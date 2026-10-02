@@ -5,6 +5,7 @@ import "./editor";
 import "./remote";
 import "./diff";
 import "./file";
+import "./workspace";
 
 export { makeBlockView, type BlockView } from "./view";
 export { openPort } from "./browser";

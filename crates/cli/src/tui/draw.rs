@@ -123,6 +123,13 @@ pub fn draw(app: &mut App, f: &mut Frame) -> Option<Cursor> {
                 let path = s.and_then(|s| s["path"].as_str().map(str::to_owned)).unwrap_or_default();
                 note(buf, r, &format!("%{pid} file {path}  (`illogical capture %{pid}`)"));
             }
+            Some(BlockType::Workspace) => {
+                let s = app.blocks.get(&pid);
+                let name = s.and_then(|s| s["name"].as_str().map(str::to_owned)).unwrap_or_default();
+                let n = s.and_then(|s| s["members"].as_array().map(Vec::len)).unwrap_or(0);
+                let g = s.and_then(|s| s["gates"].as_array().map(Vec::len)).unwrap_or(0);
+                note(buf, r, &format!("%{pid} chant workspace {name}: {n} members, {g} gates waiting  (`illogical capture %{pid}`)"));
+            }
             _ => note(buf, r, &format!("%{pid}")),
         }
     }

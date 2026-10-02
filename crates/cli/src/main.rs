@@ -201,6 +201,19 @@ enum Command {
         #[arg(long)]
         session: Option<String>,
     },
+    /// Show a chant workspace as a block (S21 spike): its members, records
+    /// and gates waiting on you, read through chant's read contract.
+    Workspace {
+        /// The workspace root [default: here].
+        dir: Option<String>,
+        /// The environment whose gates and releases to read.
+        #[arg(long, default_value = "local")]
+        env: String,
+        #[arg(long)]
+        split: Option<String>,
+        #[arg(long)]
+        session: Option<String>,
+    },
     /// Type a pane's failed command again (M24's `failed`), once its shell
     /// is waiting at its prompt.
     Rerun { pane: Option<Pane> },
@@ -1152,6 +1165,23 @@ fn real_main(cli: Cli) -> anyhow::Result<i32> {
                 "local": on.is_none() && !remote,
                 "session": session,
                 "from_pane": from,
+            });
+            let v = request(&sock, "POST", "/api/blocks", Some(&body))?.json()?;
+            if json_out {
+                print_json(&v);
+            } else {
+                println!("%{}", v["block"]);
+            }
+        }
+        Command::Workspace { dir, env, split, session } => {
+            let root = absolute(dir.as_deref().unwrap_or("."))?;
+            let body = json!({
+                "type": "workspace",
+                "config": { "root": root, "env": env },
+                "split": split_of(split.as_deref())?,
+                "local": true,
+                "session": session,
+                "from_pane": env_pane(),
             });
             let v = request(&sock, "POST", "/api/blocks", Some(&body))?.json()?;
             if json_out {

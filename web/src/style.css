@@ -3027,3 +3027,28 @@ button {
 .hl-m {
   color: #94e2d5;
 }
+
+/* S21: chant workspace blocks. */
+.ws-body { overflow: auto; padding: 8px 12px; display: flex; flex-direction: column; gap: 12px; }
+.ws h4 { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--dim); }
+.ws-gates { border: 1px solid var(--accent); border-radius: 6px; padding: 8px 10px; }
+.ws-gate { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 4px 0; }
+.ws-gate > span { flex: 1; min-width: 200px; }
+.ws-members { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
+.ws-card { background: var(--surface); border: 1px solid var(--divider); border-radius: 6px; padding: 8px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.ws-card.waits { border-color: var(--accent); }
+.ws-card.bad { border-color: var(--danger); }
+.ws-card-head { display: flex; justify-content: space-between; gap: 6px; }
+.ws-card-head b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-dir { font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-kind, .ws-tag { font-size: 11px; padding: 0 6px; border-radius: 8px; background: var(--raised); color: var(--dim); white-space: nowrap; }
+.ws-tag.waits { background: var(--accent); color: var(--bg); }
+.ws-tag.bad { background: var(--danger); color: var(--bg); }
+.ws-tags { display: flex; gap: 4px; flex-wrap: wrap; min-height: 16px; }
+.ws-actions { display: flex; gap: 4px; flex-wrap: wrap; }
+.ws button { background: var(--raised); color: var(--fg); border: 0; border-radius: 4px; padding: 2px 8px; cursor: pointer; font: inherit; font-size: 12px; }
+.ws button:hover { background: var(--raised-hover); }
+.ws-record { padding: 3px 0; }
+.ws-diag { font-size: 12px; margin: 2px 0; }
+.ws-diag.error { color: var(--danger); }
+.ws-note { font-size: 11px; margin: 0; }

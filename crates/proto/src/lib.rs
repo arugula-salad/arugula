@@ -590,6 +590,8 @@ pub enum BlockType {
     /// option (a)): this layout holds its place, and clients reach its
     /// terminal on that daemon directly. Its config is [`RemoteRef`].
     Remote,
+    /// A chant workspace, read through chant's read contract (S21 spike).
+    Workspace,
 }
 
 /// Where a remote block's pane lives (#17): a host in the home daemon's

@@ -46,6 +46,7 @@ mod sync;
 mod sys;
 mod tailscale;
 mod tls;
+mod workspace;
 
 use std::{net::SocketAddr, path::PathBuf};
 
