@@ -19,6 +19,7 @@ use illogical_proto::{
     api::{OpenRequest, PaneSummary, RunRequest},
     ask::{Ask, AskKind},
 };
+use illogical_vt::detect::AgentState;
 use tokio::{
     sync::{broadcast, mpsc, oneshot},
     time::{Instant, sleep_until},
@@ -50,8 +51,10 @@ const DONE_AFTER_MS: u64 = 5_000;
 /// A command that ran at least this long and failed is "failed" (M24);
 /// quicker ones you were typing at anyway.
 const FAILED_AFTER_MS: u64 = 3_000;
-/// Programs that wait for you quietly: one of these going quiet mid-command
-/// means it probably needs input.
+/// Agents run in terminals. Those with screen rules
+/// ([`illogical_vt::detect`]) say whether they're working, blocked on you or
+/// idle (#145); the rest are only known to be agents, and going quiet
+/// doesn't mean they want you.
 const AGENTS: &[&str] = &["claude", "codex", "aider", "gemini", "opencode", "goose", "amp"];
 /// Changes a card depends on (attention, a question, who drives) reach
 /// clients within this (M23); several in a row go together.
@@ -506,10 +509,10 @@ struct Daemon {
     attention: HashMap<PaneId, Attention>,
     /// Why each pane wants you (M24), as recorded when it started to.
     reasons: HashMap<PaneId, Reason>,
-    /// Panes whose agent may be said to have gone quiet: once per turn,
-    /// armed by input or a new command, so an idle agent redrawing itself
-    /// (a resize, its status line) doesn't want you again and again.
-    quiet_armed: std::collections::HashSet<PaneId>,
+    /// The agent each pane's screen is read for (#145), and what its
+    /// screen last said.
+    watching: HashMap<PaneId, &'static str>,
+    screen: HashMap<PaneId, AgentState>,
     clients: HashMap<ClientId, Subscriber>,
     /// The pane each client's focused window is looking at.
     focus: HashMap<ClientId, PaneId>,
@@ -665,7 +668,8 @@ pub fn start(config: Config, store: StateDir, kept: HashMap<String, OwnedFd>, pu
         meta: HashMap::new(),
         attention: HashMap::new(),
         reasons: HashMap::new(),
-        quiet_armed: Default::default(),
+        watching: Default::default(),
+        screen: Default::default(),
         clients: HashMap::new(),
         focus: HashMap::new(),
         refused: HashMap::new(),
@@ -1453,6 +1457,62 @@ impl Daemon {
         }
     }
 
+    /// Read the screen of the agent the pane runs now, if it has rules
+    /// (#145), and stop reading it once it's gone.
+    fn watch_agent(&mut self, pane: PaneId) {
+        let agent = self.agent_name(pane).and_then(|name| illogical_vt::detect::agent(&name));
+        let id = agent.map(|a| a.id);
+        if self.watching.get(&pane).copied() == id {
+            return;
+        }
+        let Some(h) = self.panes.get(&pane) else { return };
+        h.watch_agent(agent);
+        self.screen.remove(&pane);
+        match id {
+            Some(id) => self.watching.insert(pane, id),
+            None => self.watching.remove(&pane),
+        };
+    }
+
+    /// What an agent's screen says it's doing now (#145). Hooks and open
+    /// questions say more, so they win; a bell or a notification still
+    /// wants you until you answer it.
+    fn agent_screen(&mut self, pane: PaneId, state: AgentState, headline: Option<String>) {
+        let before = self.screen.insert(pane, state);
+        if self.asks.contains_key(&pane) {
+            return;
+        }
+        let now = self.attention.get(&pane).copied().unwrap_or_default();
+        let name =
+            self.watching.get(&pane).and_then(|id| illogical_vt::detect::agent(id)).map_or("The agent", |a| a.name);
+        match state {
+            AgentState::Working => {
+                let answered = now == Attention::NeedsInput && before == Some(AgentState::Blocked);
+                if matches!(now, Attention::Idle | Attention::Done) || answered {
+                    self.set_attention(pane, Attention::Working, "agent working");
+                }
+            }
+            AgentState::Blocked => {
+                let why = headline.unwrap_or_else(|| format!("{name} is waiting for you"));
+                self.set_attention(pane, Attention::NeedsInput, &why);
+            }
+            AgentState::Idle => match now {
+                // A turn ended: done, if nobody watched it end.
+                Attention::Working if before == Some(AgentState::Working) && !self.focused(pane) => {
+                    let why = format!("{name} finished its turn");
+                    self.set_attention(pane, Attention::Done, &why);
+                }
+                Attention::Working => self.set_attention(pane, Attention::Idle, "agent idle"),
+                // Its prompt went away without an answer typed here (Esc in
+                // another terminal attached to it, say).
+                Attention::NeedsInput if before == Some(AgentState::Blocked) => {
+                    self.set_attention(pane, Attention::Idle, "agent idle")
+                }
+                _ => {}
+            },
+        }
+    }
+
     fn looks_like_agent(&self, pane: PaneId) -> bool {
         let Some(h) = self.panes.get(&pane) else { return false };
         let text = h.status().current.and_then(|c| c.text).or_else(|| h.command()).unwrap_or_default();
@@ -1569,11 +1629,14 @@ impl Daemon {
                     m.hold = false;
                 }
                 self.set_attention(pane, Attention::Idle, "started");
-                self.quiet_armed.insert(pane);
+                self.watch_agent(pane);
                 self.changed();
             }
             What::Busy(true) => {
+                // An idle agent redrawing itself (a resize, its status line)
+                // isn't working; its screen says when it is.
                 if running_command()
+                    && self.screen.get(&pane) != Some(&AgentState::Idle)
                     && matches!(
                         self.attention.get(&pane).copied().unwrap_or_default(),
                         Attention::Idle | Attention::Done
@@ -1581,23 +1644,26 @@ impl Daemon {
                 {
                     self.set_attention(pane, Attention::Working, "output");
                 }
+                self.watch_agent(pane);
             }
             What::Busy(false) => {
+                // An agent gone quiet may be thinking, or done, or asking:
+                // only its screen (or a hook, or a notification) says it
+                // wants you. Quiet alone is idle, unless the screen says
+                // it's still working (a long think).
                 if running_command()
                     && self.looks_like_agent(pane)
                     && self.attention.get(&pane) == Some(&Attention::Working)
+                    && self.screen.get(&pane) != Some(&AgentState::Working)
                 {
-                    // Once a turn: after that it's an idle agent redrawing.
-                    if self.quiet_armed.remove(&pane) {
-                        self.set_attention(pane, Attention::NeedsInput, "an agent went quiet");
-                    } else {
-                        self.set_attention(pane, Attention::Idle, "quiet");
-                    }
+                    self.set_attention(pane, Attention::Idle, "quiet");
                 }
             }
+            What::Screen(state, headline) => self.agent_screen(pane, state, headline),
             What::Signal(signal) => match signal {
                 Signal::Prompt => {
                     self.emit(Some(pane), EventKind::Prompt);
+                    self.watch_agent(pane);
                     if self.attention.get(&pane) == Some(&Attention::Working) {
                         self.set_attention(pane, Attention::Idle, "prompt");
                     }
@@ -1606,7 +1672,7 @@ impl Daemon {
                 Signal::CommandStart => {
                     let text = self.panes.get(&pane).and_then(|h| h.status().current.and_then(|c| c.text));
                     self.emit(Some(pane), EventKind::CommandStart { text });
-                    self.quiet_armed.insert(pane);
+                    self.watch_agent(pane);
                     self.set_attention(pane, Attention::Working, "command started");
                     self.touch(pane);
                 }
@@ -1760,12 +1826,10 @@ impl Daemon {
             Some(by) => p.input_by(data, by),
             None => p.input(data),
         }
-        if turn {
-            self.quiet_armed.insert(pane);
-        }
         // A question open beside it still wants an answer (typing in Claude
-        // Code's prompt box doesn't answer it).
-        if self.asks.contains_key(&pane) {
+        // Code's prompt box doesn't answer it), and so does a prompt on the
+        // agent's screen that was only looked at.
+        if self.asks.contains_key(&pane) || (!turn && self.screen.get(&pane) == Some(&AgentState::Blocked)) {
             return;
         }
         if matches!(self.attention.get(&pane), Some(Attention::NeedsInput | Attention::Done)) {
@@ -3030,7 +3094,8 @@ impl Daemon {
                     self.sizes.remove(&pane);
                     self.meta.remove(&pane);
                     self.attention.remove(&pane);
-                    self.quiet_armed.remove(&pane);
+                    self.watching.remove(&pane);
+                    self.screen.remove(&pane);
                     if let Some(a) = self.asks.remove(&pane) {
                         let _ = a.reply.send((AskReply::Withdrawn, None));
                     }
