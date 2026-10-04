@@ -39,7 +39,9 @@ tests use a stand-in chant). `just screenshots` regenerates the images in
    notices` if dependencies changed; CI fails if THIRD_PARTY.md is stale).
 2. `git tag -a vX.Y.Z -m "illogical X.Y.Z" && git push origin vX.Y.Z`.
    `.github/workflows/release.yml` builds the Linux tarballs on geek and
-   the macOS one on jake-mini, attaches them and `SHA256SUMS` to the
+   the macOS ones on jake-mini (Apple silicon natively, Intel
+   cross-compiled with `just build-macos-x86_64` and `just desktop
+   x86_64`), attaches them and `SHA256SUMS` to the
    GitHub release, and bumps the formula in `arugula-salad/homebrew-tap`
    (`scripts/release`; the tap's deploy key is the `HOMEBREW_TAP_KEY`
    secret).

@@ -17,6 +17,7 @@ jobs:
       - run: just bootstrap
       - run: just check
       - run: just check-macos
+      - run: just check-macos x86_64
       - name: The desktop app
         run: just desktop-check
       - name: install.sh and the release's glibc check
