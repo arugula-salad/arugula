@@ -46,6 +46,9 @@ struct Checked {
     checked_ms: u64,
     /// The latest release's version, without the `v`.
     latest: Option<String>,
+    /// Where it was asked (a check elsewhere doesn't count).
+    #[serde(default)]
+    url: String,
 }
 
 static ENABLED: OnceLock<bool> = OnceLock::new();
@@ -61,7 +64,7 @@ pub fn start(s: Settings) {
         info!("update check off");
         return;
     }
-    let cached = read_cache(&s.state_dir);
+    let cached = read_cache(&s.state_dir, &s.url);
     *LAST.lock().unwrap() = cached.clone();
     tokio::spawn(run(s, cached));
 }
@@ -84,7 +87,7 @@ async fn run(s: Settings, cached: Option<Checked>) {
         tokio::time::sleep(wait).await;
         match latest(&client, &s.url).await {
             Ok(v) => {
-                let c = Checked { checked_ms: now_ms(), latest: Some(v.clone()) };
+                let c = Checked { checked_ms: now_ms(), latest: Some(v.clone()), url: s.url.clone() };
                 if let Ok(json) = serde_json::to_vec(&c) {
                     let _ = crate::store::write_atomic(&s.state_dir.join(CACHE), &json);
                 }
@@ -132,8 +135,9 @@ pub fn newer(a: &str, b: &str) -> bool {
     matches!((parse(a), parse(b)), (Some(a), Some(b)) if a > b)
 }
 
-fn read_cache(dir: &Path) -> Option<Checked> {
-    serde_json::from_slice(&std::fs::read(dir.join(CACHE)).ok()?).ok()
+fn read_cache(dir: &Path, url: &str) -> Option<Checked> {
+    let c: Checked = serde_json::from_slice(&std::fs::read(dir.join(CACHE)).ok()?).ok()?;
+    (c.url == url).then_some(c)
 }
 
 fn now_ms() -> u64 {
@@ -278,9 +282,10 @@ mod tests {
     fn cache_round_trips() {
         let dir = std::env::temp_dir().join(format!("illogical-update-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let c = Checked { checked_ms: 5, latest: Some("0.17.0".into()) };
+        let c = Checked { checked_ms: 5, latest: Some("0.17.0".into()), url: LATEST.into() };
         std::fs::write(dir.join(CACHE), serde_json::to_vec(&c).unwrap()).unwrap();
-        assert_eq!(read_cache(&dir), Some(c));
+        assert_eq!(read_cache(&dir, LATEST), Some(c));
+        assert_eq!(read_cache(&dir, "http://127.0.0.1:1/latest"), None);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

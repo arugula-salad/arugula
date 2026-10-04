@@ -20,6 +20,7 @@ export type UpdateStatus = {
 const DISMISS_KEY = "illogical.update.dismissed";
 /** Ask the daemon again this often (it checks GitHub far less). */
 const POLL_MS = 60 * 60 * 1000;
+const SOON_MS = 30 * 1000;
 
 function dismissed(): string | null {
   try {
@@ -42,14 +43,22 @@ export function UpdateChip({ client }: { client: Client }) {
   const mine = !client.e2e && !client.state?.roles;
   useEffect(() => {
     if (!mine) return;
-    const get = () =>
-      fetch("/api/update")
+    let t: number | undefined;
+    let live = true;
+    const get = async () => {
+      const s = await fetch("/api/update")
         .then((r) => (r.ok ? (r.json() as Promise<UpdateStatus>) : null))
-        .then(setStatus)
-        .catch(() => {});
-    get();
-    const t = setInterval(get, POLL_MS);
-    return () => clearInterval(t);
+        .catch(() => null);
+      if (!live) return;
+      setStatus(s);
+      // A daemon that just started checks in a few seconds: look again soon.
+      t = window.setTimeout(get, s?.enabled && !s.latest ? SOON_MS : POLL_MS);
+    };
+    void get();
+    return () => {
+      live = false;
+      clearTimeout(t);
+    };
   }, [mine]);
   if (!mine || !status?.newer || !status.latest || gone === status.latest) return null;
   const latest = status.latest;
