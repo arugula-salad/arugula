@@ -54,7 +54,8 @@ the daemon stopping, crashing, or the machine rebooting:
     needed: a spinner or "esc to interrupt" is *working*, a permission or
     trust prompt is *needs you* with what it asks ("Claude Code asks to run
     `rm -rf build`"), and an empty prompt box is *idle*, or *done* when a
-    turn ends while nobody is watching. A turn has to look over in three reads
+    turn someone started ends while nobody is watching. The agent is found
+    by what runs in the pane's foreground, so `cd x && claude` counts. A turn has to look over in three reads
     100 ms apart (or for 700 ms) before it counts as ended, and the first
     second after an agent starts isn't read. Other agents (aider, gemini,
     opencode...) are known as agents but not read yet; for any agent,
