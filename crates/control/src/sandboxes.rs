@@ -179,7 +179,7 @@ pub async fn done(State(app): State<Arc<App>>, d: DaemonAuth) -> R {
     Ok(Json(json!({})))
 }
 
-async fn remove(app: &App, id: &str) -> anyhow::Result<()> {
+pub async fn remove(app: &App, id: &str) -> anyhow::Result<()> {
     if let Some(h) = &app.hosted {
         h.sprites.delete(id).await?;
     }

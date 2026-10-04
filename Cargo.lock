@@ -1635,6 +1635,7 @@ dependencies = [
  "hkdf",
  "hmac",
  "illogical-e2e",
+ "libc",
  "p256",
  "reqwest",
  "rusqlite",

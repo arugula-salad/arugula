@@ -7,9 +7,11 @@
 //! them and relays opaque messages, and the keys it distributes are signed
 //! by the account's own devices, so it can refuse service but can't read.
 
+mod account;
 mod api;
 mod app_login;
 mod auth;
+mod backup;
 mod billing;
 mod db;
 mod forge;
@@ -131,6 +133,20 @@ struct Args {
     #[arg(long, default_value_t = 10_000, env = "ILLOGICAL_RELAY_FREE_MB")]
     relay_free_mb: u64,
 
+    /// Relay limits per account (#174), 0 for none: client sockets at
+    /// once, machines dialed in at once, and (while billing is off) MB a
+    /// day before its relayed traffic slows down.
+    #[arg(long, default_value_t = 32, env = "ILLOGICAL_RELAY_MAX_SOCKETS")]
+    relay_max_sockets: usize,
+    #[arg(long, default_value_t = 50, env = "ILLOGICAL_RELAY_MAX_MACHINES")]
+    relay_max_machines: usize,
+    #[arg(long, default_value_t = 2_000, env = "ILLOGICAL_RELAY_DAILY_MB")]
+    relay_daily_mb: u64,
+
+    /// Off-site backup with Litestream (#174).
+    #[command(flatten)]
+    backup: backup::Litestream,
+
     /// Push endpoints allowed besides the browsers' push services, as
     /// host:port (tests).
     #[arg(long = "push-host", hide = true)]
@@ -242,6 +258,12 @@ pub fn router(app: Arc<App>) -> Router {
         .route("/auth/passkey/login/finish", post(passkey::login_finish))
         .route("/api/me", get(api::me))
         .route("/api/me/name", post(api::set_name))
+        .route("/api/me/sessions", get(account::sessions))
+        .route("/api/me/sessions/end-all", post(account::end_all))
+        .route("/api/me/sessions/{id}/end", post(account::end_session))
+        .route("/api/me/passkeys", get(account::passkeys))
+        .route("/api/me/passkeys/{id}/remove", post(account::remove_passkey))
+        .route("/api/me/delete", get(account::preview).post(account::delete))
         .route("/api/devices", get(api::devices).post(api::enroll))
         .route("/api/devices/{id}", get(api::device))
         .route("/api/devices/{id}/approve", post(api::approve))
@@ -290,6 +312,7 @@ pub fn router(app: Arc<App>) -> Router {
         .route("/api/relay/c/{id}", get(relay::client))
         .route("/api/relay/m", get(relay::many))
         .fallback(asset)
+        .layer(axum::middleware::from_fn_with_state(app.clone(), account::note_agent))
         .layer(axum::middleware::map_response(headers))
         .with_state(app)
 }
@@ -395,6 +418,7 @@ async fn main() -> anyhow::Result<()> {
         )
         .init();
     let a = Args::parse();
+    raise_open_files();
     // Bound first, so port 0 is known before the URL is (#67).
     let l = tokio::net::TcpListener::bind(a.listen).await?;
     let listen = l.local_addr()?;
@@ -431,7 +455,14 @@ async fn main() -> anyhow::Result<()> {
     if github.is_none() {
         tracing::warn!("no GITHUB_CLIENT_ID/GITHUB_CLIENT_SECRET: GitHub sign-in is off");
     }
+    let backup = backup::Backup::new(&a.backup, &a.db)?;
+    if let Some(b) = &backup {
+        b.restore_if_missing().await?;
+    }
     let db = db::Db::open(&a.db)?;
+    if let Some(b) = &backup {
+        b.replicate();
+    }
     let vapid = push::Vapid::load(&db)?;
     let hosted = match a.sprites_token.filter(|t| !t.is_empty()) {
         Some(t) => Some(sandboxes::Hosted {
@@ -461,7 +492,11 @@ async fn main() -> anyhow::Result<()> {
         },
         db,
         http: reqwest::Client::builder().timeout(std::time::Duration::from_secs(15)).build()?,
-        relay: Default::default(),
+        relay: relay::Relay::new(relay::Caps {
+            sockets: a.relay_max_sockets,
+            daemons: a.relay_max_machines,
+            daily_bytes: a.relay_daily_mb * 1_000_000,
+        }),
         passkeys: Default::default(),
         limits: limit::Limits::new(a.trust_proxy_header),
         vapid,
@@ -483,17 +518,80 @@ async fn main() -> anyhow::Result<()> {
             }
         });
     }
+    // Expired sessions, join codes and invites go (#173).
+    {
+        let a2 = app.clone();
+        tokio::spawn(async move {
+            loop {
+                match a2.db.prune(illogical_e2e::now_ms()) {
+                    Ok(n) if n > 0 => info!(sessions = n, "pruned expired sessions"),
+                    Ok(_) => {}
+                    Err(e) => tracing::warn!(error = %e, "pruning"),
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
+            }
+        });
+    }
     // Nagle off: the relay's mux writes frames back to back (S15).
     let l = l.tap_io(|t| {
         let _ = t.set_nodelay(true);
     });
     info!(%listen, url = %app.cfg.public_url, "illogical control");
-    axum::serve(l, router(app).into_make_service_with_connect_info::<SocketAddr>()).await?;
+    let serve = axum::serve(l, router(app).into_make_service_with_connect_info::<SocketAddr>());
+    tokio::select! {
+        r = serve => r?,
+        _ = stopping() => info!("stopping"),
+    }
+    // Litestream syncs what's left before control goes.
+    if let Some(b) = &backup {
+        b.stop().await;
+    }
     Ok(())
+}
+
+/// Every relay connection is a socket: take all the open files the system
+/// allows (#174), not the usual soft limit of 1024.
+fn raise_open_files() {
+    let mut r = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
+    // SAFETY: plain calls with a valid pointer to a local.
+    unsafe {
+        if libc::getrlimit(libc::RLIMIT_NOFILE, &mut r) != 0 {
+            return;
+        }
+        if r.rlim_cur < r.rlim_max {
+            let want = libc::rlimit { rlim_cur: r.rlim_max, rlim_max: r.rlim_max };
+            if libc::setrlimit(libc::RLIMIT_NOFILE, &want) == 0 {
+                r = want;
+            }
+        }
+    }
+    info!(open_files = r.rlim_cur, "open file limit");
+}
+
+/// SIGTERM (Fly stopping the machine) or Ctrl-C.
+async fn stopping() {
+    let term = async {
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(mut s) => {
+                s.recv().await;
+            }
+            Err(_) => std::future::pending().await,
+        }
+    };
+    tokio::select! {
+        _ = tokio::signal::ctrl_c() => {},
+        _ = term => {},
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn args() {
+        use clap::CommandFactory;
+        super::Args::command().debug_assert();
+    }
+
     #[test]
     fn days() {
         assert_eq!(super::day(0), "1970-01-01");

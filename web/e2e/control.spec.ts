@@ -395,3 +395,52 @@ test("removing the phone cuts it off", async () => {
   await new Promise((r) => setTimeout(r, 3000));
   expect(await connected(phone)).toBe(false);
 });
+
+const openAccount = (page: Page) => page.evaluate(() => dispatchEvent(new CustomEvent("illogical:control-panel", { detail: "account" })));
+
+test("sessions: where you're signed in, and signing out everywhere (#173)", async () => {
+  await openAccount(laptop);
+  await expect(laptop.getByRole("heading", { name: "Sign-in and account" })).toBeVisible();
+  // This browser, the phone, and the others that signed in above.
+  await expect(laptop.locator("[data-session]")).not.toHaveCount(0);
+  expect(await laptop.locator("[data-session]").count()).toBeGreaterThanOrEqual(2);
+  await expect(laptop.locator("[data-sessions]")).toContainText("Chrome on Linux");
+  await expect(laptop.locator("[data-sessions]")).toContainText("(this one)");
+  // Sign one other out: it's gone from the list.
+  const n = await laptop.locator("[data-session]").count();
+  const other = laptop.locator("[data-end-session]").first();
+  await other.click();
+  await other.click();
+  await expect(laptop.locator("[data-session]")).toHaveCount(n - 1);
+  // Everywhere: this one too.
+  await laptop.locator("[data-end-all]").click();
+  await laptop.locator("[data-end-all]").click();
+  await expect(laptop.locator("[data-signin=github]")).toBeVisible();
+  expect((await phone.request.get(`${base}/api/me`)).status()).toBe(401);
+});
+
+test("deleting the account: type its login; its machines and team go (#173)", async () => {
+  await signIn(laptop);
+  await booted(laptop);
+  const before = await laptop.evaluate(() => window.__illogical.control!.account);
+  await openAccount(laptop);
+  await laptop.locator("[data-delete-account]").click();
+  await expect(laptop.getByRole("heading", { name: "Delete your account" })).toBeVisible();
+  await expect(laptop.locator("[data-disband]")).toContainText("Solo");
+  await expect(laptop.locator("[data-delete-what]")).toContainText("your 2 machines");
+  const go = laptop.locator("[data-delete-go]");
+  await expect(go).toBeDisabled();
+  await laptop.locator("[data-delete-confirm]").fill("someone");
+  await expect(go).toBeDisabled();
+  await laptop.locator("[data-delete-confirm]").fill("stranger");
+  await go.click();
+  await expect(laptop.locator("[data-signin=github]")).toBeVisible();
+  // The same GitHub account signing in again starts afresh: a new
+  // account, a new first device, no machines.
+  await signIn(laptop);
+  await expect(laptop.locator("[data-recovery-code]")).toHaveCount(2);
+  const after = await laptop.evaluate(() => window.__illogical.control!.account);
+  expect(after).not.toBe(before);
+  const dir = await laptop.request.get(`${base}/api/directory`);
+  expect((await dir.json()).daemons).toEqual([]);
+});

@@ -13,6 +13,7 @@ import type { MenuItem } from "./menu";
 import type { Team } from "../control";
 import type { TeamRole } from "../e2e/team.ts";
 import { qr, qrPath } from "./qr";
+import { AccountPanel } from "./account";
 
 export function useControl(s: ControlSession) {
   useSubscribe((fn) => s.subscribe(fn));
@@ -400,7 +401,7 @@ function JoinCodeForm({ s }: { s: ControlSession }) {
   );
 }
 
-type Panel = "devices" | "add" | "add-device" | "teams" | "plan";
+type Panel = "devices" | "add" | "add-device" | "teams" | "plan" | "account";
 
 const openPanel = (p: Panel) => () => dispatchEvent(new CustomEvent("illogical:control-panel", { detail: p }));
 
@@ -443,6 +444,12 @@ export function ControlOverlay({ s }: { s: ControlSession }) {
   if (panel === "devices") return <Devices s={s} close={() => setPanel(null)} />;
   if (panel === "teams") return <Teams s={s} close={() => setPanel(null)} />;
   if (panel === "plan") return <Plan s={s} close={() => setPanel(null)} />;
+  if (panel === "account")
+    return (
+      <Modal close={() => setPanel(null)}>
+        <AccountPanel s={s} close={() => setPanel(null)} />
+      </Modal>
+    );
   if (panel === "add-device") return <AddDevice s={s} close={() => setPanel(null)} />;
   if (panel === "add")
     return (
@@ -909,6 +916,7 @@ function accountItems(s: ControlSession): MenuItem[] {
   return [
     { label: "Teams…", run: panel("teams") },
     { label: "Devices and machines…", run: panel("devices") },
+    { label: "Sign-in and account…", run: panel("account") },
     ...(s.billing?.billing ? [{ label: s.billing.relay.warning ? "Plan and usage… (over the free relay)" : "Plan and usage…", run: panel("plan") }] : []),
     { label: "Sign out", run: () => void s.signOut(false) },
   ];

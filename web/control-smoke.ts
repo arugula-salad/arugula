@@ -15,6 +15,7 @@ import { generateKeys, signText, type DeviceKeys } from "./src/e2e/keys.ts";
 import { E2ESocket } from "./src/e2e/channel.ts";
 import { signRoster } from "./src/e2e/team.ts";
 import { createHmac } from "node:crypto";
+import { DatabaseSync } from "node:sqlite";
 
 // Ports the OS hands out, so runs side by side (CI and a worktree's
 // `just check` on one machine) don't collide.
@@ -25,7 +26,7 @@ async function freePort(): Promise<number> {
   await new Promise((ok) => s.close(ok));
   return port;
 }
-const [CONTROL, GITHUB, DAEMON, SPY, PUSH, STRIPE, SPRITES] = await Promise.all(Array.from({ length: 7 }, freePort));
+const [CONTROL, GITHUB, DAEMON, SPY, PUSH, STRIPE, SPRITES, DAEMON2] = await Promise.all(Array.from({ length: 8 }, freePort));
 const WHSEC = "whsec_smoke";
 // Who the fake GitHub signs in next.
 let asUser = "stranger";
@@ -415,6 +416,67 @@ try {
   check("the invoice adds up: 2 seats and 1 minute", invoice === 1601, `${invoice}¢`);
   fakeStripe.close();
   fakeSprites.close();
+
+  // 9. Deleting an account (#173): someone with a machine leaves. The
+  // machine is refused from then on, and nothing of theirs is left.
+  asUser = "leaver";
+  await signIn();
+  const leaver = await api<{ account: string }>("/api/me");
+  const lk = await generateKeys();
+  await api("/api/devices", { cert: await cert(lk, lk, leaver.account, "browser", "laptop") });
+  const state2 = temp("daemon2");
+  const joining2 = spawn(`${target}/illogicald`, ["join", base, "--name", "leaving-box", "--state-dir", state2], { stdio: ["ignore", "pipe", "inherit"] });
+  procs.push(joining2);
+  const code2 = await new Promise<string>((res) => {
+    let out = "";
+    joining2.stdout!.on("data", (d) => {
+      out += d;
+      const m = out.match(/#join=([A-Z0-9]{5}-[A-Z0-9]{5})/);
+      if (m) res(m[1]);
+    });
+  });
+  const shown2 = await api<{ cert: Cert }>(`/api/joins/${code2}`);
+  const dk2 = { ...shown2.cert, account: leaver.account, approver: lk.id, sig: "" };
+  dk2.sig = await signText(lk, certBody(dk2));
+  await api(`/api/joins/${code2}/approve`, { cert: dk2 });
+  await new Promise((r) => joining2.on("exit", r));
+  const daemon2Log: Buffer[] = [];
+  const daemon2 = spawn(`${target}/illogicald`, [
+    ...["--listen", `127.0.0.1:${DAEMON2}`, "--name", "leaving-box", "--state-dir", state2],
+    ...["--shell", "bash --norc --noprofile", "--no-manager-env", "--tailscale-socket", "/nonexistent", "--no-claude-ide"],
+  ], { stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, RUST_LOG: "info" } });
+  procs.push(daemon2);
+  daemon2.stdout!.on("data", (d: Buffer) => daemon2Log.push(d));
+  daemon2.stderr!.on("data", (d: Buffer) => daemon2Log.push(d));
+  let dir2: typeof dir = { daemons: [] };
+  for (let i = 0; i < 50 && !dir2.daemons[0]?.online; i++) {
+    await sleep(200);
+    dir2 = await api("/api/directory");
+  }
+  check("the leaver's machine is online", dir2.daemons[0]?.online === true);
+  const sessions = await api<{ sessions: { id: string; current: boolean; agent: string }[] }>("/api/me/sessions");
+  check("their sessions list this one, with what signed in", sessions.sessions.some((x) => x.current && x.agent.length > 0), JSON.stringify(sessions));
+  const preview = await api<{ confirm: string; blockers: string[]; machines: number }>("/api/me/delete");
+  check("deleting asks for the login, and nothing stands in the way", preview.confirm === "leaver" && preview.blockers.length === 0 && preview.machines === 1, JSON.stringify(preview));
+  check("the wrong word is refused", await api("/api/me/delete", { confirm: "stranger" }).then(() => false, () => true));
+  const before = Buffer.concat(daemon2Log).length;
+  await api("/api/me/delete", { confirm: "leaver" });
+  check("signed out: the account is gone", await api("/api/me").then(() => false, (e: Error) => / 401 /.test(e.message)));
+  // Hung up on, and refused when it dials again.
+  const since = () => Buffer.concat(daemon2Log).subarray(before).toString().replace(/\x1b\[[0-9;]*m/g, "");
+  const refused2 = /can't reach control's relay.*401.*not an enrolled daemon/;
+  for (let i = 0; i < 100 && !refused2.test(since()); i++) await sleep(100);
+  check("its machine is refused from then on", refused2.test(since()), since().split("\n").filter((l) => /relay/.test(l)).slice(-1)[0]);
+  const rows = new DatabaseSync(db, { readOnly: true });
+  const left: string[] = [];
+  for (const { name } of rows.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[]) {
+    for (const { name: col } of rows.prepare(`PRAGMA table_info(${name})`).all() as { name: string }[]) {
+      const n = rows.prepare(`SELECT COUNT(*) AS n FROM ${name} WHERE CAST(${col} AS TEXT) LIKE ?`).get(`%${leaver.account}%`) as { n: number };
+      if (n.n) left.push(`${name}.${col}`);
+    }
+  }
+  rows.close();
+  check("no row in control's database mentions the account", left.length === 0, left.join(", "));
 } catch (e) {
   console.log("FAIL", e);
   failed++;

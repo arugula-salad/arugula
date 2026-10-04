@@ -75,9 +75,20 @@ fn certs_of(app: &App, account: &str) -> anyhow::Result<(Vec<Cert>, Vec<Revocati
 fn certs_for<'a>(app: &App, accounts: impl Iterator<Item = &'a str>) -> anyhow::Result<AccountCerts> {
     let mut out = HashMap::new();
     for a in accounts {
-        out.insert(a.to_owned(), certs_of(app, a)?);
+        // A deleted account's signing devices, kept to check the history
+        // it signed (#173).
+        let certs = match app.db.retained_certs(a)? {
+            Some(kept) if app.db.account(a)?.is_none() => kept,
+            _ => certs_of(app, a)?,
+        };
+        out.insert(a.to_owned(), certs);
     }
     Ok(out)
+}
+
+#[cfg(test)]
+pub fn certs_for_test(app: &App, accounts: &[String]) -> AccountCerts {
+    certs_for(app, accounts.iter().map(String::as_str)).unwrap()
 }
 
 fn parse(body: &str) -> anyhow::Result<Roster> {

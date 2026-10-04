@@ -128,7 +128,7 @@ class HttpError extends Error {
   }
 }
 
-async function api<T>(path: string, body?: unknown): Promise<T> {
+export async function api<T>(path: string, body?: unknown): Promise<T> {
   const res = await fetch(path, {
     method: body === undefined ? "GET" : "POST",
     headers: body === undefined ? {} : { "Content-Type": "application/json" },
@@ -504,6 +504,11 @@ export class ControlSession {
   /** A passkey for the account signed in. */
   async addPasskey() {
     await passkeyRegister();
+    await this.refreshMe();
+  }
+
+  /** How many passkeys the account has now. */
+  async refreshMe() {
     this.passkeys = (await api<{ passkeys: number }>("/api/me")).passkeys;
     this.emit();
   }

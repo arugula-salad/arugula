@@ -2103,6 +2103,18 @@ button {
   color: var(--danger);
 }
 
+/* Deleting an account (#173): type its login to confirm. */
+.prompt-buttons button.danger:not(:disabled) {
+  background: var(--danger);
+  color: var(--letterbox);
+}
+
+.prompt label.control-confirm {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0;
+}
+
 .prompt label.control-check {
   display: flex;
   align-items: center;
