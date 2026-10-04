@@ -51,8 +51,9 @@ Linux (x86_64, arm64) and macOS (Apple silicon). Share a session with
 someone, or a whole machine with a team, with roles and presence
 ([docs/teams.md](docs/teams.md)). Remote access is over your tailnet, or
 through [illogical control](docs/control.md) for devices without one: end
-to end encrypted, so the service relays for your devices but can't read
-your terminals.
+to end encrypted, so what the service relays it can't read, and it can't
+add a reader to your machines. You do trust it for the web client it
+serves ([what holds](docs/control-e2e.md#what-holds-against-control)).
 
 ## Install
 
