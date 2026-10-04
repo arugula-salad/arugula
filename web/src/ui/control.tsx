@@ -10,7 +10,7 @@ import { directory } from "../hosts";
 import { CopyButton, CopyText, download } from "./copy";
 import { ROLE_HELP, roleAs, roleLabel } from "./roles";
 import type { MenuItem } from "./menu";
-import type { Team } from "../control";
+import type { ShareOffer, Team } from "../control";
 import type { TeamRole } from "../e2e/team.ts";
 import { qr, qrPath } from "./qr";
 
@@ -427,6 +427,7 @@ export function ControlOverlay({ s }: { s: ControlSession }) {
   // after allowing its sign-in.
   const appLogin = /^#app=([0-9a-f]{16,128})$/.exec(hash)?.[1];
   if (appLogin && !s.pending[0]) return <AppLoginPrompt s={s} id={appLogin} />;
+  if (hash === "#app-done" && !s.pending[0]) return <AppLoginDone />;
   const invite = inviteInHash(hash);
   if (invite)
     return invite.presigned ? (
@@ -439,6 +440,8 @@ export function ControlOverlay({ s }: { s: ControlSession }) {
   if (req) return <AdmitPrompt s={s} team={req.t} req={req.r} />;
   const asking = s.pending[0];
   if (asking) return <DevicePrompt s={s} c={asking} />;
+  const offer = s.offers[0];
+  if (offer) return <ShareOfferPrompt s={s} o={offer} />;
   if (s.joined) return <Joined s={s} />;
   if (panel === "devices") return <Devices s={s} close={() => setPanel(null)} />;
   if (panel === "teams") return <Teams s={s} close={() => setPanel(null)} />;
@@ -563,11 +566,11 @@ function JoinPrompt({ s, code }: { s: ControlSession; code: string }) {
 
 /** M48: the desktop app asks to sign in as this account. Its device key
  * is approved separately afterwards (the "New device?" prompt), so this
- * only lets it ask. */
+ * only lets it ask. Allowing hands a grant to the app on this computer
+ * (its loopback port): an app elsewhere that sent this link gets nothing. */
 function AppLoginPrompt({ s, id }: { s: ControlSession; id: string }) {
-  const [a, setA] = useState<{ name: string; code: string; allowed: boolean } | null>(null);
+  const [a, setA] = useState<{ name: string; code: string; allowed: boolean; from: string; same_network: boolean } | null>(null);
   const [err, setErr] = useState("");
-  const [done, setDone] = useState(false);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     s.showAppLogin(id).then(setA, (e: Error) => setErr(e.message));
@@ -576,23 +579,22 @@ function AppLoginPrompt({ s, id }: { s: ControlSession; id: string }) {
     <Modal close={clearHash}>
       <h2>Sign in the app?</h2>
       {err ? <p class="control-error" data-app-login-error>{err}</p> : null}
-      {done || a?.allowed ? (
-        <>
-          <p data-app-login-done>
-            Signed in. Next the app asks to be approved as a new device: the prompt shows here in a moment. Then it reaches your machines.
-          </p>
-          <div class="prompt-buttons">
-            <button class="primary" onClick={clearHash}>
-              Done
-            </button>
-          </div>
-        </>
+      {a?.allowed ? (
+        <p data-app-login-error>This sign-in was already allowed. Start it again in the app if it didn't finish.</p>
       ) : a ? (
         <>
           <p>
             <b data-app-login-name>{a.name}</b> asks to sign in as you. Check the app shows <b data-app-login-code={a.code}>{a.code}</b>.
           </p>
-          <p class="dim">If you didn't just press Sign in in the illogical app, cancel: someone may have sent you this link.</p>
+          {a.same_network ? null : (
+            <p class="control-error" data-app-login-elsewhere>
+              It asked from another network ({a.from}) than this browser's. If the app isn't on this computer, cancel.
+            </p>
+          )}
+          <p class="dim">
+            Only the app on this computer can finish it. If you didn't just press Sign in in the illogical app, cancel: someone may have sent you
+            this link.
+          </p>
           <div class="prompt-buttons">
             <button onClick={clearHash}>Cancel</button>
             <button
@@ -602,14 +604,12 @@ function AppLoginPrompt({ s, id }: { s: ControlSession; id: string }) {
               onClick={async () => {
                 setBusy(true);
                 try {
-                  await s.allowAppLogin(id);
-                  setDone(true);
-                  // Out of the way of the device prompt that follows.
-                  setTimeout(clearHash, 4000);
+                  // To the app's loopback port; it sends this page back.
+                  location.href = await s.allowAppLogin(id);
                 } catch (e) {
                   setErr((e as Error).message);
+                  setBusy(false);
                 }
-                setBusy(false);
               }}
             >
               Allow
@@ -619,6 +619,63 @@ function AppLoginPrompt({ s, id }: { s: ControlSession; id: string }) {
       ) : err ? null : (
         <p class="dim">Looking it up…</p>
       )}
+    </Modal>
+  );
+}
+
+/** Back from handing the app its grant. */
+function AppLoginDone() {
+  useEffect(() => {
+    // Out of the way of the device prompt that follows.
+    const t = setTimeout(clearHash, 6000);
+    return () => clearTimeout(t);
+  }, []);
+  return (
+    <Modal close={clearHash}>
+      <h2>Sign in the app?</h2>
+      <p data-app-login-done>Signed in. Next the app asks to be approved as a new device: the prompt shows here in a moment. Then it reaches your machines.</p>
+      <div class="prompt-buttons">
+        <button class="primary" onClick={clearHash}>
+          Done
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+/** Someone shares a session on their machine with this account: it's
+ * listed (and its notifications reach here) only once accepted. */
+function ShareOfferPrompt({ s, o }: { s: ControlSession; o: ShareOffer }) {
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const who = o.owner_name || o.owner_login || "Someone";
+  const answer = (accept: boolean) => async () => {
+    setBusy(true);
+    try {
+      await s.answerShare(o.daemon, accept);
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+    setBusy(false);
+  };
+  return (
+    <Modal>
+      <h2>A shared session</h2>
+      <p data-share-offer={o.daemon}>
+        <b data-share-offer-owner>{who}</b>
+        {o.owner_login && o.owner_login !== who ? ` (${o.owner_login})` : ""} wants to share a session on their machine{" "}
+        <b data-share-offer-machine>{o.name}</b> with you.
+      </p>
+      <p class="dim">Accept only if you know them. Accepting lists the machine here and lets its notifications reach you.</p>
+      {err ? <p class="control-error">{err}</p> : null}
+      <div class="prompt-buttons">
+        <button data-share-decline disabled={busy} onClick={answer(false)}>
+          Decline
+        </button>
+        <button class="primary" data-share-accept disabled={busy} onClick={answer(true)}>
+          Accept
+        </button>
+      </div>
     </Modal>
   );
 }
