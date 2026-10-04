@@ -280,7 +280,7 @@ impl Control {
             changed: watch::channel(0).0,
             direct_urls,
             nudge: tokio::sync::Notify::new(),
-            http: reqwest::Client::builder().timeout(Duration::from_secs(20)).build().expect("http client"),
+            http: crate::roots::http().timeout(Duration::from_secs(20)).build().expect("http client"),
             published: Default::default(),
             no_relay,
         });
@@ -877,7 +877,7 @@ pub async fn join_start(
     }
     let keys = DeviceKeys::load_or_create(&state_dir.join(KEY_FILE))?;
     let ask = Cert { account: String::new(), ..Cert::new(&keys, "", Kind::Daemon, name) };
-    let http = reqwest::Client::builder().timeout(Duration::from_secs(20)).build()?;
+    let http = crate::roots::http().timeout(Duration::from_secs(20)).build()?;
     let res = http
         .post(format!("{url}/api/join"))
         .json(&serde_json::json!({ "cert": ask, "urls": [], "team": team, "ticket": ticket, "features": features() }))
@@ -1057,7 +1057,7 @@ pub async fn leave(state_dir: &Path, listen: &str) -> anyhow::Result<()> {
     let Some(s) = read_saved(state_dir)? else { bail!("this machine isn't joined to any control") };
     let keys = DeviceKeys::load(&state_dir.join(KEY_FILE))?;
     let path = "/api/daemon/leave";
-    let res = reqwest::Client::new()
+    let res = crate::roots::client()
         .post(format!("{}{path}", s.url))
         .header(AUTH, auth_header(&keys, "POST", path))
         .send()

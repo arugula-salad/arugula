@@ -31,6 +31,10 @@ impl Drop for Daemon {
 }
 
 fn start() -> Daemon {
+    start_with(&[])
+}
+
+fn start_with(env: &[(&str, &std::ffi::OsStr)]) -> Daemon {
     static N: AtomicU32 = AtomicU32::new(0);
     // Short: Unix socket paths are limited to ~100 bytes.
     let state =
@@ -41,6 +45,7 @@ fn start() -> Daemon {
         .arg("--state-dir")
         .arg(&state)
         .env("PS1", "$ ")
+        .envs(env.iter().copied())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
@@ -136,6 +141,20 @@ impl Daemon {
             std::thread::sleep(Duration::from_millis(50));
         }
     }
+}
+
+/// A machine with no CA certificates (no `ca-certificates` package): the
+/// daemon falls back to its bundled roots instead of going down at start.
+#[test]
+fn starts_on_a_machine_without_ca_certificates() {
+    let dir = std::env::temp_dir().join(format!("ilg-noca-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("empty.pem"), "").unwrap();
+    // rustls-native-certs reads only these when they're set.
+    let d = start_with(&[("SSL_CERT_FILE", dir.join("empty.pem").as_os_str()), ("SSL_CERT_DIR", dir.as_os_str())]);
+    std::thread::sleep(Duration::from_secs(1));
+    assert!(d.get("/api/panes").as_array().is_some_and(|p| !p.is_empty()));
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]

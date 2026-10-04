@@ -118,10 +118,8 @@ impl Hosts {
             .and_then(|b| serde_json::from_slice::<SavedTokens>(&b).ok())
             .map(|s| s.tokens)
             .unwrap_or_default();
-        let http = reqwest::Client::builder()
-            .timeout(Duration::from_secs(5))
-            .build()
-            .expect("an HTTP client with default settings");
+        let http =
+            crate::roots::http().timeout(Duration::from_secs(5)).build().expect("an HTTP client with default settings");
         Arc::new(Self {
             name,
             path,
