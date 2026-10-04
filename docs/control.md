@@ -61,6 +61,38 @@ vs team machines and sharing a session:
 **Leaving.** `illogicald leave` takes a machine off your account (or its
 team). illogical keeps running there, at `http://127.0.0.1:7681`.
 
+**Your sign-ins, and deleting your account:** *Sign-in and account…* in
+the host menu.
+
+- **Where you're signed in:** each session, by browser and when it
+  started. *Sign out* ends one; *Sign out everywhere* ends them all, this
+  one too. Signing out doesn't remove a device: its key still reaches your
+  machines until you remove it in *Devices and machines…*. Expired
+  sessions are deleted within the hour.
+- **Passkeys:** remove one, as long as another way to sign in is left
+  (another passkey, or GitHub).
+- **Delete account…** asks you to type your GitHub login (or your name,
+  for a passkey-only account). Control then deletes your account, its
+  GitHub link, sessions, passkeys, devices and machines (they're refused
+  from then on; illogical keeps running on them, reachable only locally),
+  pending joins, push subscriptions, hosted VMs (deleted), usage counts,
+  team requests and the invites you made. Your open relay connections
+  close.
+  - **A team you founded is deleted with it.** Its signed history starts
+    at your first device's key, so it can't outlive your account. Its
+    other members are told; its machines go back to their owners.
+  - **In someone else's team** as a plain member, you can delete right
+    away: the roster keeps your name, with no device behind it (so it
+    lets nothing in), until an owner removes it. Its owners are told.
+  - **As an owner of someone else's team**, or if your devices ever signed
+    its roster, leave it first (make someone else an owner if it's only
+    you). If your devices signed part of its history, control keeps those
+    devices' certificates (public keys and device names, nothing else) to
+    check that history, until the team is deleted.
+  - **Paying for a plan?** Cancel it first.
+  - The hosted control's backups keep a deleted account for up to a week
+    more (see below).
+
 **Moving a machine** between your account and a team (or between teams):
 *Move to…* on it in *Devices and machines…*. You need to own the teams on
 both sides. Your device signs the move and the machine checks that
@@ -130,8 +162,96 @@ illogical-control --public-url https://control.example.com --listen 127.0.0.1:76
   - `--static-dir web/dist` serves a local build instead.
 - **The hosted one** is `packaging/control/` on Fly: `just control-deploy`.
 
+- **Relay limits per account**, so one account can't take the whole
+  machine (0 turns each off):
+  - `ILLOGICAL_RELAY_MAX_SOCKETS` (32): client connections through the
+    relay at once (a page uses one for all its machines).
+  - `ILLOGICAL_RELAY_MAX_MACHINES` (50): machines dialed in at once.
+  - `ILLOGICAL_RELAY_DAILY_MB` (2000): relayed traffic a day, while
+    billing is off. Past it the account's relayed traffic slows to about
+    64 KB/s, as billing's allowance does. Direct connections don't count.
+- **Backups:** set `LITESTREAM_BUCKET` and control backs its database up
+  continuously with Litestream (below).
+
 Daemons join a self-hosted control the same way:
 `illogicald join https://control.example.com`.
+
+## Operating the hosted one
+
+The hosted control is one Fly machine (`packaging/control/fly.toml`):
+`shared-cpu-1x` with 1 GB, in `ewr`, SQLite on the `control_data` volume.
+
+**Capacity.** An idle relay connection costs control about 28 KB: in a
+1 GB VM, 3,900 of them took 121 MB. So the connection limits in
+`fly.toml` (6,000 soft, 8,000 hard) are about open files, not memory.
+Control raises its open-file limit to the hard one at start and logs it
+(`open file limit open_files=…` in `fly logs`); keep `hard_limit` below
+that. Each account is held to the relay limits above.
+
+**Backups (Litestream to Cloudflare R2).** Off until its secrets are set;
+then:
+
+- on start, with no database on the volume (a new or lost volume),
+  control restores the latest backup first. If the bucket can't be
+  reached it doesn't start, rather than start empty;
+- it runs `litestream replicate` beside itself (in the image at
+  `/litestream`): changes reach R2 within about a second. A snapshot a
+  day, each kept 7 days, so a point-in-time restore reaches back a week,
+  and anything deleted is gone from the backup within a week;
+- on a stop it lets Litestream sync one last time.
+
+To turn it on:
+
+1. In Cloudflare: *R2 → Create bucket* (say `illogical-control-backup`,
+   automatic location). Then *R2 → Manage API tokens → Create API token*:
+   *Object Read & Write*, for that bucket only. Note the access key id,
+   the secret, and the S3 endpoint
+   (`https://<account id>.r2.cloudflarestorage.com`).
+2. Set the secrets (Fly restarts the machine with them):
+
+   ```
+   fly secrets set -a illogical-control \
+     LITESTREAM_BUCKET=illogical-control-backup \
+     LITESTREAM_ENDPOINT=https://<account id>.r2.cloudflarestorage.com \
+     LITESTREAM_ACCESS_KEY_ID=… LITESTREAM_SECRET_ACCESS_KEY=…
+   ```
+
+   `LITESTREAM_PATH` (default `control`) is the prefix in the bucket;
+   `LITESTREAM_REGION` defaults to `auto`.
+3. Check `fly logs`: `backing up with Litestream`, then Litestream's own
+   `replicating to` and `snapshot complete` lines.
+
+**Restoring.**
+
+- **Onto a new volume:** create it (`fly volumes create control_data -r ewr
+  -s 1`), point the machine at it (or destroy the old volume), and start
+  the machine. Control finds no database and restores the latest backup.
+- **To look at a backup, or go back in time,** on any machine with
+  `litestream` and the same four values in its environment:
+
+  ```
+  cat > ls.yml <<EOF
+  dbs:
+    - path: /tmp/control.db
+      replica: {type: s3, bucket: illogical-control-backup, path: control, region: auto, endpoint: "https://<account id>.r2.cloudflarestorage.com", force-path-style: true}
+  EOF
+  LITESTREAM_ACCESS_KEY_ID=… LITESTREAM_SECRET_ACCESS_KEY=… litestream restore -config ls.yml -o /tmp/control.db /tmp/control.db
+  ```
+
+  Add `-timestamp 2026-10-04T12:00:00Z` for a point in time. To put it
+  back: stop the machine, copy the file over `/data/control.db` (and
+  delete `control.db-wal`, `control.db-shm` and `.control.db-litestream`
+  beside it), start it.
+- **Restored once to prove it** (2026-10-04, staging): a control in one VM
+  replicated to an S3-compatible store in another; the VM was destroyed;
+  a fresh VM with an empty disk restored on start, and every account,
+  device and machine was there, and replication carried on.
+
+Fly's own daily volume snapshots (kept 5 days) still run.
+
+**A spend alert** isn't something this repository sets: it belongs to
+the Fly organization's billing settings in Fly's dashboard (#174 leaves
+it to Jake).
 
 ## Testing
 
@@ -140,7 +260,9 @@ Daemons join a self-hosted control the same way:
   - a daemon joining by code;
   - its API and protocol through the relay and directly;
   - a check that control's wire traffic, database and logs never contain
-    what was typed.
+    what was typed;
+  - deleting an account: its machine is refused, and no row in the
+    database mentions it.
 - `web/e2e/control.spec.ts` and `web/e2e/passkey.spec.ts` drive it in Chrome.
 - `web/e2e/device-keys.webkit.spec.ts` drives it in Playwright's WebKit
   (`pnpm exec playwright install webkit` first): device keys survive a
