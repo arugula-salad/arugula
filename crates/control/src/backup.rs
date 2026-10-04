@@ -49,6 +49,7 @@ pub struct Backup {
     config: PathBuf,
     db: PathBuf,
     child: Arc<Mutex<Option<u32>>>,
+    stopping: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl Backup {
@@ -69,7 +70,7 @@ impl Backup {
             .with_context(|| format!("writing {}", config.display()))?;
         let bin = if a.bin.exists() { a.bin.clone() } else { PathBuf::from("litestream") };
         info!(bucket, path = a.path, endpoint = a.endpoint.as_deref().unwrap_or("AWS"), "backing up with Litestream");
-        Ok(Some(Self { bin, config, db, child: Default::default() }))
+        Ok(Some(Self { bin, config, db, child: Default::default(), stopping: Default::default() }))
     }
 
     /// No database: restore the latest backup, if there is one.
@@ -101,13 +102,17 @@ impl Backup {
 
     /// Replicate for as long as control runs.
     pub fn replicate(&self) {
-        let (bin, config, child) = (self.bin.clone(), self.config.clone(), self.child.clone());
+        let (bin, config, child, stopping) =
+            (self.bin.clone(), self.config.clone(), self.child.clone(), self.stopping.clone());
         tokio::spawn(async move {
             loop {
                 let spawned = tokio::process::Command::new(&bin)
                     .arg("replicate")
                     .arg("-config")
                     .arg(&config)
+                    // Its own process group: a signal to control's group
+                    // doesn't cut its last sync short; control stops it.
+                    .process_group(0)
                     .kill_on_drop(true)
                     .spawn();
                 match spawned {
@@ -115,6 +120,9 @@ impl Backup {
                         *child.lock().unwrap() = c.id();
                         let status = c.wait().await;
                         *child.lock().unwrap() = None;
+                        if stopping.load(std::sync::atomic::Ordering::SeqCst) {
+                            return;
+                        }
                         error!(?status, "litestream stopped: restarting it");
                     }
                     Err(e) => error!(error = %e, bin = %bin.display(), "can't start litestream"),
@@ -126,6 +134,7 @@ impl Backup {
 
     /// Control is stopping: let Litestream sync one last time and stop.
     pub async fn stop(&self) {
+        self.stopping.store(true, std::sync::atomic::Ordering::SeqCst);
         let Some(pid) = *self.child.lock().unwrap() else { return };
         // SAFETY: a plain signal to our own child.
         unsafe {
