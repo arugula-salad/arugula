@@ -16,6 +16,10 @@ repository (below).
   - every device and machine is approved by a device you already have;
   - your devices and machines check those approvals themselves.
 
+**What it costs.** The hosted control is free during the beta. It's
+provided as is, without guarantees, and its pricing may change; any change
+is announced before it applies.
+
 The design is in [control-e2e.md](control-e2e.md). Teams, roles, personal
 vs team machines and sharing a session:
 [Your machines, your team](teams.md).
@@ -44,7 +48,20 @@ vs team machines and sharing a session:
    the host menu shows control's address as a QR code and a link. Sign in
    there. It shows a fingerprint and waits. Your devices ask *New device?*
    with the same fingerprint; approve it on one of them.
-4. **Remove a device or machine** from *Devices and machines…* in the host
+4. **Sign in the desktop app.** Once its machine has joined (*Getting
+   started*'s *Cloud* step, or `illogicald join`), the app's window is
+   control's page. The window can't use passkeys, so the app signs in
+   through your browser:
+   - *Sign in* in the app opens control in your browser and shows a short
+     code;
+   - signed in there, control asks *Sign in the app?* with the machine's
+     name and the same code: check it matches, then *Allow*;
+   - the app is then a new device: approve it, with its fingerprint, on a
+     device you already have (the browser you just used is one).
+
+   It then shows every machine in your account and your teams, like any
+   other device. The sign-in link is good for ten minutes and works once.
+5. **Remove a device or machine** from *Devices and machines…* in the host
    menu. It loses access at once. A removed machine keeps running
    illogical, reachable only locally; `illogicald join` adds it back.
 
