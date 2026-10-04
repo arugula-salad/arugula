@@ -115,16 +115,24 @@ illogical-control --public-url https://control.example.com --listen 127.0.0.1:76
   - **Who hears what:** a daemon's account must have signed in with GitHub,
     and the App's installation for the repository must be that GitHub
     user's, or GitHub must list them as a collaborator on it (asked with
-    an installation token; answers kept ten minutes). Organization
-    membership alone doesn't count, and passkey-only accounts hear
-    nothing: their blocks poll.
+    an installation token; answers kept ten minutes). Both go by the
+    numeric GitHub user id, not the login. Organization membership alone
+    doesn't count, and passkey-only accounts hear nothing: their blocks
+    poll. A machine watches at most 200 repositories and an account 400.
   - **Hosted boxes** ask `POST /api/daemon/github/token {repo}` (signed as
     the daemon) for an installation token scoped to that repository with
     read-only permissions; control keeps one until five minutes before it
     expires.
+- **Billing** (optional) needs both `STRIPE_SECRET_KEY` and
+  `STRIPE_WEBHOOK_SECRET`; with the key alone control doesn't start.
 - **Behind a proxy** that passes the client's address in a header, use
   `--trust-proxy-header` (for example `Fly-Client-IP`), so rate limits are
-  per client.
+  per client (an IPv6 client counts by its /64).
+- **Daemons from before 0.17** sign their requests to control the old
+  way. Control takes that, each signature once, unless it's started with
+  `--refuse-old-daemon-signatures` (`ILLOGICAL_CONTROL_REFUSE_OLD_DAEMON_SIGNATURES=1`),
+  when those daemons are told to update. A machine control already knows
+  joins again only from 0.17 on.
 - **Build it** with `just static` (`target/x86_64-unknown-linux-musl/release/illogical-control`).
   - The web client is built into the binary.
   - `--static-dir web/dist` serves a local build instead.

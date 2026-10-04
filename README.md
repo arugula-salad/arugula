@@ -64,8 +64,8 @@ or `.deb` (the Linux app runs on Ubuntu 22.04, Debian 12, Fedora 36 or
 newer: glibc 2.35 and up). The first time it opens it installs `illogicald` and `illogical` in
 `~/.local/bin` and starts the daemon as a service, then *Getting started*
 sets up your phone, the cloud and Claude Code, a click each. Once the
-machine is in illogical cloud, the app signs in through your browser
-(approve it as a new device once) and shows every machine in your account
+machine is in illogical cloud, the app signs in through your browser on
+the same computer (approve it as a new device once) and shows every machine in your account
 and your teams. The macOS app
 isn't notarized yet: the first time, open it, then choose *Open Anyway* in
 System Settings › Privacy & Security.
