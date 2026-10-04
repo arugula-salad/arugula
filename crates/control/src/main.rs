@@ -313,6 +313,8 @@ async fn headers(mut res: Response) -> Response {
     h.insert(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
     h.insert(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff"));
     h.insert(header::REFERRER_POLICY, HeaderValue::from_static("no-referrer"));
+    // Browsers ignore it over plain HTTP (a local control), so always.
+    h.insert(header::STRICT_TRANSPORT_SECURITY, HeaderValue::from_static("max-age=31536000"));
     h.entry(header::CONTENT_SECURITY_POLICY).or_insert(HeaderValue::from_static(
         "default-src 'self'; connect-src 'self' wss: ws: https:; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; frame-src 'self' https:; frame-ancestors 'none'",
     ));
