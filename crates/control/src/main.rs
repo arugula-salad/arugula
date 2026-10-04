@@ -148,7 +148,12 @@ struct Args {
     /// body, query or nonce in the signature); those daemons are told to
     /// update. Off for now, so machines joined with older releases keep
     /// working.
-    #[arg(long, env = "ILLOGICAL_CONTROL_REFUSE_OLD_DAEMON_SIGNATURES")]
+    #[arg(
+        long,
+        env = "ILLOGICAL_CONTROL_REFUSE_OLD_DAEMON_SIGNATURES",
+        value_parser = clap::builder::BoolishValueParser::new(),
+        action = clap::ArgAction::SetTrue
+    )]
     refuse_old_daemon_signatures: bool,
 
     /// Serve the web client from this directory instead of the built-in
