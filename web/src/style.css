@@ -2156,6 +2156,15 @@ button {
   justify-items: start;
 }
 
+.control-legal {
+  margin-top: 24px;
+  font-size: 12px;
+}
+
+.control-legal a {
+  color: inherit;
+}
+
 .control-secondary {
   padding: 8px 16px;
   border-radius: 8px;
