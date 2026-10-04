@@ -183,7 +183,7 @@ mod tests {
         let y = config_yaml(Path::new("/data/control.db"), "b", &a);
         assert!(y.contains("path: \"/data/control.db\""));
         assert!(y.contains("snapshot:\n  interval: 24h\n  retention: 168h\n"), "{y}");
-        assert!(RETENTION_DAYS <= 30);
+        const { assert!(RETENTION_DAYS <= 30) };
         assert!(y.contains("endpoint: \"https://x.r2.cloudflarestorage.com\""));
         assert!(!y.to_lowercase().contains("secret"));
         let plain = Litestream { endpoint: None, ..a };
