@@ -122,7 +122,8 @@ enum Command {
     Sandbox,
     /// Add this machine to your account on an illogical control
     /// (`https://control.example.com`): prints a code to approve from a
-    /// device that's signed in. A running daemon picks it up.
+    /// device that's signed in, then the account's fingerprint to check
+    /// against that device. A running daemon picks it up.
     Join {
         url: String,
         /// This machine's name in the directory [default: the hostname].
@@ -132,6 +133,10 @@ enum Command {
         /// account alone: the team's members reach it by their team role.
         #[arg(long)]
         team: Option<String>,
+        /// The account's fingerprint, as the approving device shows it
+        /// (Devices and machines…): checked instead of asking.
+        #[arg(long, value_name = "FINGERPRINT")]
+        account: Option<String>,
         /// A hosted sandbox's one-time ticket (control passes it).
         #[arg(long, hide = true)]
         ticket: Option<String>,
@@ -641,7 +646,7 @@ fn main() -> anyhow::Result<()> {
             install::install(!no_start, &daemon_args, reset_args)
         }
         Some(Command::Sandbox) => sandbox::supervise(),
-        Some(Command::Join { url, name, team, ticket, state_dir }) => {
+        Some(Command::Join { url, name, team, account, ticket, state_dir }) => {
             let name = name.unwrap_or_else(|| {
                 nix::unistd::gethostname().ok().and_then(|h| h.into_string().ok()).unwrap_or_else(|| "illogical".into())
             });
@@ -650,6 +655,7 @@ fn main() -> anyhow::Result<()> {
                 &url,
                 &name,
                 team.as_deref(),
+                account.as_deref(),
                 ticket.as_deref(),
                 &dir,
             ))?;
