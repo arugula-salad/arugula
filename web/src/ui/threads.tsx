@@ -6,7 +6,7 @@
 import { Fragment } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { Client } from "../client";
-import { threadKey, type PaneId, type ThreadMsg, type ThreadTarget } from "../proto";
+import { threadKey, type PaneId, type ThreadMsg, type ThreadTarget, type Unreached } from "../proto";
 import { colorOf } from "./people";
 import type { MenuItem } from "./menu";
 import { Markup, mentionToken } from "./markup";
@@ -427,12 +427,17 @@ function Compose({
     });
   };
 
+  // What the message just posted said to no one.
+  const [missed, setMissed] = useState<string[]>([]);
+
   const send = async () => {
     if (sending || (!text.trim() && !quote)) return;
     setSending(true);
     setError(null);
+    setMissed([]);
     try {
-      await client.postThread(target, text, quote);
+      const { unreached } = await client.postThread(target, text, quote);
+      setMissed(unreached.map(unreachedNote));
       setText("");
       setQuote(undefined);
     } catch (e) {
@@ -451,6 +456,11 @@ function Compose({
         void send();
       }}
     >
+      {missed.map((n) => (
+        <p key={n} class="thread-note unreached">
+          {n}
+        </p>
+      ))}
       {options.length > 0 && (
         <ul class="mention-pick" role="listbox" aria-label="People to mention">
           {options.map((p, i) => (
@@ -486,7 +496,10 @@ function Compose({
           value={text}
           aria-label={`Message ${name}`}
           placeholder={placeholder ?? `Message ${name}`}
-          onInput={(e) => setText((e.target as HTMLTextAreaElement).value)}
+          onInput={(e) => {
+            setMissed([]);
+            setText((e.target as HTMLTextAreaElement).value);
+          }}
           onKeyDown={(e) => {
             if (options.length && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
               e.preventDefault();
@@ -622,7 +635,7 @@ function Message({
             <time title={new Date(m.at).toLocaleString()}>{when(m.at)}</time>
           </div>
         )}
-        {m.text && <Markup text={m.text} isMe={isMe} />}
+        {m.text && <Markup text={m.text} isMe={isMe} landed={m.landed ?? []} />}
         {m.quote && (
           <button class="thread-quote" title="Show it in the pane" onClick={() => reveal(m.quote!)}>
             <span class="thread-quote-from">
@@ -665,4 +678,17 @@ function Message({
       </div>
     </div>
   );
+}
+
+/** What to tell the poster about an `@` that went nowhere. Unknown names and
+ *  names without access read the same: it must not say who exists. */
+function unreachedNote(u: Unreached): string {
+  switch (u.why) {
+    case "agent_needs_pane":
+      return `@${u.token} reaches an agent from its pane's thread`;
+    case "may_not_drive":
+      return `@${u.token} reaches the agent only from someone who can drive the pane`;
+    default:
+      return `Nobody here called ${u.token} can read this thread`;
+  }
 }
