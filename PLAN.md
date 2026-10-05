@@ -4492,6 +4492,7 @@ A team should be able to talk about a pane, about a session and about everything
 - **Team channels are ciphertext in control.** MLS (openmls), with each device a member. A new version of the team's signed roster moves the group to its next epoch, so control can't add a reader. Control orders, stores and fans out messages, and reads none of them.
 - **Voice is WebRTC on a session,** signaled through the session's daemon. Audio goes peer to peer, encrypted end to end by DTLS-SRTP, and each device signs its DTLS fingerprint with its device key. Control only hands out short-lived TURN credentials, and TURN sees only ciphertext.
 - **Agents are in the conversation.** MCP `read_thread` / `post_thread`, and an @mention in a pane's thread goes to that pane's agent.
+- **TURN: Cloudflare Realtime TURN for the hosted control** (Jake, 2026-10-05, after S30). Control holds the API key as a Fly secret and hands devices short-lived credentials. The privacy notice names Cloudflare. Self-hosted controls document coturn.
 - **Not Slack.** No reactions, file uploads, video or screen share: everyone in a session already sees its panes.
 
 **Order:** S30 (#239) first. M61 (#240) after it. M62 (#241) after S30 and M61. M63 (#242) after S30, in parallel with M62. M64 (#243) is gated. Tracker #244.
@@ -4518,7 +4519,7 @@ Where WebKitGTK has none, measure str0m or webrtc-rs with cpal on the Tauri side
 - **Live checks (Jake):**
   - Mac mic prompts work.
   - On the iPhone, the PWA call is clean in the foreground, but **iOS stops the mic in the background** (playback continues), and there was feedback after coming back. M63 shows "muted (app in background)" and gets a fresh mic track when the app is visible again.
-  - Still open: native mic plus AEC3 in a live call on Linux, and a Cloudflare TURN key.
+  - Still open: native mic plus AEC3 in a live call on Linux (deferred to M63's done-when), and Jake creating the Cloudflare TURN key (needed by M63).
 
 **Done when:** `spikes/s30-talk/README.md` has a go/no-go per client and these two demos:
 - a call between geek's desktop app and jake-air's Chrome through TURN, with direct UDP blocked;
