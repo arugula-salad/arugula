@@ -4,6 +4,7 @@
 //! programs.
 
 mod ask;
+#[cfg(unix)]
 mod attach;
 mod fountain_runner;
 mod fs;
@@ -11,8 +12,31 @@ mod hook;
 mod hosts;
 mod http;
 mod mcp;
+#[cfg(unix)]
 mod tmux;
+#[cfg(unix)]
 mod tui;
+
+// The terminal front ends read the terminal raw and poll it with the
+// daemon's socket: Unix only until M57 (#220) brings them to Windows.
+#[cfg(not(unix))]
+mod attach {
+    pub fn run(_: &crate::http::Target, _: u32) -> anyhow::Result<i32> {
+        anyhow::bail!("`illogical attach` isn't on Windows yet (M57, #220)")
+    }
+}
+#[cfg(not(unix))]
+mod tmux {
+    pub fn run(_: crate::http::Target, _: &[String]) -> anyhow::Result<i32> {
+        anyhow::bail!("tmux control mode isn't on Windows yet (M57, #220)")
+    }
+}
+#[cfg(not(unix))]
+mod tui {
+    pub fn run(_: &crate::http::Target, _: Option<String>) -> anyhow::Result<i32> {
+        anyhow::bail!("`illogical tui` isn't on Windows yet (M57, #220)")
+    }
+}
 
 use std::{
     io::{Read, Write},
@@ -1154,7 +1178,8 @@ fn main() {
     // Run as `tmux` (a link, or a copy on an ssh host's PATH): be tmux's
     // control mode, with tmux's own arguments.
     let argv0 = std::env::args_os().next().map(PathBuf::from);
-    if argv0.as_deref().and_then(|p| p.file_name()).is_some_and(|n| n == "tmux") {
+    let name = argv0.as_deref().and_then(|p| p.file_name());
+    if name.is_some_and(|n| n == "tmux" || cfg!(windows) && n.eq_ignore_ascii_case("tmux.exe")) {
         let args: Vec<String> = std::env::args().skip(1).collect();
         let target = http::Target::Socket(default_socket());
         match tmux::run(target, &args) {
@@ -1178,10 +1203,18 @@ fn main() {
 fn real_main(cli: Cli) -> anyhow::Result<i32> {
     if let Command::Install { args } = &cli.cmd {
         // The daemon beside this binary, else the one on PATH.
-        use std::os::unix::process::CommandExt;
-        let beside = std::env::current_exe()?.with_file_name("illogicald");
+        let beside = std::env::current_exe()?.with_file_name(format!("illogicald{}", std::env::consts::EXE_SUFFIX));
         let daemon = if beside.exists() { beside } else { PathBuf::from("illogicald") };
-        let err = std::process::Command::new(&daemon).arg("install").args(args).exec();
+        let mut cmd = std::process::Command::new(&daemon);
+        cmd.arg("install").args(args);
+        #[cfg(unix)]
+        let err = std::os::unix::process::CommandExt::exec(&mut cmd);
+        // No exec on Windows: run it and pass on its exit code.
+        #[cfg(not(unix))]
+        let err = match cmd.status() {
+            Ok(s) => return Ok(s.code().unwrap_or(1)),
+            Err(e) => e,
+        };
         bail!("running {}: {err}", daemon.display());
     }
     if let Command::Ask = cli.cmd {
@@ -2618,6 +2651,11 @@ fn secret_input(prompt: &str) -> anyhow::Result<String> {
     use std::io::IsTerminal;
     let stdin = std::io::stdin();
     let tty = stdin.is_terminal();
+    // Echo off is termios: piped only on Windows until M57 (#220).
+    if cfg!(not(unix)) && tty {
+        bail!("{} can't be typed in on Windows yet (M57, #220): pipe it in", prompt.trim_end_matches(": "));
+    }
+    #[cfg(unix)]
     let saved = if tty {
         eprint!("{prompt}");
         let _ = std::io::stderr().flush();
@@ -2631,6 +2669,7 @@ fn secret_input(prompt: &str) -> anyhow::Result<String> {
     };
     let mut line = String::new();
     let read = stdin.read_line(&mut line);
+    #[cfg(unix)]
     if let Some(t) = saved {
         let _ = nix::sys::termios::tcsetattr(&stdin, nix::sys::termios::SetArg::TCSANOW, &t);
         eprintln!();
