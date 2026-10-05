@@ -124,6 +124,9 @@ impl ClientRx {
 }
 
 /// What a client connection receives.
+// A `ServerMsg` carrying a whole `State` is a few hundred bytes; queues
+// hold a handful of these, so boxing every message isn't worth it.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub enum ToClient {
     Frame(Vec<u8>),
