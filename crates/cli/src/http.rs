@@ -113,7 +113,9 @@ impl Target {
         std::fs::read_to_string(file).ok().map(|t| t.trim().to_owned()).filter(|t| !t.is_empty())
     }
 
-    /// A WebSocket handshake request for this target.
+    /// A WebSocket handshake request for this target. (Only the terminal
+    /// front ends use WebSockets, and they're Unix only for now.)
+    #[cfg(unix)]
     pub fn ws_request(&self) -> anyhow::Result<tungstenite::handshake::client::Request> {
         use tungstenite::client::IntoClientRequest;
         let mut req = self.ws_url().into_client_request()?;
@@ -123,6 +125,7 @@ impl Target {
         Ok(req)
     }
 
+    #[cfg(unix)]
     pub fn ws_url(&self) -> String {
         match self {
             Target::Url(u) if u.tls => format!("wss://{}/ws", u.authority),
@@ -178,6 +181,7 @@ pub trait Stream: Read + Write + Send {
     /// For polling (the terminal front ends, Unix only for now).
     #[cfg(unix)]
     fn fd(&self) -> BorrowedFd<'_>;
+    #[cfg_attr(not(unix), allow(dead_code))]
     fn set_nonblocking(&self, on: bool) -> std::io::Result<()>;
 }
 
