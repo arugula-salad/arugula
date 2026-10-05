@@ -8,10 +8,15 @@
 #   KEEP=1 ...     leave the clone running
 #
 # Claims, in this order (each needs the ones before it):
-#   install   the .dmg mounts and the app copies to /Applications
-#   agent     the first start registers the daemon's launch agent through
-#             SMAppService (BTM lists it), the daemon answers, the CLI is
-#             linked into ~/.local/bin, and no illogicald install plist exists
+#   install   the .dmg mounts and the app copies to ~/Applications, where
+#             the docs say to put it until it's notarized (#315)
+#   agent     the first start installs the daemon with `illogicald install`
+#             (its plist, ~/.local/bin/illogicald), the daemon answers, the
+#             CLI is linked into ~/.local/bin, and the app's own launch agent
+#             isn't loaded. With ILLOGICAL_APPS=/Applications (a notarized
+#             build, or macOS before 26): the first start registers the
+#             launch agent through SMAppService (BTM lists it) instead, and
+#             no illogicald install plist exists
 #   pane      the window shows a pane: typing a command into it runs it
 #   keys      Ctrl-W, T, N, Q and Tab reach the pane as bytes; Cmd-W closes
 #             the pane and not the window; Cmd-T opens a tab; Cmd-Q, H and M
@@ -43,6 +48,9 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 V="$HERE/vm.sh"
 VM="${ILLOGICAL_MACOS_VM:-illogical-macos-l}"
 DMG="${ILLOGICAL_DMG:-$ROOT/dist/illogical-desktop-macos-arm64.dmg}"
+# Where the app goes in the VM ($HOME expands there).
+APPS="${ILLOGICAL_APPS:-\$HOME/Applications}"
+APP="$APPS/illogical.app"
 
 # shellcheck source=testnet/macos/need-tart.sh
 . "$HERE/need-tart.sh"
@@ -91,25 +99,49 @@ v up >/dev/null
 
 claim_install() {
   v push "$DMG" /tmp/illogical.dmg
-  if vs 'set -e; hdiutil attach -nobrowse -quiet -mountpoint /tmp/illogical-dmg /tmp/illogical.dmg
-      test -L /tmp/illogical-dmg/Applications
-      cp -R /tmp/illogical-dmg/illogical.app /Applications/
+  if vs "set -e; hdiutil attach -nobrowse -quiet -mountpoint /tmp/illogical-dmg /tmp/illogical.dmg
+      test -L /tmp/illogical-dmg/Applications || grep -q 'home folder' /tmp/illogical-dmg/Install.txt
+      mkdir -p $APPS
+      cp -R /tmp/illogical-dmg/illogical.app $APPS/
       hdiutil detach -quiet /tmp/illogical-dmg
-      codesign --verify --deep --strict /Applications/illogical.app'; then
-    pass install "the .dmg (with its Applications link) installed a validly signed app"
+      codesign --verify --deep --strict $APP"; then
+    pass install "the .dmg (with its Applications link or note) installed a validly signed app in $APPS"
   else
     fail install "installing from the .dmg failed"
   fi
 }
 
 claim_agent() {
-  vs 'open -a /Applications/illogical.app'
+  vs "open -a $APP"
+  if [ "$APPS" != /Applications ]; then
+    if wait_for 60 vs 'launchctl print gui/$(id -u)/illogicald 2>/dev/null | grep -q "state = running"'; then
+      pass agent "illogicald install's service runs: $(vs 'launchctl print gui/$(id -u)/illogicald | grep -m1 "program ="' | xargs)"
+    else
+      fail agent "illogicald install's service isn't running: $(vs 'launchctl print gui/$(id -u)/illogicald 2>&1 | grep -E "state|exit"' | xargs)"
+    fi
+    if vs 'launchctl print gui/$(id -u)/wtf.widgets.illogical.daemon >/dev/null 2>&1'; then
+      fail agent "the app's launch agent is loaded too"
+    else
+      pass agent "the app's own launch agent isn't loaded"
+    fi
+    if wait_for 30 vs '$HOME/.local/bin/illogical ls >/dev/null 2>&1'; then
+      pass agent "the daemon answers the linked CLI ($(vs 'readlink $HOME/.local/bin/illogical'))"
+    else
+      fail agent "the linked CLI in ~/.local/bin can't reach a daemon"
+    fi
+    if vs 'pgrep -fl "\.local/bin/illogicald$" >/dev/null'; then
+      pass agent "the daemon is the installed copy"
+    else
+      fail agent "the running daemon isn't ~/.local/bin's: $(vs 'pgrep -fl illogicald' | head -1)"
+    fi
+    return
+  fi
   if wait_for 60 vs 'launchctl print gui/$(id -u)/wtf.widgets.illogical.daemon 2>/dev/null | grep -q "state = running"'; then
     pass agent "the launch agent runs: $(vs 'launchctl print gui/$(id -u)/wtf.widgets.illogical.daemon | grep -m1 "program ="' | xargs)"
   else
     fail agent "the launch agent isn't running: $(vs 'launchctl print gui/$(id -u)/wtf.widgets.illogical.daemon 2>&1 | grep -E "state|exit"' | xargs)"
   fi
-  local s; s=$(vs '/Applications/illogical.app/Contents/MacOS/illogical-desktop --agent status' || true)
+  local s; s=$(vs "$APP/Contents/MacOS/illogical-desktop --agent status" || true)
   if [ "$s" = enabled ]; then pass agent "SMAppService: $s"; else fail agent "SMAppService: $s"; fi
   if vs 'sudo sfltool dumpbtm 2>/dev/null | grep -q "8.wtf.widgets.illogical.daemon"'; then
     pass agent "Login Items (BTM) lists it"
@@ -200,7 +232,7 @@ claim_keys() {
       pass keys "Cmd-$K reached the page: the app runs, shown, not minimized"
     else
       fail keys "after Cmd-$K: running=$(app_running && echo yes || echo no) visible=$vis minimized=$mini"
-      vs 'open -a /Applications/illogical.app'; sleep 3
+      vs "open -a $APP"; sleep 3
     fi
   done
 }
@@ -277,7 +309,7 @@ claim_finder() {
   # A .command file opened with the app (Open With, as a person picks it).
   vs "printf '#!/bin/sh\\necho ran > /tmp/m47-command\\nexec sleep 600\\n' > /Users/admin/m47/hello.command; chmod +x /Users/admin/m47/hello.command; rm -f /tmp/m47-command"
   n=$(panes | wc -l)
-  vs 'open -a /Applications/illogical.app /Users/admin/m47/hello.command'
+  vs "open -a $APP /Users/admin/m47/hello.command"
   if wait_for 20 vs 'grep -qx ran /tmp/m47-command'; then
     pass finder "a .command file opened with the app ran in a new pane ($(newest_after "$n" | sed 's/^/%/'))"
   else
@@ -308,7 +340,7 @@ claim_hotkey() {
   else
     fail hotkey "with no settings the hotkey hid the app"
   fi
-  vs 'osascript -e "quit app \"illogical\""; sleep 2; pkill -x illogical-desktop; d=~/Library/Application\ Support/wtf.widgets.illogical; mkdir -p "$d"; echo "{\"hotkey_on\": true}" > "$d/desktop.json"; open -a /Applications/illogical.app'
+  vs 'osascript -e "quit app \"illogical\""; sleep 2; pkill -x illogical-desktop; d=~/Library/Application\ Support/wtf.widgets.illogical; mkdir -p "$d"; echo "{\"hotkey_on\": true}" > "$d/desktop.json"; open -a '"$APP"
   wait_for 30 has_window || { fail hotkey "the app didn't come back"; return; }
   sleep 3
   front
@@ -321,12 +353,12 @@ claim_hotkey() {
 }
 
 claim_restart() {
-  local before; before=$(vs 'pgrep -f "Contents/MacOS/illogicald" | sort | xargs')
+  local before; before=$(vs 'pgrep -f "(Contents/MacOS|\.local/bin)/illogicald" | sort | xargs')
   local n; n=$(panes | wc -l)
-  vs 'pkill -x illogical-desktop; sleep 2; open -a /Applications/illogical.app'
+  vs "pkill -x illogical-desktop; sleep 2; open -a $APP"
   wait_for 30 has_window || { fail restart "the app didn't start again"; return; }
   sleep 3
-  local after; after=$(vs 'pgrep -f "Contents/MacOS/illogicald" | sort | xargs')
+  local after; after=$(vs 'pgrep -f "(Contents/MacOS|\.local/bin)/illogicald" | sort | xargs')
   if [ "$before" = "$after" ] && [ "$(panes | wc -l)" = "$n" ]; then
     pass restart "the daemon and its $n panes outlived the app"
   else

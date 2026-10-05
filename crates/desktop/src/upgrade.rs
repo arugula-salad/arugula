@@ -50,11 +50,14 @@ pub fn run() -> Result<(), String> {
     let bin = crate::bundled("illogicald").ok_or("this app's illogicald is gone")?;
     // The app's own launch agent (macOS): it already runs the bundle's
     // copy, so a restart picks up the new one.
+    // An app outside /Applications (#315) retires an older copy's agent
+    // there and installs its own daemon instead.
     #[cfg(target_os = "macos")]
-    let out = if agent_running() {
+    let out = if agent_running() && crate::service::usable() {
         crate::service::restart()?;
         std::process::Output { status: Default::default(), stdout: Vec::new(), stderr: Vec::new() }
     } else {
+        crate::service::retire(Some(&ours));
         Command::new(&bin).arg("install").output().map_err(|e| format!("{}: {e}", bin.display()))?
     };
     #[cfg(not(target_os = "macos"))]
@@ -97,8 +100,16 @@ fn running_version() -> Option<String> {
     asked.or_else(|| version_of(&crate::installed("illogicald")?))
 }
 
+/// The installed `illogicald` is an older release than the one this app
+/// carries: start the carried one's `install` instead, which updates it
+/// (#315: a daemon that wasn't running at launch was never compared).
+pub fn installed_is_older(installed: &Path, bundled: &Path) -> bool {
+    std::env::var_os("ILLOGICAL_NO_DAEMON_UPGRADE").is_none()
+        && matches!((version_of(installed), version_of(bundled)), (Some(i), Some(b)) if newer(&b, &i))
+}
+
 /// `illogicald --version` says `illogicald 0.16.0`.
-fn version_of(bin: &Path) -> Option<String> {
+pub fn version_of(bin: &Path) -> Option<String> {
     let out = Command::new(bin).arg("--version").output().ok()?;
     let text = String::from_utf8_lossy(&out.stdout);
     text.split_whitespace().nth(1).map(str::to_owned)
@@ -162,7 +173,7 @@ fn parse(v: &str) -> Option<(u64, u64, u64)> {
 }
 
 /// `a` is a later release than `b`.
-fn newer(a: &str, b: &str) -> bool {
+pub fn newer(a: &str, b: &str) -> bool {
     matches!((parse(a), parse(b)), (Some(a), Some(b)) if a > b)
 }
 

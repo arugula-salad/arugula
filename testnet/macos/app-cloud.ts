@@ -146,14 +146,14 @@ try {
     v("ssh", `curl -sf -o /dev/null ${control}/control.json`);
     return true;
   });
-  v("ssh", `set -e; curl -sSL -o /tmp/app.zip '${zip}'; ditto -x -k /tmp/app.zip /Applications`);
-  const version = v("ssh", "defaults read /Applications/illogical.app/Contents/Info CFBundleShortVersionString");
+  v("ssh", `set -e; curl -sSL -o /tmp/app.zip '${zip}'; mkdir -p ~/Applications; ditto -x -k /tmp/app.zip ~/Applications`);
+  const version = v("ssh", "defaults read ~/Applications/illogical.app/Contents/Info CFBundleShortVersionString");
 
   // The app's window as text, through the accessibility tree.
   const page = () => jxa(`all().map((e) => ["role", "name", "value", "description", "help"].map((k) => g(e, k)).join(" | ")).join("\\n")`);
 
   // 1. The app asks; its sign-in page opens in Safari.
-  v("ssh", `open --env ILLOGICAL_CONTROL=${control} --env ILLOGICAL_SIGNIN_AUTO=1 -a /Applications/illogical.app`);
+  v("ssh", `open --env ILLOGICAL_CONTROL=${control} --env ILLOGICAL_SIGNIN_AUTO=1 -a ~/Applications/illogical.app`);
   const id = await poll(
     "the app's sign-in in Safari",
     () => {

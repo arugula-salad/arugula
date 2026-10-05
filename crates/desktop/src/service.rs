@@ -10,6 +10,12 @@
 //! /Applications/illogical.app (`usable`): an app run from anywhere else
 //! installs the daemon with `illogicald install` instead.
 //!
+//! On macOS 26 an ad-hoc signed app never starts from /Applications
+//! (#315), so until it's notarized (#177) the app goes in `~/Applications`
+//! and takes the `illogicald install` path. An agent an older copy in
+//! /Applications registered would keep running that copy's daemon (or
+//! hang there): an app elsewhere retires it first (`retire`).
+//!
 //! A daemon that `illogicald install` (install.sh, Homebrew, an older
 //! app) set up keeps its own plist in `~/Library/LaunchAgents`: the app
 //! adopts that one and never registers a second.
@@ -82,6 +88,39 @@ pub fn restart() -> Result<(), String> {
     } else {
         Err(format!("launchctl kickstart: {}", String::from_utf8_lossy(&out.stderr).trim()))
     }
+}
+
+/// The agent is loaded in launchd, whichever copy of the app registered it.
+fn loaded() -> bool {
+    let uid = unsafe { libc_getuid() };
+    Command::new("launchctl").args(["print", &format!("gui/{uid}/{LABEL}")]).output().is_ok_and(|o| o.status.success())
+}
+
+/// The version of the app at /Applications, from its Info.plist: running
+/// its binaries could hang there (#315).
+fn system_app_version() -> Option<String> {
+    let info = PROGRAM.strip_suffix("/MacOS/illogicald")?.to_owned() + "/Info";
+    let out = Command::new("defaults").args(["read", &info, "CFBundleShortVersionString"]).output().ok()?;
+    out.status.success().then(|| String::from_utf8_lossy(&out.stdout).trim().to_owned())
+}
+
+/// An app outside /Applications (`~/Applications`, #315): stop the launch
+/// agent an older copy in /Applications registered, so it doesn't keep
+/// running (or restarting) that copy's daemon beside the one `illogicald
+/// install` sets up. Left alone when the copy there is newer than this one.
+pub fn retire(ours: Option<&str>) {
+    if usable() || !loaded() {
+        return;
+    }
+    if let (Some(there), Some(ours)) = (system_app_version(), ours)
+        && crate::upgrade::newer(&there, ours)
+    {
+        return;
+    }
+    let _ = unregister();
+    let uid = unsafe { libc_getuid() };
+    let _ = Command::new("launchctl").args(["bootout", &format!("gui/{uid}/{LABEL}")]).output();
+    eprintln!("illogical: retired the launch agent of {} (this app runs from elsewhere)", PROGRAM);
 }
 
 /// A plist from `illogicald install` is there: that install owns the daemon.

@@ -2,8 +2,11 @@
 #
 # The desktop app updates itself (M46), in a fresh tart VM: an app built
 # as 0.17.0 finds 0.17.1 in a manifest, downloads it, checks its signature
-# and replaces itself; the new app carries a newer daemon and restarts its
-# launch agent on it, and the panes keep running through both.
+# and replaces itself; the new app carries a newer daemon and updates the
+# running one to it, and the panes keep running through both. The app goes
+# in ~/Applications, as the docs say until it's notarized (#315), so the
+# daemon is `illogicald install`'s; ILLOGICAL_APPS=/Applications tests the
+# app's own launch agent instead.
 #
 #   testnet/macos/update.sh          (after `just build`)
 #   KEEP=1 ...                       leave the clone running
@@ -16,8 +19,9 @@
 # changed (target/update-old, kept between runs). The host serves the
 # manifest and the archive on the tart network (port 7757).
 #   update  the app replaces itself with 0.17.1 and starts again
-#   daemon  the new app finds the older daemon running, restarts its launch
-#           agent on the bundle's newer one, and that one answers
+#   daemon  the new app finds the older daemon running, replaces it with
+#           the bundle's newer one (`illogicald install`, or a restart of
+#           its launch agent from /Applications), and that one answers
 #   panes   a running vim and a running build (a counter) carry on
 #   bad     a manifest whose signature doesn't match is refused
 # shellcheck disable=SC2016,SC2329 # strings run in the VM expand there; cleanup runs from the trap
@@ -28,6 +32,9 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 V="$HERE/vm.sh"
 VM="${ILLOGICAL_MACOS_VM:-illogical-macos-l}"
 PORT=7757
+# Where the app goes in the VM ($HOME expands there).
+APPS="${ILLOGICAL_APPS:-\$HOME/Applications}"
+APP="$APPS/illogical.app"
 # shellcheck source=testnet/macos/need-tart.sh
 . "$HERE/need-tart.sh"
 
@@ -105,8 +112,8 @@ PY
 v down >/dev/null
 v up >/dev/null
 v push dist/illogical-desktop-macos-arm64.dmg /tmp/illogical.dmg
-vs 'set -e; hdiutil attach -nobrowse -quiet -mountpoint /tmp/d /tmp/illogical.dmg; cp -R /tmp/d/illogical.app /Applications/; hdiutil detach -quiet /tmp/d'
-version() { vs 'defaults read /Applications/illogical.app/Contents/Info.plist CFBundleShortVersionString'; }
+vs "set -e; hdiutil attach -nobrowse -quiet -mountpoint /tmp/d /tmp/illogical.dmg; mkdir -p $APPS; cp -R /tmp/d/illogical.app $APPS/; hdiutil detach -quiet /tmp/d"
+version() { vs "defaults read $APP/Contents/Info.plist CFBundleShortVersionString"; }
 [ "$(version)" = 0.17.0 ] || { echo "installed $(version), not 0.17.0" >&2; exit 1; }
 
 # A signature from another key first: refused.
@@ -117,7 +124,7 @@ manifest 0.17.1 "$(cat "$work/srv/illogical-desktop-macos-arm64.app.tar.gz.sig")
 (cd "$work/srv" && exec python3 -m http.server "$PORT" --bind "$host_ip" >"$work/http.log" 2>&1) &
 srv=$!
 start_app() {
-  vs "(ILLOGICAL_UPDATE_RESTART=1 nohup /Applications/illogical.app/Contents/MacOS/illogical-desktop >>/tmp/app.log 2>&1 &)"
+  vs "(ILLOGICAL_UPDATE_RESTART=1 nohup $APP/Contents/MacOS/illogical-desktop >>/tmp/app.log 2>&1 &)"
 }
 start_app
 wait_for 60 vs '$HOME/.local/bin/illogical ls >/dev/null 2>&1' || { echo "the daemon never answered" >&2; vs 'cat /tmp/app.log'; exit 1; }
@@ -137,8 +144,9 @@ vs '$HOME/.local/bin/illogical run -- vim /tmp/notes >/dev/null; $HOME/.local/bi
 sleep 2
 vim_pid=$(vs 'pgrep -x vim')
 count0=$(vs 'cat /tmp/count')
-# The daemon the launch agent runs, and the version it answers with.
-daemon_pid() { vs 'pgrep -f "Contents/MacOS/illogicald$"' || true; }
+# The daemon (the launch agent's or `illogicald install`'s, not a pane's
+# shim), and the version it answers with.
+daemon_pid() { vs 'pgrep -f "(Contents/MacOS|\.local/bin)/illogicald( --|$)"' || true; }
 answers() { vs 'curl -s -H "Authorization: Bearer $(cat $HOME/.local/state/illogical/local-token)" http://127.0.0.1:7681/api/host' | python3 -c 'import json, sys; print(json.load(sys.stdin).get("version", ""))' 2>/dev/null || true; }
 daemon0=$(daemon_pid)
 v0=$(answers)
@@ -167,7 +175,7 @@ on_new() { [ "$(answers)" = "$new" ]; }
 if wait_for 60 on_new; then
   d=$(daemon_pid)
   if [ -n "$d" ] && [ "$d" != "$daemon0" ]; then
-    pass daemon "the launch agent runs the bundle's $new now (pid $daemon0 -> $d): $(vs 'grep -m1 "updated the daemon" /tmp/app.log')"
+    pass daemon "the daemon is the bundle's $new now (pid $daemon0 -> $d): $(vs 'grep -m1 "updated the daemon" /tmp/app.log')"
   else
     fail daemon "it answers $new, but the daemon's pid is $daemon0 -> ${d:-none}"
   fi

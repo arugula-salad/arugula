@@ -77,9 +77,14 @@ service, then *Getting started*
 sets up your phone, the cloud and Claude Code, a click each. Once the
 machine is in illogical cloud, the app signs in through your browser on
 the same computer (approve it as a new device once) and shows every machine in your account
-and your teams. The macOS app
-isn't notarized yet: the first time, open it, then choose *Open Anyway* in
-System Settings › Privacy & Security.
+and your teams.
+
+On macOS, put the app in the Applications folder in your home folder
+(`~/Applications`; in Finder, *Go › Home*, and make an Applications folder
+there if there isn't one), not in `/Applications`: the app isn't notarized
+yet, and macOS 26 won't start an app that isn't notarized from
+`/Applications` (#315). The first time, open it, then choose *Open Anyway*
+in System Settings › Privacy & Security.
 
 The Windows installer isn't signed yet: when SmartScreen stops it, choose
 *More info*, then *Run anyway*.
