@@ -149,7 +149,7 @@ pub async fn passkeys(State(app): State<Arc<App>>, s: Session) -> R {
     let list: Vec<Value> =
         app.db.passkeys(&s.account)?.into_iter().map(|(id, created)| json!({ "id": id, "created": created })).collect();
     Ok(Json(json!({
-        "passkeys": list, "github": app.db.github_login(&s.account)?, "ways": app.db.sign_ins(&s.account)?,
+        "passkeys": list, "github": app.db.github_identity(&s.account)?.map(|(_, login)| login), "ways": app.db.sign_ins(&s.account)?,
     })))
 }
 
@@ -187,7 +187,7 @@ pub struct Plan {
 
 pub fn plan(app: &App, account: &str) -> anyhow::Result<Plan> {
     let a = app.db.account(account)?.ok_or_else(|| anyhow::anyhow!("no such account"))?;
-    let confirm = match app.db.github_login(account)? {
+    let confirm = match app.db.github_identity(account)?.map(|(_, login)| login) {
         Some(l) if !l.is_empty() => l,
         _ if !a.name.is_empty() => a.name.clone(),
         _ => a.id.clone(),
@@ -340,29 +340,7 @@ mod tests {
     use crate::db::{Db, Team};
 
     fn app() -> Arc<App> {
-        let db = Db::memory();
-        let vapid = crate::push::Vapid::load(&db).unwrap();
-        Arc::new(App {
-            cfg: crate::Config {
-                push_hosts: vec![],
-                relay_free_bytes: 0,
-                public_url: "http://control.test".into(),
-                origin: "http://control.test".into(),
-                github: None,
-                static_dir: None,
-            },
-            db,
-            http: reqwest::Client::new(),
-            relay: Default::default(),
-            passkeys: Default::default(),
-            limits: crate::limit::Limits::new(None),
-            vapid,
-            hosted: None,
-            stripe: None,
-            github_app: None,
-            forge: Default::default(),
-            app_logins: Default::default(),
-        })
+        Arc::new(App::for_tests("http://control.test"))
     }
 
     /// An account (signed in with GitHub as `login`) with its first device.
@@ -456,6 +434,11 @@ mod tests {
         app.db.add_relay_bytes("acct-alice", "2026-10-04", 5).unwrap();
         app.db.set_access(&box1, &["acct-bob".into()], Some(i64::MAX as u64)).unwrap();
         app.db.set_access(&bobs, &["acct-alice".into()], None).unwrap();
+        // Shares offered both ways, and answered.
+        app.db.offer_shares(&bobs, &["acct-alice".into()], 1).unwrap();
+        app.db.answer_share("acct-alice", &bobs, true, 1).unwrap();
+        app.db.offer_shares(&box1, &["acct-bob".into()], 1).unwrap();
+        app.db.answer_share("acct-bob", &box1, false, 1).unwrap();
         // Alice founded a team Bob is in, and Bob's machine is the team's.
         let v1 = roster(
             "t1",

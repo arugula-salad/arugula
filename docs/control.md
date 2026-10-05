@@ -9,14 +9,31 @@ repository (below).
 
 - **It sees:** who you are, which devices and machines you have, and when
   they connect.
-- **It never sees what your terminals say.** Every connection between a
-  device and a machine is end-to-end encrypted, including connections it
-  relays.
+- **What it relays, it can't read.** Every connection between a device and
+  a machine is end-to-end encrypted, including connections it relays, and
+  it never holds a private key. A copy of its database or its traffic
+  reads nothing.
 - **It can't add a device that reads them:**
   - every device and machine is approved by a device you already have;
-  - your devices and machines check those approvals themselves.
+  - your devices and machines check those approvals themselves;
+  - when a machine joins, you check that it shows your account's
+    fingerprint, so control can't hand it an account of its own.
+- **What you trust it with:**
+  - **the web client.** Control serves the page your browsers, your phone
+    and the desktop app (once joined) run. A control that served a
+    modified page could read what that page shows. A daemon's own page,
+    `illogicald` and the CLI don't come from control.
+  - **hosted sandboxes.** They run on control's provider, which writes
+    their trust files; the operator can read them.
 
-The design is in [control-e2e.md](control-e2e.md). Teams, roles, personal
+**What it costs.** The hosted control is free during the beta. It's
+provided as is, without guarantees, and its pricing may change; any change
+is announced before it applies. Its [terms](https://illogical.widgets.wtf/terms) and
+[privacy notice](https://illogical.widgets.wtf/privacy) say what it keeps
+and the rules; questions to <privacy@illogical.widgets.wtf>.
+
+The design, and exactly what holds if control itself turns hostile, is in
+[control-e2e.md](control-e2e.md#what-holds-against-control). Teams, roles, personal
 vs team machines and sharing a session:
 [Your machines, your team](teams.md).
 
@@ -36,7 +53,12 @@ vs team machines and sharing a session:
    ```
 
    It prints a link with a code (good for 15 minutes). Open it on a
-   signed-in device, check the code matches, and approve. *Join to* picks
+   signed-in device, check the code matches, and approve. The machine then
+   shows your account's fingerprint (`1a2b-3c4d-…`): check it's the one
+   the approving device showed (*Your account*, also under *Devices and
+   machines…*) and answer `y` (Getting started on the machine's own page
+   asks the same with two buttons). It trusts nothing until you do;
+   `--account FINGERPRINT` answers ahead, for scripts. *Join to* picks
    your account (*Just me*) or a team you own; `--team ID` picks the team
    ahead. *Cancel* turns it down. A running daemon connects within a few
    seconds, and the machine appears in the host menu.
@@ -44,7 +66,20 @@ vs team machines and sharing a session:
    the host menu shows control's address as a QR code and a link. Sign in
    there. It shows a fingerprint and waits. Your devices ask *New device?*
    with the same fingerprint; approve it on one of them.
-4. **Remove a device or machine** from *Devices and machines…* in the host
+4. **Sign in the desktop app.** Once its machine has joined (*Getting
+   started*'s *Cloud* step, or `illogicald join`), the app's window is
+   control's page. The window can't use passkeys, so the app signs in
+   through your browser:
+   - *Sign in* in the app opens control in your browser and shows a short
+     code;
+   - signed in there, control asks *Sign in the app?* with the machine's
+     name and the same code: check it matches, then *Allow*;
+   - the app is then a new device: approve it, with its fingerprint, on a
+     device you already have (the browser you just used is one).
+
+   It then shows every machine in your account and your teams, like any
+   other device. The sign-in link is good for ten minutes and works once.
+5. **Remove a device or machine** from *Devices and machines…* in the host
    menu. It loses access at once. A removed machine keeps running
    illogical, reachable only locally; `illogicald join` adds it back.
 
@@ -147,16 +182,24 @@ illogical-control --public-url https://control.example.com --listen 127.0.0.1:76
   - **Who hears what:** a daemon's account must have signed in with GitHub,
     and the App's installation for the repository must be that GitHub
     user's, or GitHub must list them as a collaborator on it (asked with
-    an installation token; answers kept ten minutes). Organization
-    membership alone doesn't count, and passkey-only accounts hear
-    nothing: their blocks poll.
+    an installation token; answers kept ten minutes). Both go by the
+    numeric GitHub user id, not the login. Organization membership alone
+    doesn't count, and passkey-only accounts hear nothing: their blocks
+    poll. A machine watches at most 200 repositories and an account 400.
   - **Hosted boxes** ask `POST /api/daemon/github/token {repo}` (signed as
     the daemon) for an installation token scoped to that repository with
     read-only permissions; control keeps one until five minutes before it
     expires.
+- **Billing** (optional) needs both `STRIPE_SECRET_KEY` and
+  `STRIPE_WEBHOOK_SECRET`; with the key alone control doesn't start.
 - **Behind a proxy** that passes the client's address in a header, use
   `--trust-proxy-header` (for example `Fly-Client-IP`), so rate limits are
-  per client.
+  per client (an IPv6 client counts by its /64).
+- **Daemons from before 0.17** sign their requests to control the old
+  way. Control takes that, each signature once, unless it's started with
+  `--refuse-old-daemon-signatures` (`ILLOGICAL_CONTROL_REFUSE_OLD_DAEMON_SIGNATURES=1`),
+  when those daemons are told to update. A machine control already knows
+  joins again only from 0.17 on.
 - **Build it** with `just static` (`target/x86_64-unknown-linux-musl/release/illogical-control`).
   - The web client is built into the binary.
   - `--static-dir web/dist` serves a local build instead.

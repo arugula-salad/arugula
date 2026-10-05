@@ -125,6 +125,19 @@ CREATE TABLE IF NOT EXISTS daemon_access (
     account TEXT NOT NULL,
     PRIMARY KEY (daemon, account)
 );
+CREATE TABLE IF NOT EXISTS daemon_offers (
+    daemon TEXT NOT NULL,
+    account TEXT NOT NULL,
+    since INTEGER NOT NULL,
+    PRIMARY KEY (daemon, account)
+);
+CREATE TABLE IF NOT EXISTS share_answers (
+    account TEXT NOT NULL,
+    daemon TEXT NOT NULL,
+    accepted INTEGER NOT NULL,
+    at INTEGER NOT NULL,
+    PRIMARY KEY (account, daemon)
+);
 CREATE TABLE IF NOT EXISTS daemon_links (
     daemon TEXT PRIMARY KEY,
     until INTEGER NOT NULL
@@ -215,6 +228,21 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     if !has("sessions", "agent")? {
         conn.execute_batch("ALTER TABLE sessions ADD COLUMN agent TEXT")?;
     }
+    if !has("joins", "proven")? {
+        conn.execute_batch("ALTER TABLE joins ADD COLUMN proven INTEGER NOT NULL DEFAULT 0")?;
+    }
+    Ok(())
+}
+
+/// Before share answers were kept, every account a daemon listed was
+/// routed to: those already listed count as accepted, so nothing shared
+/// then stops working.
+fn grandfather_shares(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute(
+        "INSERT OR IGNORE INTO share_answers (account, daemon, accepted, at)
+         SELECT account, daemon, 1, 0 FROM daemon_access",
+        [],
+    )?;
     Ok(())
 }
 
@@ -322,6 +350,8 @@ pub struct Join {
     /// What the daemon said it understands when it asked (older ones say
     /// nothing).
     pub features: String,
+    /// It signed for its key when it asked (0.17 and newer).
+    pub proven: bool,
 }
 
 /// A row that's already there (a primary key), as opposed to anything
@@ -356,8 +386,16 @@ impl Db {
         conn.busy_timeout(std::time::Duration::from_secs(5))?;
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
+        let answers_before: bool = conn.query_row(
+            "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'share_answers')",
+            [],
+            |r| r.get(0),
+        )?;
         conn.execute_batch(SCHEMA)?;
         migrate(&conn)?;
+        if !answers_before {
+            grandfather_shares(&conn)?;
+        }
         Ok(Self { conn: Mutex::new(conn) })
     }
 
@@ -406,14 +444,15 @@ impl Db {
         Ok(new_id.to_owned())
     }
 
-    /// The account's GitHub login, if it signed in with GitHub (M40).
-    pub fn github_login(&self, account: &str) -> anyhow::Result<Option<String>> {
+    /// The account's GitHub identity (M40): its numeric id (as a string)
+    /// and the login it had when it last signed in.
+    pub fn github_identity(&self, account: &str) -> anyhow::Result<Option<(String, String)>> {
         Ok(self
             .c()
             .query_row(
-                "SELECT login FROM identities WHERE account = ?1 AND provider = 'github' LIMIT 1",
+                "SELECT subject, login FROM identities WHERE account = ?1 AND provider = 'github' LIMIT 1",
                 params![account],
-                |r| r.get(0),
+                |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .optional()?)
     }
@@ -705,14 +744,15 @@ impl Db {
         team: Option<&str>,
         sandbox: Option<&str>,
         features: &str,
+        proven: bool,
         now: u64,
     ) -> anyhow::Result<()> {
         let c = self.c();
         // Old ones go first; a code can be asked for again.
         c.execute("DELETE FROM joins WHERE created < ?1", params![now.saturating_sub(JOIN_TTL_MS)])?;
         c.execute(
-            "INSERT OR REPLACE INTO joins (code, cert, poll_hash, urls, created, account, team, sandbox, features)
-             VALUES (?1, ?2, ?3, ?4, ?5, NULL, ?6, ?7, ?8)",
+            "INSERT OR REPLACE INTO joins (code, cert, poll_hash, urls, created, account, team, sandbox, features, proven)
+             VALUES (?1, ?2, ?3, ?4, ?5, NULL, ?6, ?7, ?8, ?9)",
             params![
                 code,
                 serde_json::to_string(cert)?,
@@ -721,7 +761,8 @@ impl Db {
                 now,
                 team,
                 sandbox,
-                features
+                features,
+                proven
             ],
         )?;
         Ok(())
@@ -732,7 +773,7 @@ impl Db {
             .c()
             .query_row(
                 "SELECT cert, poll_hash, urls, created, account, team, sandbox, team_sig, rejected,
-                 COALESCE(features, '') FROM joins
+                 COALESCE(features, ''), proven FROM joins
                  WHERE code = ?1 AND created >= ?2",
                 params![code, now.saturating_sub(JOIN_TTL_MS)],
                 |r| {
@@ -747,6 +788,7 @@ impl Db {
                         team_sig: r.get(7)?,
                         rejected: r.get(8)?,
                         features: r.get(9)?,
+                        proven: r.get(10)?,
                     })
                 },
             )
@@ -819,6 +861,91 @@ impl Db {
         let c = self.c();
         c.execute("DELETE FROM daemons WHERE id = ?1", params![id])?;
         c.execute("DELETE FROM devices WHERE id = ?1 AND kind = 'daemon'", params![id])?;
+        // What it shared, and the answers: a machine that joins again (to
+        // another account, say) asks again.
+        c.execute("DELETE FROM daemon_access WHERE daemon = ?1", params![id])?;
+        c.execute("DELETE FROM daemon_links WHERE daemon = ?1", params![id])?;
+        c.execute("DELETE FROM daemon_offers WHERE daemon = ?1", params![id])?;
+        c.execute("DELETE FROM share_answers WHERE daemon = ?1", params![id])?;
+        Ok(())
+    }
+
+    /// Whether this id is a daemon here already, or a device of any
+    /// account's (what a join may not take over without its key).
+    pub fn device_known(&self, id: &str) -> anyhow::Result<bool> {
+        let c = self.c();
+        let d: bool = c.query_row("SELECT EXISTS (SELECT 1 FROM daemons WHERE id = ?1)", params![id], |r| r.get(0))?;
+        let v: bool = c.query_row("SELECT EXISTS (SELECT 1 FROM devices WHERE id = ?1)", params![id], |r| r.get(0))?;
+        Ok(d || v)
+    }
+
+    // ---- shares offered to people, and their answers
+
+    /// The accounts a daemon would share with that haven't said yes yet:
+    /// these replace the ones it named before. The ones new since then.
+    pub fn offer_shares(&self, daemon: &str, accounts: &[String], now: u64) -> anyhow::Result<Vec<String>> {
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        let had: Vec<String> = {
+            let mut q = tx.prepare("SELECT account FROM daemon_offers WHERE daemon = ?1")?;
+            let rows = q.query_map(params![daemon], |r| r.get(0))?;
+            rows.collect::<Result<_, _>>()?
+        };
+        tx.execute("DELETE FROM daemon_offers WHERE daemon = ?1", params![daemon])?;
+        let mut new = Vec::new();
+        for a in accounts {
+            tx.execute(
+                "INSERT OR IGNORE INTO daemon_offers (daemon, account, since) VALUES (?1, ?2, ?3)",
+                params![daemon, a, now],
+            )?;
+            if !had.contains(a) {
+                new.push(a.clone());
+            }
+        }
+        tx.commit()?;
+        Ok(new)
+    }
+
+    /// Daemons offering to share with this account that it hasn't answered.
+    pub fn offers_for(&self, account: &str) -> anyhow::Result<Vec<String>> {
+        let c = self.c();
+        let mut q = c.prepare(
+            "SELECT o.daemon FROM daemon_offers o
+             WHERE o.account = ?1
+               AND NOT EXISTS (SELECT 1 FROM share_answers s WHERE s.account = o.account AND s.daemon = o.daemon)
+             ORDER BY o.since",
+        )?;
+        let rows = q.query_map(params![account], |r| r.get(0))?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    pub fn offered(&self, daemon: &str, account: &str) -> anyhow::Result<bool> {
+        Ok(self.c().query_row(
+            "SELECT EXISTS (SELECT 1 FROM daemon_offers WHERE daemon = ?1 AND account = ?2)
+                 OR EXISTS (SELECT 1 FROM daemon_access WHERE daemon = ?1 AND account = ?2)",
+            params![daemon, account],
+            |r| r.get(0),
+        )?)
+    }
+
+    /// Whether `account` accepted (`Some(true)`) or turned down a share
+    /// from `daemon`.
+    pub fn share_answer(&self, account: &str, daemon: &str) -> anyhow::Result<Option<bool>> {
+        Ok(self
+            .c()
+            .query_row(
+                "SELECT accepted FROM share_answers WHERE account = ?1 AND daemon = ?2",
+                params![account, daemon],
+                |r| r.get(0),
+            )
+            .optional()?)
+    }
+
+    pub fn answer_share(&self, account: &str, daemon: &str, accepted: bool, now: u64) -> anyhow::Result<()> {
+        self.c().execute(
+            "INSERT OR REPLACE INTO share_answers (account, daemon, accepted, at) VALUES (?1, ?2, ?3, ?4)",
+            params![account, daemon, accepted, now],
+        )?;
         Ok(())
     }
 
@@ -1500,6 +1627,8 @@ impl Db {
                 "DELETE FROM daemon_access WHERE daemon = ?1",
                 "DELETE FROM daemon_links WHERE daemon = ?1",
                 "DELETE FROM daemon_watches WHERE daemon = ?1",
+                "DELETE FROM daemon_offers WHERE daemon = ?1",
+                "DELETE FROM share_answers WHERE daemon = ?1",
             ] {
                 tx.execute(sql, params![d])?;
             }
@@ -1514,6 +1643,8 @@ impl Db {
             "DELETE FROM joins WHERE account = ?1",
             "DELETE FROM daemons WHERE account = ?1",
             "DELETE FROM daemon_access WHERE account = ?1",
+            "DELETE FROM daemon_offers WHERE account = ?1",
+            "DELETE FROM share_answers WHERE account = ?1",
             "DELETE FROM push_subs WHERE account = ?1",
             "DELETE FROM sandboxes WHERE account = ?1",
             "DELETE FROM billing WHERE owner = 'account:' || ?1",

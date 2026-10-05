@@ -164,25 +164,28 @@ try {
   const devs = await api<{ trust: { account: string; root: string }; certs: Cert[] }>("/api/devices");
   check("phone approved by the laptop", (await evaluate(devs.trust, devs.certs)).has(phone.id));
 
-  // 3. A daemon joins with a code.
-  const state = temp("daemon");
-  const joining = spawn(`${target}/illogicald`, ["join", base, "--name", "box", "--state-dir", state], { stdio: ["ignore", "pipe", "inherit"] });
-  procs.push(joining);
-  const code = await new Promise<string>((res) => {
-    let out = "";
-    joining.stdout!.on("data", (d) => {
-      out += d;
-      const m = out.match(/#join=([A-Z0-9]{5}-[A-Z0-9]{5})/);
-      if (m) res(m[1]);
+  // 3. A daemon joins with a code. It takes the account only if its
+  // fingerprint is the one the person expects (`--account`, else it asks).
+  const joinAs = async (name: string, state: string, account: string) => {
+    const joining = spawn(`${target}/illogicald`, ["join", base, "--name", name, "--state-dir", state, "--account", account], { stdio: ["ignore", "pipe", "inherit"] });
+    procs.push(joining);
+    const code = await new Promise<string>((res) => {
+      let out = "";
+      joining.stdout!.on("data", (d) => {
+        out += d;
+        const m = out.match(/#join=([A-Z0-9]{5}-[A-Z0-9]{5})/);
+        if (m) res(m[1]);
+      });
     });
-  });
-  const shown = await api<{ cert: Cert }>(`/api/joins/${code}`);
-  check("join code matches the daemon's key", (await joinCode(shown.cert)) === code, code);
-  const dk = { ...shown.cert, account: me.account, approver: phone.id, sig: "" };
-  dk.sig = await signText(phone, certBody(dk));
-  await api(`/api/joins/${code}/approve`, { cert: dk });
-  const joined = await new Promise<number>((r) => joining.on("exit", r));
-  check("illogicald join finished", joined === 0);
+    const shown = await api<{ cert: Cert }>(`/api/joins/${code}`);
+    check("join code matches the daemon's key", (await joinCode(shown.cert)) === code, code);
+    const dk = { ...shown.cert, account: me.account, approver: phone.id, sig: "" };
+    dk.sig = await signText(phone, certBody(dk));
+    await api(`/api/joins/${code}/approve`, { cert: dk });
+    return new Promise<number>((r) => joining.on("exit", r));
+  };
+  const state = temp("daemon");
+  check("illogicald join finished", (await joinAs("box", state, laptop.id)) === 0);
 
   // 4. The daemon runs, picks up the enrollment and dials the relay.
   procs.push(
@@ -388,13 +391,16 @@ try {
   check("an unsigned webhook is refused", unsigned.status === 400);
   const done = await hook({ type: "checkout.session.completed", data: { object: { customer: "cus_1", subscription: "sub_1", metadata: { owner: `team:${team}` } } } });
   check("the team upgraded", done.ok && (await api<{ teams: { plan: string }[] }>("/api/billing")).teams[0].plan === "team");
-  // A second person joins: the seats follow the roster.
+  // A second person joins (by an invite they accept): the seats follow
+  // the roster.
+  const invite = await api<{ code: string }>(`/api/teams/${team}/invites`, { role: "editor" });
   const laptopCookie = cookie;
   asUser = "colleague";
   await signIn();
   const them = await api<{ account: string }>("/api/me");
   const theirs = await generateKeys();
   await api("/api/devices", { cert: await cert(theirs, theirs, them.account, "browser", "their laptop") });
+  await api(`/api/invites/${team}/${invite.code}/accept`, {});
   cookie = laptopCookie;
   const v2 = await signRoster(
     { ...v1, version: 2, at: Date.now(), members: [...v1.members, { account: them.account, root: theirs.id, role: "editor", name: "colleague" }] },
@@ -417,7 +423,14 @@ try {
   fakeStripe.close();
   fakeSprites.close();
 
-  // 9. Deleting an account (#173): someone with a machine leaves. The
+  // 9. A machine expecting another account (as if control swapped in one
+  // of its own) doesn't take the approval, and pins nothing.
+  cookie = laptopCookie;
+  const elsewhere = temp("elsewhere");
+  check("a join into an account other than the one expected is refused", (await joinAs("elsewhere", elsewhere, "0123-4567-89ab-cdef")) !== 0);
+  check("... and pins nothing", !readdirSync(elsewhere).includes("control.json"));
+
+  // 10. Deleting an account (#173): someone with a machine leaves. The
   // machine is refused from then on, and nothing of theirs is left.
   asUser = "leaver";
   await signIn();
@@ -425,7 +438,7 @@ try {
   const lk = await generateKeys();
   await api("/api/devices", { cert: await cert(lk, lk, leaver.account, "browser", "laptop") });
   const state2 = temp("daemon2");
-  const joining2 = spawn(`${target}/illogicald`, ["join", base, "--name", "leaving-box", "--state-dir", state2], { stdio: ["ignore", "pipe", "inherit"] });
+  const joining2 = spawn(`${target}/illogicald`, ["join", base, "--name", "leaving-box", "--state-dir", state2, "--account", lk.id], { stdio: ["ignore", "pipe", "inherit"] });
   procs.push(joining2);
   const code2 = await new Promise<string>((res) => {
     let out = "";

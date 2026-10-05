@@ -23,6 +23,8 @@ mod push;
 #[cfg(test)]
 mod push_notices;
 mod relay;
+#[cfg(test)]
+mod routing_wire;
 mod sandboxes;
 mod sprites;
 mod teams;
@@ -158,6 +160,18 @@ struct Args {
     #[arg(long, env = "ILLOGICAL_CONTROL_PROXY_HEADER")]
     trust_proxy_header: Option<String>,
 
+    /// Refuse requests signed the way daemons before 0.17 sign them (no
+    /// body, query or nonce in the signature); those daemons are told to
+    /// update. Off for now, so machines joined with older releases keep
+    /// working.
+    #[arg(
+        long,
+        env = "ILLOGICAL_CONTROL_REFUSE_OLD_DAEMON_SIGNATURES",
+        value_parser = clap::builder::BoolishValueParser::new(),
+        action = clap::ArgAction::SetTrue
+    )]
+    refuse_old_daemon_signatures: bool,
+
     /// Serve the web client from this directory instead of the built-in
     /// copy (development).
     #[arg(long)]
@@ -179,6 +193,8 @@ pub struct Config {
     pub origin: String,
     pub github: Option<Github>,
     pub static_dir: Option<PathBuf>,
+    /// Take requests signed as daemons before 0.17 sign them.
+    pub old_daemon_signatures: bool,
 }
 
 pub struct App {
@@ -196,6 +212,40 @@ pub struct App {
     pub forge: forge::Watches,
     /// The desktop app's sign-ins in progress (M48).
     pub app_logins: app_login::Tickets,
+    /// Daemon signatures (and join proofs) already taken.
+    pub daemon_sigs: auth::Replays,
+}
+
+#[cfg(test)]
+impl App {
+    /// An app for tests: an in-memory database, nothing configured.
+    pub fn for_tests(public_url: &str) -> Self {
+        let db = db::Db::memory();
+        let vapid = push::Vapid::load(&db).unwrap();
+        App {
+            cfg: Config {
+                push_hosts: vec![],
+                relay_free_bytes: 0,
+                public_url: public_url.into(),
+                origin: origin_of(public_url).unwrap(),
+                github: None,
+                static_dir: None,
+                old_daemon_signatures: true,
+            },
+            db,
+            http: reqwest::Client::new(),
+            relay: Default::default(),
+            passkeys: Default::default(),
+            limits: limit::Limits::new(None),
+            vapid,
+            hosted: None,
+            stripe: None,
+            github_app: None,
+            forge: Default::default(),
+            app_logins: Default::default(),
+            daemon_sigs: Default::default(),
+        }
+    }
 }
 
 /// An API error: `{"error": "..."}` with a status.
@@ -248,8 +298,7 @@ pub fn router(app: Arc<App>) -> Router {
         .route("/auth/github/callback", get(auth::github_callback))
         .route("/auth/logout", post(auth::logout))
         .route("/auth/app", post(app_login::ask))
-        .route("/auth/app/{id}/poll", get(app_login::poll))
-        .route("/auth/app/{id}/redeem", get(app_login::redeem))
+        .route("/auth/app/{id}/redeem", post(app_login::redeem))
         .route("/api/app-login/{id}", get(app_login::show))
         .route("/api/app-login/{id}/allow", post(app_login::allow))
         .route("/auth/passkey/register", post(passkey::register_start))
@@ -279,6 +328,7 @@ pub fn router(app: Arc<App>) -> Router {
         .route("/api/daemon/trust", get(api::daemon_trust))
         .route("/api/daemon/leave", post(api::daemon_leave))
         .route("/api/directory", get(api::directory))
+        .route("/api/shares/{daemon}", post(teams::answer_share))
         .route("/api/people", get(teams::person))
         .route("/api/teams", get(teams::list).post(teams::create))
         .route("/api/teams/{id}/roster", post(teams::set_roster))
@@ -313,6 +363,7 @@ pub fn router(app: Arc<App>) -> Router {
         .route("/api/relay/m", get(relay::many))
         .fallback(asset)
         .layer(axum::middleware::from_fn_with_state(app.clone(), account::note_agent))
+        .layer(axum::middleware::from_fn_with_state(app.clone(), auth::verify_daemon))
         .layer(axum::middleware::map_response(headers))
         .with_state(app)
 }
@@ -324,6 +375,9 @@ async fn control_json(axum::extract::State(app): axum::extract::State<Arc<App>>)
         "control": true, "url": app.cfg.public_url, "github": app.cfg.github.is_some(), "passkeys": passkeys,
         "vapid": app.vapid.public(),
         "github_app": app.github_app.as_ref().map(|g| g.slug.clone()),
+        // How daemons sign their requests here (auth.rs): 2 takes body
+        // hashes and nonces.
+        "daemon_auth": 2,
     }))
 }
 
@@ -336,6 +390,8 @@ async fn headers(mut res: Response) -> Response {
     h.insert(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
     h.insert(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff"));
     h.insert(header::REFERRER_POLICY, HeaderValue::from_static("no-referrer"));
+    // Browsers ignore it over plain HTTP (a local control), so always.
+    h.insert(header::STRICT_TRANSPORT_SECURITY, HeaderValue::from_static("max-age=31536000"));
     h.entry(header::CONTENT_SECURITY_POLICY).or_insert(HeaderValue::from_static(
         "default-src 'self'; connect-src 'self' wss: ws: https:; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; frame-src 'self' https:; frame-ancestors 'none'",
     ));
@@ -387,6 +443,30 @@ fn mime(path: &str) -> &'static str {
 pub fn origin_of(url: &str) -> anyhow::Result<String> {
     let u = url::Url::parse(url)?;
     Ok(u.origin().ascii_serialization())
+}
+
+/// Billing, if there's a Stripe key: never without the webhook secret,
+/// which is all that tells Stripe's events from anyone's.
+fn billing_from(
+    secret: Option<String>,
+    webhook_secret: Option<String>,
+    api: String,
+    seat_price: String,
+    minutes_price: String,
+    minutes_event: String,
+) -> anyhow::Result<Option<billing::Stripe>> {
+    let Some(secret) = secret else { return Ok(None) };
+    let Some(webhook_secret) = webhook_secret else {
+        anyhow::bail!("STRIPE_SECRET_KEY is set but STRIPE_WEBHOOK_SECRET isn't: billing needs both");
+    };
+    Ok(Some(billing::Stripe {
+        api: api.trim_end_matches('/').to_owned(),
+        secret,
+        webhook_secret,
+        seat_price,
+        minutes_price,
+        minutes_event,
+    }))
 }
 
 /// The GitHub App from its id and key, if both are given.
@@ -473,14 +553,14 @@ async fn main() -> anyhow::Result<()> {
         }),
         None => None,
     };
-    let stripe = a.stripe_secret.filter(|s| !s.is_empty()).map(|secret| billing::Stripe {
-        api: a.stripe_api.trim_end_matches('/').to_owned(),
-        secret,
-        webhook_secret: a.stripe_webhook_secret.unwrap_or_default(),
-        seat_price: a.stripe_seat_price,
-        minutes_price: a.stripe_minutes_price,
-        minutes_event: a.stripe_minutes_event,
-    });
+    let stripe = billing_from(
+        set(a.stripe_secret),
+        set(a.stripe_webhook_secret),
+        a.stripe_api,
+        a.stripe_seat_price,
+        a.stripe_minutes_price,
+        a.stripe_minutes_event,
+    )?;
     let app = Arc::new(App {
         cfg: Config {
             push_hosts: a.push_hosts,
@@ -489,6 +569,7 @@ async fn main() -> anyhow::Result<()> {
             public_url,
             github,
             static_dir: a.static_dir,
+            old_daemon_signatures: !a.refuse_old_daemon_signatures,
         },
         db,
         http: reqwest::Client::builder().timeout(std::time::Duration::from_secs(15)).build()?,
@@ -505,7 +586,11 @@ async fn main() -> anyhow::Result<()> {
         github_app,
         forge: Default::default(),
         app_logins: Default::default(),
+        daemon_sigs: Default::default(),
     });
+    if !app.cfg.old_daemon_signatures {
+        info!("refusing daemons' pre-0.17 request signatures");
+    }
     if app.github_app.is_some() {
         tokio::spawn(forge::heartbeat(app.clone(), std::time::Duration::from_secs(a.forge_heartbeat_secs.max(1))));
     }
@@ -590,6 +675,24 @@ mod tests {
     fn args() {
         use clap::CommandFactory;
         super::Args::command().debug_assert();
+    }
+
+    #[test]
+    fn billing_needs_its_webhook_secret() {
+        let b = |s: Option<&str>, w: Option<&str>| {
+            super::billing_from(
+                s.map(Into::into),
+                w.map(Into::into),
+                "https://api.stripe.com/".into(),
+                String::new(),
+                String::new(),
+                String::new(),
+            )
+        };
+        assert!(b(None, None).unwrap().is_none(), "off without a key");
+        assert!(b(Some("sk_test"), None).is_err(), "a key alone doesn't start");
+        let on = b(Some("sk_test"), Some("whsec")).unwrap().unwrap();
+        assert_eq!((on.webhook_secret.as_str(), on.api.as_str()), ("whsec", "https://api.stripe.com"));
     }
 
     #[test]

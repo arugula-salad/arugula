@@ -48,6 +48,9 @@ const CLIENT_PING: Duration = Duration::from_secs(30);
 const CLIENT_READ_BUFFER: usize = 8 * 1024;
 /// A daemon's socket carries all its streams.
 const DAEMON_READ_BUFFER: usize = 32 * 1024;
+/// The largest message a daemon's socket takes: a mux frame's most data
+/// (its window) and header, with room to spare.
+const DAEMON_MAX_MESSAGE: usize = 512 * 1024;
 
 #[derive(Default)]
 pub struct Relay {
@@ -258,7 +261,11 @@ pub async fn dial(
     if let Err(e) = app.db.seen(&id, urls.as_deref(), now_ms()) {
         warn!(error = %e, "recording a daemon");
     }
-    up.read_buffer_size(DAEMON_READ_BUFFER).on_upgrade(move |ws| daemon_socket(app, id, ws, ticket))
+    // Mux frames (at most a window of data and a header) and forge text.
+    up.max_message_size(DAEMON_MAX_MESSAGE)
+        .max_frame_size(DAEMON_MAX_MESSAGE)
+        .read_buffer_size(DAEMON_READ_BUFFER)
+        .on_upgrade(move |ws| daemon_socket(app, id, ws, ticket))
 }
 
 async fn daemon_socket(app: Arc<App>, id: String, ws: WebSocket, ticket: Ticket) {
