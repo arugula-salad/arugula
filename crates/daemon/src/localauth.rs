@@ -20,7 +20,7 @@
 
 use std::{
     io::{self, Read, Write},
-    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
+    net::SocketAddr,
     path::{Path, PathBuf},
 };
 
@@ -144,13 +144,13 @@ fn parse_addr(s: &str) -> Option<SocketAddr> {
     let port = u16::from_str_radix(port, 16).ok()?;
     let word = |h: &str| u32::from_str_radix(h, 16).ok().map(u32::to_ne_bytes);
     let ip = match ip.len() {
-        8 => IpAddr::V4(Ipv4Addr::from(word(ip)?)),
+        8 => std::net::IpAddr::V4(std::net::Ipv4Addr::from(word(ip)?)),
         32 => {
             let mut b = [0u8; 16];
             for i in 0..4 {
                 b[4 * i..4 * i + 4].copy_from_slice(&word(&ip[8 * i..8 * i + 8])?);
             }
-            IpAddr::V6(Ipv6Addr::from(b))
+            std::net::IpAddr::V6(std::net::Ipv6Addr::from(b))
         }
         _ => return None,
     };
