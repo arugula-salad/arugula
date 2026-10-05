@@ -13,9 +13,19 @@
 //! `chant/lifecycle` (a gate reached, a release) reads at once ([`next`]).
 //! The fingerprint is
 //! looked at every [`POLL`] while some client draws the block, and every
-//! [`IDLE_POLL`] when none does and the workspace is on this host (so a gate
-//! reached while nobody looks still reaches the swarm and push; a VM's is
-//! left to sleep). Nothing here fetches.
+//! [`IDLE_POLL`] when none does and the workspace is on this host, so a gate
+//! reached while nobody looks still reaches the swarm and push. Nothing
+//! here fetches.
+//!
+//! **A VM's, while nobody draws it (#313)**: every [`VM_IDLE_POLL`], and
+//! only while its provider says it's running (asking doesn't wake it; a
+//! stopped, sleeping, gone or unreachable VM isn't looked at, and one whose
+//! fingerprint can't be had isn't read). Each look is one provider status
+//! call and one exec of the fingerprint (about 0.01 CPU-s on the VM). An
+//! exec may count as activity to the provider and keep the VM from
+//! sleeping, so once the workspace has held still for [`VM_QUIET`] looks it
+//! looks only every [`VM_RESTING`]th, until it changes or the VM sleeps and
+//! wakes again ([`vm_look`]).
 //!
 //! **Gates.** A gate waiting in any member is attention: `needs_input`
 //! with a `gate` reason made from the [`Gate`] ([`crate::gate::reason`]).
@@ -61,6 +71,13 @@ use crate::{
 const POLL: Duration = Duration::from_secs(3);
 /// ...and while nobody draws it, for a workspace on this host.
 const IDLE_POLL: Duration = Duration::from_secs(5);
+/// ...and for one on a VM, while the VM runs.
+const VM_IDLE_POLL: Duration = Duration::from_secs(30);
+/// Looks at a VM's workspace with nothing changed (10 minutes) before it's
+/// looked at less often...
+const VM_QUIET: u32 = 20;
+/// ...every this many (5 minutes).
+const VM_RESTING: u32 = 10;
 
 /// `sh -c ENVS sh ROOT`: the release ledgers on `chant/lifecycle`, one
 /// path a line (`ENV/releases.jsonl`, or `_members/M/ENV/releases.jsonl`).
@@ -243,6 +260,11 @@ impl Workspace {
     /// ref moved ([`next`]).
     async fn check(&self) {
         let now = self.fingerprint().await;
+        self.settle(now).await;
+    }
+
+    /// [`Workspace::check`] with the fingerprint in hand: what it did.
+    async fn settle(&self, now: Option<String>) -> Next {
         let seen = self.seen.lock().unwrap().clone();
         let what = {
             let mut pending = self.pending.lock().unwrap();
@@ -253,6 +275,7 @@ impl Workspace {
         if what == Next::Read {
             self.load().await;
         }
+        what
     }
 
     /// While drawn: the fingerprint every [`POLL`], from the start.
@@ -266,13 +289,40 @@ impl Workspace {
         });
     }
 
-    /// While nobody draws it: every [`IDLE_POLL`], on this host only.
+    /// While nobody draws it: every [`IDLE_POLL`] on this host, every
+    /// [`VM_IDLE_POLL`] on a running VM ([`vm_look`]).
     async fn idle(&self) {
+        if !self.local() {
+            return self.idle_vm().await;
+        }
         while !self.live.closed() {
             tokio::time::sleep(IDLE_POLL).await;
-            if self.local() && !self.live.drawn() && !self.live.closed() {
+            if !self.live.drawn() && !self.live.closed() {
                 self.check().await;
             }
+        }
+    }
+
+    async fn idle_vm(&self) {
+        let (Some(provider), Some(sprite)) = (self.ctx.provider.clone(), self.ctx.sprite.clone()) else { return };
+        let mut vm = VmIdle::default();
+        while !self.live.closed() {
+            tokio::time::sleep(VM_IDLE_POLL).await;
+            if self.live.drawn() {
+                vm = VmIdle::default();
+                continue;
+            }
+            if self.live.closed() {
+                break;
+            }
+            let status = provider.status(&sprite).await.ok().flatten().map(|s| s.status);
+            if !vm_look(status.as_deref(), &mut vm) {
+                continue;
+            }
+            // Unreachable after all: not read (the block keeps what it had).
+            let Some(now) = self.fingerprint().await else { continue };
+            let what = self.settle(Some(now)).await;
+            vm_looked(&mut vm, what != Next::Nothing);
         }
     }
 
@@ -366,6 +416,43 @@ fn next(seen: Option<&str>, pending: Option<&str>, now: Option<&str>) -> Next {
         _ if lifecycle(seen) != lifecycle(now) => Next::Read,
         Some(n) if pending == Some(n) => Next::Read,
         Some(_) => Next::Wait,
+    }
+}
+
+/// A VM workspace's idle looks: how many in a row found nothing changed,
+/// and how many were skipped since the last, once it's resting.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct VmIdle {
+    quiet: u32,
+    skipped: u32,
+}
+
+/// Whether an idle poll looks at a VM's workspace, given what its provider
+/// says of it: only when it's `running`, and once it has been quiet for
+/// [`VM_QUIET`] looks, every [`VM_RESTING`]th poll. A VM not running starts
+/// it over, so one woken again is looked at every poll.
+fn vm_look(status: Option<&str>, vm: &mut VmIdle) -> bool {
+    if status != Some("running") {
+        *vm = VmIdle::default();
+        return false;
+    }
+    if vm.quiet < VM_QUIET {
+        return true;
+    }
+    vm.skipped += 1;
+    if vm.skipped >= VM_RESTING {
+        vm.skipped = 0;
+        return true;
+    }
+    false
+}
+
+/// After a look: whether the fingerprint had moved.
+fn vm_looked(vm: &mut VmIdle, moved: bool) {
+    if moved {
+        *vm = VmIdle::default();
+    } else {
+        vm.quiet = vm.quiet.saturating_add(1);
     }
 }
 
@@ -471,7 +558,7 @@ impl Block for Workspace {
 
 #[cfg(test)]
 mod tests {
-    use super::{Next, env_name, envs, next};
+    use super::{Next, VM_QUIET, VM_RESTING, VmIdle, env_name, envs, next, vm_look, vm_looked};
 
     /// A fingerprint: the lifecycle ref's word, then the tree's checksum.
     fn fp(lifecycle: &str, tree: u32) -> String {
@@ -551,5 +638,54 @@ mod tests {
         for bad in ["", "--json", "a b", "a/b"] {
             assert!(env_name(bad).is_err(), "{bad:?}");
         }
+    }
+
+    /// Polls a VM's idle watch for `polls` rounds with `status`, nothing
+    /// changing; which rounds looked.
+    fn looks(vm: &mut VmIdle, status: Option<&str>, polls: u32) -> Vec<u32> {
+        (0..polls)
+            .filter(|_| {
+                let look = vm_look(status, vm);
+                if look {
+                    vm_looked(vm, false);
+                }
+                look
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_running_vm_is_looked_at_every_poll_while_it_changes() {
+        let mut vm = VmIdle::default();
+        for _ in 0..50 {
+            assert!(vm_look(Some("running"), &mut vm));
+            vm_looked(&mut vm, true);
+        }
+    }
+
+    #[test]
+    fn a_vm_not_running_or_unreachable_is_never_looked_at() {
+        for status in [Some("warm"), Some("cold"), Some("stopped"), None] {
+            let mut vm = VmIdle::default();
+            assert!(looks(&mut vm, status, 100).is_empty(), "{status:?}");
+        }
+    }
+
+    #[test]
+    fn a_quiet_vm_is_looked_at_less_often_until_it_sleeps_and_wakes() {
+        let mut vm = VmIdle::default();
+        // Quiet: every poll for VM_QUIET looks, then every VM_RESTING-th.
+        let n = VM_QUIET + 3 * VM_RESTING;
+        let seen = looks(&mut vm, Some("running"), n);
+        assert_eq!(seen.len() as u32, VM_QUIET + 3);
+        assert_eq!(seen[VM_QUIET as usize], VM_QUIET + VM_RESTING - 1);
+        // A change found while resting: every poll again.
+        vm_looked(&mut vm, true);
+        assert_eq!(vm, VmIdle::default());
+        assert!(vm_look(Some("running"), &mut vm));
+        // Asleep, then woken: every poll again.
+        let _ = looks(&mut vm, Some("running"), n);
+        assert!(!vm_look(Some("warm"), &mut vm));
+        assert!(vm_look(Some("running"), &mut vm));
     }
 }
