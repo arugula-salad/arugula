@@ -931,10 +931,17 @@ async fn block_call(
     pane: PaneId,
     b: &Arc<dyn crate::block::Block>,
     method: &str,
-    args: serde_json::Value,
+    mut args: serde_json::Value,
     by: Option<Driver>,
 ) -> Result<serde_json::Value, String> {
     let waiting = b.waiting();
+    // #302: whether Arugula carries someone else's approval to chant
+    // (`--relayed-by`), which is the daemon's to say, not the caller's.
+    if b.kind() == arugula_proto::BlockType::Workspace
+        && let Some(o) = args.as_object_mut()
+    {
+        o.insert("relayed".into(), by.as_ref().is_some_and(|d| d.who != "owner").into());
+    }
     let id = args["id"].as_str().map(str::to_owned);
     // The transcript names whoever isn't its owner (the owner's own
     // answers go unremarked, as before M29). A gate's ledger names whoever

@@ -29,10 +29,14 @@
 //!
 //! **Gates.** A gate waiting in any member is attention: `needs_input`
 //! with a `gate` reason made from the [`Gate`] ([`crate::gate::reason`]).
-//! `approve` resolves one with chant's own `approve` in the member's
-//! directory, `--approver` the person who asked (#75: the owner or an
-//! editor; guests can't call it). It's logged, with who, in the block's log
-//! and its history.
+//! `approve` runs `status`'s own `chant approve` line in the member's
+//! directory (#302: `--plan` binds it to the plan read, `--sign` for a
+//! signed gate), `--actor` the principal of the person who asked (#75: the
+//! owner or an editor; guests can't call it). Config `actor` is the owner's
+//! principal and `principals` maps editors' Arugula names to theirs
+//! (ws-080: `github:<login>` or a signer); an editor's approval is
+//! `--relayed-by` the owner, and a signed gate is the owner's to approve
+//! here. It's logged, with who, in the block's log and its history.
 //!
 //! **Envs (#312).** A block watches one env, and says which; `env {name}`
 //! switches it (kept in the config) and reads again. The state's `envs`
@@ -114,6 +118,12 @@ struct Config {
     root: String,
     #[serde(default = "local")]
     env: String,
+    /// The owner's chant principal: chant runs here, and signs, as them.
+    #[serde(default)]
+    actor: Option<String>,
+    /// Arugula names (an editor's login) to chant principals.
+    #[serde(default)]
+    principals: std::collections::BTreeMap<String, String>,
 }
 
 fn local() -> String {
@@ -350,11 +360,34 @@ impl Workspace {
         }
     }
 
+    /// Who chant records for `by` (ws-080). `relayed` is set by the
+    /// daemon, never the caller: someone other than the owner asked.
+    fn chant_by(&self, args: &Value, by: Option<&str>, version: Option<String>) -> crate::gate::ChantBy {
+        let relayed = args["relayed"].as_bool().unwrap_or(false);
+        let named = by.map(|n| model::principal(n, &self.config.principals));
+        crate::gate::ChantBy {
+            actor: if relayed { named } else { self.config.actor.clone().or(named) },
+            relayed,
+            relayed_by: self
+                .config
+                .actor
+                .clone()
+                .filter(|_| version.is_some_and(|v| model::at_least(&v, model::RELAYED_BY))),
+        }
+    }
+
     async fn approve(&self, args: Value, by: Option<String>) -> Result<Value, String> {
         let gate = self.find_gate(&args)?;
-        let chant = self.state.lock().unwrap().chant.clone().ok_or(model::NO_CHANT)?;
+        let (chant, version) = {
+            let st = self.state.lock().unwrap();
+            (st.chant.clone().ok_or(model::NO_CHANT)?, st.version.clone())
+        };
         let runner = self.runner().await?;
-        let via = crate::gate::Via::Chant { runner: &runner, chant: &chant };
+        let via = crate::gate::Via::Chant {
+            runner: &runner,
+            chant: &chant,
+            by: self.chant_by(&args, by.as_deref(), version),
+        };
         let result = crate::gate::approve(&gate, by.as_deref(), &via).await;
         let (ok, said) = match &result {
             Ok(s) | Err(s) => (result.is_ok(), s.clone()),
@@ -462,7 +495,7 @@ impl Block for Workspace {
     }
 
     fn config(&self) -> Value {
-        json!({ "root": self.config.root, "env": *self.env.lock().unwrap() })
+        json!({ "root": self.config.root, "env": *self.env.lock().unwrap(), "actor": self.config.actor, "principals": self.config.principals })
     }
 
     fn state(&self) -> Value {

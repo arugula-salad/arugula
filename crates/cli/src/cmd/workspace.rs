@@ -2,7 +2,7 @@
 
 use super::Ctx;
 use crate::util::{absolute, env_pane, loaded, open_block, print_json, split_of};
-use anyhow::bail;
+use anyhow::{Context, bail};
 use arugula_proto::{BlockType, api::OpenRequest};
 use serde_json::json;
 
@@ -13,6 +13,15 @@ pub struct Args {
     /// The environment whose gates and releases to read.
     #[arg(long, default_value = "local")]
     env: String,
+    /// Your chant principal, as gate approvals name you (a forge
+    /// identity such as `github:<login>`, or a signer): chant runs, and
+    /// signs, as you. Default: your Arugula name.
+    #[arg(long)]
+    actor: Option<String>,
+    /// An editor's chant principal, `NAME=PRINCIPAL` by their Arugula
+    /// name (`friend@example.com=github:friend`). Repeatable.
+    #[arg(long = "principal", value_name = "NAME=PRINCIPAL")]
+    principals: Vec<String>,
     /// Split a block instead of opening a tab: `right` for the one this
     /// runs in, or `%N`.
     #[arg(long)]
@@ -23,11 +32,17 @@ pub struct Args {
 
 pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
     let Ctx { sock, json_out, .. } = ctx;
-    let Args { dir, env, split, session } = args;
+    let Args { dir, env, actor, principals, split, session } = args;
     let root = absolute(dir.as_deref().unwrap_or("."))?;
+    let mut named = serde_json::Map::new();
+    for p in &principals {
+        let (name, principal) =
+            p.split_once('=').filter(|(n, v)| !n.is_empty() && !v.is_empty()).context("--principal NAME=PRINCIPAL")?;
+        named.insert(name.trim().to_owned(), principal.trim().into());
+    }
     let body = OpenRequest {
         kind: BlockType::Workspace,
-        config: json!({ "root": root, "env": env }),
+        config: json!({ "root": root, "env": env, "actor": actor, "principals": named }),
         split: split_of(split.as_deref())?,
         local: true,
         session,

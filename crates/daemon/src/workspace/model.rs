@@ -204,6 +204,22 @@ pub const NO_CHANT: &str = "no chant here: not in $CHANT, not in node_modules/.b
 pub const NO_DECLARATION: &str =
     "no chant.workspace.json or .jsonc here or above it: `chant workspace init` proposes one";
 
+/// The principal chant records for an Arugula name (ws-080): the one the
+/// block's `principals` gives it, else the name itself (a forge identity
+/// such as `github:alice` already, or a plain name where the workspace
+/// takes one).
+pub fn principal(name: &str, principals: &std::collections::BTreeMap<String, String>) -> String {
+    let name = name.trim();
+    principals
+        .get(name)
+        .or_else(|| principals.iter().find(|(k, _)| k.eq_ignore_ascii_case(name)).map(|(_, v)| v))
+        .cloned()
+        .unwrap_or_else(|| name.to_owned())
+}
+
+/// The first chant that takes `chant approve --relayed-by` (chant#3402).
+pub const RELAYED_BY: &str = "0.103.1";
+
 /// The read contract this reads (ws-017), and the first chant that writes it.
 pub const CONTRACT: u64 = 1;
 pub const FLOOR: &str = "0.81.0";
@@ -253,9 +269,7 @@ fn contract_problem(reads: &Value, chant: Option<&str>) -> Option<(&'static str,
             None => {
                 return Some((
                     "chant-too-old",
-                    format!(
-                        "chant {v}'s `{name}` names no read contract: install @intentius/chant {FLOOR} or newer"
-                    ),
+                    format!("chant {v}'s `{name}` names no read contract: install @intentius/chant {FLOOR} or newer"),
                 ));
             }
         }
@@ -402,16 +416,33 @@ pub fn compose(raw: &Value, env: &str) -> State {
                 continue;
             }
             m.gates += 1;
+            let (op, gate, env) =
+                (s(&g["component"]).unwrap_or_default(), s(&g["name"]).unwrap_or_default(), s(&g["env"]));
+            // Status's line is what approving runs (#302); a chant that
+            // gives none gets the same, from the gate's plan and rule.
+            let command = s(&g["approve"]).or_else(|| {
+                let mut line = format!("chant approve {op} {gate}");
+                if let Some(e) = &env {
+                    line += &format!(" --env {e}");
+                }
+                if let Some(p) = g["planDigest"].as_str() {
+                    line += &format!(" --plan {p}");
+                }
+                if g["signed"].is_object() {
+                    line += " --sign";
+                }
+                Some(line)
+            });
             st.gates.push(Gate {
                 member: name.clone(),
-                op: s(&g["component"]).unwrap_or_default(),
-                gate: s(&g["name"]).unwrap_or_default(),
-                env: s(&g["env"]),
+                op,
+                gate,
+                env,
                 since: s(&g["recordedAt"]),
                 expires: s(&g["expiresAt"]),
                 approvals: g["approvals"].as_array().map_or(0, |a| a.len() as u64),
                 needed: g["needed"].as_u64().unwrap_or(1),
-                command: s(&g["approve"]),
+                command,
                 source: GateSource::Chant { root: root.clone(), dir: m.path.clone(), machine: None },
             });
         }
@@ -704,7 +735,8 @@ mod tests {
         assert!(st.members.is_empty() && st.gates.is_empty());
 
         let mut raw = fixture(include_str!("fixtures/reference-raw.json"));
-        raw["reads"]["ls"]["json"]["$schema"] = "https://intentius.io/chant/schemas/workspace/ls/v2/ls.schema.json".into();
+        raw["reads"]["ls"]["json"]["$schema"] =
+            "https://intentius.io/chant/schemas/workspace/ls/v2/ls.schema.json".into();
         let st = compose(&raw, "local");
         assert_eq!(st.error_code.as_deref(), Some("contract-unknown"));
         assert!(st.error.as_deref().unwrap().contains("/ls/v2/"));
@@ -714,7 +746,8 @@ mod tests {
     fn a_chant_older_than_the_floor_says_what_to_install() {
         let mut raw = fixture(include_str!("fixtures/reference-raw.json"));
         for n in ["ls", "check", "records", "status"] {
-            raw["reads"][n] = serde_json::json!({ "code": 1, "ms": 5, "json": null, "err": "unknown command workspace" });
+            raw["reads"][n] =
+                serde_json::json!({ "code": 1, "ms": 5, "json": null, "err": "unknown command workspace" });
         }
         raw["version"] = "0.79.2".into();
         let st = compose(&raw, "local");
@@ -729,6 +762,31 @@ mod tests {
         }
         let st = compose(&raw, "local");
         assert_eq!(st.error_code.as_deref(), Some("chant-too-old"));
+    }
+
+    #[test]
+    fn a_gate_without_a_line_gets_one_with_its_plan_and_rule() {
+        let mut raw = fixture(include_str!("fixtures/reference-raw.json"));
+        let g = &mut raw["reads"]["status"]["json"]["members"][1]["gates"][0];
+        g.as_object_mut().unwrap().remove("approve");
+        g["planDigest"] = "sha256:ab12".into();
+        g["env"] = "prod".into();
+        g["signed"] = serde_json::json!({ "class": null });
+        let st = compose(&raw, "local");
+        assert_eq!(
+            st.gates[0].command.as_deref(),
+            Some("chant approve release approve-release --env prod --plan sha256:ab12 --sign")
+        );
+    }
+
+    #[test]
+    fn principals() {
+        let map: std::collections::BTreeMap<String, String> =
+            [("friend@example.com".to_owned(), "github:friend".to_owned())].into();
+        assert_eq!(principal("friend@example.com", &map), "github:friend");
+        assert_eq!(principal("Friend@Example.com", &map), "github:friend");
+        assert_eq!(principal("github:alice", &map), "github:alice");
+        assert_eq!(principal(" alex ", &map), "alex");
     }
 
     #[test]

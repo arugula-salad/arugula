@@ -7,8 +7,11 @@
 //! to `approvals` and lets the gate go, as chant's does. The real chant
 //! runs in `web/e2e/workspace.spec.ts`.
 //!
-//! A gate is `needs_input` with a `gate` reason; approving it (#75) passes
-//! `--approver` with the owner's name or an editor's, and a viewer can't.
+//! A gate is `needs_input` with a `gate` reason; approving it (#75) runs
+//! status's `approve` line with `--actor` the owner's principal or an
+//! editor's (#302), and a viewer can't. With `.signed`, the gate is bound
+//! to a plan and in `identity.gates`; with `.newer`, the chant is one that
+//! takes `--relayed-by`.
 
 // Over the daemon's Unix socket; Windows gets its named pipe in M56 (#219).
 #![cfg(unix)]
@@ -69,10 +72,11 @@ fn workspace(d: &Daemon, name: &str, gated: bool) -> PathBuf {
             r#"#!/bin/sh
 ws='{ws}'; f='{fixtures}'
 case "$1 $2" in
-  "workspace ls") if [ -e "$ws/.undeclared" ]; then cat "$f/ls-missing.json"; exit 1; fi; cat "$f/ls.json" ;;
+  "workspace ls") if [ -e "$ws/.undeclared" ]; then cat "$f/ls-missing.json"; exit 1; fi
+    if [ -e "$ws/.newer" ]; then sed 's/"0.87.0"/"0.104.0"/' "$f/ls.json"; else cat "$f/ls.json"; fi ;;
   "workspace check") cat "$f/check.json" ;;
   "workspace records") cat "$f/records.json" ;;
-  "workspace status") if [ -e "$ws/.gate" ]; then cat "$f/status-gated.json"; else cat "$f/status.json"; fi ;;
+  "workspace status") if [ ! -e "$ws/.gate" ]; then cat "$f/status.json"; elif [ -e "$ws/.signed" ]; then cat "$f/status-signed.json"; else cat "$f/status-gated.json"; fi ;;
   approve*) echo "$PWD $*" >> "$ws/approvals"; rm -f "$ws/.gate"; printf '\033[32mGate "%s" on "%s" resolved\033[0m\n' "$3" "$2" ;;
   *) echo "the stand-in doesn't know $*" >&2; exit 2 ;;
 esac
@@ -173,7 +177,7 @@ fn a_gate_is_attention_until_the_owner_approves_it() {
     let r = d.post("/api/attention/act", json!({ "action": "allow", "pane": block }));
     assert_eq!(r["results"][0]["ok"], true, "{r}");
     let said = approvals(&ws);
-    assert!(said.trim_end().ends_with(&format!("approve release approve-release --approver {OWNER}")), "{said}");
+    assert!(said.trim_end().ends_with(&format!("approve release approve-release --actor {OWNER}")), "{said}");
     // ...in the member's directory.
     assert!(said.starts_with(&format!("{delivery} approve ")), "{said}");
     // Cleared, and the gate's gone from the block.
@@ -237,7 +241,8 @@ fn an_editor_approves_as_themselves_and_a_viewer_cannot() {
     let (status, body) = as_friend(&d, "POST", "/api/attention/act", json!({ "action": "allow", "pane": block }));
     assert_eq!(status, 200, "{body}");
     let said = approvals(&ws);
-    assert!(said.trim_end().ends_with(&format!("--approver {FRIEND}")), "{said}");
+    // No principals configured: their Arugula name, and no relay to name.
+    assert!(said.trim_end().ends_with(&format!("--actor {FRIEND}")), "{said}");
     d.wait_for("attention to clear", || info(&d, block)["attention"] == "idle");
     let i = info(&d, block);
     assert_eq!(i["answered"]["who"], format!("tailnet:{FRIEND}"));
@@ -309,4 +314,63 @@ fn chant_says_what_a_workspace_is() {
     assert_eq!(st["members"], json!([]));
     let text = d.raw("GET", &format!("/api/panes/{block}/capture?format=text"), None).1;
     assert!(text.contains("(declaration-missing)"), "{text}");
+}
+
+#[test]
+fn approving_runs_status_line_with_its_plan_as_principals() {
+    let d = daemon();
+    let ws = workspace(&d, "signed", true);
+    std::fs::write(ws.join(".signed"), "").unwrap();
+    std::fs::write(ws.join(".newer"), "").unwrap();
+    let config = json!({ "root": ws, "actor": "github:owner", "principals": { FRIEND: "github:friend" } });
+    let block = d.post("/api/blocks", json!({ "type": "workspace", "config": config, "local": true }))["block"]
+        .as_u64()
+        .unwrap();
+    let st = read(&d, block);
+    assert_eq!(st["version"], "0.104.0", "{st}");
+    let line = "chant approve release approve-release --plan sha256:5f1e0c9a2b7d4e8f --sign";
+    assert_eq!(st["gates"][0]["command"], line);
+    d.wait_for("attention", || info(&d, block)["reason"]["kind"] == "gate");
+
+    // An editor can't approve a signed gate here: chant would seal it with
+    // the owner's key. Nothing reaches chant, and it still waits.
+    share(&d, block, "editor");
+    let (status, body) = as_friend(&d, "POST", "/api/attention/act", json!({ "action": "allow", "pane": block }));
+    assert_eq!(status, 409, "{body}");
+    assert!(body.contains("needs a signed approval"), "{body}");
+    assert_eq!(approvals(&ws), "");
+    assert_eq!(info(&d, block)["attention"], "needs_input");
+
+    // The owner: status's line (the plan read, --sign), as their principal.
+    let r = d.post("/api/attention/act", json!({ "action": "allow", "pane": block }));
+    assert_eq!(r["results"][0]["ok"], true, "{r}");
+    let said = approvals(&ws);
+    let delivery = ws.join("delivery").display().to_string();
+    assert_eq!(
+        said.trim_end(),
+        format!(
+            "{delivery} approve release approve-release --actor github:owner --plan sha256:5f1e0c9a2b7d4e8f --sign"
+        )
+    );
+    d.wait_for("attention to clear", || info(&d, block)["attention"] == "idle");
+
+    // Unsigned: the editor approves as their principal, carried by the
+    // owner (`--relayed-by`).
+    std::fs::remove_file(ws.join(".signed")).unwrap();
+    std::fs::write(ws.join(".gate"), "").unwrap();
+    d.call(block, "refresh", json!({}));
+    d.wait_for("the new gate", || info(&d, block)["reason"]["kind"] == "gate");
+    let (status, body) = as_friend(&d, "POST", "/api/attention/act", json!({ "action": "allow", "pane": block }));
+    assert_eq!(status, 200, "{body}");
+    let said = approvals(&ws);
+    assert!(
+        said.trim_end().ends_with("approve release approve-release --actor github:friend --relayed-by github:owner"),
+        "{said}"
+    );
+    // A caller can't claim to be relayed, or not: the daemon says.
+    std::fs::write(ws.join(".gate"), "").unwrap();
+    d.call(block, "refresh", json!({}));
+    let out = d.call(block, "approve", json!({ "key": "delivery/release/approve-release", "relayed": true }));
+    assert_eq!(out["approved"], "delivery/release/approve-release", "{out}");
+    assert!(approvals(&ws).trim_end().ends_with("--actor github:owner"), "{}", approvals(&ws));
 }
