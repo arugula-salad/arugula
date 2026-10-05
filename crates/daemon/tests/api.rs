@@ -483,6 +483,33 @@ fn an_upload_lands_on_the_host_and_its_path_pastes_bracketed() {
     let screen = || d.raw("GET", &format!("/api/panes/{pane}/capture"), None).1.replace('\n', "");
     d.wait_for("the bracketed path", || screen().contains(&want));
 
+    // `illogical upload`: 5 MB, in two chunks, from wherever the CLI runs.
+    let cli = std::path::Path::new(env!("CARGO_BIN_EXE_illogicald")).with_file_name("illogical");
+    assert!(Command::new(env!("CARGO")).args(["build", "-q", "-p", "illogical"]).status().unwrap().success());
+    let big: Vec<u8> = (0..5_000_000u32).map(|i| (i * 13 % 251) as u8).collect();
+    let local = tmp.join("big shot.JPG");
+    std::fs::write(&local, &big).unwrap();
+    let upload = |extra: &[&str]| {
+        Command::new(&cli)
+            .arg("--socket")
+            .arg(d.sock())
+            .args(["upload", &pane.to_string()])
+            .args(extra)
+            .arg(&local)
+            .env_remove("ILLOGICAL_PANE")
+            .output()
+            .unwrap()
+    };
+    // `cat` in front: not pasted, exit 2, the path printed.
+    let out = upload(&[]);
+    assert_eq!(out.status.code(), Some(2), "{}", String::from_utf8_lossy(&out.stderr));
+    let printed = String::from_utf8(out.stdout).unwrap().trim().to_owned();
+    assert!(printed.ends_with(".jpg"), "{printed}");
+    assert_eq!(std::fs::read(&printed).unwrap(), big);
+    let out = upload(&["--force"]);
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    d.wait_for("the CLI's path", || screen().matches("^[[201~").count() == 2);
+
     // The folder goes with the pane.
     d.post(&format!("/api/panes/{pane}/close"), json!({}));
     d.wait_for("the pane's uploads gone", || !folder.exists());
