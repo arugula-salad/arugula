@@ -40,6 +40,7 @@ mod push;
 mod remote;
 mod resident;
 mod review;
+mod roots;
 mod sandbox;
 mod seal;
 mod server;

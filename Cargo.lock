@@ -1615,6 +1615,7 @@ dependencies = [
  "rustls-platform-verifier",
  "serde_json",
  "tungstenite 0.30.0",
+ "webpki-root-certs",
  "zstd",
 ]
 
@@ -1739,6 +1740,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+ "webpki-root-certs",
  "x509-parser",
  "zstd",
 ]
