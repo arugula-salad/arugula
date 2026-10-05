@@ -23,6 +23,7 @@ mod fountain;
 mod fs;
 mod gate;
 mod guest_ssh;
+mod hand;
 mod heap;
 mod history;
 #[cfg(unix)]
@@ -1097,6 +1098,7 @@ async fn run(
         acl.clone(),
         mcp_tokens,
         guests,
+        hand::Hands::open(&state_dir),
     );
     app.guests.run(&app);
     control.start(app.clone());
