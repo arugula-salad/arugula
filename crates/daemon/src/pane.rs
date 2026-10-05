@@ -321,6 +321,7 @@ enum Cmd {
     Checkpoint(Sender<()>),
     /// Text as a paste into this pane: bracketed if its program asked
     /// (M70).
+    #[cfg_attr(windows, allow(dead_code))] // Uploads are Unix only, as serving is.
     EncodePaste(String, Sender<Vec<u8>>),
     Capture {
         format: CaptureFormat,
@@ -482,6 +483,7 @@ impl PaneHandle {
     }
     /// Text encoded as a paste for the program here now: bracketed if it
     /// asked, with anything that could end the bracket made harmless (M70).
+    #[cfg_attr(windows, allow(dead_code))] // Uploads are Unix only, as serving is.
     pub fn encode_paste(&self, text: String) -> Option<Vec<u8>> {
         let (tx, rx) = bounded(1);
         self.tx.send(Cmd::EncodePaste(text, tx)).ok()?;
