@@ -496,6 +496,21 @@ pub fn enc(s: &str) -> String {
     out
 }
 
+#[cfg(windows)]
+impl Stream for crate::pipe::PipeStream {
+    fn readable(&self) -> bool {
+        crate::pipe::PipeStream::readable(self)
+    }
+    fn set_nonblocking(&self, on: bool) -> std::io::Result<()> {
+        crate::pipe::PipeStream::set_nonblocking(self, on);
+        Ok(())
+    }
+    fn set_timeout(&self, t: Option<std::time::Duration>) -> std::io::Result<()> {
+        crate::pipe::PipeStream::set_timeout(self, t);
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::Url;
@@ -517,20 +532,5 @@ mod tests {
         assert!(Url::parse("ftp://x").is_err());
         assert!(Url::parse("box").is_err());
         assert!(Url::parse("http://x:notaport").is_err());
-    }
-}
-
-#[cfg(windows)]
-impl Stream for crate::pipe::PipeStream {
-    fn readable(&self) -> bool {
-        crate::pipe::PipeStream::readable(self)
-    }
-    fn set_nonblocking(&self, on: bool) -> std::io::Result<()> {
-        crate::pipe::PipeStream::set_nonblocking(self, on);
-        Ok(())
-    }
-    fn set_timeout(&self, t: Option<std::time::Duration>) -> std::io::Result<()> {
-        crate::pipe::PipeStream::set_timeout(self, t);
-        Ok(())
     }
 }

@@ -386,6 +386,7 @@ fn forward_agent() -> bool {
     !std::env::var("ILLOGICAL_SSH_AGENT").is_ok_and(|v| v == "no")
 }
 
+#[cfg(unix)]
 /// Wait for a finished ssh in the background, so it doesn't linger as a
 /// zombie.
 fn reap(mut child: std::process::Child) {
