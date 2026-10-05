@@ -128,3 +128,44 @@ impl Wake {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::time::Instant;
+
+    use super::*;
+
+    #[test]
+    fn a_wake_from_another_thread_ends_the_wait() {
+        let (mut wake, waker) = Wake::pair().unwrap();
+        let t = Instant::now();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(50));
+            waker.wake();
+        });
+        let (readable, woken) = wake.wait(None, Duration::from_secs(5)).unwrap();
+        assert!(woken && !readable);
+        assert!(t.elapsed() < Duration::from_secs(2));
+        wake.drain();
+    }
+
+    #[test]
+    fn with_nothing_to_wait_for_it_times_out() {
+        let (mut wake, _waker) = Wake::pair().unwrap();
+        let t = Instant::now();
+        assert_eq!(wake.wait(None, Duration::from_millis(60)).unwrap(), (false, false));
+        assert!(t.elapsed() >= Duration::from_millis(50));
+    }
+
+    #[test]
+    fn a_connection_with_bytes_waiting_is_readable() {
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let ours = std::net::TcpStream::connect(l.local_addr().unwrap()).unwrap();
+        let (mut theirs, _) = l.accept().unwrap();
+        ours.set_nonblocking(true).unwrap();
+        let (mut wake, _waker) = Wake::pair().unwrap();
+        std::io::Write::write_all(&mut theirs, b"x").unwrap();
+        let (readable, _) = wake.wait(Some(&ours), Duration::from_secs(5)).unwrap();
+        assert!(readable);
+    }
+}
