@@ -4206,7 +4206,8 @@ M48 made the app control's client, so on Windows it starts with sign-in and ever
 - In the VM, the installer from a CI release installs with no admin rights.
 - Sign-in through the system browser works, and a device approved from the phone shows geek's panes.
 - Typing in a pane on geek works.
-- A notification's click opens its pane.
+
+Native notifications come from a local daemon, so they arrive with it in M59.
 
 #### M55: the workspace compiles on Windows (#218)
 
@@ -4264,7 +4265,7 @@ The S29 pty host becomes `illogicald _shim` on Windows:
 - The desktop app carries `illogicald.exe` and `illogical.exe` (a PowerShell `sidecars.ps1`), installs the daemon when none answers, and upgrades an older one, as on macOS and Linux.
 - Windows zips in release.yml, and a Windows machine can join control.
 
-**Done when:** in a fresh VM, the installer alone gives a joined machine whose panes open from the phone, and they survive a reboot. Upgrading from the previous release keeps panes running.
+**Done when:** in a fresh VM, the installer alone gives a joined machine whose panes open from the phone, and they survive a reboot. A notification's click opens its pane (moved here from M54, which has no local daemon). Upgrading from the previous release keeps panes running.
 
 #### M60: Windows parity (#223)
 
