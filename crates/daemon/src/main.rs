@@ -1,8 +1,5 @@
 //! illogicald: owns the terminals; clients attach over WebSocket.
 
-// Windows builds and tests the daemon's code but doesn't serve yet (M56,
-// #219): what only serving uses is unused there until then.
-#![cfg_attr(windows, allow(dead_code, unused_imports))]
 
 mod access;
 mod acl;
