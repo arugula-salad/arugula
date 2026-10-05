@@ -72,6 +72,32 @@ pub enum ClientMsg {
     /// Follow an editor (M28): its cursor, selection and the file it shows
     /// come as [`ServerMsg::Follow`] while `on`. Viewer access is enough.
     Follow { pane: PaneId, on: bool },
+    /// This client is a hand (S33): device tools agents may call through
+    /// the daemon's MCP server. `tools` empty: it stops being one. A hand
+    /// that isn't connected is woken by a push to its device.
+    Hand {
+        tools: Vec<HandTool>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
+    },
+    /// The answer to a [`ServerMsg::HandCall`]: a result or why not.
+    HandReply {
+        id: u64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        result: Option<serde_json::Value>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+    },
+}
+
+/// A tool a hand offers (S33).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HandTool {
+    pub name: String,
+    pub description: String,
+    /// Its arguments, as a JSON Schema object.
+    #[serde(default)]
+    pub schema: serde_json::Value,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -474,6 +500,9 @@ pub enum ServerMsg {
     /// `{edit: {file, version, changes}}`, `{diagnostics: {file, items}}`,
     /// or `{gone: true}` when it left.
     Follow { pane: PaneId, msg: serde_json::Value },
+    /// An agent calls one of this hand's tools (S33). `from` says who, for
+    /// the person to decide. Answer with [`ClientMsg::HandReply`].
+    HandCall { id: u64, tool: String, args: serde_json::Value, from: String },
 }
 
 /// Changes to the last [`State`]: each pane in `panes` is `{id, ...}` with

@@ -385,7 +385,17 @@ export type ClientMsg =
    * and integration). Answered with a fresh State. */
   | { type: "subscribe"; summary: boolean }
   /** M28: follow an editor's cursor and file (viewer access). */
-  | { type: "follow"; pane: PaneId; on: boolean };
+  | { type: "follow"; pane: PaneId; on: boolean }
+  /** S33: this client lends device tools to agents (none: it stops). */
+  | { type: "hand"; tools: HandTool[]; name?: string }
+  | { type: "hand_reply"; id: number; result?: unknown; error?: string };
+
+/** S33: a tool a hand offers; `schema` is its arguments' JSON Schema. */
+export interface HandTool {
+  name: string;
+  description: string;
+  schema: unknown;
+}
 
 export type ServerMsg =
   | { type: "hello"; version: string; client: ClientId; state: State }
@@ -399,7 +409,9 @@ export type ServerMsg =
   | { type: "control_request"; pane: PaneId; who: string; name: string }
   | { type: "trust_request"; pane: PaneId; who: string; name: string }
   | { type: "delta"; delta: Delta }
-  | { type: "follow"; pane: PaneId; msg: FollowMsg };
+  | { type: "follow"; pane: PaneId; msg: FollowMsg }
+  /** S33: an agent calls one of this hand's tools; `from` says who. */
+  | { type: "hand_call"; id: number; tool: string; args: Record<string, unknown>; from: string };
 
 export const enum FrameKind {
   Output = 1,

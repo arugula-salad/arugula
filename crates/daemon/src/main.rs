@@ -18,6 +18,7 @@ mod forge;
 mod fountain;
 mod fs;
 mod gate;
+mod hand;
 mod heap;
 mod history;
 mod holder;
@@ -976,6 +977,7 @@ async fn run(
         control.clone(),
         acl.clone(),
         mcp_tokens,
+        hand::Hands::open(&state_dir),
     );
     control.start(app.clone());
     if let Some(serve) = mcp_serve {
