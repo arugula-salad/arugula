@@ -1068,5 +1068,6 @@ the daemon stopping, crashing, or the machine rebooting:
   unverified. Someone whose access is removed drops out at once. A machine
   restart ends its huddles, and the page joins again when it's back. On an
   iPhone the mic stops while the app is in the background; the bar says
-  so. The Linux desktop app's web view has no WebRTC, so it can't join
-  yet; a browser on the same machine can.
+  so. The Linux desktop app's web view has no WebRTC, so the app runs the
+  call itself (WebRTC in Rust, Opus, and WebRTC's echo cancellation and
+  noise suppression), with the same bar and buttons.

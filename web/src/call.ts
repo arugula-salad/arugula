@@ -23,6 +23,7 @@ import { checkForm, verify, type Cert } from "./e2e/cert.ts";
 import { signText } from "./e2e/keys.ts";
 import { callFingerprintBody, type Call, type CallMember, type CallSignal, type ClientId, type SessionId } from "./proto";
 import { getControlSession } from "./ui/people";
+import { native, nativeCalls, NativePeer } from "./call-native";
 
 /** How sure we are a peer is who the daemon says.
  * - `verified`: its fingerprints are signed by a device this browser's
@@ -50,6 +51,7 @@ export type Status =
 
 /** Why huddles can't run here, if they can't. */
 export function unsupported(): string | null {
+  if (nativeCalls()) return null;
   if (typeof RTCPeerConnection === "undefined") {
     return /Linux/.test(navigator.userAgent) && document.documentElement.dataset.desktop === "linux"
       ? "The Linux app can't make calls yet (its web view has no WebRTC). Join from a browser for now."
@@ -67,6 +69,8 @@ const GATHER_MS = 4000;
 
 interface Peer {
   pc: RTCPeerConnection;
+  /** In the Linux app, `pc` is this (its levels come from the app). */
+  native?: NativePeer;
   audio: HTMLAudioElement;
   analyser?: AnalyserNode;
   trust?: Trust;
@@ -97,6 +101,10 @@ export class Huddle {
   private seenSelf = false;
   private members: CallMember[] = [];
   private sink: HTMLElement;
+  /** The Linux app runs the call (call-native.ts). */
+  private readonly native = nativeCalls();
+  private nativeMe = 0;
+  private polling = false;
 
   constructor(
     readonly client: Client,
@@ -148,8 +156,10 @@ export class Huddle {
     const why = unsupported();
     if (why) return this.fail(why);
     try {
-      this.stream = await this.mic();
+      if (this.native) await native.start();
+      else this.stream = await this.mic();
     } catch (e) {
+      if (this.native) return this.fail(`The app couldn't start the call: ${(e as Error)?.message ?? e}`);
       const name = (e as DOMException)?.name;
       return this.fail(
         name === "NotAllowedError"
@@ -184,6 +194,7 @@ export class Huddle {
 
   setMuted(muted: boolean) {
     this.muted = muted;
+    if (this.native) void native.mute(muted);
     for (const t of this.stream?.getAudioTracks() ?? []) t.enabled = !muted;
     this.client.send({ type: "call_mute", session: this.session, muted });
     this.emit();
@@ -201,6 +212,7 @@ export class Huddle {
     for (const id of [...this.peers.keys()]) this.drop(id);
     for (const t of this.stream?.getTracks() ?? []) t.stop();
     this.stream = null;
+    if (this.native) void native.stop();
     void this.ctx?.close().catch(() => {});
     this.ctx = null;
     this.callId = null;
@@ -286,12 +298,13 @@ export class Huddle {
   // ---- peers
 
   private async connect(to: ClientId, offerer: boolean) {
-    const pc = new RTCPeerConnection({ iceServers: this.ice });
+    const nat = this.native ? new NativePeer(to, this.ice) : undefined;
+    const pc = nat ? (nat as unknown as RTCPeerConnection) : new RTCPeerConnection({ iceServers: this.ice });
     const audio = document.createElement("audio");
     audio.autoplay = true;
     audio.setAttribute("playsinline", "");
     this.sink.append(audio);
-    const peer: Peer = { pc, audio, speakingUntil: 0, offerer, started: performance.now() };
+    const peer: Peer = { pc, native: nat, audio, speakingUntil: 0, offerer, started: performance.now() };
     this.peers.set(to, peer);
     for (const t of this.stream?.getAudioTracks() ?? []) pc.addTrack(t, this.stream!);
     pc.ontrack = (e) => {
@@ -405,23 +418,43 @@ export class Huddle {
   private tick() {
     const now = performance.now();
     let changed = false;
-    const loud = (a?: AnalyserNode) => !!a && rms(a) > SPEAKING_RMS;
+    if (this.native) this.pollNative();
+    const loud = (p?: Peer) =>
+      !!p && (p.native ? (this.nativeLevels.get(p.native.id) ?? 0) : p.analyser ? rms(p.analyser) : 0) > SPEAKING_RMS;
     for (const p of this.peers.values()) {
       const was = p.speakingUntil > now;
-      if (loud(p.analyser)) p.speakingUntil = now + SPEAKING_HOLD_MS;
+      if (loud(p)) p.speakingUntil = now + SPEAKING_HOLD_MS;
       changed ||= was !== p.speakingUntil > now;
     }
     const was = this.speakingSelfUntil > now;
-    if (!this.muted && loud(this.mine)) this.speakingSelfUntil = now + SPEAKING_HOLD_MS;
+    const me = this.native ? this.nativeMe : this.mine ? rms(this.mine) : 0;
+    if (!this.muted && me > SPEAKING_RMS) this.speakingSelfUntil = now + SPEAKING_HOLD_MS;
     changed ||= was !== this.speakingSelfUntil > now;
     // iOS ends or mutes the mic track while the page is hidden.
     const track = this.stream?.getAudioTracks()[0];
-    const background = document.hidden && (!track || track.readyState === "ended" || track.muted);
+    const background = !this.native && document.hidden && (!track || track.readyState === "ended" || track.muted);
     if (background !== this.background) {
       this.background = background;
       changed = true;
     }
     if (changed) this.emit();
+  }
+
+  private nativeLevels = new Map<ClientId, number>();
+
+  /** The app's levels and connection states (one request in flight). */
+  private pollNative() {
+    if (this.polling) return;
+    this.polling = true;
+    native
+      .status()
+      .then((st) => {
+        this.nativeMe = st.me;
+        this.nativeLevels = new Map(st.peers.map((p) => [p.id, p.level]));
+        for (const p of st.peers) this.peers.get(p.id)?.native?.update(p.state);
+      })
+      .catch(() => {})
+      .finally(() => (this.polling = false));
   }
 
   /** Back in the foreground: a fresh mic track if the old one died (iOS

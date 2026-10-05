@@ -273,7 +273,7 @@ desktop-check:
 notices:
     cargo about generate about.hbs > THIRD_PARTY.md
     scripts/web-notices >> THIRD_PARTY.md
-    cd crates/desktop && cargo about generate -c about.toml ../../about.hbs > THIRD_PARTY.md
+    cd crates/desktop && cargo about generate --features native-calls -c about.toml ../../about.hbs > THIRD_PARTY.md
 
 # All tests.
 test: web

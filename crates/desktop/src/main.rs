@@ -45,6 +45,8 @@
 //!   the app is control's client only, so a window opens on sign-in or
 //!   control's page, and nothing local is installed, watched or offered.
 
+#[cfg(all(target_os = "linux", feature = "native-calls"))]
+mod calls;
 mod cloud;
 mod links;
 mod profile;
@@ -707,14 +709,30 @@ fn main() {
     if updater {
         builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
     }
+    #[cfg(all(target_os = "linux", feature = "native-calls"))]
+    let builder = builder.invoke_handler(tauri::generate_handler![
+        daemon_status,
+        retry,
+        cloud::cloud_status,
+        cloud::cloud_signin,
+        cloud::cloud_local,
+        calls::call_native_start,
+        calls::call_native_peer,
+        calls::call_native_remote,
+        calls::call_native_drop,
+        calls::call_native_mute,
+        calls::call_native_stop,
+        calls::call_native_status
+    ]);
+    #[cfg(not(all(target_os = "linux", feature = "native-calls")))]
+    let builder = builder.invoke_handler(tauri::generate_handler![
+        daemon_status,
+        retry,
+        cloud::cloud_status,
+        cloud::cloud_signin,
+        cloud::cloud_local
+    ]);
     builder
-        .invoke_handler(tauri::generate_handler![
-            daemon_status,
-            retry,
-            cloud::cloud_status,
-            cloud::cloud_signin,
-            cloud::cloud_local
-        ])
         .menu(|app| {
             #[cfg(target_os = "macos")]
             {

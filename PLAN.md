@@ -4586,7 +4586,9 @@ Where WebKitGTK has none, measure str0m or webrtc-rs with cpal on the Tauri side
 - TURN: daemon `GET /api/turn` → control `GET /api/daemon/turn` (daemon-signed) → Cloudflare `generate-ice-servers`, with 8-hour credentials the daemon reuses for an hour. Without a key, public STUN.
 - A dropped connection (or daemon restart) ends the huddle on the page, which rejoins on its own when the machine is back (within 2 minutes).
 - The desktop app allows the mic for its own pages (`on_permission_request`). macOS gets `NSMicrophoneUsageDescription` and the audio-input entitlement.
-- The Linux desktop app's native path (webrtc-rs) is a second step; until then it says it can't join.
+- **The Linux desktop app** runs the call in Rust (`crates/desktop/src/calls.rs`, the `native-calls` feature, which the release container builds with). It uses webrtc-rs 0.21, Opus (linked statically), cpal and AEC3 with noise suppression. There is one capture/encode thread, and each peer's decoded audio is mixed into the speaker, which is also AEC3's reference. The page keeps signaling and signing: `call-native.ts` stands in for `RTCPeerConnection` and polls levels and states (peak since the last poll). The daemon's page may call the `call_native_*` commands (capability `default`); the setup commands stay with the app's own pages (`setup`).
+  - Checked live on geek: the app's huddle with Chrome, both ways, peer to peer. PipeWire virtual devices stood in for the mic: `pw-loopback`, with `PIPEWIRE_NODE` set for the app. Chrome heard the app's mic after AEC3 (level 0.26), and the app decoded Chrome's (0.35).
+  - A locked screen stops animation frames in the app's window, so the page waits in `measureCell` (the rig shimmed `requestAnimationFrame`). `ILLOGICAL_CALL_DEBUG=1` prints the mic's level before and after AEC3. Debug builds take `ILLOGICAL_TEST_SCRIPT`.
 
 #### M64: bigger calls and calls in channels (#243, gated, after M63)
 

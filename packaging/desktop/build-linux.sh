@@ -21,7 +21,8 @@ v=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
 for b in illogicald illogical; do
   [ -s "binaries/$b-$host" ] || { echo "missing binaries/$b-$host (just static $arch)" >&2; exit 1; }
 done
-cargo tauri build --bundles deb,rpm,appimage "$@"
+# Huddles run in Rust here (M63): Opus linked in, not a library to install.
+LIBOPUS_STATIC=1 LIBOPUS_NO_PKG=1 LIBOPUS_LIB_DIR=/opt/opus cargo tauri build --bundles deb,rpm,appimage --features native-calls "$@"
 out=$CARGO_TARGET_DIR/release/bundle
 # linuxdeploy patches an RPATH into every ELF in usr/bin, which breaks the
 # static-pie sidecars (they segfault at start, so the app could never

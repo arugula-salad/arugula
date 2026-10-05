@@ -169,6 +169,92 @@ test("leaving, and the last one out ends it", async () => {
   await expect.poll(() => peers(owner), { timeout: 15_000 }).toEqual([["connected", "unverified"]]);
 });
 
+test("the Linux app's page runs the call through the app's commands", async ({ browser }) => {
+  // The Linux app has no RTCPeerConnection: its page hands descriptions to
+  // the app (crates/desktop/src/calls.rs). This stands in for the app with
+  // the browser's own WebRTC behind the same commands.
+  const ctx = await browser.newContext({ permissions: ["microphone"] });
+  await ctx.addInitScript(() => {
+    const RTC = window.RTCPeerConnection;
+    delete (window as { RTCPeerConnection?: unknown }).RTCPeerConnection;
+    (window as unknown as { __illogicalApp: unknown }).__illogicalApp = { name: "test", platform: "linux", nativeCalls: true };
+    const peers = new Map<number, RTCPeerConnection>();
+    const calls: string[] = [];
+    let stream: MediaStream | undefined;
+    const gather = (pc: RTCPeerConnection) =>
+      new Promise<void>((done) => {
+        if (pc.iceGatheringState === "complete") return done();
+        pc.addEventListener("icegatheringstatechange", () => pc.iceGatheringState === "complete" && done());
+        setTimeout(done, 3000);
+      });
+    const describe = async (pc: RTCPeerConnection, d: RTCSessionDescriptionInit) => {
+      await pc.setLocalDescription(d);
+      await gather(pc);
+      return pc.localDescription!.sdp;
+    };
+    type A = { id: number; ice: RTCIceServer[]; offer: boolean; kind: RTCSdpType; sdp: string; muted: boolean };
+    const invoke = async (cmd: string, a: A) => {
+      calls.push(cmd);
+      switch (cmd) {
+        case "call_native_start":
+          stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          return;
+        case "call_native_peer": {
+          const pc = new RTC({ iceServers: a.ice });
+          for (const t of stream!.getTracks()) pc.addTrack(t, stream!);
+          peers.get(a.id)?.close();
+          peers.set(a.id, pc);
+          return a.offer ? describe(pc, await pc.createOffer()) : null;
+        }
+        case "call_native_remote": {
+          const pc = peers.get(a.id)!;
+          await pc.setRemoteDescription({ type: a.kind, sdp: a.sdp });
+          return a.kind === "offer" ? describe(pc, await pc.createAnswer()) : null;
+        }
+        case "call_native_drop":
+          peers.get(a.id)?.close();
+          peers.delete(a.id);
+          return;
+        case "call_native_mute":
+          for (const t of stream!.getAudioTracks()) t.enabled = !a.muted;
+          return;
+        case "call_native_stop":
+          for (const pc of peers.values()) pc.close();
+          peers.clear();
+          for (const t of stream?.getTracks() ?? []) t.stop();
+          return;
+        case "call_native_status":
+          return { me: 0.1, peers: [...peers].map(([id, pc]) => ({ id, state: pc.connectionState, level: 0.1 })) };
+      }
+    };
+    Object.assign(window, { __TAURI__: { core: { invoke } }, __nativeCalls: calls });
+  });
+  const app = await ctx.newPage();
+  await app.goto("/");
+  await expect.poll(() => app.evaluate(() => window.__illogical?.client.connected)).toBe(true);
+  await expect.poll(() => app.evaluate(() => window.__illogical.client.hasCalls())).toBe(true);
+  expect(await app.evaluate(() => typeof RTCPeerConnection)).toBe("undefined");
+
+  // The owner and the friend are still in the huddle; the app joins, and
+  // offers to both.
+  await app.locator("header.bar .huddle-button").click();
+  await expect.poll(() => peers(app), { timeout: 15_000 }).toEqual([
+    ["connected", "unverified"],
+    ["connected", "unverified"],
+  ]);
+  await expect.poll(() => peers(owner), { timeout: 15_000 }).toContainEqual(["connected", "unverified"]);
+  const calls = () => app.evaluate(() => (window as unknown as { __nativeCalls: string[] }).__nativeCalls);
+  expect(await calls()).toEqual(expect.arrayContaining(["call_native_start", "call_native_peer", "call_native_remote", "call_native_status"]));
+  // Levels from the app light the rings.
+  await expect(app.locator(".huddle-member[data-speaking]").first()).toBeVisible();
+
+  await app.locator("[data-huddle-mute]").click();
+  await expect.poll(calls).toContain("call_native_mute");
+  await app.locator("[data-huddle-leave]").click();
+  await expect.poll(calls).toContain("call_native_stop");
+  await ctx.close();
+});
+
 test("the machine going away ends the huddle for everyone in it", async () => {
   daemon.kill("SIGKILL");
   await expect(owner.locator(".huddle-bar.ended")).toContainText("dropped", { timeout: 10_000 });
