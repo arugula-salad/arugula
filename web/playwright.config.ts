@@ -130,12 +130,16 @@ if (!external) process.env.ILLOGICAL_FORGE_HOOK_BASE ??= `http://127.0.0.1:${por
 const log = process.env.E2E_DAEMON_LOG ? ` >>${process.env.E2E_DAEMON_LOG} 2>&1` : "";
 
 // CI splits the specs (#287): E2E_SET=stack runs only those on the Docker
-// test stack (fixed container names and bastion port: one at a time per
-// host), E2E_SET=rest everything else, sharded across runners.
-const STACK = /(team-swarm-phones|testnet-hosts|editor-remote-ssh)\.spec\.ts$/;
+// test stack, E2E_SET=perf only the frame rates (on a host with nothing
+// else of the run on it), E2E_SET=rest everything else, sharded across
+// runners.
+const SETS: Record<string, RegExp> = {
+  stack: /(team-swarm-phones|testnet-hosts|editor-remote-ssh)\.spec\.ts$/,
+  perf: /swarm-fps\.spec\.ts$/,
+};
 const set = process.env.E2E_SET;
-const only = (match: RegExp) => (set === "stack" ? { testMatch: STACK } : { testMatch: match });
-const skip = (ignore: RegExp) => ({ testIgnore: set === "rest" ? [ignore, STACK] : ignore });
+const WEBKIT = /\.webkit\.spec\.ts$/;
+const chrome = set && SETS[set] ? { testMatch: SETS[set] } : { testIgnore: set === "rest" ? [WEBKIT, ...Object.values(SETS)] : WEBKIT };
 
 export default defineConfig({
   testDir: "e2e",
@@ -148,9 +152,9 @@ export default defineConfig({
     storageState: { cookies: tokenCookies, origins: [] },
   },
   projects: [
-    { name: "chrome", use: { channel: process.env.E2E_CHROMIUM ? "chromium" : "chrome" }, ...skip(/\.webkit\.spec\.ts$/), ...(set === "stack" ? only(STACK) : {}) },
-    // The stack's specs are all Chrome's.
-    { name: "webkit", use: { browserName: "webkit" }, ...(set === "stack" ? { testMatch: /^$/ } : { testMatch: /\.webkit\.spec\.ts$/ }) },
+    { name: "chrome", use: { channel: process.env.E2E_CHROMIUM ? "chromium" : "chrome" }, ...chrome },
+    // The stack's and the frame rates' specs are all Chrome's.
+    { name: "webkit", use: { browserName: "webkit" }, testMatch: set && SETS[set] ? /^$/ : WEBKIT },
   ],
   webServer: external
     ? undefined

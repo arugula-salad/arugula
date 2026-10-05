@@ -380,7 +380,7 @@ testnet cmd="test" profile="ssh" *claims:
         up) arch=$(docker info --format '{{{{.Architecture}}')
             case "$arch" in arm64) arch=aarch64 ;; amd64) arch=x86_64 ;; esac
             [ -n "${ILLOGICAL_TESTNET_BINARIES:-}" ] || just static "$arch" >&2 ;;
-        test|break) {{cargo}} build -q -p illogical ;;
+        test|break) [ -n "${ILLOGICAL_CLI:-}" ] || {{cargo}} build -q -p illogical ;;
       esac
     fi
     case "{{cmd}}" in
