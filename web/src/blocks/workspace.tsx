@@ -25,6 +25,59 @@ export interface WorkspaceState {
   reads: Read[]; ms: number; error: string | null; error_code: string | null; headline: string | null; loading: boolean; updated_ms: number; watching?: boolean;
   /** The envs chant has releases for, with `local` and the one watched (#312). */
   envs?: string[];
+  /** Who approvals here are recorded as (#302): the owner's chant
+   * principal, and editors' by their Arugula name. */
+  actor?: string | null;
+  principals?: Record<string, string>;
+}
+
+/** Editors' principals as lines, `name=principal`, and back. */
+function principalLines(p: Record<string, string> | undefined): string {
+  return Object.entries(p ?? {})
+    .map(([n, v]) => `${n}=${v}`)
+    .join("\n");
+}
+function parsePrincipals(text: string): Record<string, string> | string {
+  const out: Record<string, string> = {};
+  for (const line of text.split("\n")) {
+    if (!line.trim()) continue;
+    const at = line.indexOf("=");
+    if (at < 1) return `"${line.trim()}": a line is name=principal`;
+    out[line.slice(0, at).trim()] = line.slice(at + 1).trim();
+  }
+  return out;
+}
+
+/** The owner's say over who chant records approvals as (#302): the
+ * principal they approve as, and editors'. */
+function Principals({ client, id, s, close }: { client: Client; id: PaneId; s: WorkspaceState; close: () => void }) {
+  const [actor, setActor] = useState(s.actor ?? "");
+  const [editors, setEditors] = useState(principalLines(s.principals));
+  const save = async () => {
+    const principals = parsePrincipals(editors);
+    if (typeof principals === "string") return client.toast(principals);
+    const ok = await client.api(`/api/blocks/${id}/call/principals`, { actor: actor.trim(), principals }, "couldn't set the principals");
+    if (ok) close();
+  };
+  return (
+    <div class="browser-card ws-principals" data-ws-principals>
+      <label>
+        You approve as
+        <input placeholder="github:you (default: your Arugula name)" value={actor} onInput={(e) => setActor(e.currentTarget.value)} />
+      </label>
+      <label>
+        Editors approve as, one a line
+        <textarea rows={3} placeholder="sam=github:sam-h" value={editors} onInput={(e) => setEditors(e.currentTarget.value)} />
+      </label>
+      <p class="dim ws-note">The chant principal its ledger records for an approval. A name not listed is passed as is.</p>
+      <div class="ws-actions">
+        <button class="pri" data-ws-principals-save onClick={() => void save()}>
+          Save
+        </button>
+        <button onClick={close}>Cancel</button>
+      </div>
+    </div>
+  );
 }
 
 /** Directories known to hold a declaration, or not, by the pane whose
@@ -114,6 +167,7 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
   // #309: the member whose Run op is open, and the op name typed there.
   const [picking, setPicking] = useState<string | null>(null);
   const [typed, setTyped] = useState("");
+  const [who, setWho] = useState(false);
   const session = client.sessionOfTab(client.tabOfPane(id)?.id ?? -1) ?? null;
   const role = client.role(session);
   // Approving is for the owner and editors (#75); opening panes and blocks
@@ -211,12 +265,18 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
           chant {s.version ?? "?"}
         </span>
         {mayOpen && (
+          <button class="ws-meta" data-ws-actor title="Who chant records approvals here as" onClick={() => setWho(!who)}>
+            as {s.actor || "you"}
+          </button>
+        )}
+        {mayOpen && (
           <button title="Read it again" disabled={s.loading} onClick={refresh}>
             {s.loading ? "…" : "↻"}
           </button>
         )}
         <span class={`review-live ${s.watching ? "on" : ""}`}>{s.watching ? "live" : "paused"}</span>
       </div>
+      {mayOpen && who && <Principals client={client} id={id} s={s} close={() => setWho(false)} />}
       {s.error ? (
         <div class="browser-card" data-ws-error>
           <p>Can't show this workspace</p>

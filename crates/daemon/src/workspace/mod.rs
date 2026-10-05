@@ -38,6 +38,15 @@
 //! `--relayed-by` the owner, and a signed gate is the owner's to approve
 //! here. It's logged, with who, in the block's log and its history.
 //!
+//! `expire` (same arguments, same people, logged the same way) turns a gate
+//! down (#310): `chant approve <op> <gate> --expire` clears its pending fact
+//! without approving it, so the next run stops there again.
+//!
+//! `principals {actor, principals}` sets either (the owner's: it says who
+//! chant records); kept in the config like `env`, and in the state so the
+//! block can show them. An `actor` of `""` or null clears it; `principals`
+//! replaces the map.
+//!
 //! **Envs (#312).** A block watches one env, and says which; `env {name}`
 //! switches it (kept in the config) and reads again. The state's `envs`
 //! are the ones chant has written releases for on `chant/lifecycle`, from
@@ -46,13 +55,10 @@
 //! each env is another `status`, another chant process (about 2-3
 //! CPU-seconds) on every full read, for every block, VM or not.
 //!
-//! `expire` (same arguments, same people, logged the same way) turns a gate
-//! down (#310): `chant approve <op> <gate> --expire` clears its pending fact
-//! without approving it, so the next run stops there again.
-//!
 //! Methods: `refresh`, `approve {member, op, gate}` (or `{key}`; the first
 //! gate if none), `expire` (the same), `member {name}` (its directory, for
-//! opening panes there), `env {name}`, `state`.
+//! opening panes there), `env {name}`, `principals {actor, principals}`,
+//! `state`.
 
 mod model;
 
@@ -134,6 +140,51 @@ fn local() -> String {
     "local".into()
 }
 
+/// Who chant records: the owner's principal and editors' (ws-080).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct Principals {
+    actor: Option<String>,
+    principals: std::collections::BTreeMap<String, String>,
+}
+
+/// A chant principal as given: trimmed, one word (it's an argument to
+/// `--actor`).
+fn principal_name(p: &str) -> Result<String, String> {
+    let p = p.trim();
+    if p.is_empty() || p.starts_with('-') || p.contains(char::is_whitespace) {
+        return Err(format!("{p:?} isn't a chant principal (github:<login>, or a signer's name)"));
+    }
+    Ok(p.to_owned())
+}
+
+/// `who` with what `principals {actor, principals}` asks for: a key left
+/// out keeps what was there; an `actor` of `""` or null clears it, and
+/// `principals` replaces the map (an empty principal drops its name).
+fn set_principals(who: &Principals, args: &Value) -> Result<Principals, String> {
+    let mut out = who.clone();
+    if let Some(a) = args.get("actor") {
+        out.actor = match a {
+            Value::Null => None,
+            Value::String(s) if s.trim().is_empty() => None,
+            Value::String(s) => Some(principal_name(s)?),
+            _ => return Err("actor is a chant principal (a string), or null to clear it".into()),
+        };
+    }
+    if let Some(m) = args.get("principals") {
+        let m = m.as_object().ok_or("principals maps Arugula names to chant principals: {\"name\": \"github:login\"}")?;
+        out.principals.clear();
+        for (name, p) in m {
+            let name = name.trim();
+            let p = p.as_str().ok_or_else(|| format!("{name}'s principal isn't a string"))?;
+            if name.is_empty() || p.trim().is_empty() {
+                continue;
+            }
+            out.principals.insert(name.to_owned(), principal_name(p)?);
+        }
+    }
+    Ok(out)
+}
+
 pub struct Workspace {
     ctx: BlockCtx,
     me: Weak<Workspace>,
@@ -142,6 +193,9 @@ pub struct Workspace {
     env: Mutex<String>,
     /// The envs chant knows ([`envs`]), at the last read.
     envs: Mutex<Vec<String>>,
+    /// `config.actor` and `config.principals` at open, then what
+    /// `principals` set.
+    who: Mutex<Principals>,
     runner: tokio::sync::OnceCell<Result<Runner, String>>,
     state: Mutex<model::State>,
     /// The fingerprint at the last read.
@@ -162,6 +216,11 @@ impl Workspace {
         if config.root.is_empty() {
             return Err("a workspace block needs a root".into());
         }
+        let who = set_principals(
+            &Principals::default(),
+            &json!({ "actor": config.actor, "principals": config.principals }),
+        )?;
+        (config.actor, config.principals) = (who.actor, who.principals);
         if let Some(rest) = config.root.strip_prefix("~/").filter(|_| ctx.sprite.is_none()) {
             config.root = ctx.home.join(rest).display().to_string();
         }
@@ -173,6 +232,7 @@ impl Workspace {
             me: me.clone(),
             env: Mutex::new(config.env.clone()),
             envs: Mutex::new(envs("", &config.env)),
+            who: Mutex::new(Principals { actor: config.actor.clone(), principals: config.principals.clone() }),
             config,
             runner: tokio::sync::OnceCell::new(),
             state: Mutex::new(state),
@@ -368,15 +428,12 @@ impl Workspace {
     /// daemon, never the caller: someone other than the owner asked.
     fn chant_by(&self, args: &Value, by: Option<&str>, version: Option<String>) -> crate::gate::ChantBy {
         let relayed = args["relayed"].as_bool().unwrap_or(false);
-        let named = by.map(|n| model::principal(n, &self.config.principals));
+        let who = self.who.lock().unwrap().clone();
+        let named = by.map(|n| model::principal(n, &who.principals));
         crate::gate::ChantBy {
-            actor: if relayed { named } else { self.config.actor.clone().or(named) },
+            actor: if relayed { named } else { who.actor.clone().or(named) },
             relayed,
-            relayed_by: self
-                .config
-                .actor
-                .clone()
-                .filter(|_| version.is_some_and(|v| model::at_least(&v, model::RELAYED_BY))),
+            relayed_by: who.actor.filter(|_| version.is_some_and(|v| model::at_least(&v, model::RELAYED_BY))),
         }
     }
 
@@ -507,13 +564,17 @@ impl Block for Workspace {
     }
 
     fn config(&self) -> Value {
-        json!({ "root": self.config.root, "env": *self.env.lock().unwrap(), "actor": self.config.actor, "principals": self.config.principals })
+        let who = self.who.lock().unwrap();
+        json!({ "root": self.config.root, "env": *self.env.lock().unwrap(), "actor": who.actor, "principals": who.principals })
     }
 
     fn state(&self) -> Value {
         let mut v = serde_json::to_value(&*self.state.lock().unwrap()).unwrap_or_default();
         v["watching"] = self.live.drawn().into();
         v["envs"] = json!(*self.envs.lock().unwrap());
+        let who = self.who.lock().unwrap();
+        v["actor"] = json!(who.actor);
+        v["principals"] = json!(who.principals);
         v
     }
 
@@ -560,6 +621,26 @@ impl Block for Workspace {
                 }
                 Ok(json!({ "env": name, "was": was }))
             }),
+            "principals" => {
+                let set = {
+                    let mut who = self.who.lock().unwrap();
+                    set_principals(&who, &args).map(|new| {
+                        let was = std::mem::replace(&mut *who, new.clone());
+                        (new, was)
+                    })
+                };
+                if let Ok((new, was)) = &set
+                    && new != was
+                {
+                    log(&self.ctx, &json!({ "e": "principals", "actor": new.actor, "principals": new.principals }));
+                    // Kept in the config: the layout saves it at the next write.
+                    self.ctx.changed();
+                }
+                Box::pin(async move {
+                    let (new, _) = set?;
+                    Ok(json!({ "actor": new.actor, "principals": new.principals }))
+                })
+            }
             "member" => {
                 let st = self.state.lock().unwrap();
                 let name = args["name"].as_str().unwrap_or_default().to_owned();
@@ -603,7 +684,9 @@ impl Block for Workspace {
 
 #[cfg(test)]
 mod tests {
-    use super::{Next, VM_QUIET, VM_RESTING, VmIdle, env_name, envs, next, vm_look, vm_looked};
+    use serde_json::json;
+
+    use super::{Next, Principals, VM_QUIET, VM_RESTING, VmIdle, env_name, envs, next, set_principals, vm_look, vm_looked};
 
     /// A fingerprint: the lifecycle ref's word, then the tree's checksum.
     fn fp(lifecycle: &str, tree: u32) -> String {
@@ -675,6 +758,25 @@ mod tests {
         assert_eq!(envs(ledgers, "local"), ["local", "prod", "staging"]);
         // No lifecycle ref yet: local, and the one watched.
         assert_eq!(envs("", "qa"), ["local", "qa"]);
+    }
+
+    #[test]
+    fn principals_are_set_and_cleared() {
+        let none = Principals::default();
+        let p = set_principals(&none, &json!({ "actor": " github:sam ", "principals": { "val": "github:val-x" } })).unwrap();
+        assert_eq!(p.actor.as_deref(), Some("github:sam"));
+        assert_eq!(p.principals.get("val").map(String::as_str), Some("github:val-x"));
+        // A key left out keeps what was there.
+        let q = set_principals(&p, &json!({ "principals": { "jo": "github:jo", "gone": "" } })).unwrap();
+        assert_eq!(q.actor.as_deref(), Some("github:sam"));
+        assert_eq!(q.principals.keys().collect::<Vec<_>>(), ["jo"]);
+        // An empty actor, or null, clears it.
+        assert_eq!(set_principals(&q, &json!({ "actor": "" })).unwrap().actor, None);
+        assert_eq!(set_principals(&q, &json!({ "actor": null })).unwrap().actor, None);
+        // A principal is one word, not a flag.
+        for bad in [json!({ "actor": "--sign" }), json!({ "actor": "a b" }), json!({ "actor": 3 }), json!({ "principals": { "x": "-y" } })] {
+            assert!(set_principals(&q, &bad).is_err(), "{bad}");
+        }
     }
 
     #[test]

@@ -548,6 +548,14 @@ pub struct OpenWorkspaceArgs {
     /// The environment whose gates and releases to read (default local).
     #[serde(default)]
     pub env: Option<String>,
+    /// The user's chant principal, which approvals here record (github:LOGIN,
+    /// or a signer's name). Default: their Arugula name, passed as is.
+    #[serde(default)]
+    pub actor: Option<String>,
+    /// Editors' chant principals, by their Arugula name
+    /// ({"sam": "github:sam-h"}), for gates an editor approves.
+    #[serde(default)]
+    pub principals: std::collections::BTreeMap<String, String>,
     /// Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in).
     #[serde(default)]
     pub beside: Option<PaneArg>,
@@ -2706,7 +2714,7 @@ impl<'a> Call<'a> {
         }
         let req = OpenRequest {
             kind: BlockType::Workspace,
-            config: json!({ "root": dir, "env": a.env.as_deref().unwrap_or("local") }),
+            config: json!({ "root": dir, "env": a.env.as_deref().unwrap_or("local"), "actor": a.actor, "principals": a.principals }),
             session: None,
             split: beside,
             from_pane: beside,

@@ -82,6 +82,9 @@ fn policy(method: &Method, path: &str) -> Policy {
         // as `fountain` through the owner's sudoers rule, a shell as
         // `fountain`, and which view (the runner's reads the unit).
         ["api", "blocks", _, "call", "view" | "follow" | "changes" | "shell"] => Policy::Owner,
+        // #302: who chant records a workspace's gates as approved by is
+        // the owner's to say.
+        ["api", "blocks", _, "call", "principals"] => Policy::Owner,
         ["api", "blocks", id, "call", _] if !get => pane(id).map_or(Policy::Owner, |p| Policy::On(p, Role::Editor)),
         // M61: the mux checks each thread (a pane's, or a session's).
         ["api", "threads", ..] => Policy::Handler,
@@ -204,6 +207,7 @@ mod tests {
         assert_eq!(policy(&p, "/api/blocks/7/call/live"), Policy::Owner);
         assert_eq!(policy(&p, "/api/blocks/7/call/agent"), Policy::Owner);
         assert_eq!(policy(&p, "/api/blocks/7/call/run_here"), Policy::Owner);
+        assert_eq!(policy(&p, "/api/blocks/7/call/principals"), Policy::Owner);
         assert_eq!(policy(&p, "/api/blocks/7/call/comment"), Policy::On(7, Role::Editor));
         assert_eq!(policy(&p, "/api/blocks/7/call/answer"), Policy::On(7, Role::Editor));
         assert_eq!(policy(&p, "/api/studio"), Policy::Owner);

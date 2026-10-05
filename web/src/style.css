@@ -4175,6 +4175,24 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   margin: 0;
 }
 
+.ws-principals {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 10px 0;
+}
+
+.ws-principals label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+}
+
+.ws-principals textarea {
+  font-family: var(--mono, monospace);
+}
+
 .phone .ws-gate .ws-actions button {
   padding: 8px 14px;
   font-size: 14px;

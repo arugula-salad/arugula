@@ -9,7 +9,8 @@
 // clears and the next `chant run` stops there again. On a phone, *Run op*
 // on a member starts a gated op in a pane, *Approve* clears it, and *Run
 // op* again walks through (#309). The pane menu and the picker offer "Open
-// as workspace" in a workspace's directory.
+// as workspace" in a workspace's directory. The owner sets who approvals
+// are recorded as from the block's bar (#302).
 //
 // The first run installs the fixture's chant (`npm ci`, a few seconds).
 
@@ -356,4 +357,26 @@ test("Open as workspace, from a pane's menu and the picker, in a workspace's dir
   await page.locator(`.picker-row:not(.recent)[data-path="${ws}"]`).click();
   await page.locator("[data-open-workspace]").click();
   await expect.poll(async () => (await panesOf(page)).filter((p) => p.type === "workspace").length).toBe(before + 2);
+});
+
+test("the owner sets who approvals are recorded as, from the block's bar (#302)", async ({ page }) => {
+  const state = async () => (await (await fetch(`${base()}/api/blocks/${block}`)).json()).state;
+  await open(page);
+  await page.evaluate((b) => window.__arugula.client.setActive(b), block);
+  const shown = page.locator(`[data-workspace-block="${block}"]`);
+  await expect(shown.locator("[data-ws-actor]")).toHaveText("as you");
+  await shown.locator("[data-ws-actor]").click();
+  const form = shown.locator("[data-ws-principals]");
+  await form.locator("input").fill("github:me-x");
+  await form.locator("textarea").fill("friend=github:friend-y");
+  await form.locator("[data-ws-principals-save]").click();
+  await expect(form).toHaveCount(0);
+  await expect(shown.locator("[data-ws-actor]")).toHaveText("as github:me-x");
+  await expect.poll(async () => (await state()).principals).toEqual({ friend: "github:friend-y" });
+  // A principal is one word, not a flag; refused, and nothing changes.
+  expect((await post(`/api/blocks/${block}/call/principals`, { actor: "--sign" })).ok).toBe(false);
+  expect((await state()).actor).toBe("github:me-x");
+  // Cleared again: approvals name the owner by their Arugula name.
+  expect((await post(`/api/blocks/${block}/call/principals`, { actor: null, principals: {} })).ok).toBe(true);
+  await expect(shown.locator("[data-ws-actor]")).toHaveText("as you");
 });
