@@ -44,7 +44,11 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
     println!("%{block}");
     let st = &v["state"];
     if let Some(e) = st["error"].as_str() {
-        bail!("{e}");
+        // chant's reason code, when it gave one (declaration-missing, ...).
+        match st["error_code"].as_str() {
+            Some(code) => bail!("{e} ({code})"),
+            None => bail!("{e}"),
+        }
     }
     let members = st["members"].as_array().map_or(0, Vec::len);
     let gates = st["gates"].as_array().cloned().unwrap_or_default();

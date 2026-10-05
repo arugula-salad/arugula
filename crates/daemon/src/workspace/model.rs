@@ -26,11 +26,12 @@ exec node -e "$2" "$1" "$3""#;
 pub const READER: &str = r#"
 const { execFile } = require("child_process"), fs = require("fs"), path = require("path");
 const [root, env] = process.argv.slice(1);
+const here = path.resolve(root);
 function which() {
   if (process.env.CHANT) return [process.env.CHANT, "env"];
-  for (let d = path.resolve(root); ; d = path.dirname(d)) {
+  for (let d = here; ; d = path.dirname(d)) {
     const p = path.join(d, "node_modules/.bin/chant");
-    if (fs.existsSync(p)) return [p, d === path.resolve(root) ? "workspace" : "above"];
+    if (fs.existsSync(p)) return [p, d === here ? "workspace" : "above"];
     if (d === path.dirname(d)) break;
   }
   for (const d of (process.env.PATH || "").split(":")) {
@@ -39,7 +40,17 @@ function which() {
   }
   return [null, null];
 }
-const declared = fs.existsSync(path.join(root, "chant.workspace.json"));
+// Here and each parent up to the git root: where chant looks for the
+// declaration. Only to say why when there's no chant to ask; with one,
+// chant decides (declaration-missing).
+function up(found) {
+  for (let d = here; ; d = path.dirname(d)) {
+    if (found(d)) return d;
+    if (fs.existsSync(path.join(d, ".git")) || d === path.dirname(d)) return null;
+  }
+}
+const declared = up((d) => ["chant.workspace.json", "chant.workspace.jsonc"].some((f) => fs.existsSync(path.join(d, f)))) !== null;
+const gitRoot = up((d) => fs.existsSync(path.join(d, ".git")));
 const [chant, how] = which();
 function run(args) {
   const t = Date.now();
@@ -50,8 +61,8 @@ function run(args) {
   }));
 }
 (async () => {
-  const doc = { root: path.resolve(root), declared, chant, how, env };
-  if (!declared || !chant) return console.log(JSON.stringify(doc));
+  const doc = { root: here, declared, gitRoot, chant, how, env };
+  if (!chant) return console.log(JSON.stringify(doc));
   const t = Date.now();
   const [ls, check, records, status] = await Promise.all([
     run(["workspace", "ls", "--json"]),
@@ -61,6 +72,14 @@ function run(args) {
   ]);
   doc.ms = Date.now() - t;
   doc.reads = { ls, check, records, status };
+  // A chant older than the contract writes none of it: its version, to
+  // say which to install.
+  if (![ls, check, records, status].some((r) => r.json && typeof r.json === "object" && "contract" in r.json)) {
+    doc.version = await new Promise((done) => execFile(chant, ["--version"], { cwd: root, timeout: 10000 }, (e, out) => {
+      const m = /\d+\.\d+\.\d+/.exec(String(out));
+      done(m ? m[0] : null);
+    }));
+  }
   console.log(JSON.stringify(doc));
 })();
 "#;
@@ -103,6 +122,10 @@ pub struct State {
     pub ms: u64,
     /// The block can't show the workspace at all, and why.
     pub error: Option<String>,
+    /// chant's reason code for it (`declaration-missing`,
+    /// `reader-too-old`, ...), or Arugula's own for the contract:
+    /// `chant-too-old`, `contract-unknown`.
+    pub error_code: Option<String>,
     /// What wants you most, in a line (see [`State::headline`]).
     pub headline: Option<String>,
     pub loading: bool,
@@ -156,10 +179,12 @@ pub struct Read {
     pub name: String,
     pub ms: u64,
     pub code: i64,
-    /// A JSON document came back.
+    /// A result came back (not a failure, not something else).
     pub ok: bool,
     /// chant's own words when it didn't.
     pub note: Option<String>,
+    /// The failure's reason code, when chant gave one.
+    pub reason: Option<String>,
 }
 
 fn s(v: &Value) -> Option<String> {
@@ -174,8 +199,73 @@ fn join(root: &str, dir: &str) -> String {
 pub const NO_CHANT: &str = "no chant here: not in $CHANT, not in node_modules/.bin here or above (run npm install), \
                             and not on PATH";
 
-/// What it says when the directory isn't a workspace.
-pub const NO_DECLARATION: &str = "no chant.workspace.json here: `chant workspace init` proposes one";
+/// What it says when the directory isn't in a workspace (and there's no
+/// chant to ask).
+pub const NO_DECLARATION: &str =
+    "no chant.workspace.json or .jsonc here or above it: `chant workspace init` proposes one";
+
+/// The read contract this reads (ws-017), and the first chant that writes it.
+pub const CONTRACT: u64 = 1;
+pub const FLOOR: &str = "0.81.0";
+
+/// The `$id` a read's document names in `$schema`.
+fn schema_id(read: &str) -> String {
+    format!("https://intentius.io/chant/schemas/workspace/{read}/v1/{read}.schema.json")
+}
+
+/// `0.103.1` as numbers, for comparing; a pre-release counts as its release.
+pub fn version(v: &str) -> Option<(u64, u64, u64)> {
+    let mut it = v.trim().trim_start_matches('v').split(['.', '-', '+']).map(|p| p.parse::<u64>().ok());
+    Some((it.next()??, it.next()??, it.next()??))
+}
+
+/// `v` is `floor` or newer.
+pub fn at_least(v: &str, floor: &str) -> bool {
+    matches!((version(v), version(floor)), (Some(a), Some(b)) if a >= b)
+}
+
+/// Why these documents can't be read as contract 1, if they can't: the
+/// chant is older than the floor, or a document names another contract or
+/// schema. A reader that knows contract 1 refuses any other.
+fn contract_problem(reads: &Value, chant: Option<&str>) -> Option<(&'static str, String)> {
+    let v = chant.unwrap_or("?");
+    if chant.is_some_and(|c| !at_least(c, FLOOR)) {
+        return Some((
+            "chant-too-old",
+            format!(
+                "chant {v} is older than {FLOOR}, the first that writes the read contract: install @intentius/chant {FLOOR} or newer"
+            ),
+        ));
+    }
+    for name in ["ls", "check", "records", "status"] {
+        let doc = &reads[name]["json"];
+        if !doc.is_object() {
+            continue;
+        }
+        match doc["contract"].as_u64() {
+            Some(CONTRACT) => {}
+            Some(n) => {
+                return Some((
+                    "contract-unknown",
+                    format!("chant {v} writes read contract {n}; this Arugula reads contract {CONTRACT}"),
+                ));
+            }
+            None => {
+                return Some((
+                    "chant-too-old",
+                    format!(
+                        "chant {v}'s `{name}` names no read contract: install @intentius/chant {FLOOR} or newer"
+                    ),
+                ));
+            }
+        }
+        let want = schema_id(name);
+        if let Some(other) = doc["$schema"].as_str().filter(|s| *s != want) {
+            return Some(("contract-unknown", format!("chant {v}'s `{name}` follows {other}, not {want}")));
+        }
+    }
+    None
+}
 
 /// The reader's document as block state.
 pub fn compose(raw: &Value, env: &str) -> State {
@@ -186,36 +276,63 @@ pub fn compose(raw: &Value, env: &str) -> State {
         st.error = Some(e);
         return st.headlined();
     }
-    if raw["declared"] == false {
-        st.error = Some(NO_DECLARATION.into());
-        return st.headlined();
-    }
+    // With a chant, it says whether this is a workspace (it looks above
+    // too, for .json and .jsonc); without one, the reader looked the same
+    // way.
     if st.chant.is_none() {
-        st.error = Some(NO_CHANT.into());
+        st.error = Some(if raw["declared"] == false { NO_DECLARATION } else { NO_CHANT }.into());
         return st.headlined();
     }
     st.ms = raw["ms"].as_u64().unwrap_or(0);
     let reads = &raw["reads"];
     for name in ["ls", "check", "records", "status"] {
         let r = &reads[name];
-        let ok = !r["json"].is_null();
+        // A failure is `error: {code, message}` (the schemas' `oneOf`).
+        let failure = &r["json"]["error"];
+        let ok = r["json"].is_object() && !failure.is_object();
         let code = r["code"].as_i64().unwrap_or(-1);
-        let note = (!ok || code != 0)
-            .then(|| s(&r["err"]).filter(|e| !e.is_empty()))
-            .flatten()
-            .map(|e| e.lines().find(|l| !l.trim().is_empty()).unwrap_or("").trim().to_owned());
-        st.reads.push(Read { name: name.into(), ms: r["ms"].as_u64().unwrap_or(0), code, ok, note });
+        let reason = s(&failure["code"]);
+        let note = if failure.is_object() {
+            Some(s(&failure["message"]).unwrap_or_default()).filter(|m| !m.is_empty()).or_else(|| reason.clone())
+        } else {
+            (!ok || code != 0)
+                .then(|| s(&r["err"]).filter(|e| !e.is_empty()))
+                .flatten()
+                .map(|e| e.lines().find(|l| !l.trim().is_empty()).unwrap_or("").trim().to_owned())
+        };
+        st.reads.push(Read { name: name.into(), ms: r["ms"].as_u64().unwrap_or(0), code, ok, note, reason });
     }
-    st.version = s(&reads["ls"]["json"]["chant"]);
+    st.version = ["ls", "status", "check", "records"]
+        .iter()
+        .find_map(|n| s(&reads[*n]["json"]["chant"]))
+        .or_else(|| s(&raw["version"]));
+    if let Some((code, why)) = contract_problem(reads, st.version.as_deref()) {
+        st.error = Some(why);
+        st.error_code = Some(code.into());
+        return st.headlined();
+    }
 
     // Members, from `ls`. Without it there's nothing to draw.
     let ls = &reads["ls"]["json"];
-    if ls.is_null() {
-        let why = st.reads.iter().find(|r| r.name == "ls").and_then(|r| r.note.clone());
-        st.error = Some(format!("chant couldn't list the workspace: {}", why.unwrap_or_else(|| "no answer".into())));
+    if let Some(r) = st.reads.iter().find(|r| r.name == "ls" && !r.ok) {
+        let why = r.note.clone().unwrap_or_else(|| "no answer".into());
+        st.error = Some(match &r.reason {
+            Some(_) => why,
+            None => format!("chant couldn't list the workspace: {why}"),
+        });
+        st.error_code.clone_from(&r.reason);
         return st.headlined();
     }
     st.name = s(&ls["workspace"]["name"]);
+    // The root chant found: `workspace.root` is relative to the git root
+    // (absolute outside git), and may be above the directory opened.
+    if let Some(r) = s(&ls["workspace"]["root"]) {
+        if r.starts_with('/') {
+            st.root = r;
+        } else if let Some(g) = s(&raw["gitRoot"]) {
+            st.root = join(&g, &r);
+        }
+    }
     let root = st.root.clone();
     for m in ls["members"].as_array().into_iter().flatten() {
         let dir = s(&m["dir"]).unwrap_or_default();
@@ -312,7 +429,7 @@ pub fn compose(raw: &Value, env: &str) -> State {
             st.reads
                 .iter()
                 .find(|r| r.name == "records")
-                .and_then(|r| r.note.clone())
+                .and_then(|r| r.note.clone().map(|n| r.reason.as_ref().map_or(n.clone(), |c| format!("{n} ({c})"))))
                 .unwrap_or_else(|| "no record kinds".into()),
         );
     }
@@ -378,7 +495,7 @@ impl State {
             self.ms
         );
         if let Some(e) = &self.error {
-            out += &format!("\n  ! {e}\n");
+            out += &format!("\n  ! {e}{}\n", self.error_code.as_ref().map(|c| format!(" ({c})")).unwrap_or_default());
             return out;
         }
         if !self.gates.is_empty() {
@@ -522,6 +639,11 @@ mod tests {
     fn not_a_workspace() {
         let st = compose(&serde_json::json!({ "root": "/tmp/x", "declared": false, "chant": null }), "local");
         assert_eq!(st.error.as_deref(), Some(NO_DECLARATION));
+        // With a chant, chant says (declaration-missing): the reader's own
+        // look doesn't decide.
+        let mut raw = fixture(include_str!("fixtures/reference-raw.json"));
+        raw["declared"] = false.into();
+        assert_eq!(compose(&raw, "local").error, None);
     }
 
     #[test]
@@ -533,6 +655,107 @@ mod tests {
         assert_eq!(st.error.as_deref(), Some("chant couldn't list the workspace: WSP001: bad declaration"));
         let ls = st.reads.iter().find(|r| r.name == "ls").unwrap();
         assert!(!ls.ok);
+    }
+
+    /// A failure in `ls` as chant prints it (exit 1).
+    fn ls_failure(code: &str, message: &str) -> Value {
+        serde_json::json!({ "code": 1, "ms": 5, "err": "", "json": {
+            "$schema": "https://intentius.io/chant/schemas/workspace/ls/v1/ls.schema.json",
+            "contract": 1, "chant": "0.95.0", "error": { "code": code, "message": message, "location": null },
+        } })
+    }
+
+    #[test]
+    fn a_failure_is_chants_reason_not_an_empty_workspace() {
+        for code in ["declaration-missing", "reader-too-old", "root-chant-required"] {
+            let mut raw = fixture(include_str!("fixtures/reference-raw.json"));
+            raw["reads"]["ls"] = ls_failure(code, "chant says why");
+            let st = compose(&raw, "local");
+            assert_eq!(st.error.as_deref(), Some("chant says why"), "{code}");
+            assert_eq!(st.error_code.as_deref(), Some(code));
+            assert!(st.members.is_empty() && st.gates.is_empty());
+            let ls = st.reads.iter().find(|r| r.name == "ls").unwrap();
+            assert!(!ls.ok);
+            assert_eq!(ls.reason.as_deref(), Some(code));
+            assert!(st.text().contains(&format!("chant says why ({code})")));
+        }
+    }
+
+    #[test]
+    fn a_records_failure_says_its_code() {
+        let mut raw = fixture(include_str!("fixtures/reference-raw.json"));
+        raw["reads"]["records"]["json"] = serde_json::json!({
+            "$schema": "https://intentius.io/chant/schemas/workspace/records/v1/records.schema.json",
+            "contract": 1, "error": { "code": "kind-unreadable", "message": "work.kind.mjs threw" },
+        });
+        let st = compose(&raw, "local");
+        assert_eq!(st.error, None);
+        assert!(st.records.is_empty());
+        assert_eq!(st.records_note.as_deref(), Some("work.kind.mjs threw (kind-unreadable)"));
+    }
+
+    #[test]
+    fn another_contract_is_refused() {
+        let mut raw = fixture(include_str!("fixtures/reference-raw.json"));
+        raw["reads"]["status"]["json"]["contract"] = 2.into();
+        let st = compose(&raw, "local");
+        assert_eq!(st.error_code.as_deref(), Some("contract-unknown"));
+        assert!(st.error.as_deref().unwrap().contains("read contract 2"), "{:?}", st.error);
+        assert!(st.members.is_empty() && st.gates.is_empty());
+
+        let mut raw = fixture(include_str!("fixtures/reference-raw.json"));
+        raw["reads"]["ls"]["json"]["$schema"] = "https://intentius.io/chant/schemas/workspace/ls/v2/ls.schema.json".into();
+        let st = compose(&raw, "local");
+        assert_eq!(st.error_code.as_deref(), Some("contract-unknown"));
+        assert!(st.error.as_deref().unwrap().contains("/ls/v2/"));
+    }
+
+    #[test]
+    fn a_chant_older_than_the_floor_says_what_to_install() {
+        let mut raw = fixture(include_str!("fixtures/reference-raw.json"));
+        for n in ["ls", "check", "records", "status"] {
+            raw["reads"][n] = serde_json::json!({ "code": 1, "ms": 5, "json": null, "err": "unknown command workspace" });
+        }
+        raw["version"] = "0.79.2".into();
+        let st = compose(&raw, "local");
+        assert_eq!(st.version.as_deref(), Some("0.79.2"));
+        assert_eq!(st.error_code.as_deref(), Some("chant-too-old"));
+        assert!(st.error.as_deref().unwrap().contains("install @intentius/chant 0.81.0 or newer"));
+        // ...and one that writes JSON but no contract.
+        let mut raw = fixture(include_str!("fixtures/reference-raw.json"));
+        for n in ["ls", "check", "records", "status"] {
+            raw["reads"][n]["json"].as_object_mut().unwrap().remove("contract");
+            raw["reads"][n]["json"].as_object_mut().unwrap().remove("chant");
+        }
+        let st = compose(&raw, "local");
+        assert_eq!(st.error_code.as_deref(), Some("chant-too-old"));
+    }
+
+    #[test]
+    fn versions() {
+        assert!(at_least("0.81.0", FLOOR) && at_least("0.103.1", "0.103.1") && at_least("1.0.0-rc.1", "0.103.1"));
+        assert!(!at_least("0.80.9", FLOOR) && !at_least("0.103.0", "0.103.1") && !at_least("?", FLOOR));
+        assert_eq!(version("v0.95.0"), Some((0, 95, 0)));
+    }
+
+    #[test]
+    fn chant_finds_the_declaration_above() {
+        // Opened in a member's directory; chant found the workspace at the
+        // git root's `ws` (its `workspace.root`).
+        let mut raw = fixture(include_str!("fixtures/reference-raw.json"));
+        raw["root"] = "/repo/ws/delivery".into();
+        raw["gitRoot"] = "/repo".into();
+        raw["reads"]["ls"]["json"]["workspace"]["root"] = "ws".into();
+        raw["reads"]["ls"]["json"]["workspace"]["file"] = "chant.workspace.jsonc".into();
+        let st = compose(&raw, "local");
+        assert_eq!(st.error, None);
+        assert_eq!(st.root, "/repo/ws");
+        let delivery = st.members.iter().find(|m| m.name == "delivery").unwrap();
+        assert_eq!(delivery.path, "/repo/ws/delivery");
+        assert_eq!(st.gates[0].bundle(), "gate:/repo/ws");
+        // At the git root itself.
+        raw["reads"]["ls"]["json"]["workspace"]["root"] = ".".into();
+        assert_eq!(compose(&raw, "local").root, "/repo");
     }
 
     #[test]

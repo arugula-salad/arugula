@@ -17,30 +17,34 @@ interface Member {
   unreadable: string | null; errors: number; warnings: number; diagnostics: Diagnostic[]; releases: number; gates: number;
 }
 interface Rec { kind: string; id: string; title: string | null; state: string | null; ready: boolean | null; blocked_by: string[]; warnings: string[]; valid: boolean }
-interface Read { name: string; ms: number; code: number; ok: boolean; note: string | null }
+interface Read { name: string; ms: number; code: number; ok: boolean; note: string | null; reason: string | null }
 export interface WorkspaceState {
   root: string; name: string | null; chant: string | null; how: string | null; version: string | null; env: string;
   members: Member[]; records: Rec[]; records_note: string | null; gates: Gate[]; diagnostics: Diagnostic[];
-  reads: Read[]; ms: number; error: string | null; headline: string | null; loading: boolean; updated_ms: number; watching?: boolean;
+  reads: Read[]; ms: number; error: string | null; error_code: string | null; headline: string | null; loading: boolean; updated_ms: number; watching?: boolean;
   /** The envs chant has releases for, with `local` and the one watched (#312). */
   envs?: string[];
 }
 
-/** Directories known to hold a `chant.workspace.json`, or not, by the
- * pane whose host they're on. */
+/** Directories known to hold a declaration, or not, by the pane whose
+ * host they're on. */
 const known = new Map<string, boolean>();
 
-/** Whether `dir`, where `pane` runs (its machine, or this host), is a chant
- * workspace: it holds a `chant.workspace.json`. */
+/** Whether to offer `dir`, where `pane` runs (its machine, or this host),
+ * as a chant workspace: it holds a `chant.workspace.json` or `.jsonc`. Only
+ * for the offer: the block asks chant, which also looks above. */
 export async function isWorkspace(client: Client, pane: PaneId, dir: string): Promise<boolean> {
   const key = `${client.machine(pane)?.id ?? "here"}:${dir}`;
   const had = known.get(key);
   if (had !== undefined) return had;
   try {
-    const path = `${dir.replace(/\/$/, "")}/chant.workspace.json`;
-    const res = await client.request("GET", `/api/fs/stat?pane=${pane}&path=${encodeURIComponent(path)}`);
-    known.set(key, res.ok);
-    return res.ok;
+    let yes = false;
+    for (const file of ["chant.workspace.json", "chant.workspace.jsonc"]) {
+      const path = `${dir.replace(/\/$/, "")}/${file}`;
+      if ((yes = (await client.request("GET", `/api/fs/stat?pane=${pane}&path=${encodeURIComponent(path)}`)).ok)) break;
+    }
+    known.set(key, yes);
+    return yes;
   } catch {
     return false;
   }
@@ -82,10 +86,22 @@ function ago(t: string | undefined): string {
   return `${Math.round(s / 86400)}d ago`;
 }
 
-function hint(error: string, root: string): string | null {
+/** What to do about a failure, by chant's reason code (or the reader's). */
+function hint(error: string, code: string | null, root: string): string | null {
   if (error.startsWith("no chant here")) return `Run npm install in ${root}, or set CHANT for the daemon.`;
-  if (error.startsWith("no chant.workspace.json")) return "This directory isn't a chant workspace.";
-  return null;
+  switch (code) {
+    case "declaration-missing":
+      return "This directory isn't in a chant workspace: chant workspace init proposes one.";
+    case "declaration-ambiguous":
+      return "Keep one of chant.workspace.json and chant.workspace.jsonc.";
+    case "reader-too-old":
+      return "The declaration's minReader is newer than this chant: install a newer @intentius/chant at the root.";
+    case "root-chant-required":
+      return "The declaration pins another chant: run npm install at the workspace root.";
+    case "contract-unknown":
+      return "This Arugula reads contract 1: update Arugula, or install a chant that writes contract 1.";
+  }
+  return error.startsWith("no chant.workspace.json") ? "This directory isn't in a chant workspace." : null;
 }
 
 /** The env menu's entry for one it doesn't list. */
@@ -130,7 +146,7 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
       </div>
     );
   }
-  const help = s.error ? hint(s.error, s.root) : null;
+  const help = s.error ? hint(s.error, s.error_code, s.root) : null;
   return (
     <div class="review ws" data-workspace-block={id}>
       <div class="review-bar">
@@ -176,7 +192,15 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
       {s.error ? (
         <div class="browser-card" data-ws-error>
           <p>Can't show this workspace</p>
-          <p class="dim">{s.error}</p>
+          <p class="dim">
+            {s.error}
+            {s.error_code && (
+              <>
+                {" "}
+                <code data-ws-reason>{s.error_code}</code>
+              </>
+            )}
+          </p>
           {help && <p class="dim">{help}</p>}
           {mayOpen && <button onClick={refresh}>Try again</button>}
         </div>
@@ -285,7 +309,7 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
             s.records_note && <p class="dim ws-note">Records: {s.records_note}</p>
           )}
           <p class="dim ws-note">
-            {s.reads.map((r) => `${r.name} ${r.ms} ms${r.ok ? "" : " (failed)"}`).join(" · ")} · read {ago(new Date(s.updated_ms).toISOString())}
+            {s.reads.map((r) => `${r.name} ${r.ms} ms${r.ok ? "" : ` (failed${r.reason ? `: ${r.reason}` : ""})`}`).join(" · ")} · read {ago(new Date(s.updated_ms).toISOString())}
           </p>
         </div>
       )}

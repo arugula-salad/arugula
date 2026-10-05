@@ -69,7 +69,7 @@ fn workspace(d: &Daemon, name: &str, gated: bool) -> PathBuf {
             r#"#!/bin/sh
 ws='{ws}'; f='{fixtures}'
 case "$1 $2" in
-  "workspace ls") cat "$f/ls.json" ;;
+  "workspace ls") if [ -e "$ws/.undeclared" ]; then cat "$f/ls-missing.json"; exit 1; fi; cat "$f/ls.json" ;;
   "workspace check") cat "$f/check.json" ;;
   "workspace records") cat "$f/records.json" ;;
   "workspace status") if [ -e "$ws/.gate" ]; then cat "$f/status-gated.json"; else cat "$f/status.json"; fi ;;
@@ -274,7 +274,7 @@ fn without_chant_or_a_declaration_it_says_so() {
     std::fs::create_dir_all(&plain).unwrap();
     let block = open(&d, &plain);
     let st = read(&d, block);
-    assert!(st["error"].as_str().unwrap_or_default().starts_with("no chant.workspace.json here"), "{st}");
+    assert!(st["error"].as_str().unwrap_or_default().starts_with("no chant.workspace.json or .jsonc here"), "{st}");
 
     // With nothing waiting, nothing wants you.
     let ws = workspace(&d, "ws", false);
@@ -285,4 +285,28 @@ fn without_chant_or_a_declaration_it_says_so() {
     assert_eq!(d.call(block, "member", json!({ "name": "delivery" }))["kind"], "chant");
     let text = d.raw("GET", &format!("/api/panes/{block}/capture?format=text"), None).1;
     assert!(text.contains("members (4)"), "{text}");
+}
+
+#[test]
+fn chant_says_what_a_workspace_is() {
+    let d = daemon();
+    let ws = workspace(&d, "ws", true);
+    // Opened in a member's directory: chant (from node_modules above) finds
+    // the declaration above it, and the block shows the whole workspace.
+    let block = open(&d, &ws.join("delivery"));
+    let st = read(&d, block);
+    assert_eq!(st["error"], Value::Null, "{st}");
+    assert_eq!(st["how"], "above");
+    assert_eq!(st["root"], ws.display().to_string());
+    assert_eq!(st["gates"][0]["source"]["dir"], ws.join("delivery").display().to_string());
+
+    // A failure is chant's, with its reason code: not an empty workspace.
+    std::fs::write(ws.join(".undeclared"), "").unwrap();
+    let block = open(&d, &ws);
+    let st = read(&d, block);
+    assert_eq!(st["error_code"], "declaration-missing", "{st}");
+    assert!(st["error"].as_str().unwrap().starts_with("no chant.workspace.json or .jsonc between"), "{st}");
+    assert_eq!(st["members"], json!([]));
+    let text = d.raw("GET", &format!("/api/panes/{block}/capture?format=text"), None).1;
+    assert!(text.contains("(declaration-missing)"), "{text}");
 }
