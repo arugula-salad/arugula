@@ -4182,6 +4182,14 @@ Answer the questions that could change the shape before any milestone starts:
 
 **Done when:** `spikes/s29-windows/README.md` has the answers with numbers. In the VM, a demo pty host keeps a `pwsh` pane alive across its parent's restart, and the go/no-go for each later milestone's approach is written down.
 
+**Done (2026-10-05, PR #235): go.** What changed in the milestones below:
+
+- **Ship Microsoft's current ConPTY** (`conpty.dll` and `OpenConsole.exe`, MIT). Windows' own adds a frame, about 16 ms, to every echo; 1.25 echoes in 0.07 ms.
+- **The pane host works.** The pipe hop costs about 0.05 ms per keystroke, and a pane survives its parent's ssh session.
+- **lib-vt builds under MSVC** once our patch applies to CRLF checkouts.
+- **A logon task is the service.** S4U survives logoff but has no DPAPI, so it's an opt-in.
+- **Shell integration goes inline** with `-EncodedCommand`, past the `Restricted` policy.
+
 #### M54: the desktop app on Windows as a cloud client (#217)
 
 M48 made the app control's client, so on Windows it starts with sign-in and every machine on control's page, with no local daemon. Until M59 the window shows that this machine can't run panes yet.
@@ -4205,6 +4213,7 @@ M48 made the app control's client, so on Windows it starts with sign-in and ever
 - `nix` and `std::os::unix` are gated, and the Linux-only modules are cfg'd out.
 - `procinfo` and `sys` get Windows modules: stubs at first, made real in M60.
 - `e2e`'s key-file modes are gated.
+- S29's CRLF fix (`build.rs` clones Ghostty with `core.autocrlf=false`, and `.gitattributes` marks our patches `-text`) is what lets the job build lib-vt.
 - check.yml gains a `windows-x86_64` job: clippy and the unit tests for every crate except `control`, plus the `vt` tests on Windows from S29. It needs Zig and pnpm through mise.
 
 **Done when:** the Windows check job is green on main and required. No Linux or macOS behaviour changes.
@@ -4214,6 +4223,10 @@ M48 made the app control's client, so on Windows it starts with sign-in and ever
 - The named-pipe transport for the CLI and editors, with the SID check.
 - `%LOCALAPPDATA%` paths.
 - ConPTY panes inside the daemon, not yet surviving a restart, with resize and close.
+  - Through the shipped `conpty.dll`, falling back to the inbox ConPTY when it's missing.
+  - Spawned with `STARTF_USESTDHANDLES` and null handles; otherwise a daemon with redirected std handles gives them to the pane (S29).
+  - State in `%LOCALAPPDATA%\illogical\state`. The app's installer owns `%LOCALAPPDATA%\illogical` (M54).
+- The local socket is a named pipe, served by S29's `PipeListener`: a fresh instance waits while the last one serves. The DACL names the user's SID rather than `OW`, and the CLI retries on error 231.
 - The shell defaults from the shape above.
 - localauth maps loopback peers through `GetExtendedTcpTable`.
 - The integration test harness gets a transport abstraction, so its tests run on Windows CI.
@@ -4223,6 +4236,7 @@ M48 made the app control's client, so on Windows it starts with sign-in and ever
 #### M57: the CLI and the TUI on Windows (#220)
 
 - Raw mode, size and input through crossterm, with a reader thread in place of `nix::poll`.
+- Duplex paths (`attach`, the TUI's WebSocket) use overlapped I/O, such as tokio's named-pipe client. In S29 a blocking pipe handle held a write behind a read for more than 3 s.
 - `attach`, `tui`, `run`, `ls` and the MCP server work.
 - The tmux `-CC` front stays out.
 
@@ -4235,13 +4249,16 @@ The S29 pty host becomes `illogicald _shim` on Windows:
 - its exec record;
 - the lease and grace rules;
 - `holder::collect` over named pipes;
-- the watchdog through the Job Object.
+- the watchdog through the Job Object;
+- keeping a chunk read but not yet sent when a client leaves (S29's host drops it);
+- running hosts from a versioned path, because they outlive upgrades and a running exe can't be replaced.
 
 **Done when:** in the VM, restarting the daemon, killing it, and upgrading it to a new build each keep running panes with their scrollback. The e2e restart test runs on Windows CI.
 
 #### M59: install, upgrade and the app carrying the daemon on Windows (#222)
 
-- `illogicald install` registers the logon task.
+- `illogicald install` registers the logon task (interactive, no admin). Panes end at logoff, as with launchd and systemd without linger.
+- `--survive-logoff` registers an S4U task at startup instead. It says that panes there have no DPAPI, so Git Credential Manager and Credential Manager don't work in them (S29).
 - Upgrades work by renaming the running exe aside.
 - An `install.ps1` counterpart to `install.sh` (`irm … | iex`), and Windows text in the update notice.
 - The desktop app carries `illogicald.exe` and `illogical.exe` (a PowerShell `sidecars.ps1`), installs the daemon when none answers, and upgrades an older one, as on macOS and Linux.
@@ -4252,7 +4269,7 @@ The S29 pty host becomes `illogicald _shim` on Windows:
 #### M60: Windows parity (#223)
 
 - procinfo for real: cwd, argv and the deepest process in the pane's job as its foreground. These feed titles, classification and conversation matching.
-- PowerShell shell integration from S29.
+- PowerShell shell integration from S29: started with `-NoExit -EncodedCommand`, which wraps the profile's prompt and emits OSC 133 and OSC 7. Windows' default `Restricted` policy blocks any script file, a profile included.
 - Conversations' process matching on Windows.
 - The README and the site describe Windows like the other systems.
 
