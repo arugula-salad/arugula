@@ -10,7 +10,7 @@
 // The first run installs the fixture's chant (`npm ci`, a few seconds).
 
 import { execFileSync, spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { cpSync, existsSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -141,6 +141,33 @@ test("the owner approves; the next run walks through", async ({ page }) => {
   // chant's ledger names the owner by their Arugula name.
   expect(approvers()).toEqual([OWNER]);
   expect(run()).toBe(0);
+});
+
+test("a burst of edits in a member costs one full read, once it holds still (#311)", async ({ page }) => {
+  test.setTimeout(60_000);
+  await open(page);
+  await page.evaluate((b) => window.__arugula.client.setActive(b), block);
+  await expect(page.locator(`[data-workspace-block="${block}"] .review-live`)).toHaveText("live");
+  const readAt = async (): Promise<number> => (await (await fetch(`${base()}/api/blocks/${block}`)).json()).state.updated_ms;
+  // Whatever read the approve started has landed.
+  await expect.poll(async () => (await (await fetch(`${base()}/api/blocks/${block}`)).json()).state.loading).toBe(false);
+  const before = await readAt();
+  // An agent at work in a member: the tree changes every second, faster
+  // than the block polls (3 s), for ten seconds. No full read meanwhile.
+  const file = join(ws, "app", "burst.txt");
+  const seen = new Set<number>();
+  for (let i = 0; i < 10; i++) {
+    writeFileSync(file, `edit ${i}\n`);
+    seen.add(await readAt());
+    await new Promise((r) => setTimeout(r, 1_000));
+  }
+  expect([...seen]).toEqual([before]);
+  // It holds still: one read, within two polls and the read itself.
+  await expect.poll(readAt, { timeout: 15_000 }).not.toBe(before);
+  const after = await readAt();
+  await new Promise((r) => setTimeout(r, 7_000));
+  expect(await readAt()).toBe(after);
+  rmSync(file);
 });
 
 test("on a phone, an editor approves from the sheet, gates first; a viewer sees it and can't", async ({ browser, page }) => {

@@ -66,13 +66,15 @@ function run(args) {
 "#;
 
 /// `sh -c FINGERPRINT sh ROOT`: one line that changes when anything a read
-/// would see might have: a commit, the `chant/lifecycle` ref (releases and
-/// gates), or the working tree (the declaration, records, member sources).
-/// About 0.01 CPU-seconds where a full read is about 7 (four chant
-/// processes, each loading chant's TypeScript through tsx), so the block
-/// polls this and reads only when it changes. It never fetches.
+/// would see might have: the `chant/lifecycle` ref (releases and gates)
+/// first, as its own word, then a checksum of a commit and the working tree
+/// (the declaration, records, member sources). About 0.01 CPU-seconds where
+/// a full read is about 7 (four chant processes, each loading chant's
+/// TypeScript through tsx), so the block polls this and reads only when it
+/// changes. It never fetches.
 pub const FINGERPRINT: &str = r#"cd "$1" 2>/dev/null || { echo gone; exit 0; }
-{ git rev-parse -q --verify HEAD; git rev-parse -q --verify refs/heads/chant/lifecycle; git status --porcelain=v1; git diff HEAD; } 2>/dev/null | cksum"#;
+printf '%s ' "$(git rev-parse -q --verify refs/heads/chant/lifecycle 2>/dev/null || echo -)"
+{ git rev-parse -q --verify HEAD; git status --porcelain=v1; git diff HEAD; } 2>/dev/null | cksum"#;
 
 /// What the block draws and `describe` returns.
 #[derive(Debug, Clone, Default, Serialize)]

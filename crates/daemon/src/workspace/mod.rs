@@ -7,7 +7,11 @@
 //!
 //! **Freshness.** A full read costs about 7.5 CPU-seconds, so it runs on
 //! open, on `refresh` and after `approve`, and otherwise only when a cheap
-//! git fingerprint changes ([`model::FINGERPRINT`]). The fingerprint is
+//! git fingerprint changes ([`model::FINGERPRINT`]) and then holds still
+//! for one more poll, so a burst of edits (a `chant run`, an agent at work
+//! in a member) costs one read, not one per poll. A move of
+//! `chant/lifecycle` (a gate reached, a release) reads at once ([`next`]).
+//! The fingerprint is
 //! looked at every [`POLL`] while some client draws the block, and every
 //! [`IDLE_POLL`] when none does and the workspace is on this host (so a gate
 //! reached while nobody looks still reaches the swarm and push; a VM's is
@@ -69,6 +73,8 @@ pub struct Workspace {
     state: Mutex<model::State>,
     /// The fingerprint at the last read.
     seen: Mutex<Option<String>>,
+    /// A changed fingerprint the last poll saw, waiting to hold still.
+    pending: Mutex<Option<String>>,
     /// The gate attention last asked for (its headline), so it's asked once
     /// per change. Starts as `Some("")` so the first read clears any left
     /// from before a restart.
@@ -96,6 +102,7 @@ impl Workspace {
             runner: tokio::sync::OnceCell::new(),
             state: Mutex::new(state),
             seen: Mutex::new(None),
+            pending: Mutex::new(None),
             raised: Mutex::new(Some(String::new())),
             live: Live::default(),
             reading: tokio::sync::Mutex::new(()),
@@ -184,11 +191,18 @@ impl Workspace {
         Some(String::from_utf8_lossy(&out).trim().to_owned())
     }
 
-    /// Reads again if the fingerprint moved.
+    /// Reads again if the fingerprint moved and settled, or the lifecycle
+    /// ref moved ([`next`]).
     async fn check(&self) {
         let now = self.fingerprint().await;
-        let changed = now.is_none() || *self.seen.lock().unwrap() != now;
-        if changed {
+        let seen = self.seen.lock().unwrap().clone();
+        let what = {
+            let mut pending = self.pending.lock().unwrap();
+            let what = next(seen.as_deref(), pending.as_deref(), now.as_deref());
+            *pending = if what == Next::Wait { now } else { None };
+            what
+        };
+        if what == Next::Read {
             self.load().await;
         }
     }
@@ -278,6 +292,35 @@ impl Workspace {
     }
 }
 
+/// What a poll does about the fingerprint.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Next {
+    Nothing,
+    /// It moved: look again next poll.
+    Wait,
+    Read,
+}
+
+/// The `chant/lifecycle` word of a fingerprint.
+fn lifecycle(print: Option<&str>) -> Option<&str> {
+    print.and_then(|p| p.split_whitespace().next())
+}
+
+/// Given the fingerprint at the last read (`seen`), the changed one the
+/// poll before saw (`pending`) and the one now: read when the lifecycle ref
+/// moved (a gate or a release: at once), or when a change held still for
+/// one poll; wait while the working tree is still moving. No fingerprint at
+/// all reads, so the block says why.
+fn next(seen: Option<&str>, pending: Option<&str>, now: Option<&str>) -> Next {
+    match now {
+        None => Next::Read,
+        Some(n) if seen == Some(n) => Next::Nothing,
+        _ if lifecycle(seen) != lifecycle(now) => Next::Read,
+        Some(n) if pending == Some(n) => Next::Read,
+        Some(_) => Next::Wait,
+    }
+}
+
 impl Block for Workspace {
     fn kind(&self) -> BlockType {
         BlockType::Workspace
@@ -355,5 +398,73 @@ impl Block for Workspace {
             title: Some(format!("{} (chant)", st.name.clone().unwrap_or_else(|| "workspace".into()))),
             ..Default::default()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Next, next};
+
+    /// A fingerprint: the lifecycle ref's word, then the tree's checksum.
+    fn fp(lifecycle: &str, tree: u32) -> String {
+        format!("{lifecycle} {tree} 1234")
+    }
+
+    /// Polls a sequence of fingerprints from a read at `start`; how many
+    /// full reads they cost.
+    fn reads(start: &str, polls: &[String]) -> usize {
+        let (mut seen, mut pending, mut n) = (Some(start.to_owned()), None::<String>, 0);
+        for now in polls {
+            let what = next(seen.as_deref(), pending.as_deref(), Some(now));
+            pending = (what == Next::Wait).then(|| now.clone());
+            if what == Next::Read {
+                n += 1;
+                seen = Some(now.clone());
+            }
+        }
+        n
+    }
+
+    #[test]
+    fn a_burst_of_edits_costs_one_read() {
+        // The tree changes at every poll for a while (an agent editing a
+        // member), then holds still.
+        let mut polls: Vec<String> = (1..=8).map(|t| fp("aaa", t)).collect();
+        polls.extend([fp("aaa", 8), fp("aaa", 8), fp("aaa", 8)]);
+        assert_eq!(reads(&fp("aaa", 0), &polls), 1);
+    }
+
+    #[test]
+    fn nothing_moved_reads_nothing() {
+        assert_eq!(next(Some("a 1"), None, Some("a 1")), Next::Nothing);
+        assert_eq!(reads(&fp("aaa", 0), &[fp("aaa", 0), fp("aaa", 0)]), 0);
+    }
+
+    #[test]
+    fn a_change_waits_one_poll() {
+        assert_eq!(next(Some("a 1"), None, Some("a 2")), Next::Wait);
+        assert_eq!(next(Some("a 1"), Some("a 2"), Some("a 2")), Next::Read);
+        // Still moving: wait again.
+        assert_eq!(next(Some("a 1"), Some("a 2"), Some("a 3")), Next::Wait);
+    }
+
+    #[test]
+    fn a_gate_reads_at_once() {
+        // `chant run` exits at a gate: the lifecycle ref moves, while the
+        // tree is still changing. The very next poll reads.
+        assert_eq!(next(Some("aaa 1"), None, Some("bbb 2")), Next::Read);
+        assert_eq!(next(Some("aaa 1"), Some("aaa 2"), Some("bbb 3")), Next::Read);
+        // The ref appearing for the first run's gate counts too.
+        assert_eq!(next(Some("- 1"), None, Some("bbb 1")), Next::Read);
+        let mut polls: Vec<String> = (1..=4).map(|t| fp("aaa", t)).collect();
+        polls.push(fp("bbb", 5));
+        assert_eq!(reads(&fp("aaa", 0), &polls), 1);
+    }
+
+    #[test]
+    fn no_fingerprint_reads_so_the_block_says_why() {
+        assert_eq!(next(Some("a 1"), None, None), Next::Read);
+        // Nothing read before: the first fingerprint reads.
+        assert_eq!(next(None, None, Some("a 1")), Next::Read);
     }
 }
