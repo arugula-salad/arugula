@@ -4719,7 +4719,7 @@ The chat view (PR #290, `/#chat`) should be a page of its own that looks and wor
 
 The phone keeps today's list-then-thread flow, styled to match.
 
-**Decisions (defaults until Jake says otherwise):**
+**Decisions (Jake, 2026-10-05):**
 
 - **Slack's layout and density, illogical's colors.** No aubergine sidebar and no Slack marks: the page uses our theme tokens in light and dark.
 - **The talk track's "Not Slack" still holds.** It looks like Slack, but there are no reactions, file uploads, video or screen share, and no DMs. If DMs come, they come with M62's MLS channels.
@@ -4730,9 +4730,9 @@ The phone keeps today's list-then-thread flow, styled to match.
   - M62's team channels go in a *Channels* section above the machines when they land.
 - **The panes stay alive.** Going to Chat hides the tab view and doesn't unmount it, so terminals keep their output and size. Coming back is instant.
 
-**Order:** M73, then M74, then M75. M74's message component also replaces the drawer's, so the drawer improves too. M62 (#241) is independent and lands in M73's sidebar.
+**Order:** M73, then M74, then M75. M74's message component also replaces the drawer's, so the drawer improves too. M62 (#241) is independent and lands in M73's sidebar. Tracker #339.
 
-#### M73: chat is a page (the frame)
+#### M73: chat is a page (the frame) (#336)
 
 - `App` switches on the route. On `#chat` it renders `ChatPage` in place of `TopBar` and `<main>`. `<main>` stays mounted but hidden (`hidden`, not `display: none` on a parent that `measureCell` reads; check the cell cache).
   - Swarm keeps its own overlay.
@@ -4762,7 +4762,7 @@ The phone keeps today's list-then-thread flow, styled to match.
 - Screenshots in `docs/` at desktop width (light and dark) and phone width.
 - geek's desktop app: the window drags from Chat's bar and its buttons work. The same on jake-air.
 
-#### M74: messages and composer like Slack (after M73)
+#### M74: messages and composer like Slack (#337, after M73)
 
 - **Messages:**
   - a 36 px rounded-square avatar, the bold name and a dim time;
@@ -4801,7 +4801,7 @@ The phone keeps today's list-then-thread flow, styled to match.
 - The details panel's pane view shows live output.
 - Old thread files (no `pic`) still load.
 
-#### M75: getting around like Slack (after M74)
+#### M75: getting around like Slack (#338, after M74)
 
 - **Ctrl/Cmd+K on the chat page** is a channel switcher over every machine's channels and threads, ranked by unread and recency. It reuses the palette's matcher.
 - **Search:** the bar's field searches every machine's threads through each daemon's search (M61's hits carry `thread`), shows results grouped by channel, and opens the message at its place.
