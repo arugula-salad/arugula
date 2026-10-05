@@ -3258,6 +3258,8 @@ impl Daemon {
                 }
             }
             ClientMsg::CallSignal { session, to, signal } => self.call_signal(&sub, session, to, signal),
+            // The server hands these to `App::hands` (S33).
+            ClientMsg::Hand { .. } | ClientMsg::HandReply { .. } => {}
             ClientMsg::Focus { pane } => {
                 let before = self.focus.get(&client).copied();
                 match pane.filter(|p| self.sees(&who, *p)) {

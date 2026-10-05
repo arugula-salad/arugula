@@ -483,7 +483,17 @@ export type ClientMsg =
   | { type: "call_join"; session: SessionId }
   | { type: "call_leave"; session: SessionId }
   | { type: "call_mute"; session: SessionId; muted: boolean }
-  | { type: "call_signal"; session: SessionId; to: ClientId; signal: CallSignal };
+  | { type: "call_signal"; session: SessionId; to: ClientId; signal: CallSignal }
+  /** S33: this client lends device tools to agents (none: it stops). */
+  | { type: "hand"; tools: HandTool[]; name?: string }
+  | { type: "hand_reply"; id: number; result?: unknown; error?: string };
+
+/** S33: a tool a hand offers; `schema` is its arguments' JSON Schema. */
+export interface HandTool {
+  name: string;
+  description: string;
+  schema: unknown;
+}
 
 export type ServerMsg =
   | { type: "hello"; version: string; client: ClientId; state: State }
@@ -501,7 +511,9 @@ export type ServerMsg =
   | { type: "thread"; target: ThreadTarget; msg: ThreadMsg }
   /** M63: a huddle member's description; `cert` is its device
    * certificate as the daemon has it, when it has one. */
-  | { type: "call_signal"; session: SessionId; from: ClientId; signal: CallSignal; cert?: unknown };
+  | { type: "call_signal"; session: SessionId; from: ClientId; signal: CallSignal; cert?: unknown }
+  /** S33: an agent calls one of this hand's tools; `from` says who. */
+  | { type: "hand_call"; id: number; tool: string; args: Record<string, unknown>; from: string };
 
 export const enum FrameKind {
   Output = 1,
