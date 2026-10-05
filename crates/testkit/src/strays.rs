@@ -45,6 +45,8 @@ pub fn kill_programs(state: &Path) -> Vec<(PathBuf, i32)> {
             if pid > 1 {
                 let _ = signal::killpg(Pid::from_raw(pid), signal::Signal::SIGKILL);
             }
+            #[cfg(not(unix))]
+            let _ = pid;
             if let Some(s) = shim.filter(|s| *s > 1) {
                 shims.push((record, s));
             }
