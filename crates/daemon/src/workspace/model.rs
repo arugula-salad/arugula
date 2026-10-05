@@ -116,10 +116,12 @@ function run(args) {
 /// (`refs/chant/wip/*`, `kept/*`, `refs/heads/chant/work/*`, its
 /// `replication`). A lease that expires by the clock moves no ref, so it
 /// shows at the next read for another reason; the block draws no leases.
+/// The diff is `diff-index` (plumbing): porcelain `git diff HEAD` refreshes
+/// and rewrites the index even with `GIT_OPTIONAL_LOCKS=0`.
 pub const FINGERPRINT: &str = r#"cd "$1" 2>/dev/null || { echo gone; exit 0; }
 export GIT_OPTIONAL_LOCKS=0
 printf '%s ' "$(git rev-parse -q --verify refs/heads/chant/lifecycle 2>/dev/null || echo -)"
-{ git rev-parse -q --verify HEAD; git for-each-ref --format='%(objectname) %(refname)' refs/chant refs/heads/chant/work; git status --porcelain=v1; git diff HEAD; } 2>/dev/null | cksum"#;
+{ git rev-parse -q --verify HEAD; git for-each-ref --format='%(objectname) %(refname)' refs/chant refs/heads/chant/work; git status --porcelain=v1; git diff-index -p HEAD --; } 2>/dev/null | cksum"#;
 
 /// What the block draws and `describe` returns.
 #[derive(Debug, Clone, Default, Serialize)]
@@ -500,7 +502,8 @@ pub fn compose(raw: &Value, env: &str) -> State {
     let rec = &reads["records"]["json"];
     let kinds: Vec<&Value> = match rec["kinds"].as_array() {
         Some(k) => k.iter().collect(),
-        None if !rec.is_null() => vec![rec],
+        // A failure (`error: {code, message}`) is no kind.
+        None if rec.is_object() && !rec["error"].is_object() => vec![rec],
         None => vec![],
     };
     if kinds.is_empty() {

@@ -344,7 +344,11 @@ fn a_member_s_agent_runs_as_its_session_and_keeps_its_runs_in_its_config() {
 
 #[test]
 fn a_turn_s_run_id_is_rebuilt_from_the_log_and_carried_through_a_retry() {
-    let mut g = rebuilt();
+    // Up to the prompt: "retry shortly" comes before the agent does anything.
+    let mut g = Inner::new(Config::default(), None);
+    for l in &log_lines()[..6] {
+        g.rebuild_line(l);
+    }
     // The block noted the turn's run when its prompt went.
     g.rebuild_line(&frame("note", json!({ "e": "run", "id": "arugula-1-1000" })));
     assert_eq!(g.turns.last().unwrap().run.as_deref(), Some("arugula-1-1000"));

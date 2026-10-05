@@ -171,7 +171,8 @@ fn set_principals(who: &Principals, args: &Value) -> Result<Principals, String> 
         };
     }
     if let Some(m) = args.get("principals") {
-        let m = m.as_object().ok_or("principals maps Arugula names to chant principals: {\"name\": \"github:login\"}")?;
+        let m =
+            m.as_object().ok_or("principals maps Arugula names to chant principals: {\"name\": \"github:login\"}")?;
         out.principals.clear();
         for (name, p) in m {
             let name = name.trim();
@@ -216,10 +217,8 @@ impl Workspace {
         if config.root.is_empty() {
             return Err("a workspace block needs a root".into());
         }
-        let who = set_principals(
-            &Principals::default(),
-            &json!({ "actor": config.actor, "principals": config.principals }),
-        )?;
+        let who =
+            set_principals(&Principals::default(), &json!({ "actor": config.actor, "principals": config.principals }))?;
         (config.actor, config.principals) = (who.actor, who.principals);
         if let Some(rest) = config.root.strip_prefix("~/").filter(|_| ctx.sprite.is_none()) {
             config.root = ctx.home.join(rest).display().to_string();
@@ -686,7 +685,9 @@ impl Block for Workspace {
 mod tests {
     use serde_json::json;
 
-    use super::{Next, Principals, VM_QUIET, VM_RESTING, VmIdle, env_name, envs, next, set_principals, vm_look, vm_looked};
+    use super::{
+        Next, Principals, VM_QUIET, VM_RESTING, VmIdle, env_name, envs, next, set_principals, vm_look, vm_looked,
+    };
 
     /// A fingerprint: the lifecycle ref's word, then the tree's checksum.
     fn fp(lifecycle: &str, tree: u32) -> String {
@@ -763,7 +764,8 @@ mod tests {
     #[test]
     fn principals_are_set_and_cleared() {
         let none = Principals::default();
-        let p = set_principals(&none, &json!({ "actor": " github:sam ", "principals": { "val": "github:val-x" } })).unwrap();
+        let p = set_principals(&none, &json!({ "actor": " github:sam ", "principals": { "val": "github:val-x" } }))
+            .unwrap();
         assert_eq!(p.actor.as_deref(), Some("github:sam"));
         assert_eq!(p.principals.get("val").map(String::as_str), Some("github:val-x"));
         // A key left out keeps what was there.
@@ -774,7 +776,12 @@ mod tests {
         assert_eq!(set_principals(&q, &json!({ "actor": "" })).unwrap().actor, None);
         assert_eq!(set_principals(&q, &json!({ "actor": null })).unwrap().actor, None);
         // A principal is one word, not a flag.
-        for bad in [json!({ "actor": "--sign" }), json!({ "actor": "a b" }), json!({ "actor": 3 }), json!({ "principals": { "x": "-y" } })] {
+        for bad in [
+            json!({ "actor": "--sign" }),
+            json!({ "actor": "a b" }),
+            json!({ "actor": 3 }),
+            json!({ "principals": { "x": "-y" } }),
+        ] {
             assert!(set_principals(&q, &bad).is_err(), "{bad}");
         }
     }
