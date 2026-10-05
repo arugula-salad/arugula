@@ -93,7 +93,8 @@ interface Msg {
   daemon?: string;
   approve?: { id: string; title?: string };
   ask?: { id: string; field: string; options: string[] };
-  reason?: { kind: string; actions: string[] };
+  /** M34: a gate's names it (`member/op/gate`), for Approve and Expire. */
+  reason?: { kind: string; actions: string[]; gate?: { id: string; title?: string } };
   /** Control's own (#104): a device or a person waits for approval. */
   control?: boolean;
   /** M61: an @mention in this thread (`pane-7`, `session-2`). */
@@ -111,6 +112,8 @@ sw.addEventListener("push", (event: PushEvent) => {
   const approve = msg.approve && typeof msg.approve.id === "string" ? msg.approve : null;
   const ask = msg.ask && typeof msg.ask.id === "string" && Array.isArray(msg.ask.options) ? msg.ask : null;
   const reason = msg.reason && Array.isArray(msg.reason.actions) ? msg.reason : null;
+  // A gate (M34): Approve, and Expire for a chant gate (#310), else Dismiss.
+  const gate = reason && reason.gate && typeof reason.gate.id === "string" && reason.actions.includes("allow") ? reason.gate : null;
   const actions = approve
     ? [
         { action: "approve", title: "Allow" },
@@ -118,6 +121,11 @@ sw.addEventListener("push", (event: PushEvent) => {
       ]
     : ask
       ? ask.options.slice(0, 2).map((o, i) => ({ action: `answer-${i}`, title: o }))
+      : gate && reason
+        ? [
+            { action: "gate-approve", title: "Approve" },
+            reason.actions.includes("expire") ? { action: "gate-expire", title: "Expire" } : { action: "dismiss", title: "Dismiss" },
+          ]
       : reason && reason.actions.includes("rerun")
         ? [
             { action: "rerun", title: "Rerun" },
@@ -132,7 +140,7 @@ sw.addEventListener("push", (event: PushEvent) => {
       tag: msg.tag || "arugula",
       renotify: true,
       icon: "/icon.svg",
-      requireInteraction: !!(approve || ask),
+      requireInteraction: !!(approve || ask || gate),
       actions,
       data: { pane: msg.pane, daemon: msg.daemon, thread: msg.thread, approve, ask, reason, control: msg.control === true },
     } as NotificationOptions),
@@ -187,6 +195,18 @@ sw.addEventListener("notificationclick", (event: ClickEvent) => {
       (async () => {
         // Already answered, or the daemon is unreachable: say so.
         if (!(await act(data.daemon, { action, pane, id: approve.id }))) await failed(pane, data.daemon, approve.title || "");
+      })(),
+    );
+    return;
+  }
+  // A gate (M34): approved, or turned down (#310), by its key, so a gate
+  // reached since isn't the one answered.
+  const gate = data.reason?.gate;
+  if ((event.action === "gate-approve" || event.action === "gate-expire") && pane && gate) {
+    const action = event.action === "gate-approve" ? "allow" : "expire";
+    event.waitUntil(
+      (async () => {
+        if (!(await act(data.daemon, { action, pane, id: gate.id }))) await failed(pane, data.daemon, gate.title || "");
       })(),
     );
     return;

@@ -61,6 +61,17 @@ fn same_call(hook: &serde_json::Value, ask: &Ask) -> bool {
         && ask.input.as_ref() == Some(&hook["tool_input"])
 }
 
+/// A reason as a notification carries it: its actions, and for a gate
+/// (M34) its key, so the worker's Approve and Expire (#310) act on that
+/// gate and not one that came after it.
+fn push_reason(r: &Reason) -> serde_json::Value {
+    let mut v = serde_json::json!({ "kind": r.kind, "actions": r.actions, "bundle": r.bundle });
+    if let Some(g) = &r.gate {
+        v["gate"] = serde_json::json!({ "id": g.key(), "title": r.headline });
+    }
+    v
+}
+
 /// What a notification about a reason is titled.
 fn push_title(state: Attention, reason: Option<&Reason>) -> &'static str {
     match reason.map(|r| r.kind) {
@@ -191,7 +202,7 @@ impl Daemon {
             });
             if let Some(r) = &reason {
                 let x = extra.get_or_insert_with(|| serde_json::json!({}));
-                x["reason"] = serde_json::json!({ "kind": r.kind, "actions": r.actions, "bundle": r.bundle });
+                x["reason"] = push_reason(r);
             }
             // An agent's invite (#234) is for the owner alone, and opens at
             // its card: no buttons to send it from.
@@ -932,5 +943,31 @@ impl Daemon {
         };
         self.touch(pane);
         Ok(now)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::push_reason;
+
+    #[test]
+    fn a_gates_push_names_it_for_approve_and_expire() {
+        let gate = arugula_proto::Gate {
+            member: "delivery".into(),
+            op: "ship".into(),
+            gate: "approve-ship".into(),
+            env: None,
+            since: None,
+            expires: None,
+            approvals: 0,
+            needed: 1,
+            command: Some("chant approve ship approve-ship".into()),
+            source: arugula_proto::GateSource::Chant { root: "/w".into(), dir: "/w/delivery".into(), machine: None },
+        };
+        let v = push_reason(&crate::gate::reason(&[gate]).unwrap());
+        assert_eq!(v["kind"], "gate");
+        assert_eq!(v["actions"], serde_json::json!(["allow", "expire", "dismiss"]));
+        assert_eq!(v["gate"]["id"], "delivery/ship/approve-ship");
+        assert_eq!(v["gate"]["title"], "delivery: ship waits at gate approve-ship");
     }
 }
