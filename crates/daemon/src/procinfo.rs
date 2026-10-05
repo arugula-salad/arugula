@@ -71,6 +71,7 @@ pub fn alive(pid: u32) -> bool {
 }
 
 /// End a process now (SIGKILL; TerminateProcess on Windows).
+#[cfg(any(windows, test))]
 pub fn kill(pid: u32) {
     #[cfg(unix)]
     let _ = nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid as i32), nix::sys::signal::SIGKILL);

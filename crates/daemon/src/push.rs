@@ -7,7 +7,6 @@
 //! the state directory.
 
 use std::{
-    io::Read,
     path::PathBuf,
     sync::{Arc, Mutex},
 };

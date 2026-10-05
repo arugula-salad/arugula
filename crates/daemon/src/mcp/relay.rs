@@ -339,6 +339,8 @@ mod tests {
         }
     }
 
+    // Unix: the relay runs in Linux guests, on a Unix socket.
+    #[cfg(unix)]
     #[tokio::test(flavor = "multi_thread")]
     async fn sessions_per_connection_and_reconnects() {
         // Windows' python3 can be the Store's stand-in, which only says to install it.
