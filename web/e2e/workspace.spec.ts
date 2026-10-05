@@ -6,8 +6,10 @@
 // sheet's gates-first list (chant's ledger names each), a viewer sees the
 // gate with no Approve; the next `chant run` walks through. *Expire* (#310)
 // turns a gate down from the swarm's card and the phone: the attention
-// clears and the next `chant run` stops there again. The pane menu
-// and the picker offer "Open as workspace" in a workspace's directory.
+// clears and the next `chant run` stops there again. On a phone, *Run op*
+// on a member starts a gated op in a pane, *Approve* clears it, and *Run
+// op* again walks through (#309). The pane menu and the picker offer "Open
+// as workspace" in a workspace's directory.
 //
 // The first run installs the fixture's chant (`npm ci`, a few seconds).
 
@@ -284,6 +286,54 @@ test("the block says which env it watches and switches it (#312)", async ({ page
   // `arugula workspace --env` opens one on that env.
   const other = Number(/^%(\d+)/.exec(cli("workspace", ws, "--env", "staging"))![1]);
   expect((await (await fetch(`${base()}/api/blocks/${other}`)).json()).state.env).toBe("staging");
+});
+
+test("on a phone, Run op on a member starts a gated op; Approve clears its gate; Run op again walks through (#309)", async ({ browser, page }) => {
+  test.setTimeout(90_000);
+  await open(page);
+  const ctx = await browser.newContext({ ...phone, baseURL: base(), extraHTTPHeaders: { "tailscale-user-login": OWNER } });
+  const mine = await ctx.newPage();
+  await open(mine);
+  await mine.evaluate((b) => window.__arugula.client.setActive(b), block);
+  const shown = mine.locator(`[data-workspace-block="${block}"]`);
+  const delivery = shown.locator('[data-member="delivery"]');
+  const terminals = async () => (await panesOf(page)).filter((p) => p.type === "terminal").map((p) => p.id);
+
+  // Ops status names (the gated ones so far) are offered; deploy, never
+  // run, is typed.
+  await delivery.locator("[data-run-op]").tap();
+  const ops = shown.locator('[data-run-ops="delivery"]');
+  await expect(ops.locator("[data-op]")).toHaveText(["release", "ship"]);
+  const before = await terminals();
+  await ops.locator("input").fill("deploy");
+  await ops.locator("button", { hasText: "Run" }).tap();
+  await expect(ops).toHaveCount(0);
+  // A pane beside the block, in the member, running `chant run deploy`,
+  // which stops at the gate: attention, through the usual read.
+  await expect.poll(async () => (await terminals()).length, { timeout: 10_000 }).toBe(before.length + 1);
+  await expect(shown.locator('[data-gate="delivery/deploy/approve-deploy"]')).toBeVisible({ timeout: 20_000 });
+  await expect
+    .poll(async () => {
+      const r = await reasonOf(mine, block);
+      return r && [r.kind, r.headline];
+    })
+    .toEqual(["gate", "delivery: deploy waits at gate approve-deploy"]);
+
+  // Approve, on the phone.
+  await shown.locator('[data-gate="delivery/deploy/approve-deploy"] [data-approve]').tap();
+  await expect(shown.locator("[data-ws-said]")).toContainText("Approved approve-deploy", { timeout: 15_000 });
+  await expect.poll(async () => (await reasonOf(mine, block))?.kind ?? null, { timeout: 15_000 }).toBeNull();
+
+  // Run op again: deploy is offered now (its gate is in the ledger), and
+  // the run walks through the approved gate.
+  await delivery.locator("[data-run-op]").tap();
+  const again = await terminals();
+  await ops.locator('[data-op="deploy"]').tap();
+  await expect.poll(async () => (await terminals()).length, { timeout: 10_000 }).toBe(again.length + 1);
+  const pane = (await terminals()).find((t) => !again.includes(t))!;
+  await expect.poll(() => cli("capture", `%${pane}`), { timeout: 30_000 }).toContain("deployed");
+  await expect(shown.locator("[data-gate]")).toHaveCount(0);
+  await ctx.close();
 });
 
 test("Open as workspace, from a pane's menu and the picker, in a workspace's directory", async ({ page }) => {

@@ -160,6 +160,11 @@ pub struct Member {
     /// The agent sessions the declaration binds to it (ws-067): an agent
     /// started here runs as the first (#304).
     pub agents: Vec<String>,
+    /// The ops `status` names for it, for *Run op* (#309): its stewards'
+    /// ops, then any op a gate of its was recorded for. *Run op* takes a
+    /// typed name too, for an op `status` doesn't name (chant before
+    /// stewards names only gated ones).
+    pub ops: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -427,6 +432,14 @@ pub fn compose(raw: &Value, env: &str) -> State {
             .flatten()
             .map(|e| e["releases"].as_array().map_or(0, Vec::len))
             .sum();
+        let stewards = sm["stewards"].as_array().into_iter().flatten();
+        let ops = stewards.flat_map(|st| st["ops"].as_array().into_iter().flatten().filter_map(|o| s(&o["name"])));
+        let gated = sm["gates"].as_array().into_iter().flatten().filter_map(|g| s(&g["component"]));
+        for op in ops.chain(gated) {
+            if !op.is_empty() && !m.ops.contains(&op) {
+                m.ops.push(op);
+            }
+        }
         for g in sm["gates"].as_array().into_iter().flatten() {
             if g["state"].as_str().is_some_and(|s| s != "pending") {
                 continue;
@@ -856,6 +869,24 @@ mod tests {
         // A declaration that isn't plain JSON: no sessions, nothing else lost.
         raw["agents"] = Value::Null;
         assert!(compose(&raw, "local").members.iter().all(|m| m.agents.is_empty()));
+    }
+
+    #[test]
+    fn a_member_s_ops_come_from_status() {
+        let mut raw = fixture(include_str!("fixtures/reference-raw.json"));
+        // delivery's gates were recorded for release and ship.
+        let ops = |st: &State, n: &str| st.members.iter().find(|m| m.name == n).unwrap().ops.clone();
+        let st = compose(&raw, "local");
+        assert_eq!(ops(&st, "delivery"), ["release", "ship"]);
+        assert!(ops(&st, "app").is_empty(), "none named: Run op takes a typed one");
+        // A newer chant names its stewards' ops; they come first, once.
+        for m in raw["reads"]["status"]["json"]["members"].as_array_mut().unwrap() {
+            if m["name"] == "delivery" {
+                m["stewards"] = serde_json::json!([{ "name": "s", "ops": [{ "name": "ship" }, { "name": "deploy" }] }]);
+            }
+        }
+        let st = compose(&raw, "local");
+        assert_eq!(ops(&st, "delivery"), ["ship", "deploy", "release"]);
     }
 
     #[test]

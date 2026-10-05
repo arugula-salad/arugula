@@ -15,7 +15,7 @@ interface Diagnostic { rule: string; severity: string; message: string; file: st
 interface Member {
   name: string; dir: string; path: string; kind: string; because: string | null; roles: string[]; nested: boolean;
   unreadable: string | null; errors: number; warnings: number; diagnostics: Diagnostic[]; releases: number; gates: number;
-  agents: string[];
+  agents: string[]; ops: string[];
 }
 interface Rec { kind: string; id: string; title: string | null; state: string | null; ready: boolean | null; blocked_by: string[]; warnings: string[]; valid: boolean }
 interface Read { name: string; ms: number; code: number; ok: boolean; note: string | null; reason: string | null }
@@ -111,6 +111,9 @@ const OTHER = "\u0000other";
 function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: WorkspaceState | null }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [said, setSaid] = useState<string | null>(null);
+  // #309: the member whose Run op is open, and the op name typed there.
+  const [picking, setPicking] = useState<string | null>(null);
+  const [typed, setTyped] = useState("");
   const session = client.sessionOfTab(client.tabOfPane(id)?.id ?? -1) ?? null;
   const role = client.role(session);
   // Approving is for the owner and editors (#75); opening panes and blocks
@@ -131,9 +134,16 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
     );
   const changes = (m: Member) => void client.openBlock({ type: "diff", config: { repo: m.path }, ...beside }, "couldn't show the changes");
   const nested = (m: Member) => openWorkspace(client, m.path, id, s?.env ?? "local");
-  const runOp = (g: Gate) =>
-    g.source.kind === "chant" &&
-    void client.make("/api/run", { ...beside, cwd: g.source.dir, command: `${s?.chant ?? "chant"} run ${g.op}` } satisfies RunRequest).then((e) => e && client.toast(e));
+  const run = (cwd: string, op: string) =>
+    void client.make("/api/run", { ...beside, cwd, command: `${s?.chant ?? "chant"} run ${op}` } satisfies RunRequest).then((e) => e && client.toast(e));
+  const runOp = (g: Gate) => g.source.kind === "chant" && run(g.source.dir, g.op);
+  // A typed op name goes on a command line: a name, nothing a shell reads.
+  const runTyped = (m: Member) => {
+    const op = typed.trim();
+    if (!/^[\w.:/-]+$/.test(op)) return client.toast("an op name: letters, digits, '.', '_', ':', '/' and '-'");
+    setPicking(null);
+    run(m.path, op);
+  };
   const approve = async (g: Gate) => {
     setBusy(`approve:${gateKey(g)}`);
     setSaid(null);
@@ -309,8 +319,29 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
                               Agent
                             </button>
                             <button onClick={() => changes(m)}>Changes</button>
+                            <button data-run-op onClick={() => (setPicking(picking === m.name ? null : m.name), setTyped(""))}>
+                              Run op
+                            </button>
                           </>
                         )}
+                      </div>
+                    )}
+                    {mayOpen && picking === m.name && (
+                      <div class="ws-actions" data-run-ops={m.name}>
+                        {m.ops.map((op) => (
+                          <button key={op} data-op={op} onClick={() => (setPicking(null), run(m.path, op))}>
+                            {op}
+                          </button>
+                        ))}
+                        <input
+                          placeholder={m.ops.length ? "another op" : "op name"}
+                          value={typed}
+                          onInput={(e) => setTyped(e.currentTarget.value)}
+                          onKeyDown={(e) => e.key === "Enter" && runTyped(m)}
+                        />
+                        <button disabled={!typed.trim()} onClick={() => runTyped(m)}>
+                          Run
+                        </button>
                       </div>
                     )}
                   </div>
