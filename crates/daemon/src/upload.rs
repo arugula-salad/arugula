@@ -18,6 +18,9 @@
 //! unless they're ours, files `0600`, made new (never through a link), with
 //! names we choose. A pane's go when it closes; anything older than a day
 //! goes in the sweep, which also runs as the daemon starts.
+//!
+//! A VM pane's file is staged here, then written on its machine, in
+//! `~/.cache/illogical/uploads/<pane>/` there.
 
 use std::{
     fs::{self, DirBuilder, OpenOptions},
@@ -192,9 +195,7 @@ pub async fn upload(
     body: Bytes,
 ) -> Res<Json<serde_json::Value>> {
     pane(&app, id).await?;
-    if let Some(Some(_)) = app.mux.api(|r| Api::MachineOf(id, r)).await {
-        return Err(err(StatusCode::NOT_IMPLEMENTED, "uploads into a VM pane aren't in yet"));
-    }
+    let machine = app.mux.api(|r| Api::MachineOf(id, r)).await.flatten();
     if q.id.is_empty() || q.id.len() > 32 || !q.id.bytes().all(|b| b.is_ascii_hexdigit()) {
         return Err(err(StatusCode::BAD_REQUEST, "id: up to 32 hex digits"));
     }
@@ -221,7 +222,59 @@ pub async fn upload(
     })
     .await
     .map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))??;
+    // A VM pane's file goes on to its machine once it's all here.
+    let path = match machine {
+        Some(m) if last => to_machine(&app, id, &m.sprite, &path).await?,
+        _ => path.to_string_lossy().into_owned(),
+    };
     Ok(Json(serde_json::json!({ "path": path, "done": last })))
+}
+
+/// On a machine: `~/.cache/illogical/uploads/<pane>`, `0700`, made by
+/// `run` as its user. Clears what's older than a day there first.
+const MACHINE_FOLDER: &str = r#"set -e
+d="$HOME/.cache/illogical/uploads"
+find "$d" -type f -mmin +1440 -delete 2>/dev/null || true
+find "$d" -mindepth 1 -type d -empty -delete 2>/dev/null || true
+mkdir -p "$d/$1"
+chmod 700 "$d" "$d/$1"
+printf %s "$d/$1""#;
+
+/// Send a whole staged file to the pane's machine, then drop it here: its
+/// path there. The provider writes as root (S32), so the file is `0644`
+/// in the user's `0700` folder: `claude` there reads it, no one else can
+/// reach it.
+async fn to_machine(app: &App, pane: PaneId, sprite: &str, staged: &FsPath) -> Res<String> {
+    let gone = |why: String| err(StatusCode::BAD_GATEWAY, why);
+    let provider =
+        app.mux.provider.clone().ok_or_else(|| err(StatusCode::SERVICE_UNAVAILABLE, "VM panes aren't set up"))?;
+    let data = tokio::fs::read(staged).await.map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let _ = tokio::fs::remove_file(staged).await;
+    let tag = pane.to_string();
+    let argv = ["sh", "-c", MACHINE_FOLDER, "illogical-upload", &tag];
+    let (out, code) =
+        provider.run(sprite, &argv).await.map_err(|e| gone(format!("the machine isn't answering: {e}")))?;
+    let dir = String::from_utf8_lossy(&out).trim().to_owned();
+    if code != Some(0) || !dir.starts_with('/') {
+        return Err(gone("can't make the uploads folder on the machine".into()));
+    }
+    let name = staged.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let path = format!("{dir}/{name}");
+    provider
+        .write_file(sprite, &path, data, 0o644)
+        .await
+        .map_err(|e| gone(format!("can't write it on the machine: {e}")))?;
+    Ok(path)
+}
+
+/// Remove a closed pane's uploads on the machine it ran on, if that
+/// machine stays.
+pub fn forget_on(provider: Arc<dyn crate::provider::Provider>, sprite: String, pane: PaneId) {
+    tokio::spawn(async move {
+        let script = r#"rm -rf "$HOME/.cache/illogical/uploads/$1""#;
+        let tag = pane.to_string();
+        let _ = provider.run(&sprite, &["sh", "-c", script, "illogical-upload", &tag]).await;
+    });
 }
 
 #[derive(Deserialize)]
