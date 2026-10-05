@@ -4505,6 +4505,18 @@ WebRTC and the mic in each client:
 
 Where WebKitGTK has none, measure str0m or webrtc-rs with cpal on the Tauri side. For openmls in wasm: size, join and commit times at 2, 10 and 50 devices, and how invites, *Ask me first*, removal, locking and removed devices map to commits and Welcomes. Also: offline devices several epochs behind; what a hostile control gets from dropping or reordering messages; whether team daemons should be MLS members so agents can post; coturn on Fly against Cloudflare's TURN.
 
+**Result (2026-10-05, PR #270): go for both.**
+- **Voice:**
+  - WebRTC, including relay-only calls through TURN, works in Chrome, Firefox, Safari, WKWebView and Edge/WebView2.
+  - **No distro's WebKitGTK has WebRTC** (upstream builds it only with experimental features), so the Linux desktop app runs calls in Rust: webrtc-rs + Opus + cpal + AEC3. That path called Chrome on jake-air through TURN: 15 ms RTT, 0 loss, about 2% of a core.
+  - Signed fingerprints caught a hostile signaling server.
+  - TURN: Cloudflare for the hosted control.
+- **Channels:**
+  - openmls runs in wasm everywhere: 540 kB gzipped; 8 ms to join and 11 ms to commit at 50 devices.
+  - M62 needs a separate MLS key per device, bound by the device key (WebCrypto signs asynchronously), `max_past_epochs` of 3–5, and merging its own commits only after control accepts them.
+  - Team machines aren't channel members.
+- **Left for Jake:** a live call with real mics, mic permission prompts on the Mac, iOS PWA audio in the background, and a Cloudflare TURN key.
+
 **Done when:** `spikes/s30-talk/README.md` has a go/no-go per client and these two demos:
 - a call between geek's desktop app and jake-air's Chrome through TURN, with direct UDP blocked;
 - two accounts exchanging MLS messages through a stub delivery service, with a member removed mid-conversation who can't read anything sent after.
@@ -4545,7 +4557,7 @@ Where WebKitGTK has none, measure str0m or webrtc-rs with cpal on the Tauri side
 - The daemon signals and admits people by the same rules as viewing.
 - Peer to peer up to S30's limit (about 5), with signed DTLS fingerprints checked against device certificates.
 - TURN from control.
-- Clients without WebRTC use S30's fallback, or say why calls aren't available.
+- On Linux the desktop app runs the call in Rust (S30's native peer: webrtc-rs, Opus, cpal, bundled AEC3). The page keeps signaling and the UI and hands the SDP over through a Tauri command. The mic prompt goes through wry's `with_permission_handler`.
 
 **Done when:**
 - A 30-minute call on a shared session with geek's desktop app, jake-air and the phone, one of them forced through TURN.
