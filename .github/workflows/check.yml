@@ -1,8 +1,13 @@
-# Every push: the testnet's claims, `just check` and the Playwright specs
-# (Chromium and WebKit) on Linux; build, test and the WebKit specs on macOS.
-# Both need Docker: the testnet (testnet/README.md) and the ssh tests in
-# `just test` fail without it. Only pushes (never pull requests), since these
-# run on our own machines' hosts.
+# Every push, in parallel (#287):
+# - lint: the quick checks, on GitHub's runners;
+# - linux: the testnet's claims, `just check` and the Playwright specs on
+#   the Docker test stack, on geek (one stack per host at a time);
+# - build, then e2e: every other Playwright spec, in shards on geek's e2e
+#   runner pool (label linux-x86_64-e2e), each with its own test daemon;
+# - macos: build, test and the WebKit specs, on jake-mini.
+# geek and jake-mini need Docker: the testnet (testnet/README.md) and the
+# ssh tests in `just test` fail without it. Only pushes (never pull
+# requests), since most of it runs on our own machines.
 name: check
 on:
   push:
@@ -10,6 +15,28 @@ on:
   workflow_dispatch:
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # gitleaks reads the history.
+          fetch-depth: 0
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just,gitleaks
+      - name: Formatting
+        # rust-toolchain.toml's toolchain, rustfmt only.
+        run: rustup component add rustfmt && cargo fmt --all --check
+      - name: install.sh and the release's glibc check
+        run: shellcheck -s sh scripts/install.sh scripts/glibc-floor && shellcheck -s bash scripts/tests/*.sh
+      - name: Release scripts and ratchets
+        run: just test-scripts
+      - name: The test stack's scripts
+        run: shellcheck -x testnet/*.sh testnet/forges/*.sh testnet/hosts/*.sh testnet/editors/*.sh && shellcheck -s sh testnet/editors/box/entrypoint.sh testnet/sshd/entrypoint.sh testnet/sshd-systemd/keys.sh testnet/git/entrypoint.sh testnet/tailnet/entrypoint.sh
+      - name: No secrets
+        run: gitleaks git --no-banner --redact .
+
   linux:
     runs-on: [self-hosted, linux-x86_64]
     # The test stack's container names and bastion port are fixed: one
@@ -27,8 +54,8 @@ jobs:
       # it must fail.
       - name: The testnet's ssh profile
         run: just testnet down && just testnet up ssh && just testnet test ssh && just testnet break ssh
-      # The box's binaries, for the ssh tests in `just check` and the
-      # control profile.
+      # The box's binaries, for the ssh tests in `just check`, the control
+      # profile and team-swarm-phones' box behind netem.
       - run: just static
       # Before `just check`: reboot.rs drives Chromium (its watcher). After
       # it, a failing check meant the browsers a Playwright upgrade needs
@@ -44,26 +71,75 @@ jobs:
       - run: just check-macos x86_64
       - name: The desktop app
         run: just desktop-check
-      - name: install.sh and the release's glibc check
-        run: shellcheck -s sh scripts/install.sh scripts/glibc-floor && shellcheck -s bash scripts/tests/*.sh
-      - name: Release scripts and ratchets
-        run: just test-scripts
-      - name: The test stack's scripts
-        run: shellcheck -x testnet/*.sh testnet/forges/*.sh testnet/hosts/*.sh testnet/editors/*.sh && shellcheck -s sh testnet/editors/box/entrypoint.sh testnet/sshd/entrypoint.sh testnet/sshd-systemd/keys.sh testnet/git/entrypoint.sh testnet/tailnet/entrypoint.sh
       - name: THIRD_PARTY.md is current
         run: just notices && git diff --exit-code THIRD_PARTY.md crates/desktop/THIRD_PARTY.md
-      - name: No secrets
-        run: gitleaks git --no-banner --redact .
-      # team-swarm-phones' variant across networks runs a box in a container
-      # behind tc netem, with just static's illogicald (built above).
-      - name: The Playwright specs, in Chromium and WebKit
+      # The rest run in the e2e job's shards.
+      - name: The Playwright specs on the test stack
         run: just e2e
         env:
           E2E_CHROMIUM: "1"
           E2E_PORT: "7769"
+          E2E_SET: stack
       - name: Take the test stack down
         if: always()
         run: just testnet down
+
+  # What the e2e shards run, built once and kept for this run alone: other
+  # runs build into the same target directory meanwhile.
+  build:
+    runs-on: [self-hosted, linux-x86_64-e2e]
+    outputs:
+      dir: ${{ steps.keep.outputs.dir }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Keep the build between runs
+        run: echo "CARGO_TARGET_DIR=$HOME/.cache/illogical-ci/e2e" >> "$GITHUB_ENV"
+      - run: scripts/ci-cap-target 30
+      - run: just bootstrap
+      - run: just web
+      # web/dist embedded (debug-embed): the shards run these from another
+      # checkout.
+      - run: mise exec -- cargo build -p illogicald -p illogical -p illogical-control --features illogicald/debug-embed,illogical-control/debug-embed
+      - run: just static x86_64
+      - name: Keep this run's binaries
+        id: keep
+        run: |
+          runs=$HOME/.cache/illogical-ci/e2e-runs
+          dir=$runs/$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT
+          mkdir -p "$dir/debug" "$dir/x86_64-unknown-linux-musl/release"
+          # Hard links: instant, and cargo replaces files rather than
+          # writing into them, so later builds leave these alone.
+          for b in illogicald illogical illogical-control; do
+            ln -f "$CARGO_TARGET_DIR/debug/$b" "$dir/debug/$b"
+            ln -f "$CARGO_TARGET_DIR/x86_64-unknown-linux-musl/release/$b" "$dir/x86_64-unknown-linux-musl/release/$b"
+          done
+          echo "dir=$dir" >> "$GITHUB_OUTPUT"
+          # Runs from more than a day ago.
+          find "$runs" -mindepth 1 -maxdepth 1 -mmin +1440 -exec rm -rf {} +
+
+  e2e:
+    needs: build
+    runs-on: [self-hosted, linux-x86_64-e2e]
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
+    steps:
+      - uses: actions/checkout@v4
+      - run: just bootstrap
+      - name: Playwright's browsers
+        run: just browsers
+      # The specs run ../target/debug/illogicald (and the CLI and control).
+      - name: This run's binaries
+        run: rm -rf target && ln -sfn "${{ needs.build.outputs.dir }}" target
+      - name: The Playwright specs, shard ${{ matrix.shard }} of 6
+        run: |
+          # A port of its own: other shards and runs share this host.
+          port=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')
+          cd web && E2E_PORT=$port pnpm exec playwright test --shard=${{ matrix.shard }}/6
+        env:
+          E2E_CHROMIUM: "1"
+          E2E_SET: rest
 
   macos:
     runs-on: [self-hosted, macos-arm64]

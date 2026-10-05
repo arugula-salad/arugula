@@ -129,6 +129,14 @@ if (!external) process.env.ILLOGICAL_FORGE_HOOK_BASE ??= `http://127.0.0.1:${por
 // E2E_DAEMON_LOG=/path/to/file keeps the test daemon's debug log.
 const log = process.env.E2E_DAEMON_LOG ? ` >>${process.env.E2E_DAEMON_LOG} 2>&1` : "";
 
+// CI splits the specs (#287): E2E_SET=stack runs only those on the Docker
+// test stack (fixed container names and bastion port: one at a time per
+// host), E2E_SET=rest everything else, sharded across runners.
+const STACK = /(team-swarm-phones|testnet-hosts|editor-remote-ssh)\.spec\.ts$/;
+const set = process.env.E2E_SET;
+const only = (match: RegExp) => (set === "stack" ? { testMatch: STACK } : { testMatch: match });
+const skip = (ignore: RegExp) => ({ testIgnore: set === "rest" ? [ignore, STACK] : ignore });
+
 export default defineConfig({
   testDir: "e2e",
   timeout: 30_000,
@@ -140,8 +148,9 @@ export default defineConfig({
     storageState: { cookies: tokenCookies, origins: [] },
   },
   projects: [
-    { name: "chrome", use: { channel: process.env.E2E_CHROMIUM ? "chromium" : "chrome" }, testIgnore: /\.webkit\.spec\.ts$/ },
-    { name: "webkit", use: { browserName: "webkit" }, testMatch: /\.webkit\.spec\.ts$/ },
+    { name: "chrome", use: { channel: process.env.E2E_CHROMIUM ? "chromium" : "chrome" }, ...skip(/\.webkit\.spec\.ts$/), ...(set === "stack" ? only(STACK) : {}) },
+    // The stack's specs are all Chrome's.
+    { name: "webkit", use: { browserName: "webkit" }, ...(set === "stack" ? { testMatch: /^$/ } : { testMatch: /\.webkit\.spec\.ts$/ }) },
   ],
   webServer: external
     ? undefined

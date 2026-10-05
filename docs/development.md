@@ -61,10 +61,15 @@ CI runs on two self-hosted GitHub Actions runners in the arugula-salad
 org's `illogical` runner group, which only this repo may use: geek
 (`linux-x86_64`, a systemd user service,
 `~/.config/systemd/user/actions-runner-illogical.service`, runner in
-`~/.local/share/actions-runner-illogical`) and jake-mini (`macos-arm64`, a
+`~/.local/share/actions-runner-illogical`), geek's e2e pool (six more,
+`linux-x86_64-e2e`, `actions-runner-illogical-e2e@1…6.service` from one
+template unit, runners in `~/.local/share/actions-runner-illogical-e2e-N`,
+for the Playwright shards; more is `cp -a` of one, `config.sh` with an org
+registration token, and `systemctl --user enable --now` of the next
+number) and jake-mini (`macos-arm64`, a
 launchd agent, `~/Library/LaunchAgents/illogical.actions-runner.plist`,
 with `ProcessType` Interactive: launchd's throttling of background agents
-made daemon tests time out). Both run jobs on the host and keep their
+made daemon tests time out; Docker is colima, a Homebrew service). All run jobs on the host and keep their
 build in `~/.cache/illogical-ci/`, which each job deletes first once it
 passes 30 GB (`scripts/ci-cap-target`): cargo never prunes it, and on
 2026-10-02 it grew to 136 GB, filled jake-mini's disk and took the home

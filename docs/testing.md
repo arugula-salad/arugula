@@ -39,11 +39,21 @@ or an account skip without it and name what's missing
 | `testnet/macos/desktop.sh`, `testnet/macos/update.sh` | the macOS app from its .dmg in a fresh tart VM, and its updater | no |
 | `just check-macos` | clippy for the macOS target from Linux (compiles, doesn't link) | Linux |
 
-CI (`.github/workflows/check.yml`) runs on pushes, on our own machines: the
-testnet's ssh and control profiles, `just check` and `just e2e` on Linux
-(geek); `just test` and `just e2e-webkit` on macOS (jake-mini). Both
-runners need Docker (the testnet, and `ssh.rs` in `just test`): without it
-the run fails. `just browsers` installs Playwright's browsers (with their
+CI (`.github/workflows/check.yml`) runs on pushes, in parallel (#287):
+- **lint** (GitHub's runners): rustfmt, shellcheck, `just test-scripts`
+  and gitleaks.
+- **linux** (geek): the testnet's ssh and control profiles, `just check`,
+  and the Playwright specs on the test stack (`E2E_SET=stack`).
+- **build, then e2e** (geek's e2e pool, six runners labelled
+  `linux-x86_64-e2e`): one build of the debug binaries (with
+  `--features debug-embed`, so they carry `web/dist`), kept for that run,
+  then every other spec (`E2E_SET=rest`) in six `--shard`s. Each shard
+  starts its own test daemon on a free port.
+- **macos** (jake-mini): `just test` and `just e2e-webkit`.
+
+geek and jake-mini need Docker (the testnet, and `ssh.rs` in `just test`):
+without it the run fails. To run one shard's specs locally: `E2E_SET=rest
+pnpm exec playwright test --shard=2/6` in `web/`. `just browsers` installs Playwright's browsers (with their
 system libraries on Linux, if sudo needs no password; otherwise run `sudo
 pnpm exec playwright install-deps` in `web/` once). See
 [development.md](development.md) for the runners.
