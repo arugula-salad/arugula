@@ -5,7 +5,7 @@
 //! headroom over what step 1 measured, but not enough to hide either big
 //! fix coming undone: Zig's signal stack (+1.3 MB a pane) or glibc keeping
 //! what closed panes freed. Linux only: it reads /proc.
-#![cfg(target_os = "linux")]
+#![cfg(any(target_os = "linux", target_os = "android"))]
 
 mod listen;
 
