@@ -235,6 +235,20 @@ fn clean(vars: Vec<(String, String)>, given: &[(String, String)]) -> Vec<(String
 }
 
 /// Run `shell` as a login shell, interactive, and read its environment.
+/// Windows: a program's environment is the user's (the registry's), which
+/// the daemon has already; PowerShell has no login environment to add.
+#[cfg(windows)]
+async fn resolve(
+    _shell: &str,
+    _args: &[String],
+    _home: &Path,
+    _env: &[(String, String)],
+    _timeout: Duration,
+) -> Result<Vec<(String, String)>, String> {
+    Ok(vec![])
+}
+
+#[cfg(unix)]
 async fn resolve(
     shell: &str,
     args: &[String],

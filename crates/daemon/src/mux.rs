@@ -386,8 +386,12 @@ impl Config {
             .or_else(|| std::env::var("PATH").ok())
             .unwrap_or_default();
         if let Some(bin) = self.launch.exe.parent() {
-            let bin = bin.display().to_string();
-            let path = if base.split(':').any(|p| p == bin) { base } else { format!("{bin}:{base}") };
+            // `:` on Unix, `;` on Windows.
+            let mut dirs: Vec<PathBuf> = std::env::split_paths(&base).collect();
+            if !dirs.iter().any(|d| d == bin) {
+                dirs.insert(0, bin.to_owned());
+            }
+            let path = std::env::join_paths(dirs).map(|p| p.to_string_lossy().into_owned()).unwrap_or(base);
             env.retain(|(k, _)| k != "PATH");
             env.push(("PATH".into(), path));
         }
@@ -399,15 +403,16 @@ impl Config {
         // connected. An agent this machine has (a desktop's) is kept.
         #[cfg(unix)]
         let live = |p: &str| std::os::unix::net::UnixStream::connect(p).is_ok();
-        // Windows' ssh agent is a named pipe; panes keep the one they're given.
+        // Windows' ssh agent is a named pipe: panes keep the one they're given.
         #[cfg(not(unix))]
-        let live = |_: &str| false;
-        let has_agent = env
-            .iter()
-            .find(|(k, _)| k == "SSH_AUTH_SOCK")
-            .map(|(_, v)| v.clone())
-            .or_else(|| std::env::var("SSH_AUTH_SOCK").ok())
-            .is_some_and(|p| live(&p));
+        let live = |_: &str| true;
+        let has_agent = !cfg!(unix)
+            || env
+                .iter()
+                .find(|(k, _)| k == "SSH_AUTH_SOCK")
+                .map(|(_, v)| v.clone())
+                .or_else(|| std::env::var("SSH_AUTH_SOCK").ok())
+                .is_some_and(|p| live(&p));
         if !has_agent {
             env.retain(|(k, _)| k != "SSH_AUTH_SOCK");
             env.push(("SSH_AUTH_SOCK".into(), self.socket.with_file_name("agent.sock").display().to_string()));
