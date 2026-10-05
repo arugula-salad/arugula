@@ -1,4 +1,4 @@
-//! The local daemon's named pipe, as a [`Stream`] (Windows, M57).
+//! The local daemon's named pipe, as a [`Stream`] (Windows).
 //!
 //! Opened as a plain (synchronous) handle, which is enough for one thread
 //! that reads and writes in turn: a read only blocks when asked to, and
