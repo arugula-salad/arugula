@@ -197,12 +197,10 @@ mod windows {
         s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
     }
 
-    fn user() -> String {
-        let name = std::env::var("USERNAME").unwrap_or_default();
-        match std::env::var("USERDOMAIN") {
-            Ok(d) if !d.is_empty() => format!("{d}\\{name}"),
-            _ => name,
-        }
+    /// This user, by SID: a name with its domain isn't always one Task
+    /// Scheduler can map (an ssh session's `USERDOMAIN` is `WORKGROUP`).
+    fn user() -> anyhow::Result<String> {
+        Ok(crate::pipe::my_sid()?)
     }
 
     /// The task, as Task Scheduler's XML.
@@ -260,7 +258,7 @@ mod windows {
         let state = crate::default_state_dir();
         fs::create_dir_all(&state)?;
         let log = state.join("illogicald.log");
-        let task = task_xml(&exe, &log, &args, system, &user());
+        let task = task_xml(&exe, &log, &args, system, &user()?);
         // Task Scheduler reads it as UTF-16.
         let file = dir.join("illogicald-task.xml");
         let mut bytes = vec![0xff, 0xfe];
