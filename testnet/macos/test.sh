@@ -6,6 +6,11 @@
 #   testnet/macos/test.sh launchd [claim...]   claims below
 #   BREAK=1 testnet/macos/test.sh launchd      every claim must fail
 #   testnet/macos/test.sh safari               web/safari against real Safari
+#   testnet/macos/test.sh ios [claim...]       the key probe and the presigned
+#                                              invite (and S27, asked for) in
+#                                              the iOS Simulator (ios.sh; the
+#                                              Xcode base, `vm.sh base --xcode`;
+#                                              parked, #257)
 #   testnet/macos/test.sh iterm2 [claim...]    M5 and M32 in iTerm2 (iterm2.sh)
 #   testnet/macos/test.sh app                  #178, the app in cloud mode
 #                                              (app-cloud.ts)
@@ -206,8 +211,9 @@ failed=
 case "$test" in
   launchd) t_launchd "$@" ;;
   safari) exec "$HERE/safari.sh" "$@" ;;
+  ios) exec "$HERE/ios.sh" "$@" ;;
   iterm2) exec "$HERE/iterm2.sh" "$@" ;;
   app) cd "$ROOT" && exec node --experimental-strip-types --no-warnings testnet/macos/app-cloud.ts "$@" ;;
-  *) sed -n '3,40p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2 ;;
+  *) sed -n '3,44p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2 ;;
 esac
 [ -z "$failed" ]

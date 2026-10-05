@@ -4223,7 +4223,7 @@ Answers in `spikes/s27-blocks/README.md`. Go for M50, per browser:
 |---|---|---|
 | Chrome / Chromium | **go** | every check, including code-server's webviews; about 0.2 ms added per request on loopback |
 | Safari, macOS | **go** (2026-10-05) | Playwright's WebKit passes every check; real Safari 26.6.2 in a tart VM passes `safari/safari.ts` (`testnet/macos/s27-safari.sh`) |
-| Safari, iOS | **unknown** | not run; `safari/safari.ts --ios` needs the Simulator, so the Xcode image (#257) |
+| Safari, iOS | **unknown** | blocked (2026-10-05): on the Xcode image's `:latest` (Xcode 27, iOS 27 runtime) the Simulator boots and safaridriver answers, but every session is refused ("Could not find any session hosts"), Remote Automation on or off; an iOS 26.0 runtime refused the same way. Next: a base from the Xcode 26 image (#257, `just macos ios s27`) |
 | Desktop app (WebKitGTK) | **go** (2026-10-05) | Ubuntu 22.04's libwebkit2gtk-4.1 2.50.4, the library the app links, passes `safari/safari.ts` in the app's Xvfb image (MiniBrowser through WebKitWebDriver, `webkitgtk.sh`) |
 
 **Network (2026-10-05):** with browser, control and box on separate Docker networks and `tc netem` giving each link a 20 ms round trip (`netem.sh`), a relayed request took 44.5 ms at p50 against 24.6 ms for the worker straight to the daemon and 26.4 ms for today's block site: the relay costs one round trip to control and nothing more. 200 parallel requests were faster through the channel (185 ms) than today's HTTP/1.1 site (1163 ms). A block's first load was 429 ms against 98 ms today, from the bootstrap's sequential round trips through control.

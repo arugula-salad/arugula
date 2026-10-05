@@ -450,7 +450,9 @@ forges cmd="test" forge="forgejo":
     esac
 
 # macOS checks in a throwaway tart VM (testnet/macos/README.md):
-# `just macos launchd`, `just macos safari`, or base|up|down|ssh for the VM.
+# `just macos launchd`, `just macos safari`, `just macos ios` (the iOS
+# Simulator, on the Xcode base: `just macos base --xcode` once; parked,
+# #257), or base|up|down|ssh for the VM.
 # Fails without tart or the base VM; ARUGULA_SKIP_MACOS_VM=1 skips loudly.
 macos cmd="launchd" *args:
     #!/usr/bin/env bash
@@ -459,6 +461,8 @@ macos cmd="launchd" *args:
       base|up|down|ssh|ip|push|restart) exec testnet/macos/vm.sh {{cmd}} {{args}} ;;
     esac
     {{cargo}} build -p arugulad -p arugula -p arugula-control
+    # web/safari serves web/dist.
+    if [ "{{cmd}}" = ios ]; then just web; fi
     exec testnet/macos/test.sh {{cmd}} {{args}}
 
 # Tests for the shell side of releases: install.sh picks the right release

@@ -7,6 +7,18 @@ const ELEMENT = "element-6066-11e4-a52e-4f735466cecf";
 
 export const driverUrl = process.env.SAFARIDRIVER_URL ?? "";
 
+/** SAFARI_IOS=1: Safari in an iOS Simulator on safaridriver's Mac
+ * (testnet/macos/ios.sh), the one SAFARI_DEVICE_UDID names if it's set. */
+export const ios = process.env.SAFARI_IOS === "1";
+const iosCaps: Record<string, unknown> = ios
+  ? {
+      browserName: "Safari",
+      platformName: "iOS",
+      "safari:useSimulator": true,
+      ...(process.env.SAFARI_DEVICE_UDID ? { "safari:deviceUDID": process.env.SAFARI_DEVICE_UDID } : {}),
+    }
+  : {};
+
 async function call<T>(method: string, url: string, body?: unknown): Promise<T> {
   const r = await fetch(url, {
     method,
@@ -30,11 +42,12 @@ export class Safari {
   /** A new session. Safari allows one at a time per safaridriver. */
   static async start(caps: Record<string, unknown> = {}): Promise<Safari> {
     let last: unknown;
-    // A session that just ended can hold Safari for a moment.
-    for (let i = 0; i < 10; i++) {
+    // A session that just ended can hold Safari for a moment, and a
+    // Simulator's Safari takes longer to come up the first time.
+    for (let i = 0; i < (ios ? 30 : 10); i++) {
       try {
         const v = await call<{ sessionId: string; capabilities: Record<string, unknown> }>("POST", `${driverUrl}/session`, {
-          capabilities: { alwaysMatch: { browserName: "safari", ...caps } },
+          capabilities: { alwaysMatch: { browserName: "safari", ...iosCaps, ...caps } },
         });
         return new Safari(`${driverUrl}/session/${v.sessionId}`, v.capabilities);
       } catch (e) {

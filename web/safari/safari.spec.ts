@@ -8,6 +8,8 @@
 // (testnet/macos/test.sh safari), SAFARI_TUNNEL is an ssh command into it:
 // each server here is forwarded to the same port on the VM's loopback, so
 // Safari's pages are on 127.0.0.1 too, a secure context for WebCrypto.
+// SAFARI_IOS=1 drives Safari in the iOS Simulator instead (#257,
+// testnet/macos/test.sh ios), which shares the VM's network.
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -16,7 +18,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "@playwright/test";
 import { ANY, controlPort, listen } from "../e2e/ports";
-import { driverUrl, Safari } from "./webdriver";
+import { driverUrl, ios, Safari } from "./webdriver";
 
 let base = "";
 let github = "";
@@ -112,7 +114,7 @@ test("the key probe in real Safari: device keys survive a reload, or the fallbac
   const result = JSON.parse(await s.run<string>(`return document.getElementById("result").textContent;`));
   test.info().annotations.push({ type: "probe", description: JSON.stringify(result) });
   console.log(`key probe in ${result.browser}: ${verdict}\n${JSON.stringify(result.after)}`);
-  expect(result.browser).toMatch(/^Safari [\d.]+ on macOS$/);
+  expect(result.browser).toMatch(ios ? /^Safari [\d.]+ on iPhone, iOS [\d.]+$/ : /^Safari [\d.]+ on macOS$/);
   expect(["keys", "wrapped"]).toContain(verdict);
   expect(result.after.wrapped.ok).toBe(true);
 });
