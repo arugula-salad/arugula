@@ -118,6 +118,8 @@ jobs:
             ln -f "$CARGO_TARGET_DIR/debug/$b" "$dir/debug/$b"
             ln -f "$CARGO_TARGET_DIR/x86_64-unknown-linux-musl/release/$b" "$dir/x86_64-unknown-linux-musl/release/$b"
           done
+          # web/dist too: control's specs serve it with --static-dir dist.
+          rm -rf "$dir/dist" && cp -a web/dist "$dir/dist"
           echo "dir=$dir" >> "$GITHUB_OUTPUT"
           # Runs from more than a day ago.
           find "$runs" -mindepth 1 -maxdepth 1 -mmin +1440 -exec rm -rf {} +
@@ -135,8 +137,11 @@ jobs:
       - name: Playwright's browsers
         run: just browsers
       # The specs run ../target/debug/illogicald (and the CLI and control).
-      - name: This run's binaries
-        run: rm -rf target && ln -sfn "${{ needs.build.outputs.dir }}" target
+      - name: This run's binaries and web/dist
+        run: |
+          rm -rf target web/dist
+          ln -sfn "${{ needs.build.outputs.dir }}" target
+          cp -a "${{ needs.build.outputs.dir }}/dist" web/dist
       - name: The Playwright specs, shard ${{ matrix.shard }} of 6
         run: |
           # A port of its own: other shards and runs share this host.
