@@ -1835,7 +1835,12 @@ impl<'a> Call<'a> {
             })
             .collect();
         done(
-            format!("{} message(s) in {}{}", msgs.len(), target.key(), if text.is_empty() { String::new() } else { format!(":\n{}", text.join("\n")) }),
+            format!(
+                "{} message(s) in {}{}",
+                msgs.len(),
+                target.key(),
+                if text.is_empty() { String::new() } else { format!(":\n{}", text.join("\n")) }
+            ),
             json!({ "thread": target, "messages": msgs, "last": last }),
         )
     }
@@ -2859,7 +2864,7 @@ mod tests {
     #[test]
     fn annotations_are_honest() {
         let all = list(Scope::Full);
-        assert_eq!(all.len(), 32);
+        assert_eq!(all.len(), 34);
         let ro: Vec<&str> = all
             .iter()
             .filter(|t| t.annotations.as_ref().and_then(|a| a.read_only_hint) == Some(true))
@@ -2872,6 +2877,7 @@ mod tests {
                 "capture_screen",
                 "wait",
                 "list",
+                "read_thread",
                 "history",
                 "search",
                 "list_conversations",

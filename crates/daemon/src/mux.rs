@@ -13,8 +13,8 @@ use std::{
 use illogical_core::{Effect, Intent, Mux, Role};
 use illogical_proto::{
     Action, Activity, AskRef, AskWhat, Attention, BlockType, ClientId, ClientMsg, CommandInfo, Delta, Driver, Event,
-    EventKind, Machine, MachineId, MachineState, Owner, PaneId, PaneInfo, PaneOp, Policy, Presence, Reason, ReasonKind,
-    Quote, ServerMsg, SessionId, State, TabId, TabView, ThreadMsg, ThreadSummary, ThreadTarget, WorkKind,
+    EventKind, Machine, MachineId, MachineState, Owner, PaneId, PaneInfo, PaneOp, Policy, Presence, Quote, Reason,
+    ReasonKind, ServerMsg, SessionId, State, TabId, TabView, ThreadMsg, ThreadSummary, ThreadTarget, WorkKind,
     api::{OpenRequest, PaneSummary, RunRequest},
     ask::{Ask, AskKind},
 };
@@ -740,6 +740,8 @@ enum Dirty {
     All,
 }
 
+/// What one person sees besides panes: machines, who's here, threads.
+type People = (Vec<Machine>, Vec<Presence>, Vec<ThreadSummary>);
 /// A pane as one client has it.
 type PaneJson = serde_json::Map<String, serde_json::Value>;
 /// The changed panes as one person sees them (`None`: not any more).
@@ -3497,7 +3499,7 @@ impl Daemon {
         // Most clients are one person's: work each view out once.
         let mut states: HashMap<Principal, State> = HashMap::new();
         let mut views: HashMap<(Principal, bool), PaneView> = HashMap::new();
-        let mut people: HashMap<Principal, (Vec<Machine>, Vec<Presence>, Vec<ThreadSummary>)> = HashMap::new();
+        let mut people: HashMap<Principal, People> = HashMap::new();
         for (client, who) in clients {
             let summary = self.summary.contains(&client);
             let stale = full || self.sent.get(&client).is_none_or(|s| s.rev != self.mux.rev);

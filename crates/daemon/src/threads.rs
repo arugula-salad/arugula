@@ -158,13 +158,15 @@ pub fn mentions(text: &str) -> Vec<String> {
 }
 
 /// Whether `token` (from [`mentions`]) names this person: their name with
-/// the spaces taken out, its first word, or the login in their id.
+/// the spaces taken out, its first word, the part of an email address
+/// before the `@`, or the login in their id.
 pub fn names(token: &str, id: &str, name: &str) -> bool {
     let name = name.to_lowercase();
     let squashed: String = name.chars().filter(|c| !c.is_whitespace()).collect();
     let first = name.split_whitespace().next().unwrap_or("");
+    let local = first.split('@').next().unwrap_or("");
     let login = id.rsplit(':').next().unwrap_or(id).split('@').next().unwrap_or("").to_lowercase();
-    token == squashed || token == first || (!login.is_empty() && token == login)
+    [squashed.as_str(), first, local, login.as_str()].iter().any(|n| !n.is_empty() && token == *n)
 }
 
 /// Whether a message calls the pane's agent.
@@ -260,6 +262,8 @@ mod tests {
         assert!(names("samlee", "account:abc", "Sam Lee"));
         assert!(names("octocat", "tailnet:octocat@github", "The Octocat"));
         assert!(!names("sa", "account:abc", "Sam Lee"));
+        assert!(names("me", "owner", "me@example.com"));
+        assert!(names("owner", "owner", "Jake"));
         assert!(calls_agent(&mentions("hey @Claude look")));
     }
 }

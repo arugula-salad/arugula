@@ -28,12 +28,8 @@ fn daemon(tag: &str) -> illogical_testkit::Daemon {
 /// A request as a tailnet guest: status and JSON body.
 fn guest(d: &illogical_testkit::Daemon, who: &str, method: &str, path: &str, body: Option<Value>) -> (u16, Value) {
     let body = body.map(|b| b.to_string());
-    let (status, _, text) = d.tcp(
-        method,
-        path,
-        &[("tailscale-user-login", who), ("content-type", "application/json")],
-        body.as_deref(),
-    );
+    let (status, _, text) =
+        d.tcp(method, path, &[("tailscale-user-login", who), ("content-type", "application/json")], body.as_deref());
     (status, serde_json::from_str(&text).unwrap_or(Value::String(text)))
 }
 
@@ -71,11 +67,7 @@ async fn threads_seen(d: &illogical_testkit::Daemon, who: &str) -> Value {
 }
 
 fn unread(threads: &Value, key: &str, id: u64) -> Option<u64> {
-    threads
-        .as_array()?
-        .iter()
-        .find(|t| t["target"][key] == id)
-        .map(|t| t["unread"].as_u64().unwrap_or(0))
+    threads.as_array()?.iter().find(|t| t["target"][key] == id).map(|t| t["unread"].as_u64().unwrap_or(0))
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -162,7 +154,9 @@ async fn a_private_panes_thread_is_its_owners_and_from_now_starts_now() {
     let (mut ws, _) = connect_async(d.ws("/ws")).await.unwrap();
     let op = json!({ "type": "pane", "pane": pane, "op": { "op": "set_private", "on": true } });
     ws.send(Message::Text(op.to_string().into())).await.unwrap();
-    d.wait_for("the pane to go private", || guest(&d, DRIVER, "GET", &format!("/api/threads/pane-{pane}"), None).0 == 404);
+    d.wait_for("the pane to go private", || {
+        guest(&d, DRIVER, "GET", &format!("/api/threads/pane-{pane}"), None).0 == 404
+    });
     assert!(unread(&threads_seen(&d, DRIVER).await, "pane", pane).is_none());
     let (s, _) = guest(&d, DRIVER, "POST", &format!("/api/threads/pane-{pane}"), Some(json!({ "text": "hi" })));
     assert_eq!(s, 404);
@@ -191,10 +185,7 @@ fn threads_and_reads_outlive_a_restart() {
     assert_eq!(unread(&seen, "pane", pane), Some(1), "the driver read 1 of 2: {seen}");
     // And search finds what was said.
     let hits = d.get("/api/search?re=three");
-    assert!(
-        hits.as_array().unwrap().iter().any(|h| h["thread"] == format!("pane-{pane}")),
-        "{hits}"
-    );
+    assert!(hits.as_array().unwrap().iter().any(|h| h["thread"] == format!("pane-{pane}")), "{hits}");
 }
 
 #[test]
