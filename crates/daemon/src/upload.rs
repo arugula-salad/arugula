@@ -309,9 +309,12 @@ const SHELLS: &[&str] =
 /// or an agent. Not `ssh`, a container's shell, an editor, a password
 /// prompt (`sudo`), or anything else.
 fn takes_paths(command: &str) -> bool {
-    let first = command.split_whitespace().next().unwrap_or("").trim_matches(['\'', '"']);
+    let mut words = command.split_whitespace().map(|w| w.trim_matches(['\'', '"']));
+    let first = words.next().unwrap_or("");
     let name = first.rsplit('/').next().unwrap_or(first).trim_start_matches('-');
-    SHELLS.contains(&name) || crate::classify::agent(command).is_some()
+    // A shell at its prompt, not running a script (`sh build.sh`).
+    let interactive = SHELLS.contains(&name) && words.all(|w| w.starts_with('-'));
+    interactive || crate::classify::agent(command).is_some()
 }
 
 pub async fn paste(
@@ -419,12 +422,27 @@ mod tests {
 
     #[test]
     fn paths_paste_into_a_shell_or_an_agent_only() {
-        for c in ["-zsh", "/bin/bash -l", "fish", "claude", "node /usr/lib/node_modules/.bin/claude", "codex resume"] {
+        for c in [
+            "-zsh",
+            "/bin/bash -l",
+            "bash --norc --noprofile",
+            "fish",
+            "claude",
+            "node /usr/lib/node_modules/.bin/claude",
+            "/bin/sh /tmp/bin/claude",
+            "codex resume",
+        ] {
             assert!(takes_paths(c), "{c}");
         }
-        for c in
-            ["ssh geek", "docker exec -it web sh", "sudo apt upgrade", "vim notes.md", "kubectl exec -it p -- bash"]
-        {
+        for c in [
+            "ssh geek",
+            "docker exec -it web sh",
+            "sudo apt upgrade",
+            "vim notes.md",
+            "kubectl exec -it p -- bash",
+            "/bin/sh ./build.sh",
+            "bash -c 'read x'",
+        ] {
             assert!(!takes_paths(c), "{c}");
         }
     }

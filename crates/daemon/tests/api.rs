@@ -515,3 +515,80 @@ fn an_upload_lands_on_the_host_and_its_path_pastes_bracketed() {
     d.wait_for("the pane's uploads gone", || !folder.exists());
     let _ = std::fs::remove_dir_all(&tmp);
 }
+
+/// M70's refusals and upkeep, end to end: a guest who watches, or edits
+/// without the owner's trust, can't upload or paste (403); the host's 200
+/// MB quota holds (507); `ssh` in front gets no path; and a day-old upload
+/// is swept when the daemon starts again, while a new one stays.
+#[test]
+fn uploads_are_refused_past_their_limits_and_swept_after_a_restart() {
+    use std::os::unix::fs::DirBuilderExt;
+    const FRIEND: &str = "friend@example.com";
+    let tmp = std::env::temp_dir().join(format!("ilg-uploads-limits-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).unwrap();
+    let mut d = illogicald!("api")
+        .env("PS1", "$ ")
+        .env("TMPDIR", &tmp)
+        .env_remove("XDG_RUNTIME_DIR")
+        .args(["--owner", "me@example.com", "--tailscale-socket", "/nonexistent/sock"])
+        .wait_secs(10)
+        .start();
+    d.wait_for("the first prompt", || d.get("/api/panes")[0]["cwd"].is_string());
+    let pane = d.get("/api/panes")[0]["id"].as_u64().unwrap();
+    let session = d.get("/api/panes")[0]["session"].as_u64().unwrap();
+
+    // A guest: a viewer, then an editor the owner hasn't trusted with this
+    // machine. Neither writes a file here nor pastes.
+    let as_friend = |path: &str, body: &str, kind: &str| {
+        let (status, _, body) =
+            d.tcp("POST", path, &[("tailscale-user-login", FRIEND), ("Content-Type", kind)], Some(body));
+        (status, body)
+    };
+    let upload = format!("/api/panes/{pane}/upload?id=ab&offset=0&last=true");
+    let paste = format!("/api/panes/{pane}/paste");
+    for role in ["viewer", "editor"] {
+        d.post("/api/acl", json!({ "session": session, "principal": format!("tailnet:{FRIEND}"), "role": role }));
+        let (status, body) = as_friend(&upload, "hi", "application/octet-stream");
+        assert_eq!(status, 403, "{role}: {body}");
+        let (status, body) = as_friend(&paste, r#"{"paths": ["/etc/passwd"]}"#, "application/json");
+        assert_eq!(status, 403, "{role}: {body}");
+    }
+    assert!(!tmp.join("illogical-uploads").join(pane.to_string()).exists(), "nothing written for a guest");
+
+    // The quota counts every pane's uploads on the host: another pane's
+    // 200 MB (sparse) leaves no room.
+    let root = tmp.join("illogical-uploads");
+    let other = root.join("999");
+    std::fs::DirBuilder::new().recursive(true).mode(0o700).create(&other).unwrap();
+    std::fs::File::create(other.join("big.png")).unwrap().set_len(200 << 20).unwrap();
+    let (status, body) = bytes(&d, &format!("/api/panes/{pane}/upload?id=cd&ext=png&offset=0"), b"x");
+    assert_eq!(status, 507, "{body}");
+    std::fs::remove_file(other.join("big.png")).unwrap();
+
+    // `ssh` in front: the path would mean nothing on the far side.
+    let bin = tmp.join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    std::os::unix::fs::symlink("/bin/cat", bin.join("ssh")).unwrap();
+    d.post(&format!("/api/panes/{pane}/send"), json!({"text": bin.join("ssh").display().to_string(), "enter": true}));
+    // Its command line (macOS names a linked binary after its target).
+    d.wait_for("ssh in front", || d.raw("GET", &format!("/api/panes/{pane}/process"), None).1.contains("bin/ssh\""));
+    let (status, v) = bytes(&d, &format!("/api/panes/{pane}/upload?id=ef&ext=png&offset=0&last=true"), b"png");
+    assert_eq!(status, 200, "{v}");
+    let v = d.post(&paste, json!({ "paths": [v["path"]] }));
+    assert_eq!(v["pasted"], false, "{v}");
+    assert!(v["front"].as_str().unwrap().ends_with("ssh"), "{v}");
+
+    // Swept at the next start: a day old goes, a new one stays.
+    let old = other.join("old.png");
+    let new = other.join("new.png");
+    std::fs::write(&old, b"old").unwrap();
+    std::fs::write(&new, b"new").unwrap();
+    let two_days = std::time::SystemTime::now() - Duration::from_secs(48 * 3600);
+    std::fs::File::options().write(true).open(&old).unwrap().set_modified(two_days).unwrap();
+    d.stop();
+    d.start();
+    d.wait_for("the old upload swept", || !old.exists());
+    assert!(new.exists());
+    let _ = std::fs::remove_dir_all(&tmp);
+}
