@@ -1,19 +1,21 @@
 # Intel Macs (#227): test, build and package natively on GitHub's Intel
 # macOS runner, as `just test` and the release steps run on jake-mini for
-# Apple silicon. They're not our host runners, so pull requests can run this
-# too. The tarball and the app are kept as artifacts for trying on an Intel
-# Mac; the release itself cross-compiles them on jake-mini (release.yml).
+# Apple silicon. Cold, it takes about an hour, so it runs weekly on main and
+# by hand (`gh workflow run macos-intel.yml --ref BRANCH`) for changes that
+# touch macOS; every push still lints the Intel build on geek (`just
+# check-macos x86_64`). The tarball and the app are kept as artifacts for
+# trying on an Intel Mac; the release itself cross-compiles them on
+# jake-mini (release.yml).
 name: macos-intel
 on:
-  push:
-    branches: [main]
-  pull_request:
+  schedule:
+    - cron: "17 9 * * 1" # Mondays
   workflow_dispatch:
 
 permissions:
   contents: read
 
-# A newer push to the same branch or PR replaces the run in progress.
+# A newer run on the same branch replaces the one in progress.
 concurrency:
   group: macos-intel-${{ github.ref }}
   cancel-in-progress: true

@@ -68,7 +68,10 @@ before any outside contributor's workflow runs, so a fork's PR can't add
 a trigger of its own and reach them. Intel Macs are the exception:
 `.github/workflows/macos-intel.yml` runs `just test` and builds the
 tarball and the app on GitHub's `macos-15-intel` runner, which isn't
-ours, so it runs on pull requests too and keeps both as artifacts. A job's log: `gh run view --log
+ours. It takes about an hour cold, so it runs weekly on main and by hand
+(`gh workflow run macos-intel.yml --ref BRANCH`), and keeps both as
+artifacts; every push lints the Intel build on geek (`just check-macos
+x86_64`). A job's log: `gh run view --log
 <run id>` (or `--log-failed`).
 
 The repo moved from Forgejo (`git.inevitable.fyi/jhgaylor/illogical`,
