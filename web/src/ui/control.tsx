@@ -22,6 +22,21 @@ function Center({ children }: { children: preact.ComponentChildren }) {
   return <div class="control-center">{children}</div>;
 }
 
+/** The hosted control's terms (#172); a control you run yourself has its
+ * own, or none. */
+const HOSTED = "control.illogical.widgets.wtf";
+const SITE = "https://illogical.widgets.wtf";
+
+function HostedTerms() {
+  if (location.hostname !== HOSTED) return null;
+  return (
+    <p class="control-legal dim" data-legal>
+      Free during the beta, provided as is. By signing in you agree to the <a href={`${SITE}/terms`}>terms</a>; the{" "}
+      <a href={`${SITE}/privacy`}>privacy notice</a> says what this service keeps.
+    </p>
+  );
+}
+
 /** Everything before the app: sign in, approval, no machines yet. */
 export function ControlGate({ s }: { s: ControlSession }) {
   useControl(s);
@@ -52,6 +67,7 @@ export function ControlGate({ s }: { s: ControlSession }) {
           {s.info.passkeys ? <PasskeyButtons /> : null}
         </div>
         {!s.info.github && !s.info.passkeys ? <p class="control-error">No sign-in is configured on this control.</p> : null}
+        <HostedTerms />
       </Center>
     );
   }

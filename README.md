@@ -20,9 +20,13 @@ tabs and splits you drive with the mouse.
   [ACP](https://agentclientprotocol.com) agent as a UI beside your
   terminals: tool calls with their output, approvals and questions as
   cards big enough for a thumb.
-- **VS Code beside your terminals.** *Open in editor* (or `illogical edit
-  src/main.rs:42`) opens VS Code on the pane's machine, in its directory,
-  as a block: on the phone too, and back with its file after a restart.
+- **VS Code and dev servers beside your terminals** (opt-in). *Open in
+  editor* (or `illogical edit src/main.rs:42`) opens VS Code on the pane's
+  machine, in its directory, as a block, back with its file after a
+  restart; *Open a port…* shows a dev server beside its terminal. Both are
+  off until the daemon gets a listener for them (one flag for this
+  computer's browser; a domain of yours for the phone): see
+  [advanced setup](docs/advanced.md#browser-blocks-on-ports).
 - **What did the agent change?** *Changes* on a pane (or `illogical diff`)
   lists the files changed in its repository, on its machine, with +/−; tap
   a file for its hunks and a line to see the file there, both updating
@@ -159,7 +163,8 @@ most twice a day; nothing else is sent. `illogicald install --
    illogicald join https://control.illogical.widgets.wtf
    ```
 
-   See [docs/control.md](docs/control.md), including running your own.
+   The hosted control is free during the beta, provided as is. See
+   [docs/control.md](docs/control.md), including running your own.
    **With a team:** make one in control (*Teams…*), invite people, and
    pick the team when you approve a machine's join. Roles, personal vs
    team machines and sharing one session: [docs/teams.md](docs/teams.md).

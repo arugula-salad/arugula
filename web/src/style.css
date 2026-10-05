@@ -670,6 +670,15 @@ button {
   font-weight: 600;
 }
 
+.prompt-notice p {
+  margin: 8px 0 0;
+  line-height: 1.45;
+}
+
+.prompt-notice a {
+  color: var(--accent);
+}
+
 .prompt input {
   font: 13px ui-monospace, monospace;
   padding: 8px;
@@ -2145,6 +2154,15 @@ button {
   display: grid;
   gap: 8px;
   justify-items: start;
+}
+
+.control-legal {
+  margin-top: 24px;
+  font-size: 12px;
+}
+
+.control-legal a {
+  color: inherit;
 }
 
 .control-secondary {

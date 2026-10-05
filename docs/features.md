@@ -611,7 +611,7 @@ the daemon stopping, crashing, or the machine rebooting:
     ***Spec*** opens the agent-specs file
     that declares a `managed-by: chant` agent (a `.ts` under `src/agents`
     with its `name:`) as a file block; it looks in the checkout you pick
-    (`~/dev/jhgaylor/agent-specs` if it's there). Any other agent, or with
+    (`~/agent-specs` if it's there). Any other agent, or with
     no checkout, opens its page on Fountain.
   - **Read-only.** agent-specs stays the one place a curated agent is
     edited; the catalog never writes to Fountain.
@@ -734,8 +734,15 @@ the daemon stopping, crashing, or the machine rebooting:
     are the owner's; an editor sees the list. `capture --text` is the
     view as text.
 
-- **Other hosts** (M4a). Every daemon is a peer; the one the page comes
-  from (the "home daemon") keeps a list of the others and checks on
+- **Your machines through control** (M48, #151). The main way to reach
+  more than one machine: each one runs `illogicald join` once, and control's
+  page (in a browser or the desktop app) lists every machine of your
+  account and your teams in its host menu, reaching each directly when it
+  can and through control's encrypted relay otherwise. No machine is
+  special: none keeps a list of the others. See [control.md](control.md).
+- **Other hosts over the tailnet** (M4a, the older model, still there for
+  the CLI's `--host` and sandboxes). Every daemon is a peer; the one the
+  page comes from (the "home daemon") keeps a list of the others and checks on
   each every minute. The page shows a host switcher (desktop: the bar's
   left end; phone: the sheet), and each host has its own sessions and tabs.
   Switching connects straight to that daemon; nothing is relayed, and the
