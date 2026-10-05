@@ -4,13 +4,14 @@
 //! host reached through the local daemon (on its socket, under `/h/<host>`
 //! for a dial-out host, `/tunnel/<host>` for a provider host).
 
+#[cfg(unix)]
+use std::os::{
+    fd::{AsFd, BorrowedFd},
+    unix::net::UnixStream,
+};
 use std::{
     io::{BufRead, BufReader, Read, Write},
     net::TcpStream,
-    os::{
-        fd::{AsFd, BorrowedFd},
-        unix::net::UnixStream,
-    },
     path::PathBuf,
     sync::Arc,
 };
@@ -112,7 +113,9 @@ impl Target {
         std::fs::read_to_string(file).ok().map(|t| t.trim().to_owned()).filter(|t| !t.is_empty())
     }
 
-    /// A WebSocket handshake request for this target.
+    /// A WebSocket handshake request for this target. (Only the terminal
+    /// front ends use WebSockets, and they're Unix only for now.)
+    #[cfg(unix)]
     pub fn ws_request(&self) -> anyhow::Result<tungstenite::handshake::client::Request> {
         use tungstenite::client::IntoClientRequest;
         let mut req = self.ws_url().into_client_request()?;
@@ -122,6 +125,7 @@ impl Target {
         Ok(req)
     }
 
+    #[cfg(unix)]
     pub fn ws_url(&self) -> String {
         match self {
             Target::Url(u) if u.tls => format!("wss://{}/ws", u.authority),
@@ -131,10 +135,17 @@ impl Target {
 
     pub fn connect(&self) -> anyhow::Result<Box<dyn Stream>> {
         match self {
+            #[cfg(unix)]
             Target::Socket(path) | Target::Via(path, _) => Ok(Box::new(
                 UnixStream::connect(path)
                     .with_context(|| format!("can't reach illogicald at {} (is it running?)", path.display()))?,
             )),
+            // The local daemon is a named pipe on Windows (M56, #219), with
+            // its client in M57 (#220).
+            #[cfg(not(unix))]
+            Target::Socket(path) | Target::Via(path, _) => {
+                bail!("can't reach illogicald at {}: not on Windows yet (M57, #220); use --host", path.display())
+            }
             Target::Url(u) => {
                 let tcp = TcpStream::connect((u.host.as_str(), u.port))
                     .with_context(|| format!("can't reach {}:{}", u.host, u.port))?;
@@ -167,10 +178,14 @@ fn tls_config() -> anyhow::Result<Arc<rustls::ClientConfig>> {
 
 /// A connection to a daemon, whatever it runs over.
 pub trait Stream: Read + Write + Send {
+    /// For polling (the terminal front ends, Unix only for now).
+    #[cfg(unix)]
     fn fd(&self) -> BorrowedFd<'_>;
+    #[cfg_attr(not(unix), allow(dead_code))]
     fn set_nonblocking(&self, on: bool) -> std::io::Result<()>;
 }
 
+#[cfg(unix)]
 impl Stream for UnixStream {
     fn fd(&self) -> BorrowedFd<'_> {
         self.as_fd()
@@ -181,6 +196,7 @@ impl Stream for UnixStream {
 }
 
 impl Stream for TcpStream {
+    #[cfg(unix)]
     fn fd(&self) -> BorrowedFd<'_> {
         self.as_fd()
     }
@@ -207,6 +223,7 @@ impl Write for Tls {
 }
 
 impl Stream for Tls {
+    #[cfg(unix)]
     fn fd(&self) -> BorrowedFd<'_> {
         self.0.sock.as_fd()
     }
