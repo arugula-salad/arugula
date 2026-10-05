@@ -26,6 +26,9 @@ mod heap;
 mod history;
 #[cfg(unix)]
 mod holder;
+// The pane host on Windows (M58): the shim's part there.
+#[cfg(windows)]
+mod host;
 mod hosts;
 mod ide;
 mod install;
@@ -786,6 +789,10 @@ fn main() -> anyhow::Result<()> {
     if argv.get(1).map(String::as_str) == Some("_shim") {
         shim::run(&argv[2..]);
     }
+    #[cfg(windows)]
+    if argv.get(1).map(String::as_str) == Some("_host") {
+        host::run(&argv[2..]);
+    }
     log_to_file();
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -872,10 +879,7 @@ fn main() -> anyhow::Result<()> {
     }
 }
 
-async fn run(
-    mut args: RunArgs,
-    #[cfg_attr(windows, allow(unused_mut))] mut kept: std::collections::HashMap<String, pane::Kept>,
-) -> anyhow::Result<()> {
+async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane::Kept>) -> anyhow::Result<()> {
     // Bound first: a port that's taken fails at once, and port 0 is known
     // before anything uses it (#66).
     let listener = tokio::net::TcpListener::bind(args.listen)
@@ -983,6 +987,9 @@ async fn run(
         // store's.
         kept.extend(holder::collect(&state_dir));
     }
+    // Windows: panes whose hosts outlived the last daemon (M58).
+    #[cfg(windows)]
+    kept.extend(host::collect(&state_dir));
     info!(scopes = launch.scopes, fd_store = launch.fd_store, hold = launch.hold, kept = kept.len(), "pane launcher");
     store.prune_closed(store::CLOSED_RETENTION_MS);
     let integration = if args.no_shell_integration {
