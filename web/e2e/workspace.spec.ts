@@ -4,7 +4,9 @@
 // ship` exits 3) shows as attention while the block is drawn, within a few
 // seconds; the owner approves on the desktop, an editor on a phone from the
 // sheet's gates-first list (chant's ledger names each), a viewer sees the
-// gate with no Approve; the next `chant run` walks through. The pane menu
+// gate with no Approve; the next `chant run` walks through. *Expire* (#310)
+// turns a gate down from the swarm's card and the phone: the attention
+// clears and the next `chant run` stops there again. The pane menu
 // and the picker offer "Open as workspace" in a workspace's directory.
 //
 // The first run installs the fixture's chant (`npm ci`, a few seconds).
@@ -125,7 +127,7 @@ test("arugula workspace shows its members; a gate reached while it's drawn is at
     })
     .toEqual(["gate", "delivery: ship waits at gate approve-ship", `gate:${ws}`]);
   const r = (await reasonOf(page, block))!;
-  expect(r.actions).toEqual(["allow", "dismiss"]);
+  expect(r.actions).toEqual(["allow", "expire", "dismiss"]);
   await expect(shown.locator('[data-member="delivery"]')).toHaveClass(/waits/);
 });
 
@@ -168,6 +170,46 @@ test("a burst of edits in a member costs one full read, once it holds still (#31
   await new Promise((r) => setTimeout(r, 7_000));
   expect(await readAt()).toBe(after);
   rmSync(file);
+});
+
+test("Expire turns a gate down, from the card and the phone: the next run stops there again", async ({ browser, page }) => {
+  test.setTimeout(90_000);
+  await open(page);
+  const pending = async () => {
+    await expect.poll(async () => (await reasonOf(page, block))?.headline ?? null, { timeout: 15_000 }).toBe(
+      "delivery: release waits at gate approve-release",
+    );
+  };
+  const cleared = () => expect.poll(async () => (await reasonOf(page, block))?.kind ?? null, { timeout: 15_000 }).toBeNull();
+  expect(run("release")).toBe(3);
+  await pending();
+
+  // The swarm's card: Approve, Expire, Dismiss.
+  await page.goto("/#swarm");
+  const card = page.locator('.swarm-card[data-kind="gate"]');
+  await expect(card.locator("[data-expire-gate]")).toHaveText("Expire", { timeout: 15_000 });
+  await card.locator("[data-expire-gate]").click();
+  await cleared();
+  // Not approved: chant's ledger has no approval for it, and the next run
+  // stops at the gate again.
+  expect(approvers()).toEqual([OWNER]);
+  expect(run("release")).toBe(3);
+  await pending();
+  const hist = await (await fetch(`${base()}/api/history?pane=${block}`)).json();
+  expect(hist.some((h: { text: string; by: string }) => h.text === "expired delivery: release at gate approve-release" && h.by === OWNER)).toBe(true);
+
+  // On a phone, from the sheet.
+  const ctx = await browser.newContext({ ...phone, baseURL: base() });
+  const mine = await ctx.newPage();
+  await mine.goto("/");
+  await expect.poll(async () => (await reasonOf(mine, block))?.kind ?? null, { timeout: 15_000 }).toBe("gate");
+  await mine.locator(".sheet-button").click();
+  await mine.locator(`.needs-you [data-wants="${block}"] [data-expire-gate]`).tap();
+  await cleared();
+  expect(run("release")).toBe(3);
+  await pending();
+  expect(approvers()).toEqual([OWNER]);
+  await ctx.close();
 });
 
 test("on a phone, an editor approves from the sheet, gates first; a viewer sees it and can't", async ({ browser, page }) => {

@@ -158,7 +158,7 @@ fn a_gate_is_attention_until_the_owner_approves_it() {
     assert_eq!(r["headline"], "delivery: release waits at gate approve-release");
     assert_eq!(r["bundle"], format!("gate:{}", ws.display()));
     assert_eq!(r["gate"]["op"], "release");
-    assert_eq!(r["actions"], json!(["allow", "dismiss"]));
+    assert_eq!(r["actions"], json!(["allow", "expire", "dismiss"]));
     // `arugula attention` lists it.
     let list = d.get("/api/attention");
     assert!(list.as_array().unwrap().iter().any(|a| a["pane"] == block), "{list}");
@@ -373,4 +373,55 @@ fn approving_runs_status_line_with_its_plan_as_principals() {
     let out = d.call(block, "approve", json!({ "key": "delivery/release/approve-release", "relayed": true }));
     assert_eq!(out["approved"], "delivery/release/approve-release", "{out}");
     assert!(approvals(&ws).trim_end().ends_with("--actor github:owner"), "{}", approvals(&ws));
+}
+
+#[test]
+fn expire_turns_a_gate_down_as_approve_would_be_logged() {
+    let d = daemon();
+    let ws = workspace(&d, "expire", true);
+    let block = open(&d, &ws);
+    read(&d, block);
+    d.wait_for("attention", || info(&d, block)["reason"]["kind"] == "gate");
+    let call = format!("/api/blocks/{block}/call/expire");
+
+    // A viewer can't, by either route.
+    share(&d, block, "viewer");
+    let (status, body) = as_friend(&d, "POST", &call, json!({}));
+    assert_eq!(status, 403, "{body}");
+    let (status, body) = as_friend(&d, "POST", "/api/attention/act", json!({ "action": "expire", "pane": block }));
+    assert_eq!(status, 403, "{body}");
+    assert_eq!(approvals(&ws), "");
+
+    // An editor can: `chant approve <op> <gate> --expire` in the member's
+    // directory, and the attention clears.
+    share(&d, block, "editor");
+    let (status, body) = as_friend(&d, "POST", "/api/attention/act", json!({ "action": "expire", "pane": block }));
+    assert_eq!(status, 200, "{body}");
+    let delivery = ws.join("delivery").display().to_string();
+    assert_eq!(approvals(&ws).trim_end(), format!("{delivery} approve release approve-release --expire"));
+    d.wait_for("attention to clear", || info(&d, block)["attention"] == "idle");
+    // Who, on the card, in history and the audit log.
+    let i = info(&d, block);
+    assert_eq!((i["answered"]["how"].as_str(), i["answered"]["name"].as_str()), (Some("expired"), Some(FRIEND)));
+    let hist = d.get(&format!("/api/history?pane={block}"));
+    assert!(
+        hist.as_array()
+            .unwrap()
+            .iter()
+            .any(|h| h["text"] == "expired delivery: release at gate approve-release" && h["by"] == FRIEND),
+        "{hist}"
+    );
+    let acl = d.get("/api/acl");
+    assert!(acl["audit"].as_array().unwrap().iter().any(|a| a["how"] == "expired" && a["name"] == FRIEND), "{acl}");
+
+    // The next run stops at the gate again; the owner expires it by a call.
+    std::fs::write(ws.join(".gate"), "").unwrap();
+    d.call(block, "refresh", json!({}));
+    let out = d.call(block, "expire", json!({ "key": "delivery/release/approve-release" }));
+    assert_eq!(out["expired"], "delivery/release/approve-release", "{out}");
+    assert_eq!(approvals(&ws).lines().count(), 2);
+    // Nothing waiting: nothing to expire.
+    let (status, body) = d.raw("POST", &call, Some(json!({})));
+    assert_eq!(status, 400, "{body}");
+    assert!(body.contains("no gate is waiting"), "{body}");
 }

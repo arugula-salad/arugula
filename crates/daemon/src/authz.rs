@@ -179,6 +179,7 @@ mod tests {
         }
         assert!(!drives("/api/panes/3/capture"));
         assert_eq!(policy(&p, "/api/blocks/7/call/approve"), Policy::On(7, Role::Editor));
+        assert_eq!(policy(&p, "/api/blocks/7/call/expire"), Policy::On(7, Role::Editor));
         assert_eq!(policy(&p, "/api/panes/3/capture"), Policy::Owner);
         assert_eq!(policy(&g, "/api/panes"), Policy::Owner);
         assert_eq!(policy(&p, "/api/run"), Policy::Owner);

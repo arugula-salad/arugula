@@ -548,10 +548,13 @@ async fn act_one(
         .await
         .flatten()
         .ok_or_else(|| format!("%{pane} doesn't want anything (it was answered, or dismissed)"))?;
-    // A gate (M34): approve it, through the block that read it.
+    // A gate (M34): approve it, or turn it down (#310), through the block
+    // that read it.
     if let Some(g) = reason.gate.filter(|_| reason.kind == arugula_proto::ReasonKind::Gate) {
-        if req.action != Action::Allow {
-            return Err(format!("%{pane} waits at a gate: approve it (allow) or dismiss it"));
+        let expire = req.action == Action::Expire && reason.actions.contains(&Action::Expire);
+        if req.action != Action::Allow && !expire {
+            let or_expire = if reason.actions.contains(&Action::Expire) { ", expire it" } else { "" };
+            return Err(format!("%{pane} waits at a gate: approve it (allow){or_expire} or dismiss it"));
         }
         if req.id.as_ref().is_some_and(|id| *id != g.key()) {
             return Err(format!("%{pane} now waits at another gate (that one was approved)"));
@@ -564,7 +567,8 @@ async fn act_one(
             return block_call(app, pane, &b, "review", args, by).await.map(|_| ());
         }
         let args = serde_json::json!({ "key": g.key() });
-        return block_call(app, pane, &b, "approve", args, by).await.map(|_| ());
+        let method = if expire { "expire" } else { "approve" };
+        return block_call(app, pane, &b, method, args, by).await.map(|_| ());
     }
     let ask = reason.ask.ok_or_else(|| format!("%{pane} isn't asking anything: dismiss it"))?;
     let id = req.id.clone().unwrap_or(ask.id.clone());
@@ -587,6 +591,7 @@ async fn act_one(
         }
         (Action::Allow, AskWhat::Question) => return Err(format!("%{pane} asks a question: answer it")),
         (Action::Answer, AskWhat::Approve) => return Err(format!("%{pane} asks for approval: allow or deny it")),
+        (Action::Expire, _) => return Err(format!("%{pane} isn't waiting at a gate: nothing to expire")),
         (Action::Dismiss | Action::Continue | Action::Accept | Action::Reject | Action::Rerun, _) => {
             unreachable!("handled above")
         }
@@ -952,10 +957,11 @@ async fn block_call(
     let forge = b.kind() == arugula_proto::BlockType::Forge;
     let name = by.as_ref().filter(|d| gate || forge || d.who != "owner").map(|d| d.name.as_str());
     let out = b.call_by(method, args.clone(), name).await?;
-    if (gate && method == "approve") || (forge && method == "review" && out.get("gate").is_some()) {
+    if (gate && matches!(method, "approve" | "expire")) || (forge && method == "review" && out.get("gate").is_some()) {
         // Its card closes saying who, and the audit log says so.
+        let how = if method == "expire" { "expired" } else { "approved" };
         if let (Some(by), Ok(g)) = (by, serde_json::from_value::<arugula_proto::Gate>(out["gate"].clone())) {
-            app.mux.send(Cmd::Api(Api::Answered(pane, by, g.key(), "approved".into(), g.headline())));
+            app.mux.send(Cmd::Api(Api::Answered(pane, by, g.key(), how.into(), g.headline())));
         }
         return Ok(out);
     }
@@ -1360,8 +1366,8 @@ async fn call(
     let by = match method.as_str() {
         // M11: a file block's `open` is the owner's only. M36: a forge
         // block's writes say who sent them.
-        "approve" | "deny" | "answer" | "decline" | "send" | "terminal" | "open" | "comment" | "review" | "merge"
-        | "rerun_checks" => who_is(&app, who).await,
+        "approve" | "expire" | "deny" | "answer" | "decline" | "send" | "terminal" | "open" | "comment" | "review"
+        | "merge" | "rerun_checks" => who_is(&app, who).await,
         _ => None,
     };
     if let Some(b) = app.mux.api(|r| Api::Block(id, r)).await.flatten() {

@@ -457,6 +457,10 @@ pub enum Action {
     /// Type a failed command into its pane again, once its shell is idle
     /// (M11, M10's remainder).
     Rerun,
+    /// Turn a chant gate down (#310): clear its pending fact without
+    /// approving it (`chant approve <op> <gate> --expire`), so the next run
+    /// stops there again.
+    Expire,
 }
 
 /// A command the shell integration reported.

@@ -9,9 +9,16 @@ use arugula_proto::{Action, Gate, GateSource, Reason, ReasonKind};
 use crate::{review::Runner, store::now_ms};
 
 /// Why a block with these gates waiting wants you: the first gate, with
-/// how many more, bundled by its workspace. `allow` approves it.
+/// how many more, bundled by its workspace. `allow` approves it; `expire`
+/// turns a chant gate down (#310). hud has no route for that, and a review
+/// asked of you is turned down on its forge block (request changes), so
+/// theirs don't offer it.
 pub fn reason(gates: &[Gate]) -> Option<Reason> {
     let g = gates.first()?;
+    let actions = match g.source {
+        GateSource::Chant { .. } => vec![Action::Allow, Action::Expire, Action::Dismiss],
+        _ => vec![Action::Allow, Action::Dismiss],
+    };
     let more = if gates.len() > 1 { format!(" (+{} more)", gates.len() - 1) } else { String::new() };
     Some(Reason {
         kind: ReasonKind::Gate,
@@ -23,8 +30,33 @@ pub fn reason(gates: &[Gate]) -> Option<Reason> {
         bundle: Some(g.bundle()),
         ask: None,
         gate: Some(Box::new(g.clone())),
-        actions: vec![Action::Allow, Action::Dismiss],
+        actions,
     })
+}
+
+/// Turn `gate` down (#310): `chant approve <op> <gate> --expire` in the
+/// member's directory, which clears its pending fact without approving
+/// it, so the next run decides it from scratch. chant gates only.
+pub async fn expire(gate: &Gate, via: &Via<'_>) -> Result<String, String> {
+    match (&gate.source, via) {
+        (GateSource::Chant { dir, .. }, Via::Chant { runner, chant, .. }) => {
+            run_chant(runner, chant, dir, expire_args(gate)).await
+        }
+        (GateSource::Hud { .. }, _) => Err("hud has no way to expire a gate: dismiss it here".into()),
+        (GateSource::Forge { .. }, _) => Err("a review is turned down on its forge block (request changes)".into()),
+        (GateSource::Chant { .. }, Via::Hud { .. }) => Err("this gate isn't this block's to expire".into()),
+    }
+}
+
+/// `<op> <gate> [--env E] --expire`: the environment as status's line
+/// names it (it expires that environment's pending fact).
+pub fn expire_args(gate: &Gate) -> Vec<String> {
+    let mut args = vec![gate.op.clone(), gate.gate.clone()];
+    if let Some(env) = &gate.env {
+        args.extend(["--env".into(), env.clone()]);
+    }
+    args.push("--expire".into());
+    args
 }
 
 /// Approve `gate` as `approver` (#75: the owner or an editor, by their
@@ -206,7 +238,11 @@ mod tests {
         assert_eq!(r.bundle.as_deref(), Some("gate:/w"));
         assert_eq!(r.since_ms, 1_790_975_391_548);
         assert_eq!(r.gate.unwrap().key(), "delivery/ship/approve-ship");
-        assert_eq!(r.actions, [Action::Allow, Action::Dismiss]);
+        assert_eq!(r.actions, [Action::Allow, Action::Expire, Action::Dismiss]);
+        // hud's and a forge's: no expire.
+        let mut hud = gate("delivery");
+        hud.source = GateSource::Hud { box_url: "https://box".into(), app: "a".into() };
+        assert_eq!(reason(&[hud]).unwrap().actions, [Action::Allow, Action::Dismiss]);
         let one = reason(&[gate("delivery")]).unwrap();
         assert_eq!(one.headline, "delivery: ship waits at gate approve-ship");
     }
@@ -244,6 +280,14 @@ mod tests {
         g.command = Some("chant approve other approve-ship --plan sha256:ab12".into());
         g.env = Some("prod".into());
         assert_eq!(chant_args(&g, &ChantBy::default()).unwrap(), ["ship", "approve-ship", "--env", "prod"]);
+    }
+
+    #[test]
+    fn expiring() {
+        let mut g = gate("delivery");
+        assert_eq!(expire_args(&g), ["ship", "approve-ship", "--expire"]);
+        g.env = Some("prod".into());
+        assert_eq!(expire_args(&g), ["ship", "approve-ship", "--env", "prod", "--expire"]);
     }
 
     #[test]

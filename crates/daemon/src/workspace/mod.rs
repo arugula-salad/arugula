@@ -46,9 +46,13 @@
 //! each env is another `status`, another chant process (about 2-3
 //! CPU-seconds) on every full read, for every block, VM or not.
 //!
+//! `expire` (same arguments, same people, logged the same way) turns a gate
+//! down (#310): `chant approve <op> <gate> --expire` clears its pending fact
+//! without approving it, so the next run stops there again.
+//!
 //! Methods: `refresh`, `approve {member, op, gate}` (or `{key}`; the first
-//! gate if none), `member {name}` (its directory, for opening panes there),
-//! `env {name}`, `state`.
+//! gate if none), `expire` (the same), `member {name}` (its directory, for
+//! opening panes there), `env {name}`, `state`.
 
 mod model;
 
@@ -376,7 +380,10 @@ impl Workspace {
         }
     }
 
-    async fn approve(&self, args: Value, by: Option<String>) -> Result<Value, String> {
+    /// Approve the gate `args` names, or with `expire` turn it down (#310:
+    /// `chant approve --expire`, so the next run stops there again). The
+    /// same people may, and it's logged the same way.
+    async fn approve(&self, args: Value, by: Option<String>, expire: bool) -> Result<Value, String> {
         let gate = self.find_gate(&args)?;
         let (chant, version) = {
             let st = self.state.lock().unwrap();
@@ -388,13 +395,18 @@ impl Workspace {
             chant: &chant,
             by: self.chant_by(&args, by.as_deref(), version),
         };
-        let result = crate::gate::approve(&gate, by.as_deref(), &via).await;
+        let result = if expire {
+            crate::gate::expire(&gate, &via).await
+        } else {
+            crate::gate::approve(&gate, by.as_deref(), &via).await
+        };
         let (ok, said) = match &result {
             Ok(s) | Err(s) => (result.is_ok(), s.clone()),
         };
+        let (e, done) = if expire { ("expire", "expired") } else { ("approve", "approved") };
         log(
             &self.ctx,
-            &json!({ "e": "approve", "member": gate.member, "op": gate.op, "gate": gate.gate, "by": by, "ok": ok, "said": said }),
+            &json!({ "e": e, "member": gate.member, "op": gate.op, "gate": gate.gate, "by": by, "ok": ok, "said": said }),
         );
         // The block's history says who approved what (`arugula history`).
         if let Ok(mut l) = self.ctx.log() {
@@ -404,7 +416,7 @@ impl Workspace {
                 GateSource::Hud { box_url, .. } => box_url,
                 GateSource::Forge { url, .. } => url,
             };
-            let text = format!("approved {}: {} at gate {}", gate.member, gate.op, gate.gate);
+            let text = format!("{done} {}: {} at gate {}", gate.member, gate.op, gate.gate);
             let _ = l.record(
                 at,
                 Event::Command {
@@ -419,7 +431,7 @@ impl Workspace {
         }
         let said = result?;
         self.load().await;
-        Ok(json!({ "approved": gate.key(), "gate": gate, "by": by, "said": said }))
+        Ok(json!({ done: gate.key(), "gate": gate, "by": by, "said": said }))
     }
 }
 
@@ -525,9 +537,9 @@ impl Block for Workspace {
                     None => Ok(json!({ "members": st.members.len(), "gates": st.gates.len(), "ms": st.ms })),
                 }
             }),
-            "approve" => {
-                let by = by.map(str::to_owned);
-                Box::pin(async move { me.ok_or("closed")?.approve(args, by).await })
+            "approve" | "expire" => {
+                let (by, expire) = (by.map(str::to_owned), method == "expire");
+                Box::pin(async move { me.ok_or("closed")?.approve(args, by, expire).await })
             }
             "env" => Box::pin(async move {
                 let me = me.ok_or("closed")?;

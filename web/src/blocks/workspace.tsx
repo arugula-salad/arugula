@@ -8,7 +8,7 @@
 import { render } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import type { Client } from "../client";
-import { gateKey, type Gate, type PaneId, type RunRequest } from "../proto";
+import { EXPIRE_TITLE, gateKey, type Gate, type PaneId, type RunRequest } from "../proto";
 import { registerBlock, type BlockView } from "./view";
 
 interface Diagnostic { rule: string; severity: string; message: string; file: string | null; line: number | null }
@@ -135,11 +135,19 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
     g.source.kind === "chant" &&
     void client.make("/api/run", { ...beside, cwd: g.source.dir, command: `${s?.chant ?? "chant"} run ${g.op}` } satisfies RunRequest).then((e) => e && client.toast(e));
   const approve = async (g: Gate) => {
-    setBusy(gateKey(g));
+    setBusy(`approve:${gateKey(g)}`);
     setSaid(null);
     const ok = await client.api(`/api/blocks/${id}/call/approve`, { key: gateKey(g) }, "couldn't approve it");
     setBusy(null);
     if (ok) setSaid(`Approved ${g.gate}. Run ${g.op} again to walk through it.`);
+  };
+  // #310: turned down, not approved.
+  const expire = async (g: Gate) => {
+    setBusy(`expire:${gateKey(g)}`);
+    setSaid(null);
+    const ok = await client.api(`/api/blocks/${id}/call/expire`, { key: gateKey(g) }, "couldn't expire it");
+    setBusy(null);
+    if (ok) setSaid(`Expired ${g.gate}, not approved. The next run of ${g.op} stops there again.`);
   };
   const refresh = () => void client.api(`/api/blocks/${id}/call/refresh`, {}, "couldn't read the workspace");
   // The block watches one env's gates and releases (#312): switching reads
@@ -232,7 +240,12 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
                   <div class="ws-actions">
                     {mayApprove && (
                       <button class="pri" data-approve disabled={busy !== null} onClick={() => void approve(g)}>
-                        {busy === gateKey(g) ? "Approving…" : "Approve"}
+                        {busy === `approve:${gateKey(g)}` ? "Approving…" : "Approve"}
+                      </button>
+                    )}
+                    {mayApprove && g.source.kind === "chant" && (
+                      <button data-expire disabled={busy !== null} title={EXPIRE_TITLE} onClick={() => void expire(g)}>
+                        {busy === `expire:${gateKey(g)}` ? "Expiring…" : "Expire"}
                       </button>
                     )}
                     {mayOpen && <button onClick={() => runOp(g)}>Run {g.op}</button>}
