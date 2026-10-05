@@ -276,10 +276,20 @@ mod windows {
         if start {
             // The running one (the old binary) saves and goes; its panes'
             // hosts wait for the new one.
-            ask_to_stop(&state);
-            let deadline = Instant::now() + Duration::from_secs(15);
+            let pid = ask_to_stop(&state);
+            let asked = Instant::now();
+            let mut ended = false;
             while crate::daemon_running(&state) {
-                if Instant::now() > deadline {
+                // One that doesn't stop when asked (from before it could
+                // be) is ended; its panes' hosts carry on regardless.
+                if !ended && asked.elapsed() > Duration::from_secs(10) {
+                    if let Some(pid) = pid {
+                        println!("the running illogicald (pid {pid}) didn't stop when asked; ending it");
+                        crate::procinfo::kill(pid);
+                    }
+                    ended = true;
+                }
+                if asked.elapsed() > Duration::from_secs(20) {
                     bail!("the running illogicald didn't stop; stop it (or log off and on) and run this again");
                 }
                 std::thread::sleep(Duration::from_millis(100));
@@ -307,15 +317,24 @@ mod windows {
     }
 
     /// `POST /api/daemon/stop` over its pipe: it saves every pane and goes.
-    fn ask_to_stop(state: &Path) {
-        use std::io::{Read, Write};
-        let Ok(pipe) = fs::read_to_string(state.join("sock.path")) else { return };
-        let Ok(mut f) = fs::OpenOptions::new().read(true).write(true).open(pipe.trim()) else { return };
+    /// The daemon's pid (the pipe's server), if one answered.
+    fn ask_to_stop(state: &Path) -> Option<u32> {
+        use std::{
+            io::{Read, Write},
+            os::windows::io::AsRawHandle,
+        };
+        let pipe = fs::read_to_string(state.join("sock.path")).ok()?;
+        let mut f = fs::OpenOptions::new().read(true).write(true).open(pipe.trim()).ok()?;
+        let mut pid = 0u32;
+        // SAFETY: a pipe handle we hold.
+        let known =
+            unsafe { windows_sys::Win32::System::Pipes::GetNamedPipeServerProcessId(f.as_raw_handle(), &mut pid) } != 0;
         let req = "POST /api/daemon/stop HTTP/1.1\r\nHost: localhost\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
         if f.write_all(req.as_bytes()).is_ok() {
             let mut buf = [0u8; 512];
             let _ = f.read(&mut buf);
         }
+        known.then_some(pid)
     }
 
     pub fn uninstall() -> anyhow::Result<()> {
