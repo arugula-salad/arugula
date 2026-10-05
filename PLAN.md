@@ -4515,7 +4515,10 @@ Where WebKitGTK has none, measure str0m or webrtc-rs with cpal on the Tauri side
   - openmls runs in wasm everywhere: 540 kB gzipped; 8 ms to join and 11 ms to commit at 50 devices.
   - M62 needs a separate MLS key per device, bound by the device key (WebCrypto signs asynchronously), `max_past_epochs` of 3–5, and merging its own commits only after control accepts them.
   - Team machines aren't channel members.
-- **Left for Jake:** a live call with real mics, mic permission prompts on the Mac, iOS PWA audio in the background, and a Cloudflare TURN key.
+- **Live checks (Jake):**
+  - Mac mic prompts work.
+  - On the iPhone, the PWA call is clean in the foreground, but **iOS stops the mic in the background** (playback continues), and there was feedback after coming back. M63 shows "muted (app in background)" and gets a fresh mic track when the app is visible again.
+  - Still open: native mic plus AEC3 in a live call on Linux, and a Cloudflare TURN key.
 
 **Done when:** `spikes/s30-talk/README.md` has a go/no-go per client and these two demos:
 - a call between geek's desktop app and jake-air's Chrome through TURN, with direct UDP blocked;
