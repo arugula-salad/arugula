@@ -1,12 +1,14 @@
 //! `illogicald install`: run as a systemd user service, at boot (with
 //! lingering) and after crashes; on macOS, a launchd agent that starts at
 //! login and after crashes (or, with `--system`, a LaunchDaemon that starts
-//! at boot). `illogicald uninstall` removes it.
+//! at boot); on Windows, a scheduled task at logon (or at boot, with
+//! `--system`). `illogicald uninstall` removes it.
 
+use std::process::Command;
+#[cfg(unix)]
 use std::{
     fs,
     path::{Path, PathBuf},
-    process::Command,
 };
 
 use anyhow::{Context, bail};
