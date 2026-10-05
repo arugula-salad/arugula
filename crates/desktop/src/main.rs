@@ -800,8 +800,9 @@ fn close_window(app: &AppHandle) {
     }
 }
 
-/// From a notification: the pane, in a window of ours. Not while the
-/// daemon and the app don't match: the setup page says why.
+/// From a notification or an `arugula://pane/` link: the pane, in a
+/// window of ours. Not while the daemon and the app don't match: the setup
+/// page says why.
 fn open_pane(app: &AppHandle, pane: u32) {
     if compat::mismatch().is_some() {
         return focus_or_open(app);
@@ -812,8 +813,13 @@ fn open_pane(app: &AppHandle, pane: u32) {
     match showing(app, daemons).or_else(|| app.webview_windows().into_values().next()) {
         Some(w) => {
             // Already on the daemon's page: the client opens it (main.tsx),
-            // without a reload.
-            if w.url().is_ok_and(|u| daemons(&u)) {
+            // without a reload. Not on Linux (#299): WebKitGTK runs the
+            // injected event, but a pane the page already knows never gets
+            // shown from it, while one it learns of afterwards (a link's new
+            // tab) does. The page loaded at `#pane=N` shows it the way it
+            // shows that new tab, from the daemon's state, as notifications
+            // did before M46.
+            if !cfg!(target_os = "linux") && w.url().is_ok_and(|u| daemons(&u)) {
                 let _ = w.eval(format!(
                     "dispatchEvent(new CustomEvent({PAGE_EVENT_PREFIX}+':open-pane', {{ detail: {pane} }}))"
                 ));
