@@ -15,8 +15,9 @@ target=${CARGO_TARGET_DIR:-$root/target}/release
 
 # conpty.dll and the OpenConsole.exe it starts, beside illogicald (S29).
 tmp=$(mktemp -d)
-curl -fsSL -o "$tmp/conpty.nupkg" "https://www.nuget.org/api/v2/package/Microsoft.Windows.Console.ConPTY/$conpty"
-mkdir -p "$tmp/conpty" && tar -xf "$tmp/conpty.nupkg" -C "$tmp/conpty"
+# A .nupkg is a zip (Git Bash's tar can't read one; PowerShell can).
+curl -fsSL -o "$tmp/conpty.zip" "https://www.nuget.org/api/v2/package/Microsoft.Windows.Console.ConPTY/$conpty"
+powershell -NoProfile -Command "Expand-Archive -Force '$(cygpath -w "$tmp/conpty.zip")' '$(cygpath -w "$tmp/conpty")'"
 
 name=illogical-$v-x86_64-pc-windows-msvc
 mkdir -p "dist/$name"
