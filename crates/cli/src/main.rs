@@ -2710,9 +2710,13 @@ mod tests {
         assert_eq!(s("a:b", false), ("a:b".into(), None));
         // Here, only when the file is there.
         assert_eq!(s("/nowhere/x.rs:3", true), ("/nowhere/x.rs:3".into(), None));
-        assert_eq!(s("/etc/hosts:3", true), ("/etc/hosts".into(), Some(3)));
-        assert_eq!(super::absolute("/a/b").unwrap(), "/a/b");
-        assert!(super::absolute("b").unwrap().ends_with("/b"));
+        let there = concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml");
+        assert_eq!(s(&format!("{there}:3"), true), (there.into(), Some(3)));
+        // Unix paths: on Windows `/a/b` has no drive.
+        if cfg!(unix) {
+            assert_eq!(super::absolute("/a/b").unwrap(), "/a/b");
+            assert!(super::absolute("b").unwrap().ends_with("/b"));
+        }
     }
 
     #[test]
