@@ -1788,7 +1788,8 @@ impl<'a> Call<'a> {
     }
 
     #[cfg(not(unix))]
-    async fn attach(&self, _: AttachArgs) -> Out {
+    async fn attach(&self, a: AttachArgs) -> Out {
+        let _ = (a.pane, a.path, a.data, a.ext, a.text, a.force);
         Err("files can't be attached on this host yet".into())
     }
 
