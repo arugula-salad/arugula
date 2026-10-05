@@ -53,8 +53,9 @@ once (#287); a new push to a branch cancels that branch's run:
   - **testnet**: the test stack's ssh and control profiles;
   - **e2e**: the specs (`E2E_SET=rest`) in six `--shard`s, each with its
     own test daemon on a free port; **stack**: those on the test stack
-    (`E2E_SET=stack`); **perf**: the frame rates (`E2E_SET=perf`), after
-    the shards, which leave geek too busy to measure them.
+    (`E2E_SET=stack`); **perf**: the specs that time things (`E2E_SET=perf`:
+    the frame rates, `editors.spec.ts`), after the shards, which leave geek
+    too busy to measure them.
   Each job takes one of two build directories kept for its kind of job,
   and a test stack with its own name, ports and subnet (`scripts/ci-env`),
   so jobs and runs on geek don't share either.

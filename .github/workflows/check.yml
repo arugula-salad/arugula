@@ -6,7 +6,7 @@
 #   - test: `just test` (the Rust tests under nextest);
 #   - testnet: the test stack's claims (ssh, then control);
 #   - e2e: the Playwright specs in six shards; stack: those on the test
-#     stack; perf: the frame rates, once the shards are done;
+#     stack; perf: the specs that time things, once the shards are done;
 # - macos: build, test and the WebKit specs, on jake-mini.
 # Jobs on geek take a build directory and a test stack of their own
 # (scripts/ci-env), so runs and jobs don't wait on each other. geek and
@@ -171,8 +171,9 @@ jobs:
         if: always()
         run: just testnet down
 
-  # The frame rates measure software WebGL, so they wait for the shards:
-  # beside six browsers they measured geek's load.
+  # The specs that time things (E2E_SET=perf: the frame rates, editors'
+  # files in under 3 s) wait for the shards: beside six browsers they
+  # measured geek's load.
   perf:
     needs: [build, e2e]
     if: ${{ !cancelled() && needs.build.result == 'success' }}
@@ -181,9 +182,10 @@ jobs:
       - uses: actions/checkout@v4
       - run: scripts/ci-env use
       - run: just bootstrap
-      - name: Playwright's Chromium
-        run: just browsers chromium
-      - name: The frame rates
+      # editors.spec opens a file from an iPhone (WebKit) too.
+      - name: Playwright's browsers
+        run: just browsers
+      - name: The specs that time things
         run: port=$(scripts/free-port) && cd web && E2E_PORT=$port pnpm exec playwright test
         env:
           E2E_CHROMIUM: "1"
