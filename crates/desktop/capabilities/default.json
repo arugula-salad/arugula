@@ -1,16 +1,9 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "The app's windows: the local daemon's page, and the page shown when it can't be reached. The client's bar is the titlebar (M46), so the page moves, minimizes and closes its window. The daemon's page runs huddles through the app (M63).",
-  "windows": [
-    "*"
-  ],
-  "remote": {
-    "urls": [
-      "http://127.0.0.1:*",
-      "http://localhost:*"
-    ]
-  },
+  "description": "The app's windows: the local daemon's page, and the page shown when it can't be reached. The client's bar is the titlebar (M46), so the page moves, minimizes and closes its window. Control's page gets the window permissions at run time (allow_control in main.rs). The daemon's page runs huddles through the app (M63).",
+  "windows": ["*"],
+  "remote": { "urls": ["http://127.0.0.1:*", "http://localhost:*"] },
   "permissions": [
     "core:default",
     "core:window:allow-minimize",

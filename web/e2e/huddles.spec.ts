@@ -130,8 +130,16 @@ test("the owner starts a huddle; a friend sees it and joins, and they hear each 
   await expect.poll(bytes, { timeout: 10_000 }).toBeGreaterThan(1000);
 });
 
-test("a watcher joins too, and a mute shows for everyone", async () => {
-  await watcher.locator("header.bar .huddle-button").click();
+test("a watcher joins too, from the chat view's channel, and a mute shows for everyone", async () => {
+  // The chat view shows the huddle on the session's channel, and its
+  // header joins it.
+  await watcher.evaluate(() => (location.hash = "#chat"));
+  const row = watcher.locator(`.chat-row[data-chat-thread="session-${session}"]`);
+  await expect(row.locator(".huddle-chip .avatar")).toHaveCount(2);
+  await row.click();
+  await watcher.locator(".chat-head .huddle-button", { hasText: "Join huddle" }).click();
+  await expect(watcher.locator(".chat-head .huddle-button.here")).toContainText("In huddle");
+  await watcher.keyboard.press("Escape");
   for (const p of [owner, friend, watcher]) await expect(p.locator(".huddle-bar .huddle-member")).toHaveCount(3);
   await expect.poll(() => peers(watcher), { timeout: 15_000 }).toEqual([
     ["connected", "unverified"],

@@ -321,7 +321,9 @@ enum Cmd {
         reply: Sender<String>,
     },
     /// Read this agent's state off the screen from now on (`None`: stop).
-    Agent(Option<&'static Agent>),
+    /// The second: an agent with rules that runs here but whose screen
+    /// isn't read (not configured on this machine, #145).
+    Agent(Option<&'static Agent>, Option<&'static Agent>),
     /// How the agent's screen reads now, rule by rule (`describe
     /// --detection`); `None` when no agent's screen is read.
     Detection(Sender<Option<Detection>>),
@@ -339,6 +341,10 @@ pub struct Detection {
     pub fired: Option<&'static str>,
     pub title: String,
     pub rules: Vec<DetectionRule>,
+    /// Its screen isn't read: chant's inventory doesn't list it here
+    /// (#145). No rules, then.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub unread: bool,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -431,9 +437,10 @@ impl PaneHandle {
     pub fn restart(&self, start: Start, note: &str) {
         let _ = self.tx.send(Cmd::Restart { start, note: note.into() });
     }
-    /// The agent the pane runs, whose screen to read (#145), or `None`.
-    pub fn watch_agent(&self, agent: Option<&'static Agent>) {
-        let _ = self.tx.send(Cmd::Agent(agent));
+    /// The agent the pane runs, whose screen to read (#145), or `None`;
+    /// `unread`, one it runs whose screen isn't read here.
+    pub fn watch_agent(&self, agent: Option<&'static Agent>, unread: Option<&'static Agent>) {
+        let _ = self.tx.send(Cmd::Agent(agent, unread));
     }
     /// How its agent's screen reads now, rule by rule; `None` when no
     /// agent's screen is read (or the pane didn't answer).
@@ -1102,6 +1109,8 @@ struct State {
     last_tick: Instant,
     /// The agent whose screen is read (#145).
     watch: Option<Watch>,
+    /// An agent with rules running here whose screen isn't read.
+    unread: Option<&'static Agent>,
 }
 
 /// Reading an agent's state off the pane's screen (#145).
@@ -1168,6 +1177,7 @@ pub fn spawn_pane(setup: Setup) -> std::io::Result<PaneHandle> {
             last_time_mark: Instant::now() - Duration::from_secs(60),
             last_tick: Instant::now(),
             watch: None,
+            unread: None,
         };
         let adopting = matches!(start, Start::Adopt(_) | Start::Resume { .. });
         if restore && !adopting {
@@ -1343,7 +1353,10 @@ fn run(mut st: State, rx: Receiver<Cmd>, program: Receiver<Cmd>) {
             }
             Cmd::Resize { cols, rows } => st.resize(cols, rows),
             Cmd::Purge => st.purge(),
-            Cmd::Agent(agent) => st.watch_agent(agent),
+            Cmd::Agent(agent, unread) => {
+                st.watch_agent(agent);
+                st.unread = unread;
+            }
             Cmd::Detection(reply) => {
                 let _ = reply.send(st.detection());
             }
@@ -1847,6 +1860,17 @@ impl State {
     }
 
     fn detection(&self) -> Option<Detection> {
+        if let (None, Some(a)) = (&self.watch, self.unread) {
+            return Some(Detection {
+                agent: a.id,
+                name: a.name,
+                shown: None,
+                fired: None,
+                title: self.engine.title(),
+                rules: vec![],
+                unread: true,
+            });
+        }
         let w = self.watch.as_ref()?;
         let (title, lines) = (self.engine.title(), self.engine.screen_lines());
         let rules = w.agent.explain(&title, &lines);
@@ -1867,6 +1891,7 @@ impl State {
                     matched: r.matched,
                 })
                 .collect(),
+            unread: false,
         })
     }
 

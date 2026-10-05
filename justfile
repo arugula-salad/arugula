@@ -184,6 +184,8 @@ desktop-macos arch="" *tauri_args="":
     # The Mac's own arch builds without --target (`just build`).
     src={{target_dir}}/$t/release
     if [ "$t" = "$host" ] && [ -x {{target_dir}}/release/illogicald ]; then src={{target_dir}}/release; fi
+    # A test's own daemon and CLI (testnet/macos/update.sh's older ones).
+    src=${ILLOGICAL_DESKTOP_BINARIES:-$src}
     out=${CARGO_TARGET_DIR:-$PWD/target}
     flags=()
     if [ "$t" = "$host" ]; then out=$out/release; else
@@ -227,11 +229,12 @@ desktop-macos arch="" *tauri_args="":
 # The Linux desktop app under Xvfb, in a container: builds the app (debug,
 # no bundle) in its build image (packaging/desktop/Containerfile) and runs
 # packaging/desktop/xvfb's tests against a static daemon: `join` (#204,
-# test.sh, with a stand-in control) and `m46` (m46.sh: keys, the titlebar,
-# illogical:// links, the global hotkey). Needs podman or docker; the
+# test.sh, with a stand-in control), `m46` (m46.sh: keys, the titlebar,
+# illogical:// links, the global hotkey) and `m47` (a right-click in
+# Nautilus opens a tab). Needs podman or docker; the
 # container runs the host's architecture (aarch64 under Docker Desktop on a
 # Mac). `just desktop-xvfb m46 keys` runs one claim.
-desktop-xvfb *tests="join m46":
+desktop-xvfb *tests="join m46 m47":
     #!/usr/bin/env bash
     set -euo pipefail
     root={{justfile_directory()}}
@@ -270,14 +273,16 @@ desktop-check:
 # THIRD_PARTY.md: notices for the Rust crates (cargo-about) and the npm
 # packages bundled into the web client; crates/desktop/THIRD_PARTY.md for
 # the desktop app's own crates (its about.toml also accepts MPL-2.0).
+# Needs cargo-about 0.9.2; leaves both files alone when anything fails.
 notices:
-    cargo about generate about.hbs > THIRD_PARTY.md
-    scripts/web-notices >> THIRD_PARTY.md
-    cd crates/desktop && cargo about generate --features native-calls -c about.toml ../../about.hbs > THIRD_PARTY.md
+    scripts/notices
 
-# All tests.
+# All tests. The Rust ones run under cargo-nextest (.config/nextest.toml),
+# which `just bootstrap` installs; the doctests, which it can't run, under
+# cargo test.
 test: web
-    {{cargo}} test --workspace
+    {{cargo}} nextest run --workspace
+    {{cargo}} test --workspace --doc
     cd web && pnpm run typecheck
     just e2e-interop control-smoke
 
@@ -377,7 +382,7 @@ testnet cmd="test" profile="ssh" *claims:
         up) arch=$(docker info --format '{{{{.Architecture}}')
             case "$arch" in arm64) arch=aarch64 ;; amd64) arch=x86_64 ;; esac
             [ -n "${ILLOGICAL_TESTNET_BINARIES:-}" ] || just static "$arch" >&2 ;;
-        test|break) {{cargo}} build -q -p illogical ;;
+        test|break) [ -n "${ILLOGICAL_CLI:-}" ] || {{cargo}} build -q -p illogical ;;
       esac
     fi
     case "{{cmd}}" in
@@ -439,10 +444,12 @@ macos cmd="launchd" *args:
 
 # Tests for the shell side of releases: install.sh picks the right release
 # per machine, and the ratchet that what a release ships is named the same
-# everywhere (release.yml, scripts/release, Homebrew, install.sh, the site).
+# everywhere (release.yml, scripts/release, Homebrew, install.sh, the site);
+# and `just notices` keeping THIRD_PARTY.md when cargo-about fails.
 test-scripts:
     scripts/tests/install.sh
     scripts/tests/release-targets.sh
+    scripts/tests/notices.sh
 
 # What CI runs.
 check: test

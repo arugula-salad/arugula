@@ -44,6 +44,7 @@ illogical ide --diffs "Visual Studio Code"    # send Claude Code's diffs to that
 illogical shell-env [--refresh]               # the PATH blocks that run your tools get (your shell's; --refresh: read it again)
 illogical describe %4                         # any block: type, place, state
 illogical describe %4 --detection             # how its agent's screen reads: each rule, what it saw, which fired
+illogical describe --agents [--refresh]       # agents configured here (chant audit --agents): whose screen rules run
 illogical call %4 navigate '{"url":"…"}'      # a block's own methods
 illogical agent "fix the failing test"        # Claude Code here; prints %N (--codex, --fountain A,
                                               #   --acp CMD, --vm, --machine m3, --model haiku,
@@ -100,9 +101,13 @@ illogical attention [--json]                  # what wants you and why: ask, fai
 illogical ask                                 # Claude Code's AskUserQuestion hook (below)
 illogical hook                                # Claude Code's permission prompts as cards anyone on the team answers (below)
 illogical inbox                               # Claude Code's background Stop hook: follow-ups from the team (below)
+illogical hooks install [--project DIR] [--dry-run]  # add all of those to Claude Code's settings.json, keeping yours
+illogical hooks status                        # which of them are there (below)
 illogical hosts                               # the home daemon's other hosts, last seen, and control's machines once logged in
 illogical login [--account FP]                # make this CLI one of your devices on control (approve its code on a signed-in device)
 illogical --host mini capture %2              # a machine on your control account, direct or relayed (nothing in hosts.json)
+illogical --host mini attach %2               # attach, tui and --follow work through control too
+illogical --host sams-box tui                 # a team's machine, or one shared with you
 illogical logout                              # forget the CLI's key for control
 illogical hosts add box https://box.<tailnet>.ts.net
 illogical hosts invite                        # a one-time token a sandbox joins with
@@ -115,6 +120,7 @@ illogical share %3 --ttl 2h                   # a read-only link to a pane
 illogical shares                              # links that still work; shares revoke ID
 illogical share --guest %3 --name sam          # an ssh command for someone with only OpenSSH (read-only)
 illogical share --guest %3 --rw --addr box.lan  # ...who may type; --reusable for more than one login
+illogical share --guest %3 --relay            # through control's ssh jump host (the default on a joined box with no --addr)
 illogical guests                              # ssh invites that still work; guests revoke ID
 illogical search 'panic' --synced sbx         # a host's synced history (all: every host)
 illogical tail %4 --synced sbx --text         # one of its panes, after it's gone
@@ -144,6 +150,19 @@ illogical mcp token --revoke laptop           # cut it off at its next call
 
 `--json` prints the API's JSON. `--host`, anywhere on the line, is another
 daemon; a machine (a VM) is `--machine mN`.
+
+Once `illogical login` has made the CLI one of your devices, `--host NAME`
+also finds the machines control lists: your own, your teams', and those
+shared with you. Every command works that way, `attach`, `tui` and
+`--follow` included, over one end-to-end channel per command (directly
+when the machine lists a URL that answers, else through control's relay;
+`ILLOGICAL_VERBOSE=1` says which). Another account's machine is checked
+against that account's root, which the CLI remembers the first time it
+sees it (in `cli-control.json`, as a browser keeps it); if control later
+reports a different root for that account, the CLI refuses the machine and
+says so. `illogical hosts` marks another account's machines with whose
+they are. What you may do on one is what the web lets you: a team editor
+reads and types in its panes, and making panes stays its owner's.
 
 `--ssh DEST` reaches a box with your own `ssh` (your `~/.ssh/config`, keys
 and agent; a password or 2FA prompt shows in your terminal once). One master
@@ -264,7 +283,10 @@ Claude Code in an ordinary pane can tell you when it needs you, put its
 questions and permission prompts on cards anyone on the team who may
 answer can answer (from the pane, the swarm's rail or a notification), and
 take its next instruction from them. All of it is hooks, in
-`~/.claude/settings.json`:
+`~/.claude/settings.json`. `illogical hooks install` writes exactly this
+(merged into what's there, never replacing it; `--project DIR` for a
+project's `.claude/settings.json`, `--dry-run` to see the result first),
+and `illogical hooks status` checks it:
 
 ```json
 {

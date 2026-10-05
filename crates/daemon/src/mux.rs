@@ -318,6 +318,8 @@ pub struct MuxHandle {
     pub shell_env: Arc<crate::shellenv::ShellEnv>,
     /// Standing permission rules for agent blocks (#166).
     pub rules: Arc<crate::rules::Rules>,
+    /// The agents configured here, from `chant audit --agents` (#145).
+    pub inventory: Arc<crate::inventory::Inventory>,
 }
 
 impl MuxHandle {
@@ -618,6 +620,9 @@ struct Daemon {
     /// The agent each pane's screen is read for (#145), and what its
     /// screen last said.
     watching: HashMap<PaneId, &'static str>,
+    /// Agents with rules whose screens aren't read: not configured on this
+    /// machine, says the inventory.
+    unread: HashMap<PaneId, &'static str>,
     screen: HashMap<PaneId, AgentState>,
     /// Panes typed in since their agent was last idle: its next idle ends
     /// a turn someone started (a spinner at startup doesn't).
@@ -638,6 +643,9 @@ struct Daemon {
     fs: Arc<crate::fs::Scope>,
     shell_env: Arc<crate::shellenv::ShellEnv>,
     rules: Arc<crate::rules::Rules>,
+    inventory: Arc<crate::inventory::Inventory>,
+    /// The inventory's generation the panes were last watched by.
+    inventory_seen: u64,
     /// Who drives each pane (M13), and panes in pair mode.
     drivers: HashMap<PaneId, Driver>,
     pair: std::collections::HashSet<PaneId>,
@@ -796,6 +804,9 @@ pub fn start(config: Config, store: StateDir, kept: HashMap<String, Kept>, push:
     );
     shell_env.start();
     let rules = crate::rules::Rules::open(store.root().join("rules.json"));
+    // Which agents are configured here (#145), read in the background.
+    let inventory = crate::inventory::Inventory::new(shell_env.clone(), config.home.clone());
+    inventory.refresh();
     let mut d = Daemon {
         mux: Mux::new(),
         panes: HashMap::new(),
@@ -803,6 +814,7 @@ pub fn start(config: Config, store: StateDir, kept: HashMap<String, Kept>, push:
         attention: HashMap::new(),
         reasons: HashMap::new(),
         watching: Default::default(),
+        unread: Default::default(),
         screen: Default::default(),
         turn_typed: Default::default(),
         clients: HashMap::new(),
@@ -814,6 +826,8 @@ pub fn start(config: Config, store: StateDir, kept: HashMap<String, Kept>, push:
         fs: fs.clone(),
         shell_env: shell_env.clone(),
         rules: rules.clone(),
+        inventory: inventory.clone(),
+        inventory_seen: 0,
         drivers: HashMap::new(),
         pair: Default::default(),
         drove: HashMap::new(),
@@ -869,7 +883,7 @@ pub fn start(config: Config, store: StateDir, kept: HashMap<String, Kept>, push:
     d.sweep_machines();
     let (provider, daemon_id, ide) = (d.config.provider.clone(), d.config.daemon_id.clone(), d.config.ide.clone());
     tokio::spawn(d.run(rx, notices_rx));
-    MuxHandle { tx, events, store, provider, daemon_id, fs, ide, shell_env, rules }
+    MuxHandle { tx, events, store, provider, daemon_id, fs, ide, shell_env, rules, inventory }
 }
 
 /// A reason with nothing but its headline.
@@ -1218,6 +1232,7 @@ impl Daemon {
                 _ = tick.tick() => {
                     self.tick_activity();
                     self.tick_drivers();
+                    self.tick_inventory();
                     self.find_ide_panes();
                     self.flush();
                 }
@@ -1612,13 +1627,29 @@ impl Daemon {
     }
 
     fn watch_named(&mut self, pane: PaneId, name: Option<String>) {
-        let agent = name.and_then(|name| illogical_vt::detect::agent(&name));
+        let found = name.and_then(|name| illogical_vt::detect::agent(&name));
+        // On this machine, only the rule sets of the agents configured here
+        // run (the inventory, #145); a machine's panes aren't this
+        // machine's config.
+        let local = self.machine_of(pane).is_none();
+        let off = found.filter(|a| local && !self.inventory.runs(a.id));
+        if let Some(a) = off {
+            self.inventory.missing(a.id);
+        }
+        let agent = found.filter(|_| off.is_none());
         let id = agent.map(|a| a.id);
-        if self.watching.get(&pane).copied() == id {
+        if self.watching.get(&pane).copied() == id && self.unread.get(&pane).copied() == off.map(|a| a.id) {
             return;
         }
         let Some(h) = self.panes.get(&pane) else { return };
-        h.watch_agent(agent);
+        h.watch_agent(agent, off);
+        match off {
+            Some(a) => self.unread.insert(pane, a.id),
+            None => self.unread.remove(&pane),
+        };
+        if self.watching.get(&pane).copied() == id {
+            return;
+        }
         self.screen.remove(&pane);
         // The line that started it isn't a turn.
         self.turn_typed.remove(&pane);
@@ -3360,6 +3391,7 @@ impl Daemon {
                     self.meta.remove(&pane);
                     self.attention.remove(&pane);
                     self.watching.remove(&pane);
+                    self.unread.remove(&pane);
                     self.screen.remove(&pane);
                     self.turn_typed.remove(&pane);
                     if let Some(a) = self.asks.remove(&pane) {
@@ -3478,6 +3510,19 @@ impl Daemon {
 
     /// Typing stops showing a few seconds after the last keystroke, and a
     /// driver who has stopped typing for long lets go (#118).
+    /// A new inventory (#145): which panes' screens to read may change.
+    fn tick_inventory(&mut self) {
+        let generation = self.inventory.generation();
+        if generation == self.inventory_seen {
+            return;
+        }
+        self.inventory_seen = generation;
+        let panes: Vec<PaneId> = self.panes.keys().copied().collect();
+        for pane in panes {
+            self.watch_agent(pane);
+        }
+    }
+
     fn tick_drivers(&mut self) {
         let now = Instant::now();
         self.drove.retain(|p, _| self.drivers.contains_key(p));

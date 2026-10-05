@@ -1071,3 +1071,12 @@ the daemon stopping, crashing, or the machine rebooting:
   so. The Linux desktop app's web view has no WebRTC, so the app runs the
   call itself (WebRTC in Rust, Opus, and WebRTC's echo cancellation and
   noise suppression), with the same bar and buttons.
+- **Chat: every thread in one place.** *Chat* in the bar (or the phone's
+  sheet, or the command palette; `/#chat`) shows every thread on every
+  machine you can reach, like a team chat: each machine's sessions are the
+  channels, and each pane's thread sits under its session, newest first,
+  with your unread count and @mentions. The button counts what's unread
+  everywhere. A thread is read and written there, and *Go to pane* (or *Go
+  to session*) takes you to what it's about, switching machines if it's on
+  another one; so does clicking a quote. Escape, or picking a tab, goes
+  back to the panes.

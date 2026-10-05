@@ -39,6 +39,9 @@
 //!   tabs, which *Move Tab to New Window* takes back out.
 //! - **`illogical://` links** (`links.rs`), **a global hotkey**, off by
 //!   default (`settings.rs`), and **app updates** (`updates.rs`).
+//! - **The file managers** (M47): Finder's *New illogical Tab Here*
+//!   service (`finder.rs`) and `.command` files on macOS; Nautilus's
+//!   *Open in illogical* (`linux/nautilus/illogical.py`) on Linux.
 //! - A tray icon with *New window* and *This machine*; one instance (a
 //!   second launch opens a window in the first).
 //! - **Windows has no daemon yet** (M54, #217; the daemon comes in M59):
@@ -48,6 +51,8 @@
 #[cfg(all(target_os = "linux", feature = "native-calls"))]
 mod calls;
 mod cloud;
+#[cfg(target_os = "macos")]
+mod finder;
 mod links;
 mod profile;
 #[cfg(target_os = "macos")]
@@ -347,6 +352,7 @@ fn follow_join(app: AppHandle) {
         eprintln!("illogical: this machine's control is now {}", now.as_deref().unwrap_or("none"));
         // A new control: "just this machine" was said of the old one.
         cloud::set_local_only(false);
+        allow_control(&app);
         let home = home(&app);
         for w in app.webview_windows().into_values() {
             let Ok(url) = w.url() else { continue };
@@ -388,7 +394,48 @@ fn open_outside(url: &tauri::Url) {
     }
 }
 
+/// The window permissions the bar needs (capabilities/default.json), for
+/// control's origin too: when joined, the window shows control's page, and
+/// without them its bar can't move, minimize, maximize or close the window
+/// on Linux. The control is only known at run time, and can change (#204).
+/// Control's page also runs huddles through the app (M63), as the daemon's
+/// page does.
+fn allow_control(app: &AppHandle) {
+    static ALLOWED: Mutex<Vec<String>> = Mutex::new(Vec::new());
+    let Some(origin) = cloud::control()
+        .and_then(|c| c.parse::<tauri::Url>().ok())
+        .map(|u| u.origin().ascii_serialization())
+        .filter(|o| o != "null")
+    else {
+        return;
+    };
+    let mut allowed = ALLOWED.lock().unwrap();
+    if allowed.contains(&origin) {
+        return;
+    }
+    let cap = tauri::ipc::CapabilityBuilder::new(format!("control-{}", allowed.len()))
+        .remote(format!("{origin}/*"))
+        .window("*")
+        .permission("core:window:allow-minimize")
+        .permission("core:window:allow-toggle-maximize")
+        .permission("core:window:allow-internal-toggle-maximize")
+        .permission("core:window:allow-close")
+        .permission("core:window:allow-start-dragging")
+        .permission("allow-call-native-start")
+        .permission("allow-call-native-peer")
+        .permission("allow-call-native-remote")
+        .permission("allow-call-native-drop")
+        .permission("allow-call-native-mute")
+        .permission("allow-call-native-stop")
+        .permission("allow-call-native-status");
+    match app.add_capability(cap) {
+        Ok(()) => allowed.push(origin),
+        Err(e) => eprintln!("illogical: letting {origin} use its window and calls: {e}"),
+    }
+}
+
 fn open_window(app: &AppHandle, url: WebviewUrl) -> tauri::Result<tauri::WebviewWindow> {
+    allow_control(app);
     let n = WINDOWS.fetch_add(1, Ordering::SeqCst);
     let label = format!("w{n}");
     let handle = app.clone();
@@ -774,6 +821,8 @@ fn main() {
                 }
             }
             profile::init(app.handle());
+            #[cfg(target_os = "macos")]
+            finder::init(app.handle());
             if !DAEMONLESS {
                 upgrade::check();
             }
@@ -874,11 +923,19 @@ fn main() {
             #[cfg(target_os = "macos")]
             tauri::RunEvent::Reopen { has_visible_windows: false, .. } => focus_or_open(app),
             // macOS: an illogical:// link (the app started for it, or was
-            // running).
+            // running); a folder dropped on the app or opened with it, a new
+            // tab there; a .command file, run in a new tab (M47).
             #[cfg(target_os = "macos")]
             tauri::RunEvent::Opened { urls } => {
                 for url in urls {
-                    links::handle(app, url.to_string());
+                    match url.scheme() {
+                        "file" => match url.to_file_path() {
+                            Ok(p) if p.is_dir() => links::open_dir(app, &p),
+                            Ok(p) => links::run_file(app, &p),
+                            Err(()) => eprintln!("illogical: not a file this app opens: {url}"),
+                        },
+                        _ => links::handle(app, url.to_string()),
+                    }
                 }
             }
             _ => {}

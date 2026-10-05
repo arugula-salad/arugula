@@ -21,11 +21,12 @@ ed25519-dalek = "3.0.0"
 futures-util = "0.3.34"
 hex = "0.4.3"
 hmac = "0.13.0"
-illogical-e2e = { version = "0.19.0", path = "../e2e" }
+illogical-e2e = { version = "0.20.0", path = "../e2e" }
 libc = "0.2.189"
 p256 = { version = "0.14.0", features = ["ecdh", "ecdsa"] }
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "json"] }
 rusqlite = { version = "0.40.2", features = ["bundled", "fallible_uint"] }
+russh = { version = "0.64.0", default-features = false, features = ["aws-lc-rs"] }
 rust-embed = { version = "8.12.0", features = ["mime-guess"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
@@ -43,3 +44,9 @@ workspace = true
 [dev-dependencies]
 aes-gcm = "0.11.1"
 hkdf = "0.13.0"
+
+[features]
+# Embed web/dist even in a debug build (rust-embed reads it from the source
+# tree at run time otherwise): CI's e2e shards run binaries built in another
+# job's checkout.
+debug-embed = ["rust-embed/debug-embed"]

@@ -15,6 +15,7 @@ mod control;
 mod fountain_runner;
 mod fs;
 mod hook;
+mod hooks;
 mod hosts;
 mod http;
 mod mcp;
@@ -161,11 +162,19 @@ enum Command {
     Cd { pane: Pane, dir: String },
     /// A block's type, place and state (any type). With `--detection`, how
     /// the screen of the agent in a terminal pane reads: each rule, the
-    /// text it looked at, and which one fired.
+    /// text it looked at, and which one fired. `describe --agents`: the
+    /// agents configured on this machine (`chant audit --agents`), which
+    /// decide whose screen rules run here.
     Describe {
-        block: Pane,
-        #[arg(long)]
+        #[arg(required_unless_present = "agents")]
+        block: Option<Pane>,
+        #[arg(long, requires = "block")]
         detection: bool,
+        #[arg(long, conflicts_with_all = ["block", "detection"])]
+        agents: bool,
+        /// With `--agents`: ask chant again first.
+        #[arg(long, requires = "agents")]
+        refresh: bool,
     },
     /// Call one of a block's methods, e.g. `call %4 navigate '{"url":"…"}'`.
     Call {
@@ -613,6 +622,12 @@ enum Command {
     /// it (exit 2). A session nobody drives (`claude -p`, the SDK) isn't
     /// held: it exits 0 at once.
     Inbox,
+    /// Put those hooks in Claude Code's settings.json (`install`), or say
+    /// which are there (`status`). Nothing else in the file is touched.
+    Hooks {
+        #[command(subcommand)]
+        cmd: hooks::HooksCmd,
+    },
     /// What wants you, and why (M24); or, given a state, tell illogical
     /// whether this pane needs you (for agent hooks, which pass their JSON
     /// on stdin: its `message` becomes the headline).
@@ -667,7 +682,9 @@ enum Command {
     ///
     /// With --guest: an invite for someone with only OpenSSH. It prints an
     /// `ssh` command to send them, with this machine's host key pinned.
-    /// Read-only unless --rw; one login unless --reusable.
+    /// Read-only unless --rw; one login unless --reusable. A machine joined
+    /// to control with no --addr (or --guest-ssh-host) is reached through
+    /// control's ssh jump host, so a box behind NAT works too.
     Share {
         pane: Option<Pane>,
         /// How long it works (e.g. 30m, 2h, 7d; a week at most, a day with
@@ -689,9 +706,13 @@ enum Command {
         #[arg(long, requires = "guest")]
         name: Option<String>,
         /// The address they should ssh to [default: the daemon's
-        /// --guest-ssh-host, else its hostname].
-        #[arg(long = "addr", requires = "guest")]
+        /// --guest-ssh-host, else its hostname]. Not through control.
+        #[arg(long = "addr", requires = "guest", conflicts_with = "relay")]
         addr: Option<String>,
+        /// Through control's ssh jump host, or fail [default: when this
+        /// machine is joined to control and no address is set].
+        #[arg(long, requires = "guest")]
+        relay: bool,
     },
     /// ssh invites that still work (`share --guest`); `guests revoke ID` ends
     /// one and cuts off anyone using it.
@@ -1030,12 +1051,22 @@ fn default_socket() -> PathBuf {
 }
 
 /// `illogical web`: the sign-in link, opened in a browser (or printed).
+/// With `--ssh`, the box daemon's link: printed, since its page is on the
+/// box, with how to forward its port from here.
 fn web(sock: &http::Target, print: bool) -> anyhow::Result<i32> {
     let v = request(sock, "GET", "/api/signin-link", None)?.json()?;
     let Some(url) = v["url"].as_str() else { bail!("the daemon has no sign-in link: {v}") };
     let page = url.split("/auth?").next().unwrap_or(url);
     if print {
         println!("{url}");
+        return Ok(0);
+    }
+    if let http::Target::Ssh(r) = sock {
+        println!("The page is on {}. Open this in a browser here once its port is forwarded:\n\n  {url}\n", r.dest);
+        if let Some(hint) = ssh_forward(page, &r.dest) {
+            println!("{hint}\n");
+        }
+        println!("It holds {}'s local token: don't share it.", r.dest);
         return Ok(0);
     }
     let opener = if cfg!(target_os = "macos") { "open" } else { "xdg-open" };
@@ -1066,11 +1097,23 @@ fn ssh_hint(page: &str, over_ssh: bool) -> Option<String> {
     if !over_ssh {
         return None;
     }
-    let addr = page.strip_prefix("http://")?.trim_end_matches('/');
-    let port = addr.rsplit_once(':')?.1;
+    let (port, addr) = page_port(page)?;
     Some(format!(
         "Over ssh? On the computer you're at, forward the port first, then open the link there:\n\n  ssh -L {port}:{addr} <this machine>"
     ))
+}
+
+/// `--ssh dest web`: the forward that makes dest's page reachable here.
+fn ssh_forward(page: &str, dest: &str) -> Option<String> {
+    let (port, addr) = page_port(page)?;
+    Some(format!("Forward it with:\n\n  ssh -N -L {port}:{addr} {dest}"))
+}
+
+/// A page's port and address (`http://127.0.0.1:7681/` is 7681 and
+/// 127.0.0.1:7681).
+fn page_port(page: &str) -> Option<(&str, &str)> {
+    let addr = page.strip_prefix("http://")?.trim_end_matches('/');
+    Some((addr.rsplit_once(':')?.1, addr))
 }
 
 /// The pane given, or the one we're running in.
@@ -1134,6 +1177,16 @@ fn detection_text(pane: u32, v: &Value) -> String {
         };
     };
     let mut out = format!("%{pane} runs {} ({agent})", s(&v["name"]));
+    if v["unread"] == true {
+        let found: Vec<&str> = v["configured"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
+        let found = if found.is_empty() { "nothing".to_owned() } else { found.join(", ") };
+        let _ = writeln!(
+            out,
+            ": its screen isn't read here. chant audit --agents found {found} configured on this machine, not {agent} \
+             (illogical describe --agents --refresh after you set it up)"
+        );
+        return out;
+    }
     match v["fired"].as_str() {
         Some(rule) => {
             let state = v["rules"].as_array().into_iter().flatten().find(|r| r["rule"] == rule);
@@ -1154,6 +1207,48 @@ fn detection_text(pane: u32, v: &Value) -> String {
         for l in text.iter().filter_map(|l| l.as_str()).filter(|l| !l.trim().is_empty()) {
             let _ = writeln!(out, "  | {}", l.trim_end());
         }
+    }
+    out
+}
+
+/// `describe --agents` for people: what chant found, then whose screen
+/// rules run here.
+fn inventory_text(v: &Value) -> String {
+    use std::fmt::Write;
+    let s = |v: &Value| v.as_str().unwrap_or_default().to_owned();
+    let list = |v: &Value| v.as_array().into_iter().flatten().filter_map(Value::as_str).collect::<Vec<_>>().join(", ");
+    let mut out = String::new();
+    match v["state"].as_str() {
+        Some("read") => {
+            let _ = writeln!(out, "chant {} (audit --agents) found:", s(&v["version"]));
+            if v["sites"].as_array().is_none_or(|a| a.is_empty()) {
+                out.push_str("  no agent configuration\n");
+            }
+            for site in v["sites"].as_array().into_iter().flatten() {
+                let _ = writeln!(
+                    out,
+                    "  {:<9} {:<7} {}  {}",
+                    s(&site["runtime"]),
+                    s(&site["scope"]),
+                    s(&site["root"]),
+                    s(&site["summary"])
+                );
+            }
+        }
+        Some("reading") => out.push_str("chant audit --agents hasn't answered yet\n"),
+        Some("off") => out.push_str("not asking chant here (ILLOGICAL_CHANT is empty)\n"),
+        _ => {
+            let _ = writeln!(out, "no inventory: {}", v["error"].as_str().unwrap_or("chant didn't say"));
+        }
+    }
+    let off = list(&v["rules"]["off"]);
+    let _ = writeln!(
+        out,
+        "screen rules run for: {}",
+        if off.is_empty() { "every agent with rules".into() } else { list(&v["rules"]["run"]) }
+    );
+    if !off.is_empty() {
+        let _ = writeln!(out, "not configured here, so not read: {off}");
     }
     out
 }
@@ -1347,6 +1442,11 @@ fn print_json(v: &Value) {
     println!("{}", serde_json::to_string_pretty(v).unwrap_or_default());
 }
 
+/// The version, findable in the binary's bytes: the testnet tests read it
+/// from a box's static build they can't run here (#259).
+#[used]
+static VERSION_MARK: &str = concat!("\0illogical-version=", env!("CARGO_PKG_VERSION"), "\0");
+
 fn main() {
     // Run as `tmux` (a link, or a copy on an ssh host's PATH): be tmux's
     // control mode, with tmux's own arguments.
@@ -1447,12 +1547,19 @@ fn real_main(cli: Cli) -> anyhow::Result<i32> {
     if let Command::Hook = cli.cmd {
         return Ok(hook::run(http::Target::Socket(socket(&cli))));
     }
-    if let Command::Web { print } = cli.cmd {
-        // The local daemon's own link, over its socket (only ours).
+    if let Command::Web { print } = cli.cmd
+        && cli.ssh.is_none()
+    {
+        // The local daemon's own link, over its socket (only ours); with
+        // --ssh, the box's, below.
         return web(&http::Target::Socket(socket(&cli)), print);
     }
     if let Command::Inbox = cli.cmd {
         return Ok(hook::inbox(http::Target::Socket(socket(&cli))));
+    }
+    if let Command::Hooks { cmd } = cli.cmd {
+        // A settings file: no daemon involved.
+        return hooks::run(cmd, cli.json);
     }
     if let Command::Fountain { cmd: Some(FountainCmd::Runner { cmd }), .. } = &cli.cmd {
         // Fountain's API and this host's unit: no daemon involved.
@@ -1500,10 +1607,10 @@ fn real_main(cli: Cli) -> anyhow::Result<i32> {
         flag.or(gone.clone()).map(|h| format!("host={}", enc(if h == "all" { "*" } else { &h })))
     };
     match cli.cmd {
-        Command::Share { pane, ttl, guest: true, rw, reusable, name, addr } => {
+        Command::Share { pane, ttl, guest: true, rw, reusable, name, addr, relay } => {
             let body = json!({
                 "pane": here(pane)?, "ttl_secs": duration(&ttl)?, "rw": rw, "reusable": reusable,
-                "label": name, "host": addr,
+                "label": name, "host": addr, "relay": relay.then_some(true),
             });
             let v = request(&sock, "POST", "/api/guests", Some(&body))?.json()?;
             if json_out {
@@ -1511,10 +1618,16 @@ fn real_main(cli: Cli) -> anyhow::Result<i32> {
             } else {
                 println!("{}", v["command"].as_str().unwrap_or_default());
                 let left = v["expires_ms"].as_u64().unwrap_or(0).saturating_sub(now_ms()) / 1000;
+                if let Some(jump) = v["jump"].as_str() {
+                    eprintln!(
+                        "Through control's ssh jump host {jump} (ssh -J, written out so its key is pinned \
+                         too): control carries the session and can't read it."
+                    );
+                }
                 eprintln!(
                     "Invite {}: {}, {}, for {}. `illogical guests revoke {}` ends it.\n\
                      The host key is pinned in the command ({}). ssh older than 8.5 has no \
-                     KnownHostsCommand: save this line to a file and pass -o UserKnownHostsFile=<file>:\n{}",
+                     KnownHostsCommand: save this to a file and pass -o UserKnownHostsFile=<file>:\n{}",
                     v["id"],
                     if rw { "read-write" } else { "read-only" },
                     if reusable { "reusable" } else { "one login" },
@@ -1715,6 +1828,9 @@ fn real_main(cli: Cli) -> anyhow::Result<i32> {
         }
         Command::Hosts { cmd } => hosts::run(&sock, cmd, json_out, duration)?,
         Command::Sandboxes { cmd } => hosts::sandboxes(&sock, cmd, json_out)?,
+        // Only with --ssh: the box daemon's link, over the bridge to its
+        // socket.
+        Command::Web { print } if matches!(sock, http::Target::Ssh(_)) => return web(&sock, print),
         Command::Install { .. }
         | Command::Web { .. }
         | Command::Bridge { .. }
@@ -1756,13 +1872,25 @@ fn real_main(cli: Cli) -> anyhow::Result<i32> {
                 );
             }
         }
-        Command::Describe { block, detection: true } => {
+        Command::Describe { agents: true, refresh, .. } => {
+            let v = match refresh {
+                true => request(&sock, "POST", "/api/hosts/self/agents/refresh", None)?.json()?,
+                false => request(&sock, "GET", "/api/hosts/self/agents", None)?.json()?,
+            };
+            if json_out {
+                print_json(&v);
+            } else {
+                print!("{}", inventory_text(&v));
+            }
+        }
+        Command::Describe { block: Some(block), detection: true, .. } => {
             let v = request(&sock, "GET", &format!("/api/panes/{}/detection", block.0), None)?.json()?;
             print!("{}", detection_text(block.0, &v));
         }
-        Command::Describe { block, .. } => {
+        Command::Describe { block: Some(block), .. } => {
             print_json(&request(&sock, "GET", &format!("/api/blocks/{}", block.0), None)?.json()?);
         }
+        Command::Describe { block: None, .. } => unreachable!("clap requires a block"),
         Command::Call { block, method, args } => {
             let args: Value = match args {
                 Some(a) => serde_json::from_str(&a).context("args must be JSON")?,
@@ -2826,6 +2954,7 @@ fn real_main(cli: Cli) -> anyhow::Result<i32> {
         Command::Ask
         | Command::Hook
         | Command::Inbox
+        | Command::Hooks { .. }
         | Command::Fountain { cmd: Some(FountainCmd::Runner { .. }), .. } => {
             unreachable!("handled first")
         }
@@ -3031,6 +3160,37 @@ mod tests {
         assert!(text.contains("\ntitle_idle (idle, 250) title: no match\n  (empty)\n"), "{text}");
         let none = super::detection_text(2, &serde_json::json!({"agent": null, "command": "vim notes"}));
         assert_eq!(none, "%2 runs `vim notes`: no agent with screen rules\n");
+        let unread = super::detection_text(
+            3,
+            &serde_json::json!({"agent": "codex", "name": "Codex", "unread": true, "rules": [], "configured": ["claude"]}),
+        );
+        assert!(
+            unread.starts_with(
+                "%3 runs Codex (codex): its screen isn't read here. chant audit --agents found claude configured"
+            ),
+            "{unread}"
+        );
+    }
+
+    #[test]
+    fn inventory_for_people() {
+        let v = serde_json::json!({
+            "state": "read", "version": "0.95.0", "notes": [],
+            "sites": [{"id": "user-claude", "scope": "user", "runtime": "claude", "root": "/home/ada",
+                       "summary": "1 instruction file · model sonnet"}],
+            "rules": {"run": ["claude"], "off": ["codex"]},
+        });
+        assert_eq!(
+            super::inventory_text(&v),
+            "chant 0.95.0 (audit --agents) found:\n  claude    user    /home/ada  1 instruction file · model sonnet\n\
+             screen rules run for: claude\nnot configured here, so not read: codex\n"
+        );
+        let none = serde_json::json!({"state": "no_chant", "error": "no chant on PATH", "sites": [],
+                                      "rules": {"run": ["claude", "codex"], "off": []}});
+        assert_eq!(
+            super::inventory_text(&none),
+            "no inventory: no chant on PATH\nscreen rules run for: every agent with rules\n"
+        );
     }
 
     #[test]
@@ -3038,6 +3198,13 @@ mod tests {
         assert_eq!(super::ssh_hint("http://127.0.0.1:7681", false), None);
         let hint = super::ssh_hint("http://127.0.0.1:7681", true).unwrap();
         assert!(hint.ends_with("ssh -L 7681:127.0.0.1:7681 <this machine>"), "{hint}");
+    }
+
+    #[test]
+    fn web_forward_for_an_ssh_box() {
+        let hint = super::ssh_forward("http://127.0.0.1:7681/", "box").unwrap();
+        assert!(hint.ends_with("ssh -N -L 7681:127.0.0.1:7681 box"), "{hint}");
+        assert_eq!(super::ssh_forward("https://x", "box"), None);
     }
 
     #[test]

@@ -1,6 +1,6 @@
 [package]
 name = "illogical-desktop"
-version = "0.19.0"
+version = "0.20.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "illogical's desktop app: the web client in a native window, with native notifications"
@@ -64,8 +64,9 @@ tokio = { version = "1", features = ["sync", "time"], optional = true }
 mac-notification-sys = "0.6"
 # SMAppService for the daemon's launch agent, and NSWindow tabs (M46).
 objc2 = "0.6"
-objc2-foundation = { version = "0.3", features = ["NSString", "NSError"] }
-objc2-app-kit = { version = "0.3", features = ["NSWindow", "NSResponder"] }
+objc2-foundation = { version = "0.3", features = ["NSString", "NSError", "NSArray", "NSURL"] }
+# Finder's service (M47): the provider and its pasteboard.
+objc2-app-kit = { version = "0.3", features = ["NSWindow", "NSResponder", "NSApplication", "NSPasteboard", "NSPasteboardItem"] }
 objc2-service-management = { version = "0.3", features = ["SMAppService"] }
 
 # Its own workspace, out of the main build: Tauri needs WebKitGTK headers
