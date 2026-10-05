@@ -12,6 +12,13 @@
 //! word. A prefix never allows a title with a shell separator,
 //! substitution or redirect in it, so `git status` doesn't allow
 //! `git status; rm -rf ~`.
+//!
+//! `chant audit --agents` doesn't see them (#305): it reads each harness's
+//! own settings, and these are no harness's. They stay here because they
+//! answer every ACP agent's requests, not only Claude Code's, and writing
+//! them into a harness's settings would allow the same tools in that
+//! harness outside Arugula, which is what keeping them out of
+//! `.claude/settings.local.json` avoids. `arugula rules` lists them.
 
 use std::{
     io,

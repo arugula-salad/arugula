@@ -23,6 +23,14 @@ exec node -e "$2" "$1" "$3""#;
 
 /// The reads. `process.argv`: root, env. Which chant: `$CHANT`, else
 /// `node_modules/.bin/chant` here or in the nearest parent, else PATH.
+///
+/// That only finds a chant to start (#305, ws-021). Which chant reads the
+/// declaration stays chant's call: one the root doesn't pin hands the
+/// command line to the pinned one installed at the root, or refuses with
+/// `root-chant-required`, and an unpinned root is read by whichever chant
+/// meets `minReader` (`reader-too-old` otherwise). The block shows those
+/// codes and which chant it started (`how`).
+///
 /// The declaration's `agents` (#304) are read from its file, since no read
 /// prints them: `null` when it isn't plain JSON.
 pub const READER: &str = r#"
@@ -93,14 +101,25 @@ function run(args) {
 
 /// `sh -c FINGERPRINT sh ROOT`: one line that changes when anything a read
 /// would see might have: the `chant/lifecycle` ref (releases and gates)
-/// first, as its own word, then a checksum of a commit and the working tree
-/// (the declaration, records, member sources). About 0.01 CPU-seconds where
-/// a full read is about 7 (four chant processes, each loading chant's
-/// TypeScript through tsx), so the block polls this and reads only when it
-/// changes. It never fetches.
+/// first, as its own word, then a checksum of a commit, chant's other refs
+/// and the working tree (the declaration, records, member sources). About
+/// 0.01 CPU-seconds where a full read is about 7 (four chant processes,
+/// each loading chant's TypeScript through tsx), so the block polls this
+/// and reads only when it changes. It never fetches.
+///
+/// #305: `GIT_OPTIONAL_LOCKS=0` (git's `--no-optional-locks`) keeps
+/// `status` from refreshing the index and taking `index.lock` every few
+/// seconds, which would fail a person's `git commit` or chant's own writes
+/// that land at the same moment. chant's other refs are in the checksum
+/// because `status` reports them: leases (`refs/chant/lease/*`, its
+/// `leases`), work in progress, kept attempts and work branches
+/// (`refs/chant/wip/*`, `kept/*`, `refs/heads/chant/work/*`, its
+/// `replication`). A lease that expires by the clock moves no ref, so it
+/// shows at the next read for another reason; the block draws no leases.
 pub const FINGERPRINT: &str = r#"cd "$1" 2>/dev/null || { echo gone; exit 0; }
+export GIT_OPTIONAL_LOCKS=0
 printf '%s ' "$(git rev-parse -q --verify refs/heads/chant/lifecycle 2>/dev/null || echo -)"
-{ git rev-parse -q --verify HEAD; git status --porcelain=v1; git diff HEAD; } 2>/dev/null | cksum"#;
+{ git rev-parse -q --verify HEAD; git for-each-ref --format='%(objectname) %(refname)' refs/chant refs/heads/chant/work; git status --porcelain=v1; git diff HEAD; } 2>/dev/null | cksum"#;
 
 /// What the block draws and `describe` returns.
 #[derive(Debug, Clone, Default, Serialize)]
@@ -851,6 +870,58 @@ mod tests {
         raw["reads"]["ls"]["json"]["members"][0]["kind"] = "workspace".into();
         let st = compose(&raw, "local");
         assert!(st.members[0].nested);
+    }
+
+    /// The fingerprint of a scratch repository, as the block runs it.
+    fn print(dir: &std::path::Path) -> String {
+        let out = std::process::Command::new("sh").args(["-c", FINGERPRINT, "sh"]).arg(dir).output().unwrap();
+        String::from_utf8(out.stdout).unwrap()
+    }
+
+    fn git(dir: &std::path::Path, args: &[&str]) {
+        let ok = std::process::Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"])
+            .args(args)
+            .status()
+            .unwrap()
+            .success();
+        assert!(ok, "git {args:?}");
+    }
+
+    #[test]
+    fn the_fingerprint_sees_chants_refs_and_takes_no_index_lock() {
+        // #305: a lease or a wip snapshot moves the print; status leaves the
+        // index alone (no refresh, so no index.lock).
+        let dir = std::env::temp_dir().join(format!("arugula-fp-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        git(&dir, &["init", "-q", "-b", "main"]);
+        std::fs::write(dir.join("chant.workspace.json"), "{}").unwrap();
+        git(&dir, &["add", "."]);
+        git(&dir, &["commit", "-q", "-m", "one"]);
+        let first = print(&dir);
+        assert!(first.starts_with("- "), "{first}");
+        assert_eq!(print(&dir), first);
+
+        git(&dir, &["update-ref", "refs/chant/lease/work/fix-001", "HEAD"]);
+        let leased = print(&dir);
+        assert_ne!(leased, first);
+        git(&dir, &["update-ref", "refs/chant/wip/main", "HEAD"]);
+        let saved = print(&dir);
+        assert_ne!(saved, leased);
+        // Neither is the lifecycle word.
+        assert_eq!(saved.split_whitespace().next(), Some("-"));
+
+        // A touched file makes the index stale; a refreshing status would
+        // rewrite it.
+        let index = std::fs::metadata(dir.join(".git/index")).unwrap().modified().unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        std::fs::write(dir.join("chant.workspace.json"), "{}").unwrap();
+        print(&dir);
+        assert_eq!(std::fs::metadata(dir.join(".git/index")).unwrap().modified().unwrap(), index);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

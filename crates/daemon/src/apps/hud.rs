@@ -46,6 +46,12 @@
 //! than the last took (at least `BOARD_GAP`), except after an approve.
 //! A read waits longer than hud gives chant, so hud is never left running
 //! one we gave up on while we start the next.
+//! The board is hud's own route, not one of chant's contract documents
+//! (#305): the workspace is inside the box, which Arugula can't run
+//! chant in, and hud is the box's reader. Its gate fields are `status`'s,
+//! passed through, so they become M34's [`Gate`] unchanged.
+//!
+//! [`Gate`]: arugula_proto::Gate
 //! Approving one is hud's `POST /__hud/api/work/gates/approve {member,
 //! component, gate, env}` (arugula-salad/hud#735), which approves only a
 //! gate `workspace status` lists as pending; with a follower credential it
@@ -56,6 +62,10 @@
 //! its role labels), so [`hud_name`] makes Arugula's name fit: an email
 //! address by its local part, other characters as `-`. A name that can't
 //! fit (or is `owner`) is left out, and hud records its session's player.
+//! It is not a ws-080 principal (`github:<login>`, a signer) and can't be
+//! one while hud takes only display names (#305): hud is what hands the
+//! name to chant, so a workspace with `identity.attribution: identified`
+//! refuses it there (`principal-unidentified`), whatever we send.
 
 use std::{
     collections::{BTreeMap, HashMap, HashSet},

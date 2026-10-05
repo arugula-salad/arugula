@@ -937,6 +937,10 @@ case $dir in "~") dir=$HOME ;; "~/"*) dir=$HOME/${dir#"~/"} ;; esac
 
 /// `$1` the checkout, `$2` the agent's name: `ok PATH LINE` for the first
 /// `.ts` file under `src/agents` that declares `name: "$2"`.
+///
+/// A grep, not a chant read (#305): agent-specs is a chant project, not a
+/// workspace, so no contract document names the file that declares an
+/// agent, and building it to ask would cost seconds for a file to open.
 const SPEC_FILE: &str = r#"cd -- "$1" 2>/dev/null || exit 0
 grep -rnF --include='*.ts' -e "name: \"$2\"" -e "name: '$2'" -e "name:\"$2\"" src/agents 2>/dev/null | head -n 1 | {
   IFS=: read -r f n _ && [ -n "$f" ] && echo "ok $(pwd -P)/$f $n"
