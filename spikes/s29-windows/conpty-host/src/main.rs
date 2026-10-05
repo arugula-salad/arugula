@@ -11,10 +11,14 @@
 //!   conpty-host bench put --pipe NAME --text T            send T and leave (a "daemon" that goes away)
 //!   conpty-host bench expect --pipe NAME --send S --want W
 //!   conpty-host echo                                      raw stdin -> stdout (the latency probe)
+//!   conpty-host http-serve --pipe NAME --tcp ADDR          axum on a named pipe and on TCP
+//!   conpty-host http-bench --pipe NAME --tcp ADDR          requests over each, and a duplex check
 //!
 //! Frames both ways: kind (u8), length (u32 LE), payload.
 //! 0 data, 1 resize (cols u16, rows u16), 2 close, 3 exit (code i32).
 
+#[cfg(windows)]
+mod http;
 #[cfg(windows)]
 mod win;
 

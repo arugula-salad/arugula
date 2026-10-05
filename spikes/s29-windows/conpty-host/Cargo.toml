@@ -9,6 +9,8 @@ publish = false
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }
+axum = "0.8"
+futures-lite = "2"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.60", features = [

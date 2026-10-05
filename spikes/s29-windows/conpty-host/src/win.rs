@@ -287,7 +287,7 @@ impl Pty {
 
 /// Owner and SYSTEM only; nobody else can even open the pipe. (A named
 /// pipe's default DACL gives Everyone read.)
-fn owner_only() -> io::Result<SECURITY_ATTRIBUTES> {
+pub(crate) fn owner_only() -> io::Result<SECURITY_ATTRIBUTES> {
     let mut sd: PSECURITY_DESCRIPTOR = ptr::null_mut();
     let sddl = wide("D:P(A;;GA;;;OW)(A;;GA;;;SY)");
     if unsafe {
@@ -321,7 +321,7 @@ fn token_user(process: HANDLE) -> io::Result<Vec<u8>> {
 }
 
 /// The client on `pipe` runs as this process's user.
-fn same_user(pipe: HANDLE) -> io::Result<bool> {
+pub(crate) fn same_user(pipe: HANDLE) -> io::Result<bool> {
     unsafe {
         let mut pid = 0u32;
         if GetNamedPipeClientProcessId(pipe, &mut pid) == 0 {
@@ -339,7 +339,7 @@ fn same_user(pipe: HANDLE) -> io::Result<bool> {
     }
 }
 
-fn pipe_name(name: &str) -> String {
+pub(crate) fn pipe_name(name: &str) -> String {
     if name.starts_with(r"\\.\pipe\") { name.to_owned() } else { format!(r"\\.\pipe\{name}") }
 }
 
@@ -800,6 +800,8 @@ pub fn main() {
             echo();
             Ok(())
         }
+        Some("http-serve") => rt.block_on(crate::http::serve(&opt("--pipe").expect("--pipe"), &opt("--tcp").expect("--tcp"))),
+        Some("http-bench") => crate::http::bench(&opt("--pipe").expect("--pipe"), &opt("--tcp").expect("--tcp")),
         Some("cat") => {
             cat(&args[1]);
             Ok(())
