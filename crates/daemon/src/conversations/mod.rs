@@ -603,8 +603,10 @@ mod tests {
         // S20's session and its fork, with their cwd pointed at a real folder.
         for f in ["a683c96a-c2b1-4ed7-bdd4-51b7d759125b", "d1ccc1e4-4b63-4b89-80b7-38128ee9d8cc"] {
             let text = std::fs::read_to_string(fixture(&format!("scratch/{f}.jsonl"))).unwrap();
-            let text =
-                text.replace("/home/user/illogical/spikes/s20-conversations/work/scratch", work.to_str().unwrap());
+            // Escaped as JSON: a Windows path's backslashes would break the line.
+            let quoted = serde_json::to_string(work.to_str().unwrap()).unwrap();
+            let text = text
+                .replace("/home/user/illogical/spikes/s20-conversations/work/scratch", &quoted[1..quoted.len() - 1]);
             std::fs::write(proj.join(format!("{f}.jsonl")), text).unwrap();
         }
         // A subagent's transcript is in a folder of its own: not listed.
