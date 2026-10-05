@@ -171,3 +171,19 @@ test("a mention's notification opens its thread", async ({ browser }) => {
   await expect(page.locator(".thread-panel")).toContainText(`Thread · %${pane}`);
   await expect(page.locator(".thread-panel .thread-msg")).toHaveCount(3);
 });
+
+test("an older daemon (no threads feature) gets no thread items", async () => {
+  await owner.keyboard.press("Escape");
+  // What `GET /api/host` says on a daemon from before M61.
+  await owner.route("**/api/host", async (r) => {
+    const res = await r.fetch();
+    const host = (await res.json()) as { features?: Record<string, boolean> };
+    delete host.features?.threads;
+    await r.fulfill({ response: res, json: host });
+  });
+  await owner.locator(`[data-pane="${pane}"]`).click({ button: "right", position: { x: 60, y: 60 } });
+  await expect(owner.getByRole("menuitem", { name: "Split right" })).toBeVisible();
+  await expect(owner.getByRole("menuitem", { name: "Thread", exact: true })).toHaveCount(0);
+  await owner.keyboard.press("Escape");
+  await owner.unroute("**/api/host");
+});

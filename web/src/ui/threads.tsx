@@ -38,6 +38,7 @@ function unreadLabel(client: Client, target: ThreadTarget): string {
 
 /** The pane menu's thread items. */
 export function threadItems(client: Client, pane: PaneId): MenuItem[] {
+  if (!client.hasThreads()) return [];
   const n = unreadLabel(client, { pane });
   const selected = client.panes.get(pane)?.view.selection().trim() ?? "";
   return [
@@ -55,9 +56,10 @@ export function threadItems(client: Client, pane: PaneId): MenuItem[] {
 }
 
 /** The session menu's thread item. */
-export function sessionThreadItem(client: Client, session: number): MenuItem {
+export function sessionThreadItems(client: Client, session: number): MenuItem[] {
+  if (!client.hasThreads()) return [];
   const n = unreadLabel(client, { session });
-  return { label: n ? `Session thread (${n})` : "Session thread", run: () => openThread(client, { session }) };
+  return [{ label: n ? `Session thread (${n})` : "Session thread", run: () => openThread(client, { session }) }];
 }
 
 /** On a pane: its unread messages, or that it has a thread. */

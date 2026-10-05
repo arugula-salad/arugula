@@ -393,6 +393,8 @@ export interface HostFeatures {
   fountain: boolean;
   /** A linked studio. */
   studio: boolean;
+  /** M61: threads on panes and sessions (absent: an older daemon). */
+  threads?: boolean;
 }
 
 export type Intent =

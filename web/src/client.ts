@@ -542,6 +542,12 @@ export class Client {
     return this.features?.[f] ?? true;
   }
 
+  /** M61: whether this daemon keeps threads. Unlike the rest, unknown means
+   * no: control serves this page to older daemons too. */
+  hasThreads(): boolean {
+    return this.features?.threads === true;
+  }
+
   /** POST to the API; a failure shows as a toast. */
   async api(path: string, body: unknown = {}, failure = "that didn't work") {
     try {
