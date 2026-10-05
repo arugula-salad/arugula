@@ -257,6 +257,13 @@ e2e-sandbox: static
     {{cargo}} build -p illogicald
     cd web && pnpm exec playwright test e2e/sandbox.spec.ts
 
+# Tests for the shell side of releases: install.sh picks the right release
+# per machine, and the ratchet that what a release ships is named the same
+# everywhere (release.yml, scripts/release, Homebrew, install.sh, the site).
+test-scripts:
+    scripts/tests/install.sh
+    scripts/tests/release-targets.sh
+
 # What CI runs.
 check: test
     {{cargo}} fmt --all --check
