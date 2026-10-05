@@ -273,6 +273,7 @@ mod windows {
             return Err(e);
         }
         println!("registered the scheduled task {TASK} ({})", if system { "at boot" } else { "at logon" });
+        on_path(&dir);
         if start {
             // The running one (the old binary) saves and goes; its panes'
             // hosts wait for the new one.
@@ -314,6 +315,32 @@ mod windows {
             );
         }
         Ok(())
+    }
+
+    /// `dir` on the user's PATH (new terminals see it), if it isn't.
+    /// Through .NET's own setter, which tells running programs too (setx
+    /// would cut a long PATH at 1024 characters).
+    fn on_path(dir: &Path) {
+        let have = std::env::var_os("PATH")
+            .is_some_and(|p| std::env::split_paths(&p).any(|d| d.as_os_str().eq_ignore_ascii_case(dir.as_os_str())));
+        if have {
+            return;
+        }
+        let d = dir.display().to_string().replace('\'', "''");
+        let script = format!(
+            "$p = [Environment]::GetEnvironmentVariable('Path', 'User'); \
+             if (-not (($p -split ';') -contains '{d}')) {{ \
+               [Environment]::SetEnvironmentVariable('Path', (@($p, '{d}') | Where-Object {{ $_ }}) -join ';', 'User') }}"
+        );
+        let ok = Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+            .status()
+            .is_ok_and(|s| s.success());
+        if ok {
+            println!("added {} to your PATH (new terminals have `illogical`)", dir.display());
+        } else {
+            println!("note: add {} to your PATH for `illogical`", dir.display());
+        }
     }
 
     /// `POST /api/daemon/stop` over its pipe: it saves every pane and goes.

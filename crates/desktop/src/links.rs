@@ -51,8 +51,7 @@ pub fn in_args<I: IntoIterator<Item = String>>(args: I) -> Vec<String> {
 pub fn handle(app: &AppHandle, url: String) {
     let app = app.clone();
     std::thread::spawn(move || {
-        // No daemon here to open it on (Windows until M59, #222).
-        let Some(link) = parse(&url).filter(|_| !crate::DAEMONLESS) else {
+        let Some(link) = parse(&url) else {
             eprintln!("illogical: not a link this app knows: {url}");
             let a = app.clone();
             let _ = app.run_on_main_thread(move || crate::focus_or_open(&a));
