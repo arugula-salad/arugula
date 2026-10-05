@@ -351,6 +351,7 @@ mod tests {
         let start = start_time(me).unwrap();
         assert!(alive(&Record { pid: Some((me, start)), ..Default::default() }));
         assert!(!alive(&Record { pid: Some((me, start + 1)), ..Default::default() }), "pid reuse guard");
+        #[cfg(unix)]
         assert!(!close(&Record { shim: Some((me, start + 1)), ..Default::default() }), "pid reuse guard");
     }
 }

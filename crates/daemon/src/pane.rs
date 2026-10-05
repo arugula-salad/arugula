@@ -12,7 +12,7 @@ use std::{
     collections::{HashMap, HashSet, VecDeque},
     io::{Read, Write},
     path::{Path, PathBuf},
-    process::{Command, Stdio},
+    process::Stdio,
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering},
@@ -21,7 +21,10 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 #[cfg(unix)]
-use std::{fs::File, process::Child};
+use std::{
+    fs::File,
+    process::{Child, Command},
+};
 
 use crossbeam_channel::{Receiver, Sender, TryRecvError, bounded, unbounded};
 use illogical_proto::{ClientId, Frame, FrameKind, PaneId, ServerMsg};

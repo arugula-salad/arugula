@@ -247,7 +247,8 @@ fn on_line(
     }
 }
 
-#[cfg(test)]
+// Unix: the relay runs in Linux guests, on a Unix socket.
+#[cfg(all(test, unix))]
 mod tests {
     use std::{
         io::{BufRead, Write},
