@@ -32,7 +32,7 @@ impl Conn {
     /// Connect and wait for the hello.
     pub fn open(target: &Target, errors: mpsc::Sender<String>, waker: Waker) -> anyhow::Result<(Self, ServerMsg)> {
         let stream = target.connect()?;
-        let (mut ws, _) = tungstenite::client(target.ws_url(), stream).map_err(|e| match e {
+        let (mut ws, _) = tungstenite::client(target.ws_request()?, stream).map_err(|e| match e {
             tungstenite::HandshakeError::Failure(e) => anyhow::Error::from(e).context("websocket handshake"),
             tungstenite::HandshakeError::Interrupted(_) => anyhow::anyhow!("websocket handshake interrupted"),
         })?;
