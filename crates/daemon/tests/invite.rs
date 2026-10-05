@@ -90,6 +90,45 @@ fn a_re_invite_pushes_that_guest_alone() {
     );
 }
 
+/// From a thread's mention (#297): the push opens that thread (a
+/// session's opens the session's), on the invite's own tag, to them alone.
+#[test]
+fn an_invite_from_a_thread_opens_it() {
+    let d = tailnet_daemon(&[]);
+    let (pane, session) = first(&d);
+    // Someone this machine knows from another session, and no other.
+    let elsewhere = d.post("/api/run", json!({ "session": "other" }))["pane"].as_u64().unwrap();
+    let other =
+        d.get("/api/panes").as_array().unwrap().iter().find(|p| p["id"] == elsewhere).unwrap()["session"].clone();
+    share(&d, other.as_u64().unwrap(), FRIEND, "viewer");
+    let owner = Phone::subscribe(&d);
+    let friend = Phone::subscribe_as(&d, Some(FRIEND));
+    let thread = format!("session-{session}");
+    let r = d.post(&format!("/api/threads/{thread}"), json!({ "text": "@friend see this" }));
+    assert_eq!(r["invitable"][0]["who"], format!("tailnet:{FRIEND}"), "{r}");
+    let msg = r["message"]["id"].as_u64().unwrap();
+
+    let (push, (status, r)) = std::thread::scope(|s| {
+        let phone = s.spawn(|| friend.next());
+        let r = invite(&d, json!({ "session": session, "who": FRIEND, "thread": thread, "msg": msg }));
+        (phone.join().unwrap(), r)
+    });
+    assert_eq!(status, 200, "{r}");
+    assert_eq!(push["tag"], format!("invite-{}", r["invite"].as_str().unwrap()), "{push}");
+    assert_eq!((push["thread"].as_str(), push["pane"].as_u64()), (Some(thread.as_str()), Some(pane)), "{push}");
+    assert!(friend.quiet(1500), "one push");
+    assert!(owner.quiet(200), "nobody else");
+
+    // A thread elsewhere, or a message it hasn't, is refused.
+    let (status, _) = invite(
+        &d,
+        json!({ "session": session, "who": FRIEND, "thread": format!("pane-{elsewhere}"), "whole_thread": true }),
+    );
+    assert_eq!(status, 400);
+    let (status, _) = invite(&d, json!({ "session": session, "who": FRIEND, "msg": msg }));
+    assert_eq!(status, 400, "a message goes with its thread");
+}
+
 #[test]
 fn a_fresh_guest_is_granted_and_unreachable() {
     let d = tailnet_daemon(&[]);

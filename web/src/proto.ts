@@ -401,6 +401,15 @@ export interface Unreached {
   why: "agent_needs_pane" | "may_not_drive" | "nobody";
 }
 
+/** Someone the owner's `@token` named who can't read the thread (#297):
+ *  theirs to invite. Only ever in the owner's own response. */
+export interface Invitable {
+  token: string;
+  /** `tailnet:<login>` or `account:<id>`. */
+  who: string;
+  name: string;
+}
+
 export type ThreadTarget = { pane: PaneId } | { session: SessionId };
 
 /** M61: one message in a pane's or session's thread. */

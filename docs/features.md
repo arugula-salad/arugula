@@ -1089,6 +1089,19 @@ the daemon stopping, crashing, or the machine rebooting:
   session's thread or from someone who can't drive the pane) stays plain
   and the poster, and no one else, is told so under the message (and in
   `post_thread`'s `unreached`).
+- **An @ of someone who can't see the thread offers to invite them**
+  (#297). When you, the owner, write "@sam look" and Sam is someone this
+  machine knows (shared with elsewhere, or on a roster it checked) but
+  can't read that thread, the composer says "Sam can't see this. Invite
+  them?" in place of the "nobody" note. One click is #233's invite, as a
+  viewer, with your message as its note: Sam's push opens that thread.
+  By default Sam sees that message and what follows in that thread only;
+  *Share the whole thread* gives that thread's history instead. Either
+  way every other thread of the session starts at the invite, like any
+  "from now" share, and a later role change keeps what Sam could read.
+  Nobody else's post is offered anything, so an @ never tells an editor
+  who exists. Agents get no offer: `post_thread` points them at
+  `invite_person`.
 - **Huddles** (M63). A voice call on a session, for the people working in
   it: the headphones button by the session's name (or *Start a huddle* in
   the session menu) starts one, and everyone with the session sees it's on

@@ -709,6 +709,35 @@ fn shared_daemon(env: &[(&str, &str)]) -> (Daemon, u64, u64) {
     (d, pane, session)
 }
 
+/// #297: an agent's @name of someone who can't see the thread makes no
+/// invite card and no grant; post_thread points it at invite_person.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_agents_mention_invites_nobody() {
+    let (d, pane, session) = shared_daemon(&[]);
+    let elsewhere = d.post("/api/run", json!({ "session": "other" }))["pane"].as_u64().unwrap();
+    let other =
+        d.get("/api/panes").as_array().unwrap().iter().find(|p| p["id"] == elsewhere).unwrap()["session"].clone();
+    d.post("/api/acl", json!({ "session": other, "principal": "tailnet:sam@example.com", "role": "viewer" }));
+    let s = bridge(&d, Client::named("claude-code")).await;
+    let tools = s.list_tools(None).await.unwrap();
+    let post = tools.tools.iter().find(|t| t.name == "post_thread").unwrap();
+    assert!(post.description.as_deref().unwrap_or("").contains("invite_person"), "{post:?}");
+    let p = call(&s, "post_thread", json!({ "pane": pane, "text": "@sam look" })).await;
+    assert_eq!(p["unreached"], json!([{ "token": "sam", "why": "nobody" }]), "{p}");
+    assert!(p.get("invitable").is_none(), "{p}");
+    s.cancel().await.unwrap();
+    assert!(invite_blocks(&d).is_empty());
+    let grants = d.get("/api/acl")["grants"].clone();
+    assert!(
+        grants
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|g| g["principal"] != "tailnet:sam@example.com" || g["session"] != session),
+        "{grants}"
+    );
+}
+
 /// A POST on the socket as the CLI sends it under Claude Code: the HTTP
 /// status.
 fn as_agent(d: &Daemon, path: &str, body: Value) -> u16 {

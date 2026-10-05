@@ -6,7 +6,9 @@
 //! `@agent` in a pane's thread reaches the agent there as a follow-up, and
 //! threads outlive a daemon restart. A mention reaches team members who
 //! aren't connected, on a notification of its thread's own, and a role change
-//! keeps what a "from now" share already reads.
+//! keeps what a "from now" share already reads. An owner's @ that names
+//! someone who can't read the thread offers to invite them (#297): into
+//! that thread, from that message, and no other thread.
 
 // Over the daemon's Unix socket; Windows gets its named pipe in M56 (#219).
 #![cfg(unix)]
@@ -426,4 +428,202 @@ async fn a_mention_reaches_team_members_offline_on_a_tag_of_its_own() {
         assert!(Instant::now() < until, "still mentioning them on a private pane: {r}");
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
+}
+
+const SAM: &str = "sam@example.com";
+const KIM: &str = "kim@example.com";
+
+/// A second session ("other"), with a pane: someone shared only that is
+/// nameable here and reads none of the first.
+fn other_session(d: &illogical_testkit::Daemon) -> u64 {
+    let pane = d.post("/api/run", json!({ "session": "other" }))["pane"].as_u64().unwrap();
+    d.get("/api/panes").as_array().unwrap().iter().find(|p| p["id"] == pane).unwrap()["session"].as_u64().unwrap()
+}
+
+/// The owner's @ that names someone known but without access offers them;
+/// nobody else's says a thing about who exists.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_owners_at_name_offers_to_invite_whom_it_missed() {
+    let d = daemon("threads-offer");
+    let panes = d.get("/api/panes");
+    let (pane, session) = (panes[0]["id"].as_u64().unwrap(), panes[0]["session"].as_u64().unwrap());
+    let other = other_session(&d);
+    share(&d, other, SAM, "viewer", true);
+    share(&d, session, DRIVER, "editor", true);
+    share(&d, session, WATCHER, "viewer", true);
+    let key = format!("/api/threads/pane-{pane}");
+
+    let r = d.post(&key, json!({ "text": "@sam look" }));
+    assert_eq!(r["invitable"], json!([{ "token": "sam", "who": format!("tailnet:{SAM}"), "name": SAM }]), "{r}");
+    assert_eq!(r["message"]["mentions"], Value::Null, "{r}");
+    assert_eq!(r["unreached"], json!([]), "the offer says it: {r}");
+
+    // An editor's identical post: no offer, and nothing to tell Sam from a
+    // name nobody has.
+    let (s, v) = guest(&d, DRIVER, "POST", &key, Some(json!({ "text": "@sam look" })));
+    let (s2, v2) = guest(&d, DRIVER, "POST", &key, Some(json!({ "text": "@nosuchperson look" })));
+    assert_eq!((s, s2), (200, 200));
+    let keys = |v: &Value| v.as_object().unwrap().keys().cloned().collect::<Vec<_>>();
+    assert_eq!(keys(&v), keys(&v2));
+    assert!(v.get("invitable").is_none(), "{v}");
+    assert_eq!(v["unreached"], json!([{ "token": "sam", "why": "nobody" }]));
+    assert_eq!(v2["unreached"], json!([{ "token": "nosuchperson", "why": "nobody" }]));
+
+    // An unknown name, and a reader: nothing to offer.
+    let r = d.post(&key, json!({ "text": "@nosuchperson and @watcher" }));
+    assert_eq!(r["invitable"], json!([]), "{r}");
+    assert_eq!(r["message"]["mentions"], json!([format!("tailnet:{WATCHER}")]));
+    assert_eq!(r["unreached"], json!([{ "token": "nosuchperson", "why": "nobody" }]));
+
+    // A session thread offers too.
+    let r = d.post(&format!("/api/threads/session-{session}"), json!({ "text": "@sam?" }));
+    assert_eq!(r["invitable"][0]["who"], format!("tailnet:{SAM}"), "{r}");
+
+    // Two people for one @: both are offered, for the owner to pick.
+    share(&d, other, "sam@elsewhere.org", "viewer", true);
+    let r = d.post(&key, json!({ "text": "@sam again" }));
+    let who: Vec<&str> = r["invitable"].as_array().unwrap().iter().map(|o| o["who"].as_str().unwrap()).collect();
+    assert_eq!(who, [format!("tailnet:{SAM}").as_str(), "tailnet:sam@elsewhere.org"], "{r}");
+
+    // A private pane's thread is its owner's: no grant opens it.
+    let (mut ws, _) = connect_async(d.ws("/ws")).await.unwrap();
+    let op = json!({ "type": "pane", "pane": pane, "op": { "op": "set_private", "on": true } });
+    ws.send(Message::Text(op.to_string().into())).await.unwrap();
+    d.wait_for("the pane to go private", || guest(&d, DRIVER, "GET", &key, None).0 == 404);
+    let r = d.post(&key, json!({ "text": "@sam look" }));
+    assert_eq!(r["invitable"], json!([]), "{r}");
+    assert_eq!(r["unreached"], json!([{ "token": "sam", "why": "nobody" }]));
+}
+
+/// One person known as a login and as an account is offered once: the
+/// account, which control reaches.
+#[test]
+fn one_person_known_twice_is_offered_once_as_their_account() {
+    let dir = Scratch::new("threads-offer-twice");
+    let state = dir.join("state");
+    std::fs::create_dir_all(&state).unwrap();
+    let d = illogicald!("threads-offer-twice")
+        .state_dir(&state)
+        .no_wisp()
+        .args(["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock", "--no-relay"])
+        .start();
+    let pane = d.get("/api/panes")[0]["id"].as_u64().unwrap();
+    let other = other_session(&d);
+    d.post("/api/acl", json!({ "session": other, "principal": "tailnet:sam", "role": "viewer" }));
+    // A team this machine checked (pinned, shared with nothing here): sam's
+    // in it.
+    let keys = DeviceKeys::generate();
+    let mut cert = Cert::new(&keys, "owner-acct", Kind::Daemon, "x");
+    cert.sign_with(&keys);
+    let saved = json!({
+        "url": "http://127.0.0.1:1",
+        "trust": { "account": "owner-acct", "root": cert.device },
+        "cert": cert,
+        "shared_teams": { "t9": { "roster": roster("t9", vec![member("sam", "editor")]) } },
+    });
+    keys.save(&state.join("daemon.key")).unwrap();
+    std::fs::write(state.join("control.json"), serde_json::to_vec(&saved).unwrap()).unwrap();
+    let key = format!("/api/threads/pane-{pane}");
+    let until = Instant::now() + Duration::from_secs(20);
+    let r = loop {
+        let r = d.post(&key, json!({ "text": "@sam look" }));
+        if r["invitable"][0]["who"] == "account:sam" || Instant::now() > until {
+            break r;
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    };
+    assert_eq!(r["invitable"], json!([{ "token": "sam", "who": "account:sam", "name": "sam" }]), "{r}");
+}
+
+/// What `who` reads of a thread, and its status.
+fn reads(d: &illogical_testkit::Daemon, who: &str, thread: &str) -> (u16, Vec<String>) {
+    let (s, v) = guest(d, who, "GET", &format!("/api/threads/{thread}"), None);
+    (s, if s == 200 { texts(&v) } else { Vec::new() })
+}
+
+/// The invite from an offer (#297): Sam's one push opens the thread; there
+/// he reads the message that named him and what follows, and in every
+/// other thread nothing from before he was let in. "Whole thread" opens
+/// that thread's history, and still no other's. A role change keeps it.
+#[test]
+fn an_invite_from_a_mention_opens_that_thread_from_that_message() {
+    let d = daemon("threads-invite");
+    let panes = d.get("/api/panes");
+    let (pane, session) = (panes[0]["id"].as_u64().unwrap(), panes[0]["session"].as_u64().unwrap());
+    let beside = d.post("/api/run", json!({}))["pane"].as_u64().unwrap();
+    let other = other_session(&d);
+    share(&d, other, SAM, "viewer", true);
+    share(&d, other, KIM, "viewer", true);
+    let (here, there, talk) = (format!("pane-{pane}"), format!("pane-{beside}"), format!("session-{session}"));
+    let post = |t: &str, text: &str| d.post(&format!("/api/threads/{t}"), json!({ "text": text }));
+    let pause = || std::thread::sleep(Duration::from_millis(20));
+    post(&here, "before it");
+    post(&there, "the other pane");
+    post(&talk, "the session's talk");
+    pause();
+    let r = post(&here, "@sam look");
+    assert_eq!(r["invitable"][0]["who"], format!("tailnet:{SAM}"), "{r}");
+    let msg = r["message"]["id"].as_u64().unwrap();
+    pause();
+    post(&here, "after it");
+    post(&there, "the other pane, later");
+    assert_eq!(reads(&d, SAM, &here).0, 404, "Sam can't read it yet");
+
+    // What the offer's button sends. Wrong places are refused first.
+    let invite = |b: Value| {
+        let (s, t) = d.raw("POST", "/api/invite", Some(b));
+        (s, serde_json::from_str::<Value>(&t).unwrap_or(Value::String(t)))
+    };
+    let sam = format!("tailnet:{SAM}");
+    for (thread, m, s) in [(&there, 3, session), (&format!("session-{other}"), 1, session), (&here, msg, other)] {
+        let (status, v) = invite(json!({ "session": s, "who": sam, "thread": thread, "msg": m }));
+        assert_eq!(status, 400, "{thread} {m} in {s}: {v}");
+    }
+    let (status, v) = invite(json!({ "session": session, "who": sam, "thread": here, "msg": 99 }));
+    assert_eq!(status, 400, "{v}");
+    assert_eq!(reads(&d, SAM, &here).0, 404, "nothing granted by any of that");
+
+    let phone = Phone::bind();
+    let (s, v) = guest(&d, SAM, "POST", "/api/push/subscribe", Some(phone.subscription()));
+    assert_eq!(s, 200, "{v}");
+    let (push, (status, r)) = std::thread::scope(|sc| {
+        let got = sc.spawn(|| phone.next());
+        let r = invite(json!({ "session": session, "who": sam, "thread": here, "msg": msg, "note": "@sam look" }));
+        (got.join().unwrap(), r)
+    });
+    assert_eq!(status, 200, "{r}");
+    assert_eq!(r["delivery"], "sent", "{r}");
+    assert_eq!(push["tag"], format!("invite-{}", r["invite"].as_str().unwrap()), "{push}");
+    assert_eq!((push["thread"].as_str(), push["pane"].as_u64()), (Some(here.as_str()), Some(pane)), "{push}");
+    assert!(phone.quiet(1500), "one push");
+
+    // That message on; nothing older there, nothing from before elsewhere.
+    let only = |who: &str, sees: &[&str]| {
+        assert_eq!(reads(&d, who, &here), (200, sees.iter().map(|s| s.to_string()).collect()), "{who} in {here}");
+        assert_eq!(reads(&d, who, &there), (200, vec![]), "{who} in {there}");
+        assert_eq!(reads(&d, who, &talk), (200, vec![]), "{who} in {talk}");
+    };
+    only(SAM, &["@sam look", "after it"]);
+    // What comes after the grant, in any thread, is theirs as ever.
+    pause();
+    post(&there, "news");
+    assert_eq!(reads(&d, SAM, &there).1, ["news"]);
+
+    // A role change keeps it: the share dialog's, and an invite's upgrade.
+    share(&d, session, SAM, "editor", true);
+    assert_eq!(reads(&d, SAM, &here).1, ["@sam look", "after it"]);
+    d.post("/api/acl", json!({ "session": session, "principal": sam, "role": "viewer" }));
+    let (status, r) = invite(json!({ "session": session, "who": sam, "role": "editor" }));
+    assert_eq!((status, r["grant"]["granted"].as_bool()), (200, Some(true)), "{r}");
+    assert_eq!(reads(&d, SAM, &here).1, ["@sam look", "after it"]);
+    assert_eq!(reads(&d, SAM, &talk).1, Vec::<String>::new());
+
+    // The whole thread: all of it, and still no other thread's past.
+    let (status, r) = invite(
+        json!({ "session": session, "who": format!("tailnet:{KIM}"), "thread": here, "msg": msg, "whole_thread": true }),
+    );
+    assert_eq!(status, 200, "{r}");
+    assert_eq!(reads(&d, KIM, &here).1, ["before it", "@sam look", "after it"],);
+    assert_eq!(reads(&d, KIM, &there).1, Vec::<String>::new());
+    assert_eq!(reads(&d, KIM, &talk).1, Vec::<String>::new());
 }

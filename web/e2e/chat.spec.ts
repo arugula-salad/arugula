@@ -3,8 +3,9 @@
 // started through the API; the bar's Chat place counts what's unread, the
 // page (M73) covers the panes and their bar with its own, lists sessions
 // as channels with their panes' threads under them, a thread is read and
-// written there, and "Go to pane" goes back to the pane, on this host or
-// the other one.
+// written there (an owner's @ of someone who can't see it offers to invite
+// them, #297), and "Go to pane" goes back to the pane, on this host or the
+// other one.
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -217,6 +218,22 @@ test("@claude in a session channel says it needs a pane's thread; @notreal isn't
   await chat.locator(".chat-thread textarea").press("Enter");
   await expect(chat.locator(".chat-thread .thread-note.unreached")).toHaveText("Nobody here called notreal can read this thread");
   await expect(chat.locator(".chat-thread .thread-msg").filter({ hasText: "@notreal hello" }).locator("b")).toHaveCount(0);
+
+  // Someone known here who can't see it: the owner is offered to invite
+  // them, and told what they'd see (#297).
+  const other = ((await (await api("geek", "/api/run", { session: "other" })).json()) as { pane: number }).pane;
+  const panes = (await (await api("geek", "/api/panes")).json()) as { id: number; session: number }[];
+  const session = panes.find((p) => p.id === other)!.session;
+  await api("geek", "/api/acl", { session, principal: "tailnet:sam@example.com", role: "viewer" });
+  await chat.locator(".chat-thread textarea").fill("@sam can you look");
+  await chat.locator(".chat-thread textarea").press("Enter");
+  const offer = chat.locator('.chat-thread .thread-offer[data-offer="tailnet:sam@example.com"]');
+  await expect(offer).toContainText("sam can't see this. Invite them?");
+  await expect(offer.locator(".thread-offer-sees")).toHaveText("sam will see this message and what follows in this thread");
+  await offer.getByLabel("Share the whole thread").check();
+  await expect(offer.locator(".thread-offer-sees")).toHaveText("sam will see all of this thread, and no other");
+  await offer.getByRole("button", { name: "Not now" }).click();
+  await expect(offer).toHaveCount(0);
   await page.keyboard.press("Escape");
   await expect(chat).toBeHidden();
 });

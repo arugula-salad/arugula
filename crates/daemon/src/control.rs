@@ -1889,7 +1889,7 @@ mod tests {
         /// The owner shares session 1 with Bea, as `account:b1`.
         fn grant(&self) {
             let root = self.bea.id();
-            self.acl.set_full(1, "account:b1", "bea", Some(Role::Editor), "owner", None, Some(root)).unwrap();
+            self.acl.set_full(1, "account:b1", "bea", Some(Role::Editor), "owner", None, Some(root), None).unwrap();
         }
 
         /// What Bea's phone got, decrypted as a browser would (RFC 8291).

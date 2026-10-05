@@ -184,6 +184,13 @@ pub enum Api {
     ThreadPost(ThreadPost, oneshot::Sender<Result<Posted, ThreadError>>),
     /// `who` has read a thread up to a message.
     ThreadRead(ThreadTarget, crate::acl::Principal, u64),
+    /// Which of these (principal ids) read a thread now (#297); `None` if
+    /// no grant could open it (gone, or a private pane's).
+    CanRead(ThreadTarget, Vec<String>, oneshot::Sender<Option<Vec<bool>>>),
+    /// A thread an invite opens at (#297): its session, and when a message
+    /// of it was posted (`None`: no such message there). `Err`: no grant
+    /// could open the thread.
+    ThreadPlace(ThreadTarget, Option<u64>, oneshot::Sender<Result<(SessionId, Option<u64>), String>>),
     /// Where an invite to a session opens (#233): the pane given, if it's
     /// in the session, else the session's first; and the session's name.
     InviteTo(SessionId, Option<PaneId>, oneshot::Sender<Result<(PaneId, String), String>>),
@@ -2181,6 +2188,26 @@ impl Daemon {
                     self.save_due.get_or_insert_with(|| Instant::now() + SAVE_DEBOUNCE);
                     self.soon();
                 }
+            }
+            Api::CanRead(target, ids, reply) => {
+                let r = self.thread_session(target).map(|_| {
+                    ids.into_iter()
+                        .map(|id| {
+                            let p = Principal::User { id, name: String::new(), pic: None };
+                            self.thread_role(&p, target).is_some()
+                        })
+                        .collect()
+                });
+                let _ = reply.send(r);
+            }
+            Api::ThreadPlace(target, msg, reply) => {
+                let r = self
+                    .thread_session(target)
+                    .ok_or_else(|| "no such thread, or it's a private pane's".to_owned())
+                    .map(|s| {
+                        (s, msg.and_then(|id| self.threads.get(target).iter().find(|m| m.id == id).map(|m| m.at)))
+                    });
+                let _ = reply.send(r);
             }
             Api::InviteTo(session, pane, reply) => {
                 let r = match self.mux.session(session) {
@@ -4208,6 +4235,19 @@ impl Daemon {
         }
     }
 
+    /// The session a thread is in, if a grant on it could open the thread:
+    /// not a private pane's (its owner's alone).
+    fn thread_session(&self, target: ThreadTarget) -> Option<SessionId> {
+        if !self.thread_exists(target) {
+            return None;
+        }
+        match target {
+            ThreadTarget::Pane(p) if self.meta.get(&p).is_some_and(|m| m.private) => None,
+            ThreadTarget::Pane(p) => self.session_of(p),
+            ThreadTarget::Session(s) => Some(s),
+        }
+    }
+
     /// `who`'s role in a thread, and the time its messages start for them:
     /// a pane's thread is read by whoever may read the pane (a private
     /// pane's only by its owner), a session's by whoever has a role in it.
@@ -4224,7 +4264,7 @@ impl Daemon {
             ThreadTarget::Session(s) => s,
         };
         let role = self.config.acl.role(who, session)?;
-        Some((role, self.config.acl.thread_floor(who, session).unwrap_or(0)))
+        Some((role, self.config.acl.thread_floor(who, session, target).unwrap_or(0)))
     }
 
     fn thread_get(&self, target: ThreadTarget, who: &Principal) -> Result<Vec<ThreadMsg>, ThreadError> {

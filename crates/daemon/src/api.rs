@@ -891,9 +891,10 @@ async fn thread_post(
     Json(req): Json<ThreadPostRequest>,
 ) -> Res<Json<serde_json::Value>> {
     let who = who.map(|axum::Extension(w)| w).unwrap_or(crate::acl::Principal::Owner);
+    let owner = who.is_owner();
     let target = thread_target(&key)?;
     let post = crate::mux::ThreadPost { target, who, as_agent: None, text: req.text, quote: req.quote };
-    let (msg, to_agent, unreached) =
+    let (msg, to_agent, mut unreached) =
         app.mux.api(|r| Api::ThreadPost(post, r)).await.ok_or_else(gone)?.map_err(thread_err)?;
     let mut agent = serde_json::Value::Null;
     if to_agent && let illogical_proto::ThreadTarget::Pane(pane) = target {
@@ -902,7 +903,46 @@ async fn thread_post(
             Err(e) => serde_json::json!({ "error": e }),
         };
     }
+    // The owner, who sees every grant and roster already, is offered to
+    // invite whom an @ named but who can't read the thread (#297). Nobody
+    // else's post does any of this, so theirs says nothing about who exists.
+    if owner {
+        let invitable = invitable(&app, target, &mut unreached).await;
+        return Ok(Json(
+            serde_json::json!({ "message": msg, "agent": agent, "unreached": unreached, "invitable": invitable }),
+        ));
+    }
     Ok(Json(serde_json::json!({ "message": msg, "agent": agent, "unreached": unreached })))
+}
+
+/// Whom an owner's `@`s that reached nobody name, of those an invite may
+/// name, who can't read the thread and could once invited (not on a
+/// private pane's). Their tokens leave `unreached`: the offer says it.
+async fn invitable(
+    app: &App,
+    target: illogical_proto::ThreadTarget,
+    unreached: &mut Vec<crate::mux::Unreached>,
+) -> Vec<serde_json::Value> {
+    let tokens: Vec<String> = unreached.iter().filter(|u| u.why == "nobody").map(|u| u.token.clone()).collect();
+    if tokens.is_empty() {
+        return Vec::new();
+    }
+    let named: Vec<(String, crate::invite::Person)> = crate::invite::nameable(app)
+        .into_iter()
+        .filter_map(|p| {
+            let t = tokens.iter().find(|t| crate::threads::names(t, &p.id, &p.name))?;
+            Some((t.clone(), p))
+        })
+        .collect();
+    if named.is_empty() {
+        return Vec::new();
+    }
+    let ids = named.iter().map(|(_, p)| p.id.clone()).collect();
+    let Some(reads) = app.mux.api(|r| Api::CanRead(target, ids, r)).await.flatten() else { return Vec::new() };
+    let out: Vec<(String, crate::invite::Person)> =
+        named.into_iter().zip(reads).filter(|(_, reads)| !reads).map(|(n, _)| n).collect();
+    unreached.retain(|u| !out.iter().any(|(t, _)| *t == u.token));
+    out.into_iter().map(|(token, p)| serde_json::json!({ "token": token, "who": p.id, "name": p.name })).collect()
 }
 
 /// Hand a thread message to the pane's agent, as a follow-up from its

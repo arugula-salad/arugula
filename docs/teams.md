@@ -164,6 +164,11 @@ menu, *Session thread* in the session menu, or the bubble on a pane.
   connected (team members included); tapping it opens the thread. **@agent** in a pane's
   thread goes to the agent in that pane as a follow-up, if you may drive
   it; agents answer in the thread.
+- **@name of someone who can't see it:** if you own the machine and it
+  knows them (shared with elsewhere, or on a team roster it checked), the
+  composer offers to invite them. They see your message and what follows
+  in that thread, or the whole thread if you choose; no other thread's
+  past.
 - *Quote selection in thread* (pane menu) posts what you selected in the
   terminal; clicking the quote jumps back to it.
 
