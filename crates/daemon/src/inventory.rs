@@ -270,11 +270,23 @@ impl Inventory {
 }
 
 fn which(name: &str, path: &str) -> Option<PathBuf> {
-    use std::os::unix::fs::PermissionsExt;
-    path.split(':')
+    path.split(if cfg!(windows) { ';' } else { ':' })
         .filter(|d| !d.is_empty())
         .map(|d| Path::new(d).join(name))
-        .find(|p| std::fs::metadata(p).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0))
+        .find(|p| std::fs::metadata(p).is_ok_and(|m| m.is_file() && executable(&m)))
+}
+
+#[cfg(unix)]
+fn executable(m: &std::fs::Metadata) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    m.permissions().mode() & 0o111 != 0
+}
+
+/// Windows: no mode bits; `chant` there is a `.cmd`/`.exe` shim, found by
+/// name once M56 (#219) brings the daemon over.
+#[cfg(not(unix))]
+fn executable(_: &std::fs::Metadata) -> bool {
+    true
 }
 
 #[cfg(test)]

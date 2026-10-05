@@ -727,6 +727,7 @@ fn write_head(w: &mut UnixStream, status: u16, ct: Option<&str>, len: Option<usi
 
 /// `/ws` over the channel: the WebSocket's messages are the channel's
 /// `T`/`B` messages, both ways, until either end closes.
+#[cfg(unix)]
 fn serve_ws(link: &Link, mut s: UnixStream, early: Vec<u8>, key: &str) -> anyhow::Result<()> {
     use nix::poll::{PollFd, PollFlags, PollTimeout, poll};
     use std::os::fd::AsFd;
