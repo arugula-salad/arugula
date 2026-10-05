@@ -8,6 +8,7 @@ import { useSubscribe, usePhone } from "./hooks";
 import { closeMenu, MenuLayer, openMenu, PromptLayer, type MenuItem } from "./menu";
 import { KeyBar, PhoneHeader } from "./phone";
 import { ThreadBadge, ThreadLayer } from "./threads";
+import { HuddleBar, HuddleButton } from "./huddle";
 import { AttentionBadge, tabAttention } from "./attention";
 import { HostButton, HostPicker } from "./hosts";
 import { openSwarm } from "../swarm/route";
@@ -109,6 +110,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       <PromptLayer />
       <AgentDialogLayer />
       <ThreadLayer phone={phone} />
+      <HuddleBar />
       <ConversationsLayer />
       <AppsLayer />
       <SandboxesLayer />
@@ -179,6 +181,7 @@ function TopBar({
           <span class="caret">▾</span>
         </button>
       )}
+      <HuddleButton client={client} session={session.id} />
       <div class="tabbar" role="tablist">
         {session.tabs.map((id, i) => {
           const t = client.tabView(id);
