@@ -916,9 +916,11 @@ impl Approved {
         let key = state_dir.join(KEY_FILE);
         if let Ok(keys) = DeviceKeys::load(&key) {
             let path = "/api/daemon/leave";
-            let _ = reqwest::Client::new()
+            let http = crate::roots::client();
+            let v2 = takes_v2(&http, &self.saved.url).await;
+            let _ = http
                 .post(format!("{}{path}", self.saved.url))
-                .header(AUTH, auth_header(&keys, "POST", path))
+                .header(AUTH, auth_header(&keys, "POST", path, b"", v2))
                 .timeout(Duration::from_secs(10))
                 .send()
                 .await;
