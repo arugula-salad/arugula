@@ -65,7 +65,10 @@ passes 30 GB (`scripts/ci-cap-target`): cargo never prunes it, and on
 cluster down. Workflows run on pushes and tags only, never on pull
 requests, since they run on those hosts; and the repo asks for approval
 before any outside contributor's workflow runs, so a fork's PR can't add
-a trigger of its own and reach them. A job's log: `gh run view --log
+a trigger of its own and reach them. Intel Macs are the exception:
+`.github/workflows/macos-intel.yml` runs `just test` and builds the
+tarball and the app on GitHub's `macos-15-intel` runner, which isn't
+ours, so it runs on pull requests too and keeps both as artifacts. A job's log: `gh run view --log
 <run id>` (or `--log-failed`).
 
 The repo moved from Forgejo (`git.inevitable.fyi/jhgaylor/illogical`,
