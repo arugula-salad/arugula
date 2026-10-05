@@ -403,7 +403,8 @@ mod tests {
         let dir = std::env::temp_dir();
         let s = spawn(&Command {
             program: "cmd",
-            args: &["/c".into(), "set /p X=& echo got %X%& exit 7".into()],
+            // Delayed expansion: cmd expands %X% when it reads the line.
+            args: &["/v:on".into(), "/c".into(), "set /p X=& echo got !X!& exit 7".into()],
             cwd: &dir,
             env: &[],
             cols: 80,
