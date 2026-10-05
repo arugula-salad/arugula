@@ -974,7 +974,7 @@ fn defs() -> Vec<Def> {
         Def {
             name: "invite_person",
             title: "Ask to invite a person",
-            description: "Ask the user to bring someone into the session you work in (your pane's): a teammate, someone it's shared with, or tailnet:<login>, as a viewer (default) or an editor, with a note saying why. Nothing is shared in an agent's name: it waits as a card beside you that only the session's owner sends (after editing the role or note, if they like) or declines. Returns its draft id at once with status waiting; read_invite shows what became of it.",
+            description: "Ask the user to bring someone into the session you work in (your pane's): a teammate, someone it's shared with, or tailnet:<login>, as a viewer (default) or an editor, with a note saying why. Nothing is shared in an agent's name: it waits as a card beside you that only the session's owner sends (after editing the role or note, if they like) or declines. Only the owner's own agents may ask (not one a guest started). Returns its draft id at once with status waiting; read_invite shows what became of it.",
             schema: schema_for_type::<InvitePersonArgs>,
             read_only: false,
             destructive: false,
@@ -2507,6 +2507,9 @@ impl<'a> Call<'a> {
         }
         let (from, pane) = self.invite_panes(a.pane.as_ref())?;
         let at = self.readable(pane).await?;
+        // The owner's agents ask; one a guest started (or an agent of
+        // theirs did) learns nothing of who this machine knows.
+        let started = self.started_text().await?;
         // Someone this machine knows, or no card at all.
         let person = crate::invite::resolve(self.app, &a.who, None).map_err(|(_, why)| why)?;
         if crate::invite::owns_here(self.app, &person.id) {
@@ -2548,7 +2551,8 @@ impl<'a> Call<'a> {
             }
         };
         let args = json!({ "who": a.who.trim(), "person": person.id, "name": person.name, "role": role,
-            "note": note, "session": at.session, "session_name": at.session_name, "pane": pane, "from": from });
+            "note": note, "session": at.session, "session_name": at.session_name, "pane": pane, "from": from,
+            "started": started });
         let out = block.1.call_by("draft", args, Some(&self.by())).await?;
         let draft = out["draft"].as_str().unwrap_or("?").to_owned();
         done(
@@ -2562,6 +2566,21 @@ impl<'a> Call<'a> {
             json!({ "draft": draft, "status": "waiting", "block": block.0, "who": person.id, "name": person.name,
                 "role": role, "session": at.session, "pane": pane }),
         )
+    }
+
+    /// Who started the agent asking (#234), as its card says it: the
+    /// owner, or the agent that did. An agent a guest stands behind may
+    /// not ask at all.
+    async fn started_text(&self) -> Result<String, String> {
+        let Some(me) = self.me() else { return Ok("your own client".into()) };
+        if self.app.mux.api(|r| Api::GuestBehind(me, r)).await.flatten().is_some() {
+            return Err("only the owner's own agents may ask to invite someone".into());
+        }
+        Ok(match self.readable(me).await?.info.started_by {
+            Some(StartedBy { by, block: Some(b) }) => format!("started by {by} in %{b}"),
+            Some(StartedBy { by, block: None }) => format!("started by {by}"),
+            None => "you started it".into(),
+        })
     }
 
     async fn read_invite(&self, a: ReadInviteArgs) -> Out {

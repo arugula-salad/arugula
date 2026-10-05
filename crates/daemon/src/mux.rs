@@ -62,8 +62,12 @@ const TYPING: Duration = Duration::from_secs(5);
 /// next to type drives (#118).
 const DRIVER_LAPSE: Duration = Duration::from_secs(10 * 60);
 
-/// A minute of trust (M14), or `ILLOGICAL_TRUST_MINUTE_MS` (for tests).
+/// A minute of trust (M14), or in a debug build `ILLOGICAL_TRUST_MINUTE_MS`
+/// (for tests).
 fn trust_minute_ms() -> u64 {
+    if !cfg!(debug_assertions) {
+        return 60_000;
+    }
     std::env::var("ILLOGICAL_TRUST_MINUTE_MS").ok().and_then(|ms| ms.parse().ok()).unwrap_or(60_000)
 }
 
@@ -207,6 +211,9 @@ pub enum Api {
     /// An MCP client started this pane or block (M16): shown on it, and
     /// what lets an agent block's token drive it.
     StartedBy(PaneId, illogical_proto::StartedBy),
+    /// The guest (principal id) behind a pane or block, if any: who
+    /// started it, or the agent that did, or whose VM it runs on.
+    GuestBehind(PaneId, oneshot::Sender<Option<String>>),
     /// Typing by an MCP client (M16): as theirs, in the pane's history.
     InputBy(PaneId, Vec<u8>, String),
     /// An editor joined the swarm (M28): it gets an id of its own.
@@ -2410,9 +2417,19 @@ impl Daemon {
             }
             Api::StartedBy(pane, by) => {
                 if self.panes.contains_key(&pane) || self.blocks.contains_key(&pane) {
-                    self.meta.entry(pane).or_default().started_by = Some(by);
+                    // An agent's: whoever stands behind that agent stands
+                    // behind this too.
+                    let guest = by.block.and_then(|b| self.guest_behind(b));
+                    let meta = self.meta.entry(pane).or_default();
+                    meta.started_by = Some(by);
+                    if guest.is_some() {
+                        meta.guest = guest;
+                    }
                     self.touch(pane);
                 }
+            }
+            Api::GuestBehind(pane, reply) => {
+                let _ = reply.send(self.guest_behind(pane));
             }
             Api::Ask(pane, ask, reply) => {
                 let _ = reply.send(self.ask(pane, *ask));
@@ -2915,7 +2932,14 @@ impl Daemon {
         for m in self.machines.values_mut().filter(|m| !before.contains(&m.id)) {
             m.by = Some(who.id().to_owned());
         }
+        self.meta.entry(block).or_default().guest = Some(who.id().to_owned());
         Ok(block)
+    }
+
+    /// The guest behind a pane (by principal id): who started it, as its
+    /// meta says, or whose VM it runs on.
+    fn guest_behind(&self, pane: PaneId) -> Option<String> {
+        self.meta.get(&pane).and_then(|m| m.guest.clone()).or_else(|| self.machine_of(pane)?.by.clone())
     }
 
     fn open_block(&mut self, mut req: OpenRequest) -> Result<PaneId, String> {
@@ -3325,10 +3349,16 @@ impl Daemon {
                         return;
                     }
                     // An agent's invites (#234): the owner's to close, alone
-                    // or with their tab.
+                    // or with their tab or session.
+                    let panes = |tab| self.mux.tab(tab).map(|t| t.root.panes()).unwrap_or_default();
                     let closes = match &intent {
                         Intent::ClosePane { pane } => vec![*pane],
-                        Intent::CloseTab { tab } => self.mux.tab(*tab).map(|t| t.root.panes()).unwrap_or_default(),
+                        Intent::CloseTab { tab } => panes(*tab),
+                        Intent::CloseSession { session } => self
+                            .mux
+                            .session(*session)
+                            .map(|s| s.tabs.iter().flat_map(|t| panes(*t)).collect())
+                            .unwrap_or_default(),
                         _ => vec![],
                     };
                     if closes.iter().any(|p| self.is_invite(*p)) {

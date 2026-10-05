@@ -16,7 +16,13 @@
 //! block's token, `mcp:<client>@%N` for a full caller in pane N) and its
 //! drafts, the waiting ones and the last settled, so a restart keeps them.
 //! Methods: `draft {who, person, name, role, note, session, session_name,
-//! pane, from}` (by `mcp:<client>`), `drafts`, `state`.
+//! pane, from, started}` (by `mcp:<client>`), `drafts`, `state`.
+//!
+//! What the card says is what sending it does: when it's shown, the
+//! session's name is the session's now, and the person's name is who this
+//! machine knows by their principal id, shown beside it. A draft whose
+//! pane left its session, or whose person this machine no longer knows,
+//! fails instead.
 //!
 //! Closing it is the owner's too (the routes refuse anyone else, and every
 //! agent). What it still waits for is dropped then, and its drafts are
@@ -44,13 +50,14 @@ use crate::{
     store::now_ms,
 };
 
-/// How long a card waits before it's dropped.
+/// How long a card waits before it's dropped (a debug build's tests may
+/// say, `ILLOGICAL_INVITE_TTL_MS`).
 fn ttl() -> Duration {
-    std::env::var("ILLOGICAL_INVITE_TTL_MS")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .map(Duration::from_millis)
-        .unwrap_or(Duration::from_secs(24 * 3600))
+    let day = Duration::from_secs(24 * 3600);
+    if !cfg!(debug_assertions) {
+        return day;
+    }
+    std::env::var("ILLOGICAL_INVITE_TTL_MS").ok().and_then(|v| v.parse().ok()).map(Duration::from_millis).unwrap_or(day)
 }
 
 /// Settled drafts kept.
@@ -76,6 +83,10 @@ pub struct Draft {
     /// Who drafted it (`mcp:claude-code`), and from which pane.
     pub by: String,
     pub from: PaneId,
+    /// Who started that agent, as the card says it (`you`, or the agent
+    /// that did).
+    #[serde(default)]
+    pub started: String,
     /// Whom, as named, and as this machine knows them.
     pub who: String,
     pub person: String,
@@ -162,7 +173,7 @@ impl InviteBlock {
             "by": by, "at_ms": now_ms(),
             "from": args["from"], "who": args["who"], "person": args["person"], "name": args["name"],
             "role": args["role"], "note": args["note"], "session": args["session"],
-            "session_name": args["session_name"], "pane": args["pane"],
+            "session_name": args["session_name"], "pane": args["pane"], "started": args["started"],
         }))
         .map_err(|e| format!("draft: {e}"))?;
         if d.role == Role::Owner {
@@ -200,6 +211,16 @@ impl InviteBlock {
                 .find(|d| d.status == Status::Waiting && Some(&d.id) != sending.as_ref())
                 .cloned();
             let Some(d) = next else { return };
+            let d = match self.as_now(d.clone()).await {
+                Ok(d) => d,
+                Err(why) => {
+                    warn!(pane = self.ctx.id, id = d.id, error = why, "an invite can't be shown");
+                    self.settle(Draft { status: Status::Failed, settled_ms: Some(now_ms()), error: Some(why), ..d });
+                    self.ctx.changed();
+                    drop(_one);
+                    return self.raise().await;
+                }
+            };
             match self.ctx.ask(card(&d)).await {
                 Ok((token, rx)) => {
                     *self.asking.lock().unwrap() = Some((d.id.clone(), token));
@@ -212,6 +233,20 @@ impl InviteBlock {
                 Err(e) => warn!(pane = self.ctx.id, error = e, "can't show the invite"),
             }
         })
+    }
+
+    /// A draft as sending it would go, now: its session's name, and its
+    /// person's as this machine knows them; or why it can't.
+    async fn as_now(&self, d: Draft) -> Result<Draft, String> {
+        let Some(app) = self.ctx.invite.get().and_then(Weak::upgrade) else { return Ok(d) };
+        let session_name = match app.mux.api(|r| crate::mux::Api::InviteTo(d.session, Some(d.pane), r)).await {
+            Some(r) => r?.1,
+            None => return Ok(d),
+        };
+        match super::resolve(&app, &d.person, None) {
+            Ok(p) if p.id == d.person => Ok(Draft { name: p.name, session_name, ..d }),
+            _ => Err(format!("this machine doesn't know {} any more", d.person)),
+        }
     }
 
     /// Someone answered the card.
@@ -415,10 +450,12 @@ fn keep_closed(root: &std::path::Path, block: PaneId, drafter: &str, drafts: Vec
 /// note and drive trust to edit, and a reason to give if they decline.
 pub fn card(d: &Draft) -> Ask {
     let agent = d.by.strip_prefix("mcp:").unwrap_or(&d.by).to_owned();
+    let started = if d.started.is_empty() { String::new() } else { format!(", {}", d.started) };
     let message = format!(
-        "{agent} (pane %{}) wants to bring {} ({}) into {} at pane %{}: {}",
+        "{agent} (pane %{}{started}) wants to bring {} [{}] ({}) into {} at pane %{}: {}",
         d.from,
         d.name,
+        d.person,
         d.role.as_str(),
         d.session_name,
         d.pane,
@@ -551,13 +588,13 @@ mod tests {
         let d: Draft = serde_json::from_value(json!({
             "id": "inv-1", "by": "mcp:claude-code", "from": 3, "who": "sam", "person": "account:s1",
             "name": "Sam", "role": "editor", "note": "the flaky test", "session": 1,
-            "session_name": "api-work", "pane": 3, "at_ms": 1,
+            "session_name": "api-work", "pane": 3, "at_ms": 1, "started": "you started it",
         }))
         .unwrap();
         let a = card(&d);
         assert_eq!(
             a.message,
-            "claude-code (pane %3) wants to bring Sam (editor) into api-work at pane %3: the flaky test"
+            "claude-code (pane %3, you started it) wants to bring Sam [account:s1] (editor) into api-work at pane %3: the flaky test"
         );
         assert_eq!((a.kind, a.source.as_str()), (AskKind::Form, "invite"));
         let s = a.schema.unwrap();

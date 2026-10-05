@@ -942,7 +942,16 @@ async fn invitable(
     let out: Vec<(String, crate::invite::Person)> =
         named.into_iter().zip(reads).filter(|(_, reads)| !reads).map(|(n, _)| n).collect();
     unreached.retain(|u| !out.iter().any(|(t, _)| *t == u.token));
-    out.into_iter().map(|(token, p)| serde_json::json!({ "token": token, "who": p.id, "name": p.name })).collect()
+    // One taken for another (a login by an account's name) says whom.
+    out.into_iter()
+        .map(|(token, p)| {
+            let mut o = serde_json::json!({ "token": token, "who": p.id, "name": p.name });
+            if let Some(m) = p.merged {
+                o["merged"] = m.into();
+            }
+            o
+        })
+        .collect()
 }
 
 /// Hand a thread message to the pane's agent, as a follow-up from its
@@ -1142,6 +1151,11 @@ async fn open_block(
     Json(mut req): Json<illogical_proto::api::OpenRequest>,
 ) -> Res<Json<serde_json::Value>> {
     let who = who.map(|axum::Extension(w)| w);
+    // An invite block (#234) is MCP's invite_person's to make, for what it
+    // checked: never anyone's from here.
+    if req.kind == illogical_proto::BlockType::Invite {
+        return Err(ApiError(StatusCode::FORBIDDEN, "invite blocks are made by MCP's invite_person".into()));
+    }
     // M44: a worn Fountain agent runs on this host with the owner's
     // secrets: the owner's alone.
     if req.kind == illogical_proto::BlockType::Agent

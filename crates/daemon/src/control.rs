@@ -293,6 +293,8 @@ pub struct Control {
     /// Invites waiting for their person to be reachable (#233), in
     /// `invites.json`: tried again after each refresh, for a day.
     invites: std::sync::Mutex<Vec<Waiting>>,
+    /// Held while they're tried: one try at a time, beside the refreshes.
+    retrying: tokio::sync::Mutex<()>,
 }
 
 /// An invite pushed to nobody yet (#233): its person hasn't accepted the
@@ -301,6 +303,10 @@ pub struct Control {
 pub struct Waiting {
     /// Whom, by principal id.
     pub who: String,
+    /// Into which session: once they can't read it (revoked), it's not
+    /// sent. (`None`: kept from before this was.)
+    #[serde(default)]
+    pub session: Option<illogical_core::SessionId>,
     pub pane: u32,
     pub title: String,
     pub body: String,
@@ -393,6 +399,7 @@ impl Control {
                     .and_then(|b| serde_json::from_slice(&b).ok())
                     .unwrap_or_default(),
             ),
+            retrying: Default::default(),
         });
         me.reload();
         me
@@ -458,12 +465,14 @@ impl Control {
         self.team_pins.read().unwrap().clone()
     }
 
-    /// Pin more (a newer pin of the same team replaces it); true if any
-    /// changed. Only the owner's browser sends these: control never does.
-    pub fn add_team_pins(&self, pins: BTreeMap<String, String>) -> std::io::Result<bool> {
+    /// Pin more (a newer pin of the same team replaces it) and unpin
+    /// teams left (`drop`); true if any changed. Only the owner's browser
+    /// sends these: control never does.
+    pub fn set_team_pins(&self, pins: BTreeMap<String, String>, drop: &[String]) -> std::io::Result<bool> {
         let mut p = self.team_pins.write().unwrap();
         let before = p.clone();
         p.extend(pins);
+        p.retain(|team, _| !drop.contains(team));
         if *p == before {
             return Ok(false);
         }
@@ -512,9 +521,11 @@ impl Control {
     }
 
     /// Keep an invite for later (#233): pushed after a refresh that finds
-    /// its person reachable, or dropped after a day.
+    /// its person reachable, or dropped after a day. A newer invite of
+    /// theirs into the same session replaces one waiting: one push.
     pub fn wait_invite(&self, w: Waiting) {
         let mut l = self.invites.lock().unwrap();
+        l.retain(|o| !(o.who == w.who && o.session == w.session));
         l.push(w);
         self.save_invites(&l);
     }
@@ -529,8 +540,9 @@ impl Control {
     }
 
     /// Try the waiting invites again: each goes once a subscription took
-    /// it, or after a day stops waiting.
+    /// it, or after a day stops waiting, or once its share is revoked.
     pub async fn retry_invites(&self) {
+        let Ok(_one) = self.retrying.try_lock() else { return };
         let waiting = self.invites.lock().unwrap().clone();
         if waiting.is_empty() {
             return;
@@ -539,6 +551,11 @@ impl Control {
         for w in &waiting {
             if w.at + INVITE_WAIT_MS <= now_ms() {
                 info!(who = w.who, "an invite waited a day; it's unreachable");
+                done.push(w.clone());
+                continue;
+            }
+            if w.session.is_some_and(|s| self.acl.role_of(&w.who, s).is_none()) {
+                info!(who = w.who, "a waiting invite's share was revoked; it's not sent");
                 done.push(w.clone());
                 continue;
             }
@@ -1073,9 +1090,12 @@ impl Control {
                         match me.refresh().await {
                             // Roles may have changed: re-filter everyone.
                             // Someone an invite waits for may be reachable.
+                            // Beside the loop: a slow control doesn't hold up
+                            // the next refresh.
                             Ok(_) => {
                                 acl_changed();
-                                me.retry_invites().await;
+                                let m = me.clone();
+                                tokio::spawn(async move { m.retry_invites().await });
                             }
                             Err(e) => warn!(error = %e, "can't refresh certificates from control"),
                         }
@@ -2018,28 +2038,35 @@ mod tests {
 
     /// #233: a waiting invite goes out after the refresh that finds its
     /// person reachable, once; one that waited a day stops waiting,
-    /// unpushed. Kept across restarts.
+    /// unpushed, as does one whose share is gone. A second invite into the
+    /// same session replaces the first. Kept across restarts.
     #[tokio::test]
     async fn waiting_invites_go_once_or_stop_after_a_day() {
         let r = rig("waiting").await;
         let c = r.daemon().await;
-        let w = |at, tag: &str| Waiting {
+        // Shared with session 1 (not yet routed by control); never with 2.
+        r.grant();
+        let w = |at, session, tag: &str| Waiting {
             who: "account:b1".into(),
+            session: Some(session),
             pane: 1,
             title: "alex brought you into api".into(),
             body: "b".into(),
             extra: serde_json::json!({ "tag": tag }),
             at,
         };
-        c.wait_invite(w(now_ms() - INVITE_WAIT_MS - 1, "invite-old"));
-        c.wait_invite(w(now_ms(), "invite-new"));
+        c.wait_invite(w(now_ms() - INVITE_WAIT_MS - 1, 3, "invite-old"));
+        c.wait_invite(w(now_ms(), 1, "invite-first"));
+        c.wait_invite(w(now_ms(), 1, "invite-new"));
+        c.wait_invite(w(now_ms(), 2, "invite-revoked"));
+        assert_eq!(c.invites.lock().unwrap().len(), 3, "the second into session 1 replaced the first");
         c.retry_invites().await;
-        assert_eq!(c.invites.lock().unwrap().len(), 1, "the old one stopped waiting");
+        let left: Vec<_> = c.invites.lock().unwrap().iter().map(|w| w.extra["tag"].clone()).collect();
+        assert_eq!(left, ["invite-new"], "the old one and the revoked one stopped waiting");
         let kept = Control::new(&r.dir, vec![], String::new(), r.acl.clone(), false);
         assert_eq!(kept.invites.lock().unwrap().len(), 1, "kept in invites.json");
 
         r.fake.lock().unwrap().routed = true;
-        r.grant();
         assert!(c.refresh_now(REFRESH_WAIT).await);
         let t = std::time::Instant::now();
         while r.opened().is_empty() && t.elapsed() < Duration::from_secs(5) {

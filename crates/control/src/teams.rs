@@ -739,9 +739,16 @@ pub async fn daemon_peers(State(app): State<Arc<App>>, d: DaemonAuth, Query(q): 
     if over {
         app.db.offer_shares(&d.cert.device, &asking, illogical_e2e::now_ms())?;
     }
-    // Each new offer pushes the person offered, once (#232): who and which
-    // machine, nothing of what's shared (they haven't said yes yet).
-    let new: Vec<String> = new.into_iter().filter(|a| asking.contains(a)).collect();
+    // Each new offer pushes the person offered, once (#232; once a day, if
+    // the daemon drops and makes it again): who and which machine, nothing
+    // of what's shared (they haven't said yes yet).
+    let mut pushing = Vec::new();
+    for a in new.into_iter().filter(|a| asking.contains(a)) {
+        if app.db.push_offer(&d.cert.device, &a, illogical_e2e::now_ms())? {
+            pushing.push(a);
+        }
+    }
+    let new = pushing;
     if !new.is_empty()
         && let Some((owner, row)) = app.db.daemon_row(&d.cert.device)?
     {

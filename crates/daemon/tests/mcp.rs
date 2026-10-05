@@ -815,7 +815,7 @@ fn an_invite_waits_for_the_owner_and_only_they_send_it() {
     assert_eq!(
         card["message"],
         format!(
-            "claude-code (pane %{pane}) wants to bring sam@example.com (editor) into {name} at pane %{pane}: {note}"
+            "claude-code (pane %{pane}, your own client) wants to bring sam@example.com [{sam}] (editor) into {name} at pane %{pane}: {note}"
         )
     );
     assert!(card_on(&d, pane).is_null(), "never on the pane itself");
@@ -836,6 +836,16 @@ fn an_invite_waits_for_the_owner_and_only_they_send_it() {
     // Nor Claude Code on the owner's own CLI (it says so).
     assert_eq!(as_agent(&d, &format!("/api/blocks/{block}/call/answer"), json!({ "content": {} })), 403);
     assert_eq!(as_agent(&d, "/api/attention/act", json!({ "action": "answer", "pane": block, "content": {} })), 403);
+    // Nor may it skip the card: invite on the CLI, or make a card of its
+    // own (whose words needn't be what it does), or pin a team.
+    let session = d.get("/api/panes")[0]["session"].clone();
+    let direct = json!({ "session": session, "who": sam, "role": "editor", "drive_minutes": 60 });
+    assert_eq!(as_agent(&d, "/api/invite", direct), 403);
+    assert_eq!(as_agent(&d, "/api/team-pins", json!({ "pins": {} })), 403);
+    let forged = json!({ "type": "invite", "config": { "drafter": "%1", "drafts": [] } });
+    let (status, text) = d.raw("POST", "/api/blocks", Some(forged));
+    assert_eq!(status, 403, "{text}");
+    assert_eq!(invite_blocks(&d), [block], "no other invite block");
     assert!(grant_of(&d, sam).is_none(), "nothing granted");
     assert_eq!(card_on(&d, block)["id"], draft.as_str(), "the card waits still");
 
@@ -977,7 +987,10 @@ fn an_agent_block_drafts_beside_itself() {
     assert_eq!(tab_of(&d, block), tab_of(&d, a));
     assert!(grant_of(&d, "tailnet:sam@example.com").is_none());
     let card = card_on(&d, block);
-    assert!(card["message"].as_str().unwrap().starts_with(&format!("fake-agent (pane %{a}) wants to bring")), "{card}");
+    // Whose agent it is, and whom exactly, by their principal.
+    let want =
+        format!("fake-agent (pane %{a}, you started it) wants to bring sam@example.com [tailnet:sam@example.com]");
+    assert!(card["message"].as_str().unwrap().starts_with(&want), "{card}");
     let draft = r["draft"].as_str().unwrap().to_owned();
     let r = agent_mcp(&d, a, "read_invite", json!({ "draft": draft })).unwrap();
     assert_eq!(r["status"], "waiting", "{r}");

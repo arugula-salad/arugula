@@ -408,6 +408,8 @@ export interface Invitable {
   /** `tailnet:<login>` or `account:<id>`. */
   who: string;
   name: string;
+  /** Another principal taken to be them (a login by their name). */
+  merged?: string | null;
 }
 
 export type ThreadTarget = { pane: PaneId } | { session: SessionId };

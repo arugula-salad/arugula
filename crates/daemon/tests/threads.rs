@@ -532,7 +532,8 @@ fn one_person_known_twice_is_offered_once_as_their_account() {
         }
         std::thread::sleep(Duration::from_millis(500));
     };
-    assert_eq!(r["invitable"], json!([{ "token": "sam", "who": "account:sam", "name": "sam" }]), "{r}");
+    let offer = json!([{ "token": "sam", "who": "account:sam", "name": "sam", "merged": "tailnet:sam" }]);
+    assert_eq!(r["invitable"], offer, "{r}");
 }
 
 /// What `who` reads of a thread, and its status.

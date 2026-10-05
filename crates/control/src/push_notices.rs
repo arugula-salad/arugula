@@ -211,8 +211,9 @@ async fn waiting_devices_and_requests_push_their_owners() {
 }
 
 /// #232: a machine offering a session to someone outside its owner's teams
-/// pushes them, once per offer (not on each refresh that names them
-/// again): whose machine and which, nothing of what's shared.
+/// pushes them, once (not on each refresh that names them again, nor when
+/// it drops and makes the offer again that day): whose machine and which,
+/// nothing of what's shared.
 #[tokio::test]
 async fn a_new_share_offer_pushes_the_person_offered_once() {
     let mut app = App::for_tests("http://control.test");
@@ -245,4 +246,9 @@ async fn a_new_share_offer_pushes_the_person_offered_once() {
     refresh("a1jake,a2ada,a3bo").await;
     assert!(bo_phone.next().await.is_some(), "a new offer, to someone else");
     assert!(ada_phone.quiet().await);
+
+    // The daemon drops Ada and names her again: a new offer, not a new push.
+    refresh("a1jake,a3bo").await;
+    refresh("a1jake,a2ada,a3bo").await;
+    assert!(ada_phone.quiet().await, "once a day, however the offer comes and goes");
 }

@@ -734,14 +734,19 @@ export class ControlSession {
    * was deleted), oldest first. */
   notices: { id: number; title: string; body: string }[] = [];
 
+  /** Whether the last load of the teams worked: an empty list is then
+   * this account's, not a failure. */
+  teamsLoaded = false;
+
   async loadTeams() {
+    let loaded = true;
     const r = await api<{ teams: Omit<Team, "verified">[]; asked?: ControlSession["asked"]; notices?: ControlSession["notices"] }>(
       "/api/teams",
-    ).catch(() => ({
-      teams: [] as Omit<Team, "verified">[],
-      asked: this.asked,
-      notices: this.notices,
-    }));
+    ).catch(() => {
+      loaded = false;
+      return { teams: [] as Omit<Team, "verified">[], asked: this.asked, notices: this.notices };
+    });
+    this.teamsLoaded = loaded;
     this.notices = r.notices ?? [];
     const out: Team[] = [];
     for (const t of r.teams) {

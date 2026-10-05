@@ -14,7 +14,9 @@
 //! says who is who. Nobody else: sharing from the web checks their
 //! fingerprint first.
 //!
-//! Neither route is in `authz`: unmatched paths are the owner's.
+//! Neither route is in `authz`: unmatched paths are the owner's. Nor an
+//! agent's on the owner's CLI (`X-Illogical-Agent`): an agent asks with
+//! `invite_person`, and the owner sends it.
 //!
 //! From a thread (#297: the owner's offer when an @ named someone who
 //! can't read it), it opens that thread: from the message, or all of it,
@@ -34,7 +36,7 @@ use std::{
 use axum::{
     Json, Router,
     extract::State,
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
 };
@@ -76,6 +78,14 @@ pub const OWNER_ONLY: &str = "only the session's owner sends or declines an invi
 
 /// ...and closes the block it waits on (its drafts would go with it).
 pub const CLOSE_OWNER_ONLY: &str = "only the session's owner closes an invite block";
+
+/// An agent on the owner's CLI asks; the owner sends.
+pub const AGENT_ASKS: &str = "an agent doesn't invite: ask the user with illogical's invite_person tool";
+
+/// Whether the owner's CLI says an agent runs it (as for a forge's drafts).
+fn agent(headers: &HeaderMap) -> bool {
+    headers.get("x-illogical-agent").is_some()
+}
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Request {
@@ -127,6 +137,9 @@ pub struct Person {
     pub id: String,
     pub name: String,
     root: Option<String>,
+    /// Another principal [`nameable`] took to be them (a login by their
+    /// name): shown, so the owner sees whom it chose.
+    pub merged: Option<String>,
 }
 
 const UNKNOWN: &str = "share once from the web (it checks their fingerprint), then invite works";
@@ -142,11 +155,12 @@ pub fn nameable(app: &App) -> Vec<Person> {
         .list()
         .into_iter()
         .filter(|g| g.principal.starts_with("tailnet:") || g.principal.starts_with("account:"));
-    let people = grants.map(|g| Person { id: g.principal, name: g.name, root: g.root }).chain(
+    let people = grants.map(|g| Person { id: g.principal, name: g.name, root: g.root, merged: None }).chain(
         app.control.known().into_iter().map(|k| Person {
             id: format!("account:{}", k.account),
             name: k.name,
             root: Some(k.root),
+            merged: None,
         }),
     );
     let account = |p: &Person| p.id.starts_with("account:");
@@ -155,11 +169,14 @@ pub fn nameable(app: &App) -> Vec<Person> {
         if owns_here(app, &p.id) || out.iter().any(|o| o.id == p.id) {
             continue;
         }
-        // A login and an account by one name: the account. Two logins, or
-        // two accounts, are two people.
+        // A login and an account by one name: the account, saying which
+        // login it stands for. Two logins, or two accounts, are two people.
         match out.iter().position(|o| account(o) != account(&p) && key(o) == key(&p)) {
-            Some(i) if account(&p) => out[i] = p,
-            Some(_) => {}
+            Some(i) if account(&p) => {
+                let login = std::mem::replace(&mut out[i], p);
+                out[i].merged = Some(login.id);
+            }
+            Some(i) => out[i].merged = Some(p.id),
             None => out.push(p),
         }
     }
@@ -186,7 +203,7 @@ pub fn resolve(app: &App, who: &str, root: Option<String>) -> Result<Person, (St
             return Err(no(StatusCode::BAD_REQUEST, "tailnet:<login>"));
         }
         let login = login.to_ascii_lowercase();
-        return Ok(Person { id: format!("tailnet:{login}"), name: login, root: None });
+        return Ok(Person { id: format!("tailnet:{login}"), name: login, root: None, merged: None });
     }
     let unknown = || {
         let hint = if who.contains('@') { format!(" (a tailnet login: tailnet:{who})") } else { String::new() };
@@ -197,14 +214,14 @@ pub fn resolve(app: &App, who: &str, root: Option<String>) -> Result<Person, (St
             return Err(no(StatusCode::BAD_REQUEST, "account:<id>"));
         }
         if let Some(g) = grants.iter().find(|g| g.principal == who) {
-            return Ok(Person { id: who.to_owned(), name: g.name.clone(), root: g.root.clone() });
+            return Ok(Person { id: who.to_owned(), name: g.name.clone(), root: g.root.clone(), merged: None });
         }
         if let Some(k) = known.iter().find(|k| k.account == account) {
-            return Ok(Person { id: who.to_owned(), name: k.name.clone(), root: Some(k.root.clone()) });
+            return Ok(Person { id: who.to_owned(), name: k.name.clone(), root: Some(k.root.clone()), merged: None });
         }
         return match root {
             Some(r) if ok_id(&r) && r.bytes().all(|c| c.is_ascii_alphanumeric()) => {
-                Ok(Person { id: who.to_owned(), name: account.to_owned(), root: Some(r) })
+                Ok(Person { id: who.to_owned(), name: account.to_owned(), root: Some(r), merged: None })
             }
             Some(_) => Err(no(StatusCode::BAD_REQUEST, "root: a device id")),
             None => Err(unknown()),
@@ -216,13 +233,13 @@ pub fn resolve(app: &App, who: &str, root: Option<String>) -> Result<Person, (St
     for g in &grants {
         let tail = g.principal.split_once(':').map_or("", |(_, t)| t);
         if (same(&g.name) || same(tail)) && !found.iter().any(|p| p.id == g.principal) {
-            found.push(Person { id: g.principal.clone(), name: g.name.clone(), root: g.root.clone() });
+            found.push(Person { id: g.principal.clone(), name: g.name.clone(), root: g.root.clone(), merged: None });
         }
     }
     for k in &known {
         let id = format!("account:{}", k.account);
         if (same(&k.name) || same(&k.account)) && !found.iter().any(|p| p.id == id) {
-            found.push(Person { id, name: k.name.clone(), root: Some(k.root.clone()) });
+            found.push(Person { id, name: k.name.clone(), root: Some(k.root.clone()), merged: None });
         }
     }
     match found.len() {
@@ -236,7 +253,10 @@ pub fn resolve(app: &App, who: &str, root: Option<String>) -> Result<Person, (St
     }
 }
 
-async fn invite(State(app): State<Arc<App>>, Json(b): Json<Request>) -> Response {
+async fn invite(State(app): State<Arc<App>>, headers: HeaderMap, Json(b): Json<Request>) -> Response {
+    if agent(&headers) {
+        return refuse(StatusCode::FORBIDDEN, AGENT_ASKS);
+    }
     match run(&app, b, None).await {
         Ok(v) => Json(v).into_response(),
         Err((status, why)) => refuse(status, why),
@@ -401,9 +421,6 @@ async fn from_thread(app: &App, b: &Request) -> Result<Option<ThreadFrom>, (Stat
             return Err(no(StatusCode::BAD_REQUEST, "msg: the message they're brought in to see (or whole_thread)"));
         }
         (Some(m), None) => return Err(no(StatusCode::BAD_REQUEST, format!("{key} has no message {m}"))),
-        (Some(m), Some(at)) if at > now_ms() => {
-            return Err(no(StatusCode::BAD_REQUEST, format!("{key}'s message {m} isn't posted yet")));
-        }
         (Some(_), Some(_)) if b.whole_thread => 0,
         (Some(_), Some(at)) => at,
     };
@@ -459,6 +476,7 @@ async fn deliver(
     };
     app.control.wait_invite(Waiting {
         who: to.to_owned(),
+        session: extra["session"].as_u64().and_then(|s| SessionId::try_from(s).ok()),
         pane,
         title: title.to_owned(),
         body: body.to_owned(),
@@ -472,7 +490,12 @@ async fn deliver(
 struct Pins {
     /// Team id to `<founder device>.<founder's root>`, as the owner's
     /// browser pinned it.
+    #[serde(default)]
     pins: BTreeMap<String, String>,
+    /// Teams pinned here that the owner's account is no longer in: their
+    /// members stop being nameable.
+    #[serde(default)]
+    drop: Vec<String>,
 }
 
 fn pins_now(app: &App) -> Response {
@@ -483,9 +506,12 @@ async fn pins(State(app): State<Arc<App>>) -> Response {
     pins_now(&app)
 }
 
-/// The owner's browser hands over the teams it pinned (#233); their
-/// rosters are fetched and checked against these, now.
-async fn add_pins(State(app): State<Arc<App>>, Json(b): Json<Pins>) -> Response {
+/// The owner's browser hands over the teams it pinned (#233), and those
+/// it left; their rosters are fetched and checked against these, now.
+async fn add_pins(State(app): State<Arc<App>>, headers: HeaderMap, Json(b): Json<Pins>) -> Response {
+    if agent(&headers) {
+        return refuse(StatusCode::FORBIDDEN, "the owner's browser pins teams, not an agent");
+    }
     if app.control.enrolled().is_none() {
         return refuse(StatusCode::BAD_REQUEST, "this machine isn't joined to illogical control");
     }
@@ -495,7 +521,10 @@ async fn add_pins(State(app): State<Arc<App>>, Json(b): Json<Pins>) -> Response 
     if b.pins.len() > 50 || !b.pins.iter().all(|(t, r)| well_formed(t, r)) {
         return refuse(StatusCode::BAD_REQUEST, "pins: team id to <founder>.<founder's root>, 50 at most");
     }
-    match app.control.add_team_pins(b.pins) {
+    if b.drop.len() > 50 || !b.drop.iter().all(|t| ok_id(t)) {
+        return refuse(StatusCode::BAD_REQUEST, "drop: team ids, 50 at most");
+    }
+    match app.control.set_team_pins(b.pins, &b.drop) {
         Ok(true) => {
             app.control.refresh_now(REFRESH_WAIT).await;
         }

@@ -564,7 +564,8 @@ function InviteOffer({
   const [busy, setBusy] = useState(false);
   const [said, setSaid] = useState<{ ok: boolean; text: string } | null>(null);
   const n = person.name.split("@")[0];
-  const who = named ? `${n} (${person.who})` : n;
+  // Two people by one name, or one taken for another: say whom.
+  const who = named || person.merged ? `${n} (${person.who})` : n;
   const invite = async () => {
     setBusy(true);
     try {
