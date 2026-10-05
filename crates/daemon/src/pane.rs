@@ -10,16 +10,20 @@
 
 use std::{
     collections::{HashMap, HashSet, VecDeque},
-    fs::File,
-    io::{Read, Write},
     path::{Path, PathBuf},
-    process::{Child, Command, Stdio},
+    process::{Command, Stdio},
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering},
     },
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+};
+#[cfg(unix)]
+use std::{
+    fs::File,
+    io::{Read, Write},
+    process::Child,
 };
 
 use crossbeam_channel::{Receiver, Sender, TryRecvError, bounded, unbounded};
@@ -569,11 +573,14 @@ pub struct Spawn {
 }
 
 /// A terminal (and the program on it) kept while the daemon restarted:
-/// its PTY master. Windows keeps panes another way (M58, #221).
+/// its PTY master; on Windows, the pane host's pipes (`crate::host`).
 #[cfg(unix)]
 pub type Kept = std::os::fd::OwnedFd;
 #[cfg(not(unix))]
-pub enum Kept {}
+#[derive(Debug)]
+pub struct Kept {
+    pub pipe: String,
+}
 
 /// SIGKILL's number, for exits that report a signal on every system.
 const SIGKILL: i32 = 9;
@@ -676,6 +683,9 @@ pub struct Launcher {
     /// No FD store, but keep panes anyway: each shim holds its terminal
     /// for the next daemon (`--keep-panes`, see [`crate::holder`]).
     pub hold: bool,
+    /// Windows: what pane hosts run (`crate::host::exe`).
+    #[cfg(windows)]
+    pub host: PathBuf,
 }
 
 impl Launcher {
@@ -697,9 +707,12 @@ impl Launcher {
             no_expand: version.flatten().is_some_and(|v| v >= 254),
             fd_store: systemd,
             hold: keep_panes && !systemd,
+            #[cfg(windows)]
+            host: std::env::current_exe().unwrap_or_else(|_| "illogicald.exe".into()),
         }
     }
 
+    #[cfg(unix)]
     /// A command that runs this executable (the shim) for a pane or an
     /// agent: in its own scope `unit` when there are scopes. Without the
     /// daemon's service environment, which isn't the program's.
@@ -731,12 +744,29 @@ fn fd_name(pane: PaneId) -> String {
 }
 
 /// A running process on its own PTY.
+#[cfg(unix)]
 struct Process {
     pid: u32,
     master: File,
     writer: Sender<Vec<u8>>,
     /// The shim's record of it.
     record: PathBuf,
+}
+
+/// A running process on its own pseudoconsole, which its pane host owns
+/// (Windows, M58: `crate::host`).
+#[cfg(windows)]
+struct Process {
+    pid: u32,
+    writer: Sender<Vec<u8>>,
+    /// Resizes and close, to the host.
+    ctl: Sender<HostCtl>,
+}
+
+#[cfg(windows)]
+enum HostCtl {
+    Resize(u16, u16),
+    Close,
 }
 
 #[cfg(unix)]
@@ -932,28 +962,166 @@ impl Process {
     }
 }
 
-/// Windows: ConPTY panes come in M56 (#219).
-#[cfg(not(unix))]
+/// Windows (M58): the program runs under its pane's host, which outlives
+/// this daemon; the daemon is the host's client, and a restarted one
+/// adopts it (`crate::host::collect`).
+#[cfg(windows)]
 impl Process {
     fn start(
-        _spawn: &Spawn,
-        _launch: &Launcher,
-        _record: &Path,
-        _cols: u16,
-        _rows: u16,
-        _pane: PaneId,
-        _events: Sender<Cmd>,
+        spawn: &Spawn,
+        launch: &Launcher,
+        record: &Path,
+        cols: u16,
+        rows: u16,
+        pane: PaneId,
+        events: Sender<Cmd>,
     ) -> std::io::Result<Self> {
-        Err(std::io::Error::other("panes don't run on Windows yet (M56, #219)"))
+        use std::os::windows::process::CommandExt;
+        const DETACHED_PROCESS: u32 = 0x0000_0008;
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+        const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
+        let cwd = if spawn.cwd.is_dir() { spawn.cwd.clone() } else { crate::home() };
+        let pipe = crate::host::pipe_name(record);
+        let _ = std::fs::remove_file(record);
+        let mut cmd = Command::new(&launch.host);
+        cmd.arg("_host")
+            .arg("--record")
+            .arg(record)
+            .arg("--pipe")
+            .arg(&pipe)
+            .args(["--cols", &cols.to_string(), "--rows", &rows.to_string()])
+            .arg("--")
+            .arg(&spawn.program)
+            .args(&spawn.args)
+            .current_dir(&cwd)
+            .envs(spawn.env.iter().map(|(k, v)| (k, v)))
+            .env("TERM", "xterm-256color")
+            .env("COLORTERM", "truecolor")
+            .env("ILLOGICAL_PANE", pane.to_string())
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        // Out of this daemon's job, if it's in one (an ssh session, a
+        // service), so the pane outlives it.
+        let base = DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP;
+        cmd.creation_flags(base | CREATE_BREAKAWAY_FROM_JOB);
+        let mut host = match cmd.spawn() {
+            Ok(h) => h,
+            Err(_) => {
+                cmd.creation_flags(base);
+                cmd.spawn()?
+            }
+        };
+        // The host records the program's pid once it has started it.
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let pid = loop {
+            if let Some((p, _)) = crate::shim::read_record(record).pid {
+                break p;
+            }
+            if Instant::now() > deadline || host.try_wait().ok().flatten().is_some() {
+                let _ = host.kill();
+                return Err(std::io::Error::other(format!("the pane host didn't start {}", spawn.program)));
+            }
+            thread::sleep(Duration::from_millis(5));
+        };
+        info!(pane, pid, program = %spawn.program, cwd = %cwd.display(), conpty = crate::conpty::which(), "started process");
+        Self::connect(&pipe, pid, pane, events)
     }
 
-    fn adopt(master: Kept, _record: &Path, _pane: PaneId, _events: Sender<Cmd>) -> std::io::Result<Self> {
-        match master {}
+    /// Take over a pane whose host outlived the previous daemon.
+    fn adopt(kept: Kept, record: &Path, pane: PaneId, events: Sender<Cmd>) -> std::io::Result<Self> {
+        let r = crate::shim::read_record(record);
+        let Some((pid, _)) = r.pid else { return Err(std::io::Error::other("the pane's record has no program")) };
+        let p = Self::connect(&kept.pipe, pid, pane, events)?;
+        info!(pane, pid, "adopted process");
+        Ok(p)
     }
 
-    fn resize(&self, _cols: u16, _rows: u16) {}
+    /// Connect to the host's pipes: its output (and the program's exit) on
+    /// one, input, resizes and close on the other.
+    fn connect(pipe: &str, pid: u32, pane: PaneId, events: Sender<Cmd>) -> std::io::Result<Self> {
+        let open = |suffix: &str, write: bool| -> std::io::Result<std::fs::File> {
+            let name = format!("{pipe}-{suffix}");
+            let deadline = Instant::now() + Duration::from_secs(10);
+            loop {
+                match std::fs::OpenOptions::new().read(!write).write(write).open(&name) {
+                    Ok(f) => return Ok(f),
+                    // Not made yet, or still serving the last daemon.
+                    Err(e) if Instant::now() < deadline && matches!(e.raw_os_error(), Some(2 | 231)) => {
+                        thread::sleep(Duration::from_millis(10))
+                    }
+                    Err(e) => return Err(e),
+                }
+            }
+        };
+        let mut from_host = open("out", false)?;
+        let mut to_host = open("in", true)?;
 
-    fn hang_up(&self) {}
+        let out = events.clone();
+        thread::Builder::new().name(format!("pane{pane}-read")).spawn(move || {
+            let mut code = None;
+            while let Ok((kind, p)) = crate::host::read_frame(&mut from_host) {
+                match kind {
+                    crate::host::DATA => {
+                        if out.send(Cmd::Output(p)).is_err() {
+                            return;
+                        }
+                    }
+                    crate::host::EXIT if p.len() == 4 => {
+                        code = Some(i32::from_le_bytes([p[0], p[1], p[2], p[3]]));
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+            // Its exit, after all its output; or the host is gone (killed).
+            // A program its console closed under it (the session ending,
+            // a shutdown) ends with STATUS_CONTROL_C_EXIT: that's Unix's
+            // hangup, so the pane stays for its restore policy rather than
+            // closing as a shell's own `exit` does.
+            const STATUS_CONTROL_C_EXIT: i32 = 0xC000_013Au32 as i32;
+            const SIGHUP: i32 = 1;
+            let (code, signal) = match code {
+                Some(STATUS_CONTROL_C_EXIT) => (Some(128 + SIGHUP), Some(SIGHUP)),
+                Some(c) => (Some(c), None),
+                None => (Some(128 + SIGKILL), Some(SIGKILL)),
+            };
+            let _ = out.send(Cmd::Exited { key: pid as u64, code, signal });
+        })?;
+
+        let (writer, inputs) = unbounded::<Vec<u8>>();
+        let (ctl, ctls) = unbounded::<HostCtl>();
+        thread::Builder::new().name(format!("pane{pane}-write")).spawn(move || {
+            loop {
+                let sent = crossbeam_channel::select! {
+                    recv(inputs) -> d => match d {
+                        Ok(d) => crate::host::write_frame(&mut to_host, crate::host::DATA, &d),
+                        Err(_) => return,
+                    },
+                    recv(ctls) -> c => match c {
+                        Ok(HostCtl::Resize(c, r)) => {
+                            let p = [c.to_le_bytes(), r.to_le_bytes()].concat();
+                            crate::host::write_frame(&mut to_host, crate::host::RESIZE, &p)
+                        }
+                        Ok(HostCtl::Close) => crate::host::write_frame(&mut to_host, crate::host::CLOSE, &[]),
+                        Err(_) => return,
+                    },
+                };
+                if sent.is_err() {
+                    return;
+                }
+            }
+        })?;
+        Ok(Self { pid, writer, ctl })
+    }
+
+    fn resize(&self, cols: u16, rows: u16) {
+        let _ = self.ctl.send(HostCtl::Resize(cols, rows));
+    }
+
+    fn hang_up(&self) {
+        let _ = self.ctl.send(HostCtl::Close);
+    }
 }
 
 /// What a pane's program runs on: a local PTY, or an exec on its machine.
@@ -994,6 +1162,7 @@ impl Backend {
 /// Keys for machine execs, above any pid.
 static NEXT_EXEC: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1 << 32);
 
+#[cfg(unix)]
 /// How long a program's exit waits for its terminal to hang up (to read the
 /// last of its output first).
 const DRAIN_AFTER_EXIT: Duration = Duration::from_secs(1);
@@ -1627,6 +1796,16 @@ impl State {
             return self.attach_exec(&host, Begin::New { spawn: spawn.clone(), image, create: !host.borrowed });
         }
         let (cols, rows) = self.engine.size();
+        // Windows: a pseudoconsole starts from what it takes for a blank
+        // screen and draws only what changes from there, so whatever the pane
+        // shows already (restored output, a finished command) goes up into
+        // scrollback first, and the two agree on the screen.
+        #[cfg(windows)]
+        if self.engine.content_rows() > 0 {
+            let leave_alt = if self.engine.alt_screen() { "\x1b[?1049l" } else { "" };
+            let up = format!("{leave_alt}\x1b[{rows};1H{}\x1b[H", "\r\n".repeat(rows as usize));
+            self.output(up.as_bytes());
+        }
         match Process::start(spawn, &self.launch, &self.record, cols, rows, self.id, self.program.clone()) {
             Ok(p) => {
                 self.pid.store(p.pid, Ordering::Relaxed);

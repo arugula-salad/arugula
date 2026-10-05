@@ -28,16 +28,22 @@ use std::{
     fs::OpenOptions,
     io::Write,
     path::{Path, PathBuf},
-    process::Stdio,
     sync::Arc,
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    time::Duration,
+};
+#[cfg(unix)]
+use std::{
+    process::Stdio,
+    time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
 use illogical_proto::PaneId;
 #[cfg(unix)]
 use nix::sys::socket::{MsgFlags, recv, setsockopt, sockopt};
 use tokio::sync::mpsc;
-use tracing::{info, warn};
+use tracing::info;
+#[cfg(unix)]
+use tracing::warn;
 
 use crate::{
     pane::Launcher,
@@ -114,6 +120,7 @@ pub fn kill_group(pid: u32, dir: PathBuf) {
     });
 }
 
+#[cfg_attr(not(unix), allow(dead_code))]
 /// How a local agent server is started.
 pub struct LocalSpawn<'a> {
     pub id: PaneId,
@@ -222,10 +229,11 @@ pub fn adopt_local(
 ) -> Option<(Link, u32)> {
     let (a, b) = fd_names(id);
     let (in_w, out) = (kept.remove(&a)?, kept.remove(&b)?);
+    // Windows keeps no agent servers across a restart (yet).
     #[cfg(not(unix))]
     {
-        let _ = (dir, out, fd_store, sink);
-        match in_w {}
+        let _ = (dir, in_w, out, fd_store, sink);
+        None
     }
     #[cfg(unix)]
     {
@@ -290,6 +298,7 @@ fn run_local(id: PaneId, dir: PathBuf, in_w: OwnedFd, out: OwnedFd, pid: u32, fd
     }
 }
 
+#[cfg(unix)]
 /// The agent's stdout socket's buffer: room for a whole line, so lines are
 /// peeked whole (macOS's default is 8 KiB, Linux's about 200).
 const OUT_BUF: usize = 1 << 20;
@@ -594,6 +603,7 @@ async fn drive_vm(
     }
 }
 
+#[cfg(unix)]
 /// The last thing an agent server wrote to stderr (`agent.err`), for the
 /// note when it exits with an error.
 /// What was written to `path` after its first `from` bytes: the last few
@@ -605,6 +615,7 @@ fn said_since(path: &Path, from: u64) -> String {
     lines[lines.len().saturating_sub(3)..].join(" / ").chars().take(400).collect()
 }
 
+#[cfg(unix)]
 fn last_words(dir: &Path) -> Option<String> {
     let text = std::fs::read_to_string(dir.join("agent.err")).ok()?;
     let tail = &text[text.len().saturating_sub(4096)..];

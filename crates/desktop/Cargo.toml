@@ -60,6 +60,10 @@ webrtc-audio-processing-config = { version = "2.1", optional = true }
 async-trait = { version = "0.1", optional = true }
 tokio = { version = "1", features = ["sync", "time"], optional = true }
 
+[target.'cfg(windows)'.dependencies]
+# Toasts whose click opens the pane (M59).
+windows = { version = "0.61", features = ["Data_Xml_Dom", "UI_Notifications"] }
+
 [target.'cfg(target_os = "macos")'.dependencies]
 mac-notification-sys = "0.6"
 # SMAppService for the daemon's launch agent, and NSWindow tabs (M46).

@@ -5504,7 +5504,7 @@ Used by:
 - [toml_datetime 0.6.3](https://github.com/toml-rs/toml)
 - [tray-icon 0.25.1](https://github.com/tauri-apps/tray-icon)
 - [tungstenite 0.30.0](https://github.com/snapview/tungstenite-rs)
-- [unicase 2.9.0](https://github.com/seanmonstar/unicase)
+- [unicase 2.10.0](https://github.com/seanmonstar/unicase)
 - [unicode-segmentation 1.13.3](https://github.com/unicode-rs/unicode-segmentation)
 - [url 2.5.8](https://github.com/servo/rust-url)
 - [uuid 1.27.0](https://github.com/uuid-rs/uuid)
