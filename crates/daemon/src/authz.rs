@@ -53,7 +53,7 @@ fn policy(method: &Method, path: &str) -> Policy {
             "panes",
             id,
             "send" | "prompt" | "keys" | "mouse" | "attention" | "close" | "ask" | "cd" | "permit" | "hook" | "inbox"
-            | "followup",
+            | "followup" | "upload",
         ] if !get => pane(id).map_or(Policy::Owner, |p| Policy::On(p, Role::Editor)),
         ["api", "panes", id, "ask", "withdraw"] if !get => {
             pane(id).map_or(Policy::Owner, |p| Policy::On(p, Role::Editor))
@@ -121,7 +121,7 @@ pub async fn check(State(app): State<Arc<App>>, req: Request, next: Next) -> Res
                 let path = req.uri().path();
                 // A follow-up (M29) is an instruction to an agent running
                 // there: the same rule.
-                if ["/send", "/keys", "/mouse", "/followup"].iter().any(|s| path.ends_with(s)) {
+                if ["/send", "/keys", "/mouse", "/followup", "/upload"].iter().any(|s| path.ends_with(s)) {
                     let who = req.extensions().get::<Principal>().cloned().unwrap_or(Principal::Owner);
                     if let Some(Err(why)) = app.mux.api(|r| Api::MayDrive(who, pane, r)).await {
                         return refuse(StatusCode::FORBIDDEN, &why);

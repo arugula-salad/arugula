@@ -314,6 +314,8 @@ enum Cmd {
         scope: CaptureScope,
         reply: Sender<String>,
     },
+    /// S32 spike: whether the program asked for bracketed paste (2004).
+    Bracketed(Sender<bool>),
     /// Read this agent's state off the screen from now on (`None`: stop).
     Agent(Option<&'static Agent>),
     /// How the agent's screen reads now, rule by rule (`describe
@@ -458,6 +460,12 @@ impl PaneHandle {
     pub fn capture(&self, format: CaptureFormat, scope: CaptureScope) -> Option<String> {
         let (tx, rx) = bounded(1);
         self.tx.send(Cmd::Capture { format, scope, reply: tx }).ok()?;
+        rx.recv_timeout(Duration::from_secs(5)).ok()
+    }
+    /// S32 spike: whether the program asked for bracketed paste (2004).
+    pub fn bracketed(&self) -> Option<bool> {
+        let (tx, rx) = bounded(1);
+        self.tx.send(Cmd::Bracketed(tx)).ok()?;
         rx.recv_timeout(Duration::from_secs(5)).ok()
     }
     /// Note that input is about to be sent, before it's queued: a `wait`
@@ -1347,6 +1355,9 @@ fn run(mut st: State, rx: Receiver<Cmd>, program: Receiver<Cmd>) {
             }
             Cmd::Capture { format, scope, reply } => {
                 let _ = reply.send(st.capture(format, scope));
+            }
+            Cmd::Bracketed(reply) => {
+                let _ = reply.send(st.engine.dec_mode(2004));
             }
             Cmd::Close => {
                 st.closing = true;

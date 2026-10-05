@@ -251,7 +251,11 @@ export class Client {
       // Another daemon (on this machine, its sign-in cookie; it allows
       // credentials only from our exact origin).
       credentials: /^https?:/.test(this.base) ? "include" : "same-origin",
-      ...(body === undefined ? {} : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
+      ...(body === undefined
+        ? {}
+        : body instanceof Uint8Array
+          ? { headers: { "Content-Type": "application/octet-stream" }, body: body as BodyInit }
+          : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
     });
     return { ok: res.ok, status: res.status, json: <T,>() => res.json() as Promise<T>, text: () => res.text() };
   }
@@ -1084,8 +1088,31 @@ export class Client {
       this.emit();
     });
     view.onFocus(() => this.setActive(id));
+    view.onFiles((files) => void this.upload(id, files));
     this.panes.set(id, entry);
     return entry;
+  }
+
+  /** S32 spike: files pasted or dropped on a pane go to its host in 1 MB
+   * chunks; the last chunk has the daemon paste the path. */
+  async upload(pane: PaneId, files: File[]) {
+    const CHUNK = 1 << 20;
+    for (const f of files) {
+      const id = [...crypto.getRandomValues(new Uint8Array(8))].map((b) => b.toString(16).padStart(2, "0")).join("");
+      const ext = (f.type.split("/")[1] ?? f.name.split(".").pop() ?? "bin").replace(/[^a-z0-9]/gi, "").slice(0, 8) || "bin";
+      const bytes = new Uint8Array(await f.arrayBuffer());
+      const t0 = performance.now();
+      for (let at = 0; at < bytes.length || at === 0; at += CHUNK) {
+        const last = at + CHUNK >= bytes.length;
+        const res = await this.request("POST", `/api/panes/${pane}/upload?id=${id}&ext=${ext}&offset=${at}${last ? "&last=true" : ""}`, bytes.subarray(at, at + CHUNK));
+        if (!res.ok) {
+          console.warn("upload refused", res.status, await res.text?.());
+          return;
+        }
+        if (last) break;
+      }
+      console.info(`uploaded ${f.name} (${bytes.length} bytes) in ${Math.round(performance.now() - t0)} ms`);
+    }
   }
 
   private fixSelection() {

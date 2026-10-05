@@ -64,6 +64,11 @@ pub fn routes() -> Router<Arc<App>> {
         .route("/api/panes/{id}/followup", post(followup))
         .route("/api/threads/{target}", get(thread_get).post(thread_post))
         .route("/api/threads/{target}/read", post(thread_read))
+        // S32 spike: a file into the pane's host, then its path pasted.
+        .route(
+            "/api/panes/{id}/upload",
+            post(crate::upload::upload).layer(axum::extract::DefaultBodyLimit::max(crate::upload::CHUNK_MAX)),
+        )
         .route("/api/panes/{id}/close", post(close))
         .route("/api/panes/{id}/capture", get(capture))
         .route("/api/panes/{id}/process", get(process))
@@ -117,9 +122,9 @@ fn bad(msg: impl Into<String>) -> ApiError {
     ApiError(StatusCode::BAD_REQUEST, msg.into())
 }
 
-type Res<T> = Result<T, ApiError>;
+pub(crate) type Res<T> = Result<T, ApiError>;
 
-async fn pane(app: &App, id: PaneId) -> Res<PaneHandle> {
+pub(crate) async fn pane(app: &App, id: PaneId) -> Res<PaneHandle> {
     app.mux.api(|r| Api::Pane(id, r)).await.flatten().ok_or(ApiError(StatusCode::NOT_FOUND, format!("no pane %{id}")))
 }
 

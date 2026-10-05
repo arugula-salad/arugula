@@ -72,6 +72,7 @@ export class TerminalView {
     this.swallowQueries();
     this.watchCommands();
     this.term.attachCustomKeyEventHandler((e) => this.clipboardKeys(e));
+    this.takeFiles();
     this.term.open(this.host);
     this.touchScroll();
   }
@@ -279,6 +280,28 @@ export class TerminalView {
 
   onMarkMenu(cb: (mark: CommandMark, e: MouseEvent) => void) {
     this.markMenu = cb;
+  }
+
+  private filesCb: ((files: File[]) => void) | undefined;
+  onFiles(cb: (files: File[]) => void) {
+    this.filesCb = cb;
+  }
+
+  /** S32 spike: a paste or drop carrying files goes to `onFiles`. The
+   * listeners capture on the host, so they run before xterm's own paste
+   * handler, which reads only text and stops the event. */
+  private takeFiles() {
+    const take = (e: Event, files: FileList | undefined | null) => {
+      if (!files?.length || !this.filesCb) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      this.filesCb([...files]);
+    };
+    this.host.addEventListener("paste", (e) => take(e, e.clipboardData?.files), true);
+    this.host.addEventListener("dragover", (e) => {
+      if (e.dataTransfer?.types.includes("Files")) e.preventDefault();
+    }, true);
+    this.host.addEventListener("drop", (e) => take(e, e.dataTransfer?.files), true);
   }
 
   /** Ctrl+Shift+C copies the selection; Ctrl+Shift+V is left to the

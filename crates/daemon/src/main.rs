@@ -68,6 +68,7 @@ mod tailscale;
 mod threads;
 mod tls;
 mod update;
+mod upload;
 mod workspace;
 
 use std::{net::SocketAddr, path::PathBuf};

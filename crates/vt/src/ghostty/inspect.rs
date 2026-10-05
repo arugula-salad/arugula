@@ -72,6 +72,12 @@ impl GhosttyEngine {
         self.term.mode(Mode::new(mode, ModeKind::Ansi)).unwrap_or(false)
     }
 
+    /// Whether a DEC private mode (`CSI ? n h`, e.g. 2004 for bracketed
+    /// paste) is set.
+    pub fn dec_mode(&self, mode: u16) -> bool {
+        self.term.mode(Mode::new(mode, ModeKind::Dec)).unwrap_or(false)
+    }
+
     /// Lines of scrollback above the screen.
     pub fn history_lines(&self) -> usize {
         self.term.scrollback_rows().unwrap_or(0)
