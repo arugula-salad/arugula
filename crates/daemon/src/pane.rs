@@ -1134,6 +1134,7 @@ impl Backend {
 /// Keys for machine execs, above any pid.
 static NEXT_EXEC: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1 << 32);
 
+#[cfg(unix)]
 /// How long a program's exit waits for its terminal to hang up (to read the
 /// last of its output first).
 const DRAIN_AFTER_EXIT: Duration = Duration::from_secs(1);
