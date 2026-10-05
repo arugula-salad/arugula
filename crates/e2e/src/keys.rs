@@ -8,12 +8,7 @@
 //! sign <seed hex>
 //! ```
 
-use std::{
-    fs,
-    io::Write,
-    os::unix::fs::{OpenOptionsExt, PermissionsExt},
-    path::Path,
-};
+use std::{fs, io::Write, path::Path};
 
 use anyhow::{Context, bail};
 use ed25519_dalek::{Signer, SigningKey};
@@ -65,8 +60,14 @@ impl DeviceKeys {
 
     pub fn load(path: &Path) -> anyhow::Result<Self> {
         let text = fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-        if fs::metadata(path)?.permissions().mode() & 0o077 != 0 {
-            bail!("{} is readable by others: chmod 600 it", path.display());
+        // Windows: the file lives in the user's profile, whose ACL already
+        // admits only the user (and SYSTEM and Administrators).
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if fs::metadata(path)?.permissions().mode() & 0o077 != 0 {
+                bail!("{} is readable by others: chmod 600 it", path.display());
+            }
         }
         let mut lines = text.lines();
         if lines.next() != Some(HEADER) {
@@ -90,7 +91,11 @@ impl DeviceKeys {
             fs::create_dir_all(dir)?;
         }
         let tmp = path.with_extension("tmp");
-        let mut f = fs::OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(&tmp)?;
+        let mut opts = fs::OpenOptions::new();
+        opts.write(true).create(true).truncate(true);
+        #[cfg(unix)]
+        std::os::unix::fs::OpenOptionsExt::mode(&mut opts, 0o600);
+        let mut f = opts.open(&tmp)?;
         writeln!(f, "{HEADER}")?;
         writeln!(f, "noise {} {}", hex::encode(self.noise_private), hex::encode(self.noise_public))?;
         writeln!(f, "sign {}", hex::encode(self.sign.to_bytes()))?;
