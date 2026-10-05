@@ -107,7 +107,7 @@ Claude described all six correctly. Firefox isn't installed on that Mac, so its 
 **By hand, after M70 (2026-10-05):**
 
 - **Android phone, Chrome:** M70's *Attach file* (📎) sent photos through `tailscale serve` into a real `claude`, which saw and described them. The key bar overflowed with nothing to say so, which hid 📎; it's pinned at the end now.
-- **Android, a long-press Paste of a copied image** (Gboard), on a test page with a `<textarea>` and a contenteditable: both get a `paste` event carrying the file (`image.png image/png`, 1.19 MB and 367 KB), then a `beforeinput insertFromPaste`. So a textarea, like xterm's, receives pasted images as files. Gboard's own image and GIF panels and its "paste copied image" chip were offered in neither. Native apps turn those on by declaring the content types they accept, which a web page can't do.
+- **Android, a long-press Paste of a copied image** (Gboard), on a test page with a `<textarea>` and a contenteditable: both get a `paste` event carrying the file (`image.png image/png`, 1.19 MB and 367 KB), then a `beforeinput insertFromPaste`. So a textarea, like xterm's, receives pasted images as files. A long-press in a terminal pane offers Paste too, and a copied image pasted that way reached `claude` as an image. Gboard's own image and GIF panels and its "paste copied image" chip were offered in neither. Native apps turn those on by declaring the content types they accept, which a web page can't do.
 - **The desktop app (WKWebView):** a paste worked but a drop didn't, because Tauri's drag-and-drop handler takes dropped files before the page sees them. It's turned off now; that still needs checking in a rebuilt app.
 
 **HEIC** (`heic.mjs`): `createImageBitmap` on a HEIC blob works in WebKit (64x48, re-encoded to an 843-byte JPEG through `OffscreenCanvas`), and throws `InvalidStateError` in Chrome and Firefox. So the client converts HEIC when it can decode it, which is WebKit, the case that matters. Otherwise it uploads the file as it is.
@@ -151,7 +151,7 @@ By code only, since there was no provider account here. A VM pane's file would g
 
 These are for a person, or for #214's suite:
 
-- **Phones:** iOS Safari, the camera, and whether iOS hands the picker HEIC or JPEG. Android Chrome's picker and paste are measured above. Still open there: whether a long-press in a terminal pane offers Paste, since xterm's textarea is hidden.
+- **Phones:** iOS Safari, the camera, and whether iOS hands the picker HEIC or JPEG. Android Chrome's picker and paste are measured above.
 - **The desktop app:** a drop in a rebuilt app on macOS, and WebKitGTK on Linux.
 - **Firefox's paste** of a real screenshot (Safari and Chrome are done by hand).
 - **The other routes in practice:** an upload through control's relay, `/tunnel/NAME` and dial-out.
