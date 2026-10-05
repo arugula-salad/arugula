@@ -153,6 +153,7 @@ enum Kind {
     /// `install.sh` (or `illogicald install` from a download).
     Script,
     /// Homebrew: `brew upgrade`, then `illogicald install` again.
+    #[cfg_attr(windows, allow(dead_code))] // Homebrew is macOS's and Linux's.
     Brew,
     /// The desktop app (its .deb or the macOS app): a newer app replaces
     /// the daemon when it opens.
