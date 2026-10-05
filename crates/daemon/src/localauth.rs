@@ -107,6 +107,7 @@ pub fn serve_peer_ok(peer: SocketAddr, port: u16) -> bool {
     crate::pipe::loopback_peer_ok(peer, port)
 }
 
+#[cfg(unix)]
 fn euid() -> Option<u32> {
     #[cfg(unix)]
     return Some(nix::unistd::geteuid().as_raw());
@@ -114,6 +115,7 @@ fn euid() -> Option<u32> {
     None
 }
 
+#[cfg(unix)]
 /// The account that owns the client end of a loopback TCP connection to
 /// our `port` (Linux: `/proc/net/tcp{,6}`, which has both ends).
 pub fn loopback_uid(peer: SocketAddr, port: u16) -> Option<u32> {
@@ -123,6 +125,7 @@ pub fn loopback_uid(peer: SocketAddr, port: u16) -> Option<u32> {
         .find_map(|table| uid_in(&table, peer, port))
 }
 
+#[cfg(any(unix, test))]
 fn uid_in(table: &str, peer: SocketAddr, port: u16) -> Option<u32> {
     let want = (peer.ip().to_canonical(), peer.port());
     table.lines().skip(1).find_map(|line| {
@@ -133,6 +136,7 @@ fn uid_in(table: &str, peer: SocketAddr, port: u16) -> Option<u32> {
     })
 }
 
+#[cfg(any(unix, test))]
 /// `0100007F:1E01` (IPv4) or 32 hex digits and a port (IPv6): each 32-bit
 /// word as the kernel holds it, printed as a native number.
 fn parse_addr(s: &str) -> Option<SocketAddr> {
