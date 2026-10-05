@@ -24,9 +24,17 @@
 //! editor; guests can't call it). It's logged, with who, in the block's log
 //! and its history.
 //!
+//! **Envs (#312).** A block watches one env, and says which; `env {name}`
+//! switches it (kept in the config) and reads again. The state's `envs`
+//! are the ones chant has written releases for on `chant/lifecycle`, from
+//! one `git ls-tree` per full read ([`ENVS`]), plus `local` and the one
+//! watched, for the block's menu. Gates in the other envs aren't read:
+//! each env is another `status`, another chant process (about 2-3
+//! CPU-seconds) on every full read, for every block, VM or not.
+//!
 //! Methods: `refresh`, `approve {member, op, gate}` (or `{key}`; the first
 //! gate if none), `member {name}` (its directory, for opening panes there),
-//! `state`.
+//! `env {name}`, `state`.
 
 mod model;
 
@@ -54,6 +62,36 @@ const POLL: Duration = Duration::from_secs(3);
 /// ...and while nobody draws it, for a workspace on this host.
 const IDLE_POLL: Duration = Duration::from_secs(5);
 
+/// `sh -c ENVS sh ROOT`: the release ledgers on `chant/lifecycle`, one
+/// path a line (`ENV/releases.jsonl`, or `_members/M/ENV/releases.jsonl`).
+/// Nothing if there's no such ref yet.
+const ENVS: &str = r#"cd "$1" 2>/dev/null || exit 0
+git ls-tree -r --name-only refs/heads/chant/lifecycle 2>/dev/null | grep '/releases\.jsonl$'"#;
+
+/// The envs [`ENVS`] names, with `local` and the one watched, sorted.
+fn envs(ledgers: &str, watched: &str) -> Vec<String> {
+    let mut out: Vec<String> = ledgers
+        .lines()
+        .filter_map(|l| l.trim().strip_suffix("/releases.jsonl"))
+        .map(|d| d.rsplit('/').next().unwrap_or(d))
+        .filter(|e| !e.is_empty() && !e.starts_with('_'))
+        .map(str::to_owned)
+        .chain(["local".to_owned(), watched.to_owned()])
+        .collect();
+    out.sort();
+    out.dedup();
+    out
+}
+
+/// An env name `status` can take as its argument.
+fn env_name(name: &str) -> Result<String, String> {
+    let name = name.trim();
+    if name.is_empty() || name.starts_with('-') || name.contains(|c: char| c.is_whitespace() || c == '/') {
+        return Err(format!("{name:?} isn't an environment's name"));
+    }
+    Ok(name.to_owned())
+}
+
 #[derive(Debug, Clone, Deserialize)]
 struct Config {
     root: String,
@@ -69,6 +107,10 @@ pub struct Workspace {
     ctx: BlockCtx,
     me: Weak<Workspace>,
     config: Config,
+    /// The env watched: `config.env` at open, then what `env` chose.
+    env: Mutex<String>,
+    /// The envs chant knows ([`envs`]), at the last read.
+    envs: Mutex<Vec<String>>,
     runner: tokio::sync::OnceCell<Result<Runner, String>>,
     state: Mutex<model::State>,
     /// The fingerprint at the last read.
@@ -98,6 +140,8 @@ impl Workspace {
         let w = Arc::new_cyclic(|me| Self {
             ctx,
             me: me.clone(),
+            env: Mutex::new(config.env.clone()),
+            envs: Mutex::new(envs("", &config.env)),
             config,
             runner: tokio::sync::OnceCell::new(),
             state: Mutex::new(state),
@@ -135,14 +179,18 @@ impl Workspace {
         self.ctx.changed();
         let print = self.fingerprint().await;
         *self.seen.lock().unwrap() = print;
+        let env = self.env.lock().unwrap().clone();
         let mut st = match self.runner().await {
             Err(e) => model::State { error: Some(e), ..Default::default() },
             Ok(r) => {
-                let args = [self.config.root.clone(), model::READER.to_owned(), self.config.env.clone()];
+                if let Ok((out, _)) = r.sh(ENVS, std::slice::from_ref(&self.config.root)).await {
+                    *self.envs.lock().unwrap() = envs(&String::from_utf8_lossy(&out), &env);
+                }
+                let args = [self.config.root.clone(), model::READER.to_owned(), env.clone()];
                 match r.sh(model::SCRIPT, &args).await {
                     Err(e) => model::State { error: Some(e), ..Default::default() },
                     Ok((out, _)) => match serde_json::from_slice::<Value>(&out) {
-                        Ok(raw) => model::compose(&raw, &self.config.env),
+                        Ok(raw) => model::compose(&raw, &env),
                         Err(e) => model::State {
                             error: Some(format!("the reader said something else: {e}")),
                             ..Default::default()
@@ -157,7 +205,7 @@ impl Workspace {
         if st.headline.is_none() {
             st.headline = st.error.clone();
         }
-        st.env = self.config.env.clone();
+        st.env = env;
         st.updated_ms = now_ms();
         for g in &mut st.gates {
             if let GateSource::Chant { machine, .. } = &mut g.source {
@@ -327,12 +375,13 @@ impl Block for Workspace {
     }
 
     fn config(&self) -> Value {
-        json!({ "root": self.config.root, "env": self.config.env })
+        json!({ "root": self.config.root, "env": *self.env.lock().unwrap() })
     }
 
     fn state(&self) -> Value {
         let mut v = serde_json::to_value(&*self.state.lock().unwrap()).unwrap_or_default();
         v["watching"] = self.live.drawn().into();
+        v["envs"] = json!(*self.envs.lock().unwrap());
         v
     }
 
@@ -360,6 +409,25 @@ impl Block for Workspace {
                 let by = by.map(str::to_owned);
                 Box::pin(async move { me.ok_or("closed")?.approve(args, by).await })
             }
+            "env" => Box::pin(async move {
+                let me = me.ok_or("closed")?;
+                let name = env_name(args["name"].as_str().unwrap_or_default())?;
+                let was = std::mem::replace(&mut *me.env.lock().unwrap(), name.clone());
+                if was != name {
+                    log(&me.ctx, &json!({ "e": "env", "env": name, "was": was }));
+                    {
+                        let mut all = me.envs.lock().unwrap();
+                        if !all.contains(&name) {
+                            all.push(name.clone());
+                            all.sort();
+                        }
+                    }
+                    // The gates of the env it watched aren't its any more.
+                    me.state.lock().unwrap().gates.clear();
+                    me.load().await;
+                }
+                Ok(json!({ "env": name, "was": was }))
+            }),
             "member" => {
                 let st = self.state.lock().unwrap();
                 let name = args["name"].as_str().unwrap_or_default().to_owned();
@@ -403,7 +471,7 @@ impl Block for Workspace {
 
 #[cfg(test)]
 mod tests {
-    use super::{Next, next};
+    use super::{Next, env_name, envs, next};
 
     /// A fingerprint: the lifecycle ref's word, then the tree's checksum.
     fn fp(lifecycle: &str, tree: u32) -> String {
@@ -466,5 +534,22 @@ mod tests {
         assert_eq!(next(Some("a 1"), None, None), Next::Read);
         // Nothing read before: the first fingerprint reads.
         assert_eq!(next(None, None, Some("a 1")), Next::Read);
+    }
+
+    #[test]
+    fn the_envs_chant_has_ledgers_for() {
+        let ledgers = "local/releases.jsonl\n_members/delivery/prod/releases.jsonl\n\
+                       _members/delivery/local/releases.jsonl\nstaging/releases.jsonl\n_gates/releases.jsonl\n";
+        assert_eq!(envs(ledgers, "local"), ["local", "prod", "staging"]);
+        // No lifecycle ref yet: local, and the one watched.
+        assert_eq!(envs("", "qa"), ["local", "qa"]);
+    }
+
+    #[test]
+    fn an_env_is_a_name_not_a_flag() {
+        assert_eq!(env_name(" prod ").as_deref(), Ok("prod"));
+        for bad in ["", "--json", "a b", "a/b"] {
+            assert!(env_name(bad).is_err(), "{bad:?}");
+        }
     }
 }

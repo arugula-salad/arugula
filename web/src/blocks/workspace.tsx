@@ -22,6 +22,8 @@ export interface WorkspaceState {
   root: string; name: string | null; chant: string | null; how: string | null; version: string | null; env: string;
   members: Member[]; records: Rec[]; records_note: string | null; gates: Gate[]; diagnostics: Diagnostic[];
   reads: Read[]; ms: number; error: string | null; headline: string | null; loading: boolean; updated_ms: number; watching?: boolean;
+  /** The envs chant has releases for, with `local` and the one watched (#312). */
+  envs?: string[];
 }
 
 /** Directories known to hold a `chant.workspace.json`, or not, by the
@@ -86,6 +88,9 @@ function hint(error: string, root: string): string | null {
   return null;
 }
 
+/** The env menu's entry for one it doesn't list. */
+const OTHER = "\u0000other";
+
 function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: WorkspaceState | null }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [said, setSaid] = useState<string | null>(null);
@@ -111,6 +116,12 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
     if (ok) setSaid(`Approved ${g.gate}. Run ${g.op} again to walk through it.`);
   };
   const refresh = () => void client.api(`/api/blocks/${id}/call/refresh`, {}, "couldn't read the workspace");
+  // The block watches one env's gates and releases (#312): switching reads
+  // again, and the choice is kept in its config.
+  const switchEnv = (name: string) => {
+    if (name === OTHER) name = window.prompt("Which environment?", "")?.trim() ?? "";
+    if (name && name !== s?.env) void client.api(`/api/blocks/${id}/call/env`, { name }, "couldn't switch the environment");
+  };
 
   if (!s || (s.loading && !s.updated_ms)) {
     return (
@@ -126,8 +137,34 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
         <span class="review-path" title={s.root}>
           <b>{s.name ?? "workspace"}</b> {s.root}
         </span>
+        {mayApprove ? (
+          <select
+            class="ws-env"
+            data-ws-env
+            title="The environment whose gates and releases this block watches"
+            value={s.env}
+            disabled={s.loading}
+            onChange={(e) => {
+              const name = e.currentTarget.value;
+              // Shows the env watched until the block says it switched.
+              e.currentTarget.value = s.env;
+              switchEnv(name);
+            }}
+          >
+            {(s.envs ?? [s.env]).map((e) => (
+              <option key={e} value={e}>
+                {e}
+              </option>
+            ))}
+            <option value={OTHER}>other…</option>
+          </select>
+        ) : (
+          <span class="dim ws-meta" title="The environment whose gates and releases this block watches">
+            {s.env}
+          </span>
+        )}
         <span class="dim ws-meta" title={s.chant ?? ""}>
-          {s.env} · chant {s.version ?? "?"}
+          chant {s.version ?? "?"}
         </span>
         {mayOpen && (
           <button title="Read it again" disabled={s.loading} onClick={refresh}>

@@ -4013,6 +4013,15 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   font-size: 12px;
 }
 
+.ws-env {
+  background: var(--raised);
+  color: var(--fg);
+  border: 0;
+  border-radius: 4px;
+  font-size: 12px;
+  height: 26px;
+}
+
 .ws-gates {
   border: 1px solid var(--accent);
   border-radius: 8px;

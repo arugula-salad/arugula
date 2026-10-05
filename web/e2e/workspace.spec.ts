@@ -222,6 +222,28 @@ test("on a phone, an editor approves from the sheet, gates first; a viewer sees 
   await ctx.close();
 });
 
+test("the block says which env it watches and switches it (#312)", async ({ page }) => {
+  test.setTimeout(60_000);
+  const state = async () => (await (await fetch(`${base()}/api/blocks/${block}`)).json()).state;
+  await open(page);
+  await page.evaluate((b) => window.__arugula.client.setActive(b), block);
+  const env = page.locator(`[data-workspace-block="${block}"] [data-ws-env]`);
+  await expect(env).toHaveValue("local");
+  // From the API (and so `arugula call %N env`), a name that isn't one is refused.
+  expect((await post(`/api/blocks/${block}/call/env`, { name: "--json" })).ok).toBe(false);
+  expect((await post(`/api/blocks/${block}/call/env`, { name: "staging" })).ok).toBe(true);
+  await expect.poll(async () => (await state()).env).toBe("staging");
+  await expect(env).toHaveValue("staging");
+  await expect(env.locator("option")).toContainText(["local", "staging"]);
+  // Back, from the menu.
+  await env.selectOption("local");
+  await expect.poll(async () => (await state()).env).toBe("local");
+  await expect.poll(async () => (await state()).loading).toBe(false);
+  // `arugula workspace --env` opens one on that env.
+  const other = Number(/^%(\d+)/.exec(cli("workspace", ws, "--env", "staging"))![1]);
+  expect((await (await fetch(`${base()}/api/blocks/${other}`)).json()).state.env).toBe("staging");
+});
+
 test("Open as workspace, from a pane's menu and the picker, in a workspace's directory", async ({ page }) => {
   await open(page);
   const term = (await panesOf(page)).find((p) => p.type === "terminal")!.id;
