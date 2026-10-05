@@ -28,6 +28,7 @@ It's enough to measure with and to demo, not M68. It writes on the daemon's own 
 | Claude's Ctrl+V | It sends **no clipboard query at all**: no OSC 52, 5522 or 1337, even when told it's in kitty or Ghostty. Over "ssh" it prints *No image found in clipboard. You're SSH'd; try scp?*. Nothing to answer, so nothing to build. |
 | Browsers: an image paste | Chrome and WebKit give the paste event a `File` (`image.png`, no text). xterm.js 6 reads only `text/plain` and stops the event, so today **an image paste is silently dropped**. A capture-phase listener on the terminal's host takes it first. Firefox: not measured (Playwright's Firefox can't put an image on its clipboard). |
 | Browsers: a drop | The file arrives in all three. |
+| By hand, in real Safari and Chrome | All six checks passed: a paste, a drag from Finder, and a drag of the screenshot thumbnail, in each browser. Claude read all six (section 3). |
 | HEIC | WebKit decodes it and re-encodes it as JPEG in the browser. Chrome and Firefox can't decode it, but HEIC comes from iPhones, which run WebKit. |
 | The route | It works. A `0600` file appears in a `0700` folder, and the path is pasted bracketed because `claude` asked for 2004. Refusals: the same id gets 409, a wrong offset 409, a body over 4 MB 413, and past 20 MB 413. A pre-existing `0755` folder is refused. |
 | Body size | Axum's 2 MB default applies to every route today. Chunks of 1 MB under a 4 MB route limit move 20 MB locally in 0.24 s. |
@@ -97,6 +98,19 @@ One case already works without us: a local pane on the same Mac as the browser. 
 
 xterm.js 6's `handlePasteEvent` calls `stopPropagation()` and reads only `getData("text/plain")`, so **today an image paste does nothing at all**: an empty string reaches the program. The capture listener on the host runs first, takes events that carry files, and leaves text pastes alone. The drop is synthetic (Playwright can't drag from the OS), so it checks our listener rather than the browser's drag source.
 
+**By hand, on the Mac mini:** Aaron ran this branch's daemon on 127.0.0.1:7692 with `claude` in its pane, and tried three ways in each browser:
+
+| Browser | How | File | Prompt |
+|---|---|---|---|
+| Safari | Cmd+V of a screenshot | PNG 974x736, 316 KB | `[Image #1]` |
+| Safari | a drag from Finder | PNG 1898x1278, 1.10 MB (two chunks) | `[Image #2]` |
+| Safari | a drag of the screenshot thumbnail (Cmd+Shift+Ctrl+4) | PNG 826x472, 70 KB | `[Image #3]` |
+| Chrome | a drag of the screenshot thumbnail | PNG 1164x920, 162 KB | `[Image #4]` |
+| Chrome | Cmd+V of a screenshot | PNG 2048x920, 494 KB | `[Image #5]` |
+| Chrome | a drag from Finder | PNG 1706x1322, 1.29 MB (two chunks) | `[Image #6]` |
+
+Claude described all six correctly. Firefox isn't installed on that Mac, so its real paste is still open.
+
 **HEIC** (`heic.mjs`): `createImageBitmap` on a HEIC blob works in WebKit (64x48, re-encoded to an 843-byte JPEG through `OffscreenCanvas`), and throws `InvalidStateError` in Chrome and Firefox. So the client converts HEIC when it can decode it, which is WebKit, the case that matters. Otherwise it uploads the file as it is.
 
 ## 4. The route and transport
@@ -139,8 +153,8 @@ By code only, since there was no provider account here. A VM pane's file would g
 These are for a person, or for #214's suite:
 
 - **Phones:** iOS Safari and Android Chrome. That means a paste, the photo picker (`<input type=file accept=image/*>`) and the camera. Also whether iOS hands the picker HEIC or JPEG.
-- **The desktop app:** WKWebView and WebKitGTK, as its own windows. Playwright's WebKit stands in for them above.
-- **Firefox's paste** of a real screenshot.
+- **The desktop app:** WKWebView and WebKitGTK, as its own windows. Playwright's WebKit and real Safari stand in for them above.
+- **Firefox's paste** of a real screenshot (Safari and Chrome are done by hand).
 - **The other routes in practice:** an upload through control's relay, `/tunnel/NAME` and dial-out.
 - **On Linux:** `claude` on geek, including its Ctrl+V.
 - **Codex** with the same forms.
