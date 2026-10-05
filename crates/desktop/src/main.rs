@@ -363,6 +363,7 @@ fn focus_or_open(app: &AppHandle) {
 }
 
 /// From a notification: the pane, in a window of ours.
+#[cfg(not(windows))]
 fn open_pane(app: &AppHandle, pane: u32) {
     let url = page_at(&format!("/#pane={pane}"));
     match app.webview_windows().values().next() {
@@ -407,8 +408,10 @@ async fn retry(app: AppHandle, window: tauri::WebviewWindow) -> Result<(), Strin
 fn notify(app: &AppHandle, pane: u32, title: String, body: String) {
     // Windows: a local daemon's notifications come with it (M59).
     #[cfg(windows)]
-    let _ = (&app, pane, &title, &body);
+    let _ = (app, pane, title, body);
+    #[cfg(not(windows))]
     let app = app.clone();
+    #[cfg(not(windows))]
     std::thread::spawn(move || {
         #[cfg(target_os = "linux")]
         {
