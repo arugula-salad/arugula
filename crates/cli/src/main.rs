@@ -3,6 +3,11 @@
 //! URL, with `--host`); `--json` prints the API's answers as they are, for
 //! programs.
 
+// Windows builds the CLI, but its terminal front ends and its links to
+// machines (a local socket, control, ssh) come in M57 (#220): what only
+// they use is unused there until then.
+#![cfg_attr(windows, allow(dead_code, unused_imports))]
+
 mod ask;
 #[cfg(unix)]
 mod attach;

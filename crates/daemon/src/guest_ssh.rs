@@ -127,11 +127,7 @@ pub struct Guests {
 }
 
 fn random_bytes<const N: usize>() -> [u8; N] {
-    let mut b = [0u8; N];
-    std::fs::File::open("/dev/urandom")
-        .and_then(|mut f| std::io::Read::read_exact(&mut f, &mut b))
-        .expect("/dev/urandom");
-    b
+    crate::push::random()
 }
 
 /// A token is a valid ssh username: `g` and 32 hex digits (128 bits).
