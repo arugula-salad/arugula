@@ -733,6 +733,15 @@ fn daemon_running(state_dir: &std::path::Path) -> bool {
     std::fs::read_to_string(state_dir.join("sock.path")).is_ok_and(|p| pipe::answering(p.trim()))
 }
 
+/// A command line from words, quoted as Windows programs split them (cmd's
+/// `/k` takes one). On Unix, the words joined (never used there).
+fn conpty_command_line(argv: &[String]) -> String {
+    #[cfg(windows)]
+    return argv.split_first().map(|(p, rest)| conpty::command_line(p, rest)).unwrap_or_default();
+    #[cfg(not(windows))]
+    argv.join(" ")
+}
+
 /// This computer's name, for joining.
 fn hostname() -> Option<String> {
     #[cfg(unix)]
