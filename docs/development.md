@@ -61,11 +61,13 @@ CI runs on two self-hosted GitHub Actions runners in the arugula-salad
 org's `illogical` runner group, which only this repo may use: geek
 (`linux-x86_64`, a systemd user service,
 `~/.config/systemd/user/actions-runner-illogical.service`, runner in
-`~/.local/share/actions-runner-illogical`), geek's e2e pool (six more,
-`linux-x86_64-e2e`, `actions-runner-illogical-e2e@1…6.service` from one
+`~/.local/share/actions-runner-illogical`), geek's CI pool (twelve more,
+`linux-x86_64-ci`, `actions-runner-illogical-e2e@1…12.service` from one
 template unit, runners in `~/.local/share/actions-runner-illogical-e2e-N`,
-for the Playwright shards; more is `cp -a` of one, `config.sh` with an org
-registration token, and `systemctl --user enable --now` of the next
+which run check.yml's jobs on geek side by side; more is `cp -a` of one
+without `_work`, `.runner` and `.credentials*`, `config.sh --runnergroup
+illogical --labels linux-x86_64,linux-x86_64-e2e,linux-x86_64-ci` with an
+org registration token, and `systemctl --user enable --now` of the next
 number) and jake-mini (`macos-arm64`, a
 launchd agent, `~/Library/LaunchAgents/illogical.actions-runner.plist`,
 with `ProcessType` Interactive: launchd's throttling of background agents

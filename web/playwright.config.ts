@@ -144,6 +144,10 @@ const chrome = set && SETS[set] ? { testMatch: SETS[set] } : { testIgnore: set =
 export default defineConfig({
   testDir: "e2e",
   timeout: 30_000,
+  // CI's hosts run other jobs beside the specs (#287): an expectation gets
+  // longer there, and a spec that fails once runs again, reported as flaky.
+  expect: { timeout: process.env.CI ? 10_000 : 5_000 },
+  retries: process.env.CI ? 1 : 0,
   fullyParallel: false,
   workers: 1,
   use: {
