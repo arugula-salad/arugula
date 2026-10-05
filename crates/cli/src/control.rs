@@ -21,8 +21,8 @@
 
 #[cfg(unix)]
 use std::os::unix::net::UnixStream;
-/// Windows: the link's own sockets come with M57 (#220); a stream type
-/// stands in until then.
+/// Windows: the HTTP client's end of a carried connection is a loopback
+/// TCP pair ([`pair`]).
 #[cfg(not(unix))]
 type UnixStream = std::net::TcpStream;
 use std::{
@@ -403,7 +403,7 @@ type Reply = mpsc::Sender<(u16, Option<String>, Vec<u8>)>;
 /// each response to the request waiting for it.
 pub struct Link {
     out: Mutex<mpsc::Sender<(Msg, Option<Reply>)>>,
-    wake: Mutex<UnixStream>,
+    waker: crate::wake::Waker,
     next: AtomicU32,
     /// How it got there, in words.
     pub route: String,
@@ -416,20 +416,6 @@ impl std::fmt::Debug for Link {
 }
 
 impl Link {
-    #[cfg(not(unix))]
-    fn connect(
-        _at: &Url,
-        _ws_url: &str,
-        _headers: &[(&str, &str)],
-        _cert: &Cert,
-        _keys: &DeviceKeys,
-        _connect_timeout: Option<Duration>,
-        _route: String,
-    ) -> anyhow::Result<Self> {
-        bail!("reaching machines through control from Windows comes in M57 (#220)")
-    }
-
-    #[cfg(unix)]
     fn connect(
         at: &Url,
         ws_url: &str,
@@ -478,15 +464,14 @@ impl Link {
         ws.get_ref().set_timeout(None)?;
         ws.get_mut().set_nonblocking(true)?;
         let (tx, rx) = mpsc::channel();
-        let (wake, woken) = UnixStream::pair()?;
-        woken.set_nonblocking(true)?;
-        std::thread::spawn(move || io(ws, ch, rx, woken));
-        Ok(Self { out: Mutex::new(tx), wake: Mutex::new(wake), next: AtomicU32::new(1), route })
+        let (wake, waker) = crate::wake::Wake::pair()?;
+        std::thread::spawn(move || io(ws, ch, rx, wake));
+        Ok(Self { out: Mutex::new(tx), waker, next: AtomicU32::new(1), route })
     }
 
     fn put(&self, m: Msg, reply: Option<Reply>) -> anyhow::Result<()> {
         self.out.lock().unwrap().send((m, reply)).map_err(|_| anyhow::anyhow!("the channel closed"))?;
-        let _ = self.wake.lock().unwrap().write_all(b"x");
+        self.waker.wake();
         Ok(())
     }
 
@@ -507,14 +492,8 @@ impl Link {
 
     /// A connection the HTTP client can use as if it were a socket to the
     /// daemon: each request on it is carried over the channel.
-    #[cfg(not(unix))]
     pub fn stream(self: &Arc<Self>) -> anyhow::Result<UnixStream> {
-        bail!("reaching machines through control from Windows comes in M57 (#220)")
-    }
-
-    #[cfg(unix)]
-    pub fn stream(self: &Arc<Self>) -> anyhow::Result<UnixStream> {
-        let (ours, theirs) = UnixStream::pair()?;
+        let (ours, theirs) = pair()?;
         let link = self.clone();
         std::thread::spawn(move || {
             let _ = serve_one(&link, theirs);
@@ -523,8 +502,29 @@ impl Link {
     }
 }
 
-/// Read one HTTP/1.1 request from `s`, carry it, write its answer.
+/// Two connected ends, for a request carried in this process.
 #[cfg(unix)]
+fn pair() -> std::io::Result<(UnixStream, UnixStream)> {
+    UnixStream::pair()
+}
+
+/// Windows: a loopback TCP pair. Whoever connects first to the listener is
+/// checked to be us (by its address) before it's used.
+#[cfg(not(unix))]
+fn pair() -> std::io::Result<(UnixStream, UnixStream)> {
+    let l = std::net::TcpListener::bind("127.0.0.1:0")?;
+    let ours = std::net::TcpStream::connect(l.local_addr()?)?;
+    loop {
+        let (theirs, from) = l.accept()?;
+        if from == ours.local_addr()? {
+            ours.set_nodelay(true)?;
+            theirs.set_nodelay(true)?;
+            return Ok((ours, theirs));
+        }
+    }
+}
+
+/// Read one HTTP/1.1 request from `s`, carry it, write its answer.
 fn serve_one(link: &Link, s: UnixStream) -> anyhow::Result<()> {
     let mut r = BufReader::new(s.try_clone()?);
     let mut line = String::new();
@@ -574,24 +574,16 @@ fn serve_one(link: &Link, s: UnixStream) -> anyhow::Result<()> {
 
 /// The socket's thread: until every `Link` handle is gone or the socket
 /// closes.
-#[cfg(unix)]
 fn io(
     mut ws: WebSocket<Box<dyn Stream>>,
     ch: Channel,
     rx: mpsc::Receiver<(Msg, Option<Reply>)>,
-    mut woken: UnixStream,
+    mut wake: crate::wake::Wake,
 ) {
-    use nix::poll::{PollFd, PollFlags, PollTimeout, poll};
-    use std::os::fd::AsFd;
     let mut waiting: HashMap<u32, Reply> = HashMap::new();
-    let mut buf = [0u8; 256];
     'outer: loop {
-        {
-            let mut fds =
-                [PollFd::new(ws.get_ref().fd(), PollFlags::POLLIN), PollFd::new(woken.as_fd(), PollFlags::POLLIN)];
-            let _ = poll(&mut fds, PollTimeout::from(100u16));
-        }
-        while woken.read(&mut buf).is_ok_and(|n| n > 0) {}
+        let _ = wake.wait(Some(ws.get_ref().as_ref()), Duration::from_millis(100));
+        wake.drain();
         loop {
             match rx.try_recv() {
                 Ok((m, reply)) => {
