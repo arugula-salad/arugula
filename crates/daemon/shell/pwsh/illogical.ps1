@@ -14,6 +14,14 @@ if (-not $global:__illogical_hooked) {
   $global:__illogical_hooked = $true
   $global:__illogical_first = $true
   $global:__illogical_prompt = $function:prompt
+  # The window title, as other shells keep it (the directory at the prompt,
+  # the command while it runs), unless the profile set one of its own.
+  $global:__illogical_title = $Host.UI.RawUI.WindowTitle
+  function global:__illogical_set_title([string]$t) {
+    if ($Host.UI.RawUI.WindowTitle -ne $global:__illogical_title) { return }
+    $Host.UI.RawUI.WindowTitle = $t
+    $global:__illogical_title = $Host.UI.RawUI.WindowTitle
+  }
 
   # The command line, escaped so it fits in an OSC: `\\` for a backslash,
   # `\xHH` for ';' and control characters.
@@ -31,10 +39,14 @@ if (-not $global:__illogical_hooked) {
 
   # Before each prompt: the last command's exit code (a native program's
   # own, or 1 when a cmdlet failed), the directory, and "a prompt starts
-  # here"; after it, "the input starts here".
+  # here"; after it, "the input starts here". $LASTEXITCODE outlives the
+  # native program that set it, so it counts only when it changed.
+  $global:__illogical_lec = $global:LASTEXITCODE
   function global:prompt {
     $ok = $global:?
-    $code = if ($ok) { 0 } elseif ($global:LASTEXITCODE) { $global:LASTEXITCODE } else { 1 }
+    $lec = $global:LASTEXITCODE
+    $code = if ($ok) { 0 } elseif ($lec -and $lec -ne $global:__illogical_lec) { $lec } else { 1 }
+    $global:__illogical_lec = $lec
     $e = [char]27; $bel = [char]7
     $s = ''
     if ($global:__illogical_first) { $global:__illogical_first = $false } else { $s += "$e]133;D;$code$bel" }
@@ -43,6 +55,7 @@ if (-not $global:__illogical_hooked) {
       $path = ($loc.ProviderPath -replace '\\', '/') -replace '%', '%25' -replace ' ', '%20'
       $s += "$e]7;file://$env:COMPUTERNAME/$path$bel"
     }
+    __illogical_set_title $loc.Path
     $s += "$e]133;A$bel"
     $s + (& $global:__illogical_prompt) + "$e]133;B$bel"
   }
@@ -55,6 +68,7 @@ if (-not $global:__illogical_hooked) {
     $global:__illogical_readline = $function:PSConsoleHostReadLine
     function global:PSConsoleHostReadLine {
       $line = & $global:__illogical_readline
+      if ($line.Trim()) { __illogical_set_title $line.Trim() }
       $e = [char]27; $bel = [char]7
       [Console]::Write("$e]633;E;$(__illogical_escape $line)$bel$e]133;C$bel")
       $line
