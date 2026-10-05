@@ -88,7 +88,8 @@ pub fn load_or_create(path: &Path) -> anyhow::Result<String> {
 
 /// Whether a loopback connection carrying `tailscale serve`'s identity
 /// header can be serve's: its other end is tailscaled's (root) or the
-/// owner's own. Where that can't be told (not Linux), it is.
+/// owner's own. Where that can't be told (macOS), it is.
+#[cfg(unix)]
 pub fn serve_peer_ok(peer: SocketAddr, port: u16) -> bool {
     if !cfg!(target_os = "linux") {
         return true;
@@ -97,6 +98,13 @@ pub fn serve_peer_ok(peer: SocketAddr, port: u16) -> bool {
         Some(uid) => uid == 0 || Some(uid) == euid(),
         None => false,
     }
+}
+
+/// Windows: its TCP table names the client's process, and so its user
+/// (tailscaled runs as SYSTEM).
+#[cfg(windows)]
+pub fn serve_peer_ok(peer: SocketAddr, port: u16) -> bool {
+    crate::pipe::loopback_peer_ok(peer, port)
 }
 
 fn euid() -> Option<u32> {
