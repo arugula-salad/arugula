@@ -558,24 +558,12 @@ fn notify(app: &AppHandle, pane: u32, title: String, body: String) {
     let app = app.clone();
     std::thread::spawn(move || {
         // Windows: a toast under the app's own id (its Start menu shortcut,
-        // which the installer makes, carries it); a click opens the pane.
+        // which the installer makes, carries it). A click opens
+        // `illogical://pane/N`, which comes back to this app (one instance)
+        // as a link, from the popup or the Action Center alike.
         #[cfg(windows)]
-        {
-            let a = app.clone();
-            let toast = tauri_winrt_notification::Toast::new(&a.config().identifier)
-                .title(&title)
-                .text1(&body)
-                .on_activated(move |_| {
-                    let b = a.clone();
-                    let _ = a.run_on_main_thread(move || open_pane(&b, pane));
-                    Ok(())
-                });
-            match toast.show() {
-                // The click is the toast's to report: keep it while it can
-                // still be clicked (in the Action Center, too).
-                Ok(()) => std::thread::sleep(Duration::from_secs(30 * 60)),
-                Err(e) => eprintln!("illogical: a notification: {e}"),
-            }
+        if let Err(e) = toast(&app.config().identifier, &title, &body, pane) {
+            eprintln!("illogical: a notification: {e}");
         }
         #[cfg(target_os = "linux")]
         {
@@ -608,6 +596,26 @@ fn notify(app: &AppHandle, pane: u32, title: String, body: String) {
             }
         }
     });
+}
+
+/// A Windows toast whose click opens `illogical://pane/{pane}`.
+#[cfg(windows)]
+fn toast(app_id: &str, title: &str, body: &str, pane: u32) -> windows::core::Result<()> {
+    use windows::{
+        Data::Xml::Dom::XmlDocument,
+        UI::Notifications::{ToastNotification, ToastNotificationManager},
+        core::HSTRING,
+    };
+    let esc = |s: &str| s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;");
+    let xml = format!(
+        r#"<toast activationType="protocol" launch="illogical://pane/{pane}"><visual><binding template="ToastGeneric"><text>{}</text><text>{}</text></binding></visual></toast>"#,
+        esc(title),
+        esc(body)
+    );
+    let doc = XmlDocument::new()?;
+    doc.LoadXml(&HSTRING::from(xml))?;
+    let toast = ToastNotification::CreateToastNotification(&doc)?;
+    ToastNotificationManager::CreateToastNotifierWithId(&HSTRING::from(app_id))?.Show(&toast)
 }
 
 fn set_count(app: &AppHandle, count: usize) {

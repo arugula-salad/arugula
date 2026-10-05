@@ -38,7 +38,7 @@ webkit2gtk-sys = "2"
 
 [target.'cfg(windows)'.dependencies]
 # Toasts whose click opens the pane (M59).
-tauri-winrt-notification = "0.7"
+windows = { version = "0.61", features = ["Data_Xml_Dom", "UI_Notifications"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 mac-notification-sys = "0.6"
