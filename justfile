@@ -275,9 +275,12 @@ notices:
     scripts/web-notices >> THIRD_PARTY.md
     cd crates/desktop && cargo about generate -c about.toml ../../about.hbs > THIRD_PARTY.md
 
-# All tests.
+# All tests. The Rust ones run under cargo-nextest (.config/nextest.toml),
+# which `just bootstrap` installs; the doctests, which it can't run, under
+# cargo test.
 test: web
-    {{cargo}} test --workspace
+    {{cargo}} nextest run --workspace
+    {{cargo}} test --workspace --doc
     cd web && pnpm run typecheck
     just e2e-interop control-smoke
 
