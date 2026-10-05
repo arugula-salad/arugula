@@ -575,6 +575,17 @@ just bootstrap && just install</pre>
     main.innerHTML = "<b>Download for Linux</b><span>x86_64 AppImage · free</span>";
     document.getElementById("dl-alt").innerHTML =
       'Also: <a href="https://github.com/arugula-salad/illogical/releases/latest/download/illogical-desktop-linux-x86_64.deb">.deb</a> · <a href="https://github.com/arugula-salad/illogical/releases/latest/download/illogical-desktop-macos-arm64.zip">macOS</a> (<a href="https://github.com/arugula-salad/illogical/releases/latest/download/illogical-desktop-macos-x86_64.zip">Intel</a>) · <a href="#install">servers, without a screen</a>';
+  } else if (/Macintosh/.test(navigator.userAgent) && navigator.userAgentData?.getHighEntropyValues) {
+    // Chromium browsers say which chip a Mac has; Safari and Firefox don't,
+    // so they keep Apple silicon with Intel beside it.
+    navigator.userAgentData.getHighEntropyValues(["architecture"]).then(({ architecture }) => {
+      if (architecture !== "x86") return;
+      const main = document.getElementById("dl-main");
+      main.href = "https://github.com/arugula-salad/illogical/releases/latest/download/illogical-desktop-macos-x86_64.zip";
+      main.innerHTML = "<b>Download for macOS</b><span>Intel · free</span>";
+      document.getElementById("dl-alt").innerHTML =
+        'Apple silicon: <a href="https://github.com/arugula-salad/illogical/releases/latest/download/illogical-desktop-macos-arm64.zip">.zip</a> · Linux: <a href="https://github.com/arugula-salad/illogical/releases/latest/download/illogical-desktop-linux-x86_64.AppImage">AppImage</a> · <a href="https://github.com/arugula-salad/illogical/releases/latest/download/illogical-desktop-linux-x86_64.deb">.deb</a> · <a href="#install">servers, without a screen</a>';
+    }, () => {});
   }
 
   const live = document.documentElement.classList.contains("live");
