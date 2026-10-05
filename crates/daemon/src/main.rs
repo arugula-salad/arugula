@@ -36,8 +36,8 @@ mod mcp;
 mod mux;
 mod osc;
 mod pane;
-mod perm;
 mod paths;
+mod perm;
 mod ports;
 mod procinfo;
 mod provider;
@@ -715,9 +715,7 @@ fn main() -> anyhow::Result<()> {
         #[cfg(not(unix))]
         Some(Command::Sandbox) => anyhow::bail!("the sandbox supervisor is for Linux boxes"),
         Some(Command::Join { url, name, team, account, ticket, state_dir }) => {
-            let name = name.unwrap_or_else(|| {
-                hostname().unwrap_or_else(|| "illogical".into())
-            });
+            let name = name.unwrap_or_else(|| hostname().unwrap_or_else(|| "illogical".into()));
             let dir = state_dir.unwrap_or_else(default_state_dir);
             tokio::runtime::Runtime::new()?.block_on(control::join(
                 &url,
@@ -1080,6 +1078,7 @@ async fn run(
     Ok(())
 }
 
+#[cfg(unix)]
 async fn signalled() {
     let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).expect("SIGTERM");
     tokio::select! {

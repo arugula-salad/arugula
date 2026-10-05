@@ -1,13 +1,13 @@
 //! The bits of systemd the daemon uses without linking libsystemd. On
 //! Windows there's no systemd: notifying does nothing and nothing is kept.
 
+use std::process::Command;
 #[cfg(unix)]
 use std::{
     collections::HashMap,
     io::IoSlice,
     os::fd::{AsRawFd, BorrowedFd, FromRawFd, OwnedFd, RawFd},
 };
-use std::process::Command;
 
 #[cfg(unix)]
 use nix::{

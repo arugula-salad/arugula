@@ -255,6 +255,7 @@ async fn resolve(
         .kill_on_drop(true);
     // SAFETY: setsid is async-signal-safe; nothing else runs between fork
     // and exec. A session of its own: no controlling terminal to take.
+    #[cfg(unix)]
     unsafe {
         c.pre_exec(|| nix::unistd::setsid().map(|_| ()).map_err(std::io::Error::from));
     }
@@ -289,9 +290,12 @@ async fn resolve(
         }
         Err(_) => {
             // The shell, and whatever its rc files started with it.
+            #[cfg(unix)]
             if let Some(pid) = pid {
                 let _ = nix::sys::signal::killpg(nix::unistd::Pid::from_raw(pid as i32), nix::sys::signal::SIGKILL);
             }
+            #[cfg(not(unix))]
+            let _ = (pid, child.start_kill());
             let _ = child.wait().await;
             Err(format!("{shell} took longer than {}s to start (an rc file waits for something?)", timeout.as_secs()))
         }

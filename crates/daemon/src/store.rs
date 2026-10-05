@@ -506,7 +506,11 @@ mod tests {
         assert_eq!(log.end(), 6 * 1024 * 1024 + 5);
         // Modes are Unix's; Windows has the profile's ACL.
         #[cfg(unix)]
-        assert_eq!(std::os::unix::fs::PermissionsExt::mode(&fs::metadata(dir.join(seg_name(0))).unwrap().permissions()) & 0o777, 0o600);
+        assert_eq!(
+            std::os::unix::fs::PermissionsExt::mode(&fs::metadata(dir.join(seg_name(0))).unwrap().permissions())
+                & 0o777,
+            0o600
+        );
         fs::remove_dir_all(dir).unwrap();
     }
 

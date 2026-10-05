@@ -69,7 +69,8 @@ pub fn load_or_create(path: &Path) -> anyhow::Result<String> {
             // Written aside and linked in: whoever starts beside us (two
             // daemons sharing a file) reads a whole token, never half of one.
             let tmp = path.with_extension(format!("tmp{}", std::process::id()));
-            let mut f = crate::perm::open_mode(std::fs::OpenOptions::new().write(true).create_new(true), 0o600).open(&tmp)?;
+            let mut f =
+                crate::perm::open_mode(std::fs::OpenOptions::new().write(true).create_new(true), 0o600).open(&tmp)?;
             f.write_all(token.as_bytes())?;
             f.sync_all()?;
             let linked = std::fs::hard_link(&tmp, path);

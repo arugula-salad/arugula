@@ -136,9 +136,14 @@ mod tests {
         let again = DeviceKeys::load_or_create(&path).unwrap();
         assert_eq!(k.id(), again.id());
         assert_eq!(k.noise_private, again.noise_private);
-        assert_eq!(fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
-        assert!(DeviceKeys::load(&path).is_err());
+        // Modes are Unix's; on Windows the profile's ACL keeps it private.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+            assert!(DeviceKeys::load(&path).is_err());
+        }
         fs::remove_dir_all(dir).unwrap();
     }
 

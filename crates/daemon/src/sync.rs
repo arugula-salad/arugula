@@ -671,7 +671,10 @@ mod tests {
         }
         // Modes are Unix's; Windows has the profile's ACL.
         #[cfg(unix)]
-        assert_eq!(std::os::unix::fs::PermissionsExt::mode(&fs::metadata(d.join("synced/key")).unwrap().permissions()) & 0o777, 0o600);
+        assert_eq!(
+            std::os::unix::fs::PermissionsExt::mode(&fs::metadata(d.join("synced/key")).unwrap().permissions()) & 0o777,
+            0o600
+        );
         // Rotation keeps it readable.
         assert_eq!(s.rotate().unwrap(), 2);
         assert_eq!(Synced::new(&d, None).read_from("box", 3, 0).unwrap().1, b"hello world\nlater\n");

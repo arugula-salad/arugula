@@ -23,7 +23,6 @@
 use std::{
     collections::HashMap,
     io,
-    os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     process::Stdio,
     sync::{Arc, Mutex, OnceLock, Weak},
@@ -233,7 +232,11 @@ impl Server {
 
     async fn connect(&self) -> io::Result<Conn> {
         match &self.on {
+            #[cfg(unix)]
             On::Here => Ok(Box::new(tokio::net::UnixStream::connect(&self.settings.socket).await?)),
+            // code-server listens on a Unix socket; Windows has none for it.
+            #[cfg(not(unix))]
+            On::Here => Err(io::Error::other("code-server here needs a Unix socket")),
             On::Vm { provider, sprite } => provider.dial(sprite, VM_PORT).await,
         }
     }
@@ -319,6 +322,7 @@ impl Server {
             c
         } else {
             let mut c = tokio::process::Command::new(bin);
+            #[cfg(unix)]
             c.process_group(0);
             c
         };
@@ -434,7 +438,7 @@ fn args(dir: &Path, idle: u64, grace: u64) -> Vec<String> {
 fn prepare(dir: &Path) -> io::Result<()> {
     std::fs::create_dir_all(dir.join("user/User"))?;
     std::fs::create_dir_all(dir.join("extensions"))?;
-    let _ = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700));
+    let _ = crate::perm::set(dir, 0o700);
     store::write_atomic(&dir.join("config.yaml"), b"auth: none\ncert: false\n")?;
     let settings = dir.join("user/User/settings.json");
     if !settings.exists() {

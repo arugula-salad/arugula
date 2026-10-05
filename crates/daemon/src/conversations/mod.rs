@@ -470,8 +470,7 @@ fn live(dir: &Path, ours: &Ours) -> HashMap<String, Live> {
 /// The process is running, and is the one that wrote the file: it started
 /// when `procStart` says.
 fn alive(pid: u32, proc_start: Option<&str>) -> bool {
-    // EPERM is someone's process all the same; only ESRCH means it's gone.
-    if nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid as i32), None) == Err(nix::errno::Errno::ESRCH) {
+    if !crate::procinfo::alive(pid) {
         return false;
     }
     let Some(want) = proc_start else { return true };
@@ -768,7 +767,7 @@ mod tests {
         // Not under any of ours.
         let l = live(&sessions, &Ours { panes: [(1, 7)].into(), ..Ours::default() });
         assert_eq!(l["in-pane"].pane.filter(|p| *p == 7), None);
-        let _ = nix::sys::signal::kill(nix::unistd::Pid::from_raw(claude as i32), nix::sys::signal::SIGKILL);
+        crate::procinfo::kill(claude);
         shell.wait().unwrap();
         std::fs::remove_dir_all(&root).unwrap();
     }

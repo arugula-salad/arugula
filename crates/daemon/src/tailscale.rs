@@ -98,6 +98,8 @@ impl LocalApi {
             let Via::Socket(socket) = &self.via else { bail!("no tailscaled socket") };
             // Windows: tailscaled has no Unix socket; the CLI answers instead.
             #[cfg(not(unix))]
+            let mut s = tokio::io::empty();
+            #[cfg(not(unix))]
             bail!("no tailscaled socket here: {}", socket.display());
             #[cfg(unix)]
             let mut s = tokio::net::UnixStream::connect(socket)
