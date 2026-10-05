@@ -416,3 +416,75 @@ fn push_reaches_a_subscribed_browser_encrypted() {
     let msg: Value = serde_json::from_slice(&plain).unwrap();
     assert_eq!((msg["title"].as_str(), msg["body"].as_str()), (Some("illogical"), Some("Notifications work.")));
 }
+
+/// A request over the socket with raw bytes for a body (an upload's
+/// chunk): status and body.
+fn bytes(d: &Daemon, path: &str, body: &[u8]) -> (u16, Value) {
+    let mut s = UnixStream::connect(d.sock()).unwrap();
+    let head = format!(
+        "POST {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\n\r\n",
+        body.len()
+    );
+    s.write_all(head.as_bytes()).unwrap();
+    s.write_all(body).unwrap();
+    let mut res = Vec::new();
+    s.read_to_end(&mut res).unwrap();
+    let res = String::from_utf8_lossy(&res).into_owned();
+    let (head, body) = res.split_once("\r\n\r\n").unwrap_or((&res, ""));
+    let status = head.split_whitespace().nth(1).unwrap().parse().unwrap();
+    (status, serde_json::from_str(body).unwrap_or(Value::Null))
+}
+
+/// M70: a file uploaded in chunks lands on the host with the same bytes,
+/// in a private folder of the pane's; its path pastes bracketed into a
+/// program that asked, but not into whatever isn't a shell or an agent
+/// unless forced; a file over the cap is refused; and the folder goes with
+/// the pane.
+#[test]
+fn an_upload_lands_on_the_host_and_its_path_pastes_bracketed() {
+    use std::os::unix::fs::PermissionsExt;
+    let tmp = std::env::temp_dir().join(format!("ilg-uploads-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).unwrap();
+    let d = illogicald!("api").env("PS1", "$ ").env("TMPDIR", &tmp).env_remove("XDG_RUNTIME_DIR").wait_secs(10).start();
+    d.wait_for("the first prompt", || d.get("/api/panes")[0]["cwd"].is_string());
+    let pane = d.post("/api/run", json!({"command": r"printf '\e[?2004h'; cat -v"}))["pane"].as_u64().unwrap();
+    d.wait_for("cat", || d.raw("GET", &format!("/api/panes/{pane}/process"), None).1.contains("\"cat\""));
+
+    // Every byte value, past one chunk.
+    let png: Vec<u8> = (0..300_000u32).map(|i| (i * 7 % 256) as u8).collect();
+    let up = format!("/api/panes/{pane}/upload?id=00ab&ext=PNG");
+    let (s, v) = bytes(&d, &format!("{up}&offset=0"), &png[..200_000]);
+    assert_eq!(s, 200, "{v}");
+    let (s, v) = bytes(&d, &format!("{up}&offset=0"), &png[..10]);
+    assert_eq!(s, 409, "the file's already there: {v}");
+    let (s, v) = bytes(&d, &format!("{up}&offset=200000&last=true"), &png[200_000..]);
+    assert_eq!((s, v["done"].as_bool()), (200, Some(true)), "{v}");
+    let path = v["path"].as_str().unwrap().to_owned();
+    let folder = tmp.join("illogical-uploads").join(pane.to_string());
+    assert_eq!(std::path::Path::new(&path), folder.join("00ab.png"));
+    assert_eq!(std::fs::read(&path).unwrap(), png);
+    assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+    assert_eq!(std::fs::metadata(&folder).unwrap().permissions().mode() & 0o777, 0o700);
+
+    // Over the cap: refused before anything's written.
+    let (s, _) = bytes(&d, &format!("/api/panes/{pane}/upload?id=ff&offset={}", (20 << 20) - 1), b"ab");
+    assert_eq!(s, 413);
+    let (s, _) = bytes(&d, &format!("/api/panes/{pane}/upload?id=../x&offset=0"), b"ab");
+    assert_eq!(s, 400);
+
+    // `cat` isn't a shell or an agent: it says what's in front.
+    let v = d.post(&format!("/api/panes/{pane}/paste"), json!({"paths": [path]}));
+    assert_eq!((v["pasted"].as_bool(), v["front"].as_str()), (Some(false), Some("cat -v")), "{v}");
+    let v = d.post(&format!("/api/panes/{pane}/paste"), json!({"paths": [path], "force": true}));
+    assert_eq!(v["pasted"], true, "{v}");
+    let want = format!("^[[200~{path}^[[201~");
+    // A long path wraps.
+    let screen = || d.raw("GET", &format!("/api/panes/{pane}/capture"), None).1.replace('\n', "");
+    d.wait_for("the bracketed path", || screen().contains(&want));
+
+    // The folder goes with the pane.
+    d.post(&format!("/api/panes/{pane}/close"), json!({}));
+    d.wait_for("the pane's uploads gone", || !folder.exists());
+    let _ = std::fs::remove_dir_all(&tmp);
+}

@@ -3454,6 +3454,8 @@ impl Daemon {
                     self.ids.lock().unwrap().remove(&pane);
                     if let Some(p) = self.panes.remove(&pane) {
                         p.close();
+                        #[cfg(unix)]
+                        crate::upload::forget(pane);
                     }
                     if let Some(b) = self.blocks.remove(&pane) {
                         b.close();
