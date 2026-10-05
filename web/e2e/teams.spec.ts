@@ -169,7 +169,7 @@ test("two people at different companies join a team by invite", async ({ browser
  * and how it ended. */
 async function startJoin(name: string, state: string, extra: string[] = [], env: NodeJS.ProcessEnv = {}) {
   const joining = spawn("../target/debug/illogicald", ["join", base, "--name", name, "--state-dir", state, ...extra], {
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio: ["pipe", "pipe", "pipe"],
     env: { ...process.env, ...env },
   });
   procs.push(joining);
@@ -184,7 +184,13 @@ async function startJoin(name: string, state: string, extra: string[] = [], env:
       if (m) res(m[1]);
     });
   });
-  return { link, exited, out: () => out, err: () => err };
+  // Answer the machine's question: the account's fingerprint, as `page`
+  // shows it while approving.
+  const confirm = async (page: Page) => {
+    const account = await page.locator("[data-join-account]").getAttribute("data-join-account");
+    return () => joining.stdin!.end(`${account}\n`);
+  };
+  return { link, exited, confirm, out: () => out, err: () => err };
 }
 
 function runDaemon(name: string, state: string) {
@@ -215,7 +221,9 @@ test("a team-owned box joins; both use it through the relay and pass control", a
   await expect(alice.locator("[data-join-team]")).toHaveText("Acme");
   await expect(alice.locator("[data-join-to]")).toHaveValue(team);
   await expect(alice.locator("[data-join-grants]")).toContainText("The members of Acme reach it by their role");
+  const answer = await j.confirm(alice);
   await alice.locator("[data-approve-join]").click();
+  answer();
   expect(await j.exited).toBe(0);
   expect(j.out()).toContain("This machine is in the team Acme");
   expect(j.out()).toContain("illogicald isn't running here");
@@ -257,7 +265,9 @@ test("a presigned invite: someone already in a team joins another in one click",
   const old = temp("oldbox");
   const j = await startJoin("oldbox", old, ["--team", team], { ILLOGICAL_FEATURES: "" });
   await alice.goto(j.link);
+  const answer = await j.confirm(alice);
   await alice.locator("[data-approve-join]").click();
+  answer();
   expect(await j.exited).toBe(0);
   await alice.goto("/");
   await alice.waitForFunction(() => window.__illogical?.control?.phase === "ready");
@@ -397,7 +407,9 @@ test("Cancel turns a join down; Just me keeps a machine apart from the team's", 
   await expect(alice.locator("[data-join-to]")).toHaveValue(team);
   await alice.locator("[data-join-to]").selectOption("");
   await expect(alice.locator("[data-join-grants]")).toContainText("Only your devices reach it");
+  const answer = await j.confirm(alice);
   await alice.locator("[data-approve-join]").click();
+  answer();
   expect(await j.exited).toBe(0);
   expect(j.out()).toContain("This machine is in your account");
   expect(j.out()).toContain("Not the team Acme");

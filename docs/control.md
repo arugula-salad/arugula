@@ -9,12 +9,22 @@ repository (below).
 
 - **It sees:** who you are, which devices and machines you have, and when
   they connect.
-- **It never sees what your terminals say.** Every connection between a
-  device and a machine is end-to-end encrypted, including connections it
-  relays.
+- **What it relays, it can't read.** Every connection between a device and
+  a machine is end-to-end encrypted, including connections it relays, and
+  it never holds a private key. A copy of its database or its traffic
+  reads nothing.
 - **It can't add a device that reads them:**
   - every device and machine is approved by a device you already have;
-  - your devices and machines check those approvals themselves.
+  - your devices and machines check those approvals themselves;
+  - when a machine joins, you check that it shows your account's
+    fingerprint, so control can't hand it an account of its own.
+- **What you trust it with:**
+  - **the web client.** Control serves the page your browsers, your phone
+    and the desktop app (once joined) run. A control that served a
+    modified page could read what that page shows. A daemon's own page,
+    `illogicald` and the CLI don't come from control.
+  - **hosted sandboxes.** They run on control's provider, which writes
+    their trust files; the operator can read them.
 
 **What it costs.** The hosted control is free during the beta. It's
 provided as is, without guarantees, and its pricing may change; any change
@@ -22,7 +32,8 @@ is announced before it applies. Its [terms](https://illogical.widgets.wtf/terms)
 [privacy notice](https://illogical.widgets.wtf/privacy) say what it keeps
 and the rules; questions to <privacy@illogical.widgets.wtf>.
 
-The design is in [control-e2e.md](control-e2e.md). Teams, roles, personal
+The design, and exactly what holds if control itself turns hostile, is in
+[control-e2e.md](control-e2e.md#what-holds-against-control). Teams, roles, personal
 vs team machines and sharing a session:
 [Your machines, your team](teams.md).
 
@@ -42,7 +53,12 @@ vs team machines and sharing a session:
    ```
 
    It prints a link with a code (good for 15 minutes). Open it on a
-   signed-in device, check the code matches, and approve. *Join to* picks
+   signed-in device, check the code matches, and approve. The machine then
+   shows your account's fingerprint (`1a2b-3c4d-…`): check it's the one
+   the approving device showed (*Your account*, also under *Devices and
+   machines…*) and answer `y` (Getting started on the machine's own page
+   asks the same with two buttons). It trusts nothing until you do;
+   `--account FINGERPRINT` answers ahead, for scripts. *Join to* picks
    your account (*Just me*) or a team you own; `--team ID` picks the team
    ahead. *Cancel* turns it down. A running daemon connects within a few
    seconds, and the machine appears in the host menu.

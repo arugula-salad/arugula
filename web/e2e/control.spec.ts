@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { ready, run, text } from "./helpers";
-import { ANY, controlPort, listen } from "./ports";
+import { ANY, controlPort, daemonPort, listen } from "./ports";
 
 let base = "";
 const procs: ChildProcess[] = [];
@@ -86,7 +86,7 @@ async function signIn(page: Page) {
 /** `illogicald join`, approved from `page`; then the daemon runs. */
 async function addMachine(page: Page, name: string, direct: boolean) {
   const state = temp(name);
-  const joining = spawn("../target/debug/illogicald", ["join", base, "--name", name, "--state-dir", state], { stdio: ["ignore", "pipe", "ignore"] });
+  const joining = spawn("../target/debug/illogicald", ["join", base, "--name", name, "--state-dir", state], { stdio: ["pipe", "pipe", "ignore"] });
   procs.push(joining);
   const link = await new Promise<string>((res) => {
     let out = "";
@@ -100,7 +100,10 @@ async function addMachine(page: Page, name: string, direct: boolean) {
   const exited = new Promise<number | null>((r) => joining.on("exit", r));
   await page.goto(link);
   await expect(page.locator("[data-join-code]")).toHaveText(code);
+  // The machine asks whether the account is the one this browser shows.
+  const account = await page.locator("[data-join-account]").getAttribute("data-join-account");
   await page.locator("[data-approve-join]").click();
+  joining.stdin!.end(`${account}\n`);
   expect(await exited).toBe(0);
   procs.push(
     spawn(
@@ -426,4 +429,69 @@ test("removing the phone cuts it off", async () => {
   await expect.poll(() => connected(phone), { timeout: 5_000, intervals: [200] }).toBe(false);
   await new Promise((r) => setTimeout(r, 3000));
   expect(await connected(phone)).toBe(false);
+});
+
+test("Getting started asks to check the account's fingerprint before the machine trusts it", async ({ browser }) => {
+  const state = temp("starter");
+  procs.push(
+    spawn(
+      "../target/debug/illogicald",
+      [
+        ...["--listen", ANY, "--name", "starter", "--state-dir", state],
+        ...["--shell", "bash --norc --noprofile", "--no-manager-env", "--tailscale-socket", "/nonexistent/sock"],
+      ],
+      { stdio: "ignore" },
+    ),
+  );
+  const local = `http://127.0.0.1:${await daemonPort(state, procs.at(-1))}`;
+  const page = await (await browser.newContext()).newPage();
+  await page.goto(local);
+  await expect(page.locator(".session-button")).toBeVisible();
+  const start = page.getByRole("dialog", { name: "Getting started" });
+  const cloud = async () => {
+    if (!(await start.isVisible())) {
+      await page.locator(".session-button").click();
+      await page.getByRole("menuitem", { name: "Getting started" }).click();
+    }
+    await start.locator('[data-start-seg="cloud"]').click();
+  };
+  // Asks this test's control for a code (the button asks the hosted one),
+  // approves it on the laptop from the link the panel shows, and returns
+  // the account the laptop showed.
+  const approve = async () => {
+    const r = await page.request.post(`${local}/api/setup/control`, { data: { url: base } });
+    expect(((await r.json()) as { pending?: { approve: string } }).pending?.approve).toContain(base);
+    await page.reload();
+    await cloud();
+    const link = (await start.locator("[data-start-approve]").getAttribute("href"))!;
+    expect(link.startsWith(`${base}/#join=`)).toBe(true);
+    await laptop.goto(link);
+    const account = (await laptop.locator("[data-join-account]").getAttribute("data-join-account"))!;
+    await laptop.locator("[data-approve-join]").click();
+    return account;
+  };
+  const shown = () => start.locator("[data-start-account]").getAttribute("data-start-account").then((a) => a?.replaceAll("-", ""));
+
+  // Approved, but not saved until the person says the account is theirs.
+  // "They don't": nothing is pinned.
+  const account = await approve();
+  await expect.poll(shown, { timeout: 20_000 }).toBe(account);
+  await expect(start.locator("[data-start-confirm]")).toContainText("Is this your account?");
+  await start.locator("[data-start-different]").click();
+  await expect(start.locator("[data-start-error]")).toContainText("Not joined");
+  expect((await (await page.request.get(`${local}/api/setup?part=control`)).json()).control.joined).toBeUndefined();
+
+  // Again (as a new key: the turned-down one is dropped), and "They
+  // match": joined.
+  expect(await approve()).toBe(account);
+  await expect.poll(shown, { timeout: 20_000 }).toBe(account);
+  await start.locator("[data-start-same]").click();
+  await expect(start.locator("[data-start-joined]")).toHaveText("Joined to your account", { timeout: 20_000 });
+  await page.context().close();
+  // The laptop sees it in the account.
+  await laptop.goto("/");
+  await expect.poll(() => hostNames(laptop), { timeout: 20_000 }).toContain("starter");
+  await panel(laptop, "devices");
+  await expect(laptop.locator("[data-account-fingerprint]")).toHaveAttribute("data-account-fingerprint", account);
+  await laptop.getByRole("button", { name: "Done" }).click();
 });

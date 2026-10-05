@@ -521,6 +521,15 @@ function JoinPrompt({ s, code }: { s: ControlSession; code: string }) {
             <b data-join-code={j.code}>{j.code}</b>. Check that's the code it printed.
           </p>
           <p class="dim">Its key: {fingerprint(j.cert.device)}</p>
+          {s.enrollment ? (
+            <p>
+              Your account:{" "}
+              <b class="fingerprint" data-join-account={s.enrollment.root}>
+                {fingerprint(s.enrollment.root)}
+              </b>
+              . Once you approve, the machine shows its account's fingerprint: check it's this one there.
+            </p>
+          ) : null}
           {owned.length || asked ? (
             <p>
               <label>
@@ -861,6 +870,15 @@ function Devices({ s, close }: { s: ControlSession; close: () => void }) {
       <p class="dim">
         Signed in as <b data-account={s.account}>{s.login}</b>.
       </p>
+      {s.enrollment ? (
+        <p class="dim">
+          Your account's fingerprint:{" "}
+          <span class="fingerprint-inline" data-account-fingerprint={s.enrollment.root}>
+            {fingerprint(s.enrollment.root)}
+          </span>
+          . A machine shows it when it joins; check they match.
+        </p>
+      ) : null}
       {s.rootMismatch ? (
         <p class="control-error">Control reports a different first device for this account than this browser pinned. New devices and machines won't be trusted here.</p>
       ) : null}
