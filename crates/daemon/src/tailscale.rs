@@ -96,6 +96,10 @@ impl LocalApi {
     async fn get(&self, path: &str) -> anyhow::Result<(u16, Vec<u8>)> {
         let go = async {
             let Via::Socket(socket) = &self.via else { bail!("no tailscaled socket") };
+            // Windows: tailscaled has no Unix socket; the CLI answers instead.
+            #[cfg(not(unix))]
+            bail!("no tailscaled socket here: {}", socket.display());
+            #[cfg(unix)]
             let mut s = tokio::net::UnixStream::connect(socket)
                 .await
                 .with_context(|| format!("connecting to {}", socket.display()))?;

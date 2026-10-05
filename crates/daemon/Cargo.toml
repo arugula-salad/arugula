@@ -22,7 +22,6 @@ illogical-e2e = { version = "0.17.0", path = "../e2e" }
 illogical-proto = { version = "0.17.0", path = "../proto" }
 illogical-vt = { version = "0.17.0", path = "../vt" }
 instant-acme = { version = "0.8.5", features = ["rcgen"] }
-nix = { version = "0.31.3", features = ["term", "process", "fs", "ioctl", "signal", "poll", "socket", "uio", "hostname", "user", "dir"] }
 p256 = { version = "0.14.0", features = ["ecdh", "ecdsa"] }
 regex = "1.13.1"
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "http2", "json"] }
@@ -47,10 +46,20 @@ url = "2.5.8"
 webpki-root-certs = "1.0.9"
 zstd = "0.14.0"
 
+# ptys, signals, sockets: Unix only. Windows gets ConPTY and named pipes (M56).
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.31.3", features = ["term", "process", "fs", "ioctl", "signal", "poll", "socket", "uio", "hostname", "user", "dir"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.60", features = ["Win32_Foundation", "Win32_System_Time"] }
+
 [lints]
 workspace = true
 
 [dev-dependencies]
 futures-util = "0.3.34"
-rmcp = { version = "=3.5.0", default-features = false, features = ["client", "transport-streamable-http-client-unix-socket", "transport-streamable-http-client-reqwest", "transport-child-process"] }
+rmcp = { version = "=3.5.0", default-features = false, features = ["client", "transport-streamable-http-client-reqwest", "transport-child-process"] }
 rcgen = "0.14.10"
+
+[target.'cfg(unix)'.dev-dependencies]
+rmcp = { version = "=3.5.0", default-features = false, features = ["transport-streamable-http-client-unix-socket"] }

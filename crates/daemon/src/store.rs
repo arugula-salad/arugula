@@ -25,7 +25,6 @@ use std::{
     collections::BTreeMap,
     fs::{self, File, OpenOptions},
     io::{self, Read, Seek, SeekFrom, Write},
-    os::unix::fs::{DirBuilderExt, OpenOptionsExt},
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -96,12 +95,12 @@ pub fn now_ms() -> u64 {
 }
 
 pub fn private_dir(path: &Path) -> io::Result<()> {
-    fs::DirBuilder::new().recursive(true).mode(0o700).create(path)
+    crate::perm::dir_mode(fs::DirBuilder::new().recursive(true), 0o700).create(path)
 }
 
 fn private_file() -> OpenOptions {
     let mut o = OpenOptions::new();
-    o.mode(0o600);
+    crate::perm::open_mode(&mut o, 0o600);
     o
 }
 
@@ -130,6 +129,8 @@ impl StateDir {
         let old = root.join("panes");
         if old.is_dir() && !old.is_symlink() && !root.join("blocks").exists() {
             fs::rename(&old, root.join("blocks"))?;
+            // Only Unix daemons ever had `panes/`.
+            #[cfg(unix)]
             std::os::unix::fs::symlink("blocks", &old)?;
         }
         private_dir(&root.join("blocks"))?;
@@ -503,8 +504,9 @@ mod tests {
         drop(log);
         let log = PaneLog::open(dir.clone()).unwrap();
         assert_eq!(log.end(), 6 * 1024 * 1024 + 5);
-        let mode = fs::metadata(dir.join(seg_name(0))).unwrap().permissions();
-        assert_eq!(std::os::unix::fs::PermissionsExt::mode(&mode) & 0o777, 0o600);
+        // Modes are Unix's; Windows has the profile's ACL.
+        #[cfg(unix)]
+        assert_eq!(std::os::unix::fs::PermissionsExt::mode(&fs::metadata(dir.join(seg_name(0))).unwrap().permissions()) & 0o777, 0o600);
         fs::remove_dir_all(dir).unwrap();
     }
 
@@ -568,8 +570,9 @@ mod tests {
         };
         state.save_layout(&saved).unwrap();
         assert_eq!(state.load_layout().unwrap(), Some(saved));
-        let mode = fs::metadata(&dir).unwrap().permissions();
-        assert_eq!(std::os::unix::fs::PermissionsExt::mode(&mode) & 0o777, 0o700);
+        // Modes are Unix's; Windows has the profile's ACL.
+        #[cfg(unix)]
+        assert_eq!(std::os::unix::fs::PermissionsExt::mode(&fs::metadata(&dir).unwrap().permissions()) & 0o777, 0o700);
         fs::remove_dir_all(dir).unwrap();
     }
 }

@@ -1,5 +1,9 @@
 //! illogicald: owns the terminals; clients attach over WebSocket.
 
+// Windows builds and tests the daemon's code but doesn't serve yet (M56,
+// #219): what only serving uses is unused there until then.
+#![cfg_attr(windows, allow(dead_code, unused_imports))]
+
 mod access;
 mod acl;
 mod agent;
@@ -20,6 +24,7 @@ mod fs;
 mod gate;
 mod heap;
 mod history;
+#[cfg(unix)]
 mod holder;
 mod hosts;
 mod ide;
@@ -31,6 +36,7 @@ mod mcp;
 mod mux;
 mod osc;
 mod pane;
+mod perm;
 mod paths;
 mod ports;
 mod procinfo;
@@ -41,6 +47,8 @@ mod remote;
 mod resident;
 mod review;
 mod roots;
+// The tailnet sandbox supervisor: Linux boxes.
+#[cfg(unix)]
 mod sandbox;
 mod seal;
 mod server;
@@ -537,6 +545,7 @@ fn daemon_id(store: &store::StateDir) -> String {
 
 /// `$SHELL`, else the login shell from the user database: launchd and some
 /// service managers don't set `$SHELL`, and macOS's `/bin/bash` is 3.2.
+#[cfg(unix)]
 fn login_shell() -> String {
     std::env::var("SHELL")
         .ok()
@@ -552,6 +561,7 @@ fn login_shell() -> String {
 /// long for a Unix socket (about 108 bytes); then `sock` in a directory of
 /// our own (0700) in `$XDG_RUNTIME_DIR` (else /tmp), named by a hash of the
 /// state directory, recorded in `sock.path`.
+#[cfg(unix)]
 fn socket_path(state_dir: &std::path::Path) -> anyhow::Result<PathBuf> {
     let plain = state_dir.join("sock");
     let record = state_dir.join("sock.path");
@@ -579,6 +589,7 @@ fn socket_path(state_dir: &std::path::Path) -> anyhow::Result<PathBuf> {
 /// `dir`, made 0700, or there already as a directory (not a link) of ours,
 /// made 0700: in a shared directory like /tmp, one someone else made first
 /// is refused, never used.
+#[cfg(unix)]
 fn private_socket_dir(dir: &std::path::Path) -> anyhow::Result<()> {
     use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
     match std::fs::DirBuilder::new().mode(0o700).create(dir) {
@@ -597,6 +608,7 @@ fn private_socket_dir(dir: &std::path::Path) -> anyhow::Result<()> {
 }
 
 /// A daemon is listening on `state_dir`'s CLI socket.
+#[cfg(unix)]
 fn daemon_running(state_dir: &std::path::Path) -> bool {
     use std::os::unix::ffi::OsStringExt;
     let path = std::fs::read(state_dir.join("sock.path"))
@@ -607,6 +619,7 @@ fn daemon_running(state_dir: &std::path::Path) -> bool {
 
 /// `<state>/editors/sock`, in a 0700 directory with nothing else in it, for
 /// a dev container to mount (M28).
+#[cfg(unix)]
 fn editors_socket(state_dir: &std::path::Path) -> std::io::Result<tokio::net::UnixListener> {
     use std::os::unix::fs::PermissionsExt;
     let dir = state_dir.join("editors");
@@ -620,19 +633,43 @@ fn editors_socket(state_dir: &std::path::Path) -> std::io::Result<tokio::net::Un
 }
 
 fn default_state_dir() -> PathBuf {
+    // Windows: beside the desktop app, which its installer puts in
+    // %LOCALAPPDATA%\illogical (M54).
+    #[cfg(windows)]
+    if let Some(d) = std::env::var_os("LOCALAPPDATA") {
+        return PathBuf::from(d).join("illogical").join("state");
+    }
     std::env::var_os("XDG_STATE_HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|| home().join(".local/state"))
         .join("illogical")
 }
 
+/// Windows: the daemon's named pipe comes in M56 (#219).
+#[cfg(not(unix))]
+fn daemon_running(_state_dir: &std::path::Path) -> bool {
+    false
+}
+
+/// This computer's name, for joining.
+fn hostname() -> Option<String> {
+    #[cfg(unix)]
+    return nix::unistd::gethostname().ok().and_then(|h| h.into_string().ok());
+    #[cfg(not(unix))]
+    std::env::var("COMPUTERNAME").ok()
+}
+
 fn home() -> PathBuf {
-    std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| "/".into())
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+        .unwrap_or_else(|| "/".into())
 }
 
 fn main() -> anyhow::Result<()> {
     // The pane shim forks, so it runs before any threads exist.
     let argv: Vec<String> = std::env::args().collect();
+    #[cfg(unix)]
     if argv.get(1).map(String::as_str) == Some("_shim") {
         shim::run(&argv[2..]);
     }
@@ -649,12 +686,14 @@ fn main() -> anyhow::Result<()> {
         return Ok(());
     }
     // Claude Code's IDE connections, kept across daemon restarts (M28).
+    #[cfg(unix)]
     if argv.get(1).map(String::as_str) == Some("_ide_relay") && argv.len() >= 4 {
         let args = ide::relay::Args { dir: argv[2].clone().into(), lock_dir: argv[3].clone().into() };
         return Ok(tokio::runtime::Runtime::new()?.block_on(ide::relay::run(args))?);
     }
     let args = Args::parse();
     match args.command {
+        #[cfg(unix)]
         Some(Command::Install {
             tailnet: Some(authkey),
             home,
@@ -671,10 +710,13 @@ fn main() -> anyhow::Result<()> {
         Some(Command::Install { no_start, reset_args, daemon_args, .. }) => {
             install::install(!no_start, &daemon_args, reset_args)
         }
+        #[cfg(unix)]
         Some(Command::Sandbox) => sandbox::supervise(),
+        #[cfg(not(unix))]
+        Some(Command::Sandbox) => anyhow::bail!("the sandbox supervisor is for Linux boxes"),
         Some(Command::Join { url, name, team, account, ticket, state_dir }) => {
             let name = name.unwrap_or_else(|| {
-                nix::unistd::gethostname().ok().and_then(|h| h.into_string().ok()).unwrap_or_else(|| "illogical".into())
+                hostname().unwrap_or_else(|| "illogical".into())
             });
             let dir = state_dir.unwrap_or_else(default_state_dir);
             tokio::runtime::Runtime::new()?.block_on(control::join(
@@ -700,6 +742,9 @@ fn main() -> anyhow::Result<()> {
             let listen = std::fs::read_to_string(dir.join("listen")).unwrap_or_else(|_| "127.0.0.1:7681".into());
             tokio::runtime::Runtime::new()?.block_on(control::leave(&dir, listen.trim()))
         }
+        #[cfg(not(unix))]
+        None => anyhow::bail!("illogicald doesn't run panes on Windows yet (M56, #219)"),
+        #[cfg(unix)]
         None => {
             heap::tune();
             // Pane terminals kept for us across a restart; taken before any
@@ -710,6 +755,7 @@ fn main() -> anyhow::Result<()> {
     }
 }
 
+#[cfg(unix)]
 async fn run(
     mut args: RunArgs,
     mut kept: std::collections::HashMap<String, std::os::fd::OwnedFd>,
@@ -790,7 +836,7 @@ async fn run(
         status
             .as_ref()
             .and_then(|t| t.host.split('.').next().map(str::to_owned))
-            .or_else(|| nix::unistd::gethostname().ok().and_then(|h| h.into_string().ok()))
+            .or_else(hostname)
             .unwrap_or_else(|| "illogical".into())
     });
     info!(name, "this host");

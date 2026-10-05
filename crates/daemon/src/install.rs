@@ -4,17 +4,16 @@
 
 use std::{
     fs,
-    os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     process::Command,
 };
 
 use anyhow::{Context, bail};
 
-#[cfg_attr(target_os = "macos", allow(dead_code))]
+#[cfg_attr(any(target_os = "macos", windows), allow(dead_code))]
 const UNIT: &str = "illogicald.service";
 
-#[cfg_attr(target_os = "macos", allow(dead_code))]
+#[cfg_attr(any(target_os = "macos", windows), allow(dead_code))]
 fn unit_text(args: &[String]) -> String {
     let args: String = args.iter().map(|a| format!(" {a}")).collect();
     format!(
@@ -44,7 +43,7 @@ WantedBy=default.target
     )
 }
 
-#[cfg_attr(target_os = "macos", allow(dead_code))]
+#[cfg_attr(any(target_os = "macos", windows), allow(dead_code))]
 fn systemctl(args: &[&str]) -> anyhow::Result<()> {
     let status = Command::new("systemctl")
         .arg("--user")
@@ -96,7 +95,7 @@ fn next_steps(args: &[String], logs: &str) -> String {
 }
 
 /// Arguments in a unit `unit_text` wrote.
-#[cfg_attr(target_os = "macos", allow(dead_code))]
+#[cfg_attr(any(target_os = "macos", windows), allow(dead_code))]
 fn unit_args(unit: &str) -> Option<Vec<String>> {
     let line = unit.lines().find_map(|l| l.strip_prefix("ExecStart=%h/.local/bin/illogicald"))?;
     Some(line.split_whitespace().map(String::from).collect())
@@ -107,7 +106,13 @@ pub fn install(start: bool, daemon_args: &[String], reset: bool) -> anyhow::Resu
     launchd::install(start, daemon_args, reset)
 }
 
-#[cfg(not(target_os = "macos"))]
+/// Windows: a logon task, in M59 (#222).
+#[cfg(windows)]
+pub fn install(_start: bool, _daemon_args: &[String], _reset: bool) -> anyhow::Result<()> {
+    bail!("illogicald install isn't on Windows yet (M59, #222)")
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
 pub fn install(start: bool, daemon_args: &[String], reset: bool) -> anyhow::Result<()> {
     let home = PathBuf::from(std::env::var_os("HOME").context("HOME is not set")?);
     copy_binaries(&home)?;
@@ -152,7 +157,7 @@ pub fn copy_binaries(home: &Path) -> anyhow::Result<PathBuf> {
         // Copy then rename, so a running daemon's binary is replaced whole.
         let tmp = bin_dir.join(".illogicald.new");
         fs::copy(&exe, &tmp).with_context(|| format!("copying {}", exe.display()))?;
-        fs::set_permissions(&tmp, fs::Permissions::from_mode(0o755))?;
+        crate::perm::set(&tmp, 0o755)?;
         fs::rename(&tmp, &dest)?;
         println!("installed {}", dest.display());
     }
@@ -162,7 +167,7 @@ pub fn copy_binaries(home: &Path) -> anyhow::Result<PathBuf> {
     if let Some(cli) = exe.parent().map(|d| d.join("illogical")).filter(|p| p.exists()) {
         let tmp = bin_dir.join(".illogical.new");
         fs::copy(&cli, &tmp).with_context(|| format!("copying {}", cli.display()))?;
-        fs::set_permissions(&tmp, fs::Permissions::from_mode(0o755))?;
+        crate::perm::set(&tmp, 0o755)?;
         fs::rename(&tmp, bin_dir.join("illogical"))?;
         println!("installed {}", bin_dir.join("illogical").display());
     } else {
@@ -259,7 +264,11 @@ mod launchd {
         fs::write(&plist, plist_text(&exe.display().to_string(), &args, &log.display().to_string()))?;
         println!("wrote {}", plist.display());
 
-        let domain = format!("gui/{}", nix::unistd::getuid());
+        #[cfg(unix)]
+        let uid = nix::unistd::getuid();
+        #[cfg(not(unix))]
+        let uid = 0;
+        let domain = format!("gui/{uid}");
         let service = format!("{domain}/{LABEL}");
         if start {
             // In case it was disabled (`launchctl disable`) before.
