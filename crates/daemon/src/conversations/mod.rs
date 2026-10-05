@@ -704,6 +704,8 @@ mod tests {
         .unwrap();
     }
 
+    // Unix: starts processes with sh.
+    #[cfg(unix)]
     #[test]
     fn live_sessions_are_checked_against_their_start_time() {
         let root = tmp("live");
@@ -741,6 +743,8 @@ mod tests {
         }
     }
 
+    // Unix: starts processes with sh and reads their ancestry.
+    #[cfg(unix)]
     #[test]
     fn a_holder_is_placed_by_its_ancestors() {
         let root = tmp("ours");

@@ -159,7 +159,8 @@ mod tests {
             .arg(&path)
             .output();
         let _ = std::fs::remove_file(&path);
-        let Ok(out) = out else { return };
+        // No python3 (or Windows' Store stand-in for one): nothing to check with.
+        let Ok(out) = out.filter(|o| !String::from_utf8_lossy(&o.stderr).contains("Microsoft Store")) else { return };
         assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
         let names = String::from_utf8_lossy(&out.stdout);
         for n in [

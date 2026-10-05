@@ -428,7 +428,10 @@ impl PaneLog {
     /// The pane closed: keep its history a while (for `illogical history`
     /// and `search`) under `closed/<id>-<time>`.
     pub fn retire(self, pane: PaneId) {
-        retire_dir(&self.dir, pane);
+        // Closed first: Windows won't move a directory with open files.
+        let dir = self.dir.clone();
+        drop(self);
+        retire_dir(&dir, pane);
     }
 }
 

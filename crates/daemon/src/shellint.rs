@@ -119,6 +119,8 @@ mod tests {
         }
     }
 
+    // Unix: bash's integration (PowerShell's is M60, #223).
+    #[cfg(unix)]
     #[test]
     fn bash_login_becomes_posix_with_env() {
         let i = Integration { dir: "/x".into() };

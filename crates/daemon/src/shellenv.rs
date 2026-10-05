@@ -353,6 +353,8 @@ mod tests {
         }
     }
 
+    // Unix: runs bash.
+    #[cfg(unix)]
     #[tokio::test]
     async fn an_rc_file_adds_to_path_and_its_noise_is_ignored() {
         let home =
@@ -378,6 +380,8 @@ mod tests {
         assert!(env.contains(&("ILLOGICAL_PANE".into(), "7".into())));
     }
 
+    // Unix: runs bash.
+    #[cfg(unix)]
     #[tokio::test]
     async fn a_slow_rc_file_falls_back() {
         let home = Home::new("slow", "sleep 30\nexport PATH=\"$HOME/tools/bin:$PATH\"\n");
@@ -391,6 +395,8 @@ mod tests {
         assert_eq!(merge(&block, &r, None), block);
     }
 
+    // Unix: runs bash.
+    #[cfg(unix)]
     #[tokio::test]
     async fn a_broken_shell_falls_back() {
         let home = Home::new("broken", "exit 3\n");

@@ -631,6 +631,8 @@ exec "$root/bin/code-server" --config "$d/config.yaml" --user-data-dir "$d/user"
 mod tests {
     use super::*;
 
+    // code-server here is Linux's and macOS's.
+    #[cfg(unix)]
     #[test]
     fn every_platform_has_a_checksum() {
         for p in ["linux-amd64", "linux-arm64", "macos-amd64", "macos-arm64"] {
@@ -640,6 +642,8 @@ mod tests {
         assert!(platform().is_some());
     }
 
+    // code-server here is Linux's and macOS's.
+    #[cfg(unix)]
     #[test]
     fn flags_keep_it_to_its_own_folder() {
         let a = args(Path::new("/s/editor"), 30, 300);
@@ -653,6 +657,8 @@ mod tests {
         assert!(a.contains(&"--disable-workspace-trust".to_owned()));
     }
 
+    // code-server here is Linux's and macOS's.
+    #[cfg(unix)]
     #[test]
     fn settings_and_extension_go_in_once() {
         let dir = std::env::temp_dir().join(format!("ilg-editor-{}", unique()));
