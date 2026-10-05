@@ -23,6 +23,8 @@ exec node -e "$2" "$1" "$3""#;
 
 /// The reads. `process.argv`: root, env. Which chant: `$CHANT`, else
 /// `node_modules/.bin/chant` here or in the nearest parent, else PATH.
+/// The declaration's `agents` (#304) are read from its file, since no read
+/// prints them: `null` when it isn't plain JSON.
 pub const READER: &str = r#"
 const { execFile } = require("child_process"), fs = require("fs"), path = require("path");
 const [root, env] = process.argv.slice(1);
@@ -49,8 +51,13 @@ function up(found) {
     if (fs.existsSync(path.join(d, ".git")) || d === path.dirname(d)) return null;
   }
 }
-const declared = up((d) => ["chant.workspace.json", "chant.workspace.jsonc"].some((f) => fs.existsSync(path.join(d, f)))) !== null;
+const declDir = up((d) => ["chant.workspace.json", "chant.workspace.jsonc"].some((f) => fs.existsSync(path.join(d, f))));
+const declared = declDir !== null;
 const gitRoot = up((d) => fs.existsSync(path.join(d, ".git")));
+// The agent sessions (ws-067), which no read prints: from the declaration
+// (a .jsonc one gives none).
+let agents = null;
+try { const a = JSON.parse(fs.readFileSync(path.join(declDir, "chant.workspace.json"), "utf8")).agents; agents = Array.isArray(a) ? a : []; } catch {}
 const [chant, how] = which();
 function run(args) {
   const t = Date.now();
@@ -61,7 +68,7 @@ function run(args) {
   }));
 }
 (async () => {
-  const doc = { root: here, declared, gitRoot, chant, how, env };
+  const doc = { root: here, declared, gitRoot, chant, how, env, agents };
   if (!chant) return console.log(JSON.stringify(doc));
   const t = Date.now();
   const [ls, check, records, status] = await Promise.all([
@@ -150,6 +157,9 @@ pub struct Member {
     pub diagnostics: Vec<Diagnostic>,
     pub releases: usize,
     pub gates: usize,
+    /// The agent sessions the declaration binds to it (ws-067): an agent
+    /// started here runs as the first (#304).
+    pub agents: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -363,6 +373,12 @@ pub fn compose(raw: &Value, env: &str) -> State {
                 .then(|| s(&m["reason"]["message"]).or_else(|| s(&m["reason"]["code"])).unwrap_or_default()),
             ..Default::default()
         });
+    }
+    for a in raw["agents"].as_array().into_iter().flatten() {
+        let (Some(name), Some(on)) = (s(&a["name"]), s(&a["member"])) else { continue };
+        if let Some(m) = st.members.iter_mut().find(|m| m.name == on) {
+            m.agents.push(name);
+        }
     }
 
     // Declaration findings, onto the member they name. `WSP009` ("kind
@@ -822,6 +838,24 @@ mod tests {
         raw["reads"]["ls"]["json"]["members"][0]["kind"] = "workspace".into();
         let st = compose(&raw, "local");
         assert!(st.members[0].nested);
+    }
+
+    #[test]
+    fn declared_agent_sessions_go_on_their_member() {
+        let mut raw = fixture(include_str!("fixtures/reference-raw.json"));
+        raw["agents"] = serde_json::json!([
+            { "name": "app", "member": "app" },
+            { "name": "design", "member": "design" },
+            { "name": "ghost", "member": "nobody" },
+        ]);
+        let st = compose(&raw, "local");
+        let agents = |n: &str| st.members.iter().find(|m| m.name == n).unwrap().agents.clone();
+        assert_eq!(agents("app"), ["app"]);
+        assert_eq!(agents("design"), ["design"]);
+        assert!(agents("delivery").is_empty());
+        // A declaration that isn't plain JSON: no sessions, nothing else lost.
+        raw["agents"] = Value::Null;
+        assert!(compose(&raw, "local").members.iter().all(|m| m.agents.is_empty()));
     }
 
     #[test]

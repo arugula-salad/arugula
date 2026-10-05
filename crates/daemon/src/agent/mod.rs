@@ -48,6 +48,7 @@
 //! happens by itself (`none` and `rerun-ask` wait for "Resume").
 
 pub mod adapters;
+pub mod chant;
 pub mod defs;
 pub mod images;
 mod link;
@@ -129,6 +130,10 @@ pub struct Config {
     /// it's loaded, or the block stops with the reason. Never a new session.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub follow: bool,
+    /// Started from a chant workspace member (#304): it runs as the
+    /// member's agent session and writes a run record per turn.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chant: Option<chant::Chant>,
 }
 
 /// Where an opened conversation came from (M33). Until it's continued the
@@ -222,6 +227,9 @@ pub struct TurnStat {
     pub cost: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tokens: Option<Value>,
+    /// Its run in the chant workspace's run ledger (#304).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub run: Option<String>,
     #[serde(skip)]
     cost_base: Option<f64>,
 }
@@ -348,6 +356,12 @@ struct Inner {
     /// #379: which login its Claude Code uses and how to log in to it,
     /// said when a turn fails on authentication.
     login: Option<String>,
+    /// #304: the chant run ledger's writer, for an agent started from a
+    /// workspace member.
+    runs: Option<mpsc::UnboundedSender<chant::Write>>,
+    /// #304: the run of a prompt the agent asked to retry, for when it goes
+    /// again.
+    carry_run: Option<String>,
 }
 
 enum Msg {
@@ -415,6 +429,8 @@ impl Inner {
             awaiting_shell: false,
             token: None,
             login: None,
+            runs: None,
+            carry_run: None,
         }
     }
 
@@ -654,6 +670,18 @@ impl Inner {
                 self.t.note(msg.clone(), at);
                 self.error = Some(msg);
             }
+            // #304: the turn's run in the chant workspace's ledger.
+            "run" => {
+                if let Some(t) = self.turns.last_mut().filter(|t| t.run.is_none()) {
+                    t.run = e["id"].as_str().map(str::to_owned);
+                }
+            }
+            "run_failed" => {
+                let verb = if e["verb"] == "end" { "the end of" } else { "" };
+                let what = format!("{verb} run {}", e["id"].as_str().unwrap_or("?"));
+                let why = e["message"].as_str().unwrap_or("?");
+                self.t.note(format!("Couldn't record {} in chant: {why}", what.trim()), at);
+            }
             _ => {}
         }
     }
@@ -702,6 +730,7 @@ impl Inner {
                             prompt: text.chars().take(120).collect(),
                             started_ms: at,
                             cost_base: self.cost,
+                            run: self.carry_run.take(),
                             ..Default::default()
                         });
                         Purpose::Prompt
@@ -793,7 +822,8 @@ impl Inner {
                     (Purpose::Prompt, Some(e)) if e.contains("retry") => {
                         self.prompt_id = None;
                         self.status = Status::Ready;
-                        self.turns.pop();
+                        // Its run goes on with the prompt sent again.
+                        self.carry_run = self.turns.pop().and_then(|t| t.run);
                         if let Some(Entry::User { text, images, .. }) = self.t.entries.last().cloned() {
                             self.t.entries.pop();
                             fx.push(Effect::Retry(Queued { text, images }));
@@ -1150,7 +1180,19 @@ impl Agent {
             inner.token = Some(link.tokens.block_token(ctx.id));
         }
         let (tx, rx) = mpsc::unbounded_channel();
+        let member = inner.cfg.chant.clone();
         let agent = Arc::new(Agent { ctx: ctx.clone(), inner: Arc::new(Mutex::new(inner)), tx });
+        // #304: its run records, written in order, each noted in its log.
+        if let Some(c) = member {
+            let (inner, tx) = (Arc::downgrade(&agent.inner), agent.tx.clone());
+            let runs = chant::writer(&ctx, c, move |e| {
+                if let Some(inner) = inner.upgrade() {
+                    inner.lock().unwrap().note(e);
+                    let _ = tx.send(Msg::Changed);
+                }
+            });
+            agent.inner.lock().unwrap().runs = Some(runs);
+        }
         agent.begin();
         ctx.rt.spawn(run(agent.ctx.clone(), agent.inner.clone(), agent.tx.clone(), rx));
         Ok(agent)
@@ -1351,6 +1393,9 @@ impl Agent {
                 let shell = self.ctx.shell_env.local_now().unwrap_or_default();
                 let mut env = crate::shellenv::merge(&self.ctx.env, &shell, self.ctx.launch.exe.parent());
                 env.extend(launch.env.iter().cloned());
+                // #304: the member's agent session, which chant judges its
+                // writes by.
+                env.extend(session_env(&inner.cfg));
                 // M44 and #128: what the session's `${…}`s stand for, in the
                 // adapter's environment (its own and its children's: never
                 // on a command line).
@@ -1414,6 +1459,7 @@ impl Agent {
                 if inner.cfg.def.agent == Kind::Claude {
                     inner.note(json!({ "e": "login", "login": vm_login(&self.ctx) }));
                 }
+                secret.extend(session_env(&inner.cfg));
                 let begin = link::VmBegin::New {
                     npm: launch.npm.map(str::to_owned),
                     cwd: inner.cfg.cwd.clone().unwrap_or_else(|| "/home/sprite".into()),
@@ -1928,6 +1974,11 @@ fn act(ctx: &BlockCtx, g: &mut Inner, f: Effect) {
             // and no exit code: a turn that stopped early isn't a failure of
             // anything that ran.
             if let Some(t) = g.turns.last().cloned() {
+                // #304: and the end of its run in the chant ledger.
+                if let (Some(runs), Some(id)) = (&g.runs, t.run.clone()) {
+                    let fields = chant::end_fields(&t, g.currency.as_deref(), &chant::harness(&g.cfg.def));
+                    let _ = runs.send(chant::Write::End { id, fields });
+                }
                 let cwd = g.cfg.cwd.clone();
                 let label = format!("{}: {}", g.cfg.def.label(), t.prompt.lines().next().unwrap_or(""));
                 if let Some(log) = g.log.as_mut() {
@@ -2104,11 +2155,50 @@ fn new_session(ctx: &BlockCtx, g: &mut Inner, cwd: &str) {
         g.note(json!({ "e": "error", "message": "The Fountain agent isn't worn yet: no session opened" }));
         return;
     }
-    let meta = imported_meta(g)
+    let mut meta = imported_meta(g)
         .or_else(|| worn_meta(ctx, g))
         .unwrap_or_else(|| g.cfg.def.launch(&ctx.home, ctx.sprite.is_some()).map(|l| l.meta).unwrap_or_default());
+    // #304: Claude is told the chant session it runs as, for its commits.
+    if g.cfg.def.agent == Kind::Claude
+        && let Some(say) = g.cfg.chant.as_ref().and_then(chant::system_prompt)
+    {
+        if !meta.is_object() {
+            meta = json!({});
+        }
+        let had = meta["systemPrompt"]["append"].as_str().map(|a| format!("{a}\n\n")).unwrap_or_default();
+        meta["systemPrompt"]["append"] = json!(format!("{had}{say}"));
+    }
     let mcp = g.servers(ctx);
     g.request("session/new", json!({ "cwd": cwd, "mcpServers": mcp, "_meta": meta }));
+}
+
+/// #304: `CHANT_AGENT` for an agent started from a workspace member whose
+/// declaration binds it a session.
+fn session_env(cfg: &Config) -> Option<(String, String)> {
+    let a = cfg.chant.as_ref()?.agent.clone()?;
+    Some((chant::AGENT_ENV.into(), a))
+}
+
+/// #304: the start of a turn's run in the chant ledger, once its prompt has
+/// gone (not again for a prompt sent again after "retry").
+fn start_run(ctx: &BlockCtx, g: &mut Inner, prompt: &str) {
+    let (Some(c), Some(t)) = (g.cfg.chant.clone(), g.turns.last()) else { return };
+    if g.runs.is_none() || t.run.is_some() {
+        return;
+    }
+    let id = chant::run_id(ctx.id, t.started_ms);
+    let fields = chant::start_fields(
+        &c,
+        &id,
+        t.started_ms,
+        &chant::harness(&g.cfg.def),
+        chant::model(&g.config_options).as_deref(),
+        prompt,
+    );
+    g.note(json!({ "e": "run", "id": id }));
+    if let Some(runs) = &g.runs {
+        let _ = runs.send(chant::Write::Start { id, fields });
+    }
 }
 
 /// Send the next queued prompt, if the agent can take it.
@@ -2145,6 +2235,7 @@ fn send_next(ctx: &BlockCtx, g: &mut Inner) {
         params["_meta"] = json!({ "clientRequestId": format!("arugula-{}-{}", ctx.id, g.next_id) });
     }
     g.request("session/prompt", params);
+    start_run(ctx, g, &q.text);
 }
 
 impl Agent {

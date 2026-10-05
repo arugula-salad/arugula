@@ -15,6 +15,7 @@ interface Diagnostic { rule: string; severity: string; message: string; file: st
 interface Member {
   name: string; dir: string; path: string; kind: string; because: string | null; roles: string[]; nested: boolean;
   unreadable: string | null; errors: number; warnings: number; diagnostics: Diagnostic[]; releases: number; gates: number;
+  agents: string[];
 }
 interface Rec { kind: string; id: string; title: string | null; state: string | null; ready: boolean | null; blocked_by: string[]; warnings: string[]; valid: boolean }
 interface Read { name: string; ms: number; code: number; ok: boolean; note: string | null; reason: string | null }
@@ -118,7 +119,16 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
   const mayOpen = role === "owner";
   const beside = { split: id, from_pane: id };
   const shell = (cwd: string) => void client.make("/api/run", { ...beside, cwd } satisfies RunRequest).then((e) => e && client.toast(e));
-  const agent = (m: Member) => void client.openBlock({ type: "agent", config: { agent: "claude", cwd: m.path }, ...beside }, "couldn't start the agent");
+  // #304: as the member's agent session (CHANT_AGENT), writing a run record per turn.
+  const agent = (m: Member) =>
+    void client.openBlock(
+      {
+        type: "agent",
+        config: { agent: "claude", cwd: m.path, chant: { root: s?.root, member: m.name, agent: m.agents[0], chant: s?.chant ?? undefined } },
+        ...beside,
+      },
+      "couldn't start the agent",
+    );
   const changes = (m: Member) => void client.openBlock({ type: "diff", config: { repo: m.path }, ...beside }, "couldn't show the changes");
   const nested = (m: Member) => openWorkspace(client, m.path, id, s?.env ?? "local");
   const runOp = (g: Gate) =>
@@ -279,7 +289,12 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
                         ) : (
                           <>
                             <button onClick={() => shell(m.path)}>Shell</button>
-                            <button onClick={() => agent(m)}>Agent</button>
+                            <button
+                              title={m.agents[0] ? `As agent session ${m.agents[0]}` : "The declaration binds no agent session to this member"}
+                              onClick={() => agent(m)}
+                            >
+                              Agent
+                            </button>
                             <button onClick={() => changes(m)}>Changes</button>
                           </>
                         )}
