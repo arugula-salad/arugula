@@ -19,15 +19,17 @@ hkdf = "0.13.0"
 http-body-util = "0.1.5"
 hyper = { version = "1.11.1", features = ["http1", "client", "server"] }
 hyper-util = { version = "0.1.21", features = ["tokio"] }
-illogical-core = { version = "0.17.0", path = "../core" }
-illogical-e2e = { version = "0.17.0", path = "../e2e" }
-illogical-proto = { version = "0.17.0", path = "../proto" }
-illogical-vt = { version = "0.17.0", path = "../vt" }
+illogical-core = { version = "0.18.0", path = "../core" }
+illogical-e2e = { version = "0.18.0", path = "../e2e" }
+illogical-proto = { version = "0.18.0", path = "../proto" }
+illogical-vt = { version = "0.18.0", path = "../vt" }
 instant-acme = { version = "0.8.5", features = ["rcgen"] }
 p256 = { version = "0.14.0", features = ["ecdh", "ecdsa"] }
 regex = "1.13.1"
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "http2", "json"] }
 rustls-platform-verifier = "0.7.1"
+# The guest ssh server (M65).
+russh = { version = "0.64.0", default-features = false, features = ["aws-lc-rs"] }
 rust-embed = { version = "8.12.0", features = ["mime-guess"] }
 # MCP (M16), pinned: 3.x moves fast (S14).
 rmcp = { version = "=3.5.0", default-features = false, features = ["server", "schemars", "transport-io", "transport-streamable-http-server"] }
@@ -60,6 +62,7 @@ workspace = true
 
 [dev-dependencies]
 futures-util = "0.3.34"
+illogical-testkit = { path = "../testkit" }
 rmcp = { version = "=3.5.0", default-features = false, features = ["client", "transport-streamable-http-client-reqwest", "transport-child-process"] }
 rcgen = "0.14.10"
 

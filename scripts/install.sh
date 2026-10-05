@@ -26,6 +26,10 @@ case "$(uname -s)/$(uname -m)" in
   Linux/x86_64 | Linux/amd64) target=x86_64-unknown-linux-musl ;;
   Linux/aarch64 | Linux/arm64) target=aarch64-unknown-linux-musl ;;
   Darwin/arm64) target=aarch64-apple-darwin ;;
+  # An Intel Mac, or a shell under Rosetta on Apple silicon (which gets the
+  # native build).
+  Darwin/x86_64)
+    if [ "$(sysctl -n hw.optional.arm64 2>/dev/null)" = 1 ]; then target=aarch64-apple-darwin; else target=x86_64-apple-darwin; fi ;;
   *) die "no release for $(uname -s) $(uname -m); build from source: $repo/blob/main/docs/development.md" ;;
 esac
 
@@ -82,7 +86,10 @@ fi
 # or the default.
 listen=127.0.0.1:7681
 if [ "$os" = Darwin ]; then
-  args=$(sed -n 's:.*<string>\(.*\)</string>.*:\1:p' "$HOME/Library/LaunchAgents/illogicald.plist" 2>/dev/null || true)
+  plist="$HOME/Library/LaunchAgents/illogicald.plist"
+  # Or the LaunchDaemon `illogicald install --system` wrote.
+  [ -f "$plist" ] || plist="/Library/LaunchDaemons/illogicald.$(id -un).plist"
+  args=$(sed -n 's:.*<string>\(.*\)</string>.*:\1:p' "$plist" 2>/dev/null || true)
 else
   args=$(sed -n 's/^ExecStart=[^ ]*//p' "$HOME/.config/systemd/user/illogicald.service" 2>/dev/null || true)
 fi

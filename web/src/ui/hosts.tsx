@@ -2,6 +2,7 @@
 // phone's sheet. Each host has its own sessions and tabs; switching shows
 // that host's layout, connected straight to it.
 
+import { Fragment } from "preact";
 import { directory } from "../hosts";
 import type { Fleet } from "../fleet";
 import { useSubscribe } from "./hooks";
@@ -78,7 +79,28 @@ function useHosts(): boolean {
   useSubscribe((fn) => directory.subscribe(fn));
   useSubscribe((fn) => fleet?.subscribe(fn) ?? (() => {}));
   useSubscribe((fn) => subscribeRunners(fn));
-  return directory.control || directory.names.length > 1 || directory.shown !== null;
+  return directory.control || directory.names.length > 1 || directory.shown !== null || !!directory.joined;
+}
+
+/** M49: on a joined daemon's own page, the way to the account's other
+ * machines is control's page, not a list here. */
+function allMachines(): MenuItem[] {
+  const url = directory.joined;
+  if (directory.control || !url) return [];
+  return [{ label: "All your machines…", run: () => void window.open(url, "_blank", "noopener") }];
+}
+
+/** M30: hosts grouped by whose they are (yours, each teammate's, each
+ * team's); one group while there's only one person. */
+function hostGroups(): { label: string; names: string[] }[] {
+  const groups = new Map<string, { label: string; names: string[] }>();
+  for (const name of directory.names) {
+    const h = fleet?.host(name);
+    const p = h ? fleet!.personOf(h) : { id: "me", name: "", kind: "me" as const };
+    const label = p.kind === "me" ? "Yours" : p.kind === "team" ? `Team ${p.name}` : `${p.name}'s`;
+    (groups.get(p.id) ?? groups.set(p.id, { label, names: [] }).get(p.id)!).names.push(name);
+  }
+  return [...groups.values()];
 }
 
 /** Desktop: the shown host, opening a menu of the others. */
@@ -90,25 +112,26 @@ export function HostButton() {
       label: `${name === directory.current ? "✓ " : "    "}${name}${name === directory.home ? " (home)" : ""}  · ${fleetLabel(name) ?? seen(name)}${runnerSuffix(name)}`,
       run: () => directory.select(name),
     });
-    // M30: grouped by whose they are (yours, each teammate's, each team's)
-    // once there's more than one person.
-    const groups = new Map<string, { label: string; names: string[] }>();
-    for (const name of directory.names) {
-      const h = fleet?.host(name);
-      const p = h ? fleet!.personOf(h) : { id: "me", name: "", kind: "me" as const };
-      const label = p.kind === "me" ? "Yours" : p.kind === "team" ? `Team ${p.name}` : `${p.name}'s`;
-      (groups.get(p.id) ?? groups.set(p.id, { label, names: [] }).get(p.id)!).names.push(name);
-    }
+    const groups = hostGroups();
     const items: MenuItem[] =
-      groups.size > 1
-        ? [...groups.values()].flatMap((g) => [{ header: g.label } as MenuItem, ...g.names.map(item)])
+      groups.length > 1
+        ? groups.flatMap((g) => [{ header: g.label } as MenuItem, ...g.names.map(item)])
         : directory.names.map(item);
+    // M51: boxes reached over ssh, which only a terminal can open.
+    if (directory.sshOnly.length) {
+      items.push("separator", { header: "From a terminal (ssh)" } as MenuItem);
+      for (const h of directory.sshOnly) {
+        items.push({ label: `    ${h.name}  · illogical --host ${h.name} tui`, disabled: true, run: () => {} });
+      }
+    }
     items.push("separator", { label: "Swarm: every pane at once", run: openSwarm });
     if (fleet?.notice) items.push("separator", { label: fleet.notice, disabled: true, run: () => {} });
     if (directory.stale) {
       const what = directory.control ? "Control unreachable: saved list" : "Home daemon unreachable: saved list";
       items.push("separator", { label: what, disabled: true, run: () => {} });
     }
+    const all = allMachines();
+    if (all.length) items.push("separator", ...all);
     items.push(...extras());
     openMenu({ clientX: r.left, clientY: r.bottom + 4, preventDefault: () => e.preventDefault() }, items);
   };
@@ -157,47 +180,58 @@ export function HostCrumb() {
 /** Phone: a section of the sheet listing every host. */
 export function HostSection({ close }: { close: () => void }) {
   if (!useHosts()) return null;
+  const groups = hostGroups();
   return (
     <section class="sheet-hosts">
-      <h2>Hosts{directory.stale ? " (saved list)" : ""}</h2>
-      {directory.names.map((name) => (
-        <button
-          key={name}
-          class={name === directory.current ? "sheet-item sheet-host current" : "sheet-item sheet-host"}
-          data-host={name}
-          onClick={() => {
-            directory.select(name);
-            close();
-          }}
-        >
-          {name}
-          <span class="host-seen" data-fleet={fleet?.host(name)?.state}>
-            {name === directory.home ? "home · " : ""}
-            {fleetLabel(name) ?? seen(name)}
-          </span>
-          {runnerOf(name) && (
-            <span class={`host-seen host-runner${runnerOf(name)!.problem ? " problem" : ""}`} data-fountain-runner={runnerOf(name)!.name} title={runnerOf(name)!.problem ?? ""}>
-              {runnerLabel(runnerOf(name)!)}
-            </span>
-          )}
-        </button>
-      ))}
-      {extras().flatMap((item) =>
-        typeof item === "object" && "run" in item
-          ? [
+      <h2>Machines{directory.stale ? " (saved list)" : ""}</h2>
+      {groups.map((g) => (
+        <Fragment key={g.label}>
+          {groups.length > 1 && <h3>{g.label}</h3>}
+          <div class="sheet-chips">
+            {g.names.map((name) => (
               <button
-                key={item.label}
-                class="sheet-item"
+                key={name}
+                class={name === directory.current ? "chip sheet-host current" : "chip sheet-host"}
+                aria-pressed={name === directory.current}
+                data-host={name}
                 onClick={() => {
-                  item.run();
+                  directory.select(name);
                   close();
                 }}
               >
-                {item.label}
-              </button>,
-            ]
-          : [],
-      )}
+                <span class="host-name">{name}</span>
+                <span class="host-seen" data-fleet={fleet?.host(name)?.state}>
+                  {name === directory.home ? "home · " : ""}
+                  {fleetLabel(name) ?? seen(name)}
+                </span>
+                {runnerOf(name) && (
+                  <span class={`host-seen host-runner${runnerOf(name)!.problem ? " problem" : ""}`} data-fountain-runner={runnerOf(name)!.name} title={runnerOf(name)!.problem ?? ""}>
+                    {runnerLabel(runnerOf(name)!)}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        </Fragment>
+      ))}
+      <div class="sheet-chips">
+        {[...allMachines(), ...extras()].flatMap((item) =>
+          typeof item === "object" && "run" in item
+            ? [
+                <button
+                  key={item.label}
+                  class="chip"
+                  onClick={() => {
+                    item.run();
+                    close();
+                  }}
+                >
+                  {item.label}
+                </button>,
+              ]
+            : [],
+        )}
+      </div>
     </section>
   );
 }
