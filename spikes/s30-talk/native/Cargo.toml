@@ -23,6 +23,8 @@ hound = "3"
 ed25519-dalek = { version = "2", features = ["rand_core"] }
 rand = "0.8"
 base64 = "0.22"
+webrtc-audio-processing = { version = "2.1", features = ["bundled"] }
+webrtc-audio-processing-config = "2.1"
 
 [profile.release]
 strip = true

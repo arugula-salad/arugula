@@ -14,6 +14,18 @@ const types = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/ja
 
 const server = http.createServer((req, res) => {
   const u = new URL(req.url, "http://x");
+  if (req.method === "POST" && u.pathname === "/live") {
+    // One stats line per second from call.html?live=1, for watching a call.
+    let body = "";
+    req.on("data", (c) => (body += c));
+    req.on("end", () => {
+      let name = "unknown";
+      try { name = (JSON.parse(body).client || "unknown").replace(/[^\w.-]/g, "_"); } catch {}
+      fs.appendFileSync(path.join(dir, "reports", `live-${name}.jsonl`), body + "\n");
+      res.end("ok");
+    });
+    return;
+  }
   if (req.method === "POST" && u.pathname === "/report") {
     let body = "";
     req.on("data", (c) => (body += c));
@@ -26,6 +38,11 @@ const server = http.createServer((req, res) => {
       res.end("ok");
     });
     return;
+  }
+  // /p: the phone's call, with its settings (TURN_IP: where coturn listens).
+  if (u.pathname === "/p") {
+    res.writeHead(302, { location: `/call.html?room=phone1&live=1&client=iphone&relay=1&turn=turn:${process.env.TURN_IP || "127.0.0.1"}:3478&user=s30&pass=s30secret` });
+    return res.end();
   }
   const f = path.join(dir, path.normalize(u.pathname === "/" ? "/call.html" : u.pathname));
   if (!f.startsWith(dir) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) { res.statusCode = 404; return res.end(); }

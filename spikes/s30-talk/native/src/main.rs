@@ -55,10 +55,11 @@ struct Args {
     peer_key: Option<String>,
     seconds: u64,
     wav: Option<String>,
+    aec: bool,
 }
 
 fn args() -> Result<Args> {
-    let mut a = Args { ws: String::new(), mic: false, play: false, turn: None, relay: false, peer_key: None, seconds: 0, wav: None };
+    let mut a = Args { ws: String::new(), mic: false, play: false, turn: None, relay: false, peer_key: None, seconds: 0, wav: None, aec: true };
     let mut it = std::env::args().skip(1);
     let (mut turn, mut user, mut pass) = (None, String::new(), String::new());
     while let Some(k) = it.next() {
@@ -74,6 +75,7 @@ fn args() -> Result<Args> {
             "--peer-key" => a.peer_key = Some(v()?),
             "--seconds" => a.seconds = v()?.parse()?,
             "--wav" => a.wav = Some(v()?),
+            "--no-aec" => a.aec = false,
             _ => return Err(anyhow!("unknown argument {k}")),
         }
     }
@@ -89,6 +91,26 @@ fn fingerprints(sdp: &str) -> String {
     sdp.lines().filter(|l| l.starts_with("a=fingerprint:")).map(|l| l.trim()).collect::<Vec<_>>().join("\n")
 }
 
+const APM_FRAME: usize = 480; // AEC3 works on 10 ms frames
+
+/// Echo cancellation and noise suppression (AEC3, WebRTC's audio processing).
+struct Apm {
+    p: webrtc_audio_processing::Processor,
+}
+
+impl Apm {
+    fn new() -> Result<Self> {
+        use webrtc_audio_processing_config::{Config, EchoCanceller, NoiseSuppression};
+        let p = webrtc_audio_processing::Processor::new(RATE).map_err(|e| anyhow!("apm: {e:?}"))?;
+        p.set_config(Config {
+            echo_canceller: Some(EchoCanceller::Full { stream_delay_ms: None }),
+            noise_suppression: Some(NoiseSuppression::default()),
+            ..Default::default()
+        });
+        Ok(Self { p })
+    }
+}
+
 struct Counters {
     sent: AtomicU64,
     recv: AtomicU64,
@@ -101,6 +123,7 @@ struct Handler {
     counters: Arc<Counters>,
     received: Arc<StdMutex<Vec<i16>>>,
     playback: Option<Arc<StdMutex<std::collections::VecDeque<f32>>>>,
+    apm: Option<Arc<Apm>>,
 }
 
 #[async_trait::async_trait]
@@ -118,7 +141,9 @@ impl PeerConnectionEventHandler for Handler {
         let counters = self.counters.clone();
         let received = self.received.clone();
         let playback = self.playback.clone();
+        let apm = self.apm.clone();
         tokio::spawn(async move {
+            let mut render: Vec<f32> = Vec::new();
             let mut dec = opus::Decoder::new(RATE, opus::Channels::Mono).expect("opus decoder");
             let mut pcm = vec![0i16; FRAME * 6];
             while let Some(evt) = track.poll().await {
@@ -129,6 +154,14 @@ impl PeerConnectionEventHandler for Handler {
                     let rms = (frame.iter().map(|&s| (s as f64).powi(2)).sum::<f64>() / n.max(1) as f64).sqrt() / 32768.0;
                     counters.level_milli.store((rms * 1000.0) as u64, Ordering::Relaxed);
                     received.lock().unwrap().extend_from_slice(frame);
+                    // What goes to the speaker is the echo AEC3 must remove.
+                    if let Some(apm) = &apm {
+                        render.extend(frame.iter().map(|&s| s as f32 / 32768.0));
+                        while render.len() >= APM_FRAME {
+                            let mut f = vec![render.drain(..APM_FRAME).collect::<Vec<f32>>()];
+                            let _ = apm.p.process_render_frame(&mut f);
+                        }
+                    }
                     if let Some(pb) = &playback {
                         let mut q = pb.lock().unwrap();
                         q.extend(frame.iter().map(|&s| s as f32 / 32768.0));
@@ -259,7 +292,9 @@ async fn main() -> Result<()> {
     let received = Arc::new(StdMutex::new(Vec::<i16>::new()));
     let playback = a.play.then(|| Arc::new(StdMutex::new(std::collections::VecDeque::new())));
     let _speaker = match &playback { Some(q) => Some(start_speaker(q.clone())?), None => None };
-    let handler = Arc::new(Handler { gathered: gtx, state: stx, counters: counters.clone(), received: received.clone(), playback });
+    let apm = if a.aec && a.mic { Some(Arc::new(Apm::new()?)) } else { None };
+    eprintln!("echo cancellation: {}", if apm.is_some() { "AEC3 + noise suppression" } else { "off" });
+    let handler = Arc::new(Handler { gathered: gtx, state: stx, counters: counters.clone(), received: received.clone(), playback, apm: apm.clone() });
 
     let pc = PeerConnectionBuilder::new()
         .with_configuration(cfg.build())
@@ -361,12 +396,23 @@ async fn main() -> Result<()> {
         None
     };
     let (ftx, mut frx) = mpsc::channel::<Vec<u8>>(50);
+    let capture_apm = apm.clone();
     std::thread::spawn(move || {
         let mut enc = opus::Encoder::new(RATE, opus::Channels::Mono, opus::Application::Voip).expect("opus encoder");
+        let mut raw: Vec<f32> = Vec::new();
         let mut buf: Vec<f32> = Vec::new();
         let mut out = vec![0u8; 1500];
         while let Ok(chunk) = arx.recv() {
-            buf.extend(chunk);
+            if let Some(apm) = &capture_apm {
+                raw.extend(chunk);
+                while raw.len() >= APM_FRAME {
+                    let mut f = vec![raw.drain(..APM_FRAME).collect::<Vec<f32>>()];
+                    let _ = apm.p.process_capture_frame(&mut f);
+                    buf.extend(f.pop().unwrap());
+                }
+            } else {
+                buf.extend(chunk);
+            }
             while buf.len() >= FRAME {
                 let frame: Vec<f32> = buf.drain(..FRAME).collect();
                 if let Ok(n) = enc.encode_float(&frame, &mut out) {

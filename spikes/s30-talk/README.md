@@ -4,7 +4,7 @@ Run 2026-10-05 on geek (Ubuntu 26.04), jake-air (macOS 15.5) and the Win11 VM. T
 
 ## Answers
 
-- **Voice: go, with one native piece.** WebRTC works in Chrome, Firefox, Safari, WKWebView (the macOS app) and Edge/WebView2 (the Windows app), including relay-only calls through TURN.
+- **Voice: go, with one native piece; on iOS, the mic works only in the foreground.** WebRTC works in Chrome, Firefox, Safari, WKWebView (the macOS app) and Edge/WebView2 (the Windows app), including relay-only calls through TURN.
   - **The Linux desktop app's WebKitGTK has no WebRTC on any distro.** Upstream builds it only with experimental features.
   - The fallback works: a native Rust peer (webrtc-rs, Opus, cpal, AEC3) called Chrome on jake-air through TURN. 15 ms RTT, 0 loss, about 2% of a core.
 - **Team channels: go, with openmls.**
@@ -46,12 +46,12 @@ Run 2026-10-05 on geek (Ubuntu 26.04), jake-air (macOS 15.5) and the Win11 VM. T
 |---|---|---|---|---|---|
 | **Desktop app, Linux** (WebKitGTK 2.52.6, Ubuntu 26.04, geek) | **no**, even with `enable-webrtc` on | n/a | `getUserMedia` exists | no | **no-go in the webview → native fallback (go)** |
 | WebKitGTK on other distros (Fedora 44 2.54.0, Arch 2.52.6, Debian trixie 2.54.0 and sid 2.54.1, Tumbleweed 2.52.6) | **no** (no WebRTC backend in the library) | n/a | n/a | n/a | same |
-| **Desktop app, macOS** (WKWebView, macOS 15.5, jake-air) | yes | yes: 94 ms to connect, 6 ms RTT | refused when launched over ssh (macOS asks on behalf of sshd); **needs a GUI launch, Jake** | `RTCRtpScriptTransform` | **go** |
+| **Desktop app, macOS** (WKWebView, macOS 15.5, jake-air) | yes | yes: 94 ms to connect, 6 ms RTT | yes, launched from the GUI with `NSMicrophoneUsageDescription`: real mic, echo cancellation on. Launched over ssh it's refused, because macOS asks on behalf of sshd | `RTCRtpScriptTransform` | **go** |
 | **Desktop app, Windows** (Edge 154 headless, Win11 VM; same engine as WebView2) | yes | yes: 137 ms | fake device ok | both | **go** (WebView2 itself not run) |
 | Chrome (geek, jake-air) | yes | yes: 103–129 ms | Air's real mic ok | both | **go** |
 | Firefox (Playwright, geek) | yes | yes, on the tailnet IP; it refuses TURN on loopback | fake device ok | `RTCRtpScriptTransform` | **go** |
-| Safari (macOS 15.5, jake-air) | yes | yes: 93 ms, 7 ms RTT | the prompt went unanswered; **Jake** | `RTCRtpScriptTransform` | **go** (mic pending) |
-| Phone PWA (iOS) | not run | not run | not run | — | **unknown: Jake** (see "Left for Jake") |
+| Safari 18.5 (macOS 15.5, jake-air) | yes | yes: 93 ms, 7 ms RTT | yes: real mic, echo cancellation on | `RTCRtpScriptTransform` | **go** |
+| Phone PWA (iOS, from the home screen) | yes | yes: relay to relay with the Air, 8–11 ms RTT, 0 lost | yes, in the foreground. **In the background the mic stops** (see "Live checks") | not checked | **go, foreground only** |
 
 **Why Linux has none.** Upstream `Source/cmake/OptionsGTK.cmake` sets `ENABLE_WEB_RTC` to `${ENABLE_EXPERIMENTAL_FEATURES}`, which release builds leave off, and no distro turns it on. `ENABLE_MEDIA_STREAM` is on, which is why `getUserMedia` exists without `RTCPeerConnection`. Playwright's own WebKitGTK build, with experimental features on, does have it (libwebrtc symbols in the library, relay-only call ok). That build served as the positive control for the library check (`grep -a -c 'webrtc::PeerConnection'` finds 3 hits there and 0 in every distro build). Bundling our own WebKitGTK is out of the question for size and security updates.
 
@@ -66,13 +66,13 @@ Run 2026-10-05 on geek (Ubuntu 26.04), jake-air (macOS 15.5) and the Win11 VM. T
 
 | Measure | Value |
 |---|---|
-| Binary, stripped, standalone (tokio, rustls, ring, webrtc-rs, libopus) | 12.1 MB. The app already has tokio, so the real increase is smaller |
+| Binary, stripped, standalone (tokio, rustls, ring, webrtc-rs, libopus, AEC3) | 13.0 MB (12.1 MB without AEC3). The app already has tokio, so the real increase is smaller |
 | CPU, one call (Opus encode and decode, DTLS-SRTP, TURN) | 1.5–2% of one core on geek |
 | Connect time after the offer | 519 ms locally through TURN, 827 ms to the Air |
 | Echo cancellation (AEC3 via `webrtc-audio-processing` 2.1, bundled; `aec/`) | 22–28 dB of echo removed once converged; 5.7 ms per second of audio (about 0.6% of a core); +1.3 MB |
 
 Gaps and gotchas:
-- **Real mic capture on geek is unverified.** cpal opened ALSA's default device (PipeWire) and the speaker, but the default source (the OBSBOT Meet 2) delivered nothing, and `pw-record` got 0 bytes from it too. So this is geek's audio state, not the code. A live call with Jake will check it (see "Left for Jake").
+- **Real mic capture on geek is unverified.** cpal opened ALSA's default device (PipeWire) and the speaker, but the default source (the OBSBOT Meet 2) delivered nothing, and `pw-record` got 0 bytes from it too. So this is geek's audio state, not the code. Jake chose to skip it (see "Still open").
 - **Double talk** (both people speaking at once) through AEC3 can't be judged from a synthetic tone; it needs a listening test.
 - **Building:** `webrtc-audio-processing`'s bundled build needs meson and ninja (installed in a venv here) and libclang. bindgen needed `BINDGEN_EXTRA_CLANG_ARGS=-I/usr/lib/gcc/x86_64-linux-gnu/15/include` on geek because there are no clang headers. CI will need the same.
 - **webrtc-rs 0.21** is a rewrite on the sans-IO `rtc` crate, so expect its API to keep moving. It worked first time, TURN included. str0m wasn't tried because it has no TURN client, and the app needs one when both ends are behind NAT.
@@ -111,12 +111,21 @@ All of it, with numbers, is in [mls/FINDINGS.md](mls/FINDINGS.md). In short:
 | Welcome / GroupInfo at 50 devices | about 34 kB each (about 680 bytes per device, mostly the JSON credential) |
 | Demo | `cargo run --release --bin demo` in `mls/`, or `bench.html` in a browser. bob, removed mid-conversation, reads 0 of 2 later messages; control's forged device is refused by everyone |
 
-## Left for Jake
+## Live checks with Jake (2026-10-05)
 
-1. **A live call with real mics** between geek and jake-air, to listen for echo and double talk. geek's default source (the OBSBOT Meet 2) gave PipeWire nothing during the spike (`pw-record` got 0 bytes), so check it in GNOME's sound settings first.
-2. **Mic permission on the Mac:** open `~/s30/S30Probe.app` on the Air from Finder (it asks for the mic), and allow the mic in Safari. Over ssh, macOS refuses on behalf of sshd.
-3. **The phone:** does iOS keep call audio when the PWA goes to the background or the screen locks?
-4. **A Cloudflare TURN key** for the hosted control, if Cloudflare is the choice.
+- **Mic prompts on the Mac:** the WKWebView probe app, launched from the GUI, asked for the mic. Once Jake allowed it, it captured the MacBook Air microphone with echo cancellation on. Safari 18.5 did the same.
+- **iPhone PWA ↔ Chrome on the Air**, relay to relay through TURN (`/p` on the test server, added to the home screen):
+  - **Foreground:** connected with 8–11 ms RTT, 0 packets lost, about 36 ms jitter buffer. Jake heard it clean, with the phone next to the Air.
+  - **In the background or locked (about 16 s):** the phone **stopped sending**. The Air got 0 packets a second, apart from one 2 s burst. It **kept receiving and playing** the Air's audio (Jake still heard it), the connection stayed up, and the page's script kept running.
+  - **After coming back, there was feedback for the rest of the call.** The likely cause is that iOS resumes the mic without its echo cancellation. That's not verified.
+- **What M63 does about the phone:**
+  - say plainly that the phone's mic only works with the app open, and show the user as "muted (app in background)" to the others;
+  - on `visibilitychange` back to visible, get a fresh mic track (`getUserMedia` plus `replaceTrack`) instead of trusting the resumed one. Then check again that the feedback is gone.
+
+## Still open
+
+1. **Native mic capture and AEC3 in a live call** on the Linux app. geek's default source (the OBSBOT Meet 2) gave PipeWire 0 bytes, so Jake chose to skip it. The native peer now runs AEC3 and noise suppression on the mic (`--no-aec` turns them off), but only the synthetic echo test has exercised them.
+2. **A Cloudflare TURN key** for the hosted control, if Cloudflare is the choice.
 
 ## Reproduce
 

@@ -2,6 +2,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>S30 call</title>
+<link rel="manifest" href="manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <style>
 :root{--bg:#111;--fg:#ddd;--dim:#888;--ok:#6c6;--bad:#e66}
 body{font:15px ui-monospace,monospace;margin:16px;background:var(--bg);color:var(--fg)}
@@ -103,7 +106,7 @@ async function onSignal(m) {
 }
 function hang() { pc?.close(); ws?.close(); stream?.getTracks().forEach((t) => t.stop()); log("hung up"); }
 async function poll() {
-  if (!pc || pc.connectionState !== "connected") return;
+  if (!pc) return;
   const s = await pc.getStats(); let inb, out, pair, local, remote;
   s.forEach((x) => {
     if (x.type === "inbound-rtp" && x.kind === "audio") inb = x;
@@ -127,6 +130,7 @@ async function poll() {
     v.heardRms = Math.sqrt(t.reduce((a, x) => a + x * x, 0) / t.length).toFixed(3);
   }
   summary.last = v;
+  if (q.get("live")) fetch("/live", { method: "POST", body: JSON.stringify({ client, t: Date.now(), state: pc.connectionState, hidden: document.hidden, ...v }) }).catch(() => {});
   statsEl.textContent = Object.entries(v).map(([k, x]) => `${k.padEnd(15)} ${x ?? "-"}`).join("\n");
 }
 function report() { if (q.get("report")) fetch("/report", { method: "POST", body: JSON.stringify({ ...summary, done: true }) }); }

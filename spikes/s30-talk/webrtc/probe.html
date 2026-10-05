@@ -84,7 +84,7 @@ function tone() {
   await step("loopbackTone", () => loopback(tone(), {}));
   await step("devices", async () => (await navigator.mediaDevices.enumerateDevices()).map((d) => d.kind + ":" + (d.label || "?")));
   await step("getUserMedia", async () => {
-    const s = await timeout(navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }), 15000, "gUM");
+    const s = await timeout(navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }), Number(q.get("gumwait") || 15000), "gUM");
     const t = s.getAudioTracks()[0];
     r.gumSettings = t.getSettings ? t.getSettings() : null;
     r.loopbackMic = await loopback(s, {}).catch((e) => "ERR " + e.message);
