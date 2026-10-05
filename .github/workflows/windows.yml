@@ -21,10 +21,12 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v4
-      # Zig, for Ghostty's lib-vt (.mise.toml).
-      - uses: jdx/mise-action@v2
+      # Zig, for Ghostty's lib-vt (the version in .mise.toml). Not through
+      # mise: its Windows shims are .cmd files, which the build script's
+      # Command can't run.
+      - uses: mlugg/setup-zig@v2
         with:
-          install_args: zig
+          version: 0.16.0
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --workspace --exclude illogical-control --all-targets -- -D warnings
       - run: cargo test --workspace --exclude illogical-control
