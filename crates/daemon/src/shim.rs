@@ -217,6 +217,7 @@ pub fn run(args: &[String]) -> ! {
 #[cfg(unix)]
 pub const HELD_FD: i32 = 3;
 
+#[cfg(any(unix, test))]
 fn parse(args: &[String]) -> Option<(String, Option<String>, Vec<String>)> {
     let mut it = args.iter();
     if it.next()? != "--record" {
@@ -289,6 +290,7 @@ pub fn read_record(path: &std::path::Path) -> Record {
     r
 }
 
+#[cfg(unix)]
 /// Ask the shim to close the program: it hangs the group up, and kills it if
 /// it's still there a few seconds later. False if the shim is gone or too old
 /// to be asked.

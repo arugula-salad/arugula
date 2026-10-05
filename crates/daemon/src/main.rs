@@ -1,6 +1,5 @@
 //! illogicald: owns the terminals; clients attach over WebSocket.
 
-
 mod access;
 mod acl;
 mod agent;
@@ -858,7 +857,10 @@ fn main() -> anyhow::Result<()> {
         }
         // Nothing is kept across a restart on Windows yet (M58, #221).
         #[cfg(windows)]
-        None => tokio::runtime::Runtime::new()?.block_on(run(args.run, Default::default())),
+        None => {
+            heap::tune();
+            tokio::runtime::Runtime::new()?.block_on(run(args.run, Default::default()))
+        }
         #[cfg(unix)]
         None => {
             heap::tune();

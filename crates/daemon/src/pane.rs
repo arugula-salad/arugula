@@ -10,10 +10,9 @@
 
 use std::{
     collections::{HashMap, HashSet, VecDeque},
-    fs::File,
     io::{Read, Write},
     path::{Path, PathBuf},
-    process::{Child, Command, Stdio},
+    process::{Command, Stdio},
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering},
@@ -21,6 +20,8 @@ use std::{
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
+#[cfg(unix)]
+use std::{fs::File, process::Child};
 
 use crossbeam_channel::{Receiver, Sender, TryRecvError, bounded, unbounded};
 use illogical_proto::{ClientId, Frame, FrameKind, PaneId, ServerMsg};
@@ -687,6 +688,7 @@ impl Launcher {
         }
     }
 
+    #[cfg(unix)]
     /// A command that runs this executable (the shim) for a pane or an
     /// agent: in its own scope `unit` when there are scopes. Without the
     /// daemon's service environment, which isn't the program's.

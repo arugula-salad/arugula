@@ -30,7 +30,9 @@ use std::{
     time::{Duration, Instant},
 };
 
-use tokio::{io::AsyncReadExt, sync::OnceCell};
+#[cfg(unix)]
+use tokio::io::AsyncReadExt;
+use tokio::sync::OnceCell;
 
 use crate::provider::Provider;
 
@@ -178,6 +180,7 @@ fn done(host: &str, shell: &str, r: Result<Vec<(String, String)>, String>, t: In
 /// A machine runs `bash -l` in its panes, so that's what's read there.
 const MACHINE_SH: &str = r#"exec bash -l -i -c "$1" </dev/null 2>/dev/null"#;
 
+#[cfg(unix)]
 /// The arguments before the script, for shells that take `-l -i -c`.
 fn flags(shell: &str) -> Option<[&'static str; 3]> {
     let name = Path::new(shell).file_name()?.to_str()?.trim_start_matches('-');
@@ -340,10 +343,12 @@ mod tests {
 
     use super::*;
 
+    #[cfg(unix)]
     /// A HOME of its own, removed when dropped (after the shell is gone:
     /// `resolve` waits for it or kills it).
     struct Home(PathBuf);
 
+    #[cfg(unix)]
     impl Home {
         fn new(name: &str, bashrc: &str) -> Self {
             let dir = std::env::temp_dir().join(format!("illogical-shellenv-{name}-{}", std::process::id()));
