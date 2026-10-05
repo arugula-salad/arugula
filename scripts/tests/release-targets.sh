@@ -12,7 +12,10 @@ cd "$(dirname "$0")/../.."
 fail=0
 bad() { printf 'FAIL  %s\n' "$*"; fail=1; }
 
-# The source of truth: `just dist`'s targets and `just desktop`'s outputs.
+# The source of truth: `just dist`'s targets and `just desktop`'s outputs,
+# plus the Windows installer, which release.yml builds itself on GitHub's
+# runner (no just there).
+wf=.github/workflows/release.yml
 read -ra targets <<<"$(sed -n '/^dist:/,/^[^ ]/p' justfile | sed -n 's/^ *for t in \(.*\); do$/\1/p')"
 [ "${#targets[@]}" -gt 0 ] || { echo "FAIL  can't find just dist's targets in the justfile"; exit 1; }
 desktop=$(sed -n '/^desktop /,/^[^ ]/p' justfile)
@@ -21,6 +24,7 @@ while read -r d; do downloads+=("$d"); done < <(
   {
     grep -o 'illogical-desktop-linux-[A-Za-z0-9_]*\.[A-Za-z]*' <<<"$desktop"
     sed -n 's/.*) name=\(macos-[a-z0-9_]*\) ;;.*/illogical-desktop-\1.zip/p' <<<"$desktop"
+    grep -o 'dist/illogical-desktop-windows-[A-Za-z0-9_.-]*\.exe' "$wf" | sed 's:^dist/::'
   } | sort -u
 )
 [ "${#downloads[@]}" -gt 0 ] || { echo "FAIL  can't find just desktop's outputs in the justfile"; exit 1; }
@@ -28,7 +32,6 @@ echo "targets:   ${targets[*]}"
 echo "downloads: ${downloads[*]}"
 
 # release.yml builds every target and every download.
-wf=.github/workflows/release.yml
 for t in "${targets[@]}"; do
   case "$t" in
     *-unknown-linux-musl) step="just static ${t%%-*}" ;;
@@ -43,6 +46,7 @@ for d in "${downloads[@]}"; do
     illogical-desktop-linux-*) step="just desktop" ;;
     illogical-desktop-macos-arm64.zip) step="just desktop" ;; # native
     illogical-desktop-macos-*.zip) a=${d#illogical-desktop-macos-}; step="just desktop ${a%.zip}" ;;
+    illogical-desktop-windows-*) step="scripts/release upload \"\$GITHUB_REF_NAME\" dist/$d" ;;
     *) bad "$d: no rule for how release.yml makes it; add one here"; continue ;;
   esac
   grep -qx " *- run: $step" "$wf" || bad "$wf doesn't make $d (expected: run: $step)"
