@@ -834,8 +834,22 @@ html[data-desktop="macos"] .bar {
   gap: 4px;
   padding: 4px 4px calc(4px + env(safe-area-inset-bottom));
   background: var(--surface);
+}
+
+/* The keys scroll sideways when they don't fit; the faded edge says there
+   are more. */
+.keybar-keys {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  gap: 4px;
   overflow-x: auto;
   scrollbar-width: none;
+  mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+}
+
+.keybar .attach {
+  flex: none;
 }
 
 .key {
