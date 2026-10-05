@@ -34,6 +34,7 @@ mod hosts;
 mod ide;
 mod install;
 mod inventory;
+mod invite;
 mod keys;
 mod localauth;
 mod machine;
