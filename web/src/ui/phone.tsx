@@ -290,6 +290,19 @@ export function KeyBar({ client }: { client: Client }) {
           </button>
         );
       })}
+      {/* M70: a photo, or the camera, into the pane. */}
+      <button
+        class="key"
+        title="Attach file"
+        aria-label="Attach file"
+        onPointerDown={(e) => e.preventDefault()}
+        onClick={() => {
+          const pane = client.active();
+          if (pane !== undefined) void client.attachFiles(pane);
+        }}
+      >
+        📎
+      </button>
     </div>
   );
 }
