@@ -387,13 +387,16 @@ try {
   check("an unsigned webhook is refused", unsigned.status === 400);
   const done = await hook({ type: "checkout.session.completed", data: { object: { customer: "cus_1", subscription: "sub_1", metadata: { owner: `team:${team}` } } } });
   check("the team upgraded", done.ok && (await api<{ teams: { plan: string }[] }>("/api/billing")).teams[0].plan === "team");
-  // A second person joins: the seats follow the roster.
+  // A second person joins (by an invite they accept): the seats follow
+  // the roster.
+  const invite = await api<{ code: string }>(`/api/teams/${team}/invites`, { role: "editor" });
   const laptopCookie = cookie;
   asUser = "colleague";
   await signIn();
   const them = await api<{ account: string }>("/api/me");
   const theirs = await generateKeys();
   await api("/api/devices", { cert: await cert(theirs, theirs, them.account, "browser", "their laptop") });
+  await api(`/api/invites/${team}/${invite.code}/accept`, {});
   cookie = laptopCookie;
   const v2 = await signRoster(
     { ...v1, version: 2, at: Date.now(), members: [...v1.members, { account: them.account, root: theirs.id, role: "editor", name: "colleague" }] },

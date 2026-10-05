@@ -247,6 +247,8 @@ pub struct Control {
     /// Reached through a provider's proxy (a hosted sandbox, M20): no relay
     /// socket, so certificates are fetched more often instead of nudged.
     pub no_relay: bool,
+    /// Control takes v2 request signatures (see [`auth_header`]).
+    auth_v2: std::sync::atomic::AtomicBool,
 }
 
 fn read_saved(dir: &Path) -> anyhow::Result<Option<Saved>> {
@@ -262,11 +264,29 @@ fn write_saved(dir: &Path, s: &Saved) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// A request signature for control: see control's `auth.rs`.
-pub fn auth_header(keys: &DeviceKeys, method: &str, path: &str) -> String {
+/// A request signature for control: see control's `auth.rs`. It covers the
+/// method, path and query, the time, a fresh nonce and the body's hash
+/// (`v2`), or for a control from before 0.17 the method, path and time.
+pub fn auth_header(keys: &DeviceKeys, method: &str, path_and_query: &str, body: &[u8], v2: bool) -> String {
+    use sha2::{Digest, Sha256};
     let ms = now_ms();
-    let msg = format!("illogical daemon auth\n{method}\n{path}\n{ms}\n");
-    format!("{} {ms} {}", keys.id(), hex::encode(keys.signature(msg.as_bytes())))
+    if !v2 {
+        let path = path_and_query.split('?').next().unwrap_or(path_and_query);
+        let msg = format!("illogical daemon auth\n{method}\n{path}\n{ms}\n");
+        return format!("{} {ms} {}", keys.id(), hex::encode(keys.signature(msg.as_bytes())));
+    }
+    let nonce = hex::encode(illogical_e2e::random::<16>());
+    let digest = hex::encode(Sha256::digest(body));
+    let msg = format!("illogical daemon auth v2\n{method}\n{path_and_query}\n{ms}\n{nonce}\n{digest}\n");
+    format!("v2 {} {ms} {nonce} {}", keys.id(), hex::encode(keys.signature(msg.as_bytes())))
+}
+
+/// Whether the control at `url` takes signatures over the body and a
+/// nonce (it says `daemon_auth: 2` in `control.json`).
+async fn takes_v2(http: &reqwest::Client, url: &str) -> bool {
+    let Ok(r) = http.get(format!("{url}/control.json")).send().await else { return false };
+    let v: serde_json::Value = r.json().await.unwrap_or_default();
+    v["daemon_auth"].as_u64().is_some_and(|n| n >= 2)
 }
 
 const AUTH: &str = "x-illogical-auth";
@@ -283,6 +303,7 @@ impl Control {
             http: reqwest::Client::builder().timeout(Duration::from_secs(20)).build().expect("http client"),
             published: Default::default(),
             no_relay,
+            auth_v2: Default::default(),
         });
         me.reload();
         me
@@ -377,12 +398,34 @@ impl Control {
         self.install(next);
     }
 
+    /// A signature for a request to control (see [`auth_header`]).
+    fn sign(&self, e: &Enrolled, method: &str, path_and_query: &str, body: &[u8]) -> String {
+        let v2 = self.auth_v2.load(std::sync::atomic::Ordering::Relaxed);
+        auth_header(&e.keys, method, path_and_query, body, v2)
+    }
+
+    /// Ask control how it takes signatures, until it says v2.
+    async fn check_auth(&self, e: &Enrolled) {
+        if !self.auth_v2.load(std::sync::atomic::Ordering::Relaxed) && takes_v2(&self.http, &e.saved.url).await {
+            self.auth_v2.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+
+    /// POST JSON to control, signed over exactly the bytes sent.
+    fn post_json(&self, e: &Enrolled, path: &str, body: &serde_json::Value) -> reqwest::RequestBuilder {
+        let bytes = serde_json::to_vec(body).unwrap_or_default();
+        self.http
+            .post(format!("{}{path}", e.saved.url))
+            .header(AUTH, self.sign(e, "POST", path, &bytes))
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .body(bytes)
+    }
+
     async fn get<T: serde::de::DeserializeOwned>(&self, e: &Enrolled, path_and_query: &str) -> anyhow::Result<T> {
-        let path = path_and_query.split('?').next().unwrap_or(path_and_query);
         let res = self
             .http
             .get(format!("{}{path_and_query}", e.saved.url))
-            .header(AUTH, auth_header(&e.keys, "GET", path))
+            .header(AUTH, self.sign(e, "GET", path_and_query, b""))
             .send()
             .await?;
         if res.status() == reqwest::StatusCode::UNAUTHORIZED {
@@ -401,6 +444,7 @@ impl Control {
     /// with); keep what checks out against what this daemon pinned.
     async fn refresh(&self) -> anyhow::Result<bool> {
         let Some(e) = self.enrolled() else { return Ok(false) };
+        self.check_auth(&e).await;
         #[derive(Deserialize)]
         struct Own {
             certs: Vec<Cert>,
@@ -571,15 +615,8 @@ impl Control {
                 ) else {
                     continue;
                 };
-                let path = "/api/daemon/push";
                 let req = serde_json::json!({ "endpoint": s.endpoint, "body": base64::engine::general_purpose::STANDARD.encode(body) });
-                let res = me
-                    .http
-                    .post(format!("{}{path}", e.saved.url))
-                    .header(AUTH, auth_header(&e.keys, "POST", path))
-                    .json(&req)
-                    .send()
-                    .await;
+                let res = me.post_json(&e, "/api/daemon/push", &req).send().await;
                 if let Err(err) = res {
                     warn!(error = %err, "can't push through control");
                 }
@@ -592,12 +629,8 @@ impl Control {
     /// account's GitHub login. Never logged.
     pub async fn github_token(&self, repo: &str) -> Result<serde_json::Value, String> {
         let e = self.enrolled().ok_or("not joined to illogical control")?;
-        let path = "/api/daemon/github/token";
         let res = self
-            .http
-            .post(format!("{}{path}", e.saved.url))
-            .header(AUTH, auth_header(&e.keys, "POST", path))
-            .json(&serde_json::json!({ "repo": repo }))
+            .post_json(&e, "/api/daemon/github/token", &serde_json::json!({ "repo": repo }))
             .send()
             .await
             .map_err(|e| format!("can't reach control: {e}"))?;
@@ -619,7 +652,7 @@ impl Control {
             let r = me
                 .http
                 .post(format!("{}{path}", e.saved.url))
-                .header(AUTH, auth_header(&e.keys, "POST", path))
+                .header(AUTH, me.sign(&e, "POST", path, b""))
                 .send()
                 .await;
             if let Err(err) = r {
@@ -655,14 +688,7 @@ impl Control {
         if self.published.lock().unwrap().as_ref() == Some(&body) {
             return;
         }
-        let path = "/api/daemon/access";
-        let res = self
-            .http
-            .post(format!("{}{path}", e.saved.url))
-            .header(AUTH, auth_header(&e.keys, "POST", path))
-            .json(&body)
-            .send()
-            .await;
+        let res = self.post_json(e, "/api/daemon/access", &body).send().await;
         match res {
             Ok(r) if r.status().is_success() => *self.published.lock().unwrap() = Some(body),
             Ok(r) => warn!(status = %r.status(), "control refused the access list"),
@@ -755,7 +781,9 @@ async fn relay_once(
     url.query_pairs_mut().append_pair("urls", &serde_json::to_string(&control.direct_urls)?);
     let scheme = if url.scheme() == "https" { "wss" } else { "ws" };
     url.set_scheme(scheme).map_err(|()| anyhow::anyhow!("bad control URL"))?;
-    let ws = crate::dial::open_ws(&url, &[(AUTH, &auth_header(&e.keys, "GET", path))]).await?;
+    control.check_auth(e).await;
+    let signed = format!("{}?{}", url.path(), url.query().unwrap_or_default());
+    let ws = crate::dial::open_ws(&url, &[(AUTH, &control.sign(e, "GET", &signed, b""))]).await?;
     info!(control = e.saved.url, "connected to control's relay");
     // M40: forge subscriptions out, pokes and heartbeats in.
     let texts = crate::forge::live::watch_messages()
@@ -877,10 +905,18 @@ pub async fn join_start(
     }
     let keys = DeviceKeys::load_or_create(&state_dir.join(KEY_FILE))?;
     let ask = Cert { account: String::new(), ..Cert::new(&keys, "", Kind::Daemon, name) };
+    // That this is the key's holder asking, not someone with its certificate.
+    let ms = now_ms();
+    let proof = serde_json::json!({
+        "ms": ms,
+        "sig": hex::encode(keys.signature(illogical_e2e::cert::join_proof_body(&ask, ms).as_bytes())),
+    });
     let http = reqwest::Client::builder().timeout(Duration::from_secs(20)).build()?;
     let res = http
         .post(format!("{url}/api/join"))
-        .json(&serde_json::json!({ "cert": ask, "urls": [], "team": team, "ticket": ticket, "features": features() }))
+        .json(&serde_json::json!({
+            "cert": ask, "urls": [], "team": team, "ticket": ticket, "features": features(), "proof": proof,
+        }))
         .send()
         .await
         .with_context(|| format!("can't reach control at {url}"))?;
@@ -1057,11 +1093,10 @@ pub async fn leave(state_dir: &Path, listen: &str) -> anyhow::Result<()> {
     let Some(s) = read_saved(state_dir)? else { bail!("this machine isn't joined to any control") };
     let keys = DeviceKeys::load(&state_dir.join(KEY_FILE))?;
     let path = "/api/daemon/leave";
-    let res = reqwest::Client::new()
-        .post(format!("{}{path}", s.url))
-        .header(AUTH, auth_header(&keys, "POST", path))
-        .send()
-        .await;
+    let http = reqwest::Client::new();
+    let v2 = takes_v2(&http, &s.url).await;
+    let res =
+        http.post(format!("{}{path}", s.url)).header(AUTH, auth_header(&keys, "POST", path, b"", v2)).send().await;
     match res {
         Ok(r) if r.status().is_success() => println!("Left {} ({}).", s.url, whose(&s)),
         Ok(r) => println!("{} (leaving anyway)", control_said(r).await),

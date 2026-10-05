@@ -218,7 +218,7 @@ test("two people, a laptop and a phone each, two machines each and a team box", 
   await jake.evaluate(() => window.__illogical.control!.createTeam("Acme"));
   const team = await jake.evaluate(() => window.__illogical.control!.teams[0].team);
   sam = await laptop(browser, "sam");
-  const link = await jake.evaluate((t) => window.__illogical.control!.invite(t, "editor"), team);
+  const link = await jake.evaluate((t) => window.__illogical.control!.invite(t, "editor", true), team);
   await sam.goto(link);
   await sam.locator("[data-accept-invite]").click();
   await jake.evaluate(() => window.__illogical.control!.refresh());

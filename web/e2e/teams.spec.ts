@@ -450,3 +450,30 @@ test("Move to… puts a machine in a team and back, signed by the device", async
   await expect.poll(() => alice.evaluate((id) => window.__illogical.control!.daemons.find((d) => d.id === id)?.team ?? null, minebox)).toBeNull();
   await alice.getByRole("button", { name: "Done" }).click();
 });
+
+test("a session shared with someone outside your teams waits for their yes", async ({ browser }) => {
+  test.setTimeout(120_000);
+  const erin = await person(browser, "erin");
+  const who = await alice.evaluate(() => window.__illogical.control!.person("erin"));
+  // minebox is Alice's own again (the test before): she shares a session.
+  await alice.evaluate(() => window.__illogical.hosts.select("minebox"));
+  await expect
+    .poll(() => alice.evaluate(() => window.__illogical.client.connected && !!window.__illogical.client.state?.sessions.length), { timeout: 20_000 })
+    .toBe(true);
+  const shared = await alice.evaluate(async (c) => {
+    const cl = window.__illogical.client;
+    const session = cl.state!.sessions[0].id;
+    return (await cl.request("POST", "/api/acl", { session, principal: `account:${c.account}`, role: "viewer", root: c.root, name: "erin" })).ok;
+  }, who);
+  expect(shared).toBe(true);
+  // Erin is asked first, by Alice's name; the machine isn't hers to see yet.
+  const offers = () => erin.evaluate(async () => (await window.__illogical.control!.refresh(), window.__illogical.control!.offers.length));
+  await expect.poll(offers, { timeout: 30_000 }).toBe(1);
+  await expect(erin.locator("[data-share-offer-owner]")).toHaveText("alice");
+  await expect(erin.locator("[data-share-offer-machine]")).toHaveText("minebox");
+  expect(await hostNames(erin)).not.toContain("minebox");
+  await erin.locator("[data-share-accept]").click();
+  await expect
+    .poll(async () => (await erin.evaluate(() => window.__illogical.control!.refresh()), hostNames(erin)), { timeout: 30_000 })
+    .toContain("minebox");
+});

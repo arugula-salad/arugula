@@ -42,6 +42,9 @@ const PING_EVERY: Duration = Duration::from_secs(15);
 pub const NUDGE: &str = "trust";
 const DEAD_AFTER: Duration = Duration::from_secs(45);
 const CLIENT_PING: Duration = Duration::from_secs(30);
+/// The largest message a daemon's socket takes: a mux frame's most data
+/// (its window) and header, with room to spare.
+const DAEMON_MAX_MESSAGE: usize = 512 * 1024;
 
 #[derive(Default)]
 pub struct Relay {
@@ -113,7 +116,10 @@ pub async fn dial(
     if let Err(e) = app.db.seen(&id, urls.as_deref(), now_ms()) {
         warn!(error = %e, "recording a daemon");
     }
-    up.on_upgrade(move |ws| daemon_socket(app, id, ws))
+    // Mux frames (at most a window of data and a header) and forge text.
+    up.max_message_size(DAEMON_MAX_MESSAGE)
+        .max_frame_size(DAEMON_MAX_MESSAGE)
+        .on_upgrade(move |ws| daemon_socket(app, id, ws))
 }
 
 async fn daemon_socket(app: Arc<App>, id: String, ws: WebSocket) {

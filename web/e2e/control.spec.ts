@@ -5,6 +5,7 @@
 // anything until the first approves it, and loses access when removed.
 
 import { spawn, type ChildProcess } from "node:child_process";
+import { createHash, randomBytes } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
@@ -265,34 +266,63 @@ test("a phone needs the laptop's approval", async ({ browser }) => {
 });
 
 test("the desktop app signs in through the browser, then is approved as a device (M48)", async ({ browser }) => {
-  // The app asks for a ticket, and opens its page in the person's browser.
-  const ask = await fetch(`${base}/auth/app`, {
+  // The app keeps a verifier, listens on a loopback port for its grant,
+  // asks for a ticket, and opens its page in the person's browser.
+  const verifier = randomBytes(32).toString("hex");
+  const challenge = createHash("sha256").update(verifier).digest("hex");
+  let grant = "";
+  const loop = createServer((req, res) => {
+    const u = new URL(req.url!, "http://127.0.0.1");
+    if (u.pathname === "/illogical-signin") grant = u.searchParams.get("grant") ?? "";
+    res.writeHead(303, { location: `${base}/#app-done` }).end();
+  });
+  await new Promise<void>((r) => loop.listen(0, "127.0.0.1", r));
+  const port = (loop.address() as { port: number }).port;
+  // An app from before the loopback hand-over is told to update.
+  const old = await fetch(`${base}/auth/app`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ name: "illogical app on test-mac" }),
   });
+  expect(old.status).toBe(400);
+  expect(((await old.json()) as { error: string }).error).toContain("update it");
+  const ask = await fetch(`${base}/auth/app`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: "illogical app on test-mac", challenge, port }),
+  });
   expect(ask.status).toBe(200);
-  const t = (await ask.json()) as { ticket: string; secret: string; code: string; url: string };
+  const t = (await ask.json()) as { ticket: string; code: string; url: string };
   expect(t.url).toBe(`${base}/#app=${t.ticket}`);
-  const poll = async (secret = t.secret) => ((await (await fetch(`${base}/auth/app/${t.ticket}/poll?secret=${secret}`)).json()) as { state: string }).state;
-  expect(await poll()).toBe("waiting");
-  // A redeem before the person allows it gets nothing.
-  expect((await fetch(`${base}/auth/app/${t.ticket}/redeem?secret=${t.secret}`, { redirect: "manual" })).status).toBe(404);
+  const redeem = (body: unknown, origin = base) =>
+    fetch(`${base}/auth/app/${t.ticket}/redeem`, { method: "POST", headers: { "content-type": "application/json", origin }, body: JSON.stringify(body) });
+  // A redeem before the person allows it gets nothing; nor does a GET.
+  expect((await redeem({ grant: "00", verifier })).status).toBe(404);
+  expect((await fetch(`${base}/auth/app/${t.ticket}/redeem?grant=00&verifier=${verifier}`, { redirect: "manual" })).status).toBe(405);
 
-  // In the browser (signed in), the same code, and Allow.
+  // In the browser (signed in), the same code, and Allow: the grant goes
+  // to the app's port, and the browser comes back to control's page.
   await laptop.goto(t.url);
   await expect(laptop.locator("[data-app-login-name]")).toHaveText("illogical app on test-mac");
   await expect(laptop.locator("[data-app-login-code]")).toHaveText(t.code);
+  await expect(laptop.locator("[data-app-login-elsewhere]")).toHaveCount(0);
   await laptop.locator("[data-app-login-allow]").click();
   await expect(laptop.locator("[data-app-login-done]")).toBeVisible();
-  expect(await poll()).toBe("allowed");
-  expect(await poll("0".repeat(64))).toBe("expired");
+  expect(grant).toMatch(/^[0-9a-f]{64}$/);
+  loop.close();
+  // The grant alone (someone who saw the link) or from another site does nothing.
+  expect((await redeem({ grant, verifier: "0".repeat(64) })).status).toBe(404);
+  expect((await redeem({ grant, verifier }, "https://elsewhere.example")).status).toBe(403);
+  // In a browser rather than the app's window, #app-redeem doesn't sign in.
+  const other = await (await browser.newContext()).newPage();
+  await other.goto(`${base}/#app-redeem=${t.ticket}.${grant}.${verifier}`);
+  await expect(other.locator("[data-signin]").first()).toBeVisible();
+  await other.context().close();
 
   // The app's window redeems it: signed in, then a new device to approve.
   const app = await (await browser.newContext()).newPage();
   await app.addInitScript(() => Object.assign(window, { __illogicalApp: { name: "illogical app on test-mac" } }));
-  await app.goto(`${base}/auth/app/${t.ticket}/redeem?secret=${t.secret}`);
-  await expect(app).toHaveURL(`${base}/`);
+  await app.goto(`${base}/#app-redeem=${t.ticket}.${grant}.${verifier}`);
   await expect(app.getByText("Approve this browser")).toBeVisible();
   const fp = await app.locator("[data-fingerprint]").getAttribute("data-fingerprint");
   await expect(laptop.locator(`[data-pending="${fp}"]`)).toBeVisible({ timeout: 20_000 });
@@ -303,8 +333,7 @@ test("the desktop app signs in through the browser, then is approved as a device
   await shell(app, "app");
 
   // Single use.
-  expect((await fetch(`${base}/auth/app/${t.ticket}/redeem?secret=${t.secret}`, { redirect: "manual" })).status).toBe(404);
-  expect(await poll()).toBe("expired");
+  expect((await redeem({ grant, verifier })).status).toBe(404);
 
   // Removing the app's device in control cuts it off at once.
   const id = await app.evaluate(() => window.__illogical.control!.keys.id);
