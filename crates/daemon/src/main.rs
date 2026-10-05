@@ -51,6 +51,7 @@ mod review;
 mod roots;
 mod rules;
 // The tailnet sandbox supervisor: Linux boxes.
+mod calls;
 #[cfg(unix)]
 mod sandbox;
 mod seal;

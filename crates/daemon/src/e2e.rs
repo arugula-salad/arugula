@@ -164,7 +164,15 @@ async fn serve(app: Arc<App>, mut inbound: mpsc::Receiver<Vec<u8>>, out: mpsc::S
     let (data_tx, mut data_rx) = client_queue();
     let (ctrl_tx, mut ctrl_rx) = mpsc::unbounded_channel();
     app.mux.send(Cmd::Connect {
-        sub: Subscriber { client, data: data_tx, ctrl: ctrl_tx, principal: principal.clone(), name },
+        sub: Subscriber {
+            client,
+            data: data_tx,
+            ctrl: ctrl_tx,
+            principal: principal.clone(),
+            name,
+            // A read-only link's stand-in has no signing key.
+            device: Some(device.clone()).filter(|d| !d.sign.is_empty()),
+        },
     });
     let router = crate::server::channel_router(app.clone());
     let mut changed = app.control.changed.subscribe();

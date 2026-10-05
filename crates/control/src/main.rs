@@ -29,6 +29,7 @@ mod routing_wire;
 mod sandboxes;
 mod sprites;
 mod teams;
+mod turn;
 
 use std::{net::SocketAddr, path::PathBuf, sync::Arc};
 
@@ -106,6 +107,15 @@ struct Args {
     sprites_url: String,
     #[arg(long, env = "SPRITES_TOKEN", hide_env_values = true)]
     sprites_token: Option<String>,
+
+    /// TURN for huddles (M63): a Cloudflare TURN key's id and API token.
+    /// Without them, daemons get public STUN only.
+    #[arg(long, env = "CLOUDFLARE_TURN_KEY_ID", hide_env_values = true)]
+    turn_key_id: Option<String>,
+    #[arg(long, env = "CLOUDFLARE_TURN_API_TOKEN", hide_env_values = true)]
+    turn_api_token: Option<String>,
+    #[arg(long, default_value = "https://rtc.live.cloudflare.com", env = "ILLOGICAL_TURN_API", hide = true)]
+    turn_api: String,
     /// The static daemon (x86_64 musl) to put in them.
     #[arg(long, default_value = "/illogicald", env = "ILLOGICAL_SANDBOX_BINARY")]
     sandbox_binary: PathBuf,
@@ -215,6 +225,8 @@ pub struct App {
     pub app_logins: app_login::Tickets,
     /// Daemon signatures (and join proofs) already taken.
     pub daemon_sigs: auth::Replays,
+    /// TURN credentials for huddles (M63).
+    pub turn: Option<turn::Turn>,
 }
 
 #[cfg(test)]
@@ -245,6 +257,7 @@ impl App {
             forge: Default::default(),
             app_logins: Default::default(),
             daemon_sigs: Default::default(),
+            turn: None,
         }
     }
 }
@@ -346,6 +359,7 @@ pub fn router(app: Arc<App>) -> Router {
         .route("/api/presigned/{team}/{key}/preview", get(teams::preview_presigned))
         .route("/api/daemon/team", get(teams::daemon_team))
         .route("/api/daemon/peers", get(teams::daemon_peers))
+        .route("/api/daemon/turn", get(turn::daemon_turn))
         .route("/api/daemon/teams", get(teams::daemon_teams))
         .route("/api/daemon/access", post(teams::daemon_access))
         .route("/api/relay/link/{id}", get(relay::link))
@@ -567,6 +581,13 @@ async fn main() -> anyhow::Result<()> {
         a.stripe_minutes_price,
         a.stripe_minutes_event,
     )?;
+    let turn = match (set(a.turn_key_id), set(a.turn_api_token)) {
+        (Some(key_id), Some(token)) => Some(turn::Turn { key_id, token, api: a.turn_api }),
+        _ => {
+            tracing::warn!("no CLOUDFLARE_TURN_KEY_ID/CLOUDFLARE_TURN_API_TOKEN: huddles get STUN only");
+            None
+        }
+    };
     let app = Arc::new(App {
         cfg: Config {
             push_hosts: a.push_hosts,
@@ -593,6 +614,7 @@ async fn main() -> anyhow::Result<()> {
         forge: Default::default(),
         app_logins: Default::default(),
         daemon_sigs: Default::default(),
+        turn,
     });
     if !app.cfg.old_daemon_signatures {
         info!("refusing daemons' pre-0.17 request signatures");

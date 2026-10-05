@@ -161,6 +161,9 @@ pub struct Subscriber {
     /// is an owner here through control (the account's own login, or a
     /// team box's owner by name).
     pub name: Option<String>,
+    /// The device it connected from, when that was through control with a
+    /// device key (M63: its huddle signatures are checked against this).
+    pub device: Option<illogical_e2e::Cert>,
 }
 
 /// What a pane tells the multiplexer.

@@ -466,7 +466,9 @@ async fn connection(app: Arc<App>, mut socket: WebSocket, who: Principal) {
     info!(client, who = who.id(), "client connected");
     let (data_tx, mut data_rx) = client_queue();
     let (ctrl_tx, mut ctrl_rx) = mpsc::unbounded_channel();
-    app.mux.send(Cmd::Connect { sub: Subscriber { client, data: data_tx, ctrl: ctrl_tx, principal: who, name: None } });
+    app.mux.send(Cmd::Connect {
+        sub: Subscriber { client, data: data_tx, ctrl: ctrl_tx, principal: who, name: None, device: None },
+    });
 
     loop {
         tokio::select! {
