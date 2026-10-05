@@ -57,7 +57,6 @@ fn systemctl(args: &[&str]) -> anyhow::Result<()> {
     Ok(())
 }
 
-#[cfg_attr(windows, allow(dead_code))] // Windows' install is M59's (#222).
 /// The daemon arguments to install: those given, or with none, the ones an
 /// earlier install wrote (read back by `earlier`), so an upgrade keeps them.
 fn args_to_install(given: &[String], reset: bool, earlier: impl FnOnce() -> Option<Vec<String>>) -> Vec<String> {
@@ -71,7 +70,6 @@ fn args_to_install(given: &[String], reset: bool, earlier: impl FnOnce() -> Opti
     kept
 }
 
-#[cfg_attr(windows, allow(dead_code))] // Windows' install is M59's (#222).
 /// Where the installed daemon listens: its `--listen`, else the default.
 fn listen_of(args: &[String]) -> String {
     let mut it = args.iter();
@@ -88,7 +86,6 @@ fn listen_of(args: &[String]) -> String {
     "127.0.0.1:7681".into()
 }
 
-#[cfg_attr(windows, allow(dead_code))] // Windows' install is M59's (#222).
 /// What to do after it starts (#107): open it, read its logs, reach it
 /// from elsewhere.
 fn next_steps(args: &[String], logs: &str) -> String {
@@ -117,13 +114,230 @@ pub fn uninstall() -> anyhow::Result<()> {
 
 /// Windows: a logon task, in M59 (#222).
 #[cfg(windows)]
-pub fn install(_start: bool, _daemon_args: &[String], _reset: bool, _system: bool) -> anyhow::Result<()> {
-    bail!("illogicald install isn't on Windows yet (M59, #222)")
+pub fn install(start: bool, daemon_args: &[String], reset: bool, system: bool) -> anyhow::Result<()> {
+    windows::install(start, daemon_args, reset, system)
 }
 
 #[cfg(windows)]
 pub fn uninstall() -> anyhow::Result<()> {
-    bail!("illogicald uninstall isn't on Windows yet (M59, #222)")
+    windows::uninstall()
+}
+
+/// Windows (M59, #222): the binaries in `%LOCALAPPDATA%\Programs\illogical`,
+/// and a scheduled task, `illogicald`, that starts the daemon at logon as
+/// this user (no admin), with no window (`conhost --headless`), logging to
+/// `illogicald.log` in the state directory. Logging off ends it, as with
+/// launchd and systemd without linger; its panes' hosts close after their
+/// grace. `--system` starts it at boot instead (S4U: an admin prompt once,
+/// and panes there have no DPAPI, so no Credential Manager; S29).
+#[cfg(windows)]
+mod windows {
+    use std::{
+        fs,
+        path::{Path, PathBuf},
+        process::Command,
+        time::{Duration, Instant},
+    };
+
+    use anyhow::{Context, bail};
+
+    const TASK: &str = "illogicald";
+    /// What goes in, from beside this exe.
+    const FILES: [&str; 4] = ["illogicald.exe", "illogical.exe", "conpty.dll", "OpenConsole.exe"];
+
+    pub fn programs() -> PathBuf {
+        PathBuf::from(std::env::var_os("LOCALAPPDATA").unwrap_or_default()).join("Programs").join("illogical")
+    }
+
+    /// The files, into `programs()`. One in use (the running daemon's
+    /// exe, its ConPTY) can't be overwritten but can be renamed: it moves to
+    /// `old\` first, and goes once nothing runs it.
+    pub fn copy_binaries() -> anyhow::Result<PathBuf> {
+        let dir = programs();
+        let old = dir.join("old");
+        fs::create_dir_all(&old)?;
+        let me = std::env::current_exe()?.canonicalize()?;
+        let from = me.parent().context("this exe has no directory")?.to_owned();
+        let stamp = crate::store::now_ms();
+        for name in FILES {
+            let src = from.join(name);
+            let dest = dir.join(name);
+            if !src.is_file() {
+                if name == "illogical.exe" {
+                    println!(
+                        "note: no `illogical` CLI next to {}; build it with `cargo build -p illogical`",
+                        me.display()
+                    );
+                }
+                continue;
+            }
+            if dest.canonicalize().is_ok_and(|d| d == src.canonicalize().unwrap_or_default()) {
+                continue;
+            }
+            let tmp = dir.join(format!("{name}.new"));
+            fs::copy(&src, &tmp).with_context(|| format!("copying {}", src.display()))?;
+            if dest.exists() && fs::remove_file(&dest).is_err() {
+                fs::rename(&dest, old.join(format!("{name}.{stamp}")))
+                    .with_context(|| format!("moving the running {} aside", dest.display()))?;
+            }
+            fs::rename(&tmp, &dest)?;
+            println!("installed {}", dest.display());
+        }
+        if let Ok(entries) = fs::read_dir(&old) {
+            for e in entries.flatten() {
+                let _ = fs::remove_file(e.path());
+            }
+        }
+        Ok(dir.join("illogicald.exe"))
+    }
+
+    fn xml(s: &str) -> String {
+        s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
+    }
+
+    fn user() -> String {
+        let name = std::env::var("USERNAME").unwrap_or_default();
+        match std::env::var("USERDOMAIN") {
+            Ok(d) if !d.is_empty() => format!("{d}\\{name}"),
+            _ => name,
+        }
+    }
+
+    /// The task, as Task Scheduler's XML.
+    pub fn task_xml(exe: &Path, log: &Path, args: &[String], system: bool, user: &str) -> String {
+        let mut words =
+            vec!["--headless".to_owned(), exe.display().to_string(), "--log-file".into(), log.display().to_string()];
+        words.extend(args.iter().cloned());
+        let arguments = crate::conpty::command_line(&words[0], &words[1..]);
+        let (trigger, logon) = if system {
+            ("<BootTrigger><Enabled>true</Enabled></BootTrigger>".to_owned(), "S4U")
+        } else {
+            (
+                format!("<LogonTrigger><Enabled>true</Enabled><UserId>{}</UserId></LogonTrigger>", xml(user)),
+                "InteractiveToken",
+            )
+        };
+        format!(
+            r#"<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo><Description>illogicald: illogical's daemon, which keeps your terminals running</Description></RegistrationInfo>
+  <Triggers>{trigger}</Triggers>
+  <Principals><Principal id="Author"><UserId>{user}</UserId><LogonType>{logon}</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <RestartOnFailure><Interval>PT1M</Interval><Count>999</Count></RestartOnFailure>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <Priority>7</Priority>
+  </Settings>
+  <Actions Context="Author"><Exec><Command>conhost.exe</Command><Arguments>{arguments}</Arguments></Exec></Actions>
+</Task>
+"#,
+            user = xml(user),
+            arguments = xml(&arguments),
+        )
+    }
+
+    fn schtasks(args: &[&str]) -> anyhow::Result<()> {
+        let out = Command::new("schtasks").args(args).output().context("running schtasks")?;
+        if !out.status.success() {
+            bail!("schtasks {} failed: {}", args.join(" "), String::from_utf8_lossy(&out.stderr).trim());
+        }
+        Ok(())
+    }
+
+    pub fn install(start: bool, daemon_args: &[String], reset: bool, system: bool) -> anyhow::Result<()> {
+        let exe = copy_binaries()?;
+        let dir = programs();
+        let args_file = dir.join("daemon-args.json");
+        let args =
+            super::args_to_install(daemon_args, reset, || serde_json::from_slice(&fs::read(&args_file).ok()?).ok());
+        crate::store::write_atomic(&args_file, &serde_json::to_vec(&args)?)?;
+        let state = crate::default_state_dir();
+        fs::create_dir_all(&state)?;
+        let log = state.join("illogicald.log");
+        let task = task_xml(&exe, &log, &args, system, &user());
+        // Task Scheduler reads it as UTF-16.
+        let file = dir.join("illogicald-task.xml");
+        let mut bytes = vec![0xff, 0xfe];
+        bytes.extend(task.encode_utf16().flat_map(u16::to_le_bytes));
+        fs::write(&file, bytes)?;
+        let created = schtasks(&["/Create", "/TN", TASK, "/XML", &file.display().to_string(), "/F"]);
+        let _ = fs::remove_file(&file);
+        if let Err(e) = created {
+            if system {
+                bail!("{e:#}\n--system (start at boot) needs an administrator: run it from an elevated terminal");
+            }
+            return Err(e);
+        }
+        println!("registered the scheduled task {TASK} ({})", if system { "at boot" } else { "at logon" });
+        if start {
+            // The running one (the old binary) saves and goes; its panes'
+            // hosts wait for the new one.
+            let _ = schtasks(&["/End", "/TN", TASK]);
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while crate::daemon_running(&state) && Instant::now() < deadline {
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            schtasks(&["/Run", "/TN", TASK])?;
+            let deadline = Instant::now() + Duration::from_secs(20);
+            while !crate::daemon_running(&state) {
+                if Instant::now() > deadline {
+                    bail!("started {TASK}, but it isn't answering; see {}", log.display());
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            println!("started {TASK}");
+            print!("{}", super::next_steps(&args, &log.display().to_string()));
+        } else {
+            println!("start it with `schtasks /Run /TN {TASK}`");
+        }
+        if system {
+            println!(
+                "note: at boot it runs without your password: panes can't use Windows' stored credentials (Credential Manager, Git Credential Manager)"
+            );
+        }
+        Ok(())
+    }
+
+    pub fn uninstall() -> anyhow::Result<()> {
+        let _ = schtasks(&["/End", "/TN", TASK]);
+        if schtasks(&["/Delete", "/TN", TASK, "/F"]).is_err() {
+            println!("illogicald isn't installed as a scheduled task here");
+            return Ok(());
+        }
+        println!(
+            "illogicald is no longer a scheduled task; {} and the panes' state ({}) are kept",
+            programs().display(),
+            crate::default_state_dir().display()
+        );
+        Ok(())
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn the_task_runs_headless_with_the_log_and_args() {
+            let t = task_xml(
+                Path::new(r"C:\Users\a b\AppData\Local\Programs\illogical\illogicald.exe"),
+                Path::new(r"C:\s\illogicald.log"),
+                &["--listen".into(), "127.0.0.1:7681".into()],
+                false,
+                r"BOX\a b",
+            );
+            assert!(t.contains("<LogonTrigger>") && t.contains("<LogonType>InteractiveToken</LogonType>"));
+            assert!(t.contains("<UserId>BOX\\a b</UserId>"));
+            assert!(t.contains(
+                "<Arguments>--headless &quot;C:\\Users\\a b\\AppData\\Local\\Programs\\illogical\\illogicald.exe&quot; --log-file C:\\s\\illogicald.log --listen 127.0.0.1:7681</Arguments>"
+            ));
+            let boot = task_xml(Path::new("x.exe"), Path::new("l"), &[], true, "u");
+            assert!(boot.contains("<BootTrigger>") && boot.contains("<LogonType>S4U</LogonType>"));
+        }
+    }
 }
 
 /// Stop and remove the systemd user service; the binaries and state stay.
@@ -186,7 +400,7 @@ pub fn install(start: bool, daemon_args: &[String], reset: bool, system: bool) -
     Ok(())
 }
 
-#[cfg_attr(windows, allow(dead_code))] // Windows' install is M59's (#222).
+#[cfg(unix)]
 /// This binary (and the CLI beside it) into `~/.local/bin`; where the
 /// daemon now is.
 pub fn copy_binaries(home: &Path) -> anyhow::Result<PathBuf> {
