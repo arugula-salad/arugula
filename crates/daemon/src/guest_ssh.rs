@@ -214,8 +214,7 @@ impl Guests {
                 let key = PrivateKey::from(pair);
                 let pem = key.to_openssh(ssh_key::LineEnding::LF)?;
                 write_atomic(&self.key_path, pem.as_bytes())?;
-                use std::os::unix::fs::PermissionsExt;
-                std::fs::set_permissions(&self.key_path, std::fs::Permissions::from_mode(0o600))?;
+                crate::perm::set(&self.key_path, 0o600)?;
                 info!("made the guest ssh host key");
                 key
             }
@@ -790,7 +789,7 @@ fn error(status: StatusCode, msg: impl Into<String>) -> Response {
 }
 
 fn hostname() -> String {
-    nix::unistd::gethostname().ok().and_then(|h| h.into_string().ok()).unwrap_or_else(|| "localhost".into())
+    crate::hostname().unwrap_or_else(|| "localhost".into())
 }
 
 async fn mint(State(app): AppState, Json(req): Json<GuestInviteRequest>) -> Response {
@@ -894,8 +893,7 @@ mod tests {
         let a = Guests::open(&d, None, None).host_key().unwrap();
         let b = Guests::open(&d, None, None).host_key().unwrap();
         assert_eq!(a.public_key(), b.public_key());
-        use std::os::unix::fs::PermissionsExt;
-        let mode = std::fs::metadata(d.join("guest_ssh_host_key")).unwrap().permissions().mode();
+        let mode = crate::perm::mode(&std::fs::metadata(d.join("guest_ssh_host_key")).unwrap());
         assert_eq!(mode & 0o777, 0o600);
         std::fs::remove_dir_all(d).unwrap();
     }

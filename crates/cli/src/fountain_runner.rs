@@ -275,13 +275,13 @@ fn runner_name(unit: Option<&str>) -> String {
 }
 
 #[cfg(unix)]
-fn hostname() -> Option<String> {
+pub fn hostname() -> Option<String> {
     nix::unistd::gethostname().ok().and_then(|h| h.into_string().ok())
 }
 
 /// Windows keeps the machine's name in the environment.
 #[cfg(not(unix))]
-fn hostname() -> Option<String> {
+pub fn hostname() -> Option<String> {
     std::env::var("COMPUTERNAME").ok()
 }
 

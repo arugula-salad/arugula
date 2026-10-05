@@ -710,8 +710,14 @@ fn log_to_file() {
         let _ = std::fs::create_dir_all(dir);
     }
     let Ok(f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) else { return };
-    let _ = nix::unistd::dup2_stdout(&f);
-    let _ = nix::unistd::dup2_stderr(&f);
+    #[cfg(unix)]
+    {
+        let _ = nix::unistd::dup2_stdout(&f);
+        let _ = nix::unistd::dup2_stderr(&f);
+    }
+    // Windows: the service's log comes with its logon task (M59, #222).
+    #[cfg(not(unix))]
+    drop(f);
     // Panes don't inherit it.
     unsafe { std::env::remove_var("ILLOGICAL_LOG_FILE") };
 }

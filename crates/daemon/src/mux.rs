@@ -397,7 +397,11 @@ impl Config {
         // use the one at a fixed path beside the socket, which `illogical
         // bridge` points at the owner's forwarded agent while they're
         // connected. An agent this machine has (a desktop's) is kept.
+        #[cfg(unix)]
         let live = |p: &str| std::os::unix::net::UnixStream::connect(p).is_ok();
+        // Windows' ssh agent is a named pipe; panes keep the one they're given.
+        #[cfg(not(unix))]
+        let live = |_: &str| false;
         let has_agent = env
             .iter()
             .find(|(k, _)| k == "SSH_AUTH_SOCK")

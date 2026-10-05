@@ -1380,10 +1380,18 @@ fn real_main(cli: Cli) -> anyhow::Result<i32> {
         if let Some(dest) = &cli.ssh {
             return ssh::Remote::parse(dest)?.join(&args, &control);
         }
-        use std::os::unix::process::CommandExt;
-        let beside = std::env::current_exe()?.with_file_name("illogicald");
+        let beside = std::env::current_exe()?.with_file_name(format!("illogicald{}", std::env::consts::EXE_SUFFIX));
         let daemon = if beside.exists() { beside } else { PathBuf::from("illogicald") };
-        let err = std::process::Command::new(&daemon).args(&args).exec();
+        let mut cmd = std::process::Command::new(&daemon);
+        cmd.args(&args);
+        #[cfg(unix)]
+        let err = std::os::unix::process::CommandExt::exec(&mut cmd);
+        // No exec on Windows: run it and pass on its exit code.
+        #[cfg(not(unix))]
+        let err = match cmd.status() {
+            Ok(s) => return Ok(s.code().unwrap_or(1)),
+            Err(e) => e,
+        };
         bail!("running {}: {err}", daemon.display());
     }
     if let Command::Login { url, name, account } = &cli.cmd {
@@ -1396,7 +1404,7 @@ fn real_main(cli: Cli) -> anyhow::Result<i32> {
                 .unwrap_or_else(|| ssh::CONTROL.to_owned()),
         };
         let name = name.clone().unwrap_or_else(|| {
-            let h = nix::unistd::gethostname().ok().and_then(|h| h.into_string().ok()).unwrap_or_default();
+            let h = fountain_runner::hostname().unwrap_or_default();
             if h.is_empty() { "illogical CLI".into() } else { format!("illogical CLI on {h}") }
         });
         control::login(&url, &name, account.as_deref())?;
