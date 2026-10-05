@@ -115,9 +115,9 @@ All of it, with numbers, is in [mls/FINDINGS.md](mls/FINDINGS.md). In short:
 
 - **Mic prompts on the Mac:** the WKWebView probe app, launched from the GUI, asked for the mic. Once Jake allowed it, it captured the MacBook Air microphone with echo cancellation on. Safari 18.5 did the same.
 - **iPhone PWA ↔ Chrome on the Air**, relay to relay through TURN (`/p` on the test server, added to the home screen):
-  - **Foreground:** connected with 8–11 ms RTT, 0 packets lost, about 36 ms jitter buffer. Jake heard it clean, with the phone next to the Air.
+  - **Foreground:** connected with 8–11 ms RTT, 0 packets lost, about 36 ms jitter buffer. Jake heard it clean, with the phone next to the Air (both mics and both speakers side by side).
   - **In the background or locked (about 16 s):** the phone **stopped sending**. The Air got 0 packets a second, apart from one 2 s burst. It **kept receiving and playing** the Air's audio (Jake still heard it), the connection stayed up, and the page's script kept running.
-  - **After coming back, there was feedback for the rest of the call.** The likely cause is that iOS resumes the mic without its echo cancellation. That's not verified.
+  - **After coming back, there was some feedback for the rest of the call.** This was the hardest setup for echo cancellation: both mics and both speakers right next to each other. The same setup was clean in the foreground before the lock, so something changed on resume, possibly iOS bringing the mic back without its echo cancellation. With devices apart, it might not show at all. Not verified.
 - **What M63 does about the phone:**
   - say plainly that the phone's mic only works with the app open, and show the user as "muted (app in background)" to the others;
   - on `visibilitychange` back to visible, get a fresh mic track (`getUserMedia` plus `replaceTrack`) instead of trusting the resumed one. Then check again that the feedback is gone.
