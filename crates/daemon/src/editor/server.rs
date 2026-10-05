@@ -321,9 +321,13 @@ impl Server {
             c.arg(format!("--unit=illogical-code-server-{}", unique())).arg("--").arg(bin);
             c
         } else {
-            let mut c = tokio::process::Command::new(bin);
+            let c = tokio::process::Command::new(bin);
             #[cfg(unix)]
-            c.process_group(0);
+            let c = {
+                let mut c = c;
+                c.process_group(0);
+                c
+            };
             c
         };
         for k in crate::sys::SERVICE_ENV {

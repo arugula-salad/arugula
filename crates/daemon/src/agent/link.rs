@@ -19,7 +19,6 @@
 #[cfg(unix)]
 use std::{
     fs::File,
-    io::Write,
     os::{
         fd::{AsRawFd, OwnedFd},
         unix::net::UnixStream,
@@ -27,6 +26,7 @@ use std::{
 };
 use std::{
     fs::OpenOptions,
+    io::Write,
     path::{Path, PathBuf},
     process::Stdio,
     sync::Arc,
@@ -224,7 +224,7 @@ pub fn adopt_local(
     let (in_w, out) = (kept.remove(&a)?, kept.remove(&b)?);
     #[cfg(not(unix))]
     {
-        let _ = (out, fd_store, sink);
+        let _ = (dir, out, fd_store, sink);
         match in_w {}
     }
     #[cfg(unix)]
