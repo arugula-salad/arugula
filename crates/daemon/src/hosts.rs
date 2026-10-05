@@ -458,11 +458,7 @@ fn validate(mut req: AddHost, this: &str) -> Result<AddHost, String> {
 }
 
 fn random<const N: usize>() -> [u8; N] {
-    let mut b = [0u8; N];
-    std::fs::File::open("/dev/urandom")
-        .and_then(|mut f| std::io::Read::read_exact(&mut f, &mut b))
-        .expect("/dev/urandom");
-    b
+    crate::push::random()
 }
 
 pub fn digest(token: &str) -> String {

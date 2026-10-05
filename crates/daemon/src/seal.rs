@@ -47,9 +47,7 @@ const RING_HEADER: &str = "illogical-sync-keys 1";
 const MAX_RECORD: u32 = 8 << 20;
 
 fn random<const N: usize>() -> [u8; N] {
-    let mut b = [0u8; N];
-    File::open("/dev/urandom").and_then(|mut f| f.read_exact(&mut b)).expect("/dev/urandom");
-    b
+    crate::push::random()
 }
 
 fn hex(b: &[u8]) -> String {

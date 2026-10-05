@@ -534,8 +534,7 @@ fn daemon_id(store: &store::StateDir) -> String {
     {
         return id.trim().to_owned();
     }
-    let mut b = [0u8; 4];
-    let _ = std::fs::File::open("/dev/urandom").and_then(|mut f| std::io::Read::read_exact(&mut f, &mut b));
+    let b = push::random::<4>();
     let id: String = b.iter().map(|x| format!("{x:02x}")).collect();
     if let Err(e) = store::write_atomic(&path, id.as_bytes()) {
         warn!(error = %e, "can't save the daemon id");

@@ -592,8 +592,7 @@ fn tail(path: &Path) -> String {
 
 /// A name part no other process picks at the same time.
 fn unique() -> String {
-    let mut b = [0u8; 6];
-    let _ = std::fs::File::open("/dev/urandom").and_then(|mut f| std::io::Read::read_exact(&mut f, &mut b));
+    let b = crate::push::random::<6>();
     format!("{}-{}", std::process::id(), hex::encode(b))
 }
 

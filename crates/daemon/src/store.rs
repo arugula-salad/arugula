@@ -114,6 +114,9 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
         f.sync_all()?;
     }
     fs::rename(&tmp, path)?;
+    // The rename itself, on disk. (Windows can't open a directory as a
+    // file; NTFS journals the rename.)
+    #[cfg(unix)]
     if let Some(dir) = path.parent() {
         File::open(dir)?.sync_all()?;
     }

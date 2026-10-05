@@ -382,7 +382,7 @@ mod imp {
         let (mut created, mut exited, mut kernel, mut user) = (z, z, z, z);
         // SAFETY: four valid FILETIMEs for the call to fill.
         let ok = unsafe { GetProcessTimes(p.0, &mut created, &mut exited, &mut kernel, &mut user) };
-        (ok != 0).then(|| (created.dwHighDateTime as u64) << 32 | created.dwLowDateTime as u64)
+        (ok != 0).then_some((created.dwHighDateTime as u64) << 32 | created.dwLowDateTime as u64)
     }
 
     pub fn cwd(_pid: u32) -> Option<PathBuf> {
