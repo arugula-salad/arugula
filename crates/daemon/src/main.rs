@@ -980,7 +980,13 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
         warn!(error = %e, "can't record the listen address");
     }
     start_sites(&args.blocks, &access, owner, args.listen, &state_dir)?;
-    let launch = pane::Launcher::detect(args.keep_panes);
+    #[cfg_attr(unix, allow(unused_mut))]
+    let mut launch = pane::Launcher::detect(args.keep_panes);
+    // Windows: pane hosts run from a copy of this exe (M58).
+    #[cfg(windows)]
+    {
+        launch.host = host::exe(&state_dir);
+    }
     #[cfg(unix)]
     if launch.hold {
         // Terminals the last daemon's pane shims kept, adopted like the FD

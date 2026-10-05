@@ -670,6 +670,9 @@ pub struct Launcher {
     /// No FD store, but keep panes anyway: each shim holds its terminal
     /// for the next daemon (`--keep-panes`, see [`crate::holder`]).
     pub hold: bool,
+    /// Windows: what pane hosts run (`crate::host::exe`).
+    #[cfg(windows)]
+    pub host: PathBuf,
 }
 
 impl Launcher {
@@ -691,6 +694,8 @@ impl Launcher {
             no_expand: version.flatten().is_some_and(|v| v >= 254),
             fd_store: systemd,
             hold: keep_panes && !systemd,
+            #[cfg(windows)]
+            host: std::env::current_exe().unwrap_or_else(|_| "illogicald.exe".into()),
         }
     }
 
@@ -965,7 +970,7 @@ impl Process {
         let cwd = if spawn.cwd.is_dir() { spawn.cwd.clone() } else { crate::home() };
         let pipe = crate::host::pipe_name(record);
         let _ = std::fs::remove_file(record);
-        let mut cmd = Command::new(&launch.exe);
+        let mut cmd = Command::new(&launch.host);
         cmd.arg("_host")
             .arg("--record")
             .arg(record)

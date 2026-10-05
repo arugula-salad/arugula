@@ -343,6 +343,49 @@ fn host(args: &[String]) -> io::Result<()> {
     }
 }
 
+/// What pane hosts run: a copy of this exe (with the ConPTY beside it), one
+/// per build, under the state directory. Hosts outlive the daemon, and a
+/// running exe can't be replaced on Windows: run from here, they never hold
+/// the daemon's own exe, so it can be upgraded (or rebuilt) under them.
+/// Copies no host runs any more are removed (a running one can't be).
+pub fn exe(state_dir: &Path) -> PathBuf {
+    let Ok(me) = std::env::current_exe() else { return PathBuf::from("illogicald.exe") };
+    let meta = std::fs::metadata(&me);
+    let stamp = meta
+        .as_ref()
+        .ok()
+        .and_then(|m| Some((m.len(), m.modified().ok()?.duration_since(std::time::UNIX_EPOCH).ok()?.as_nanos())));
+    let Some((len, mtime)) = stamp else { return me };
+    let root = state_dir.join("hosts");
+    let dir = root.join(format!("{len:x}-{mtime:x}"));
+    let copy = dir.join("illogicald.exe");
+    if !copy.is_file() {
+        let made = std::fs::create_dir_all(&dir).and_then(|_| {
+            let tmp = dir.join("illogicald.exe.tmp");
+            std::fs::copy(&me, &tmp)?;
+            for extra in ["conpty.dll", "OpenConsole.exe"] {
+                let from = me.with_file_name(extra);
+                if from.is_file() {
+                    std::fs::copy(&from, dir.join(extra))?;
+                }
+            }
+            std::fs::rename(&tmp, &copy)
+        });
+        if let Err(e) = made {
+            tracing::warn!(error = %e, "can't copy the pane host; panes hold this exe");
+            return me;
+        }
+    }
+    if let Ok(dirs) = std::fs::read_dir(&root) {
+        for d in dirs.flatten() {
+            if d.path() != dir {
+                let _ = std::fs::remove_dir_all(d.path());
+            }
+        }
+    }
+    copy
+}
+
 /// The panes whose hosts outlived the last daemon (from their records), by
 /// the name the restore looks them up by (`pane-N`).
 pub fn collect(state_dir: &Path) -> std::collections::HashMap<String, crate::pane::Kept> {
