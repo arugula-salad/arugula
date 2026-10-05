@@ -1260,6 +1260,9 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
     Ok(())
 }
 
+/// `POST /api/daemon/stop` (on the local socket): stop as on a signal.
+static STOP: tokio::sync::Notify = tokio::sync::Notify::const_new();
+
 /// Windows: Ctrl-C, the console closing, logoff or shutdown.
 #[cfg(windows)]
 async fn signalled() {
@@ -1271,6 +1274,7 @@ async fn signalled() {
     );
     tokio::select! {
         _ = tokio::signal::ctrl_c() => {}
+        _ = STOP.notified() => {}
         _ = close.recv() => {}
         _ = shutdown.recv() => {}
         _ = logoff.recv() => {}
@@ -1282,6 +1286,7 @@ async fn signalled() {
     let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).expect("SIGTERM");
     tokio::select! {
         _ = tokio::signal::ctrl_c() => {}
+        _ = STOP.notified() => {}
         _ = term.recv() => {}
     }
 }

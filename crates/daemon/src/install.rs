@@ -276,11 +276,15 @@ mod windows {
         if start {
             // The running one (the old binary) saves and goes; its panes'
             // hosts wait for the new one.
-            let _ = schtasks(&["/End", "/TN", TASK]);
-            let deadline = Instant::now() + Duration::from_secs(10);
-            while crate::daemon_running(&state) && Instant::now() < deadline {
+            ask_to_stop(&state);
+            let deadline = Instant::now() + Duration::from_secs(15);
+            while crate::daemon_running(&state) {
+                if Instant::now() > deadline {
+                    bail!("the running illogicald didn't stop; stop it (or log off and on) and run this again");
+                }
                 std::thread::sleep(Duration::from_millis(100));
             }
+            let _ = schtasks(&["/End", "/TN", TASK]);
             schtasks(&["/Run", "/TN", TASK])?;
             let deadline = Instant::now() + Duration::from_secs(20);
             while !crate::daemon_running(&state) {
@@ -302,7 +306,20 @@ mod windows {
         Ok(())
     }
 
+    /// `POST /api/daemon/stop` over its pipe: it saves every pane and goes.
+    fn ask_to_stop(state: &Path) {
+        use std::io::{Read, Write};
+        let Ok(pipe) = fs::read_to_string(state.join("sock.path")) else { return };
+        let Ok(mut f) = fs::OpenOptions::new().read(true).write(true).open(pipe.trim()) else { return };
+        let req = "POST /api/daemon/stop HTTP/1.1\r\nHost: localhost\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+        if f.write_all(req.as_bytes()).is_ok() {
+            let mut buf = [0u8; 512];
+            let _ = f.read(&mut buf);
+        }
+    }
+
     pub fn uninstall() -> anyhow::Result<()> {
+        ask_to_stop(&crate::default_state_dir());
         let _ = schtasks(&["/End", "/TN", TASK]);
         if schtasks(&["/Delete", "/TN", TASK, "/F"]).is_err() {
             println!("illogicald isn't installed as a scheduled task here");
