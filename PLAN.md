@@ -4580,6 +4580,14 @@ Where WebKitGTK has none, measure str0m or webrtc-rs with cpal on the Tauri side
 - A revoked guest drops out within a second.
 - After a daemon restart, *Join call* brings everyone back.
 
+**As built (huddles, 2026-10-05):** a call on a session is a *huddle*, as in team chat. The headphones button sits by the session's name (the bar, the phone's bar, and the chat view's channel header); *Start a huddle* / *Join the huddle* are in the session menu. The huddle bar stays in the corner across tabs, sessions and the chat view, showing members, speaking rings, mute and leave. Ctrl/Cmd+Shift+Space mutes.
+- The daemon keeps huddles in memory (`calls.rs`, `State.calls`) and relays `call_signal` only between members, attaching the sender's device certificate. Anyone with a role in the session may join except read-only links. Losing the session takes you out on the next ACL change.
+- The signature covers `illogical call v1`, the call id, from, to and the fingerprints (`call_fingerprint_body`). Peers show as *verified* (one of your own devices, checked against this browser's trusted set), *signed* (another account's device, as the daemon vouches) or *unverified* (no device key: tailnet or local). A bad signature is *refused*. Checking another account's certificate chain against a pinned root is left for later.
+- TURN: daemon `GET /api/turn` → control `GET /api/daemon/turn` (daemon-signed) → Cloudflare `generate-ice-servers`, with 8-hour credentials the daemon reuses for an hour. Without a key, public STUN.
+- A dropped connection (or daemon restart) ends the huddle on the page, which rejoins on its own when the machine is back (within 2 minutes).
+- The desktop app allows the mic for its own pages (`on_permission_request`). macOS gets `NSMicrophoneUsageDescription` and the audio-input entitlement.
+- The Linux desktop app's native path (webrtc-rs) is a second step; until then it says it can't join.
+
 #### M64: bigger calls and calls in channels (#243, gated, after M63)
 
 - **Triggers:** a team regularly wants more people on a call than peer to peer handles, or people want a call that isn't on a session.

@@ -37,6 +37,7 @@
     "macOS": {
       "signingIdentity": "-",
       "minimumSystemVersion": "13.0",
+      "entitlements": "macos/entitlements.plist",
       "files": {
         "Library/LaunchAgents/wtf.widgets.illogical.daemon.plist": "macos/wtf.widgets.illogical.daemon.plist"
       }
