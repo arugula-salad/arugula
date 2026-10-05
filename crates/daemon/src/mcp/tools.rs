@@ -2947,7 +2947,7 @@ mod tests {
     #[test]
     fn annotations_are_honest() {
         let all = list(Scope::Full);
-        assert_eq!(all.len(), 34);
+        assert_eq!(all.len(), 36);
         let ro: Vec<&str> = all
             .iter()
             .filter(|t| t.annotations.as_ref().and_then(|a| a.read_only_hint) == Some(true))
@@ -2968,7 +2968,8 @@ mod tests {
                 "read_issue",
                 "list_agents",
                 "read_agent",
-                "read_file"
+                "read_file",
+                "list_devices"
             ]
         );
         assert_eq!(list(Scope::Read).len(), ro.len(), "a read token sees the read-only tools only");
