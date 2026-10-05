@@ -68,6 +68,7 @@ mod tailscale;
 mod threads;
 mod tls;
 mod update;
+#[cfg(unix)]
 mod upload;
 mod workspace;
 

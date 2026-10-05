@@ -46,7 +46,7 @@ use crate::{
 type AppState = State<Arc<App>>;
 
 pub fn routes() -> Router<Arc<App>> {
-    Router::new()
+    let r = Router::new()
         .route("/api/panes", get(panes))
         .route("/api/run", post(run))
         .route("/api/panes/{id}/send", post(send))
@@ -64,11 +64,6 @@ pub fn routes() -> Router<Arc<App>> {
         .route("/api/panes/{id}/followup", post(followup))
         .route("/api/threads/{target}", get(thread_get).post(thread_post))
         .route("/api/threads/{target}/read", post(thread_read))
-        // S32 spike: a file into the pane's host, then its path pasted.
-        .route(
-            "/api/panes/{id}/upload",
-            post(crate::upload::upload).layer(axum::extract::DefaultBodyLimit::max(crate::upload::CHUNK_MAX)),
-        )
         .route("/api/panes/{id}/close", post(close))
         .route("/api/panes/{id}/capture", get(capture))
         .route("/api/panes/{id}/process", get(process))
@@ -107,7 +102,14 @@ pub fn routes() -> Router<Arc<App>> {
         .route("/api/push/key", get(push_key))
         .route("/api/push/subscribe", post(push_subscribe))
         .route("/api/push/test", post(push_test))
-        .route("/api/notify", get(notify_get).post(notify_set))
+        .route("/api/notify", get(notify_get).post(notify_set));
+    // S32 spike: a file into the pane's host, then its path pasted.
+    #[cfg(unix)]
+    let r = r.route(
+        "/api/panes/{id}/upload",
+        post(crate::upload::upload).layer(axum::extract::DefaultBodyLimit::max(crate::upload::CHUNK_MAX)),
+    );
+    r
 }
 
 pub struct ApiError(pub StatusCode, pub String);
