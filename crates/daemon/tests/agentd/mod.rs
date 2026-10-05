@@ -213,6 +213,7 @@ pub fn open_push(ua: &p256::SecretKey, auth: &[u8], body: &[u8]) -> Value {
 pub struct Phone {
     service: TcpListener,
     ua: p256::SecretKey,
+    ua_public: Vec<u8>,
     auth: [u8; 16],
 }
 
@@ -223,13 +224,8 @@ impl Phone {
 
     /// Subscribed as a tailnet user (M29), or as the owner.
     pub fn subscribe_as(d: &Daemon, login: Option<&str>) -> Self {
-        use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD as B64};
-        let service = TcpListener::bind("127.0.0.1:0").unwrap();
-        let endpoint = format!("http://127.0.0.1:{}/push/abc", service.local_addr().unwrap().port());
-        let ua = p256::SecretKey::from_slice(&[7u8; 32]).unwrap();
-        let ua_public = ua.public_key().to_sec1_bytes().to_vec();
-        let auth = [9u8; 16];
-        let sub = json!({"endpoint": endpoint, "keys": {"p256dh": B64.encode(&ua_public), "auth": B64.encode(auth)}});
+        let phone = Self::bind();
+        let sub = phone.subscription();
         match login {
             None => {
                 d.post("/api/push/subscribe", sub);
@@ -239,7 +235,22 @@ impl Phone {
                 assert_eq!(status, 200, "{l} subscribing: {body}");
             }
         }
-        Self { service, ua, auth }
+        phone
+    }
+
+    /// A phone nobody has subscribed yet.
+    pub fn bind() -> Self {
+        let service = TcpListener::bind("127.0.0.1:0").unwrap();
+        let ua = p256::SecretKey::from_slice(&[7u8; 32]).unwrap();
+        let ua_public = ua.public_key().to_sec1_bytes().to_vec();
+        Self { service, ua, ua_public, auth: [9u8; 16] }
+    }
+
+    /// Its subscription, as `PushSubscription.toJSON()` gives it.
+    pub fn subscription(&self) -> Value {
+        use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD as B64};
+        let endpoint = format!("http://127.0.0.1:{}/push/abc", self.service.local_addr().unwrap().port());
+        json!({"endpoint": endpoint, "keys": {"p256dh": B64.encode(&self.ua_public), "auth": B64.encode(self.auth)}})
     }
 
     /// Whether nothing came for `ms`.
