@@ -65,7 +65,10 @@ vs team machines and sharing a session:
    `--account FINGERPRINT` answers ahead, for scripts. *Join to* picks
    your account (*Just me*) or a team you own; `--team ID` picks the team
    ahead. *Cancel* turns it down. A running daemon connects within a few
-   seconds, and the machine appears in the host menu.
+   seconds, and the machine appears in the host menu. A machine runs one
+   join at a time: while Getting started's waits, `illogicald join` says
+   which code it is and where to approve it, and the other way round.
+   An approval is never lost to a second request from the same machine.
 3. **Add your phone** (or any other browser): *Add a phone or browser…* in
    the host menu shows control's address as a QR code and a link. Sign in
    there. It shows a fingerprint and waits. Your devices ask *New device?*
@@ -98,7 +101,12 @@ vs team machines and sharing a session:
    machines…* to revoke it.
 6. **Remove a device or machine** from *Devices and machines…* in the host
    menu. It loses access at once. A removed machine keeps running
-   illogical, reachable only locally; `illogicald join` adds it back.
+   illogical, reachable only locally. Its key never counts again, so when
+   control says it was removed, the machine sets the key aside
+   (`daemon.key.removed-…`) and asks to join again with a new one: a new
+   code to approve, shown in *Getting started* and by `illogicald join`.
+   Approved into the same account, it's back without checking the
+   fingerprint again.
 
 **How a device reaches a machine:**
 
@@ -150,10 +158,12 @@ the host menu.
     more (see below).
 
 **Moving a machine** between your account and a team (or between teams):
-*Move to…* on it in *Devices and machines…*. You need to own the teams on
-both sides. Your device signs the move and the machine checks that
-signature, so control can't move a machine by itself. An offline machine
-moves when it next connects.
+*In …* on it in *Devices and machines…*, into any team you're in. Your
+device signs the move and the machine checks that signature, so control
+can't move a machine by itself. A team's owners can take a member's
+machine out of the team (*Take out* in *Teams…*): the machine checks that
+an owner of the team, in the member list it checked, signed it, and takes
+nothing else from them. An offline machine moves when it next connects.
 
 **What isn't here yet:** the CLI (`illogical`) still reaches only the local
 daemon, or others over the tailnet.
@@ -234,6 +244,14 @@ illogical-control --public-url https://control.example.com --listen 127.0.0.1:76
   - `ILLOGICAL_RELAY_DAILY_MB` (2000): relayed traffic a day, while
     billing is off. Past it the account's relayed traffic slows to about
     64 KB/s, as billing's allowance does. Direct connections don't count.
+- **A ceiling on the relay,** every account's sockets together:
+  `ILLOGICAL_RELAY_MAX_TOTAL` (5000; 0 for none). Keep it below the
+  proxy's connection limit, so a full relay still leaves room for
+  control's pages and sign-ins. Past it a new relay socket is refused
+  (what's open stays): daemons and the CLI get `503` with
+  `Retry-After: 30`, and a browser's socket closes at once with code
+  1013 and the reason. Daemons wait that long and up to as long again;
+  a page says control is full and waits 30 to 60 seconds.
 - **Backups:** set `LITESTREAM_BUCKET` and control backs its database up
   continuously with Litestream (below).
 
@@ -252,7 +270,13 @@ The hosted control is one Fly machine (`packaging/control/fly.toml`):
 `fly.toml` (6,000 soft, 8,000 hard) are about open files, not memory.
 Control raises its open-file limit to the hard one at start and logs it
 (`open file limit open_files=…` in `fly logs`); keep `hard_limit` below
-that. Each account is held to the relay limits above.
+that. Each account is held to the relay limits above, and the relay as
+a whole to its ceiling (5,000, under Fly's soft limit, so pages and
+sign-ins still get through when it's full). Each minute it changed,
+`fly logs` has `relay sockets` with the count (`sockets`, `daemons`,
+`clients`), the ceiling (`max`) and how many were refused for it
+(`refused`); `the relay is full` and `the relay has room again` mark
+when it fills and empties.
 
 **Backups (Litestream to Cloudflare R2).** Off until its secrets are set;
 then:
