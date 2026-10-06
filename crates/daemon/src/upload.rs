@@ -81,17 +81,22 @@ fn private_dir(dir: &FsPath) -> io::Result<()> {
 /// or temp directory (one of the system's, not checked), else in a private
 /// `/tmp/illogical-<uid>`.
 fn root() -> io::Result<PathBuf> {
-    let base = match std::env::var_os("XDG_RUNTIME_DIR").or_else(|| std::env::var_os("TMPDIR")) {
-        Some(d) => PathBuf::from(d),
-        None => {
-            let d = PathBuf::from(format!("/tmp/illogical-{}", nix::unistd::geteuid().as_raw()));
-            private_dir(&d)?;
-            d
-        }
-    };
+    let (base, ours) = base();
+    if ours {
+        private_dir(&base)?;
+    }
     let root = base.join("illogical-uploads");
     private_dir(&root)?;
     Ok(root)
+}
+
+/// The directory `root` goes in, without making anything: the runtime or
+/// temp directory, or our own in /tmp (true).
+fn base() -> (PathBuf, bool) {
+    match std::env::var_os("XDG_RUNTIME_DIR").or_else(|| std::env::var_os("TMPDIR")) {
+        Some(d) => (PathBuf::from(d), false),
+        None => (PathBuf::from(format!("/tmp/illogical-{}", nix::unistd::geteuid().as_raw())), true),
+    }
 }
 
 /// A pane's folder, made if it isn't there.
@@ -114,8 +119,14 @@ fn used(root: &FsPath) -> u64 {
         .sum()
 }
 
-/// Remove a closed pane's uploads.
+/// Remove a closed pane's uploads. Most panes have none, and only those
+/// that do get a thread: a thread for every closed pane left glibc an arena
+/// each, which it never gives back (closing 49 at once kept 8 MB,
+/// tests/memory.rs).
 pub fn forget(pane: PaneId) {
+    if !base().0.join("illogical-uploads").join(pane.to_string()).exists() {
+        return;
+    }
     std::thread::spawn(move || {
         let Ok(root) = root() else { return };
         let dir = root.join(pane.to_string());
