@@ -175,7 +175,9 @@ impl Tokens {
 
     fn mac(&self, block: PaneId) -> String {
         let mut m = <Hmac<Sha256> as KeyInit>::new_from_slice(&self.key).expect("any key length");
-        m.update(format!("arugula block {block}").as_bytes());
+        // Frozen (#504): agents started before an update carry tokens made
+        // this way (`block_tokens_never_change`).
+        m.update(format!("illogical block {block}").as_bytes());
         hex(&m.finalize().into_bytes())
     }
 
@@ -253,6 +255,14 @@ async fn revoke(State(app): AppState, UrlPath(name): UrlPath<String>) -> Respons
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// An agent block's token from before an update still checks (#504):
+    /// a rename must not change how it's made.
+    #[test]
+    fn block_tokens_never_change() {
+        let t = Tokens { path: PathBuf::new(), key: [b'k'; 32], saved: Mutex::new(vec![]) };
+        assert_eq!(t.mac(7), "fc69c1f978ef50871eeb01118749d040388f7ae2c231ac65206a7146184b68bd");
+    }
 
     #[test]
     fn mints_checks_and_revokes() {

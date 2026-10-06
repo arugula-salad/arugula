@@ -2014,11 +2014,19 @@ pub const JOIN_TTL_MS: u64 = 15 * 60 * 1000;
 
 fn gone_hash(device: &str) -> String {
     use sha2::{Digest, Sha256};
-    hex::encode(Sha256::digest(format!("arugula gone daemon\n{device}")))
+    // Frozen (#504): control already keeps these (`gone_hash_never_changes`).
+    hex::encode(Sha256::digest(format!("illogical gone daemon\n{device}")))
 }
 
 #[cfg(test)]
 mod tests {
+    /// The hash of a deleted machine control keeps (#504): a rename must
+    /// not change it.
+    #[test]
+    fn gone_hash_never_changes() {
+        assert_eq!(super::gone_hash("d1"), "fcec8b42707808b19f2026f57b1df1067476f9c187f8129e3c1a92acd07a44bb");
+    }
+
     use arugula_e2e::{Cert, Kind};
 
     use super::*;
