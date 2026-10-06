@@ -59,6 +59,37 @@ test("Homebrew's command, the app's download, and nothing when up to date", asyn
   await expect(page.locator("[data-update-chip]")).toBeHidden();
 });
 
+test("in an app that updates itself: Update now asks the app", async ({ page }) => {
+  // The app's init script and its invoke, standing in: the first press
+  // finds the app current, the second fails.
+  await page.addInitScript(() => {
+    const w = window as unknown as Record<string, unknown>;
+    w.__illogicalApp = { name: "test", platform: "linux", updates: true };
+    const calls: string[] = [];
+    w.__updateCalls = calls;
+    w.__TAURI__ = {
+      core: {
+        invoke: (cmd: string) => {
+          calls.push(cmd);
+          return calls.length === 1 ? Promise.resolve("current") : Promise.reject(new Error("no network"));
+        },
+      },
+    };
+  });
+  await serve(page, status({ kind: "app", command: undefined }));
+  await reset(page);
+  await page.locator("[data-update-chip]").click();
+  const pop = page.getByRole("dialog", { name: "Update illogical" });
+  await expect(pop).toContainText("restarts into it, then updates the daemon");
+  await expect(pop).not.toContainText("Download the new app");
+  const now = pop.locator("[data-update-now]");
+  await now.click();
+  await expect(pop.locator("[data-update-note]")).toContainText("try again in a few minutes");
+  await now.click();
+  await expect(pop.locator("[data-update-note]")).toHaveText("Couldn't update: no network");
+  expect(await page.evaluate(() => (window as unknown as { __updateCalls: string[] }).__updateCalls)).toEqual(["app_update", "app_update"]);
+});
+
 test("the real daemon answers: off for a build run from target/", async ({ page }) => {
   await reset(page);
   const got = await page.evaluate(() => fetch("/api/update").then((r) => r.json()));

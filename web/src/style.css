@@ -4966,6 +4966,21 @@ html[data-desktop="macos"] .bar {
   color: var(--accent);
 }
 
+.update-now {
+  padding: 4px 12px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  color: var(--accent);
+}
+
+.update-now:hover:not(:disabled) {
+  background: var(--raised-hover);
+}
+
+.update-now:disabled {
+  opacity: 0.6;
+}
+
 .update-actions button {
   padding: 4px 10px;
   border-radius: 6px;

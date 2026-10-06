@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "The app's windows: the local daemon's page, and the page shown when it can't be reached. The client's bar is the titlebar (M46), so the page moves, minimizes and closes its window. Control's page gets the window permissions at run time (allow_control in main.rs). The daemon's page runs huddles through the app (M63).",
+  "description": "The app's windows: the local daemon's page, and the page shown when it can't be reached. The client's bar is the titlebar (M46), so the page moves, minimizes and closes its window. Control's page gets the window permissions at run time (allow_control in main.rs). The daemon's page runs huddles through the app (M63) and updates the app (its update chip's Update now).",
   "windows": ["*"],
   "remote": { "urls": ["http://127.0.0.1:*", "http://localhost:*"] },
   "permissions": [
@@ -17,6 +17,7 @@
     "allow-call-native-drop",
     "allow-call-native-mute",
     "allow-call-native-stop",
-    "allow-call-native-status"
+    "allow-call-native-status",
+    "allow-app-update"
   ]
 }

@@ -121,6 +121,7 @@ files = {
     "darwin-x86_64": "illogical-desktop-macos-x86_64.app.tar.gz",
     "linux-x86_64": "illogical-desktop-linux-x86_64.AppImage",
     "linux-aarch64": "illogical-desktop-linux-aarch64.AppImage",
+    "windows-x86_64": "illogical-desktop-windows-x86_64-setup.exe",
 }
 platforms = {}
 for p, f in files.items():

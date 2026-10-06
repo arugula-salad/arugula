@@ -149,7 +149,8 @@ pub fn is_control_signin(url: &tauri::Url) -> bool {
 }
 
 /// Script for every page in the app's windows: the name control's page
-/// gives this device, and no passkey button where passkeys can't work.
+/// gives this device, whether the app updates itself, and no passkey
+/// button where passkeys can't work.
 pub fn init_script() -> String {
     let control = control().unwrap_or_default();
     // Debug builds only: a test's script for the page (the native huddle
@@ -160,7 +161,7 @@ pub fn init_script() -> String {
     #[cfg(not(debug_assertions))]
     let test = String::new();
     let s = format!(
-        "window.__illogicalApp = {{ name: {}, platform: {:?}, nativeCalls: {} }};\n\
+        "window.__illogicalApp = {{ name: {}, platform: {:?}, nativeCalls: {}, updates: {} }};\n\
          if ({control:?} && location.origin === new URL({control:?}).origin) {{\n\
            addEventListener('DOMContentLoaded', () => {{\n\
              const s = document.createElement('style');\n\
@@ -172,6 +173,8 @@ pub fn init_script() -> String {
         if cfg!(target_os = "macos") { "macos" } else { "linux" },
         // Huddles run in Rust here (M63, crates/desktop/src/calls.rs).
         cfg!(all(target_os = "linux", feature = "native-calls")),
+        // The update chip's *Update now* (updates.rs).
+        crate::updates::enabled(),
     );
     #[cfg(debug_assertions)]
     if !test.is_empty() {

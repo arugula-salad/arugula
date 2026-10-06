@@ -94,7 +94,18 @@ jobs:
       - run: |
           v=$(sed -n 's/^version = "\(.*\)"/\1/p' crates/desktop/Cargo.toml | head -1)
           cp "crates/desktop/target/release/bundle/nsis/illogical_${v}_x64-setup.exe" dist/illogical-desktop-windows-x86_64-setup.exe
-      - run: scripts/release upload "$GITHUB_REF_NAME" dist/illogical-desktop-windows-x86_64-setup.exe
+      # The updater installs the installer itself, signed with the updater key.
+      - run: |
+          if [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
+            npx --yes @tauri-apps/cli@2 signer sign dist/illogical-desktop-windows-x86_64-setup.exe >/dev/null
+            echo "signed the installer for the updater"
+          else
+            echo "no updater signature: TAURI_SIGNING_PRIVATE_KEY isn't set"
+          fi
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      - run: scripts/release upload "$GITHUB_REF_NAME" dist/illogical-desktop-windows-x86_64-setup.exe*
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: scripts/release upload "$GITHUB_REF_NAME" dist/illogical-*-x86_64-pc-windows-msvc.zip

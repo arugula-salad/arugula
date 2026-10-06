@@ -8,6 +8,7 @@ fn main() {
         "cloud_status",
         "cloud_signin",
         "cloud_local",
+        "app_update",
         "call_native_start",
         "call_native_peer",
         "call_native_remote",

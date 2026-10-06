@@ -1,6 +1,9 @@
 // A newer release is out (#176): a small chip in the top bar, and the
 // command that updates this install. The daemon checks, at most twice a
-// day (`GET /api/update`, crates/daemon/src/update.rs).
+// day (`GET /api/update`, crates/daemon/src/update.rs). In the desktop app,
+// when it updates itself, *Update now* does it all: the app puts the new
+// one in place and restarts, and the new app updates the daemon
+// (crates/desktop/src/updates.rs).
 
 import { useEffect, useState } from "preact/hooks";
 import type { Client } from "../client";
@@ -33,6 +36,20 @@ function dismissed(): string | null {
 /** The desktop app's window says so (crates/desktop/src/cloud.rs). */
 function inApp(): boolean {
   return !!(window as { __illogicalApp?: unknown }).__illogicalApp;
+}
+
+/** The app updates itself and the daemon (`window.__illogicalApp.updates`). */
+function appUpdates(): boolean {
+  return !!(window as { __illogicalApp?: { updates?: boolean } }).__illogicalApp?.updates;
+}
+
+type Invoke = <T>(cmd: string) => Promise<T>;
+
+/** The app's `app_update`: it restarts the app, or says what it did. */
+function appUpdate(): Promise<"daemon" | "current"> {
+  const invoke = (globalThis as { __TAURI__?: { core?: { invoke?: Invoke } } }).__TAURI__?.core?.invoke;
+  if (!invoke) return Promise.reject(new Error("the app isn't reachable from this page"));
+  return invoke("app_update");
 }
 
 export function UpdateChip({ client }: { client: Client }) {
@@ -96,6 +113,7 @@ export function UpdateChip({ client }: { client: Client }) {
 }
 
 function How({ status }: { status: UpdateStatus }) {
+  if (appUpdates()) return <UpdateNow />;
   if (inApp() || status.kind === "app")
     return (
       <p>
@@ -116,4 +134,32 @@ function How({ status }: { status: UpdateStatus }) {
       </p>
     );
   return <p>Build it from the new release's source, then run <code>illogicald install</code> again.</p>;
+}
+
+/** The app updates itself, then the daemon. */
+function UpdateNow() {
+  const [state, setState] = useState<{ busy?: boolean; note?: string }>({});
+  const go = () => {
+    setState({ busy: true });
+    // Restarting closes this page; anything else comes back.
+    appUpdate().then(
+      (r) =>
+        setState({
+          note: r === "current" ? "This app is already the newest it can find. The release may still be publishing: try again in a few minutes." : undefined,
+        }),
+      (e: unknown) => setState({ note: `Couldn't update: ${e instanceof Error ? e.message : String(e)}` }),
+    );
+  };
+  return (
+    <>
+      <p>The app downloads the new version and restarts into it, then updates the daemon.</p>
+      {state.busy && <p data-update-busy>Downloading… the app restarts when it's ready.</p>}
+      {state.note && <p data-update-note>{state.note}</p>}
+      <p>
+        <button class="update-now" onClick={go} disabled={state.busy} data-update-now>
+          Update now
+        </button>
+      </p>
+    </>
+  );
 }
