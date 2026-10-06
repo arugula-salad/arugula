@@ -560,7 +560,9 @@ pub fn cache_root(env: &[(String, String)], home: &Path) -> PathBuf {
         .map(|(_, v)| v.clone())
         .or_else(|| std::env::var("XDG_CACHE_HOME").ok())
         .filter(|v| v.starts_with('/'));
-    xdg.map(PathBuf::from).unwrap_or_else(|| home.join(".cache")).join("arugula/fountain")
+    let base = xdg.map(PathBuf::from).unwrap_or_else(|| home.join(".cache"));
+    // (#505) Bundles cached before the rename are used where they are.
+    arugula_core::rename::kept(base.join("arugula/fountain"), base.join("illogical/fountain"))
 }
 
 /// A name safe as one path component.
@@ -1256,6 +1258,18 @@ pub fn scrub(line: &str, secrets: &[String]) -> Option<String> {
 mod tests {
     use super::*;
 
+    /// Bundles cached before the rename are used where they are (#505).
+    #[test]
+    fn bundles_cached_before_the_rename_stay_put() {
+        let tmp = std::env::temp_dir().join(format!("arugula-cache-root-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let env = vec![("XDG_CACHE_HOME".to_owned(), tmp.display().to_string())];
+        assert_eq!(cache_root(&env, Path::new("/nowhere")), tmp.join("arugula/fountain"));
+        std::fs::create_dir_all(tmp.join("illogical/fountain")).unwrap();
+        assert_eq!(cache_root(&env, Path::new("/nowhere")), tmp.join("illogical/fountain"));
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
     fn vars(kv: &[(&str, &str)]) -> BTreeMap<String, String> {
         kv.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
     }
@@ -1393,9 +1407,9 @@ mod tests {
         add("stdio-env", json!({ "command": "tool", "args": ["serve"], "env": { "TOKEN": "${X}" } }));
         let out = servers(&odd, &found, false).await;
         let left: Vec<(&str, &str)> = out.left.iter().map(|l| (l.name.as_str(), l.why.as_str())).collect();
-        assert_eq!(left.iter().map(|l| l.0).collect::<Vec<_>>(), ["argv", "escaped", "gmail", "arugula", "weird"]);
+        assert_eq!(left.iter().map(|l| l.0).collect::<Vec<_>>(), ["argv", "arugula", "escaped", "gmail", "weird"]);
         assert!(left[0].1.contains("${X} in its command line"), "{left:?}");
-        assert!(left[1].1.contains("literal ${"), "{left:?}");
+        assert!(left[2].1.contains("literal ${"), "{left:?}");
         assert_eq!(left[4].1, "its type \"${X}\" isn't one Claude Code takes", "the recipe's, not the value");
         let url = out.list.iter().find(|s| s["name"] == "in-url").unwrap();
         assert_eq!(url["url"], "${ARUGULA_FTN_IN_URL_URL}");

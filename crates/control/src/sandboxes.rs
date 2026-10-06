@@ -134,11 +134,24 @@ pub async fn enrolled(app: &App, sandbox: &str, cert: &arugula_e2e::Cert) -> any
         "certs": certs,
         "revocations": app.db.revocations(&cert.account)?,
     });
-    h.sprites
-        .write_file(sandbox, ".local/state/arugula/control.json", serde_json::to_vec_pretty(&saved)?, 0o600)
-        .await?;
+    let dir = state_dir(&h.sprites, sandbox).await?;
+    h.sprites.write_file(sandbox, &format!("{dir}/control.json"), serde_json::to_vec_pretty(&saved)?, 0o600).await?;
     app.db.set_sandbox_state(sandbox, "running")?;
     Ok(())
+}
+
+/// Where the box's daemon waits for its enrollment: beside its join
+/// request. A box provisioned before the rename runs a script that waits
+/// in `~/.local/state/illogical` (#505).
+async fn state_dir(sprites: &Sprites, sandbox: &str) -> anyhow::Result<&'static str> {
+    const NEW: &str = ".local/state/arugula";
+    const OLD: &str = ".local/state/illogical";
+    if sprites.read_file(sandbox, &format!("{NEW}/join-request.json")).await?.is_none()
+        && sprites.read_file(sandbox, &format!("{OLD}/join-request.json")).await?.is_some()
+    {
+        return Ok(OLD);
+    }
+    Ok(NEW)
 }
 
 /// My sandboxes, with any join waiting for my device's approval.
@@ -196,4 +209,39 @@ pub async fn remove(app: &App, id: &str) -> anyhow::Result<()> {
 /// A ticket from a sandbox's service: which sandbox it is.
 pub fn ticket(app: &App, ticket: &str) -> anyhow::Result<Option<String>> {
     app.db.sandbox_by_ticket(&hash(ticket))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use axum::{Router, extract::Query, routing::get};
+
+    use super::*;
+
+    /// A provider whose box holds `files` (relative to its home).
+    async fn provider(files: &'static [&'static str]) -> Sprites {
+        let app = Router::new().route(
+            "/v1/sprites/{name}/fs/read",
+            get(move |Query(q): Query<HashMap<String, String>>| async move {
+                if files.contains(&q["path"].as_str()) { (StatusCode::OK, "{}") } else { (StatusCode::NOT_FOUND, "") }
+            }),
+        );
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let at = l.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(l, app).await.unwrap() });
+        Sprites::new(&format!("http://{at}"), "t".into()).unwrap()
+    }
+
+    /// A box provisioned before the rename waits for its enrollment in the
+    /// old state directory (#505); a new one in the new.
+    #[tokio::test]
+    async fn enrollment_goes_where_the_box_asked() {
+        let new = provider(&[".local/state/arugula/join-request.json"]).await;
+        assert_eq!(state_dir(&new, "ilc-1").await.unwrap(), ".local/state/arugula");
+        let old = provider(&[".local/state/illogical/join-request.json"]).await;
+        assert_eq!(state_dir(&old, "ilc-1").await.unwrap(), ".local/state/illogical");
+        let none = provider(&[]).await;
+        assert_eq!(state_dir(&none, "ilc-1").await.unwrap(), ".local/state/arugula");
+    }
 }

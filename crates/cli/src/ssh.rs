@@ -28,11 +28,16 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const CONTROL: &str = "https://control.illogical.widgets.wtf";
 const RELEASES: &str = "https://github.com/arugula-salad/illogical/releases/download";
 
-/// The CLI the install put on the box. `ssh box cmd` doesn't have
+/// Shell (for `sh -c '…'`) that sets `$c` and `$d` to the CLI and daemon
+/// the install put on the box: ours, or (#505) the `illogical` and
+/// `illogicald` an install from before the rename put there, until this
+/// version is installed over them. `ssh box cmd` doesn't have
 /// `~/.local/bin` on PATH (that's `~/.profile`, read by login shells only),
-/// and a login shell could print into the bridge's stream, so it's always
-/// named in full.
-const REMOTE_CLI: &str = "~/.local/bin/arugula";
+/// and a login shell could print into the bridge's stream, so they're
+/// always named in full.
+const PICK: &str = "c=$HOME/.local/bin/arugula d=$HOME/.local/bin/arugulad; \
+if [ ! -x \"$c\" ] && [ -x \"$HOME/.local/bin/illogical\" ]; then \
+c=$HOME/.local/bin/illogical d=$HOME/.local/bin/illogicald; fi;";
 
 /// A box reached over ssh: what `ssh` is given as its destination
 /// (`user@box`, `box` from `~/.ssh/config`, `ssh://user@box:2222`).
@@ -157,7 +162,7 @@ impl Remote {
         // master has gone and ssh connects on its own.
         let agent: &[&str] = if forward_agent() { &["-o", "ForwardAgent=yes"] } else { &[] };
         let child = self
-            .channel_cmd(agent, &format!("{REMOTE_CLI} bridge"))
+            .channel_cmd(agent, &format!("sh -c '{PICK} exec \"$c\" bridge'"))
             .stdin(Stdio::from(std::os::fd::OwnedFd::from(theirs.try_clone()?)))
             .stdout(Stdio::from(std::os::fd::OwnedFd::from(theirs)))
             .stderr(Stdio::null())
@@ -216,7 +221,7 @@ impl Remote {
         self.prepare()?;
         let quoted: Vec<String> = args.iter().map(|a| sh_quote(a)).collect();
         let mut child = self
-            .channel_cmd(&[], &format!("~/.local/bin/arugulad {}", quoted.join(" ")))
+            .channel_cmd(&[], &format!("sh -c '{PICK} exec \"$d\" \"$@\"' sh {}", quoted.join(" ")))
             .stderr(Stdio::piped())
             .spawn()
             .with_context(|| format!("running ssh to {}", self.dest))?;
@@ -248,9 +253,7 @@ impl Remote {
     fn probe(&self) -> anyhow::Result<Probe> {
         // `sh -c` so it reads the same whatever the login shell is.
         let out = self.run(
-            &format!(
-                "sh -c 'if [ -x {REMOTE_CLI} ]; then {REMOTE_CLI} bridge --probe; else echo \"{{}}\"; fi; uname -sm'"
-            ),
+            &format!("sh -c '{PICK} if [ -x \"$c\" ]; then \"$c\" bridge --probe; else echo \"{{}}\"; fi; uname -sm'"),
             None,
         )?;
         Probe::parse(&out)
@@ -325,7 +328,7 @@ impl Remote {
     /// sudo, which polkit usually allows), detached otherwise (it survives
     /// logging out, not a reboot).
     fn start(&self) -> anyhow::Result<()> {
-        let out = self.run(START, None)?;
+        let out = self.run(&START.replacen("PICK", PICK, 1), None)?;
         let how = out.lines().last().unwrap_or_default().trim();
         match how {
             "launchd" => {
@@ -354,9 +357,9 @@ impl Remote {
 /// GUI login a background agent, whose `note:` line is printed first); a
 /// systemd user service if the user has a manager, with lingering; else
 /// detached, without this login's agent (the bridge links the current one).
-/// Prints how: `launchd`, `linger`, `nolinger` or `detached`.
-const START: &str = r#"sh -c '
-d=$HOME/.local/bin/arugulad
+/// Prints how: `launchd`, `linger`, `nolinger` or `detached`. `PICK` in
+/// it is [`PICK`].
+const START: &str = r#"sh -c 'PICK
 if [ "$(uname -s)" = Darwin ] && out=$("$d" install 2>&1); then
   printf "%s\n" "$out" | grep "^note:"
   echo launchd
@@ -706,6 +709,39 @@ mod tests {
         assert!(!compatible("1.0.0", "0.16.0"));
         assert!(!compatible("2.0.0", "1.4.0"));
         assert!(!compatible("garbage", "0.16.0"));
+    }
+
+    /// A box with an install from before the rename is used with what's
+    /// there, until this version goes in (#505).
+    #[cfg(unix)]
+    #[test]
+    fn a_box_installed_before_the_rename_keeps_its_binaries() {
+        let home = std::env::temp_dir().join(format!("arugula-ssh-pick-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&home);
+        let bin = home.join(".local/bin");
+        fs::create_dir_all(&bin).unwrap();
+        let pick = || {
+            let out = Command::new("sh")
+                .args(["-c", &format!("{PICK} printf '%s %s' \"${{c##*/}}\" \"${{d##*/}}\"")])
+                .env("HOME", &home)
+                .output()
+                .unwrap();
+            String::from_utf8(out.stdout).unwrap()
+        };
+        let put = |name: &str| {
+            fs::write(bin.join(name), "#!/bin/sh\n").unwrap();
+            fs::set_permissions(bin.join(name), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+        };
+        assert_eq!(pick(), "arugula arugulad", "nothing there: ours, to install");
+        put("illogical");
+        put("illogicald");
+        assert_eq!(pick(), "illogical illogicald");
+        put("arugula");
+        assert_eq!(pick(), "arugula arugulad");
+        // START begins with it, and is still one `sh -c '…'`.
+        let start = START.replacen("PICK", PICK, 1);
+        assert!(start.starts_with(&format!("sh -c '{PICK}\n")) && start.ends_with("fi'"));
+        let _ = fs::remove_dir_all(&home);
     }
 
     #[test]

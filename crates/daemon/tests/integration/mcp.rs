@@ -738,7 +738,7 @@ fn an_agent_block_in_a_vm_gets_mcp_through_the_relay() {
     assert!(seen.contains(&a) && !seen.contains(&other), "{l}");
     // Its run lands on its own machine, beside it (which makes the machine
     // its tab's).
-    let sock = format!("/tmp/arugula-mcp-{a}.sock");
+    let sock = format!("/tmp/illogical-mcp-{a}.sock");
     let r = agent_mcp(&d, a, "run", json!({ "command": format!("test -S {sock} && echo IN-ITS-VM"), "wait": true }))
         .unwrap();
     assert_eq!(r["exit"], 0, "{r}");

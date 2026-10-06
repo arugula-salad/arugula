@@ -523,6 +523,11 @@ mod tests {
         let dropin = root.join("etc/systemd/system/fountain-runner.service.d");
         std::fs::create_dir_all(&dropin).unwrap();
         std::fs::write(dropin.join("10-protect-proc.conf"), "[Service]\nProtectProc=invisible\n").unwrap();
+        // The rule as the setup named it before the rename (#505): the new one
+        // replaces it.
+        let old_rule = root.join("etc/sudoers.d/illogical-fountain");
+        std::fs::create_dir_all(old_rule.parent().unwrap()).unwrap();
+        std::fs::write(&old_rule, "# old\n").unwrap();
         let setup = |extra: &[&str]| {
             Command::new("bash")
                 .arg(&script)
@@ -547,6 +552,8 @@ mod tests {
         for r in &removes {
             assert!(said.lines().any(|l| l == r), "{r} in\n{said}");
         }
+        let drop_old = format!("+ rm -f {}", old_rule.display());
+        assert!(said.lines().any(|l| l == drop_old), "{drop_old} in\n{said}");
         // ...and on --uninstall.
         let out = setup(&["--uninstall"]);
         let undone = String::from_utf8_lossy(&out.stdout);
@@ -554,6 +561,7 @@ mod tests {
         for r in &removes {
             assert!(undone.lines().any(|l| l == r), "{r} in\n{undone}");
         }
+        assert!(undone.contains(&old_rule.display().to_string()), "{undone}");
         assert!(said.contains("+ usermod --append --groups fountain sam"), "{said}");
         assert!(said.contains("+ install -d -m 2750 -o fountain -g fountain"), "{said}");
 

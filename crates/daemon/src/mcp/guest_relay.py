@@ -24,7 +24,9 @@ try:
     with open(pidfile) as f:
         old = int(f.read().strip())
     with open(f"/proc/{old}/cmdline", "rb") as f:
-        if b"arugula-mcp-relay" in f.read() and old != os.getpid():
+        # (Under the old name too: one a daemon from before the rename ran, #505.)
+        cmdline = f.read()
+        if (b"arugula-mcp-relay" in cmdline or b"illogical-mcp-relay" in cmdline) and old != os.getpid():
             os.kill(old, signal.SIGTERM)
 except (OSError, ValueError):
     pass

@@ -86,6 +86,8 @@ node_dir=/opt/fountain-node
 bin=/usr/local/bin/fountain
 unit=/etc/systemd/system/$svc.service
 sudoers=/etc/sudoers.d/arugula-fountain
+# The rule's name before the rename (#505): replaced by the new one.
+old_sudoers=/etc/sudoers.d/illogical-fountain
 
 # Run a command, or print it in a dry run.
 run() {
@@ -188,7 +190,7 @@ fi
 if [ -n "$uninstall" ]; then
   say "Removing the Fountain runner setup."
   run_ok systemctl disable --now "$svc"
-  run rm -f "$(at "$unit")" "$(at "$sudoers")" "$(at "$bin")"
+  run rm -f "$(at "$unit")" "$(at "$sudoers")" "$(at "$old_sudoers")" "$(at "$bin")"
   drop_interim
   run rm -rf "$(at "$node_dir")"
   run systemctl daemon-reload
@@ -262,6 +264,7 @@ elif [ -z "$dry" ]; then
 fi
 install -m 0440 "$tmp" "$(at "$sudoers")"
 [ -n "$dry" ] || chown root:root "$sudoers"
+[ ! -e "$(at "$old_sudoers")" ] || run rm -f "$(at "$old_sudoers")"
 
 mkdir -p "$(at /etc/systemd/system)"
 render_unit >"$(at "$unit")"
