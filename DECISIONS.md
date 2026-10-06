@@ -246,7 +246,7 @@ The TUI (`illogical tui`) and the tmux `-CC` front end are kept working and
 tested, but they are frozen: no new features there.
 Why: every feature in the web client lands once instead of three times.
 Where: `crates/cli/src/tui/`, `crates/cli/src/tmux/`, `web/`, `crates/desktop/`.
-From: #387, #442; [S26](docs/plan-archive.md#s26-how-native-can-it-get-141), [M31](docs/plan-archive.md#m31-illogical-tui), [M5](docs/plan-archive.md#m5-tmux-control-mode--cc-front-end).
+From: #387; [S26](docs/plan-archive.md#s26-how-native-can-it-get-141), [M31](docs/plan-archive.md#m31-illogical-tui), [M5](docs/plan-archive.md#m5-tmux-control-mode--cc-front-end).
 
 ### The web client draws terminals through one file
 xterm.js lives behind `terminal-view.ts` (WebGL on visible panes, DOM for the
