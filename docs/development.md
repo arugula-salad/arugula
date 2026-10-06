@@ -68,9 +68,9 @@ which run check.yml's jobs on geek side by side; 9–12 are registered but
 disabled: twelve with no limits kept geek at load 30+ and failed the tests
 that time things. The drop-in `actions-runner-illogical-e2e@.service.d/limits.conf`
 puts them in `illogical-ci.slice` (CPUWeight 50 under the desktop, 96 GB
-for all of CI), gives each 20 GB and caps nextest and cargo at six
-threads; threads rather than a CPUQuota, which stalls a runner for the
-rest of its period and times tests out. More is `cp -a` of one
+for all of CI) and gives each 20 GB; `scripts/ci-env` caps nextest and
+cargo at six threads, rather than a CPUQuota, which stalls a runner for
+the rest of its period and times tests out. More is `cp -a` of one
 without `_work`, `.runner` and `.credentials*`, `config.sh --runnergroup
 illogical --labels linux-x86_64,linux-x86_64-e2e,linux-x86_64-ci` with an
 org registration token, and `systemctl --user enable --now` of the next
