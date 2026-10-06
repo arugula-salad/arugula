@@ -47,7 +47,8 @@ const git = (...args: string[]) => execFileSync("git", ["-C", ws, "-c", "user.em
 const cli = (...args: string[]) => execFileSync("../target/debug/arugula", ["--socket", join(dir, "state/sock"), ...args], { encoding: "utf8" });
 const post = (path: string, body: unknown, headers: Record<string, string> = {}) =>
   fetch(base() + path, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
-const panesOf = (page: Page) => page.evaluate(() => window.__arugula.client.state!.panes);
+// A page just opened has no client (or state) yet: no panes.
+const panesOf = (page: Page) => page.evaluate(() => window.__arugula?.client.state?.panes ?? []);
 const reasonOf = async (page: Page, id: PaneId): Promise<Reason | null> => (await panesOf(page)).find((p) => p.id === id)?.reason ?? null;
 /** Who approved delivery's gates, by chant's own `status`. */
 const approvers = () => {
@@ -149,17 +150,27 @@ test("the owner approves; the next run walks through", async ({ page }) => {
 });
 
 test("a burst of edits in a member costs one full read, once it holds still (#311)", async ({ page }) => {
-  test.setTimeout(60_000);
+  test.setTimeout(90_000);
   await open(page);
   await page.evaluate((b) => window.__arugula.client.setActive(b), block);
   await expect(page.locator(`[data-workspace-block="${block}"] .review-live`)).toHaveText("live");
-  const readAt = async (): Promise<number> => (await (await fetch(`${base()}/api/blocks/${block}`)).json()).state.updated_ms;
-  // Whatever read the approve started has landed.
-  await expect.poll(async () => (await (await fetch(`${base()}/api/blocks/${block}`)).json()).state.loading).toBe(false);
-  const before = await readAt();
+  const shown = async (): Promise<{ updated_ms: number; loading: boolean }> => (await (await fetch(`${base()}/api/blocks/${block}`)).json()).state;
+  const readAt = async () => (await shown()).updated_ms;
+  // The last test's `chant run` changed the workspace, and its read may
+  // not have come yet (it would land in the burst): first, the block
+  // holds still, no read for two polls and then some.
+  let before = 0;
+  for (;;) {
+    const now = await shown();
+    if (!now.loading && now.updated_ms === before) break;
+    before = now.updated_ms;
+    await new Promise((r) => setTimeout(r, 7_000));
+  }
   // An agent at work in a member: the tree changes every second, faster
   // than the block polls (3 s), for ten seconds. No full read meanwhile.
-  const file = join(ws, "app", "burst.txt");
+  // A tracked file: the fingerprint has its diff, where an untracked one
+  // is only its `??` line, which holds still after the first write.
+  const file = join(ws, "app", "README.md");
   const seen = new Set<number>();
   for (let i = 0; i < 10; i++) {
     writeFileSync(file, `edit ${i}\n`);
@@ -172,7 +183,7 @@ test("a burst of edits in a member costs one full read, once it holds still (#31
   const after = await readAt();
   await new Promise((r) => setTimeout(r, 7_000));
   expect(await readAt()).toBe(after);
-  rmSync(file);
+  git("checkout", "-q", "--", "app/README.md");
 });
 
 test("Expire turns a gate down, from the card and the phone: the next run stops there again", async ({ browser, page }) => {
@@ -312,6 +323,9 @@ test("on a phone, Run op on a member starts a gated op; Approve clears its gate;
   // A pane beside the block, in the member, running `chant run deploy`,
   // which stops at the gate: attention, through the usual read.
   await expect.poll(async () => (await terminals()).length, { timeout: 10_000 }).toBe(before.length + 1);
+  // The phone shows the new pane; back to the block.
+  await expect.poll(() => mine.evaluate(() => window.__arugula.client.active())).not.toBe(block);
+  await mine.evaluate((b) => window.__arugula.client.setActive(b), block);
   await expect(shown.locator('[data-gate="delivery/deploy/approve-deploy"]')).toBeVisible({ timeout: 20_000 });
   await expect
     .poll(async () => {
