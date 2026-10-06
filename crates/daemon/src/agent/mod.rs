@@ -1938,8 +1938,11 @@ fn act(ctx: &BlockCtx, g: &mut Inner, f: Effect) {
         }
         Effect::Permission(key) => {
             let Some(p) = g.pending.iter().find(|p| p.id == key).cloned() else { return };
-            let allowed =
-                g.cfg.allow.iter().any(|r| r.tool == p.tool && r.title.as_ref().is_none_or(|t| *t == p.title));
+            let allowed = g
+                .cfg
+                .allow
+                .iter()
+                .any(|r| crate::mcp::same_tool(&r.tool, &p.tool) && r.title.as_ref().is_none_or(|t| *t == p.title));
             // #166: then the daemon's standing rules, as they are now.
             let standing = (!allowed)
                 .then(|| {

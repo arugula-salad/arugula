@@ -189,7 +189,10 @@ codex mcp add arugula -- arugula mcp
 
 `arugula setup claude` (or Getting started's *Use Claude Code with
 arugula*) adds it to Claude Code, and installs the adapter agent blocks
-run Claude Code through, in one go.
+run Claude Code through, in one go. A server added before the rename, as
+`illogical`, is replaced by `arugula`: its tools become `mcp__arugula__*`,
+so permission rules for `mcp__illogical__*` need the new name (rules
+arugula itself keeps, on cards and agent blocks, still match).
 
 The tools. `list`, `show` and `draft` each group several jobs under a
 `kind` argument, so a client's list stays short; the tool's
@@ -280,7 +283,9 @@ take its next instruction from them. All of it is hooks, in
 `~/.claude/settings.json`. `arugula hooks install` writes exactly this
 (merged into what's there, never replacing it; `--project DIR` for a
 project's `.claude/settings.json`, `--dry-run` to see the result first),
-and `arugula hooks status` checks it:
+and `arugula hooks status` checks it. Hooks installed before the rename
+(`illogical hook`, …) still run, and `status` says so; `install` renames
+them in place:
 
 ```json
 {

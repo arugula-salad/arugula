@@ -53,7 +53,7 @@ impl Standing {
     /// Whether it answers a request for `tool` titled `title`, from a block
     /// working in `cwd` (on `sprite`).
     pub fn allows(&self, tool: &str, title: &str, cwd: Option<&str>, sprite: Option<&str>) -> bool {
-        if self.tool != tool {
+        if !crate::mcp::same_tool(&self.tool, tool) {
             return false;
         }
         if let Some(dir) = &self.cwd {
@@ -185,6 +185,18 @@ mod tests {
         assert!(!r.allows("Edit", "make", Some("/src/x"), None));
         assert!(!r.allows("Bash", "make", Some("/src/x"), Some("vm-1")), "the same path on a VM is another place");
         assert!(rule("Bash", None, None).allows("Bash", "anything", None, Some("vm-1")));
+    }
+
+    #[test]
+    fn an_old_named_mcp_rule_still_holds() {
+        // Made before the rename (#505): our tools were mcp__illogical__*.
+        let r = rule("mcp__illogical__run", None, None);
+        assert!(r.allows("mcp__arugula__run", "run", None, None));
+        assert!(r.allows("mcp__illogical__run", "run", None, None));
+        assert!(!r.allows("mcp__arugula__close", "close", None, None));
+        assert!(!r.allows("mcp__other__run", "run", None, None));
+        // Not the other way: a new rule isn't an old-named server's.
+        assert!(!rule("mcp__arugula__run", None, None).allows("mcp__illogical__run", "run", None, None));
     }
 
     #[test]
