@@ -64,10 +64,7 @@ const DIRECT_TIMEOUT: Duration = Duration::from_secs(3);
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(15);
 
 fn config_dir() -> PathBuf {
-    std::env::var_os("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".config"))
-        .join("arugula")
+    arugula_proto::dirs::config_dir().unwrap_or_else(|| PathBuf::from(".config/arugula"))
 }
 
 /// What `arugula login` pinned.

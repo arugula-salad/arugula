@@ -87,17 +87,14 @@ fn home_dir() -> anyhow::Result<PathBuf> {
 }
 
 fn config_path(home: &Path) -> PathBuf {
-    std::env::var_os("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| home.join(".config"))
-        .join("arugula/sandbox.json")
+    arugula_proto::dirs::config_dir().unwrap_or_else(|| home.join(".config/arugula")).join("sandbox.json")
 }
 
+/// tailscaled's state is in it: one illogical made is used where it is
+/// (#505), so the sandbox stays the same node.
 fn sandbox_dir(home: &Path) -> PathBuf {
-    std::env::var_os("XDG_STATE_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| home.join(".local/state"))
-        .join("arugula-sandbox")
+    arugula_proto::dirs::state_home("arugula-sandbox", "illogical-sandbox")
+        .unwrap_or_else(|| home.join(".local/state/arugula-sandbox"))
 }
 
 impl Config {

@@ -37,10 +37,14 @@ pub const OLD_APP_PROGRAM: &str = "/Applications/illogical.app/Contents/MacOS/il
 /// `arugulad install`'s launchd label, and its systemd unit.
 pub const LABEL: &str = "arugulad";
 pub const UNIT: &str = "arugulad.service";
-/// Both, and the old release's (`illogicald`, #505): a machine whose
-/// daemon an older release set up still has its service found here.
-pub const LABELS: [&str; 2] = [LABEL, "illogicald"];
-pub const UNITS: [&str; 2] = [UNIT, "illogicald.service"];
+/// What illogical's install called them, which a machine not yet
+/// reinstalled still has (#505).
+pub const OLD_LABEL: &str = "illogicald";
+pub const OLD_UNIT: &str = "illogicald.service";
+/// Both, the new names first: a machine whose daemon illogical set up still
+/// has its service found here (#505).
+pub const LABELS: [&str; 2] = [LABEL, OLD_LABEL];
+pub const UNITS: [&str; 2] = [UNIT, OLD_UNIT];
 
 /// The app's plist and the daemon it carries, in the app that's in
 /// /Applications under either name ([`APP_BUNDLES`]); [`APP_PLIST`] and
@@ -285,8 +289,7 @@ pub fn log() -> Option<Log> {
         return home().map(|h| Log::File(h.join("Library/Logs/arugulad.log")));
     }
     if cfg!(windows) {
-        let local = std::env::var_os("LOCALAPPDATA").map(PathBuf::from)?;
-        return Some(Log::File(local.join("arugula").join("state").join("arugulad.log")));
+        return Some(Log::File(crate::dirs::default_state_dir()?.join("arugulad.log")));
     }
     Some(Log::Journal(format!("journalctl --user -u {} -u {} -e", LABELS[0], LABELS[1])))
 }

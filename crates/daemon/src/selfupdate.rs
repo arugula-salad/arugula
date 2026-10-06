@@ -38,8 +38,9 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 use tracing::{info, warn};
 
-/// The macOS app's launch agent (crates/desktop/macos).
-pub const APP_AGENT: &str = "wtf.widgets.illogical.daemon";
+/// The macOS app's launch agent (crates/desktop/macos): its label, or the
+/// one it had before the rename, until the app updates (#505).
+const APP_AGENTS: [&str; 2] = [arugula_proto::service::APP_LABEL, arugula_proto::service::OLD_APP_LABEL];
 /// How long a download may take.
 const DOWNLOAD: Duration = Duration::from_secs(10 * 60);
 /// After the new install says it's done, this daemon should be gone.
@@ -71,13 +72,12 @@ fn stem(version: &str) -> Option<String> {
 const EXT: &str = if cfg!(windows) { "zip" } else { "tar.gz" };
 const EXE: &str = if cfg!(windows) { "arugulad.exe" } else { "arugulad" };
 
-/// The daemon in an unpacked release: `arugula-…/arugulad`, or the
-/// renamed release's `arugula-…/arugulad` (#504), which this version's
-/// updater installs too.
+/// The daemon in an unpacked release: `arugula-…/arugulad`, or a release
+/// laid out as illogical's were (`illogical-…/illogicald`, #505).
 fn daemon_in(dir: &Path, version: &str) -> Option<PathBuf> {
     let target = target()?;
     let exe = |n: &str| if cfg!(windows) { format!("{n}.exe") } else { n.to_owned() };
-    [("arugula", "arugulad"), ("arugula", "arugulad"), ("arugula", "arugulad"), ("arugula", "arugulad")]
+    [("arugula", "arugulad"), ("illogical", "arugulad"), ("arugula", "illogicald"), ("illogical", "illogicald")]
         .into_iter()
         .map(|(folder, bin)| dir.join(format!("{folder}-{version}-{target}")).join(exe(bin)))
         .find(|p| p.is_file())
@@ -178,18 +178,22 @@ enum Service {
 fn service() -> Option<Service> {
     if cfg!(target_os = "linux") {
         // systemd sets INVOCATION_ID for what it starts; the unit is the one
-        // `install` wrote.
+        // `install` wrote, or illogical's (#505).
         let home = PathBuf::from(std::env::var_os("HOME")?);
-        let unit = home.join(".config/systemd/user/arugulad.service");
+        let units = home.join(".config/systemd/user");
+        let unit = arugula_proto::service::UNITS.iter().any(|u| units.join(u).is_file());
         let exe = std::env::current_exe().ok()?.canonicalize().ok()?;
-        let ours = exe == home.join(".local/bin/arugulad").canonicalize().ok()?;
-        (std::env::var_os("INVOCATION_ID").is_some() && unit.is_file() && ours).then_some(Service::Systemd)
+        let ours = ["arugulad", "illogicald"]
+            .iter()
+            .any(|b| home.join(".local/bin").join(b).canonicalize().ok().as_ref() == Some(&exe));
+        (std::env::var_os("INVOCATION_ID").is_some() && unit && ours).then_some(Service::Systemd)
     } else if cfg!(target_os = "macos") {
         // launchd names the job it started. A `--system` LaunchDaemon is
         // `arugulad.USER`: that one needs sudo.
+        // illogical's label is `illogicald` (#505).
         match std::env::var("XPC_SERVICE_NAME").ok()?.as_str() {
-            "arugulad" => Some(Service::LaunchAgent),
-            APP_AGENT => Some(Service::AppAgent),
+            "arugulad" | "illogicald" => Some(Service::LaunchAgent),
+            l if APP_AGENTS.contains(&l) => Some(Service::AppAgent),
             _ => None,
         }
     } else if cfg!(windows) {
@@ -203,16 +207,19 @@ fn service() -> Option<Service> {
 /// `--system` one at boot, which needs an administrator to change).
 #[cfg(windows)]
 fn windows_task() -> bool {
+    // Ours, or illogical's (#505).
     let local = PathBuf::from(std::env::var_os("LOCALAPPDATA").unwrap_or_default());
-    let installed = local.join("Programs").join("arugula").join("arugulad.exe").canonicalize().ok();
     let exe = std::env::current_exe().ok().and_then(|e| e.canonicalize().ok());
-    if installed.is_none() || installed != exe {
-        return false;
-    }
-    Command::new("schtasks")
-        .args(["/Query", "/TN", "arugulad", "/XML"])
-        .output()
-        .is_ok_and(|o| o.status.success() && String::from_utf8_lossy(&o.stdout).contains("<LogonTrigger>"))
+    let installed = [("arugula", "arugulad.exe"), ("illogical", "illogicald.exe")]
+        .iter()
+        .any(|(d, b)| exe.is_some() && local.join("Programs").join(d).join(b).canonicalize().ok() == exe);
+    installed
+        && arugula_proto::service::LABELS.iter().any(|task| {
+            Command::new("schtasks")
+                .args(["/Query", "/TN", *task, "/XML"])
+                .output()
+                .is_ok_and(|o| o.status.success() && String::from_utf8_lossy(&o.stdout).contains("<LogonTrigger>"))
+        })
 }
 
 #[cfg(not(windows))]
@@ -429,7 +436,7 @@ fn ask(question: &str) -> anyhow::Result<bool> {
 #[cfg(target_os = "macos")]
 pub fn hand_on() {
     use std::os::unix::process::CommandExt;
-    if std::env::var("XPC_SERVICE_NAME").as_deref() != Ok(APP_AGENT) {
+    if !std::env::var("XPC_SERVICE_NAME").is_ok_and(|l| APP_AGENTS.contains(&l.as_str())) {
         return;
     }
     let in_bundle = std::env::current_exe().is_ok_and(|e| e.ends_with("Contents/MacOS/arugulad"));
@@ -516,15 +523,15 @@ mod tests {
         assert_eq!(version_of(&exe).as_deref(), Some("9.9.9"));
     }
 
-    /// #504: the renamed release, under the archive name this version
-    /// asks for, holds `arugula-…/arugulad`.
+    /// #505: a release laid out as illogical's were, under the archive
+    /// name this version asks for, holds `illogical-…/illogicald`.
     #[cfg(unix)]
     #[tokio::test]
-    async fn fetches_a_renamed_release() {
-        let releases = fake_release_of("renamed", "9.9.8", false, "arugula", "arugulad").await;
-        let into = scratch("renamed");
+    async fn fetches_a_release_with_the_old_layout() {
+        let releases = fake_release_of("old-layout", "9.9.8", false, "illogical", "illogicald").await;
+        let into = scratch("old-layout");
         let exe = fetch(&releases, "9.9.8", &into).await.unwrap();
-        assert!(exe.ends_with("arugulad"), "{}", exe.display());
+        assert!(exe.ends_with("illogical-9.9.8-".to_owned() + target().unwrap() + "/illogicald"), "{}", exe.display());
         assert_eq!(version_of(&exe).as_deref(), Some("9.9.8"));
     }
 

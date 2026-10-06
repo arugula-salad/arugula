@@ -372,14 +372,11 @@ fn editors_socket(state_dir: &std::path::Path) -> std::io::Result<tokio::net::Un
     Ok(l)
 }
 
+/// Windows: beside the desktop app, which its installer puts in
+/// %LOCALAPPDATA%\arugula (M54). A machine set up as illogical keeps its
+/// `illogical` one, in place (#505).
 fn default_state_dir() -> PathBuf {
-    // Windows: beside the desktop app, which its installer puts in
-    // %LOCALAPPDATA%\arugula (M54).
-    #[cfg(windows)]
-    if let Some(d) = std::env::var_os("LOCALAPPDATA") {
-        return PathBuf::from(d).join("arugula").join("state");
-    }
-    std::env::var_os("XDG_STATE_HOME").map(PathBuf::from).unwrap_or_else(|| home().join(".local/state")).join("arugula")
+    arugula_proto::dirs::default_state_dir().unwrap_or_else(|| home().join(".local/state/arugula"))
 }
 
 /// A daemon is serving `state_dir`'s named pipe.
@@ -737,10 +734,7 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
             .map(|p| std::sync::Arc::new(p) as std::sync::Arc<dyn provider::Provider>);
     info!(url = args.wisp_url, on = provider.is_some(), "VM panes");
     let secrets = {
-        let config = std::env::var_os("XDG_CONFIG_HOME")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| home().join(".config"))
-            .join("arugula");
+        let config = arugula_proto::dirs::config_dir().unwrap_or_else(|| home().join(".config/arugula"));
         block::Secrets {
             anthropic_key: args.anthropic_key_file.clone().unwrap_or_else(|| config.join("anthropic-key")),
             claude_token: args.claude_token_file.clone().unwrap_or_else(|| config.join("claude-oauth-token")),

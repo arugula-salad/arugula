@@ -244,8 +244,11 @@ struct Status {
 fn this_kind() -> Kind {
     let exe = std::env::current_exe().ok().and_then(|e| e.canonicalize().ok()).unwrap_or_default();
     let local = PathBuf::from(std::env::var_os("LOCALAPPDATA").unwrap_or_default());
-    let installed = local.join("Programs").join("arugula").join("arugulad.exe").canonicalize().ok();
-    if installed.as_ref() != Some(&exe) {
+    // Ours, or illogical's (#505).
+    let installed = [("arugula", "arugulad.exe"), ("illogical", "illogicald.exe")]
+        .iter()
+        .any(|(d, b)| local.join("Programs").join(d).join(b).canonicalize().ok().as_ref() == Some(&exe));
+    if !installed {
         return Kind::Source;
     }
     if desktop_app(&local) { Kind::App } else { Kind::Script }
