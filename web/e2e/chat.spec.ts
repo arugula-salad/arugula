@@ -1,15 +1,18 @@
-// The chat view: every thread (M61) on every machine in one place. Two
+// The chat page: every thread (M61) on every machine in one place. Two
 // daemons stand in for geek (the page's own) and jake-mini. Threads are
-// started through the API; the bar's Chat button counts what's unread,
-// the view lists sessions as channels with their panes' threads under
-// them, a thread is read and written there, and "Go to pane" goes back to
-// the pane, on this host or the other one.
+// started through the API; the bar's Chat place counts what's unread, the
+// page (M73) covers the panes and their bar with its own, lists sessions
+// as channels with their panes' threads under them, a thread is read and
+// written there (an owner's @ of someone who can't see it offers to invite
+// them, #297), and "Go to pane" goes back to the pane, on this host or the
+// other one.
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
+import { ready, run } from "./helpers";
 import { ANY, daemonPort } from "./ports";
 
 let homeUrl = "";
@@ -109,6 +112,67 @@ test("the bar counts unread threads on every host", async ({ browser }) => {
   await expect(page.locator("[data-open-chat]")).toBeVisible();
 });
 
+test("chat is a page of its own, over the panes and their bar", async () => {
+  const pane = page.locator(`[data-pane="${home.pane}"]`);
+  const before = await pane.boundingBox();
+  await page.locator(".app > .bar [data-open-chat]").click();
+  const chat = page.locator("[data-chat]");
+  await expect(chat).toBeVisible();
+  expect(await page.evaluate(() => location.hash)).toBe("#chat");
+
+  // Its own bar, with the places; the panes' bar is under it and out of reach.
+  await expect(chat.locator(".chat-bar [data-open-chat]")).toHaveAttribute("aria-pressed", "true");
+  const box = (await chat.boundingBox())!;
+  expect(box.y).toBe(0);
+  expect(await page.locator(".app > .bar").evaluate((el) => (el as HTMLElement).inert)).toBe(true);
+  expect(await page.locator(".app > .main").evaluate((el) => (el as HTMLElement).inert)).toBe(true);
+  const covered = await page.locator(".app > .bar .session-button").evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    return !!document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)?.closest("[data-chat]");
+  });
+  expect(covered).toBe(true);
+
+  // Escape doesn't leave it; browser Back does, to the same pane, laid out
+  // as it was (the panes stayed mounted under the page).
+  await page.keyboard.press("Escape");
+  await expect(chat).toBeVisible();
+  await page.goBack();
+  await expect(chat).toBeHidden();
+  expect(await pane.boundingBox()).toEqual(before);
+  expect(await page.locator(".app > .bar").evaluate((el) => (el as HTMLElement).inert)).toBe(false);
+
+  // The Panes place leaves it too.
+  await page.locator("[data-open-chat]").click();
+  await expect(chat).toBeVisible();
+  await chat.locator("[data-open-panes]").click();
+  await expect(chat).toBeHidden();
+});
+
+test("the sidebar remembers a machine folded away, and can show only what's unread", async () => {
+  await page.locator("[data-open-chat]").click();
+  const chat = page.locator("[data-chat]");
+  const mini = chat.locator(".chat-list section").filter({ has: page.getByRole("heading", { name: "jake-mini" }) });
+  await mini.getByRole("button", { name: "jake-mini" }).click();
+  await expect(mini.locator(".chat-row")).toHaveCount(0);
+  await page.reload();
+  await expect(page.locator("[data-chat]")).toBeVisible();
+  await expect(mini.locator(".chat-row")).toHaveCount(0);
+  await mini.getByRole("button", { name: "jake-mini" }).click();
+  await expect(mini.locator(".chat-row").first()).toBeVisible();
+
+  // The workspace menu: new session, mark all read, unread only.
+  await chat.locator("[data-chat-workspace]").click();
+  await page.locator(".menu").getByText("Show unread only").click();
+  // Everything here is read (your own messages are), so only the thread
+  // shown stays listed.
+  await expect(chat.locator(".chat-row[data-chat-thread]")).toHaveCount(1);
+  await expect(chat.locator(".chat-row.selected")).toHaveCount(1);
+  await chat.locator("[data-chat-workspace]").click();
+  await page.locator(".menu").getByText("Show every channel").click();
+  await expect(chat.locator(".chat-row").first()).toBeVisible();
+  await chat.locator("[data-open-panes]").click();
+});
+
 test("the chat view lists sessions as channels and panes under them", async () => {
   await page.locator("[data-open-chat]").click();
   const chat = page.locator("[data-chat]");
@@ -141,6 +205,39 @@ test("a thread is read and written in the view, and links to its pane", async ()
   expect(await page.evaluate(() => window.__illogical.client.active())).toBe(home.pane);
 });
 
+test("@claude in a session channel says it needs a pane's thread; @notreal isn't marked", async () => {
+  await page.locator("[data-open-chat]").click();
+  const chat = page.locator("[data-chat]");
+  await chat.locator(".chat-list section").first().locator(`[data-chat-thread="session-${home.session}"]`).click();
+  await expect(chat.locator(".chat-thread")).toContainText("standup in five");
+  await chat.locator(".chat-thread textarea").fill("@claude are you there");
+  await chat.locator(".chat-thread textarea").press("Enter");
+  await expect(chat.locator(".chat-thread .thread-note.unreached")).toHaveText("@claude reaches an agent from its pane's thread");
+  await expect(chat.locator(".chat-thread .thread-msg").filter({ hasText: "are you there" }).locator(".mention")).toHaveCount(0);
+  await chat.locator(".chat-thread textarea").fill("@notreal hello");
+  await chat.locator(".chat-thread textarea").press("Enter");
+  await expect(chat.locator(".chat-thread .thread-note.unreached")).toHaveText("Nobody here called notreal can read this thread");
+  await expect(chat.locator(".chat-thread .thread-msg").filter({ hasText: "@notreal hello" }).locator(".mention")).toHaveCount(0);
+
+  // Someone known here who can't see it: the owner is offered to invite
+  // them, and told what they'd see (#297).
+  const other = ((await (await api("geek", "/api/run", { session: "other" })).json()) as { pane: number }).pane;
+  const panes = (await (await api("geek", "/api/panes")).json()) as { id: number; session: number }[];
+  const session = panes.find((p) => p.id === other)!.session;
+  await api("geek", "/api/acl", { session, principal: "tailnet:sam@example.com", role: "viewer" });
+  await chat.locator(".chat-thread textarea").fill("@sam can you look");
+  await chat.locator(".chat-thread textarea").press("Enter");
+  const offer = chat.locator('.chat-thread .thread-offer[data-offer="tailnet:sam@example.com"]');
+  await expect(offer).toContainText("sam can't see this. Invite them?");
+  await expect(offer.locator(".thread-offer-sees")).toHaveText("sam will see this message and what follows in this thread");
+  await offer.getByLabel("Share the whole thread").check();
+  await expect(offer.locator(".thread-offer-sees")).toHaveText("sam will see all of this thread, and no other");
+  await offer.getByRole("button", { name: "Not now" }).click();
+  await expect(offer).toHaveCount(0);
+  await chat.locator("[data-open-panes]").click();
+  await expect(chat).toBeHidden();
+});
+
 test("another host's thread reads there, and its pane opens on that host", async () => {
   await page.locator("[data-open-chat]").click();
   const chat = page.locator("[data-chat]");
@@ -160,11 +257,31 @@ test("another host's thread reads there, and its pane opens on that host", async
   await expect.poll(() => page.evaluate(() => window.__illogical.client.active())).toBe(mini.pane);
 });
 
-test("Escape closes the view", async () => {
+test("details show the pane live, and a draft waits in its thread", async () => {
+  await ready(page, home.pane);
+  await run(page, home.pane, "echo PEEK-$((6*7))", "PEEK-42");
   await page.locator("[data-open-chat]").click();
-  await expect(page.locator("[data-chat]")).toBeVisible();
-  await page.keyboard.press("Escape");
-  await expect(page.locator("[data-chat]")).toBeHidden();
+  const chat = page.locator("[data-chat]");
+  const geek = chat.locator(".chat-list section").first();
+  await geek.locator(`[data-chat-thread="pane-${home.pane}"]`).click();
+  await chat.locator("[data-chat-details]").click();
+  await expect(chat.locator(`[data-chat-peek="${home.pane}"]`)).toContainText("PEEK-42");
+
+  // A session's details show its panes, each opening its own thread.
+  await geek.locator(`[data-chat-thread="session-${home.session}"]`).click();
+  await expect(chat.locator(`[data-chat-peek="${home.pane}"]`)).toBeVisible();
+  await expect(chat.locator("[data-chat-topic]")).toContainText("pane");
+
+  // Half a message stays with its thread while you look at another.
+  await chat.locator(".chat-thread textarea").fill("half a thought");
+  await geek.locator(`[data-chat-thread="pane-${home.pane}"]`).click();
+  await expect(chat.locator(".chat-thread textarea")).toHaveValue("");
+  await geek.locator(`[data-chat-thread="session-${home.session}"]`).click();
+  await expect(chat.locator(".chat-thread textarea")).toHaveValue("half a thought");
+  await chat.locator(".chat-thread textarea").fill("");
+  await chat.locator("[data-chat-details]").click();
+  await expect(chat.locator("[data-chat-details-panel]")).toHaveCount(0);
+  await chat.locator("[data-open-panes]").click();
 });
 
 test("on a phone: the list, then a thread, and back", async ({ browser }) => {
