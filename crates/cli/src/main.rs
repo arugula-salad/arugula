@@ -672,8 +672,10 @@ enum Command {
         #[arg(long)]
         pane: Option<Pane>,
     },
-    /// Commands run in any pane, including recently closed ones, and the
-    /// answers and approvals given there (`--kind command|answer|agent`).
+    /// Commands run in any pane, including recently closed ones
+    ///
+    /// Also the answers and approvals given there, and what agent blocks did
+    /// (`--kind command|answer|agent`).
     History {
         #[arg(long)]
         pane: Option<Pane>,
