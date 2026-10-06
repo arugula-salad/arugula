@@ -622,6 +622,8 @@ case $(uname -m) in
   *) echo "no code-server for $(uname -m)" >&2; exit 3 ;;
 esac
 root=$HOME/.cache/arugula/code-server/$v-linux-$a
+o=$HOME/.cache/illogical/code-server/$v-linux-$a
+[ -x "$root/bin/code-server" ] || ! [ -x "$o/bin/code-server" ] || root=$o
 d=$HOME/.local/state/arugula-editor
 # A VM's from before the rename, used where it is (#505).
 old=$HOME/.cache/illogical/code-server/$v-linux-$a
@@ -638,6 +640,7 @@ fi
 mkdir -p "$d/user/User" "$d/extensions/$8"
 printf 'auth: none\ncert: false\n' >"$d/config.yaml"
 [ -f "$d/user/User/settings.json" ] || printf '%s' "$7" >"$d/user/User/settings.json"
+rm -rf "$d"/extensions/illogical.illogical*
 cp /tmp/arugula-editor-ext/* "$d/extensions/$8/" 2>/dev/null || true
 printf '[{"identifier":{"id":"%s"},"version":"%s","location":{"$mid":1,"path":"%s","scheme":"file"},"relativeLocation":"%s","metadata":{"pinned":true,"source":"vsix"}}]' \
   "${8%-*}" "${8##*-}" "$d/extensions/$8" "$8" >"$d/extensions/extensions.json"
@@ -724,6 +727,36 @@ mod tests {
         assert_eq!(format!("{}.{}", pkg["publisher"].as_str().unwrap(), pkg["name"].as_str().unwrap()), EXT_ID);
         assert_eq!(pkg["version"], EXT_VERSION);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A VM's code-server and its editor state from before the rename are
+    /// used where they are (#505).
+    #[cfg(unix)]
+    #[test]
+    fn a_vm_keeps_its_editor_from_before_the_rename() {
+        let home = std::env::temp_dir().join(format!("ilg-editor-vm-{}", unique()));
+        std::fs::create_dir_all(&home).unwrap();
+        let (head, _) = VM_SCRIPT.split_once("if [ ! -x").unwrap();
+        let places = || {
+            let out = std::process::Command::new("sh")
+                .args(["-c", &format!("{head}printf '%s %s' \"$root\" \"$d\""), "sh", "1.0", "a", "b", "1"])
+                .env("HOME", &home)
+                .output()
+                .unwrap();
+            String::from_utf8(out.stdout).unwrap().replace(&home.display().to_string(), "~")
+        };
+        let a = match std::env::consts::ARCH {
+            "aarch64" => "arm64",
+            _ => "amd64",
+        };
+        assert_eq!(places(), format!("~/.cache/arugula/code-server/1.0-linux-{a} ~/.local/state/arugula-editor"));
+        let bin = home.join(format!(".cache/illogical/code-server/1.0-linux-{a}/bin"));
+        std::fs::create_dir_all(&bin).unwrap();
+        std::fs::write(bin.join("code-server"), "").unwrap();
+        std::fs::set_permissions(bin.join("code-server"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+        std::fs::create_dir_all(home.join(".local/state/illogical-editor")).unwrap();
+        assert_eq!(places(), format!("~/.cache/illogical/code-server/1.0-linux-{a} ~/.local/state/illogical-editor"));
+        let _ = std::fs::remove_dir_all(&home);
     }
 
     #[tokio::test]

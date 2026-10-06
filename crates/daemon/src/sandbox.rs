@@ -86,6 +86,9 @@ fn home_dir() -> anyhow::Result<PathBuf> {
     Ok(PathBuf::from(std::env::var_os("HOME").context("HOME is not set")?))
 }
 
+// A sandbox installed before the rename keeps its config, and its
+// tailscaled's state (so it stays the same tailnet node) under the old
+// names (#505).
 fn config_path(home: &Path) -> PathBuf {
     arugula_proto::dirs::config_dir().unwrap_or_else(|| home.join(".config/arugula")).join("sandbox.json")
 }
@@ -95,6 +98,11 @@ fn config_path(home: &Path) -> PathBuf {
 fn sandbox_dir(home: &Path) -> PathBuf {
     arugula_proto::dirs::state_home("arugula-sandbox", "illogical-sandbox")
         .unwrap_or_else(|| home.join(".local/state/arugula-sandbox"))
+}
+
+/// Where a downloaded tailscale is kept (#505: the old place, if it's there).
+fn tailscale_lib(home: &Path) -> PathBuf {
+    arugula_core::rename::kept(home.join(".local/lib/arugula/tailscale"), home.join(".local/lib/illogical/tailscale"))
 }
 
 impl Config {
@@ -374,7 +382,7 @@ impl Drop for KeyFile {
 /// tailscaled and tailscale from PATH, else the static build from
 /// pkgs.tailscale.com, kept in `~/.local/lib/arugula/tailscale`.
 async fn tailscale_binaries(home: &Path) -> anyhow::Result<(PathBuf, PathBuf)> {
-    let lib = home.join(".local/lib/arugula/tailscale");
+    let lib = tailscale_lib(home);
     let (d, c) = (lib.join("tailscaled"), lib.join("tailscale"));
     if d.exists() && c.exists() {
         return Ok((d, c));
@@ -643,6 +651,22 @@ mod tests {
         drop(KeyFile::new(&format!("file:{}", f.display()), &dir).unwrap());
         assert!(f.exists());
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_sandbox_installed_before_the_rename_keeps_its_places() {
+        let d = std::env::temp_dir().join(format!("ilg-sandbox-names-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&d);
+        // A new one: the new name. (The config and tailscaled's state dir
+        // follow `arugula_proto::dirs`, tested there.)
+        assert_eq!(tailscale_lib(&d), d.join(".local/lib/arugula/tailscale"));
+        // One from before: the tailscale it downloaded, where it is.
+        for old in ["illogical", "illogical-sandbox", ".local/lib/illogical/tailscale"] {
+            fs::create_dir_all(d.join(old)).unwrap();
+        }
+        fs::write(d.join("illogical/sandbox.json"), "{}").unwrap();
+        assert_eq!(tailscale_lib(&d), d.join(".local/lib/illogical/tailscale"));
+        fs::remove_dir_all(d).unwrap();
     }
 
     #[test]

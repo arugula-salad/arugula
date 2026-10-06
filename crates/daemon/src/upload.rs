@@ -271,11 +271,14 @@ async fn store(app: &App, id: PaneId, q: UploadQuery, body: Bytes) -> Res<serde_
 }
 
 /// On a machine: `~/.cache/arugula/uploads/<pane>`, `0700`, made by
-/// `run` as its user. Clears what's older than a day there first.
+/// `run` as its user. Clears what's older than a day there first, and in
+/// the folder a daemon from before the rename used (#505).
 const MACHINE_FOLDER: &str = r#"set -e
 d="$HOME/.cache/arugula/uploads"
-find "$d" -type f -mmin +1440 -delete 2>/dev/null || true
-find "$d" -mindepth 1 -type d -empty -delete 2>/dev/null || true
+for x in "$d" "$HOME/.cache/illogical/uploads"; do
+  find "$x" -type f -mmin +1440 -delete 2>/dev/null || true
+  find "$x" -mindepth 1 -type d -empty -delete 2>/dev/null || true
+done
 mkdir -p "$d/$1"
 chmod 700 "$d" "$d/$1"
 printf %s "$d/$1""#;
@@ -307,11 +310,14 @@ async fn to_machine(app: &App, pane: PaneId, sprite: &str, staged: &FsPath) -> R
     Ok(path)
 }
 
+const FORGET: &str = r#"rm -rf "$HOME/.cache/arugula/uploads/$1" "$HOME/.cache/illogical/uploads/$1""#;
+
 /// Remove a closed pane's uploads on the machine it ran on, if that
 /// machine stays.
 pub fn forget_on(provider: Arc<dyn crate::provider::Provider>, sprite: String, pane: PaneId) {
     tokio::spawn(async move {
-        let script = r#"rm -rf "$HOME/.cache/arugula/uploads/$1""#;
+        // (#505) A pane from before the rename has its uploads in the old folder.
+        let script = FORGET;
         let tag = pane.to_string();
         let _ = provider.run(&sprite, &["sh", "-c", script, "arugula-upload", &tag]).await;
     });
@@ -418,6 +424,36 @@ pub async fn paste_into(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A machine's uploads from before the rename are aged out and removed
+    /// with their pane like the new ones (#505).
+    #[cfg(unix)]
+    #[test]
+    fn a_machines_old_uploads_still_go() {
+        let home = std::env::temp_dir().join(format!("arugula-up-old-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        let old = home.join(".cache/illogical/uploads");
+        std::fs::create_dir_all(old.join("7")).unwrap();
+        std::fs::create_dir_all(old.join("8")).unwrap();
+        std::fs::write(old.join("8/a.png"), "x").unwrap();
+        let stale = std::fs::File::options().write(true).open(old.join("8/a.png")).unwrap();
+        stale.set_modified(std::time::SystemTime::now() - Duration::from_secs(2 * 86400)).unwrap();
+        let sh = |script: &str, tag: &str| {
+            let out = std::process::Command::new("sh")
+                .args(["-c", script, "arugula-upload", tag])
+                .env("HOME", &home)
+                .output()
+                .unwrap();
+            assert!(out.status.success(), "{out:?}");
+            String::from_utf8(out.stdout).unwrap()
+        };
+        let made = sh(MACHINE_FOLDER, "9");
+        assert_eq!(made, format!("{}/.cache/arugula/uploads/9", home.display()));
+        assert!(!old.join("8").exists(), "a day old: gone");
+        sh(FORGET, "7");
+        assert!(!old.join("7").exists());
+        let _ = std::fs::remove_dir_all(&home);
+    }
 
     fn temp(tag: &str) -> PathBuf {
         let d = std::env::temp_dir().join(format!("ilg-upload-{tag}-{}", std::process::id()));

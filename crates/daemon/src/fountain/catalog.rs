@@ -79,11 +79,13 @@ pub fn source(a: &Agent) -> (Source, Option<String>) {
 
 /// `metadata.arugula.local` (flat or nested): `false` (or `"false"`, as
 /// some metadata keeps every value a string) says it's for Fountain only,
-/// not to be worn here (M44).
+/// not to be worn here (M44). Agents written before the rename say it as
+/// `illogical.local` (#505).
 pub fn local_ok(a: &Agent) -> bool {
-    let flat = a.metadata.get("arugula.local");
-    let nested = a.metadata.get("arugula").and_then(|v| v.get("local"));
-    match flat.or(nested) {
+    let said = ["arugula", "illogical"]
+        .into_iter()
+        .find_map(|n| a.metadata.get(&format!("{n}.local")).or_else(|| a.metadata.get(n).and_then(|v| v.get("local"))));
+    match said {
         Some(Value::Bool(false)) => false,
         Some(Value::String(s)) => !s.trim().eq_ignore_ascii_case("false"),
         _ => true,
@@ -434,6 +436,13 @@ mod tests {
         assert!(!card(&orch, &envs).local, "as a string too");
         orch.metadata.insert("arugula.local".into(), json!("true"));
         assert!(card(&orch, &envs).local);
+        orch.metadata.remove("arugula.local");
+        // As agents written before the rename say it (#505).
+        orch.metadata.insert("illogical.local".into(), json!(false));
+        assert!(!card(&orch, &envs).local);
+        orch.metadata.remove("illogical.local");
+        orch.metadata.insert("illogical".into(), json!({ "local": "false" }));
+        assert!(!card(&orch, &envs).local);
     }
 
     #[test]

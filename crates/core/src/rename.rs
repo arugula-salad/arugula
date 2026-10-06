@@ -53,6 +53,12 @@ pub fn either<T>(names: [&str; 2], get: impl FnMut(&str) -> Option<T>) -> Option
     names.into_iter().find_map(get)
 }
 
+/// `old` where only it exists, else `new`: a file or directory made under
+/// the old name stays where it is, and anything new gets the new name.
+pub fn kept(new: std::path::PathBuf, old: std::path::PathBuf) -> std::path::PathBuf {
+    if !new.exists() && old.exists() { old } else { new }
+}
+
 /// For each `ILLOGICAL_X` whose `ARUGULA_X` isn't set: the new name and the
 /// value, so the rest of the program (and its children) see it there.
 pub fn env_aliases(
@@ -104,6 +110,19 @@ pub unsafe fn alias_env() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn kept_is_the_old_path_only_while_it_alone_exists() {
+        let d = std::env::temp_dir().join(format!("arugula-kept-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        let (new, old) = (d.join("arugula"), d.join("illogical"));
+        assert_eq!(kept(new.clone(), old.clone()), new, "neither: the new");
+        std::fs::create_dir_all(&old).unwrap();
+        assert_eq!(kept(new.clone(), old.clone()), old, "only the old");
+        std::fs::create_dir_all(&new).unwrap();
+        assert_eq!(kept(new.clone(), old.clone()), new, "both: the new");
+        let _ = std::fs::remove_dir_all(&d);
+    }
 
     fn vars(v: &[(&str, &str)]) -> Vec<(std::ffi::OsString, std::ffi::OsString)> {
         v.iter().map(|(k, v)| (k.into(), v.into())).collect()
