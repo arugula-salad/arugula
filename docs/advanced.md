@@ -145,6 +145,10 @@ daemon's own environment, and the log says why. After changing an rc file,
 `arugula shell-env --refresh` reads it again (`arugula shell-env` shows
 what blocks get).
 
+The names from before the rename still work: an `ILLOGICAL_*` setting counts
+as its `ARUGULA_*` one when that isn't set, and panes get `ILLOGICAL_PANE`
+and `ILLOGICAL_SOCK` beside `ARUGULA_PANE` and `ARUGULA_SOCK`.
+
 ## Claude Code hooks
 
 Claude Code in a pane can tell you when it needs you, put its questions and

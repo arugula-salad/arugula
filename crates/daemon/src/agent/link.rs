@@ -377,7 +377,8 @@ fn take(sock: &OwnedFd, n: usize) -> Result<(), String> {
 }
 
 /// Runs first in the VM, under `bash -c`: installs Node and the adapter
-/// (once per machine, into `~/.arugula/agents`; its noise goes to
+/// (once per machine, into `~/.arugula/agents`, or the `~/.illogical/agents`
+/// an older daemon made; its noise goes to
 /// stderr), reads `KEY=value` lines from stdin up to a blank one into the
 /// environment (credentials: never on disk, never in argv), then becomes
 /// the agent server.
@@ -387,6 +388,8 @@ pub const GUEST_BOOT: &str = r#"
 set -e
 pkg=$1; dir=$2; shift 2
 A=$HOME/.arugula/agents
+# What an illogical daemon installed, where it is (#505).
+if ! [ -d "$A" ] && [ -d "$HOME/.illogical/agents" ]; then A=$HOME/.illogical/agents; fi
 exec 3>&1 1>&2
 if [ -n "$pkg" ]; then
   if ! [ -x "$A/node/bin/node" ]; then

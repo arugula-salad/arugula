@@ -497,7 +497,7 @@ fn default_socket() -> PathBuf {
 static VERSION_MARK: &str = concat!("\0arugula-version=", env!("CARGO_PKG_VERSION"), "\0");
 
 fn main() {
-    // ARUGULA_X for ARUGULA_X (#504), before any thread exists.
+    // ILLOGICAL_X stands in for ARUGULA_X (#505), before any thread exists.
     // SAFETY: nothing else runs yet.
     unsafe { arugula_proto::rename::alias_env() };
     // Run as `tmux` (a link, or a copy on an ssh host's PATH): be tmux's

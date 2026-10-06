@@ -39,7 +39,7 @@ pub const SESSION_COOKIE: &str = "ilg_session";
 const STATE_COOKIE: &str = "ilg_oauth";
 const SESSION_DAYS: u64 = 30;
 /// The signature header, under either name (#504): daemons and CLIs send
-/// `x-arugula-auth` until the rename, `x-arugula-auth` after.
+/// `x-illogical-auth` until the rename, `x-arugula-auth` after.
 pub fn auth_header(headers: &HeaderMap) -> Option<&HeaderValue> {
     arugula_core::rename::either(arugula_core::rename::AUTH, |n| headers.get(n))
 }

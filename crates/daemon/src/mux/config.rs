@@ -102,8 +102,11 @@ impl Config {
             env.retain(|(k, _)| k != "PATH");
             env.push(("PATH".into(), path));
         }
-        env.push(("ARUGULA_PANE".into(), pane.to_string()));
-        env.push(("ARUGULA_SOCK".into(), self.socket.display().to_string()));
+        // Under the old names too (#505), for a user's script or an
+        // illogical CLI that reads them.
+        use arugula_proto::rename::both_env;
+        env.extend(both_env("ARUGULA_PANE", pane.to_string()));
+        env.extend(both_env("ARUGULA_SOCK", self.socket.display().to_string()));
         // A box reached over ssh (M51) has no agent of its own: its panes
         // use the one at a fixed path beside the socket, which `arugula
         // bridge` points at the owner's forwarded agent while they're
@@ -286,11 +289,10 @@ impl Config {
     /// is, and a tag `process` finds its shell by (machines are shared, so
     /// it names the pane). None of this host's.
     fn guest_env(&self, pane: PaneId) -> Vec<(String, String)> {
-        vec![
-            ("TERM".into(), "xterm-256color".into()),
-            ("COLORTERM".into(), "truecolor".into()),
-            ("ARUGULA_EXEC".into(), exec_tag(&self.daemon_id, pane)),
-        ]
+        let mut env = vec![("TERM".into(), "xterm-256color".into()), ("COLORTERM".into(), "truecolor".into())];
+        // Under the old name too (#505): an older daemon finds it there.
+        env.extend(arugula_proto::rename::both_env("ARUGULA_EXEC", exec_tag(&self.daemon_id, pane)));
+        env
     }
 
     /// The sprite names this daemon's machines get.

@@ -557,7 +557,7 @@ fn github_app(a: &Args) -> anyhow::Result<Option<forge::GithubApp>> {
 }
 
 fn main() -> anyhow::Result<()> {
-    // ARUGULA_X for ARUGULA_X (#504), before the runtime's threads exist.
+    // ILLOGICAL_X stands in for ARUGULA_X (#505), before the runtime's threads exist.
     // SAFETY: nothing else runs yet.
     unsafe { arugula_core::rename::alias_env() };
     tokio::runtime::Builder::new_multi_thread().enable_all().build()?.block_on(run())

@@ -449,8 +449,11 @@ fn log_to_file(argv: &[String]) {
             SetStdHandle(STD_ERROR_HANDLE, h);
         }
     }
-    // Panes don't inherit it.
-    unsafe { std::env::remove_var("ARUGULA_LOG_FILE") };
+    // Panes don't inherit it (under either name, #505).
+    unsafe {
+        std::env::remove_var("ARUGULA_LOG_FILE");
+        std::env::remove_var("ILLOGICAL_LOG_FILE");
+    };
 }
 
 /// The version, findable in the binary's bytes: the testnet tests read it
@@ -459,7 +462,7 @@ fn log_to_file(argv: &[String]) {
 static VERSION_MARK: &str = concat!("\0arugula-version=", env!("CARGO_PKG_VERSION"), "\0");
 
 fn main() -> anyhow::Result<()> {
-    // ARUGULA_X for ARUGULA_X (#504), before any thread exists.
+    // ILLOGICAL_X stands in for ARUGULA_X (#505), before any thread exists.
     // SAFETY: nothing else runs yet.
     unsafe { arugula_proto::rename::alias_env() };
     // The pane shim forks, so it runs before any threads exist.

@@ -47,6 +47,9 @@ impl Integration {
             fs::write(&p, text)?;
             crate::perm::set(&p, 0o644)?;
         }
+        // An older daemon's fish script, if this is its directory too:
+        // fish loads every file there, and both would report (#505).
+        let _ = fs::remove_file(dir.join("fish/vendor_conf.d/illogical.fish"));
         Ok(Self { dir })
     }
 
@@ -172,6 +175,20 @@ mod tests {
         i.apply(&mut s);
         assert_eq!(s.args, vec!["--posix"]);
         assert!(s.env.contains(&("ARUGULA_BASH_NORC".into(), "1".into())));
+    }
+
+    /// #505: fish loads every script in the directory, so an older
+    /// daemon's goes.
+    #[test]
+    fn an_older_daemons_fish_script_goes() {
+        let dir = std::env::temp_dir().join(format!("arugula-shellint-{}", std::process::id()));
+        let old = dir.join("fish/vendor_conf.d/illogical.fish");
+        std::fs::create_dir_all(old.parent().unwrap()).unwrap();
+        std::fs::write(&old, "").unwrap();
+        Integration::install(dir.clone()).unwrap();
+        assert!(!old.exists());
+        assert!(dir.join("fish/vendor_conf.d/arugula.fish").exists());
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

@@ -81,6 +81,23 @@ fn enc(s: &str) -> String {
         .collect()
 }
 
+/// A GET's response head over the socket, lowercase.
+fn head_of(d: &Daemon, path: &str) -> String {
+    use std::io::{BufRead, BufReader, Write};
+    let mut s = std::os::unix::net::UnixStream::connect(d.sock()).unwrap();
+    write!(s, "GET {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n").unwrap();
+    let mut r = BufReader::new(s);
+    let mut head = String::new();
+    loop {
+        let mut line = String::new();
+        if r.read_line(&mut line).unwrap() == 0 || line.trim().is_empty() {
+            break;
+        }
+        head.push_str(&line);
+    }
+    head.to_ascii_lowercase()
+}
+
 fn names(list: &Value) -> Vec<String> {
     list["entries"].as_array().unwrap().iter().map(|e| e["name"].as_str().unwrap().to_owned()).collect()
 }
@@ -106,6 +123,13 @@ fn this_hosts_files_cd_and_names() {
     assert_eq!(names(&d.get(&format!("/api/fs/list?path={}&dirs=1", enc(&r)))), ["src"]);
     let (status, body) = d.raw("GET", &format!("/api/fs/read?path={}/notes.txt&offset=3&len=4", enc(&r)), None);
     assert_eq!((status, body.as_str()), (200, "3456"));
+    // #505: its size and offset under both names, for an older CLI.
+    let head = head_of(&d, &format!("/api/fs/read?path={}/notes.txt&offset=3&len=4", enc(&r)));
+    for h in
+        ["x-arugula-size: 10\r\n", "x-illogical-size: 10\r\n", "x-arugula-offset: 3\r\n", "x-illogical-offset: 3\r\n"]
+    {
+        assert!(head.contains(h), "{head}");
+    }
     assert_eq!(d.get(&format!("/api/fs/stat?path={}/notes.txt", enc(&r)))["size"], 10);
     // Refused: kernel files, a link into them, the daemon's own state.
     // (macOS has no /proc: there the link leads nowhere, a 404.)

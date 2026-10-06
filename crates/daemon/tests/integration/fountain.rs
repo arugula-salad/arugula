@@ -1462,6 +1462,7 @@ fn secrets_env() -> HashMap<String, String> {
         ("ARUGULA_FTN_FROM_GH_H_AUTHORIZATION", format!("Bearer {GH}")),
         ("ARUGULA_FTN_FROM_SHELL_E_TOKEN", SH.to_owned()),
         ("ARUGULA_MCP_BLOCK_TOKEN", "ilb_".to_owned()),
+        ("ILLOGICAL_MCP_BLOCK_TOKEN", "ilb_".to_owned()),
     ]
     .into_iter()
     .map(|(k, v)| (k.to_owned(), v))
@@ -1583,6 +1584,8 @@ fn run_here_wears_the_agent() {
     assert_eq!(environ.get("ARUGULA_FTN_FROM_SHELL_E_TOKEN").map(String::as_str), Some(SH));
     assert!(environ.get("ARUGULA_MCP_BLOCK_TOKEN").is_some_and(|t| t.starts_with("ilb_")));
     let token = environ["ARUGULA_MCP_BLOCK_TOKEN"].clone();
+    // #505: under the old name too, for an illogical daemon that takes it over.
+    assert_eq!(environ.get("ILLOGICAL_MCP_BLOCK_TOKEN"), Some(&token));
     for secret in [INF, GH, SH, token.as_str()] {
         assert!(!proc_cmdline(pid).contains(secret), "{secret} on the adapter's command line");
         assert!(!s.to_string().contains(secret), "{secret} in session/new");
