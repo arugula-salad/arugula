@@ -196,12 +196,12 @@ test("Activity has what's for you, and clears when it's read", async () => {
 
 test("search finds messages and opens them", async () => {
   const field = owner.locator("[data-chat-search]");
-  await field.fill("late night");
+  await field.fill("old one");
   const view = owner.locator("[data-chat-search-view]");
   await expect(view.locator(".chat-hit")).toHaveCount(1);
   await expect(view).toContainText("1 message");
-  await view.locator('[data-chat-hit="2"]').click();
-  await expect(owner.locator('.chat-thread [data-msg="2"]')).toBeInViewport();
+  await view.locator('[data-chat-hit="1"]').click();
+  await expect(owner.locator('.chat-thread [data-msg="1"]')).toBeInViewport();
   await expect(field).toHaveValue("");
   await field.fill("nothing like this");
   await expect(view).toContainText("No messages match");
@@ -216,14 +216,19 @@ test("Ctrl+K jumps to a channel, and Alt+arrows walk them", async () => {
   await owner.keyboard.press("Control+k");
   const sw = owner.locator("[data-chat-switcher]");
   await expect(sw).toBeVisible();
+  await expect(sw.locator("input")).toBeFocused();
   await owner.keyboard.type(name.split(" ")[0]);
   await owner.keyboard.press("Enter");
   await expect(sw).toHaveCount(0);
   await expect.poll(() => owner.evaluate(() => location.hash)).toBe(`#chat=box/session-${session}`);
+  // The hash moves before the page does: wait for the channel to show.
+  const selected = owner.locator(".chat-row.selected[data-chat-thread]");
+  await expect(selected).toHaveAttribute("data-chat-thread", `session-${session}`);
 
   // The session's channel, then its pane's thread under it, and back.
   await owner.keyboard.press("Alt+ArrowDown");
   await expect.poll(() => owner.evaluate(() => location.hash)).toBe(`#chat=box/pane-${pane}`);
+  await expect(selected).toHaveAttribute("data-chat-thread", `pane-${pane}`);
   await owner.keyboard.press("Alt+ArrowUp");
   await expect.poll(() => owner.evaluate(() => location.hash)).toBe(`#chat=box/session-${session}`);
 });
