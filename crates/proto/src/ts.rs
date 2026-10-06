@@ -10,9 +10,9 @@ use ts_rs::{Config, TS, TypeVisitor};
 use crate::{
     ClientMsg, RemoteRef, ServerMsg,
     api::{
-        ActRequest, GuestInvite, GuestInviteRequest, InviteRequest, Invited, NotifyPref, NotifyRequest,
+        ActRequest, ActResponse, GuestInvite, GuestInviteRequest, InviteRequest, Invited, NotifyPref, NotifyRequest,
         OpenConversationRequest, OpenConversationResponse, OpenRequest, OpenResponse, RunRequest, RunResponse, Share,
-        ShareRequest, ThreadMessages, ThreadPostRequest, ThreadPosted, ThreadReadRequest,
+        ShareRequest, TeamPins, TeamPinsRequest, ThreadMessages, ThreadPostRequest, ThreadPosted, ThreadReadRequest,
     },
     hosts::{ControlState, HostFeatures, HostInfo},
 };
@@ -48,6 +48,9 @@ fn generate() -> String {
     c.visit::<ServerMsg>();
     c.visit::<ClientMsg>();
     c.visit::<ActRequest>();
+    c.visit::<ActResponse>();
+    c.visit::<TeamPinsRequest>();
+    c.visit::<TeamPins>();
     c.visit::<HostFeatures>();
     c.visit::<ControlState>();
     c.visit::<HostInfo>();

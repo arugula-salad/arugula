@@ -44,6 +44,10 @@ message?: string,
  */
 text?: string, };
 
+export type ActResponse = { results: Array<ActResult>, };
+
+export type ActResult = { pane: number, ok: boolean, error?: string, };
+
 /**
  * Something done about a reason (`POST /api/attention/act`).
  */
@@ -1167,6 +1171,28 @@ threads?: Array<ThreadSummary>,
 calls?: Array<Call>, };
 
 export type TabView = { id: number, name: string | null, root: Node, cols: number, rows: number, owner: number | null, zoom: number | null, layout: Layout, };
+
+/**
+ * `GET` and `POST /api/team-pins`: the teams pinned here, and those whose
+ * rosters this machine checked.
+ */
+export type TeamPins = { pins: { [key in string]: string }, checked: Array<string>, };
+
+/**
+ * `POST /api/team-pins`: the teams the owner's browser pinned, and those
+ * it left (#233; the owner's). Their rosters are checked against these.
+ */
+export type TeamPinsRequest = { 
+/**
+ * Team id to `<founder device>.<founder's root>`, as the owner's
+ * browser pinned it.
+ */
+pins: { [key in string]: string }, 
+/**
+ * Teams pinned here that the owner's account is no longer in: their
+ * members stop being nameable.
+ */
+drop: Array<string>, };
 
 /**
  * What handing a post to the pane's agent came to: `delivered` (`false`:

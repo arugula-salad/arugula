@@ -152,6 +152,8 @@ impl ActRequest {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "ts", ts(optional_fields))]
 pub struct ActResult {
     pub pane: PaneId,
     pub ok: bool,
@@ -160,6 +162,7 @@ pub struct ActResult {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ActResponse {
     pub results: Vec<ActResult>,
 }
@@ -845,6 +848,31 @@ pub struct OpenConversationResponse {
     pub error: Option<String>,
 }
 
+/// `POST /api/team-pins`: the teams the owner's browser pinned, and those
+/// it left (#233; the owner's). Their rosters are checked against these.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "ts", ts(optional_fields))]
+pub struct TeamPinsRequest {
+    /// Team id to `<founder device>.<founder's root>`, as the owner's
+    /// browser pinned it.
+    #[serde(default)]
+    pub pins: std::collections::BTreeMap<String, String>,
+    /// Teams pinned here that the owner's account is no longer in: their
+    /// members stop being nameable.
+    #[serde(default)]
+    pub drop: Vec<String>,
+}
+
+/// `GET` and `POST /api/team-pins`: the teams pinned here, and those whose
+/// rosters this machine checked.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct TeamPins {
+    pub pins: std::collections::BTreeMap<String, String>,
+    pub checked: Vec<String>,
+}
+
 /// What "needs you" notifications someone other than the owner gets (M29):
 /// agents in these sessions, or everything they may edit here ("this team's
 /// agents" on a team daemon). The owner always is.
@@ -1064,6 +1092,30 @@ mod wire {
         assert_eq!(serde_json::to_value(&some).unwrap(), json!({ "all": false, "sessions": [1, 3] }));
         let req: NotifyRequest = serde_json::from_value(json!({ "on": true })).unwrap();
         assert_eq!((req.session, req.on), (None, true));
+    }
+
+    /// `team-pins` answered `json!({ "pins": ..., "checked": ... })`.
+    #[test]
+    fn team_pins_answer_as_they_did() {
+        let pins: std::collections::BTreeMap<String, String> = [("t1".to_owned(), "dev.root".to_owned())].into();
+        let checked = vec!["t1".to_owned(), "t2".to_owned()];
+        let typed = TeamPins { pins: pins.clone(), checked: checked.clone() };
+        assert_eq!(serde_json::to_value(&typed).unwrap(), json!({ "pins": pins, "checked": checked }));
+        let none = TeamPins::default();
+        assert_eq!(serde_json::to_value(&none).unwrap(), json!({ "pins": {}, "checked": [] }));
+        let req: TeamPinsRequest = serde_json::from_value(json!({})).unwrap();
+        assert!(req.pins.is_empty() && req.drop.is_empty());
+        // What an act answers: `error` only when a pane refused.
+        let act = ActResponse {
+            results: vec![
+                ActResult { pane: 1, ok: true, error: None },
+                ActResult { pane: 2, ok: false, error: Some("no".into()) },
+            ],
+        };
+        assert_eq!(
+            serde_json::to_value(&act).unwrap(),
+            json!({ "results": [{ "pane": 1, "ok": true }, { "pane": 2, "ok": false, "error": "no" }] })
+        );
     }
 
     /// `GET /api/host`: `None`s are left out, as its derive always did.

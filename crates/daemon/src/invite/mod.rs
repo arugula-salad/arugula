@@ -28,10 +28,7 @@
 
 pub mod card;
 
-use std::{
-    collections::BTreeMap,
-    sync::{Arc, OnceLock, Weak},
-};
+use std::sync::{Arc, OnceLock, Weak};
 
 use axum::{
     Json, Router,
@@ -43,9 +40,8 @@ use axum::{
 use illogical_core::{Role, SessionId};
 use illogical_proto::{
     PaneId, ThreadTarget,
-    api::{InviteDelivery, InviteGrant, InviteRequest, Invited},
+    api::{InviteDelivery, InviteGrant, InviteRequest, Invited, TeamPins, TeamPinsRequest},
 };
-use serde::Deserialize;
 use serde_json::json;
 
 use crate::{
@@ -462,20 +458,8 @@ async fn deliver(
     (InviteDelivery::Pending, Some(why.into()))
 }
 
-#[derive(Deserialize)]
-struct Pins {
-    /// Team id to `<founder device>.<founder's root>`, as the owner's
-    /// browser pinned it.
-    #[serde(default)]
-    pins: BTreeMap<String, String>,
-    /// Teams pinned here that the owner's account is no longer in: their
-    /// members stop being nameable.
-    #[serde(default)]
-    drop: Vec<String>,
-}
-
 fn pins_now(app: &App) -> Response {
-    Json(json!({ "pins": app.control.team_pins(), "checked": app.control.checked_teams() })).into_response()
+    Json(TeamPins { pins: app.control.team_pins(), checked: app.control.checked_teams() }).into_response()
 }
 
 async fn pins(State(app): State<Arc<App>>) -> Response {
@@ -484,7 +468,7 @@ async fn pins(State(app): State<Arc<App>>) -> Response {
 
 /// The owner's browser hands over the teams it pinned (#233), and those
 /// it left; their rosters are fetched and checked against these, now.
-async fn add_pins(State(app): State<Arc<App>>, headers: HeaderMap, Json(b): Json<Pins>) -> Response {
+async fn add_pins(State(app): State<Arc<App>>, headers: HeaderMap, Json(b): Json<TeamPinsRequest>) -> Response {
     if agent(&headers) {
         return refuse(StatusCode::FORBIDDEN, "the owner's browser pins teams, not an agent");
     }

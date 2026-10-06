@@ -12,7 +12,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { Fleet, FleetPane } from "../fleet";
-import { gateKey, type Action, type OpenRequest, type OpenResponse, type Reason } from "../proto";
+import { gateKey, type Action, type ActRequest, type ActResponse, type OpenRequest, type OpenResponse, type Reason } from "../proto";
 import { AskCard, type Answered } from "../blocks/ask";
 import { ANSWERED_MS, answeredLine, FollowUpBox, PermissionBody, PermissionButtons, VIEWER_NOTE, type Requester } from "../ui/answer-card";
 import { Avatar } from "../ui/people";
@@ -641,7 +641,7 @@ async function changesOf(fleet: Fleet, p: FleetPane, back: () => void): Promise<
 }
 
 /** Act on a bundle: one request per host, naming its panes. */
-async function act(fleet: Fleet, panes: FleetPane[], action: Action, extra: Record<string, unknown> = {}): Promise<string | null> {
+async function act(fleet: Fleet, panes: FleetPane[], action: Action, extra: Partial<ActRequest> = {}): Promise<string | null> {
   const hosts = new Map<string, FleetPane[]>();
   for (const p of panes) hosts.set(p.host, [...(hosts.get(p.host) ?? []), p]);
   let err: string | null = null;
@@ -650,10 +650,10 @@ async function act(fleet: Fleet, panes: FleetPane[], action: Action, extra: Reco
       const r = ps[0].info.reason;
       // What it answers: a question or approval's id, or a gate's key (M34).
       const id = r?.ask?.id ?? (r?.gate ? gateKey(r.gate) : undefined);
-      const body = ps.length === 1 ? { action, pane: ps[0].id, id, ...extra } : { action, panes: ps.map((p) => p.id), ...extra };
+      const body: ActRequest = ps.length === 1 ? { action, pane: ps[0].id, id, ...extra } : { action, panes: ps.map((p) => p.id), ...extra };
       try {
         const res = await fleet.request(host, "POST", "/api/attention/act", body);
-        if (!res.ok) err = (await res.json<{ error?: string; results?: { error?: string }[] }>().catch(() => null))?.error ?? `couldn't (${res.status})`;
+        if (!res.ok) err = (await res.json<Partial<ActResponse> & { error?: string }>().catch(() => null))?.error ?? `couldn't (${res.status})`;
       } catch (e) {
         err = String(e);
       }
