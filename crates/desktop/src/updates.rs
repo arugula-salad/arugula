@@ -81,7 +81,9 @@ pub fn start(app: AppHandle) {
     std::thread::spawn(move || {
         std::thread::sleep(Duration::from_secs(5));
         loop {
-            match tauri::async_runtime::block_on(fetch(&app, !cfg!(windows))) {
+            // A test that restarts at once installs on Windows too.
+            let install = !cfg!(windows) || std::env::var_os("ILLOGICAL_UPDATE_RESTART").is_some();
+            match tauri::async_runtime::block_on(fetch(&app, install)) {
                 Ok(Some(v)) => {
                     ready(&app, &v);
                     return;
