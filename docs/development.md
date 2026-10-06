@@ -79,7 +79,8 @@ for `.busy` false, restart, then `PUT` its three labels back. More is `cp -a` of
 without `_work`, `.runner` and `.credentials*`, `config.sh --runnergroup
 illogical --labels linux-x86_64,linux-x86_64-e2e,linux-x86_64-ci` with an
 org registration token, and `systemctl --user enable --now` of the next
-number) and jake-mini (`macos-arm64`, a
+number) and jake-mini (`macos-arm64`, releases only: check.yml's macos job
+runs on GitHub's `macos-15`, as one runner kept every run waiting; a
 launchd agent, `~/Library/LaunchAgents/illogical.actions-runner.plist`,
 with `ProcessType` Interactive: launchd's throttling of background agents
 made daemon tests time out; Docker is colima, a Homebrew service). All run jobs on the host and keep their
