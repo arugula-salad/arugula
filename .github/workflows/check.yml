@@ -210,6 +210,9 @@ jobs:
     runs-on: macos-15
     env:
       ILLOGICAL_SKIP_DOCKER: "1"
+      # mise fetches tools from GitHub's API: unauthenticated, a hosted
+      # runner shares 60 requests an hour with everyone on its IP.
+      GITHUB_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
       - name: bash 4.4+ (macOS ships 3.2; the shell integration tests need PS0)
