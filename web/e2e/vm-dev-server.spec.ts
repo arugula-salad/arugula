@@ -47,6 +47,7 @@ const app: Record<string, string> = {
   "label.js": `export const label = "hello";`,
   "main.js": `import "./style.css";
 import { label } from "./label.js";
+import { labs } from "./labs";
 const h = document.querySelector("#h");
 h.textContent = label;
 const b = document.querySelector("#b");
@@ -61,7 +62,7 @@ test.beforeAll(async () => {
   daemon = spawn(
     "../target/debug/illogicald",
     ["--listen", ANY, "--block-listen", ANY, "--shell", "bash --norc --noprofile"],
-    { stdio: "ignore", env: { ...process.env, ILLOGICAL_STATE_DIR: state, ILLOGICAL_WISP_URL: WISP } },
+    { stdio: "ignore", env: { ...process.env, ILLOGICAL_STATE_DIR: labs(state), ILLOGICAL_WISP_URL: WISP } },
   );
   APP = `http://127.0.0.1:${await daemonPort(state, daemon)}`;
   BLOCKS = await blockPort(state, daemon);
