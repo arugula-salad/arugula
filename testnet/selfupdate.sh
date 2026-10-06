@@ -7,7 +7,8 @@
 #   check   the daemon finds NEW and offers Update now (apply: true)
 #   apply   POST /api/update/apply: it downloads NEW, checks it against
 #           SHA256SUMS and runs NEW's install outside the service
-#           (systemd-run); the service restarts onto NEW, which answers
+#           (systemd-run); the service restarts onto NEW, which answers,
+#           and the old one stopped when asked (systemd didn't kill it)
 #   panes   the counter is the same process, and still counting
 #   bad     `illogicald update -y` against a release whose SHA256SUMS
 #           doesn't match refuses it; the daemon stays NEW
@@ -116,6 +117,11 @@ for _ in $(seq 90); do
   sleep 1
 done
 new_pid=$(s 'systemctl --user show -p MainPID --value illogicald.service')
+# It stopped when asked: systemd didn't have to kill it after its timeout.
+# (The systemd-run client it waited on is killed with the old cgroup; the
+# install itself runs on in its own unit.)
+killed=$(s 'journalctl --user -u illogicald.service --no-pager 2>/dev/null | grep -i "stop-sigterm.*timed out" || true')
+[ -z "$killed" ] || fail apply "systemd had to kill the old daemon: $killed"
 if [ "$ok" = 1 ] && [ "$new_pid" != "$daemon_pid" ] && [ "$(s '.local/bin/illogicald --version')" = "illogicald $NEW" ]; then
   pass apply "$OLD -> $NEW, service pid $daemon_pid -> $new_pid"
 else
