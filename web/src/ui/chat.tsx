@@ -20,7 +20,7 @@ import { threadKey, type SessionId, type ThreadMsg, type ThreadSummary, type Thr
 import { getFleet } from "./hosts";
 import { usePhone } from "./hooks";
 import { openMenu, type MenuItem } from "./menu";
-import { openPalette } from "./palette";
+import { ActivityView, SearchField, SearchView, Switcher, activityCount, useChatKeys } from "./chat-find";
 import { closeThread, ThreadBody, type Quote } from "./threads";
 import { HuddleButton, HuddleChip, useHuddle } from "./huddle";
 import { Avatar } from "./people";
@@ -33,19 +33,46 @@ const listeners = new Set<() => void>();
 const changed = () => listeners.forEach((fn) => fn());
 addEventListener("hashchange", changed);
 
-interface ChatRoute {
+export interface ChatRoute {
   host?: string;
   key?: string;
   /** M74: a message to show (a copied link). */
   msg?: number;
+  /** M75: Activity (your mentions), or search results for `q`. */
+  view?: "activity" | "search";
+  q?: string;
 }
 
 /** `#chat`, `#chat=<host>/<pane-N|session-N>` for one thread, and
- * `…&msg=N` for one message in it. */
+ * `…&msg=N` for one message in it; `#chat=activity`, and
+ * `#chat=search/<words>`. */
 function chatRoute(): ChatRoute | null {
+  if (location.hash === "#chat=activity") return { view: "activity" };
+  const q = /^#chat=search\/(.*)$/.exec(location.hash);
+  if (q) return { view: "search", q: safeDecode(q[1]) };
   const m = /^#chat(?:=(.*)\/((?:pane|session)-\d+)(?:&msg=(\d+))?)?$/.exec(location.hash);
   if (!m) return null;
-  return m[2] ? { host: decodeURIComponent(m[1]), key: m[2], msg: m[3] ? Number(m[3]) : undefined } : {};
+  return m[2] ? { host: safeDecode(m[1]), key: m[2], msg: m[3] ? Number(m[3]) : undefined } : {};
+}
+
+function safeDecode(s: string): string {
+  try {
+    return decodeURIComponent(s);
+  } catch {
+    return s;
+  }
+}
+
+/** Activity, or search results for `q` (M75). */
+export function openChatView(view: "activity" | "search", q = "") {
+  closeThread();
+  const hash = view === "activity" ? "chat=activity" : `chat=search/${encodeURIComponent(q)}`;
+  if (location.hash === `#${hash}`) return changed();
+  // Typing in search replaces the entry, so Back doesn't step through it.
+  if (view === "search" && chatRoute()?.view === "search") {
+    history.replaceState(null, "", `#${hash}`);
+    changed();
+  } else location.hash = hash;
 }
 
 /** Whether the chat page is shown, kept current with the route. */
@@ -59,9 +86,10 @@ export function useChatOpen(): boolean {
   return isChatOpen();
 }
 
-export function openChat(host?: string, target?: ThreadTarget) {
+export function openChat(host?: string, target?: ThreadTarget, msg?: number) {
   closeThread();
-  const hash = host !== undefined && target ? `chat=${encodeURIComponent(host)}/${threadKey(target)}` : "chat";
+  const hash =
+    host !== undefined && target ? `chat=${encodeURIComponent(host)}/${threadKey(target)}${msg !== undefined ? `&msg=${msg}` : ""}` : "chat";
   if (location.hash !== `#${hash}`) location.hash = hash;
   else changed();
 }
@@ -83,7 +111,7 @@ function targetOf(key: string): ThreadTarget | null {
 
 // ---- where the threads come from
 
-interface Source {
+export interface Source {
   host: string;
   client: Client;
   /** The page's own connection (it can show panes; the rest go there). */
@@ -92,7 +120,7 @@ interface Source {
 
 /** Every host with threads to show: the shown one through the page's own
  * client, the others through the fleet's, when they keep threads. */
-function sources(client: Client, fleet: Fleet | null): Source[] {
+export function sources(client: Client, fleet: Fleet | null): Source[] {
   const current = directory.current;
   const out: Source[] = [{ host: current, client, shown: true }];
   for (const h of fleet?.list ?? []) {
@@ -162,14 +190,12 @@ export function Places({ client, at }: { client: Client; at: "panes" | "chat" })
 }
 
 /** Chat's own bar, which is the desktop app's titlebar on this page. */
-function ChatBar({ client }: { client: Client }) {
+function ChatBar({ client, route }: { client: Client; route: ChatRoute }) {
   return (
     <header class="bar chat-bar" data-tauri-drag-region>
       <Places client={client} at="chat" />
       <div class="bar-fill" data-tauri-drag-region />
-      <button class="chat-search" title="Search (the command palette for now)" onClick={() => openPalette(client)}>
-        <span aria-hidden="true">⌕</span> Search
-      </button>
+      <SearchField route={route} />
       <div class="bar-fill" data-tauri-drag-region />
       <UpdateChip client={client} />
       <WindowButtons />
@@ -204,7 +230,7 @@ let unreadOnly = remembered("chat.unreadOnly", false);
 
 // ---- the view
 
-interface Row {
+export interface Row {
   host: string;
   target: ThreadTarget;
   label: string;
@@ -215,7 +241,7 @@ interface Row {
 
 /** A host's channels: each session, with its panes' threads under it,
  * newest first. */
-function rowsOf(s: Source): Row[] {
+export function rowsOf(s: Source): Row[] {
   const st = s.client.state;
   if (!st) return [];
   const summaries = new Map((st.threads ?? []).map((t) => [threadKey(t.target), t]));
@@ -242,12 +268,12 @@ function rowsOf(s: Source): Row[] {
   return out;
 }
 
-function paneLabel(client: Client, pane: number): string {
+export function paneLabel(client: Client, pane: number): string {
   const t = client.title(pane) || client.cwd(pane)?.split("/").filter(Boolean).pop() || "";
   return t ? `%${pane} ${t}` : `%${pane}`;
 }
 
-function sessionName(client: Client, session: SessionId): string {
+export function sessionName(client: Client, session: SessionId): string {
   return client.state?.sessions.find((s) => s.id === session)?.name ?? `session ${session}`;
 }
 
@@ -313,7 +339,7 @@ function ChatView({ client, route }: { client: Client; route: ChatRoute }) {
   const fromRoute = route.key ? targetOf(route.key) : null;
   const src = all.find((s) => s.host === route.host);
   if (fromRoute && src) picked = { s: src, target: fromRoute };
-  if (!picked && !phone) {
+  if (!picked && !phone && !route.view) {
     const flat = rows.flatMap(({ s, rows }) => rows.map((r) => ({ s, r })));
     const best =
       flat.filter((x) => x.r.summary?.unread).sort((a, b) => b.r.summary!.at - a.r.summary!.at)[0] ??
@@ -359,8 +385,20 @@ function ChatView({ client, route }: { client: Client; route: ChatRoute }) {
     redraw();
   };
 
+  // M75: Alt+↑/↓ through the channels, Shift+Esc marks everything read.
+  const flatRows = rows.flatMap(({ s, rows }) => (phone || !collapsed.has(s.host) ? rows : []).map((r) => ({ s, r })));
+  useChatKeys(flatRows, pickedKey, () => markAllRead(all));
+  const mentions = activityCount(all);
+
   const list = (
     <nav class="chat-list" aria-label="Threads">
+      <div class="chat-top">
+        <button class={`chat-row chat-activity${route.view === "activity" ? " selected" : ""}${mentions ? " unread" : ""}`} data-chat-activity onClick={() => openChatView("activity")}>
+          <span class="chat-sigil">@</span>
+          <span class="chat-label">Activity</span>
+          {mentions > 0 && <span class="chat-count mention">{mentions}</span>}
+        </button>
+      </div>
       {huddles.length > 0 && (
         <section data-chat-huddles>
           <h2 class="chat-section">Huddles</h2>
@@ -393,12 +431,20 @@ function ChatView({ client, route }: { client: Client; route: ChatRoute }) {
     </nav>
   );
 
-  const thread = picked && <ChatThread key={pickedKey} s={picked.s} target={picked.target} phone={phone} multi={multi} focus={route.msg} />;
+  const thread = route.view ? (
+    route.view === "activity" ? (
+      <ActivityView all={all} multi={multi} phone={phone} />
+    ) : (
+      <SearchView all={all} q={route.q ?? ""} multi={multi} phone={phone} />
+    )
+  ) : (
+    picked && <ChatThread key={pickedKey} s={picked.s} target={picked.target} phone={phone} multi={multi} focus={route.msg} />
+  );
 
   if (phone) {
     return (
       <div class="chat phone" data-chat>
-        {picked ? (
+        {picked || route.view ? (
           thread
         ) : (
           <>
@@ -447,7 +493,8 @@ function ChatView({ client, route }: { client: Client; route: ChatRoute }) {
 
   return (
     <div class="chat" data-chat>
-      <ChatBar client={client} />
+      <ChatBar client={client} route={route} />
+      <Switcher rows={flatRows} multi={multi} />
       <div class="chat-body">
         <aside class={huddle ? "chat-side huddling" : "chat-side"}>
           <header class="chat-side-head">

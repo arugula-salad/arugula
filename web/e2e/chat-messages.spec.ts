@@ -3,7 +3,8 @@
 // while it's stopped, as a restart keeps threads): a line between days, a
 // red "New" line at the first unread, pictures, an agent's badge, runs of
 // one person under one heading, and a small Markdown in which typed HTML
-// stays text. Then @ completes a name and the hover toolbar quotes.
+// stays text. Then @ completes a name and the hover toolbar quotes. M75:
+// Activity, search, the Ctrl+K switcher and the channel keys.
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -164,4 +165,65 @@ test("a copied link opens the message and flashes it", async () => {
   await owner.goto(link);
   await expect(owner.locator('.chat-thread [data-msg="1"]')).toBeInViewport();
   await expect(owner.locator('.chat-thread [data-msg="1"]')).toHaveClass(/flash/);
+});
+
+test("Activity has what's for you, and clears when it's read", async () => {
+  const pane = await owner.evaluate(() => window.__illogical.client.state!.panes[0].id);
+  // The friend mentions the owner in the pane's thread.
+  const r = await fetch(`${base}/api/threads/pane-${pane}`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "tailscale-user-login": FRIEND },
+    body: JSON.stringify({ text: "@me the pane is stuck" }),
+  });
+  expect(r.ok).toBe(true);
+  const activity = owner.locator("[data-chat-activity]");
+  await expect(activity.locator(".chat-count")).toHaveText("1");
+  await activity.click();
+  const view = owner.locator("[data-chat-activity-view]");
+  await expect(view.locator(".chat-hit.unread")).toContainText("the pane is stuck");
+  // The agent's message that mentioned the owner is there too.
+  await expect(view.locator('[data-chat-hit="5"]')).toBeVisible();
+
+  // Shift+Esc reads everything.
+  await owner.keyboard.press("Shift+Escape");
+  await expect(activity.locator(".chat-count")).toHaveCount(0);
+  await expect(view.locator(".chat-hit.unread")).toHaveCount(0);
+
+  // A hit opens its message in its thread.
+  await view.locator(".chat-hit", { hasText: "the pane is stuck" }).click();
+  await expect(owner.locator(".chat-thread .thread-msg.flash")).toContainText("the pane is stuck");
+});
+
+test("search finds messages and opens them", async () => {
+  const field = owner.locator("[data-chat-search]");
+  await field.fill("late night");
+  const view = owner.locator("[data-chat-search-view]");
+  await expect(view.locator(".chat-hit")).toHaveCount(1);
+  await expect(view).toContainText("1 message");
+  await view.locator('[data-chat-hit="2"]').click();
+  await expect(owner.locator('.chat-thread [data-msg="2"]')).toBeInViewport();
+  await expect(field).toHaveValue("");
+  await field.fill("nothing like this");
+  await expect(view).toContainText("No messages match");
+  await field.press("Escape");
+  await expect(view).toHaveCount(0);
+});
+
+test("Ctrl+K jumps to a channel, and Alt+arrows walk them", async () => {
+  const pane = await owner.evaluate(() => window.__illogical.client.state!.panes[0].id);
+  const name = await owner.evaluate(() => window.__illogical.client.state!.sessions[0].name);
+  await owner.locator(`.chat-row[data-chat-thread="pane-${pane}"]`).click();
+  await owner.keyboard.press("Control+k");
+  const sw = owner.locator("[data-chat-switcher]");
+  await expect(sw).toBeVisible();
+  await owner.keyboard.type(name.split(" ")[0]);
+  await owner.keyboard.press("Enter");
+  await expect(sw).toHaveCount(0);
+  await expect.poll(() => owner.evaluate(() => location.hash)).toBe(`#chat=box/session-${session}`);
+
+  // The session's channel, then its pane's thread under it, and back.
+  await owner.keyboard.press("Alt+ArrowDown");
+  await expect.poll(() => owner.evaluate(() => location.hash)).toBe(`#chat=box/pane-${pane}`);
+  await owner.keyboard.press("Alt+ArrowUp");
+  await expect.poll(() => owner.evaluate(() => location.hash)).toBe(`#chat=box/session-${session}`);
 });

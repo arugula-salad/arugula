@@ -555,7 +555,7 @@ function when(at: number): string {
 }
 
 /** A message's picture: theirs, or their initials on their color. */
-function MsgAvatar({ who, name, pic }: { who: string; name: string; pic?: string }) {
+export function MsgAvatar({ who, name, pic }: { who: string; name: string; pic?: string }) {
   const initials = name
     .split(/[\s@]+/)
     .filter(Boolean)

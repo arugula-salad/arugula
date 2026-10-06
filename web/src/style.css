@@ -5641,9 +5641,147 @@ button.thread-quote:hover {
   text-align: left;
 }
 
-.chat-search:hover {
+.chat-search:hover,
+.chat-search:focus {
   border-color: var(--raised-hover);
   color: var(--fg);
+  outline: none;
+}
+
+input.chat-search {
+  font: inherit;
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+}
+
+.chat-view > .chat-search {
+  flex: none;
+  margin: 8px 16px 0;
+  height: 32px;
+}
+
+/* M75: Activity and search results, and the switcher. */
+.chat-activity {
+  margin-top: 6px;
+}
+
+.chat-hits {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chat-hit {
+  display: block;
+  width: 100%;
+  margin: 8px 0;
+  padding: 8px 12px 10px;
+  border: 1px solid var(--divider);
+  border-radius: 8px;
+  text-align: left;
+  --msg-gutter: 28px;
+}
+
+.chat-hit:hover {
+  background: color-mix(in srgb, var(--raised) 45%, transparent);
+}
+
+.chat-hit.unread {
+  border-left: 3px solid #f9e2af;
+}
+
+.chat-hit-where {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+  color: var(--dim);
+  font-size: 12px;
+}
+
+.chat-hit.unread .chat-hit-where span {
+  color: var(--fg);
+  font-weight: 700;
+}
+
+.chat-hit-body {
+  display: flex;
+  gap: 8px;
+}
+
+.chat-hit-text {
+  min-width: 0;
+  max-height: 9em;
+  overflow: hidden;
+}
+
+.chat-switcher-back {
+  position: fixed;
+  inset: 0;
+  z-index: 49;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 12vh;
+  background: rgb(0 0 0 / 0.4);
+}
+
+.chat-switcher {
+  width: min(560px, calc(100vw - 32px));
+  border: 1px solid var(--divider);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 12px 40px rgb(0 0 0 / 0.5);
+  overflow: hidden;
+}
+
+.chat-switcher input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 14px 16px;
+  border: 0;
+  border-bottom: 1px solid var(--divider);
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: 15px;
+  outline: none;
+}
+
+.chat-switcher ul {
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.chat-switcher li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.chat-switcher li.unread .chat-label {
+  font-weight: 700;
+}
+
+.chat-switcher li.picked {
+  background: var(--accent);
+  color: var(--surface);
+}
+
+.chat-switcher li.picked .chat-sigil,
+.chat-switcher li.picked .chat-switcher-host {
+  color: inherit;
+}
+
+.chat-switcher-host {
+  color: var(--dim);
+  font-size: 12px;
 }
 
 .chat-body {

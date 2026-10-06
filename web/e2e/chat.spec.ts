@@ -164,7 +164,7 @@ test("the sidebar remembers a machine folded away, and can show only what's unre
   await page.locator(".menu").getByText("Show unread only").click();
   // Everything here is read (your own messages are), so only the thread
   // shown stays listed.
-  await expect(chat.locator(".chat-row")).toHaveCount(1);
+  await expect(chat.locator(".chat-row[data-chat-thread]")).toHaveCount(1);
   await expect(chat.locator(".chat-row.selected")).toHaveCount(1);
   await chat.locator("[data-chat-workspace]").click();
   await page.locator(".menu").getByText("Show every channel").click();
