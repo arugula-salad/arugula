@@ -40,6 +40,7 @@ trait Measure {
     fn panes(&self) -> Vec<Value>;
     fn rss(&self) -> u64;
     fn settled_rss(&self) -> u64;
+    fn pane_threads(&self, ids: &[String]) -> usize;
 }
 
 impl Measure for Daemon {
@@ -78,6 +79,16 @@ impl Measure for Daemon {
         }
         last
     }
+
+    /// How many of these panes' threads are still running.
+    fn pane_threads(&self, ids: &[String]) -> usize {
+        let Ok(tasks) = std::fs::read_dir(format!("/proc/{}/task", self.pid().unwrap())) else { return 0 };
+        tasks
+            .flatten()
+            .filter_map(|t| std::fs::read_to_string(t.path().join("comm")).ok())
+            .filter(|name| ids.iter().any(|id| name.strip_prefix(id.as_str()).is_some_and(|r| r.starts_with('-'))))
+            .count()
+    }
 }
 
 #[test]
@@ -102,6 +113,13 @@ fn idle_panes_stay_small_and_closed_ones_give_memory_back() {
         d.request("POST", &format!("/api/panes/{}/close", p["id"]), Some(json!({})));
     }
     d.wait_for("the panes to close", || d.panes().len() == 1);
+    // A pane leaves the list when it's asked to close, but its threads end
+    // only once its program has gone (up to the 3 s SIGKILL after the
+    // hangup), and only then are its engine and ring freed and the heap
+    // trimmed. RSS holds still meanwhile, so settled_rss alone measured
+    // closing panes, not closed ones.
+    let closed: Vec<String> = panes[1..].iter().map(|p| format!("pane{}", p["id"])).collect();
+    d.wait_for("the closed panes' threads to end", || d.pane_threads(&closed) == 0);
     let after = d.settled_rss();
     let kept = after.saturating_sub(base);
     eprintln!("daemon rss: {after} KiB after closing {} panes: {kept} KiB kept", PANES - 1);
