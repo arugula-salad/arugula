@@ -286,8 +286,10 @@ const openPane = (pane: number, daemon?: string, thread?: string) => {
     const off = client.subscribe(() => go() && off());
   }
 };
+// The desktop app sends this page its events as arugula:… once it says
+// it's from after the rename (#505); an app from before sends illogical:….
+(window as { __arugulaPage?: boolean }).__arugulaPage = true;
 // A pane opened on the home daemon from elsewhere (a sandbox shell).
-// An app from before the rename (#505) sends it as illogical:open-pane.
 for (const name of ["arugula:open-pane", "illogical:open-pane"]) {
   window.addEventListener(name, (e) => openPane((e as CustomEvent<number>).detail));
 }
@@ -313,7 +315,6 @@ if (!linkTarget) void registerWorker(openPane);
 // Daemon menu (#325): Join… and Join again… open Getting started at the
 // cloud step, on an open page (the event) or a new one
 // (`#getting-started=cloud`).
-// An app from before the rename (#505) sends illogical:getting-started.
 for (const name of ["arugula:getting-started", "illogical:getting-started"]) {
   window.addEventListener(name, (e) => openGettingStarted((e as CustomEvent<Section>).detail, client));
 }

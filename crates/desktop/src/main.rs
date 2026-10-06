@@ -790,11 +790,9 @@ fn open_pane(app: &AppHandle, pane: u32) {
             // Already on the daemon's page: the client opens it (main.tsx),
             // without a reload.
             if w.url().is_ok_and(|u| daemons(&u)) {
-                // Both names: a daemon from before the rename (#505) serves
-                // a page that listens for the old one.
-                for name in ["arugula", arugula_proto::rename::OLD] {
-                    let _ = w.eval(format!("dispatchEvent(new CustomEvent('{name}:open-pane', {{ detail: {pane} }}))"));
-                }
+                let _ = w.eval(format!(
+                    "dispatchEvent(new CustomEvent({PAGE_EVENT_PREFIX}+':open-pane', {{ detail: {pane} }}))"
+                ));
             } else {
                 let _ = w.navigate(url);
             }
@@ -1006,6 +1004,12 @@ fn watch_once(app: &AppHandle) -> anyhow::Result<()> {
         seen = Some(now);
     }
 }
+
+/// The prefix of the events the app sends into a daemon's page, as JS: a
+/// page from after the rename (#505) says so (`window.__arugulaPage`) and
+/// listens for `arugula:`, one from a daemon on 0.25 or older only for
+/// `illogical:`. One event either way, so a new page doesn't hear it twice.
+pub(crate) const PAGE_EVENT_PREFIX: &str = "(window.__arugulaPage ? 'arugula' : 'illogical')";
 
 fn main() {
     // ILLOGICAL_X stands in for ARUGULA_X (#505), before any thread exists.

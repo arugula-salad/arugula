@@ -399,13 +399,10 @@ pub fn getting_started(app: &AppHandle, section: &str) {
     match on_page {
         // The client opens it (main.tsx) without a reload.
         Some(w) => {
-            // Both names: a daemon from before the rename (#505) serves a
-            // page that listens for the old one.
-            for name in ["arugula", arugula_proto::rename::OLD] {
-                let _ = w.eval(format!(
-                    "dispatchEvent(new CustomEvent('{name}:getting-started', {{ detail: {section:?} }}))"
-                ));
-            }
+            let _ = w.eval(format!(
+                "dispatchEvent(new CustomEvent({}+':getting-started', {{ detail: {section:?} }}))",
+                crate::PAGE_EVENT_PREFIX
+            ));
             let _ = w.unminimize();
             let _ = w.show();
             let _ = w.set_focus();

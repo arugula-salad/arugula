@@ -309,7 +309,7 @@ test("the desktop app signs in through the browser, then is approved as a device
   let grant = "";
   const loop = createServer((req, res) => {
     const u = new URL(req.url!, "http://127.0.0.1");
-    if (u.pathname === "/arugula-signin") grant = u.searchParams.get("grant") ?? "";
+    if (u.pathname === "/illogical-signin") grant = u.searchParams.get("grant") ?? "";
     res.writeHead(303, { location: `${base}/#app-done` }).end();
   });
   await new Promise<void>((r) => loop.listen(0, "127.0.0.1", r));

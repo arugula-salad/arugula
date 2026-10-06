@@ -16,7 +16,7 @@
 //!    arugula app on <name>?" with the code and where the request came
 //!    from (`GET /api/app-login/{id}`). Allow (`POST …/allow`) binds the
 //!    ticket to the account and answers with a one-time grant, which the
-//!    page hands to `http://127.0.0.1:<port>/arugula-signin`: only the
+//!    page hands to `http://127.0.0.1:<port>/illogical-signin`: only the
 //!    app on this computer hears it.
 //! 3. The app's webview opens control's page with `#app-redeem=<id>.<grant>.<verifier>`,
 //!    which posts them to `POST /auth/app/{id}/redeem` (from control's own
@@ -53,7 +53,9 @@ const TTL_MS: u64 = 10 * 60 * 1000;
 const MAX_OPEN: usize = 1000;
 pub const ASKS: (&str, usize) = ("app-login", 60);
 /// Where the app listens for its grant.
-const LOOPBACK_PATH: &str = "/arugula-signin";
+// The old name (#505): apps on 0.25 and older listen only there, and
+// apps since take both. The new one once those are gone (#508).
+const LOOPBACK_PATH: &str = "/illogical-signin";
 
 #[derive(Clone)]
 struct Ticket {
