@@ -63,7 +63,7 @@ it. Flags after `--` are passed to the daemon on every start
 - **From the desktop app:** its *Daemon* menu (in the tray, and on a Mac in
   the app menu and the Dock icon's menu) says the daemon's version, whether
   it's running and which service runs it (the app's own launch agent,
-  `wtf.widgets.illogical.daemon`, or what `arugulad install` set up),
+  `io.arugula.desktop.daemon`, or what `arugulad install` set up),
   and whether and where this machine is joined to control. *Restart*,
   *Stop…* and *Start* go through that service, so a restart keeps the
   panes; a stop ends them, and the daemon stays stopped until *Start* or

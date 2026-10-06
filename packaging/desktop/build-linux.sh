@@ -45,16 +45,17 @@ out=$CARGO_TARGET_DIR/release/bundle
 # install its daemon). Put the originals back and pack the AppImage again
 # with the same plugin.
 cd "$out/appimage"
-for b in arugulad arugula; do install -m 755 "/src/crates/desktop/binaries/$b-$host" "arugula.AppDir/usr/bin/$b"; done
-for b in arugulad arugula; do "arugula.AppDir/usr/bin/$b" --version >/dev/null; done
-appimage=$(ls arugula_"$v"_*.AppImage)
+# Tauri names the bundles after productName (Arugula).
+for b in arugulad arugula; do install -m 755 "/src/crates/desktop/binaries/$b-$host" "Arugula.AppDir/usr/bin/$b"; done
+for b in arugulad arugula; do "Arugula.AppDir/usr/bin/$b" --version >/dev/null; done
+appimage=$(ls Arugula_"$v"_*.AppImage)
 rm -f "$appimage"
 plugin=$(ls /root/.cache/tauri/linuxdeploy-plugin-appimage*.AppImage | head -1)
-APPIMAGE_EXTRACT_AND_RUN=1 ARCH=$arch OUTPUT=$appimage "$plugin" --appdir arugula.AppDir >/dev/null
+APPIMAGE_EXTRACT_AND_RUN=1 ARCH=$arch OUTPUT=$appimage "$plugin" --appdir Arugula.AppDir >/dev/null
 mkdir -p /dist
 name=arugula-desktop-linux-$arch
-cp "$out/deb/arugula_${v}_$deb.deb" "/dist/$name.deb"
-cp "$out/rpm/arugula-$v-1.$arch.rpm" "/dist/$name.rpm"
+cp "$out/deb/Arugula_${v}_$deb.deb" "/dist/$name.deb"
+cp "$out/rpm/Arugula-$v-1.$arch.rpm" "/dist/$name.rpm"
 cp "$out/appimage/$appimage" "/dist/$name.AppImage"
 # The sidecars as the app will run them: they must start (from a copy
 # without the mark, which the shipped AppImage keeps).

@@ -141,18 +141,33 @@ static WINDOWS: AtomicUsize = AtomicUsize::new(0);
 /// Why the daemon couldn't be reached, for the page that says so.
 static STATUS: Mutex<String> = Mutex::new(String::new());
 static ADDR: OnceLock<String> = OnceLock::new();
+/// Held while the app starts, installs or re-registers the daemon.
+static ONE: Mutex<()> = Mutex::new(());
 
-fn state_dir() -> Option<PathBuf> {
+/// The daemon's state directories, the one to read first first: its own
+/// name's, then the old name's (#505), which a daemon from before the
+/// rename (or one that kept its state where it was) writes to.
+fn state_dirs() -> Vec<PathBuf> {
+    if let Some(d) = std::env::var_os("ARUGULA_STATE_DIR") {
+        return vec![PathBuf::from(d)];
+    }
     // Windows: the daemon's (`%LOCALAPPDATA%\arugula\state`, M56).
     #[cfg(windows)]
-    let windows = std::env::var_os("LOCALAPPDATA").map(|d| PathBuf::from(d).join("arugula").join("state"));
+    let (base, under) = (std::env::var_os("LOCALAPPDATA").map(PathBuf::from), |d: PathBuf| d.join("state"));
     #[cfg(not(windows))]
-    let windows = None;
-    std::env::var_os("ARUGULA_STATE_DIR")
-        .map(PathBuf::from)
-        .or(windows)
-        .or_else(|| std::env::var_os("XDG_STATE_HOME").map(|d| PathBuf::from(d).join("arugula")))
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/state/arugula")))
+    let (base, under) = (
+        std::env::var_os("XDG_STATE_HOME")
+            .map(PathBuf::from)
+            .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/state"))),
+        |d: PathBuf| d,
+    );
+    let Some(base) = base else { return Vec::new() };
+    ["arugula", arugula_proto::rename::OLD].iter().map(|n| under(base.join(n))).collect()
+}
+
+/// `name` in the daemon's state directory: the first that has it.
+fn state_file(name: &str) -> Option<PathBuf> {
+    state_dirs().into_iter().map(|d| d.join(name)).find(|f| f.is_file())
 }
 
 /// `host:port` of the local daemon.
@@ -161,8 +176,8 @@ fn addr() -> &'static str {
         if let Ok(u) = std::env::var("ARUGULA_URL") {
             return u.trim_start_matches("http://").trim_end_matches('/').to_string();
         }
-        state_dir()
-            .and_then(|d| std::fs::read_to_string(d.join("listen")).ok())
+        state_file("listen")
+            .and_then(|f| std::fs::read_to_string(f).ok())
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
             .unwrap_or_else(|| "127.0.0.1:7681".into())
@@ -178,7 +193,7 @@ fn local_token() -> Option<String> {
     let file = std::env::var_os("ARUGULA_LOCAL_TOKEN_FILE")
         .filter(|v| !v.is_empty())
         .map(PathBuf::from)
-        .or_else(|| state_dir().map(|d| d.join("local-token")))?;
+        .or_else(|| state_file("local-token"))?;
     std::fs::read_to_string(file).ok().map(|t| t.trim().to_owned()).filter(|t| !t.is_empty())
 }
 
@@ -213,28 +228,37 @@ fn reachable() -> bool {
     TcpStream::connect_timeout(&sa, Duration::from_millis(400)).is_ok()
 }
 
-/// An installed copy of `name`: `~/.local/bin`, Homebrew, then `PATH`;
-/// on Windows, where `arugulad install` puts it, then `PATH`.
-fn installed(name: &str) -> Option<PathBuf> {
-    let name = &format!("{name}{}", std::env::consts::EXE_SUFFIX);
+/// An installed copy of the first of `names` there is: `~/.local/bin`,
+/// Homebrew, then `PATH`; on Windows, where `arugulad install` puts it,
+/// then `PATH`.
+fn installed(names: &[&str]) -> Option<PathBuf> {
     let home = std::env::var_os("HOME").map(PathBuf::from);
-    let mut candidates: Vec<PathBuf> = home.iter().map(|h| h.join(".local/bin").join(name)).collect();
+    let mut dirs: Vec<PathBuf> = home.iter().map(|h| h.join(".local/bin")).collect();
     if cfg!(windows) {
         let local = std::env::var_os("LOCALAPPDATA").map(PathBuf::from);
-        candidates.extend(local.map(|l| l.join("Programs").join("arugula").join(name)));
+        // An install from before the rename is in Programs\illogical (#505).
+        dirs.extend(local.iter().flat_map(|l| ["arugula", "illogical"].map(|n| l.join("Programs").join(n))));
     } else {
-        candidates.extend(["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"].map(|d| PathBuf::from(d).join(name)));
+        dirs.extend(["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"].map(PathBuf::from));
     }
     if let Some(path) = std::env::var_os("PATH") {
-        candidates.extend(std::env::split_paths(&path).map(|d| d.join(name)));
+        dirs.extend(std::env::split_paths(&path));
     }
-    let ours = bundled(name);
-    candidates.into_iter().find(|p| p.is_file() && Some(p) != ours.as_ref())
+    names.iter().find_map(|name| {
+        let name = format!("{name}{}", std::env::consts::EXE_SUFFIX);
+        let ours = bundled(&name);
+        dirs.iter().map(|d| d.join(&name)).find(|p| p.is_file() && Some(p) != ours.as_ref())
+    })
 }
+
+/// The daemon, under its name or (installed before the rename, #505) its
+/// old one.
+const DAEMON: [&str; 2] = ["arugulad", "illogicald"];
 
 /// The copy of `name` this app carries, next to its own executable.
 fn bundled(name: &str) -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?.canonicalize().ok()?;
+    let name = name.strip_suffix(std::env::consts::EXE_SUFFIX).unwrap_or(name);
     Some(exe.parent()?.join(format!("{name}{}", std::env::consts::EXE_SUFFIX))).filter(|p| p.is_file())
 }
 
@@ -250,7 +274,8 @@ fn unquarantine(path: &std::path::Path) {
 /// The bundled CLI into `~/.local/bin`, when no `arugula` is installed.
 /// (Windows: `arugulad install` puts it beside itself, on PATH.)
 fn install_cli() -> Option<PathBuf> {
-    if cfg!(windows) || installed("arugula").is_some() {
+    // Only the new name: one from before the rename stays, beside this.
+    if cfg!(windows) || installed(&["arugula"]).is_some() {
         return None;
     }
     let src = bundled("arugula")?;
@@ -280,8 +305,12 @@ fn install_cli() -> Option<PathBuf> {
 /// service.
 fn ensure_daemon() -> Result<(), String> {
     // One at a time: a second window's setup page waits for the first's.
-    static ONE: Mutex<()> = Mutex::new(());
     let _one = ONE.lock().unwrap_or_else(|e| e.into_inner());
+    start_daemon()
+}
+
+/// `ensure_daemon`, with `ONE` held.
+fn start_daemon() -> Result<(), String> {
     if reachable() {
         return Ok(());
     }
@@ -295,7 +324,7 @@ fn ensure_daemon() -> Result<(), String> {
             }
         }
     }
-    let Some(bin) = installed("arugulad").or_else(|| bundled("arugulad")) else {
+    let Some(bin) = installed(&DAEMON).or_else(|| bundled("arugulad")) else {
         return Err(format!(
             "Nothing answers at {}, arugulad isn't installed, and this app doesn't carry one.",
             addr()
@@ -304,8 +333,8 @@ fn ensure_daemon() -> Result<(), String> {
     let out =
         std::process::Command::new(&bin).arg("install").output().map_err(|e| format!("{}: {e}", bin.display()))?;
     // `install` copied itself to ~/.local/bin (and restarted the service).
-    if let Some(home) = std::env::var_os("HOME") {
-        let copied = PathBuf::from(home).join(".local/bin/arugulad");
+    if let (Some(home), Some(name)) = (std::env::var_os("HOME"), bin.file_name()) {
+        let copied = PathBuf::from(home).join(".local/bin").join(name);
         if copied != bin {
             unquarantine(&copied);
         }
@@ -761,7 +790,11 @@ fn open_pane(app: &AppHandle, pane: u32) {
             // Already on the daemon's page: the client opens it (main.tsx),
             // without a reload.
             if w.url().is_ok_and(|u| daemons(&u)) {
-                let _ = w.eval(format!("dispatchEvent(new CustomEvent('arugula:open-pane', {{ detail: {pane} }}))"));
+                // Both names: a daemon from before the rename (#505) serves
+                // a page that listens for the old one.
+                for name in ["arugula", arugula_proto::rename::OLD] {
+                    let _ = w.eval(format!("dispatchEvent(new CustomEvent('{name}:open-pane', {{ detail: {pane} }}))"));
+                }
             } else {
                 let _ = w.navigate(url);
             }
@@ -784,7 +817,7 @@ fn daemon_status() -> String {
     if let Some(m) = compat::mismatch() {
         return m.message();
     }
-    match installed("arugulad") {
+    match installed(&DAEMON) {
         Some(bin) => format!("Starting {}…", bin.display()),
         None if bundled("arugulad").is_some() => "Installing arugulad (a service that starts at login)…".into(),
         None => format!("Nothing answers at {}.", addr()),
@@ -866,7 +899,7 @@ fn notify(app: &AppHandle, click: Click, title: String, body: String) {
         #[cfg(target_os = "macos")]
         {
             use mac_notification_sys::{Notification, NotificationResponse, send_notification, set_application};
-            let _ = set_application("wtf.widgets.illogical");
+            let _ = set_application(arugula_proto::service::APP_ID);
             if let Ok(NotificationResponse::Click) =
                 send_notification(&title, None, &body, Some(Notification::new().wait_for_click(true)))
             {
@@ -1117,11 +1150,37 @@ fn main() {
                     if let Err(e) = app.deep_link().register_all() {
                         eprintln!("arugula: registering arugula:// links: {e}");
                     }
+                    // #505: the app from before the rename claimed
+                    // illogical:// in its own file, which this one now does.
+                    if let Some(h) = std::env::var_os("HOME") {
+                        let old = PathBuf::from(h).join(".local/share/applications/illogical-desktop-handler.desktop");
+                        let _ = std::fs::remove_file(old);
+                    }
                 }
             }
+            settings::adopt_old(app.handle());
             profile::init(app.handle());
             #[cfg(target_os = "macos")]
             finder::init(app.handle());
+            // #505: the app from before the rename's launch agent gives way
+            // to this app's daemon (a window finding none waits for this).
+            #[cfg(target_os = "macos")]
+            std::thread::spawn(|| {
+                let one = ONE.lock().unwrap_or_else(|e| e.into_inner());
+                if service::retire_old() {
+                    // Its daemon has up to its ExitTimeOut (15 s) to go.
+                    for _ in 0..80 {
+                        if !reachable() {
+                            break;
+                        }
+                        std::thread::sleep(Duration::from_millis(250));
+                    }
+                    if let Err(e) = start_daemon() {
+                        eprintln!("arugula: starting the daemon after the old app's: {e}");
+                    }
+                }
+                drop(one);
+            });
             compat::check();
             let prefs = settings::load(app.handle());
             let hotkey_ok = match settings::apply(app.handle(), &prefs) {
@@ -1256,4 +1315,54 @@ fn main() {
             }
             _ => {}
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use arugula_proto::service::{APP_ID, APP_LABEL};
+
+    fn file(p: &str) -> String {
+        std::fs::read_to_string(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(p)).unwrap()
+    }
+
+    /// The identifier and the launch agent's names live in tauri.conf.json
+    /// and the plist as well as in proto: they agree (#505).
+    #[test]
+    fn the_names_agree() {
+        let conf: serde_json::Value = serde_json::from_str(&file("tauri.conf.json")).unwrap();
+        assert_eq!(conf["identifier"], APP_ID);
+        assert_eq!(conf["productName"], "Arugula");
+        let plist_name = format!("{APP_LABEL}.plist");
+        let files = &conf["bundle"]["macOS"]["files"];
+        assert_eq!(files[format!("Library/LaunchAgents/{plist_name}")], format!("macos/{plist_name}"));
+        let plist = file(&format!("macos/{plist_name}"));
+        assert!(plist.contains(&format!("<key>Label</key>\n  <string>{APP_LABEL}</string>")), "{plist}");
+        assert!(plist.contains(&format!("<string>{APP_ID}</string>")), "{plist}");
+        // Both schemes, old links keep working.
+        assert_eq!(conf["plugins"]["deep-link"]["desktop"]["schemes"], serde_json::json!(["arugula", "illogical"]));
+    }
+
+    /// #505: the daemon's state under its new name, else its old one.
+    #[test]
+    fn reads_the_state_under_either_name() {
+        let base = std::env::temp_dir().join(format!("arugula-state-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        // SAFETY: this test alone touches these variables.
+        unsafe {
+            std::env::remove_var("ARUGULA_STATE_DIR");
+            std::env::set_var("XDG_STATE_HOME", &base);
+        }
+        if cfg!(windows) {
+            return;
+        }
+        assert_eq!(super::state_dirs(), [base.join("arugula"), base.join("illogical")]);
+        std::fs::create_dir_all(base.join("illogical")).unwrap();
+        std::fs::write(base.join("illogical/listen"), "127.0.0.1:1").unwrap();
+        assert_eq!(super::state_file("listen"), Some(base.join("illogical/listen")));
+        std::fs::create_dir_all(base.join("arugula")).unwrap();
+        std::fs::write(base.join("arugula/listen"), "127.0.0.1:2").unwrap();
+        assert_eq!(super::state_file("listen"), Some(base.join("arugula/listen")));
+        assert_eq!(super::state_file("local-token"), None);
+        let _ = std::fs::remove_dir_all(&base);
+    }
 }

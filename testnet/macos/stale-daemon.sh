@@ -58,7 +58,7 @@ tar -xzf "$work/$tgz" -C "$work/old" --strip-components 1
 v down >/dev/null
 v up >/dev/null
 v push "$DMG" /tmp/arugula.dmg
-vs 'set -e; hdiutil attach -nobrowse -quiet -mountpoint /tmp/d /tmp/arugula.dmg; cp -R /tmp/d/arugula.app /Applications/; hdiutil detach -quiet /tmp/d'
+vs 'set -e; hdiutil attach -nobrowse -quiet -mountpoint /tmp/d /tmp/arugula.dmg; cp -R /tmp/d/Arugula.app /Applications/; hdiutil detach -quiet /tmp/d'
 vs 'mkdir -p /tmp/old'
 v push "$work/old/arugulad" /tmp/old/arugulad
 v push "$work/old/arugula" /tmp/old/arugula
@@ -69,7 +69,7 @@ answers_old() { [ "$(answers)" = "$OLD" ]; }
 nothing_answers() { [ -z "$(answers)" ]; }
 said_why() { vs "grep -q 'arugulad here is $OLD; this app needs 0.19.0 or newer' /tmp/app.log"; }
 quit_app() { vs 'osascript -e "quit app \"arugula\"" 2>/dev/null; sleep 2; pkill -x arugula-desktop; : >/tmp/app.log; true'; }
-start_app() { vs '(nohup /Applications/arugula.app/Contents/MacOS/arugula-desktop >>/tmp/app.log 2>&1 &)'; }
+start_app() { vs '(nohup /Applications/Arugula.app/Contents/MacOS/arugula-desktop >>/tmp/app.log 2>&1 &)'; }
 # The older daemon as the service, as install.sh leaves it.
 install_old() {
   vs '/tmp/old/arugulad install >/dev/null'

@@ -313,7 +313,7 @@ mod tests {
         let not_joined = ControlState { state: "not_joined".into(), ..Default::default() };
         let agent = Service {
             kind: service::Kind::AppAgent,
-            target: "gui/501/wtf.widgets.illogical.daemon".into(),
+            target: format!("gui/501/{}", service::APP_LABEL),
             file: PathBuf::from(service::APP_PLIST),
             running: true,
             loaded: true,
@@ -325,7 +325,7 @@ mod tests {
         assert_eq!(parts, ["daemon", "binary", "log", "control"]);
         assert_eq!(
             ls[0].says,
-            "jake-air: arugulad 0.21.0, running as the app's launch agent (wtf.widgets.illogical.daemon)"
+            "jake-air: arugulad 0.21.0, running as the app's launch agent (io.arugula.desktop.daemon)"
         );
         assert_eq!(ls[1].says, service::APP_PROGRAM);
         assert_eq!(ls[2].says, "/Users/me/Library/Logs/arugulad.log");

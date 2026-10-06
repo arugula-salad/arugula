@@ -209,7 +209,7 @@ desktop-macos arch="" *tauri_args="":
     ln -s /usr/bin/xattr "$sysbin/xattr"
     # ${flags[@]+…}: macOS bash 3.2 calls an empty array unbound.
     PATH="$sysbin:$PATH" cargo tauri build --bundles app ${flags[@]+"${flags[@]}"} {{tauri_args}}
-    app=$out/bundle/macos/arugula.app
+    app=$out/bundle/macos/Arugula.app
     "$root/scripts/macos-sign" app "$app"
     # A zip of the app: ditto keeps its signature and symlinks.
     # --norsrc: no ._* AppleDouble files for xattrs like
@@ -221,17 +221,17 @@ desktop-macos arch="" *tauri_args="":
     if zipinfo -1 "$zip" | grep -E '(^|/)\._'; then echo "AppleDouble files in $zip" >&2; exit 1; fi
     # The .dmg: the app beside a link to /Applications.
     stage=$(mktemp -d)
-    ditto "$app" "$stage/arugula.app"
+    ditto "$app" "$stage/Arugula.app"
     ln -s /Applications "$stage/Applications"
     dmg=$dist/arugula-desktop-$name.dmg
     rm -f "$dmg"
-    hdiutil create -quiet -volname arugula -srcfolder "$stage" -fs HFS+ -format UDZO "$dmg"
+    hdiutil create -quiet -volname Arugula -srcfolder "$stage" -fs HFS+ -format UDZO "$dmg"
     rm -rf "$stage"
     "$root/scripts/macos-sign" dmg "$dmg"
     # The updater's archive of the app, signed with the updater key.
     if [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
       tgz=$dist/arugula-desktop-$name.app.tar.gz
-      tar -C "$(dirname "$app")" -czf "$tgz" arugula.app
+      tar -C "$(dirname "$app")" -czf "$tgz" Arugula.app
       cargo tauri signer sign "$tgz" >/dev/null
       echo "signed $tgz for the updater"
     else

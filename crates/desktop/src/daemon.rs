@@ -399,9 +399,13 @@ pub fn getting_started(app: &AppHandle, section: &str) {
     match on_page {
         // The client opens it (main.tsx) without a reload.
         Some(w) => {
-            let _ = w.eval(format!(
-                "dispatchEvent(new CustomEvent('arugula:getting-started', {{ detail: {section:?} }}))"
-            ));
+            // Both names: a daemon from before the rename (#505) serves a
+            // page that listens for the old one.
+            for name in ["arugula", arugula_proto::rename::OLD] {
+                let _ = w.eval(format!(
+                    "dispatchEvent(new CustomEvent('{name}:getting-started', {{ detail: {section:?} }}))"
+                ));
+            }
             let _ = w.unminimize();
             let _ = w.show();
             let _ = w.set_focus();
@@ -867,7 +871,7 @@ mod tests {
     fn agent(running: bool) -> Service {
         Service {
             kind: Kind::AppAgent,
-            target: "gui/501/wtf.widgets.illogical.daemon".into(),
+            target: format!("gui/501/{}", arugula_proto::service::APP_LABEL),
             file: PathBuf::new(),
             running,
             loaded: running,
@@ -887,7 +891,7 @@ mod tests {
         let es = entries(&up(Some(agent(true))), None);
         assert_eq!(
             find(&es, "daemon-status").unwrap().text,
-            "arugulad 0.20.0, running as the app's launch agent (wtf.widgets.illogical.daemon)"
+            "arugulad 0.20.0, running as the app's launch agent (io.arugula.desktop.daemon)"
         );
         assert!(find(&es, "daemon-update").is_none() && find(&es, "daemon-compat").is_none());
         assert!(find(&es, "daemon-restart").unwrap().enabled);

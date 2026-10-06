@@ -25,7 +25,7 @@
 # ARUGULA_APP_VERSION=app-vX.Y.Z  the app's release (default: app-latest)
 # ARUGULA_APP_DOWNLOAD_URL=…      where the app's zip and its SHA256SUMS
 #                           are, instead of GitHub
-# ARUGULA_APP_DIR=DIR     where arugula.app goes, instead of
+# ARUGULA_APP_DIR=DIR     where Arugula.app goes, instead of
 #                           /Applications or ~/Applications
 set -eu
 
@@ -223,33 +223,36 @@ fi
 if [ "$app" = 1 ]; then
   if [ -n "${ARUGULA_APP_DIR:-}" ]; then
     appdir=$ARUGULA_APP_DIR
-  elif [ -w /Applications ] && { [ ! -e /Applications/arugula.app ] || [ -w /Applications/arugula.app ]; }; then
+  elif [ -w /Applications ] && { [ ! -e /Applications/Arugula.app ] || [ -w /Applications/Arugula.app ]; }; then
     appdir=/Applications
   else
     appdir=$HOME/Applications
   fi
   mkdir -p "$appdir"
   ditto -x -k "$tmp/app/$zip" "$tmp/app/x" || die "couldn't unpack $zip"
-  [ -d "$tmp/app/x/arugula.app" ] || die "$zip has no arugula.app"
+  [ -d "$tmp/app/x/Arugula.app" ] || die "$zip has no Arugula.app"
   # Side by side, then swapped in, so a failed copy leaves the old app.
-  rm -rf "$appdir/.arugula.app.new"
-  ditto "$tmp/app/x/arugula.app" "$appdir/.arugula.app.new" || die "couldn't copy arugula.app to $appdir"
-  rm -rf "$appdir/arugula.app"
-  mv "$appdir/.arugula.app.new" "$appdir/arugula.app"
+  rm -rf "$appdir/.Arugula.app.new"
+  ditto "$tmp/app/x/Arugula.app" "$appdir/.Arugula.app.new" || die "couldn't copy Arugula.app to $appdir"
+  rm -rf "$appdir/Arugula.app"
+  mv "$appdir/.Arugula.app.new" "$appdir/Arugula.app"
+  # The app from before the rename (#505): this one replaces it. Its
+  # launch agent stops when Arugula first opens.
+  rm -rf "$appdir/illogical.app"
   say ""
-  say "The app is in $appdir/arugula.app."
+  say "The app is in $appdir/Arugula.app."
   other=""
   case "$appdir" in
-    /Applications) other=$HOME/Applications/arugula.app ;;
-    "$HOME/Applications") other=/Applications/arugula.app ;;
+    /Applications) other=$HOME/Applications/Arugula.app ;;
+    "$HOME/Applications") other=/Applications/Arugula.app ;;
   esac
   if [ -n "$other" ] && [ -e "$other" ]; then
     say "  There's an older copy in $other: remove it, so Spotlight and the Dock open this one."
   fi
-  if pgrep -x arugula-desktop >/dev/null 2>&1; then
+  if pgrep -x arugula-desktop >/dev/null 2>&1 || pgrep -x illogical-desktop >/dev/null 2>&1; then
     say "  An earlier one is running: quit it (arugula > Quit) and open the app again."
   elif [ -n "$started" ]; then
-    open "$appdir/arugula.app" || say "  Open it from $appdir."
+    open "$appdir/Arugula.app" || say "  Open it from $appdir."
   fi
 fi
 
