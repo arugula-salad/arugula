@@ -1393,9 +1393,9 @@ mod tests {
         add("stdio-env", json!({ "command": "tool", "args": ["serve"], "env": { "TOKEN": "${X}" } }));
         let out = servers(&odd, &found, false).await;
         let left: Vec<(&str, &str)> = out.left.iter().map(|l| (l.name.as_str(), l.why.as_str())).collect();
-        assert_eq!(left.iter().map(|l| l.0).collect::<Vec<_>>(), ["argv", "escaped", "gmail", "arugula", "weird"]);
+        assert_eq!(left.iter().map(|l| l.0).collect::<Vec<_>>(), ["argv", "arugula", "escaped", "gmail", "weird"]);
         assert!(left[0].1.contains("${X} in its command line"), "{left:?}");
-        assert!(left[1].1.contains("literal ${"), "{left:?}");
+        assert!(left[2].1.contains("literal ${"), "{left:?}");
         assert_eq!(left[4].1, "its type \"${X}\" isn't one Claude Code takes", "the recipe's, not the value");
         let url = out.list.iter().find(|s| s["name"] == "in-url").unwrap();
         assert_eq!(url["url"], "${ARUGULA_FTN_IN_URL_URL}");
