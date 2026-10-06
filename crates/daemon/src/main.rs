@@ -835,10 +835,9 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
     let synced = sync::Synced::new(&state_dir, args.reach.sync_key_file.clone());
     synced.prune(sync::RETAIN_MS);
     let static_dir = args.static_dir.clone().unwrap_or_else(|| {
-        std::env::var_os("XDG_DATA_HOME")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| home().join(".local/share"))
-            .join("arugula/static")
+        let data = std::env::var_os("XDG_DATA_HOME").map(PathBuf::from).unwrap_or_else(|| home().join(".local/share"));
+        // The one from before the rename, where it is (#505).
+        arugula_proto::dirs::named_in(&data, "arugula", "illogical").join("static")
     });
     let binaries = static_dir.join("arugulad").exists().then_some(resident::Binaries { dir: static_dir });
     let app = server::App::new(
