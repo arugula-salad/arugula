@@ -1139,14 +1139,17 @@ export class ControlSession {
   }
 
   /** After a lost key (#94): forget this browser's place in the account
-   * and ask to join again, as a new device. */
-  async enrollAgain() {
+   * and ask to join again, as a new device. One the account stopped
+   * trusting (#327) asks with the recovery form open; a lost key asks as
+   * before, the form a button away. */
+  async enrollAgain(recover = false) {
     await forget(location.origin);
-    try {
-      sessionStorage.setItem(RECOVER_KEY, "1");
-    } catch {
-      // The form stays a button away.
-    }
+    if (recover)
+      try {
+        sessionStorage.setItem(RECOVER_KEY, "1");
+      } catch {
+        // The form stays a button away.
+      }
     location.reload();
   }
 

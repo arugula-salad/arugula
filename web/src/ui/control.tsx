@@ -120,7 +120,7 @@ export function ControlGate({ s }: { s: ControlSession }) {
         <p>
           Forget it here and enroll it again as a new device. Another of your devices approves it, or a recovery code does: the next screen asks for one.
         </p>
-        <button class="primary" data-enroll-again onClick={() => void s.enrollAgain()}>
+        <button class="primary" data-enroll-again onClick={() => void s.enrollAgain(true)}>
           Forget this browser and enroll again
         </button>
         <SignOuts s={s} />
