@@ -45,27 +45,31 @@ function appUpdates(): boolean {
 
 type Invoke = <T>(cmd: string) => Promise<T>;
 
-/** The app's `app_update`: it restarts the app, or says what it did. */
-function appUpdate(): Promise<"daemon" | "current"> {
+/** A command of the app's (crates/desktop/src/updates.rs). */
+function app<T>(cmd: string): Promise<T> {
   const invoke = (globalThis as { __TAURI__?: { core?: { invoke?: Invoke } } }).__TAURI__?.core?.invoke;
   if (!invoke) return Promise.reject(new Error("the app isn't reachable from this page"));
-  return invoke("app_update");
+  return invoke<T>(cmd);
 }
 
 export function UpdateChip({ client }: { client: Client }) {
   const [status, setStatus] = useState<UpdateStatus | null>(null);
   const [open, setOpen] = useState(false);
   const [gone, setGone] = useState(dismissed);
-  // The owner's own daemon only: not a guest, not a page from control.
-  const mine = !client.e2e && !client.state?.roles;
+  // The owner's own daemon only: not a guest, not a page from control. In
+  // an app that updates itself, this machine's, whatever page it shows
+  // (control's too, when joined): the app asks the daemon.
+  const viaApp = appUpdates();
+  const mine = viaApp || (!client.e2e && !client.state?.roles);
   useEffect(() => {
     if (!mine) return;
     let t: number | undefined;
     let live = true;
     const get = async () => {
-      const s = await fetch("/api/update")
-        .then((r) => (r.ok ? (r.json() as Promise<UpdateStatus>) : null))
-        .catch(() => null);
+      const s = await (viaApp
+        ? app<UpdateStatus>("app_update_status")
+        : fetch("/api/update").then((r) => (r.ok ? (r.json() as Promise<UpdateStatus>) : null))
+      ).catch(() => null);
       if (!live) return;
       setStatus(s);
       // A daemon that just started checks in a few seconds: look again soon.
@@ -76,7 +80,7 @@ export function UpdateChip({ client }: { client: Client }) {
       live = false;
       clearTimeout(t);
     };
-  }, [mine]);
+  }, [mine, viaApp]);
   if (!mine || !status?.newer || !status.latest || gone === status.latest) return null;
   const latest = status.latest;
   const dismiss = () => {
@@ -95,7 +99,7 @@ export function UpdateChip({ client }: { client: Client }) {
       {open && (
         <div class="update-pop" role="dialog" aria-label="Update illogical" data-update>
           <p>
-            <b>illogical {latest}</b> is out; this daemon is {status.current}. Panes keep running while it restarts.
+            <b>illogical {latest}</b> is out; {viaApp ? "this machine's daemon" : "this daemon"} is {status.current}. Panes keep running while it restarts.
           </p>
           <How status={status} />
           <div class="update-actions">
@@ -142,7 +146,7 @@ function UpdateNow() {
   const go = () => {
     setState({ busy: true });
     // Restarting closes this page; anything else comes back.
-    appUpdate().then(
+    app<"daemon" | "current">("app_update").then(
       (r) =>
         setState({
           note: r === "current" ? "This app is already the newest it can find. The release may still be publishing: try again in a few minutes." : undefined,

@@ -410,7 +410,7 @@ fn open_outside(url: &tauri::Url) {
 /// without them its bar can't move, minimize, maximize or close the window
 /// on Linux. The control is only known at run time, and can change (#204).
 /// Control's page also runs huddles through the app (M63), as the daemon's
-/// page does.
+/// page does, and offers the app's *Update now* (updates.rs).
 fn allow_control(app: &AppHandle) {
     static ALLOWED: Mutex<Vec<String>> = Mutex::new(Vec::new());
     let Some(origin) = cloud::control()
@@ -438,7 +438,9 @@ fn allow_control(app: &AppHandle) {
         .permission("allow-call-native-drop")
         .permission("allow-call-native-mute")
         .permission("allow-call-native-stop")
-        .permission("allow-call-native-status");
+        .permission("allow-call-native-status")
+        .permission("allow-app-update")
+        .permission("allow-app-update-status");
     match app.add_capability(cap) {
         Ok(()) => allowed.push(origin),
         Err(e) => eprintln!("illogical: letting {origin} use its window and calls: {e}"),
@@ -802,6 +804,7 @@ fn main() {
         cloud::cloud_signin,
         cloud::cloud_local,
         updates::app_update,
+        updates::app_update_status,
         calls::call_native_start,
         calls::call_native_peer,
         calls::call_native_remote,
@@ -817,7 +820,8 @@ fn main() {
         cloud::cloud_status,
         cloud::cloud_signin,
         cloud::cloud_local,
-        updates::app_update
+        updates::app_update,
+        updates::app_update_status
     ]);
     builder
         .menu(|app| {

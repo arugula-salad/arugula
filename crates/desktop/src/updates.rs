@@ -13,7 +13,9 @@
 //! The page's *Update now* (the top bar's update chip, `app_update`) does
 //! the same at once: download and put in place if that hasn't happened yet,
 //! then restart. When the app is already the latest but the daemon isn't,
-//! it updates the daemon from the setup page instead.
+//! it updates the daemon from the setup page instead. The chip shows on
+//! control's page too, which the window shows when joined: it reads this
+//! machine's daemon through the app (`app_update_status`).
 //!
 //! Where it can update: the macOS app, the Linux AppImage and the Windows
 //! installer. A .deb or .rpm belongs to the package manager. On Windows the
@@ -176,4 +178,21 @@ pub fn from_tray(app: &AppHandle) {
             Err(e) => eprintln!("illogical: updating the app: {e}"),
         }
     });
+}
+
+/// This machine's daemon's `GET /api/update`, for the update chip on any
+/// page the window shows (control's can't ask the daemon itself).
+#[tauri::command]
+pub async fn app_update_status() -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let agent: ureq::Agent =
+            ureq::Agent::config_builder().timeout_global(Some(Duration::from_secs(5))).build().into();
+        let mut req = agent.get(&format!("{}/api/update", crate::page()));
+        if let Some(b) = crate::bearer() {
+            req = req.header("Authorization", &b);
+        }
+        req.call().map_err(|e| e.to_string())?.body_mut().read_json::<serde_json::Value>().map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }

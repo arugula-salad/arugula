@@ -59,27 +59,31 @@ test("Homebrew's command, the app's download, and nothing when up to date", asyn
   await expect(page.locator("[data-update-chip]")).toBeHidden();
 });
 
-test("in an app that updates itself: Update now asks the app", async ({ page }) => {
-  // The app's init script and its invoke, standing in: the first press
-  // finds the app current, the second fails.
-  await page.addInitScript(() => {
+test("in an app that updates itself: the app reads the daemon's status, and Update now asks it", async ({ page }) => {
+  // The app's init script and its invoke, standing in: the status comes
+  // from the app (as on control's page), not the page's own /api/update;
+  // the first Update now finds the app current, the second fails.
+  await page.route("**/api/update", (r) => r.fulfill({ json: status({ newer: false, latest: "0.16.0" }) }));
+  await page.addInitScript((body) => {
     const w = window as unknown as Record<string, unknown>;
     w.__illogicalApp = { name: "test", platform: "linux", updates: true };
     const calls: string[] = [];
     w.__updateCalls = calls;
+    let updates = 0;
     w.__TAURI__ = {
       core: {
         invoke: (cmd: string) => {
           calls.push(cmd);
-          return calls.length === 1 ? Promise.resolve("current") : Promise.reject(new Error("no network"));
+          if (cmd === "app_update_status") return Promise.resolve(body);
+          return ++updates === 1 ? Promise.resolve("current") : Promise.reject(new Error("no network"));
         },
       },
     };
-  });
-  await serve(page, status({ kind: "app", command: undefined }));
+  }, status({ kind: "app", command: undefined }));
   await reset(page);
   await page.locator("[data-update-chip]").click();
   const pop = page.getByRole("dialog", { name: "Update illogical" });
+  await expect(pop).toContainText("this machine's daemon is 0.16.0");
   await expect(pop).toContainText("restarts into it, then updates the daemon");
   await expect(pop).not.toContainText("Download the new app");
   const now = pop.locator("[data-update-now]");
@@ -87,7 +91,9 @@ test("in an app that updates itself: Update now asks the app", async ({ page }) 
   await expect(pop.locator("[data-update-note]")).toContainText("try again in a few minutes");
   await now.click();
   await expect(pop.locator("[data-update-note]")).toHaveText("Couldn't update: no network");
-  expect(await page.evaluate(() => (window as unknown as { __updateCalls: string[] }).__updateCalls)).toEqual(["app_update", "app_update"]);
+  const calls = await page.evaluate(() => (window as unknown as { __updateCalls: string[] }).__updateCalls);
+  expect(calls.filter((c) => c === "app_update")).toEqual(["app_update", "app_update"]);
+  expect(calls).toContain("app_update_status");
 });
 
 test("the real daemon answers: off for a build run from target/", async ({ page }) => {

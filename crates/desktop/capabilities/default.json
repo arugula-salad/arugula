@@ -18,6 +18,7 @@
     "allow-call-native-mute",
     "allow-call-native-stop",
     "allow-call-native-status",
-    "allow-app-update"
+    "allow-app-update",
+    "allow-app-update-status"
   ]
 }
