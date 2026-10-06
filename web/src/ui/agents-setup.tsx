@@ -15,7 +15,7 @@ const SAID_KEY = "arugula.agents-nudge";
 
 /** `GET /api/setup?part=agents`. */
 interface AgentsSetup {
-  claude: { installed: boolean; tools: boolean };
+  claude: { installed: boolean; tools: boolean; /** #505: registered as `illogical` (works until set up again). */ old?: boolean };
   adapters?: Adapter[];
 }
 

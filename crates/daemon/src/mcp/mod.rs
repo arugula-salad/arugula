@@ -65,6 +65,14 @@ pub const PATH: &str = "/mcp";
 /// What agent blocks call the server.
 pub const SERVER_NAME: &str = "arugula";
 
+/// Whether a permission rule's tool is `tool`. A rule made before the
+/// rename (#505) names our tools `mcp__illogical__X`; they're now
+/// `mcp__arugula__X`, and the rule still means them.
+pub fn same_tool(rule: &str, tool: &str) -> bool {
+    rule == tool
+        || rule.strip_prefix("mcp__illogical__").is_some_and(|x| tool.strip_prefix("mcp__arugula__") == Some(x))
+}
+
 /// How an agent block reaches MCP: the daemon's loopback `/mcp`, or the
 /// CLI's bridge on the Unix socket, with the block's token; in a VM, a
 /// relay the daemon opens into it (`relay.rs`).

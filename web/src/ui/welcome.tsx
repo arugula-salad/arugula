@@ -66,7 +66,7 @@ interface Setup {
     /** #325: as `/api/host`'s `control_state` (absent: an older daemon). */
     state?: ControlState;
   };
-  claude: { installed: boolean; tools: boolean };
+  claude: { installed: boolean; tools: boolean; /** #505: registered as `illogical` (works until set up again). */ old?: boolean };
   /** #335: each adapter, with `found` (its agent's CLI is here). Absent
    * from an older daemon. */
   adapters?: Adapter[];
@@ -801,7 +801,7 @@ function Agents({ client, setup, manual, refresh, close }: { client: Client | nu
                 <ul class="start-checks">
                   <Check state={cl?.tools ? "done" : "todo"}>
                     <span data-start-tools>
-                      {cl?.tools ? "Claude Code has arugula's tools" : cl && !cl.installed ? "Claude Code isn't installed" : "arugula's MCP server: not added yet"}
+                      {cl?.tools ? "Claude Code has arugula's tools" : cl && !cl.installed ? "Claude Code isn't installed" : cl?.old ? "arugula's MCP server: added under its old name (illogical); set up again to rename it" : "arugula's MCP server: not added yet"}
                     </span>
                   </Check>
                 </ul>
