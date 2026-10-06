@@ -167,6 +167,7 @@ impl Daemon {
     }
 
     /// M70's upload route, one chunk: the path it answered.
+    #[cfg(unix)]
     #[allow(dead_code)]
     pub fn upload(&self, id: u64, ext: &str, body: &[u8]) -> String {
         use std::io::{Read, Write};
