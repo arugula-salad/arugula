@@ -65,7 +65,7 @@ jobs:
         # rust-toolchain.toml's toolchain, rustfmt only.
         run: rustup component add rustfmt && cargo fmt --all --check
       - name: install.sh and the release's glibc check
-        run: shellcheck -s sh scripts/install.sh scripts/glibc-floor && shellcheck -s bash scripts/tests/*.sh
+        run: shellcheck -s sh scripts/install.sh scripts/glibc-floor && shellcheck -s bash scripts/tests/*.sh scripts/dist-pack
       - name: Release scripts and ratchets
         run: just test-scripts
       - name: The web client's wire types are current (web/src/proto.gen.ts)

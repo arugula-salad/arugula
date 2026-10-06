@@ -127,7 +127,8 @@ jobs:
       - run: |
           mkdir -p dist
           v=$(sed -n 's/^version = "\(.*\)"/\1/p' crates/desktop/Cargo.toml | head -1)
-          cp "crates/desktop/target/release/bundle/nsis/arugula_${v}_x64-setup.exe" dist/arugula-desktop-windows-x86_64-setup.exe
+          product=$(sed -n 's/^ *"productName": "\(.*\)",$/\1/p' crates/desktop/tauri.conf.json)
+          cp "crates/desktop/target/release/bundle/nsis/${product}_${v}_x64-setup.exe" dist/arugula-desktop-windows-x86_64-setup.exe
       # The updater installs the installer itself, signed with the updater
       # key (#384).
       - run: |
