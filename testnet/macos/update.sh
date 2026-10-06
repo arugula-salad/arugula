@@ -106,8 +106,8 @@ PY
 v down >/dev/null
 v up >/dev/null
 v push dist/arugula-desktop-macos-arm64.dmg /tmp/arugula.dmg
-vs 'set -e; hdiutil attach -nobrowse -quiet -mountpoint /tmp/d /tmp/arugula.dmg; cp -R /tmp/d/arugula.app /Applications/; hdiutil detach -quiet /tmp/d'
-version() { vs 'defaults read /Applications/arugula.app/Contents/Info.plist CFBundleShortVersionString'; }
+vs 'set -e; hdiutil attach -nobrowse -quiet -mountpoint /tmp/d /tmp/arugula.dmg; cp -R /tmp/d/Arugula.app /Applications/; hdiutil detach -quiet /tmp/d'
+version() { vs 'defaults read /Applications/Arugula.app/Contents/Info.plist CFBundleShortVersionString'; }
 [ "$(version)" = 0.17.0 ] || { echo "installed $(version), not 0.17.0" >&2; exit 1; }
 
 # A signature from another key first: refused.
@@ -118,7 +118,7 @@ manifest 0.17.1 "$(cat "$work/srv/arugula-desktop-macos-arm64.app.tar.gz.sig")"
 (cd "$work/srv" && exec python3 -m http.server "$PORT" --bind "$host_ip" >"$work/http.log" 2>&1) &
 srv=$!
 start_app() {
-  vs "(ARUGULA_UPDATE_RESTART=1 nohup /Applications/arugula.app/Contents/MacOS/arugula-desktop >>/tmp/app.log 2>&1 &)"
+  vs "(ARUGULA_UPDATE_RESTART=1 nohup /Applications/Arugula.app/Contents/MacOS/arugula-desktop >>/tmp/app.log 2>&1 &)"
 }
 start_app
 wait_for 60 vs '$HOME/.local/bin/arugula ls >/dev/null 2>&1' || { echo "the daemon never answered" >&2; vs 'cat /tmp/app.log'; exit 1; }

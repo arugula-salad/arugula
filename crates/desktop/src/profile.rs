@@ -2,7 +2,7 @@
 //!
 //! The .deb uses the system's WebKitGTK and the AppImage carries Ubuntu
 //! 22.04's, and both keep the window's cookies, IndexedDB and service
-//! workers in the same place (`~/.local/share/wtf.widgets.illogical`).
+//! workers in the same place (`~/.local/share/io.arugula.desktop`).
 //! WebKitGTK upgrades a profile's storage as it opens it, and an older one
 //! can't read the result: after the .deb ran on WebKitGTK 2.52, the
 //! AppImage's 2.50 fails to open control's IndexedDB ("Unable to establish

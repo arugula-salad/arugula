@@ -200,9 +200,12 @@ fn kind(exe: &Path, home: &Path, exists: impl Fn(&Path) -> Option<PathBuf>) -> K
     if brew {
         return Kind::Brew;
     }
-    let app = [deb.to_path_buf(), PathBuf::from("/Applications/arugula.app"), home.join("Applications/arugula.app")]
-        .iter()
-        .any(|p| exists(p).is_some());
+    // The app under either name (#505): one from before the rename that
+    // updated in place is still illogical.app.
+    let bundles = ["Arugula.app", "illogical.app"];
+    let app = std::iter::once(deb.to_path_buf())
+        .chain(bundles.iter().flat_map(|b| [Path::new("/Applications").join(b), home.join("Applications").join(b)]))
+        .any(|p| exists(&p).is_some());
     if app {
         return Kind::App;
     }
@@ -235,7 +238,8 @@ struct Status {
 
 /// Windows: `arugulad install` puts it in `%LOCALAPPDATA%\Programs\arugula`
 /// (from install.ps1 or the desktop app, which lives in
-/// `%LOCALAPPDATA%\arugula`).
+/// `%LOCALAPPDATA%\Arugula`, or before the rename `%LOCALAPPDATA%\illogical`,
+/// #505).
 #[cfg(windows)]
 fn this_kind() -> Kind {
     let exe = std::env::current_exe().ok().and_then(|e| e.canonicalize().ok()).unwrap_or_default();
@@ -244,7 +248,16 @@ fn this_kind() -> Kind {
     if installed.as_ref() != Some(&exe) {
         return Kind::Source;
     }
-    if local.join("arugula").join("arugula-desktop.exe").is_file() { Kind::App } else { Kind::Script }
+    if desktop_app(&local) { Kind::App } else { Kind::Script }
+}
+
+/// The desktop app is installed (Windows): Arugula, or the app from before
+/// the rename (#505), which stays until the new app's installer removes it.
+#[cfg(any(windows, test))]
+fn desktop_app(local: &Path) -> bool {
+    [("Arugula", "arugula-desktop.exe"), ("illogical", "illogical-desktop.exe")]
+        .iter()
+        .any(|(dir, exe)| local.join(dir).join(exe).is_file())
 }
 
 #[cfg(unix)]
@@ -320,6 +333,21 @@ pub fn routes() -> Router<Arc<App>> {
 mod tests {
     use super::*;
 
+    /// #505: the Windows app under either name.
+    #[test]
+    fn finds_the_windows_app_under_either_name() {
+        let local = std::env::temp_dir().join(format!("arugula-local-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&local);
+        assert!(!desktop_app(&local));
+        for (dir, exe) in [("illogical", "illogical-desktop.exe"), ("Arugula", "arugula-desktop.exe")] {
+            std::fs::create_dir_all(local.join(dir)).unwrap();
+            std::fs::write(local.join(dir).join(exe), "").unwrap();
+            assert!(desktop_app(&local), "{dir}");
+            let _ = std::fs::remove_dir_all(local.join(dir));
+        }
+        let _ = std::fs::remove_dir_all(&local);
+    }
+
     #[test]
     fn reads_the_tag_from_the_redirect() {
         assert_eq!(
@@ -356,9 +384,12 @@ mod tests {
         let deb = |p: &Path| (p == Path::new("/usr/bin/arugulad")).then(|| p.to_path_buf());
         assert_eq!(kind(&local, home, deb), Kind::App);
         assert_eq!(kind(Path::new("/usr/bin/arugulad"), home, deb), Kind::App);
-        let mac = |p: &Path| (p == Path::new("/Applications/arugula.app")).then(|| p.to_path_buf());
+        let mac = |p: &Path| (p == Path::new("/Applications/Arugula.app")).then(|| p.to_path_buf());
         assert_eq!(kind(&local, home, mac), Kind::App);
-        assert_eq!(kind(Path::new("/Applications/arugula.app/Contents/MacOS/arugulad"), home, none), Kind::App);
+        assert_eq!(kind(Path::new("/Applications/Arugula.app/Contents/MacOS/arugulad"), home, none), Kind::App);
+        // #505: the app from before the rename, updated in place.
+        let old = |p: &Path| (p == home.join("Applications/illogical.app")).then(|| p.to_path_buf());
+        assert_eq!(kind(&local, home, old), Kind::App);
     }
 
     #[test]

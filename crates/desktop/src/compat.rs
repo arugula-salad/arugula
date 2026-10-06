@@ -185,7 +185,7 @@ fn command_for(installed: Option<&Path>) -> &'static str {
 }
 
 fn by_hand() -> &'static str {
-    let installed = crate::installed("arugulad").map(|p| p.canonicalize().unwrap_or(p));
+    let installed = crate::installed(&crate::DAEMON).map(|p| p.canonicalize().unwrap_or(p));
     command_for(installed.as_deref())
 }
 

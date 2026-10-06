@@ -1,4 +1,5 @@
-//! `arugula://` links (M46):
+//! `arugula://` links (M46), and `illogical://` ones from before the
+//! rename (#505):
 //!
 //! - `arugula://pane/%3` (or `pane/3`): that pane on this machine's
 //!   daemon, in a window of ours;
@@ -31,9 +32,13 @@ enum Act {
     Run { cwd: Option<String>, command: Option<String> },
 }
 
+/// `illogical://` too (#505): links in people's notes and scripts from
+/// before the rename keep working.
+const SCHEMES: [&str; 2] = ["arugula", arugula_proto::rename::OLD];
+
 pub fn parse(url: &str) -> Option<Link> {
     let url = tauri::Url::parse(url).ok()?;
-    if url.scheme() != "arugula" {
+    if !SCHEMES.contains(&url.scheme()) {
         return None;
     }
     let path = url.path().trim_matches('/');
@@ -54,7 +59,9 @@ pub fn parse(url: &str) -> Option<Link> {
 
 /// The links among a launch's arguments.
 pub fn in_args<I: IntoIterator<Item = String>>(args: I) -> Vec<String> {
-    args.into_iter().filter(|a| a.starts_with("arugula://")).collect()
+    args.into_iter()
+        .filter(|a| SCHEMES.iter().any(|s| a.strip_prefix(s).is_some_and(|r| r.starts_with("://"))))
+        .collect()
 }
 
 /// Do what `url` says. Waits (off the main thread) for the daemon, which a
@@ -153,6 +160,10 @@ mod tests {
         assert_eq!(parse("arugula://pane/"), None);
         assert_eq!(parse("arugula://delete/everything"), None);
         assert_eq!(parse("https://pane/3"), None);
+        // #505: the old scheme too.
+        assert_eq!(parse("illogical://pane/%3"), Some(Link::Pane(3)));
+        assert_eq!(parse("illogical://open?cwd=%2Ftmp"), Some(Link::Open { cwd: Some("/tmp".into()) }));
+        assert_eq!(parse("illogical://delete/everything"), None);
     }
 
     #[test]
@@ -163,7 +174,8 @@ mod tests {
 
     #[test]
     fn picks_links_from_args() {
-        let args = ["/usr/bin/arugula-desktop", "arugula://pane/3", "--x"].map(String::from);
-        assert_eq!(super::in_args(args), ["arugula://pane/3"]);
+        let args = ["/usr/bin/arugula-desktop", "arugula://pane/3", "--x", "illogical://open", "illogicalx://y"]
+            .map(String::from);
+        assert_eq!(super::in_args(args), ["arugula://pane/3", "illogical://open"]);
     }
 }

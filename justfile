@@ -230,7 +230,7 @@ desktop-macos arch="" *tauri_args="":
     ln -s /Applications "$stage/Applications"
     dmg=$dist/arugula-desktop-$name.dmg
     rm -f "$dmg"
-    hdiutil create -quiet -volname arugula -srcfolder "$stage" -fs HFS+ -format UDZO "$dmg"
+    hdiutil create -quiet -volname Arugula -srcfolder "$stage" -fs HFS+ -format UDZO "$dmg"
     rm -rf "$stage"
     "$root/scripts/macos-sign" dmg "$dmg"
     # The updater's archive of the app, signed with the updater key.

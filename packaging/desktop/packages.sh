@@ -3,7 +3,8 @@
 # ARCH`): the .deb on Ubuntu 22.04 and the .rpm on Fedora, each in a
 # container of ARCH. After the install: the app and both sidecars are in
 # /usr/bin and run, every library the app needs resolves, the desktop
-# file claims arugula:// links (x-scheme-handler/arugula), which
+# file claims arugula:// links (x-scheme-handler/arugula, and the old
+# illogical://, #505), which
 # xdg-mime then hands to it, passes the link on (%u) and offers a New Tab
 # action, and Nautilus's extension (M47) is where nautilus-python looks.
 set -euo pipefail
@@ -22,6 +23,7 @@ missing=$(ldd /usr/bin/arugula-desktop | grep "not found" || true)
 [ -z "$missing" ] || { echo "missing libraries: $missing"; exit 1; }
 desktop=$(grep -l "^Exec=arugula-desktop" /usr/share/applications/*.desktop)
 grep -q "^MimeType=.*x-scheme-handler/arugula" "$desktop" || { echo "$desktop has no x-scheme-handler/arugula"; exit 1; }
+grep -q "^MimeType=.*x-scheme-handler/illogical" "$desktop" || { echo "$desktop has no x-scheme-handler/illogical"; exit 1; }
 grep -qx "Exec=arugula-desktop %u" "$desktop" || { echo "$desktop: $(grep ^Exec= "$desktop" | head -1), not passing the link"; exit 1; }
 grep -qx "Exec=arugula-desktop arugula://open" "$desktop" || { echo "$desktop has no New Tab action"; exit 1; }
 ext=/usr/share/nautilus-python/extensions/arugula.py

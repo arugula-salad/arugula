@@ -105,9 +105,7 @@ pub async fn fetch(app: &AppHandle, install: bool) -> Result<Option<String>, Str
     }
     let mut b = app.updater_builder();
     if let Some(u) = std::env::var("ARUGULA_UPDATE_URL").ok().filter(|u| !u.is_empty()) {
-        b = b
-            .endpoints(vec![u.parse().map_err(|e| format!("ARUGULA_UPDATE_URL: {e}"))?])
-            .map_err(|e| e.to_string())?;
+        b = b.endpoints(vec![u.parse().map_err(|e| format!("ARUGULA_UPDATE_URL: {e}"))?]).map_err(|e| e.to_string())?;
     }
     let Some(update) = b.build().map_err(|e| e.to_string())?.check().await.map_err(|e| e.to_string())? else {
         return Ok(None);

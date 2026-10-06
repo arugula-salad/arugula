@@ -54,6 +54,34 @@ pub fn save(app: &AppHandle, s: &Settings) {
     }
 }
 
+/// #505: the app's identifier changed (`wtf.widgets.illogical` to
+/// `io.arugula.desktop`), and its directories with it. The first launch
+/// copies the settings from the old app's config directory (copies: the
+/// old app may still be there). Not `cloud.json`: it says which controls
+/// the window holds a session on, and those sessions are in the WebView's
+/// storage, which starts fresh.
+pub fn adopt_old(app: &AppHandle) {
+    let Ok(dir) = app.path().app_config_dir() else { return };
+    let old = dir.with_file_name(arugula_proto::service::OLD_APP_ID);
+    for name in adopt(&old, &dir) {
+        eprintln!("arugula: took {name} from {}", old.display());
+    }
+}
+
+/// The settings files `old` has and `dir` doesn't, copied over.
+fn adopt(old: &std::path::Path, dir: &std::path::Path) -> Vec<&'static str> {
+    if old == dir {
+        return Vec::new();
+    }
+    ["desktop.json", "daemon.json"]
+        .into_iter()
+        .filter(|name| {
+            let (from, to) = (old.join(name), dir.join(name));
+            from.is_file() && !to.exists() && std::fs::create_dir_all(dir).is_ok() && std::fs::copy(&from, &to).is_ok()
+        })
+        .collect()
+}
+
 /// The plugin, with what a press does.
 pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     tauri_plugin_global_shortcut::Builder::new()
@@ -131,5 +159,25 @@ mod tests {
         let s: Settings = serde_json::from_str(r#"{"hotkey_on": true, "hotkey": "Super+F12"}"#).unwrap();
         assert!(s.hotkey_on);
         assert_eq!(s.keys(), "Super+F12");
+    }
+
+    #[test]
+    fn adopts_the_old_apps_settings_once() {
+        let base = std::env::temp_dir().join(format!("arugula-adopt-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let (old, new) = (base.join("wtf.widgets.illogical"), base.join("io.arugula.desktop"));
+        assert!(super::adopt(&old, &new).is_empty());
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::write(old.join("desktop.json"), r#"{"hotkey_on":true}"#).unwrap();
+        std::fs::write(old.join("cloud.json"), "{}").unwrap();
+        assert_eq!(super::adopt(&old, &new), ["desktop.json"]);
+        assert_eq!(std::fs::read_to_string(new.join("desktop.json")).unwrap(), r#"{"hotkey_on":true}"#);
+        assert!(old.join("desktop.json").is_file() && !new.join("cloud.json").exists());
+        // Its own settings win.
+        std::fs::write(old.join("daemon.json"), "{}").unwrap();
+        std::fs::write(new.join("desktop.json"), "{}").unwrap();
+        assert_eq!(super::adopt(&old, &new), ["daemon.json"]);
+        assert_eq!(std::fs::read_to_string(new.join("desktop.json")).unwrap(), "{}");
+        let _ = std::fs::remove_dir_all(&base);
     }
 }
