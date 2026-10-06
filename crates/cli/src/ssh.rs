@@ -28,11 +28,26 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const CONTROL: &str = "https://control.illogical.widgets.wtf";
 const RELEASES: &str = "https://github.com/arugula-salad/illogical/releases/download";
 
-/// The CLI the install put on the box. `ssh box cmd` doesn't have
-/// `~/.local/bin` on PATH (that's `~/.profile`, read by login shells only),
-/// and a login shell could print into the bridge's stream, so it's always
-/// named in full.
-const REMOTE_CLI: &str = "~/.local/bin/arugula";
+/// `sh -c` that runs the CLI the install put on the box with `args`:
+/// `arugula`, or on a box illogical was installed on, `illogical` (#505).
+/// `ssh box cmd` doesn't have `~/.local/bin` on PATH (that's `~/.profile`,
+/// read by login shells only), and a login shell could print into the
+/// bridge's stream, so it's always named in full. `sh` so it reads the same
+/// whatever the login shell is.
+fn remote_cli(args: &str) -> String {
+    format!(
+        "sh -c {}",
+        sh_quote(&format!("c=$HOME/.local/bin/arugula; [ -x $c ] || c=$HOME/.local/bin/illogical; exec $c {args}"))
+    )
+}
+
+/// The same for the box's daemon: `arugulad`, or `illogicald` (#505).
+fn remote_daemon(args: &str) -> String {
+    format!(
+        "sh -c {}",
+        sh_quote(&format!("d=$HOME/.local/bin/arugulad; [ -x $d ] || d=$HOME/.local/bin/illogicald; exec $d {args}"))
+    )
+}
 
 /// A box reached over ssh: what `ssh` is given as its destination
 /// (`user@box`, `box` from `~/.ssh/config`, `ssh://user@box:2222`).
@@ -157,7 +172,7 @@ impl Remote {
         // master has gone and ssh connects on its own.
         let agent: &[&str] = if forward_agent() { &["-o", "ForwardAgent=yes"] } else { &[] };
         let child = self
-            .channel_cmd(agent, &format!("{REMOTE_CLI} bridge"))
+            .channel_cmd(agent, &remote_cli("bridge"))
             .stdin(Stdio::from(std::os::fd::OwnedFd::from(theirs.try_clone()?)))
             .stdout(Stdio::from(std::os::fd::OwnedFd::from(theirs)))
             .stderr(Stdio::null())
@@ -216,7 +231,7 @@ impl Remote {
         self.prepare()?;
         let quoted: Vec<String> = args.iter().map(|a| sh_quote(a)).collect();
         let mut child = self
-            .channel_cmd(&[], &format!("~/.local/bin/arugulad {}", quoted.join(" ")))
+            .channel_cmd(&[], &remote_daemon(&quoted.join(" ")))
             .stderr(Stdio::piped())
             .spawn()
             .with_context(|| format!("running ssh to {}", self.dest))?;
@@ -247,10 +262,9 @@ impl Remote {
 
     fn probe(&self) -> anyhow::Result<Probe> {
         // `sh -c` so it reads the same whatever the login shell is.
+        // `arugula`, or `illogical` on a box illogical was installed on (#505).
         let out = self.run(
-            &format!(
-                "sh -c 'if [ -x {REMOTE_CLI} ]; then {REMOTE_CLI} bridge --probe; else echo \"{{}}\"; fi; uname -sm'"
-            ),
+            "sh -c 'c=$HOME/.local/bin/arugula; [ -x $c ] || c=$HOME/.local/bin/illogical; if [ -x $c ]; then $c bridge --probe; else echo \"{}\"; fi; uname -sm'",
             None,
         )?;
         Probe::parse(&out)
@@ -300,12 +314,20 @@ impl Remote {
                 Some(&file),
             )?;
         }
+        // The old names, as links to the new (#505): older clients reach the
+        // box with `~/.local/bin/illogical bridge`, and hooks call it.
+        self.run(
+            "sh -c 'cd ~/.local/bin && for p in illogicald:arugulad illogical:arugula; do ln -sf ${p#*:} .${p%:*}.link && mv -f .${p%:*}.link ${p%:*}; done'",
+            None,
+        )?;
         // A daemon already running there keeps the old binary until it
         // restarts: a systemd service or a launchd agent restarts now (its
         // panes are adopted). A --system LaunchDaemon needs sudo, so not.
         if p.daemon {
             let out = self.run(
-                "sh -c 'if systemctl --user is-active --quiet arugulad 2>/dev/null || [ -f ~/Library/LaunchAgents/arugulad.plist ]; then ~/.local/bin/arugulad install >/dev/null && echo restarted; fi'",
+                // illogical's service too: the install puts arugulad's in
+                // its place (#505).
+                "sh -c 'if systemctl --user is-active --quiet arugulad 2>/dev/null || systemctl --user is-active --quiet illogicald 2>/dev/null || [ -f ~/Library/LaunchAgents/arugulad.plist ] || [ -f ~/Library/LaunchAgents/illogicald.plist ]; then ~/.local/bin/arugulad install >/dev/null && echo restarted; fi'",
                 None,
             );
             if !out.is_ok_and(|o| o.contains("restarted")) {
@@ -357,6 +379,7 @@ impl Remote {
 /// Prints how: `launchd`, `linger`, `nolinger` or `detached`.
 const START: &str = r#"sh -c '
 d=$HOME/.local/bin/arugulad
+[ -x "$d" ] || d=$HOME/.local/bin/illogicald
 if [ "$(uname -s)" = Darwin ] && out=$("$d" install 2>&1); then
   printf "%s\n" "$out" | grep "^note:"
   echo launchd
@@ -526,7 +549,7 @@ fn home() -> PathBuf {
 }
 
 fn config_dir() -> PathBuf {
-    std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from).unwrap_or_else(|| home().join(".config")).join("arugula")
+    arugula_proto::dirs::config_dir().unwrap_or_else(|| home().join(".config/arugula"))
 }
 
 fn cache_dir() -> PathBuf {
@@ -685,6 +708,34 @@ mod tests {
         for bad in ["", "-oProxyCommand=x", "box; rm -rf ~", "a b", "$(id)", "box`id`"] {
             assert!(Remote::parse(bad).is_err(), "{bad}");
         }
+    }
+
+    /// #505: a box illogical was installed on has only the old names.
+    #[cfg(unix)]
+    #[test]
+    fn remote_commands_find_either_name() {
+        let home = std::env::temp_dir().join(format!("arugula-ssh-names-{}", std::process::id()));
+        let bin = home.join(".local/bin");
+        let _ = fs::remove_dir_all(&home);
+        fs::create_dir_all(&bin).unwrap();
+        let run = |cmd: &str| {
+            let out = Command::new("sh").arg("-c").arg(cmd).env("HOME", &home).output().unwrap();
+            String::from_utf8_lossy(&out.stdout).trim().to_owned()
+        };
+        let fake = |name: &str| {
+            let f = bin.join(name);
+            fs::write(&f, format!("#!/bin/sh\necho {name} \"$@\"\n")).unwrap();
+            fs::set_permissions(&f, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+        };
+        fake("illogical");
+        fake("illogicald");
+        assert_eq!(run(&remote_cli("bridge")), "illogical bridge");
+        assert_eq!(run(&remote_daemon(&[sh_quote("join"), sh_quote("it's")].join(" "))), "illogicald join it's");
+        fake("arugula");
+        fake("arugulad");
+        assert_eq!(run(&remote_cli("bridge --probe")), "arugula bridge --probe");
+        assert_eq!(run(&remote_daemon("join")), "arugulad join");
+        fs::remove_dir_all(&home).unwrap();
     }
 
     #[test]

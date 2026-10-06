@@ -146,6 +146,10 @@ if [ "$os" = Linux ] && ! command -v systemctl >/dev/null 2>&1; then
   for b in arugulad arugula; do
     cp "$tmp/$name/$b" "$HOME/.local/bin/.$b.new" && mv "$HOME/.local/bin/.$b.new" "$HOME/.local/bin/$b"
   done
+  # The old names, as links (#505): hooks and older clients call them.
+  for p in illogicald:arugulad illogical:arugula; do
+    ln -sf "${p#*:}" "$HOME/.local/bin/.${p%:*}.link" && mv -f "$HOME/.local/bin/.${p%:*}.link" "$HOME/.local/bin/${p%:*}"
+  done
   say "installed ~/.local/bin/arugulad and ~/.local/bin/arugula"
   nosystemd=1
 elif [ -n "${ARUGULA_NO_START:-}" ]; then
@@ -206,7 +210,7 @@ elif [ -n "${nosystemd:-}" ]; then
     # An upgrade: the old daemon is still the one running.
     say "arugula $version is installed. A daemon is already running here (the old one): restart it"
     say "to run this version. Panes started with --keep-panes keep running:"
-    say "  kill \$(pgrep -f '^$HOME/.local/bin/arugulad --keep-panes')"
+    say "  kill \$(pgrep -f '^$HOME/.local/bin/(arugulad|illogicald) --keep-panes')"
   else
     say "arugula $version is installed. No systemd here, so no service: start the daemon with"
   fi

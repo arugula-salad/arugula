@@ -142,17 +142,10 @@ static WINDOWS: AtomicUsize = AtomicUsize::new(0);
 static STATUS: Mutex<String> = Mutex::new(String::new());
 static ADDR: OnceLock<String> = OnceLock::new();
 
+/// The daemon's (Windows: `%LOCALAPPDATA%\arugula\state`, M56), found
+/// as it finds it.
 fn state_dir() -> Option<PathBuf> {
-    // Windows: the daemon's (`%LOCALAPPDATA%\arugula\state`, M56).
-    #[cfg(windows)]
-    let windows = std::env::var_os("LOCALAPPDATA").map(|d| PathBuf::from(d).join("arugula").join("state"));
-    #[cfg(not(windows))]
-    let windows = None;
-    std::env::var_os("ARUGULA_STATE_DIR")
-        .map(PathBuf::from)
-        .or(windows)
-        .or_else(|| std::env::var_os("XDG_STATE_HOME").map(|d| PathBuf::from(d).join("arugula")))
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/state/arugula")))
+    arugula_proto::dirs::state_dir()
 }
 
 /// `host:port` of the local daemon.

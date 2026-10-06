@@ -13,7 +13,10 @@ use std::{
 };
 
 /// The app's launch agent (macOS, `crates/desktop/src/service.rs`).
-pub const APP_LABEL: &str = "wtf.widgets.illogical.daemon";
+pub const APP_LABEL: &str = "io.arugula.desktop.daemon";
+/// Its label before the rename, which an app not yet updated still loads
+/// (#505).
+pub const OLD_APP_LABEL: &str = "wtf.widgets.illogical.daemon";
 /// Its plist inside the app, which is where it runs the daemon from.
 pub const APP_PLIST: &str =
     "/Applications/arugula.app/Contents/Library/LaunchAgents/wtf.widgets.illogical.daemon.plist";
@@ -21,10 +24,14 @@ pub const APP_PROGRAM: &str = "/Applications/arugula.app/Contents/MacOS/arugulad
 /// `arugulad install`'s launchd label, and its systemd unit.
 pub const LABEL: &str = "arugulad";
 pub const UNIT: &str = "arugulad.service";
-/// Both, and the renamed release's (`arugulad`, #504): a machine whose
-/// daemon the renamed release set up still has its service found here.
-pub const LABELS: [&str; 2] = [LABEL, "arugulad"];
-pub const UNITS: [&str; 2] = [UNIT, "arugulad.service"];
+/// What illogical's install called them, which a machine not yet
+/// reinstalled still has (#505).
+pub const OLD_LABEL: &str = "illogicald";
+pub const OLD_UNIT: &str = "illogicald.service";
+/// Both, the new names first: a machine whose daemon illogical set up still
+/// has its service found here (#505).
+pub const LABELS: [&str; 2] = [LABEL, OLD_LABEL];
+pub const UNITS: [&str; 2] = [UNIT, OLD_UNIT];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
@@ -238,8 +245,7 @@ pub fn log() -> Option<Log> {
         return home().map(|h| Log::File(h.join("Library/Logs/arugulad.log")));
     }
     if cfg!(windows) {
-        let local = std::env::var_os("LOCALAPPDATA").map(PathBuf::from)?;
-        return Some(Log::File(local.join("arugula").join("state").join("arugulad.log")));
+        return Some(Log::File(crate::dirs::default_state_dir()?.join("arugulad.log")));
     }
     Some(Log::Journal(format!("journalctl --user -u {} -u {} -e", LABELS[0], LABELS[1])))
 }
@@ -272,7 +278,7 @@ mod tests {
     fn the_line_says_version_state_and_service() {
         assert_eq!(
             line(Some("0.21.0"), Some(&svc(Kind::AppAgent, true))),
-            "arugulad 0.21.0, running as the app's launch agent (wtf.widgets.illogical.daemon)"
+            "arugulad 0.21.0, running as the app's launch agent (io.arugula.desktop.daemon)"
         );
         assert_eq!(
             line(Some("0.21.0"), Some(&svc(Kind::Agent, false))),
@@ -280,9 +286,9 @@ mod tests {
         );
         assert_eq!(line(Some("0.21.0"), None), "arugulad 0.21.0, running, not as a service");
         assert_eq!(line(None, Some(&svc(Kind::Systemd, false))), "Stopped (the systemd user unit arugulad.service)");
-        // #504: a unit the renamed release set up is named as it is.
-        let renamed = Service { target: UNITS[1].into(), ..svc(Kind::Systemd, false) };
-        assert_eq!(line(None, Some(&renamed)), "Stopped (the systemd user unit arugulad.service)");
+        // #505: a unit illogical set up is named as it is.
+        let old = Service { target: UNITS[1].into(), ..svc(Kind::Systemd, false) };
+        assert_eq!(line(None, Some(&old)), "Stopped (the systemd user unit illogicald.service)");
         assert_eq!(line(None, None), "Not running, and not set up as a service");
     }
 

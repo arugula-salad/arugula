@@ -18,6 +18,7 @@ pub use arugula_core::{
 
 pub mod api;
 pub mod ask;
+pub mod dirs;
 pub mod follow;
 pub mod fs;
 pub mod hosts;

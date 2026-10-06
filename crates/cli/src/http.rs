@@ -108,14 +108,10 @@ impl Target {
         if !host {
             return None;
         }
-        let file = std::env::var_os("ARUGULA_LOCAL_TOKEN_FILE").filter(|v| !v.is_empty()).map(PathBuf::from).or_else(
-            || {
-                let state = std::env::var_os("XDG_STATE_HOME")
-                    .map(PathBuf::from)
-                    .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/state")))?;
-                Some(state.join("arugula/local-token"))
-            },
-        )?;
+        let file = std::env::var_os("ARUGULA_LOCAL_TOKEN_FILE")
+            .filter(|v| !v.is_empty())
+            .map(PathBuf::from)
+            .or_else(|| Some(arugula_proto::dirs::default_state_dir()?.join("local-token")))?;
         std::fs::read_to_string(file).ok().map(|t| t.trim().to_owned()).filter(|t| !t.is_empty())
     }
 

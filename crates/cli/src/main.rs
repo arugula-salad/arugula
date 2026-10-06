@@ -427,15 +427,7 @@ enum Command {
 /// `%LOCALAPPDATA%\arugula\state`, then `$XDG_STATE_HOME/arugula`, then
 /// `~/.local/state/arugula`.
 fn state_dir() -> Option<PathBuf> {
-    #[cfg(windows)]
-    let windows = std::env::var_os("LOCALAPPDATA").map(|d| PathBuf::from(d).join("arugula").join("state"));
-    #[cfg(not(windows))]
-    let windows = None;
-    std::env::var_os("ARUGULA_STATE_DIR")
-        .map(PathBuf::from)
-        .or(windows)
-        .or_else(|| std::env::var_os("XDG_STATE_HOME").map(|d| PathBuf::from(d).join("arugula")))
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/state/arugula")))
+    arugula_proto::dirs::state_dir()
 }
 
 /// Commands and options that work but stay out of `--help` unless the machine
@@ -471,20 +463,9 @@ fn default_socket() -> PathBuf {
     if let Some(s) = std::env::var_os("ARUGULA_SOCK") {
         return PathBuf::from(s);
     }
-    // Windows: the daemon's named pipe, which it records beside its state.
-    #[cfg(windows)]
-    if let Some(d) = std::env::var_os("LOCALAPPDATA") {
-        let state = PathBuf::from(d).join("arugula").join("state");
-        return match std::fs::read_to_string(state.join("sock.path")) {
-            Ok(p) if !p.trim().is_empty() => PathBuf::from(p.trim()),
-            _ => state.join("sock"),
-        };
-    }
-    let state = std::env::var_os("XDG_STATE_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".local/state"))
-        .join("arugula");
-    // A state directory too deep for a socket path puts it elsewhere.
+    // The daemon records its socket beside its state: Windows' named pipe,
+    // or one put elsewhere because the directory is too deep for a socket.
+    let state = arugula_proto::dirs::default_state_dir().unwrap_or_else(|| PathBuf::from(".local/state/arugula"));
     match std::fs::read_to_string(state.join("sock.path")) {
         Ok(p) if !p.trim().is_empty() => PathBuf::from(p.trim()),
         _ => state.join("sock"),
