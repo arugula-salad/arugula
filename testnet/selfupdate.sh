@@ -140,5 +140,5 @@ else
   fail bad "$out"
 fi
 
-[ -n "${KEEP:-}" ] || docker compose -f "$HERE/compose.yaml" --profile ssh rm -sf box-systemd >/dev/null 2>&1
+[ -n "${KEEP:-}" ] || "$HERE/down.sh" >/dev/null 2>&1
 exit "$failed"
