@@ -11,3 +11,5 @@ Puts your editor in your [arugula](https://illogical.widgets.wtf) swarm, beside 
 It talks only to the arugula daemon on its own machine, over a local socket. Your files and cursor go only to the people following you, over arugula's end-to-end channels.
 
 It also brings arugula's colour theme.
+
+It was called illogical before, and what you set up then keeps working: `illogical.*` settings are read when the `arugula.*` ones aren't set, folders that joined stay joined, and the illogical extension (`illogical.illogical-editor`) is uninstalled when this one starts, since both would join.
