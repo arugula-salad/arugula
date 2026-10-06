@@ -327,20 +327,14 @@ WebKit needs `pnpm exec playwright install webkit` once.
 
 ### Spike: blocks through control (S27)
 
-`archive/spikes:spikes/s27-blocks/` has its own Playwright suite for #148 (blocks served
-from control's block domain, carried to the daemon over Noise by a service
-worker). It isn't part of `just e2e`; run it from that directory:
-
-The spike code is on the `archive/spikes` branch. To run its tests:
+S27 (`spikes/s27-blocks/`, now on the `archive/spikes` branch) has its own
+Playwright suite for #148 (blocks served from control's block domain, carried
+to the daemon over Noise by a service worker). It isn't part of `just e2e`;
+check the branch out in its own worktree and run it from the spike's directory:
 
 ```sh
-git show archive/spikes:spikes/s27-blocks/package.json > s27.package.json
-git show archive/spikes:spikes/s27-blocks/pnpm-workspace.yaml > s27.pnpm-workspace.yaml
-# Extract the full spike directory to run tests; see `git show archive/spikes:spikes/s27-blocks/README.md` for setup.
-```
-
-Key test commands (when extracted):
-```sh
+git worktree add ../illogical-spikes archive/spikes
+cd ../illogical-spikes/spikes/s27-blocks
 pnpm test                   # builds s27 and the worker, then Chromium and WebKit
 pnpm typecheck
 ./linux-webkit.sh [specs]   # WebKit on Linux in Playwright's container (Docker, Zig)
