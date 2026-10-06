@@ -13,6 +13,7 @@ import { devices, expect, test, type Frame, type Page } from "@playwright/test";
 import { menu, open, paneEl, text, type as typeIn, closeContexts } from "./helpers";
 import type { PaneId } from "../src/proto";
 import { ANY, blockPort, daemonPort } from "./ports";
+import { labs } from "./labs";
 
 test.afterAll(closeContexts);
 
@@ -47,7 +48,6 @@ const app: Record<string, string> = {
   "label.js": `export const label = "hello";`,
   "main.js": `import "./style.css";
 import { label } from "./label.js";
-import { labs } from "./labs";
 const h = document.querySelector("#h");
 h.textContent = label;
 const b = document.querySelector("#b");

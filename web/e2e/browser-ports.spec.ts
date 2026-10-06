@@ -15,6 +15,7 @@ import { createServer, type ViteDevServer } from "vite";
 import { menu, open, paneEl, panes, reset, closeContexts } from "./helpers";
 import type { PaneId } from "../src/proto";
 import { ANY, blockPort, daemonPort } from "./ports";
+import { labs } from "./labs";
 
 test.afterAll(closeContexts);
 
@@ -35,7 +36,6 @@ const files: Record<string, string> = {
   "label.js": `export const label = "hello";`,
   "main.js": `import "./style.css";
 import { label } from "./label.js";
-import { labs } from "./labs";
 const h = document.querySelector("#h");
 h.textContent = label;
 const b = document.querySelector("#b");
