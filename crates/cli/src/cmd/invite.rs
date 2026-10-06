@@ -63,7 +63,7 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
                 })
             }
             (None, Some(n)) => panes.as_array().into_iter().flatten().find(|p| p["id"] == n),
-            (None, None) => bail!("which session? (give --session, or run this inside an arugula pane)"),
+            (None, None) => bail!("which session? (give --session, or run this inside an Arugula pane)"),
         }
         .and_then(|p| p["session"].as_u64())
         .with_context(|| format!("no session {}", session.as_deref().unwrap_or("for that pane")))?;

@@ -72,7 +72,7 @@ impl DeviceKeys {
         }
         let mut lines = text.lines();
         if lines.next() != Some(HEADER) {
-            bail!("{} is not an arugula device key", path.display());
+            bail!("{} is not an Arugula device key", path.display());
         }
         let (mut noise, mut sign) = (None, None);
         for line in lines {

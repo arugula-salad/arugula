@@ -1,4 +1,4 @@
-// M28: your editor in the swarm. A standalone code-server with arugula's
+// M28: your editor in the swarm. A standalone code-server with Arugula's
 // extension installed from its VSIX stands in for VS Code over Remote-SSH
 // (S17: the same server and extension host Remote-SSH runs; the extension
 // reaches the daemon on the machine the files are on). It joins only when

@@ -47,9 +47,9 @@ ensure_release() {
   local tag=$1 title notes
   gh release view "$tag" -R "$repo" >/dev/null 2>&1 && return
   case "$tag" in
-    app-v*) title="arugula app ${tag#app-v}"
+    app-v*) title="Arugula app ${tag#app-v}"
       notes="The desktop app. It installs the daemon on a machine that has none; the daemon updates itself." ;;
-    *) title="arugula ${tag#v}"
+    *) title="Arugula ${tag#v}"
       notes="Download the desktop app at https://illogical.widgets.wtf (it installs the daemon). Servers and headless machines: curl -fsSL https://illogical.widgets.wtf/install.sh | sh" ;;
   esac
   # A draft until `publish`: a release with only the first job's files
@@ -178,7 +178,7 @@ case "${1:-}" in
       gh api -X POST "repos/$repo/git/refs" -f ref="refs/tags/$app_latest" -f sha="$sha" >/dev/null
     fi
     gh release view "$app_latest" -R "$repo" >/dev/null 2>&1 \
-      || gh release create "$app_latest" -R "$repo" --verify-tag --latest=false --title "arugula app (latest)" \
+      || gh release create "$app_latest" -R "$repo" --verify-tag --latest=false --title "Arugula app (latest)" \
         --notes "The newest desktop app, always: its downloads keep these names. Each version's own release is app-vX.Y.Z." >/dev/null
     # Its downloads under their old names too, illogical-desktop-*: the site
     # before the rename, older docs and links point at those here (#505,

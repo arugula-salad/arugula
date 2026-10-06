@@ -1,4 +1,4 @@
-//! arugula's VS Code extension as a VSIX (M28), for VS Code and Cursor
+//! Arugula's VS Code extension as a VSIX (M28), for VS Code and Cursor
 //! on your own machines: `arugula editors install`, or `just vsix` for
 //! the marketplaces. A VSIX is a zip with a manifest; the files are the
 //! ones editor blocks install (`ext/`).

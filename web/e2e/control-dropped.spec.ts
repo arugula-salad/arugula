@@ -92,7 +92,7 @@ test("a removed key: the join it asked for, in the banner and Getting started", 
 });
 
 test("in the app, a drop opens the join itself, once, leading with the machine (#326)", async ({ page }) => {
-  await page.addInitScript(() => Object.assign(window, { __arugulaApp: { name: "arugula app on test-mac" } }));
+  await page.addInitScript(() => Object.assign(window, { __arugulaApp: { name: "Arugula app on test-mac" } }));
   await standing(page, dropped);
   await reset(page);
   const start = page.getByRole("dialog", { name: "Getting started" });

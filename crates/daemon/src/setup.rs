@@ -3,7 +3,7 @@
 //!
 //! - `POST /api/setup/tailscale`: `tailscale serve --bg --https=443` in
 //!   front of this daemon, so the phone reaches it on the tailnet.
-//! - `POST /api/setup/control`: ask arugula control to add this machine
+//! - `POST /api/setup/control`: ask Arugula control to add this machine
 //!   (`arugulad join`); the answer is the code and where to approve it,
 //!   and the daemon waits for the approval in the background. Once
 //!   approved, the page shows the account's fingerprint to check against
@@ -15,7 +15,7 @@
 //!   One registered as `illogical` (before the rename, #505) is replaced:
 //!   the new one added, then the old one removed.
 //! - `POST /api/setup/agents/{kind}` (#335), "Use Claude Code with
-//!   arugula": installs (or updates) the agent's ACP adapter, waiting for
+//!   Arugula": installs (or updates) the agent's ACP adapter, waiting for
 //!   npm, and for Claude Code adds the MCP server too; the answer says what
 //!   changed (`done`). `arugula setup claude` asks the same.
 //!
@@ -160,7 +160,7 @@ struct ControlStatus {
     /// and where to approve it. Only one join runs at a time.
     #[serde(skip_serializing_if = "Option::is_none")]
     elsewhere: Option<crate::control::JoinLockInfo>,
-    /// The control the button joins: `--control`, else arugula cloud
+    /// The control the button joins: `--control`, else Arugula cloud
     /// (#207), or the one that dropped this machine (#325). The page sends
     /// it back with the join.
     url: String,
@@ -362,7 +362,7 @@ fn serve_failed(ts: &Path, said: &str) -> Outcome {
 #[derive(Deserialize, Default)]
 #[serde(default)]
 struct JoinReq {
-    /// Control's address (arugula's cloud by default).
+    /// Control's address (Arugula's cloud by default).
     url: Option<String>,
     /// A team to put it in ahead of time (its id).
     team: Option<String>,
@@ -621,7 +621,7 @@ async fn add_mcp(app: &App) -> Result<Vec<String>, Outcome> {
         let (new, old) = tokio::join!(mcp_scope(app, &c, MCP_NAME), mcp_scope(app, &c, MCP_OLD));
         let cli = if new.is_none() {
             let Some(cli) = cli(app).await else {
-                return Err(Outcome { done, ..Outcome::err("Can't find the arugula CLI next to the daemon.") });
+                return Err(Outcome { done, ..Outcome::err("Can't find the Arugula CLI next to the daemon.") });
             };
             cli.display().to_string()
         } else {
@@ -649,7 +649,7 @@ async fn add_mcp(app: &App) -> Result<Vec<String>, Outcome> {
                 Err(e) => return Err(Outcome { done, ..Outcome::err(e) }),
             }
             let line = if step[1] == "add" {
-                "Added arugula's MCP server to Claude Code: it can start its helpers as panes in your next session."
+                "Added Arugula's MCP server to Claude Code: it can start its helpers as panes in your next session."
             } else {
                 RENAMED
             };
@@ -660,7 +660,7 @@ async fn add_mcp(app: &App) -> Result<Vec<String>, Outcome> {
     }
     // Renamed: the add's line says less than the rename's.
     if done.iter().any(|d| d == RENAMED) {
-        done.retain(|d| !d.starts_with("Added arugula's MCP server"));
+        done.retain(|d| !d.starts_with("Added Arugula's MCP server"));
     }
     Ok(done)
 }
@@ -761,9 +761,9 @@ async fn install(app: &App, a: &'static Adapter) -> Result<Option<String>, Outco
     }
 }
 
-/// `POST /api/setup/agents/{kind}`: "Use Claude Code with arugula" (or
+/// `POST /api/setup/agents/{kind}`: "Use Claude Code with Arugula" (or
 /// Codex): its adapter installed or brought up to the pin, and for Claude
-/// Code arugula's MCP server added. Run by the person, never by itself.
+/// Code Arugula's MCP server added. Run by the person, never by itself.
 async fn use_agent(State(app): AppState, axum::extract::Path(kind): axum::extract::Path<String>) -> Json<Outcome> {
     let Some(a) = ADAPTERS.iter().find(|a| a.dir == kind || a.cli == kind) else {
         return Json(Outcome::err(format!("no agent {kind} to set up (claude or codex)")));
@@ -785,7 +785,7 @@ async fn use_agent(State(app): AppState, axum::extract::Path(kind): axum::extrac
     }
     if done.is_empty() {
         done.push(match a.kind {
-            Kind::Claude => "Already set up: agent panes work, and Claude Code has arugula's MCP server.".into(),
+            Kind::Claude => "Already set up: agent panes work, and Claude Code has Arugula's MCP server.".into(),
             _ => format!("Already set up: {} runs as agent panes here.", a.label),
         });
     }

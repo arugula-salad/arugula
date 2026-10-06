@@ -481,7 +481,7 @@ fn main() -> anyhow::Result<()> {
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "arugulad=info".into()),
         )
         .init();
-    // `just vsix`: arugula's VS Code extension, for the marketplaces.
+    // `just vsix`: Arugula's VS Code extension, for the marketplaces.
     if argv.get(1).map(String::as_str) == Some("_vsix") && argv.len() >= 3 {
         let out = std::path::Path::new(&argv[2]).join(editor::vsix::file_name());
         std::fs::write(&out, editor::vsix::build())?;

@@ -1,4 +1,4 @@
--- arugula.nvim (M28): your nvim in the arugula swarm.
+-- arugula.nvim (M28): your nvim in the Arugula swarm.
 --
 -- It connects to the arugulad on this machine ($ARUGULA_SOCK, else the
 -- daemon's usual socket) with core vim.uv, no dependencies, and speaks the

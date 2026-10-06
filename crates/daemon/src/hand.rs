@@ -218,7 +218,7 @@ impl Hands {
         };
         match found.as_slice() {
             [one] => Ok(one.clone()),
-            [] if all.is_empty() => Err("no device has offered tools here yet: open arugula on the phone and turn on \"Lend this device to agents\"".into()),
+            [] if all.is_empty() => Err("no device has offered tools here yet: open Arugula on the phone and turn on \"Lend this device to agents\"".into()),
             [] => Err(format!("no device matches {:?}: see list (kind devices)", sel.unwrap_or(""))),
             more => Err(format!(
                 "{} devices match; say which: {}",

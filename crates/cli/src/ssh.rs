@@ -182,7 +182,7 @@ impl Remote {
         Ok(ours)
     }
 
-    /// Before the first connection: the master, arugula on the box (offered
+    /// Before the first connection: the master, Arugula on the box (offered
     /// once if it's missing, or if it's a different major version), and its
     /// daemon running.
     pub fn prepare(&self) -> anyhow::Result<()> {
@@ -191,7 +191,7 @@ impl Remote {
         let mut p = self.probe()?;
         if !p.installed {
             let q = format!(
-                "arugula isn't installed on {}. Install {VERSION} there (~/.local/bin, and its daemon)?",
+                "Arugula isn't installed on {}. Install {VERSION} there (~/.local/bin, and its daemon)?",
                 self.dest
             );
             self.offer(&q, interactive)?;
@@ -201,8 +201,8 @@ impl Remote {
             && !compatible(&v, VERSION)
         {
             let q =
-                format!("{} runs arugula {v}; this is {VERSION}, a different major version. Upgrade it?", self.dest);
-            self.offer(&q, interactive).with_context(|| format!("{} runs arugula {v}, not {VERSION}", self.dest))?;
+                format!("{} runs Arugula {v}; this is {VERSION}, a different major version. Upgrade it?", self.dest);
+            self.offer(&q, interactive).with_context(|| format!("{} runs Arugula {v}, not {VERSION}", self.dest))?;
             self.install(&p)?;
             p = self.probe()?;
         }
@@ -302,7 +302,7 @@ impl Remote {
     /// `~/.local/bin`, over the master: the box needs nothing but sshd and
     /// `sh`, not even a network.
     fn install(&self, p: &Probe) -> anyhow::Result<()> {
-        let triple = p.triple().with_context(|| format!("no arugula build for {} ({})", self.dest, p.uname))?;
+        let triple = p.triple().with_context(|| format!("no Arugula build for {} ({})", self.dest, p.uname))?;
         let dir = binaries(triple)?;
         eprintln!("arugula: installing {VERSION} ({triple}) on {}", self.dest);
         for name in ["arugulad", "arugula"] {

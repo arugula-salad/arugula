@@ -113,7 +113,7 @@ async fn a_port_through_its_own_site() {
     // Opening the daemon's own ports is refused; a dev server's isn't.
     let (status, body) = d.raw("POST", "/api/blocks", Some(json!({"type": "browser", "config": {"port": d.port}})));
     assert_eq!(status, 400, "{body}");
-    assert!(body.contains("arugula's own"), "{body}");
+    assert!(body.contains("Arugula's own"), "{body}");
     let (status, body) =
         d.raw("POST", "/api/blocks", Some(json!({"type": "browser", "config": {"port": d.block_port}})));
     assert_eq!(status, 400, "{body}");

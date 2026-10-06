@@ -33,7 +33,7 @@
 //! - only the app may frame a block (`frame-ancestors`, plus the block's
 //!   own pages: VS Code frames itself), and the dev server's own
 //!   `X-Frame-Options` is dropped;
-//! - a site may have a script of arugula's put first in its pages
+//! - a site may have a script of Arugula's put first in its pages
 //!   (`Site::set_head_script`; editor blocks' storage, #69);
 //! - it carries WebSocket upgrades, so hot reload works;
 //! - it never proxies to the daemon's own ports.
@@ -161,7 +161,7 @@ pub struct Sites {
 
 static SITES: OnceLock<Arc<Sites>> = OnceLock::new();
 
-/// The origin of arugula control's page, while this daemon is enrolled:
+/// The origin of Arugula control's page, while this daemon is enrolled:
 /// a page that may frame blocks too, as the app's own may. Control sets it
 /// whenever its enrollment changes, before or after sites are installed.
 static CONTROL_ORIGIN: Mutex<Option<String>> = Mutex::new(None);
@@ -218,7 +218,7 @@ impl Sites {
     pub fn allowed(&self, t: &Target) -> Result<(), String> {
         match t {
             Target::Local(p) if self.settings.reserved.contains(p) => {
-                Err(format!("port {p} is arugula's own; it can't be shown in a block"))
+                Err(format!("port {p} is Arugula's own; it can't be shown in a block"))
             }
             _ => Ok(()),
         }

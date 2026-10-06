@@ -79,7 +79,7 @@ pub const OWNER_ONLY: &str = "only the session's owner sends or declines an invi
 pub const CLOSE_OWNER_ONLY: &str = "only the session's owner closes an invite block";
 
 /// An agent on the owner's CLI asks; the owner sends.
-pub const AGENT_ASKS: &str = "an agent doesn't invite: ask the user with arugula's invite_person tool";
+pub const AGENT_ASKS: &str = "an agent doesn't invite: ask the user with Arugula's invite_person tool";
 
 /// Whether the owner's CLI says an agent runs it (as for a forge's drafts),
 /// under either name (#504).
@@ -426,7 +426,7 @@ async fn deliver(
     let through_control = to.starts_with("account:") && app.control.enrolled().is_some();
     if !through_control {
         return match (to.starts_with("account:"), here) {
-            (true, _) => (InviteDelivery::Unreachable, Some("this machine isn't joined to arugula control".into())),
+            (true, _) => (InviteDelivery::Unreachable, Some("this machine isn't joined to Arugula control".into())),
             (false, 0) => (InviteDelivery::Unreachable, Some("they haven't turned on notifications here".into())),
             (false, _) => (InviteDelivery::Unreachable, Some("their push service turned it down".into())),
         };
@@ -474,7 +474,7 @@ async fn add_pins(State(app): State<Arc<App>>, headers: HeaderMap, Json(b): Json
         return refuse(StatusCode::FORBIDDEN, "the owner's browser pins teams, not an agent");
     }
     if app.control.enrolled().is_none() {
-        return refuse(StatusCode::BAD_REQUEST, "this machine isn't joined to arugula control");
+        return refuse(StatusCode::BAD_REQUEST, "this machine isn't joined to Arugula control");
     }
     let well_formed = |team: &str, root: &str| {
         ok_id(team) && root.split_once('.').is_some_and(|(f, r)| ok_id(f) && ok_id(r) && !r.contains('.'))

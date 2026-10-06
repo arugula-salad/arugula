@@ -102,7 +102,7 @@ test("VS Code in a VM tab, and a file there at its line", async ({ page }) => {
   const f = page.frameLocator(`[data-pane="${block.id}"] iframe`);
   await expect(f.locator(".monaco-workbench")).toBeVisible({ timeout: 540_000 });
   await expect(f.locator(".explorer-folders-view .monaco-list-row", { hasText: "proj" }).first()).toBeVisible({ timeout: 60_000 });
-  // arugula's theme there too.
+  // Arugula's theme there too.
   await expect.poll(() => f.locator(".monaco-workbench .part.sidebar").evaluate((e) => getComputedStyle(e).backgroundColor)).toBe("rgb(24, 24, 37)");
 
   // A file on that machine, at its line.

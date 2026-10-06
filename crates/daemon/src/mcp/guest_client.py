@@ -73,7 +73,7 @@ def reader(c):
     for p in lost:
         emit(json.dumps({"jsonrpc": "2.0", "id": json.loads(p), "error": {
             "code": -32000,
-            "message": "the connection to arugula dropped (did its daemon restart?); call again"}}).encode())
+            "message": "the connection to Arugula dropped (did its daemon restart?); call again"}}).encode())
     attach(connect(300))
 
 

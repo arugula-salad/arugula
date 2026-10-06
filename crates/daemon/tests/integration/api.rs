@@ -414,7 +414,7 @@ fn push_reaches_a_subscribed_browser_encrypted() {
     let mut plain = Aes128Gcm::new_from_slice(&cek).unwrap().decrypt(&nonce.into(), sealed).unwrap();
     assert_eq!(plain.pop(), Some(2), "last-record padding delimiter");
     let msg: Value = serde_json::from_slice(&plain).unwrap();
-    assert_eq!((msg["title"].as_str(), msg["body"].as_str()), (Some("arugula"), Some("Notifications work.")));
+    assert_eq!((msg["title"].as_str(), msg["body"].as_str()), (Some("Arugula"), Some("Notifications work.")));
 }
 
 /// A request over the socket with raw bytes for a body (an upload's

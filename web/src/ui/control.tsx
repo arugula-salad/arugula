@@ -57,7 +57,7 @@ export function ControlGate({ s }: { s: ControlSession }) {
     const next = encodeURIComponent(signInNext());
     return (
       <Center>
-        <h1>arugula</h1>
+        <h1>Arugula</h1>
         <WhyHere />
         <p>Your terminals, on every machine, from any device. End to end encrypted: this service introduces your devices to your machines and relays for them, but can't read what they say.</p>
         <div class="control-signins">
@@ -162,7 +162,7 @@ function Waiting({ s }: { s: ControlSession }) {
   }, []);
   const code = joinInHash(hash);
   const name = deviceName();
-  // "the arugula app on jake-air", or "this browser (Chrome on Mac)".
+  // "the Arugula app on jake-air", or "this browser (Chrome on Mac)".
   const what = inApp() ? `the ${name}` : `this browser (${name})`;
   const fp = (
     <p class="fingerprint" data-fingerprint={s.keys.id}>
@@ -175,7 +175,7 @@ function Waiting({ s }: { s: ControlSession }) {
         <h1>Approve the machine on a device you use</h1>
         <p data-waiting-join={code}>
           You're signed in as <b>{s.login}</b>, here to add a machine with code <b>{code}</b>. Only a device already in your account can approve it,
-          and this browser isn't one yet. On a browser or phone you use with arugula, open:
+          and this browser isn't one yet. On a browser or phone you use with Arugula, open:
         </p>
         <CopyText text={`${s.info.url}/#join=${code}`} data-control-join-link />
         <p>Approve the code there, and pick where the machine goes: your account, or a team you own. That's the one approval the machine needs.</p>
@@ -247,7 +247,7 @@ function WhyHere() {
   if (/^#app=/.test(hash))
     return (
       <p class="control-why" data-why="app">
-        Sign in to let the arugula app use your account.
+        Sign in to let the Arugula app use your account.
       </p>
     );
   return null;
@@ -437,7 +437,7 @@ function AddMachine({ s }: { s: ControlSession }) {
     <div class="control-add">
       <ol class="control-steps">
         <li>
-          <b>Install arugula on the machine</b> (macOS or Linux):
+          <b>Install Arugula on the machine</b> (macOS or Linux):
           <CopyText text={INSTALL} data-install />
           <span class="dim">
             Or with <a href="https://illogical.widgets.wtf/#install" target="_blank" rel="noopener">Homebrew, or from source</a>.
@@ -665,7 +665,7 @@ function JoinPrompt({ s, code, from }: { s: ControlSession; code: string; from?:
     if (e instanceof RefusedError) setRefused(true);
     setBusy(false);
   };
-  // M49: the arugula CLI on a machine, asking to be one of your devices.
+  // M49: the Arugula CLI on a machine, asking to be one of your devices.
   if (j?.cert.kind === "cli") return <CliJoin s={s} j={j} cancel={cancel} refused={refused} failed={failed} />;
   const machine = j ? (
     <>
@@ -795,7 +795,7 @@ function JoinPrompt({ s, code, from }: { s: ControlSession; code: string; from?:
   );
 }
 
-/** M49: the arugula CLI on some machine asks to be one of this account's
+/** M49: the Arugula CLI on some machine asks to be one of this account's
  * devices (`arugula login`). Approved, it reaches the account's machines
  * and can approve devices and machines, as this browser can. */
 function CliJoin({ s, j, cancel, refused, failed }: { s: ControlSession; j: JoinRequest; cancel: () => void; refused: boolean; failed: (e: unknown) => void }) {
@@ -810,7 +810,7 @@ function CliJoin({ s, j, cancel, refused, failed }: { s: ControlSession; j: Join
         </p>
       ) : null}
       <p data-join-cli={j.cert.name}>
-        The arugula command line on <b>{j.cert.name}</b> asks to be one of your devices, with code <b data-join-code={j.code}>{j.code}</b>. Check it's the code
+        The Arugula command line on <b>{j.cert.name}</b> asks to be one of your devices, with code <b data-join-code={j.code}>{j.code}</b>. Check it's the code
         it shows where you ran <code>arugula login</code>.
       </p>
       <p class="dim">Its key: {fingerprint(j.cert.device)}</p>
@@ -879,7 +879,7 @@ function AppLoginPrompt({ s, id }: { s: ControlSession; id: string }) {
             </p>
           )}
           <p class="dim">
-            Only the app on this computer can finish it. If you didn't just press Sign in in the arugula app, cancel: someone may have sent you
+            Only the app on this computer can finish it. If you didn't just press Sign in in the Arugula app, cancel: someone may have sent you
             this link.
           </p>
           <div class="prompt-buttons">
@@ -1246,7 +1246,7 @@ function Devices({ s, close }: { s: ControlSession; close: () => void }) {
         >
           {removing.kind === "daemon" ? (
             <p data-remove-explain>
-              It loses access at once: it's taken off your account. arugula keeps running on it, reachable only locally. To add it back, join it again with{" "}
+              It loses access at once: it's taken off your account. Arugula keeps running on it, reachable only locally. To add it back, join it again with{" "}
               <code>arugulad join</code>, which makes a new key.
             </p>
           ) : (

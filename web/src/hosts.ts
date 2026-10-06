@@ -21,7 +21,7 @@ export interface ProviderRef {
 export interface Host {
   name: string;
   urls: string[];
-  /** A daemon in arugula control's directory: its device id. */
+  /** A daemon in Arugula control's directory: its device id. */
   id?: string;
   /** How it's reached: `tailnet`, straight to its URLs; `dial_out` (M4c),
    * it dials the home daemon and is reached through it at `/h/<name>/…`;
@@ -75,7 +75,7 @@ export class HostDirectory {
   shown: string | null = load<string>(SHOWN_KEY);
   /** Provider hosts whose tailnet URL answered: used instead of the tunnel. */
   private upgraded = new Set<string>();
-  /** The page is arugula control's (M17): the list comes from control,
+  /** The page is Arugula control's (M17): the list comes from control,
    * and there's no home daemon. */
   control = false;
   /** The control this page's daemon joined (`/api/host`'s `control`), if

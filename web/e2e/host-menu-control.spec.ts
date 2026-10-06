@@ -1,4 +1,4 @@
-// M49: a daemon joined to arugula control doesn't list the account's other
+// M49: a daemon joined to Arugula control doesn't list the account's other
 // machines on its own page (that would make it a hub). Its host menu has
 // "All your machines…", which opens control's page. A daemon that isn't
 // joined has neither the link nor, with no other hosts, the menu.

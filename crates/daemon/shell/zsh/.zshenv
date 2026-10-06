@@ -1,4 +1,4 @@
-# arugula shell integration for zsh. UNTESTED: zsh isn't installed on the
+# Arugula shell integration for zsh. UNTESTED: zsh isn't installed on the
 # machine this was written on.
 #
 # arugulad points ZDOTDIR here; this restores the user's ZDOTDIR, reads

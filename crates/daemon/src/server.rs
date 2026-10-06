@@ -54,7 +54,7 @@ pub struct App {
     pub shares: Arc<crate::share::Shares>,
     /// History other hosts synced to us.
     pub synced: Arc<crate::sync::Synced>,
-    /// Enrollment in arugula control: trusted devices, the relay.
+    /// Enrollment in Arugula control: trusted devices, the relay.
     pub control: Arc<crate::control::Control>,
     /// Who else may reach which sessions (M12).
     pub acl: Arc<crate::acl::Acl>,

@@ -1,6 +1,6 @@
 # Features
 
-What arugula does, roughly in the order it was built. [plan-archive.md](plan-archive.md) has the reasoning and the milestones, and [DECISIONS.md](../DECISIONS.md) the decisions that still hold.
+What Arugula does, roughly in the order it was built. [plan-archive.md](plan-archive.md) has the reasoning and the milestones, and [DECISIONS.md](../DECISIONS.md) the decisions that still hold.
 
 Examples name the machine that serves the page `home`; on a real tailnet it's your machine's MagicDNS name.
 
@@ -123,8 +123,8 @@ stopping, crashing, or the machine rebooting:
     (the block shows the download), or `--code-server PATH`.
   - Settings, extensions (from [Open VSX](https://open-vsx.org)) and state
     are in `<state>/editor/`, so they outlive restarts. New settings start
-    with arugula's colours and VS Code's AI features off.
-  - arugula's extension in each window reports the active file, the
+    with Arugula's colours and VS Code's AI features off.
+  - Arugula's extension in each window reports the active file, the
     cursor and the lines around it: summaries say `kind: editor`, the
     project and `file`, and the swarm's preview (and `capture`) is those
     lines. It's the same extension as for your own VS Code (below), so
@@ -160,13 +160,13 @@ stopping, crashing, or the machine rebooting:
   your machines shows up in the swarm beside your panes: a tile of kind
   editor in its project, with its file, its errors and unsaved files, and
   the lines around its cursor as its preview.
-  - **Joining.** VS Code and Cursor: arugula's extension (`arugula
+  - **Joining.** VS Code and Cursor: Arugula's extension (`arugula
     editors install`, or the VSIX from `arugula editors vsix`), then
     *arugula: Show this workspace in the swarm*. nvim: `editors/nvim`
     (arugula.nvim) and `:ArugulaJoin`. Each folder joins only when
     asked, and that's remembered for it; *Take this workspace out of the
     swarm* (`:ArugulaLeave`) removes it at once.
-  - **Where.** The editor talks to the arugula daemon on the machine its
+  - **Where.** The editor talks to the Arugula daemon on the machine its
     files are on: under Remote-SSH the extension runs on the remote
     machine, so it's that machine's daemon and that machine's cluster. In
     a dev container, the dev container feature in `editors/devcontainer`
@@ -260,7 +260,7 @@ stopping, crashing, or the machine rebooting:
     with the pins in `defs.rs`.
   - Without having to know: Getting started's Agents step shows
     each adapter's state next to *Start an agent…*, and *Use Claude Code
-    with arugula* installs the adapter and adds arugula's MCP server
+    with Arugula* installs the adapter and adds Arugula's MCP server
     in one click, then says what changed (`arugula setup claude` from a
     terminal). Where Claude Code is on the machine and isn't set up, the
     first screen offers that click. When Claude Code or Codex is here and
@@ -301,7 +301,7 @@ stopping, crashing, or the machine rebooting:
     block. Nothing runs, and the block keeps reading the transcript as it
     grows, so a terminal session can be followed from the phone. Picking
     one a block already has goes to that block; one running in an
-    arugula pane goes to the pane.
+    Arugula pane goes to the pane.
   - **What Continue won't remember** is folded away and dimmed, under a
     note: *Not in what it remembers*. A resume follows one branch of the
     transcript (the newest `last-prompt` leaf, walked back by
@@ -377,7 +377,7 @@ stopping, crashing, or the machine rebooting:
     posts it (as edited) with the owner's login; *Drop* drops it. The
     owner and editors may send; viewers can't. The block and its history
     say who sent each one, and that an agent drafted it. Several wait in
-    turn. This holds on arugula's own surfaces; an agent on your account
+    turn. This holds on Arugula's own surfaces; an agent on your account
     could still run `tea` itself. A person's own write (the block's
     buttons, `arugula pr comment %N …` in your shell) goes straight out.
   - **The code.** *Diff* fetches `refs/pull/N/head` into your clone (no
@@ -426,7 +426,7 @@ stopping, crashing, or the machine rebooting:
     while you look at it; the block's footer and its state say *live* or
     *polling* (and why), and `capture --text` says `live: webhook` or
     `live: polling (why)`. Issues on the same repository hear theirs too.
-    - **GitHub** needs nothing on the block: a daemon joined to arugula
+    - **GitHub** needs nothing on the block: a daemon joined to Arugula
       control tells control which repositories it has blocks on, and
       control's GitHub App relays its webhooks (only "something changed on
       OWNER/REPO#N", never the event's contents) to the daemons of people
@@ -579,7 +579,7 @@ stopping, crashing, or the machine rebooting:
 
 - **iTerm2 as a client**. `arugula tmux -CC` speaks tmux's control
   mode, so iTerm2 (and Ghostty's and WezTerm's tmux support) shows
-  arugula's sessions, tabs and splits as native windows, tabs and splits,
+  Arugula's sessions, tabs and splits as native windows, tabs and splits,
   live alongside the browser; see *Use it*.
 
 - **In any terminal**. `arugula tui` (with `--host`, any host;
@@ -637,7 +637,7 @@ stopping, crashing, or the machine rebooting:
 - **Every host at once**. The page keeps a light connection
   (summaries only) to every machine in its list, not just the one it
   shows: yours, your team's, and teammates' machines that shared a session
-  with you or with the team. Through arugula control they share one
+  with you or with the team. Through Arugula control they share one
   connection to the relay. A machine that goes away greys out with when it
   was last seen and comes back on its own; reconnects after a laptop wakes are spread out.
   Private panes never leave their owner's view, and revoking a share or
@@ -701,7 +701,7 @@ stopping, crashing, or the machine rebooting:
   lines, click it to open it (an editor that joined: follow it). On a
   phone the cards are a strip along the bottom. `just fake-fleet` runs three throwaway machines to try it on.
 - **Tools for any agent** (MCP). Claude Code, Codex or any MCP client
-  gets arugula as tools: `run` a command in a pane you can watch and
+  gets Arugula as tools: `run` a command in a pane you can watch and
   take over (it outlives the
   agent's turn), `wait` for it and `read_output`, `send_input`, `list`,
   `close`, `history` (commands, or output matching a regex), `show` (a

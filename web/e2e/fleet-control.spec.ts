@@ -1,4 +1,4 @@
-// M25 through arugula control: the fleet on a page served by control. Three
+// M25 through Arugula control: the fleet on a page served by control. Three
 // machines join an account (one reachable directly, two only through the
 // relay); the laptop and a phone each see all three machines' panes at
 // once, and the relayed ones share one WebSocket to control, each

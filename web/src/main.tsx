@@ -1,4 +1,4 @@
-// arugula web client: tabs and splits of terminals owned by the daemon.
+// Arugula web client: tabs and splits of terminals owned by the daemon.
 
 // First: storage kept under the old names (#505), before anything reads it.
 import "./rename";
@@ -28,7 +28,7 @@ import { setupDesktop } from "./desktop";
 import { openThread } from "./ui/threads";
 import { openGettingStarted, type Section } from "./ui/welcome";
 
-// Served by arugula control (M17), not a daemon: sign in, enroll this
+// Served by Arugula control (M17), not a daemon: sign in, enroll this
 // browser, and reach daemons through end-to-end channels. A read-only link
 // (M19, `#link=…`) needs no account: its key is in the fragment.
 const info = await detectControl();

@@ -245,7 +245,7 @@ test("an adapter that isn't installed: its command to copy, and Install in a pan
 // Start an agent, and one click installs one (`POST /api/setup/agents/…`,
 // the daemon waiting for npm: the stand-in here), then says what changed;
 // an install older than the pin is out of date, and the same click
-// updates it. Codex's, since Claude Code's would also add arugula's MCP
+// updates it. Codex's, since Claude Code's would also add Arugula's MCP
 // server to the Claude Code on the test machine.
 test("Getting started: each adapter's state, and one click that installs or updates it", async ({ page }) => {
   const dir = join(process.env.ARUGULA_AGENTS_DIR!, "codex");
@@ -285,7 +285,7 @@ test("Getting started: each adapter's state, and one click that installs or upda
   expect(await codex()).toMatchObject({ state: "installed", version: "0.0.1", outdated: true });
   if (before.found) {
     await page.evaluate(() => dispatchEvent(new CustomEvent("arugula:getting-started", { detail: "agents" })));
-    await expect(panel.locator('[data-start-adapter="codex"]')).toHaveText(`Codex's adapter 0.0.1: out of date (arugula uses ${before.pinned})`);
+    await expect(panel.locator('[data-start-adapter="codex"]')).toHaveText(`Codex's adapter 0.0.1: out of date (Arugula uses ${before.pinned})`);
     await expect(panel.locator('.adapter-help[data-adapter="outdated"]')).toBeVisible();
     await panel.getByRole("button", { name: "Close" }).click();
   }

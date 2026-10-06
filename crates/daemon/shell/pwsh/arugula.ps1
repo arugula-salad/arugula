@@ -1,4 +1,4 @@
-# arugula shell integration for PowerShell (pwsh 7 and Windows PowerShell
+# Arugula shell integration for PowerShell (pwsh 7 and Windows PowerShell
 # 5.1).
 #
 # arugulad starts PowerShell with `-NoExit -EncodedCommand` and this script

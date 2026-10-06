@@ -1,4 +1,4 @@
-// M17/M18: arugula control in a browser. A stranger with no tailnet signs
+// M17/M18: Arugula control in a browser. A stranger with no tailnet signs
 // in (a fake GitHub), the browser becomes the account's first device, two
 // machines join by code, and both are listed and usable: one directly,
 // one only through the relay. A second browser (the phone) can't reach
@@ -318,14 +318,14 @@ test("the desktop app signs in through the browser, then is approved as a device
   const old = await fetch(`${base}/auth/app`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ name: "arugula app on test-mac" }),
+    body: JSON.stringify({ name: "Arugula app on test-mac" }),
   });
   expect(old.status).toBe(400);
   expect(((await old.json()) as { error: string }).error).toContain("update it");
   const ask = await fetch(`${base}/auth/app`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ name: "arugula app on test-mac", challenge, port }),
+    body: JSON.stringify({ name: "Arugula app on test-mac", challenge, port }),
   });
   expect(ask.status).toBe(200);
   const t = (await ask.json()) as { ticket: string; code: string; url: string };
@@ -339,7 +339,7 @@ test("the desktop app signs in through the browser, then is approved as a device
   // In the browser (signed in), the same code, and Allow: the grant goes
   // to the app's port, and the browser comes back to control's page.
   await laptop.goto(t.url);
-  await expect(laptop.locator("[data-app-login-name]")).toHaveText("arugula app on test-mac");
+  await expect(laptop.locator("[data-app-login-name]")).toHaveText("Arugula app on test-mac");
   await expect(laptop.locator("[data-app-login-code]")).toHaveText(t.code);
   await expect(laptop.locator("[data-app-login-elsewhere]")).toHaveCount(0);
   await laptop.locator("[data-app-login-allow]").click();
@@ -357,14 +357,14 @@ test("the desktop app signs in through the browser, then is approved as a device
 
   // The app's window redeems it: signed in, then a new device to approve.
   const app = await (await browser.newContext()).newPage();
-  await app.addInitScript(() => Object.assign(window, { __arugulaApp: { name: "arugula app on test-mac" } }));
+  await app.addInitScript(() => Object.assign(window, { __arugulaApp: { name: "Arugula app on test-mac" } }));
   await app.goto(`${base}/#app-redeem=${t.ticket}.${grant}.${verifier}`);
   // It says it's the app being approved, by name (#326).
   await expect(app.getByText("Approve this app as a device")).toBeVisible();
-  await expect(app.locator("[data-waiting-browser]")).toContainText("the arugula app on test-mac");
+  await expect(app.locator("[data-waiting-browser]")).toContainText("the Arugula app on test-mac");
   const fp = await app.locator("[data-fingerprint]").getAttribute("data-fingerprint");
   await expect(laptop.locator(`[data-pending="${fp}"]`)).toBeVisible({ timeout: 20_000 });
-  await expect(laptop.locator(".prompt")).toContainText("arugula app on test-mac");
+  await expect(laptop.locator(".prompt")).toContainText("Arugula app on test-mac");
   await laptop.locator("[data-approve]").click();
   await expect.poll(() => hostNames(app), { timeout: 20_000 }).toEqual(["box", "mac"]);
   await showHost(app, "mac");

@@ -673,7 +673,7 @@ fn iterm2s_conversation_gets_tmuxs_answers() {
     c.send(&[&format!("refresh-client -C @{wid}:100x30")]);
     c.wait_idle();
     let shrunk = c.wait_note(&format!("%layout-change @{wid} "));
-    // tmux takes 10 from each side (55|44); arugula keeps the ratio (54|45).
+    // tmux takes 10 from each side (55|44); Arugula keeps the ratio (54|45).
     let shrunk = canonical_layout(shrunk.split_whitespace().nth(2).unwrap());
     assert!(shrunk.ends_with(",100x30,0,0{54x30,0,0,0,45x30,55,0,1}"), "{shrunk}");
 

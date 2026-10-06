@@ -1,4 +1,4 @@
-# arugula desktop
+# Arugula desktop
 
 The desktop app (M46, Tauri 2): the daemon's own web client in a native
 window, with a tray, updates, deep links and a bundled daemon for first

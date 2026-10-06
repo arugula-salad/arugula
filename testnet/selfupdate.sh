@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# The daemon updates itself (#391), on a fresh box-systemd: arugula OLD
+# The daemon updates itself (#391), on a fresh box-systemd: Arugula OLD
 # installed as the lingering systemd user service, a pane running a
 # counter, and a fake release of NEW served on the box (python3, with
 # `releases/latest` redirecting to NEW's tag as GitHub's does). Then:

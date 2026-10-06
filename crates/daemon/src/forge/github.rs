@@ -523,7 +523,7 @@ pub async fn knows(runner: &Runner, host: &str) -> bool {
 }
 
 /// Where the GitHub adapter gets its token: `gh`, on the block's host;
-/// and (M40) on github.com with no `gh` login, arugula control's GitHub
+/// and (M40) on github.com with no `gh` login, Arugula control's GitHub
 /// App, read-only, for the block's repository.
 #[derive(Clone)]
 pub struct GhToken {
@@ -559,10 +559,10 @@ impl GhToken {
             Ok(t) => Ok(t),
             Err(e) if self.host == "github.com" && self.repo.is_some() => match self.app_token(fresh).await {
                 Ok(t) => {
-                    info!(host = self.host, "no gh login: reading through arugula control's GitHub App");
+                    info!(host = self.host, "no gh login: reading through Arugula control's GitHub App");
                     Ok(t)
                 }
-                Err(why) => Err(format!("{e} (and arugula control's GitHub App can't read it: {why})")),
+                Err(why) => Err(format!("{e} (and Arugula control's GitHub App can't read it: {why})")),
             },
             Err(e) => Err(e),
         }
@@ -966,7 +966,7 @@ impl Adapter for Github {
 
     fn read_only(&self) -> Option<String> {
         self.token.via_app().map(|_| {
-            "read-only: no gh login here, so it reads through arugula control's GitHub App; writes go out as you, so they need your own login (`gh auth login`, then refresh)".to_owned()
+            "read-only: no gh login here, so it reads through Arugula control's GitHub App; writes go out as you, so they need your own login (`gh auth login`, then refresh)".to_owned()
         })
     }
 

@@ -1,8 +1,8 @@
-# arugula dev container feature
+# Arugula dev container feature
 
-Puts VS Code (or Cursor) in a dev container in your arugula swarm.
+Puts VS Code (or Cursor) in a dev container in your Arugula swarm.
 
-The extension runs inside the container, so it can't see the arugula daemon on the host by itself. This feature mounts the daemon's editors' socket directory (`~/.local/state/arugula/editors` on the machine running the container) at `/run/arugula`, sets `ARUGULA_SOCK`, and asks for the extension. That socket only lets an editor join the swarm; the container can't drive the daemon through it.
+The extension runs inside the container, so it can't see the Arugula daemon on the host by itself. This feature mounts the daemon's editors' socket directory (`~/.local/state/arugula/editors` on the machine running the container) at `/run/arugula`, sets `ARUGULA_SOCK`, and asks for the extension. That socket only lets an editor join the swarm; the container can't drive the daemon through it.
 
 ```jsonc
 // .devcontainer/devcontainer.json

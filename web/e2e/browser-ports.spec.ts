@@ -2,7 +2,7 @@
 // `http://b-<id>-<key>.localhost:<port>` on a loopback listener). A real
 // Vite dev server on this host shows in a block beside a terminal; hot
 // reload works on the desktop and a phone; the page has its own origin and
-// a script in it can't reach arugula; a server that dies is noticed, and
+// a script in it can't reach Arugula; a server that dies is noticed, and
 // the page comes back with it.
 
 import { spawn, type ChildProcess } from "node:child_process";
@@ -101,7 +101,7 @@ const attention = (page: Page, b: PaneId) => page.evaluate((b) => window.__arugu
 
 let block: PaneId = 0;
 
-test("a dev server beside a terminal: its own origin, hot reload, no way into arugula", async ({ page }) => {
+test("a dev server beside a terminal: its own origin, hot reload, no way into Arugula", async ({ page }) => {
   await reset(page);
   const [term] = await panes(page);
   await menu(page, paneEl(page, term), "Open a port…");

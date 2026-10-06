@@ -1,6 +1,6 @@
-# Working on arugula
+# Working on Arugula
 
-arugula keeps terminals and agent sessions alive on a machine and lets you
+Arugula keeps terminals and agent sessions alive on a machine and lets you
 reach them from a browser, a phone, the desktop app or a shell. One daemon,
 `arugulad`, per machine owns the panes; every client attaches to it.
 
@@ -22,7 +22,7 @@ Each has a `README.md` with where to start reading.
 - `crates/daemon`: `arugulad`.
 - `crates/cli`: `arugula`, the CLI, plus `arugula tui` and
   `arugula tmux -CC`.
-- `crates/control`: arugula control: accounts, devices, the directory and the
+- `crates/control`: Arugula control: accounts, devices, the directory and the
   relay.
 - `crates/control-wire`: the enrolment, routing and relay messages between
   daemons and control, one type each, so both sides build from the same

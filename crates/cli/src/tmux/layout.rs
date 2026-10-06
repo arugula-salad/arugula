@@ -1,4 +1,4 @@
-//! An arugula split tree to and from a tmux layout string (spike S11's
+//! An Arugula split tree to and from a tmux layout string (spike S11's
 //! `tmux_layout.py`).
 //!
 //! Cells come from the daemon's own arithmetic (`arugula_core::layout`),

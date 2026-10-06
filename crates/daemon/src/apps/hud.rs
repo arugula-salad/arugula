@@ -24,7 +24,7 @@
 //! - `POST /__hud/api/chat/answer {chatKey, requestId, optionId}`, with the
 //!   box's own `Origin` (hud refuses cross-site writes). With a follower
 //!   credential (the block's config says so) it adds `onBehalfOf: {name,
-//!   via: "arugula"}`, naming whoever answered in arugula; that needs
+//!   via: "arugula"}`, naming whoever answered in Arugula; that needs
 //!   hud's trusted-follower change (arugula-salad track A5). Without one,
 //!   hud records the session's own player, the box's owner.
 //! - `POST /__hud/api/chat/prompt {chatKey, text}`, for the block's
@@ -53,7 +53,7 @@
 //!
 //! **Names for hud.** hud takes a person's name only as a display name
 //! (at most 32 characters: letters, digits, spaces and `-_.'`, not one of
-//! its role labels), so [`hud_name`] makes arugula's name fit: an email
+//! its role labels), so [`hud_name`] makes Arugula's name fit: an email
 //! address by its local part, other characters as `-`. A name that can't
 //! fit (or is `owner`) is left out, and hud records its session's player.
 
@@ -977,7 +977,7 @@ pub fn board_gates(origin: &str, app: &str, board: &Value) -> Vec<arugula_proto:
         .collect()
 }
 
-/// arugula's name for a person as hud takes a display name: an email by
+/// Arugula's name for a person as hud takes a display name: an email by
 /// its local part, characters hud refuses as `-`, at most 32; `None` for
 /// what can't be one (empty, or one of hud's role labels).
 pub fn hud_name(name: &str) -> Option<String> {

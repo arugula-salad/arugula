@@ -4,7 +4,7 @@
 // box: a page behind a door that lets in whoever follows an entry link
 // (a partitioned cookie, as studio's door hands out), and hud's routes
 // (tabs, the chat stream with its queue frames, answers). The box is on
-// `localhost`, arugula's page on 127.0.0.1: another site, so the frame is
+// `localhost`, Arugula's page on 127.0.0.1: another site, so the frame is
 // third party as it is for real. Picked from a pane's menu, the box opens
 // in the frame; its agent's question is a card on the block ("hud asks"),
 // answered here and sent back to hud; answered in hud, the card goes.

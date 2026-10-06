@@ -5,7 +5,7 @@ use std::{net::SocketAddr, path::PathBuf};
 use clap::{Parser, Subcommand};
 
 #[derive(Parser, Debug)]
-#[command(version, about = "arugula daemon: owns terminals that clients attach to")]
+#[command(version, about = "Arugula daemon: owns terminals that clients attach to")]
 pub(crate) struct Args {
     #[command(subcommand)]
     pub(crate) command: Option<Command>,
@@ -75,7 +75,7 @@ pub(crate) enum Command {
     /// Keep tailscaled and the daemon running, as `install --tailnet` set
     /// them up (for machines without systemd); stops on SIGTERM.
     Sandbox,
-    /// Add this machine to your account on an arugula control
+    /// Add this machine to your account on an Arugula control
     /// (`https://control.example.com`): prints a code to approve from a
     /// device that's signed in, then the account's fingerprint to check
     /// against that device. A running daemon picks it up.
@@ -111,7 +111,7 @@ pub(crate) enum Command {
         #[arg(long, env = "ARUGULA_STATE_DIR")]
         state_dir: Option<PathBuf>,
     },
-    /// Update arugula here to the latest release, after asking: download
+    /// Update Arugula here to the latest release, after asking: download
     /// it, check it against the release's SHA256SUMS and run its `install`,
     /// which restarts the service (panes keep running) and keeps its flags.
     Update {
@@ -288,7 +288,7 @@ pub(crate) struct RunArgs {
 /// on ports (so they need --block-listen).
 #[derive(clap::Args, Debug)]
 pub(crate) struct EditorArgs {
-    /// A code-server to run [default: the release arugula pins, downloaded
+    /// A code-server to run [default: the release Arugula pins, downloaded
     /// to ~/.cache/arugula/code-server the first time an editor opens].
     #[arg(long, env = "ARUGULA_CODE_SERVER")]
     pub(crate) code_server: Option<PathBuf>,

@@ -188,7 +188,7 @@ fn check_daemon(app: &App, parts: &Parts, body: &[u8]) -> Result<Cert, ApiError>
             if !app.cfg.old_daemon_signatures {
                 return Err(err(
                     StatusCode::UPGRADE_REQUIRED,
-                    "this machine's arugula is too old for this control: update arugula (0.17 or newer) and restart it",
+                    "this machine's Arugula is too old for this control: update Arugula (0.17 or newer) and restart it",
                 ));
             }
             let ms: u64 = ms.parse().map_err(|_| bad())?;

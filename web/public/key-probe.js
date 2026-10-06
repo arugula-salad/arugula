@@ -1,6 +1,6 @@
 // The device key probe (#94): store non-extractable Ed25519 and X25519
-// keys in IndexedDB the way arugula does, reload, and check they still
-// sign and agree. Also checks the fallback arugula uses where they
+// keys in IndexedDB the way Arugula does, reload, and check they still
+// sign and agree. Also checks the fallback Arugula uses where they
 // don't (PKCS#8 wrapped with a non-extractable AES-GCM key). Plain script,
 // no build step and no network, so it can be opened on any browser.
 
@@ -80,7 +80,7 @@ const CHECKS = [
   },
   {
     key: "both",
-    what: "Both in one record, as arugula stored them before #94",
+    what: "Both in one record, as Arugula stored them before #94",
     async make() {
       const sign = await subtle.generateKey({ name: "Ed25519" }, false, ["sign", "verify"]);
       const noise = await subtle.generateKey({ name: "X25519" }, false, ["deriveBits"]);
@@ -94,7 +94,7 @@ const CHECKS = [
   },
   {
     key: "wrapped",
-    what: "Both wrapped with an AES-GCM key (arugula's fallback)",
+    what: "Both wrapped with an AES-GCM key (Arugula's fallback)",
     async make() {
       const sign = await subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"]);
       const noise = await subtle.generateKey({ name: "X25519" }, true, ["deriveBits"]);
@@ -185,11 +185,11 @@ async function report() {
   } else if (after.wrapped.ok) {
     verdict = "wrapped";
     v.className = "no";
-    v.textContent = "No: device keys don't survive a reload here. arugula's fallback (wrapped keys) does, so arugula keeps them wrapped.";
+    v.textContent = "No: device keys don't survive a reload here. Arugula's fallback (wrapped keys) does, so Arugula keeps them wrapped.";
   } else {
     verdict = "none";
     v.className = "no";
-    v.textContent = "No, and the fallback doesn't work either: arugula can't keep a device key in this browser.";
+    v.textContent = "No, and the fallback doesn't work either: Arugula can't keep a device key in this browser.";
   }
   done({ verdict, browser: browser(), ua: navigator.userAgent, before, after });
 }

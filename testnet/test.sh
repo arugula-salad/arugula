@@ -45,7 +45,7 @@
 #           control at its address there. Broken: control taken off the
 #           inner network (and put back).
 #   m52     M52 end to end: on a fresh box-systemd, `arugula --ssh
-#           box-systemd join` installs arugula and starts its daemon, and
+#           box-systemd join` installs Arugula and starts its daemon, and
 #           its code is approved by a headless device; the box is then on
 #           the account's device list and online, and with the ssh master
 #           closed and the bastion paused, a marker round-trips through a

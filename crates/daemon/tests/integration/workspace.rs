@@ -169,7 +169,7 @@ fn a_gate_is_attention_until_the_owner_approves_it() {
     assert!(body.contains("no gate app/x/y is waiting"), "{body}");
 
     // The owner approves from the rail: chant is told who, by the owner's
-    // arugula name (their tailnet login here), not the OS user.
+    // Arugula name (their tailnet login here), not the OS user.
     let r = d.post("/api/attention/act", json!({ "action": "allow", "pane": block }));
     assert_eq!(r["results"][0]["ok"], true, "{r}");
     let said = approvals(&ws);

@@ -71,7 +71,7 @@ test.describe("desktop", () => {
     await expect(el.locator(".agent-msg").last()).toHaveText("You said kestrel.");
     await expect(el.locator(".agent-status")).toHaveText("Ready");
     await expect(el.locator(".agent-import")).toBeHidden();
-    await expect(el.locator(".agent-note", { hasText: "Continued in arugula" })).toBeVisible();
+    await expect(el.locator(".agent-note", { hasText: "Continued in Arugula" })).toBeVisible();
 
     // Picking it again goes to the block.
     await menu(page, paneEl(page, term), "Claude Code conversations…");

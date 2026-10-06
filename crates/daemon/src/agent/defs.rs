@@ -136,7 +136,7 @@ pub struct Launch {
     pub npm: Option<&'static str>,
 }
 
-/// Where arugula keeps agent adapters on this host: under
+/// Where Arugula keeps agent adapters on this host: under
 /// `~/.local/share/illogical` on a machine that installed them before the
 /// rename, where they are (#505).
 pub fn agents_dir(home: &Path) -> PathBuf {

@@ -75,7 +75,7 @@ pub fn loaded(sock: &http::Target, block: u64) -> anyhow::Result<Value> {
 pub fn here(p: Option<Pane>) -> anyhow::Result<u32> {
     match p {
         Some(Pane(n)) => Ok(n),
-        None => env_pane().context("which pane? (give %N, or run this inside an arugula pane)"),
+        None => env_pane().context("which pane? (give %N, or run this inside an Arugula pane)"),
     }
 }
 

@@ -99,7 +99,7 @@ export interface ApiResponse {
   text?(): Promise<string>;
 }
 
-/** A daemon reached through arugula control (M17/M18): an end-to-end
+/** A daemon reached through Arugula control (M17/M18): an end-to-end
  * channel, directly when one of its URLs answers, else through the relay. */
 export interface E2ETarget {
   daemon: DaemonRef;
@@ -218,7 +218,7 @@ export class Client {
    * page came from. Another daemon must list this page's origin as
    * allowed (`--allow-origin`). A path (`/h/box`) is a dial-out host,
    * reached through this page's own daemon. `e2e:<id>` with a target: a
-   * daemon reached through arugula control. */
+   * daemon reached through Arugula control. */
   constructor(
     readonly base = "",
     readonly e2e?: E2ETarget,

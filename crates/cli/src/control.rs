@@ -1,4 +1,4 @@
-//! The CLI as a device of your account on arugula control (M49).
+//! The CLI as a device of your account on Arugula control (M49).
 //!
 //! `arugula login` makes this CLI a `cli` device: it asks control to join
 //! the account the way a daemon does (`arugulad join`), shows a code, and
@@ -331,7 +331,7 @@ pub fn login(url: &str, name: &str, account: Option<&str>) -> anyhow::Result<()>
     };
     let about = get("/control.json").and_then(|r| r.json()).with_context(|| format!("can't reach control at {url}"))?;
     if about["cli_join"].as_u64().is_none() {
-        bail!("control at {url} doesn't take the arugula CLI as a device yet (it's older than this CLI)");
+        bail!("control at {url} doesn't take the Arugula CLI as a device yet (it's older than this CLI)");
     }
     let keys = DeviceKeys::generate();
     let ask = Cert { account: String::new(), ..Cert::new(&keys, "", Kind::Cli, name) };

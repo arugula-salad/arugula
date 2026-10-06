@@ -1,4 +1,4 @@
-# arugula shell integration for bash (4.4+).
+# Arugula shell integration for bash (4.4+).
 #
 # arugulad starts bash with --posix and ENV pointing here, the way Ghostty
 # injects its integration: in POSIX mode an interactive bash reads only $ENV,

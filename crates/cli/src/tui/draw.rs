@@ -331,7 +331,7 @@ fn sidebar(app: &mut App, buf: &mut Buffer, width: u16, height: u16) {
         }
         *y += 1;
     };
-    line(buf, &mut y, " arugula", Style::default().add_modifier(Modifier::BOLD));
+    line(buf, &mut y, " Arugula", Style::default().add_modifier(Modifier::BOLD));
     let Some(state) = &app.state else { return };
     for s in &state.sessions {
         y += 1;

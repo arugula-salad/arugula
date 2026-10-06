@@ -1,4 +1,4 @@
-//! `arugula editors`: editors in the swarm, and arugula's extension for them.
+//! `arugula editors`: editors in the swarm, and Arugula's extension for them.
 
 use super::Ctx;
 use crate::http::{self, request};
@@ -8,13 +8,13 @@ use std::path::PathBuf;
 
 #[derive(clap::Subcommand)]
 pub enum EditorsCmd {
-    /// Write arugula's VS Code extension (a VSIX) to a file.
+    /// Write Arugula's VS Code extension (a VSIX) to a file.
     Vsix {
         /// Where [default: arugula-editor-VERSION.vsix here].
         #[arg(short, long)]
         out: Option<PathBuf>,
     },
-    /// Install arugula's extension in VS Code or Cursor.
+    /// Install Arugula's extension in VS Code or Cursor.
     ///
     /// With their CLI (`code --install-extension`).
     Install {
@@ -95,7 +95,7 @@ pub fn run(cmd: Option<EditorsCmd>, ctx: Ctx) -> anyhow::Result<i32> {
     Ok(0)
 }
 
-/// arugula's VS Code extension, from the daemon (M28).
+/// Arugula's VS Code extension, from the daemon (M28).
 fn vsix(sock: &http::Target) -> anyhow::Result<(String, Vec<u8>)> {
     let res = request(sock, "GET", "/api/editors/vsix", None)?;
     let name = res

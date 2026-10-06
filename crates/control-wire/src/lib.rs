@@ -1,4 +1,4 @@
-//! What daemons and arugula control say to each other to enrol and to
+//! What daemons and Arugula control say to each other to enrol and to
 //! route: joining, the account's and team's certificates, who gets in, how
 //! the relay is dialled, and what `/control.json` says about control.
 //!

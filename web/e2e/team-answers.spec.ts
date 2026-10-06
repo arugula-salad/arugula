@@ -253,7 +253,7 @@ test("a permission prompt on Jake's machine is allowed by Sam from the phone, an
   await sam.locator(`[data-pane="${pane}"] .followup button`).tap();
   await expect(sam.locator(`[data-pane="${pane}"] .followup-sent`)).toHaveText("Sent.");
   // Claude Code got it from its inbox hook (here, printed to the terminal).
-  await expect.poll(() => flat(jake, pane)).toContain("A follow-up from sam (sent through arugula): then open a PR");
+  await expect.poll(() => flat(jake, pane)).toContain("A follow-up from sam (sent through Arugula): then open a PR");
   await expect.poll(() => text(jake, pane)).toContain("mac-inbox-42");
 
   // `arugula log --who` and history attribute both to Sam.
@@ -302,7 +302,7 @@ test("on the team's box the follow-up goes straight through, and a viewer can't 
   await sam.locator(`[data-pane="${pane}"] .followup input`).fill("now run the tests");
   await sam.locator(`[data-pane="${pane}"] .followup button`).tap();
   await expect(sam.locator(`[data-pane="${pane}"] .followup-sent`)).toHaveText("Sent.");
-  await expect.poll(() => flat(jake, pane)).toContain("A follow-up from sam (sent through arugula): now run the tests");
+  await expect.poll(() => flat(jake, pane)).toContain("A follow-up from sam (sent through Arugula): now run the tests");
 });
 
 test("a notification's Allow answers over the service worker's own channel", async () => {

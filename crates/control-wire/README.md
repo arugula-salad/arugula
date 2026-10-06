@@ -1,6 +1,6 @@
 # arugula-control-wire
 
-The JSON that daemons and arugula control send each other to enrol, to learn
+The JSON that daemons and Arugula control send each other to enrol, to learn
 their account's and team's certificates, to say who gets in, and to dial the
 relay: one type per message, so a renamed field breaks both builds. The routes
 are `pub const`s here too. Push, TURN, sandbox and forge messages aren't here

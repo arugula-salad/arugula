@@ -1,4 +1,4 @@
-// A local arugula control with a fake GitHub sign-in, people signed in on
+// A local Arugula control with a fake GitHub sign-in, people signed in on
 // it, and machines joined to it, as team-swarm.spec.ts sets them up (M30).
 // For the phone specs: a person can be any browser context (a Pixel 7 in
 // Chrome, an iPhone in WebKit).

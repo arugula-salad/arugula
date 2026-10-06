@@ -82,11 +82,11 @@ export function UpdateChip({ client }: { client: Client }) {
   };
   return (
     <div class="update">
-      <button class="update-chip" title={`arugula ${latest} is out (this is ${status.current})`} data-update-chip onClick={() => setOpen(!open)}>
+      <button class="update-chip" title={`Arugula ${latest} is out (this is ${status.current})`} data-update-chip onClick={() => setOpen(!open)}>
         Update {latest}
       </button>
       {open && (
-        <div class="update-pop" role="dialog" aria-label="Update arugula" data-update>
+        <div class="update-pop" role="dialog" aria-label="Update Arugula" data-update>
           <p>
             <b>arugula {latest}</b> is out; this daemon is {status.current}. Panes keep running while it restarts.
           </p>

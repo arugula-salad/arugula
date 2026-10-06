@@ -1,6 +1,6 @@
 // M6a's "done when", on a real VM: in a VM tab, `npm run dev` runs in one
 // block and its app in a browser block beside it; hot reload works on the
-// desktop and a phone; a script in the app can't reach arugula; closing
+// desktop and a phone; a script in the app can't reach Arugula; closing
 // the tab deletes the machine and both blocks. Needs wispd and its token,
 // and the internet in the VM (Node from nodejs.org, Vite from npm);
 // elsewhere these skip.
@@ -113,7 +113,7 @@ let term: PaneId = 0;
 let block: PaneId = 0;
 let tab = 0;
 
-test("npm run dev in a VM tab, its app beside it, hot reload, no way into arugula", async ({ page }) => {
+test("npm run dev in a VM tab, its app beside it, hot reload, no way into Arugula", async ({ page }) => {
   test.skip(!token, "no wisp token on this host");
   test.setTimeout(300_000);
   await open(page);

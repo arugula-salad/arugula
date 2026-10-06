@@ -2,7 +2,7 @@
 // isn't installed or is older than the daemon's pin, so agent panes won't
 // start (or run an old one). Said once, as a line under the top bar, with
 // Set it up…, which opens Getting started's Agents step (its one click,
-// "Use Claude Code with arugula"). Only the owner's own daemon is asked
+// "Use Claude Code with Arugula"). Only the owner's own daemon is asked
 // (`/api/setup?part=agents`), once per page; each adapter's pin is said
 // once per browser, so a release that moves the pin says it again.
 
@@ -43,8 +43,8 @@ export function nudged(s: AgentsSetup | null): Adapter[] {
 }
 
 function line(a: Adapter, tools: boolean): string {
-  const mcp = a.kind === "claude" && !tools ? ", and arugula's MCP server lets it start its helpers as panes" : "";
-  if (a.state === "installed") return `${a.label}'s adapter here is ${a.version}, older than this arugula's (${a.pinned})${mcp}.`;
+  const mcp = a.kind === "claude" && !tools ? ", and Arugula's MCP server lets it start its helpers as panes" : "";
+  if (a.state === "installed") return `${a.label}'s adapter here is ${a.version}, older than this Arugula's (${a.pinned})${mcp}.`;
   if (a.state === "no_node") return `${a.label} is on this machine, but agent panes can't run it: ${a.why ?? `its adapter needs Node ${a.node_major}+`}.`;
   return `${a.label} is on this machine, but agent panes need its adapter${mcp}.`;
 }

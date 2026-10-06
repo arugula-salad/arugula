@@ -100,7 +100,7 @@ async fn run(s: Settings, cached: Option<Checked>) {
                     let _ = crate::store::write_atomic(&s.state_dir.join(CACHE), &json);
                 }
                 if newer(&v, env!("CARGO_PKG_VERSION")) {
-                    info!(latest = %v, "a newer arugula is out");
+                    info!(latest = %v, "a newer Arugula is out");
                 }
                 *LAST.lock().unwrap() = Some(c);
                 wait = Duration::from_millis(EVERY_MS);

@@ -1,5 +1,5 @@
 //! M40: live updates for forge blocks, against fakes served here: a fake
-//! arugula control (its relay socket, where the daemon subscribes and
+//! Arugula control (its relay socket, where the daemon subscribes and
 //! hears pokes and heartbeats, and its GitHub App token endpoint), a fake
 //! GitHub (S23's `cli/cli#13788`) with a stand-in `gh`, and a fake Forgejo
 //! (S23's #84) with a stand-in `tea` that takes webhooks. Nothing here

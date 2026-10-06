@@ -418,7 +418,7 @@ impl Daemon {
         text: Option<String>,
         by: Driver,
     ) -> Result<(), String> {
-        let ide = self.config.ide.clone().ok_or("arugula isn't Claude Code's IDE here")?;
+        let ide = self.config.ide.clone().ok_or("Arugula isn't Claude Code's IDE here")?;
         let at = self
             .diffs
             .iter()

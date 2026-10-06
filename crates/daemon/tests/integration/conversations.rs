@@ -231,7 +231,7 @@ fn a_conversation_opens_stopped_follows_and_continues() {
     assert_eq!(last_reply(&s), "You said kestrel.", "{s}");
     assert_eq!(s["import"]["continued"], true);
     assert_eq!(s["session_id"], ID);
-    assert!(texts(&s).contains(&"Continued in arugula".to_owned()));
+    assert!(texts(&s).contains(&"Continued in Arugula".to_owned()));
     assert!(d.state.join(format!("blocks/{id}/imported.json")).is_file());
     d.call(id, "send", json!({ "text": "meta" }));
     d.wait(id, "idle");

@@ -1,4 +1,4 @@
-//! macOS: Finder's *New arugula Tab Here* (M47).
+//! macOS: Finder's *New Arugula Tab Here* (M47).
 //!
 //! Info.plist declares a service (`NSServices`) for folders, so Finder
 //! lists it when you right-click one (under Quick Actions or Services) and

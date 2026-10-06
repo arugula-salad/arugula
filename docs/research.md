@@ -126,7 +126,7 @@ Links: [ghostty](https://github.com/ghostty-org/ghostty),
 [herdr](https://herdr.dev/) is "the runtime your coding agents live on":
 Apache-2.0 Rust from Herdr, Inc., v0.1.0 in March 2026, about 41.9k stars
 (their own counts). Linux, macOS and Windows. The closest overlap with
-arugula so far, and the same engine bet (a `crates/ghostty-vt` crate).
+Arugula so far, and the same engine bet (a `crates/ghostty-vt` crate).
 
 - **Shape.** A background server owns the PTYs; the client is a TUI inside
   your existing terminal. Keyboard-first (`ctrl+b` prefix) with full mouse:

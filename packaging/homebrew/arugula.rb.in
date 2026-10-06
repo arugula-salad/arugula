@@ -1,4 +1,4 @@
-# The arugula formula, written by scripts/release into the
+# The Arugula formula, written by scripts/release into the
 # arugula-salad/homebrew-tap repo on each release. Don't edit the copy there.
 class Arugula < Formula
   desc "Terminal multiplexer whose sessions outlive the window, the daemon and the reboot"
@@ -46,7 +46,7 @@ class Arugula < Formula
       arugulad's, keeping your panes, state and settings.
       It copies itself to ~/.local/bin, runs from there, and prints the
       next steps: where to open it, its logs, your phone (Tailscale) and
-      arugula control. Then, for Claude Code:
+      Arugula control. Then, for Claude Code:
         claude mcp add arugula -- arugula mcp
       Docs: https://illogical.widgets.wtf/#install
     EOS

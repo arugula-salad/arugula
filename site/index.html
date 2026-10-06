@@ -3,11 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>arugula — Keep track of your agents without checking every session.</title>
+<title>Arugula — Keep track of your agents without checking every session.</title>
 <meta name="description" content="See which agents need input and what your teammates are working on. Leave unfinished work open, come back later, or join a teammate’s session to help.">
 <meta property="og:type" content="website">
-<meta property="og:site_name" content="arugula">
-<meta property="og:title" content="arugula — Keep track of your agents without checking every session.">
+<meta property="og:site_name" content="Arugula">
+<meta property="og:title" content="Arugula — Keep track of your agents without checking every session.">
 <meta property="og:description" content="See which agents need input and what your teammates are working on. Leave unfinished work open, come back later, or join a teammate’s session to help.">
 <meta property="og:image" content="https://illogical.widgets.wtf/img/og.jpg">
 <meta property="og:image:width" content="1200">
@@ -243,7 +243,7 @@
 <body>
 <div class="wrap">
   <header class="top">
-    <a class="brand" href="/"><img src="icon.svg" alt="">arugula</a>
+    <a class="brand" href="/"><img src="icon.svg" alt="">Arugula</a>
     <nav class="seg" aria-label="Site">
       <a class="on" href="#install">install</a>
       <a href="https://github.com/arugula-salad/illogical#quickstart">docs</a>
@@ -415,7 +415,7 @@
             </picture>
           </figure>
           <h3>Your dev server, beside it <span class="optin">opt-in</span></h3>
-          <p><code>npm run dev</code> in a pane, then open its port: the app sits next to the terminal, hot reload and all. Each block is its own origin, so the page can't reach arugula. When the server dies the block says so, and the page comes back with it. One daemon flag turns it on for the browser on that machine; <a href="https://github.com/arugula-salad/illogical/blob/main/docs/advanced.md#browser-blocks-on-ports">from your phone</a>, it also needs a domain of yours.</p>
+          <p><code>npm run dev</code> in a pane, then open its port: the app sits next to the terminal, hot reload and all. Each block is its own origin, so the page can't reach Arugula. When the server dies the block says so, and the page comes back with it. One daemon flag turns it on for the browser on that machine; <a href="https://github.com/arugula-salad/illogical/blob/main/docs/advanced.md#browser-blocks-on-ports">from your phone</a>, it also needs a domain of yours.</p>
         </div>
         <div class="kind">
           <figure class="pane opens" style="--c: var(--k-editor)">
@@ -445,12 +445,12 @@
 
     <section class="get" id="install">
       <p class="meta"><i style="background:var(--k-shell)"></i>your machine · the desktop app</p>
-      <h2 class="cl">Get arugula.</h2>
+      <h2 class="cl">Get Arugula.</h2>
       <div class="ways four">
         <div class="card" style="--c: var(--k-agent)">
           <div class="ch"><b>macOS</b></div>
           <div class="cm">apple silicon or intel · .zip</div>
-          <p>Unzip it and drag <em>arugula</em> to Applications. It isn't notarized yet: the first time, open it, then choose <em>Open Anyway</em> in System Settings › Privacy &amp; Security.</p>
+          <p>Unzip it and drag <em>Arugula</em> to Applications. It isn't notarized yet: the first time, open it, then choose <em>Open Anyway</em> in System Settings › Privacy &amp; Security.</p>
           <p>Or, in Terminal, <code>curl -fsSL https://illogical.widgets.wtf/install.sh | sh</code> installs the app with no <em>Open Anyway</em> step, along with its service and the CLI, and opens it.</p>
           <div class="ca"><a class="pri" href="https://github.com/arugula-salad/illogical/releases/download/app-latest/arugula-desktop-macos-arm64.zip" data-dl="mac">Apple silicon</a><a href="https://github.com/arugula-salad/illogical/releases/download/app-latest/arugula-desktop-macos-x86_64.zip">Intel</a></div>
         </div>
@@ -480,7 +480,7 @@
           <div class="ch"><b>One command</b></div>
           <div class="cm">shell · linux · macos</div>
           <pre id="way1">curl -fsSL https://illogical.widgets.wtf/install.sh | sh</pre>
-          <p>Installs arugula and starts its background service (on a Mac at its screen, the app too; <code>sh -s -- --no-app</code> leaves it out). Run again to upgrade.</p>
+          <p>Installs Arugula and starts its background service (on a Mac at its screen, the app too; <code>sh -s -- --no-app</code> leaves it out). Run again to upgrade.</p>
           <div class="ca"><button type="button" class="pri copy" data-copy="way1">Copy</button></div>
         </div>
         <div class="card" style="--c: var(--k-server)">
@@ -502,7 +502,7 @@ arugulad install</pre>
           <div class="ch"><b>From source</b></div>
           <div class="cm">rustup · mise · just · node · pnpm</div>
           <pre id="way3">git clone https://github.com/arugula-salad/illogical
-cd arugula
+cd illogical
 just bootstrap && just install</pre>
           <p>On macOS, the Xcode command line tools too.</p>
           <div class="ca"><button type="button" class="pri copy" data-copy="way3">Copy</button><a class="ghost" href="https://github.com/arugula-salad/illogical/blob/main/docs/development.md#build-from-source">Details</a></div>
@@ -520,9 +520,9 @@ just bootstrap && just install</pre>
     </section>
 
     <section class="hosted" id="cloud">
-      <p class="meta"><i style="background:var(--k-server)"></i>arugula control · hosted · free beta</p>
+      <p class="meta"><i style="background:var(--k-server)"></i>Arugula control · hosted · free beta</p>
       <h2 class="cl">Every machine, from any device.</h2>
-      <p class="lead">arugula control is the hosted service behind <em>Getting started</em>'s cloud step. Sign in with GitHub or a passkey, add each machine with <code>arugulad join</code>, and open any of them from your phone, another browser or the desktop app, with or without a tailnet.</p>
+      <p class="lead">Arugula control is the hosted service behind <em>Getting started</em>'s cloud step. Sign in with GitHub or a passkey, add each machine with <code>arugulad join</code>, and open any of them from your phone, another browser or the desktop app, with or without a tailnet.</p>
       <div class="ways">
         <div class="card" style="--c: var(--k-server)">
           <div class="ch"><b>What it does</b></div>
@@ -537,7 +537,7 @@ just bootstrap && just install</pre>
         <div class="card done" style="--c: var(--s-done)">
           <div class="ch"><b>What it costs</b></div>
           <div class="cm">free during the beta</div>
-          <p>Nothing while arugula is in beta. It's provided as is, without an uptime promise; if pricing comes, it's announced before it applies. Or run your own: it's one binary in the repository.</p>
+          <p>Nothing while Arugula is in beta. It's provided as is, without an uptime promise; if pricing comes, it's announced before it applies. Or run your own: it's one binary in the repository.</p>
         </div>
       </div>
       <p class="after"><a href="https://github.com/arugula-salad/illogical/blob/main/docs/control.md">How control works, and running your own</a> · <a href="https://control.illogical.widgets.wtf">Open control</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></p>

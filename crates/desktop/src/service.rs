@@ -70,7 +70,7 @@ pub fn register() -> Result<(), String> {
     match unsafe { a.status() } {
         SMAppServiceStatus::Enabled => Ok(()),
         SMAppServiceStatus::RequiresApproval => {
-            Err("macOS wants you to allow arugula in System Settings > General > Login Items before its daemon runs."
+            Err("macOS wants you to allow Arugula in System Settings > General > Login Items before its daemon runs."
                 .into())
         }
         _ => Err(format!("SMAppService says the daemon's agent is {}", status())),

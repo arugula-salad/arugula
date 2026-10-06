@@ -1606,7 +1606,7 @@ impl<'a> Call<'a> {
     fn split_pane(&self, split: Option<&PaneArg>) -> Result<Option<PaneId>, String> {
         match split {
             Some(PaneArg::Name(s)) if s.trim().eq_ignore_ascii_case("self") => self.own_pane().map(Some).ok_or_else(|| {
-                "split \"self\": this caller has no pane of its own (run arugula mcp inside an arugula pane, or give a pane number)".into()
+                "split \"self\": this caller has no pane of its own (run arugula mcp inside an Arugula pane, or give a pane number)".into()
             }),
             other => other.map(PaneArg::id).transpose(),
         }
@@ -3268,7 +3268,7 @@ impl<'a> Call<'a> {
     /// A resource's text: `arugula://history`, `arugula://pane/N/output`,
     /// `arugula://pane/N/screen` or `arugula://block/N`.
     pub async fn resource(&self, uri: &str) -> Result<String, String> {
-        let rest = uri.strip_prefix("arugula://").ok_or_else(|| format!("not an arugula resource: {uri}"))?;
+        let rest = uri.strip_prefix("arugula://").ok_or_else(|| format!("not an Arugula resource: {uri}"))?;
         let parts: Vec<&str> = rest.trim_end_matches('/').split('/').collect();
         let pane_of = |s: &str| PaneArg::Name(s.to_owned()).id();
         let out = match parts.as_slice() {

@@ -138,7 +138,7 @@ test("the owner approves; the next run walks through", async ({ page }) => {
   await expect(shown.locator("[data-ws-said]")).toContainText("Approved approve-ship", { timeout: 15_000 });
   await expect(shown.locator("[data-gate]")).toHaveCount(0);
   await expect.poll(async () => (await panesOf(page)).find((p) => p.id === block)?.attention).toBe("idle");
-  // chant's ledger names the owner by their arugula name.
+  // chant's ledger names the owner by their Arugula name.
   expect(approvers()).toEqual([OWNER]);
   expect(run()).toBe(0);
 });

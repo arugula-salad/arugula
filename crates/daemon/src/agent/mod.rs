@@ -342,7 +342,7 @@ struct Inner {
     wearing: bool,
     /// #161: waiting for this host's shell environment before spawning.
     awaiting_shell: bool,
-    /// #128: arugula's own MCP token, when it goes by reference (a local
+    /// #128: Arugula's own MCP token, when it goes by reference (a local
     /// Claude Code), to keep out of logs too.
     token: Option<String>,
     /// #379: which login its Claude Code uses and how to log in to it,
@@ -440,7 +440,7 @@ impl Inner {
         self.note(json!({ "e": "queue", "text": q.text, "images": q.images, "front": front }));
     }
 
-    /// The MCP servers a session gets: the block's own, and arugula's
+    /// The MCP servers a session gets: the block's own, and Arugula's
     /// (M16), scoped to the block's tab. Over HTTP on loopback when the
     /// agent takes it, else `arugula mcp` on stdio with the token in its
     /// environment. A VM's agent can't reach the host, so it gets a client
@@ -495,7 +495,7 @@ impl Inner {
     }
 
     /// What never goes into the log or the transcript: a worn agent's
-    /// secrets, and arugula's own token where it went by reference.
+    /// secrets, and Arugula's own token where it went by reference.
     fn secrets(&self) -> Vec<String> {
         let mut out: Vec<String> = self.worn.as_ref().map(|w| w.secrets.clone()).unwrap_or_default();
         out.extend(self.token.clone());
@@ -554,7 +554,7 @@ impl Inner {
                 self.error = None;
                 self.adapter = None;
                 let just_continued =
-                    matches!(self.t.entries.last(), Some(Entry::Note { text, .. }) if text == "Continued in arugula");
+                    matches!(self.t.entries.last(), Some(Entry::Note { text, .. }) if text == "Continued in Arugula");
                 // A block opened on a session it has no transcript of (M45b's
                 // *Follow*: a Fountain conversation) didn't start before: it
                 // loads the session, which replays it.
@@ -647,7 +647,7 @@ impl Inner {
                 self.held = None;
                 self.follow = Default::default();
                 self.status = Status::Stopped;
-                self.t.note("Continued in arugula", at);
+                self.t.note("Continued in Arugula", at);
             }
             "error" => {
                 let msg = e["message"].as_str().unwrap_or("error").to_owned();
@@ -1193,7 +1193,7 @@ impl Agent {
     fn take_over(&self, inner: &mut Inner) {
         {
             // Still running from before the restart: carry on with it. One
-            // an older daemon started without arugula's token in its
+            // an older daemon started without Arugula's token in its
             // environment can't use the references it'd get now (#128):
             // it starts again (its session is reopened).
             let stale = by_reference(&inner.cfg.def, &self.ctx)
@@ -1304,7 +1304,7 @@ impl Agent {
         }
     }
 
-    /// A VM agent's way to arugula's MCP server (#59): a relay into its
+    /// A VM agent's way to Arugula's MCP server (#59): a relay into its
     /// VM, opened once and kept for the block's life (an agent that
     /// restarts connects again).
     fn relay(&self, inner: &mut Inner, provider: Arc<dyn crate::provider::Provider>, sprite: &str) {
@@ -1995,7 +1995,7 @@ fn act(ctx: &BlockCtx, g: &mut Inner, f: Effect) {
     }
 }
 
-/// A frame as the log keeps it: without arugula's MCP token (M16), and
+/// A frame as the log keeps it: without Arugula's MCP token (M16), and
 /// (M44) without a worn Fountain agent's secrets: its servers' headers and
 /// env, and any of `secrets` anywhere else.
 /// A prompt as the log keeps it: an image we kept (M71) by its name in the
@@ -2070,7 +2070,7 @@ fn launch_meta(ctx: &BlockCtx, g: &Inner) -> Option<Value> {
     m.as_object().is_some_and(|o| !o.is_empty()).then_some(m)
 }
 
-/// The adapter's environment variable that holds arugula's MCP token
+/// The adapter's environment variable that holds Arugula's MCP token
 /// (#128).
 pub const MCP_TOKEN_ENV: &str = "ARUGULA_MCP_BLOCK_TOKEN";
 
@@ -2088,7 +2088,7 @@ fn by_reference(def: &Def, ctx: &BlockCtx) -> bool {
 /// illogical daemon left it empty, for `ILLOGICAL_MCP_BLOCK_TOKEN` (#505).
 const TOKEN_IN_ENV: &str = "mcp-token-env";
 
-/// The variable a block's running agent server has arugula's token in
+/// The variable a block's running agent server has Arugula's token in
 /// ([`TOKEN_IN_ENV`]): one an illogical daemon started has only the old
 /// name (#505).
 fn token_env(dir: &Path) -> String {

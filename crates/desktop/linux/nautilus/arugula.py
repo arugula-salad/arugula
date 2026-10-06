@@ -1,4 +1,4 @@
-# "Open in arugula" in Nautilus's right-click menu (M47): on a folder, or
+# "Open in Arugula" in Nautilus's right-click menu (M47): on a folder, or
 # on a folder's background, it opens a new tab there in the running app
 # (arugula://open?cwd=DIR, which the app's .desktop file or the AppImage
 # claims; a first launch starts the app). The .deb and .rpm put this in
@@ -38,8 +38,8 @@ class ArugulaMenu(GObject.GObject, Nautilus.MenuProvider):
     def _item(self, name, paths):
         item = Nautilus.MenuItem(
             name="Arugula::" + name,
-            label="Open in arugula",
-            tip="Open a new arugula tab in this folder",
+            label="Open in Arugula",
+            tip="Open a new Arugula tab in this folder",
         )
         item.connect("activate", lambda _item: [_open(p) for p in paths])
         return item

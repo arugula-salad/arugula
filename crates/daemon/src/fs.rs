@@ -159,7 +159,7 @@ impl Scope {
         self.private
             .iter()
             .any(|x| p.starts_with(x))
-            .then(|| FsError::Denied(format!("{}: arugula's own state and secrets aren't served", p.display())))
+            .then(|| FsError::Denied(format!("{}: Arugula's own state and secrets aren't served", p.display())))
     }
 
     /// `~`, `~/x` and relative paths are the home directory's.

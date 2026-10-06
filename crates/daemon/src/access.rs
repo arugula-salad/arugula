@@ -235,9 +235,9 @@ impl Access {
         }
         Err((
             StatusCode::UNAUTHORIZED,
-            "This machine's arugula needs you to sign in from it.\n\n\
+            "This machine's Arugula needs you to sign in from it.\n\n\
              Run this in a terminal here, which opens the page signed in:\n\narugula web\n\n\
-             (Or open the desktop app. Programs send the token in local-token, in arugula's state \
+             (Or open the desktop app. Programs send the token in local-token, in Arugula's state \
              directory, as Authorization: Bearer.)"
                 .into(),
         ))

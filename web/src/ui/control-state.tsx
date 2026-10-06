@@ -1,4 +1,4 @@
-// #325: this machine's standing with arugula control, from `/api/host`'s
+// #325: this machine's standing with Arugula control, from `/api/host`'s
 // `control_state` (crates/daemon/src/control.rs): joined (where, connected
 // or not), not joined, or dropped by control. Dropped is a banner under the
 // top bar with Join again (Getting started's join); the host menu has a
@@ -101,7 +101,7 @@ export function controlLine(s: ControlState): string {
     case "dropped":
       return `Dropped by control: no longer in ${placeOf(s)}`;
     default:
-      return "Not joined to arugula control";
+      return "Not joined to Arugula control";
   }
 }
 

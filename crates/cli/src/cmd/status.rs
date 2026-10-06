@@ -1,10 +1,10 @@
-//! `arugula status`: how arugula is doing on this machine, one line
+//! `arugula status`: how Arugula is doing on this machine, one line
 //! per part: the daemon (answering, its version), the service that runs it,
 //! the binary that service runs and where its log is (#322), as the desktop
-//! app's *Daemon* menu says them; its standing with arugula control
+//! app's *Daemon* menu says them; its standing with Arugula control
 //! (#325): joined where and whether connected, not joined, or dropped by
 //! control and what it said; and the agents (#335): each ACP adapter's
-//! state and whether Claude Code has arugula's MCP server. Each part is
+//! state and whether Claude Code has Arugula's MCP server. Each part is
 //! a [`Line`].
 //!
 //! The service, binary and log are this machine's: with `--host` or
@@ -137,7 +137,7 @@ pub fn agent_lines(v: &Value) -> Vec<Line> {
         let setup = if kind == "claude" { SETUP.to_owned() } else { format!("`arugula setup {kind}`") };
         let (says, fix) = match s("state") {
             "installed" if a["outdated"] == true => (
-                format!("{label}'s adapter {}, out of date (arugula uses {})", s("version"), s("pinned")),
+                format!("{label}'s adapter {}, out of date (Arugula uses {})", s("version"), s("pinned")),
                 Some(format!("{setup} updates it")),
             ),
             "installed" if a["on_path"] == true => (format!("{label}'s adapter, on PATH"), None),
@@ -157,16 +157,16 @@ pub fn agent_lines(v: &Value) -> Vec<Line> {
         let (says, fix) = match (c["installed"].as_bool(), c["tools"].as_bool()) {
             // Under the old name too (#505): setup takes that one out.
             (_, Some(true)) if c["old"] == true => (
-                "Claude Code has arugula's MCP server, and also one under the old name (illogical)".to_owned(),
+                "Claude Code has Arugula's MCP server, and also one under the old name (illogical)".to_owned(),
                 Some(SETUP.to_owned()),
             ),
-            (_, Some(true)) => ("Claude Code has arugula's MCP server".to_owned(), None),
+            (_, Some(true)) => ("Claude Code has Arugula's MCP server".to_owned(), None),
             (_, _) if c["old"] == true => (
-                "Claude Code has arugula's MCP server under the old name (illogical); it works until renamed"
+                "Claude Code has Arugula's MCP server under the old name (illogical); it works until renamed"
                     .to_owned(),
                 Some(SETUP.to_owned()),
             ),
-            (Some(true), _) => ("Claude Code doesn't have arugula's MCP server".to_owned(), Some(SETUP.to_owned())),
+            (Some(true), _) => ("Claude Code doesn't have Arugula's MCP server".to_owned(), Some(SETUP.to_owned())),
             _ => ("Claude Code isn't on this machine".to_owned(), None),
         };
         out.push(Line { part: "mcp", says, fix });
@@ -265,7 +265,7 @@ mod tests {
         );
 
         let none = ControlState { state: "not_joined".into(), ..Default::default() };
-        assert_eq!(control_line(&none).says, "Not joined to arugula control");
+        assert_eq!(control_line(&none).says, "Not joined to Arugula control");
     }
 
     #[test]
@@ -283,7 +283,7 @@ mod tests {
         assert_eq!(ls[0].says, "Claude Code's adapter isn't installed, and Claude Code is on this machine");
         assert!(ls[0].fix.as_deref().unwrap().contains("arugula setup claude"));
         assert!(ls[1].fix.is_none(), "no Codex here: nothing to do");
-        assert_eq!(ls[2].says, "Claude Code doesn't have arugula's MCP server");
+        assert_eq!(ls[2].says, "Claude Code doesn't have Arugula's MCP server");
         assert!(ls[2].fix.is_some());
 
         let v = json!({
@@ -296,11 +296,11 @@ mod tests {
             ],
         });
         let ls = agent_lines(&v);
-        assert_eq!(ls[0].says, "Claude Code's adapter 0.81.2, out of date (arugula uses 0.85.0)");
+        assert_eq!(ls[0].says, "Claude Code's adapter 0.81.2, out of date (Arugula uses 0.85.0)");
         assert!(ls[0].fix.as_deref().unwrap().ends_with("updates it"));
         assert_eq!(ls[1].says, "Codex's adapter 2.1.0");
         assert!(ls[1].fix.is_none());
-        assert_eq!(ls[2].says, "Claude Code has arugula's MCP server");
+        assert_eq!(ls[2].says, "Claude Code has Arugula's MCP server");
 
         // Registered under the old name (#505): there, with a fix.
         let old = agent_lines(&json!({ "claude": { "installed": true, "tools": false, "old": true } }));
