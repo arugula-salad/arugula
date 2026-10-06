@@ -14,7 +14,7 @@
 
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
-use illogical_proto::PaneId;
+use arugula_proto::PaneId;
 use serde_json::{Value, json};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader, DuplexStream},
@@ -32,7 +32,7 @@ pub type Serve = Arc<dyn Fn(PaneId, DuplexStream) + Send + Sync>;
 
 /// The relay's socket in the guest, per block (a VM tab can hold several).
 pub fn socket(id: PaneId) -> String {
-    format!("/tmp/illogical-mcp-{id}.sock")
+    format!("/tmp/arugula-mcp-{id}.sock")
 }
 
 /// The `mcpServers` entry a VM agent gets: the client, on stdio.
@@ -40,7 +40,7 @@ pub fn server_entry(id: PaneId) -> Value {
     json!({
         "name": super::SERVER_NAME,
         "command": "python3",
-        "args": ["-c", CLIENT, "illogical-mcp", socket(id)],
+        "args": ["-c", CLIENT, "arugula-mcp", socket(id)],
         "env": [],
     })
 }
@@ -88,7 +88,7 @@ async fn drive(
     mut stop: mpsc::UnboundedReceiver<()>,
 ) {
     let argv: Vec<String> =
-        ["python3", "-c", RELAY, "illogical-mcp-relay", &socket(id)].iter().map(|s| s.to_string()).collect();
+        ["python3", "-c", RELAY, "arugula-mcp-relay", &socket(id)].iter().map(|s| s.to_string()).collect();
     // The agent's own start creates its machine; the relay starts beside
     // it, so wait for the machine rather than taking "no such machine" as
     // its end.
@@ -288,7 +288,7 @@ mod tests {
     /// The relay, run on this host as the exec would run it in a guest.
     fn local_relay(sock: &str) -> (Child, Pipe) {
         let mut child = Command::new("python3")
-            .args(["-c", RELAY, "illogical-mcp-relay", sock])
+            .args(["-c", RELAY, "arugula-mcp-relay", sock])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -353,7 +353,7 @@ mod tests {
             eprintln!("no python3; skipping");
             return;
         }
-        let dir = std::env::temp_dir().join(format!("illogical-relay-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("arugula-relay-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let sock = dir.join("mcp.sock").display().to_string();
         let count = Arc::new(std::sync::atomic::AtomicU64::new(0));
@@ -364,7 +364,7 @@ mod tests {
 
         let client = |sock: &str| {
             let mut child = Command::new("python3")
-                .args(["-c", CLIENT, "illogical-mcp", sock])
+                .args(["-c", CLIENT, "arugula-mcp", sock])
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
                 .spawn()

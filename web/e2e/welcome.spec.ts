@@ -29,7 +29,7 @@ test("opens once on first run, a step at a time, then from the session menu", as
   await expect(panel.locator("[data-start-serve]")).toBeVisible();
   await panel.locator("[data-start-next]").click();
   await expect(progress).toHaveText("Step 3 / 5 · Cloud");
-  await expect(panel.locator("[data-start-connect]")).toHaveText("Connect to illogical cloud");
+  await expect(panel.locator("[data-start-connect]")).toHaveText("Connect to arugula cloud");
   await panel.locator("[data-start-next]").click();
   await expect(progress).toHaveText("Step 4 / 5 · Agents");
   await expect(panel.locator("[data-start-agent]")).toBeVisible();
@@ -44,7 +44,7 @@ test("opens once on first run, a step at a time, then from the session menu", as
 
   // Remembered: not again on reload.
   await page.reload();
-  await expect.poll(() => page.evaluate(() => window.__illogical?.client.state !== null)).toBe(true);
+  await expect.poll(() => page.evaluate(() => window.__arugula?.client.state !== null)).toBe(true);
   await expect(page.locator(".session-button")).toBeVisible();
   await expect(panel).toBeHidden();
 

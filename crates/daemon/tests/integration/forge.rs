@@ -45,7 +45,7 @@ const TOKEN: &str = "fake-forgejo-token-123";
 const REPO: &str = "jhgaylor/illogical";
 
 fn fixture(f: &str) -> Value {
-    let p = format!("{}/tests/fixtures/forgejo/forgejo-illogical-84/{f}", env!("CARGO_MANIFEST_DIR"));
+    let p = format!("{}/tests/fixtures/forgejo/forgejo-arugula-84/{f}", env!("CARGO_MANIFEST_DIR"));
     serde_json::from_str(&std::fs::read_to_string(p).unwrap()).unwrap()
 }
 
@@ -294,7 +294,7 @@ esac
         let path = format!("{}:{}", self.bin.display(), std::env::var("PATH").unwrap_or_default());
         Daemon::child_env(
             &["--wisp-token-file", "/nonexistent", "--owner", OWNER, "--tailscale-socket", "/nonexistent/sock"],
-            &[("PATH", &path), ("ILLOGICAL_FORGE_POLL_MS", "250,250")],
+            &[("PATH", &path), ("ARUGULA_FORGE_POLL_MS", "250,250")],
         )
     }
 }
@@ -671,7 +671,7 @@ fn no_tea_says_so() {
     let forge = Forge::start(&dir, "someone", None);
     let d = Daemon::child_env(
         &["--wisp-token-file", "/nonexistent"],
-        &[("PATH", "/usr/bin:/bin"), ("ILLOGICAL_FORGE_POLL_MS", "250,250")],
+        &[("PATH", "/usr/bin:/bin"), ("ARUGULA_FORGE_POLL_MS", "250,250")],
     );
     let block = open_pr(&d, &forge);
     let st = read(&d, block);
@@ -727,11 +727,11 @@ fn the_prs_code_as_a_worktree_a_diff_and_a_terminal() {
     read(&d, block);
     let out = d.call(block, "diff", json!({ "dir": clone }));
     // git reports the clone by its real path (/private/var on macOS).
-    let wt = clone.canonicalize().unwrap().join(".illogical/worktrees/pr-84");
+    let wt = clone.canonicalize().unwrap().join(".arugula/worktrees/pr-84");
     assert_eq!(out["worktree"], wt.display().to_string(), "{out}");
     assert_eq!(out["rev_a"], base);
     assert_eq!(git(&wt, &["rev-parse", "HEAD"]), head);
-    assert_eq!(git(&clone, &["rev-parse", "refs/illogical/pr/84"]), head);
+    assert_eq!(git(&clone, &["rev-parse", "refs/arugula/pr/84"]), head);
     // The main checkout doesn't see it as untracked.
     assert_eq!(git(&clone, &["status", "--porcelain"]), "");
     let diff = out["block"].as_u64().unwrap();

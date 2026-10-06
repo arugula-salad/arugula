@@ -719,7 +719,7 @@ mod tests {
 
     #[test]
     fn this_repos_merged_pr() {
-        let p = pr("forgejo-illogical-84");
+        let p = pr("forgejo-arugula-84");
         let it = &p.item;
         assert_eq!((it.number, it.state, it.draft), (84, ItemState::Merged, false));
         assert_eq!(it.author, "jhgaylor");
@@ -919,7 +919,7 @@ mod tests {
     fn this_repos_closed_milestone_issue() {
         use crate::forge::model::issue_attention;
         // #73 here: a label, refs from other issues (not PRs), comments, closed.
-        let i = issue("forgejo-illogical-issue-73");
+        let i = issue("forgejo-arugula-issue-73");
         assert_eq!((i.item.number, i.item.state), (73, ItemState::Closed));
         assert_eq!(i.item.labels, ["milestone"]);
         assert!(i.item.assignees.is_empty());
@@ -927,7 +927,7 @@ mod tests {
         assert_eq!(i.events.first().map(|e| e.kind), Some(EventKind::Labeled));
         assert!(i.events.iter().any(|e| e.what.as_deref() == Some("#85")), "the ref to #85");
         assert!(issue_attention(&i, &me("jhgaylor", &[]), 0).is_empty(), "closed, and nobody's");
-        let raw = fixture("forgejo-illogical-issue-73", "item.json");
+        let raw = fixture("forgejo-arugula-issue-73", "item.json");
         let mut moved = raw.clone();
         moved["comments"] = json!(99);
         assert_ne!(issue_fingerprint(&raw), issue_fingerprint(&moved));
@@ -935,11 +935,11 @@ mod tests {
 
     #[test]
     fn a_pr_by_its_head_branch() {
-        let mut a = fixture("forgejo-illogical-84", "item.json");
+        let mut a = fixture("forgejo-arugula-84", "item.json");
         a["head"]["ref"] = json!("i89-issue-blocks");
         let mut fork = a.clone();
         fork["number"] = json!(90);
-        fork["head"]["repo"]["full_name"] = json!("someone/illogical");
+        fork["head"]["repo"]["full_name"] = json!("someone/arugula");
         let list = json!([fork, a]);
         let l = pr_with_head(&list, "jhgaylor/illogical", "i89-issue-blocks").unwrap();
         assert_eq!((l.number, l.head.as_deref()), (84, Some("i89-issue-blocks")), "not the fork's");
@@ -952,7 +952,7 @@ mod tests {
 
     #[test]
     fn fingerprints_move_with_the_item() {
-        let raw = fixture("forgejo-illogical-84", "item.json");
+        let raw = fixture("forgejo-arugula-84", "item.json");
         let a = fingerprint(&raw);
         let mut b = raw.clone();
         b["updated_at"] = json!("2026-10-04T00:00:00Z");

@@ -1,4 +1,4 @@
-// illogical web client: tabs and splits of terminals owned by the daemon.
+// arugula web client: tabs and splits of terminals owned by the daemon.
 
 import { setLending } from "./hand";
 import type { TeamPins, TeamPinsRequest } from "./proto";
@@ -26,7 +26,7 @@ import { setupDesktop } from "./desktop";
 import { openThread } from "./ui/threads";
 import { openGettingStarted, type Section } from "./ui/welcome";
 
-// Served by illogical control (M17), not a daemon: sign in, enroll this
+// Served by arugula control (M17), not a daemon: sign in, enroll this
 // browser, and reach daemons through end-to-end channels. A read-only link
 // (M19, `#link=…`) needs no account: its key is in the fragment.
 const info = await detectControl();
@@ -53,7 +53,7 @@ setLending(session);
 if (session) {
   setHostMenuExtras(() => controlMenuItems(session));
   // A tapped notice from control (#104): what waits shows now.
-  addEventListener("illogical:control-refresh", () => void session.refresh());
+  addEventListener("arugula:control-refresh", () => void session.refresh());
   setPushBackend({
     enable: () => enableControlPush(session.info.vapid, (sub) => session.subscribePush(sub)),
     disable: async () => {
@@ -285,7 +285,7 @@ const openPane = (pane: number, daemon?: string, thread?: string) => {
   }
 };
 // A pane opened on the home daemon from elsewhere (a sandbox shell).
-window.addEventListener("illogical:open-pane", (e) => openPane((e as CustomEvent<number>).detail));
+window.addEventListener("arugula:open-pane", (e) => openPane((e as CustomEvent<number>).detail));
 const fromHash = /^#pane=(?:([0-9a-f]+)\.)?(\d+)(?:&thread=((?:pane|session)-\d+))?$/.exec(location.hash);
 if (fromHash) {
   const [, daemon, pane, thread] = fromHash;
@@ -308,7 +308,7 @@ if (!linkTarget) void registerWorker(openPane);
 // Daemon menu (#325): Join… and Join again… open Getting started at the
 // cloud step, on an open page (the event) or a new one
 // (`#getting-started=cloud`).
-window.addEventListener("illogical:getting-started", (e) => openGettingStarted((e as CustomEvent<Section>).detail, client));
+window.addEventListener("arugula:getting-started", (e) => openGettingStarted((e as CustomEvent<Section>).detail, client));
 const startAt = /^#getting-started=(\w+)$/.exec(location.hash);
 if (startAt) {
   openGettingStarted(startAt[1] as Section, client);
@@ -317,7 +317,7 @@ if (startAt) {
 
 // For end-to-end tests.
 Object.assign(window, {
-  __illogical: {
+  __arugula: {
     get client() {
       return client;
     },

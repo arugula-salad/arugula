@@ -1,9 +1,9 @@
 //! The daemon updates itself, when asked (#391).
 //!
 //! `POST /api/update/apply` (the web notice's Update now, for owners) and
-//! `illogicald update` do what install.sh does: download this platform's
+//! `arugulad update` do what install.sh does: download this platform's
 //! archive from the release, check it against the release's `SHA256SUMS`,
-//! unpack it, and run the new `illogicald install`. That copies the
+//! unpack it, and run the new `arugulad install`. That copies the
 //! binaries into place, keeps the flags the last install wrote, and
 //! restarts the service with the panes kept (the systemd FD store, pane
 //! shims on macOS, pane hosts on Windows). Anything that fails before the
@@ -15,7 +15,7 @@
 //! the task's job on Windows.
 //!
 //! The button is only for a service this can update without asking anyone
-//! else: the one `illogicald install` set up (install.sh, the desktop
+//! else: the one `arugulad install` set up (install.sh, the desktop
 //! app), run as the user. Homebrew updates with brew; a `--system` service
 //! needs sudo or an administrator; a daemon run by hand or from a build
 //! isn't a service. Those keep the notice with their command.
@@ -62,22 +62,22 @@ fn target() -> Option<&'static str> {
     }
 }
 
-/// `illogical-0.24.0-x86_64-unknown-linux-musl`, the archive's name
+/// `arugula-0.24.0-x86_64-unknown-linux-musl`, the archive's name
 /// without its extension (and the folder in it).
 fn stem(version: &str) -> Option<String> {
-    Some(format!("illogical-{version}-{}", target()?))
+    Some(format!("arugula-{version}-{}", target()?))
 }
 
 const EXT: &str = if cfg!(windows) { "zip" } else { "tar.gz" };
-const EXE: &str = if cfg!(windows) { "illogicald.exe" } else { "illogicald" };
+const EXE: &str = if cfg!(windows) { "arugulad.exe" } else { "arugulad" };
 
-/// The daemon in an unpacked release: `illogical-…/illogicald`, or the
+/// The daemon in an unpacked release: `arugula-…/arugulad`, or the
 /// renamed release's `arugula-…/arugulad` (#504), which this version's
 /// updater installs too.
 fn daemon_in(dir: &Path, version: &str) -> Option<PathBuf> {
     let target = target()?;
     let exe = |n: &str| if cfg!(windows) { format!("{n}.exe") } else { n.to_owned() };
-    [("illogical", "illogicald"), ("arugula", "arugulad"), ("illogical", "arugulad"), ("arugula", "illogicald")]
+    [("arugula", "arugulad"), ("arugula", "arugulad"), ("arugula", "arugulad"), ("arugula", "arugulad")]
         .into_iter()
         .map(|(folder, bin)| dir.join(format!("{folder}-{version}-{target}")).join(exe(bin)))
         .find(|p| p.is_file())
@@ -103,11 +103,11 @@ async fn get(client: &reqwest::Client, url: &str) -> anyhow::Result<Vec<u8>> {
 }
 
 fn client() -> anyhow::Result<reqwest::Client> {
-    Ok(crate::roots::http().timeout(DOWNLOAD).user_agent("illogical").build()?)
+    Ok(crate::roots::http().timeout(DOWNLOAD).user_agent("arugula").build()?)
 }
 
 /// Download release `version` into `into`, check it against the release's
-/// `SHA256SUMS` and unpack it: the new `illogicald`. Nothing is unpacked
+/// `SHA256SUMS` and unpack it: the new `arugulad`. Nothing is unpacked
 /// from an archive whose sum doesn't match.
 pub async fn fetch(releases: &str, version: &str, into: &Path) -> anyhow::Result<PathBuf> {
     let stem = stem(version).context("there's no release build for this platform")?;
@@ -152,11 +152,11 @@ fn unpack(archive: &Path, into: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// `illogicald --version` says `illogicald 0.24.0`.
+/// `arugulad --version` says `arugulad 0.24.0`.
 pub fn version_of(bin: &Path) -> Option<String> {
-    // Not into a log file: the app's agent sets ILLOGICAL_LOG_FILE, and
+    // Not into a log file: the app's agent sets ARUGULA_LOG_FILE, and
     // `hand_on` asks before main takes it out of the environment.
-    let out = Command::new(bin).arg("--version").env_remove("ILLOGICAL_LOG_FILE").output().ok()?;
+    let out = Command::new(bin).arg("--version").env_remove("ARUGULA_LOG_FILE").output().ok()?;
     out.status.success().then_some(())?;
     String::from_utf8_lossy(&out.stdout).split_whitespace().nth(1).map(str::to_owned)
 }
@@ -165,13 +165,13 @@ pub fn version_of(bin: &Path) -> Option<String> {
 /// the user.
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Service {
-    /// `illogicald install`'s systemd user unit.
+    /// `arugulad install`'s systemd user unit.
     Systemd,
-    /// `illogicald install`'s launch agent (macOS).
+    /// `arugulad install`'s launch agent (macOS).
     LaunchAgent,
     /// The macOS app's launch agent.
     AppAgent,
-    /// `illogicald install`'s logon task (Windows).
+    /// `arugulad install`'s logon task (Windows).
     Task,
 }
 
@@ -180,15 +180,15 @@ fn service() -> Option<Service> {
         // systemd sets INVOCATION_ID for what it starts; the unit is the one
         // `install` wrote.
         let home = PathBuf::from(std::env::var_os("HOME")?);
-        let unit = home.join(".config/systemd/user/illogicald.service");
+        let unit = home.join(".config/systemd/user/arugulad.service");
         let exe = std::env::current_exe().ok()?.canonicalize().ok()?;
-        let ours = exe == home.join(".local/bin/illogicald").canonicalize().ok()?;
+        let ours = exe == home.join(".local/bin/arugulad").canonicalize().ok()?;
         (std::env::var_os("INVOCATION_ID").is_some() && unit.is_file() && ours).then_some(Service::Systemd)
     } else if cfg!(target_os = "macos") {
         // launchd names the job it started. A `--system` LaunchDaemon is
-        // `illogicald.USER`: that one needs sudo.
+        // `arugulad.USER`: that one needs sudo.
         match std::env::var("XPC_SERVICE_NAME").ok()?.as_str() {
-            "illogicald" => Some(Service::LaunchAgent),
+            "arugulad" => Some(Service::LaunchAgent),
             APP_AGENT => Some(Service::AppAgent),
             _ => None,
         }
@@ -204,13 +204,13 @@ fn service() -> Option<Service> {
 #[cfg(windows)]
 fn windows_task() -> bool {
     let local = PathBuf::from(std::env::var_os("LOCALAPPDATA").unwrap_or_default());
-    let installed = local.join("Programs").join("illogical").join("illogicald.exe").canonicalize().ok();
+    let installed = local.join("Programs").join("arugula").join("arugulad.exe").canonicalize().ok();
     let exe = std::env::current_exe().ok().and_then(|e| e.canonicalize().ok());
     if installed.is_none() || installed != exe {
         return false;
     }
     Command::new("schtasks")
-        .args(["/Query", "/TN", "illogicald", "/XML"])
+        .args(["/Query", "/TN", "arugulad", "/XML"])
         .output()
         .is_ok_and(|o| o.status.success() && String::from_utf8_lossy(&o.stdout).contains("<LogonTrigger>"))
 }
@@ -232,7 +232,7 @@ pub fn refusal() -> Option<&'static str> {
             return Some("this install updates another way (see the command)");
         }
         if service().is_none() {
-            return Some("this daemon isn't the service `illogicald install` set up for you");
+            return Some("this daemon isn't the service `arugulad install` set up for you");
         }
         None
     })
@@ -268,7 +268,7 @@ fn start(to: String, releases: String, state_dir: PathBuf) -> Result<Applying, (
         }
         *a = Some(Applying { to: to.clone(), stage: "downloading", error: None });
     }
-    info!(to = %to, "updating illogical");
+    info!(to = %to, "updating arugula");
     tokio::spawn(async move {
         let dir = state_dir.join("update");
         let exe = match fetch(&releases, &to, &dir).await {
@@ -304,7 +304,7 @@ fn start(to: String, releases: String, state_dir: PathBuf) -> Result<Applying, (
     Ok(applying().unwrap_or(Applying { to: String::new(), stage: "downloading", error: None }))
 }
 
-/// Run the new `illogicald install` outside this service, and wait for it.
+/// Run the new `arugulad install` outside this service, and wait for it.
 /// It restarts the service, which ends this daemon; if it ends first
 /// instead, it failed (or didn't restart anything), and says why in `log`.
 fn hand_off(exe: &Path, log: &Path) -> anyhow::Result<()> {
@@ -325,7 +325,7 @@ fn hand_off(exe: &Path, log: &Path) -> anyhow::Result<()> {
 fn outside(exe: &Path) -> Command {
     if cfg!(target_os = "linux") {
         let mut c = Command::new("systemd-run");
-        let unit = format!("illogicald-update-{}", crate::store::now_ms());
+        let unit = format!("arugulad-update-{}", crate::store::now_ms());
         c.args(["--user", "--collect", "--quiet", "--wait", "--pipe", "--unit", &unit, "--"]).arg(exe).arg("install");
         return c;
     }
@@ -385,7 +385,7 @@ pub fn routes() -> Router<Arc<crate::server::App>> {
     Router::new().route("/api/update/apply", post(apply))
 }
 
-/// `illogicald update`: ask, then do the same from a terminal. The new
+/// `arugulad update`: ask, then do the same from a terminal. The new
 /// `install` runs here, in the foreground, so its output (and any
 /// question it asks, like sudo's for a `--system` service) is the user's.
 pub fn cli(yes: bool, latest_url: &str) -> anyhow::Result<()> {
@@ -396,15 +396,15 @@ pub fn cli(yes: bool, latest_url: &str) -> anyhow::Result<()> {
     let latest = rt.block_on(crate::update::latest_once(latest_url))?;
     let current = env!("CARGO_PKG_VERSION");
     if !crate::update::newer(&latest, current) {
-        println!("illogical {current} is the latest release.");
+        println!("arugula {current} is the latest release.");
         return Ok(());
     }
-    println!("illogical {latest} is out; this is {current}. Panes keep running while the daemon restarts.");
+    println!("arugula {latest} is out; this is {current}. Panes keep running while the daemon restarts.");
     if !yes && !ask("Update now? [y/N] ")? {
         println!("Not updated.");
         return Ok(());
     }
-    let dir = std::env::temp_dir().join(format!("illogical-update-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("arugula-update-{}", std::process::id()));
     let exe = rt.block_on(fetch(&releases(latest_url), &latest, &dir))?;
     println!("checked {latest} against the release's SHA256SUMS; installing it");
     let status = Command::new(&exe).arg("install").status().with_context(|| format!("running {}", exe.display()))?;
@@ -422,7 +422,7 @@ fn ask(question: &str) -> anyhow::Result<bool> {
     Ok(matches!(line.trim(), "y" | "Y" | "yes"))
 }
 
-/// macOS: the app's launch agent runs the `illogicald` in the app's
+/// macOS: the app's launch agent runs the `arugulad` in the app's
 /// bundle. When an update has put a newer one in `~/.local/bin`, run that
 /// instead (same arguments, same environment). Called first thing, before
 /// anything else starts.
@@ -432,14 +432,14 @@ pub fn hand_on() {
     if std::env::var("XPC_SERVICE_NAME").as_deref() != Ok(APP_AGENT) {
         return;
     }
-    let in_bundle = std::env::current_exe().is_ok_and(|e| e.ends_with("Contents/MacOS/illogicald"));
+    let in_bundle = std::env::current_exe().is_ok_and(|e| e.ends_with("Contents/MacOS/arugulad"));
     let Some(home) = std::env::var_os("HOME").map(PathBuf::from) else { return };
-    let newer = home.join(".local/bin/illogicald");
+    let newer = home.join(".local/bin/arugulad");
     if !in_bundle || !version_of(&newer).is_some_and(|v| crate::update::newer(&v, env!("CARGO_PKG_VERSION"))) {
         return;
     }
     let err = Command::new(&newer).args(std::env::args_os().skip(1)).exec();
-    eprintln!("illogicald: running the newer {} failed ({err}); carrying on with this one", newer.display());
+    eprintln!("arugulad: running the newer {} failed ({err}); carrying on with this one", newer.display());
 }
 
 #[cfg(test)]
@@ -457,18 +457,18 @@ mod tests {
 
     #[test]
     fn reads_sha256sums() {
-        let sums = "AB12  illogical-1.0.0-x.tar.gz\ncd34 *illogical-1.0.0-y.zip\n";
-        assert_eq!(sum_for(sums, "illogical-1.0.0-x.tar.gz").as_deref(), Some("ab12"));
-        assert_eq!(sum_for(sums, "illogical-1.0.0-y.zip").as_deref(), Some("cd34"));
-        assert_eq!(sum_for(sums, "illogical-1.0.0-x.tar"), None);
+        let sums = "AB12  arugula-1.0.0-x.tar.gz\ncd34 *arugula-1.0.0-y.zip\n";
+        assert_eq!(sum_for(sums, "arugula-1.0.0-x.tar.gz").as_deref(), Some("ab12"));
+        assert_eq!(sum_for(sums, "arugula-1.0.0-y.zip").as_deref(), Some("cd34"));
+        assert_eq!(sum_for(sums, "arugula-1.0.0-x.tar"), None);
     }
 
     /// A fake release on loopback: `SHA256SUMS` and this platform's
-    /// archive, holding an `illogicald` that says it's `version`.
+    /// archive, holding an `arugulad` that says it's `version`.
     /// A fresh directory for one test.
     #[cfg(unix)]
     fn scratch(name: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("illogical-selfupdate-{name}-{}", std::process::id()));
+        let d = std::env::temp_dir().join(format!("arugula-selfupdate-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         d
@@ -476,7 +476,7 @@ mod tests {
 
     #[cfg(unix)]
     async fn fake_release(name: &str, version: &str, sums_lie: bool) -> String {
-        fake_release_of(name, version, sums_lie, "illogical", "illogicald").await
+        fake_release_of(name, version, sums_lie, "arugula", "arugulad").await
     }
 
     /// The same, with the folder and daemon in the archive named `folder`

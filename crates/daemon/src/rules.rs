@@ -209,7 +209,7 @@ mod tests {
 
     #[test]
     fn rules_are_kept_once_and_forgotten() {
-        let dir = std::env::temp_dir().join(format!("illogical-rules-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("arugula-rules-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("rules.json");
         let _ = std::fs::remove_file(&path);

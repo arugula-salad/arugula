@@ -1,4 +1,4 @@
-//! M28: editors in the swarm. An editor (a stand-in for illogical's VS Code
+//! M28: editors in the swarm. An editor (a stand-in for arugula's VS Code
 //! extension or nvim plugin, speaking its protocol on the daemon's socket)
 //! joins as an entry of its own: kind editor, its project, its file, its
 //! diagnostics and debugger, but no tab. Following it streams its cursor and
@@ -15,8 +15,8 @@ use crate::agentd;
 use std::time::{Duration, Instant};
 
 use agentd::*;
+use arugula_proto::{ClientMsg, PaneInfo, ServerMsg, State};
 use futures_util::{SinkExt, StreamExt};
-use illogical_proto::{ClientMsg, PaneInfo, ServerMsg, State};
 use serde_json::{Value, json};
 use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
@@ -39,7 +39,7 @@ impl Editor {
     async fn join_at(sock: &std::path::Path, hello: Value) -> Self {
         let mut s = UnixStream::connect(sock).await.unwrap();
         s.write_all(
-            b"GET /api/editors/connect HTTP/1.1\r\nHost: x\r\nConnection: Upgrade\r\nUpgrade: illogical-editor\r\n\r\n",
+            b"GET /api/editors/connect HTTP/1.1\r\nHost: x\r\nConnection: Upgrade\r\nUpgrade: arugula-editor\r\n\r\n",
         )
         .await
         .unwrap();
@@ -170,8 +170,8 @@ async fn an_editor_joins_reports_and_leaves_at_once() {
     let id = ed.id;
     // An entry of its own: an editor, its project, no tab.
     let p = web.until("the editor to show", id, |p| p.is_some()).await.unwrap();
-    assert_eq!(p.kind, illogical_proto::BlockType::Editor);
-    assert_eq!(p.work, Some(illogical_proto::WorkKind::Editor));
+    assert_eq!(p.kind, arugula_proto::BlockType::Editor);
+    assert_eq!(p.work, Some(arugula_proto::WorkKind::Editor));
     assert_eq!(p.project.as_ref().map(|p| p.name.as_str()), Some("proj"));
     assert_eq!(p.cwd.as_deref(), Some(root.as_str()));
     let info = p.editor.clone().unwrap();
@@ -202,7 +202,7 @@ async fn an_editor_joins_reports_and_leaves_at_once() {
         assert!(Instant::now() < deadline, "capture: {text}");
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
-    // ...and `illogical editors` lists it.
+    // ...and `arugula editors` lists it.
     let list = d.get("/api/editors");
     assert_eq!(list[0]["pane"], id);
     assert_eq!(list[0]["editor"]["app"], "vscode");
@@ -271,10 +271,10 @@ async fn a_paused_debugger_is_a_card_continue_answers() {
         .await;
     let p = web.until("a card", id, |p| p.is_some_and(|p| p.reason.is_some())).await.unwrap();
     let r = p.reason.unwrap();
-    assert_eq!(p.attention, illogical_proto::Attention::NeedsInput);
-    assert_eq!(r.kind, illogical_proto::ReasonKind::Paused);
+    assert_eq!(p.attention, arugula_proto::Attention::NeedsInput);
+    assert_eq!(r.kind, arugula_proto::ReasonKind::Paused);
     assert_eq!(r.headline, "Paused at app.ts:12 (breakpoint)");
-    assert_eq!(r.actions, vec![illogical_proto::Action::Continue, illogical_proto::Action::Dismiss]);
+    assert_eq!(r.actions, vec![arugula_proto::Action::Continue, arugula_proto::Action::Dismiss]);
     // On the rail's list too.
     let list = d.get("/api/attention");
     assert!(list.as_array().unwrap().iter().any(|i| i["pane"] == id && i["reason"]["kind"] == "paused"), "{list}");
@@ -313,14 +313,14 @@ async fn errors_after_a_save_and_conflicts_are_cards() {
     // A merge conflict opened.
     ed.send(json!({ "t": "summary", "conflict": format!("{root}/src/lib.rs") })).await;
     let p = web.until("a conflict card", id, |p| p.is_some_and(|p| p.reason.is_some())).await.unwrap();
-    assert_eq!(p.reason.as_ref().unwrap().kind, illogical_proto::ReasonKind::Conflict);
+    assert_eq!(p.reason.as_ref().unwrap().kind, arugula_proto::ReasonKind::Conflict);
     assert_eq!(p.reason.as_ref().unwrap().headline, "Merge conflict in lib.rs");
     // Dismissing it clears the card; the editor stays.
     d.post("/api/attention/act", json!({ "action": "dismiss", "pane": id }));
     web.until("dismissed", id, |p| p.is_some_and(|p| p.reason.is_none())).await;
 }
 
-/// illogical.nvim, in a real headless nvim driven over its RPC socket.
+/// arugula.nvim, in a real headless nvim driven over its RPC socket.
 #[tokio::test(flavor = "multi_thread")]
 async fn nvim_joins_follows_and_leaves() {
     if std::process::Command::new("nvim").arg("--version").output().is_err() {
@@ -339,9 +339,9 @@ async fn nvim_joins_follows_and_leaves() {
         .arg(&rpc)
         .arg("--cmd")
         .arg(format!("set rtp^={}", plugin.display()))
-        .args(["-c", "runtime plugin/illogical.lua", "-c", "IllogicalJoin", &file])
+        .args(["-c", "runtime plugin/arugula.lua", "-c", "ArugulaJoin", &file])
         .current_dir(&root)
-        .env("ILLOGICAL_SOCK", d.sock())
+        .env("ARUGULA_SOCK", d.sock())
         .env("XDG_DATA_HOME", &data)
         .env("XDG_STATE_HOME", d.sessions.join("nvim-state"))
         .stdin(std::process::Stdio::null())
@@ -395,9 +395,9 @@ async fn nvim_joins_follows_and_leaves() {
     keys(":w<CR>");
     web.until("no unsaved buffers", id, |p| p.and_then(|p| p.editor.as_ref()).is_some_and(|e| e.dirty == 0)).await;
     // Leaving: gone at once, and the folder's forgotten.
-    keys(":IllogicalLeave<CR>");
+    keys(":ArugulaLeave<CR>");
     web.until("it to go", id, |p| p.is_none()).await;
-    let remembered = std::fs::read_to_string(data.join("nvim/illogical/folders.json")).unwrap();
+    let remembered = std::fs::read_to_string(data.join("nvim/arugula/folders.json")).unwrap();
     assert_eq!(remembered.trim(), "[]");
     let _ = nvim.kill();
     let _ = nvim.wait();

@@ -5,7 +5,7 @@
 //! API) and reads the tag from it. That one request is all it sends: no
 //! version, no identity, nothing else. The answer is kept in
 //! `update-check.json` in the state directory, so a restart doesn't ask
-//! again. `--no-update-check` (`ILLOGICAL_NO_UPDATE_CHECK`) turns it off;
+//! again. `--no-update-check` (`ARUGULA_NO_UPDATE_CHECK`) turns it off;
 //! a daemon run from where it was built (tests, development) doesn't ask.
 //!
 //! `GET /api/update` says what it found and how this install updates:
@@ -81,7 +81,7 @@ async fn run(s: Settings, cached: Option<Checked>) {
     let client = match crate::roots::http()
         .redirect(reqwest::redirect::Policy::none())
         .timeout(Duration::from_secs(20))
-        .user_agent("illogical")
+        .user_agent("arugula")
         .build()
     {
         Ok(c) => c,
@@ -100,7 +100,7 @@ async fn run(s: Settings, cached: Option<Checked>) {
                     let _ = crate::store::write_atomic(&s.state_dir.join(CACHE), &json);
                 }
                 if newer(&v, env!("CARGO_PKG_VERSION")) {
-                    info!(latest = %v, "a newer illogical is out");
+                    info!(latest = %v, "a newer arugula is out");
                 }
                 *LAST.lock().unwrap() = Some(c);
                 wait = Duration::from_millis(EVERY_MS);
@@ -113,12 +113,12 @@ async fn run(s: Settings, cached: Option<Checked>) {
     }
 }
 
-/// Ask once, now (`illogicald update`).
+/// Ask once, now (`arugulad update`).
 pub async fn latest_once(url: &str) -> anyhow::Result<String> {
     let client = crate::roots::http()
         .redirect(reqwest::redirect::Policy::none())
         .timeout(Duration::from_secs(20))
-        .user_agent("illogical")
+        .user_agent("arugula")
         .build()?;
     latest(&client, url).await
 }
@@ -166,9 +166,9 @@ fn now_ms() -> u64 {
 #[derive(Serialize, Debug, PartialEq, Clone, Copy)]
 #[serde(rename_all = "lowercase")]
 enum Kind {
-    /// `install.sh` (or `illogicald install` from a download).
+    /// `install.sh` (or `arugulad install` from a download).
     Script,
-    /// Homebrew: `brew upgrade`, then `illogicald install` again.
+    /// Homebrew: `brew upgrade`, then `arugulad install` again.
     #[cfg_attr(windows, allow(dead_code))] // Homebrew is macOS's and Linux's.
     Brew,
     /// The desktop app (its .deb or the macOS app). The daemon updates
@@ -182,10 +182,10 @@ enum Kind {
 /// The service runs a copy in `~/.local/bin` whichever way it came, so
 /// look for where that copy came from.
 fn kind(exe: &Path, home: &Path, exists: impl Fn(&Path) -> Option<PathBuf>) -> Kind {
-    let local = home.join(".local/bin/illogicald");
-    let deb = Path::new("/usr/bin/illogicald");
+    let local = home.join(".local/bin/arugulad");
+    let deb = Path::new("/usr/bin/arugulad");
     // The macOS app's own launch agent runs the copy in its bundle (M46).
-    if exe.ends_with("Contents/MacOS/illogicald") {
+    if exe.ends_with("Contents/MacOS/arugulad") {
         return Kind::App;
     }
     if exe != local && exe != deb {
@@ -195,15 +195,14 @@ fn kind(exe: &Path, home: &Path, exists: impl Fn(&Path) -> Option<PathBuf>) -> K
     let brew = brew_prefixes
         .into_iter()
         .chain(["/opt/homebrew", "/usr/local", "/home/linuxbrew/.linuxbrew"].map(PathBuf::from))
-        .filter_map(|p| exists(&p.join("bin/illogicald")))
+        .filter_map(|p| exists(&p.join("bin/arugulad")))
         .any(|real| real.components().any(|c| c.as_os_str() == "Cellar"));
     if brew {
         return Kind::Brew;
     }
-    let app =
-        [deb.to_path_buf(), PathBuf::from("/Applications/illogical.app"), home.join("Applications/illogical.app")]
-            .iter()
-            .any(|p| exists(p).is_some());
+    let app = [deb.to_path_buf(), PathBuf::from("/Applications/arugula.app"), home.join("Applications/arugula.app")]
+        .iter()
+        .any(|p| exists(p).is_some());
     if app {
         return Kind::App;
     }
@@ -234,18 +233,18 @@ struct Status {
     applying: Option<crate::selfupdate::Applying>,
 }
 
-/// Windows: `illogicald install` puts it in `%LOCALAPPDATA%\Programs\illogical`
+/// Windows: `arugulad install` puts it in `%LOCALAPPDATA%\Programs\arugula`
 /// (from install.ps1 or the desktop app, which lives in
-/// `%LOCALAPPDATA%\illogical`).
+/// `%LOCALAPPDATA%\arugula`).
 #[cfg(windows)]
 fn this_kind() -> Kind {
     let exe = std::env::current_exe().ok().and_then(|e| e.canonicalize().ok()).unwrap_or_default();
     let local = PathBuf::from(std::env::var_os("LOCALAPPDATA").unwrap_or_default());
-    let installed = local.join("Programs").join("illogical").join("illogicald.exe").canonicalize().ok();
+    let installed = local.join("Programs").join("arugula").join("arugulad.exe").canonicalize().ok();
     if installed.as_ref() != Some(&exe) {
         return Kind::Source;
     }
-    if local.join("illogical").join("illogical-desktop.exe").is_file() { Kind::App } else { Kind::Script }
+    if local.join("arugula").join("arugula-desktop.exe").is_file() { Kind::App } else { Kind::Script }
 }
 
 #[cfg(unix)]
@@ -280,7 +279,7 @@ fn command(kind: Kind) -> Option<&'static str> {
     }
 }
 
-const BREW: &str = "brew upgrade illogical && illogicald install";
+const BREW: &str = "brew upgrade arugula && arugulad install";
 
 /// The install script's copy or the app's: `selfupdate` may replace it.
 /// Not Homebrew's (brew does) or a build's.
@@ -288,11 +287,11 @@ pub fn updates_itself() -> bool {
     matches!(this_kind(), Kind::Script | Kind::App)
 }
 
-/// `illogicald update` isn't how this one updates: the command that is.
+/// `arugulad update` isn't how this one updates: the command that is.
 pub fn other_command() -> Option<&'static str> {
     match this_kind() {
         Kind::Brew => Some(BREW),
-        Kind::Source => Some("git pull, build it, and run `illogicald install` again"),
+        Kind::Source => Some("git pull, build it, and run `arugulad install` again"),
         Kind::Script | Kind::App => None,
     }
 }
@@ -345,26 +344,26 @@ mod tests {
     #[test]
     fn tells_installs_apart() {
         let home = Path::new("/home/me");
-        let local = home.join(".local/bin/illogicald");
+        let local = home.join(".local/bin/arugulad");
         let none = |_: &Path| None;
         assert_eq!(kind(&local, home, none), Kind::Script);
-        assert_eq!(kind(Path::new("/home/me/src/illogical/target/release/illogicald"), home, none), Kind::Source);
+        assert_eq!(kind(Path::new("/home/me/src/arugula/target/release/arugulad"), home, none), Kind::Source);
         let brew = |p: &Path| {
-            (p == Path::new("/opt/homebrew/bin/illogicald"))
-                .then(|| PathBuf::from("/opt/homebrew/Cellar/illogical/0.16.0/bin/illogicald"))
+            (p == Path::new("/opt/homebrew/bin/arugulad"))
+                .then(|| PathBuf::from("/opt/homebrew/Cellar/arugula/0.16.0/bin/arugulad"))
         };
         assert_eq!(kind(&local, home, brew), Kind::Brew);
-        let deb = |p: &Path| (p == Path::new("/usr/bin/illogicald")).then(|| p.to_path_buf());
+        let deb = |p: &Path| (p == Path::new("/usr/bin/arugulad")).then(|| p.to_path_buf());
         assert_eq!(kind(&local, home, deb), Kind::App);
-        assert_eq!(kind(Path::new("/usr/bin/illogicald"), home, deb), Kind::App);
-        let mac = |p: &Path| (p == Path::new("/Applications/illogical.app")).then(|| p.to_path_buf());
+        assert_eq!(kind(Path::new("/usr/bin/arugulad"), home, deb), Kind::App);
+        let mac = |p: &Path| (p == Path::new("/Applications/arugula.app")).then(|| p.to_path_buf());
         assert_eq!(kind(&local, home, mac), Kind::App);
-        assert_eq!(kind(Path::new("/Applications/illogical.app/Contents/MacOS/illogicald"), home, none), Kind::App);
+        assert_eq!(kind(Path::new("/Applications/arugula.app/Contents/MacOS/arugulad"), home, none), Kind::App);
     }
 
     #[test]
     fn cache_round_trips() {
-        let dir = std::env::temp_dir().join(format!("illogical-update-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("arugula-update-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let c = Checked { checked_ms: 5, latest: Some("0.17.0".into()), url: LATEST.into() };
         std::fs::write(dir.join(CACHE), serde_json::to_vec(&c).unwrap()).unwrap();

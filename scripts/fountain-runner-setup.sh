@@ -5,7 +5,7 @@
 #   sudo bash scripts/fountain-runner-setup.sh \
 #     --fountain "$(command -v fountain)" --node "$(node -p process.execPath)"
 #
-# Then, without root: `illogical fountain runner install` creates the
+# Then, without root: `arugula fountain runner install` creates the
 # runner's key, writes it for the `fountain` user and starts the unit.
 #
 # What it does:
@@ -18,7 +18,7 @@
 #     own node (nvm, mise) is in a home the `fountain` user can't read, so it
 #     gets a root-owned copy of just node and npm (about 140 MB);
 #   - /usr/local/bin/fountain: a copy of the CLI (run this again to upgrade);
-#   - /etc/sudoers.d/illogical-fountain, checked with `visudo -cf`: the user
+#   - /etc/sudoers.d/arugula-fountain, checked with `visudo -cf`: the user
 #     may run bash as `fountain` (a shell in a sandbox, and writing its key),
 #     and as root `systemctl start|stop|restart|status fountain-runner`,
 #     nothing else;
@@ -26,7 +26,7 @@
 #     Restart=always, UMask=0027 so the group can read; ProtectProc=invisible,
 #     so its agents can't read other users' processes' command lines in
 #     /proc; systemd 247 or later; IPAddressDeny=localhost, so its agents
-#     can't reach services on this machine's loopback, like illogicald,
+#     can't reach services on this machine's loopback, like arugulad,
 #     except systemd-resolved's DNS stub), enabled. The unit is the one source of
 #     truth: an interim drop-in (fountain-runner.service.d/10-protect-proc.conf)
 #     is removed, with its directory if that leaves it empty. It starts
@@ -85,7 +85,7 @@ sandboxes=$home/sandboxes
 node_dir=/opt/fountain-node
 bin=/usr/local/bin/fountain
 unit=/etc/systemd/system/$svc.service
-sudoers=/etc/sudoers.d/illogical-fountain
+sudoers=/etc/sudoers.d/arugula-fountain
 
 # Run a command, or print it in a dry run.
 run() {
@@ -105,7 +105,7 @@ run_ok() {
 at() { printf '%s%s' "$root" "$1"; }
 
 # Loopback is shared by every account here: the runner's agents stay off
-# it (the services on it, illogicald among them, aren't theirs), but for
+# it (the services on it, arugulad among them, aren't theirs), but for
 # systemd-resolved's stub, which DNS goes through.
 render_loopback() {
   if [ -n "$loopback" ]; then
@@ -118,7 +118,7 @@ render_loopback() {
 
 render_unit() {
   cat <<EOF
-# Written by illogical's scripts/fountain-runner-setup.sh; run it again to change it.
+# Written by arugula's scripts/fountain-runner-setup.sh; run it again to change it.
 [Unit]
 Description=Fountain runner $name (sandboxes for agents on the runner provider)
 After=network-online.target
@@ -154,7 +154,7 @@ render_sudoers() {
   local sc
   sc=$(command -v systemctl || echo /usr/bin/systemctl)
   cat <<EOF
-# Written by illogical's scripts/fountain-runner-setup.sh (--uninstall removes it).
+# Written by arugula's scripts/fountain-runner-setup.sh (--uninstall removes it).
 # A shell as the Fountain runner's user (a sandbox's shell, and its key):
 $user ALL=(fountain) NOPASSWD: /bin/bash
 # The runner's unit, and nothing else as root:
@@ -273,9 +273,9 @@ run systemctl enable "$svc"
 run systemctl try-restart "$svc"
 
 say ""
-say "Done. Now, as $user (no root): illogical fountain runner install"
+say "Done. Now, as $user (no root): arugula fountain runner install"
 say "It writes the runner's key to $home/.fountain/credentials and starts $svc."
 say "$user is in the fountain group from its next login: processes started before"
-say "(a shell, illogicald's user manager) don't have it until then or a reboot."
+say "(a shell, arugulad's user manager) don't have it until then or a reboot."
 [ -n "$dry" ] && say "(Dry run: nothing outside $root changed.)"
 exit 0

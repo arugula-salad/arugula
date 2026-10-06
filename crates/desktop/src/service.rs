@@ -2,15 +2,15 @@
 //!
 //! The bundle carries a launch agent
 //! (`Contents/Library/LaunchAgents/wtf.widgets.illogical.daemon.plist`)
-//! that runs the bundled `illogicald`. On a Mac with no daemon yet, the app
+//! that runs the bundled `arugulad`. On a Mac with no daemon yet, the app
 //! registers it through SMAppService, so it shows under Login Items as
-//! illogical's, starts at login, and runs the copy inside the app: an app
+//! arugula's, starts at login, and runs the copy inside the app: an app
 //! update brings a new daemon with it, and the app restarts the agent
 //! (`restart`) when the one running is older. Only from
-//! /Applications/illogical.app (`usable`): an app run from anywhere else
-//! installs the daemon with `illogicald install` instead.
+//! /Applications/arugula.app (`usable`): an app run from anywhere else
+//! installs the daemon with `arugulad install` instead.
 //!
-//! A daemon that `illogicald install` (install.sh, Homebrew, an older
+//! A daemon that `arugulad install` (install.sh, Homebrew, an older
 //! app) set up keeps its own plist in `~/Library/LaunchAgents` (or
 //! `/Library/LaunchDaemons` with `--system`): the app adopts that one and
 //! never registers a second.
@@ -23,11 +23,11 @@ use objc2_service_management::{SMAppService, SMAppServiceStatus};
 pub const PLIST: &str = "wtf.widgets.illogical.daemon.plist";
 pub const LABEL: &str = "wtf.widgets.illogical.daemon";
 /// The agent's `Program` (see the plist for why it's a fixed path).
-pub const PROGRAM: &str = "/Applications/illogical.app/Contents/MacOS/illogicald";
+pub const PROGRAM: &str = "/Applications/arugula.app/Contents/MacOS/arugulad";
 
 /// This app is the one the agent runs: it's in /Applications.
 pub fn usable() -> bool {
-    crate::bundled("illogicald").is_some_and(|p| p == std::path::Path::new(PROGRAM))
+    crate::bundled("arugulad").is_some_and(|p| p == std::path::Path::new(PROGRAM))
 }
 
 fn agent() -> objc2::rc::Retained<SMAppService> {
@@ -58,7 +58,7 @@ pub fn register() -> Result<(), String> {
     match unsafe { a.status() } {
         SMAppServiceStatus::Enabled => Ok(()),
         SMAppServiceStatus::RequiresApproval => {
-            Err("macOS wants you to allow illogical in System Settings > General > Login Items before its daemon runs."
+            Err("macOS wants you to allow arugula in System Settings > General > Login Items before its daemon runs."
                 .into())
         }
         _ => Err(format!("SMAppService says the daemon's agent is {}", status())),
@@ -70,7 +70,7 @@ pub fn unregister() -> Result<(), String> {
 }
 
 /// Restart the running agent on the bundle's (newer) daemon. Panes keep
-/// running: the agent sets `ILLOGICAL_KEEP_PANES`, as `illogicald
+/// running: the agent sets `ARUGULA_KEEP_PANES`, as `arugulad
 /// install`'s plist does.
 pub fn restart() -> Result<(), String> {
     let uid = unsafe { libc_getuid() };
@@ -85,16 +85,16 @@ pub fn restart() -> Result<(), String> {
     }
 }
 
-/// A plist from `illogicald install` is there: that install owns the daemon.
-/// Its launch agent (label `illogicald`, what install.sh sets up), or the
-/// LaunchDaemon `illogicald install --system` wrote, which a later
-/// `illogicald install` (install.sh run again) keeps.
+/// A plist from `arugulad install` is there: that install owns the daemon.
+/// Its launch agent (label `arugulad`, what install.sh sets up), or the
+/// LaunchDaemon `arugulad install --system` wrote, which a later
+/// `arugulad install` (install.sh run again) keeps.
 pub fn installed_by_script() -> bool {
     let agent = std::env::var_os("HOME")
         .map(std::path::PathBuf::from)
-        .is_some_and(|h| h.join("Library/LaunchAgents/illogicald.plist").is_file());
+        .is_some_and(|h| h.join("Library/LaunchAgents/arugulad.plist").is_file());
     let daemon = std::env::var("USER")
-        .is_ok_and(|u| std::path::Path::new(&format!("/Library/LaunchDaemons/illogicald.{u}.plist")).is_file());
+        .is_ok_and(|u| std::path::Path::new(&format!("/Library/LaunchDaemons/arugulad.{u}.plist")).is_file());
     agent || daemon
 }
 

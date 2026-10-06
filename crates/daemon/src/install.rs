@@ -1,8 +1,8 @@
-//! `illogicald install`: run as a systemd user service, at boot (with
+//! `arugulad install`: run as a systemd user service, at boot (with
 //! lingering) and after crashes; on macOS, a launchd agent that starts at
 //! login and after crashes (or, with `--system`, a LaunchDaemon that starts
 //! at boot); on Windows, a scheduled task at logon (or at boot, with
-//! `--system`). `illogicald uninstall` removes it.
+//! `--system`). `arugulad uninstall` removes it.
 
 use std::process::Command;
 #[cfg(unix)]
@@ -14,7 +14,7 @@ use std::{
 use anyhow::{Context, bail};
 
 #[cfg_attr(any(target_os = "macos", windows), allow(dead_code))]
-const UNIT: &str = "illogicald.service";
+const UNIT: &str = "arugulad.service";
 
 #[cfg_attr(any(target_os = "macos", windows), allow(dead_code))]
 fn unit_text(args: &[String]) -> String {
@@ -22,14 +22,14 @@ fn unit_text(args: &[String]) -> String {
     format!(
         "\
 [Unit]
-Description=illogical: terminals that outlive their windows
+Description=arugula: terminals that outlive their windows
 # VM panes reattach to wispd's machines; start after it when it's here.
 After=wisp.service
 
 [Service]
 Type=notify
 NotifyAccess=main
-ExecStart=%h/.local/bin/illogicald{args}
+ExecStart=%h/.local/bin/arugulad{args}
 Restart=on-failure
 RestartSec=1
 # Stop the daemon first: it saves every pane, then exits. Only then are the
@@ -48,11 +48,9 @@ WantedBy=default.target
 
 #[cfg_attr(any(target_os = "macos", windows), allow(dead_code))]
 fn systemctl(args: &[&str]) -> anyhow::Result<()> {
-    let status = Command::new("systemctl")
-        .arg("--user")
-        .args(args)
-        .status()
-        .context("running systemctl (no systemd here? run `illogicald` directly, or `illogicald install --tailnet` in a sandbox)")?;
+    let status = Command::new("systemctl").arg("--user").args(args).status().context(
+        "running systemctl (no systemd here? run `arugulad` directly, or `arugulad install --tailnet` in a sandbox)",
+    )?;
     if !status.success() {
         bail!("systemctl --user {} failed", args.join(" "));
     }
@@ -92,7 +90,7 @@ fn listen_of(args: &[String]) -> String {
 /// from elsewhere.
 fn next_steps(args: &[String], logs: &str) -> String {
     format!(
-        "Open http://{} with `illogical web` (it signs your browser in)\nLogs: {logs}\nFrom other devices: `tailscale serve`, or `illogicald join https://control.illogical.widgets.wtf`\n",
+        "Open http://{} with `arugula web` (it signs your browser in)\nLogs: {logs}\nFrom other devices: `tailscale serve`, or `arugulad join https://control.illogical.widgets.wtf`\n",
         listen_of(args)
     )
 }
@@ -100,7 +98,7 @@ fn next_steps(args: &[String], logs: &str) -> String {
 /// Arguments in a unit `unit_text` wrote.
 #[cfg_attr(any(target_os = "macos", windows), allow(dead_code))]
 fn unit_args(unit: &str) -> Option<Vec<String>> {
-    let line = unit.lines().find_map(|l| l.strip_prefix("ExecStart=%h/.local/bin/illogicald"))?;
+    let line = unit.lines().find_map(|l| l.strip_prefix("ExecStart=%h/.local/bin/arugulad"))?;
     Some(line.split_whitespace().map(String::from).collect())
 }
 
@@ -125,10 +123,10 @@ pub fn uninstall() -> anyhow::Result<()> {
     windows::uninstall()
 }
 
-/// Windows (M59, #222): the binaries in `%LOCALAPPDATA%\Programs\illogical`,
-/// and a scheduled task, `illogicald`, that starts the daemon at logon as
+/// Windows (M59, #222): the binaries in `%LOCALAPPDATA%\Programs\arugula`,
+/// and a scheduled task, `arugulad`, that starts the daemon at logon as
 /// this user (no admin), with no window (`conhost --headless`), logging to
-/// `illogicald.log` in the state directory. Logging off ends it, as with
+/// `arugulad.log` in the state directory. Logging off ends it, as with
 /// launchd and systemd without linger; its panes' hosts close after their
 /// grace. `--system` starts it at boot instead (S4U: an admin prompt once,
 /// and panes there have no DPAPI, so no Credential Manager; S29).
@@ -143,12 +141,12 @@ mod windows {
 
     use anyhow::{Context, bail};
 
-    const TASK: &str = "illogicald";
+    const TASK: &str = "arugulad";
     /// What goes in, from beside this exe.
-    const FILES: [&str; 4] = ["illogicald.exe", "illogical.exe", "conpty.dll", "OpenConsole.exe"];
+    const FILES: [&str; 4] = ["arugulad.exe", "arugula.exe", "conpty.dll", "OpenConsole.exe"];
 
     pub fn programs() -> PathBuf {
-        PathBuf::from(std::env::var_os("LOCALAPPDATA").unwrap_or_default()).join("Programs").join("illogical")
+        PathBuf::from(std::env::var_os("LOCALAPPDATA").unwrap_or_default()).join("Programs").join("arugula")
     }
 
     /// The files, into `programs()`. One in use (the running daemon's
@@ -165,11 +163,8 @@ mod windows {
             let src = from.join(name);
             let dest = dir.join(name);
             if !src.is_file() {
-                if name == "illogical.exe" {
-                    println!(
-                        "note: no `illogical` CLI next to {}; build it with `cargo build -p illogical`",
-                        me.display()
-                    );
+                if name == "arugula.exe" {
+                    println!("note: no `arugula` CLI next to {}; build it with `cargo build -p arugula`", me.display());
                 }
                 continue;
             }
@@ -190,7 +185,7 @@ mod windows {
                 let _ = fs::remove_file(e.path());
             }
         }
-        Ok(dir.join("illogicald.exe"))
+        Ok(dir.join("arugulad.exe"))
     }
 
     fn xml(s: &str) -> String {
@@ -220,7 +215,7 @@ mod windows {
         format!(
             r#"<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
-  <RegistrationInfo><Description>illogicald: illogical's daemon, which keeps your terminals running</Description></RegistrationInfo>
+  <RegistrationInfo><Description>arugulad: arugula's daemon, which keeps your terminals running</Description></RegistrationInfo>
   <Triggers>{trigger}</Triggers>
   <Principals><Principal id="Author"><UserId>{user}</UserId><LogonType>{logon}</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>
   <Settings>
@@ -257,10 +252,10 @@ mod windows {
         crate::store::write_atomic(&args_file, &serde_json::to_vec(&args)?)?;
         let state = crate::default_state_dir();
         fs::create_dir_all(&state)?;
-        let log = state.join("illogicald.log");
+        let log = state.join("arugulad.log");
         let task = task_xml(&exe, &log, &args, system, &user()?);
         // Task Scheduler reads it as UTF-16.
-        let file = dir.join("illogicald-task.xml");
+        let file = dir.join("arugulad-task.xml");
         let mut bytes = vec![0xff, 0xfe];
         bytes.extend(task.encode_utf16().flat_map(u16::to_le_bytes));
         fs::write(&file, bytes)?;
@@ -285,13 +280,13 @@ mod windows {
                 // be) is ended; its panes' hosts carry on regardless.
                 if !ended && asked.elapsed() > Duration::from_secs(10) {
                     if let Some(pid) = pid {
-                        println!("the running illogicald (pid {pid}) didn't stop when asked; ending it");
+                        println!("the running arugulad (pid {pid}) didn't stop when asked; ending it");
                         crate::procinfo::kill(pid);
                     }
                     ended = true;
                 }
                 if asked.elapsed() > Duration::from_secs(20) {
-                    bail!("the running illogicald didn't stop; stop it (or log off and on) and run this again");
+                    bail!("the running arugulad didn't stop; stop it (or log off and on) and run this again");
                 }
                 std::thread::sleep(Duration::from_millis(100));
             }
@@ -337,9 +332,9 @@ mod windows {
             .status()
             .is_ok_and(|s| s.success());
         if ok {
-            println!("added {} to your PATH (new terminals have `illogical`)", dir.display());
+            println!("added {} to your PATH (new terminals have `arugula`)", dir.display());
         } else {
-            println!("note: add {} to your PATH for `illogical`", dir.display());
+            println!("note: add {} to your PATH for `arugula`", dir.display());
         }
     }
 
@@ -368,11 +363,11 @@ mod windows {
         ask_to_stop(&crate::default_state_dir());
         let _ = schtasks(&["/End", "/TN", TASK]);
         if schtasks(&["/Delete", "/TN", TASK, "/F"]).is_err() {
-            println!("illogicald isn't installed as a scheduled task here");
+            println!("arugulad isn't installed as a scheduled task here");
             return Ok(());
         }
         println!(
-            "illogicald is no longer a scheduled task; {} and the panes' state ({}) are kept",
+            "arugulad is no longer a scheduled task; {} and the panes' state ({}) are kept",
             programs().display(),
             crate::default_state_dir().display()
         );
@@ -386,8 +381,8 @@ mod windows {
         #[test]
         fn the_task_runs_headless_with_the_log_and_args() {
             let t = task_xml(
-                Path::new(r"C:\Users\a b\AppData\Local\Programs\illogical\illogicald.exe"),
-                Path::new(r"C:\s\illogicald.log"),
+                Path::new(r"C:\Users\a b\AppData\Local\Programs\arugula\arugulad.exe"),
+                Path::new(r"C:\s\arugulad.log"),
                 &["--listen".into(), "127.0.0.1:7681".into()],
                 false,
                 r"BOX\a b",
@@ -395,7 +390,7 @@ mod windows {
             assert!(t.contains("<LogonTrigger>") && t.contains("<LogonType>InteractiveToken</LogonType>"));
             assert!(t.contains("<UserId>BOX\\a b</UserId>"));
             assert!(t.contains(
-                "<Arguments>--headless &quot;C:\\Users\\a b\\AppData\\Local\\Programs\\illogical\\illogicald.exe&quot; --log-file C:\\s\\illogicald.log --listen 127.0.0.1:7681</Arguments>"
+                "<Arguments>--headless &quot;C:\\Users\\a b\\AppData\\Local\\Programs\\arugula\\arugulad.exe&quot; --log-file C:\\s\\arugulad.log --listen 127.0.0.1:7681</Arguments>"
             ));
             let boot = task_xml(Path::new("x.exe"), Path::new("l"), &[], true, "u");
             assert!(boot.contains("<BootTrigger>") && boot.contains("<LogonType>S4U</LogonType>"));
@@ -409,7 +404,7 @@ pub fn uninstall() -> anyhow::Result<()> {
     let home = PathBuf::from(std::env::var_os("HOME").context("HOME is not set")?);
     let unit = home.join(".config/systemd/user").join(UNIT);
     if !unit.is_file() {
-        println!("illogicald isn't installed as a service here");
+        println!("arugulad isn't installed as a service here");
         return Ok(());
     }
     systemctl(&["disable", "--now", UNIT])?;
@@ -417,7 +412,7 @@ pub fn uninstall() -> anyhow::Result<()> {
     println!("removed {}", unit.display());
     systemctl(&["daemon-reload"])?;
     println!(
-        "illogicald is no longer a service here; {} and the panes' state (~/.local/state/illogical) are kept",
+        "arugulad is no longer a service here; {} and the panes' state (~/.local/state/arugula) are kept",
         home.join(".local/bin").display()
     );
     Ok(())
@@ -448,7 +443,7 @@ pub fn install(start: bool, daemon_args: &[String], reset: bool, system: bool) -
         // new daemon and keep running.
         systemctl(&["restart", UNIT])?;
         println!("started {UNIT}");
-        print!("{}", next_steps(&args, "journalctl --user -u illogicald -e"));
+        print!("{}", next_steps(&args, "journalctl --user -u arugulad -e"));
     } else {
         println!("start it with `systemctl --user start {UNIT}`");
     }
@@ -468,12 +463,12 @@ pub fn install(start: bool, daemon_args: &[String], reset: bool, system: bool) -
 /// daemon now is.
 pub fn copy_binaries(home: &Path) -> anyhow::Result<PathBuf> {
     let bin_dir = home.join(".local/bin");
-    let dest = bin_dir.join("illogicald");
+    let dest = bin_dir.join("arugulad");
     let exe = std::env::current_exe()?.canonicalize()?;
     fs::create_dir_all(&bin_dir)?;
     if exe != dest.canonicalize().unwrap_or_default() {
         // Copy then rename, so a running daemon's binary is replaced whole.
-        let tmp = bin_dir.join(".illogicald.new");
+        let tmp = bin_dir.join(".arugulad.new");
         fs::copy(&exe, &tmp).with_context(|| format!("copying {}", exe.display()))?;
         crate::perm::set(&tmp, 0o755)?;
         fs::rename(&tmp, &dest)?;
@@ -482,14 +477,14 @@ pub fn copy_binaries(home: &Path) -> anyhow::Result<PathBuf> {
 
     // The CLI, built next to the daemon, goes next to it too (panes find it
     // on PATH there).
-    if let Some(cli) = exe.parent().map(|d| d.join("illogical")).filter(|p| p.exists()) {
-        let tmp = bin_dir.join(".illogical.new");
+    if let Some(cli) = exe.parent().map(|d| d.join("arugula")).filter(|p| p.exists()) {
+        let tmp = bin_dir.join(".arugula.new");
         fs::copy(&cli, &tmp).with_context(|| format!("copying {}", cli.display()))?;
         crate::perm::set(&tmp, 0o755)?;
-        fs::rename(&tmp, bin_dir.join("illogical"))?;
-        println!("installed {}", bin_dir.join("illogical").display());
+        fs::rename(&tmp, bin_dir.join("arugula"))?;
+        println!("installed {}", bin_dir.join("arugula").display());
     } else {
-        println!("note: no `illogical` CLI next to {}; build it with `cargo build -p illogical`", exe.display());
+        println!("note: no `arugula` CLI next to {}; build it with `cargo build -p arugula`", exe.display());
     }
     Ok(dest)
 }
@@ -511,7 +506,7 @@ mod launchd {
 
     use anyhow::{Context, bail};
 
-    pub const LABEL: &str = "illogicald";
+    pub const LABEL: &str = "arugulad";
 
     /// How launchd runs it.
     #[derive(Debug, Clone, PartialEq, Eq)]
@@ -600,7 +595,7 @@ mod launchd {
   <!-- No FD store here: pane shims keep the terminals while it restarts. -->
   <key>EnvironmentVariables</key>
   <dict>
-    <key>ILLOGICAL_KEEP_PANES</key>
+    <key>ARUGULA_KEEP_PANES</key>
     <string>true</string>{env}
   </dict>
   <!-- Stop the daemon first, so it saves every pane. -->
@@ -618,13 +613,13 @@ mod launchd {
         )
     }
 
-    /// The one-line warning a background install prints. `illogical
+    /// The one-line warning a background install prints. `arugula
     /// --ssh` passes `note:` lines through.
     pub fn background_note(user: &str) -> String {
         format!(
-            "note: {user} has no GUI login on this Mac (only ssh), so illogicald runs as a background agent: it keeps \
+            "note: {user} has no GUI login on this Mac (only ssh), so arugulad runs as a background agent: it keeps \
              running after you log out, but after a reboot it won't start until {user} logs in to the desktop or runs \
-             `illogicald install` again. `illogicald install --system` starts it at boot instead (a LaunchDaemon; \
+             `arugulad install` again. `arugulad install --system` starts it at boot instead (a LaunchDaemon; \
              needs sudo)."
         )
     }
@@ -711,17 +706,15 @@ mod launchd {
         fs::create_dir_all(&agents)?;
         let logs = me.home.join("Library/Logs");
         fs::create_dir_all(&logs)?;
-        let log = logs.join("illogicald.log");
+        let log = logs.join("arugulad.log");
         let agent = agents.join(format!("{LABEL}.plist"));
         let daemon = system_plist(&me.name);
         // A LaunchDaemon from an earlier `--system` stays one: going back
-        // to an agent is `illogicald uninstall` first (both need sudo).
+        // to an agent is `arugulad uninstall` first (both need sudo).
         let system = system || {
             let had = daemon.is_file();
             if had {
-                println!(
-                    "keeping the LaunchDaemon from the last install (--system); `illogicald uninstall` removes it"
-                );
+                println!("keeping the LaunchDaemon from the last install (--system); `arugulad uninstall` removes it");
             }
             had
         };
@@ -735,7 +728,7 @@ mod launchd {
         // (#391), so restart that agent rather than start a second daemon.
         let app_agent = format!("{gui}/{}", crate::selfupdate::APP_AGENT);
         if !system && !agent.is_file() && has(&app_agent) {
-            println!("the illogical app's launch agent runs the daemon here; it runs {} from now on", exe.display());
+            println!("the arugula app's launch agent runs the daemon here; it runs {} from now on", exe.display());
             if start {
                 let out = Command::new("launchctl").args(["kickstart", "-k", &app_agent]).output()?;
                 if !out.status.success() {
@@ -757,7 +750,7 @@ mod launchd {
 
         if let Mode::System { .. } = mode {
             println!(
-                "--system: a LaunchDaemon, {}, runs illogicald as {} from boot, with nobody logged in. Writing and \
+                "--system: a LaunchDaemon, {}, runs arugulad as {} from boot, with nobody logged in. Writing and \
                  loading it needs root, so this runs sudo (it may ask for your password):",
                 daemon.display(),
                 me.name
@@ -853,11 +846,11 @@ mod launchd {
         }
         if found {
             println!(
-                "illogicald is no longer a service here; {} and the panes' state (~/.local/state/illogical) are kept",
+                "arugulad is no longer a service here; {} and the panes' state (~/.local/state/arugula) are kept",
                 me.home.join(".local/bin").display()
             );
         } else {
-            println!("illogicald isn't installed as a service here");
+            println!("arugulad isn't installed as a service here");
         }
         Ok(())
     }
@@ -869,19 +862,19 @@ mod tests {
     #[test]
     fn plist_carries_daemon_args() {
         let t = super::launchd::plist_text(
-            "/Users/me/.local/bin/illogicald",
+            "/Users/me/.local/bin/arugulad",
             &["--listen".into(), "127.0.0.1:9000".into(), "a<b".into()],
-            "/Users/me/Library/Logs/illogicald.log",
+            "/Users/me/Library/Logs/arugulad.log",
             &super::launchd::Mode::Gui,
         );
         assert!(t.contains(
-            "<string>/Users/me/.local/bin/illogicald</string>\n    <string>--listen</string>\n    <string>127.0.0.1:9000</string>\n    <string>a&lt;b</string>\n  </array>"
+            "<string>/Users/me/.local/bin/arugulad</string>\n    <string>--listen</string>\n    <string>127.0.0.1:9000</string>\n    <string>a&lt;b</string>\n  </array>"
         ));
         assert!(t.contains("<key>RunAtLoad</key>"));
-        assert!(t.contains("<key>ILLOGICAL_KEEP_PANES</key>\n    <string>true</string>"));
+        assert!(t.contains("<key>ARUGULA_KEEP_PANES</key>\n    <string>true</string>"));
         assert_eq!(super::launchd::plist_args(&t).unwrap(), ["--listen", "127.0.0.1:9000", "a<b"]);
         assert!(!t.contains("LimitLoadToSessionType") && !t.contains("UserName"));
-        let bare = super::launchd::plist_text("/x/illogicald", &[], "/x/log", &super::launchd::Mode::Gui);
+        let bare = super::launchd::plist_text("/x/arugulad", &[], "/x/log", &super::launchd::Mode::Gui);
         assert_eq!(super::launchd::plist_args(&bare).unwrap(), Vec::<String>::new());
     }
 
@@ -890,19 +883,19 @@ mod tests {
     fn plist_modes() {
         use super::launchd::{Mode, plist_args, plist_text};
         let args = ["--listen".to_string(), "127.0.0.1:9000".to_string()];
-        let bg = plist_text("/x/illogicald", &args, "/x/log", &Mode::Background);
-        assert!(bg.contains("<key>Label</key>\n  <string>illogicald</string>"));
+        let bg = plist_text("/x/arugulad", &args, "/x/log", &Mode::Background);
+        assert!(bg.contains("<key>Label</key>\n  <string>arugulad</string>"));
         assert!(bg.contains("<key>LimitLoadToSessionType</key>\n  <string>Background</string>"));
         assert!(!bg.contains("UserName"));
         assert_eq!(plist_args(&bg).unwrap(), args);
 
         let sys = Mode::System { user: "illo".into(), home: "/Users/illo".into() };
-        assert_eq!(super::launchd::system_plist("illo").to_str(), Some("/Library/LaunchDaemons/illogicald.illo.plist"));
-        let t = plist_text("/x/illogicald", &args, "/x/log", &sys);
-        assert!(t.contains("<key>Label</key>\n  <string>illogicald.illo</string>"));
+        assert_eq!(super::launchd::system_plist("illo").to_str(), Some("/Library/LaunchDaemons/arugulad.illo.plist"));
+        let t = plist_text("/x/arugulad", &args, "/x/log", &sys);
+        assert!(t.contains("<key>Label</key>\n  <string>arugulad.illo</string>"));
         assert!(t.contains("<key>UserName</key>\n  <string>illo</string>"));
         assert!(t.contains("<key>HOME</key>\n    <string>/Users/illo</string>"));
-        assert!(t.contains("<key>ILLOGICAL_KEEP_PANES</key>\n    <string>true</string>"));
+        assert!(t.contains("<key>ARUGULA_KEEP_PANES</key>\n    <string>true</string>"));
         assert!(!t.contains("LimitLoadToSessionType"));
         assert_eq!(plist_args(&t).unwrap(), args);
     }
@@ -913,14 +906,14 @@ mod tests {
         let n = super::launchd::background_note("illo");
         assert!(n.starts_with("note: illo has no GUI login"));
         assert!(n.contains("after a reboot it won't start until illo logs in"));
-        assert!(n.contains("`illogicald install --system`") && n.contains("sudo"));
-        assert!(!n.contains('\n'), "one line, so `illogical --ssh` can pass it through");
+        assert!(n.contains("`arugulad install --system`") && n.contains("sudo"));
+        assert!(!n.contains('\n'), "one line, so `arugula --ssh` can pass it through");
     }
 
     #[test]
     fn unit_carries_daemon_args() {
         let t = super::unit_text(&["--listen".into(), "127.0.0.1:9000".into()]);
-        assert!(t.contains("ExecStart=%h/.local/bin/illogicald --listen 127.0.0.1:9000\n"));
+        assert!(t.contains("ExecStart=%h/.local/bin/arugulad --listen 127.0.0.1:9000\n"));
         assert!(t.contains("KillMode=mixed"));
         assert!(t.contains("Type=notify"));
         assert!(t.contains("FileDescriptorStoreMax="));
@@ -931,9 +924,8 @@ mod tests {
     #[test]
     fn next_steps_name_the_listen_address() {
         assert!(
-            super::next_steps(&[], "logs").starts_with(
-                "Open http://127.0.0.1:7681 with `illogical web` (it signs your browser in)\nLogs: logs\n"
-            )
+            super::next_steps(&[], "logs")
+                .starts_with("Open http://127.0.0.1:7681 with `arugula web` (it signs your browser in)\nLogs: logs\n")
         );
         assert!(
             super::next_steps(&["--listen".into(), "127.0.0.1:9000".into()], "l")

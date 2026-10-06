@@ -384,7 +384,7 @@ export function ShareDialog({ client }: { client: Client }) {
           }}
         >
           <input
-            placeholder={control && client.e2e ? "their name or login on illogical" : "their tailnet login"}
+            placeholder={control && client.e2e ? "their name or login on arugula" : "their tailnet login"}
             value={who}
             onInput={(e) => setWho((e.target as HTMLInputElement).value)}
             aria-label="Who"

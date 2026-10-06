@@ -1,6 +1,6 @@
 #!/bin/sh
-# Install illogical: download a release for this machine, check it, and run
-# `illogicald install`, which puts illogicald and illogical in ~/.local/bin
+# Install arugula: download a release for this machine, check it, and run
+# `arugulad install`, which puts arugulad and arugula in ~/.local/bin
 # and starts the daemon as a service (systemd user unit on Linux, launchd
 # agent on macOS). Run it again to upgrade; the daemon's flags are kept.
 #
@@ -17,28 +17,28 @@
 # --app                     install the Mac app even with no one at the
 #                           screen (over ssh, say)
 # --no-app                  don't install the Mac app
-# ILLOGICAL_VERSION=vX.Y.Z  a release tag (default: the latest)
-# ILLOGICAL_NO_START=1      install the service without starting it
-# ILLOGICAL_DOWNLOAD_URL=…  where the release's files are, instead of GitHub
+# ARUGULA_VERSION=vX.Y.Z  a release tag (default: the latest)
+# ARUGULA_NO_START=1      install the service without starting it
+# ARUGULA_DOWNLOAD_URL=…  where the release's files are, instead of GitHub
 #                           (a mirror, or a local build: file:///path/to/dist)
-# ILLOGICAL_APP=1 (or 0)    the same as --app (or --no-app)
-# ILLOGICAL_APP_VERSION=app-vX.Y.Z  the app's release (default: app-latest)
-# ILLOGICAL_APP_DOWNLOAD_URL=…      where the app's zip and its SHA256SUMS
+# ARUGULA_APP=1 (or 0)    the same as --app (or --no-app)
+# ARUGULA_APP_VERSION=app-vX.Y.Z  the app's release (default: app-latest)
+# ARUGULA_APP_DOWNLOAD_URL=…      where the app's zip and its SHA256SUMS
 #                           are, instead of GitHub
-# ILLOGICAL_APP_DIR=DIR     where illogical.app goes, instead of
+# ARUGULA_APP_DIR=DIR     where arugula.app goes, instead of
 #                           /Applications or ~/Applications
 set -eu
 
 repo=https://github.com/arugula-salad/illogical
 
 say() { printf '%s\n' "$*"; }
-die() { printf 'illogical: %s\n' "$*" >&2; exit 1; }
+die() { printf 'arugula: %s\n' "$*" >&2; exit 1; }
 need() { command -v "$1" >/dev/null 2>&1 || die "needs $1"; }
 
 # The Mac app: by default when this is someone's own session at the screen
 # (not ssh), since that's who the site's one-liner is for; a server or an
 # ssh session gets the daemon alone unless it says --app.
-app=${ILLOGICAL_APP:-auto}
+app=${ARUGULA_APP:-auto}
 for a in "$@"; do
   case "$a" in
     --app) app=1 ;;
@@ -62,7 +62,7 @@ case "$(uname -s)/$(uname -m)" in
   *) die "no release for $(uname -s) $(uname -m); build from source: $repo/blob/main/docs/development.md" ;;
 esac
 
-version=${ILLOGICAL_VERSION:-}
+version=${ARUGULA_VERSION:-}
 if [ -z "$version" ]; then
   # releases/latest redirects to releases/tag/<tag>. Not GitHub's API: its
   # unauthenticated limit (60 an hour) is shared by everyone behind an IP.
@@ -74,7 +74,7 @@ if [ -z "$version" ]; then
   esac
 fi
 
-# --app said so (or ILLOGICAL_APP=1): a missing app is an error, not a skip.
+# --app said so (or ARUGULA_APP=1): a missing app is an error, not a skip.
 asked=$app
 if [ "$(uname -s)" != Darwin ]; then
   [ "$app" != 1 ] || die "--app is for macOS; on Linux and Windows, the app is at $repo/releases/tag/app-latest"
@@ -88,8 +88,8 @@ elif [ "$app" = auto ]; then
   fi
 fi
 
-name="illogical-${version#v}-$target"
-base=${ILLOGICAL_DOWNLOAD_URL:-$repo/releases/download/$version}
+name="arugula-${version#v}-$target"
+base=${ARUGULA_DOWNLOAD_URL:-$repo/releases/download/$version}
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
@@ -112,11 +112,11 @@ fi
 # for an app that isn't notarized yet.
 if [ "$app" = 1 ]; then
   case "$target" in
-    aarch64-*) zip=illogical-desktop-macos-arm64.zip ;;
-    *) zip=illogical-desktop-macos-x86_64.zip ;;
+    aarch64-*) zip=arugula-desktop-macos-arm64.zip ;;
+    *) zip=arugula-desktop-macos-x86_64.zip ;;
   esac
-  app_version=${ILLOGICAL_APP_VERSION:-app-latest}
-  app_base=${ILLOGICAL_APP_DOWNLOAD_URL:-$repo/releases/download/$app_version}
+  app_version=${ARUGULA_APP_VERSION:-app-latest}
+  app_base=${ARUGULA_APP_DOWNLOAD_URL:-$repo/releases/download/$app_version}
   mkdir "$tmp/app"
   say "downloading $zip ($app_version)"
   if curl -fsSL -o "$tmp/app/$zip" "$app_base/$zip" && curl -fsSL -o "$tmp/app/SHA256SUMS" "$app_base/SHA256SUMS"; then
@@ -143,15 +143,15 @@ started=""
 if [ "$os" = Linux ] && ! command -v systemctl >/dev/null 2>&1; then
   # No systemd (a container, a sandbox): the binaries, but no service.
   mkdir -p "$HOME/.local/bin"
-  for b in illogicald illogical; do
+  for b in arugulad arugula; do
     cp "$tmp/$name/$b" "$HOME/.local/bin/.$b.new" && mv "$HOME/.local/bin/.$b.new" "$HOME/.local/bin/$b"
   done
-  say "installed ~/.local/bin/illogicald and ~/.local/bin/illogical"
+  say "installed ~/.local/bin/arugulad and ~/.local/bin/arugula"
   nosystemd=1
-elif [ -n "${ILLOGICAL_NO_START:-}" ]; then
-  "$tmp/$name/illogicald" install --no-start
+elif [ -n "${ARUGULA_NO_START:-}" ]; then
+  "$tmp/$name/arugulad" install --no-start
 else
-  "$tmp/$name/illogicald" install
+  "$tmp/$name/arugulad" install
   started=1
 fi
 
@@ -159,12 +159,12 @@ fi
 # or the default.
 listen=127.0.0.1:7681
 if [ "$os" = Darwin ]; then
-  plist="$HOME/Library/LaunchAgents/illogicald.plist"
-  # Or the LaunchDaemon `illogicald install --system` wrote.
-  [ -f "$plist" ] || plist="/Library/LaunchDaemons/illogicald.$(id -un).plist"
+  plist="$HOME/Library/LaunchAgents/arugulad.plist"
+  # Or the LaunchDaemon `arugulad install --system` wrote.
+  [ -f "$plist" ] || plist="/Library/LaunchDaemons/arugulad.$(id -un).plist"
   args=$(sed -n 's:.*<string>\(.*\)</string>.*:\1:p' "$plist" 2>/dev/null || true)
 else
-  args=$(sed -n 's/^ExecStart=[^ ]*//p' "$HOME/.config/systemd/user/illogicald.service" 2>/dev/null || true)
+  args=$(sed -n 's/^ExecStart=[^ ]*//p' "$HOME/.config/systemd/user/arugulad.service" 2>/dev/null || true)
 fi
 prev=""
 for a in $args; do
@@ -192,28 +192,28 @@ if [ -n "$started" ]; then
     i=$((i + 1))
   done
   if [ -n "$up" ]; then
-    say "illogical $version is installed and running."
+    say "arugula $version is installed and running."
   else
-    say "illogical $version is installed, but it isn't answering at $url yet."
+    say "arugula $version is installed, but it isn't answering at $url yet."
     if [ "$os" = Darwin ]; then
-      say "  Its logs:  tail -n 50 ~/Library/Logs/illogicald.log"
+      say "  Its logs:  tail -n 50 ~/Library/Logs/arugulad.log"
     else
-      say "  Its logs:  journalctl --user -u illogicald -e"
+      say "  Its logs:  journalctl --user -u arugulad -e"
     fi
   fi
 elif [ -n "${nosystemd:-}" ]; then
   if curl -s -o /dev/null -m 1 "$url/"; then
     # An upgrade: the old daemon is still the one running.
-    say "illogical $version is installed. A daemon is already running here (the old one): restart it"
+    say "arugula $version is installed. A daemon is already running here (the old one): restart it"
     say "to run this version. Panes started with --keep-panes keep running:"
-    say "  kill \$(pgrep -f '^$HOME/.local/bin/illogicald --keep-panes')"
+    say "  kill \$(pgrep -f '^$HOME/.local/bin/arugulad --keep-panes')"
   else
-    say "illogical $version is installed. No systemd here, so no service: start the daemon with"
+    say "arugula $version is installed. No systemd here, so no service: start the daemon with"
   fi
-  say "  nohup $HOME/.local/bin/illogicald --keep-panes >>~/illogicald.log 2>&1 &"
+  say "  nohup $HOME/.local/bin/arugulad --keep-panes >>~/arugulad.log 2>&1 &"
   say "(--keep-panes: panes outlive its restarts)"
 else
-  say "illogical $version is installed, not started (ILLOGICAL_NO_START)."
+  say "arugula $version is installed, not started (ARUGULA_NO_START)."
 fi
 
 # The Mac app, after the daemon: it finds that one (its plist in
@@ -221,35 +221,35 @@ fi
 # rather than starting its own (#392). /Applications if this user can
 # write there, else ~/Applications.
 if [ "$app" = 1 ]; then
-  if [ -n "${ILLOGICAL_APP_DIR:-}" ]; then
-    appdir=$ILLOGICAL_APP_DIR
-  elif [ -w /Applications ] && { [ ! -e /Applications/illogical.app ] || [ -w /Applications/illogical.app ]; }; then
+  if [ -n "${ARUGULA_APP_DIR:-}" ]; then
+    appdir=$ARUGULA_APP_DIR
+  elif [ -w /Applications ] && { [ ! -e /Applications/arugula.app ] || [ -w /Applications/arugula.app ]; }; then
     appdir=/Applications
   else
     appdir=$HOME/Applications
   fi
   mkdir -p "$appdir"
   ditto -x -k "$tmp/app/$zip" "$tmp/app/x" || die "couldn't unpack $zip"
-  [ -d "$tmp/app/x/illogical.app" ] || die "$zip has no illogical.app"
+  [ -d "$tmp/app/x/arugula.app" ] || die "$zip has no arugula.app"
   # Side by side, then swapped in, so a failed copy leaves the old app.
-  rm -rf "$appdir/.illogical.app.new"
-  ditto "$tmp/app/x/illogical.app" "$appdir/.illogical.app.new" || die "couldn't copy illogical.app to $appdir"
-  rm -rf "$appdir/illogical.app"
-  mv "$appdir/.illogical.app.new" "$appdir/illogical.app"
+  rm -rf "$appdir/.arugula.app.new"
+  ditto "$tmp/app/x/arugula.app" "$appdir/.arugula.app.new" || die "couldn't copy arugula.app to $appdir"
+  rm -rf "$appdir/arugula.app"
+  mv "$appdir/.arugula.app.new" "$appdir/arugula.app"
   say ""
-  say "The app is in $appdir/illogical.app."
+  say "The app is in $appdir/arugula.app."
   other=""
   case "$appdir" in
-    /Applications) other=$HOME/Applications/illogical.app ;;
-    "$HOME/Applications") other=/Applications/illogical.app ;;
+    /Applications) other=$HOME/Applications/arugula.app ;;
+    "$HOME/Applications") other=/Applications/arugula.app ;;
   esac
   if [ -n "$other" ] && [ -e "$other" ]; then
     say "  There's an older copy in $other: remove it, so Spotlight and the Dock open this one."
   fi
-  if pgrep -x illogical-desktop >/dev/null 2>&1; then
-    say "  An earlier one is running: quit it (illogical > Quit) and open the app again."
+  if pgrep -x arugula-desktop >/dev/null 2>&1; then
+    say "  An earlier one is running: quit it (arugula > Quit) and open the app again."
   elif [ -n "$started" ]; then
-    open "$appdir/illogical.app" || say "  Open it from $appdir."
+    open "$appdir/arugula.app" || say "  Open it from $appdir."
   fi
 fi
 
@@ -283,9 +283,9 @@ fi
 
 say ""
 if [ -n "$started" ]; then
-  say "  Open      illogical web   ($url, with your browser signed in)"
+  say "  Open      arugula web   ($url, with your browser signed in)"
 else
-  say "  Open      illogical web   ($url signed in, once it's running)"
+  say "  Open      arugula web   ($url signed in, once it's running)"
 fi
 serve="tailscale serve --bg --https=443 $url"
 if [ -n "$dns" ]; then
@@ -305,10 +305,10 @@ elif [ -n "$ts" ]; then
   say "  Phone     tailscale up, then $serve"
 else
   say "  Phone     install Tailscale (https://tailscale.com/download) to reach it"
-  say "            from your phone, or use illogical control (Anywhere)"
+  say "            from your phone, or use arugula control (Anywhere)"
 fi
-say "  Anywhere  ${bin}illogicald join https://control.illogical.widgets.wtf"
+say "  Anywhere  ${bin}arugulad join https://control.illogical.widgets.wtf"
 say "            (also how you add this machine to a team: pick it when you approve)"
-say "  Agents    ${bin}illogical agent --help · claude mcp add illogical -- ${bin}illogical mcp"
-say "  Hooks     ${bin}illogical hooks install   (Claude Code's questions and approvals as cards)"
+say "  Agents    ${bin}arugula agent --help · claude mcp add arugula -- ${bin}arugula mcp"
+say "  Hooks     ${bin}arugula hooks install   (Claude Code's questions and approvals as cards)"
 say "  Docs      https://illogical.widgets.wtf/#install"

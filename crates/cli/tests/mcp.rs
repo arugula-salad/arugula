@@ -1,4 +1,4 @@
-//! #234: `illogical mcp` in a pane says which (`$ILLOGICAL_PANE`), so a
+//! #234: `arugula mcp` in a pane says which (`$ARUGULA_PANE`), so a
 //! tool like `invite_person` knows where Claude Code in a terminal works;
 //! outside a pane it says nothing.
 
@@ -11,19 +11,19 @@ use std::{
     process::{Command, Stdio},
 };
 
-/// The headers of the one request `illogical mcp` sends for a line, with
-/// `ILLOGICAL_PANE` as given.
+/// The headers of the one request `arugula mcp` sends for a line, with
+/// `ARUGULA_PANE` as given.
 fn headers_sent(pane: Option<&str>) -> String {
     let dir = std::env::temp_dir().join(format!("ilg-cli-mcp-{}-{}", std::process::id(), pane.unwrap_or("none")));
     std::fs::create_dir_all(&dir).unwrap();
     let sock = dir.join("sock");
     let _ = std::fs::remove_file(&sock);
     let listener = UnixListener::bind(&sock).unwrap();
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_illogical"));
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_arugula"));
     cmd.args(["--socket", sock.to_str().unwrap(), "mcp"]).stdin(Stdio::piped()).stdout(Stdio::piped());
-    cmd.env_remove("ILLOGICAL_PANE");
+    cmd.env_remove("ARUGULA_PANE");
     if let Some(p) = pane {
-        cmd.env("ILLOGICAL_PANE", p);
+        cmd.env("ARUGULA_PANE", p);
     }
     let mut child = cmd.spawn().unwrap();
     let mut stdin = child.stdin.take().unwrap();
@@ -64,10 +64,10 @@ fn headers_sent(pane: Option<&str>) -> String {
 #[test]
 fn the_bridge_says_which_pane_it_runs_in() {
     let head = headers_sent(Some("7"));
-    assert!(head.contains("x-illogical-pane: 7\r\n"), "{head}");
+    assert!(head.contains("x-arugula-pane: 7\r\n"), "{head}");
     let head = headers_sent(None);
-    assert!(!head.contains("x-illogical-pane"), "{head}");
+    assert!(!head.contains("x-arugula-pane"), "{head}");
     // Something that isn't a pane isn't passed on.
     let head = headers_sent(Some("seven"));
-    assert!(!head.contains("x-illogical-pane"), "{head}");
+    assert!(!head.contains("x-arugula-pane"), "{head}");
 }

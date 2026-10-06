@@ -9,7 +9,7 @@ use crate::{
     store::PaneMeta,
     sys,
 };
-use illogical_proto::{PaneId, Policy};
+use arugula_proto::{PaneId, Policy};
 use std::{path::PathBuf, sync::Arc};
 use tracing::info;
 
@@ -18,7 +18,7 @@ use tracing::info;
 pub struct Config {
     /// Who else may reach which sessions (M12).
     pub acl: Arc<crate::acl::Acl>,
-    /// Illogical control: notifications through it go to people's
+    /// Arugula control: notifications through it go to people's
     /// devices (M21).
     pub control: Arc<crate::control::Control>,
     /// A hosted sandbox (M20): when its last session closes, it's done.
@@ -37,7 +37,7 @@ pub struct Config {
     pub manager_env: bool,
     pub launch: pane::Launcher,
     pub integration: Option<Integration>,
-    /// The CLI's socket, for `ILLOGICAL_SOCK` in panes.
+    /// The CLI's socket, for `ARUGULA_SOCK` in panes.
     pub socket: PathBuf,
     /// Where VM panes get their machines; `None` if not set up.
     pub provider: Option<Arc<dyn Provider>>,
@@ -52,7 +52,7 @@ pub struct Config {
     pub mcp: Option<crate::mcp::Link>,
     /// What runs an invite the owner sent from an agent's card (#234).
     pub invite: crate::invite::Hook,
-    /// illogicald as Claude Code's IDE (M28); `None`: off.
+    /// arugulad as Claude Code's IDE (M28); `None`: off.
     pub ide: Option<Arc<crate::ide::Ide>>,
 }
 
@@ -102,10 +102,10 @@ impl Config {
             env.retain(|(k, _)| k != "PATH");
             env.push(("PATH".into(), path));
         }
-        env.push(("ILLOGICAL_PANE".into(), pane.to_string()));
-        env.push(("ILLOGICAL_SOCK".into(), self.socket.display().to_string()));
+        env.push(("ARUGULA_PANE".into(), pane.to_string()));
+        env.push(("ARUGULA_SOCK".into(), self.socket.display().to_string()));
         // A box reached over ssh (M51) has no agent of its own: its panes
-        // use the one at a fixed path beside the socket, which `illogical
+        // use the one at a fixed path beside the socket, which `arugula
         // bridge` points at the owner's forwarded agent while they're
         // connected. An agent this machine has (a desktop's) is kept.
         #[cfg(unix)]
@@ -207,13 +207,13 @@ impl Config {
         args.extend(["-c".into(), script]);
         // `sh -c SCRIPT NAME ARGS…`: NAME is $0. fish has no $0.
         if !fish {
-            args.push("illogical".into());
+            args.push("arugula".into());
         }
         args.extend(words);
         Spawn { args, ..shell }
     }
 
-    /// Run `command` by itself (`illogical run`): the pane holds when it
+    /// Run `command` by itself (`arugula run`): the pane holds when it
     /// ends, so its output and exit code can still be read.
     pub(super) fn run_only(&self, pane: PaneId, cwd: PathBuf, command: &str) -> Spawn {
         let mut args = self.shell_args.clone();
@@ -223,7 +223,7 @@ impl Config {
             Dialect::PowerShell => args.extend([
                 "-Command".into(),
                 format!(
-                    "{command}\n$illogicalOk = $?; if ($LASTEXITCODE) {{ exit $LASTEXITCODE }}; if (-not $illogicalOk) {{ exit 1 }}"
+                    "{command}\n$arugulaOk = $?; if ($LASTEXITCODE) {{ exit $LASTEXITCODE }}; if (-not $arugulaOk) {{ exit 1 }}"
                 ),
             ]),
             Dialect::Cmd => args.extend(["/d".into(), "/c".into(), command.into()]),
@@ -289,7 +289,7 @@ impl Config {
         vec![
             ("TERM".into(), "xterm-256color".into()),
             ("COLORTERM".into(), "truecolor".into()),
-            ("ILLOGICAL_EXEC".into(), exec_tag(&self.daemon_id, pane)),
+            ("ARUGULA_EXEC".into(), exec_tag(&self.daemon_id, pane)),
         ]
     }
 

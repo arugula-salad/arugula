@@ -1,4 +1,4 @@
-//! illogicald as Claude Code's IDE (M28, S17: go, as a complement to M29's
+//! arugulad as Claude Code's IDE (M28, S17: go, as a complement to M29's
 //! hook).
 //!
 //! Claude Code in a pane finds us by `CLAUDE_CODE_SSE_PORT`, which every
@@ -11,7 +11,7 @@
 //!
 //! The connections themselves are held by a relay (`relay.rs`), a process
 //! of its own that outlives a daemon restart; this side is the daemon's
-//! link to it. "Which IDE gets diffs" is a setting here: illogical's cards,
+//! link to it. "Which IDE gets diffs" is a setting here: arugula's cards,
 //! or another IDE that registered with Claude Code (VS Code with Claude
 //! Code's extension, say), to which the daemon passes each `openDiff` on.
 
@@ -50,7 +50,7 @@ use crate::{
 };
 
 /// What we're called in Claude Code's `/ide` list.
-pub const NAME: &str = "illogical";
+pub const NAME: &str = "arugula";
 
 /// Where Claude Code looks for IDEs: `$CLAUDE_CONFIG_DIR/ide`, else
 /// `~/.claude/ide`.
@@ -92,7 +92,7 @@ pub enum Event {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 struct Prefs {
     /// Another IDE's name as it registers (`Visual Studio Code`); none:
-    /// illogical's own cards.
+    /// arugula's own cards.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     diffs: Option<String>,
 }
@@ -236,7 +236,7 @@ impl Ide {
         self.line(json!({ "t": "notify", "conn": conn.unwrap_or(0), "method": method, "params": params }));
     }
 
-    /// Where diffs go: `None` for illogical's cards.
+    /// Where diffs go: `None` for arugula's cards.
     pub fn diffs_to(&self) -> Option<String> {
         self.prefs.lock().unwrap().diffs.clone()
     }
@@ -374,7 +374,7 @@ async fn connect(dir: &Path, lock_dir: &Path, launch: &Launcher) -> io::Result<(
 #[cfg(unix)]
 /// The relay, in a scope (or process group) of its own so it outlives us.
 fn spawn_relay(dir: &Path, lock_dir: &Path, launch: &Launcher) -> io::Result<()> {
-    let unit = format!("illogical-ide-relay-{}", std::process::id());
+    let unit = format!("arugula-ide-relay-{}", std::process::id());
     let mut c = launch.command(&unit);
     c.arg("_ide_relay").arg(dir).arg(lock_dir);
     #[cfg(unix)]

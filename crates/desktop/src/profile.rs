@@ -30,7 +30,7 @@ pub fn init(app: &AppHandle) {
         let base = app.path().app_data_dir().ok()?;
         let dir = choose(&base, webkit_version()?);
         if let Some(d) = &dir {
-            eprintln!("illogical: {} was opened by a newer WebKitGTK; using {}", base.display(), d.display());
+            eprintln!("arugula: {} was opened by a newer WebKitGTK; using {}", base.display(), d.display());
         }
         dir
     });
@@ -79,7 +79,7 @@ mod tests {
 
     #[test]
     fn older_webkit_gets_its_own_profile() {
-        let base = std::env::temp_dir().join(format!("illogical-profile-{}", std::process::id()));
+        let base = std::env::temp_dir().join(format!("arugula-profile-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);
         // First launch records its version; the same or a newer one keeps the profile.
         assert_eq!(choose(&base, (2, 50)), None);

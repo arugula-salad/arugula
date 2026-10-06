@@ -9,7 +9,7 @@
 //! - **fountain**: `fountain acp --agent X`, an agent in a Fountain sandbox.
 //! - **acp**: any other ACP agent server, by its command line.
 //!
-//! The npm adapters are looked for in `~/.local/share/illogical/agents/`
+//! The npm adapters are looked for in `~/.local/share/arugula/agents/`
 //! (`npm install --prefix …/claude` the pin below: see `adapters.rs`), then
 //! on `PATH`.
 
@@ -136,11 +136,11 @@ pub struct Launch {
     pub npm: Option<&'static str>,
 }
 
-/// Where illogical keeps agent adapters on this host.
+/// Where arugula keeps agent adapters on this host.
 pub fn agents_dir(home: &Path) -> PathBuf {
-    std::env::var_os("ILLOGICAL_AGENTS_DIR")
+    std::env::var_os("ARUGULA_AGENTS_DIR")
         .map(PathBuf::from)
-        .unwrap_or_else(|| home.join(".local/share/illogical/agents"))
+        .unwrap_or_else(|| home.join(".local/share/arugula/agents"))
 }
 
 /// `name` from our agents directory if it's installed there, else `name`
@@ -227,7 +227,7 @@ impl Def {
                 }
                 // Tests put a stand-in there (M43's e2e: the fake ACP agent),
                 // so no test reaches a real Fountain.
-                let bin = std::env::var("ILLOGICAL_FOUNTAIN_BIN").ok().filter(|b| !b.is_empty());
+                let bin = std::env::var("ARUGULA_FOUNTAIN_BIN").ok().filter(|b| !b.is_empty());
                 l.argv = vec![bin.unwrap_or_else(|| installed(home, "fountain"))];
                 if let Some(p) = &self.profile {
                     l.argv.extend(["--profile".into(), p.clone()]);

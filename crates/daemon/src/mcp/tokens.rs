@@ -1,6 +1,6 @@
 //! Who may use `/mcp` without the owner's own identity (M16).
 //!
-//! - **Client tokens** (`illogical mcp token --name N`): for an MCP client
+//! - **Client tokens** (`arugula mcp token --name N`): for an MCP client
 //!   that has no tailnet identity of its own (a tagged node, a client that
 //!   can't use serve). Each has a name, which the log and "started by" use
 //!   when the client doesn't name itself, and a scope: `full` (everything,
@@ -18,6 +18,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use arugula_proto::PaneId;
 use axum::{
     Json, Router,
     extract::{Path as UrlPath, State},
@@ -26,7 +27,6 @@ use axum::{
     routing::{delete, get},
 };
 use hkdf::hmac::{Hmac, KeyInit, Mac};
-use illogical_proto::PaneId;
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use tracing::{info, warn};
@@ -175,7 +175,7 @@ impl Tokens {
 
     fn mac(&self, block: PaneId) -> String {
         let mut m = <Hmac<Sha256> as KeyInit>::new_from_slice(&self.key).expect("any key length");
-        m.update(format!("illogical block {block}").as_bytes());
+        m.update(format!("arugula block {block}").as_bytes());
         hex(&m.finalize().into_bytes())
     }
 

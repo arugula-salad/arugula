@@ -13,14 +13,14 @@
 //! so for anything else it answers what's in front instead, and the client
 //! offers *Copy* and *Paste anyway* (`force`).
 //!
-//! Files go in `illogical-uploads/<pane>/` under `$XDG_RUNTIME_DIR`, else
-//! `$TMPDIR`, else `/tmp/illogical-<uid>`: folders `0700` and refused
+//! Files go in `arugula-uploads/<pane>/` under `$XDG_RUNTIME_DIR`, else
+//! `$TMPDIR`, else `/tmp/arugula-<uid>`: folders `0700` and refused
 //! unless they're ours, files `0600`, made new (never through a link), with
 //! names we choose. A pane's go when it closes; anything older than a day
 //! goes in the sweep, which also runs as the daemon starts.
 //!
 //! A VM pane's file is staged here, then written on its machine, in
-//! `~/.cache/illogical/uploads/<pane>/` there.
+//! `~/.cache/arugula/uploads/<pane>/` there.
 //!
 //! M71: an agent block takes uploads too, always on this host: its `send
 //! {text, files}` takes them as its prompt's files (images go to the agent
@@ -35,13 +35,13 @@ use std::{
     time::{Duration, SystemTime},
 };
 
+use arugula_proto::PaneId;
 use axum::{
     Json,
     body::Bytes,
     extract::{Path, Query, State},
     http::StatusCode,
 };
-use illogical_proto::PaneId;
 use serde::Deserialize;
 use tracing::warn;
 
@@ -81,19 +81,19 @@ fn private_dir(dir: &FsPath) -> io::Result<()> {
     Ok(())
 }
 
-/// Where every pane's uploads go: `illogical-uploads` in the user's runtime
+/// Where every pane's uploads go: `arugula-uploads` in the user's runtime
 /// or temp directory (one of the system's, not checked), else in a private
-/// `/tmp/illogical-<uid>`.
+/// `/tmp/arugula-<uid>`.
 fn root() -> io::Result<PathBuf> {
     let base = match std::env::var_os("XDG_RUNTIME_DIR").or_else(|| std::env::var_os("TMPDIR")) {
         Some(d) => PathBuf::from(d),
         None => {
-            let d = PathBuf::from(format!("/tmp/illogical-{}", nix::unistd::geteuid().as_raw()));
+            let d = PathBuf::from(format!("/tmp/arugula-{}", nix::unistd::geteuid().as_raw()));
             private_dir(&d)?;
             d
         }
     };
-    let root = base.join("illogical-uploads");
+    let root = base.join("arugula-uploads");
     private_dir(&root)?;
     Ok(root)
 }
@@ -194,7 +194,7 @@ fn write_chunk(path: &FsPath, offset: u64, body: &[u8]) -> io::Result<()> {
 
 /// An agent block (M71), which takes uploads as its prompts' files.
 async fn agent(app: &App, id: PaneId) -> Option<Arc<dyn crate::block::Block>> {
-    app.mux.api(|r| Api::Block(id, r)).await.flatten().filter(|b| b.kind() == illogical_proto::BlockType::Agent)
+    app.mux.api(|r| Api::Block(id, r)).await.flatten().filter(|b| b.kind() == arugula_proto::BlockType::Agent)
 }
 
 /// One of `pane`'s uploads, by the path the route answered: a file (not a
@@ -270,10 +270,10 @@ async fn store(app: &App, id: PaneId, q: UploadQuery, body: Bytes) -> Res<serde_
     Ok(serde_json::json!({ "path": path, "done": last }))
 }
 
-/// On a machine: `~/.cache/illogical/uploads/<pane>`, `0700`, made by
+/// On a machine: `~/.cache/arugula/uploads/<pane>`, `0700`, made by
 /// `run` as its user. Clears what's older than a day there first.
 const MACHINE_FOLDER: &str = r#"set -e
-d="$HOME/.cache/illogical/uploads"
+d="$HOME/.cache/arugula/uploads"
 find "$d" -type f -mmin +1440 -delete 2>/dev/null || true
 find "$d" -mindepth 1 -type d -empty -delete 2>/dev/null || true
 mkdir -p "$d/$1"
@@ -291,7 +291,7 @@ async fn to_machine(app: &App, pane: PaneId, sprite: &str, staged: &FsPath) -> R
     let data = tokio::fs::read(staged).await.map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     let _ = tokio::fs::remove_file(staged).await;
     let tag = pane.to_string();
-    let argv = ["sh", "-c", MACHINE_FOLDER, "illogical-upload", &tag];
+    let argv = ["sh", "-c", MACHINE_FOLDER, "arugula-upload", &tag];
     let (out, code) =
         provider.run(sprite, &argv).await.map_err(|e| gone(format!("the machine isn't answering: {e}")))?;
     let dir = String::from_utf8_lossy(&out).trim().to_owned();
@@ -311,9 +311,9 @@ async fn to_machine(app: &App, pane: PaneId, sprite: &str, staged: &FsPath) -> R
 /// machine stays.
 pub fn forget_on(provider: Arc<dyn crate::provider::Provider>, sprite: String, pane: PaneId) {
     tokio::spawn(async move {
-        let script = r#"rm -rf "$HOME/.cache/illogical/uploads/$1""#;
+        let script = r#"rm -rf "$HOME/.cache/arugula/uploads/$1""#;
         let tag = pane.to_string();
-        let _ = provider.run(&sprite, &["sh", "-c", script, "illogical-upload", &tag]).await;
+        let _ = provider.run(&sprite, &["sh", "-c", script, "arugula-upload", &tag]).await;
     });
 }
 

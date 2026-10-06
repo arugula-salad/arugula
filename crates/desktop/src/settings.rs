@@ -3,7 +3,7 @@
 //!
 //! The hotkey is off by default (M46). The tray's *Global hotkey* item
 //! turns it on or off; `hotkey` in the file picks the keys
-//! (`Ctrl+Alt+Space` unless set). Pressed, it brings illogical to the
+//! (`Ctrl+Alt+Space` unless set). Pressed, it brings arugula to the
 //! front, or hides it when one of its windows has focus.
 
 use std::path::PathBuf;
@@ -31,7 +31,7 @@ impl Settings {
 }
 
 fn file(app: &AppHandle) -> Option<PathBuf> {
-    if let Some(f) = std::env::var_os("ILLOGICAL_DESKTOP_SETTINGS") {
+    if let Some(f) = std::env::var_os("ARUGULA_DESKTOP_SETTINGS") {
         return Some(f.into());
     }
     Some(app.path().app_config_dir().ok()?.join("desktop.json"))
@@ -50,7 +50,7 @@ pub fn save(app: &AppHandle, s: &Settings) {
         let _ = std::fs::create_dir_all(dir);
     }
     if let Err(e) = std::fs::write(&f, serde_json::to_string_pretty(s).unwrap()) {
-        eprintln!("illogical: saving {}: {e}", f.display());
+        eprintln!("arugula: saving {}: {e}", f.display());
     }
 }
 
@@ -73,7 +73,7 @@ pub fn apply(app: &AppHandle, s: &Settings) -> Result<(), String> {
         return Ok(());
     }
     gs.register(s.keys()).map_err(|e| format!("the global hotkey {}: {e}", s.keys()))?;
-    eprintln!("illogical: global hotkey {}", s.keys());
+    eprintln!("arugula: global hotkey {}", s.keys());
     Ok(())
 }
 

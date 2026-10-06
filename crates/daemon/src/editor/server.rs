@@ -12,7 +12,7 @@
 //! the VM, reached through the provider's proxy like any port there.
 //!
 //! **Where it comes from:** a pinned release from GitHub, checked against
-//! its SHA-256, unpacked once into the cache (`~/.cache/illogical/
+//! its SHA-256, unpacked once into the cache (`~/.cache/arugula/
 //! code-server/`), or `--code-server` for one already installed.
 //!
 //! **What it writes:** its settings, extensions and state under
@@ -64,10 +64,10 @@ const START: Duration = Duration::from_secs(60);
 
 /// The extension every editor block has (`ext/`): it reports the active
 /// file and carries the theme.
-pub const EXT_ID: &str = "illogical.illogical-editor";
+pub const EXT_ID: &str = "arugula.arugula-editor";
 pub const EXT_VERSION: &str = "0.2.0";
 /// What it was called before (M27): taken out where it's found.
-const OLD_IDS: &[&str] = &["illogical.illogical"];
+const OLD_IDS: &[&str] = &["arugula.arugula"];
 pub const EXT_FILES: &[(&str, &str)] = &[
     ("package.json", include_str!("ext/package.json")),
     ("extension.js", include_str!("ext/extension.js")),
@@ -76,7 +76,7 @@ pub const EXT_FILES: &[(&str, &str)] = &[
 
 /// What a new settings folder starts with. Later changes are the user's.
 const SETTINGS: &str = r#"{
-  "workbench.colorTheme": "illogical",
+  "workbench.colorTheme": "arugula",
   "chat.disableAIFeatures": true,
   "workbench.startupEditor": "none",
   "workbench.secondarySideBar.defaultVisibility": "hidden",
@@ -318,7 +318,7 @@ impl Server {
             if launch.no_expand {
                 c.arg("--expand-environment=no");
             }
-            c.arg(format!("--unit=illogical-code-server-{}", unique())).arg("--").arg(bin);
+            c.arg(format!("--unit=arugula-code-server-{}", unique())).arg("--").arg(bin);
             c
         } else {
             let c = tokio::process::Command::new(bin);
@@ -343,7 +343,7 @@ impl Server {
             c.env(k, v);
         }
         // It serves every block, not one pane.
-        c.env_remove("ILLOGICAL_PANE");
+        c.env_remove("ARUGULA_PANE");
         c
     }
 
@@ -353,7 +353,7 @@ impl Server {
         self.set(Status::Starting);
         for (name, text) in EXT_FILES {
             provider
-                .write_file(sprite, &format!("/tmp/illogical-editor-ext/{name}"), text.as_bytes().to_vec(), 0o644)
+                .write_file(sprite, &format!("/tmp/arugula-editor-ext/{name}"), text.as_bytes().to_vec(), 0o644)
                 .await
                 .map_err(|e| e.to_string())?;
         }
@@ -377,7 +377,7 @@ impl Server {
             env: vec![],
             dir: None,
         };
-        provider.put_service(sprite, "illogical-code-server", &def).await.map_err(|e| e.to_string())?;
+        provider.put_service(sprite, "arugula-code-server", &def).await.map_err(|e| e.to_string())?;
         // The first start downloads the release in the VM: give it time.
         let t0 = Instant::now();
         while t0.elapsed() < Duration::from_secs(600) {
@@ -606,8 +606,8 @@ case $(uname -m) in
   aarch64|arm64) a=arm64 sum=$3 ;;
   *) echo "no code-server for $(uname -m)" >&2; exit 3 ;;
 esac
-root=$HOME/.cache/illogical/code-server/$v-linux-$a
-d=$HOME/.local/state/illogical-editor
+root=$HOME/.cache/arugula/code-server/$v-linux-$a
+d=$HOME/.local/state/arugula-editor
 if [ ! -x "$root/bin/code-server" ]; then
   mkdir -p "$root.part"
   curl -fsSL "$9/v$v/code-server-$v-linux-$a.tar.gz" -o "$root.tgz"
@@ -619,7 +619,7 @@ fi
 mkdir -p "$d/user/User" "$d/extensions/$8"
 printf 'auth: none\ncert: false\n' >"$d/config.yaml"
 [ -f "$d/user/User/settings.json" ] || printf '%s' "$7" >"$d/user/User/settings.json"
-cp /tmp/illogical-editor-ext/* "$d/extensions/$8/" 2>/dev/null || true
+cp /tmp/arugula-editor-ext/* "$d/extensions/$8/" 2>/dev/null || true
 printf '[{"identifier":{"id":"%s"},"version":"%s","location":{"$mid":1,"path":"%s","scheme":"file"},"relativeLocation":"%s","metadata":{"pinned":true,"source":"vsix"}}]' \
   "${8%-*}" "${8##*-}" "$d/extensions/$8" "$8" >"$d/extensions/extensions.json"
 exec "$root/bin/code-server" --config "$d/config.yaml" --user-data-dir "$d/user" --extensions-dir "$d/extensions" \
@@ -665,20 +665,20 @@ mod tests {
         prepare(&dir).unwrap();
         let settings = dir.join("user/User/settings.json");
         let v: serde_json::Value = serde_json::from_slice(&std::fs::read(&settings).unwrap()).unwrap();
-        assert_eq!(v["workbench.colorTheme"], "illogical");
+        assert_eq!(v["workbench.colorTheme"], "arugula");
         assert_eq!(v["chat.disableAIFeatures"], true);
         // Someone's own settings stay theirs.
         std::fs::write(&settings, "{\"workbench.colorTheme\": \"Default Light Modern\"}").unwrap();
         // An extension they installed stays listed; an old one of ours goes.
         let exts = dir.join("extensions");
-        std::fs::create_dir_all(exts.join("illogical.illogical-0.0.1")).unwrap();
+        std::fs::create_dir_all(exts.join("arugula.arugula-0.0.1")).unwrap();
         let mut list: Vec<serde_json::Value> =
             serde_json::from_slice(&std::fs::read(exts.join("extensions.json")).unwrap()).unwrap();
         list.retain(|v| v["identifier"]["id"] != EXT_ID);
         list.push(serde_json::json!({ "identifier": { "id": "rust-lang.rust-analyzer" }, "relativeLocation": "ra" }));
         list.push(
             // M27's, under its old name.
-            serde_json::json!({ "identifier": { "id": "illogical.illogical" }, "relativeLocation": "illogical.illogical-0.0.1" }),
+            serde_json::json!({ "identifier": { "id": "arugula.arugula" }, "relativeLocation": "arugula.arugula-0.0.1" }),
         );
         std::fs::write(exts.join("extensions.json"), serde_json::to_vec(&list).unwrap()).unwrap();
         prepare(&dir).unwrap();
@@ -688,7 +688,7 @@ mod tests {
         let ids: Vec<&str> = list.iter().filter_map(|v| v["identifier"]["id"].as_str()).collect();
         assert_eq!(ids, ["rust-lang.rust-analyzer", EXT_ID]);
         assert_eq!(list[1]["relativeLocation"], format!("{EXT_ID}-{EXT_VERSION}"));
-        assert!(!exts.join("illogical.illogical-0.0.1").exists());
+        assert!(!exts.join("arugula.arugula-0.0.1").exists());
         let pkg: serde_json::Value =
             serde_json::from_slice(&std::fs::read(exts.join(format!("{EXT_ID}-{EXT_VERSION}/package.json"))).unwrap())
                 .unwrap();

@@ -15,12 +15,12 @@
 
 use std::{path::PathBuf, sync::Arc};
 
+use arugula_e2e::now_ms;
 use axum::{
     Json,
     extract::{Path, State},
     http::StatusCode,
 };
-use illogical_e2e::now_ms;
 use serde_json::{Value, json};
 use tracing::{info, warn};
 
@@ -35,7 +35,7 @@ type R = Result<Json<Value>, ApiError>;
 
 /// The daemon's port inside a sandbox.
 pub const PORT: u16 = 7681;
-const SERVICE: &str = "illogicald";
+const SERVICE: &str = "arugulad";
 const PREFIX: &str = "ilc-";
 
 pub struct Hosted {
@@ -71,7 +71,7 @@ pub async fn create(State(app): State<Arc<App>>, s: Session, body: Option<Json<V
         ));
     }
     let device = body.as_ref().and_then(|b| b["device"].as_str()).unwrap_or_default().to_owned();
-    let id = format!("{PREFIX}{}", hex::encode(illogical_e2e::random::<6>()));
+    let id = format!("{PREFIX}{}", hex::encode(arugula_e2e::random::<6>()));
     let ticket = token();
     app.db.add_sandbox(&id, &s.account, &device, &hash(&ticket), now_ms())?;
     info!(sandbox = id, account = s.account, "creating a hosted sandbox");
@@ -90,13 +90,13 @@ async fn provision(app: &App, id: &str, _ticket: &str) -> anyhow::Result<()> {
     h.sprites.create(id).await?;
     app.db.set_sandbox_state(id, "installing")?;
     let bin = tokio::fs::read(&h.binary).await?;
-    h.sprites.write_file(id, ".local/bin/illogicald", bin, 0o755).await?;
+    h.sprites.write_file(id, ".local/bin/arugulad", bin, 0o755).await?;
     // The daemon makes its key there and asks to join; control fetches the
     // request through the provider, the browser that asked approves it, and
     // control writes the enrollment back. Then it runs for good: on
     // loopback, reached through the provider's proxy, never dialing in.
     let script = format!(
-        "B=$HOME/.local/bin/illogicald; S=$HOME/.local/state/illogical; mkdir -p $S; \
+        "B=$HOME/.local/bin/arugulad; S=$HOME/.local/state/arugula; mkdir -p $S; \
          [ -f $S/control.json ] || $B join-request --name {id} --out $S/join-request.json --state-dir $S; \
          while [ ! -f $S/control.json ]; do sleep 1; done; \
          exec $B --listen 127.0.0.1:{PORT} --state-dir $S --no-relay --sandbox-of-control --no-manager-env"
@@ -105,8 +105,8 @@ async fn provision(app: &App, id: &str, _ticket: &str) -> anyhow::Result<()> {
     app.db.set_sandbox_state(id, "joining")?;
     let mut req = None;
     for _ in 0..120 {
-        if let Some(b) = h.sprites.read_file(id, ".local/state/illogical/join-request.json").await?
-            && let Ok(c) = serde_json::from_slice::<illogical_e2e::Cert>(&b)
+        if let Some(b) = h.sprites.read_file(id, ".local/state/arugula/join-request.json").await?
+            && let Ok(c) = serde_json::from_slice::<arugula_e2e::Cert>(&b)
         {
             req = Some(c);
             break;
@@ -115,7 +115,7 @@ async fn provision(app: &App, id: &str, _ticket: &str) -> anyhow::Result<()> {
     }
     let cert = req.ok_or_else(|| anyhow::anyhow!("the daemon didn't ask to join"))?;
     cert.check_request()?;
-    let code = illogical_e2e::cert::join_code(&cert);
+    let code = arugula_e2e::cert::join_code(&cert);
     // Control read the request from inside the box it made: its own key's.
     app.db.add_join(&code, &cert, &hash(&token()), &[], None, Some(id), "", true, now_ms())?;
     app.db.set_sandbox_state(id, "approving")?;
@@ -123,7 +123,7 @@ async fn provision(app: &App, id: &str, _ticket: &str) -> anyhow::Result<()> {
 }
 
 /// The requester approved its join: hand the daemon its enrollment.
-pub async fn enrolled(app: &App, sandbox: &str, cert: &illogical_e2e::Cert) -> anyhow::Result<()> {
+pub async fn enrolled(app: &App, sandbox: &str, cert: &arugula_e2e::Cert) -> anyhow::Result<()> {
     let h = app.hosted.as_ref().ok_or_else(|| anyhow::anyhow!("no hosted sandboxes"))?;
     let root = app.db.account(&cert.account)?.and_then(|a| a.root).ok_or_else(|| anyhow::anyhow!("no root"))?;
     let (certs, _) = app.db.devices(&cert.account)?;
@@ -135,7 +135,7 @@ pub async fn enrolled(app: &App, sandbox: &str, cert: &illogical_e2e::Cert) -> a
         "revocations": app.db.revocations(&cert.account)?,
     });
     h.sprites
-        .write_file(sandbox, ".local/state/illogical/control.json", serde_json::to_vec_pretty(&saved)?, 0o600)
+        .write_file(sandbox, ".local/state/arugula/control.json", serde_json::to_vec_pretty(&saved)?, 0o600)
         .await?;
     app.db.set_sandbox_state(sandbox, "running")?;
     Ok(())

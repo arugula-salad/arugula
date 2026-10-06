@@ -3,7 +3,7 @@
 //! agent and any password or 2FA prompt work as they always do, and nothing
 //! but the destination is stored. One master connection per box
 //! (ControlMaster) carries everything: each connection to the daemon is a
-//! channel on it running `illogical bridge` on the box, which joins the
+//! channel on it running `arugula bridge` on the box, which joins the
 //! channel to the daemon's Unix socket (S28, `spikes/s28-ssh`).
 
 #[cfg(unix)]
@@ -32,7 +32,7 @@ const RELEASES: &str = "https://github.com/arugula-salad/illogical/releases/down
 /// `~/.local/bin` on PATH (that's `~/.profile`, read by login shells only),
 /// and a login shell could print into the bridge's stream, so it's always
 /// named in full.
-const REMOTE_CLI: &str = "~/.local/bin/illogical";
+const REMOTE_CLI: &str = "~/.local/bin/arugula";
 
 /// A box reached over ssh: what `ssh` is given as its destination
 /// (`user@box`, `box` from `~/.ssh/config`, `ssh://user@box:2222`).
@@ -57,8 +57,8 @@ impl Remote {
 
     /// `ssh` with the options every call shares, for this box's master.
     fn ssh(&self) -> Command {
-        // ILLOGICAL_SSH replaces `ssh` (`ssh -F testnet/.state/ssh_config`).
-        let mut words: Vec<String> = std::env::var("ILLOGICAL_SSH")
+        // ARUGULA_SSH replaces `ssh` (`ssh -F testnet/.state/ssh_config`).
+        let mut words: Vec<String> = std::env::var("ARUGULA_SSH")
             .ok()
             .map(|s| s.split_whitespace().map(String::from).collect())
             .filter(|w: &Vec<String>| !w.is_empty())
@@ -110,7 +110,7 @@ impl Remote {
         // `git push` from a pane on the box uses this client's agent (the
         // bridge links it for the box's panes). Channels through a master
         // get the master's agent, and only if the master forwards it, so
-        // this is where it's decided. ILLOGICAL_SSH_AGENT=no keeps it here.
+        // this is where it's decided. ARUGULA_SSH_AGENT=no keeps it here.
         if forward_agent() {
             c.args(["-o", "ForwardAgent=yes"]);
         }
@@ -143,7 +143,7 @@ impl Remote {
     }
 
     /// A new connection to the box's daemon: one end of a socket pair,
-    /// with `ssh … illogical bridge` on the other (its stdin and stdout), so
+    /// with `ssh … arugula bridge` on the other (its stdin and stdout), so
     /// it has a real fd to poll like any other connection.
     #[cfg(not(unix))]
     pub fn channel(&self) -> anyhow::Result<UnixStream> {
@@ -167,7 +167,7 @@ impl Remote {
         Ok(ours)
     }
 
-    /// Before the first connection: the master, illogical on the box (offered
+    /// Before the first connection: the master, arugula on the box (offered
     /// once if it's missing, or if it's a different major version), and its
     /// daemon running.
     pub fn prepare(&self) -> anyhow::Result<()> {
@@ -176,7 +176,7 @@ impl Remote {
         let mut p = self.probe()?;
         if !p.installed {
             let q = format!(
-                "illogical isn't installed on {}. Install {VERSION} there (~/.local/bin, and its daemon)?",
+                "arugula isn't installed on {}. Install {VERSION} there (~/.local/bin, and its daemon)?",
                 self.dest
             );
             self.offer(&q, interactive)?;
@@ -186,18 +186,18 @@ impl Remote {
             && !compatible(&v, VERSION)
         {
             let q =
-                format!("{} runs illogical {v}; this is {VERSION}, a different major version. Upgrade it?", self.dest);
-            self.offer(&q, interactive).with_context(|| format!("{} runs illogical {v}, not {VERSION}", self.dest))?;
+                format!("{} runs arugula {v}; this is {VERSION}, a different major version. Upgrade it?", self.dest);
+            self.offer(&q, interactive).with_context(|| format!("{} runs arugula {v}, not {VERSION}", self.dest))?;
             self.install(&p)?;
             p = self.probe()?;
         }
         if !p.daemon {
-            eprintln!("illogical: starting illogicald on {}", self.dest);
+            eprintln!("arugula: starting arugulad on {}", self.dest);
             self.start()?;
             let until = Instant::now() + Duration::from_secs(15);
             while !self.probe()?.daemon {
                 if Instant::now() > until {
-                    bail!("illogicald on {} didn't start: see ~/.local/state/illogicald.log there", self.dest);
+                    bail!("arugulad on {} didn't start: see ~/.local/state/arugulad.log there", self.dest);
                 }
                 std::thread::sleep(Duration::from_millis(300));
             }
@@ -205,7 +205,7 @@ impl Remote {
         Ok(())
     }
 
-    /// M52: set the box up (`prepare`), then run its `illogicald join` here,
+    /// M52: set the box up (`prepare`), then run its `arugulad join` here,
     /// in this terminal: its code and the account's fingerprint show here
     /// and its question is answered here, while you approve it from a
     /// signed-in device. Afterwards control reaches it, and ssh isn't needed.
@@ -216,7 +216,7 @@ impl Remote {
         self.prepare()?;
         let quoted: Vec<String> = args.iter().map(|a| sh_quote(a)).collect();
         let mut child = self
-            .channel_cmd(&[], &format!("~/.local/bin/illogicald {}", quoted.join(" ")))
+            .channel_cmd(&[], &format!("~/.local/bin/arugulad {}", quoted.join(" ")))
             .stderr(Stdio::piped())
             .spawn()
             .with_context(|| format!("running ssh to {}", self.dest))?;
@@ -236,9 +236,9 @@ impl Remote {
         let status = child.wait()?;
         if !status.success() && unreachable(&String::from_utf8_lossy(&said)) {
             eprintln!(
-                "illogical: {dest} can't reach control at {control}. Joining needs {dest} to connect out to \
+                "arugula: {dest} can't reach control at {control}. Joining needs {dest} to connect out to \
                  control (HTTPS, or http on a private network), and it couldn't. {dest} is still reachable from a \
-                 terminal over ssh: `illogical --ssh {dest} tui`.",
+                 terminal over ssh: `arugula --ssh {dest} tui`.",
                 dest = self.dest
             );
         }
@@ -257,15 +257,15 @@ impl Remote {
     }
 
     /// Ask once: yes, unless declined before (remembered, so it isn't asked
-    /// again) or there's no terminal to ask in. ILLOGICAL_SSH_INSTALL=yes
+    /// again) or there's no terminal to ask in. ARUGULA_SSH_INSTALL=yes
     /// answers yes without asking.
     fn offer(&self, question: &str, interactive: bool) -> anyhow::Result<()> {
-        if std::env::var("ILLOGICAL_SSH_INSTALL").is_ok_and(|v| v == "yes") {
+        if std::env::var("ARUGULA_SSH_INSTALL").is_ok_and(|v| v == "yes") {
             return Ok(());
         }
         let declined = config_dir().join("ssh-declined");
         let known = fs::read_to_string(&declined).unwrap_or_default();
-        let how = "ILLOGICAL_SSH_INSTALL=yes installs it without asking";
+        let how = "ARUGULA_SSH_INSTALL=yes installs it without asking";
         if known.lines().any(|l| l == self.dest) {
             bail!("{question} (declined before; {how})");
         }
@@ -288,10 +288,10 @@ impl Remote {
     /// `~/.local/bin`, over the master: the box needs nothing but sshd and
     /// `sh`, not even a network.
     fn install(&self, p: &Probe) -> anyhow::Result<()> {
-        let triple = p.triple().with_context(|| format!("no illogical build for {} ({})", self.dest, p.uname))?;
+        let triple = p.triple().with_context(|| format!("no arugula build for {} ({})", self.dest, p.uname))?;
         let dir = binaries(triple)?;
-        eprintln!("illogical: installing {VERSION} ({triple}) on {}", self.dest);
-        for name in ["illogicald", "illogical"] {
+        eprintln!("arugula: installing {VERSION} ({triple}) on {}", self.dest);
+        for name in ["arugulad", "arugula"] {
             let file = dir.join(name);
             self.run(
                 &format!(
@@ -305,12 +305,12 @@ impl Remote {
         // panes are adopted). A --system LaunchDaemon needs sudo, so not.
         if p.daemon {
             let out = self.run(
-                "sh -c 'if systemctl --user is-active --quiet illogicald 2>/dev/null || [ -f ~/Library/LaunchAgents/illogicald.plist ]; then ~/.local/bin/illogicald install >/dev/null && echo restarted; fi'",
+                "sh -c 'if systemctl --user is-active --quiet arugulad 2>/dev/null || [ -f ~/Library/LaunchAgents/arugulad.plist ]; then ~/.local/bin/arugulad install >/dev/null && echo restarted; fi'",
                 None,
             );
             if !out.is_ok_and(|o| o.contains("restarted")) {
                 eprintln!(
-                    "illogical: the daemon running on {} is still the old one until it restarts (its panes are kept)",
+                    "arugula: the daemon running on {} is still the old one until it restarts (its panes are kept)",
                     self.dest
                 );
             }
@@ -332,17 +332,17 @@ impl Remote {
                 // The install's notes (a Mac with no GUI login: it won't come
                 // back after a reboot by itself) pass through.
                 for note in out.lines().filter_map(|l| l.strip_prefix("note: ")) {
-                    eprintln!("illogical: {}: {note}", self.dest);
+                    eprintln!("arugula: {}: {note}", self.dest);
                 }
             }
             "linger" => {}
             "nolinger" => eprintln!(
-                "illogical: illogicald on {} stops when you log out: lingering couldn't be turned on without sudo \
+                "arugula: arugulad on {} stops when you log out: lingering couldn't be turned on without sudo \
                  (`sudo loginctl enable-linger $USER` there keeps it)",
                 self.dest
             ),
             _ => eprintln!(
-                "illogical: no systemd user session on {}: illogicald runs detached, so it survives logging out but not a reboot",
+                "arugula: no systemd user session on {}: arugulad runs detached, so it survives logging out but not a reboot",
                 self.dest
             ),
         }
@@ -350,13 +350,13 @@ impl Remote {
     }
 }
 
-/// On the box: on a Mac, `illogicald install` (a LaunchAgent, or with no
+/// On the box: on a Mac, `arugulad install` (a LaunchAgent, or with no
 /// GUI login a background agent, whose `note:` line is printed first); a
 /// systemd user service if the user has a manager, with lingering; else
 /// detached, without this login's agent (the bridge links the current one).
 /// Prints how: `launchd`, `linger`, `nolinger` or `detached`.
 const START: &str = r#"sh -c '
-d=$HOME/.local/bin/illogicald
+d=$HOME/.local/bin/arugulad
 if [ "$(uname -s)" = Darwin ] && out=$("$d" install 2>&1); then
   printf "%s\n" "$out" | grep "^note:"
   echo launchd
@@ -367,11 +367,11 @@ else
   mkdir -p "$HOME/.local/state"
   unset SSH_AUTH_SOCK
   if command -v setsid >/dev/null 2>&1; then s=setsid; else s=; fi
-  nohup $s "$d" --keep-panes </dev/null >"$HOME/.local/state/illogicald.log" 2>&1 &
+  nohup $s "$d" --keep-panes </dev/null >"$HOME/.local/state/arugulad.log" 2>&1 &
   echo detached
 fi'"#;
 
-/// Whether `illogicald join`'s errors say it couldn't connect to control
+/// Whether `arugulad join`'s errors say it couldn't connect to control
 /// at all (as opposed to control refusing, or nobody approving).
 fn unreachable(said: &str) -> bool {
     said.contains("can't reach control at")
@@ -383,7 +383,7 @@ fn sh_quote(s: &str) -> String {
 }
 
 fn forward_agent() -> bool {
-    !std::env::var("ILLOGICAL_SSH_AGENT").is_ok_and(|v| v == "no")
+    !std::env::var("ARUGULA_SSH_AGENT").is_ok_and(|v| v == "no")
 }
 
 #[cfg(unix)]
@@ -438,19 +438,19 @@ fn compatible(theirs: &str, ours: &str) -> bool {
     major(theirs).is_some() && major(theirs) == major(ours)
 }
 
-/// A directory with `illogical` and `illogicald` for `triple`:
-/// ILLOGICAL_SSH_BINARIES (`DIR/TRIPLE/` or `DIR/`), else this build's own
+/// A directory with `arugula` and `arugulad` for `triple`:
+/// ARUGULA_SSH_BINARIES (`DIR/TRIPLE/` or `DIR/`), else this build's own
 /// when it's a static build for the same platform, else the release
 /// tarball, downloaded once and checked against the release's SHA256SUMS.
 fn binaries(triple: &str) -> anyhow::Result<PathBuf> {
-    let has = |d: &Path| d.join("illogical").is_file() && d.join("illogicald").is_file();
-    if let Some(dir) = std::env::var_os("ILLOGICAL_SSH_BINARIES").map(PathBuf::from) {
+    let has = |d: &Path| d.join("arugula").is_file() && d.join("arugulad").is_file();
+    if let Some(dir) = std::env::var_os("ARUGULA_SSH_BINARIES").map(PathBuf::from) {
         for d in [dir.join(triple), dir.clone()] {
             if has(&d) {
                 return Ok(d);
             }
         }
-        bail!("no illogical and illogicald for {triple} in {}", dir.display());
+        bail!("no arugula and arugulad for {triple} in {}", dir.display());
     }
     if own_triple() == Some(triple)
         && let Some(d) = std::env::current_exe()?.parent().map(Path::to_path_buf)
@@ -473,17 +473,17 @@ fn own_triple() -> Option<&'static str> {
 }
 
 fn download(triple: &str) -> anyhow::Result<PathBuf> {
-    let name = format!("illogical-{VERSION}-{triple}");
+    let name = format!("arugula-{VERSION}-{triple}");
     let cache = cache_dir().join("releases").join(VERSION);
     let dir = cache.join(&name);
-    if dir.join("illogical").is_file() && dir.join("illogicald").is_file() {
+    if dir.join("arugula").is_file() && dir.join("arugulad").is_file() {
         return Ok(dir);
     }
     fs::create_dir_all(&cache)?;
     let base = format!("{RELEASES}/v{VERSION}");
     let tarball = cache.join(format!("{name}.tar.gz"));
     let sums = cache.join("SHA256SUMS");
-    eprintln!("illogical: downloading {name}");
+    eprintln!("arugula: downloading {name}");
     for (url, to) in [(format!("{base}/{name}.tar.gz"), &tarball), (format!("{base}/SHA256SUMS"), &sums)] {
         let ok = Command::new("curl").args(["-fsSL", "-o"]).arg(to).arg(&url).status().is_ok_and(|s| s.success());
         if !ok {
@@ -504,7 +504,7 @@ fn download(triple: &str) -> anyhow::Result<PathBuf> {
         bail!("{name}.tar.gz doesn't match the release's SHA256SUMS");
     }
     let ok = Command::new("tar").arg("-xzf").arg(&tarball).arg("-C").arg(&cache).status().is_ok_and(|s| s.success());
-    if !ok || !dir.join("illogical").is_file() {
+    if !ok || !dir.join("arugula").is_file() {
         bail!("couldn't unpack {}", tarball.display());
     }
     Ok(dir)
@@ -526,11 +526,11 @@ fn home() -> PathBuf {
 }
 
 fn config_dir() -> PathBuf {
-    std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from).unwrap_or_else(|| home().join(".config")).join("illogical")
+    std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from).unwrap_or_else(|| home().join(".config")).join("arugula")
 }
 
 fn cache_dir() -> PathBuf {
-    std::env::var_os("XDG_CACHE_HOME").map(PathBuf::from).unwrap_or_else(|| home().join(".cache")).join("illogical")
+    std::env::var_os("XDG_CACHE_HOME").map(PathBuf::from).unwrap_or_else(|| home().join(".cache")).join("arugula")
 }
 
 /// Where the masters' sockets go. A Unix socket path is at most 104 bytes on
@@ -543,9 +543,9 @@ fn control_dir() -> PathBuf {
     #[cfg(not(unix))]
     let uid = 0;
     let candidates = [
-        std::env::var_os("XDG_RUNTIME_DIR").map(|d| PathBuf::from(d).join("illogical-ssh")),
+        std::env::var_os("XDG_RUNTIME_DIR").map(|d| PathBuf::from(d).join("arugula-ssh")),
         Some(cache_dir().join("ssh")),
-        Some(PathBuf::from(format!("/tmp/illogical-ssh-{uid}"))),
+        Some(PathBuf::from(format!("/tmp/arugula-ssh-{uid}"))),
     ];
     for dir in candidates.into_iter().flatten() {
         if dir.as_os_str().len() > 45 || fs::create_dir_all(&dir).is_err() {
@@ -564,7 +564,7 @@ fn control_dir() -> PathBuf {
     cache_dir().join("ssh")
 }
 
-/// `illogical bridge` (on the box, run by a client over ssh): join stdin and
+/// `arugula bridge` (on the box, run by a client over ssh): join stdin and
 /// stdout to the daemon's socket until either side is done. With `probe`:
 /// say what's installed and whether the daemon answers, as one JSON line.
 #[cfg(unix)]
@@ -602,7 +602,7 @@ pub fn bridge(sock: &Path, probe: bool) -> anyhow::Result<i32> {
     let conn = match connect_daemon(sock) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("illogical bridge: can't reach illogicald at {}: {e}", sock.display());
+            eprintln!("arugula bridge: can't reach arugulad at {}: {e}", sock.display());
             return Ok(1);
         }
     };
@@ -716,6 +716,6 @@ mod tests {
 
     #[test]
     fn agent_beside_socket() {
-        assert_eq!(agent_link(Path::new("/run/user/1/illogical/sock")), Path::new("/run/user/1/illogical/agent.sock"));
+        assert_eq!(agent_link(Path::new("/run/user/1/arugula/sock")), Path::new("/run/user/1/arugula/agent.sock"));
     }
 }

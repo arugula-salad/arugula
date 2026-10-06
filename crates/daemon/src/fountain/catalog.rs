@@ -77,12 +77,12 @@ pub fn source(a: &Agent) -> (Source, Option<String>) {
     (Source::Hand, None)
 }
 
-/// `metadata.illogical.local` (flat or nested): `false` (or `"false"`, as
+/// `metadata.arugula.local` (flat or nested): `false` (or `"false"`, as
 /// some metadata keeps every value a string) says it's for Fountain only,
 /// not to be worn here (M44).
 pub fn local_ok(a: &Agent) -> bool {
-    let flat = a.metadata.get("illogical.local");
-    let nested = a.metadata.get("illogical").and_then(|v| v.get("local"));
+    let flat = a.metadata.get("arugula.local");
+    let nested = a.metadata.get("arugula").and_then(|v| v.get("local"));
     match flat.or(nested) {
         Some(Value::Bool(false)) => false,
         Some(Value::String(s)) => !s.trim().eq_ignore_ascii_case("false"),
@@ -231,7 +231,7 @@ pub struct Card {
     /// Which app made it.
     pub app: Option<String>,
     /// Whether *Run here* could wear it (M44): `claude` agents not marked
-    /// `illogical.local: false`.
+    /// `arugula.local: false`.
     pub local: bool,
     /// Why not, when it's a claude agent that can't.
     pub local_why: Option<String>,
@@ -264,7 +264,7 @@ pub fn card(a: &Agent, envs: &BTreeMap<String, String>) -> Card {
         source: Some(src),
         app,
         local: claude && ok,
-        local_why: (claude && !ok).then(|| "it's for Fountain only (metadata illogical.local: false)".to_owned()),
+        local_why: (claude && !ok).then(|| "it's for Fountain only (metadata arugula.local: false)".to_owned()),
     }
 }
 
@@ -423,16 +423,16 @@ mod tests {
         assert_eq!((card(codex, &envs).local, card(codex, &envs).local_why), (false, None));
         // Marked for Fountain only (M44 adds it to the orchestrators).
         let mut orch = named(&all, "orchestrator").clone();
-        orch.metadata.insert("illogical.local".into(), json!(false));
+        orch.metadata.insert("arugula.local".into(), json!(false));
         let c = card(&orch, &envs);
         assert!(!c.local && c.local_why.unwrap().contains("Fountain only"));
-        orch.metadata.remove("illogical.local");
-        orch.metadata.insert("illogical".into(), json!({ "local": false }));
+        orch.metadata.remove("arugula.local");
+        orch.metadata.insert("arugula".into(), json!({ "local": false }));
         assert!(!card(&orch, &envs).local);
-        orch.metadata.remove("illogical");
-        orch.metadata.insert("illogical.local".into(), json!("false"));
+        orch.metadata.remove("arugula");
+        orch.metadata.insert("arugula.local".into(), json!("false"));
         assert!(!card(&orch, &envs).local, "as a string too");
-        orch.metadata.insert("illogical.local".into(), json!("true"));
+        orch.metadata.insert("arugula.local".into(), json!("true"));
         assert!(card(&orch, &envs).local);
     }
 

@@ -1,6 +1,6 @@
--- illogical.nvim (M28): your nvim in the illogical swarm.
+-- arugula.nvim (M28): your nvim in the arugula swarm.
 --
--- It connects to the illogicald on this machine ($ILLOGICAL_SOCK, else the
+-- It connects to the arugulad on this machine ($ARUGULA_SOCK, else the
 -- daemon's usual socket) with core vim.uv, no dependencies, and speaks the
 -- daemon's editor protocol (lines of JSON over an HTTP upgrade; see the
 -- daemon's editor/link.rs), as the VS Code extension does:
@@ -13,8 +13,8 @@
 --             only while someone follows (the daemon says `followers`):
 --             the cursor at most every 100 ms, the file, each change
 --
--- A folder joins only when asked (:IllogicalJoin), and that's remembered
--- for it; :IllogicalLeave takes it out at once.
+-- A folder joins only when asked (:ArugulaJoin), and that's remembered
+-- for it; :ArugulaLeave takes it out at once.
 --
 -- Lines count from 1 and columns from 0 (UTF-16 units), as the follow
 -- view (and VS Code) count them.
@@ -51,12 +51,12 @@ local S = {
 
 local function state_dir()
   local base = vim.env.XDG_STATE_HOME or (vim.env.HOME .. "/.local/state")
-  return base .. "/illogical"
+  return base .. "/arugula"
 end
 
 local function socket_path()
   if M.opts.socket then return M.opts.socket end
-  if vim.env.ILLOGICAL_SOCK and vim.env.ILLOGICAL_SOCK ~= "" then return vim.env.ILLOGICAL_SOCK end
+  if vim.env.ARUGULA_SOCK and vim.env.ARUGULA_SOCK ~= "" then return vim.env.ARUGULA_SOCK end
   local f = io.open(state_dir() .. "/sock.path", "r")
   if f then
     local p = vim.trim(f:read("*a") or "")
@@ -68,7 +68,7 @@ end
 
 -- Folders that joined, remembered.
 local function remembered_path()
-  return vim.fn.stdpath("data") .. "/illogical/folders.json"
+  return vim.fn.stdpath("data") .. "/arugula/folders.json"
 end
 
 local function remembered()
@@ -351,7 +351,7 @@ local function on_message(m)
     local more = m.n > S.followers
     S.followers = m.n
     if more then
-      vim.notify(("illogical: %d following"):format(m.n))
+      vim.notify(("arugula: %d following"):format(m.n))
       follow_all()
     elseif m.n == 0 then
       S.open = nil
@@ -389,7 +389,7 @@ connect = function()
   local upgraded = false
   pipe:connect(socket_path(), function(err)
     if err then return vim.schedule(lost) end
-    pipe:write("GET /api/editors/connect HTTP/1.1\r\nHost: localhost\r\nConnection: Upgrade\r\nUpgrade: illogical-editor\r\n\r\n")
+    pipe:write("GET /api/editors/connect HTTP/1.1\r\nHost: localhost\r\nConnection: Upgrade\r\nUpgrade: arugula-editor\r\n\r\n")
     pipe:read_start(function(rerr, data)
       if rerr or not data then return vim.schedule(lost) end
       vim.schedule(function()
@@ -452,7 +452,7 @@ end
 local function hook_dap()
   local ok, dap = pcall(require, "dap")
   if not ok then return end
-  dap.listeners.after.event_stopped["illogical"] = function(session, body)
+  dap.listeners.after.event_stopped["arugula"] = function(session, body)
     local frame = session.current_frame
     set_debug({
       state = "paused",
@@ -468,9 +468,9 @@ local function hook_dap()
       end
     end, 300)
   end
-  dap.listeners.after.event_continued["illogical"] = function() set_debug({ state = "running" }) end
-  dap.listeners.after.event_terminated["illogical"] = function() set_debug(vim.NIL) end
-  dap.listeners.after.event_exited["illogical"] = function() set_debug(vim.NIL) end
+  dap.listeners.after.event_continued["arugula"] = function() set_debug({ state = "running" }) end
+  dap.listeners.after.event_terminated["arugula"] = function() set_debug(vim.NIL) end
+  dap.listeners.after.event_exited["arugula"] = function() set_debug(vim.NIL) end
 end
 
 -- ---- public
@@ -483,21 +483,21 @@ function M.join()
   remember(S.folder, true)
   S.on = true
   connect()
-  vim.notify("illogical: " .. S.folder .. " is in the swarm")
+  vim.notify("arugula: " .. S.folder .. " is in the swarm")
 end
 
 --- Leave at once, and forget the folder.
 function M.leave()
   remember(S.folder or vim.fn.getcwd(), false)
   disconnect()
-  vim.notify("illogical: out of the swarm")
+  vim.notify("arugula: out of the swarm")
 end
 
---- For a statusline: "", "illogical", or "2 following".
+--- For a statusline: "", "arugula", or "2 following".
 function M.status()
   if not S.on then return "" end
   if S.followers > 0 then return ("%d following"):format(S.followers) end
-  return S.id and "illogical" or "illogical…"
+  return S.id and "arugula" or "arugula…"
 end
 
 --- The pane id the daemon gave it, if connected.
@@ -507,7 +507,7 @@ end
 
 function M.setup(opts)
   M.opts = opts or {}
-  local g = vim.api.nvim_create_augroup("illogical", { clear = true })
+  local g = vim.api.nvim_create_augroup("arugula", { clear = true })
   local au = function(ev, what) vim.api.nvim_create_autocmd(ev, { group = g, callback = function() changed(what) end }) end
   au({ "BufEnter" }, { summary = true, peek = true, follow = true })
   au({ "CursorMoved", "CursorMovedI", "ModeChanged" }, { peek = true, follow = true })

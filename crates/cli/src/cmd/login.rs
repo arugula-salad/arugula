@@ -1,4 +1,4 @@
-//! `illogical login`: this CLI as one of your devices on illogical control.
+//! `arugula login`: this CLI as one of your devices on arugula control.
 
 use crate::http::{self};
 use crate::{Cli, control, fountain_runner, socket, ssh};
@@ -8,7 +8,7 @@ pub struct Args {
     /// The control [default: the one this machine's daemon joined, else
     /// https://control.illogical.widgets.wtf].
     url: Option<String>,
-    /// What the account calls this terminal [default: illogical CLI on
+    /// What the account calls this terminal [default: arugula CLI on
     /// <hostname>].
     #[arg(long)]
     name: Option<String>,
@@ -30,7 +30,7 @@ pub fn run(args: &Args, cli: &Cli) -> anyhow::Result<i32> {
     };
     let name = name.clone().unwrap_or_else(|| {
         let h = fountain_runner::hostname().unwrap_or_default();
-        if h.is_empty() { "illogical CLI".into() } else { format!("illogical CLI on {h}") }
+        if h.is_empty() { "arugula CLI".into() } else { format!("arugula CLI on {h}") }
     });
     control::login(&url, &name, account.as_deref())?;
     Ok(0)

@@ -1,6 +1,6 @@
 //! Which service runs this machine's daemon (#322), for the desktop app's
-//! *Daemon* menu and `illogical status`: the app's own launch agent, the
-//! launch agent or LaunchDaemon `illogicald install` wrote, its systemd
+//! *Daemon* menu and `arugula status`: the app's own launch agent, the
+//! launch agent or LaunchDaemon `arugulad install` wrote, its systemd
 //! user unit, its scheduled task on Windows, or none.
 //!
 //! Unlike the rest of this crate it looks at the machine (the service
@@ -16,11 +16,11 @@ use std::{
 pub const APP_LABEL: &str = "wtf.widgets.illogical.daemon";
 /// Its plist inside the app, which is where it runs the daemon from.
 pub const APP_PLIST: &str =
-    "/Applications/illogical.app/Contents/Library/LaunchAgents/wtf.widgets.illogical.daemon.plist";
-pub const APP_PROGRAM: &str = "/Applications/illogical.app/Contents/MacOS/illogicald";
-/// `illogicald install`'s launchd label, and its systemd unit.
-pub const LABEL: &str = "illogicald";
-pub const UNIT: &str = "illogicald.service";
+    "/Applications/arugula.app/Contents/Library/LaunchAgents/wtf.widgets.illogical.daemon.plist";
+pub const APP_PROGRAM: &str = "/Applications/arugula.app/Contents/MacOS/arugulad";
+/// `arugulad install`'s launchd label, and its systemd unit.
+pub const LABEL: &str = "arugulad";
+pub const UNIT: &str = "arugulad.service";
 /// Both, and the renamed release's (`arugulad`, #504): a machine whose
 /// daemon the renamed release set up still has its service found here.
 pub const LABELS: [&str; 2] = [LABEL, "arugulad"];
@@ -30,14 +30,14 @@ pub const UNITS: [&str; 2] = [UNIT, "arugulad.service"];
 pub enum Kind {
     /// The app's launch agent, registered through SMAppService.
     AppAgent,
-    /// `illogicald install`'s launch agent (`~/Library/LaunchAgents`).
+    /// `arugulad install`'s launch agent (`~/Library/LaunchAgents`).
     Agent,
-    /// `illogicald install --system`'s LaunchDaemon, which runs as the
+    /// `arugulad install --system`'s LaunchDaemon, which runs as the
     /// user from boot (stopping and starting it needs an administrator).
     LaunchDaemon,
-    /// `illogicald install`'s systemd user unit.
+    /// `arugulad install`'s systemd user unit.
     Systemd,
-    /// `illogicald install`'s scheduled task (Windows).
+    /// `arugulad install`'s scheduled task (Windows).
     Task,
 }
 
@@ -46,7 +46,7 @@ pub enum Kind {
 pub struct Service {
     pub kind: Kind,
     /// What its manager calls it: a launchd service target
-    /// (`gui/501/illogicald`), the unit or the task.
+    /// (`gui/501/arugulad`), the unit or the task.
     pub target: String,
     /// Its plist or unit file.
     pub file: PathBuf,
@@ -65,8 +65,8 @@ impl Service {
         let label = self.target.rsplit('/').next().unwrap_or(&self.target);
         match self.kind {
             Kind::AppAgent => format!("the app's launch agent ({APP_LABEL})"),
-            Kind::Agent => format!("illogicald install's launch agent ({label})"),
-            Kind::LaunchDaemon => format!("illogicald install's LaunchDaemon ({})", self.target),
+            Kind::Agent => format!("arugulad install's launch agent ({label})"),
+            Kind::LaunchDaemon => format!("arugulad install's LaunchDaemon ({})", self.target),
             Kind::Systemd => format!("the systemd user unit {label}"),
             Kind::Task => format!("the scheduled task {label}"),
         }
@@ -102,7 +102,7 @@ fn home() -> Option<PathBuf> {
 
 /// The service set up to run the daemon here, running or not, if any. One
 /// that's running comes first: a Mac can have the app's agent and an
-/// older `illogicald install` agent both.
+/// older `arugulad install` agent both.
 pub fn find() -> Option<Service> {
     let mut found = candidates();
     found.sort_by_key(|s| !s.running);
@@ -116,7 +116,7 @@ fn candidates() -> Vec<Service> {
     let gui = format!("gui/{uid}");
     let user = format!("user/{uid}");
     // The app's agent: loaded, or not (stopped) while it's the one the
-    // app would register (no `illogicald install` plist).
+    // app would register (no `arugulad install` plist).
     let app = launchd(&format!("{gui}/{APP_LABEL}"));
     let file = |p: PathBuf| p.is_file().then_some(p);
     let (label, agent_plist) = LABELS
@@ -230,25 +230,25 @@ impl std::fmt::Display for Log {
     }
 }
 
-/// The daemon's log: `~/Library/Logs/illogicald.log` on macOS (every
+/// The daemon's log: `~/Library/Logs/arugulad.log` on macOS (every
 /// service there writes it), the journal on Linux, the state directory's
-/// `illogicald.log` on Windows.
+/// `arugulad.log` on Windows.
 pub fn log() -> Option<Log> {
     if cfg!(target_os = "macos") {
-        return home().map(|h| Log::File(h.join("Library/Logs/illogicald.log")));
+        return home().map(|h| Log::File(h.join("Library/Logs/arugulad.log")));
     }
     if cfg!(windows) {
         let local = std::env::var_os("LOCALAPPDATA").map(PathBuf::from)?;
-        return Some(Log::File(local.join("illogical").join("state").join("illogicald.log")));
+        return Some(Log::File(local.join("arugula").join("state").join("arugulad.log")));
     }
     Some(Log::Journal(format!("journalctl --user -u {} -u {} -e", LABELS[0], LABELS[1])))
 }
 
 /// How the daemon here is doing, in one line: what the app's *Daemon*
-/// menu and `illogical status` say. `version` is what the daemon said of
+/// menu and `arugula status` say. `version` is what the daemon said of
 /// itself (`None`: it didn't answer).
 pub fn line(version: Option<&str>, service: Option<&Service>) -> String {
-    let v = version.map(|v| format!("illogicald {v}, ")).unwrap_or_default();
+    let v = version.map(|v| format!("arugulad {v}, ")).unwrap_or_default();
     match (version.is_some(), service) {
         (true, Some(s)) if s.running => format!("{v}running as {}", s.name()),
         (true, Some(s)) => format!("{v}running, not as a service ({} is stopped)", s.name()),
@@ -264,7 +264,7 @@ mod tests {
     use super::*;
 
     fn svc(kind: Kind, running: bool) -> Service {
-        let target = if kind == Kind::Systemd { UNIT } else { "gui/501/illogicald" };
+        let target = if kind == Kind::Systemd { UNIT } else { "gui/501/arugulad" };
         Service { kind, target: target.into(), file: PathBuf::new(), running, loaded: running }
     }
 
@@ -272,14 +272,14 @@ mod tests {
     fn the_line_says_version_state_and_service() {
         assert_eq!(
             line(Some("0.21.0"), Some(&svc(Kind::AppAgent, true))),
-            "illogicald 0.21.0, running as the app's launch agent (wtf.widgets.illogical.daemon)"
+            "arugulad 0.21.0, running as the app's launch agent (wtf.widgets.illogical.daemon)"
         );
         assert_eq!(
             line(Some("0.21.0"), Some(&svc(Kind::Agent, false))),
-            "illogicald 0.21.0, running, not as a service (illogicald install's launch agent (illogicald) is stopped)"
+            "arugulad 0.21.0, running, not as a service (arugulad install's launch agent (arugulad) is stopped)"
         );
-        assert_eq!(line(Some("0.21.0"), None), "illogicald 0.21.0, running, not as a service");
-        assert_eq!(line(None, Some(&svc(Kind::Systemd, false))), "Stopped (the systemd user unit illogicald.service)");
+        assert_eq!(line(Some("0.21.0"), None), "arugulad 0.21.0, running, not as a service");
+        assert_eq!(line(None, Some(&svc(Kind::Systemd, false))), "Stopped (the systemd user unit arugulad.service)");
         // #504: a unit the renamed release set up is named as it is.
         let renamed = Service { target: UNITS[1].into(), ..svc(Kind::Systemd, false) };
         assert_eq!(line(None, Some(&renamed)), "Stopped (the systemd user unit arugulad.service)");
@@ -288,11 +288,11 @@ mod tests {
 
     #[test]
     fn the_program_comes_from_the_plist_or_the_unit() {
-        let unit = "[Service]\nType=notify\nExecStart=%h/.local/bin/illogicald --listen 0.0.0.0:7681\n";
-        assert_eq!(program_in(unit, Some(Path::new("/home/me"))), Some("/home/me/.local/bin/illogicald".into()));
-        let plist = "<key>Label</key>\n<string>illogicald</string>\n<key>ProgramArguments</key>\n<array>\n    \
-                     <string>/Users/me/.local/bin/illogicald</string>\n    <string>--headless</string>\n</array>";
-        assert_eq!(program_in(plist, None), Some("/Users/me/.local/bin/illogicald".into()));
+        let unit = "[Service]\nType=notify\nExecStart=%h/.local/bin/arugulad --listen 0.0.0.0:7681\n";
+        assert_eq!(program_in(unit, Some(Path::new("/home/me"))), Some("/home/me/.local/bin/arugulad".into()));
+        let plist = "<key>Label</key>\n<string>arugulad</string>\n<key>ProgramArguments</key>\n<array>\n    \
+                     <string>/Users/me/.local/bin/arugulad</string>\n    <string>--headless</string>\n</array>";
+        assert_eq!(program_in(plist, None), Some("/Users/me/.local/bin/arugulad".into()));
         assert_eq!(program_in("nothing", None), None);
     }
 }

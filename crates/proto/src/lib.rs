@@ -1,4 +1,4 @@
-//! Wire protocol shared by illogicald and its clients.
+//! Wire protocol shared by arugulad and its clients.
 //!
 //! Two kinds of WebSocket message:
 //! - Text frames carry JSON control messages ([`ClientMsg`], [`ServerMsg`]).
@@ -10,8 +10,8 @@
 use serde::{Deserialize, Serialize};
 
 /// Old and new names across the rename to Arugula (#504).
-pub use illogical_core::rename;
-pub use illogical_core::{
+pub use arugula_core::rename;
+pub use arugula_core::{
     ClientId, Dir, Edge, Intent, Layout, Node, NodeId, OptionMap, OptionScope, Options, PaneId, Rect, Session,
     SessionId, SplitRect, TabId,
 };
@@ -157,10 +157,10 @@ pub struct HandTool {
     pub schema: serde_json::Value,
 }
 
-/// #379: the header `illogical mcp` sends with the `CLAUDE_CONFIG_DIR` of
+/// #379: the header `arugula mcp` sends with the `CLAUDE_CONFIG_DIR` of
 /// the client that started it (on the local socket only), so an agent it
 /// starts uses that client's Claude Code login.
-pub const CLAUDE_CONFIG_DIR_HEADER: &str = "Illogical-Claude-Config-Dir";
+pub const CLAUDE_CONFIG_DIR_HEADER: &str = "Arugula-Claude-Config-Dir";
 
 /// The most people in one huddle: every member sends to every other
 /// (S30: CPU and how it sounds are the limit, not bandwidth).
@@ -306,7 +306,7 @@ pub enum ReasonKind {
     /// An editor has a file with merge conflicts open.
     Conflict,
     /// An agent's edit waits for approval as a diff (Claude Code's
-    /// `openDiff`, with illogicald as its IDE).
+    /// `openDiff`, with arugulad as its IDE).
     Diff,
     /// A release or an op waits at a gate for a person to approve it (M34:
     /// a chant gate in a workspace's member).
@@ -479,7 +479,7 @@ pub struct CommandInfo {
     pub by: Option<String>,
 }
 
-/// Something that happened, as streamed by `illogical events` and the event
+/// Something that happened, as streamed by `arugula events` and the event
 /// API (one JSON object per line).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Event {
@@ -783,7 +783,7 @@ pub struct State {
     /// can't come back as numbers inside a tagged message). Absent for the
     /// owner, who owns everything.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub roles: Option<Vec<(SessionId, illogical_core::Role)>>,
+    pub roles: Option<Vec<(SessionId, arugula_core::Role)>>,
     /// Who else is here and where they're looking (M13), within what this
     /// client sees.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -1078,14 +1078,14 @@ pub struct PaneInfo {
     #[cfg_attr(feature = "ts", ts(type = "import(\"./blocks/ask\").Answered | null"))]
     pub answered: Option<ask::Answered>,
     /// An edit Claude Code in this terminal proposes, waiting as a diff
-    /// (M28: illogicald as its IDE).
+    /// (M28: arugulad as its IDE).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub diff: Option<DiffInfo>,
-    /// Claude Code in this terminal is connected to illogicald as its IDE
+    /// Claude Code in this terminal is connected to arugulad as its IDE
     /// (M28): lines can be mentioned to it from a followed editor.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub claude_ide: bool,
-    /// Claude Code in this terminal waits for a follow-up (its `illogical
+    /// Claude Code in this terminal waits for a follow-up (its `arugula
     /// inbox` hook, M29): one sent now goes straight in.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub inbox: bool,
@@ -1215,7 +1215,7 @@ pub struct DiffInfo {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub new: bool,
     pub at_ms: u64,
-    /// Which IDE shows it: `illogical`, or the one diffs go to.
+    /// Which IDE shows it: `arugula`, or the one diffs go to.
     pub ide: String,
 }
 
@@ -1511,7 +1511,7 @@ mod tests {
             panes: vec![],
             machines: vec![],
             options: Box::new(options),
-            roles: Some(vec![(1, illogical_core::Role::Viewer), (4, illogical_core::Role::Editor)]),
+            roles: Some(vec![(1, arugula_core::Role::Viewer), (4, arugula_core::Role::Editor)]),
             presence: vec![],
             threads: vec![],
             calls: vec![],

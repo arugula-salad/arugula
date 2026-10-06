@@ -1,4 +1,4 @@
-//! `illogical join`: this machine, or a box over ssh, on your account on illogical control.
+//! `arugula join`: this machine, or a box over ssh, on your account on arugula control.
 
 use crate::{Cli, ssh};
 use anyhow::bail;
@@ -32,8 +32,8 @@ pub fn run(args: &Args, cli: &Cli) -> anyhow::Result<i32> {
     if let Some(dest) = &cli.ssh {
         return ssh::Remote::parse(dest)?.join(&args, &control);
     }
-    let beside = std::env::current_exe()?.with_file_name(format!("illogicald{}", std::env::consts::EXE_SUFFIX));
-    let daemon = if beside.exists() { beside } else { PathBuf::from("illogicald") };
+    let beside = std::env::current_exe()?.with_file_name(format!("arugulad{}", std::env::consts::EXE_SUFFIX));
+    let daemon = if beside.exists() { beside } else { PathBuf::from("arugulad") };
     let mut cmd = std::process::Command::new(&daemon);
     cmd.args(&args);
     #[cfg(unix)]

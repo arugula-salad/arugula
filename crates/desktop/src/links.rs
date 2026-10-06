@@ -1,8 +1,8 @@
-//! `illogical://` links (M46):
+//! `arugula://` links (M46):
 //!
-//! - `illogical://pane/%3` (or `pane/3`): that pane on this machine's
+//! - `arugula://pane/%3` (or `pane/3`): that pane on this machine's
 //!   daemon, in a window of ours;
-//! - `illogical://open?cwd=/some/dir`: a new tab there, shown; with no
+//! - `arugula://open?cwd=/some/dir`: a new tab there, shown; with no
 //!   `cwd`, a new tab in the home directory.
 //!
 //! macOS hands links to the running app (or starts it) through the URL
@@ -11,7 +11,7 @@
 //! second launch's arguments reach the first through single-instance.
 //!
 //! The file managers (M47) use the same path: Nautilus's extension opens
-//! `illogical://open?cwd=`, and Finder's service calls `open_dir` here.
+//! `arugula://open?cwd=`, and Finder's service calls `open_dir` here.
 //! A `.command` file opened with the app (`run_file`) runs in a new tab;
 //! that never comes from a link, so no web page can run a command.
 
@@ -33,7 +33,7 @@ enum Act {
 
 pub fn parse(url: &str) -> Option<Link> {
     let url = tauri::Url::parse(url).ok()?;
-    if url.scheme() != "illogical" {
+    if url.scheme() != "arugula" {
         return None;
     }
     let path = url.path().trim_matches('/');
@@ -54,19 +54,19 @@ pub fn parse(url: &str) -> Option<Link> {
 
 /// The links among a launch's arguments.
 pub fn in_args<I: IntoIterator<Item = String>>(args: I) -> Vec<String> {
-    args.into_iter().filter(|a| a.starts_with("illogical://")).collect()
+    args.into_iter().filter(|a| a.starts_with("arugula://")).collect()
 }
 
 /// Do what `url` says. Waits (off the main thread) for the daemon, which a
 /// first launch may still be installing.
 pub fn handle(app: &AppHandle, url: String) {
     let Some(link) = parse(&url) else {
-        eprintln!("illogical: not a link this app knows: {url}");
+        eprintln!("arugula: not a link this app knows: {url}");
         let a = app.clone();
         let _ = app.run_on_main_thread(move || crate::focus_or_open(&a));
         return;
     };
-    eprintln!("illogical: opening {url}");
+    eprintln!("arugula: opening {url}");
     let act = match link {
         Link::Pane(p) => Act::Show(p),
         Link::Open { cwd } => Act::Run { cwd, command: None },
@@ -78,7 +78,7 @@ pub fn handle(app: &AppHandle, url: String) {
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub fn open_dir(app: &AppHandle, dir: &Path) {
     let dir = if dir.is_dir() { dir } else { dir.parent().unwrap_or(dir) };
-    eprintln!("illogical: a new tab in {}", dir.display());
+    eprintln!("arugula: a new tab in {}", dir.display());
     act_on(app, dir.display().to_string(), Act::Run { cwd: Some(dir.display().to_string()), command: None });
 }
 
@@ -86,7 +86,7 @@ pub fn open_dir(app: &AppHandle, dir: &Path) {
 /// its own folder, as Terminal runs it.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub fn run_file(app: &AppHandle, file: &Path) {
-    eprintln!("illogical: running {}", file.display());
+    eprintln!("arugula: running {}", file.display());
     let cwd = file.parent().map(|d| d.display().to_string());
     act_on(app, file.display().to_string(), Act::Run { cwd, command: Some(quote(&file.display().to_string())) });
 }
@@ -110,7 +110,7 @@ fn act_on(app: &AppHandle, what: String, act: Act) {
             Act::Run { cwd, command } => match run(cwd.as_deref(), command.as_deref()) {
                 Ok(p) => p,
                 Err(e) => {
-                    eprintln!("illogical: {what}: {e}");
+                    eprintln!("arugula: {what}: {e}");
                     let a = app.clone();
                     let _ = app.run_on_main_thread(move || crate::focus_or_open(&a));
                     return;
@@ -142,16 +142,16 @@ mod tests {
 
     #[test]
     fn reads_links() {
-        assert_eq!(parse("illogical://pane/%3"), Some(Link::Pane(3)));
-        assert_eq!(parse("illogical://pane/%253"), Some(Link::Pane(3)));
-        assert_eq!(parse("illogical://pane/12"), Some(Link::Pane(12)));
-        assert_eq!(parse("illogical://pane/12/"), Some(Link::Pane(12)));
-        assert_eq!(parse("illogical://open?cwd=%2Ftmp%2Fa%20b"), Some(Link::Open { cwd: Some("/tmp/a b".into()) }));
-        assert_eq!(parse("illogical://open"), Some(Link::Open { cwd: None }));
-        assert_eq!(parse("illogical://open?cwd="), Some(Link::Open { cwd: None }));
-        assert_eq!(parse("illogical://pane/x"), None);
-        assert_eq!(parse("illogical://pane/"), None);
-        assert_eq!(parse("illogical://delete/everything"), None);
+        assert_eq!(parse("arugula://pane/%3"), Some(Link::Pane(3)));
+        assert_eq!(parse("arugula://pane/%253"), Some(Link::Pane(3)));
+        assert_eq!(parse("arugula://pane/12"), Some(Link::Pane(12)));
+        assert_eq!(parse("arugula://pane/12/"), Some(Link::Pane(12)));
+        assert_eq!(parse("arugula://open?cwd=%2Ftmp%2Fa%20b"), Some(Link::Open { cwd: Some("/tmp/a b".into()) }));
+        assert_eq!(parse("arugula://open"), Some(Link::Open { cwd: None }));
+        assert_eq!(parse("arugula://open?cwd="), Some(Link::Open { cwd: None }));
+        assert_eq!(parse("arugula://pane/x"), None);
+        assert_eq!(parse("arugula://pane/"), None);
+        assert_eq!(parse("arugula://delete/everything"), None);
         assert_eq!(parse("https://pane/3"), None);
     }
 
@@ -163,7 +163,7 @@ mod tests {
 
     #[test]
     fn picks_links_from_args() {
-        let args = ["/usr/bin/illogical-desktop", "illogical://pane/3", "--x"].map(String::from);
-        assert_eq!(super::in_args(args), ["illogical://pane/3"]);
+        let args = ["/usr/bin/arugula-desktop", "arugula://pane/3", "--x"].map(String::from);
+        assert_eq!(super::in_args(args), ["arugula://pane/3"]);
     }
 }

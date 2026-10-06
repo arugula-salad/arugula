@@ -1,5 +1,5 @@
 //! Editors in the swarm (M28): VS Code, Cursor or nvim, wherever they run,
-//! connected to the illogicald on their machine.
+//! connected to the arugulad on their machine.
 //!
 //! An editor connects to the daemon's socket (`/api/editors/connect`, an
 //! HTTP upgrade to lines of JSON both ways) once its workspace is opted in.
@@ -29,6 +29,7 @@
 
 use std::sync::{Arc, Mutex};
 
+use arugula_proto::{Action, Attention, DebugState, Diag, EditorInfo, PaneId, Reason, ReasonKind};
 use axum::{
     body::Body,
     extract::{Request, State},
@@ -36,7 +37,6 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use hyper_util::rt::TokioIo;
-use illogical_proto::{Action, Attention, DebugState, Diag, EditorInfo, PaneId, Reason, ReasonKind};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::{
@@ -53,7 +53,7 @@ use crate::{
 };
 
 /// The upgrade's protocol name.
-pub const PROTOCOL: &str = "illogical-editor";
+pub const PROTOCOL: &str = "arugula-editor";
 /// The longest line an editor may send (a file opened for followers).
 const MAX_LINE: usize = 4 << 20;
 /// Edits kept after the last `open`, for a new follower; past this the

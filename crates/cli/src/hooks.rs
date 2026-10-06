@@ -1,4 +1,4 @@
-//! `illogical hooks`: put Claude Code's hooks for illogical into its
+//! `arugula hooks`: put Claude Code's hooks for arugula into its
 //! settings.json (`install`), or say which are there (`status`). The merge
 //! only ever adds: every other key and every other hook stays as it is, and
 //! a hook already there (same event, same matcher, same command) isn't
@@ -13,25 +13,25 @@ use anyhow::{Context, bail};
 use clap::Subcommand;
 use serde_json::{Map, Value, json};
 
-/// The hooks illogical wants in Claude Code's settings.json. This is the
+/// The hooks arugula wants in Claude Code's settings.json. This is the
 /// JSON in docs/cli.md § "Claude Code in a pane"; a test fails if the two
 /// differ, so change them together.
 pub const HOOKS_SNIPPET: &str = r#"{
   "hooks": {
-    "Notification": [{ "hooks": [{ "type": "command", "command": "illogical attention needs-input" }] }],
+    "Notification": [{ "hooks": [{ "type": "command", "command": "arugula attention needs-input" }] }],
     "Stop": [
-      { "hooks": [{ "type": "command", "command": "illogical attention done" }] },
-      { "hooks": [{ "type": "command", "command": "illogical inbox", "asyncRewake": true, "timeout": 86400 }] }
+      { "hooks": [{ "type": "command", "command": "arugula attention done" }] },
+      { "hooks": [{ "type": "command", "command": "arugula inbox", "asyncRewake": true, "timeout": 86400 }] }
     ],
-    "SessionStart": [{ "hooks": [{ "type": "command", "command": "illogical inbox", "asyncRewake": true, "timeout": 86400 }] }],
+    "SessionStart": [{ "hooks": [{ "type": "command", "command": "arugula inbox", "asyncRewake": true, "timeout": 86400 }] }],
     "PreToolUse": [
-      { "matcher": "AskUserQuestion", "hooks": [{ "type": "command", "command": "illogical ask", "timeout": 604800 }] },
-      { "hooks": [{ "type": "command", "command": "illogical hook" }] }
+      { "matcher": "AskUserQuestion", "hooks": [{ "type": "command", "command": "arugula ask", "timeout": 604800 }] },
+      { "hooks": [{ "type": "command", "command": "arugula hook" }] }
     ],
-    "PermissionRequest": [{ "hooks": [{ "type": "command", "command": "illogical hook", "timeout": 604800 }] }],
-    "PostToolUse": [{ "hooks": [{ "type": "command", "command": "illogical hook" }] }],
-    "PostToolUseFailure": [{ "hooks": [{ "type": "command", "command": "illogical hook" }] }],
-    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "illogical hook" }] }]
+    "PermissionRequest": [{ "hooks": [{ "type": "command", "command": "arugula hook", "timeout": 604800 }] }],
+    "PostToolUse": [{ "hooks": [{ "type": "command", "command": "arugula hook" }] }],
+    "PostToolUseFailure": [{ "hooks": [{ "type": "command", "command": "arugula hook" }] }],
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "arugula hook" }] }]
   }
 }"#;
 
@@ -48,7 +48,7 @@ pub enum HooksCmd {
         #[arg(long)]
         dry_run: bool,
     },
-    /// Which events have the illogical hook (exits 0 even if some don't).
+    /// Which events have the arugula hook (exits 0 even if some don't).
     Status {
         /// Check DIR/.claude/settings.json instead of ~/.claude/settings.json.
         #[arg(long, value_name = "DIR")]
@@ -82,7 +82,7 @@ fn snippet() -> Map<String, Value> {
 
 /// Whether `groups` (an event's array) has a group with this matcher and
 /// one of this group's commands. A group with another matcher is another
-/// entry: `AskUserQuestion`'s `illogical ask` is not the bare `illogical hook`.
+/// entry: `AskUserQuestion`'s `arugula ask` is not the bare `arugula hook`.
 fn has_group(groups: &[Value], want: &Value) -> bool {
     let commands = |g: &Value| -> Vec<String> {
         g["hooks"].as_array().into_iter().flatten().filter_map(|h| h["command"].as_str().map(str::to_owned)).collect()
@@ -134,7 +134,7 @@ fn write_atomic(path: &Path, text: &str) -> anyhow::Result<()> {
     let target = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
     let dir = target.parent().context("settings.json has no directory")?;
     fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
-    let tmp = dir.join(format!(".settings.json.illogical-{}", std::process::id()));
+    let tmp = dir.join(format!(".settings.json.arugula-{}", std::process::id()));
     let result = (|| {
         fs::write(&tmp, text)?;
         if let Ok(meta) = fs::metadata(&target) {
@@ -169,7 +169,7 @@ fn install(path: &Path, dry_run: bool) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Per event: whether every illogical entry for it is in `settings`.
+/// Per event: whether every arugula entry for it is in `settings`.
 fn present(settings: &Value) -> Vec<(String, bool)> {
     snippet()
         .into_iter()
@@ -195,7 +195,7 @@ fn status(path: &Path, json_out: bool) -> anyhow::Result<()> {
         println!("  {event:<20} {}", if *p { "present" } else { "missing" });
     }
     if !installed {
-        println!("`illogical hooks install` adds the missing ones.");
+        println!("`arugula hooks install` adds the missing ones.");
     }
     Ok(())
 }
@@ -206,7 +206,7 @@ mod tests {
 
     /// A fresh directory under the system temp dir.
     fn temp(name: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("illogical-hooks-{name}-{}", std::process::id()));
+        let d = std::env::temp_dir().join(format!("arugula-hooks-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(&d).unwrap();
         d
@@ -256,19 +256,19 @@ mod tests {
 
     #[test]
     fn ask_matcher_is_its_own_entry() {
-        // A bare `illogical ask` (no matcher) isn't the AskUserQuestion one,
-        // and the bare `illogical hook` isn't it either.
+        // A bare `arugula ask` (no matcher) isn't the AskUserQuestion one,
+        // and the bare `arugula hook` isn't it either.
         let bare = r#"{"hooks":{"PreToolUse":[
-            {"hooks":[{"type":"command","command":"illogical ask"}]},
-            {"matcher":"Bash","hooks":[{"type":"command","command":"illogical hook"}]}]}}"#;
+            {"hooks":[{"type":"command","command":"arugula ask"}]},
+            {"matcher":"Bash","hooks":[{"type":"command","command":"arugula hook"}]}]}}"#;
         let (v, changed) = merged(bare);
         assert!(changed);
         let pre = v["hooks"]["PreToolUse"].as_array().unwrap();
         assert_eq!(pre.len(), 4);
         assert!(pre.iter().any(|g| g["matcher"] == "AskUserQuestion"));
-        assert!(pre.iter().any(|g| g.get("matcher").is_none() && g["hooks"][0]["command"] == "illogical hook"));
+        assert!(pre.iter().any(|g| g.get("matcher").is_none() && g["hooks"][0]["command"] == "arugula hook"));
         // Only the AskUserQuestion one present: the bare hook is still missing.
-        let only_ask = r#"{"hooks":{"PreToolUse":[{"matcher":"AskUserQuestion","hooks":[{"type":"command","command":"illogical ask"}]}]}}"#;
+        let only_ask = r#"{"hooks":{"PreToolUse":[{"matcher":"AskUserQuestion","hooks":[{"type":"command","command":"arugula ask"}]}]}}"#;
         let (v, _) = merged(only_ask);
         assert_eq!(v["hooks"]["PreToolUse"].as_array().unwrap().len(), 2);
     }
@@ -328,7 +328,7 @@ mod tests {
         let none: Value = serde_json::from_str(MINE).unwrap();
         assert!(present(&none).iter().all(|(_, p)| !*p));
         // Half of Stop's entries is not enough for Stop.
-        let half = r#"{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"illogical attention done"}]}]}}"#;
+        let half = r#"{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"arugula attention done"}]}]}}"#;
         let p = present(&serde_json::from_str(half).unwrap());
         assert!(p.iter().any(|(e, ok)| e == "Stop" && !ok));
     }
