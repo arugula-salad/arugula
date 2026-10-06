@@ -16,7 +16,7 @@ import { listen } from "./ports";
 const TOKEN = "e2e-forge-token";
 const REPO = "jhgaylor/illogical";
 const fixture = (f: string) =>
-  JSON.parse(readFileSync(new URL(`../../crates/daemon/tests/fixtures/forgejo/forgejo-arugula-84/${f}`, import.meta.url), "utf8"));
+  JSON.parse(readFileSync(new URL(`../../crates/daemon/tests/fixtures/forgejo/forgejo-illogical-84/${f}`, import.meta.url), "utf8"));
 
 let origin = "";
 let server: Server;

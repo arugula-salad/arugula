@@ -197,7 +197,7 @@ async fn fj_pull(State(f): State<Fakes>, h: HeaderMap) -> Response {
         return no();
     }
     f.seen.lock().unwrap().fj_pulls += 1;
-    let mut it = fixture("forgejo/forgejo-arugula-84", "item.json");
+    let mut it = fixture("forgejo/forgejo-illogical-84", "item.json");
     it["state"] = json!("open");
     it["merged"] = json!(false);
     it["merged_at"] = Value::Null;
@@ -209,7 +209,7 @@ async fn fj_issue(State(f): State<Fakes>, h: HeaderMap) -> Response {
         return no();
     }
     f.seen.lock().unwrap().fj_issues += 1;
-    Json(fixture("forgejo/forgejo-arugula-issue-73", "item.json")).into_response()
+    Json(fixture("forgejo/forgejo-illogical-issue-73", "item.json")).into_response()
 }
 
 async fn fj_status(h: HeaderMap) -> Response {

@@ -208,7 +208,7 @@ test("Agent on this: the issue and its agent in a tab, on a branch of their own,
   await expect(el.locator("[data-agent-pr-waiting]")).toBeVisible();
 
   // The agent's PR appears on the forge: its block joins the tab.
-  const pr = fixture("forgejo-arugula-84", "item.json");
+  const pr = fixture("forgejo-illogical-84", "item.json");
   Object.assign(pr, { number: 91, state: "open", merged: false, merged_at: null, html_url: `${origin}/${REPO}/pulls/91`, title: "Add a frobnicator" });
   pr.head.ref = branch;
   pr.head.repo.full_name = REPO;

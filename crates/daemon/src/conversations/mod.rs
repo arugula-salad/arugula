@@ -622,7 +622,7 @@ mod tests {
             // Escaped as JSON: a Windows path's backslashes would break the line.
             let quoted = serde_json::to_string(work.to_str().unwrap()).unwrap();
             let text =
-                text.replace("/home/user/arugula/spikes/s20-conversations/work/scratch", &quoted[1..quoted.len() - 1]);
+                text.replace("/home/user/illogical/spikes/s20-conversations/work/scratch", &quoted[1..quoted.len() - 1]);
             std::fs::write(proj.join(format!("{f}.jsonl")), text).unwrap();
         }
         // A subagent's transcript is in a folder of its own: not listed.

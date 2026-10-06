@@ -574,7 +574,7 @@ fn agent_on_this_makes_a_branch_an_agent_and_a_tab_and_its_pr_joins_them() {
     // doesn't count): the PR block joins the tab, once.
     let lists = forge.f.with(|i| i.pull_lists);
     d.wait_for("polls of the pulls", || forge.f.with(|i| i.pull_lists) >= lists + 2);
-    let mut pr = fixture("forgejo-arugula-84", "item.json");
+    let mut pr = fixture("forgejo-illogical-84", "item.json");
     pr["number"] = json!(91);
     pr["state"] = json!("open");
     pr["merged"] = json!(false);
