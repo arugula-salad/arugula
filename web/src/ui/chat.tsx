@@ -16,13 +16,14 @@ import type { Client } from "../client";
 import type { Fleet } from "../fleet";
 import { directory } from "../hosts";
 import { openSwarm } from "../swarm/route";
-import { threadKey, type SessionId, type ThreadSummary, type ThreadTarget } from "../proto";
+import { threadKey, type SessionId, type ThreadMsg, type ThreadSummary, type ThreadTarget } from "../proto";
 import { getFleet } from "./hosts";
 import { usePhone } from "./hooks";
 import { openMenu, type MenuItem } from "./menu";
 import { openPalette } from "./palette";
 import { closeThread, ThreadBody, type Quote } from "./threads";
 import { HuddleButton, HuddleChip, useHuddle } from "./huddle";
+import { Avatar } from "./people";
 import { UpdateChip } from "./update";
 import { WindowButtons } from "./window-buttons";
 
@@ -32,11 +33,19 @@ const listeners = new Set<() => void>();
 const changed = () => listeners.forEach((fn) => fn());
 addEventListener("hashchange", changed);
 
-/** `#chat`, or `#chat=<host>/<pane-N|session-N>` for one thread. */
-function chatRoute(): { host?: string; key?: string } | null {
-  const m = /^#chat(?:=(.*)\/((?:pane|session)-\d+))?$/.exec(location.hash);
+interface ChatRoute {
+  host?: string;
+  key?: string;
+  /** M74: a message to show (a copied link). */
+  msg?: number;
+}
+
+/** `#chat`, `#chat=<host>/<pane-N|session-N>` for one thread, and
+ * `…&msg=N` for one message in it. */
+function chatRoute(): ChatRoute | null {
+  const m = /^#chat(?:=(.*)\/((?:pane|session)-\d+)(?:&msg=(\d+))?)?$/.exec(location.hash);
   if (!m) return null;
-  return m[2] ? { host: decodeURIComponent(m[1]), key: m[2] } : {};
+  return m[2] ? { host: decodeURIComponent(m[1]), key: m[2], msg: m[3] ? Number(m[3]) : undefined } : {};
 }
 
 /** Whether the chat page is shown, kept current with the route. */
@@ -288,7 +297,7 @@ function markAllRead(all: Source[]) {
   for (const s of all) for (const t of s.client.state?.threads ?? []) if (t.unread) s.client.markThreadRead(t.target, t.last);
 }
 
-function ChatView({ client, route }: { client: Client; route: { host?: string; key?: string } }) {
+function ChatView({ client, route }: { client: Client; route: ChatRoute }) {
   const phone = usePhone();
   const fleet = getFleet();
   const huddle = useHuddle();
@@ -384,7 +393,7 @@ function ChatView({ client, route }: { client: Client; route: { host?: string; k
     </nav>
   );
 
-  const thread = picked && <ChatThread key={pickedKey} s={picked.s} target={picked.target} phone={phone} multi={multi} />;
+  const thread = picked && <ChatThread key={pickedKey} s={picked.s} target={picked.target} phone={phone} multi={multi} focus={route.msg} />;
 
   if (phone) {
     return (
@@ -455,15 +464,64 @@ function ChatView({ client, route }: { client: Client; route: { host?: string; k
   );
 }
 
-function ChatThread({ s, target, phone, multi }: { s: Source; target: ThreadTarget; phone: boolean; multi: boolean }) {
+/** A thread's link, as the page's address with its fragment. */
+function linkTo(host: string, target: ThreadTarget, msg?: number): string {
+  const hash = `#chat=${encodeURIComponent(host)}/${threadKey(target)}${msg !== undefined ? `&msg=${msg}` : ""}`;
+  return `${location.origin}${location.pathname}${location.search}${hash}`;
+}
+
+/** What the header's second line says: where it is and what it's doing. */
+function topicOf(s: Source, target: ThreadTarget, multi: boolean): string {
+  const c = s.client;
+  const parts: string[] = [];
+  if (multi) parts.push(s.host || "this machine");
+  if ("pane" in target) {
+    const session = c.sessionOfPane(target.pane);
+    if (session !== null) parts.push(`# ${sessionName(c, session)}`);
+    const info = c.info(target.pane);
+    if (info?.cwd) parts.push(info.cwd.replace(/^\/home\/[^/]+|^\/Users\/[^/]+/, "~"));
+    const doing = info?.current?.text ?? info?.command;
+    if (doing) parts.push(doing);
+  } else {
+    const n = panesOf(c, target.session).length;
+    parts.push(n === 1 ? "1 pane" : `${n} panes`);
+  }
+  return parts.join(" · ");
+}
+
+function panesOf(c: Client, session: SessionId): number[] {
+  return (c.state?.panes ?? []).filter((p) => c.sessionOfPane(p.id) === session && p.type !== "remote").map((p) => p.id);
+}
+
+/** Who's in it: people here now, then whoever has posted. */
+function membersOf(c: Client, target: ThreadTarget, msgs: ThreadMsg[]): { who: string; name: string; pic?: string }[] {
+  const out = new Map<string, { who: string; name: string; pic?: string }>();
+  const session = "pane" in target ? c.sessionOfPane(target.pane) : target.session;
+  for (const p of c.state?.presence ?? []) {
+    const here = p.tab === undefined || session === null || c.sessionOfTab(p.tab) === session;
+    if (here && !out.has(p.who)) out.set(p.who, { who: p.who, name: p.name, pic: p.pic });
+  }
+  for (const m of msgs) if (!m.agent && !out.has(m.who)) out.set(m.who, { who: m.who, name: m.name, pic: m.pic });
+  return [...out.values()];
+}
+
+let detailsOpen = (() => {
+  try {
+    return localStorage.getItem("chat.details") === "1";
+  } catch {
+    return false;
+  }
+})();
+
+function ChatThread({ s, target, phone, multi, focus }: { s: Source; target: ThreadTarget; phone: boolean; multi: boolean; focus?: number }) {
   const c = s.client;
   const pane = "pane" in target ? target.pane : null;
   const session = pane !== null ? c.sessionOfPane(pane) : (target as { session: number }).session;
-  const name = pane !== null ? paneLabel(c, pane) : `# ${sessionName(c, session!)}`;
-  const where = [multi ? s.host || "this machine" : null, pane !== null && session !== null ? `# ${sessionName(c, session)}` : null]
-    .filter(Boolean)
-    .join(" · ");
+  const name = pane !== null ? paneLabel(c, pane) : sessionName(c, session!);
   const alive = pane !== null ? !!c.info(pane) : !!c.state?.sessions.some((x) => x.id === session);
+  const [msgs, setMsgs] = useState<ThreadMsg[]>([]);
+  const [details, setDetails] = useState(detailsOpen && !phone);
+  const members = membersOf(c, target, msgs);
 
   // A quote: its pane, with the output shown when this page has it.
   const reveal = (q: Quote): string | null => {
@@ -472,33 +530,161 @@ function ChatThread({ s, target, phone, multi }: { s: Source; target: ThreadTarg
     return null;
   };
 
+  const toggleDetails = () => {
+    detailsOpen = !details;
+    try {
+      localStorage.setItem("chat.details", detailsOpen ? "1" : "0");
+    } catch {
+      // kept for this page only
+    }
+    setDetails(detailsOpen);
+  };
+
   return (
-    <section class="chat-thread" aria-label={name}>
+    <div class="chat-main">
+      <section class="chat-thread" aria-label={name}>
+        <header class="chat-head">
+          {phone && (
+            <button class="chat-back" title="Every thread" onClick={() => openChat()}>
+              ‹
+            </button>
+          )}
+          <div class="chat-title">
+            <strong>
+              <span class="chat-title-sigil">{pane !== null ? "↳" : "#"}</span>
+              {name}
+            </strong>
+            <span data-chat-topic>{topicOf(s, target, multi)}</span>
+          </div>
+          {!phone && members.length > 0 && (
+            <button class="chat-members" title={members.map((m) => m.name).join(", ")} onClick={() => !details && toggleDetails()}>
+              {members.slice(0, 3).map((m) => (
+                <Avatar key={m.who} p={m} />
+              ))}
+              <span>{members.length}</span>
+            </button>
+          )}
+          {session !== null && c.state?.sessions.some((x) => x.id === session) && (
+            <HuddleButton client={c} session={session} label />
+          )}
+          {alive && (
+            <button class="chat-go" data-chat-go onClick={() => goTo(s, target)}>
+              {pane !== null ? "Go to pane" : "Go to session"}
+            </button>
+          )}
+          {!phone && (
+            <button
+              class={details ? "chat-info on" : "chat-info"}
+              title={details ? "Hide details" : "Details: the pane, and who's here"}
+              aria-pressed={details}
+              data-chat-details
+              onClick={toggleDetails}
+            >
+              ⓘ
+            </button>
+          )}
+          {phone && (
+            <button class="thread-close" title="Close" onClick={closeChat}>
+              ✕
+            </button>
+          )}
+        </header>
+        <ThreadBody
+          client={c}
+          target={target}
+          phone={phone}
+          reveal={reveal}
+          extras={{
+            link: (id) => linkTo(s.host, target, id),
+            goTo: alive ? () => goTo(s, target) : undefined,
+            onMessages: setMsgs,
+            focus,
+            draftKey: `${s.host}/${threadKey(target)}`,
+            name: pane !== null ? name : `#${name}`,
+          }}
+        />
+      </section>
+      {details && <ChatDetails s={s} target={target} members={members} close={toggleDetails} />}
+    </div>
+  );
+}
+
+/** The right-hand panel: the pane itself, live (or the session's panes),
+ * and who's in it. */
+function ChatDetails({
+  s,
+  target,
+  members,
+  close,
+}: {
+  s: Source;
+  target: ThreadTarget;
+  members: { who: string; name: string; pic?: string }[];
+  close: () => void;
+}) {
+  const c = s.client;
+  const panes = "pane" in target ? [target.pane] : panesOf(c, target.session);
+  return (
+    <aside class="chat-details" aria-label="Details" data-chat-details-panel>
       <header class="chat-head">
-        {phone && (
-          <button class="chat-back" title="Every thread" onClick={() => openChat()}>
-            ‹
-          </button>
-        )}
-        <div class="chat-title">
-          <strong>{name}</strong>
-          {where && <span>{where}</span>}
-        </div>
-        {session !== null && c.state?.sessions.some((x) => x.id === session) && (
-          <HuddleButton client={c} session={session} label />
-        )}
-        {alive && (
-          <button class="chat-go" data-chat-go onClick={() => goTo(s, target)}>
-            {pane !== null ? "Go to pane" : "Go to session"}
-          </button>
-        )}
-        {phone && (
-          <button class="thread-close" title="Close" onClick={closeChat}>
-            ✕
-          </button>
-        )}
+        <strong>Details</strong>
+        <button class="thread-close" title="Close" onClick={close}>
+          ✕
+        </button>
       </header>
-      <ThreadBody client={c} target={target} phone={phone} reveal={reveal} />
-    </section>
+      <div class="chat-details-body">
+        <h3>{panes.length === 1 && "pane" in target ? "The pane, live" : "Its panes, live"}</h3>
+        {panes.length === 0 && <p class="chat-none">No panes.</p>}
+        {panes.map((p) => (
+          <PanePeek key={p} s={s} pane={p} lines={"pane" in target ? 24 : 6} open={() => openChat(s.host, { pane: p })} single={"pane" in target} />
+        ))}
+        <h3>People</h3>
+        {members.length === 0 && <p class="chat-none">Just you, so far.</p>}
+        <ul class="chat-people">
+          {members.map((m) => (
+            <li key={m.who}>
+              <Avatar p={m} />
+              <span>{m.name}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </aside>
+  );
+}
+
+/** A pane's screen as text, refreshed while it's shown. */
+function PanePeek({ s, pane, lines, open, single }: { s: Source; pane: number; lines: number; open: () => void; single: boolean }) {
+  const [text, setText] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    let timer: number | undefined;
+    const tick = async () => {
+      try {
+        const res = await s.client.request("GET", `/api/panes/${pane}/capture?format=text`);
+        const t = res.ok && res.text ? await res.text() : "";
+        const all = t.split("\n").map((l) => l.trimEnd());
+        while (all.length && !all[all.length - 1]) all.pop();
+        if (live) setText(all.slice(-lines).join("\n"));
+      } catch {
+        if (live) setText((t) => t ?? "");
+      }
+      if (live) timer = window.setTimeout(tick, document.visibilityState === "visible" ? 1500 : 5000);
+    };
+    void tick();
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [s.client, pane, lines]);
+  return (
+    <div class="chat-peek">
+      {!single && (
+        <button class="chat-peek-title" onClick={open} title="Its thread">
+          ↳ {paneLabel(s.client, pane)}
+        </button>
+      )}
+      <pre data-chat-peek={pane}>{text ?? "…"}</pre>
+    </div>
   );
 }
