@@ -1,5 +1,6 @@
 //! illogicald: owns the terminals; clients attach over WebSocket.
 
+mod a2a;
 mod access;
 mod acl;
 mod agent;

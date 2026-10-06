@@ -83,6 +83,10 @@ fn policy(method: &Method, path: &str) -> Policy {
         // `fountain`, and which view (the runner's reads the unit).
         ["api", "blocks", _, "call", "view" | "follow" | "changes" | "shell"] => Policy::Owner,
         ["api", "blocks", id, "call", _] if !get => pane(id).map_or(Policy::Owner, |p| Policy::On(p, Role::Editor)),
+        // S34: agents offered here: listed and sent tasks by anyone who
+        // reaches this machine (each task waits for the owner's OK); the
+        // handlers check the rest (offering is the owner's).
+        ["api", "a2a", ..] => Policy::Handler,
         // M61: the mux checks each thread (a pane's, or a session's).
         ["api", "threads", ..] => Policy::Handler,
         // M24: the handler shows each person what they may read, and checks

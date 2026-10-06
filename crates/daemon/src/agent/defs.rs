@@ -78,6 +78,10 @@ pub struct Def {
     /// cache, and its secrets in memory.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub as_fountain: Option<String>,
+    /// S34: Claude Code as an agent recipe (a Claude Code subagent file):
+    /// `{name, prompt, model?, tools?, disallowedTools?}`. Nothing secret.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recipe: Option<Value>,
     /// M44: the agent-specs checkout whose Infisical mapping a worn agent's
     /// `${VAR}`s go through (`~/…` allowed; the default one if it's there).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -130,7 +134,10 @@ impl Def {
         match self.agent {
             Kind::Claude => match &self.as_fountain {
                 Some(a) => format!("Claude Code as {a}"),
-                None => "Claude Code".into(),
+                None => match self.recipe.as_ref().and_then(|r| r["name"].as_str()) {
+                    Some(r) => format!("Claude Code as {r}"),
+                    None => "Claude Code".into(),
+                },
             },
             Kind::Codex => "Codex".into(),
             Kind::Fountain => format!("Fountain {}", self.fountain_agent.as_deref().unwrap_or("agent")),
@@ -179,6 +186,9 @@ impl Def {
                 } else {
                     json!({ "claudeCode": { "options": { "settingSources": [] } } })
                 };
+                if let Some(r) = &self.recipe {
+                    recipe_meta(&mut l.meta, r);
+                }
                 l.npm = Some(CLAUDE_ACP);
             }
             Kind::Codex => {
@@ -247,6 +257,28 @@ pub fn wear_meta(meta: &mut Value, system: &str, plugin: &Path, model: Option<&s
     }
     if o.get("settingSources").is_none() {
         o["settingSources"] = json!([]);
+    }
+}
+
+/// S34: a recipe on Claude's `session/new` `_meta`. The adapter drops
+/// the SDK's `agent` option (main-thread agent selection isn't part of its
+/// ACP contract), so the recipe is put on as M44 puts on a Fountain agent:
+/// its prompt appended, its model and its tool lists.
+pub fn recipe_meta(meta: &mut Value, r: &Value) {
+    if !meta["claudeCode"]["options"].is_object() {
+        meta["claudeCode"] = json!({ "options": { "settingSources": [] } });
+    }
+    let name = r["name"].as_str().unwrap_or("agent");
+    let prompt = r["prompt"].as_str().unwrap_or_default();
+    meta["systemPrompt"] = json!({ "append": format!("You are running as the agent \"{name}\".\n\n{prompt}") });
+    let o = &mut meta["claudeCode"]["options"];
+    if let Some(m) = r["model"].as_str().filter(|m| !m.is_empty() && *m != "inherit") {
+        o["model"] = json!(m);
+    }
+    for k in ["tools", "disallowedTools"] {
+        if r[k].as_array().is_some_and(|a| !a.is_empty()) {
+            o[k] = r[k].clone();
+        }
     }
 }
 

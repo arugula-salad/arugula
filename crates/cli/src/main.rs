@@ -3,6 +3,7 @@
 //! URL, with `--host`); `--json` prints the API's answers as they are, for
 //! programs.
 
+mod a2a;
 mod ask;
 mod attach;
 mod control;
@@ -882,6 +883,12 @@ enum Command {
         /// Print what's installed and whether the daemon answers, as JSON.
         #[arg(long)]
         probe: bool,
+    },
+    /// Agents offered to other people's agents, and A2A tasks for them.
+    #[command(hide = true)]
+    A2a {
+        #[command(subcommand)]
+        cmd: a2a::A2aCmd,
     },
     /// Other daemons to switch to.
     ///
@@ -2070,6 +2077,7 @@ fn real_main(cli: Cli) -> anyhow::Result<i32> {
                 );
             }
         }
+        Command::A2a { cmd } => return a2a::run(&sock, cmd, json_out),
         Command::Hosts { cmd } => hosts::run(&sock, cmd, json_out, duration)?,
         Command::Sandboxes { cmd } => hosts::sandboxes(&sock, cmd, json_out)?,
         // Only with --ssh: the box daemon's link, over the bridge to its

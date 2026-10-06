@@ -49,6 +49,7 @@ hex = "0.4.3"
 url = "2.5.8"
 webpki-root-certs = "1.0.9"
 zstd = "0.14.0"
+serde_norway = "0.9.42"
 
 # ptys, signals, sockets: Unix only. Windows gets ConPTY and named pipes (M56).
 [target.'cfg(unix)'.dependencies]

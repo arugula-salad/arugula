@@ -141,6 +141,14 @@ impl Out {
     }
 }
 
+/// The device on the other end of a channel (S34).
+#[derive(Debug, Clone)]
+pub struct Caller {
+    pub account: String,
+    pub device: String,
+    pub name: String,
+}
+
 async fn serve(app: Arc<App>, mut inbound: mpsc::Receiver<Vec<u8>>, out: mpsc::Sender<Vec<u8>>) -> anyhow::Result<()> {
     let m1 = tokio::time::timeout(std::time::Duration::from_secs(15), inbound.recv())
         .await
@@ -152,6 +160,7 @@ async fn serve(app: Arc<App>, mut inbound: mpsc::Receiver<Vec<u8>>, out: mpsc::S
         warn!(key = hex::encode(&who[..8]), "refused a channel from a device this daemon doesn't trust");
         anyhow::bail!("unknown device");
     };
+    let caller = Caller { account: device.account.clone(), device: device.device.clone(), name: device.name.clone() };
     let (m2, ch) = responder.finish(&[])?;
     out.send(m2).await?;
     let out = Arc::new(Out { ch: Arc::new(ch), q: tokio::sync::Mutex::new(out) });
@@ -202,7 +211,7 @@ async fn serve(app: Arc<App>, mut inbound: mpsc::Receiver<Vec<u8>>, out: mpsc::S
                         }
                     }
                     Ok(Some(Msg::Request { id, head, body })) => {
-                        tokio::spawn(answer(router.clone(), out.clone(), id, head, body, principal.clone()));
+                        tokio::spawn(answer(router.clone(), out.clone(), id, head, body, (principal.clone(), caller.clone())));
                     }
                     Ok(Some(Msg::Response { .. })) => break Err(anyhow::anyhow!("a client doesn't answer requests")),
                     Err(e) => break Err(e),
@@ -256,7 +265,14 @@ fn to_msg(o: ToClient) -> Option<Msg> {
     }
 }
 
-async fn answer(router: Router, out: Arc<Out>, id: u32, head: RequestHead, body: Vec<u8>, who: crate::acl::Principal) {
+async fn answer(
+    router: Router,
+    out: Arc<Out>,
+    id: u32,
+    head: RequestHead,
+    body: Vec<u8>,
+    who: (crate::acl::Principal, Caller),
+) {
     let say = |status, content_type, more, body| Msg::Response {
         id,
         head: ResponseHead { status, content_type, more },
@@ -302,7 +318,7 @@ async fn call(
     router: Router,
     head: RequestHead,
     body: Vec<u8>,
-    who: crate::acl::Principal,
+    who: (crate::acl::Principal, Caller),
 ) -> anyhow::Result<(u16, Option<String>, Body)> {
     anyhow::ensure!(head.path.starts_with("/api/"), "only the API is reachable this way");
     let mut req = Request::builder().method(head.method.as_str()).uri(head.path.as_str());
@@ -311,7 +327,10 @@ async fn call(
     }
     let mut req = req.body(Body::from(body))?;
     // Who's asking: the API's checks (authz.rs) go by it.
-    req.extensions_mut().insert(who);
+    req.extensions_mut().insert(who.0);
+    // S34: which account's device it is (a team owner is `Owner` above,
+    // whichever account they are).
+    req.extensions_mut().insert(who.1);
     let res = router.oneshot(req).await?;
     let status = res.status().as_u16();
     let ct = res.headers().get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).map(str::to_owned);
