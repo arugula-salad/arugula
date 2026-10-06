@@ -53,8 +53,13 @@ interface FetchEvent {
 const sw = self as unknown as Worker;
 const SHELL = "arugula-shell-v1";
 
+// The cache the worker kept before the rename (#505): this one replaces it.
+const OLD_SHELL = "illogical-shell-v1";
+
 sw.addEventListener("install", () => void sw.skipWaiting());
-sw.addEventListener("activate", (e: Waiting) => e.waitUntil(sw.clients.claim()));
+sw.addEventListener("activate", (e: Waiting) =>
+  e.waitUntil(Promise.all([sw.clients.claim(), caches.delete(OLD_SHELL).catch(() => false)])),
+);
 
 sw.addEventListener("fetch", (event: FetchEvent) => {
   const req = event.request;
