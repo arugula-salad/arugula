@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS revocations (
     device TEXT NOT NULL,
     body TEXT NOT NULL
 );
+CREATE INDEX IF NOT EXISTS revocations_device ON revocations (device);
 CREATE TABLE IF NOT EXISTS joins (
     code TEXT PRIMARY KEY,
     cert TEXT NOT NULL,
@@ -795,6 +796,22 @@ impl Db {
         let mut q = c.prepare("SELECT body FROM revocations WHERE account = ?1")?;
         let rows = q.query_map(params![account], |r| r.get::<_, String>(0))?;
         rows.map(|r| Ok(serde_json::from_str(&r?)?)).collect()
+    }
+
+    /// The first revocation of `device` in any account, if it was ever
+    /// removed (#330): a revoked key never counts again, anywhere.
+    pub fn revoked(&self, device: &str) -> anyhow::Result<Option<Revocation>> {
+        let c = self.c();
+        let mut q = c.prepare("SELECT body FROM revocations WHERE device = ?1")?;
+        let rows = q.query_map(params![device], |r| r.get::<_, String>(0))?;
+        let mut first: Option<Revocation> = None;
+        for r in rows {
+            let r: Revocation = serde_json::from_str(&r?)?;
+            if first.as_ref().is_none_or(|f| r.at < f.at) {
+                first = Some(r);
+            }
+        }
+        Ok(first)
     }
 
     // ---- joins

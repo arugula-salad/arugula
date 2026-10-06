@@ -95,6 +95,15 @@ fn approval_ok(app: &App, account: &str, cert: &Cert, what: &str) -> Result<(), 
         refused(what, account, cert, "the account has no devices yet");
         return Err(err(StatusCode::CONFLICT, "this account has no devices yet"));
     };
+    // A removed key never counts again (#330): say so, not that it
+    // doesn't chain.
+    if revs.iter().any(|r| r.device == cert.device) {
+        refused(what, account, cert, "this device was removed from the account (revoked): it needs a new key");
+        return Err(err(
+            StatusCode::FORBIDDEN,
+            "that key was removed from this account, so it can't be approved again: it needs a new key",
+        ));
+    }
     certs.push(cert.clone());
     if trust.evaluate(&certs, &revs).get(&cert.device).is_none_or(|c| c != cert) {
         certs.pop();
@@ -297,6 +306,25 @@ pub async fn revoke(State(app): State<Arc<App>>, s: Session, Json(b): Json<Revok
     Ok(Json(json!({})))
 }
 
+/// Why a removed key can't come back (#330), when `device` was revoked:
+/// the words, and when and by which device (that by name only with
+/// `detail`, for the key's holder).
+pub fn removed(app: &App, device: &str, kind: Kind, detail: bool) -> anyhow::Result<Option<(String, Value)>> {
+    let Some(r) = app.db.revoked(device)? else { return Ok(None) };
+    let day = crate::day(r.at);
+    if !detail {
+        let msg = format!("this key was removed from its account on {day}: it needs a new key, then join again");
+        return Ok(Some((msg, json!({ "at": r.at }))));
+    }
+    let what = if kind == Kind::Daemon { "this machine" } else { "this device" };
+    let by = app.db.device(&r.account, &r.by)?.map(|(c, _)| c.name).filter(|n| !n.is_empty());
+    let by_words = by.as_deref().map(|n| format!(" by {n}")).unwrap_or_default();
+    let msg = format!(
+        "{what} was removed from its account on {day}{by_words}, so its key can't join again: it needs a new key"
+    );
+    Ok(Some((msg, json!({ "at": r.at, "by": by }))))
+}
+
 // ---------------------------------------------------------------- joining
 
 #[derive(Deserialize)]
@@ -377,7 +405,7 @@ pub async fn join(
     axum::extract::ConnectInfo(peer): axum::extract::ConnectInfo<std::net::SocketAddr>,
     headers: axum::http::HeaderMap,
     Json(b): Json<JoinReq>,
-) -> R {
+) -> Result<Response, ApiError> {
     app.limits.check(crate::limit::JOINS, app.limits.client_ip(peer, &headers))?;
     b.cert.check_request().map_err(|e| err(StatusCode::BAD_REQUEST, &e.to_string()))?;
     // A daemon, or the CLI (M49), which joins the same way: a code shown
@@ -394,6 +422,12 @@ pub async fn join(
     // A daemon control knows joins again only with its key: anyone may
     // have its certificate.
     let proven = join_proven(&app, &b)?;
+    // A removed key never joins again (#330), and gets no code: it says
+    // when it was removed (and by which device, to the key's holder), and
+    // that it needs a new key. `removed` says so to the program asking.
+    if let Some((msg, removed)) = removed(&app, &b.cert.device, b.cert.kind, proven)? {
+        return Ok((StatusCode::GONE, Json(json!({ "error": msg, "removed": removed }))).into_response());
+    }
     if !proven && app.db.device_known(&b.cert.device)? {
         return Err(err(StatusCode::UPGRADE_REQUIRED, JOIN_NEEDS_UPDATE));
     }
@@ -426,7 +460,8 @@ pub async fn join(
     )?;
     Ok(Json(
         json!({ "code": code, "poll": poll, "expires_in_secs": crate::db::JOIN_TTL_MS / 1000, "team_name": team_name }),
-    ))
+    )
+    .into_response())
 }
 
 #[derive(Deserialize)]

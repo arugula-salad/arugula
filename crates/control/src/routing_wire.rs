@@ -227,6 +227,70 @@ async fn joining_again_needs_the_machines_key() {
 }
 
 #[tokio::test]
+async fn a_removed_machine_rejoins_only_with_a_new_key() {
+    let c = control(|_| {}).await;
+    let root = person(&c.app, "jake", "a1");
+    let cookie = session(&c.app, "a1");
+    let post = |b: Value| c.http.post(format!("{}/api/join", c.base)).json(&b).send();
+    let approve = |keys: &DeviceKeys, code: &str| {
+        let mut cert = Cert { account: "a1".into(), ..Cert::new(keys, "", Kind::Daemon, "box") };
+        cert.sign_with(&root);
+        let path = format!("/api/joins/{code}/approve");
+        let cookie = cookie.clone();
+        let c = &c;
+        async move { c.as_person(&cookie, "POST", &path, Some(json!({ "cert": cert }))).await }
+    };
+
+    // It joins, then a browser removes it.
+    let old = DeviceKeys::generate();
+    let r: Value = post(join_body(&old, true)).await.unwrap().json().await.unwrap();
+    let old_code = r["code"].as_str().unwrap().to_owned();
+    assert_eq!(approve(&old, &old_code).await.0, 200);
+    assert_eq!(c.daemon_get(&old, "/api/daemon/trust").await.0, 200);
+    let rev = illogical_e2e::Revocation::new("a1", &old.id(), &root);
+    let (st, _) = c.as_person(&cookie, "POST", "/api/revocations", Some(json!({ "revocation": rev }))).await;
+    assert_eq!(st, 200);
+
+    // Its key is Gone, saying so, not that it isn't enrolled.
+    let (st, said) = c.daemon_get(&old, "/api/daemon/trust").await;
+    assert_eq!(st, 410);
+    assert!(said["error"].as_str().unwrap().contains("removed from its account"), "{said}");
+    // Joining with it again: refused at once, with when and by which
+    // device, and no code to approve.
+    let r = post(join_body(&old, true)).await.unwrap();
+    assert_eq!(r.status(), 410);
+    let said: Value = r.json().await.unwrap();
+    assert!(said.get("code").is_none());
+    assert_eq!(said["removed"]["by"], "laptop");
+    assert_eq!(said["removed"]["at"], rev.at);
+    let words = said["error"].as_str().unwrap();
+    assert!(words.contains("removed") && words.contains("by laptop") && words.contains("new key"), "{words}");
+    // Without its key's proof, it learns less.
+    let said: Value = post(join_body(&old, false)).await.unwrap().json().await.unwrap();
+    assert!(said["removed"].get("by").is_none() && !said["error"].as_str().unwrap().contains("laptop"), "{said}");
+    // A code it got before (or from an older control) is refused for the
+    // real reason.
+    let ask = Cert { account: String::new(), ..Cert::new(&old, "", Kind::Daemon, "box") };
+    c.app.db.add_join(&old_code, &ask, &hash("p"), &[], None, None, "", true, now_ms()).unwrap();
+    let (st, said) = approve(&old, &old_code).await;
+    assert_eq!(st, 403);
+    assert!(said["error"].as_str().unwrap().contains("removed"), "{said}");
+
+    // With a new key: a new code, approved once.
+    let new = DeviceKeys::generate();
+    let r: Value = post(join_body(&new, true)).await.unwrap().json().await.unwrap();
+    let code = r["code"].as_str().unwrap().to_owned();
+    assert_ne!(code, old_code);
+    assert_eq!(approve(&new, &code).await.0, 200);
+    assert_eq!(approve(&new, &code).await.0, 404, "approved once");
+    assert_eq!(c.daemon_get(&new, "/api/daemon/trust").await.0, 200);
+    assert_eq!(c.app.db.daemon_row(&new.id()).unwrap().unwrap().0, "a1");
+    // The old key stays out.
+    assert_eq!(c.daemon_get(&old, "/api/daemon/trust").await.0, 410);
+    assert_eq!(post(join_body(&old, true)).await.unwrap().status(), 410);
+}
+
+#[tokio::test]
 async fn the_cli_joins_with_a_code_and_then_signs_as_its_account() {
     let c = control(|_| {}).await;
     let root = person(&c.app, "jake", "a1");
@@ -275,10 +339,10 @@ async fn the_cli_joins_with_a_code_and_then_signs_as_its_account() {
     // It isn't a daemon, though.
     assert_eq!(c.daemon_get(&cli, "/api/daemon/trust").await.0, 401);
 
-    // Revoked, it's refused.
+    // Revoked, it's refused (Gone: its key was removed, #330).
     let rev = illogical_e2e::Revocation::new("a1", &cli.id(), &root);
     c.app.db.add_revocation(&rev).unwrap();
-    assert_eq!(c.daemon_get(&cli, "/api/directory").await.0, 401);
+    assert_eq!(c.daemon_get(&cli, "/api/directory").await.0, 410);
 }
 
 fn roster(team: &str, version: u64, members: Vec<Member>, by: &DeviceKeys) -> Roster {
