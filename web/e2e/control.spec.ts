@@ -262,6 +262,22 @@ test("two machines join by code; one direct, one only through the relay", async 
   await laptop.evaluate((p) => window.__illogical.client.input(p, new TextEncoder().encode("\x15")), pane);
 });
 
+test("a relayed page that goes leaves the machine's clients (presence) too", async () => {
+  const viewers = () => laptop.evaluate(() => window.__illogical.client.state?.presence?.length ?? 0);
+  const before = await viewers();
+  // Each page that came and went stayed a client of the mux until the
+  // daemon restarted: hundreds, slowing every keystroke.
+  for (let i = 0; i < 3; i++) {
+    const other = await laptop.context().newPage();
+    await other.goto("/");
+    await booted(other);
+    await showHost(other, "mac");
+    await expect.poll(viewers, { timeout: 20_000 }).toBe(before + 1);
+    await other.close();
+    await expect.poll(viewers, { timeout: 20_000 }).toBe(before);
+  }
+});
+
 async function phoneContext(browser: Browser) {
   return browser.newContext({ viewport: { width: 390, height: 760 }, isMobile: true, hasTouch: true });
 }
@@ -403,9 +419,18 @@ test("devices and machines, grouped; new recovery codes retire the old", async (
   await expect(machines).toHaveCount(2);
   await expect(machines.filter({ hasText: "box" }).locator("[data-status]")).toContainText("online · direct");
   await expect(machines.filter({ hasText: "mac" }).locator("[data-status]")).toContainText("online · relayed");
-  // Removing a machine says what happens to it (not confirmed here).
-  await machines.filter({ hasText: "mac" }).locator("[data-remove]").click();
-  await expect(laptop.locator("[data-remove-explain]")).toContainText("keeps running on it, reachable only locally");
+  // Removing a machine asks in a dialog that says what happens to it. A
+  // double-click on Remove only opens it (#328 lost a Mac that way).
+  const mac = await machines.filter({ hasText: "mac" }).getAttribute("data-device");
+  await machines.filter({ hasText: "mac" }).locator("[data-remove]").dblclick();
+  await new Promise((r) => setTimeout(r, 1000));
+  expect(await laptop.evaluate((d) => window.__illogical.control!.trusted.has(d), mac!)).toBe(true);
+  const ask = laptop.locator("[data-confirm-dialog]");
+  await expect(ask).toContainText("Remove mac?");
+  await expect(ask.locator("[data-remove-explain]")).toContainText("keeps running on it, reachable only locally");
+  await ask.locator("[data-cancel-remove]").click();
+  await expect(ask).toHaveCount(0);
+  await expect(machines).toHaveCount(2);
   // The laptop, the phone and the browser the recovery code let in.
   await expect(laptop.locator("[data-browsers] li")).toHaveCount(3);
   await expect(laptop.locator("[data-browsers] li").filter({ hasText: "(this browser)" })).toHaveCount(1);
@@ -433,9 +458,20 @@ test("devices and machines, grouped; new recovery codes retire the old", async (
   await expect.poll(() => hostNames(other), { timeout: 20_000 }).toEqual(["box", "mac"]);
 });
 
-test("removing the phone cuts it off", async () => {
+test("removing the phone cuts it off, once confirmed in a dialog", async () => {
   const id = await phone.evaluate(() => window.__illogical.control!.keys.id);
-  await laptop.evaluate((d) => window.__illogical.control!.revoke(d), id);
+  await controlPanel(laptop, "devices");
+  // A double-click on Remove opens the dialog and removes nothing.
+  await laptop.locator(`[data-browsers] [data-remove="${id}"]`).dblclick();
+  await new Promise((r) => setTimeout(r, 1000));
+  expect(await laptop.evaluate((d) => window.__illogical.control!.trusted.has(d), id)).toBe(true);
+  expect(await connected(phone)).toBe(true);
+  const ask = laptop.locator("[data-confirm-dialog]");
+  await expect(ask).toContainText("loses access to your machines at once");
+  await ask.locator("[data-confirm-remove]").click();
+  await expect(ask).toHaveCount(0);
+  await expect(laptop.locator(`[data-browsers] [data-remove="${id}"]`)).toHaveCount(0);
+  await laptop.getByRole("button", { name: "Done" }).click();
   // Control nudges the daemons, which refresh, close its channel and
   // refuse it from then on.
   await expect.poll(() => connected(phone), { timeout: 5_000, intervals: [200] }).toBe(false);
