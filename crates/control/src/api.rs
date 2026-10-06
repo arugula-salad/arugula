@@ -742,7 +742,11 @@ pub async fn daemon_trust(State(app): State<Arc<App>>, d: DaemonAuth, Query(q): 
     app.db.set_daemon_features(&d.cert.device, &q.features)?;
     let (trust, certs, revs) = trusted(&app, &d.cert.account)?;
     // Its last move (#100), for the daemon to check and take.
-    let moved = app.db.daemon_moved(&d.cert.device)?.and_then(|j| serde_json::from_str(&j).ok());
+    let moved = app.db.daemon_moved(&d.cert.device)?.and_then(|j| {
+        serde_json::from_str(&j)
+            .inspect_err(|e| warn!(daemon = %d.cert.device, error = %e, "a stored move doesn't parse; not sending it"))
+            .ok()
+    });
     crate::reply(&wire::TrustAnswer { trust, certs, revocations: revs, moved })
 }
 

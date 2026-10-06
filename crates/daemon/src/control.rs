@@ -491,7 +491,7 @@ pub fn auth_header(keys: &DeviceKeys, method: &str, path_and_query: &str, body: 
 /// nonce (it says `daemon_auth: 2` in `control.json`).
 async fn takes_v2(http: &reqwest::Client, url: &str) -> bool {
     let Ok(r) = http.get(format!("{url}{}", wire::CONTROL_JSON)).send().await else { return false };
-    let about: wire::ControlInfo = r.json().await.unwrap_or_default();
+    let about: wire::ControlAuth = r.json().await.unwrap_or_default();
     about.daemon_auth >= 2
 }
 
@@ -674,7 +674,7 @@ impl Control {
     /// `None` when it runs none.
     pub async fn guest_jump(&self) -> anyhow::Result<Option<crate::guest_ssh::Jump>> {
         let Some(e) = self.enrolled() else { return Ok(None) };
-        let about: wire::ControlInfo = self
+        let about: wire::ControlJump = self
             .http
             .get(format!("{}{}", e.saved.url.trim_end_matches('/'), wire::CONTROL_JSON))
             .send()

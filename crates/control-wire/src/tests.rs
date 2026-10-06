@@ -318,6 +318,22 @@ fn an_older_controls_control_json_parses() {
     assert_eq!(old.daemon_auth, 0);
 }
 
+/// A `/control.json` with a field this daemon can't take still says how to
+/// sign, and still has its jump host.
+#[test]
+fn a_malformed_field_in_control_json_loses_neither_auth_nor_the_jump_host() {
+    let bad_jump = json!({ "daemon_auth": 2, "guest_ssh": "nope", "vapid": 5, "github_app": { "slug": "x" } });
+    assert!(serde_json::from_value::<ControlInfo>(bad_jump.clone()).is_err());
+    assert_eq!(parse::<ControlAuth>(&bad_jump).daemon_auth, 2);
+    let bad_vapid = json!({
+        "daemon_auth": 2, "vapid": 5,
+        "guest_ssh": { "host": "jump.example", "port": 22, "known_hosts": "jump.example ssh-ed25519 AAAA" },
+    });
+    assert_eq!(parse::<ControlJump>(&bad_vapid).guest_ssh.unwrap().host, "jump.example");
+    assert!(parse::<ControlJump>(&json!({ "daemon_auth": 2 })).guest_ssh.is_none());
+    assert_eq!(parse::<ControlAuth>(&json!({})).daemon_auth, 0);
+}
+
 // ---------------------------------------------------------------- the rest
 
 #[test]

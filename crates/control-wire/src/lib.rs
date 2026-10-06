@@ -82,6 +82,23 @@ pub struct ControlInfo {
     pub guest_ssh: Option<GuestJump>,
 }
 
+/// Just the signature version from `/control.json`, for a daemon deciding
+/// how to sign. Read apart from [`ControlInfo`] so that a field it can't
+/// take never quietly drops the daemon back to v1 signatures.
+#[derive(Debug, Clone, Copy, Default, Deserialize)]
+pub struct ControlAuth {
+    #[serde(default)]
+    pub daemon_auth: u64,
+}
+
+/// Just the jump host from `/control.json`, read apart from
+/// [`ControlInfo`] so an unrelated malformed field doesn't lose it.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct ControlJump {
+    #[serde(default)]
+    pub guest_ssh: Option<GuestJump>,
+}
+
 /// Control's ssh jump host, for daemons making invites.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GuestJump {
