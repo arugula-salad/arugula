@@ -194,7 +194,7 @@ most twice a day; nothing else is sent. `arugulad install --
    control and use it from any browser:
 
    ```
-   arugulad join https://control.illogical.widgets.wtf
+   arugulad join https://control.arugula.io
    ```
 
    The hosted control is free during the beta, provided as is. See

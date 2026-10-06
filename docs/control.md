@@ -2,7 +2,7 @@
 
 Arugula control lets you reach your machines from any device without a
 tailnet. It is also where accounts and devices live. The hosted one is at
-<https://control.illogical.widgets.wtf>; you can run your own from this
+<https://control.arugula.io>; you can run your own from this
 repository (below).
 
 **What it can and can't see.**
@@ -53,7 +53,7 @@ vs team machines and sharing a session:
 2. **Add a machine.** Install Arugula on it, then run:
 
    ```
-   arugulad join https://control.illogical.widgets.wtf
+   arugulad join https://control.arugula.io
    ```
 
    It prints a link with a code (good for 15 minutes). Open it on a

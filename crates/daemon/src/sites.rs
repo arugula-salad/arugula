@@ -161,14 +161,15 @@ pub struct Sites {
 
 static SITES: OnceLock<Arc<Sites>> = OnceLock::new();
 
-/// The origin of Arugula control's page, while this daemon is enrolled:
-/// a page that may frame blocks too, as the app's own may. Control sets it
-/// whenever its enrollment changes, before or after sites are installed.
-static CONTROL_ORIGIN: Mutex<Option<String>> = Mutex::new(None);
+/// The origins of Arugula control's page, while this daemon is enrolled:
+/// pages that may frame blocks too, as the app's own may. Every URL control
+/// answers at while it moves (#507). Control sets them whenever its
+/// enrollment changes, before or after sites are installed.
+static CONTROL_ORIGINS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
-/// Let control's page (`origin`, or none) frame this daemon's blocks.
-pub fn set_control_origin(origin: Option<String>) {
-    *CONTROL_ORIGIN.lock().unwrap() = origin;
+/// Let control's pages (`origins`, or none) frame this daemon's blocks.
+pub fn set_control_origins(origins: Vec<String>) {
+    *CONTROL_ORIGINS.lock().unwrap() = origins;
 }
 
 /// Block sites, if this daemon serves them (`--block-listen`).
@@ -616,7 +617,7 @@ async fn handle(
 /// this daemon is enrolled (it shows the same blocks, #69).
 fn pages(app: &[String]) -> Vec<String> {
     let mut pages = app.to_vec();
-    pages.extend(CONTROL_ORIGIN.lock().unwrap().clone());
+    pages.extend(CONTROL_ORIGINS.lock().unwrap().iter().cloned());
     pages
 }
 
@@ -814,12 +815,12 @@ mod tests {
     #[test]
     fn control_page_may_frame_blocks_while_enrolled() {
         let app = vec!["https://geek.example.ts.net".to_string()];
-        set_control_origin(Some("https://control.example.com".into()));
+        set_control_origins(vec!["https://control.example.com".into(), "https://old.example.com".into()]);
         assert_eq!(
             frame_ancestors(&pages(&app)),
-            "frame-ancestors 'self' https://geek.example.ts.net https://control.example.com"
+            "frame-ancestors 'self' https://geek.example.ts.net https://control.example.com https://old.example.com"
         );
-        set_control_origin(None);
+        set_control_origins(vec![]);
         assert_eq!(frame_ancestors(&pages(&app)), "frame-ancestors 'self' https://geek.example.ts.net");
     }
 

@@ -78,6 +78,23 @@ fn features() -> String {
 const WATCH: Duration = Duration::from_secs(3);
 /// Dropped by control: what it said, and when (#325).
 pub const DROPPED_FILE: &str = "control-dropped.json";
+/// Two control URLs that are the same one, trailing slash aside.
+fn same(a: &str, b: &str) -> bool {
+    a.trim_end_matches('/').eq_ignore_ascii_case(b.trim_end_matches('/'))
+}
+
+/// Where control says it is now: `primary`, else the URL it was asked at.
+fn follow_target(w: &wire::ControlWhere) -> String {
+    if w.primary.is_empty() { w.url.clone() } else { w.primary.clone() }
+}
+
+/// The URL to move to (#507): control's `primary`, when it isn't `url`,
+/// and control lists `url` as one of its own.
+fn follow(url: &str, here: &wire::ControlWhere) -> Option<String> {
+    let to = follow_target(here);
+    (!to.is_empty() && !same(&to, url) && here.urls.iter().any(|u| same(u, url))).then_some(to)
+}
+
 /// Who removed `control.json` on purpose, for the running daemon's log.
 pub const LEFT_FILE: &str = "control-left.json";
 /// How often a dropped daemon asks control again (control may have been
@@ -317,6 +334,9 @@ pub struct Control {
     pub no_relay: bool,
     /// Control takes v2 request signatures (see [`auth_header`]).
     auth_v2: std::sync::atomic::AtomicBool,
+    /// Every URL control says it answers at (#507), from `/control.json`:
+    /// their pages may frame this daemon's blocks.
+    control_urls: std::sync::Mutex<Vec<String>>,
     /// TURN credentials for huddles (M63), and when they were fetched.
     turn: tokio::sync::Mutex<Option<(std::time::Instant, serde_json::Value)>>,
     /// Teams the owner's browser pinned (#233), by id: `<founder
@@ -519,6 +539,7 @@ impl Control {
             published: Default::default(),
             no_relay,
             auth_v2: Default::default(),
+            control_urls: Default::default(),
             turn: Default::default(),
             team_pins: RwLock::new(
                 std::fs::read(state_dir.join(PINS_FILE))
@@ -896,10 +917,19 @@ impl Control {
     }
 
     fn install(&self, e: Option<Enrolled>) {
-        // Control's page shows this daemon's blocks too: let it frame them.
-        crate::sites::set_control_origin(
-            e.as_ref().and_then(|e| reqwest::Url::parse(&e.saved.url).ok().map(|u| u.origin().ascii_serialization())),
-        );
+        // Control's page shows this daemon's blocks too: let it frame them,
+        // at every URL control answers at (#507).
+        let origin = |u: &str| reqwest::Url::parse(u).ok().map(|u| u.origin().ascii_serialization());
+        let mut origins: Vec<String> = Vec::new();
+        if let Some(e) = &e {
+            let also = self.control_urls.lock().unwrap().clone();
+            for o in std::iter::once(e.saved.url.as_str()).chain(also.iter().map(String::as_str)).filter_map(origin) {
+                if !origins.contains(&o) {
+                    origins.push(o);
+                }
+            }
+        }
+        crate::sites::set_control_origins(origins);
         self.acl.set_team_roles(e.as_ref().map(|e| e.team_roles.clone()).unwrap_or_default());
         self.acl.set_shared_teams(e.as_ref().map(|e| e.shared_roles.clone()).unwrap_or_default());
         *self.now.write().unwrap() = e.map(Arc::new);
@@ -951,6 +981,22 @@ impl Control {
         }
     }
 
+    /// Where control says it is (#507): the URLs it answers at, kept for
+    /// framing, and the one to move to when it says it's moved and the new
+    /// URL agrees that `url` is one of its own.
+    async fn where_control_is(&self, url: &str) -> Option<String> {
+        let at = |u: &str| format!("{}{}", u.trim_end_matches('/'), wire::CONTROL_JSON);
+        let get = |u: String| async move {
+            self.http.get(u).send().await.ok()?.error_for_status().ok()?.json::<wire::ControlWhere>().await.ok()
+        };
+        let here = get(at(url)).await?;
+        *self.control_urls.lock().unwrap() = here.urls.clone();
+        let to = follow(url, &here)?;
+        let there = get(at(&to)).await?;
+        same(&follow_target(&there), &to).then_some(())?;
+        there.urls.iter().any(|u| same(u, url)).then_some(to)
+    }
+
     /// POST JSON to control, signed over exactly the bytes sent.
     fn post_json(&self, e: &Enrolled, path: &str, body: &impl Serialize) -> reqwest::RequestBuilder {
         let bytes = serde_json::to_vec(body).unwrap_or_default();
@@ -986,8 +1032,13 @@ impl Control {
         let Some(e) = self.enrolled() else { return Ok(false) };
         let number = self.started.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
         self.check_auth(&e).await;
+        let moved_to = self.where_control_is(&e.saved.url).await;
         let own: wire::TrustAnswer = self.get(&e, &wire::Features::path(&features())).await?;
         let mut saved = e.saved.clone();
+        if let Some(to) = moved_to {
+            info!(from = saved.url, to, "control moved; following it");
+            saved.url = to;
+        }
         saved.certs = own.certs;
         saved.revocations = own.revocations;
         if let Some(m) = own.moved {
@@ -1075,6 +1126,7 @@ impl Control {
         }
 
         let changed = saved.shared_teams != e.saved.shared_teams
+            || saved.url != e.saved.url
             || saved.login != e.saved.login
             || (saved.team.clone(), saved.moved_at) != (e.saved.team.clone(), e.saved.moved_at)
             || (

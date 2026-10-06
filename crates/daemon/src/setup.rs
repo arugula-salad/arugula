@@ -53,7 +53,7 @@ use crate::server::App;
 
 type AppState = State<Arc<App>>;
 
-pub const CONTROL: &str = "https://control.illogical.widgets.wtf";
+pub const CONTROL: &str = "https://control.arugula.io";
 const TAILSCALE_ADMIN_DNS: &str = "https://login.tailscale.com/admin/dns";
 const TAILSCALE_DOWNLOAD: &str = "https://tailscale.com/download";
 

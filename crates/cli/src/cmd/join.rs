@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 #[derive(clap::Args)]
 pub struct Args {
-    /// The control [default: https://control.illogical.widgets.wtf].
+    /// The control [default: https://control.arugula.io].
     url: Option<String>,
     /// Its name in the directory [default: its hostname].
     #[arg(long)]

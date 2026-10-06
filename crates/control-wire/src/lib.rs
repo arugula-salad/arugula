@@ -99,6 +99,18 @@ pub struct ControlAuth {
     pub daemon_auth: u64,
 }
 
+/// Just where control is from `/control.json` (#507), read apart from
+/// [`ControlInfo`] like the others.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct ControlWhere {
+    #[serde(default)]
+    pub url: String,
+    #[serde(default)]
+    pub primary: String,
+    #[serde(default)]
+    pub urls: Vec<String>,
+}
+
 /// Just the jump host from `/control.json`, read apart from
 /// [`ControlInfo`] so an unrelated malformed field doesn't lose it.
 #[derive(Debug, Clone, Default, Deserialize)]

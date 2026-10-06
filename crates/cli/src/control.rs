@@ -899,7 +899,7 @@ mod tests {
         for ok in ["127.0.0.1", "10.229.85.10", "192.168.1.2", "localhost", "::1"] {
             assert!(private_host(ok), "{ok}");
         }
-        for no in ["control.illogical.widgets.wtf", "8.8.8.8"] {
+        for no in ["control.arugula.io", "8.8.8.8"] {
             assert!(!private_host(no), "{no}");
         }
     }

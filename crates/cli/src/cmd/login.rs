@@ -6,7 +6,7 @@ use crate::{Cli, control, fountain_runner, socket, ssh};
 #[derive(clap::Args)]
 pub struct Args {
     /// The control [default: the one this machine's daemon joined, else
-    /// https://control.illogical.widgets.wtf].
+    /// https://control.arugula.io].
     url: Option<String>,
     /// What the account calls this terminal [default: Arugula CLI on
     /// <hostname>].

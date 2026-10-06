@@ -315,7 +315,7 @@ claim_m52() {
 }
 
 claim_unreachable() {
-  local box=box-bare url=https://control.illogical.widgets.wtf pid rc=0
+  local box=box-bare url=https://control.arugula.io pid rc=0
   fresh "$box" || return 1
   [ -z "$BREAK" ] || url="$CONTROL_URL"
   cli --ssh "$box" join "$url" < /dev/null > "$WORK/unreachable.out" 2>&1 &

@@ -21,7 +21,7 @@ credit you in the advisory unless you'd rather not be named.
 - The daemon (`arugulad`), the CLI (`arugula`) and the web client it
   serves.
 - The desktop app.
-- control: control.illogical.widgets.wtf and its relay.
+- control: control.arugula.io and its relay.
 - The install script at illogical.widgets.wtf/install.sh and the release
   artifacts.
 

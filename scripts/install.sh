@@ -349,7 +349,7 @@ else
   say "  Phone     install Tailscale (https://tailscale.com/download) to reach it"
   say "            from your phone, or use Arugula control (Anywhere)"
 fi
-say "  Anywhere  ${bin}arugulad join https://control.illogical.widgets.wtf"
+say "  Anywhere  ${bin}arugulad join https://control.arugula.io"
 say "            (also how you add this machine to a team: pick it when you approve)"
 say "  Agents    ${bin}arugula agent --help · claude mcp add arugula -- ${bin}arugula mcp"
 say "  Hooks     ${bin}arugula hooks install   (Claude Code's questions and approvals as cards)"

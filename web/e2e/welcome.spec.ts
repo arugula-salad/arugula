@@ -64,7 +64,7 @@ test("the daemon's setup status, and the cheap poll for a join", async ({ page }
   await reset(page);
   const status = await page.evaluate(async () => (await fetch("/api/setup")).json());
   expect(["missing", "stopped", "needs-login", "running"]).toContain(status.tailscale.state);
-  expect(status.control.url).toBe("https://control.illogical.widgets.wtf");
+  expect(status.control.url).toBe("https://control.arugula.io");
   expect(typeof status.claude.installed).toBe("boolean");
   // Polling while a join waits asks for the cheap part only.
   const control = await page.evaluate(async () => (await fetch("/api/setup?part=control")).json());

@@ -228,14 +228,14 @@ mod tests {
     fn the_control_line_says_where_and_how() {
         let joined = ControlState {
             state: "joined".into(),
-            url: Some("https://control.illogical.widgets.wtf".into()),
+            url: Some("https://control.arugula.io".into()),
             kind: Some("team".into()),
             name: Some("arugula".into()),
             connected: true,
             ..Default::default()
         };
         let l = control_line(&joined);
-        assert_eq!(l.says, "In the team arugula on control.illogical.widgets.wtf: connected");
+        assert_eq!(l.says, "In the team arugula on control.arugula.io: connected");
         assert!(l.fix.is_none());
 
         let dropped = ControlState {
@@ -247,21 +247,21 @@ mod tests {
         };
         let l = control_line(&dropped);
         assert!(
-            l.says.starts_with("Dropped by control: no longer in the team arugula on control.illogical.widgets.wtf"),
+            l.says.starts_with("Dropped by control: no longer in the team arugula on control.arugula.io"),
             "{}",
             l.says
         );
-        assert!(l.fix.unwrap().contains("arugulad join https://control.illogical.widgets.wtf"));
+        assert!(l.fix.unwrap().contains("arugulad join https://control.arugula.io"));
 
         // A removed key: the join it asked for by itself (#330).
         let rejoining = ControlState {
             code: Some("ABCDE-FGHIJ".into()),
-            approve: Some("https://control.illogical.widgets.wtf/#join=ABCDE-FGHIJ".into()),
+            approve: Some("https://control.arugula.io/#join=ABCDE-FGHIJ".into()),
             ..dropped
         };
         assert_eq!(
             control_line(&rejoining).fix.as_deref(),
-            Some("joining again: approve code ABCDE-FGHIJ at https://control.illogical.widgets.wtf/#join=ABCDE-FGHIJ")
+            Some("joining again: approve code ABCDE-FGHIJ at https://control.arugula.io/#join=ABCDE-FGHIJ")
         );
 
         let none = ControlState { state: "not_joined".into(), ..Default::default() };

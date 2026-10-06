@@ -31,7 +31,7 @@ import { AdapterHelp, adapterLine, adapterReady, installAdapter, type Adapter } 
 
 const DOCS = "https://github.com/arugula-salad/illogical/blob/main/docs";
 /** Arugula cloud, unless the daemon was started with `--control` (#207). */
-const CONTROL = "https://control.illogical.widgets.wtf";
+const CONTROL = "https://control.arugula.io";
 const SEEN_KEY = "arugula.getting-started";
 
 /** What `/api/host` says about this daemon (the parts for this panel). */

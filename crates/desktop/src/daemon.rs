@@ -950,7 +950,7 @@ mod tests {
     fn the_control_line_offers_join_or_join_again() {
         let dropped = ControlState {
             state: "dropped".into(),
-            url: Some("https://control.illogical.widgets.wtf".into()),
+            url: Some("https://control.arugula.io".into()),
             kind: Some("team".into()),
             name: Some("arugula".into()),
             said: Some("not an enrolled daemon (left, or revoked?)".into()),
@@ -967,7 +967,7 @@ mod tests {
         let es = with(joined);
         assert_eq!(
             find(&es, "daemon-control").unwrap().text,
-            "In the team arugula on control.illogical.widgets.wtf: connected"
+            "In the team arugula on control.arugula.io: connected"
         );
         assert!(find(&es, "daemon-join").is_none());
 

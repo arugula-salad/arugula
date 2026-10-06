@@ -231,7 +231,7 @@ Homebrew), then add it to your account on
 [Arugula control](control.md):
 
 ```
-arugulad join https://control.illogical.widgets.wtf
+arugulad join https://control.arugula.io
 ```
 
 Approve the code it prints on a signed-in device. Every machine you join

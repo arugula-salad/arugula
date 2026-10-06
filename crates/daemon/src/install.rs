@@ -96,7 +96,7 @@ fn listen_of(args: &[String]) -> String {
 /// from elsewhere.
 fn next_steps(args: &[String], logs: &str) -> String {
     format!(
-        "Open http://{} with `arugula web` (it signs your browser in)\nLogs: {logs}\nFrom other devices: `tailscale serve`, or `arugulad join https://control.illogical.widgets.wtf`\n",
+        "Open http://{} with `arugula web` (it signs your browser in)\nLogs: {logs}\nFrom other devices: `tailscale serve`, or `arugulad join https://control.arugula.io`\n",
         listen_of(args)
     )
 }

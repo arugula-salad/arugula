@@ -444,7 +444,7 @@ relay. S15 found a wrinkle:
 - **Chrome (153) blocks a public origin from connecting to a private
   address**, and that includes the tailnet's 100.64.0.0/10:
   `net::ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS`.
-- A page served by control (`https://control.illogical.widgets.wtf`)
+- A page served by control (`https://control.arugula.io`)
   therefore can't open `wss://geek.<tailnet>.ts.net` until the user grants
   the *local network access* permission. Granting it worked in the spike.
 - **So M17's web client:**

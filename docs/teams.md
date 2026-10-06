@@ -13,7 +13,7 @@ Two words:
 
 ## Just you
 
-1. **Sign in** at <https://control.illogical.widgets.wtf>, with GitHub or a
+1. **Sign in** at <https://control.arugula.io>, with GitHub or a
    passkey.
    - A passkey account asks for a display name when you make it: it's
      what teammates see. GitHub accounts go by their login. Either can
@@ -25,7 +25,7 @@ Two words:
    it:
 
    ```
-   arugulad join https://control.illogical.widgets.wtf
+   arugulad join https://control.arugula.io
    ```
 
    It prints a link with a code. Open it on a signed-in device, check the
@@ -74,7 +74,7 @@ A team shares its machines with its members.
    join with the team's id (it's in *Teams…*, with the command to copy):
 
    ```
-   arugulad join https://control.illogical.widgets.wtf --team ID
+   arugulad join https://control.arugula.io --team ID
    ```
 
    A machine already joined goes in with *In …* on it in *Devices and

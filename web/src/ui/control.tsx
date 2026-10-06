@@ -26,7 +26,7 @@ function Center({ children }: { children: preact.ComponentChildren }) {
 
 /** The hosted control's terms (#172); a control you run yourself has its
  * own, or none. */
-const HOSTED = "control.illogical.widgets.wtf";
+const HOSTED = "control.arugula.io";
 const SITE = "https://illogical.widgets.wtf";
 
 function HostedTerms() {

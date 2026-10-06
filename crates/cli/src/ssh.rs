@@ -25,7 +25,7 @@ use serde_json::{Value, json};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// The hosted control, where `join` goes by default.
-pub const CONTROL: &str = "https://control.illogical.widgets.wtf";
+pub const CONTROL: &str = "https://control.arugula.io";
 const RELEASES: &str = "https://github.com/arugula-salad/illogical/releases/download";
 
 /// `sh -c` that runs the CLI the install put on the box with `args`:
