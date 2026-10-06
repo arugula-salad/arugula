@@ -444,6 +444,7 @@ mod tests {
     /// A fake release on loopback: `SHA256SUMS` and this platform's
     /// archive, holding an `illogicald` that says it's `version`.
     /// A fresh directory for one test.
+    #[cfg(unix)]
     fn scratch(name: &str) -> PathBuf {
         let d = std::env::temp_dir().join(format!("illogical-selfupdate-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
