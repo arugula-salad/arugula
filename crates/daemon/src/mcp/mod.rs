@@ -1,4 +1,4 @@
-//! MCP (M16): arugula as tools for any agent. A curated layer over the
+//! MCP (M16): Arugula as tools for any agent. A curated layer over the
 //! same machinery the API uses, served by rmcp at `/mcp` as Streamable HTTP
 //! (both the stateless 2026-07-28 protocol Claude Code speaks and the older
 //! sessions Codex speaks).
@@ -266,7 +266,7 @@ impl CacheHints for ReadResourceResult {
     }
 }
 
-const INSTRUCTIONS_BASE: &str = "arugula runs commands in durable terminal panes that the user can watch \
+const INSTRUCTIONS_BASE: &str = "Arugula runs commands in durable terminal panes that the user can watch \
 (on the web and the phone) and take over. Use run to start a build or a dev server in a pane (wait: true \
 to wait for it), wait and read_output to follow it (they return \"still running\" with an offset: call \
 again; read_output with screen: true is what a full-screen program shows), list to see what's there (kind \

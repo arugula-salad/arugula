@@ -146,7 +146,7 @@ test.describe("watched from a phone", () => {
       writeFileSync(config, JSON.stringify({ mcpServers: { arugula: { command: resolve("../target/debug/arugula"), args: ["--socket", join(state!, "sock"), "mcp"] } } }));
       const build = `sleep 15; test -f ${dir}/ready && echo BUILD-OK || { echo 'error: ${dir}/ready is missing (touch it)'; false; }`;
       const prompt =
-        `Use the arugula MCP tools. Run this build with the run tool, with wait true: \`${build}\`. ` +
+        `Use the Arugula MCP tools. Run this build with the run tool, with wait true: \`${build}\`. ` +
         "If it fails, read why, fix it, and run the build again until it succeeds (wait again if it's still running). Then reply with just the word DONE.";
       const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("CLAUDE") || k === "CLAUDE_CONFIG_DIR"));
       const agent = spawn(

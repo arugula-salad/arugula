@@ -939,7 +939,7 @@ async fn tell_agent(app: &App, pane: PaneId, msg: &arugula_proto::ThreadMsg) -> 
     if let Some(q) = &msg.quote {
         text.push_str(&format!("\n\nQuoting %{}:\n{}", q.pane, q.text));
     }
-    text.push_str("\n\n(Answer in the thread with arugula's post_thread tool.)");
+    text.push_str("\n\n(Answer in the thread with Arugula's post_thread tool.)");
     let by = Driver { who: msg.who.clone(), name: msg.name.clone() };
     if let Some(b) = app.mux.api(|r| Api::Block(pane, r)).await.flatten() {
         let name = (by.who != "owner").then_some(by.name.as_str());
@@ -989,7 +989,7 @@ async fn block_call(
     let id = args["id"].as_str().map(str::to_owned);
     // The transcript names whoever isn't its owner (the owner's own
     // answers go unremarked, as before M29). A gate's ledger names whoever
-    // approved it, the owner too, by their arugula name (#75).
+    // approved it, the owner too, by their Arugula name (#75).
     let gate = matches!(b.kind(), arugula_proto::BlockType::Workspace | arugula_proto::BlockType::App);
     // A forge block (M36) names everyone who writes through it, the owner
     // too: its log and its drafts say who sent what.
@@ -1050,8 +1050,8 @@ async fn answer_terminal(
             let said = args["message"].as_str().or(args["reason"].as_str()).map(str::trim).filter(|m| !m.is_empty());
             let name = by.as_ref().map_or("someone", |b| b.name.as_str());
             let message = match said {
-                Some(m) => format!("{name} said no (through arugula): {m}"),
-                None => format!("{name} said no (through arugula)."),
+                Some(m) => format!("{name} said no (through Arugula): {m}"),
+                None => format!("{name} said no (through Arugula)."),
             };
             AskReply::Deny { message }
         }
@@ -1845,7 +1845,7 @@ async fn export(State(app): AppState, Path(id): Path<PaneId>) -> Res<Response> {
         .find(|(p, _, _)| *p == id)
         .map(|(_, _, d)| d)
         .ok_or(ApiError(StatusCode::NOT_FOUND, format!("no history for pane %{id}")))?;
-    let cast = tokio::task::spawn_blocking(move || history::export_cast(&dir, &format!("arugula pane %{id}")))
+    let cast = tokio::task::spawn_blocking(move || history::export_cast(&dir, &format!("Arugula pane %{id}")))
         .await
         .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
         .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
@@ -2133,7 +2133,7 @@ async fn push_test(
 ) -> Res<Json<serde_json::Value>> {
     let push = app.push.as_ref().ok_or(ApiError(StatusCode::NOT_FOUND, "push is off".into()))?;
     let me = who.map(|axum::Extension(w)| w.id().to_owned()).unwrap_or_else(|| "owner".into());
-    push.send_to(0, "arugula", "Notifications work.", None, |w| w == me);
+    push.send_to(0, "Arugula", "Notifications work.", None, |w| w == me);
     Ok(Json(serde_json::json!({ "subscriptions": push.subscriptions() })))
 }
 
@@ -2443,7 +2443,7 @@ async fn ide_mention(
     let ide = app.mux.ide.as_ref().ok_or_else(|| bad("arugulad isn't Claude Code's IDE here"))?;
     let conns = app.mux.api(|r| Api::IdeConns(m.pane, r)).await.unwrap_or_default();
     if conns.is_empty() {
-        return Err(ApiError(StatusCode::CONFLICT, format!("Claude Code in %{} isn't connected to arugula", m.pane)));
+        return Err(ApiError(StatusCode::CONFLICT, format!("Claude Code in %{} isn't connected to Arugula", m.pane)));
     }
     // From 0, as VS Code's extension sends them.
     let params = serde_json::json!({
@@ -2455,7 +2455,7 @@ async fn ide_mention(
     Ok(Json(serde_json::json!({ "sent": conns.len() })))
 }
 
-/// `GET /api/editors/vsix` (M28): arugula's VS Code extension.
+/// `GET /api/editors/vsix` (M28): Arugula's VS Code extension.
 async fn vsix() -> Response {
     let name = crate::editor::vsix::file_name();
     (

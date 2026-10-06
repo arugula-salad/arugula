@@ -21,7 +21,7 @@
 //! turn, so waiting there would hold `claude -p` for the hook's 24 hours
 //! (#124).
 //!
-//! Outside an arugula pane both do nothing.
+//! Outside an Arugula pane both do nothing.
 
 use std::{
     io::{Read, Write},
@@ -100,7 +100,7 @@ pub fn inbox(sock: Target) -> i32 {
                 let name = v["by"]["name"].as_str().unwrap_or("a teammate");
                 let text = v["text"].as_str().unwrap_or_default();
                 let mut err = std::io::stderr().lock();
-                let _ = writeln!(err, "A follow-up from {name} (sent through arugula): {text}");
+                let _ = writeln!(err, "A follow-up from {name} (sent through Arugula): {text}");
                 let _ = err.flush();
                 return 2;
             }

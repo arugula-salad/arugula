@@ -39,7 +39,7 @@ tests use a stand-in chant). `just screenshots` regenerates the images in
 `dive.gif` is the page's own tour, made by `web/screenshots/dive.mjs`.
 
 `just testnet up ssh` starts a local stack in Docker (`testnet/`, #200): a
-bastion and a box with no arugula that only ssh reaches. `just testnet
+bastion and a box with no Arugula that only ssh reaches. `just testnet
 test` runs its claims; `testnet/README.md` lists them.
 
 ## Releasing
@@ -74,7 +74,7 @@ daemon's update check read it.
    the daemon's) and commit. Notes go in `docs/releases/app-X.Y.Z.md`.
 2. `git tag -a app-vX.Y.Z -m "arugula app X.Y.Z" && git push origin
    app-vX.Y.Z`. `.github/workflows/app-release.yml` downloads arugulad
-   and arugula from the latest daemon release (checked against its
+   and Arugula from the latest daemon release (checked against its
    `SHA256SUMS`) for the app to carry, builds and signs the apps (Linux on
    geek, macOS on jake-mini, notarized with the Developer ID when its
    secrets are set, Windows on GitHub's runner), and publishes the release
@@ -150,7 +150,7 @@ The rest of this script is still by hand. From the Mac, against geek:
 1. On geek, install the build (`just install`) and check `arugula ls`
    works. Open <https://geek.tail1234.ts.net> in a browser beside iTerm2.
 2. In iTerm2: `ssh -t geek '~/.local/bin/arugula tmux -CC attach'`. A new
-   iTerm2 window opens with a tab per arugula tab (the gateway window
+   iTerm2 window opens with a tab per Arugula tab (the gateway window
    says "tmux mode"). The tab's shell prompt is there, with its history.
 3. Type `ls` and Enter in it: the output appears in iTerm2 and in the
    browser's same pane.
@@ -352,7 +352,7 @@ See [AGENTS.md](../AGENTS.md) for the crate map and the daemon's layers. Each cr
   block was blank while the same page on its own worked (#69). Playwright's
   Chrome allows third-party cookies, and 127.0.0.1 and `*.localhost` are
   already different sites, so the specs never saw it. An editor block's
-  site now puts a script of arugula's first in its pages that gives the
+  site now puts a script of Arugula's first in its pages that gives the
   window storage in memory when it's refused (`editor/storage.js`), and
   `editors.spec.ts` runs a block in a Chrome profile that blocks
   third-party cookies (`sec-fetch-storage-access: none` says it's

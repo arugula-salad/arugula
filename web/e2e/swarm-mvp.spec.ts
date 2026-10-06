@@ -312,7 +312,7 @@ test("Sam's follow-up needs Jake's trust on his machine, then reaches the agent"
   await done.locator(".followup input").fill("now run the tests");
   await done.locator(".followup button").tap();
   await expect(done.locator(".followup-sent")).toHaveText("Sent.");
-  await expect.poll(() => capture(jake, "mac", 1)).toContain("A follow-up from sam (sent through arugula): now run the tests");
+  await expect.poll(() => capture(jake, "mac", 1)).toContain("A follow-up from sam (sent through Arugula): now run the tests");
   await expect.poll(() => capture(jake, "mac", 1)).toContain("mac-inbox-42");
 
   // The pane's history attributes both to Sam.
@@ -345,6 +345,6 @@ test("on the team's box, Sam's answer and follow-up go straight through", async 
   await done.locator(".followup input").fill("now run the tests");
   await done.locator(".followup button").tap();
   await expect(done.locator(".followup-sent")).toHaveText("Sent.");
-  await expect.poll(() => capture(jake, "teambox", 1)).toContain("A follow-up from sam (sent through arugula): now run the tests");
+  await expect.poll(() => capture(jake, "teambox", 1)).toContain("A follow-up from sam (sent through Arugula): now run the tests");
   await expect.poll(() => capture(jake, "teambox", 1)).toContain("box-inbox-42");
 });

@@ -183,7 +183,7 @@ async fn an_editor_on_this_host() {
     let page = http.get(&src).send().await.unwrap();
     assert_eq!(page.status(), 200);
     assert!(page.text().await.unwrap().contains("fake code-server"));
-    // #69: the page, as a frame loads it, has arugula's storage script
+    // #69: the page, as a frame loads it, has Arugula's storage script
     // first, served from the block's own origin.
     let page = http
         .get(&src)

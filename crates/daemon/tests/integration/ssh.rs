@@ -1,6 +1,6 @@
 //! M51 end to end over a real sshd: the test stack's `ssh` profile
-//! (`testnet/`, #200), a bastion and box-bare, which has no arugula and is
-//! reached only by ProxyJump. The CLI's `--ssh` installs arugula there,
+//! (`testnet/`, #200), a bastion and box-bare, which has no Arugula and is
+//! reached only by ProxyJump. The CLI's `--ssh` installs Arugula there,
 //! starts its daemon, runs and captures a pane, gives the box's panes this
 //! client's agent (a `git push` from a pane to the stack's git server works
 //! with it, and only with it), survives the connection going away, and a

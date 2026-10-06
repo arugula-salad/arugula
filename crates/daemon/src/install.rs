@@ -334,7 +334,7 @@ mod windows {
         format!(
             r#"<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
-  <RegistrationInfo><Description>arugulad: arugula's daemon, which keeps your terminals running</Description></RegistrationInfo>
+  <RegistrationInfo><Description>arugulad: Arugula's daemon, which keeps your terminals running</Description></RegistrationInfo>
   <Triggers>{trigger}</Triggers>
   <Principals><Principal id="Author"><UserId>{user}</UserId><LogonType>{logon}</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>
   <Settings>
@@ -1049,7 +1049,7 @@ mod launchd {
         let app_agent = format!("{gui}/{}", arugula_proto::service::APP_LABEL);
         let old_app = has(&format!("{gui}/{}", arugula_proto::service::OLD_APP_LABEL));
         if !system && !agent.is_file() && old_agent.is_none() && has(&app_agent) {
-            println!("the arugula app's launch agent runs the daemon here; it runs {} from now on", exe.display());
+            println!("the Arugula app's launch agent runs the daemon here; it runs {} from now on", exe.display());
             if start {
                 let out = Command::new("launchctl").args(["kickstart", "-k", &app_agent]).output()?;
                 if !out.status.success() {

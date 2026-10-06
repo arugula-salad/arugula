@@ -275,7 +275,7 @@ fn start(to: String, releases: String, state_dir: PathBuf) -> Result<Applying, (
         }
         *a = Some(Applying { to: to.clone(), stage: "downloading", error: None });
     }
-    info!(to = %to, "updating arugula");
+    info!(to = %to, "updating Arugula");
     tokio::spawn(async move {
         let dir = state_dir.join("update");
         let exe = match fetch(&releases, &to, &dir).await {
@@ -403,10 +403,10 @@ pub fn cli(yes: bool, latest_url: &str) -> anyhow::Result<()> {
     let latest = rt.block_on(crate::update::latest_once(latest_url))?;
     let current = env!("CARGO_PKG_VERSION");
     if !crate::update::newer(&latest, current) {
-        println!("arugula {current} is the latest release.");
+        println!("Arugula {current} is the latest release.");
         return Ok(());
     }
-    println!("arugula {latest} is out; this is {current}. Panes keep running while the daemon restarts.");
+    println!("Arugula {latest} is out; this is {current}. Panes keep running while the daemon restarts.");
     if !yes && !ask("Update now? [y/N] ")? {
         println!("Not updated.");
         return Ok(());

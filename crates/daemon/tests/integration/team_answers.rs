@@ -150,7 +150,7 @@ fn a_permission_prompt_is_a_card_answered_by_whoever_may() {
     let decision = &out["hookSpecificOutput"]["decision"];
     assert_eq!(decision["behavior"], "deny");
     assert!(
-        decision["message"].as_str().unwrap().ends_with(" said no (through arugula): do a dry run first"),
+        decision["message"].as_str().unwrap().ends_with(" said no (through Arugula): do a dry run first"),
         "{decision}"
     );
 }
@@ -250,7 +250,7 @@ fn a_follow_up_wakes_the_agent_through_its_inbox() {
     assert_eq!(std::fs::read_to_string(dir.join("exit")).unwrap().trim(), "2");
     let err = std::fs::read_to_string(dir.join("err")).unwrap();
     assert!(
-        err.starts_with("A follow-up from ") && err.trim().ends_with(" (sent through arugula): now run the tests"),
+        err.starts_with("A follow-up from ") && err.trim().ends_with(" (sent through Arugula): now run the tests"),
         "{err}"
     );
     // Recorded as the sender's.

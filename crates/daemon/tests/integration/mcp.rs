@@ -1,7 +1,7 @@
-//! M16: arugula as MCP tools, against the real daemon. An rmcp client
+//! M16: Arugula as MCP tools, against the real daemon. An rmcp client
 //! through `arugula mcp` (the stdio bridge on the Unix socket) and over
 //! HTTP with client tokens; and an agent block (`fake_acp.py`) using the
-//! server arugula hands it, scoped to its tab: a dev server and a browser
+//! server Arugula hands it, scoped to its tab: a dev server and a browser
 //! block beside itself, other tabs refused, and a second agent started,
 //! waited on and answered. With wisp on this host (skipped without its
 //! token), an agent block in a VM too, through the relay the daemon opens
@@ -453,7 +453,7 @@ async fn http_with_a_token_until_it_is_revoked() {
     assert_eq!(res.status(), 403);
 }
 
-/// The agent's own MCP call, through the server arugula gave it: the
+/// The agent's own MCP call, through the server Arugula gave it: the
 /// result's structured content, or its error.
 fn agent_mcp(d: &Daemon, agent: u64, tool: &str, args: Value) -> Result<Value, String> {
     let answers = || -> Vec<String> {
@@ -711,7 +711,7 @@ async fn what_failed_here_yesterday() {
     s.cancel().await.unwrap();
 }
 
-/// #59: an agent block in a wisp VM gets arugula through the relay the
+/// #59: an agent block in a wisp VM gets Arugula through the relay the
 /// daemon opens into its VM (a guest can't reach the host): scoped to its
 /// tab like a local one, its `run` on its own machine, across a daemon
 /// restart. Skips without a wisp token on this host.

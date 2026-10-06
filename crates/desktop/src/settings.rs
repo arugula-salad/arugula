@@ -3,7 +3,7 @@
 //!
 //! The hotkey is off by default (M46). The tray's *Global hotkey* item
 //! turns it on or off; `hotkey` in the file picks the keys
-//! (`Ctrl+Alt+Space` unless set). Pressed, it brings arugula to the
+//! (`Ctrl+Alt+Space` unless set). Pressed, it brings Arugula to the
 //! front, or hides it when one of its windows has focus.
 
 use std::path::PathBuf;

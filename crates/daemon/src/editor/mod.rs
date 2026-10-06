@@ -9,7 +9,7 @@
 //!   listens on a 0600 Unix socket, so the daemon's access checks are its
 //!   auth. Like browser blocks on ports, they're the owner's.
 //! - **Each block has a workspace** (`<state>/editor/w/<id>/`) that names
-//!   the block (`arugula.block`), so arugula's extension in that window
+//!   the block (`arugula.block`), so Arugula's extension in that window
 //!   knows which block it is and reports the active file, the cursor and
 //!   the lines around it (`report`). That's the swarm's preview, and what
 //!   comes back after a restart.
@@ -115,7 +115,7 @@ pub struct Editor {
     /// A load found no server: reload the frame once it's up.
     missed: AtomicBool,
     closed: AtomicBool,
-    /// Its window's arugula extension, connected (M28).
+    /// Its window's Arugula extension, connected (M28).
     link: Mutex<Option<Arc<link::Link>>>,
 }
 

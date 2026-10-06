@@ -550,7 +550,7 @@ pub struct Bundle {
     pub contents: Contents,
 }
 
-/// Where arugula caches bundles: `$XDG_CACHE_HOME` (else `~/.cache`)
+/// Where Arugula caches bundles: `$XDG_CACHE_HOME` (else `~/.cache`)
 /// `/arugula/fountain`.
 pub fn cache_root(env: &[(String, String)], home: &Path) -> PathBuf {
     let xdg = env
@@ -730,7 +730,7 @@ pub async fn bundle(a: &Agent, cache: &Path, env: &[(String, String)]) -> Result
     let plugin_name = format!("fountain-{}", slug(&a.name));
     let manifest = json!({
         "name": plugin_name,
-        "description": format!("Skills of the Fountain agent {}, worn locally by arugula", a.name),
+        "description": format!("Skills of the Fountain agent {}, worn locally by Arugula", a.name),
         "version": "0.0.0",
     });
     std::fs::write(
@@ -1033,7 +1033,7 @@ pub async fn servers(a: &Agent, found: &Found, probe: bool) -> Served {
     let mut keys: Vec<Vec<String>> = vec![];
     for (name, s) in &a.mcp_servers {
         if name == crate::mcp::SERVER_NAME {
-            out.left.push(LeftOut { name: name.clone(), why: "arugula's own server has that name".into() });
+            out.left.push(LeftOut { name: name.clone(), why: "Arugula's own server has that name".into() });
             continue;
         }
         let raw = serde_json::to_value(s).unwrap_or_default();
@@ -1374,7 +1374,7 @@ mod tests {
         assert_eq!(out.left[0].name, "github");
         assert!(out.left[0].why.contains("${X} isn't set"), "{:?}", out.left);
         assert!(out.secrets.is_empty() && out.env.is_empty());
-        // A Fountain connection, arugula's own name, a variable on a
+        // A Fountain connection, Arugula's own name, a variable on a
         // command line, a literal ${…}, a URL with a variable, and a type
         // that's wrong (said from the recipe, not its values).
         let mut odd = Agent { name: "odd".into(), ..Agent::default() };

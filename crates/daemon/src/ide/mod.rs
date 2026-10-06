@@ -11,7 +11,7 @@
 //!
 //! The connections themselves are held by a relay (`relay.rs`), a process
 //! of its own that outlives a daemon restart; this side is the daemon's
-//! link to it. "Which IDE gets diffs" is a setting here: arugula's cards,
+//! link to it. "Which IDE gets diffs" is a setting here: Arugula's cards,
 //! or another IDE that registered with Claude Code (VS Code with Claude
 //! Code's extension, say), to which the daemon passes each `openDiff` on.
 
@@ -95,7 +95,7 @@ pub enum Event {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 struct Prefs {
     /// Another IDE's name as it registers (`Visual Studio Code`); none:
-    /// arugula's own cards.
+    /// Arugula's own cards.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     diffs: Option<String>,
 }
@@ -239,7 +239,7 @@ impl Ide {
         self.line(json!({ "t": "notify", "conn": conn.unwrap_or(0), "method": method, "params": params }));
     }
 
-    /// Where diffs go: `None` for arugula's cards.
+    /// Where diffs go: `None` for Arugula's cards.
     pub fn diffs_to(&self) -> Option<String> {
         self.prefs.lock().unwrap().diffs.clone()
     }

@@ -293,7 +293,7 @@ test("a member puts their own machine in the team; an owner can take it out", as
   await bob.locator("[data-approve-join]").click();
   answer();
   expect(await j.exited).toBe(0);
-  // An arugula from before owners could take machines out.
+  // An Arugula from before owners could take machines out.
   let d = runDaemon("bobbox", state, { env: { ARUGULA_FEATURES: "presigned-invites" } });
   await bob.goto("/");
   await bob.waitForFunction(() => window.__arugula?.control?.phase === "ready");
@@ -316,7 +316,7 @@ test("a member puts their own machine in the team; an owner can take it out", as
   await controlPanel(alice, "teams");
   const listed = alice.locator(`[data-team-machine="${bobbox}"]`);
   await expect(listed).toContainText("bob's");
-  // Its arugula is too old to take an owner's move: she's told so.
+  // Its Arugula is too old to take an owner's move: she's told so.
   await listed.locator("[data-take-out]").click();
   await listed.locator("[data-take-out-go]").click();
   await expect(alice.locator(".control-error")).toContainText("bobbox runs an older arugula: its owner updates it");
@@ -506,7 +506,7 @@ test("removing a member cuts them off within a second", async () => {
 
 test("a machine downgraded after a one-click join is told to update", async () => {
   // #135: a team box joins now that the team's history has a presigned
-  // version, then runs an arugula from before them (played by one that
+  // version, then runs an Arugula from before them (played by one that
   // says it understands nothing). Control won't hand it rosters it would
   // stop at, and it says why.
   const state = temp("downbox");
@@ -518,7 +518,7 @@ test("a machine downgraded after a one-click join is told to update", async () =
   answer();
   expect(await j.exited).toBe(0);
   const d = runDaemon("downbox", state, { env: { ARUGULA_FEATURES: "" }, log: true });
-  await expect.poll(d.log, { timeout: 30_000 }).toContain("update arugula to keep up with the team");
+  await expect.poll(d.log, { timeout: 30_000 }).toContain("update Arugula to keep up with the team");
   d.proc.kill("SIGKILL");
   // Out of the team again, so the tests after see only their machines.
   const left = spawn("../target/debug/arugulad", ["leave", "--state-dir", state], { stdio: "ignore" });

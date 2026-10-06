@@ -20,7 +20,7 @@
 #   links     `open arugula://open?cwd=DIR` opens a tab there and shows
 #             it; `open arugula://pane/%N` shows pane N
 #   finder    M47: the app's service is registered; right-clicking a
-#             folder in Finder and picking *New arugula Tab Here* opens a
+#             folder in Finder and picking *New Arugula Tab Here* opens a
 #             tab there in the running app and shows it; a .command file
 #             opened with the app runs in a new tab
 #   this      #323: the tray's *This machine*, clicked again and again,
@@ -286,8 +286,8 @@ newest_after() { wait_for 20 more_panes_than "$1" && panes | tail -1; }
 
 claim_finder() {
   vs '/System/Library/CoreServices/pbs -update; sleep 1'
-  if vs '/System/Library/CoreServices/pbs -dump 2>/dev/null | grep -q "New arugula Tab Here"'; then
-    pass finder "the services list has New arugula Tab Here"
+  if vs '/System/Library/CoreServices/pbs -dump 2>/dev/null | grep -q "New Arugula Tab Here"'; then
+    pass finder "the services list has New Arugula Tab Here"
   else
     fail finder "pbs doesn't list the app's service"
   fi
@@ -296,7 +296,7 @@ claim_finder() {
   local n; n=$(panes | wc -l)
   # Finder on ~/m47 in a list view, the folder selected by typing its name
   # (no Apple Events to Finder: those need a person's yes); then a
-  # right-click on it and *New arugula Tab Here* (finder-menu.js).
+  # right-click on it and *New Arugula Tab Here* (finder-menu.js).
   vs 'open /Users/admin/m47'
   sleep 2
   keys 'keystroke "2" using command down'
@@ -305,8 +305,8 @@ claim_finder() {
   sleep 1
   v push "$HERE/finder-menu.js" /tmp/finder-menu.js
   local how
-  how=$(vs "osascript -l JavaScript /tmp/finder-menu.js some-project 'New arugula Tab Here'" 2>&1) \
-    || { fail finder "right-click > New arugula Tab Here: $how"; return; }
+  how=$(vs "osascript -l JavaScript /tmp/finder-menu.js some-project 'New Arugula Tab Here'" 2>&1) \
+    || { fail finder "right-click > New Arugula Tab Here: $how"; return; }
   local p; p=$(newest_after "$n") || { fail finder "$how, but no new pane"; return; }
   local cwd; cwd=$(pane_cwd "$p")
   if [ "$cwd" = "$dir" ]; then

@@ -833,7 +833,7 @@ async fn attach(
     handle.attach_with(sub.clone(), want);
     guests.count(g.id, 1);
     let mode = if g.rw { "read-write" } else { "read-only" };
-    let heading = format!("arugula %{} ({mode}) · Ctrl-] leaves", g.pane);
+    let heading = format!("Arugula %{} ({mode}) · Ctrl-] leaves", g.pane);
     let mut ended = guests.ended.subscribe();
     let deadline = tokio::time::Instant::now() + Duration::from_millis(g.expires_ms.saturating_sub(now_ms()));
     let mut events = app.mux.events();

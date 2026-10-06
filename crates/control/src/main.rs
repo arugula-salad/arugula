@@ -1,4 +1,4 @@
-//! arugula control (`arugula-control`): accounts, devices, the
+//! Arugula control (`arugula-control`): accounts, devices, the
 //! directory and the relay, for people who don't run a tailnet and for
 //! teams. Anyone can run it; the hosted one runs this code.
 //!
@@ -50,7 +50,7 @@ use serde_json::json;
 use tracing::info;
 
 #[derive(Parser, Debug)]
-#[command(version, about = "arugula control: accounts, devices, the directory and the relay")]
+#[command(version, about = "Arugula control: accounts, devices, the directory and the relay")]
 struct Args {
     /// Address to listen on (put TLS in front: Caddy, Fly, `tailscale serve`).
     /// Port 0 picks a free one, recorded in `listen` beside the database.
@@ -734,7 +734,7 @@ async fn run() -> anyhow::Result<()> {
     let l = l.tap_io(|t| {
         let _ = t.set_nodelay(true);
     });
-    info!(%listen, url = %app.cfg.public_url, "arugula control");
+    info!(%listen, url = %app.cfg.public_url, "Arugula control");
     let serve = axum::serve(l, router(app).into_make_service_with_connect_info::<SocketAddr>());
     tokio::select! {
         r = serve => r?,

@@ -1,4 +1,4 @@
-//! The app as a client of arugula control (M48, #159): once this machine
+//! The app as a client of Arugula control (M48, #159): once this machine
 //! is joined, the window is control's own client, with every machine in
 //! the account and the team, each reached directly or through the relay,
 //! end to end. Before that it's the local page (whose Getting started has
@@ -43,7 +43,7 @@ fn agent() -> &'static ureq::Agent {
 /// What the local daemon says about itself, read when a window opens.
 #[derive(Clone, Default)]
 pub struct Local {
-    /// This machine's name, for the device ("arugula app on jake-air").
+    /// This machine's name, for the device ("Arugula app on jake-air").
     pub name: String,
     /// The control it's joined to (`ARUGULA_CONTROL` overrides, for tests).
     /// None while control has dropped it (#325, #326): it isn't in.
@@ -108,7 +108,7 @@ pub fn control() -> Option<String> {
 
 pub fn device_name() -> String {
     let name = LOCAL.lock().unwrap().as_ref().map(|l| l.name.clone()).unwrap_or_default();
-    if name.is_empty() { "arugula app".into() } else { format!("arugula app on {name}") }
+    if name.is_empty() { "Arugula app".into() } else { format!("Arugula app on {name}") }
 }
 
 pub fn set_local_only(on: bool) {
@@ -308,7 +308,7 @@ pub fn init_script() -> String {
 #[derive(serde::Serialize)]
 pub struct Status {
     control: Option<String>,
-    /// The app's name as a device ("arugula app on jake-air").
+    /// The app's name as a device ("Arugula app on jake-air").
     name: String,
     /// This machine's name.
     machine: String,
@@ -342,7 +342,7 @@ pub struct Started {
 #[tauri::command]
 pub async fn cloud_signin(app: AppHandle, window: tauri::WebviewWindow) -> Result<Started, String> {
     use sha2::{Digest, Sha256};
-    let control = control().ok_or("this machine isn't joined to arugula cloud")?;
+    let control = control().ok_or("this machine isn't joined to Arugula cloud")?;
     let mut secret = [0u8; 32];
     getrandom::fill(&mut secret).map_err(|e| e.to_string())?;
     let verifier = hex(&secret);

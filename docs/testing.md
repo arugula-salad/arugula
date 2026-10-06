@@ -1,7 +1,7 @@
 # Testing
 
 Every test runs the real binaries as child processes, each with its own
-temp state directory and a port the OS picks. Anything outside arugula
+temp state directory and a port the OS picks. Anything outside Arugula
 (GitHub, Fountain, an agent, Stripe) is a fake served by the test or a
 small script, or a response recorded from the real service and checked in.
 Nothing in the default run costs money, and no test waits for a person:
@@ -426,7 +426,7 @@ logged-in session over ssh.
 | Service registration | (the systemd unit: `arugulad install`, unchanged) | `agent`: the first start registers the launch agent through SMAppService, BTM lists it, the bundle's daemon answers the linked CLI, no second plist | the app runs a daemon that isn't the one Login Items shows, or two |
 | Working pane, no terminal | | `install`, `pane`: the .dmg installs, and a command typed into the window runs | |
 | Panes outlive the app | | `restart`: the daemon's pids and panes are the same after the app restarts | |
-| Right-click a folder (M47) | `m47` (`just desktop-xvfb m47`): with the packages' .desktop file and Nautilus extension, a right-click on a folder (and inside one) in Nautilus, *Open in arugula*, opens a tab there in the running app and shows it | `finder`: the service is registered (`pbs`); a right-click on a folder in Finder, *New arugula Tab Here*, opens a tab there; a `.command` file opened with the app runs in a new pane | the file manager's menu has no entry, or it starts a second app |
+| Right-click a folder (M47) | `m47` (`just desktop-xvfb m47`): with the packages' .desktop file and Nautilus extension, a right-click on a folder (and inside one) in Nautilus, *Open in Arugula*, opens a tab there in the running app and shows it | `finder`: the service is registered (`pbs`); a right-click on a folder in Finder, *New Arugula Tab Here*, opens a tab there; a `.command` file opened with the app runs in a new pane | the file manager's menu has no entry, or it starts a second app |
 | Packages | `just desktop-packages ARCH`: .deb and .rpm install, libraries resolve, xdg-mime hands `arugula://` to the app, the .desktop file passes the link (`%u`) and has a New Tab action, the Nautilus extension is in place | `install` above | |
 | A daemon too old for the app (#317) | `just desktop-xvfb stale`: a 0.8.0 stand-in (`old-daemon.py`, no protocol) installed as the service, stopped (`stopped`) or running (`running`): the app says 0.8.0 runs and 0.19.0 is needed, 0.8.0 still answers afterwards, and it served no page | `stale-daemon.sh`: the same with the released 0.8.0 (`OLD=` another below 0.19.0), installed with its own `arugulad install` | the app shows an old daemon's page, or replaces a daemon (#392) |
 | Updates | | `update.sh`: 0.17.0 refuses a manifest signed with another key, then replaces itself with 0.17.1 and restarts; the new app carries a newer daemon and leaves the running one alone (#392); a running vim and a counting build carry on | |
@@ -593,7 +593,7 @@ It needs, in the repository's Actions settings:
 | `ARUGULA_GH_TEST_REPO` | variable | `org/repo` in a test organization: public, both bots can write, with `.github/workflows/arugula-red.yml` on its default branch (a job that fails on pushes to `red-*`) |
 | `ARUGULA_GH_AUTHOR_TOKEN` | secret | the first bot's token: contents, pull requests, issues and actions, read and write, on that repository |
 | `ARUGULA_GH_REVIEWER_TOKEN` | secret | the second bot's token, the same |
-| `ARUGULA_GH_APP_ID` | variable | a test copy of arugula's GitHub App, installed on the test organization, with pull request and issue comment events |
+| `ARUGULA_GH_APP_ID` | variable | a test copy of Arugula's GitHub App, installed on the test organization, with pull request and issue comment events |
 | `ARUGULA_GH_APP_PRIVATE_KEY` | secret | that App's private key (PEM) |
 
 Control is stood in for in that test, and the App's deliveries are read
@@ -610,7 +610,7 @@ promise broke.
 The promises:
 
 1. A box you can ssh into needs nothing set up first: the first `arugula
-   --ssh box` command installs arugula there and starts its daemon.
+   --ssh box` command installs Arugula there and starts its daemon.
 2. The daemon outlives the ssh login: a lingering systemd user service on
    Linux, and on macOS a launchd service for a user with no GUI session.
 3. Only the owner's forwarded agent reaches panes, so `git push` from a
@@ -631,7 +631,7 @@ a machine in those promises:
 
 - `bastion`: a ProxyJump host in front of a private network. It's the only
   container the host can reach (`127.0.0.1:22922`).
-- `box-bare`: a fresh machine. No arugula, no state, no route out; it's
+- `box-bare`: a fresh machine. No Arugula, no state, no route out; it's
   reached only through the bastion, so anything installed on it arrived
   over ssh.
 - `box-systemd`: a Linux server with systemd as PID 1, logind and polkit,
@@ -658,7 +658,7 @@ reached only over ssh.
 
 | Test | Closes | What it does | A failure means |
 |---|---|---|---|
-| `just testnet test ssh` (`login`, `jump`, `inner`, `bare`, `stdio`, `agent`, `push`, `linger`) | the ground under #153 (S28) and #154 (M51) | checks the stack is the shape the other tests assume: the key and host keys work, ProxyJump works, box-bare has no route out and no arugula, 1 MiB of random bytes cross ssh's stdio unchanged, a forwarded agent shows on the box, `git push` works with only the forwarded agent, and a user turns on lingering with no sudo | the environment changed, not arugula: read it before any other failure. `bare` fails on a box an earlier run installed on (`just testnet down` and `up`); `stdio` means the transport S28's bridge rides on isn't clean; `linger` means no Linux box could keep a daemon past logout without sudo |
+| `just testnet test ssh` (`login`, `jump`, `inner`, `bare`, `stdio`, `agent`, `push`, `linger`) | the ground under #153 (S28) and #154 (M51) | checks the stack is the shape the other tests assume: the key and host keys work, ProxyJump works, box-bare has no route out and no Arugula, 1 MiB of random bytes cross ssh's stdio unchanged, a forwarded agent shows on the box, `git push` works with only the forwarded agent, and a user turns on lingering with no sudo | the environment changed, not arugula: read it before any other failure. `bare` fails on a box an earlier run installed on (`just testnet down` and `up`); `stdio` means the transport S28's bridge rides on isn't clean; `linger` means no Linux box could keep a daemon past logout without sudo |
 | `crates/daemon/tests/integration/ssh.rs` | #154 (M51): "an e2e test drives it against a local sshd"; `git push` uses the client's agent | on a recreated box-bare: the first `--ssh box-bare ls` installs and starts the daemon; `run` and `capture` a pane; the client's key shows in a pane while a client is attached; a `git push` from a pane reaches the git server; the same push with `ARUGULA_SSH_AGENT=no` is refused; the pane outlives the connection; a saved `ssh://box-bare` host works with `--host`, and an option as a destination (`ssh://-oProxyCommand=id`) is refused | promise 1 (no install or no daemon on a fresh box), promise 3 (the push failed with the agent, or worked without it, so panes see some other agent or none), promise 2 (the pane went with the connection), or the host list |
 | `crates/daemon/tests/integration/reboot.rs` | #26; M52's "the box survives a reboot" on Linux | installs over `--ssh` as a lingering user service, builds #26's session (splits, a nested directory, coloured output, every restart policy, a browser block, an agent block), then `docker restart` twice with nobody logged in; checks the daemon is up, the journal's "saved for shutdown" and "restored", layout, directories, scrollback with `── restored`, each pane by its policy, both blocks, and a headless web client (`web/reconnect-watch.ts`) reconnecting without a reload | promise 2 on Linux if the daemon isn't up after the restart (lingering, the user service); otherwise a restore regressed (#26), named by the assertion |
 | `just testnet test control signin reach` | the ground under #155 (M52) | a device signs in with the fake GitHub and is trusted; box-systemd reaches control at its inner address | the stack, not M52: the fakes or the inner network |
@@ -668,7 +668,7 @@ reached only over ssh.
 | `just testnet test control m49team` | #254: a team machine listed and reachable from `arugula hosts` | an owner's team with box-systemd in it; the CLI's account asks to join and is admitted; `hosts` lists box-systemd as the owner's, and the CLI captures its pane and attaches to it (relayed) | pinning and checking another account's root, or a team member's CLI device not taken by the team's machine |
 | `crates/daemon/tests/integration/guest_ssh.rs`, `web/e2e/guest-ssh.spec.ts` | #198 (M65): the direct path and the pane menu entry | the system OpenSSH client as a guest against a dev daemon ([below](#guest-ssh-m65)) | promise 6; the test's name says which part (read-only, read-write, ending a session, refusals, the CLI) |
 | `guest_ssh.rs`'s `a_guest_reaches_a_daemon_behind_nat_through_controls_jump_host` | #253 (M65's relay) | box-systemd joined to the `control` profile's control, a guest on the host through control's jump host | promise 6 for a box behind NAT, and control can't read the pane |
-| `testnet/measure-tailnet.sh` (`just testnet measure tailnet`) | #153 (S28): the tailnet comparison | installs arugula on ts-box over ssh from ts-client, checks both paths see the same panes, then times `arugula ls` and an 8 MiB `arugula export` over `--ssh` and over the tailnet | one path no longer reaches the daemon, or the two disagree about its panes. Slower numbers don't fail it: compare them with `spikes/s28-ssh/README.md` |
+| `testnet/measure-tailnet.sh` (`just testnet measure tailnet`) | #153 (S28): the tailnet comparison | installs Arugula on ts-box over ssh from ts-client, checks both paths see the same panes, then times `arugula ls` and an 8 MiB `arugula export` over `--ssh` and over the tailnet | one path no longer reaches the daemon, or the two disagree about its panes. Slower numbers don't fail it: compare them with `spikes/s28-ssh/README.md` |
 | `just macos launchd` | #153 (S28) and #155 (M52): jake-mini with no GUI session | in a fresh macOS VM, a user who never had a GUI session runs `arugulad install` over ssh: it installs the background agent, warns that it won't start after a reboot by itself, and the daemon and pane outlive the ssh session; `arugula --ssh` from the host starts it and passes the warning on; `install --system` survives a VM restart with nobody logged in, its pane restored; `uninstall` leaves nothing of either ([its claims](#the-tests)) | promise 2 on macOS: the install a Mac reached only over ssh gets, and what it says about reboots |
 
 ### What BREAK=1 proves
@@ -880,7 +880,7 @@ Only what no test can do:
   Anthropic account, so its Code tab session records are a fixture
   ([Fixtures](#fixtures)) and `conversations.rs` checks the daemon reads
   them where the app keeps them on each OS. What the app shows after
-  arugula continues or forks one of its sessions needs the signed-in app.
+  Arugula continues or forks one of its sessions needs the signed-in app.
 - **Gatekeeper on a downloaded app.** The VM's `app` test fetches the zip
   with curl, which sets no quarantine flag, so the first-launch prompt a
   browser download gets isn't covered (the app is ad hoc signed until

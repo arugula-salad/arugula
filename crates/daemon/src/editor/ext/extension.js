@@ -1,4 +1,4 @@
-// arugula's extension for VS Code, Cursor and code-server (M27, M28).
+// Arugula's extension for VS Code, Cursor and code-server (M27, M28).
 //
 // It runs in the workspace's extension host (`extensionKind: workspace`):
 // on the machine the files are on, which under Remote-SSH or in a dev
@@ -129,7 +129,7 @@ async function replaceOld() {
 
 async function setOn(v) {
   if (block) {
-    vscode.window.showInformationMessage("This window is an arugula editor block: it's always in the swarm.");
+    vscode.window.showInformationMessage("This window is an Arugula editor block: it's always in the swarm.");
     return;
   }
   on = v;
@@ -148,10 +148,10 @@ async function menu() {
 }
 
 function statusText() {
-  if (!on) return "Not in your arugula swarm";
-  if (!welcome) return "Connecting to arugula…";
-  if (followers > 0) return `${followers} following this editor in arugula`;
-  return `In your arugula swarm as %${welcome}`;
+  if (!on) return "Not in your Arugula swarm";
+  if (!welcome) return "Connecting to Arugula…";
+  if (followers > 0) return `${followers} following this editor in Arugula`;
+  return `In your Arugula swarm as %${welcome}`;
 }
 
 function showStatus() {
@@ -161,7 +161,7 @@ function showStatus() {
     status.hide();
     return;
   }
-  status.text = !on ? "$(circle-slash) arugula" : followers > 0 ? `$(eye) ${followers} following` : welcome ? "$(broadcast) arugula" : "$(sync~spin) arugula";
+  status.text = !on ? "$(circle-slash) Arugula" : followers > 0 ? `$(eye) ${followers} following` : welcome ? "$(broadcast) Arugula" : "$(sync~spin) Arugula";
   status.tooltip = statusText();
   status.backgroundColor = followers > 0 ? new vscode.ThemeColor("statusBarItem.warningBackground") : undefined;
   status.show();

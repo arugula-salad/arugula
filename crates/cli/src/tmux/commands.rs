@@ -690,7 +690,7 @@ impl Front {
             pane = neighbour(&v.layout, pane, d).unwrap_or(pane);
         }
         if c.name == "select-pane" && (c.has('T') || c.has('P') || c.has('M') || c.has('m')) && dir.is_none() {
-            // A title, style or mark: nothing arugula keeps.
+            // A title, style or mark: nothing Arugula keeps.
             return Ok(vec![]);
         }
         self.set_active_tab(t.session, tab);

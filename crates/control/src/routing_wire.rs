@@ -177,7 +177,7 @@ async fn daemon_signatures_cover_the_request_and_are_good_once() {
         .await
         .unwrap();
     assert_eq!(r.status(), 426);
-    assert!(r.text().await.unwrap().contains("update arugula"));
+    assert!(r.text().await.unwrap().contains("update Arugula"));
     assert_eq!(strict.daemon_get(&d, "/api/daemon/trust").await.0, 200);
     let ctl: Value =
         strict.http.get(format!("{}/control.json", strict.base)).send().await.unwrap().json().await.unwrap();
@@ -207,7 +207,7 @@ async fn joining_again_needs_the_machines_key() {
     // Someone with only a joined machine's certificate can't ask for it.
     let r = post(join_body(&joined, false)).await.unwrap();
     assert_eq!(r.status(), 426);
-    assert!(r.text().await.unwrap().contains("update arugula"));
+    assert!(r.text().await.unwrap().contains("update Arugula"));
     let mut bad = join_body(&joined, true);
     bad["proof"]["sig"] = json!(hex::encode(DeviceKeys::generate().signature(b"x")));
     assert_eq!(post(bad).await.unwrap().status(), 401);
@@ -215,7 +215,7 @@ async fn joining_again_needs_the_machines_key() {
     let proven = join_body(&joined, true);
     assert_eq!(post(proven.clone()).await.unwrap().status(), 200);
     assert_eq!(post(proven).await.unwrap().status(), 401, "a proof is good once");
-    // A new machine on an older arugula still joins.
+    // A new machine on an older Arugula still joins.
     let fresh = DeviceKeys::generate();
     assert_eq!(post(join_body(&fresh, false)).await.unwrap().status(), 200);
 
@@ -451,7 +451,7 @@ async fn a_waiting_browser_brings_the_machine_it_came_for() {
 
     let browser = DeviceKeys::generate();
     let enrolls = |keys: &DeviceKeys, join: Option<&str>| {
-        let cert = Cert::new(keys, "a1", Kind::Browser, "arugula app on box");
+        let cert = Cert::new(keys, "a1", Kind::Browser, "Arugula app on box");
         let (c, cookie) = (&c, cookie.clone());
         let body = json!({ "cert": cert, "join": join });
         async move { c.as_person(&cookie, "POST", "/api/devices", Some(body)).await }
@@ -534,7 +534,7 @@ async fn the_cli_joins_with_a_code_and_then_signs_as_its_account() {
     let root = person(&c.app, "jake", "a1");
     daemon(&c.app, "a1", "geek");
     let cli = DeviceKeys::generate();
-    let ask = Cert { account: String::new(), ..Cert::new(&cli, "", Kind::Cli, "arugula CLI on mini") };
+    let ask = Cert { account: String::new(), ..Cert::new(&cli, "", Kind::Cli, "Arugula CLI on mini") };
     let post = |b: Value| c.http.post(format!("{}/api/join", c.base)).json(&b).send();
     let proof = || {
         let ms = now_ms();
@@ -777,7 +777,7 @@ async fn a_team_daemon_too_old_for_presigned_rosters_is_told_to_update() {
     // a roster it would stop at.
     let (st, v) = c.daemon_get(&d, old).await;
     assert_eq!(st, 409);
-    assert!(v["error"].as_str().unwrap().contains("update arugula"), "{v}");
+    assert!(v["error"].as_str().unwrap().contains("update Arugula"), "{v}");
     let (st, v) = c.daemon_get(&d, "/api/daemon/team?since=1").await;
     assert_eq!(st, 409, "{v}");
     // One that understands them gets both versions.
@@ -1065,7 +1065,7 @@ async fn a_full_relay_refuses_new_sockets_and_still_signs_people_in() {
     assert_eq!(body["error"], crate::relay::FULL);
     // So is the CLI, the same way.
     let cli = DeviceKeys::generate();
-    let mut cert = Cert::new(&cli, "a1", Kind::Cli, "arugula CLI");
+    let mut cert = Cert::new(&cli, "a1", Kind::Cli, "Arugula CLI");
     cert.sign_with(&root);
     c.app.db.put_device(&cert, true, now_ms()).unwrap();
     let path = format!("/api/relay/c/{}", geek.id());

@@ -189,11 +189,11 @@ pub async fn enroll(State(app): State<Arc<App>>, s: Session, Json(b): Json<Enrol
                 let (title, body) = match join {
                     Some(_) => (
                         "A new browser and a machine want into your account",
-                        "Open arugula to check them and approve both at once.",
+                        "Open Arugula to check them and approve both at once.",
                     ),
                     None => (
                         "A new browser wants into your account",
-                        "Open arugula to check its fingerprint and approve it.",
+                        "Open Arugula to check its fingerprint and approve it.",
                     ),
                 };
                 crate::push::notify(&app, vec![s.account.clone()], "control-device", title.into(), body.into());
@@ -369,7 +369,7 @@ const PROOF_SKEW_MS: u64 = 5 * 60 * 1000;
 
 /// What an older daemon is told when a join would need its key.
 const JOIN_NEEDS_UPDATE: &str =
-    "this machine was joined before: update arugula (0.17 or newer) on it, then run join again";
+    "this machine was joined before: update Arugula (0.17 or newer) on it, then run join again";
 
 /// Whether the join request comes from the key's holder: an error if it
 /// says so and doesn't, `false` if it doesn't say (an older daemon).
@@ -395,7 +395,7 @@ fn can_follow(app: &App, team: &str, features: &str, name: &str) -> Result<(), A
         return Err(err(
             StatusCode::CONFLICT,
             &format!(
-                "{name} needs an update before it can join this team (its arugula is older than the team's invites)"
+                "{name} needs an update before it can join this team (its Arugula is older than the team's invites)"
             ),
         ));
     }

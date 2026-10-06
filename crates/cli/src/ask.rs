@@ -7,7 +7,7 @@
 //!
 //! Anything else ends it with no output, which leaves Claude Code to show
 //! its picker as usual: "Answer in terminal" on the card, running outside an
-//! arugula pane, input that isn't AskUserQuestion's, or a daemon that's
+//! Arugula pane, input that isn't AskUserQuestion's, or a daemon that's
 //! gone for good. When Claude Code gives up on it (Esc or Ctrl-C in the TUI,
 //! or the hook's timeout) it gets SIGTERM, and withdraws the card first.
 //! A daemon restart while it waits only means asking the new one.

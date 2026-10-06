@@ -16,7 +16,7 @@
 #             (desktop.json), it hides the focused window and brings it back
 #   nautilus  M47 (`just desktop-xvfb m47`): with the packages' .desktop
 #             file claiming arugula:// and their Nautilus extension, a
-#             right-click on a folder in Nautilus, *Open in arugula*,
+#             right-click on a folder in Nautilus, *Open in Arugula*,
 #             opens a tab there in the running app and shows it; so does
 #             the same item on a folder's background
 #
@@ -92,7 +92,7 @@ stop_app() {
   app_pid=
 }
 # The app's window (visible), by its title.
-window() { xdotool search --onlyvisible --name '^arugula$' 2>/dev/null | head -1; }
+window() { xdotool search --onlyvisible --name '^Arugula$' 2>/dev/null | head -1; }
 # Pane ids.
 panes() { il --json ls | python3 -c 'import json, sys; [print(p["id"]) for p in json.load(sys.stdin)]'; }
 # The recorder that started in $1, and its size ("rows cols").
@@ -272,8 +272,8 @@ claim_links() {
       bad links "arugula://pane/%$other didn't show it (size $(size_in "$odir"))"
     fi
   fi
-  [ -n "$(window)" ] && [ "$(xdotool search --name '^arugula$' | wc -l)" -eq 1 ] \
-    || bad links "the links opened another window: $(xdotool search --name '^arugula$' | wc -l)"
+  [ -n "$(window)" ] && [ "$(xdotool search --name '^Arugula$' | wc -l)" -eq 1 ] \
+    || bad links "the links opened another window: $(xdotool search --name '^Arugula$' | wc -l)"
 }
 
 # The app as the packages install it: their .desktop file (from
@@ -285,7 +285,7 @@ install_like_a_package() {
   printf '#!/bin/sh\nexec "%s" "$@"\n' "$app" >"$bin/arugula-desktop"
   chmod +x "$bin/arugula-desktop"
   sed -e '/{{[#/]if/d' -e "s|{{exec}}|$bin/arugula-desktop|g" -e 's|{{icon}}|arugula-desktop|' \
-    -e 's|{{name}}|arugula|' -e 's|{{categories}}|Development;|' -e 's|{{comment}}|Terminals|' \
+    -e 's|{{name}}|Arugula|' -e 's|{{categories}}|Development;|' -e 's|{{comment}}|Terminals|' \
     -e 's|{{mime_type}}|x-scheme-handler/arugula|' "$desktop_dir/linux/arugula.desktop" >"$apps/arugula.desktop"
   desktop-file-validate "$apps/arugula.desktop" || bad nautilus "the .desktop file doesn't validate"
   update-desktop-database "$apps"
@@ -297,7 +297,7 @@ nautilus_window() { xdotool search --onlyvisible --class '[Nn]autilus' >/dev/nul
 
 # Right-click DIR's entry in Nautilus (shown in its parent, selected) or,
 # with `background`, an empty spot inside DIR, with the mouse; then click
-# *Open in arugula* in the menu that opens.
+# *Open in Arugula* in the menu that opens.
 nautilus_open() {
   local dir=$1 where=${2:-}
   # One window at a time: Nautilus is one process, whatever starts it.
@@ -322,7 +322,7 @@ nautilus_open() {
   # shellcheck disable=SC2086 # "x y"
   xdotool mousemove $xy click 3
   sleep 1
-  "$here/click.py" nautilus "Open in arugula" 10
+  "$here/click.py" nautilus "Open in Arugula" 10
 }
 
 claim_nautilus() {
@@ -331,7 +331,7 @@ claim_nautilus() {
   mkdir -p "$dir"
   local before; before=$(panes | wc -l)
   if ! out=$(nautilus_open "$dir" 2>&1); then
-    bad nautilus "right-click > Open in arugula: $out"
+    bad nautilus "right-click > Open in Arugula: $out"
     return
   fi
   if wait_for 20 started_in "$dir"; then
@@ -347,16 +347,16 @@ claim_nautilus() {
   local inside=$work/projects/inside
   mkdir -p "$inside"
   if ! out=$(nautilus_open "$inside" background 2>&1); then
-    bad nautilus "right-click inside a folder > Open in arugula: $out"
+    bad nautilus "right-click inside a folder > Open in Arugula: $out"
   elif wait_for 20 started_in "$inside"; then
     ok nautilus "right-click inside a folder: a new pane started in $inside"
   else
     bad nautilus "no pane started in $inside"
   fi
-  if [ "$(xdotool search --name '^arugula$' | wc -l)" -eq 1 ]; then
+  if [ "$(xdotool search --name '^Arugula$' | wc -l)" -eq 1 ]; then
     ok nautilus "one app, one window: the links went to the running app"
   else
-    bad nautilus "$(xdotool search --name '^arugula$' | wc -l) windows"
+    bad nautilus "$(xdotool search --name '^Arugula$' | wc -l) windows"
   fi
 }
 

@@ -1,4 +1,4 @@
-# arugula shell integration for fish. UNTESTED: fish isn't installed on
+# Arugula shell integration for fish. UNTESTED: fish isn't installed on
 # the machine this was written on.
 #
 # arugulad prepends this directory's parent to XDG_DATA_DIRS, so fish loads

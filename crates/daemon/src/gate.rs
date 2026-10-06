@@ -28,7 +28,7 @@ pub fn reason(gates: &[Gate]) -> Option<Reason> {
 }
 
 /// Approve `gate` as `approver` (#75: the owner or an editor, by their
-/// arugula name), through its source. What the source said, on success.
+/// Arugula name), through its source. What the source said, on success.
 pub async fn approve(gate: &Gate, approver: Option<&str>, via: &Via<'_>) -> Result<String, String> {
     match (&gate.source, via) {
         (GateSource::Chant { dir, .. }, Via::Chant { runner, chant }) => {

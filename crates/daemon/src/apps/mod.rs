@@ -1,6 +1,6 @@
 //! Studio app blocks (M35): a studio box (arugula-salad's studio) as a
 //! block. The frame is the box itself, on its own origin, so there's no
-//! block site or proxy; what the box waits on comes to arugula as
+//! block site or proxy; what the box waits on comes to Arugula as
 //! attention, read through hud in the box (never by running anything
 //! there).
 //!

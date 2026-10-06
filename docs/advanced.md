@@ -2,7 +2,7 @@
 
 Everything here is optional. The [quickstart](../README.md#install) gets you
 durable panes, the phone, your other machines through
-[arugula control](control.md), and agent blocks; these add web apps and VS
+[Arugula control](control.md), and agent blocks; these add web apps and VS
 Code beside your terminals, containers, and iTerm2. *Open a port…* and *Open
 in editor* say how to turn them on until they are.
 
@@ -156,7 +156,7 @@ permission prompts on cards anyone on the team who may answer can answer,
 and take follow-ups from them, all through hooks in
 `~/.claude/settings.json`. The whole block, and what each part does, is in
 [the CLI's *Claude Code in a pane*](cli.md#claude-code-in-a-pane). Outside
-an arugula pane the hooks do nothing, so they're safe everywhere.
+an Arugula pane the hooks do nothing, so they're safe everywhere.
 
 ## Browser blocks on ports
 
@@ -166,7 +166,7 @@ needs a listener and a wildcard name; without one they're off, and *Open a
 port…* says how to turn them on (this section).
 
 The browser showing the block reaches that listener itself. Through
-[arugula control](control.md) from another device (your phone, another
+[Arugula control](control.md) from another device (your phone, another
 computer) blocks aren't relayed yet, so there they need the tailnet setup
 below.
 
@@ -210,10 +210,10 @@ like a browser block on a port, so they need block sites
 (`--block-listen`, above); without them *Open in editor* says how to turn
 them on.
 
-- **code-server:** the release arugula pins is downloaded the first time
+- **code-server:** the release Arugula pins is downloaded the first time
   an editor opens (about 230 MB) into `$XDG_CACHE_HOME/arugula/code-server`
   and checked against its SHA-256. `--code-server PATH` runs another one
-  instead (a recent one: arugula passes `--idle-timeout-seconds` and
+  instead (a recent one: Arugula passes `--idle-timeout-seconds` and
   `--socket-mode`).
 - **Where things are:** settings, extensions and VS Code's state in
   `<state>/editor/` (`user/User/settings.json` is yours after the first
@@ -226,9 +226,9 @@ them on.
 
 ## More machines
 
-Install arugula on each machine (the desktop app, `install.sh` or
+Install Arugula on each machine (the desktop app, `install.sh` or
 Homebrew), then add it to your account on
-[arugula control](control.md):
+[Arugula control](control.md):
 
 ```
 arugulad join https://control.illogical.widgets.wtf
@@ -283,7 +283,7 @@ home daemon, encrypted at rest there; `--sync-live` pushes open ones too.
 
 ## iTerm2, as a tmux client
 
-iTerm2's tmux integration works with arugula in place of tmux: sessions
+iTerm2's tmux integration works with Arugula in place of tmux: sessions
 are sessions, tabs are native windows, splits are native splits, and the
 same layout stays live in the browser. From iTerm2:
 

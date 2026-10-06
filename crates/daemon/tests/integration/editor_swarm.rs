@@ -1,4 +1,4 @@
-//! M28: editors in the swarm. An editor (a stand-in for arugula's VS Code
+//! M28: editors in the swarm. An editor (a stand-in for Arugula's VS Code
 //! extension or nvim plugin, speaking its protocol on the daemon's socket)
 //! joins as an entry of its own: kind editor, its project, its file, its
 //! diagnostics and debugger, but no tab. Following it streams its cursor and

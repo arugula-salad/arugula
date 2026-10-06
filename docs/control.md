@@ -1,6 +1,6 @@
-# arugula control
+# Arugula control
 
-arugula control lets you reach your machines from any device without a
+Arugula control lets you reach your machines from any device without a
 tailnet. It is also where accounts and devices live. The hosted one is at
 <https://control.illogical.widgets.wtf>; you can run your own from this
 repository (below).
@@ -50,7 +50,7 @@ vs team machines and sharing a session:
      every device, one of them lets a new browser in, once. *Devices and
      machines…* says how many are left; *Make new codes* there replaces
      them (the old ones stop working).
-2. **Add a machine.** Install arugula on it, then run:
+2. **Add a machine.** Install Arugula on it, then run:
 
    ```
    arugulad join https://control.illogical.widgets.wtf
@@ -113,7 +113,7 @@ vs team machines and sharing a session:
    machines…* to revoke it.
 6. **Remove a device or machine** from *Devices and machines…* in the host
    menu. It loses access at once. A removed machine keeps running
-   arugula, reachable only locally. Its key never counts again, so when
+   Arugula, reachable only locally. Its key never counts again, so when
    control says it was removed, the machine sets the key aside
    (`daemon.key.removed-…`) and asks to join again with a new one: a new
    code to approve, shown in *Getting started* and by `arugulad join`.
@@ -155,7 +155,7 @@ make it a hub): its host menu has *All your machines…*, which opens
 control's page.
 
 **Leaving.** `arugulad leave` takes a machine off your account (or its
-team). arugula keeps running there, at `http://127.0.0.1:7681`. The
+team). Arugula keeps running there, at `http://127.0.0.1:7681`. The
 daemon's log says it left, so a leave reads differently from a removal.
 
 **Dropped by control.** If control stops knowing a machine (it left, it
@@ -179,7 +179,7 @@ join's code. Otherwise its `control.json` stays (control could be
 wrong): the daemon stops redialling the relay and asks again every 10
 minutes, until you join again (the old enrollment is set aside as
 `control.json.dropped`) or run `arugulad leave`. If `control.json`
-disappears while the daemon runs and nothing of arugula's removed it,
+disappears while the daemon runs and nothing of Arugula's removed it,
 the log says that too.
 
 `GET /api/host`'s `control_state` (for the machine's owner only) has all
@@ -202,7 +202,7 @@ the host menu.
 - **Delete account…** asks you to type your GitHub login (or your name,
   for a passkey-only account). Control then deletes your account, its
   GitHub link, sessions, passkeys, devices and machines (they're refused
-  from then on; arugula keeps running on them, reachable only locally),
+  from then on; Arugula keeps running on them, reachable only locally),
   pending joins, push subscriptions, hosted VMs (deleted), usage counts,
   team requests and the invites you made. Your open relay connections
   close.

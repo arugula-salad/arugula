@@ -1,4 +1,4 @@
-# arugula
+# Arugula
 
 The `arugula` command: drive arugulad from a shell or a script, over the
 daemon's HTTP API on its Unix socket (or another daemon's URL, with

@@ -52,7 +52,7 @@ struct Cli {
     #[arg(long, global = true, conflicts_with = "ssh")]
     host: Option<String>,
     /// Talk to the daemon on a box you can ssh into (`user@box`, or a Host
-    /// from ~/.ssh/config), with your own ssh. Offers to install arugula
+    /// from ~/.ssh/config), with your own ssh. Offers to install Arugula
     /// there if it's missing.
     #[arg(long, global = true, value_name = "DEST")]
     ssh: Option<String>,
@@ -184,7 +184,7 @@ enum Command {
     App(cmd::app::Args),
     /// Editors in the swarm: VS Code, Cursor or nvim that joined.
     ///
-    /// Also editor blocks. `editors install` adds arugula's extension to VS Code
+    /// Also editor blocks. `editors install` adds Arugula's extension to VS Code
     /// or Cursor here (in a Remote-SSH window's terminal: there).
     Editors {
         #[command(subcommand)]
@@ -259,14 +259,14 @@ enum Command {
     /// Claude Code's hook for its questions (PreToolUse on AskUserQuestion).
     ///
     /// Shows its questions as a card beside this pane (every client, with a push),
-    /// waits, and prints the answer for Claude Code. Outside an arugula pane, or
+    /// waits, and prints the answer for Claude Code. Outside an Arugula pane, or
     /// "Answer in terminal": no output, so Claude Code shows its picker.
     Ask,
     /// Claude Code's hook for permission prompts.
     ///
     /// `PermissionRequest` becomes an approval card anyone who may answer can allow
     /// or deny; other events close a card the terminal answered first. Outside an
-    /// arugula pane: nothing.
+    /// Arugula pane: nothing.
     Hook,
     /// Claude Code's background hook for follow-ups (`Stop`, `SessionStart`).
     ///
@@ -284,7 +284,7 @@ enum Command {
     },
     /// What wants you, and why.
     ///
-    /// Or, given a state, tell arugula whether this pane needs you (for agent
+    /// Or, given a state, tell Arugula whether this pane needs you (for agent
     /// hooks, which pass their JSON on stdin: its `message` becomes the headline).
     Attention(cmd::attention::Args),
     /// Commands run in any pane, including recently closed ones
@@ -325,7 +325,7 @@ enum Command {
     ///
     /// Shares it with them (as a viewer unless --role says otherwise) and
     /// notifies them alone, opening at a pane. WHO is a tailnet login, someone already shared with, or (when
-    /// joined to arugula control) a member of your teams, by name.
+    /// joined to Arugula control) a member of your teams, by name.
     /// Prints whether the notification reached them: sent, pending (they
     /// haven't accepted this machine yet) or unreachable, and why.
     Invite(cmd::invite::Args),
@@ -351,33 +351,33 @@ enum Command {
     ///
     /// `arugulad install` with these arguments.
     Install(cmd::install::Args),
-    /// Add a machine to your account on arugula control.
+    /// Add a machine to your account on Arugula control.
     ///
     /// So the web, the phone and other machines reach it through control. With
-    /// `--ssh user@box`: that box, set up over ssh first (arugula installed, its
+    /// `--ssh user@box`: that box, set up over ssh first (Arugula installed, its
     /// daemon kept running after you log out); its code shows here, to approve from
     /// a signed-in device. Without: this machine.
     Join(cmd::join::Args),
-    /// Make this CLI one of your devices on arugula control.
+    /// Make this CLI one of your devices on Arugula control.
     ///
     /// So `--host NAME` reaches every machine on your account, directly or through
     /// control's relay. Shows a code to approve on a signed-in device.
     Login(cmd::login::Args),
     /// Forget this CLI's key for control (`arugula login` makes a new one).
     Logout,
-    /// How arugula is doing on this machine.
+    /// How Arugula is doing on this machine.
     ///
     /// The daemon (its version, the service that runs it, its binary and
-    /// log), whether and where it's joined to arugula control
+    /// log), whether and where it's joined to Arugula control
     /// (connected, or dropped by control), each agent's adapter and
-    /// whether Claude Code has arugula's MCP server. Exits 1 when the
+    /// whether Claude Code has Arugula's MCP server. Exits 1 when the
     /// daemon doesn't answer or control dropped it.
     Status,
     /// Use Claude Code (or Codex) with arugula.
     ///
     /// Installs the ACP adapter agent blocks run it through, at the version
     /// this daemon pins (or updates an older one), and for Claude Code adds
-    /// arugula's MCP server, so it can start its helpers as panes. Says
+    /// Arugula's MCP server, so it can start its helpers as panes. Says
     /// what changed. Getting started's Agents step does the same.
     Setup(cmd::setup::Args),
     /// Join stdin and stdout to this daemon's socket.
@@ -408,7 +408,7 @@ enum Command {
     },
     /// An MCP server on stdio, for agents that start one as a command.
     ///
-    /// `claude mcp add arugula -- arugula mcp`: arugula's tools, bridged to
+    /// `claude mcp add arugula -- arugula mcp`: Arugula's tools, bridged to
     /// the daemon's `/mcp`. `mcp token` makes tokens for clients that reach `/mcp`
     /// over HTTP without a tailnet identity.
     Mcp(cmd::mcp::Args),
@@ -589,7 +589,7 @@ fn real_main(cli: Cli) -> anyhow::Result<i32> {
         Err(e) => return Err(e),
     };
     REMOTE.store(!matches!(sock, http::Target::Socket(_)), std::sync::atomic::Ordering::Relaxed);
-    // Over ssh: the master, arugula installed there, its daemon up.
+    // Over ssh: the master, Arugula installed there, its daemon up.
     if let http::Target::Ssh(r) = &sock {
         r.prepare()?;
     }

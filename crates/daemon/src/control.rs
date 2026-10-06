@@ -1,4 +1,4 @@
-//! Enrolled in arugula control (M17, M18): who may connect, and the way
+//! Enrolled in Arugula control (M17, M18): who may connect, and the way
 //! in through control's relay.
 //!
 //! `arugulad join URL` makes this daemon's keys (`<state>/daemon.key`),
@@ -1212,7 +1212,7 @@ impl Control {
     /// control's GitHub App (for a box with no `gh` login), and the
     /// account's GitHub login. Never logged.
     pub async fn github_token(&self, repo: &str) -> Result<serde_json::Value, String> {
-        let e = self.enrolled().ok_or("not joined to arugula control")?;
+        let e = self.enrolled().ok_or("not joined to Arugula control")?;
         let res = self
             .post_json(&e, "/api/daemon/github/token", &serde_json::json!({ "repo": repo }))
             .send()
@@ -2161,7 +2161,7 @@ pub async fn leave(state_dir: &Path, listen: &str) -> anyhow::Result<()> {
     note_left(state_dir, "arugulad leave");
     let _ = std::fs::remove_file(state_dir.join(DROPPED_FILE));
     std::fs::remove_file(state_dir.join(FILE))?;
-    println!("arugula keeps running here; reach it at http://{listen}.");
+    println!("Arugula keeps running here; reach it at http://{listen}.");
     println!("Rejoin with `arugulad join {}` (the approver picks their account or a team).", s.url);
     Ok(())
 }
@@ -3055,7 +3055,7 @@ mod tests {
         let saved = saved_for("https://control.example", "lex00");
         let none = state_of(None, &Link::default(), false);
         assert_eq!(none.state, "not_joined");
-        assert_eq!(none.line(), "Not joined to arugula control");
+        assert_eq!(none.line(), "Not joined to Arugula control");
 
         let mut link = Link::default();
         let s = state_of(Some(&saved), &link, false);

@@ -1,4 +1,4 @@
-// The page served by arugula control (M17): who you are, this browser's
+// The page served by Arugula control (M17): who you are, this browser's
 // place in your account, and the daemons you can reach.
 //
 // Signing in (GitHub) only opens control's API. What lets this browser
@@ -277,7 +277,7 @@ const REFUSED: Record<string, string> = {
   approver_untrusted:
     "This browser isn't one your account trusts any more, so its approvals are refused. Forget it and enroll it again (another of your devices or a recovery code approves it), then try again.",
   bad_signature: "This browser's key isn't the one your account approved. Forget it and enroll it again, then try again.",
-  cant_approve: "A machine can't approve devices. Approve from a browser, phone or the arugula CLI.",
+  cant_approve: "A machine can't approve devices. Approve from a browser, phone or the Arugula CLI.",
   recovery_for_machine: "A recovery code approves browsers and phones, not machines. Approve the machine from one of your devices.",
   no_chain: "Control's records for your account don't add up from here (the approval doesn't chain to your first device). Reload and try again; if it keeps happening, approve from another device.",
   no_devices: "This account has no devices yet. Reload: this browser becomes its first.",
@@ -353,7 +353,7 @@ const NO_NOISE = "0".repeat(64);
 
 /** A browser's name in its account's device list. */
 export function deviceName(): string {
-  // M48: the desktop app says what it is ("arugula app on jake-air").
+  // M48: the desktop app says what it is ("Arugula app on jake-air").
   const app0 = desktopApp()?.name;
   if (app0) return app0;
   const ua = navigator.userAgent;

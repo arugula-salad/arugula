@@ -249,8 +249,8 @@ pub(crate) async fn agents_for(runner: &Runner, profile: Option<&str>) -> Result
 pub fn unreadable_note(n: usize) -> Option<String> {
     match n {
         0 => None,
-        1 => Some("1 agent couldn't be read (Fountain sent something this arugula doesn't understand)".into()),
-        n => Some(format!("{n} agents couldn't be read (Fountain sent something this arugula doesn't understand)")),
+        1 => Some("1 agent couldn't be read (Fountain sent something this Arugula doesn't understand)".into()),
+        n => Some(format!("{n} agents couldn't be read (Fountain sent something this Arugula doesn't understand)")),
     }
 }
 

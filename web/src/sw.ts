@@ -1,10 +1,10 @@
-// arugula service worker: shows push notifications (a pane needs you)
+// Arugula service worker: shows push notifications (a pane needs you)
 // and opens that pane when one is tapped. An approval (an agent block's
 // permission request, or Claude Code's in a terminal, M29) comes with Allow
 // and Deny; a question with one or two answers comes with them (M6c); a
 // failure or a finished command with Dismiss (M24). Those are answered from
 // here, without opening the app: on the daemon's own page with a request to
-// it, and through arugula control over an end-to-end channel the worker
+// it, and through Arugula control over an end-to-end channel the worker
 // opens itself, with this device's key and the daemon's Noise key from the
 // directory the page checked (S18). It also keeps the last copy of the page
 // itself, used only when the daemon that serves it doesn't answer: the page
@@ -101,7 +101,7 @@ interface Msg {
 }
 
 sw.addEventListener("push", (event: PushEvent) => {
-  let msg: Msg = { title: "arugula", body: "" };
+  let msg: Msg = { title: "Arugula", body: "" };
   try {
     msg = event.data?.json() as Msg;
   } catch {
@@ -127,7 +127,7 @@ sw.addEventListener("push", (event: PushEvent) => {
           ? [{ action: "dismiss", title: "Dismiss" }]
           : [];
   event.waitUntil(
-    sw.registration.showNotification(msg.title || "arugula", {
+    sw.registration.showNotification(msg.title || "Arugula", {
       body: msg.body || "",
       tag: msg.tag || "arugula",
       renotify: true,

@@ -127,7 +127,7 @@ test("an agent's approval is allowed from the rail, and the follow-up wakes it",
   await done.locator(".followup input").fill("now run the tests");
   await done.locator(".followup button").click();
   await expect(done.locator(".followup-sent")).toHaveText("Sent.");
-  await expect.poll(() => capture(page, "workstation", pane)).toContain("(sent through arugula): now run the tests");
+  await expect.poll(() => capture(page, "workstation", pane)).toContain("(sent through Arugula): now run the tests");
   await fake.close("workstation", pane);
 });
 

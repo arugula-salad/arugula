@@ -155,11 +155,11 @@ pub fn check_now(app: &AppHandle) {
     let current = app.package_info().version.to_string();
     if !enabled() {
         let why = if can_update() {
-            "This build of arugula doesn't check for updates."
+            "This build of Arugula doesn't check for updates."
         } else {
-            "This copy of arugula updates with its package manager."
+            "This copy of Arugula updates with its package manager."
         };
-        app.dialog().message(why).title(format!("arugula {current}")).show(|_| {});
+        app.dialog().message(why).title(format!("Arugula {current}")).show(|_| {});
         return;
     }
     tauri::async_runtime::spawn(async move {
@@ -169,15 +169,15 @@ pub fn check_now(app: &AppHandle) {
         let dialog = app.dialog().clone();
         match found {
             Ok(None) => {
-                dialog.message(format!("arugula {current} is the latest.")).title("No update").show(|_| {});
+                dialog.message(format!("Arugula {current} is the latest.")).title("No update").show(|_| {});
             }
             Ok(Some(v)) => {
                 ready(&app, &v);
                 let in_place = READY.lock().unwrap().is_some();
                 let (text, yes) = if in_place {
-                    (format!("arugula {v} is ready. Restart now to use it?"), "Restart Now")
+                    (format!("Arugula {v} is ready. Restart now to use it?"), "Restart Now")
                 } else {
-                    (format!("arugula {v} is out. Install it now? The app closes while it installs."), "Update Now")
+                    (format!("Arugula {v} is out. Install it now? The app closes while it installs."), "Update Now")
                 };
                 let app = app.clone();
                 dialog

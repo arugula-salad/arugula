@@ -15,7 +15,7 @@ Remote-SSH (`web/e2e/editor-swarm.spec.ts`). This runs the real thing:
   server and copies it over, as for a box with no way out).
 - `m28-box` is a Debian container (`box/Dockerfile`: sshd, Node for the
   debugger, Python for the stand-in Claude Code, socat) running the static
-  `arugulad` as `illo` in its usual state directory. arugula's
+  `arugulad` as `illo` in its usual state directory. Arugula's
   extension is installed into the box's VS Code server from the daemon's
   own VSIX (`arugula editors vsix`), and the window reloads.
 - The phone is a Pixel-sized page on the box's daemon.

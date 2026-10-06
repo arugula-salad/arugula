@@ -128,7 +128,7 @@ pub struct HostInfo {
 /// older daemons, and anyone else, leave it out.
 pub const CONTROL_STATE_KEY: &str = "control_state";
 
-/// A machine's standing with arugula control (#325): whether and where
+/// A machine's standing with Arugula control (#325): whether and where
 /// it's joined, whether control is reachable, or that control dropped it.
 /// The page, the tray and `arugula status` all show this.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -205,7 +205,7 @@ impl ControlState {
     }
 
     /// One line: "In the team arugula on control.example: connected",
-    /// "Not joined to arugula control", "Dropped by control: …". What the
+    /// "Not joined to Arugula control", "Dropped by control: …". What the
     /// tray's control line and `arugula status` say.
     pub fn line(&self) -> String {
         match self.state.as_str() {
@@ -219,7 +219,7 @@ impl ControlState {
                 self.place(),
                 self.said.as_deref().unwrap_or("it doesn't know this machine")
             ),
-            _ => "Not joined to arugula control".into(),
+            _ => "Not joined to Arugula control".into(),
         }
     }
 
@@ -254,7 +254,7 @@ mod control_state_tests {
         assert_eq!(s.place(), "an account on control.example");
         let d = ControlState { state: "dropped".into(), said: Some("left".into()), ..s };
         assert_eq!(d.line(), "Dropped by control: no longer in an account on control.example (control says: left)");
-        assert_eq!(ControlState::default().line(), "Not joined to arugula control");
+        assert_eq!(ControlState::default().line(), "Not joined to Arugula control");
         let v = serde_json::json!({ "name": "a", "version": "1", CONTROL_STATE_KEY: d });
         assert_eq!(ControlState::of_host(&v), Some(d));
         assert_eq!(ControlState::of_host(&serde_json::json!({ "name": "a" })), None);

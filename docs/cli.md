@@ -9,7 +9,7 @@ arugula status                              # the daemon: its version, the servi
                                               #   control (connected, or dropped by control: exit 1);
                                               #   each agent's adapter, and Claude Code's MCP server
 arugula setup claude                        # Claude Code's adapter (installed, or updated to the pin)
-                                              #   and arugula's MCP server, then what changed
+                                              #   and Arugula's MCP server, then what changed
                                               #   (`setup codex`: Codex's adapter)
 arugula ls                                  # panes, what they're running, who needs you
 arugula run -- make test                    # in a new tab; prints its pane (%N)
@@ -41,7 +41,7 @@ arugula diff %4 HEAD~3 HEAD                 # in %4's repository, on its machine
 arugula view %4:src/main.rs:42              # a file block there, at line 42, followed live (PATH, mN:PATH)
 arugula rerun %3                            # type %3's failed command again, once its shell is idle
 arugula editors                             # editors in the swarm: VS Code, Cursor, nvim, editor blocks
-arugula editors install                     # arugula's extension into VS Code or Cursor here (--with cursor)
+arugula editors install                     # Arugula's extension into VS Code or Cursor here (--with cursor)
 arugula editors vsix -o arugula.vsix      # ...or its VSIX, to install by hand
 arugula ide                                 # arugulad as Claude Code's IDE: its port, where diffs go
 arugula ide --diffs "Visual Studio Code"    # send Claude Code's diffs to that IDE instead (arugula: back)
@@ -108,7 +108,7 @@ arugula search 'panic' --synced sbx         # a host's synced history (all: ever
 arugula tail %4 --synced sbx --text         # one of its panes, after it's gone
 arugula synced                              # hosts whose history is kept here
 arugula --host s1 ls                        # through the tunnel (wakes it)
-arugula --ssh me@box tui                    # a box you can ssh into; installs arugula there first if asked
+arugula --ssh me@box tui                    # a box you can ssh into; installs Arugula there first if asked
 arugula hosts add box ssh://me@box          # saved: `arugula --host box …` runs your ssh to it
 arugula --ssh me@box join                   # set the box up over ssh and add it to control (approve the code from your phone)
 arugula --ssh me@box join --account FP      # the same, checking the account's fingerprint instead of asking
@@ -132,7 +132,7 @@ a viewer (`--role editor` to drive; never lower than they have: revoke
 first) and pushes that person alone: "*you* brought you into *session*",
 the note, opening at the pane (this one, `--pane %N`, or the session's
 first). WHO is a tailnet login, someone already shared with, or, joined to
-arugula control, a member of your teams by name (your browser tells
+Arugula control, a member of your teams by name (your browser tells
 your machines which teams it checked; each machine checks the roster
 itself). Anyone else: share once from the web, which checks their
 fingerprint, then invite. `--root DEVICE` names an account's first device
@@ -164,7 +164,7 @@ reads and types in its panes, and making panes stays its owner's.
 `--ssh DEST` reaches a box with your own `ssh` (your `~/.ssh/config`, keys
 and agent; a password or 2FA prompt shows in your terminal once). One master
 connection per box carries every command after it. The first time, if the
-box has no arugula, it offers to put this version in `~/.local/bin` there
+box has no Arugula, it offers to put this version in `~/.local/bin` there
 (the release for the box's platform, copied over ssh, so the box needs no
 network) and starts its daemon: a systemd user service with lingering where
 it can, detached otherwise. Declining is remembered.
@@ -188,11 +188,11 @@ codex mcp add arugula -- arugula mcp
 ```
 
 `arugula setup claude` (or Getting started's *Use Claude Code with
-arugula*) adds it to Claude Code, and installs the adapter agent blocks
+Arugula*) adds it to Claude Code, and installs the adapter agent blocks
 run Claude Code through, in one go. A server added before the rename, as
 `illogical`, is replaced by `arugula`: its tools become `mcp__arugula__*`,
 so permission rules for `mcp__illogical__*` need the new name (rules
-arugula itself keeps, on cards and agent blocks, still match).
+Arugula itself keeps, on cards and agent blocks, still match).
 
 The tools. `list`, `show` and `draft` each group several jobs under a
 `kind` argument, so a client's list stays short; the tool's
@@ -308,7 +308,7 @@ them in place:
 }
 ```
 
-Outside an arugula pane every one of these does nothing, so the hooks
+Outside an Arugula pane every one of these does nothing, so the hooks
 are safe everywhere. Take only the lines you want: each group below works
 on its own.
 
@@ -384,4 +384,4 @@ In `acceptEdits` mode Claude Code sends no diffs.
 chooses which agents notify them: *Notify me about its agents* in the
 session menu (or the phone's sheet), or `POST /api/notify` with `{"session": N, "on": true}` (no
 session: everything they may edit there). This holds for the daemon's own
-push and for pushes through arugula control.
+push and for pushes through Arugula control.

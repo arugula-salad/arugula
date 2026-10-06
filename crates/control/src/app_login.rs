@@ -13,7 +13,7 @@
 //!    (`challenge` is the verifier's SHA-256, hex). It gets an id, a short
 //!    code, and the page to open (`/#app=<id>`).
 //! 2. In the browser, signed in, control's page shows "Sign in the
-//!    arugula app on <name>?" with the code and where the request came
+//!    Arugula app on <name>?" with the code and where the request came
 //!    from (`GET /api/app-login/{id}`). Allow (`POST …/allow`) binds the
 //!    ticket to the account and answers with a one-time grant, which the
 //!    page hands to `http://127.0.0.1:<port>/illogical-signin`: only the
@@ -188,7 +188,7 @@ pub async fn ask(
     let (Some(challenge), Some(port)) = (b.challenge.filter(|c| hex64(c)), b.port.filter(|p| *p >= 1024)) else {
         return Err(err(
             StatusCode::BAD_REQUEST,
-            "this arugula app is out of date: update it (0.17 or newer) to sign in",
+            "this Arugula app is out of date: update it (0.17 or newer) to sign in",
         ));
     };
     let name: String = b.name.trim().chars().filter(|c| !c.is_control()).take(80).collect();
@@ -277,7 +277,7 @@ mod tests {
     fn a_ticket_is_allowed_once_and_redeemed_once_by_the_app_that_asked() {
         let t = Tickets::default();
         let verifier = "v".repeat(43);
-        let id = t.create("arugula app on jake-air", &sha256_hex(&verifier), 50123, HERE, 1000).unwrap();
+        let id = t.create("Arugula app on jake-air", &sha256_hex(&verifier), 50123, HERE, 1000).unwrap();
         assert_eq!(t.redeem(&id, "", &verifier, 1001), None, "not before it's allowed");
         let (grant, port) = t.allow(&id, "acct", 1002).unwrap();
         assert_eq!(port, 50123);

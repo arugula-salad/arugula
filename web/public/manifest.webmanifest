@@ -1,6 +1,6 @@
 {
-  "name": "arugula",
-  "short_name": "arugula",
+  "name": "Arugula",
+  "short_name": "Arugula",
   "start_url": "/",
   "display": "standalone",
   "display_override": ["window-controls-overlay"],

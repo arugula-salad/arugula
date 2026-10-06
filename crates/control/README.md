@@ -1,6 +1,6 @@
 # arugula-control
 
-arugula control: accounts, devices, the directory and the relay, for
+Arugula control: accounts, devices, the directory and the relay, for
 people who don't run a tailnet and for teams. It holds metadata only:
 terminal bytes travel end to end between a device and a daemon
 ([docs/control-e2e.md](../../docs/control-e2e.md), [docs/control.md](../../docs/control.md)).

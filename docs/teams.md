@@ -1,13 +1,13 @@
 # Your machines, your team
 
-arugula runs on your machines. Through
-[arugula control](control.md) they're yours alone, a team's, or yours
+Arugula runs on your machines. Through
+[Arugula control](control.md) they're yours alone, a team's, or yours
 with one session shared. This page says how to set each up and who sees
 what.
 
 Two words:
 
-- **A device** is a browser you use arugula from: your laptop's
+- **A device** is a browser you use Arugula from: your laptop's
   browser, your phone. It holds your account's keys.
 - **A machine** runs `arugulad`, the daemon that owns the terminals.
 
@@ -20,7 +20,7 @@ Two words:
      change it later, in *Devices and machines…*.
    - Your first browser becomes your first device, and shows two
      recovery codes once. Keep them offline.
-2. **Install arugula** on a machine
+2. **Install Arugula** on a machine
    (`curl -fsSL https://illogical.widgets.wtf/install.sh | sh`), then join
    it:
 
@@ -52,11 +52,11 @@ A team shares its machines with its members.
      carries a one-time key that never reaches control. The person's own
      device adds them to the member list with that key, so control still
      can't add anyone by itself ([control-e2e.md](control-e2e.md)).
-   - If a machine in the team runs an older arugula, the link asks you
+   - If a machine in the team runs an older Arugula, the link asks you
      first instead, and says which machine to update. Once someone has
-     joined with one, a machine on an older arugula can't join the team
+     joined with one, a machine on an older Arugula can't join the team
      until it's updated, and one that was downgraded since gets no member
-     list changes: it logs that arugula needs an update.
+     list changes: it logs that Arugula needs an update.
    - The team lists the links nobody has used yet, each with *Cancel*.
      Cancel one you sent to the wrong person: control refuses it from then
      on. Machines never hear of a link until it's used, so a cancel holds
@@ -85,7 +85,7 @@ A team shares its machines with its members.
 5. **Take a machine out:** the team's machines are listed in *Teams…*. An
    owner can *Take out* a member's machine: the team loses it at once, and
    it's its owner's alone again. The machine checks that an owner signed
-   it. One on an older arugula can't take that until it's updated, and
+   it. One on an older Arugula can't take that until it's updated, and
    the owner is told so.
 
 **Roles.** Owners change them in *Teams…*.
@@ -130,7 +130,7 @@ panes leave their screens within a second. *Unlock* lets them back in.
 To share a session (a set of tabs) instead of a whole machine:
 *Share session…* in the session menu.
 
-- **Someone:** their login on arugula, then check their first device's
+- **Someone:** their login on Arugula, then check their first device's
   fingerprint and *Share with* them. They *can watch* or *can drive*.
   *with history* also shows what was there before; without it they see
   from now on.

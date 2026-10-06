@@ -29,7 +29,7 @@ test("opens once on first run, a step at a time, then from the session menu", as
   await expect(panel.locator("[data-start-serve]")).toBeVisible();
   await panel.locator("[data-start-next]").click();
   await expect(progress).toHaveText("Step 3 / 5 · Cloud");
-  await expect(panel.locator("[data-start-connect]")).toHaveText("Connect to arugula cloud");
+  await expect(panel.locator("[data-start-connect]")).toHaveText("Connect to Arugula cloud");
   await panel.locator("[data-start-next]").click();
   await expect(progress).toHaveText("Step 4 / 5 · Agents");
   await expect(panel.locator("[data-start-agent]")).toBeVisible();

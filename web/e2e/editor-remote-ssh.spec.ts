@@ -1,6 +1,6 @@
 // M28 with the real thing: VS Code (downloaded by @vscode/test-electron,
 // driven through Playwright's Electron support) opens a folder on a testnet
-// box over Microsoft's Remote-SSH, with arugula's extension installed on
+// box over Microsoft's Remote-SSH, with Arugula's extension installed on
 // the box's VS Code server, as a person's laptop would. The box runs its
 // own arugulad; a phone (a Pixel-sized page on that daemon) follows the
 // editor's cursor, gets the debugger's breakpoint as a card it continues

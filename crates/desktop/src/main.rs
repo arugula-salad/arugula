@@ -1,4 +1,4 @@
-//! arugula's desktop app (M46): the daemon's own web client in a native
+//! Arugula's desktop app (M46): the daemon's own web client in a native
 //! window, for macOS and Linux.
 //!
 //! - **The daemon stays a separate service**, so panes outlive the window.
@@ -31,7 +31,7 @@
 //!   follows the daemon's state, notifies when a pane starts needing you and
 //!   no window has focus, and a click opens that pane. The needs-you count
 //!   goes on the dock badge (macOS) and the tray.
-//! - **Every machine, through arugula cloud** (M48, #159): once this
+//! - **Every machine, through Arugula cloud** (M48, #159): once this
 //!   machine is joined, the window is control's own client, signed in
 //!   through the person's browser (`cloud.rs`). A join (or a leave) while
 //!   the app is open moves the window there too (#204).
@@ -45,9 +45,9 @@
 //!   its tab bar, the page's bar moves below it (`tab_bars`, #323).
 //! - **`arugula://` links** (`links.rs`), **a global hotkey**, off by
 //!   default (`settings.rs`), and **app updates** (`updates.rs`).
-//! - **The file managers** (M47): Finder's *New arugula Tab Here*
+//! - **The file managers** (M47): Finder's *New Arugula Tab Here*
 //!   service (`finder.rs`) and `.command` files on macOS; Nautilus's
-//!   *Open in arugula* (`linux/nautilus/arugula.py`) on Linux.
+//!   *Open in Arugula* (`linux/nautilus/arugula.py`) on Linux.
 //! - A tray icon with *New window* and *This machine* (which brings forward
 //!   a window already showing this machine, #323); one instance (a second
 //!   launch opens a window in the first).
@@ -558,7 +558,7 @@ fn open_window(app: &AppHandle, url: WebviewUrl) -> tauri::Result<tauri::Webview
         builder = builder.decorations(false);
     }
     let w = builder
-        .title("arugula")
+        .title("Arugula")
         .inner_size(1280.0, 820.0)
         .initialization_script(cloud::init_script())
         // Huddles (M63): the microphone for the client's own pages (macOS
@@ -589,7 +589,7 @@ fn open_window(app: &AppHandle, url: WebviewUrl) -> tauri::Result<tauri::Webview
         })
         // macOS: the window's title, which its native tab shows (#323),
         // says what the page is; and a new page hears whether AppKit's tab
-        // bar shows. (Linux keeps "arugula": the tests find the window
+        // bar shows. (Linux keeps "Arugula": the tests find the window
         // by it.)
         .on_page_load(|_w, _load| {
             #[cfg(target_os = "macos")]
@@ -656,8 +656,8 @@ fn title_for(url: &tauri::Url) -> String {
     }
     let control = cloud::control().and_then(|c| c.parse::<tauri::Url>().ok());
     match control {
-        Some(c) if c.origin() == url.origin() => c.host_str().unwrap_or("arugula").to_owned(),
-        _ => "arugula".into(),
+        Some(c) if c.origin() == url.origin() => c.host_str().unwrap_or("Arugula").to_owned(),
+        _ => "Arugula".into(),
     }
 }
 
@@ -675,7 +675,7 @@ fn bring_forward(w: &tauri::WebviewWindow) {
     let _ = w.set_focus();
 }
 
-/// *Open arugula*: a window showing home (control's page, or the
+/// *Open Arugula*: a window showing home (control's page, or the
 /// daemon's) comes forward, else any window, and one opens only when there
 /// is none (#323).
 fn focus_or_open(app: &AppHandle) {
@@ -880,7 +880,7 @@ fn notify(app: &AppHandle, click: Click, title: String, body: String) {
             let Ok(handle) = notify_rust::Notification::new()
                 .summary(&title)
                 .body(&body)
-                .appname("arugula")
+                .appname("Arugula")
                 .icon("arugula-desktop")
                 .action("default", "Open")
                 .show()
@@ -936,9 +936,9 @@ fn set_count(app: &AppHandle, count: usize) {
         }
         if let Some(tray) = app2.tray_by_id("arugula") {
             let _ = tray.set_tooltip(Some(if count == 0 {
-                "arugula".to_string()
+                "Arugula".to_string()
             } else {
-                format!("arugula: {count} need you")
+                format!("Arugula: {count} need you")
             }));
             let _ = tray.set_title(Some(if count == 0 { String::new() } else { count.to_string() }));
         }
@@ -1097,7 +1097,7 @@ fn main() {
                 let this = MenuItem::with_id(app, "menu-this", "This machine", true, None::<&str>)?;
                 let app_menu = Submenu::with_items(
                     app,
-                    "arugula",
+                    "Arugula",
                     true,
                     &[
                         &PredefinedMenuItem::about(app, None, None)?,
@@ -1105,14 +1105,14 @@ fn main() {
                         &this,
                         &daemon::submenu(app)?,
                         &PredefinedMenuItem::separator(app)?,
-                        &PredefinedMenuItem::hide(app, Some("Hide arugula"))?,
+                        &PredefinedMenuItem::hide(app, Some("Hide Arugula"))?,
                         &PredefinedMenuItem::hide_others(app, None)?,
                         &PredefinedMenuItem::show_all(app, None)?,
                         &PredefinedMenuItem::separator(app)?,
                         // Cmd-W is the page's (a pane); this closes the
                         // window, and its native tab (#323).
                         &MenuItem::with_id(app, "close-window", "Close Window", true, Some("CmdOrCtrl+Shift+W"))?,
-                        &PredefinedMenuItem::quit(app, Some("Quit arugula"))?,
+                        &PredefinedMenuItem::quit(app, Some("Quit Arugula"))?,
                     ],
                 )?;
                 let edit = Submenu::with_items(
@@ -1200,7 +1200,7 @@ fn main() {
             for url in links::in_args(std::env::args()) {
                 links::handle(app.handle(), url);
             }
-            let open = MenuItem::with_id(app, "open", "Open arugula", true, None::<&str>)?;
+            let open = MenuItem::with_id(app, "open", "Open Arugula", true, None::<&str>)?;
             let new = MenuItem::with_id(app, "new", "New window", true, None::<&str>)?;
             let this = MenuItem::with_id(app, "this", "This machine", true, None::<&str>)?;
             // Windows has no daemon of its own yet (M59).
@@ -1220,7 +1220,7 @@ fn main() {
             let version = MenuItem::with_id(
                 app,
                 "version",
-                format!("arugula {}", app.package_info().version),
+                format!("Arugula {}", app.package_info().version),
                 false,
                 None::<&str>,
             )?;
@@ -1238,7 +1238,7 @@ fn main() {
             let hotkey_item = hotkey.clone();
             TrayIconBuilder::with_id("arugula")
                 .icon(app.default_window_icon().unwrap().clone())
-                .tooltip("arugula")
+                .tooltip("Arugula")
                 .menu(&Menu::with_items(app, &items)?)
                 .on_menu_event(move |app, e| match e.id().as_ref() {
                     "open" => focus_or_open(app),
@@ -1290,7 +1290,7 @@ fn main() {
             Ok(())
         })
         .build(context)
-        .expect("arugula desktop")
+        .expect("Arugula desktop")
         .run(|app, event| match event {
             // macOS: stay in the Dock with no windows, as Mac apps do.
             // Linux: stay in the tray while the global hotkey is on.

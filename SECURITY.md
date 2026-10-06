@@ -1,6 +1,6 @@
 # Security
 
-arugula runs your terminals, and its hosted service (control) relays
+Arugula runs your terminals, and its hosted service (control) relays
 between your devices, so security reports matter a lot to us.
 
 ## Reporting a vulnerability

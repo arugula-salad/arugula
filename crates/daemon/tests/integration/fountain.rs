@@ -4,7 +4,7 @@
 //! on Fountain* runs the fake ACP agent as `fountain`.
 //!
 //! What's checked: the login (the file's profile, FOUNTAIN_API_KEY, none);
-//! the key and arugula's User-Agent on every request; cards, where each
+//! the key and Arugula's User-Agent on every request; cards, where each
 //! comes from, and the filters (kept in the config); `capture --text`; *Run
 //! on Fountain* opening an agent block beside it; *Run here* refused with
 //! its reason; *Spec* opening the agent-specs file, or Fountain's page;
@@ -300,7 +300,7 @@ fn the_catalog_filters_and_runs() {
     assert_eq!(st["key_from"], "file");
     assert_eq!(st["profiles"], json!(["default", "other"]));
     assert_eq!(st["counts"]["source"]["agent-specs"], 23);
-    // The key, and arugula's own User-Agent, on every request.
+    // The key, and Arugula's own User-Agent, on every request.
     let uas = fz.f.with(|i| i.agents_seen.clone());
     assert!(!uas.is_empty() && uas.iter().all(|u| u.starts_with("arugula/")), "{uas:?}");
     // No key in the state, the config or the log.
@@ -463,7 +463,7 @@ fn logins() {
     assert!(text.contains("no Fountain login here"), "{text}");
 }
 
-/// The agent's own MCP call, through the server arugula gave it.
+/// The agent's own MCP call, through the server Arugula gave it.
 fn agent_mcp(d: &Daemon, agent: u64, tool: &str, args: Value) -> Result<Value, String> {
     let answers = || -> Vec<String> {
         entries(&d.state(agent))
@@ -1568,7 +1568,7 @@ fn run_here_wears_the_agent() {
         json!({ "name": "from-shell", "command": "python3", "args": ["-c", "pass"], "env": [{ "name": "TOKEN", "value": "${ARUGULA_FTN_FROM_SHELL_E_TOKEN}" }] })
     );
     assert_eq!(by("open")["type"], "http");
-    // #128: arugula's own token too.
+    // #128: Arugula's own token too.
     assert_eq!(by("arugula")["headers"][0]["value"], "Bearer ${ARUGULA_MCP_BLOCK_TOKEN}");
     let pid = d.state(id)["pid"].as_u64().unwrap();
     // (Linux: /proc. The rest holds everywhere.)
@@ -1671,8 +1671,8 @@ fn a_worn_agent_is_put_on_again_after_a_reboot() {
     let plain_config = json!({ "agent": "claude", "cwd": w.work, "prompt": "hello" });
     let plain = d.open_with(json!({ "type": "agent", "split": id, "config": plain_config }));
     assert_eq!(d.wait(plain, "idle"), "done", "{}", d.state(plain));
-    // #128: its arugula MCP server works through the reference.
-    agent_mcp(&d, plain, "list", json!({})).expect("arugula's MCP server, through ${ARUGULA_MCP_BLOCK_TOKEN}");
+    // #128: its Arugula MCP server works through the reference.
+    agent_mcp(&d, plain, "list", json!({})).expect("Arugula's MCP server, through ${ARUGULA_MCP_BLOCK_TOKEN}");
     // Forget what each session was opened with, to see what reopening sends.
     let forget = |b: u64| {
         let sid = d.state(b)["session_id"].as_str().unwrap().to_owned();
@@ -1752,7 +1752,7 @@ fn a_worn_agent_taken_over_after_a_restart() {
 
     // #128, upgrading: an ordinary Claude Code block whose adapter an older
     // daemon started (no token in its environment, so no marker) is
-    // started again when taken over, and its arugula MCP still works.
+    // started again when taken over, and its Arugula MCP still works.
     let config = json!({ "agent": "claude", "cwd": w.work, "prompt": "hello" });
     let plain = d.open_with(json!({ "type": "agent", "config": config }));
     assert_eq!(d.wait(plain, "idle"), "done", "{}", d.state(plain));
@@ -1770,7 +1770,7 @@ fn a_worn_agent_taken_over_after_a_restart() {
     d.wait_for("ready", || d.state(plain)["status"] == "ready");
     d.wait_for("the old one gone", || !alive(old));
     assert!(marker.is_file());
-    agent_mcp(&d, plain, "list", json!({})).expect("arugula's MCP server, through the reference");
+    agent_mcp(&d, plain, "list", json!({})).expect("Arugula's MCP server, through the reference");
 }
 
 #[test]

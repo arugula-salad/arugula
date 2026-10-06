@@ -31,7 +31,7 @@
 //! time as a form ask with the text to edit. The owner or an editor sends
 //! (the answer, with the edited text), or drops it (decline); viewers can't
 //! answer. It posts with the owner's login, and the draft and the log say
-//! who sent it. "Agents draft, people send" holds on arugula's own
+//! who sent it. "Agents draft, people send" holds on Arugula's own
 //! surfaces; an agent on the person's account can still run `tea` itself.
 //!
 //! **The log** (`blocks/%N/`): the timeline's events as JSON lines, and
@@ -323,7 +323,7 @@ pub trait Adapter: Send + Sync {
 }
 
 /// The HTTP client forge blocks (and M43's Fountain client) use: a
-/// timeout, and arugula's own User-Agent.
+/// timeout, and Arugula's own User-Agent.
 pub(crate) fn http() -> reqwest::Client {
     static C: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
     C.get_or_init(|| {
@@ -633,7 +633,7 @@ impl ForgeBlock {
         let (p, host, repo, _) = self.live_key();
         if p == Provider::Github {
             return Err(Error::Http(
-                "GitHub's live updates come through arugula control's GitHub App: join control (`arugulad join`), sign in there with GitHub and install the App; there's no webhook to make here".into(),
+                "GitHub's live updates come through Arugula control's GitHub App: join control (`arugulad join`), sign in there with GitHub and install the App; there's no webhook to make here".into(),
             ));
         }
         let had = live::hook_of(p, &host, &repo);

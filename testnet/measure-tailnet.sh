@@ -12,7 +12,7 @@
 # says that nothing ran.
 #
 # Puts this tree's static binaries on ts-client (`just static <arch>`, or
-# ARUGULA_SSH_BINARIES), installs arugula on ts-box over ssh, then times
+# ARUGULA_SSH_BINARIES), installs Arugula on ts-box over ssh, then times
 # on ts-client, so docker exec isn't in the numbers:
 #
 #   request   a whole `arugula ls` (process start, connect, one request),

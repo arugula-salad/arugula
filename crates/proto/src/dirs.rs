@@ -1,4 +1,4 @@
-//! Where arugula keeps its files on this machine: the state directory
+//! Where Arugula keeps its files on this machine: the state directory
 //! (`~/.local/state/arugula`, Windows `%LOCALAPPDATA%\arugula\state`) and
 //! the config directory (`~/.config/arugula`). The daemon, the CLI and the
 //! desktop app all ask here, so they agree.

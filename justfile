@@ -1,4 +1,4 @@
-# arugula tasks. Cargo runs under mise so libghostty-vt-sys finds the Zig
+# Arugula tasks. Cargo runs under mise so libghostty-vt-sys finds the Zig
 # it needs (.mise.toml).
 
 set shell := ["bash", "-euo", "pipefail", "-c"]
@@ -48,7 +48,7 @@ static arch="x86_64": web
     {{cargo}} build --release --target "$t" -p arugulad -p arugula -p arugula-control
     file {{target_dir}}/$t/release/arugulad {{target_dir}}/$t/release/arugula {{target_dir}}/$t/release/arugula-control
 
-# Deploy the hosted arugula control to Fly (packaging/control/fly.toml):
+# Deploy the hosted Arugula control to Fly (packaging/control/fly.toml):
 # the static x86_64 binary in a distroless image, from a small build context.
 control-deploy: static
     #!/usr/bin/env bash
@@ -356,7 +356,7 @@ browsers *which="chromium webkit":
       pnpm exec playwright install {{which}}
     fi
 
-# arugula's VS Code extension as a VSIX in target/ (M28), for Open VSX
+# Arugula's VS Code extension as a VSIX in target/ (M28), for Open VSX
 # (`npx ovsx publish FILE`) and the Marketplace (`npx @vscode/vsce publish
 # --packagePath FILE`).
 # Its publisher is `arugula`, which has to be created on both first (#508).

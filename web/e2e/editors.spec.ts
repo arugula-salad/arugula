@@ -1,7 +1,7 @@
-// M27: editor blocks, with the real code-server (the release arugula
+// M27: editor blocks, with the real code-server (the release Arugula
 // pins, downloaded into ~/.cache/arugula/code-server on first use). VS Code
 // opens from a pane's menu on that pane's directory, on the block's own
-// origin, in arugula's theme; `arugula edit FILE:LINE` opens a file in
+// origin, in Arugula's theme; `arugula edit FILE:LINE` opens a file in
 // under 3 s once the server is warm, on the desktop, a Pixel 7 and an
 // iPhone (WebKit);
 // the extension reports the file and the cursor; the swarm shows the block
@@ -119,7 +119,7 @@ const shown = (f: FrameLocator, text: string) => f.locator(".monaco-editor .view
 let term: PaneId = 0;
 let first: PaneId = 0;
 
-test("Open in editor: VS Code on the pane's directory, on the block's own origin, in arugula's colours", async ({ page }) => {
+test("Open in editor: VS Code on the pane's directory, on the block's own origin, in Arugula's colours", async ({ page }) => {
   // The first run downloads code-server (about 230 MB).
   test.setTimeout(600_000);
   await reset(page);
@@ -142,7 +142,7 @@ test("Open in editor: VS Code on the pane's directory, on the block's own origin
   const origin = await page.evaluate((b) => new URL((document.querySelector(`[data-pane="${b}"] iframe`) as HTMLIFrameElement).src).origin, first);
   expect(origin).toMatch(new RegExp(`^http://b-${first}-[a-z0-9]{20}\\.localhost:${BLOCKS}$`));
   expect(await paneEl(page, first).locator("iframe").getAttribute("sandbox")).toContain("allow-same-origin");
-  // arugula's theme: the terminal's background.
+  // Arugula's theme: the terminal's background.
   await expect
     .poll(() => f.locator(".monaco-workbench .part.sidebar").evaluate((e) => getComputedStyle(e).backgroundColor))
     .toBe("rgb(24, 24, 37)");

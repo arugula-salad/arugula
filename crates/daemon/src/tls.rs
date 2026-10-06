@@ -327,7 +327,7 @@ impl Cloudflare {
             // Cloudflare wants TXT content quoted.
             "content": format!("\"{value}\""),
             "ttl": 60,
-            "comment": "arugula ACME challenge; safe to delete",
+            "comment": "Arugula ACME challenge; safe to delete",
         });
         let rec = self.call(reqwest::Method::POST, &format!("/zones/{zone}/dns_records"), Some(body)).await?;
         let id = rec["id"].as_str().ok_or_else(|| anyhow!("cloudflare: no record id"))?.to_owned();

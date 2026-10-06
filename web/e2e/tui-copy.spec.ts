@@ -59,7 +59,7 @@ test.beforeAll(async () => {
   })();
   tmux("new-session", "-d", "-s", "tui", "-x", "120", "-y", "30", `TERM=xterm-256color ../target/debug/arugula --socket ${sock} tui`);
   tmux("set", "-s", "set-clipboard", "on");
-  await expect.poll(() => screen()).toContain("arugula");
+  await expect.poll(() => screen()).toContain("Arugula");
   await expect.poll(() => screen()).toMatch(/│\$/);
 });
 

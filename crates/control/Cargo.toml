@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "arugula control: accounts, devices, the directory and the relay"
+description = "Arugula control: accounts, devices, the directory and the relay"
 
 [[bin]]
 name = "arugula-control"

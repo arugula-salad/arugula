@@ -1,4 +1,4 @@
-# arugula control: keys, channels and the relay (S15 spec)
+# Arugula control: keys, channels and the relay (S15 spec)
 
 Written 2026-10-01, from S15 ([spikes/s15-control](../spikes/s15-control/README.md)).
 This is the design M17–M21 build. It turns the control track's promise

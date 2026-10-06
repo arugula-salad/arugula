@@ -118,7 +118,7 @@ render_loopback() {
 
 render_unit() {
   cat <<EOF
-# Written by arugula's scripts/fountain-runner-setup.sh; run it again to change it.
+# Written by Arugula's scripts/fountain-runner-setup.sh; run it again to change it.
 [Unit]
 Description=Fountain runner $name (sandboxes for agents on the runner provider)
 After=network-online.target
@@ -154,7 +154,7 @@ render_sudoers() {
   local sc
   sc=$(command -v systemctl || echo /usr/bin/systemctl)
   cat <<EOF
-# Written by arugula's scripts/fountain-runner-setup.sh (--uninstall removes it).
+# Written by Arugula's scripts/fountain-runner-setup.sh (--uninstall removes it).
 # A shell as the Fountain runner's user (a sandbox's shell, and its key):
 $user ALL=(fountain) NOPASSWD: /bin/bash
 # The runner's unit, and nothing else as root:

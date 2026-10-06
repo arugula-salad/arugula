@@ -1,8 +1,8 @@
 {
   "id": "arugula",
   "version": "0.1.0",
-  "name": "arugula",
-  "description": "Puts this dev container's VS Code in your arugula swarm: the arugula daemon on the host, reached through its editors' socket.",
+  "name": "Arugula",
+  "description": "Puts this dev container's VS Code in your Arugula swarm: the Arugula daemon on the host, reached through its editors' socket.",
   "documentationURL": "https://github.com/arugula-salad/illogical/tree/main/editors/devcontainer",
   "options": {},
   "mounts": [

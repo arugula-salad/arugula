@@ -31,4 +31,4 @@ case "$FORGE" in
   gitlab) rm -f "$HERE/.state/gitlab.json" "$HERE/.state/gitlab-root-password" ;;
   *) rm -f "$HERE/.state/$FORGE.json" ;;
 esac
-echo "arugula testnet forges removed ($FORGE)"
+echo "Arugula testnet forges removed ($FORGE)"

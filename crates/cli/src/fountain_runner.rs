@@ -17,7 +17,7 @@
 //!
 //! Reads and writes go to Fountain's HTTP API with your CLI login
 //! (`FOUNTAIN_API_KEY`, or `~/.fountain/credentials` and its profile), and
-//! a User-Agent of arugula's own (managoat.com refuses some defaults).
+//! a User-Agent of Arugula's own (managoat.com refuses some defaults).
 
 use std::{
     collections::HashMap,
@@ -193,7 +193,7 @@ fn install(key_name: &str, new_key: bool) -> anyhow::Result<i32> {
         && as_runner("true").stdout(Stdio::null()).stderr(Stdio::null()).status().is_ok_and(|s| s.success());
     if !user_exists || !Path::new(UNIT_FILE).exists() || !rule {
         eprintln!(
-            "The runner's root setup hasn't run here yet (or its sudoers rule is missing). Run once, from a checkout of arugula:"
+            "The runner's root setup hasn't run here yet (or its sudoers rule is missing). Run once, from a checkout of Arugula:"
         );
         eprintln!();
         eprintln!("  {SETUP}");

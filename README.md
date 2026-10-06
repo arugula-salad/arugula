@@ -1,10 +1,10 @@
-# arugula
+# Arugula
 
 Keep track of your agents without checking every session. See which agents
 need input and what your teammates are working on. Leave unfinished work
 open, come back later, or join a teammate's session to help.
 
-arugula is a terminal multiplexer whose sessions outlive the window, the
+Arugula is a terminal multiplexer whose sessions outlive the window, the
 daemon and the reboot. A daemon owns your terminals; the browser (desktop or
 phone) draws tabs and splits you drive with the mouse.
 
@@ -59,7 +59,7 @@ Linux (x86_64, arm64), macOS (Apple silicon and Intel) and Windows 10 and 11
 (x86_64). Share a session with
 someone, or a whole machine with a team, with roles and presence
 ([docs/teams.md](docs/teams.md)). Remote access is over your tailnet, or
-through [arugula control](docs/control.md) for devices without one: end
+through [Arugula control](docs/control.md) for devices without one: end
 to end encrypted, so what the service relays it can't read, and it can't
 add a reader to your machines. You do trust it for the web client it
 serves ([what holds](docs/control-e2e.md#what-holds-against-control)).
@@ -79,7 +79,7 @@ installs `arugulad` and `arugula` (in `~/.local/bin`, or
 `%LOCALAPPDATA%\Programs\arugula` on Windows) and starts the daemon as a
 service, then *Getting started*
 sets up your phone, the cloud and Claude Code, a click each. Once the
-machine is in arugula cloud, the app signs in through your browser on
+machine is in Arugula cloud, the app signs in through your browser on
 the same computer (approve it as a new device once) and shows every machine in your account
 and your teams. The macOS app
 isn't notarized yet: the first time, open it, then choose *Open Anyway* in
@@ -190,7 +190,7 @@ most twice a day; nothing else is sent. `arugulad install --
    [docs/cli.md](docs/cli.md) has the rest.
 4. **In a terminal**, or over ssh: `arugula tui`. The mouse works as in
    the browser; Ctrl-] is the menu key (Ctrl-] ? lists the rest).
-5. **Without a tailnet**, add the machine to an account on arugula
+5. **Without a tailnet**, add the machine to an account on Arugula
    control and use it from any browser:
 
    ```
@@ -205,8 +205,8 @@ most twice a day; nothing else is sent. `arugulad install --
 6. **Agents.** *Start an agent…* in a pane's menu, or `arugula agent
    "fix the failing test"`. Claude Code and Codex run through an npm
    adapter (needs Node 20+). `arugula setup claude`, or *Use Claude Code
-   with arugula* in Getting started's Agents step, installs Claude
-   Code's and adds arugula's MCP server (step 7) in one go; *Start an
+   with Arugula* in Getting started's Agents step, installs Claude
+   Code's and adds Arugula's MCP server (step 7) in one go; *Start an
    agent…* offers to install it too, in a pane you can watch. Or install
    it yourself:
 
@@ -219,7 +219,7 @@ most twice a day; nothing else is sent. `arugulad install --
    question cards and permission cards, and take follow-ups, through its
    hooks: see [Claude Code in a pane](docs/cli.md#claude-code-in-a-pane).
 7. **As tools for any agent (MCP).** Give Claude Code (or Codex, or any
-   MCP client) arugula's tools: it runs builds and dev servers in panes
+   MCP client) Arugula's tools: it runs builds and dev servers in panes
    you can watch from the phone and take over, waits on them, starts and
    answers other agents, and searches what happened yesterday.
 
@@ -266,7 +266,7 @@ layout still come back.
 
 Panes run PowerShell (PowerShell 7 if it's installed, else Windows
 PowerShell), with prompts, commands, exit codes and the directory reported
-as in bash, zsh and fish: arugula passes its integration inline, so no
+as in bash, zsh and fish: Arugula passes its integration inline, so no
 profile or execution policy change is needed. Each pane has a small host
 process of its own, so panes keep running while the daemon restarts or
 upgrades, as on Linux.
@@ -284,7 +284,7 @@ panes. `arugula --ssh` doesn't reach Windows yet.
   more machines and containers, iTerm2 as a tmux client.
 - [docs/teams.md](docs/teams.md): your machines, your team: roles,
   personal vs team machines, sharing a session.
-- [docs/control.md](docs/control.md): arugula control, hosted or your
+- [docs/control.md](docs/control.md): Arugula control, hosted or your
   own; [docs/control-e2e.md](docs/control-e2e.md), how it keeps out of your
   terminals.
 - [docs/cli.md](docs/cli.md): the CLI and the HTTP API.

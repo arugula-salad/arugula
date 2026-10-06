@@ -1,5 +1,5 @@
 //! #26's reboot check in a container (#214 section 4): box-systemd from the
-//! test stack (`testnet/`), with arugula installed over `--ssh` as a
+//! test stack (`testnet/`), with Arugula installed over `--ssh` as a
 //! lingering systemd user service. A session like #26's "before" is built
 //! through the CLI: tabs and splits, a shell in a nested directory with
 //! coloured output, `rerun`, `rerun-ask`, `hook` (a command pane) and

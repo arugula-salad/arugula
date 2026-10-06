@@ -131,10 +131,10 @@ pub async fn register_start(
     };
     let user_id = arugula_e2e::random::<16>().to_vec();
     let challenge = app.passkeys.issue(Purpose::Register { account: account.clone(), name: name.clone() });
-    let name = if name.is_empty() { "arugula".to_owned() } else { name };
+    let name = if name.is_empty() { "Arugula".to_owned() } else { name };
     Ok(Json(json!({
         "challenge": challenge,
-        "rp": { "id": rp_id(&app), "name": "arugula" },
+        "rp": { "id": rp_id(&app), "name": "Arugula" },
         "user": { "id": B64.encode(&user_id), "name": name, "displayName": name },
         "pubKeyCredParams": [
             { "type": "public-key", "alg": EDDSA },

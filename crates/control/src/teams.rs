@@ -378,7 +378,7 @@ pub async fn set_roster(
             owners,
             &format!("control-team-{team}"),
             format!("{} joined {} with your invite", me.name, t.name),
-            format!("As {}. Open arugula to check their fingerprint, or remove them.", me.role.as_str()),
+            format!("As {}. Open Arugula to check their fingerprint, or remove them.", me.role.as_str()),
         );
     }
     for m in &b.roster.members {
@@ -575,7 +575,7 @@ pub async fn accept_invite(State(app): State<Arc<App>>, s: Session, Path((team, 
             owners,
             &format!("control-team-{t}"),
             format!("{who} asks to join {}", team.name),
-            "Open arugula to add them.".into(),
+            "Open Arugula to add them.".into(),
         );
     }
     Ok(Json(json!({ "team": t, "pending": true })))
@@ -623,7 +623,7 @@ pub async fn daemon_team(State(app): State<Arc<App>>, d: DaemonAuth, Query(q): Q
     if !takes_presigned(&q.features) && has_presigned(&app, &team)? {
         return Err(err(
             StatusCode::CONFLICT,
-            "this machine's arugula is older than its team's invites: update arugula to keep up with the team",
+            "this machine's Arugula is older than its team's invites: update Arugula to keep up with the team",
         ));
     }
     let rosters: Vec<Roster> =
@@ -750,7 +750,7 @@ pub async fn daemon_peers(State(app): State<Arc<App>>, d: DaemonAuth, Query(q): 
             new,
             &format!("control-share-{}", d.cert.device),
             format!("{} wants to share {} with you", login.as_deref().unwrap_or("Someone"), row.name),
-            "Open arugula to accept or turn it down.".into(),
+            "Open Arugula to accept or turn it down.".into(),
         );
     }
     crate::reply(&out)

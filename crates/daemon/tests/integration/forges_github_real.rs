@@ -10,7 +10,7 @@
 //!   tokens (contents, pull requests, issues and actions: read and write
 //!   on that repository);
 //! - for the App: `ARUGULA_GH_APP_ID` and `ARUGULA_GH_APP_PRIVATE_KEY`
-//!   (a copy of arugula's App, installed on the test organization, with
+//!   (a copy of Arugula's App, installed on the test organization, with
 //!   pull request and issue comment events).
 //!
 //! A test whose variables aren't all set says SKIP and passes, so the
@@ -156,8 +156,8 @@ impl Gh {
             "POST",
             &format!("/repos/{}/pulls", self.repo),
             &auth,
-            Some(json!({ "head": branch, "base": base, "title": format!("arugula test {branch}"),
-                "body": "Opened by arugula's nightly forge tests; closed when they finish." })),
+            Some(json!({ "head": branch, "base": base, "title": format!("Arugula test {branch}"),
+                "body": "Opened by Arugula's nightly forge tests; closed when they finish." })),
         );
         pr.number = made["number"].as_u64().unwrap();
         pr.url = made["html_url"].as_str().unwrap().to_owned();

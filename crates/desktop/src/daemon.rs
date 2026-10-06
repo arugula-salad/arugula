@@ -28,7 +28,7 @@
 //!   machine without its ACP adapter (or with one older than the daemon's
 //!   pin) gets one notification per pin, remembered in `daemon.json` too,
 //!   whose click opens Getting started's Agents step and its "Use Claude
-//!   Code with arugula".
+//!   Code with Arugula".
 //!
 //! A thread (`follow`) reads `/api/host`, `/api/update` and the service
 //! every few seconds, and rebuilds the menus when what they'd say changes.
@@ -190,7 +190,7 @@ pub fn entries(s: &Status, busy: Option<&str>) -> Vec<Entry> {
             None => match s.host.as_ref().and_then(|h| h.control.as_ref()) {
                 Some(u) => out.push(entry("daemon-control", format!("Joined to {u}"), false)),
                 None => {
-                    out.push(entry("daemon-control", "Not joined to arugula control", false));
+                    out.push(entry("daemon-control", "Not joined to Arugula control", false));
                     out.push(entry("daemon-join", "Join…", true));
                 }
             },
@@ -324,7 +324,7 @@ fn dropped(app: &AppHandle, c: &ControlState) {
         Some(code) => format!("{}. It asks to join again: approve {code} on a device you use.", c.line()),
         None => format!("{}. Click to join again.", c.line()),
     };
-    crate::notify(app, crate::Click::JoinAgain, "This machine is no longer in arugula control".into(), what);
+    crate::notify(app, crate::Click::JoinAgain, "This machine is no longer in Arugula control".into(), what);
 }
 
 /// #335: the daemon's `/api/setup?part=agents`, and a notification for
@@ -379,9 +379,9 @@ pub fn nudge(v: &serde_json::Value, seen: &[String]) -> Option<Nudge> {
         format!("Agent panes need {first}'s adapter")
     };
     let body = if outdated && labels.len() == 1 {
-        format!("This arugula runs a newer {first} adapter than the one installed. Click to update it.")
+        format!("This Arugula runs a newer {first} adapter than the one installed. Click to update it.")
     } else {
-        format!("{who} is on this machine, but arugula can't run it in agent panes yet. Click to set it up.")
+        format!("{who} is on this machine, but Arugula can't run it in agent panes yet. Click to set it up.")
     };
     Some(Nudge { keys, title, body })
 }

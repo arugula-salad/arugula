@@ -136,7 +136,7 @@ pub struct Launch {
     pub npm: Option<&'static str>,
 }
 
-/// Where arugula keeps agent adapters on this host.
+/// Where Arugula keeps agent adapters on this host.
 pub fn agents_dir(home: &Path) -> PathBuf {
     std::env::var_os("ARUGULA_AGENTS_DIR")
         .map(PathBuf::from)

@@ -1,7 +1,7 @@
 {
   "name": "arugula-editor",
-  "displayName": "arugula",
-  "description": "Your editor in the arugula swarm: who's in which file, follow its cursor from a phone, debugger stops and Claude Code's diffs on the rail. And arugula's colours.",
+  "displayName": "Arugula",
+  "description": "Your editor in the Arugula swarm: who's in which file, follow its cursor from a phone, debugger stops and Claude Code's diffs on the rail. And Arugula's colours.",
   "publisher": "arugula",
   "version": "0.2.0",
   "license": "MIT",
@@ -16,22 +16,22 @@
   "capabilities": { "untrustedWorkspaces": { "supported": true }, "virtualWorkspaces": false },
   "contributes": {
     "commands": [
-      { "command": "arugula.join", "title": "Show this workspace in the swarm", "category": "arugula" },
-      { "command": "arugula.leave", "title": "Take this workspace out of the swarm", "category": "arugula" },
-      { "command": "arugula.menu", "title": "Swarm status", "category": "arugula" }
+      { "command": "arugula.join", "title": "Show this workspace in the swarm", "category": "Arugula" },
+      { "command": "arugula.leave", "title": "Take this workspace out of the swarm", "category": "Arugula" },
+      { "command": "arugula.menu", "title": "Swarm status", "category": "Arugula" }
     ],
     "configuration": {
-      "title": "arugula",
+      "title": "Arugula",
       "properties": {
         "arugula.block": {
           "type": "number",
           "default": 0,
-          "description": "The editor block this window is (arugula sets it in the block's workspace)."
+          "description": "The editor block this window is (Arugula sets it in the block's workspace)."
         },
         "arugula.socket": {
           "type": "string",
           "default": "",
-          "description": "The arugula daemon's socket on this machine [default: $ARUGULA_SOCK, else ~/.local/state/arugula/sock]. Read as `illogical.socket` if this isn't set."
+          "description": "The Arugula daemon's socket on this machine [default: $ARUGULA_SOCK, else ~/.local/state/arugula/sock]. Read as `illogical.socket` if this isn't set."
         },
         "arugula.sshHost": {
           "type": "string",

@@ -2,7 +2,7 @@
 
 Part A of #200: network shapes that one host's loopback can't give a test. A
 box behind a bastion, a network where only ssh gets through, a box with no
-arugula on it. One Compose file, one profile per scenario, borrowing
+Arugula on it. One Compose file, one profile per scenario, borrowing
 INTENTIUS/terragucci's `stack/`.
 
 ```sh
@@ -22,7 +22,7 @@ just testnet measure tailnet   # S28: ssh against the tailnet path
 testnet/selfupdate.sh OLD NEW  # #391: the daemon updates itself (two `just static` builds)
 ```
 
-The Rust tests that drive arugula against the stack,
+The Rust tests that drive Arugula against the stack,
 `crates/daemon/tests/integration/ssh.rs` (M51, box-bare and git) and
 `crates/daemon/tests/integration/reboot.rs` (#26, box-systemd), bring the `ssh` profile
 up when it isn't. Both recreate the boxes they use and need `just static
@@ -50,7 +50,7 @@ added when a milestone needs it.
 - `bastion`: Debian with sshd only. It's the one thing published to the
   host, on `127.0.0.1:22922` (`ARUGULA_TESTNET_SSH_PORT`), and it forwards
   TCP for ProxyJump.
-- `box-bare`: the same image with no arugula and nothing set up for it,
+- `box-bare`: the same image with no Arugula and nothing set up for it,
   on an internal network with no route out. It's reached only through the
   bastion, so anything installed on it has to arrive over ssh.
 - `box-systemd`: box-bare with systemd as PID 1, logind and polkit, also on
@@ -81,7 +81,7 @@ by name with strict host key checking and `BatchMode`.
 
 The nodes share a network and connect directly (`tailscale ping` says
 "direct"). headscale requires a DERP map, so its embedded DERP server is on,
-unused. `measure-tailnet.sh` installs arugula on ts-box over ssh from
+unused. `measure-tailnet.sh` installs Arugula on ts-box over ssh from
 ts-client, then times the same requests over both paths (S28's numbers are
 in `spikes/s28-ssh/README.md`). Tailscale SSH isn't here: its check mode
 needs a login at an identity provider, which a test can't do.
@@ -127,7 +127,7 @@ means.
 | `login` | the stack's key logs into the bastion, host key checked | a fresh key the boxes don't know |
 | `jump` | box-bare answers through the bastion with ProxyJump | the bastion's `AllowTcpForwarding` off |
 | `inner` | box-bare has no default route | checking the bastion instead |
-| `bare` | no arugula on box-bare's login PATH, no state or config dir | a stub `/usr/local/bin/arugula` |
+| `bare` | no Arugula on box-bare's login PATH, no state or config dir | a stub `/usr/local/bin/arugula` |
 | `stdio` | 1 MiB of random bytes through `cat` on box-bare come back identical | a forced tty (`-tt`) |
 | `agent` | a key in the client's agent shows on box-bare when forwarded | `ForwardAgent=no` |
 | `push` | `git push` from box-bare to `git` with the key only in the forwarded agent | `ForwardAgent=no` |
@@ -167,5 +167,5 @@ The `control` profile's:
 - Claims for the tailnet profile; its check is the measurement, which fails
   when either path doesn't reach the daemon.
 
-The `ssh` profile's boxes never have arugula built in: tests put it there
+The `ssh` profile's boxes never have Arugula built in: tests put it there
 over ssh from the client (`just static`), which is what `bare` guards.

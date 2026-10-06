@@ -18,7 +18,7 @@
 //! - **Within a timeout.** An rc file that hangs, or a shell that fails,
 //!   leaves the daemon's own environment, with one warning in the log.
 //! - **Only what the shell changed.** Blocks keep the daemon's `ARUGULA_*`
-//!   variables and the arugula CLI on `PATH`; the shell's variables go
+//!   variables and the Arugula CLI on `PATH`; the shell's variables go
 //!   over the rest.
 //!
 //! Panes don't use this: they run the real shell.
@@ -321,7 +321,7 @@ async fn resolve(
 
 /// A local block's environment with the shell's over it: `block` is what
 /// it would get otherwise (the daemon's additions, `ARUGULA_*`), and
-/// `bin` (the arugula CLI's directory) stays on `PATH`.
+/// `bin` (the Arugula CLI's directory) stays on `PATH`.
 pub fn merge(block: &[(String, String)], shell: &Resolved, bin: Option<&Path>) -> Vec<(String, String)> {
     let mut env: Vec<(String, String)> = block.to_vec();
     for (k, v) in &shell.vars {

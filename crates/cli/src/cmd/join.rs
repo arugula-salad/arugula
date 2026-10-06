@@ -1,4 +1,4 @@
-//! `arugula join`: this machine, or a box over ssh, on your account on arugula control.
+//! `arugula join`: this machine, or a box over ssh, on your account on Arugula control.
 
 use crate::{Cli, ssh};
 use anyhow::bail;

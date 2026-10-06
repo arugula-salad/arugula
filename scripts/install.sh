@@ -219,9 +219,9 @@ if [ -n "$started" ]; then
     i=$((i + 1))
   done
   if [ -n "$up" ]; then
-    say "arugula $version is installed and running."
+    say "Arugula $version is installed and running."
   else
-    say "arugula $version is installed, but it isn't answering at $url yet."
+    say "Arugula $version is installed, but it isn't answering at $url yet."
     if [ "$os" = Darwin ]; then
       say "  Its logs:  tail -n 50 ~/Library/Logs/arugulad.log"
     else
@@ -231,16 +231,16 @@ if [ -n "$started" ]; then
 elif [ -n "${nosystemd:-}" ]; then
   if curl -s -o /dev/null -m 1 "$url/"; then
     # An upgrade: the old daemon is still the one running.
-    say "arugula $version is installed. A daemon is already running here (the old one): restart it"
+    say "Arugula $version is installed. A daemon is already running here (the old one): restart it"
     say "to run this version. Panes started with --keep-panes keep running:"
     say "  kill \$(pgrep -f '^$HOME/.local/bin/(arugulad|illogicald) --keep-panes')"
   else
-    say "arugula $version is installed. No systemd here, so no service: start the daemon with"
+    say "Arugula $version is installed. No systemd here, so no service: start the daemon with"
   fi
   say "  nohup $HOME/.local/bin/arugulad --keep-panes >>~/arugulad.log 2>&1 &"
   say "(--keep-panes: panes outlive its restarts)"
 else
-  say "arugula $version is installed, not started (ARUGULA_NO_START)."
+  say "Arugula $version is installed, not started (ARUGULA_NO_START)."
 fi
 
 # The Mac app, after the daemon: it finds that one (its plist in
@@ -347,7 +347,7 @@ elif [ -n "$ts" ]; then
   say "  Phone     tailscale up, then $serve"
 else
   say "  Phone     install Tailscale (https://tailscale.com/download) to reach it"
-  say "            from your phone, or use arugula control (Anywhere)"
+  say "            from your phone, or use Arugula control (Anywhere)"
 fi
 say "  Anywhere  ${bin}arugulad join https://control.illogical.widgets.wtf"
 say "            (also how you add this machine to a team: pick it when you approve)"

@@ -184,7 +184,7 @@ start: number, end: number | null,
 by?: string, };
 
 /**
- * A machine's standing with arugula control (#325): whether and where
+ * A machine's standing with Arugula control (#325): whether and where
  * it's joined, whether control is reachable, or that control dropped it.
  * The page, the tray and `arugula status` all show this.
  */

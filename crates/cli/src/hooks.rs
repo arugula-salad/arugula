@@ -1,4 +1,4 @@
-//! `arugula hooks`: put Claude Code's hooks for arugula into its
+//! `arugula hooks`: put Claude Code's hooks for Arugula into its
 //! settings.json (`install`), or say which are there (`status`). The merge
 //! only ever adds: every other key and every other hook stays as it is, and
 //! a hook already there (same event, same matcher, same command) isn't
@@ -15,7 +15,7 @@ use anyhow::{Context, bail};
 use clap::Subcommand;
 use serde_json::{Map, Value, json};
 
-/// The hooks arugula wants in Claude Code's settings.json. This is the
+/// The hooks Arugula wants in Claude Code's settings.json. This is the
 /// JSON in docs/cli.md § "Claude Code in a pane"; a test fails if the two
 /// differ, so change them together.
 pub const HOOKS_SNIPPET: &str = r#"{
@@ -277,7 +277,7 @@ enum Has {
     Missing,
 }
 
-/// Per event: whether every arugula entry for it is in `settings`.
+/// Per event: whether every Arugula entry for it is in `settings`.
 fn present(settings: &Value) -> Vec<(String, Has)> {
     let mut renamed = settings["hooks"].as_object().cloned().unwrap_or_default();
     rename_old(&mut renamed);

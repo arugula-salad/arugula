@@ -27,7 +27,7 @@ test("a newer release: the chip, the command, and Not now", async ({ page }) => 
   const chip = page.locator("[data-update-chip]");
   await expect(chip).toHaveText("Update 0.17.0");
   await chip.click();
-  const pop = page.getByRole("dialog", { name: "Update arugula" });
+  const pop = page.getByRole("dialog", { name: "Update Arugula" });
   await expect(pop).toContainText("this daemon is 0.16.0");
   await expect(pop.locator("[data-update-command]")).toHaveText("curl -fsSL https://illogical.widgets.wtf/install.sh | sh");
   await expect(pop.getByRole("link", { name: "What's new" })).toHaveAttribute("href", /\/tag\/v0\.17\.0$/);

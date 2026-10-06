@@ -1,4 +1,4 @@
-# Install arugula on Windows: download a release, check it, and run
+# Install Arugula on Windows: download a release, check it, and run
 # `arugulad install`, which puts arugulad and arugula in
 # %LOCALAPPDATA%\Programs\arugula (on your PATH) and starts the daemon at
 # logon as a scheduled task. Run it again to upgrade; the daemon's flags and
@@ -66,7 +66,7 @@
 
     $bin = Join-Path $env:LOCALAPPDATA 'Programs\arugula'
     ''
-    'arugula is installed. In a new terminal:'
+    'Arugula is installed. In a new terminal:'
     '  arugula web       open it in your browser, signed in'
     '  arugula run pwsh  a pane, from the command line'
     "(Or now: & '$bin\arugula.exe' web)"

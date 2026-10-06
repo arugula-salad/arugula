@@ -145,7 +145,7 @@ pub fn target(socket: PathBuf, host: Option<&str>) -> anyhow::Result<Target> {
         let hint = if crate::control::logged_in() {
             ""
         } else {
-            "; `arugula login` reaches the machines on your arugula control account"
+            "; `arugula login` reaches the machines on your Arugula control account"
         };
         return match list {
             Err(e) => Err(e.context(format!("looking up --host {host} in the local daemon's host list{hint}"))),

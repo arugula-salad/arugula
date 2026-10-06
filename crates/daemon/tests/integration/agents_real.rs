@@ -25,7 +25,7 @@
 //!   Runs in `target/m29-tui`.
 //! - `mcp` (M6c): an MCP server's form and sign-in link (`fake_mcp.py`)
 //!   through Claude Code in an agent block.
-//! - `mcp-cc` (M16): Claude Code outside arugula (`claude -p`, haiku),
+//! - `mcp-cc` (M16): Claude Code outside Arugula (`claude -p`, haiku),
 //!   with `arugula mcp` as its MCP server: a build that fails after a
 //!   while, waited through; it reads why, fixes it and reruns, and the
 //!   pane says "started by mcp:claude-code". With `mcp-vm` too, the build
@@ -446,7 +446,7 @@ fn an_mcp_servers_form_and_sign_in_link() {
     assert!(t.contains(r#""size":"M""#) || t.contains(r#""size": "M""#), "{t}");
 }
 
-/// M16: Claude Code outside arugula uses it through `arugula mcp`.
+/// M16: Claude Code outside Arugula uses it through `arugula mcp`.
 #[test]
 fn claude_code_outside_runs_a_build_through_mcp() {
     if !wanted("mcp-cc") {
@@ -475,7 +475,7 @@ fn claude_code_outside_runs_a_build_through_mcp() {
     let place =
         if on_vm { "with vm: true (a throwaway VM pane; run the fix in that same pane with send_input)" } else { "" };
     let prompt = format!(
-        "Use the arugula MCP tools. Run this build with the run tool {place}, with wait true: `{build}`. \
+        "Use the Arugula MCP tools. Run this build with the run tool {place}, with wait true: `{build}`. \
          If it fails, read why, fix it, and run the build again until it succeeds (wait again if it's still running). \
          Then reply with just the word DONE."
     );
