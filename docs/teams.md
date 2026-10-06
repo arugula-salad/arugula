@@ -138,7 +138,7 @@ until you allow it (above).
 
 ## Talking about it: threads
 
-Every pane and every session has a thread (M61): *Thread* in a pane's
+Every pane and every session has a thread: *Thread* in a pane's
 menu, *Session thread* in the session menu, or the bubble on a pane.
 
 - **Who sees what:** the same people as the pane or session. Watchers read;
@@ -155,7 +155,7 @@ menu, *Session thread* in the session menu, or the bubble on a pane.
 
 ## Talking out loud: huddles
 
-A session can have a huddle (M63), a voice call for the people in it: the
+A session can have a huddle, a voice call for the people in it: the
 headphones button by the session's name, or *Start a huddle* in the
 session menu. Up to 5 people.
 

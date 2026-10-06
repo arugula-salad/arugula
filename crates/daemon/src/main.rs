@@ -181,7 +181,7 @@ enum Command {
         #[arg(long, env = "ILLOGICAL_STATE_DIR")]
         state_dir: Option<PathBuf>,
     },
-    /// A hosted sandbox (M20): make this daemon's key and write its
+    /// A hosted sandbox: make this daemon's key and write its
     /// certificate request to `out`, for control to fetch through the
     /// provider (it then writes control.json back).
     #[command(hide = true)]
@@ -226,7 +226,7 @@ struct RunArgs {
     #[arg(long, hide = true)]
     no_relay: bool,
 
-    /// A hosted sandbox (M20): when the last session closes, ask control
+    /// A hosted sandbox: when the last session closes, ask control
     /// to delete it.
     #[arg(long, hide = true)]
     sandbox_of_control: bool,
@@ -238,14 +238,14 @@ struct RunArgs {
     #[arg(long = "direct-url", env = "ILLOGICAL_DIRECT_URL", value_delimiter = ',')]
     direct_urls: Vec<String>,
 
-    /// The control Getting started's *Connect* button joins (#207): your
+    /// The control Getting started's *Connect* button joins: your
     /// own, say. `illogicald join URL` takes any control regardless.
     #[arg(long = "control", env = "ILLOGICAL_CONTROL", value_name = "URL", default_value = setup::CONTROL)]
     control_url: String,
 
     /// Extra origins whose pages may use this daemon (WebSocket and API),
     /// exactly as the browser sends them: the Vite dev server, or the home
-    /// daemon whose host list this daemon is on (`https://geek.….ts.net`).
+    /// daemon whose host list this daemon is on (`https://home.example.ts.net`).
     #[arg(long = "allow-origin")]
     allow_origins: Vec<String>,
 
@@ -264,7 +264,7 @@ struct RunArgs {
     #[arg(long, default_value_t = 3, env = "ILLOGICAL_GUEST_MACHINES", hide = true)]
     guest_machines: usize,
 
-    /// Where the ssh server for invited guests listens (M65: `illogical
+    /// Where the ssh server for invited guests listens (`illogical
     /// share --guest`), only while an invite exists; `off` turns the feature
     /// off. Port 0 picks a free one.
     #[arg(long, env = "ILLOGICAL_GUEST_SSH", default_value = guest_ssh::DEFAULT_LISTEN, hide = true)]
@@ -325,12 +325,12 @@ struct RunArgs {
     /// ~/.config/illogical/claude-oauth-token].
     #[arg(long, env = "ILLOGICAL_CLAUDE_TOKEN_FILE", hide = true)]
     claude_token_file: Option<PathBuf>,
-    /// Where the studio token is kept (M35: `illogical studio login`),
+    /// Where the studio token is kept (`illogical studio login`),
     /// mode 0600, never sent to a client [default: studio.json in the
     /// state directory].
     #[arg(long, env = "ILLOGICAL_STUDIO_FILE", hide = true)]
     studio_file: Option<PathBuf>,
-    /// Don't be Claude Code's IDE (M28). By default Claude Code in a pane
+    /// Don't be Claude Code's IDE. By default Claude Code in a pane
     /// connects to illogicald (`CLAUDE_CODE_SSE_PORT`) and its edits wait
     /// as diff cards beside the terminal's own prompt.
     #[arg(long, env = "ILLOGICAL_NO_CLAUDE_IDE")]
@@ -358,7 +358,7 @@ struct RunArgs {
     reach: ReachArgs,
 }
 
-/// Editor blocks (M27): VS Code as code-server, served like browser blocks
+/// Editor blocks: VS Code as code-server, served like browser blocks
 /// on ports (so they need --block-listen).
 #[derive(clap::Args, Debug)]
 struct EditorArgs {
@@ -375,11 +375,11 @@ struct EditorArgs {
     code_server_releases: String,
 }
 
-/// M4c: reaching a home daemon from a host that can only dial out, and
+/// Reaching a home daemon from a host that can only dial out, and
 /// keeping history there.
 #[derive(clap::Args, Debug)]
 struct ReachArgs {
-    /// Dial out to this home daemon (`wss://geek.….ts.net`) and serve this
+    /// Dial out to this home daemon (`wss://home.example.ts.net`) and serve this
     /// daemon through it, for when nothing can connect in. Redials with
     /// backoff; this daemon works on its own meanwhile.
     #[arg(long, env = "ILLOGICAL_PEER", requires = "token")]
@@ -1304,5 +1304,51 @@ async fn signalled() {
         _ = tokio::signal::ctrl_c() => {}
         _ = STOP.notified() => {}
         _ = term.recv() => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::CommandFactory;
+
+    /// `illogicald --help` is for strangers: no milestone or issue numbers, no
+    /// names of our own machines, and what needs a wispd, the studio or guest
+    /// ssh isn't listed.
+    #[test]
+    fn help_has_no_internal_numbers_or_names_and_hides_what_a_stranger_cant_use() {
+        let mut cmd = super::Args::command();
+        let mut texts = vec![cmd.render_long_help().to_string()];
+        for sub in cmd.get_subcommands_mut() {
+            texts.push(sub.render_long_help().to_string());
+        }
+        for help in &texts {
+            let b = help.as_bytes();
+            for (at, ch) in help.char_indices() {
+                if ch != 'M' && ch != '#' {
+                    continue;
+                }
+                let digits = help[at + 1..].chars().take_while(|c| c.is_ascii_digit()).count();
+                let word_start = at == 0 || !b[at - 1].is_ascii_alphanumeric();
+                let shown: String = help[at..].chars().take(12).collect();
+                assert!(!((ch == 'M' && word_start && digits >= 2) || (ch == '#' && digits >= 2)), "{shown}");
+            }
+            for name in ["geek", "jake-mini", "arugula-salad"] {
+                assert!(!help.contains(name), "{name} in the help");
+            }
+        }
+        let top = &texts[0];
+        for flag in [
+            "--wisp-url",
+            "--wisp-token-file",
+            "--studio-file",
+            "--guest-ssh",
+            "--guest-ssh-host",
+            "--guest-machines",
+            "--static-dir",
+        ] {
+            assert!(!top.contains(flag), "{flag} is in `illogicald --help`");
+        }
+        // Still there for whoever knows them.
+        assert!(super::Args::command().get_arguments().any(|a| a.get_long() == Some("studio-file")));
     }
 }

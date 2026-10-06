@@ -4,9 +4,9 @@ What illogical does, roughly in the order it was built. [PLAN.md](../PLAN.md) ha
 
 Examples name the machine that serves the page `home`; on a real tailnet it's your machine's MagicDNS name.
 
-Everything from M1 (sessions, tabs and splits held by the daemon, driven by
-the mouse, the same live on every window and a phone), and now it survives
-the daemon stopping, crashing, or the machine rebooting:
+Sessions, tabs and splits are held by the daemon, driven by the mouse, the
+same live on every window and a phone, and they survive the daemon
+stopping, crashing, or the machine rebooting:
 
 - Every pane's output goes to an append-only log as it happens, and its
   terminal is checkpointed (Ghostty's snapshot format, zstd) after 5s idle
@@ -22,7 +22,7 @@ the daemon stopping, crashing, or the machine rebooting:
   History is kept to 256 MB per pane, in `~/.local/state/illogical`, which
   is private to you (0700/0600).
 
-- **Restarting the daemon doesn't touch running programs** (M2b). Each pane's
+- **Restarting the daemon doesn't touch running programs**. Each pane's
   program runs in its own systemd scope behind a small shim, and its terminal
   is kept in systemd's FD store while the daemon is gone. A restarted (or
   crashed and auto-restarted) daemon adopts every live pane: vim keeps its
@@ -33,7 +33,7 @@ the daemon stopping, crashing, or the machine rebooting:
   terminal instead (`--keep-panes`), with the same result; a stop ends the
   panes a minute later.
 
-- **Panes know about commands** (M3). bash gets shell integration
+- **Panes know about commands**. bash gets shell integration
   automatically (the way Ghostty does it: no dotfile changes), so each pane
   knows where every command starts and ends, its exit code and its directory.
   In the browser each finished command gets a mark in the gutter (green or
@@ -48,7 +48,7 @@ the daemon stopping, crashing, or the machine rebooting:
   command finishing while you're elsewhere shows "done". With *Notify this
   device* on (session menu; the phone's sheet), the phone gets a push notification; tapping it
   opens the pane.
-  - **Agents in terminal panes** (#145). For Claude Code and Codex the
+  - **Agents in terminal panes**. For Claude Code and Codex the
     daemon reads the bottom of the pane's screen and its title, as its own
     terminal has them (never where someone has scrolled to), with no hooks
     needed: a spinner or "esc to interrupt" is *working*, a permission or
@@ -62,7 +62,7 @@ the daemon stopping, crashing, or the machine rebooting:
     going quiet alone never means it wants you. Hooks, notifications and
     the bell still say so whatever the screen shows. The rules are a small
     table per agent in `crates/vt/src/detect.rs`.
-  - **Why it wants you** (M24). Every pane that wants you says why: *ask*
+  - **Why it wants you**. Every pane that wants you says why: *ask*
     (an agent's question or permission request), *failed* (a command that
     ran a few seconds ended non-zero), *exited*, *input* (a bell or a
     notification) or *done*, with a one-line headline, the command and its
@@ -71,11 +71,11 @@ the daemon stopping, crashing, or the machine rebooting:
     or dismiss (`/api/attention/act`). `illogical attention --json` lists
     them, `illogical events` streams them, and notifications are titled by
     them. Dismissing on one screen clears it on every other.
-  - **Rerun** (M11). A failed command typed at a prompt can be run again:
+  - **Rerun**. A failed command typed at a prompt can be run again:
     *Rerun* on the phone's *Needs you*, a swarm card, the notification, or
     the tab's ✗ badge, or `illogical rerun %N`. It's typed into the pane
     only once its shell is idle at its prompt.
-  - **What each pane is** (M23). Every pane carries what it's running
+  - **What each pane is**. Every pane carries what it's running
     (shell, build, test, agent, server, logs or editor, from the program
     itself, so an alias for `claude` still reads as an agent), its git
     project, how busy it is and its title; `illogical ls --json` shows
@@ -84,14 +84,14 @@ the daemon stopping, crashing, or the machine rebooting:
     second.
 - **History.** Closed panes' output is kept for 7 days, and `illogical
   history` / `search` look across all panes.
-- **Blocks** (M6, in progress). A pane is one kind of block; every kind
+- **Blocks** (in progress). A pane is one kind of block; every kind
   shares the layout, ids, attention, `describe` and `call`. The first other
   kind is a browser block for ordinary pages: *Open a web page…* in the pane
   menu, or `illogical open example.com`. Sites that refuse to be framed get
   a card with "open in new tab". Block directories are `blocks/<id>/` in
   the state directory (`panes/` before; it's moved, and left as a link).
 
-- **Browser blocks on ports** (M6a). Run `npm run dev` in a pane, then
+- **Browser blocks on ports**. Run `npm run dev` in a pane, then
   *Open a port…* (pane menu), *Open port* (phone sheet) or `illogical open --split right
   :5173` puts the app beside it, hot reload and all. A block opened from a
   pane shows that pane's machine's port. Each block is
@@ -106,7 +106,7 @@ the daemon stopping, crashing, or the machine rebooting:
   the frame's navigations; when the server dies it asks for you and shows
   the page again when the server is back. Events: `navigated`,
   `load_error`.
-- **Editor blocks** (M27). VS Code ([code-server](https://github.com/coder/code-server))
+- **Editor blocks**. VS Code ([code-server](https://github.com/coder/code-server))
   where a pane runs, as a block: *Open in editor* (a pane's menu, or a
   tile's right-click in the swarm, or *Edit* on a card), or `illogical edit
   [PATH[:LINE]]`. A folder opens as itself, a file in its project (its git
@@ -127,11 +127,11 @@ the daemon stopping, crashing, or the machine rebooting:
   - illogical's extension in each window reports the active file, the
     cursor and the lines around it: summaries say `kind: editor`, the
     project and `file`, and the swarm's preview (and `capture`) is those
-    lines. It's the same extension as for your own VS Code (M28, below), so
+    lines. It's the same extension as for your own VS Code (below), so
     a block can be followed and its debugger's stops are cards too. After a
     daemon restart the window reconnects to the same session; after a
     reboot the block asks the new server for the file it had.
-- **Changes: diff and file blocks** (M11). For checking what an agent
+- **Changes: diff and file blocks**. For checking what an agent
   did, from anywhere and especially the phone. *Changes* (a pane's or a
   tab's menu, the phone's sheet, a swarm tile with a project) opens a diff
   block beside the pane, on its machine, for its git
@@ -156,7 +156,7 @@ the daemon stopping, crashing, or the machine rebooting:
     runs on the block's host and never
     takes the repository's lock. `capture --text` is the unified diff, or
     the file.
-- **Your editor in the swarm** (M28). VS Code, Cursor or nvim on any of
+- **Your editor in the swarm**. VS Code, Cursor or nvim on any of
   your machines shows up in the swarm beside your panes: a tile of kind
   editor in its project, with its file, its errors and unsaved files, and
   the lines around its cursor as its preview.
@@ -189,7 +189,7 @@ the daemon stopping, crashing, or the machine rebooting:
   - **Who sees it.** An editor isn't in a session: it's yours, and on a
     team's daemon its members' by their team role. Following is viewer
     access; *Continue* needs editor.
-- **illogicald as Claude Code's IDE** (M28). Claude Code in a pane
+- **illogicald as Claude Code's IDE**. Claude Code in a pane
   connects to illogicald the way it does to VS Code (every pane has
   `CLAUDE_CODE_SSE_PORT`; `--no-claude-ide` turns it off), so each edit it
   wants to make (Edit and Write, in default mode) waits as a diff card on
@@ -205,7 +205,7 @@ the daemon stopping, crashing, or the machine rebooting:
   --diffs "Visual Studio Code"` (or *Diffs here* on a card) passes them
   there. Bash and other tools stay with the hooks in [*Claude Code in a
   pane*](cli.md#claude-code-in-a-pane).
-- **Agent blocks** (M6b). An agent run as UI instead of a TUI: messages,
+- **Agent blocks**. An agent run as UI instead of a TUI: messages,
   thoughts, tool-call cards with each command's output in a read-only
   terminal, permission requests as Approve / Always / Deny cards (big
   enough for a thumb, and actions on the push notification), a composer,
@@ -220,11 +220,11 @@ the daemon stopping, crashing, or the machine rebooting:
     `.claude/settings.local.json` into your repo. Claude Code runs with no
     settings sources, so your own hooks don't fire inside it.
   - *From now on…* on a card keeps a standing rule on this machine
-    (#166): the tool, or commands starting with a prefix, in the block's
+   : the tool, or commands starting with a prefix, in the block's
     directory and below or in every agent block. New blocks never ask for
     what a rule allows. *Permission rules…* in the session menu (or
     `illogical rules`) lists them, and forgets them.
-  - A block can start with rules and a mode (#163): `illogical agent
+  - A block can start with rules and a mode: `illogical agent
     --allow Bash --permission-mode auto`, or `allow` and `permission_mode`
     on MCP `start_agent`, so a lead pre-authorizes its subagents (an agent
     can't start one in `bypassPermissions`). `--user-settings` gives Claude
@@ -247,7 +247,7 @@ the daemon stopping, crashing, or the machine rebooting:
     (Codex uses `~/.local/bin/codex`). They need Node on PATH (a Node
     mise installed is used if there's none). A test keeps these in step
     with the pins in `defs.rs`.
-  - **Questions and forms** (M6c). Claude Code's AskUserQuestion is a
+  - **Questions and forms**. Claude Code's AskUserQuestion is a
     question card: buttons for one answer, checkboxes for several, each
     option's description, an "Other" box (on its own it's the answer; next
     to a pick it's a note), and an option's preview (mockups, code) in
@@ -267,7 +267,7 @@ the daemon stopping, crashing, or the machine rebooting:
     'NAME=COMMAND'` gives the session an MCP server. Codex only asks this way
     in its plan mode.
 
-- **Claude Code conversations** (M33). Every Claude Code conversation on
+- **Claude Code conversations**. Every Claude Code conversation on
   the daemon's machine, from a terminal or the desktop app's Code tab, can
   be opened as an agent block and carried on there. *Claude Code
   conversations…* (a pane's menu; *Conversations* in the phone's sheet;
@@ -284,7 +284,7 @@ the daemon stopping, crashing, or the machine rebooting:
     transcript (the newest `last-prompt` leaf, walked back by
     `parentUuid`), so a rewind's abandoned turns, another writer's turns,
     or an exchange an away summary cut off aren't in it, though the block
-    shows them (#79).
+    shows them.
   - **Continue** (or just send a message) freezes what it had into the
     block and resumes the session through `claude-agent-acp`, with your
     settings, skills and `CLAUDE.md` as in the terminal, every hook off,
@@ -299,7 +299,7 @@ the daemon stopping, crashing, or the machine rebooting:
     sessions archived in the desktop app, and ones whose folder is gone
     (except the desktop app's, whose scratch folder goes with them, and
     comes back empty if you continue). *All* shows everything.
-  - **Every host's** (#78): with more than one host, the picker lists
+  - **Every host's**: with more than one host, the picker lists
     each host's conversations under its name, then by folder, asking them
     all at once over the fleet's connections and showing each as it
     answers. A host that doesn't answer in 5 s says so. Picking another host's opens it
@@ -307,7 +307,7 @@ the daemon stopping, crashing, or the machine rebooting:
     `illogical claude ls --host all` does the same in a terminal;
     `illogical --host NAME claude open ID` opens one there.
   - Claude Desktop's chats aren't here: they live on claude.ai.
-  - **On a Mac** (#81) it works the same way. Whether a session is open
+  - **On a Mac** it works the same way. Whether a session is open
     comes from `~/.claude/sessions` checked against the process's start
     time, which Claude Code writes there as `ps -o lstart` (`/proc` on
     Linux), so a reused pid doesn't count. A Claude Code started from one
@@ -320,7 +320,7 @@ the daemon stopping, crashing, or the machine rebooting:
     Cowork sessions (`local-agent-mode-sessions/`) keep their transcripts
     elsewhere, not in `~/.claude/projects`, so they aren't listed.
 
-- **Pull requests** (M36, Forgejo; M38, GitHub; M39, GitLab). A PR as a block beside the work on
+- **Pull requests** (Forgejo, GitHub, GitLab). A PR as a block beside the work on
   it: its checks, reviews and timeline, and what it waits on you for.
   - **Opening one.** *Open pull request…* (a pane's menu, the `+`
     button's menu; *Pull request* in the phone's sheet), `illogical pr
@@ -364,7 +364,7 @@ the daemon stopping, crashing, or the machine rebooting:
     merge-base..head; *Checkout* opens a terminal there. The owner's.
   - `capture --text` is the PR as text; the block's log has the timeline,
     so `history` and `search` find its comments.
-  - **GitLab merge requests** (M39). The same block for a merge request:
+  - **GitLab merge requests**. The same block for a merge request:
     open it from its link (`…/GROUP/[SUB/]PROJECT/-/merge_requests/N`, in
     a terminal too), `illogical pr URL`, `GROUP/PROJECT!N`, or N in a clone
     whose remote is gitlab.com (or a `gitlab.` host). It reads with your
@@ -382,7 +382,7 @@ the daemon stopping, crashing, or the machine rebooting:
     or `squash`. *Diff* and *Checkout* fetch `refs/merge-requests/N/head`
     and diff from `diff_refs.base_sha`, the merge base. A poll is one
     conditional request when nothing moved (gitlab.com counts 304s too).
-  - **GitHub pull requests** (M38). The same block for a GitHub PR: open
+  - **GitHub pull requests**. The same block for a GitHub PR: open
     it from its link (`github.com/OWNER/REPO/pull/N`, in a terminal too),
     `illogical pr URL`, or `OWNER/REPO#N` / N in a clone whose remote is on
     github.com. It reads with your `gh` login's token (`gh auth token
@@ -397,7 +397,7 @@ the daemon stopping, crashing, or the machine rebooting:
     (`illogical pr rerun %N`, `illogical rerun %N`, the rail, the block),
     which reruns each red workflow run's failed jobs. Merge is `merge`,
     `squash` or `rebase`.
-  - **Live updates** (M40). A poke from the forge makes the block read at
+  - **Live updates**. A poke from the forge makes the block read at
     once, and while the webhook path is healthy (something heard from it
     in the last ten minutes) the block polls only every few minutes, even
     while you look at it; the block's footer and its state say *live* or
@@ -427,7 +427,7 @@ the daemon stopping, crashing, or the machine rebooting:
     reaches the rail. Every write, a person's or an agent's draft, is
     refused there: writes go out as you, with your own `gh` login.
 
-- **Issues** (M37, Forgejo and GitHub). An issue is the same block: its
+- **Issues** (Forgejo and GitHub). An issue is the same block: its
   labels, assignees, the pull requests that refer to it and its timeline,
   read with the same `tea` (or `gh`) login. GitLab's issues aren't read
   yet.
@@ -463,13 +463,13 @@ the daemon stopping, crashing, or the machine rebooting:
     Comments on issues (`issue_comment`, `illogical issue comment %N`) are
     drafts from agents too, as on a PR.
 
-- **Your machines through control** (M48, #151). The main way to reach
+- **Your machines through control**. The main way to reach
   more than one machine: each one runs `illogicald join` once, and control's
   page (in a browser or the desktop app) lists every machine of your
   account and your teams in its host menu, reaching each directly when it
   can and through control's encrypted relay otherwise. No machine is
   special: none keeps a list of the others. See [control.md](control.md).
-- **Other hosts over the tailnet** (M4a, the older model, still there for
+- **Other hosts over the tailnet** (the older model, still there for
   the CLI's `--host` and boxes you can't join to control). Every daemon is a peer; the one the
   page comes from (the "home daemon") keeps a list of the others and checks on
   each every minute. The page shows a host switcher (desktop: the bar's
@@ -481,7 +481,7 @@ the daemon stopping, crashing, or the machine rebooting:
   `illogical --host NAME …` runs any command on another host. A container
   (no systemd needed) gets a static daemon on the tailnet with one command
   and adds itself to the list.
-- **Panes from several hosts in one layout** (#17). The home daemon's
+- **Panes from several hosts in one layout**. The home daemon's
   tabs and splits can hold panes that run on another host in its list:
   *New tab on box* (the `+` button's right-click menu), *Split right on
   box* (a pane's menu), or `illogical --host box run --home`. The page
@@ -494,7 +494,7 @@ the daemon stopping, crashing, or the machine rebooting:
   back by itself. Closing it here closes it there; if the host can't be
   reached, it stays open there. A pane its host closes (it exited, or was
   closed on the host's own page) leaves the layout here too.
-- **Hosts that can only dial out** (M4c). A box that allows nothing
+- **Hosts that can only dial out**. A box that allows nothing
   in but outbound HTTPS runs `illogicald --peer wss://home.… --token FILE`:
   it keeps one WebSocket open to the home daemon and serves its own
   WebSocket and API over it, many streams at once. The home daemon lists it
@@ -508,7 +508,7 @@ the daemon stopping, crashing, or the machine rebooting:
   (`illogical hosts token NAME`, or joining with an invite), stored only
   as a hash, good for that host alone, and revocable (`hosts revoke`,
   `hosts rm`).
-- **Read-only share links** (M4c). `illogical share %N --ttl 1h`, or *Share
+- **Read-only share links**. `illogical share %N --ttl 1h`, or *Share
   read-only link…* on a pane, gives a `/share/…` link that shows that pane
   live (its screen and scrollback, then its output) and nothing else: no
   typing, sizes, other panes or API, and a viewer that sends anything is
@@ -516,7 +516,7 @@ the daemon stopping, crashing, or the machine rebooting:
   with, say), never a tagged node, Funnel or the internet. Links expire (a
   week at most), are listed (`illogical shares`) and revocable (`shares
   revoke ID`), which cuts off anyone watching.
-- **History that outlives a host** (M4c). With `--sync` (closed panes)
+- **History that outlives a host**. With `--sync` (closed panes)
   or `--sync-live` (open ones too), a host pushes its panes' log segments
   and indexes to the home daemon with its token, resuming from what is
   already there. The home daemon keeps them encrypted at rest and answers
@@ -529,7 +529,7 @@ the daemon stopping, crashing, or the machine rebooting:
   `illogical synced rotate-key` re-encrypts everything under a new key and
   drops the old one. File names and sizes aren't secret; contents are.
 
-- **Files and navigation** (M7). *Go to directory…* (a pane's menu; *In a
+- **Files and navigation**. *Go to directory…* (a pane's menu; *In a
   directory…* on the `+` button's right-click; *Go to directory* in the
   phone's sheet, where it's a full-screen sheet; Ctrl+Shift+G) browses
   directories on the host the pane runs on: this daemon's or another host's
@@ -554,12 +554,12 @@ the daemon stopping, crashing, or the machine rebooting:
     names ("drifting cedar", unique per daemon). Ids don't change, rename
     is still a double-click, and older sessions keep their names.
 
-- **iTerm2 as a client** (M5). `illogical tmux -CC` speaks tmux's control
+- **iTerm2 as a client**. `illogical tmux -CC` speaks tmux's control
   mode, so iTerm2 (and Ghostty's and WezTerm's tmux support) shows
   illogical's sessions, tabs and splits as native windows, tabs and splits,
   live alongside the browser; see *Use it*.
 
-- **In any terminal** (M31). `illogical tui` (with `--host`, any host;
+- **In any terminal**. `illogical tui` (with `--host`, any host;
   `--session S` to start in one) draws the shown tab's panes in the
   terminal you're in, beside a sidebar of sessions and tabs, each tab
   marked with its panes' worst attention (● needs you, ✓ done, ◌ working),
@@ -585,7 +585,7 @@ the daemon stopping, crashing, or the machine rebooting:
     (Shift+PgUp/PgDn too) under a dim ↑ marker saying how far, until you
     type; it sends arrow keys to a pager or editor, or goes to the program
     if it takes the mouse.
-  - **Selecting and copying** (M32). Drag to select within a pane, double-
+  - **Selecting and copying**. Drag to select within a pane, double-
     click a word, triple-click a line; letting go copies. When the program
     takes the mouse, Shift-drag selects. Copies go to your terminal's
     clipboard through OSC 52, so they work over ssh (in tmux, with
@@ -611,7 +611,7 @@ the daemon stopping, crashing, or the machine rebooting:
     synchronized output (a program's frame is drawn whole) are kept. A
     frame takes about 1 ms to draw with four busy panes at 200x50.
 
-- **Every host at once** (M25, M30). The page keeps a light connection
+- **Every host at once**. The page keeps a light connection
   (summaries only) to every machine in its list, not just the one it
   shows: yours, your team's, and teammates' machines that shared a session
   with you or with the team. Through illogical control they share one
@@ -620,7 +620,7 @@ the daemon stopping, crashing, or the machine rebooting:
   Private panes never leave their owner's view, and revoking a share or
   locking a team takes those panes off everyone else's screen within a
   second.
-- **Team answers** (M29). When an agent on any of the team's machines asks
+- **Team answers**. When an agent on any of the team's machines asks
   something (an agent block, or Claude Code in a terminal through its
   hooks: see [*Claude Code in a pane*](cli.md#claude-code-in-a-pane)),
   anyone who may edit that session can answer: from the card beside the
@@ -631,7 +631,7 @@ the daemon stopping, crashing, or the machine rebooting:
   instruction, as its sender's input; on someone's own machine a teammate
   needs their trust first. Cards show who else is looking. Who gets
   notified is opt-in per person (*Notify me about its agents*).
-- **The swarm** (M26, `/#swarm`, *Swarm* beside the tabs). Every pane on
+- **The swarm** (`/#swarm`, *Swarm* beside the tabs). Every pane on
   every machine you and your team can see, as one field of tiles coloured
   by kind and lit by activity, clustered by project (or directory, outside
   a repository), machine, kind, session or person. What needs you lifts out
@@ -640,7 +640,7 @@ the daemon stopping, crashing, or the machine rebooting:
   send an agent its next instruction. Hover a tile to peek at its last
   lines, click it to open it (an editor that joined: follow it). On a
   phone the cards are a strip along the bottom. `just fake-fleet` runs three throwaway machines to try it on.
-- **Tools for any agent** (M16, MCP). Claude Code, Codex or any MCP client
+- **Tools for any agent** (MCP). Claude Code, Codex or any MCP client
   gets illogical as tools: `run` a command in a pane you can watch and
   take over (it outlives the
   agent's turn), `wait` for it and `read_output`, `send_input`, `list`,
@@ -660,7 +660,7 @@ the daemon stopping, crashing, or the machine rebooting:
   tabs. Over HTTP (`/mcp`), the owner gets in as for the web client;
   anything else needs a token from `illogical mcp token`, revocable at any
   time.
-- **Threads on panes and sessions** (M61). Every pane and every session has
+- **Threads on panes and sessions**. Every pane and every session has
   a thread where the people working on it talk: *Thread* in a pane's menu,
   *Session thread* in the session menu, or the bubble on a pane. Messages
   arrive live on every window and phone. The machine that owns the pane
@@ -675,7 +675,7 @@ the daemon stopping, crashing, or the machine rebooting:
   to the output. `@agent` (or `@claude`) in a pane's thread goes to that
   pane's agent as a follow-up, from whoever may drive it, and agents read
   and answer with the MCP tools `read_thread` and `post_thread`.
-- **Huddles** (M63). A voice call on a session, for the people working in
+- **Huddles**. A voice call on a session, for the people working in
   it: the headphones button by the session's name (or *Start a huddle* in
   the session menu) starts one, and everyone with the session sees it's on
   (the button goes green with how many are in) and joins with a click. Up

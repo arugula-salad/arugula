@@ -45,7 +45,7 @@ illogical agent "fix the failing test"        # Claude Code here; prints %N (--c
                                               #   --acp CMD, --machine m3, --model haiku,
                                               #   --cwd d, --wait)
 illogical agent --allow Read --allow Edit --permission-mode acceptEdits "…"
-                                              # pre-approve tools and pick its mode (#163);
+                                              # pre-approve tools and pick its mode;
                                               #   --user-settings: your Claude Code allow/deny
                                               #   lists and default mode, never your hooks
 illogical claude ls [--live] [--all] [words]  # Claude Code conversations here: terminal and desktop app
@@ -321,14 +321,14 @@ curl --unix-socket "$ILLOGICAL_SOCK" -X POST localhost/api/panes/3/followup \
 ```
 
 `/api/attention/act` takes `action` (`allow`, `deny`, `answer`,
-`dismiss`, and for M28 `accept`, `reject` and `continue`) and a `pane` or
+`dismiss`, and for the editor's diffs `accept`, `reject` and `continue`) and a `pane` or
 a list of `panes`, plus `option: "always"` and `suggestion: N` (which of
 Claude Code's suggestions) for allow, `message` for deny, `content` (the
 card's fields) for answer and `text` (the file as it should be saved) for
 accept. Each pane is checked on its own (editor on its session) and
 answered on its own.
 
-**Diffs** (M28, no hooks needed). Claude Code in a pane connects to
+**Diffs** (no hooks needed). Claude Code in a pane connects to
 illogicald as its IDE (`CLAUDE_CODE_SSE_PORT` is set in every pane), and
 its Edit and Write calls wait as diff cards on the pane and the rail:
 accept, change then accept, or reject. `GET /api/panes/N/diff` has the

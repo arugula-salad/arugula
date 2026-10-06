@@ -1,11 +1,24 @@
 # illogical
 
-A terminal multiplexer whose sessions outlive the window, the daemon and the
-reboot. A daemon owns your terminals; the browser (desktop or phone) draws
-tabs and splits you drive with the mouse.
+Keep track of your agents without checking every session. See which agents
+need input and what your teammates are working on. Leave unfinished work
+open, come back later, or join a teammate's session to help.
+
+illogical is a terminal multiplexer whose sessions outlive the window, the
+daemon and the reboot. A daemon owns your terminals; the browser (desktop or
+phone) draws tabs and splits you drive with the mouse.
 
 ![Tabs and splits in the browser](site/img/desktop.png)
 
+- **The swarm.** Every pane on every machine you and your team can see, in
+  one live view, clustered by project, machine, kind or person. Whatever
+  needs someone (an agent asking, a build failing) lifts out to a rail of
+  cards, where anyone on the team who may answer allows, answers or sends
+  the agent its next instruction, and everyone sees who did.
+- **Agents as blocks.** Claude Code, Codex or any
+  [ACP](https://agentclientprotocol.com) agent as a UI beside your
+  terminals: tool calls with their output, approvals and questions as
+  cards big enough for a thumb.
 - **Mouse first.** Click, drag and right-click for tabs and splits. No
   chords to learn, no prefix key.
 - **Durable.** Close the window, lose the connection, restart the daemon or
@@ -16,10 +29,6 @@ tabs and splits you drive with the mouse.
 - **Anywhere on your tailnet.** The same live layout on every window and
   your phone, over [Tailscale](https://tailscale.com). Push notifications
   when a pane rings, a long command finishes, or an agent needs you.
-- **Agents as blocks.** Claude Code, Codex or any
-  [ACP](https://agentclientprotocol.com) agent as a UI beside your
-  terminals: tool calls with their output, approvals and questions as
-  cards big enough for a thumb.
 - **VS Code and dev servers beside your terminals** (opt-in). *Open in
   editor* (or `illogical edit src/main.rs:42`) opens VS Code on the pane's
   machine, in its directory, as a block, back with its file after a
@@ -32,11 +41,6 @@ tabs and splits you drive with the mouse.
   a file for its hunks and a line to see the file there, both updating
   while the agent works. Phone first, and a failed build is a *Rerun* tap
   away.
-- **The swarm.** Every pane on every machine you and your team can see, in
-  one live view, clustered by project, machine, kind or person. Whatever
-  needs someone (an agent asking, a build failing) lifts out to a rail of
-  cards, where anyone on the team who may answer allows, answers or sends
-  the agent its next instruction, and everyone sees who did.
 - **Your editor in the swarm.** VS Code, Cursor or nvim (over Remote-SSH
   too) shows up beside your panes once you ask it to. Follow its cursor
   from your phone; a debugger stopping, or Claude Code wanting to edit a
@@ -260,7 +264,7 @@ The daemon starts when you log on, and logging off ends it; its panes close
 a minute later. `illogicald install --system` (from an elevated terminal)
 starts it at boot instead, but programs there can't use Windows' protected
 storage, so Credential Manager and Git Credential Manager don't work in its
-panes. `illogical --ssh` doesn't reach Windows yet (#284).
+panes. `illogical --ssh` doesn't reach Windows yet.
 
 ## More
 
