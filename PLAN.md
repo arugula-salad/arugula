@@ -4582,6 +4582,7 @@ Where WebKitGTK has none, measure str0m or webrtc-rs with cpal on the Tauri side
 - **Rules:** a pane's thread follows `readable` (private panes are their owner's). Posting needs Editor. A "from now" grant sees messages from its `at`.
 - **`@agent`/`@claude`** (from someone `may_drive_here`) goes through the follow-up path, an agent block's `send` or the inbox hook. MCP `read_thread`/`post_thread` default to an agent block's own pane.
 - **UI:** a drawer (a full-screen sheet on phones), the pane's bubble, a dot on the session button, and a folded corner in the blocks, hive and timeline themes. A mention's push notification opens the thread (`#pane=N&thread=…`).
+- **An @ that can't reach offers an invite (#297):** the owner's `POST /api/threads/…` returns `invitable` (`{token, who, name}`): each `@` that reached nobody but names someone `invite::nameable` knows (grants, checked rosters; a login and an account of one name are the account) who can't read the thread, as `Api::CanRead` says, and none on a private pane's. Those tokens leave `unreached`. No one else's response has the field. The composer's offer posts `/api/invite` with `thread`, `msg` and `whole_thread`; the server checks the message is in that thread and the thread in the session. A new "from now" grant gets `Grant.thread_from {thread, from}`: `thread_floor(p, session, target)` is the message's `at` (0 for the whole thread) in that thread only, else `at`. `set_full` keeps it on a role change. The invite's push has `thread`. Agent mentions make no card; `post_thread`'s description names `invite_person`.
 - **Not done:**
   - messages carry the name, not the device (presence carries no device either);
   - the city theme doesn't draw unread;
@@ -4838,6 +4839,13 @@ The phone keeps today's list-then-thread flow, styled to match.
 - Screenshots in `docs/` at desktop width (light and dark) and phone width.
 - geek's desktop app: the window drags from Chat's bar and its buttons work. The same on jake-air.
 
+**As built (2026-10-05, PR #350):**
+- **The cause of the popout look:** since M63's merge, `.huddle-act.leave:hover` in style.css had lost its `}`. Browsers read every rule after it as nested under that selector, so none of the chat view's styles applied, and S33's hand cards had lost theirs the same way (`.chat-back`). `web/scripts/check-css.mjs` now fails the web build on a rule opened inside another.
+- `ChatPage` stays a fixed layer, but now over the whole window (`inset: 0`) with its own bar, rather than `App` switching on the route. The panes' bar and `<main>` get `inert`, so the panes keep their layout and size and nothing under the page takes focus.
+- The switch is `Places` (`[data-open-panes]`, `[data-open-swarm]`, `[data-open-chat]`). The swarm keeps its own bar.
+- The sidebar's folds, unread-only filter and width are kept in `localStorage` (`chat.collapsed`, `chat.unreadOnly`, `chat.side`). With one machine, its section is called *Sessions*.
+- The phone's bar keeps its sheet button; the switch isn't on the phone.
+
 #### M74: messages and composer like Slack (#337, after M73)
 
 - **Messages:**
@@ -4877,6 +4885,16 @@ The phone keeps today's list-then-thread flow, styled to match.
 - The details panel's pane view shows live output.
 - Old thread files (no `pic`) still load.
 
+**As built (2026-10-05, PR #353):**
+- `ThreadMsg.pic` is filled from the poster's principal at post time (the owner's from `owner_pic`). An agent's message has none, and shows a ⚙ tile and the *Agent* badge.
+- `ui/markup.tsx` renders the Markdown subset as Preact nodes.
+- The *New* line is placed once, when the thread loads, from `ThreadSummary.unread`.
+- The details panel's live view is a text capture (`/api/panes/N/capture?format=text`) every 1.5 s through the thread's own client, not a second terminal view: it works for every machine's panes and costs no terminal.
+- Member avatars come from presence in the session plus the thread's posters. The share list isn't read.
+- @ completion offers the same people, plus `@agent` on a pane's thread. Enter sends when the typed word is already a whole name.
+- Drafts are kept in `sessionStorage` under `chat.draft:<host>/<thread>`.
+- The drawer shares the message list and composer (28 px pictures).
+
 #### M75: getting around like Slack (#338, after M74)
 
 - **Ctrl/Cmd+K on the chat page** is a channel switcher over every machine's channels and threads, ranked by unread and recency. It reuses the palette's matcher.
@@ -4886,6 +4904,12 @@ The phone keeps today's list-then-thread flow, styled to match.
 - **Mark read up to here** from a message's hover menu.
 
 **Done when:** Playwright switches channels by keyboard only, finds a message on a second machine (the testnet profile) by search and lands on it, and sees a mention in Activity that clears when read.
+
+**As built (2026-10-05):**
+- **Search and Activity load every thread the reader can read**, through each machine's own client, and filter in the page. `/api/search` is the owner's alone and covers output too. Threads reload when their last message changes.
+- **Routes:** `#chat=activity` and `#chat=search/<words>`. Typing replaces the history entry, so Back doesn't step through each letter.
+- **Activity's count** is the number of threads with an unread mention.
+- **Not done:** *Mark read up to here*. Reading a thread marks it all read, and the daemon only moves a read mark forward, so the item would do nothing. *Mark unread* would need the daemon to move it back.
 
 ## Acceptance tests (automated where possible)
 

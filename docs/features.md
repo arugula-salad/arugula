@@ -631,6 +631,43 @@ stopping, crashing, or the machine rebooting:
   instruction, as its sender's input; on someone's own machine a teammate
   needs their trust first. Cards show who else is looking. Who gets
   notified is opt-in per person (*Notify me about its agents*).
+- **Invites**. "Bring Sam into this" in one step: *Share and
+  notify* in *Share session…*, `illogical invite sam`, or `POST
+  /api/invite` (the owner's only) shares the session (or upgrades a
+  share; never downgrades one) and pushes that one person, "Alex brought
+  you into api-work: take a look at the flaky test", opening at the pane,
+  whatever anyone's notification settings. It reports what happened, not
+  what was tried: *sent* when a subscription took it, *pending* while
+  someone outside your teams hasn't accepted the machine (retried after
+  each refresh for a day), else *unreachable* with why. People are named
+  as the machine itself knows them: tailnet logins, people already shared
+  with, and members of rosters it checked against a team pin your own
+  browser gave it, never on control's word. A team's members on a team's
+  machine already hold their role: they're just told. `--drive N` also
+  trusts an editor to type on your machine for N minutes. Audit-logged.
+- **An agent asks to invite someone** . MCP's `invite_person
+  {who, role?, pane?, note}`, from any of your own agents, Claude Code in
+  a terminal included, shares nothing: it opens a small invite block
+  beside the agent with a card, "claude-code (pane %3, you started it)
+  wants to bring Sam [account:s1] (editor) into api-work at pane %3: …",
+  whose names are the session's and the person's as the machine knows
+  them when it's shown (the principal beside the name), and pushes it to you alone (not to
+  editors who opted in), with no buttons to send it from. Only the
+  session's owner answers it, by any route (the card, the push, the
+  swarm, the CLI): *Invite* sends the invite as you, with the role and
+  note as you left them and drive trust only if you set it; *Decline*
+  tells the agent, with a reason if you give one. Editors, and agents
+  (`agent_respond`, the CLI under one), are refused. An agent a guest
+  started (or one such an agent started) can't ask at all; nor can an
+  agent skip the card: `illogical invite` and `/api/team-pins` under one
+  are refused, and only `invite_person` makes invite blocks. Unanswered, it's
+  dropped after a day. Closing the invite block is yours alone too
+  (editors and agents are refused); what still waited is dropped, and
+  `read_invite` says so. `read_invite` tells the agent which: waiting,
+  sent (with the delivery), declined, dropped or failed. Each agent has at
+  most five waiting. The card lives on its own block, so it never
+  replaces the agent's own permission or question card. The audit log
+  names you as sender and the agent and its pane as drafter.
 - **The swarm** (`/#swarm`, *Swarm* beside the tabs). Every pane on
   every machine you and your team can see, as one field of tiles coloured
   by kind and lit by activity, clustered by project (or directory, outside
@@ -670,17 +707,35 @@ stopping, crashing, or the machine rebooting:
   its owner's, and someone shared "from now" sees messages from then on.
   Each person has their own unread count: on the pane's bubble, a dot on
   the session button, and a folded corner in the swarm. `@name` notifies someone, on
-  their phone too. *Quote selection in thread* posts terminal output as a
+  their phone too (a tap opens the thread; team members are reached
+  whether or not they're connected). *Quote selection in thread* posts terminal output as a
   quote that stays readable after the pane scrolls; clicking it jumps back
   to the output. `@agent` (or `@claude`) in a pane's thread goes to that
   pane's agent as a follow-up, from whoever may drive it, and agents read
-  and answer with the MCP tools `read_thread` and `post_thread`.
+  and answer with the MCP tools `read_thread` and `post_thread`. Only an
+  `@` that reached someone is marked in the thread; one that reached no
+  one (a name nobody here who can read the thread has, or an `@agent` in a
+  session's thread or from someone who can't drive the pane) stays plain
+  and the poster, and no one else, is told so under the message (and in
+  `post_thread`'s `unreached`).
+- **An @ of someone who can't see the thread offers to invite them**. When you, the owner, write "@sam look" and Sam is someone this
+  machine knows (shared with elsewhere, or on a roster it checked) but
+  can't read that thread, the composer says "Sam can't see this. Invite
+  them?" in place of the "nobody" note. One click is the invite, as a
+  viewer, with your message as its note: Sam's push opens that thread.
+  By default Sam sees that message and what follows in that thread only;
+  *Share the whole thread* gives that thread's history instead. Either
+  way every other thread of the session starts at the invite, like any
+  "from now" share, and a later role change keeps what Sam could read.
+  Nobody else's post is offered anything, so an @ never tells an editor
+  who exists. Agents get no offer: `post_thread` points them at
+  `invite_person`.
 - **Huddles**. A voice call on a session, for the people working in
   it: the headphones button by the session's name (or *Start a huddle* in
   the session menu) starts one, and everyone with the session sees it's on
   (the button goes green with how many are in) and joins with a click. Up
   to 5 people. The huddle bar stays in the corner while you move between
-  tabs, sessions and the chat view: who's in, who's talking, who's muted,
+  tabs, sessions and chat (where it sits in the sidebar's corner): who's in, who's talking, who's muted,
   *Mute* (Ctrl/Cmd+Shift+Space) and *Leave*. Audio goes straight between
   devices, encrypted end to end (WebRTC, DTLS-SRTP), through a TURN relay
   when there's no direct path; the machine only introduces the members.
@@ -695,12 +750,30 @@ stopping, crashing, or the machine rebooting:
   so. The Linux desktop app's web view has no WebRTC, so the app runs the
   call itself (WebRTC in Rust, Opus, and WebRTC's echo cancellation and
   noise suppression), with the same bar and buttons.
-- **Chat: every thread in one place.** *Chat* in the bar (or the phone's
-  sheet, or the command palette; `/#chat`) shows every thread on every
-  machine you can reach, like a team chat: each machine's sessions are the
-  channels, and each pane's thread sits under its session, newest first,
-  with your unread count and @mentions. The button counts what's unread
-  everywhere. A thread is read and written there, and *Go to pane* (or *Go
-  to session*) takes you to what it's about, switching machines if it's on
-  another one; so does clicking a quote. Escape, or picking a tab, goes
-  back to the panes.
+- **Chat: every thread in one place.** *Chat* (beside *Panes* and *Swarm*
+  in the bar, the phone's sheet, or the command palette; `/#chat`) is a
+  page of its own, laid out like a team chat. On the left: *Activity*,
+  any huddles that are on, then each machine's sessions as channels with
+  each pane's thread under its session, newest first, unread in bold and
+  @mentions counted. Fold a machine away, show only what's unread, or drag
+  the sidebar wider; the browser remembers. The panes stay as they were
+  under the page; *Panes*, or Back, returns to them.
+  - **Messages** carry the poster's picture, run together under one
+    heading, and have a line between days and a red *New* line at the
+    first one you hadn't read. An agent's are badged. Text takes a little
+    Markdown: `code`, fenced code blocks, **bold**, *italic*, links and
+    @mentions (yours stand out); anything else, HTML included, stays text.
+    Hover a message to quote it in your reply, copy a link to it (the link
+    opens the thread at that message), or go to its pane.
+  - **Writing:** Enter sends, Shift+Enter makes a new line, and @ offers
+    the people here (and `@agent` in a pane's thread). An unsent message
+    waits in its thread while you look at another.
+  - **The header** says where the thread is and what its pane is doing,
+    who's in it, and has the huddle button and *Go to pane* (or *Go to
+    session*). ⓘ opens details: the pane's screen, live (or each of the
+    session's panes), and the people.
+  - **Getting around:** the search field in the bar searches every thread
+    on every machine you can read as you type. *Activity* lists messages
+    that mention you and agents' answers to you. Ctrl/Cmd+K jumps to a
+    channel by name. Alt+↑/↓ moves between channels, Alt+Shift+↑/↓ between
+    unread ones, and Shift+Esc marks everything read.

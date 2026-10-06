@@ -205,9 +205,11 @@ mod tests {
             at: 1,
             who: "owner".into(),
             name: "Jake".into(),
+            pic: None,
             text: text.into(),
             quote: None,
             mentions: vec![],
+            landed: Vec::new(),
             to_agent: false,
             agent: false,
         }
