@@ -710,6 +710,12 @@ async fn a_terminal_pane_is_the_default_of_the_mcp_server_it_runs() {
     let posted = d.get(&format!("/api/threads/pane-{mine}"));
     assert_eq!(posted["messages"][1]["text"], "a build pane", "{posted}");
     assert_eq!(d.get(&format!("/api/threads/pane-{other}"))["messages"].as_array().unwrap().len(), 1);
+    // Splitting "self" opens beside it, in its tab.
+    let r = call(&s, "run", json!({ "split": "self" })).await;
+    let split = r["pane"].as_u64().unwrap();
+    assert_ne!(split, mine);
+    let tab = |p: u64| d.get("/api/panes").as_array().unwrap().iter().find(|x| x["id"] == p).unwrap()["tab"].clone();
+    assert_eq!(tab(split), tab(mine), "{r}");
     // Naming a pane still wins.
     let r = call(&s, "read_thread", json!({ "pane": other })).await;
     assert_eq!(r["messages"][0]["text"], "and this one?", "{r}");
@@ -728,6 +734,7 @@ async fn a_terminal_pane_is_the_default_of_the_mcp_server_it_runs() {
     // No pane, as before: it has to say which thread.
     let s = bridge_in(&d, Client::named("claude-code"), None).await;
     assert!(refused(&s, "read_thread", json!({})).await.contains("which thread"));
+    assert!(refused(&s, "run", json!({ "split": "Self" })).await.contains("no pane of its own"));
     let l = call(&s, "list", json!({})).await;
     assert!(l["panes"].as_array().unwrap().iter().all(|p| p.get("you").is_none()), "{l}");
     s.cancel().await.unwrap();

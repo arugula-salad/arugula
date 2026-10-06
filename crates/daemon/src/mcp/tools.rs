@@ -89,8 +89,9 @@ pub struct RunArgs {
     /// Where it starts: a directory (on its machine, for a VM).
     #[serde(default)]
     pub cwd: Option<String>,
-    /// Split this pane instead of opening a new tab. An agent block's token
-    /// always splits (beside the agent, by default).
+    /// Split this pane instead of opening a new tab; "self" is the caller's
+    /// own pane. An agent block's token always splits (beside the agent, by
+    /// default).
     #[serde(default)]
     pub split: Option<PaneArg>,
     /// With split: run where that pane runs (its tab's VM) instead of on
@@ -1295,6 +1296,16 @@ impl<'a> Call<'a> {
         self.caller.pane
     }
 
+    /// `run`'s `split`: a pane, or "self" for the caller's own.
+    fn split_pane(&self, split: Option<&PaneArg>) -> Result<Option<PaneId>, String> {
+        match split {
+            Some(PaneArg::Name(s)) if s.trim().eq_ignore_ascii_case("self") => self.own_pane().map(Some).ok_or_else(|| {
+                "split \"self\": this caller has no pane of its own (run illogical mcp inside an illogical pane, or give a pane number)".into()
+            }),
+            other => other.map(PaneArg::id).transpose(),
+        }
+    }
+
     /// The agent block whose token this is: what confines a caller.
     fn me(&self) -> Option<PaneId> {
         match self.caller.scope {
@@ -1446,7 +1457,7 @@ impl<'a> Call<'a> {
                 if a.vm || a.vm_tab || a.machine.is_some() || a.session.is_some() {
                     return Err("this agent's token reaches its own tab only: run splits a pane there (no vm, vm_tab, machine or session)".into());
                 }
-                let split = a.split.as_ref().map(PaneArg::id).transpose()?.unwrap_or(me);
+                let split = self.split_pane(a.split.as_ref())?.unwrap_or(me);
                 let p = self.readable(split).await?;
                 if p.info.host.is_some() {
                     self.share_my_machine().await;
@@ -1457,7 +1468,7 @@ impl<'a> Call<'a> {
                 req.from_pane = Some(split);
             }
             None => {
-                req.split = a.split.as_ref().map(PaneArg::id).transpose()?;
+                req.split = self.split_pane(a.split.as_ref())?;
                 req.join = a.join;
                 req.vm = a.vm;
                 req.vm_tab = a.vm_tab;
