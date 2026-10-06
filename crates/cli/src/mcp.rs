@@ -12,6 +12,10 @@
 //! `Mcp-Method`/`Mcp-Name` headers. If the daemon restarted (its sessions
 //! are gone: 404), it opens a new session with the client's own
 //! `initialize` and sends the request again, so the client never notices.
+//!
+//! In a pane, it says which (`$ILLOGICAL_PANE`, as `X-Illogical-Pane`): a
+//! default for tools that act where the client works (#234's
+//! `invite_person`), not a credential.
 
 use std::{
     io::{BufRead, BufReader, Write},
@@ -194,7 +198,7 @@ impl Bridge {
             headers.push(("Authorization", a));
         }
         if let Some(p) = &self.pane {
-            headers.push(("Illogical-Pane", p));
+            headers.push(("X-Illogical-Pane", p));
         }
         let res = http::send(&self.target, "POST", PATH, &headers, line.as_bytes())?;
         let status = res.status;
@@ -275,7 +279,7 @@ impl Bridge {
             headers.push(("Authorization", a));
         }
         if let Some(p) = &self.pane {
-            headers.push(("Illogical-Pane", p));
+            headers.push(("X-Illogical-Pane", p));
         }
         let res = http::send(&self.target, "POST", PATH, &headers, init.as_bytes())?;
         let id = res.header("mcp-session-id").map(str::to_owned);

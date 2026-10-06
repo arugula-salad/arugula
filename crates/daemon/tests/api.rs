@@ -566,12 +566,18 @@ fn uploads_are_refused_past_their_limits_and_swept_after_a_restart() {
     assert_eq!(status, 507, "{body}");
     std::fs::remove_file(other.join("big.png")).unwrap();
 
-    // `ssh` in front: the path would mean nothing on the far side.
+    // `ssh` in front: the path would mean nothing on the far side. A
+    // script of that name, not a link to a binary: a multicall coreutils
+    // (uutils, as Ubuntu ships) runs as whatever it's called, and there's
+    // no `ssh` in it.
+    use std::os::unix::fs::PermissionsExt;
     let bin = tmp.join("bin");
     std::fs::create_dir_all(&bin).unwrap();
-    std::os::unix::fs::symlink("/bin/cat", bin.join("ssh")).unwrap();
-    d.post(&format!("/api/panes/{pane}/send"), json!({"text": bin.join("ssh").display().to_string(), "enter": true}));
-    // Its command line (macOS names a linked binary after its target).
+    let ssh = bin.join("ssh");
+    std::fs::write(&ssh, "#!/bin/sh\nsleep 600\n").unwrap();
+    std::fs::set_permissions(&ssh, std::fs::Permissions::from_mode(0o755)).unwrap();
+    d.post(&format!("/api/panes/{pane}/send"), json!({"text": ssh.display().to_string(), "enter": true}));
+    // Its command line: `/bin/sh …/bin/ssh`.
     d.wait_for("ssh in front", || d.raw("GET", &format!("/api/panes/{pane}/process"), None).1.contains("bin/ssh\""));
     let (status, v) = bytes(&d, &format!("/api/panes/{pane}/upload?id=ef&ext=png&offset=0&last=true"), b"png");
     assert_eq!(status, 200, "{v}");
@@ -591,4 +597,27 @@ fn uploads_are_refused_past_their_limits_and_swept_after_a_restart() {
     d.wait_for("the old upload swept", || !old.exists());
     assert!(new.exists());
     let _ = std::fs::remove_dir_all(&tmp);
+}
+
+/// #233: an invite is in the audit log: who invited whom, as what, to
+/// which pane, and how it went.
+#[test]
+fn an_invite_is_audited() {
+    let d = start();
+    let p = &d.get("/api/panes")[0];
+    let (pane, session) = (p["id"].as_u64().unwrap(), p["session"].as_u64().unwrap());
+    let r = d.post("/api/invite", json!({ "session": session, "who": "tailnet:sam@example.com", "role": "editor" }));
+    assert_eq!(r["delivery"], "unreachable", "{r}");
+    let audit = d.get("/api/acl")["audit"].clone();
+    let line = audit.as_array().unwrap().iter().find(|a| a["action"] == "invite").cloned().unwrap_or_default();
+    assert_eq!(
+        (line["by"].as_str(), line["principal"].as_str(), line["role"].as_str(), line["pane"].as_u64()),
+        (Some("owner"), Some("tailnet:sam@example.com"), Some("editor"), Some(pane)),
+        "{audit}"
+    );
+    assert_eq!((line["session"].as_u64(), line["delivery"].as_str()), (Some(session), Some("unreachable")));
+    // The grant before it, as any share.
+    assert!(
+        audit.as_array().unwrap().iter().any(|a| a["action"] == "grant" && a["principal"] == "tailnet:sam@example.com")
+    );
 }
