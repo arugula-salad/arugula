@@ -12,7 +12,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { Fleet, FleetPane } from "../fleet";
-import { gateKey, type Action, type Reason } from "../proto";
+import { gateKey, type Action, type OpenRequest, type OpenResponse, type Reason } from "../proto";
 import { AskCard, type Answered } from "../blocks/ask";
 import { ANSWERED_MS, answeredLine, FollowUpBox, PermissionBody, PermissionButtons, VIEWER_NOTE, type Requester } from "../ui/answer-card";
 import { Avatar } from "../ui/people";
@@ -615,8 +615,8 @@ function canEdit(fleet: Fleet, p: FleetPane) {
 /** Open VS Code in a pane's directory, on its machine, and show it. */
 async function editIn(fleet: Fleet, p: FleetPane, back: () => void): Promise<string | null> {
   try {
-    const res = await fleet.request(p.host, "POST", "/api/blocks", { type: "editor", config: {}, from_pane: p.id });
-    const v = await res.json<{ block?: number; error?: string }>().catch(() => null);
+    const res = await fleet.request(p.host, "POST", "/api/blocks", { type: "editor", config: {}, from_pane: p.id } satisfies OpenRequest);
+    const v = await res.json<Partial<OpenResponse> & { error?: string }>().catch(() => null);
     if (!res.ok || v?.block === undefined) return v?.error ?? `couldn't (${res.status})`;
     back();
     fleet.open(p.host, v.block);
@@ -629,8 +629,8 @@ async function editIn(fleet: Fleet, p: FleetPane, back: () => void): Promise<str
 /** What changed in a pane's project (M11): a diff block beside it, shown. */
 async function changesOf(fleet: Fleet, p: FleetPane, back: () => void): Promise<string | null> {
   try {
-    const res = await fleet.request(p.host, "POST", "/api/blocks", { type: "diff", config: {}, from_pane: p.id, split: p.id });
-    const v = await res.json<{ block?: number; error?: string }>().catch(() => null);
+    const res = await fleet.request(p.host, "POST", "/api/blocks", { type: "diff", config: {}, from_pane: p.id, split: p.id } satisfies OpenRequest);
+    const v = await res.json<Partial<OpenResponse> & { error?: string }>().catch(() => null);
     if (!res.ok || v?.block === undefined) return v?.error ?? `couldn't (${res.status})`;
     back();
     fleet.open(p.host, v.block);

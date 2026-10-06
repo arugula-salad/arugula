@@ -9,8 +9,12 @@ use ts_rs::{Config, TS, TypeVisitor};
 
 use crate::{
     ClientMsg, RemoteRef, ServerMsg,
-    api::ActRequest,
-    hosts::{ControlState, HostFeatures},
+    api::{
+        ActRequest, GuestInvite, GuestInviteRequest, InviteRequest, Invited, NotifyPref, NotifyRequest,
+        OpenConversationRequest, OpenConversationResponse, OpenRequest, OpenResponse, RunRequest, RunResponse, Share,
+        ShareRequest, ThreadMessages, ThreadPostRequest, ThreadPosted, ThreadReadRequest,
+    },
+    hosts::{ControlState, HostFeatures, HostInfo},
 };
 
 /// Rust's aliases, which ts-rs sees through: the web client names them.
@@ -46,6 +50,25 @@ fn generate() -> String {
     c.visit::<ActRequest>();
     c.visit::<HostFeatures>();
     c.visit::<ControlState>();
+    c.visit::<HostInfo>();
+    c.visit::<ThreadMessages>();
+    c.visit::<ThreadPostRequest>();
+    c.visit::<ThreadReadRequest>();
+    c.visit::<ThreadPosted>();
+    c.visit::<InviteRequest>();
+    c.visit::<Invited>();
+    c.visit::<RunRequest>();
+    c.visit::<RunResponse>();
+    c.visit::<OpenRequest>();
+    c.visit::<OpenResponse>();
+    c.visit::<OpenConversationRequest>();
+    c.visit::<OpenConversationResponse>();
+    c.visit::<NotifyRequest>();
+    c.visit::<NotifyPref>();
+    c.visit::<ShareRequest>();
+    c.visit::<Share>();
+    c.visit::<GuestInviteRequest>();
+    c.visit::<GuestInvite>();
     c.visit::<RemoteRef>();
     c.decls.sort();
     let mut out = String::from(

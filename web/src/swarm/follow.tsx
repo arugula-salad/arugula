@@ -10,7 +10,7 @@
 
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { Fleet, FleetPane } from "../fleet";
-import type { FollowMsg } from "../proto";
+import type { FollowMsg, OpenRequest, OpenResponse } from "../proto";
 import { openMenu, type MenuItem } from "../ui/menu";
 import { useSubscribe } from "../ui/hooks";
 import type { CodeView } from "./code";
@@ -201,8 +201,8 @@ export function openHere(
     items.push({
       label: `VS Code in illogical (on ${p.host})`,
       run: async () => {
-        const res = await fleet.request(p.host, "POST", "/api/blocks", { type: "editor", config: { path: file, line: at?.line ?? null } });
-        const v = await res.json<{ block?: number; error?: string }>().catch(() => null);
+        const res = await fleet.request(p.host, "POST", "/api/blocks", { type: "editor", config: { path: file, line: at?.line ?? null } } satisfies OpenRequest);
+        const v = await res.json<Partial<OpenResponse> & { error?: string }>().catch(() => null);
         if (!res.ok || v?.block === undefined) return setErr(v?.error ?? `couldn't (${res.status})`);
         back();
         fleet.open(p.host, v.block);
