@@ -686,7 +686,7 @@ stopping, crashing, or the machine rebooting:
   issue, a conversation), `draft` (a comment, review, merge or new issue
   for the user to send), `start_agent` and `agent_respond` (one agent
   supervising another), `read_file`. The tools that do several jobs take a
-  `kind`, so the list stays short (#349). `claude mcp add illogical --
+  `kind`, so the list stays short. `claude mcp add illogical --
   illogical mcp` sets it up; see the README. Output comes in pages, a long
   wait sends progress and answers "still running" by 100s with where to
   pick up, and errors say what happened ("pane %7 is gone; its last

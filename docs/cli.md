@@ -181,7 +181,7 @@ codex mcp add illogical -- illogical mcp
 ```
 
 The tools. `list`, `show` and `draft` each group several jobs under a
-`kind` argument (#349), so a client's list stays short; the tool's
+`kind` argument, so a client's list stays short; the tool's
 description says what each kind takes:
 
 | Tool | What it does | Reads only |
@@ -205,7 +205,7 @@ description says what each kind takes:
 | `read_file` | A text file on this host or a pane's machine, paged | yes |
 | `device_call` | A tool on one of the user's devices (`list` kind `devices`), which the user allows or denies there | no |
 
-The names from before #349 (`capture_screen`, `search`, `open_port`,
+The older tool names (`capture_screen`, `search`, `open_port`,
 `open_pr`, `pr_comment`, `read_issue` and the rest) still answer, as the
 tool and kind that do their job now; they aren't listed.
 
