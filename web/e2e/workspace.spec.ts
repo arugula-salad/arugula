@@ -121,7 +121,9 @@ test("arugula workspace shows its members; a gate reached while it's drawn is at
   await expect(shown.locator('[data-gate="delivery/ship/approve-ship"]')).toBeVisible({ timeout: 8_000 });
   const took = Date.now() - t;
   console.log(`chant run exits 3 → the gate on screen: ${took} ms`);
-  expect(took).toBeLessThan(6_000);
+  // The lifecycle ref is looked at every second while drawn, then a read:
+  // about 1.3 s here (#311 asks about 2).
+  expect(took).toBeLessThan(3_000);
   // The pane's attention follows the block's state: poll it, as it may
   // come a moment after the gate is drawn.
   await expect
@@ -168,8 +170,8 @@ test("a burst of edits in a member costs one full read, once it holds still (#31
   }
   // An agent at work in a member: the tree changes every second, faster
   // than the block polls (3 s), for ten seconds. No full read meanwhile.
-  // A tracked file: the fingerprint has its diff, where an untracked one
-  // is only its `??` line, which holds still after the first write.
+  // A tracked file (its diff is in the fingerprint; an untracked one's
+  // mtime and size are too).
   const file = join(ws, "app", "README.md");
   const seen = new Set<number>();
   for (let i = 0; i < 10; i++) {

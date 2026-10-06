@@ -12,7 +12,9 @@
 //! in a member) costs one read, not one per poll. A move of
 //! `chant/lifecycle` (a gate reached, a release) reads at once ([`next`]).
 //! The fingerprint is
-//! looked at every [`POLL`] while some client draws the block, and every
+//! looked at every [`POLL`] while some client draws the block (and on this
+//! host the lifecycle ref alone every [`REF_POLL`] in between, so a gate
+//! shows about a second and a read after `chant run` exits), and every
 //! [`IDLE_POLL`] when none does and the workspace is on this host, so a gate
 //! reached while nobody looks still reaches the swarm and push. Nothing
 //! here fetches.
@@ -83,6 +85,11 @@ use crate::{
 /// How often the fingerprint is looked at while drawn (a full read only
 /// when it changes).
 const POLL: Duration = Duration::from_secs(3);
+/// While drawn, on this host: how often just the `chant/lifecycle` ref is
+/// looked at ([`model::LIFECYCLE`], one `git rev-parse`) between full
+/// fingerprints, so a gate waits on this, not [`POLL`]. Not on a VM, where
+/// each look is an exec through its provider.
+const REF_POLL: Duration = Duration::from_secs(1);
 /// ...and while nobody draws it, for a workspace on this host.
 const IDLE_POLL: Duration = Duration::from_secs(5);
 /// ...and for one on a VM, while the VM runs.
@@ -329,6 +336,15 @@ impl Workspace {
         Some(String::from_utf8_lossy(&out).trim().to_owned())
     }
 
+    /// Whether the lifecycle ref is not what it was at the last read (one
+    /// `git rev-parse`; can't tell, and it hasn't).
+    async fn ref_moved(&self) -> bool {
+        let Ok(r) = self.runner().await else { return false };
+        let Ok((out, _)) = r.sh(model::LIFECYCLE, std::slice::from_ref(&self.config.root)).await else { return false };
+        let now = String::from_utf8_lossy(&out);
+        ref_moved(self.seen.lock().unwrap().as_deref(), now.trim())
+    }
+
     /// Reads again if the fingerprint moved and settled, or the lifecycle
     /// ref moved ([`next`]).
     async fn check(&self) {
@@ -351,13 +367,24 @@ impl Workspace {
         what
     }
 
-    /// While drawn: the fingerprint every [`POLL`], from the start.
+    /// While drawn: the fingerprint every [`POLL`], from the start, and on
+    /// this host the lifecycle ref every [`REF_POLL`] between ([`look`]).
     fn watch(&self, round: u64) {
         let Some(me) = self.me.upgrade() else { return };
         self.ctx.rt.spawn(async move {
+            let quick = me.local();
+            let mut tick = 0u32;
             while me.live.on(round) {
-                me.check().await;
-                tokio::time::sleep(POLL).await;
+                match look(tick, quick) {
+                    Look::Full => me.check().await,
+                    Look::Ref => {
+                        if me.ref_moved().await {
+                            me.check().await;
+                        }
+                    }
+                }
+                tick = tick.wrapping_add(1);
+                tokio::time::sleep(if quick { REF_POLL } else { POLL }).await;
             }
         });
     }
@@ -518,6 +545,29 @@ fn next(seen: Option<&str>, pending: Option<&str>, now: Option<&str>) -> Next {
         Some(n) if pending == Some(n) => Next::Read,
         Some(_) => Next::Wait,
     }
+}
+
+/// What a drawn block's poll looks at.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Look {
+    /// The whole fingerprint ([`Workspace::check`]).
+    Full,
+    /// Only the lifecycle ref; the whole fingerprint if it moved.
+    Ref,
+}
+
+/// The `tick`th poll of a drawn block, polled every [`REF_POLL`] when
+/// `quick` (on this host), else every [`POLL`]: the full fingerprint on the
+/// first and then once a [`POLL`], the lifecycle ref alone between.
+fn look(tick: u32, quick: bool) -> Look {
+    let every = (POLL.as_millis() / REF_POLL.as_millis()).max(1) as u32;
+    if !quick || tick.is_multiple_of(every) { Look::Full } else { Look::Ref }
+}
+
+/// Whether the lifecycle ref's word now differs from the one in the
+/// fingerprint at the last read. Nothing read yet: the next full look reads.
+fn ref_moved(seen: Option<&str>, now: &str) -> bool {
+    !now.is_empty() && seen.is_some_and(|s| lifecycle(Some(s)) != Some(now))
 }
 
 /// A VM workspace's idle looks: how many in a row found nothing changed,
@@ -686,7 +736,8 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        Next, Principals, VM_QUIET, VM_RESTING, VmIdle, env_name, envs, next, set_principals, vm_look, vm_looked,
+        Look, Next, POLL, Principals, REF_POLL, VM_QUIET, VM_RESTING, VmIdle, env_name, envs, look, next, ref_moved,
+        set_principals, vm_look, vm_looked,
     };
 
     /// A fingerprint: the lifecycle ref's word, then the tree's checksum.
@@ -743,6 +794,32 @@ mod tests {
         let mut polls: Vec<String> = (1..=4).map(|t| fp("aaa", t)).collect();
         polls.push(fp("bbb", 5));
         assert_eq!(reads(&fp("aaa", 0), &polls), 1);
+    }
+
+    #[test]
+    fn drawn_here_the_lifecycle_ref_is_looked_at_every_second_and_the_rest_every_poll() {
+        // On this host: a full fingerprint first and once a POLL, the ref
+        // alone the other ticks, so a gate waits at most REF_POLL to be seen
+        // while full looks are no more frequent than before.
+        let every = (POLL.as_millis() / REF_POLL.as_millis()) as u32;
+        assert!(REF_POLL <= std::time::Duration::from_secs(1) && every >= 3);
+        let ticks: Vec<Look> = (0..2 * every).map(|t| look(t, true)).collect();
+        assert_eq!(ticks.iter().filter(|l| **l == Look::Full).count(), 2);
+        assert_eq!(ticks[0], Look::Full);
+        assert_eq!(ticks[every as usize], Look::Full);
+        assert!(ticks[1..every as usize].iter().all(|l| *l == Look::Ref));
+        // On a VM: the full fingerprint every POLL, as before.
+        assert!((0..10).all(|t| look(t, false) == Look::Full));
+
+        // The quick look: a moved ref sends the poll to the full fingerprint
+        // (which then reads at once, as `next` says).
+        assert!(ref_moved(Some("aaa 1 2"), "bbb"));
+        assert!(ref_moved(Some("- 1 2"), "bbb"));
+        assert!(!ref_moved(Some("aaa 1 2"), "aaa"));
+        // Couldn't tell, or nothing read yet: leave it to the full look.
+        assert!(!ref_moved(Some("aaa 1 2"), ""));
+        assert!(!ref_moved(None, "aaa"));
+        assert_eq!(next(Some("aaa 1 2"), None, Some("bbb 1 2")), Next::Read);
     }
 
     #[test]

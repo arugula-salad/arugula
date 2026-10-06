@@ -118,10 +118,28 @@ function run(args) {
 /// shows at the next read for another reason; the block draws no leases.
 /// The diff is `diff-index` (plumbing): porcelain `git diff HEAD` refreshes
 /// and rewrites the index even with `GIT_OPTIONAL_LOCKS=0`.
+///
+/// Untracked files: `status` shows each only as its `??` line, and the diff
+/// leaves them out, so an edit inside one would move nothing. Their mtimes
+/// and sizes are in the checksum too (`ls-files -o`, which reads the index
+/// and never writes it, then `stat`: GNU/busybox `-c` with nanosecond
+/// mtimes, BSD `-f` on macOS, in one `xargs`), not their contents. Capped
+/// at the first 1000 files, so a large untracked tree (a build output
+/// nobody ignored) costs a bounded `stat`; an edit past the cap shows at
+/// the next read for another reason. The walk itself is the one `status`
+/// already does.
 pub const FINGERPRINT: &str = r#"cd "$1" 2>/dev/null || { echo gone; exit 0; }
 export GIT_OPTIONAL_LOCKS=0
 printf '%s ' "$(git rev-parse -q --verify refs/heads/chant/lifecycle 2>/dev/null || echo -)"
-{ git rev-parse -q --verify HEAD; git for-each-ref --format='%(objectname) %(refname)' refs/chant refs/heads/chant/work; git status --porcelain=v1; git diff-index -p HEAD --; } 2>/dev/null | cksum"#;
+if stat -c %s . >/dev/null 2>&1; then set -- -c '%y %s %n'; else set -- -f '%Fm %z %N'; fi
+{ git rev-parse -q --verify HEAD; git for-each-ref --format='%(objectname) %(refname)' refs/chant refs/heads/chant/work; git status --porcelain=v1; git diff-index -p HEAD --
+git ls-files -o --exclude-standard -z | tr '\0' '\n' | head -n 1000 | tr '\n' '\0' | xargs -0 stat "$@"; } 2>/dev/null | cksum"#;
+
+/// `sh -c LIFECYCLE sh ROOT`: just [`FINGERPRINT`]'s first word, the
+/// `chant/lifecycle` ref (one `git rev-parse`), for the block's quick look
+/// between full fingerprints.
+pub const LIFECYCLE: &str = r#"cd "$1" 2>/dev/null || { echo gone; exit 0; }
+git rev-parse -q --verify refs/heads/chant/lifecycle 2>/dev/null || echo -"#;
 
 /// What the block draws and `describe` returns.
 #[derive(Debug, Clone, Default, Serialize)]
@@ -924,6 +942,56 @@ mod tests {
         std::fs::write(dir.join("chant.workspace.json"), "{}").unwrap();
         print(&dir);
         assert_eq!(std::fs::metadata(dir.join(".git/index")).unwrap().modified().unwrap(), index);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_edit_inside_an_untracked_file_moves_the_fingerprint() {
+        // An untracked file was only its `??` line: editing it moved nothing.
+        let dir = std::env::temp_dir().join(format!("arugula-fp-untracked-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("member")).unwrap();
+        git(&dir, &["init", "-q", "-b", "main"]);
+        std::fs::write(dir.join("chant.workspace.json"), "{}").unwrap();
+        std::fs::write(dir.join(".gitignore"), "ignored/\n").unwrap();
+        git(&dir, &["add", "."]);
+        git(&dir, &["commit", "-q", "-m", "one"]);
+        let index = std::fs::metadata(dir.join(".git/index")).unwrap().modified().unwrap();
+        std::fs::write(dir.join("member/new file.ts"), "a").unwrap();
+        let first = print(&dir);
+        // Same `??` line, same size, new contents.
+        std::fs::write(dir.join("member/new file.ts"), "b").unwrap();
+        let edited = print(&dir);
+        assert_ne!(edited, first);
+        assert_eq!(print(&dir), edited);
+        // Ignored files stay out of it.
+        std::fs::create_dir_all(dir.join("ignored")).unwrap();
+        std::fs::write(dir.join("ignored/out.js"), "x").unwrap();
+        assert_eq!(print(&dir), edited);
+        // Still no index write, and the cap the comment states.
+        assert_eq!(std::fs::metadata(dir.join(".git/index")).unwrap().modified().unwrap(), index);
+        assert!(FINGERPRINT.contains("head -n 1000 "));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_quick_look_is_the_fingerprint_s_first_word() {
+        let lifecycle = |dir: &std::path::Path| {
+            let out = std::process::Command::new("sh").args(["-c", LIFECYCLE, "sh"]).arg(dir).output().unwrap();
+            String::from_utf8(out.stdout).unwrap().trim().to_owned()
+        };
+        let word = |dir: &std::path::Path| print(dir).split_whitespace().next().unwrap().to_owned();
+        let dir = std::env::temp_dir().join(format!("arugula-fp-ref-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!((lifecycle(&dir), word(&dir)), ("gone".to_owned(), "gone".to_owned()));
+        std::fs::create_dir_all(&dir).unwrap();
+        git(&dir, &["init", "-q", "-b", "main"]);
+        git(&dir, &["commit", "-q", "--allow-empty", "-m", "one"]);
+        assert_eq!(lifecycle(&dir), "-");
+        assert_eq!(lifecycle(&dir), word(&dir));
+        git(&dir, &["update-ref", "refs/heads/chant/lifecycle", "HEAD"]);
+        assert_ne!(lifecycle(&dir), "-");
+        assert_eq!(lifecycle(&dir), word(&dir));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
