@@ -290,6 +290,45 @@ async fn a_removed_machine_rejoins_only_with_a_new_key() {
     assert_eq!(post(join_body(&old, true)).await.unwrap().status(), 410);
 }
 
+/// #330: a removed machine is refused everywhere, so only its own
+/// account removes it, and nobody else's revocation keeps it out.
+#[tokio::test]
+async fn only_a_machines_own_account_removes_it() {
+    let c = control(|_| {}).await;
+    person(&c.app, "jake", "a1");
+    let mallory = person(&c.app, "mallory", "a2");
+    let box_a = daemon(&c.app, "a1", "geek");
+    let cookie = session(&c.app, "a2");
+    let revoke = |by: &DeviceKeys, id: &str| {
+        let rev = illogical_e2e::Revocation::new("a2", id, by);
+        let cookie = cookie.clone();
+        let c = &c;
+        async move { c.as_person(&cookie, "POST", "/api/revocations", Some(json!({ "revocation": rev }))).await }
+    };
+
+    // Mallory can't revoke Jake's machine by its fingerprint.
+    let (st, said) = revoke(&mallory, &box_a.id()).await;
+    assert_eq!(st, 403);
+    assert_eq!(said["error"], "that device isn't this account's");
+    assert_eq!(c.daemon_get(&box_a, "/api/daemon/trust").await.0, 200);
+
+    // Nor by making its public keys a device of her own and revoking that:
+    // it's out of her account, not refused anywhere else.
+    let mut planted = Cert::new(&box_a, "a2", Kind::Browser, "planted");
+    planted.sign_with(&mallory);
+    c.app.db.put_device(&planted, true, now_ms()).unwrap();
+    assert_eq!(revoke(&mallory, &box_a.id()).await.0, 200);
+    assert!(c.app.db.revoked(&box_a.id()).unwrap().is_none());
+    assert_eq!(c.daemon_get(&box_a, "/api/daemon/trust").await.0, 200);
+    let r = c.http.post(format!("{}/api/join", c.base)).json(&join_body(&box_a, true)).send().await.unwrap();
+    assert_eq!(r.status(), 200, "its holder still joins (to move it, say)");
+
+    // Her own machine she removes, and it's refused from then on.
+    let box_m = daemon(&c.app, "a2", "mbox");
+    assert_eq!(revoke(&mallory, &box_m.id()).await.0, 200);
+    assert_eq!(c.daemon_get(&box_m, "/api/daemon/trust").await.0, 410);
+}
+
 #[tokio::test]
 async fn the_cli_joins_with_a_code_and_then_signs_as_its_account() {
     let c = control(|_| {}).await;
@@ -339,10 +378,10 @@ async fn the_cli_joins_with_a_code_and_then_signs_as_its_account() {
     // It isn't a daemon, though.
     assert_eq!(c.daemon_get(&cli, "/api/daemon/trust").await.0, 401);
 
-    // Revoked, it's refused (Gone: its key was removed, #330).
+    // Revoked, it's refused.
     let rev = illogical_e2e::Revocation::new("a1", &cli.id(), &root);
     c.app.db.add_revocation(&rev).unwrap();
-    assert_eq!(c.daemon_get(&cli, "/api/directory").await.0, 410);
+    assert_eq!(c.daemon_get(&cli, "/api/directory").await.0, 401);
 }
 
 fn roster(team: &str, version: u64, members: Vec<Member>, by: &DeviceKeys) -> Roster {

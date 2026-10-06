@@ -296,12 +296,20 @@ pub async fn revoke(State(app): State<Arc<App>>, s: Session, Json(b): Json<Revok
     if signer.is_none() {
         return Err(err(StatusCode::FORBIDDEN, "that revocation doesn't check out"));
     }
-    app.db.add_revocation(&r)?;
-    nudge(&app, &s.account);
+    // Only its own: a revoked machine is refused everywhere (#330), so
+    // another account's isn't for this one to remove.
+    if !app.db.is_accounts(&s.account, &r.device)? {
+        return Err(err(StatusCode::FORBIDDEN, "that device isn't this account's"));
+    }
     // A revoked daemon leaves the directory and the relay.
     if app.db.daemon_account(&r.device)?.as_deref() == Some(s.account.as_str()) {
+        app.db.add_machine_revocation(&r)?;
+        nudge(&app, &s.account);
         app.db.drop_daemon(&r.device)?;
         app.relay.drop_daemon(&r.device);
+    } else {
+        app.db.add_revocation(&r)?;
+        nudge(&app, &s.account);
     }
     Ok(Json(json!({})))
 }
