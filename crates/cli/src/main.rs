@@ -94,11 +94,10 @@ enum Command {
         /// Split this pane instead of opening a tab.
         #[arg(long)]
         split: Option<Pane>,
-        /// With --split: run where that pane runs (its VM tab's machine, or
-        /// the sandbox it has a shell on) instead of this host.
+        /// With --split: run where that pane runs instead of this host.
         #[arg(long, requires = "split")]
         join: bool,
-        /// Where it starts (with --join, or on a VM: a directory there).
+        /// Where it starts (with --join: a directory there).
         #[arg(long)]
         cwd: Option<String>,
         /// After a restart: shell, none, rerun, rerun-ask, or hook:COMMAND.
@@ -109,19 +108,19 @@ enum Command {
         wait: bool,
         /// On a new throwaway VM, deleted when the pane closes. Without a
         /// command: a shell on one.
-        #[arg(long)]
+        #[arg(long, hide = true)]
         vm: bool,
         /// In a new tab whose panes share one throwaway VM (splits join it),
         /// deleted when the tab closes.
-        #[arg(long, conflicts_with_all = ["vm", "split"])]
+        #[arg(long, hide = true, conflicts_with_all = ["vm", "split"])]
         vm_tab: bool,
         /// The VM's image (with --vm or --vm-tab).
-        #[arg(long)]
+        #[arg(long, hide = true)]
         image: Option<String>,
         /// On a sandbox that exists (`illogical sandboxes`), over a plain
         /// exec with no daemon there: disposable, and the sandbox stays
         /// when the pane closes. Without a command: a shell.
-        #[arg(long, conflicts_with_all = ["vm", "vm_tab", "image"])]
+        #[arg(long, hide = true, conflicts_with_all = ["vm", "vm_tab", "image"])]
         sandbox: Option<String>,
         /// With --host: run it on that host but put it in this daemon's
         /// layout (a tab here, or beside --split, a pane here), as a remote
@@ -130,15 +129,15 @@ enum Command {
         home: bool,
         /// One argument is a shell command line (`'make && ./app'`);
         /// several are a program and its arguments, quoted as given. None
-        /// (with --cwd, --join, --home or a VM): a shell.
+        /// (with --cwd, --join or --home): a shell.
         #[arg(trailing_var_arg = true, required_unless_present_any = ["vm", "vm_tab", "sandbox", "join", "cwd", "home"])]
         command: Vec<String>,
     },
     /// Machines that panes run on (VM panes).
+    #[command(hide = true)]
     Machines,
     /// Files on a host, read-only: `ls`, `stat`, `cat`, `watch`, `recent`.
-    /// `%N:PATH` is on the host pane %N runs on (its VM), `mN:PATH` on
-    /// machine N.
+    /// `%N:PATH` is on the host pane %N runs on, `mN:PATH` on machine N.
     Fs {
         #[command(subcommand)]
         cmd: fs::FsCmd,
@@ -174,12 +173,11 @@ enum Command {
         /// `:PORT[/path]`, or a URL.
         target: String,
         /// Split a block instead of opening a tab: `right` for the one this
-        /// runs in, or `%N`. In a VM tab the block is on the tab's machine.
+        /// runs in, or `%N`.
         #[arg(long)]
         split: Option<String>,
-        /// The machine whose port it is: `mN` (see `illogical machines`), or
-        /// `local` for this host [default: the VM tab's, when splitting
-        /// there; else this host]. (`--host` is another daemon.)
+        /// The machine whose port it is: `mN`, or `local` for this host
+        /// [default: this host]. (`--host` is another daemon.)
         #[arg(long)]
         machine: Option<String>,
         #[arg(long)]
@@ -244,6 +242,7 @@ enum Command {
     /// for a person, which are attention you approve (`call %N approve`).
     /// Read through the workspace's own chant. Prints the block, then its
     /// members and gates.
+    #[command(hide = true)]
     Workspace {
         /// The workspace root, holding chant.workspace.json [default: here].
         dir: Option<String>,
@@ -286,7 +285,7 @@ enum Command {
     /// list. `fountain agents [QUERY]` lists them here without a block.
     /// `fountain --view runner` (M45b): this host as the account's runner
     /// instead, with its sandboxes (Follow, Changes, Shell).
-    #[command(args_conflicts_with_subcommands = true)]
+    #[command(args_conflicts_with_subcommands = true, hide = true)]
     Fountain {
         #[command(subcommand)]
         cmd: Option<FountainCmd>,
@@ -342,12 +341,14 @@ enum Command {
     /// Your studio (M35: arugula-salad's): `login URL` keeps a studio
     /// token in the daemon (read from stdin), `logout` forgets it, and
     /// `follower APP` keeps a hud follower link for an app's box.
+    #[command(hide = true)]
     Studio {
         #[command(subcommand)]
         cmd: Option<StudioCmd>,
     },
     /// Open a studio app's box as a block (M35); prints its block. With no
     /// name, lists your apps.
+    #[command(hide = true)]
     App {
         /// The app's name in studio.
         name: Option<String>,
@@ -400,18 +401,18 @@ enum Command {
         #[arg(long, conflicts_with_all = ["fountain", "codex"])]
         acp: Option<String>,
         /// A Fountain agent (name or id), run in Fountain's sandbox.
-        #[arg(long, conflicts_with = "codex")]
+        #[arg(long, hide = true, conflicts_with = "codex")]
         fountain: Option<String>,
         /// Claude Code wearing a Fountain agent (name or id), on this host:
         /// its system prompt, skills and MCP servers (M44).
-        #[arg(long = "as", value_name = "AGENT", conflicts_with_all = ["acp", "fountain", "codex", "vm", "machine"])]
+        #[arg(long = "as", value_name = "AGENT", hide = true, conflicts_with_all = ["acp", "fountain", "codex", "vm", "machine"])]
         as_fountain: Option<String>,
         /// Codex instead of Claude Code.
         #[arg(long)]
         codex: bool,
         /// Fountain: a vault for its secrets (with `--as`: whose agent-specs
         /// mapping its `${VAR}`s go through, over its environment's).
-        #[arg(long)]
+        #[arg(long, hide = true)]
         vault: Option<String>,
         /// A model to switch to (e.g. `haiku`).
         #[arg(long)]
@@ -433,7 +434,7 @@ enum Command {
         #[arg(long, conflicts_with_all = ["acp", "fountain", "codex"])]
         user_settings: bool,
         /// On a new throwaway VM of its own.
-        #[arg(long, conflicts_with = "machine")]
+        #[arg(long, hide = true, conflicts_with = "machine")]
         vm: bool,
         /// On this existing machine (`m3` or `3`). (`--host` is another
         /// daemon.)
@@ -679,43 +680,37 @@ enum Command {
     },
     /// A read-only link to a pane: whoever opens it on the tailnet sees it
     /// live and can't type, resize or see anything else.
-    ///
-    /// With --guest: an invite for someone with only OpenSSH. It prints an
-    /// `ssh` command to send them, with this machine's host key pinned.
-    /// Read-only unless --rw; one login unless --reusable. A machine joined
-    /// to control with no --addr (or --guest-ssh-host) is reached through
-    /// control's ssh jump host, so a box behind NAT works too.
     Share {
         pane: Option<Pane>,
-        /// How long it works (e.g. 30m, 2h, 7d; a week at most, a day with
-        /// --guest, two hours with --rw).
+        /// How long it works (e.g. 30m, 2h, 7d; a week at most).
         #[arg(long, default_value = "1h")]
         ttl: String,
         /// An ssh invite instead of a link (M65). (`--ssh` is taken: it
         /// reaches a box over ssh, so `--ssh box share --guest` makes an
         /// invite there.)
-        #[arg(long)]
+        #[arg(long, hide = true)]
         guest: bool,
         /// They may type, when nobody else is driving the pane.
-        #[arg(long, requires = "guest")]
+        #[arg(long, hide = true, requires = "guest")]
         rw: bool,
         /// Good for any number of logins until it ends.
-        #[arg(long, requires = "guest")]
+        #[arg(long, hide = true, requires = "guest")]
         reusable: bool,
         /// What to call them on their input [default: guest].
-        #[arg(long, requires = "guest")]
+        #[arg(long, hide = true, requires = "guest")]
         name: Option<String>,
         /// The address they should ssh to [default: the daemon's
         /// --guest-ssh-host, else its hostname]. Not through control.
-        #[arg(long = "addr", requires = "guest", conflicts_with = "relay")]
+        #[arg(long = "addr", hide = true, requires = "guest", conflicts_with = "relay")]
         addr: Option<String>,
         /// Through control's ssh jump host, or fail [default: when this
         /// machine is joined to control and no address is set].
-        #[arg(long, requires = "guest")]
+        #[arg(long, hide = true, requires = "guest")]
         relay: bool,
     },
     /// ssh invites that still work (`share --guest`); `guests revoke ID` ends
     /// one and cuts off anyone using it.
+    #[command(hide = true)]
     Guests {
         #[command(subcommand)]
         cmd: Option<SharesCmd>,
@@ -745,8 +740,7 @@ enum Command {
         #[arg(long)]
         print: bool,
     },
-    /// Install the daemon: `illogicald install` with these arguments (e.g.
-    /// `--tailnet file:KEY --home URL --join TOKEN` in a sandbox).
+    /// Install the daemon: `illogicald install` with these arguments.
     Install {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
@@ -804,6 +798,7 @@ enum Command {
     },
     /// The sandbox provider's sandboxes (this daemon's): open a shell on
     /// one (`run --sandbox`), or make a daemon resident there.
+    #[command(hide = true)]
     Sandboxes {
         #[command(subcommand)]
         cmd: Option<hosts::SandboxesCmd>,
@@ -3325,5 +3320,40 @@ mod tests {
         assert!(super::Cli::try_parse_from(["illogical", "agent", "--vm", "--machine", "m3"]).is_err());
         assert!(super::looks_like_machine("m2") && super::looks_like_machine("local"));
         assert!(!super::looks_like_machine("box"));
+    }
+
+    /// What a newcomer can't use stays out of the help, and still works for
+    /// anyone who knows the command.
+    #[test]
+    fn what_a_stranger_cant_use_is_hidden_but_there() {
+        use clap::{CommandFactory, Parser};
+        let mut root = super::Cli::command();
+        let listed = root.render_long_help().to_string();
+        let listed: Vec<&str> =
+            listed.lines().filter_map(|l| l.strip_prefix("  ")?.split_whitespace().next()).collect();
+        for hidden in ["fountain", "studio", "app", "workspace", "guests", "machines", "sandboxes"] {
+            assert!(root.find_subcommand(hidden).unwrap().is_hide_set(), "{hidden} isn't hidden");
+            assert!(!listed.contains(&hidden), "{hidden} is in `illogical --help`");
+            // Asking for it by name still gives its help.
+            let e = super::Cli::try_parse_from(["illogical", hidden, "--help"]).err().expect("help is an early exit");
+            assert_eq!(e.kind(), clap::error::ErrorKind::DisplayHelp, "{hidden}");
+        }
+        assert!(listed.contains(&"run") && listed.contains(&"pr"), "{listed:?}");
+        // Options: out of the subcommand's help, still parsed.
+        for (cmd, opts) in [
+            ("agent", &["fountain", "as_fountain", "vault", "vm"][..]),
+            ("run", &["vm", "vm_tab", "image", "sandbox"][..]),
+            ("share", &["guest", "rw", "reusable", "relay", "addr", "name"][..]),
+        ] {
+            let sub = root.find_subcommand(cmd).unwrap();
+            for o in opts {
+                let arg = sub.get_arguments().find(|a| a.get_id() == o).unwrap_or_else(|| panic!("{cmd} has no {o}"));
+                assert!(arg.is_hide_set(), "{cmd} {o} isn't hidden");
+            }
+        }
+        assert!(super::Cli::try_parse_from(["illogical", "agent", "--fountain", "x", "hi"]).is_ok());
+        assert!(super::Cli::try_parse_from(["illogical", "run", "--vm", "--", "make"]).is_ok());
+        assert!(super::Cli::try_parse_from(["illogical", "share", "--guest", "--rw", "%3"]).is_ok());
+        assert!(super::Cli::try_parse_from(["illogical", "guests"]).is_ok());
     }
 }

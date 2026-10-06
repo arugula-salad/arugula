@@ -101,8 +101,7 @@ panes leave their screens within a second. *Unlock* lets them back in.
 - **On your own machine, a pane runs as you.** A teammate who wants to
   type in one (or answer its agent) asks first, and you get *{name} asks
   to drive %N* with how long: 10 minutes, 30 minutes or 2 hours. Until
-  then they can work in throwaway VM tabs of their own (Linux, with wisp;
-  see [advanced.md](advanced.md)).
+  then they can't type in it.
 - **On a team machine** nobody's OK is needed: members drive it by their
   role.
 - **Private panes:** *Private (only you see it)* in a pane's menu keeps it

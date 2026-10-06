@@ -104,7 +104,7 @@ enum Command {
     /// a Mac with no GUI login (reached over ssh) the agent runs in the
     /// background session: it outlives the ssh login but not a reboot;
     /// --system starts it at boot instead.
-    /// With --tailnet (sandboxes, no systemd): joins the tailnet with a
+    /// With --tailnet (no systemd): joins the tailnet with a
     /// userspace tailscaled and runs the daemon there, both kept running by
     /// `illogicald sandbox`.
     Install {
@@ -261,17 +261,17 @@ struct RunArgs {
 
     /// How many VMs each guest (someone a session is shared with) may have
     /// at once; their panes run on VMs, never this machine.
-    #[arg(long, default_value_t = 3, env = "ILLOGICAL_GUEST_MACHINES")]
+    #[arg(long, default_value_t = 3, env = "ILLOGICAL_GUEST_MACHINES", hide = true)]
     guest_machines: usize,
 
     /// Where the ssh server for invited guests listens (M65: `illogical
     /// share --guest`), only while an invite exists; `off` turns the feature
     /// off. Port 0 picks a free one.
-    #[arg(long, env = "ILLOGICAL_GUEST_SSH", default_value = guest_ssh::DEFAULT_LISTEN)]
+    #[arg(long, env = "ILLOGICAL_GUEST_SSH", default_value = guest_ssh::DEFAULT_LISTEN, hide = true)]
     guest_ssh: String,
 
     /// The address guests are told to ssh to [default: the hostname].
-    #[arg(long, env = "ILLOGICAL_GUEST_SSH_HOST")]
+    #[arg(long, env = "ILLOGICAL_GUEST_SSH_HOST", hide = true)]
     guest_ssh_host: Option<String>,
 
     /// Command line for panes, split on whitespace [default: $SHELL -l].
@@ -299,36 +299,36 @@ struct RunArgs {
     #[arg(long)]
     no_shell_integration: bool,
     /// The wispd that VM panes get their machines from.
-    #[arg(long, env = "ILLOGICAL_WISP_URL", default_value = "http://127.0.0.1:7788")]
+    #[arg(long, env = "ILLOGICAL_WISP_URL", default_value = "http://127.0.0.1:7788", hide = true)]
     wisp_url: String,
     /// Its API token. VM panes are off without one. Default:
     /// `$XDG_DATA_HOME/wisp/token`.
-    #[arg(long, env = "ILLOGICAL_WISP_TOKEN_FILE")]
+    #[arg(long, env = "ILLOGICAL_WISP_TOKEN_FILE", hide = true)]
     wisp_token_file: Option<PathBuf>,
     /// Where the static binaries (`just static`) to copy into a sandbox
     /// are, when making a daemon resident there [default:
     /// $XDG_DATA_HOME/illogical/static].
-    #[arg(long, env = "ILLOGICAL_STATIC_DIR")]
+    #[arg(long, env = "ILLOGICAL_STATIC_DIR", hide = true)]
     static_dir: Option<PathBuf>,
     /// A resident daemon in a sandbox (set when it's made resident): the
     /// SHA-256 of the token the home daemon's tunnel presents. Connections
     /// from this machine (the provider's proxy arrives on loopback) need
     /// it; the Unix socket doesn't.
-    #[arg(long, value_name = "HEX")]
+    #[arg(long, value_name = "HEX", hide = true)]
     provider_token_sha256: Option<String>,
     /// An Anthropic API key for Claude Code agents in VMs, passed to them as
     /// ANTHROPIC_API_KEY [default: ~/.config/illogical/anthropic-key].
-    #[arg(long, env = "ILLOGICAL_ANTHROPIC_KEY_FILE")]
+    #[arg(long, env = "ILLOGICAL_ANTHROPIC_KEY_FILE", hide = true)]
     anthropic_key_file: Option<PathBuf>,
     /// A Claude Code token (`claude setup-token`) for agents in VMs when
     /// there's no API key, passed as CLAUDE_CODE_OAUTH_TOKEN [default:
     /// ~/.config/illogical/claude-oauth-token].
-    #[arg(long, env = "ILLOGICAL_CLAUDE_TOKEN_FILE")]
+    #[arg(long, env = "ILLOGICAL_CLAUDE_TOKEN_FILE", hide = true)]
     claude_token_file: Option<PathBuf>,
     /// Where the studio token is kept (M35: `illogical studio login`),
     /// mode 0600, never sent to a client [default: studio.json in the
     /// state directory].
-    #[arg(long, env = "ILLOGICAL_STUDIO_FILE")]
+    #[arg(long, env = "ILLOGICAL_STUDIO_FILE", hide = true)]
     studio_file: Option<PathBuf>,
     /// Don't be Claude Code's IDE (M28). By default Claude Code in a pane
     /// connects to illogicald (`CLAUDE_CODE_SSE_PORT`) and its edits wait

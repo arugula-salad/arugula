@@ -84,29 +84,6 @@ the daemon stopping, crashing, or the machine rebooting:
     second.
 - **History.** Closed panes' output is kept for 7 days, and `illogical
   history` / `search` look across all panes.
-- **VM tabs and panes** (M3b, M3c). *New VM tab* (the `+` button's
-  right-click, the tab and session menus, the phone's sheet) or `illogical
-  run --vm-tab` opens a tab with its own throwaway Firecracker microVM, a
-  wisp sprite on this host. Splits in it join the VM, so a shell and
-  `claude` side by side see the same files; *Split (local)* adds a shell on
-  this host instead (badged `local`). Panes on the tab's VM can't be
-  dragged out of it (local ones can). The tab's menu can start a new pane
-  on the VM or reset it (delete and recreate it; the panes restart by
-  policy), and closing the tab deletes it. *New VM pane on the right* or
-  `illogical run --vm` gives one pane a VM of its own, deleted with the
-  pane; *Share machine with tab* hands it to the tab. It's for agents and
-  untrusted builds.
-  Its shell gets the same integration (marks, `wait`, history), `process`
-  asks the VM, and the output is logged here, so `illogical tail` still has
-  the session after the VM is gone. Restarting the daemon reattaches to the
-  VM's shell without losing or repeating output. If the VM is deleted from
-  under a pane, Enter starts a new one; after a reboot, each VM comes back
-  as one fresh VM (one per tab, not per pane) and its panes restore by
-  policy. Needs wispd's token at `~/.local/share/wisp/token`
-  (`--wisp-url`, `--wisp-token-file`); without it VM panes are off. The
-  base image is plain Ubuntu 24.04: install what you need, e.g. Claude Code
-  with `curl -fsSL https://claude.ai/install.sh | bash`.
-
 - **Blocks** (M6, in progress). A pane is one kind of block; every kind
   shares the layout, ids, attention, `describe` and `call`. The first other
   kind is a browser block for ordinary pages: *Open a web page…* in the pane
@@ -114,14 +91,12 @@ the daemon stopping, crashing, or the machine rebooting:
   a card with "open in new tab". Block directories are `blocks/<id>/` in
   the state directory (`panes/` before; it's moved, and left as a link).
 
-- **Browser blocks on ports** (M6a). Run `npm run dev` in a VM tab, then
-  *Open a port on this machine…* (pane menu), *Open a port on machine…*
-  (tab menu), *Open port* (phone sheet) or `illogical open --split right
+- **Browser blocks on ports** (M6a). Run `npm run dev` in a pane, then
+  *Open a port…* (pane menu), *Open port* (phone sheet) or `illogical open --split right
   :5173` puts the app beside it, hot reload and all. A block opened from a
-  pane shows that pane's machine's port (or this host's). Each block is
+  pane shows that pane's machine's port. Each block is
   served on an origin of its own, `https://b-<id>.illogical.example.com:7443`
-  for example, by the daemon, which proxies it to the port (through the Sprites
-  proxy for a VM). The dev server needs no config: the proxy rewrites
+  for example, by the daemon, which proxies it to the port. The dev server needs no config: the proxy rewrites
   `Host` and `Origin` to `localhost:<port>`, and since that switches off the
   server's own guards, the proxy enforces its own: only you (asked of
   tailscaled), only the block's own origin, nothing cross-site but page
@@ -136,8 +111,7 @@ the daemon stopping, crashing, or the machine rebooting:
   tile's right-click in the swarm, or *Edit* on a card), or `illogical edit
   [PATH[:LINE]]`. A folder opens as itself, a file in its project (its git
   repository) at its line.
-  - One server per machine, shared by every editor block there: this host,
-    or the VM tab's machine (a sprite service there). It starts when a block
+  - One server per machine, shared by every editor block there. It starts when a block
     needs it, stops after 15 minutes with nothing open (`--editor-idle`), and
     starts again when someone looks.
   - It has no auth of its own. On this host it listens on a 0600 Unix
@@ -156,13 +130,11 @@ the daemon stopping, crashing, or the machine rebooting:
     lines. It's the same extension as for your own VS Code (M28, below), so
     a block can be followed and its debugger's stops are cards too. After a
     daemon restart the window reconnects to the same session; after a
-    reboot the block asks the new server for the file it had. In a VM it
-    opens the file it was opened on and doesn't follow the cursor (the
-    extension can't reach the daemon from there).
+    reboot the block asks the new server for the file it had.
 - **Changes: diff and file blocks** (M11). For checking what an agent
   did, from anywhere and especially the phone. *Changes* (a pane's or a
   tab's menu, the phone's sheet, a swarm tile with a project) opens a diff
-  block beside the pane, on its machine (a VM tab's too), for its git
+  block beside the pane, on its machine, for its git
   repository: a list of changed files with +/− first (staged, unstaged and
   untracked against HEAD; or one revision against the working tree; or a
   range). Tap a file for its unified hunks, highlighted; tap a line to
@@ -171,8 +143,8 @@ the daemon stopping, crashing, or the machine rebooting:
   from a shell, `show_changes` and `show_file` from MCP, and *Open file*
   on an agent's tool call opens the file it touched.
   - **Live while looked at.** Both follow the files as they change (every
-    second here, every 3 seconds on a VM), but only while some client
-    draws them; with nobody looking they stop, so a VM can sleep, and
+    second), but only while some client
+    draws them; with nobody looking they stop, and
     catch up when someone looks again. The file block keeps its mark on
     the same line of text when lines above it change.
   - **Read-only.** Nothing in them edits or reverts. What they show is in
@@ -181,40 +153,9 @@ the daemon stopping, crashing, or the machine rebooting:
     file block at another file, or opening one, is the owner's.
   - **Caps.** A file's diff over 256 KB shows as too big (open the file),
     a binary file as binary; a file block shows the first 1 MiB. `git`
-    runs on the block's host (through the provider on a VM) and never
+    runs on the block's host and never
     takes the repository's lock. `capture --text` is the unified diff, or
     the file.
-- **chant workspaces** (M34). A [chant](https://intentius.io/chant)
-  workspace (a directory with a `chant.workspace.json`) as a block:
-  `illogical workspace [DIR] [--env E]`, *Open as workspace* in a pane's
-  menu or the directory picker when the directory holds one, or
-  `open_workspace` from MCP. It shows the gates waiting for a person first,
-  then a card per member (its kind, why chant doesn't read it, errors and
-  warnings from `check`, releases, gates), then the records with what
-  blocks them and pin drift.
-  - **Members.** *Shell*, *Agent* and *Changes* open a terminal, a Claude
-    Code agent block or a diff block in the member's directory, beside the
-    workspace. A nested workspace's *Open* opens it as a block of its own.
-  - **Gates are attention.** An op stopped at a gate (`chant run` exits 3)
-    is `needs_input`: "delivery: ship waits at gate approve-ship". It's a
-    card on the swarm's rail (one per workspace), first in the phone's
-    *Needs you* list, and a push notification. *Approve* there or on the
-    block runs `chant approve <op> <gate> --approver <you>` in the member's
-    directory, so chant's ledger says who: the owner by their illogical
-    name, an editor by theirs. A shared session's viewers see the gate and
-    can't approve it. *Run op* opens a pane running `chant run <op>`, which
-    walks through once the gate is approved. Approvals are in the block's
-    history (`illogical history`) and the audit log, with who.
-  - **Read through chant.** The block runs the workspace's own chant
-    (`$CHANT`, else `node_modules/.bin` there or in a parent, else `PATH`,
-    with your shell's environment) for `workspace ls`, `check`, `records`
-    and `status`, and says so when there's none ("run npm install"). A
-    read costs a few CPU-seconds, so it reads on open, on *Refresh* and
-    after an approval, and otherwise only when git says something changed
-    (HEAD, `chant/lifecycle`, the working tree): every 3 seconds while
-    it's drawn, every 5 when it isn't (on this host; on a VM only while
-    drawn). It never fetches, so a gate reached in CI shows once someone
-    fetches `chant/lifecycle`. `illogical call %N approve|refresh|member|state`.
 - **Your editor in the swarm** (M28). VS Code, Cursor or nvim on any of
   your machines shows up in the swarm beside your panes: a tile of kind
   editor in its project, with its file, its errors and unsaved files, and
@@ -270,8 +211,8 @@ the daemon stopping, crashing, or the machine rebooting:
   enough for a thumb, and actions on the push notification), a composer,
   Stop, and cost per turn. The block is an
   [ACP](https://agentclientprotocol.com) client, so one block type drives
-  Claude Code (`claude-agent-acp`), Codex (`codex-acp`), a Fountain agent
-  (`fountain acp`, in Fountain's sandbox) or any ACP agent server. Start
+  Claude Code (`claude-agent-acp`), Codex (`codex-acp`) or any ACP agent
+  server. Start
   one from *Start an agent…* in the pane menu, *New agent* in the phone's
   sheet, or `illogical agent`.
   - *Always* is remembered by the block (in its config) and answered by
@@ -296,8 +237,7 @@ the daemon stopping, crashing, or the machine rebooting:
     FD store, so restarting the daemon mid-turn (even with an approval
     open) doesn't touch it. After a reboot the session reopens with
     `session/resume` (or `session/load`), unless the policy is `none` or
-    `rerun-ask` (then *Resume*). A Fountain turn that ran on while nothing
-    followed it shows "running on Fountain" and appears when it ends.
+    `rerun-ask` (then *Resume*).
   - The adapters, pinned, go in `~/.local/share/illogical/agents/`. When
     one isn't installed (or there's no Node 20+), *Start an agent…* and
     the block say so, with the command to copy and *Install*, which runs
@@ -324,20 +264,8 @@ the daemon stopping, crashing, or the machine rebooting:
     (`question_<n>_custom` is "Other"; a multi-select takes a list), and
     `call %N decline` skips. The question and the answer are in the
     transcript, `history` and `search`. `illogical agent --mcp
-    'NAME=COMMAND'` gives the session an MCP server. Fountain agents can't
-    ask (Fountain doesn't pass questions on, so they ask in plain text),
-    and Codex only asks this way in its plan mode.
-  - **In a VM** (`--vm`, or the dialog's checkbox) the agent server runs
-    over a non-TTY exec on the block's own machine; its first start
-    installs Node and the adapter there (about 15s). Claude Code there
-    needs credentials: a token from `claude setup-token` in
-    `~/.config/illogical/claude-oauth-token` (given to it as
-    `CLAUDE_CODE_OAUTH_TOKEN`), or an API key in
-    `~/.config/illogical/anthropic-key` (`ANTHROPIC_API_KEY`, used first);
-    `--claude-token-file` and `--anthropic-key-file` move them. They reach
-    the agent on its stdin, into its environment only: never the VM's
-    disk, a URL, an argv, the log or the layout. A VM agent survives a
-    daemon restart (its exec session lives on wisp).
+    'NAME=COMMAND'` gives the session an MCP server. Codex only asks this way
+    in its plan mode.
 
 - **Claude Code conversations** (M33). Every Claude Code conversation on
   the daemon's machine, from a terminal or the desktop app's Code tab, can
@@ -374,8 +302,7 @@ the daemon stopping, crashing, or the machine rebooting:
   - **Every host's** (#78): with more than one host, the picker lists
     each host's conversations under its name, then by folder, asking them
     all at once over the fleet's connections and showing each as it
-    answers. A sandbox that's asleep isn't woken to be asked, and a host
-    that doesn't answer in 5 s says so. Picking another host's opens it
+    answers. A host that doesn't answer in 5 s says so. Picking another host's opens it
     on that host and shows it there, where it continues.
     `illogical claude ls --host all` does the same in a terminal;
     `illogical --host NAME claude open ID` opens one there.
@@ -388,71 +315,10 @@ the daemon stopping, crashing, or the machine rebooting:
     processes, with no systemd scopes needed. The desktop app's own
     records (title, archived) are read from `~/Library/Application
     Support/Claude/claude-code-sessions/` (`~/.config/Claude/` on Linux).
-    Not yet checked on a Mac: that folder and its fields (jake-mini's app
-    hadn't run a Code tab session, so there's none), and whether the app
+    Not yet checked on a Mac: that folder and its fields, and whether the app
     deletes a scratch workspace with its session there as on Linux. Its
     Cowork sessions (`local-agent-mode-sessions/`) keep their transcripts
-    inside their VM, not in `~/.claude/projects`, so they aren't listed.
-
-- **Studio apps** (M35). An app box from your studio (arugula-salad's) as
-  a block: the app in a frame, and its agent's questions as asks you
-  answer in illogical.
-  - **Your studio.** `illogical studio login https://studio.example` keeps
-    a studio token in the daemon (read from stdin; in `studio.json` in the
-    state directory, mode 0600, or `--studio-file`). It's never sent to a
-    client. `illogical studio logout` forgets it.
-  - **Opening one.** *Open a studio app…* (a pane's menu, the `+` button's
-    menu; *Studio apps* in the phone's sheet), `illogical app NAME`
-    (`illogical app` lists them) or MCP's `open_app`. The block keeps the
-    box's address, the app's name and the studio, nothing else.
-  - **Getting in.** Each time a client draws the block, the daemon mints a
-    fresh ten-minute entry link from studio and the frame goes through it.
-    After that the box's own cookie carries the frame. The link is never
-    kept: not in the block's config, its log, the frame's address or the
-    page's storage. ↻ gets a new one; *Records* opens hud's Decisions,
-    Work, Intent or Sessions in the frame the same way. Only the owner may
-    get in: a link signs in as them. It needs the box's door to hand out
-    hud's session as a partitioned cookie (`SameSite=None; Secure;
-    Partitioned`), or the framed box says "You need a link".
-  - **Questions.** The daemon follows hud in the box itself (its own
-    session, minted the same way, kept in memory only). When the box's
-    agent waits on a question, it's a card on the block ("hud asks") and
-    an `ask` on the swarm's rail, bundled by the app. The answer goes back
-    to hud as the option picked. Answered in hud's own panel, interrupted
-    or expired, the card goes. With several tabs asking, one card shows at
-    a time. *Skip* closes the card and leaves the question to hud.
-  - **Prompts.** Sending to the block prompts the box's agent through the
-    daemon's hud session, for scripts and agents: `illogical call %N send
-    '{"text":"…"}'` or MCP's `send_input`. (In a browser, hud's own
-    composer is in the frame.) It goes to the box's first tab unless you
-    name another by title or chat key (`"tab":"Main"`, `send_input`'s
-    `tab`). hud queues it behind a running turn and says where it is in
-    the queue. Refusals come back as hud gave them: an unknown tab, a full
-    queue, or the box's turn budget. The block's history says who prompted
-    which tab. hud has no `onBehalfOf` for prompts, so in hud's chat the
-    prompt is the session's (the box's owner, or the follower).
-  - **Gates.** A release or op waiting at a chant gate in the box is
-    attention, the same as a workspace block's: the block lists it with
-    *Approve*, and it's a `gate` card on the swarm's rail and in the
-    phone's sheet. They come from hud's work board, read again each time
-    hud's live feed says something changed, never on a timer. *Approve*
-    goes to hud, which approves it only if `workspace status` still lists
-    it as pending. The card stays until hud's board drops the gate; if hud
-    refuses, the card says why.
-  - **Who answered.** Viewers can't answer or approve; editors and the
-    owner can. hud records whoever its session belongs to (the box's
-    owner). With a follower credential (`hud share --role follower` in the
-    box, kept with `illogical studio follower APP`; every block of that app
-    then uses it), answers and approvals also name who clicked
-    (`onBehalfOf`), and chant's ledger gets that name. hud takes names of
-    at most 32 letters, digits, spaces and `-_.'`: an email address goes
-    as its local part, other characters as `-`, and `owner` isn't sent.
-    That needs hud's trusted-follower change.
-  - **After a restart** the block comes back and mints again.
-  - **Not yet:** an "Other" answer (hud only takes one of its options).
-  - Any browser block takes questions too: `POST /api/panes/%N/ask` with
-    `source` and `agent` (who asks), for something that follows a page's
-    agent from outside.
+    elsewhere, not in `~/.claude/projects`, so they aren't listed.
 
 - **Pull requests** (M36, Forgejo; M38, GitHub; M39, GitLab). A PR as a block beside the work on
   it: its checks, reviews and timeline, and what it waits on you for.
@@ -554,7 +420,7 @@ the daemon stopping, crashing, or the machine rebooting:
       live updates* removes the webhook. An agent's `live` is a draft, like
       any other write to the forge. The forge must reach the daemon over
       the tailnet; a hook that goes quiet just means polling again.
-  - **A box with no `gh` login** (a hosted sandbox) joined to control
+  - **A box with no `gh` login** joined to control
     reads GitHub through control's App: a read-only token for that one
     repository, held in memory until a minute before it expires. Who you
     are comes from your control sign-in, so a review asked of you still
@@ -597,162 +463,6 @@ the daemon stopping, crashing, or the machine rebooting:
     Comments on issues (`issue_comment`, `illogical issue comment %N`) are
     drafts from agents too, as on a PR.
 
-- **Fountain agents** (M43). The agents on your Fountain account as a
-  catalog block: a card each, filters, and ways to run one.
-  - **Opening it.** *Fountain agents…* (a pane's menu, the `+` button's
-    menu; *Fountain agents* in the phone's sheet), `illogical fountain`
-    (`-q WORDS`, `--source agent-specs`, `--profile P`), or MCP's
-    `open_fountain`. `illogical fountain agents [WORDS]` lists them in the
-    terminal without a block.
-  - **Your login.** It reads with your own `fountain` CLI login, on this
-    host with your shell's environment: `FOUNTAIN_API_KEY` (and
-    `FOUNTAIN_BASE_URL`), else the profile's `api_key` and `base_url` in
-    `~/.fountain/credentials` (`FOUNTAIN_PROFILE`, else `default`; the
-    block's owner can pick another). The key is held in memory only. A host
-    with no login says so on the block.
-  - **The cards.** Name, where it comes from, runtime and model, its
-    environment, sandbox provider and mode, conversations, when it last
-    changed, the description, skills and MCP servers. Read when it opens,
-    then every 3 minutes while it's on screen, and on *Refresh*.
-  - **Where an agent comes from.** *agent-specs*: `managed-by: chant` in
-    its metadata (the curated ones). *App-made*: `switchyard`, `salon`,
-    `paddock`, `drydock`, `part-of` or `attemptId` in its metadata, a name
-    ending in a UUID, or a name an app gives (`Mend: github.com/…`).
-    *Hand-made*: the rest. Every agent is listed: app-made ones are
-    filtered, never hidden.
-  - **Filters.** A search over names, descriptions, skills and MCP
-    servers, and chips for source, runtime and sandbox provider. They're
-    the block's (kept in its config), so the phone and every client see
-    the same list, and `capture --text` is that list.
-  - ***Run on Fountain*** opens an agent block running it on Fountain
-    (`fountain acp --agent NAME`) beside the catalog. ***Run here*** (for
-    `claude` agents; below) wears it in a Claude Code on this host.
-    ***Spec*** opens the agent-specs file
-    that declares a `managed-by: chant` agent (a `.ts` under `src/agents`
-    with its `name:`) as a file block; it looks in the checkout you pick
-    (`~/agent-specs` if it's there). Any other agent, or with
-    no checkout, opens its page on Fountain.
-  - **Read-only.** agent-specs stays the one place a curated agent is
-    edited; the catalog never writes to Fountain.
-  - **For agents.** MCP's `list_agents {query?, source?}` (compact rows)
-    and `read_agent {name}` (the whole recipe; a server's credentials show
-    as their `${VAR}`s, since Fountain never returns a secret) let a local
-    agent see the team, and `start_agent` with a Fountain agent hands one a
-    task.
-
-- **Wearing a Fountain agent here** (M44). A Claude Code agent block on
-  this host, configured as one of your Fountain agents: its system prompt,
-  its skills and its MCP servers, working in a folder of yours (a worktree)
-  with your own tools.
-  - **Ways in.** *Run here* on a catalog card (it asks for the folder, and
-    offers the last one next time), `illogical agent --as NAME "prompt"`
-    (in the current directory, or `--cwd`), and MCP's `start_agent {agent:
-    claude, as_fountain: NAME}`. Only the owner can: it runs on the
-    owner's machine with their secrets (an editor's *Run here*, or a
-    block of theirs with `as_fountain`, is refused).
-  - **The bundle**, built from the agent's recipe and cached in
-    `~/.cache/illogical/fountain/<agent id>/<updated_at>/` for a day (a new
-    version beside the old ones, which stay a week for blocks still on
-    them): a
-    plugin (`fountain-<name>`) whose skills are the agent's (inline ones
-    written out; GitHub ones copied from shallow clones kept in
-    `…/fountain/github/`, fetched again daily), and the system prompt,
-    after a short preamble saying it runs locally (where it mentions
-    `/home/sprite`, `/workspace`, vaults or spawning, those describe the
-    sandbox). The session gets them as `_meta.systemPrompt.append` and
-    `_meta.claudeCode.options.plugins`, the agent's model (`anthropic/`
-    taken off), and still no settings sources, so your own hooks stay out.
-  - **MCP servers** come with their `${VAR}`s resolved by Fountain's rules
-    (`$$` is a literal `$`; values aren't expanded again). Each variable's
-    value comes from, in order: Infisical (in your agent-specs checkout,
-    through the agent's environment in `dist/fountain.yaml`, and its vault
-    over that (`--vault`, or the only one it may use), to an `infisical://`
-    URI, read with your `infisical` login; a variable neither maps is
-    tried as itself in env `dev`, and the header says so), your shell's
-    environment, then `gh auth token` for `GITHUB_TOKEN`.
-  - **Never on a command line.** Claude Code's SDK puts the session's MCP
-    config on `claude`'s command line, which anyone on the machine can
-    read. So the session gets references (`${ILLOGICAL_FTN_…}`, which
-    Claude Code expands itself), and the values are in the adapter's
-    environment, readable only by you. A server whose command or arguments
-    hold a variable is left out (its own command line would show it), as
-    is one with a literal `${…}` (Fountain's `$$`), which Claude Code would
-    expand. illogical's own MCP token goes the same way for every local
-    Claude Code block (#128). Values are held in memory: never in the
-    layout, the block's log or state, `capture`, MCP results or the web
-    (the log shows `<redacted>`). Note that the agent's own commands
-    inherit that environment.
-  - **What doesn't carry over** is named in the block's header, which
-    says "as NAME" with the skills and servers that came: a server with a
-    variable nothing has, one that needs an OAuth sign-in (a headless
-    Claude Code can't: no credentials, and a known OAuth host such as
-    mem0's, or a `401` with `WWW-Authenticate`), a Fountain connection,
-    and GitHub skills that couldn't be fetched.
-  - **Not wearable:** agents of another runtime (*Run on Fountain*), and
-    ones whose metadata says `illogical.local: false` (the orchestrators,
-    written for Fountain's sandboxes); the card greys *Run here* with the
-    reason. After a restart the block puts the agent on again before it
-    takes over the agent still running (or starts it again).
-
-- **This machine as the Fountain runner** (M45). The setup (the README's
-  *A Fountain runner*) makes a `fountain` user, the `fountain-runner`
-  systemd unit and a sudoers rule. A Fountain block's `view: runner`
-  (*Fountain runner…* in a pane's or the `+` button's menu, `illogical
-  fountain --view runner`, MCP's `open_fountain {view: "runner"}`) shows:
-  - **The runner.** This host's (the unit's `--name`): online or offline,
-    its version against the installed `fountain --version`, when Fountain
-    last saw it, and how many sandboxes it holds; then every other runner
-    on the account. Read from `GET /api/runners` every minute while it's on
-    screen and every 5 minutes otherwise, so its attention still fires.
-  - **Attention** (`failed`, one *Fountain runner* card on the rail):
-    the unit is active (`systemctl is-active`) but Fountain has said the
-    runner is offline for 5 minutes; or another runner is online, which
-    would win placement (Fountain puts a runner conversation on the most
-    recently connected one). It's raised once per change and clears by
-    itself.
-  - **Its sandboxes**, newest first (`GET /api/sandboxes`, this runner's),
-    each with its directory, agent and conversations. A parked
-    (suspended) one still opens:
-    - ***Follow*** opens an agent block on a conversation: `fountain acp
-      --agent NAME`, which loads it (`session/load`) and replays it. The
-      block is marked `follow`: if the conversation can't be loaded (or the
-      agent can't load one), it stops and says why; it never starts a new
-      conversation.
-    - ***Changes*** opens a diff block for each git checkout up to two
-      levels down in the sandbox, from its upstream's merge base (else
-      `origin/HEAD`'s, else an empty tree: everything in it).
-    - ***Shell*** opens a terminal as `fountain` in the sandbox, with
-      `HOME` the `fountain` user's own (`/home/fountain`), reading no
-      profile, rc, inputrc or history file (`bash --noprofile --norc`,
-      `INPUTRC` and `HISTFILE` `/dev/null`: the sandbox's agent may have
-      written them). It runs outside
-      the runner's sandboxing (the unit's protections don't apply) and it
-      isn't Fountain's, so parking the sandbox doesn't stop it; the block
-      says so.
-  - **Read as `fountain`.** The sandboxes are the `fountain` user's (mode
-    0700), so every read and shell goes through `sudo -n -u fountain
-    /bin/bash -c SCRIPT _ ROOT DIR`, the one command the sudoers rule
-    allows, with the directories as arguments, never in the script.
-    - A sandbox's directory is the unit's `--root` and its name, only: a
-      path Fountain gives must be exactly that, and each script checks the
-      directory's real path is inside the root (a symlink out is refused).
-    - Every git there reads only: no global or system config, no hooks,
-      fsmonitor, pager, external diff or textconv, no remote contacted (no
-      lazy fetch of a partial clone's objects, every protocol refused), and
-      every filter driver
-      the repository's config names emptied, so a repository's own config
-      can't run anything when it's read.
-    - A diff block takes `run_as: "fountain"` for this: only that user,
-      only on this host, only under the unit's root. It has no *Open file*
-      (that would read the sandbox's files as you).
-  - **The machine's line.** `GET /api/host` has `fountain_runner` (name,
-    online, version, sandboxes, and what wants you) on a host with the
-    unit, from what was last read (never Fountain on the request). The
-    host menu, the phone's host list and the swarm's bar show it.
-  - **The owner's.** *Follow*, *Changes*, *Shell* and switching the view
-    are the owner's; an editor sees the list. `capture --text` is the
-    view as text.
-
 - **Your machines through control** (M48, #151). The main way to reach
   more than one machine: each one runs `illogicald join` once, and control's
   page (in a browser or the desktop app) lists every machine of your
@@ -760,17 +470,17 @@ the daemon stopping, crashing, or the machine rebooting:
   can and through control's encrypted relay otherwise. No machine is
   special: none keeps a list of the others. See [control.md](control.md).
 - **Other hosts over the tailnet** (M4a, the older model, still there for
-  the CLI's `--host` and sandboxes). Every daemon is a peer; the one the
+  the CLI's `--host` and boxes you can't join to control). Every daemon is a peer; the one the
   page comes from (the "home daemon") keeps a list of the others and checks on
   each every minute. The page shows a host switcher (desktop: the bar's
   left end; phone: the sheet), and each host has its own sessions and tabs.
   Switching connects straight to that daemon; nothing is relayed, and the
-  host you left gets no connection (so a sandbox can sleep). The list is
+  host you left gets no connection. The list is
   remembered in the browser, and the page itself by its service worker, so
   the other hosts stay reachable while the home daemon is down.
-  `illogical --host NAME …` runs any command on another host. A sandbox
-  (a sprite, a container: no systemd needed) gets a static daemon on the
-  tailnet with one command and adds itself to the list; see *Use it*.
+  `illogical --host NAME …` runs any command on another host. A container
+  (no systemd needed) gets a static daemon on the tailnet with one command
+  and adds itself to the list.
 - **Panes from several hosts in one layout** (#17). The home daemon's
   tabs and splits can hold panes that run on another host in its list:
   *New tab on box* (the `+` button's right-click menu), *Split right on
@@ -784,7 +494,7 @@ the daemon stopping, crashing, or the machine rebooting:
   back by itself. Closing it here closes it there; if the host can't be
   reached, it stays open there. A pane its host closes (it exited, or was
   closed on the host's own page) leaves the layout here too.
-- **Hosts that can only dial out** (M4c). A sandbox that allows nothing
+- **Hosts that can only dial out** (M4c). A box that allows nothing
   in but outbound HTTPS runs `illogicald --peer wss://home.… --token FILE`:
   it keeps one WebSocket open to the home daemon and serves its own
   WebSocket and API over it, many streams at once. The home daemon lists it
@@ -792,7 +502,7 @@ the daemon stopping, crashing, or the machine rebooting:
   checks, so the page's host switcher and `illogical --host NAME` work as
   for any host. It's not a hub: only the home daemon opens streams, the
   host serves nothing that leads elsewhere, and what it answers is served
-  defanged (no cookies or CORS, `nosniff`, a sandboxing CSP), since it
+  defanged (no cookies or CORS, `nosniff`, a restrictive CSP), since it
   lands on the home daemon's origin. It redials with backoff and works on
   its own meanwhile. The token is per host, minted by the home daemon
   (`illogical hosts token NAME`, or joining with an invite), stored only
@@ -806,18 +516,7 @@ the daemon stopping, crashing, or the machine rebooting:
   with, say), never a tagged node, Funnel or the internet. Links expire (a
   week at most), are listed (`illogical shares`) and revocable (`shares
   revoke ID`), which cuts off anyone watching.
-- **A pane for a guest with only OpenSSH** (M65). `illogical share --guest
-  %3` prints an `ssh` command to send someone: the username is a one-time
-  token and the daemon's host key is pinned in the command, so nothing is
-  saved on their side. The daemon's own ssh server (`--guest-ssh`, port
-  7684) listens only while an invite exists, and a session can only watch
-  that pane: no shell, no account, no commands, no forwarding. Read-only
-  unless `--rw`, which types under the one-driver rule with the guest's
-  `--name` on their input. Invites are single use unless `--reusable`,
-  expire (an hour by default; a day at most, two hours with `--rw`), end
-  with the pane, and `illogical guests revoke ID` cuts the guest off at
-  once.
-- **History that outlives a sandbox** (M4c). With `--sync` (closed panes)
+- **History that outlives a host** (M4c). With `--sync` (closed panes)
   or `--sync-live` (open ones too), a host pushes its panes' log segments
   and indexes to the home daemon with its token, resuming from what is
   already there. The home daemon keeps them encrypted at rest and answers
@@ -830,53 +529,14 @@ the daemon stopping, crashing, or the machine rebooting:
   `illogical synced rotate-key` re-encrypts everything under a new key and
   drops the old one. File names and sizes aren't secret; contents are.
 
-- **Sandboxes** (M4b). *Sandboxes…* (session menu; *Sandboxes* in the
-  phone's sheet) or `illogical sandboxes` lists the home daemon's provider's
-  sandboxes (wisp sprites here; Fly's Sprites API fits the same adapter)
-  with their state, asked of the provider, which doesn't wake them.
-  - *Shell* (`illogical run --sandbox NAME`) opens a pane here whose
-    terminal is a plain exec on that sandbox: nothing is installed there.
-    It's disposable, and badged so: the output is logged here while it's
-    attached, but the provider keeps only its replay buffer while nothing
-    follows it (1 MB on wisp, about 6.5 KB on Fly), and closing the pane
-    hangs the shell up and leaves the sandbox alone.
-  - *Make resident* (`illogical sandboxes promote NAME [--as HOST]`) copies
-    the static daemon in (`just static`; the home daemon finds it in
-    `--static-dir`, default `~/.local/share/illogical/static`) and registers
-    it as a sprite *service*, so it starts on every boot and restarts if it
-    exits. It becomes a host in the list, a *provider* host: the client and
-    `--host` reach it through the home daemon's **provider tunnel**
-    (`/tunnel/HOST/…`, through the Sprites proxy to its port, never a
-    public URL). Connecting wakes it; the page lets go of it 10s after it's
-    hidden, so it can sleep. After it goes cold (on wisp, a real reboot)
-    its daemon restores its layout and scrollback from its own disk, the
-    way a reboot does here. A provider host with a tailnet URL too is
-    switched to the tailnet if that answers within 5s of the wake.
-    `illogical sandboxes demote NAME` stops it.
-  - **Identity.** The tunnel is for callers the home daemon already let in
-    (the owner, or its Unix socket). It strips their identity headers and
-    presents a token it minted for that host when it made it resident; the
-    resident daemon keeps only the token's SHA-256 (in its arguments) and
-    refuses every loopback connection without it, so other programs in the
-    sandbox can't use the provider's proxy path to it. These provider
-    tunnel tokens (`ilp_…`, home → host) stay in the home daemon's
-    `provider-tokens.json`, never in the host list clients get; dial-out
-    host tokens (`ilh_…`, host → home, M4c) are the other direction.
-    `hosts revoke` and `hosts rm` drop whatever a host has of both.
-  - Like a dial-out host's (`/h/NAME`), only the WebSocket and the API go
-    through `/tunnel/NAME`, and the answers are defanged: they're served on
-    the home daemon's origin and the sandbox runs untrusted code.
-
 - **Files and navigation** (M7). *Go to directory…* (a pane's menu; *In a
   directory…* on the `+` button's right-click; *Go to directory* in the
   phone's sheet, where it's a full-screen sheet; Ctrl+Shift+G) browses
-  directories on the host the pane runs on: this daemon's, another host's
-  (it answers for itself), or its VM's (through the provider). It starts
+  directories on the host the pane runs on: this daemon's or another host's
+  (it answers for itself). It starts
   where the pane is (OSC 7), lists directories used lately there first,
   and filters fuzzily as you type (`/…` or `~…` goes to a path; Backspace
-  goes up). Then *New pane here* (on the same host: a VM tab's machine, a
-  sandbox's shell), *New tab here* (not for a VM's own directories: they
-  exist only in its tab), or *cd there*, which types `cd` into the shell
+  goes up). Then *New pane here* (on the same host), *New tab here*, or *cd there*, which types `cd` into the shell
   only while it waits at its prompt (shell integration says so) and says
   why not otherwise.
   - The `fs` methods behind it (`/api/fs/list|stat|read|watch|recent`,
@@ -884,15 +544,13 @@ the daemon stopping, crashing, or the machine rebooting:
     viewers and host tokens never reach them. On a daemon's host they read
     as the daemon's user, so the OS's permissions are the limit, and they
     also refuse `/proc`, `/sys`, `/dev`, the daemon's state directory and
-    the secrets it knows of (the wisp token, agent credentials); paths are
+    the secrets it knows of (agent credentials); paths are
     resolved first and an opened file is checked again through
     `/proc/self/fd`, so no symlink (or one swapped in mid-open) gets
-    around that. On a machine the provider's agent reads as the sandbox's
-    root, in the user's own sandbox; the same places are refused by path,
-    and a read through any symlink is refused. A listing holds at most
+    around that. A listing holds at most
     5000 entries and a read at most 1 MiB (read in ranges); `watch`
-    polls (1s here, 3s on a machine) until you hang up.
-  - New sessions, and the machines of VM tabs and VM panes, get generated
+    polls (every second) until you hang up.
+  - New sessions get generated
     names ("drifting cedar", unique per daemon). Ids don't change, rename
     is still a double-click, and older sessions keep their names.
 
@@ -958,8 +616,7 @@ the daemon stopping, crashing, or the machine rebooting:
   shows: yours, your team's, and teammates' machines that shared a session
   with you or with the team. Through illogical control they share one
   connection to the relay. A machine that goes away greys out with when it
-  was last seen and comes back on its own; a sandbox that's asleep isn't
-  woken to be counted; reconnects after a laptop wakes are spread out.
+  was last seen and comes back on its own; reconnects after a laptop wakes are spread out.
   Private panes never leave their owner's view, and revoking a share or
   locking a team takes those panes off everyone else's screen within a
   second.
@@ -983,40 +640,9 @@ the daemon stopping, crashing, or the machine rebooting:
   send an agent its next instruction. Hover a tile to peek at its last
   lines, click it to open it (an editor that joined: follow it). On a
   phone the cards are a strip along the bottom. `just fake-fleet` runs three throwaway machines to try it on.
-- **Swarm themes** (M41). *Theme* in the swarm's bar picks how it's
-  drawn: *blocks* (the field above, the default) or *city*, the same panes
-  in 3D, remembered per browser. In the city a cluster is a block, its
-  rows are machines, and each pane keeps its lot (in pane order) until you
-  regroup. A building's height is how long its command has run (log
-  scale), kept after it's done; a lit roof means still running; its
-  windows scroll while it prints, stay lit a while after, and go dark when
-  it's quiet; colour is kind, and shape says whether it finishes (box),
-  runs until stopped (drum), is an agent (hexagon), an editor (pentagon)
-  or a pull request or issue (slab). A red roof is a failed last command,
-  a beam is something that needs you (taller the longer it waits), a
-  marker over a building is a teammate with it open (a cone while they
-  type). The rail, hover peeks, click to open, *Show* and notification
-  links work as in blocks. *How to read the city* under the legend says
-  all this on the page. three.js loads only when the city is picked.
-- **Hive and timeline themes** (M42). Two more choices under *Theme*.
-  The *hive* is one hex cell per pane, packed into a comb per cluster, and
-  it reads flat, so it suits a phone. A cell fills as its command runs
-  (log scale, full at an hour), bright while running and faded once done.
-  What runs until stopped is full and hatched. The cell's edge pulses
-  while it prints, and a red rim means its last command failed. A pane
-  that needs you fills with the reason's colour and shows how long it has
-  waited, and its glow spills onto the cells around it, wider the longer it
-  waits. The *timeline* is one lane per pane under its cluster's name,
-  showing the last 40 minutes with now at the right edge, so you can see
-  what happened while you were away. Each command is a bar as long as it
-  ran, coloured by kind, with stripes for how much it printed and a red cap
-  if it failed. The bars come from each machine's command history, as in
-  `illogical history`. A pane that needs you gets a band from when it
-  started waiting until now. Hover, click, *Show*, *Fit* and the key work as
-  in the other themes.
 - **Tools for any agent** (M16, MCP). Claude Code, Codex or any MCP client
   gets illogical as tools: `run` a command in a pane you can watch and
-  take over (here, on a throwaway VM, or a sandbox; it outlives the
+  take over (it outlives the
   agent's turn), `wait` for it and `read_output`, `send_input`, `list`,
   `close`, `history` and `search`, `open_port` (a dev server in a browser
   block beside its terminal), `start_agent` and `agent_respond` (one agent
@@ -1031,8 +657,7 @@ the daemon stopping, crashing, or the machine rebooting:
   Every agent block gets it too, scoped to its own tab: it can start a dev
   server beside itself and show it in a browser block, start and answer
   other agents there, and read the rest of its tab, but not touch other
-  tabs. An agent in a VM gets it through a relay the daemon opens into
-  its VM, and what it runs lands on its machine. Over HTTP (`/mcp`), the owner gets in as for the web client;
+  tabs. Over HTTP (`/mcp`), the owner gets in as for the web client;
   anything else needs a token from `illogical mcp token`, revocable at any
   time.
 - **Threads on panes and sessions** (M61). Every pane and every session has
@@ -1044,8 +669,7 @@ the daemon stopping, crashing, or the machine rebooting:
   unencrypted. Watchers read and drivers post. A private pane's thread is
   its owner's, and someone shared "from now" sees messages from then on.
   Each person has their own unread count: on the pane's bubble, a dot on
-  the session button, and a folded corner in the swarm (blocks, hive and
-  timeline; the city doesn't draw it yet). `@name` notifies someone, on
+  the session button, and a folded corner in the swarm. `@name` notifies someone, on
   their phone too. *Quote selection in thread* posts terminal output as a
   quote that stays readable after the pane scrolls; clicking it jumps back
   to the output. `@agent` (or `@claude`) in a pane's thread goes to that
