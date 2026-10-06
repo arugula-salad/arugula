@@ -11,9 +11,10 @@
 //! - **It installs the daemon when there is none.** The bundle carries
 //!   `illogicald` and `illogical` (sidecars, built by `sidecars.sh`). With no
 //!   daemon answering, the window opens on a setup page that runs
-//!   `illogicald install`: the installed one if there is one (it restarts the
-//!   service), else the bundled one, which copies itself to `~/.local/bin`
-//!   and registers the launchd agent or systemd unit. The bundled CLI goes
+//!   `illogicald install`: the installed one if there is one and it isn't
+//!   older than the bundled one (it restarts the service), else the
+//!   bundled one, which copies itself to `~/.local/bin` and registers the
+//!   launchd agent or systemd unit. The bundled CLI goes
 //!   to `~/.local/bin` too, unless an `illogical` is already installed.
 //! - **It updates an older daemon** (#176): when the daemon's service runs
 //!   an older version than the one bundled, the setup page runs the
@@ -238,7 +239,17 @@ fn ensure_daemon() -> Result<(), String> {
             }
         }
     }
-    let Some(bin) = installed("illogicald").or_else(|| bundled("illogicald")) else {
+    #[cfg(target_os = "macos")]
+    service::retire(bundled("illogicald").as_deref().and_then(upgrade::version_of).as_deref());
+    // The installed one, unless it's older than ours (#315).
+    let bin = match (installed("illogicald"), bundled("illogicald")) {
+        (Some(i), Some(b)) if upgrade::installed_is_older(&i, &b) => {
+            eprintln!("illogical: the installed {} is older than this app's: installing ours", i.display());
+            Some(b)
+        }
+        (i, b) => i.or(b),
+    };
+    let Some(bin) = bin else {
         return Err(format!(
             "Nothing answers at {}, illogicald isn't installed, and this app doesn't carry one.",
             addr()

@@ -206,10 +206,24 @@ desktop-macos arch="" *tauri_args="":
     rm -f "$zip"
     ditto -c -k --norsrc --keepParent "$app" "$zip"
     if zipinfo -1 "$zip" | grep -E '(^|/)\._'; then echo "AppleDouble files in $zip" >&2; exit 1; fi
-    # The .dmg: the app beside a link to /Applications.
+    # The .dmg: a notarized app (#177) beside a link to /Applications. An
+    # ad-hoc one hangs at launch there on macOS 26 (#315), so it comes
+    # with a note to use ~/Applications instead.
     stage=$(mktemp -d)
     ditto "$app" "$stage/illogical.app"
-    ln -s /Applications "$stage/Applications"
+    if [ -n "${APPLE_CERTIFICATE:-}" ]; then
+      ln -s /Applications "$stage/Applications"
+    else
+      printf '%s\n' \
+        "Drag illogical into the Applications folder in your home folder" \
+        "(Finder: Go > Home; make an Applications folder there if there isn't one)." \
+        "" \
+        "Not /Applications: illogical isn't notarized yet, and macOS 26 won't" \
+        "start an app that isn't notarized from there." \
+        "" \
+        "The first time, open it, then choose Open Anyway in" \
+        "System Settings > Privacy & Security." > "$stage/Install.txt"
+    fi
     dmg=$dist/illogical-desktop-$name.dmg
     rm -f "$dmg"
     hdiutil create -quiet -volname illogical -srcfolder "$stage" -fs HFS+ -format UDZO "$dmg"

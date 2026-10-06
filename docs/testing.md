@@ -423,19 +423,20 @@ logged-in session over ssh.
 | Tabs in the titlebar | `titlebar`: no decorations; dragging the bar moves the window; the bar's maximize and minimize work | `tabs`: Cmd-N opens a window as a native tab | the window can't be moved or managed without the system's titlebar |
 | `illogical://` | `links`: a second launch with `illogical://open?cwd=DIR` opens a tab in DIR in the running app and shows it; `illogical://pane/%N` shows N | `links`: the same through `open URL` (the URL scheme in Info.plist) | links start a second app, or open nothing |
 | Global hotkey | `hotkey`: off by default; on, Ctrl+Alt+Space hides the focused window and brings it back | `hotkey`: the same with Ctrl-Option-Space | |
-| Service registration | (the systemd unit: `illogicald install`, unchanged) | `agent`: the first start registers the launch agent through SMAppService, BTM lists it, the bundle's daemon answers the linked CLI, no second plist | the app runs a daemon that isn't the one Login Items shows, or two |
-| Working pane, no terminal | | `install`, `pane`: the .dmg installs, and a command typed into the window runs | |
+| Service registration | (the systemd unit: `illogicald install`, unchanged) | `agent`: from `~/Applications` (where the docs put the app until it's notarized, #315), the first start runs `illogicald install`, its daemon answers the linked CLI, and the app's own launch agent isn't loaded; with `ILLOGICAL_APPS=/Applications`, it registers the launch agent through SMAppService instead, BTM lists it, the bundle's daemon answers, no second plist | the app runs a daemon that isn't the one Login Items shows, or two |
+| Working pane, no terminal | | `install`, `pane`: the .dmg (with a note to use `~/Applications` while the app isn't notarized) installs, and a command typed into the window runs | |
 | Panes outlive the app | | `restart`: the daemon's pids and panes are the same after the app restarts | |
 | Right-click a folder (M47) | `m47` (`just desktop-xvfb m47`): with the packages' .desktop file and Nautilus extension, a right-click on a folder (and inside one) in Nautilus, *Open in illogical*, opens a tab there in the running app and shows it | `finder`: the service is registered (`pbs`); a right-click on a folder in Finder, *New illogical Tab Here*, opens a tab there; a `.command` file opened with the app runs in a new pane | the file manager's menu has no entry, or it starts a second app |
 | Packages | `just desktop-packages ARCH`: .deb and .rpm install, libraries resolve, xdg-mime hands `illogical://` to the app, the .desktop file passes the link (`%u`) and has a New Tab action, the Nautilus extension is in place | `install` above | |
-| Updates | | `update.sh`: 0.17.0 refuses a manifest signed with another key, then replaces itself with 0.17.1 and restarts; the new app carries a newer daemon and restarts its launch agent on it; a running vim and a counting build carry on | |
+| Updates | | `update.sh`: 0.17.0 refuses a manifest signed with another key, then replaces itself with 0.17.1 and restarts; the new app carries a newer daemon and updates the running one to it; a running vim and a counting build carry on | |
 
 `update.sh` makes a throwaway updater key and builds the app twice with
 it. The installed one carries a daemon one minor version older than the
 tree's (built from a copy of the tree with only the version changed, kept
 in `target/update-old`), so the update also runs `upgrade.rs`'s path: the
-new app finds the older daemon, restarts its launch agent on the bundle's
-newer one, and the panes stay.
+new app finds the older daemon, replaces it with the bundle's newer one
+(`illogicald install` from `~/Applications`, a restart of its launch
+agent with `ILLOGICAL_APPS=/Applications`), and the panes stay.
 
 Nautilus and Finder are driven as a person would: the mouse right-clicks
 the folder (xdotool at the spot AT-SPI reports, under Xvfb; a CGEvent at

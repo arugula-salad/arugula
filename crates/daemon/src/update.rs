@@ -300,6 +300,13 @@ mod tests {
         let mac = |p: &Path| (p == Path::new("/Applications/illogical.app")).then(|| p.to_path_buf());
         assert_eq!(kind(&local, home, mac), Kind::App);
         assert_eq!(kind(Path::new("/Applications/illogical.app/Contents/MacOS/illogicald"), home, none), Kind::App);
+        // Where the macOS app goes until it's notarized (#315).
+        let user_mac = |p: &Path| (p == Path::new("/home/me/Applications/illogical.app")).then(|| p.to_path_buf());
+        assert_eq!(kind(&local, home, user_mac), Kind::App);
+        assert_eq!(
+            kind(Path::new("/home/me/Applications/illogical.app/Contents/MacOS/illogicald"), home, none),
+            Kind::App
+        );
     }
 
     #[test]
