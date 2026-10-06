@@ -1,9 +1,11 @@
 # illogical-control
 
-Hosted service for accounts, devices, the directory, and the relay. It holds metadata only; terminal bytes travel end-to-end encrypted between a client and a daemon (see `docs/control-e2e.md`).
+illogical control: accounts, devices, the directory and the relay, for
+people who don't run a tailnet and for teams. It holds metadata only:
+terminal bytes travel end to end between a device and a daemon
+([docs/control-e2e.md](../../docs/control-e2e.md), [docs/control.md](../../docs/control.md)).
 
-Control introduces clients and daemons and relays opaque Noise messages between them. Device keys are signed by the account, so control can refuse service but cannot read.
+Depends on `illogical-e2e`.
 
-**Dependencies:** axum, rusqlite (SQLite), passkeys (for authentication), e2e.
-
-**Start reading:** [`src/main.rs`](src/main.rs) for the entry point and clap arguments, then `src/routing_*.rs` for the API routes.
+Start with `src/main.rs`, then `src/api.rs` (devices, approvals, daemons
+joining, the directory) and `src/relay.rs` (the relay).

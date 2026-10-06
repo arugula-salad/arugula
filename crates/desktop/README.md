@@ -1,9 +1,11 @@
-# desktop
+# illogical desktop
 
-Tauri 2 desktop app: a window and tray icon for macOS, Linux, and Windows. Embeds the web client and wraps it with native features like the updater and deep links.
+The desktop app (M46, Tauri 2): the daemon's own web client in a native
+window, with a tray, updates, deep links and a bundled daemon for first
+install.
 
-**Excluded from the workspace:** has its own `Cargo.lock` and can release independently (#388). Pinned versions of some dependencies (sha2, getrandom) differ from the workspace to avoid tight coupling.
+It's outside the Cargo workspace, with its own `Cargo.lock`, so it builds and
+releases on its own (#388). It depends on `illogical-proto` by path.
 
-**Dependencies:** tauri, serde, proto (for types).
-
-**Start reading:** [`src/main.rs`](src/main.rs) for the window setup, and `tauri.conf.json` for the app configuration.
+Start with `src/main.rs`, then `src/service.rs` and `src/updates.rs`.
+`just desktop-check` checks it.

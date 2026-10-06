@@ -1,9 +1,12 @@
 # illogical-proto
 
-Wire protocol for client–daemon and daemon–daemon communication: `ClientMsg` and `ServerMsg` for JSON control messages, and `Frame` for binary terminal bytes with a fixed header and stream offset.
+The wire protocol shared by illogicald and its clients: the WebSocket's JSON
+control messages and binary frames, and the HTTP API's routes and types
+(`src/api.rs`). The web client's copy, `web/src/proto.gen.ts`, is generated
+with ts-rs: after changing a type the web client uses, run `just proto-ts`
+(CI fails if the file is stale).
 
-The web client's TypeScript copy (`web/src/proto.gen.ts`) is generated from the Rust types with ts-rs. Run `just proto-ts` after changes (CI fails if stale). The HTTP API types are still written by hand in `proto.rs`.
+Depends on `illogical-core`.
 
-**Dependencies:** serde, serde_json, and ts-rs (as an optional feature).
-
-**Start reading:** [`src/lib.rs`](src/lib.rs) for the wire types and the protocol overview at the top.
+Start with `src/lib.rs`: its header describes the protocol. `src/hosts.rs`
+is federation's host list, and where the `labs` switch is read.

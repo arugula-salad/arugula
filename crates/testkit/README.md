@@ -1,9 +1,11 @@
 # illogical-testkit
 
-Harness for illogicald's integration tests: a dev daemon with its own state directory and socket, helpers for making requests to it, and cleanup when the harness is dropped.
+The harness for illogicald's integration tests (#200): a dev daemon with a
+state dir and socket of its own, the requests tests make to it, waits, and
+cleanup when it's dropped. [docs/testing.md](../../docs/testing.md) has how to
+use it.
 
-Used only by tests. See `docs/testing.md` for how to use it.
+Depends on no other workspace crate (it runs the built daemon).
 
-**Dependencies:** proto, daemon, tokio, anyhow.
-
-**Start reading:** [`src/lib.rs`](src/lib.rs) for the `Testkit` struct and its methods.
+Start with `src/lib.rs`: `Builder` starts a `Daemon`; `Scratch` is a temp
+dir that cleans up after itself.

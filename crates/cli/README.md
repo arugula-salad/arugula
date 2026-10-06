@@ -1,12 +1,14 @@
 # illogical
 
-Command-line interface to illogicald. Talks to the daemon's HTTP API over its Unix socket, or to another daemon's URL with `--host`. Supports `--json` for machine-readable output.
+The `illogical` command: drive illogicald from a shell or a script, over the
+daemon's HTTP API on its Unix socket (or another daemon's URL, with
+`--host`). `--json` prints the API's answers as they are.
 
-Includes three frontends:
-- **CLI:** subcommands like `illogical attach`, `illogical ssh`, and `illogical ask` (the Claude Code integration point).
-- **TUI:** a terminal UI that mirrors the daemon's state (no new features after launch).
-- **tmux -CC:** a tmux control-mode adapter that lets tmux clients attach (recorded fixtures in `crates/daemon/tests/integration/tmux.rs`).
+Depends on `illogical-core`, `illogical-proto`, `illogical-vt` and
+`illogical-e2e`.
 
-**Dependencies:** proto, daemon (test only), tokio, clap.
-
-**Start reading:** [`src/main.rs`](src/main.rs) for the command tree, then see `src/cmd/` for each command's implementation. The tmux adapter is in `src/tmux/`.
+Start with `src/main.rs` (the command tree and dispatch); each subcommand is
+in `src/cmd/<name>.rs`, shared helpers in `src/util.rs`. `src/ask.rs` and
+`src/hook.rs` are Claude Code's hooks, `src/mcp.rs` the stdio bridge to the
+daemon's MCP server. `src/tui/` (`illogical tui`) and `src/tmux/`
+(`illogical tmux -CC`) are kept working but get no new features.

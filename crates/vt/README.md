@@ -1,9 +1,13 @@
 # illogical-vt
 
-Server-side terminal state on libghostty-vt. `VtEngine` takes PTY output, resize events, and terminal queries; maintains the screen state; and produces snapshots for xterm.js and checkpoints for disk storage.
+A pane's terminal state on the daemon. `VtEngine` is what the daemon needs
+from a terminal emulator; `src/ghostty.rs` implements it on libghostty-vt
+(the sys crate is vendored in `vendor/libghostty-vt-sys`, which patches
+Ghostty after checkout). Snapshots go to clients, checkpoints to disk.
 
-Also handles OSC signals, VT compatibility for xterm.js's measured capabilities, and recorded fixtures for testing.
+Depends on `libghostty-vt`.
 
-**Dependencies:** libghostty-vt-sys (vendored and patched), zstd (for checkpoints).
-
-**Start reading:** [`src/lib.rs`](src/lib.rs) for the `VtEngine` interface and overview, then [`src/compat.rs`](src/compat.rs) for xterm.js compatibility.
+Start with `src/lib.rs` (`VtEngine`), then `src/compat.rs` (keeping the
+daemon's answers within what clients can draw) and `src/detect.rs` (what an
+agent in a pane is doing, read off its screen). `fixtures/` holds recorded
+terminal sessions the tests replay.
