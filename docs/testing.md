@@ -43,7 +43,7 @@ CI (`.github/workflows/check.yml`) runs on pushes, every job it can at
 once (#287); a new push to a branch cancels that branch's run:
 - **lint** (GitHub's runners): rustfmt, shellcheck, `just test-scripts`
   and gitleaks.
-- On geek's pool (twelve runners, `linux-x86_64-ci`):
+- On geek's pool (eight runners, `linux-x86_64-ci`):
   - **build** and **static**: the debug binaries (with `--features
     debug-embed`, so they carry `web/dist`) and the box's static ones,
     once, kept for the run's other jobs (`scripts/ci-env keep`);
