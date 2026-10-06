@@ -194,8 +194,7 @@ pub struct ListArgs {}
 
 #[derive(Deserialize, JsonSchema)]
 pub struct ThreadArgs {
-    /// The pane whose thread it is (`7` or `"%7"`). For an agent block's
-    /// token, its own pane when neither is given.
+    /// The pane whose thread it is (`7` or `"%7"`). Neither this nor a session: the caller's own pane (an agent block, or the terminal pane `illogical mcp` runs in).
     #[serde(default)]
     pub pane: Option<PaneArg>,
     /// Or a session's thread, by its id.
@@ -208,8 +207,7 @@ pub struct ThreadArgs {
 
 #[derive(Deserialize, JsonSchema)]
 pub struct PostThreadArgs {
-    /// The pane whose thread to post in (`7` or `"%7"`). For an agent
-    /// block's token, its own pane when neither is given.
+    /// The pane whose thread to post in (`7` or `"%7"`). Neither this nor a session: the caller's own pane (an agent block, or the terminal pane `illogical mcp` runs in).
     #[serde(default)]
     pub pane: Option<PaneArg>,
     /// Or a session's thread, by its id.
@@ -265,7 +263,7 @@ pub struct OpenPortArgs {
     #[serde(default)]
     pub path: Option<String>,
     /// The pane (a terminal running the server, say) to open it beside.
-    /// An agent block's token: default the agent itself.
+    /// Default: the caller's own pane (an agent block, or the terminal pane `illogical mcp` runs in).
     #[serde(default)]
     pub beside: Option<PaneArg>,
 }
@@ -276,8 +274,7 @@ pub struct OpenAppArgs {
     /// apps instead.
     #[serde(default)]
     pub app: Option<String>,
-    /// The pane to open it beside. An agent block's token: default the
-    /// agent itself.
+    /// The pane to open it beside. Default: the caller's own pane (an agent block, or the terminal pane `illogical mcp` runs in).
     #[serde(default)]
     pub beside: Option<PaneArg>,
 }
@@ -330,7 +327,7 @@ pub struct StartAgentArgs {
     /// default mode, CLAUDE.md), without their hooks.
     #[serde(default)]
     pub user_settings: bool,
-    /// Open it beside this pane (an agent block's token: beside itself).
+    /// Open it beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `illogical mcp` runs in).
     #[serde(default)]
     pub beside: Option<PaneArg>,
     /// The session for a new tab, when not beside a pane.
@@ -367,7 +364,7 @@ pub struct OpenConversationArgs {
     /// Then continue it, or fork it (for one open somewhere else) and go on in the fork.
     #[serde(default)]
     pub then: Option<ConversationThen>,
-    /// Open it beside this pane (an agent block's token: beside itself).
+    /// Open it beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `illogical mcp` runs in).
     #[serde(default)]
     pub beside: Option<PaneArg>,
 }
@@ -433,8 +430,8 @@ pub struct RespondArgs {
 pub struct ReadFileArgs {
     /// The file. Relative paths are from the pane's directory, or home.
     pub path: String,
-    /// On the machine this pane runs on (default this host; an agent
-    /// block's token: its own).
+    /// On the machine this pane runs on. Default: the caller's own pane (an
+    /// agent block, or the terminal pane `illogical mcp` runs in).
     #[serde(default)]
     pub pane: Option<PaneArg>,
     /// A byte offset to start at (a previous result's next_offset).
@@ -447,8 +444,7 @@ pub struct ReadFileArgs {
 
 #[derive(Deserialize, JsonSchema)]
 pub struct ShowChangesArgs {
-    /// The pane whose repository it is (its directory, on its machine). An
-    /// agent block's token: default the agent itself.
+    /// The pane whose repository it is (its directory, on its machine). Default: the caller's own pane (an agent block, or the terminal pane `illogical mcp` runs in).
     #[serde(default)]
     pub beside: Option<PaneArg>,
     /// Any directory in the repository, instead (on the pane's machine).
@@ -469,8 +465,7 @@ pub struct ShowFileArgs {
     /// The line to mark and scroll to.
     #[serde(default)]
     pub line: Option<u32>,
-    /// On the machine this pane runs on, beside it (an agent block's token:
-    /// default the agent itself).
+    /// On the machine this pane runs on, beside it. Default: the caller's own pane (an agent block, or the terminal pane `illogical mcp` runs in).
     #[serde(default)]
     pub beside: Option<PaneArg>,
 }
@@ -483,8 +478,7 @@ pub struct OpenWorkspaceArgs {
     /// The environment whose gates and releases to read (default local).
     #[serde(default)]
     pub env: Option<String>,
-    /// Beside this pane, on its machine (an agent block's token: default
-    /// the agent itself).
+    /// Beside this pane, on its machine. Default: the caller's own pane (an agent block, or the terminal pane `illogical mcp` runs in).
     #[serde(default)]
     pub beside: Option<PaneArg>,
 }
@@ -498,7 +492,7 @@ pub struct OpenPrArgs {
     /// and where diff and checkout fetch the PR's code.
     #[serde(default)]
     pub dir: Option<String>,
-    /// Beside this pane (an agent block's token: default the agent itself).
+    /// Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `illogical mcp` runs in).
     #[serde(default)]
     pub beside: Option<PaneArg>,
 }
@@ -511,7 +505,7 @@ pub struct OpenIssueArgs {
     /// and where the user's "Agent on this" makes its worktree.
     #[serde(default)]
     pub dir: Option<String>,
-    /// Beside this pane (an agent block's token: default the agent itself).
+    /// Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `illogical mcp` runs in).
     #[serde(default)]
     pub beside: Option<PaneArg>,
 }
@@ -623,7 +617,7 @@ pub struct OpenFountainArgs {
     pub source: Option<String>,
     #[serde(default)]
     pub profile: Option<String>,
-    /// Beside this pane (an agent block's token: default the agent itself).
+    /// Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `illogical mcp` runs in).
     #[serde(default)]
     pub beside: Option<PaneArg>,
 }
@@ -1295,6 +1289,13 @@ impl<'a> Call<'a> {
         )
     }
 
+    /// Where a tool defaults to when it's given no pane: the caller's own
+    /// (an agent block, or the terminal pane `illogical mcp` runs in).
+    fn own_pane(&self) -> Option<PaneId> {
+        self.caller.pane
+    }
+
+    /// The agent block whose token this is: what confines a caller.
     fn me(&self) -> Option<PaneId> {
         match self.caller.scope {
             Scope::Block(b) => Some(b),
@@ -1839,8 +1840,19 @@ impl<'a> Call<'a> {
     async fn list(&self) -> Out {
         let panes = self.panes().await;
         let tab = self.me().and_then(|me| panes.iter().find(|p| p.info.id == me).map(|p| p.tab));
-        let entries: Vec<Value> =
-            panes.iter().filter(|p| tab.is_none_or(|t| p.tab == t)).take(300).map(entry).collect();
+        let own = self.own_pane();
+        let entries: Vec<Value> = panes
+            .iter()
+            .filter(|p| tab.is_none_or(|t| p.tab == t))
+            .take(300)
+            .map(|p| {
+                let mut e = entry(p);
+                if own == Some(p.info.id) {
+                    e["you"] = json!(true);
+                }
+                e
+            })
+            .collect();
         let needs: Vec<String> = panes
             .iter()
             .filter(|p| tab.is_none_or(|t| p.tab == t) && p.info.attention == Attention::NeedsInput)
@@ -1887,8 +1899,8 @@ impl<'a> Call<'a> {
                 }
                 Ok(ThreadTarget::Session(s))
             }
-            (None, None) => match self.me() {
-                Some(me) => Ok(ThreadTarget::Pane(me)),
+            (None, None) => match self.own_pane() {
+                Some(own) => self.readable(own).await.map(|_| ThreadTarget::Pane(own)),
                 None => Err("which thread? give a pane or a session".into()),
             },
         }
@@ -2018,9 +2030,9 @@ impl<'a> Call<'a> {
     }
 
     async fn open_port(&self, a: OpenPortArgs) -> Out {
-        let beside = match (a.beside.as_ref().map(PaneArg::id).transpose()?, self.me()) {
+        let beside = match (a.beside.as_ref().map(PaneArg::id).transpose()?, self.own_pane()) {
             (Some(b), _) => Some(b),
-            (None, me) => me,
+            (None, own) => own,
         };
         let host = match beside {
             Some(b) => self.readable(b).await?.info.host,
@@ -2055,9 +2067,9 @@ impl<'a> Call<'a> {
             let names: Vec<&str> = apps.iter().map(|a| a.name.as_str()).collect();
             return done(format!("{} apps: {}", apps.len(), names.join(", ")), json!({ "apps": apps }));
         };
-        let beside = match (a.beside.as_ref().map(PaneArg::id).transpose()?, self.me()) {
+        let beside = match (a.beside.as_ref().map(PaneArg::id).transpose()?, self.own_pane()) {
             (Some(b), _) => Some(b),
-            (None, me) => me,
+            (None, own) => own,
         };
         if let Some(b) = beside {
             self.readable(b).await?;
@@ -2080,9 +2092,9 @@ impl<'a> Call<'a> {
 
     /// Beside `beside`, or the agent itself; on its machine.
     async fn beside(&self, beside: Option<&PaneArg>) -> Result<(Option<PaneId>, Option<u32>), String> {
-        let beside = match (beside.map(PaneArg::id).transpose()?, self.me()) {
+        let beside = match (beside.map(PaneArg::id).transpose()?, self.own_pane()) {
             (Some(b), _) => Some(b),
-            (None, me) => me,
+            (None, own) => own,
         };
         let host = match beside {
             Some(b) => self.readable(b).await?.info.host,
@@ -2414,9 +2426,9 @@ impl<'a> Call<'a> {
         if a.prompt.trim().is_empty() {
             return Err("give the agent a prompt".into());
         }
-        let beside = match (a.beside.as_ref().map(PaneArg::id).transpose()?, self.me()) {
+        let beside = match (a.beside.as_ref().map(PaneArg::id).transpose()?, self.own_pane()) {
             (Some(b), _) => Some(b),
-            (None, me) => me,
+            (None, own) => own,
         };
         if self.me().is_some() && (a.vm || a.session.is_some()) {
             return Err(
@@ -2518,9 +2530,9 @@ impl<'a> Call<'a> {
     async fn open_conversation(&self, a: OpenConversationArgs) -> Out {
         // Conversations are this host's, and continue as a Claude Code here.
         confine(self.on_machine().await?, false)?;
-        let beside = match (a.beside.as_ref().map(PaneArg::id).transpose()?, self.me()) {
+        let beside = match (a.beside.as_ref().map(PaneArg::id).transpose()?, self.own_pane()) {
             (Some(b), _) => Some(b),
-            (None, me) => me,
+            (None, own) => own,
         };
         if let Some(b) = beside {
             self.readable(b).await?;
@@ -2614,9 +2626,9 @@ impl<'a> Call<'a> {
 
     async fn read_file(&self, a: ReadFileArgs) -> Out {
         let max = a.max_chars.unwrap_or(PAGE).clamp(200, PAGE_MAX);
-        let pane = match (a.pane.as_ref().map(PaneArg::id).transpose()?, self.me()) {
+        let pane = match (a.pane.as_ref().map(PaneArg::id).transpose()?, self.own_pane()) {
             (Some(p), _) => Some(p),
-            (None, me) => me,
+            (None, own) => own,
         };
         let mut path = a.path.clone();
         if let Some(p) = pane {

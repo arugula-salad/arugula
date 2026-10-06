@@ -41,13 +41,27 @@ struct Session {
 struct Bridge {
     target: Target,
     token: Option<String>,
+    /// The pane this runs in (`$ILLOGICAL_PANE`), sent on every request so
+    /// the tools can default to it.
+    pane: Option<String>,
     session: Mutex<Session>,
     out: Mutex<std::io::Stdout>,
 }
 
 pub fn run(target: Target, token: Option<String>) -> anyhow::Result<i32> {
-    let bridge =
-        Arc::new(Bridge { target, token, session: Mutex::new(Session::default()), out: Mutex::new(std::io::stdout()) });
+    // Another daemon's panes aren't this shell's.
+    let pane = std::env::var("ILLOGICAL_PANE")
+        .ok()
+        .and_then(|v| v.trim().parse::<u32>().ok())
+        .filter(|_| matches!(target, Target::Socket(_)))
+        .map(|p| p.to_string());
+    let bridge = Arc::new(Bridge {
+        target,
+        token,
+        pane,
+        session: Mutex::new(Session::default()),
+        out: Mutex::new(std::io::stdout()),
+    });
     let stdin = std::io::stdin();
     for line in stdin.lock().lines() {
         let line = line.context("reading stdin")?;
@@ -179,6 +193,9 @@ impl Bridge {
         if let Some(a) = &auth {
             headers.push(("Authorization", a));
         }
+        if let Some(p) = &self.pane {
+            headers.push(("Illogical-Pane", p));
+        }
         let res = http::send(&self.target, "POST", PATH, &headers, line.as_bytes())?;
         let status = res.status;
         if status == 404 && session.is_some() {
@@ -256,6 +273,9 @@ impl Bridge {
         let auth = self.token.as_ref().map(|t| format!("Bearer {t}"));
         if let Some(a) = &auth {
             headers.push(("Authorization", a));
+        }
+        if let Some(p) = &self.pane {
+            headers.push(("Illogical-Pane", p));
         }
         let res = http::send(&self.target, "POST", PATH, &headers, init.as_bytes())?;
         let id = res.header("mcp-session-id").map(str::to_owned);
