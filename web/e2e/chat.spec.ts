@@ -213,11 +213,11 @@ test("@claude in a session channel says it needs a pane's thread; @notreal isn't
   await chat.locator(".chat-thread textarea").fill("@claude are you there");
   await chat.locator(".chat-thread textarea").press("Enter");
   await expect(chat.locator(".chat-thread .thread-note.unreached")).toHaveText("@claude reaches an agent from its pane's thread");
-  await expect(chat.locator(".chat-thread .thread-msg").filter({ hasText: "are you there" }).locator("b")).toHaveCount(0);
+  await expect(chat.locator(".chat-thread .thread-msg").filter({ hasText: "are you there" }).locator(".mention")).toHaveCount(0);
   await chat.locator(".chat-thread textarea").fill("@notreal hello");
   await chat.locator(".chat-thread textarea").press("Enter");
   await expect(chat.locator(".chat-thread .thread-note.unreached")).toHaveText("Nobody here called notreal can read this thread");
-  await expect(chat.locator(".chat-thread .thread-msg").filter({ hasText: "@notreal hello" }).locator("b")).toHaveCount(0);
+  await expect(chat.locator(".chat-thread .thread-msg").filter({ hasText: "@notreal hello" }).locator(".mention")).toHaveCount(0);
 
   // Someone known here who can't see it: the owner is offered to invite
   // them, and told what they'd see (#297).
@@ -234,7 +234,7 @@ test("@claude in a session channel says it needs a pane's thread; @notreal isn't
   await expect(offer.locator(".thread-offer-sees")).toHaveText("sam will see all of this thread, and no other");
   await offer.getByRole("button", { name: "Not now" }).click();
   await expect(offer).toHaveCount(0);
-  await page.keyboard.press("Escape");
+  await chat.locator("[data-open-panes]").click();
   await expect(chat).toBeHidden();
 });
 

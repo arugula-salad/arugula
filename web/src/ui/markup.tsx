@@ -8,10 +8,10 @@ import type { ComponentChildren } from "preact";
 /** Whether a mention (`@jake`) is the person reading. */
 export type IsMe = (token: string) => boolean;
 
-/** `landed`: the @tokens that reached someone (a thread message's, #296).
+/** `landed`: whether an @token reached someone (a thread message's, #296).
  * Given, only those are marked; the rest stay plain text, so a highlight
  * never promises a notification nobody got. */
-export function Markup({ text, isMe, landed }: { text: string; isMe?: IsMe; landed?: string[] }) {
+export function Markup({ text, isMe, landed }: { text: string; isMe?: IsMe; landed?: (token: string) => boolean }) {
   const out: ComponentChildren[] = [];
   // Fenced blocks first: nothing inside them is formatted.
   const fence = /```[^\n]*\n?([\s\S]*?)```/g;
@@ -31,7 +31,7 @@ export function Markup({ text, isMe, landed }: { text: string; isMe?: IsMe; land
 }
 
 /** Text between code blocks, trimmed of the newlines around the blocks. */
-function Lines({ text, isMe, landed }: { text: string; isMe?: IsMe; landed?: string[] }) {
+function Lines({ text, isMe, landed }: { text: string; isMe?: IsMe; landed?: (token: string) => boolean }) {
   const t = text.replace(/^\n/, "").replace(/\n$/, "");
   if (!t) return null;
   return <p class="thread-text">{inline(t, isMe, landed)}</p>;
@@ -42,7 +42,7 @@ function Lines({ text, isMe, landed }: { text: string; isMe?: IsMe; landed?: str
 const INLINE =
   /(`[^`\n]+`)|(\*\*[^*\n]+\*\*)|((?:^|(?<=[\s(]))[*_][^*_\s][^*_\n]*[*_](?=$|[\s.,;:!?)]))|(https?:\/\/[^\s<>()]+[^\s<>().,;:!?'"])|((?:^|(?<=[^\w]))@[\w.-]*\w)/g;
 
-export function inline(text: string, isMe?: IsMe, landed?: string[]): ComponentChildren[] {
+export function inline(text: string, isMe?: IsMe, landed?: (token: string) => boolean): ComponentChildren[] {
   const out: ComponentChildren[] = [];
   let at = 0;
   let k = 0;
@@ -59,7 +59,7 @@ export function inline(text: string, isMe?: IsMe, landed?: string[]): ComponentC
           {s}
         </a>,
       );
-    else if (landed && !landed.includes(s.slice(1).toLowerCase())) out.push(s);
+    else if (landed && !landed(s.slice(1).toLowerCase())) out.push(s);
     else {
       const token = s.slice(1).toLowerCase();
       out.push(

@@ -93,7 +93,7 @@ test("a message reaches everyone on the pane, live", async ({ browser }) => {
   await panel.locator("textarea").press("Enter");
   await expect(panel.locator(".thread-msg")).toContainText("the deploy script hangs");
   // @friend reached someone, so it's marked.
-  await expect(panel.locator(".thread-text b")).toHaveText("@friend");
+  await expect(panel.locator(".thread-text .mention")).toHaveText("@friend");
 
   // The friend's badge says it's for them; the watcher's just that it's new.
   const badge = (p: Page) => p.locator(`[data-pane="${pane}"] .thread-badge`);
@@ -124,7 +124,7 @@ test("an @ that reached no one stays plain and tells only its poster", async () 
   await panel.locator("textarea").press("Enter");
   const msg = panel.locator(".thread-msg").filter({ hasText: "what's up" });
   await expect(msg).toBeVisible();
-  await expect(msg.locator("b")).toHaveCount(0);
+  await expect(msg.locator(".mention")).toHaveCount(0);
   await expect(panel.locator(".thread-note.unreached")).toHaveText("Nobody here called notreal can read this thread");
   // Typing again clears the note.
   await panel.locator("textarea").fill("x");
@@ -134,7 +134,7 @@ test("an @ that reached no one stays plain and tells only its poster", async () 
   // Not the friend's page: nothing is said to them, and it's plain there too.
   await friend.locator(".thread-panel .thread-msg").filter({ hasText: "what's up" }).waitFor();
   await expect(friend.locator(".thread-panel .thread-note.unreached")).toHaveCount(0);
-  await expect(friend.locator(".thread-panel .thread-msg").filter({ hasText: "what's up" }).locator("b")).toHaveCount(0);
+  await expect(friend.locator(".thread-panel .thread-msg").filter({ hasText: "what's up" }).locator(".mention")).toHaveCount(0);
 });
 
 test("a quote jumps back to the output it came from", async () => {

@@ -719,7 +719,7 @@ function Message({
             <time title={new Date(m.at).toLocaleString()}>{when(m.at)}</time>
           </div>
         )}
-        {m.text && <Markup text={m.text} isMe={isMe} landed={m.landed ?? []} />}
+        {m.text && <Markup text={m.text} isMe={isMe} landed={reached(m, isMe, client.me())} />}
         {m.quote && (
           <button class="thread-quote" title="Show it in the pane" onClick={() => reveal(m.quote!)}>
             <span class="thread-quote-from">
@@ -775,4 +775,15 @@ function unreachedNote(u: Unreached): string {
     default:
       return `Nobody here called ${u.token} can read this thread`;
   }
+}
+
+/** The @tokens of a message that reached someone (#296): the daemon's
+ *  `landed`, and any that name the reader when it reached them (`mentions`
+ *  says so). A message without `landed` (from a daemon before it was kept)
+ *  marks nothing else: better plain than a highlight that promises a
+ *  notification nobody got. */
+function reached(m: ThreadMsg, isMe: (token: string) => boolean, me: string): (token: string) => boolean {
+  const landed = m.landed ?? [];
+  const forMe = !!m.mentions?.includes(me);
+  return (token) => landed.includes(token) || (forMe && isMe(token));
 }
