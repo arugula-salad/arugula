@@ -311,10 +311,14 @@ impl Daemon {
                     let (start, hold, cwd) = match self.next_spawn.take() {
                         // A command from `run`: fill in the pane id it gets.
                         Some((mut spawn, Some(text))) => {
-                            spawn.env.retain(|(k, _)| k != "ARUGULA_PANE" && k != "ARUGULA_EXEC");
-                            spawn.env.push(("ARUGULA_PANE".into(), pane.to_string()));
+                            // Under both names (#505).
+                            use arugula_proto::rename::{both_env, old_env};
+                            spawn.env.retain(|(k, _)| {
+                                !["ARUGULA_PANE", "ARUGULA_EXEC"].iter().any(|n| k == n || *k == old_env(n))
+                            });
+                            spawn.env.extend(both_env("ARUGULA_PANE", pane.to_string()));
                             if host.is_some() {
-                                spawn.env.push(("ARUGULA_EXEC".into(), exec_tag(&self.config.daemon_id, pane)));
+                                spawn.env.extend(both_env("ARUGULA_EXEC", exec_tag(&self.config.daemon_id, pane)));
                             }
                             let cwd = spawn.cwd.clone();
                             (Start::Run { spawn, text }, true, cwd)

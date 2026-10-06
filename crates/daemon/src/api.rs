@@ -1466,12 +1466,13 @@ async fn machines(State(app): AppState) -> Res<Json<Vec<arugula_proto::Machine>>
 }
 
 /// Finds a VM pane's shell by the tag in its environment (a session leader
-/// carrying `ARUGULA_EXEC=$1`) and prints: its pid, the foreground
+/// carrying `ARUGULA_EXEC=$1`, or `ILLOGICAL_EXEC=$1` from an older daemon,
+/// #505) and prints: its pid, the foreground
 /// process's pid, comm, exe, cwd, and argv separated by \x1f.
 const GUEST_PROCESS: &str = r#"
 for d in /proc/[0-9]*; do
   p=${d#/proc/}
-  tr '\0' '\n' <"$d/environ" 2>/dev/null | grep -qx "ARUGULA_EXEC=$1" || continue
+  tr '\0' '\n' <"$d/environ" 2>/dev/null | grep -qx -e "ARUGULA_EXEC=$1" -e "ILLOGICAL_EXEC=$1" || continue
   st=$(sed 's/^.*) //' "$d/stat" 2>/dev/null) || continue
   set -- "$1" $st
   [ "$5" = "$p" ] || continue
@@ -2134,6 +2135,33 @@ async fn push_test(
     let me = who.map(|axum::Extension(w)| w.id().to_owned()).unwrap_or_else(|| "owner".into());
     push.send_to(0, "arugula", "Notifications work.", None, |w| w == me);
     Ok(Json(serde_json::json!({ "subscriptions": push.subscriptions() })))
+}
+
+/// #505: a machine's shell is found by its tag under either name (a pane
+/// an older daemon started has `ILLOGICAL_EXEC`).
+#[cfg(all(test, target_os = "linux"))]
+mod guest_process_tests {
+    #[test]
+    fn a_shell_is_found_by_its_tag_under_either_name() {
+        for name in ["ARUGULA_EXEC", "ILLOGICAL_EXEC"] {
+            let tag = format!("t505-{name}-{}", std::process::id());
+            let mut leader =
+                std::process::Command::new("setsid").args(["sleep", "30"]).env(name, &tag).spawn().unwrap();
+            let pid = leader.id().to_string();
+            let found = (0..50).find_map(|_| {
+                let out =
+                    std::process::Command::new("bash").args(["-c", super::GUEST_PROCESS, "p", &tag]).output().unwrap();
+                let first = String::from_utf8_lossy(&out.stdout).lines().next().map(str::to_owned);
+                (first.as_deref() == Some(pid.as_str())).then_some(()).or_else(|| {
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                    None
+                })
+            });
+            let _ = leader.kill();
+            let _ = leader.wait();
+            assert!(found.is_some(), "{name}");
+        }
+    }
 }
 
 #[cfg(test)]

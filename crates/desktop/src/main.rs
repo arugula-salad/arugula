@@ -975,7 +975,7 @@ fn watch_once(app: &AppHandle) -> anyhow::Result<()> {
 }
 
 fn main() {
-    // ARUGULA_X for ARUGULA_X (#504), before any thread exists.
+    // ILLOGICAL_X stands in for ARUGULA_X (#505), before any thread exists.
     // SAFETY: nothing else runs yet.
     unsafe { arugula_proto::rename::alias_env() };
     // `arugula-desktop --agent status|register|unregister|restart`: the

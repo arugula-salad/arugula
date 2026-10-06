@@ -220,7 +220,9 @@ pub(super) fn text(st: &State) -> String {
 /// `.claude/worktrees/BRANCH` (where the repo keeps its worktrees) or
 /// `.arugula/worktrees/BRANCH` on a new branch from it that tracks
 /// nothing (or on the branch, if it's there already). An existing
-/// worktree is left as it is. Says `ok WORKTREE BASE` or `err WHY` last.
+/// worktree is left as it is, and one an illogical daemon made in
+/// `.illogical/worktrees` is used where it is (#505). Says `ok WORKTREE
+/// BASE` or `err WHY` last.
 const WORKTREE: &str = r#"dir=$1; branch=$2; base=$3; repo=$4
 case $dir in "~") dir=$HOME ;; "~/"*) dir=$HOME/${dir#"~/"} ;; esac
 cd -- "$dir" 2>/dev/null || { printf 'err no such directory: %s\n' "$dir"; exit 0; }
@@ -235,7 +237,8 @@ if [ -z "$base" ]; then
   base=$(git ls-remote --symref "$remote" HEAD 2>/dev/null | awk '$1 == "ref:" { sub("^refs/heads/", "", $2); print $2; exit }')
   [ -n "$base" ] || base=main
 fi
-if [ -d .claude/worktrees ]; then w=.claude/worktrees/$branch; else
+if [ -d .claude/worktrees ]; then w=.claude/worktrees/$branch
+elif [ -e ".illogical/worktrees/$branch/.git" ]; then w=.illogical/worktrees/$branch; else
   w=.arugula/worktrees/$branch; mkdir -p .arugula/worktrees
   ex=$(git rev-parse --git-common-dir)/info/exclude; mkdir -p "$(dirname "$ex")"
   grep -qx '.arugula/' "$ex" 2>/dev/null || echo '.arugula/' >> "$ex"
@@ -663,6 +666,44 @@ fn new_ask(n: &NewIssue, repo: &str) -> Ask {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// #505: a git repository with a commit on `main`, its own `origin`,
+    /// and a worktree an illogical daemon made in `.illogical/worktrees/NAME`.
+    #[cfg(unix)]
+    fn repo_with_old_worktree(tag: &str, name: &str, detached: bool) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("arugula-wt-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let dir = dir.canonicalize().unwrap();
+        let wt = format!(".illogical/worktrees/{name}");
+        let add = if detached {
+            format!("git worktree add -q --detach {wt}")
+        } else {
+            format!("git worktree add -q -b {name} {wt}")
+        };
+        let script = format!(
+            "git init -q -b main && git -c user.name=a -c user.email=a@b commit -q --allow-empty -m one \
+             && git remote add origin \"$PWD\" && {add}"
+        );
+        let st = std::process::Command::new("sh").arg("-c").arg(script).current_dir(&dir).status().unwrap();
+        assert!(st.success());
+        dir
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_older_daemons_worktree_is_used_where_it_is() {
+        let dir = repo_with_old_worktree("issue", "i7-thing", false);
+        let d = dir.display().to_string();
+        let out = std::process::Command::new("sh")
+            .args(["-c", WORKTREE, "sh", &d, "i7-thing", "main", "o/r"])
+            .output()
+            .unwrap();
+        let out = String::from_utf8_lossy(&out.stdout);
+        assert_eq!(out.lines().last(), Some(format!("ok {d}/.illogical/worktrees/i7-thing main").as_str()), "{out}");
+        assert!(!dir.join(".arugula").exists());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 
     #[test]
     fn an_agents_prompt_says_what_and_where() {

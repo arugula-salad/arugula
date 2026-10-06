@@ -468,7 +468,7 @@ impl Inner {
         // the token is in its adapter's environment ([`MCP_TOKEN_ENV`]).
         // Other agents get the token itself, as before.
         let token = if by_reference(&self.cfg.def, ctx) {
-            format!("${{{MCP_TOKEN_ENV}}}")
+            format!("${{{}}}", token_env(&ctx.dir))
         } else {
             link.tokens.block_token(ctx.id)
         };
@@ -484,7 +484,11 @@ impl Inner {
                 "name": crate::mcp::SERVER_NAME,
                 "command": link.cli.display().to_string(),
                 "args": ["mcp", "--socket", link.socket.display().to_string()],
-                "env": [{ "name": "ARUGULA_MCP_TOKEN", "value": token }],
+                // Under the old name too (#505), for an illogical CLI.
+                "env": [
+                    { "name": "ARUGULA_MCP_TOKEN", "value": token },
+                    { "name": "ILLOGICAL_MCP_TOKEN", "value": token },
+                ],
             })
         });
         list
@@ -1358,9 +1362,9 @@ impl Agent {
                     && let Some(link) = &self.ctx.mcp
                 {
                     let token = link.tokens.block_token(self.ctx.id);
-                    env.push((MCP_TOKEN_ENV.into(), token.clone()));
+                    env.extend(arugula_proto::rename::both_env(MCP_TOKEN_ENV, token.clone()));
                     inner.token = Some(token);
-                    let _ = std::fs::write(&marker, b"");
+                    let _ = std::fs::write(&marker, MCP_TOKEN_ENV);
                 } else {
                     let _ = std::fs::remove_file(&marker);
                 }
@@ -2077,8 +2081,19 @@ fn by_reference(def: &Def, ctx: &BlockCtx) -> bool {
 
 /// In the block's directory while its agent server has the token in its
 /// environment (#128): one started by an older daemon hasn't, and is
-/// started again when taken over.
+/// started again when taken over. It holds the variable's name; an
+/// illogical daemon left it empty, for `ILLOGICAL_MCP_BLOCK_TOKEN` (#505).
 const TOKEN_IN_ENV: &str = "mcp-token-env";
+
+/// The variable a block's running agent server has arugula's token in
+/// ([`TOKEN_IN_ENV`]): one an illogical daemon started has only the old
+/// name (#505).
+fn token_env(dir: &Path) -> String {
+    match std::fs::read_to_string(dir.join(TOKEN_IN_ENV)) {
+        Ok(s) if s.trim().is_empty() => arugula_proto::rename::old_env(MCP_TOKEN_ENV),
+        _ => MCP_TOKEN_ENV.to_owned(),
+    }
+}
 
 fn new_session(ctx: &BlockCtx, g: &mut Inner, cwd: &str) {
     // A worn agent never opens a plain session (M44).

@@ -5,7 +5,7 @@
 //!
 //! - **Headers:** read under either name ([`either`]). Send both where the
 //!   other end may be older than 0.25 ([`AGENT`], [`PANE`],
-//!   [`CLAUDE_CONFIG_DIR`], [`SIZE`]); control is always current, so
+//!   [`CLAUDE_CONFIG_DIR`], [`SIZE`], [`OFFSET`]); control is always current, so
 //!   [`AUTH`] goes under the new name only.
 //! - **Environment variables:** `ILLOGICAL_X` stands in for `ARUGULA_X`
 //!   when only the old name is set ([`alias_env`]): a pane started before
@@ -38,7 +38,8 @@ pub const OLD: &str = "illogical";
 pub const AGENT: [&str; 2] = ["x-arugula-agent", "x-illogical-agent"];
 /// The pane an MCP client runs in.
 pub const PANE: [&str; 2] = ["x-arugula-pane", "x-illogical-pane"];
-/// The Claude Code config directory of the agent calling MCP.
+/// The `CLAUDE_CONFIG_DIR` of the client that started `arugula mcp` (#379,
+/// local socket only), so an agent it starts uses that client's login.
 pub const CLAUDE_CONFIG_DIR: [&str; 2] = ["arugula-claude-config-dir", "illogical-claude-config-dir"];
 /// A daemon's or CLI's signed request to control.
 pub const AUTH: [&str; 2] = ["x-arugula-auth", "x-illogical-auth"];
@@ -65,6 +66,26 @@ pub fn env_aliases(
             (!set(&new)).then(|| (new, v.clone()))
         })
         .collect()
+}
+
+/// `ILLOGICAL_X` for `ARUGULA_X`. Panes get the variables a script or an
+/// older CLI reads under both names (`ARUGULA_PANE`, `ARUGULA_SOCK`, …),
+/// and what the daemon takes out goes under both.
+pub fn old_env(new: &str) -> String {
+    format!("ILLOGICAL_{}", new.strip_prefix("ARUGULA_").unwrap_or(new))
+}
+
+/// `ARUGULA_X` under both names, for a pane's environment: `[(new, v),
+/// (old, v)]`.
+pub fn both_env(new: &str, v: impl Into<String>) -> [(String, String); 2] {
+    let v = v.into();
+    [(new.to_owned(), v.clone()), (old_env(new), v)]
+}
+
+/// Whether `k` is one of ours under either name (`ARUGULA_*`,
+/// `ILLOGICAL_*`).
+pub fn is_ours(k: &str) -> bool {
+    k.starts_with("ARUGULA_") || k.starts_with("ILLOGICAL_")
 }
 
 /// Set `ARUGULA_X` from `ILLOGICAL_X` where only the old name is set.
@@ -99,6 +120,16 @@ mod tests {
         ]));
         // The new name wins when both are set; a bare ILLOGICAL isn't ours.
         assert_eq!(got, vec![("ARUGULA_SOCK".to_string(), "/old".into())]);
+    }
+
+    #[test]
+    fn old_env_names() {
+        assert_eq!(old_env("ARUGULA_PANE"), "ILLOGICAL_PANE");
+        assert_eq!(
+            both_env("ARUGULA_SOCK", "/s"),
+            [("ARUGULA_SOCK".into(), "/s".into()), ("ILLOGICAL_SOCK".into(), "/s".into())]
+        );
+        assert!(is_ours("ILLOGICAL_EXEC") && is_ours("ARUGULA_EXEC") && !is_ours("ILLOGICAL"));
     }
 
     #[test]

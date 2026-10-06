@@ -343,7 +343,7 @@ impl Server {
             c.env(k, v);
         }
         // It serves every block, not one pane.
-        c.env_remove("ARUGULA_PANE");
+        c.env_remove("ARUGULA_PANE").env_remove("ILLOGICAL_PANE");
         c
     }
 

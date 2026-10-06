@@ -36,7 +36,7 @@ const WRAPPERS: &[&str] = &[
 
 static SERVERS: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
-        r"\b(run dev|serve|server|uvicorn|gunicorn|rails s|runserver|vite$|vite --|vite dev|next dev|arugulad --foreground|caddy run|nginx|watch|cargo watch|air|npm start|pnpm dev|yarn dev|hugo server)\b",
+        r"\b(run dev|serve|server|uvicorn|gunicorn|rails s|runserver|vite$|vite --|vite dev|next dev|arugulad --foreground|illogicald --foreground|caddy run|nginx|watch|cargo watch|air|npm start|pnpm dev|yarn dev|hugo server)\b",
     )
     .unwrap()
 });
@@ -235,6 +235,7 @@ mod tests {
             ("uvicorn app:main --reload", Server),
             ("python manage.py runserver", Server),
             ("arugulad --foreground", Server),
+            ("illogicald --foreground", Server),
             ("hugo server", Server),
             ("cargo watch -x check", Server),
             ("caddy run", Server),

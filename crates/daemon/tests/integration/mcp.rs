@@ -1054,8 +1054,8 @@ fn as_agent(d: &Daemon, path: &str, body: Value) -> u16 {
     as_agent_by(d, "X-Arugula-Agent", path, body)
 }
 
-/// The same, with the agent header named `header` (#504: the renamed CLI
-/// sends `X-Arugula-Agent`).
+/// The same, with the agent header named `header` (#505: an illogical CLI
+/// sends `X-Illogical-Agent`).
 fn as_agent_by(d: &Daemon, header: &str, path: &str, body: Value) -> u16 {
     use std::io::{Read, Write};
     let mut s = std::os::unix::net::UnixStream::connect(d.sock()).unwrap();
@@ -1158,9 +1158,9 @@ fn an_invite_waits_for_the_owner_and_only_they_send_it() {
     let direct = json!({ "session": session, "who": sam, "role": "editor", "drive_minutes": 60 });
     assert_eq!(as_agent(&d, "/api/invite", direct.clone()), 403);
     assert_eq!(as_agent(&d, "/api/team-pins", json!({ "pins": {} })), 403);
-    // #504: the renamed CLI's header is an agent's too.
-    assert_eq!(as_agent_by(&d, "X-Arugula-Agent", "/api/invite", direct), 403);
-    assert_eq!(as_agent_by(&d, "X-Arugula-Agent", "/api/team-pins", json!({ "pins": {} })), 403);
+    // #505: an illogical CLI's header is an agent's too.
+    assert_eq!(as_agent_by(&d, "X-Illogical-Agent", "/api/invite", direct), 403);
+    assert_eq!(as_agent_by(&d, "X-Illogical-Agent", "/api/team-pins", json!({ "pins": {} })), 403);
     let forged = json!({ "type": "invite", "config": { "drafter": "%1", "drafts": [] } });
     let (status, text) = d.raw("POST", "/api/blocks", Some(forged));
     assert_eq!(status, 403, "{text}");
