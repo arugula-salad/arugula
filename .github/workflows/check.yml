@@ -217,7 +217,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - id: ask
-        run: if scripts/macos-changed "${{ github.event.before }}"; then echo run=true; else echo run=false; fi >> "$GITHUB_OUTPUT"
+        run: if scripts/macos-changed "${{ github.event.before }}"; then echo run=true >> "$GITHUB_OUTPUT"; else echo run=false >> "$GITHUB_OUTPUT"; fi
 
   # GitHub's Apple silicon runner (free for a public repo, up to five at
   # once): jake-mini's one runner kept every run waiting 12-27 min for it,
