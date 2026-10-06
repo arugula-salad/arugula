@@ -13,6 +13,9 @@
 # jake-mini need Docker: the test stack (testnet/README.md) and the ssh
 # tests in `just test` fail without it. Only pushes (never pull requests),
 # since most of it runs on our own machines.
+# Other branches' pushes skip testnet, stack and perf: geek runs several
+# branches at once, and their load made the tests that time things fail
+# (a full run is `gh workflow run check.yml --ref BRANCH`). main runs all.
 name: check
 on:
   push:
@@ -120,6 +123,7 @@ jobs:
   # it must fail.
   testnet:
     needs: [build, static]
+    if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
     runs-on: [self-hosted, linux-x86_64-ci]
     steps:
       - uses: actions/checkout@v4
@@ -160,6 +164,7 @@ jobs:
   # The specs on the test stack (team-swarm-phones' box behind netem).
   stack:
     needs: [build, static]
+    if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
     runs-on: [self-hosted, linux-x86_64-ci]
     steps:
       - uses: actions/checkout@v4
@@ -182,7 +187,7 @@ jobs:
   # measured geek's load.
   perf:
     needs: [build, e2e]
-    if: ${{ !cancelled() && needs.build.result == 'success' }}
+    if: ${{ !cancelled() && needs.build.result == 'success' && (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch') }}
     runs-on: [self-hosted, linux-x86_64-ci]
     steps:
       - uses: actions/checkout@v4

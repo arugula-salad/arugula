@@ -59,6 +59,9 @@ once (#287); a new push to a branch cancels that branch's run:
   Each job takes one of two build directories kept for its kind of job,
   and a test stack with its own name, ports and subnet (`scripts/ci-env`),
   so jobs and runs on geek don't share either.
+  Pushes to branches other than main skip testnet, stack and perf (geek
+  runs several branches at once, and their load failed the tests that
+  time things); `gh workflow run check.yml --ref BRANCH` runs them all.
 - **macos** (jake-mini): `just test` and `just e2e-webkit`.
 
 The Rust tests run under cargo-nextest (`.config/nextest.toml`): each in
