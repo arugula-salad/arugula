@@ -142,7 +142,9 @@ fn unpack(archive: &Path, into: &Path) -> anyhow::Result<()> {
 
 /// `illogicald --version` says `illogicald 0.24.0`.
 pub fn version_of(bin: &Path) -> Option<String> {
-    let out = Command::new(bin).arg("--version").output().ok()?;
+    // Not into a log file: the app's agent sets ILLOGICAL_LOG_FILE, and
+    // `hand_on` asks before main takes it out of the environment.
+    let out = Command::new(bin).arg("--version").env_remove("ILLOGICAL_LOG_FILE").output().ok()?;
     out.status.success().then_some(())?;
     String::from_utf8_lossy(&out.stdout).split_whitespace().nth(1).map(str::to_owned)
 }
@@ -266,7 +268,13 @@ fn start(to: String, releases: String, state_dir: PathBuf) -> Result<Applying, (
         };
         stage(&to, "installing", None);
         let log = state_dir.join("update.log");
-        let ran = tokio::task::spawn_blocking(move || hand_off(&exe, &log)).await;
+        // A thread of its own, not spawn_blocking: the runtime's shutdown
+        // waits for those, and the install waits for this daemon to exit.
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(hand_off(&exe, &log));
+        });
+        let ran = rx.await;
         let why = match ran {
             Ok(Ok(())) => {
                 // The install restarted the service, so this should be gone
