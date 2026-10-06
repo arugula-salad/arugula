@@ -227,6 +227,179 @@ async fn joining_again_needs_the_machines_key() {
 }
 
 #[tokio::test]
+async fn a_removed_machine_rejoins_only_with_a_new_key() {
+    let c = control(|_| {}).await;
+    let root = person(&c.app, "jake", "a1");
+    let cookie = session(&c.app, "a1");
+    let post = |b: Value| c.http.post(format!("{}/api/join", c.base)).json(&b).send();
+    let approve = |keys: &DeviceKeys, code: &str| {
+        let mut cert = Cert { account: "a1".into(), ..Cert::new(keys, "", Kind::Daemon, "box") };
+        cert.sign_with(&root);
+        let path = format!("/api/joins/{code}/approve");
+        let cookie = cookie.clone();
+        let c = &c;
+        async move { c.as_person(&cookie, "POST", &path, Some(json!({ "cert": cert }))).await }
+    };
+
+    // It joins, then a browser removes it.
+    let old = DeviceKeys::generate();
+    let r: Value = post(join_body(&old, true)).await.unwrap().json().await.unwrap();
+    let old_code = r["code"].as_str().unwrap().to_owned();
+    assert_eq!(approve(&old, &old_code).await.0, 200);
+    assert_eq!(c.daemon_get(&old, "/api/daemon/trust").await.0, 200);
+    let rev = illogical_e2e::Revocation::new("a1", &old.id(), &root);
+    let (st, _) = c.as_person(&cookie, "POST", "/api/revocations", Some(json!({ "revocation": rev }))).await;
+    assert_eq!(st, 200);
+
+    // Its key is Gone, saying so, not that it isn't enrolled.
+    let (st, said) = c.daemon_get(&old, "/api/daemon/trust").await;
+    assert_eq!(st, 410);
+    assert!(said["error"].as_str().unwrap().contains("removed from its account"), "{said}");
+    // Joining with it again: refused at once, with when and by which
+    // device, and no code to approve.
+    let r = post(join_body(&old, true)).await.unwrap();
+    assert_eq!(r.status(), 410);
+    let said: Value = r.json().await.unwrap();
+    assert!(said.get("code").is_none());
+    assert_eq!(said["removed"]["by"], "laptop");
+    assert_eq!(said["removed"]["at"], rev.at);
+    let words = said["error"].as_str().unwrap();
+    assert!(words.contains("removed") && words.contains("by laptop") && words.contains("new key"), "{words}");
+    // Without its key's proof, it learns less.
+    let said: Value = post(join_body(&old, false)).await.unwrap().json().await.unwrap();
+    assert!(said["removed"].get("by").is_none() && !said["error"].as_str().unwrap().contains("laptop"), "{said}");
+    // A code it got before (or from an older control) is refused for the
+    // real reason.
+    let ask = Cert { account: String::new(), ..Cert::new(&old, "", Kind::Daemon, "box") };
+    c.app.db.drop_join(&old_code).unwrap();
+    c.app.db.add_join(&old_code, &ask, &hash("p"), &[], None, None, "", true, now_ms()).unwrap();
+    let (st, said) = approve(&old, &old_code).await;
+    assert_eq!(st, 403);
+    assert!(said["error"].as_str().unwrap().contains("removed"), "{said}");
+
+    // With a new key: a new code, approved once.
+    let new = DeviceKeys::generate();
+    let r: Value = post(join_body(&new, true)).await.unwrap().json().await.unwrap();
+    let code = r["code"].as_str().unwrap().to_owned();
+    assert_ne!(code, old_code);
+    assert_eq!(approve(&new, &code).await.0, 200);
+    assert_eq!(approve(&new, &code).await.0, 404, "approved once");
+    assert_eq!(c.daemon_get(&new, "/api/daemon/trust").await.0, 200);
+    assert_eq!(c.app.db.daemon_row(&new.id()).unwrap().unwrap().0, "a1");
+    // The old key stays out.
+    assert_eq!(c.daemon_get(&old, "/api/daemon/trust").await.0, 410);
+    assert_eq!(post(join_body(&old, true)).await.unwrap().status(), 410);
+}
+
+/// #329: two joins from one machine (the CLI and Getting started, say)
+/// share a code. The second never wipes an approval the first got, and the
+/// requester that lost out is told why.
+#[tokio::test]
+async fn a_second_join_from_one_machine_keeps_the_approval() {
+    let c = control(|_| {}).await;
+    let root = person(&c.app, "jake", "a1");
+    let cookie = session(&c.app, "a1");
+    let keys = DeviceKeys::generate();
+    let ask = |proof: bool| {
+        let b = join_body(&keys, proof);
+        let c = &c;
+        async move {
+            let r = c.http.post(format!("{}/api/join", c.base)).json(&b).send().await.unwrap();
+            (r.status().as_u16(), r.json::<Value>().await.unwrap_or_default())
+        }
+    };
+    let poll = |code: &str, poll: &str| {
+        let url = format!("{}/api/join/{code}?poll={poll}", c.base);
+        let c = &c;
+        async move {
+            let r = c.http.get(url).send().await.unwrap();
+            (r.status().as_u16(), r.json::<Value>().await.unwrap_or_default())
+        }
+    };
+    let approve = |code: &str| {
+        let mut cert = Cert { account: "a1".into(), ..Cert::new(&keys, "", Kind::Daemon, "box") };
+        cert.sign_with(&root);
+        let path = format!("/api/joins/{code}/approve");
+        let (c, cookie) = (&c, cookie.clone());
+        async move { c.as_person(&cookie, "POST", &path, Some(json!({ "cert": cert }))).await }
+    };
+
+    // The first asks and is approved; then a second asks from the machine.
+    let (_, first) = ask(true).await;
+    let code = first["code"].as_str().unwrap().to_owned();
+    assert_eq!(approve(&code).await.0, 200);
+    let (st, second) = ask(true).await;
+    assert_eq!(st, 200, "{second}");
+    assert_eq!(second["code"], code.as_str());
+    // The approval stands: the second collects it, and the first is told.
+    let (st, said) = poll(&code, first["poll"].as_str().unwrap()).await;
+    assert_eq!(st, 409, "{said}");
+    assert!(said["error"].as_str().unwrap().contains("another join from this machine"), "{said}");
+    let (st, got) = poll(&code, second["poll"].as_str().unwrap()).await;
+    assert_eq!(st, 200);
+    assert_eq!(got["approved"], true, "{got}");
+    assert_eq!(got["trust"]["root"], root.id());
+
+    // Before an approval: the second takes the code over; the first hears
+    // so; one approval does for the second.
+    let keys2 = DeviceKeys::generate();
+    let b1 = join_body(&keys2, true);
+    let first: Value =
+        c.http.post(format!("{}/api/join", c.base)).json(&b1).send().await.unwrap().json().await.unwrap();
+    let b2 = join_body(&keys2, true);
+    let second: Value =
+        c.http.post(format!("{}/api/join", c.base)).json(&b2).send().await.unwrap().json().await.unwrap();
+    let code2 = second["code"].as_str().unwrap().to_owned();
+    assert_eq!(poll(&code2, first["poll"].as_str().unwrap()).await.0, 409);
+    assert_eq!(poll(&code2, second["poll"].as_str().unwrap()).await.1["approved"], false);
+    // Someone with only its certificate can't take a waiting join over.
+    let r = c.http.post(format!("{}/api/join", c.base)).json(&join_body(&keys2, false)).send().await.unwrap();
+    assert_eq!(r.status(), 409);
+    assert_eq!(poll(&code2, second["poll"].as_str().unwrap()).await.0, 200);
+    // A poll token nobody was given is still nobody's.
+    assert_eq!(poll(&code2, "nope").await.0, 403);
+}
+
+/// #330: a removed machine is refused everywhere, so only its own
+/// account removes it, and nobody else's revocation keeps it out.
+#[tokio::test]
+async fn only_a_machines_own_account_removes_it() {
+    let c = control(|_| {}).await;
+    person(&c.app, "jake", "a1");
+    let mallory = person(&c.app, "mallory", "a2");
+    let box_a = daemon(&c.app, "a1", "geek");
+    let cookie = session(&c.app, "a2");
+    let revoke = |by: &DeviceKeys, id: &str| {
+        let rev = illogical_e2e::Revocation::new("a2", id, by);
+        let cookie = cookie.clone();
+        let c = &c;
+        async move { c.as_person(&cookie, "POST", "/api/revocations", Some(json!({ "revocation": rev }))).await }
+    };
+
+    // Mallory can't revoke Jake's machine by its fingerprint.
+    let (st, said) = revoke(&mallory, &box_a.id()).await;
+    assert_eq!(st, 403);
+    assert_eq!(said["error"], "that device isn't this account's");
+    assert_eq!(c.daemon_get(&box_a, "/api/daemon/trust").await.0, 200);
+
+    // Nor by making its public keys a device of her own and revoking that:
+    // it's out of her account, not refused anywhere else.
+    let mut planted = Cert::new(&box_a, "a2", Kind::Browser, "planted");
+    planted.sign_with(&mallory);
+    c.app.db.put_device(&planted, true, now_ms()).unwrap();
+    assert_eq!(revoke(&mallory, &box_a.id()).await.0, 200);
+    assert!(c.app.db.revoked(&box_a.id()).unwrap().is_none());
+    assert_eq!(c.daemon_get(&box_a, "/api/daemon/trust").await.0, 200);
+    let r = c.http.post(format!("{}/api/join", c.base)).json(&join_body(&box_a, true)).send().await.unwrap();
+    assert_eq!(r.status(), 200, "its holder still joins (to move it, say)");
+
+    // Her own machine she removes, and it's refused from then on.
+    let box_m = daemon(&c.app, "a2", "mbox");
+    assert_eq!(revoke(&mallory, &box_m.id()).await.0, 200);
+    assert_eq!(c.daemon_get(&box_m, "/api/daemon/trust").await.0, 410);
+}
+
+#[tokio::test]
 async fn the_cli_joins_with_a_code_and_then_signs_as_its_account() {
     let c = control(|_| {}).await;
     let root = person(&c.app, "jake", "a1");
@@ -729,6 +902,86 @@ async fn deleting_a_founder_hangs_up_the_teams_machines_and_tells_its_members() 
         let (_, v) = c.as_person(cookie, "GET", "/api/teams", None).await;
         assert_eq!(v["notices"], json!([]), "{who}");
     }
+}
+
+#[tokio::test]
+async fn a_full_relay_refuses_new_sockets_and_still_signs_people_in() {
+    // #344: a ceiling of two relay sockets, one account's daemon and page
+    // holding both.
+    let c = control(|a| a.relay.caps.total = 2).await;
+    let root = person(&c.app, "jake", "a1");
+    let geek = daemon(&c.app, "a1", "geek");
+    let geeks_socket = dial_relay(&c, &geek).await;
+    let cookie = session(&c.app, "a1");
+    let page_socket = || {
+        let mut req = format!("{}/api/relay/m", c.base.replace("http://", "ws://")).into_client_request().unwrap();
+        req.headers_mut().insert("cookie", cookie.parse().unwrap());
+        req.headers_mut().insert("origin", c.base.parse().unwrap());
+        req
+    };
+    let (mut page, _) = tokio_tungstenite::connect_async(page_socket()).await.unwrap();
+    assert_eq!(c.app.relay.counts().0, 2);
+
+    // Another account's daemon is told to wait, with why.
+    person(&c.app, "mo", "m1");
+    let box_ = daemon(&c.app, "m1", "box");
+    let mut req = format!("{}/api/relay/dial", c.base.replace("http://", "ws://")).into_client_request().unwrap();
+    req.headers_mut().insert("x-illogical-auth", v2(&box_, "GET", "/api/relay/dial", b"").parse().unwrap());
+    let Err(tokio_tungstenite::tungstenite::Error::Http(r)) = tokio_tungstenite::connect_async(req).await else {
+        panic!("a daemon dials into a full relay");
+    };
+    assert_eq!(r.status(), 503);
+    assert_eq!(r.headers()["retry-after"], "30");
+    let body: Value = serde_json::from_slice(r.body().as_deref().unwrap()).unwrap();
+    assert_eq!(body["error"], crate::relay::FULL);
+    // So is the CLI, the same way.
+    let cli = DeviceKeys::generate();
+    let mut cert = Cert::new(&cli, "a1", Kind::Cli, "illogical CLI");
+    cert.sign_with(&root);
+    c.app.db.put_device(&cert, true, now_ms()).unwrap();
+    let path = format!("/api/relay/c/{}", geek.id());
+    let mut req = format!("{}{path}", c.base.replace("http://", "ws://")).into_client_request().unwrap();
+    req.headers_mut().insert("x-illogical-auth", v2(&cli, "GET", &path, b"").parse().unwrap());
+    let Err(tokio_tungstenite::tungstenite::Error::Http(r)) = tokio_tungstenite::connect_async(req).await else {
+        panic!("the CLI connects through a full relay");
+    };
+    assert_eq!(r.status(), 503);
+    // A browser can't read that, so its socket is closed at once with why.
+    let (mut second, _) = tokio_tungstenite::connect_async(page_socket()).await.unwrap();
+    let Some(Ok(Message::Close(Some(f)))) = tokio::time::timeout(Duration::from_secs(2), second.next()).await.unwrap()
+    else {
+        panic!("a browser's socket is closed");
+    };
+    assert_eq!((u16::from(f.code), f.reason.as_str()), (1013, crate::relay::FULL));
+    assert_eq!(c.app.relay.counts(), (2, 1, 2, 3));
+
+    // Control's pages and sign-ins still answer.
+    assert_eq!(c.http.get(format!("{}/control.json", c.base)).send().await.unwrap().status(), 200);
+    let (st, v) = c.as_person("", "POST", "/auth/passkey/login", None).await;
+    assert_eq!(st, 200, "{v}");
+    assert!(v["challenge"].is_string());
+    assert_eq!(c.as_person(&cookie, "GET", "/api/me", None).await.0, 200);
+
+    // What was open stays open; one closing makes room.
+    assert!(c.app.relay.online(&geek.id()));
+    page.close(None).await.unwrap();
+    assert!(closes(&mut page).await);
+    for _ in 0..50 {
+        if c.app.relay.counts().0 < 2 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    let _boxes_socket = dial_relay(&c, &box_).await;
+    for _ in 0..50 {
+        if c.app.relay.online(&box_.id()) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(c.app.relay.online(&box_.id()), "the box is on the relay now");
+    assert!(c.app.relay.online(&geek.id()), "geek's socket was kept throughout");
+    drop(geeks_socket);
 }
 
 #[test]
