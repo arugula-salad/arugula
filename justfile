@@ -67,7 +67,9 @@ build-macos-x86_64: web
 
 # Release tarballs in dist/: arugula-VERSION-TARGET.tar.gz with both
 # binaries and the licenses, for the targets already built (`just static`,
-# `just static aarch64`, `just build` and `just build-macos-x86_64` on a Mac).
+# `just static aarch64`, `just build` and `just build-macos-x86_64` on a Mac),
+# and each under its old name, illogical-VERSION-TARGET.tar.gz, for older
+# daemons' self-update (scripts/dist-pack, #505).
 dist:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -79,10 +81,11 @@ dist:
       # The Mac's own architecture builds without --target (`just build`).
       if [ "$t" = "$host" ] && [ -x {{target_dir}}/release/arugulad ]; then d={{target_dir}}/release; fi
       [ -x "$d/arugulad" ] || continue
-      n=arugula-$v-$t; s=$(mktemp -d)/$n; mkdir -p "$s"
-      cp "$d/arugulad" "$d/arugula" LICENSE-MIT LICENSE-APACHE THIRD_PARTY.md README.md "$s/"
-      tar -C "$(dirname "$s")" -czf "dist/$n.tar.gz" "$n"
-      echo "dist/$n.tar.gz"
+      n=arugula-$v-$t; rm -rf "dist/$n"; mkdir -p "dist/$n"
+      cp "$d/arugulad" "$d/arugula" LICENSE-MIT LICENSE-APACHE THIRD_PARTY.md README.md "dist/$n/"
+      # And illogical-VERSION-TARGET.tar.gz for older daemons (#505).
+      scripts/dist-pack "dist/$n"
+      rm -rf "dist/$n"
     done
     (cd dist && (sha256sum *.tar.gz 2>/dev/null || shasum -a 256 *.tar.gz) > SHA256SUMS)
 
@@ -209,7 +212,9 @@ desktop-macos arch="" *tauri_args="":
     ln -s /usr/bin/xattr "$sysbin/xattr"
     # ${flags[@]+…}: macOS bash 3.2 calls an empty array unbound.
     PATH="$sysbin:$PATH" cargo tauri build --bundles app ${flags[@]+"${flags[@]}"} {{tauri_args}}
-    app=$out/bundle/macos/arugula.app
+    # The bundle is named after the app's productName (Arugula.app).
+    product=$(sed -n 's/^ *"productName": "\(.*\)",$/\1/p' tauri.conf.json)
+    app=$out/bundle/macos/$product.app
     "$root/scripts/macos-sign" app "$app"
     # A zip of the app: ditto keeps its signature and symlinks.
     # --norsrc: no ._* AppleDouble files for xattrs like
@@ -221,7 +226,7 @@ desktop-macos arch="" *tauri_args="":
     if zipinfo -1 "$zip" | grep -E '(^|/)\._'; then echo "AppleDouble files in $zip" >&2; exit 1; fi
     # The .dmg: the app beside a link to /Applications.
     stage=$(mktemp -d)
-    ditto "$app" "$stage/arugula.app"
+    ditto "$app" "$stage/$product.app"
     ln -s /Applications "$stage/Applications"
     dmg=$dist/arugula-desktop-$name.dmg
     rm -f "$dmg"
@@ -231,7 +236,7 @@ desktop-macos arch="" *tauri_args="":
     # The updater's archive of the app, signed with the updater key.
     if [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
       tgz=$dist/arugula-desktop-$name.app.tar.gz
-      tar -C "$(dirname "$app")" -czf "$tgz" arugula.app
+      tar -C "$(dirname "$app")" -czf "$tgz" "$product.app"
       cargo tauri signer sign "$tgz" >/dev/null
       echo "signed $tgz for the updater"
     else

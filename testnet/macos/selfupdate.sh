@@ -95,14 +95,20 @@ echo "daemons: OLD $OLD, NEW $NEW (debug builds)"
 
 # The fake releases.
 srvdir=$work/srv
+# Packed as a release is (scripts/dist-pack), so under the old name too: a
+# daemon from before the rename fetches illogical-VERSION-TARGET (#505).
 release() { # VERSION FROM-DIR [lie]
-  local stem="arugula-$1-$TARGET" d="$srvdir/releases/download/v$1"
-  mkdir -p "$d" "$work/stage/$stem"
-  cp "$2/arugulad" "$2/arugula" "$work/stage/$stem/"
-  tar -czf "$d/$stem.tar.gz" -C "$work/stage" "$stem"
-  local sum; sum=$(shasum -a 256 "$d/$stem.tar.gz" | awk '{print $1}')
-  [ -z "${3:-}" ] || sum=$(printf '0%.0s' $(seq 64))
-  printf '%s  %s\n' "$sum" "$stem.tar.gz" >"$d/SHA256SUMS"
+  local stem="arugula-$1-$TARGET" d="$srvdir/releases/download/v$1" f sum
+  mkdir -p "$d/$stem"
+  cp "$2/arugulad" "$2/arugula" "$d/$stem/"
+  "$ROOT/scripts/dist-pack" "$d/$stem" >/dev/null
+  rm -rf "${d:?}/$stem"
+  : >"$d/SHA256SUMS"
+  for f in "$stem.tar.gz" "illogical-$1-$TARGET.tar.gz"; do
+    sum=$(shasum -a 256 "$d/$f" | awk '{print $1}')
+    [ -z "${3:-}" ] || sum=$(printf '0%.0s' $(seq 64))
+    printf '%s  %s\n' "$sum" "$f" >>"$d/SHA256SUMS"
+  done
 }
 release $NEW "$sudir/$NEW"
 release $BAD "$sudir/$NEW" lie

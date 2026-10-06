@@ -25,9 +25,18 @@
 # ARUGULA_APP_VERSION=app-vX.Y.Z  the app's release (default: app-latest)
 # ARUGULA_APP_DOWNLOAD_URL=…      where the app's zip and its SHA256SUMS
 #                           are, instead of GitHub
-# ARUGULA_APP_DIR=DIR     where arugula.app goes, instead of
+# ARUGULA_APP_DIR=DIR     where Arugula.app goes, instead of
 #                           /Applications or ~/Applications
+# Each ARUGULA_X can also be ILLOGICAL_X, its name before the rename.
 set -eu
+
+# The names from before the rename, for scripts that set them (#505, drop
+# in #508). The new one wins when both are set.
+for v in VERSION NO_START DOWNLOAD_URL APP APP_VERSION APP_DOWNLOAD_URL APP_DIR; do
+  if eval "[ -z \"\${ARUGULA_$v+x}\" ] && [ -n \"\${ILLOGICAL_$v+x}\" ]"; then
+    eval "ARUGULA_$v=\$ILLOGICAL_$v"
+  fi
+done
 
 repo=https://github.com/arugula-salad/illogical
 
@@ -147,6 +156,15 @@ if [ "$os" = Linux ] && ! command -v systemctl >/dev/null 2>&1; then
     cp "$tmp/$name/$b" "$HOME/.local/bin/.$b.new" && mv "$HOME/.local/bin/.$b.new" "$HOME/.local/bin/$b"
   done
   say "installed ~/.local/bin/arugulad and ~/.local/bin/arugula"
+  # An install from before the rename: its names now lead to the new
+  # binaries, for the panes and hooks that call them (#505, drop in #508).
+  # `arugulad install` does this where there's a service.
+  for b in arugulad arugula; do
+    o=illogical${b#arugula}
+    if [ -e "$HOME/.local/bin/$o" ] || [ -L "$HOME/.local/bin/$o" ]; then
+      ln -sf "$b" "$HOME/.local/bin/.$o.new" && mv -f "$HOME/.local/bin/.$o.new" "$HOME/.local/bin/$o"
+    fi
+  done
   nosystemd=1
 elif [ -n "${ARUGULA_NO_START:-}" ]; then
   "$tmp/$name/arugulad" install --no-start
@@ -160,11 +178,16 @@ fi
 listen=127.0.0.1:7681
 if [ "$os" = Darwin ]; then
   plist="$HOME/Library/LaunchAgents/arugulad.plist"
-  # Or the LaunchDaemon `arugulad install --system` wrote.
-  [ -f "$plist" ] || plist="/Library/LaunchDaemons/arugulad.$(id -un).plist"
+  # Or the LaunchDaemon `arugulad install --system` wrote, or (not started,
+  # on a machine from before the rename) the old one's (#505).
+  for p in "/Library/LaunchDaemons/arugulad.$(id -un).plist" "$HOME/Library/LaunchAgents/illogicald.plist" "/Library/LaunchDaemons/illogicald.$(id -un).plist"; do
+    [ -f "$plist" ] || plist=$p
+  done
   args=$(sed -n 's:.*<string>\(.*\)</string>.*:\1:p' "$plist" 2>/dev/null || true)
 else
-  args=$(sed -n 's/^ExecStart=[^ ]*//p' "$HOME/.config/systemd/user/arugulad.service" 2>/dev/null || true)
+  unit="$HOME/.config/systemd/user/arugulad.service"
+  [ -f "$unit" ] || unit="$HOME/.config/systemd/user/illogicald.service"
+  args=$(sed -n 's/^ExecStart=[^ ]*//p' "$unit" 2>/dev/null || true)
 fi
 prev=""
 for a in $args; do
@@ -206,7 +229,7 @@ elif [ -n "${nosystemd:-}" ]; then
     # An upgrade: the old daemon is still the one running.
     say "arugula $version is installed. A daemon is already running here (the old one): restart it"
     say "to run this version. Panes started with --keep-panes keep running:"
-    say "  kill \$(pgrep -f '^$HOME/.local/bin/arugulad --keep-panes')"
+    say "  kill \$(pgrep -f '^$HOME/.local/bin/(arugulad|illogicald) --keep-panes')"
   else
     say "arugula $version is installed. No systemd here, so no service: start the daemon with"
   fi
@@ -221,35 +244,50 @@ fi
 # rather than starting its own (#392). /Applications if this user can
 # write there, else ~/Applications.
 if [ "$app" = 1 ]; then
+  ditto -x -k "$tmp/app/$zip" "$tmp/app/x" || die "couldn't unpack $zip"
+  # The bundle's name is the app's productName (Arugula.app).
+  bundle=""
+  for b in "$tmp/app/x"/*.app; do [ -d "$b" ] && bundle=$(basename "$b") && break; done
+  [ -n "$bundle" ] || die "$zip has no app in it"
   if [ -n "${ARUGULA_APP_DIR:-}" ]; then
     appdir=$ARUGULA_APP_DIR
-  elif [ -w /Applications ] && { [ ! -e /Applications/arugula.app ] || [ -w /Applications/arugula.app ]; }; then
+  elif [ -w /Applications ] && { [ ! -e "/Applications/$bundle" ] || [ -w "/Applications/$bundle" ]; }; then
     appdir=/Applications
   else
     appdir=$HOME/Applications
   fi
   mkdir -p "$appdir"
-  ditto -x -k "$tmp/app/$zip" "$tmp/app/x" || die "couldn't unpack $zip"
-  [ -d "$tmp/app/x/arugula.app" ] || die "$zip has no arugula.app"
   # Side by side, then swapped in, so a failed copy leaves the old app.
-  rm -rf "$appdir/.arugula.app.new"
-  ditto "$tmp/app/x/arugula.app" "$appdir/.arugula.app.new" || die "couldn't copy arugula.app to $appdir"
-  rm -rf "$appdir/arugula.app"
-  mv "$appdir/.arugula.app.new" "$appdir/arugula.app"
+  rm -rf "$appdir/.$bundle.new"
+  ditto "$tmp/app/x/$bundle" "$appdir/.$bundle.new" || die "couldn't copy $bundle to $appdir"
+  rm -rf "${appdir:?}/$bundle"
+  mv "$appdir/.$bundle.new" "$appdir/$bundle"
   say ""
-  say "The app is in $appdir/arugula.app."
+  say "The app is in $appdir/$bundle."
+  # The app from before the rename, illogical.app, is this one now: it
+  # goes, so Spotlight and the Dock don't keep opening it (#505, drop in
+  # #508).
+  if [ "$bundle" != illogical.app ] && [ -d "$appdir/illogical.app" ]; then
+    if rm -rf "${appdir:?}/illogical.app" 2>/dev/null; then
+      say "  It replaces $appdir/illogical.app (illogical is Arugula now)."
+    else
+      say "  Remove $appdir/illogical.app (illogical is Arugula now): it couldn't be removed from here."
+    fi
+  fi
   other=""
   case "$appdir" in
-    /Applications) other=$HOME/Applications/arugula.app ;;
-    "$HOME/Applications") other=/Applications/arugula.app ;;
+    /Applications) other=$HOME/Applications ;;
+    "$HOME/Applications") other=/Applications ;;
   esac
-  if [ -n "$other" ] && [ -e "$other" ]; then
-    say "  There's an older copy in $other: remove it, so Spotlight and the Dock open this one."
-  fi
-  if pgrep -x arugula-desktop >/dev/null 2>&1; then
-    say "  An earlier one is running: quit it (arugula > Quit) and open the app again."
+  for o in "$bundle" illogical.app; do
+    if [ -n "$other" ] && [ -e "$other/$o" ]; then
+      say "  There's an older copy in $other/$o: remove it, so Spotlight and the Dock open this one."
+    fi
+  done
+  if pgrep -f '/(Arugula|arugula|illogical)\.app/Contents/MacOS/' >/dev/null 2>&1; then
+    say "  An earlier one is running: quit it (its menu > Quit) and open the app again."
   elif [ -n "$started" ]; then
-    open "$appdir/arugula.app" || say "  Open it from $appdir."
+    open "$appdir/$bundle" || say "  Open it from $appdir."
   fi
 fi
 

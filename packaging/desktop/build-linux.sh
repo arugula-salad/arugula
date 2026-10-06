@@ -18,6 +18,8 @@ case "$arch" in
 esac
 cd /src/crates/desktop
 v=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+# The bundles are named after the app's productName.
+product=$(sed -n 's/^ *"productName": "\(.*\)",$/\1/p' tauri.conf.json)
 for b in arugulad arugula; do
   [ -s "binaries/$b-$host" ] || { echo "missing binaries/$b-$host (just static $arch)" >&2; exit 1; }
 done
@@ -45,16 +47,16 @@ out=$CARGO_TARGET_DIR/release/bundle
 # install its daemon). Put the originals back and pack the AppImage again
 # with the same plugin.
 cd "$out/appimage"
-for b in arugulad arugula; do install -m 755 "/src/crates/desktop/binaries/$b-$host" "arugula.AppDir/usr/bin/$b"; done
-for b in arugulad arugula; do "arugula.AppDir/usr/bin/$b" --version >/dev/null; done
-appimage=$(ls arugula_"$v"_*.AppImage)
+for b in arugulad arugula; do install -m 755 "/src/crates/desktop/binaries/$b-$host" "$product.AppDir/usr/bin/$b"; done
+for b in arugulad arugula; do "$product.AppDir/usr/bin/$b" --version >/dev/null; done
+appimage=$(ls "$product"_"$v"_*.AppImage)
 rm -f "$appimage"
 plugin=$(ls /root/.cache/tauri/linuxdeploy-plugin-appimage*.AppImage | head -1)
-APPIMAGE_EXTRACT_AND_RUN=1 ARCH=$arch OUTPUT=$appimage "$plugin" --appdir arugula.AppDir >/dev/null
+APPIMAGE_EXTRACT_AND_RUN=1 ARCH=$arch OUTPUT=$appimage "$plugin" --appdir "$product.AppDir" >/dev/null
 mkdir -p /dist
 name=arugula-desktop-linux-$arch
-cp "$out/deb/arugula_${v}_$deb.deb" "/dist/$name.deb"
-cp "$out/rpm/arugula-$v-1.$arch.rpm" "/dist/$name.rpm"
+cp "$out/deb/${product}_${v}_$deb.deb" "/dist/$name.deb"
+cp "$out/rpm/$product-$v-1.$arch.rpm" "/dist/$name.rpm"
 cp "$out/appimage/$appimage" "/dist/$name.AppImage"
 # The sidecars as the app will run them: they must start (from a copy
 # without the mark, which the shipped AppImage keeps).

@@ -46,17 +46,22 @@ docker compose -f "$HERE/compose.yaml" --profile ssh up -d --force-recreate --wa
 s() { ssh -F "$STATE/ssh_config" box-systemd "$@"; }
 until s true 2>/dev/null; do sleep 1; done
 
-# The fake release: NEW's archive and SHA256SUMS, and BAD, whose sum lies.
+# The fake release: NEW's archives and SHA256SUMS, and BAD, whose sums lie.
+# Packed as a release is (scripts/dist-pack), so under the old name too: an
+# OLD from before the rename fetches illogical-VERSION-TARGET (#505).
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 for v in "$NEW" "$BAD"; do
   d="$work/rel/releases/download/v$v"
   name="arugula-$v-$TARGET"
-  mkdir -p "$d" "$work/$name"
-  cp "$NEW_DIR/arugulad" "$NEW_DIR/arugula" "$work/$name/"
-  tar -czf "$d/$name.tar.gz" -C "$work" "$name"
-  if [ "$v" = "$BAD" ]; then sum=$(printf '0%.0s' $(seq 64)); else sum=$(sha256sum "$d/$name.tar.gz" | cut -d' ' -f1); fi
-  echo "$sum  $name.tar.gz" > "$d/SHA256SUMS"
+  mkdir -p "$d" "$d/$name"
+  cp "$NEW_DIR/arugulad" "$NEW_DIR/arugula" "$d/$name/"
+  "$HERE/../scripts/dist-pack" "$d/$name" >/dev/null
+  rm -rf "${d:?}/$name"
+  for f in "$name.tar.gz" "illogical-$v-$TARGET.tar.gz"; do
+    if [ "$v" = "$BAD" ]; then sum=$(printf '0%.0s' $(seq 64)); else sum=$(sha256sum "$d/$f" | cut -d' ' -f1); fi
+    echo "$sum  $f" >> "$d/SHA256SUMS"
+  done
 done
 echo "$NEW" > "$work/rel/latest"
 cat > "$work/rel/serve.py" <<'PY'

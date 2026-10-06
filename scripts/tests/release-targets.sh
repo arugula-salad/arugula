@@ -96,16 +96,16 @@ for t in "${targets[@]}"; do
   grep -q "arugula-@VERSION@-$t\.tar\.gz" "$formula" || bad "$formula has no URL for $t"
 done
 in_formula=$(grep -o '@SHA_[A-Z0-9_]*@' "$formula" | sort -u)
+# "@PLACEHOLDER@ target", for each `s=$(sha target); sed+=(-e "s/@PLACEHOLDER@/$s/")`.
 # shellcheck disable=SC2016 # a literal $(sha …) in scripts/release
-in_release=$(grep -o 's/@SHA_[A-Z0-9_]*@/\$(sha [a-z0-9_-]*)' scripts/release | sort -u)
-# shellcheck disable=SC2001 # one per line; sed reads clearer here
-filled=$(sed 's:^s/\(@SHA_[A-Z0-9_]*@\)/.*:\1:' <<<"$in_release" | sort -u)
+in_release=$(sed -n 's/.*s=\$(sha \([a-z0-9_-]*\)); sed+=(-e "s\/\(@SHA_[A-Z0-9_]*@\)\/.*/\2 \1/p' scripts/release | sort -u)
+[ -n "$in_release" ] || bad "can't find the checksums scripts/release fills in"
+filled=$(cut -d' ' -f1 <<<"$in_release" | sort -u)
 [ "$in_formula" = "$filled" ] || bad "checksum placeholders differ: formula has $(tr '\n' ' ' <<<"$in_formula"), scripts/release fills $(tr '\n' ' ' <<<"$filled")"
 # Each placeholder sits under its own target's URL: the sha it's filled
 # with is for the tarball on the line above it.
-while read -r line; do
-  [ -n "$line" ] || continue
-  ph=${line#s/}; ph=${ph%%/*}; t=${line##*(sha }; t=${t%)}
+while read -r ph t; do
+  [ -n "$ph" ] || continue
   above=$(grep -B1 "sha256 \"$ph\"" "$formula" | head -1)
   grep -q "arugula-@VERSION@-$t\.tar\.gz" <<<"$above" || bad "$ph is filled with $t's checksum but sits under another URL in $formula"
 done <<<"$in_release"
@@ -132,6 +132,77 @@ done
 while IFS=: read -r f name; do
   printf '%s\n' "${downloads[@]}" | grep -qx "$name" || bad "$f links $name, which no release makes"
 done < <(grep -oH 'arugula-desktop-[A-Za-z0-9_.-]*[A-Za-z0-9]' README.md site/index.html docs/*.md | sort -u)
+
+# The old names (#505, drop in #508): daemons on 0.24 and 0.25 update
+# themselves by fetching illogical-VERSION-TARGET.{tar.gz,zip}, and the
+# site's older links point at app-latest's illogical-desktop-*. Every
+# archive is packed by scripts/dist-pack, which makes both.
+# shellcheck disable=SC2016 # literal $n, $name and ${f#…} in the scripts
+sed -n '/^dist:/,/^[^ ]/p' justfile | grep -q 'scripts/dist-pack "dist/\$n"' || bad "just dist doesn't pack with scripts/dist-pack"
+# shellcheck disable=SC2016
+grep -q 'scripts/dist-pack "dist/\$name"' scripts/windows-dist || bad "scripts/windows-dist doesn't pack with scripts/dist-pack"
+grep -q 'dist/illogical-\*-x86_64-pc-windows-msvc.zip' "$wf" || bad "$wf doesn't upload the Windows zip's old name"
+grep -q '^    for p in arugula illogical; do$' scripts/release || bad "scripts/release sums doesn't count the old names"
+grep -q 'sha256sum -- arugula-\[0-9\]\*.tar.gz arugula-\[0-9\]\*.zip illogical-\[0-9\]\*.tar.gz illogical-\[0-9\]\*.zip > SHA256SUMS' scripts/release \
+  || bad "scripts/release's SHA256SUMS doesn't list the old names"
+# shellcheck disable=SC2016
+grep -q 'illogical-desktop-\${f#arugula-desktop-}' scripts/release || bad "scripts/release doesn't put app-latest's downloads under their old names"
+
+# What scripts/dist-pack makes, from stand-in binaries: the old archive
+# holds illogical-VERSION-TARGET/illogicald, where 0.24 looks (and 0.25
+# first), beside the arugulad and arugula the new install copies.
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+for t in x86_64-unknown-linux-musl x86_64-pc-windows-msvc; do
+  case "$t" in *-windows-*) x=.exe e=zip ;; *) x="" e=tar.gz ;; esac
+  n=arugula-1.2.3-$t o=illogical-1.2.3-$t
+  mkdir -p "$work/$n" "$work/$t"
+  echo daemon >"$work/$n/arugulad$x"; echo cli >"$work/$n/arugula$x"; echo license >"$work/$n/LICENSE-MIT"
+  scripts/dist-pack "$work/$n" >/dev/null || { bad "scripts/dist-pack failed for $t"; continue; }
+  for a in "$n.$e" "$o.$e"; do [ -f "$work/$a" ] || bad "scripts/dist-pack made no $a"; done
+  [ ! -e "$work/$o" ] || bad "scripts/dist-pack left its $o folder behind"
+  if [ "$e" = zip ]; then
+    python3 -I -m zipfile -e "$work/$n.$e" "$work/$t/new"
+    python3 -I -m zipfile -e "$work/$o.$e" "$work/$t/old"
+  else
+    mkdir -p "$work/$t/new" "$work/$t/old"
+    tar -xzf "$work/$n.$e" -C "$work/$t/new"
+    tar -xzf "$work/$o.$e" -C "$work/$t/old"
+  fi
+  got=$(cd "$work/$t/new" && find . -type f | LC_ALL=C sort | tr '\n' ' ')
+  [ "$got" = "./$n/LICENSE-MIT ./$n/arugula$x ./$n/arugulad$x " ] || bad "$n.$e holds $got"
+  got=$(cd "$work/$t/old" && find . -mindepth 1 -maxdepth 1)
+  [ "$got" = "./$o" ] || bad "$o.$e holds $got, not $o/"
+  for f in illogicald arugulad; do
+    [ "$(cat "$work/$t/old/$o/$f$x" 2>/dev/null)" = daemon ] || bad "$o.$e has no $o/$f$x that's arugulad"
+  done
+  for f in "illogical$x" "arugula$x" LICENSE-MIT; do
+    [ "$(cat "$work/$t/old/$o/$f")" = "$(cat "$work/$n/$f" 2>/dev/null || echo cli)" ] || bad "$o.$e has no $o/$f, or not arugula's"
+  done
+done
+
+# The Homebrew tap's files: the formula (named arugula now, every checksum
+# filled), the old formula gone, and formula_renames.json moving `illogical`
+# installs to `arugula` (keeping any other renames).
+tap=$work/tap
+mkdir -p "$tap/Formula"
+echo old >"$tap/Formula/illogical.rb"
+echo '{"other": "thing"}' >"$tap/formula_renames.json"
+for t in "${targets[@]}"; do printf '%064d  arugula-1.2.3-%s.tar.gz\n' "${#t}" "$t"; done >"$work/SHA256SUMS"
+if scripts/release tap-files v1.2.3 "$tap" "$work/SHA256SUMS" >/dev/null; then
+  f=$tap/Formula/arugula.rb
+  grep -q '^class Arugula < Formula$' "$f" || bad "the tap's formula isn't class Arugula"
+  ! grep -q '@[A-Z_]*@' "$f" || bad "the tap's formula has placeholders left: $(grep -o '@[A-Z_]*@' "$f" | tr '\n' ' ')"
+  [ "$(grep -c 'sha256 "[0-9a-f]\{64\}"' "$f")" = "${#targets[@]}" ] || bad "the tap's formula hasn't a checksum for each target"
+  [ ! -e "$tap/Formula/illogical.rb" ] || bad "the tap keeps Formula/illogical.rb, so brew won't rename it"
+  python3 -I -c 'import json, sys; r = json.load(open(sys.argv[1])); sys.exit(r != {"illogical": "arugula", "other": "thing"})' "$tap/formula_renames.json" \
+    || bad "the tap's formula_renames.json is $(cat "$tap/formula_renames.json")"
+else
+  bad "scripts/release tap-files failed"
+fi
+# A release missing a target's tarball stops it.
+grep -v aarch64-apple-darwin "$work/SHA256SUMS" >"$work/SHORT"
+! scripts/release tap-files v1.2.3 "$work/tap2" "$work/SHORT" >/dev/null 2>&1 || bad "scripts/release tap-files wrote a formula with a checksum missing"
 
 [ "$fail" = 0 ] && echo "release targets: all agree"
 exit "$fail"

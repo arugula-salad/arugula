@@ -10,18 +10,29 @@
 # $env:ARUGULA_NO_START = '1'        register the task without starting it
 # $env:ARUGULA_DOWNLOAD_URL = '...'  where the release's files are, instead
 #                                      of GitHub (a mirror, or a local folder)
+# Each can also be ILLOGICAL_..., its name before the rename.
+#
+# On a machine with illogical, `arugulad install` moves it over: it replaces
+# the illogicald task and keeps illogical.exe and illogicald.exe callable.
 
 # A block of its own: `iex` runs this in your shell, which an `exit` would end.
 & {
   $ErrorActionPreference = 'Stop'
   $ProgressPreference = 'SilentlyContinue'
   $repo = 'https://github.com/arugula-salad/illogical'
+  # ARUGULA_X, or ILLOGICAL_X, its name before the rename, for scripts that
+  # set that (#505, drop in #508). Read, not set: this runs in your shell.
+  $setting = {
+    param($n)
+    $new = [Environment]::GetEnvironmentVariable("ARUGULA_$n")
+    if ($null -ne $new) { $new } else { [Environment]::GetEnvironmentVariable("ILLOGICAL_$n") }
+  }
 
   # x64 builds; Windows on Arm runs them too.
   if (-not [Environment]::Is64BitOperatingSystem) { throw 'arugula: there is no 32-bit Windows release' }
   $target = 'x86_64-pc-windows-msvc'
 
-  $version = $env:ARUGULA_VERSION
+  $version = & $setting 'VERSION'
   if (-not $version) {
     # releases/latest redirects to releases/tag/<tag>. Not GitHub's API: its
     # unauthenticated limit is shared by everyone behind an IP.
@@ -34,7 +45,7 @@
   }
 
   $name = "arugula-$($version.TrimStart('v'))-$target"
-  $base = if ($env:ARUGULA_DOWNLOAD_URL) { $env:ARUGULA_DOWNLOAD_URL } else { "$repo/releases/download/$version" }
+  $base = if (& $setting 'DOWNLOAD_URL') { & $setting 'DOWNLOAD_URL' } else { "$repo/releases/download/$version" }
   $tmp = Join-Path ([IO.Path]::GetTempPath()) "arugula-install-$PID"
   New-Item -ItemType Directory -Force $tmp | Out-Null
   try {
@@ -50,7 +61,7 @@
 
     Expand-Archive (Join-Path $tmp "$name.zip") $tmp -Force
     $daemon = Join-Path $tmp "$name\arugulad.exe"
-    if ($env:ARUGULA_NO_START) { & $daemon install --no-start } else { & $daemon install }
+    if (& $setting 'NO_START') { & $daemon install --no-start } else { & $daemon install }
     if ($LASTEXITCODE -ne 0) { throw "arugula: arugulad install failed ($LASTEXITCODE)" }
 
     $bin = Join-Path $env:LOCALAPPDATA 'Programs\arugula'
