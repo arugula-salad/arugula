@@ -21,6 +21,7 @@ illogical capture %3 --scrollback [--ansi|--html]
 illogical process %3                          # the foreground process
 illogical events -f [--pane %3] [--type command_end,attention]
 illogical history --failed --since 2h
+illogical history --kind answer                 # who allowed or answered what (command, answer or agent)
 illogical search 'panic|Traceback' --since 1d
 illogical export %3 -o session.cast           # asciinema play session.cast
 illogical open example.com                    # a browser block (--split %3 beside a pane)
@@ -191,7 +192,7 @@ The tools:
 | `wait` | Until `command_end`, `exit`, `match` (a `pattern`), `idle` or `needs_input`. After `timeout` seconds (100 by default) it answers "still running" with the offset: call it again | yes |
 | `list` | Panes and blocks: where, what they run, attention, who started them | yes |
 | `close` | Close a pane or block | no |
-| `history` | Commands across panes: `failed`, `since` and `before` (`2d`, `36h`), `cwd`, `match` | yes |
+| `history` | Commands across panes, and answers and approvals with who gave them: `kind` (`command`, `answer`, `agent`), `failed` (commands only), `since` and `before` (`2d`, `36h`), `cwd`, `match` | yes |
 | `search` | Lines of output matching a regex | yes |
 | `open_port` | A browser block on a port of a pane's machine, beside it | no |
 | `start_agent` | An agent block (Claude Code, Codex, any ACP agent) with a prompt | no |
