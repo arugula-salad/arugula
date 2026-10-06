@@ -38,6 +38,28 @@ export interface ControlInfo {
   passkeys: boolean;
   /** Control's VAPID public key (M21). */
   vapid: string;
+  /** Where control is now, when it answers at more than one URL (#507). */
+  primary?: string;
+}
+
+/** On a URL control is moving away from (#507): a line at the top saying
+ * where it is now, with the same page there. This site keeps working for
+ * now: its passkeys and approved browsers are its own, so the new one is
+ * signed in and approved from here. */
+export function showMoving(info: ControlInfo): void {
+  if (!info.primary || info.primary === info.url) return;
+  const to = new URL(location.pathname + location.search + location.hash, info.primary);
+  const bar = document.createElement("div");
+  bar.className = "control-dropped";
+  bar.setAttribute("role", "status");
+  bar.dataset.controlMoving = "";
+  const p = document.createElement("p");
+  const a = document.createElement("a");
+  a.href = to.href;
+  a.textContent = to.host;
+  p.append("Control is moving to ", a, ". Sign in there, then approve that browser from this one; this address stops working once everyone has moved.");
+  bar.append(p);
+  document.body.prepend(bar);
 }
 
 export interface DirDaemon {
