@@ -15,3 +15,7 @@ or copy `editors/nvim` onto your `runtimepath`.
 - `:ArugulaStatus` says whether it's in, and how many follow it. `require("arugula").status()` is the same for a statusline.
 
 It talks to the arugula daemon on the same machine (`$ARUGULA_SOCK`, else `~/.local/state/arugula/sock`). Over ssh, nvim runs on the remote machine, so that's the daemon there. Set `vim.g.arugula = { socket = "…" }` before the plugin loads to use another socket.
+
+## From illogical.nvim
+
+arugula was called illogical, and configs from then keep working: `require("illogical")` is `require("arugula")`, `vim.g.illogical` is read when `vim.g.arugula` isn't set, and `:IllogicalJoin`, `:IllogicalLeave` and `:IllogicalStatus` still run. Folders that joined under the old name stay joined. It finds the daemon under its old names too (`$ILLOGICAL_SOCK`, `~/.local/state/illogical/sock`), and talks to an illogical daemon (0.25 and older) as well as an arugula one. Move to the new names when it suits you: the old ones will go in a later release.

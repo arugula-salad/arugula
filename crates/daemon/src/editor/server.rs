@@ -33,7 +33,7 @@ use futures_util::future::BoxFuture;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use tokio::{io::AsyncWriteExt, sync::watch};
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::{
     pane::Launcher,
@@ -66,13 +66,17 @@ const START: Duration = Duration::from_secs(60);
 /// file and carries the theme.
 pub const EXT_ID: &str = "arugula.arugula-editor";
 pub const EXT_VERSION: &str = "0.2.0";
-/// What it was called before (M27): taken out where it's found.
-const OLD_IDS: &[&str] = &["arugula.arugula"];
+/// What it was called before: taken out where it's found. M27's, and the
+/// name before the rename (#505; an id can't be renamed on the marketplaces).
+const OLD_IDS: &[&str] = &["illogical.illogical", "illogical.illogical-editor"];
 pub const EXT_FILES: &[(&str, &str)] = &[
     ("package.json", include_str!("ext/package.json")),
     ("extension.js", include_str!("ext/extension.js")),
     ("theme.json", include_str!("ext/theme.json")),
 ];
+
+/// The theme as settings from before the rename name it (#505).
+const OLD_THEME: &str = r#""workbench.colorTheme": "illogical""#;
 
 /// What a new settings folder starts with. Later changes are the user's.
 const SETTINGS: &str = r#"{
@@ -377,6 +381,11 @@ impl Server {
             env: vec![],
             dir: None,
         };
+        // A VM's server from before the rename runs under the old name, on
+        // the same port (#505).
+        if let Err(e) = provider.delete_service(sprite, "illogical-code-server").await {
+            debug!(sprite, error = %e, "removing the old code-server service");
+        }
         provider.put_service(sprite, "arugula-code-server", &def).await.map_err(|e| e.to_string())?;
         // The first start downloads the release in the VM: give it time.
         let t0 = Instant::now();
@@ -447,6 +456,12 @@ fn prepare(dir: &Path) -> io::Result<()> {
     let settings = dir.join("user/User/settings.json");
     if !settings.exists() {
         store::write_atomic(&settings, SETTINGS.as_bytes())?;
+    } else if let Ok(text) = std::fs::read_to_string(&settings)
+        && text.contains(OLD_THEME)
+    {
+        // The theme by its name before the rename, which goes with the old
+        // extension (#505).
+        store::write_atomic(&settings, text.replace(OLD_THEME, r#""workbench.colorTheme": "arugula""#).as_bytes())?;
     }
     install_ext(&dir.join("extensions"))
 }
@@ -608,6 +623,10 @@ case $(uname -m) in
 esac
 root=$HOME/.cache/arugula/code-server/$v-linux-$a
 d=$HOME/.local/state/arugula-editor
+# A VM's from before the rename, used where it is (#505).
+old=$HOME/.cache/illogical/code-server/$v-linux-$a
+[ -x "$root/bin/code-server" ] || [ ! -x "$old/bin/code-server" ] || root=$old
+[ -d "$d" ] || [ ! -d "$HOME/.local/state/illogical-editor" ] || d=$HOME/.local/state/illogical-editor
 if [ ! -x "$root/bin/code-server" ]; then
   mkdir -p "$root.part"
   curl -fsSL "$9/v$v/code-server-$v-linux-$a.tar.gz" -o "$root.tgz"
@@ -667,19 +686,28 @@ mod tests {
         let v: serde_json::Value = serde_json::from_slice(&std::fs::read(&settings).unwrap()).unwrap();
         assert_eq!(v["workbench.colorTheme"], "arugula");
         assert_eq!(v["chat.disableAIFeatures"], true);
+        // The theme under its old name is ours, renamed (#505).
+        std::fs::write(&settings, "{\n  \"workbench.colorTheme\": \"illogical\",\n  \"editor.fontSize\": 15\n}")
+            .unwrap();
+        prepare(&dir).unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&std::fs::read(&settings).unwrap()).unwrap();
+        assert_eq!((v["workbench.colorTheme"].as_str(), v["editor.fontSize"].as_u64()), (Some("arugula"), Some(15)));
         // Someone's own settings stay theirs.
         std::fs::write(&settings, "{\"workbench.colorTheme\": \"Default Light Modern\"}").unwrap();
         // An extension they installed stays listed; an old one of ours goes.
         let exts = dir.join("extensions");
-        std::fs::create_dir_all(exts.join("arugula.arugula-0.0.1")).unwrap();
+        std::fs::create_dir_all(exts.join("illogical.illogical-0.0.1")).unwrap();
+        std::fs::create_dir_all(exts.join("illogical.illogical-editor-0.2.0")).unwrap();
         let mut list: Vec<serde_json::Value> =
             serde_json::from_slice(&std::fs::read(exts.join("extensions.json")).unwrap()).unwrap();
         list.retain(|v| v["identifier"]["id"] != EXT_ID);
         list.push(serde_json::json!({ "identifier": { "id": "rust-lang.rust-analyzer" }, "relativeLocation": "ra" }));
         list.push(
             // M27's, under its old name.
-            serde_json::json!({ "identifier": { "id": "arugula.arugula" }, "relativeLocation": "arugula.arugula-0.0.1" }),
+            serde_json::json!({ "identifier": { "id": "illogical.illogical" }, "relativeLocation": "illogical.illogical-0.0.1" }),
         );
+        // The one from before the rename (#505).
+        list.push(serde_json::json!({ "identifier": { "id": "illogical.illogical-editor" }, "relativeLocation": "illogical.illogical-editor-0.2.0" }));
         std::fs::write(exts.join("extensions.json"), serde_json::to_vec(&list).unwrap()).unwrap();
         prepare(&dir).unwrap();
         assert!(std::fs::read_to_string(&settings).unwrap().contains("Light"));
@@ -688,7 +716,8 @@ mod tests {
         let ids: Vec<&str> = list.iter().filter_map(|v| v["identifier"]["id"].as_str()).collect();
         assert_eq!(ids, ["rust-lang.rust-analyzer", EXT_ID]);
         assert_eq!(list[1]["relativeLocation"], format!("{EXT_ID}-{EXT_VERSION}"));
-        assert!(!exts.join("arugula.arugula-0.0.1").exists());
+        assert!(!exts.join("illogical.illogical-0.0.1").exists());
+        assert!(!exts.join("illogical.illogical-editor-0.2.0").exists());
         let pkg: serde_json::Value =
             serde_json::from_slice(&std::fs::read(exts.join(format!("{EXT_ID}-{EXT_VERSION}/package.json"))).unwrap())
                 .unwrap();

@@ -57,10 +57,25 @@ let saved = false;
 /** The debugger, as its adapter said. */
 let debug = null;
 const timers = {};
+/** The upgrade's protocol name. A daemon from before the rename (0.25 and
+ * older) knows only the old one and refuses the new with a 400 (#505). */
+let proto = "arugula-editor";
+const OLD_PROTO = "illogical-editor";
+/** The extension's id before the rename (#505). */
+const OLD_ID = "illogical.illogical-editor";
+
+/** A setting, or its name from before the rename, `illogical.*` (#505):
+ * the workspace of an editor block made before the update says
+ * `illogical.block`. */
+function setting(key) {
+  const v = vscode.workspace.getConfiguration("arugula").get(key);
+  if (v) return v;
+  return vscode.workspace.getConfiguration("illogical").get(key);
+}
 
 function activate(context) {
   ctx = context;
-  block = Number(vscode.workspace.getConfiguration("arugula").get("block")) || 0;
+  block = Number(setting("block")) || 0;
   on = block > 0 || remembered().includes(folderPath());
   status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 0);
   status.command = "arugula.menu";
@@ -91,6 +106,23 @@ function activate(context) {
   );
   if (on) connect();
   else showStatus();
+  replaceOld();
+}
+
+// The extension under its old name (#505): it's this one, so it goes, and
+// the theme picked under the old name is this one's.
+async function replaceOld() {
+  try {
+    const theme = vscode.workspace.getConfiguration("workbench").inspect("colorTheme");
+    if (theme?.globalValue === "illogical") {
+      await vscode.workspace.getConfiguration("workbench").update("colorTheme", "arugula", vscode.ConfigurationTarget.Global);
+    }
+    if (vscode.extensions.getExtension(OLD_ID)) {
+      await vscode.commands.executeCommand("workbench.extensions.uninstallExtension", OLD_ID);
+    }
+  } catch {
+    // left as it is; both work
+  }
 }
 
 // ---- joining and leaving
@@ -142,11 +174,17 @@ function rememberedFile() {
 }
 
 function remembered() {
-  try {
-    return JSON.parse(fs.readFileSync(rememberedFile(), "utf8"));
-  } catch {
-    return [];
+  // The old extension's, until this one remembers something (#505). Its
+  // storage is beside this one's, under its id.
+  const old = path.join(path.dirname(ctx.globalStorageUri.fsPath), OLD_ID, "folders.json");
+  for (const f of [rememberedFile(), old]) {
+    try {
+      return JSON.parse(fs.readFileSync(f, "utf8"));
+    } catch {
+      // next
+    }
   }
+  return [];
 }
 
 function remember(folder, yes) {
@@ -169,17 +207,24 @@ function folderPath() {
 
 /** The daemon's socket on this machine. */
 function socketPath() {
-  const set = vscode.workspace.getConfiguration("arugula").get("socket");
+  const set = setting("socket");
   if (set) return set;
+  // The old names too: a shell started before the update, a daemon whose
+  // state is still in the old directory (#505).
   if (process.env.ARUGULA_SOCK) return process.env.ARUGULA_SOCK;
-  const state = path.join(process.env.XDG_STATE_HOME || path.join(os.homedir(), ".local", "state"), "arugula");
-  try {
-    const p = fs.readFileSync(path.join(state, "sock.path"), "utf8").trim();
-    if (p) return p;
-  } catch {
-    // the usual place
+  if (process.env.ILLOGICAL_SOCK) return process.env.ILLOGICAL_SOCK;
+  const base = process.env.XDG_STATE_HOME || path.join(os.homedir(), ".local", "state");
+  for (const name of ["arugula", "illogical"]) {
+    const state = path.join(base, name);
+    try {
+      const p = fs.readFileSync(path.join(state, "sock.path"), "utf8").trim();
+      if (p) return p;
+    } catch {
+      // the usual place
+    }
+    if (fs.existsSync(path.join(state, "sock"))) return path.join(state, "sock");
   }
-  return path.join(state, "sock");
+  return path.join(base, "arugula", "sock");
 }
 
 function appName() {
@@ -196,7 +241,7 @@ function connect() {
   const req = http.request({
     socketPath: socketPath(),
     path: "/api/editors/connect",
-    headers: { Connection: "Upgrade", Upgrade: "arugula-editor" },
+    headers: { Connection: "Upgrade", Upgrade: proto },
   });
   req.on("upgrade", (_res, s, head) => {
     sock = s;
@@ -230,6 +275,8 @@ function connect() {
   });
   req.on("response", (res) => {
     res.resume();
+    // Refused: the daemon may know the protocol by its other name.
+    if (res.statusCode === 400) proto = proto === OLD_PROTO ? "arugula-editor" : OLD_PROTO;
     lost();
   });
   req.on("error", () => lost());
@@ -240,7 +287,7 @@ function connect() {
  * here, on the remote side, VS Code says only the remote's kind, so HOST is
  * this machine's name unless `arugula.sshHost` says otherwise. */
 function remoteAuthority() {
-  const host = vscode.workspace.getConfiguration("arugula").get("sshHost") || os.hostname();
+  const host = setting("sshHost") || os.hostname();
   if (vscode.env.remoteName === "ssh-remote") return `ssh-remote+${host}`;
   return null;
 }

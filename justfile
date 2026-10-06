@@ -354,6 +354,8 @@ browsers *which="chromium webkit":
 # arugula's VS Code extension as a VSIX in target/ (M28), for Open VSX
 # (`npx ovsx publish FILE`) and the Marketplace (`npx @vscode/vsce publish
 # --packagePath FILE`).
+# Its publisher is `arugula`, which has to be created on both first (#508).
+# Nothing went out as `illogical.illogical-editor`, so no old id to keep.
 vsix:
     {{cargo}} build -p arugulad
     {{target_dir}}/debug/arugulad _vsix {{target_dir}}

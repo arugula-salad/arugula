@@ -82,6 +82,13 @@ pub fn run(cmd: Option<EditorsCmd>, ctx: Ctx) -> anyhow::Result<i32> {
             if !st.success() {
                 bail!("{editor} --install-extension failed");
             }
+            // The extension under its name before the rename, which would
+            // join the swarm a second time (#505). Not there is fine.
+            let _ = std::process::Command::new(&editor)
+                .args(["--uninstall-extension", "illogical.illogical-editor"])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status();
             println!("Installed. In the editor: \"arugula: Show this workspace in the swarm\".");
         }
     }
