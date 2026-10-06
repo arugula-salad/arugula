@@ -34,6 +34,8 @@ const RELEASES: &str = "https://github.com/arugula-salad/illogical/releases/down
 /// read by login shells only), and a login shell could print into the
 /// bridge's stream, so it's always named in full. `sh` so it reads the same
 /// whatever the login shell is.
+// The bridge over ssh is Unix-only (`channel`).
+#[cfg_attr(not(unix), allow(dead_code))]
 fn remote_cli(args: &str) -> String {
     format!(
         "sh -c {}",

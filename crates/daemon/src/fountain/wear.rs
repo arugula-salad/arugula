@@ -1259,6 +1259,8 @@ mod tests {
     use super::*;
 
     /// Bundles cached before the rename are used where they are (#505).
+    /// Unix: the runner's XDG_CACHE_HOME is a Unix path.
+    #[cfg(unix)]
     #[test]
     fn bundles_cached_before_the_rename_stay_put() {
         let tmp = std::env::temp_dir().join(format!("arugula-cache-root-{}", std::process::id()));
