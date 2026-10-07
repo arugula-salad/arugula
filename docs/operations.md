@@ -4,8 +4,9 @@ A design note for #451 (part of #387). It proposes how one declaration per
 operation can produce the HTTP route, the access check for it, the MCP tool
 and the CLI's call, and says plainly where that stops working. A pilot on
 the branch `arch/451-ops-pilot` converts three real operations; what it
-showed is in [The pilot](#the-pilot). Nothing here is decided until the
-team has reviewed it; when it is, it gets an entry in `DECISIONS.md`.
+showed is in [The pilot](#the-pilot). The owner settled the open
+questions on 2026-10-07 ([Decided](#decided)); the rest waits on the
+team's review, and then gets an entry in `DECISIONS.md`.
 
 ## What we have today
 
@@ -48,11 +49,13 @@ CLI both see:
 
 ```rust
 pub trait Op: Send + Sync + 'static {
-    const NAME: &'static str;            // "close": for logs and errors
+    const NAME: &'static str;            // "pane.close": for logs and errors
     const METHOD: Method;                // Post
     const PATH: &'static str;            // "/api/panes/{id}/close"
     const ACCESS: Access;                // Pane(Role::Editor)
     const LABS: bool = false;            // listed only with the labs file
+    const DRIVES: bool = false;          // types into the pane: needs the owner's trust (M14)
+    const CREDENTIAL: bool = false;      // a GET whose answer grants access: not for read-only tokens
     type Path: PathArgs;                 // PaneId, or ()
     type Req: Request;                   // the body; Empty for none
     type Res: Serialize + DeserializeOwned;
@@ -62,7 +65,13 @@ pub enum Access { Owner, Pane(Role), Handler, Anyone }
 ```
 
 `Access` is `authz.rs`'s `Policy` without the pane number: the declaration
-says which role, and the path supplies the pane. The doc comment on the
+says which role, and the path supplies the pane.
+
+`NAME` is the operation's own name, `noun.verb` (`panes.list`,
+`pane.close`, `shell_env.get`, `shell_env.refresh`), not any surface's: the
+same operation is `GET /api/panes`, MCP's `list` kind `panes` and the CLI's
+`ls`, and a name tied to one of them goes stale when that surface renames
+or drops it. (The pilot used the CLI's names; ticket 1 renames them.) The doc comment on the
 declaration is the API's description, the line that is today a row in the
 table at the top of `proto/src/api.rs`.
 
@@ -132,7 +141,8 @@ them.
 **The MCP tool.** `mcp::ops::def::<O>()` is the tool's row in the list
 (`all_defs`), in the same place the hand-written `Def` was, so the list's
 order doesn't move. Whether a read-only token may call it follows from the
-method: only a GET reads. A kind of a grouped tool is `ops::kind::<O>()`,
+method: only a GET reads, unless the declaration says `CREDENTIAL` (see
+[Required role](#required-role-across-surfaces)). A kind of a grouped tool is `ops::kind::<O>()`,
 a `const fn`, so it sits in the `LIST`/`SHOW` table as a row like the
 others; the grouped tool itself (its lead sentence, `grouped_schema`, the
 default kind) stays hand-written. A call goes through `ops::call::<O>`:
@@ -229,14 +239,35 @@ derives the other checks from:
 
 | `ACCESS` | HTTP (`authz.rs`) | Handler | MCP `Read` token | MCP agent block (`Block`) |
 |---|---|---|---|---|
-| `Owner` | only the owner | owner check (`serve`) | GETs only | allowed; the operation confines itself (the panes list shows only the block's tab) |
-| `Pane(Viewer)` | that role on the pane's session | | GETs only | `readable`: the pane is in the block's tab |
-| `Pane(Editor)` | that role | | GETs only | `drivable`: the block started it |
-| `Handler` | the handler checks | the handler checks | GETs only | the handler checks |
+| `Owner` | only the owner | owner check (`serve`) | GETs only, not `CREDENTIAL` | allowed; the operation confines itself (the panes list shows only the block's tab) |
+| `Pane(Viewer)` | that role on the pane's session | | GETs only, not `CREDENTIAL` | `readable`: the pane is in the block's tab |
+| `Pane(Editor)` | that role | | GETs only, not `CREDENTIAL` | `drivable`: the block started it |
+| `Handler` | the handler checks | the handler checks | GETs only, not `CREDENTIAL` | the handler checks |
 
-What doesn't map yet, and stays in `authz.rs` until a declaration needs it:
-`drives` (needs the owner's trust to type, M14), `from_now` (a share's floor,
-M13), and the per-method block-call rules above.
+**Read-only means it can't change anything or gain access.** A GET is
+read-only by default, but a few GETs answer with something that grants
+more: `GET /api/signin-link` returns a link carrying the daemon's local
+token, and `/api/mcp/tokens` and `/api/shares` list secrets. Those declare
+`CREDENTIAL: true`, and a read-only token can't call them. A test lists
+every GET operation a read-only token can reach, against a checked-in
+file, so a new one shows up in review.
+
+**`authz.rs`'s special cases:**
+
+- `drives` (typing into a pane on the owner's machine needs their trust,
+  M14) becomes `DRIVES: true` on `send`, `keys`, `mouse`, `followup`,
+  `upload` and `paste` as they convert. Today it matches path suffixes, so
+  a new route ending in `/send` gets it by accident and a renamed one loses
+  it; the flag ends that.
+- `from_now` (a share from now on reads nothing before it began, M13)
+  applies only to `capture`, `tail` and `export.cast`, which stay
+  hand-written ([What doesn't fit](#what-doesnt-fit-and-what-it-does-instead)),
+  so it stays in `authz.rs` beside them.
+- The per-method block-call rules stay with block calls (#459).
+
+So the guest-access rules stay reviewable in one place, a test writes every
+operation's `ACCESS`, `DRIVES` and `CREDENTIAL` to a checked-in table, as the
+golden MCP tool list does for tools.
 
 ## Labs
 
@@ -308,8 +339,8 @@ Branch `arch/451-ops-pilot`, three operations of different shapes:
    `PaneSummary` to the owner; MCP's `list` is a grouped tool and this is
    its default kind, `panes`, which confines an agent block to its tab,
    marks the caller's own pane and answers `PaneEntry` rows with a summary;
-   the CLI's `ls` reads untyped JSON (it may talk to an older daemon with
-   `--host`).
+   the CLI's `ls` reads untyped JSON in the pilot. Older daemons aren't
+   supported ([Decided](#decided)), so ticket 1 makes it typed.
 
 What it showed:
 
@@ -371,56 +402,59 @@ what it calls; each CLI request site by its route.
 
 ## Proposed tickets
 
-Each is one PR. The lead files them after review.
+Each is one PR. Filed on 2026-10-07 as #572–#580, in this order.
 
-1. **Operations: the mechanism, with shell-env, close and the panes list.**
+1. (#572) **Operations: the mechanism, with shell-env, close and the panes list.**
    The pilot, reviewed and tidied: `arugula_proto::op`, `daemon/src/ops/`,
-   `mcp/ops.rs`, the CLI's `call`. Adds the `DECISIONS.md` entry and the
+   `mcp/ops.rs`, the CLI's `call`. Neutral names (`panes.list`,
+   `pane.close`, `shell_env.get`, `shell_env.refresh`); `CREDENTIAL`, and
+   the test listing what a read-only token may call; the checked-in access
+   table; `ls` parses typed answers. Adds the `DECISIONS.md` entry and the
    test that every `api.rs` route is an operation or on the hand-written
    list. Depends on nothing.
-2. **Operations: other path types and GET queries.** `PathArgs` for
+2. (#573) **Operations: other path types and GET queries.** `PathArgs` for
    `usize`, `SessionId`, `ThreadTarget` and names; a GET's `Req` as its
    query, read with axum's `Query`, and the CLI building the same query
    string it does today. Converts `rules` (three routes) and `wait` as the
    proof. After 1.
-3. **Operations: the pane verbs.** `send`, `keys`, `mouse`, `attention`,
+3. (#574) **Operations: the pane verbs.** `send`, `keys`, `mouse`, `attention`,
    `followup`, `process`, `detection`, `diff`, `drivers`, and the CLI sites
    that call them; `DRIVES` as a declared flag replacing `authz::drives`.
    After 1.
-4. **Operations: the owner's settings routes.** `ide`, `agents`, `studio`,
+4. (#575) **Operations: the owner's settings routes.** `ide`, `agents`, `studio`,
    `machines`, `push`, `notify`, `adapters`, `conversations`. Mechanical.
    After 2.
-5. **Operations: the long waits.** `ask`, `permit`, `inbox`, `prompt`;
+5. (#576) **Operations: the long waits.** `ask`, `permit`, `inbox`, `prompt`;
    MCP's `prompt_agent` calls `Prompt::handle` instead of `api::prompt`.
    After 3.
-6. **MCP: the tools that are operations.** `read_thread` and `post_thread`
+6. (#577) **MCP: the tools that are operations.** `read_thread` and `post_thread`
    (with `LABS` replacing `UNLISTED_THREADS`), `list` kinds `conversations`
    and `fountain_agents`, `show` kind `conversation`. Golden fixture
    unchanged. After 2 and 4.
-7. **Operations: the other modules.** `fs` (not `watch`), `hosts`,
+7. (#578) **Operations: the other modules.** `fs` (not `watch`), `hosts`,
    `shares`, `guests`, `acl`, `invite`, `setup`, `mcp/tokens`, `synced`,
    `sandboxes`. May split by module. After 2.
-8. **Optional: the operations table for the web client.** Emit each
+8. (#579) **Optional: the operations table for the web client.** Emit each
    operation's method and path into `proto.gen.ts` beside its types, so
    the web client's fetches name the operation too. After 1.
-9. **Optional: `outputSchema`.** `JsonSchema` on `mcp/results.rs`'s types
+9. (#580) **Optional: `outputSchema`.** `JsonSchema` on `mcp/results.rs`'s types
    and an `Answer` type on `McpOp`, listed as each tool's `outputSchema`.
    Changes the golden fixture on purpose. After 1.
 
-## Open questions for the team
+## Decided
 
-1. MCP descriptions live in each operation's file in the pilot (beside
-   its handler), while the tool list's order stays in `tools.rs`. Is that
-   the split you want, or should every description stay in `tools.rs`?
-2. The CLI's `ls` keeps reading untyped JSON so that `--host` to an older
-   daemon still prints. Should the CLI parse typed answers from every
-   operation (and fail on an old daemon's shape), or keep this per command?
-3. Whether a read-only MCP token may call a tool now follows from the
-   method (only a GET reads). Every tool that is an operation today agrees.
-   Is that rule acceptable, or should it be an explicit flag?
-4. `authz.rs`'s special cases (`drives`, `from_now`, block methods): move
-   each onto the declaration as its operations convert, or keep them in the
-   table for good?
-5. `Op::NAME` is the CLI command's name in the pilot (`ls`, `close`,
-   `shell-env`). Should it be a neutral name instead, given the MCP tool's
-   name differs (`list` kind `panes`)?
+The owner answered the open questions on 2026-10-07:
+
+1. **MCP descriptions** live in each operation's file, beside its handler;
+   the tool list's order stays in `tools.rs`.
+2. **Older daemons aren't supported.** The CLI parses typed answers from
+   every operation, `ls` included, and doesn't keep untyped reads for
+   `--host` to an older daemon.
+3. **Read-only follows the method:** a GET is read-only unless it declares
+   `CREDENTIAL` (its answer grants access, like the sign-in link). A test
+   lists what a read-only token can reach.
+4. **`drives` moves onto the declaration** as `DRIVES`; `from_now` stays in
+   `authz.rs` with the hand-written streaming routes it applies to; a
+   checked-in table of every operation's access keeps the rules reviewable
+   in one place.
+5. **`Op::NAME` is neutral,** `noun.verb`, not a surface's name.
