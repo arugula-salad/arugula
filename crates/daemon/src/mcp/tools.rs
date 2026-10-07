@@ -3760,6 +3760,8 @@ mod tests {
             assert!(!tools.contains("fountain"), "the tool list mentions Fountain");
             assert!(!tools.contains("studio"), "the tool list mentions studio");
             assert!(!tools.contains("workspace"), "the tool list mentions workspaces");
+            assert!(!tools.contains("read_thread"), "the tool list mentions chat");
+            assert!(!tools.contains("post_thread"), "the tool list mentions chat");
         }
         let shown = kinds_of(labs, "show");
         assert!(!shown.contains(&"app") && !shown.contains(&"workspace"), "{shown:?}");

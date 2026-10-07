@@ -1,32 +1,14 @@
 //! Conversations on a pane or session: posting, reading, summaries and who
 //! gets told about a mention.
 
-use super::{Daemon, SAVE_DEBOUNCE};
+use super::{Daemon, Posted, SAVE_DEBOUNCE, ThreadError, ThreadPost};
 use crate::{acl::Principal, pane::ToClient, store::now_ms};
 use arugula_core::Role;
 use arugula_proto::{
-    Driver, Quote, ServerMsg, SessionId, ThreadMsg, ThreadSummary, ThreadTarget,
+    ServerMsg, SessionId, ThreadMsg, ThreadSummary, ThreadTarget,
     api::{Unreached, UnreachedWhy},
 };
 use tokio::time::Instant;
-
-/// A post to a thread (M61).
-pub struct ThreadPost {
-    pub target: ThreadTarget,
-    pub who: crate::acl::Principal,
-    /// An agent posting through MCP: its name. Access is still `who`'s.
-    pub as_agent: Option<Driver>,
-    pub text: String,
-    pub quote: Option<Quote>,
-}
-
-/// What a post comes to: the message, whether it went to the pane's agent,
-/// and the `@`s that reached no one.
-pub type Posted = (ThreadMsg, bool, Vec<Unreached>);
-
-/// Why a thread request failed: an HTTP status and what to say.
-#[derive(Debug)]
-pub struct ThreadError(pub u16, pub String);
 
 impl Daemon {
     /// Whether a thread's pane or session is still here.
@@ -67,6 +49,17 @@ impl Daemon {
         };
         let role = self.config.acl.role(who, session)?;
         Some((role, self.config.acl.thread_floor(who, session, target).unwrap_or(0)))
+    }
+
+    /// Where an invite from a thread opens (#297): see [`Api::ThreadPlace`].
+    pub(super) fn thread_place(
+        &self,
+        target: ThreadTarget,
+        msg: Option<u64>,
+    ) -> Result<(SessionId, Option<u64>), String> {
+        self.thread_session(target)
+            .ok_or_else(|| "no such thread, or it's a private pane's".to_owned())
+            .map(|s| (s, msg.and_then(|id| self.threads.get(target).iter().find(|m| m.id == id).map(|m| m.at))))
     }
 
     pub(super) fn thread_get(&self, target: ThreadTarget, who: &Principal) -> Result<Vec<ThreadMsg>, ThreadError> {
@@ -133,7 +126,7 @@ impl Daemon {
             return Err(ThreadError(403, format!("you can't read %{}", q.pane)));
         }
         let by = as_agent.clone().unwrap_or_else(|| self.driver_of(&who));
-        let tokens = crate::threads::mentions(&text);
+        let tokens = crate::labs::threads::mentions(&text);
         // A team's other owner reads every thread, as the owner does.
         let co_owner =
             |p: &Principal| p.id().strip_prefix("account:").is_some_and(|a| self.config.control.owns_here(a));
@@ -144,28 +137,27 @@ impl Daemon {
             .filter(|p| self.thread_role(p, target).is_some() || (co_owner(p) && self.thread_exists(target)))
             .filter(|p| {
                 let name = self.name_of(p);
-                tokens.iter().any(|t| crate::threads::names(t, p.id(), &name))
+                tokens.iter().any(|t| crate::labs::threads::names(t, p.id(), &name))
             })
             .map(|p| p.id().to_owned())
             .collect();
         // An @agent goes to the pane's agent as a follow-up: an instruction,
         // so only from someone who may drive it (and never from an agent).
         let to_agent = as_agent.is_none()
-            && crate::threads::calls_agent(&tokens)
+            && crate::labs::threads::calls_agent(&tokens)
             && matches!(target, ThreadTarget::Pane(p) if self.may_drive_here(&who, p).is_ok());
         // Which tokens went anywhere; the rest are the poster's to hear about.
         let me = self.name_of(&who);
         let (mut landed, mut unreached) = (Vec::new(), Vec::new());
         for t in &tokens {
-            let person = self
-                .mentionable()
-                .into_iter()
-                .any(|p| mentions.iter().any(|m| m == p.id()) && crate::threads::names(t, p.id(), &self.name_of(&p)));
-            if person || (to_agent && crate::threads::calls_agent(std::slice::from_ref(t))) {
+            let person = self.mentionable().into_iter().any(|p| {
+                mentions.iter().any(|m| m == p.id()) && crate::labs::threads::names(t, p.id(), &self.name_of(&p))
+            });
+            if person || (to_agent && crate::labs::threads::calls_agent(std::slice::from_ref(t))) {
                 landed.push(t.clone());
-            } else if crate::threads::names(t, who.id(), &me) {
+            } else if crate::labs::threads::names(t, who.id(), &me) {
                 // Yourself: nothing to say.
-            } else if crate::threads::calls_agent(std::slice::from_ref(t)) {
+            } else if crate::labs::threads::calls_agent(std::slice::from_ref(t)) {
                 let why = if matches!(target, ThreadTarget::Pane(_)) {
                     UnreachedWhy::MayNotDrive
                 } else {

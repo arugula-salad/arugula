@@ -6,16 +6,38 @@
 mod api_calls;
 mod attention;
 mod blocks;
+#[cfg(feature = "labs")]
 mod call_ops;
 mod clients;
 mod config;
 mod info;
+#[cfg(not(feature = "labs"))]
+mod labs_off;
 mod machines;
+#[cfg(feature = "labs")]
 mod thread_ops;
 mod who_may;
 
 pub use config::Config;
-pub use thread_ops::{Posted, ThreadError, ThreadPost};
+
+/// A post to a thread (M61).
+#[cfg_attr(not(feature = "labs"), allow(dead_code))]
+pub struct ThreadPost {
+    pub target: ThreadTarget,
+    pub who: crate::acl::Principal,
+    /// An agent posting through MCP: its name. Access is still `who`'s.
+    pub as_agent: Option<Driver>,
+    pub text: String,
+    pub quote: Option<arugula_proto::Quote>,
+}
+
+/// What a post comes to: the message, whether it went to the pane's agent,
+/// and the `@`s that reached no one.
+pub type Posted = (ThreadMsg, bool, Vec<arugula_proto::api::Unreached>);
+
+/// Why a thread request failed: an HTTP status and what to say.
+#[derive(Debug)]
+pub struct ThreadError(pub u16, pub String);
 
 use self::attention::{PendingDiff, TermAsk, Waiter};
 use crate::{
@@ -404,9 +426,9 @@ struct Daemon {
     config: Config,
     store: StateDir,
     /// Threads on panes and sessions (M61).
-    threads: crate::threads::Threads,
+    threads: crate::labs::Threads,
     /// Huddles on sessions (M63).
-    calls: crate::calls::Calls,
+    calls: crate::labs::Calls,
     notices: NoticeSink,
     events: broadcast::Sender<Event>,
     push: Option<Push>,
@@ -567,7 +589,7 @@ pub fn start(config: Config, store: StateDir, kept: HashMap<String, Kept>, push:
         trust: HashMap::new(),
         sizes: BTreeMap::new(),
         config,
-        threads: crate::threads::Threads::open(store.root()),
+        threads: crate::labs::Threads::open(store.root()),
         calls: Default::default(),
         store: store.clone(),
         notices,

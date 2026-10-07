@@ -1,6 +1,6 @@
 //! Labs: the features that are not part of the core (Fountain, studio apps
-//! with hud, chant workspaces, VMs with their sandboxes, and guest ssh so
-//! far; huddles, chat and the other forges move here in #456 and #457), behind the cargo feature
+//! with hud, chant workspaces, VMs with their sandboxes, guest ssh, and
+//! huddles and chat so far; the other forges move here in #457), behind the cargo feature
 //! `labs`. The feature is on by default, so a release build has all of it;
 //! `--no-default-features` leaves it out, for fast local builds, for agents
 //! working on core, and for the CI job `core`. (The runtime switch, the
@@ -48,6 +48,9 @@ use crate::{
 
 #[cfg(feature = "labs")]
 pub mod apps;
+// Huddles (M63): who is in each voice call on a session.
+#[cfg(feature = "labs")]
+pub mod calls;
 #[cfg(feature = "labs")]
 pub mod fountain;
 // Guest ssh: the russh server and its invites (M65). `russh` is an optional
@@ -66,6 +69,11 @@ pub mod resident;
 pub mod sandbox;
 #[cfg(feature = "labs")]
 pub mod sprites;
+// Chat (M61): the threads on panes and sessions. The mux's handling of
+// both is `mux/thread_ops.rs` and `mux/call_ops.rs`, which need Daemon's
+// private fields; `mux/labs_off.rs` has their twins.
+#[cfg(feature = "labs")]
+pub mod threads;
 #[cfg(feature = "labs")]
 pub mod workspace;
 
@@ -119,6 +127,40 @@ pub fn create_block(kind: BlockType, _ctx: BlockCtx, _config: Value) -> Result<A
         BlockType::Workspace => "A chant workspace".to_owned(),
         kind => format!("A {kind:?} block"),
     }))
+}
+
+/// Whether chat is in this build: `Ok`, or the refusal for a request that
+/// needs it.
+#[cfg(feature = "labs")]
+pub fn chat() -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(not(feature = "labs"))]
+pub fn chat() -> Result<(), String> {
+    Err(not_built("Chat"))
+}
+
+/// Threads on panes and sessions, and huddles on sessions. Always made, so
+/// each has a twin that holds nothing and touches nothing on disk: a build
+/// without Labs never opens, writes or deletes the state dir's `threads/`,
+/// so a later build with Labs finds it as it was.
+#[cfg(feature = "labs")]
+pub use calls::Calls;
+#[cfg(feature = "labs")]
+pub use threads::Threads;
+
+#[cfg(not(feature = "labs"))]
+pub use absent::{Calls, Threads};
+
+/// Whether `token` (an `@name` in a message) names this person: see
+/// `threads::names`. Nobody is named where there is no chat.
+#[cfg(feature = "labs")]
+pub use threads::names as thread_names;
+
+#[cfg(not(feature = "labs"))]
+pub fn thread_names(_token: &str, _id: &str, _name: &str) -> bool {
+    false
 }
 
 /// Sets up the studio token store (M35) at start-up. A build without Labs
@@ -225,8 +267,9 @@ pub use absent::{Worn, scrub, wear};
 /// worn, so an agent block's `worn` stays `None`.
 #[cfg(not(feature = "labs"))]
 mod absent {
-    use std::sync::Arc;
+    use std::{path::Path, sync::Arc};
 
+    use arugula_proto::{CallMember, ClientId, SessionId, ThreadMsg, ThreadTarget};
     use serde_json::Value;
 
     use crate::{review::Runner, server::App};
@@ -259,6 +302,44 @@ mod absent {
 
         /// Dropped: control has no guest to hand through.
         pub fn serve_relayed(self: &Arc<Self>, _app: &Arc<App>, _stream: tokio::io::DuplexStream) {}
+    }
+
+    /// Threads of a build without Labs: none, and nothing read from or
+    /// written to the state dir.
+    pub struct Threads;
+
+    impl Threads {
+        pub fn open(_root: &Path) -> Self {
+            Threads
+        }
+
+        pub fn get(&self, _target: ThreadTarget) -> &[ThreadMsg] {
+            &[]
+        }
+
+        pub fn targets(&self) -> impl Iterator<Item = ThreadTarget> + '_ {
+            std::iter::empty()
+        }
+
+        pub fn mark_read(&mut self, _who: &str, _target: ThreadTarget, _upto: u64) -> bool {
+            false
+        }
+
+        pub fn save(&mut self) {}
+    }
+
+    /// Huddles of a build without Labs: none.
+    #[derive(Default)]
+    pub struct Calls;
+
+    impl Calls {
+        pub fn leave_all(&mut self, _client: ClientId) -> bool {
+            false
+        }
+
+        pub fn retain(&mut self, _keep: impl FnMut(SessionId, &CallMember) -> bool) -> bool {
+            false
+        }
     }
 
     /// Uninhabited: no build without Labs puts an agent on.

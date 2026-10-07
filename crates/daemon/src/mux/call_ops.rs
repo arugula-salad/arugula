@@ -31,6 +31,18 @@ impl Daemon {
         self.calls.all().filter(|c| self.call_role(who, c.session).is_some()).cloned().collect()
     }
 
+    pub(super) fn call_leave(&mut self, sub: &Subscriber, session: SessionId) {
+        if self.calls.leave(session, sub.client) {
+            self.soon();
+        }
+    }
+
+    pub(super) fn call_mute(&mut self, sub: &Subscriber, session: SessionId, muted: bool) {
+        if self.calls.mute(session, sub.client, muted) {
+            self.soon();
+        }
+    }
+
     pub(super) fn call_join(&mut self, sub: &Subscriber, session: SessionId) {
         let who = &sub.principal;
         let refuse = |message: String| {

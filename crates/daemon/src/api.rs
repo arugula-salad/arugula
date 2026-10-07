@@ -867,7 +867,7 @@ async fn invitable(app: &App, target: arugula_proto::ThreadTarget, unreached: &m
     let named: Vec<(String, crate::invite::Person)> = crate::invite::nameable(app)
         .into_iter()
         .filter_map(|p| {
-            let t = tokens.iter().find(|t| crate::threads::names(t, &p.id, &p.name))?;
+            let t = tokens.iter().find(|t| crate::labs::thread_names(t, &p.id, &p.name))?;
             Some((t.clone(), p))
         })
         .collect();
@@ -906,6 +906,7 @@ async fn thread_read(
     Json(req): Json<ThreadReadRequest>,
 ) -> Res<Json<Empty>> {
     let who = who.map(|axum::Extension(w)| w).unwrap_or(crate::acl::Principal::Owner);
+    crate::labs::chat().map_err(|e| ApiError(StatusCode::NOT_IMPLEMENTED, e))?;
     let target = thread_target(&key)?;
     app.mux.send(Cmd::Api(Api::ThreadRead(target, who, req.upto)));
     Ok(Json(Empty {}))
