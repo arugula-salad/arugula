@@ -87,9 +87,14 @@ test.beforeAll(async () => {
   }
 });
 
-test.afterAll(() => {
-  for (const d of daemons.values()) d.kill("SIGKILL");
-  for (const s of states) rmSync(s, { recursive: true, force: true });
+// A killed daemon can still be writing its state until it has exited: wait
+// for each before removing the directories (ENOTEMPTY otherwise).
+test.afterAll(async () => {
+  const live = [...daemons.values()].filter((d) => d.exitCode === null && d.signalCode === null);
+  const exited = live.map((d) => new Promise((r) => d.once("exit", r)));
+  for (const d of live) d.kill("SIGKILL");
+  await Promise.all(exited);
+  for (const s of states) rmSync(s, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 });
 
 const hostStates = (page: Page) =>
