@@ -1690,6 +1690,29 @@ fn whose(s: &Saved) -> String {
     }
 }
 
+/// Joining again while in: what to do instead (#551). One machine is in
+/// one place at a time, and `arugulad leave` takes it off control until
+/// it's approved again, so that's the last thing to try, not the first.
+fn already_in(s: &Saved, team: Option<&str>) -> String {
+    let here = format!("this machine is already in {} on {}", whose(s), s.url);
+    let move_it = "use In … beside it in Devices and machines… (the host menu)";
+    let leave = "`arugulad leave`, then join again, also moves it, but takes it off control until it's approved again";
+    match team {
+        Some(t) if s.team.as_ref().is_some_and(|p| p.team == t) => here,
+        Some(t) => {
+            // Its name, if a session here was shared with it; else its id.
+            let asked = s
+                .shared_teams
+                .get(t)
+                .map_or_else(|| format!("the team {t}"), |x| format!("the team {}", x.roster.name));
+            format!(
+                "{here}, and a machine is in one team at a time. To work with {asked} and keep this machine where it is, share a session with that team (Share session…, in the session menu). To move it there, {move_it}. {leave}."
+            )
+        }
+        None => format!("{here}. To move it, {move_it}. {leave}."),
+    }
+}
+
 /// `<state>/join.lock`: one join at a time per machine (#329). The CLI's
 /// `arugulad join` and Getting started's button (the running daemon)
 /// would otherwise ask control for the same code, and the second would
@@ -1911,11 +1934,7 @@ pub async fn join_start(
                 whose(&s),
                 s.url
             ),
-            None => bail!(
-                "this machine is already in {} on {}; to move it, run `arugulad leave`, then join again",
-                whose(&s),
-                s.url
-            ),
+            None => bail!("{}", already_in(&s, team)),
         }
     }
     // One join at a time on this machine (#329).
@@ -2233,6 +2252,48 @@ mod tests {
     fn mv(keys: &DeviceKeys, by: &Cert, daemon: &str, team: Option<&TeamPin>, at: u64) -> Move {
         let sig = hex::encode(keys.signature(Move::body(daemon, team, at).as_bytes()));
         Move { team: team.cloned(), at, by: by.device.clone(), sig }
+    }
+
+    #[test]
+    fn joining_again_says_what_to_do_instead() {
+        let (_, root) = device("a1", Kind::Browser);
+        let (_, dcert) = device("a1", Kind::Daemon);
+        let mut s = Saved {
+            url: "https://c.example".into(),
+            trust: Trust { account: "a1".into(), root: root.device.clone() },
+            cert: dcert,
+            certs: vec![root],
+            revocations: vec![],
+            team: Some(TeamPin { team: "t1".into(), founder: "a1".into(), founder_root: "r".into() }),
+            roster: None,
+            team_certs: Default::default(),
+            team_names: Default::default(),
+            locked: false,
+            peers: Default::default(),
+            shared_teams: Default::default(),
+            login: "sam".into(),
+            moved_at: 0,
+        };
+        // Into the team it's in: nothing to do.
+        assert_eq!(already_in(&s, Some("t1")), "this machine is already in the team t1 on https://c.example");
+        // Another team: it's named (by id, unless a share here names it),
+        // sharing a session and In … come first, and leave last (#551).
+        let other = already_in(&s, Some("t2"));
+        assert!(other.contains("To work with the team t2"), "{other}");
+        let (share, move_it, leave) = (
+            other.find("share a session").unwrap(),
+            other.find("In …").unwrap(),
+            other.find("arugulad leave").unwrap(),
+        );
+        assert!(share < move_it && move_it < leave, "{other}");
+        // Its account, not a team: In … first, then leave.
+        s.team = None;
+        let mine = already_in(&s, None);
+        assert!(
+            mine.starts_with("this machine is already in sam's account on https://c.example. To move it, use In …"),
+            "{mine}"
+        );
+        assert!(mine.contains("takes it off control until it's approved again"), "{mine}");
     }
 
     #[test]
