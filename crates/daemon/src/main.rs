@@ -8,6 +8,7 @@ mod args;
 mod authz;
 mod block;
 mod browser;
+mod calls;
 mod classify;
 mod control;
 // Windows panes on a pseudoconsole (M56).
@@ -37,7 +38,6 @@ mod invite;
 mod keys;
 mod labs;
 mod localauth;
-mod machine;
 mod mcp;
 mod mux;
 mod osc;
@@ -50,18 +50,12 @@ mod pipe;
 mod ports;
 mod procinfo;
 mod provider;
-mod provider_tunnel;
 mod push;
 mod remote;
-mod resident;
 mod resume;
 mod review;
 mod roots;
 mod rules;
-// The tailnet sandbox supervisor: Linux boxes.
-mod calls;
-#[cfg(unix)]
-mod sandbox;
 mod seal;
 mod selfupdate;
 mod server;
@@ -500,28 +494,13 @@ fn main() -> anyhow::Result<()> {
         .unwrap_or_else(|e| e.exit());
     match args.command {
         #[cfg(unix)]
-        Some(Command::Install {
-            tailnet: Some(authkey),
-            home,
-            join,
-            owner,
-            hostname,
-            port,
-            no_serve,
-            daemon_args,
-            ..
-        }) => {
-            sandbox::install(sandbox::TailnetOpts { authkey, hostname, home, join, owner, port, no_serve, daemon_args })
-        }
+        Some(install @ Command::Install { tailnet: Some(_), .. }) => labs::tailnet_install(install),
         Some(Command::Install { no_start, reset_args, system, daemon_args, .. }) => {
             install::install(!no_start, &daemon_args, reset_args, system)
         }
         Some(Command::Uninstall) => install::uninstall(),
         Some(Command::Update { yes }) => selfupdate::cli(yes, &args.run.update_url),
-        #[cfg(unix)]
-        Some(Command::Sandbox) => sandbox::supervise(),
-        #[cfg(not(unix))]
-        Some(Command::Sandbox) => anyhow::bail!("the sandbox supervisor is for Linux boxes"),
+        Some(Command::Sandbox) => labs::supervise_sandbox(),
         Some(Command::Join { url, name, team, account, ticket, state_dir }) => {
             let name = name.unwrap_or_else(|| hostname().unwrap_or_else(|| "arugula".into()));
             let dir = state_dir.unwrap_or_else(default_state_dir);
@@ -731,9 +710,11 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
             .unwrap_or_else(|| home().join(".local/share"))
             .join("wisp/token")
     });
-    let provider: Option<std::sync::Arc<dyn provider::Provider>> =
-        provider::sprites::Sprites::open(&args.wisp_url, &token_file)
-            .map(|p| std::sync::Arc::new(p) as std::sync::Arc<dyn provider::Provider>);
+    let provider: Option<std::sync::Arc<dyn provider::Provider>> = labs::open_provider(
+        &args.wisp_url,
+        &token_file,
+        args.wisp_token_file.is_some() || args.wisp_url != args::DEFAULT_WISP_URL,
+    );
     info!(url = args.wisp_url, on = provider.is_some(), "VM panes");
     let secrets = {
         let config = arugula_proto::dirs::config_dir().unwrap_or_else(|| home().join(".config/arugula"));
@@ -841,7 +822,7 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
         // The one from before the rename, where it is (#505).
         arugula_proto::dirs::named_in(&data, "arugula", "illogical").join("static")
     });
-    let binaries = static_dir.join("arugulad").exists().then_some(resident::Binaries { dir: static_dir });
+    let binaries = labs::binaries(static_dir);
     let app = server::App::new(
         access,
         identify,
