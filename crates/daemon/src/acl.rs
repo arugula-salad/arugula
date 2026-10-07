@@ -303,6 +303,7 @@ impl Acl {
     /// For a "from now" share (M13): when it was made. Thread messages
     /// (M61) from before it aren't theirs to read either, but for the one
     /// thread they were invited into (#297): there, from its exception.
+    #[cfg_attr(not(feature = "labs"), allow(dead_code))]
     pub fn thread_floor(&self, p: &Principal, session: SessionId, thread: ThreadTarget) -> Option<u64> {
         let Principal::User { id, .. } = p else { return None };
         let g = self.grants.read().unwrap();

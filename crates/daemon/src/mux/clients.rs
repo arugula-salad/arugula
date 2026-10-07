@@ -149,16 +149,8 @@ impl Daemon {
             }
             ClientMsg::Follow { pane, on } => self.follow(client, pane, on),
             ClientMsg::CallJoin { session } => self.call_join(&sub, session),
-            ClientMsg::CallLeave { session } => {
-                if self.calls.leave(session, client) {
-                    self.soon();
-                }
-            }
-            ClientMsg::CallMute { session, muted } => {
-                if self.calls.mute(session, client, muted) {
-                    self.soon();
-                }
-            }
+            ClientMsg::CallLeave { session } => self.call_leave(&sub, session),
+            ClientMsg::CallMute { session, muted } => self.call_mute(&sub, session, muted),
             ClientMsg::CallSignal { session, to, signal } => self.call_signal(&sub, session, to, signal),
             // The server hands these to `App::hands` (S33).
             ClientMsg::Hand { .. } | ClientMsg::HandReply { .. } => {}

@@ -147,7 +147,7 @@ pub fn search(store: &StateDir, re: &Regex, since_ms: Option<u64>, limit: usize)
     // What people said in threads (M61), open panes' or closed ones'.
     let open: std::collections::HashSet<PaneId> =
         store.pane_dirs().into_iter().filter(|(_, open, _)| *open).map(|(p, _, _)| p).collect();
-    let threads = crate::threads::Threads::open(store.root());
+    let threads = crate::labs::Threads::open(store.root());
     let mut targets: Vec<_> = threads.targets().collect();
     targets.sort();
     for t in targets {
