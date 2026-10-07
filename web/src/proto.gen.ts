@@ -68,6 +68,35 @@ bps: number,
 last_ms: number, };
 
 /**
+ * The agent working on an issue, and what it made.
+ */
+export type AgentLink = { branch: string, 
+/**
+ * The worktree, absolute.
+ */
+worktree: string, 
+/**
+ * What the branch was made from.
+ */
+base: string, 
+/**
+ * The agent block.
+ */
+block: number, 
+/**
+ * `claude`, `codex`, …
+ */
+agent: string, at_ms: number, 
+/**
+ * Its pull request, once there is one (found once).
+ */
+pr?: number, pr_url?: string, 
+/**
+ * The PR block opened beside the agent.
+ */
+pr_block?: number, };
+
+/**
  * The open question or approval behind an `ask` reason.
  */
 export type AskRef = { 
@@ -110,6 +139,12 @@ export type Attention = "idle" | "working" | "needs_input" | "done";
  * share one id space (`%N`) and one place in the layout tree.
  */
 export type BlockType = "terminal" | "browser" | "agent" | "editor" | "diff" | "file" | "remote" | "workspace" | "app" | "forge" | "fountain" | "invite";
+
+/**
+ * A side of a PR: which repository (a fork's, for its head), branch and
+ * commit.
+ */
+export type Branch = { repo: string | null, branch: string, sha: string, };
 
 /**
  * A huddle: a voice call on a session (M63), peer to peer between its
@@ -157,6 +192,17 @@ export type CallSignal = { type: SdpKind, sdp: string,
  * device key, when it has one.
  */
 sig?: string, };
+
+export type Check = { name: string, source: CheckSource, state: CheckState, allow_failure: boolean, 
+/**
+ * Absolute (Forgejo's own are relative to the site; the adapter makes
+ * them whole).
+ */
+url: string | null, description: string | null, run: RunRef | null, };
+
+export type CheckSource = "status" | "action" | "check_run" | "pipeline_job";
+
+export type CheckState = "queued" | "running" | "success" | "failure" | "cancelled" | "skipped" | "neutral" | "action_required" | "manual";
 
 export type Child = { weight: number, node: Node, };
 
@@ -294,6 +340,25 @@ ide: string, };
 export type Dir = "row" | "column";
 
 /**
+ * An agent's write, waiting for a person.
+ */
+export type Draft = { id: string, 
+/**
+ * Who drafted it (`mcp:claude-code`, `agent`).
+ */
+by: string, at_ms: number, status: DraftStatus, 
+/**
+ * Who sent or dropped it, and when.
+ */
+settled_by?: string, settled_ms?: number, url?: string, 
+/**
+ * The last send failed: why (it waits again, text kept).
+ */
+error?: string, } & ({ "method": "comment", body: string, } | { "method": "review", event: ReviewEvent, body?: string, } | { "method": "merge", style?: string, } | { "method": "rerun_checks" } | { "method": "live", on: boolean, });
+
+export type DraftStatus = "waiting" | "sent" | "dropped";
+
+/**
  * A pane's driver (M13).
  */
 export type Driver = { 
@@ -347,6 +412,26 @@ conflict?: string | null,
  */
 followers: number, };
 
+export type Event = { 
+/**
+ * Provider-prefixed, stable across polls (`fj-1403`).
+ */
+id: string, at: number, actor: string | null, kind: EventKind, 
+/**
+ * The forge's own name for it, when it's `other` (or more exact).
+ */
+what?: string, 
+/**
+ * Who a request is for.
+ */
+target?: Reviewer, body?: string, 
+/**
+ * A push: how many commits, and whether it was forced.
+ */
+commits?: number, force?: boolean, };
+
+export type EventKind = "commented" | "review_comment" | "reviewed" | "review_requested" | "review_request_removed" | "review_dismissed" | "pushed" | "labeled" | "assigned" | "renamed" | "referenced" | "merged" | "closed" | "reopened" | "branch_deleted" | "milestone" | "mentioned" | "other";
+
 export type FollowChange = { range: [number, number, number, number], text: string, };
 
 export type FollowCursor = { file: string, line: number, col: number, sel?: [number, number, number, number] | null, 
@@ -372,6 +457,98 @@ export type FollowEdit = { file: string, version: number, changes: Array<FollowC
 export type FollowMsg = FollowCursor | { open: FollowOpen, } | { edit: FollowEdit, } | { diagnostics: FollowDiagnostics, } | { gone: true, };
 
 export type FollowOpen = { file: string, version: number, text: string | null, lang?: string, too_big?: boolean, };
+
+/**
+ * M40: how the block hears of changes.
+ */
+export type ForgeLive = "webhook" | "polling";
+
+/**
+ * A `tea` login to pick from.
+ */
+export type ForgeLogin = { name: string, url: string, user: string, };
+
+/**
+ * A forge block's state: the PR or issue, what it wants of you, the agent's
+ * drafts, and how it's kept current.
+ */
+export type ForgeState = { provider: Provider, 
+/**
+ * M37: `pr` or `issue`.
+ */
+kind: ItemKind, repo: string, number: number, api: string | null, login: string | null, host: string | null, dir: string | null, loading: boolean, error: string | null, 
+/**
+ * It can only read, and why (GitLab with no glab login: anonymous).
+ */
+read_only: string | null, 
+/**
+ * Logins to pick from, when none (or several) matched.
+ */
+logins: Array<ForgeLogin>, 
+/**
+ * "You", on the forge.
+ */
+me: string | null, pr: Pr | null, 
+/**
+ * M37: the issue, for `kind: issue`.
+ */
+issue: Issue | null, 
+/**
+ * M37: the agent on it.
+ */
+link: AgentLink | null, 
+/**
+ * M37: a new issue, before (and after) it went out.
+ */
+new: NewIssue | null, wants: Array<ForgeWant>, 
+/**
+ * Whether *Rerun checks* is possible here, and where the failed run
+ * is when it isn't (Forgejo).
+ */
+rerun: Rerun | null, drafts: Array<Draft>, updated_ms: number, polls: number, 
+/**
+ * M40: pokes heard (webhooks through control or straight here).
+ */
+pokes: number, reads: number, 
+/**
+ * A client draws it.
+ */
+watching: boolean, 
+/**
+ * The last write's result (sent directly), for the client.
+ */
+said: string | null, 
+/**
+ * The forge's rate limit and any backing off (M38: GitHub).
+ */
+rate: RateLimit | null, 
+/**
+ * M40: webhook (pokes say when to read) or polling, and why.
+ */
+live: ForgeLive, 
+/**
+ * Where the pokes come from, when there's a way for them to
+ * (`github-app`, `hook`).
+ */
+live_via: string | null, live_why: string | null, 
+/**
+ * When it last heard from the webhook path.
+ */
+live_heard_ms: number | null, 
+/**
+ * A webhook this daemon made is on the repository.
+ */
+hook: boolean, };
+
+/**
+ * What it wants of you, as the client draws it.
+ */
+export type ForgeWant = { kind: ForgeWantKind, why: string, };
+
+/**
+ * What a PR or issue wants of you, as the client draws it: its kind.
+ */
+export type ForgeWantKind = "review" | "failed" | "changes" | "mention" | "done" | "assigned";
 
 /**
  * A machine's Fountain runner, for its line in the machine panel and the
@@ -680,7 +857,52 @@ reason: string | null,
  */
 drive: boolean | null, };
 
+/**
+ * An issue, read whole (M37): the item (no branches), its newest events,
+ * and the pull requests that refer to it.
+ */
+export type Issue = { item: Item, events: Array<Event>, linked: Array<Linked>, };
+
+export type Item = { kind: ItemKind, number: number, url: string, title: string, body: string, 
+/**
+ * The author's login.
+ */
+author: string, state: ItemState, draft: boolean, labels: Array<string>, assignees: Array<string>, base: Branch, head: Branch, 
+/**
+ * `refs/pull/N/head`: what `diff` and `checkout` fetch (never the
+ * head's branch: AGit PRs have none).
+ */
+head_ref: string, merge_base: string | null, 
+/**
+ * `None` while the forge works it out.
+ */
+mergeable: boolean | null, 
+/**
+ * The forge says branch protection blocks a merge (GitHub only;
+ * Forgejo can't tell, so false).
+ */
+blocked: boolean, 
+/**
+ * Review requests still pending (Forgejo's `requested_reviewers` also
+ * keeps whoever already reviewed: see `forge::forgejo`).
+ */
+requested: Array<Reviewer>, comments: number, updated_at: number, merged_at: number | null, merged_by: string | null, };
+
+export type ItemKind = "pr" | "issue";
+
+export type ItemState = "open" | "closed" | "merged";
+
 export type Layout = { panes: Array<[number, Rect]>, splits: Array<SplitRect>, };
+
+/**
+ * M37: a pull request that refers to an issue (from the issue's
+ * timeline), or one found by its head branch.
+ */
+export type Linked = { number: number, title: string, state: ItemState, url: string, 
+/**
+ * Its head branch, when the forge said.
+ */
+head?: string, };
 
 /**
  * A machine that blocks can run on instead of this host: today a
@@ -716,6 +938,23 @@ borrowed?: boolean,
 by?: string | null, };
 
 export type MachineState = "starting" | "running" | "gone";
+
+/**
+ * A new issue, before and after it reached the forge.
+ */
+export type NewIssue = { title: string, body: string, 
+/**
+ * Who asked for it: a person, `mcp:<client>`, or `an agent`.
+ */
+by: string, 
+/**
+ * An agent's: a draft, until a person sends it.
+ */
+agent: boolean, at_ms: number, status: DraftStatus, settled_by?: string, url?: string, 
+/**
+ * The last try failed: why.
+ */
+error?: string, };
 
 export type Node = { "type": "pane", pane: number, } | { "type": "split", id: number, dir: Dir, children: Array<Child>, };
 
@@ -946,6 +1185,15 @@ export type PaneOp = { "op": "set_policy", policy: Policy, } | { "op": "purge" }
 export type Policy = { "kind": "none" } | { "kind": "shell" } | { "kind": "rerun", confirm: boolean, } | { "kind": "hook", command: string, } | { "kind": "resume" };
 
 /**
+ * A pull request, read whole.
+ */
+export type Pr = { item: Item, reviews: Array<Review>, checks: Array<Check>, rollup: CheckState | null, 
+/**
+ * The newest events, oldest first.
+ */
+events: Array<Event>, };
+
+/**
  * Someone looking at the daemon (M13): one per connected client.
  */
 export type Presence = { client: number, 
@@ -972,10 +1220,28 @@ root: string,
 name: string, };
 
 /**
+ * Which forge.
+ */
+export type Provider = "forgejo" | "github" | "gitlab";
+
+/**
  * Output quoted in a thread message: kept as text, so it stays readable
  * after the pane scrolls or closes.
  */
 export type Quote = { pane: number, text: string, };
+
+/**
+ * GitHub's rate limit as last heard, and any backing off (M38).
+ */
+export type RateLimit = { limit: number | null, remaining: number | null, used: number | null, 
+/**
+ * When the window resets (epoch seconds).
+ */
+reset: number | null, requests: number, not_modified: number, 
+/**
+ * Why it's polling slowly, if it is.
+ */
+backoff: string | null, };
 
 /**
  * Why a pane wants you (M24): what happened, not just "needs you", so a
@@ -1026,9 +1292,46 @@ export type Rect = { x: number, y: number, cols: number, rows: number, };
 export type RemoteRef = { host: string, pane: number, };
 
 /**
+ * What the failed checks' rerun is: through the API (`api`: GitLab, as
+ * `rerun_checks`), or on a forge with none (or no login), the run's page.
+ */
+export type Rerun = { api: boolean, url: string | null, note: string, 
+/**
+ * GitHub: how many workflow runs it reruns.
+ */
+runs?: number, 
+/**
+ * GitLab: the pipeline's id, `null` when no check says. Absent
+ * (outer `None`) for the others.
+ */
+pipeline?: string | null, };
+
+export type Review = { id: string, author: string | null, state: ReviewState, commit: string | null, 
+/**
+ * Made on an older head.
+ */
+stale: boolean, at: number | null, body: string | null, url: string | null, };
+
+export type ReviewEvent = "approve" | "request_changes" | "comment";
+
+export type ReviewState = "approved" | "changes_requested" | "commented" | "dismissed" | "pending";
+
+/**
+ * Who a review request is for: a person, or a team (`Org/Name`, or just
+ * `Name` when the forge doesn't say).
+ */
+export type Reviewer = { "user": string } | { "team": string };
+
+/**
  * Ordered: an owner can do anything an editor can, and so on.
  */
 export type Role = "viewer" | "editor" | "owner";
+
+/**
+ * What a rerun would act on: an Actions run (its number in the repo) and
+ * job.
+ */
+export type RunRef = { id: string, job: string | null, };
 
 /**
  * `POST /api/run`: a new terminal pane.

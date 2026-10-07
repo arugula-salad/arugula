@@ -15,41 +15,9 @@
 import { render } from "preact";
 import { useState } from "preact/hooks";
 import type { Client } from "../client";
-import type { PaneId } from "../proto";
+import type { Draft, Event as ForgeEvent, ForgeState, PaneId } from "../proto";
 import { askText } from "../ui/menu";
 import { registerBlock, type BlockView } from "./view";
-
-interface Branch { repo: string | null; branch: string; sha: string }
-interface Item {
-  number: number; url: string; title: string; body: string; author: string; state: "open" | "closed" | "merged"; draft: boolean;
-  labels: string[]; assignees: string[]; base: Branch; head: Branch; head_ref: string; merge_base: string | null;
-  mergeable: boolean | null; requested: ({ user: string } | { team: string })[]; updated_at: number; merged_at: number | null; merged_by: string | null;
-}
-interface Review { id: string; author: string | null; state: string; commit: string | null; stale: boolean; at: number | null; body: string | null; url: string | null }
-interface Check { name: string; source: string; state: string; url: string | null; description: string | null }
-interface Event { id: string; at: number; actor: string | null; kind: string; what?: string; target?: { user: string } | { team: string }; body?: string; commits?: number; force?: boolean }
-interface Pr { item: Item; reviews: Review[]; checks: Check[]; rollup: string | null; events: Event[] }
-interface Linked { number: number; title: string; state: "open" | "closed" | "merged"; url: string; head?: string }
-interface Issue { item: Item; events: Event[]; linked: Linked[] }
-interface AgentLink { branch: string; worktree: string; base: string; block: PaneId; agent: string; at_ms: number; pr?: number; pr_url?: string; pr_block?: PaneId }
-interface NewIssue { title: string; body: string; by: string; agent: boolean; at_ms: number; status: "waiting" | "sent" | "dropped"; settled_by?: string; url?: string; error?: string }
-interface Draft {
-  id: string; method: "comment" | "review" | "merge" | "rerun_checks"; body?: string; event?: string; style?: string; by: string; at_ms: number;
-  status: "waiting" | "sent" | "dropped"; settled_by?: string; settled_ms?: number; url?: string; error?: string;
-}
-export interface ForgeState {
-  provider: string; kind?: "pr" | "issue"; repo: string; number: number; api: string | null; login: string | null; host: string | null; dir: string | null;
-  loading: boolean; error: string | null; read_only?: string | null; logins: { name: string; url: string; user: string }[]; me: string | null; pr: Pr | null;
-  issue?: Issue | null; link?: AgentLink | null; new?: NewIssue | null;
-  wants: { kind: "review" | "failed" | "changes" | "mention" | "done" | "assigned"; why: string }[];
-  rerun: { api: boolean; url: string | null; note: string; pipeline?: string | null; runs?: number } | null; drafts: Draft[];
-  /** M38: GitHub's rate limit, and why it's backing off. */
-  rate?: { remaining: number | null; limit: number | null; backoff: string | null } | null;
-  updated_ms: number; polls: number; reads: number; watching?: boolean; said: string | null;
-  /** M40: webhook (pokes say when to read) or polling, and why. */
-  live?: "webhook" | "polling"; live_via?: string | null; live_why?: string | null; live_heard_ms?: number | null;
-  hook?: boolean; pokes?: number;
-}
 
 /** "Open pull request…": a link, OWNER/REPO#N, or N in `dir`'s repository,
  * beside `split` or in a new tab of `session`. */
@@ -79,7 +47,7 @@ function ago(ms: number | null | undefined): string {
 
 const words = (s: string) => s.replace(/_/g, " ");
 
-function eventLine(e: Event): string {
+function eventLine(e: ForgeEvent): string {
   switch (e.kind) {
     case "commented":
       return "commented";
@@ -106,8 +74,12 @@ function draftWhat(d: Draft): string {
   if (d.method === "comment") return "a comment";
   if (d.method === "merge") return `a merge (${d.style ?? "merge"})`;
   if (d.method === "rerun_checks") return "a rerun of the checks";
+  if (d.method !== "review") return "a review";
   return d.event === "approve" ? "an approval" : d.event === "request_changes" ? "a review asking for changes" : "a review";
 }
+
+/** A draft's text: a comment's or a review's (a merge or a rerun has none). */
+const draftBody = (d: Draft) => ("body" in d ? d.body : undefined);
 
 const linkedState = (st: string) => <span class={`ws-tag forge-state ${st}`}>{st}</span>;
 
@@ -355,7 +327,7 @@ function Drafts({ s }: { s: ForgeState }) {
             {d.status === "dropped" && <span class="ws-tag">dropped by {d.settled_by}</span>}
             {d.error && <span class="ws-tag bad">{d.error}</span>}
           </div>
-          {d.body && <div class="forge-body">{d.body}</div>}
+          {draftBody(d) && <div class="forge-body">{draftBody(d)}</div>}
         </div>
       ))}
     </section>
@@ -603,7 +575,7 @@ function plain(s: ForgeState | null): string {
   const lines = [`${s.repo}#${s.number} ${it?.title ?? ""}`.trim()];
   if (s.error) lines.push(s.error);
   for (const w of s.wants) lines.push(`waiting on you: ${w.why}`);
-  for (const d of s.drafts) lines.push(`draft ${d.id} ${d.status}: ${d.body ?? d.method}`);
+  for (const d of s.drafts) lines.push(`draft ${d.id} ${d.status}: ${draftBody(d) ?? d.method}`);
   for (const c of s.pr?.checks ?? []) lines.push(`${c.state} ${c.name}`);
   for (const r of s.pr?.reviews ?? []) lines.push(`${r.author ?? "?"} ${r.state}`);
   if (s.link) lines.push(`agent %${s.link.block} on ${s.link.branch}${s.link.pr ? `, PR #${s.link.pr}` : ""}`);

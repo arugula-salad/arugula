@@ -42,7 +42,7 @@ use futures_util::future::BoxFuture;
 use serde_json::{Value, json};
 
 use super::{
-    Adapter, Error, Polled, ReviewEvent, Sent, Write,
+    Adapter, Error, Polled, RateLimit, ReviewEvent, Sent, Write,
     forgejo::time,
     model::{
         Branch, Check, CheckSource, CheckState, Event, EventKind, Item, ItemKind, ItemState, Linked, Me, Review,
@@ -1040,7 +1040,7 @@ impl Adapter for Github {
         })
     }
 
-    fn rate(&self) -> Option<Value> {
+    fn rate(&self) -> Option<RateLimit> {
         let why = self.holding();
         let l = self.limits.lock().unwrap();
         let low = l.remaining.is_some_and(|r| r < LOW) && l.reset.is_some_and(|r| r > epoch());
@@ -1054,17 +1054,22 @@ impl Adapter for Github {
                 )
             })
         });
-        Some(json!({
-            "limit": l.limit, "remaining": l.remaining, "used": l.used, "reset": l.reset,
-            "requests": l.requests, "not_modified": l.not_modified, "backoff": backoff,
-        }))
+        Some(RateLimit {
+            limit: l.limit,
+            remaining: l.remaining,
+            used: l.used,
+            reset: l.reset,
+            requests: l.requests,
+            not_modified: l.not_modified,
+            backoff,
+        })
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::forge::model::{Pr, Want, attention, rollup};
+    use crate::forge::model::{EventLine, ItemText, Pr, Want, attention, rollup};
 
     fn fixture(dir: &str, f: &str) -> Value {
         let p = format!("{}/tests/fixtures/github/{dir}/{f}", env!("CARGO_MANIFEST_DIR"));

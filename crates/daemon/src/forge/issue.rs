@@ -28,55 +28,7 @@
 //! dropped it.
 
 use super::*;
-use arugula_proto::{PaneId, api::HistoryKind};
-
-/// The agent working on an issue, and what it made.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct AgentLink {
-    pub branch: String,
-    /// The worktree, absolute.
-    pub worktree: String,
-    /// What the branch was made from.
-    pub base: String,
-    /// The agent block.
-    pub block: PaneId,
-    /// `claude`, `codex`, …
-    pub agent: String,
-    pub at_ms: u64,
-    /// Its pull request, once there is one (found once).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub pr: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub pr_url: Option<String>,
-    /// The PR block opened beside the agent.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub pr_block: Option<PaneId>,
-}
-
-/// A new issue, before and after it reached the forge.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct NewIssue {
-    pub title: String,
-    #[serde(default)]
-    pub body: String,
-    /// Who asked for it: a person, `mcp:<client>`, or `an agent`.
-    #[serde(default)]
-    pub by: String,
-    /// An agent's: a draft, until a person sends it.
-    #[serde(default)]
-    pub agent: bool,
-    #[serde(default)]
-    pub at_ms: u64,
-    #[serde(default)]
-    pub status: DraftStatus,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub settled_by: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub url: Option<String>,
-    /// The last try failed: why.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
-}
+use arugula_proto::{PaneId, api::HistoryKind, forge::Issue};
 
 /// The card's id for a new issue's draft.
 const NEW: &str = "new";
@@ -180,7 +132,7 @@ fn defang(s: &str) -> String {
 
 /// What an issue block adds to its text: the agent on it, and a new
 /// issue's draft.
-pub(super) fn text(st: &State) -> String {
+pub(super) fn text(st: &ForgeState) -> String {
     let mut out = String::new();
     if let Some(n) = &st.new
         && st.number == 0
@@ -469,7 +421,7 @@ impl ForgeBlock {
         self.ctx.changed();
         // Look for its PR on the faster rhythm from now.
         self.wake.notify_one();
-        Ok(json!({ "agent": block, "branch": branch, "worktree": wt, "base": base }))
+        to_value(AgentStarted { agent: block, branch, worktree: wt, base })
     }
 
     // ------------------------------------------------------------ new issues
