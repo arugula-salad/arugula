@@ -56,6 +56,7 @@ stem=illogical-$OLD-$TARGET
 curl -fsSL -o "$work/$stem.tar.gz" "https://github.com/arugula-salad/illogical/releases/download/v$OLD/$stem.tar.gz"
 tar -xzf "$work/$stem.tar.gz" -C "$work"
 # This tree's daemon and CLI.
+mkdir -p "$ROOT/web/dist"
 (cd "$ROOT" && mise exec -- cargo build -q -p arugulad -p arugula) >"$work/build.log" 2>&1 || { tail -20 "$work/build.log"; exit 1; }
 tgt="${CARGO_TARGET_DIR:-$ROOT/target}/debug"
 echo "old: illogical $OLD (release); new: this tree (debug)"
@@ -116,7 +117,7 @@ fi
 
 state=$(vs 'readlink ~/.local/state/arugula; test -d ~/.local/state/illogical && test ! -L ~/.local/state/illogical && echo kept' | tr '\n' ' ')
 if [[ "$state" == *illogical*kept* ]]; then
-  pass state "~/.local/state/arugula -> $state"
+  pass state "the arugula state link -> $state"
 else
   fail state "$state"
 fi
