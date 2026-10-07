@@ -113,6 +113,11 @@ moves the state dir. A `labs` cargo feature is planned (#452).
 - `just proto-ts`: regenerate `web/src/proto.gen.ts`.
 - In a worktree, set `CARGO_TARGET_DIR` to a directory of its own, so
   parallel builds don't share one `target/`.
+- One suite runs at a time per machine: `just test`, `just check` and
+  `just e2e` build, then wait for `scripts/suite-lock` while another worktree's
+  tests run. Two at once wedge macOS's syspolicyd, and the tests fail by the
+  hundred. Waiting can take a while, so run them in the background (or an
+  Arugula pane). Agents building side by side: `CARGO_BUILD_JOBS=4`.
 
 ## Milestone codes
 
