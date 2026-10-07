@@ -203,14 +203,24 @@ test("a machine on another network, behind netem, in both phones' swarms", async
     docker("build", "-q", "-t", `${project}-netem`, dir);
     docker("network", "create", net);
     const gateway = docker("network", "inspect", net, "--format", "{{(index .IPAM.Config 0).Gateway}}");
-    const via = await listen(forward, gateway);
+    // On Docker Desktop that address is inside its VM, not on this host:
+    // listen on loopback and have the box reach it as host.docker.internal.
+    let host = gateway;
+    let via: number;
+    try {
+      via = await listen(forward, gateway);
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== "EADDRNOTAVAIL") throw e;
+      via = await listen(forward);
+      host = "host.docker.internal";
+    }
     // In the box, socat brings the forwarder to control's own address, so
     // the URLs control hands out work there.
     const port = new URL(control.base).port;
     docker(
       "run", "-d", "--name", name, "--network", net, "--cap-add", "NET_ADMIN",
       "-v", `${bin}:/usr/local/bin/arugulad:ro`, `${project}-netem`,
-      "sh", "-c", `socat TCP-LISTEN:${port},bind=127.0.0.1,fork,reuseaddr TCP:${gateway}:${via} & sleep infinity`,
+      "sh", "-c", `socat TCP-LISTEN:${port},bind=127.0.0.1,fork,reuseaddr TCP:${host}:${via} & sleep infinity`,
     );
     docker("exec", name, "tc", "qdisc", "add", "dev", "eth0", "root", "netem", "delay", "120ms", "40ms", "loss", "1%");
     expect(docker("exec", name, "tc", "qdisc", "show", "dev", "eth0")).toContain("netem");
