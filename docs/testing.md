@@ -882,6 +882,17 @@ what's missing:
 | `scripts/macos-sign` in the release | the `APPLE_*` secrets (a Developer ID, #177); without them it says which is missing and leaves the ad-hoc signature |
 | updater signatures and `latest.json` in the release | `TAURI_SIGNING_PRIVATE_KEY` (and its password), and the matching public key in `crates/desktop/tauri.conf.json` |
 
+`vm_reboot.rs` is #214's VM tabs across a real kernel reboot (#256): two
+VM tabs, one split, the daemon stopped as a host reboot would stop it, and
+each sprite suspended and cooled through wispd's operator endpoints (what
+`--warm-ttl` does), so the next wake boots the guest. After the daemon
+starts, every pane says its session was lost and gets a shell on its
+tab's machine under a new boot id, with its home directory kept; each tab
+still has exactly one machine, and wisp lists no other
+`illogical-eph-<daemon id>-*` sprite (the prefix kept from before the
+rename), nor any once the tabs close. With a token and no wispd answering
+at 127.0.0.1:7788 it fails rather than skips.
+
 `workspace.spec.ts` needs the network on its first run, to install the
 pinned chant.
 
