@@ -15,6 +15,7 @@ pub mod edit;
 pub mod editors;
 pub mod events;
 pub mod export;
+#[cfg(feature = "labs")]
 pub mod fountain;
 pub mod history;
 pub mod ide;

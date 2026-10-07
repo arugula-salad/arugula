@@ -1,7 +1,7 @@
 //! `arugula login`: this CLI as one of your devices on Arugula control.
 
 use crate::http::{self};
-use crate::{Cli, control, fountain_runner, socket, ssh};
+use crate::{Cli, control, socket, ssh, util};
 
 #[derive(clap::Args)]
 pub struct Args {
@@ -29,7 +29,7 @@ pub fn run(args: &Args, cli: &Cli) -> anyhow::Result<i32> {
             .unwrap_or_else(|| ssh::CONTROL.to_owned()),
     };
     let name = name.clone().unwrap_or_else(|| {
-        let h = fountain_runner::hostname().unwrap_or_default();
+        let h = util::hostname().unwrap_or_default();
         if h.is_empty() { "Arugula CLI".into() } else { format!("Arugula CLI on {h}") }
     });
     control::login(&url, &name, account.as_deref())?;

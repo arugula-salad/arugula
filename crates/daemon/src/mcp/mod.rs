@@ -220,7 +220,7 @@ impl McpServer {
     /// This machine has the `labs` file: read on each call, so it needs no
     /// restart.
     fn labs(&self) -> bool {
-        arugula_proto::hosts::labs(self.app.control.state_dir())
+        crate::labs::enabled(self.app.control.state_dir())
     }
 
     fn caller(&self, ctx: &RequestContext<RoleServer>) -> Caller {

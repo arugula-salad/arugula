@@ -9,6 +9,7 @@ mod ask;
 mod attach;
 mod cmd;
 mod control;
+#[cfg(feature = "labs")]
 mod fountain_runner;
 mod fs;
 mod hook;
@@ -38,7 +39,9 @@ mod tmux {
 use std::path::PathBuf;
 
 use clap::{FromArgMatches, Parser, Subcommand};
-use cmd::{claude::ClaudeCmd, fountain::FountainCmd};
+use cmd::claude::ClaudeCmd;
+#[cfg(feature = "labs")]
+use cmd::fountain::FountainCmd;
 use util::{Pane, REMOTE};
 
 #[derive(Parser)]
@@ -140,6 +143,7 @@ enum Command {
     /// draft that waits for a person to send it.
     #[command(args_conflicts_with_subcommands = true)]
     Pr(cmd::pr::Args),
+    #[cfg(feature = "labs")]
     /// Your Fountain agents as a catalog block.
     ///
     /// Read with your own `fountain` login (FOUNTAIN_API_KEY or
@@ -437,7 +441,18 @@ fn state_dir() -> Option<PathBuf> {
 /// Commands and options that work but stay out of `--help` unless the machine
 /// has the `labs` file: they're for what a stranger doesn't have. Others that
 /// are `hide = true` are internals, and stay hidden.
-const LABS_COMMANDS: [&str; 7] = ["fountain", "studio", "app", "workspace", "guests", "machines", "sandboxes"];
+///
+/// Fountain's command is not in a build without the `labs` feature.
+const LABS_COMMANDS: &[&str] = &[
+    #[cfg(feature = "labs")]
+    "fountain",
+    "studio",
+    "app",
+    "workspace",
+    "guests",
+    "machines",
+    "sandboxes",
+];
 const LABS_OPTIONS: [(&str, &[&str]); 5] = [
     ("agent", &["fountain", "as_fountain", "vault", "vm", "machine"]),
     ("run", &["vm", "vm_tab", "image", "sandbox"]),
@@ -473,7 +488,7 @@ fn labs_command(labs: bool) -> clap::Command {
     let mut cmd = Cli::command();
     if labs {
         for name in LABS_COMMANDS {
-            cmd = cmd.mut_subcommand(name, |s| s.hide(false));
+            cmd = cmd.mut_subcommand(*name, |s| s.hide(false));
         }
         for (name, opts) in LABS_OPTIONS {
             cmd = cmd.mut_subcommand(name, |s| opts.iter().fold(s, |s, o| s.mut_arg(*o, |a| a.hide(false))));
@@ -577,6 +592,7 @@ fn real_main(cli: Cli) -> anyhow::Result<i32> {
         // A settings file: no daemon involved.
         return hooks::run(cmd, cli.json);
     }
+    #[cfg(feature = "labs")]
     if let Command::Fountain(args) = &cli.cmd
         && let Some(FountainCmd::Runner { cmd }) = &args.cmd
     {
@@ -664,6 +680,7 @@ fn real_main(cli: Cli) -> anyhow::Result<i32> {
         Command::View(args) => cmd::view::run(args, ctx),
         Command::Workspace(args) => cmd::workspace::run(args, ctx),
         Command::Pr(args) => cmd::pr::run(args, ctx),
+        #[cfg(feature = "labs")]
         Command::Fountain(args) => cmd::fountain::run(args, ctx),
         Command::Issue(args) => cmd::issue::run(args, ctx),
         Command::Rerun(args) => cmd::rerun::run(args, ctx),
@@ -728,7 +745,7 @@ mod tests {
         let listed = root.render_long_help().to_string();
         let listed: Vec<&str> =
             listed.lines().filter_map(|l| l.strip_prefix("  ")?.split_whitespace().next()).collect();
-        for hidden in ["fountain", "studio", "app", "workspace", "guests", "machines", "sandboxes"] {
+        for hidden in super::LABS_COMMANDS.iter().copied() {
             assert!(root.find_subcommand(hidden).unwrap().is_hide_set(), "{hidden} isn't hidden");
             assert!(!listed.contains(&hidden), "{hidden} is in `arugula --help`");
             // Asking for it by name still gives its help.
@@ -780,8 +797,7 @@ mod tests {
             out
         }
         let (off, on) = (hidden(&super::labs_command(false)), hidden(&super::labs_command(true)));
-        let mut set: Vec<String> =
-            ["fountain", "studio", "app", "workspace", "guests", "machines", "sandboxes"].map(String::from).into();
+        let mut set: Vec<String> = super::LABS_COMMANDS.iter().map(|c| (*c).to_owned()).collect();
         for (cmd, opts) in [
             ("agent", &["fountain", "as_fountain", "vault", "vm", "machine"][..]),
             ("run", &["vm", "vm_tab", "image", "sandbox"][..]),
@@ -809,7 +825,7 @@ mod tests {
                 .collect::<Vec<_>>()
         };
         let (without, with) = (listed(false), listed(true));
-        for name in ["fountain", "studio", "app", "workspace", "guests", "machines", "sandboxes"] {
+        for name in super::LABS_COMMANDS.iter().copied() {
             assert!(!without.iter().any(|l| l == name), "{name} in `arugula --help` without labs");
             assert!(with.iter().any(|l| l == name), "{name} isn't in `arugula --help` with labs");
         }

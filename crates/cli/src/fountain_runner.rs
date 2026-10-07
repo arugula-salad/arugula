@@ -30,7 +30,10 @@ use anyhow::{Context, bail};
 use clap::Subcommand;
 use serde_json::{Value, json};
 
-use crate::http::{Target, Url, enc, send};
+use crate::{
+    http::{Target, Url, enc, send},
+    util::hostname,
+};
 
 /// The systemd unit the setup script writes.
 pub const UNIT: &str = "fountain-runner";
@@ -274,17 +277,6 @@ fn runner_name(unit: Option<&str>) -> String {
     from_unit.unwrap_or_else(|| {
         hostname().map(|h| h.split('.').next().unwrap_or_default().to_lowercase()).unwrap_or_default()
     })
-}
-
-#[cfg(unix)]
-pub fn hostname() -> Option<String> {
-    nix::unistd::gethostname().ok().and_then(|h| h.into_string().ok())
-}
-
-/// Windows keeps the machine's name in the environment.
-#[cfg(not(unix))]
-pub fn hostname() -> Option<String> {
-    std::env::var("COMPUTERNAME").ok()
 }
 
 fn status(json_out: bool) -> anyhow::Result<i32> {

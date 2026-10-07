@@ -47,6 +47,7 @@
 pub mod api;
 pub mod catalog;
 pub mod login;
+pub mod routes;
 pub mod runner;
 pub mod wear;
 

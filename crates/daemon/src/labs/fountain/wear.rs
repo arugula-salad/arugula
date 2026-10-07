@@ -910,6 +910,31 @@ impl Worn {
     pub fn dress(&self, meta: &mut Value) {
         crate::agent::defs::wear_meta(meta, &self.system, &self.plugin, self.info.model.as_deref());
     }
+
+    /// The servers it adds to the agent's own, each credential a reference.
+    pub fn servers(&self) -> &[Value] {
+        &self.servers
+    }
+
+    /// What the references stand for: the adapter's environment.
+    pub fn env(&self) -> &[(String, String)] {
+        &self.env
+    }
+
+    /// Every value that may be secret, to keep out of logs.
+    pub fn secrets(&self) -> &[String] {
+        &self.secrets
+    }
+
+    /// What the block shows of it (nothing secret), as JSON.
+    pub fn info(&self) -> Value {
+        serde_json::to_value(&self.info).unwrap_or_default()
+    }
+
+    /// [`Info::text`], for `capture --text`.
+    pub fn text(&self) -> String {
+        self.info.text()
+    }
 }
 
 /// Its model, as Claude Code names it (`anthropic/` taken off; another
@@ -1253,7 +1278,7 @@ pub fn scrub(line: &str, secrets: &[String]) -> Option<String> {
             }
             let cur = out.as_deref().unwrap_or(line);
             if cur.contains(needle) {
-                out = Some(cur.replace(needle, crate::fountain::api::REDACTED));
+                out = Some(cur.replace(needle, crate::labs::fountain::api::REDACTED));
             }
         }
     }
@@ -1348,7 +1373,7 @@ mod tests {
     }
 
     fn agents() -> Vec<Agent> {
-        let v: Value = serde_json::from_str(include_str!("../../tests/fixtures/fountain/agents.json")).unwrap();
+        let v: Value = serde_json::from_str(include_str!("../../../tests/fixtures/fountain/agents.json")).unwrap();
         super::super::api::rows(v["data"].as_array().unwrap().clone()).items
     }
 

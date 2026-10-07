@@ -214,28 +214,7 @@ impl Diff {
         let repo = config.repo.clone().filter(|r| !r.is_empty()).unwrap_or_else(|| "~".into());
         let runner = Runner::of(&ctx);
         if let Some(user) = &config.run_as {
-            if user != crate::fountain::runner::USER {
-                return Err(format!("a diff runs git as you, or as {} (not {user})", crate::fountain::runner::USER));
-            }
-            if ctx.sprite.is_some() {
-                return Err(format!("run_as {user} is for this host's sandboxes"));
-            }
-            if !repo.starts_with('/') || repo.split('/').any(|c| c == "..") {
-                return Err(format!("run_as {user} needs an absolute directory: {repo}"));
-            }
-            // Only inside the runner's sandboxes (the scripts check the
-            // real path too).
-            let root = crate::fountain::runner::unit()
-                .and_then(|u| u.root)
-                .ok_or_else(|| format!("run_as {user} needs this host's fountain-runner unit and its --root"))?;
-            // The root as written, or its canonical path (macOS's /var is
-            // /private/var; Changes passes real paths). Canonicalizing may
-            // fail here (the root is fountain's): then as written only.
-            let under = |r: &str| repo.starts_with(&format!("{}/", r.trim_end_matches('/')));
-            let canonical = std::fs::canonicalize(&root).ok().map(|p| p.display().to_string());
-            if !under(&root) && !canonical.as_deref().is_some_and(under) {
-                return Err(format!("run_as {user} is for the runner's sandboxes, under {root}: not {repo}"));
-            }
+            crate::labs::check_run_as(user, &repo, ctx.sprite.is_some())?;
         } else if let Ok(Runner::Local { .. }) = &runner
             && !ctx.restoring
         {
@@ -299,19 +278,8 @@ impl Diff {
         ];
         args.extend(self.config.rev_a.iter().chain(self.config.rev_b.iter()).cloned());
         let run = match &self.config.run_as {
-            // Through sudo, with git hardened (no global or system config,
-            // hooks, fsmonitor, pager, external diff, filters), and only
-            // inside the runner's root, really.
-            Some(_) => {
-                let root = crate::fountain::runner::unit().and_then(|u| u.root).unwrap_or_default();
-                let s = format!(
-                    "{}{}{}",
-                    crate::fountain::runner::GIT_SAFE,
-                    crate::fountain::runner::inside_prelude(&root),
-                    script()
-                );
-                crate::fountain::runner::sudo_sh(&s, &args).await
-            }
+            // Through sudo, as the runner's user.
+            Some(_) => crate::labs::git_as_runner(&script(), &args).await,
             None => runner.sh(&script(), &args).await,
         };
         let (out, _) = match run {
