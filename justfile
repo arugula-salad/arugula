@@ -521,3 +521,26 @@ dev:
 # Re-record snapshot fixtures (crates/vt/fixtures).
 fixtures *names:
     python3 crates/vt/fixtures/record.py {{names}}
+
+# Re-record the client fixtures (crates/proto/fixtures, #200) from throwaway
+# daemons: all of them, or the ones named (attach, run-capture, events).
+record-fixtures *names:
+    {{cargo}} build -p arugulad
+    {{cargo}} run -q -p arugula-testkit --bin record-fixtures -- --daemon {{target_dir}}/debug/arugulad --record crates/proto/fixtures {{names}}
+
+# Copy the client fixtures to crates/proto/fixtures/releases/VERSION, as each
+# release does (docs/development.md): the daemon's tests replay the last two.
+release-fixtures:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    v=$({{cargo}} pkgid -p arugulad | sed 's/.*[#@]//')
+    d=crates/proto/fixtures/releases/$v
+    rm -rf "$d" && mkdir -p "$d"
+    cp crates/proto/fixtures/*.jsonl "$d/"
+    ls "$d"
+
+# The certificate vectors checked in for other implementations
+# (crates/e2e/fixtures/certs.json, from `interop fixtures`).
+e2e-vectors:
+    {{cargo}} build -p arugula-e2e --example interop
+    {{target_dir}}/debug/examples/interop fixtures | python3 -m json.tool --indent 2 --no-ensure-ascii > crates/e2e/fixtures/certs.json

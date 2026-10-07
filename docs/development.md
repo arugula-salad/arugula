@@ -60,8 +60,10 @@ daemon's update check read it.
 
 **The daemon (`v*`).**
 
-1. Set the version in the workspace `Cargo.toml` and commit (`just
-   notices` if dependencies changed; CI fails if THIRD_PARTY.md is stale).
+1. Set the version in the workspace `Cargo.toml`, run `just
+   release-fixtures` (the client fixtures for later daemons to replay,
+   #200; the release fails without them) and commit (`just notices` if
+   dependencies changed; CI fails if THIRD_PARTY.md is stale).
    Notes go in `docs/releases/X.Y.Z.md`. Push it to main and wait for CI
    to pass on it.
 2. Tag the commit `chant ci last-green` names (below), once it's the

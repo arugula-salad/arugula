@@ -8,6 +8,7 @@
 //! assert_eq!(d.get(&format!("/api/panes/{pane}/wait?until=exit&timeout=10"))["code"], 4);
 //! ```
 
+pub mod fixture;
 pub mod listen;
 pub mod strays;
 
@@ -84,6 +85,10 @@ pub struct Builder {
     env: Vec<(OsString, Option<OsString>)>,
     block_listen: bool,
     wait: Duration,
+    /// Where [`Daemon::fixture`] sessions are written.
+    record: Option<PathBuf>,
+    /// `$HOME` is `home` in the state dir.
+    home_in_state: bool,
 }
 
 impl Builder {
@@ -100,7 +105,24 @@ impl Builder {
             env: vec![("ARUGULA_CHANT".into(), Some("".into()))],
             block_listen: false,
             wait: Duration::from_secs(15),
+            record: None,
+            home_in_state: false,
         }
+    }
+
+    /// Record client fixtures (#200): each [`Daemon::fixture`] session is
+    /// written to `dir` as `<name>.jsonl` when it finishes.
+    pub fn record(mut self, dir: impl Into<PathBuf>) -> Self {
+        self.record = Some(dir.into());
+        self
+    }
+
+    /// `$HOME` is a `home` dir in the state dir, made when it starts, and
+    /// the XDG dirs are in it (`CLAUDE_CONFIG_DIR` is unset): no file of
+    /// the user's gets in, and it goes with the state dir.
+    pub fn home_in_state(mut self) -> Self {
+        self.home_in_state = true;
+        self
     }
 
     /// Use this state dir instead of a fresh one under the temp dir. It
@@ -205,6 +227,7 @@ impl Builder {
             return None;
         }
         let mut d = self.daemon();
+        d.make_home();
         let unit = format!("arugula-test-{}", d.state.file_name().unwrap().to_string_lossy());
         let path = d.b.env.iter().rev().find(|(k, _)| k == "PATH").map(|(_, v)| v.clone());
         let path = path.unwrap_or_else(|| std::env::var_os("PATH")).unwrap_or_default();
@@ -243,7 +266,18 @@ impl Builder {
                 s
             }
         };
-        Daemon { port: 0, block_port: 0, state, run: Run::Child(None), b: self }
+        let mut b = self;
+        if b.home_in_state {
+            let home = state.join("home");
+            b = b.env("HOME", &home).env_remove("CLAUDE_CONFIG_DIR");
+            for (k, d) in
+                [("XDG_CONFIG_HOME", ".config"), ("XDG_DATA_HOME", ".local/share"), ("XDG_STATE_HOME", ".local/state")]
+            {
+                b = b.env(k, home.join(d));
+            }
+            b = b.env("XDG_CACHE_HOME", home.join(".cache"));
+        }
+        Daemon { port: 0, block_port: 0, state, run: Run::Child(None), b }
     }
 }
 
@@ -307,6 +341,7 @@ impl Daemon {
     pub fn start(&mut self) {
         assert!(matches!(self.run, Run::Child(None)), "start: it's running");
         let first = self.port == 0;
+        self.make_home();
         if first {
             let _ = std::fs::remove_file(self.state.join("listen"));
             let _ = std::fs::remove_file(self.state.join("block-listen"));
@@ -331,6 +366,12 @@ impl Daemon {
             }
         }
         self.wait_up();
+    }
+
+    fn make_home(&self) {
+        if self.b.home_in_state {
+            std::fs::create_dir_all(self.state.join("home")).unwrap();
+        }
     }
 
     fn wait_port(&mut self, file: &str) -> u16 {

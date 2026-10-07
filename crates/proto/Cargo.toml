@@ -12,11 +12,20 @@ serde_json = "1.0.151"
 # Its warnings are for serde attributes it can't read (`from`, `other`):
 # they change only how a type parses, not how it looks.
 ts-rs = { version = "12.0.1", optional = true, features = ["no-serde-warnings"] }
+tungstenite = { version = "0.30.0", optional = true }
 
 [features]
 # TypeScript for the types the web client uses: `just proto-ts` writes
 # web/src/proto.gen.ts, and a test checks it's current.
 ts = ["dep:ts-rs", "arugula-core/ts"]
+# Client fixtures (#200): the format, normalizing and matching.
+fixtures = []
+# `arugula-fixture-server`, which serves a fixture's daemon side.
+fixture-server = ["fixtures", "dep:tungstenite"]
+
+[[bin]]
+name = "arugula-fixture-server"
+required-features = ["fixture-server"]
 
 [lints]
 workspace = true

@@ -4,6 +4,7 @@
 //   just e2e-interop    (or: node --experimental-strip-types e2e-interop.ts)
 
 import { execFileSync, spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { evaluate, certBody, joinCode, type Cert } from "./src/e2e/cert.ts";
 import { generateKeys, signText } from "./src/e2e/keys.ts";
 import { E2ESocket } from "./src/e2e/channel.ts";
@@ -21,6 +22,15 @@ const fx = JSON.parse(execFileSync(bin, ["fixtures"]).toString());
 const trusted = [...(await evaluate(fx.trust, fx.certs, fx.revocations)).keys()].sort();
 check("same trusted set as Rust", JSON.stringify(trusted) === JSON.stringify(fx.trusted), trusted.join(","));
 check("same join code", (await joinCode(fx.daemon)) === fx.joinCode, fx.joinCode);
+
+// 1b. The same from the vectors checked in (crates/e2e/fixtures, #200),
+// which an implementation with no Rust toolchain checks itself against.
+{
+  const v = JSON.parse(readFileSync(new URL("../crates/e2e/fixtures/certs.json", import.meta.url), "utf8"));
+  const got = [...(await evaluate(v.trust, v.certs, v.revocations)).keys()].sort();
+  check("checked-in vectors: the trusted set", JSON.stringify(got) === JSON.stringify(v.trusted), got.join(","));
+  check("checked-in vectors: the join code", (await joinCode(v.daemon)) === v.joinCode, v.joinCode);
+}
 
 // 2. Certificates signed here, evaluated by Rust.
 const root = await generateKeys();

@@ -9,6 +9,8 @@ mod app;
 mod conn;
 mod copy;
 mod draw;
+#[cfg(test)]
+mod fixture_tests;
 mod keys;
 mod pane;
 

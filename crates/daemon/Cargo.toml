@@ -63,6 +63,7 @@ workspace = true
 
 [dev-dependencies]
 futures-util = "0.3.34"
+arugula-proto = { version = "0.26.2", path = "../proto", features = ["fixtures"] }
 arugula-testkit = { path = "../testkit" }
 rmcp = { version = "=3.5.0", default-features = false, features = ["client", "transport-streamable-http-client-reqwest", "transport-child-process"] }
 # instant-acme's features (aws-lc-rs): the defaults add ring (#466).
