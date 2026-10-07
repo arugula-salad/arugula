@@ -4366,6 +4366,11 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   overflow: hidden;
 }
 
+/* Cut mid-line: fade the last line out rather than show half of it. */
+.forge-clamp.cut {
+  mask-image: linear-gradient(#000 calc(100% - 2.5em), transparent);
+}
+
 .forge-more {
   color: var(--accent);
   font-size: 12px;

@@ -116,7 +116,7 @@ function Body({ text, s, description }: { text: string; s: ForgeState; descripti
   const toggle = description ? cut : over || open;
   return (
     <div class={description ? "forge-body forge-desc" : "forge-body"}>
-      <div ref={clip} class={description || open ? undefined : "forge-clamp"}>
+      <div ref={clip} class={description || open ? undefined : over ? "forge-clamp cut" : "forge-clamp"}>
         <Markdown text={cut && !open ? text.slice(0, LONG_BODY) : text} refs={refsOf(s)} />
       </div>
       {toggle && (
