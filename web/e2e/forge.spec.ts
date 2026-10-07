@@ -125,6 +125,51 @@ test("a pull request opens from the menu; the review asked of you is approved th
   await expect.poll(() => page.evaluate((b) => window.__arugula.client.info(b)?.reason ?? null, block)).toBeNull();
 });
 
+test("a description is drawn as Markdown, with the status chips and the actions held at the foot", async ({ page }) => {
+  fresh();
+  item.body = [
+    "Does **a lot** with `inline code`, see #5.",
+    "",
+    "- one",
+    "- two",
+    "",
+    "[x](javascript:alert(1)) <img src=x onerror=alert(1)>",
+    "",
+    ...Array.from({ length: 80 }, (_, i) => `line ${i}`).join("\n\n").split("\n"),
+  ].join("\n");
+  const block = await openPr(page);
+  const el = page.locator(`[data-forge-block="${block}"]`);
+  const desc = el.locator(".forge-desc");
+  await expect(desc.locator("li")).toHaveCount(2);
+  await expect(desc.locator("strong")).toHaveText("a lot");
+  await expect(desc.locator("code")).toHaveText("inline code");
+  await expect(desc).not.toContainText("**");
+  await expect(desc.locator('a[href$="/issues/5"]')).toHaveText("#5");
+  // Whoever opened the PR wrote it: nothing in it runs or loads.
+  await expect(desc).toContainText("<img src=x onerror=alert(1)>");
+  await expect(el.locator('a[href^="javascript:"]')).toHaveCount(0);
+  await expect(el.locator("img")).toHaveCount(0);
+  // Where it stands, in chips under the meta line.
+  const chips = el.locator("[data-forge-chips]");
+  await expect(chips).toContainText("checks passed");
+  await expect(chips).toContainText("no reviews");
+  await expect(chips).toContainText("mergeable");
+  await expect(el.locator(".forge-meta")).toContainText("tea login e2e");
+  // The footer holds the actions at the bottom of the body, scrolled or not.
+  const scroller = el.locator(".review-body");
+  const foot = el.locator(".forge-foot");
+  const atBottom = async () => {
+    const [f, b] = [await foot.boundingBox(), await scroller.boundingBox()];
+    return Math.round(f!.y + f!.height) - Math.round(b!.y + b!.height);
+  };
+  expect(await scroller.evaluate((e) => e.scrollHeight > e.clientHeight)).toBe(true);
+  expect(await atBottom()).toBe(0);
+  await scroller.evaluate((e) => e.scrollTo(0, e.scrollHeight / 2));
+  expect(await atBottom()).toBe(0);
+  await expect(foot.locator("button", { hasText: "Comment" })).toBeVisible();
+  await expect(foot.locator("[data-forge-live-state]")).toContainText("polls");
+});
+
 test("an agent's comment waits as a draft until a person edits and sends it", async ({ page }) => {
   fresh();
   const block = await openPr(page);
