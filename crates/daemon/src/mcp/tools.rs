@@ -3590,6 +3590,28 @@ mod tests {
 
     use super::*;
 
+    /// `tools/list` for every scope, with and without labs, against the
+    /// checked-in file: names, descriptions, annotations and every input
+    /// schema. `ARUGULA_BLESS=1` rewrites the file after a change meant to
+    /// alter what agents see.
+    #[test]
+    fn the_tool_list_and_each_schema_are_unchanged() {
+        let mut all = serde_json::Map::new();
+        for (scope_name, scope) in [("full", Scope::Full), ("read", Scope::Read), ("block", Scope::Block(1))] {
+            for labs in [true, false] {
+                let tools = serde_json::to_value(list(scope, labs)).unwrap();
+                all.insert(format!("{scope_name}, labs {labs}"), tools);
+            }
+        }
+        let got = serde_json::to_string_pretty(&Value::Object(all)).unwrap() + "\n";
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mcp-tool-list.json");
+        if std::env::var_os("ARUGULA_BLESS").is_some() {
+            std::fs::write(&path, &got).unwrap();
+        }
+        let want = std::fs::read_to_string(&path).expect("tests/fixtures/mcp-tool-list.json (ARUGULA_BLESS=1 writes it)");
+        assert!(got == want, "the tool list changed; ARUGULA_BLESS=1 rewrites {}", path.display());
+    }
+
     #[test]
     fn pages_cut_at_lines_and_fit() {
         let raw: Vec<u8> = (0..2000).flat_map(|i| format!("\x1b[32mline {i:04}\x1b[0m\r\n").into_bytes()).collect();
