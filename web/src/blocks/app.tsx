@@ -19,7 +19,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import type { Client } from "../client";
 import { gateKey, type Gate, type PaneId } from "../proto";
 import { openMenu } from "../ui/menu";
-import { registerBlock, type BlockView } from "./view";
+import type { BlockRenderer, BlockView } from "./view";
 
 export interface AppState {
   app: string;
@@ -238,7 +238,8 @@ function AppBlock({ client, id, s }: { client: Client; id: PaneId; s: AppState |
   );
 }
 
-registerBlock("app", (client, id): BlockView => {
+/** How to draw a studio app block: the Labs entry hands it to the page. */
+export const appBlock: BlockRenderer = (client, id): BlockView => {
   const host = document.createElement("div");
   host.className = "block block-browser block-app";
   let state: AppState | null = null;
@@ -259,4 +260,4 @@ registerBlock("app", (client, id): BlockView => {
       host.remove();
     },
   };
-});
+};

@@ -137,6 +137,25 @@ test("on a desktop: no chat, threads or huddles, no Fountain, studio or VMs, no 
   await expect(palette).toBeHidden();
 });
 
+/** The Labs half of the web client is one chunk (src/labs.ts), named `labs-<hash>.js`. */
+const LABS_CHUNK = /\/assets\/labs-[\w-]+\.js/;
+
+test("without labs the page never requests the Labs chunk", async ({ page }) => {
+  const asked: string[] = [];
+  page.on("request", (r) => asked.push(r.url()));
+  await open(page);
+  const pane = await page.evaluate(() => window.__arugula.client.state!.panes[0].id);
+  await ready(page, pane);
+  await expect.poll(() => page.evaluate(() => window.__arugula.client.features !== null)).toBe(true);
+  // Open the places a Labs session would load it for: the menus and the swarm.
+  await noLabsItems(page, pane);
+  await page.goto("/#swarm");
+  await expect(page.locator(".swarm")).toBeVisible();
+  // The page's own scripts did load, so the check looks at something.
+  expect(asked.some((u) => /\/assets\/main-[\w-]+\.js/.test(u))).toBe(true);
+  expect(asked.filter((u) => LABS_CHUNK.test(u))).toEqual([]);
+});
+
 test("a thread message posted through the API shows nowhere", async ({ page }) => {
   await open(page);
   const [pane, session] = await page.evaluate(() => {
@@ -242,6 +261,8 @@ test("a daemon from before labs, which says nothing of it, gets none of it eithe
 
 test("making the file on the running daemon brings it all back, with no restart", async ({ page }) => {
   expect(existsSync(join(state, "labs"))).toBe(false);
+  const asked: string[] = [];
+  page.on("request", (r) => asked.push(r.url()));
   writeFileSync(join(state, "labs"), "");
   // Something new for the owner, from the friend.
   const pane0 = ((await (await api("/api/panes")).json()) as { id: number }[])[0].id;
@@ -254,6 +275,8 @@ test("making the file on the running daemon brings it all back, with no restart"
   await expect.poll(() => page.evaluate(() => window.__arugula.client.hasLabs())).toBe(true);
   await expect(page.locator("[data-open-chat]")).toBeVisible();
   await expect(page.locator("[data-huddle]").first()).toBeVisible();
+  // Now the Labs chunk was fetched, since this machine has them.
+  expect(asked.filter((u) => LABS_CHUNK.test(u)).length).toBeGreaterThan(0);
   await expect(page.locator(".thread-badge.unread")).toBeVisible();
   await expect(page.locator(".session-unread")).toBeVisible();
   await paneEl(page, pane).click({ button: "right", position: { x: 60, y: 60 } });

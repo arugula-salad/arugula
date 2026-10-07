@@ -17,7 +17,7 @@ import { ControlSession, detectControl, restoreInvite, showMoving } from "./cont
 import { ControlGate, ControlOverlay, controlMenuItems, NoMachines, useControl } from "./ui/control";
 import { setFleet, setHostMenuExtras } from "./ui/hosts";
 import { setControlSession } from "./ui/people";
-import { activeHuddle } from "./call";
+import { labsNow } from "./labs-load";
 import { unhex } from "./e2e/cert.ts";
 import { useSubscribe } from "./ui/hooks";
 import { useEffect, useState } from "preact/hooks";
@@ -338,7 +338,7 @@ Object.assign(window, {
     fleet,
     /** M63: the huddle this page is in. */
     get huddle() {
-      return activeHuddle();
+      return labsNow()?.activeHuddle() ?? null;
     },
     /** M26: made-up panes in the swarm (frame-rate check, screenshots). */
     swarmFake: (n: number) => fakeSwarm(fleet, n),

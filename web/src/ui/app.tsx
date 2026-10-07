@@ -8,18 +8,16 @@ import { useSubscribe, usePhone } from "./hooks";
 import { closeMenu, MenuLayer, openMenu, PromptLayer, type MenuItem } from "./menu";
 import { KeyBar, PhoneHeader } from "./phone";
 import { ThreadBadge, ThreadLayer } from "./threads";
-import { HuddleBar, HuddleButton } from "./huddle";
-import { ChatPage, Places, useChatOpen } from "./chat";
+import { InLabs } from "./in-labs";
+import { Places, useChatOpen } from "./places";
 import { AttentionBadge, tabAttention } from "./attention";
 import { HostButton, HostPicker } from "./hosts";
 import { ControlRequests, PaneMarks, PeopleBar, ShareDialog, TabPeople } from "./people";
 import { directory } from "../hosts";
-import { SandboxesLayer } from "./sandboxes";
 import { RulesLayer } from "./rules";
 import { useWorkspaceDir } from "../blocks";
 import { AgentDialogLayer } from "./agent-dialog";
 import { ConversationsLayer } from "./conversations";
-import { AppsLayer } from "./apps";
 import { PickerLayer, usePickerShortcut } from "./picker";
 import { TermAnswered, TermAsk, TermDiff } from "./term-ask";
 import { InstallHint } from "./notify";
@@ -111,11 +109,11 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       <PromptLayer />
       <AgentDialogLayer />
       <ThreadLayer phone={phone} />
-      <HuddleBar />
-      {state && <ChatPage client={client} />}
+      <InLabs on={client.hasLabs()}>{(l) => <l.HuddleBar />}</InLabs>
+      {state && <InLabs on={client.hasLabs()}>{(l) => <l.ChatPage client={client} />}</InLabs>}
       <ConversationsLayer />
-      <AppsLayer />
-      <SandboxesLayer />
+      <InLabs on={client.hasLabs()}>{(l) => <l.AppsLayer />}</InLabs>
+      <InLabs on={client.hasLabs()}>{(l) => <l.SandboxesLayer />}</InLabs>
       <RulesLayer />
       <PickerLayer />
       <PaletteLayer />
@@ -207,7 +205,7 @@ function TopBar({
               <span class="caret">▾</span>
             </button>
           )}
-          <HuddleButton client={client} session={session.id} />
+          <InLabs on={client.hasLabs()}>{(l) => <l.HuddleButton client={client} session={session.id} />}</InLabs>
           <div class="tabbar" role="tablist">
             {session.tabs.map((id, i) => {
               const t = client.tabView(id);

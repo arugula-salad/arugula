@@ -16,7 +16,7 @@ import type { PaneId } from "../proto";
 import { fuzzy } from "../fs";
 import { useWorkspaceDir } from "../blocks";
 import { closeSwarm, openSwarm, swarmRoute } from "../swarm/route";
-import { openChat } from "./chat";
+import { openChat } from "./places";
 import { askText, closeMenu, type MenuItem } from "./menu";
 import { newTabItems, PALETTE_KEY, paneItems, sessionItems, tabItems } from "./commands";
 

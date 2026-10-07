@@ -9,17 +9,16 @@ import { useSubscribe } from "./hooks";
 import { AttentionBadge } from "./attention";
 import { HostCrumb, HostSection } from "./hosts";
 import { openSwarm } from "../swarm/route";
-import { openChat } from "./chat";
+import { openChat } from "./places";
 import { openChanges, openFountain, openIssue, openPort, openPr } from "../blocks";
 import { startAgent } from "./agent-dialog";
 import { pickConversation } from "./conversations";
-import { pickApp } from "./apps";
-import { openSandboxes } from "./sandboxes";
+import { pickApp, openSandboxes } from "../labs-load";
 import { openPicker } from "./picker";
 import { NotifySection } from "./notify";
 import { openGettingStarted } from "./welcome";
 import { openPalette } from "./palette";
-import { HuddleButton } from "./huddle";
+import { InLabs } from "./in-labs";
 
 export function PhoneHeader({ client }: { client: Client }) {
   const [open, setOpen] = useState(false);
@@ -40,7 +39,7 @@ export function PhoneHeader({ client }: { client: Client }) {
             </>
           )}
         </button>
-        {session && <HuddleButton client={client} session={session.id} />}
+        {session && <InLabs on={client.hasLabs()}>{(l) => <l.HuddleButton client={client} session={session.id} />}</InLabs>}
         {panes.length > 1 && (
           <span class="pane-count">
             {panes.indexOf(active ?? -1) + 1}/{panes.length}
@@ -242,7 +241,7 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
             {client.has("vms") && session !== null && (
               <button onClick={act(() => void client.newVm({ session, tab: true }))}>New VM tab</button>
             )}
-            {client.has("vms") && <button onClick={act(() => openSandboxes())}>Sandboxes</button>}
+            {client.has("vms") && <button onClick={act(() => openSandboxes(client))}>Sandboxes</button>}
             <button onClick={act(() => client.intent({ op: "new_session", name: null, from_pane: active ?? null }))}>New session</button>
             <button data-getting-started-open onClick={act(() => openGettingStarted(undefined, client))}>
               Getting started
