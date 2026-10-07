@@ -220,6 +220,6 @@ case "$test" in
   app) cd "$ROOT" && exec node --experimental-strip-types --no-warnings testnet/macos/app-cloud.ts "$@" ;;
   journey) cd "$ROOT" && exec node --experimental-strip-types --no-warnings testnet/macos/journey-j1.ts "$@" ;;
   journey-j2a) cd "$ROOT" && exec node --experimental-strip-types --no-warnings testnet/macos/journey-j2a.ts "$@" ;;
-  *) sed -n '3,44p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2 ;;
+  *) sed -n '3,48p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2 ;;
 esac
 [ -z "$failed" ]
