@@ -31,6 +31,7 @@ mod forge_issues;
 mod forge_live;
 mod forges_github_real;
 mod forges_real;
+#[cfg(feature = "labs")]
 mod fountain;
 mod fs;
 mod guest_ssh;

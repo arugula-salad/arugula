@@ -174,6 +174,9 @@ impl Def {
 
     pub fn check(&self) -> Result<(), String> {
         match self.agent {
+            // Without Labs there is no Fountain to run or to wear.
+            Kind::Fountain if !crate::labs::BUILT => Err(crate::labs::not_built("Fountain")),
+            _ if !crate::labs::BUILT && self.as_fountain.is_some() => Err(crate::labs::not_built("Fountain")),
             Kind::Fountain if self.fountain_agent.as_deref().is_none_or(str::is_empty) => {
                 Err("a Fountain agent block needs the agent's name or id".into())
             }
@@ -271,6 +274,7 @@ pub fn user_settings_meta() -> Value {
 /// system prompt appended, its skills as a local plugin, its model. The
 /// rest stays, `settingSources: []` above all (without it the user's own
 /// hooks fire inside the block, S24).
+#[cfg(feature = "labs")]
 pub fn wear_meta(meta: &mut Value, system: &str, plugin: &Path, model: Option<&str>) {
     if !meta.is_object() {
         *meta = json!({});
@@ -353,23 +357,28 @@ mod tests {
         assert_eq!(mine.meta["claudeCode"]["options"]["settings"]["disableAllHooks"], json!(true));
         assert!(Def { agent: Kind::Codex, user_settings: true, ..Default::default() }.launch(home, false).is_err());
 
-        let f = Def {
-            agent: Kind::Fountain,
-            fountain_agent: Some("arena".into()),
-            vault: Some("v".into()),
-            ..Default::default()
-        };
-        assert_eq!(
-            f.launch(home, false).unwrap().argv,
-            split_command("fountain acp --agent arena --vault v --permission ask")
-        );
-        assert!(f.launch(home, true).is_err());
-        assert!(Def { agent: Kind::Fountain, ..Default::default() }.check().is_err());
+        // A build without Labs refuses a Fountain agent (`check`), so can't launch one.
+        #[cfg(feature = "labs")]
+        {
+            let f = Def {
+                agent: Kind::Fountain,
+                fountain_agent: Some("arena".into()),
+                vault: Some("v".into()),
+                ..Default::default()
+            };
+            assert_eq!(
+                f.launch(home, false).unwrap().argv,
+                split_command("fountain acp --agent arena --vault v --permission ask")
+            );
+            assert!(f.launch(home, true).is_err());
+            assert!(Def { agent: Kind::Fountain, ..Default::default() }.check().is_err());
+        }
 
         let codex = Def { agent: Kind::Codex, ..Default::default() }.launch(home, false).unwrap();
         assert_eq!(codex.env, vec![("CODEX_PATH".into(), "codex".into())]);
     }
 
+    #[cfg(feature = "labs")]
     #[test]
     fn a_worn_agent_on_the_meta() {
         let home = Path::new("/nonexistent-home");

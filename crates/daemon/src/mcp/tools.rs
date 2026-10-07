@@ -666,6 +666,8 @@ pub struct ReadInviteArgs {
     pub pane: Option<PaneArg>,
 }
 
+// Read only by Fountain's handlers, which a build without Labs lacks.
+#[cfg_attr(not(feature = "labs"), allow(dead_code))]
 #[derive(Deserialize, JsonSchema)]
 pub struct ListAgentsArgs {
     /// Words to look for in each agent's name, description, skills and MCP
@@ -682,6 +684,8 @@ pub struct ListAgentsArgs {
     pub profile: Option<String>,
 }
 
+// Read only by Fountain's handlers, which a build without Labs lacks.
+#[cfg_attr(not(feature = "labs"), allow(dead_code))]
 #[derive(Deserialize, JsonSchema)]
 pub struct ReadAgentArgs {
     /// The agent's name (or id), as kind fountain_agents gives it.
@@ -691,6 +695,8 @@ pub struct ReadAgentArgs {
     pub profile: Option<String>,
 }
 
+// Read only by Fountain's handlers, which a build without Labs lacks.
+#[cfg_attr(not(feature = "labs"), allow(dead_code))]
 #[derive(Deserialize, JsonSchema)]
 pub struct OpenFountainArgs {
     /// "catalog" (the default: the agents) or "runner" (this host as the
@@ -2757,29 +2763,32 @@ impl<'a> Call<'a> {
             results::WorkspaceOpened { block, root: state["root"].clone(), members, gates },
         )
     }
+}
 
+#[cfg(feature = "labs")]
+impl Call<'_> {
     /// The account's agents (M43), read with the user's own login on this
     /// host.
-    async fn fountain_agents(&self, profile: Option<&str>) -> Result<crate::fountain::Agents, String> {
-        let runner = crate::fountain::local_runner(&self.app.mux.shell_env).await;
-        crate::fountain::agents_for(&runner, profile).await
+    async fn fountain_agents(&self, profile: Option<&str>) -> Result<crate::labs::fountain::Agents, String> {
+        let runner = crate::labs::fountain::local_runner(&self.app.mux.shell_env).await;
+        crate::labs::fountain::agents_for(&runner, profile).await
     }
 
     async fn list_agents(&self, a: ListAgentsArgs) -> Out {
-        let mut f = crate::fountain::catalog::Filter::default();
+        let mut f = crate::labs::fountain::catalog::Filter::default();
         f.apply(&json!({ "query": a.query, "source": a.source }))?;
         let got = self.fountain_agents(a.profile.as_deref()).await?;
         let (login, agents) = (&got.login, &got.agents);
-        let rows = crate::fountain::rows(agents, &f);
+        let rows = crate::labs::fountain::rows(agents, &f);
         let mut text = match f.describe() {
             d if d.is_empty() => format!("{} agents on {}:\n", agents.len(), login.base_url),
             d => format!("{} of {} agents on {} ({d}):\n", rows.len(), agents.len(), login.base_url),
         };
         for r in &rows {
-            text.push_str(&crate::fountain::catalog::line(r));
+            text.push_str(&crate::labs::fountain::catalog::line(r));
             text.push('\n');
         }
-        let note = crate::fountain::unreadable_note(got.unreadable);
+        let note = crate::labs::fountain::unreadable_note(got.unreadable);
         if let Some(n) = &note {
             text.push_str(n);
             text.push('\n');
@@ -2803,10 +2812,10 @@ impl<'a> Call<'a> {
 
     async fn read_agent(&self, a: ReadAgentArgs) -> Out {
         let got = self.fountain_agents(a.profile.as_deref()).await?;
-        let agent = crate::fountain::find(&got.agents, &a.name).ok_or_else(|| {
+        let agent = crate::labs::fountain::find(&got.agents, &a.name).ok_or_else(|| {
             format!("no agent {:?} on this Fountain account (list kind fountain_agents lists them)", a.name)
         })?;
-        let recipe = crate::fountain::recipe(agent);
+        let recipe = crate::labs::fountain::recipe(agent);
         done(format!("{} ({}, {})", agent.name, agent.runtime, agent.model), recipe)
     }
 
@@ -2817,7 +2826,7 @@ impl<'a> Call<'a> {
             "runner" => true,
             v => return Err(format!("view is \"catalog\" or \"runner\", not {v:?}")),
         };
-        let mut filter = crate::fountain::catalog::Filter::default();
+        let mut filter = crate::labs::fountain::catalog::Filter::default();
         filter.apply(&json!({ "query": a.query, "source": a.source }))?;
         let config = if runner {
             json!({ "profile": a.profile, "view": "runner" })
@@ -2861,7 +2870,24 @@ impl<'a> Call<'a> {
             results::BlockText { block, text: b.text() },
         )
     }
+}
 
+#[cfg(not(feature = "labs"))]
+impl Call<'_> {
+    async fn list_agents(&self, _: ListAgentsArgs) -> Out {
+        Err(crate::labs::not_built("Fountain"))
+    }
+
+    async fn read_agent(&self, _: ReadAgentArgs) -> Out {
+        Err(crate::labs::not_built("Fountain"))
+    }
+
+    async fn open_fountain(&self, _: OpenFountainArgs) -> Out {
+        Err(crate::labs::not_built("Fountain"))
+    }
+}
+
+impl Call<'_> {
     /// A forge block (M36's PR, M37's issue or new issue) beside a pane.
     async fn open_forge(&self, mut what: ForgeOpen, dir: Option<String>, beside: Option<PaneArg>) -> Out {
         let (beside, host) = self.beside(beside.as_ref()).await?;
@@ -3172,8 +3198,7 @@ impl<'a> Call<'a> {
                 return Err("as_fountain is for agent claude: a Claude Code wears the Fountain agent".into());
             }
             // Refused up front, with the reason (an orchestrator, a codex agent).
-            let runner = crate::fountain::local_runner(&self.app.mux.shell_env).await;
-            crate::fountain::wear::find(&runner, None, name).await?;
+            crate::labs::check_wearable(&self.app.mux.shell_env, name).await?;
         }
         if host.is_some() {
             self.share_my_machine().await;
@@ -3695,6 +3720,24 @@ mod tests {
         let want =
             std::fs::read_to_string(&path).expect("tests/fixtures/mcp-tool-list.json (ARUGULA_BLESS=1 writes it)");
         assert!(got == want, "the tool list changed; ARUGULA_BLESS=1 rewrites {}", path.display());
+    }
+
+    /// A build without Labs lists nothing of Fountain, whatever the `labs`
+    /// file says: no kind, no argument, no value, no word in a description.
+    #[cfg(not(feature = "labs"))]
+    #[test]
+    fn a_build_without_labs_never_lists_fountain() {
+        let dir = std::env::temp_dir().join(format!("arugula-nolabs-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("labs"), "").unwrap();
+        assert!(arugula_proto::hosts::labs(&dir), "the file is there");
+        let labs = crate::labs::enabled(&dir);
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(!labs, "labs is on in a build without it");
+        for scope in [Scope::Full, Scope::Read, Scope::Block(1)] {
+            let tools = serde_json::to_string(&list(scope, labs)).unwrap().to_lowercase();
+            assert!(!tools.contains("fountain"), "the tool list mentions Fountain");
+        }
     }
 
     /// What `pr_write` hands the forge block's `call_by`: the keys the old

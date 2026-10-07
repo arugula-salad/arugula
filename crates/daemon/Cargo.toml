@@ -72,6 +72,10 @@ rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs"
 rmcp = { version = "=3.5.0", default-features = false, features = ["transport-streamable-http-client-unix-socket"] }
 
 [features]
+# Labs (Fountain first; see src/labs/mod.rs): on by default. Release builds
+# have it all; `--no-default-features` leaves it out.
+default = ["labs"]
+labs = []
 # Embed web/dist even in a debug build (rust-embed reads it from the source
 # tree at run time otherwise): CI's e2e shards run binaries built in another
 # job's checkout.

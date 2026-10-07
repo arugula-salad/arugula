@@ -537,7 +537,7 @@ async fn host(State(app): AppState, who: Option<axum::Extension<crate::acl::Prin
         team: saved
             .and_then(|s| s.roster.as_ref().map(|r| r.name.clone()).or_else(|| Some(s.team.as_ref()?.team.clone()))),
         // M45b: only where the runner's unit is; from what was last read.
-        fountain_runner: crate::fountain::runner::host_info(&app.mux.shell_env),
+        fountain_runner: crate::labs::fountain_runner_info(&app.mux.shell_env),
         features: Some(features(&app)),
     };
     Json(HostAnswer { info, control_state: owner.then(|| crate::setup::control_state(&app)) })
@@ -550,37 +550,16 @@ async fn host(State(app): AppState, who: Option<axum::Extension<crate::acl::Prin
 /// threads and huddles are its alone, and Fountain, studio and VMs need it
 /// as well as their own setup.
 pub(crate) fn features(app: &App) -> HostFeatures {
-    let labs = arugula_proto::hosts::labs(app.control.state_dir());
+    let labs = crate::labs::enabled(app.control.state_dir());
     HostFeatures {
         labs,
         blocks: crate::sites::get().is_some(),
         vms: labs && app.mux.provider.is_some(),
-        fountain: labs && fountain_login_here(&app.mux.shell_env),
+        fountain: labs && crate::labs::fountain_login_here(&app.mux.shell_env),
         studio: labs && crate::apps::studio::get().and_then(|s| s.url()).is_some(),
         threads: labs,
         calls: labs,
     }
-}
-
-/// A Fountain login the catalog would find (`fountain::login`'s order): a
-/// key in the daemon's or the shell's environment, or the CLI's
-/// credentials file.
-fn fountain_login_here(shell_env: &crate::shellenv::ShellEnv) -> bool {
-    let shell = shell_env.local_now();
-    let var = |k: &str| {
-        shell
-            .as_ref()
-            .and_then(|r| r.get(k).map(str::to_owned))
-            .or_else(|| std::env::var(k).ok())
-            .filter(|v| !v.is_empty())
-    };
-    if var("FOUNTAIN_API_KEY").is_some() {
-        return true;
-    }
-    let file = var("ARUGULA_FOUNTAIN_CREDENTIALS")
-        .map(std::path::PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".fountain/credentials")));
-    file.is_some_and(|f| f.is_file())
 }
 
 async fn list(State(app): AppState) -> Json<HostList> {

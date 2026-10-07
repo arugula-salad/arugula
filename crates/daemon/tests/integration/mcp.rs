@@ -836,30 +836,44 @@ async fn labs_lists_all_the_tools_and_the_thread_text() {
     assert_eq!(s.list_all_tools().await.unwrap().len(), 18);
     assert!(!instructions(&s).contains("read_thread"), "{}", instructions(&s));
 
-    std::fs::write(d.state.join("labs"), "").unwrap();
-    let with = s.list_all_tools().await.unwrap();
-    assert_eq!(with.len(), 20, "{:?}", names(&with));
-    for name in ["read_thread", "post_thread"] {
-        assert!(with.iter().any(|t| t.name == name), "{name} isn't listed with labs");
-    }
-    for (tool, kind) in [
-        ("show", "fountain"),
-        ("list", "fountain_agents"),
-        ("list", "fountain_agent"),
-        ("show", "app"),
-        ("show", "workspace"),
-    ] {
-        assert!(kinds(&with, tool).contains(&kind.to_owned()), "{tool} kind {kind} isn't listed with labs");
-    }
-    // A new connection's instructions have the thread text.
-    let s2 = bridge(&d, Client::named("claude-code")).await;
-    assert!(instructions(&s2).contains("read_thread and post_thread"), "{}", instructions(&s2));
-    s2.cancel().await.unwrap();
+    // With Labs built in, the `labs` file lists them.
+    #[cfg(feature = "labs")]
+    {
+        std::fs::write(d.state.join("labs"), "").unwrap();
+        let with = s.list_all_tools().await.unwrap();
+        assert_eq!(with.len(), 20, "{:?}", names(&with));
+        for name in ["read_thread", "post_thread"] {
+            assert!(with.iter().any(|t| t.name == name), "{name} isn't listed with labs");
+        }
+        for (tool, kind) in [
+            ("show", "fountain"),
+            ("list", "fountain_agents"),
+            ("list", "fountain_agent"),
+            ("show", "app"),
+            ("show", "workspace"),
+        ] {
+            assert!(kinds(&with, tool).contains(&kind.to_owned()), "{tool} kind {kind} isn't listed with labs");
+        }
+        // A new connection's instructions have the thread text.
+        let s2 = bridge(&d, Client::named("claude-code")).await;
+        assert!(instructions(&s2).contains("read_thread and post_thread"), "{}", instructions(&s2));
+        s2.cancel().await.unwrap();
 
-    std::fs::remove_file(d.state.join("labs")).unwrap();
-    let without = s.list_all_tools().await.unwrap();
-    assert_eq!(without.len(), 18);
-    assert!(!kinds(&without, "show").contains(&"fountain".to_owned()));
+        std::fs::remove_file(d.state.join("labs")).unwrap();
+        let without = s.list_all_tools().await.unwrap();
+        assert_eq!(without.len(), 18);
+        assert!(!kinds(&without, "show").contains(&"fountain".to_owned()));
+    }
+    // Without it, the file changes nothing: they aren't in this build.
+    #[cfg(not(feature = "labs"))]
+    {
+        std::fs::write(d.state.join("labs"), "").unwrap();
+        let with = s.list_all_tools().await.unwrap();
+        assert_eq!(with.len(), 18, "{:?}", names(&with));
+        assert!(!kinds(&with, "show").contains(&"fountain".to_owned()));
+        assert!(!instructions(&s).contains("read_thread"), "{}", instructions(&s));
+        std::fs::remove_file(d.state.join("labs")).unwrap();
+    }
     s.cancel().await.unwrap();
 }
 
@@ -1019,6 +1033,7 @@ fn shared_daemon(env: &[(&str, &str)]) -> (Daemon, u64, u64) {
 
 /// #297: an agent's @name of someone who can't see the thread makes no
 /// invite card and no grant; post_thread points it at invite_person.
+#[cfg(feature = "labs")]
 #[tokio::test(flavor = "multi_thread")]
 async fn an_agents_mention_invites_nobody() {
     let (d, pane, session) = shared_daemon(&[]);
