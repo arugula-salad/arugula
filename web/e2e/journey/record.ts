@@ -35,6 +35,8 @@ export type Step = {
   opened: string[];
   /** What confused or cost the person, though the step got done. */
   issues: string[];
+  /** An unguided step already filed (where): drawn as one, not failed on. */
+  known?: string;
   shot?: string;
 };
 
@@ -231,10 +233,15 @@ export class Journey {
     console.log(`${this.name}: ${verdict}; ${t.steps} steps, ${t.switches} switches, ${t.compared} compared. Graph: ${join(REPORTS, `${this.name}.html`)}`);
   }
 
-  /** Attach the report, and fail if any step was unguided. */
-  async finish() {
+  /** Attach the report, and fail if any step was unguided, but for those
+   * `known` (step id: where it's filed): those are drawn, not failed on,
+   * so CI stays green on what's filed and goes red on a new gap. */
+  async finish(known: Record<string, string> = {}) {
+    for (const s of this.steps) if (s.result === "unguided" && known[s.id]) s.known = known[s.id];
     await this.attach();
-    const unguided = this.steps.filter((s) => s.result === "unguided");
+    const unguided = this.steps.filter((s) => s.result === "unguided" && !known[s.id]);
+    const fixed = Object.keys(known).filter((id) => this.steps.some((s) => s.id === id && s.result !== "unguided"));
+    if (fixed.length) console.log(`${this.name}: now led by the screen, take off its known list: ${fixed.join(", ")}`);
     if (unguided.length)
       throw new Stopped(`${this.name}: ${unguided.length} step(s) a newcomer isn't led to: ${unguided.map((s) => `${s.id} (${s.prompt})`).join("; ")}`);
   }

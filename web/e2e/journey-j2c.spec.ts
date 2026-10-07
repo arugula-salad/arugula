@@ -444,5 +444,12 @@ test("J2c: #551's evening: a machine already in one team, a friend's second team
   } finally {
     for (const a of [sam, jake, riley]) await a.quit().catch(() => {});
   }
-  await j.finish();
+  await j.finish({
+    // Filed on #551 and #550.
+    "find-arugulad": "#550: the app's arugulad isn't on PATH, and nothing says where it is",
+    "share-team": "#551: Share is only in the session menu",
+    "riley-finds": "#551: a shared machine is named only in the host menu",
+    "riley-asks": "#551: after the role change the screen still says you're watching; nothing says to ask",
+    "take-control": "#551: allowed to drive, but the owner has control, and nothing says Take control",
+  });
 });

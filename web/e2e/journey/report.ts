@@ -56,7 +56,7 @@ export function annotation(s: Step): { kind: "ok" | "slow" | "unguided" | "faile
   const issues = (s.issues ?? []).join("; ");
   const also = issues ? `. Also: ${issues}` : "";
   if (s.result === "failed") return { kind: "failed", text: `Failed: ${(s.note ?? "").split("\n")[0]}${also}` };
-  if (s.result === "unguided") return { kind: "unguided", text: `Not led here: ${s.prompt}${also}` };
+  if (s.result === "unguided") return { kind: "unguided", text: `Not led here${s.known ? ` (known, ${s.known})` : ""}: ${s.prompt}${also}` };
   if (issues) return { kind: "slow", text: `Done, but: ${issues}` };
   if (s.ms >= SLOW_MS) return { kind: "slow", text: `Works, but the person waits ${secs(s.ms)}` };
   const bits = [

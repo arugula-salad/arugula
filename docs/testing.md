@@ -29,6 +29,7 @@ or an account skip without it and name what's missing
 | `just e2e-interop` (in `just test`) | the browser's end-to-end crypto (`web/src/e2e`) against Rust's (`crates/e2e`): certificate vectors made by `crates/e2e/examples/interop.rs` and the ones checked in (`crates/e2e/fixtures/`), and a Noise handshake with its `responder` | Linux and macOS |
 | `just control-smoke` (in `just test`) | `web/control-smoke.ts`: a fake GitHub, Stripe, push service and Sprites API, the real `arugula-control` and real daemons; headless devices sign in, enroll, approve the daemons' join codes and reach them directly and through the relay; the CLI (M49) logs in with a code the device approves and, with no daemon of its own, runs, lists and captures on one machine directly and one through the relay | Linux and macOS |
 | `just e2e` | the Playwright specs in `web/e2e/` against throwaway daemons (`just e2e <url>` tests a running one): the `chrome` project, and `webkit` for `*.webkit.spec.ts` | Linux (Playwright's Chromium and WebKit) |
+| `just journey [j1\|j2a\|j2b\|j2c]` | a new user's journeys ([below](#a-new-users-journeys)): one person from no account to a terminal, and two people linking up; each ends with an annotated graph in `web/journey-reports/` (local, never committed) | Linux, in the e2e shards (they're specs in `web/e2e/`) |
 | `just e2e-webkit` | only the `webkit` project: Safari's engine, for device keys (#94) and the one-click invite (#137) | macOS |
 | `just testnet up`, `test`, `break` (`ssh`, then `control`) | the Docker test stack's claims ([testnet/README.md](../testnet/README.md)), then each claim under `BREAK=1`, where it must fail | Linux |
 | `just forges`, `just testnet-hosts`, `just testnet-editors` | real forges, two hosts and VS Code over Remote-SSH, in Docker ([below](#real-forges-two-hosts-vs-code-over-remote-ssh)) | the forges nightly (`forges-nightly.yml`) |
@@ -523,6 +524,54 @@ branch) for macOS Safari, and `just macos ios s27` with `ARUGULA_S27_DIR`
 set to this directory for `--ios` in the iOS Simulator ([the tart
 VM](#a-fresh-mac-the-tart-vm-harness); parked, #257).
 `--driver playwright-webkit` checks the script itself without Safari.
+
+## A new user's journeys
+
+`web/e2e/journey-*.spec.ts` (#551) take the path a new user takes, and
+check that the screen leads them along it, not only that each piece
+works. Run them with `just journey` (or `just journey j2c` for one).
+
+| Journey | What |
+|---|---|
+| J1 | one person on the Mac app, from no account to a command in a terminal: Getting started's Cloud step, an account made from the machine's approval link, recovery codes, the machine approved and its account's fingerprint checked, the app signed in through the browser and approved as a device, the app reopened |
+| J2a | two friends, each through J1 first: one shares a session with the other (not a teammate), who accepts, finds the machine, asks to drive, is allowed, takes control and types; the owner sees it |
+| J2b | the same through a team: a one-click invite, the owner's machine moved into the team with *In …*, the friend driving it by role |
+| J2c | the evening #551 audits: the owner's machine already in a team, a friend's second team, the team page's `arugulad join … --team` (not on the app's PATH, #550, and the machine is already in a team), *In …*, sharing with the team, the Swarm, *+* on a teammate's machine |
+
+The rules, which are the point:
+
+- Steps act only on what a person sees: roles, visible text, a tooltip.
+  No `window.__arugula`, `data-*` hooks or API calls to act (the page's
+  own hooks only to read a terminal's text, which is canvas). Codes and
+  fingerprints are read off one screen and checked on the other.
+  Commands run as the page printed them, in a shell whose PATH is what
+  the app leaves (`~/.local/bin` with only `arugula` in it).
+- Each person starts with an empty home and no account; control is the
+  run's own, empty. GitHub is a fake that asks a first-time user to
+  authorize the app, as the real one does.
+- The app is emulated (`journey/app.ts`): only its native parts, each as
+  `crates/desktop` does it (where links open, the window moving once the
+  machine joins, the browser sign-in's loopback grant, the app's own
+  sign-in page). Everything else is the real page, daemon and control.
+  The real app in a VM is `testnet/macos/`.
+- Each step names the prompt on screen that led to it. A step with none is
+  *unguided*: the journey still takes it, so the whole path is drawn, and
+  the run fails at the end. Steps that worked but confused (typing that
+  did nothing, a dialog that hides a request) are noted as friction.
+  Gaps already filed are listed in the spec (`j.finish({ step: "#551 …" })`):
+  drawn, not failed on; the run says when one is fixed.
+- Each J2 journey runs J1 for each person first, as its own report
+  (`J2a-setup-sam`), so a signup failure can't hide a linking failure.
+
+Every run ends with a report, in `web/journey-reports/` (newest run;
+each run also under `history/`) and attached to the Playwright report:
+`J1.html` has the totals (steps, wall time, switches between surfaces or
+people, hand-offs between people, codes compared, commands typed), the
+first step a newcomer gets stuck at with its screenshot, and every step
+with its screenshot; `J1.svg` is the graph alone: one lane per person and
+surface (app, browser, terminal, a message between people), steps top to
+bottom, each annotated with what led to it or what went wrong. The
+directory is in `web/.gitignore`. `JOURNEY_REPORT_DIR` puts it elsewhere.
 
 ## A device that approves things
 

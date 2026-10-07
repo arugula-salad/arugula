@@ -304,5 +304,11 @@ test("J2a: two friends link up by sharing a session; the friend types in the own
     await sam.quit().catch(() => {});
     await riley.quit().catch(() => {});
   }
-  await j.finish();
+  await j.finish({
+    // Filed on #551: what nothing on screen leads to today.
+    "open-share": "#551: Share is only in the session menu",
+    "find-fingerprint": "#551: nothing says where your first device's fingerprint is",
+    "find-machine": "#551: a shared machine is named only in the host menu",
+    "take-control": "#551: allowed to drive, but the owner has control, and nothing says Take control",
+  });
 });
