@@ -5396,6 +5396,7 @@ limitations under the License.
 ## Apache License 2.0
 
 Used by:
+- [wry 0.57.0](https://github.com/tauri-apps/wry)
 - [asn1-rs-derive 0.5.1](https://github.com/rusticata/asn1-rs.git)
 - [asn1-rs 0.6.2](https://github.com/rusticata/asn1-rs.git)
 - [async-channel 2.5.0](https://github.com/smol-rs/async-channel)
@@ -5511,7 +5512,6 @@ Used by:
 - [web_atoms 0.2.6](https://github.com/servo/html5ever)
 - [webrtc 0.21.0](https://github.com/webrtc-rs/webrtc)
 - [window-vibrancy 0.8.1](https://github.com/tauri-apps/tauri-plugin-vibrancy)
-- [wry 0.57.0](https://github.com/tauri-apps/wry)
 - [x509-parser 0.16.0](https://github.com/rusticata/x509-parser.git)
 - [xattr 1.6.1](https://github.com/Stebalien/xattr)
 - [yasna 0.6.0](https://github.com/qnighy/yasna.rs)

@@ -81,6 +81,12 @@ objc2-service-management = { version = "0.3", features = ["SMAppService"] }
 # that CI's runners don't have (M46).
 [workspace]
 
+# wry 0.57 aborts the app when macOS can't create the file picker: a pick
+# (Cmd-U, an attach button) after the app was updated in place (#556). The
+# fix is upstream as tauri-apps/wry#1881; drop this once wry releases it.
+[patch.crates-io]
+wry = { git = "https://github.com/alecraso/wry", branch = "arugula/catch-open-panel" }
+
 [profile.release]
 strip = true
 lto = "thin"
