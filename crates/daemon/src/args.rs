@@ -225,7 +225,7 @@ pub(crate) struct RunArgs {
     #[arg(long)]
     pub(crate) no_shell_integration: bool,
     /// The wispd that VM panes get their machines from.
-    #[arg(long, env = "ARUGULA_WISP_URL", default_value = "http://127.0.0.1:7788", hide = true)]
+    #[arg(long, env = "ARUGULA_WISP_URL", default_value = DEFAULT_WISP_URL, hide = true)]
     pub(crate) wisp_url: String,
     /// Its API token. VM panes are off without one. Default:
     /// `$XDG_DATA_HOME/wisp/token`.
@@ -370,6 +370,9 @@ pub(crate) struct BlockArgs {
     #[arg(long, env = "ARUGULA_BLOCK_ACME_DIRECTORY", default_value = crate::tls::LETS_ENCRYPT)]
     pub(crate) block_acme_directory: String,
 }
+
+/// Where wispd listens unless told otherwise.
+pub(crate) const DEFAULT_WISP_URL: &str = "http://127.0.0.1:7788";
 
 /// Options that work but stay out of `--help` unless the machine has the
 /// `labs` file: guest ssh, the studio file and the sandbox provider. The

@@ -14,8 +14,7 @@
 
 use std::sync::Arc;
 
-use crate::provider::Provider;
-pub use crate::provider::{Begin, Exec, ExecEvent};
+use crate::provider::{Begin, Exec, ExecEvent, Provider};
 
 /// Start (or resume) a session on `sprite`. Events go to `sink` in order,
 /// from a task on `rt`.

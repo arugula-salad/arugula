@@ -1,6 +1,6 @@
 //! Sandbox providers (M4b): whoever runs the machines that aren't this
 //! host, behind one trait. The first adapter is the Sprites API
-//! ([`sprites`]), which covers wisp here on geek and Fly's hosted sprites.
+//! (`labs/sprites.rs`), which covers wisp here on geek and Fly's hosted sprites.
 //!
 //! A provider can:
 //!
@@ -24,8 +24,11 @@
 //! two "compatible" implementations differ in how much exec output they
 //! replay, who owns a reattached session, how a kill behaves and what
 //! "cold" means; code asks instead of assuming wisp.
-
-pub mod sprites;
+//!
+//! The trait and its types stay in core, as the interface; the Sprites
+//! adapter and what runs on it are Labs (`labs/`). A build without Labs has
+//! no adapter, so none of this is ever used there.
+#![cfg_attr(not(feature = "labs"), allow(dead_code))]
 
 use std::{io, sync::Arc, time::Duration};
 
