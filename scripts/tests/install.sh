@@ -225,6 +225,12 @@ cp "$work/good.zip" "$zip"
 
 # The names from before the rename (#505). ILLOGICAL_VERSION and
 # ILLOGICAL_NO_START still pick the release and keep it from starting.
+# A Linux with systemd, whatever this machine has (a Mac has no systemctl,
+# and install.sh would take the no-systemd path, which never starts it).
+mkdir -p "$work/systemd"
+printf '#!/bin/sh\nexit 0\n' >"$work/systemd/systemctl"
+chmod +x "$work/systemd/systemctl"
+path=$work/systemd:$stubs:$PATH
 release=("ILLOGICAL_VERSION=$version" "ILLOGICAL_NO_START=1")
 run old-env Linux x86_64
 if [ "$status" = 0 ] && grep -qx ".*/releases/download/$version/arugula-${version#v}-x86_64-unknown-linux-musl.tar.gz" "$home/fetched" \
@@ -238,6 +244,7 @@ release=("ARUGULA_VERSION=$version" "ILLOGICAL_VERSION=v0.0.1" "ARUGULA_NO_START
 run both-env Linux x86_64
 if [ "$status" = 0 ] && ! grep -q 'v0.0.1' "$home/fetched"; then ok "ARUGULA_VERSION over ILLOGICAL_VERSION"; else bad both-env "took ILLOGICAL_VERSION over ARUGULA_VERSION"; fi
 release=("ARUGULA_VERSION=$version" "ARUGULA_NO_START=1")
+path=$stubs:$PATH
 
 # A Mac with the app from before the rename: illogical.app goes, Arugula.app
 # takes its place (#505).
