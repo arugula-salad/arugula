@@ -1,7 +1,8 @@
 //! M65: a pane for a guest with only OpenSSH. Every test runs the system
 //! `ssh` with the command `arugula share --guest` prints (plus `-F
-//! /dev/null` and `BatchMode`, so the runner's own ssh config stays out of
-//! it), on a pseudo-terminal, against a dev daemon.
+//! /dev/null`, so the runner's own ssh config stays out of it, and a
+//! connect timeout), on a pseudo-terminal, against a dev daemon. Whether it
+//! prompts is up to the command itself (#300).
 
 // Over the daemon's Unix socket; Windows gets its named pipe in M56 (#219).
 #![cfg(unix)]
@@ -168,10 +169,11 @@ fn winsize(cols: u16, rows: u16) -> nix::pty::Winsize {
     nix::pty::Winsize { ws_row: rows, ws_col: cols, ws_xpixel: 0, ws_ypixel: 0 }
 }
 
-/// The command as a guest gets it, with the test's own options added.
+/// The command as a guest gets it, with only the runner's ssh config kept
+/// out. No `BatchMode` of the test's own: the command has to bring it.
 fn hermetic(command: &str) -> String {
     let rest = command.strip_prefix("ssh ").expect("an ssh command");
-    format!("ssh -F /dev/null -o BatchMode=yes -o ConnectTimeout=5 {rest}")
+    format!("ssh -F /dev/null -o ConnectTimeout=5 {rest}")
 }
 
 impl Guest {
@@ -397,11 +399,16 @@ fn wrong_tokens_and_other_host_keys_are_refused_and_the_port_closes() {
     let token = inv["token"].as_str().unwrap();
     let port = inv["port"].as_u64().unwrap() as u16;
 
-    // A wrong token: refused, with no password prompt to wait at.
+    // A wrong token: refused, with no password prompt to wait at (#300).
+    // The guest is on a terminal ssh could ask on, so this holds only
+    // because the command itself sets BatchMode.
+    assert!(cmd.contains("-o BatchMode=yes "), "{cmd}");
     let wrong = cmd.replace(token, "g00000000000000000000000000000000");
     let mut g = Guest::run(&wrong);
-    assert_eq!(g.exited(Duration::from_secs(10)), 255);
-    assert!(g.text().contains("Permission denied"), "{:?}", g.text());
+    assert_eq!(g.exited(Duration::from_secs(10)), 255, "{:?}", g.text());
+    let said = g.text();
+    assert!(said.contains("Permission denied"), "{said:?}");
+    assert!(!said.to_lowercase().contains("password") && !said.contains("passphrase"), "it prompted: {said:?}");
 
     // Something else answering on that address: the pinned key doesn't
     // match, so ssh stops before it sends the token, and the invite is

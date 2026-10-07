@@ -730,8 +730,10 @@ case instead (`ssh.rs`'s push with `ARUGULA_SSH_AGENT=no`,
 daemon started with `--guest-ssh 127.0.0.1:0 --guest-ssh-host 127.0.0.1`.
 Each guest is the command the daemon printed, run by `sh` on a
 pseudo-terminal that is its controlling terminal (so a resize reaches ssh as
-SIGWINCH), with `-F /dev/null -o BatchMode=yes` added so the runner's own
-ssh config and agent stay out of it. They check:
+SIGWINCH), with only `-F /dev/null -o ConnectTimeout=5` added so the
+runner's own ssh config stays out of it. Nothing adds `BatchMode`: the
+command has to bring it, so a wrong token failing at once with no prompt
+(#300) is the printed command's doing. They check:
 
 - a read-only guest sees the screen and live output, its typing never
   reaches the pane, and a single-use token can't log in twice;

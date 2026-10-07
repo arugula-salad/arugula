@@ -212,11 +212,14 @@ impl Jump {
 }
 
 /// The command a guest pastes: the host key pinned, nothing written to
-/// their known-hosts file.
+/// their known-hosts file. It never prompts (`BatchMode`), as the relayed
+/// command's hop doesn't: a wrong or spent token can't be fixed by typing
+/// a password or a key's passphrase, so ssh says `Permission denied` and
+/// stops.
 pub fn command(token: &str, host: &str, port: u16, known_hosts: &str) -> String {
     let p = if port == 22 { String::new() } else { format!("-p {port} ") };
     format!(
-        "ssh {p}-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=yes \
+        "ssh {p}-o BatchMode=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=yes \
          -o 'KnownHostsCommand=/bin/echo {known_hosts}' {token}@{host}"
     )
 }
@@ -984,16 +987,22 @@ async fn mint(State(app): AppState, Json(req): Json<GuestInviteRequest>) -> Resp
     if !plain_host(&host) {
         return error(StatusCode::BAD_REQUEST, format!("{host:?} isn't a host name or address"));
     }
-    let addr = match guests.ensure_listening(&app).await {
-        Ok(a) => a,
-        Err(e) => return error(StatusCode::SERVICE_UNAVAILABLE, e.to_string()),
-    };
     let key = match guests.host_key() {
         Ok(k) => k,
         Err(e) => return error(StatusCode::INTERNAL_SERVER_ERROR, format!("no host key: {e}")),
     };
-    let public = key.public_key().to_openssh().unwrap_or_default();
+    // The invite first, then the listener: listening with no invite yet,
+    // the once-a-second idle check could close it under the command.
     let (mut invite, token) = guests.mint(&req, None);
+    let addr = match guests.ensure_listening(&app).await {
+        Ok(a) => a,
+        Err(e) => {
+            guests.revoke(invite.id);
+            guests.stop_if_idle().await;
+            return error(StatusCode::SERVICE_UNAVAILABLE, e.to_string());
+        }
+    };
+    let public = key.public_key().to_openssh().unwrap_or_default();
     let known = format!("{} {public}", known_name(&host, addr.port()));
     invite.command = Some(command(&token, &host, addr.port(), &known));
     invite.known_hosts = Some(known);
@@ -1163,7 +1172,7 @@ mod tests {
         let c = command("gabc", "box", 7684, "[box]:7684 ssh-ed25519 AAAA");
         assert_eq!(
             c,
-            "ssh -p 7684 -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=yes \
+            "ssh -p 7684 -o BatchMode=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=yes \
              -o 'KnownHostsCommand=/bin/echo [box]:7684 ssh-ed25519 AAAA' gabc@box"
         );
     }
