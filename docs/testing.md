@@ -81,6 +81,15 @@ commits may have a job named like a required one. `npx
 @intentius/chant@0.108.0 ci last-green` (after `git fetch --tags`) prints
 the newest green commit.
 
+`.github/workflows/ci-red.yml` runs `scripts/ci-red` every hour, so a red
+main gets heard: when main has gone 6 hours (`ARUGULA_RED_HOURS`) without a
+green commit, or a commit gets a `ci/revoked` tag, it opens an issue titled
+"main is red", or comments on the open one, once per red stretch or
+revocation; GitHub notifies the repo's watchers and anyone the
+`ARUGULA_RED_MENTION` variable names. It closes the issue once main has a
+green commit newer than everything it reported. `scripts/tests/ci-red.sh`
+(`just test-scripts`) runs it with a fake gh.
+
 The Rust tests run under cargo-nextest (`.config/nextest.toml`): each in
 its own process and all at once, `ssh.rs` and `reboot.rs` one at a time
 (the test stack). CI's profile (`NEXTEST_PROFILE=ci`) retries a failure

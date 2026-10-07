@@ -467,6 +467,7 @@ macos cmd="launchd" *args:
 # `just notices` keeping THIRD_PARTY.md when cargo-about fails; and
 # `scripts/release check-green` refusing a tag on a commit CI didn't pass.
 test-scripts:
+    scripts/tests/ci-red.sh
     scripts/tests/install.sh
     scripts/tests/release-targets.sh
     scripts/tests/notices.sh
