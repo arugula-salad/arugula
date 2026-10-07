@@ -16,11 +16,10 @@
 //!   don't upgrade together, so a field either one read with
 //!   `#[serde(default)]` keeps it, and nothing here is `deny_unknown_fields`.
 //!   A field neither side needs to find is not made required.
-//!
-//! Forge messages are still built by hand (#450).
 
 use serde::{Deserialize, Serialize};
 
+pub mod forge;
 pub mod join;
 pub mod push;
 pub mod team;

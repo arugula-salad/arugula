@@ -42,6 +42,7 @@ use tracing::{info, warn};
 
 use super::{ForgeBlock, model::Provider};
 use crate::control::Control;
+use arugula_control_wire::forge::{ForgePoke, ForgeWatch, ForgeWatching};
 
 /// How long the webhook path counts as healthy after the last thing heard
 /// from it (`ARUGULA_FORGE_LIVE_MS` in tests).
@@ -177,7 +178,7 @@ pub fn resubscribe() {
         .collect();
     repos.sort_by_key(|r| r.to_ascii_lowercase());
     repos.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
-    let msg = json!({ "t": "forge.watch", "repos": repos }).to_string();
+    let msg = serde_json::to_string(&ForgeWatch::new(repos)).unwrap_or_default();
     h.watch.send_if_modified(|m| {
         if m.as_deref() == Some(&msg) {
             return false;
@@ -250,17 +251,22 @@ pub fn from_control(text: &str) {
     let Ok(v) = serde_json::from_str::<Value>(text) else { return };
     match v["t"].as_str() {
         Some("forge.poke") => {
-            let p = &v["poke"];
-            let (Some(repo), Some("github")) = (p["repo"].as_str(), p["provider"].as_str()) else { return };
-            let host = p["host"].as_str().unwrap_or("github.com");
-            poke(Provider::Github, host, repo, p["number"].as_u64(), p["event"].as_str().unwrap_or(""));
+            let Ok(ForgePoke { poke: p, .. }) = serde_json::from_value(v) else { return };
+            if p.provider != "github" {
+                return;
+            }
+            poke(Provider::Github, &p.host, &p.repo, p.number, &p.event);
         }
         Some("forge.watching") => {
             let Some(h) = hub() else { return };
-            for r in v["repos"].as_array().into_iter().flatten() {
-                let Some(repo) = r["repo"].as_str() else { continue };
-                let live = r["live"] == true;
-                let why = (!live).then(|| r["why"].as_str().unwrap_or("control says no").to_owned());
+            let repos = serde_json::from_value::<ForgeWatching>(v).map(|w| w.repos).unwrap_or_default();
+            for r in repos {
+                let repo = r.repo.as_str();
+                if repo.is_empty() {
+                    continue;
+                }
+                let live = r.live;
+                let why = (!live).then(|| r.why.unwrap_or_else(|| "control says no".to_owned()));
                 h.github.lock().unwrap().insert(repo.to_ascii_lowercase(), why);
                 let k = key(Provider::Github, "github.com", repo);
                 if live {
@@ -301,10 +307,9 @@ pub async fn app_token(repo: &str, fresh: bool) -> Result<(String, String), Stri
         .and_then(|h| h.control.as_ref()?.upgrade())
         .ok_or("not joined to Arugula control, whose GitHub App could read it")?;
     let v = control.github_token(repo).await?;
-    let token = v["token"].as_str().filter(|t| !t.is_empty()).ok_or("control sent no token")?.to_owned();
-    let login = v["login"].as_str().unwrap_or_default().to_owned();
-    let left = v["expires_at"]
-        .as_str()
+    let token = Some(v.token).filter(|t| !t.is_empty()).ok_or("control sent no token")?;
+    let login = v.login;
+    let left = Some(v.expires_at.as_str())
         .and_then(epoch_of)
         .map(|e| e.saturating_sub(crate::store::now_ms() / 1000))
         .unwrap_or(600);
