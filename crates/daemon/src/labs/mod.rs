@@ -337,8 +337,8 @@ pub use guest_ssh::Guests;
 #[cfg(not(feature = "labs"))]
 pub use absent::Guests;
 
-/// Opens the guest invites (`given`: `--guest-ssh` or `--guest-ssh-host` was
-/// left at its default). A build without Labs has none: flags given are
+/// Opens the guest invites (`given`: `--guest-ssh` or `--guest-ssh-host`
+/// wasn't left at its default). A build without Labs has none: flags given are
 /// ignored, with a warning.
 #[cfg(feature = "labs")]
 pub fn open_guests(
