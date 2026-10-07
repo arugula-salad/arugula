@@ -556,7 +556,7 @@ pub(crate) fn features(app: &App) -> HostFeatures {
         blocks: crate::sites::get().is_some(),
         vms: labs && app.mux.provider.is_some(),
         fountain: labs && crate::labs::fountain_login_here(&app.mux.shell_env),
-        studio: labs && crate::apps::studio::get().and_then(|s| s.url()).is_some(),
+        studio: labs && crate::labs::studio_here(),
         threads: labs,
         calls: labs,
     }

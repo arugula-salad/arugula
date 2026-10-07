@@ -32,6 +32,7 @@
 //!   the follower mints again, and so does each client's frame.
 
 pub mod hud;
+pub mod routes;
 pub mod studio;
 
 use std::sync::{Arc, Mutex, Weak};
