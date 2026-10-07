@@ -17,12 +17,11 @@ use arugula_proto::{
     api::{
         Adapters, AgentRules, AgentsInventory, Answered, AskAnswer, AskRequest, AttentionRequest, ConversationList,
         ConversationRow, Described, Detection, DetectionAnswer, DetectionRule, Empty, FollowUpRequest, FollowedUp,
-        FollowerLinkRequest, HistoryKind, IdeDiffs, IdeDiffsRequest, IdeInfo, IdeMentionRequest, IdeMentioned,
-        IdeOther, InboxAnswer, Invitable, KeysRequest, MouseRequest, NoDetection, NotifyPref, NotifyRequest,
-        OpenConversationRequest, OpenConversationResponse, OpenResponse, PaneDiff, PermitAnswer, PermitRequest,
-        Process, PromptRequest, PromptResult, PushSubscriptions, Rules, RunRequest, RunResponse, SecretFinding,
-        SendRequest, ShellEnv, StandingRule, StudioApp, StudioAppRow, StudioApps, StudioLoggedIn, StudioLoginRequest,
-        StudioStatus, ThreadAgent, ThreadMessages, ThreadPostRequest, ThreadPosted, ThreadReadRequest, Unreached,
+        HistoryKind, IdeDiffs, IdeDiffsRequest, IdeInfo, IdeMentionRequest, IdeMentioned, IdeOther, InboxAnswer,
+        Invitable, KeysRequest, MouseRequest, NoDetection, NotifyPref, NotifyRequest, OpenConversationRequest,
+        OpenConversationResponse, OpenResponse, PaneDiff, PermitAnswer, PermitRequest, Process, PromptRequest,
+        PromptResult, PushSubscriptions, Rules, RunRequest, RunResponse, SecretFinding, SendRequest, ShellEnv,
+        StandingRule, ThreadAgent, ThreadMessages, ThreadPostRequest, ThreadPosted, ThreadReadRequest, Unreached,
         UnreachedWhy, WaitResult, WithdrawRequest,
     },
 };
@@ -99,9 +98,6 @@ pub fn routes() -> Router<Arc<App>> {
         .route("/api/blocks", post(open_block))
         .route("/api/blocks/{id}", get(describe))
         .route("/api/blocks/{id}/call/{method}", post(call))
-        .route("/api/studio", get(studio_status).post(studio_login).delete(studio_logout))
-        .route("/api/studio/apps", get(studio_apps))
-        .route("/api/studio/followers/{app}", axum::routing::put(studio_follower).delete(studio_unfollow))
         .route("/api/machines", get(machines))
         .route("/api/machines/{id}/reset", post(reset_machine))
         .route("/api/panes/{id}/share-machine", post(share_machine))
@@ -1108,7 +1104,7 @@ async fn open_block(
     }
     // A studio box (M35), by its app's name: where it is, from studio.
     if req.kind == arugula_proto::BlockType::App {
-        req.config = app_config(&req.config).await.map_err(bad)?;
+        req.config = crate::labs::app_config(&req.config).await.map_err(bad)?;
     }
     // A pull request (M36), by its link, OWNER/REPO#N, or N in a clone.
     if req.kind == arugula_proto::BlockType::Forge {
@@ -2440,97 +2436,6 @@ async fn vsix() -> Response {
         crate::editor::vsix::build(),
     )
         .into_response()
-}
-
-/// A studio app block's config (M35) from `{app}` (and optionally `to`,
-/// dropped: a deep link is the frame's, never kept): the box and studio
-/// filled in from studio's list when not given.
-pub async fn app_config(c: &serde_json::Value) -> Result<serde_json::Value, String> {
-    let name = c["app"].as_str().filter(|n| !n.is_empty()).ok_or("an app block needs {\"app\": NAME}")?;
-    let studio = crate::apps::studio::get().ok_or("no studio here")?;
-    // With a follower link kept for the app, hud is told who answered,
-    // wherever the block was opened from (the picker passes nothing).
-    let follower = c["follower"].as_bool().unwrap_or_else(|| studio.follower(name).is_some());
-    let mut out = serde_json::json!({ "app": name, "follower": follower });
-    match (c["box_url"].as_str(), c["studio"].as_str()) {
-        (Some(b), Some(s)) => {
-            out["box_url"] = b.into();
-            out["studio"] = s.into();
-            if let Some(t) = c["title"].as_str() {
-                out["title"] = t.into();
-            }
-        }
-        _ => {
-            let a = studio.app(name).await?;
-            out["box_url"] = a.url.into();
-            out["studio"] = studio.url().ok_or("not logged in to a studio")?.into();
-            if let Some(t) = a.title {
-                out["title"] = t.into();
-            }
-        }
-    }
-    Ok(out)
-}
-
-fn studio() -> Res<Arc<crate::apps::studio::Studio>> {
-    crate::apps::studio::get().ok_or_else(|| ApiError(StatusCode::SERVICE_UNAVAILABLE, "no studio here".into()))
-}
-
-/// `GET /api/studio` (M35): which studio, and whether there's a token.
-/// Never the token.
-async fn studio_status() -> Res<Json<StudioStatus>> {
-    Ok(Json(studio()?.status()))
-}
-
-/// `arugula studio login`: keep a studio token, once studio takes it.
-async fn studio_login(Json(req): Json<StudioLoginRequest>) -> Res<Json<StudioLoggedIn>> {
-    let apps = studio()?.login(&req.url, &req.token).await.map_err(bad)?;
-    Ok(Json(StudioLoggedIn { apps: apps.into_iter().map(studio_app).collect() }))
-}
-
-fn studio_app(a: crate::apps::studio::AppInfo) -> StudioApp {
-    StudioApp { name: a.name, title: a.title, url: a.url, status: a.status }
-}
-
-async fn studio_logout() -> Res<Json<Empty>> {
-    studio()?.logout().map_err(bad)?;
-    Ok(Json(Empty {}))
-}
-
-/// The person's apps, from studio, with the app blocks that show them.
-async fn studio_apps(State(app): AppState) -> Res<Json<StudioApps>> {
-    let s = studio()?;
-    let apps = s.apps().await.map_err(bad)?;
-    let mut blocks: HashMap<String, Vec<PaneId>> = HashMap::new();
-    for p in app.mux.api(Api::Panes).await.unwrap_or_default() {
-        if p.info.kind == arugula_proto::BlockType::App
-            && let Some(b) = app.mux.api(|r| Api::Block(p.info.id, r)).await.flatten()
-            && let Some(name) = b.config()["app"].as_str()
-        {
-            blocks.entry(name.to_owned()).or_default().push(p.info.id);
-        }
-    }
-    let list: Vec<StudioAppRow> = apps
-        .into_iter()
-        .map(|a| {
-            let blocks = blocks.get(&a.name).cloned().unwrap_or_default();
-            StudioAppRow { app: studio_app(a), blocks }
-        })
-        .collect();
-    Ok(Json(StudioApps { studio: s.url(), apps: list }))
-}
-
-/// Keep a hud follower link for an app (`hud share --role follower` in
-/// its box): app blocks with `follower` enter with it and name who
-/// answered.
-async fn studio_follower(Path(name): Path<String>, Json(req): Json<FollowerLinkRequest>) -> Res<Json<Empty>> {
-    studio()?.set_follower(&name, Some(&req.link)).map_err(bad)?;
-    Ok(Json(Empty {}))
-}
-
-async fn studio_unfollow(Path(name): Path<String>) -> Res<Json<Empty>> {
-    studio()?.set_follower(&name, None).map_err(bad)?;
-    Ok(Json(Empty {}))
 }
 
 /// ICE servers for a huddle (M63): TURN credentials from control, or STUN.

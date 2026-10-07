@@ -13,6 +13,7 @@ mod agent_screens;
 mod agents;
 mod agents_real;
 mod api;
+#[cfg(feature = "labs")]
 mod apps;
 mod attach;
 mod attention;
@@ -61,4 +62,5 @@ mod tmux;
 mod upgrade;
 mod vm_reboot;
 mod windows;
+#[cfg(feature = "labs")]
 mod workspace;

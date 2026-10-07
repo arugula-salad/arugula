@@ -4,7 +4,6 @@ mod access;
 mod acl;
 mod agent;
 mod api;
-mod apps;
 mod args;
 mod authz;
 mod block;
@@ -81,7 +80,6 @@ mod tls;
 mod update;
 #[cfg(unix)]
 mod upload;
-mod workspace;
 
 use std::{net::SocketAddr, path::PathBuf};
 
@@ -746,7 +744,7 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
     };
     // Studio apps (M35): the token that lists them and mints ways in.
     let studio_file = args.studio_file.clone().unwrap_or_else(|| state_dir.join("studio.json"));
-    apps::studio::install(studio_file.clone());
+    labs::install_studio(studio_file.clone(), args.studio_file.is_some());
     // What `fs` never serves, besides the state directory.
     let private = vec![
         token_file.clone(),

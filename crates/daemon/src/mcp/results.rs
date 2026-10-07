@@ -22,7 +22,8 @@ use arugula_proto::{
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::apps::studio::AppInfo;
+#[cfg(feature = "labs")]
+use crate::labs::apps::studio::AppInfo;
 
 /// Only the pane: closed, answered, or sent a prompt.
 #[derive(Debug, Serialize)]
@@ -237,6 +238,7 @@ pub struct PortOpened {
 }
 
 /// A studio app opened in a block.
+#[cfg(feature = "labs")]
 #[derive(Debug, Serialize)]
 pub struct AppOpened {
     pub block: PaneId,
@@ -244,6 +246,7 @@ pub struct AppOpened {
 }
 
 /// The studio's apps.
+#[cfg(feature = "labs")]
 #[derive(Debug, Serialize)]
 pub struct Apps {
     pub apps: Vec<AppInfo>,
@@ -276,6 +279,7 @@ pub struct DiffOpened {
 }
 
 /// A member of a workspace block. The fields are the block's own.
+#[cfg(feature = "labs")]
 #[derive(Debug, Serialize)]
 pub struct Member {
     pub name: Value,
@@ -286,6 +290,7 @@ pub struct Member {
 }
 
 /// A workspace block opened.
+#[cfg(feature = "labs")]
 #[derive(Debug, Serialize)]
 pub struct WorkspaceOpened {
     pub block: PaneId,
@@ -433,6 +438,7 @@ mod tests {
         );
         same(BlockOnly { block: 9 }, json!({ "block": 9 }));
         same(PortOpened { block: 9, port: 3000 }, json!({ "block": 9, "port": 3000 }));
+        #[cfg(feature = "labs")]
         same(AppOpened { block: 9, app: "notes".into() }, json!({ "block": 9, "app": "notes" }));
         #[cfg(feature = "labs")]
         same(BlockText { block: 9, text: "t".into() }, json!({ "block": 9, "text": "t" }));
@@ -624,6 +630,7 @@ mod tests {
             json!({ "block": 4, "repo": "/r", "files": [{ "path": "a", "old": null, "status": "M", "add": 1,
                 "del": 2, "binary": false, "big": false }] }),
         );
+        #[cfg(feature = "labs")]
         same(
             WorkspaceOpened {
                 block: 4,
@@ -661,6 +668,7 @@ mod tests {
                 "source": null, "app": null, "skills": [], "mcp": ["x"], "description": "" }],
                 "unreadable": 0 }),
         );
+        #[cfg(feature = "labs")]
         same(Apps { apps: vec![] }, json!({ "apps": [] }));
     }
 
