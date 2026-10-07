@@ -15,7 +15,7 @@ use tokio_tungstenite::{connect_async, tungstenite::Message};
 const OWNER: &str = "me@example.com";
 const FRIEND: &str = "friend@example.com";
 const CHAT: &str = "Chat isn't in this build (built without labs)";
-const HUDDLES: &str = "Huddles isn't in this build (built without labs)";
+const HUDDLES: &str = "A huddle isn't in this build (built without labs)";
 
 fn daemon(tag: &str) -> arugula_testkit::Daemon {
     arugulad!(tag).no_wisp().args(["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock"]).start()

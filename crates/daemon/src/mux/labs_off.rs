@@ -67,5 +67,5 @@ impl Daemon {
 
 /// Tells the client its huddle message went nowhere.
 fn refuse(sub: &Subscriber) {
-    let _ = sub.ctrl.send(ToClient::Msg(ServerMsg::Error { id: None, message: not_built("Huddles") }));
+    let _ = sub.ctrl.send(ToClient::Msg(ServerMsg::Error { id: None, message: not_built("A huddle") }));
 }
