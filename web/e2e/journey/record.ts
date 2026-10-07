@@ -62,7 +62,11 @@ export type Spec = {
  * { name: /share/i })` is 'a button "share"'. */
 export function inWords(locator: string): string {
   const said: string[] = [];
-  const pattern = (v: string) => v.replace(/^\/\^?|\$?\/[a-z]*$/g, "").replace(/\\/g, "").replace(/\|/g, '" or "');
+  const pattern = (v: string) =>
+    v
+      .replace(/^\/\^?|\$?\/[a-z]*$/g, "")
+      .replace(/\\/g, "")
+      .replace(/\|/g, '" or "');
   for (const m of locator.matchAll(/getBy(Role|Text|Title|Label|Placeholder)\(([^)]*)\)/g)) {
     const [, kind, args] = m;
     const name = /name: (\/[^/]+\/[a-z]*|'[^']*')/.exec(args)?.[1] ?? args.split(",")[0];

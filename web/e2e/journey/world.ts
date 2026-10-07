@@ -6,7 +6,7 @@
 // Nothing is approved, joined or signed in ahead: a person starts with
 // an empty home and no account.
 
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import { tmpdir } from "node:os";
@@ -106,6 +106,13 @@ export class Person {
       TERM: "xterm-256color",
       LANG: process.env.LANG ?? "en_US.UTF-8",
     };
+  }
+
+  /** A command typed into a terminal on their Mac: their shell, their
+   * PATH. What it printed, and how it ended. */
+  shell(cmd: string): { out: string; code: number } {
+    const r = spawnSync("/bin/bash", ["-c", cmd], { env: this.shellEnv(), cwd: this.home, encoding: "utf8", timeout: 60_000 });
+    return { out: `${r.stdout ?? ""}${r.stderr ?? ""}`.trim(), code: r.status ?? -1 };
   }
 
   /** The app's first start: the daemon as its launch agent runs it (no

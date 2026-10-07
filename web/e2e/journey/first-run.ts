@@ -3,9 +3,9 @@
 // this as its own journey; J2 runs it for each person first, as its own
 // report, so a signup failure can't hide a linking failure.
 
-import { expect, type Locator, type Page } from "@playwright/test";
-import type { App } from "./app";
-import type { Journey } from "./record";
+import { expect, type Browser, type Locator, type Page, type TestInfo } from "@playwright/test";
+import { App } from "./app";
+import { Journey } from "./record";
 import type { World } from "./world";
 
 export const CODE = /\b[A-Z0-9]{4,6}-[A-Z0-9]{4,6}\b/;
@@ -285,4 +285,21 @@ export async function firstRun(j: Journey, world: World, app: App, actor: string
       await expect.poll(() => screenText(w), { timeout: 30_000 }).toContain("hello-42");
     },
   );
+}
+
+/** Someone who has been through J1 on their own Mac, recorded as its own
+ * report (`<journey>-setup-<login>`), so a signup failure there can't hide
+ * what the journey after it is about. Their app, open and signed in. */
+export async function onboarded(world: World, browser: Browser, info: TestInfo, journey: string, login: string, machine: string): Promise<App> {
+  const p = await world.person(browser, login);
+  await p.installApp(machine);
+  const app = await App.install(p, browser);
+  const j = new Journey(`${journey}-setup-${login}`, `${login}'s first run (J1), before ${journey}`, info, [login]);
+  app.onOutside = (url) => j.opened(url);
+  try {
+    await firstRun(j, world, app, login, machine);
+  } finally {
+    await j.attach();
+  }
+  return app;
 }

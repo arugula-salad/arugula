@@ -13,8 +13,8 @@
 //   just journey j2a
 
 import { expect, test, type Page } from "@playwright/test";
-import { App } from "./journey/app";
-import { clickTerminal, FP, firstRun, read, screenText } from "./journey/first-run";
+import type { App } from "./journey/app";
+import { clickTerminal, FP, onboarded, read, screenText } from "./journey/first-run";
 import { Journey, type Surface } from "./journey/record";
 import { World } from "./journey/world";
 import { closeContexts } from "./helpers";
@@ -26,28 +26,13 @@ const world = new World();
 test.beforeAll(() => world.start());
 test.afterAll(() => world.stop());
 
-/** A person through J1, recorded as its own report; their app, open. */
-async function onboarded(browser: import("@playwright/test").Browser, info: import("@playwright/test").TestInfo, login: string, machine: string) {
-  const p = await world.person(browser, login);
-  await p.installApp(machine);
-  const app = await App.install(p, browser);
-  const j = new Journey(`J2a-setup-${login}`, `${login}'s first run (J1), before linking up`, info, [login]);
-  app.onOutside = (url) => j.opened(url);
-  try {
-    await firstRun(j, world, app, login, machine);
-  } finally {
-    await j.attach();
-  }
-  return app;
-}
-
 /** The session the window shows, by the name on its button. */
 const sessionName = (p: Page) => p.evaluate(() => window.__arugula.client.state!.sessions.find((s) => s.id === window.__arugula.client.session)!.name);
 
 test("J2a: two friends link up by sharing a session; the friend types in the owner's terminal", async ({ browser }, info) => {
   test.setTimeout(420_000);
-  const sam = await onboarded(browser, info, "sam", "sammac");
-  const riley = await onboarded(browser, info, "riley", "rileymac");
+  const sam = await onboarded(world, browser, info, "J2a", "sam", "sammac");
+  const riley = await onboarded(world, browser, info, "J2a", "riley", "rileymac");
   const j = new Journey("J2a", "two friends link up: share a session, the friend drives it", info, ["sam", "riley"]);
   const at = (who: App) => () => who.window;
   const step = (
@@ -164,11 +149,11 @@ test("J2a: two friends link up by sharing a session; the friend types in the own
         const said = await p.getByText(/riley/).allInnerTexts();
         if (!said.some((t) => /see|accept|asked|wait/i.test(t))) j.issue("the dialog doesn't say what Riley sees next, or that Riley must accept first");
         await p.keyboard.press("Escape");
-      const dialog = p.getByRole("button", { name: "Done" });
-      if (await dialog.isVisible()) {
-        j.issue("Escape doesn't close the Share dialog; while it's open it covers what comes next (Riley's ask to drive)");
-        await dialog.click();
-      }
+        const dialog = p.getByRole("button", { name: "Done" });
+        if (await dialog.isVisible()) {
+          j.issue("Escape doesn't close the Share dialog; while it's open it covers what comes next (Riley's ask to drive)");
+          await dialog.click();
+        }
       },
     );
 
@@ -249,32 +234,56 @@ test("J2a: two friends link up by sharing a session; the friend types in the own
       },
     );
 
-    await step("riley-types", "Riley, allowed now, types in Sam's terminal", "riley", "app", at(riley), (p) => p.getByTitle("Hosts"), async (p) => {
-      await clickTerminal(p);
-      await p.keyboard.type("echo second-try\n", { delay: 5 });
-      await new Promise((r) => setTimeout(r, 1500));
-      if (!(await screenText(sam.window)).includes("second-try")) {
-        const said = (await p.locator("body").innerText()).match(/[^\n]*(control|driv)[^\n]*/i)?.[0];
-        j.issue(
-          said
-            ? `allowed, typing still did nothing: Sam still has control of the pane; the screen said: "${said.trim()}"`
-            : "allowed, typing still did nothing: Sam still has control of the pane, and nothing on screen says so but a ✎ sam badge",
-        );
-      }
-    });
+    await step(
+      "riley-types",
+      "Riley, allowed now, types in Sam's terminal",
+      "riley",
+      "app",
+      at(riley),
+      (p) => p.getByTitle("Hosts"),
+      async (p) => {
+        await clickTerminal(p);
+        await p.keyboard.type("echo second-try\n", { delay: 5 });
+        await new Promise((r) => setTimeout(r, 1500));
+        if (!(await screenText(sam.window)).includes("second-try")) {
+          const said = (await p.locator("body").innerText()).match(/[^\n]*(control|driv)[^\n]*/i)?.[0];
+          j.issue(
+            said
+              ? `allowed, typing still did nothing: Sam still has control of the pane; the screen said: "${said.trim()}"`
+              : "allowed, typing still did nothing: Sam still has control of the pane, and nothing on screen says so but a ✎ sam badge",
+          );
+        }
+      },
+    );
 
-    await step("take-control", "Riley takes control of the pane", "riley", "app", at(riley), (p) => p.getByText(/take control|ask for control/i), async (p) => {
-      const v = p.viewportSize()!;
-      await p.mouse.click(v.width / 2, v.height / 2, { button: "right" });
-      await p.getByRole("menuitem", { name: /Take control/ }).click();
-    });
+    await step(
+      "take-control",
+      "Riley takes control of the pane",
+      "riley",
+      "app",
+      at(riley),
+      (p) => p.getByText(/take control|ask for control/i),
+      async (p) => {
+        const v = p.viewportSize()!;
+        await p.mouse.click(v.width / 2, v.height / 2, { button: "right" });
+        await p.getByRole("menuitem", { name: /Take control/ }).click();
+      },
+    );
 
-    await step("riley-drives", "Riley types in Sam's terminal", "riley", "app", at(riley), (p) => p.getByTitle("Hosts"), async (p) => {
-      await clickTerminal(p);
-      j.typed(`echo ${marker}`);
-      await p.keyboard.type(`echo ${marker}\n`, { delay: 5 });
-      await expect.poll(() => screenText(p), { timeout: 15_000 }).toContain("hi-from-riley-42");
-    });
+    await step(
+      "riley-drives",
+      "Riley types in Sam's terminal",
+      "riley",
+      "app",
+      at(riley),
+      (p) => p.getByTitle("Hosts"),
+      async (p) => {
+        await clickTerminal(p);
+        j.typed(`echo ${marker}`);
+        await p.keyboard.type(`echo ${marker}\n`, { delay: 5 });
+        await expect.poll(() => screenText(p), { timeout: 15_000 }).toContain("hi-from-riley-42");
+      },
+    );
 
     await step(
       "sam-sees",
