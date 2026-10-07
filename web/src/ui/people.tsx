@@ -99,9 +99,17 @@ export function PaneMarks({ client, pane }: { client: Client; pane: PaneId }) {
           </span>
         ))}
         {driver ? (
-          <span class="pane-driver" data-driver={driver.who} title={`${driver.name} is driving: only their typing reaches it`}>
-            ✎ {driver.name.split("@")[0]}
-          </span>
+          <>
+            <span class="pane-driver" data-driver={driver.who} title={`${driver.name} is driving: only their typing reaches it`}>
+              ✎ {driver.name.split("@")[0]}
+            </span>
+            {/* You may type here, but they have control: say how to get it (#551). */}
+            {!pair && client.mayType(pane) ? (
+              <button class="pane-take" data-take-control={pane} onClick={() => client.paneOp(pane, { op: "take_control" })}>
+                Take control
+              </button>
+            ) : null}
+          </>
         ) : pair ? (
           <span class="pane-driver" title="Pair mode: everyone types">
             ✎ pair

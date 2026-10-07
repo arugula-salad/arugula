@@ -264,9 +264,8 @@ test("J2a: two friends link up by sharing a session; the friend types in the own
       at(riley),
       (p) => p.getByText(/take control|ask for control/i),
       async (p) => {
-        const v = p.viewportSize()!;
-        await p.mouse.click(v.width / 2, v.height / 2, { button: "right" });
-        await p.getByRole("menuitem", { name: /Take control/ }).click();
+        // On the pane, beside whose control it's in.
+        await p.getByRole("button", { name: "Take control" }).first().click();
       },
     );
 
@@ -309,6 +308,5 @@ test("J2a: two friends link up by sharing a session; the friend types in the own
     "open-share": "#551: Share is only in the session menu",
     "find-fingerprint": "#551: nothing says where your first device's fingerprint is",
     "find-machine": "#551: a shared machine is named only in the host menu",
-    "take-control": "#551: allowed to drive, but the owner has control, and nothing says Take control",
   });
 });

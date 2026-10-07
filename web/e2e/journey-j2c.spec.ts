@@ -400,9 +400,8 @@ test("J2c: #551's evening: a machine already in one team, a friend's second team
       at(riley),
       (p) => p.getByText(/take control|ask for control/i),
       async (p) => {
-        const v = p.viewportSize()!;
-        await p.mouse.click(v.width / 2, v.height / 2, { button: "right" });
-        await p.getByRole("menuitem", { name: /Take control/ }).click();
+        // On the pane, beside whose control it's in.
+        await p.getByRole("button", { name: "Take control" }).first().click();
       },
     );
 
@@ -450,6 +449,5 @@ test("J2c: #551's evening: a machine already in one team, a friend's second team
     "share-team": "#551: Share is only in the session menu",
     "riley-finds": "#551: a shared machine is named only in the host menu",
     "riley-asks": "#551: after the role change the screen still says you're watching; nothing says to ask",
-    "take-control": "#551: allowed to drive, but the owner has control, and nothing says Take control",
   });
 });
