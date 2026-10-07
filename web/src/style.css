@@ -6515,3 +6515,30 @@ html.chat-open .huddle-bar {
   flex-direction: column;
   align-items: stretch;
 }
+
+/* #551: someone else's machine, new in the list. */
+.machine-note {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--accent);
+  background: var(--surface);
+  line-height: 1.45;
+}
+
+.machine-note p {
+  flex: 1;
+  margin: 0;
+}
+
+.machine-note-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.app.phone .machine-note {
+  flex-direction: column;
+  align-items: stretch;
+}

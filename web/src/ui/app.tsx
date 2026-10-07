@@ -11,7 +11,7 @@ import { ThreadBadge, ThreadLayer } from "./threads";
 import { HuddleBar, HuddleButton } from "./huddle";
 import { ChatPage, Places, useChatOpen } from "./chat";
 import { AttentionBadge, tabAttention } from "./attention";
-import { getFleet, HostButton, HostPicker } from "./hosts";
+import { getFleet, HostButton, HostPicker, NewMachineNote } from "./hosts";
 import { ControlRequests, PaneMarks, PeopleBar, ShareDialog, TabPeople } from "./people";
 import { directory } from "../hosts";
 import { SandboxesLayer } from "./sandboxes";
@@ -96,6 +96,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
         <TopBar client={client} renaming={renaming} setRenaming={setRenaming} inert={chatOpen} />
       ))}
       {state && <ControlBanner client={client} />}
+      {state && <NewMachineNote />}
       {state && <AgentsNudge client={client} />}
       <main class="main" inert={chatOpen}>
         {!state ? (

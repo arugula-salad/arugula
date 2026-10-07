@@ -250,7 +250,8 @@ test("J2c: #551's evening: a machine already in one team, a friend's second team
       at(riley),
       (p) => p.getByText(/sammac/),
       async (p) => {
-        await show(p, "sammac");
+        await p.getByRole("button", { name: "Switch to sammac" }).click();
+        await expect(p.getByTitle("Hosts")).toContainText("sammac", { timeout: 20_000 });
         await expect.poll(() => screenText(p), { timeout: 20_000 }).toContain("hello-42");
       },
       "anything naming Sam's machine (sammac) outside the host menu",
@@ -449,7 +450,6 @@ test("J2c: #551's evening: a machine already in one team, a friend's second team
     // Filed on #551 and #550.
     "find-arugulad": "#550: the app's arugulad isn't on PATH, and nothing says where it is",
     "share-team": "#551: Share is only in the session menu",
-    "riley-finds": "#551: a shared machine is named only in the host menu",
     "riley-asks": "#551: after the role change the screen still says you're watching; nothing says to ask",
   });
 });

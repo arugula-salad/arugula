@@ -183,10 +183,7 @@ test("J2a: two friends link up by sharing a session; the friend types in the own
       at(riley),
       (p) => p.getByText(/sammac/),
       async (p) => {
-        if (!(await p.getByTitle("Hosts").innerText()).includes("sammac")) {
-          await p.getByTitle("Hosts").click();
-          await p.getByRole("menuitem", { name: /sammac/ }).click();
-        }
+        await p.getByRole("button", { name: "Switch to sammac" }).click();
         await expect(p.getByTitle("Hosts")).toContainText("sammac", { timeout: 20_000 });
         await expect.poll(() => screenText(p), { timeout: 20_000 }).toContain("hello-42");
       },
@@ -311,6 +308,5 @@ test("J2a: two friends link up by sharing a session; the friend types in the own
   await j.finish({
     // Filed on #551: what nothing on screen leads to today.
     "open-share": "#551: Share is only in the session menu",
-    "find-machine": "#551: a shared machine is named only in the host menu",
   });
 });

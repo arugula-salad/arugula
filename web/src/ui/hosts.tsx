@@ -3,6 +3,7 @@
 // that host's layout, connected straight to it.
 
 import { Fragment } from "preact";
+import { useState } from "preact/hooks";
 import { directory } from "../hosts";
 import type { Fleet } from "../fleet";
 import { useSubscribe } from "./hooks";
@@ -239,5 +240,81 @@ export function HostSection({ close }: { close: () => void }) {
         )}
       </div>
     </section>
+  );
+}
+
+const SEEN_KEY = "arugula.hosts.others";
+
+function loadSeen(): Set<string> | null {
+  try {
+    const v = localStorage.getItem(SEEN_KEY);
+    return v ? new Set(JSON.parse(v) as string[]) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveSeen(seen: Set<string>) {
+  try {
+    localStorage.setItem(SEEN_KEY, JSON.stringify([...seen]));
+  } catch {
+    // Not remembered: said again on the next page.
+  }
+}
+
+/** Machines someone else lets you reach, said once. Null until the first
+ * list (what's there then isn't news). */
+let others: Set<string> | null = loadSeen();
+
+/** #551: someone else's machine that just reached your list (a share you
+ * accepted, a team's machine): named here, not only in the host menu. */
+export function NewMachineNote() {
+  useSubscribe((fn) => directory.subscribe(fn));
+  useSubscribe((fn) => fleet?.subscribe(fn) ?? (() => {}));
+  const [, redraw] = useState(0);
+  if (!fleet || directory.stale) return null;
+  const theirs = directory.names.flatMap((name) => {
+    const h = fleet!.host(name);
+    // Someone else's: yours in a team isn't news to you.
+    return h?.owner ? [{ name, owner: h.owner, team: h.teamName }] : [];
+  });
+  if (others === null) {
+    others = new Set(theirs.map((m) => m.name));
+    saveSeen(others);
+    return null;
+  }
+  const seen = others;
+  const done = (name: string) => {
+    seen.add(name);
+    saveSeen(seen);
+    redraw((n) => n + 1);
+  };
+  // Shown already, by the host menu: found.
+  if (theirs.some((x) => x.name === directory.current) && !seen.has(directory.current)) {
+    seen.add(directory.current);
+    saveSeen(seen);
+  }
+  const m = theirs.find((x) => !seen.has(x.name));
+  if (!m) return null;
+  return (
+    <div class="machine-note" role="status" data-machine-note={m.name}>
+      <p>
+        You can reach {m.owner}'s machine <b>{m.name}</b>
+        {m.team ? ` (team ${m.team})` : ""} now. Switch to it here, or later from the host menu.
+      </p>
+      <div class="machine-note-actions">
+        <button
+          class="primary"
+          data-machine-note-show
+          onClick={() => {
+            done(m.name);
+            directory.select(m.name);
+          }}
+        >
+          Switch to {m.name}
+        </button>
+        <button onClick={() => done(m.name)}>Not now</button>
+      </div>
+    </div>
   );
 }
