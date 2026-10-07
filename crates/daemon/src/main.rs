@@ -8,7 +8,6 @@ mod args;
 mod authz;
 mod block;
 mod browser;
-mod calls;
 mod classify;
 mod control;
 // Windows panes on a pseudoconsole (M56).
@@ -68,7 +67,6 @@ mod store;
 mod sync;
 mod sys;
 mod tailscale;
-mod threads;
 mod tls;
 mod update;
 #[cfg(unix)]

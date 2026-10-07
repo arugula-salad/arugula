@@ -51,13 +51,7 @@ impl Daemon {
                 let _ = reply.send(r);
             }
             Api::ThreadPlace(target, msg, reply) => {
-                let r = self
-                    .thread_session(target)
-                    .ok_or_else(|| "no such thread, or it's a private pane's".to_owned())
-                    .map(|s| {
-                        (s, msg.and_then(|id| self.threads.get(target).iter().find(|m| m.id == id).map(|m| m.at)))
-                    });
-                let _ = reply.send(r);
+                let _ = reply.send(self.thread_place(target, msg));
             }
             Api::InviteTo(session, pane, reply) => {
                 let r = match self.mux.session(session) {

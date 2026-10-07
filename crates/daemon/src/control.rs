@@ -856,6 +856,7 @@ impl Control {
 
     /// People who have a team role here, by the roster (this daemon's team,
     /// and teams sessions were shared with), connected or not.
+    #[cfg_attr(not(feature = "labs"), allow(dead_code))]
     pub fn team_people(&self) -> Vec<Principal> {
         let Some(e) = self.enrolled() else { return Vec::new() };
         let mut out = Vec::new();
@@ -882,6 +883,7 @@ impl Control {
 
     /// The team's other owners (#386), by account: they get in as the
     /// owner, but each is someone to @mention.
+    #[cfg_attr(not(feature = "labs"), allow(dead_code))]
     pub fn co_owners(&self) -> Vec<Principal> {
         let Some(e) = self.enrolled() else { return Vec::new() };
         let Some(r) = &e.saved.roster else { return Vec::new() };

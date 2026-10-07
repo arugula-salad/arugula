@@ -18,6 +18,7 @@ mod apps;
 mod attach;
 mod attention;
 mod blocks;
+#[cfg(feature = "labs")]
 mod calls;
 #[cfg(unix)]
 mod client_fixtures;
@@ -43,6 +44,8 @@ mod hand;
 mod hosts;
 mod ide;
 mod invite;
+#[cfg(not(feature = "labs"))]
+mod labs_off;
 mod local_auth;
 mod machines;
 mod mcp;
@@ -58,6 +61,7 @@ mod sites;
 mod ssh;
 mod summaries;
 mod team_answers;
+#[cfg(feature = "labs")]
 mod threads;
 mod tmux;
 mod upgrade;

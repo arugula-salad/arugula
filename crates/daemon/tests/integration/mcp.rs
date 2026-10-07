@@ -870,6 +870,7 @@ async fn labs_lists_all_the_tools_and_the_thread_text() {
         std::fs::write(d.state.join("labs"), "").unwrap();
         let with = s.list_all_tools().await.unwrap();
         assert_eq!(with.len(), 18, "{:?}", names(&with));
+        assert!(!with.iter().any(|t| t.name == "read_thread" || t.name == "post_thread"));
         assert!(!kinds(&with, "show").contains(&"fountain".to_owned()));
         assert!(!instructions(&s).contains("read_thread"), "{}", instructions(&s));
         std::fs::remove_file(d.state.join("labs")).unwrap();
@@ -878,6 +879,7 @@ async fn labs_lists_all_the_tools_and_the_thread_text() {
 }
 
 /// M61: an agent reads the people's thread about a pane and answers in it.
+#[cfg(feature = "labs")]
 #[tokio::test(flavor = "multi_thread")]
 async fn an_agent_reads_and_posts_in_threads() {
     let d = Daemon::child();
@@ -909,6 +911,7 @@ async fn an_agent_reads_and_posts_in_threads() {
 }
 
 /// M61: an agent block's own pane is its thread unless it names another.
+#[cfg(feature = "labs")]
 #[test]
 fn an_agent_blocks_thread_is_its_own() {
     let d = Daemon::child_with(&["--wisp-token-file", "/nonexistent", "--block-listen", "127.0.0.1:0"]);
@@ -924,6 +927,7 @@ fn an_agent_blocks_thread_is_its_own() {
 
 /// A Claude Code in a terminal pane, through `arugula mcp`, is that pane
 /// where a call leaves one out, and `list` says which it is.
+#[cfg(feature = "labs")]
 #[tokio::test(flavor = "multi_thread")]
 async fn a_terminal_pane_is_the_default_of_the_mcp_server_it_runs() {
     let d = Daemon::child();
@@ -977,6 +981,7 @@ async fn a_terminal_pane_is_the_default_of_the_mcp_server_it_runs() {
 
 /// The header only fills in a default: an agent block's token is its own
 /// pane, whatever pane the request says it is in.
+#[cfg(feature = "labs")]
 #[tokio::test(flavor = "multi_thread")]
 async fn an_agent_blocks_token_is_its_own_pane_whatever_the_header_says() {
     use axum::http::{HeaderName, HeaderValue};
