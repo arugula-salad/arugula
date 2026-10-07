@@ -824,7 +824,7 @@ impl Adapter for Gitlab {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::forge::model::{Pr, Want, attention, rollup};
+    use crate::forge::model::{ItemText, Pr, Want, attention, rollup};
 
     fn fixture(f: &str) -> Value {
         let p = format!("{}/tests/fixtures/gitlab/gitlab-cli-3941/{f}", env!("CARGO_MANIFEST_DIR"));

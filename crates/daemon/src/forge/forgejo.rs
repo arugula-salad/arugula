@@ -681,7 +681,7 @@ impl Adapter for Forgejo {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::forge::model::{CheckState, Want, attention, rollup};
+    use crate::forge::model::{CheckState, EventLine, ItemText, Want, attention, rollup};
 
     fn fixture(dir: &str, f: &str) -> Value {
         let p = format!("{}/tests/fixtures/forgejo/{dir}/{f}", env!("CARGO_MANIFEST_DIR"));

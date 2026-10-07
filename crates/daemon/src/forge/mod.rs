@@ -69,6 +69,11 @@ use arugula_proto::{
     api::HistoryKind,
     api::{OpenRequest, RunRequest},
     ask::{Ask, AskKind},
+    forge::{
+        AgentLink, AgentStarted, CheckedOut, Diffed, Draft, DraftStatus, Drafted, Drafts, ForgeLive, ForgeLogin,
+        ForgeState, ForgeWant, ForgeWantKind, LoggedIn, NewIssue, RateLimit, Refreshed, Rerun, ReviewEvent, Write,
+        Written,
+    },
 };
 use futures_util::future::BoxFuture;
 use serde::{Deserialize, Serialize};
@@ -76,9 +81,8 @@ use serde_json::{Value, json};
 use tracing::{info, warn};
 
 use self::{
-    issue::{AgentLink, NewIssue},
     login::{Login, Tea, TokenSource},
-    model::{Check, Event, Issue, Item, ItemKind, Me, Pr, Provider, Review, Reviewer, Want},
+    model::{Check, Event, EventLine, Item, ItemKind, ItemText, Me, Pr, Provider, Review, Reviewer, Want},
 };
 use crate::{
     block::{Block, BlockCtx, Summary, no_method},
@@ -146,41 +150,16 @@ pub struct Polled {
     pub fingerprint: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ReviewEvent {
-    Approve,
-    RequestChanges,
-    Comment,
+/// What the daemon does with a [`Write`] (the type is proto's).
+trait WriteExt: Sized {
+    /// The write a method call asks for.
+    fn from_call(method: &str, args: &Value) -> Result<Self, String>;
+    /// "a comment", "an approval", for cards and logs.
+    fn what(&self) -> &'static str;
+    fn body(&self) -> Option<&str>;
 }
 
-/// A write to the forge.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "method", rename_all = "snake_case")]
-pub enum Write {
-    Comment {
-        body: String,
-    },
-    Review {
-        event: ReviewEvent,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        body: Option<String>,
-    },
-    Merge {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        style: Option<String>,
-    },
-    /// Run the failed checks again (GitLab: retry the head pipeline).
-    #[serde(rename = "rerun_checks")]
-    Rerun,
-    /// M40: a webhook to this daemon on the repository, made or removed
-    /// with the person's login (Forgejo, GitLab).
-    Live {
-        on: bool,
-    },
-}
-
-impl Write {
+impl WriteExt for Write {
     fn from_call(method: &str, args: &Value) -> Result<Self, String> {
         let body = args["body"].as_str().map(str::to_owned);
         match method {
@@ -212,7 +191,6 @@ impl Write {
         }
     }
 
-    /// "a comment", "an approval", for cards and logs.
     fn what(&self) -> &'static str {
         match self {
             Write::Comment { .. } => "a comment",
@@ -306,7 +284,7 @@ pub trait Adapter: Send + Sync {
         false
     }
     /// The rate limit as last heard, and any backing off (M38: GitHub).
-    fn rate(&self) -> Option<Value> {
+    fn rate(&self) -> Option<RateLimit> {
         None
     }
     /// M40: make (`on`) or remove a repository webhook to this daemon:
@@ -356,38 +334,6 @@ fn adapter(provider: Provider, login: &Login, tea: Arc<Tea>) -> Arc<dyn Adapter>
 
 // ---------------------------------------------------------------- the block
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum DraftStatus {
-    #[default]
-    Waiting,
-    Sent,
-    Dropped,
-}
-
-/// An agent's write, waiting for a person.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Draft {
-    pub id: String,
-    #[serde(flatten)]
-    pub write: Write,
-    /// Who drafted it (`mcp:claude-code`, `agent`).
-    pub by: String,
-    pub at_ms: u64,
-    #[serde(default)]
-    pub status: DraftStatus,
-    /// Who sent or dropped it, and when.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub settled_by: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub settled_ms: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub url: Option<String>,
-    /// The last send failed: why (it waits again, text kept).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
-}
-
 fn pr_kind() -> ItemKind {
     ItemKind::Pr
 }
@@ -429,68 +375,11 @@ struct Config {
     new: Option<NewIssue>,
 }
 
-/// What it wants of you, as the client draws it.
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-struct WantView {
-    kind: &'static str,
-    why: String,
-}
-
-#[derive(Debug, Clone, Default, Serialize)]
-struct State {
-    provider: Provider,
-    /// M37: `pr` or `issue`.
-    kind: ItemKind,
-    repo: String,
-    number: u64,
-    api: Option<String>,
-    login: Option<String>,
-    host: Option<String>,
-    dir: Option<String>,
-    loading: bool,
-    error: Option<String>,
-    /// It can only read, and why (GitLab with no glab login: anonymous).
-    read_only: Option<String>,
-    /// Logins to pick from, when none (or several) matched.
-    logins: Vec<LoginView>,
-    /// "You", on the forge.
-    me: Option<String>,
-    pr: Option<Pr>,
-    /// M37: the issue, for `kind: issue`.
-    issue: Option<Issue>,
-    /// M37: the agent on it.
-    link: Option<AgentLink>,
-    /// M37: a new issue, before (and after) it went out.
-    new: Option<NewIssue>,
-    wants: Vec<WantView>,
-    /// Whether *Rerun checks* is possible here, and where the failed run
-    /// is when it isn't (Forgejo).
-    rerun: Option<Value>,
-    drafts: Vec<Draft>,
-    updated_ms: u64,
-    polls: u64,
-    /// M40: pokes heard (webhooks through control or straight here).
-    pokes: u64,
-    reads: u64,
-    watching: bool,
-    /// The last write's result (sent directly), for the client.
-    said: Option<String>,
-    /// The forge's rate limit and any backing off (M38: GitHub).
-    rate: Option<Value>,
-}
-
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-struct LoginView {
-    name: String,
-    url: String,
-    user: String,
-}
-
 pub struct ForgeBlock {
     ctx: BlockCtx,
     me: Weak<ForgeBlock>,
     config: Mutex<Config>,
-    state: Mutex<State>,
+    state: Mutex<ForgeState>,
     tea: tokio::sync::OnceCell<Result<Arc<Tea>, String>>,
     adapter: Mutex<Option<Arc<dyn Adapter>>>,
     you: Mutex<Option<Me>>,
@@ -532,7 +421,7 @@ impl ForgeBlock {
         {
             return Err("a new issue needs a title".into());
         }
-        let state = State {
+        let state = ForgeState {
             provider: config.provider,
             kind: config.kind,
             link: config.link.clone(),
@@ -547,7 +436,7 @@ impl ForgeBlock {
             // sent; a person's is read once it's opened.
             loading: config.number != 0
                 || config.new.as_ref().is_some_and(|n| !n.agent && n.status == DraftStatus::Waiting),
-            ..State::default()
+            ..ForgeState::default()
         };
         crate::review::log(
             &ctx,
@@ -811,7 +700,7 @@ impl ForgeBlock {
     fn candidates(&self, logins: &[Login]) {
         self.state.lock().unwrap().logins = logins
             .iter()
-            .map(|l| LoginView { name: l.name.clone(), url: l.url.clone(), user: l.user.clone() })
+            .map(|l| ForgeLogin { name: l.name.clone(), url: l.url.clone(), user: l.user.clone() })
             .collect();
     }
 
@@ -1048,7 +937,7 @@ impl ForgeBlock {
                 // retries the pipeline (`rerun_checks`).
                 let mut r = plain(ReasonKind::Failed, why);
                 r.bundle = Some(format!("failed:{bundle}"));
-                if self.state.lock().unwrap().rerun.as_ref().is_some_and(|v| v["api"] == true) {
+                if self.state.lock().unwrap().rerun.as_ref().is_some_and(|v| v.api) {
                     r.actions.insert(0, Action::Rerun);
                 }
                 (Attention::Done, r)
@@ -1067,14 +956,14 @@ impl ForgeBlock {
             let mut st = self.state.lock().unwrap();
             st.wants = wants
                 .iter()
-                .map(|w| WantView {
+                .map(|w| ForgeWant {
                     kind: match w {
-                        Want::Review { .. } => "review",
-                        Want::Failed { .. } => "failed",
-                        Want::Changes { .. } => "changes",
-                        Want::Mention { .. } => "mention",
-                        Want::Done { .. } => "done",
-                        Want::Assigned { .. } => "assigned",
+                        Want::Review { .. } => ForgeWantKind::Review,
+                        Want::Failed { .. } => ForgeWantKind::Failed,
+                        Want::Changes { .. } => ForgeWantKind::Changes,
+                        Want::Mention { .. } => ForgeWantKind::Mention,
+                        Want::Done { .. } => ForgeWantKind::Done,
+                        Want::Assigned { .. } => ForgeWantKind::Assigned,
                     },
                     why: w.why().to_owned(),
                 })
@@ -1157,18 +1046,18 @@ impl ForgeBlock {
                 self.ctx.rt.spawn(async move { me.raise_draft().await });
             }
             let waiting = self.config.lock().unwrap().drafts.len();
-            return Ok(json!({ "draft": id, "status": "waiting", "queued": waiting,
-                "note": "a person sends, edits or drops it; read_forge (or describe) shows what became of it" }));
+            return to_value(Drafted {
+                draft: id,
+                status: DraftStatus::Waiting,
+                queued: waiting as u64,
+                note: "a person sends, edits or drops it; read_forge (or describe) shows what became of it".into(),
+            });
         }
         // Approving the review asked of you (the rail's `allow`): its card
         // closes saying who.
         let gate = args["key"].as_str().and_then(|k| self.gate.lock().unwrap().clone().filter(|g| g.key() == k));
         let sent = self.send(&w, by.as_deref(), None).await?;
-        let mut out = json!({ "sent": w.what(), "url": sent.url, "said": sent.said, "by": by });
-        if let Some(g) = gate {
-            out["gate"] = json!(g);
-        }
-        Ok(out)
+        to_value(Written { sent: w.what().into(), url: sent.url, said: sent.said, by, gate })
     }
 
     /// Send a write as the owner's login, saying who sent it (and who
@@ -1368,7 +1257,7 @@ impl ForgeBlock {
             local: self.ctx.sprite.is_none(),
         };
         let block = self.ctx.open(req).await?;
-        Ok(json!({ "block": block, "worktree": wt, "rev_a": mb, "rev_b": format!("refs/arugula/pr/{number}") }))
+        to_value(Diffed { block, worktree: wt, rev_a: mb, rev_b: format!("refs/arugula/pr/{number}") })
     }
 
     async fn checkout(&self, args: Value) -> Result<Value, String> {
@@ -1381,7 +1270,7 @@ impl ForgeBlock {
             ..RunRequest::default()
         };
         let pane = self.ctx.run(req).await?;
-        Ok(json!({ "pane": pane, "worktree": wt }))
+        to_value(CheckedOut { pane, worktree: wt })
     }
 }
 
@@ -1427,7 +1316,7 @@ printf 'ok %s/%s %s\n' "$top" "$w" "$mb"
 
 /// What the failed checks' rerun is: through the API (`api`: GitLab, as
 /// `rerun_checks`), or on a forge with none (or no login), the run's page.
-fn rerun(pr: &Pr, api: bool) -> Option<Value> {
+fn rerun(pr: &Pr, api: bool) -> Option<Rerun> {
     if pr.rollup != Some(model::CheckState::Failure) {
         return None;
     }
@@ -1436,19 +1325,29 @@ fn rerun(pr: &Pr, api: bool) -> Option<Value> {
     if api && red.is_some_and(|c| c.source == model::CheckSource::CheckRun) {
         // M38: GitHub reruns each red workflow run's failed jobs.
         let runs = pr.checks.iter().filter(|c| c.state.red() && c.run.is_some()).count();
-        return Some(json!({ "api": true, "url": url, "runs": runs,
-            "note": "Rerun reruns the failed jobs of each red workflow run" }));
+        return Some(Rerun {
+            api: true,
+            url,
+            note: "Rerun reruns the failed jobs of each red workflow run".into(),
+            runs: Some(runs as u64),
+            pipeline: None,
+        });
     }
     if api {
         let pipeline = red.and_then(|c| c.run.as_ref()).map(|r| r.id.clone());
-        return Some(json!({ "api": true, "url": url, "pipeline": pipeline,
-            "note": "Rerun retries the pipeline's failed jobs" }));
+        return Some(Rerun {
+            api: true,
+            url,
+            note: "Rerun retries the pipeline's failed jobs".into(),
+            runs: None,
+            pipeline: Some(pipeline),
+        });
     }
     let note = match pr.checks.first().map(|c| c.source) {
         Some(model::CheckSource::PipelineJob) => "Rerun needs a glab login: rerun them on the pipeline's page",
         _ => "Forgejo has no API to rerun checks: rerun them on the run's page",
     };
-    Some(json!({ "api": false, "url": url, "note": note }))
+    Some(Rerun { api: false, url, note: note.into(), runs: None, pipeline: None })
 }
 
 /// A draft as a form card: the text to edit (and a review's event).
@@ -1522,6 +1421,28 @@ fn edited(w: &Write, content: &Value) -> Write {
     }
 }
 
+/// A typed answer, as the block's methods give them.
+fn to_value<T: Serialize>(v: T) -> Result<Value, String> {
+    serde_json::to_value(v).map_err(|e| e.to_string())
+}
+
+impl ForgeBlock {
+    /// The block's state as clients read it: what it keeps, and how it's
+    /// kept current now.
+    fn view(&self) -> ForgeState {
+        let mut v = self.state.lock().unwrap().clone();
+        v.watching = self.live.drawn();
+        // M40: webhook or polling, and why.
+        let s = self.standing();
+        v.live = if s.live == "webhook" { ForgeLive::Webhook } else { ForgeLive::Polling };
+        v.live_via = s.via.map(str::to_owned);
+        v.live_why = s.why;
+        v.live_heard_ms = s.heard_ms;
+        v.hook = s.hook;
+        v
+    }
+}
+
 impl Block for ForgeBlock {
     fn kind(&self) -> BlockType {
         BlockType::Forge
@@ -1532,16 +1453,7 @@ impl Block for ForgeBlock {
     }
 
     fn state(&self) -> Value {
-        let mut v = serde_json::to_value(&*self.state.lock().unwrap()).unwrap_or_default();
-        v["watching"] = self.live.drawn().into();
-        // M40: webhook or polling, and why.
-        let s = self.standing();
-        v["live"] = json!(s.live);
-        v["live_via"] = json!(s.via);
-        v["live_why"] = json!(s.why);
-        v["live_heard_ms"] = json!(s.heard_ms);
-        v["hook"] = json!(s.hook);
-        v
+        serde_json::to_value(self.view()).unwrap_or_default()
     }
 
     fn text(&self) -> String {
@@ -1565,7 +1477,7 @@ impl Block for ForgeBlock {
         if !st.wants.is_empty() {
             out.push_str("waiting on you:\n");
             for w in &st.wants {
-                out.push_str(&format!("  {}: {}\n", w.kind, w.why));
+                out.push_str(&format!("  {}: {}\n", w.kind.as_str(), w.why));
             }
         }
         let waiting: Vec<&Draft> = st.drafts.iter().filter(|d| d.status == DraftStatus::Waiting).collect();
@@ -1594,7 +1506,7 @@ impl Block for ForgeBlock {
                 let st = me.state.lock().unwrap();
                 match &st.error {
                     Some(e) => Err(e.clone()),
-                    None => Ok(json!({ "reads": st.reads, "polls": st.polls })),
+                    None => to_value(Refreshed { reads: st.reads, polls: st.polls }),
                 }
             }),
             "login" => Box::pin(async move {
@@ -1618,7 +1530,7 @@ impl Block for ForgeBlock {
                 me.connected(provider, l, tea);
                 me.read(true).await;
                 me.ctx.changed();
-                Ok(json!({ "login": name }))
+                to_value(LoggedIn { login: name.to_owned() })
             }),
             "review" | "merge" | "rerun_checks" if self.config.lock().unwrap().kind == ItemKind::Issue => {
                 let e = format!("an issue has no {method}: comment on it, or open its pull request");
@@ -1637,11 +1549,11 @@ impl Block for ForgeBlock {
             "checkout" => Box::pin(async move { me.ok_or("closed")?.checkout(args).await }),
             "drafts" => {
                 let d = self.state.lock().unwrap().drafts.clone();
-                Box::pin(async move { Ok(json!({ "drafts": d })) })
+                Box::pin(async move { to_value(Drafts { drafts: d }) })
             }
             "state" => {
-                let s = self.state();
-                Box::pin(async move { Ok(s) })
+                let s = self.view();
+                Box::pin(async move { to_value(s) })
             }
             m => {
                 let e = no_method(BlockType::Forge, m);
@@ -1932,6 +1844,36 @@ async fn remote_of(dir: &str) -> Result<(String, String, String), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A config an older daemon saved (before `seen_ms`, `log_mark`, the
+    /// settled fields on drafts, M37's link and new issue) still reads: the
+    /// block's state is kept in it, and it's now made of proto's types.
+    #[test]
+    fn a_config_an_older_daemon_saved_still_reads() {
+        let old = json!({
+            "provider": "forgejo", "repo": "o/r", "number": 7,
+            "api": null, "login": "t", "host": null, "dir": null,
+            "drafts": [
+                { "id": "d1", "method": "comment", "body": "text", "by": "mcp:x", "at_ms": 5 },
+                { "id": "d2", "method": "review", "event": "request_changes", "body": "no", "by": "an agent",
+                  "at_ms": 6, "status": "sent", "settled_by": "jake", "settled_ms": null, "url": null, "error": null },
+            ],
+        });
+        let c: Config = serde_json::from_value(old).unwrap();
+        assert_eq!(c.kind, ItemKind::Pr);
+        assert_eq!((c.seen_ms, c.log_mark), (0, 0));
+        assert_eq!(c.drafts[0].status, DraftStatus::Waiting);
+        assert_eq!(c.drafts[1].write, Write::Review { event: ReviewEvent::RequestChanges, body: Some("no".into()) });
+        assert!(c.link.is_none() && c.new.is_none());
+        // M37's: a new issue and a link with nothing but what they began with.
+        let c: Config = serde_json::from_value(json!({
+            "repo": "o/r", "number": 0, "kind": "issue", "new": { "title": "T" },
+            "link": { "branch": "b", "worktree": "/w", "base": "main", "block": 3, "agent": "claude", "at_ms": 1 },
+        }))
+        .unwrap();
+        assert_eq!(c.new.unwrap().status, DraftStatus::Waiting);
+        assert_eq!(c.link.unwrap().pr, None);
+    }
 
     /// #505: a git repository with a commit on `main`, its own `origin`,
     /// and a worktree an illogical daemon made in `.illogical/worktrees/NAME`.

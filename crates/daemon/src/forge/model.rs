@@ -5,230 +5,12 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Which forge.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Provider {
-    #[default]
-    Forgejo,
-    /// GitHub, or GitHub Enterprise (M38).
-    Github,
-    /// GitLab (M39): merge requests, through the person's `glab` login.
-    Gitlab,
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ItemKind {
-    #[default]
-    Pr,
-    /// M37.
-    Issue,
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ItemState {
-    #[default]
-    Open,
-    Closed,
-    Merged,
-}
-
-/// A side of a PR: which repository (a fork's, for its head), branch and
-/// commit.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Branch {
-    pub repo: Option<String>,
-    pub branch: String,
-    pub sha: String,
-}
-
-/// Who a review request is for: a person, or a team (`Org/Name`, or just
-/// `Name` when the forge doesn't say).
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Reviewer {
-    User(String),
-    Team(String),
-}
-
-impl Reviewer {
-    pub fn name(&self) -> &str {
-        match self {
-            Reviewer::User(n) | Reviewer::Team(n) => n,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Item {
-    pub kind: ItemKind,
-    pub number: u64,
-    pub url: String,
-    pub title: String,
-    pub body: String,
-    /// The author's login.
-    pub author: String,
-    pub state: ItemState,
-    pub draft: bool,
-    pub labels: Vec<String>,
-    pub assignees: Vec<String>,
-    pub base: Branch,
-    pub head: Branch,
-    /// `refs/pull/N/head`: what `diff` and `checkout` fetch (never the
-    /// head's branch: AGit PRs have none).
-    pub head_ref: String,
-    pub merge_base: Option<String>,
-    /// `None` while the forge works it out.
-    pub mergeable: Option<bool>,
-    /// The forge says branch protection blocks a merge (GitHub only;
-    /// Forgejo can't tell, so false).
-    pub blocked: bool,
-    /// Review requests still pending (Forgejo's `requested_reviewers` also
-    /// keeps whoever already reviewed: see [`super::forgejo`]).
-    pub requested: Vec<Reviewer>,
-    pub comments: u64,
-    pub updated_at: i64,
-    pub merged_at: Option<i64>,
-    pub merged_by: Option<String>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ReviewState {
-    Approved,
-    ChangesRequested,
-    Commented,
-    Dismissed,
-    /// Started and not submitted (the reviewer's own draft).
-    Pending,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Review {
-    pub id: String,
-    pub author: Option<String>,
-    pub state: ReviewState,
-    pub commit: Option<String>,
-    /// Made on an older head.
-    pub stale: bool,
-    pub at: Option<i64>,
-    pub body: Option<String>,
-    pub url: Option<String>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum CheckSource {
-    /// A commit status (older CI, or another service).
-    Status,
-    /// Forgejo Actions, which write commit statuses.
-    Action,
-    /// A GitHub check run (Actions, or another app).
-    CheckRun,
-    /// A job in a GitLab merge request's head pipeline.
-    PipelineJob,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum CheckState {
-    Queued,
-    Running,
-    Success,
-    Failure,
-    Cancelled,
-    Skipped,
-    Neutral,
-    ActionRequired,
-    /// Waits for someone to start it (a GitLab manual job); not counted.
-    Manual,
-}
-
-impl CheckState {
-    pub fn red(self) -> bool {
-        matches!(self, CheckState::Failure | CheckState::Cancelled | CheckState::ActionRequired)
-    }
-}
-
-/// What a rerun would act on: an Actions run (its number in the repo) and
-/// job.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RunRef {
-    pub id: String,
-    pub job: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Check {
-    pub name: String,
-    pub source: CheckSource,
-    pub state: CheckState,
-    pub allow_failure: bool,
-    /// Absolute (Forgejo's own are relative to the site; the adapter makes
-    /// them whole).
-    pub url: Option<String>,
-    pub description: Option<String>,
-    pub run: Option<RunRef>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum EventKind {
-    Commented,
-    ReviewComment,
-    Reviewed,
-    ReviewRequested,
-    ReviewRequestRemoved,
-    ReviewDismissed,
-    Pushed,
-    Labeled,
-    Assigned,
-    Renamed,
-    Referenced,
-    Merged,
-    Closed,
-    Reopened,
-    BranchDeleted,
-    Milestone,
-    /// GitHub says who was mentioned (`target`), not who wrote it.
-    Mentioned,
-    Other,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Event {
-    /// Provider-prefixed, stable across polls (`fj-1403`).
-    pub id: String,
-    pub at: i64,
-    pub actor: Option<String>,
-    pub kind: EventKind,
-    /// The forge's own name for it, when it's `other` (or more exact).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub what: Option<String>,
-    /// Who a request is for.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub target: Option<Reviewer>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub body: Option<String>,
-    /// A push: how many commits, and whether it was forced.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub commits: Option<u32>,
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub force: bool,
-}
-
-/// A pull request, read whole.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Pr {
-    pub item: Item,
-    pub reviews: Vec<Review>,
-    pub checks: Vec<Check>,
-    pub rollup: Option<CheckState>,
-    /// The newest events, oldest first.
-    pub events: Vec<Event>,
-}
+// The model types the block's state is made of are proto's (`arugula_proto::forge`),
+// which the web client's types are made from; this module keeps their logic.
+pub use arugula_proto::forge::{
+    Branch, Check, CheckSource, CheckState, Event, EventKind, Issue, Item, ItemKind, ItemState, Linked, Pr, Provider,
+    Review, ReviewState, Reviewer, RunRef,
+};
 
 /// The checks' sum: failure if any counted check is red, else running if
 /// any isn't done, else success; `None` when nothing counts. Skipped,
@@ -413,9 +195,14 @@ fn state_word<T: Serialize>(v: &T) -> String {
     serde_json::to_value(v).ok().and_then(|v| v.as_str().map(|s| s.replace('_', " "))).unwrap_or_default()
 }
 
-impl Event {
+/// An event as a line of text.
+pub trait EventLine {
     /// One line: when, who, what (and a body's first line).
-    pub fn line(&self) -> String {
+    fn line(&self) -> String;
+}
+
+impl EventLine for Event {
+    fn line(&self) -> String {
         let who = self.actor.as_deref().unwrap_or("someone");
         let what = match self.kind {
             EventKind::Commented => "commented".to_owned(),
@@ -459,28 +246,6 @@ impl Event {
             .unwrap_or_default();
         format!("{} {who} {what}{body}", when(self.at))
     }
-}
-
-/// M37: a pull request that refers to an issue (from the issue's
-/// timeline), or one found by its head branch.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Linked {
-    pub number: u64,
-    pub title: String,
-    pub state: ItemState,
-    pub url: String,
-    /// Its head branch, when the forge said.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub head: Option<String>,
-}
-
-/// An issue, read whole (M37): the item (no branches), its newest events,
-/// and the pull requests that refer to it.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Issue {
-    pub item: Item,
-    pub events: Vec<Event>,
-    pub linked: Vec<Linked>,
 }
 
 /// What an issue wants of `me` (M37), for events newer than `seen` (ms):
@@ -532,10 +297,15 @@ pub fn issue_attention(issue: &Issue, me: &Me, seen: i64) -> Vec<Want> {
     out
 }
 
-impl Issue {
-    /// The issue as text, for `capture --text` and agents: header, body,
-    /// the pull requests that refer to it, the timeline.
-    pub fn text(&self, repo: &str) -> String {
+/// A pull request or an issue as text, for `capture --text` and agents.
+pub trait ItemText {
+    fn text(&self, repo: &str) -> String;
+}
+
+impl ItemText for Issue {
+    /// The issue as text: header, body, the pull requests that refer to
+    /// it, the timeline.
+    fn text(&self, repo: &str) -> String {
         let it = &self.item;
         let mut out = vec![format!("{repo}#{} {}", it.number, it.title)];
         out.push(format!("issue · {} · opened by {} · {}", state_word(&it.state), it.author, it.url));
@@ -583,10 +353,9 @@ fn clip(s: &str, n: usize) -> String {
     if s.chars().count() <= n { s.to_owned() } else { format!("{}…", s.chars().take(n).collect::<String>()) }
 }
 
-impl Pr {
-    /// The PR as text, for `capture --text` and agents: header, body,
-    /// reviews, checks, the timeline.
-    pub fn text(&self, repo: &str) -> String {
+impl ItemText for Pr {
+    /// The PR as text: header, body, reviews, checks, the timeline.
+    fn text(&self, repo: &str) -> String {
         let it = &self.item;
         let mut out = vec![format!("{repo}#{} {}", it.number, it.title)];
         let state = if it.draft && it.state == ItemState::Open { "draft".into() } else { state_word(&it.state) };

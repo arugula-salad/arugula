@@ -20,6 +20,7 @@ pub mod api;
 pub mod ask;
 pub mod dirs;
 pub mod follow;
+pub mod forge;
 pub mod fs;
 pub mod hosts;
 pub mod keys;

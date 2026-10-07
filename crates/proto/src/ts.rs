@@ -14,6 +14,7 @@ use crate::{
         OpenConversationRequest, OpenConversationResponse, OpenRequest, OpenResponse, RunRequest, RunResponse, Share,
         ShareRequest, TeamPins, TeamPinsRequest, ThreadMessages, ThreadPostRequest, ThreadPosted, ThreadReadRequest,
     },
+    forge::ForgeState,
     hosts::{ControlState, HostFeatures, HostInfo},
 };
 
@@ -72,6 +73,7 @@ fn generate() -> String {
     c.visit::<Share>();
     c.visit::<GuestInviteRequest>();
     c.visit::<GuestInvite>();
+    c.visit::<ForgeState>();
     c.visit::<RemoteRef>();
     c.decls.sort();
     let mut out = String::from(
