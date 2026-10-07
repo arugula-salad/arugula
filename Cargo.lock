@@ -274,12 +274,14 @@ dependencies = [
  "serde",
  "serde_json",
  "ts-rs",
+ "tungstenite 0.30.0",
 ]
 
 [[package]]
 name = "arugula-testkit"
 version = "0.26.2"
 dependencies = [
+ "arugula-proto",
  "nix",
  "serde_json",
  "tokio-tungstenite 0.30.0",

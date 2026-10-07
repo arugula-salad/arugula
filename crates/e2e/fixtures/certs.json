@@ -1,0 +1,95 @@
+{
+  "certs": [
+    {
+      "account": "acct",
+      "approver": "37f824883d50f9a4",
+      "created": 1,
+      "device": "37f824883d50f9a4",
+      "kind": "browser",
+      "name": "laptop ✓",
+      "noise": "099f788779c94ac15a0dfce2320e81d17e29b097f825e7f888cfcb2815869d77",
+      "sig": "418af43c3a5d11c5d80a5819d8eddb0bb06df86b1ad03e20a3a92aa355cb2762b810e2b79d968fac451af77cba4abf67c8f52eb03e33ed59aea4b7af5604d00e",
+      "sign": "dacce21af609b845fa0bc7905c02ab7c48833d767e4f0921c4f5cec8ca7def44",
+      "v": 1
+    },
+    {
+      "account": "acct",
+      "approver": "37f824883d50f9a4",
+      "created": 2,
+      "device": "410ea04bffe4b014",
+      "kind": "browser",
+      "name": "phone",
+      "noise": "3f011a62a6fd61731f8f0c8d706261724932e7feb142d8fbe7e7262062406206",
+      "sig": "8072ceba1d0683722539966ef3442a22508ffac19515cd0d9e5c148c198d0c5e54ec2f16622a78b7ded1b2b27cbca9f8403fc337f21e9ca98d37c39b13313709",
+      "sign": "3185b1e4f1e568d1297b2b2377dfb5f9690169252b9ad11e2aac7716bed034cf",
+      "v": 1
+    },
+    {
+      "account": "acct",
+      "approver": "410ea04bffe4b014",
+      "created": 3,
+      "device": "396bc5d7f1568612",
+      "kind": "daemon",
+      "name": "geek",
+      "noise": "4c089ec7630989c7ae1d5a37a19c0d378847af68cea5a01a24064a5b24fa9313",
+      "sig": "06950261579b3a7e4a47cf51d3225442c97ad9831c4a10553efaf7397126e3ae837b79213501c6c1dc4b966905fa3f2ea560f0ab0fcada21e1e891543d64d307",
+      "sign": "3f9da351674a0b3b11218b2c099e9fdd1fbc96c78c3554cff9a6f4f3a5b2e74f",
+      "v": 1
+    },
+    {
+      "account": "acct",
+      "approver": "410ea04bffe4b014",
+      "created": 50,
+      "device": "031ccf630a9787ab",
+      "kind": "daemon",
+      "name": "late",
+      "noise": "6c313705ba5d60e14bc3479c7a144757f1630029786a3fdfa9b35100e57db46e",
+      "sig": "b38f2c23d4b9520992b8a49451eadb492105117191ba03f8df25b6fdd2c1268487a1acd3b7a9edf384339ab20cfc6df4ce4325a1dbcd5f4a6185845b45fb420f",
+      "sign": "4ad7791e4e8fd6aa85d2d2d28de0589688aee5d7090713155e0fab5d5c904ff1",
+      "v": 1
+    },
+    {
+      "account": "acct",
+      "approver": "1f5dbcdb6538142c",
+      "created": 4,
+      "device": "1f5dbcdb6538142c",
+      "kind": "browser",
+      "name": "control's",
+      "noise": "e2661a137609cf924c1eb97fd3478a010fe3821dd62c05a978a4b25d0a0f4617",
+      "sig": "379df2e76e5d44a04e6701f67b8dcd4b37f93b8078f1efdaebd72e1d46692bbf7bfaa1da34e1e3ae318101a615bb11add41af270fd3139ebf47b6e01fb5ceb01",
+      "sign": "828f497d00ae09fbc422355c2baef7f670f78e3c148c045cb6a00df07324d30f",
+      "v": 1
+    }
+  ],
+  "daemon": {
+    "account": "acct",
+    "approver": "410ea04bffe4b014",
+    "created": 3,
+    "device": "396bc5d7f1568612",
+    "kind": "daemon",
+    "name": "geek",
+    "noise": "4c089ec7630989c7ae1d5a37a19c0d378847af68cea5a01a24064a5b24fa9313",
+    "sig": "06950261579b3a7e4a47cf51d3225442c97ad9831c4a10553efaf7397126e3ae837b79213501c6c1dc4b966905fa3f2ea560f0ab0fcada21e1e891543d64d307",
+    "sign": "3f9da351674a0b3b11218b2c099e9fdd1fbc96c78c3554cff9a6f4f3a5b2e74f",
+    "v": 1
+  },
+  "joinCode": "XVPNK-3CC7M",
+  "revocations": [
+    {
+      "account": "acct",
+      "at": 10,
+      "by": "37f824883d50f9a4",
+      "device": "410ea04bffe4b014",
+      "sig": "d02521d465ae4785124039e2021709fa095485cc43841e41633242280aec7aa6e554e9a6225cf4e91f949c3697fb7efef7b38f99d17ca1c696e69d470bcc9e0e",
+      "v": 1
+    }
+  ],
+  "trust": {
+    "account": "acct",
+    "root": "37f824883d50f9a4"
+  },
+  "trusted": [
+    "37f824883d50f9a4",
+    "396bc5d7f1568612"
+  ]
+}

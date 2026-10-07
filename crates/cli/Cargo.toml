@@ -32,4 +32,5 @@ nix = { version = "0.31.3", features = ["term", "poll", "signal", "ioctl", "host
 workspace = true
 
 [dev-dependencies]
+arugula-proto = { version = "0.26.2", path = "../proto", features = ["fixture-server"] }
 proptest = "1.11.0"

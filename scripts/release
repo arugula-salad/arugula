@@ -6,7 +6,8 @@
 #
 # The daemon (v*):
 #   release check-version TAG      the tag matches the workspace version, on a
-#                                  green commit (check-green)
+#                                  green commit (check-green), and the
+#                                  release's client fixtures are copied
 #   release upload TAG FILE...     attach files to TAG's release (a draft, made if new)
 #   release sums TAG               SHA256SUMS of the release's tarballs and zips
 #                                  (each under its new and its old name)
@@ -133,6 +134,10 @@ case "${1:-}" in
   check-version)
     v=$(version)
     [ "$2" = "v$v" ] || { echo "tag $2 doesn't match the workspace version $v" >&2; exit 1; }
+    # What this release's clients send and see, for later daemons to replay
+    # (#200).
+    [ -n "$(ls crates/proto/fixtures/releases/"$v"/*.jsonl 2>/dev/null)" ] \
+      || { echo "no crates/proto/fixtures/releases/$v: run \`just release-fixtures\` and commit it" >&2; exit 1; }
     check_green "$2"
     ;;
   check-app-version)

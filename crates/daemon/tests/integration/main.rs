@@ -18,6 +18,8 @@ mod attach;
 mod attention;
 mod blocks;
 mod calls;
+#[cfg(unix)]
+mod client_fixtures;
 mod control_moves;
 mod control_state;
 mod conversations;

@@ -25,8 +25,8 @@ or an account skip without it and name what's missing
 
 | Command | What it runs | In CI |
 |---|---|---|
-| `cargo nextest run --workspace` (in `just test`) | unit tests in every crate, and the daemon's integration tests in `crates/daemon/tests/`, `ssh.rs` and `reboot.rs` among them (Docker) | Linux and macOS |
-| `just e2e-interop` (in `just test`) | the browser's end-to-end crypto (`web/src/e2e`) against Rust's (`crates/e2e`): certificate vectors made by `crates/e2e/examples/interop.rs`, and a Noise handshake with its `responder` | Linux and macOS |
+| `cargo nextest run --workspace` (in `just test`) | unit tests in every crate, and the daemon's integration tests in `crates/daemon/tests/`, `ssh.rs` and `reboot.rs` among them (Docker); the [client fixtures](#client-fixtures) both ways | Linux and macOS |
+| `just e2e-interop` (in `just test`) | the browser's end-to-end crypto (`web/src/e2e`) against Rust's (`crates/e2e`): certificate vectors made by `crates/e2e/examples/interop.rs` and the ones checked in (`crates/e2e/fixtures/`), and a Noise handshake with its `responder` | Linux and macOS |
 | `just control-smoke` (in `just test`) | `web/control-smoke.ts`: a fake GitHub, Stripe, push service and Sprites API, the real `arugula-control` and real daemons; headless devices sign in, enroll, approve the daemons' join codes and reach them directly and through the relay; the CLI (M49) logs in with a code the device approves and, with no daemon of its own, runs, lists and captures on one machine directly and one through the relay | Linux and macOS |
 | `just e2e` | the Playwright specs in `web/e2e/` against throwaway daemons (`just e2e <url>` tests a running one): the `chrome` project, and `webkit` for `*.webkit.spec.ts` | Linux (Playwright's Chromium and WebKit) |
 | `just e2e-webkit` | only the `webkit` project: Safari's engine, for device keys (#94) and the one-click invite (#137) | macOS |
@@ -120,6 +120,9 @@ change it), a short state dir under the temp dir named after the tag
 (`.state_dir()` for one of the test's own), and no `NOTIFY_SOCKET`; its
 output goes nowhere. The rest is the test's to say:
 
+- `.record(dir)` saves the client fixtures its sessions record, and
+  `.home_in_state()` gives it a `$HOME` (and XDG dirs) in its state dir
+  ([Client fixtures](#client-fixtures)).
 - `.arg()`, `.args()`; `.no_wisp()` and `.no_tailscale()` keep this host's
   wispd and tailscaled out of it; `.block_listen()` adds
   `--block-listen 127.0.0.1:0`.
@@ -153,7 +156,8 @@ stopping the code-servers it started) wraps the `Daemon` in a struct of its
 own with a `Drop` that does that first, as `machines.rs` and `editors.rs`
 do.
 
-Also in the crate: `listen`, which reads the port a daemon took from
+Also in the crate: `fixture`, recording and replaying [client
+fixtures](#client-fixtures); `listen`, which reads the port a daemon took from
 `state/listen` (don't pick a free port yourself and pass it in: it can be
 taken before the daemon binds it, #66); `strays`, the cleanup above; and
 `Scratch`, a temp dir removed on drop. `crates/daemon/tests/integration/agentd/` builds
@@ -292,9 +296,141 @@ Recorded from real systems and checked in, so tests see real shapes:
 | `crates/daemon/tests/fixtures/s13-*`, `s18-*` | Claude Code hook payloads | by hand |
 | `crates/daemon/tests/fixtures/fountain/`, `chant/` | Fountain API and chant output | by hand |
 | `crates/daemon/tests/fixtures/chant/audit-agents.json` | `chant audit --agents --scope system,user --format json` (chant 0.95.0), with only Claude Code configured | `chant audit --agents` with `HOME` a scratch dir holding only `.claude/CLAUDE.md` and `.claude/settings.json` |
+| `crates/proto/fixtures/` | client fixtures: what a client and the daemon said to each other ([below](#client-fixtures)) | `just record-fixtures [names]` |
+| `crates/proto/fixtures/releases/<version>/` | the client fixtures as each release shipped them | `just release-fixtures`, when releasing |
+| `crates/e2e/fixtures/certs.json` | device certificates, a revocation and what Rust makes of them (`interop fixtures`), for implementations without a Rust toolchain | `just e2e-vectors` |
 
 Scrub anything personal or secret before checking a recording in;
 `gitleaks` runs in CI.
+
+## Client fixtures
+
+Golden sessions recorded from a real daemon (#200), so a client can be
+tested with no daemon or PTY, and the daemon can be tested against the
+clients already released. Each is `crates/proto/fixtures/<name>.jsonl`:
+a header line (`fixture`, `version`, `about`), then one event per line.
+
+```json
+{"t":3,"c":1,"from":"client","request":{"method":"POST","path":"/api/run","body":{"command":"echo fixture-run"}}}
+{"t":5,"c":1,"from":"daemon","response":{"status":200,"type":"application/json","body":{"pane":2}}}
+{"t":3,"c":2,"from":"client","open":"/ws"}
+{"t":6,"c":2,"from":"daemon","msg":{"type":"pong","id":1}}
+{"t":9,"c":2,"from":"daemon","frame":{"kind":"output","pane":1,"offset":131,"data":"fixture-attach\r\n"}}
+```
+
+`t` is milliseconds from the start, `c` the connection (one per HTTP
+request, one per WebSocket). An event is a `request` and its `response`
+(a JSON `body`, a `text` one, or `stream: true` followed by `line`s), an
+`open`ed WebSocket, a `msg` (a control message) or `frame` (terminal
+bytes, as text, or `hex` when they aren't UTF-8) either way, or a `close`.
+
+What changes between runs is replaced when it's recorded
+(`arugula_proto::fixture::Normalize`): the state dir, `$HOME`, the
+socket, the temp dir, ports, the local token, this machine's name and your
+user name become `<state>`, `<home>`, `<sock>`, `<tmp>`, `<port>`,
+`<token>`, `<hostname>` and `<user>`; session names become `<session:N>`;
+fields named like a token become `<token>`; and integers past 10^12
+(times in ms or ns, a pane's epoch) become 0. Numbers stay numbers, so a
+client still parses what it's sent. Output that gets shorter or longer
+moves the pane's later offsets by as much. Pane, tab, session and client
+ids are kept: a fresh daemon hands out the same ones.
+
+| Fixture | What the client does |
+|---|---|
+| `attach` | views the first tab at 80x24 and attaches its pane as the TUI does, types `echo fixture-attach`, resizes to 100x30, detaches |
+| `run-capture` | `arugula run --wait 'echo fixture-run'`, then `arugula capture %2` |
+| `events` | `arugula events -f` while `arugula run` runs a command, until it exits |
+
+### Recording
+
+`just record-fixtures [names]` runs `crates/testkit/src/bin/record-fixtures.rs`
+against throwaway daemons, one per fixture, set up by
+`arugula_testkit::fixture::daemon`: bash without rc files and `PS1='$ '`,
+a `$HOME` in the state dir, no wisp, tailscaled, Claude Code IDE or update
+check. A test can record too: a builder with `.record(dir)` writes each
+session it finishes.
+
+```rust
+let d = arugula_testkit::fixture::daemon(bin, "rec").record("crates/proto/fixtures").start();
+arugula_testkit::fixture::ready(&d); // the first pane's prompt is up
+let s = d.fixture("run-capture", "what it covers");
+let pane = s.post("/api/run", json!({"command": "echo hi"}))["pane"].as_u64().unwrap();
+let mut ws = s.ws();          // records what it sends and what comes
+ws.until("hello", |m| m["type"] == "hello");
+let events = s.stream("/api/events?follow=1");
+s.finish();                   // writes run-capture.jsonl
+```
+
+A session talks to the daemon's TCP port with the local token, as a
+client on the same machine does. Read the diff before checking a
+re-recording in.
+
+### Replaying against a client
+
+`arugula-fixture-server FIXTURE [--listen ADDR] [--timeout SECS]`
+(`cargo run -p arugula-proto --features fixture-server --bin
+arugula-fixture-server -- attach`) serves a fixture's daemon side on a
+port and prints its URL; in a Rust test, `arugula_proto::fixture::server::Server`
+does the same in-process. What the daemon said goes out once everything the
+client said before it in the recording has come. What the client sends
+must match one of its next recorded steps, in any order among themselves:
+a request or message matches when it has every field the recorded one had
+(it may add more, and a placeholder matches anything), and typed bytes
+match however the client splits them. `ping`, `ack` and `focus`, and a
+repeat of a message already matched, pass anywhere; the recorder's own
+pings needn't come. Anything else is unexpected: a 404, or an `error` and a
+close on a WebSocket. When only the client's closes are left, the server
+closes what's open (so `events -f` ends), and that counts as those closes.
+It exits 0 when the fixture played out, 1 on anything unexpected and 2 if
+steps were left at the timeout.
+
+- The TUI: `crates/cli/src/tui/fixture_tests.rs` plays `attach` through the
+  TUI's own connection and `App`, drawn into ratatui's test backend sized
+  so its pane area is the recorded view, typed into with key events. What's
+  left at the end is the recording's detach: the TUI detaches by closing.
+- The CLI: `crates/cli/tests/fixtures.rs` runs `arugula --host <url>`
+  for `run --wait`, `capture` and `events -f`.
+
+Another client (the desktop app, the web client, someone else's) can do
+the same with the binary and no Rust in its tests.
+
+### Replaying against the daemon
+
+`crates/daemon/tests/integration/client_fixtures.rs` sends each fixture's client side
+to a fresh daemon (`arugula_testkit::fixture::replay`), with placeholders
+put back to that daemon's values, and checks what comes back:
+
+- a response's status is the same, and its body has the recorded shape
+  (`arugula_proto::fixture::shape`): every recorded field is there with
+  the same JSON type, `type`, `kind` and `op` are equal, other values may
+  differ, `null` matches anything, and new fields are fine;
+- each recorded message and streamed line arrives with that shape, in any
+  order; `state`, `delta`, `block` and `notice` come as often as things
+  change, so they're checked when one comes but not required;
+- every word (three or more letters) of the recorded output shows up in the
+  pane's output before the client's next step.
+
+A field a released client relied on that's renamed, retyped or dropped
+fails here, as does a message it waited for that no longer comes.
+
+### Releases
+
+Each release copies the set to `crates/proto/fixtures/releases/<version>/`
+(`just release-fixtures`, committed with the version bump;
+`scripts/release check-version` refuses a tag without it).
+`released_fixtures_still_play` replays the newest two releases' sets, so
+a daemon change that breaks a client still out there fails before it
+ships. Until the first release with fixtures, it says there are none.
+
+### Crypto vectors
+
+`crates/e2e/fixtures/certs.json` is one run of `interop fixtures`:
+certificates for five devices (one self-signed impostor, one approved after
+its approver was revoked), a revocation, the devices Rust trusts and a
+daemon's join code. `crates/e2e/tests/vectors.rs` checks Rust still agrees
+with it and `web/e2e-interop.ts` checks the browser's code does; another
+implementation can check itself against the file alone. `just e2e-vectors`
+makes a new set.
 
 ## Browser tests
 
@@ -925,5 +1061,6 @@ Real gaps, each one automatable:
   needs a URL github.com can reach.
 - **Cursor's Remote-SSH and the Dev Containers extension** (M28).
 - **A Fountain profile** in `testnet/` (#200).
-- **Client fixtures** (#200): recorded daemon sessions a client can replay
-  against, and a daemon check against previous releases' fixtures.
+- **More client fixtures** (#200): splits and tabs, `arugula attach`'s
+  zoomed view, `--ssh` through `arugula bridge`, and the desktop app and
+  web client against the fixture server.
