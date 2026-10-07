@@ -34,7 +34,7 @@ or an account skip without it and name what's missing
 | `just forges`, `just testnet-hosts`, `just testnet-editors` | real forges, two hosts and VS Code over Remote-SSH, in Docker ([below](#real-forges-two-hosts-vs-code-over-remote-ssh)) | the forges nightly (`forges-nightly.yml`) |
 | `just macos <test>` | the tart VM's checks: launchd with no GUI session, real Safari, Safari in the iOS Simulator, iTerm2, the desktop app ([below](#a-fresh-mac-the-tart-vm-harness)) | no |
 | `just desktop-check` | rustfmt and clippy for `crates/desktop` | Linux |
-| `just desktop-xvfb` | the Linux desktop app under Xvfb in a container (`packaging/desktop/xvfb/`): `join` (#204), `m46`, `m47` and `stale` (#317) (see [The desktop app's tests](#the-desktop-apps-tests)) | no |
+| `just desktop-xvfb` | the Linux desktop app under Xvfb in a container (`packaging/desktop/xvfb/`): `join` (#204), `m46` (`bare` and `links` among its claims), `m47` and `stale` (#317) (see [The desktop app's tests](#the-desktop-apps-tests)) | Linux |
 | `just desktop-packages ARCH` | the .deb on Ubuntu 22.04 and the .rpm on Fedora 42 install and claim `arugula://` (after `just desktop-linux ARCH`) | no |
 | `testnet/macos/desktop.sh`, `testnet/macos/update.sh`, `testnet/macos/stale-daemon.sh` | the macOS app from its .dmg in a fresh tart VM, its updater, and a daemon too old for it (#317) | no |
 | `just check-macos` | clippy for the macOS target from Linux (compiles, doesn't link) | Linux |
@@ -55,7 +55,10 @@ once (#287); a new push to a branch cancels that branch's run:
     own test daemon on a free port; **stack**: those on the test stack
     (`E2E_SET=stack`); **perf**: the specs that time things (`E2E_SET=perf`:
     the frame rates, `editors.spec.ts`), after the shards, which leave geek
-    too busy to measure them.
+    too busy to measure them;
+  - **desktop-xvfb**: `just desktop-xvfb` (`join`, `m46`, `m47`, `stale`)
+    in its container. It isn't a required check, and isn't named
+    `desktop`, which is Windows' required one.
   Each job takes one of two build directories kept for its kind of job,
   and a test stack with its own name, ports and subnet (`scripts/ci-env`),
   so jobs and runs on geek don't share either.
@@ -95,8 +98,8 @@ its own process and all at once, `ssh.rs` and `reboot.rs` one at a time
 (the test stack). CI's profile (`NEXTEST_PROFILE=ci`) retries a failure
 once and reports a test that passes the second time as flaky.
 
-geek needs Docker (the testnet, and `ssh.rs` in `just test`): without it
-the run fails. To run one shard's specs locally: `E2E_SET=rest
+geek needs Docker (the testnet, `ssh.rs` in `just test`, and the
+container `just desktop-xvfb` runs in): without it the run fails. To run one shard's specs locally: `E2E_SET=rest
 pnpm exec playwright test --shard=2/6` in `web/`. `just browsers` installs Playwright's browsers (with their
 system libraries on Linux, if sudo needs no password; otherwise run `sudo
 pnpm exec playwright install-deps` in `web/` once). See
@@ -1098,7 +1101,9 @@ Real gaps, each one automatable:
 - **The iOS Simulator** (#257): `just macos ios` is written but parked
   ([above](#the-tests)); it needs a run on the Xcode 26 base, and S27's
   `--ios` with it.
-- **The tart tests in CI** on the macos-arm64 runner ([above](#on-the-macos-arm64-runner)).
+- **The tart tests in CI** on the macos-arm64 runner ([above](#on-the-macos-arm64-runner)),
+  the desktop app's (`testnet/macos/desktop.sh`, `stale-daemon.sh`) first
+  (#317); it needs tart and the base VM on jake-mini (#263).
 - **Control checking GitHub's signature on a real webhook delivery**: it
   needs a URL github.com can reach.
 - **Cursor's Remote-SSH and the Dev Containers extension** (M28).

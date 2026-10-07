@@ -8,6 +8,7 @@
 #   - testnet: the test stack's claims (ssh, then control);
 #   - e2e: the Playwright specs in six shards; stack: those on the test
 #     stack; perf: the specs that time things, once the shards are done;
+#   - desktop-xvfb: the Linux desktop app's claims under Xvfb;
 # - macos: test and, beside it, the WebKit specs, on GitHub's macOS
 #   runners (when the push changes what runs there: scripts/macos-changed;
 #   main always).
@@ -211,6 +212,19 @@ jobs:
         env:
           E2E_CHROMIUM: "1"
           E2E_SET: perf
+
+  # The Linux desktop app under Xvfb, in a container (#317): `just
+  # desktop-xvfb`'s join, m46 (bare and links among its claims), m47 and
+  # stale. The recipe builds the box's binaries and the app itself. Not
+  # named desktop: that's the Windows job chant.workspace.json requires.
+  desktop-xvfb:
+    runs-on: [self-hosted, linux-x86_64-ci]
+    steps:
+      - uses: actions/checkout@v4
+      - run: scripts/ci-env target desktop-xvfb
+      - run: just bootstrap
+      - name: The desktop app under Xvfb (join, m46, m47, stale)
+        run: just desktop-xvfb
 
   # Does the push need the macOS runner (scripts/macos-changed)? main's
   # always do; a branch's only when it changes what runs on macOS.
