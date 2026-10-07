@@ -5082,3 +5082,12 @@ Unit and property tests live in `core`. The `vt` crate is tested with snapshot r
 2. Zig 0.15.2 and 0.16.0 in `~/.local/opt`; `~/.local/bin/zig` points at 0.16. Builds of libghostty-vt need 0.15.2 first on PATH.
 3. Neovim 0.12 in `~/.local/opt` (for fixtures).
 4. `sudo tailscale set --operator=jake`.
+
+## Launch checks on macOS 26 (#319, #314): results (2026-10-05)
+
+Added after the archive was made, as the record of a run (#319). Run once on lex00's `integration` branch (538fae1's tree, before the rename and before #392) in a fresh macOS 26.6.2 (25G83) tart VM, app 0.21.0 ad-hoc signed.
+
+- **install.sh (#318):** curl and `ditto` leave no quarantine flag. The app opens with no Gatekeeper window from `/Applications` and from `~/Applications` (`spctl` still says rejected), adopts install.sh's daemon (0.21.0) and is in Login Items. No #315 hang on this path, so install.sh keeps choosing `/Applications` when it's writable.
+- **The app:** the window drags (#316), the daemon is the app's version, an older stopped `illogicald install` is updated (#317), Cmd-Q/H work (#320), *This machine* adds no tabs and the bar sits below native tabs (#323). `testnet/macos/desktop.sh` 36/36 with the app in `/Applications`, 34/34 in `~/Applications`. Since #392 the app no longer updates an older daemon: it says the daemon is too old and offers its update, which this run didn't check.
+- **Not covered:** the site's zip downloaded in Safari and Chrome (nothing automated quarantines it the way a browser does); Login Items with the app in `~/Applications`.
+- **#314:** a gate approved from a phone is covered in Playwright's phone context (`web/e2e/workspace.spec.ts`), not on a real phone. A workspace on a VM tab and jake-mini's resolve time weren't run (no wisp token here; jake-mini).
