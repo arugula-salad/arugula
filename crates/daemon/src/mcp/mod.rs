@@ -29,10 +29,11 @@
 //! starts says so: the pane shows "started by mcp:<client>", and what the
 //! client typed is in history as theirs.
 
+pub(crate) mod ops;
 pub mod relay;
-mod results;
+pub(crate) mod results;
 pub mod tokens;
-mod tools;
+pub(crate) mod tools;
 
 use std::sync::Arc;
 

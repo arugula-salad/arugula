@@ -1,9 +1,12 @@
 //! `arugula shell-env`: the shell environment blocks that run your tools get.
 
 use super::Ctx;
-use crate::http::request;
+use crate::http::call_raw;
 use crate::util::print_json;
-use arugula_proto::api::ShellEnv;
+use arugula_proto::{
+    api::Empty,
+    op::ops::{ShellEnvGet, ShellEnvRefresh},
+};
 
 #[derive(clap::Args)]
 pub struct Args {
@@ -15,8 +18,8 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
     let Ctx { sock, json_out, .. } = ctx;
     let Args { refresh } = args;
     let (env, v) = match refresh {
-        true => request(&sock, "POST", "/api/hosts/self/shell-env/refresh", None)?.parse_raw::<ShellEnv>()?,
-        false => request(&sock, "GET", "/api/hosts/self/shell-env", None)?.parse_raw::<ShellEnv>()?,
+        true => call_raw::<ShellEnvRefresh>(&sock, &(), &Empty {})?,
+        false => call_raw::<ShellEnvGet>(&sock, &(), &Empty {})?,
     };
     if json_out {
         print_json(&v);

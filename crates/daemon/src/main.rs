@@ -41,6 +41,7 @@ mod localauth;
 mod machine;
 mod mcp;
 mod mux;
+mod ops;
 mod osc;
 mod pane;
 mod paths;

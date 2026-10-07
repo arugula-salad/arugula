@@ -24,7 +24,7 @@ use crate::{acl::Principal, mux::Api, server::App};
 
 /// What a call needs from someone who isn't the owner.
 #[derive(Debug, PartialEq, Eq)]
-enum Policy {
+pub(crate) enum Policy {
     Anyone,
     /// This role on the pane's (or block's) session.
     On(PaneId, Role),
@@ -34,6 +34,10 @@ enum Policy {
 }
 
 fn policy(method: &Method, path: &str) -> Policy {
+    // An operation (#451) says what it needs in its declaration.
+    if let Some(p) = crate::ops::policy(method, path) {
+        return p;
+    }
     let parts: Vec<&str> = path.trim_start_matches('/').split('/').collect();
     let pane = |s: &str| s.parse::<PaneId>().ok();
     let get = method == Method::GET;
@@ -54,7 +58,7 @@ fn policy(method: &Method, path: &str) -> Policy {
             "api",
             "panes",
             id,
-            "send" | "prompt" | "keys" | "mouse" | "attention" | "close" | "ask" | "cd" | "permit" | "hook" | "inbox"
+            "send" | "prompt" | "keys" | "mouse" | "attention" | "ask" | "cd" | "permit" | "hook" | "inbox"
             | "followup" | "upload" | "paste",
         ] if !get => pane(id).map_or(Policy::Owner, |p| Policy::On(p, Role::Editor)),
         ["api", "panes", id, "ask", "withdraw"] if !get => {
@@ -173,6 +177,7 @@ mod tests {
         assert_eq!(policy(&g, "/api/host"), Policy::Anyone);
         assert_eq!(policy(&g, "/api/panes/3/capture"), Policy::On(3, Role::Viewer));
         assert_eq!(policy(&p, "/api/panes/3/send"), Policy::On(3, Role::Editor));
+        assert_eq!(policy(&p, "/api/panes/3/close"), Policy::On(3, Role::Editor));
         for path in ["/api/panes/3/upload", "/api/panes/3/paste"] {
             assert_eq!(policy(&p, path), Policy::On(3, Role::Editor), "{path}");
             assert!(drives(path), "{path}");

@@ -1,13 +1,14 @@
 //! `arugula ls`: the panes.
 
 use super::Ctx;
-use crate::http::request;
+use crate::http::send_op;
 use crate::util::print_json;
+use arugula_proto::{api::Empty, op::ops::ListPanes};
 use serde_json::Value;
 
 pub fn run(ctx: Ctx) -> anyhow::Result<i32> {
     let Ctx { sock, json_out, .. } = ctx;
-    let v = request(&sock, "GET", "/api/panes", None)?.json()?;
+    let v = send_op::<ListPanes>(&sock, &(), &Empty {})?.json()?;
     if json_out {
         print_json(&v);
         return Ok(0);
