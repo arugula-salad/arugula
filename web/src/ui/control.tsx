@@ -1153,7 +1153,7 @@ function Devices({ s, close }: { s: ControlSession; close: () => void }) {
           <span class="fingerprint-inline" data-account-fingerprint={s.enrollment.root}>
             {fingerprint(s.enrollment.root)}
           </span>
-          . A machine shows it when it joins; check they match.
+          , your first device's. A machine shows it when it joins; check they match. Someone sharing a session with you may ask for it too.
         </p>
       ) : null}
       {s.rootMismatch ? (

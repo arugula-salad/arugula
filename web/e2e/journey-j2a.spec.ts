@@ -104,20 +104,25 @@ test("J2a: two friends link up by sharing a session; the friend types in the own
     );
 
     let rileyFp = "";
-    await step(
-      "find-fingerprint",
-      "Riley finds their own fingerprint",
-      "riley",
-      "app",
-      at(riley),
-      (p) => p.getByText(/fingerprint/i),
-      async (p) => {
+    // Sam's dialog says where it is, and Sam passes that on with the ask.
+    await j.step(
+      {
+        id: "find-fingerprint",
+        title: "Riley finds their own fingerprint",
+        actor: "riley",
+        surface: "app",
+        page: at(riley),
+        prompt: sam.window.getByText(/fingerprint in Devices and machines…, in the host menu/),
+      },
+      async () => {
+        const p = riley.window;
         // In the host menu (the machine's name), under the account's items.
         await p.getByTitle("Hosts").click();
         await p.getByRole("menuitem", { name: "Devices and machines…" }).click();
         const all = await p.getByText(FP).allInnerTexts();
         rileyFp = await read(p.getByText(/account/i).filter({ hasText: FP }), FP);
-        if (all.length > 1) j.issue(`the panel shows ${all.length} fingerprints; which one Sam means ("first device") isn't said`);
+        if (all.length > 1 && !(await p.getByText(/first device/).count()))
+          j.issue(`the panel shows ${all.length} fingerprints; which one Sam means ("first device") isn't said`);
         await p.getByRole("button", { name: "Done" }).click();
       },
     );
@@ -307,7 +312,6 @@ test("J2a: two friends link up by sharing a session; the friend types in the own
   await j.finish({
     // Filed on #551: what nothing on screen leads to today.
     "open-share": "#551: Share is only in the session menu",
-    "find-fingerprint": "#551: nothing says where your first device's fingerprint is",
     "find-machine": "#551: a shared machine is named only in the host menu",
     "take-control": "#551: allowed to drive, but the owner has control, and nothing says Take control",
   });
