@@ -39,6 +39,9 @@ use std::{
 };
 
 use anyhow::{Context as _, bail};
+use arugula_control_wire::forge::{
+    ForgePoke, ForgeWatch, ForgeWatching, GithubToken, GithubTokenRequest, Poke, Standing,
+};
 use aws_lc_rs::{rand::SystemRandom, rsa::KeyPair, signature::RSA_PKCS1_SHA256};
 use axum::{
     Json,
@@ -48,7 +51,6 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD as B64};
-use serde::Deserialize;
 use serde_json::{Value, json};
 use sha2::Sha256;
 use tracing::{info, warn};
@@ -346,18 +348,6 @@ pub fn signed(secret: &str, header: Option<&str>, body: &[u8]) -> bool {
     mac.verify_slice(&sig).is_ok()
 }
 
-/// What control relays of an event: no more than this.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
-pub struct Poke {
-    pub provider: &'static str,
-    pub host: &'static str,
-    pub repo: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub number: Option<u64>,
-    pub event: String,
-    pub delivery: String,
-}
-
 /// The pokes an event makes: one per pull request or issue it names, or
 /// one for the whole repository.
 pub fn pokes(event: &str, delivery: &str, v: &Value) -> Vec<Poke> {
@@ -378,8 +368,8 @@ pub fn pokes(event: &str, delivery: &str, v: &Value) -> Vec<Poke> {
     numbers.sort_unstable();
     numbers.dedup();
     let one = |number| Poke {
-        provider: "github",
-        host: "github.com",
+        provider: "github".to_owned(),
+        host: "github.com".to_owned(),
         repo: repo.to_owned(),
         number,
         event: event.to_owned(),
@@ -409,15 +399,6 @@ impl Seen {
         }
         true
     }
-}
-
-/// Whether a repository's events reach a daemon, and why not.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
-pub struct Standing {
-    pub repo: String,
-    pub live: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub why: Option<String>,
 }
 
 struct Watch {
@@ -537,16 +518,8 @@ async fn standings(app: &App, account: &str, repos: &[String], fresh: bool) -> V
 
 /// What a daemon says over its relay socket (anything but "trust").
 pub fn from_daemon(app: &Arc<App>, daemon: &str, generation: u64, text: &str) {
-    #[derive(Deserialize)]
-    struct Msg {
-        t: String,
-        #[serde(default)]
-        repos: Vec<String>,
-    }
-    let Ok(m) = serde_json::from_str::<Msg>(text) else { return };
-    if m.t != "forge.watch" {
-        return;
-    }
+    // Another `t` doesn't parse as a watch: not ours, passed over.
+    let Ok(m) = serde_json::from_str::<ForgeWatch>(text) else { return };
     if app.limits.check_daemon(crate::limit::FORGE_WATCHES, daemon).is_err() {
         warn!(%daemon, "too many forge.watch messages; ignoring this one");
         return;
@@ -578,7 +551,7 @@ pub fn from_daemon(app: &Arc<App>, daemon: &str, generation: u64, text: &str) {
 }
 
 fn watching(st: &[Standing]) -> String {
-    json!({ "t": "forge.watching", "repos": st }).to_string()
+    serde_json::to_string(&ForgeWatching::new(st.to_vec())).unwrap_or_default()
 }
 
 /// Every `every`, each subscribed daemon hears where its repositories
@@ -620,7 +593,7 @@ pub async fn webhook(State(app): State<Arc<App>>, headers: HeaderMap, body: Byte
     let v: Value = serde_json::from_slice(&body).unwrap_or_default();
     let mut relayed = 0;
     for p in pokes(&event, &delivery, &v) {
-        let msg = json!({ "t": "forge.poke", "poke": p }).to_string();
+        let msg = serde_json::to_string(&ForgePoke::new(p.clone())).unwrap_or_default();
         let to = app.forge.route(&p.repo);
         for d in &to {
             app.relay.text(d, &msg);
@@ -631,18 +604,13 @@ pub async fn webhook(State(app): State<Arc<App>>, headers: HeaderMap, body: Byte
     (StatusCode::ACCEPTED, Json(json!({ "relayed": relayed }))).into_response()
 }
 
-#[derive(Deserialize)]
-pub struct TokenAsk {
-    repo: String,
-}
-
 /// `POST /api/daemon/github/token {repo}`: a hosted box (no `gh` login)
 /// reads through the App, for repositories its account may.
 pub async fn daemon_token(
     State(app): State<Arc<App>>,
     d: DaemonAuth,
-    Json(b): Json<TokenAsk>,
-) -> Result<Json<Value>, ApiError> {
+    Json(b): Json<GithubTokenRequest>,
+) -> Result<Json<GithubToken>, ApiError> {
     let gh = app.github_app.as_ref().ok_or_else(|| err(StatusCode::NOT_FOUND, "this control has no GitHub App"))?;
     if !good_repo(&b.repo) {
         return Err(err(StatusCode::BAD_REQUEST, "repo: OWNER/NAME"));
@@ -658,7 +626,7 @@ pub async fn daemon_token(
     let (token, expires_at) = gh.token(&app.http, install.id, name).await?;
     // Who and what; never the token.
     info!(daemon = d.cert.device, repo = b.repo, "installation token for a daemon");
-    Ok(Json(json!({ "token": token, "expires_at": expires_at, "login": login, "app": gh.slug })))
+    Ok(Json(GithubToken { token, expires_at, login, app: gh.slug.clone() }))
 }
 
 #[cfg(test)]
@@ -731,8 +699,8 @@ pub(crate) mod tests {
         assert_eq!(
             p,
             vec![Poke {
-                provider: "github",
-                host: "github.com",
+                provider: "github".into(),
+                host: "github.com".into(),
                 repo: "jhgaylor/hud".into(),
                 number: Some(7),
                 event: "pull_request".into(),

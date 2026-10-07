@@ -468,3 +468,104 @@ fn an_older_controls_ice_servers_parse() {
     }
     assert!(parse::<IceServers>(&json!({})).ice_servers.is_empty());
 }
+
+// ---------------------------------------------------------------- forge
+
+use forge::{ForgePoke, ForgeWatch, ForgeWatching, GithubToken, GithubTokenRequest};
+
+#[test]
+fn a_watch_is_what_the_daemon_sends() {
+    let w = round::<ForgeWatch>(json!({ "t": "forge.watch", "repos": ["cli/cli", "o/r"] }));
+    assert_eq!(w.repos, ["cli/cli", "o/r"]);
+    assert_eq!(serde_json::to_value(ForgeWatch::new(vec![])).unwrap(), json!({ "t": "forge.watch", "repos": [] }));
+    // Control took a missing list as none.
+    assert!(parse::<ForgeWatch>(&json!({ "t": "forge.watch" })).repos.is_empty());
+}
+
+#[test]
+fn watching_is_what_control_says() {
+    let recorded = json!({ "t": "forge.watching", "repos": [
+        { "repo": "cli/cli", "live": true },
+        { "repo": "o/r", "live": false, "why": "the GitHub App arugula-test isn't installed on o" },
+    ] });
+    let w = round::<ForgeWatching>(recorded);
+    assert!(w.repos[0].live && w.repos[0].why.is_none());
+    assert_eq!(w.repos[1].why.as_deref(), Some("the GitHub App arugula-test isn't installed on o"));
+    // A daemon read what it found: no list, and entries without a `live`, a
+    // `why` or a `repo`.
+    assert!(parse::<ForgeWatching>(&json!({ "t": "forge.watching" })).repos.is_empty());
+    let w = parse::<ForgeWatching>(&json!({ "t": "forge.watching", "repos": [{ "repo": "a/b" }, { "live": true }] }));
+    assert!(!w.repos[0].live && w.repos[0].why.is_none());
+    assert!(w.repos[1].repo.is_empty());
+}
+
+fn poke() -> Value {
+    json!({ "t": "forge.poke", "poke": { "provider": "github", "host": "github.com", "repo": "cli/cli",
+        "number": 7, "event": "pull_request_review", "delivery": "x" } })
+}
+
+#[test]
+fn a_poke_is_what_control_relays() {
+    let p = round::<ForgePoke>(poke());
+    assert_eq!(p.poke.number, Some(7));
+    // A poke for a whole repository leaves `number` out.
+    let all = round::<ForgePoke>(json!({ "t": "forge.poke", "poke": { "provider": "github", "host": "github.com",
+        "repo": "o/r", "event": "push", "delivery": "d" } }));
+    assert!(all.poke.number.is_none());
+    assert_eq!(serde_json::to_value(ForgePoke::new(all.poke)).unwrap()["poke"].get("number"), None);
+}
+
+#[test]
+fn a_poke_from_an_older_control_parses() {
+    let p = poke();
+    for field in ["host", "number", "event", "delivery"] {
+        let mut v = p.clone();
+        v["poke"].as_object_mut().unwrap().remove(field);
+        parse::<ForgePoke>(&v);
+    }
+    let bare = parse::<ForgePoke>(&json!({ "t": "forge.poke", "poke": { "provider": "github", "repo": "o/r" } }));
+    assert_eq!((bare.poke.host.as_str(), bare.poke.event.as_str()), ("github.com", ""));
+    // A newer control's extra fields are ignored.
+    let mut v = p;
+    v["poke"]["actor"] = json!("someone");
+    v["more"] = json!(true);
+    parse::<ForgePoke>(&v);
+}
+
+/// The relay socket carries other subsystems' frames too: one with another
+/// `t` is not a forge message, so each side passes it over as it did.
+#[test]
+fn another_frame_on_the_socket_is_not_a_forge_message() {
+    for frame in [
+        json!({ "t": "guest.routes.ok", "seq": 1 }),
+        json!({ "t": "trust" }),
+        json!({ "t": "forge.future", "repos": ["o/r"] }),
+        json!({ "repos": ["o/r"] }),
+        json!({ "t": 5, "repos": [] }),
+    ] {
+        let s = frame.to_string();
+        assert!(serde_json::from_str::<ForgeWatch>(&s).is_err(), "{s}");
+        assert!(serde_json::from_str::<ForgeWatching>(&s).is_err(), "{s}");
+        assert!(serde_json::from_str::<ForgePoke>(&s).is_err(), "{s}");
+    }
+    // And each forge frame is only its own.
+    assert!(serde_json::from_value::<ForgeWatch>(poke()).is_err());
+    assert!(serde_json::from_value::<ForgePoke>(json!({ "t": "forge.watch", "repos": [] })).is_err());
+}
+
+#[test]
+fn the_github_token_request_and_answer() {
+    let r = round::<GithubTokenRequest>(json!({ "repo": "cli/cli" }));
+    assert_eq!(r.repo, "cli/cli");
+    assert_eq!(forge::GITHUB_TOKEN, "/api/daemon/github/token");
+    let a = round::<GithubToken>(json!({
+        "token": "ghs_x", "expires_at": "2099-01-01T00:00:00Z", "login": "jhgaylor", "app": "arugula-test",
+    }));
+    assert_eq!(a.login, "jhgaylor");
+    assert!(!format!("{a:?}").contains("ghs_x"));
+    // A daemon read what it found: control's answer in the tests has no
+    // login or app, and a body that isn't an object is no token.
+    let bare = parse::<GithubToken>(&json!({ "token": "t" }));
+    assert_eq!((bare.expires_at.as_str(), bare.login.as_str(), bare.app.as_str()), ("", "", ""));
+    assert!(parse::<GithubToken>(&json!({})).token.is_empty());
+}

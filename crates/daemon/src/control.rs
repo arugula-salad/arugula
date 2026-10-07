@@ -1268,10 +1268,10 @@ impl Control {
     /// M40: a read-only installation token for a GitHub repository from
     /// control's GitHub App (for a box with no `gh` login), and the
     /// account's GitHub login. Never logged.
-    pub async fn github_token(&self, repo: &str) -> Result<serde_json::Value, String> {
+    pub async fn github_token(&self, repo: &str) -> Result<wire::forge::GithubToken, String> {
         let e = self.enrolled().ok_or("not joined to Arugula control")?;
         let res = self
-            .post_json(&e, "/api/daemon/github/token", &serde_json::json!({ "repo": repo }))
+            .post_json(&e, wire::forge::GITHUB_TOKEN, &wire::forge::GithubTokenRequest { repo: repo.to_owned() })
             .send()
             .await
             .map_err(|e| format!("can't reach control: {e}"))?;
@@ -1280,7 +1280,7 @@ impl Control {
         if !status.is_success() {
             return Err(v["error"].as_str().map_or_else(|| format!("control said {status}"), str::to_owned));
         }
-        Ok(v)
+        Ok(serde_json::from_value(v).unwrap_or_default())
     }
 
     /// ICE servers for a huddle (M63): control's TURN credentials, kept
