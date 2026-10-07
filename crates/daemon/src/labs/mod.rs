@@ -1,11 +1,11 @@
-//! Labs: the features that are not part of the core (Fountain first; studio,
-//! chant, VMs, guest ssh, huddles, chat and the other forges move here in
-//! #453 to #457), behind the cargo feature `labs`. The feature is on by
-//! default, so a release build has all of it; `--no-default-features` leaves
-//! it out, for fast local builds, for agents working on core, and for the CI
-//! job `core`. (The runtime switch, the `labs` file in the state dir, is
-//! separate: it decides what a machine shows, and [`enabled`] ANDs it with
-//! this build.)
+//! Labs: the features that are not part of the core (Fountain, studio apps
+//! with hud, and chant workspaces so far; VMs, guest ssh, huddles, chat and
+//! the other forges move here in #454 to #457), behind the cargo feature
+//! `labs`. The feature is on by default, so a release build has all of it;
+//! `--no-default-features` leaves it out, for fast local builds, for agents
+//! working on core, and for the CI job `core`. (The runtime switch, the
+//! `labs` file in the state dir, is separate: it decides what a machine
+//! shows, and [`enabled`] ANDs it with this build.)
 //!
 //! **The pattern.** A Labs feature is a module in this directory, declared
 //! here under `#[cfg(feature = "labs")]`, and nothing outside `labs/` names
@@ -30,7 +30,10 @@
 //! site with a twin next to it is the fallback; keep the list of those short.
 //! Tests that need the feature are `#[cfg(feature = "labs")]`.
 
-use std::{path::Path, sync::Arc};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use arugula_proto::{BlockType, hosts::FountainRunnerInfo};
 use axum::Router;
@@ -43,7 +46,11 @@ use crate::{
 };
 
 #[cfg(feature = "labs")]
+pub mod apps;
+#[cfg(feature = "labs")]
 pub mod fountain;
+#[cfg(feature = "labs")]
+pub mod workspace;
 
 /// Whether this build has Labs.
 pub const BUILT: bool = cfg!(feature = "labs");
@@ -62,7 +69,7 @@ pub fn enabled(state_dir: &Path) -> bool {
 /// Adds Labs' HTTP routes to the API's.
 #[cfg(feature = "labs")]
 pub fn routes(r: Router<Arc<App>>) -> Router<Arc<App>> {
-    fountain::routes::routes(r)
+    apps::routes::routes(fountain::routes::routes(r))
 }
 
 #[cfg(not(feature = "labs"))]
@@ -75,13 +82,55 @@ pub fn routes(r: Router<Arc<App>>) -> Router<Arc<App>> {
 pub fn create_block(kind: BlockType, ctx: BlockCtx, config: Value) -> Result<Arc<dyn Block>, String> {
     match kind {
         BlockType::Fountain => fountain::FountainBlock::create(ctx, config),
+        BlockType::App => apps::AppBlock::create(ctx, config),
+        BlockType::Workspace => workspace::Workspace::create(ctx, config),
         other => Err(format!("{other:?} isn't a Labs block")),
     }
 }
 
 #[cfg(not(feature = "labs"))]
 pub fn create_block(kind: BlockType, _ctx: BlockCtx, _config: Value) -> Result<Arc<dyn Block>, String> {
-    Err(not_built(&format!("A {kind:?} block")))
+    Err(not_built(&match kind {
+        BlockType::App => "An app block".to_owned(),
+        BlockType::Workspace => "A chant workspace".to_owned(),
+        kind => format!("A {kind:?} block"),
+    }))
+}
+
+/// Sets up the studio token store (M35) at start-up. A build without Labs
+/// has no studio: a file given with `--studio` is ignored, with a warning.
+#[cfg(feature = "labs")]
+pub fn install_studio(file: PathBuf, _given: bool) {
+    apps::studio::install(file);
+}
+
+#[cfg(not(feature = "labs"))]
+pub fn install_studio(file: PathBuf, given: bool) {
+    if given {
+        tracing::warn!(file = %file.display(), "{}", not_built("Studio"));
+    }
+}
+
+/// Whether the user is logged in to a studio: `GET /api/host`'s
+/// `features.studio`.
+#[cfg(feature = "labs")]
+pub fn studio_here() -> bool {
+    apps::studio::get().and_then(|s| s.url()).is_some()
+}
+
+#[cfg(not(feature = "labs"))]
+pub fn studio_here() -> bool {
+    false
+}
+
+/// A studio app block's config (M35) from `{app}`: the box and studio filled
+/// in from studio's list when not given.
+#[cfg(feature = "labs")]
+pub use apps::routes::app_config;
+
+#[cfg(not(feature = "labs"))]
+pub async fn app_config(_c: &Value) -> Result<Value, String> {
+    Err(not_built("An app block"))
 }
 
 /// `GET /api/host`'s `fountain_runner` (M45b): only where the runner's unit

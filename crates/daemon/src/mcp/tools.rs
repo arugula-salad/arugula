@@ -337,6 +337,8 @@ pub struct OpenPortArgs {
     pub beside: Option<PaneArg>,
 }
 
+// Read only by the handler, which a build without Labs lacks.
+#[cfg_attr(not(feature = "labs"), allow(dead_code))]
 #[derive(Deserialize, JsonSchema)]
 pub struct OpenAppArgs {
     /// The app's name in the user's studio. Leave it out to list their
@@ -540,6 +542,8 @@ pub struct ShowFileArgs {
     pub beside: Option<PaneArg>,
 }
 
+// Read only by the handler, which a build without Labs lacks.
+#[cfg_attr(not(feature = "labs"), allow(dead_code))]
 #[derive(Deserialize, JsonSchema)]
 pub struct OpenWorkspaceArgs {
     /// The workspace's root: a directory holding chant.workspace.json (an
@@ -2586,36 +2590,6 @@ impl<'a> Call<'a> {
         )
     }
 
-    async fn open_app(&self, a: OpenAppArgs) -> Out {
-        let studio = crate::apps::studio::get().ok_or("no studio here")?;
-        let Some(name) = a.app else {
-            let apps = studio.apps().await?;
-            let names: Vec<&str> = apps.iter().map(|a| a.name.as_str()).collect();
-            return done(format!("{} apps: {}", apps.len(), names.join(", ")), results::Apps { apps });
-        };
-        let beside = match (a.beside.as_ref().map(PaneArg::id).transpose()?, self.own_pane()) {
-            (Some(b), _) => Some(b),
-            (None, own) => own,
-        };
-        if let Some(b) = beside {
-            self.readable(b).await?;
-        }
-        let config = crate::api::app_config(&json!({ "app": name })).await?;
-        let req = OpenRequest {
-            kind: BlockType::App,
-            config,
-            session: None,
-            split: beside,
-            from_pane: beside,
-            vm: false,
-            image: None,
-            host: None,
-            local: true,
-        };
-        let block = self.open(req).await?;
-        done(format!("Opened app {name} in block %{block}"), results::AppOpened { block, app: name })
-    }
-
     /// Beside `beside`, or the agent itself; on its machine.
     async fn beside(&self, beside: Option<&PaneArg>) -> Result<(Option<PaneId>, Option<u32>), String> {
         let beside = match (beside.map(PaneArg::id).transpose()?, self.own_pane()) {
@@ -2703,6 +2677,39 @@ impl<'a> Call<'a> {
         let at = a.line.map(|l| format!(" at line {l}")).unwrap_or_default();
         done(format!("Showing {}{at} in file block %{block}", a.path), results::BlockOnly { block })
     }
+}
+
+#[cfg(feature = "labs")]
+impl Call<'_> {
+    async fn open_app(&self, a: OpenAppArgs) -> Out {
+        let studio = crate::labs::apps::studio::get().ok_or("no studio here")?;
+        let Some(name) = a.app else {
+            let apps = studio.apps().await?;
+            let names: Vec<&str> = apps.iter().map(|a| a.name.as_str()).collect();
+            return done(format!("{} apps: {}", apps.len(), names.join(", ")), results::Apps { apps });
+        };
+        let beside = match (a.beside.as_ref().map(PaneArg::id).transpose()?, self.own_pane()) {
+            (Some(b), _) => Some(b),
+            (None, own) => own,
+        };
+        if let Some(b) = beside {
+            self.readable(b).await?;
+        }
+        let config = crate::labs::app_config(&json!({ "app": name })).await?;
+        let req = OpenRequest {
+            kind: BlockType::App,
+            config,
+            session: None,
+            split: beside,
+            from_pane: beside,
+            vm: false,
+            image: None,
+            host: None,
+            local: true,
+        };
+        let block = self.open(req).await?;
+        done(format!("Opened app {name} in block %{block}"), results::AppOpened { block, app: name })
+    }
 
     async fn open_workspace(&self, a: OpenWorkspaceArgs) -> Out {
         let (beside, host) = self.beside(a.beside.as_ref()).await?;
@@ -2763,10 +2770,7 @@ impl<'a> Call<'a> {
             results::WorkspaceOpened { block, root: state["root"].clone(), members, gates },
         )
     }
-}
 
-#[cfg(feature = "labs")]
-impl Call<'_> {
     /// The account's agents (M43), read with the user's own login on this
     /// host.
     async fn fountain_agents(&self, profile: Option<&str>) -> Result<crate::labs::fountain::Agents, String> {
@@ -2874,6 +2878,14 @@ impl Call<'_> {
 
 #[cfg(not(feature = "labs"))]
 impl Call<'_> {
+    async fn open_app(&self, _: OpenAppArgs) -> Out {
+        Err(crate::labs::not_built("An app block"))
+    }
+
+    async fn open_workspace(&self, _: OpenWorkspaceArgs) -> Out {
+        Err(crate::labs::not_built("A chant workspace"))
+    }
+
     async fn list_agents(&self, _: ListAgentsArgs) -> Out {
         Err(crate::labs::not_built("Fountain"))
     }
@@ -3722,8 +3734,9 @@ mod tests {
         assert!(got == want, "the tool list changed; ARUGULA_BLESS=1 rewrites {}", path.display());
     }
 
-    /// A build without Labs lists nothing of Fountain, whatever the `labs`
-    /// file says: no kind, no argument, no value, no word in a description.
+    /// A build without Labs lists nothing of Fountain, studio apps or chant
+    /// workspaces, whatever the `labs` file says: no kind, no argument, no
+    /// value, no word in a description.
     #[cfg(not(feature = "labs"))]
     #[test]
     fn a_build_without_labs_never_lists_fountain() {
@@ -3737,7 +3750,11 @@ mod tests {
         for scope in [Scope::Full, Scope::Read, Scope::Block(1)] {
             let tools = serde_json::to_string(&list(scope, labs)).unwrap().to_lowercase();
             assert!(!tools.contains("fountain"), "the tool list mentions Fountain");
+            assert!(!tools.contains("studio"), "the tool list mentions studio");
+            assert!(!tools.contains("workspace"), "the tool list mentions workspaces");
         }
+        let shown = kinds_of(labs, "show");
+        assert!(!shown.contains(&"app") && !shown.contains(&"workspace"), "{shown:?}");
     }
 
     /// What `pr_write` hands the forge block's `call_by`: the keys the old
