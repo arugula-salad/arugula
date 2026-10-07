@@ -21,7 +21,6 @@ mod editor;
 mod forge;
 mod fs;
 mod gate;
-mod guest_ssh;
 mod hand;
 mod heap;
 mod history;
@@ -814,7 +813,9 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
         "off" => None,
         a => Some(a.parse::<SocketAddr>().map_err(|e| anyhow::anyhow!("--guest-ssh {a}: {e}"))?),
     };
-    let guests = guest_ssh::Guests::open(&state_dir, guest_listen, args.guest_ssh_host.clone());
+    let guest_given =
+        !["off", labs::GUEST_SSH_LISTEN].contains(&args.guest_ssh.as_str()) || args.guest_ssh_host.is_some();
+    let guests = labs::open_guests(&state_dir, guest_listen, args.guest_ssh_host.clone(), guest_given);
     let synced = sync::Synced::new(&state_dir, args.reach.sync_key_file.clone());
     synced.prune(sync::RETAIN_MS);
     let static_dir = args.static_dir.clone().unwrap_or_else(|| {
