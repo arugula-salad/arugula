@@ -31,19 +31,12 @@ const world = new World();
 test.beforeAll(() => world.start());
 test.afterAll(() => world.stop());
 
-test("J1: a new Mac user, from no account to a command in a terminal", async ({
-  browser,
-}, info) => {
+test("J1: a new Mac user, from no account to a command in a terminal", async ({ browser }, info) => {
   test.setTimeout(300_000);
   const me = await world.person(browser, "newcomer");
   await me.installApp("newmac");
   const app = await App.install(me, browser);
-  const j = new Journey(
-    "J1",
-    "one person, unregistered to working (Mac app)",
-    info,
-    ["newcomer"],
-  );
+  const j = new Journey("J1", "one person, unregistered to working (Mac app)", info, ["newcomer"]);
   app.onOutside = (url) => j.opened(url);
   try {
     await firstRun(j, world, app, "newcomer", "newmac");

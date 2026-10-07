@@ -21,12 +21,7 @@ export async function read(loc: Locator, re: RegExp): Promise<string> {
 
 /** What the terminal shows (read, never driven, through the page's own
  * hook: the canvas has no text a locator finds). */
-export const screenText = (page: Page) =>
-  page.evaluate(() =>
-    window.__arugula?.client.state
-      ? window.__arugula.text(window.__arugula.client.active()!)
-      : "",
-  );
+export const screenText = (page: Page) => page.evaluate(() => (window.__arugula?.client.state ? window.__arugula.text(window.__arugula.client.active()!) : ""));
 
 /** Click into the terminal as a person does: the big area under the bar. */
 export async function clickTerminal(page: Page) {
@@ -36,13 +31,7 @@ export async function clickTerminal(page: Page) {
 
 /** J1's steps, recorded in `j` as `actor`, on `app` (whose machine is
  * `machine`). Leaves the app open on control's page, signed in. */
-export async function firstRun(
-  j: Journey,
-  world: World,
-  app: App,
-  actor: string,
-  machine: string,
-) {
+export async function firstRun(j: Journey, world: World, app: App, actor: string, machine: string) {
   const step = (
     id: string,
     title: string,
@@ -51,11 +40,7 @@ export async function firstRun(
     prompt: (p: Page) => Locator | null,
     act: (p: Page) => Promise<void>,
     why?: string,
-  ) =>
-    j.step(
-      { id, title, actor, surface, page: page(), prompt: prompt(page()), why },
-      () => act(page()),
-    );
+  ) => j.step({ id, title, actor, surface, page: page(), prompt: prompt(page()), why }, () => act(page()));
   const win = () => app.window;
   const tab = () => app.lastOpened;
   const start = () => win().getByRole("dialog", { name: "Getting started" });
@@ -111,9 +96,7 @@ export async function firstRun(
       await start()
         .getByRole("button", { name: /Skip for now/ })
         .click();
-      await expect(
-        start().getByRole("heading", { name: /to your account or team/ }),
-      ).toBeVisible();
+      await expect(start().getByRole("heading", { name: /to your account or team/ })).toBeVisible();
     },
   );
 
@@ -127,15 +110,8 @@ export async function firstRun(
       await start()
         .getByRole("button", { name: /^Connect to / })
         .click();
-      await expect(
-        start().getByText("Approve this code on a device you use"),
-      ).toBeVisible({ timeout: 20_000 });
-      machineCode = await read(
-        start()
-          .getByText("Approve this code on a device you use")
-          .locator(".."),
-        CODE,
-      );
+      await expect(start().getByText("Approve this code on a device you use")).toBeVisible({ timeout: 20_000 });
+      machineCode = await read(start().getByText("Approve this code on a device you use").locator(".."), CODE);
     },
   );
 
@@ -150,9 +126,7 @@ export async function firstRun(
       await start()
         .getByRole("link", { name: /Approve in Arugula cloud/ })
         .click();
-      await expect
-        .poll(() => app.opened.length, { timeout: 10_000 })
-        .toBeGreaterThan(before);
+      await expect.poll(() => app.opened.length, { timeout: 10_000 }).toBeGreaterThan(before);
       void p;
     },
   );
@@ -203,9 +177,7 @@ export async function firstRun(
       expect(shown).toBe(machineCode);
       account = await read(p.getByText(/Your account:/), FP);
       await p.getByRole("button", { name: /^Approve/ }).click();
-      await expect(
-        p.getByRole("heading", { name: "Add a machine?", exact: true }),
-      ).toBeHidden({ timeout: 20_000 });
+      await expect(p.getByRole("heading", { name: "Add a machine?", exact: true })).toBeHidden({ timeout: 20_000 });
     },
   );
 
@@ -216,10 +188,7 @@ export async function firstRun(
     win,
     () => start().getByText("Is this your account?"),
     async () => {
-      const shown = await read(
-        start().getByText("Is this your account?").locator(".."),
-        FP,
-      );
+      const shown = await read(start().getByText("Is this your account?").locator(".."), FP);
       j.compared(`account ${account} (browser) = ${shown} (app)`);
       expect(shown).toBe(account);
       await start().getByRole("button", { name: "They match" }).click();
@@ -231,8 +200,7 @@ export async function firstRun(
     "The app says the machine is in",
     "app",
     win,
-    (p) =>
-      p.getByText(/Joined to your account|This window, every machine/).first(),
+    (p) => p.getByText(/Joined to your account|This window, every machine/).first(),
     async () => {},
   );
 
@@ -243,21 +211,14 @@ export async function firstRun(
     win,
     (p) => p.getByRole("button", { name: "Sign the app in" }),
     async (p) => {
-      await expect(
-        p.getByRole("heading", { name: "This window, every machine" }),
-      ).toBeVisible({ timeout: 20_000 });
+      await expect(p.getByRole("heading", { name: "This window, every machine" })).toBeVisible({ timeout: 20_000 });
       const before = app.opened.length;
       await p.getByRole("button", { name: "Sign the app in" }).click();
       await expect(p.getByText("Check your browser shows")).toBeVisible({
         timeout: 20_000,
       });
-      appCode = await read(
-        p.getByText("Check your browser shows").locator(".."),
-        /\b[A-Z0-9-]{4,}\b/,
-      );
-      await expect
-        .poll(() => app.opened.length, { timeout: 10_000 })
-        .toBeGreaterThan(before);
+      appCode = await read(p.getByText("Check your browser shows").locator(".."), /\b[A-Z0-9-]{4,}\b/);
+      await expect.poll(() => app.opened.length, { timeout: 10_000 }).toBeGreaterThan(before);
     },
   );
 
@@ -268,12 +229,8 @@ export async function firstRun(
     tab,
     (p) => p.getByRole("heading", { name: "Sign in the app?" }),
     async (p) => {
-      const shown = (
-        await p.getByText(/asks to sign in as you/).innerText()
-      ).includes(appCode);
-      j.compared(
-        `app sign-in code ${appCode} (app) shown in the browser: ${shown}`,
-      );
+      const shown = (await p.getByText(/asks to sign in as you/).innerText()).includes(appCode);
+      j.compared(`app sign-in code ${appCode} (app) shown in the browser: ${shown}`);
       expect(shown).toBe(true);
       await p.getByRole("button", { name: "Allow" }).click();
     },
@@ -284,20 +241,11 @@ export async function firstRun(
     "approve-app",
     "Approve the app as a device, checking its fingerprint",
     "browser",
-    () =>
-      app.opened.find(
-        (t) => !t.isClosed() && t.url().startsWith(world.control),
-      ) ?? tab(),
+    () => app.opened.find((t) => !t.isClosed() && t.url().startsWith(world.control)) ?? tab(),
     (p) => p.getByRole("heading", { name: "New device?" }),
     async (p) => {
-      appFp = await read(
-        win().getByText("It shows this fingerprint").locator(".."),
-        FP,
-      );
-      const shown = await read(
-        p.getByRole("heading", { name: "New device?" }).locator(".."),
-        FP,
-      );
+      appFp = await read(win().getByText("It shows this fingerprint").locator(".."), FP);
+      const shown = await read(p.getByRole("heading", { name: "New device?" }).locator(".."), FP);
       j.compared(`app device ${appFp} (app) = ${shown} (browser)`);
       expect(shown).toBe(appFp);
       await p.getByRole("button", { name: "Approve" }).click();
@@ -316,17 +264,14 @@ export async function firstRun(
       const cmd = "echo hello-$((6*7))";
       j.typed(cmd);
       await p.keyboard.type(`${cmd}\n`, { delay: 5 });
-      await expect
-        .poll(() => screenText(p), { timeout: 15_000 })
-        .toContain("hello-42");
+      await expect.poll(() => screenText(p), { timeout: 15_000 }).toContain("hello-42");
     },
   );
 
   await j.step(
     {
       id: "restart",
-      title:
-        "Quit and reopen the app: still signed in, the terminal still there",
+      title: "Quit and reopen the app: still signed in, the terminal still there",
       actor,
       surface: "app",
       page: win,
@@ -336,12 +281,8 @@ export async function firstRun(
     async () => {
       await app.quit();
       const w = await app.launch();
-      await expect(
-        w.getByRole("button", { name: new RegExp(machine) }).first(),
-      ).toBeVisible({ timeout: 30_000 });
-      await expect
-        .poll(() => screenText(w), { timeout: 30_000 })
-        .toContain("hello-42");
+      await expect(w.getByRole("button", { name: new RegExp(machine) }).first()).toBeVisible({ timeout: 30_000 });
+      await expect.poll(() => screenText(w), { timeout: 30_000 }).toContain("hello-42");
     },
   );
 }

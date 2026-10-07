@@ -28,10 +28,7 @@ import { asPerson, type Person } from "./world";
 /** The app's own pages (cloud.rs `app_url`, as on Windows: a URL the
  * window can load; macOS uses tauri://localhost). */
 const APP = "http://tauri.localhost";
-const SIGNIN = readFileSync(
-  resolve("../crates/desktop/dist/signin.html"),
-  "utf8",
-);
+const SIGNIN = readFileSync(resolve("../crates/desktop/dist/signin.html"), "utf8");
 const JOIN_POLL = 2_000;
 
 export class App {
@@ -54,10 +51,7 @@ export class App {
   ) {}
 
   /** The app's webview: storage of its own that outlives a restart. */
-  static async install(
-    person: Person,
-    browser: import("@playwright/test").Browser,
-  ): Promise<App> {
+  static async install(person: Person, browser: import("@playwright/test").Browser): Promise<App> {
     const ctx = await browser.newContext({
       viewport: { width: 1200, height: 760 },
     });
@@ -89,9 +83,7 @@ export class App {
         addEventListener(
           "click",
           (e) => {
-            const a = (e.target as Element | null)?.closest?.(
-              "a[target=_blank]",
-            ) as HTMLAnchorElement | null;
+            const a = (e.target as Element | null)?.closest?.("a[target=_blank]") as HTMLAnchorElement | null;
             if (!a || !a.href) return;
             e.preventDefault();
             void newWindow(a.href);
@@ -99,26 +91,20 @@ export class App {
           true,
         );
         window.open = ((url?: string | URL) => {
-          if (url !== undefined)
-            void newWindow(new URL(String(url), location.href).href);
+          if (url !== undefined) void newWindow(new URL(String(url), location.href).href);
           return null;
         }) as typeof window.open;
         if (control && location.origin === new URL(control).origin)
           addEventListener("DOMContentLoaded", () => {
             const s = document.createElement("style");
-            s.textContent =
-              "[data-signin=passkey] { display: none !important; }";
+            s.textContent = "[data-signin=passkey] { display: none !important; }";
             document.head.appendChild(s);
           });
       },
       { name: app.deviceName(), control: person.world.control },
     );
-    await ctx.exposeBinding("__appInvoke", (source, cmd: string) =>
-      app.invoke(source.page, cmd),
-    );
-    await ctx.exposeBinding("__appNewWindow", (_source, url: string) =>
-      app.newWindow(url),
-    );
+    await ctx.exposeBinding("__appInvoke", (source, cmd: string) => app.invoke(source.page, cmd));
+    await ctx.exposeBinding("__appNewWindow", (_source, url: string) => app.newWindow(url));
     await ctx.route("**/*", (route) => app.route(route));
     return app;
   }
@@ -143,15 +129,7 @@ export class App {
       this.control = dropped ? null : (v.control?.replace(/\/$/, "") ?? null);
       const s = v.control_state;
       this.place =
-        s?.state === "joined"
-          ? s.kind === "team"
-            ? s.name
-              ? `the team ${s.name}`
-              : "a team"
-            : s.name
-              ? `${s.name}'s account`
-              : "your account"
-          : null;
+        s?.state === "joined" ? (s.kind === "team" ? (s.name ? `the team ${s.name}` : "a team") : s.name ? `${s.name}'s account` : "your account") : null;
     } catch {
       // the daemon is restarting: keep what was read
     }
@@ -163,18 +141,14 @@ export class App {
 
   /** main.rs `home`. */
   home() {
-    if (this.control && !this.localOnly)
-      return this.signedIn.has(this.control)
-        ? `${this.control}/`
-        : `${APP}/signin.html`;
+    if (this.control && !this.localOnly) return this.signedIn.has(this.control) ? `${this.control}/` : `${APP}/signin.html`;
     return this.pageAt("/");
   }
 
   private ours(url: URL) {
     if (["about:", "blob:", "data:"].includes(url.protocol)) return true;
     if (url.origin === APP) return true;
-    if (this.control && url.origin === new URL(this.control).origin)
-      return true;
+    if (this.control && url.origin === new URL(this.control).origin) return true;
     return url.origin === new URL(this.person.daemon).origin;
   }
 
@@ -217,9 +191,7 @@ export class App {
     if (this.ours(url)) return route.continue();
     // on_new_window / on_navigation: the person's browser takes it.
     await route.abort();
-    for (const p of this.ctx.pages())
-      if (p.opener() && p.url() === "about:blank")
-        void p.close().catch(() => {});
+    for (const p of this.ctx.pages()) if (p.opener() && p.url() === "about:blank") void p.close().catch(() => {});
     await this.outside(req.url());
   }
 
@@ -260,11 +232,7 @@ export class App {
       this.localOnly = false;
       for (const p of this.ctx.pages()) {
         const url = p.url();
-        const moves =
-          was === null
-            ? this.isDaemonPage(url)
-            : url.startsWith(was) ||
-              (url.startsWith(APP) && new URL(url).pathname === "/signin.html");
+        const moves = was === null ? this.isDaemonPage(url) : url.startsWith(was) || (url.startsWith(APP) && new URL(url).pathname === "/signin.html");
         if (moves) void p.goto(this.home()).catch(() => {});
       }
       was = now;
@@ -320,18 +288,12 @@ export class App {
     let ticket = "";
     const grants = createServer((req, res) => {
       const u = new URL(req.url!, "http://127.0.0.1");
-      const grant =
-        u.pathname === "/illogical-signin" &&
-        u.searchParams.get("ticket") === ticket
-          ? (u.searchParams.get("grant") ?? "")
-          : "";
+      const grant = u.pathname === "/illogical-signin" && u.searchParams.get("ticket") === ticket ? (u.searchParams.get("grant") ?? "") : "";
       if (!/^[0-9a-f]+$/.test(grant)) return res.writeHead(404).end();
       res.writeHead(303, { location: `${control}/#app-done` }).end();
       grants.close();
       this.signedIn.add(control);
-      void page
-        .goto(`${control}/#app-redeem=${ticket}.${grant}.${verifier}`)
-        .catch(() => {});
+      void page.goto(`${control}/#app-redeem=${ticket}.${grant}.${verifier}`).catch(() => {});
     });
     this.grants.push(grants);
     await new Promise<void>((ok) => grants.listen(0, "127.0.0.1", ok));

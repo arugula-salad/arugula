@@ -14,10 +14,8 @@ type Data = {
 };
 
 const SURFACES: Surface[] = ["app", "browser", "terminal", "message"];
-const esc = (s: string) =>
-  s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-const secs = (ms: number) =>
-  ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`;
+const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+const secs = (ms: number) => (ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`);
 const MARK = { ok: "✓", unguided: "!", failed: "✕" } as const;
 const WORD = { ok: "ok", unguided: "unguided", failed: "failed" } as const;
 
@@ -38,6 +36,7 @@ export function totals(steps: Step[]) {
     compared: steps.reduce((n, s) => n + s.compared.length, 0),
     typed: steps.reduce((n, s) => n + s.typed.length, 0),
     unguided: steps.filter((s) => s.result === "unguided").length,
+    friction: steps.filter((s) => s.result === "ok" && (s.issues ?? []).length).length,
     failed: steps.filter((s) => s.result === "failed").length,
   };
 }
@@ -45,10 +44,7 @@ export function totals(steps: Step[]) {
 function lanes(d: Data) {
   const used = new Set(d.steps.map((s) => `${s.actor}/${s.surface}`));
   const out: { key: string; actor: string; surface: Surface }[] = [];
-  for (const actor of d.actors)
-    for (const surface of SURFACES)
-      if (used.has(`${actor}/${surface}`))
-        out.push({ key: `${actor}/${surface}`, actor, surface });
+  for (const actor of d.actors) for (const surface of SURFACES) if (used.has(`${actor}/${surface}`)) out.push({ key: `${actor}/${surface}`, actor, surface });
   return out;
 }
 
@@ -56,16 +52,13 @@ function lanes(d: Data) {
 const SLOW_MS = 10_000;
 
 /** What the graph says beside a step: the problem, or what went right. */
-export function annotation(s: Step): {
-  kind: "ok" | "slow" | "unguided" | "failed";
-  text: string;
-} {
-  if (s.result === "failed")
-    return { kind: "failed", text: `Failed: ${(s.note ?? "").split("\n")[0]}` };
-  if (s.result === "unguided")
-    return { kind: "unguided", text: `Not led here: ${s.prompt}` };
-  if (s.ms >= SLOW_MS)
-    return { kind: "slow", text: `Works, but the person waits ${secs(s.ms)}` };
+export function annotation(s: Step): { kind: "ok" | "slow" | "unguided" | "failed"; text: string } {
+  const issues = (s.issues ?? []).join("; ");
+  const also = issues ? `. Also: ${issues}` : "";
+  if (s.result === "failed") return { kind: "failed", text: `Failed: ${(s.note ?? "").split("\n")[0]}${also}` };
+  if (s.result === "unguided") return { kind: "unguided", text: `Not led here: ${s.prompt}${also}` };
+  if (issues) return { kind: "slow", text: `Done, but: ${issues}` };
+  if (s.ms >= SLOW_MS) return { kind: "slow", text: `Works, but the person waits ${secs(s.ms)}` };
   const bits = [
     s.prompt.startsWith("the person's own doing")
       ? s.prompt.replace("the person's own doing: ", "")
@@ -110,10 +103,7 @@ export function swimlane(d: Data) {
     y += rowH(s);
   }
   const H = y + 16;
-  const cx = (s: Step) =>
-    LEFT +
-    ls.findIndex((l) => l.key === `${s.actor}/${s.surface}`) * COL +
-    COL / 2;
+  const cx = (s: Step) => LEFT + ls.findIndex((l) => l.key === `${s.actor}/${s.surface}`) * COL + COL / 2;
   const v = (name: string, fallback: string) => `var(--${name}, ${fallback})`;
   const COLORS = {
     ok: v("good", "#0ca30c"),
@@ -140,10 +130,7 @@ export function swimlane(d: Data) {
       const a = d.steps[j];
       const moved = a.surface !== s.surface || a.actor !== s.actor;
       const [x1, y1, x2, y2] = [cx(a), ys[j], cx(s), ys[j + 1]];
-      const path =
-        x1 === x2
-          ? `M${x1},${y1 + 13} L${x2},${y2 - 13}`
-          : `M${x1},${y1 + 13} C${x1},${(y1 + y2) / 2} ${x2},${(y1 + y2) / 2} ${x2},${y2 - 13}`;
+      const path = x1 === x2 ? `M${x1},${y1 + 13} L${x2},${y2 - 13}` : `M${x1},${y1 + 13} C${x1},${(y1 + y2) / 2} ${x2},${(y1 + y2) / 2} ${x2},${y2 - 13}`;
       return `<path d="${path}" fill="none" stroke="${moved ? v("switch", "#2a78d6") : v("link", "#a3a29b")}" stroke-width="2"${moved ? ' stroke-dasharray="5 3"' : ""}/>`;
     })
     .join("");
@@ -152,8 +139,7 @@ export function swimlane(d: Data) {
       const a = annotation(s);
       const lines = wrap(a.text, 78);
       const ink = a.kind === "ok" ? v("ink2", "#52514e") : COLORS[a.kind];
-      const glyphInk =
-        a.kind === "unguided" || a.kind === "slow" ? "#0b0b0b" : "#ffffff";
+      const glyphInk = a.kind === "unguided" || a.kind === "slow" ? "#0b0b0b" : "#ffffff";
       const top = ys[i] - rowH(s) / 2 + 18;
       return (
         `<g><title>${i + 1}. ${esc(s.title)}: ${esc(a.text)}</title>` +
@@ -163,10 +149,7 @@ export function swimlane(d: Data) {
         `<line x1="${cx(s) + 14}" y1="${ys[i]}" x2="${notesX - 6}" y2="${ys[i]}" stroke="${v("line", "#e4e3de")}" stroke-width="1"/>` +
         `<text x="${notesX}" y="${top}" font-size="13" font-weight="600" fill="${v("ink", "#0b0b0b")}">${esc(s.title)} <tspan font-weight="400" fill="${v("ink2", "#52514e")}">${secs(s.ms)}</tspan></text>` +
         lines
-          .map(
-            (l, k) =>
-              `<text x="${notesX}" y="${top + 16 * (k + 1)}" font-size="12" fill="${ink}">${k === 0 ? `${ICON[a.kind]} ` : ""}${esc(l)}</text>`,
-          )
+          .map((l, k) => `<text x="${notesX}" y="${top + 16 * (k + 1)}" font-size="12" fill="${ink}">${k === 0 ? `${ICON[a.kind]} ` : ""}${esc(l)}</text>`)
           .join("") +
         `</g>`
       );
@@ -179,14 +162,8 @@ export function swimlane(d: Data) {
 export function graph(d: Data) {
   const t = totals(d.steps);
   const svg = swimlane(d);
-  const verdict = t.failed
-    ? "stopped at a step it couldn't take"
-    : t.unguided
-      ? `${t.unguided} step(s) nothing on screen led to`
-      : "led all the way";
-  const m = /^<svg [^>]*viewBox="0 0 (\d+) (\d+)"[^>]*>([\s\S]*)<\/svg>$/.exec(
-    svg,
-  )!;
+  const verdict = t.failed ? "stopped at a step it couldn't take" : t.unguided ? `${t.unguided} step(s) nothing on screen led to` : "led all the way";
+  const m = /^<svg [^>]*viewBox="0 0 (\d+) (\d+)"[^>]*>([\s\S]*)<\/svg>$/.exec(svg)!;
   const [w, h] = [Number(m[1]), Number(m[2]) + 52];
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" font-family="system-ui, sans-serif" role="img" aria-label="${esc(d.name)} journey">` +
@@ -199,14 +176,9 @@ export function graph(d: Data) {
 
 export function report(d: Data): string {
   const t = totals(d.steps);
-  const first = d.steps.find((s) => s.result !== "ok");
-  const tile = (n: string | number, label: string, warn = false) =>
-    `<div class="tile${warn ? " warn" : ""}"><b>${n}</b><span>${label}</span></div>`;
-  const verdict = t.failed
-    ? "stopped"
-    : t.unguided
-      ? "not led all the way"
-      : "led all the way";
+  const first = d.steps.find((s) => s.result !== "ok") ?? d.steps.find((s) => (s.issues ?? []).length);
+  const tile = (n: string | number, label: string, warn = false) => `<div class="tile${warn ? " warn" : ""}"><b>${n}</b><span>${label}</span></div>`;
+  const verdict = t.failed ? "stopped" : t.unguided ? "not led all the way" : "led all the way";
   const step = (s: Step, i: number) => `
     <tr id="s${i}" class="${s.result}">
       <td class="n">${i + 1}</td>
@@ -215,6 +187,7 @@ export function report(d: Data): string {
         <div class="prompt">${s.result === "unguided" ? "No prompt: " : "Prompt: "}${esc(s.prompt)}</div>
         ${s.note ? `<pre class="note">${esc(s.note)}</pre>` : ""}
         ${s.compared.length ? `<div class="dim">Compared: ${s.compared.map((c) => `<code>${esc(c)}</code>`).join(", ")}</div>` : ""}
+        ${(s.issues ?? []).length ? `<div class="prompt" style="color:var(--serious)">Friction: ${s.issues.map(esc).join("; ")}</div>` : ""}
         ${s.opened.length ? `<div class="dim">Opened in the browser: ${s.opened.map((c) => `<code>${esc(c)}</code>`).join(", ")}</div>` : ""}
         ${s.typed.length ? `<div class="dim">Typed: ${s.typed.map((c) => `<code>${esc(c)}</code>`).join(", ")}</div>` : ""}</td>
       <td class="num">${secs(s.ms)}</td>
@@ -222,9 +195,7 @@ export function report(d: Data): string {
     </tr>`;
   const shots = d.steps
     .map((s, i) =>
-      s.shot
-        ? `<a class="lightbox" id="shot${i}" href="#s${i}"><img src="data:image/jpeg;base64,${s.shot}" alt="Step ${i + 1} full size"></a>`
-        : "",
+      s.shot ? `<a class="lightbox" id="shot${i}" href="#s${i}"><img src="data:image/jpeg;base64,${s.shot}" alt="Step ${i + 1} full size"></a>` : "",
     )
     .join("");
   return `<!doctype html>
@@ -264,17 +235,17 @@ code { font-size:12px; }
 <h1>${esc(d.name)}: ${esc(d.title)}</h1>
 <div class="dim">${esc(d.at)} · ${esc(verdict)}</div>
 <div class="tiles">
-${tile(t.steps, "steps")}${tile(secs(t.wall), "wall time")}${tile(t.switches, "switches (surface or person)")}${tile(t.handoffs, "hand-offs between people")}${tile(t.compared, "codes and fingerprints compared")}${tile(t.typed, "commands typed")}${tile(t.unguided, "unguided steps", t.unguided > 0)}${tile(t.failed, "failed", t.failed > 0)}
+${tile(t.steps, "steps")}${tile(secs(t.wall), "wall time")}${tile(t.switches, "switches (surface or person)")}${tile(t.handoffs, "hand-offs between people")}${tile(t.compared, "codes and fingerprints compared")}${tile(t.typed, "commands typed")}${tile(t.unguided, "unguided steps", t.unguided > 0)}${tile(t.friction, "steps with friction", t.friction > 0)}${tile(t.failed, "failed", t.failed > 0)}
 </div>
 ${
   first
     ? `<h2>Where a newcomer gets stuck</h2><div class="callout ${first.result}"><b>Step ${d.steps.indexOf(first) + 1}: ${esc(first.title)}</b> <span class="badge ${first.result}">${MARK[first.result]} ${WORD[first.result]}</span>
-<div class="prompt">${first.result === "unguided" ? "No prompt: " : "Prompt: "}${esc(first.prompt)}</div>${first.note ? `<pre class="note">${esc(first.note)}</pre>` : ""}
+<div class="prompt">${first.result === "unguided" ? "No prompt: " : "Prompt: "}${esc(first.prompt)}</div>${first.note ? `<pre class="note">${esc(first.note)}</pre>` : ""}${(first.issues ?? []).length ? `<div class="prompt" style="color:var(--serious)">Friction: ${first.issues.map(esc).join("; ")}</div>` : ""}
 ${first.shot ? `<img src="data:image/jpeg;base64,${first.shot}" alt="Screenshot at that step">` : ""}</div>`
     : ""
 }
 <h2>The path</h2>
-<div class="legend"><span><i style="background:var(--good)"></i>✓ led by the screen</span><span><i style="background:var(--serious)"></i>◷ works, but slow</span><span><i style="background:var(--warn)"></i>! nothing on screen led there</span><span><i style="background:var(--bad)"></i>✕ failed</span><span><i style="background:var(--switch)"></i>dashed: a switch of surface or person</span></div>
+<div class="legend"><span><i style="background:var(--good)"></i>✓ led by the screen</span><span><i style="background:var(--serious)"></i>◷ done, but slow or confusing</span><span><i style="background:var(--warn)"></i>! nothing on screen led there</span><span><i style="background:var(--bad)"></i>✕ failed</span><span><i style="background:var(--switch)"></i>dashed: a switch of surface or person</span></div>
 <div class="scroll">${swimlane(d)}</div>
 <h2>Every step</h2>
 <table>${d.steps.map(step).join("")}</table>

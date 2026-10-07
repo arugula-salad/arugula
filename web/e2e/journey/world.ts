@@ -7,13 +7,7 @@
 // an empty home and no account.
 
 import { spawn, type ChildProcess } from "node:child_process";
-import {
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  symlinkSync,
-} from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -25,8 +19,7 @@ export const BIN = resolve("../target/debug");
 
 /** A browser that isn't Playwright's to the page: the client greets a
  * person (Getting started) but never automation (welcome.spec.ts). */
-export const asPerson = () =>
-  Object.defineProperty(Navigator.prototype, "webdriver", { get: () => false });
+export const asPerson = () => Object.defineProperty(Navigator.prototype, "webdriver", { get: () => false });
 
 export class World {
   control = "";
@@ -53,14 +46,7 @@ export class World {
     const db = join(this.temp("control"), "control.db");
     const p = this.spawn(`${BIN}/arugula-control`, [
       ...["--listen", ANY, "--public-url", "http://127.0.0.1:0", "--db", db],
-      ...[
-        "--github-client-id",
-        "id",
-        "--github-client-secret",
-        "s",
-        "--static-dir",
-        "dist",
-      ],
+      ...["--github-client-id", "id", "--github-client-secret", "s", "--static-dir", "dist"],
       ...["--github-url", this.github, "--github-api", this.github],
     ]);
     this.control = `http://127.0.0.1:${await controlPort(db, p)}`;
@@ -132,21 +118,8 @@ export class Person {
     this.proc = this.world.spawn(
       `${BIN}/arugulad`,
       [
-        ...[
-          "--listen",
-          ANY,
-          "--name",
-          machine,
-          "--control",
-          this.world.control,
-        ],
-        ...[
-          "--shell",
-          "bash --norc --noprofile",
-          "--no-manager-env",
-          "--tailscale-socket",
-          "/nonexistent/sock",
-        ],
+        ...["--listen", ANY, "--name", machine, "--control", this.world.control],
+        ...["--shell", "bash --norc --noprofile", "--no-manager-env", "--tailscale-socket", "/nonexistent/sock"],
       ],
       {
         ...this.shellEnv(),
@@ -199,21 +172,14 @@ function fakeGithub(): Server {
         .end();
     } else if (u.pathname === "/login/oauth/access_token") {
       const code = new URLSearchParams(await body(req)).get("code") ?? "";
-      res
-        .writeHead(200, { "content-type": "application/json" })
-        .end(
-          JSON.stringify({
-            access_token: `gho_${code.replace(/^c0de\./, "")}`,
-          }),
-        );
-    } else if (u.pathname === "/user") {
-      const login = String(req.headers.authorization ?? "").replace(
-        /^(Bearer|token) gho_/,
-        "",
+      res.writeHead(200, { "content-type": "application/json" }).end(
+        JSON.stringify({
+          access_token: `gho_${code.replace(/^c0de\./, "")}`,
+        }),
       );
-      res
-        .writeHead(200, { "content-type": "application/json" })
-        .end(JSON.stringify({ id: githubId(login), login }));
+    } else if (u.pathname === "/user") {
+      const login = String(req.headers.authorization ?? "").replace(/^(Bearer|token) gho_/, "");
+      res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ id: githubId(login), login }));
     } else res.writeHead(404).end();
   });
 }
