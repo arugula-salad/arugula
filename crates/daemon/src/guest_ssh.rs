@@ -212,11 +212,14 @@ impl Jump {
 }
 
 /// The command a guest pastes: the host key pinned, nothing written to
-/// their known-hosts file.
+/// their known-hosts file. It never prompts (`BatchMode`), as the relayed
+/// command's hop doesn't: a wrong or spent token can't be fixed by typing
+/// a password or a key's passphrase, so ssh says `Permission denied` and
+/// stops.
 pub fn command(token: &str, host: &str, port: u16, known_hosts: &str) -> String {
     let p = if port == 22 { String::new() } else { format!("-p {port} ") };
     format!(
-        "ssh {p}-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=yes \
+        "ssh {p}-o BatchMode=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=yes \
          -o 'KnownHostsCommand=/bin/echo {known_hosts}' {token}@{host}"
     )
 }
@@ -1163,7 +1166,7 @@ mod tests {
         let c = command("gabc", "box", 7684, "[box]:7684 ssh-ed25519 AAAA");
         assert_eq!(
             c,
-            "ssh -p 7684 -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=yes \
+            "ssh -p 7684 -o BatchMode=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=yes \
              -o 'KnownHostsCommand=/bin/echo [box]:7684 ssh-ed25519 AAAA' gabc@box"
         );
     }
