@@ -12,7 +12,9 @@ impl Daemon {
     /// program starts.
     pub(super) fn new_machine(&mut self, image: Option<String>) -> Result<MachineId, String> {
         if self.config.provider.is_none() {
-            return Err("VM panes aren't set up: arugulad found no wisp token (see --wisp-token-file)".into());
+            return Err(crate::labs::vms_unavailable(
+                "VM panes aren't set up: arugulad found no wisp token (see --wisp-token-file)",
+            ));
         }
         let id = self.next_machine;
         let sprite = format!("{}{id}", self.config.sprite_prefix());
@@ -23,7 +25,9 @@ impl Daemon {
     /// shell", M4b): never created, reset or deleted by us.
     pub(super) fn borrow_machine(&mut self, sprite: &str) -> Result<MachineId, String> {
         if self.config.provider.is_none() {
-            return Err("no sandbox provider: arugulad found no wisp token (see --wisp-token-file)".into());
+            return Err(crate::labs::vms_unavailable(
+                "no sandbox provider: arugulad found no wisp token (see --wisp-token-file)",
+            ));
         }
         if sprite.starts_with(&self.config.sprite_prefix()) {
             return Err(format!("{sprite} is one of this daemon's own machines"));

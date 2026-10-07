@@ -48,11 +48,11 @@ use tokio::{
 use tokio_tungstenite::tungstenite::{Message, client::IntoClientRequest, handshake::client::Request};
 use tracing::{info, warn};
 
-use super::{
+use crate::pane::Spawn;
+use crate::provider::{
     Begin, Caps, Cold, Conn, Exec, ExecEvent, ExecInput, ExecSink, PATIENCE, Pipe, PipeBegin, PipeEvent, Provider,
     Sandbox, ServiceDef,
 };
-use crate::pane::Spawn;
 use arugula_proto::fs::{FsEntry, FsKind, FsList};
 
 /// How long a session survives with nobody attached: longer than any

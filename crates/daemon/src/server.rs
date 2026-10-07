@@ -47,7 +47,8 @@ pub struct App {
     pub push: Option<crate::push::Push>,
     pub hosts: Arc<Hosts>,
     /// The static binaries a daemon made resident in a sandbox runs.
-    pub binaries: Option<crate::resident::Binaries>,
+    #[cfg_attr(not(feature = "labs"), allow(dead_code))]
+    pub binaries: Option<crate::labs::Binaries>,
     /// Dial-out hosts connected to us (M4c).
     pub dial_outs: Arc<crate::dial::DialOuts>,
     /// Read-only share links.
@@ -79,7 +80,7 @@ impl App {
         hosts: Arc<Hosts>,
         shares: Arc<crate::share::Shares>,
         synced: Arc<crate::sync::Synced>,
-        binaries: Option<crate::resident::Binaries>,
+        binaries: Option<crate::labs::Binaries>,
         control: Arc<crate::control::Control>,
         acl: Arc<crate::acl::Acl>,
         mcp: Arc<crate::mcp::Tokens>,
@@ -130,11 +131,7 @@ fn own_routes(app: &Arc<App>) -> Router<Arc<App>> {
 /// the way through to dial-out hosts (`/h/NAME`), its provider's sandboxes,
 /// and the provider tunnel to resident daemons in them (`/tunnel/NAME`).
 fn api_routes(app: &Arc<App>) -> Router<Arc<App>> {
-    own_routes(app)
-        .merge(crate::dial::routes())
-        .merge(crate::sync::routes())
-        .merge(crate::resident::routes())
-        .merge(crate::provider_tunnel::routes())
+    crate::labs::home_routes(own_routes(app).merge(crate::dial::routes()).merge(crate::sync::routes()))
 }
 
 /// Over TCP (loopback, behind `tailscale serve`, or a tailnet address):
