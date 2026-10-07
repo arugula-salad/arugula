@@ -69,8 +69,9 @@ Paths are under `crates/daemon/src/`.
   (`invite/`), remote blocks (`remote.rs`), configured agent harnesses
   (`inventory.rs`).
 - **Reach:** other daemons (`hosts.rs`), machines that aren't this host
-  (`machine.rs`), sandbox providers (`provider/`, `provider_tunnel.rs`,
-  `resident.rs`, `sandbox.rs`), synced history (`sync.rs`, `seal.rs`),
+  (`labs/machine.rs`), sandbox providers (the trait in `provider/`; the
+  Sprites adapter, `labs/provider_tunnel.rs`, `labs/resident.rs` and
+  `labs/sandbox.rs` in Labs), synced history (`sync.rs`, `seal.rs`),
   tailscaled (`tailscale.rs`), outgoing TLS roots (`roots.rs`).
 - **Lifecycle:** the command line (`args.rs`), startup (`main.rs`), `install`
   (`install.rs`), Getting started (`setup.rs`), updates (`update.rs`,
@@ -103,8 +104,11 @@ An empty `labs` file in the state dir turns on what a stranger doesn't get
 moves the state dir. A `labs` cargo feature (on by default) compiles Labs
 code in or out: it lives in `crates/daemon/src/labs/`, and core reaches it
 only through the surface in `labs/mod.rs`, which explains the pattern. Fountain,
-studio apps and chant workspaces are there so far (#452, #453); the rest
-follows (#454 to #457). `just check-core`
+studio apps, chant workspaces, and VMs (the Sprites adapter, machines, resident
+daemons, the provider tunnel and the tailnet sandbox supervisor) are there so
+far (#452 to #454); the rest follows (#455 to #457). The `Provider` trait stays
+in core (`provider/`); a build without Labs never has a provider, and a saved
+VM pane comes back exited, with the reason. `just check-core`
 runs clippy and the tests of `arugulad` and `arugula` with the feature off.
 
 ## Commands

@@ -1,7 +1,7 @@
 //! A small Sprites API client (M20): what hosted sandboxes need from the
 //! provider. Create one, put the daemon in it and run it as a service,
 //! open a connection to its port (which wakes it), delete it. The same API
-//! as the daemon's provider (`crates/daemon/src/provider/sprites.rs`); wisp
+//! as the daemon's provider (`crates/daemon/src/labs/sprites.rs`); wisp
 //! speaks it too, which is how the tests run.
 
 use std::io;

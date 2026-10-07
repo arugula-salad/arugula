@@ -58,6 +58,7 @@ mod team_answers;
 mod threads;
 mod tmux;
 mod upgrade;
+mod vm_layout;
 mod vm_reboot;
 mod windows;
 #[cfg(feature = "labs")]

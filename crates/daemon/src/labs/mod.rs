@@ -1,6 +1,6 @@
 //! Labs: the features that are not part of the core (Fountain, studio apps
-//! with hud, and chant workspaces so far; VMs, guest ssh, huddles, chat and
-//! the other forges move here in #454 to #457), behind the cargo feature
+//! with hud, chant workspaces, and VMs with their sandboxes so far; guest
+//! ssh, huddles, chat and the other forges move here in #455 to #457), behind the cargo feature
 //! `labs`. The feature is on by default, so a release build has all of it;
 //! `--no-default-features` leaves it out, for fast local builds, for agents
 //! working on core, and for the CI job `core`. (The runtime switch, the
@@ -41,6 +41,7 @@ use serde_json::Value;
 
 use crate::{
     block::{Block, BlockCtx},
+    provider::{Begin, Exec, ExecEvent, Provider},
     server::App,
     shellenv::ShellEnv,
 };
@@ -49,6 +50,18 @@ use crate::{
 pub mod apps;
 #[cfg(feature = "labs")]
 pub mod fountain;
+// VMs: the machines panes run on, and the sandboxes they come from.
+#[cfg(feature = "labs")]
+pub mod machine;
+#[cfg(feature = "labs")]
+pub mod provider_tunnel;
+#[cfg(feature = "labs")]
+pub mod resident;
+// The tailnet sandbox supervisor: Linux boxes.
+#[cfg(all(feature = "labs", unix))]
+pub mod sandbox;
+#[cfg(feature = "labs")]
+pub mod sprites;
 #[cfg(feature = "labs")]
 pub mod workspace;
 
@@ -205,6 +218,11 @@ mod absent {
 
     use crate::review::Runner;
 
+    /// Uninhabited: no build without Labs makes a daemon resident in a
+    /// sandbox, so there are never binaries to copy in.
+    #[derive(Debug, Clone)]
+    pub enum Binaries {}
+
     /// Uninhabited: no build without Labs puts an agent on.
     pub enum Worn {}
 
@@ -247,4 +265,138 @@ mod absent {
     pub fn scrub(_line: &str, _secrets: &[String]) -> Option<String> {
         None
     }
+}
+
+/// Adds what makes a daemon a home daemon for VMs: its provider's sandboxes
+/// (making a daemon resident in one), and the provider tunnel to the
+/// resident daemons in them.
+#[cfg(feature = "labs")]
+pub fn home_routes(r: Router<Arc<App>>) -> Router<Arc<App>> {
+    r.merge(resident::routes()).merge(provider_tunnel::routes())
+}
+
+#[cfg(not(feature = "labs"))]
+pub fn home_routes(r: Router<Arc<App>>) -> Router<Arc<App>> {
+    r
+}
+
+/// The sandbox provider VM panes get their machines from, if there is one:
+/// the Sprites API (wisp, or Fly's) at `url`, with the token in
+/// `token_file`. A build without Labs has none: a provider given
+/// (`given`: the flags weren't left at their defaults) is ignored, with a
+/// warning.
+#[cfg(feature = "labs")]
+pub fn open_provider(url: &str, token_file: &Path, _given: bool) -> Option<Arc<dyn Provider>> {
+    sprites::Sprites::open(url, token_file).map(|p| Arc::new(p) as Arc<dyn Provider>)
+}
+
+#[cfg(not(feature = "labs"))]
+pub fn open_provider(url: &str, _token_file: &Path, given: bool) -> Option<Arc<dyn Provider>> {
+    if given {
+        tracing::warn!(url, "{}", not_built("VMs"));
+    }
+    None
+}
+
+/// Why a request that needs VM panes can't have them: `why` when there is
+/// no provider here, and that this build has no VMs when it was built without
+/// Labs.
+#[cfg(feature = "labs")]
+pub fn vms_unavailable(why: &str) -> String {
+    why.to_owned()
+}
+
+#[cfg(not(feature = "labs"))]
+pub fn vms_unavailable(_why: &str) -> String {
+    "VMs aren't in this build (built without labs)".to_owned()
+}
+
+/// Starts (or resumes) a session on `sprite`, a VM pane's terminal. There is
+/// no pane on a machine without a provider, which a build without Labs
+/// never has; if it is asked anyway, the session is lost at once.
+#[cfg(feature = "labs")]
+pub fn machine_start(
+    rt: &tokio::runtime::Handle,
+    provider: Arc<dyn Provider>,
+    sprite: String,
+    begin: Begin,
+    size: (u16, u16),
+    sink: impl Fn(ExecEvent) -> bool + Send + 'static,
+) -> Exec {
+    machine::start(rt, provider, sprite, begin, size, sink)
+}
+
+#[cfg(not(feature = "labs"))]
+pub fn machine_start(
+    _rt: &tokio::runtime::Handle,
+    _provider: Arc<dyn Provider>,
+    _sprite: String,
+    _begin: Begin,
+    _size: (u16, u16),
+    sink: impl Fn(ExecEvent) -> bool + Send + 'static,
+) -> Exec {
+    sink(ExecEvent::Lost { machine_gone: true });
+    Exec { tx: tokio::sync::mpsc::unbounded_channel().0 }
+}
+
+/// The static binaries to copy into a sandbox when making a daemon resident
+/// there.
+#[cfg(feature = "labs")]
+pub use resident::Binaries;
+
+#[cfg(not(feature = "labs"))]
+pub use absent::Binaries;
+
+/// The static binaries in `dir`, if they are there.
+#[cfg(feature = "labs")]
+pub fn binaries(dir: PathBuf) -> Option<Binaries> {
+    dir.join("arugulad").exists().then_some(Binaries { dir })
+}
+
+#[cfg(not(feature = "labs"))]
+pub fn binaries(_dir: PathBuf) -> Option<Binaries> {
+    None
+}
+
+/// `arugulad install --tailnet`: joins a tailnet with a userspace tailscaled
+/// and keeps the daemon running there (for machines without systemd).
+#[cfg(all(feature = "labs", unix))]
+pub fn tailnet_install(cmd: crate::args::Command) -> anyhow::Result<()> {
+    let crate::args::Command::Install {
+        tailnet: Some(authkey),
+        home,
+        join,
+        owner,
+        hostname,
+        port,
+        no_serve,
+        daemon_args,
+        ..
+    } = cmd
+    else {
+        anyhow::bail!("not a tailnet install")
+    };
+    sandbox::install(sandbox::TailnetOpts { authkey, hostname, home, join, owner, port, no_serve, daemon_args })
+}
+
+#[cfg(all(not(feature = "labs"), unix))]
+pub fn tailnet_install(_cmd: crate::args::Command) -> anyhow::Result<()> {
+    anyhow::bail!(not_built("A tailnet sandbox"))
+}
+
+/// `arugulad sandbox`: keeps tailscaled and the daemon running, as
+/// `install --tailnet` set them up.
+#[cfg(all(feature = "labs", unix))]
+pub fn supervise_sandbox() -> anyhow::Result<()> {
+    sandbox::supervise()
+}
+
+#[cfg(all(not(feature = "labs"), unix))]
+pub fn supervise_sandbox() -> anyhow::Result<()> {
+    anyhow::bail!(not_built("The sandbox supervisor"))
+}
+
+#[cfg(not(unix))]
+pub fn supervise_sandbox() -> anyhow::Result<()> {
+    anyhow::bail!("the sandbox supervisor is for Linux boxes")
 }

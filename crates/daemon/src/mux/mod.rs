@@ -747,7 +747,7 @@ impl Daemon {
         cols: u16,
         rows: u16,
         restore: bool,
-        start: Start,
+        mut start: Start,
         cwd: PathBuf,
         integrate: bool,
         hold: bool,
@@ -756,16 +756,24 @@ impl Daemon {
         let host = match machine {
             None => None,
             Some(m) => {
-                let provider =
-                    self.config.provider.clone().ok_or_else(|| std::io::Error::other("VM panes aren't set up"))?;
                 let machine = self.machines.get(&m).ok_or_else(|| std::io::Error::other("no such machine"))?;
-                Some(pane::Host {
-                    provider,
-                    borrowed: machine.borrowed,
-                    sprite: machine.sprite.clone(),
-                    image: machine.image.clone(),
-                    rt: tokio::runtime::Handle::current(),
-                })
+                match self.config.provider.clone() {
+                    Some(provider) => Some(pane::Host {
+                        provider,
+                        borrowed: machine.borrowed,
+                        sprite: machine.sprite.clone(),
+                        image: machine.image.clone(),
+                        rt: tokio::runtime::Handle::current(),
+                    }),
+                    // No provider here (or none in this build): the pane
+                    // stays in the layout, exited, with its machine and the
+                    // reason, for a daemon that has one.
+                    None => {
+                        let note = crate::labs::vms_unavailable("VM panes aren't set up here: no wisp token");
+                        start = Start::Unavailable { note };
+                        None
+                    }
+                }
             }
         };
         let shell = match machine {

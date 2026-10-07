@@ -5,7 +5,7 @@
 //! A host gets on the list by being added (`arugula hosts add`, by the
 //! owner), by joining with a one-time invite token (a sandbox installing
 //! itself, which has no user identity to be checked), or by being made
-//! resident in a provider's sandbox (M4b, `resident.rs`). The home daemon
+//! resident in a provider's sandbox (M4b, `labs/resident.rs`). The home daemon
 //! checks on each host every minute and records when it last answered; a
 //! provider host's sandbox is asked about through its provider instead,
 //! which doesn't wake it.
@@ -20,7 +20,7 @@
 //! - **Provider tunnel tokens** (`ilp_…`, M4b), us → the host: minted when
 //!   a daemon is made resident in a sandbox, kept here in
 //!   `provider-tokens.json` (we present them; the host keeps the hash), and
-//!   sent by the provider tunnel (`provider_tunnel.rs`) to reach it.
+//!   sent by the provider tunnel (`labs/provider_tunnel.rs`) to reach it.
 //!
 //! Neither is ever in the list clients get. `hosts revoke` and `hosts rm`
 //! drop whatever a host has of both.
@@ -151,6 +151,7 @@ impl Hosts {
 
     /// Add (or replace) a host whose daemon lives in a provider's sandbox,
     /// reached through our tunnel with `token`.
+    #[cfg(feature = "labs")]
     pub fn add_provider(&self, name: String, at: ProviderRef, token: String) -> Result<Host, String> {
         let req = validate(AddHost { name, urls: vec![], transport: Transport::Provider, ssh: None }, &self.name)?;
         {
@@ -162,6 +163,7 @@ impl Hosts {
     }
 
     /// A provider host: where it is, and the token its daemon wants.
+    #[cfg(feature = "labs")]
     pub fn provider_tunnel(&self, name: &str) -> Option<(ProviderRef, String)> {
         let inner = self.inner.lock().unwrap();
         let at = inner.hosts.iter().find(|h| h.name == name)?.provider.clone()?;
@@ -758,6 +760,7 @@ mod tests {
         std::fs::remove_dir_all(d).unwrap();
     }
 
+    #[cfg(feature = "labs")]
     #[test]
     fn revoking_or_removing_a_provider_host_drops_both_kinds_of_token() {
         let d = dir();

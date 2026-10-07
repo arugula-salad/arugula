@@ -42,9 +42,8 @@ use tokio::sync::mpsc;
 use tracing::{debug, info, warn};
 
 use crate::{
-    machine::{Begin, Exec, ExecEvent},
     osc::Signal,
-    provider::Provider,
+    provider::{Begin, Exec, ExecEvent, Provider},
     store::{Event, PaneLog, now_ms},
 };
 
@@ -639,6 +638,12 @@ pub enum Start {
         enter: Spawn,
         text: Option<String>,
         escape: Option<Spawn>,
+    },
+    /// A VM pane whose machine can't be reached from this daemon (it has no
+    /// provider, or was built without VMs): show `note` and stay exited, with
+    /// its scrollback, so the layout keeps the pane for a daemon that can.
+    Unavailable {
+        note: String,
     },
 }
 
@@ -1699,6 +1704,11 @@ impl State {
                 self.output(banner.as_bytes());
                 self.waiting = Some(Waiting { enter, text, escape });
             }
+            Start::Unavailable { note } => {
+                self.status.lock().unwrap().exited = Some(None);
+                self.output(format!("\x1b[0m\r\n\x1b[2m[{note}]\x1b[0m\r\n").as_bytes());
+                self.notify(What::Exited { code: None, close: false });
+            }
         }
     }
 
@@ -1718,10 +1728,14 @@ impl State {
     fn attach_exec(&mut self, host: &Host, begin: Begin) {
         let key = NEXT_EXEC.fetch_add(1, Ordering::Relaxed);
         let events = self.events.clone();
-        let exec =
-            crate::machine::start(&host.rt, host.provider.clone(), host.sprite.clone(), begin, self.engine.size(), {
-                move |event| events.send(Cmd::Exec { key, event }).is_ok()
-            });
+        let exec = crate::labs::machine_start(
+            &host.rt,
+            host.provider.clone(),
+            host.sprite.clone(),
+            begin,
+            self.engine.size(),
+            move |event| events.send(Cmd::Exec { key, event }).is_ok(),
+        );
         self.running.store(true, Ordering::Relaxed);
         self.process = Some(Backend::Vm { exec, key });
     }
