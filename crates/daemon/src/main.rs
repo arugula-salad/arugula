@@ -8,6 +8,7 @@ mod args;
 mod authz;
 mod block;
 mod browser;
+mod calls;
 mod classify;
 mod control;
 // Windows panes on a pseudoconsole (M56).
@@ -44,7 +45,6 @@ mod pane;
 mod paths;
 mod perm;
 // The local socket on Windows: a named pipe (M56).
-mod calls;
 #[cfg(windows)]
 mod pipe;
 mod ports;
