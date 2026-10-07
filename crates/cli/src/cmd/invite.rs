@@ -1,10 +1,11 @@
 //! `arugula invite`: bring someone into a session.
 
 use super::Ctx;
-use crate::http::request;
+use crate::http::{request, request_as};
 use crate::util::{Pane, env_pane, print_json};
 use anyhow::{Context, bail};
-use serde_json::json;
+use arugula_core::Role;
+use arugula_proto::api::{InviteDelivery, InviteRequest, Invited};
 use std::io::Write;
 
 #[derive(clap::Args)]
@@ -67,30 +68,39 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
         }
         .and_then(|p| p["session"].as_u64())
         .with_context(|| format!("no session {}", session.as_deref().unwrap_or("for that pane")))?;
-    let body = json!({
-        "session": session, "who": who, "role": role, "pane": pane, "history": history,
-        "drive_minutes": drive, "note": note, "root": root,
-    });
-    let v = request(&sock, "POST", "/api/invite", Some(&body))?.json()?;
+    let body = InviteRequest {
+        session: session.try_into().context("no such session")?,
+        who: who.clone(),
+        role: Some(if role == "editor" { Role::Editor } else { Role::Viewer }),
+        note,
+        pane,
+        history,
+        drive_minutes: drive,
+        root,
+        thread: None,
+        msg: None,
+        whole_thread: false,
+    };
+    let (v, raw) = request_as(&sock, "POST", "/api/invite", &body)?.parse_raw::<Invited>()?;
     if json_out {
-        print_json(&v);
+        print_json(&raw);
         return Ok(0);
     }
-    let g = &v["grant"];
-    let name = g["name"].as_str().unwrap_or(&who);
-    let what = if g["granted"] == true { "shared with" } else { "already shared with" };
-    println!("{what} {name} as {} (opens at %{})", g["role"].as_str().unwrap_or(""), v["pane"]);
-    match (v["drive"].as_bool(), drive) {
-        (Some(true), Some(m)) => println!("they may type in %{} for {m} minutes", v["pane"]),
+    let g = &v.grant;
+    let name = if g.name.is_empty() { &who } else { &g.name };
+    let what = if g.granted { "shared with" } else { "already shared with" };
+    println!("{what} {name} as {} (opens at %{})", g.role.as_str(), v.pane);
+    match (v.drive, drive) {
+        (Some(true), Some(m)) => println!("they may type in %{} for {m} minutes", v.pane),
         (Some(false), _) => {
             println!("--drive changed nothing: they drive by their role here, or the pane isn't on this machine")
         }
         _ => {}
     }
-    match (v["delivery"].as_str().unwrap_or(""), v["reason"].as_str()) {
-        ("sent", _) => println!("notified"),
-        (d, Some(why)) => println!("{d}: {why}"),
-        (d, None) => println!("{d}"),
+    match (v.delivery, v.reason.as_deref()) {
+        (InviteDelivery::Sent, _) => println!("notified"),
+        (d, Some(why)) => println!("{}: {why}", d.as_str()),
+        (d, None) => println!("{}", d.as_str()),
     }
     Ok(0)
 }

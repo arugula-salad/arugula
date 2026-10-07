@@ -17,11 +17,12 @@ use std::{
     time::{Duration, Instant},
 };
 
+use arugula_proto::api::{AskAnswer, AskRequest, WithdrawRequest};
 #[cfg(unix)]
 use nix::sys::signal::{SigSet, Signal};
-use serde_json::{Value, json};
+use serde_json::Value;
 
-use crate::http::{Target, request};
+use crate::http::{Target, request_as};
 
 /// How long to keep asking a daemon that doesn't answer before leaving the
 /// question to the terminal.
@@ -55,17 +56,16 @@ pub fn run(sock: Target) -> i32 {
 
 /// The hook's output, or `None` to leave the question to the terminal.
 fn wait_for_answer(sock: &Target, pane: u32, questions: &Value, id: Option<String>) -> Option<Value> {
-    let body = json!({ "questions": questions, "id": id });
+    let body = AskRequest { questions: questions.clone(), id, source: None, agent: None };
     let mut failing_since: Option<Instant> = None;
     loop {
-        let answer = request(sock, "POST", &format!("/api/panes/{pane}/ask"), Some(&body));
+        let answer = request_as(sock, "POST", &format!("/api/panes/{pane}/ask"), &body);
         match answer {
             Ok(res) if res.status == 503 => {}
             Ok(res) => {
-                let v = res.json().ok()?;
-                return match v["action"].as_str() {
-                    Some("accept" | "decline") => Some(v["output"].clone()),
-                    _ => None,
+                return match res.parse::<AskAnswer>().ok()? {
+                    AskAnswer::Accept { output, .. } | AskAnswer::Decline { output, .. } => Some(output),
+                    AskAnswer::Terminal | AskAnswer::Withdrawn => None,
                 };
             }
             Err(_) => {}
@@ -95,7 +95,7 @@ pub fn withdraw_on_signals(sock: Target, pane: u32, id: Option<String>) {
     }
     std::thread::spawn(move || {
         if set.wait().is_ok() {
-            let _ = request(&sock, "POST", &format!("/api/panes/{pane}/ask/withdraw"), Some(&json!({ "id": id })));
+            let _ = request_as(&sock, "POST", &format!("/api/panes/{pane}/ask/withdraw"), &WithdrawRequest { id });
             std::process::exit(0);
         }
     });
@@ -114,7 +114,12 @@ pub fn withdraw_on_signals(sock: Target, pane: u32, id: Option<String>) {
     }
     unsafe extern "system" fn on_ctrl(_event: u32) -> windows_sys::core::BOOL {
         if let Some((sock, pane, id)) = CARD.get() {
-            let _ = request(sock, "POST", &format!("/api/panes/{pane}/ask/withdraw"), Some(&json!({ "id": id })));
+            let _ = request_as(
+                sock,
+                "POST",
+                &format!("/api/panes/{pane}/ask/withdraw"),
+                &WithdrawRequest { id: id.clone() },
+            );
         }
         std::process::exit(0);
     }

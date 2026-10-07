@@ -1,9 +1,9 @@
 //! `arugula share`: a read-only link to a pane, an ssh invite with `--guest`, and the lists of both.
 
 use super::Ctx;
-use crate::http::request;
+use crate::http::{request, request_as};
 use crate::util::{Pane, duration, here, now_ms, print_json, span, time};
-use serde_json::json;
+use arugula_proto::api::{Empty, GuestInvite, GuestInviteRequest, Share, ShareRequest};
 
 #[derive(clap::Subcommand)]
 pub enum SharesCmd {
@@ -45,17 +45,22 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
     let Ctx { sock, json_out, .. } = ctx;
     match args {
         Args { pane, ttl, guest: true, rw, reusable, name, addr, relay } => {
-            let body = json!({
-                "pane": here(pane)?, "ttl_secs": duration(&ttl)?, "rw": rw, "reusable": reusable,
-                "label": name, "host": addr, "relay": relay.then_some(true),
-            });
-            let v = request(&sock, "POST", "/api/guests", Some(&body))?.json()?;
+            let body = GuestInviteRequest {
+                pane: here(pane)?,
+                ttl_secs: Some(duration(&ttl)?),
+                rw,
+                reusable,
+                label: name,
+                host: addr,
+                relay: relay.then_some(true),
+            };
+            let (g, v) = request_as(&sock, "POST", "/api/guests", &body)?.parse_raw::<GuestInvite>()?;
             if json_out {
                 print_json(&v);
             } else {
-                println!("{}", v["command"].as_str().unwrap_or_default());
-                let left = v["expires_ms"].as_u64().unwrap_or(0).saturating_sub(now_ms()) / 1000;
-                if let Some(jump) = v["jump"].as_str() {
+                println!("{}", g.command.as_deref().unwrap_or_default());
+                let left = g.expires_ms.saturating_sub(now_ms()) / 1000;
+                if let Some(jump) = g.jump.as_deref() {
                     eprintln!(
                         "Through control's ssh jump host {jump} (ssh -J, written out so its key is pinned \
                          too): control carries the session and can't read it."
@@ -65,23 +70,23 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
                     "Invite {}: {}, {}, for {}. `arugula guests revoke {}` ends it.\n\
                      The host key is pinned in the command ({}). ssh older than 8.5 has no \
                      KnownHostsCommand: save this to a file and pass -o UserKnownHostsFile=<file>:\n{}",
-                    v["id"],
+                    g.id,
                     if rw { "read-write" } else { "read-only" },
                     if reusable { "reusable" } else { "one login" },
                     span(left),
-                    v["id"],
-                    v["fingerprint"].as_str().unwrap_or_default(),
-                    v["known_hosts"].as_str().unwrap_or_default(),
+                    g.id,
+                    g.fingerprint.as_deref().unwrap_or_default(),
+                    g.known_hosts.as_deref().unwrap_or_default(),
                 );
             }
         }
         Args { pane, ttl, .. } => {
-            let body = json!({"pane": here(pane)?, "ttl_secs": duration(&ttl)?});
-            let v = request(&sock, "POST", "/api/shares", Some(&body))?.json()?;
+            let body = ShareRequest { pane: here(pane)?, ttl_secs: Some(duration(&ttl)?) };
+            let (s, v) = request_as(&sock, "POST", "/api/shares", &body)?.parse_raw::<Share>()?;
             if json_out {
                 print_json(&v);
             } else {
-                println!("{}", v["url"].as_str().or(v["path"].as_str()).unwrap_or_default());
+                println!("{}", s.url.as_deref().or(s.path.as_deref()).unwrap_or_default());
             }
         }
     }
@@ -92,37 +97,36 @@ pub fn guests(cmd: Option<SharesCmd>, ctx: Ctx) -> anyhow::Result<i32> {
     let Ctx { sock, json_out, .. } = ctx;
     match cmd {
         None => {
-            let v = request(&sock, "GET", "/api/guests", None)?.json()?;
+            let (list, v) = request(&sock, "GET", "/api/guests", None)?.parse_raw::<Vec<GuestInvite>>()?;
             if json_out {
                 print_json(&v);
                 return Ok(0);
             }
-            let list = v.as_array().cloned().unwrap_or_default();
             if list.is_empty() {
                 println!("no ssh invites");
             }
             for g in list {
-                let left = g["expires_ms"].as_u64().unwrap_or(0).saturating_sub(now_ms()) / 1000;
-                let kind = match (g["rw"].as_bool(), g["reusable"].as_bool()) {
-                    (Some(true), Some(true)) => "rw, reusable",
-                    (Some(true), _) => "rw",
-                    (_, Some(true)) => "ro, reusable",
+                let left = g.expires_ms.saturating_sub(now_ms()) / 1000;
+                let kind = match (g.rw, g.reusable) {
+                    (true, true) => "rw, reusable",
+                    (true, _) => "rw",
+                    (_, true) => "ro, reusable",
                     _ => "ro",
                 };
                 println!(
-                    "{:<4} %{:<4} {:<12} {:<14} {} connected{}, expires in {}",
-                    g["id"],
-                    g["pane"],
-                    g["label"].as_str().unwrap_or(""),
+                    "{} %{} {:<12} {:<14} {} connected{}, expires in {}",
+                    g.id,
+                    g.pane,
+                    g.label,
                     kind,
-                    g["sessions"],
-                    if g["used"] == true && g["reusable"] != true { ", spent" } else { "" },
+                    g.sessions,
+                    if g.used && !g.reusable { ", spent" } else { "" },
                     span(left)
                 );
             }
         }
         Some(SharesCmd::Revoke { id }) => {
-            request(&sock, "DELETE", &format!("/api/guests/{id}"), None)?.json()?;
+            request(&sock, "DELETE", &format!("/api/guests/{id}"), None)?.parse::<Empty>()?;
         }
     }
     Ok(0)
@@ -132,24 +136,18 @@ pub fn shares(cmd: Option<SharesCmd>, ctx: Ctx) -> anyhow::Result<i32> {
     let Ctx { sock, json_out, .. } = ctx;
     match cmd {
         None => {
-            let v = request(&sock, "GET", "/api/shares", None)?.json()?;
+            let (shares, v) = request(&sock, "GET", "/api/shares", None)?.parse_raw::<Vec<Share>>()?;
             if json_out {
                 print_json(&v);
                 return Ok(0);
             }
-            for s in v.as_array().into_iter().flatten() {
-                let left = s["expires_ms"].as_u64().unwrap_or(0).saturating_sub(now_ms()) / 1000;
-                println!(
-                    "{:<4} %{:<4} made {:>8}, expires in {}",
-                    s["id"],
-                    s["pane"],
-                    time(s["created_ms"].as_u64().unwrap_or(0)),
-                    span(left)
-                );
+            for s in &shares {
+                let left = s.expires_ms.saturating_sub(now_ms()) / 1000;
+                println!("{} %{} made {:>8}, expires in {}", s.id, s.pane, time(s.created_ms), span(left));
             }
         }
         Some(SharesCmd::Revoke { id }) => {
-            request(&sock, "DELETE", &format!("/api/shares/{id}"), None)?.json()?;
+            request(&sock, "DELETE", &format!("/api/shares/{id}"), None)?.parse::<Empty>()?;
         }
     }
     Ok(0)

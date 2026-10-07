@@ -3,7 +3,7 @@
 use super::Ctx;
 use crate::http::request;
 use crate::util::print_json;
-use serde_json::Value;
+use arugula_proto::api::ShellEnv;
 
 #[derive(clap::Args)]
 pub struct Args {
@@ -14,25 +14,24 @@ pub struct Args {
 pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
     let Ctx { sock, json_out, .. } = ctx;
     let Args { refresh } = args;
-    let v = match refresh {
-        true => request(&sock, "POST", "/api/hosts/self/shell-env/refresh", None)?.json()?,
-        false => request(&sock, "GET", "/api/hosts/self/shell-env", None)?.json()?,
+    let (env, v) = match refresh {
+        true => request(&sock, "POST", "/api/hosts/self/shell-env/refresh", None)?.parse_raw::<ShellEnv>()?,
+        false => request(&sock, "GET", "/api/hosts/self/shell-env", None)?.parse_raw::<ShellEnv>()?,
     };
     if json_out {
         print_json(&v);
         return Ok(0);
     }
-    let shell = v["shell"].as_str().unwrap_or("?");
-    match v["error"].as_str() {
+    let shell = if env.shell.is_empty() { "?" } else { &env.shell };
+    match env.error.as_deref() {
         Some(e) => println!("{shell}: {e}; blocks get the daemon's environment"),
         None => {
-            println!("{shell} ({} ms)", v["ms"]);
-            match v["path"].as_str() {
+            println!("{shell} ({} ms)", env.ms);
+            match env.path.as_deref() {
                 Some(p) => println!("PATH={p}"),
                 None => println!("PATH is the daemon's"),
             }
-            let vars: Vec<&str> = v["vars"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
-            println!("also sets: {}", vars.into_iter().filter(|k| *k != "PATH").collect::<Vec<_>>().join(" "));
+            println!("also sets: {}", env.vars.iter().filter(|k| *k != "PATH").cloned().collect::<Vec<_>>().join(" "));
         }
     }
     Ok(0)

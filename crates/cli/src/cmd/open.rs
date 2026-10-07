@@ -1,9 +1,9 @@
 //! `arugula open`: a browser block on a port or a web page.
 
 use super::Ctx;
-use crate::http::request;
-use crate::util::{Pane, env_pane, here, print_json};
+use crate::util::{Pane, env_pane, here, open_block, print_json};
 use anyhow::Context;
+use arugula_proto::{BlockType, api::OpenRequest};
 use serde_json::json;
 
 #[derive(clap::Args)]
@@ -43,20 +43,21 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
         Some(m) => Some(m.trim_start_matches('m').parse::<u32>().with_context(|| format!("not a machine: {m}"))?),
         None => None,
     };
-    let body = json!({
-        "type": "browser",
-        "config": config,
-        "split": split,
-        "host": host,
-        "local": local,
-        "session": session,
-        "from_pane": env_pane(),
-    });
-    let v = request(&sock, "POST", "/api/blocks", Some(&body))?.json()?;
+    let body = OpenRequest {
+        kind: BlockType::Browser,
+        config,
+        split,
+        host,
+        local,
+        session,
+        from_pane: env_pane(),
+        ..Default::default()
+    };
+    let (opened, v) = open_block(&sock, &body)?;
     if json_out {
         print_json(&v);
     } else {
-        println!("%{}", v["block"]);
+        println!("%{}", opened.block);
     }
     Ok(0)
 }

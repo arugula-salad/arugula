@@ -2,7 +2,11 @@
 
 use super::Ctx;
 use crate::http::request;
-use crate::util::{Pane, env_pane, here, print_json};
+use crate::util::{Pane, env_pane, here, open_block, print_json};
+use arugula_proto::{
+    BlockType,
+    api::{OpenRequest, StudioApps},
+};
 use serde_json::json;
 
 #[derive(clap::Args)]
@@ -26,23 +30,18 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
     let Ctx { sock, json_out, .. } = ctx;
     match args {
         Args { name: None, .. } => {
-            let v = request(&sock, "GET", "/api/studio/apps", None)?.json()?;
+            let (list, v) = request(&sock, "GET", "/api/studio/apps", None)?.parse_raw::<StudioApps>()?;
             if json_out {
                 print_json(&v);
                 return Ok(0);
             }
-            for a in v["apps"].as_array().into_iter().flatten() {
-                let s = |k: &str| a[k].as_str().unwrap_or("");
-                let blocks: Vec<String> = a["blocks"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .filter_map(|b| b.as_u64())
-                    .map(|b| format!("%{b}"))
-                    .collect();
+            for row in &list.apps {
+                let a = &row.app;
+                let blocks: Vec<String> = row.blocks.iter().map(|b| format!("%{b}")).collect();
                 let open = if blocks.is_empty() { String::new() } else { format!("  [{}]", blocks.join(", ")) };
-                let status = if s("status").is_empty() { String::new() } else { format!(" ({})", s("status")) };
-                println!("{:<24} {}{status}{open}", s("name"), s("url"));
+                let status =
+                    a.status.as_deref().filter(|s| !s.is_empty()).map(|s| format!(" ({s})")).unwrap_or_default();
+                println!("{:<24} {}{status}{open}", a.name, a.url);
             }
         }
         Args { name: Some(name), split, session, follower } => {
@@ -51,18 +50,19 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
                 Some("right") => Some(here(None)?),
                 Some(p) => Some(p.parse::<Pane>().map_err(anyhow::Error::msg)?.0),
             };
-            let body = json!({
-                "type": "app",
-                "config": if follower { serde_json::json!({ "app": name, "follower": true }) } else { serde_json::json!({ "app": name }) },
-                "split": split,
-                "session": session,
-                "from_pane": env_pane(),
-            });
-            let v = request(&sock, "POST", "/api/blocks", Some(&body))?.json()?;
+            let body = OpenRequest {
+                kind: BlockType::App,
+                config: if follower { json!({ "app": name, "follower": true }) } else { json!({ "app": name }) },
+                split,
+                session,
+                from_pane: env_pane(),
+                ..Default::default()
+            };
+            let (opened, v) = open_block(&sock, &body)?;
             if json_out {
                 print_json(&v);
             } else {
-                println!("%{}", v["block"]);
+                println!("%{}", opened.block);
             }
         }
     }

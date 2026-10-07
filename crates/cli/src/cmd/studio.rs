@@ -1,11 +1,18 @@
 //! `arugula studio`: your studio's token and follower links.
 
 use super::Ctx;
-use crate::http::{enc, request};
+use crate::http::{enc, request, request_as};
 use crate::{term, util::print_json};
 use anyhow::bail;
-use serde_json::json;
+use arugula_proto::api::{Empty, FollowerLinkRequest, StudioLoggedIn, StudioLoginRequest, StudioStatus};
 use std::io::Write;
+
+/// What a studio route said, for people.
+enum Said {
+    Status(StudioStatus),
+    LoggedIn(StudioLoggedIn),
+    Nothing,
+}
 
 #[derive(clap::Subcommand)]
 pub enum StudioCmd {
@@ -32,34 +39,47 @@ pub enum StudioCmd {
 
 pub fn run(cmd: Option<StudioCmd>, ctx: Ctx) -> anyhow::Result<i32> {
     let Ctx { sock, json_out, .. } = ctx;
-    let v = match cmd {
-        None => request(&sock, "GET", "/api/studio", None)?.json()?,
+    let (said, v) = match cmd {
+        None => {
+            let (s, v) = request(&sock, "GET", "/api/studio", None)?.parse_raw::<StudioStatus>()?;
+            (Said::Status(s), v)
+        }
         Some(StudioCmd::Login { url }) => {
             let token = secret_input("Studio token: ")?;
-            request(&sock, "POST", "/api/studio", Some(&json!({ "url": url, "token": token })))?.json()?
+            let (l, v) = request_as(&sock, "POST", "/api/studio", &StudioLoginRequest { url, token })?
+                .parse_raw::<StudioLoggedIn>()?;
+            (Said::LoggedIn(l), v)
         }
-        Some(StudioCmd::Logout) => request(&sock, "DELETE", "/api/studio", None)?.json()?,
+        Some(StudioCmd::Logout) => {
+            (Said::Nothing, request(&sock, "DELETE", "/api/studio", None)?.parse_raw::<Empty>()?.1)
+        }
         Some(StudioCmd::Follower { app, forget: true }) => {
-            request(&sock, "DELETE", &format!("/api/studio/followers/{}", enc(&app)), None)?.json()?
+            let path = format!("/api/studio/followers/{}", enc(&app));
+            (Said::Nothing, request(&sock, "DELETE", &path, None)?.parse_raw::<Empty>()?.1)
         }
         Some(StudioCmd::Follower { app, forget: false }) => {
             let link = secret_input("Follower link: ")?;
             let path = format!("/api/studio/followers/{}", enc(&app));
-            request(&sock, "PUT", &path, Some(&json!({ "link": link })))?.json()?
+            (Said::Nothing, request_as(&sock, "PUT", &path, &FollowerLinkRequest { link })?.parse_raw::<Empty>()?.1)
         }
     };
     if json_out {
         print_json(&v);
-    } else if let Some(apps) = v["apps"].as_array() {
-        println!("logged in; {} app{}", apps.len(), if apps.len() == 1 { "" } else { "s" });
-    } else if let Some(url) = v["url"].as_str() {
-        let state = if v["logged_in"] == true { "logged in" } else { "logged out" };
-        println!("{url}: {state}");
-        for f in v["followers"].as_array().into_iter().flatten() {
-            println!("  follower link for {}", f.as_str().unwrap_or("?"));
+    } else {
+        match said {
+            Said::LoggedIn(l) => {
+                println!("logged in; {} app{}", l.apps.len(), if l.apps.len() == 1 { "" } else { "s" })
+            }
+            Said::Status(StudioStatus { url: Some(url), logged_in, followers }) => {
+                let state = if logged_in { "logged in" } else { "logged out" };
+                println!("{url}: {state}");
+                for f in followers {
+                    println!("  follower link for {f}");
+                }
+            }
+            Said::Status(_) => println!("no studio: `arugula studio login <url>`"),
+            Said::Nothing => {}
         }
-    } else if v.get("logged_in").is_some() {
-        println!("no studio: `arugula studio login <url>`");
     }
     Ok(0)
 }

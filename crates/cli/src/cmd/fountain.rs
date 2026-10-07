@@ -2,8 +2,12 @@
 
 use super::Ctx;
 use crate::http::{enc, request};
-use crate::util::{env_pane, loaded, print_json, split_of};
+use crate::util::{env_pane, loaded, open_block, print_json, split_of};
 use anyhow::bail;
+use arugula_proto::{
+    BlockType,
+    api::{FountainAgents, OpenRequest},
+};
 use serde_json::json;
 
 /// Fountain: the catalog and this machine as the runner.
@@ -69,14 +73,16 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
             } else {
                 format!("/api/fountain/agents?{}", q.join("&"))
             };
-            let v = request(&sock, "GET", &path, None)?.json()?;
+            let (agents, v) = request(&sock, "GET", &path, None)?.parse_raw::<FountainAgents>()?;
             if json_out {
                 print_json(&v);
                 return Ok(0);
             }
-            let rows = v["agents"].as_array().cloned().unwrap_or_default();
-            println!("{} of {} agents on {}", rows.len(), v["total"], v["base_url"].as_str().unwrap_or("Fountain"));
-            if let Some(n) = v["unreadable"].as_u64().filter(|n| *n > 0) {
+            let rows = agents.agents;
+            let base_url = if agents.base_url.is_empty() { "Fountain" } else { &agents.base_url };
+            println!("{} of {} agents on {base_url}", rows.len(), agents.total);
+            if agents.unreadable > 0 {
+                let n = agents.unreadable;
                 println!("({n} couldn't be read: Fountain sent something this Arugula doesn't understand)");
             }
             for r in rows {
@@ -107,14 +113,15 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
             if let Some(s) = source {
                 filter["sources"] = json!(s.split(',').map(str::trim).collect::<Vec<_>>());
             }
-            let body = json!({
-                "type": "fountain",
-                "config": { "profile": profile, "view": view, "filter": filter },
-                "split": split_of(split.as_deref())?,
-                "session": session,
-                "from_pane": env_pane(),
-            });
-            let block = request(&sock, "POST", "/api/blocks", Some(&body))?.json()?["block"].as_u64().unwrap_or(0);
+            let body = OpenRequest {
+                kind: BlockType::Fountain,
+                config: json!({ "profile": profile, "view": view, "filter": filter }),
+                split: split_of(split.as_deref())?,
+                session,
+                from_pane: env_pane(),
+                ..Default::default()
+            };
+            let block = open_block(&sock, &body)?.0.block;
             let v = loaded(&sock, block)?;
             if json_out {
                 print_json(&v);

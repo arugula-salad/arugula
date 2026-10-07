@@ -6,10 +6,14 @@
 use std::io::{BufRead, BufReader, Write};
 
 use anyhow::Context;
+use arugula_proto::{
+    api::Empty,
+    fs::{CdRequest, FsEntry, FsKind, FsList},
+};
 use clap::Subcommand;
-use serde_json::{Value, json};
+use serde_json::Value;
 
-use crate::http::{Target, enc, request};
+use crate::http::{Target, enc, request, request_as};
 
 #[derive(Subcommand)]
 pub enum FsCmd {
@@ -76,12 +80,12 @@ fn print_json(v: &Value) {
     println!("{}", serde_json::to_string_pretty(v).unwrap_or_default());
 }
 
-fn kind_char(e: &Value) -> char {
-    match (e["type"].as_str(), e["target"].as_str()) {
-        (Some("directory"), _) => 'd',
-        (Some("symlink"), _) => 'l',
-        (Some("file"), _) => '-',
-        _ => '?',
+fn kind_char(e: &FsEntry) -> char {
+    match e.kind {
+        FsKind::Directory => 'd',
+        FsKind::Symlink => 'l',
+        FsKind::File => '-',
+        FsKind::Other => '?',
     }
 }
 
@@ -90,38 +94,34 @@ pub fn run(sock: &Target, cmd: FsCmd, json_out: bool, remote: bool) -> anyhow::R
         FsCmd::Ls { path, dirs, long } => {
             let (on, path) = place(path.as_deref().unwrap_or("~"), remote)?;
             let extra = if dirs { vec!["dirs=1".to_owned()] } else { vec![] };
-            let v = request(sock, "GET", &format!("/api/fs/list?{}", query(&on, &path, &extra)), None)?.json()?;
+            let (list, v) = request(sock, "GET", &format!("/api/fs/list?{}", query(&on, &path, &extra)), None)?
+                .parse_raw::<FsList>()?;
             if json_out {
                 print_json(&v);
                 return Ok(0);
             }
-            for e in v["entries"].as_array().into_iter().flatten() {
-                let name = e["name"].as_str().unwrap_or("?");
-                let slash = if e["type"] == "directory" || e["target"] == "directory" { "/" } else { "" };
+            for e in &list.entries {
+                let name = if e.name.is_empty() { "?" } else { &e.name };
+                let slash = if e.is_dir() { "/" } else { "" };
                 if long {
-                    let mode = e["mode"].as_u64().unwrap_or(0);
-                    println!("{}{mode:04o} {:>12}  {name}{slash}", kind_char(e), e["size"].as_u64().unwrap_or(0));
+                    println!("{}{:04o} {:>12}  {name}{slash}", kind_char(e), e.mode, e.size);
                 } else {
                     println!("{name}{slash}");
                 }
             }
-            if v["truncated"] == true {
+            if list.truncated {
                 eprintln!("arugula: (more entries than one listing holds)");
             }
         }
         FsCmd::Stat { path } => {
             let (on, path) = place(&path, remote)?;
-            let v = request(sock, "GET", &format!("/api/fs/stat?{}", query(&on, &path, &[])), None)?.json()?;
+            let (e, v) = request(sock, "GET", &format!("/api/fs/stat?{}", query(&on, &path, &[])), None)?
+                .parse_raw::<FsEntry>()?;
             if json_out {
                 print_json(&v);
             } else {
-                let mode = v["mode"].as_u64().unwrap_or(0);
-                println!(
-                    "{} {}{mode:04o} {} bytes",
-                    v["path"].as_str().unwrap_or("?"),
-                    kind_char(&v),
-                    v["size"].as_u64().unwrap_or(0)
-                );
+                let path = if e.path.is_empty() { "?" } else { &e.path };
+                println!("{path} {}{:04o} {} bytes", kind_char(&e), e.mode, e.size);
             }
         }
         FsCmd::Cat { path, offset, len } => {
@@ -161,12 +161,12 @@ pub fn run(sock: &Target, cmd: FsCmd, json_out: bool, remote: bool) -> anyhow::R
                 None => String::new(),
                 Some(o) => place(&format!("{o}:"), remote)?.0,
             };
-            let v = request(sock, "GET", &format!("/api/fs/recent?{q}"), None)?.json()?;
+            let (dirs, v) = request(sock, "GET", &format!("/api/fs/recent?{q}"), None)?.parse_raw::<Vec<String>>()?;
             if json_out {
                 print_json(&v);
             } else {
-                for d in v.as_array().into_iter().flatten() {
-                    println!("{}", d.as_str().unwrap_or(""));
+                for d in &dirs {
+                    println!("{d}");
                 }
             }
         }
@@ -177,7 +177,8 @@ pub fn run(sock: &Target, cmd: FsCmd, json_out: bool, remote: bool) -> anyhow::R
 /// `arugula cd %N DIR`: typed into pane N's shell if it's idle at its
 /// prompt; refused (with why) otherwise.
 pub fn cd(sock: &Target, pane: u32, path: &str) -> anyhow::Result<i32> {
-    request(sock, "POST", &format!("/api/panes/{pane}/cd"), Some(&json!({ "path": path })))?.json()?;
+    request_as(sock, "POST", &format!("/api/panes/{pane}/cd"), &CdRequest { path: path.to_owned() })?
+        .parse::<Empty>()?;
     Ok(0)
 }
 

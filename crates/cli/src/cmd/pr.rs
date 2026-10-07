@@ -2,8 +2,9 @@
 
 use super::Ctx;
 use crate::http::{self, request};
-use crate::util::{Pane, absolute, env_pane, loaded, print_json, split_of};
+use crate::util::{Pane, absolute, env_pane, loaded, open_block, print_json, split_of};
 use anyhow::{Context, bail};
+use arugula_proto::{BlockType, api::OpenRequest};
 use serde_json::json;
 
 /// Writes to a PR block.
@@ -66,14 +67,15 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
         }
         Args { cmd: None, target, split, session } => {
             let target = target.context("which pull request? a URL, OWNER/REPO#N, or N in this repository")?;
-            let body = json!({
-                "type": "forge",
-                "config": { "pr": target, "dir": absolute(".")? },
-                "split": split_of(split.as_deref())?,
-                "session": session,
-                "from_pane": env_pane(),
-            });
-            let block = request(&sock, "POST", "/api/blocks", Some(&body))?.json()?["block"].as_u64().unwrap_or(0);
+            let body = OpenRequest {
+                kind: BlockType::Forge,
+                config: json!({ "pr": target, "dir": absolute(".")? }),
+                split: split_of(split.as_deref())?,
+                session,
+                from_pane: env_pane(),
+                ..Default::default()
+            };
+            let block = open_block(&sock, &body)?.0.block;
             let v = loaded(&sock, block)?;
             if json_out {
                 print_json(&v);

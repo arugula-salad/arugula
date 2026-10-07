@@ -3,6 +3,7 @@
 use super::Ctx;
 use crate::http::{enc, request};
 use crate::util::{Pane, duration, print_json, time};
+use arugula_proto::api::{HistoryEntry, HistoryKind};
 
 #[derive(clap::Args)]
 pub struct Args {
@@ -55,30 +56,32 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
     if let Some(m) = matching {
         q.push(format!("match={}", enc(&m)));
     }
-    let v = request(&sock, "GET", &format!("/api/history?{}", q.join("&")), None)?.json()?;
+    let (entries, v) =
+        request(&sock, "GET", &format!("/api/history?{}", q.join("&")), None)?.parse_raw::<Vec<HistoryEntry>>()?;
     if json_out {
         print_json(&v);
         return Ok(0);
     }
-    for c in v.as_array().into_iter().flatten() {
-        let exit = match c["exit"].as_i64() {
+    for c in &entries {
+        let exit = match c.exit {
             Some(0) => "  ".to_owned(),
             Some(e) => format!("{e:>2}"),
             None => " …".to_owned(),
         };
-        let closed = if c["open"].as_bool() == Some(false) { " (closed)" } else { "" };
-        let host = c["host"].as_str().map(|h| format!("{h}:")).unwrap_or_default();
-        let by = c["by"].as_str().map(|b| format!("  by {b}")).unwrap_or_default();
-        let by = match c["kind"].as_str() {
-            Some(k @ ("answer" | "agent")) => format!("  ({k}){by}"),
-            _ => by,
+        let closed = if c.open { "" } else { " (closed)" };
+        let host = c.host.as_ref().map(|h| format!("{h}:")).unwrap_or_default();
+        let by = c.by.as_ref().map(|b| format!("  by {b}")).unwrap_or_default();
+        let by = match c.kind {
+            HistoryKind::Answer => format!("  (answer){by}"),
+            HistoryKind::Agent => format!("  (agent){by}"),
+            HistoryKind::Command => by,
         };
         println!(
-            "{exit}  {host}%{:<4} {:>8}  {}{closed}   [{}]{by}",
-            c["pane"],
-            time(c["started_ms"].as_u64().unwrap_or(0)),
-            c["text"].as_str().unwrap_or("?"),
-            c["cwd"].as_str().unwrap_or("")
+            "{exit}  {host}%{} {:>8}  {}{closed}   [{}]{by}",
+            c.pane,
+            time(c.started_ms),
+            c.text.as_deref().unwrap_or("?"),
+            c.cwd.as_deref().unwrap_or("")
         );
     }
     Ok(0)

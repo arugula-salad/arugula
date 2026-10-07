@@ -59,9 +59,17 @@ pub fn split_of(split: Option<&str>) -> anyhow::Result<Option<u32>> {
     })
 }
 
+/// `POST /api/blocks`: the block it opened, and the answer as the daemon sent it.
+pub fn open_block(
+    sock: &http::Target,
+    req: &arugula_proto::api::OpenRequest,
+) -> anyhow::Result<(arugula_proto::api::OpenResponse, Value)> {
+    http::request_as(sock, "POST", "/api/blocks", req)?.parse_raw()
+}
+
 /// A block's `describe` once it has read what it shows (M11's views read
 /// in the background; at most 30s).
-pub fn loaded(sock: &http::Target, block: u64) -> anyhow::Result<Value> {
+pub fn loaded(sock: &http::Target, block: u32) -> anyhow::Result<Value> {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
     loop {
         let v = request(sock, "GET", &format!("/api/blocks/{block}"), None)?.json()?;
@@ -117,6 +125,14 @@ pub fn span(secs: u64) -> String {
         60..3600 => format!("{}m", secs / 60),
         3600..86400 => format!("{}h", secs / 3600),
         _ => format!("{}d", secs / 86400),
+    }
+}
+
+/// An enum the wire spells in snake case (`needs_input`), as that word.
+pub fn snake<T: serde::Serialize>(v: &T) -> String {
+    match serde_json::to_value(v) {
+        Ok(Value::String(s)) => s,
+        _ => String::new(),
     }
 }
 

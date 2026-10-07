@@ -1,9 +1,9 @@
 //! `arugula workspace`: a chant workspace as a block.
 
 use super::Ctx;
-use crate::http::request;
-use crate::util::{absolute, env_pane, loaded, print_json, split_of};
+use crate::util::{absolute, env_pane, loaded, open_block, print_json, split_of};
 use anyhow::bail;
+use arugula_proto::{BlockType, api::OpenRequest};
 use serde_json::json;
 
 #[derive(clap::Args)]
@@ -25,15 +25,16 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
     let Ctx { sock, json_out, .. } = ctx;
     let Args { dir, env, split, session } = args;
     let root = absolute(dir.as_deref().unwrap_or("."))?;
-    let body = json!({
-        "type": "workspace",
-        "config": { "root": root, "env": env },
-        "split": split_of(split.as_deref())?,
-        "local": true,
-        "session": session,
-        "from_pane": env_pane(),
-    });
-    let block = request(&sock, "POST", "/api/blocks", Some(&body))?.json()?["block"].as_u64().unwrap_or(0);
+    let body = OpenRequest {
+        kind: BlockType::Workspace,
+        config: json!({ "root": root, "env": env }),
+        split: split_of(split.as_deref())?,
+        local: true,
+        session,
+        from_pane: env_pane(),
+        ..Default::default()
+    };
+    let block = open_block(&sock, &body)?.0.block;
     // Its first read: four chant processes, a second or two.
     let v = loaded(&sock, block)?;
     if json_out {

@@ -30,6 +30,8 @@ use std::{
 
 use serde_json::Value;
 
+use arugula_proto::api::{InboxAnswer, PermitAnswer};
+
 use crate::http::{Target, request};
 
 /// How long to keep asking a daemon that doesn't answer before leaving the
@@ -60,10 +62,10 @@ pub fn run(sock: Target) -> i32 {
         match request(&sock, "POST", &format!("/api/panes/{pane}/permit"), Some(&hook)) {
             Ok(res) if res.status == 503 => {}
             Ok(res) => {
-                let Ok(v) = res.json() else { return 0 };
-                if matches!(v["action"].as_str(), Some("allow" | "deny")) {
+                let Ok(answer) = res.parse::<PermitAnswer>() else { return 0 };
+                if let PermitAnswer::Allow { output } | PermitAnswer::Deny { output } = answer {
                     let mut out = std::io::stdout().lock();
-                    let _ = writeln!(out, "{}", v["output"]);
+                    let _ = writeln!(out, "{output}");
                     let _ = out.flush();
                 }
                 return 0;
@@ -93,12 +95,8 @@ pub fn inbox(sock: Target) -> i32 {
             Ok(res) if res.status == 503 => {}
             Ok(res) if res.status >= 400 => return 0,
             Ok(res) => {
-                let Ok(v) = res.json() else { return 0 };
-                if v["action"] != "follow_up" {
-                    return 0;
-                }
-                let name = v["by"]["name"].as_str().unwrap_or("a teammate");
-                let text = v["text"].as_str().unwrap_or_default();
+                let Ok(InboxAnswer::FollowUp { text, by }) = res.parse() else { return 0 };
+                let name = if by.name.is_empty() { "a teammate" } else { &by.name };
                 let mut err = std::io::stderr().lock();
                 let _ = writeln!(err, "A follow-up from {name} (sent through Arugula): {text}");
                 let _ = err.flush();

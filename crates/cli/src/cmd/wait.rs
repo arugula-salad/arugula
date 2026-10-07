@@ -2,7 +2,8 @@
 
 use super::Ctx;
 use crate::http::{enc, request};
-use crate::util::{Pane, here, print_json};
+use crate::util::{Pane, here, print_json, snake};
+use arugula_proto::api::WaitResult;
 
 #[derive(clap::Args)]
 pub struct Args {
@@ -40,41 +41,41 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
     if let Some(t) = timeout {
         q.push_str(&format!("&timeout={t}"));
     }
-    let v = request(&sock, "GET", &format!("/api/panes/{pane}/wait?{q}"), None)?.json()?;
+    let (w, v) = request(&sock, "GET", &format!("/api/panes/{pane}/wait?{q}"), None)?.parse_raw::<WaitResult>()?;
     if json_out {
         print_json(&v);
     }
-    Ok(match v["result"].as_str() {
-        Some("timeout") => {
+    Ok(match w {
+        WaitResult::Timeout => {
             if !json_out {
                 eprintln!("arugula: timed out");
             }
             124
         }
-        Some("command_end") => {
+        WaitResult::CommandEnd { text, exit, .. } => {
             if !json_out {
-                println!("{} exited {}", v["text"].as_str().unwrap_or("command"), v["exit"]);
+                let exit = exit.map_or("null".to_owned(), |e| e.to_string());
+                println!("{} exited {exit}", text.as_deref().unwrap_or("command"));
             }
-            v["exit"].as_i64().unwrap_or(0) as i32
+            exit.unwrap_or(0)
         }
-        Some("exit") => v["code"].as_i64().unwrap_or(0) as i32,
-        Some("attention") => {
+        WaitResult::Exit { code } => code.unwrap_or(0),
+        WaitResult::Attention { state, ask } => {
             if json_out {
-            } else if v["ask"].is_object() {
+            } else if ask.is_some() {
                 // What it asks, for a script (or another agent) to
                 // answer with `call %N answer`.
                 print_json(&v["ask"]);
             } else {
-                println!("{}", v["state"].as_str().unwrap_or("").replace('_', "-"));
+                println!("{}", snake(&state).replace('_', "-"));
             }
             0
         }
-        Some("match") => {
+        WaitResult::Match { text, .. } => {
             if !json_out {
-                println!("{}", v["text"].as_str().unwrap_or(""));
+                println!("{text}");
             }
             0
         }
-        _ => 1,
     })
 }

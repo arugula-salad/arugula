@@ -2,26 +2,25 @@
 
 use super::Ctx;
 use crate::http::request;
-use crate::util::print_json;
-use serde_json::Value;
+use crate::util::{print_json, snake};
+use arugula_proto::{Machine, Owner};
 
 pub fn run(ctx: Ctx) -> anyhow::Result<i32> {
     let Ctx { sock, json_out, .. } = ctx;
-    let v = request(&sock, "GET", "/api/machines", None)?.json()?;
+    let (machines, v) = request(&sock, "GET", "/api/machines", None)?.parse_raw::<Vec<Machine>>()?;
     if json_out {
         print_json(&v);
         return Ok(0);
     }
-    for m in v.as_array().into_iter().flatten() {
-        let s = |k: &str| m.get(k).and_then(Value::as_str).unwrap_or("");
-        let image = m["image"].as_str().unwrap_or("default image");
-        let owner = match (m["owner"]["tab"].as_u64(), m["owner"]["pane"].as_u64()) {
-            (Some(t), _) => format!("@{t}"),
-            (_, Some(p)) => format!("%{p}"),
-            _ => "?".into(),
+    for m in &machines {
+        let image = m.image.as_deref().unwrap_or("default image");
+        let owner = match m.owner {
+            Owner::Tab(t) => format!("@{t}"),
+            Owner::Pane(p) => format!("%{p}"),
         };
-        let (state, sprite, provider, name) = (s("state"), s("sprite"), s("provider"), s("name"));
-        println!("m{:<4} {owner:<5} {state:<9} {name:<18} {sprite:<34} {provider} ({image})", m["id"]);
+        let (state, sprite, provider, name) =
+            (snake(&m.state), &m.sprite, &m.provider, m.name.as_deref().unwrap_or(""));
+        println!("m{} {owner:<5} {state:<9} {name:<18} {sprite:<34} {provider} ({image})", m.id);
     }
     Ok(0)
 }

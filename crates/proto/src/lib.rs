@@ -251,6 +251,7 @@ pub struct Reason {
     /// When it started wanting you.
     pub since_ms: u64,
     /// One line: the question, the command that failed, what finished.
+    #[serde(default)]
     pub headline: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
@@ -865,8 +866,10 @@ pub type MachineId = u32;
 pub struct Machine {
     pub id: MachineId,
     /// Who runs it: `wisp`.
+    #[serde(default)]
     pub provider: String,
     /// The provider's name for it.
+    #[serde(default)]
     pub sprite: String,
     /// What to call it ("drifting cedar", M7): a display name for the
     /// machines we make. The sprite keeps its own name.
@@ -1230,7 +1233,7 @@ pub struct StartedBy {
 }
 
 /// A pane's driver (M13).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Driver {
     /// Principal id (`owner`, `tailnet:<login>`, `account:<id>`).
