@@ -253,6 +253,44 @@ find . -maxdepth 3 -name .git -prune -print 2>/dev/null | LC_ALL=C sort | head -
   printf 'repo %s\t%s\n' "${base:-EMPTY}" "$top"
 done"#;
 
+/// A diff block's `run_as` (M45b), checked when the block is made: only the
+/// runner's own user, on this host, for an absolute directory inside the
+/// runner's `--root`.
+pub fn check_run_as(user: &str, repo: &str, on_sprite: bool) -> Result<(), String> {
+    if user != USER {
+        return Err(format!("a diff runs git as you, or as {USER} (not {user})"));
+    }
+    if on_sprite {
+        return Err(format!("run_as {user} is for this host's sandboxes"));
+    }
+    if !repo.starts_with('/') || repo.split('/').any(|c| c == "..") {
+        return Err(format!("run_as {user} needs an absolute directory: {repo}"));
+    }
+    // Only inside the runner's sandboxes (the scripts check the
+    // real path too).
+    let root = unit()
+        .and_then(|u| u.root)
+        .ok_or_else(|| format!("run_as {user} needs this host's fountain-runner unit and its --root"))?;
+    // The root as written, or its canonical path (macOS's /var is
+    // /private/var; Changes passes real paths). Canonicalizing may
+    // fail here (the root is fountain's): then as written only.
+    let under = |r: &str| repo.starts_with(&format!("{}/", r.trim_end_matches('/')));
+    let canonical = std::fs::canonicalize(&root).ok().map(|p| p.display().to_string());
+    if !under(&root) && !canonical.as_deref().is_some_and(under) {
+        return Err(format!("run_as {user} is for the runner's sandboxes, under {root}: not {repo}"));
+    }
+    Ok(())
+}
+
+/// Run a diff block's `script` as `fountain` through sudo, with git
+/// hardened (no global or system config, hooks, fsmonitor, pager, external
+/// diff, filters), and only inside the runner's root, really.
+pub async fn git_as_runner(script: &str, args: &[String]) -> Result<(Vec<u8>, Option<i32>), String> {
+    let root = unit().and_then(|u| u.root).unwrap_or_default();
+    let s = format!("{}{}{}", GIT_SAFE, inside_prelude(&root), script);
+    sudo_sh(&s, args).await
+}
+
 /// The diff block's prelude for `run_as`: `$1` (the repository) must be
 /// inside `root`, really, and becomes that real path.
 pub fn inside_prelude(root: &str) -> String {
@@ -677,7 +715,7 @@ pub fn summary(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fountain::api;
+    use crate::labs::fountain::api;
 
     fn fixture(f: &str) -> Vec<serde_json::Value> {
         let p = format!("{}/tests/fixtures/fountain/{f}", env!("CARGO_MANIFEST_DIR"));

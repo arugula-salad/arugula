@@ -28,6 +28,13 @@ windows-sys = { version = "0.60", features = ["Win32_Foundation", "Win32_System_
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.31.3", features = ["term", "poll", "signal", "ioctl", "hostname"] }
 
+[features]
+# Labs (Fountain's `arugula fountain runner` first): on by default, as in the
+# daemon (see crates/daemon/src/labs/mod.rs). `--no-default-features` leaves
+# it out.
+default = ["labs"]
+labs = []
+
 [lints]
 workspace = true
 

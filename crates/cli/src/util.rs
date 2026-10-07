@@ -140,6 +140,18 @@ pub fn print_json(v: &Value) {
     println!("{}", serde_json::to_string_pretty(v).unwrap_or_default());
 }
 
+/// This machine's name, if it says (the host name; Windows keeps it in the environment).
+#[cfg(unix)]
+pub fn hostname() -> Option<String> {
+    nix::unistd::gethostname().ok().and_then(|h| h.into_string().ok())
+}
+
+/// Windows keeps the machine's name in the environment.
+#[cfg(not(unix))]
+pub fn hostname() -> Option<String> {
+    std::env::var("COMPUTERNAME").ok()
+}
+
 #[cfg(test)]
 mod tests {
     #[test]

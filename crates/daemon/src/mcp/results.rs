@@ -295,13 +295,14 @@ pub struct WorkspaceOpened {
 }
 
 /// A card in `list` kind fountain_agents.
+#[cfg(feature = "labs")]
 #[derive(Debug, Serialize)]
 pub struct AgentRow {
     pub name: String,
     pub id: String,
     pub runtime: String,
     pub model: String,
-    pub source: Option<crate::fountain::catalog::Source>,
+    pub source: Option<crate::labs::fountain::catalog::Source>,
     pub app: Option<String>,
     pub skills: Vec<String>,
     pub mcp: Vec<String>,
@@ -309,6 +310,7 @@ pub struct AgentRow {
 }
 
 /// `list` kind fountain_agents.
+#[cfg(feature = "labs")]
 #[derive(Debug, Serialize)]
 pub struct FountainAgents {
     pub total: usize,
@@ -317,6 +319,7 @@ pub struct FountainAgents {
 }
 
 /// A Fountain block's text.
+#[cfg(feature = "labs")]
 #[derive(Debug, Serialize)]
 pub struct BlockText {
     pub block: PaneId,
@@ -431,6 +434,7 @@ mod tests {
         same(BlockOnly { block: 9 }, json!({ "block": 9 }));
         same(PortOpened { block: 9, port: 3000 }, json!({ "block": 9, "port": 3000 }));
         same(AppOpened { block: 9, app: "notes".into() }, json!({ "block": 9, "app": "notes" }));
+        #[cfg(feature = "labs")]
         same(BlockText { block: 9, text: "t".into() }, json!({ "block": 9, "text": "t" }));
         same(Screen { pane: 7, text: "hi".into() }, json!({ "pane": 7, "text": "hi" }));
         same(
@@ -636,6 +640,7 @@ mod tests {
             json!({ "block": 4, "root": "/w", "members": [{ "name": "m", "dir": "/w/m", "kind": "rust",
                 "errors": 0, "gates": [] }], "gates": [] }),
         );
+        #[cfg(feature = "labs")]
         same(
             FountainAgents {
                 total: 3,

@@ -303,6 +303,7 @@ fn a_remote_pane_runs_there_and_has_its_place_here() {
 /// `GET /api/host` says so, with threads and huddles (and Fountain, studio
 /// and VMs, where set up) following it, and creating or removing the file on
 /// a running daemon flips it with no restart.
+#[cfg(feature = "labs")]
 #[test]
 fn the_labs_file_turns_on_what_a_stranger_doesnt_get() {
     // A Fountain login is set up here, so that `fountain` shows what labs
@@ -342,6 +343,26 @@ fn the_labs_file_turns_on_what_a_stranger_doesnt_get() {
         (f["labs"].clone(), f["threads"].clone(), f["calls"].clone()),
         (false.into(), false.into(), false.into())
     );
+}
+
+/// A build without Labs ignores the `labs` file: nothing it holds is on.
+#[cfg(not(feature = "labs"))]
+#[test]
+fn a_build_without_labs_ignores_the_labs_file() {
+    let d = arugulad!("hosts")
+        .args(["--name", "plain"])
+        .no_wisp()
+        .no_tailscale()
+        .env("PS1", "$ ")
+        .env("FOUNTAIN_API_KEY", "fk_test")
+        .env("ARUGULA_LOCAL_TOKEN_FILE", token_file())
+        .start();
+    std::fs::write(d.state.join("labs"), "").unwrap();
+    let host = d.get("/api/host");
+    for key in ["labs", "threads", "calls", "fountain", "studio", "vms"] {
+        assert_eq!(host["features"][key], false, "{key}: {host}");
+    }
+    assert!(host.get("fountain_runner").is_none_or(|v| v.is_null()), "{host}");
 }
 
 /// The three readers of the `labs` file agree: the daemon's `/api/host`
