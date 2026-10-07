@@ -2241,7 +2241,7 @@
         "readOnlyHint": false,
         "title": "Show the user a block"
       },
-      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?}: An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on.\n- app {app?, beside?}: One of the user's studio apps (a box with its own agent, hud) as an app block: the app in a frame, and its agent's questions as asks on the block; send_input to the block prompts its agent. Without app: lists the user's apps.\n- workspace {dir, beside?, env?}: A chant workspace block: its members as cards (open a shell, an agent or the changes in one), its records, and the gates waiting for a person, which the user can approve there and which show as attention on the phone and the swarm. Read through the workspace's own chant. Returns its members and the gates waiting.\n- fountain {beside?, profile?, query?, source?, view?}: The user's Fountain agents as a catalog block: a card per agent with its skills, servers and where it comes from, filters, and Run on Fountain / Spec for each. Returns the (filtered) list as text. With view \"runner\": this host as the account's Fountain runner instead: its status, the other runners, and its sandboxes with their conversations.",
+      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?}: An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on.\n- app {app?, beside?}: One of the user's studio apps (a box with its own agent, hud) as an app block: the app in a frame, and its agent's questions as asks on the block; send_input to the block prompts its agent. Without app: lists the user's apps.\n- workspace {dir, actor?, beside?, env?, principals?}: A chant workspace block: its members as cards (open a shell, an agent or the changes in one), its records, and the gates waiting for a person, which the user can approve there and which show as attention on the phone and the swarm. Read through the workspace's own chant. Returns its members and the gates waiting.\n- fountain {beside?, profile?, query?, source?, view?}: The user's Fountain agents as a catalog block: a card per agent with its skills, servers and where it comes from, filters, and Run on Fountain / Spec for each. Returns the (filtered) list as text. With view \"runner\": this host as the account's Fountain runner instead: its status, the other runners, and its sandboxes with their conversations.",
       "inputSchema": {
         "$defs": {
           "ConversationThen": {
@@ -2267,6 +2267,14 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
+          "actor": {
+            "default": null,
+            "description": "workspace: The user's chant principal, which approvals here record (github:LOGIN,\nor a signer's name). Default: their Arugula name, passed as is.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "app": {
             "default": null,
             "description": "app: The app's name in the user's studio. Leave it out to list their\napps instead.",
@@ -2353,6 +2361,14 @@
           "pr": {
             "description": "pr: The pull request: its link (a Forgejo PR's or a GitLab MR's),\nOWNER/REPO#N, GROUP/PROJECT!N (GitLab), or N (in dir's repository).",
             "type": "string"
+          },
+          "principals": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": {},
+            "description": "workspace: Editors' chant principals, by their Arugula name\n({\"sam\": \"github:sam-h\"}), for gates an editor approves.",
+            "type": "object"
           },
           "profile": {
             "default": null,
@@ -5375,7 +5391,7 @@
         "readOnlyHint": false,
         "title": "Show the user a block"
       },
-      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?}: An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on.\n- app {app?, beside?}: One of the user's studio apps (a box with its own agent, hud) as an app block: the app in a frame, and its agent's questions as asks on the block; send_input to the block prompts its agent. Without app: lists the user's apps.\n- workspace {dir, beside?, env?}: A chant workspace block: its members as cards (open a shell, an agent or the changes in one), its records, and the gates waiting for a person, which the user can approve there and which show as attention on the phone and the swarm. Read through the workspace's own chant. Returns its members and the gates waiting.\n- fountain {beside?, profile?, query?, source?, view?}: The user's Fountain agents as a catalog block: a card per agent with its skills, servers and where it comes from, filters, and Run on Fountain / Spec for each. Returns the (filtered) list as text. With view \"runner\": this host as the account's Fountain runner instead: its status, the other runners, and its sandboxes with their conversations.",
+      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?}: An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on.\n- app {app?, beside?}: One of the user's studio apps (a box with its own agent, hud) as an app block: the app in a frame, and its agent's questions as asks on the block; send_input to the block prompts its agent. Without app: lists the user's apps.\n- workspace {dir, actor?, beside?, env?, principals?}: A chant workspace block: its members as cards (open a shell, an agent or the changes in one), its records, and the gates waiting for a person, which the user can approve there and which show as attention on the phone and the swarm. Read through the workspace's own chant. Returns its members and the gates waiting.\n- fountain {beside?, profile?, query?, source?, view?}: The user's Fountain agents as a catalog block: a card per agent with its skills, servers and where it comes from, filters, and Run on Fountain / Spec for each. Returns the (filtered) list as text. With view \"runner\": this host as the account's Fountain runner instead: its status, the other runners, and its sandboxes with their conversations.",
       "inputSchema": {
         "$defs": {
           "ConversationThen": {
@@ -5401,6 +5417,14 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
+          "actor": {
+            "default": null,
+            "description": "workspace: The user's chant principal, which approvals here record (github:LOGIN,\nor a signer's name). Default: their Arugula name, passed as is.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "app": {
             "default": null,
             "description": "app: The app's name in the user's studio. Leave it out to list their\napps instead.",
@@ -5487,6 +5511,14 @@
           "pr": {
             "description": "pr: The pull request: its link (a Forgejo PR's or a GitLab MR's),\nOWNER/REPO#N, GROUP/PROJECT!N (GitLab), or N (in dir's repository).",
             "type": "string"
+          },
+          "principals": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": {},
+            "description": "workspace: Editors' chant principals, by their Arugula name\n({\"sam\": \"github:sam-h\"}), for gates an editor approves.",
+            "type": "object"
           },
           "profile": {
             "default": null,
