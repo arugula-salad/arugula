@@ -50,6 +50,8 @@ key() {
 
 ip() { tart ip --wait 120 "$name"; }
 have() { tart list -q 2>/dev/null | grep -qx "$1"; }
+# A base made before the rename keeps its name (#505).
+if ! have "$BASE" && have illogical-macos-base; then BASE=illogical-macos-base; fi
 
 # Fresh VMs get fresh host keys, so none are kept.
 SSH_OPTS=(-i "$STATE/id_ed25519" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=no
