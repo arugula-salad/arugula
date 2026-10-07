@@ -11,7 +11,7 @@ import { ThreadBadge, ThreadLayer } from "./threads";
 import { HuddleBar, HuddleButton } from "./huddle";
 import { ChatPage, Places, useChatOpen } from "./chat";
 import { AttentionBadge, tabAttention } from "./attention";
-import { HostButton, HostPicker } from "./hosts";
+import { getFleet, HostButton, HostPicker } from "./hosts";
 import { ControlRequests, PaneMarks, PeopleBar, ShareDialog, TabPeople } from "./people";
 import { directory } from "../hosts";
 import { SandboxesLayer } from "./sandboxes";
@@ -229,7 +229,7 @@ function TopBar({
             {marker === session.tabs.length && <div class="drop-marker" />}
             <button
               class="new-tab"
-              title={client.has("vms") ? "New tab (right-click for a VM tab)" : "New tab (right-click for more)"}
+              title={`New tab ${newTabWhere()} (right-click for ${client.has("vms") ? "a VM tab" : "more"})`}
               onClick={() => client.intent({ op: "new_tab", session: session.id, from_pane: client.active() ?? null })}
               onContextMenu={(e) => openFresh(client, e, () => newTabItems(client, session.id))}
             >
@@ -244,6 +244,16 @@ function TopBar({
       <WindowButtons />
     </header>
   );
+}
+
+/** Where + opens a tab (#551): the shown machine, and whose it is, since
+ * on someone else's it runs as them. */
+function newTabWhere(): string {
+  const name = directory.current;
+  if (!name) return "here";
+  const h = getFleet()?.host(name);
+  const whose = h?.owner ? `, ${h.owner}'s machine` : h?.teamName ? `, team ${h.teamName}'s machine` : "";
+  return `on ${name}${whose}`;
 }
 
 function TabItem({
