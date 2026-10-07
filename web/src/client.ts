@@ -1108,9 +1108,18 @@ export class Client {
         void this.loadFeatures();
         this.onHello?.();
         break;
-      case "state":
+      case "state": {
+        // Someone changed what you may do here (#551): say so, or the
+        // last "you're watching" stands.
+        const was = this.state?.roles ? this.role() : null;
         this.applyState(msg.state, false);
+        const now = this.state?.roles && this.session !== null && this.state.roles.some(([s]) => s === this.session) ? this.role() : null;
+        if (was && now && was !== now) {
+          const name = this.state?.sessions.find((s) => s.id === this.session)?.name ?? "this session";
+          this.toast(now === "viewer" ? `you only watch ${name} now` : `you may drive ${name} now`);
+        }
         break;
+      }
       case "delta":
         this.applyDelta(msg.delta);
         break;

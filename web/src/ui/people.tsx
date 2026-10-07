@@ -226,6 +226,8 @@ export function ShareDialog({ client }: { client: Client }) {
   const [grants, setGrants] = useState<Grant[]>([]);
   const [who, setWho] = useState("");
   const [role, setRole] = useState<Role>("viewer");
+  // A team's role, picked beside its Share button (#551).
+  const [teamRole, setTeamRole] = useState<Record<string, Role>>({});
   const [history, setHistory] = useState(false);
   const [err, setErr] = useState("");
   const [secrets, setSecrets] = useState<{ pane: PaneId; kinds: string[] }[]>([]);
@@ -393,11 +395,23 @@ export function ShareDialog({ client }: { client: Client }) {
                     onClick={() =>
                       // Pinned to its founder, as this browser pinned the
                       // team: the machine checks every roster back to them.
-                      void set(`team:${t.team}`, role, history, { root: `${t.pin.founder}.${t.pin.founder_root}`, name: t.roster.name })
+                      void set(`team:${t.team}`, teamRole[t.team] ?? "viewer", history, {
+                        root: `${t.pin.founder}.${t.pin.founder_root}`,
+                        name: t.roster.name,
+                      })
                     }
                   >
                     Share with everyone in {t.roster.name}
                   </button>{" "}
+                  <select
+                    value={teamRole[t.team] ?? "viewer"}
+                    onChange={(e) => setTeamRole({ ...teamRole, [t.team]: (e.target as HTMLSelectElement).value as Role })}
+                    aria-label={`Role for ${t.roster.name}`}
+                    data-share-team-role={t.team}
+                  >
+                    <option value="viewer">{roleLabel("viewer")}</option>
+                    <option value="editor">{roleLabel("editor")}</option>
+                  </select>{" "}
                   <span class="dim">(as members come and go)</span>
                 </p>
               ))
