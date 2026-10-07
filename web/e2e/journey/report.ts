@@ -11,6 +11,8 @@ type Data = {
   actors: string[];
   at: string;
   steps: Step[];
+  /** How long a step takes before it reads as slow. */
+  slowMs?: number;
 };
 
 const SURFACES: Surface[] = ["app", "browser", "terminal", "message"];
@@ -52,13 +54,13 @@ function lanes(d: Data) {
 const SLOW_MS = 10_000;
 
 /** What the graph says beside a step: the problem, or what went right. */
-export function annotation(s: Step): { kind: "ok" | "slow" | "unguided" | "failed"; text: string } {
+export function annotation(s: Step, slowMs = SLOW_MS): { kind: "ok" | "slow" | "unguided" | "failed"; text: string } {
   const issues = (s.issues ?? []).join("; ");
   const also = issues ? `. Also: ${issues}` : "";
   if (s.result === "failed") return { kind: "failed", text: `Failed: ${(s.note ?? "").split("\n")[0]}${also}` };
   if (s.result === "unguided") return { kind: "unguided", text: `Not led here${s.known ? ` (known, ${s.known})` : ""}: ${s.prompt}${also}` };
   if (issues) return { kind: "slow", text: `Done, but: ${issues}` };
-  if (s.ms >= SLOW_MS) return { kind: "slow", text: `Works, but the person waits ${secs(s.ms)}` };
+  if (s.ms >= slowMs) return { kind: "slow", text: `Works, but the person waits ${secs(s.ms)}` };
   const bits = [
     s.prompt.startsWith("the person's own doing")
       ? s.prompt.replace("the person's own doing: ", "")
@@ -95,7 +97,7 @@ export function swimlane(d: Data) {
   const LEFT = 36;
   const notesX = LEFT + ls.length * COL + 20;
   const W = notesX + 640;
-  const rowH = (s: Step) => 26 + 16 * wrap(annotation(s).text, 78).length;
+  const rowH = (s: Step) => 26 + 16 * wrap(annotation(s, d.slowMs).text, 78).length;
   const ys: number[] = [];
   let y = TOP;
   for (const s of d.steps) {
@@ -136,7 +138,7 @@ export function swimlane(d: Data) {
     .join("");
   const rows = d.steps
     .map((s, i) => {
-      const a = annotation(s);
+      const a = annotation(s, d.slowMs);
       const lines = wrap(a.text, 78);
       const ink = a.kind === "ok" ? v("ink2", "#52514e") : COLORS[a.kind];
       const glyphInk = a.kind === "unguided" || a.kind === "slow" ? "#0b0b0b" : "#ffffff";

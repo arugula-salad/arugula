@@ -9,10 +9,10 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { Locator, Page, TestInfo } from "@playwright/test";
-import { graph, report, totals } from "./report";
+import { graph, report, totals } from "./report.ts";
 
 /** Where reports go: local output, never committed (web/.gitignore). */
-export const REPORTS = resolve(process.env.JOURNEY_REPORT_DIR ?? "journey-reports");
+export const reports = () => resolve(process.env.JOURNEY_REPORT_DIR ?? "journey-reports");
 
 export type Surface = "app" | "browser" | "terminal" | "message";
 
@@ -48,9 +48,11 @@ export type Spec = {
   /** Where to screenshot, after the step (a function when the step
    * opens the window it ends on). */
   page?: Page | (() => Page);
+  /** A screenshot taken another way (a Mac's screen), when not a page. */
+  shot?: () => Promise<Buffer | undefined>;
   /** What on screen tells the person to take this step; `null` when
    * nothing does (say why in `why`). */
-  prompt: Locator | null;
+  prompt: Locator | null | (() => Promise<string | null>);
   /** In words, what on screen should lead here ("a Share button on the
    * main screen"): said when it isn't there. */
   expect?: string;
@@ -89,12 +91,20 @@ export class Journey {
   private t0 = Date.now();
   private current?: Step;
 
-  constructor(
-    readonly name: string,
-    readonly title: string,
-    private info: TestInfo,
-    readonly actors: string[],
-  ) {}
+  readonly name: string;
+  readonly title: string;
+  readonly actors: string[];
+  /** The Playwright test's, when there is one: the report is attached. */
+  private info?: TestInfo;
+  /** How long a step takes before the graph calls it slow. */
+  slowMs?: number;
+
+  constructor(name: string, title: string, info: TestInfo | undefined, actors: string[]) {
+    this.name = name;
+    this.title = title;
+    this.info = info;
+    this.actors = actors;
+  }
 
   /** Inside a step: a code or fingerprint the person compared. */
   compared(what: string) {
@@ -139,6 +149,16 @@ export class Journey {
     } else if (spec.prompt === null) {
       s.result = "unguided";
       s.prompt = spec.why ?? "nothing on screen says to do this";
+    } else if (typeof spec.prompt === "function") {
+      // Off the web (the Mac's own windows): the prompt's text, or null.
+      const until = Date.now() + 15_000;
+      let text: string | null = null;
+      while (!(text = await spec.prompt().catch(() => null)) && Date.now() < until) await new Promise((r) => setTimeout(r, 500));
+      if (text) s.prompt = text.replace(/\s+/g, " ").trim().slice(0, 400);
+      else {
+        s.result = "unguided";
+        s.prompt = `nothing on screen shows ${spec.expect ?? "what leads here"}`;
+      }
     } else {
       try {
         await spec.prompt.first().waitFor({ state: "visible", timeout: 15_000 });
@@ -155,13 +175,13 @@ export class Journey {
     try {
       const out = await act();
       s.ms = Date.now() - began;
-      await this.shoot(s, spec.page);
+      await this.shoot(s, spec.page, spec.shot);
       return out;
     } catch (e) {
       s.ms = Date.now() - began;
       s.result = "failed";
       s.note = (e as Error).message.split("\n").slice(0, 6).join("\n");
-      await this.shoot(s, spec.page);
+      await this.shoot(s, spec.page, spec.shot);
       this.write();
       throw new Stopped(`${this.name} stopped at ${s.id} (${s.title}): ${s.note}`);
     } finally {
@@ -169,7 +189,11 @@ export class Journey {
     }
   }
 
-  private async shoot(s: Step, at?: Page | (() => Page)) {
+  private async shoot(s: Step, at?: Page | (() => Page), shot?: () => Promise<Buffer | undefined>) {
+    if (shot) {
+      s.shot = (await shot().catch(() => undefined))?.toString("base64");
+      return;
+    }
     let page: Page | undefined;
     try {
       page = typeof at === "function" ? at() : at;
@@ -198,6 +222,7 @@ export class Journey {
       actors: this.actors,
       at: new Date().toISOString(),
       steps: this.steps,
+      slowMs: this.slowMs,
     };
     const files = {
       html: report(data),
@@ -205,32 +230,30 @@ export class Journey {
       json: JSON.stringify(data, null, 1),
     };
     const stamp = data.at.replace(/[:.]/g, "-");
-    mkdirSync(join(REPORTS, "history"), { recursive: true });
+    mkdirSync(join(reports(), "history"), { recursive: true });
     for (const [ext, body] of Object.entries(files)) {
-      writeFileSync(join(REPORTS, `${this.name}.${ext}`), body);
-      writeFileSync(join(REPORTS, "history", `${stamp}-${this.name}.${ext}`), body);
-      writeFileSync(this.info.outputPath(`${this.name}.${ext}`), body);
+      writeFileSync(join(reports(), `${this.name}.${ext}`), body);
+      writeFileSync(join(reports(), "history", `${stamp}-${this.name}.${ext}`), body);
+      if (this.info) writeFileSync(this.info.outputPath(`${this.name}.${ext}`), body);
     }
-    return {
-      json: this.info.outputPath(`${this.name}.json`),
-      html: this.info.outputPath(`${this.name}.html`),
-    };
+    const at = (ext: string) => (this.info ? this.info.outputPath(`${this.name}.${ext}`) : join(reports(), `${this.name}.${ext}`));
+    return { json: at("json"), html: at("html") };
   }
 
   /** Write the report and attach it to the test. */
   async attach() {
     const { json, html } = this.write();
-    await this.info.attach(`${this.name} report`, {
+    await this.info?.attach(`${this.name} report`, {
       path: html,
       contentType: "text/html",
     });
-    await this.info.attach(`${this.name} data`, {
+    await this.info?.attach(`${this.name} data`, {
       path: json,
       contentType: "application/json",
     });
     const t = totals(this.steps);
     const verdict = t.failed ? "stopped" : t.unguided ? `${t.unguided} unguided step(s)` : "led all the way";
-    console.log(`${this.name}: ${verdict}; ${t.steps} steps, ${t.switches} switches, ${t.compared} compared. Graph: ${join(REPORTS, `${this.name}.html`)}`);
+    console.log(`${this.name}: ${verdict}; ${t.steps} steps, ${t.switches} switches, ${t.compared} compared. Graph: ${join(reports(), `${this.name}.html`)}`);
   }
 
   /** Attach the report, and fail if any step was unguided, but for those

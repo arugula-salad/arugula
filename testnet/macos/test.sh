@@ -14,6 +14,8 @@
 #   testnet/macos/test.sh iterm2 [claim...]    M5 and M32 in iTerm2 (iterm2.sh)
 #   testnet/macos/test.sh app                  #178, the app in cloud mode
 #                                              (app-cloud.ts)
+#   testnet/macos/test.sh journey              #551, J1 on the real app and
+#                                              Safari, graphed (journey-j1.ts)
 #   KEEP=1 ...                                 leave the clone running
 #
 # launchd (S28 #153, M52 #155): a user made with sysadminctl who has never
@@ -214,6 +216,7 @@ case "$test" in
   ios) exec "$HERE/ios.sh" "$@" ;;
   iterm2) exec "$HERE/iterm2.sh" "$@" ;;
   app) cd "$ROOT" && exec node --experimental-strip-types --no-warnings testnet/macos/app-cloud.ts "$@" ;;
+  journey) cd "$ROOT" && exec node --experimental-strip-types --no-warnings testnet/macos/journey-j1.ts "$@" ;;
   *) sed -n '3,44p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2 ;;
 esac
 [ -z "$failed" ]

@@ -33,7 +33,7 @@ or an account skip without it and name what's missing
 | `just e2e-webkit` | only the `webkit` project: Safari's engine, for device keys (#94) and the one-click invite (#137) | macOS |
 | `just testnet up`, `test`, `break` (`ssh`, then `control`) | the Docker test stack's claims ([testnet/README.md](../testnet/README.md)), then each claim under `BREAK=1`, where it must fail | Linux |
 | `just forges`, `just testnet-hosts`, `just testnet-editors` | real forges, two hosts and VS Code over Remote-SSH, in Docker ([below](#real-forges-two-hosts-vs-code-over-remote-ssh)) | the forges nightly (`forges-nightly.yml`) |
-| `just macos <test>` | the tart VM's checks: launchd with no GUI session, real Safari, Safari in the iOS Simulator, iTerm2, the desktop app ([below](#a-fresh-mac-the-tart-vm-harness)) | no |
+| `just macos <test>` | the tart VM's checks: launchd with no GUI session, real Safari, Safari in the iOS Simulator, iTerm2, the desktop app ([below](#a-fresh-mac-the-tart-vm-harness)), and `journey`: J1 on the real app and Safari, graphed ([below](#a-new-users-journeys)) | no |
 | `just desktop-check` | rustfmt and clippy for `crates/desktop` | Linux |
 | `just desktop-xvfb` | the Linux desktop app under Xvfb in a container (`packaging/desktop/xvfb/`): `join` (#204), `m46`, `m47` and `stale` (#317) (see [The desktop app's tests](#the-desktop-apps-tests)) | no |
 | `just desktop-packages ARCH` | the .deb on Ubuntu 22.04 and the .rpm on Fedora 42 install and claim `arugula://` (after `just desktop-linux ARCH`) | no |
@@ -562,6 +562,21 @@ The rules, which are the point:
   drawn, not failed on; the run says when one is fixed.
 - Each J2 journey runs J1 for each person first, as its own report
   (`J2a-setup-sam`), so a signup failure can't hide a linking failure.
+
+On a real Mac, `just macos journey` (`testnet/macos/journey-j1.ts`) takes
+J1 with the released app (its zip from the `app-latest` release, what a
+new user downloads, unless `ARUGULA_MACOS_APP_ZIP` says otherwise) in a
+fresh tart VM ([the tart VM](#a-fresh-mac-the-tart-vm-harness)): its own
+launch agent and daemon, and the real Safari it opens links in. It
+presses buttons and links by their visible names through System Events
+and reads what they say; only the terminal's text comes from `arugula
+capture`. Control and the fake GitHub run on the host, tunnelled into the
+VM at the same loopback addresses; the daemon gets this control from
+`ARUGULA_CONTROL` in the app's launch agent (the bundle signed again, ad
+hoc as released), and the run stops before *Connect* if the app would
+reach any other control. Its report is `J1-mac`, with the Mac's screen at
+each step; a step's time includes the accessibility reads (seconds
+each), so only one over 30 s reads as slow.
 
 Every run ends with a report, in `web/journey-reports/` (newest run;
 each run also under `history/`) and attached to the Playwright report:
