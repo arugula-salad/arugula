@@ -345,7 +345,7 @@ struct Inner {
     adapter: Option<Value>,
     /// M44: the Fountain agent it wears, once put on (in memory only: its
     /// MCP servers' values may be secrets). Put on again after a restart.
-    worn: Option<Arc<crate::fountain::wear::Worn>>,
+    worn: Option<Arc<crate::labs::Worn>>,
     /// Putting it on now.
     wearing: bool,
     /// #161: waiting for this host's shell environment before spawning.
@@ -467,7 +467,7 @@ impl Inner {
         // M44: a worn Fountain agent's, values resolved.
         if let Some(w) = &self.worn {
             let extra: Vec<Value> =
-                w.servers.iter().filter(|s| !list.iter().any(|o| o["name"] == s["name"])).cloned().collect();
+                w.servers().iter().filter(|s| !list.iter().any(|o| o["name"] == s["name"])).cloned().collect();
             list.extend(extra);
         }
         let Some(link) = &ctx.mcp else { return list };
@@ -513,7 +513,7 @@ impl Inner {
     /// What never goes into the log or the transcript: a worn agent's
     /// secrets, and Arugula's own token where it went by reference.
     fn secrets(&self) -> Vec<String> {
-        let mut out: Vec<String> = self.worn.as_ref().map(|w| w.secrets.clone()).unwrap_or_default();
+        let mut out: Vec<String> = self.worn.as_ref().map(|w| w.secrets().to_vec()).unwrap_or_default();
         out.extend(self.token.clone());
         out
     }
@@ -1108,7 +1108,7 @@ impl Inner {
             "user_settings": self.cfg.def.user_settings,
             // M44: what it wears (nothing secret), or that it's putting it on.
             "as_fountain": self.cfg.def.as_fountain,
-            "worn": self.worn.as_ref().map(|w| &w.info),
+            "worn": self.worn.as_ref().map(|w| w.info()),
             "wearing": self.wearing,
             "import": self.cfg.import.as_ref().map(|i| json!({
                 "source": i.source,
@@ -1284,7 +1284,7 @@ impl Agent {
                     line
                 } else {
                     let text = String::from_utf8_lossy(&line);
-                    match crate::fountain::wear::scrub(&text, &secrets) {
+                    match crate::labs::scrub(&text, &secrets) {
                         Some(t) => t.into_bytes(),
                         None => line,
                     }
@@ -1400,7 +1400,7 @@ impl Agent {
                 // adapter's environment (its own and its children's: never
                 // on a command line).
                 if let Some(w) = &inner.worn {
-                    env.extend(w.env.iter().cloned());
+                    env.extend(w.env().iter().cloned());
                 }
                 let marker = self.ctx.dir.join(TOKEN_IN_ENV);
                 if by_reference(&inner.cfg.def, &self.ctx)
@@ -1536,7 +1536,7 @@ impl Agent {
             let worn = match Runner::user(&agent.ctx).await {
                 Ok(runner) => {
                     let (profile, specs, vault) = (def.profile.as_deref(), def.specs.as_deref(), def.vault.as_deref());
-                    crate::fountain::wear::wear(&runner, profile, specs, vault, &which).await
+                    crate::labs::wear(&runner, profile, specs, vault, &which).await
                 }
                 Err(e) => Err(e),
             };
@@ -2082,7 +2082,7 @@ fn redacted<'a>(frame: &'a Value, secrets: &[String]) -> std::borrow::Cow<'a, Va
         }
     }
     if !secrets.is_empty()
-        && let Some(text) = crate::fountain::wear::scrub(&f.to_string(), secrets)
+        && let Some(text) = crate::labs::scrub(&f.to_string(), secrets)
     {
         f = serde_json::from_str(&text).unwrap_or_else(|_| json!({ "redacted": true, "method": frame["method"] }));
     }
@@ -2566,7 +2566,7 @@ impl Block for Agent {
             head.push_str(&format!(" in {cwd}"));
         }
         if let Some(w) = &g.worn {
-            head.push_str(&format!("\n\n_{}_", w.info.text()));
+            head.push_str(&format!("\n\n_{}_", w.text()));
         }
         let mut out = format!("{head}\n\n{}", g.t.markdown());
         for p in &g.pending {

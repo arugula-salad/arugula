@@ -517,6 +517,13 @@ check: test
     {{cargo}} fmt --all --check
     {{cargo}} clippy --workspace --all-targets -- -D warnings
 
+# The daemon and the CLI without Labs (#452): clippy and the tests with the
+# `labs` feature off, which CI runs as the `core` job. Run it after touching
+# anything in or beside crates/daemon/src/labs; `just check` covers the rest.
+check-core: web
+    {{cargo}} clippy -p arugulad -p arugula --no-default-features --all-targets -- -D warnings
+    {{cargo}} nextest run -p arugulad -p arugula --no-default-features
+
 # Type-check and lint the macOS build from Linux: ARCH is aarch64 (Apple
 # silicon) or x86_64 (Intel). Zig is the C compiler; this compiles but
 # doesn't link, so build and test on a Mac too.

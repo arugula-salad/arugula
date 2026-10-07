@@ -5,6 +5,7 @@
 #   - clippy: Linux, both Macs (cross), the desktop app (when the push
 #     changes it: scripts/app-changed), and notices;
 #   - test: `just test` (the Rust tests under nextest);
+#   - core: the daemon and the CLI without Labs (`just check-core`, #452);
 #   - testnet: the test stack's claims (ssh, then control);
 #   - e2e: the Playwright specs in six shards; stack: those on the test
 #     stack; perf: the specs that time things, once the shards are done;
@@ -115,6 +116,19 @@ jobs:
         run: if scripts/app-changed "${{ github.event.before }}"; then just desktop-check; fi
       - name: THIRD_PARTY.md is current
         run: just notices && git diff --exit-code THIRD_PARTY.md crates/desktop/THIRD_PARTY.md
+
+  # The daemon and the CLI built without the `labs` feature (crates/daemon/
+  # src/labs/mod.rs): clippy and the tests. The ssh tests, which need
+  # Docker, run in `test`.
+  core:
+    runs-on: [self-hosted, linux-x86_64-ci]
+    steps:
+      - uses: actions/checkout@v4
+      - run: scripts/ci-env target core
+      - run: just bootstrap
+      - run: just check-core
+        env:
+          ARUGULA_SKIP_DOCKER: "1"
 
   test:
     needs: static

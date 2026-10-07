@@ -331,7 +331,7 @@ mod tests {
     use super::*;
 
     fn agents() -> Vec<Agent> {
-        let v: Value = serde_json::from_str(include_str!("../../tests/fixtures/fountain/agents.json")).unwrap();
+        let v: Value = serde_json::from_str(include_str!("../../../tests/fixtures/fountain/agents.json")).unwrap();
         serde_json::from_value(v["data"].clone()).unwrap()
     }
 

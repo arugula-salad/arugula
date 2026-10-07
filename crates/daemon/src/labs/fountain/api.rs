@@ -417,7 +417,7 @@ mod tests {
 
     #[test]
     fn agents_as_fountain_sends_them() {
-        let body = include_str!("../../tests/fixtures/fountain/agents.json");
+        let body = include_str!("../../../tests/fixtures/fountain/agents.json");
         let v: Data<Vec<Value>> = serde_json::from_str(body).unwrap();
         let l: Listing<Agent> = rows(v.data);
         assert_eq!(l.unreadable, 0);
@@ -442,7 +442,7 @@ mod tests {
     #[test]
     fn odd_rows_dont_empty_the_list() {
         let odd: Data<Vec<Value>> =
-            serde_json::from_str(include_str!("../../tests/fixtures/fountain/odd-agents.json")).unwrap();
+            serde_json::from_str(include_str!("../../../tests/fixtures/fountain/odd-agents.json")).unwrap();
         let l: Listing<Agent> = rows(odd.data);
         assert_eq!(l.unreadable, 1, "the garbage row");
         let nulls = l.items.iter().find(|a| a.name == "fixture-nulls").unwrap();
@@ -478,7 +478,7 @@ mod tests {
     #[test]
     fn runners_and_sandboxes() {
         let r: Data<Vec<Runner>> =
-            serde_json::from_str(include_str!("../../tests/fixtures/fountain/runners.json")).unwrap();
+            serde_json::from_str(include_str!("../../../tests/fixtures/fountain/runners.json")).unwrap();
         assert!(r.data.iter().any(|r| r.online));
         assert!(r.data.iter().all(|r| !r.name.is_empty() && r.last_seen_at.is_some()));
         let s: Data<Vec<Sandbox>> = serde_json::from_value(serde_json::json!({ "data": [{

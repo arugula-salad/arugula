@@ -38,6 +38,7 @@ or an account skip without it and name what's missing
 | `just desktop-xvfb` | the Linux desktop app under Xvfb in a container (`packaging/desktop/xvfb/`): `join` (#204), `m46` (`bare` and `links` among its claims), `m47` and `stale` (#317) (see [The desktop app's tests](#the-desktop-apps-tests)) | Linux |
 | `just desktop-packages ARCH` | the .deb on Ubuntu 22.04 and the .rpm on Fedora 42 install and claim `arugula://` (after `just desktop-linux ARCH`) | no |
 | `testnet/macos/desktop.sh`, `testnet/macos/update.sh`, `testnet/macos/stale-daemon.sh` | the macOS app from its .dmg in a fresh tart VM, its updater, and a daemon too old for it (#317) | no |
+| `just check-core` | clippy and the daemon's and CLI's tests without the `labs` feature (the core, with no Fountain; #452) | Linux and macOS |
 | `just check-macos` | clippy for the macOS target from Linux (compiles, doesn't link) | Linux |
 
 CI (`.github/workflows/check.yml`) runs on pushes, every job it can at
@@ -50,6 +51,8 @@ once (#287); a new push to a branch cancels that branch's run:
     once, kept for the run's other jobs (`scripts/ci-env keep`);
   - **clippy**: Linux, both Macs (`just check-macos`), the desktop app
     and `just notices`;
+  - **core**: `just check-core`, clippy and the daemon's and the CLI's
+    tests with the `labs` feature off (#452);
   - **test**: `just test`, the box's binaries from static;
   - **testnet**: the test stack's ssh and control profiles;
   - **e2e**: the specs (`E2E_SET=rest`) in six `--shard`s, each with its

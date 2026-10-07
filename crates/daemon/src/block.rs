@@ -366,7 +366,7 @@ pub fn create(kind: BlockType, ctx: BlockCtx, config: Value) -> Result<Arc<dyn B
         BlockType::Workspace => crate::workspace::Workspace::create(ctx, config),
         BlockType::App => crate::apps::AppBlock::create(ctx, config),
         BlockType::Forge => crate::forge::ForgeBlock::create(ctx, config),
-        BlockType::Fountain => crate::fountain::FountainBlock::create(ctx, config),
+        BlockType::Fountain => crate::labs::create_block(kind, ctx, config),
         BlockType::Invite => crate::invite::card::InviteBlock::create(ctx, config),
         BlockType::Unknown => Err("a block type this build doesn't know".into()),
     }

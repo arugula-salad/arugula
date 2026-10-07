@@ -187,6 +187,27 @@ pub(crate) async fn read(runner: &Runner) -> Result<Found, String> {
     Ok(parse_found(&out))
 }
 
+/// A Fountain login the catalog would find (this module's order): a
+/// key in the daemon's or the shell's environment, or the CLI's
+/// credentials file.
+pub fn here(shell_env: &crate::shellenv::ShellEnv) -> bool {
+    let shell = shell_env.local_now();
+    let var = |k: &str| {
+        shell
+            .as_ref()
+            .and_then(|r| r.get(k).map(str::to_owned))
+            .or_else(|| std::env::var(k).ok())
+            .filter(|v| !v.is_empty())
+    };
+    if var("FOUNTAIN_API_KEY").is_some() {
+        return true;
+    }
+    let file = var("ARUGULA_FOUNTAIN_CREDENTIALS")
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".fountain/credentials")));
+    file.is_some_and(|f| f.is_file())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
