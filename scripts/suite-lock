@@ -20,6 +20,7 @@
 use strict;
 use warnings;
 use Fcntl qw(:flock);
+use File::Path qw(make_path);
 use POSIX qw(strftime);
 
 @ARGV or die "usage: scripts/suite-lock COMMAND...\n";
@@ -27,7 +28,8 @@ exec @ARGV or die "suite-lock: $ARGV[0]: $!\n"
   if $ENV{CI} || $ENV{ARUGULA_SUITE_LOCKED} || ($ENV{ARUGULA_SUITE_LOCK} // '') eq '0';
 
 my $dir = "$ENV{HOME}/.cache/arugula";
-mkdir $dir unless -d $dir;
+# ~/.cache too, on a fresh home.
+make_path($dir);
 my $path = "$dir/suite.lock";
 open(my $lock, '+>>', $path) or die "suite-lock: $path: $!\n";
 
@@ -45,20 +47,26 @@ print $lock "pid $$ in $cwd since " . strftime('%H:%M:%S', localtime) . "\n";
 $lock->flush;
 
 # A wedged syspolicyd stays pegged with nothing new to check; the suite
-# would only time out by the hundred. Builds are done by now, so busy for
-# three samples running means wedged, not working.
-if ($^O eq 'darwin') {
-  my $pegged = 1;
-  for my $i (1 .. 3) {
-    my ($cpu) = map { /^\s*([\d.]+)/ ? $1 : () } grep { /syspolicyd$/ } `ps -Ao pcpu,comm`;
-    if (!defined $cpu || $cpu < 80) { $pegged = 0; last }
-    sleep 2 if $i < 3;
-  }
-  if ($pegged) {
-    print STDERR "suite-lock: syspolicyd is stuck near 100% CPU, so every new binary waits for it\n"
-      . "and this suite would fail with timeouts. Restart it (launchd brings it back):\n"
-      . "  sudo killall syspolicyd\n";
-    exit 1;
+# would only time out by the hundred. It's also busy for a moment whenever
+# new binaries first run (another worktree's, say), so it counts as wedged
+# only when it stays busy for ARUGULA_SUITE_LOCK_BUSY seconds (30). Only
+# macOS has one; elsewhere ps lists none.
+my $busy = sub {
+  my ($cpu) = map { /^\s*([\d.]+)/ ? $1 : () } grep { /syspolicyd$/ } `ps -Ao pcpu,comm`;
+  defined $cpu && $cpu >= 80;
+};
+if ($busy->()) {
+  my $window = $ENV{ARUGULA_SUITE_LOCK_BUSY} // 30;
+  my $until = time + $window;
+  print STDERR "suite-lock: syspolicyd is busy; waiting up to ${window}s for it to settle\n";
+  while ($busy->()) {
+    if (time >= $until) {
+      print STDERR "suite-lock: syspolicyd is stuck near 100% CPU, so every new binary waits for it\n"
+        . "and this suite would fail with timeouts. Restart it (launchd brings it back):\n"
+        . "  sudo killall syspolicyd\n";
+      exit 1;
+    }
+    sleep 2;
   }
 }
 

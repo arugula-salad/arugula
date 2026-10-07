@@ -118,6 +118,8 @@ moves the state dir. A `labs` cargo feature is planned (#452).
   tests run. Two at once wedge macOS's syspolicyd, and the tests fail by the
   hundred. Waiting can take a while, so run them in the background (or an
   Arugula pane). Agents building side by side: `CARGO_BUILD_JOBS=4`.
+  Run suites through `just`: a `cargo nextest run` of your own skips the
+  lock.
 
 ## Milestone codes
 
