@@ -479,6 +479,7 @@ impl Daemon {
     }
 
     /// An ssh guest's window (M65) sizes the pane's tab, zoomed to it.
+    #[cfg(feature = "labs")]
     pub(super) fn guest_view(&mut self, client: ClientId, pane: PaneId, (cols, rows): (u16, u16)) {
         let Ok(tab) = self.mux.tab_of(pane) else { return };
         let now = std::time::Instant::now();

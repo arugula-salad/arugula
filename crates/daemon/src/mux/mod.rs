@@ -230,6 +230,7 @@ pub enum Api {
     /// An ssh guest with a read-write invite typed (M65). Refused while
     /// someone else drives; the first keys take the pane, and its size, as
     /// `arugula attach` does.
+    #[cfg(feature = "labs")]
     GuestInput {
         pane: PaneId,
         client: ClientId,
@@ -239,6 +240,7 @@ pub enum Api {
         reply: oneshot::Sender<Result<(), String>>,
     },
     /// Their window changed: the pane follows if they drive it.
+    #[cfg(feature = "labs")]
     GuestSize {
         pane: PaneId,
         client: ClientId,
@@ -246,6 +248,7 @@ pub enum Api {
         size: (u16, u16),
     },
     /// They left: they drive nothing and size nothing.
+    #[cfg(feature = "labs")]
     GuestLeft {
         client: ClientId,
         who: String,

@@ -62,7 +62,7 @@ pub struct App {
     /// MCP's tokens (M16).
     pub mcp: Arc<crate::mcp::Tokens>,
     /// Invites for guests with only OpenSSH (M65).
-    pub guests: Arc<crate::guest_ssh::Guests>,
+    pub guests: Arc<crate::labs::Guests>,
     /// Devices lending their tools to agents (S33).
     pub hands: Arc<crate::hand::Hands>,
     next_client: AtomicU64,
@@ -84,7 +84,7 @@ impl App {
         control: Arc<crate::control::Control>,
         acl: Arc<crate::acl::Acl>,
         mcp: Arc<crate::mcp::Tokens>,
-        guests: Arc<crate::guest_ssh::Guests>,
+        guests: Arc<crate::labs::Guests>,
         hands: Arc<crate::hand::Hands>,
     ) -> Arc<Self> {
         Arc::new(Self {
@@ -119,7 +119,6 @@ fn own_routes(app: &Arc<App>) -> Router<Arc<App>> {
         .merge(crate::fs::routes())
         .merge(crate::hosts::routes())
         .merge(crate::share::api_routes())
-        .merge(crate::guest_ssh::routes())
         .merge(crate::acl::api::routes())
         .merge(crate::invite::routes())
         .merge(crate::setup::routes())

@@ -40,8 +40,7 @@ Each has a `README.md` with where to start reading.
 Paths are under `crates/daemon/src/`.
 
 - **Edge:** the embedded web client and `/ws` (`server.rs`), the HTTP API
-  (`api.rs`), MCP (`mcp/`), share links (`share.rs`), guest ssh
-  (`guest_ssh.rs`), file uploads (`upload.rs`), the dial-out transport
+  (`api.rs`), MCP (`mcp/`), share links (`share.rs`), file uploads (`upload.rs`), the dial-out transport
   (`dial.rs`), end-to-end channels from client devices (`e2e.rs`), enrolment in
   control (`control.rs`), Windows' named pipe (`pipe.rs`).
 - **Who may:** who may talk to the daemon (`access.rs`, `localauth.rs`),
@@ -105,8 +104,10 @@ moves the state dir. A `labs` cargo feature (on by default) compiles Labs
 code in or out: it lives in `crates/daemon/src/labs/`, and core reaches it
 only through the surface in `labs/mod.rs`, which explains the pattern. Fountain,
 studio apps, chant workspaces, and VMs (the Sprites adapter, machines, resident
-daemons, the provider tunnel and the tailnet sandbox supervisor) are there so
-far (#452 to #454); the rest follows (#455 to #457). The `Provider` trait stays
+daemons, the provider tunnel and the tailnet sandbox supervisor) and guest ssh
+(`labs/guest_ssh.rs`; `russh` is an optional dependency, and a build without
+Labs answers `/api/guests` with 501) are there so far (#452 to #455); the rest
+follows (#456 and #457). The `Provider` trait stays
 in core (`provider/`); a build without Labs never has a provider, and a saved
 VM pane comes back exited, with the reason. `just check-core`
 runs clippy and the tests of `arugulad` and `arugula` with the feature off.

@@ -365,6 +365,31 @@ fn a_build_without_labs_ignores_the_labs_file() {
     assert!(host.get("fountain_runner").is_none_or(|v| v.is_null()), "{host}");
 }
 
+/// A build without Labs has no guest ssh: the invite routes answer 501 and
+/// say so, which is what `arugula share --guest` prints.
+#[cfg(not(feature = "labs"))]
+#[test]
+fn a_build_without_labs_answers_guest_invites_with_501() {
+    let d = arugulad!("hosts")
+        .args(["--name", "plain"])
+        .no_wisp()
+        .no_tailscale()
+        .env("PS1", "$ ")
+        .env("ARUGULA_LOCAL_TOKEN_FILE", token_file())
+        .start();
+    let want = "Guest ssh isn't in this build (built without labs)";
+    for (method, path, body) in [
+        ("POST", "/api/guests", Some(serde_json::json!({ "pane": 1 }))),
+        ("GET", "/api/guests", None),
+        ("DELETE", "/api/guests/1", None),
+    ] {
+        let (status, text) = d.raw(method, path, body);
+        assert_eq!(status, 501, "{method} {path}: {text}");
+        let v: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(v["error"], want, "{method} {path}: {text}");
+    }
+}
+
 /// The three readers of the `labs` file agree: the daemon's `/api/host`
 /// (above), and the two `--help`s, which find the same file through the
 /// state directory the program would use: `ARUGULA_STATE_DIR` for both,
