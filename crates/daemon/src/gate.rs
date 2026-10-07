@@ -4,9 +4,13 @@
 //! block (M35) reads hud's; a forge block (M36) raises one for a review
 //! asked of you. Neither the reason nor the card knows which.
 
-use arugula_proto::{Action, Gate, GateSource, Reason, ReasonKind};
+#[cfg(feature = "labs")]
+use arugula_proto::GateSource;
+use arugula_proto::{Action, Gate, Reason, ReasonKind};
 
-use crate::{review::Runner, store::now_ms};
+#[cfg(feature = "labs")]
+use crate::review::Runner;
+use crate::store::now_ms;
 
 /// Why a block with these gates waiting wants you: the first gate, with
 /// how many more, bundled by its workspace. `allow` approves it.
@@ -29,6 +33,7 @@ pub fn reason(gates: &[Gate]) -> Option<Reason> {
 
 /// Approve `gate` as `approver` (#75: the owner or an editor, by their
 /// Arugula name), through its source. What the source said, on success.
+#[cfg(feature = "labs")]
 pub async fn approve(gate: &Gate, approver: Option<&str>, via: &Via<'_>) -> Result<String, String> {
     match (&gate.source, via) {
         (GateSource::Chant { dir, .. }, Via::Chant { runner, chant }) => {
@@ -58,7 +63,7 @@ pub async fn approve(gate: &Gate, approver: Option<&str>, via: &Via<'_>) -> Resu
             let mut body = serde_json::json!({
                 "member": gate.member, "component": gate.op, "gate": gate.gate, "env": gate.env,
             });
-            if *follower && let Some(name) = approver.and_then(crate::apps::hud::hud_name) {
+            if *follower && let Some(name) = approver.and_then(crate::labs::apps::hud::hud_name) {
                 body["onBehalfOf"] = serde_json::json!({ "name": name, "via": "arugula" });
             }
             session.approve_gate(&body).await
@@ -73,16 +78,18 @@ pub async fn approve(gate: &Gate, approver: Option<&str>, via: &Via<'_>) -> Resu
 }
 
 /// What a source needs to approve one of its gates.
+#[cfg(feature = "labs")]
 pub enum Via<'a> {
     /// The workspace's chant, run on the block's host with the user's
     /// shell environment.
     Chant { runner: &'a Runner, chant: &'a str },
     /// The app block's session with hud in its box (M35); `follower`:
     /// it's a follower credential, so hud is told who approves.
-    Hud { session: &'a crate::apps::hud::Session, follower: bool },
+    Hud { session: &'a crate::labs::apps::hud::Session, follower: bool },
 }
 
 /// Text without terminal colours, trimmed.
+#[cfg(feature = "labs")]
 fn plain(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut it = s.chars().peekable();
@@ -129,6 +136,8 @@ pub(crate) fn rfc3339_ms(s: &str) -> Option<u64> {
 
 #[cfg(test)]
 mod tests {
+    use arugula_proto::GateSource;
+
     use super::*;
 
     fn gate(member: &str) -> Gate {
@@ -165,6 +174,7 @@ mod tests {
         assert_eq!(rfc3339_ms("1970-01-01T00:00:00Z"), Some(0));
         assert_eq!(rfc3339_ms("2000-03-01T00:00:00.5Z"), Some(951_868_800_500));
         assert_eq!(rfc3339_ms("yesterday"), None);
+        #[cfg(feature = "labs")]
         assert_eq!(plain("\x1b[32mGate \"g\" resolved\x1b[0m\n"), "Gate \"g\" resolved");
     }
 }

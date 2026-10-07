@@ -63,7 +63,8 @@ Paths are under `crates/daemon/src/`.
 - **Blocks:** what every block provides (`block.rs`), agents (`agent/`),
   browsers (`browser.rs`) and block sites (`sites.rs`, `tls.rs`, `ports.rs`),
   editors (`editor/`), review (`review/`), files (`fs.rs`), forges (`forge/`),
-  Fountain (`labs/fountain/`), workspaces (`workspace/`), studio apps (`apps/`),
+  Fountain (`labs/fountain/`), workspaces (`labs/workspace/`), studio apps
+  (`labs/apps/`),
   conversations (`conversations/`), the IDE bridge (`ide/`), invites
   (`invite/`), remote blocks (`remote.rs`), configured agent harnesses
   (`inventory.rs`).
@@ -101,8 +102,9 @@ An empty `labs` file in the state dir turns on what a stranger doesn't get
 (#385). It's read by `arugula_proto::hosts::labs`. `ARUGULA_STATE_DIR`
 moves the state dir. A `labs` cargo feature (on by default) compiles Labs
 code in or out: it lives in `crates/daemon/src/labs/`, and core reaches it
-only through the surface in `labs/mod.rs`, which explains the pattern. Fountain
-is there so far (#452); the rest follows (#453 to #457). `just check-core`
+only through the surface in `labs/mod.rs`, which explains the pattern. Fountain,
+studio apps and chant workspaces are there so far (#452, #453); the rest
+follows (#454 to #457). `just check-core`
 runs clippy and the tests of `arugulad` and `arugula` with the feature off.
 
 ## Commands
