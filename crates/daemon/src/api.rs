@@ -2545,6 +2545,6 @@ async fn studio_unfollow(Path(name): Path<String>) -> Res<Json<Empty>> {
 }
 
 /// ICE servers for a huddle (M63): TURN credentials from control, or STUN.
-async fn turn(State(app): AppState) -> Json<serde_json::Value> {
+async fn turn(State(app): AppState) -> Json<arugula_control_wire::IceServers> {
     Json(app.control.ice_servers().await)
 }
