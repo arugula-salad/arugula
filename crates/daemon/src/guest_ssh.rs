@@ -987,16 +987,22 @@ async fn mint(State(app): AppState, Json(req): Json<GuestInviteRequest>) -> Resp
     if !plain_host(&host) {
         return error(StatusCode::BAD_REQUEST, format!("{host:?} isn't a host name or address"));
     }
-    let addr = match guests.ensure_listening(&app).await {
-        Ok(a) => a,
-        Err(e) => return error(StatusCode::SERVICE_UNAVAILABLE, e.to_string()),
-    };
     let key = match guests.host_key() {
         Ok(k) => k,
         Err(e) => return error(StatusCode::INTERNAL_SERVER_ERROR, format!("no host key: {e}")),
     };
-    let public = key.public_key().to_openssh().unwrap_or_default();
+    // The invite first, then the listener: listening with no invite yet,
+    // the once-a-second idle check could close it under the command.
     let (mut invite, token) = guests.mint(&req, None);
+    let addr = match guests.ensure_listening(&app).await {
+        Ok(a) => a,
+        Err(e) => {
+            guests.revoke(invite.id);
+            guests.stop_if_idle().await;
+            return error(StatusCode::SERVICE_UNAVAILABLE, e.to_string());
+        }
+    };
+    let public = key.public_key().to_openssh().unwrap_or_default();
     let known = format!("{} {public}", known_name(&host, addr.port()));
     invite.command = Some(command(&token, &host, addr.port(), &known));
     invite.known_hosts = Some(known);
