@@ -598,6 +598,40 @@ fn an_agents_writes_are_drafts_a_person_sends() {
     assert_eq!(forge.f.writes().len(), 2, "the dropped merge went out");
 }
 
+/// MCP's `draft review` with no body and `draft merge` with no style
+/// (#448): the arguments leave the key out where they used to say `null`,
+/// and the block drafts the same either way.
+#[test]
+fn an_approval_with_no_body_and_a_merge_with_no_style_draft_either_way() {
+    let dir = scratch("drafts-bare");
+    let forge = Forge::start(&dir, "someone", None);
+    let d = forge.daemon();
+    let block = open_pr(&d, &forge);
+    read(&d, block);
+    let by = json!({ "agent": true });
+    let with = |extra: Value| {
+        let mut a = by.clone();
+        a.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+        a
+    };
+    let omitted = d.call(block, "review", with(json!({ "event": "approve" })));
+    let null = d.call(block, "review", with(json!({ "event": "approve", "body": null })));
+    let merge_omitted = d.call(block, "merge", with(json!({})));
+    let merge_null = d.call(block, "merge", with(json!({ "style": null })));
+    for out in [&omitted, &null, &merge_omitted, &merge_null] {
+        assert_eq!(out["status"], "waiting", "{out}");
+        assert!(out["draft"].is_string(), "{out}");
+    }
+    let st = d.state(block);
+    let drafts = st["drafts"].as_array().unwrap();
+    assert_eq!(drafts.len(), 4, "{st}");
+    assert_eq!((drafts[0]["method"].as_str(), drafts[0]["event"].as_str()), (Some("review"), Some("approve")));
+    assert_eq!(drafts[0]["body"], drafts[1]["body"]);
+    assert_eq!(drafts[2]["method"], "merge");
+    assert_eq!(drafts[2]["style"], drafts[3]["style"]);
+    assert!(forge.f.writes().is_empty(), "a draft went out");
+}
+
 #[test]
 fn a_persons_writes_go_straight_out() {
     let dir = scratch("direct");

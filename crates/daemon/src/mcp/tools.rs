@@ -10,6 +10,7 @@ use std::{future::Future, sync::Arc, time::Duration};
 use arugula_proto::{
     Attention, BlockType, Driver, PaneId, Policy, SessionId, StartedBy, ThreadTarget,
     api::{ActRequest, HistoryEntry, HistoryKind, OpenRequest, PaneSummary, RunRequest, WaitResult},
+    forge::{ForgeState, ItemKind, ReviewEvent, Write},
 };
 use rmcp::{
     Peer, RoleServer,
@@ -18,11 +19,14 @@ use rmcp::{
     service::RequestContext,
 };
 use schemars::JsonSchema;
-use serde::{Deserialize, de::DeserializeOwned};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 use tokio::time::Instant;
 
-use super::{Caller, Scope};
+use super::{
+    Caller, Scope,
+    results::{self, RunState},
+};
 use crate::{
     history::{self, Filter},
     mux::Api,
@@ -62,6 +66,29 @@ fn progress_every() -> Duration {
 }
 
 // ---------------------------------------------------------------- arguments
+
+/// What `open_forge` asks the forge block's `open_config` for (a `Value` it
+/// keeps, being the block's persisted config): a PR or issue by reference,
+/// or a new issue. Only what is set goes in.
+#[derive(Debug, Default, Serialize)]
+struct ForgeOpen {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pr: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    issue: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    body: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    repo: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    by: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    agent: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    dir: Option<String>,
+}
 
 /// A pane or block: `7` or `"%7"`.
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
@@ -1383,7 +1410,9 @@ fn pick_kind(
 
 type Out = Result<Value, String>;
 
-fn done(summary: impl Into<String>, mut v: Value) -> Out {
+/// A result, with the `summary` sentence in it.
+fn done(summary: impl Into<String>, v: impl Serialize) -> Out {
+    let mut v = serde_json::to_value(v).map_err(|e| e.to_string())?;
     v["summary"] = Value::String(summary.into());
     Ok(v)
 }
@@ -1526,11 +1555,13 @@ impl<'a> Call<'a> {
                 Err(e) => Err(e),
             },
             ("show", Some("pr")) => match parse::<OpenPrArgs>(args) {
-                Ok(a) => self.open_forge(json!({ "pr": a.pr }), a.dir, a.beside).await,
+                Ok(a) => self.open_forge(ForgeOpen { pr: Some(a.pr), ..Default::default() }, a.dir, a.beside).await,
                 Err(e) => Err(e),
             },
             ("show", Some("issue")) => match parse::<OpenIssueArgs>(args) {
-                Ok(a) => self.open_forge(json!({ "issue": a.issue }), a.dir, a.beside).await,
+                Ok(a) => {
+                    self.open_forge(ForgeOpen { issue: Some(a.issue), ..Default::default() }, a.dir, a.beside).await
+                }
                 Err(e) => Err(e),
             },
             ("show", Some("conversation")) => match parse(args) {
@@ -1551,28 +1582,35 @@ impl<'a> Call<'a> {
             },
             // draft
             ("draft", Some("comment")) => match parse::<CommentArgs>(args) {
-                Ok(a) => self.pr_write(&a.block, "comment", json!({ "body": a.body })).await,
+                Ok(a) => self.pr_write(&a.block, Write::Comment { body: a.body }).await,
                 Err(e) => Err(e),
             },
             ("draft", Some("review")) => match parse::<PrReviewArgs>(args) {
                 Ok(a) => {
                     let event = match a.event {
-                        PrReviewEvent::Approve => "approve",
-                        PrReviewEvent::RequestChanges => "request_changes",
-                        PrReviewEvent::Comment => "comment",
+                        PrReviewEvent::Approve => ReviewEvent::Approve,
+                        PrReviewEvent::RequestChanges => ReviewEvent::RequestChanges,
+                        PrReviewEvent::Comment => ReviewEvent::Comment,
                     };
-                    self.pr_write(&a.block, "review", json!({ "event": event, "body": a.body })).await
+                    self.pr_write(&a.block, Write::Review { event, body: a.body }).await
                 }
                 Err(e) => Err(e),
             },
             ("draft", Some("merge")) => match parse::<PrMergeArgs>(args) {
-                Ok(a) => self.pr_write(&a.block, "merge", json!({ "style": a.style })).await,
+                Ok(a) => self.pr_write(&a.block, Write::Merge { style: a.style }).await,
                 Err(e) => Err(e),
             },
             ("draft", Some("issue")) => match parse::<IssueNewArgs>(args) {
                 Ok(a) => {
-                    let c = json!({ "issue": "new", "title": a.title, "body": a.body.unwrap_or_default(),
-                        "repo": a.repo, "by": self.by(), "agent": true });
+                    let c = ForgeOpen {
+                        issue: Some("new".into()),
+                        title: Some(a.title),
+                        body: Some(a.body.unwrap_or_default()),
+                        repo: a.repo,
+                        by: Some(self.by()),
+                        agent: Some(true),
+                        ..Default::default()
+                    };
                     self.open_forge(c, a.dir, a.beside).await
                 }
                 Err(e) => Err(e),
@@ -1595,7 +1633,7 @@ impl<'a> Call<'a> {
                 devices.iter().map(|d| d["name"].as_str().unwrap_or("?")).collect::<Vec<_>>().join(", ")
             ),
         };
-        done(summary, json!({ "devices": devices }))
+        done(summary, results::Devices { devices })
     }
 
     /// `history`: its entries, or with kind output, lines of output
@@ -1654,7 +1692,13 @@ impl<'a> Call<'a> {
         let woke = c.woke_ms.map_or(String::new(), |ms| format!(" (woken: back in {:.1}s)", ms as f64 / 1000.0));
         done(
             format!("{} answered {}{woke}", c.name, a.tool),
-            json!({ "device": c.device, "name": c.name, "result": c.result, "woke_ms": c.woke_ms, "answer_ms": c.answer_ms }),
+            results::DeviceCalled {
+                device: c.device,
+                name: c.name,
+                result: c.result,
+                woke_ms: c.woke_ms,
+                answer_ms: c.answer_ms,
+            },
         )
     }
 
@@ -1872,7 +1916,7 @@ impl<'a> Call<'a> {
         let start = Instant::now();
         let place = self.place(pane).await;
         let Some(command) = a.command else {
-            return done(format!("Opened a shell in %{pane} ({place})"), json!({ "pane": pane, "state": "started" }));
+            return done(format!("Opened a shell in %{pane} ({place})"), RunState::Started { pane });
         };
         // The shell's first prompt (a VM takes a while), then the command.
         let mux = self.app.mux.clone();
@@ -1910,7 +1954,7 @@ impl<'a> Call<'a> {
                     "Started `{}` in %{pane} ({place}). Follow it with wait (until command_end) or read_output.",
                     one_line(&command, 80)
                 ),
-                json!({ "pane": pane, "state": "started" }),
+                RunState::Started { pane },
             );
         }
         let left = limit.saturating_sub(start.elapsed());
@@ -1971,13 +2015,12 @@ impl<'a> Call<'a> {
         };
         done(
             summary,
-            json!({
-                "pane": pane,
-                "state": "still running",
-                "command": current.and_then(|c| c.text),
-                "next_offset": end,
-                "last_lines": self.last_lines(pane, from, None),
-            }),
+            RunState::StillRunning {
+                pane,
+                command: current.and_then(|c| c.text),
+                next_offset: end,
+                last_lines: self.last_lines(pane, from, None),
+            },
         )
     }
 
@@ -1997,24 +2040,23 @@ impl<'a> Call<'a> {
                 };
                 done(
                     format!("{what} in %{pane} {how}; read_output with last_command for all of its output"),
-                    json!({
-                        "pane": pane,
-                        "state": "done",
-                        "command": text,
-                        "exit": exit,
-                        "output_offset": start,
-                        "next_offset": next,
-                        "last_lines": self.last_lines(pane, start, end),
-                    }),
+                    RunState::Done {
+                        pane,
+                        command: text,
+                        exit,
+                        output_offset: start,
+                        next_offset: next,
+                        last_lines: self.last_lines(pane, start, end),
+                    },
                 )
             }
             WaitResult::Exit { code } => done(
                 format!("%{pane}'s process exited{}", code.map(|c| format!(" {c}")).unwrap_or_default()),
-                json!({ "pane": pane, "state": "exited", "exit": code, "last_lines": self.last_lines(pane, 0, None) }),
+                RunState::Exited { pane, exit: code, last_lines: self.last_lines(pane, 0, None) },
             ),
             WaitResult::Match { text, offset } => done(
                 format!("%{pane}'s output matched: {}", one_line(&text, 80)),
-                json!({ "pane": pane, "state": "matched", "match": text, "offset": offset, "next_offset": self.end_of(pane).await }),
+                RunState::Matched { pane, matched: text, offset, next_offset: self.end_of(pane).await },
             ),
             WaitResult::Attention { state, ask } => {
                 let summary = match (&state, &ask) {
@@ -2025,7 +2067,7 @@ impl<'a> Call<'a> {
                     (Attention::Done, _) => format!("%{pane} finished"),
                     _ => format!("%{pane} is idle"),
                 };
-                done(summary, json!({ "pane": pane, "state": state, "ask": ask }))
+                done(summary, results::Attended { pane, state, ask })
             }
             WaitResult::Timeout => self.still_running(pane, Duration::ZERO).await,
         }
@@ -2076,7 +2118,7 @@ impl<'a> Call<'a> {
             let b =
                 self.app.mux.api(|r| Api::Block(pane, r)).await.flatten().ok_or_else(|| format!("no block %{pane}"))?;
             b.call_by("send", json!({ "text": a.text.unwrap_or_default(), "files": [path] }), Some(&by)).await?;
-            return done(format!("Sent %{pane} a prompt with the file"), json!({ "pane": pane }));
+            return done(format!("Sent %{pane} a prompt with the file"), results::PaneOnly { pane });
         }
         let out =
             crate::upload::paste_into(self.app, pane, vec![path.clone()], a.force, Some(&by)).await.map_err(|e| e.1)?;
@@ -2086,7 +2128,7 @@ impl<'a> Call<'a> {
                 "%{pane} is running {front}, which wouldn't read a path; it's at {path} (force pastes it anyway)"
             ));
         }
-        done(format!("Pasted {path} into %{pane}"), json!({ "pane": pane, "path": path }))
+        done(format!("Pasted {path} into %{pane}"), results::Pasted { pane, path })
     }
 
     #[cfg(not(unix))]
@@ -2114,11 +2156,16 @@ impl<'a> Call<'a> {
                 };
                 return done(
                     format!("Prompted %{pane}'s agent in {tab}{queued}; wait until needs_input for its questions"),
-                    json!({ "pane": pane, "tab": tab, "chat": out["chat"], "position": out["position"] }),
+                    results::Prompted {
+                        pane,
+                        tab: tab.to_owned(),
+                        chat: out["chat"].clone(),
+                        position: out["position"].clone(),
+                    },
                 );
             }
             b.call_by("send", json!({ "text": text }), Some(&self.by())).await?;
-            return done(format!("Sent %{pane} a prompt"), json!({ "pane": pane }));
+            return done(format!("Sent %{pane} a prompt"), results::PaneOnly { pane });
         }
         let handle =
             self.app.mux.api(|r| Api::Pane(pane, r)).await.flatten().ok_or_else(|| format!("no pane %{pane}"))?;
@@ -2139,7 +2186,7 @@ impl<'a> Call<'a> {
         self.app.mux.send(crate::mux::Cmd::Api(Api::InputBy(pane, data, self.by())));
         done(
             format!("Typed into %{pane}; its output from here starts at offset {offset}"),
-            json!({ "pane": pane, "next_offset": offset }),
+            results::Typed { pane, next_offset: offset },
         )
     }
 
@@ -2189,7 +2236,8 @@ impl<'a> Call<'a> {
             let st =
                 status.as_ref().ok_or("a closed pane's commands: use history, then read_output with its offset")?;
             let c = st.current.clone().or(st.last.clone()).ok_or("no command recorded in that pane yet")?;
-            command = Some(json!({ "text": c.text, "exit": c.exit, "running": st.current.is_some() }));
+            command =
+                Some(results::OutputCommand { text: c.text.clone(), exit: c.exit, running: st.current.is_some() });
             (Some(a.offset.unwrap_or(c.start)), if st.current.is_some() { None } else { c.end })
         } else {
             (a.offset, None)
@@ -2221,17 +2269,7 @@ impl<'a> Call<'a> {
         } else {
             format!("%{pane}: {} characters, up to now (offset {next}); later output starts there", text.len())
         };
-        done(
-            summary,
-            json!({
-                "pane": pane,
-                "offset": start,
-                "next_offset": next,
-                "more": more,
-                "command": command,
-                "text": text,
-            }),
-        )
+        done(summary, results::Output { pane, offset: start, next_offset: next, more, command, text })
     }
 
     async fn capture(&self, a: PaneOnly) -> Out {
@@ -2251,7 +2289,7 @@ impl<'a> Call<'a> {
             b.text()
         };
         let text = cap_tail(text.trim_end(), PAGE_MAX);
-        done(format!("%{pane}'s screen ({} lines)", text.lines().count()), json!({ "pane": pane, "text": text }))
+        done(format!("%{pane}'s screen ({} lines)", text.lines().count()), results::Screen { pane, text })
     }
 
     async fn wait(&self, a: WaitArgs) -> Out {
@@ -2301,14 +2339,14 @@ impl<'a> Call<'a> {
         let panes = self.panes().await;
         let tab = self.me().and_then(|me| panes.iter().find(|p| p.info.id == me).map(|p| p.tab));
         let own = self.own_pane();
-        let entries: Vec<Value> = panes
+        let entries: Vec<results::PaneEntry> = panes
             .iter()
             .filter(|p| tab.is_none_or(|t| p.tab == t))
             .take(300)
             .map(|p| {
                 let mut e = entry(p);
                 if own == Some(p.info.id) {
-                    e["you"] = json!(true);
+                    e.you = Some(true);
                 }
                 e
             })
@@ -2325,7 +2363,7 @@ impl<'a> Call<'a> {
         if !needs.is_empty() {
             summary.push_str(&format!("; {} need input", needs.join(", ")));
         }
-        done(summary, json!({ "panes": entries }))
+        done(summary, results::Panes { panes: entries })
     }
 
     async fn close(&self, a: PaneOnly) -> Out {
@@ -2335,7 +2373,7 @@ impl<'a> Call<'a> {
             return Err(crate::invite::CLOSE_OWNER_ONLY.into());
         }
         match self.app.mux.api(|r| Api::Close(pane, r)).await {
-            Some(true) => done(format!("Closed %{pane}"), json!({ "pane": pane })),
+            Some(true) => done(format!("Closed %{pane}"), results::PaneOnly { pane }),
             _ => Err(self.gone(pane).await),
         }
     }
@@ -2399,7 +2437,7 @@ impl<'a> Call<'a> {
                 target.key(),
                 if text.is_empty() { String::new() } else { format!(":\n{}", text.join("\n")) }
             ),
-            json!({ "thread": target, "messages": msgs, "last": last }),
+            results::ThreadRead { thread: target, messages: msgs, last },
         )
     }
 
@@ -2417,7 +2455,7 @@ impl<'a> Call<'a> {
             self.app.mux.api(|r| Api::ThreadPost(post, r)).await.ok_or("daemon is shutting down")?.map_err(|e| e.1)?;
         done(
             format!("posted #{} in {}", msg.id, target.key()),
-            json!({ "thread": target, "message": msg, "unreached": unreached }),
+            results::ThreadPosted { thread: target, message: msg, unreached },
         )
     }
 
@@ -2457,22 +2495,20 @@ impl<'a> Call<'a> {
         let total = hits.len();
         hits.reverse();
         hits.truncate(limit);
-        let entries: Vec<Value> = hits
+        let entries: Vec<results::CommandEntry> = hits
             .iter()
-            .map(|h| {
-                json!({
-                    "pane": h.pane,
-                    "open": h.open,
-                    "command": h.text,
-                    "cwd": h.cwd,
-                    "exit": h.exit,
-                    "started_ms": h.started_ms,
-                    "started": ago(h.started_ms),
-                    "seconds": h.ended_ms.map(|e| e.saturating_sub(h.started_ms) / 1000),
-                    "by": h.by,
-                    "kind": h.kind,
-                    "output_offset": h.start,
-                })
+            .map(|h| results::CommandEntry {
+                pane: h.pane,
+                open: h.open,
+                command: h.text.clone(),
+                cwd: h.cwd.clone(),
+                exit: h.exit,
+                started_ms: h.started_ms,
+                started: ago(h.started_ms),
+                seconds: h.ended_ms.map(|e| e.saturating_sub(h.started_ms) / 1000),
+                by: h.by.clone(),
+                kind: h.kind,
+                output_offset: h.start,
             })
             .collect();
         let summary = match (total, a.failed) {
@@ -2485,7 +2521,7 @@ impl<'a> Call<'a> {
                 entries.len()
             ),
         };
-        done(summary, json!({ "commands": entries, "total": total }))
+        done(summary, results::Commands { commands: entries, total })
     }
 
     async fn search(&self, a: SearchArgs) -> Out {
@@ -2497,13 +2533,20 @@ impl<'a> Call<'a> {
         let want = if only.is_some() { 2000 } else { limit };
         let hits =
             tokio::task::spawn_blocking(move || history::search(&store, &re, since, want)).await.unwrap_or_default();
-        let hits: Vec<Value> = hits
+        let hits: Vec<results::Hit> = hits
             .into_iter()
             .filter(|h| only.as_ref().is_none_or(|o| o.contains(&h.pane)))
             .take(limit)
-            .map(|h| json!({ "pane": h.pane, "open": h.open, "offset": h.offset, "command": h.command, "thread": h.thread, "line": one_line(&h.line, 300) }))
+            .map(|h| results::Hit {
+                pane: h.pane,
+                open: h.open,
+                offset: h.offset,
+                command: h.command,
+                thread: h.thread,
+                line: one_line(&h.line, 300),
+            })
             .collect();
-        done(format!("{} matching lines", hits.len()), json!({ "hits": hits }))
+        done(format!("{} matching lines", hits.len()), results::Hits { hits })
     }
 
     async fn open_port(&self, a: OpenPortArgs) -> Out {
@@ -2533,7 +2576,7 @@ impl<'a> Call<'a> {
         };
         done(
             format!("Opened port {} in browser block %{block} {place}", a.port),
-            json!({ "block": block, "port": a.port }),
+            results::PortOpened { block, port: a.port },
         )
     }
 
@@ -2542,7 +2585,7 @@ impl<'a> Call<'a> {
         let Some(name) = a.app else {
             let apps = studio.apps().await?;
             let names: Vec<&str> = apps.iter().map(|a| a.name.as_str()).collect();
-            return done(format!("{} apps: {}", apps.len(), names.join(", ")), json!({ "apps": apps }));
+            return done(format!("{} apps: {}", apps.len(), names.join(", ")), results::Apps { apps });
         };
         let beside = match (a.beside.as_ref().map(PaneArg::id).transpose()?, self.own_pane()) {
             (Some(b), _) => Some(b),
@@ -2564,7 +2607,7 @@ impl<'a> Call<'a> {
             local: true,
         };
         let block = self.open(req).await?;
-        done(format!("Opened app {name} in block %{block}"), json!({ "block": block, "app": name }))
+        done(format!("Opened app {name} in block %{block}"), results::AppOpened { block, app: name })
     }
 
     /// Beside `beside`, or the agent itself; on its machine.
@@ -2610,11 +2653,19 @@ impl<'a> Call<'a> {
         if let Some(e) = state["error"].as_str() {
             return Err(format!("diff block %{block}: {e}"));
         }
-        let files: Vec<Value> = state["files"]
+        let files: Vec<results::DiffFile> = state["files"]
             .as_array()
             .into_iter()
             .flatten()
-            .map(|f| json!({ "path": f["path"], "old": f["old"], "status": f["status"], "add": f["add"], "del": f["del"], "binary": f["binary"], "big": f["big"] }))
+            .map(|f| results::DiffFile {
+                path: f["path"].clone(),
+                old: f["old"].clone(),
+                status: f["status"].clone(),
+                add: f["add"].clone(),
+                del: f["del"].clone(),
+                binary: f["binary"].clone(),
+                big: f["big"].clone(),
+            })
             .collect();
         let n = files.len();
         done(
@@ -2625,7 +2676,7 @@ impl<'a> Call<'a> {
                 state["del"],
                 state["against"].as_str().unwrap_or("")
             ),
-            json!({ "block": block, "repo": state["repo"], "files": files }),
+            results::DiffOpened { block, repo: state["repo"].clone(), files },
         )
     }
 
@@ -2644,7 +2695,7 @@ impl<'a> Call<'a> {
         };
         let block = self.open(req).await?;
         let at = a.line.map(|l| format!(" at line {l}")).unwrap_or_default();
-        done(format!("Showing {}{at} in file block %{block}", a.path), json!({ "block": block }))
+        done(format!("Showing {}{at} in file block %{block}", a.path), results::BlockOnly { block })
     }
 
     async fn open_workspace(&self, a: OpenWorkspaceArgs) -> Out {
@@ -2678,11 +2729,17 @@ impl<'a> Call<'a> {
         if let Some(e) = state["error"].as_str() {
             return Err(format!("workspace block %{block}: {e}"));
         }
-        let members: Vec<Value> = state["members"]
+        let members: Vec<results::Member> = state["members"]
             .as_array()
             .into_iter()
             .flatten()
-            .map(|m| json!({ "name": m["name"], "dir": m["dir"], "kind": m["kind"], "errors": m["errors"], "gates": m["gates"] }))
+            .map(|m| results::Member {
+                name: m["name"].clone(),
+                dir: m["dir"].clone(),
+                kind: m["kind"].clone(),
+                errors: m["errors"].clone(),
+                gates: m["gates"].clone(),
+            })
             .collect();
         let gates = state["gates"].clone();
         let waiting = gates.as_array().map_or(0, Vec::len);
@@ -2697,7 +2754,7 @@ impl<'a> Call<'a> {
                     n => format!(", {n} gates wait for the user"),
                 }
             ),
-            json!({ "block": block, "root": state["root"], "members": members, "gates": gates }),
+            results::WorkspaceOpened { block, root: state["root"].clone(), members, gates },
         )
     }
 
@@ -2727,14 +2784,21 @@ impl<'a> Call<'a> {
             text.push_str(n);
             text.push('\n');
         }
-        let rows: Vec<Value> = rows
+        let rows: Vec<results::AgentRow> = rows
             .iter()
-            .map(|c| {
-                json!({ "name": c.name, "id": c.id, "runtime": c.runtime, "model": c.model, "source": c.source,
-                    "app": c.app, "skills": c.skills, "mcp": c.mcp, "description": c.description })
+            .map(|c| results::AgentRow {
+                name: c.name.clone(),
+                id: c.id.clone(),
+                runtime: c.runtime.clone(),
+                model: c.model.clone(),
+                source: c.source,
+                app: c.app.clone(),
+                skills: c.skills.clone(),
+                mcp: c.mcp.clone(),
+                description: c.description.clone(),
             })
             .collect();
-        done(text, json!({ "total": agents.len(), "agents": rows, "unreadable": got.unreadable }))
+        done(text, results::FountainAgents { total: agents.len(), agents: rows, unreadable: got.unreadable })
     }
 
     async fn read_agent(&self, a: ReadAgentArgs) -> Out {
@@ -2786,7 +2850,7 @@ impl<'a> Call<'a> {
         }
         if runner {
             let text = b.text();
-            return done(format!("Fountain block %{block}:\n{text}"), json!({ "block": block, "text": text }));
+            return done(format!("Fountain block %{block}:\n{text}"), results::BlockText { block, text });
         }
         done(
             format!(
@@ -2794,12 +2858,12 @@ impl<'a> Call<'a> {
                 st["agents"].as_array().map_or(0, Vec::len),
                 st["total"]
             ),
-            json!({ "block": block, "text": b.text() }),
+            results::BlockText { block, text: b.text() },
         )
     }
 
     /// A forge block (M36's PR, M37's issue or new issue) beside a pane.
-    async fn open_forge(&self, mut what: Value, dir: Option<String>, beside: Option<PaneArg>) -> Out {
+    async fn open_forge(&self, mut what: ForgeOpen, dir: Option<String>, beside: Option<PaneArg>) -> Out {
         let (beside, host) = self.beside(beside.as_ref()).await?;
         // N alone means the repository beside it, if no dir is given.
         let dir = match (&dir, beside) {
@@ -2807,8 +2871,8 @@ impl<'a> Call<'a> {
             (None, Some(b)) if host.is_none() => self.readable(b).await?.info.cwd,
             _ => None,
         };
-        what["dir"] = json!(dir);
-        let config = crate::forge::open_config(&what).await?;
+        what.dir = dir;
+        let config = crate::forge::open_config(&serde_json::to_value(&what).map_err(|e| e.to_string())?).await?;
         let req = OpenRequest {
             kind: BlockType::Forge,
             config,
@@ -2829,24 +2893,29 @@ impl<'a> Call<'a> {
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
         };
-        let st = b.state();
-        let what = if st["kind"] == "issue" { "Issue" } else { "PR" };
-        if let Some(e) = st["error"].as_str() {
+        let st = forge_state(&b)?;
+        let what = if st.kind == ItemKind::Issue { "Issue" } else { "PR" };
+        if let Some(e) = &st.error {
             return Err(format!("{what} block %{block}: {e}"));
         }
-        if st["number"] == 0 {
+        if st.number == 0 {
             return done(
                 format!(
                     "Drafted a new issue on {} in %{block}: it waits for the user to send, edit or drop it (read_forge shows what became of it)",
-                    st["repo"].as_str().unwrap_or("")
+                    st.repo
                 ),
-                json!({ "block": block, "status": "waiting", "text": b.text() }),
+                results::ForgeDrafted { block, status: "waiting", text: b.text() },
             );
         }
-        let title = st["pr"]["item"]["title"].as_str().or(st["issue"]["item"]["title"].as_str()).unwrap_or("");
+        let title = st
+            .pr
+            .as_ref()
+            .map(|p| p.item.title.as_str())
+            .or(st.issue.as_ref().map(|i| i.item.title.as_str()))
+            .unwrap_or("");
         done(
-            format!("{what} block %{block}: {}#{} {title}", st["repo"].as_str().unwrap_or(""), st["number"]),
-            json!({ "block": block, "text": b.text(), "wants": st["wants"] }),
+            format!("{what} block %{block}: {}#{} {title}", st.repo, st.number),
+            results::ForgeOpened { block, text: b.text(), wants: st.wants },
         )
     }
 
@@ -2863,19 +2932,19 @@ impl<'a> Call<'a> {
 
     async fn read_forge(&self, a: ReadForgeArgs) -> Out {
         let (id, b) = self.forge(&a.block).await?;
-        let st = b.state();
-        let drafts = st["drafts"].clone();
-        let what = if st["kind"] == "issue" { "Issue" } else { "PR" };
+        let st = forge_state(&b)?;
+        let what = if st.kind == ItemKind::Issue { "Issue" } else { "PR" };
         done(
-            format!("{what} block %{id}: {}#{}", st["repo"].as_str().unwrap_or(""), st["number"]),
-            json!({ "block": id, "text": b.text(), "wants": st["wants"], "drafts": drafts, "error": st["error"] }),
+            format!("{what} block %{id}: {}#{}", st.repo, st.number),
+            results::ForgeRead { block: id, text: b.text(), wants: st.wants, drafts: st.drafts, error: st.error },
         )
     }
 
     /// An agent's write: a draft on the block, at once.
-    async fn pr_write(&self, block: &PaneArg, method: &str, args: Value) -> Out {
+    async fn pr_write(&self, block: &PaneArg, write: Write) -> Out {
         let (id, b) = self.forge(block).await?;
-        let out = b.call_by(method, args, Some(&self.by())).await?;
+        let (method, args) = write_call(&write);
+        let out = b.call_by(&method, args, Some(&self.by())).await?;
         let draft = out["draft"].as_str().unwrap_or("?").to_owned();
         done(
             format!(
@@ -2988,8 +3057,16 @@ impl<'a> Call<'a> {
                 at.session_name,
                 block.0
             ),
-            json!({ "draft": draft, "status": "waiting", "block": block.0, "who": person.id, "name": person.name,
-                "role": role, "session": at.session, "pane": pane }),
+            results::InviteDrafted {
+                draft,
+                status: "waiting",
+                block: block.0,
+                who: person.id,
+                name: person.name,
+                role,
+                session: at.session,
+                pane,
+            },
         )
     }
 
@@ -3039,20 +3116,18 @@ impl<'a> Call<'a> {
                 "dropped" => format!("Nobody answered {id} in time: nothing was shared"),
                 _ => format!("Inviting {name} failed: {}", d["error"].as_str().unwrap_or("?")),
             };
-            let mut v = d;
-            v["draft"] = json!(id);
-            v["block"] = json!(block);
-            return done(summary, v);
+            return done(summary, results::InviteRead { card: d, draft: id.to_owned(), block });
         }
         // Its block was closed: what it said then.
         let root = self.app.mux.store.root().to_owned();
         let kept = tokio::task::spawn_blocking(move || crate::invite::card::closed(&root)).await.unwrap_or_default();
         if let Some(c) = kept.into_iter().rev().find(|c| c.drafter == drafter && c.draft.id == id) {
-            let mut v = serde_json::to_value(&c.draft).unwrap_or_default();
-            v["draft"] = json!(id);
-            v["block"] = json!(c.block);
-            let status = v["status"].as_str().unwrap_or("").to_owned();
-            return done(format!("{id} is {status}; its invite block %{} was closed", c.block), v);
+            let status = serde_json::to_value(&c.draft).unwrap_or_default()["status"].as_str().unwrap_or("").to_owned();
+            let block = c.block;
+            return done(
+                format!("{id} is {status}; its invite block %{block} was closed"),
+                results::InviteRead { card: c.draft, draft: id.to_owned(), block },
+            );
         }
         Err(format!("no invite {id} of yours (invite_person returns one)"))
     }
@@ -3161,7 +3236,7 @@ impl<'a> Call<'a> {
             format!(
                 "Started an agent in %{block}; wait on it (until needs_input or idle), then read_output for its transcript"
             ),
-            json!({ "block": block }),
+            results::BlockOnly { block },
         )
     }
 
@@ -3240,9 +3315,7 @@ impl<'a> Call<'a> {
             PromptResult::Stalled { why, .. } => format!("%{pane} stalled: {why}"),
             PromptResult::StillRunning => format!("%{pane} is still working: wait until idle"),
         };
-        let mut v = serde_json::to_value(&r).map_err(|e| e.to_string())?;
-        v["pane"] = json!(pane);
-        done(summary, v)
+        done(summary, results::PromptedAgent { result: r, pane })
     }
 
     async fn respond(&self, a: RespondArgs) -> Out {
@@ -3280,7 +3353,7 @@ impl<'a> Call<'a> {
             Response::Answer => "Answered",
             Response::Skip => "Skipped",
         };
-        done(format!("{did} what %{pane} asked"), json!({ "pane": pane }))
+        done(format!("{did} what %{pane} asked"), results::PaneOnly { pane })
     }
 
     async fn read_file(&self, a: ReadFileArgs) -> Out {
@@ -3319,10 +3392,7 @@ impl<'a> Call<'a> {
         } else {
             format!("{path}: {size} bytes, to the end")
         };
-        done(
-            summary,
-            json!({ "path": path, "size": size, "offset": offset, "next_offset": next, "more": more, "text": text }),
-        )
+        done(summary, results::FileRead { path, size, offset, next_offset: next, more, text })
     }
 
     // ------------------------------------------------------------ resources
@@ -3371,7 +3441,7 @@ impl<'a> Call<'a> {
                     Some(b) => b.state(),
                     None => Value::Null,
                 };
-                json!({ "pane": entry(&p), "state": state })
+                serde_json::to_value(results::BlockResource { pane: entry(&p), state }).unwrap_or_default()
             }
             _ => return Err(format!("no such resource: {uri}")),
         };
@@ -3380,25 +3450,39 @@ impl<'a> Call<'a> {
 }
 
 /// A pane in `list`.
-fn entry(p: &PaneSummary) -> Value {
+fn entry(p: &PaneSummary) -> results::PaneEntry {
     let i = &p.info;
-    json!({
-        "pane": i.id,
-        "type": i.kind,
-        "session": p.session_name,
-        "tab": p.tab,
-        "tab_name": p.tab_name,
-        "machine": i.host.map(|m| format!("m{m}")),
-        "cwd": i.cwd,
-        "command": i.command,
-        "title": i.title,
-        "running": i.running,
-        "attention": i.attention,
-        "why": i.reason.as_ref().map(|r| r.headline.clone()),
-        "current": i.current.as_ref().and_then(|c| c.text.clone()),
-        "last": i.last.as_ref().map(|c| json!({ "command": c.text, "exit": c.exit })),
-        "started_by": i.started_by.as_ref().map(|s| s.by.clone()),
-    })
+    results::PaneEntry {
+        pane: i.id,
+        kind: i.kind,
+        session: p.session_name.clone(),
+        tab: p.tab,
+        tab_name: p.tab_name.clone(),
+        machine: i.host.map(|m| format!("m{m}")),
+        cwd: i.cwd.clone(),
+        command: i.command.clone(),
+        title: i.title.clone(),
+        running: i.running,
+        attention: i.attention,
+        why: i.reason.as_ref().map(|r| r.headline.clone()),
+        current: i.current.as_ref().and_then(|c| c.text.clone()),
+        last: i.last.as_ref().map(|c| results::LastCommand { command: c.text.clone(), exit: c.exit }),
+        started_by: i.started_by.as_ref().map(|s| s.by.clone()),
+        you: None,
+    }
+}
+
+/// A write as the forge block's `call_by` takes it: the method, and its
+/// arguments (the write without its `method` tag).
+fn write_call(write: &Write) -> (String, Value) {
+    let mut args = serde_json::to_value(write).unwrap_or_default();
+    let method = args.as_object_mut().and_then(|o| o.remove("method")).and_then(|m| m.as_str().map(str::to_owned));
+    (method.unwrap_or_default(), args)
+}
+
+/// A forge block's state, as the block's view has it.
+fn forge_state(b: &Arc<dyn crate::block::Block>) -> Result<ForgeState, String> {
+    serde_json::from_value(b.state()).map_err(|e| format!("the forge block's state: {e}"))
 }
 
 /// A block's text (an agent's transcript), paged by character.
@@ -3417,7 +3501,7 @@ fn page_text(pane: PaneId, text: &str, offset: Option<u64>, max: usize) -> Out {
     } else {
         format!("%{pane}: characters {from}–{to}, to the end")
     };
-    done(summary, json!({ "pane": pane, "offset": from, "next_offset": to, "more": more, "text": page }))
+    done(summary, results::Page { pane, offset: from, next_offset: to, more, text: page })
 }
 
 /// The longest start of `raw` whose text fits in `max` characters, cut at a
@@ -3608,8 +3692,28 @@ mod tests {
         if std::env::var_os("ARUGULA_BLESS").is_some() {
             std::fs::write(&path, &got).unwrap();
         }
-        let want = std::fs::read_to_string(&path).expect("tests/fixtures/mcp-tool-list.json (ARUGULA_BLESS=1 writes it)");
+        let want =
+            std::fs::read_to_string(&path).expect("tests/fixtures/mcp-tool-list.json (ARUGULA_BLESS=1 writes it)");
         assert!(got == want, "the tool list changed; ARUGULA_BLESS=1 rewrites {}", path.display());
+    }
+
+    /// What `pr_write` hands the forge block's `call_by`: the keys the old
+    /// `json!` wrote, but a missing body or style is left out, not `null`
+    /// (the block reads both as none).
+    #[test]
+    fn a_write_is_a_method_and_its_arguments() {
+        let call = |w: Write| write_call(&w);
+        assert_eq!(call(Write::Comment { body: "hi".into() }), ("comment".into(), json!({ "body": "hi" })));
+        assert_eq!(
+            call(Write::Review { event: ReviewEvent::RequestChanges, body: Some("no".into()) }),
+            ("review".into(), json!({ "event": "request_changes", "body": "no" }))
+        );
+        assert_eq!(
+            call(Write::Review { event: ReviewEvent::Approve, body: None }),
+            ("review".into(), json!({ "event": "approve" }))
+        );
+        assert_eq!(call(Write::Merge { style: None }), ("merge".into(), json!({})));
+        assert_eq!(call(Write::Merge { style: Some("squash".into()) }), ("merge".into(), json!({ "style": "squash" })));
     }
 
     #[test]

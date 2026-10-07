@@ -30,6 +30,7 @@
 //! client typed is in history as theirs.
 
 pub mod relay;
+mod results;
 pub mod tokens;
 mod tools;
 
