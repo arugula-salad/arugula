@@ -43,9 +43,9 @@ calls show up as cards.
 | Images in prompts | Sent as ACP image content blocks when the agent supports them | [#249](https://github.com/arugula-salad/arugula/issues/249) (M70) |
 | Push notifications | Web Push when an agent needs input or a long command ends. This is what Claude Code's Remote Control does for Anthropic's apps | M3, M21 |
 
-In `arugula-experimental`, the App builder streams Fountain Conversations and
+In `experimental`, the App builder streams Fountain Conversations and
 shows tool approvals as cards. Free-form questions aren't events in Fountain
-yet ([PLAN.md](https://github.com/arugula-salad/arugula-experimental/blob/main/docs/PLAN.md)).
+yet ([PLAN.md](https://github.com/arugula-salad/experimental/blob/main/docs/PLAN.md)).
 
 ## Already planned
 
@@ -58,7 +58,7 @@ protocol. It covers A2A between teammates, not between vendors.
 | MCP discoverability | A `capabilities` tool, and one Claude Code plugin bundling the MCP server, the hooks and a short skill | Hooks half landed ([#238](https://github.com/arugula-salad/arugula/issues/238)). The plugin and the tool are open | [#229](https://github.com/arugula-salad/arugula/issues/229) |
 | Typed MCP and one operation list | Each operation declared once for the API, MCP and the CLI | Design notes, open | [#448](https://github.com/arugula-salad/arugula/issues/448), [#451](https://github.com/arugula-salad/arugula/issues/451) |
 | Phone as a hand | The phone's camera, location and Shortcuts as MCP tools for agents. A2A only if the phone acts as an agent itself | Spike closed | [#268](https://github.com/arugula-salad/arugula/issues/268) (S33) |
-| Triggers and Goals (`arugula-experimental`) | Work that starts from events, not only from a person typing. The grow loop around a Goal | Out of the MVP. "Which triggers come first?" is an open question for Jake and Aaron | [product.md](https://github.com/arugula-salad/arugula-experimental/blob/main/docs/product.md), [upstream-questions.md](https://github.com/arugula-salad/arugula-experimental/blob/main/docs/upstream-questions.md) |
+| Triggers and Goals (`experimental`) | Work that starts from events, not only from a person typing. The grow loop around a Goal | Out of the MVP. "Which triggers come first?" is an open question for Jake and Aaron | [product.md](https://github.com/arugula-salad/experimental/blob/main/docs/product.md), [upstream-questions.md](https://github.com/arugula-salad/experimental/blob/main/docs/upstream-questions.md) |
 
 ## Gaps
 
@@ -76,7 +76,7 @@ features most likely to send Joe back to a vendor app.
 | Runs long jobs with no terminal | Claude Managed Agents: hosted sessions, memory stores, rubric-graded Outcomes, webhooks (beta) | A second runtime beside machines and Fountain, shown as an agent block | API. Billing and token rules need checking |
 | Designs, chats with a Project's memory, makes artifacts in the chat | Claude Design, claude.ai Projects and memory, ChatGPT features in its own app | No API. Rebuild the habit (preview blocks, artifacts as MCP Apps) or link out | Vendor app only |
 
-**One thing to check first.** `arugula-experimental` decision D5 has people
+**One thing to check first.** `experimental` decision D5 has people
 bring their own token from `claude setup-token`. Running real Claude Code with
 it inside a machine is likely fine. Driving the Agent SDK or Managed Agents
 with a subscription token may not be allowed. Check before building on either.
@@ -89,7 +89,7 @@ back to Cowork, and nothing covers them yet.
 1. **Scheduled and event-started agent blocks.** A spike in Arugula: an agent
    block with a schedule or a trigger (a forge webhook, a failed build), its
    result as a card and in the pane's thread. This would also answer "which
-   triggers come first?" for `arugula-experimental`.
+   triggers come first?" for `experimental`.
 2. **Finish #229, then ship it as a plugin in Claude and ChatGPT.** The
    `capabilities` tool and the Claude Code plugin are already scoped. A plugin
    in their apps means a Cowork task or a ChatGPT chat can post into Arugula's
@@ -121,10 +121,10 @@ back to Cowork, and nothing covers them yet.
 Repos, read on 2026-10-07: this repo's [README](../README.md),
 [DECISIONS.md](../DECISIONS.md), [plan-archive.md](plan-archive.md),
 [labs.md](labs.md) and the issues linked above; and
-[arugula-experimental](https://github.com/arugula-salad/arugula-experimental)'s
-[PLAN.md](https://github.com/arugula-salad/arugula-experimental/blob/main/docs/PLAN.md),
-[product.md](https://github.com/arugula-salad/arugula-experimental/blob/main/docs/product.md)
-and [upstream-questions.md](https://github.com/arugula-salad/arugula-experimental/blob/main/docs/upstream-questions.md).
+[experimental](https://github.com/arugula-salad/experimental)'s
+[PLAN.md](https://github.com/arugula-salad/experimental/blob/main/docs/PLAN.md),
+[product.md](https://github.com/arugula-salad/experimental/blob/main/docs/product.md)
+and [upstream-questions.md](https://github.com/arugula-salad/experimental/blob/main/docs/upstream-questions.md).
 
 Vendor and protocol pages (from search results; not all opened):
 
