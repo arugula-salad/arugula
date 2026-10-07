@@ -2,7 +2,8 @@
 
 use super::Ctx;
 use crate::http::request;
-use crate::util::{Pane, here, print_json};
+use crate::util::{Pane, here, print_json, snake};
+use arugula_proto::api::{AttentionItem, Empty};
 use serde_json::{Value, json};
 
 /// A hook's `message` (Claude Code's Notification: "Claude needs your
@@ -30,20 +31,15 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
     let Ctx { sock, json_out, .. } = ctx;
     match args {
         Args { state: None, .. } => {
-            let v = request(&sock, "GET", "/api/attention", None)?.json()?;
+            let (items, v) = request(&sock, "GET", "/api/attention", None)?.parse_raw::<Vec<AttentionItem>>()?;
             if json_out {
                 print_json(&v);
                 return Ok(0);
             }
-            for i in v.as_array().into_iter().flatten() {
-                let r = &i["reason"];
-                let bundle = r["bundle"].as_str().map(|b| format!("  [{b}]")).unwrap_or_default();
-                println!(
-                    "%{:<4} {:<7} {}{bundle}",
-                    i["pane"],
-                    r["kind"].as_str().unwrap_or(""),
-                    r["headline"].as_str().unwrap_or("")
-                );
+            for i in &items {
+                let r = &i.reason;
+                let bundle = r.bundle.as_ref().map(|b| format!("  [{b}]")).unwrap_or_default();
+                println!("%{} {:<7} {}{bundle}", i.pane, snake(&r.kind), r.headline);
             }
         }
         Args { state: Some(state), pane } => {
@@ -52,7 +48,9 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
             // Arugula pane there's nobody to tell, and that's fine.
             let Ok(pane) = here(pane) else { return Ok(0) };
             let path = format!("/api/panes/{pane}/attention");
-            request(&sock, "POST", &path, Some(&json!({"state": state, "why": hook_message()})))?.json()?;
+            // The state stays the string typed here: the daemon names the
+            // ones it doesn't know, as it always did.
+            request(&sock, "POST", &path, Some(&json!({"state": state, "why": hook_message()})))?.parse::<Empty>()?;
         }
     }
     Ok(0)

@@ -1,9 +1,9 @@
 //! `arugula diff`: what changed in a git repository, as a diff block.
 
 use super::Ctx;
-use crate::http::request;
-use crate::util::{REMOTE, absolute, env_pane, loaded, print_json, split_of};
+use crate::util::{REMOTE, absolute, env_pane, loaded, open_block, print_json, split_of};
 use anyhow::{Context, bail};
+use arugula_proto::{BlockType, api::OpenRequest};
 use serde_json::json;
 
 #[derive(clap::Args)]
@@ -39,14 +39,15 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
         None if from.is_none() && !remote => Some(std::env::current_dir()?.display().to_string()),
         None => None,
     };
-    let body = json!({
-        "type": "diff",
-        "config": { "repo": repo, "rev_a": revs.first(), "rev_b": revs.get(1) },
-        "split": split_of(split.as_deref())?,
-        "session": session,
-        "from_pane": from.or_else(env_pane),
-    });
-    let block = request(&sock, "POST", "/api/blocks", Some(&body))?.json()?["block"].as_u64().unwrap_or(0);
+    let body = OpenRequest {
+        kind: BlockType::Diff,
+        config: json!({ "repo": repo, "rev_a": revs.first(), "rev_b": revs.get(1) }),
+        split: split_of(split.as_deref())?,
+        session,
+        from_pane: from.or_else(env_pane),
+        ..Default::default()
+    };
+    let block = open_block(&sock, &body)?.0.block;
     let v = loaded(&sock, block)?;
     if json_out {
         print_json(&v);

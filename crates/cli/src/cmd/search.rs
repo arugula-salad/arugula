@@ -3,6 +3,7 @@
 use super::Ctx;
 use crate::http::{enc, request};
 use crate::util::{duration, print_json};
+use arugula_proto::api::SearchHit;
 
 #[derive(clap::Args)]
 pub struct Args {
@@ -25,15 +26,16 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
     if let Some(s) = since {
         q.push(format!("since={}", duration(&s)?));
     }
-    let v = request(&sock, "GET", &format!("/api/search?{}", q.join("&")), None)?.json()?;
+    let (hits, v) =
+        request(&sock, "GET", &format!("/api/search?{}", q.join("&")), None)?.parse_raw::<Vec<SearchHit>>()?;
     if json_out {
         print_json(&v);
         return Ok(0);
     }
-    for h in v.as_array().into_iter().flatten() {
-        let cmd = h["command"].as_str().map(|c| format!("  ({c})")).unwrap_or_default();
-        let host = h["host"].as_str().map(|h| format!("{h}:")).unwrap_or_default();
-        println!("{host}%{}@{}: {}{cmd}", h["pane"], h["offset"], h["line"].as_str().unwrap_or(""));
+    for h in &hits {
+        let cmd = h.command.as_ref().map(|c| format!("  ({c})")).unwrap_or_default();
+        let host = h.host.as_ref().map(|h| format!("{h}:")).unwrap_or_default();
+        println!("{host}%{}@{}: {}{cmd}", h.pane, h.offset, h.line);
     }
     Ok(0)
 }

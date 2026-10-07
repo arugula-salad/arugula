@@ -6,6 +6,7 @@ use crate::{
     hosts,
     util::{Pane, REMOTE},
 };
+use arugula_proto::api::Empty;
 
 #[derive(clap::Args)]
 pub struct Args {
@@ -27,12 +28,12 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
         };
         if let Some((host, pane)) = remote {
             let closed = hosts::target(local_sock.clone(), Some(&host))
-                .and_then(|t| request(&t, "POST", &format!("/api/panes/{pane}/close"), None)?.json());
+                .and_then(|t| request(&t, "POST", &format!("/api/panes/{pane}/close"), None)?.parse::<Empty>());
             if let Err(e) = closed {
                 eprintln!("arugula: %{pane} on {host} stays open there: {e:#}");
             }
         }
-        request(&sock, "POST", &format!("/api/panes/{}/close", p.0), None)?.json()?;
+        request(&sock, "POST", &format!("/api/panes/{}/close", p.0), None)?.parse::<Empty>()?;
     }
     Ok(0)
 }

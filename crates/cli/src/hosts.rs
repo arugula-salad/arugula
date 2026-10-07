@@ -12,10 +12,14 @@
 use std::path::PathBuf;
 
 use anyhow::{Context, bail};
+use arugula_proto::{
+    api::Empty,
+    hosts::{AddHost, Host, HostList, HostToken, Invite, PromoteRequest, SandboxList, Transport},
+};
 use clap::Subcommand;
 use serde_json::{Value, json};
 
-use crate::http::{Target, Url, request};
+use crate::http::{Target, Url, request, request_as};
 
 #[derive(Subcommand)]
 pub enum HostsCmd {
@@ -72,38 +76,29 @@ pub enum SandboxesCmd {
 pub fn sandboxes(target: &Target, cmd: Option<SandboxesCmd>, json_out: bool) -> anyhow::Result<()> {
     let v = match cmd {
         None => {
-            let v = request(target, "GET", "/api/sandboxes", None)?.json()?;
+            let (list, v) = request(target, "GET", "/api/sandboxes", None)?.parse_raw::<SandboxList>()?;
             if !json_out {
-                let p = &v["provider"];
-                let replay = p["exec_replay"].as_u64().unwrap_or(0);
+                let p = &list.provider;
                 println!(
                     "{}: a shell with no daemon (`run --sandbox NAME`) keeps {} KB while detached",
-                    p["name"].as_str().unwrap_or("?"),
-                    replay / 1024
+                    or_unknown(&p.name),
+                    p.exec_replay / 1024
                 );
-                for s in v["sandboxes"].as_array().into_iter().flatten() {
-                    let host = s["host"].as_str().map(|h| format!("resident: --host {h}")).unwrap_or_default();
-                    println!(
-                        "{:<34} {:<8} {host}",
-                        s["name"].as_str().unwrap_or("?"),
-                        s["status"].as_str().unwrap_or("?")
-                    );
+                for s in &list.sandboxes {
+                    let host = s.host.as_ref().map(|h| format!("resident: --host {h}")).unwrap_or_default();
+                    println!("{:<34} {:<8} {host}", or_unknown(&s.name), or_unknown(&s.status));
                 }
                 return Ok(());
             }
             v
         }
         Some(SandboxesCmd::Promote { sandbox, name, port }) => {
-            let body = json!({"host": name, "port": port});
-            let v = request(
-                target,
-                "POST",
-                &format!("/api/sandboxes/{}/promote", crate::http::enc(&sandbox)),
-                Some(&body),
-            )?
-            .json()?;
+            let body = PromoteRequest { host: name, port };
+            let (host, v) =
+                request_as(target, "POST", &format!("/api/sandboxes/{}/promote", crate::http::enc(&sandbox)), &body)?
+                    .parse_raw::<Host>()?;
             if !json_out {
-                println!("{} is resident in {sandbox}: `arugula --host {0} …`", v["name"].as_str().unwrap_or("?"));
+                println!("{} is resident in {sandbox}: `arugula --host {0} …`", or_unknown(&host.name));
                 return Ok(());
             }
             v
@@ -128,16 +123,13 @@ pub fn target(socket: PathBuf, host: Option<&str>) -> anyhow::Result<Target> {
     }
     // The local daemon's list first; then control's directory (M49), which
     // needs no local daemon at all.
-    let list = request(&local, "GET", "/api/hosts", None).and_then(|r| r.json());
+    let list = request(&local, "GET", "/api/hosts", None).and_then(|r| r.parse::<HostList>());
     if let Ok(l) = &list
-        && l["this"].as_str() == Some(host)
+        && l.this == host
     {
         return Ok(local);
     }
-    let entry = list
-        .as_ref()
-        .ok()
-        .and_then(|l| l["hosts"].as_array().into_iter().flatten().find(|h| h["name"].as_str() == Some(host)).cloned());
+    let entry = list.as_ref().ok().and_then(|l| l.hosts.iter().find(|h| h.name == host).cloned());
     let Some(entry) = entry else {
         if let Some(t) = crate::control::target(host)? {
             return Ok(t);
@@ -156,22 +148,21 @@ pub fn target(socket: PathBuf, host: Option<&str>) -> anyhow::Result<Target> {
     // (M4c), or a resident daemon in a sandbox, through the provider tunnel
     // (M4b; that also wakes it).
     // Over ssh, from this client (M51).
-    if entry["transport"].as_str() == Some("ssh") {
-        let dest = entry["ssh"].as_str().with_context(|| format!("host {host} has no ssh destination"))?;
+    if entry.transport == Transport::Ssh {
+        let dest = entry.ssh.as_deref().with_context(|| format!("host {host} has no ssh destination"))?;
         return Ok(Target::Ssh(crate::ssh::Remote::parse(dest)?));
     }
-    let via = match entry["transport"].as_str() {
-        Some("dial_out") => Some("h"),
-        Some("provider") => Some("tunnel"),
+    let via = match entry.transport {
+        Transport::DialOut => Some("h"),
+        Transport::Provider => Some("tunnel"),
         _ => None,
     };
     if let Some(via) = via {
         return Ok(Target::Via(socket_of(&local), format!("/{via}/{}", crate::http::enc(host))));
     }
-    let urls: Vec<&str> = entry["urls"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
     // The first URL that answers.
     let mut last = None;
-    for u in &urls {
+    for u in &entry.urls {
         let t = Target::Url(Url::parse(u)?);
         match t.connect() {
             Ok(_) => return Ok(t),
@@ -182,6 +173,11 @@ pub fn target(socket: PathBuf, host: Option<&str>) -> anyhow::Result<Target> {
         Some(e) => Err(e.context(format!("can't reach {host}"))),
         None => bail!("host {host} has no URL"),
     }
+}
+
+/// A name the daemon left out is `?`.
+fn or_unknown(s: &str) -> &str {
+    if s.is_empty() { "?" } else { s }
 }
 
 fn socket_of(t: &Target) -> PathBuf {
@@ -212,11 +208,11 @@ pub fn run(
         None => {
             // This daemon's list (if one runs here), and control's
             // directory (if this CLI is logged in), marked apart.
-            let local = request(target, "GET", "/api/hosts", None).and_then(|r| r.json());
+            let local = request(target, "GET", "/api/hosts", None).and_then(|r| r.parse_raw::<HostList>());
             let control = crate::control::listing();
             let local = match (local, &control) {
-                (Ok(v), _) => v,
-                (Err(_), Ok(Some(_))) => Value::Null,
+                (Ok(l), _) => Some(l),
+                (Err(_), Ok(Some(_))) => None,
                 (Err(e), _) => return Err(e),
             };
             let control = control.unwrap_or_else(|e| {
@@ -227,12 +223,14 @@ pub fn run(
                 let c = control.as_ref().map(|(url, list)| {
                     json!({"url": url, "machines": list.iter().map(|m| json!({"id": m.id, "name": m.name, "urls": m.urls, "online": m.online, "account": m.account, "owner": m.account.as_ref().map(|_| m.owner()), "team": m.team})).collect::<Vec<_>>()})
                 });
+                let (this, hosts) = match &local {
+                    Some((_, v)) => (v["this"].clone(), v["hosts"].clone()),
+                    None => (Value::Null, Value::Null),
+                };
                 println!(
                     "{}",
-                    serde_json::to_string_pretty(
-                        &json!({"this": local["this"], "hosts": local["hosts"], "control": c})
-                    )
-                    .unwrap_or_default()
+                    serde_json::to_string_pretty(&json!({"this": this, "hosts": hosts, "control": c}))
+                        .unwrap_or_default()
                 );
                 return Ok(());
             }
@@ -248,39 +246,34 @@ pub fn run(
                     println!("{:<20} {:<44} (control: {url}{whose})", m.name, how);
                 }
             }
-            if local.is_null() {
-                return Ok(());
-            }
-            let v = local;
+            let Some((list, v)) = local else { return Ok(()) };
             if !json_out {
-                println!("{:<20} {:<44} (this daemon)", v["this"].as_str().unwrap_or("?"), "");
-                for h in v["hosts"].as_array().into_iter().flatten() {
-                    let mut urls: Vec<&str> =
-                        h["urls"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
-                    if h["transport"].as_str() == Some("dial_out") {
+                println!("{:<20} {:<44} (this daemon)", or_unknown(&list.this), "");
+                for h in &list.hosts {
+                    let mut urls: Vec<&str> = h.urls.iter().map(String::as_str).collect();
+                    if h.transport == Transport::DialOut {
                         urls.push("(dials out, reached through here)");
                     }
                     let ssh;
-                    if h["transport"].as_str() == Some("ssh") {
-                        ssh = format!("ssh {}", h["ssh"].as_str().unwrap_or("?"));
+                    if h.transport == Transport::Ssh {
+                        ssh = format!("ssh {}", h.ssh.as_deref().unwrap_or("?"));
                         urls.push(&ssh);
                     }
-                    let seen =
-                        h["last_seen_ms"].as_u64().map(|t| format!("seen {}", ago(t))).unwrap_or("never seen".into());
-                    let place = match h["provider"].as_object() {
+                    let seen = h.last_seen_ms.map(|t| format!("seen {}", ago(t))).unwrap_or("never seen".into());
+                    let place = match &h.provider {
                         Some(p) => format!(
                             "{} {} (tunnel){}",
-                            p["provider"].as_str().unwrap_or("?"),
-                            p["sandbox"].as_str().unwrap_or("?"),
+                            or_unknown(&p.provider),
+                            or_unknown(&p.sandbox),
                             if urls.is_empty() { String::new() } else { format!(" {}", urls.join(" ")) }
                         ),
                         None => urls.join(" "),
                     };
-                    let seen = match h["status"].as_str() {
+                    let seen = match h.status.as_deref() {
                         Some(st) => format!("{st}, {seen}"),
                         None => seen,
                     };
-                    println!("{:<20} {place:<44} {seen}", h["name"].as_str().unwrap_or("?"));
+                    println!("{:<20} {place:<44} {seen}", or_unknown(&h.name));
                 }
                 return Ok(());
             }
@@ -289,35 +282,38 @@ pub fn run(
         Some(HostsCmd::Add { name, urls }) if urls.iter().any(|u| u.starts_with("ssh://")) => {
             let [dest] = urls.as_slice() else { bail!("an ssh host has one ssh:// destination and no other URL") };
             let dest = crate::ssh::Remote::parse(dest)?.dest;
-            let body = json!({"name": name, "urls": [], "transport": "ssh", "ssh": dest});
-            request(target, "POST", "/api/hosts", Some(&body))?.json()?
+            let body = AddHost { name, urls: vec![], transport: Transport::Ssh, ssh: Some(dest) };
+            request_as(target, "POST", "/api/hosts", &body)?.parse_raw::<Host>()?.1
         }
         Some(HostsCmd::Add { name, urls }) => {
-            request(target, "POST", "/api/hosts", Some(&json!({"name": name, "urls": urls, "transport": "tailnet"})))?
-                .json()?
+            let body = AddHost { name, urls, transport: Transport::Tailnet, ssh: None };
+            request_as(target, "POST", "/api/hosts", &body)?.parse_raw::<Host>()?.1
         }
         Some(HostsCmd::Rm { name }) => {
-            request(target, "DELETE", &format!("/api/hosts/{}", crate::http::enc(&name)), None)?.json()?
+            request(target, "DELETE", &format!("/api/hosts/{}", crate::http::enc(&name)), None)?.parse_raw::<Empty>()?.1
         }
         Some(HostsCmd::Invite { ttl }) => {
-            let v = request(target, "POST", &format!("/api/hosts/invite?ttl={}", secs(&ttl)?), None)?.json()?;
+            let (invite, v) = request(target, "POST", &format!("/api/hosts/invite?ttl={}", secs(&ttl)?), None)?
+                .parse_raw::<Invite>()?;
             if !json_out {
-                println!("{}", v["token"].as_str().unwrap_or_default());
+                println!("{}", invite.token);
                 return Ok(());
             }
             v
         }
         Some(HostsCmd::Token { name }) => {
             let path = format!("/api/hosts/{}/token", crate::http::enc(&name));
-            let v = request(target, "POST", &path, None)?.json()?;
+            let (minted, v) = request(target, "POST", &path, None)?.parse_raw::<HostToken>()?;
             if !json_out {
-                println!("{}", v["token"].as_str().unwrap_or_default());
+                println!("{}", minted.token);
                 return Ok(());
             }
             v
         }
         Some(HostsCmd::Revoke { name }) => {
-            request(target, "DELETE", &format!("/api/hosts/{}/token", crate::http::enc(&name)), None)?.json()?
+            request(target, "DELETE", &format!("/api/hosts/{}/token", crate::http::enc(&name)), None)?
+                .parse_raw::<Empty>()?
+                .1
         }
     };
     if json_out {
@@ -347,12 +343,12 @@ pub fn each(
     mut each: impl FnMut(&str, Answer),
 ) -> anyhow::Result<()> {
     let local = Target::Socket(socket.clone());
-    let list = request(&local, "GET", "/api/hosts", None)?.json()?;
-    let mut names = vec![list["this"].as_str().unwrap_or("this").to_owned()];
+    let list: HostList = request(&local, "GET", "/api/hosts", None)?.parse()?;
+    let mut names = vec![if list.this.is_empty() { "this".to_owned() } else { list.this.clone() }];
     let (tx, rx) = std::sync::mpsc::channel();
-    for h in list["hosts"].as_array().into_iter().flatten() {
-        let Some(name) = h["name"].as_str() else { continue };
-        if h["transport"].as_str() == Some("provider") && h["status"].as_str().is_some_and(|s| s != "running") {
+    for h in &list.hosts {
+        let name = h.name.as_str();
+        if h.transport == Transport::Provider && h.status.as_deref().is_some_and(|s| s != "running") {
             each(name, Answer::Asleep);
             continue;
         }

@@ -1,9 +1,9 @@
 //! `arugula view`: a file in a file block, read-only and followed live.
 
 use super::Ctx;
-use crate::http::request;
-use crate::util::{REMOTE, absolute, env_pane, file_line, print_json, split_of};
+use crate::util::{REMOTE, absolute, env_pane, file_line, open_block, print_json, split_of};
 use anyhow::Context;
+use arugula_proto::{BlockType, api::OpenRequest};
 use serde_json::json;
 
 #[derive(clap::Args)]
@@ -39,20 +39,21 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
         None => (env_pane(), None),
     };
     let path = if on.is_none() && !remote { absolute(&path)? } else { path };
-    let body = json!({
-        "type": "file",
-        "config": { "path": path, "line": line.or(at) },
-        "split": split_of(split.as_deref())?,
-        "host": host,
-        "local": on.is_none() && !remote,
-        "session": session,
-        "from_pane": from,
-    });
-    let v = request(&sock, "POST", "/api/blocks", Some(&body))?.json()?;
+    let body = OpenRequest {
+        kind: BlockType::File,
+        config: json!({ "path": path, "line": line.or(at) }),
+        split: split_of(split.as_deref())?,
+        host,
+        local: on.is_none() && !remote,
+        session,
+        from_pane: from,
+        ..Default::default()
+    };
+    let (opened, v) = open_block(&sock, &body)?;
     if json_out {
         print_json(&v);
     } else {
-        println!("%{}", v["block"]);
+        println!("%{}", opened.block);
     }
     Ok(0)
 }

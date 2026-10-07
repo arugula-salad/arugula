@@ -98,6 +98,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::{Attention, PaneId, PaneInfo, Policy, SessionId, TabId};
 
+/// A field an older daemon leaves out reads as true.
+fn yes() -> bool {
+    true
+}
+
 /// `GET /api/attention`: a pane that wants you (M24).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AttentionItem {
@@ -175,6 +180,7 @@ pub struct ActResult {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ActResponse {
+    #[serde(default)]
     pub results: Vec<ActResult>,
 }
 
@@ -189,7 +195,7 @@ pub struct PaneSummary {
 }
 
 /// `POST /api/blocks`: open a block of any type.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "ts", ts(optional_fields = nullable))]
 pub struct OpenRequest {
@@ -335,7 +341,12 @@ pub enum PromptResult {
     /// No sign of work within the stall window: no agent there, the
     /// prompt wasn't submitted, or the agent died. With the screen's last
     /// lines, to see which.
-    Stalled { why: String, screen: String },
+    Stalled {
+        #[serde(default)]
+        why: String,
+        #[serde(default)]
+        screen: String,
+    },
     /// Still working at the timeout: wait until idle.
     StillRunning,
 }
@@ -394,7 +405,9 @@ pub struct AttentionRequest {
 pub struct Process {
     pub pid: u32,
     /// The foreground process (the shell when nothing else runs).
+    #[serde(default)]
     pub foreground: u32,
+    #[serde(default)]
     pub argv: Vec<String>,
     pub comm: String,
     pub exe: Option<String>,
@@ -462,10 +475,12 @@ impl HistoryKind {
 pub struct HistoryEntry {
     pub pane: PaneId,
     /// False for a pane that has been closed (its history is kept a while).
+    #[serde(default = "yes")]
     pub open: bool,
     pub text: Option<String>,
     pub cwd: Option<String>,
     pub exit: Option<i32>,
+    #[serde(default)]
     pub started_ms: u64,
     pub ended_ms: Option<u64>,
     /// Stream offsets of the output: `tail --from start`.
@@ -485,8 +500,11 @@ pub struct HistoryEntry {
 /// A handoff in a pane: from here on, `who` typed (`arugula log --who`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DriverEntry {
+    #[serde(default)]
     pub at_ms: u64,
+    #[serde(default)]
     pub offset: u64,
+    #[serde(default)]
     pub who: String,
 }
 
@@ -496,6 +514,7 @@ pub struct SearchHit {
     pub open: bool,
     /// Stream offset of the line.
     pub offset: u64,
+    #[serde(default)]
     pub line: String,
     /// The command whose output it is, if known.
     pub command: Option<String>,
@@ -527,7 +546,9 @@ pub struct ShareRequest {
 pub struct Share {
     pub id: u32,
     pub pane: PaneId,
+    #[serde(default)]
     pub created_ms: u64,
+    #[serde(default)]
     pub expires_ms: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub token: Option<String>,
@@ -580,10 +601,15 @@ pub struct GuestInviteRequest {
 pub struct GuestInvite {
     pub id: u32,
     pub pane: PaneId,
+    #[serde(default)]
     pub rw: bool,
+    #[serde(default)]
     pub reusable: bool,
+    #[serde(default)]
     pub label: String,
+    #[serde(default)]
     pub created_ms: u64,
+    #[serde(default)]
     pub expires_ms: u64,
     /// A single-use invite someone has logged in with.
     #[serde(default)]
@@ -641,7 +667,9 @@ pub struct SyncedPane {
 /// `GET /api/synced`: a host whose history the home daemon keeps.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SyncedHost {
+    #[serde(default)]
     pub name: String,
+    #[serde(default)]
     pub panes: std::collections::BTreeMap<PaneId, SyncedPane>,
 }
 
@@ -808,8 +836,10 @@ impl InviteDelivery {
 pub struct InviteGrant {
     pub session: SessionId,
     pub principal: String,
+    #[serde(default)]
     pub name: String,
     pub role: arugula_core::Role,
+    #[serde(default)]
     pub granted: bool,
 }
 
@@ -943,13 +973,16 @@ pub struct AskRequest {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub enum AskAnswer {
     Accept {
+        #[serde(default)]
         #[cfg_attr(feature = "ts", ts(type = "unknown"))]
         content: serde_json::Value,
+        #[serde(default)]
         #[cfg_attr(feature = "ts", ts(type = "unknown"))]
         output: serde_json::Value,
         by: Option<crate::Driver>,
     },
     Decline {
+        #[serde(default)]
         #[cfg_attr(feature = "ts", ts(type = "unknown"))]
         output: serde_json::Value,
         by: Option<crate::Driver>,
@@ -1006,10 +1039,12 @@ fn string_or_none<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Strin
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub enum PermitAnswer {
     Allow {
+        #[serde(default)]
         #[cfg_attr(feature = "ts", ts(type = "unknown"))]
         output: serde_json::Value,
     },
     Deny {
+        #[serde(default)]
         #[cfg_attr(feature = "ts", ts(type = "unknown"))]
         output: serde_json::Value,
     },
@@ -1022,7 +1057,12 @@ pub enum PermitAnswer {
 #[serde(tag = "action", rename_all = "snake_case")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub enum InboxAnswer {
-    FollowUp { text: String, by: crate::Driver },
+    FollowUp {
+        #[serde(default)]
+        text: String,
+        #[serde(default)]
+        by: crate::Driver,
+    },
     Replaced,
 }
 
@@ -1084,8 +1124,10 @@ pub struct Described {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ConversationList {
+    #[serde(default)]
     pub conversations: Vec<ConversationRow>,
     /// How many there are, before `limit`.
+    #[serde(default)]
     pub total: usize,
 }
 
@@ -1115,6 +1157,7 @@ pub struct Adapters {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "ts", ts(optional_fields))]
 pub struct IdeInfo {
+    #[serde(default)]
     pub on: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
@@ -1134,10 +1177,14 @@ pub struct IdeInfo {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct IdeOther {
+    #[serde(default)]
     pub name: String,
+    #[serde(default)]
     pub port: u16,
     pub pid: Option<u32>,
+    #[serde(default)]
     pub folders: Vec<String>,
+    #[serde(default)]
     pub alive: bool,
 }
 
@@ -1181,6 +1228,7 @@ pub struct IdeMentioned {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Rules {
+    #[serde(default)]
     pub rules: Vec<StandingRule>,
 }
 
@@ -1209,6 +1257,7 @@ pub struct StandingRule {
     /// Its place in the list: what `DELETE /api/rules/{index}` names.
     pub index: usize,
     /// How it reads.
+    #[serde(default)]
     pub text: String,
 }
 
@@ -1217,11 +1266,14 @@ pub struct StandingRule {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ShellEnv {
+    #[serde(default)]
     pub shell: String,
     pub ok: bool,
     pub error: Option<String>,
+    #[serde(default)]
     pub ms: u64,
     pub path: Option<String>,
+    #[serde(default)]
     pub vars: Vec<String>,
 }
 
@@ -1234,14 +1286,17 @@ pub struct ShellEnv {
 pub struct AgentsInventory {
     #[serde(flatten)]
     pub inventory: serde_json::Value,
+    #[serde(default)]
     pub rules: AgentRules,
 }
 
 /// Which agents' screens are read here (`run`) and which aren't (`off`).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct AgentRules {
+    #[serde(default)]
     pub run: Vec<String>,
+    #[serde(default)]
     pub off: Vec<String>,
 }
 
@@ -1260,12 +1315,15 @@ pub enum DetectionAnswer {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Detection {
     pub agent: String,
+    #[serde(default)]
     pub name: String,
     /// What was last reported (after the debounce).
     pub shown: Option<String>,
     /// The rule that matches now, if any.
     pub fired: Option<String>,
+    #[serde(default)]
     pub title: String,
+    #[serde(default)]
     pub rules: Vec<DetectionRule>,
     /// Its screen isn't read: chant's inventory doesn't list it here. No
     /// rules, then.
@@ -1280,11 +1338,17 @@ pub struct Detection {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct DetectionRule {
+    #[serde(default)]
     pub rule: String,
+    #[serde(default)]
     pub state: String,
+    #[serde(default)]
     pub priority: u16,
+    #[serde(default)]
     pub region: String,
+    #[serde(default)]
     pub text: Vec<String>,
+    #[serde(default)]
     pub matched: bool,
 }
 
@@ -1302,7 +1366,9 @@ pub struct NoDetection {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct StudioStatus {
     pub url: Option<String>,
+    #[serde(default)]
     pub logged_in: bool,
+    #[serde(default)]
     pub followers: Vec<String>,
 }
 
@@ -1326,9 +1392,11 @@ pub struct StudioLoggedIn {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct StudioApp {
+    #[serde(default)]
     pub name: String,
     pub title: Option<String>,
     /// The box's origin (`https://name.studio.example`).
+    #[serde(default)]
     pub url: String,
     pub status: Option<String>,
 }
@@ -1347,6 +1415,7 @@ pub struct StudioApps {
 pub struct StudioAppRow {
     #[serde(flatten)]
     pub app: StudioApp,
+    #[serde(default)]
     pub blocks: Vec<PaneId>,
 }
 
@@ -1363,15 +1432,19 @@ pub struct FollowerLinkRequest {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct FountainAgents {
+    #[serde(default)]
     pub base_url: String,
     pub profile: String,
     /// How many agents Fountain has, before the filter.
+    #[serde(default)]
     pub total: usize,
     #[cfg_attr(feature = "ts", ts(type = "unknown"))]
     pub filter: serde_json::Value,
     #[cfg_attr(feature = "ts", ts(type = "Array<unknown>"))]
+    #[serde(default)]
     pub agents: Vec<serde_json::Value>,
     /// Rows Fountain sent that didn't parse.
+    #[serde(default)]
     pub unreadable: usize,
 }
 

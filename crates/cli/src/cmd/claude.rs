@@ -1,12 +1,12 @@
 //! `arugula claude`: Claude Code conversations on this machine.
 
 use super::Ctx;
-use crate::http::{enc, request};
+use crate::http::{enc, request, request_as};
 use crate::{
     hosts,
     util::{Pane, env_pane, print_json, time},
 };
-use anyhow::Context;
+use arugula_proto::api::{ConversationList, OpenConversationRequest, OpenConversationResponse};
 use serde_json::{Value, json};
 use std::path::PathBuf;
 
@@ -50,23 +50,25 @@ pub fn run(cmd: ClaudeCmd, ctx: Ctx) -> anyhow::Result<i32> {
     match cmd {
         ClaudeCmd::Ls { all, live, cwd, limit, words } => {
             let path = conversations_path(all, live, cwd, limit, &words);
-            let v = request(&sock, "GET", &path, None)?.json()?;
+            let (list, v) = request(&sock, "GET", &path, None)?.parse_raw::<ConversationList>()?;
             if json_out {
                 print_json(&v);
                 return Ok(0);
             }
             let home = std::env::var("HOME").ok();
-            for c in v["conversations"].as_array().into_iter().flatten() {
-                print_conversation(c, home.as_deref());
+            for c in &list.conversations {
+                print_conversation(&c.conversation, c.block, home.as_deref());
             }
         }
         ClaudeCmd::Open { id, session, split } => {
-            let body = json!({ "id": id, "session": session, "split": split.map(|p| p.0), "from_pane": env_pane() });
-            let v = request(&sock, "POST", "/api/conversations/open", Some(&body))?.json()?;
+            let body =
+                OpenConversationRequest { id, then: None, session, split: split.map(|p| p.0), from_pane: env_pane() };
+            let (opened, v) =
+                request_as(&sock, "POST", "/api/conversations/open", &body)?.parse_raw::<OpenConversationResponse>()?;
             if json_out {
                 print_json(&v);
             } else {
-                println!("%{}", v["block"].as_u64().context("no block in the answer")?);
+                println!("%{}", opened.block);
             }
         }
     }
@@ -95,8 +97,9 @@ pub fn conversations_path(all: bool, live: bool, cwd: Option<String>, limit: usi
     format!("/api/conversations?{}", q.join("&"))
 }
 
-/// One line of `claude ls`; `~` for `home`.
-fn print_conversation(c: &Value, home: Option<&str>) {
+/// One line of `claude ls`; `~` for `home`. `block` is the agent block that
+/// has it open.
+fn print_conversation(c: &Value, block: Option<u32>, home: Option<&str>) {
     let s = |k: &str| c[k].as_str().unwrap_or("");
     let mut cwd = s("cwd").to_owned();
     if let Some(home) = home.filter(|h| !h.is_empty())
@@ -113,7 +116,7 @@ fn print_conversation(c: &Value, home: Option<&str>) {
     if let Some(p) = c["live"]["place"].as_str() {
         tags.push(p.to_owned());
     }
-    if let Some(b) = c["block"].as_u64() {
+    if let Some(b) = block {
         tags.push(format!("block %{b}"));
     }
     let tags = if tags.is_empty() { String::new() } else { format!("  [{}]", tags.join(", ")) };
@@ -151,7 +154,7 @@ pub fn claude_ls_all(socket: PathBuf, path: String, json_out: bool) -> anyhow::R
                 // Its home, from its paths: another machine's isn't ours.
                 let home = list.iter().find_map(|c| home_of(c["cwd"].as_str()?));
                 for c in &list {
-                    print_conversation(c, home);
+                    print_conversation(c, c["block"].as_u64().and_then(|b| u32::try_from(b).ok()), home);
                 }
             }
             hosts::Answer::Asleep => println!("{host}: asleep (not woken to ask)"),

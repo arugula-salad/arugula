@@ -31,8 +31,10 @@ pub enum Transport {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProviderRef {
     /// Which provider: `wisp`, `sprites`.
+    #[serde(default)]
     pub provider: String,
     /// The provider's name for the sandbox.
+    #[serde(default)]
     pub sandbox: String,
     pub port: u16,
 }
@@ -40,9 +42,11 @@ pub struct ProviderRef {
 /// Another daemon, in the home daemon's list.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Host {
+    #[serde(default)]
     pub name: String,
     /// Where its page, API and WebSocket are (`https://box.tailnet.ts.net`),
     /// best first.
+    #[serde(default)]
     pub urls: Vec<String>,
     #[serde(default)]
     pub transport: Transport,
@@ -70,7 +74,9 @@ pub struct Host {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HostList {
     /// The name of the daemon answering, which isn't in `hosts`.
+    #[serde(default)]
     pub this: String,
+    #[serde(default)]
     pub hosts: Vec<Host>,
 }
 
@@ -334,6 +340,7 @@ pub struct FountainRunnerInfo {
 /// `POST /api/hosts/invite`: a one-time token that lets a sandbox add itself.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Invite {
+    #[serde(default)]
     pub token: String,
     pub expires_ms: u64,
 }
@@ -364,16 +371,19 @@ pub struct Joined {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HostToken {
     pub name: String,
+    #[serde(default)]
     pub token: String,
 }
 
 /// A sandbox provider's capabilities, as far as a client cares.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProviderInfo {
+    #[serde(default)]
     pub name: String,
     /// Output a detached shell keeps for reattaching, in bytes: a shell
     /// opened without a daemon has no more history than this while
     /// nothing follows it.
+    #[serde(default)]
     pub exec_replay: u64,
     /// Whether a daemon can be made resident there (files and services).
     pub resident: bool,
@@ -383,12 +393,15 @@ pub struct ProviderInfo {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SandboxList {
     pub provider: ProviderInfo,
+    #[serde(default)]
     pub sandboxes: Vec<SandboxInfo>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SandboxInfo {
+    #[serde(default)]
     pub name: String,
+    #[serde(default)]
     pub status: String,
     /// The host in the list whose daemon lives there, if one does.
     #[serde(default)]

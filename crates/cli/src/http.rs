@@ -303,6 +303,8 @@ pub struct Response {
     done: bool,
     /// Lowercase names.
     headers: Vec<(String, String)>,
+    /// `GET /api/panes`, for an error that names the route.
+    route: String,
 }
 
 pub fn request(
@@ -329,6 +331,12 @@ pub fn request(
         );
     }
     send(target, method, path, &[("Content-Type", "application/json")], body.as_bytes())
+}
+
+/// `request` with a typed body (a request type from `arugula_proto::api`),
+/// which goes out as the same JSON the type serializes to.
+pub fn request_as(target: &Target, method: &str, path: &str, body: &impl serde::Serialize) -> anyhow::Result<Response> {
+    request(target, method, path, Some(&serde_json::to_value(body)?))
 }
 
 /// Whether an agent runs this (Claude Code sets CLAUDECODE; others
@@ -398,7 +406,8 @@ pub fn send_on(
             _ => {}
         }
     }
-    Ok(Response { status, reader, chunked, length, chunk_left: 0, done: false, headers })
+    let route = format!("{method} {}", path.split('?').next().unwrap_or(path));
+    Ok(Response { status, reader, chunked, length, chunk_left: 0, done: false, headers, route })
 }
 
 impl Read for Response {
@@ -469,6 +478,22 @@ impl Response {
         Ok(v)
     }
 
+    /// The body as a `T` (a type from `arugula_proto::api`), or the API's
+    /// error as an error, as `json` does. A body that isn't a `T` is an error
+    /// naming the route. Fields a `T` leaves out are the type's to default:
+    /// the daemon may be older or newer than this CLI.
+    pub fn parse<T: serde::de::DeserializeOwned>(self) -> anyhow::Result<T> {
+        Ok(self.parse_raw::<T>()?.0)
+    }
+
+    /// Like `parse`, with the body as the daemon sent it too, for a command
+    /// that prints the daemon's answer (`--json`) as it came.
+    pub fn parse_raw<T: serde::de::DeserializeOwned>(self) -> anyhow::Result<(T, serde_json::Value)> {
+        let (status, route) = (self.status, self.route.clone());
+        let text = self.text()?;
+        parse_body(status, &route, &text)
+    }
+
     /// Fail with the API's error message on a non-2xx status.
     pub fn ok(self) -> anyhow::Result<Self> {
         if (200..300).contains(&self.status) {
@@ -482,6 +507,22 @@ impl Response {
             .unwrap_or(text);
         bail!("{msg} (HTTP {status})")
     }
+}
+
+/// `Response::parse_raw`, on a body already read.
+pub(crate) fn parse_body<T: serde::de::DeserializeOwned>(
+    status: u16,
+    route: &str,
+    text: &str,
+) -> anyhow::Result<(T, serde_json::Value)> {
+    let v: serde_json::Value =
+        serde_json::from_str(text).unwrap_or_else(|_| serde_json::Value::String(text.to_owned()));
+    if !(200..300).contains(&status) {
+        bail!("{}", v.get("error").and_then(|e| e.as_str()).unwrap_or(&v.to_string()));
+    }
+    let typed = serde_json::from_value(v.clone())
+        .map_err(|e| anyhow::anyhow!("{route}: the daemon's answer isn't what this arugula expects: {e}"))?;
+    Ok((typed, v))
 }
 
 /// Percent-encode a query value.

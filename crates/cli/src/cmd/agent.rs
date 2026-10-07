@@ -1,10 +1,21 @@
 //! `arugula agent`: an agent block with a prompt, or a Claude Code conversation continued.
 
 use super::Ctx;
-use crate::http::request;
+use crate::http::{request, request_as};
 use crate::util::{Pane, REMOTE, absolute, env_pane, print_json};
 use anyhow::Context;
+use arugula_proto::{
+    Attention, BlockType,
+    api::{Adapters, OpenConversationRequest, OpenConversationResponse, OpenRequest, OpenResponse, WaitResult},
+};
 use serde_json::{Value, json};
+
+/// `--wait`: whether the agent stopped to ask (exit code 2), once it's idle
+/// or needs you.
+fn needs_input(sock: &crate::http::Target, block: u32) -> anyhow::Result<bool> {
+    let w: WaitResult = request(sock, "GET", &format!("/api/panes/{block}/wait?until=idle"), None)?.parse()?;
+    Ok(matches!(w, WaitResult::Attention { state: Attention::NeedsInput, .. }))
+}
 
 #[derive(clap::Args)]
 pub struct Args {
@@ -86,16 +97,17 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
             let prompt = prompt.join(" ");
             // With a prompt, sending it is what continues it.
             let then = if prompt.is_empty() || then == "fork" { Some(then) } else { None };
-            let body = json!({
-                "id": id,
-                "then": then,
-                "session": session,
-                "split": split.map(|p| p.0),
-                "from_pane": env_pane(),
-            });
-            let v = request(&sock, "POST", "/api/conversations/open", Some(&body))?.json()?;
-            let block = v["block"].as_u64().context("no block in the answer")?;
-            if let Some(e) = v["error"].as_str() {
+            let body = OpenConversationRequest {
+                id,
+                then: then.map(str::to_owned),
+                session,
+                split: split.map(|p| p.0),
+                from_pane: env_pane(),
+            };
+            let (opened, v) =
+                request_as(&sock, "POST", "/api/conversations/open", &body)?.parse_raw::<OpenConversationResponse>()?;
+            let block = opened.block;
+            if let Some(e) = &opened.error {
                 eprintln!("%{block}: {e}");
                 return Ok(1);
             }
@@ -117,10 +129,10 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
                 println!("%{block}");
             }
             if wait && !prompt.is_empty() {
-                let w = request(&sock, "GET", &format!("/api/panes/{block}/wait?until=idle"), None)?.json()?;
+                let needs_input = needs_input(&sock, block)?;
                 let text = request(&sock, "GET", &format!("/api/panes/{block}/capture"), None)?.ok()?.text()?;
                 print!("{text}");
-                return Ok(if w["state"] == "needs_input" { 2 } else { 0 });
+                return Ok(if needs_input { 2 } else { 0 });
             }
         }
         Args {
@@ -196,27 +208,27 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
             }
             let host =
                 machine.map(|h| h.trim_start_matches('m').parse::<u32>()).transpose().context("--machine: m<N>")?;
-            let body = json!({
-                "type": "agent",
-                "config": config,
-                "vm": vm,
-                "host": host,
-                "split": split.map(|p| p.0),
-                "session": session,
-                "from_pane": std::env::var("ARUGULA_PANE").ok().and_then(|v| v.parse::<u32>().ok()),
-            });
-            let v = request(&sock, "POST", "/api/blocks", Some(&body))?.json()?;
-            let block = v["block"].as_u64().context("no block in the answer")?;
+            let body = OpenRequest {
+                kind: BlockType::Agent,
+                config,
+                vm,
+                host,
+                split: split.map(|p| p.0),
+                session,
+                from_pane: std::env::var("ARUGULA_PANE").ok().and_then(|v| v.parse::<u32>().ok()),
+                ..Default::default()
+            };
+            let (OpenResponse { block }, v) = request_as(&sock, "POST", "/api/blocks", &body)?.parse_raw()?;
             if json_out {
                 print_json(&v);
             } else {
                 println!("%{block}");
             }
             if wait && !prompt.is_empty() {
-                let w = request(&sock, "GET", &format!("/api/panes/{block}/wait?until=idle"), None)?.json()?;
+                let needs_input = needs_input(&sock, block)?;
                 let text = request(&sock, "GET", &format!("/api/panes/{block}/capture"), None)?.ok()?.text()?;
                 print!("{text}");
-                return Ok(if w["state"] == "needs_input" { 2 } else { 0 });
+                return Ok(if needs_input { 2 } else { 0 });
             }
         }
     }
@@ -226,8 +238,8 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
 /// Why an agent of `kind` can't start on this daemon, and how to fix it
 /// (#335); `None` when it can, or the daemon doesn't say.
 fn adapter_missing(sock: &crate::http::Target, kind: &str) -> Option<String> {
-    let v = request(sock, "GET", "/api/agents/adapters", None).ok()?.json().ok()?;
-    let a = v["adapters"].as_array()?.iter().find(|a| a["kind"] == kind)?;
+    let v: Adapters = request(sock, "GET", "/api/agents/adapters", None).ok()?.parse().ok()?;
+    let a = v.adapters.iter().find(|a| a["kind"] == kind)?;
     adapter_fix(a)
 }
 

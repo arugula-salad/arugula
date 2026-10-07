@@ -37,13 +37,17 @@ pub enum FsKind {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FsEntry {
+    #[serde(default)]
     pub name: String,
     /// Absolute.
+    #[serde(default)]
     pub path: String,
     #[serde(rename = "type")]
     pub kind: FsKind,
+    #[serde(default)]
     pub size: u64,
     /// Permission bits (`0o644`).
+    #[serde(default)]
     pub mode: u32,
     pub mtime_ms: u64,
     /// For a symlink: what it points at, when known (`directory` means the

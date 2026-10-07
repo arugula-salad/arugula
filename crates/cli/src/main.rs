@@ -3,6 +3,8 @@
 //! URL, with `--host`); `--json` prints the API's answers as they are, for
 //! programs.
 
+#[cfg(test)]
+mod answers;
 mod ask;
 mod attach;
 mod cmd;

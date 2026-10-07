@@ -3,7 +3,7 @@
 use super::Ctx;
 use crate::http::request;
 use crate::util::print_json;
-use serde_json::Value;
+use arugula_proto::api::{Empty, Rules};
 
 #[derive(clap::Args)]
 pub struct Args {
@@ -17,21 +17,20 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
     let Ctx { sock, json_out, .. } = ctx;
     let Args { forget, forget_all } = args;
     if forget_all {
-        request(&sock, "DELETE", "/api/rules", None)?.json()?;
+        request(&sock, "DELETE", "/api/rules", None)?.parse::<Empty>()?;
     } else if let Some(i) = forget {
-        request(&sock, "DELETE", &format!("/api/rules/{i}"), None)?.json()?;
+        request(&sock, "DELETE", &format!("/api/rules/{i}"), None)?.parse::<Empty>()?;
     }
-    let v: Value = request(&sock, "GET", "/api/rules", None)?.json()?;
+    let (rules, v) = request(&sock, "GET", "/api/rules", None)?.parse_raw::<Rules>()?;
     if json_out {
         print_json(&v);
         return Ok(0);
     }
-    let rules = v["rules"].as_array().cloned().unwrap_or_default();
-    if rules.is_empty() {
+    if rules.rules.is_empty() {
         println!("No standing rules: agent blocks ask (\"Always\" for a directory or everywhere makes one)");
     }
-    for r in rules {
-        println!("{:>3}  {}", r["index"], r["text"].as_str().unwrap_or(""));
+    for r in &rules.rules {
+        println!("{}  {}", r.index, r.text);
     }
     Ok(0)
 }

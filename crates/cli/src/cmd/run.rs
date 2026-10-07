@@ -1,19 +1,24 @@
 //! `arugula run`: start a command in a new tab or split.
 
 use super::Ctx;
-use crate::http::{self, request};
+use crate::http::{self, request, request_as};
 use crate::util::{Pane, REMOTE, env_pane, print_json};
-use anyhow::{Context, bail};
-use serde_json::{Value, json};
+use anyhow::bail;
+use arugula_proto::{
+    BlockType, Policy,
+    api::{OpenRequest, OpenResponse, RunRequest, RunResponse, WaitResult},
+    hosts::HostList,
+};
+use serde_json::json;
 
-fn policy(s: &str) -> anyhow::Result<Value> {
+fn policy(s: &str) -> anyhow::Result<Policy> {
     Ok(match s {
-        "shell" => json!({"kind": "shell"}),
-        "none" => json!({"kind": "none"}),
-        "rerun" => json!({"kind": "rerun", "confirm": false}),
-        "rerun-ask" => json!({"kind": "rerun", "confirm": true}),
-        "resume" => json!({"kind": "resume"}),
-        h if h.starts_with("hook:") => json!({"kind": "hook", "command": &h[5..]}),
+        "shell" => Policy::Shell,
+        "none" => Policy::None,
+        "rerun" => Policy::Rerun { confirm: false },
+        "rerun-ask" => Policy::Rerun { confirm: true },
+        "resume" => Policy::Resume,
+        h if h.starts_with("hook:") => Policy::Hook { command: h[5..].to_owned() },
         _ => bail!("policy: shell, none, rerun, rerun-ask, resume or hook:COMMAND"),
     })
 }
@@ -90,41 +95,37 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
             anyhow::bail!("--home needs --host NAME, a host in this daemon's list");
         };
         let local = http::Target::Socket(local_sock);
-        let this = request(&local, "GET", "/api/hosts", None)?.json()?["this"]
-            .as_str()
-            .context("this daemon has no name")?
-            .to_owned();
+        let this = request(&local, "GET", "/api/hosts", None)?.parse::<HostList>()?.this;
         // On the host first, in a session named after us...
-        let body = json!({
-            "command": (!command.is_empty()).then(|| shell_command(&command)),
-            "vm": vm,
-            "image": image,
-            "sandbox": sandbox,
-            "session": this,
-            "cwd": cwd,
-            "policy": pol.as_deref().map(policy).transpose()?,
-        });
-        let v = request(&sock, "POST", "/api/run", Some(&body))?.json()?;
-        let pane = v["pane"].as_u64().context("no pane in the answer")?;
+        let body = RunRequest {
+            command: (!command.is_empty()).then(|| shell_command(&command)),
+            vm,
+            image,
+            sandbox,
+            session: Some(this),
+            cwd,
+            policy: pol.as_deref().map(policy).transpose()?,
+            ..Default::default()
+        };
+        let RunResponse { pane } = request_as(&sock, "POST", "/api/run", &body)?.parse()?;
         // ...then its place in our layout.
         let from = std::env::var("ARUGULA_PANE").ok().and_then(|v| v.parse::<u32>().ok());
-        let body = json!({
-            "type": "remote",
-            "config": {"host": host, "pane": pane},
-            "session": session,
-            "split": split.map(|p| p.0),
-            "from_pane": from,
-        });
-        let b = request(&local, "POST", "/api/blocks", Some(&body))?.json()?;
-        let block = b["block"].as_u64().context("no block in the answer")?;
+        let body = OpenRequest {
+            kind: BlockType::Remote,
+            config: json!({"host": host, "pane": pane}),
+            session,
+            split: split.map(|p| p.0),
+            from_pane: from,
+            ..Default::default()
+        };
+        let OpenResponse { block } = request_as(&local, "POST", "/api/blocks", &body)?.parse()?;
         if json_out {
             print_json(&json!({"block": block, "host": host, "pane": pane}));
         } else {
             println!("%{block} ({host} %{pane})");
         }
         if wait {
-            let w = request(&sock, "GET", &format!("/api/panes/{pane}/wait?until=exit"), None)?.json()?;
-            return Ok(w["code"].as_i64().unwrap_or(1) as i32);
+            return exit_code(&sock, pane);
         }
         return Ok(0);
     }
@@ -135,31 +136,38 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
     } else {
         cwd.or_else(|| std::env::current_dir().ok().map(|d| d.display().to_string()))
     };
-    let body = json!({
-        "command": (!command.is_empty()).then(|| shell_command(&command)),
-        "vm": vm,
-        "vm_tab": vm_tab,
-        "image": image,
-        "sandbox": sandbox,
-        "session": session,
-        "split": split.map(|p| p.0),
-        "join": join,
-        "cwd": cwd,
-        "policy": pol.as_deref().map(policy).transpose()?,
-        "from_pane": env_pane(),
-    });
-    let v = request(&sock, "POST", "/api/run", Some(&body))?.json()?;
-    let pane = v["pane"].as_u64().context("no pane in the answer")?;
+    let body = RunRequest {
+        command: (!command.is_empty()).then(|| shell_command(&command)),
+        vm,
+        vm_tab,
+        image,
+        sandbox,
+        session,
+        split: split.map(|p| p.0),
+        join,
+        cwd,
+        policy: pol.as_deref().map(policy).transpose()?,
+        from_pane: env_pane(),
+    };
+    let (RunResponse { pane }, v) = request_as(&sock, "POST", "/api/run", &body)?.parse_raw()?;
     if json_out {
         print_json(&v);
     } else {
         println!("%{pane}");
     }
     if wait {
-        let w = request(&sock, "GET", &format!("/api/panes/{pane}/wait?until=exit"), None)?.json()?;
-        return Ok(w["code"].as_i64().unwrap_or(1) as i32);
+        return exit_code(&sock, pane);
     }
     Ok(0)
+}
+
+/// `--wait`: the pane's exit code (1 when it ended some other way).
+fn exit_code(sock: &http::Target, pane: u32) -> anyhow::Result<i32> {
+    let w: WaitResult = request(sock, "GET", &format!("/api/panes/{pane}/wait?until=exit"), None)?.parse()?;
+    Ok(match w {
+        WaitResult::Exit { code } => code.unwrap_or(1),
+        _ => 1,
+    })
 }
 
 #[cfg(test)]
@@ -167,7 +175,10 @@ mod tests {
     #[test]
     fn run_quotes_words() {
         let v = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-        assert_eq!(super::policy("hook:claude --continue").unwrap()["command"], "claude --continue");
+        assert_eq!(
+            super::policy("hook:claude --continue").unwrap(),
+            arugula_proto::Policy::Hook { command: "claude --continue".into() }
+        );
         assert_eq!(super::shell_command(&v(&["make && ./app"])), "make && ./app");
         assert_eq!(super::shell_command(&v(&["make", "test"])), "make test");
         assert_eq!(super::shell_command(&v(&["bash", "-c", "echo hi; exit 3"])), "bash -c 'echo hi; exit 3'");
