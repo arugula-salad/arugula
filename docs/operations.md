@@ -383,7 +383,7 @@ what it calls; each CLI request site by its route.
   `search`, `conversations`, `fountain/agents`). 7 don't fit: `capture`,
   `tail`, `export.cast`, `events`, `vsix`, `upload`, and block `call`.
   So about 61 of 68.
-- **HTTP, other modules** (`fs`, `hosts`, `share`, `guest_ssh`, `acl`,
+- **HTTP, other modules** (`fs`, `hosts`, `share`, `labs/guest_ssh`, `acl`,
   `invite`, `setup`, `mcp/tokens`, `sync`, `resident`, about 40 more):
   most convert the same way; the sync pushes, `fs/watch`, the share viewer
   and the tunnels don't. Not counted route by route.

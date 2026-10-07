@@ -1,6 +1,6 @@
 //! Labs: the features that are not part of the core (Fountain, studio apps
-//! with hud, chant workspaces, and VMs with their sandboxes so far; guest
-//! ssh, huddles, chat and the other forges move here in #455 to #457), behind the cargo feature
+//! with hud, chant workspaces, VMs with their sandboxes, and guest ssh so
+//! far; huddles, chat and the other forges move here in #456 and #457), behind the cargo feature
 //! `labs`. The feature is on by default, so a release build has all of it;
 //! `--no-default-features` leaves it out, for fast local builds, for agents
 //! working on core, and for the CI job `core`. (The runtime switch, the
@@ -50,6 +50,10 @@ use crate::{
 pub mod apps;
 #[cfg(feature = "labs")]
 pub mod fountain;
+// Guest ssh: the russh server and its invites (M65). `russh` is an optional
+// dependency of the daemon, enabled by this feature.
+#[cfg(feature = "labs")]
+pub mod guest_ssh;
 // VMs: the machines panes run on, and the sandboxes they come from.
 #[cfg(feature = "labs")]
 pub mod machine;
@@ -64,6 +68,13 @@ pub mod sandbox;
 pub mod sprites;
 #[cfg(feature = "labs")]
 pub mod workspace;
+
+/// Where the guest ssh server listens unless `--guest-ssh` says otherwise.
+/// (The flag is in every build, so the default is too.)
+pub const GUEST_SSH_LISTEN: &str = "0.0.0.0:7684";
+
+/// The raw stream kind control opens for a guest through its jump host.
+pub const GUEST_STREAM_KIND: &[u8] = b"ssh-guest";
 
 /// Whether this build has Labs.
 pub const BUILT: bool = cfg!(feature = "labs");
@@ -214,14 +225,41 @@ pub use absent::{Worn, scrub, wear};
 /// worn, so an agent block's `worn` stays `None`.
 #[cfg(not(feature = "labs"))]
 mod absent {
+    use std::sync::Arc;
+
     use serde_json::Value;
 
-    use crate::review::Runner;
+    use crate::{review::Runner, server::App};
 
     /// Uninhabited: no build without Labs makes a daemon resident in a
     /// sandbox, so there are never binaries to copy in.
     #[derive(Debug, Clone)]
     pub enum Binaries {}
+
+    /// The guest invites of a build without Labs: none, ever. It still sits
+    /// on the control link's text channel, so its routes watch is kept open
+    /// (holding nothing): a closed one would end the link's loop.
+    #[derive(Default)]
+    pub struct Guests {
+        routes_out: tokio::sync::watch::Sender<Option<String>>,
+    }
+
+    impl Guests {
+        pub fn run(self: &Arc<Self>, _app: &Arc<App>) {}
+
+        /// Nothing to tell control about routes.
+        pub fn routes_messages(&self) -> tokio::sync::watch::Receiver<Option<String>> {
+            self.routes_out.subscribe()
+        }
+
+        /// Never ours, so the text goes on to the forge.
+        pub fn heard_from_control(&self, _text: &str) -> bool {
+            false
+        }
+
+        /// Dropped: control has no guest to hand through.
+        pub fn serve_relayed(self: &Arc<Self>, _app: &Arc<App>, _stream: tokio::io::DuplexStream) {}
+    }
 
     /// Uninhabited: no build without Labs puts an agent on.
     pub enum Worn {}
@@ -269,15 +307,60 @@ mod absent {
 
 /// Adds what makes a daemon a home daemon for VMs: its provider's sandboxes
 /// (making a daemon resident in one), and the provider tunnel to the
-/// resident daemons in them.
+/// resident daemons in them. And the owner's guest ssh invites
+/// (`/api/guests`), which a build without Labs answers with 501 and "Guest
+/// ssh isn't in this build", so `arugula share --guest` says so.
 #[cfg(feature = "labs")]
 pub fn home_routes(r: Router<Arc<App>>) -> Router<Arc<App>> {
-    r.merge(resident::routes()).merge(provider_tunnel::routes())
+    r.merge(resident::routes()).merge(provider_tunnel::routes()).merge(guest_ssh::routes())
 }
 
 #[cfg(not(feature = "labs"))]
 pub fn home_routes(r: Router<Arc<App>>) -> Router<Arc<App>> {
-    r
+    use axum::{Json, http::StatusCode, response::IntoResponse, routing::any};
+
+    async fn no_guests() -> axum::response::Response {
+        (StatusCode::NOT_IMPLEMENTED, Json(serde_json::json!({ "error": not_built("Guest ssh") }))).into_response()
+    }
+    r.route("/api/guests", any(no_guests)).route("/api/guests/{id}", any(no_guests))
+}
+
+/// Control's ssh jump host for guests, as its `/control.json` describes it.
+#[cfg(feature = "labs")]
+pub use guest_ssh::Jump as GuestJump;
+
+/// The invites for guests with only OpenSSH (M65), and the ssh server for
+/// them. Always made, so it has a twin that holds nothing.
+#[cfg(feature = "labs")]
+pub use guest_ssh::Guests;
+
+#[cfg(not(feature = "labs"))]
+pub use absent::Guests;
+
+/// Opens the guest invites (`given`: `--guest-ssh` or `--guest-ssh-host` was
+/// left at its default). A build without Labs has none: flags given are
+/// ignored, with a warning.
+#[cfg(feature = "labs")]
+pub fn open_guests(
+    state_dir: &Path,
+    listen: Option<std::net::SocketAddr>,
+    host: Option<String>,
+    _given: bool,
+) -> Arc<Guests> {
+    Guests::open(state_dir, listen, host)
+}
+
+#[cfg(not(feature = "labs"))]
+pub fn open_guests(
+    _state_dir: &Path,
+    _listen: Option<std::net::SocketAddr>,
+    _host: Option<String>,
+    given: bool,
+) -> Arc<Guests> {
+    if given {
+        tracing::warn!("{}", not_built("Guest ssh"));
+    }
+    Arc::new(Guests::default())
 }
 
 /// The sandbox provider VM panes get their machines from, if there is one:

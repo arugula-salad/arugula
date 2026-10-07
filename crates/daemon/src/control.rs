@@ -693,7 +693,8 @@ impl Control {
 
     /// Control's ssh jump host for guests (M65), from its `/control.json`;
     /// `None` when it runs none.
-    pub async fn guest_jump(&self) -> anyhow::Result<Option<crate::guest_ssh::Jump>> {
+    #[cfg(feature = "labs")]
+    pub async fn guest_jump(&self) -> anyhow::Result<Option<crate::labs::GuestJump>> {
         let Some(e) = self.enrolled() else { return Ok(None) };
         let about: wire::ControlJump = self
             .http
@@ -703,7 +704,7 @@ impl Control {
             .error_for_status()?
             .json()
             .await?;
-        Ok(about.guest_ssh.map(|j| crate::guest_ssh::Jump { host: j.host, port: j.port, known_hosts: j.known_hosts }))
+        Ok(about.guest_ssh.map(|j| crate::labs::GuestJump { host: j.host, port: j.port, known_hosts: j.known_hosts }))
     }
 
     /// Look again soon (grants changed here, say).
@@ -1485,7 +1486,7 @@ async fn keep_relay(control: Arc<Control>, app: Arc<App>) {
     let a = app.clone();
     tokio::spawn(async move {
         while let Some((kind, s)) = raws.recv().await {
-            if kind == crate::guest_ssh::STREAM_KIND {
+            if kind == crate::labs::GUEST_STREAM_KIND {
                 a.guests.serve_relayed(&a, s);
             }
         }

@@ -168,6 +168,7 @@ impl Daemon {
                 let _ = reply.send((self.config.home.clone(), self.config.env(0)));
             }
             Api::InputBy(pane, data, by) => self.input(pane, data, Some(by)),
+            #[cfg(feature = "labs")]
             Api::GuestInput { pane, client, by, data, size, reply } => {
                 if !self.panes.contains_key(&pane) {
                     let _ = reply.send(Err("the pane closed".into()));
@@ -192,11 +193,13 @@ impl Daemon {
                 self.input(pane, data, Some(by.name));
                 let _ = reply.send(Ok(()));
             }
+            #[cfg(feature = "labs")]
             Api::GuestSize { pane, client, who, size } => {
                 if self.drivers.get(&pane).is_some_and(|d| d.who == who) {
                     self.guest_view(client, pane, size);
                 }
             }
+            #[cfg(feature = "labs")]
             Api::GuestLeft { client, who } => {
                 let before = self.drivers.len();
                 self.drivers.retain(|_, d| d.who != who);
