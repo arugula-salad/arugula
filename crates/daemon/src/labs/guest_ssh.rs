@@ -68,10 +68,6 @@ use crate::{
     store::{now_ms, write_atomic},
 };
 
-/// Where it listens unless `--guest-ssh` says otherwise.
-pub const DEFAULT_LISTEN: &str = "0.0.0.0:7684";
-/// The raw stream kind control opens for a guest through its jump host.
-pub const STREAM_KIND: &[u8] = b"ssh-guest";
 /// How long making a relayed invite waits for control to take its route.
 const ROUTE_WITHIN: Duration = Duration::from_secs(10);
 const DEFAULT_TTL_SECS: u64 = 3600;

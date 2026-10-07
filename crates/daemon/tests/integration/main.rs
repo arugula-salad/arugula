@@ -37,6 +37,7 @@ mod forges_real;
 #[cfg(feature = "labs")]
 mod fountain;
 mod fs;
+#[cfg(feature = "labs")]
 mod guest_ssh;
 mod hand;
 mod hosts;
