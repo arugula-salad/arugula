@@ -30,7 +30,8 @@ pub struct PaneOnly {
     pub pane: PaneId,
 }
 
-/// A file pasted into a terminal.
+/// A file pasted into a terminal (`attach` pastes only on Unix).
+#[cfg(unix)]
 #[derive(Debug, Serialize)]
 pub struct Pasted {
     pub pane: PaneId,
@@ -420,6 +421,7 @@ mod tests {
     #[test]
     fn a_pane_alone_and_the_small_ones() {
         same(PaneOnly { pane: 7 }, json!({ "pane": 7 }));
+        #[cfg(unix)]
         same(Pasted { pane: 7, path: "/tmp/a.png".into() }, json!({ "pane": 7, "path": "/tmp/a.png" }));
         same(Typed { pane: 7, next_offset: 120 }, json!({ "pane": 7, "next_offset": 120 }));
         same(
