@@ -4,9 +4,7 @@
 //! block (M35) reads hud's; a forge block (M36) raises one for a review
 //! asked of you. Neither the reason nor the card knows which.
 
-#[cfg(feature = "labs")]
-use arugula_proto::GateSource;
-use arugula_proto::{Action, Gate, Reason, ReasonKind};
+use arugula_proto::{Action, Gate, GateSource, Reason, ReasonKind};
 
 #[cfg(feature = "labs")]
 use crate::review::Runner;
@@ -38,6 +36,7 @@ pub fn reason(gates: &[Gate]) -> Option<Reason> {
     })
 }
 
+#[cfg(feature = "labs")]
 /// Turn `gate` down (#310): `chant approve <op> <gate> --expire` in the
 /// member's directory, which clears its pending fact without approving
 /// it, so the next run decides it from scratch. chant gates only.
@@ -52,6 +51,7 @@ pub async fn expire(gate: &Gate, via: &Via<'_>) -> Result<String, String> {
     }
 }
 
+#[cfg(feature = "labs")]
 /// `<op> <gate> [--env E] --expire`: the environment as status's line
 /// names it (it expires that environment's pending fact).
 pub fn expire_args(gate: &Gate) -> Vec<String> {
@@ -96,6 +96,7 @@ pub async fn approve(gate: &Gate, approver: Option<&str>, via: &Via<'_>) -> Resu
     }
 }
 
+#[cfg(feature = "labs")]
 /// `chant approve <args>` in `dir`: what it said, or why it failed.
 async fn run_chant(runner: &Runner, chant: &str, dir: &str, args: Vec<String>) -> Result<String, String> {
     let script = r#"cd "$1" || exit 1; c=$2; shift 2; exec "$c" approve "$@" 2>&1"#;
@@ -114,6 +115,7 @@ async fn run_chant(runner: &Runner, chant: &str, dir: &str, args: Vec<String>) -
     }
 }
 
+#[cfg(feature = "labs")]
 /// Who approves a chant gate, as chant records them (ws-080).
 #[derive(Debug, Clone, Default)]
 pub struct ChantBy {
@@ -129,6 +131,7 @@ pub struct ChantBy {
     pub relayed_by: Option<String>,
 }
 
+#[cfg(feature = "labs")]
 /// The `chant approve` arguments for `gate`: status's own line (`approve`,
 /// with `--plan <digest>` binding the approval to the plan read and
 /// `--sign` for a gate in `identity.gates`), as `by`. A line that isn't
@@ -219,8 +222,6 @@ pub(crate) fn rfc3339_ms(s: &str) -> Option<u64> {
 
 #[cfg(test)]
 mod tests {
-    use arugula_proto::GateSource;
-
     use super::*;
 
     fn gate(member: &str) -> Gate {
@@ -256,10 +257,12 @@ mod tests {
         assert_eq!(one.headline, "delivery: ship waits at gate approve-ship");
     }
 
+    #[cfg(feature = "labs")]
     fn by(actor: &str) -> ChantBy {
         ChantBy { actor: Some(actor.into()), ..Default::default() }
     }
 
+    #[cfg(feature = "labs")]
     #[test]
     fn approving_runs_status_line() {
         let mut g = gate("delivery");
@@ -291,6 +294,7 @@ mod tests {
         assert_eq!(chant_args(&g, &ChantBy::default()).unwrap(), ["ship", "approve-ship", "--env", "prod"]);
     }
 
+    #[cfg(feature = "labs")]
     #[test]
     fn expiring() {
         let mut g = gate("delivery");
