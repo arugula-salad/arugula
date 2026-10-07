@@ -33,7 +33,7 @@ or an account skip without it and name what's missing
 | `just e2e-webkit` | only the `webkit` project: Safari's engine, for device keys (#94) and the one-click invite (#137) | macOS |
 | `just testnet up`, `test`, `break` (`ssh`, then `control`) | the Docker test stack's claims ([testnet/README.md](../testnet/README.md)), then each claim under `BREAK=1`, where it must fail | Linux |
 | `just forges`, `just testnet-hosts`, `just testnet-editors` | real forges, two hosts and VS Code over Remote-SSH, in Docker ([below](#real-forges-two-hosts-vs-code-over-remote-ssh)) | the forges nightly (`forges-nightly.yml`) |
-| `just macos <test>` | the tart VM's checks: launchd with no GUI session, real Safari, Safari in the iOS Simulator, iTerm2, the desktop app ([below](#a-fresh-mac-the-tart-vm-harness)), and `journey`: J1 on the real app and Safari, graphed ([below](#a-new-users-journeys)) | no |
+| `just macos <test>` | the tart VM's checks: launchd with no GUI session, real Safari, Safari in the iOS Simulator, iTerm2, the desktop app ([below](#a-fresh-mac-the-tart-vm-harness)), `journey`: J1 on the real app and Safari, and `journey-j2a`: Sam on the real app, Riley in a browser, both graphed ([below](#a-new-users-journeys)) | no |
 | `just desktop-check` | rustfmt and clippy for `crates/desktop` | Linux |
 | `just desktop-xvfb` | the Linux desktop app under Xvfb in a container (`packaging/desktop/xvfb/`): `join` (#204), `m46`, `m47` and `stale` (#317) (see [The desktop app's tests](#the-desktop-apps-tests)) | no |
 | `just desktop-packages ARCH` | the .deb on Ubuntu 22.04 and the .rpm on Fedora 42 install and claim `arugula://` (after `just desktop-linux ARCH`) | no |
@@ -577,6 +577,15 @@ hoc as released), and the run stops before *Connect* if the app would
 reach any other control. Its report is `J1-mac`, with the Mac's screen at
 each step; a step's time includes the accessibility reads (seconds
 each), so only one over 30 s reads as slow.
+
+`just macos journey-j2a` (`testnet/macos/journey-j2a.ts`) is J2a with Sam
+on the real app in the VM (after J1 there, as its own report) and Riley a
+friend on another computer, in a browser on the host (Chrome, through
+Playwright) with an account made on control's page. Sam's steps press what
+the Mac shows, Riley's what the page shows; the report is `J2a-mac`, with
+each person's screen at their steps. Riley has no machine of their own
+here, so after *Accept* the window shows Sam's: that step is led by the
+screen, unlike J2a's.
 
 Every run ends with a report, in `web/journey-reports/` (newest run;
 each run also under `history/`) and attached to the Playwright report:
