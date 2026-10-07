@@ -92,6 +92,7 @@ fn a_re_invite_pushes_that_guest_alone() {
 
 /// From a thread's mention (#297): the push opens that thread (a
 /// session's opens the session's), on the invite's own tag, to them alone.
+#[cfg(feature = "labs")]
 #[test]
 fn an_invite_from_a_thread_opens_it() {
     let d = tailnet_daemon(&[]);
@@ -595,6 +596,7 @@ fn on_a_team_daemon_a_members_role_is_enough() {
 /// #386: on a team daemon, the team's other owners get in as the owner,
 /// yet each is someone to invite and @mention: no grant, just their phone,
 /// opening at the pane.
+#[cfg(feature = "labs")]
 #[test]
 fn a_teams_other_owner_is_told_not_granted() {
     let w = world_where(TeamRole::Owner);

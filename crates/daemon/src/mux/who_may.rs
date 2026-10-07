@@ -115,6 +115,7 @@ impl Daemon {
     }
 
     /// A person's picture, if they have one.
+    #[cfg_attr(not(feature = "labs"), allow(dead_code))]
     pub(super) fn pic_of(&self, who: &Principal) -> Option<String> {
         match who {
             Principal::User { pic, .. } => pic.clone(),
