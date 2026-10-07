@@ -29,7 +29,13 @@ pub fn path() -> Option<PathBuf> {
 
 /// Write down every panic, after the default hook prints it to stderr.
 pub fn install() {
-    let Some(path) = path() else { return };
+    if let Some(path) = path() {
+        install_at(path);
+    }
+}
+
+/// [`install`], writing to `path`.
+fn install_at(path: PathBuf) {
     let print = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         print(info);
@@ -107,6 +113,42 @@ mod tests {
         super::append(&path, &entry).unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), entry);
         assert_eq!(std::fs::metadata(path.with_extension("log.old")).unwrap().len(), super::KEEP + 1);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// The child of `a_panic_is_written_down`: with the hook on the file it
+    /// names, a thread panics. Run alone, it does nothing.
+    #[test]
+    fn panic_in_child() {
+        let Some(path) = std::env::var_os(CHILD) else { return };
+        super::install_at(path.into());
+        let worker = std::thread::Builder::new().name("worker".into());
+        let _ = worker.spawn(|| panic!("boom in the worker")).unwrap().join();
+    }
+
+    const CHILD: &str = "ARUGULA_TEST_PANIC_LOG";
+
+    /// The hook is the process's, so it's tried in a child: this test binary
+    /// again, running only `panic_in_child`.
+    #[test]
+    fn a_panic_is_written_down() {
+        let dir = std::env::temp_dir().join(format!("arugula-panics-child-{}", std::process::id()));
+        let path = dir.join("logs").join(super::NAME);
+        let out = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "panics::tests::panic_in_child", "--nocapture", "--test-threads=1"])
+            .env(CHILD, &path)
+            .output()
+            .unwrap();
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        // The default hook still printed it.
+        assert!(stderr.contains("boom in the worker"), "stderr: {stderr}");
+        let log = std::fs::read_to_string(&path).unwrap();
+        let first = log.lines().next().unwrap();
+        let head = format!(" arugula-desktop {} on {} (worker): ", env!("CARGO_PKG_VERSION"), std::env::consts::OS);
+        assert!(first.contains(&head), "{log}");
+        assert!(log.contains("boom in the worker"), "{log}");
+        // A forced backtrace: frames, whatever RUST_BACKTRACE says.
+        assert!(log.lines().any(|l| l.trim_start().starts_with("0: ")), "{log}");
         std::fs::remove_dir_all(dir).unwrap();
     }
 }
