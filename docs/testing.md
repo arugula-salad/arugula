@@ -32,7 +32,7 @@ or an account skip without it and name what's missing
 | `just e2e-webkit` | only the `webkit` project: Safari's engine, for device keys (#94) and the one-click invite (#137) | macOS |
 | `just testnet up`, `test`, `break` (`ssh`, then `control`) | the Docker test stack's claims ([testnet/README.md](../testnet/README.md)), then each claim under `BREAK=1`, where it must fail | Linux |
 | `just forges`, `just testnet-hosts`, `just testnet-editors` | real forges, two hosts and VS Code over Remote-SSH, in Docker ([below](#real-forges-two-hosts-vs-code-over-remote-ssh)) | the forges nightly (`forges-nightly.yml`) |
-| `just macos <test>` | the tart VM's checks: launchd with no GUI session, real Safari, iTerm2, the desktop app ([below](#a-fresh-mac-the-tart-vm-harness)) | no |
+| `just macos <test>` | the tart VM's checks: launchd with no GUI session, real Safari, Safari in the iOS Simulator, iTerm2, the desktop app ([below](#a-fresh-mac-the-tart-vm-harness)) | no |
 | `just desktop-check` | rustfmt and clippy for `crates/desktop` | Linux |
 | `just desktop-xvfb` | the Linux desktop app under Xvfb in a container (`packaging/desktop/xvfb/`): `join` (#204), `m46`, `m47` and `stale` (#317) (see [The desktop app's tests](#the-desktop-apps-tests)) | no |
 | `just desktop-packages ARCH` | the .deb on Ubuntu 22.04 and the .rpm on Fedora 42 install and claim `arugula://` (after `just desktop-linux ARCH`) | no |
@@ -373,7 +373,10 @@ each spec checks:
 Measurements are appended to `.run/results.jsonl` with the load average.
 `safari/safari.ts --print-setup` lists what a Mac needs first (sudo:
 `safaridriver --enable`, the test certificate trusted, `/etc/hosts`).
-Running it unattended in the tart VM isn't done yet ([Planned](#planned)).
+Unattended in a tart VM: `testnet/macos/s27-safari.sh` (on the same
+branch) for macOS Safari, and `just macos ios s27` with `ARUGULA_S27_DIR`
+set to this directory for `--ios` in the iOS Simulator ([the tart
+VM](#a-fresh-mac-the-tart-vm-harness); parked, #257).
 `--driver playwright-webkit` checks the script itself without Safari.
 
 ## A device that approves things
@@ -780,6 +783,8 @@ in to its own GUI session at boot. The scripts are in `testnet/macos/`.
 just macos base              # make the base VM, once (about 30 GB)
 just macos launchd           # launchd with no GUI session (S28, M52)
 just macos safari            # web/safari against real Safari (#94, #137)
+just macos base --xcode      # the Xcode base for `ios`, once (about 60 GB more)
+just macos ios               # #94 and #137 in the iOS Simulator (#257; parked, below)
 just macos iterm2            # M5 (tmux -CC) and M32 (OSC 52) in iTerm2
 just macos app               # the desktop app in cloud mode (#178)
 just macos up | ssh CMD | down   # the VM by hand
@@ -794,7 +799,8 @@ testnet's claims.
 Without tart, or without the base VM, every script fails and says what to
 run; a test that didn't run isn't a pass. Only `ARUGULA_SKIP_MACOS_VM=1`
 skips, and it prints that no VM test ran. They need an Apple silicon Mac,
-about 35 GB free, and the network for the image, iTerm2 and the app's zip.
+about 35 GB free (about 60 GB more for `ios`'s Xcode base), and the network
+for the images, iTerm2 and the app's zip.
 
 ### Setup
 
@@ -807,6 +813,14 @@ about 35 GB free, and the network for the image, iTerm2 and the app's zip.
   `ARUGULA_MACOS_IMAGE` picks another), then empties tart's OCI cache
   (`tart prune --entries=caches`), so the disk holds one copy, about 30
   GB, not two. The base is never booted.
+- **The Xcode base, for `ios` only.** `just macos base --xcode` makes a
+  second base, `arugula-macos-xcode-base`, from
+  `ghcr.io/cirruslabs/macos-tahoe-xcode:26.5` (the same macOS with Xcode 26
+  and its iOS Simulator; `ARUGULA_MACOS_XCODE_IMAGE` picks another),
+  pruned the same way. It's pinned to Xcode 26: `:latest` is Xcode 27,
+  whose iOS 27 Simulator refuses safaridriver's sessions (below). `vm.sh up NAME --xcode`
+  clones it. No other test uses it, so a Mac that never runs `ios` never
+  pulls it.
 - **Clones.** Every test VM is an APFS clone of the base (`tart clone`,
   nearly free on disk), booted headless (`tart run --no-graphics`). `up`
   puts the harness key (`testnet/macos/.state/`, ignored by git) into
@@ -821,8 +835,16 @@ about 35 GB free, and the network for the image, iTerm2 and the app's zip.
 |---|---|---|
 | `launchd` (`install`, `warning`, `logout`, `uninstall-agent`, `ssh`, `system`, `reboot`, `uninstall`) | A user made with `sysadminctl`, who never had a GUI session and is reached only over ssh, runs `arugulad install`. With no GUI session that's the background agent (with one it's the usual GUI LaunchAgent, which this VM's `admin` has and `illo` never does): it installs, warns that the daemon won't start after a reboot by itself, and the daemon and a pane outlive the ssh session. `arugulad uninstall` leaves nothing behind. `arugula --ssh illo@vm ls` from the host starts the daemon there and passes the warning through. `arugulad install --system` switches to a LaunchDaemon cleanly; after a clean shutdown and `tart run`, with nobody logged in as them, the daemon is back with its pane's output; `arugulad uninstall` removes the LaunchDaemon too. | One VM, in that order. "Nothing behind" means no plist in `~/Library/LaunchAgents` or `/Library/LaunchDaemons`, no `arugulad` service in `gui/UID`, `user/UID` or `system`, and no `arugulad` process for the user. The user gets passwordless sudo before `system`, as an admin would have. `BREAK=1` boots the service out before install, logout, system and reboot, drops the `note:` line before warning, installs again after each uninstall, and has the daemon already running when the ssh check would start it. |
 | `safari` | `/key-probe.html` puts its verdict in the DOM (`data-verdict` on `#verdict`: `keys`, `wrapped` or `none`, and JSON in `#result`), and it's `keys` or `wrapped`. A signed-out invitee opens a presigned invite, signs in through GitHub and joins in one click; the owner's Chrome sees them in the roster. | `web/safari/safari.spec.ts` with a small WebDriver client (`web/safari/webdriver.ts`). safaridriver runs in the VM (`sudo safaridriver --enable` once); its port comes to the host over ssh, and control and the fake GitHub, run on the host, are forwarded to the same ports on the VM's loopback. `SAFARIDRIVER_URL` alone runs the spec against any safaridriver. |
+| `ios` (`probe`, `invite`, `s27`), parked (#257) | The same key probe and presigned invite as `safari`, in Safari on an iPhone in the iOS Simulator (the probe reports `Safari N on iPhone, iOS N`), and, when named, S27's `safari/safari.ts --ios`, whose verdict must be a go. | `testnet/macos/ios.sh`, in a clone of the Xcode base (`arugula-macos-ios`). In the VM: `safaridriver --enable`, the newest iOS runtime's iPhone (`ARUGULA_IOS_DEVICE` names another device type; one is made if the image has none, and the runtime downloaded with `xcodebuild -downloadPlatform iOS` if it has no iOS runtime) booted with `simctl bootstatus -b`. The Simulator shares the VM's network, so the ports forwarded to the VM's loopback reach it as for `safari`. The spec picks it with `safari:useSimulator` and `safari:deviceUDID` (`SAFARI_IOS=1`, `SAFARI_DEVICE_UDID`). `just macos ios` builds `web/dist` and control first. `s27` needs `ARUGULA_S27_DIR`, the spike built in a worktree of `archive/spikes`: its CA is then trusted in the Mac's keychain and added to the Simulator's (`simctl keychain add-root-cert`), and its block names go in `/etc/hosts`. |
 | `iterm2` (`attach`, `type`, `output`, `split`, `tab`, `osc52`) | iTerm2 runs `arugula tmux -CC` and opens a native window for the daemon's tab; text written there runs in the pane; the pane's output shows in iTerm2; a split in iTerm2 adds a pane; a daemon tab becomes an iTerm2 tab. `arugula tui` in iTerm2 copies a line in copy mode, and `pbpaste` has it. | iTerm2's latest stable zip, driven by AppleScript over ssh. The VM's TCC database (SIP is off in the image) gets Apple Events for sshd and osascript to iTerm2 before it starts, so nothing asks. |
 | `app` (`signin`, `approve`, `machines`, `reach`) | The release's app (`ARUGULA_MACOS_APP_ZIP` for another) signs in to control through the browser hand-over, is approved as a new device, lists every machine on the account (one on the host, and the Mac's own daemon once it joins), and keystrokes in its terminal run in that machine's pane. | `testnet/macos/app-cloud.ts`. Control, the fake GitHub and the host's machine run here; `web/fixtures/device.ts` is the person: it reads the app's `/#app=` page from Safari (AppleScript), allows it, hands the grant to the app's loopback port, and approves the app. The app's window is read through accessibility (JXA and System Events). |
+
+`ios` is parked: on the Xcode image's `:latest` (Xcode 27, iOS 27
+runtime) the Simulator boots and safaridriver answers, but every session
+is refused ("Could not find any session hosts"), with Remote Automation
+on or off; an iOS 26.0 runtime downloaded into that image was refused the
+same way (2026-10-05). The next try is a base from the Xcode 26 image,
+the default now; it hasn't been run. No CI job runs it.
 
 What they found (2026-10-05, macOS 26.6.2 in the VM):
 
@@ -855,7 +877,8 @@ What they found (2026-10-05, macOS 26.6.2 in the VM):
 The same scripts can run on the self-hosted runner (jake-mini) once tart
 is installed there: Apple silicon runs the VMs without nesting. A job
 would run `just macos launchd`, `safari`, `iterm2` and `app` in turn (never
-two at once), and needs about 35 GB free for the base and one clone. It
+two at once), and needs about 35 GB free for the base and one clone; `ios`
+needs the Xcode base as well, about 60 GB more. It
 should make the base once and keep it between runs (the prune leaves no
 cache behind), and always end with `vm.sh down`. Not tried there yet: tart
 needs the runner's user to be able to use Virtualization.framework from
@@ -921,16 +944,13 @@ Only what no test can do:
 
 Real gaps, each one automatable:
 
-- **The iOS Simulator** (`safari:useSimulator`): the VM's base image has
-  no Xcode. cirruslabs' Xcode images have it, at roughly twice the disk;
-  the Safari spec would need only that capability.
 - **iTerm2 beyond tmux's basics:** dragging dividers, resizing windows,
   detach and reattach ([development.md](development.md#testing-iterm2))
   aren't in `just macos iterm2` yet; they can be, with the same
   AppleScript.
-- **S27 in iOS Safari:** `archive/spikes:spikes/s27-blocks/safari/safari.ts --ios`
-  needs the Simulator, so the Xcode image (#257). macOS Safari runs
-  unattended with `testnet/macos/s27-safari.sh`.
+- **The iOS Simulator** (#257): `just macos ios` is written but parked
+  ([above](#the-tests)); it needs a run on the Xcode 26 base, and S27's
+  `--ios` with it.
 - **The tart tests in CI** on the macos-arm64 runner ([above](#on-the-macos-arm64-runner)).
 - **Control checking GitHub's signature on a real webhook delivery**: it
   needs a URL github.com can reach.

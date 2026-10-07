@@ -2,8 +2,10 @@
 #
 # A throwaway macOS VM (tart) that tests drive over ssh.
 #
-#   testnet/macos/vm.sh base             make the base VM (once; ~30 GB)
-#   testnet/macos/vm.sh up [NAME]        clone the base VM, boot the clone
+#   testnet/macos/vm.sh base [--xcode]   make the base VM (once; ~30 GB,
+#                                        or ~60 GB more for --xcode's)
+#   testnet/macos/vm.sh up [NAME] [--xcode]
+#                                        clone the base VM, boot the clone
 #                                        headless, wait for ssh
 #   testnet/macos/vm.sh ssh [NAME] [--as USER] CMD
 #                                        run CMD in it, as admin unless USER
@@ -24,16 +26,25 @@
 # into admin's authorized_keys through the tart guest agent, so nothing
 # after that needs the password. Runs on any Apple silicon Mac with tart,
 # the self-hosted macos-arm64 runner included.
+#
+# --xcode uses a second base, arugula-macos-xcode-base, made from
+# $ARUGULA_MACOS_XCODE_IMAGE (default
+# ghcr.io/cirruslabs/macos-tahoe-xcode:26.5: Xcode 26 and the iOS
+# Simulator; :latest's Xcode 27 refuses safaridriver's sessions, #257).
+# Only the iOS Simulator test (ios.sh) uses it, and at about twice the
+# disk it's made only when asked for.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STATE="$HERE/.state"
 IMAGE="${ARUGULA_MACOS_IMAGE:-ghcr.io/cirruslabs/macos-tahoe-base:latest}"
 BASE=arugula-macos-base
+XCODE_IMAGE="${ARUGULA_MACOS_XCODE_IMAGE:-ghcr.io/cirruslabs/macos-tahoe-xcode:26.5}"
+XCODE_BASE=arugula-macos-xcode-base
 # Never let a clone prune tart's cache (other images) to make room.
 export TART_NO_AUTO_PRUNE=1
 
-usage() { sed -n '3,27p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+usage() { sed -n '3,35p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 
 # shellcheck source=testnet/macos/need-tart.sh
 . "$HERE/need-tart.sh"
@@ -41,7 +52,13 @@ usage() { sed -n '3,27p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 cmd="${1:-}"; shift || true
 name="arugula-macos"
 case "${1:-}" in arugula-*) name=$1; shift ;; esac
-[ "$name" != arugula-macos-base ] || { echo "arugula-macos-base is the base; use a clone" >&2; exit 2; }
+case "$name" in "$BASE" | "$XCODE_BASE") echo "$name is a base; use a clone" >&2; exit 2 ;; esac
+size="about 30 GB"
+make_base="just macos base"
+if [ "${1:-}" = --xcode ]; then
+  IMAGE=$XCODE_IMAGE BASE=$XCODE_BASE size="about 60 GB" make_base="just macos base --xcode"
+  shift
+fi
 
 key() {
   mkdir -p "$STATE"
@@ -51,7 +68,7 @@ key() {
 ip() { tart ip --wait 120 "$name"; }
 have() { tart list -q 2>/dev/null | grep -qx "$1"; }
 # A base made before the rename keeps its name (#505).
-if ! have "$BASE" && have illogical-macos-base; then BASE=illogical-macos-base; fi
+if [ "$BASE" = arugula-macos-base ] && ! have "$BASE" && have illogical-macos-base; then BASE=illogical-macos-base; fi
 
 # Fresh VMs get fresh host keys, so none are kept.
 SSH_OPTS=(-i "$STATE/id_ed25519" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=no
@@ -90,7 +107,7 @@ case "$cmd" in
     ;;
   up)
     key
-    have "$BASE" || { echo "no base VM $BASE, so no macOS VM test can run: make it once with \`just macos base\` (pulls $IMAGE, about 30 GB)" >&2; exit 1; }
+    have "$BASE" || { echo "no base VM $BASE, so this macOS VM test can't run: make it once with \`$make_base\` (pulls $IMAGE, $size)" >&2; exit 1; }
     have "$name" || tart clone "$BASE" "$name"
     tart list 2>/dev/null | awk -v n="$name" '$2 == n && $NF == "running" { r = 1 } END { exit !r }' || boot
     # The guest agent starts a little after the network does.
