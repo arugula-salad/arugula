@@ -120,9 +120,11 @@ test("J2c: #551's evening: a machine already in one team, a friend's second team
         await account(p, "Teams…");
         joinCmd =
           /arugulad join \S+ --team \S+/.exec(
+            // DLex Corp's: the team he means to bring the machine into.
             await p
+              .locator("section.team")
+              .filter({ has: p.getByRole("heading", { name: "DLex Corp" }) })
               .getByText(/arugulad join .* --team/)
-              .last()
               .innerText(),
           )?.[0] ?? "";
         expect(joinCmd).not.toBe("");
