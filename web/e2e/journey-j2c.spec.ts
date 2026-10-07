@@ -271,7 +271,7 @@ test("J2c: #551's evening: a machine already in one team, a friend's second team
         else if (clusters) j.issue(`by project, Sam's terminal shows as "${clusters}", its directory`);
         if (!/git|repositor/i.test(text)) j.issue("nothing says projects come from a pane's git repository (a terminal in $HOME has none), or how to make one");
         // Back to the panes: the Swarm covers the bar, and has no close.
-        const back = p.getByText("Panes", { exact: true });
+        const back = p.locator(".swarm").getByText("Panes", { exact: true });
         if (
           !(await back.click({ timeout: 2_000 }).then(
             () => true,

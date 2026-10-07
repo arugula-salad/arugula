@@ -35,6 +35,10 @@ export function openMenu(e: { clientX: number; clientY: number; preventDefault()
   changed();
 }
 
+/** Escapes a menu took (closing itself): a view under it lets them be. */
+const tookEscape = new WeakSet<Event>();
+export const escapeTaken = (e: Event) => tookEscape.has(e);
+
 export function closeMenu() {
   if (current) {
     current = null;
@@ -53,7 +57,11 @@ export function MenuLayer() {
     listeners.add(fn);
     layers.push(me);
     changed();
-    const key = (e: KeyboardEvent) => e.key === "Escape" && closeMenu();
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || !current) return;
+      tookEscape.add(e);
+      closeMenu();
+    };
     const down = (e: PointerEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) closeMenu();
     };
