@@ -114,6 +114,7 @@ mod daemon;
 #[cfg(target_os = "macos")]
 mod finder;
 mod links;
+mod panics;
 mod profile;
 #[cfg(target_os = "macos")]
 mod service;
@@ -1035,6 +1036,8 @@ fn watch_once(app: &AppHandle) -> anyhow::Result<()> {
 pub(crate) const PAGE_EVENT_PREFIX: &str = "(window.__arugulaPage ? 'arugula' : 'illogical')";
 
 fn main() {
+    // Finder throws stderr away: write panics down where they can be found.
+    panics::install();
     // ILLOGICAL_X stands in for ARUGULA_X (#505), before any thread exists.
     // SAFETY: nothing else runs yet.
     unsafe { arugula_proto::rename::alias_env() };
