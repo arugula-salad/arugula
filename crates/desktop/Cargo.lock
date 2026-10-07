@@ -6787,7 +6787,7 @@ checksum = "3ad82d2a33cdc9674dc7465672f271e096168fcdbe0f799d9e6db8c5892679dc"
 [[package]]
 name = "wry"
 version = "0.57.0"
-source = "git+https://github.com/alecraso/wry?branch=arugula%2Fcatch-open-panel#9d061945cb054ef95edda18c729bfc03f0d04e97"
+source = "git+https://github.com/alecraso/wry?branch=arugula%2Fcatch-open-panel#d3ade2322230c64ac6b451207eeff793d9e92963"
 dependencies = [
  "base64 0.22.1",
  "block2",
