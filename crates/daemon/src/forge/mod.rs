@@ -50,16 +50,21 @@
 //! has none: then the state's `read_only` says so and writes are refused.
 //! Its failed pipeline offers *Rerun* (`rerun_checks`).
 
-pub mod forgejo;
 pub mod github;
-pub mod gitlab;
 pub mod issue;
 pub mod live;
+// The part of a forge block that connects to Forgejo and GitLab, which are
+// Labs: it needs the block's private fields, so it is here and not in
+// `labs/`; the twins are below, after `connect`.
+#[cfg(feature = "labs")]
+mod labs_forges;
 pub mod login;
 pub mod model;
+pub mod util;
 
 use std::{
     collections::HashSet,
+    path::Path,
     sync::{Arc, Mutex, Weak},
     time::Duration,
 };
@@ -70,9 +75,8 @@ use arugula_proto::{
     api::{OpenRequest, RunRequest},
     ask::{Ask, AskKind},
     forge::{
-        AgentLink, AgentStarted, CheckedOut, Diffed, Draft, DraftStatus, Drafted, Drafts, ForgeLive, ForgeLogin,
-        ForgeState, ForgeWant, ForgeWantKind, LoggedIn, NewIssue, RateLimit, Refreshed, Rerun, ReviewEvent, Write,
-        Written,
+        AgentLink, AgentStarted, CheckedOut, Diffed, Draft, DraftStatus, Drafted, Drafts, ForgeLive, ForgeState,
+        ForgeWant, ForgeWantKind, NewIssue, RateLimit, Refreshed, Rerun, ReviewEvent, Write, Written,
     },
 };
 use futures_util::future::BoxFuture;
@@ -80,10 +84,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tracing::{info, warn};
 
-use self::{
-    login::{Login, Tea, TokenSource},
-    model::{Check, Event, EventLine, Item, ItemKind, ItemText, Me, Pr, Provider, Review, Reviewer, Want},
-};
+use self::model::{Check, Event, EventLine, Item, ItemKind, ItemText, Me, Pr, Provider, Review, Reviewer, Want};
 use crate::{
     block::{Block, BlockCtx, Summary, no_method},
     mux::AskReply,
@@ -234,7 +235,9 @@ pub trait Adapter: Send + Sync {
         number: u64,
     ) -> BoxFuture<'a, Result<(Vec<Review>, Vec<Reviewer>, Vec<Event>), Error>>;
     fn write<'a>(&'a self, repo: &'a str, number: u64, w: &'a Write) -> BoxFuture<'a, Result<Sent, Error>>;
-    /// The repository's clone URLs, for matching a remote to a login.
+    /// The repository's clone URLs, for matching a remote to a login (only
+    /// Forgejo's `tea` logins are matched that way, so only Labs asks).
+    #[cfg_attr(not(feature = "labs"), allow(dead_code))]
     fn repo_urls<'a>(&'a self, repo: &'a str) -> BoxFuture<'a, Result<Vec<String>, Error>>;
 
     // M37: issues. Defaults say the forge can't yet, so an adapter that
@@ -314,24 +317,6 @@ pub(crate) fn http() -> reqwest::Client {
     .clone()
 }
 
-fn adapter(provider: Provider, login: &Login, tea: Arc<Tea>) -> Arc<dyn Adapter> {
-    match provider {
-        Provider::Forgejo => Arc::new(forgejo::Forgejo::new(&login.api(), http(), TokenSource::new(tea, login))),
-        Provider::Github => {
-            let host = login::url_host(&login.url).unwrap_or_default();
-            let token = github::GhToken::new(tea.runner.clone(), &host);
-            Arc::new(github::Github::new(&github::api_for(&host), http(), token))
-        }
-        // GitLab connects through glab ([`ForgeBlock::connect_gitlab`]),
-        // never a tea login: anything else reads anonymously.
-        Provider::Gitlab => {
-            let api = format!("{}/api/v4", login.url.trim_end_matches('/'));
-            let note = gitlab::read_only_note(&login::url_host(&login.url).unwrap_or_default(), "not a glab login");
-            Arc::new(gitlab::Gitlab::new(&api, http(), None, Some(note)))
-        }
-    }
-}
-
 // ---------------------------------------------------------------- the block
 
 fn pr_kind() -> ItemKind {
@@ -380,7 +365,7 @@ pub struct ForgeBlock {
     me: Weak<ForgeBlock>,
     config: Mutex<Config>,
     state: Mutex<ForgeState>,
-    tea: tokio::sync::OnceCell<Result<Arc<Tea>, String>>,
+    runner: tokio::sync::OnceCell<Result<Runner, String>>,
     adapter: Mutex<Option<Arc<dyn Adapter>>>,
     you: Mutex<Option<Me>>,
     fingerprint: Mutex<Option<String>>,
@@ -404,6 +389,12 @@ pub struct ForgeBlock {
 impl ForgeBlock {
     pub fn create(ctx: BlockCtx, config: Value) -> Result<Arc<dyn Block>, String> {
         let mut config: Config = serde_json::from_value(config).map_err(|e| format!("forge config: {e}"))?;
+        // Forgejo's and GitLab's are Labs'. One saved while Labs was on is
+        // still brought back, as unavailable, and reads again when it is.
+        let allowed = crate::labs::forge_allowed(config.provider, &ctx.state_dir);
+        if !ctx.restoring {
+            allowed.clone()?;
+        }
         config.repo = config.repo.trim_matches('/').to_owned();
         // GitLab's projects can sit in subgroups (group/sub/proj).
         let parts = config.repo.split('/').count();
@@ -434,8 +425,10 @@ impl ForgeBlock {
             dir: config.dir.clone(),
             // A new issue an agent drafted has nothing to read until it's
             // sent; a person's is read once it's opened.
-            loading: config.number != 0
-                || config.new.as_ref().is_some_and(|n| !n.agent && n.status == DraftStatus::Waiting),
+            loading: allowed.is_ok()
+                && (config.number != 0
+                    || config.new.as_ref().is_some_and(|n| !n.agent && n.status == DraftStatus::Waiting)),
+            error: allowed.err(),
             ..ForgeState::default()
         };
         crate::review::log(
@@ -450,7 +443,7 @@ impl ForgeBlock {
             me: me.clone(),
             config: Mutex::new(config),
             state: Mutex::new(state),
-            tea: tokio::sync::OnceCell::new(),
+            runner: tokio::sync::OnceCell::new(),
             adapter: Mutex::new(None),
             you: Mutex::new(None),
             fingerprint: Mutex::new(None),
@@ -546,101 +539,28 @@ impl ForgeBlock {
         }
     }
 
-    async fn tea(&self) -> Result<Arc<Tea>, String> {
-        self.tea
-            .get_or_init(|| async { Runner::user(&self.ctx).await.map(|runner| Arc::new(Tea { runner })) })
-            .await
-            .clone()
+    async fn runner(&self) -> Result<Runner, String> {
+        self.runner.get_or_init(|| async { Runner::user(&self.ctx).await }).await.clone()
     }
 
     /// The adapter, once a login is known: from config, or resolved.
     async fn connect(&self) -> Result<Arc<dyn Adapter>, String> {
+        // Forgejo's and GitLab's are Labs': a block of theirs reads nothing
+        // (and writes nothing) where Labs is off, and does again when it is
+        // on.
+        let provider = self.config.lock().unwrap().provider;
+        crate::labs::forge_allowed(provider, &self.ctx.state_dir)?;
         if let Some(a) = self.adapter.lock().unwrap().clone() {
             return Ok(a);
         }
-        if self.config.lock().unwrap().provider == Provider::Gitlab {
+        if provider == Provider::Gitlab {
             return self.connect_gitlab().await;
         }
-        let tea = self.tea().await?;
-        if let Some(a) = self.connect_github(&tea).await? {
+        let runner = self.runner().await?;
+        if let Some(a) = self.connect_github(&runner).await? {
             return Ok(a);
         }
-        let logins = tea.logins().await?;
-        let (want, host, provider, repo) = {
-            let c = self.config.lock().unwrap();
-            let host = c.host.clone().or_else(|| c.api.as_deref().and_then(login::url_host));
-            (c.login.clone(), host, c.provider, c.repo.clone())
-        };
-        let login = match want {
-            Some(name) => logins
-                .iter()
-                .find(|l| l.name == name)
-                .cloned()
-                .ok_or_else(|| format!("tea has no login {name:?} any more: `tea login add`, or pick another"))
-                .inspect_err(|_| self.candidates(&logins))?,
-            None => {
-                let Some(host) = host else {
-                    // No host to go by: the default login, or the only one.
-                    let pick = logins.iter().find(|l| l.default).or(logins.first().filter(|_| logins.len() == 1));
-                    let l = pick.cloned().ok_or_else(|| {
-                        self.candidates(&logins);
-                        "which forge? pick a tea login".to_owned()
-                    })?;
-                    return Ok(self.connected(provider, l, tea));
-                };
-                let lookup_tea = tea.clone();
-                let lookup = move |l: Login| -> BoxFuture<'static, Result<Vec<String>, String>> {
-                    let (tea, repo) = (lookup_tea.clone(), repo.clone());
-                    Box::pin(
-                        async move { adapter(provider, &l, tea).repo_urls(&repo).await.map_err(|e| e.to_string()) },
-                    )
-                };
-                let r = login::resolve(logins.clone(), &host, &lookup).await;
-                match r.login {
-                    Some(l) => l,
-                    None => {
-                        self.candidates(&r.candidates);
-                        return Err(r.error.unwrap_or_else(|| format!("no tea login for {host}")));
-                    }
-                }
-            }
-        };
-        Ok(self.connected(provider, login, tea))
-    }
-
-    /// GitLab (M39): glab's token for the host, or anonymous and read-only.
-    async fn connect_gitlab(&self) -> Result<Arc<dyn Adapter>, String> {
-        let runner = Runner::user(&self.ctx).await?;
-        let (host, api) = {
-            let c = self.config.lock().unwrap();
-            let host = c.host.clone().or_else(|| c.api.as_deref().and_then(login::url_host));
-            let host = host.ok_or("which GitLab? open it from a link or a clone")?;
-            let api = c.api.clone().unwrap_or_else(|| format!("https://{host}/api/v4"));
-            (host, api)
-        };
-        let g = gitlab::connect(runner, &host, &api, http()).await;
-        let a: Arc<dyn Adapter> = Arc::new(g.adapter);
-        {
-            let mut c = self.config.lock().unwrap();
-            c.login = g.login.clone();
-            c.api = Some(api.clone());
-        }
-        {
-            let mut st = self.state.lock().unwrap();
-            st.login = g.login.clone();
-            st.api = Some(api);
-            st.read_only = a.read_only();
-            st.logins.clear();
-        }
-        info!(pane = self.ctx.id, host, login = g.login, "gitlab block connected");
-        *self.adapter.lock().unwrap() = Some(a.clone());
-        Ok(a)
-    }
-
-    fn connected(&self, provider: Provider, login: Login, tea: Arc<Tea>) -> Arc<dyn Adapter> {
-        let a = adapter(provider, &login, tea);
-        let api = login.api();
-        self.attach(login.name, api, a)
+        self.connect_tea(runner).await
     }
 
     fn attach(&self, name: String, api: String, a: Arc<dyn Adapter>) -> Arc<dyn Adapter> {
@@ -664,7 +584,7 @@ impl ForgeBlock {
     /// M38: a GitHub block reads with `gh`'s login for its host. A host
     /// that isn't github.com's is GitHub Enterprise when `gh` is logged in
     /// there (asked once, when the block has no login yet).
-    async fn connect_github(&self, tea: &Arc<Tea>) -> Result<Option<Arc<dyn Adapter>>, String> {
+    async fn connect_github(&self, runner: &Runner) -> Result<Option<Arc<dyn Adapter>>, String> {
         let (provider, host, api, login) = {
             let c = self.config.lock().unwrap();
             (c.provider, c.host.clone(), c.api.clone(), c.login.clone())
@@ -678,7 +598,7 @@ impl ForgeBlock {
             Provider::Gitlab => return Ok(None),
             Provider::Forgejo => {
                 let Some(h) = host.filter(|_| login.is_none()) else { return Ok(None) };
-                if github::is_github_host(&h) || !github::knows(&tea.runner, &h).await {
+                if github::is_github_host(&h) || !github::knows(runner, &h).await {
                     return Ok(None);
                 }
                 let mut c = self.config.lock().unwrap();
@@ -692,16 +612,9 @@ impl ForgeBlock {
             _ => github::api_for(&host),
         };
         let repo = self.config.lock().unwrap().repo.clone();
-        let token = github::GhToken::new(tea.runner.clone(), &host).for_repo(&repo);
+        let token = github::GhToken::new(runner.clone(), &host).for_repo(&repo);
         let a: Arc<dyn Adapter> = Arc::new(github::Github::new(&api, http(), token));
         Ok(Some(self.attach(host, api, a)))
-    }
-
-    fn candidates(&self, logins: &[Login]) {
-        self.state.lock().unwrap().logins = logins
-            .iter()
-            .map(|l| ForgeLogin { name: l.name.clone(), url: l.url.clone(), user: l.user.clone() })
-            .collect();
     }
 
     async fn run(self: Arc<Self>) {
@@ -1518,19 +1431,8 @@ impl Block for ForgeBlock {
                 if me.config.lock().unwrap().provider == Provider::Gitlab {
                     return Err("a GitLab block uses glab's login for its host: `glab auth login`, then refresh".into());
                 }
-                let tea = me.tea().await?;
-                let logins = tea.logins().await?;
-                let l = logins
-                    .iter()
-                    .find(|l| l.name == name)
-                    .cloned()
-                    .ok_or_else(|| format!("tea has no login {name:?}"))?;
-                *me.you.lock().unwrap() = None;
-                let provider = me.config.lock().unwrap().provider;
-                me.connected(provider, l, tea);
-                me.read(true).await;
-                me.ctx.changed();
-                to_value(LoggedIn { login: name.to_owned() })
+                crate::labs::forge_allowed(Provider::Forgejo, &me.ctx.state_dir)?;
+                me.login_tea(name).await
             }),
             "review" | "merge" | "rerun_checks" if self.config.lock().unwrap().kind == ItemKind::Issue => {
                 let e = format!("an issue has no {method}: comment on it, or open its pull request");
@@ -1610,6 +1512,24 @@ impl Block for ForgeBlock {
     }
 }
 
+/// What a build without Labs answers for Forgejo and GitLab: they are not
+/// in it (a block of theirs is refused first, by `connect`, so these are
+/// asked only if that changes).
+#[cfg(not(feature = "labs"))]
+impl ForgeBlock {
+    async fn connect_tea(&self, _runner: Runner) -> Result<Arc<dyn Adapter>, String> {
+        Err(crate::labs::not_built("A Forgejo block"))
+    }
+
+    async fn connect_gitlab(&self) -> Result<Arc<dyn Adapter>, String> {
+        Err(crate::labs::not_built("A GitLab block"))
+    }
+
+    async fn login_tea(self: &Arc<Self>, _name: &str) -> Result<Value, String> {
+        Err(crate::labs::not_built("A Forgejo login"))
+    }
+}
+
 // ---------------------------------------------------------------- opening
 
 /// A forge block's config from what a person or agent gave: `{pr: URL |
@@ -1618,7 +1538,29 @@ impl Block for ForgeBlock {
 /// links to), `{issue: "new", title, body?, repo? | dir?, by?, agent?}`
 /// (M37: a new issue, an agent's a draft), or a config already whole
 /// (`{repo, number}`).
-pub async fn open_config(c: &Value) -> Result<Value, String> {
+///
+/// Forgejo's and GitLab's are Labs': a link that comes out as one of theirs
+/// is refused where Labs is off (see [`crate::labs::forge_allowed`]), asked
+/// of the result so no default or fallback of [`resolve_config`] gets round it.
+pub async fn open_config(c: &Value, state_dir: &Path) -> Result<Value, String> {
+    let out = resolve_for(c, crate::labs::enabled(state_dir)).await?;
+    let provider = serde_json::from_value::<Provider>(out["provider"].clone()).unwrap_or_default();
+    crate::labs::forge_allowed(provider, state_dir)?;
+    Ok(out)
+}
+
+/// [`resolve_for`] with Labs on, as the tests ask it.
+#[cfg(test)]
+async fn resolve_config(c: &Value) -> Result<Value, String> {
+    resolve_for(c, true).await
+}
+
+/// What [`open_config`] makes of it, before asking whether this machine may
+/// open that forge's blocks. A link is told by its look: GitHub's, GitLab's,
+/// and otherwise Forgejo's. A reference that says nothing of its forge (no
+/// host, no clone, no `provider`) is Forgejo's with Labs on, as it always was,
+/// and GitHub's (github.com) with it off, where GitHub is the only forge.
+async fn resolve_for(c: &Value, labs: bool) -> Result<Value, String> {
     let dir = c["dir"].as_str().filter(|d| !d.is_empty()).map(str::to_owned);
     let issue = c["issue"].is_string();
     let mut out = json!({ "provider": "forgejo", "kind": if issue { "issue" } else { "pr" } });
@@ -1645,7 +1587,9 @@ pub async fn open_config(c: &Value) -> Result<Value, String> {
         .filter(|s| !s.is_empty())
         .ok_or("say which pull request or issue: {\"pr\" | \"issue\": URL | OWNER/REPO#N | N}")?;
     if issue && what == "new" {
-        return issue::new_config(c, out, dir).await;
+        let mut out = issue::new_config(c, out, dir).await?;
+        github_by_default(&mut out, c, labs);
+        return Ok(out);
     }
     // M38: a GitHub link (`…/pull/N`), on github.com or an Enterprise host.
     if let Some((host, repo, n)) = github::pr_url(what) {
@@ -1680,7 +1624,7 @@ pub async fn open_config(c: &Value) -> Result<Value, String> {
         }
         return Ok(out);
     }
-    if let Some((host, repo, n, api)) = gitlab::parse_mr_url(what) {
+    if let Some((host, repo, n, api)) = util::parse_mr_url(what) {
         // M39: a GitLab merge request's link.
         out["provider"] = json!("gitlab");
         out["host"] = json!(host);
@@ -1761,17 +1705,29 @@ pub async fn open_config(c: &Value) -> Result<Value, String> {
     // A clone on a GitLab host is GitLab's (others are told by a link, `!N`
     // or `provider`).
     if let Some(h) = out["host"].as_str()
-        && gitlab::known_host(h)
+        && util::known_host(h)
         && c["provider"].as_str().is_none()
     {
         out["provider"] = json!("gitlab");
     }
+    github_by_default(&mut out, c, labs);
     if out["provider"] == "gitlab" && out["api"].is_null() {
         let host = out["host"].as_str().unwrap_or("gitlab.com").to_owned();
         out["host"] = json!(host);
         out["api"] = json!(format!("https://{host}/api/v4"));
     }
     Ok(out)
+}
+
+/// Where Labs is off a config that says nothing of its forge (no `provider`,
+/// no host, no clone's remote) is GitHub's, on github.com: GitHub is the only
+/// forge there. This is the one place that choice is made.
+fn github_by_default(out: &mut Value, c: &Value, labs: bool) {
+    if !labs && out["provider"] == "forgejo" && c["provider"].is_null() && out["host"].is_null() {
+        out["provider"] = json!("github");
+        out["host"] = json!("github.com");
+        out["api"] = json!(github::api_for("github.com"));
+    }
 }
 
 /// `https://host/owner/name/pulls/N` → (host, owner/name, N, API base).
@@ -1930,63 +1886,85 @@ mod tests {
 
     #[tokio::test]
     async fn configs_from_what_was_given() {
-        let c = open_config(&json!({ "pr": "https://git.inevitable.fyi/jhgaylor/illogical/pulls/84" })).await.unwrap();
+        let c =
+            resolve_config(&json!({ "pr": "https://git.inevitable.fyi/jhgaylor/illogical/pulls/84" })).await.unwrap();
         assert_eq!(c["repo"], "jhgaylor/illogical");
         assert_eq!(c["number"], 84);
         assert_eq!(c["host"], "git.inevitable.fyi");
-        let c = open_config(&json!({ "pr": "o/r#12" })).await.unwrap();
+        let c = resolve_config(&json!({ "pr": "o/r#12" })).await.unwrap();
         assert_eq!((c["repo"].as_str(), c["number"].as_u64()), (Some("o/r"), Some(12)));
-        assert!(open_config(&json!({ "pr": "12" })).await.unwrap_err().contains("which repository"));
-        assert!(open_config(&json!({ "pr": "o/r#x" })).await.is_err());
-        assert!(open_config(&json!({})).await.is_err());
+        assert!(resolve_config(&json!({ "pr": "12" })).await.unwrap_err().contains("which repository"));
+        assert!(resolve_config(&json!({ "pr": "o/r#x" })).await.is_err());
+        assert!(resolve_config(&json!({})).await.is_err());
     }
 
     #[tokio::test]
     async fn github_configs() {
-        let c = open_config(&json!({ "pr": "https://github.com/cli/cli/pull/14519" })).await.unwrap();
+        let c = resolve_config(&json!({ "pr": "https://github.com/cli/cli/pull/14519" })).await.unwrap();
         assert_eq!((c["provider"].as_str(), c["api"].as_str()), (Some("github"), Some("https://api.github.com")));
         assert_eq!(
             (c["repo"].as_str(), c["number"].as_u64(), c["host"].as_str()),
             (Some("cli/cli"), Some(14519), Some("github.com"))
         );
-        let c = open_config(&json!({ "pr": "https://ghe.example.com/o/r/pull/3/files" })).await.unwrap();
+        let c = resolve_config(&json!({ "pr": "https://ghe.example.com/o/r/pull/3/files" })).await.unwrap();
         assert_eq!(
             (c["provider"].as_str(), c["api"].as_str()),
             (Some("github"), Some("https://ghe.example.com/api/v3"))
         );
         // Forgejo's links stay Forgejo's.
-        let c = open_config(&json!({ "pr": "https://git.inevitable.fyi/jhgaylor/illogical/pulls/84" })).await.unwrap();
+        let c =
+            resolve_config(&json!({ "pr": "https://git.inevitable.fyi/jhgaylor/illogical/pulls/84" })).await.unwrap();
         assert_eq!(c["provider"], "forgejo");
         // A whole config keeps its provider.
-        let c = open_config(&json!({ "provider": "github", "api": "http://127.0.0.1:1", "repo": "o/r", "number": 2 }))
-            .await
-            .unwrap();
+        let c =
+            resolve_config(&json!({ "provider": "github", "api": "http://127.0.0.1:1", "repo": "o/r", "number": 2 }))
+                .await
+                .unwrap();
         assert_eq!((c["provider"].as_str(), c["api"].as_str()), (Some("github"), Some("http://127.0.0.1:1")));
         assert_eq!(Write::from_call("rerun_checks", &json!({})).unwrap(), Write::Rerun);
         assert_eq!(serde_json::to_value(Write::Rerun).unwrap(), json!({ "method": "rerun_checks" }));
     }
 
     #[tokio::test]
+    async fn a_bare_reference_is_githubs_where_labs_is_off() {
+        let off = |v: Value| async move { resolve_for(&v, false).await.unwrap() };
+        let c = off(json!({ "pr": "o/r#12" })).await;
+        assert_eq!((c["provider"].as_str(), c["host"].as_str()), (Some("github"), Some("github.com")));
+        assert_eq!(c["api"], "https://api.github.com");
+        assert_eq!((c["repo"].as_str(), c["number"].as_u64()), (Some("o/r"), Some(12)));
+        // Not guessed for what says otherwise.
+        assert_eq!(off(json!({ "pr": "o/r#3", "host": "git.inevitable.fyi" })).await["provider"], "forgejo");
+        assert_eq!(off(json!({ "pr": "o/r#3", "provider": "forgejo" })).await["provider"], "forgejo");
+        assert_eq!(off(json!({ "pr": "g/p!3" })).await["provider"], "gitlab");
+        assert_eq!(off(json!({ "pr": "https://git.example/o/r/pulls/3" })).await["provider"], "forgejo");
+        // With Labs on it stays Forgejo's.
+        let c = resolve_for(&json!({ "pr": "o/r#12" }), true).await.unwrap();
+        assert_eq!(c["provider"], "forgejo");
+        assert!(c["host"].is_null());
+    }
+
+    #[tokio::test]
     async fn gitlab_configs() {
-        let c = open_config(&json!({ "pr": "https://gitlab.com/gitlab-org/cli/-/merge_requests/3941" })).await.unwrap();
+        let c =
+            resolve_config(&json!({ "pr": "https://gitlab.com/gitlab-org/cli/-/merge_requests/3941" })).await.unwrap();
         assert_eq!(
             (c["provider"].as_str(), c["repo"].as_str(), c["number"].as_u64()),
             (Some("gitlab"), Some("gitlab-org/cli"), Some(3941))
         );
         assert_eq!((c["host"].as_str(), c["api"].as_str()), (Some("gitlab.com"), Some("https://gitlab.com/api/v4")));
-        let c = open_config(&json!({ "pr": "http://127.0.0.1:9/g/sub/p/-/merge_requests/2" })).await.unwrap();
+        let c = resolve_config(&json!({ "pr": "http://127.0.0.1:9/g/sub/p/-/merge_requests/2" })).await.unwrap();
         assert_eq!((c["repo"].as_str(), c["api"].as_str()), (Some("g/sub/p"), Some("http://127.0.0.1:9/api/v4")));
         // GitLab's own notation; a host it's known by.
-        let c = open_config(&json!({ "pr": "gitlab-org/cli!12" })).await.unwrap();
+        let c = resolve_config(&json!({ "pr": "gitlab-org/cli!12" })).await.unwrap();
         assert_eq!((c["provider"].as_str(), c["number"].as_u64()), (Some("gitlab"), Some(12)));
         assert_eq!(c["api"], "https://gitlab.com/api/v4");
-        let c = open_config(&json!({ "pr": "o/r#3", "host": "gitlab.example.org" })).await.unwrap();
+        let c = resolve_config(&json!({ "pr": "o/r#3", "host": "gitlab.example.org" })).await.unwrap();
         assert_eq!(
             (c["provider"].as_str(), c["api"].as_str()),
             (Some("gitlab"), Some("https://gitlab.example.org/api/v4"))
         );
         // Forgejo stays Forgejo.
-        let c = open_config(&json!({ "pr": "o/r#3", "host": "git.inevitable.fyi" })).await.unwrap();
+        let c = resolve_config(&json!({ "pr": "o/r#3", "host": "git.inevitable.fyi" })).await.unwrap();
         assert_eq!(c["provider"], "forgejo");
         assert_eq!(Write::from_call("rerun_checks", &json!({})).unwrap(), Write::Rerun);
         assert_eq!(serde_json::to_value(Write::Rerun).unwrap(), json!({ "method": "rerun_checks" }));

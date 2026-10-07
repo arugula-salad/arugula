@@ -290,8 +290,25 @@ fn serve() -> (tokio::runtime::Runtime, Fakes, String) {
 }
 
 fn daemon(bin: &Path, origin: &str, poll: &str) -> Daemon {
+    daemon_in(bin, origin, poll, false)
+}
+
+/// ...with Labs on, for Forgejo's and GitLab's blocks.
+#[cfg(feature = "labs")]
+fn daemon_labs(bin: &Path, origin: &str, poll: &str) -> Daemon {
+    daemon_in(bin, origin, poll, true)
+}
+
+fn daemon_in(bin: &Path, origin: &str, poll: &str, labs: bool) -> Daemon {
     let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default());
-    Daemon::child_env(
+    let start = |args: &[&str], env: &[(&str, &str)]| {
+        Daemon::child_in(args, env, |state| {
+            if labs {
+                std::fs::write(state.join("labs"), "").unwrap();
+            }
+        })
+    };
+    start(
         &[
             "--wisp-token-file",
             "/nonexistent",
@@ -451,6 +468,7 @@ fn a_box_with_no_gh_login_reads_through_the_app_and_writes_nothing() {
     assert!(!std::fs::read_to_string(d.state.join("control.json")).unwrap().contains(APP_TOKEN));
 }
 
+#[cfg(feature = "labs")]
 fn hmac_hex(secret: &str, body: &str) -> String {
     use hmac::{KeyInit, Mac};
     let mut mac = hmac::Hmac::<sha2::Sha256>::new_from_slice(secret.as_bytes()).unwrap();
@@ -459,7 +477,7 @@ fn hmac_hex(secret: &str, body: &str) -> String {
 }
 
 /// A POST to the daemon's TCP listener, as a forge sends it.
-fn deliver(d: &Daemon, path_and_query: &str, headers: &[(&str, &str)], body: &str) -> u16 {
+pub(crate) fn deliver(d: &Daemon, path_and_query: &str, headers: &[(&str, &str)], body: &str) -> u16 {
     use std::io::{Read, Write};
     let mut s = std::net::TcpStream::connect(("127.0.0.1", d.port)).unwrap();
     let extra: String = headers.iter().map(|(k, v)| format!("{k}: {v}\r\n")).collect();
@@ -475,6 +493,7 @@ fn deliver(d: &Daemon, path_and_query: &str, headers: &[(&str, &str)], body: &st
     out.split_whitespace().nth(1).and_then(|c| c.parse().ok()).unwrap_or(0)
 }
 
+#[cfg(feature = "labs")]
 #[test]
 fn forgejo_live_updates_make_a_signed_hook_that_pokes_the_block() {
     let dir = scratch("fj");
@@ -492,7 +511,7 @@ fn forgejo_live_updates_make_a_signed_hook_that_pokes_the_block() {
         ),
     );
     script(&bin, "gh", "exit 1\n");
-    let d = daemon(&bin, &origin, "150,60000");
+    let d = daemon_labs(&bin, &origin, "150,60000");
     let b = open(&d, json!({ "pr": format!("{origin}/jhgaylor/illogical/pulls/84") }));
     wait_until("the first read", 20, || d.state(b)["pr"].is_object());
     assert_eq!(d.state(b)["live"], "polling");
@@ -578,13 +597,14 @@ fn forgejo_live_updates_make_a_signed_hook_that_pokes_the_block() {
     assert_ne!(code, 200, "{body}");
 }
 
+#[cfg(feature = "labs")]
 #[test]
 fn gitlabs_hook_route_takes_only_its_token() {
     let dir = scratch("gl");
     let (_rt, _f, origin) = serve();
     let bin = dir.join("bin");
     script(&bin, "gh", "exit 1\n");
-    let mut d = daemon(&bin, &origin, "250,250");
+    let mut d = daemon_labs(&bin, &origin, "250,250");
     // A hook made earlier (as `live` on a GitLab block leaves it).
     d.stop();
     let rec = json!({ "hooks": [{ "k": "gk1", "provider": "gitlab", "host": "gitlab.example", "repo": "g/sub/p",

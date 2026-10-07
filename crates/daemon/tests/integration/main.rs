@@ -28,12 +28,17 @@ mod conversations;
 mod dialout;
 mod editor_swarm;
 mod editors;
+#[cfg(feature = "labs")]
 mod forge;
 mod forge_github;
+#[cfg(feature = "labs")]
 mod forge_gitlab;
+#[cfg(feature = "labs")]
 mod forge_issues;
+mod forge_labs_off;
 mod forge_live;
 mod forges_github_real;
+#[cfg(feature = "labs")]
 mod forges_real;
 #[cfg(feature = "labs")]
 mod fountain;

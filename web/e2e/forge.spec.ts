@@ -166,3 +166,13 @@ test("an agent's comment waits as a draft until a person edits and sends it", as
   await expect(el.locator(`[data-draft="${d.draft}"]`)).toHaveAttribute("data-draft-status", "dropped");
   expect(writes.length).toBe(1);
 });
+
+test("with labs on, Forgejo's and GitLab's links in terminal output open as blocks", async ({ page }) => {
+  await reset(page);
+  const kinds = page.evaluate(() =>
+    ["https://git.example.test/o/r/pulls/3", "https://gitlab.com/g/p/-/merge_requests/2", "https://github.com/o/r/pull/3"].map((u) =>
+      (window.__arugula.client as unknown as { forgeLink(u: string): string | null }).forgeLink(u),
+    ),
+  );
+  expect(await kinds).toEqual(["pr", "pr", "pr"]);
+});

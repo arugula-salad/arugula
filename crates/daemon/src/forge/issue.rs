@@ -717,22 +717,24 @@ mod tests {
 
     #[tokio::test]
     async fn new_issue_configs() {
-        let c = open_config(&json!({ "issue": "new", "title": " T ", "repo": "o/r", "by": "mcp:x" })).await.unwrap();
+        let c = resolve_config(&json!({ "issue": "new", "title": " T ", "repo": "o/r", "by": "mcp:x" })).await.unwrap();
         assert_eq!(
             (c["kind"].as_str(), c["number"].as_u64(), c["repo"].as_str()),
             (Some("issue"), Some(0), Some("o/r"))
         );
         assert_eq!((c["new"]["title"].as_str(), c["new"]["agent"].as_bool()), (Some("T"), Some(true)));
-        let c = open_config(&json!({ "issue": "new", "title": "T", "repo": "o/r", "by": "Jake" })).await.unwrap();
+        let c = resolve_config(&json!({ "issue": "new", "title": "T", "repo": "o/r", "by": "Jake" })).await.unwrap();
         assert_eq!(c["new"]["agent"], false);
-        assert!(open_config(&json!({ "issue": "new", "repo": "o/r" })).await.unwrap_err().contains("title"));
-        assert!(open_config(&json!({ "issue": "new", "title": "T" })).await.unwrap_err().contains("which repository"));
+        assert!(resolve_config(&json!({ "issue": "new", "repo": "o/r" })).await.unwrap_err().contains("title"));
+        assert!(
+            resolve_config(&json!({ "issue": "new", "title": "T" })).await.unwrap_err().contains("which repository")
+        );
         // An issue by its link, or a PR link given as an issue's.
-        let c = open_config(&json!({ "issue": "https://git.example/o/r/issues/7" })).await.unwrap();
+        let c = resolve_config(&json!({ "issue": "https://git.example/o/r/issues/7" })).await.unwrap();
         assert_eq!((c["kind"].as_str(), c["number"].as_u64()), (Some("issue"), Some(7)));
-        let c = open_config(&json!({ "pr": "https://git.example/o/r/issues/7" })).await.unwrap();
+        let c = resolve_config(&json!({ "pr": "https://git.example/o/r/issues/7" })).await.unwrap();
         assert_eq!(c["kind"], "issue", "a link opens what it links to");
-        let c = open_config(&json!({ "issue": "o/r#3" })).await.unwrap();
+        let c = resolve_config(&json!({ "issue": "o/r#3" })).await.unwrap();
         assert_eq!((c["kind"].as_str(), c["repo"].as_str()), (Some("issue"), Some("o/r")));
     }
 }

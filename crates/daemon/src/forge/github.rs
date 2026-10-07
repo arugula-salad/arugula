@@ -43,18 +43,18 @@ use serde_json::{Value, json};
 
 use super::{
     Adapter, Error, Polled, RateLimit, ReviewEvent, Sent, Write,
-    forgejo::time,
     model::{
         Branch, Check, CheckSource, CheckState, Event, EventKind, Item, ItemKind, ItemState, Linked, Me, Review,
         ReviewState, Reviewer, RunRef,
     },
+    util::time,
 };
 use tracing::info;
 
 use crate::review::Runner;
 
 /// Timeline events kept in the state (as on Forgejo).
-pub const EVENTS: usize = super::forgejo::EVENTS;
+pub const EVENTS: usize = super::util::EVENTS;
 /// Fewer requests left than this: back off.
 pub const LOW: u64 = 100;
 /// How often it polls while the limit is low.
@@ -729,7 +729,7 @@ impl Github {
             let res = req
                 .send()
                 .await
-                .map_err(|e| Error::Http(format!("{}: {}", super::redact(&url), super::forgejo::short(&e))))?;
+                .map_err(|e| Error::Http(format!("{}: {}", super::redact(&url), super::util::short(&e))))?;
             let status = res.status();
             let headers = res.headers().clone();
             self.note_limits(&headers);

@@ -12,10 +12,12 @@ control pages until those moved to the site.
 
 A file named `labs` in a machine's state directory turns on what a new
 install doesn't show: chat and threads, huddles, Fountain, studio apps,
-chant workspaces, VM tabs and sandboxes, ssh invites for guests, the swarm's
+chant workspaces, VM tabs and sandboxes, ssh invites for guests, GitLab and
+Forgejo pull request and issue blocks (GitHub's are always on), the swarm's
 city, hive and timeline views, and the matching tools, commands and options
 of `arugula mcp`, `arugula --help` and `arugulad --help`. They all keep
-working without it; they just aren't offered.
+working without it, and just aren't offered; GitLab and Forgejo blocks are
+refused.
 
 ```
 touch ~/.local/state/arugula/labs

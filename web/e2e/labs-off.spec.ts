@@ -95,6 +95,23 @@ test("the host says labs is off, and what follows it", async () => {
   expect(await features()).toEqual({ labs: false, blocks: false, vms: false, fountain: false, studio: false, threads: false, calls: false });
 });
 
+test("links to Forgejo and GitLab stay plain links; GitHub's still open as blocks", async ({ page }) => {
+  await open(page);
+  await expect.poll(() => page.evaluate(() => window.__arugula.client.features !== null)).toBe(true);
+  const kinds = (uris: string[]) =>
+    page.evaluate((us) => us.map((u) => (window.__arugula.client as unknown as { forgeLink(u: string): string | null }).forgeLink(u)), uris);
+  expect(
+    await kinds([
+      "https://git.example.test/o/r/pulls/3",
+      "https://git.example.test/o/r/issues/3",
+      "https://gitlab.com/g/p/-/merge_requests/2",
+      "https://gitlab.com/g/p/-/issues/2",
+      "https://github.com/o/r/pull/3",
+      "https://github.com/o/r/issues/3",
+    ]),
+  ).toEqual([null, null, null, null, "pr", "issue"]);
+});
+
 test("on a desktop: no chat, threads or huddles, no Fountain, studio or VMs, no ssh invite", async ({ page }) => {
   await open(page);
   const pane = await page.evaluate(() => window.__arugula.client.state!.panes[0].id);

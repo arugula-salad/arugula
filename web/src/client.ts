@@ -1282,6 +1282,21 @@ export class Client {
     this.emit();
   }
 
+  /** What a link in terminal output opens as: a PR or an issue block, or
+   * null for a plain link. Forgejo and GitLab are Labs: without it only
+   * GitHub's links (`/pull/N`; issues on github.com) become blocks. */
+  forgeLink(uri: string): "pr" | "issue" | null {
+    const what = forgePr(uri) ? "pr" : forgeIssue(uri) ? "issue" : null;
+    if (!what || this.hasLabs()) return what;
+    try {
+      const u = new URL(uri);
+      if (what === "pr") return /^\/[^/]+\/[^/]+\/pull\/\d+(?:\/|$)/.test(u.pathname) ? what : null;
+      return /^(?:www\.)?github\.com$/.test(u.hostname) && !u.pathname.includes("/-/") ? what : null;
+    } catch {
+      return null;
+    }
+  }
+
   private newPane(id: PaneId, epoch: number): PaneEntry {
     // M36: a pull request's link (Forgejo's; M38: GitHub's; M39: a GitLab
     // merge request's) opens as a PR block beside the terminal (Shift: in
@@ -1289,7 +1304,7 @@ export class Client {
     // M37: an issue's link opens as an issue block.
     const view = new TerminalView((uri, e) => {
       if (e.shiftKey || this.state?.roles) return false;
-      const what = forgePr(uri) ? "pr" : forgeIssue(uri) ? "issue" : null;
+      const what = this.forgeLink(uri);
       if (!what) return false;
       const failure = what === "pr" ? "couldn't open the pull request" : "couldn't open the issue";
       void this.openBlock({ type: "forge", config: { [what]: uri, dir: this.cwd(id) ?? undefined }, split: id, from_pane: id }, failure);

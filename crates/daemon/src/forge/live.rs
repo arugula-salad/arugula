@@ -29,16 +29,9 @@ use std::{
     time::{Duration, Instant},
 };
 
-use axum::{
-    Json,
-    body::Bytes,
-    extract::Query,
-    http::{HeaderMap, StatusCode},
-    response::{IntoResponse, Response},
-};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
-use tracing::{info, warn};
+use serde_json::Value;
+use tracing::info;
 
 use super::{ForgeBlock, model::Provider};
 use crate::control::Control;
@@ -188,7 +181,7 @@ pub fn resubscribe() {
     });
 }
 
-fn hear(k: &str) {
+pub(crate) fn hear(k: &str) {
     if let Some(h) = hub() {
         h.heard.lock().unwrap().insert(k.to_owned(), (Instant::now(), crate::store::now_ms()));
     }
@@ -373,7 +366,7 @@ fn base() -> Result<String, String> {
 /// A new hook's record (not yet made on the forge): its URL and secret.
 pub fn new_hook(provider: Provider, host: &str, repo: &str) -> Result<HookRec, String> {
     let k = hex::encode(arugula_e2e::random::<12>());
-    let path = if provider == Provider::Gitlab { GITLAB_PATH } else { FORGEJO_PATH };
+    let path = crate::labs::hook_path(provider)?;
     Ok(HookRec {
         url: format!("{}{path}?k={k}", base()?),
         k,
@@ -384,6 +377,13 @@ pub fn new_hook(provider: Provider, host: &str, repo: &str) -> Result<HookRec, S
         id: None,
         created_ms: crate::store::now_ms(),
     })
+}
+
+/// The hook this daemon made whose URL carries `k`, for `provider`: what the
+/// Forgejo and GitLab routes look a delivery up by.
+#[cfg(feature = "labs")]
+pub(crate) fn rec_by(k: &str, provider: Provider) -> Option<HookRec> {
+    hub()?.hooks.lock().unwrap().iter().find(|r| r.k == k && r.provider == provider && !k.is_empty()).cloned()
 }
 
 /// The forge made it (`Some(rec)`), or it's gone (`None` for this key).
@@ -406,98 +406,12 @@ pub fn keep_hook(provider: Provider, host: &str, repo: &str, rec: Option<HookRec
     save_hooks(h)
 }
 
-pub const FORGEJO_PATH: &str = "/api/forge/hooks/forgejo";
-pub const GITLAB_PATH: &str = "/api/forge/hooks/gitlab";
-
-#[derive(Deserialize)]
-pub struct HookQuery {
-    #[serde(default)]
-    k: String,
-}
-
-fn rec_by(k: &str, provider: Provider) -> Option<HookRec> {
-    hub()?.hooks.lock().unwrap().iter().find(|r| r.k == k && r.provider == provider && !k.is_empty()).cloned()
-}
-
-fn eq_ct(a: &[u8], b: &[u8]) -> bool {
-    a.len() == b.len() && a.iter().zip(b).fold(0u8, |x, (p, q)| x | (p ^ q)) == 0
-}
-
-/// Forgejo's signature: hex HMAC-SHA256 of the body.
-pub fn forgejo_signed(secret: &str, sig: Option<&str>, body: &[u8]) -> bool {
-    use hmac::{KeyInit, Mac};
-    let Some(sig) = sig.and_then(|s| hex::decode(s.trim().trim_start_matches("sha256=")).ok()) else { return false };
-    let Ok(mut mac) = hmac::Hmac::<sha2::Sha256>::new_from_slice(secret.as_bytes()) else { return false };
-    mac.update(body);
-    mac.verify_slice(&sig).is_ok()
-}
-
-fn refused() -> Response {
-    (StatusCode::UNAUTHORIZED, Json(json!({ "error": "bad signature" }))).into_response()
-}
-
-/// `POST /api/forge/hooks/forgejo?k=…`: a Forgejo webhook, signed.
-pub async fn forgejo_hook(Query(q): Query<HookQuery>, headers: HeaderMap, body: Bytes) -> Response {
-    let h = |k: &str| headers.get(k).and_then(|v| v.to_str().ok());
-    let Some(rec) = rec_by(&q.k, Provider::Forgejo) else { return refused() };
-    let sig = h("x-forgejo-signature").or(h("x-gitea-signature"));
-    if !forgejo_signed(&rec.secret, sig, &body) {
-        warn!(repo = rec.repo, "a Forgejo webhook with a bad or missing signature");
-        return refused();
-    }
-    let event = h("x-forgejo-event").or(h("x-gitea-event")).unwrap_or_default().to_owned();
-    let v: Value = serde_json::from_slice(&body).unwrap_or_default();
-    if !v["repository"]["full_name"].as_str().is_some_and(|r| r.eq_ignore_ascii_case(&rec.repo)) {
-        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "not this hook's repository" }))).into_response();
-    }
-    let number = v["pull_request"]["number"].as_u64().or(v["issue"]["number"].as_u64());
-    poke(Provider::Forgejo, &rec.host, &rec.repo, number, &event);
-    Json(json!({ "ok": true })).into_response()
-}
-
-/// `POST /api/forge/hooks/gitlab?k=…`: a GitLab webhook, with its token.
-pub async fn gitlab_hook(Query(q): Query<HookQuery>, headers: HeaderMap, body: Bytes) -> Response {
-    let Some(rec) = rec_by(&q.k, Provider::Gitlab) else { return refused() };
-    let token = headers.get("x-gitlab-token").and_then(|v| v.to_str().ok()).unwrap_or_default();
-    if !eq_ct(token.as_bytes(), rec.secret.as_bytes()) {
-        warn!(repo = rec.repo, "a GitLab webhook with a bad or missing token");
-        return refused();
-    }
-    let v: Value = serde_json::from_slice(&body).unwrap_or_default();
-    if !v["project"]["path_with_namespace"].as_str().is_some_and(|r| r.eq_ignore_ascii_case(&rec.repo)) {
-        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "not this hook's project" }))).into_response();
-    }
-    let kind = v["object_kind"].as_str().unwrap_or_default();
-    let number = match kind {
-        "merge_request" => v["object_attributes"]["iid"].as_u64(),
-        "note" | "pipeline" => v["merge_request"]["iid"].as_u64(),
-        _ => None,
-    };
-    if kind == "issue" || (kind == "note" && number.is_none()) {
-        // Issues number apart from merge requests on GitLab: heard, no poll.
-        hear(&key(Provider::Gitlab, &rec.host, &rec.repo));
-    } else {
-        poke(Provider::Gitlab, &rec.host, &rec.repo, number, kind);
-    }
-    Json(json!({ "ok": true })).into_response()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn signatures_and_keys() {
-        use hmac::{KeyInit, Mac};
-        let mut mac = hmac::Hmac::<sha2::Sha256>::new_from_slice(b"s3cret").unwrap();
-        mac.update(b"{}");
-        let sig = hex::encode(mac.finalize().into_bytes());
-        assert!(forgejo_signed("s3cret", Some(&sig), b"{}"));
-        assert!(!forgejo_signed("other", Some(&sig), b"{}"));
-        assert!(!forgejo_signed("s3cret", Some(&sig), b"{ }"));
-        assert!(!forgejo_signed("s3cret", None, b"{}"));
-        assert!(!forgejo_signed("s3cret", Some("nothex"), b"{}"));
-        assert!(eq_ct(b"abc", b"abc") && !eq_ct(b"abc", b"abd") && !eq_ct(b"abc", b"ab"));
+    fn keys() {
         assert_eq!(key(Provider::Github, "GitHub.com", "Cli/CLI"), "github:github.com/cli/cli");
         assert_eq!(epoch_of("2026-10-03T12:00:00Z"), Some(1_791_028_800));
     }
