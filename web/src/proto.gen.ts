@@ -51,7 +51,7 @@ export type ActResult = { pane: number, ok: boolean, error?: string, };
 /**
  * Something done about a reason (`POST /api/attention/act`).
  */
-export type Action = "allow" | "deny" | "answer" | "dismiss" | "continue" | "accept" | "reject" | "rerun";
+export type Action = "allow" | "deny" | "answer" | "dismiss" | "continue" | "accept" | "reject" | "rerun" | "expire";
 
 /**
  * How much a pane prints (M23).

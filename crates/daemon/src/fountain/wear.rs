@@ -234,6 +234,12 @@ pub fn refusal(a: &Agent) -> Option<String> {
 /// What `dist/fountain.yaml` says: each Environment's and Vault's secrets
 /// (`key` → `value`: an `infisical://` URI or a literal), and each Agent's
 /// environment. A small reader for what chant writes, not YAML at large.
+///
+/// It reads chant's build output, not a contract document (#305):
+/// agent-specs is a chant project, not a workspace, and `dist/fountain.yaml`
+/// is what its fountain lexicon writes for Fountain to apply, so it is the
+/// file Fountain itself trusts. No chant read gives an Environment's
+/// secrets mapping without building.
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct Specs {
     /// `(kind, name)` → key → value.

@@ -1,0 +1,63 @@
+#!/bin/sh
+# What a workspace block's reads cost over a command (#311): how many full
+# reads it made and the CPU seconds of the chant processes they started.
+# Not run in CI; for measuring before and after a change to the block's
+# polling, by hand, against a dev daemon (never the installed one).
+#
+#   1. scripts/workspace-cpu wrap
+#        prints a CHANT=... line. Start a dev daemon with it in its
+#        environment (and no CHANT in your shell's rc, which would win, #74):
+#        the block's reader then runs chant through a wrapper that logs each
+#        process's CPU time.
+#   2. Open a workspace block on the workspace with that daemon (drawn, or
+#      not, whichever is being measured) and let its first read finish.
+#   3. scripts/workspace-cpu run DIR -- chant run <op>
+#        runs the command in DIR, waits SETTLE seconds (default 15) for the
+#        block to catch up, and prints the reads and CPU seconds the block
+#        spent meanwhile. The command's own CPU isn't counted.
+#
+# Before/after: check out the commit before #311's, build, measure; then
+# this one. Same op, same workspace, same drawn-or-not.
+set -eu
+
+dir=${WORKSPACE_CPU_DIR:-${TMPDIR:-/tmp}/workspace-cpu}
+log=$dir/log
+
+case ${1:-} in
+wrap)
+  mkdir -p "$dir"
+  real=$(command -v chant) || { echo "no chant on PATH: set REAL_CHANT" >&2; exit 1; }
+  real=${REAL_CHANT:-$real}
+  # One line per chant process: its subcommand, then the user and system
+  # seconds `times` gives for its children (chant and its node).
+  cat >"$dir/chant" <<EOF
+#!/bin/sh
+"$real" "\$@"
+rc=\$?
+printf '%s %s ' "\$1" "\$2" >>"$log"
+times | tail -n 1 >>"$log"
+exit \$rc
+EOF
+  chmod +x "$dir/chant"
+  : >"$log"
+  echo "CHANT=$dir/chant"
+  ;;
+run)
+  shift
+  ws=${1:?usage: workspace-cpu run DIR -- COMMAND...}
+  shift
+  [ "${1:-}" = "--" ] && shift
+  [ -f "$log" ] || { echo "run 'workspace-cpu wrap' first" >&2; exit 1; }
+  start=$(wc -l <"$log")
+  (cd "$ws" && "$@") || echo "(the command exited $?)" >&2
+  sleep "${SETTLE:-15}"
+  tail -n +"$((start + 1))" "$log" | awk '
+    function secs(t,  m) { m = index(t, "m"); return substr(t, 1, m - 1) * 60 + substr(t, m + 1, length(t) - m - 1) }
+    { cpu += secs($3) + secs($4); if ($2 == "status") reads++ }
+    END { printf "%d full reads, %d chant processes, %.1f CPU-s\n", reads, NR, cpu }'
+  ;;
+*)
+  sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'
+  exit 2
+  ;;
+esac

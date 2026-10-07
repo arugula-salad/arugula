@@ -324,3 +324,49 @@ fn the_token_is_referenced_by_the_name_its_server_has() {
     assert_eq!(token_env(&dir), "ARUGULA_MCP_BLOCK_TOKEN");
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+#[test]
+fn a_member_s_agent_runs_as_its_session_and_keeps_its_runs_in_its_config() {
+    let cfg: Config = serde_json::from_value(json!({
+        "agent": "claude", "cwd": "/w/app",
+        "chant": { "root": "/w", "member": "app", "agent": "app", "chant": "/w/node_modules/.bin/chant" }
+    }))
+    .unwrap();
+    assert_eq!(session_env(&cfg), Some(("CHANT_AGENT".into(), "app".into())));
+    // It's made again from layout.json as it was.
+    assert_eq!(serde_json::to_value(&cfg).unwrap()["chant"]["agent"], "app");
+    // A member the declaration binds no session to: no CHANT_AGENT.
+    let mut none = cfg.clone();
+    none.chant.as_mut().unwrap().agent = None;
+    assert_eq!(session_env(&none), None);
+    assert_eq!(session_env(&Config::default()), None);
+}
+
+#[test]
+fn a_turn_s_run_id_is_rebuilt_from_the_log_and_carried_through_a_retry() {
+    // Up to the prompt: "retry shortly" comes before the agent does anything.
+    let mut g = Inner::new(Config::default(), None);
+    for l in &log_lines()[..6] {
+        g.rebuild_line(l);
+    }
+    // The block noted the turn's run when its prompt went.
+    g.rebuild_line(&frame("note", json!({ "e": "run", "id": "arugula-1-1000" })));
+    assert_eq!(g.turns.last().unwrap().run.as_deref(), Some("arugula-1-1000"));
+    // Another note can't take it over.
+    g.rebuild_line(&frame("note", json!({ "e": "run", "id": "other" })));
+    assert_eq!(g.turns.last().unwrap().run.as_deref(), Some("arugula-1-1000"));
+
+    // "Retry shortly": the prompt goes again as the same run.
+    let fx = g.on_in(&json!({ "jsonrpc": "2.0", "id": 3, "error": { "message": "please retry shortly" } }), 2000);
+    assert!(matches!(fx.as_slice(), [Effect::Retry(_)]));
+    assert!(g.turns.is_empty());
+    g.on_out(&json!({ "jsonrpc": "2.0", "id": 4, "method": "session/prompt", "params": { "prompt": [{ "type": "text", "text": "make x" }] } }), 7000);
+    assert_eq!(g.turns.last().unwrap().run.as_deref(), Some("arugula-1-1000"));
+
+    // A write chant refused is said in the transcript.
+    g.rebuild_line(&frame(
+        "note",
+        json!({ "e": "run_failed", "verb": "end", "id": "arugula-1-1000", "message": "run-unknown: no run" }),
+    ));
+    assert!(g.t.markdown().contains("Couldn't record the end of run arugula-1-1000 in chant: run-unknown: no run"));
+}

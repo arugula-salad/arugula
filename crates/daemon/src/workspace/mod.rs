@@ -7,21 +7,59 @@
 //!
 //! **Freshness.** A full read costs about 7.5 CPU-seconds, so it runs on
 //! open, on `refresh` and after `approve`, and otherwise only when a cheap
-//! git fingerprint changes ([`model::FINGERPRINT`]). The fingerprint is
-//! looked at every [`POLL`] while some client draws the block, and every
-//! [`IDLE_POLL`] when none does and the workspace is on this host (so a gate
-//! reached while nobody looks still reaches the swarm and push; a VM's is
-//! left to sleep). Nothing here fetches.
+//! git fingerprint changes ([`model::FINGERPRINT`]) and then holds still
+//! for one more poll, so a burst of edits (a `chant run`, an agent at work
+//! in a member) costs one read, not one per poll. A move of
+//! `chant/lifecycle` (a gate reached, a release) reads at once ([`next`]).
+//! The fingerprint is
+//! looked at every [`POLL`] while some client draws the block (and on this
+//! host the lifecycle ref alone every [`REF_POLL`] in between, so a gate
+//! shows about a second and a read after `chant run` exits), and every
+//! [`IDLE_POLL`] when none does and the workspace is on this host, so a gate
+//! reached while nobody looks still reaches the swarm and push. Nothing
+//! here fetches.
+//!
+//! **A VM's, while nobody draws it (#313)**: every [`VM_IDLE_POLL`], and
+//! only while its provider says it's running (asking doesn't wake it; a
+//! stopped, sleeping, gone or unreachable VM isn't looked at, and one whose
+//! fingerprint can't be had isn't read). Each look is one provider status
+//! call and one exec of the fingerprint (about 0.01 CPU-s on the VM). An
+//! exec may count as activity to the provider and keep the VM from
+//! sleeping, so once the workspace has held still for [`VM_QUIET`] looks it
+//! looks only every [`VM_RESTING`]th, until it changes or the VM sleeps and
+//! wakes again ([`vm_look`]).
 //!
 //! **Gates.** A gate waiting in any member is attention: `needs_input`
 //! with a `gate` reason made from the [`Gate`] ([`crate::gate::reason`]).
-//! `approve` resolves one with chant's own `approve` in the member's
-//! directory, `--approver` the person who asked (#75: the owner or an
-//! editor; guests can't call it). It's logged, with who, in the block's log
-//! and its history.
+//! `approve` runs `status`'s own `chant approve` line in the member's
+//! directory (#302: `--plan` binds it to the plan read, `--sign` for a
+//! signed gate), `--actor` the principal of the person who asked (#75: the
+//! owner or an editor; guests can't call it). Config `actor` is the owner's
+//! principal and `principals` maps editors' Arugula names to theirs
+//! (ws-080: `github:<login>` or a signer); an editor's approval is
+//! `--relayed-by` the owner, and a signed gate is the owner's to approve
+//! here. It's logged, with who, in the block's log and its history.
+//!
+//! `expire` (same arguments, same people, logged the same way) turns a gate
+//! down (#310): `chant approve <op> <gate> --expire` clears its pending fact
+//! without approving it, so the next run stops there again.
+//!
+//! `principals {actor, principals}` sets either (the owner's: it says who
+//! chant records); kept in the config like `env`, and in the state so the
+//! block can show them. An `actor` of `""` or null clears it; `principals`
+//! replaces the map.
+//!
+//! **Envs (#312).** A block watches one env, and says which; `env {name}`
+//! switches it (kept in the config) and reads again. The state's `envs`
+//! are the ones chant has written releases for on `chant/lifecycle`, from
+//! one `git ls-tree` per full read ([`ENVS`]), plus `local` and the one
+//! watched, for the block's menu. Gates in the other envs aren't read:
+//! each env is another `status`, another chant process (about 2-3
+//! CPU-seconds) on every full read, for every block, VM or not.
 //!
 //! Methods: `refresh`, `approve {member, op, gate}` (or `{key}`; the first
-//! gate if none), `member {name}` (its directory, for opening panes there),
+//! gate if none), `expire` (the same), `member {name}` (its directory, for
+//! opening panes there), `env {name}`, `principals {actor, principals}`,
 //! `state`.
 
 mod model;
@@ -47,28 +85,131 @@ use crate::{
 /// How often the fingerprint is looked at while drawn (a full read only
 /// when it changes).
 const POLL: Duration = Duration::from_secs(3);
+/// While drawn, on this host: how often just the `chant/lifecycle` ref is
+/// looked at ([`model::LIFECYCLE`], one `git rev-parse`) between full
+/// fingerprints, so a gate waits on this, not [`POLL`]. Not on a VM, where
+/// each look is an exec through its provider.
+const REF_POLL: Duration = Duration::from_secs(1);
 /// ...and while nobody draws it, for a workspace on this host.
 const IDLE_POLL: Duration = Duration::from_secs(5);
+/// ...and for one on a VM, while the VM runs.
+const VM_IDLE_POLL: Duration = Duration::from_secs(30);
+/// Looks at a VM's workspace with nothing changed (10 minutes) before it's
+/// looked at less often...
+const VM_QUIET: u32 = 20;
+/// ...every this many (5 minutes).
+const VM_RESTING: u32 = 10;
+
+/// `sh -c ENVS sh ROOT`: the release ledgers on `chant/lifecycle`, one
+/// path a line (`ENV/releases.jsonl`, or `_members/M/ENV/releases.jsonl`).
+/// Nothing if there's no such ref yet.
+const ENVS: &str = r#"cd "$1" 2>/dev/null || exit 0
+git ls-tree -r --name-only refs/heads/chant/lifecycle 2>/dev/null | grep '/releases\.jsonl$'"#;
+
+/// The envs [`ENVS`] names, with `local` and the one watched, sorted.
+fn envs(ledgers: &str, watched: &str) -> Vec<String> {
+    let mut out: Vec<String> = ledgers
+        .lines()
+        .filter_map(|l| l.trim().strip_suffix("/releases.jsonl"))
+        .map(|d| d.rsplit('/').next().unwrap_or(d))
+        .filter(|e| !e.is_empty() && !e.starts_with('_'))
+        .map(str::to_owned)
+        .chain(["local".to_owned(), watched.to_owned()])
+        .collect();
+    out.sort();
+    out.dedup();
+    out
+}
+
+/// An env name `status` can take as its argument.
+fn env_name(name: &str) -> Result<String, String> {
+    let name = name.trim();
+    if name.is_empty() || name.starts_with('-') || name.contains(|c: char| c.is_whitespace() || c == '/') {
+        return Err(format!("{name:?} isn't an environment's name"));
+    }
+    Ok(name.to_owned())
+}
 
 #[derive(Debug, Clone, Deserialize)]
 struct Config {
     root: String,
     #[serde(default = "local")]
     env: String,
+    /// The owner's chant principal: chant runs here, and signs, as them.
+    #[serde(default)]
+    actor: Option<String>,
+    /// Arugula names (an editor's login) to chant principals.
+    #[serde(default)]
+    principals: std::collections::BTreeMap<String, String>,
 }
 
 fn local() -> String {
     "local".into()
 }
 
+/// Who chant records: the owner's principal and editors' (ws-080).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct Principals {
+    actor: Option<String>,
+    principals: std::collections::BTreeMap<String, String>,
+}
+
+/// A chant principal as given: trimmed, one word (it's an argument to
+/// `--actor`).
+fn principal_name(p: &str) -> Result<String, String> {
+    let p = p.trim();
+    if p.is_empty() || p.starts_with('-') || p.contains(char::is_whitespace) {
+        return Err(format!("{p:?} isn't a chant principal (github:<login>, or a signer's name)"));
+    }
+    Ok(p.to_owned())
+}
+
+/// `who` with what `principals {actor, principals}` asks for: a key left
+/// out keeps what was there; an `actor` of `""` or null clears it, and
+/// `principals` replaces the map (an empty principal drops its name).
+fn set_principals(who: &Principals, args: &Value) -> Result<Principals, String> {
+    let mut out = who.clone();
+    if let Some(a) = args.get("actor") {
+        out.actor = match a {
+            Value::Null => None,
+            Value::String(s) if s.trim().is_empty() => None,
+            Value::String(s) => Some(principal_name(s)?),
+            _ => return Err("actor is a chant principal (a string), or null to clear it".into()),
+        };
+    }
+    if let Some(m) = args.get("principals") {
+        let m =
+            m.as_object().ok_or("principals maps Arugula names to chant principals: {\"name\": \"github:login\"}")?;
+        out.principals.clear();
+        for (name, p) in m {
+            let name = name.trim();
+            let p = p.as_str().ok_or_else(|| format!("{name}'s principal isn't a string"))?;
+            if name.is_empty() || p.trim().is_empty() {
+                continue;
+            }
+            out.principals.insert(name.to_owned(), principal_name(p)?);
+        }
+    }
+    Ok(out)
+}
+
 pub struct Workspace {
     ctx: BlockCtx,
     me: Weak<Workspace>,
     config: Config,
+    /// The env watched: `config.env` at open, then what `env` chose.
+    env: Mutex<String>,
+    /// The envs chant knows ([`envs`]), at the last read.
+    envs: Mutex<Vec<String>>,
+    /// `config.actor` and `config.principals` at open, then what
+    /// `principals` set.
+    who: Mutex<Principals>,
     runner: tokio::sync::OnceCell<Result<Runner, String>>,
     state: Mutex<model::State>,
     /// The fingerprint at the last read.
     seen: Mutex<Option<String>>,
+    /// A changed fingerprint the last poll saw, waiting to hold still.
+    pending: Mutex<Option<String>>,
     /// The gate attention last asked for (its headline), so it's asked once
     /// per change. Starts as `Some("")` so the first read clears any left
     /// from before a restart.
@@ -83,6 +224,9 @@ impl Workspace {
         if config.root.is_empty() {
             return Err("a workspace block needs a root".into());
         }
+        let who =
+            set_principals(&Principals::default(), &json!({ "actor": config.actor, "principals": config.principals }))?;
+        (config.actor, config.principals) = (who.actor, who.principals);
         if let Some(rest) = config.root.strip_prefix("~/").filter(|_| ctx.sprite.is_none()) {
             config.root = ctx.home.join(rest).display().to_string();
         }
@@ -92,10 +236,14 @@ impl Workspace {
         let w = Arc::new_cyclic(|me| Self {
             ctx,
             me: me.clone(),
+            env: Mutex::new(config.env.clone()),
+            envs: Mutex::new(envs("", &config.env)),
+            who: Mutex::new(Principals { actor: config.actor.clone(), principals: config.principals.clone() }),
             config,
             runner: tokio::sync::OnceCell::new(),
             state: Mutex::new(state),
             seen: Mutex::new(None),
+            pending: Mutex::new(None),
             raised: Mutex::new(Some(String::new())),
             live: Live::default(),
             reading: tokio::sync::Mutex::new(()),
@@ -128,14 +276,18 @@ impl Workspace {
         self.ctx.changed();
         let print = self.fingerprint().await;
         *self.seen.lock().unwrap() = print;
+        let env = self.env.lock().unwrap().clone();
         let mut st = match self.runner().await {
             Err(e) => model::State { error: Some(e), ..Default::default() },
             Ok(r) => {
-                let args = [self.config.root.clone(), model::READER.to_owned(), self.config.env.clone()];
+                if let Ok((out, _)) = r.sh(ENVS, std::slice::from_ref(&self.config.root)).await {
+                    *self.envs.lock().unwrap() = envs(&String::from_utf8_lossy(&out), &env);
+                }
+                let args = [self.config.root.clone(), model::READER.to_owned(), env.clone()];
                 match r.sh(model::SCRIPT, &args).await {
                     Err(e) => model::State { error: Some(e), ..Default::default() },
                     Ok((out, _)) => match serde_json::from_slice::<Value>(&out) {
-                        Ok(raw) => model::compose(&raw, &self.config.env),
+                        Ok(raw) => model::compose(&raw, &env),
                         Err(e) => model::State {
                             error: Some(format!("the reader said something else: {e}")),
                             ..Default::default()
@@ -150,7 +302,7 @@ impl Workspace {
         if st.headline.is_none() {
             st.headline = st.error.clone();
         }
-        st.env = self.config.env.clone();
+        st.env = env;
         st.updated_ms = now_ms();
         for g in &mut st.gates {
             if let GateSource::Chant { machine, .. } = &mut g.source {
@@ -184,33 +336,93 @@ impl Workspace {
         Some(String::from_utf8_lossy(&out).trim().to_owned())
     }
 
-    /// Reads again if the fingerprint moved.
-    async fn check(&self) {
-        let now = self.fingerprint().await;
-        let changed = now.is_none() || *self.seen.lock().unwrap() != now;
-        if changed {
-            self.load().await;
-        }
+    /// Whether the lifecycle ref is not what it was at the last read (one
+    /// `git rev-parse`; can't tell, and it hasn't).
+    async fn ref_moved(&self) -> bool {
+        let Ok(r) = self.runner().await else { return false };
+        let Ok((out, _)) = r.sh(model::LIFECYCLE, std::slice::from_ref(&self.config.root)).await else { return false };
+        let now = String::from_utf8_lossy(&out);
+        ref_moved(self.seen.lock().unwrap().as_deref(), now.trim())
     }
 
-    /// While drawn: the fingerprint every [`POLL`], from the start.
+    /// Reads again if the fingerprint moved and settled, or the lifecycle
+    /// ref moved ([`next`]).
+    async fn check(&self) {
+        let now = self.fingerprint().await;
+        self.settle(now).await;
+    }
+
+    /// [`Workspace::check`] with the fingerprint in hand: what it did.
+    async fn settle(&self, now: Option<String>) -> Next {
+        let seen = self.seen.lock().unwrap().clone();
+        let what = {
+            let mut pending = self.pending.lock().unwrap();
+            let what = next(seen.as_deref(), pending.as_deref(), now.as_deref());
+            *pending = if what == Next::Wait { now } else { None };
+            what
+        };
+        if what == Next::Read {
+            self.load().await;
+        }
+        what
+    }
+
+    /// While drawn: the fingerprint every [`POLL`], from the start, and on
+    /// this host the lifecycle ref every [`REF_POLL`] between ([`look`]).
     fn watch(&self, round: u64) {
         let Some(me) = self.me.upgrade() else { return };
         self.ctx.rt.spawn(async move {
+            let quick = me.local();
+            let mut tick = 0u32;
             while me.live.on(round) {
-                me.check().await;
-                tokio::time::sleep(POLL).await;
+                match look(tick, quick) {
+                    Look::Full => me.check().await,
+                    Look::Ref => {
+                        if me.ref_moved().await {
+                            me.check().await;
+                        }
+                    }
+                }
+                tick = tick.wrapping_add(1);
+                tokio::time::sleep(if quick { REF_POLL } else { POLL }).await;
             }
         });
     }
 
-    /// While nobody draws it: every [`IDLE_POLL`], on this host only.
+    /// While nobody draws it: every [`IDLE_POLL`] on this host, every
+    /// [`VM_IDLE_POLL`] on a running VM ([`vm_look`]).
     async fn idle(&self) {
+        if !self.local() {
+            return self.idle_vm().await;
+        }
         while !self.live.closed() {
             tokio::time::sleep(IDLE_POLL).await;
-            if self.local() && !self.live.drawn() && !self.live.closed() {
+            if !self.live.drawn() && !self.live.closed() {
                 self.check().await;
             }
+        }
+    }
+
+    async fn idle_vm(&self) {
+        let (Some(provider), Some(sprite)) = (self.ctx.provider.clone(), self.ctx.sprite.clone()) else { return };
+        let mut vm = VmIdle::default();
+        while !self.live.closed() {
+            tokio::time::sleep(VM_IDLE_POLL).await;
+            if self.live.drawn() {
+                vm = VmIdle::default();
+                continue;
+            }
+            if self.live.closed() {
+                break;
+            }
+            let status = provider.status(&sprite).await.ok().flatten().map(|s| s.status);
+            if !vm_look(status.as_deref(), &mut vm) {
+                continue;
+            }
+            // Unreachable after all: not read (the block keeps what it had).
+            let Some(now) = self.fingerprint().await else { continue };
+            let what = self.settle(Some(now)).await;
+            vm_looked(&mut vm, what != Next::Nothing);
         }
     }
 
@@ -238,18 +450,46 @@ impl Workspace {
         }
     }
 
-    async fn approve(&self, args: Value, by: Option<String>) -> Result<Value, String> {
+    /// Who chant records for `by` (ws-080). `relayed` is set by the
+    /// daemon, never the caller: someone other than the owner asked.
+    fn chant_by(&self, args: &Value, by: Option<&str>, version: Option<String>) -> crate::gate::ChantBy {
+        let relayed = args["relayed"].as_bool().unwrap_or(false);
+        let who = self.who.lock().unwrap().clone();
+        let named = by.map(|n| model::principal(n, &who.principals));
+        crate::gate::ChantBy {
+            actor: if relayed { named } else { who.actor.clone().or(named) },
+            relayed,
+            relayed_by: who.actor.filter(|_| version.is_some_and(|v| model::at_least(&v, model::RELAYED_BY))),
+        }
+    }
+
+    /// Approve the gate `args` names, or with `expire` turn it down (#310:
+    /// `chant approve --expire`, so the next run stops there again). The
+    /// same people may, and it's logged the same way.
+    async fn approve(&self, args: Value, by: Option<String>, expire: bool) -> Result<Value, String> {
         let gate = self.find_gate(&args)?;
-        let chant = self.state.lock().unwrap().chant.clone().ok_or(model::NO_CHANT)?;
+        let (chant, version) = {
+            let st = self.state.lock().unwrap();
+            (st.chant.clone().ok_or(model::NO_CHANT)?, st.version.clone())
+        };
         let runner = self.runner().await?;
-        let via = crate::gate::Via::Chant { runner: &runner, chant: &chant };
-        let result = crate::gate::approve(&gate, by.as_deref(), &via).await;
+        let via = crate::gate::Via::Chant {
+            runner: &runner,
+            chant: &chant,
+            by: self.chant_by(&args, by.as_deref(), version),
+        };
+        let result = if expire {
+            crate::gate::expire(&gate, &via).await
+        } else {
+            crate::gate::approve(&gate, by.as_deref(), &via).await
+        };
         let (ok, said) = match &result {
             Ok(s) | Err(s) => (result.is_ok(), s.clone()),
         };
+        let (e, done) = if expire { ("expire", "expired") } else { ("approve", "approved") };
         log(
             &self.ctx,
-            &json!({ "e": "approve", "member": gate.member, "op": gate.op, "gate": gate.gate, "by": by, "ok": ok, "said": said }),
+            &json!({ "e": e, "member": gate.member, "op": gate.op, "gate": gate.gate, "by": by, "ok": ok, "said": said }),
         );
         // The block's history says who approved what (`arugula history`).
         if let Ok(mut l) = self.ctx.log() {
@@ -259,7 +499,7 @@ impl Workspace {
                 GateSource::Hud { box_url, .. } => box_url,
                 GateSource::Forge { url, .. } => url,
             };
-            let text = format!("approved {}: {} at gate {}", gate.member, gate.op, gate.gate);
+            let text = format!("{done} {}: {} at gate {}", gate.member, gate.op, gate.gate);
             let _ = l.record(
                 at,
                 Event::Command {
@@ -274,7 +514,96 @@ impl Workspace {
         }
         let said = result?;
         self.load().await;
-        Ok(json!({ "approved": gate.key(), "gate": gate, "by": by, "said": said }))
+        Ok(json!({ done: gate.key(), "gate": gate, "by": by, "said": said }))
+    }
+}
+
+/// What a poll does about the fingerprint.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Next {
+    Nothing,
+    /// It moved: look again next poll.
+    Wait,
+    Read,
+}
+
+/// The `chant/lifecycle` word of a fingerprint.
+fn lifecycle(print: Option<&str>) -> Option<&str> {
+    print.and_then(|p| p.split_whitespace().next())
+}
+
+/// Given the fingerprint at the last read (`seen`), the changed one the
+/// poll before saw (`pending`) and the one now: read when the lifecycle ref
+/// moved (a gate or a release: at once), or when a change held still for
+/// one poll; wait while the working tree is still moving. No fingerprint at
+/// all reads, so the block says why.
+fn next(seen: Option<&str>, pending: Option<&str>, now: Option<&str>) -> Next {
+    match now {
+        None => Next::Read,
+        Some(n) if seen == Some(n) => Next::Nothing,
+        _ if lifecycle(seen) != lifecycle(now) => Next::Read,
+        Some(n) if pending == Some(n) => Next::Read,
+        Some(_) => Next::Wait,
+    }
+}
+
+/// What a drawn block's poll looks at.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Look {
+    /// The whole fingerprint ([`Workspace::check`]).
+    Full,
+    /// Only the lifecycle ref; the whole fingerprint if it moved.
+    Ref,
+}
+
+/// The `tick`th poll of a drawn block, polled every [`REF_POLL`] when
+/// `quick` (on this host), else every [`POLL`]: the full fingerprint on the
+/// first and then once a [`POLL`], the lifecycle ref alone between.
+fn look(tick: u32, quick: bool) -> Look {
+    let every = (POLL.as_millis() / REF_POLL.as_millis()).max(1) as u32;
+    if !quick || tick.is_multiple_of(every) { Look::Full } else { Look::Ref }
+}
+
+/// Whether the lifecycle ref's word now differs from the one in the
+/// fingerprint at the last read. Nothing read yet: the next full look reads.
+fn ref_moved(seen: Option<&str>, now: &str) -> bool {
+    !now.is_empty() && seen.is_some_and(|s| lifecycle(Some(s)) != Some(now))
+}
+
+/// A VM workspace's idle looks: how many in a row found nothing changed,
+/// and how many were skipped since the last, once it's resting.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct VmIdle {
+    quiet: u32,
+    skipped: u32,
+}
+
+/// Whether an idle poll looks at a VM's workspace, given what its provider
+/// says of it: only when it's `running`, and once it has been quiet for
+/// [`VM_QUIET`] looks, every [`VM_RESTING`]th poll. A VM not running starts
+/// it over, so one woken again is looked at every poll.
+fn vm_look(status: Option<&str>, vm: &mut VmIdle) -> bool {
+    if status != Some("running") {
+        *vm = VmIdle::default();
+        return false;
+    }
+    if vm.quiet < VM_QUIET {
+        return true;
+    }
+    vm.skipped += 1;
+    if vm.skipped >= VM_RESTING {
+        vm.skipped = 0;
+        return true;
+    }
+    false
+}
+
+/// After a look: whether the fingerprint had moved.
+fn vm_looked(vm: &mut VmIdle, moved: bool) {
+    if moved {
+        *vm = VmIdle::default();
+    } else {
+        vm.quiet = vm.quiet.saturating_add(1);
     }
 }
 
@@ -284,12 +613,17 @@ impl Block for Workspace {
     }
 
     fn config(&self) -> Value {
-        json!({ "root": self.config.root, "env": self.config.env })
+        let who = self.who.lock().unwrap();
+        json!({ "root": self.config.root, "env": *self.env.lock().unwrap(), "actor": who.actor, "principals": who.principals })
     }
 
     fn state(&self) -> Value {
         let mut v = serde_json::to_value(&*self.state.lock().unwrap()).unwrap_or_default();
         v["watching"] = self.live.drawn().into();
+        v["envs"] = json!(*self.envs.lock().unwrap());
+        let who = self.who.lock().unwrap();
+        v["actor"] = json!(who.actor);
+        v["principals"] = json!(who.principals);
         v
     }
 
@@ -313,9 +647,48 @@ impl Block for Workspace {
                     None => Ok(json!({ "members": st.members.len(), "gates": st.gates.len(), "ms": st.ms })),
                 }
             }),
-            "approve" => {
-                let by = by.map(str::to_owned);
-                Box::pin(async move { me.ok_or("closed")?.approve(args, by).await })
+            "approve" | "expire" => {
+                let (by, expire) = (by.map(str::to_owned), method == "expire");
+                Box::pin(async move { me.ok_or("closed")?.approve(args, by, expire).await })
+            }
+            "env" => Box::pin(async move {
+                let me = me.ok_or("closed")?;
+                let name = env_name(args["name"].as_str().unwrap_or_default())?;
+                let was = std::mem::replace(&mut *me.env.lock().unwrap(), name.clone());
+                if was != name {
+                    log(&me.ctx, &json!({ "e": "env", "env": name, "was": was }));
+                    {
+                        let mut all = me.envs.lock().unwrap();
+                        if !all.contains(&name) {
+                            all.push(name.clone());
+                            all.sort();
+                        }
+                    }
+                    // The gates of the env it watched aren't its any more.
+                    me.state.lock().unwrap().gates.clear();
+                    me.load().await;
+                }
+                Ok(json!({ "env": name, "was": was }))
+            }),
+            "principals" => {
+                let set = {
+                    let mut who = self.who.lock().unwrap();
+                    set_principals(&who, &args).map(|new| {
+                        let was = std::mem::replace(&mut *who, new.clone());
+                        (new, was)
+                    })
+                };
+                if let Ok((new, was)) = &set
+                    && new != was
+                {
+                    log(&self.ctx, &json!({ "e": "principals", "actor": new.actor, "principals": new.principals }));
+                    // Kept in the config: the layout saves it at the next write.
+                    self.ctx.changed();
+                }
+                Box::pin(async move {
+                    let (new, _) = set?;
+                    Ok(json!({ "actor": new.actor, "principals": new.principals }))
+                })
             }
             "member" => {
                 let st = self.state.lock().unwrap();
@@ -355,5 +728,195 @@ impl Block for Workspace {
             title: Some(format!("{} (chant)", st.name.clone().unwrap_or_else(|| "workspace".into()))),
             ..Default::default()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::{
+        Look, Next, POLL, Principals, REF_POLL, VM_QUIET, VM_RESTING, VmIdle, env_name, envs, look, next, ref_moved,
+        set_principals, vm_look, vm_looked,
+    };
+
+    /// A fingerprint: the lifecycle ref's word, then the tree's checksum.
+    fn fp(lifecycle: &str, tree: u32) -> String {
+        format!("{lifecycle} {tree} 1234")
+    }
+
+    /// Polls a sequence of fingerprints from a read at `start`; how many
+    /// full reads they cost.
+    fn reads(start: &str, polls: &[String]) -> usize {
+        let (mut seen, mut pending, mut n) = (Some(start.to_owned()), None::<String>, 0);
+        for now in polls {
+            let what = next(seen.as_deref(), pending.as_deref(), Some(now));
+            pending = (what == Next::Wait).then(|| now.clone());
+            if what == Next::Read {
+                n += 1;
+                seen = Some(now.clone());
+            }
+        }
+        n
+    }
+
+    #[test]
+    fn a_burst_of_edits_costs_one_read() {
+        // The tree changes at every poll for a while (an agent editing a
+        // member), then holds still.
+        let mut polls: Vec<String> = (1..=8).map(|t| fp("aaa", t)).collect();
+        polls.extend([fp("aaa", 8), fp("aaa", 8), fp("aaa", 8)]);
+        assert_eq!(reads(&fp("aaa", 0), &polls), 1);
+    }
+
+    #[test]
+    fn nothing_moved_reads_nothing() {
+        assert_eq!(next(Some("a 1"), None, Some("a 1")), Next::Nothing);
+        assert_eq!(reads(&fp("aaa", 0), &[fp("aaa", 0), fp("aaa", 0)]), 0);
+    }
+
+    #[test]
+    fn a_change_waits_one_poll() {
+        assert_eq!(next(Some("a 1"), None, Some("a 2")), Next::Wait);
+        assert_eq!(next(Some("a 1"), Some("a 2"), Some("a 2")), Next::Read);
+        // Still moving: wait again.
+        assert_eq!(next(Some("a 1"), Some("a 2"), Some("a 3")), Next::Wait);
+    }
+
+    #[test]
+    fn a_gate_reads_at_once() {
+        // `chant run` exits at a gate: the lifecycle ref moves, while the
+        // tree is still changing. The very next poll reads.
+        assert_eq!(next(Some("aaa 1"), None, Some("bbb 2")), Next::Read);
+        assert_eq!(next(Some("aaa 1"), Some("aaa 2"), Some("bbb 3")), Next::Read);
+        // The ref appearing for the first run's gate counts too.
+        assert_eq!(next(Some("- 1"), None, Some("bbb 1")), Next::Read);
+        let mut polls: Vec<String> = (1..=4).map(|t| fp("aaa", t)).collect();
+        polls.push(fp("bbb", 5));
+        assert_eq!(reads(&fp("aaa", 0), &polls), 1);
+    }
+
+    #[test]
+    fn drawn_here_the_lifecycle_ref_is_looked_at_every_second_and_the_rest_every_poll() {
+        // On this host: a full fingerprint first and once a POLL, the ref
+        // alone the other ticks, so a gate waits at most REF_POLL to be seen
+        // while full looks are no more frequent than before.
+        let every = (POLL.as_millis() / REF_POLL.as_millis()) as u32;
+        assert!(REF_POLL <= std::time::Duration::from_secs(1) && every >= 3);
+        let ticks: Vec<Look> = (0..2 * every).map(|t| look(t, true)).collect();
+        assert_eq!(ticks.iter().filter(|l| **l == Look::Full).count(), 2);
+        assert_eq!(ticks[0], Look::Full);
+        assert_eq!(ticks[every as usize], Look::Full);
+        assert!(ticks[1..every as usize].iter().all(|l| *l == Look::Ref));
+        // On a VM: the full fingerprint every POLL, as before.
+        assert!((0..10).all(|t| look(t, false) == Look::Full));
+
+        // The quick look: a moved ref sends the poll to the full fingerprint
+        // (which then reads at once, as `next` says).
+        assert!(ref_moved(Some("aaa 1 2"), "bbb"));
+        assert!(ref_moved(Some("- 1 2"), "bbb"));
+        assert!(!ref_moved(Some("aaa 1 2"), "aaa"));
+        // Couldn't tell, or nothing read yet: leave it to the full look.
+        assert!(!ref_moved(Some("aaa 1 2"), ""));
+        assert!(!ref_moved(None, "aaa"));
+        assert_eq!(next(Some("aaa 1 2"), None, Some("bbb 1 2")), Next::Read);
+    }
+
+    #[test]
+    fn no_fingerprint_reads_so_the_block_says_why() {
+        assert_eq!(next(Some("a 1"), None, None), Next::Read);
+        // Nothing read before: the first fingerprint reads.
+        assert_eq!(next(None, None, Some("a 1")), Next::Read);
+    }
+
+    #[test]
+    fn the_envs_chant_has_ledgers_for() {
+        let ledgers = "local/releases.jsonl\n_members/delivery/prod/releases.jsonl\n\
+                       _members/delivery/local/releases.jsonl\nstaging/releases.jsonl\n_gates/releases.jsonl\n";
+        assert_eq!(envs(ledgers, "local"), ["local", "prod", "staging"]);
+        // No lifecycle ref yet: local, and the one watched.
+        assert_eq!(envs("", "qa"), ["local", "qa"]);
+    }
+
+    #[test]
+    fn principals_are_set_and_cleared() {
+        let none = Principals::default();
+        let p = set_principals(&none, &json!({ "actor": " github:sam ", "principals": { "val": "github:val-x" } }))
+            .unwrap();
+        assert_eq!(p.actor.as_deref(), Some("github:sam"));
+        assert_eq!(p.principals.get("val").map(String::as_str), Some("github:val-x"));
+        // A key left out keeps what was there.
+        let q = set_principals(&p, &json!({ "principals": { "jo": "github:jo", "gone": "" } })).unwrap();
+        assert_eq!(q.actor.as_deref(), Some("github:sam"));
+        assert_eq!(q.principals.keys().collect::<Vec<_>>(), ["jo"]);
+        // An empty actor, or null, clears it.
+        assert_eq!(set_principals(&q, &json!({ "actor": "" })).unwrap().actor, None);
+        assert_eq!(set_principals(&q, &json!({ "actor": null })).unwrap().actor, None);
+        // A principal is one word, not a flag.
+        for bad in [
+            json!({ "actor": "--sign" }),
+            json!({ "actor": "a b" }),
+            json!({ "actor": 3 }),
+            json!({ "principals": { "x": "-y" } }),
+        ] {
+            assert!(set_principals(&q, &bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn an_env_is_a_name_not_a_flag() {
+        assert_eq!(env_name(" prod ").as_deref(), Ok("prod"));
+        for bad in ["", "--json", "a b", "a/b"] {
+            assert!(env_name(bad).is_err(), "{bad:?}");
+        }
+    }
+
+    /// Polls a VM's idle watch for `polls` rounds with `status`, nothing
+    /// changing; which rounds looked.
+    fn looks(vm: &mut VmIdle, status: Option<&str>, polls: u32) -> Vec<u32> {
+        (0..polls)
+            .filter(|_| {
+                let look = vm_look(status, vm);
+                if look {
+                    vm_looked(vm, false);
+                }
+                look
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_running_vm_is_looked_at_every_poll_while_it_changes() {
+        let mut vm = VmIdle::default();
+        for _ in 0..50 {
+            assert!(vm_look(Some("running"), &mut vm));
+            vm_looked(&mut vm, true);
+        }
+    }
+
+    #[test]
+    fn a_vm_not_running_or_unreachable_is_never_looked_at() {
+        for status in [Some("warm"), Some("cold"), Some("stopped"), None] {
+            let mut vm = VmIdle::default();
+            assert!(looks(&mut vm, status, 100).is_empty(), "{status:?}");
+        }
+    }
+
+    #[test]
+    fn a_quiet_vm_is_looked_at_less_often_until_it_sleeps_and_wakes() {
+        let mut vm = VmIdle::default();
+        // Quiet: every poll for VM_QUIET looks, then every VM_RESTING-th.
+        let n = VM_QUIET + 3 * VM_RESTING;
+        let seen = looks(&mut vm, Some("running"), n);
+        assert_eq!(seen.len() as u32, VM_QUIET + 3);
+        assert_eq!(seen[VM_QUIET as usize], VM_QUIET + VM_RESTING - 1);
+        // A change found while resting: every poll again.
+        vm_looked(&mut vm, true);
+        assert_eq!(vm, VmIdle::default());
+        assert!(vm_look(Some("running"), &mut vm));
+        // Asleep, then woken: every poll again.
+        let _ = looks(&mut vm, Some("running"), n);
+        assert!(!vm_look(Some("warm"), &mut vm));
+        assert!(vm_look(Some("running"), &mut vm));
     }
 }

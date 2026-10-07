@@ -1,0 +1,10 @@
+{
+  "$schema": "https://intentius.io/chant/schemas/workspace/ls/v1/ls.schema.json",
+  "contract": 1,
+  "chant": "0.87.0",
+  "error": {
+    "code": "declaration-missing",
+    "message": "no chant.workspace.json or .jsonc between this directory and the git root; chant workspace init proposes one",
+    "location": null
+  }
+}

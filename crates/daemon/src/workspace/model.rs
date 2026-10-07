@@ -23,14 +23,25 @@ exec node -e "$2" "$1" "$3""#;
 
 /// The reads. `process.argv`: root, env. Which chant: `$CHANT`, else
 /// `node_modules/.bin/chant` here or in the nearest parent, else PATH.
+///
+/// That only finds a chant to start (#305, ws-021). Which chant reads the
+/// declaration stays chant's call: one the root doesn't pin hands the
+/// command line to the pinned one installed at the root, or refuses with
+/// `root-chant-required`, and an unpinned root is read by whichever chant
+/// meets `minReader` (`reader-too-old` otherwise). The block shows those
+/// codes and which chant it started (`how`).
+///
+/// The declaration's `agents` (#304) are read from its file, since no read
+/// prints them: `null` when it isn't plain JSON.
 pub const READER: &str = r#"
 const { execFile } = require("child_process"), fs = require("fs"), path = require("path");
 const [root, env] = process.argv.slice(1);
+const here = path.resolve(root);
 function which() {
   if (process.env.CHANT) return [process.env.CHANT, "env"];
-  for (let d = path.resolve(root); ; d = path.dirname(d)) {
+  for (let d = here; ; d = path.dirname(d)) {
     const p = path.join(d, "node_modules/.bin/chant");
-    if (fs.existsSync(p)) return [p, d === path.resolve(root) ? "workspace" : "above"];
+    if (fs.existsSync(p)) return [p, d === here ? "workspace" : "above"];
     if (d === path.dirname(d)) break;
   }
   for (const d of (process.env.PATH || "").split(":")) {
@@ -39,7 +50,22 @@ function which() {
   }
   return [null, null];
 }
-const declared = fs.existsSync(path.join(root, "chant.workspace.json"));
+// Here and each parent up to the git root: where chant looks for the
+// declaration. Only to say why when there's no chant to ask; with one,
+// chant decides (declaration-missing).
+function up(found) {
+  for (let d = here; ; d = path.dirname(d)) {
+    if (found(d)) return d;
+    if (fs.existsSync(path.join(d, ".git")) || d === path.dirname(d)) return null;
+  }
+}
+const declDir = up((d) => ["chant.workspace.json", "chant.workspace.jsonc"].some((f) => fs.existsSync(path.join(d, f))));
+const declared = declDir !== null;
+const gitRoot = up((d) => fs.existsSync(path.join(d, ".git")));
+// The agent sessions (ws-067), which no read prints: from the declaration
+// (a .jsonc one gives none).
+let agents = null;
+try { const a = JSON.parse(fs.readFileSync(path.join(declDir, "chant.workspace.json"), "utf8")).agents; agents = Array.isArray(a) ? a : []; } catch {}
 const [chant, how] = which();
 function run(args) {
   const t = Date.now();
@@ -50,8 +76,8 @@ function run(args) {
   }));
 }
 (async () => {
-  const doc = { root: path.resolve(root), declared, chant, how, env };
-  if (!declared || !chant) return console.log(JSON.stringify(doc));
+  const doc = { root: here, declared, gitRoot, chant, how, env, agents };
+  if (!chant) return console.log(JSON.stringify(doc));
   const t = Date.now();
   const [ls, check, records, status] = await Promise.all([
     run(["workspace", "ls", "--json"]),
@@ -61,18 +87,59 @@ function run(args) {
   ]);
   doc.ms = Date.now() - t;
   doc.reads = { ls, check, records, status };
+  // A chant older than the contract writes none of it: its version, to
+  // say which to install.
+  if (![ls, check, records, status].some((r) => r.json && typeof r.json === "object" && "contract" in r.json)) {
+    doc.version = await new Promise((done) => execFile(chant, ["--version"], { cwd: root, timeout: 10000 }, (e, out) => {
+      const m = /\d+\.\d+\.\d+/.exec(String(out));
+      done(m ? m[0] : null);
+    }));
+  }
   console.log(JSON.stringify(doc));
 })();
 "#;
 
 /// `sh -c FINGERPRINT sh ROOT`: one line that changes when anything a read
-/// would see might have: a commit, the `chant/lifecycle` ref (releases and
-/// gates), or the working tree (the declaration, records, member sources).
-/// About 0.01 CPU-seconds where a full read is about 7 (four chant
-/// processes, each loading chant's TypeScript through tsx), so the block
-/// polls this and reads only when it changes. It never fetches.
+/// would see might have: the `chant/lifecycle` ref (releases and gates)
+/// first, as its own word, then a checksum of a commit, chant's other refs
+/// and the working tree (the declaration, records, member sources). About
+/// 0.01 CPU-seconds where a full read is about 7 (four chant processes,
+/// each loading chant's TypeScript through tsx), so the block polls this
+/// and reads only when it changes. It never fetches.
+///
+/// #305: `GIT_OPTIONAL_LOCKS=0` (git's `--no-optional-locks`) keeps
+/// `status` from refreshing the index and taking `index.lock` every few
+/// seconds, which would fail a person's `git commit` or chant's own writes
+/// that land at the same moment. chant's other refs are in the checksum
+/// because `status` reports them: leases (`refs/chant/lease/*`, its
+/// `leases`), work in progress, kept attempts and work branches
+/// (`refs/chant/wip/*`, `kept/*`, `refs/heads/chant/work/*`, its
+/// `replication`). A lease that expires by the clock moves no ref, so it
+/// shows at the next read for another reason; the block draws no leases.
+/// The diff is `diff-index` (plumbing): porcelain `git diff HEAD` refreshes
+/// and rewrites the index even with `GIT_OPTIONAL_LOCKS=0`.
+///
+/// Untracked files: `status` shows each only as its `??` line, and the diff
+/// leaves them out, so an edit inside one would move nothing. Their mtimes
+/// and sizes are in the checksum too (`ls-files -o`, which reads the index
+/// and never writes it, then `stat`: GNU/busybox `-c` with nanosecond
+/// mtimes, BSD `-f` on macOS, in one `xargs`), not their contents. Capped
+/// at the first 1000 files, so a large untracked tree (a build output
+/// nobody ignored) costs a bounded `stat`; an edit past the cap shows at
+/// the next read for another reason. The walk itself is the one `status`
+/// already does.
 pub const FINGERPRINT: &str = r#"cd "$1" 2>/dev/null || { echo gone; exit 0; }
-{ git rev-parse -q --verify HEAD; git rev-parse -q --verify refs/heads/chant/lifecycle; git status --porcelain=v1; git diff HEAD; } 2>/dev/null | cksum"#;
+export GIT_OPTIONAL_LOCKS=0
+printf '%s ' "$(git rev-parse -q --verify refs/heads/chant/lifecycle 2>/dev/null || echo -)"
+if stat -c %s . >/dev/null 2>&1; then set -- -c '%y %s %n'; else set -- -f '%Fm %z %N'; fi
+{ git rev-parse -q --verify HEAD; git for-each-ref --format='%(objectname) %(refname)' refs/chant refs/heads/chant/work; git status --porcelain=v1; git diff-index -p HEAD --
+git ls-files -o --exclude-standard -z | tr '\0' '\n' | head -n 1000 | tr '\n' '\0' | xargs -0 stat "$@"; } 2>/dev/null | cksum"#;
+
+/// `sh -c LIFECYCLE sh ROOT`: just [`FINGERPRINT`]'s first word, the
+/// `chant/lifecycle` ref (one `git rev-parse`), for the block's quick look
+/// between full fingerprints.
+pub const LIFECYCLE: &str = r#"cd "$1" 2>/dev/null || { echo gone; exit 0; }
+git rev-parse -q --verify refs/heads/chant/lifecycle 2>/dev/null || echo -"#;
 
 /// What the block draws and `describe` returns.
 #[derive(Debug, Clone, Default, Serialize)]
@@ -101,6 +168,10 @@ pub struct State {
     pub ms: u64,
     /// The block can't show the workspace at all, and why.
     pub error: Option<String>,
+    /// chant's reason code for it (`declaration-missing`,
+    /// `reader-too-old`, ...), or Arugula's own for the contract:
+    /// `chant-too-old`, `contract-unknown`.
+    pub error_code: Option<String>,
     /// What wants you most, in a line (see [`State::headline`]).
     pub headline: Option<String>,
     pub loading: bool,
@@ -125,6 +196,14 @@ pub struct Member {
     pub diagnostics: Vec<Diagnostic>,
     pub releases: usize,
     pub gates: usize,
+    /// The agent sessions the declaration binds to it (ws-067): an agent
+    /// started here runs as the first (#304).
+    pub agents: Vec<String>,
+    /// The ops `status` names for it, for *Run op* (#309): its stewards'
+    /// ops, then any op a gate of its was recorded for. *Run op* takes a
+    /// typed name too, for an op `status` doesn't name (chant before
+    /// stewards names only gated ones).
+    pub ops: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -154,10 +233,12 @@ pub struct Read {
     pub name: String,
     pub ms: u64,
     pub code: i64,
-    /// A JSON document came back.
+    /// A result came back (not a failure, not something else).
     pub ok: bool,
     /// chant's own words when it didn't.
     pub note: Option<String>,
+    /// The failure's reason code, when chant gave one.
+    pub reason: Option<String>,
 }
 
 fn s(v: &Value) -> Option<String> {
@@ -172,8 +253,87 @@ fn join(root: &str, dir: &str) -> String {
 pub const NO_CHANT: &str = "no chant here: not in $CHANT, not in node_modules/.bin here or above (run npm install), \
                             and not on PATH";
 
-/// What it says when the directory isn't a workspace.
-pub const NO_DECLARATION: &str = "no chant.workspace.json here: `chant workspace init` proposes one";
+/// What it says when the directory isn't in a workspace (and there's no
+/// chant to ask).
+pub const NO_DECLARATION: &str =
+    "no chant.workspace.json or .jsonc here or above it: `chant workspace init` proposes one";
+
+/// The principal chant records for an Arugula name (ws-080): the one the
+/// block's `principals` gives it, else the name itself (a forge identity
+/// such as `github:alice` already, or a plain name where the workspace
+/// takes one).
+pub fn principal(name: &str, principals: &std::collections::BTreeMap<String, String>) -> String {
+    let name = name.trim();
+    principals
+        .get(name)
+        .or_else(|| principals.iter().find(|(k, _)| k.eq_ignore_ascii_case(name)).map(|(_, v)| v))
+        .cloned()
+        .unwrap_or_else(|| name.to_owned())
+}
+
+/// The first chant that takes `chant approve --relayed-by` (chant#3402).
+pub const RELAYED_BY: &str = "0.103.1";
+
+/// The read contract this reads (ws-017), and the first chant that writes it.
+pub const CONTRACT: u64 = 1;
+pub const FLOOR: &str = "0.81.0";
+
+/// The `$id` a read's document names in `$schema`.
+fn schema_id(read: &str) -> String {
+    format!("https://intentius.io/chant/schemas/workspace/{read}/v1/{read}.schema.json")
+}
+
+/// `0.103.1` as numbers, for comparing; a pre-release counts as its release.
+pub fn version(v: &str) -> Option<(u64, u64, u64)> {
+    let mut it = v.trim().trim_start_matches('v').split(['.', '-', '+']).map(|p| p.parse::<u64>().ok());
+    Some((it.next()??, it.next()??, it.next()??))
+}
+
+/// `v` is `floor` or newer.
+pub fn at_least(v: &str, floor: &str) -> bool {
+    matches!((version(v), version(floor)), (Some(a), Some(b)) if a >= b)
+}
+
+/// Why these documents can't be read as contract 1, if they can't: the
+/// chant is older than the floor, or a document names another contract or
+/// schema. A reader that knows contract 1 refuses any other.
+fn contract_problem(reads: &Value, chant: Option<&str>) -> Option<(&'static str, String)> {
+    let v = chant.unwrap_or("?");
+    if chant.is_some_and(|c| !at_least(c, FLOOR)) {
+        return Some((
+            "chant-too-old",
+            format!(
+                "chant {v} is older than {FLOOR}, the first that writes the read contract: install @intentius/chant {FLOOR} or newer"
+            ),
+        ));
+    }
+    for name in ["ls", "check", "records", "status"] {
+        let doc = &reads[name]["json"];
+        if !doc.is_object() {
+            continue;
+        }
+        match doc["contract"].as_u64() {
+            Some(CONTRACT) => {}
+            Some(n) => {
+                return Some((
+                    "contract-unknown",
+                    format!("chant {v} writes read contract {n}; this Arugula reads contract {CONTRACT}"),
+                ));
+            }
+            None => {
+                return Some((
+                    "chant-too-old",
+                    format!("chant {v}'s `{name}` names no read contract: install @intentius/chant {FLOOR} or newer"),
+                ));
+            }
+        }
+        let want = schema_id(name);
+        if let Some(other) = doc["$schema"].as_str().filter(|s| *s != want) {
+            return Some(("contract-unknown", format!("chant {v}'s `{name}` follows {other}, not {want}")));
+        }
+    }
+    None
+}
 
 /// The reader's document as block state.
 pub fn compose(raw: &Value, env: &str) -> State {
@@ -184,36 +344,63 @@ pub fn compose(raw: &Value, env: &str) -> State {
         st.error = Some(e);
         return st.headlined();
     }
-    if raw["declared"] == false {
-        st.error = Some(NO_DECLARATION.into());
-        return st.headlined();
-    }
+    // With a chant, it says whether this is a workspace (it looks above
+    // too, for .json and .jsonc); without one, the reader looked the same
+    // way.
     if st.chant.is_none() {
-        st.error = Some(NO_CHANT.into());
+        st.error = Some(if raw["declared"] == false { NO_DECLARATION } else { NO_CHANT }.into());
         return st.headlined();
     }
     st.ms = raw["ms"].as_u64().unwrap_or(0);
     let reads = &raw["reads"];
     for name in ["ls", "check", "records", "status"] {
         let r = &reads[name];
-        let ok = !r["json"].is_null();
+        // A failure is `error: {code, message}` (the schemas' `oneOf`).
+        let failure = &r["json"]["error"];
+        let ok = r["json"].is_object() && !failure.is_object();
         let code = r["code"].as_i64().unwrap_or(-1);
-        let note = (!ok || code != 0)
-            .then(|| s(&r["err"]).filter(|e| !e.is_empty()))
-            .flatten()
-            .map(|e| e.lines().find(|l| !l.trim().is_empty()).unwrap_or("").trim().to_owned());
-        st.reads.push(Read { name: name.into(), ms: r["ms"].as_u64().unwrap_or(0), code, ok, note });
+        let reason = s(&failure["code"]);
+        let note = if failure.is_object() {
+            Some(s(&failure["message"]).unwrap_or_default()).filter(|m| !m.is_empty()).or_else(|| reason.clone())
+        } else {
+            (!ok || code != 0)
+                .then(|| s(&r["err"]).filter(|e| !e.is_empty()))
+                .flatten()
+                .map(|e| e.lines().find(|l| !l.trim().is_empty()).unwrap_or("").trim().to_owned())
+        };
+        st.reads.push(Read { name: name.into(), ms: r["ms"].as_u64().unwrap_or(0), code, ok, note, reason });
     }
-    st.version = s(&reads["ls"]["json"]["chant"]);
+    st.version = ["ls", "status", "check", "records"]
+        .iter()
+        .find_map(|n| s(&reads[*n]["json"]["chant"]))
+        .or_else(|| s(&raw["version"]));
+    if let Some((code, why)) = contract_problem(reads, st.version.as_deref()) {
+        st.error = Some(why);
+        st.error_code = Some(code.into());
+        return st.headlined();
+    }
 
     // Members, from `ls`. Without it there's nothing to draw.
     let ls = &reads["ls"]["json"];
-    if ls.is_null() {
-        let why = st.reads.iter().find(|r| r.name == "ls").and_then(|r| r.note.clone());
-        st.error = Some(format!("chant couldn't list the workspace: {}", why.unwrap_or_else(|| "no answer".into())));
+    if let Some(r) = st.reads.iter().find(|r| r.name == "ls" && !r.ok) {
+        let why = r.note.clone().unwrap_or_else(|| "no answer".into());
+        st.error = Some(match &r.reason {
+            Some(_) => why,
+            None => format!("chant couldn't list the workspace: {why}"),
+        });
+        st.error_code.clone_from(&r.reason);
         return st.headlined();
     }
     st.name = s(&ls["workspace"]["name"]);
+    // The root chant found: `workspace.root` is relative to the git root
+    // (absolute outside git), and may be above the directory opened.
+    if let Some(r) = s(&ls["workspace"]["root"]) {
+        if r.starts_with('/') {
+            st.root = r;
+        } else if let Some(g) = s(&raw["gitRoot"]) {
+            st.root = join(&g, &r);
+        }
+    }
     let root = st.root.clone();
     for m in ls["members"].as_array().into_iter().flatten() {
         let dir = s(&m["dir"]).unwrap_or_default();
@@ -230,6 +417,12 @@ pub fn compose(raw: &Value, env: &str) -> State {
                 .then(|| s(&m["reason"]["message"]).or_else(|| s(&m["reason"]["code"])).unwrap_or_default()),
             ..Default::default()
         });
+    }
+    for a in raw["agents"].as_array().into_iter().flatten() {
+        let (Some(name), Some(on)) = (s(&a["name"]), s(&a["member"])) else { continue };
+        if let Some(m) = st.members.iter_mut().find(|m| m.name == on) {
+            m.agents.push(name);
+        }
     }
 
     // Declaration findings, onto the member they name. `WSP009` ("kind
@@ -278,21 +471,46 @@ pub fn compose(raw: &Value, env: &str) -> State {
             .flatten()
             .map(|e| e["releases"].as_array().map_or(0, Vec::len))
             .sum();
+        let stewards = sm["stewards"].as_array().into_iter().flatten();
+        let ops = stewards.flat_map(|st| st["ops"].as_array().into_iter().flatten().filter_map(|o| s(&o["name"])));
+        let gated = sm["gates"].as_array().into_iter().flatten().filter_map(|g| s(&g["component"]));
+        for op in ops.chain(gated) {
+            if !op.is_empty() && !m.ops.contains(&op) {
+                m.ops.push(op);
+            }
+        }
         for g in sm["gates"].as_array().into_iter().flatten() {
             if g["state"].as_str().is_some_and(|s| s != "pending") {
                 continue;
             }
             m.gates += 1;
+            let (op, gate, env) =
+                (s(&g["component"]).unwrap_or_default(), s(&g["name"]).unwrap_or_default(), s(&g["env"]));
+            // Status's line is what approving runs (#302); a chant that
+            // gives none gets the same, from the gate's plan and rule.
+            let command = s(&g["approve"]).or_else(|| {
+                let mut line = format!("chant approve {op} {gate}");
+                if let Some(e) = &env {
+                    line += &format!(" --env {e}");
+                }
+                if let Some(p) = g["planDigest"].as_str() {
+                    line += &format!(" --plan {p}");
+                }
+                if g["signed"].is_object() {
+                    line += " --sign";
+                }
+                Some(line)
+            });
             st.gates.push(Gate {
                 member: name.clone(),
-                op: s(&g["component"]).unwrap_or_default(),
-                gate: s(&g["name"]).unwrap_or_default(),
-                env: s(&g["env"]),
+                op,
+                gate,
+                env,
                 since: s(&g["recordedAt"]),
                 expires: s(&g["expiresAt"]),
                 approvals: g["approvals"].as_array().map_or(0, |a| a.len() as u64),
                 needed: g["needed"].as_u64().unwrap_or(1),
-                command: s(&g["approve"]),
+                command,
                 source: GateSource::Chant { root: root.clone(), dir: m.path.clone(), machine: None },
             });
         }
@@ -302,7 +520,8 @@ pub fn compose(raw: &Value, env: &str) -> State {
     let rec = &reads["records"]["json"];
     let kinds: Vec<&Value> = match rec["kinds"].as_array() {
         Some(k) => k.iter().collect(),
-        None if !rec.is_null() => vec![rec],
+        // A failure (`error: {code, message}`) is no kind.
+        None if rec.is_object() && !rec["error"].is_object() => vec![rec],
         None => vec![],
     };
     if kinds.is_empty() {
@@ -310,7 +529,7 @@ pub fn compose(raw: &Value, env: &str) -> State {
             st.reads
                 .iter()
                 .find(|r| r.name == "records")
-                .and_then(|r| r.note.clone())
+                .and_then(|r| r.note.clone().map(|n| r.reason.as_ref().map_or(n.clone(), |c| format!("{n} ({c})"))))
                 .unwrap_or_else(|| "no record kinds".into()),
         );
     }
@@ -376,7 +595,7 @@ impl State {
             self.ms
         );
         if let Some(e) = &self.error {
-            out += &format!("\n  ! {e}\n");
+            out += &format!("\n  ! {e}{}\n", self.error_code.as_ref().map(|c| format!(" ({c})")).unwrap_or_default());
             return out;
         }
         if !self.gates.is_empty() {
@@ -520,6 +739,11 @@ mod tests {
     fn not_a_workspace() {
         let st = compose(&serde_json::json!({ "root": "/tmp/x", "declared": false, "chant": null }), "local");
         assert_eq!(st.error.as_deref(), Some(NO_DECLARATION));
+        // With a chant, chant says (declaration-missing): the reader's own
+        // look doesn't decide.
+        let mut raw = fixture(include_str!("fixtures/reference-raw.json"));
+        raw["declared"] = false.into();
+        assert_eq!(compose(&raw, "local").error, None);
     }
 
     #[test]
@@ -533,12 +757,278 @@ mod tests {
         assert!(!ls.ok);
     }
 
+    /// A failure in `ls` as chant prints it (exit 1).
+    fn ls_failure(code: &str, message: &str) -> Value {
+        serde_json::json!({ "code": 1, "ms": 5, "err": "", "json": {
+            "$schema": "https://intentius.io/chant/schemas/workspace/ls/v1/ls.schema.json",
+            "contract": 1, "chant": "0.95.0", "error": { "code": code, "message": message, "location": null },
+        } })
+    }
+
+    #[test]
+    fn a_failure_is_chants_reason_not_an_empty_workspace() {
+        for code in ["declaration-missing", "reader-too-old", "root-chant-required"] {
+            let mut raw = fixture(include_str!("fixtures/reference-raw.json"));
+            raw["reads"]["ls"] = ls_failure(code, "chant says why");
+            let st = compose(&raw, "local");
+            assert_eq!(st.error.as_deref(), Some("chant says why"), "{code}");
+            assert_eq!(st.error_code.as_deref(), Some(code));
+            assert!(st.members.is_empty() && st.gates.is_empty());
+            let ls = st.reads.iter().find(|r| r.name == "ls").unwrap();
+            assert!(!ls.ok);
+            assert_eq!(ls.reason.as_deref(), Some(code));
+            assert!(st.text().contains(&format!("chant says why ({code})")));
+        }
+    }
+
+    #[test]
+    fn a_records_failure_says_its_code() {
+        let mut raw = fixture(include_str!("fixtures/reference-raw.json"));
+        raw["reads"]["records"]["json"] = serde_json::json!({
+            "$schema": "https://intentius.io/chant/schemas/workspace/records/v1/records.schema.json",
+            "contract": 1, "error": { "code": "kind-unreadable", "message": "work.kind.mjs threw" },
+        });
+        let st = compose(&raw, "local");
+        assert_eq!(st.error, None);
+        assert!(st.records.is_empty());
+        assert_eq!(st.records_note.as_deref(), Some("work.kind.mjs threw (kind-unreadable)"));
+    }
+
+    #[test]
+    fn another_contract_is_refused() {
+        let mut raw = fixture(include_str!("fixtures/reference-raw.json"));
+        raw["reads"]["status"]["json"]["contract"] = 2.into();
+        let st = compose(&raw, "local");
+        assert_eq!(st.error_code.as_deref(), Some("contract-unknown"));
+        assert!(st.error.as_deref().unwrap().contains("read contract 2"), "{:?}", st.error);
+        assert!(st.members.is_empty() && st.gates.is_empty());
+
+        let mut raw = fixture(include_str!("fixtures/reference-raw.json"));
+        raw["reads"]["ls"]["json"]["$schema"] =
+            "https://intentius.io/chant/schemas/workspace/ls/v2/ls.schema.json".into();
+        let st = compose(&raw, "local");
+        assert_eq!(st.error_code.as_deref(), Some("contract-unknown"));
+        assert!(st.error.as_deref().unwrap().contains("/ls/v2/"));
+    }
+
+    #[test]
+    fn a_chant_older_than_the_floor_says_what_to_install() {
+        let mut raw = fixture(include_str!("fixtures/reference-raw.json"));
+        for n in ["ls", "check", "records", "status"] {
+            raw["reads"][n] =
+                serde_json::json!({ "code": 1, "ms": 5, "json": null, "err": "unknown command workspace" });
+        }
+        raw["version"] = "0.79.2".into();
+        let st = compose(&raw, "local");
+        assert_eq!(st.version.as_deref(), Some("0.79.2"));
+        assert_eq!(st.error_code.as_deref(), Some("chant-too-old"));
+        assert!(st.error.as_deref().unwrap().contains("install @intentius/chant 0.81.0 or newer"));
+        // ...and one that writes JSON but no contract.
+        let mut raw = fixture(include_str!("fixtures/reference-raw.json"));
+        for n in ["ls", "check", "records", "status"] {
+            raw["reads"][n]["json"].as_object_mut().unwrap().remove("contract");
+            raw["reads"][n]["json"].as_object_mut().unwrap().remove("chant");
+        }
+        let st = compose(&raw, "local");
+        assert_eq!(st.error_code.as_deref(), Some("chant-too-old"));
+    }
+
+    #[test]
+    fn a_gate_without_a_line_gets_one_with_its_plan_and_rule() {
+        let mut raw = fixture(include_str!("fixtures/reference-raw.json"));
+        let g = &mut raw["reads"]["status"]["json"]["members"][1]["gates"][0];
+        g.as_object_mut().unwrap().remove("approve");
+        g["planDigest"] = "sha256:ab12".into();
+        g["env"] = "prod".into();
+        g["signed"] = serde_json::json!({ "class": null });
+        let st = compose(&raw, "local");
+        assert_eq!(
+            st.gates[0].command.as_deref(),
+            Some("chant approve release approve-release --env prod --plan sha256:ab12 --sign")
+        );
+    }
+
+    #[test]
+    fn principals() {
+        let map: std::collections::BTreeMap<String, String> =
+            [("friend@example.com".to_owned(), "github:friend".to_owned())].into();
+        assert_eq!(principal("friend@example.com", &map), "github:friend");
+        assert_eq!(principal("Friend@Example.com", &map), "github:friend");
+        assert_eq!(principal("github:alice", &map), "github:alice");
+        assert_eq!(principal(" alex ", &map), "alex");
+    }
+
+    #[test]
+    fn versions() {
+        assert!(at_least("0.81.0", FLOOR) && at_least("0.103.1", "0.103.1") && at_least("1.0.0-rc.1", "0.103.1"));
+        assert!(!at_least("0.80.9", FLOOR) && !at_least("0.103.0", "0.103.1") && !at_least("?", FLOOR));
+        assert_eq!(version("v0.95.0"), Some((0, 95, 0)));
+    }
+
+    #[test]
+    fn chant_finds_the_declaration_above() {
+        // Opened in a member's directory; chant found the workspace at the
+        // git root's `ws` (its `workspace.root`).
+        let mut raw = fixture(include_str!("fixtures/reference-raw.json"));
+        raw["root"] = "/repo/ws/delivery".into();
+        raw["gitRoot"] = "/repo".into();
+        raw["reads"]["ls"]["json"]["workspace"]["root"] = "ws".into();
+        raw["reads"]["ls"]["json"]["workspace"]["file"] = "chant.workspace.jsonc".into();
+        let st = compose(&raw, "local");
+        assert_eq!(st.error, None);
+        assert_eq!(st.root, "/repo/ws");
+        let delivery = st.members.iter().find(|m| m.name == "delivery").unwrap();
+        assert_eq!(delivery.path, "/repo/ws/delivery");
+        assert_eq!(st.gates[0].bundle(), "gate:/repo/ws");
+        // At the git root itself.
+        raw["reads"]["ls"]["json"]["workspace"]["root"] = ".".into();
+        assert_eq!(compose(&raw, "local").root, "/repo");
+    }
+
     #[test]
     fn a_nested_workspace_is_a_card() {
         let mut raw = fixture(include_str!("fixtures/reference-raw.json"));
         raw["reads"]["ls"]["json"]["members"][0]["kind"] = "workspace".into();
         let st = compose(&raw, "local");
         assert!(st.members[0].nested);
+    }
+
+    /// The fingerprint of a scratch repository, as the block runs it.
+    fn print(dir: &std::path::Path) -> String {
+        let out = std::process::Command::new("sh").args(["-c", FINGERPRINT, "sh"]).arg(dir).output().unwrap();
+        String::from_utf8(out.stdout).unwrap()
+    }
+
+    fn git(dir: &std::path::Path, args: &[&str]) {
+        let ok = std::process::Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"])
+            .args(args)
+            .status()
+            .unwrap()
+            .success();
+        assert!(ok, "git {args:?}");
+    }
+
+    #[test]
+    fn the_fingerprint_sees_chants_refs_and_takes_no_index_lock() {
+        // #305: a lease or a wip snapshot moves the print; status leaves the
+        // index alone (no refresh, so no index.lock).
+        let dir = std::env::temp_dir().join(format!("arugula-fp-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        git(&dir, &["init", "-q", "-b", "main"]);
+        std::fs::write(dir.join("chant.workspace.json"), "{}").unwrap();
+        git(&dir, &["add", "."]);
+        git(&dir, &["commit", "-q", "-m", "one"]);
+        let first = print(&dir);
+        assert!(first.starts_with("- "), "{first}");
+        assert_eq!(print(&dir), first);
+
+        git(&dir, &["update-ref", "refs/chant/lease/work/fix-001", "HEAD"]);
+        let leased = print(&dir);
+        assert_ne!(leased, first);
+        git(&dir, &["update-ref", "refs/chant/wip/main", "HEAD"]);
+        let saved = print(&dir);
+        assert_ne!(saved, leased);
+        // Neither is the lifecycle word.
+        assert_eq!(saved.split_whitespace().next(), Some("-"));
+
+        // A touched file makes the index stale; a refreshing status would
+        // rewrite it.
+        let index = std::fs::metadata(dir.join(".git/index")).unwrap().modified().unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        std::fs::write(dir.join("chant.workspace.json"), "{}").unwrap();
+        print(&dir);
+        assert_eq!(std::fs::metadata(dir.join(".git/index")).unwrap().modified().unwrap(), index);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_edit_inside_an_untracked_file_moves_the_fingerprint() {
+        // An untracked file was only its `??` line: editing it moved nothing.
+        let dir = std::env::temp_dir().join(format!("arugula-fp-untracked-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("member")).unwrap();
+        git(&dir, &["init", "-q", "-b", "main"]);
+        std::fs::write(dir.join("chant.workspace.json"), "{}").unwrap();
+        std::fs::write(dir.join(".gitignore"), "ignored/\n").unwrap();
+        git(&dir, &["add", "."]);
+        git(&dir, &["commit", "-q", "-m", "one"]);
+        let index = std::fs::metadata(dir.join(".git/index")).unwrap().modified().unwrap();
+        std::fs::write(dir.join("member/new file.ts"), "a").unwrap();
+        let first = print(&dir);
+        // Same `??` line, same size, new contents.
+        std::fs::write(dir.join("member/new file.ts"), "b").unwrap();
+        let edited = print(&dir);
+        assert_ne!(edited, first);
+        assert_eq!(print(&dir), edited);
+        // Ignored files stay out of it.
+        std::fs::create_dir_all(dir.join("ignored")).unwrap();
+        std::fs::write(dir.join("ignored/out.js"), "x").unwrap();
+        assert_eq!(print(&dir), edited);
+        // Still no index write, and the cap the comment states.
+        assert_eq!(std::fs::metadata(dir.join(".git/index")).unwrap().modified().unwrap(), index);
+        assert!(FINGERPRINT.contains("head -n 1000 "));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_quick_look_is_the_fingerprint_s_first_word() {
+        let lifecycle = |dir: &std::path::Path| {
+            let out = std::process::Command::new("sh").args(["-c", LIFECYCLE, "sh"]).arg(dir).output().unwrap();
+            String::from_utf8(out.stdout).unwrap().trim().to_owned()
+        };
+        let word = |dir: &std::path::Path| print(dir).split_whitespace().next().unwrap().to_owned();
+        let dir = std::env::temp_dir().join(format!("arugula-fp-ref-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!((lifecycle(&dir), word(&dir)), ("gone".to_owned(), "gone".to_owned()));
+        std::fs::create_dir_all(&dir).unwrap();
+        git(&dir, &["init", "-q", "-b", "main"]);
+        git(&dir, &["commit", "-q", "--allow-empty", "-m", "one"]);
+        assert_eq!(lifecycle(&dir), "-");
+        assert_eq!(lifecycle(&dir), word(&dir));
+        git(&dir, &["update-ref", "refs/heads/chant/lifecycle", "HEAD"]);
+        assert_ne!(lifecycle(&dir), "-");
+        assert_eq!(lifecycle(&dir), word(&dir));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn declared_agent_sessions_go_on_their_member() {
+        let mut raw = fixture(include_str!("fixtures/reference-raw.json"));
+        raw["agents"] = serde_json::json!([
+            { "name": "app", "member": "app" },
+            { "name": "design", "member": "design" },
+            { "name": "ghost", "member": "nobody" },
+        ]);
+        let st = compose(&raw, "local");
+        let agents = |n: &str| st.members.iter().find(|m| m.name == n).unwrap().agents.clone();
+        assert_eq!(agents("app"), ["app"]);
+        assert_eq!(agents("design"), ["design"]);
+        assert!(agents("delivery").is_empty());
+        // A declaration that isn't plain JSON: no sessions, nothing else lost.
+        raw["agents"] = Value::Null;
+        assert!(compose(&raw, "local").members.iter().all(|m| m.agents.is_empty()));
+    }
+
+    #[test]
+    fn a_member_s_ops_come_from_status() {
+        let mut raw = fixture(include_str!("fixtures/reference-raw.json"));
+        // delivery's gates were recorded for release and ship.
+        let ops = |st: &State, n: &str| st.members.iter().find(|m| m.name == n).unwrap().ops.clone();
+        let st = compose(&raw, "local");
+        assert_eq!(ops(&st, "delivery"), ["release", "ship"]);
+        assert!(ops(&st, "app").is_empty(), "none named: Run op takes a typed one");
+        // A newer chant names its stewards' ops; they come first, once.
+        for m in raw["reads"]["status"]["json"]["members"].as_array_mut().unwrap() {
+            if m["name"] == "delivery" {
+                m["stewards"] = serde_json::json!([{ "name": "s", "ops": [{ "name": "ship" }, { "name": "deploy" }] }]);
+            }
+        }
+        let st = compose(&raw, "local");
+        assert_eq!(ops(&st, "delivery"), ["ship", "deploy", "release"]);
     }
 
     #[test]

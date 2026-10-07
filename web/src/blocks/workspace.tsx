@@ -8,37 +8,97 @@
 import { render } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import type { Client } from "../client";
-import { gateKey, type Gate, type PaneId, type RunRequest } from "../proto";
+import { EXPIRE_TITLE, gateKey, type Gate, type PaneId, type RunRequest } from "../proto";
 import { registerBlock, type BlockView } from "./view";
 
 interface Diagnostic { rule: string; severity: string; message: string; file: string | null; line: number | null }
 interface Member {
   name: string; dir: string; path: string; kind: string; because: string | null; roles: string[]; nested: boolean;
   unreadable: string | null; errors: number; warnings: number; diagnostics: Diagnostic[]; releases: number; gates: number;
+  agents: string[]; ops: string[];
 }
 interface Rec { kind: string; id: string; title: string | null; state: string | null; ready: boolean | null; blocked_by: string[]; warnings: string[]; valid: boolean }
-interface Read { name: string; ms: number; code: number; ok: boolean; note: string | null }
+interface Read { name: string; ms: number; code: number; ok: boolean; note: string | null; reason: string | null }
 export interface WorkspaceState {
   root: string; name: string | null; chant: string | null; how: string | null; version: string | null; env: string;
   members: Member[]; records: Rec[]; records_note: string | null; gates: Gate[]; diagnostics: Diagnostic[];
-  reads: Read[]; ms: number; error: string | null; headline: string | null; loading: boolean; updated_ms: number; watching?: boolean;
+  reads: Read[]; ms: number; error: string | null; error_code: string | null; headline: string | null; loading: boolean; updated_ms: number; watching?: boolean;
+  /** The envs chant has releases for, with `local` and the one watched (#312). */
+  envs?: string[];
+  /** Who approvals here are recorded as (#302): the owner's chant
+   * principal, and editors' by their Arugula name. */
+  actor?: string | null;
+  principals?: Record<string, string>;
 }
 
-/** Directories known to hold a `chant.workspace.json`, or not, by the
- * pane whose host they're on. */
+/** Editors' principals as lines, `name=principal`, and back. */
+function principalLines(p: Record<string, string> | undefined): string {
+  return Object.entries(p ?? {})
+    .map(([n, v]) => `${n}=${v}`)
+    .join("\n");
+}
+function parsePrincipals(text: string): Record<string, string> | string {
+  const out: Record<string, string> = {};
+  for (const line of text.split("\n")) {
+    if (!line.trim()) continue;
+    const at = line.indexOf("=");
+    if (at < 1) return `"${line.trim()}": a line is name=principal`;
+    out[line.slice(0, at).trim()] = line.slice(at + 1).trim();
+  }
+  return out;
+}
+
+/** The owner's say over who chant records approvals as (#302): the
+ * principal they approve as, and editors'. */
+function Principals({ client, id, s, close }: { client: Client; id: PaneId; s: WorkspaceState; close: () => void }) {
+  const [actor, setActor] = useState(s.actor ?? "");
+  const [editors, setEditors] = useState(principalLines(s.principals));
+  const save = async () => {
+    const principals = parsePrincipals(editors);
+    if (typeof principals === "string") return client.toast(principals);
+    const ok = await client.api(`/api/blocks/${id}/call/principals`, { actor: actor.trim(), principals }, "couldn't set the principals");
+    if (ok) close();
+  };
+  return (
+    <div class="browser-card ws-principals" data-ws-principals>
+      <label>
+        You approve as
+        <input placeholder="github:you (default: your Arugula name)" value={actor} onInput={(e) => setActor(e.currentTarget.value)} />
+      </label>
+      <label>
+        Editors approve as, one a line
+        <textarea rows={3} placeholder="sam=github:sam-h" value={editors} onInput={(e) => setEditors(e.currentTarget.value)} />
+      </label>
+      <p class="dim ws-note">The chant principal its ledger records for an approval. A name not listed is passed as is.</p>
+      <div class="ws-actions">
+        <button class="pri" data-ws-principals-save onClick={() => void save()}>
+          Save
+        </button>
+        <button onClick={close}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+/** Directories known to hold a declaration, or not, by the pane whose
+ * host they're on. */
 const known = new Map<string, boolean>();
 
-/** Whether `dir`, where `pane` runs (its machine, or this host), is a chant
- * workspace: it holds a `chant.workspace.json`. */
+/** Whether to offer `dir`, where `pane` runs (its machine, or this host),
+ * as a chant workspace: it holds a `chant.workspace.json` or `.jsonc`. Only
+ * for the offer: the block asks chant, which also looks above. */
 export async function isWorkspace(client: Client, pane: PaneId, dir: string): Promise<boolean> {
   const key = `${client.machine(pane)?.id ?? "here"}:${dir}`;
   const had = known.get(key);
   if (had !== undefined) return had;
   try {
-    const path = `${dir.replace(/\/$/, "")}/chant.workspace.json`;
-    const res = await client.request("GET", `/api/fs/stat?pane=${pane}&path=${encodeURIComponent(path)}`);
-    known.set(key, res.ok);
-    return res.ok;
+    let yes = false;
+    for (const file of ["chant.workspace.json", "chant.workspace.jsonc"]) {
+      const path = `${dir.replace(/\/$/, "")}/${file}`;
+      if ((yes = (await client.request("GET", `/api/fs/stat?pane=${pane}&path=${encodeURIComponent(path)}`)).ok)) break;
+    }
+    known.set(key, yes);
+    return yes;
   } catch {
     return false;
   }
@@ -80,15 +140,34 @@ function ago(t: string | undefined): string {
   return `${Math.round(s / 86400)}d ago`;
 }
 
-function hint(error: string, root: string): string | null {
+/** What to do about a failure, by chant's reason code (or the reader's). */
+function hint(error: string, code: string | null, root: string): string | null {
   if (error.startsWith("no chant here")) return `Run npm install in ${root}, or set CHANT for the daemon.`;
-  if (error.startsWith("no chant.workspace.json")) return "This directory isn't a chant workspace.";
-  return null;
+  switch (code) {
+    case "declaration-missing":
+      return "This directory isn't in a chant workspace: chant workspace init proposes one.";
+    case "declaration-ambiguous":
+      return "Keep one of chant.workspace.json and chant.workspace.jsonc.";
+    case "reader-too-old":
+      return "The declaration's minReader is newer than this chant: install a newer @intentius/chant at the root.";
+    case "root-chant-required":
+      return "The declaration pins another chant: run npm install at the workspace root.";
+    case "contract-unknown":
+      return "This Arugula reads contract 1: update Arugula, or install a chant that writes contract 1.";
+  }
+  return error.startsWith("no chant.workspace.json") ? "This directory isn't in a chant workspace." : null;
 }
+
+/** The env menu's entry for one it doesn't list. */
+const OTHER = "\u0000other";
 
 function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: WorkspaceState | null }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [said, setSaid] = useState<string | null>(null);
+  // #309: the member whose Run op is open, and the op name typed there.
+  const [picking, setPicking] = useState<string | null>(null);
+  const [typed, setTyped] = useState("");
+  const [who, setWho] = useState(false);
   const session = client.sessionOfTab(client.tabOfPane(id)?.id ?? -1) ?? null;
   const role = client.role(session);
   // Approving is for the owner and editors (#75); opening panes and blocks
@@ -97,20 +176,50 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
   const mayOpen = role === "owner";
   const beside = { split: id, from_pane: id };
   const shell = (cwd: string) => void client.make("/api/run", { ...beside, cwd } satisfies RunRequest).then((e) => e && client.toast(e));
-  const agent = (m: Member) => void client.openBlock({ type: "agent", config: { agent: "claude", cwd: m.path }, ...beside }, "couldn't start the agent");
+  // #304: as the member's agent session (CHANT_AGENT), writing a run record per turn.
+  const agent = (m: Member) =>
+    void client.openBlock(
+      {
+        type: "agent",
+        config: { agent: "claude", cwd: m.path, chant: { root: s?.root, member: m.name, agent: m.agents[0], chant: s?.chant ?? undefined } },
+        ...beside,
+      },
+      "couldn't start the agent",
+    );
   const changes = (m: Member) => void client.openBlock({ type: "diff", config: { repo: m.path }, ...beside }, "couldn't show the changes");
   const nested = (m: Member) => openWorkspace(client, m.path, id, s?.env ?? "local");
-  const runOp = (g: Gate) =>
-    g.source.kind === "chant" &&
-    void client.make("/api/run", { ...beside, cwd: g.source.dir, command: `${s?.chant ?? "chant"} run ${g.op}` } satisfies RunRequest).then((e) => e && client.toast(e));
+  const run = (cwd: string, op: string) =>
+    void client.make("/api/run", { ...beside, cwd, command: `${s?.chant ?? "chant"} run ${op}` } satisfies RunRequest).then((e) => e && client.toast(e));
+  const runOp = (g: Gate) => g.source.kind === "chant" && run(g.source.dir, g.op);
+  // A typed op name goes on a command line: a name, nothing a shell reads.
+  const runTyped = (m: Member) => {
+    const op = typed.trim();
+    if (!/^[\w.:/-]+$/.test(op)) return client.toast("an op name: letters, digits, '.', '_', ':', '/' and '-'");
+    setPicking(null);
+    run(m.path, op);
+  };
   const approve = async (g: Gate) => {
-    setBusy(gateKey(g));
+    setBusy(`approve:${gateKey(g)}`);
     setSaid(null);
     const ok = await client.api(`/api/blocks/${id}/call/approve`, { key: gateKey(g) }, "couldn't approve it");
     setBusy(null);
     if (ok) setSaid(`Approved ${g.gate}. Run ${g.op} again to walk through it.`);
   };
+  // #310: turned down, not approved.
+  const expire = async (g: Gate) => {
+    setBusy(`expire:${gateKey(g)}`);
+    setSaid(null);
+    const ok = await client.api(`/api/blocks/${id}/call/expire`, { key: gateKey(g) }, "couldn't expire it");
+    setBusy(null);
+    if (ok) setSaid(`Expired ${g.gate}, not approved. The next run of ${g.op} stops there again.`);
+  };
   const refresh = () => void client.api(`/api/blocks/${id}/call/refresh`, {}, "couldn't read the workspace");
+  // The block watches one env's gates and releases (#312): switching reads
+  // again, and the choice is kept in its config.
+  const switchEnv = (name: string) => {
+    if (name === OTHER) name = window.prompt("Which environment?", "")?.trim() ?? "";
+    if (name && name !== s?.env) void client.api(`/api/blocks/${id}/call/env`, { name }, "couldn't switch the environment");
+  };
 
   if (!s || (s.loading && !s.updated_ms)) {
     return (
@@ -119,16 +228,47 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
       </div>
     );
   }
-  const help = s.error ? hint(s.error, s.root) : null;
+  const help = s.error ? hint(s.error, s.error_code, s.root) : null;
   return (
     <div class="review ws" data-workspace-block={id}>
       <div class="review-bar">
         <span class="review-path" title={s.root}>
           <b>{s.name ?? "workspace"}</b> {s.root}
         </span>
+        {mayApprove ? (
+          <select
+            class="ws-env"
+            data-ws-env
+            title="The environment whose gates and releases this block watches"
+            value={s.env}
+            disabled={s.loading}
+            onChange={(e) => {
+              const name = e.currentTarget.value;
+              // Shows the env watched until the block says it switched.
+              e.currentTarget.value = s.env;
+              switchEnv(name);
+            }}
+          >
+            {(s.envs ?? [s.env]).map((e) => (
+              <option key={e} value={e}>
+                {e}
+              </option>
+            ))}
+            <option value={OTHER}>other…</option>
+          </select>
+        ) : (
+          <span class="dim ws-meta" title="The environment whose gates and releases this block watches">
+            {s.env}
+          </span>
+        )}
         <span class="dim ws-meta" title={s.chant ?? ""}>
-          {s.env} · chant {s.version ?? "?"}
+          chant {s.version ?? "?"}
         </span>
+        {mayOpen && (
+          <button class="ws-meta" data-ws-actor title="Who chant records approvals here as" onClick={() => setWho(!who)}>
+            as {s.actor || "you"}
+          </button>
+        )}
         {mayOpen && (
           <button title="Read it again" disabled={s.loading} onClick={refresh}>
             {s.loading ? "…" : "↻"}
@@ -136,10 +276,19 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
         )}
         <span class={`review-live ${s.watching ? "on" : ""}`}>{s.watching ? "live" : "paused"}</span>
       </div>
+      {mayOpen && who && <Principals client={client} id={id} s={s} close={() => setWho(false)} />}
       {s.error ? (
         <div class="browser-card" data-ws-error>
           <p>Can't show this workspace</p>
-          <p class="dim">{s.error}</p>
+          <p class="dim">
+            {s.error}
+            {s.error_code && (
+              <>
+                {" "}
+                <code data-ws-reason>{s.error_code}</code>
+              </>
+            )}
+          </p>
           {help && <p class="dim">{help}</p>}
           {mayOpen && <button onClick={refresh}>Try again</button>}
         </div>
@@ -161,7 +310,12 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
                   <div class="ws-actions">
                     {mayApprove && (
                       <button class="pri" data-approve disabled={busy !== null} onClick={() => void approve(g)}>
-                        {busy === gateKey(g) ? "Approving…" : "Approve"}
+                        {busy === `approve:${gateKey(g)}` ? "Approving…" : "Approve"}
+                      </button>
+                    )}
+                    {mayApprove && g.source.kind === "chant" && (
+                      <button data-expire disabled={busy !== null} title={EXPIRE_TITLE} onClick={() => void expire(g)}>
+                        {busy === `expire:${gateKey(g)}` ? "Expiring…" : "Expire"}
                       </button>
                     )}
                     {mayOpen && <button onClick={() => runOp(g)}>Run {g.op}</button>}
@@ -218,10 +372,36 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
                         ) : (
                           <>
                             <button onClick={() => shell(m.path)}>Shell</button>
-                            <button onClick={() => agent(m)}>Agent</button>
+                            <button
+                              title={m.agents[0] ? `As agent session ${m.agents[0]}` : "The declaration binds no agent session to this member"}
+                              onClick={() => agent(m)}
+                            >
+                              Agent
+                            </button>
                             <button onClick={() => changes(m)}>Changes</button>
+                            <button data-run-op onClick={() => (setPicking(picking === m.name ? null : m.name), setTyped(""))}>
+                              Run op
+                            </button>
                           </>
                         )}
+                      </div>
+                    )}
+                    {mayOpen && picking === m.name && (
+                      <div class="ws-actions" data-run-ops={m.name}>
+                        {m.ops.map((op) => (
+                          <button key={op} data-op={op} onClick={() => (setPicking(null), run(m.path, op))}>
+                            {op}
+                          </button>
+                        ))}
+                        <input
+                          placeholder={m.ops.length ? "another op" : "op name"}
+                          value={typed}
+                          onInput={(e) => setTyped(e.currentTarget.value)}
+                          onKeyDown={(e) => e.key === "Enter" && runTyped(m)}
+                        />
+                        <button disabled={!typed.trim()} onClick={() => runTyped(m)}>
+                          Run
+                        </button>
                       </div>
                     )}
                   </div>
@@ -248,7 +428,7 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
             s.records_note && <p class="dim ws-note">Records: {s.records_note}</p>
           )}
           <p class="dim ws-note">
-            {s.reads.map((r) => `${r.name} ${r.ms} ms${r.ok ? "" : " (failed)"}`).join(" · ")} · read {ago(new Date(s.updated_ms).toISOString())}
+            {s.reads.map((r) => `${r.name} ${r.ms} ms${r.ok ? "" : ` (failed${r.reason ? `: ${r.reason}` : ""})`}`).join(" · ")} · read {ago(new Date(s.updated_ms).toISOString())}
           </p>
         </div>
       )}

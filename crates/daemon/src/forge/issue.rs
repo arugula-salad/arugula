@@ -20,6 +20,11 @@
 //! (every [`super::LINKED`], or faster while drawn) and, once, opens its PR
 //! block beside the agent.
 //!
+//! The branch is Arugula's own, not a chant work lease (`chant/work/...`
+//! through `chant workspace work claim`), on purpose (#305): a forge issue
+//! isn't a chant record, and a work kind's lease is for the record it
+//! names. Work on a record of a declared work kind goes through chant.
+//!
 //! **A new issue** (`{issue: "new", title, body}`): a person's goes out
 //! when the block opens, with the owner's login, and the block becomes that
 //! issue. An agent's (MCP, or the CLI under one) is a draft on the block

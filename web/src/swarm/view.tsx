@@ -12,7 +12,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { Fleet, FleetPane } from "../fleet";
-import { gateKey, type Action, type ActRequest, type ActResponse, type OpenRequest, type OpenResponse, type Reason } from "../proto";
+import { EXPIRE_TITLE, gateKey, type Action, type ActRequest, type ActResponse, type OpenRequest, type OpenResponse, type Reason } from "../proto";
 import { AskCard, type Answered } from "../blocks/ask";
 import { ANSWERED_MS, answeredLine, FollowUpBox, PermissionBody, PermissionButtons, VIEWER_NOTE, type Requester } from "../ui/answer-card";
 import { Avatar } from "../ui/people";
@@ -781,6 +781,11 @@ function Card({
           {r.actions.includes("allow") && (
             <button class="pri" data-approve-gate={r.kind === "gate" ? "" : undefined} disabled={busy} onClick={() => void run("allow")}>
               {all(r.kind === "gate" ? "Approve" : "Allow")}
+            </button>
+          )}
+          {r.actions.includes("expire") && (
+            <button data-expire-gate disabled={busy} title={EXPIRE_TITLE} onClick={() => void run("expire")}>
+              {all("Expire")}
             </button>
           )}
           {r.actions.includes("deny") && r.ask?.what === "approve" && (

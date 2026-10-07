@@ -1067,6 +1067,8 @@ impl App {
                 Action::Accept => m.push(item("Accept the edit", answer(pane, Action::Accept, None))),
                 Action::Reject => m.push(item("Reject the edit", answer(pane, Action::Reject, None))),
                 Action::Rerun => m.push(item("Rerun", answer(pane, Action::Rerun, None))),
+                // #310: a chant gate turned down, not approved.
+                Action::Expire => m.push(item("Expire the gate", answer(pane, Action::Expire, None))),
                 Action::Answer => {}
             }
         }
@@ -1366,6 +1368,7 @@ fn answer(pane: PaneId, action: Action, option: Option<&str>) -> Act {
         Action::Accept => "accept that",
         Action::Reject => "reject that",
         Action::Rerun => "run that again",
+        Action::Expire => "expire that",
     };
     Act::Api("/api/attention/act".into(), body, what)
 }

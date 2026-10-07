@@ -12,6 +12,9 @@ export function gateKey(g: Gate): string {
   return `${g.member}/${g.op}/${g.gate}`;
 }
 
+/** What *Expire* does to a chant gate (#310), for its tooltip. */
+export const EXPIRE_TITLE = "Turn it down: clear the pending gate without approving it, so the next run stops there again";
+
 /** What a huddle member signs with its device key: the call, who from and
  * to, and the SDP's `a=fingerprint:` lines (the daemon's
  * `call_fingerprint_body`). */

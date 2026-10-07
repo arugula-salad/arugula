@@ -4,13 +4,18 @@
 // ship` exits 3) shows as attention while the block is drawn, within a few
 // seconds; the owner approves on the desktop, an editor on a phone from the
 // sheet's gates-first list (chant's ledger names each), a viewer sees the
-// gate with no Approve; the next `chant run` walks through. The pane menu
-// and the picker offer "Open as workspace" in a workspace's directory.
+// gate with no Approve; the next `chant run` walks through. *Expire* (#310)
+// turns a gate down from the swarm's card and the phone: the attention
+// clears and the next `chant run` stops there again. On a phone, *Run op*
+// on a member starts a gated op in a pane, *Approve* clears it, and *Run
+// op* again walks through (#309). The pane menu and the picker offer "Open
+// as workspace" in a workspace's directory. The owner sets who approvals
+// are recorded as from the block's bar (#302).
 //
 // The first run installs the fixture's chant (`npm ci`, a few seconds).
 
 import { execFileSync, spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { cpSync, existsSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -42,7 +47,8 @@ const git = (...args: string[]) => execFileSync("git", ["-C", ws, "-c", "user.em
 const cli = (...args: string[]) => execFileSync("../target/debug/arugula", ["--socket", join(dir, "state/sock"), ...args], { encoding: "utf8" });
 const post = (path: string, body: unknown, headers: Record<string, string> = {}) =>
   fetch(base() + path, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
-const panesOf = (page: Page) => page.evaluate(() => window.__arugula.client.state!.panes);
+// A page just opened has no client (or state) yet: no panes.
+const panesOf = (page: Page) => page.evaluate(() => window.__arugula?.client.state?.panes ?? []);
 const reasonOf = async (page: Page, id: PaneId): Promise<Reason | null> => (await panesOf(page)).find((p) => p.id === id)?.reason ?? null;
 /** Who approved delivery's gates, by chant's own `status`. */
 const approvers = () => {
@@ -115,7 +121,9 @@ test("arugula workspace shows its members; a gate reached while it's drawn is at
   await expect(shown.locator('[data-gate="delivery/ship/approve-ship"]')).toBeVisible({ timeout: 8_000 });
   const took = Date.now() - t;
   console.log(`chant run exits 3 → the gate on screen: ${took} ms`);
-  expect(took).toBeLessThan(6_000);
+  // The lifecycle ref is looked at every second while drawn, then a read:
+  // about 1.3 s here (#311 asks about 2).
+  expect(took).toBeLessThan(3_000);
   // The pane's attention follows the block's state: poll it, as it may
   // come a moment after the gate is drawn.
   await expect
@@ -125,7 +133,7 @@ test("arugula workspace shows its members; a gate reached while it's drawn is at
     })
     .toEqual(["gate", "delivery: ship waits at gate approve-ship", `gate:${ws}`]);
   const r = (await reasonOf(page, block))!;
-  expect(r.actions).toEqual(["allow", "dismiss"]);
+  expect(r.actions).toEqual(["allow", "expire", "dismiss"]);
   await expect(shown.locator('[data-member="delivery"]')).toHaveClass(/waits/);
 });
 
@@ -141,6 +149,83 @@ test("the owner approves; the next run walks through", async ({ page }) => {
   // chant's ledger names the owner by their Arugula name.
   expect(approvers()).toEqual([OWNER]);
   expect(run()).toBe(0);
+});
+
+test("a burst of edits in a member costs one full read, once it holds still (#311)", async ({ page }) => {
+  test.setTimeout(90_000);
+  await open(page);
+  await page.evaluate((b) => window.__arugula.client.setActive(b), block);
+  await expect(page.locator(`[data-workspace-block="${block}"] .review-live`)).toHaveText("live");
+  const shown = async (): Promise<{ updated_ms: number; loading: boolean }> => (await (await fetch(`${base()}/api/blocks/${block}`)).json()).state;
+  const readAt = async () => (await shown()).updated_ms;
+  // The last test's `chant run` changed the workspace, and its read may
+  // not have come yet (it would land in the burst): first, the block
+  // holds still, no read for two polls and then some.
+  let before = 0;
+  for (;;) {
+    const now = await shown();
+    if (!now.loading && now.updated_ms === before) break;
+    before = now.updated_ms;
+    await new Promise((r) => setTimeout(r, 7_000));
+  }
+  // An agent at work in a member: the tree changes every second, faster
+  // than the block polls (3 s), for ten seconds. No full read meanwhile.
+  // A tracked file (its diff is in the fingerprint; an untracked one's
+  // mtime and size are too).
+  const file = join(ws, "app", "README.md");
+  const seen = new Set<number>();
+  for (let i = 0; i < 10; i++) {
+    writeFileSync(file, `edit ${i}\n`);
+    seen.add(await readAt());
+    await new Promise((r) => setTimeout(r, 1_000));
+  }
+  expect([...seen]).toEqual([before]);
+  // It holds still: one read, within two polls and the read itself.
+  await expect.poll(readAt, { timeout: 15_000 }).not.toBe(before);
+  const after = await readAt();
+  await new Promise((r) => setTimeout(r, 7_000));
+  expect(await readAt()).toBe(after);
+  git("checkout", "-q", "--", "app/README.md");
+});
+
+test("Expire turns a gate down, from the card and the phone: the next run stops there again", async ({ browser, page }) => {
+  test.setTimeout(90_000);
+  await open(page);
+  const pending = async () => {
+    await expect.poll(async () => (await reasonOf(page, block))?.headline ?? null, { timeout: 15_000 }).toBe(
+      "delivery: release waits at gate approve-release",
+    );
+  };
+  const cleared = () => expect.poll(async () => (await reasonOf(page, block))?.kind ?? null, { timeout: 15_000 }).toBeNull();
+  expect(run("release")).toBe(3);
+  await pending();
+
+  // The swarm's card: Approve, Expire, Dismiss.
+  await page.goto("/#swarm");
+  const card = page.locator('.swarm-card[data-kind="gate"]');
+  await expect(card.locator("[data-expire-gate]")).toHaveText("Expire", { timeout: 15_000 });
+  await card.locator("[data-expire-gate]").click();
+  await cleared();
+  // Not approved: chant's ledger has no approval for it, and the next run
+  // stops at the gate again.
+  expect(approvers()).toEqual([OWNER]);
+  expect(run("release")).toBe(3);
+  await pending();
+  const hist = await (await fetch(`${base()}/api/history?pane=${block}`)).json();
+  expect(hist.some((h: { text: string; by: string }) => h.text === "expired delivery: release at gate approve-release" && h.by === OWNER)).toBe(true);
+
+  // On a phone, from the sheet.
+  const ctx = await browser.newContext({ ...phone, baseURL: base() });
+  const mine = await ctx.newPage();
+  await mine.goto("/");
+  await expect.poll(async () => (await reasonOf(mine, block))?.kind ?? null, { timeout: 15_000 }).toBe("gate");
+  await mine.locator(".sheet-button").click();
+  await mine.locator(`.needs-you [data-wants="${block}"] [data-expire-gate]`).tap();
+  await cleared();
+  expect(run("release")).toBe(3);
+  await pending();
+  expect(approvers()).toEqual([OWNER]);
+  await ctx.close();
 });
 
 test("on a phone, an editor approves from the sheet, gates first; a viewer sees it and can't", async ({ browser, page }) => {
@@ -195,6 +280,79 @@ test("on a phone, an editor approves from the sheet, gates first; a viewer sees 
   await ctx.close();
 });
 
+test("the block says which env it watches and switches it (#312)", async ({ page }) => {
+  test.setTimeout(60_000);
+  const state = async () => (await (await fetch(`${base()}/api/blocks/${block}`)).json()).state;
+  await open(page);
+  await page.evaluate((b) => window.__arugula.client.setActive(b), block);
+  const env = page.locator(`[data-workspace-block="${block}"] [data-ws-env]`);
+  await expect(env).toHaveValue("local");
+  // From the API (and so `arugula call %N env`), a name that isn't one is refused.
+  expect((await post(`/api/blocks/${block}/call/env`, { name: "--json" })).ok).toBe(false);
+  expect((await post(`/api/blocks/${block}/call/env`, { name: "staging" })).ok).toBe(true);
+  await expect.poll(async () => (await state()).env).toBe("staging");
+  await expect(env).toHaveValue("staging");
+  await expect(env.locator("option")).toContainText(["local", "staging"]);
+  // Back, from the menu.
+  await env.selectOption("local");
+  await expect.poll(async () => (await state()).env).toBe("local");
+  await expect.poll(async () => (await state()).loading).toBe(false);
+  // `arugula workspace --env` opens one on that env.
+  const other = Number(/^%(\d+)/.exec(cli("workspace", ws, "--env", "staging"))![1]);
+  expect((await (await fetch(`${base()}/api/blocks/${other}`)).json()).state.env).toBe("staging");
+});
+
+test("on a phone, Run op on a member starts a gated op; Approve clears its gate; Run op again walks through (#309)", async ({ browser, page }) => {
+  test.setTimeout(90_000);
+  await open(page);
+  const ctx = await browser.newContext({ ...phone, baseURL: base(), extraHTTPHeaders: { "tailscale-user-login": OWNER } });
+  const mine = await ctx.newPage();
+  await open(mine);
+  await mine.evaluate((b) => window.__arugula.client.setActive(b), block);
+  const shown = mine.locator(`[data-workspace-block="${block}"]`);
+  const delivery = shown.locator('[data-member="delivery"]');
+  const terminals = async () => (await panesOf(page)).filter((p) => p.type === "terminal").map((p) => p.id);
+
+  // Ops status names (the gated ones so far) are offered; deploy, never
+  // run, is typed.
+  await delivery.locator("[data-run-op]").tap();
+  const ops = shown.locator('[data-run-ops="delivery"]');
+  await expect(ops.locator("[data-op]")).toHaveText(["release", "ship"]);
+  const before = await terminals();
+  await ops.locator("input").fill("deploy");
+  await ops.locator("button", { hasText: "Run" }).tap();
+  await expect(ops).toHaveCount(0);
+  // A pane beside the block, in the member, running `chant run deploy`,
+  // which stops at the gate: attention, through the usual read.
+  await expect.poll(async () => (await terminals()).length, { timeout: 10_000 }).toBe(before.length + 1);
+  // The phone shows the new pane; back to the block.
+  await expect.poll(() => mine.evaluate(() => window.__arugula.client.active())).not.toBe(block);
+  await mine.evaluate((b) => window.__arugula.client.setActive(b), block);
+  await expect(shown.locator('[data-gate="delivery/deploy/approve-deploy"]')).toBeVisible({ timeout: 20_000 });
+  await expect
+    .poll(async () => {
+      const r = await reasonOf(mine, block);
+      return r && [r.kind, r.headline];
+    })
+    .toEqual(["gate", "delivery: deploy waits at gate approve-deploy"]);
+
+  // Approve, on the phone.
+  await shown.locator('[data-gate="delivery/deploy/approve-deploy"] [data-approve]').tap();
+  await expect(shown.locator("[data-ws-said]")).toContainText("Approved approve-deploy", { timeout: 15_000 });
+  await expect.poll(async () => (await reasonOf(mine, block))?.kind ?? null, { timeout: 15_000 }).toBeNull();
+
+  // Run op again: deploy is offered now (its gate is in the ledger), and
+  // the run walks through the approved gate.
+  await delivery.locator("[data-run-op]").tap();
+  const again = await terminals();
+  await ops.locator('[data-op="deploy"]').tap();
+  await expect.poll(async () => (await terminals()).length, { timeout: 10_000 }).toBe(again.length + 1);
+  const pane = (await terminals()).find((t) => !again.includes(t))!;
+  await expect.poll(() => cli("capture", `%${pane}`), { timeout: 30_000 }).toContain("deployed");
+  await expect(shown.locator("[data-gate]")).toHaveCount(0);
+  await ctx.close();
+});
+
 test("Open as workspace, from a pane's menu and the picker, in a workspace's directory", async ({ page }) => {
   await open(page);
   const term = (await panesOf(page)).find((p) => p.type === "terminal")!.id;
@@ -215,4 +373,26 @@ test("Open as workspace, from a pane's menu and the picker, in a workspace's dir
   await page.locator(`.picker-row:not(.recent)[data-path="${ws}"]`).click();
   await page.locator("[data-open-workspace]").click();
   await expect.poll(async () => (await panesOf(page)).filter((p) => p.type === "workspace").length).toBe(before + 2);
+});
+
+test("the owner sets who approvals are recorded as, from the block's bar (#302)", async ({ page }) => {
+  const state = async () => (await (await fetch(`${base()}/api/blocks/${block}`)).json()).state;
+  await open(page);
+  await page.evaluate((b) => window.__arugula.client.setActive(b), block);
+  const shown = page.locator(`[data-workspace-block="${block}"]`);
+  await expect(shown.locator("[data-ws-actor]")).toHaveText("as you");
+  await shown.locator("[data-ws-actor]").click();
+  const form = shown.locator("[data-ws-principals]");
+  await form.locator("input").fill("github:me-x");
+  await form.locator("textarea").fill("friend=github:friend-y");
+  await form.locator("[data-ws-principals-save]").click();
+  await expect(form).toHaveCount(0);
+  await expect(shown.locator("[data-ws-actor]")).toHaveText("as github:me-x");
+  await expect.poll(async () => (await state()).principals).toEqual({ friend: "github:friend-y" });
+  // A principal is one word, not a flag; refused, and nothing changes.
+  expect((await post(`/api/blocks/${block}/call/principals`, { actor: "--sign" })).ok).toBe(false);
+  expect((await state()).actor).toBe("github:me-x");
+  // Cleared again: approvals name the owner by their Arugula name.
+  expect((await post(`/api/blocks/${block}/call/principals`, { actor: null, principals: {} })).ok).toBe(true);
+  await expect(shown.locator("[data-ws-actor]")).toHaveText("as you");
 });

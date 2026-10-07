@@ -11,6 +11,13 @@
 //! gone for good. When Claude Code gives up on it (Esc or Ctrl-C in the TUI,
 //! or the hook's timeout) it gets SIGTERM, and withdraws the card first.
 //! A daemon restart while it waits only means asking the new one.
+//!
+//! The question and its answer stay in Arugula, not in a chant
+//! workspace's `points` even where one declares an `adhoc` point (#305,
+//! ws-091): it is Claude Code's own question, in any pane, answered for
+//! Claude Code, and a points answer is a record with its own rules
+//! (`quorum-not-met`, `answer-in-steward-turn`) that a hook waiting on one
+//! person can't meet. The same goes for agent blocks' questions.
 
 use std::{
     io::{Read, Write},

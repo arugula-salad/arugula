@@ -409,6 +409,36 @@ dir is never used: it holds secrets and a VM pane can't see it.
 Where: `crates/daemon/src/upload.rs`, `web/src/upload.ts`.
 From: [Images track](docs/plan-archive.md#images-track-s32-m70m72-added-2026-10-05), [M70](docs/plan-archive.md#m70-images-into-terminal-panes-249).
 
+### A workspace block asks chant, and keeps a few reads of its own
+A workspace block reads through the workspace's own chant and its contract-1
+documents; chant decides what the workspace is and who reads it. An audit
+against chant's workspace spec (INTENTIUS/chant 74b1a5b97, #305) found
+smaller deviations. One was fixed: the fingerprint runs git with
+`GIT_OPTIONAL_LOCKS=0` and `diff-index`, so polling never takes `index.lock`,
+and its checksum covers `refs/chant/*` and `refs/heads/chant/work/*`. The
+rest stay, each with a comment at the spot:
+- Which chant (ws-021). The reader only finds a chant to start (`$CHANT`,
+  `node_modules/.bin` here or above, PATH); chant hands off to the root's
+  pinned one or refuses (`root-chant-required`, `reader-too-old`), and the
+  block shows the code.
+- Studio-box gates come from hud's work board (`apps/hud.rs`): the workspace
+  is inside the box, where Arugula can't run chant. The board's gate fields
+  are `status`'s.
+- hud passes the email's local part as `onBehalfOf` (ws-080), since hud
+  takes only a display name; a workspace with `identity.attribution:
+  identified` refuses it in chant. The block's own approvals pass principals.
+- Standing permission rules stay outside `chant audit --agents`
+  (`rules.rs`): they are Arugula's, answering every ACP agent, and writing
+  them into a harness's settings would allow those tools outside Arugula.
+- Agent questions stay in Arugula, not chant `points` (ws-091): one person
+  answering a hook can't meet a points record's rules.
+- `dist/fountain.yaml` and `src/agents` are read by hand: agent-specs is a
+  chant project, not a workspace, and asking chant would mean a build.
+- A forge issue keeps its own branch, not a chant work lease: the issue isn't
+  a chant record.
+Where: `crates/daemon/src/workspace/model.rs` (`READER`, `FINGERPRINT`), `apps/hud.rs`, `rules.rs`, `cli/src/ask.rs`, `fountain/wear.rs`, `forge/issue.rs`.
+From: [M34](docs/plan-archive.md#m34-chant-workspace-blocks-73), #303, #305.
+
 ### Threads live on the daemon that owns the pane
 Pane and session threads are kept in `<state>/threads/`, outside the pane's
 own directory (closing a pane keeps its conversation), with the pane's access

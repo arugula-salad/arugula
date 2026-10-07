@@ -7,8 +7,11 @@
 //! to `approvals` and lets the gate go, as chant's does. The real chant
 //! runs in `web/e2e/workspace.spec.ts`.
 //!
-//! A gate is `needs_input` with a `gate` reason; approving it (#75) passes
-//! `--approver` with the owner's name or an editor's, and a viewer can't.
+//! A gate is `needs_input` with a `gate` reason; approving it (#75) runs
+//! status's `approve` line with `--actor` the owner's principal or an
+//! editor's (#302), and a viewer can't. With `.signed`, the gate is bound
+//! to a plan and in `identity.gates`; with `.newer`, the chant is one that
+//! takes `--relayed-by`.
 
 // Over the daemon's Unix socket; Windows gets its named pipe in M56 (#219).
 #![cfg(unix)]
@@ -69,10 +72,11 @@ fn workspace(d: &Daemon, name: &str, gated: bool) -> PathBuf {
             r#"#!/bin/sh
 ws='{ws}'; f='{fixtures}'
 case "$1 $2" in
-  "workspace ls") cat "$f/ls.json" ;;
+  "workspace ls") if [ -e "$ws/.undeclared" ]; then cat "$f/ls-missing.json"; exit 1; fi
+    if [ -e "$ws/.newer" ]; then sed 's/"0.87.0"/"0.104.0"/' "$f/ls.json"; else cat "$f/ls.json"; fi ;;
   "workspace check") cat "$f/check.json" ;;
   "workspace records") cat "$f/records.json" ;;
-  "workspace status") if [ -e "$ws/.gate" ]; then cat "$f/status-gated.json"; else cat "$f/status.json"; fi ;;
+  "workspace status") if [ ! -e "$ws/.gate" ]; then cat "$f/status.json"; elif [ -e "$ws/.signed" ]; then cat "$f/status-signed.json"; else cat "$f/status-gated.json"; fi ;;
   approve*) echo "$PWD $*" >> "$ws/approvals"; rm -f "$ws/.gate"; printf '\033[32mGate "%s" on "%s" resolved\033[0m\n' "$3" "$2" ;;
   *) echo "the stand-in doesn't know $*" >&2; exit 2 ;;
 esac
@@ -154,7 +158,7 @@ fn a_gate_is_attention_until_the_owner_approves_it() {
     assert_eq!(r["headline"], "delivery: release waits at gate approve-release");
     assert_eq!(r["bundle"], format!("gate:{}", ws.display()));
     assert_eq!(r["gate"]["op"], "release");
-    assert_eq!(r["actions"], json!(["allow", "dismiss"]));
+    assert_eq!(r["actions"], json!(["allow", "expire", "dismiss"]));
     // `arugula attention` lists it.
     let list = d.get("/api/attention");
     assert!(list.as_array().unwrap().iter().any(|a| a["pane"] == block), "{list}");
@@ -173,7 +177,7 @@ fn a_gate_is_attention_until_the_owner_approves_it() {
     let r = d.post("/api/attention/act", json!({ "action": "allow", "pane": block }));
     assert_eq!(r["results"][0]["ok"], true, "{r}");
     let said = approvals(&ws);
-    assert!(said.trim_end().ends_with(&format!("approve release approve-release --approver {OWNER}")), "{said}");
+    assert!(said.trim_end().ends_with(&format!("approve release approve-release --actor {OWNER}")), "{said}");
     // ...in the member's directory.
     assert!(said.starts_with(&format!("{delivery} approve ")), "{said}");
     // Cleared, and the gate's gone from the block.
@@ -237,7 +241,8 @@ fn an_editor_approves_as_themselves_and_a_viewer_cannot() {
     let (status, body) = as_friend(&d, "POST", "/api/attention/act", json!({ "action": "allow", "pane": block }));
     assert_eq!(status, 200, "{body}");
     let said = approvals(&ws);
-    assert!(said.trim_end().ends_with(&format!("--approver {FRIEND}")), "{said}");
+    // No principals configured: their Arugula name, and no relay to name.
+    assert!(said.trim_end().ends_with(&format!("--actor {FRIEND}")), "{said}");
     d.wait_for("attention to clear", || info(&d, block)["attention"] == "idle");
     let i = info(&d, block);
     assert_eq!(i["answered"]["who"], format!("tailnet:{FRIEND}"));
@@ -274,7 +279,7 @@ fn without_chant_or_a_declaration_it_says_so() {
     std::fs::create_dir_all(&plain).unwrap();
     let block = open(&d, &plain);
     let st = read(&d, block);
-    assert!(st["error"].as_str().unwrap_or_default().starts_with("no chant.workspace.json here"), "{st}");
+    assert!(st["error"].as_str().unwrap_or_default().starts_with("no chant.workspace.json or .jsonc here"), "{st}");
 
     // With nothing waiting, nothing wants you.
     let ws = workspace(&d, "ws", false);
@@ -285,4 +290,138 @@ fn without_chant_or_a_declaration_it_says_so() {
     assert_eq!(d.call(block, "member", json!({ "name": "delivery" }))["kind"], "chant");
     let text = d.raw("GET", &format!("/api/panes/{block}/capture?format=text"), None).1;
     assert!(text.contains("members (4)"), "{text}");
+}
+
+#[test]
+fn chant_says_what_a_workspace_is() {
+    let d = daemon();
+    let ws = workspace(&d, "ws", true);
+    // Opened in a member's directory: chant (from node_modules above) finds
+    // the declaration above it, and the block shows the whole workspace.
+    let block = open(&d, &ws.join("delivery"));
+    let st = read(&d, block);
+    assert_eq!(st["error"], Value::Null, "{st}");
+    assert_eq!(st["how"], "above");
+    assert_eq!(st["root"], ws.display().to_string());
+    assert_eq!(st["gates"][0]["source"]["dir"], ws.join("delivery").display().to_string());
+
+    // A failure is chant's, with its reason code: not an empty workspace.
+    std::fs::write(ws.join(".undeclared"), "").unwrap();
+    let block = open(&d, &ws);
+    let st = read(&d, block);
+    assert_eq!(st["error_code"], "declaration-missing", "{st}");
+    assert!(st["error"].as_str().unwrap().starts_with("no chant.workspace.json or .jsonc between"), "{st}");
+    assert_eq!(st["members"], json!([]));
+    let text = d.raw("GET", &format!("/api/panes/{block}/capture?format=text"), None).1;
+    assert!(text.contains("(declaration-missing)"), "{text}");
+}
+
+#[test]
+fn approving_runs_status_line_with_its_plan_as_principals() {
+    let d = daemon();
+    let ws = workspace(&d, "signed", true);
+    std::fs::write(ws.join(".signed"), "").unwrap();
+    std::fs::write(ws.join(".newer"), "").unwrap();
+    let config = json!({ "root": ws, "actor": "github:owner", "principals": { FRIEND: "github:friend" } });
+    let block = d.post("/api/blocks", json!({ "type": "workspace", "config": config, "local": true }))["block"]
+        .as_u64()
+        .unwrap();
+    let st = read(&d, block);
+    assert_eq!(st["version"], "0.104.0", "{st}");
+    let line = "chant approve release approve-release --plan sha256:5f1e0c9a2b7d4e8f --sign";
+    assert_eq!(st["gates"][0]["command"], line);
+    d.wait_for("attention", || info(&d, block)["reason"]["kind"] == "gate");
+
+    // An editor can't approve a signed gate here: chant would seal it with
+    // the owner's key. Nothing reaches chant, and it still waits.
+    share(&d, block, "editor");
+    let (status, body) = as_friend(&d, "POST", "/api/attention/act", json!({ "action": "allow", "pane": block }));
+    assert_eq!(status, 409, "{body}");
+    assert!(body.contains("needs a signed approval"), "{body}");
+    assert_eq!(approvals(&ws), "");
+    assert_eq!(info(&d, block)["attention"], "needs_input");
+
+    // The owner: status's line (the plan read, --sign), as their principal.
+    let r = d.post("/api/attention/act", json!({ "action": "allow", "pane": block }));
+    assert_eq!(r["results"][0]["ok"], true, "{r}");
+    let said = approvals(&ws);
+    let delivery = ws.join("delivery").display().to_string();
+    assert_eq!(
+        said.trim_end(),
+        format!(
+            "{delivery} approve release approve-release --actor github:owner --plan sha256:5f1e0c9a2b7d4e8f --sign"
+        )
+    );
+    d.wait_for("attention to clear", || info(&d, block)["attention"] == "idle");
+
+    // Unsigned: the editor approves as their principal, carried by the
+    // owner (`--relayed-by`).
+    std::fs::remove_file(ws.join(".signed")).unwrap();
+    std::fs::write(ws.join(".gate"), "").unwrap();
+    d.call(block, "refresh", json!({}));
+    d.wait_for("the new gate", || info(&d, block)["reason"]["kind"] == "gate");
+    let (status, body) = as_friend(&d, "POST", "/api/attention/act", json!({ "action": "allow", "pane": block }));
+    assert_eq!(status, 200, "{body}");
+    let said = approvals(&ws);
+    assert!(
+        said.trim_end().ends_with("approve release approve-release --actor github:friend --relayed-by github:owner"),
+        "{said}"
+    );
+    // A caller can't claim to be relayed, or not: the daemon says.
+    std::fs::write(ws.join(".gate"), "").unwrap();
+    d.call(block, "refresh", json!({}));
+    let out = d.call(block, "approve", json!({ "key": "delivery/release/approve-release", "relayed": true }));
+    assert_eq!(out["approved"], "delivery/release/approve-release", "{out}");
+    assert!(approvals(&ws).trim_end().ends_with("--actor github:owner"), "{}", approvals(&ws));
+}
+
+#[test]
+fn expire_turns_a_gate_down_as_approve_would_be_logged() {
+    let d = daemon();
+    let ws = workspace(&d, "expire", true);
+    let block = open(&d, &ws);
+    read(&d, block);
+    d.wait_for("attention", || info(&d, block)["reason"]["kind"] == "gate");
+    let call = format!("/api/blocks/{block}/call/expire");
+
+    // A viewer can't, by either route.
+    share(&d, block, "viewer");
+    let (status, body) = as_friend(&d, "POST", &call, json!({}));
+    assert_eq!(status, 403, "{body}");
+    let (status, body) = as_friend(&d, "POST", "/api/attention/act", json!({ "action": "expire", "pane": block }));
+    assert_eq!(status, 403, "{body}");
+    assert_eq!(approvals(&ws), "");
+
+    // An editor can: `chant approve <op> <gate> --expire` in the member's
+    // directory, and the attention clears.
+    share(&d, block, "editor");
+    let (status, body) = as_friend(&d, "POST", "/api/attention/act", json!({ "action": "expire", "pane": block }));
+    assert_eq!(status, 200, "{body}");
+    let delivery = ws.join("delivery").display().to_string();
+    assert_eq!(approvals(&ws).trim_end(), format!("{delivery} approve release approve-release --expire"));
+    d.wait_for("attention to clear", || info(&d, block)["attention"] == "idle");
+    // Who, on the card, in history and the audit log.
+    let i = info(&d, block);
+    assert_eq!((i["answered"]["how"].as_str(), i["answered"]["name"].as_str()), (Some("expired"), Some(FRIEND)));
+    let hist = d.get(&format!("/api/history?pane={block}"));
+    assert!(
+        hist.as_array()
+            .unwrap()
+            .iter()
+            .any(|h| h["text"] == "expired delivery: release at gate approve-release" && h["by"] == FRIEND),
+        "{hist}"
+    );
+    let acl = d.get("/api/acl");
+    assert!(acl["audit"].as_array().unwrap().iter().any(|a| a["how"] == "expired" && a["name"] == FRIEND), "{acl}");
+
+    // The next run stops at the gate again; the owner expires it by a call.
+    std::fs::write(ws.join(".gate"), "").unwrap();
+    d.call(block, "refresh", json!({}));
+    let out = d.call(block, "expire", json!({ "key": "delivery/release/approve-release" }));
+    assert_eq!(out["expired"], "delivery/release/approve-release", "{out}");
+    assert_eq!(approvals(&ws).lines().count(), 2);
+    // Nothing waiting: nothing to expire.
+    let (status, body) = d.raw("POST", &call, Some(json!({})));
+    assert_eq!(status, 400, "{body}");
+    assert!(body.contains("no gate is waiting"), "{body}");
 }

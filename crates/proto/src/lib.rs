@@ -349,8 +349,8 @@ pub struct Gate {
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub enum GateSource {
-    /// chant on the block's host: approved by `chant approve <op> <gate>`
-    /// in the member's directory, `--approver` the person who approves.
+    /// chant on the block's host: approved by `status`'s `chant approve`
+    /// line in the member's directory, `--actor` the person who approves.
     Chant {
         /// The workspace's root, and the member's directory, on that host.
         root: String,
@@ -459,6 +459,10 @@ pub enum Action {
     /// Type a failed command into its pane again, once its shell is idle
     /// (M11, M10's remainder).
     Rerun,
+    /// Turn a chant gate down (#310): clear its pending fact without
+    /// approving it (`chant approve <op> <gate> --expire`), so the next run
+    /// stops there again.
+    Expire,
 }
 
 /// A command the shell integration reported.

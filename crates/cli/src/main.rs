@@ -124,8 +124,9 @@ enum Command {
     ///
     /// Its members as cards to open shells, agents and diffs on, its records, and
     /// the gates waiting for a person, which are attention you approve (`call %N
-    /// approve`). Read through the workspace's own chant. Prints the block, then
-    /// its members and gates.
+    /// approve`) or turn down (`call %N expire`: `chant approve --expire`). Read
+    /// through the workspace's own chant. Prints the block, then its members and
+    /// gates.
     #[command(hide = true)]
     Workspace(cmd::workspace::Args),
     /// Show a pull request as a block.

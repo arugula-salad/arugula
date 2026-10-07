@@ -4,7 +4,7 @@
 
 import { useState } from "preact/hooks";
 import { paneIds, tabLabel, type Client } from "../client";
-import { gateKey } from "../proto";
+import { EXPIRE_TITLE, gateKey } from "../proto";
 import { useSubscribe } from "./hooks";
 import { AttentionBadge } from "./attention";
 import { HostCrumb, HostSection } from "./hosts";
@@ -102,6 +102,16 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
                   {gate && may && (
                     <button class="sheet-act" data-approve-gate={p.id} onClick={act(() => void client.act({ action: "allow", pane: p.id, id: gateKey(gate) }))}>
                       Approve
+                    </button>
+                  )}
+                  {gate && may && p.reason?.actions.includes("expire") && (
+                    <button
+                      class="sheet-act"
+                      data-expire-gate={p.id}
+                      title={EXPIRE_TITLE}
+                      onClick={act(() => void client.act({ action: "expire", pane: p.id, id: gateKey(gate) }))}
+                    >
+                      Expire
                     </button>
                   )}
                 </div>
