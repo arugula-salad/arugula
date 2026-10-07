@@ -111,8 +111,13 @@ Labs answers `/api/guests` with 501), and chat and huddles (`labs/threads.rs`,
 `labs/calls.rs`, with the mux's handling in `mux/thread_ops.rs` and
 `mux/call_ops.rs`, which need `Daemon`'s fields; a build without Labs answers
 the thread routes with 501 and a huddle message with an error, and never
-touches the state dir's `threads/`) are there so far (#452 to #456); the
-other forges follow (#457). The `Provider` trait stays
+touches the state dir's `threads/`), and the Forgejo and GitLab forges
+(`labs/forgejo.rs`, `labs/gitlab.rs`, `labs/tea.rs`, `labs/forge_live.rs`,
+and `forge/labs_forges.rs`, the block's own connecting, which needs its
+fields; GitHub's PR and issue blocks are core, and `labs::forge_allowed`
+refuses the others unless Labs is on, in a block's creation, `open_config`
+and each read, so a saved one comes back unavailable; with Labs off a bare
+`OWNER/REPO#N` is GitHub's) are there (#452 to #457). The `Provider` trait stays
 in core (`provider/`); a build without Labs never has a provider, and a saved
 VM pane comes back exited, with the reason. `just check-core`
 runs clippy and the tests of `arugulad` and `arugula` with the feature off.

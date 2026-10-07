@@ -328,7 +328,7 @@ exit 0
         let path = format!("{}:{}", self.bin.display(), std::env::var("PATH").unwrap_or_default());
         // No real glab config is read: it'd be the person's.
         let cfg = self.bin.join("no-config");
-        Daemon::child_env(
+        Daemon::child_labs_env(
             &["--wisp-token-file", "/nonexistent", "--owner", OWNER, "--tailscale-socket", "/nonexistent/sock"],
             &[("PATH", &path), ("ARUGULA_FORGE_POLL_MS", "250,250"), ("GLAB_CONFIG_DIR", cfg.to_str().unwrap())],
         )
@@ -610,7 +610,7 @@ fn with_no_glab_login_it_reads_anonymously_and_refuses_writes() {
 fn with_no_glab_at_all_it_says_so() {
     let dir = scratch("noglab");
     let forge = Forge::start(&dir, "someone", None);
-    let d = Daemon::child_env(
+    let d = Daemon::child_labs_env(
         &["--wisp-token-file", "/nonexistent"],
         &[("PATH", "/usr/bin:/bin"), ("ARUGULA_FORGE_POLL_MS", "250,250")],
     );

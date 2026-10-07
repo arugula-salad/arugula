@@ -161,6 +161,8 @@ pub struct BlockEnv {
     pub rules: Arc<crate::rules::Rules>,
     /// What runs an invite the owner sent from its card (#234).
     pub invite: crate::invite::Hook,
+    /// The daemon's state directory, where the machine's `labs` file is.
+    pub state_dir: PathBuf,
 }
 
 /// The ids of the daemon's panes and blocks, as the multiplexer keeps them.
@@ -197,6 +199,8 @@ pub struct BlockCtx {
     /// Standing permission rules (#166).
     pub rules: Arc<crate::rules::Rules>,
     pub invite: crate::invite::Hook,
+    /// The daemon's state directory, where the machine's `labs` file is.
+    pub state_dir: PathBuf,
 }
 
 impl BlockCtx {
@@ -230,6 +234,7 @@ impl BlockCtx {
             ids: base.ids,
             rules: base.rules,
             invite: base.invite,
+            state_dir: base.state_dir,
         }
     }
 

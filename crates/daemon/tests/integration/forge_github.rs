@@ -428,6 +428,17 @@ esac
             &[("PATH", &path), ("ARUGULA_FORGE_POLL_MS", "250,250"), ("ARUGULA_GITHUB_API", &self.origin)],
         )
     }
+
+    /// ...with Labs on, for a block that starts as Forgejo's (a config that
+    /// names no forge, which `gh` may then say is GitHub Enterprise's).
+    #[cfg(feature = "labs")]
+    fn daemon_labs(&self) -> Daemon {
+        let path = format!("{}:{}", self.bin.display(), std::env::var("PATH").unwrap_or_default());
+        Daemon::child_labs_env(
+            &["--wisp-token-file", "/nonexistent", "--owner", OWNER, "--tailscale-socket", "/nonexistent/sock"],
+            &[("PATH", &path), ("ARUGULA_FORGE_POLL_MS", "250,250"), ("ARUGULA_GITHUB_API", &self.origin)],
+        )
+    }
 }
 
 fn scratch(tag: &str) -> Scratch {
@@ -758,11 +769,15 @@ fn a_forks_pr_from_its_pull_ref_and_owner_repo_from_a_github_clone() {
     assert_eq!(files, ["b.txt"]);
 }
 
+// A config that names no forge starts as Forgejo's, and only `gh` knowing the
+// host makes it GitHub's: where Labs is off that is refused (a link, with
+// `/pull/N`, or `provider: github` says it is GitHub's).
+#[cfg(feature = "labs")]
 #[test]
 fn a_host_gh_is_logged_in_to_is_github_enterprise() {
     let dir = scratch("ghe");
     let hub = Hub::start(&dir, "someone", &[], &[]);
-    let d = hub.daemon();
+    let d = hub.daemon_labs();
     // No tea login names it, but gh has one there: GitHub Enterprise.
     let block = open(&d, json!({ "repo": "o/r", "number": 3, "host": "ghe.example.test" }));
     d.wait_for("connected", || d.state(block)["login"] == "ghe.example.test");

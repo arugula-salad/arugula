@@ -138,7 +138,7 @@ fn api_routes(app: &Arc<App>) -> Router<Arc<App>> {
 /// must come from one of our origins. Serve it with
 /// `into_make_service_with_connect_info::<SocketAddr>()`.
 pub fn router(app: Arc<App>) -> Router {
-    Router::new()
+    let r = Router::new()
         .route("/ws", get(ws))
         .route(crate::e2e::PATH, get(crate::e2e::ws))
         .route(crate::localauth::AUTH_PATH, get(signin))
@@ -147,10 +147,10 @@ pub fn router(app: Arc<App>) -> Router {
                 .layer(middleware::from_fn_with_state(app.clone(), crate::authz::check))
                 .layer(middleware::from_fn_with_state(app.clone(), api_origin)),
         )
-        .merge(crate::share::viewer_routes())
-        // M40: forges' webhooks, by their signatures (the handler checks).
-        .route(crate::forge::live::FORGEJO_PATH, axum::routing::post(crate::forge::live::forgejo_hook))
-        .route(crate::forge::live::GITLAB_PATH, axum::routing::post(crate::forge::live::gitlab_hook))
+        .merge(crate::share::viewer_routes());
+    // M40: Forgejo's and GitLab's webhooks, by their signatures (the handler
+    // checks); they are Labs'.
+    crate::labs::forge_hook_routes(r)
         .fallback(asset)
         .layer(middleware::from_fn_with_state(app.clone(), cors))
         .layer(middleware::from_fn_with_state(app.clone(), guard))
@@ -373,7 +373,7 @@ fn class(req: &Request, access: &Access) -> Class {
         || (m == Method::GET && path == crate::dial::DIAL_PATH)
         || (m == Method::GET && path == crate::e2e::PATH)
         || path.starts_with(crate::sync::PUSH_PREFIX)
-        || (m == Method::POST && [crate::forge::live::FORGEJO_PATH, crate::forge::live::GITLAB_PATH].contains(&path))
+        || (m == Method::POST && crate::labs::is_forge_hook(path))
     {
         Class::Token
     } else if path == crate::mcp::PATH

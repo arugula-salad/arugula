@@ -2910,7 +2910,11 @@ impl Call<'_> {
             _ => None,
         };
         what.dir = dir;
-        let config = crate::forge::open_config(&serde_json::to_value(&what).map_err(|e| e.to_string())?).await?;
+        let config = crate::forge::open_config(
+            &serde_json::to_value(&what).map_err(|e| e.to_string())?,
+            self.app.control.state_dir(),
+        )
+        .await?;
         let req = OpenRequest {
             kind: BlockType::Forge,
             config,

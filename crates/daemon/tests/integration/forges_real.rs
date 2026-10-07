@@ -161,7 +161,7 @@ esac
         ];
         all.retain(|(k, _)| !env.iter().any(|(e, _)| e == k));
         all.extend_from_slice(env);
-        Daemon::child_env(
+        Daemon::child_labs_env(
             &["--wisp-token-file", "/nonexistent", "--owner", OWNER, "--tailscale-socket", "/nonexistent/sock"],
             &all,
         )

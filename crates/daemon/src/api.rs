@@ -1105,7 +1105,7 @@ async fn open_block(
                 req.config["agent"] = true.into();
             }
         }
-        req.config = crate::forge::open_config(&req.config).await.map_err(bad)?;
+        req.config = crate::forge::open_config(&req.config, app.control.state_dir()).await.map_err(bad)?;
     }
     // A pane on another daemon (#17) names a host in our list: that's
     // where clients look it up.
