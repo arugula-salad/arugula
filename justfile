@@ -11,6 +11,9 @@ cargo := "mise exec -- cargo"
 # Where cargo builds (CI keeps one per runner, outside the checkout).
 target_dir := env("CARGO_TARGET_DIR", justfile_directory() / "target")
 
+# Runs a suite while no other worktree here runs one (scripts/suite-lock).
+suite_lock := justfile_directory() / "scripts/suite-lock"
+
 default:
     @just --list
 
@@ -301,18 +304,26 @@ notices:
 
 # All tests. The Rust ones run under cargo-nextest (.config/nextest.toml),
 # which `just bootstrap` installs; the doctests, which it can't run, under
-# cargo test.
+# cargo test. Builds first, then runs the suite one worktree at a time
+# (scripts/suite-lock).
 test: web
+    {{cargo}} nextest run --workspace --no-run
+    {{cargo}} build -p arugula-control -p arugulad -p arugula
+    {{cargo}} build -p arugula-e2e --example interop
+    cd web && pnpm run typecheck
+    {{suite_lock}} just test-run
+
+[private]
+test-run:
     {{cargo}} nextest run --workspace
     {{cargo}} test --workspace --doc
-    cd web && pnpm run typecheck
     just e2e-interop control-smoke
 
 # Control end to end without a browser: sign in (fake GitHub), enroll,
 # join a daemon, reach it through the relay and directly.
 control-smoke:
     {{cargo}} build -p arugula-control -p arugulad -p arugula
-    cd web && TARGET_DIR="{{target_dir}}/debug" node --experimental-strip-types --no-warnings control-smoke.ts
+    cd web && TARGET_DIR="{{target_dir}}/debug" {{suite_lock}} node --experimental-strip-types --no-warnings control-smoke.ts
 
 # The swarm (M26) by hand: three throwaway daemons with scripted work on
 # 7730-7732 (t: make trouble, a: an agent asks, x: quit).
@@ -323,15 +334,15 @@ fake-fleet:
 # The browser's end-to-end crypto (web/src/e2e) against Rust's (crates/e2e).
 e2e-interop:
     {{cargo}} build -p arugula-e2e --example interop
-    cd web && INTEROP_BIN="{{target_dir}}/debug/examples/interop" node --experimental-strip-types --no-warnings e2e-interop.ts
+    cd web && INTEROP_BIN="{{target_dir}}/debug/examples/interop" {{suite_lock}} node --experimental-strip-types --no-warnings e2e-interop.ts
 
 # Browser tests in system Chrome; pass a URL to test a running daemon.
 e2e url="": web e2e-build
-    cd web && E2E_BASE_URL="{{url}}" pnpm exec playwright test
+    cd web && E2E_BASE_URL="{{url}}" {{suite_lock}} pnpm exec playwright test
 
 # Only the WebKit specs (`*.webkit.spec.ts`), as the macOS runner runs them.
 e2e-webkit: web e2e-build
-    cd web && pnpm exec playwright test --project=webkit
+    cd web && {{suite_lock}} pnpm exec playwright test --project=webkit
 
 # What the specs run, from ../target/debug: with CARGO_TARGET_DIR elsewhere
 # (CI), target is a link to it.
@@ -471,6 +482,7 @@ test-scripts:
     scripts/tests/release-targets.sh
     scripts/tests/notices.sh
     scripts/tests/release-green.sh
+    scripts/tests/suite-lock.sh
 
 # What CI runs.
 check: test

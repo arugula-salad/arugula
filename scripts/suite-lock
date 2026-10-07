@@ -1,0 +1,81 @@
+#!/usr/bin/perl
+# scripts/suite-lock COMMAND...: run COMMAND while no other worktree on this
+# machine runs a suite; wait while one does.
+#
+# A suite (nextest, the doctests, the interop and control smokes, Playwright)
+# runs fresh unsigned binaries, and many of its tests start daemons on
+# loopback. Two at once on a Mac wedge syspolicyd, which checks every new
+# binary before it runs: every exec on the machine, the app included, then
+# waits at _dyld_start until `sudo killall syspolicyd`, and the suites fail
+# by the hundred. Builds stay outside the lock (`just test` builds first).
+#
+# The lock is flock(2) on ~/.cache/arugula/suite.lock, held by this script
+# while COMMAND runs: the kernel frees it when the script exits or is killed,
+# so a dead run leaves no stale lock. COMMAND doesn't inherit it, so a daemon
+# a test leaves behind doesn't hold it either. The file says who holds it.
+#
+# CI runs one job's suite per slot already (scripts/ci-slot), so with CI set
+# this only runs COMMAND, as it does inside a locked run (no deadlock on
+# itself) and with ARUGULA_SUITE_LOCK=0.
+use strict;
+use warnings;
+use Fcntl qw(:flock);
+use File::Path qw(make_path);
+use POSIX qw(strftime);
+
+@ARGV or die "usage: scripts/suite-lock COMMAND...\n";
+exec @ARGV or die "suite-lock: $ARGV[0]: $!\n"
+  if $ENV{CI} || $ENV{ARUGULA_SUITE_LOCKED} || ($ENV{ARUGULA_SUITE_LOCK} // '') eq '0';
+
+my $dir = "$ENV{HOME}/.cache/arugula";
+# ~/.cache too, on a fresh home.
+make_path($dir);
+my $path = "$dir/suite.lock";
+open(my $lock, '+>>', $path) or die "suite-lock: $path: $!\n";
+
+unless (flock($lock, LOCK_EX | LOCK_NB)) {
+  seek($lock, 0, 0);
+  chomp(my $holder = <$lock> // 'another run');
+  my $since = time;
+  print STDERR "suite-lock: waiting for $holder\n";
+  flock($lock, LOCK_EX) or die "suite-lock: $path: $!\n";
+  printf STDERR "suite-lock: waited %ds\n", time - $since;
+}
+truncate($lock, 0);
+my $cwd = `pwd`; chomp $cwd;
+print $lock "pid $$ in $cwd since " . strftime('%H:%M:%S', localtime) . "\n";
+$lock->flush;
+
+# A wedged syspolicyd stays pegged with nothing new to check; the suite
+# would only time out by the hundred. It's also busy for a moment whenever
+# new binaries first run (another worktree's, say), so it counts as wedged
+# only when it stays busy for ARUGULA_SUITE_LOCK_BUSY seconds (30). Only
+# macOS has one; elsewhere ps lists none.
+my $busy = sub {
+  my ($cpu) = map { /^\s*([\d.]+)/ ? $1 : () } grep { /syspolicyd$/ } `ps -Ao pcpu,comm`;
+  defined $cpu && $cpu >= 80;
+};
+if ($busy->()) {
+  my $window = $ENV{ARUGULA_SUITE_LOCK_BUSY} // 30;
+  my $until = time + $window;
+  print STDERR "suite-lock: syspolicyd is busy; waiting up to ${window}s for it to settle\n";
+  while ($busy->()) {
+    if (time >= $until) {
+      print STDERR "suite-lock: syspolicyd is stuck near 100% CPU, so every new binary waits for it\n"
+        . "and this suite would fail with timeouts. Restart it (launchd brings it back):\n"
+        . "  sudo killall syspolicyd\n";
+      exit 1;
+    }
+    sleep 2;
+  }
+}
+
+$ENV{ARUGULA_SUITE_LOCKED} = 1;
+my $pid = fork // die "suite-lock: fork: $!\n";
+if ($pid == 0) {
+  exec @ARGV or die "suite-lock: $ARGV[0]: $!\n";
+}
+# Ctrl-C reaches COMMAND from the terminal; pass on a kill sent to us.
+$SIG{$_} = sub { kill $_[0], $pid } for qw(INT TERM HUP);
+waitpid($pid, 0);
+exit($? & 127 ? 128 + ($? & 127) : $? >> 8);
