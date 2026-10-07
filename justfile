@@ -340,6 +340,14 @@ e2e-interop:
 e2e url="": web e2e-build
     cd web && E2E_BASE_URL="{{url}}" {{suite_lock}} pnpm exec playwright test
 
+# A new user's journeys (#551), as a person takes them: J1 (one person,
+# from no account to a terminal) and J2 (two people linking up). Each ends
+# with a graph of the path, every step annotated with what went right or
+# wrong, in web/journey-reports/ (local output, never committed).
+journey which="": web e2e-build
+    cd web && pnpm exec playwright test --project=chrome e2e/journey-{{ if which == "" { "" } else { which } }}
+    @echo "Graphs: web/journey-reports/ (open the .html; the .svg is the graph alone)"
+
 # Only the WebKit specs (`*.webkit.spec.ts`), as the macOS runner runs them.
 e2e-webkit: web e2e-build
     cd web && {{suite_lock}} pnpm exec playwright test --project=webkit
