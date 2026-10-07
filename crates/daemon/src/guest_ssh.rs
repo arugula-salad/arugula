@@ -179,13 +179,14 @@ fn random_route() -> String {
 /// does (OpenSSH turns `-J` into this `ProxyCommand`), spelled out because
 /// ssh doesn't pass `-o` options to a `-J` hop: written this way the hop
 /// pins control's key too, rather than asking the guest about it and
-/// saving it in their known-hosts file. The hop never prompts
-/// (`BatchMode`): with a route that has ended, OpenSSH would otherwise ask
-/// for a password the jump host doesn't take.
+/// saving it in their known-hosts file. Neither ssh prompts (`BatchMode`):
+/// with a route that has ended, the hop would otherwise ask for a password
+/// the jump host doesn't take, and with a wrong or spent token on a good
+/// route, the outer ssh would ask for one the daemon doesn't take (#300).
 pub fn relay_command(token: &str, id: &str, known_hosts: &str, route: &str, jump: &Jump) -> String {
     let p = if jump.port == 22 { String::new() } else { format!("-p {} ", jump.port) };
     format!(
-        "ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=yes \
+        "ssh -o BatchMode=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=yes \
          -o 'KnownHostsCommand=/bin/echo {known_hosts}' \
          -o 'ProxyCommand=ssh {p}-o BatchMode=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=yes \
          -o \"KnownHostsCommand=/bin/echo {jk}\" -W %h:%p {route}@{jh}' {token}@{id}",
@@ -1145,7 +1146,7 @@ mod tests {
         let c = relay_command("gabc", "0123abcd", "0123abcd ssh-ed25519 AAAA", "rdef", &jump);
         assert_eq!(
             c,
-            "ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=yes \
+            "ssh -o BatchMode=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=yes \
              -o 'KnownHostsCommand=/bin/echo 0123abcd ssh-ed25519 AAAA' \
              -o 'ProxyCommand=ssh -p 2222 -o BatchMode=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=yes \
              -o \"KnownHostsCommand=/bin/echo [control]:2222 ssh-ed25519 BBBB\" -W %h:%p rdef@control' gabc@0123abcd"

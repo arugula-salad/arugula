@@ -978,7 +978,9 @@ control's jump host carried for the session. The test checks:
   neither the pane's text nor the token in it, and control's log has
   neither (nor the route): control relays ciphertext;
 - a wrong route, and the same command after `guests revoke`, are refused
-  at the hop, with nothing passed on to the daemon.
+  at the hop, with nothing passed on to the daemon;
+- a wrong token on a good route gets through the hop and is refused by the
+  daemon at once, with no prompt (#300).
 
 Run them with `cargo test -p arugulad --test integration guest_ssh::`. They skip,
 saying so, if there's no `ssh` on PATH; the relay test fails without

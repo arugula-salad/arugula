@@ -660,6 +660,20 @@ fn a_guest_reaches_a_daemon_behind_nat_through_controls_jump_host() {
     };
     refused_at_the_hop(&cmd.replace(&format!("{route}@"), "rnot-a-route@"), "wrong-route");
 
+    // A wrong token on a good route: the hop opens and the daemon refuses
+    // it. The guest is on a terminal ssh could ask on, so failing at once
+    // with no prompt is the command's own BatchMode (#300), not the test's.
+    assert!(cmd.starts_with("ssh -o BatchMode=yes "), "{cmd}");
+    let (mut g, dir) = tapped(
+        &cmd.replace(&format!("{token}@{id}"), &format!("g00000000000000000000000000000000@{id}")),
+        "wrong-token",
+    );
+    assert_eq!(g.exited(Duration::from_secs(15)), 255, "{:?}", g.text());
+    let said = g.text();
+    assert!(said.contains("Permission denied"), "{said:?}");
+    assert!(!said.to_lowercase().contains("password") && !said.contains("passphrase"), "it prompted: {said:?}");
+    assert!(std::fs::read(dir.join("down")).unwrap_or_default().starts_with(b"SSH-2.0-"), "the hop didn't open");
+
     // Revoking the (reusable) invite withdraws its route.
     env.ok(&["--ssh", "box-systemd", "guests", "revoke", inv["id"].to_string().as_str()]);
     refused_at_the_hop(&cmd, "revoked");
