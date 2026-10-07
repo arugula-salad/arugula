@@ -216,8 +216,7 @@ test("J2c: #551's evening: a machine already in one team, a friend's second team
       (p) => p.getByRole("button", { name: /share/i }),
       async (p) => {
         await show(p, "sammac");
-        await p.getByTitle("Sessions").click();
-        await p.getByRole("menuitem", { name: "Share session…" }).click();
+        await p.getByRole("button", { name: /share/i }).first().click();
         await p.getByRole("button", { name: "Share with everyone in DLex Corp" }).click();
         await expect(p.getByText("DLex Corp").first()).toBeVisible();
         const row = p.getByRole("listitem").filter({ hasText: "DLex Corp" }).first();
@@ -449,7 +448,6 @@ test("J2c: #551's evening: a machine already in one team, a friend's second team
   await j.finish({
     // Filed on #551 and #550.
     "find-arugulad": "#550: the app's arugulad isn't on PATH, and nothing says where it is",
-    "share-team": "#551: Share is only in the session menu",
     "riley-asks": "#551: after the role change the screen still says you're watching; nothing says to ask",
   });
 });

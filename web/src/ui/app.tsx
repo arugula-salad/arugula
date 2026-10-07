@@ -12,7 +12,7 @@ import { HuddleBar, HuddleButton } from "./huddle";
 import { ChatPage, Places, useChatOpen } from "./chat";
 import { AttentionBadge, tabAttention } from "./attention";
 import { getFleet, HostButton, HostPicker, NewMachineNote } from "./hosts";
-import { ControlRequests, PaneMarks, PeopleBar, ShareDialog, TabPeople } from "./people";
+import { ControlRequests, PaneMarks, PeopleBar, ShareDialog, shareSession, TabPeople } from "./people";
 import { directory } from "../hosts";
 import { SandboxesLayer } from "./sandboxes";
 import { RulesLayer } from "./rules";
@@ -210,6 +210,12 @@ function TopBar({
             </button>
           )}
           <HuddleButton client={client} session={session.id} />
+          {/* Sharing is the daemon's owner's (M13), and on the bar so it's found (#551). */}
+          {state.roles ? null : (
+            <button class="share-button" aria-label="Share session" title="Share this session with someone" onClick={() => shareSession(session.id)}>
+              Share
+            </button>
+          )}
           <div class="tabbar" role="tablist">
             {session.tabs.map((id, i) => {
               const t = client.tabView(id);

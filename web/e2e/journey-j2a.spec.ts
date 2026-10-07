@@ -26,9 +26,6 @@ const world = new World();
 test.beforeAll(() => world.start());
 test.afterAll(() => world.stop());
 
-/** The session the window shows, by the name on its button. */
-const sessionName = (p: Page) => p.evaluate(() => window.__arugula.client.state!.sessions.find((s) => s.id === window.__arugula.client.session)!.name);
-
 test("J2a: two friends link up by sharing a session; the friend types in the owner's terminal", async ({ browser }, info) => {
   test.setTimeout(420_000);
   const sam = await onboarded(world, browser, info, "J2a", "sam", "sammac");
@@ -70,10 +67,8 @@ test("J2a: two friends link up by sharing a session; the friend types in the own
       at(sam),
       (p) => p.getByRole("button", { name: /share/i }),
       async (p) => {
-        // On screen: the session's button, its name. Share is in its menu.
-        await p.getByTitle("Sessions").click();
-        await p.getByRole("menuitem", { name: "Share session…" }).click();
-        j.issue(`Share is inside the session menu (the "${await sessionName(p)} ▾" button); nothing on the main screen says Share`);
+        // On the bar, beside the session's name.
+        await p.getByRole("button", { name: /share/i }).first().click();
       },
     );
 
@@ -305,8 +300,5 @@ test("J2a: two friends link up by sharing a session; the friend types in the own
     await sam.quit().catch(() => {});
     await riley.quit().catch(() => {});
   }
-  await j.finish({
-    // Filed on #551: what nothing on screen leads to today.
-    "open-share": "#551: Share is only in the session menu",
-  });
+  await j.finish();
 });
