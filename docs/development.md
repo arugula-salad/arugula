@@ -60,15 +60,20 @@ daemon's update check read it.
 
 **The daemon (`v*`).**
 
-1. Set the version in the workspace `Cargo.toml`, run `just
-   release-fixtures` (the client fixtures for later daemons to replay,
-   #200; the release fails without them) and commit (`just notices` if
-   dependencies changed; CI fails if THIRD_PARTY.md is stale).
-   Notes go in `docs/releases/X.Y.Z.md`. Push it to main and wait for CI
-   to pass on it.
-2. Tag the commit `chant ci last-green` names (below), once it's the
-   version commit or a later one: `git tag -a vX.Y.Z -m "arugula X.Y.Z"
-   "$sha" && git push origin vX.Y.Z`.
+1. Notes go in `docs/releases/X.Y.Z.md`; merge them to main (they needn't
+   pass CI first).
+2. `just release` (a patch; `just release minor`, `just release major`)
+   bumps the version on top of the newest commit on main that passed CI
+   (below), copies the client fixtures to
+   `crates/proto/fixtures/releases/X.Y.Z` (for later daemons to replay,
+   #200; the release fails without them), tags it `vX.Y.Z` and pushes the
+   tag with main, the bump merged in. `just release --dry-run` shows the
+   commit, the version and the bump, and stops. By hand instead: set the
+   version in the workspace `Cargo.toml`, run `just release-fixtures` and
+   commit (`just notices` if dependencies changed; CI fails if
+   THIRD_PARTY.md is stale), push it to main, wait for CI to pass on it, and
+   tag the commit `chant ci last-green` names: `git tag -a vX.Y.Z -m
+   "arugula X.Y.Z" "$sha" && git push origin vX.Y.Z`.
    `.github/workflows/release.yml` builds the Linux tarballs on geek, the
    macOS ones on jake-mini (Apple silicon natively, Intel cross-compiled
    with `just build-macos-x86_64`) and the Windows zip on GitHub's runner,
@@ -86,12 +91,13 @@ daemon's update check read it.
 
 **The app (`app-v*`)**, only when `crates/desktop` changes:
 
-1. Set the version in `crates/desktop/Cargo.toml` (its own numbering, not
-   the daemon's) and commit. Notes go in `docs/releases/app-X.Y.Z.md`.
-   Push it to main and wait for CI to pass on it.
-2. Tag the commit `chant ci last-green` names in the same way: `git tag -a
-   app-vX.Y.Z -m "arugula app X.Y.Z" "$sha" && git push origin
-   app-vX.Y.Z`. `.github/workflows/app-release.yml` downloads arugulad
+1. Notes go in `docs/releases/app-X.Y.Z.md`, merged to main.
+2. `just release --app` (with `minor` or `major` as above) bumps
+   `crates/desktop`'s version (its own numbering, not the daemon's) and
+   tags `app-vX.Y.Z` in the same way; by hand, set it in
+   `crates/desktop/Cargo.toml`, and once CI passes, `git tag -a app-vX.Y.Z
+   -m "arugula app X.Y.Z" "$sha" && git push origin app-vX.Y.Z`.
+   `.github/workflows/app-release.yml` downloads arugulad
    and Arugula from the latest daemon release (checked against its
    `SHA256SUMS`) for the app to carry, builds and signs the apps (Linux on
    geek, macOS on jake-mini, notarized with the Developer ID when its
@@ -116,12 +122,29 @@ git fetch origin --tags
 sha=$(npx @intentius/chant@0.108.0 ci last-green)
 ```
 
+`just green` lists the newest of them, newest first (`just green 50` for
+more). The tags page on GitHub sorts them by name, not by date.
+
 `chant ci last-green` reads `origin/main` and the local tags, so `origin`
 must be GitHub. `scripts/release check-version` and `check-app-version`
 refuse a tag on a commit with no `ci/green` tag, or with a `ci/revoked`
-one (a re-run failed after it passed). `ARUGULA_RELEASE_SKIP_GREEN=1` skips that
+one (a re-run failed after it passed). A commit that changes nothing but
+Arugula's own versions (in the manifests, the lock files and the
+THIRD_PARTY.md files), release notes and its copy of the client fixtures counts as its parent: that's
+the commit `just release` tags. `ARUGULA_RELEASE_SKIP_GREEN=1` skips that
 check; in the release workflows it comes from the repository variable of
 the same name.
+
+`just release` (`scripts/release bump`, #524, after chant's) reads main and
+the `ci/` tags from GitHub, whatever your remotes are, and works in a
+throwaway worktree, so your checkout stays as it is. It takes the version
+from the green commit or main, whichever is higher (main may carry a bump
+that hasn't passed yet), and the notes from main. It refuses a commit the
+lane already released, a tag that exists, and a merge into main that
+conflicts anywhere but the version lines; if main moves while it pushes,
+nothing is pushed and you run it again. `just release COMMIT` releases an
+older green commit on main instead. `scripts/tests/release-bump.sh` (`just
+test-scripts`) runs it against a local repository.
 
 `scripts/release` (`check-version`, `sums`, `publish`, `homebrew` for the
 daemon; `check-app-version`, `sidecars`, `app-upload`, `app-publish` for the

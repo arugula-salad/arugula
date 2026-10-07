@@ -302,6 +302,19 @@ desktop-check:
 notices:
     scripts/notices
 
+# Release without waiting for a version bump to pass CI (#524): commit the
+# bump on top of the newest commit on main with a ci/green tag, tag it, and
+# push the tag with main, the bump merged in (docs/development.md).
+# just release [patch|minor|major] [--app] [COMMIT] [--dry-run]
+release *args:
+    scripts/release bump {{args}}
+
+# The newest commits on main that passed CI (their ci/green tags), newest
+# first; a tag CI revoked since is gone here too.
+green n="20":
+    @git fetch -q --force --prune https://github.com/arugula-salad/arugula.git '+refs/tags/ci/*:refs/tags/ci/*'
+    @git log --no-walk --tags='ci/green/*' --date=format-local:'%Y-%m-%d %H:%M' --format='%h %cd %s' | head -n {{n}}
+
 # All tests. The Rust ones run under cargo-nextest (.config/nextest.toml),
 # which `just bootstrap` installs; the doctests, which it can't run, under
 # cargo test. Builds first, then runs the suite one worktree at a time
@@ -488,6 +501,7 @@ test-scripts:
     scripts/tests/notices.sh
     scripts/tests/release-green.sh
     scripts/tests/suite-lock.sh
+    scripts/tests/release-bump.sh
 
 # What CI runs.
 check: test
