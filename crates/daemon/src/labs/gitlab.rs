@@ -37,21 +37,22 @@ use std::{
     sync::{LazyLock, Mutex},
 };
 
+use arugula_proto::forge::{ReviewEvent, Write};
 use futures_util::future::BoxFuture;
 use serde_json::{Value, json};
 
-use super::{
-    Adapter, Error, Polled, ReviewEvent, Sent, Write,
-    forgejo::time,
-    model::{
-        Branch, Check, CheckSource, CheckState, Event, EventKind, Item, ItemKind, ItemState, Me, Review, ReviewState,
-        Reviewer, RunRef,
+use crate::{
+    forge::{
+        Adapter, Error, Polled, Sent,
+        model::{
+            Branch, Check, CheckSource, CheckState, Event, EventKind, Item, ItemKind, ItemState, Me, Review,
+            ReviewState, Reviewer, RunRef,
+        },
+        util::{EVENTS, time},
     },
+    review::Runner,
 };
-use crate::review::Runner;
 
-/// How many notes are kept in the state (the rest are in the block's log).
-pub const EVENTS: usize = super::forgejo::EVENTS;
 /// Pages of a pipeline's jobs read at most (100 a page).
 const JOB_PAGES: u64 = 5;
 
@@ -82,31 +83,6 @@ pub fn project(path: &str) -> String {
 /// The site's address, from an API base (`https://h/api/v4` → `https://h`).
 pub fn site(api: &str) -> String {
     api.trim_end_matches('/').trim_end_matches("/api/v4").to_owned()
-}
-
-/// A host that's GitLab by its name alone (the rest are GitLab when `glab`
-/// knows them, or when a link says so).
-pub fn known_host(host: &str) -> bool {
-    let h = host.split(':').next().unwrap_or(host).to_ascii_lowercase();
-    h == "gitlab.com" || h.starts_with("gitlab.")
-}
-
-/// `https://H[/prefix]/G/[SUB/…]P/-/merge_requests/N[/…]` → (host, project
-/// path, N, API base). `None` when it isn't a merge request's address.
-pub fn parse_mr_url(u: &str) -> Option<(String, String, u64, String)> {
-    let url = url::Url::parse(u).ok()?;
-    if !matches!(url.scheme(), "http" | "https") {
-        return None;
-    }
-    let host = super::login::url_host(u)?;
-    let segs: Vec<&str> = url.path_segments()?.filter(|x| !x.is_empty()).collect();
-    let at = segs.windows(2).position(|w| w == ["-", "merge_requests"])?;
-    let n: u64 = segs.get(at + 2)?.parse().ok()?;
-    if at < 2 {
-        return None; // a project needs a namespace and a name
-    }
-    let repo = segs[..at].join("/");
-    Some((host.clone(), repo, n, format!("{}://{host}/api/v4", url.scheme())))
 }
 
 /// Whether a title marks a draft (GitLab sets `draft` from these too; this
@@ -555,9 +531,10 @@ impl Gitlab {
                 req = req.json(b);
             }
             self.requests.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            let res = req.send().await.map_err(|e| Error::Http(format!("{}: {}", super::redact(&url), short(&e))))?;
+            let res =
+                req.send().await.map_err(|e| Error::Http(format!("{}: {}", crate::forge::redact(&url), short(&e))))?;
             let status = res.status();
-            tracing::debug!(url = super::redact(&url), status = status.as_u16(), "gitlab request");
+            tracing::debug!(url = crate::forge::redact(&url), status = status.as_u16(), "gitlab request");
             let pages = res.headers().get("x-total-pages").and_then(|v| v.to_str().ok()?.parse().ok());
             if status == reqwest::StatusCode::NOT_MODIFIED
                 && let Some((_, v)) = cached
@@ -1045,16 +1022,6 @@ mod tests {
         assert_eq!(project("gitlab-org/cli"), "gitlab-org%2Fcli");
         assert_eq!(project("/group/sub/proj/"), "group%2Fsub%2Fproj");
         assert_eq!(site("https://gitlab.example/api/v4"), "https://gitlab.example");
-        let p = parse_mr_url("https://gitlab.com/gitlab-org/cli/-/merge_requests/3941").unwrap();
-        assert_eq!(p, ("gitlab.com".into(), "gitlab-org/cli".into(), 3941, "https://gitlab.com/api/v4".into()));
-        let p = parse_mr_url("http://127.0.0.1:8080/group/sub/proj/-/merge_requests/7/diffs?x=1").unwrap();
-        assert_eq!((p.1.as_str(), p.2, p.3.as_str()), ("group/sub/proj", 7, "http://127.0.0.1:8080/api/v4"));
-        assert!(parse_mr_url("https://gitlab.com/gitlab-org/cli/-/issues/3").is_none());
-        assert!(parse_mr_url("https://gitlab.com/cli/-/merge_requests/3").is_none());
-        assert!(parse_mr_url("https://git.example/o/r/pulls/3").is_none());
-        assert!(known_host("gitlab.com"));
-        assert!(known_host("gitlab.example.org"));
-        assert!(!known_host("git.inevitable.fyi"));
     }
 
     #[test]

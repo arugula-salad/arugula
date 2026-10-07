@@ -315,7 +315,7 @@ esac
 
     fn daemon(&self) -> Daemon {
         let path = format!("{}:{}", self.bin.display(), std::env::var("PATH").unwrap_or_default());
-        Daemon::child_env(
+        Daemon::child_labs_env(
             &["--wisp-token-file", "/nonexistent", "--owner", OWNER, "--tailscale-socket", "/nonexistent/sock"],
             &[
                 ("PATH", &path),

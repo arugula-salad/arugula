@@ -853,6 +853,7 @@ impl Daemon {
             ids: self.ids.clone(),
             rules: self.rules.clone(),
             invite: self.config.invite.clone(),
+            state_dir: self.store.root().to_owned(),
         };
         let is_restore = restoring.is_some();
         let (policy, kept) = restoring.unwrap_or_default();

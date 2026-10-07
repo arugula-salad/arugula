@@ -95,6 +95,13 @@ impl Daemon {
         Self::child_in(args, env, |_| {})
     }
 
+    /// ...with the machine's Labs on (the `labs` file in its state dir), as
+    /// Forgejo and GitLab blocks need (#457).
+    #[cfg(feature = "labs")]
+    pub fn child_labs_env(args: &[&str], env: &[(&str, &str)]) -> Self {
+        Self::child_in(args, env, |state| std::fs::write(state.join("labs"), "").unwrap())
+    }
+
     /// ...with its state directory made by `setup` first (a control
     /// enrollment, say).
     pub fn child_in(args: &[&str], env: &[(&str, &str)], setup: impl FnOnce(&std::path::Path)) -> Self {

@@ -1,7 +1,7 @@
 //! Labs: the features that are not part of the core (Fountain, studio apps
-//! with hud, chant workspaces, VMs with their sandboxes, guest ssh, and
-//! huddles and chat so far; the other forges move here in #457), behind the cargo feature
-//! `labs`. The feature is on by default, so a release build has all of it;
+//! with hud, chant workspaces, VMs with their sandboxes, guest ssh, huddles
+//! and chat, and the Forgejo and GitLab forges: everything listed in
+//! #452 to #457 is here), behind the cargo feature `labs`. The feature is on by default, so a release build has all of it;
 //! `--no-default-features` leaves it out, for fast local builds, for agents
 //! working on core, and for the CI job `core`. (The runtime switch, the
 //! `labs` file in the state dir, is separate: it decides what a machine
@@ -41,6 +41,7 @@ use serde_json::Value;
 
 use crate::{
     block::{Block, BlockCtx},
+    forge::model::Provider as ForgeProvider,
     provider::{Begin, Exec, ExecEvent, Provider},
     server::App,
     shellenv::ShellEnv,
@@ -51,8 +52,18 @@ pub mod apps;
 // Huddles (M63): who is in each voice call on a session.
 #[cfg(feature = "labs")]
 pub mod calls;
+// Forgejo and GitLab as forges (#457): their adapters, the `tea` logins
+// Forgejo reads with, and the webhooks they send. GitHub is core's. The
+// parts of a forge block that connect to them are `forge/labs_forges.rs`,
+// which needs the block's private fields; `forge/mod.rs` has their twins.
+#[cfg(feature = "labs")]
+pub mod forge_live;
+#[cfg(feature = "labs")]
+pub mod forgejo;
 #[cfg(feature = "labs")]
 pub mod fountain;
+#[cfg(feature = "labs")]
+pub mod gitlab;
 // Guest ssh: the russh server and its invites (M65). `russh` is an optional
 // dependency of the daemon, enabled by this feature.
 #[cfg(feature = "labs")]
@@ -69,6 +80,8 @@ pub mod resident;
 pub mod sandbox;
 #[cfg(feature = "labs")]
 pub mod sprites;
+#[cfg(feature = "labs")]
+pub mod tea;
 // Chat (M61): the threads on panes and sessions. The mux's handling of
 // both is `mux/thread_ops.rs` and `mux/call_ops.rs`, which need Daemon's
 // private fields; `mux/labs_off.rs` has their twins.
@@ -127,6 +140,59 @@ pub fn create_block(kind: BlockType, _ctx: BlockCtx, _config: Value) -> Result<A
         BlockType::Workspace => "A chant workspace".to_owned(),
         kind => format!("A {kind:?} block"),
     }))
+}
+
+/// Whether a forge block of `provider` may be made or opened here. GitHub's
+/// always may; Forgejo's and GitLab's are Labs, so they need this build to
+/// have it and the machine to have turned it on (the `labs` file).
+pub fn forge_allowed(provider: ForgeProvider, state_dir: &Path) -> Result<(), String> {
+    let name = match provider {
+        ForgeProvider::Github => return Ok(()),
+        ForgeProvider::Forgejo => "Forgejo",
+        ForgeProvider::Gitlab => "GitLab",
+    };
+    if enabled(state_dir) {
+        Ok(())
+    } else if BUILT {
+        Err(format!("{name} blocks are in Labs (turn Labs on to open them)"))
+    } else {
+        Err(not_built(&format!("A {name} block")))
+    }
+}
+
+/// Adds the Forgejo and GitLab webhook routes to the router, outside the
+/// API's authorization: a delivery is trusted by its signature.
+#[cfg(feature = "labs")]
+pub fn forge_hook_routes(r: Router<Arc<App>>) -> Router<Arc<App>> {
+    forge_live::routes(r)
+}
+
+#[cfg(not(feature = "labs"))]
+pub fn forge_hook_routes(r: Router<Arc<App>>) -> Router<Arc<App>> {
+    r
+}
+
+/// Whether `path` is a forge webhook's, which the guard lets through to be
+/// checked by its signature.
+#[cfg(feature = "labs")]
+pub fn is_forge_hook(path: &str) -> bool {
+    forge_live::is_hook(path)
+}
+
+#[cfg(not(feature = "labs"))]
+pub fn is_forge_hook(_path: &str) -> bool {
+    false
+}
+
+/// The path a webhook for `provider` is made to deliver to.
+#[cfg(feature = "labs")]
+pub fn hook_path(provider: ForgeProvider) -> Result<&'static str, String> {
+    Ok(forge_live::path(provider))
+}
+
+#[cfg(not(feature = "labs"))]
+pub fn hook_path(provider: ForgeProvider) -> Result<&'static str, String> {
+    Err(not_built(&format!("A {provider:?} webhook")))
 }
 
 /// Whether chat is in this build: `Ok`, or the refusal for a request that
