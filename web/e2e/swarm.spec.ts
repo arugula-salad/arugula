@@ -71,6 +71,8 @@ test("clusters by project (with fallback groups), machine, kind, session and per
   const temp = `/${realpathSync(tmpdir()).split("/")[1]}`;
   await expect.poll(() => clusters(page), { timeout: 10_000 }).toEqual(expect.arrayContaining(["api", "web", "infra", "~/scratch", temp]));
   expect(await clusters(page)).not.toContain("none");
+  // It says so (#551).
+  await expect(page.locator(".swarm-hint")).toContainText("A pane's project is the git repository it's in");
   // Machines, kinds, sessions, people.
   await page.locator('[data-g="machine"]').click();
   await expect.poll(() => clusters(page)).toEqual(["build-01", "build-02", "workstation"]);
@@ -93,6 +95,18 @@ test("clusters by project (with fallback groups), machine, kind, session and per
   await stop.evaluate((f) => f());
     // Tiles are coloured by kind: the legend has every kind.
   await expect(page.locator(".swarm-legend span")).toHaveCount(11);
+});
+
+test("Panes and Escape lead back to the panes (#551)", async ({ page }) => {
+  await swarm(page);
+  await page.locator(".swarm").getByRole("button", { name: "Panes", exact: true }).click();
+  await expect(page.locator(".swarm")).toBeHidden();
+  expect(new URL(page.url()).hash).toBe("");
+  await page.goto("/#swarm");
+  await expect(page.locator(".swarm")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".swarm")).toBeHidden();
+  expect(new URL(page.url()).hash).toBe("");
 });
 
 test("failures on one machine bundle into one card, dismissed together", async ({ page }) => {

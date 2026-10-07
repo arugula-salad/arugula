@@ -16,7 +16,7 @@ import { EXPIRE_TITLE, gateKey, type Action, type ActRequest, type ActResponse, 
 import { AskCard, type Answered } from "../blocks/ask";
 import { ANSWERED_MS, answeredLine, FollowUpBox, PermissionBody, PermissionButtons, VIEWER_NOTE, type Requester } from "../ui/answer-card";
 import { Avatar } from "../ui/people";
-import { MenuLayer, openMenu } from "../ui/menu";
+import { escapeTaken, MenuLayer, openMenu } from "../ui/menu";
 import { usePhone, useSubscribe } from "../ui/hooks";
 import { Field, type FieldHooks, type FieldPane, type HistoryRun, type SwarmScene } from "./field";
 import { FollowView, appName } from "./follow";
@@ -311,6 +311,19 @@ export function SwarmView({
     return () => clearInterval(t);
   }, []);
 
+  // Escape leaves (#551), as Panes does: after closing a menu or the
+  // editor followed, and not from a field being typed in. Listening from
+  // the first draw, not the next frame.
+  useLayoutEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || escapeTaken(e) || (e.target as HTMLElement).closest?.("input, textarea, select")) return;
+      if (following) setFollowing(null);
+      else back();
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, [following, back]);
+
   // A notification's deep link: the pane, and its card.
   useEffect(() => {
     if (!focus) return;
@@ -432,8 +445,8 @@ export function SwarmView({
           <button data-fit onClick={() => field.current?.fitAll()}>
             Fit
           </button>
-          <button data-swarm-back onClick={back}>
-            Tabs
+          <button data-swarm-back title="Back to the panes (Escape)" onClick={back}>
+            Panes
           </button>
         </div>
       </div>
@@ -482,7 +495,10 @@ export function SwarmView({
             ))}
           </div>
           {theme !== "blocks" && <ThemeKey theme={theme} />}
-          <div class="swarm-hint">{HINT[theme][phone ? 1 : 0]}</div>
+          <div class="swarm-hint">
+            {HINT[theme][phone ? 1 : 0]}
+            {by === "project" ? ` ${PROJECTS}` : ""}
+          </div>
         </div>
         <div class="swarm-clusters" hidden>
           {clusters.map((c) => (
@@ -514,6 +530,9 @@ const ARIA: Record<Theme, string> = {
 };
 
 /** What to do with each theme: [laptop, phone]. */
+/** #551: where a pane's project comes from. */
+const PROJECTS = "A pane's project is the git repository it's in; one outside a repository goes by its directory.";
+
 const HINT: Record<Theme, [string, string]> = {
   blocks: ["Scroll to zoom. Drag to pan. Click a cluster name to dive in, a pane to open it.", "Pinch to zoom, drag to pan. Tap a pane to open it."],
   city: [
