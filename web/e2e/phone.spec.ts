@@ -89,3 +89,38 @@ test("notify this device from the sheet", async ({ page, context }) => {
   await expect(notify).toHaveAttribute("aria-pressed", "false");
   service.close();
 });
+
+// #331: with no session, the sheet's New tab makes one, and New agent and
+// Conversations open (the daemon puts what they start in a new session).
+test("with no sessions, the sheet's New tab makes one; New agent and Conversations open", async ({ page }) => {
+  await reset(page);
+  await page.evaluate(() => {
+    const c = window.__arugula.client;
+    for (const s of c.state!.sessions) c.intent({ op: "close_session", session: s.id });
+  });
+  await expect.poll(() => page.evaluate(() => window.__arugula.client.state!.sessions.length)).toBe(0);
+  const sheet = async () => {
+    await page.locator(".sheet-button").tap();
+    await expect(page.locator(".sheet")).toBeVisible();
+  };
+
+  await sheet();
+  await page.locator(".sheet [data-new-agent]").tap();
+  await expect(page.getByRole("dialog", { name: "Start an agent" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "Start an agent" })).toHaveCount(0);
+
+  await sheet();
+  await page.locator(".sheet [data-conversations]").tap();
+  const conversations = page.getByRole("dialog", { name: "Claude Code conversations" });
+  await expect(conversations).toBeVisible();
+  // Its filter isn't focused on a phone (no keyboard popping up), so no
+  // Escape: Cancel closes it.
+  await conversations.getByRole("button", { name: "Cancel" }).tap();
+  await expect(conversations).toHaveCount(0);
+
+  await sheet();
+  await page.locator(".sheet [data-new-tab]").tap();
+  await expect.poll(() => page.evaluate(() => window.__arugula.client.state!.sessions.length)).toBe(1);
+  await expect(page.locator("[data-no-sessions]")).toHaveCount(0);
+});

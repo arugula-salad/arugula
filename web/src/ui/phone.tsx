@@ -73,6 +73,8 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
     close();
   };
   const session = client.session;
+  // #331: with no session, what opens a tab opens a session for it.
+  const where = session ?? undefined;
   const owner = !state.roles;
   const closeTab =
     client.tab !== null && (client.tabMachine(client.tab) || paneIds(client.tabView(client.tab)!).length > 1);
@@ -109,12 +111,21 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
         )}
         {/* What a phone is opened for most: right at the top. */}
         <div class="sheet-actions sheet-quick">
-          <button onClick={act(() => session !== null && client.intent({ op: "new_tab", session, from_pane: active ?? null }))}>New tab</button>
-          <button onClick={act(() => session !== null && startAgent(client, { session, from: active }))}>New agent</button>
+          <button
+            data-new-tab
+            onClick={act(() =>
+              client.intent(session !== null ? { op: "new_tab", session, from_pane: active ?? null } : { op: "new_session", name: null, from_pane: null }),
+            )}
+          >
+            New tab
+          </button>
+          <button data-new-agent onClick={act(() => startAgent(client, { session: where, from: active }))}>
+            New agent
+          </button>
           {owner && (
             <button
               data-conversations
-              onClick={act(() => session !== null && pickConversation(client, { session, cwd: (active !== undefined && client.cwd(active)) || undefined }, true))}
+              onClick={act(() => pickConversation(client, { session: where, cwd: (active !== undefined && client.cwd(active)) || undefined }, true))}
             >
               Conversations
             </button>
@@ -185,22 +196,22 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
           <h2>Open</h2>
           <div class="sheet-actions">
             {owner && client.has("studio") && (
-              <button data-studio-apps onClick={act(() => session !== null && pickApp(client, { session }, true))}>
+              <button data-studio-apps onClick={act(() => pickApp(client, { session: where }, true))}>
                 Studio apps
               </button>
             )}
             {owner && (
-              <button data-open-pr onClick={act(() => session !== null && void openPr(client, { session }))}>
+              <button data-open-pr onClick={act(() => void openPr(client, { session: where }))}>
                 Pull request
               </button>
             )}
             {owner && (
-              <button data-open-issue onClick={act(() => session !== null && void openIssue(client, { session }))}>
+              <button data-open-issue onClick={act(() => void openIssue(client, { session: where }))}>
                 Issue
               </button>
             )}
             {owner && client.has("fountain") && (
-              <button data-open-fountain onClick={act(() => session !== null && void openFountain(client, { session }))}>
+              <button data-open-fountain onClick={act(() => void openFountain(client, { session: where }))}>
                 Fountain agents
               </button>
             )}
@@ -218,8 +229,8 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
             {active !== undefined && client.tab !== null && client.tabMachine(client.tab) && (
               <button onClick={act(() => client.intent({ op: "split", pane: active, edge: "right", local: true }))}>Split (local)</button>
             )}
-            {client.has("vms") && (
-              <button onClick={act(() => session !== null && void client.newVm({ session, tab: true }))}>New VM tab</button>
+            {client.has("vms") && session !== null && (
+              <button onClick={act(() => void client.newVm({ session, tab: true }))}>New VM tab</button>
             )}
             {client.has("vms") && <button onClick={act(() => openSandboxes())}>Sandboxes</button>}
             <button onClick={act(() => client.intent({ op: "new_session", name: null, from_pane: active ?? null }))}>New session</button>
