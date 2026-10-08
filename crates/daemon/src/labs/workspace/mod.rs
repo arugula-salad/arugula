@@ -47,10 +47,14 @@
 //! joins nothing. That read runs `git log` over the member (about a second
 //! on a small repository, 40 s and more on chant's own), so it runs only
 //! for a member with a gate waiting, after the full read and apart from it,
-//! one member at a time, and is kept until the fingerprint moves. The gate
-//! shows at once and its decisions when they come; the attention is asked
-//! again with them. The plan digest and the member's last release come
-//! from `status`.
+//! one member at a time. It's kept until `HEAD` or the lifecycle ref moves
+//! (an edit in the tree doesn't), and while nobody draws the block it runs
+//! once per gate raised. The gate shows at once, its decisions when they
+//! come, and the last ones read stay on it while the next read runs. The
+//! attention names the gates by headline and keys only: a read landing
+//! updates the card while the attention lasts, and asks nothing again, so
+//! a gate dismissed stays dismissed. The plan digest and the member's last
+//! release come from `status`.
 //!
 //! `expire` (same arguments, same people, logged the same way) turns a gate
 //! down (#310): `chant approve <op> <gate> --expire` clears its pending fact
@@ -223,10 +227,9 @@ pub struct Workspace {
     seen: Mutex<Option<String>>,
     /// A changed fingerprint the last poll saw, waiting to hold still.
     pending: Mutex<Option<String>>,
-    /// The gates attention last asked for (as JSON), so it's asked once per
-    /// change: another gate, or the decisions behind one read meanwhile.
-    /// Starts as `Some("")` so the first read clears any left from before a
-    /// restart.
+    /// The gates attention last asked for ([`raised_key`]), so it's asked
+    /// once per change of gate. Starts as `Some("")` so the first read
+    /// clears any left from before a restart.
     raised: Mutex<Option<String>>,
     /// Each member's intent read (#617), by name, with the fingerprint it
     /// was read at: kept until the fingerprint moves.
@@ -330,25 +333,31 @@ impl Workspace {
                 machine.clone_from(&self.ctx.sprite);
             }
         }
-        self.attach(&mut st);
-        self.raise(&st.gates);
-        let wanted = !self.wanted(&st).is_empty();
-        *self.state.lock().unwrap() = st;
+        // Attached and swapped in under the state's lock, so a read that
+        // lands meanwhile (`changed_why`, which takes it too) isn't lost.
+        let (gates, wanted) = {
+            let mut cur = self.state.lock().unwrap();
+            self.attach(&mut st);
+            *cur = st;
+            (cur.gates.clone(), !self.wanted(&cur).is_empty())
+        };
+        self.raise(&gates);
         self.ctx.changed();
         if wanted && let Some(me) = self.me.upgrade() {
             self.ctx.rt.spawn(async move { me.read_intents().await });
         }
     }
 
-    /// The members whose intent read is wanted and not had at this
-    /// fingerprint: those with a gate waiting.
+    /// The members whose intent read is wanted and not had: those with a
+    /// gate waiting ([`wanted`]).
     fn wanted(&self, st: &model::State) -> Vec<(String, String)> {
-        wanted(st, &self.intents.lock().unwrap(), self.seen.lock().unwrap().as_deref())
+        let seen = self.seen.lock().unwrap().clone();
+        wanted(st, &self.intents.lock().unwrap(), intent_key(seen.as_deref()), self.live.drawn())
     }
 
-    /// What the intent reads had at this fingerprint, onto the gates.
+    /// What the intent reads had last, onto the gates.
     fn attach(&self, st: &mut model::State) {
-        attach(st, &self.intents.lock().unwrap(), self.seen.lock().unwrap().as_deref());
+        attach(st, &self.intents.lock().unwrap());
     }
 
     /// Reads the intent of each member [`Workspace::wanted`] names, one at
@@ -365,7 +374,7 @@ impl Workspace {
             if self.live.closed() {
                 return;
             }
-            let print = self.seen.lock().unwrap().clone();
+            let print = intent_key(self.seen.lock().unwrap().as_deref()).map(str::to_owned);
             let got = match (chant, version) {
                 (None, _) => Err(model::NO_CHANT.to_owned()),
                 (_, Some(v)) if !model::at_least(&v, model::INTENT_FLOOR) => Err(format!(
@@ -379,7 +388,8 @@ impl Workspace {
             } else if let Ok(i) = &got {
                 log(&self.ctx, &json!({ "e": "intent", "member": name, "ms": i.ms, "decisions": i.decisions.len() }));
             }
-            self.intents.lock().unwrap().insert(name, Known { print, got });
+            let gates = self.state.lock().unwrap().gates.iter().filter(|g| g.member == name).map(Gate::key).collect();
+            self.intents.lock().unwrap().insert(name, Known { print, got, gates });
             let gates = {
                 let mut st = self.state.lock().unwrap();
                 self.attach(&mut st);
@@ -404,19 +414,16 @@ impl Workspace {
         model::intent(&doc, ms)
     }
 
-    /// Gates waiting are attention; none, and it's let go.
+    /// Gates waiting are attention; none, and it's let go ([`raise`]).
     fn raise(&self, gates: &[Gate]) {
-        let reason = crate::gate::reason(gates);
-        let now = reason.as_ref().map(|_| serde_json::to_string(gates).unwrap_or_default());
         let mut raised = self.raised.lock().unwrap();
-        if *raised == now {
-            return;
+        match raise(raised.as_deref(), gates) {
+            Raise::Ask(r) => self.ctx.reason(Attention::NeedsInput, r),
+            Raise::Update(r) => self.ctx.update_reason(r),
+            Raise::Clear => self.ctx.clear(ReasonKind::Gate),
+            Raise::Nothing => {}
         }
-        match reason {
-            Some(r) => self.ctx.reason(Attention::NeedsInput, r),
-            None => self.ctx.clear(ReasonKind::Gate),
-        }
-        *raised = now;
+        *raised = raised_key(gates);
     }
 
     /// The fingerprint now, if it can be had.
@@ -608,18 +615,42 @@ impl Workspace {
     }
 }
 
-/// An intent read, and the fingerprint it was read at.
+/// An intent read, what it was read at ([`intent_key`]), and the gates
+/// waiting in its member when it was read.
 struct Known {
     print: Option<String>,
     got: Result<model::Intent, String>,
+    gates: Vec<String>,
 }
 
-/// The members (name, directory) whose intent read isn't had at the
-/// fingerprint `seen`: those with a chant gate waiting.
-fn wanted(st: &model::State, intents: &HashMap<String, Known>, seen: Option<&str>) -> Vec<(String, String)> {
+/// What an intent read depends on, from a fingerprint: its first two
+/// words, the `chant/lifecycle` ref and a checksum of `HEAD` and chant's
+/// refs ([`model::FINGERPRINT`]). An edit in the working tree doesn't move
+/// it; a commit, a record committed, a gate or a release does.
+fn intent_key(print: Option<&str>) -> Option<&str> {
+    let p = print?;
+    let end = p.match_indices(' ').nth(1).map_or(p.len(), |(i, _)| i);
+    Some(&p[..end])
+}
+
+/// The members (name, directory) whose intent read is wanted: those with a
+/// chant gate waiting, whose read isn't had at `key`. While nobody draws the
+/// block (`drawn` false), only a gate no read was made for yet: the one
+/// read when it's raised, for the swarm and the phone.
+fn wanted(
+    st: &model::State,
+    intents: &HashMap<String, Known>,
+    key: Option<&str>,
+    drawn: bool,
+) -> Vec<(String, String)> {
     let mut out: Vec<(String, String)> = Vec::new();
     for g in st.gates.iter().filter(|g| matches!(g.source, GateSource::Chant { .. })) {
-        let fresh = intents.get(&g.member).is_some_and(|k| k.print.as_deref() == seen);
+        let known = intents.get(&g.member);
+        let fresh = match known {
+            Some(k) if drawn => k.print.as_deref() == key,
+            Some(k) => k.gates.contains(&g.key()),
+            None => false,
+        };
         if !fresh && !out.iter().any(|(n, _)| *n == g.member) {
             let dir = st.members.iter().find(|m| m.name == g.member).map(|m| m.dir.clone());
             out.push((g.member.clone(), dir.unwrap_or_else(|| ".".into())));
@@ -628,18 +659,50 @@ fn wanted(st: &model::State, intents: &HashMap<String, Known>, seen: Option<&str
     out
 }
 
-/// What the intent reads had at the fingerprint `seen`, onto the gates of
-/// their members; one read at another fingerprint is left off.
-fn attach(st: &mut model::State, intents: &HashMap<String, Known>, seen: Option<&str>) {
+/// What the intent reads had last onto the gates of their members, until
+/// a fresh read replaces it: the card keeps its decisions while the next
+/// read runs.
+fn attach(st: &mut model::State, intents: &HashMap<String, Known>) {
     for g in &mut st.gates {
         let (Some(why), Some(k)) = (g.why.as_mut(), intents.get(&g.member)) else { continue };
-        if k.print.as_deref() != seen {
-            continue;
-        }
         match &k.got {
             Ok(i) => (why.decisions, why.note) = (Some(i.decisions.clone()), None),
             Err(e) => (why.decisions, why.note) = (None, Some(e.clone())),
         }
+    }
+}
+
+/// What [`raise`] does about the gates' attention.
+#[derive(Debug, Clone, PartialEq)]
+enum Raise {
+    /// Another gate, or the first: ask (a push, the rail).
+    Ask(arugula_proto::Reason),
+    /// The same gates, saying more (their decisions read): the card says
+    /// so while the attention lasts, and asks nothing again.
+    Update(arugula_proto::Reason),
+    /// None waits: let go.
+    Clear,
+    /// None waits, and none did.
+    Nothing,
+}
+
+/// What names the gates for attention: the reason's headline and every
+/// gate's key. Their `why` isn't in it, so a read landing, or the
+/// fingerprint moving, never asks again for a gate someone dismissed.
+fn raised_key(gates: &[Gate]) -> Option<String> {
+    let reason = crate::gate::reason(gates)?;
+    let mut keys: Vec<String> = gates.iter().map(Gate::key).collect();
+    keys.sort();
+    Some(format!("{}\n{}", reason.headline, keys.join("\n")))
+}
+
+/// Given what attention last asked for (`was`), what these gates call for.
+fn raise(was: Option<&str>, gates: &[Gate]) -> Raise {
+    match (crate::gate::reason(gates), raised_key(gates)) {
+        (Some(r), now) if now.as_deref() == was => Raise::Update(r),
+        (Some(r), _) => Raise::Ask(r),
+        (None, _) if was.is_none() => Raise::Nothing,
+        (None, _) => Raise::Clear,
     }
 }
 
@@ -765,6 +828,11 @@ impl Block for Workspace {
         match method {
             "refresh" => Box::pin(async move {
                 let me = me.ok_or("closed")?;
+                // Read the decisions again too (an uncommitted record moves
+                // no key); what's shown stays until they land.
+                for k in me.intents.lock().unwrap().values_mut() {
+                    (k.print, k.gates) = (None, vec![]);
+                }
                 me.load().await;
                 let st = me.state.lock().unwrap();
                 match &st.error {
@@ -861,42 +929,105 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        HashMap, Known, Look, Next, POLL, Principals, REF_POLL, VM_QUIET, VM_RESTING, VmIdle, attach, env_name, envs,
-        look, model, next, ref_moved, set_principals, vm_look, vm_looked, wanted,
+        HashMap, Known, Look, Next, POLL, Principals, REF_POLL, Raise, VM_QUIET, VM_RESTING, VmIdle, attach, env_name,
+        envs, intent_key, look, model, next, raise, raised_key, ref_moved, set_principals, vm_look, vm_looked, wanted,
     };
 
     #[test]
-    fn a_gate_s_decisions_are_read_once_per_fingerprint() {
+    fn a_gate_s_decisions_are_read_once_per_commit_and_kept_meanwhile() {
         // #617: a gate waiting wants its member's intent read; once had at
-        // this fingerprint it goes on the gate, and isn't read again until
-        // the fingerprint moves.
+        // this HEAD and lifecycle ref it goes on the gate, and isn't read
+        // again until a commit or the ledger moves it. An edit doesn't.
         let raw: serde_json::Value = serde_json::from_str(include_str!("fixtures/reference-raw.json")).unwrap();
         let doc: serde_json::Value = serde_json::from_str(include_str!("fixtures/intent-delivery.json")).unwrap();
         let mut st = model::compose(&raw, "local");
         let mut intents = HashMap::new();
-        assert_eq!(wanted(&st, &intents, Some("a 1")), [("delivery".to_owned(), "delivery".to_owned())]);
-        intents.insert(
-            "delivery".to_owned(),
-            Known { print: Some("a 1".into()), got: Ok(model::intent(&doc, 1400).unwrap()) },
-        );
-        assert!(wanted(&st, &intents, Some("a 1")).is_empty());
-        attach(&mut st, &intents, Some("a 1"));
-        let why = st.gates[0].why.clone().unwrap();
-        assert_eq!(why.decisions.unwrap()[0].id, "toy-001");
+        let delivery = vec![("delivery".to_owned(), "delivery".to_owned())];
+        let key = |print: &str| intent_key(Some(print)).map(str::to_owned);
+        assert_eq!(wanted(&st, &intents, key("lc h1 9 9").as_deref(), true), delivery);
+        let gates = vec!["delivery/release/approve-release".to_owned()];
+        let got = Ok(model::intent(&doc, 1400).unwrap());
+        intents.insert("delivery".to_owned(), Known { print: key("lc h1 9 9"), got, gates: gates.clone() });
+        // An edit in the tree: the same key, no read.
+        assert!(wanted(&st, &intents, key("lc h1 7 7").as_deref(), true).is_empty());
+        attach(&mut st, &intents);
+        assert_eq!(st.gates[0].why.as_ref().unwrap().decisions.as_ref().unwrap()[0].id, "toy-001");
         assert!(st.text().contains("    enforces toy-001 A person approves each ship\n"), "{}", st.text());
-        // The fingerprint moved: read again, and the old one isn't put on.
-        assert_eq!(wanted(&st, &intents, Some("a 2")).len(), 1);
+        // A commit: read again, and meanwhile the gate keeps what it had
+        // (no flicker to "Reading").
+        assert_eq!(wanted(&st, &intents, key("lc h2 7 7").as_deref(), true), delivery);
         let mut fresh = model::compose(&raw, "local");
-        attach(&mut fresh, &intents, Some("a 2"));
-        assert_eq!(fresh.gates[0].why.as_ref().unwrap().decisions, None);
-        // A failure is a note on the gate, and is kept like an answer.
-        intents.insert("delivery".to_owned(), Known { print: Some("a 2".into()), got: Err("too slow".into()) });
-        attach(&mut fresh, &intents, Some("a 2"));
-        assert_eq!(fresh.gates[0].why.as_ref().unwrap().note.as_deref(), Some("too slow"));
-        assert!(wanted(&fresh, &intents, Some("a 2")).is_empty());
+        attach(&mut fresh, &intents);
+        assert_eq!(fresh.gates[0].why.as_ref().unwrap().decisions.as_ref().unwrap()[0].id, "toy-001");
+        // ...until a fresh read replaces it; a failure is a note.
+        intents.insert("delivery".to_owned(), Known { print: key("lc h2 7 7"), got: Err("too slow".into()), gates });
+        attach(&mut fresh, &intents);
+        let why = fresh.gates[0].why.as_ref().unwrap();
+        assert_eq!((why.decisions.as_ref(), why.note.as_deref()), (None, Some("too slow")));
         // No gate, no read.
         fresh.gates.clear();
-        assert!(wanted(&fresh, &HashMap::new(), Some("a 2")).is_empty());
+        assert!(wanted(&fresh, &HashMap::new(), key("lc h2 7 7").as_deref(), true).is_empty());
+    }
+
+    #[test]
+    fn nobody_looking_reads_a_gate_once_when_it_s_raised() {
+        let raw: serde_json::Value = serde_json::from_str(include_str!("fixtures/reference-raw.json")).unwrap();
+        let st = model::compose(&raw, "local");
+        let mut intents = HashMap::new();
+        // Raised while nobody draws the block: read, for the swarm and phone.
+        assert_eq!(wanted(&st, &intents, Some("lc h1"), false).len(), 1);
+        let gates = vec!["delivery/release/approve-release".to_owned()];
+        intents.insert("delivery".to_owned(), Known { print: Some("lc h1".into()), got: Err("x".into()), gates });
+        // Commits since, still nobody looking: no more reads.
+        assert!(wanted(&st, &intents, Some("lc h9"), false).is_empty());
+        // Someone looks: read at this commit.
+        assert_eq!(wanted(&st, &intents, Some("lc h9"), true).len(), 1);
+        // Another gate raised in the member while nobody looks: read once.
+        let mut raw2 = raw.clone();
+        for g in raw2["reads"]["status"]["json"]["members"][1]["gates"].as_array_mut().unwrap() {
+            g["state"] = "pending".into();
+        }
+        assert_eq!(wanted(&model::compose(&raw2, "local"), &intents, Some("lc h9"), false).len(), 1);
+    }
+
+    #[test]
+    fn a_dismissed_gate_isn_t_asked_again_when_the_tree_or_its_decisions_move() {
+        // #617: attention names the gates by headline and keys, never their
+        // `why`. Raised, then dismissed (the pane goes idle); the
+        // fingerprint moves (a fresh read resets `why`), and the decisions
+        // land: each is an update, which the mux applies only while the
+        // pane still needs input, so nothing is asked again.
+        let raw: serde_json::Value = serde_json::from_str(include_str!("fixtures/reference-raw.json")).unwrap();
+        let doc: serde_json::Value = serde_json::from_str(include_str!("fixtures/intent-delivery.json")).unwrap();
+        let first = model::compose(&raw, "local");
+        assert!(matches!(raise(Some(""), &first.gates), Raise::Ask(_)));
+        let was = raised_key(&first.gates);
+        // The fingerprint moved: a new read, `why` back to nothing read.
+        let moved = model::compose(&raw, "local");
+        assert!(matches!(raise(was.as_deref(), &moved.gates), Raise::Update(_)));
+        // The decisions landed.
+        let mut read = moved.clone();
+        let mut intents = HashMap::new();
+        let got = Ok(model::intent(&doc, 1).unwrap());
+        intents.insert("delivery".to_owned(), Known { print: None, got, gates: vec![] });
+        attach(&mut read, &intents);
+        let Raise::Update(r) = raise(was.as_deref(), &read.gates) else { panic!("asked again") };
+        assert_eq!(r.gate.unwrap().why.unwrap().decisions.unwrap()[0].id, "toy-001");
+        // Another gate is a new ask; none is let go.
+        let mut raw2 = raw.clone();
+        for g in raw2["reads"]["status"]["json"]["members"][1]["gates"].as_array_mut().unwrap() {
+            g["state"] = "pending".into();
+        }
+        assert!(matches!(raise(was.as_deref(), &model::compose(&raw2, "local").gates), Raise::Ask(_)));
+        assert_eq!(raise(was.as_deref(), &[]), Raise::Clear);
+        assert_eq!(raise(None, &[]), Raise::Nothing);
+    }
+
+    #[test]
+    fn an_intent_read_s_key_is_the_lifecycle_ref_and_head() {
+        assert_eq!(intent_key(Some("lc h1 123 45")), Some("lc h1"));
+        assert_eq!(intent_key(Some("gone")), Some("gone"));
+        assert_eq!(intent_key(None), None);
     }
 
     /// A fingerprint: the lifecycle ref's word, then the tree's checksum.

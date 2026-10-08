@@ -946,9 +946,44 @@ impl Daemon {
     }
 }
 
+/// Whether a block's [`What::Update`](crate::pane::What::Update) changes
+/// its pane's reason: only while the pane still needs input for a reason of
+/// that kind. Dismissed (idle), or wanting you for something else, it's
+/// left alone, and nothing is asked again.
+pub(super) fn updates(attention: Option<Attention>, current: Option<&Reason>, new: &Reason) -> bool {
+    attention == Some(Attention::NeedsInput) && current.is_some_and(|r| r.kind == new.kind)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::push_reason;
+    use super::{push_reason, updates};
+    use arugula_proto::{Attention, ReasonKind};
+
+    #[test]
+    fn an_update_says_more_only_while_the_reason_still_wants_you() {
+        let gate = |why: bool| arugula_proto::Gate {
+            member: "delivery".into(),
+            op: "ship".into(),
+            gate: "approve-ship".into(),
+            env: None,
+            since: Some("2026-10-07T00:00:00Z".into()),
+            expires: None,
+            approvals: 0,
+            needed: 1,
+            command: None,
+            source: arugula_proto::GateSource::Chant { root: "/w".into(), dir: "/w/delivery".into(), machine: None },
+            why: why.then(Default::default),
+        };
+        let was = crate::gate::reason(&[gate(false)]).unwrap();
+        let more = crate::gate::reason(&[gate(true)]).unwrap();
+        assert!(updates(Some(Attention::NeedsInput), Some(&was), &more));
+        // Dismissed: idle, and it stays so.
+        assert!(!updates(Some(Attention::Idle), Some(&was), &more));
+        assert!(!updates(None, None, &more));
+        // Wanting you for something else.
+        let other = arugula_proto::Reason { kind: ReasonKind::Failed, ..was.clone() };
+        assert!(!updates(Some(Attention::NeedsInput), Some(&other), &more));
+    }
 
     #[test]
     fn a_gates_push_names_it_for_approve_and_expire() {

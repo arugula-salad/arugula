@@ -104,8 +104,10 @@ function run(args) {
 
 /// `sh -c FINGERPRINT sh ROOT`: one line that changes when anything a read
 /// would see might have: the `chant/lifecycle` ref (releases and gates)
-/// first, as its own word, then a checksum of a commit, chant's other refs
-/// and the working tree (the declaration, records, member sources). About
+/// first, as its own word, then `HEAD`, then a checksum of a commit, chant's
+/// other refs and the working tree (the declaration, records, member
+/// sources). The first two words are what an intent read depends on
+/// (#617): its history and the committed records, not the working tree. About
 /// 0.01 CPU-seconds where a full read is about 7 (four chant processes,
 /// each loading chant's TypeScript through tsx), so the block polls this
 /// and reads only when it changes. It never fetches.
@@ -134,6 +136,7 @@ function run(args) {
 pub const FINGERPRINT: &str = r#"cd "$1" 2>/dev/null || { echo gone; exit 0; }
 export GIT_OPTIONAL_LOCKS=0
 printf '%s ' "$(git rev-parse -q --verify refs/heads/chant/lifecycle 2>/dev/null || echo -)"
+printf '%s ' "$(git rev-parse -q --verify HEAD 2>/dev/null || echo -)"
 if stat -c %s . >/dev/null 2>&1; then set -- -c '%y %s %n'; else set -- -f '%Fm %z %N'; fi
 { git rev-parse -q --verify HEAD; git for-each-ref --format='%(objectname) %(refname)' refs/chant refs/heads/chant/work; git status --porcelain=v1; git diff-index -p HEAD --
 git ls-files -o --exclude-standard -z | tr '\0' '\n' | head -n 1000 | tr '\n' '\0' | xargs -0 stat "$@"; } 2>/dev/null | cksum"#;

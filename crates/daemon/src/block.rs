@@ -336,6 +336,14 @@ impl BlockCtx {
         let _ = self.notices.send(Notice { pane: self.id, what: What::Reason(state, reason) });
     }
 
+    /// The reason it asks with says more (#617: a gate's decisions, read
+    /// after it was raised): the card shows it, while the attention is
+    /// still for that kind of reason. It asks nothing again: a reason
+    /// dismissed stays dismissed.
+    pub fn update_reason(&self, reason: arugula_proto::Reason) {
+        let _ = self.notices.send(Notice { pane: self.id, what: What::Update(reason) });
+    }
+
     /// Let go of attention, if it's still for a reason of this kind (one
     /// dismissed or replaced meanwhile is left alone).
     pub fn clear(&self, kind: arugula_proto::ReasonKind) {

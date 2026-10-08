@@ -138,3 +138,23 @@ test("on a phone, the sheet's gate says what it enforces (#617)", async ({ brows
   await row.screenshot({ path: info.outputPath("phone-sheet.png") });
   await ctx.close();
 });
+
+test("a gate dismissed stays dismissed when the workspace moves and its decisions are read again (#617)", async ({ page }) => {
+  test.setTimeout(60_000);
+  await open(page);
+  const state = async () => (await (await fetch(`${base()}/api/blocks/${block}`)).json()).state;
+  await expect.poll(async () => (await reasonOf(page, block))?.kind ?? null, { timeout: 15_000 }).toBe("gate");
+  const act = await fetch(`${base()}/api/attention/act`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "dismiss", pane: block }) });
+  expect(act.ok).toBe(true);
+  await expect.poll(async () => (await panesOf(page)).find((p) => p.id === block)?.attention).toBe("idle");
+  // A commit in delivery: a full read (the gate's `why` starts over) and a
+  // new intent read, whose decisions land on the block's card.
+  const before = (await state()).updated_ms;
+  writeFileSync(join(ws, "delivery", "notes.md"), "another note\n");
+  git("commit", "-qam", "delivery: another note");
+  await expect.poll(async () => (await state()).updated_ms, { timeout: 20_000 }).not.toBe(before);
+  await expect.poll(async () => (await state()).gates[0]?.why?.decisions?.[0]?.id ?? null, { timeout: 20_000 }).toBe("toy-001");
+  await new Promise((r) => setTimeout(r, 2_000));
+  // Not asked again.
+  expect((await panesOf(page)).find((p) => p.id === block)?.attention).toBe("idle");
+});

@@ -440,7 +440,7 @@ rest stay, each with a comment at the spot:
 The decisions a gate enforces come from `graph --intent <member dir>`
 (#617), so chant does the covering and the block joins nothing (ws-052).
 It's read per member with a gate waiting, outside the full read, and kept
-until the fingerprint moves: it runs `git log` over the member, about a
+until `HEAD` or the lifecycle ref moves (once per gate while nobody looks): it runs `git log` over the member, about a
 second on a small repository and 40 s or more on chant's own, where the 30 s
 limit on a host command cuts it off and the card says so.
 Where: `crates/daemon/src/workspace/model.rs` (`READER`, `FINGERPRINT`, `INTENT`), `apps/hud.rs`, `rules.rs`, `cli/src/ask.rs`, `fountain/wear.rs`, `forge/issue.rs`.
