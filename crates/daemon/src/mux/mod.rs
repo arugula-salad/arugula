@@ -1000,6 +1000,7 @@ impl Daemon {
                     self.set_attention_with(pane, state, &why, Some(reason));
                 }
             }
+            #[cfg(feature = "labs")]
             What::Update(reason) => {
                 if attention::updates(self.attention.get(&pane).copied(), self.reasons.get(&pane), &reason) {
                     let state = Attention::NeedsInput;

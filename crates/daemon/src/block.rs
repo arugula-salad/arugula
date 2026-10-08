@@ -340,6 +340,7 @@ impl BlockCtx {
     /// after it was raised): the card shows it, while the attention is
     /// still for that kind of reason. It asks nothing again: a reason
     /// dismissed stays dismissed.
+    #[cfg(feature = "labs")]
     pub fn update_reason(&self, reason: arugula_proto::Reason) {
         let _ = self.notices.send(Notice { pane: self.id, what: What::Update(reason) });
     }

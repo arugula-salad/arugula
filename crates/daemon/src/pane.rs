@@ -205,7 +205,8 @@ pub enum What {
     /// editor's debugger paused, say).
     Reason(arugula_proto::Attention, arugula_proto::Reason),
     /// ...or says more about it, if that's still why it wants you, asking
-    /// nothing again (#617).
+    /// nothing again (#617: a workspace gate's decisions).
+    #[cfg(feature = "labs")]
     Update(arugula_proto::Reason),
     /// ...or lets go of it, if that's still why it wants you.
     Clear(arugula_proto::ReasonKind),

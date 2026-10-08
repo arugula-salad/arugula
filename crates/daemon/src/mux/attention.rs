@@ -946,6 +946,7 @@ impl Daemon {
     }
 }
 
+#[cfg(feature = "labs")]
 /// Whether a block's [`What::Update`](crate::pane::What::Update) changes
 /// its pane's reason: only while the pane still needs input for a reason of
 /// that kind. Dismissed (idle), or wanting you for something else, it's
@@ -956,9 +957,9 @@ pub(super) fn updates(attention: Option<Attention>, current: Option<&Reason>, ne
 
 #[cfg(test)]
 mod tests {
-    use super::{push_reason, updates};
-    use arugula_proto::{Attention, ReasonKind};
+    use super::push_reason;
 
+    #[cfg(feature = "labs")]
     #[test]
     fn an_update_says_more_only_while_the_reason_still_wants_you() {
         let gate = |why: bool| arugula_proto::Gate {
@@ -974,6 +975,8 @@ mod tests {
             source: arugula_proto::GateSource::Chant { root: "/w".into(), dir: "/w/delivery".into(), machine: None },
             why: why.then(Default::default),
         };
+        use super::updates;
+        use arugula_proto::{Attention, ReasonKind};
         let was = crate::gate::reason(&[gate(false)]).unwrap();
         let more = crate::gate::reason(&[gate(true)]).unwrap();
         assert!(updates(Some(Attention::NeedsInput), Some(&was), &more));
