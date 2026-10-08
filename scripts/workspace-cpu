@@ -29,13 +29,19 @@ wrap)
   real=$(command -v chant) || { echo "no chant on PATH: set REAL_CHANT" >&2; exit 1; }
   real=${REAL_CHANT:-$real}
   # One line per chant process: its subcommand, then the user and system
-  # seconds `times` gives for its children (chant and its node).
+  # seconds `times` gives for its children (chant and its node). `times`
+  # writes to a file: in a pipeline it runs in a subshell, which has no
+  # children, so it said 0. The line is one write, so two reads at once
+  # don't interleave theirs.
   cat >"$dir/chant" <<EOF
 #!/bin/sh
 "$real" "\$@"
 rc=\$?
-printf '%s %s ' "\$1" "\$2" >>"$log"
-times | tail -n 1 >>"$log"
+tf=\$(mktemp)
+times >"\$tf"
+line="\$1 \$2 \$(tail -n 1 "\$tf")"
+rm -f "\$tf"
+printf '%s\\n' "\$line" >>"$log"
 exit \$rc
 EOF
   chmod +x "$dir/chant"
