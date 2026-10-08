@@ -438,10 +438,13 @@ rest stay, each with a comment at the spot:
   the block's principals and `--relayed-by`. An op gate that asks a point
   (chant#3170) is that question, never a `chant approve`. This is the
   approvals inbox behold#472 asked for, so behold doesn't build one.
-- A member's agent sessions are read from the declaration's file, `.json`
-  or `.jsonc` (its comments and trailing commas taken out), since no read
-  prints which session is bound to which member (#590), until `ls --json`
-  does (INTENTIUS/chant#3615).
+- A member's agent sessions are `ls --json`'s `agents` for the member
+  (#590), from the `ls` the block already runs. A chant that lacks the
+  field, any before INTENTIUS/chant#3628 (no release has it yet), gets the
+  reader's own parse of the declaration's file instead, `.json` or `.jsonc`
+  (its comments and trailing commas taken out), read in the working tree
+  where chant reads it at base. Drop that parse once the block's chant
+  floor has the field.
 - *Changes* on a member (#619) joins what chant can't know, and nothing
   else: a run in `graph --intent`'s `why` is linked to the open agent block
   whose recent turns wrote that run id, and a lease's holder to the open

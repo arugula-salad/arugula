@@ -38,10 +38,11 @@ exec node -e "$2" "$1" "$3""#;
 /// meets `minReader` (`reader-too-old` otherwise). The block shows those
 /// codes and which chant it started (`how`).
 ///
-/// The declaration's `agents` (#304) are read from its file, since no read
-/// prints them (#590, INTENTIUS/chant#3615): `chant.workspace.json`, or
-/// `.jsonc` with its comments and trailing commas taken out; `null` when
-/// neither parses.
+/// A member's agent sessions (#304) are `ls --json`'s `agents`, which chant
+/// prints from INTENTIUS/chant#3628 on (#590). Only when `ls` gives none
+/// (an older chant) is the declaration's `agents` read from its file:
+/// `chant.workspace.json`, or `.jsonc` with its comments and trailing commas
+/// taken out; `null` when neither parses.
 pub const READER: &str = r#"
 const { execFile } = require("child_process"), fs = require("fs"), path = require("path");
 const [root, env] = process.argv.slice(1);
@@ -71,12 +72,15 @@ function up(found) {
 const declDir = up((d) => ["chant.workspace.json", "chant.workspace.jsonc"].some((f) => fs.existsSync(path.join(d, f))));
 const declared = declDir !== null;
 const gitRoot = up((d) => fs.existsSync(path.join(d, ".git")));
-// The agent sessions (ws-067), which no read prints: from the declaration.
-// JSONC: comments and trailing commas out, strings kept as they are.
+// The agent sessions (ws-067), for a chant whose `ls` doesn't print them
+// (before INTENTIUS/chant#3628): from the declaration. JSONC: comments and
+// trailing commas out, strings kept as they are.
 const jsonc = (t) => JSON.parse(t.replace(/("(?:[^"\\]|\\.)*")|\/\/[^\n]*|\/\*[\s\S]*?\*\//g, (m, str) => str ?? "").replace(/("(?:[^"\\]|\\.)*")|,(\s*[}\]])/g, (m, str, end) => str ?? end));
-let agents = null;
-for (const f of ["chant.workspace.json", "chant.workspace.jsonc"]) {
-  try { const a = (f.endsWith("c") ? jsonc : JSON.parse)(fs.readFileSync(path.join(declDir, f), "utf8")).agents; agents = Array.isArray(a) ? a : []; break; } catch {}
+function declaredAgents() {
+  for (const f of ["chant.workspace.json", "chant.workspace.jsonc"]) {
+    try { const a = (f.endsWith("c") ? jsonc : JSON.parse)(fs.readFileSync(path.join(declDir, f), "utf8")).agents; return Array.isArray(a) ? a : []; } catch {}
+  }
+  return null;
 }
 const [chant, how] = which();
 function run(args) {
@@ -88,7 +92,7 @@ function run(args) {
   }));
 }
 (async () => {
-  const doc = { root: here, declared, gitRoot, chant, how, env, agents };
+  const doc = { root: here, declared, gitRoot, chant, how, env };
   if (!chant) return console.log(JSON.stringify(doc));
   const t = Date.now();
   const [ls, check, records, status, points] = await Promise.all([
@@ -100,6 +104,8 @@ function run(args) {
   ]);
   doc.ms = Date.now() - t;
   doc.reads = { ls, check, records, status, points };
+  const members = ls.json && Array.isArray(ls.json.members) ? ls.json.members : [];
+  if (!members.some((m) => Array.isArray(m.agents))) doc.agents = declaredAgents();
   // A chant older than the contract writes none of it: its version, to
   // say which to install.
   if (![ls, check, records, status].some((r) => r.json && typeof r.json === "object" && "contract" in r.json)) {
@@ -215,8 +221,8 @@ pub struct Member {
     pub diagnostics: Vec<Diagnostic>,
     pub releases: usize,
     pub gates: usize,
-    /// The agent sessions the declaration binds to it (ws-067): an agent
-    /// started here runs as the first (#304).
+    /// The agent sessions the declaration binds to it (ws-067), as `ls`
+    /// lists them (#590): an agent started here runs as the first (#304).
     pub agents: Vec<String>,
     /// The ops `status` names for it, for *Run op* (#309): its stewards'
     /// ops, then any op a gate of its was recorded for. *Run op* takes a
@@ -518,10 +524,25 @@ pub fn compose(raw: &Value, env: &str) -> State {
             ..Default::default()
         });
     }
-    for a in raw["agents"].as_array().into_iter().flatten() {
-        let (Some(name), Some(on)) = (s(&a["name"]), s(&a["member"])) else { continue };
-        if let Some(m) = st.members.iter_mut().find(|m| m.name == on) {
-            m.agents.push(name);
+    // Agent sessions (#590): `ls`'s, from a chant that prints them
+    // (INTENTIUS/chant#3628), read where chant's write paths read them.
+    // Before that, the reader's parse of the declaration: `member` or
+    // `members`, in declaration order.
+    let listed = ls["members"].as_array().into_iter().flatten();
+    if listed.clone().any(|m| m["agents"].is_array()) {
+        for (m, l) in st.members.iter_mut().zip(listed) {
+            m.agents = l["agents"].as_array().into_iter().flatten().filter_map(s).collect();
+        }
+    } else {
+        for a in raw["agents"].as_array().into_iter().flatten() {
+            let Some(name) = s(&a["name"]) else { continue };
+            let on: Vec<String> = s(&a["member"])
+                .into_iter()
+                .chain(a["members"].as_array().into_iter().flatten().filter_map(s))
+                .collect();
+            for m in st.members.iter_mut().filter(|m| on.contains(&m.name)) {
+                m.agents.push(name.clone());
+            }
         }
     }
 
@@ -1762,6 +1783,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// The fallback, for a chant whose `ls` has no `agents`: the reader's
+    /// parse of the declaration.
     #[test]
     fn declared_agent_sessions_go_on_their_member() {
         let mut raw = fixture(include_str!("fixtures/reference-raw.json"));
@@ -1778,6 +1801,36 @@ mod tests {
         // A declaration that isn't plain JSON: no sessions, nothing else lost.
         raw["agents"] = Value::Null;
         assert!(compose(&raw, "local").members.iter().all(|m| m.agents.is_empty()));
+        // A session bound to several members, as chant#3628's test binds one.
+        raw["agents"] = serde_json::json!([{ "name": "factory", "members": ["app", "design"] }]);
+        let st = compose(&raw, "local");
+        let agents = |n: &str| st.members.iter().find(|m| m.name == n).unwrap().agents.clone();
+        assert_eq!((agents("app"), agents("design")), (vec!["factory".to_owned()], vec!["factory".to_owned()]));
+    }
+
+    /// #590: a chant that prints each member's `agents` in `ls --json`
+    /// (INTENTIUS/chant#3628) is where the sessions come from, whatever the
+    /// reader would have parsed.
+    #[test]
+    fn agent_sessions_come_from_ls_when_chant_prints_them() {
+        let mut raw = fixture(include_str!("fixtures/reference-raw.json"));
+        let ls = &mut raw["reads"]["ls"]["json"];
+        ls["workspace"]["agentsFrom"] = "base".into();
+        for m in ls["members"].as_array_mut().unwrap() {
+            m["agents"] = match m["name"].as_str().unwrap() {
+                "app" => serde_json::json!(["app-agent", "factory"]),
+                "design" => serde_json::json!(["factory"]),
+                _ => serde_json::json!([]),
+            };
+        }
+        // Only an older chant's reader parses the declaration; were it here,
+        // it isn't what the members get.
+        raw["agents"] = serde_json::json!([{ "name": "stale", "member": "delivery" }]);
+        let st = compose(&raw, "local");
+        let agents = |n: &str| st.members.iter().find(|m| m.name == n).unwrap().agents.clone();
+        assert_eq!(agents("app"), ["app-agent", "factory"]);
+        assert_eq!(agents("design"), ["factory"]);
+        assert!(agents("delivery").is_empty() && agents("design-client").is_empty());
     }
 
     #[test]
