@@ -15,7 +15,10 @@ export async function account(p: Page, item: "Teams…" | "Devices and machines�
 export async function show(p: Page, machine: string) {
   if ((await p.getByTitle("Hosts").innerText()).includes(machine)) return;
   await p.getByTitle("Hosts").click();
-  await p.getByRole("menuitem", { name: new RegExp(`\\b${machine}\\b`) }).click();
+  // The machine's own item starts with its name (after a ✓ when it's the one
+  // shown); another machine's item can mention it further on ("Fountain
+  // runner geek").
+  await p.getByRole("menuitem", { name: new RegExp(`^(✓\\s*)?${machine}\\b`) }).click();
   await expect(p.getByTitle("Hosts")).toContainText(machine, { timeout: 20_000 });
 }
 
