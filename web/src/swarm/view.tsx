@@ -736,6 +736,13 @@ function Card({
     setErr(e);
   };
   const all = (label: string) => (n > 1 ? `${label} all ${n}` : label);
+  // The card's main button: what to do about it. With nothing to rerun,
+  // continue, allow or answer, that's going to the pane (one pane; a
+  // bundle's is Dismiss all). Dismiss is never dressed as the main button
+  // while there is one.
+  const verb = ["rerun", "continue", "allow"].some((a) => r.actions.includes(a as Action)) || r.ask?.what === "question";
+  const openFirst = !verb && n === 1 && !isPresence(first) && r.kind !== "ask" && r.kind !== "diff";
+  const cta = verb || openFirst;
   const kind = r.kind === "exited" || r.kind === "errors" ? "failed" : r.kind === "diff" ? "ask" : r.kind;
   const diff = n === 1 && r.kind === "diff" ? first.info.diff : null;
   const focused = focus && b.panes.some((p) => p.host === focus.host && p.id === focus.pane);
@@ -789,6 +796,11 @@ function Card({
         />
       ) : (
         <div class="ca">
+          {openFirst && (
+            <button class="pri" data-open-card onClick={open}>
+              Open
+            </button>
+          )}
           {r.actions.includes("rerun") && (
             <button class="pri" data-rerun disabled={busy} onClick={() => void run("rerun")}>
               {all("Rerun")}
@@ -814,16 +826,20 @@ function Card({
               {all("Deny")}
             </button>
           )}
+          {r.ask?.what === "question" && (
+            <button class="pri" onClick={open}>
+              Answer…
+            </button>
+          )}
           {r.actions.includes("dismiss") && r.kind !== "ask" && (
-            <button class={r.actions.length === 1 ? "pri" : ""} disabled={busy} onClick={() => void run("dismiss")}>
+            <button class={cta ? "quiet" : "pri"} data-dismiss-card disabled={busy} onClick={() => void run("dismiss")}>
               {all("Dismiss")}
             </button>
           )}
-          {r.ask?.what === "question" && <button onClick={open}>Answer…</button>}
         </div>
       )}
       <div class="ca ca-nav">
-        {!isPresence(first) && (
+        {!isPresence(first) && !openFirst && (
           <button class="ghost" onClick={open}>
             Open
           </button>
