@@ -8,7 +8,7 @@
 import { render } from "preact";
 import { useState } from "preact/hooks";
 import type { Client } from "../client";
-import { EXPIRE_TITLE, gateKey, type Gate, type PaneId, type RunRequest } from "../proto";
+import { EXPIRE_TITLE, gateKey, type Gate, type PaneId, type RunRequest, type WorkspaceRecord } from "../proto";
 import { openWorkspace } from "./open-labs";
 import type { BlockRenderer, BlockView } from "./view";
 
@@ -18,11 +18,10 @@ interface Member {
   unreadable: string | null; errors: number; warnings: number; diagnostics: Diagnostic[]; releases: number; gates: number;
   agents: string[]; ops: string[];
 }
-interface Rec { kind: string; id: string; title: string | null; state: string | null; ready: boolean | null; blocked_by: string[]; warnings: string[]; valid: boolean }
 interface Read { name: string; ms: number; code: number; ok: boolean; note: string | null; reason: string | null }
 export interface WorkspaceState {
   root: string; name: string | null; chant: string | null; how: string | null; version: string | null; env: string;
-  members: Member[]; records: Rec[]; records_note: string | null; gates: Gate[]; diagnostics: Diagnostic[];
+  members: Member[]; records: WorkspaceRecord[]; records_note: string | null; gates: Gate[]; diagnostics: Diagnostic[];
   reads: Read[]; ms: number; error: string | null; error_code: string | null; headline: string | null; loading: boolean; updated_ms: number; watching?: boolean;
   /** The envs chant has releases for, with `local` and the one watched (#312). */
   envs?: string[];

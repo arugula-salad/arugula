@@ -10,7 +10,10 @@
 //! - [`compose`]: pure. Turns that document into the block's state: member
 //!   cards, records, the gates waiting, and a headline.
 
-use arugula_proto::{Gate, GateSource};
+use arugula_proto::{
+    Gate, GateSource,
+    workspace::{PinState, Record, RecordChoice, RecordEvidence},
+};
 use serde::Serialize;
 use serde_json::Value;
 
@@ -213,19 +216,6 @@ pub struct Diagnostic {
     pub message: String,
     pub file: Option<String>,
     pub line: Option<u64>,
-}
-
-#[derive(Debug, Clone, Default, Serialize)]
-pub struct Record {
-    pub kind: String,
-    pub id: String,
-    pub title: Option<String>,
-    pub state: Option<String>,
-    pub ready: Option<bool>,
-    pub blocked_by: Vec<String>,
-    /// Pin drift and the like.
-    pub warnings: Vec<String>,
-    pub valid: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -537,24 +527,80 @@ pub fn compose(raw: &Value, env: &str) -> State {
         let kind =
             s(&k["kind"]["name"]).or_else(|| s(&k["kind"])).or_else(|| s(&k["declared"]["name"])).unwrap_or_default();
         for r in k["records"].as_array().into_iter().flatten() {
-            st.records.push(Record {
-                kind: kind.clone(),
-                id: s(&r["id"]).unwrap_or_default(),
-                title: s(&r["data"]["title"]),
-                state: s(&r["state"]),
-                ready: r["ready"].as_bool(),
-                blocked_by: r["blockedBy"].as_array().into_iter().flatten().filter_map(|b| s(&b["id"])).collect(),
-                warnings: r["warnings"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .filter_map(|w| s(&w["message"]).or_else(|| s(&w["code"])).or_else(|| s(w)))
-                    .collect(),
-                valid: r["valid"].as_bool().unwrap_or(true),
-            });
+            st.records.push(record(&kind, r));
         }
     }
     st.headlined()
+}
+
+/// The strings in a list, or in each object's `key` (a list of either).
+fn ids(v: &Value, key: &str) -> Vec<String> {
+    v.as_array().into_iter().flatten().filter_map(|x| s(x).or_else(|| s(&x[key]))).collect()
+}
+
+/// One record of `records --current` (#616): every field a decision can be
+/// drawn with, as chant wrote it. Reads only the record itself: its data,
+/// and what chant says of it beside the data (`supersededBy`, `assets`,
+/// `attested`). A kind whose records name these fields otherwise gets
+/// what's there.
+fn record(kind: &str, r: &Value) -> Record {
+    let d = &r["data"];
+    // An option by its id, with the label the record's options give it.
+    let label =
+        |id: &str| d["options"].as_array().into_iter().flatten().find(|o| o["id"] == id).and_then(|o| s(&o["label"]));
+    let choice = |c: &Value, why: &str| {
+        let option = s(&c["option"])?;
+        Some(RecordChoice { label: label(&option), why: s(&c[why]), option })
+    };
+    // A pinned file's state, from chant's check of the record's pins.
+    let pin = |path: &str| {
+        r["assets"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|a| a["path"] == path)
+            .and_then(|a| PinState::parse(a["state"].as_str()?))
+    };
+    Record {
+        kind: kind.to_owned(),
+        id: s(&r["id"]).unwrap_or_default(),
+        title: s(&d["title"]),
+        state: s(&r["state"]),
+        ready: r["ready"].as_bool(),
+        blocked_by: ids(&r["blockedBy"], "id"),
+        warnings: r["warnings"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|w| s(&w["message"]).or_else(|| s(&w["code"])).or_else(|| s(w)))
+            .collect(),
+        valid: r["valid"].as_bool().unwrap_or(true),
+        question: s(&d["question"]),
+        constrains: ids(&d["constrains"], "entry"),
+        choice: choice(&d["choice"], "reason"),
+        rejected: d["rejected"].as_array().into_iter().flatten().filter_map(|c| choice(c, "why")).collect(),
+        // `{decision: id}`, or `{revision, option}` for a choice made before
+        // decision files: only the first names a record.
+        supersedes: ids(&d["supersedes"], "decision"),
+        superseded_by: s(&r["supersededBy"]),
+        remediated_by: ids(&r["remediatedBy"], "id"),
+        implements: ids(&r["implements"], "id"),
+        decided_by: s(&d["decided_by"]),
+        decided_on: s(&d["decided_on"]),
+        proposed_by: s(&d["proposed_by"]),
+        evidence: d["evidence"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(|e| {
+                let path = s(&e["path"]);
+                RecordEvidence { title: s(&e["title"]), url: s(&e["url"]), pin: path.as_deref().and_then(pin), path }
+            })
+            .collect(),
+        attested: r["attested"].as_bool(),
+        provenance: s(&r["provenance"]["level"]),
+        path: s(&r["path"]),
+    }
 }
 
 impl State {
@@ -710,6 +756,67 @@ mod tests {
         assert_eq!(w2.blocked_by, ["W-001"]);
         assert!(st.reads.iter().all(|r| r.ok));
         assert!(st.text().contains("delivery/release gate approve-release"));
+    }
+
+    #[test]
+    fn a_decision_keeps_its_fields() {
+        // #616: what the reference workspace's decisions say reaches the
+        // client, not just id, state and title.
+        let st = compose(&fixture(include_str!("fixtures/reference-raw.json")), "local");
+        let r = |id: &str| st.records.iter().find(|r| r.id == id).unwrap().clone();
+        let d = r("ref-001");
+        assert_eq!(d.kind, "decision");
+        assert_eq!(d.question.as_deref(), Some("What builds the app's image and runs it?"));
+        assert_eq!(d.constrains, ["member:app", "member:delivery"]);
+        let choice = d.choice.unwrap();
+        assert_eq!(
+            (choice.option.as_str(), choice.label.as_deref()),
+            ("a", Some("a chant project with the docker lexicon"))
+        );
+        assert!(choice.why.unwrap().starts_with("The reference workspace needs a `chant` member"));
+        assert_eq!(d.rejected.iter().map(|c| c.option.as_str()).collect::<Vec<_>>(), ["b", "c"]);
+        assert_eq!(d.rejected[0].label.as_deref(), Some("a hand-written compose file in the app"));
+        assert!(d.rejected[0].why.as_deref().unwrap().contains("without a `chant` member"));
+        assert_eq!((d.decided_by.as_deref(), d.decided_on.as_deref()), (Some("lex00"), Some("2026-09-23")));
+        assert!(d.supersedes.is_empty() && d.superseded_by.is_none());
+        assert_eq!((d.attested, d.provenance.as_deref()), (None, Some("unattested")));
+        assert_eq!(d.path.as_deref(), Some("decisions/ref-001-how-the-app-is-deployed.md"));
+        // Links are evidence with a url and no pin.
+        assert_eq!(d.evidence.len(), 2);
+        assert!(d.evidence.iter().all(|e| e.url.is_some() && e.path.is_none() && e.pin.is_none()));
+        // A pinned file carries chant's word on it.
+        let pinned = r("ref-002").evidence.into_iter().find(|e| e.path.is_some()).unwrap();
+        assert_eq!(
+            (pinned.title.as_deref(), pinned.path.as_deref(), pinned.pin),
+            (Some("The home screen spec"), Some("design/screens/home.json"), Some(PinState::Pinned))
+        );
+        // A work item: the decisions it carries out.
+        assert_eq!(r("W-001").implements, ["ref-002"]);
+        assert_eq!(r("W-002").blocked_by, ["W-001"]);
+        // ...and the wire carries them, by the names the client reads.
+        let wire = serde_json::to_value(&st).unwrap();
+        let first = &wire["records"][0];
+        assert_eq!(first["constrains"], serde_json::json!(["member:app", "member:delivery"]));
+        assert_eq!(first["choice"]["option"], "a");
+        assert_eq!(wire["records"][1]["evidence"][2]["pin"], "pinned");
+    }
+
+    #[test]
+    fn supersession_drift_and_trust_survive_the_read() {
+        let mut raw = fixture(include_str!("fixtures/reference-raw.json"));
+        let rec = &mut raw["reads"]["records"]["json"]["kinds"][0]["records"][1];
+        rec["data"]["supersedes"] = serde_json::json!([{ "decision": "ref-000" }, { "revision": "v1", "option": "b" }]);
+        rec["assets"][0]["state"] = "drifted".into();
+        rec["attested"] = true.into();
+        rec["supersededBy"] = "ref-009".into();
+        rec["data"]["choice"] = Value::Null;
+        let st = compose(&raw, "local");
+        let d = st.records.iter().find(|r| r.id == "ref-002").unwrap();
+        assert_eq!(d.supersedes, ["ref-000"]);
+        assert_eq!(d.superseded_by.as_deref(), Some("ref-009"));
+        assert_eq!(d.evidence.iter().find_map(|e| e.pin), Some(PinState::Drifted));
+        assert_eq!(d.attested, Some(true));
+        assert_eq!(d.choice, None);
     }
 
     #[test]

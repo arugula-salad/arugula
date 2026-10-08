@@ -75,6 +75,7 @@ fn generate() -> String {
     c.visit::<GuestInvite>();
     c.visit::<ForgeState>();
     c.visit::<RemoteRef>();
+    c.visit::<crate::workspace::Record>();
     c.decls.sort();
     let mut out = String::from(
         "// Generated from crates/proto by `just proto-ts`: don't edit. Change the\n\

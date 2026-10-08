@@ -29,6 +29,7 @@ pub mod keys;
 pub mod service;
 #[cfg(all(test, feature = "ts"))]
 mod ts;
+pub mod workspace;
 
 /// The app↔daemon protocol (#390). The desktop app relies on a few things
 /// from the daemon, listed in `crates/desktop/src/main.rs`'s docs; the
