@@ -26,9 +26,12 @@ on:
   workflow_dispatch:
 
 # A new run by hand on a branch cancels its run in progress; main's runs
-# all finish.
+# all start and finish. Each of main's runs has a group of its own: GitHub
+# keeps one pending run per group and cancels the one before, even without
+# cancel-in-progress, so pushes close together left runs that never started
+# and commits chant ci never decided (#524).
 concurrency:
-  group: check-${{ github.ref }}
+  group: check-${{ github.ref == 'refs/heads/main' && github.run_id || github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
