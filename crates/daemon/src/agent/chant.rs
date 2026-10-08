@@ -63,6 +63,14 @@ pub fn run_id(block: u32, started_ms: u64) -> String {
     format!("arugula-{block}-{started_ms}")
 }
 
+/// The agent block that picked a run id ([`run_id`]), for linking a run
+/// back to its pane (#619).
+pub fn run_block(run: &str) -> Option<u32> {
+    let (block, ms) = run.strip_prefix("arugula-")?.split_once('-')?;
+    ms.parse::<u64>().ok()?;
+    block.parse().ok()
+}
+
 /// The `_meta` key on the prompt's text block that names the turn's run
 /// (#590): the block is for the agent, so the transcript leaves it out.
 pub const RUN_META: &str = "arugula/chantRun";
@@ -360,6 +368,14 @@ mod tests {
             })
             .collect();
         assert_eq!(users, ["fix it", "no note here"]);
+    }
+
+    #[test]
+    fn a_run_id_names_the_block_that_picked_it() {
+        assert_eq!(run_block(&run_id(7, 1_790_848_800_000)), Some(7));
+        assert_eq!(run_block("20261003T061522Z-3f9a1c2e"), None);
+        assert_eq!(run_block("arugula-x-1"), None);
+        assert_eq!(run_block("arugula-7-x"), None);
     }
 
     #[test]

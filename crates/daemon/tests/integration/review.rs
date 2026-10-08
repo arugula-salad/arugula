@@ -431,3 +431,89 @@ fn a_failed_build_runs_again() {
     let runs = history.as_array().unwrap().iter().filter(|c| c["text"] == "build --all").count();
     assert_eq!(runs, 2, "{history}");
 }
+
+/// #619: *Changes* on a chant workspace member, against where its branch
+/// left main, says which decision and run made each hunk, from the
+/// workspace's chant (a stand-in printing what chant 0.108.1 said about
+/// the same file, `fixtures/chant/why/`). The run's line is committed;
+/// the other isn't, and the member's agent pane holds the lease on its
+/// work item.
+#[test]
+fn a_member_s_hunks_name_their_decision_and_run() {
+    use std::os::unix::fs::PermissionsExt;
+    let d = Daemon::child();
+    let ws = d.sessions.join("why");
+    std::fs::create_dir_all(ws.join("app")).unwrap();
+    git(&ws, &["init", "-q", "-b", "main"]);
+    let server = |port: &str, greet: &str| {
+        format!(
+            "// The toy server.\nexport function port() {{\n  return {port};\n}}\n\nexport function greet(name) {{\n  return `{greet}`;\n}}\n"
+        )
+    };
+    std::fs::write(ws.join("app/server.mjs"), server("3000", "hello ${name}")).unwrap();
+    git(&ws, &["add", "-A"]);
+    git(&ws, &["commit", "-qm", "the workspace"]);
+    git(&ws, &["checkout", "-qb", "work"]);
+    std::fs::write(ws.join("app/server.mjs"), server("Number(process.env.PORT ?? 8080)", "hello ${name}")).unwrap();
+    git(
+        &ws,
+        &[
+            "commit",
+            "-qam",
+            "port: read PORT, default 8080",
+            "-m",
+            "Chant-Agent: app\nChant-Run: arugula-7-1790848800000",
+        ],
+    );
+    std::fs::write(ws.join("app/server.mjs"), server("Number(process.env.PORT ?? 8080)", "hello, ${name}!")).unwrap();
+
+    let fixtures = format!("{}/tests/fixtures/chant/why", env!("CARGO_MANIFEST_DIR"));
+    let chant = d.sessions.join("chant");
+    let asked = d.sessions.join("chant.asked");
+    std::fs::write(
+        &chant,
+        format!(
+            "#!/bin/sh\necho \"$PWD $*\" >> '{asked}'\ncase \"$2\" in\n  graph) cat '{fixtures}/intent.json' ;;\n  status) cat '{fixtures}/status.json' ;;\n  *) exit 2 ;;\nesac\n",
+            asked = asked.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&chant, std::fs::Permissions::from_mode(0o755)).unwrap();
+    // The member's agent, running as its session `app`.
+    let agent = d.open_with(json!({ "type": "agent", "config": {
+        "agent": "acp", "command": ["python3", fake()], "cwd": ws.join("app"),
+        "chant": { "root": ws, "member": "app", "agent": "app", "chant": chant },
+    } }));
+
+    let config = json!({ "repo": ws.join("app"), "base": true, "chant": { "root": ws, "chant": chant } });
+    let id = d.open_with(json!({ "type": "diff", "config": config }));
+    let s = loaded(&d, id);
+    assert!(s["against"].as_str().unwrap().starts_with("the working tree against where it left main ("), "{s}");
+    assert_eq!(files(&s), [("app/server.mjs".to_owned(), "modified".to_owned(), 2, 2)]);
+    d.call(id, "file", json!({ "path": "app/server.mjs" }));
+    let s = wait_state(&d, id, "the hunk's why", |s| file(s, "app/server.mjs")["hunks"][0]["why"].is_object());
+    let w = &file(&s, "app/server.mjs")["hunks"][0]["why"];
+    assert_eq!((w["committed"].as_u64(), w["uncommitted"].as_u64()), (Some(1), Some(1)), "{w}");
+    assert_eq!(w["decisions"][0]["id"], "why-001");
+    assert_eq!(w["decisions"][0]["title"], "The server answers on one port");
+    assert_eq!(w["decisions"][0]["relevance"], "path");
+    assert_eq!(w["runs"][0]["id"], "arugula-7-1790848800000");
+    assert_eq!(w["runs"][0]["agent"], "app");
+    assert_eq!(w["holder"], json!({ "name": "app", "item": "W-001", "pane": agent }));
+    // chant was asked in the workspace root, about the file by its path.
+    let asked = std::fs::read_to_string(&asked).unwrap();
+    let file_path = ws.join("app/server.mjs").canonicalize().unwrap();
+    assert!(
+        asked.lines().next().unwrap().ends_with(&format!("workspace graph --intent {} --json", file_path.display())),
+        "{asked}"
+    );
+    assert!(asked.contains("workspace status local --json"), "{asked}");
+
+    // A plain diff of the same repository asks chant nothing.
+    let plain = d.open_with(json!({ "type": "diff", "config": { "repo": ws } }));
+    assert_eq!(loaded(&d, plain)["against"], "the working tree against HEAD");
+    d.call(plain, "file", json!({ "path": "app/server.mjs" }));
+    let s = wait_state(&d, plain, "its hunks", |s| file(s, "app/server.mjs")["hunks"].is_array());
+    assert!(file(&s, "app/server.mjs")["hunks"][0].get("why").is_none(), "{s}");
+    assert_eq!(std::fs::read_to_string(d.sessions.join("chant.asked")).unwrap().lines().count(), 2);
+}

@@ -3819,6 +3819,37 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   overflow-wrap: anywhere;
 }
 
+.diff-why {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  padding: 3px 8px;
+  font: 12px/1.4 system-ui, sans-serif;
+  border-bottom: 1px solid var(--divider);
+  overflow-wrap: anywhere;
+}
+
+.diff-why-dec b {
+  color: var(--accent);
+}
+
+.diff-why-run {
+  color: #89b4fa;
+}
+
+button.diff-why-run {
+  padding: 0;
+  font: inherit;
+  background: none;
+  border: none;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.diff-why-wip {
+  color: #f9e2af;
+}
+
 .dl {
   display: flex;
 }

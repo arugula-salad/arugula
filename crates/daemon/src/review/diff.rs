@@ -23,15 +23,24 @@
 //! file whose diff is over [`FILE_MAX`] shows as too big (open the file),
 //! a binary one as binary. `capture --text` is the unified diff.
 //!
+//! #619: `chant: {root, chant?}` (from a workspace member's *Changes*):
+//! each open file's hunks also say which decision and run made them, read
+//! from that workspace's chant when the file opens and again when its diff
+//! or `HEAD` moves, one read at a time ([`super::why`]). With `base: true`
+//! and no revisions, the working tree is compared with where `HEAD` left
+//! the default branch (the merge base with `origin/HEAD`, `main` or
+//! `master`), so a member's committed work shows beside what isn't
+//! committed yet.
+//!
 //! Methods (editor role): `refresh`, and `file {path, open?}` to open or
 //! close a file's hunks. "Open file" at a line is an ordinary file block
 //! opened beside this one (`POST /api/blocks`, `from_pane` this block).
 
 use std::{
-    collections::hash_map::DefaultHasher,
+    collections::{HashMap, hash_map::DefaultHasher},
     hash::{Hash, Hasher},
     sync::{Arc, Mutex, Weak},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use arugula_proto::BlockType;
@@ -39,7 +48,10 @@ use futures_util::future::BoxFuture;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use super::{Live, Runner};
+use super::{
+    Live, Runner,
+    why::{self, Panes, Why},
+};
 use crate::{
     block::{Block, BlockCtx, Summary, no_method},
     store::now_ms,
@@ -62,11 +74,14 @@ const SUDO_POLL: Duration = Duration::from_secs(15);
 const EMPTY_TREE: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 
 /// Everything in one `sh -c`: `$1` the directory, `$2` 1 to add untracked
-/// files, `$3` the cap, then the revisions. The first line is `ok TOP` or
-/// `err WHY`; then the diff, `arugula-untracked`, untracked files'
-/// diffs, `arugula-big PATH` for one too big to read and
-/// `arugula-more` past the cap on how many.
-const SCRIPT: &str = r#"r=$1; u=$2; cap=$3; shift 3
+/// files, `$3` the cap, `$4` 1 to compare with the default branch's merge
+/// base when no revision is given, then the revisions. The first line is
+/// `ok HEAD BASE TOP` (BASE `<branch>:<merge base>`; `-` for no `HEAD`,
+/// or no base) or `err WHY`; then
+/// the diff, `arugula-untracked`, untracked files' diffs, `arugula-big
+/// PATH` for one too big to read and `arugula-more` past the cap on how
+/// many.
+const SCRIPT: &str = r#"r=$1; u=$2; cap=$3; b=$4; shift 4
 case $r in "~") r=$HOME ;; "~/"*) r=$HOME/${r#"~/"} ;; esac
 g="-c core.quotePath=false -c core.fsmonitor=false"
 cd -- "$r" 2>/dev/null || { printf 'err no such directory: %s\n' "$r"; exit 0; }
@@ -74,10 +89,19 @@ command -v git >/dev/null 2>&1 || { echo "err git isn't installed here"; exit 0;
 top=$(git rev-parse --show-toplevel 2>&1) || { printf 'err %s\n' "$(printf '%s\n' "$top" | head -n 1)"; exit 0; }
 cd -- "$top" || exit 0
 for x; do git rev-parse -q --verify "$x^{tree}" >/dev/null 2>&1 || { printf 'err no such revision: %s\n' "$x"; exit 0; }; done
+h=$(git rev-parse -q --verify HEAD 2>/dev/null) || h=-
+base=-
 if [ $# -eq 0 ]; then
-  if git rev-parse -q --verify HEAD >/dev/null 2>&1; then set -- HEAD; else set -- EMPTY; fi
+  if [ "$h" != - ]; then set -- HEAD; else set -- EMPTY; fi
+  if [ "$b" = 1 ] && [ "$h" != - ]; then
+    for x in origin/HEAD main master; do
+      m=$(git merge-base HEAD "$x" 2>/dev/null) || continue
+      [ "$m" = "$h" ] || { set -- "$m"; base=$x:$m; }
+      break
+    done
+  fi
 fi
-printf 'ok %s\n' "$top"
+printf 'ok %s %s %s\n' "$h" "$base" "$top"
 {
   git $g diff --no-color --no-ext-diff --no-textconv -M "$@" 2>/dev/null
   if [ "$u" = 1 ]; then
@@ -116,6 +140,54 @@ struct Config {
     /// Run git as this user (only `fountain`, M45b).
     #[serde(default)]
     run_as: Option<String>,
+    /// #619: the chant workspace it was opened from, to say what made each
+    /// hunk.
+    #[serde(default)]
+    chant: Option<ChantConfig>,
+    /// #619: with no revisions, against the default branch's merge base.
+    #[serde(default)]
+    base: bool,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct ChantConfig {
+    /// The workspace root, where chant is asked.
+    root: String,
+    /// The workspace's chant, as the workspace block found it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    chant: Option<String>,
+}
+
+/// How long a file's why waits after its last read before the next.
+const WHY_GAP: Duration = Duration::from_secs(3);
+
+/// One open file's why: the diff it was read for, and what chant said.
+#[derive(Default)]
+struct WhyRead {
+    /// [`why_key`] of the diff and `HEAD` read for.
+    key: u64,
+    read: Option<Result<Why, String>>,
+    reading: bool,
+    last: Option<Instant>,
+}
+
+/// What a `base` diff is compared with, in words.
+fn against_base(base: &str) -> String {
+    match base.split_once(':') {
+        Some((branch, sha)) => {
+            format!("the working tree against where it left {branch} ({})", &sha[..sha.len().min(8)])
+        }
+        None => "the working tree against HEAD".to_owned(),
+    }
+}
+
+/// What a file's why was read for: its section of the diff and `HEAD`
+/// (a commit moves lines from uncommitted to committed without changing a
+/// diff against a fixed base).
+fn why_key(text: &str, head: &str) -> u64 {
+    let mut h = DefaultHasher::new();
+    (text, head).hash(&mut h);
+    h.finish()
 }
 
 /// One file in the diff.
@@ -185,6 +257,8 @@ struct Read {
     hash: u64,
     files: Vec<FileDiff>,
     truncated: bool,
+    /// `HEAD` when it was read (`-`: none).
+    head: String,
 }
 
 pub struct Diff {
@@ -198,6 +272,10 @@ pub struct Diff {
     live: Live,
     /// One read at a time.
     reading: tokio::sync::Mutex<()>,
+    /// #619: each open file's why, by path.
+    whys: Mutex<HashMap<String, WhyRead>>,
+    /// One chant read at a time.
+    asking: tokio::sync::Mutex<()>,
 }
 
 impl Diff {
@@ -250,6 +328,8 @@ impl Diff {
             state: Mutex::new(state),
             live: Live::default(),
             reading: tokio::sync::Mutex::new(()),
+            whys: Mutex::new(HashMap::new()),
+            asking: tokio::sync::Mutex::new(()),
         });
         // Read once now, so `capture` and `describe` have it; brought back
         // after a restart, only once someone looks.
@@ -275,6 +355,7 @@ impl Diff {
             self.config.repo.clone().unwrap_or_default(),
             if untracked { "1" } else { "0" }.to_owned(),
             OUT_MAX.to_string(),
+            if self.config.base { "1" } else { "0" }.to_owned(),
         ];
         args.extend(self.config.rev_a.iter().chain(self.config.rev_b.iter()).cloned());
         let run = match &self.config.run_as {
@@ -291,8 +372,14 @@ impl Diff {
         let hash = h.finish();
         let text = String::from_utf8_lossy(&out);
         let (first, rest) = text.split_once('\n').unwrap_or((&text, ""));
-        let top = match first.split_once(' ') {
-            Some(("ok", top)) => top.to_owned(),
+        let (head, base, top) = match first.split_once(' ') {
+            Some(("ok", rest)) => {
+                let mut w = rest.splitn(3, ' ');
+                match (w.next(), w.next(), w.next()) {
+                    (Some(h), Some(b), Some(top)) => (h.to_owned(), b.to_owned(), top.to_owned()),
+                    _ => return self.failed("couldn't read the diff".into()),
+                }
+            }
             Some(("err", why)) => return self.failed(why.to_owned()),
             _ => return self.failed("couldn't read the diff".into()),
         };
@@ -301,7 +388,7 @@ impl Diff {
             let same = read.hash == hash && read.hash != 0;
             if !same {
                 let (files, truncated) = parse(rest, out.len() >= OUT_MAX);
-                *read = Read { hash, files, truncated };
+                *read = Read { hash, files, truncated, head };
             }
             same
         };
@@ -312,6 +399,9 @@ impl Diff {
                 return;
             }
             st.error = None;
+            if self.config.base && self.config.rev_a.is_none() {
+                st.against = against_base(&base);
+            }
             st.name = std::path::Path::new(&top).file_name().map(|n| n.to_string_lossy().into_owned());
             st.repo = Some(top);
             st.updated_ms = now_ms();
@@ -340,6 +430,7 @@ impl Diff {
         let open = self.open.lock().unwrap().clone();
         let (files, add, del, truncated) = {
             let read = self.read.lock().unwrap();
+            let whys = self.whys.lock().unwrap();
             let files: Vec<Value> = read
                 .files
                 .iter()
@@ -347,7 +438,24 @@ impl Diff {
                     let mut v = serde_json::to_value(f).unwrap_or_default();
                     if open.contains(&f.path) {
                         v["open"] = true.into();
-                        v["hunks"] = serde_json::to_value(hunks(&f.text)).unwrap_or_default();
+                        let hs = hunks(&f.text);
+                        v["hunks"] = serde_json::to_value(&hs).unwrap_or_default();
+                        if self.config.chant.is_some() && !hs.is_empty() {
+                            let w = whys.get(&f.path).filter(|w| w.key == why_key(&f.text, &read.head));
+                            match w.and_then(|w| w.read.as_ref()) {
+                                Some(Ok(why)) => {
+                                    for (i, h) in hs.iter().enumerate() {
+                                        let added: Vec<u32> =
+                                            h.lines.iter().filter(|l| l.0 == '+').map(|l| l.2).collect();
+                                        if let Some(hw) = why.hunk(&added) {
+                                            v["hunks"][i]["why"] = serde_json::to_value(hw).unwrap_or_default();
+                                        }
+                                    }
+                                }
+                                Some(Err(e)) => v["why"] = json!({ "error": e }),
+                                None => v["why"] = json!({ "reading": true }),
+                            }
+                        }
                     }
                     v
                 })
@@ -361,6 +469,94 @@ impl Diff {
             (st.files, st.add, st.del, st.truncated) = (files, add, del, truncated);
         }
         self.ctx.changed();
+        self.ask_why();
+    }
+
+    /// #619: read the why of each open file whose diff or `HEAD` moved
+    /// since its last read, one chant read at a time, each file at most
+    /// every [`WHY_GAP`].
+    fn ask_why(&self) {
+        if self.config.chant.is_none() {
+            return;
+        }
+        let want: Vec<String> = {
+            let open = self.open.lock().unwrap();
+            let read = self.read.lock().unwrap();
+            let mut whys = self.whys.lock().unwrap();
+            whys.retain(|p, _| open.contains(p));
+            read.files
+                .iter()
+                .filter(|f| open.contains(&f.path) && !f.big && !f.binary && !f.text.is_empty())
+                .filter(|f| {
+                    let w = whys.entry(f.path.clone()).or_default();
+                    let go = !w.reading && (w.read.is_none() || w.key != why_key(&f.text, &read.head));
+                    w.reading |= go;
+                    go
+                })
+                .map(|f| f.path.clone())
+                .collect()
+        };
+        for path in want {
+            let Some(me) = self.me.upgrade() else { return };
+            self.ctx.rt.spawn(async move {
+                let _one = me.asking.lock().await;
+                let last = me.whys.lock().unwrap().get(&path).and_then(|w| w.last);
+                if let Some(wait) = last.and_then(|l| WHY_GAP.checked_sub(l.elapsed())) {
+                    tokio::time::sleep(wait).await;
+                }
+                // Read for the diff as it is now.
+                let key = {
+                    let read = me.read.lock().unwrap();
+                    read.files.iter().find(|f| f.path == path).map(|f| why_key(&f.text, &read.head))
+                };
+                let got = match key {
+                    Some(_) if !me.live.closed() => Some(me.why(&path).await),
+                    _ => None,
+                };
+                if let Some(w) = me.whys.lock().unwrap().get_mut(&path) {
+                    w.reading = false;
+                    w.last = Some(Instant::now());
+                    if let (Some(key), Some(got)) = (key, got) {
+                        (w.key, w.read) = (key, Some(got));
+                    }
+                }
+                me.redraw();
+            });
+        }
+    }
+
+    /// One file's why from the workspace's chant: `graph --intent`, and
+    /// `status`'s leases when lines aren't committed yet.
+    async fn why(&self, path: &str) -> Result<Why, String> {
+        let c = self.config.chant.clone().ok_or("not from a workspace")?;
+        let top = self.state.lock().unwrap().repo.clone().ok_or("no repository yet")?;
+        let runner = Runner::user(&self.ctx).await?;
+        let chant = c.chant.clone().unwrap_or_else(|| "chant".into());
+        let ask = |args: &[&str]| {
+            let mut a = vec![c.root.clone(), chant.clone()];
+            a.extend(args.iter().map(|s| s.to_string()));
+            let runner = runner.clone();
+            async move {
+                let (out, code) = runner.sh(why::READ, &a).await?;
+                serde_json::from_slice::<Value>(&out).map_err(|_| match code {
+                    Some(127) => "chant isn't there to run".to_owned(),
+                    Some(c) => format!("chant exited {c} without saying why"),
+                    None => "chant was stopped".to_owned(),
+                })
+            }
+        };
+        let file = format!("{}/{path}", top.trim_end_matches('/'));
+        let mut args = vec!["graph", "--intent", &file, "--json"];
+        if let Some(at) = &self.config.rev_b {
+            args.extend(["--at", at]);
+        }
+        let intent = ask(&args).await?;
+        let status = match Why::uncommitted(&intent) {
+            true => ask(&["status", "local", "--json"]).await.ok(),
+            false => None,
+        };
+        let panes = Panes::of(&c.root, &self.ctx.agents().await);
+        Why::read(&intent, status.as_ref(), &panes)
     }
 
     /// Open or close a file's hunks.
@@ -416,6 +612,12 @@ impl Block for Diff {
         });
         if let Some(u) = &self.config.run_as {
             v["run_as"] = json!(u);
+        }
+        if let Some(c) = &self.config.chant {
+            v["chant"] = json!(c);
+        }
+        if self.config.base {
+            v["base"] = json!(true);
         }
         v
     }

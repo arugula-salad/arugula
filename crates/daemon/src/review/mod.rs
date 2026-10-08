@@ -6,6 +6,9 @@
 //!   file list with +/− first, each file opening to its unified hunks;
 //! - a **file block** ([`file`]): one file, followed live, at a line.
 //!
+//! A diff block opened from a chant workspace member's card also says which
+//! decision and run made each hunk ([`why`], #619).
+//!
 //! What they share, beyond the block contract:
 //!
 //! - **Live only while drawn.** They poll their host (a file's size and
@@ -26,6 +29,7 @@
 
 pub mod diff;
 pub mod file;
+pub mod why;
 
 use std::{
     path::PathBuf,
