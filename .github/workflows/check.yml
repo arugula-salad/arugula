@@ -297,6 +297,12 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.part }}
+      # mise's Zig (for libghostty) and nextest, kept between runs: Zig's
+      # community mirror answered 429 once and failed the job (#524).
+      - uses: actions/cache@v4
+        with:
+          path: ~/.local/share/mise/installs
+          key: mise-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.mise.toml') }}
       - run: just bootstrap
       # reboot.rs drives Chromium.
       - name: Playwright's Chromium

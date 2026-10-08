@@ -22,6 +22,9 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  # mise's GitHub downloads (nextest): unauthenticated, they share the
+  # runner's IP's rate limit and ran out.
+  GITHUB_TOKEN: ${{ github.token }}
 
 jobs:
   macos-intel:
@@ -50,6 +53,11 @@ jobs:
           workspaces: |
             . -> target
             crates/desktop -> target
+      # mise's Zig (for libghostty) and nextest, kept between runs.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.local/share/mise/installs
+          key: mise-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.mise.toml') }}
       - run: just bootstrap
       - run: just test
       - run: just build
