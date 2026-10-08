@@ -83,9 +83,23 @@ export async function publicRaw(k: CryptoKey): Promise<Bytes> {
   return new Uint8Array(await subtle.exportKey("raw", k));
 }
 
+/** A new X25519 or Ed25519 key pair. WebKit on Linux (libgcrypt) fails
+ * about one generateKey in 200 with an OperationError (#524: 10 to 22 in
+ * 3000 for each kind, in Playwright's WebKit); a fresh try succeeds, so
+ * try again. */
+export async function newKeyPair(name: "X25519" | "Ed25519", extractable: boolean, usages: KeyUsage[]): Promise<CryptoKeyPair> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return (await subtle.generateKey({ name }, extractable, usages)) as CryptoKeyPair;
+    } catch (e) {
+      if (attempt >= 8 || (e as Error).name !== "OperationError") throw e;
+    }
+  }
+}
+
 /** A device key pair: the private half can't be exported. */
 export async function deviceKey(): Promise<CryptoKeyPair> {
-  return (await subtle.generateKey({ name: "X25519" }, false, ["deriveBits"])) as CryptoKeyPair;
+  return newKeyPair("X25519", false, ["deriveBits"]);
 }
 
 class Symmetric {
@@ -155,7 +169,7 @@ export class Initiator {
   async write(payload: Uint8Array, prologue: Uint8Array = new Uint8Array()): Promise<Bytes> {
     this.sym = await Symmetric.init(prologue);
     await this.sym.mixHash(this.rs); // <- s
-    this.e = (await subtle.generateKey({ name: "X25519" }, false, ["deriveBits"])) as CryptoKeyPair;
+    this.e = await newKeyPair("X25519", false, ["deriveBits"]);
     const ePub = await publicRaw(this.e.publicKey);
     await this.sym.mixHash(ePub); // e
     await this.sym.mixKey(await dh(this.e.privateKey, this.rs)); // es

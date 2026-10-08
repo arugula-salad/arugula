@@ -16,7 +16,7 @@
 // Both forms are equally readable on disk to someone who has the browser
 // profile, and the keys are non-extractable in memory either way.
 
-import { deviceKey, publicRaw } from "./noise.ts";
+import { deviceKey, newKeyPair, publicRaw } from "./noise.ts";
 import { deviceId, hex, unhex, type Cert } from "./cert.ts";
 
 const subtle = globalThis.crypto.subtle;
@@ -61,8 +61,8 @@ async function kv<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBReq
 }
 
 export async function generateKeys(extractable = false): Promise<DeviceKeys> {
-  const noise = extractable ? ((await subtle.generateKey({ name: "X25519" }, true, ["deriveBits"])) as CryptoKeyPair) : await deviceKey();
-  const sign = (await subtle.generateKey({ name: "Ed25519" }, extractable, ["sign", "verify"])) as CryptoKeyPair;
+  const noise = extractable ? await newKeyPair("X25519", true, ["deriveBits"]) : await deviceKey();
+  const sign = await newKeyPair("Ed25519", extractable, ["sign", "verify"]);
   const n = await publicRaw(noise.publicKey);
   const s = await publicRaw(sign.publicKey);
   return { noise, sign, id: await deviceId(n, s), noisePub: hex(n), signPub: hex(s) };
@@ -77,7 +77,7 @@ export async function checkKeys(keys: DeviceKeys): Promise<string | null> {
     const signPub = await subtle.importKey("raw", unhex(keys.signPub), { name: "Ed25519" }, false, ["verify"]);
     const sig = await subtle.sign("Ed25519", keys.sign.privateKey, msg);
     if (!(await subtle.verify("Ed25519", signPub, sig, msg))) return "its Ed25519 key signs what its public key doesn't verify";
-    const other = (await subtle.generateKey({ name: "X25519" }, false, ["deriveBits"])) as CryptoKeyPair;
+    const other = await newKeyPair("X25519", false, ["deriveBits"]);
     const noisePub = await subtle.importKey("raw", unhex(keys.noisePub), { name: "X25519" }, true, []);
     const a = await subtle.deriveBits({ name: "X25519", public: other.publicKey }, keys.noise.privateKey, 256);
     const b = await subtle.deriveBits({ name: "X25519", public: noisePub }, other.privateKey, 256);
