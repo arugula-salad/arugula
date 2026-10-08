@@ -75,8 +75,8 @@ use arugula_proto::{
     api::{OpenRequest, RunRequest},
     ask::{Ask, AskKind},
     forge::{
-        AgentLink, AgentStarted, CheckedOut, Diffed, Draft, DraftStatus, Drafted, Drafts, ForgeLive, ForgeState,
-        ForgeWant, ForgeWantKind, NewIssue, RateLimit, Refreshed, Rerun, ReviewEvent, Write, Written,
+        AgentLink, AgentStarted, ChangesAsked, CheckedOut, Diffed, Draft, DraftStatus, Drafted, Drafts, ForgeLive,
+        ForgeState, ForgeWant, ForgeWantKind, NewIssue, RateLimit, Refreshed, Rerun, ReviewEvent, Write, Written,
     },
 };
 use futures_util::future::BoxFuture;
@@ -1448,6 +1448,11 @@ impl Block for ForgeBlock {
             }
             // M37: an agent on this issue, in a worktree and a tab.
             "agent" => Box::pin(async move { me.ok_or("closed")?.agent_on(args).await }),
+            // An agent's new issue: a person asks it for changes, and it
+            // drafts again.
+            "revise" => Box::pin(async move { me.ok_or("closed")?.revise(args, by).await }),
+            "redraft" => Box::pin(async move { me.ok_or("closed")?.redraft(args).await }),
+            "drop" => Box::pin(async move { me.ok_or("closed")?.drop_new(by).await }),
             "diff" => Box::pin(async move { me.ok_or("closed")?.diff(args).await }),
             "checkout" => Box::pin(async move { me.ok_or("closed")?.checkout(args).await }),
             "drafts" => {

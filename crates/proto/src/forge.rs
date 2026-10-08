@@ -419,6 +419,35 @@ pub struct NewIssue {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub error: Option<String>,
+    /// The agent's pane, where *Ask for changes* sends a person's note.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub pane: Option<PaneId>,
+    /// The last note asking the agent for changes: it's revising until it
+    /// drafts again (`revised_ms`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub asked: Option<ChangesAsked>,
+}
+
+/// A person's note asking an agent to change its draft.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ChangesAsked {
+    pub note: String,
+    pub by: String,
+    pub at_ms: u64,
+    /// When the agent drafted again.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub revised_ms: Option<u64>,
+}
+
+impl NewIssue {
+    /// Asked for changes, and the agent hasn't drafted again yet.
+    pub fn revising(&self) -> bool {
+        self.status == DraftStatus::Waiting && self.asked.as_ref().is_some_and(|a| a.revised_ms.is_none())
+    }
 }
 
 // ---------------------------------------------------------------- the state
@@ -946,6 +975,13 @@ mod wire {
                     settled_by: Some("jake".into()),
                     url: None,
                     error: Some("nope".into()),
+                    pane: Some(4),
+                    asked: Some(ChangesAsked {
+                        note: "shorter".into(),
+                        by: "jake".into(),
+                        at_ms: 61,
+                        revised_ms: Some(62),
+                    }),
                 }),
                 wants: vec![ForgeWant { kind: ForgeWantKind::Assigned, why: "assigned to you".into() }],
                 rerun: Some(Rerun { api: true, url: None, note: "n".into(), runs: None, pipeline: Some(None) }),
@@ -976,7 +1012,8 @@ mod wire {
             o.insert(
                 "new".into(),
                 json!({ "title": "T", "body": "B", "by": "mcp:x", "agent": true, "at_ms": 60,
-                        "status": "dropped", "settled_by": "jake", "error": "nope" }),
+                        "status": "dropped", "settled_by": "jake", "error": "nope", "pane": 4,
+                        "asked": { "note": "shorter", "by": "jake", "at_ms": 61, "revised_ms": 62 } }),
             );
             o.insert("wants".into(), json!([{ "kind": "assigned", "why": "assigned to you" }]));
             o.insert("rerun".into(), json!({ "api": true, "url": null, "pipeline": null, "note": "n" }));

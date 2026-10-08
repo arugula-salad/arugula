@@ -954,6 +954,15 @@ async fn block_call(
     // too: its log and its drafts say who sent what.
     let forge = b.kind() == arugula_proto::BlockType::Forge;
     let name = by.as_ref().filter(|d| gate || forge || d.who != "owner").map(|d| d.name.as_str());
+    let mut args = args;
+    // Asking an agent for changes (a forge block's new issue) is a
+    // follow-up from this person, recorded as theirs.
+    if forge
+        && method == "revise"
+        && let Some(o) = args.as_object_mut()
+    {
+        o.insert("by_who".into(), by.as_ref().map_or("owner", |d| d.who.as_str()).into());
+    }
     let out = b.call_by(method, args.clone(), name).await?;
     if (gate && matches!(method, "approve" | "expire")) || (forge && method == "review" && out.get("gate").is_some()) {
         // Its card closes saying who, and the audit log says so.
@@ -1365,7 +1374,7 @@ async fn call(
         // M11: a file block's `open` is the owner's only. M36: a forge
         // block's writes say who sent them.
         "approve" | "expire" | "deny" | "answer" | "decline" | "send" | "terminal" | "open" | "comment" | "review"
-        | "merge" | "rerun_checks" => who_is(&app, who).await,
+        | "merge" | "rerun_checks" | "revise" | "drop" => who_is(&app, who).await,
         _ => None,
     };
     if let Some(b) = app.mux.api(|r| Api::Block(id, r)).await.flatten() {

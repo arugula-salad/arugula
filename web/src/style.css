@@ -6855,3 +6855,194 @@ html.chat-open .huddle-bar {
   flex-direction: column;
   align-items: stretch;
 }
+
+/* A new issue's draft: the text once, the actions in the footer. */
+.forge-new {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1 0 auto;
+  max-width: 760px;
+}
+
+.forge-new-who {
+  margin: 0;
+  font-size: 12px;
+}
+
+.forge-new-who b {
+  color: var(--fg);
+}
+
+.forge-new-title {
+  margin: 0 0 10px;
+  font-size: 17px;
+  line-height: 1.3;
+  text-wrap: pretty;
+}
+
+.forge-new-text.dropped {
+  opacity: 0.5;
+}
+
+.forge-status {
+  font-size: 12.5px;
+  padding: 8px 10px;
+  border: 1px solid var(--divider);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.forge-status.asked {
+  border-color: color-mix(in srgb, #f9e2af 45%, transparent);
+}
+
+.forge-status.ok {
+  border-color: color-mix(in srgb, #a6e3a1 45%, transparent);
+}
+
+.forge-status.bad {
+  border-color: color-mix(in srgb, var(--danger) 55%, transparent);
+  color: var(--danger);
+}
+
+.forge-status-note {
+  margin: 4px 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.forge-state.draft {
+  background: color-mix(in srgb, var(--accent) 22%, var(--raised));
+  color: var(--fg);
+}
+
+.forge-state.revising {
+  background: color-mix(in srgb, #f9e2af 25%, var(--raised));
+  color: var(--fg);
+}
+
+.forge-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.forge-field > span {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--dim);
+}
+
+.forge-field input,
+.forge-field textarea,
+.forge-compose textarea {
+  font: inherit;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--divider);
+  border-radius: 6px;
+  padding: 7px 9px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.forge-field input {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.forge-field textarea {
+  font: 12px/1.5 var(--mono, ui-monospace, monospace);
+  min-height: 320px;
+  resize: vertical;
+}
+
+.forge-preview {
+  border: 1px solid var(--divider);
+  border-radius: 6px;
+  padding: 10px 12px;
+  min-height: 320px;
+}
+
+.forge-tabs {
+  display: flex;
+  gap: 2px;
+}
+
+.forge-tabs button {
+  font-size: 12px;
+  color: var(--dim);
+  border-bottom: 2px solid transparent;
+  padding: 2px 8px 4px;
+}
+
+.forge-tabs button[aria-selected="true"] {
+  color: var(--fg);
+  border-bottom-color: var(--accent);
+}
+
+.forge-new-foot {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.forge-new-foot .forge-actions {
+  align-items: center;
+}
+
+.forge-spacer {
+  flex: 1;
+}
+
+.forge-as {
+  font-size: 11px;
+}
+
+.ws-actions button.forge-drop {
+  background: none;
+  color: var(--danger);
+}
+
+.ws-actions button.forge-drop:hover {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+}
+
+.forge-compose {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.forge-compose label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.forge-compose textarea {
+  font-size: 13px;
+  border-color: var(--accent);
+  resize: vertical;
+}
+
+/* On a phone the main buttons share the row, big enough to tap. */
+@container (max-width: 460px) {
+  .forge-new-foot .forge-actions button {
+    flex: 1 1 auto;
+    padding: 7px 10px;
+    font-size: 13px;
+  }
+
+  .forge-new-foot .forge-actions button.forge-drop {
+    flex: 0 0 auto;
+  }
+
+  .forge-new-foot .forge-spacer,
+  .forge-new-foot .forge-actions .forge-as {
+    display: none;
+  }
+}

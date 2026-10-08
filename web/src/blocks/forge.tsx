@@ -4,7 +4,8 @@
 // read-only when glab has none). M37: or an issue, with *Agent on this* (a
 // worktree and branch for it, an agent there, the two in a tab, and the
 // agent's PR joining them), the PRs that refer to it, and a new issue an
-// agent drafted, waiting on the card for a person to send. What waits on
+// agent drafted, shown once on its block with Send, Edit, Ask for changes
+// and Drop (no card over it). What waits on
 // you comes first (a
 // review asked of you, red checks, changes asked for, a mention), then an
 // agent's drafts, the checks, the reviews and the timeline. An agent's
@@ -254,31 +255,7 @@ function IssueBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeSta
   const openPrBlock = (n: number) =>
     void client.openBlock({ type: "forge", config: { repo: s.repo, number: n, kind: "pr", dir: s.dir ?? undefined, api: s.api ?? undefined, login: s.login ?? undefined }, split: id, from_pane: id, local: true }, "couldn't open the pull request");
 
-  const n = s.new;
-  if (s.number === 0 && n) {
-    // A new issue: an agent's waits on the card; a person's goes out.
-    return (
-      <div class="review ws forge" data-forge-block={id} data-forge-new={n.status}>
-        <div class="review-bar">
-          <span class="review-path">
-            <b>{s.repo}</b> new issue: {n.title}
-          </span>
-          <span class={`ws-tag forge-state ${n.status}`}>{n.status === "waiting" ? (n.agent ? "draft" : "opening") : n.status}</span>
-        </div>
-        <div class="review-body ws-body">
-          {n.status === "waiting" && n.agent && (
-            <p class="forge-want" data-new-waiting>
-              <b>{n.by.replace(/^mcp:/, "")}</b> drafted it <span class="dim">{ago(n.at_ms)}</span>: it's on the card, to edit and send, or drop
-            </p>
-          )}
-          {n.status === "dropped" && <p class="dim" data-new-dropped>Dropped by {n.settled_by ?? "someone"}</p>}
-          {n.error && <p class="ws-tag bad">{n.error}</p>}
-          {s.error && <p class="ws-tag bad">{s.error}</p>}
-          {n.body.trim() && <Body text={n.body} s={s} description />}
-        </div>
-      </div>
-    );
-  }
+  if (s.number === 0 && s.new) return <NewIssueBlock client={client} id={id} s={s} />;
   if (s.loading && !s.updated_ms) {
     return (
       <div class="review ws forge">
@@ -417,6 +394,194 @@ function IssueBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeSta
           <Foot s={s} buttons={mayWrite && it.state === "open" ? <button onClick={() => void comment()}>Comment…</button> : null} />
         </div>
       )}
+    </div>
+  );
+}
+
+/** A new issue: an agent's draft, shown once, with every action in the
+ * footer (the card the daemon raises is a line for the swarm and the phone).
+ * Send it as it is or edited in place, ask the agent for changes, or drop it.
+ * A person's own goes out at once. */
+function NewIssueBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeState }) {
+  const n = s.new!;
+  const [mode, setMode] = useState<"view" | "edit" | "ask">("view");
+  const [title, setTitle] = useState(n.title);
+  const [body, setBody] = useState(n.body);
+  const [preview, setPreview] = useState(false);
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
+  const session = client.sessionOfTab(client.tabOfPane(id)?.id ?? -1) ?? null;
+  const mayWrite = client.role(session) !== "viewer";
+  const agent = n.by.replace(/^mcp:/, "");
+  const waiting = n.status === "waiting" && n.agent;
+  const revising = waiting && !!n.asked && n.asked.revised_ms === undefined;
+  const call = async (method: string, args: unknown, failure: string) => {
+    setBusy(method);
+    const ok = await client.api(`/api/blocks/${id}/call/${method}`, args, failure);
+    setBusy(null);
+    return ok;
+  };
+  const edit = () => {
+    setTitle(n.title);
+    setBody(n.body);
+    setPreview(false);
+    setMode("edit");
+  };
+  const send = () => {
+    const content = mode === "edit" ? { title: title.trim() || n.title, body } : {};
+    void call("answer", { id: "new", content }, "couldn't send the issue").then((ok) => ok && setMode("view"));
+  };
+  const revise = () => {
+    if (!note.trim()) return;
+    void call("revise", { note: note.trim() }, `couldn't ask ${agent} for changes`).then((ok) => {
+      if (!ok) return;
+      setNote("");
+      setMode("view");
+    });
+  };
+  const drop = () => void call("drop", {}, "couldn't drop the draft").then((ok) => ok && setMode("view"));
+  const as = s.me && s.login ? `as ${s.me} on ${s.login}` : "with your forge login";
+  const tag = !waiting ? (n.status === "waiting" ? "opening" : n.status) : revising ? "revising" : "draft";
+
+  let foot: ComponentChildren = null;
+  if (waiting && mayWrite) {
+    if (mode === "edit") {
+      foot = (
+        <div class="ws-actions forge-actions">
+          <button class="pri" data-new-send disabled={busy !== null || !title.trim()} onClick={send}>
+            {busy === "answer" ? "Sending…" : "Send"}
+          </button>
+          <button onClick={() => setMode("view")}>Cancel</button>
+          <span class="forge-spacer" />
+          <span class="dim forge-as">{as}</span>
+        </div>
+      );
+    } else if (mode === "ask") {
+      foot = (
+        <div class="forge-compose">
+          <label>
+            <span class="dim">
+              What should <b>{agent}</b> change?
+            </span>
+            <textarea
+              data-new-note
+              rows={3}
+              value={note}
+              placeholder="Say what's wrong or missing. It goes to the agent, not the issue."
+              onInput={(e) => setNote((e.currentTarget as HTMLTextAreaElement).value)}
+              onKeyDown={(e) => (e.metaKey || e.ctrlKey) && e.key === "Enter" && revise()}
+            />
+          </label>
+          <div class="ws-actions forge-actions">
+            <button class="pri" data-new-revise disabled={busy !== null || !note.trim()} onClick={revise}>
+              {busy === "revise" ? "Sending…" : `Send to ${agent}`}
+            </button>
+            <button onClick={() => setMode("view")}>Cancel</button>
+          </div>
+        </div>
+      );
+    } else {
+      foot = (
+        <div class="ws-actions forge-actions">
+          <button class="pri" data-new-send disabled={busy !== null || revising} onClick={send}>
+            {busy === "answer" ? "Sending…" : n.error ? "Try again" : "Send"}
+          </button>
+          <button data-new-edit disabled={busy !== null || revising} onClick={edit}>
+            Edit
+          </button>
+          {n.pane !== undefined && (
+            <button data-new-ask disabled={busy !== null || revising} onClick={() => setMode("ask")}>
+              Ask for changes…
+            </button>
+          )}
+          <span class="forge-spacer" />
+          <button class="forge-drop" data-new-drop disabled={busy !== null} onClick={drop}>
+            Drop
+          </button>
+        </div>
+      );
+    }
+  }
+
+  return (
+    <div class="review ws forge" data-forge-block={id} data-forge-new={n.status} data-new-mode={mode} data-new-revising={revising || undefined}>
+      <div class="review-bar">
+        <span class="review-path">
+          <b>{s.repo}</b> <span class="dim">new issue</span>
+        </span>
+        <span class={`ws-tag forge-state ${tag}`}>{tag}</span>
+      </div>
+      <div class="review-body ws-body">
+        <div class="forge-new">
+          {mode === "edit" ? (
+            <>
+              <label class="forge-field">
+                <span>Title</span>
+                <input data-new-title value={title} onInput={(e) => setTitle((e.currentTarget as HTMLInputElement).value)} />
+              </label>
+              <div class="forge-field">
+                <div class="forge-tabs" role="tablist">
+                  <button role="tab" aria-selected={!preview} onClick={() => setPreview(false)}>
+                    Write
+                  </button>
+                  <button role="tab" aria-selected={preview} onClick={() => setPreview(true)}>
+                    Preview
+                  </button>
+                </div>
+                {preview ? (
+                  <div class="forge-preview">
+                    <Markdown text={body} refs={null} />
+                  </div>
+                ) : (
+                  <textarea data-new-body aria-label="Text" value={body} onInput={(e) => setBody((e.currentTarget as HTMLTextAreaElement).value)} />
+                )}
+              </div>
+            </>
+          ) : (
+            <>
+              <p class="dim forge-new-who">
+                {n.agent ? (
+                  <>
+                    <b>{agent}</b> drafted this new issue · {ago(n.at_ms)}
+                  </>
+                ) : (
+                  <>opening it as {n.by || "you"}…</>
+                )}
+              </p>
+              {revising && n.asked && (
+                <div class="forge-status asked" data-new-asked>
+                  <b>{n.asked.by}</b> asked for changes <span class="dim">· {ago(n.asked.at_ms)}</span>
+                  <div class="forge-status-note">{n.asked.note}</div>
+                  <div class="dim">{agent} is revising it. The new draft replaces this one here.</div>
+                </div>
+              )}
+              {waiting && !revising && n.asked?.revised_ms !== undefined && (
+                <div class="forge-status ok" data-new-revised>
+                  {agent} revised it after {n.asked.by}'s note <span class="dim">· {ago(n.asked.revised_ms)}</span>
+                  <div class="dim forge-status-note">“{n.asked.note}”</div>
+                </div>
+              )}
+              {n.status === "dropped" && (
+                <div class="forge-status" data-new-dropped>
+                  Dropped by {n.settled_by ?? "someone"}
+                </div>
+              )}
+              {n.error && <div class="forge-status bad">Sending failed: {n.error}. The draft is unchanged, so you can try again.</div>}
+              {s.error && <div class="forge-status bad">{s.error}</div>}
+              <div class={n.status === "dropped" ? "forge-new-text dropped" : "forge-new-text"}>
+                <h2 class="forge-new-title">{n.title}</h2>
+                {n.body.trim() ? <Body text={n.body} s={s} description /> : <p class="dim">No text.</p>}
+              </div>
+            </>
+          )}
+        </div>
+        {foot && (
+          <div class="forge-foot forge-new-foot">
+            {foot}
+            {mode === "view" && <span class="dim forge-as">{as}</span>}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

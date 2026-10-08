@@ -1103,7 +1103,7 @@
         "readOnlyHint": false,
         "title": "Draft a forge write"
       },
-      "description": "Draft a write to a pull request or issue, by kind. Nothing reaches the forge in an agent's name: the draft waits on its block as a card the user (or an editor) edits and sends, or drops. Returns its draft id (a new issue: its block) at once; read_forge shows what became of it.\n- comment {block, body}: A comment on a PR or issue block's pull request or issue.\n- review {block, event, body?}: A review (approve, request_changes or comment) of a PR block's pull request.\n- merge {block, style?}: Merging a PR block's pull request.\n- issue {title, beside?, body?, dir?, repo?}: A new issue on the user's Forgejo or GitHub: a block beside you holding the draft as a card with its title and text, which then shows the issue once sent. Returns the block.",
+      "description": "Draft a write to a pull request or issue, by kind. Nothing reaches the forge in an agent's name: the draft waits on its block as a card the user (or an editor) edits and sends, or drops. Returns its draft id (a new issue: its block) at once; read_forge shows what became of it.\n- comment {block, body}: A comment on a PR or issue block's pull request or issue.\n- review {block, event, body?}: A review (approve, request_changes or comment) of a PR block's pull request.\n- merge {block, style?}: Merging a PR block's pull request.\n- issue {title, beside?, block?, body?, dir?, repo?}: A new issue on the user's Forgejo or GitHub: a block beside you holding the draft, for the user to send, edit, drop or ask you to change; it shows the issue once sent. Asked for changes, draft again with block set to that block. Returns the block.",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -1142,8 +1142,15 @@
             "description": "issue: Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in)."
           },
           "block": {
-            "$ref": "#/$defs/PaneArg",
-            "description": "comment: The PR or issue block (from show). review, merge: The PR block (from show)."
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PaneArg"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "comment: The PR or issue block (from show). review, merge: The PR block (from show). issue: Your earlier draft's block, when the user asked for changes: the new title and text replace it there."
           },
           "body": {
             "default": null,
@@ -2812,7 +2819,7 @@
         "readOnlyHint": false,
         "title": "Draft a forge write"
       },
-      "description": "Draft a write to a pull request or issue, by kind. Nothing reaches the forge in an agent's name: the draft waits on its block as a card the user (or an editor) edits and sends, or drops. Returns its draft id (a new issue: its block) at once; read_forge shows what became of it.\n- comment {block, body}: A comment on a PR or issue block's pull request or issue.\n- review {block, event, body?}: A review (approve, request_changes or comment) of a PR block's pull request.\n- merge {block, style?}: Merging a PR block's pull request.\n- issue {title, beside?, body?, dir?, repo?}: A new issue on the user's Forgejo or GitHub: a block beside you holding the draft as a card with its title and text, which then shows the issue once sent. Returns the block.",
+      "description": "Draft a write to a pull request or issue, by kind. Nothing reaches the forge in an agent's name: the draft waits on its block as a card the user (or an editor) edits and sends, or drops. Returns its draft id (a new issue: its block) at once; read_forge shows what became of it.\n- comment {block, body}: A comment on a PR or issue block's pull request or issue.\n- review {block, event, body?}: A review (approve, request_changes or comment) of a PR block's pull request.\n- merge {block, style?}: Merging a PR block's pull request.\n- issue {title, beside?, block?, body?, dir?, repo?}: A new issue on the user's Forgejo or GitHub: a block beside you holding the draft, for the user to send, edit, drop or ask you to change; it shows the issue once sent. Asked for changes, draft again with block set to that block. Returns the block.",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -2851,8 +2858,15 @@
             "description": "issue: Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in)."
           },
           "block": {
-            "$ref": "#/$defs/PaneArg",
-            "description": "comment: The PR or issue block (from show). review, merge: The PR block (from show)."
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PaneArg"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "comment: The PR or issue block (from show). review, merge: The PR block (from show). issue: Your earlier draft's block, when the user asked for changes: the new title and text replace it there."
           },
           "body": {
             "default": null,
@@ -4253,7 +4267,7 @@
         "readOnlyHint": false,
         "title": "Draft a forge write"
       },
-      "description": "Draft a write to a pull request or issue, by kind. Nothing reaches the forge in an agent's name: the draft waits on its block as a card the user (or an editor) edits and sends, or drops. Returns its draft id (a new issue: its block) at once; read_forge shows what became of it.\n- comment {block, body}: A comment on a PR or issue block's pull request or issue.\n- review {block, event, body?}: A review (approve, request_changes or comment) of a PR block's pull request.\n- merge {block, style?}: Merging a PR block's pull request.\n- issue {title, beside?, body?, dir?, repo?}: A new issue on the user's Forgejo or GitHub: a block beside you holding the draft as a card with its title and text, which then shows the issue once sent. Returns the block.",
+      "description": "Draft a write to a pull request or issue, by kind. Nothing reaches the forge in an agent's name: the draft waits on its block as a card the user (or an editor) edits and sends, or drops. Returns its draft id (a new issue: its block) at once; read_forge shows what became of it.\n- comment {block, body}: A comment on a PR or issue block's pull request or issue.\n- review {block, event, body?}: A review (approve, request_changes or comment) of a PR block's pull request.\n- merge {block, style?}: Merging a PR block's pull request.\n- issue {title, beside?, block?, body?, dir?, repo?}: A new issue on the user's Forgejo or GitHub: a block beside you holding the draft, for the user to send, edit, drop or ask you to change; it shows the issue once sent. Asked for changes, draft again with block set to that block. Returns the block.",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -4292,8 +4306,15 @@
             "description": "issue: Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in)."
           },
           "block": {
-            "$ref": "#/$defs/PaneArg",
-            "description": "comment: The PR or issue block (from show). review, merge: The PR block (from show)."
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PaneArg"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "comment: The PR or issue block (from show). review, merge: The PR block (from show). issue: Your earlier draft's block, when the user asked for changes: the new title and text replace it there."
           },
           "body": {
             "default": null,
@@ -5962,7 +5983,7 @@
         "readOnlyHint": false,
         "title": "Draft a forge write"
       },
-      "description": "Draft a write to a pull request or issue, by kind. Nothing reaches the forge in an agent's name: the draft waits on its block as a card the user (or an editor) edits and sends, or drops. Returns its draft id (a new issue: its block) at once; read_forge shows what became of it.\n- comment {block, body}: A comment on a PR or issue block's pull request or issue.\n- review {block, event, body?}: A review (approve, request_changes or comment) of a PR block's pull request.\n- merge {block, style?}: Merging a PR block's pull request.\n- issue {title, beside?, body?, dir?, repo?}: A new issue on the user's Forgejo or GitHub: a block beside you holding the draft as a card with its title and text, which then shows the issue once sent. Returns the block.",
+      "description": "Draft a write to a pull request or issue, by kind. Nothing reaches the forge in an agent's name: the draft waits on its block as a card the user (or an editor) edits and sends, or drops. Returns its draft id (a new issue: its block) at once; read_forge shows what became of it.\n- comment {block, body}: A comment on a PR or issue block's pull request or issue.\n- review {block, event, body?}: A review (approve, request_changes or comment) of a PR block's pull request.\n- merge {block, style?}: Merging a PR block's pull request.\n- issue {title, beside?, block?, body?, dir?, repo?}: A new issue on the user's Forgejo or GitHub: a block beside you holding the draft, for the user to send, edit, drop or ask you to change; it shows the issue once sent. Asked for changes, draft again with block set to that block. Returns the block.",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -6001,8 +6022,15 @@
             "description": "issue: Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in)."
           },
           "block": {
-            "$ref": "#/$defs/PaneArg",
-            "description": "comment: The PR or issue block (from show). review, merge: The PR block (from show)."
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PaneArg"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "comment: The PR or issue block (from show). review, merge: The PR block (from show). issue: Your earlier draft's block, when the user asked for changes: the new title and text replace it there."
           },
           "body": {
             "default": null,

@@ -88,6 +88,9 @@ struct ForgeOpen {
     agent: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     dir: Option<String>,
+    /// The agent's own pane (a new issue's draft), for *Ask for changes*.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pane: Option<PaneId>,
 }
 
 /// A pane or block: `7` or `"%7"`.
@@ -623,6 +626,9 @@ pub struct IssueNewArgs {
     /// Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in).
     #[serde(default)]
     pub beside: Option<PaneArg>,
+    /// Your earlier draft's block, when the user asked for changes: the new title and text replace it there.
+    #[serde(default)]
+    pub block: Option<PaneArg>,
 }
 
 #[derive(Deserialize, JsonSchema, Clone, Copy)]
@@ -829,7 +835,7 @@ const DRAFT: &[Kind] = &[
     Kind { name: "merge", description: "Merging a PR block's pull request.", schema: schema_for_type::<PrMergeArgs> },
     Kind {
         name: "issue",
-        description: "A new issue on the user's Forgejo or GitHub: a block beside you holding the draft as a card with its title and text, which then shows the issue once sent. Returns the block.",
+        description: "A new issue on the user's Forgejo or GitHub: a block beside you holding the draft, for the user to send, edit, drop or ask you to change; it shows the issue once sent. Asked for changes, draft again with block set to that block. Returns the block.",
         schema: schema_for_type::<IssueNewArgs>,
     },
 ];
@@ -1619,6 +1625,9 @@ impl<'a> Call<'a> {
                 Err(e) => Err(e),
             },
             ("draft", Some("issue")) => match parse::<IssueNewArgs>(args) {
+                Ok(IssueNewArgs { block: Some(block), title, body, .. }) => {
+                    self.redraft_issue(&block, title, body.unwrap_or_default()).await
+                }
                 Ok(a) => {
                     let c = ForgeOpen {
                         issue: Some("new".into()),
@@ -1627,6 +1636,7 @@ impl<'a> Call<'a> {
                         repo: a.repo,
                         by: Some(self.by()),
                         agent: Some(true),
+                        pane: self.own_pane(),
                         ..Default::default()
                     };
                     self.open_forge(c, a.dir, a.beside).await
@@ -2999,6 +3009,19 @@ impl Call<'_> {
         done(
             format!(
                 "Drafted on %{id} as {draft}: it waits for the user to send, edit or drop it (read_forge shows what became of it)"
+            ),
+            out,
+        )
+    }
+
+    /// A new issue drafted again, on its block, after the user asked for
+    /// changes.
+    async fn redraft_issue(&self, block: &PaneArg, title: String, body: String) -> Out {
+        let (id, b) = self.forge(block).await?;
+        let out = b.call_by("redraft", json!({ "title": title, "body": body }), Some(&self.by())).await?;
+        done(
+            format!(
+                "Drafted the new issue again in %{id}: it waits for the user to send, edit or drop it (read_forge shows what became of it)"
             ),
             out,
         )
