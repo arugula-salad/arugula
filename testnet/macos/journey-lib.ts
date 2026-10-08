@@ -177,6 +177,8 @@ export async function startMac(login: string): Promise<{ control: string; github
     }),
   );
   await until("the tunnels", () => (sh(`curl -sf -o /dev/null ${control}/control.json && echo up`) === "up" ? true : null));
+  // A URL is downloaded in the VM; a path here is copied in.
+  if (!/^https?:/.test(zip)) v("push", zip, "/tmp/app.zip");
   sh(`set -e; case '${zip}' in http*) curl -sSL -o /tmp/app.zip '${zip}' ;; esac; ditto -x -k /tmp/app.zip /Applications`);
   // Screenshots over ssh: macOS asks once whether sshd may record the
   // screen; allow it before the journey, and check it's gone.
