@@ -199,7 +199,9 @@ async function startJoin(name: string, state: string, extra: string[] = [], env:
   let out = "";
   let err = "";
   joining.stderr!.on("data", (d) => (err += d));
-  const exited = new Promise<number | null>((r) => joining.on("exit", r));
+  // "close", not "exit": a process can exit before the last of its output
+  // has been read.
+  const exited = new Promise<number | null>((r) => joining.on("close", r));
   const link = await new Promise<string>((res) => {
     joining.stdout!.on("data", (d) => {
       out += d;
@@ -237,7 +239,8 @@ test("a team-owned box joins; both use it through the relay and pass control", a
   const state = temp("box");
   const j = await startJoin("buildbox", state, ["--team", team]);
   expect(j.out()).toContain("To add this machine (buildbox) to the team Acme");
-  expect(j.out()).toContain("Waiting for approval (the code lasts 15 minutes)");
+  // The link comes a few lines before it, maybe in an earlier read.
+  await expect.poll(j.out).toContain("Waiting for approval (the code lasts 15 minutes)");
   // #100: Bob (an editor) sees it's for the team; he could add it (#332),
   // as his, and is told what that shares. Alice adds it instead.
   await bob.goto(j.link);
