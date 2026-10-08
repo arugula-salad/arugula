@@ -699,7 +699,7 @@ export class Client {
     return this.features?.[f] ?? true;
   }
 
-  /** Whether this machine has a `labs` file, which turns on what a stranger
+  /** Whether this machine has the `labs` flag on, which turns on what a stranger
    * doesn't get: chat, huddles, Fountain, studio, VMs, guest ssh and the
    * swarm's extra views. Unlike `has`, unknown means no: control serves this
    * page to older daemons too, which never say. */

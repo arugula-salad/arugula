@@ -461,6 +461,26 @@ commits?: number, force?: boolean, };
 
 export type EventKind = "commented" | "review_comment" | "reviewed" | "review_requested" | "review_request_removed" | "review_dismissed" | "pushed" | "labeled" | "assigned" | "renamed" | "referenced" | "merged" | "closed" | "reopened" | "branch_deleted" | "milestone" | "mentioned" | "other";
 
+/**
+ * `GET /api/flags`: one row per flag (the `flags.list` operation).
+ */
+export type FlagInfo = { name: string, about: string, 
+/**
+ * Whether it is on here now.
+ */
+on: boolean, default: boolean, 
+/**
+ * Whether this build has what the flag turns on. A build without Labs
+ * can set `labs`, and nothing follows; Settings says so. Absent from
+ * daemons that don't report it, which have it.
+ */
+built?: boolean, };
+
+/**
+ * `PUT /api/flags/{name}`: the body (the `flag.set` operation).
+ */
+export type FlagSetRequest = { on: boolean, };
+
 export type FollowChange = { range: [number, number, number, number], text: string, };
 
 export type FollowCursor = { file: string, line: number, col: number, sel?: [number, number, number, number] | null, 
@@ -798,9 +818,9 @@ schema: unknown, };
  */
 export type HostFeatures = { 
 /**
- * The machine has a `labs` file in its state dir (see [`labs`]): what a
- * stranger doesn't get is on. Absent from older daemons, and pages
- * treat that as off.
+ * The `labs` flag is on here (see [`crate::flags`]): what a stranger
+ * doesn't get is on. Absent from older daemons, and pages treat that
+ * as off.
  */
 labs: boolean, 
 /**

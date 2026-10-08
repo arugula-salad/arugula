@@ -13,6 +13,7 @@ import { pickConversation } from "./conversations";
 import { openPicker } from "./picker";
 import { agentNotifyItems, notificationItems } from "./notify";
 import { openGettingStarted } from "./welcome";
+import { openFlags } from "./flags";
 import { openRules } from "./rules";
 import { desktopApp, desktopPlatform, openInNewWindow } from "../desktop";
 import { sessionThreadItems, threadItems } from "./threads";
@@ -212,6 +213,8 @@ export function sessionItems(client: Client, session: SessionId, rename: () => v
     ...agentNotifyItems(client, session),
     // #166: this machine's standing permission rules, the owner's.
     ...(client.state?.roles ? [] : [{ label: "Permission rules…", run: () => openRules(client) } as MenuItem]),
+    // #464: the machine's named flags, Labs first, the owner's.
+    ...(client.state?.roles ? [] : [{ label: "Labs…", run: () => openFlags(client) } as MenuItem]),
     { label: "Getting started", run: () => openGettingStarted(undefined, client) },
     "separator",
     { label: "Close session", danger: true, run: () => client.intent({ op: "close_session", session }) },

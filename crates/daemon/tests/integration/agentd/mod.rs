@@ -95,11 +95,11 @@ impl Daemon {
         Self::child_in(args, env, |_| {})
     }
 
-    /// ...with the machine's Labs on (the `labs` file in its state dir), as
+    /// ...with the machine's Labs on (the `labs` flag in its state dir), as
     /// Forgejo and GitLab blocks need (#457).
     #[cfg(feature = "labs")]
     pub fn child_labs_env(args: &[&str], env: &[(&str, &str)]) -> Self {
-        Self::child_in(args, env, |state| std::fs::write(state.join("labs"), "").unwrap())
+        Self::child_in(args, env, |state| arugula_testkit::labs(state, true))
     }
 
     /// ...with its state directory made by `setup` first (a control

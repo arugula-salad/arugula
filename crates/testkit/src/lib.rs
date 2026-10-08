@@ -36,6 +36,13 @@ macro_rules! arugulad {
     };
 }
 
+/// Turns Labs on or off in a daemon's state dir, as `arugulad flags labs`
+/// does (#464): a running daemon follows at once. Only the one test of the
+/// old `labs` marker file (`hosts.rs`) writes that file by hand.
+pub fn labs(state: &Path, on: bool) {
+    arugula_proto::flags::set(state, arugula_proto::flags::LABS, on).expect("the state dir takes flags.json");
+}
+
 /// The shell test daemons run unless told otherwise: no rc files, so
 /// nothing of the user's gets in.
 #[cfg(unix)]
@@ -584,6 +591,13 @@ impl Daemon {
     /// POST JSON over the socket, which must answer 200 with JSON.
     pub fn post(&self, path: &str, body: Value) -> Value {
         let (status, text) = self.raw("POST", path, Some(body));
+        assert_eq!(status, 200, "{path}: {text}");
+        serde_json::from_str(&text).unwrap()
+    }
+
+    /// PUT JSON over the socket, which must answer 200 with JSON.
+    pub fn put(&self, path: &str, body: Value) -> Value {
+        let (status, text) = self.raw("PUT", path, Some(body));
         assert_eq!(status, 200, "{path}: {text}");
         serde_json::from_str(&text).unwrap()
     }

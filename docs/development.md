@@ -21,8 +21,8 @@ release tarballs in `dist/`.
 
 ## Working on it
 
-What a new install hides until its state directory has a `labs` file
-(chat, huddles, Fountain, studio, workspaces, VMs, guest ssh) is described
+What a new install hides until its `labs` flag is on (`arugulad flags labs on`;
+chat, huddles, Fountain, studio, workspaces, VMs, guest ssh) is described
 in [labs.md](labs.md); the public docs leave it out. Running control
 yourself, operating the hosted one and testing it are in
 [control-ops.md](control-ops.md).

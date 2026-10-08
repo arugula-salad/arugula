@@ -21,6 +21,7 @@ pub mod ask;
 pub mod dirs;
 #[cfg(feature = "fixtures")]
 pub mod fixture;
+pub mod flags;
 pub mod follow;
 pub mod forge;
 pub mod fs;

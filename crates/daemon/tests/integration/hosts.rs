@@ -299,13 +299,14 @@ fn a_remote_pane_runs_there_and_has_its_place_here() {
     wait_for("the pane there to close", || !ids(&other).contains(&json!(pane2)));
 }
 
-/// What a stranger doesn't get follows the `labs` file in the state dir:
-/// `GET /api/host` says so, with threads and huddles (and Fountain, studio
-/// and VMs, where set up) following it, and creating or removing the file on
-/// a running daemon flips it with no restart.
+/// What a stranger doesn't get follows the `labs` flag in the state dir's
+/// `flags.json`: `GET /api/host` says so, with threads and huddles (and
+/// Fountain, studio and VMs, where set up) following it, and setting it on a
+/// running daemon, from outside it or through `PUT /api/flags/labs`, flips
+/// it with no restart.
 #[cfg(feature = "labs")]
 #[test]
-fn the_labs_file_turns_on_what_a_stranger_doesnt_get() {
+fn the_labs_flag_turns_on_what_a_stranger_doesnt_get() {
     // A Fountain login is set up here, so that `fountain` shows what labs
     // does to it.
     let d = arugulad!("hosts")
@@ -323,8 +324,7 @@ fn the_labs_file_turns_on_what_a_stranger_doesnt_get() {
         assert_eq!(f[key], false, "{key} without labs: {f}");
     }
 
-    let file = d.state.join("labs");
-    std::fs::write(&file, "").unwrap();
+    arugula_testkit::labs(&d.state, true);
     let f = features();
     assert_eq!((f["labs"].clone(), f["threads"].clone(), f["calls"].clone()), (true.into(), true.into(), true.into()));
     // Fountain, studio and VMs need their own setup as well: only the
@@ -334,15 +334,99 @@ fn the_labs_file_turns_on_what_a_stranger_doesnt_get() {
         (true.into(), false.into(), false.into())
     );
 
-    // Whatever it holds; and gone, it's off again.
-    std::fs::write(&file, "anything\n").unwrap();
-    assert_eq!(features()["labs"], true);
-    std::fs::remove_file(&file).unwrap();
+    // Off again, and on through the owner's route.
+    arugula_testkit::labs(&d.state, false);
     let f = features();
     assert_eq!(
         (f["labs"].clone(), f["threads"].clone(), f["calls"].clone()),
         (false.into(), false.into(), false.into())
     );
+    let listed = d.put("/api/flags/labs", serde_json::json!({ "on": true }));
+    assert_eq!(
+        (listed["name"].clone(), listed["on"].clone(), listed["built"].clone()),
+        ("labs".into(), true.into(), true.into())
+    );
+    assert_eq!(features()["labs"], true);
+    let all = d.get("/api/flags");
+    assert_eq!(all.as_array().map(Vec::len), Some(1), "{all}");
+    assert_eq!(
+        (all[0]["name"].clone(), all[0]["on"].clone(), all[0]["default"].clone()),
+        ("labs".into(), true.into(), false.into())
+    );
+    assert!(all[0]["about"].as_str().is_some_and(|a| !a.is_empty()), "{all}");
+    d.put("/api/flags/labs", serde_json::json!({ "on": false }));
+    assert_eq!(features()["labs"], false);
+    // A flag that isn't one.
+    let (status, text) = d.raw("PUT", "/api/flags/nope", Some(serde_json::json!({ "on": true })));
+    assert_eq!(status, 404, "{text}");
+    assert!(text.contains("no flag named nope"), "{text}");
+}
+
+/// The flags are the owner's: someone a session is shared with, even as an
+/// editor, can neither read nor set them.
+#[test]
+fn the_flags_are_the_owners() {
+    let d = arugulad!("hosts")
+        .args(["--name", "plain", "--owner", "me@example.com"])
+        .no_wisp()
+        .no_tailscale()
+        .env("PS1", "$ ")
+        .env("ARUGULA_LOCAL_TOKEN_FILE", token_file())
+        .start();
+    let session = d.get("/api/panes")[0]["session"].as_u64().unwrap();
+    d.post(
+        "/api/acl",
+        serde_json::json!({ "session": session, "principal": "tailnet:friend@example.com", "role": "editor" }),
+    );
+    for (method, path, body) in [("GET", "/api/flags", None), ("PUT", "/api/flags/labs", Some(r#"{"on":true}"#))] {
+        let headers = [("tailscale-user-login", "friend@example.com"), ("Content-Type", "application/json")];
+        let (status, _, text) = d.tcp(method, path, &headers, body);
+        assert_eq!(status, 403, "{method} {path}: {text}");
+    }
+    assert!(!arugula_proto::flags::get(&d.state, "labs"));
+}
+
+/// The `labs` file of #385, the one test that still writes it: a daemon
+/// that hasn't moved it yet (or a CLI newer than its daemon) still sees
+/// Labs, and a starting daemon moves it into `flags.json` and removes it.
+#[cfg(feature = "labs")]
+#[test]
+fn the_old_labs_file_still_turns_labs_on_and_a_starting_daemon_migrates_it() {
+    // The fallback: a running daemon sees the marker the moment it's made...
+    let d = arugulad!("hosts-legacy")
+        .args(["--name", "plain"])
+        .no_wisp()
+        .no_tailscale()
+        .env("PS1", "$ ")
+        .env("ARUGULA_LOCAL_TOKEN_FILE", token_file())
+        .start();
+    let labs = || d.get("/api/host")["features"]["labs"].clone();
+    assert_eq!(labs(), false);
+    std::fs::write(d.state.join("labs"), "").unwrap();
+    assert_eq!(labs(), true);
+    // ...unless flags.json says otherwise.
+    arugula_testkit::labs(&d.state, false);
+    assert_eq!(labs(), false);
+    drop(d);
+
+    // The migration: the marker is there when the daemon starts.
+    let state = arugula_testkit::Scratch::new("labs-migrate");
+    std::fs::write(state.join("labs"), "").unwrap();
+    std::fs::write(state.join("flags.json"), r#"{"other":1,"flags":{"future":true}}"#).unwrap();
+    let d = arugulad!("hosts-migrate")
+        .state_dir(&*state)
+        .args(["--name", "plain"])
+        .no_wisp()
+        .no_tailscale()
+        .env("PS1", "$ ")
+        .env("ARUGULA_LOCAL_TOKEN_FILE", token_file())
+        .start();
+    assert_eq!(d.get("/api/host")["features"]["labs"], true);
+    assert!(!state.join("labs").exists(), "the marker file is retired");
+    let flags: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(state.join("flags.json")).unwrap()).unwrap();
+    assert_eq!(flags, serde_json::json!({ "other": 1, "flags": { "future": true, "labs": true } }));
+    drop(d);
 }
 
 /// A build without Labs ignores the `labs` file: nothing it holds is on.
@@ -357,7 +441,7 @@ fn a_build_without_labs_ignores_the_labs_file() {
         .env("FOUNTAIN_API_KEY", "fk_test")
         .env("ARUGULA_LOCAL_TOKEN_FILE", token_file())
         .start();
-    std::fs::write(d.state.join("labs"), "").unwrap();
+    arugula_testkit::labs(&d.state, true);
     let host = d.get("/api/host");
     for key in ["labs", "threads", "calls", "fountain", "studio", "vms"] {
         assert_eq!(host["features"][key], false, "{key}: {host}");
@@ -427,7 +511,7 @@ fn both_helps_follow_the_same_labs_file() {
     }
 
     // On, through the environment, and for arugulad through its flag too.
-    std::fs::write(state.join("labs"), "").unwrap();
+    arugula_testkit::labs(&state, true);
     let cli_on = help(cli_bin(), &[], Some(&state));
     for c in ["fountain", "studio", "app", "workspace", "guests", "machines", "sandboxes"] {
         assert!(listed(&cli_on, c), "{c} isn't in `arugula --help` with labs");

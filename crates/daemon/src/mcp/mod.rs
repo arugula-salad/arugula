@@ -218,7 +218,7 @@ pub struct McpServer {
 }
 
 impl McpServer {
-    /// This machine has the `labs` file: read on each call, so it needs no
+    /// This machine has the `labs` flag on: read on each call, so it needs no
     /// restart.
     fn labs(&self) -> bool {
         crate::labs::enabled(self.app.control.state_dir())

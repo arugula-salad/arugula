@@ -145,11 +145,11 @@ fn the_forgejo_and_gitlab_hook_routes_are_not_there_without_labs() {
     {
         // The switch is read on each delivery: with it on the route is there
         // and takes a delivery only if it is signed.
-        std::fs::write(d.state.join("labs"), "").unwrap();
+        arugula_testkit::labs(&d.state, true);
         for path in ["/api/forge/hooks/forgejo?k=x", "/api/forge/hooks/gitlab?k=x"] {
             assert_eq!(deliver(&d, path, &[("X-Gitlab-Token", "x")], "{}"), 401, "{path}");
         }
-        std::fs::remove_file(d.state.join("labs")).unwrap();
+        arugula_testkit::labs(&d.state, false);
         assert_eq!(deliver(&d, "/api/forge/hooks/forgejo?k=x", &[], "{}"), 404);
     }
 }
