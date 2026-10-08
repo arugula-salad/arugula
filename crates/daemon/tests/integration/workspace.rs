@@ -86,7 +86,8 @@ case "$1 $2 $3" in
 esac
 case "$1 $2" in
   "workspace ls") if [ -e "$ws/.undeclared" ]; then cat "$f/ls-missing.json"; exit 1; fi
-    if [ -e "$ws/.newer" ]; then sed 's/"0.87.0"/"0.104.0"/' "$f/ls.json"; else cat "$f/ls.json"; fi ;;
+    if [ -e "$ws/.sessions" ]; then sed -e 's/"because":/"agents": [], "because":/' -e 's/"agents": \[\], "because": "a Node/"agents": ["app-agent"], "because": "a Node/' -e 's/"minReader":/"agentsFrom": "base", "minReader":/' "$f/ls.json"
+    elif [ -e "$ws/.newer" ]; then sed 's/"0.87.0"/"0.104.0"/' "$f/ls.json"; else cat "$f/ls.json"; fi ;;
   "workspace check") cat "$f/check.json" ;;
   "workspace records") cat "$f/records.json" ;;
   "workspace status") if [ ! -e "$ws/.gate" ]; then cat "$f/status.json"; elif [ -e "$ws/.signed" ]; then cat "$f/status-signed.json"; else cat "$f/status-gated.json"; fi ;;
@@ -331,7 +332,8 @@ fn chant_says_what_a_workspace_is() {
 }
 
 /// #590: a member's agent sessions come from the declaration, a `.jsonc`
-/// one too, until a read of chant's prints them.
+/// one too, when chant's `ls` doesn't print them (before
+/// INTENTIUS/chant#3628).
 #[test]
 fn a_jsonc_declaration_binds_its_agent_sessions_too() {
     let d = daemon();
@@ -348,6 +350,26 @@ fn a_jsonc_declaration_binds_its_agent_sessions_too() {
     let agents = |n: &str| st["members"].as_array().unwrap().iter().find(|m| m["name"] == n).unwrap()["agents"].clone();
     assert_eq!(agents("app"), json!(["app"]), "{st}");
     assert_eq!(agents("delivery"), json!([]));
+}
+
+/// #590: with a chant whose `ls --json` lists each member's `agents`
+/// (INTENTIUS/chant#3628), the sessions are chant's, not the declaration's.
+#[test]
+fn agent_sessions_come_from_chant_s_ls() {
+    let d = daemon();
+    let ws = workspace(&d, "sessions", false);
+    std::fs::write(
+        ws.join("chant.workspace.json"),
+        r#"{"name":"reference","schema":1,"members":[],"agents":[{"name":"stale","member":"delivery"}]}"#,
+    )
+    .unwrap();
+    std::fs::write(ws.join(".sessions"), "").unwrap();
+    let block = open(&d, &ws);
+    let st = read(&d, block);
+    assert_eq!(st["error"], Value::Null, "{st}");
+    let agents = |n: &str| st["members"].as_array().unwrap().iter().find(|m| m["name"] == n).unwrap()["agents"].clone();
+    assert_eq!(agents("app"), json!(["app-agent"]), "{st}");
+    assert_eq!(agents("delivery"), json!([]), "{st}");
 }
 
 #[test]

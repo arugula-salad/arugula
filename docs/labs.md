@@ -367,7 +367,9 @@ card is a block call, and a viewer's are refused.
 ### Agents on a member
 
 *Agent* starts an agent block in the member's directory as the agent
-session the declaration (`.json` or `.jsonc`) binds to the member
+session the declaration binds to the member, the first of the member's
+`agents` in `chant workspace ls --json`; with a chant whose `ls` doesn't
+list them, the block reads the declaration (`.json` or `.jsonc`) itself
 (`crates/daemon/src/agent/chant.rs`):
 
 - The agent runs with `CHANT_AGENT` set to that session, so chant judges
