@@ -67,8 +67,15 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
     }
     let members = st["members"].as_array().map_or(0, Vec::len);
     let gates = st["gates"].as_array().cloned().unwrap_or_default();
+    // A decision point's open question (#621) waits beside the gates.
+    let (points, gates): (Vec<_>, Vec<_>) = gates.into_iter().partition(|g| g["source"]["kind"] == "point");
+    let open = match points.len() {
+        0 => String::new(),
+        1 => ", 1 decision open".to_owned(),
+        n => format!(", {n} decisions open"),
+    };
     println!(
-        "{}: {members} members, {} records, {} waiting at a gate",
+        "{}: {members} members, {} records, {} waiting at a gate{open}",
         st["name"].as_str().unwrap_or("workspace"),
         st["records"].as_array().map_or(0, Vec::len),
         gates.len()
@@ -77,5 +84,28 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
         let s = |k: &str| g[k].as_str().unwrap_or("").to_owned();
         println!("  {}: {} waits at gate {}", s("member"), s("op"), s("gate"));
     }
+    for p in points {
+        println!("  {}", point_line(&p));
+    }
     Ok(0)
+}
+
+/// A decision point's question as a line: what it asks, and its choices.
+fn point_line(g: &serde_json::Value) -> String {
+    let src = &g["source"];
+    let member = g["member"].as_str().filter(|m| !m.is_empty()).map(|m| format!("{m}: ")).unwrap_or_default();
+    let choices: Vec<&str> =
+        src["choices"].as_array().into_iter().flatten().filter_map(|c| c["label"].as_str()).collect();
+    let pick = if choices.is_empty() { String::new() } else { format!(" ({})", choices.join(", ")) };
+    format!("{member}{}{pick}  [{}]", src["question"].as_str().unwrap_or(""), src["id"].as_str().unwrap_or(""))
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn a_decision_points_line() {
+        let g = serde_json::json!({ "member": "", "source": { "kind": "point", "id": "slice-tier-1",
+            "question": "Which builder tier (W-001)", "choices": [{ "label": "small" }, { "label": "large" }] } });
+        assert_eq!(super::point_line(&g), "Which builder tier (W-001) (small, large)  [slice-tier-1]");
+    }
 }

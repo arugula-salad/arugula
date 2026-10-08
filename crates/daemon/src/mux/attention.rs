@@ -61,13 +61,20 @@ fn same_call(hook: &serde_json::Value, ask: &Ask) -> bool {
         && ask.input.as_ref() == Some(&hook["tool_input"])
 }
 
-/// A reason as a notification carries it: its actions, and for a gate
-/// (M34) its key, so the worker's Approve and Expire (#310) act on that
-/// gate and not one that came after it.
+/// A reason as a notification carries it: its actions, and for a gate its
+/// key, so the worker's Approve and Expire (#310) act on that gate and not
+/// one that came after it. A decision point's question (#621) brings its
+/// choices when there are one or two, a button each.
 fn push_reason(r: &Reason) -> serde_json::Value {
     let mut v = serde_json::json!({ "kind": r.kind, "actions": r.actions, "bundle": r.bundle });
     if let Some(g) = &r.gate {
         v["gate"] = serde_json::json!({ "id": g.key(), "title": r.headline });
+        if let arugula_proto::GateSource::Point { choices, .. } = &g.source
+            && (1..=2).contains(&choices.len())
+        {
+            v["gate"]["choices"] =
+                choices.iter().map(|c| serde_json::json!({ "value": c.value, "label": c.label })).collect();
+        }
     }
     v
 }
@@ -83,6 +90,13 @@ fn push_title(state: Attention, reason: Option<&Reason>) -> &'static str {
         Some(ReasonKind::Errors) => "Errors",
         Some(ReasonKind::Conflict) => "Merge conflict",
         Some(ReasonKind::Diff) => "Wants to edit",
+        Some(ReasonKind::Gate)
+            if reason
+                .and_then(|r| r.gate.as_ref())
+                .is_some_and(|g| matches!(g.source, arugula_proto::GateSource::Point { .. })) =>
+        {
+            "A decision waits on you"
+        }
         Some(ReasonKind::Gate) => "Waits at a gate",
         None if state == Attention::Done => "Done",
         None => "Needs you",
@@ -1008,5 +1022,48 @@ mod tests {
         assert_eq!(v["actions"], serde_json::json!(["allow", "expire", "dismiss"]));
         assert_eq!(v["gate"]["id"], "delivery/ship/approve-ship");
         assert_eq!(v["gate"]["title"], "delivery: ship waits at gate approve-ship");
+        assert!(v["gate"].get("choices").is_none());
+    }
+
+    #[test]
+    fn a_decision_points_push_brings_two_choices_to_answer_with() {
+        use arugula_proto::{GateSource, workspace::PointChoice};
+        let choice = |v: &str, l: &str| PointChoice { value: v.into(), label: l.into(), means: None };
+        let mut q = arugula_proto::Gate {
+            member: String::new(),
+            op: "ship-skip".into(),
+            gate: "ship-skip-1724faf3af79".into(),
+            env: None,
+            since: None,
+            expires: None,
+            approvals: 0,
+            needed: 1,
+            command: None,
+            source: GateSource::Point {
+                root: "/w".into(),
+                machine: None,
+                id: "ship-skip-1724faf3af79".into(),
+                point: "ship-skip".into(),
+                question: "May this release skip the human gate".into(),
+                choices: vec![choice("true", "yes"), choice("false", "no")],
+                proposed: None,
+            },
+            why: None,
+        };
+        let r = crate::gate::reason(std::slice::from_ref(&q)).unwrap();
+        assert_eq!(super::push_title(arugula_proto::Attention::NeedsInput, Some(&r)), "A decision waits on you");
+        let v = push_reason(&r);
+        assert_eq!(v["actions"], serde_json::json!(["answer", "dismiss"]));
+        assert_eq!(v["gate"]["id"], "/ship-skip/ship-skip-1724faf3af79");
+        assert_eq!(v["gate"]["title"], "May this release skip the human gate");
+        assert_eq!(
+            v["gate"]["choices"],
+            serde_json::json!([{ "value": "true", "label": "yes" }, { "value": "false", "label": "no" }])
+        );
+        // Three are picked on the card.
+        if let GateSource::Point { choices, .. } = &mut q.source {
+            choices.push(choice("maybe", "maybe"));
+        }
+        assert!(push_reason(&crate::gate::reason(&[q]).unwrap())["gate"].get("choices").is_none());
     }
 }

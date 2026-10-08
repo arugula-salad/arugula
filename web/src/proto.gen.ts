@@ -667,7 +667,29 @@ box_url: string, app: string, } | { "kind": "forge",
  * The forge's API base (`https://git.example/api/v1`) and its web
  * address for the PR.
  */
-api: string, url: string, number: number, };
+api: string, url: string, number: number, } | { "kind": "point", root: string, machine?: string, 
+/**
+ * The answer record's id, which `points answer` names.
+ */
+id: string, 
+/**
+ * The point's name.
+ */
+point: string, 
+/**
+ * What it asks: the point's title (or an ad-hoc question's own
+ * text) and what it's about.
+ */
+question: string, 
+/**
+ * The answers it takes; empty when the points read didn't say.
+ */
+choices: Array<PointChoice>, 
+/**
+ * The answer a model proposed (or leaned to, below its
+ * threshold), as one of `choices`' values.
+ */
+proposed?: string, };
 
 /**
  * What someone about to approve a gate wants to know (#617): the
@@ -1316,6 +1338,13 @@ export type PaneOp = { "op": "set_policy", policy: Policy, } | { "op": "purge" }
  * A pinned file against the tree read (chant's asset `state`).
  */
 export type PinState = "pinned" | "drifted" | "missing" | "stale";
+
+/**
+ * One answer a decision point's question takes (#621), from `points
+ * --open`: what `points answer --answer` is given, how to show it (`yes`
+ * and `no` for a yes-or-no point) and what the points file says it means.
+ */
+export type PointChoice = { value: string, label: string, means: string | null, };
 
 /**
  * What a pane does when the daemon restores it. Its scrollback always comes

@@ -4,16 +4,18 @@
 //! Two halves:
 //!
 //! - [`SCRIPT`] + [`READER`]: one `sh -c` on the block's host (one exec on
-//!   a VM). It finds the workspace's own chant, runs the four reads in
+//!   a VM). It finds the workspace's own chant, runs the five reads in
 //!   parallel with node, and prints one JSON document: what it ran, how long
 //!   each took, and what each said.
 //! - [`compose`]: pure. Turns that document into the block's state: member
-//!   cards, records, the gates waiting, and a headline.
+//!   cards, records, the gates and decision points waiting, and a
+//!   headline.
 
 use arugula_proto::{
     Gate, GateSource,
     workspace::{
-        DecisionRef, GateRelease, GateWhy, Lease, MemberWhy, PinState, Record, RecordChoice, RecordEvidence, RunRef,
+        DecisionRef, GateRelease, GateWhy, Lease, MemberWhy, PinState, PointChoice, Record, RecordChoice,
+        RecordEvidence, RunRef,
     },
 };
 use serde::Serialize;
@@ -89,14 +91,15 @@ function run(args) {
   const doc = { root: here, declared, gitRoot, chant, how, env, agents };
   if (!chant) return console.log(JSON.stringify(doc));
   const t = Date.now();
-  const [ls, check, records, status] = await Promise.all([
+  const [ls, check, records, status, points] = await Promise.all([
     run(["workspace", "ls", "--json"]),
     run(["workspace", "check", "--format", "json"]),
     run(["workspace", "records", "--current", "--json"]),
     run(["workspace", "status", env, "--json"]),
+    run(["workspace", "points", "--open", "--json"]),
   ]);
   doc.ms = Date.now() - t;
-  doc.reads = { ls, check, records, status };
+  doc.reads = { ls, check, records, status, points };
   // A chant older than the contract writes none of it: its version, to
   // say which to install.
   if (![ls, check, records, status].some((r) => r.json && typeof r.json === "object" && "contract" in r.json)) {
@@ -171,7 +174,8 @@ pub struct State {
     pub records: Vec<Record>,
     /// Why there are no records, when there aren't.
     pub records_note: Option<String>,
-    /// Gates waiting for a person, in any member.
+    /// Gates waiting for a person, in any member, then the decision
+    /// points' questions open for people (#621).
     pub gates: Vec<Gate>,
     /// Every work lease `status` lists (#618).
     pub leases: Vec<Lease>,
@@ -342,6 +346,104 @@ fn contract_problem(reads: &Value, chant: Option<&str>) -> Option<(&'static str,
     None
 }
 
+/// One read's outcome, from the reader's document.
+fn read(name: &str, r: &Value) -> Read {
+    // A failure is `error: {code, message}` (the schemas' `oneOf`).
+    let failure = &r["json"]["error"];
+    let ok = r["json"].is_object() && !failure.is_object();
+    let code = r["code"].as_i64().unwrap_or(-1);
+    let reason = s(&failure["code"]);
+    let note = if failure.is_object() {
+        Some(s(&failure["message"]).unwrap_or_default()).filter(|m| !m.is_empty()).or_else(|| reason.clone())
+    } else {
+        (!ok || code != 0)
+            .then(|| s(&r["err"]).filter(|e| !e.is_empty()))
+            .flatten()
+            .map(|e| e.lines().find(|l| !l.trim().is_empty()).unwrap_or("").trim().to_owned())
+    };
+    Read { name: name.into(), ms: r["ms"].as_u64().unwrap_or(0), code, ok, note, reason }
+}
+
+/// The first chant with `workspace points --open` (ws-058).
+pub const POINTS_FLOOR: &str = "0.91.0";
+
+/// The questions open for people in a `points --open` document (#621), as
+/// gates of the workspace at `root`, in chant's order. Nothing from a
+/// document that isn't contract 1's `points`.
+pub fn points(doc: &Value, root: &str) -> Vec<Gate> {
+    if doc["contract"].as_u64() != Some(CONTRACT) || doc["$schema"].as_str() != Some(schema_id("points").as_str()) {
+        return vec![];
+    }
+    let declared = |name: &str| doc["points"].as_array().into_iter().flatten().find(|p| p["name"] == name);
+    let mut out = vec![];
+    for q in doc["questions"].as_array().into_iter().flatten() {
+        let (Some(id), Some(name)) = (s(&q["id"]), s(&q["point"])) else { continue };
+        if q["open"] == false {
+            continue;
+        }
+        let point = declared(&name);
+        let yes_no = q["questionType"] == "noul";
+        // An ad-hoc point's question and criteria come with each ask.
+        let asked = &q["asked"];
+        let criteria =
+            if asked["criteria"].is_object() { &asked["criteria"] } else { &point.unwrap_or(&Value::Null)["criteria"] };
+        let choices = q["candidates"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|c| {
+                let value = match c {
+                    Value::Bool(b) => b.to_string(),
+                    Value::String(v) => v.clone(),
+                    _ => return None,
+                };
+                let label = match (yes_no, value.as_str()) {
+                    (true, "true") => "yes".to_owned(),
+                    (true, "false") => "no".to_owned(),
+                    _ => value.clone(),
+                };
+                Some(PointChoice { means: s(&criteria[&value]).filter(|m| !m.is_empty()), value, label })
+            })
+            .collect();
+        let title =
+            s(&asked["question"]).or_else(|| point.and_then(|p| s(&p["title"]))).unwrap_or_else(|| name.clone());
+        // What it's about; a gate's question (chant#3170) is about the gate
+        // (`gate:<op>/<gate>`), which its card names anyway.
+        let question = match s(&q["subject"]).filter(|s| !s.starts_with("gate:")) {
+            Some(subject) => format!("{title} ({subject})"),
+            None => title,
+        };
+        let proposed = match &q["model"]["answer"] {
+            Value::Bool(b) => Some(b.to_string()),
+            Value::String(v) => Some(v.clone()),
+            _ => None,
+        };
+        out.push(Gate {
+            member: String::new(),
+            op: name.clone(),
+            gate: id.clone(),
+            env: None,
+            // chant writes the day it was asked.
+            since: s(&q["askedOn"]).map(|d| if d.len() == 10 { format!("{d}T00:00:00Z") } else { d }),
+            expires: None,
+            approvals: 0,
+            needed: point.and_then(|p| p["quorum"]["count"].as_u64()).unwrap_or(1),
+            command: Some(format!("chant workspace points answer {id} --answer <value> --by <name>")),
+            source: GateSource::Point {
+                root: root.to_owned(),
+                machine: None,
+                id,
+                point: name,
+                question,
+                choices,
+                proposed,
+            },
+            why: None,
+        });
+    }
+    out
+}
+
 /// The reader's document as block state.
 pub fn compose(raw: &Value, env: &str) -> State {
     let mut st = State { env: env.to_owned(), root: s(&raw["root"]).unwrap_or_default(), ..Default::default() };
@@ -361,26 +463,17 @@ pub fn compose(raw: &Value, env: &str) -> State {
     st.ms = raw["ms"].as_u64().unwrap_or(0);
     let reads = &raw["reads"];
     for name in ["ls", "check", "records", "status"] {
-        let r = &reads[name];
-        // A failure is `error: {code, message}` (the schemas' `oneOf`).
-        let failure = &r["json"]["error"];
-        let ok = r["json"].is_object() && !failure.is_object();
-        let code = r["code"].as_i64().unwrap_or(-1);
-        let reason = s(&failure["code"]);
-        let note = if failure.is_object() {
-            Some(s(&failure["message"]).unwrap_or_default()).filter(|m| !m.is_empty()).or_else(|| reason.clone())
-        } else {
-            (!ok || code != 0)
-                .then(|| s(&r["err"]).filter(|e| !e.is_empty()))
-                .flatten()
-                .map(|e| e.lines().find(|l| !l.trim().is_empty()).unwrap_or("").trim().to_owned())
-        };
-        st.reads.push(Read { name: name.into(), ms: r["ms"].as_u64().unwrap_or(0), code, ok, note, reason });
+        st.reads.push(read(name, &reads[name]));
     }
     st.version = ["ls", "status", "check", "records"]
         .iter()
         .find_map(|n| s(&reads[*n]["json"]["chant"]))
         .or_else(|| s(&raw["version"]));
+    // `points` (#621) only from a chant that has it, so an older one's
+    // usage text isn't a failed read.
+    if reads["points"].is_object() && st.version.as_deref().is_none_or(|v| at_least(v, POINTS_FLOOR)) {
+        st.reads.push(read("points", &reads["points"]));
+    }
     if let Some((code, why)) = contract_problem(reads, st.version.as_deref()) {
         st.error = Some(why);
         st.error_code = Some(code.into());
@@ -467,6 +560,10 @@ pub fn compose(raw: &Value, env: &str) -> State {
         }
     }
 
+    // The decision points' open questions (#621); an op gate that asks
+    // one is answered as one, and shown once, as the gate.
+    let mut questions = points(&reads["points"]["json"], &root);
+
     // Releases and pending gates, from `status`.
     let status = &reads["status"]["json"];
     for sm in status["members"].as_array().into_iter().flatten() {
@@ -508,6 +605,30 @@ pub fn compose(raw: &Value, env: &str) -> State {
                 }
                 Some(line)
             });
+            // chant#3170: a gate that asks a decision point waits on its
+            // question, which `points answer` answers.
+            let source = match s(&g["answer"]["id"]) {
+                None => GateSource::Chant { root: root.clone(), dir: m.path.clone(), machine: None },
+                Some(id) => match questions
+                    .iter()
+                    .position(|q| matches!(&q.source, GateSource::Point { id: i, .. } if *i == id))
+                {
+                    Some(at) => questions.remove(at).source,
+                    None => {
+                        let point = s(&g["answer"]["point"]).unwrap_or_default();
+                        let question = format!("{op} waits at gate {gate}, on decision point {point}");
+                        GateSource::Point {
+                            root: root.clone(),
+                            machine: None,
+                            id,
+                            point,
+                            question,
+                            choices: vec![],
+                            proposed: None,
+                        }
+                    }
+                },
+            };
             st.gates.push(Gate {
                 member: name.clone(),
                 op,
@@ -518,7 +639,7 @@ pub fn compose(raw: &Value, env: &str) -> State {
                 approvals: g["approvals"].as_array().map_or(0, |a| a.len() as u64),
                 needed: g["needed"].as_u64().unwrap_or(1),
                 command,
-                source: GateSource::Chant { root: root.clone(), dir: m.path.clone(), machine: None },
+                source,
                 // The decisions come from another read, when a gate is
                 // raised ([`intent`]).
                 why: Some(GateWhy {
@@ -529,6 +650,8 @@ pub fn compose(raw: &Value, env: &str) -> State {
             });
         }
     }
+
+    st.gates.extend(questions);
 
     // Work leases, onto the member whose ledger holds each.
     st.leases = status["leases"].as_array().into_iter().flatten().map(lease).collect();
@@ -1395,6 +1518,101 @@ mod tests {
             st.gates[0].command.as_deref(),
             Some("chant approve release approve-release --env prod --plan sha256:ab12 --sign")
         );
+    }
+
+    /// The reference workspace's read, with real `points --open --json`
+    /// (chant 0.108.1, e2e's toy with ship-skip and slice-tier asked).
+    fn with_points() -> Value {
+        let mut raw = fixture(include_str!("fixtures/reference-raw.json"));
+        raw["reads"]["points"] =
+            serde_json::json!({ "code": 0, "ms": 900, "json": fixture(include_str!("fixtures/points-open.json")) });
+        raw["reads"]["ls"]["json"]["chant"] = "0.108.1".into();
+        raw
+    }
+
+    #[test]
+    fn open_decision_points_wait_after_the_gates() {
+        let st = compose(&with_points(), "local");
+        let keys: Vec<String> = st.gates.iter().map(Gate::key).collect();
+        assert_eq!(
+            keys,
+            [
+                "delivery/release/approve-release",
+                "/ship-skip/ship-skip-c709bdd7cdca",
+                "/slice-tier/slice-tier-577f5102863f"
+            ]
+        );
+        let (skip, tier) = (&st.gates[1], &st.gates[2]);
+        assert_eq!(skip.headline(), "May this release skip the human gate");
+        assert_eq!(tier.headline(), "Which builder tier builds this work item (W-001)");
+        assert_eq!(skip.bundle(), "gate:/scratch/refws");
+        assert_eq!(skip.since.as_deref(), Some("2026-10-08T00:00:00Z"));
+        assert_eq!(skip.why, None);
+        let GateSource::Point { root, id, point, choices, proposed, .. } = &skip.source else {
+            panic!("{:?}", skip.source)
+        };
+        assert_eq!(
+            (root.as_str(), id.as_str(), point.as_str()),
+            ("/scratch/refws", "ship-skip-c709bdd7cdca", "ship-skip")
+        );
+        // A yes-or-no point: `true` and `false`, shown as yes and no, with
+        // what each means.
+        assert_eq!(
+            choices.iter().map(|c| (c.value.as_str(), c.label.as_str())).collect::<Vec<_>>(),
+            [("true", "yes"), ("false", "no")]
+        );
+        assert_eq!(choices[0].means.as_deref(), Some("An agent may pass the gate."));
+        assert_eq!(*proposed, None);
+        let GateSource::Point { choices, .. } = &tier.source else { panic!() };
+        assert_eq!(choices.iter().map(|c| c.label.as_str()).collect::<Vec<_>>(), ["small", "medium", "large"]);
+        // Only a member's gate counts on its card, and the read is listed.
+        assert_eq!(st.members.iter().map(|m| m.gates).sum::<usize>(), 1);
+        assert!(st.reads.iter().any(|r| r.name == "points" && r.ok));
+        assert!(st.text().contains("/ship-skip gate ship-skip-c709bdd7cdca"));
+    }
+
+    #[test]
+    fn a_gate_that_asks_a_point_is_its_question() {
+        // chant#3170: status names the question the gate waits on, and its
+        // line is `points answer`'s.
+        let mut raw = with_points();
+        let g = &mut raw["reads"]["status"]["json"]["members"][1]["gates"][0];
+        g["answer"] =
+            serde_json::json!({ "point": "ship-skip", "id": "ship-skip-c709bdd7cdca", "path": "answers/x.md" });
+        g["approve"] = "chant workspace points answer ship-skip-c709bdd7cdca --answer <value> --by <name>".into();
+        // A model leaned to an answer, below its threshold.
+        let q = &mut raw["reads"]["points"]["json"]["questions"][0];
+        q["model"] = serde_json::json!({ "answer": false, "confidence": 0.6 });
+        q["subject"] = "gate:release/approve-release".into();
+        let st = compose(&raw, "local");
+        // Shown once, as the gate.
+        assert_eq!(st.gates.len(), 2);
+        let g = &st.gates[0];
+        assert_eq!(g.key(), "delivery/release/approve-release");
+        assert_eq!(g.headline(), "delivery: May this release skip the human gate");
+        assert!(g.why.is_some());
+        let GateSource::Point { id, choices, proposed, .. } = &g.source else { panic!("{:?}", g.source) };
+        assert_eq!((id.as_str(), choices.len(), proposed.as_deref()), ("ship-skip-c709bdd7cdca", 2, Some("false")));
+        // The question unread (an older chant, or a failed read): the gate
+        // is still its question, with no choices to offer.
+        raw["reads"].as_object_mut().unwrap().remove("points");
+        let st = compose(&raw, "local");
+        let GateSource::Point { choices, question, .. } = &st.gates[0].source else { panic!() };
+        assert!(choices.is_empty());
+        assert_eq!(question, "release waits at gate approve-release, on decision point ship-skip");
+    }
+
+    #[test]
+    fn points_from_another_contract_or_an_older_chant_are_nothing() {
+        let mut raw = with_points();
+        raw["reads"]["points"]["json"]["contract"] = 2.into();
+        assert_eq!(compose(&raw, "local").gates.len(), 1);
+        // A chant before `points` (the reference's is 0.87) says something
+        // else: not a failed read.
+        let mut raw = fixture(include_str!("fixtures/reference-raw.json"));
+        raw["reads"]["points"] = serde_json::json!({ "code": 1, "ms": 300, "json": null, "err": "Unknown command" });
+        let st = compose(&raw, "local");
+        assert!(st.reads.iter().all(|r| r.name != "points"));
     }
 
     #[test]

@@ -12,6 +12,7 @@ import { EXPIRE_TITLE, gateKey, type DecisionRef, type Gate, type Lease, type Me
 import { openWorkspace } from "./open-labs";
 import type { BlockRenderer, BlockView } from "./view";
 import { ago, decisionLine, GateWhy, governs } from "../ui/gate-why";
+import { PointChoices, pointOf, proposalLine } from "../ui/point-choices";
 import { Graph, type Clicks, type GraphStatus } from "./workspace-graph";
 
 interface Diagnostic { rule: string; severity: string; message: string; file: string | null; line: number | null }
@@ -302,6 +303,15 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
     setBusy(null);
     if (ok) setSaid(`Expired ${g.gate}, not approved. The next run of ${g.op} stops there again.`);
   };
+  // #621: a decision point's question, answered with one of its choices.
+  const answer = async (g: Gate, value: string) => {
+    setBusy(`answer:${gateKey(g)}`);
+    setSaid(null);
+    const ok = await client.api(`/api/blocks/${id}/call/answer`, { key: gateKey(g), answer: value }, "couldn't answer it");
+    setBusy(null);
+    const label = pointOf(g)?.choices.find((c) => c.value === value)?.label ?? value;
+    if (ok) setSaid(`Answered ${label}: chant recorded it.`);
+  };
   const refresh = () => void client.api(`/api/blocks/${id}/call/refresh`, {}, "couldn't read the workspace");
   // The block watches one env's gates and releases (#312): switching reads
   // again, and the choice is kept in its config.
@@ -389,7 +399,7 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
           {s.gates.length > 0 && (
             <section class="ws-gates" data-ws-gates>
               <h4>Waiting on you</h4>
-              {s.gates.map((g) => (
+              {s.gates.filter((g) => !pointOf(g)).map((g) => (
                 <div class="ws-gate" key={gateKey(g)} data-gate={gateKey(g)}>
                   <div class="ws-gate-what">
                     <b>{g.member}</b>: {g.op} waits at gate <b>{g.gate}</b>
@@ -415,7 +425,10 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
                   </div>
                 </div>
               ))}
-              {!mayApprove && <p class="dim ws-note">You're watching this session: the owner or an editor approves.</p>}
+              {s.gates.filter((g) => pointOf(g)).map((g) => (
+                <PointGate key={gateKey(g)} g={g} may={mayApprove} busy={busy !== null} answer={(v) => void answer(g, v)} />
+              ))}
+              {!mayApprove && <p class="dim ws-note">You're watching this session: the owner or an editor approves or answers.</p>}
             </section>
           )}
           {said && <p class="ws-said" data-ws-said>{said}</p>}
@@ -550,12 +563,41 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
   );
 }
 
+/** A decision point's open question (#621) on "Waiting on you": what it
+ * asks, a button for each answer, and for an op gate that asks it, the
+ * gate's member and what it enforces. */
+function PointGate({ g, may, busy, answer }: { g: Gate; may: boolean; busy: boolean; answer: (value: string) => void }) {
+  const point = pointOf(g)!;
+  const proposal = proposalLine(point);
+  return (
+    <div class="ws-gate" data-gate={gateKey(g)} data-point={point.id}>
+      <div class="ws-gate-what">
+        {g.member && <b>{g.member}: </b>}
+        {point.question}
+        <div class="dim ws-gate-when">
+          decision point {point.point}
+          {g.member && ` · ${g.op} waits at gate ${g.gate}`}
+          {g.needed > 1 && ` · ${g.needed} people answer it`}
+          {g.since && ` · asked ${ago(g.since)}`}
+        </div>
+        {proposal && <div class="dim">{proposal}</div>}
+        {g.why && <GateWhy gate={g} />}
+      </div>
+      <div class="ws-actions">
+        {may && <PointChoices point={point} busy={busy} answer={answer} />}
+        {may && !point.choices.length && <code class="dim">{g.command}</code>}
+      </div>
+    </div>
+  );
+}
+
 function plain(s: WorkspaceState | null): string {
   if (!s) return "";
   const lines = [`${s.name ?? "workspace"} ${s.root}`];
   if (s.error) lines.push(s.error);
   for (const g of s.gates) {
-    lines.push(`waiting: ${g.member}: ${g.op} at gate ${g.gate}`);
+    const point = pointOf(g);
+    lines.push(point ? `decision: ${g.member ? `${g.member}: ` : ""}${point.question}` : `waiting: ${g.member}: ${g.op} at gate ${g.gate}`);
     const d = decisionLine(g);
     if (d) lines.push(`  ${d}`);
   }

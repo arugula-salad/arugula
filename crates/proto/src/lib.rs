@@ -385,6 +385,34 @@ pub enum GateSource {
         url: String,
         number: u64,
     },
+    /// A question asked of a workspace's decision point (ws-058, #621),
+    /// open for people: escalated to them, or a model's proposal waiting
+    /// for one to confirm it (`chant workspace points --open`). Answered
+    /// with one of `choices` by `chant workspace points answer <id>` in the
+    /// workspace's root, `--by` the person who answers. An op gate that
+    /// asks a point (chant#3170) is one too, and keeps its member, op and
+    /// gate; any other question has its point as `op`, its id as `gate`
+    /// and no member.
+    Point {
+        root: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts", ts(optional))]
+        machine: Option<String>,
+        /// The answer record's id, which `points answer` names.
+        id: String,
+        /// The point's name.
+        point: String,
+        /// What it asks: the point's title (or an ad-hoc question's own
+        /// text) and what it's about.
+        question: String,
+        /// The answers it takes; empty when the points read didn't say.
+        choices: Vec<workspace::PointChoice>,
+        /// The answer a model proposed (or leaned to, below its
+        /// threshold), as one of `choices`' values.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts", ts(optional))]
+        proposed: Option<String>,
+    },
 }
 
 impl Gate {
@@ -397,16 +425,22 @@ impl Gate {
     pub fn headline(&self) -> String {
         match &self.source {
             GateSource::Forge { .. } => format!("{}{}: review requested from you", self.member, self.op),
+            GateSource::Point { question, .. } if self.member.is_empty() => question.clone(),
+            GateSource::Point { question, .. } => format!("{}: {question}", self.member),
             _ => format!("{}: {} waits at gate {}", self.member, self.op, self.gate),
         }
     }
 
-    /// Gates of one workspace are one card on the rail: `gate:<root>`
-    /// (with its machine, when it's on one).
+    /// Gates of one workspace (and its decision points) are one card on
+    /// the rail: `gate:<root>` (with its machine, when it's on one).
     pub fn bundle(&self) -> String {
         match &self.source {
-            GateSource::Chant { root, machine: None, .. } => format!("gate:{root}"),
-            GateSource::Chant { root, machine: Some(m), .. } => format!("gate:{m}:{root}"),
+            GateSource::Chant { root, machine: None, .. } | GateSource::Point { root, machine: None, .. } => {
+                format!("gate:{root}")
+            }
+            GateSource::Chant { root, machine: Some(m), .. } | GateSource::Point { root, machine: Some(m), .. } => {
+                format!("gate:{m}:{root}")
+            }
             GateSource::Hud { box_url, .. } => format!("gate:{box_url}"),
             // M36: bundled by repository, with the PR's other reasons.
             GateSource::Forge { api, .. } => format!("forge:{}/{}", host_of(api), self.member),
