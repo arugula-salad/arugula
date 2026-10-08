@@ -72,7 +72,8 @@ test("after a restart: tabs, splits, cwd and scrollback are back; policies apply
   await paneEl(page, first).click({ button: "right", position: { x: 60, y: 60 } });
   await page.getByRole("menuitemradio", { name: /Run a command/ }).click();
   await page.getByRole("dialog").getByRole("textbox").fill("echo hook-$((3*3))");
-  await page.getByRole("button", { name: "OK" }).click();
+  // Exact: the session button's name ("silent brook ▾") has "ok" in it too.
+  await page.getByRole("dialog").getByRole("button", { name: "OK", exact: true }).click();
   await expect
     .poll(() => page.evaluate((p) => window.__arugula.client.info(p)?.policy, first))
     .toEqual({ kind: "hook", command: "echo hook-$((3*3))" });

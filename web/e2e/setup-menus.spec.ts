@@ -104,7 +104,7 @@ test("Open a port… and Open in editor say how to turn block sites on", async (
     await expect(note.getByRole("link")).toHaveAttribute("href", new RegExp(`^https://docs\\.arugula\\.io/advanced/${anchor}$`));
     // No port asked for, no error, nothing opened.
     await expect(page.locator(".prompt input")).toHaveCount(0);
-    await page.getByRole("button", { name: "OK" }).click();
+    await page.getByRole("button", { name: "OK", exact: true }).click();
     await expect(note).toHaveCount(0);
     expect(await panes(page)).toEqual([term]);
   }
