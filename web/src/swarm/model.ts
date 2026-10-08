@@ -153,6 +153,8 @@ export function cardTitle(r: Reason, n: number, machines: string[], agent?: stri
     case "gate":
       // M36: a review asked of you is a gate too.
       if (r.gate?.source.kind === "forge") return n > 1 ? `${n} reviews asked of you` : "Review requested";
+      // #621: a workspace decision point's question.
+      if (r.gate?.source.kind === "point") return n > 1 ? `${n} decisions wait on you` : "A decision waits on you";
       return n > 1 ? `${n} workspaces wait at gates` : "Waits at a gate";
   }
 }

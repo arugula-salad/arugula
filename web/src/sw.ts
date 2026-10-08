@@ -93,8 +93,9 @@ interface Msg {
   daemon?: string;
   approve?: { id: string; title?: string };
   ask?: { id: string; field: string; options: string[] };
-  /** M34: a gate's names it (`member/op/gate`), for Approve and Expire. */
-  reason?: { kind: string; actions: string[]; gate?: { id: string; title?: string } };
+  /** A gate's names it (`member/op/gate`), for Approve and Expire; a
+   * decision point's (#621) brings one or two choices to answer with. */
+  reason?: { kind: string; actions: string[]; gate?: { id: string; title?: string; choices?: { value: string; label: string }[] } };
   /** Control's own (#104): a device or a person waits for approval. */
   control?: boolean;
   /** M61: an @mention in this thread (`pane-7`, `session-2`). */
@@ -114,6 +115,9 @@ sw.addEventListener("push", (event: PushEvent) => {
   const reason = msg.reason && Array.isArray(msg.reason.actions) ? msg.reason : null;
   // A gate (M34): Approve, and Expire for a chant gate (#310), else Dismiss.
   const gate = reason && reason.gate && typeof reason.gate.id === "string" && reason.actions.includes("allow") ? reason.gate : null;
+  // A decision point's question (#621): a button for each choice.
+  const choices = reason?.gate && typeof reason.gate.id === "string" && reason.actions.includes("answer") ? reason.gate.choices : undefined;
+  const point = Array.isArray(choices) ? choices : null;
   const actions = approve
     ? [
         { action: "approve", title: "Allow" },
@@ -121,6 +125,8 @@ sw.addEventListener("push", (event: PushEvent) => {
       ]
     : ask
       ? ask.options.slice(0, 2).map((o, i) => ({ action: `answer-${i}`, title: o }))
+      : point
+        ? point.slice(0, 2).map((c, i) => ({ action: `point-${i}`, title: c.label.charAt(0).toUpperCase() + c.label.slice(1) }))
       : gate && reason
         ? [
             { action: "gate-approve", title: "Approve" },
@@ -140,7 +146,7 @@ sw.addEventListener("push", (event: PushEvent) => {
       tag: msg.tag || "arugula",
       renotify: true,
       icon: "/icon.svg",
-      requireInteraction: !!(approve || ask || gate),
+      requireInteraction: !!(approve || ask || gate || point),
       actions,
       data: { pane: msg.pane, daemon: msg.daemon, thread: msg.thread, approve, ask, reason, control: msg.control === true },
     } as NotificationOptions),
@@ -207,6 +213,19 @@ sw.addEventListener("notificationclick", (event: ClickEvent) => {
     event.waitUntil(
       (async () => {
         if (!(await act(data.daemon, { action, pane, id: gate.id }))) await failed(pane, data.daemon, gate.title || "");
+      })(),
+    );
+    return;
+  }
+  // A decision point's question (#621), answered with the choice picked,
+  // by its key, so a question asked since isn't the one answered.
+  const chose = /^point-(\d)$/.exec(event.action || "");
+  const choice = chose && gate?.choices?.[Number(chose[1])];
+  if (choice && pane && gate) {
+    event.waitUntil(
+      (async () => {
+        const body = { action: "answer", pane, id: gate.id, content: { answer: choice.value } } satisfies ActRequest;
+        if (!(await act(data.daemon, body))) await failed(pane, data.daemon, gate.title || choice.label);
       })(),
     );
     return;

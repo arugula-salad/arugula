@@ -545,9 +545,23 @@ async fn act_one(
         .await
         .flatten()
         .ok_or_else(|| format!("%{pane} doesn't want anything (it was answered, or dismissed)"))?;
-    // A gate (M34): approve it, or turn it down (#310), through the block
-    // that read it.
+    // A gate: approve it, or turn it down (#310), through the block that
+    // read it. A decision point's question (#621) is answered instead.
     if let Some(g) = reason.gate.filter(|_| reason.kind == arugula_proto::ReasonKind::Gate) {
+        if matches!(g.source, arugula_proto::GateSource::Point { .. }) {
+            let answer = req.content.as_ref().and_then(|c| c.get("answer")).filter(|a| a.is_string() || a.is_boolean());
+            let Some(answer) = answer.filter(|_| req.action == Action::Answer) else {
+                return Err(format!(
+                    "%{pane} asks a decision: answer it (content {{\"answer\": one of its choices}}) or dismiss it"
+                ));
+            };
+            if req.id.as_ref().is_some_and(|id| *id != g.key()) {
+                return Err(format!("%{pane} now asks another decision (that one was answered)"));
+            }
+            let b = app.mux.api(|r| Api::Block(pane, r)).await.flatten().ok_or_else(|| format!("no block %{pane}"))?;
+            let args = serde_json::json!({ "key": g.key(), "answer": answer });
+            return block_call(app, pane, &b, "answer", args, by).await.map(|_| ());
+        }
         let expire = req.action == Action::Expire && reason.actions.contains(&Action::Expire);
         if req.action != Action::Allow && !expire {
             let or_expire = if reason.actions.contains(&Action::Expire) { ", expire it" } else { "" };
@@ -964,11 +978,20 @@ async fn block_call(
         o.insert("by_who".into(), by.as_ref().map_or("owner", |d| d.who.as_str()).into());
     }
     let out = b.call_by(method, args.clone(), name).await?;
-    if (gate && matches!(method, "approve" | "expire")) || (forge && method == "review" && out.get("gate").is_some()) {
+    // A workspace's decision point (#621) is answered, as a gate is approved.
+    let point = b.kind() == arugula_proto::BlockType::Workspace && method == "answer";
+    if (gate && matches!(method, "approve" | "expire"))
+        || point
+        || (forge && method == "review" && out.get("gate").is_some())
+    {
         // Its card closes saying who, and the audit log says so.
-        let how = if method == "expire" { "expired" } else { "approved" };
+        let how = match method {
+            "expire" => "expired".to_owned(),
+            "answer" => format!("answered {}", out["label"].as_str().unwrap_or_default()),
+            _ => "approved".to_owned(),
+        };
         if let (Some(by), Ok(g)) = (by, serde_json::from_value::<arugula_proto::Gate>(out["gate"].clone())) {
-            app.mux.send(Cmd::Api(Api::Answered(pane, by, g.key(), how.into(), g.headline())));
+            app.mux.send(Cmd::Api(Api::Answered(pane, by, g.key(), how, g.headline())));
         }
         return Ok(out);
     }

@@ -22,6 +22,7 @@ import { Field, type FieldHooks, type FieldPane, type HistoryRun, type SwarmScen
 import { FollowView, appName } from "./follow";
 import { DiffCard } from "../ui/diff-card";
 import { GateWhy } from "../ui/gate-why";
+import { PointChoices, pointOf, proposalLine } from "../ui/point-choices";
 import { runnerLabel, runners, subscribeRunners, watchRunners } from "../runners";
 import { activityOf, bundleOf, cardTitle, followable, GROUPINGS, groupOf, isPresence, kindOf, KINDS, REASON_COL, reasonOf, type GroupBy } from "./model";
 
@@ -729,6 +730,7 @@ function Card({
   const ids = b.panes.slice(0, 4).map((p) => `%${p.id}`).join(" ") + (n > 4 ? " …" : "");
   const project = first.info.project?.name ?? groupOf(first, "project");
   const ask = n === 1 ? first.info.ask : null;
+  const point = r.kind === "gate" ? pointOf(r.gate) : null;
   const run = async (action: Action, extra: Record<string, unknown> = {}) => {
     setBusy(true);
     const e = await act(fleet, b.panes, action, extra);
@@ -764,6 +766,7 @@ function Card({
         </div>
       )}
       {r.kind === "gate" && r.gate && <GateWhy gate={r.gate} />}
+      {point && proposalLine(point) && <div class="dim gate-why">{proposalLine(point)}</div>}
       {diff ? (
         <DiffCard
           key={diff.id}
@@ -779,6 +782,16 @@ function Card({
         <p class="ask-viewer">{VIEWER_NOTE}</p>
       ) : ask?.kind === "permission" ? (
         <PermissionButtons ask={ask} act={(action, extra) => void run(action, { ...extra, id: ask.id })} />
+      ) : point ? (
+        // #621: answered with one of its choices; a bundle is opened.
+        <div class="ca" data-point={point.id}>
+          {n === 1 && <PointChoices point={point} busy={busy} answer={(answer) => void run("answer", { content: { answer } })} />}
+          {r.actions.includes("dismiss") && (
+            <button class="ghost" disabled={busy} onClick={() => void run("dismiss")}>
+              {all("Dismiss")}
+            </button>
+          )}
+        </div>
       ) : ask && r.ask?.what === "question" ? (
         <AskCard
           ask={ask}

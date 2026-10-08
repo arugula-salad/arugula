@@ -432,6 +432,12 @@ rest stay, each with a comment at the spot:
   them into a harness's settings would allow those tools outside Arugula.
 - Agent questions stay in Arugula, not chant `points` (ws-091): one person
   answering a hook can't meet a points record's rules.
+- A workspace's decision points are answered on the swarm's rail, as its
+  gates are approved (#621): a question `points --open` lists is a `Gate`
+  with a `point` source, answered by `chant workspace points answer` with
+  the block's principals and `--relayed-by`. An op gate that asks a point
+  (chant#3170) is that question, never a `chant approve`. This is the
+  approvals inbox behold#472 asked for, so behold doesn't build one.
 - A member's agent sessions are read from the declaration's file, `.json`
   or `.jsonc` (its comments and trailing commas taken out), since no read
   prints which session is bound to which member (#590), until `ls --json`

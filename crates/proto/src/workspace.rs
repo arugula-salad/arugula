@@ -181,6 +181,17 @@ pub struct GateWhy {
     pub last_release: Option<GateRelease>,
 }
 
+/// One answer a decision point's question takes (#621), from `points
+/// --open`: what `points answer --answer` is given, how to show it (`yes`
+/// and `no` for a yes-or-no point) and what the points file says it means.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct PointChoice {
+    pub value: String,
+    pub label: String,
+    pub means: Option<String>,
+}
+
 /// A release, from `status`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]

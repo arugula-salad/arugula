@@ -20,6 +20,7 @@ import { openGettingStarted } from "./welcome";
 import { openPalette } from "./palette";
 import { InLabs } from "./in-labs";
 import { GateWhy } from "./gate-why";
+import { PointChoices, pointOf } from "./point-choices";
 
 export function PhoneHeader({ client }: { client: Client }) {
   const [open, setOpen] = useState(false);
@@ -88,6 +89,8 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
               const may = client.role(client.sessionOfTab(client.tabOfPane(p.id)?.id ?? -1) ?? null) !== "viewer";
               const rerun = p.reason?.actions.includes("rerun") && may;
               const gate = p.reason?.kind === "gate" ? p.reason.gate : undefined;
+              // #621: a decision point's question is answered, not approved.
+              const point = pointOf(gate);
               return (
                 <div key={p.id} class="sheet-row" data-wants={p.id}>
                   <button class="sheet-item" onClick={act(() => client.setActive(p.id))}>
@@ -102,7 +105,14 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
                       Rerun
                     </button>
                   )}
-                  {gate && may && (
+                  {gate && point && may && (
+                    <PointChoices
+                      point={point}
+                      cls="sheet-act"
+                      answer={(answer) => act(() => void client.act({ action: "answer", pane: p.id, id: gateKey(gate), content: { answer } }))()}
+                    />
+                  )}
+                  {gate && !point && may && (
                     <button class="sheet-act" data-approve-gate={p.id} onClick={act(() => void client.act({ action: "allow", pane: p.id, id: gateKey(gate) }))}>
                       Approve
                     </button>

@@ -12,6 +12,12 @@
 //! editor's (#302), and a viewer can't. With `.signed`, the gate is bound
 //! to a plan and in `identity.gates`; with `.newer`, the chant is one that
 //! takes `--relayed-by`.
+//!
+//! With `.points`, two of the workspace's decision points have questions
+//! open for people (#621: the real `points --open` of e2e's toy, in
+//! `src/labs/workspace/fixtures`); `points answer` writes where it ran and
+//! its arguments to `approvals` and closes them, and refuses `large` for
+//! want of a quorum.
 
 // Over the daemon's Unix socket; Windows gets its named pipe in M56 (#219).
 #![cfg(unix)]
@@ -58,6 +64,7 @@ fn daemon_without_chant(scratch: &Scratch) -> Daemon {
 fn workspace(d: &Daemon, name: &str, gated: bool) -> PathBuf {
     let ws = d.sessions.join(name);
     let fixtures = format!("{}/tests/fixtures/chant", env!("CARGO_MANIFEST_DIR"));
+    let points = format!("{}/src/labs/workspace/fixtures/points-open.json", env!("CARGO_MANIFEST_DIR"));
     std::fs::create_dir_all(ws.join("node_modules/.bin")).unwrap();
     for m in ["app", "delivery", "design-client", "design"] {
         std::fs::create_dir_all(ws.join(m)).unwrap();
@@ -71,6 +78,12 @@ fn workspace(d: &Daemon, name: &str, gated: bool) -> PathBuf {
         format!(
             r#"#!/bin/sh
 ws='{ws}'; f='{fixtures}'
+case "$1 $2 $3" in
+  "workspace points answer")
+    case "$*" in *"--answer large"*) echo '{{"verb":"answer","error":{{"code":"quorum-not-met","message":"slice-tier needs 2 people to answer, and 1 counts"}}}}'; exit 1 ;; esac
+    echo "$PWD $*" >> "$ws/approvals"; rm -f "$ws/.points"; echo '{{"verb":"answer","question":{{"title":"answered"}}}}'; exit 0 ;;
+  "workspace points --open") if [ -e "$ws/.points" ]; then cat '{points}'; else sed 's/"open": true/"open": false/' '{points}'; fi; exit 0 ;;
+esac
 case "$1 $2" in
   "workspace ls") if [ -e "$ws/.undeclared" ]; then cat "$f/ls-missing.json"; exit 1; fi
     if [ -e "$ws/.newer" ]; then sed 's/"0.87.0"/"0.104.0"/' "$f/ls.json"; else cat "$f/ls.json"; fi ;;
@@ -81,7 +94,8 @@ case "$1 $2" in
   *) echo "the stand-in doesn't know $*" >&2; exit 2 ;;
 esac
 "#,
-            ws = ws.display()
+            ws = ws.display(),
+            points = points,
         ),
     )
     .unwrap();
@@ -444,4 +458,84 @@ fn expire_turns_a_gate_down_as_approve_would_be_logged() {
     let (status, body) = d.raw("POST", &call, Some(json!({})));
     assert_eq!(status, 400, "{body}");
     assert!(body.contains("no gate is waiting"), "{body}");
+}
+
+/// #621: a decision point's open question is a card on the rail, answered
+/// with one of its choices through `chant workspace points answer`, as the
+/// person who answers; a viewer can't, and an answer that's no choice, or
+/// for a question answered since, isn't sent.
+#[test]
+fn a_decision_point_is_answered_from_the_rail() {
+    let d = daemon();
+    let ws = workspace(&d, "points", false);
+    std::fs::write(ws.join(".points"), "").unwrap();
+    let block = open(&d, &ws);
+    let st = read(&d, block);
+    assert_eq!(st["gates"].as_array().map(Vec::len), Some(2), "{st}");
+    d.wait_for("attention", || info(&d, block)["attention"] == "needs_input");
+    let r = &info(&d, block)["reason"];
+    assert_eq!(r["kind"], "gate", "{r}");
+    assert_eq!(r["actions"], json!(["answer", "dismiss"]));
+    assert_eq!(r["headline"], "May this release skip the human gate (+1 more)");
+    assert_eq!(r["bundle"], format!("gate:{}", ws.display()));
+    let src = &r["gate"]["source"];
+    assert_eq!((src["kind"].as_str(), src["id"].as_str()), (Some("point"), Some("ship-skip-c709bdd7cdca")));
+    assert_eq!(src["choices"][0], json!({ "value": "true", "label": "yes", "means": "An agent may pass the gate." }));
+    let key = "/ship-skip/ship-skip-c709bdd7cdca";
+
+    // A viewer sees it and can't answer it.
+    share(&d, block, "viewer");
+    let act = json!({ "action": "answer", "pane": block, "id": key, "content": { "answer": "true" } });
+    let (status, body) = as_friend(&d, "POST", "/api/attention/act", act.clone());
+    assert_eq!(status, 403, "{body}");
+    // Approving isn't answering, an answer needs a choice, and a question
+    // answered since isn't this one.
+    let no = |body: Value| {
+        let (status, said) = d.raw("POST", "/api/attention/act", Some(body));
+        assert_eq!(status, 409, "{said}");
+        said
+    };
+    assert!(no(json!({ "action": "allow", "pane": block })).contains("asks a decision"));
+    assert!(no(json!({ "action": "answer", "pane": block, "content": {} })).contains("asks a decision"));
+    let other = json!({ "action": "answer", "pane": block, "id": "/x/y", "content": { "answer": "true" } });
+    assert!(no(other).contains("answered"));
+    let (status, body) =
+        d.raw("POST", &format!("/api/blocks/{block}/call/answer"), Some(json!({ "key": key, "answer": "maybe" })));
+    assert_eq!(status, 400, "{body}");
+    assert!(body.contains("isn't one of its answers (yes, no)"), "{body}");
+    let (status, body) = d.raw("POST", &format!("/api/blocks/{block}/call/approve"), Some(json!({ "key": key })));
+    assert_eq!(status, 400, "{body}");
+    assert_eq!(approvals(&ws), "", "nothing reached chant");
+
+    // The owner answers yes: in the root, by their Arugula name.
+    let r = d.post("/api/attention/act", act);
+    assert_eq!(r["results"][0]["ok"], true, "{r}");
+    let said = approvals(&ws);
+    assert_eq!(
+        said.trim_end(),
+        format!("{} workspace points answer ship-skip-c709bdd7cdca --answer true --by {OWNER}", ws.display())
+    );
+    d.wait_for("attention to clear", || info(&d, block)["attention"] == "idle");
+    let i = info(&d, block);
+    assert_eq!((i["answered"]["how"].as_str(), i["answered"]["name"].as_str()), (Some("answered yes"), Some(OWNER)));
+    let hist = d.get(&format!("/api/history?pane={block}"));
+    assert!(
+        hist.as_array()
+            .unwrap()
+            .iter()
+            .any(|h| h["text"] == "answered May this release skip the human gate: yes" && h["by"] == OWNER),
+        "{hist}"
+    );
+
+    // chant's refusal comes back as it said it, and the question waits.
+    std::fs::write(ws.join(".points"), "").unwrap();
+    d.call(block, "refresh", json!({}));
+    let (status, body) = d.raw(
+        "POST",
+        &format!("/api/blocks/{block}/call/answer"),
+        Some(json!({ "key": "/slice-tier/slice-tier-577f5102863f", "answer": "large" })),
+    );
+    assert_eq!(status, 400, "{body}");
+    assert!(body.contains("slice-tier needs 2 people to answer, and 1 counts"), "{body}");
+    assert_eq!(d.state(block)["gates"].as_array().map(Vec::len), Some(2));
 }

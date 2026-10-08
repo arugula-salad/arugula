@@ -1,0 +1,187 @@
+{
+  "$schema": "https://intentius.io/chant/schemas/workspace/points/v1/points.schema.json",
+  "contract": 1,
+  "chant": "0.108.1",
+  "at": null,
+  "workspace": {
+    "name": "toy",
+    "root": "."
+  },
+  "open": true,
+  "sources": [
+    {
+      "kind": "answers/answer.kind.mjs",
+      "points": "decisions/points.json",
+      "reason": null
+    }
+  ],
+  "points": [
+    {
+      "name": "ship-skip",
+      "title": "May this release skip the human gate",
+      "kind": "answers/answer.kind.mjs",
+      "file": "decisions/points.json",
+      "version": "3e2a6664f3e4d1e6d1416f3c32d6188f09da54447e6bca2a2bc907d95fff4472",
+      "questionType": "noul",
+      "instructions": "May this release pass the ship gate without a person approving it?",
+      "candidates": [
+        true,
+        false
+      ],
+      "criteria": {
+        "true": "An agent may pass the gate.",
+        "false": "A person approves the release at the gate."
+      },
+      "adhoc": false,
+      "inputs": [
+        {
+          "name": "release.units",
+          "output": "release",
+          "description": "work items the release ships"
+        }
+      ],
+      "deciders": [
+        {
+          "kind": "quorum",
+          "count": 1
+        }
+      ],
+      "quorum": {
+        "count": 1
+      }
+    },
+    {
+      "name": "slice-tier",
+      "title": "Which builder tier builds this work item",
+      "kind": "answers/answer.kind.mjs",
+      "file": "decisions/points.json",
+      "version": "c49de2aa39913db12596ff20f0a1d6c428c8069cfe1c669f04c76574b37d1e2b",
+      "questionType": "choice",
+      "instructions": "Pick the smallest builder tier.",
+      "candidates": [
+        "small",
+        "medium",
+        "large"
+      ],
+      "criteria": {
+        "small": "A small builder.",
+        "medium": "A mid-size builder.",
+        "large": "The largest builder."
+      },
+      "adhoc": false,
+      "inputs": [
+        {
+          "name": "work-item.words",
+          "output": "work-item",
+          "description": "words in the body"
+        }
+      ],
+      "deciders": [
+        {
+          "kind": "quorum",
+          "count": 1
+        }
+      ],
+      "quorum": {
+        "count": 1
+      }
+    }
+  ],
+  "questions": [
+    {
+      "id": "ship-skip-c709bdd7cdca",
+      "path": "answers/ship-skip-c709bdd7cdca.md",
+      "point": "ship-skip",
+      "title": "May this release skip the human gate: open for people",
+      "subject": null,
+      "state": "escalated",
+      "open": true,
+      "questionType": "noul",
+      "candidates": [
+        true,
+        false
+      ],
+      "inputs": {
+        "release.units": [
+          "W-001"
+        ]
+      },
+      "inputsHash": "c709bdd7cdca9e6a9ff912aa0f2b3684fa401f088ffe62ea624db17eceb98a1a",
+      "pointVersion": "3e2a6664f3e4d1e6d1416f3c32d6188f09da54447e6bca2a2bc907d95fff4472",
+      "current": true,
+      "answer": null,
+      "decider": {
+        "kind": "quorum",
+        "count": 1
+      },
+      "probabilities": null,
+      "confidence": null,
+      "threshold": null,
+      "reason": null,
+      "model": null,
+      "escalations": [],
+      "answeredBy": [],
+      "askedOn": "2026-10-08",
+      "answeredOn": null,
+      "note": null,
+      "relayedBy": null,
+      "retractions": [],
+      "asked": null,
+      "askedBy": null,
+      "ledger": null,
+      "valid": true,
+      "warnings": []
+    },
+    {
+      "id": "slice-tier-577f5102863f",
+      "path": "answers/slice-tier-577f5102863f.md",
+      "point": "slice-tier",
+      "title": "Which builder tier builds this work item (W-001): open for people",
+      "subject": "W-001",
+      "state": "escalated",
+      "open": true,
+      "questionType": "choice",
+      "candidates": [
+        "small",
+        "medium",
+        "large"
+      ],
+      "inputs": {
+        "work-item.words": 300
+      },
+      "inputsHash": "577f5102863f2e4a427d7c87351ae05833f98dfd6ed8e15f412917608da9aa78",
+      "pointVersion": "c49de2aa39913db12596ff20f0a1d6c428c8069cfe1c669f04c76574b37d1e2b",
+      "current": true,
+      "answer": null,
+      "decider": {
+        "kind": "quorum",
+        "count": 1
+      },
+      "probabilities": null,
+      "confidence": null,
+      "threshold": null,
+      "reason": null,
+      "model": null,
+      "escalations": [],
+      "answeredBy": [],
+      "askedOn": "2026-10-08",
+      "answeredOn": null,
+      "note": null,
+      "relayedBy": null,
+      "retractions": [],
+      "asked": null,
+      "askedBy": null,
+      "ledger": null,
+      "valid": true,
+      "warnings": []
+    }
+  ],
+  "summary": {
+    "points": 2,
+    "questions": 2,
+    "open": 2,
+    "escalated": 2,
+    "proposed": 0,
+    "answered": 0
+  }
+}

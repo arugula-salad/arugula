@@ -73,6 +73,16 @@
 //! DECISIONS.md. `hud {url}` keeps hud's
 //! address, where a proposed decision is reviewed.
 //!
+//! **Decision points (#621).** The full read lists the questions open for
+//! people (`points --open`, chant 0.91 and newer), and each is a gate with
+//! a `point` source on the same attention: `answer {key, answer}` runs
+//! `chant workspace points answer <id> --answer <value> --by <principal>`
+//! in the root, with the same principals and `--relayed-by` as `approve`,
+//! and chant writes the answer record. An op gate that asks a point
+//! (chant#3170) is that question, answered the same way, not with `chant
+//! approve`. An agent's question to its people stays Arugula's (ws-091):
+//! these are only the workspace's points records.
+//!
 //! `expire` (same arguments, same people, logged the same way) turns a gate
 //! down (#310): `chant approve <op> <gate> --expire` clears its pending fact
 //! without approving it, so the next run stops there again.
@@ -94,9 +104,10 @@
 //! it through the block's site ([`graph`]); a settled read tells behold.
 //!
 //! Methods: `refresh`, `approve {member, op, gate}` (or `{key}`; the first
-//! gate if none), `expire` (the same), `member {name}` (its directory, for
-//! opening panes there), `env {name}`, `principals {actor, principals}`,
-//! `why {member, open}`, `hud {url}`, `graph`, `state`.
+//! gate if none), `expire` (the same), `answer {key, answer}`, `member
+//! {name}` (its directory, for opening panes there), `env {name}`,
+//! `principals {actor, principals}`, `why {member, open}`, `hud {url}`,
+//! `graph`, `state`.
 
 mod graph;
 mod model;
@@ -385,7 +396,7 @@ impl Workspace {
         st.env = env;
         st.updated_ms = now_ms();
         for g in &mut st.gates {
-            if let GateSource::Chant { machine, .. } = &mut g.source {
+            if let GateSource::Chant { machine, .. } | GateSource::Point { machine, .. } = &mut g.source {
                 machine.clone_from(&self.ctx.sprite);
             }
         }
@@ -662,6 +673,9 @@ impl Workspace {
     /// same people may, and it's logged the same way.
     async fn approve(&self, args: Value, by: Option<String>, expire: bool) -> Result<Value, String> {
         let gate = self.find_gate(&args)?;
+        if matches!(gate.source, GateSource::Point { .. }) {
+            return Err(format!("{} is a decision point's question: answer it with one of its choices", gate.key()));
+        }
         let (chant, version) = {
             let st = self.state.lock().unwrap();
             (st.chant.clone().ok_or(model::NO_CHANT)?, st.version.clone())
@@ -692,6 +706,7 @@ impl Workspace {
                 GateSource::Chant { dir, .. } => dir,
                 GateSource::Hud { box_url, .. } => box_url,
                 GateSource::Forge { url, .. } => url,
+                GateSource::Point { root, .. } => root,
             };
             let text = format!("{done} {}: {} at gate {}", gate.member, gate.op, gate.gate);
             let _ = l.record(
@@ -709,6 +724,55 @@ impl Workspace {
         let said = result?;
         self.load().await;
         Ok(json!({ done: gate.key(), "gate": gate, "by": by, "said": said }))
+    }
+
+    /// Answer the decision point's question `args` names (`{key, answer}`)
+    /// with one of its choices (#621): `chant workspace points answer`, as
+    /// the person who asked, recorded like an approval.
+    async fn answer(&self, args: Value, by: Option<String>) -> Result<Value, String> {
+        let gate = self.find_gate(&args)?;
+        let GateSource::Point { choices, .. } = &gate.source else {
+            return Err(format!("{} waits at a gate: approve it, or expire it", gate.key()));
+        };
+        let value = match &args["answer"] {
+            Value::String(v) => v.clone(),
+            Value::Bool(b) => b.to_string(),
+            _ => return Err("answer needs {\"key\", \"answer\"}: one of its choices".into()),
+        };
+        let label = choices.iter().find(|c| c.value == value).map_or(value.clone(), |c| c.label.clone());
+        let (chant, version) = {
+            let st = self.state.lock().unwrap();
+            (st.chant.clone().ok_or(model::NO_CHANT)?, st.version.clone())
+        };
+        let runner = self.runner().await?;
+        let via = crate::gate::Via::Chant {
+            runner: &runner,
+            chant: &chant,
+            by: self.chant_by(&args, by.as_deref(), version),
+        };
+        let result = crate::gate::answer(&gate, &value, &via).await;
+        let (ok, said) = match &result {
+            Ok(s) | Err(s) => (result.is_ok(), s.clone()),
+        };
+        log(&self.ctx, &json!({ "e": "answer", "key": gate.key(), "answer": value, "by": by, "ok": ok, "said": said }));
+        if let Ok(mut l) = self.ctx.log() {
+            let at = l.end();
+            let text = format!("answered {}: {label}", gate.headline());
+            let _ = l.record(
+                at,
+                Event::Command {
+                    at_ms: now_ms(),
+                    text: Some(text),
+                    cwd: Some(self.config.root.clone()),
+                    by: by.clone(),
+                    kind: HistoryKind::Answer,
+                },
+            );
+            let _ = l.record(at, Event::End { at_ms: now_ms(), exit: Some(if ok { 0 } else { 1 }) });
+        }
+        let said = result?;
+        self.load().await;
+        Ok(json!({ "answered": gate.key(), "answer": value, "label": label, "gate": gate, "by": by, "said": said }))
     }
 }
 
@@ -771,7 +835,9 @@ fn wanted(st: &model::State, why: &Why, key: Option<&str>, drawn: bool) -> Wante
             out.members.push((name.clone(), dir.unwrap_or_else(|| ".".into())));
         }
     };
-    for g in st.gates.iter().filter(|g| matches!(g.source, GateSource::Chant { .. })) {
+    // A gate in a member (`status`'s, which carry a `why`), not a decision
+    // point's question asked of the workspace.
+    for g in st.gates.iter().filter(|g| g.why.is_some()) {
         let fresh = match why.intents.get(&g.member) {
             Some(k) if drawn => k.print.as_deref() == key,
             Some(k) => k.gates.contains(&g.key()),
@@ -994,6 +1060,10 @@ impl Block for Workspace {
             "approve" | "expire" => {
                 let (by, expire) = (by.map(str::to_owned), method == "expire");
                 Box::pin(async move { me.ok_or("closed")?.approve(args, by, expire).await })
+            }
+            "answer" => {
+                let by = by.map(str::to_owned);
+                Box::pin(async move { me.ok_or("closed")?.answer(args, by).await })
             }
             "env" => Box::pin(async move {
                 let me = me.ok_or("closed")?;

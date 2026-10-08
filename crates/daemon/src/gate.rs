@@ -2,7 +2,9 @@
 //! the swarm's rail, push and the phone show, and approving one through
 //! where it came from. The workspace block reads chant's; a studio app
 //! block (M35) reads hud's; a forge block (M36) raises one for a review
-//! asked of you. Neither the reason nor the card knows which.
+//! asked of you. Neither the reason nor the card knows which. A workspace
+//! decision point's open question (#621) rides the same way, answered with
+//! one of its choices rather than approved.
 
 use arugula_proto::{Action, Gate, GateSource, Reason, ReasonKind};
 
@@ -14,11 +16,13 @@ use crate::store::now_ms;
 /// how many more, bundled by its workspace. `allow` approves it; `expire`
 /// turns a chant gate down (#310). hud has no route for that, and a review
 /// asked of you is turned down on its forge block (request changes), so
-/// theirs don't offer it.
+/// theirs don't offer it. A decision point's question is answered
+/// (`answer`, with one of its choices).
 pub fn reason(gates: &[Gate]) -> Option<Reason> {
     let g = gates.first()?;
     let actions = match g.source {
         GateSource::Chant { .. } => vec![Action::Allow, Action::Expire, Action::Dismiss],
+        GateSource::Point { .. } => vec![Action::Answer, Action::Dismiss],
         _ => vec![Action::Allow, Action::Dismiss],
     };
     let more = if gates.len() > 1 { format!(" (+{} more)", gates.len() - 1) } else { String::new() };
@@ -43,10 +47,13 @@ pub fn reason(gates: &[Gate]) -> Option<Reason> {
 pub async fn expire(gate: &Gate, via: &Via<'_>) -> Result<String, String> {
     match (&gate.source, via) {
         (GateSource::Chant { dir, .. }, Via::Chant { runner, chant, .. }) => {
-            run_chant(runner, chant, dir, expire_args(gate)).await
+            let mut args = vec!["approve".to_owned()];
+            args.extend(expire_args(gate));
+            run_chant(runner, chant, dir, args).await
         }
         (GateSource::Hud { .. }, _) => Err("hud has no way to expire a gate: dismiss it here".into()),
         (GateSource::Forge { .. }, _) => Err("a review is turned down on its forge block (request changes)".into()),
+        (GateSource::Point { .. }, _) => Err(POINT_NOT_GATE.into()),
         (GateSource::Chant { .. }, Via::Hud { .. }) => Err("this gate isn't this block's to expire".into()),
     }
 }
@@ -72,7 +79,8 @@ pub async fn approve(gate: &Gate, approver: Option<&str>, via: &Via<'_>) -> Resu
             // Status's own `chant approve` line (#302), as the principal
             // chant records, in the member's directory: chant finds the
             // member's ledger from there.
-            let args = chant_args(gate, by)?;
+            let mut args = vec!["approve".to_owned()];
+            args.extend(chant_args(gate, by)?);
             run_chant(runner, chant, dir, args).await
         }
         (GateSource::Hud { .. }, Via::Hud { session, follower }) => {
@@ -90,6 +98,7 @@ pub async fn approve(gate: &Gate, approver: Option<&str>, via: &Via<'_>) -> Resu
         // M36: a review asked of you is approved as a review, by the forge
         // block itself (`act` calls its `review` method).
         (GateSource::Forge { .. }, _) => Err("a review is approved through its forge block".into()),
+        (GateSource::Point { .. }, _) => Err(POINT_NOT_GATE.into()),
         (GateSource::Chant { .. }, Via::Hud { .. }) | (GateSource::Hud { .. }, Via::Chant { .. }) => {
             Err("this gate isn't this block's to approve".into())
         }
@@ -97,22 +106,91 @@ pub async fn approve(gate: &Gate, approver: Option<&str>, via: &Via<'_>) -> Resu
 }
 
 #[cfg(feature = "labs")]
-/// `chant approve <args>` in `dir`: what it said, or why it failed.
+/// Why a decision point's question isn't approved or expired.
+const POINT_NOT_GATE: &str = "a decision point is answered, with one of its choices: it isn't approved or expired";
+
+#[cfg(feature = "labs")]
+/// Answer a decision point's open question (#621) with `value`, one of its
+/// choices: `chant workspace points answer <id> --answer <value> --by
+/// <principal>` in the workspace's root, as `by` (`--relayed-by` the owner
+/// when someone else answers). chant counts the answer toward the point's
+/// quorum and writes the answer record. What chant said, on success.
+pub async fn answer(gate: &Gate, value: &str, via: &Via<'_>) -> Result<String, String> {
+    match (&gate.source, via) {
+        (GateSource::Point { root, .. }, Via::Chant { runner, chant, by }) => {
+            let args = answer_args(gate, value, by)?;
+            let said = run_chant(runner, chant, root, args).await?;
+            Ok(points_said(&said).unwrap_or(said))
+        }
+        (GateSource::Point { .. }, Via::Hud { .. }) => Err("this question isn't this block's to answer".into()),
+        _ => Err("a gate is approved, not answered".into()),
+    }
+}
+
+#[cfg(feature = "labs")]
+/// The `chant` arguments that answer `gate`'s question with `value`, as
+/// `by`: a value its choices don't list (when they're known) isn't sent.
+pub fn answer_args(gate: &Gate, value: &str, by: &ChantBy) -> Result<Vec<String>, String> {
+    let GateSource::Point { id, choices, .. } = &gate.source else {
+        return Err("a gate is approved, not answered".into());
+    };
+    if !choices.is_empty() && !choices.iter().any(|c| c.value == value) {
+        let all: Vec<&str> = choices.iter().map(|c| c.label.as_str()).collect();
+        return Err(format!("{value:?} isn't one of its answers ({})", all.join(", ")));
+    }
+    let who = by.actor.clone().ok_or(
+        "chant records who answers, and nobody is named: set the owner's principal in the workspace block's principals",
+    )?;
+    let mut args = ["workspace", "points", "answer", id, "--answer", value, "--by", &who].map(str::to_owned).to_vec();
+    if let Some(r) = by.relayed_by.as_ref().filter(|_| by.relayed) {
+        args.extend(["--relayed-by".into(), r.clone()]);
+    }
+    Ok(args)
+}
+
+#[cfg(feature = "labs")]
+/// What `points answer` printed on success, as a line: the question's new
+/// title (`...: medium`). None when it isn't the points-write document.
+fn points_said(said: &str) -> Option<String> {
+    let doc: serde_json::Value = serde_json::from_str(said).ok()?;
+    doc["question"]["title"].as_str().map(str::to_owned)
+}
+
+#[cfg(feature = "labs")]
+/// `chant <args>` in `dir`: what it said, or why it failed.
 async fn run_chant(runner: &Runner, chant: &str, dir: &str, args: Vec<String>) -> Result<String, String> {
-    let script = r#"cd "$1" || exit 1; c=$2; shift 2; exec "$c" approve "$@" 2>&1"#;
+    let script = r#"cd "$1" || exit 1; c=$2; shift 2; exec "$c" "$@" 2>&1"#;
+    let what = args.iter().take_while(|a| !a.starts_with('-')).take(3).cloned().collect::<Vec<_>>().join(" ");
     let mut argv = vec![dir.to_owned(), chant.to_owned()];
     argv.extend(args);
     let (out, code) = runner.sh(script, &argv).await?;
     let said = plain(&String::from_utf8_lossy(&out));
-    match code {
-        Some(0) => Ok(said),
-        _ if said.is_empty() => Err(format!("chant approve failed (exit {})", code.unwrap_or(-1))),
-        // ws-080: the workspace wants a forge identity or a signer.
-        _ if said.contains("principal-unidentified") || said.contains("forge identity or signer") => Err(format!(
-            "{said}\n(name them for chant in the workspace block's principals, e.g. `arugula workspace --principal <name>=github:<login>`)"
-        )),
-        _ => Err(said),
+    if code == Some(0) {
+        return Ok(said);
     }
+    if said.is_empty() {
+        return Err(format!("chant {what} failed (exit {})", code.unwrap_or(-1)));
+    }
+    // `points answer` says why in its JSON document, with its code.
+    let (why, code) = points_error(&said).unwrap_or_else(|| (said.clone(), String::new()));
+    // ws-080: the workspace wants a forge identity or a signer.
+    if code == "principal-unidentified"
+        || said.contains("principal-unidentified")
+        || said.contains("forge identity or signer")
+    {
+        return Err(format!(
+            "{why}\n(name them for chant in the workspace block's principals, e.g. `arugula workspace --principal <name>=github:<login>`)"
+        ));
+    }
+    Err(why)
+}
+
+#[cfg(feature = "labs")]
+/// A points-write document's error: its message and code.
+fn points_error(said: &str) -> Option<(String, String)> {
+    let doc: serde_json::Value = serde_json::from_str(said).ok()?;
+    let e = &doc["error"];
+    Some((e["message"].as_str()?.to_owned(), e["code"].as_str().unwrap_or_default().to_owned()))
 }
 
 #[cfg(feature = "labs")]
@@ -293,6 +371,73 @@ mod tests {
         g.command = Some("chant approve other approve-ship --plan sha256:ab12".into());
         g.env = Some("prod".into());
         assert_eq!(chant_args(&g, &ChantBy::default()).unwrap(), ["ship", "approve-ship", "--env", "prod"]);
+    }
+
+    fn question() -> Gate {
+        use arugula_proto::workspace::PointChoice;
+        let choice = |v: &str| PointChoice { value: v.into(), label: v.into(), means: None };
+        Gate {
+            member: String::new(),
+            op: "slice-tier".into(),
+            gate: "slice-tier-1724faf3af79".into(),
+            env: None,
+            since: Some("2026-10-08T00:00:00Z".into()),
+            expires: None,
+            approvals: 0,
+            needed: 1,
+            command: None,
+            source: GateSource::Point {
+                root: "/w".into(),
+                machine: None,
+                id: "slice-tier-1724faf3af79".into(),
+                point: "slice-tier".into(),
+                question: "Which builder tier builds this work item (W-001)".into(),
+                choices: vec![choice("small"), choice("medium"), choice("large")],
+                proposed: None,
+            },
+            why: None,
+        }
+    }
+
+    #[test]
+    fn a_decision_points_question_is_answered() {
+        let r = reason(&[question()]).unwrap();
+        assert_eq!(r.kind, ReasonKind::Gate);
+        assert_eq!(r.actions, [Action::Answer, Action::Dismiss]);
+        assert_eq!(r.headline, "Which builder tier builds this work item (W-001)");
+        assert_eq!(r.bundle.as_deref(), Some("gate:/w"));
+        // With the workspace's gates on one card.
+        let both = reason(&[gate("delivery"), question()]).unwrap();
+        assert_eq!(both.headline, "delivery: ship waits at gate approve-ship (+1 more)");
+    }
+
+    #[cfg(feature = "labs")]
+    #[test]
+    fn answering_runs_points_answer() {
+        let q = question();
+        assert_eq!(
+            answer_args(&q, "medium", &by("github:alice")).unwrap(),
+            ["workspace", "points", "answer", "slice-tier-1724faf3af79", "--answer", "medium", "--by", "github:alice"]
+        );
+        // Someone else's, carried by the owner.
+        let relayed = ChantBy { relayed: true, relayed_by: Some("github:owner".into()), ..by("github:bob") };
+        assert_eq!(
+            answer_args(&q, "small", &relayed).unwrap()[6..],
+            ["--by", "github:bob", "--relayed-by", "github:owner"]
+        );
+        // Not one of its choices, or nobody to name.
+        assert!(answer_args(&q, "huge", &by("github:alice")).unwrap_err().contains("small, medium, large"));
+        assert!(answer_args(&q, "small", &ChantBy::default()).unwrap_err().contains("principals"));
+        // A gate isn't answered.
+        assert!(answer_args(&gate("delivery"), "yes", &by("github:alice")).is_err());
+        assert_eq!(
+            points_said(r#"{"verb":"answer","question":{"title":"Which builder tier (W-001): medium"}}"#).as_deref(),
+            Some("Which builder tier (W-001): medium")
+        );
+        assert_eq!(
+            points_error(r#"{"error":{"code":"quorum-not-met","message":"needs 2 people"}}"#),
+            Some(("needs 2 people".into(), "quorum-not-met".into()))
+        );
     }
 
     #[cfg(feature = "labs")]
