@@ -133,7 +133,9 @@ Arugula's own versions (in the manifests, the lock files and the
 THIRD_PARTY.md files), release notes and its copy of the client fixtures counts as its parent: that's
 the commit `just release` tags. `ARUGULA_RELEASE_SKIP_GREEN=1` skips that
 check; in the release workflows it comes from the repository variable of
-the same name.
+the same name. The variable stays unset. Only an org admin sets it, to 1,
+for one named release when CI can't go green (an outage, say), and unsets
+it once that release is out (lex00, 2026-10-08, #524).
 
 `just release` (`scripts/release bump`, #524, after chant's) reads main and
 the `ci/` tags from GitHub, whatever your remotes are, and works in a
