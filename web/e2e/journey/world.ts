@@ -97,8 +97,8 @@ export class Person {
   }
 
   /** What a person's shell has after the Mac app's first start: its
-   * PATH, with ~/.local/bin holding the `arugula` the app links there
-   * (only that one: #550). */
+   * PATH, with ~/.local/bin holding the `arugula` and `arugulad` the
+   * app links there (#550). */
   shellEnv(): NodeJS.ProcessEnv {
     return {
       HOME: this.home,
@@ -121,7 +121,7 @@ export class Person {
    * hosted one), and the CLI linked into ~/.local/bin (install_cli). */
   async installApp(machine: string) {
     mkdirSync(join(this.home, ".local/bin"), { recursive: true });
-    symlinkSync(`${BIN}/arugula`, join(this.home, ".local/bin/arugula"));
+    for (const b of ["arugula", "arugulad"]) symlinkSync(`${BIN}/${b}`, join(this.home, `.local/bin/${b}`));
     this.proc = this.world.spawn(
       `${BIN}/arugulad`,
       [

@@ -2,7 +2,7 @@
 // a team (Arugula, with Jake and his machine geek). Riley makes a second
 // team, DLex Corp, to work with Sam, and invites him. Sam tries what the
 // screens offer to bring his machine into it: the team page's copied
-// `arugulad join … --team` (not on his PATH from the app, #550; and the
+// `arugulad join … --team` (on his PATH from the app since #550, but the
 // machine is already in Arugula), then *In …* (which would take it out of
 // Arugula). What works is sharing the session with DLex Corp; Riley finds
 // it, the Swarm, and drives Sam's terminal. Sam, looking at Jake's geek,
@@ -18,7 +18,7 @@ import type { App } from "./journey/app";
 import { clickTerminal, onboarded, screenText } from "./journey/first-run";
 import { account, join, makeTeam, moveInto, show } from "./journey/ui";
 import { Journey, type Surface } from "./journey/record";
-import { BIN, World } from "./journey/world";
+import { World } from "./journey/world";
 import { closeContexts } from "./helpers";
 
 test.afterAll(closeContexts);
@@ -141,42 +141,12 @@ test("J2c: #551's evening: a machine already in one team, a friend's second team
       (p) => p.getByTitle("Hosts"),
       async () => {
         j.typed(joinCmd);
-        const r = sam.person.shell(joinCmd);
-        if (r.code !== 0) j.issue(`the copied command fails: "${r.out.split("\n")[0]}"`);
-      },
-    );
-
-    let fullPath = "";
-    await j.step(
-      {
-        id: "find-arugulad",
-        title: "Sam finds arugulad inside the app",
-        actor: "sam",
-        surface: "terminal",
-        prompt: null,
-        why: "nothing on screen says the app's arugulad is inside Arugula.app (#550)",
-      },
-      async () => {
-        // /Applications/Arugula.app/Contents/MacOS/arugulad, on a Mac.
-        fullPath = joinCmd.replace(/^arugulad/, `${BIN}/arugulad`);
-      },
-    );
-
-    await step(
-      "already-in",
-      "Sam runs it from the app: the machine is already in Arugula",
-      "sam",
-      "terminal",
-      at(sam),
-      (p) => p.getByTitle("Hosts"),
-      async () => {
-        j.typed(fullPath.replace(BIN, "/Applications/Arugula.app/Contents/MacOS"));
-        const r = sam.person.shell(`${fullPath} </dev/null`);
+        const r = sam.person.shell(`${joinCmd} </dev/null`);
         const said = r.out.split("\n").find((l) => /already|leave|team/i.test(l)) ?? r.out.split("\n")[0];
         if (r.code !== 0) {
           j.issue(`it says: "${said}"`);
           if (!/DLex Corp/.test(r.out)) j.issue("it names the team the machine is in, but not DLex Corp, the one asked for");
-          if (/arugulad leave/.test(r.out))
+          if (/arugulad leave/.test(r.out) && !/takes it off/.test(r.out))
             j.issue(
               "its advice (arugulad leave, then join) takes the machine off the cloud until a fresh approval; In … in Devices and machines… would move it",
             );
@@ -448,8 +418,5 @@ test("J2c: #551's evening: a machine already in one team, a friend's second team
   } finally {
     for (const a of [sam, jake, riley]) await a.quit().catch(() => {});
   }
-  await j.finish({
-    // Filed on #551 and #550.
-    "find-arugulad": "#550: the app's arugulad isn't on PATH, and nothing says where it is",
-  });
+  await j.finish();
 });
