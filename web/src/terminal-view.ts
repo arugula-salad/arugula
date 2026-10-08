@@ -412,8 +412,8 @@ export class TerminalView {
     return this.term.modes.applicationCursorKeysMode;
   }
 
-  /** Whether the program asked for mouse reports (then right-click and
-   * drags belong to it). */
+  /** Whether the program asked for mouse reports (then clicks and drags
+   * belong to it; a right-click only with Shift). */
   get mouseTracking(): boolean {
     return this.term.modes.mouseTrackingMode !== "none";
   }

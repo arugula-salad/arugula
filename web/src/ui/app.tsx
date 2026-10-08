@@ -561,9 +561,37 @@ function PaneSlot({
     });
   }, [entry, client, id]);
 
+  // A right-click is our menu's, also over a program that tracks the mouse
+  // (most agents do, and ignore the button). Shift sends it on to the
+  // program instead, as a plain right-click: xterm.js would report the
+  // Shift too, and no program binds that.
+  const rightDown = (e: MouseEvent) => {
+    if (e.button !== 2 || !e.isTrusted || !entry?.view.mouseTracking) return;
+    e.stopPropagation();
+    if (!e.shiftKey) return;
+    const plain = (type: string, from: MouseEvent) =>
+      new MouseEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        view: window,
+        button: from.button,
+        buttons: from.buttons,
+        clientX: from.clientX,
+        clientY: from.clientY,
+      });
+    e.target?.dispatchEvent(plain("mousedown", e));
+    const up = (u: MouseEvent) => {
+      if (u.button !== 2 || !u.isTrusted) return;
+      window.removeEventListener("mouseup", up, true);
+      u.stopPropagation();
+      (u.target ?? document).dispatchEvent(plain("mouseup", u));
+    };
+    window.addEventListener("mouseup", up, true);
+  };
+
   const menu = (e: MouseEvent) => {
-    // A program that tracks the mouse gets right-clicks; Shift reaches us.
-    if (entry?.view.mouseTracking && !e.shiftKey) return;
+    // Sent on to the program (above): no menu, ours or the browser's.
+    if (entry?.view.mouseTracking && e.shiftKey) return e.preventDefault();
     // A text box's own menu (an agent's composer): on a phone, its Paste
     // is the one that can paste an image (Chrome refuses ours).
     if (editable(e.target)) return;
@@ -581,6 +609,7 @@ function PaneSlot({
       data-pane={id}
       style={px(rect, cell)}
       onPointerDownCapture={() => client.setActive(id)}
+      onMouseDownCapture={rightDown}
       onContextMenu={menu}
     >
       <HostBadge client={client} id={id} />

@@ -43,6 +43,24 @@ test("a background tab that wants you gets a badge until you look", async ({ pag
   await expect(badge).toBeHidden();
 });
 
+test("a right-click is the pane's menu over a program that takes the mouse; Shift sends it on", async ({ page }) => {
+  await reset(page);
+  const pane = await active(page);
+  await type(page, pane, "printf 'mouse-on\\n\\e[?1000h\\e[?1006h'; cat -v\n");
+  await expect.poll(() => text(page, pane)).toContain("mouse-on\n");
+  await paneEl(page, pane).click({ button: "right", position: { x: 60, y: 60 } });
+  await expect(page.getByRole("menuitem", { name: "Split right" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  // cat -v shows the reports it was sent: none yet, then a plain right
+  // button's press and release.
+  expect(await text(page, pane)).not.toContain("^[[<");
+  await paneEl(page, pane).click({ button: "right", position: { x: 60, y: 60 }, modifiers: ["Shift"] });
+  await expect.poll(() => text(page, pane)).toMatch(/\^\[\[<2;\d+;\d+M\^\[\[<2;\d+;\d+m/);
+  await expect(page.getByRole("menu")).toHaveCount(0);
+  await page.keyboard.press("Control+c");
+  await type(page, pane, "printf '\\e[?1000l\\e[?1006l'\n");
+});
+
 test("shell integration can be switched off for a pane's new shells", async ({ page }) => {
   await reset(page);
   const pane = await active(page);
