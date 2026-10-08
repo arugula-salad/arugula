@@ -840,7 +840,7 @@ async fn labs_lists_all_the_tools_and_the_thread_text() {
     // With Labs built in, the `labs` file lists them.
     #[cfg(feature = "labs")]
     {
-        std::fs::write(d.state.join("labs"), "").unwrap();
+        arugula_testkit::labs(&d.state, true);
         let with = s.list_all_tools().await.unwrap();
         assert_eq!(with.len(), 20, "{:?}", names(&with));
         for name in ["read_thread", "post_thread"] {
@@ -860,7 +860,7 @@ async fn labs_lists_all_the_tools_and_the_thread_text() {
         assert!(instructions(&s2).contains("read_thread and post_thread"), "{}", instructions(&s2));
         s2.cancel().await.unwrap();
 
-        std::fs::remove_file(d.state.join("labs")).unwrap();
+        arugula_testkit::labs(&d.state, false);
         let without = s.list_all_tools().await.unwrap();
         assert_eq!(without.len(), 18);
         assert!(!kinds(&without, "show").contains(&"fountain".to_owned()));
@@ -868,13 +868,13 @@ async fn labs_lists_all_the_tools_and_the_thread_text() {
     // Without it, the file changes nothing: they aren't in this build.
     #[cfg(not(feature = "labs"))]
     {
-        std::fs::write(d.state.join("labs"), "").unwrap();
+        arugula_testkit::labs(&d.state, true);
         let with = s.list_all_tools().await.unwrap();
         assert_eq!(with.len(), 18, "{:?}", names(&with));
         assert!(!with.iter().any(|t| t.name == "read_thread" || t.name == "post_thread"));
         assert!(!kinds(&with, "show").contains(&"fountain".to_owned()));
         assert!(!instructions(&s).contains("read_thread"), "{}", instructions(&s));
-        std::fs::remove_file(d.state.join("labs")).unwrap();
+        arugula_testkit::labs(&d.state, false);
     }
     s.cancel().await.unwrap();
 }
@@ -1048,7 +1048,7 @@ async fn an_agents_mention_invites_nobody() {
         d.get("/api/panes").as_array().unwrap().iter().find(|p| p["id"] == elsewhere).unwrap()["session"].clone();
     d.post("/api/acl", json!({ "session": other, "principal": "tailnet:sam@example.com", "role": "viewer" }));
     // post_thread is listed on a machine with labs.
-    std::fs::write(d.state.join("labs"), "").unwrap();
+    arugula_testkit::labs(&d.state, true);
     let s = bridge(&d, Client::named("claude-code")).await;
     let tools = s.list_tools(None).await.unwrap();
     let post = tools.tools.iter().find(|t| t.name == "post_thread").unwrap();

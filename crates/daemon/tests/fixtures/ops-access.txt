@@ -1,4 +1,6 @@
 # name method path access drives credential
+flag.set PUT /api/flags/{name} Owner drives=false credential=false
+flags.list GET /api/flags Owner drives=false credential=false
 pane.close POST /api/panes/{id}/close Pane(Editor) drives=false credential=false
 panes.list GET /api/panes Owner drives=false credential=false
 shell_env.get GET /api/hosts/self/shell-env Owner drives=false credential=false

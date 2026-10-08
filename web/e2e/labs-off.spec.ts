@@ -1,13 +1,14 @@
 // The default, which is what a stranger gets: a machine without the `labs`
-// file shows no chat, threads or huddles, no Fountain, studio, VM or
+// flag shows no chat, threads or huddles, no Fountain, studio, VM or
 // sandbox, no "Invite over ssh", and one swarm theme. The rest of the suite
 // runs with labs on (e2e/labs.ts), so this is the only proof of the default,
 // and it is in the set that always runs (`E2E_SET=rest`).
 //
 // The daemon here is set up for every one of those (a Fountain login, a
 // linked studio, a sandbox provider, guest ssh), so only the missing file
-// hides them: and the last test makes the file, on the running daemon, and
-// loads the page again to see them all.
+// hides them: and the last test sets the flag, on the running daemon, and
+// loads the page again to see them all. (labs-settings.spec.ts does it from
+// the page.)
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -15,6 +16,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { closeContexts, open, paneEl, ready } from "./helpers";
+import { labs } from "./labs";
 import { ANY, daemonPort } from "./ports";
 
 const OWNER = "me@example.com";
@@ -259,11 +261,11 @@ test("a daemon from before labs, which says nothing of it, gets none of it eithe
   await noLabsItems(page, pane);
 });
 
-test("making the file on the running daemon brings it all back, with no restart", async ({ page }) => {
-  expect(existsSync(join(state, "labs"))).toBe(false);
+test("setting the flag on the running daemon brings it all back, with no restart", async ({ page }) => {
+  expect(existsSync(join(state, "flags.json"))).toBe(false);
   const asked: string[] = [];
   page.on("request", (r) => asked.push(r.url()));
-  writeFileSync(join(state, "labs"), "");
+  labs(state);
   // Something new for the owner, from the friend.
   const pane0 = ((await (await api("/api/panes")).json()) as { id: number }[])[0].id;
   expect((await api(`/api/threads/pane-${pane0}`, { text: "still there?" }, FRIEND)).ok).toBe(true);

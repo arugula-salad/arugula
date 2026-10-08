@@ -10,6 +10,7 @@
 //! is in `docs/operations.md`.
 
 mod close;
+mod flags;
 mod panes;
 mod shell_env;
 
@@ -38,6 +39,8 @@ macro_rules! every_op {
         $m!(arugula_proto::op::ops::ClosePane);
         $m!(arugula_proto::op::ops::ShellEnvGet);
         $m!(arugula_proto::op::ops::ShellEnvRefresh);
+        $m!(arugula_proto::op::ops::FlagsList);
+        $m!(arugula_proto::op::ops::FlagSet);
     };
 }
 
@@ -49,6 +52,10 @@ pub enum OpError {
     NoPane(PaneId),
     /// Not this caller's to do (403).
     Forbidden(String),
+    /// No such flag (404), with the sentence that names the ones there are.
+    NoFlag(String),
+    /// The state dir couldn't be written (500).
+    Failed(String),
     /// What an MCP agent's token doesn't reach. HTTP's middleware checks
     /// before a handler runs, so it never sees one.
     Unreachable(String),
@@ -59,6 +66,8 @@ impl OpError {
         match self {
             OpError::NoPane(id) => ApiError(StatusCode::NOT_FOUND, format!("no pane %{id}")),
             OpError::Forbidden(why) | OpError::Unreachable(why) => ApiError(StatusCode::FORBIDDEN, why),
+            OpError::NoFlag(why) => ApiError(StatusCode::NOT_FOUND, why),
+            OpError::Failed(why) => ApiError(StatusCode::INTERNAL_SERVER_ERROR, why),
         }
     }
 }
@@ -109,8 +118,8 @@ pub trait Handle: Op {
     -> impl Future<Output = Result<Self::Res, OpError>> + Send;
 }
 
-/// A route's path segment, as axum extracts it: nothing, or a pane (with
-/// axum's own answer to one that isn't a number, as before).
+/// A route's path segment, as axum extracts it: nothing, a pane (with
+/// axum's own answer to one that isn't a number, as before) or a name.
 pub trait FromPath: Sized {
     fn from_parts(parts: &mut Parts) -> impl Future<Output = Result<Self, Response>> + Send;
 }
@@ -124,6 +133,12 @@ impl FromPath for () {
 impl FromPath for PaneId {
     async fn from_parts(parts: &mut Parts) -> Result<Self, Response> {
         Path::<PaneId>::from_request_parts(parts, &()).await.map(|Path(id)| id).map_err(IntoResponse::into_response)
+    }
+}
+
+impl FromPath for String {
+    async fn from_parts(parts: &mut Parts) -> Result<Self, Response> {
+        Path::<String>::from_request_parts(parts, &()).await.map(|Path(s)| s).map_err(IntoResponse::into_response)
     }
 }
 

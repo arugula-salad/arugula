@@ -63,10 +63,22 @@ impl PathArgs for () {
 
 impl PathArgs for PaneId {
     fn fill(&self, template: &str) -> String {
-        match (template.find('{'), template.find('}')) {
-            (Some(a), Some(b)) if a < b => format!("{}{self}{}", &template[..a], &template[b + 1..]),
-            _ => template.to_owned(),
-        }
+        fill_hole(template, self)
+    }
+}
+
+/// A name, as a flag's (`PUT /api/flags/{name}`).
+impl PathArgs for String {
+    fn fill(&self, template: &str) -> String {
+        fill_hole(template, self)
+    }
+}
+
+/// `template` with its `{…}` replaced by `value`.
+fn fill_hole(template: &str, value: &dyn std::fmt::Display) -> String {
+    match (template.find('{'), template.find('}')) {
+        (Some(a), Some(b)) if a < b => format!("{}{value}{}", &template[..a], &template[b + 1..]),
+        _ => template.to_owned(),
     }
 }
 
@@ -86,6 +98,8 @@ impl Request for crate::api::Empty {
     }
 }
 
+impl Request for crate::flags::FlagSetRequest {}
+
 /// One operation's wire half.
 pub trait Op: Send + Sync + 'static {
     /// Its own name, `noun.verb`, not any surface's (the CLI command or MCP
@@ -96,8 +110,8 @@ pub trait Op: Send + Sync + 'static {
     /// Its route, with `{id}` where [`Op::Path`] goes.
     const PATH: &'static str;
     const ACCESS: Access;
-    /// Only listed where the machine has the `labs` file
-    /// (`arugula_proto::hosts::labs`); it works either way.
+    /// Only listed where the machine has the `labs` flag on
+    /// (`arugula_proto::flags`); it works either way.
     const LABS: bool = false;
     /// Types into a pane, so needs the owner's trust on their machine
     /// (M14). Nothing reads it yet: `authz.rs` still matches path suffixes.
@@ -122,6 +136,7 @@ pub mod ops {
     use crate::{
         PaneId,
         api::{Empty, PaneSummary, ShellEnv},
+        flags::{FlagInfo, FlagSetRequest},
     };
 
     /// `GET /api/panes`: every pane and block (`arugula ls`, MCP's `list`
@@ -179,6 +194,34 @@ pub mod ops {
         type Req = Empty;
         type Res = ShellEnv;
     }
+
+    /// `GET /api/flags` (#464): every flag with its state, for the owner's
+    /// Settings.
+    pub struct FlagsList;
+
+    impl Op for FlagsList {
+        const NAME: &'static str = "flags.list";
+        const METHOD: Method = Method::Get;
+        const PATH: &'static str = "/api/flags";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = Empty;
+        type Res = Vec<FlagInfo>;
+    }
+
+    /// `PUT /api/flags/NAME` (#464): turn a flag on or off here. It takes
+    /// effect at once; pages read `HostFeatures` when they load.
+    pub struct FlagSet;
+
+    impl Op for FlagSet {
+        const NAME: &'static str = "flag.set";
+        const METHOD: Method = Method::Put;
+        const PATH: &'static str = "/api/flags/{name}";
+        const ACCESS: Access = Access::Owner;
+        type Path = String;
+        type Req = FlagSetRequest;
+        type Res = FlagInfo;
+    }
 }
 
 #[cfg(test)]
@@ -189,6 +232,7 @@ mod tests {
     fn paths_fill_their_pane() {
         assert_eq!(ops::ClosePane::path(&7), "/api/panes/7/close");
         assert_eq!(ops::ListPanes::path(&()), "/api/panes");
+        assert_eq!(ops::FlagSet::path(&"labs".to_owned()), "/api/flags/labs");
         assert!(crate::api::Empty::without_body().is_some());
     }
 }

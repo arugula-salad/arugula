@@ -106,9 +106,9 @@ pub fn not_built(what: &str) -> String {
 }
 
 /// Whether Labs is on here: this build has it, and the machine has the
-/// `labs` file in its state directory (read on each call).
+/// `labs` flag on (`flags.json` in its state directory, read on each call).
 pub fn enabled(state_dir: &Path) -> bool {
-    BUILT && arugula_proto::hosts::labs(state_dir)
+    BUILT && arugula_proto::flags::get(state_dir, arugula_proto::flags::LABS)
 }
 
 /// Adds Labs' HTTP routes to the API's.
@@ -144,7 +144,7 @@ pub fn create_block(kind: BlockType, _ctx: BlockCtx, _config: Value) -> Result<A
 
 /// Whether a forge block of `provider` may be made or opened here. GitHub's
 /// always may; Forgejo's and GitLab's are Labs, so they need this build to
-/// have it and the machine to have turned it on (the `labs` file).
+/// have it and the machine to have turned it on (the `labs` flag).
 pub fn forge_allowed(provider: ForgeProvider, state_dir: &Path) -> Result<(), String> {
     let name = match provider {
         ForgeProvider::Github => return Ok(()),

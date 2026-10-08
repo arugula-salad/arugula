@@ -14,6 +14,7 @@ import { AttentionBadge, tabAttention } from "./attention";
 import { getFleet, HostButton, HostPicker, NewMachineNote } from "./hosts";
 import { ControlRequests, PaneMarks, PeopleBar, ShareDialog, shareSession, TabPeople } from "./people";
 import { directory } from "../hosts";
+import { FlagsLayer } from "./flags";
 import { RulesLayer } from "./rules";
 import { useWorkspaceDir } from "../blocks";
 import { AgentDialogLayer } from "./agent-dialog";
@@ -116,6 +117,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       <InLabs on={client.hasLabs()}>{(l) => <l.AppsLayer />}</InLabs>
       <InLabs on={client.hasLabs()}>{(l) => <l.SandboxesLayer />}</InLabs>
       <RulesLayer />
+      <FlagsLayer />
       <PickerLayer />
       <PaletteLayer />
       <GettingStartedLayer />

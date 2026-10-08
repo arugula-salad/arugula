@@ -273,6 +273,7 @@ dependencies = [
  "arugula-core",
  "serde",
  "serde_json",
+ "tracing",
  "ts-rs",
  "tungstenite 0.30.0",
 ]

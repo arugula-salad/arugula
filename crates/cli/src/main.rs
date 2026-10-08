@@ -540,8 +540,8 @@ fn main() {
         }
     }
     // What a stranger doesn't get shows in `--help` where this machine has
-    // the `labs` file; everything works either way.
-    let labs = state_dir().is_some_and(|d| arugula_proto::hosts::labs(&d));
+    // the `labs` flag on; everything works either way.
+    let labs = state_dir().is_some_and(|d| arugula_proto::flags::get(&d, arugula_proto::flags::LABS));
     let cli = Cli::from_arg_matches(&labs_command(labs).get_matches()).unwrap_or_else(|e| e.exit());
     match real_main(cli) {
         Ok(code) => std::process::exit(code),

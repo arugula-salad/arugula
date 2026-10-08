@@ -589,18 +589,56 @@ From: [Control track](docs/plan-archive.md#control-track-s15-m17m22-added-2026-1
 
 ## Build and release
 
-### One switch for what a stranger doesn't get: the `labs` file
-A file named `labs` in a machine's state dir turns on huddles and chat,
-Fountain, studio apps and chant workspaces, VMs and sandboxes, guest ssh and
-the swarm's extra views. Present means on, whatever it holds; it is a `stat`
-on every read, so no restart is needed. It is a file, not an environment
-variable, because `shellenv::clean()` drops every `ILLOGICAL_*` a shell
-prints and the desktop app starts the daemon from a fixed plist. Labs is
-per machine, visibility rather than enforcement (a machine without it still
-answers the routes), and `HostFeatures.labs` tells the page. Per-feature
-flags come after launch (#347); a Labs cargo feature is planned (#452).
-Where: `crates/proto/src/hosts.rs` (`labs`, `LABS_FILE`, `HostFeatures`), `crates/daemon/src/hosts.rs`, `crates/daemon/src/args.rs` (`labs_command`), `crates/daemon/src/mcp/mod.rs`, `crates/cli/src/main.rs`.
-From: #385, #342, #347, #387.
+### One switch for what a stranger doesn't get: the `labs` flag
+The `labs` flag turns on huddles and chat, Fountain, studio apps and chant
+workspaces, VMs and sandboxes, guest ssh, Forgejo and GitLab and the swarm's
+extra views. It is the first named flag in the daemon's config, and the
+mechanism #347's per-feature flags extend:
+- **The file** is `flags.json` in the state dir, `{"flags": {"labs": true}}`.
+  The top-level object has room for the rest of #347's config; a write keeps
+  every key and flag it doesn't know, so an older or newer daemon's aren't
+  lost. It is written by a temporary file and a rename, private to the owner.
+  A file that doesn't parse is logged once and read as every flag at its
+  default; only an explicit set replaces it (keeping the old one as
+  `flags.json.bad`).
+- **The registry** is `arugula_proto::flags::FLAGS`: a name, a sentence and a
+  default. `get`, `set` and `all` are the only way in; an unknown name is an
+  error to set and off to get. #347 adds a row per feature and gates that
+  feature's routes, blocks and MCP tools on `get`; the file, the CLI, the
+  route and Settings need no change.
+- **Reads are never cached.** `get` reads the file on every call (a request,
+  a tool list, a forge open; none is in a loop), so a flag flips with no
+  restart, whoever flipped it. That keeps what #385 had, without a cache to
+  invalidate between the daemon and `arugulad flags` in another process.
+  Two writers at once can lose one change, since each reads the file, changes
+  a flag and renames; they are a person at a switch and one at a terminal,
+  and the loser sees the flag as it now is, so there is no lock.
+- **Three ways to set it:** `arugulad flags [NAME [on|off]]` works on the
+  state dir, so it works with the daemon stopped; `flags.list` and `flag.set`
+  (`GET /api/flags`, `PUT /api/flags/{name}`) are owner operations (#572) with
+  no MCP tool, since an agent has no business with the owner's settings; the
+  web client's *Labs…* in the session menu uses them and reloads the page,
+  because `HostFeatures` and the Labs chunk are read at load.
+- **The old `labs` file** (#385: empty, present means on) is read once more
+  and retired. A starting daemon moves it into `flags.json` (unless that
+  already says `labs`) and removes it. Until then `get` counts the file as
+  `labs` on when `flags.json` has no `labs`, so a CLI newer than its daemon,
+  or a daemon not yet restarted, still sees Labs. That fallback goes in a
+  later release, like the rename bridges (#534).
+- **The `labs` cargo feature (#452) is unaffected.** `labs::enabled` is still
+  `BUILT && flags::get(…)`; a build without Labs can set the flag and
+  nothing follows, and *Labs…* says so.
+It was a file, not an environment variable, because `shellenv::clean()` drops
+every `ILLOGICAL_*` a shell prints and the desktop app starts the daemon from
+a fixed plist; that holds for `flags.json` too. The state dir survives
+`arugulad uninstall`, install.sh and the desktop app's updates. Labs is per
+machine, visibility rather than enforcement (a machine without it still
+answers the routes), and `HostFeatures.labs` tells the page.
+Not done: a flag per team or account on control (#347's last item, #464's
+option 2). It would sit beside `flags.json`: control's answer for a joined
+machine, with the file as the fallback for machines that aren't joined.
+Where: `crates/proto/src/flags.rs`, `crates/proto/src/op.rs` (`FlagsList`, `FlagSet`), `crates/daemon/src/ops/flags.rs`, `crates/daemon/src/labs/mod.rs` (`enabled`), `crates/daemon/src/main.rs` (`flags_cli`, the startup migration), `crates/daemon/src/args.rs` (`labs_command`), `crates/daemon/src/mcp/mod.rs`, `crates/cli/src/main.rs`, `web/src/ui/flags.tsx`.
+From: #385, #342, #347, #387, #464.
 
 ### Zig 0.16 builds Ghostty; the toolchain is pinned
 libghostty-vt needs Zig, pinned in `.mise.toml`; cargo runs under `mise exec`

@@ -14,6 +14,7 @@ use crate::{
         OpenConversationRequest, OpenConversationResponse, OpenRequest, OpenResponse, RunRequest, RunResponse, Share,
         ShareRequest, TeamPins, TeamPinsRequest, ThreadMessages, ThreadPostRequest, ThreadPosted, ThreadReadRequest,
     },
+    flags::{FlagInfo, FlagSetRequest},
     forge::ForgeState,
     hosts::{ControlState, HostFeatures, HostInfo},
 };
@@ -53,6 +54,8 @@ fn generate() -> String {
     c.visit::<TeamPinsRequest>();
     c.visit::<TeamPins>();
     c.visit::<HostFeatures>();
+    c.visit::<FlagInfo>();
+    c.visit::<FlagSetRequest>();
     c.visit::<ControlState>();
     c.visit::<HostInfo>();
     c.visit::<ThreadMessages>();

@@ -81,6 +81,8 @@ pub async fn call<O: McpOp>(call: &Call<'_>, args: serde_json::Value) -> Out {
     match O::handle(&cx, path.clone(), req).await {
         Ok(res) => O::answer(call, &path, res),
         Err(OpError::NoPane(id)) => Err(call.gone(id).await),
-        Err(OpError::Forbidden(why) | OpError::Unreachable(why)) => Err(why),
+        Err(OpError::Forbidden(why) | OpError::Unreachable(why) | OpError::NoFlag(why) | OpError::Failed(why)) => {
+            Err(why)
+        }
     }
 }
