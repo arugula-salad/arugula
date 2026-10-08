@@ -362,6 +362,9 @@ struct Inner {
     /// #304: the run of a prompt the agent asked to retry, for when it goes
     /// again.
     carry_run: Option<String>,
+    /// #590: the run id picked for the prompt just sent (its trailer is in
+    /// the prompt), for its `runs start`.
+    next_run: Option<String>,
 }
 
 enum Msg {
@@ -431,6 +434,7 @@ impl Inner {
             login: None,
             runs: None,
             carry_run: None,
+            next_run: None,
         }
     }
 
@@ -706,12 +710,13 @@ impl Inner {
                     "session/set_mode" => Purpose::SetMode(m["params"]["modeId"].as_str().unwrap_or("").to_owned()),
                     "session/prompt" => {
                         // An image (or, to an agent that takes none, its
-                        // path) is named in its block's `_meta` (M71).
+                        // path) is named in its block's `_meta` (M71); the
+                        // turn's run trailers (#590) are for the agent only.
                         let blocks = m["params"]["prompt"].as_array().map(Vec::as_slice).unwrap_or_default();
                         let image = |c: &Value| c["_meta"][images::META].as_str().map(str::to_owned);
                         let text: String = blocks
                             .iter()
-                            .filter(|c| image(c).is_none())
+                            .filter(|c| image(c).is_none() && c["_meta"].get(chant::RUN_META).is_none())
                             .filter_map(|c| c["text"].as_str())
                             .collect::<Vec<_>>()
                             .join("\n");
@@ -2182,11 +2187,12 @@ fn session_env(cfg: &Config) -> Option<(String, String)> {
 /// #304: the start of a turn's run in the chant ledger, once its prompt has
 /// gone (not again for a prompt sent again after "retry").
 fn start_run(ctx: &BlockCtx, g: &mut Inner, prompt: &str) {
+    let picked = g.next_run.take();
     let (Some(c), Some(t)) = (g.cfg.chant.clone(), g.turns.last()) else { return };
     if g.runs.is_none() || t.run.is_some() {
         return;
     }
-    let id = chant::run_id(ctx.id, t.started_ms);
+    let id = picked.unwrap_or_else(|| chant::run_id(ctx.id, t.started_ms));
     let fields = chant::start_fields(
         &c,
         &id,
@@ -2229,6 +2235,13 @@ fn send_next(ctx: &BlockCtx, g: &mut Inner) {
             }
         };
         prompt.push(block);
+    }
+    // #590: the turn's run, picked now so the prompt can name its trailer
+    // (the same run when a prompt goes again after "retry").
+    if let (Some(c), Some(_)) = (&g.cfg.chant, &g.runs) {
+        let run = g.carry_run.clone().unwrap_or_else(|| chant::run_id(ctx.id, now_ms()));
+        prompt.push(chant::turn_block(c, &run));
+        g.next_run = g.carry_run.is_none().then_some(run);
     }
     let mut params = json!({ "sessionId": session, "prompt": prompt });
     if g.cfg.def.agent == Kind::Fountain {

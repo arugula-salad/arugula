@@ -577,6 +577,69 @@ fn an_image_reaches_the_agent_as_an_image_or_a_path() {
     let _ = std::fs::remove_dir_all(&tmp);
 }
 
+/// #590: an agent started from a workspace member, any ACP agent and not
+/// only Claude, is told on each prompt the trailers its turn's commits end
+/// with: its session's `Chant-Agent` and the turn's `Chant-Run`, the run
+/// the block records in chant's ledger. The transcript shows only what the
+/// person said.
+#[test]
+fn a_member_s_agent_is_told_its_turn_s_run_trailer() {
+    use std::os::unix::fs::PermissionsExt;
+    let d = Daemon::child();
+    // A stand-in chant: each ledger write's arguments and fields, a line.
+    let chant = d.sessions.join("chant");
+    let calls = d.sessions.join("chant.calls");
+    std::fs::write(
+        &chant,
+        format!(
+            "#!/bin/sh\n{{ printf '%s ' \"$@\"; cat; echo; }} >> '{}'\nprintf '{{\"run\":{{\"id\":\"x\"}}}}'\n",
+            calls.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&chant, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let config = json!({
+        "agent": "acp", "command": ["python3", fake()], "cwd": d.sessions, "prompt": "hello",
+        "chant": { "root": d.sessions, "member": "app", "agent": "app", "chant": chant },
+    });
+    let id = d.open_with(json!({ "type": "agent", "config": config }));
+    assert_eq!(d.wait(id, "idle"), "done");
+    let s = d.state(id);
+    let run = s["recent_turns"][0]["run"].as_str().unwrap().to_owned();
+    assert!(run.starts_with(&format!("arugula-{id}-")), "{s}");
+    let session = s["session_id"].as_str().unwrap();
+    let sent: Value =
+        serde_json::from_slice(&std::fs::read(d.sessions.join(format!("prompt-{session}.json"))).unwrap()).unwrap();
+    assert_eq!(sent[0]["text"], "hello", "{sent}");
+    assert_eq!(sent[1]["_meta"]["arugula/chantRun"], run.as_str(), "{sent}");
+    let note = sent[1]["text"].as_str().unwrap();
+    assert!(note.ends_with(&format!("\n\nChant-Agent: app\nChant-Run: {run}")), "{note}");
+    let user = entries(&s).into_iter().find(|e| e["type"] == "user").unwrap();
+    assert_eq!(user["text"], "hello", "the trailers are for the agent");
+
+    // The ledger's start and end are that run.
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    let ledger = loop {
+        let l = std::fs::read_to_string(&calls).unwrap_or_default();
+        if l.contains(&format!("workspace runs end {run} --from -")) || std::time::Instant::now() > deadline {
+            break l;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    };
+    let start = ledger.lines().find(|l| l.starts_with("workspace runs start --from -")).expect(&ledger);
+    assert!(start.contains(&format!("\"id\":\"{run}\"")), "{ledger}");
+    assert!(ledger.contains(&format!("workspace runs end {run} --from -")), "{ledger}");
+
+    // The next turn is another run, named on its own prompt.
+    d.call(id, "send", json!({ "text": "again" }));
+    assert_eq!(d.wait(id, "idle"), "done");
+    let next = d.state(id)["recent_turns"][0]["run"].as_str().unwrap().to_owned();
+    assert_ne!(next, run);
+    let sent: Value =
+        serde_json::from_slice(&std::fs::read(d.sessions.join(format!("prompt-{session}.json"))).unwrap()).unwrap();
+    assert_eq!(sent[1]["_meta"]["arugula/chantRun"], next.as_str(), "{sent}");
+}
+
 /// A permission request reaches a subscribed phone as a push with what to
 /// approve, and approving by its id (as the notification's action does)
 /// works.

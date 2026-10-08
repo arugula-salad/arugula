@@ -316,6 +316,26 @@ fn chant_says_what_a_workspace_is() {
     assert!(text.contains("(declaration-missing)"), "{text}");
 }
 
+/// #590: a member's agent sessions come from the declaration, a `.jsonc`
+/// one too, until a read of chant's prints them.
+#[test]
+fn a_jsonc_declaration_binds_its_agent_sessions_too() {
+    let d = daemon();
+    let ws = workspace(&d, "jsonc", false);
+    std::fs::remove_file(ws.join("chant.workspace.json")).unwrap();
+    std::fs::write(
+        ws.join("chant.workspace.jsonc"),
+        "{\n  // the toy\n  \"name\": \"reference // not a comment\",\n  \"schema\": 1,\n  \"members\": [],\n  /* sessions */\n  \"agents\": [{ \"name\": \"app\", \"member\": \"app\", }, ],\n}\n",
+    )
+    .unwrap();
+    let block = open(&d, &ws);
+    let st = read(&d, block);
+    assert_eq!(st["error"], Value::Null, "{st}");
+    let agents = |n: &str| st["members"].as_array().unwrap().iter().find(|m| m["name"] == n).unwrap()["agents"].clone();
+    assert_eq!(agents("app"), json!(["app"]), "{st}");
+    assert_eq!(agents("delivery"), json!([]));
+}
+
 #[test]
 fn approving_runs_status_line_with_its_plan_as_principals() {
     let d = daemon();

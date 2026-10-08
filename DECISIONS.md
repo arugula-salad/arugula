@@ -432,6 +432,9 @@ rest stay, each with a comment at the spot:
   them into a harness's settings would allow those tools outside Arugula.
 - Agent questions stay in Arugula, not chant `points` (ws-091): one person
   answering a hook can't meet a points record's rules.
+- A member's agent sessions are read from the declaration's file, `.json`
+  or `.jsonc` (its comments and trailing commas taken out), since no read
+  prints which session is bound to which member (#590).
 - `dist/fountain.yaml` and `src/agents` are read by hand: agent-specs is a
   chant project, not a workspace, and asking chant would mean a build.
 - A forge issue keeps its own branch, not a chant work lease: the issue isn't
