@@ -1,0 +1,3 @@
+# name method path
+panes.list GET /api/panes
+shell_env.get GET /api/hosts/self/shell-env

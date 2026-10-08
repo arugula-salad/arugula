@@ -39,6 +39,7 @@ mod labs;
 mod localauth;
 mod mcp;
 mod mux;
+mod ops;
 mod osc;
 mod pane;
 mod paths;

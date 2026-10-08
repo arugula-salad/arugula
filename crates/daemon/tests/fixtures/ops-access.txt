@@ -1,0 +1,5 @@
+# name method path access drives credential
+pane.close POST /api/panes/{id}/close Pane(Editor) drives=false credential=false
+panes.list GET /api/panes Owner drives=false credential=false
+shell_env.get GET /api/hosts/self/shell-env Owner drives=false credential=false
+shell_env.refresh POST /api/hosts/self/shell-env/refresh Owner drives=false credential=false

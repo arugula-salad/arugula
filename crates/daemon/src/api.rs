@@ -20,10 +20,11 @@ use arugula_proto::{
         HistoryKind, IdeDiffs, IdeDiffsRequest, IdeInfo, IdeMentionRequest, IdeMentioned, IdeOther, InboxAnswer,
         Invitable, KeysRequest, MouseRequest, NoDetection, NotifyPref, NotifyRequest, OpenConversationRequest,
         OpenConversationResponse, OpenResponse, PaneDiff, PermitAnswer, PermitRequest, Process, PromptRequest,
-        PromptResult, PushSubscriptions, Rules, RunRequest, RunResponse, SecretFinding, SendRequest, ShellEnv,
-        StandingRule, ThreadAgent, ThreadMessages, ThreadPostRequest, ThreadPosted, ThreadReadRequest, Unreached,
-        UnreachedWhy, WaitResult, WithdrawRequest,
+        PromptResult, PushSubscriptions, Rules, RunRequest, RunResponse, SecretFinding, SendRequest, StandingRule,
+        ThreadAgent, ThreadMessages, ThreadPostRequest, ThreadPosted, ThreadReadRequest, Unreached, UnreachedWhy,
+        WaitResult, WithdrawRequest,
     },
+    op::ops::{ClosePane, ListPanes, ShellEnvGet, ShellEnvRefresh},
 };
 use axum::{
     Json, Router,
@@ -42,6 +43,7 @@ use crate::{
     history::{self, Filter},
     keys,
     mux::{Api, AskReply, Cmd, InboxReply, MuxHandle},
+    ops::OpRoutes,
     osc::strip,
     pane::{CaptureFormat, CaptureScope, PaneHandle, Subscriber, ToClient},
     push::Subscription,
@@ -53,7 +55,7 @@ type AppState = State<Arc<App>>;
 
 pub fn routes() -> Router<Arc<App>> {
     let r = Router::new()
-        .route("/api/panes", get(panes))
+        .op::<ListPanes>()
         .route("/api/run", post(run))
         .route("/api/panes/{id}/send", post(send))
         .route("/api/panes/{id}/prompt", post(prompt_))
@@ -71,7 +73,7 @@ pub fn routes() -> Router<Arc<App>> {
         .route("/api/turn", get(turn))
         .route("/api/threads/{target}", get(thread_get).post(thread_post))
         .route("/api/threads/{target}/read", post(thread_read))
-        .route("/api/panes/{id}/close", post(close))
+        .op::<ClosePane>()
         .route("/api/panes/{id}/capture", get(capture))
         .route("/api/panes/{id}/process", get(process))
         .route("/api/panes/{id}/detection", get(detection))
@@ -83,8 +85,8 @@ pub fn routes() -> Router<Arc<App>> {
         .route("/api/ide", get(ide_get).put(ide_set))
         .route("/api/rules", get(rules_get).delete(rules_forget_all))
         .route("/api/rules/{index}", axum::routing::delete(rules_forget))
-        .route("/api/hosts/self/shell-env", get(shell_env_get))
-        .route("/api/hosts/self/shell-env/refresh", post(shell_env_refresh))
+        .op::<ShellEnvGet>()
+        .op::<ShellEnvRefresh>()
         .route("/api/hosts/self/agents", get(agents_get))
         .route("/api/hosts/self/agents/refresh", post(agents_refresh))
         .route("/api/editors", get(editors))
@@ -191,11 +193,6 @@ fn read_log(app: &App, id: PaneId, from: u64) -> (u64, Vec<u8>) {
 }
 
 // ---------------------------------------------------------------- handlers
-
-async fn panes(State(app): AppState) -> Res<Response> {
-    let list = app.mux.api(Api::Panes).await.unwrap_or_default();
-    Ok(Json(list).into_response())
-}
 
 async fn run(State(app): AppState, Json(req): Json<RunRequest>) -> Res<Json<RunResponse>> {
     if req.command.as_deref().is_some_and(|c| c.trim().is_empty()) {
@@ -928,7 +925,7 @@ async fn thread_read(
 
 /// Whether a block is an agent's invites (#234): the owner's to answer,
 /// and it shows only its own cards.
-async fn is_invite(app: &App, id: PaneId) -> bool {
+pub(crate) async fn is_invite(app: &App, id: PaneId) -> bool {
     app.mux.api(|r| Api::Block(id, r)).await.flatten().is_some_and(|b| b.kind() == arugula_proto::BlockType::Invite)
 }
 
@@ -1060,23 +1057,6 @@ async fn answer_terminal(
         Some(Err(e)) if e == crate::invite::OWNER_ONLY => Err(ApiError(StatusCode::FORBIDDEN, e)),
         Some(Err(e)) => Err(bad(e)),
         None => Err(ApiError(StatusCode::SERVICE_UNAVAILABLE, "daemon is shutting down".into())),
-    }
-}
-
-async fn close(
-    State(app): AppState,
-    Path(id): Path<PaneId>,
-    who: Option<axum::Extension<crate::acl::Principal>>,
-    headers: HeaderMap,
-) -> Res<Json<Empty>> {
-    // An agent's invites (#234) are the owner's to close, not an agent's.
-    let owner = who.is_none_or(|axum::Extension(w)| w.is_owner());
-    if (!owner || crate::invite::agent(&headers)) && is_invite(&app, id).await {
-        return Err(ApiError(StatusCode::FORBIDDEN, crate::invite::CLOSE_OWNER_ONLY.into()));
-    }
-    match app.mux.api(|r| Api::Close(id, r)).await {
-        Some(true) => Ok(Json(Empty {})),
-        _ => Err(ApiError(StatusCode::NOT_FOUND, format!("no pane %{id}"))),
     }
 }
 
@@ -2352,37 +2332,6 @@ async fn rules_forget_all(
     owner_only(&who)?;
     app.mux.rules.forget(None).map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e))?;
     Ok(Json(Empty {}))
-}
-
-/// `GET /api/hosts/self/shell-env` (#74): the user's shell environment
-/// blocks that run the user's tools get here, waiting for it if it's still
-/// being resolved. Its `PATH` and the names of the rest.
-async fn shell_env_get(
-    State(app): AppState,
-    who: Option<axum::Extension<crate::acl::Principal>>,
-) -> Res<Json<ShellEnv>> {
-    owner_only(&who)?;
-    let s = &app.mux.shell_env;
-    let r = s.local().await;
-    Ok(Json(ShellEnv {
-        shell: s.shell().to_owned(),
-        ok: r.error.is_none(),
-        ms: r.took.as_millis() as u64,
-        path: r.get("PATH").map(str::to_owned),
-        vars: r.vars.iter().map(|(k, _)| k.clone()).collect(),
-        error: r.error.clone(),
-    }))
-}
-
-/// `POST /api/hosts/self/shell-env/refresh` (#74): resolve it again (here,
-/// and on each machine when next needed), after changing an rc file.
-async fn shell_env_refresh(
-    state: AppState,
-    who: Option<axum::Extension<crate::acl::Principal>>,
-) -> Res<Json<ShellEnv>> {
-    owner_only(&who)?;
-    state.0.mux.shell_env.refresh();
-    shell_env_get(state, who).await
 }
 
 /// `GET /api/hosts/self/agents` (#145): the agents configured on this

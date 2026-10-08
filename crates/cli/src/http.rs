@@ -333,6 +333,32 @@ pub fn request(
     send(target, method, path, &[("Content-Type", "application/json")], body.as_bytes())
 }
 
+/// An operation (`arugula_proto::op`): its method and path from its
+/// declaration, its request as the body (none where it takes none), and
+/// the response to read as the caller likes.
+pub fn send_op<O: arugula_proto::op::Op>(target: &Target, path: &O::Path, req: &O::Req) -> anyhow::Result<Response> {
+    use arugula_proto::op::Request;
+    let body = match O::Req::without_body() {
+        Some(_) => None,
+        None => Some(serde_json::to_value(req)?),
+    };
+    request(target, O::METHOD.as_str(), &O::path(path), body.as_ref())
+}
+
+/// An operation's answer, with the body as the daemon sent it too (`parse_raw`).
+pub fn call_raw<O: arugula_proto::op::Op>(
+    target: &Target,
+    path: &O::Path,
+    req: &O::Req,
+) -> anyhow::Result<(O::Res, serde_json::Value)> {
+    send_op::<O>(target, path, req)?.parse_raw::<O::Res>()
+}
+
+/// An operation's answer (`parse`).
+pub fn call<O: arugula_proto::op::Op>(target: &Target, path: &O::Path, req: &O::Req) -> anyhow::Result<O::Res> {
+    Ok(call_raw::<O>(target, path, req)?.0)
+}
+
 /// `request` with a typed body (a request type from `arugula_proto::api`),
 /// which goes out as the same JSON the type serializes to.
 pub fn request_as(target: &Target, method: &str, path: &str, body: &impl serde::Serialize) -> anyhow::Result<Response> {
