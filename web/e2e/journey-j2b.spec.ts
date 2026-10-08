@@ -112,7 +112,8 @@ test("J2b: two friends link up through a team; the friend types on the owner's t
       at(riley),
       (p) => p.getByText(/sammac/),
       async (p) => {
-        await show(p, "sammac");
+        await p.getByRole("button", { name: "Switch to sammac" }).click();
+        await expect(p.getByTitle("Hosts")).toContainText("sammac", { timeout: 20_000 });
         await expect.poll(() => screenText(p), { timeout: 20_000 }).toContain("hello-42");
       },
       "anything naming Sam's machine (sammac) outside the host menu",
@@ -157,8 +158,5 @@ test("J2b: two friends link up through a team; the friend types on the owner's t
   } finally {
     for (const a of [sam, riley]) await a.quit().catch(() => {});
   }
-  await j.finish({
-    // Filed on #551.
-    "riley-finds": "#551: a team's machine is named only in the host menu",
-  });
+  await j.finish();
 });
