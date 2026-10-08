@@ -96,6 +96,7 @@
 //! `why {member, open}`, `hud {url}`, `state`.
 
 mod model;
+pub mod why;
 
 use std::{
     collections::{HashMap, HashSet},

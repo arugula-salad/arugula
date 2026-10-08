@@ -299,6 +299,33 @@ pub fn check_run_as(_user: &str, _repo: &str, _on_sprite: bool) -> Result<(), St
     Err(not_built("A diff run as the Fountain runner"))
 }
 
+/// #619: which decision and run made each hunk of a file in a workspace
+/// member's *Changes*, from the workspace's chant: [`file_why`] reads it,
+/// and [`FileWhy::hunk_json`] answers for a hunk's added lines.
+#[cfg(feature = "labs")]
+pub use workspace::why::{Why as FileWhy, read as file_why};
+
+#[cfg(not(feature = "labs"))]
+pub struct FileWhy;
+
+#[cfg(not(feature = "labs"))]
+impl FileWhy {
+    pub fn hunk_json(&self, _added: &[u32]) -> Option<Value> {
+        None
+    }
+}
+
+#[cfg(not(feature = "labs"))]
+pub async fn file_why(
+    _ctx: &BlockCtx,
+    _root: &str,
+    _chant: Option<&str>,
+    _file: &str,
+    _at: Option<&str>,
+) -> Result<FileWhy, String> {
+    Err(not_built("Which decision and run made a hunk"))
+}
+
 /// A diff block's git, run as the Fountain runner's user.
 #[cfg(feature = "labs")]
 pub use fountain::runner::git_as_runner;

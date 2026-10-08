@@ -24,6 +24,8 @@ use std::collections::{BTreeSet, HashMap};
 use serde::Serialize;
 use serde_json::Value;
 
+use crate::{block::BlockCtx, review::Runner};
+
 /// `sh -c READ sh ROOT CHANT ARGS…`: one chant read in the workspace root,
 /// its document on stdout.
 pub const READ: &str = r#"cd "$1" 2>/dev/null || { printf '{"error":{"message":"no such directory: %s"}}' "$1"; exit 0; }
@@ -231,6 +233,11 @@ impl Why {
         Ok(Self { spans, nodes, ranked, carries, holder, panes: panes.clone() })
     }
 
+    /// [`Why::hunk`] as the diff block's state carries it.
+    pub fn hunk_json(&self, added: &[u32]) -> Option<Value> {
+        self.hunk(added).map(|h| serde_json::to_value(h).unwrap_or_default())
+    }
+
     /// Whether any line isn't committed: then `status` is read for leases.
     pub fn uncommitted(intent: &Value) -> bool {
         intent["why"]["gaps"].as_array().into_iter().flatten().any(|g| g["code"] == "intent-why-uncommitted")
@@ -336,6 +343,46 @@ fn strings_at(v: &Value, key: &str) -> Vec<String> {
     v.as_array().into_iter().flatten().filter_map(|o| o[key].as_str().map(str::to_owned)).collect()
 }
 
+/// One file's why, asked of the workspace's chant in `root` (`chant`, or
+/// `chant` on PATH): `graph --intent <file> --json` (`--at` a revision for
+/// a range), and `status local --json` for its leases when lines aren't
+/// committed yet; runs and leases linked to this daemon's open agent
+/// blocks.
+pub async fn read(
+    ctx: &BlockCtx,
+    root: &str,
+    chant: Option<&str>,
+    file: &str,
+    at: Option<&str>,
+) -> Result<Why, String> {
+    let runner = Runner::user(ctx).await?;
+    let chant = chant.unwrap_or("chant");
+    let ask = |args: &[&str]| {
+        let mut a = vec![root.to_owned(), chant.to_owned()];
+        a.extend(args.iter().map(|s| s.to_string()));
+        let runner = runner.clone();
+        async move {
+            let (out, code) = runner.sh(READ, &a).await?;
+            serde_json::from_slice::<Value>(&out).map_err(|_| match code {
+                Some(127) => "chant isn't there to run".to_owned(),
+                Some(c) => format!("chant exited {c} without saying why"),
+                None => "chant was stopped".to_owned(),
+            })
+        }
+    };
+    let mut args = vec!["graph", "--intent", file, "--json"];
+    if let Some(at) = at {
+        args.extend(["--at", at]);
+    }
+    let intent = ask(&args).await?;
+    let status = match Why::uncommitted(&intent) {
+        true => ask(&["status", "local", "--json"]).await.ok(),
+        false => None,
+    };
+    let panes = Panes::of(root, &ctx.agents().await);
+    Why::read(&intent, status.as_ref(), &panes)
+}
+
 fn strings(v: &Value) -> Vec<String> {
     v.as_array().into_iter().flatten().filter_map(|s| s.as_str().map(str::to_owned)).collect()
 }
@@ -349,8 +396,8 @@ mod tests {
     /// line 3 committed by run `arugula-7-1790848800000` (the member's
     /// agent session `app`), line 7 not committed, why-001 constraining
     /// the file by path, and W-001 on the member, its lease held by `app`.
-    const INTENT: &str = include_str!("../../tests/fixtures/chant/why/intent.json");
-    const STATUS: &str = include_str!("../../tests/fixtures/chant/why/status.json");
+    const INTENT: &str = include_str!("../../../tests/fixtures/chant/why/intent.json");
+    const STATUS: &str = include_str!("../../../tests/fixtures/chant/why/status.json");
 
     fn docs() -> (Value, Value) {
         (serde_json::from_str(INTENT).unwrap(), serde_json::from_str(STATUS).unwrap())

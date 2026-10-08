@@ -334,6 +334,7 @@ impl BlockCtx {
 
     /// The agent blocks open now, each with its config and state (#619:
     /// which pane made a chant run, or runs as a lease's holder).
+    #[cfg_attr(not(feature = "labs"), allow(dead_code))]
     pub async fn agents(&self) -> Vec<(PaneId, Value, Value)> {
         let Some(cmds) = self.cmds.as_ref() else { return vec![] };
         let (tx, rx) = tokio::sync::oneshot::channel();

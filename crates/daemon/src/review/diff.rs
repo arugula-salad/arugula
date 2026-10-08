@@ -26,7 +26,8 @@
 //! #619: `chant: {root, chant?}` (from a workspace member's *Changes*):
 //! each open file's hunks also say which decision and run made them, read
 //! from that workspace's chant when the file opens and again when its diff
-//! or `HEAD` moves, one read at a time ([`super::why`]). With `base: true`
+//! or `HEAD` moves, one read at a time (`labs/workspace/why.rs`, through
+//! [`crate::labs::file_why`]; a build without Labs says it can't). With `base: true`
 //! and no revisions, the working tree is compared with where `HEAD` left
 //! the default branch (the merge base with `origin/HEAD`, `main` or
 //! `master`), so a member's committed work shows beside what isn't
@@ -51,10 +52,8 @@ use futures_util::future::BoxFuture;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use super::{
-    Live, Runner,
-    why::{self, Panes, Why},
-};
+use super::{Live, Runner};
+use crate::labs::FileWhy;
 use crate::{
     block::{Block, BlockCtx, Summary, no_method},
     store::now_ms,
@@ -183,7 +182,7 @@ const WHY_GAP_MAX: Duration = Duration::from_secs(30);
 struct WhyRead {
     /// [`why_key`] of the added lines and `HEAD` read for.
     key: u64,
-    read: Option<Result<Why, String>>,
+    read: Option<Result<FileWhy, String>>,
     reading: bool,
     last: Option<Instant>,
     gap: Option<Duration>,
@@ -495,8 +494,8 @@ impl Diff {
                                     for (i, h) in hs.iter().enumerate() {
                                         let added: Vec<u32> =
                                             h.lines.iter().filter(|l| l.0 == '+').map(|l| l.2).collect();
-                                        if let Some(hw) = why.hunk(&added) {
-                                            v["hunks"][i]["why"] = serde_json::to_value(hw).unwrap_or_default();
+                                        if let Some(hw) = why.hunk_json(&added) {
+                                            v["hunks"][i]["why"] = hw;
                                         }
                                     }
                                 }
@@ -579,38 +578,12 @@ impl Diff {
         }
     }
 
-    /// One file's why from the workspace's chant: `graph --intent`, and
-    /// `status`'s leases when lines aren't committed yet.
-    async fn why(&self, path: &str) -> Result<Why, String> {
+    /// One file's why from the workspace's chant (a Labs feature).
+    async fn why(&self, path: &str) -> Result<FileWhy, String> {
         let c = self.config.chant.clone().ok_or("not from a workspace")?;
         let top = self.state.lock().unwrap().repo.clone().ok_or("no repository yet")?;
-        let runner = Runner::user(&self.ctx).await?;
-        let chant = c.chant.clone().unwrap_or_else(|| "chant".into());
-        let ask = |args: &[&str]| {
-            let mut a = vec![c.root.clone(), chant.clone()];
-            a.extend(args.iter().map(|s| s.to_string()));
-            let runner = runner.clone();
-            async move {
-                let (out, code) = runner.sh(why::READ, &a).await?;
-                serde_json::from_slice::<Value>(&out).map_err(|_| match code {
-                    Some(127) => "chant isn't there to run".to_owned(),
-                    Some(c) => format!("chant exited {c} without saying why"),
-                    None => "chant was stopped".to_owned(),
-                })
-            }
-        };
         let file = format!("{}/{path}", top.trim_end_matches('/'));
-        let mut args = vec!["graph", "--intent", &file, "--json"];
-        if let Some(at) = &self.config.rev_b {
-            args.extend(["--at", at]);
-        }
-        let intent = ask(&args).await?;
-        let status = match Why::uncommitted(&intent) {
-            true => ask(&["status", "local", "--json"]).await.ok(),
-            false => None,
-        };
-        let panes = Panes::of(&c.root, &self.ctx.agents().await);
-        Why::read(&intent, status.as_ref(), &panes)
+        crate::labs::file_why(&self.ctx, &c.root, c.chant.as_deref(), &file, self.config.rev_b.as_deref()).await
     }
 
     /// Open or close a file's hunks.

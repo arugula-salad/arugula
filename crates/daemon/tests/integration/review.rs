@@ -438,6 +438,7 @@ fn a_failed_build_runs_again() {
 /// the same file, `fixtures/chant/why/`). The run's line is committed;
 /// the other isn't, and the member's agent pane holds the lease on its
 /// work item.
+#[cfg(feature = "labs")]
 #[test]
 fn a_member_s_hunks_name_their_decision_and_run() {
     use std::os::unix::fs::PermissionsExt;
