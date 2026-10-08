@@ -88,11 +88,25 @@ export function PaneMarks({ client, pane }: { client: Client; pane: PaneId }) {
   const focused = people(client.others().filter((p) => p.pane === pane));
   const driver = client.drivenBy(pane);
   const pair = client.info(pane)?.pair;
-  if (!focused.length && !driver && !pair) return null;
+  // A guest who may only watch, said where they look (#664).
+  const watching = !!client.state?.roles && client.role() === "viewer";
+  // And one who has control of it: their typing reaches it.
+  const driving = !!client.state?.roles && !watching && client.info(pane)?.driver?.who === client.me();
+  if (!focused.length && !driver && !pair && !watching && !driving) return null;
   return (
     <>
       {focused.length ? <div class="pane-outline" style={{ "--who": colorOf(focused[0].who) }} /> : null}
       <div class="pane-people">
+        {watching ? (
+          <span class="pane-driver" data-you-watch title="Shared with you to watch: its owner can let you drive (Share, as someone who drives)">
+            you watch
+          </span>
+        ) : null}
+        {driving ? (
+          <span class="pane-driver" data-you-drive title="You have control: your typing reaches it">
+            ✎ you drive
+          </span>
+        ) : null}
         {focused.map((p) => (
           <span key={p.who} class="pane-person" style={{ "--who": colorOf(p.who) }}>
             {p.name.split("@")[0]}
@@ -231,6 +245,8 @@ export function ShareDialog({ client }: { client: Client }) {
   const [session, setSession] = useState<SessionId | null>(null);
   const [grants, setGrants] = useState<Grant[]>([]);
   const [callers, setCallers] = useState<Callers>({ shared: [], tagged: [] });
+  // This machine's tailnet address, for a share to a tailnet login (#664).
+  const [address, setAddress] = useState<string | null>(null);
   const [who, setWho] = useState("");
   const [role, setRole] = useState<Role>("viewer");
   // A team's role, picked beside its Share button (#551).
@@ -254,6 +270,8 @@ export function ShareDialog({ client }: { client: Client }) {
       setGrants(v.grants);
       setCallers(v.callers ?? { shared: [], tagged: [] });
     }
+    const h = await client.request("GET", "/api/host");
+    if (h.ok) setAddress((await h.json<{ tailnet_url?: string }>()).tailnet_url ?? null);
     if (s !== null) {
       const x = await client.request("GET", `/api/sessions/${s}/secrets`);
       if (x.ok) setSecrets(await x.json());
@@ -342,6 +360,11 @@ export function ShareDialog({ client }: { client: Client }) {
         ) : (
           <p class="dim">Only you can reach it.</p>
         )}
+        {address && !(control && client.e2e) && mine.some((g) => g.principal.startsWith("tailnet:")) ? (
+          <p class="dim" data-share-address>
+            Send them this machine's tailnet address, where they open it: <CopyText text={address} inline share data-share-url />
+          </p>
+        ) : null}
         {callers.shared
           .filter((c) => mine.some((g) => g.principal === `tailnet:${c.login}`))
           .map((c) => (
