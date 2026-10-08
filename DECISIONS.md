@@ -488,8 +488,10 @@ login shell over the daemon's), so it sees the credentials that shell has
 and Arugula adds none. It's started with no `--env`, which would read live
 at startup and on each change: the block's env reaches it through the frame,
 `gates=<env>` for its gate strip, and the graph's env only when the person
-asks for a live read. behold listens on loopback and answers only its
-loopback names; the site proxy hands it `Host: localhost:<port>` and its own
+asks for a live read. A later env change is a `behold:view` message
+carrying `gates` (and `env` when live), so the frame never loads again.
+behold listens on loopback and answers only its loopback names; the site
+proxy hands it `Host: localhost:<port>` and its own
 origin, so no `--allow-host` is needed. A settled read tells behold
 (`POST /api/refresh?notify=1`), so behold doesn't poll the repo too. Framed,
 behold draws gates without an approve button: the block approves (one

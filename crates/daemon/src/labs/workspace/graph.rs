@@ -13,7 +13,8 @@
 //! env live (`chant graph --live`) at startup and on every source change.
 //! The block's env reaches behold through the frame instead: `gates=<env>`
 //! for the gates behold draws, and `env=<env>` only when the person asks
-//! for a live read there, since that needs the host's credentials. Never
+//! for a live read there, since that needs the host's credentials. Both
+//! move later by a `behold:view` message, not a reload. Never
 //! `--local`, which starts emulators.
 //!
 //! **Its environment** is the one a member's Shell pane gets on this host:
