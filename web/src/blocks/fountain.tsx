@@ -24,7 +24,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import type { Client } from "../client";
 import type { PaneId } from "../proto";
 import { askText } from "../ui/menu";
-import { registerBlock, type BlockView } from "./view";
+import type { BlockRenderer, BlockView } from "./view";
 
 type Source = "agent-specs" | "hand" | "app";
 interface Card {
@@ -53,14 +53,6 @@ export interface FountainState {
   loading: boolean; error: string | null; agents: Card[]; total: number; unreadable?: number; unreadable_note?: string | null; filter: Filter;
   counts: { source: Record<string, number>; runtime: Record<string, number>; provider: Record<string, number> };
   specs: string | null; specs_why: string | null; here?: string | null; updated_ms: number; polls: number; watching?: boolean; said: string | null;
-}
-
-/** "Fountain agents…" (or, M45b, "Fountain runner…"): the block beside
- * `split`, or in a new tab of `session`. */
-export async function openFountain(client: Client, where: { split?: PaneId; session?: number }, view: "catalog" | "runner" = "catalog") {
-  const place = where.split !== undefined ? { split: where.split, from_pane: where.split } : { session: where.session !== undefined ? String(where.session) : undefined };
-  const failure = view === "runner" ? "couldn't open the Fountain runner" : "couldn't open the Fountain catalog";
-  await client.openBlock({ type: "fountain", config: { view }, local: true, ...place }, failure);
 }
 
 const SOURCES: { key: Source; label: string }[] = [
@@ -477,7 +469,8 @@ function CatalogBlock({ client, id, s }: { client: Client; id: PaneId; s: Founta
   );
 }
 
-registerBlock("fountain", (client, id): BlockView => {
+/** How to draw a Fountain block: the Labs entry hands it to the page. */
+export const fountainBlock: BlockRenderer = (client, id): BlockView => {
   const host = document.createElement("div");
   host.className = "block block-fountain";
   let state: FountainState | null = null;
@@ -500,4 +493,4 @@ registerBlock("fountain", (client, id): BlockView => {
       host.remove();
     },
   };
-});
+};

@@ -10,7 +10,7 @@ import type { Client } from "../client";
 import type { PaneId, RunRequest } from "../proto";
 import { directory } from "../hosts";
 import { fuzzy, isDir, listDirs, recentDirs, type FsList } from "../fs";
-import { isWorkspace, openWorkspace } from "../blocks/workspace";
+import { isWorkspace, openWorkspace } from "../blocks/open-labs";
 
 let open: { client: Client; pane: PaneId; phone: boolean } | null = null;
 const listeners = new Set<() => void>();

@@ -9,7 +9,8 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { fuzzy } from "../fs";
 import { threadKey, type ThreadMsg, type ThreadSummary, type ThreadTarget } from "../proto";
-import { openChat, openChatView, paneLabel, sessionName, type ChatRoute, type Row, type Source } from "./chat";
+import { openChat, openChatView, type ChatRoute, type Source } from "./places";
+import { paneLabel, sessionName, type Row } from "./chat";
 import { Markup } from "./markup";
 import { MsgAvatar } from "./threads";
 

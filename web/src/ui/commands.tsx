@@ -5,19 +5,17 @@
 import { paneIds, type Client } from "../client";
 import type { Machine, OpenRequest, PaneId, Policy, SessionId, TabView } from "../proto";
 import { askText, type MenuItem } from "./menu";
-import { openSandboxes } from "./sandboxes";
+import { labsNow, openSandboxes, pickApp } from "../labs-load";
 import { driveItems, shareSession } from "./people";
 import { newRemote, openChanges, openEditor, openFountain, openIssue, openPort, openPr, openWorkspace, remoteHosts } from "../blocks";
 import { startAgent } from "./agent-dialog";
 import { pickConversation } from "./conversations";
-import { pickApp } from "./apps";
 import { openPicker } from "./picker";
 import { agentNotifyItems, notificationItems } from "./notify";
 import { openGettingStarted } from "./welcome";
 import { openRules } from "./rules";
 import { desktopApp, desktopPlatform, openInNewWindow } from "../desktop";
 import { sessionThreadItems, threadItems } from "./threads";
-import { huddleItems } from "./huddle";
 
 /** Chords, as menus and the palette show them. */
 export const PICKER_KEY = "Ctrl+Shift+G";
@@ -200,13 +198,13 @@ export function sessionItems(client: Client, session: SessionId, rename: () => v
     ...(client.has("vms")
       ? [
           { label: "New VM tab", run: () => void client.newVm({ session, tab: true }) } as MenuItem,
-          { label: "Sandboxes…", run: () => openSandboxes() } as MenuItem,
+          { label: "Sandboxes…", run: () => openSandboxes(client) } as MenuItem,
         ]
       : []),
     { label: "Rename session", run: rename },
     // M61: the people's conversation about this session.
     ...sessionThreadItems(client, session),
-    ...huddleItems(client, session),
+    ...(labsNow()?.huddleItems(client, session) ?? []),
     // Sharing is the daemon's owner's (M13).
     ...(client.state?.roles ? [] : [{ label: "Share session…", run: () => shareSession(session) } as MenuItem]),
     "separator",
