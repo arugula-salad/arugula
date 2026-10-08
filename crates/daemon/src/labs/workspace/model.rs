@@ -12,7 +12,9 @@
 
 use arugula_proto::{
     Gate, GateSource,
-    workspace::{DecisionRef, GateRelease, GateWhy, PinState, Record, RecordChoice, RecordEvidence},
+    workspace::{
+        DecisionRef, GateRelease, GateWhy, Lease, MemberWhy, PinState, Record, RecordChoice, RecordEvidence, RunRef,
+    },
 };
 use serde::Serialize;
 use serde_json::Value;
@@ -120,7 +122,7 @@ function run(args) {
 /// `leases`), work in progress, kept attempts and work branches
 /// (`refs/chant/wip/*`, `kept/*`, `refs/heads/chant/work/*`, its
 /// `replication`). A lease that expires by the clock moves no ref, so it
-/// shows at the next read for another reason; the block draws no leases.
+/// shows at the next read for another reason (its card says `expired` then).
 /// The diff is `diff-index` (plumbing): porcelain `git diff HEAD` refreshes
 /// and rewrites the index even with `GIT_OPTIONAL_LOCKS=0`.
 ///
@@ -166,6 +168,8 @@ pub struct State {
     pub records_note: Option<String>,
     /// Gates waiting for a person, in any member.
     pub gates: Vec<Gate>,
+    /// Every work lease `status` lists (#618).
+    pub leases: Vec<Lease>,
     /// Declaration findings for no member (or the workspace as a whole).
     pub diagnostics: Vec<Diagnostic>,
     /// Each read: how long, and whether it answered.
@@ -210,6 +214,11 @@ pub struct Member {
     /// typed name too, for an op `status` doesn't name (chant before
     /// stewards names only gated ones).
     pub ops: Vec<String>,
+    /// Work leases on it (#618): held in its ledger, and, once its intent
+    /// is read, on work items whose constrains cover it.
+    pub leases: Vec<Lease>,
+    /// Its decisions, undecided commits and runs, once read (#618).
+    pub why: Option<MemberWhy>,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -516,6 +525,12 @@ pub fn compose(raw: &Value, env: &str) -> State {
         }
     }
 
+    // Work leases, onto the member whose ledger holds each.
+    st.leases = status["leases"].as_array().into_iter().flatten().map(lease).collect();
+    for m in &mut st.members {
+        m.leases = st.leases.iter().filter(|l| l.member.as_deref() == Some(&m.name)).cloned().collect();
+    }
+
     // Records: the current ones of every kind the declaration names.
     let rec = &reads["records"]["json"];
     let kinds: Vec<&Value> = match rec["kinds"].as_array() {
@@ -586,6 +601,8 @@ pub struct Intent {
     pub undecided: usize,
     /// The agent runs that made commits there, newest first.
     pub runs: Vec<String>,
+    /// The work items whose constrains cover it.
+    pub work: Vec<String>,
     /// How long chant took.
     pub ms: u64,
 }
@@ -645,8 +662,133 @@ pub fn intent(doc: &Value, ms: u64) -> Result<Intent, String> {
         decisions,
         undecided: of_kind("finding").filter(|f| f["code"] == "intent-commit-undecided").count(),
         runs: of_kind("run").filter_map(|r| s(&r["run"])).collect(),
+        // In the graph also when it only implements or needs something
+        // there; its own `constrains` say it covers the region.
+        work: of_kind("work")
+            .filter(|w| w["constrains"].as_array().is_some_and(|c| !c.is_empty()))
+            .filter_map(|w| s(&w["record"]))
+            .collect(),
         ms,
     })
+}
+
+/// One of `status`'s leases.
+fn lease(l: &Value) -> Lease {
+    Lease {
+        item: s(&l["item"]).unwrap_or_default(),
+        holder: s(&l["holder"]).unwrap_or_default(),
+        state: s(&l["state"]).unwrap_or_default(),
+        expires_at: s(&l["expiresAt"]),
+        member: s(&l["member"]),
+        token: s(&l["token"]),
+        pane: None,
+    }
+}
+
+/// `sh -c RUNS sh ROOT CHANT`: the run ledger (`chant workspace runs`),
+/// the runs of about the last two weeks: `--since` the newest commit older
+/// than that, when there is one (chant lists the runs that made a commit
+/// after it, or started after its date).
+pub const RUNS: &str = r#"cd "$1" 2>/dev/null || exit 0
+since=$(git rev-list -n 1 --before='14 days ago' HEAD 2>/dev/null)
+exec "$2" workspace runs ${since:+--since "$since"} --json"#;
+
+/// The runs document's runs, newest first, or chant's reason it has none.
+pub fn runs(doc: &Value) -> Result<Vec<RunRef>, String> {
+    if !doc.is_object() {
+        return Err("chant said nothing readable about the runs".into());
+    }
+    if let Some(e) = doc["error"].as_object() {
+        let m = e.get("message").and_then(Value::as_str).unwrap_or_default();
+        return Err(if m.is_empty() { "chant couldn't read the runs".into() } else { m.to_owned() });
+    }
+    if doc["contract"].as_u64() != Some(CONTRACT) {
+        return Err(format!(
+            "the runs read names contract {}; this Arugula reads contract {CONTRACT}",
+            doc["contract"]
+        ));
+    }
+    Ok(doc["runs"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|r| {
+            let id = s(&r["id"]).unwrap_or_default();
+            RunRef {
+                // Named once the agent block in that pane says it wrote it
+                // (the workspace block's `ledger`).
+                pane: None,
+                state: s(&r["state"]),
+                agent: s(&r["agent"]),
+                by: s(&r["by"]),
+                started_at: s(&r["startedAt"]),
+                ended_at: s(&r["endedAt"]),
+                outcome: s(&r["outcome"]),
+                unit: s(&r["unit"]["id"]),
+                lease: s(&r["lease"]),
+                decisions: ids(&r["decisions"], "id"),
+                id,
+            }
+        })
+        .collect())
+}
+
+/// How many recent runs a member card shows.
+pub const RECENT_RUNS: usize = 5;
+
+/// A member's why from its intent read and the run ledger: the decisions
+/// chant ranked, its recent runs (its agent sessions', and those chant's
+/// walk joined to its commits), and its leases (held in its ledger, or on
+/// a work item covering it), each linked to the Arugula pane behind it.
+pub fn member_why(
+    m: &mut Member,
+    all_leases: &[Lease],
+    intent: Option<&Result<Intent, String>>,
+    ledger: Option<&Result<Vec<RunRef>, String>>,
+) {
+    let mut why = MemberWhy::default();
+    let work: &[String] = match intent {
+        Some(Ok(i)) => {
+            why.decisions = Some(i.decisions.clone());
+            why.undecided = Some(i.undecided as u64);
+            why.ms = Some(i.ms);
+            &i.work
+        }
+        Some(Err(e)) => {
+            why.note = Some(e.clone());
+            &[]
+        }
+        None => &[],
+    };
+    let joined: &[String] = match intent {
+        Some(Ok(i)) => &i.runs,
+        _ => &[],
+    };
+    let all: &[RunRef] = match ledger {
+        Some(Ok(r)) => r,
+        Some(Err(e)) => {
+            why.runs_note = Some(e.clone());
+            &[]
+        }
+        None => &[],
+    };
+    why.runs = all
+        .iter()
+        .filter(|r| r.agent.as_ref().is_some_and(|a| m.agents.contains(a)) || joined.contains(&r.id))
+        .take(RECENT_RUNS)
+        .cloned()
+        .collect();
+    m.leases = all_leases
+        .iter()
+        .filter(|l| l.member.as_deref() == Some(&m.name) || work.contains(&l.item))
+        .cloned()
+        .map(|mut l| {
+            // The run under its token.
+            l.pane = all.iter().find(|r| r.lease.is_some() && r.lease == l.token).and_then(|r| r.pane);
+            l
+        })
+        .collect();
+    m.why = Some(why);
 }
 
 /// The strings in a list, or in each object's `key` (a list of either).
@@ -807,6 +949,25 @@ impl State {
                 tags.push(format!("unreadable: {u}"));
             }
             out += &format!("  {:<28} {:<36} {}\n", m.name, m.dir, tags.join(", "));
+            for l in &m.leases {
+                out += &format!("    lease {} held by {} ({})\n", l.item, l.holder, l.state);
+            }
+            if let Some(w) = &m.why {
+                for d in w.decisions.iter().flatten().filter(|d| d.current) {
+                    out += &format!(
+                        "    {} {} {}\n",
+                        d.id,
+                        d.state.as_deref().unwrap_or("-"),
+                        d.title.as_deref().unwrap_or("")
+                    );
+                }
+                if let Some(n) = w.undecided.filter(|n| *n > 0) {
+                    out += &format!("    {n} commits no decision covers\n");
+                }
+                for r in &w.runs {
+                    out += &format!("    run {} {}\n", r.id, r.state.as_deref().unwrap_or(""));
+                }
+            }
         }
         if !self.records.is_empty() {
             out += &format!("\nrecords ({})\n", self.records.len());
@@ -1025,6 +1186,74 @@ mod tests {
         other["contract"] = 2.into();
         assert!(intent(&other, 0).unwrap_err().contains("contract"));
         assert!(INTENT.contains(r#"workspace graph --intent "$3" --json"#));
+    }
+
+    #[test]
+    fn the_run_ledger_names_each_run_s_pane() {
+        // Real `chant workspace runs --json` (0.108.1): one run Arugula
+        // started from pane 7, under W-001's lease.
+        let runs = runs(&fixture(include_str!("fixtures/runs.json"))).unwrap();
+        assert_eq!(runs.len(), 1);
+        let r = &runs[0];
+        // Its id names pane 7, but only the daemon, asking that pane's
+        // block, says it ran there.
+        assert_eq!((r.id.as_str(), r.pane, r.state.as_deref()), ("arugula-7-1759880000000", None, Some("running")));
+        assert_eq!((r.agent.as_deref(), r.unit.as_deref()), (Some("shipper"), Some("W-001")));
+        assert_eq!(r.decisions, ["decision/toy-001"]);
+        assert_eq!(r.lease.as_deref(), Some("106ffd19-97f5-476c-824e-12ec93af6f28"));
+        // Only an Arugula run's id names a pane.
+        assert_eq!(RunRef::pane_of("arugula-12-1700000000000"), Some(12));
+        for other in ["run-1", "arugula-x-1", "arugula-3", "arugula-3-1-2"] {
+            assert_eq!(RunRef::pane_of(other), None, "{other}");
+        }
+        let failure =
+            serde_json::json!({ "contract": 1, "error": { "code": "not-a-git-repository", "message": "not in git" } });
+        assert_eq!(super::runs(&failure).unwrap_err(), "not in git");
+    }
+
+    #[test]
+    fn a_member_s_leases_and_undecided_commits() {
+        // A lease in delivery's own ledger is on its card from status alone.
+        let mut raw = fixture(include_str!("fixtures/reference-raw.json"));
+        raw["reads"]["status"]["json"]["leases"] = serde_json::json!([
+            { "item": "W-002", "holder": "sam", "token": "t", "acquiredAt": "a", "expiresAt": "2026-10-08T00:00:00Z",
+              "state": "expired", "ref": "refs/chant/lease/_members/delivery/work/W-002", "member": "delivery" },
+            { "item": "W-001", "holder": "shipper", "token": "u", "acquiredAt": "a", "expiresAt": "e",
+              "state": "active", "ref": "refs/chant/lease/work/W-001", "member": null },
+        ]);
+        let st = compose(&raw, "local");
+        assert_eq!(st.leases.len(), 2);
+        let delivery = st.members.iter().find(|m| m.name == "delivery").unwrap();
+        assert_eq!(
+            delivery.leases.iter().map(|l| (l.item.as_str(), l.state.as_str())).collect::<Vec<_>>(),
+            [("W-002", "expired")]
+        );
+        // The intent read counts the commits no decision covered.
+        // W-002 is in the graph only through a link (it implements a
+        // decision there) and constrains nothing: not delivery's.
+        let mut doc = fixture(include_str!("fixtures/intent-delivery-work.json"));
+        let mut linked = doc["nodes"].as_array().unwrap().iter().find(|n| n["kind"] == "work").unwrap().clone();
+        linked["id"] = "record:work/W-002".into();
+        linked["record"] = "W-002".into();
+        linked["constrains"] = serde_json::json!([]);
+        doc["nodes"].as_array_mut().unwrap().push(linked);
+        let i = intent(&doc, 0).unwrap();
+        assert_eq!(i.work, ["W-001"]);
+        let mut m = delivery.clone();
+        member_why(&mut m, &st.leases, Some(&Ok(i)), None);
+        let w = m.why.unwrap();
+        assert_eq!(w.undecided, Some(1));
+        assert!(w.runs.is_empty() && w.runs_note.is_none());
+        // Both leases now: its own, and W-001's, which covers it.
+        assert_eq!(m.leases.iter().map(|l| l.item.as_str()).collect::<Vec<_>>(), ["W-002", "W-001"]);
+        // A failed read is a note.
+        let mut m = delivery.clone();
+        member_why(&mut m, &st.leases, Some(&Err("too slow".into())), Some(&Err("no ledger".into())));
+        let w = m.why.unwrap();
+        assert_eq!(
+            (w.note.as_deref(), w.runs_note.as_deref(), w.decisions),
+            (Some("too slow"), Some("no ledger"), None)
+        );
     }
 
     #[test]

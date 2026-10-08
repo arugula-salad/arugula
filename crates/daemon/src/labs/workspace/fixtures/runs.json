@@ -1,0 +1,157 @@
+{
+  "$schema": "https://intentius.io/chant/schemas/workspace/runs/v1/runs.schema.json",
+  "contract": 1,
+  "chant": "0.108.1",
+  "workspace": {
+    "name": "toy",
+    "root": "."
+  },
+  "ledger": {
+    "branch": "chant/lifecycle",
+    "dir": "_agent-runs",
+    "commit": "95dbdbc5097d417989b0e241b6d6c4e64b38e159"
+  },
+  "filter": {
+    "unit": null,
+    "decision": null,
+    "by": null,
+    "since": null,
+    "followSquash": false
+  },
+  "trust": {
+    "base": "2354cdeda3971a5864cd331c59a228870748e058",
+    "baseFrom": "main",
+    "runners": [],
+    "problems": []
+  },
+  "runs": [
+    {
+      "id": "arugula-7-1759880000000",
+      "state": "running",
+      "startedAt": "2026-10-08T01:00:00.000Z",
+      "endedAt": null,
+      "outcome": null,
+      "by": null,
+      "agent": "shipper",
+      "harness": {
+        "name": "claude-code",
+        "version": null
+      },
+      "model": null,
+      "provider": null,
+      "unit": {
+        "id": "W-001",
+        "kind": "work"
+      },
+      "lease": "106ffd19-97f5-476c-824e-12ec93af6f28",
+      "records": [],
+      "instruction": {
+        "bytes": null,
+        "ref": null,
+        "sha256": "2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881"
+      },
+      "usage": null,
+      "models": [],
+      "cost": null,
+      "transcript": null,
+      "commits": [],
+      "decisions": [
+        "decision/toy-001"
+      ],
+      "ledger": "_agent-runs/arugula-7-1759880000000.jsonl",
+      "record": null,
+      "statements": [],
+      "attestation": {
+        "status": "unsigned",
+        "signer": null,
+        "class": null,
+        "keyid": null,
+        "code": null,
+        "reason": "the run has not ended, and a statement is signed over an ended run",
+        "commits": [],
+        "statements": []
+      }
+    }
+  ],
+  "totals": {
+    "all": {
+      "runs": 1,
+      "running": 1,
+      "tokens": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0
+      },
+      "cost": [],
+      "unpriced": [
+        "arugula-7-1759880000000"
+      ],
+      "unreported": [
+        "arugula-7-1759880000000"
+      ]
+    },
+    "byUnit": [
+      {
+        "unit": "W-001",
+        "runs": 1,
+        "running": 1,
+        "tokens": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "cost": [],
+        "unpriced": [
+          "arugula-7-1759880000000"
+        ],
+        "unreported": [
+          "arugula-7-1759880000000"
+        ]
+      }
+    ],
+    "byDecision": [
+      {
+        "decision": "decision/toy-001",
+        "runs": 1,
+        "running": 1,
+        "tokens": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "cost": [],
+        "unpriced": [
+          "arugula-7-1759880000000"
+        ],
+        "unreported": [
+          "arugula-7-1759880000000"
+        ]
+      }
+    ],
+    "byPrincipal": [
+      {
+        "principal": null,
+        "runs": 1,
+        "running": 1,
+        "tokens": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "cost": [],
+        "unpriced": [
+          "arugula-7-1759880000000"
+        ],
+        "unreported": [
+          "arugula-7-1759880000000"
+        ]
+      }
+    ]
+  },
+  "malformed": 0,
+  "reasons": []
+}

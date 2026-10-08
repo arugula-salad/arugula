@@ -953,6 +953,32 @@ export type ItemState = "open" | "closed" | "merged";
 export type Layout = { panes: Array<[number, Rect]>, splits: Array<SplitRect>, };
 
 /**
+ * A work lease, from `status`'s `leases` (#618): who holds a work item.
+ */
+export type Lease = { 
+/**
+ * The work item's id.
+ */
+item: string, holder: string, 
+/**
+ * `active`, or `expired` (it can be claimed again).
+ */
+state: string, expires_at: string | null, 
+/**
+ * The member whose ledger holds it; none for the workspace's own.
+ */
+member: string | null, 
+/**
+ * The fencing token, which a run under the lease names.
+ */
+token: string | null, 
+/**
+ * The Arugula agent pane holding it, when a run of one names its token
+ * (or, running, its agent session is the holder).
+ */
+pane: number | null, };
+
+/**
  * M37: a pull request that refers to an issue (from the issue's
  * timeline), or one found by its head branch.
  */
@@ -996,6 +1022,38 @@ borrowed?: boolean,
 by?: string | null, };
 
 export type MachineState = "starting" | "running" | "gone";
+
+/**
+ * Why a member is the way it is, and who works on it (#618): read when
+ * its card is opened, kept until the fingerprint moves.
+ */
+export type MemberWhy = { 
+/**
+ * The decisions covering it, most relevant first (the gate card's
+ * read). None while reading, or when it couldn't be read.
+ */
+decisions: Array<DecisionRef> | null, 
+/**
+ * Commits that changed it while no decision constrained it.
+ */
+undecided: number | null, 
+/**
+ * Why the decisions couldn't be read.
+ */
+note: string | null, 
+/**
+ * Its recent agent runs, newest first: those of the agent sessions the
+ * declaration binds to it, and those that made commits in it.
+ */
+runs: Array<WorkspaceRun>, 
+/**
+ * Why the runs couldn't be read.
+ */
+runs_note: string | null, 
+/**
+ * How long chant's intent read took.
+ */
+ms: number | null, };
 
 /**
  * A new issue, before and after it reached the forge.
@@ -1767,3 +1825,43 @@ provenance?: string,
  * The record's file, from the repository root.
  */
 path?: string, };
+
+/**
+ * An agent run, from `chant workspace runs` (#618). `WorkspaceRun` in
+ * TypeScript, which has a `RunRef` already.
+ */
+export type WorkspaceRun = { 
+/**
+ * The `Chant-Run` trailer's value.
+ */
+id: string, 
+/**
+ * `running` or `ended`.
+ */
+state: string | null, 
+/**
+ * The agent session it ran as, and who it worked for.
+ */
+agent: string | null, by: string | null, started_at: string | null, ended_at: string | null, 
+/**
+ * How it ended: done, not_done, failed, cancelled.
+ */
+outcome: string | null, 
+/**
+ * The work item it worked on.
+ */
+unit: string | null, 
+/**
+ * The lease token it worked under.
+ */
+lease: string | null, 
+/**
+ * `<kind>/<id>` of each decision it carried out.
+ */
+decisions: Array<string>, 
+/**
+ * The Arugula agent pane that ran it (an Arugula run's id names its
+ * block: `arugula-<pane>-<ms>`). The client links it while that pane
+ * is open.
+ */
+pane: number | null, };

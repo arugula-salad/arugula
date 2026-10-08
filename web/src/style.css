@@ -4082,6 +4082,42 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   margin-top: 2px;
 }
 
+/* #618: a member card's why, when it's open. */
+.ws-why {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--divider);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.ws-why h5 {
+  margin: 6px 0 2px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.ws-why p {
+  margin: 2px 0;
+}
+
+.ws-why-row {
+  margin: 2px 0;
+  overflow-wrap: anywhere;
+}
+
+.ws-why .link {
+  min-height: 0;
+  padding: 0 2px;
+  background: none;
+  color: var(--accent);
+  font-weight: normal;
+  font-size: 12px;
+}
+
 .ws-gate-when {
   font-size: 12px;
   margin-top: 2px;

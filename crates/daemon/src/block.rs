@@ -53,6 +53,13 @@ pub trait Block: Send + Sync {
     fn call_by(&self, method: &str, args: Value, _by: Option<&str>) -> BoxFuture<'static, Result<Value, String>> {
         self.call(method, args)
     }
+    /// Whether it wrote this chant agent run (#618: an agent block started
+    /// from a workspace member writes one per turn), so a workspace block
+    /// links the run to it.
+    #[cfg(feature = "labs")]
+    fn wrote_run(&self, _id: &str) -> bool {
+        false
+    }
     /// Its cells changed size (a terminal-like renderer may care).
     fn resize(&self, _cols: u16, _rows: u16) {}
     /// Some client draws it now (true), or none does any more (M11).
@@ -285,6 +292,15 @@ impl BlockCtx {
         cmds.send(crate::mux::Cmd::Api(crate::mux::Api::OwnTab(self.id, name, tx)))
             .map_err(|_| "the daemon is stopping".to_owned())?;
         rx.await.map_err(|_| "the daemon is stopping".to_owned())?
+    }
+
+    /// Another block, if it's open.
+    #[cfg(feature = "labs")]
+    pub async fn block(&self, id: PaneId) -> Option<Arc<dyn Block>> {
+        let cmds = self.cmds.as_ref()?;
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        cmds.send(crate::mux::Cmd::Api(crate::mux::Api::Block(id, tx))).ok()?;
+        rx.await.ok().flatten()
     }
 
     /// Whether another block is still open (M37: an issue's agent).

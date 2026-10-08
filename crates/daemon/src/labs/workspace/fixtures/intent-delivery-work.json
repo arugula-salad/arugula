@@ -1,0 +1,405 @@
+{
+  "$schema": "https://intentius.io/chant/schemas/workspace/intent/v1/intent.schema.json",
+  "contract": 1,
+  "chant": "0.108.1",
+  "at": null,
+  "workspace": {
+    "name": "toy",
+    "root": "."
+  },
+  "region": "region:delivery",
+  "history": {
+    "rev": "2354cdeda3971a5864cd331c59a228870748e058",
+    "follows": "directory",
+    "shallow": false
+  },
+  "kinds": [
+    {
+      "file": "decisions/decision.kind.mjs",
+      "name": "decision",
+      "records": "decision",
+      "joins": null
+    },
+    {
+      "file": "work/work.kind.mjs",
+      "name": "work",
+      "records": "work",
+      "joins": null
+    }
+  ],
+  "nodes": [
+    {
+      "id": "region:delivery",
+      "kind": "region",
+      "path": "delivery",
+      "lines": null,
+      "member": "delivery",
+      "at": null,
+      "type": "dir",
+      "generated": null,
+      "node": null,
+      "symbol": null
+    },
+    {
+      "id": "file:delivery/chant.config.ts",
+      "kind": "file",
+      "path": "delivery/chant.config.ts",
+      "member": "delivery",
+      "generated": false
+    },
+    {
+      "id": "file:delivery/ship.op.ts",
+      "kind": "file",
+      "path": "delivery/ship.op.ts",
+      "member": "delivery",
+      "generated": false
+    },
+    {
+      "id": "member:delivery",
+      "kind": "member",
+      "name": "delivery",
+      "dir": "delivery",
+      "memberKind": "chant"
+    },
+    {
+      "id": "commit:2354cdeda3971a5864cd331c59a228870748e058",
+      "kind": "commit",
+      "sha": "2354cdeda3971a5864cd331c59a228870748e058",
+      "subject": "one",
+      "author": {
+        "name": "t",
+        "email": "t@t"
+      },
+      "date": "2026-10-07T19:13:29-06:00",
+      "trailers": {},
+      "pullRequest": null,
+      "signature": {
+        "level": "unattested",
+        "reason": "no signers file (.chant/allowed_signers) at base; attestation is off"
+      },
+      "lines": null,
+      "state": "undecided",
+      "joins": {
+        "agent": null,
+        "lease": null,
+        "run": null,
+        "records": [],
+        "applied": null
+      }
+    },
+    {
+      "id": "record:decision/toy-000",
+      "kind": "decision",
+      "recordKind": "decision",
+      "record": "toy-000",
+      "path": "decisions/toy-000-ship-on-merge.md",
+      "title": "Ship on every merge",
+      "state": "decided",
+      "closed": false,
+      "valid": true,
+      "reasons": [],
+      "provenance": {
+        "level": "unattested",
+        "commit": null,
+        "reason": "no signers file (.chant/allowed_signers) at base 2354cded; attestation is off"
+      },
+      "decided_by": "lex00",
+      "decided_on": "2026-10-01",
+      "decidedIn": {
+        "sha": "2354cdeda3971a5864cd331c59a228870748e058",
+        "date": "2026-10-07T19:13:29-06:00",
+        "subject": "one"
+      },
+      "reviews": {
+        "agree": 0,
+        "dissent": 0,
+        "abstain": 0,
+        "openConcerns": 0
+      },
+      "supersededBy": "toy-001",
+      "supersedes": [],
+      "constrains": [
+        {
+          "entry": "member:delivery",
+          "granularity": "member"
+        }
+      ]
+    },
+    {
+      "id": "record:decision/toy-001",
+      "kind": "decision",
+      "recordKind": "decision",
+      "record": "toy-001",
+      "path": "decisions/toy-001-a-person-approves-each-ship.md",
+      "title": "A person approves each ship",
+      "state": "decided",
+      "closed": false,
+      "valid": true,
+      "reasons": [],
+      "provenance": {
+        "level": "unattested",
+        "commit": null,
+        "reason": "no signers file (.chant/allowed_signers) at base 2354cded; attestation is off"
+      },
+      "decided_by": "lex00",
+      "decided_on": "2026-10-02",
+      "decidedIn": {
+        "sha": "2354cdeda3971a5864cd331c59a228870748e058",
+        "date": "2026-10-07T19:13:29-06:00",
+        "subject": "one"
+      },
+      "reviews": {
+        "agree": 0,
+        "dissent": 0,
+        "abstain": 0,
+        "openConcerns": 0
+      },
+      "supersededBy": null,
+      "supersedes": [
+        "toy-000"
+      ],
+      "constrains": [
+        {
+          "entry": "member:delivery",
+          "granularity": "member"
+        }
+      ]
+    },
+    {
+      "id": "record:decision/toy-002",
+      "kind": "decision",
+      "recordKind": "decision",
+      "record": "toy-002",
+      "path": "decisions/toy-002-release-on-fridays.md",
+      "title": "Releases go out on Fridays",
+      "state": "proposed",
+      "closed": false,
+      "valid": true,
+      "reasons": [],
+      "provenance": {
+        "level": "unattested",
+        "commit": null,
+        "reason": "no signers file (.chant/allowed_signers) at base 2354cded; attestation is off"
+      },
+      "decided_by": null,
+      "decided_on": null,
+      "decidedIn": null,
+      "reviews": {
+        "agree": 0,
+        "dissent": 0,
+        "abstain": 0,
+        "openConcerns": 0
+      },
+      "supersededBy": null,
+      "supersedes": [],
+      "constrains": []
+    },
+    {
+      "id": "evidence:https://example.com/toy",
+      "kind": "evidence",
+      "ref": "https://example.com/toy",
+      "plugin": null,
+      "data": {
+        "title": "The toy's README",
+        "url": "https://example.com/toy",
+        "path": null,
+        "as_of": "2026-10-01T00:00:00Z",
+        "sha256": null
+      }
+    },
+    {
+      "id": "artifact:delivery/ship.op.ts",
+      "kind": "artifact",
+      "path": "delivery/ship.op.ts",
+      "anchor": null,
+      "pinnedSha256": "c03f661ea9635a1d4544289b6b513b0087d5dd5668eb54baad0eaed0fb52ad3b",
+      "currentSha256": "c03f661ea9635a1d4544289b6b513b0087d5dd5668eb54baad0eaed0fb52ad3b",
+      "pinState": "pinned"
+    },
+    {
+      "id": "record:work/W-001",
+      "kind": "work",
+      "recordKind": "work",
+      "record": "W-001",
+      "path": "work/W-001-ship-the-toy.md",
+      "title": "Ship the toy",
+      "state": "in-progress",
+      "closed": false,
+      "valid": true,
+      "reasons": [],
+      "provenance": {
+        "level": "unattested",
+        "commit": null,
+        "reason": "no signers file (.chant/allowed_signers) at base 2354cded; attestation is off"
+      },
+      "owner": "lex00",
+      "ready": false,
+      "blockedBy": [],
+      "implements": [
+        {
+          "id": "toy-001",
+          "state": "decided"
+        }
+      ],
+      "needs": [],
+      "source": null,
+      "supersededBy": null,
+      "constrains": [
+        {
+          "entry": "member:delivery",
+          "granularity": "member"
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "id": "finding:intent-commit-undecided:1",
+      "kind": "finding",
+      "code": "intent-commit-undecided",
+      "message": "2354cded changed the region when no decision constrained delivery by path",
+      "concerns": [
+        "commit:2354cdeda3971a5864cd331c59a228870748e058",
+        "region:delivery"
+      ],
+      "addressed": false,
+      "addressedBy": []
+    },
+    {
+      "id": "finding:intent-decision-provisional:1",
+      "kind": "finding",
+      "code": "intent-decision-provisional",
+      "message": "the decisions constraining delivery are decided, and none is in a closed state",
+      "concerns": [
+        "region:delivery",
+        "record:decision/toy-001"
+      ],
+      "addressed": false,
+      "addressedBy": []
+    },
+    {
+      "id": "finding:intent-constraint-coarse:1",
+      "kind": "finding",
+      "code": "intent-constraint-coarse",
+      "message": "delivery is constrained only through its member, delivery",
+      "concerns": [
+        "region:delivery",
+        "record:decision/toy-000",
+        "record:decision/toy-001"
+      ],
+      "addressed": false,
+      "addressedBy": []
+    },
+    {
+      "id": "finding:intent-evidence-unpinned:1",
+      "kind": "finding",
+      "code": "intent-evidence-unpinned",
+      "message": "toy-000 cites https://example.com/toy with no hash, so what the page said when it was decided can't be checked",
+      "concerns": [
+        "record:decision/toy-000",
+        "evidence:https://example.com/toy"
+      ],
+      "addressed": false,
+      "addressedBy": []
+    }
+  ],
+  "edges": [
+    {
+      "kind": "touched-by",
+      "from": "region:delivery",
+      "to": "commit:2354cdeda3971a5864cd331c59a228870748e058",
+      "lines": null
+    },
+    {
+      "kind": "constrains",
+      "from": "record:decision/toy-000",
+      "to": "region:delivery",
+      "granularity": "member",
+      "entry": "member:delivery"
+    },
+    {
+      "kind": "constrains",
+      "from": "record:decision/toy-001",
+      "to": "region:delivery",
+      "granularity": "member",
+      "entry": "member:delivery"
+    },
+    {
+      "kind": "constrains",
+      "from": "record:decision/toy-002",
+      "to": "file:delivery/ship.op.ts",
+      "granularity": "path",
+      "entry": "path:delivery/ship.op.ts"
+    },
+    {
+      "kind": "supersedes",
+      "from": "record:decision/toy-001",
+      "to": "record:decision/toy-000"
+    },
+    {
+      "kind": "cites-evidence",
+      "from": "record:decision/toy-000",
+      "to": "evidence:https://example.com/toy"
+    },
+    {
+      "kind": "pins",
+      "from": "record:decision/toy-001",
+      "to": "artifact:delivery/ship.op.ts",
+      "pinnedSha256": "c03f661ea9635a1d4544289b6b513b0087d5dd5668eb54baad0eaed0fb52ad3b",
+      "pinState": "pinned"
+    },
+    {
+      "kind": "constrains",
+      "from": "record:work/W-001",
+      "to": "region:delivery",
+      "granularity": "member",
+      "entry": "member:delivery"
+    },
+    {
+      "kind": "implements",
+      "from": "record:work/W-001",
+      "to": "record:decision/toy-001"
+    }
+  ],
+  "reasons": [],
+  "summary": {
+    "commits": 1,
+    "decisions": 3,
+    "artifacts": 1,
+    "findings": 4
+  },
+  "why": {
+    "lines": null,
+    "blame": [],
+    "decisions": [
+      {
+        "decision": "record:decision/toy-001",
+        "relevance": "member",
+        "current": true,
+        "closed": false,
+        "lines": 0
+      },
+      {
+        "decision": "record:decision/toy-002",
+        "relevance": "related",
+        "current": true,
+        "closed": false,
+        "lines": 0
+      },
+      {
+        "decision": "record:decision/toy-000",
+        "relevance": "member",
+        "current": false,
+        "closed": false,
+        "lines": 0
+      }
+    ],
+    "runs": [],
+    "explained": true,
+    "gaps": [
+      {
+        "code": "intent-why-no-run",
+        "message": "no agent run is joined to the commits that made delivery"
+      }
+    ]
+  }
+}

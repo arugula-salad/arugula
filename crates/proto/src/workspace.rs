@@ -191,3 +191,82 @@ pub struct GateRelease {
     pub actor: Option<String>,
     pub git_sha: Option<String>,
 }
+
+/// A work lease, from `status`'s `leases` (#618): who holds a work item.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct Lease {
+    /// The work item's id.
+    pub item: String,
+    pub holder: String,
+    /// `active`, or `expired` (it can be claimed again).
+    pub state: String,
+    pub expires_at: Option<String>,
+    /// The member whose ledger holds it; none for the workspace's own.
+    pub member: Option<String>,
+    /// The fencing token, which a run under the lease names.
+    pub token: Option<String>,
+    /// The Arugula agent pane holding it, when a run of one names its token
+    /// (or, running, its agent session is the holder).
+    pub pane: Option<u32>,
+}
+
+/// An agent run, from `chant workspace runs` (#618). `WorkspaceRun` in
+/// TypeScript, which has a `RunRef` already.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "ts", ts(rename = "WorkspaceRun"))]
+pub struct RunRef {
+    /// The `Chant-Run` trailer's value.
+    pub id: String,
+    /// `running` or `ended`.
+    pub state: Option<String>,
+    /// The agent session it ran as, and who it worked for.
+    pub agent: Option<String>,
+    pub by: Option<String>,
+    pub started_at: Option<String>,
+    pub ended_at: Option<String>,
+    /// How it ended: done, not_done, failed, cancelled.
+    pub outcome: Option<String>,
+    /// The work item it worked on.
+    pub unit: Option<String>,
+    /// The lease token it worked under.
+    pub lease: Option<String>,
+    /// `<kind>/<id>` of each decision it carried out.
+    pub decisions: Vec<String>,
+    /// The Arugula agent pane that ran it (an Arugula run's id names its
+    /// block: `arugula-<pane>-<ms>`). The client links it while that pane
+    /// is open.
+    pub pane: Option<u32>,
+}
+
+impl RunRef {
+    /// The pane an Arugula run's id names (`arugula-<pane>-<ms>`).
+    pub fn pane_of(id: &str) -> Option<u32> {
+        let mut it = id.strip_prefix("arugula-")?.split('-');
+        let pane = it.next()?.parse().ok()?;
+        it.next()?.parse::<u64>().ok()?;
+        it.next().is_none().then_some(pane)
+    }
+}
+
+/// Why a member is the way it is, and who works on it (#618): read when
+/// its card is opened, kept until the fingerprint moves.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct MemberWhy {
+    /// The decisions covering it, most relevant first (the gate card's
+    /// read). None while reading, or when it couldn't be read.
+    pub decisions: Option<Vec<DecisionRef>>,
+    /// Commits that changed it while no decision constrained it.
+    pub undecided: Option<u64>,
+    /// Why the decisions couldn't be read.
+    pub note: Option<String>,
+    /// Its recent agent runs, newest first: those of the agent sessions the
+    /// declaration binds to it, and those that made commits in it.
+    pub runs: Vec<RunRef>,
+    /// Why the runs couldn't be read.
+    pub runs_note: Option<String>,
+    /// How long chant's intent read took.
+    pub ms: Option<u64>,
+}

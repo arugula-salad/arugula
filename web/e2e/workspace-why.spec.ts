@@ -2,11 +2,16 @@
 // the decision it enforces, with the plan digest and the last release. The
 // fixture (e2e/fixtures/chant-workspace-decisions, chant 0.108.1 pinned in
 // its lock file: `graph --intent` came in 0.102) is the toy workspace with
-// three decisions. toy-001 constrains member:delivery and supersedes
-// toy-000; toy-002, proposed, constrains one file in delivery. A gate in
-// delivery enforces toy-001 alone. The decisions are read from chant's
-// intent graph when the gate is raised, so they come a moment after it: on
-// the block's "Waiting on you", the swarm's card and the phone's sheet.
+// three decisions and a work item. toy-001 constrains member:delivery and
+// supersedes toy-000; toy-002, proposed, constrains one file in delivery;
+// W-001 carries out toy-001 in delivery. A gate in delivery enforces
+// toy-001 alone. The decisions are read from chant's intent graph when the
+// gate is raised, so they come a moment after it: on the block's "Waiting
+// on you", the swarm's card and the phone's sheet.
+//
+// #618's: an opened member card shows its decisions (the proposed one
+// links to hud), the lease on W-001 and the run under it, each linked to
+// the pane that ran it, and how many commits no decision covers.
 //
 // The first run installs the fixture's chant (`npm ci`, a few seconds).
 
@@ -25,6 +30,7 @@ test.afterAll(closeContexts);
 
 const OWNER = "me@example.com";
 const FIXTURE = fileURLToPath(new URL("./fixtures/chant-workspace-decisions", import.meta.url));
+const FAKE_ACP = fileURLToPath(new URL("../../crates/daemon/tests/fake_acp.py", import.meta.url));
 const phone = (() => {
   const { viewport, userAgent, deviceScaleFactor, isMobile, hasTouch } = devices["Pixel 7"];
   return { viewport, userAgent, deviceScaleFactor, isMobile, hasTouch };
@@ -93,7 +99,7 @@ test("a waiting gate names the decision it enforces, its plan and the last relea
   test.setTimeout(90_000);
   const out = cli("workspace", ws);
   block = Number(/^%(\d+)/.exec(out)![1]);
-  expect(out).toContain("toy: 2 members, 2 records, 0 waiting at a gate");
+  expect(out).toContain("toy: 2 members, 3 records, 0 waiting at a gate");
   await open(page);
   await page.evaluate((b) => window.__arugula.client.setActive(b), block);
   const shown = page.locator(`[data-workspace-block="${block}"]`);
@@ -157,4 +163,78 @@ test("a gate dismissed stays dismissed when the workspace moves and its decision
   await new Promise((r) => setTimeout(r, 2_000));
   // Not asked again.
   expect((await panesOf(page)).find((p) => p.id === block)?.attention).toBe("idle");
+});
+
+test("an opened member card: its decisions, the lease and run on it with their pane, and undecided commits (#618)", async ({ page }, info) => {
+  test.setTimeout(120_000);
+  await open(page);
+  const state = async () => (await (await fetch(`${base()}/api/blocks/${block}`)).json()).state;
+  const post = (path: string, body: unknown) => fetch(base() + path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  // An agent block started from delivery, as the card's Agent button
+  // starts one (on the fake ACP agent): its turn is a run in the ledger,
+  // as the agent session the declaration binds to delivery.
+  const config = {
+    agent: "acp",
+    command: ["python3", FAKE_ACP],
+    cwd: join(ws, "delivery"),
+    prompt: "look at the ship op",
+    chant: { root: ws, member: "delivery", agent: "shipper", chant: join(ws, "node_modules/.bin/chant") },
+  };
+  const agentPane: PaneId = (await (await post("/api/blocks", { type: "agent", config })).json()).block;
+  const runs = () => JSON.parse(chant(ws, "workspace", "runs", "--json").stdout).runs as { id: string; agent: string }[];
+  await expect.poll(() => runs().find((r) => r.id.startsWith(`arugula-${agentPane}-`))?.agent ?? null, { timeout: 30_000 }).toBe("shipper");
+  const run = runs().find((r) => r.id.startsWith(`arugula-${agentPane}-`))!.id;
+  // Someone claims W-001 and records a run under its lease whose id names
+  // that pane, but no block there wrote it: not linked.
+  const claim = JSON.parse(chant(ws, "workspace", "work", "claim", "W-001", "--holder", "shipper", "--json").stdout);
+  const other = `arugula-${agentPane}-1`;
+  const fields = { id: other, startedAt: new Date().toISOString(), harness: "claude-code", agent: "shipper", lease: claim.lease.token, unit: { id: "W-001", kind: "work" }, instruction: { sha256: "a".repeat(64) } };
+  const started = spawnSync(join(FIXTURE, "node_modules/.bin/chant"), ["workspace", "runs", "start", "--from", "-"], { cwd: ws, input: JSON.stringify(fields), encoding: "utf8" });
+  expect(started.status, started.stdout + started.stderr).toBe(0);
+  // The block reads the lease (status) once the fingerprint settles.
+  await expect.poll(async () => (await state()).leases?.map((l: { item: string }) => l.item) ?? [], { timeout: 20_000 }).toEqual(["W-001"]);
+
+  await page.evaluate((b) => window.__arugula.client.setActive(b), block);
+  const shown = page.locator(`[data-workspace-block="${block}"]`);
+  const card = shown.locator('[data-member="delivery"]');
+  await card.locator('[data-why-toggle="delivery"]').click();
+  const why = card.locator('[data-why="delivery"]');
+  await expect(why.locator('[data-why-decision="toy-001"]')).toContainText("toy-001 decided A person approves each ship", { timeout: 30_000 });
+  await expect(why.locator('[data-why-decision="toy-002"]')).toContainText("proposed");
+  await expect(why).toContainText("Replaced: toy-000 Ship on every merge");
+  await expect(why.locator("[data-why-undecided]")).toHaveText(/^\d+ commits? changed delivery while no decision covered it\.$/);
+  await expect(card.locator("[data-tag-undecided]")).toHaveText(/^\d+ undecided$/);
+  // The agent block's run links to its pane; the other run and the lease
+  // under it don't.
+  await expect(why.locator(`[data-why-run="${run}"] [data-why-pane="${agentPane}"]`)).toBeVisible({ timeout: 20_000 });
+  await expect(why.locator(`[data-why-run="${run}"]`)).toContainText("as shipper");
+  await expect(why.locator(`[data-why-run="${other}"]`)).toContainText("running · as shipper · W-001");
+  await expect(why.locator(`[data-why-run="${other}"] [data-why-pane]`)).toHaveCount(0);
+  await expect(why.locator('[data-why-lease="W-001"]')).toContainText("W-001 held by shipper · until");
+  await expect(why.locator('[data-why-lease="W-001"] [data-why-pane]')).toHaveCount(0);
+  await expect(card.locator("[data-tag-leases]")).toHaveText("1 leased");
+  await card.screenshot({ path: info.outputPath("member-card.png") });
+
+  // Another client closes the card: this one, still showing it, asks again.
+  expect((await post(`/api/blocks/${block}/call/why`, { member: "delivery", open: false })).ok).toBe(true);
+  await expect.poll(async () => (await state()).members.find((m: { name: string }) => m.name === "delivery").why?.decisions?.[0]?.id ?? null, { timeout: 15_000 }).toBe("toy-001");
+  await expect(why.locator('[data-why-decision="toy-001"]')).toBeVisible();
+
+  // The proposed decision is reviewed in hud: its decisions page, at the id.
+  expect((await post(`/api/blocks/${block}/call/hud`, { url: "javascript:alert(1)" })).ok).toBe(false);
+  expect((await post(`/api/blocks/${block}/call/hud`, { url: "https://hud.example/?q=1" })).ok).toBe(false);
+  expect((await post(`/api/blocks/${block}/call/hud`, { url: "https://hud.example/" })).ok).toBe(true);
+  await page.evaluate(() => {
+    (window as unknown as { opened: string[] }).opened = [];
+    window.open = (u?: string | URL) => ((window as unknown as { opened: string[] }).opened.push(String(u)), null);
+  });
+  await why.locator('[data-why-review="toy-002"]').click();
+  expect(await page.evaluate(() => (window as unknown as { opened: string[] }).opened)).toEqual(["https://hud.example/decisions#toy-002"]);
+  // The block's text has it all.
+  const text = cli("capture", `%${block}`);
+  expect(text).toContain("lease W-001 held by shipper (active)");
+  expect(text).toContain(`run ${other} running`);
+  // The run's pane link shows the agent's pane.
+  await why.locator(`[data-why-run="${run}"] [data-why-pane="${agentPane}"]`).click();
+  await expect.poll(() => page.evaluate(() => window.__arugula.client.active())).toBe(agentPane);
 });

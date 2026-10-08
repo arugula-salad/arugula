@@ -442,9 +442,25 @@ The decisions a gate enforces come from `graph --intent <member dir>`
 It's read per member with a gate waiting, outside the full read, and kept
 until `HEAD` or the lifecycle ref moves (once per gate while nobody looks): it runs `git log` over the member, about a
 second on a small repository and 40 s or more on chant's own, where the 30 s
-limit on a host command cuts it off and the card says so.
-Where: `crates/daemon/src/workspace/model.rs` (`READER`, `FINGERPRINT`, `INTENT`), `apps/hud.rs`, `rules.rs`, `cli/src/ask.rs`, `fountain/wear.rs`, `forge/issue.rs`.
-From: [M34](docs/plan-archive.md#m34-chant-workspace-blocks-73), #303, #305, #617.
+limit on a host command cuts it off and the card says so. A member card
+opened (#618) gets the same read, and the run ledger, only while a client
+draws the block.
+
+A member card joins a few things itself, accepted beside the pane mapping
+because chant has no document that does them (#618):
+- A run's pane: the run id Arugula writes (`arugula-<pane>-<ms>`), named
+  only when the agent block in that pane recorded that run. chant knows the
+  agent session; only Arugula knows the pane.
+- A run on a member: its `agent` is a session the declaration binds to the
+  member (`agents`), or chant's intent walk joined the run to the member's
+  commits.
+- A lease on a member: `status`'s lease is in the member's ledger, or its
+  item is a work node in the member's intent graph with its own
+  `constrains` (chant's statement that it covers the member).
+- A lease's pane: the run whose `lease` is the lease's token, and that run's
+  pane. A lease is never linked by its holder's name.
+Where: `crates/daemon/src/workspace/model.rs` (`READER`, `FINGERPRINT`, `INTENT`, `member_why`), `apps/hud.rs`, `rules.rs`, `cli/src/ask.rs`, `fountain/wear.rs`, `forge/issue.rs`.
+From: [M34](docs/plan-archive.md#m34-chant-workspace-blocks-73), #303, #305, #617, #618.
 
 ### Threads live on the daemon that owns the pane
 Pane and session threads are kept in `<state>/threads/`, outside the pane's
