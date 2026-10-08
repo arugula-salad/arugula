@@ -4,6 +4,7 @@
 
 import { evaluate, hex, unhex, type Cert, type Revocation } from "./cert.ts";
 import { signText, type DeviceKeys } from "./keys.ts";
+import { newKeyPair } from "./noise.ts";
 
 export type TeamRole = "owner" | "editor" | "viewer";
 
@@ -81,7 +82,7 @@ const PKCS8_ED25519 = "302e020100300506032b657004220420";
 /** A one-time invite key: its seed (for the link's fragment only) and
  * public half (the invite's `key`). */
 export async function newInviteKey(): Promise<{ seed: string; key: string }> {
-  const k = (await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"])) as CryptoKeyPair;
+  const k = await newKeyPair("Ed25519", true, ["sign", "verify"]);
   const pkcs8 = hex(new Uint8Array(await crypto.subtle.exportKey("pkcs8", k.privateKey)));
   return { seed: pkcs8.slice(PKCS8_ED25519.length), key: hex(new Uint8Array(await crypto.subtle.exportKey("raw", k.publicKey))) };
 }

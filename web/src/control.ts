@@ -11,6 +11,7 @@
 
 import { certBody, deviceId, evaluate, hex, joinCode, normalizeCode, type Cert, type Revocation, revocationBody, unhex } from "./e2e/cert.ts";
 import { forget, loadEnrollment, loadKeys, saveEnrollment, saveWorkerDirectory, signText, type DeviceKeys, type Enrollment } from "./e2e/keys.ts";
+import { newKeyPair } from "./e2e/noise.ts";
 import type { E2ETarget } from "./client";
 import { desktopApp } from "./desktop";
 import {
@@ -586,7 +587,7 @@ export class ControlSession {
     const codes: string[] = [];
     const certs: Cert[] = [];
     for (let i = 1; i <= 2; i++) {
-      const kp = (await subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"])) as CryptoKeyPair;
+      const kp = await newKeyPair("Ed25519", true, ["sign", "verify"]);
       const seed = new Uint8Array(await subtle.exportKey("pkcs8", kp.privateKey)).slice(16);
       const sign = new Uint8Array(await subtle.exportKey("raw", kp.publicKey));
       const c: Cert = {
@@ -1073,7 +1074,7 @@ export class ControlSession {
   async makeLink(request: (m: string, p: string, b?: unknown) => Promise<{ ok: boolean; json<T>(): Promise<T> }>, id: string, session: number, ttlSecs: number, history: boolean): Promise<string> {
     const d = this.daemons.find((x) => x.id === id);
     if (!d) throw new Error("no such machine");
-    const kp = (await crypto.subtle.generateKey({ name: "X25519" }, true, ["deriveBits"])) as CryptoKeyPair;
+    const kp = await newKeyPair("X25519", true, ["deriveBits"]);
     const seed = new Uint8Array(await crypto.subtle.exportKey("pkcs8", kp.privateKey)).slice(16);
     const pub = new Uint8Array(await crypto.subtle.exportKey("raw", kp.publicKey));
     const res = await request("POST", "/api/links", { session, key: hex(pub), ttl_secs: ttlSecs, history });
