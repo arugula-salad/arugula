@@ -167,11 +167,10 @@ test.beforeAll(async () => {
   servers.push(studioServer);
 });
 
-test.afterAll(async ({ browser }) => {
-  const page = await browser.newPage();
-  await page.goto("/");
-  await page.evaluate(() => window.__arugula?.client.request("DELETE", "/api/studio")).catch(() => {});
-  await page.close();
+test.afterAll(async ({}, info) => {
+  // Through Node's fetch, which carries the local token (a page from
+  // browser.newPage() has no cookie, and was refused).
+  await fetch(`${info.project.use.baseURL}/api/studio`, { method: "DELETE" }).catch(() => {});
   for (const s of streams) s.end();
   for (const s of feeds) s.end();
   for (const s of servers) s.close();
@@ -197,6 +196,9 @@ async function blockOf(page: Page): Promise<number> {
 
 test("a studio app opens framed from another site; its agent's question is answered here", async ({ page }) => {
   await reset(page);
+  // A retry (or a repeat) starts where the last try left the daemon, which
+  // this file shares with the others: linked to the fake studio.
+  await page.evaluate(() => window.__arugula.client.request("DELETE", "/api/studio"));
   const term = (await panes(page))[0];
   // Not linked to a studio: the menus don't offer one (#180).
   await paneEl(page, term).click({ button: "right", position: { x: 60, y: 60 } });
