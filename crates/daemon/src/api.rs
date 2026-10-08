@@ -24,7 +24,7 @@ use arugula_proto::{
         ThreadAgent, ThreadMessages, ThreadPostRequest, ThreadPosted, ThreadReadRequest, Unreached, UnreachedWhy,
         WaitResult, WithdrawRequest,
     },
-    op::ops::{ClosePane, ListPanes, ShellEnvGet, ShellEnvRefresh},
+    op::ops::{ClosePane, FlagSet, FlagsList, ListPanes, ShellEnvGet, ShellEnvRefresh},
 };
 use axum::{
     Json, Router,
@@ -87,6 +87,8 @@ pub fn routes() -> Router<Arc<App>> {
         .route("/api/rules/{index}", axum::routing::delete(rules_forget))
         .op::<ShellEnvGet>()
         .op::<ShellEnvRefresh>()
+        .op::<FlagsList>()
+        .op::<FlagSet>()
         .route("/api/hosts/self/agents", get(agents_get))
         .route("/api/hosts/self/agents/refresh", post(agents_refresh))
         .route("/api/editors", get(editors))

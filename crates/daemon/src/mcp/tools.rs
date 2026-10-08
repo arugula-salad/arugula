@@ -1464,7 +1464,7 @@ impl<'a> Call<'a> {
 
     pub async fn dispatch(&self, name: &str, args: Value) -> CallToolResult {
         let fail = |e: String| CallToolResult::error(vec![ContentBlock::text(e)]);
-        let labs = arugula_proto::hosts::labs(self.app.control.state_dir());
+        let labs = arugula_proto::flags::get(self.app.control.state_dir(), arugula_proto::flags::LABS);
         let (def, kind, args) = match route(name, args, labs) {
             Ok(r) => r,
             Err(e) => return fail(e),
@@ -3716,15 +3716,15 @@ mod tests {
     }
 
     /// A build without Labs lists nothing of Fountain, studio apps or chant
-    /// workspaces, whatever the `labs` file says: no kind, no argument, no
+    /// workspaces, whatever the `labs` flag says: no kind, no argument, no
     /// value, no word in a description.
     #[cfg(not(feature = "labs"))]
     #[test]
     fn a_build_without_labs_never_lists_fountain() {
         let dir = std::env::temp_dir().join(format!("arugula-nolabs-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("labs"), "").unwrap();
-        assert!(arugula_proto::hosts::labs(&dir), "the file is there");
+        arugula_proto::flags::set(&dir, arugula_proto::flags::LABS, true).unwrap();
+        assert!(arugula_proto::flags::get(&dir, arugula_proto::flags::LABS), "the flag is on");
         let labs = crate::labs::enabled(&dir);
         std::fs::remove_dir_all(&dir).unwrap();
         assert!(!labs, "labs is on in a build without it");

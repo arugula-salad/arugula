@@ -520,6 +520,9 @@ fn main() -> anyhow::Result<()> {
         Some(Command::JoinRequest { name, out, state_dir }) => {
             control::join_request(&name, &out, &state_dir.unwrap_or_else(default_state_dir))
         }
+        Some(Command::Flags { name, switch, state_dir }) => {
+            flags_cli(name.as_deref(), switch, &state_dir.unwrap_or_else(default_state_dir))
+        }
         Some(Command::Leave { state_dir }) => {
             let dir = state_dir.unwrap_or_else(default_state_dir);
             let listen = std::fs::read_to_string(dir.join("listen")).unwrap_or_else(|_| "127.0.0.1:7681".into());
@@ -540,6 +543,36 @@ fn main() -> anyhow::Result<()> {
             tokio::runtime::Runtime::new()?.block_on(run(args.run, kept))
         }
     }
+}
+
+/// `arugulad flags`: the flags with their state, one's state, or one set.
+/// It works on the state directory, not through the daemon.
+fn flags_cli(name: Option<&str>, switch: Option<args::Switch>, dir: &std::path::Path) -> anyhow::Result<()> {
+    use arugula_proto::flags;
+    let state = |on| if on { "on" } else { "off" };
+    let Some(name) = name else {
+        let rows = flags::all(dir);
+        let width = rows.iter().map(|(f, _)| f.name.len()).max().unwrap_or(0);
+        for (f, on) in rows {
+            println!("{:width$}  {:3}  {}", f.name, state(on), f.about);
+        }
+        return Ok(());
+    };
+    match switch {
+        None if flags::FLAGS.iter().any(|f| f.name == name) => println!("{}", state(flags::get(dir, name))),
+        None => anyhow::bail!("no flag named {name} (see `arugulad flags`)"),
+        Some(s) => {
+            let on = s == args::Switch::On;
+            flags::set(dir, name, on).map_err(|e| anyhow::anyhow!("{e}"))?;
+            println!("{name} is {}", state(on));
+            if name == flags::LABS && !labs::BUILT {
+                println!("  This build of Arugula has no Labs, so nothing changes.");
+            } else if daemon_running(dir) {
+                println!("  The running daemon follows at once; reload the page to see it there.");
+            }
+        }
+    }
+    Ok(())
 }
 
 async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane::Kept>) -> anyhow::Result<()> {
@@ -639,6 +672,12 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
     let state_dir = args.state_dir.clone().unwrap_or_else(default_state_dir);
     let store = store::StateDir::open(state_dir.clone())?;
     info!(state = %state_dir.display(), "state directory");
+    // The `labs` file of #385 moves into flags.json (#464).
+    match arugula_proto::flags::migrate_legacy(&state_dir) {
+        Ok(true) => info!("the labs file is now the labs flag in flags.json"),
+        Ok(false) => {}
+        Err(e) => warn!(error = %e, "can't move the labs file into flags.json"),
+    }
     if let Err(e) = store::write_atomic(&state_dir.join("listen"), args.listen.to_string().as_bytes()) {
         warn!(error = %e, "can't record the listen address");
     }

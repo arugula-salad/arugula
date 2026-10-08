@@ -124,6 +124,28 @@ pub(crate) enum Command {
         #[arg(long, env = "ARUGULA_STATE_DIR")]
         state_dir: Option<PathBuf>,
     },
+    /// List what can be switched on here, or switch one: `arugulad flags
+    /// labs on` shows what a new install doesn't (chat, huddles, Fountain
+    /// and more). It writes flags.json in the state directory, so it works
+    /// with the daemon stopped, and a running one follows at once; reload
+    /// the page to see it there.
+    Flags {
+        /// The flag to show or set [default: list them all].
+        name: Option<String>,
+        /// Turn it on or off [default: show it].
+        #[arg(requires = "name", value_enum)]
+        switch: Option<Switch>,
+        /// The daemon's state directory [default: as the daemon's].
+        #[arg(long, env = "ARUGULA_STATE_DIR")]
+        state_dir: Option<PathBuf>,
+    },
+}
+
+/// What `arugulad flags NAME` is told to do.
+#[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Switch {
+    On,
+    Off,
 }
 
 #[derive(clap::Args, Debug)]
@@ -375,7 +397,7 @@ pub(crate) struct BlockArgs {
 pub(crate) const DEFAULT_WISP_URL: &str = "http://127.0.0.1:7788";
 
 /// Options that work but stay out of `--help` unless the machine has the
-/// `labs` file: guest ssh, the studio file and the sandbox provider. The
+/// `labs` flag on: guest ssh, the studio file and the sandbox provider. The
 /// others that are `hide = true` are internals, and stay hidden.
 const LABS_OPTIONS: [&str; 5] = ["guest_ssh", "guest_ssh_host", "studio_file", "wisp_url", "wisp_token_file"];
 
@@ -391,7 +413,7 @@ pub(crate) fn labs_command(labs: bool) -> clap::Command {
     cmd
 }
 
-/// This machine has the `labs` file, in the state dir it was told to use
+/// This machine has the `labs` flag on, in the state dir it was told to use
 /// (`--state-dir`, read from the command line before it's parsed, or
 /// `ARUGULA_STATE_DIR`) or the default one.
 pub(crate) fn labs_here() -> bool {
@@ -405,7 +427,7 @@ pub(crate) fn labs_here() -> bool {
         }
     }
     let dir = given.or_else(|| std::env::var_os("ARUGULA_STATE_DIR").map(PathBuf::from));
-    arugula_proto::hosts::labs(&dir.unwrap_or_else(crate::default_state_dir))
+    arugula_proto::flags::get(&dir.unwrap_or_else(crate::default_state_dir), arugula_proto::flags::LABS)
 }
 
 #[cfg(test)]

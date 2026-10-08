@@ -53,7 +53,7 @@ pub trait Op: Send + Sync + 'static {
     const METHOD: Method;                // Post
     const PATH: &'static str;            // "/api/panes/{id}/close"
     const ACCESS: Access;                // Pane(Role::Editor)
-    const LABS: bool = false;            // listed only with the labs file
+    const LABS: bool = false;            // listed only with the labs flag
     const DRIVES: bool = false;          // types into the pane: needs the owner's trust (M14)
     const CREDENTIAL: bool = false;      // a GET whose answer grants access: not for read-only tokens
     type Path: PathArgs;                 // PaneId, or ()

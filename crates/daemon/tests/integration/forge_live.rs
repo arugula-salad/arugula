@@ -304,7 +304,7 @@ fn daemon_in(bin: &Path, origin: &str, poll: &str, labs: bool) -> Daemon {
     let start = |args: &[&str], env: &[(&str, &str)]| {
         Daemon::child_in(args, env, |state| {
             if labs {
-                std::fs::write(state.join("labs"), "").unwrap();
+                arugula_testkit::labs(state, true);
             }
         })
     };

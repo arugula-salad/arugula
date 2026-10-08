@@ -1,6 +1,6 @@
 # Labs
 
-What a machine offers only when its state directory has a `labs` file.
+What a machine offers only when its `labs` flag is on.
 These features work, but a stranger doesn't have what they need (a
 Fountain login, the studio, a sandbox provider, our own chant setup), so
 the public docs at [docs.arugula.io](https://docs.arugula.io/) don't
@@ -10,28 +10,38 @@ control pages until those moved to the site.
 
 ## Turning labs on
 
-A file named `labs` in a machine's state directory turns on what a new
-install doesn't show: chat and threads, huddles, Fountain, studio apps,
-chant workspaces, VM tabs and sandboxes, ssh invites for guests, GitLab and
-Forgejo pull request and issue blocks (GitHub's are always on), the swarm's
-city, hive and timeline views, and the matching tools, commands and options
-of `arugula mcp`, `arugula --help` and `arugulad --help`. They all keep
-working without it, and just aren't offered; GitLab and Forgejo blocks are
-refused.
+The `labs` flag turns on what a new install doesn't show: chat and threads,
+huddles, Fountain, studio apps, chant workspaces, VM tabs and sandboxes, ssh
+invites for guests, GitLab and Forgejo pull request and issue blocks
+(GitHub's are always on), the swarm's city, hive and timeline views, and the
+matching tools, commands and options of `arugula mcp`, `arugula --help` and
+`arugulad --help`. They all keep working without it, and just aren't
+offered; GitLab and Forgejo blocks are refused.
 
 ```
-touch ~/.local/state/arugula/labs
+arugulad flags labs on        # and `off`; plain `arugulad flags` lists the flags
 ```
 
-The state directory is `$ARUGULA_STATE_DIR` if set, else
+Or, as the machine's owner, in the web client: the session menu's *Labs…*
+has a switch for each flag. The page reloads to show the change.
+
+The flag is `{"flags": {"labs": true}}` in `flags.json` in the state
+directory, which is `$ARUGULA_STATE_DIR` if set, else
 `$XDG_STATE_HOME/arugula`, else `~/.local/state/arugula`; on Windows,
-`%LOCALAPPDATA%\arugula\state`. The file can be empty. Delete it to turn
-labs off again.
+`%LOCALAPPDATA%\arugula\state`. `arugulad flags` writes it directly, so it
+works with the daemon stopped. The state directory is kept by
+`arugulad uninstall`, the installer and the updates, so the flag survives
+them.
+
+An empty `labs` file in the state directory, which is how 0.24 and later
+turned Labs on, still works: a starting daemon moves it into `flags.json`
+and removes it, and until then the old file counts as the flag being on.
+That fallback goes in a later release.
 
 - **Per machine.** It's read by the machine that serves the page, so every
   machine you want them on needs its own. Someone you share a session with
   sees chat and huddles on your machine if it has labs, and not otherwise.
-- **No restart.** The daemon looks for the file whenever it's asked; reload the
+- **No restart.** The daemon reads the flag whenever it's asked; reload the
   page to see the change.
 - **Each feature still needs its own setup.** Fountain needs a login, studio a
   link, VMs a sandbox provider, guest ssh its listener; labs only stops

@@ -267,26 +267,13 @@ mod control_state_tests {
     }
 }
 
-/// The file in a machine's state dir that turns on what a stranger doesn't
-/// get: huddles, chat, Fountain, studio, VMs, guest ssh and the swarm's extra
-/// views. Present means on, whatever it holds.
-pub const LABS_FILE: &str = "labs";
-
-/// Whether `state_dir` has the `labs` file. A `stat` on every call, never
-/// cached, so adding or removing the file takes effect with no restart. The
-/// daemon, the CLI and the page (through `HostFeatures::labs`) all read it
-/// through this one name.
-pub fn labs(state_dir: &std::path::Path) -> bool {
-    state_dir.join(LABS_FILE).exists()
-}
-
 /// The optional parts of a machine, as `GET /api/host` reports them.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct HostFeatures {
-    /// The machine has a `labs` file in its state dir (see [`labs`]): what a
-    /// stranger doesn't get is on. Absent from older daemons, and pages
-    /// treat that as off.
+    /// The `labs` flag is on here (see [`crate::flags`]): what a stranger
+    /// doesn't get is on. Absent from older daemons, and pages treat that
+    /// as off.
     #[serde(default)]
     pub labs: bool,
     /// Browser blocks on ports and editor blocks: block sites are on
