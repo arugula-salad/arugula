@@ -500,7 +500,8 @@ tests' count under nextest is unchanged, and the unit tests' total across
    root. About 4.8k lines moved. **M.** Depends on #578.
    - *Traps:* the shim's `_shim` dispatch stays in `main.rs`, calling
      `arugula_mux::shim::run`, before any thread starts. `conpty.rs` is
-     Windows-only, and nothing on `main` compiles Windows (see [Open
+     Windows-only. `windows.yml` compiles and tests it only on `main`, so
+     the branch needs a run by hand before it merges (see [Open
      questions](#open-questions)). `acl`'s `pub mod api` is a nested
      module: split it by hand.
 2. **Blocks behind a registry, in place.** `BlockKind` and `BlockKinds`.
@@ -570,11 +571,13 @@ measured) starts from a core that names neither.
    and `arugula_mux` is the task and the panes. `arugula-panes` is the
    alternative if that is too close. (`arugula-daemon-core` would be worse
    beside `arugula-core`.)
-2. **Windows.** No job on `main` compiles the Windows build. Only
-   `app-release.yml`'s `windows` job does, at release. Tickets 1 and 4 move
-   `conpty.rs`, `host.rs` and the pipe helpers. Either add a `cargo check`
-   on GitHub's Windows runner to `check.yml` first, or have each of those
-   PRs checked by hand on Windows.
+2. **Windows before merging.** `windows.yml` runs clippy (`--workspace
+   --exclude arugula-control --all-targets -D warnings`) and `cargo test`
+   on GitHub's Windows runner on every push to `main`, never on a branch.
+   Tickets 1 and 4 move `conpty.rs`, `host.rs` and the pipe helpers, so a
+   Windows break would show up only after the merge. Should each of those
+   branches get a `gh workflow run windows.yml --ref BRANCH`, passing,
+   before it merges? Recommended: yes.
 3. **Keep the root re-exports, or do ticket 7?** Keeping them makes every
    later diff smaller. Dropping them makes it obvious at each use which
    crate a name comes from.
