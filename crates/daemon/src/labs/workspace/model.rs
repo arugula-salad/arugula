@@ -37,7 +37,9 @@ exec node -e "$2" "$1" "$3""#;
 /// codes and which chant it started (`how`).
 ///
 /// The declaration's `agents` (#304) are read from its file, since no read
-/// prints them: `null` when it isn't plain JSON.
+/// prints them (#590, INTENTIUS/chant#3615): `chant.workspace.json`, or
+/// `.jsonc` with its comments and trailing commas taken out; `null` when
+/// neither parses.
 pub const READER: &str = r#"
 const { execFile } = require("child_process"), fs = require("fs"), path = require("path");
 const [root, env] = process.argv.slice(1);
@@ -67,10 +69,13 @@ function up(found) {
 const declDir = up((d) => ["chant.workspace.json", "chant.workspace.jsonc"].some((f) => fs.existsSync(path.join(d, f))));
 const declared = declDir !== null;
 const gitRoot = up((d) => fs.existsSync(path.join(d, ".git")));
-// The agent sessions (ws-067), which no read prints: from the declaration
-// (a .jsonc one gives none).
+// The agent sessions (ws-067), which no read prints: from the declaration.
+// JSONC: comments and trailing commas out, strings kept as they are.
+const jsonc = (t) => JSON.parse(t.replace(/("(?:[^"\\]|\\.)*")|\/\/[^\n]*|\/\*[\s\S]*?\*\//g, (m, str) => str ?? "").replace(/("(?:[^"\\]|\\.)*")|,(\s*[}\]])/g, (m, str, end) => str ?? end));
 let agents = null;
-try { const a = JSON.parse(fs.readFileSync(path.join(declDir, "chant.workspace.json"), "utf8")).agents; agents = Array.isArray(a) ? a : []; } catch {}
+for (const f of ["chant.workspace.json", "chant.workspace.jsonc"]) {
+  try { const a = (f.endsWith("c") ? jsonc : JSON.parse)(fs.readFileSync(path.join(declDir, f), "utf8")).agents; agents = Array.isArray(a) ? a : []; break; } catch {}
+}
 const [chant, how] = which();
 function run(args) {
   const t = Date.now();

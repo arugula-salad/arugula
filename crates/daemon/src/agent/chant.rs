@@ -6,13 +6,19 @@
 //!
 //! - its agent server runs with `CHANT_AGENT` set to the agent session the
 //!   declaration binds to the member, so chant judges its writes by that
-//!   session's scope; Claude is also told to put `Chant-Agent` on its
-//!   commits.
+//!   session's scope; Claude is also told, on its system prompt, which
+//!   session it runs as.
 //! - each turn is an agent run in the workspace's run ledger: `chant
 //!   workspace runs start` when the prompt goes, `runs end` with the stop
 //!   reason, tokens and cost when the turn ends. The block picks the run's
-//!   id, so the end needs nothing back from the start. The prompt is pinned
-//!   by hash, never copied.
+//!   id before the prompt goes, so the end needs nothing back from the
+//!   start. The prompt is pinned by hash, never copied.
+//! - #590: each prompt carries one more text block, [`turn_note`], naming
+//!   the trailers the turn's commits end with: `Chant-Agent` (when the
+//!   member has a session) and `Chant-Run` with the turn's run id, so
+//!   chant's `graph --intent` joins a commit to the run that made it. Every
+//!   agent gets it (Claude, Codex, any ACP agent), since it is part of the
+//!   prompt; its `_meta` ([`RUN_META`]) keeps it out of the transcript.
 //!
 //! The writes go one at a time, in order, with the user's shell environment
 //! (#74) on the block's host. A failure is a note in the transcript; the
@@ -55,6 +61,54 @@ pub enum Write {
 /// ledger and the same if the block picks it again after a restart.
 pub fn run_id(block: u32, started_ms: u64) -> String {
     format!("arugula-{block}-{started_ms}")
+}
+
+/// The `_meta` key on the prompt's text block that names the turn's run
+/// (#590): the block is for the agent, so the transcript leaves it out.
+pub const RUN_META: &str = "arugula/chantRun";
+
+/// How [`turn_note`] starts: what a replayed transcript is cut at.
+pub const NOTE_PREFIX: &str = "This turn is the chant agent run `";
+
+/// Whether a prompt gets [`turn_note`]: not a slash command (`/usage`,
+/// `/compact args`, a custom command), which Claude Code's adapter reads
+/// from the first block alone, taking anything after it as the command's
+/// arguments, and which `/usage` only runs as a prompt of one block.
+pub fn takes_note(text: &str) -> bool {
+    !text.trim_start().starts_with('/')
+}
+
+/// A replayed user message without the [`turn_note`] the agent was sent
+/// with it (a session loaded again replays the prompt as the agent got it).
+pub fn strip_notes(t: &mut super::transcript::Transcript) {
+    for e in &mut t.entries {
+        if let super::transcript::Entry::User { text, .. } = e
+            && let Some(at) = text.find(NOTE_PREFIX)
+        {
+            text.truncate(at);
+            text.truncate(text.trim_end().len());
+        }
+    }
+}
+
+/// What a prompt tells the agent about the turn's run (#590): the trailers
+/// each commit it makes in the turn ends with.
+pub fn turn_note(c: &Chant, run: &str) -> String {
+    let mut trailers = String::new();
+    if let Some(a) = &c.agent {
+        trailers.push_str(&format!("Chant-Agent: {a}\n"));
+    }
+    trailers.push_str(&format!("Chant-Run: {run}"));
+    format!(
+        "{NOTE_PREFIX}{run}` in the workspace member `{}`. \
+         End the message of every commit you make in this turn with these trailers, as the last lines:\n\n{trailers}",
+        c.member
+    )
+}
+
+/// The text block [`turn_note`] goes in.
+pub fn turn_block(c: &Chant, run: &str) -> Value {
+    json!({ "type": "text", "text": turn_note(c, run), "_meta": { RUN_META: run } })
 }
 
 /// The harness chant records for an agent kind.
@@ -133,7 +187,8 @@ pub fn system_prompt(c: &Chant) -> Option<String> {
     let a = c.agent.as_ref()?;
     Some(format!(
         "You are working in the chant workspace member `{}` as the agent session `{a}` (CHANT_AGENT is set). \
-         End the message of every commit you make with the trailer `Chant-Agent: {a}`.",
+         End the message of every commit you make with the trailer `Chant-Agent: {a}`, and the `Chant-Run` \
+         trailer the prompt names for its turn.",
         c.member
     ))
 }
@@ -279,6 +334,44 @@ mod tests {
         let refused = br#"{"verb":"end","error":{"code":"run-unknown","message":"no run x"}}"#;
         assert_eq!(failure(refused, Some(1)).as_deref(), Some("run-unknown: no run x"));
         assert_eq!(failure(b"", Some(127)).as_deref(), Some("chant isn't there to run"));
+    }
+
+    #[test]
+    fn slash_commands_go_alone_and_a_replay_drops_the_note() {
+        assert!(takes_note("fix the port"));
+        assert!(!takes_note("/usage") && !takes_note(" /compact keep the plan"));
+        let mut t = super::super::transcript::Transcript::default();
+        let note = turn_note(&member(Some("app")), "arugula-7-1");
+        for chunk in ["fix it", "\n\n", &note[..10], &note[10..]] {
+            t.apply(&json!({ "sessionUpdate": "user_message_chunk", "content": { "type": "text", "text": chunk } }), 0);
+        }
+        t.apply(&json!({ "sessionUpdate": "agent_message_chunk", "content": { "type": "text", "text": "done" } }), 0);
+        t.apply(
+            &json!({ "sessionUpdate": "user_message_chunk", "content": { "type": "text", "text": "no note here" } }),
+            0,
+        );
+        strip_notes(&mut t);
+        let users: Vec<_> = t
+            .entries
+            .iter()
+            .filter_map(|e| match e {
+                super::super::transcript::Entry::User { text, .. } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(users, ["fix it", "no note here"]);
+    }
+
+    #[test]
+    fn each_turn_names_its_run_trailer_and_the_session_s() {
+        let b = turn_block(&member(Some("app")), "arugula-7-1");
+        assert_eq!(b["_meta"][RUN_META], "arugula-7-1");
+        let text = b["text"].as_str().unwrap();
+        assert!(text.ends_with("\n\nChant-Agent: app\nChant-Run: arugula-7-1"), "{text}");
+        assert!(text.contains("member `app`"), "{text}");
+        // No session: only the run.
+        let text = turn_note(&member(None), "arugula-7-1");
+        assert!(text.ends_with("\n\nChant-Run: arugula-7-1") && !text.contains("Chant-Agent"), "{text}");
     }
 
     #[test]
