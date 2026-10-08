@@ -6,7 +6,7 @@
 // viewers see the same, without the buttons.
 
 import { render } from "preact";
-import { useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import type { Client } from "../client";
 import { EXPIRE_TITLE, gateKey, type DecisionRef, type Gate, type Lease, type MemberWhy, type PaneId, type RunRequest, type WorkspaceRecord, type WorkspaceRun } from "../proto";
 import { openWorkspace } from "./open-labs";
@@ -216,8 +216,25 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
     const open = !next.delete(m.name);
     if (open) next.add(m.name);
     setWhy(next);
+    // Asked now: the effect below needn't ask again for it.
+    if (open) asked.current.add(m.name);
+    else asked.current.delete(m.name);
     void client.api(`/api/blocks/${id}/call/why`, { member: m.name, open }, "couldn't read why");
   };
+  // The daemon keeps one set of open cards for every client, and lets them
+  // go when nobody draws the block or someone closes one: a card open here
+  // that comes back without its why is asked for again, once.
+  const asked = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    for (const m of s?.members ?? []) {
+      if (!why.has(m.name) || m.why) {
+        asked.current.delete(m.name);
+      } else if (!asked.current.has(m.name)) {
+        asked.current.add(m.name);
+        void client.api(`/api/blocks/${id}/call/why`, { member: m.name, open: true }, "couldn't read why");
+      }
+    }
+  }, [s, why]);
   const session = client.sessionOfTab(client.tabOfPane(id)?.id ?? -1) ?? null;
   const role = client.role(session);
   // Approving is for the owner and editors (#75); opening panes and blocks

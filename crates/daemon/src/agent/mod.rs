@@ -2559,6 +2559,10 @@ impl Block for Agent {
         self.inner.lock().unwrap().state(&self.ctx)
     }
 
+    fn wrote_run(&self, id: &str) -> bool {
+        self.inner.lock().unwrap().turns.iter().any(|t| t.run.as_deref() == Some(id))
+    }
+
     fn text(&self) -> String {
         let g = self.inner.lock().unwrap();
         let mut head = format!("# {}", g.title.clone().unwrap_or_else(|| g.cfg.def.label()));

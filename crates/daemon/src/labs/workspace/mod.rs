@@ -59,14 +59,18 @@
 //! **Why a member is the way it is (#618).** `why {member, open}` opens a
 //! member card (or closes it): while some client draws the block, an open
 //! card's member gets the same intent read, and the run ledger (`chant
-//! workspace runs`) is read once for all of them, each kept until the
-//! fingerprint moves. The card shows the decisions covering the member,
+//! workspace runs`, about the last two weeks) is read once for all of
+//! them, each kept until `HEAD` or the lifecycle ref moves. A card is open
+//! until a client closes it or no client draws the block; a client still
+//! showing it asks again. The card shows the decisions covering the member,
 //! how many commits no decision covers (`intent-commit-undecided`, a tag:
 //! only gates are attention), its recent runs (its declared agent
 //! sessions', and those chant's walk joined to its commits) and the leases
 //! on it (`status`'s `leases`, in its ledger or on a work item covering
-//! it). An Arugula run's id names the pane that ran it, so a run, and a
-//! lease a run works under, link to that pane. `hud {url}` keeps hud's
+//! it). An Arugula run's id names the pane that ran it; a run links to
+//! that pane when the agent block there recorded it, and a lease to the
+//! pane of the run under its token. Those joins are listed in
+//! DECISIONS.md. `hud {url}` keeps hud's
 //! address, where a proposed decision is reviewed.
 //!
 //! `expire` (same arguments, same people, logged the same way) turns a gate
@@ -151,17 +155,26 @@ fn envs(ledgers: &str, watched: &str) -> Vec<String> {
     out
 }
 
-/// hud's address as given: an http(s) URL, without a trailing slash; empty
-/// clears it.
+/// hud's address as given: an http(s) URL with a host, and no query or
+/// fragment (the block adds `/decisions#<id>`), without a trailing slash;
+/// empty clears it.
 fn hud_url(url: &str) -> Result<Option<String>, String> {
-    let url = url.trim().trim_end_matches('/');
-    if url.is_empty() {
+    let given = url.trim();
+    if given.is_empty() {
         return Ok(None);
     }
-    if !(url.starts_with("http://") || url.starts_with("https://")) || url.contains(char::is_whitespace) {
-        return Err(format!("{url:?} isn't hud's address (http://... or https://...)"));
+    let bad = || format!("{given:?} isn't hud's address (http://host or https://host, maybe with a path)");
+    let u = url::Url::parse(given).map_err(|_| bad())?;
+    if !matches!(u.scheme(), "http" | "https")
+        || u.host_str().is_none_or(str::is_empty)
+        || u.query().is_some()
+        || u.fragment().is_some()
+        || !u.username().is_empty()
+        || u.password().is_some()
+    {
+        return Err(bad());
     }
-    Ok(Some(url.to_owned()))
+    Ok(Some(u.as_str().trim_end_matches('/').to_owned()))
 }
 
 /// An env name `status` can take as its argument.
@@ -261,8 +274,7 @@ pub struct Workspace {
     /// once per change of gate. Starts as `Some("")` so the first read
     /// clears any left from before a restart.
     raised: Mutex<Option<String>>,
-    /// The intent reads (#617), the run ledger and the cards open (#618),
-    /// kept until the fingerprint moves.
+    /// The intent reads (#617), the run ledger and the cards open (#618).
     why: Mutex<Why>,
     /// `config.hud` at open, then what `hud` set.
     hud: Mutex<Option<String>>,
@@ -457,11 +469,21 @@ impl Workspace {
         self.ctx.changed();
     }
 
-    /// The run ledger: `chant workspace runs --json` in the root.
+    /// The run ledger: `chant workspace runs --json` in the root. A run's
+    /// pane is named only when the agent block in the pane its id names
+    /// (`arugula-<pane>-<ms>`) wrote it: an id is only a string in the
+    /// ledger, and another daemon numbers its panes too.
     async fn ledger(&self, root: &str, chant: &str) -> Result<Vec<arugula_proto::workspace::RunRef>, String> {
         let r = self.runner().await?;
         let (out, _) = r.sh(model::RUNS, &[root.to_owned(), chant.to_owned()]).await?;
-        model::runs(&serde_json::from_slice::<Value>(&out).unwrap_or(Value::Null))
+        let mut runs = model::runs(&serde_json::from_slice::<Value>(&out).unwrap_or(Value::Null))?;
+        for run in &mut runs {
+            let Some(pane) = arugula_proto::workspace::RunRef::pane_of(&run.id) else { continue };
+            if self.ctx.block(pane).await.is_some_and(|b| b.wrote_run(&run.id)) {
+                run.pane = Some(pane);
+            }
+        }
+        Ok(runs)
     }
 
     /// One member's intent read: `graph --intent <dir>` in the root.
@@ -1063,8 +1085,16 @@ impl Block for Workspace {
     fn drawn(&self, on: bool) {
         if let Some(round) = self.live.set(on) {
             self.watch(round);
-            // Cards left open while nobody looked are read again.
+            // A gate raised while nobody looked is read at this commit.
             self.read_why();
+        }
+        // #618: nobody draws it, so no card is open. A client still showing
+        // one asks again (`why`) when it sees the card without its why.
+        if !on {
+            self.why.lock().unwrap().open.clear();
+            for m in &mut self.state.lock().unwrap().members {
+                m.why = None;
+            }
         }
         self.ctx.changed();
     }
@@ -1089,9 +1119,9 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        HashMap, Known, Look, Next, POLL, Principals, REF_POLL, Raise, VM_QUIET, VM_RESTING, VmIdle, Wanted, Why,
-        attach, env_name, envs, hud_url, intent_key, look, model, next, raise, raised_key, ref_moved, set_principals,
-        vm_look, vm_looked, wanted,
+        Known, Look, Next, POLL, Principals, REF_POLL, Raise, VM_QUIET, VM_RESTING, VmIdle, Wanted, Why, attach,
+        env_name, envs, hud_url, intent_key, look, model, next, raise, raised_key, ref_moved, set_principals, vm_look,
+        vm_looked, wanted,
     };
 
     #[test]
@@ -1105,7 +1135,7 @@ mod tests {
         let mut why = Why::default();
         let delivery = vec![("delivery".to_owned(), "delivery".to_owned())];
         let key = |print: &str| intent_key(Some(print)).map(str::to_owned);
-        assert_eq!(wanted(&st, &why, key("lc h1 9 9").as_deref(), true), delivery);
+        assert_eq!(wanted(&st, &why, key("lc h1 9 9").as_deref(), true).members, delivery);
         let gates = vec!["delivery/release/approve-release".to_owned()];
         let got = Ok(model::intent(&doc, 1400).unwrap());
         why.intents.insert("delivery".to_owned(), Known { print: key("lc h1 9 9"), got, gates: gates.clone() });
@@ -1116,7 +1146,7 @@ mod tests {
         assert!(st.text().contains("    enforces toy-001 A person approves each ship\n"), "{}", st.text());
         // A commit: read again, and meanwhile the gate keeps what it had
         // (no flicker to "Reading").
-        assert_eq!(wanted(&st, &why, key("lc h2 7 7").as_deref(), true), delivery);
+        assert_eq!(wanted(&st, &why, key("lc h2 7 7").as_deref(), true).members, delivery);
         let mut fresh = model::compose(&raw, "local");
         attach(&mut fresh, &why);
         assert_eq!(fresh.gates[0].why.as_ref().unwrap().decisions.as_ref().unwrap()[0].id, "toy-001");
@@ -1137,19 +1167,19 @@ mod tests {
         let st = model::compose(&raw, "local");
         let mut why = Why::default();
         // Raised while nobody draws the block: read, for the swarm and phone.
-        assert_eq!(wanted(&st, &why, Some("lc h1"), false).len(), 1);
+        assert_eq!(wanted(&st, &why, Some("lc h1"), false).members.len(), 1);
         let gates = vec!["delivery/release/approve-release".to_owned()];
         why.intents.insert("delivery".to_owned(), Known { print: Some("lc h1".into()), got: Err("x".into()), gates });
         // Commits since, still nobody looking: no more reads.
         assert!(wanted(&st, &why, Some("lc h9"), false).is_empty());
         // Someone looks: read at this commit.
-        assert_eq!(wanted(&st, &why, Some("lc h9"), true).len(), 1);
+        assert_eq!(wanted(&st, &why, Some("lc h9"), true).members.len(), 1);
         // Another gate raised in the member while nobody looks: read once.
         let mut raw2 = raw.clone();
         for g in raw2["reads"]["status"]["json"]["members"][1]["gates"].as_array_mut().unwrap() {
             g["state"] = "pending".into();
         }
-        assert_eq!(wanted(&model::compose(&raw2, "local"), &why, Some("lc h9"), false).len(), 1);
+        assert_eq!(wanted(&model::compose(&raw2, "local"), &why, Some("lc h9"), false).members.len(), 1);
     }
 
     #[test]
@@ -1190,67 +1220,67 @@ mod tests {
         assert_eq!(intent_key(Some("lc h1 123 45")), Some("lc h1"));
         assert_eq!(intent_key(Some("gone")), Some("gone"));
         assert_eq!(intent_key(None), None);
-        #[test]
-        fn an_open_card_reads_its_member_and_the_runs_while_drawn() {
-            // #618: a card opened wants its member's intent and the run ledger,
-            // only while some client draws the block; what they say goes on
-            // the card, with its leases linked to the pane behind them.
-            let mut raw: serde_json::Value = serde_json::from_str(include_str!("fixtures/reference-raw.json")).unwrap();
-            // delivery's gates approved: nothing but the card wants a read.
-            for g in raw["reads"]["status"]["json"]["members"][1]["gates"].as_array_mut().unwrap() {
-                g["state"] = "approved".into();
-            }
-            raw["agents"] = serde_json::json!([{ "name": "shipper", "member": "delivery" }]);
-            raw["reads"]["status"]["json"]["leases"] = serde_json::json!([{ "item": "W-001", "holder": "shipper",
-            "token": "106ffd19-97f5-476c-824e-12ec93af6f28", "acquiredAt": "2026-10-08T01:13:30.857Z",
-            "expiresAt": "2026-10-08T01:23:30.857Z", "state": "active", "ref": "refs/chant/lease/work/W-001",
-            "member": null }]);
-            let mut st = model::compose(&raw, "local");
-            let mut why = Why::default();
-            assert!(wanted(&st, &why, Some("lc h1"), true).is_empty());
-            why.open.insert("delivery".into());
-            let want = Wanted { members: vec![("delivery".into(), "delivery".into())], runs: true };
-            assert_eq!(wanted(&st, &why, Some("lc h1"), true), want);
-            // Nobody draws it: nothing, however long the card was left open.
-            assert!(wanted(&st, &why, Some("lc h1"), false).is_empty());
-            // Open, nothing read yet: the card says it's reading.
-            attach(&mut st, &why);
-            let card = st.members.iter().find(|m| m.name == "delivery").unwrap();
-            assert_eq!(card.why.as_ref().unwrap().decisions, None);
-            // Read. The daemon names a run's pane only once the agent block in
-            // that pane says it wrote the run (`ledger`): here, pane 7 did.
-            let intent: serde_json::Value =
-                serde_json::from_str(include_str!("fixtures/intent-delivery-work.json")).unwrap();
-            let runs: serde_json::Value = serde_json::from_str(include_str!("fixtures/runs.json")).unwrap();
-            let mut runs = model::runs(&runs).unwrap();
-            assert_eq!(runs[0].pane, None);
-            runs[0].pane = Some(7);
-            let key = || Some("lc h1".to_owned());
-            why.intents
-                .insert("delivery".into(), Known { print: key(), got: model::intent(&intent, 900), gates: vec![] });
-            why.ledger = Some(Known { print: key(), got: Ok(runs), gates: vec![] });
-            assert!(wanted(&st, &why, Some("lc h1"), true).is_empty());
-            attach(&mut st, &why);
-            let card = st.members.iter().find(|m| m.name == "delivery").unwrap();
-            let w = card.why.as_ref().unwrap();
-            assert_eq!(w.decisions.as_ref().unwrap()[0].id, "toy-001");
-            assert_eq!(
-                w.runs.iter().map(|r| (r.id.as_str(), r.pane)).collect::<Vec<_>>(),
-                [("arugula-7-1759880000000", Some(7))]
-            );
-            // The flat ledger's lease is on delivery through W-001, which chant's
-            // walk says covers it, and the run under its token ran in pane 7.
-            assert_eq!(card.leases.iter().map(|l| (l.item.as_str(), l.pane)).collect::<Vec<_>>(), [("W-001", Some(7))]);
-            // The app card isn't open: no why, no lease.
-            let app = st.members.iter().find(|m| m.name == "app").unwrap();
-            assert!(app.why.is_none() && app.leases.is_empty());
-            // A commit: read again, and the card keeps what it shows meanwhile.
-            assert_eq!(wanted(&st, &why, Some("lc h2"), true), want);
-            let mut fresh = model::compose(&raw, "local");
-            attach(&mut fresh, &why);
-            let card = fresh.members.iter().find(|m| m.name == "delivery").unwrap();
-            assert_eq!(card.why.as_ref().unwrap().decisions.as_ref().unwrap()[0].id, "toy-001");
+    }
+
+    #[test]
+    fn an_open_card_reads_its_member_and_the_runs_while_drawn() {
+        // #618: a card opened wants its member's intent and the run ledger,
+        // only while some client draws the block; what they say goes on
+        // the card, with its leases linked to the pane behind them.
+        let mut raw: serde_json::Value = serde_json::from_str(include_str!("fixtures/reference-raw.json")).unwrap();
+        // delivery's gates approved: nothing but the card wants a read.
+        for g in raw["reads"]["status"]["json"]["members"][1]["gates"].as_array_mut().unwrap() {
+            g["state"] = "approved".into();
         }
+        raw["agents"] = serde_json::json!([{ "name": "shipper", "member": "delivery" }]);
+        raw["reads"]["status"]["json"]["leases"] = serde_json::json!([{ "item": "W-001", "holder": "shipper",
+        "token": "106ffd19-97f5-476c-824e-12ec93af6f28", "acquiredAt": "2026-10-08T01:13:30.857Z",
+        "expiresAt": "2026-10-08T01:23:30.857Z", "state": "active", "ref": "refs/chant/lease/work/W-001",
+        "member": null }]);
+        let mut st = model::compose(&raw, "local");
+        let mut why = Why::default();
+        assert!(wanted(&st, &why, Some("lc h1"), true).is_empty());
+        why.open.insert("delivery".into());
+        let want = Wanted { members: vec![("delivery".into(), "delivery".into())], runs: true };
+        assert_eq!(wanted(&st, &why, Some("lc h1"), true), want);
+        // Nobody draws it: nothing, however long the card was left open.
+        assert!(wanted(&st, &why, Some("lc h1"), false).is_empty());
+        // Open, nothing read yet: the card says it's reading.
+        attach(&mut st, &why);
+        let card = st.members.iter().find(|m| m.name == "delivery").unwrap();
+        assert_eq!(card.why.as_ref().unwrap().decisions, None);
+        // Read. The daemon names a run's pane only once the agent block in
+        // that pane says it wrote the run (`ledger`): here, pane 7 did.
+        let intent: serde_json::Value =
+            serde_json::from_str(include_str!("fixtures/intent-delivery-work.json")).unwrap();
+        let runs: serde_json::Value = serde_json::from_str(include_str!("fixtures/runs.json")).unwrap();
+        let mut runs = model::runs(&runs).unwrap();
+        assert_eq!(runs[0].pane, None);
+        runs[0].pane = Some(7);
+        let key = || Some("lc h1".to_owned());
+        why.intents.insert("delivery".into(), Known { print: key(), got: model::intent(&intent, 900), gates: vec![] });
+        why.ledger = Some(Known { print: key(), got: Ok(runs), gates: vec![] });
+        assert!(wanted(&st, &why, Some("lc h1"), true).is_empty());
+        attach(&mut st, &why);
+        let card = st.members.iter().find(|m| m.name == "delivery").unwrap();
+        let w = card.why.as_ref().unwrap();
+        assert_eq!(w.decisions.as_ref().unwrap()[0].id, "toy-001");
+        assert_eq!(
+            w.runs.iter().map(|r| (r.id.as_str(), r.pane)).collect::<Vec<_>>(),
+            [("arugula-7-1759880000000", Some(7))]
+        );
+        // The flat ledger's lease is on delivery through W-001, which chant's
+        // walk says covers it, and the run under its token ran in pane 7.
+        assert_eq!(card.leases.iter().map(|l| (l.item.as_str(), l.pane)).collect::<Vec<_>>(), [("W-001", Some(7))]);
+        // The app card isn't open: no why, no lease.
+        let app = st.members.iter().find(|m| m.name == "app").unwrap();
+        assert!(app.why.is_none() && app.leases.is_empty());
+        // A commit: read again, and the card keeps what it shows meanwhile.
+        assert_eq!(wanted(&st, &why, Some("lc h2"), true), want);
+        let mut fresh = model::compose(&raw, "local");
+        attach(&mut fresh, &why);
+        let card = fresh.members.iter().find(|m| m.name == "delivery").unwrap();
+        assert_eq!(card.why.as_ref().unwrap().decisions.as_ref().unwrap()[0].id, "toy-001");
     }
 
     /// A fingerprint: the lifecycle ref's word, then the tree's checksum.
@@ -1379,8 +1409,19 @@ mod tests {
     #[test]
     fn hud_s_address_is_a_url() {
         assert_eq!(hud_url(" https://hud.example/ "), Ok(Some("https://hud.example".into())));
+        assert_eq!(hud_url("http://127.0.0.1:4000/__hud"), Ok(Some("http://127.0.0.1:4000/__hud".into())));
         assert_eq!(hud_url(""), Ok(None));
-        for bad in ["hud.example", "javascript:alert(1)", "https://a b"] {
+        for bad in [
+            "hud.example",
+            "javascript:alert(1)",
+            "https://a b",
+            "file:///etc/passwd",
+            "http://",
+            "https://hud.example/?x=1",
+            "https://hud.example/#x",
+            "https://user:pw@hud.example",
+            "data:text/html,hi",
+        ] {
             assert!(hud_url(bad).is_err(), "{bad}");
         }
     }

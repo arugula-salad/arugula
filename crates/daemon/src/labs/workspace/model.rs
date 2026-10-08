@@ -662,7 +662,12 @@ pub fn intent(doc: &Value, ms: u64) -> Result<Intent, String> {
         decisions,
         undecided: of_kind("finding").filter(|f| f["code"] == "intent-commit-undecided").count(),
         runs: of_kind("run").filter_map(|r| s(&r["run"])).collect(),
-        work: of_kind("work").filter_map(|w| s(&w["record"])).collect(),
+        // In the graph also when it only implements or needs something
+        // there; its own `constrains` say it covers the region.
+        work: of_kind("work")
+            .filter(|w| w["constrains"].as_array().is_some_and(|c| !c.is_empty()))
+            .filter_map(|w| s(&w["record"]))
+            .collect(),
         ms,
     })
 }
@@ -680,9 +685,13 @@ fn lease(l: &Value) -> Lease {
     }
 }
 
-/// `sh -c RUNS sh ROOT CHANT`: the run ledger (`chant workspace runs`).
+/// `sh -c RUNS sh ROOT CHANT`: the run ledger (`chant workspace runs`),
+/// the runs of about the last two weeks: `--since` the newest commit older
+/// than that, when there is one (chant lists the runs that made a commit
+/// after it, or started after its date).
 pub const RUNS: &str = r#"cd "$1" 2>/dev/null || exit 0
-exec "$2" workspace runs --json"#;
+since=$(git rev-list -n 1 --before='14 days ago' HEAD 2>/dev/null)
+exec "$2" workspace runs ${since:+--since "$since"} --json"#;
 
 /// The runs document's runs, newest first, or chant's reason it has none.
 pub fn runs(doc: &Value) -> Result<Vec<RunRef>, String> {
@@ -706,7 +715,9 @@ pub fn runs(doc: &Value) -> Result<Vec<RunRef>, String> {
         .map(|r| {
             let id = s(&r["id"]).unwrap_or_default();
             RunRef {
-                pane: RunRef::pane_of(&id),
+                // Named once the agent block in that pane says it wrote it
+                // (the workspace block's `ledger`).
+                pane: None,
                 state: s(&r["state"]),
                 agent: s(&r["agent"]),
                 by: s(&r["by"]),
@@ -772,15 +783,8 @@ pub fn member_why(
         .filter(|l| l.member.as_deref() == Some(&m.name) || work.contains(&l.item))
         .cloned()
         .map(|mut l| {
-            // The run under its token; else, while running, one whose agent
-            // session holds it.
-            l.pane = all
-                .iter()
-                .find(|r| r.lease.is_some() && r.lease == l.token)
-                .or_else(|| {
-                    all.iter().find(|r| r.state.as_deref() == Some("running") && r.agent.as_deref() == Some(&l.holder))
-                })
-                .and_then(|r| r.pane);
+            // The run under its token.
+            l.pane = all.iter().find(|r| r.lease.is_some() && r.lease == l.token).and_then(|r| r.pane);
             l
         })
         .collect();
@@ -1191,7 +1195,9 @@ mod tests {
         let runs = runs(&fixture(include_str!("fixtures/runs.json"))).unwrap();
         assert_eq!(runs.len(), 1);
         let r = &runs[0];
-        assert_eq!((r.id.as_str(), r.pane, r.state.as_deref()), ("arugula-7-1759880000000", Some(7), Some("running")));
+        // Its id names pane 7, but only the daemon, asking that pane's
+        // block, says it ran there.
+        assert_eq!((r.id.as_str(), r.pane, r.state.as_deref()), ("arugula-7-1759880000000", None, Some("running")));
         assert_eq!((r.agent.as_deref(), r.unit.as_deref()), (Some("shipper"), Some("W-001")));
         assert_eq!(r.decisions, ["decision/toy-001"]);
         assert_eq!(r.lease.as_deref(), Some("106ffd19-97f5-476c-824e-12ec93af6f28"));
@@ -1223,7 +1229,15 @@ mod tests {
             [("W-002", "expired")]
         );
         // The intent read counts the commits no decision covered.
-        let i = intent(&fixture(include_str!("fixtures/intent-delivery-work.json")), 0).unwrap();
+        // W-002 is in the graph only through a link (it implements a
+        // decision there) and constrains nothing: not delivery's.
+        let mut doc = fixture(include_str!("fixtures/intent-delivery-work.json"));
+        let mut linked = doc["nodes"].as_array().unwrap().iter().find(|n| n["kind"] == "work").unwrap().clone();
+        linked["id"] = "record:work/W-002".into();
+        linked["record"] = "W-002".into();
+        linked["constrains"] = serde_json::json!([]);
+        doc["nodes"].as_array_mut().unwrap().push(linked);
+        let i = intent(&doc, 0).unwrap();
         assert_eq!(i.work, ["W-001"]);
         let mut m = delivery.clone();
         member_why(&mut m, &st.leases, Some(&Ok(i)), None);
