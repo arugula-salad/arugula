@@ -638,6 +638,14 @@ fn a_member_s_agent_is_told_its_turn_s_run_trailer() {
     let sent: Value =
         serde_json::from_slice(&std::fs::read(d.sessions.join(format!("prompt-{session}.json"))).unwrap()).unwrap();
     assert_eq!(sent[1]["_meta"]["arugula/chantRun"], next.as_str(), "{sent}");
+
+    // A slash command goes alone, as typed (`/usage` runs only as a prompt
+    // of one block; anything after `/compact` is its arguments).
+    d.call(id, "send", json!({ "text": "/usage" }));
+    assert_eq!(d.wait(id, "idle"), "done");
+    let sent: Value =
+        serde_json::from_slice(&std::fs::read(d.sessions.join(format!("prompt-{session}.json"))).unwrap()).unwrap();
+    assert_eq!(sent, json!([{ "type": "text", "text": "/usage" }]));
 }
 
 /// A permission request reaches a subscribed phone as a push with what to

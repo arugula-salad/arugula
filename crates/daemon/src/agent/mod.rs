@@ -792,7 +792,9 @@ impl Inner {
                     }
                     (Purpose::Load { merge }, None) => {
                         self.config_options = r["configOptions"].clone();
-                        if let Some(replay) = self.replay.take() {
+                        if let Some(mut replay) = self.replay.take() {
+                            // #590: the prompt as the person wrote it.
+                            chant::strip_notes(&mut replay);
                             if merge {
                                 self.t.merge(replay);
                             } else {
@@ -2237,8 +2239,9 @@ fn send_next(ctx: &BlockCtx, g: &mut Inner) {
         prompt.push(block);
     }
     // #590: the turn's run, picked now so the prompt can name its trailer
-    // (the same run when a prompt goes again after "retry").
-    if let (Some(c), Some(_)) = (&g.cfg.chant, &g.runs) {
+    // (the same run when a prompt goes again after "retry"). A slash
+    // command goes as it was typed.
+    if let (Some(c), Some(_), true) = (&g.cfg.chant, &g.runs, chant::takes_note(&q.text)) {
         let run = g.carry_run.clone().unwrap_or_else(|| chant::run_id(ctx.id, now_ms()));
         prompt.push(chant::turn_block(c, &run));
         g.next_run = g.carry_run.is_none().then_some(run);

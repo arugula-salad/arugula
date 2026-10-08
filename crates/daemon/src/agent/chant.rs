@@ -67,6 +67,30 @@ pub fn run_id(block: u32, started_ms: u64) -> String {
 /// (#590): the block is for the agent, so the transcript leaves it out.
 pub const RUN_META: &str = "arugula/chantRun";
 
+/// How [`turn_note`] starts: what a replayed transcript is cut at.
+pub const NOTE_PREFIX: &str = "This turn is the chant agent run `";
+
+/// Whether a prompt gets [`turn_note`]: not a slash command (`/usage`,
+/// `/compact args`, a custom command), which Claude Code's adapter reads
+/// from the first block alone, taking anything after it as the command's
+/// arguments, and which `/usage` only runs as a prompt of one block.
+pub fn takes_note(text: &str) -> bool {
+    !text.trim_start().starts_with('/')
+}
+
+/// A replayed user message without the [`turn_note`] the agent was sent
+/// with it (a session loaded again replays the prompt as the agent got it).
+pub fn strip_notes(t: &mut super::transcript::Transcript) {
+    for e in &mut t.entries {
+        if let super::transcript::Entry::User { text, .. } = e
+            && let Some(at) = text.find(NOTE_PREFIX)
+        {
+            text.truncate(at);
+            text.truncate(text.trim_end().len());
+        }
+    }
+}
+
 /// What a prompt tells the agent about the turn's run (#590): the trailers
 /// each commit it makes in the turn ends with.
 pub fn turn_note(c: &Chant, run: &str) -> String {
@@ -76,7 +100,7 @@ pub fn turn_note(c: &Chant, run: &str) -> String {
     }
     trailers.push_str(&format!("Chant-Run: {run}"));
     format!(
-        "This turn is the chant agent run `{run}` in the workspace member `{}`. \
+        "{NOTE_PREFIX}{run}` in the workspace member `{}`. \
          End the message of every commit you make in this turn with these trailers, as the last lines:\n\n{trailers}",
         c.member
     )
@@ -310,6 +334,32 @@ mod tests {
         let refused = br#"{"verb":"end","error":{"code":"run-unknown","message":"no run x"}}"#;
         assert_eq!(failure(refused, Some(1)).as_deref(), Some("run-unknown: no run x"));
         assert_eq!(failure(b"", Some(127)).as_deref(), Some("chant isn't there to run"));
+    }
+
+    #[test]
+    fn slash_commands_go_alone_and_a_replay_drops_the_note() {
+        assert!(takes_note("fix the port"));
+        assert!(!takes_note("/usage") && !takes_note(" /compact keep the plan"));
+        let mut t = super::super::transcript::Transcript::default();
+        let note = turn_note(&member(Some("app")), "arugula-7-1");
+        for chunk in ["fix it", "\n\n", &note[..10], &note[10..]] {
+            t.apply(&json!({ "sessionUpdate": "user_message_chunk", "content": { "type": "text", "text": chunk } }), 0);
+        }
+        t.apply(&json!({ "sessionUpdate": "agent_message_chunk", "content": { "type": "text", "text": "done" } }), 0);
+        t.apply(
+            &json!({ "sessionUpdate": "user_message_chunk", "content": { "type": "text", "text": "no note here" } }),
+            0,
+        );
+        strip_notes(&mut t);
+        let users: Vec<_> = t
+            .entries
+            .iter()
+            .filter_map(|e| match e {
+                super::super::transcript::Entry::User { text, .. } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(users, ["fix it", "no note here"]);
     }
 
     #[test]

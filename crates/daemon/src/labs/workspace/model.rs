@@ -37,7 +37,7 @@ exec node -e "$2" "$1" "$3""#;
 /// codes and which chant it started (`how`).
 ///
 /// The declaration's `agents` (#304) are read from its file, since no read
-/// prints them (#590): `chant.workspace.json`, or `.jsonc` with its comments
+/// prints them (#590, INTENTIUS/chant#3615): `chant.workspace.json`, or `.jsonc` with its comments
 /// and trailing commas taken out; `null` when neither parses.
 pub const READER: &str = r#"
 const { execFile } = require("child_process"), fs = require("fs"), path = require("path");
