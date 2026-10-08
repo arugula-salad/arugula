@@ -738,8 +738,8 @@ function Card({
   const all = (label: string) => (n > 1 ? `${label} all ${n}` : label);
   // The card's main button: what to do about it. With nothing to rerun,
   // continue, allow or answer, that's going to the pane (one pane; a
-  // bundle's is Dismiss all). Dismiss is never dressed as the main button
-  // while there is one.
+  // bundle's is Dismiss all). With a main button, Dismiss goes down with
+  // Show and Edit.
   const verb = ["rerun", "continue", "allow"].some((a) => r.actions.includes(a as Action)) || r.ask?.what === "question";
   const openFirst = !verb && n === 1 && !isPresence(first) && r.kind !== "ask" && r.kind !== "diff";
   const cta = verb || openFirst;
@@ -831,8 +831,8 @@ function Card({
               Answer…
             </button>
           )}
-          {r.actions.includes("dismiss") && r.kind !== "ask" && (
-            <button class={cta ? "quiet" : "pri"} data-dismiss-card disabled={busy} onClick={() => void run("dismiss")}>
+          {r.actions.includes("dismiss") && r.kind !== "ask" && !cta && (
+            <button class="pri" data-dismiss-card disabled={busy} onClick={() => void run("dismiss")}>
               {all("Dismiss")}
             </button>
           )}
@@ -857,8 +857,8 @@ function Card({
             Edit
           </button>
         )}
-        {can && (r.kind === "ask" || r.kind === "diff") && (
-          <button class="ghost" disabled={busy} onClick={() => void run("dismiss")}>
+        {can && (r.kind === "ask" || r.kind === "diff" || (cta && r.actions.includes("dismiss"))) && (
+          <button class="ghost" data-dismiss-card disabled={busy} onClick={() => void run("dismiss")}>
             {all("Dismiss")}
           </button>
         )}

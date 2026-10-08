@@ -3386,16 +3386,6 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   border-color: var(--line);
   color: var(--mute);
 }
-/* Dismiss beside a main button: quiet, and at the far end of the row. */
-.swarm-card .ca button.quiet {
-  margin-left: auto;
-  border-color: transparent;
-  color: var(--mute);
-  font-weight: 500;
-}
-.swarm-card .ca button.quiet:hover {
-  color: var(--ink);
-}
 .swarm-card .ask {
   margin: 0;
   background: none;

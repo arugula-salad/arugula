@@ -109,13 +109,13 @@ test("Panes and Escape lead back to the panes (#551)", async ({ page }) => {
   expect(new URL(page.url()).hash).toBe("");
 });
 
-test("a finished card's main button is Open, and Dismiss is the quiet one", async ({ page }) => {
+test("a finished card's main button is Open, and Dismiss is down with Show and Edit", async ({ page }) => {
   await swarm(page);
   const pane = await fake.finish("workstation");
   const card = page.locator(`.swarm-card[data-panes~="workstation:${pane}"]`);
   await expect(card).toBeVisible({ timeout: 20_000 });
   await expect(card.locator(".ca button.pri")).toHaveText(["Open"]);
-  await expect(card.locator("[data-dismiss-card]")).toHaveClass(/quiet/);
+  await expect(card.locator(".ca-nav [data-dismiss-card]")).toBeVisible();
   await card.locator("[data-open-card]").click();
   await expect(page.locator(".swarm")).toBeHidden();
 });
