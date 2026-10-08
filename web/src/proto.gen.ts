@@ -1179,6 +1179,11 @@ editor?: EditorInfo | null, };
 export type PaneOp = { "op": "set_policy", policy: Policy, } | { "op": "purge" } | { "op": "set_integration", on: boolean, } | { "op": "attention", state: Attention, } | { "op": "take_control" } | { "op": "request_control" } | { "op": "give_control", to: string, } | { "op": "release_control" } | { "op": "set_pair", on: boolean, } | { "op": "request_trust" } | { "op": "grant_trust", to: string, minutes: number, } | { "op": "revoke_trust", to: string, } | { "op": "set_private", on: boolean, };
 
 /**
+ * A pinned file against the tree read (chant's asset `state`).
+ */
+export type PinState = "pinned" | "drifted" | "missing" | "stale";
+
+/**
  * What a pane does when the daemon restores it. Its scrollback always comes
  * back; this decides what runs in it.
  */
@@ -1282,6 +1287,33 @@ gate?: Gate,
 actions: Array<Action>, };
 
 export type ReasonKind = "ask" | "input" | "failed" | "exited" | "done" | "paused" | "errors" | "conflict" | "diff" | "gate";
+
+/**
+ * An option chosen or turned down.
+ */
+export type RecordChoice = { option: string, 
+/**
+ * The option's label, from the record's options.
+ */
+label: string | null, 
+/**
+ * Why it was chosen, or turned down.
+ */
+why: string | null, };
+
+/**
+ * One entry of a record's evidence.
+ */
+export type RecordEvidence = { title: string | null, 
+/**
+ * A link.
+ */
+url?: string, 
+/**
+ * A workspace file pinned by the hash of its bytes, and how it stands
+ * now.
+ */
+path?: string, pin?: PinState, };
 
 export type Rect = { x: number, y: number, cols: number, rows: number, };
 
@@ -1607,3 +1639,73 @@ export type UnreachedWhy = "agent_needs_pane" | "may_not_drive" | "nobody";
  * command the shell integration reported.
  */
 export type WorkKind = "shell" | "build" | "test" | "agent" | "server" | "logs" | "editor" | "app" | "pr" | "issue" | "fountain";
+
+/**
+ * One current record of a kind the declaration names: a decision, a work
+ * item, a session.
+ */
+export type WorkspaceRecord = { 
+/**
+ * The kind's name (`decision`, `work`).
+ */
+kind: string, id: string, title: string | null, state: string | null, 
+/**
+ * A work item: whether nothing blocks it.
+ */
+ready: boolean | null, blocked_by: Array<string>, 
+/**
+ * PinState drift and the like.
+ */
+warnings: Array<string>, valid: boolean, 
+/**
+ * What a decision answers.
+ */
+question?: string, 
+/**
+ * What it constrains, as the record writes it: `member:<name>`,
+ * `path:<path>`.
+ */
+constrains: Array<string>, 
+/**
+ * The option chosen, and why. None while proposed.
+ */
+choice?: RecordChoice, 
+/**
+ * The options turned down, each with why.
+ */
+rejected: Array<RecordChoice>, 
+/**
+ * The records this one replaces, and the one that replaced it (chant
+ * derives that from the other's link).
+ */
+supersedes: Array<string>, superseded_by?: string, 
+/**
+ * Records that fix this one's consequences without replacing it.
+ */
+remediated_by: Array<string>, 
+/**
+ * A work item: the decisions it carries out.
+ */
+implements: Array<string>, 
+/**
+ * Who decided, and when (a date); who proposed it.
+ */
+decided_by?: string, decided_on?: string, proposed_by?: string, 
+/**
+ * What it cites: links, and workspace files pinned by hash.
+ */
+evidence: Array<RecordEvidence>, 
+/**
+ * Whether its author's seal verifies: none when nothing here can say
+ * (no seal and no signers file).
+ */
+attested?: boolean, 
+/**
+ * How far the commit behind it is trusted: `attested`,
+ * `attested-unverifiable-here`, `adopted`, `unattested`.
+ */
+provenance?: string, 
+/**
+ * The record's file, from the repository root.
+ */
+path?: string, };
