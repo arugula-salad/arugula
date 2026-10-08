@@ -464,14 +464,18 @@ export type EventKind = "commented" | "review_comment" | "reviewed" | "review_re
 /**
  * `GET /api/flags`: one row per flag (the `flags.list` operation).
  */
-export type FlagInfo = { name: string, about: string, 
+export type FlagInfo = { name: string, 
+/**
+ * What Developer settings calls it. Absent from a daemon before #665.
+ */
+title?: string, about: string, 
 /**
  * Whether it is on here now.
  */
 on: boolean, default: boolean, 
 /**
  * Whether this build has what the flag turns on. A build without Labs
- * can set `labs`, and nothing follows; Settings says so. Absent from
+ * can set a flag, and nothing follows; Settings says so. Absent from
  * daemons that don't report it, which have it.
  */
 built?: boolean, };
@@ -818,11 +822,17 @@ schema: unknown, };
  */
 export type HostFeatures = { 
 /**
- * The `labs` flag is on here (see [`crate::flags`]): what a stranger
- * doesn't get is on. Absent from older daemons, and pages treat that
- * as off.
+ * Some Labs flag is on here (see [`crate::flags`]). Absent from older
+ * daemons, and pages treat that as off. Daemons from before each
+ * feature had a flag (#665) say only this, so a page reads it for
+ * every flag where `flags` is missing.
  */
 labs: boolean, 
+/**
+ * The owner has asked for Developer settings here
+ * ([`crate::flags::unlocked`]), so the page offers them.
+ */
+dev?: boolean, 
 /**
  * Browser blocks on ports and editor blocks: block sites are on
  * (`--block-listen`).
@@ -842,14 +852,19 @@ fountain: boolean,
  */
 studio: boolean, 
 /**
- * Threads on panes and sessions: with `labs`. Older daemons leave it
+ * Threads on panes and sessions: the `chat` flag. Older daemons leave it
  * out, and pages hide threads there.
  */
 threads?: boolean, 
 /**
  * Huddles on sessions, likewise.
  */
-calls?: boolean, };
+calls?: boolean, 
+/**
+ * The names of the Labs flags that are on, whatever else each needs
+ * (a login, a provider). `None` from a daemon before #665: see `labs`.
+ */
+flags?: Array<string>, };
 
 /**
  * `GET /api/host`: who this daemon is.

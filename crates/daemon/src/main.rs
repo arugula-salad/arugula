@@ -551,6 +551,8 @@ fn flags_cli(name: Option<&str>, switch: Option<args::Switch>, dir: &std::path::
     use arugula_proto::flags;
     let state = |on| if on { "on" } else { "off" };
     let Some(name) = name else {
+        // Asking is what makes Developer settings show in the menus (#665).
+        flags::unlock(dir).map_err(|e| anyhow::anyhow!("{e}"))?;
         let rows = flags::all(dir);
         let width = rows.iter().map(|(f, _)| f.name.len()).max().unwrap_or(0);
         for (f, on) in rows {
@@ -565,10 +567,10 @@ fn flags_cli(name: Option<&str>, switch: Option<args::Switch>, dir: &std::path::
             let on = s == args::Switch::On;
             flags::set(dir, name, on).map_err(|e| anyhow::anyhow!("{e}"))?;
             println!("{name} is {}", state(on));
-            if name == flags::LABS && !labs::BUILT {
+            if !labs::BUILT {
                 println!("  This build of Arugula has no Labs, so nothing changes.");
             } else if daemon_running(dir) {
-                println!("  The running daemon follows at once; reload the page to see it there.");
+                println!("  The running daemon follows at once.");
             }
         }
     }
@@ -674,7 +676,7 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
     info!(state = %state_dir.display(), "state directory");
     // The `labs` file of #385 moves into flags.json (#464).
     match arugula_proto::flags::migrate_legacy(&state_dir) {
-        Ok(true) => info!("the labs file is now the labs flag in flags.json"),
+        Ok(true) => info!("the labs file is now labs in flags.json: every flag on"),
         Ok(false) => {}
         Err(e) => warn!(error = %e, "can't move the labs file into flags.json"),
     }

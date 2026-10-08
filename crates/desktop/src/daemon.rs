@@ -203,6 +203,8 @@ pub fn entries(s: &Status, busy: Option<&str>) -> Vec<Entry> {
     out.push(entry("daemon-start", "Start", !answering && busy.is_none()));
     out.push(separator());
     out.push(entry("daemon-log", "Open log", service::log().is_some()));
+    // This machine's Labs flags, on its page (#665).
+    out.push(entry("daemon-dev", "Developer settings…", answering));
     out
 }
 
@@ -390,6 +392,20 @@ pub fn nudge(v: &serde_json::Value, seen: &[String]) -> Option<Nudge> {
 /// control, or join again, #325), in a window of ours. Not while the
 /// daemon and the app don't match: the setup page says why.
 pub fn getting_started(app: &AppHandle, section: &str) {
+    on_page(app, "getting-started", &format!("{section:?}"), &format!("/#getting-started={section}"));
+}
+
+/// Developer settings on the daemon's page (#665): this machine's Labs
+/// flags. From here it opens whether or not the machine has asked for it.
+fn developer(app: &AppHandle) {
+    on_page(app, "developer", "null", "/#developer");
+}
+
+/// Has the daemon's page open something: a page that's open hears `event`
+/// with `detail` (JS) and opens it without a reload (main.tsx); else a new
+/// window starts at `hash`. Not while the daemon and the app don't match:
+/// the setup page says why.
+fn on_page(app: &AppHandle, event: &str, detail: &str, hash: &str) {
     if crate::compat::mismatch().is_some() {
         return crate::focus_or_open(app);
     }
@@ -397,10 +413,9 @@ pub fn getting_started(app: &AppHandle, section: &str) {
     let _ = app.show();
     let on_page = app.webview_windows().into_values().find(|w| w.url().is_ok_and(|u| crate::daemons(&u)));
     match on_page {
-        // The client opens it (main.tsx) without a reload.
         Some(w) => {
             let _ = w.eval(format!(
-                "dispatchEvent(new CustomEvent({}+':getting-started', {{ detail: {section:?} }}))",
+                "dispatchEvent(new CustomEvent({}+':{event}', {{ detail: {detail} }}))",
                 crate::PAGE_EVENT_PREFIX
             ));
             let _ = w.unminimize();
@@ -408,8 +423,7 @@ pub fn getting_started(app: &AppHandle, section: &str) {
             let _ = w.set_focus();
         }
         None => {
-            let _ =
-                crate::open_window(app, WebviewUrl::External(crate::page_at(&format!("/#getting-started={section}"))));
+            let _ = crate::open_window(app, WebviewUrl::External(crate::page_at(hash)));
         }
     }
 }
@@ -441,6 +455,7 @@ pub fn menu_event(app: &AppHandle, id: &str) -> bool {
         }
         "daemon-join" => getting_started(app, "cloud"),
         "daemon-log" => open_log(),
+        "daemon-dev" => developer(app),
         "daemon-status" | "daemon-control" => {}
         _ => return false,
     }
@@ -895,6 +910,7 @@ mod tests {
         assert!(find(&es, "daemon-stop").unwrap().enabled);
         assert!(!find(&es, "daemon-start").unwrap().enabled);
         assert!(find(&es, "daemon-log").is_some());
+        assert!(find(&es, "daemon-dev").unwrap().enabled);
 
         // Stopped: Start, not Stop or Restart, and no control line.
         let s = Status { service: Some(agent(false)), ..Default::default() };
@@ -904,6 +920,8 @@ mod tests {
         assert!(!find(&es, "daemon-stop").unwrap().enabled);
         assert!(!find(&es, "daemon-restart").unwrap().enabled);
         assert!(find(&es, "daemon-control").is_none() && find(&es, "daemon-join").is_none());
+        // Its page has the settings, and it isn't answering.
+        assert!(!find(&es, "daemon-dev").unwrap().enabled);
 
         // Not a service: nothing to stop or restart it through.
         let es = entries(&up(None), None);

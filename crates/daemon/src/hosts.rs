@@ -31,6 +31,7 @@ use std::{
     time::Duration,
 };
 
+use arugula_proto::flags;
 use arugula_proto::hosts::{
     AddHost, Host, HostFeatures, HostInfo, HostList, HostToken, Invite, JoinRequest, Joined, ProviderRef, Transport,
 };
@@ -548,19 +549,22 @@ async fn host(State(app): AppState, who: Option<axum::Extension<crate::acl::Prin
 /// What this machine is set up for, so the menus offer only that (#180)
 /// or say how to turn it on (#171). Cheap: nothing here asks anyone.
 ///
-/// What a stranger doesn't get follows the `labs` file in the state dir:
-/// threads and huddles are its alone, and Fountain, studio and VMs need it
-/// as well as their own setup.
+/// What a stranger doesn't get follows the machine's Labs flags: threads
+/// and huddles are a flag each, and Fountain, studio and VMs need theirs as
+/// well as their own setup.
 pub(crate) fn features(app: &App) -> HostFeatures {
-    let labs = crate::labs::enabled(app.control.state_dir());
+    let dir = app.control.state_dir();
+    let on = crate::labs::flags(dir);
     HostFeatures {
-        labs,
+        labs: on.any(),
+        dev: arugula_proto::flags::unlocked(dir),
         blocks: crate::sites::get().is_some(),
-        vms: labs && app.mux.provider.is_some(),
-        fountain: labs && crate::labs::fountain_login_here(&app.mux.shell_env),
-        studio: labs && crate::labs::studio_here(),
-        threads: labs,
-        calls: labs,
+        vms: on.has(flags::VMS) && app.mux.provider.is_some(),
+        fountain: on.has(flags::FOUNTAIN) && crate::labs::fountain_login_here(&app.mux.shell_env),
+        studio: on.has(flags::STUDIO) && crate::labs::studio_here(),
+        threads: on.has(flags::CHAT),
+        calls: on.has(flags::HUDDLES),
+        flags: Some(on.names().map(str::to_owned).collect()),
     }
 }
 

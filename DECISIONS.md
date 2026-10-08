@@ -633,8 +633,39 @@ answers the routes), and `HostFeatures.labs` tells the page.
 Not done: a flag per team or account on control (#347's last item, #464's
 option 2). It would sit beside `flags.json`: control's answer for a joined
 machine, with the file as the fallback for machines that aren't joined.
-Where: `crates/proto/src/flags.rs`, `crates/proto/src/op.rs` (`FlagsList`, `FlagSet`), `crates/daemon/src/ops/flags.rs`, `crates/daemon/src/labs/mod.rs` (`enabled`), `crates/daemon/src/main.rs` (`flags_cli`, the startup migration), `crates/daemon/src/args.rs` (`labs_command`), `crates/daemon/src/mcp/mod.rs`, `crates/cli/src/main.rs`, `web/src/ui/flags.tsx`.
+Where: `crates/proto/src/flags.rs`, `crates/proto/src/op.rs` (`FlagsList`, `FlagSet`), `crates/daemon/src/ops/flags.rs`, `crates/daemon/src/labs/mod.rs` (`enabled`), `crates/daemon/src/main.rs` (`flags_cli`, the startup migration), `crates/daemon/src/args.rs` (`labs_command`), `crates/daemon/src/mcp/mod.rs`, `crates/cli/src/main.rs`. The dialog is now `web/src/ui/developer.tsx` (next entry).
 From: #385, #342, #347, #387, #464.
+
+### A flag for each Labs feature, and Developer settings to turn them on
+Chat on a machine shouldn't need Fountain, studio and the rest on with it, so
+the one `labs` flag (above) is nine: `chat`, `huddles`, `vms`, `fountain`,
+`studio`, `workspaces`, `guest-ssh`, `swarm-themes`, `forges`. Each is a row
+in `FLAGS`, off by default.
+- **`labs` is no longer a flag; in the file it means all of them.** `labs`
+  in `flags.json`, or the old empty `labs` file, is the answer for every flag
+  the file doesn't name itself. A machine that had Labs keeps everything, one
+  feature turned off there leaves the rest, and the test suites' one switch
+  (`testkit::labs`, `e2e/labs.ts`) still turns it all on. `PUT
+  /api/flags/labs` and `arugulad flags labs on` are refused: nothing offers
+  it.
+- **Each gate reads its own flag.** `labs::on(dir, flags::NAME)` in the
+  daemon; `flags::on(dir)` gives the whole set from one read, for what lists
+  many (`tools/list`, both `--help`s). As before this is visibility, not
+  enforcement, except for Forgejo and GitLab, which are refused.
+- **`HostFeatures` says which.** `labs` is now "any flag on", and `flags`
+  names those that are. A page on a daemon from before reads `labs` for every
+  flag, which is what it meant there. `Client.flag(name)` is the page's one
+  question; `has()`, `hasThreads()` and `hasCalls()` stand as they were.
+- **Developer settings, unlocked first.** The owner's dialog (session menu,
+  palette, the phone's sheet) has a switch per flag and applies it without a
+  reload: the Labs chunk loads when a flag first needs it. The menus offer it
+  only where `flags.json` exists (`HostFeatures.dev`), which `arugulad flags`
+  makes, so a stranger doesn't meet unfinished features. The desktop app's
+  *Daemon* menu and `/#developer` open it regardless.
+Not done: per-flag enforcement of routes and block constructors, and flags
+per team on control (#347).
+Where: `crates/proto/src/flags.rs`, `crates/daemon/src/labs/mod.rs` (`flags`, `on`), `crates/daemon/src/hosts.rs` (`features`), `crates/daemon/src/mcp/tools.rs` (`UNLISTED*`), `crates/cli/src/main.rs` and `crates/daemon/src/args.rs` (`LABS_*`), `web/src/client.ts` (`flag`), `web/src/ui/developer.tsx`, `crates/desktop/src/daemon.rs`.
+From: #665, #464, #347.
 
 ### Zig 0.16 builds Ghostty; the toolchain is pinned
 libghostty-vt needs Zig, pinned in `.mise.toml`; cargo runs under `mise exec`

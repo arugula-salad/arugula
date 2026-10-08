@@ -1709,8 +1709,9 @@ mod wire {
                 "name": "box", "version": "1.2.3", "protocol": 2, "tailnet_url": "https://box.ts.net",
                 "tailnet_seen": true, "control": "https://control", "team": "acme",
                 "fountain_runner": { "name": "r", "online": true },
-                "features": { "labs": true, "blocks": true, "vms": false, "fountain": false, "studio": false,
-                              "threads": false, "calls": false },
+                // `dev` came with flags (#665); `flags` is left out when unsaid.
+                "features": { "labs": true, "dev": false, "blocks": true, "vms": false, "fountain": false,
+                              "studio": false, "threads": false, "calls": false },
             })
         );
     }

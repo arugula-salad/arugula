@@ -40,7 +40,9 @@ macro_rules! arugulad {
 /// does (#464): a running daemon follows at once. Only the one test of the
 /// old `labs` marker file (`hosts.rs`) writes that file by hand.
 pub fn labs(state: &Path, on: bool) {
-    arugula_proto::flags::set(state, arugula_proto::flags::LABS, on).expect("the state dir takes flags.json");
+    for f in arugula_proto::flags::FLAGS {
+        arugula_proto::flags::set(state, f.name, on).expect("the state dir takes flags.json");
+    }
 }
 
 /// The shell test daemons run unless told otherwise: no rc files, so

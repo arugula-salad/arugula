@@ -13,7 +13,7 @@ import { pickConversation } from "./conversations";
 import { openPicker } from "./picker";
 import { agentNotifyItems, notificationItems } from "./notify";
 import { openGettingStarted } from "./welcome";
-import { openFlags } from "./flags";
+import { openDeveloper } from "./developer";
 import { openRules } from "./rules";
 import { desktopApp, desktopPlatform, openInNewWindow } from "../desktop";
 import { sessionThreadItems, threadItems } from "./threads";
@@ -117,8 +117,8 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
           } as MenuItem,
         ]),
     // An ssh command for a guest with only OpenSSH. The owner's. Only where
-    // this machine has labs.
-    ...(client.base.startsWith("/") || client.state?.roles || !client.hasLabs()
+    // this machine has turned guest ssh on.
+    ...(client.base.startsWith("/") || client.state?.roles || !client.flag("guest-ssh")
       ? []
       : [
           {
@@ -213,8 +213,8 @@ export function sessionItems(client: Client, session: SessionId, rename: () => v
     ...agentNotifyItems(client, session),
     // #166: this machine's standing permission rules, the owner's.
     ...(client.state?.roles ? [] : [{ label: "Permission rules…", run: () => openRules(client) } as MenuItem]),
-    // #464: the machine's named flags, Labs first, the owner's.
-    ...(client.state?.roles ? [] : [{ label: "Labs…", run: () => openFlags(client) } as MenuItem]),
+    // #665: this machine's Labs flags, the owner's, once asked for.
+    ...(!client.state?.roles && client.hasDev() ? [{ label: "Developer settings…", run: () => openDeveloper(client) } as MenuItem] : []),
     { label: "Getting started", run: () => openGettingStarted(undefined, client) },
     "separator",
     { label: "Close session", danger: true, run: () => client.intent({ op: "close_session", session }) },
@@ -226,7 +226,7 @@ export function sessionItems(client: Client, session: SessionId, rename: () => v
 function fountainItems(client: Client, where: { session?: number; split?: PaneId }): MenuItem[] {
   return [
     ...(client.has("fountain") ? [{ label: "Fountain agents…", run: () => void openFountain(client, where) } as MenuItem] : []),
-    ...(client.hasLabs() && (client.features === null || client.fountainRunner)
+    ...(client.flag("fountain") && (client.features === null || client.fountainRunner)
       ? [{ label: "Fountain runner…", run: () => void openFountain(client, where, "runner") } as MenuItem]
       : []),
   ];

@@ -1,6 +1,6 @@
 # Labs
 
-What a machine offers only when its `labs` flag is on.
+What a machine offers only when the owner turns its flag on.
 These features work, but a stranger doesn't have what they need (a
 Fountain login, the studio, a sandbox provider, our own chant setup), so
 the public docs at [docs.arugula.io](https://docs.arugula.io/) don't
@@ -8,44 +8,60 @@ describe them at all. This page is the team's description of them. It
 was the *Labs* sections of the public features, teams, advanced and
 control pages until those moved to the site.
 
-## Turning labs on
+## Turning a feature on
 
-The `labs` flag turns on what a new install doesn't show: chat and threads,
-huddles, Fountain, studio apps, chant workspaces, VM tabs and sandboxes, ssh
-invites for guests, GitLab and Forgejo pull request and issue blocks
-(GitHub's are always on), the swarm's city, hive and timeline views, and the
-matching tools, commands and options of `arugula mcp`, `arugula --help` and
-`arugulad --help`. They all keep working without it, and just aren't
-offered; GitLab and Forgejo blocks are refused.
+Each feature has a flag, off on a new install:
+
+| Flag | Turns on |
+| --- | --- |
+| `chat` | Threads on panes and sessions, and the chat page |
+| `huddles` | Voice calls on a session |
+| `vms` | VM tabs and panes, machines and the sandboxes page |
+| `fountain` | Fountain agents and the runner view |
+| `studio` | Studio app blocks |
+| `workspaces` | Chant workspace blocks |
+| `guest-ssh` | *Invite over ssh…* for a guest with only OpenSSH |
+| `swarm-themes` | The swarm's city, hive and timeline views |
+| `forges` | GitLab and Forgejo pull request and issue blocks (GitHub's are always on) |
+
+A flag also lists its feature's tools, commands and options in `arugula mcp`,
+`arugula --help` and `arugulad --help`. They all keep working without it, and
+just aren't offered; GitLab and Forgejo blocks are refused.
 
 ```
-arugulad flags labs on        # and `off`; plain `arugulad flags` lists the flags
+arugulad flags                # the flags, and which are on
+arugulad flags chat on        # and `off`
 ```
 
-Or, as the machine's owner, in the web client: the session menu's *Labs…*
-has a switch for each flag. The page reloads to show the change.
+Or, as the machine's owner, in the web client: *Developer settings…* in the
+session menu (and the command palette, and the phone's sheet) has a switch
+for each flag, and the page follows a switch at once, with no reload. The
+menus offer it only on a machine that has asked: one where `arugulad flags`
+has been run, or a flag set. The desktop app's *Daemon* menu has *Developer
+settings…* either way, and so does the page at `/#developer`.
 
-The flag is `{"flags": {"labs": true}}` in `flags.json` in the state
+The flags are `{"flags": {"chat": true}}` in `flags.json` in the state
 directory, which is `$ARUGULA_STATE_DIR` if set, else
 `$XDG_STATE_HOME/arugula`, else `~/.local/state/arugula`; on Windows,
 `%LOCALAPPDATA%\arugula\state`. `arugulad flags` writes it directly, so it
 works with the daemon stopped. The state directory is kept by
-`arugulad uninstall`, the installer and the updates, so the flag survives
+`arugulad uninstall`, the installer and the updates, so the flags survive
 them.
 
-An empty `labs` file in the state directory, which is how 0.24 and later
-turned Labs on, still works: a starting daemon moves it into `flags.json`
-and removes it, and until then the old file counts as the flag being on.
-That fallback goes in a later release.
+Before each feature had a flag there was one switch, and it still counts:
+an empty `labs` file in the state directory (0.24 and later), or `labs` in
+`flags.json`, means every flag the file doesn't name is on. So a machine
+that had Labs keeps all of it, and turning one feature off there leaves the
+rest. A starting daemon moves the old file into `flags.json` and removes it.
 
-- **Per machine.** It's read by the machine that serves the page, so every
-  machine you want them on needs its own. Someone you share a session with
-  sees chat and huddles on your machine if it has labs, and not otherwise.
-- **No restart.** The daemon reads the flag whenever it's asked; reload the
-  page to see the change.
+- **Per machine.** They're read by the machine that serves the page, so every
+  machine you want a feature on needs its own. Someone you share a session
+  with sees chat and huddles on your machine if it has them on, and not
+  otherwise.
+- **No restart.** The daemon reads the flags whenever it's asked.
 - **Each feature still needs its own setup.** Fountain needs a login, studio a
-  link, VMs a sandbox provider, guest ssh its listener; labs only stops
-  them from being hidden.
+  link, VMs a sandbox provider, guest ssh its listener; a flag only stops
+  its feature from being hidden.
 
 ## What labs unhides
 

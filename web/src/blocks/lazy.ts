@@ -12,6 +12,8 @@ import { registerBlock, type BlockView } from "./view";
 const LABS_BLOCKS = ["fountain", "app", "workspace"] as const;
 type LabsBlock = (typeof LABS_BLOCKS)[number];
 
+/** The Labs flag each needs. */
+const FLAGS: Record<LabsBlock, string> = { fountain: "fountain", app: "studio", workspace: "workspaces" };
 const TITLES: Record<LabsBlock, string> = { fountain: "Fountain", app: "App", workspace: "Workspace" };
 
 function rendererOf(labs: Labs, type: LabsBlock) {
@@ -33,11 +35,11 @@ function lazyView(type: LabsBlock, client: Client, id: PaneId): BlockView {
 
   const decide = () => {
     // The daemon's features arrive just after its layout: until they do, we
-    // don't know whether this machine has labs.
+    // don't know whether this machine has the block's flag on.
     if (gone || inner || client.features === null) return;
     off?.();
     off = null;
-    if (!client.hasLabs()) {
+    if (!client.flag(FLAGS[type])) {
       host.textContent = "This block is in Labs";
       host.className = "block block-unknown";
       return;

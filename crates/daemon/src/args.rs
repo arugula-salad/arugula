@@ -2,6 +2,7 @@
 
 use std::{net::SocketAddr, path::PathBuf};
 
+use arugula_proto::flags::{self, On};
 use clap::{Parser, Subcommand};
 
 #[derive(Parser, Debug)]
@@ -125,10 +126,9 @@ pub(crate) enum Command {
         state_dir: Option<PathBuf>,
     },
     /// List what can be switched on here, or switch one: `arugulad flags
-    /// labs on` shows what a new install doesn't (chat, huddles, Fountain
-    /// and more). It writes flags.json in the state directory, so it works
-    /// with the daemon stopped, and a running one follows at once; reload
-    /// the page to see it there.
+    /// chat on` shows chat, which a new install doesn't. It writes
+    /// flags.json in the state directory, so it works with the daemon
+    /// stopped, and a running one follows at once.
     Flags {
         /// The flag to show or set [default: list them all].
         name: Option<String>,
@@ -396,27 +396,31 @@ pub(crate) struct BlockArgs {
 /// Where wispd listens unless told otherwise.
 pub(crate) const DEFAULT_WISP_URL: &str = "http://127.0.0.1:7788";
 
-/// Options that work but stay out of `--help` unless the machine has the
-/// `labs` flag on: guest ssh, the studio file and the sandbox provider. The
-/// others that are `hide = true` are internals, and stay hidden.
-const LABS_OPTIONS: [&str; 5] = ["guest_ssh", "guest_ssh_host", "studio_file", "wisp_url", "wisp_token_file"];
+/// Options that work but stay out of `--help` unless the machine has turned
+/// their Labs flag on: guest ssh, the studio file and the sandbox provider.
+/// The others that are `hide = true` are internals, and stay hidden.
+const LABS_OPTIONS: [(&str, &str); 5] = [
+    ("guest_ssh", flags::GUEST_SSH),
+    ("guest_ssh_host", flags::GUEST_SSH),
+    ("studio_file", flags::STUDIO),
+    ("wisp_url", flags::VMS),
+    ("wisp_token_file", flags::VMS),
+];
 
-/// The command line, listing the labs options in `--help` when `labs`.
-pub(crate) fn labs_command(labs: bool) -> clap::Command {
+/// The command line, listing in `--help` the options `flags` turns on.
+pub(crate) fn labs_command(on: On) -> clap::Command {
     use clap::CommandFactory;
     let mut cmd = Args::command();
-    if labs {
-        for opt in LABS_OPTIONS {
-            cmd = cmd.mut_arg(opt, |a| a.hide(false));
-        }
+    for (opt, _) in LABS_OPTIONS.iter().filter(|(_, f)| on.has(f)) {
+        cmd = cmd.mut_arg(*opt, |a| a.hide(false));
     }
     cmd
 }
 
-/// This machine has the `labs` flag on, in the state dir it was told to use
+/// This machine's Labs flags, in the state dir it was told to use
 /// (`--state-dir`, read from the command line before it's parsed, or
 /// `ARUGULA_STATE_DIR`) or the default one.
-pub(crate) fn labs_here() -> bool {
+pub(crate) fn labs_here() -> On {
     let mut given = None;
     let mut argv = std::env::args().skip(1);
     while let Some(a) = argv.next() {
@@ -427,11 +431,17 @@ pub(crate) fn labs_here() -> bool {
         }
     }
     let dir = given.or_else(|| std::env::var_os("ARUGULA_STATE_DIR").map(PathBuf::from));
-    arugula_proto::flags::get(&dir.unwrap_or_else(crate::default_state_dir), arugula_proto::flags::LABS)
+    arugula_proto::flags::on(&dir.unwrap_or_else(crate::default_state_dir))
 }
 
 #[cfg(test)]
 mod tests {
+    /// The command line with every Labs flag on, or none.
+    fn labs_command(labs: bool) -> clap::Command {
+        use arugula_proto::flags::On;
+        super::labs_command(if labs { On::all() } else { On::none() })
+    }
+
     use clap::CommandFactory;
 
     /// `arugulad --help` is for strangers: no milestone or issue numbers, no
@@ -489,7 +499,7 @@ mod tests {
             "--sandbox-of-control",
             "--provider-token-sha256",
         ];
-        let help = |on: bool| super::labs_command(on).render_long_help().to_string();
+        let help = |on: bool| labs_command(on).render_long_help().to_string();
         let (off, on) = (help(false), help(true));
         for flag in labs {
             assert!(!off.contains(&format!("{flag} ")) && !off.contains(&format!("{flag}\n")), "{flag} without labs");
@@ -500,11 +510,8 @@ mod tests {
         }
         // The labs set is all that differs, and the hidden options still parse.
         let hidden = |on: bool| {
-            let mut ids: Vec<String> = super::labs_command(on)
-                .get_arguments()
-                .filter(|a| a.is_hide_set())
-                .map(|a| a.get_id().to_string())
-                .collect();
+            let mut ids: Vec<String> =
+                labs_command(on).get_arguments().filter(|a| a.is_hide_set()).map(|a| a.get_id().to_string()).collect();
             ids.sort();
             ids
         };
@@ -513,7 +520,7 @@ mod tests {
         assert!(h_on.iter().all(|i| h_off.contains(i)));
         for on in [false, true] {
             assert!(
-                super::labs_command(on)
+                labs_command(on)
                     .try_get_matches_from(["arugulad", "--studio-file", "/x", "--guest-ssh", "off"])
                     .is_ok()
             );

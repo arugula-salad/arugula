@@ -83,7 +83,7 @@ pub async fn forgejo_hook(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    if !crate::labs::enabled(app.control.state_dir()) {
+    if !crate::labs::on(app.control.state_dir(), arugula_proto::flags::FORGES) {
         return off();
     }
     let h = |k: &str| headers.get(k).and_then(|v| v.to_str().ok());
@@ -110,7 +110,7 @@ pub async fn gitlab_hook(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    if !crate::labs::enabled(app.control.state_dir()) {
+    if !crate::labs::on(app.control.state_dir(), arugula_proto::flags::FORGES) {
         return off();
     }
     let Some(rec) = rec_by(&q.k, Provider::Gitlab) else { return refused() };

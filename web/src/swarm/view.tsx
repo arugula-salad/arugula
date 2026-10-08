@@ -119,7 +119,7 @@ export function SwarmView({
   const [by, setBy] = useState<GroupBy>(savedBy);
   const [chosen, setChosen] = useState<Theme>(savedTheme);
   // Read on each render: the features arrive after the first one.
-  const themes = offeredThemes(!!home && !!fleet.clientOf(home)?.hasLabs());
+  const themes = offeredThemes(!!home && !!fleet.clientOf(home)?.flag("swarm-themes"));
   const theme = themes.includes(chosen) ? chosen : "blocks";
   const [peek, setPeek] = useState<{ key: string; x: number; y: number; text: string } | null>(null);
   const [hidden, setHidden] = useState<Set<string>>(new Set());

@@ -7,8 +7,8 @@
 // The daemon here is set up for every one of those (a Fountain login, a
 // linked studio, a sandbox provider, guest ssh), so only the missing file
 // hides them: and the last test sets the flag, on the running daemon, and
-// loads the page again to see them all. (labs-settings.spec.ts does it from
-// the page.)
+// loads the page again to see them all. (developer-settings.spec.ts turns
+// them on one at a time, from the page.)
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -63,10 +63,10 @@ const api = (path: string, body?: unknown, as?: string) =>
     body: body === undefined ? undefined : JSON.stringify(body),
   });
 
-const features = async () => ((await (await api("/api/host")).json()) as { features: Record<string, boolean> }).features;
+const features = async () => ((await (await api("/api/host")).json()) as { features: Record<string, boolean | string[]> }).features;
 
 /** What this page shows to a stranger's eye, wherever labs would put it. */
-const MENU_HIDDEN = [/^Thread\b/, /^Session thread/, /huddle/i, /\bVM\b/, /^Sandboxes/, /^Fountain/, /studio app/i, /^Invite over ssh/];
+const MENU_HIDDEN = [/^Thread\b/, /^Session thread/, /huddle/i, /\bVM\b/, /^Sandboxes/, /^Fountain/, /studio app/i, /^Invite over ssh/, /^Developer settings/];
 
 async function menuItems(page: Page) {
   const items = (await page.getByRole("menuitem").allInnerTexts()).map((s) => s.trim());
@@ -94,7 +94,7 @@ async function noLabsItems(page: Page, pane: number) {
 }
 
 test("the host says labs is off, and what follows it", async () => {
-  expect(await features()).toEqual({ labs: false, blocks: false, vms: false, fountain: false, studio: false, threads: false, calls: false });
+  expect(await features()).toEqual({ labs: false, dev: false, blocks: false, vms: false, fountain: false, studio: false, threads: false, calls: false, flags: [] });
 });
 
 test("links to Forgejo and GitLab stay plain links; GitHub's still open as blocks", async ({ page }) => {
@@ -269,7 +269,11 @@ test("setting the flag on the running daemon brings it all back, with no restart
   // Something new for the owner, from the friend.
   const pane0 = ((await (await api("/api/panes")).json()) as { id: number }[])[0].id;
   expect((await api(`/api/threads/pane-${pane0}`, { text: "still there?" }, FRIEND)).ok).toBe(true);
-  expect(await features()).toEqual({ labs: true, blocks: false, vms: true, fountain: true, studio: true, threads: true, calls: true });
+  expect(await features()).toEqual({
+    ...{ labs: true, dev: true, blocks: false, vms: true, fountain: true, studio: true, threads: true, calls: true },
+    // `labs`, the one switch from before, is every flag (#665).
+    flags: ["chat", "huddles", "vms", "fountain", "studio", "workspaces", "guest-ssh", "swarm-themes", "forges"],
+  });
 
   await open(page);
   const pane = await page.evaluate(() => window.__arugula.client.state!.panes[0].id);

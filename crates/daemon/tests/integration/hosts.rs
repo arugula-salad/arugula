@@ -299,14 +299,14 @@ fn a_remote_pane_runs_there_and_has_its_place_here() {
     wait_for("the pane there to close", || !ids(&other).contains(&json!(pane2)));
 }
 
-/// What a stranger doesn't get follows the `labs` flag in the state dir's
-/// `flags.json`: `GET /api/host` says so, with threads and huddles (and
-/// Fountain, studio and VMs, where set up) following it, and setting it on a
-/// running daemon, from outside it or through `PUT /api/flags/labs`, flips
-/// it with no restart.
+/// What a stranger doesn't get follows the flags in the state dir's
+/// `flags.json`, one to a feature: `GET /api/host` says so, with threads and
+/// huddles (and Fountain, studio and VMs, where set up) each following its
+/// own, and setting one on a running daemon, from outside it or through
+/// `PUT /api/flags/{name}`, flips it with no restart.
 #[cfg(feature = "labs")]
 #[test]
-fn the_labs_flag_turns_on_what_a_stranger_doesnt_get() {
+fn each_flag_turns_on_its_part_of_what_a_stranger_doesnt_get() {
     // A Fountain login is set up here, so that `fountain` shows what labs
     // does to it.
     let d = arugulad!("hosts")
@@ -341,21 +341,42 @@ fn the_labs_flag_turns_on_what_a_stranger_doesnt_get() {
         (f["labs"].clone(), f["threads"].clone(), f["calls"].clone()),
         (false.into(), false.into(), false.into())
     );
-    let listed = d.put("/api/flags/labs", serde_json::json!({ "on": true }));
+    // #665: each feature has a flag of its own, and the owner's route turns
+    // chat on alone, Fountain's login notwithstanding.
+    assert_eq!(f["dev"], true, "the flags file is there: {f}");
+    let listed = d.put("/api/flags/chat", serde_json::json!({ "on": true }));
     assert_eq!(
-        (listed["name"].clone(), listed["on"].clone(), listed["built"].clone()),
-        ("labs".into(), true.into(), true.into())
+        (listed["name"].clone(), listed["title"].clone(), listed["on"].clone(), listed["built"].clone()),
+        ("chat".into(), "Chat".into(), true.into(), true.into())
     );
-    assert_eq!(features()["labs"], true);
+    let f = features();
+    assert_eq!((f["labs"].clone(), f["threads"].clone()), (true.into(), true.into()), "{f}");
+    assert_eq!((f["calls"].clone(), f["fountain"].clone()), (false.into(), false.into()), "{f}");
+    assert_eq!(f["flags"], serde_json::json!(["chat"]));
     let all = d.get("/api/flags");
-    assert_eq!(all.as_array().map(Vec::len), Some(1), "{all}");
+    assert_eq!(all.as_array().map(Vec::len), Some(9), "{all}");
+    for row in all.as_array().unwrap() {
+        assert_eq!(
+            (row["on"].clone(), row["default"].clone()),
+            ((row["name"] == "chat").into(), false.into()),
+            "{row}"
+        );
+        assert!(row["about"].as_str().is_some_and(|a| !a.is_empty()), "{all}");
+    }
+    // Fountain's flag, with the login this daemon has.
+    d.put("/api/flags/fountain", serde_json::json!({ "on": true }));
+    assert_eq!(features()["fountain"], true);
+    d.put("/api/flags/fountain", serde_json::json!({ "on": false }));
+    d.put("/api/flags/chat", serde_json::json!({ "on": false }));
+    let f = features();
+    // Off again leaves Developer settings offered: the owner asked.
     assert_eq!(
-        (all[0]["name"].clone(), all[0]["on"].clone(), all[0]["default"].clone()),
-        ("labs".into(), true.into(), false.into())
+        (f["labs"].clone(), f["dev"].clone(), f["flags"].clone()),
+        (false.into(), true.into(), serde_json::json!([]))
     );
-    assert!(all[0]["about"].as_str().is_some_and(|a| !a.is_empty()), "{all}");
-    d.put("/api/flags/labs", serde_json::json!({ "on": false }));
-    assert_eq!(features()["labs"], false);
+    // `labs` was the one flag before (#464); it isn't one to set now.
+    let (status, text) = d.raw("PUT", "/api/flags/labs", Some(serde_json::json!({ "on": true })));
+    assert_eq!(status, 404, "{text}");
     // A flag that isn't one.
     let (status, text) = d.raw("PUT", "/api/flags/nope", Some(serde_json::json!({ "on": true })));
     assert_eq!(status, 404, "{text}");
@@ -378,12 +399,12 @@ fn the_flags_are_the_owners() {
         "/api/acl",
         serde_json::json!({ "session": session, "principal": "tailnet:friend@example.com", "role": "editor" }),
     );
-    for (method, path, body) in [("GET", "/api/flags", None), ("PUT", "/api/flags/labs", Some(r#"{"on":true}"#))] {
+    for (method, path, body) in [("GET", "/api/flags", None), ("PUT", "/api/flags/chat", Some(r#"{"on":true}"#))] {
         let headers = [("tailscale-user-login", "friend@example.com"), ("Content-Type", "application/json")];
         let (status, _, text) = d.tcp(method, path, &headers, body);
         assert_eq!(status, 403, "{method} {path}: {text}");
     }
-    assert!(!arugula_proto::flags::get(&d.state, "labs"));
+    assert!(!arugula_proto::flags::on(&d.state).any());
 }
 
 /// The `labs` file of #385, the one test that still writes it: a daemon

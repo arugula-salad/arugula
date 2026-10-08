@@ -1549,7 +1549,7 @@ impl ForgeBlock {
 /// is refused where Labs is off (see [`crate::labs::forge_allowed`]), asked
 /// of the result so no default or fallback of [`resolve_config`] gets round it.
 pub async fn open_config(c: &Value, state_dir: &Path) -> Result<Value, String> {
-    let out = resolve_for(c, crate::labs::enabled(state_dir)).await?;
+    let out = resolve_for(c, crate::labs::on(state_dir, arugula_proto::flags::FORGES)).await?;
     let provider = serde_json::from_value::<Provider>(out["provider"].clone()).unwrap_or_default();
     crate::labs::forge_allowed(provider, state_dir)?;
     Ok(out)
