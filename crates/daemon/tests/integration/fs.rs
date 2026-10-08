@@ -165,17 +165,20 @@ fn this_hosts_files_cd_and_names() {
 }
 
 /// A sandbox we create for the test, deleted when dropped.
+#[cfg(feature = "labs")]
 struct Sprite {
     token: String,
     name: String,
 }
 
+#[cfg(feature = "labs")]
 impl Drop for Sprite {
     fn drop(&mut self) {
         curl(&self.token, "DELETE", &format!("{WISP}/v1/sprites/{}", self.name), None);
     }
 }
 
+#[cfg(feature = "labs")]
 #[test]
 fn a_sandbox_through_the_provider() {
     let Some(token) = token() else {

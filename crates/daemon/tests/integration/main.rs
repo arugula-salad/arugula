@@ -52,6 +52,7 @@ mod invite;
 #[cfg(not(feature = "labs"))]
 mod labs_off;
 mod local_auth;
+#[cfg(feature = "labs")]
 mod machines;
 mod mcp;
 mod memory;
@@ -71,6 +72,7 @@ mod threads;
 mod tmux;
 mod upgrade;
 mod vm_layout;
+#[cfg(feature = "labs")]
 mod vm_reboot;
 mod windows;
 #[cfg(feature = "labs")]

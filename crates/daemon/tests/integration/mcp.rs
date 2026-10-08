@@ -715,6 +715,7 @@ async fn what_failed_here_yesterday() {
 /// daemon opens into its VM (a guest can't reach the host): scoped to its
 /// tab like a local one, its `run` on its own machine, across a daemon
 /// restart. Skips without a wisp token on this host.
+#[cfg(feature = "labs")]
 #[test]
 fn an_agent_block_in_a_vm_gets_mcp_through_the_relay() {
     let token = std::env::var_os("ARUGULA_WISP_TOKEN_FILE")
