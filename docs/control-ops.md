@@ -1,13 +1,18 @@
 # Running Arugula control
 
-Operating control: running your own, the hosted one at
-[control.arugula.io](https://control.arugula.io), and testing it. Using
+Operating control: the hosted one at
+[control.arugula.io](https://control.arugula.io), running your own, and
+testing it. Using
 control (accounts, devices, joining machines, teams) is in the public docs:
 [docs.arugula.io/control](https://docs.arugula.io/control/). The design,
 and what holds if control turns hostile, is in
 [control-e2e.md](control-e2e.md).
 
 ## Running your own
+
+Only the hosted control is supported for now (#662). The code is open and
+these notes are how it runs, but a control you run yourself gets no help.
+For a setup of your own, use the tailnet without control.
 
 `arugula-control` is one static binary with an SQLite database. Put TLS
 in front of it: Caddy, Fly, or `tailscale serve`.

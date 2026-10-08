@@ -562,12 +562,16 @@ approval was recorded as a rejection.
 Where: `crates/e2e/src/cert.rs` (`Trust::refusal`, `Refusal`), `crates/control/src/api.rs` (`approval_ok`), `web/src/control.ts` (`REFUSED`, the `untrusted` phase).
 From: #327, #330.
 
-### Control is open source and self-hostable; the tailnet stays first class
-`illogical-control` lives in this repo and the hosted one runs the same code.
-Tailnet users can skip control, or enroll and keep direct connections. Free
-for one person, per seat for teams, sandboxes by usage.
+### Control's code is open, only the hosted control is supported; the tailnet stays first class
+`arugula-control` lives in this repo and the hosted one
+(control.arugula.io) runs the same code. For now only the hosted one is
+supported: a control you run yourself gets no help (lex00, 2026-10-08).
+People who want a setup of their own use the tailnet without control,
+which stays first class: tailnet users skip control, or enroll and keep
+direct connections. Free for one person, per seat for teams, sandboxes by
+usage.
 Where: `crates/control/`, `packaging/control/`.
-From: [Control track](docs/plan-archive.md#control-track-s15-m17m22-added-2026-10-01), M22.
+From: [Control track](docs/plan-archive.md#control-track-s15-m17m22-added-2026-10-01), M22, #662.
 
 ## Build and release
 
