@@ -205,3 +205,241 @@ TURN credentials (from Cloudflare, for the hosted control); a relayed
 call's audio is encrypted end to end, so the relay sees only addresses and
 volume. Operating TURN for the hosted control is in
 [control-ops.md](control-ops.md#turn-for-huddles).
+
+## Chant workspaces
+
+A workspace block shows a chant workspace beside your terminals: the gates
+waiting for a person, a card for each member, and the workspace's records.
+From a member's card you open a shell, an agent, its changes or its graph
+there, or run one of its ops. The block reads the workspace through chant's
+read contract (contract 1), with the workspace's own chant, so what it shows
+is what chant says (`crates/daemon/src/labs/workspace/`,
+`web/src/blocks/workspace.tsx`). DECISIONS.md has what it reads and joins
+itself ("A workspace block asks chant, and keeps a few reads of its own").
+
+### Opening one
+
+A workspace is a directory with a `chant.workspace.json` or
+`chant.workspace.jsonc`. When a pane's folder holds one, its menu offers
+*Open as workspace*, which opens the block beside the pane. From the CLI:
+
+```
+arugula workspace                     # the workspace here, in a new tab
+arugula workspace ~/src/estate --split right
+arugula workspace --env staging       # watch staging's gates and releases
+```
+
+It prints the block's id, then a line with the members, records and gates
+waiting. An agent opens one with MCP's `show` (kind `workspace`, the root
+as an absolute path).
+
+The block runs the first chant it finds: `$CHANT` in the daemon's
+environment, else `node_modules/.bin/chant` in the root or a parent, else
+`chant` on `PATH`. chant then decides whether it may read the declaration.
+When it can't, the block shows chant's reason code and what to do:
+`declaration-missing` (run `chant workspace init`), `root-chant-required`
+(run `npm install` at the root), `reader-too-old`, `contract-unknown`.
+
+The bar names the workspace and its root, the environment watched, the
+chant version, who approvals are recorded as, and whether it's *live*.
+Below it are *Waiting on you* (the gates), *Members* (a card each, with its
+kind, directory and tags such as `gate waits`, `2 leased`, `3 undecided`)
+and *Records*. The block reads again on open, on ↻, after an approval, and
+when the repository changes and then holds still for a moment, so a `chant
+run` or an agent at work costs one read, not one per edit. A release or a
+gate reached reads at once: a gate shows about a second after `chant run`
+stops at it. It keeps watching while nobody looks, so a gate still reaches
+the rail, the phone and push.
+
+### Gates
+
+A gate waiting for a person is on the block under *Waiting on you*, and is
+attention (a `gate` reason) on the rail, the phone and push:
+
+```
+delivery: ship waits at gate approve-ship
+0/1 approvals · just now · expires 10/8/2026, 6:59:54 PM
+Enforces toy-001: A person approves each ship
+plan sha256:3f9a1c0e7b2d · no release yet
+```
+
+The card names the decision the gate enforces, from `chant workspace graph
+--intent <member dir>`. That read can land a moment after the gate, so the
+card says *Reading the decisions…* until then. With no current decision
+covering the member it says so, and on a large repository the read can pass
+the host's 30 s limit on a command, which the card also says. The last line
+has the plan the approval binds and the member's last release in the
+watched environment (`web/src/ui/gate-why.tsx`).
+
+*Approve* runs the `chant approve` line `chant workspace status` printed
+for the gate, in the member's directory. That line has `--plan <digest>`,
+so the approval is for the plan you were shown, and `--sign` for a gate
+that needs a signed approval (`crates/daemon/src/gate.rs`). The owner and
+drivers approve, from the block, the rail, the phone's sheet, a push or
+`arugula tui`; watchers see the cards without buttons. Approving doesn't run
+the op: run it again to walk through the gate.
+
+*Expire* turns a gate down: `chant approve <op> <gate> [--env E] --expire`
+clears the waiting gate without approving it, so the next run of the op
+stops there again. It's on the block's gate card, the phone's sheet,
+`arugula tui` and the push, for chant gates only (hud has no route for it).
+
+### Who chant records
+
+chant records each approval as a principal: a forge identity such as
+`github:alice`, or a signer. By default the owner approves as their Arugula
+name, passed as is. Where the workspace wants a forge identity or a signer
+(`identity.attribution: identified`), name them. The owner sets this with
+*as …* on the bar, or when opening the block:
+
+```
+arugula workspace --actor github:alice --principal sam@example.com=github:sam-h
+```
+
+`--actor` is the owner's principal; `--principal NAME=PRINCIPAL`
+(repeatable) is an editor's, by their Arugula name. MCP's `show` takes the
+same as `actor` and `principals`. chant runs on the owner's machine with
+the owner's credentials, so an editor's approval goes as `--actor <their
+principal> --relayed-by <the owner's>` (chant 0.103.1 and newer). A gate
+that needs a signed approval can't be relayed: the owner approves it in the
+block, or the editor runs the `chant approve` line with `--actor` where
+their own key is. When chant refuses for want of a principal, the error
+says which flag to set.
+
+### The environment
+
+A block watches one environment's gates and releases: `local`, unless it
+was opened with `--env`. The menu on the bar lists the environments chant
+has releases for on `chant/lifecycle`, plus `local`, and *other…* for one
+it doesn't list. A pick reads again, and the block keeps it in its config.
+The owner and drivers switch it. Gates in the other environments aren't
+read: each is another `status`, another chant process on every read.
+
+### Member cards
+
+The owner's buttons on a member's card:
+
+- *Shell*: a terminal in the member's directory, beside the block.
+- *Agent*: an agent block there, as the member's agent session (below).
+- *Changes*: what changed in the member (below).
+- *Graph*: behold's estate graph on this member (below).
+- *Run op*: the member's ops as buttons, and a box for another name. It
+  opens a terminal beside the block running `chant run <op>` in the
+  member's directory. A gate's card has *Run {op}* for the op it stopped.
+
+A member that is a workspace of its own has *Open* instead, which opens it
+in a block of its own.
+
+*Why* (owner and drivers) opens the card on why the member is the way it
+is, and who works on it:
+
+```
+delivery                                   chant
+gate waits  1 leased  2 undecided
+DECISIONS
+toy-001 decided  A person approves each ship
+toy-002 proposed Releases go out on Fridays  Review in hud
+Replaced: toy-000 Ship on every merge
+2 commits changed delivery while no decision covered it.
+LEASES
+W-001 held by shipper · until 7:29 PM  pane %3
+RUNS
+arugula-3-1791422365955 running · as shipper · W-001 · just now  pane %3
+```
+
+- Decisions: those covering the member, ranked by chant, with the ones they
+  replaced. A proposed one has *Review in hud*, which opens
+  `<hud>/decisions#<id>`; the owner's first click asks for hud's address,
+  and the block keeps it.
+- Undecided commits: how many changed the member while no decision covered
+  it (`intent-commit-undecided`). The `undecided` tag counts the same. It's
+  a tag, not attention: only gates are.
+- Leases: `status`'s, in the member's ledger or on a work item covering it.
+- Runs: agent runs on the member from about the last two weeks (`chant
+  workspace runs`), those of the sessions its declaration binds and those
+  chant's walk joined to its commits.
+
+A run or lease links to its pane only when the agent block there recorded
+that run and the pane is still open; a run id from another daemon, or one
+typed by hand, links nowhere. Viewers see the tags but not *Why*: opening a
+card is a block call, and a viewer's are refused.
+
+### Agents on a member
+
+*Agent* starts an agent block in the member's directory as the agent
+session the declaration (`.json` or `.jsonc`) binds to the member
+(`crates/daemon/src/agent/chant.rs`):
+
+- The agent runs with `CHANT_AGENT` set to that session, so chant judges
+  its writes by the session's scope. Claude is also told on its system
+  prompt.
+- Each turn is a run in the workspace's run ledger: `chant workspace runs
+  start` when the prompt goes, `runs end` with the stop reason, tokens and
+  cost when the turn ends. The run id is `arugula-<pane>-<ms>`. A failed
+  write is a note in the transcript; the turn goes on.
+- Each prompt carries a note naming the trailers the turn's commits end
+  with, so `graph --intent` joins a commit to the run that made it:
+
+  ```
+  Chant-Agent: app
+  Chant-Run: arugula-7-1790848800000
+  ```
+
+  It's part of the prompt, so Codex and any other ACP agent get it; its
+  `_meta` (`arugula/chantRun`) keeps it out of the transcript. A member
+  with no agent session gets only `Chant-Run`. A prompt starting with `/`
+  goes alone, as typed, with no note; its run is still recorded.
+
+### Changes on a member
+
+*Changes* on a member card opens a diff block of the member's directory,
+from where the branch left the default one (the merge base with
+`origin/HEAD`, `main` or `master`) to the working tree. On the default
+branch itself it compares the working tree with `HEAD`, and says committed
+work isn't shown. A menu on the bar compares with the last commit, the last
+3 or 10, or a revision typed in, and goes back to the branch point; the
+block keeps the choice.
+
+With a file open, each hunk names what made its added lines
+(`crates/daemon/src/labs/workspace/why.rs`):
+
+```
+@@ -1,8 +1,8 @@
+why-001 The server answers on one port
+Run arugula-2-1791429314234 (app, claude-code)
+1 not committed yet; app holds the lease on W-001
+```
+
+- The decision the hunk's commit or run carries out, else the one chant
+  ranks first for the file; hover for its state.
+- The run, linked to its agent pane when an open agent block on this daemon
+  wrote it.
+- Lines not committed yet, with who holds a lease on the work covering the
+  file, if anyone.
+
+A hunk that only removes lines names nothing. A plain diff block never runs
+chant.
+
+### The estate graph
+
+*Graph* on a member card (the owner's) shows behold's estate graph in the
+block, on that member. The first time, the block starts `behold serve
+<root> --port 0` on this host and frames it through the block's own site,
+as an editor block frames code-server, so it needs `--block-listen`. It runs
+`$ARUGULA_BEHOLD` (a command) if the daemon has it, else
+`node_modules/.bin/behold` in the root, else `behold` on `PATH`. *Graph* on
+another member moves the view there (`crates/daemon/src/labs/workspace/graph.rs`,
+`web/src/blocks/workspace-graph.tsx`).
+
+The graph opens on the source. *live {env}* on its bar reads the block's
+environment live, with this host's credentials. The gates behold draws
+follow the block's environment, without an approve button: the block's gate
+cards approve. A click on a member in behold opens a Shell there; *a click
+opens* on the bar switches that to Changes, or to nothing.
+
+behold gets the environment a Shell pane in the member gets (the login
+shell's variables), and Arugula adds no credentials. It listens on loopback
+only, and only the owner starts or reaches it. It runs until the block
+closes or the daemon stops, either of which stops its process group. One
+that exits by itself shows the end of its log and *Try again*. It isn't
+available for a workspace on a VM; the block says so.
