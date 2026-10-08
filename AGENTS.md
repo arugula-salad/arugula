@@ -46,6 +46,10 @@ Paths are under `crates/daemon/src/`.
 - **Who may:** who may talk to the daemon (`access.rs`, `localauth.rs`),
   principals and grants (`acl.rs`), the API for someone who isn't the owner
   (`authz.rs`), standing permission rules (`rules.rs`), file modes (`perm.rs`).
+- **Operations:** `ops/`: each operation (a route, its access, its MCP tool
+  or kind) handled once (`mod.rs` holds the list and `HAND_WRITTEN`), with
+  `mcp/ops.rs`; declared in `crates/proto/src/op.rs`
+  ([docs/operations.md](docs/operations.md)).
 - **The mux:** `mux/`: the task that owns the layout, the panes and every
   client (`mod.rs`), with one file per area: `attention.rs`, `clients.rs`,
   `blocks.rs`, `api_calls.rs`, `who_may.rs`, `thread_ops.rs`, `machines.rs`,

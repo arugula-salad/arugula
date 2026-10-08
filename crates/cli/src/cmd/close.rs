@@ -1,12 +1,12 @@
 //! `arugula close`: panes, and what runs in them.
 
 use super::Ctx;
-use crate::http::request;
+use crate::http::{call, request};
 use crate::{
     hosts,
     util::{Pane, REMOTE},
 };
-use arugula_proto::api::Empty;
+use arugula_proto::{api::Empty, op::ops::ClosePane};
 
 #[derive(clap::Args)]
 pub struct Args {
@@ -33,7 +33,7 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
                 eprintln!("arugula: %{pane} on {host} stays open there: {e:#}");
             }
         }
-        request(&sock, "POST", &format!("/api/panes/{}/close", p.0), None)?.parse::<Empty>()?;
+        call::<ClosePane>(&sock, &p.0, &Empty {})?;
     }
     Ok(0)
 }

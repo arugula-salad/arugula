@@ -11,6 +11,7 @@ use arugula_proto::{
     Attention, BlockType, Driver, PaneId, Policy, SessionId, StartedBy, ThreadTarget,
     api::{ActRequest, HistoryEntry, HistoryKind, OpenRequest, PaneSummary, RunRequest, WaitResult},
     forge::{ForgeState, ItemKind, ReviewEvent, Write},
+    op::ops::{ClosePane, ListPanes},
 };
 use rmcp::{
     Peer, RoleServer,
@@ -102,7 +103,7 @@ pub enum PaneArg {
 }
 
 impl PaneArg {
-    fn id(&self) -> Result<PaneId, String> {
+    pub(crate) fn id(&self) -> Result<PaneId, String> {
         match self {
             PaneArg::Id(n) => Ok(*n),
             PaneArg::Name(s) => s
@@ -739,19 +740,19 @@ pub struct OpenFountainArgs {
 
 type Schema = Arc<serde_json::Map<String, Value>>;
 
-struct Def {
-    name: &'static str,
-    title: &'static str,
-    description: &'static str,
-    args: Args,
-    read_only: bool,
-    destructive: bool,
-    idempotent: bool,
-    open_world: bool,
+pub(crate) struct Def {
+    pub(crate) name: &'static str,
+    pub(crate) title: &'static str,
+    pub(crate) description: &'static str,
+    pub(crate) args: Args,
+    pub(crate) read_only: bool,
+    pub(crate) destructive: bool,
+    pub(crate) idempotent: bool,
+    pub(crate) open_world: bool,
 }
 
 /// What a tool takes.
-enum Args {
+pub(crate) enum Args {
     /// One set of arguments, for a tool that does one thing.
     One(fn() -> Schema),
     /// A grouped tool (#349): its `kind` argument picks one of these jobs,
@@ -764,11 +765,11 @@ enum Args {
 /// is a row, so the kinds that belong to one feature (Fountain's, the
 /// studio's) can be left out of their group, and their arguments with them,
 /// by filtering its table ([`defs`]).
-struct Kind {
-    name: &'static str,
+pub(crate) struct Kind {
+    pub(crate) name: &'static str,
     /// What it does, for the tool's description.
-    description: &'static str,
-    schema: fn() -> Schema,
+    pub(crate) description: &'static str,
+    pub(crate) schema: fn() -> Schema,
 }
 
 /// `show`'s blocks.
@@ -842,11 +843,7 @@ const DRAFT: &[Kind] = &[
 
 /// `list`'s lists.
 const LIST: &[Kind] = &[
-    Kind {
-        name: "panes",
-        description: "Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.",
-        schema: schema_for_type::<ListArgs>,
-    },
+    super::ops::kind::<ListPanes>(),
     Kind {
         name: "conversations",
         description: "Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.",
@@ -1036,16 +1033,7 @@ fn all_defs() -> Vec<Def> {
             idempotent: true,
             open_world: true,
         },
-        Def {
-            name: "close",
-            title: "Close a pane",
-            description: "Close a pane or block, ending what runs in it.",
-            args: Args::One(schema_for_type::<PaneOnly>),
-            read_only: false,
-            destructive: true,
-            idempotent: false,
-            open_world: false,
-        },
+        super::ops::def::<ClosePane>(),
         Def {
             name: "read_thread",
             title: "Read a thread",
@@ -1432,16 +1420,16 @@ fn pick_kind(
 
 // ---------------------------------------------------------------- calls
 
-type Out = Result<Value, String>;
+pub(crate) type Out = Result<Value, String>;
 
 /// A result, with the `summary` sentence in it.
-fn done(summary: impl Into<String>, v: impl Serialize) -> Out {
+pub(crate) fn done(summary: impl Into<String>, v: impl Serialize) -> Out {
     let mut v = serde_json::to_value(v).map_err(|e| e.to_string())?;
     v["summary"] = Value::String(summary.into());
     Ok(v)
 }
 
-fn parse<T: DeserializeOwned>(args: Value) -> Result<T, String> {
+pub(crate) fn parse<T: DeserializeOwned>(args: Value) -> Result<T, String> {
     serde_json::from_value(args).map_err(|e| format!("bad arguments: {e}"))
 }
 
@@ -1460,6 +1448,10 @@ pub struct Call<'a> {
 impl<'a> Call<'a> {
     pub fn new(app: &'a Arc<App>, caller: Caller, client: String, ctx: &RequestContext<RoleServer>) -> Self {
         Self { app, caller, client, peer: ctx.peer.clone(), progress: ctx.meta.get_progress_token(), ctx: ctx.clone() }
+    }
+
+    pub(crate) fn app(&self) -> &'a Arc<App> {
+        self.app
     }
 
     fn by(&self) -> String {
@@ -1506,10 +1498,7 @@ impl<'a> Call<'a> {
                 Ok(a) => self.wait(a).await,
                 Err(e) => Err(e),
             },
-            ("close", _) => match parse(args) {
-                Ok(a) => self.close(a).await,
-                Err(e) => Err(e),
-            },
+            ("close", _) => super::ops::call::<ClosePane>(self, args).await,
             ("read_thread", _) => match parse(args) {
                 Ok(a) => self.read_thread(a).await,
                 Err(e) => Err(e),
@@ -1551,7 +1540,7 @@ impl<'a> Call<'a> {
                 Err(e) => Err(e),
             },
             // list
-            ("list", Some("panes")) => self.list().await,
+            ("list", Some("panes")) => super::ops::call::<ListPanes>(self, args).await,
             ("list", Some("conversations")) => match parse(args) {
                 Ok(a) => self.list_conversations(a).await,
                 Err(e) => Err(e),
@@ -1732,7 +1721,7 @@ impl<'a> Call<'a> {
 
     /// Where a tool defaults to when it's given no pane: the caller's own
     /// (an agent block, or the terminal pane `arugula mcp` runs in).
-    fn own_pane(&self) -> Option<PaneId> {
+    pub(crate) fn own_pane(&self) -> Option<PaneId> {
         self.caller.pane
     }
 
@@ -1757,7 +1746,7 @@ impl<'a> Call<'a> {
     }
 
     /// The agent block whose token this is: what confines a caller.
-    fn me(&self) -> Option<PaneId> {
+    pub(crate) fn me(&self) -> Option<PaneId> {
         match self.caller.scope {
             Scope::Block(b) => Some(b),
             _ => None,
@@ -1775,7 +1764,7 @@ impl<'a> Call<'a> {
     }
 
     /// An open pane or block, if this caller may see it.
-    async fn readable(&self, pane: PaneId) -> Result<PaneSummary, String> {
+    pub(crate) async fn readable(&self, pane: PaneId) -> Result<PaneSummary, String> {
         let panes = self.panes().await;
         let Some(p) = panes.iter().find(|p| p.info.id == pane).cloned() else {
             return Err(self.gone(pane).await);
@@ -1791,7 +1780,7 @@ impl<'a> Call<'a> {
 
     /// An open pane or block this caller may type in, answer for or close:
     /// anything, or for an agent block's token, what it started.
-    async fn drivable(&self, pane: PaneId) -> Result<PaneSummary, String> {
+    pub(crate) async fn drivable(&self, pane: PaneId) -> Result<PaneSummary, String> {
         let p = self.readable(pane).await?;
         if let Some(me) = self.me()
             && p.info.started_by.as_ref().and_then(|s| s.block) != Some(me)
@@ -1802,7 +1791,7 @@ impl<'a> Call<'a> {
     }
 
     /// Why a pane isn't there, as specifically as history can say.
-    async fn gone(&self, pane: PaneId) -> String {
+    pub(crate) async fn gone(&self, pane: PaneId) -> String {
         let store = self.app.mux.store.clone();
         let last = tokio::task::spawn_blocking(move || {
             history::history(
@@ -2360,49 +2349,6 @@ impl<'a> Call<'a> {
                 };
                 self.not_yet(pane, limit, label).await
             }
-        }
-    }
-
-    async fn list(&self) -> Out {
-        let panes = self.panes().await;
-        let tab = self.me().and_then(|me| panes.iter().find(|p| p.info.id == me).map(|p| p.tab));
-        let own = self.own_pane();
-        let entries: Vec<results::PaneEntry> = panes
-            .iter()
-            .filter(|p| tab.is_none_or(|t| p.tab == t))
-            .take(300)
-            .map(|p| {
-                let mut e = entry(p);
-                if own == Some(p.info.id) {
-                    e.you = Some(true);
-                }
-                e
-            })
-            .collect();
-        let needs: Vec<String> = panes
-            .iter()
-            .filter(|p| tab.is_none_or(|t| p.tab == t) && p.info.attention == Attention::NeedsInput)
-            .map(|p| format!("%{}", p.info.id))
-            .collect();
-        let mut summary = match tab {
-            Some(_) => format!("{} panes and blocks in this agent's tab", entries.len()),
-            None => format!("{} panes and blocks", entries.len()),
-        };
-        if !needs.is_empty() {
-            summary.push_str(&format!("; {} need input", needs.join(", ")));
-        }
-        done(summary, results::Panes { panes: entries })
-    }
-
-    async fn close(&self, a: PaneOnly) -> Out {
-        let pane = a.pane.id()?;
-        // An invite block (#234) is the owner's to close, never an agent's.
-        if self.drivable(pane).await?.info.kind == BlockType::Invite {
-            return Err(crate::invite::CLOSE_OWNER_ONLY.into());
-        }
-        match self.app.mux.api(|r| Api::Close(pane, r)).await {
-            Some(true) => done(format!("Closed %{pane}"), results::PaneOnly { pane }),
-            _ => Err(self.gone(pane).await),
         }
     }
 
@@ -3522,7 +3468,7 @@ impl Call<'_> {
 }
 
 /// A pane in `list`.
-fn entry(p: &PaneSummary) -> results::PaneEntry {
+pub(crate) fn entry(p: &PaneSummary) -> results::PaneEntry {
     let i = &p.info;
     results::PaneEntry {
         pane: i.id,

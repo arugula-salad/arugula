@@ -24,7 +24,7 @@ use crate::{acl::Principal, mux::Api, server::App};
 
 /// What a call needs from someone who isn't the owner.
 #[derive(Debug, PartialEq, Eq)]
-enum Policy {
+pub(crate) enum Policy {
     Anyone,
     /// This role on the pane's (or block's) session.
     On(PaneId, Role),
@@ -37,7 +37,7 @@ enum Policy {
 /// handler (`{id}`, `{method}`): a policy is decided on what the handler
 /// sees, so `call/%70rincipals` is `call/principals`. None when a segment
 /// isn't UTF-8 once decoded (the router refuses those).
-fn segments(path: &str) -> Option<Vec<String>> {
+pub(crate) fn segments(path: &str) -> Option<Vec<String>> {
     path.trim_start_matches('/')
         .split('/')
         .map(|s| percent_encoding::percent_decode_str(s).decode_utf8().ok().map(|s| s.into_owned()))
@@ -45,6 +45,11 @@ fn segments(path: &str) -> Option<Vec<String>> {
 }
 
 fn policy(method: &Method, path: &str) -> Policy {
+    // An operation (#451) says what it needs in its declaration; it matches
+    // the segments decoded, as below.
+    if let Some(p) = crate::ops::policy(method, path) {
+        return p;
+    }
     let Some(parts) = segments(path) else {
         return Policy::Owner;
     };
@@ -68,7 +73,7 @@ fn policy(method: &Method, path: &str) -> Policy {
             "api",
             "panes",
             id,
-            "send" | "prompt" | "keys" | "mouse" | "attention" | "close" | "ask" | "cd" | "permit" | "hook" | "inbox"
+            "send" | "prompt" | "keys" | "mouse" | "attention" | "ask" | "cd" | "permit" | "hook" | "inbox"
             | "followup" | "upload" | "paste",
         ] if !get => pane(id).map_or(Policy::Owner, |p| Policy::On(p, Role::Editor)),
         ["api", "panes", id, "ask", "withdraw"] if !get => {
@@ -201,6 +206,7 @@ mod tests {
         assert_eq!(policy(&g, "/api/host"), Policy::Anyone);
         assert_eq!(policy(&g, "/api/panes/3/capture"), Policy::On(3, Role::Viewer));
         assert_eq!(policy(&p, "/api/panes/3/send"), Policy::On(3, Role::Editor));
+        assert_eq!(policy(&p, "/api/panes/3/close"), Policy::On(3, Role::Editor));
         for path in ["/api/panes/3/upload", "/api/panes/3/paste"] {
             assert_eq!(policy(&p, path), Policy::On(3, Role::Editor), "{path}");
             assert!(drives(path), "{path}");
@@ -255,6 +261,21 @@ mod tests {
         // Not UTF-8 once decoded: the router refuses it, and so do we.
         assert_eq!(policy(&p, "/api/blocks/7/call/%FF"), Policy::Owner);
         assert!(drives("/api/panes/3/%73end"));
+    }
+
+    /// An operation (`ops::policy`) is decided on the decoded path too: an
+    /// editor-only principal's pane 1 is `%31` as well.
+    #[test]
+    fn an_operations_encoded_path_is_its_plain_paths_policy() {
+        let p = Method::POST;
+        for path in ["/api/panes/1/close", "/api/panes/%31/close", "/api/panes/1/%63lose"] {
+            assert_eq!(policy(&p, path), Policy::On(1, Role::Editor), "{path}");
+        }
+        for path in ["/api/hosts/self/shell-env/refresh", "/api/%68osts/self/shell-env/%72efresh"] {
+            assert_eq!(policy(&p, path), Policy::Owner, "{path}");
+        }
+        assert_eq!(policy(&Method::GET, "/api/%70anes"), Policy::Owner);
+        assert_eq!(policy(&p, "/api/panes/%FF/close"), Policy::Owner);
     }
 
     #[test]
