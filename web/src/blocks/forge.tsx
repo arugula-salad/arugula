@@ -12,10 +12,11 @@
 // the text and Send, or Drop. Everything drawn comes from the daemon's
 // state, so a shared session's viewers see the same, without the buttons.
 
-import { render } from "preact";
-import { useState } from "preact/hooks";
+import { render, type ComponentChildren } from "preact";
+import { useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { Client } from "../client";
-import type { Draft, Event as ForgeEvent, ForgeState, PaneId } from "../proto";
+import type { Draft, Event as ForgeEvent, ForgeState, PaneId, Pr } from "../proto";
+import { Markdown } from "../ui/markdown";
 import { askText } from "../ui/menu";
 import { registerBlock, type BlockView } from "./view";
 
@@ -81,6 +82,147 @@ function draftWhat(d: Draft): string {
 /** A draft's text: a comment's or a review's (a merge or a rerun has none). */
 const draftBody = (d: Draft) => ("body" in d ? d.body : undefined);
 
+/** Where a body's `#N` goes: the repository's issues, on the forge's own
+ * origin. GitLab numbers issues and merge requests apart, so it stays text. */
+function refsOf(s: ForgeState): string | null {
+  const url = (s.pr ?? s.issue)?.item.url;
+  if (!url || s.provider === "gitlab") return null;
+  try {
+    return `${new URL(url).origin}/${s.repo}/issues/`;
+  } catch {
+    return null;
+  }
+}
+
+/** A description longer than this is cut, with *Show all*. */
+const LONG_BODY = 20000;
+
+/** A forge body as Markdown. The description is drawn whole; the rest clamp
+ * to eight lines (in CSS), with a toggle once they're taller than that. */
+function Body({ text, s, description }: { text: string; s: ForgeState; description?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const [over, setOver] = useState(false);
+  const clip = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = clip.current;
+    if (!el || description || open) return;
+    const measure = () => setOver(el.scrollHeight > el.clientHeight + 1);
+    measure();
+    const watch = new ResizeObserver(measure);
+    watch.observe(el);
+    return () => watch.disconnect();
+  }, [text, open, description]);
+  const cut = description && text.length > LONG_BODY;
+  const toggle = description ? cut : over || open;
+  return (
+    <div class={description ? "forge-body forge-desc" : "forge-body"}>
+      <div ref={clip} class={description || open ? undefined : over ? "forge-clamp cut" : "forge-clamp"}>
+        <Markdown text={cut && !open ? text.slice(0, LONG_BODY) : text} refs={refsOf(s)} />
+      </div>
+      {toggle && (
+        <button class="forge-more" onClick={() => setOpen(!open)}>
+          {open ? "Show less" : "Show all"}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** The newest first, with a run of pushes by one person as one entry. A
+ * force-push stays its own: it rewrote what the others pushed. */
+function tidy(events: ForgeEvent[]): ForgeEvent[] {
+  const out: ForgeEvent[] = [];
+  for (const e of [...events].reverse()) {
+    const last = out[out.length - 1];
+    if (last && e.kind === "pushed" && last.kind === "pushed" && !e.force && !last.force && e.actor === last.actor) {
+      out[out.length - 1] = { ...last, commits: (last.commits ?? 1) + (e.commits ?? 1), at: Math.max(last.at, e.at) };
+    } else out.push(e);
+  }
+  return out;
+}
+
+function Timeline({ events, s }: { events: ForgeEvent[]; s: ForgeState }) {
+  if (!events.length) return null;
+  return (
+    <section data-forge-timeline>
+      <h4>Timeline</h4>
+      {tidy(events).map((e) => (
+        <div key={e.id} class="forge-row forge-event">
+          <span class="dim">{ago(e.at)}</span> <b>{e.actor ?? "someone"}</b> {eventLine(e)}
+          {e.body && <Body text={e.body} s={s} />}
+        </div>
+      ))}
+    </section>
+  );
+}
+
+/** The description in the main column, `side` beside it (under it when the
+ * block is narrow). */
+function Cols({ s, body, side }: { s: ForgeState; body: string; side: ComponentChildren[] }) {
+  const sides = side.filter(Boolean);
+  return (
+    <div class={sides.length ? "forge-cols forge-two" : "forge-cols"}>
+      <div class="forge-main">{body.trim() ? <Body text={body} s={s} description /> : <p class="dim">No description.</p>}</div>
+      {sides.length > 0 && <div class="forge-side">{sides}</div>}
+    </div>
+  );
+}
+
+/** The actions, held at the foot of the scrolling body, and the polls line;
+ * with no actions the line just ends the body. */
+function Foot({ s, buttons }: { s: ForgeState; buttons: ComponentChildren }) {
+  const polls = (
+    <p class="dim ws-note forge-polls" data-forge-live-state title={s.live_why ?? undefined}>
+      {s.polls} polls, {s.reads} full reads · read {ago(s.updated_ms)}
+      {s.live && ` · ${s.live === "webhook" ? `live (${s.live_via === "github-app" ? "GitHub App" : "webhook"})` : "polling"}`}
+    </p>
+  );
+  if (!buttons) return polls;
+  return (
+    <div class="forge-foot">
+      <div class="ws-actions forge-actions">{buttons}</div>
+      {polls}
+    </div>
+  );
+}
+
+const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
+
+function checksLine(pr: Pr): string {
+  const r = pr.rollup;
+  const n = pr.checks.length;
+  if (!r) return n ? plural(n, "check") : "no checks";
+  if (r === "success") return "checks passed";
+  if (r === "running" || r === "queued") return "checks running";
+  if (r === "failure") {
+    const failed = pr.checks.filter((c) => c.state === "failure").length;
+    return failed ? `${failed} of ${n} checks failed` : "checks failed";
+  }
+  return `checks ${words(r)}`;
+}
+
+const BLOCKED = "The forge won't merge it yet, though it has no conflicts: on GitHub, branch protection; on GitLab, approvals, unresolved discussions and the like.";
+
+/** Where the PR stands, in a row under the meta line. */
+function Chips({ pr }: { pr: Pr }) {
+  const it = pr.item;
+  const open = it.state === "open";
+  return (
+    <div class="forge-chips" data-forge-chips>
+      <span class={`ws-tag forge-check ${pr.rollup ?? "none"}`}>{checksLine(pr)}</span>
+      <span class="ws-tag forge-chip">{pr.reviews.length ? plural(pr.reviews.length, "review") : "no reviews"}</span>
+      {/* null is the forge still working it out, and also every merged or closed PR */}
+      {open && <span class={`ws-tag forge-chip ${it.mergeable === null ? "wait" : it.mergeable ? "good" : "bad"}`}>{it.mergeable === null ? "mergeable: checking" : it.mergeable ? "mergeable" : "conflicts"}</span>}
+      {open && it.blocked && (
+        <span class="ws-tag forge-chip bad" title={BLOCKED}>
+          merge blocked
+        </span>
+      )}
+      <span class="ws-tag forge-chip">{plural(it.comments, "comment")}</span>
+    </div>
+  );
+}
+
 const linkedState = (st: string) => <span class={`ws-tag forge-state ${st}`}>{st}</span>;
 
 /** M37: an issue, the agent on it, and a new issue's draft. */
@@ -132,7 +274,7 @@ function IssueBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeSta
           {n.status === "dropped" && <p class="dim" data-new-dropped>Dropped by {n.settled_by ?? "someone"}</p>}
           {n.error && <p class="ws-tag bad">{n.error}</p>}
           {s.error && <p class="ws-tag bad">{s.error}</p>}
-          {n.body.trim() && <div class="forge-body">{n.body}</div>}
+          {n.body.trim() && <Body text={n.body} s={s} description />}
         </div>
       </div>
     );
@@ -271,29 +413,8 @@ function IssueBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeSta
             ))}
           </section>
           {s.drafts.length > 0 && <Drafts s={s} />}
-          {it.body.trim() && (
-            <section>
-              <h4>Description</h4>
-              <div class="forge-body">{it.body}</div>
-            </section>
-          )}
-          <section data-forge-timeline>
-            <h4>Timeline</h4>
-            {[...issue.events].reverse().map((e) => (
-              <div key={e.id} class="forge-row forge-event">
-                <span class="dim">{ago(e.at)}</span> <b>{e.actor ?? "someone"}</b> {eventLine(e)}
-                {e.body && <div class="forge-body">{e.body}</div>}
-              </div>
-            ))}
-          </section>
-          {mayWrite && it.state === "open" && (
-            <div class="ws-actions forge-actions">
-              <button onClick={() => void comment()}>Comment…</button>
-            </div>
-          )}
-          <p class="dim ws-note">
-            {s.polls} polls, {s.reads} full reads · read {ago(s.updated_ms)}
-          </p>
+          <Cols s={s} body={it.body} side={[<Timeline key="t" events={issue.events} s={s} />]} />
+          <Foot s={s} buttons={mayWrite && it.state === "open" ? <button onClick={() => void comment()}>Comment…</button> : null} />
         </div>
       )}
     </div>
@@ -327,7 +448,7 @@ function Drafts({ s }: { s: ForgeState }) {
             {d.status === "dropped" && <span class="ws-tag">dropped by {d.settled_by}</span>}
             {d.error && <span class="ws-tag bad">{d.error}</span>}
           </div>
-          {draftBody(d) && <div class="forge-body">{draftBody(d)}</div>}
+          {draftBody(d) && <Body text={draftBody(d)!} s={s} />}
         </div>
       ))}
     </section>
@@ -385,6 +506,7 @@ function PrBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeState 
   const state = it ? (it.state === "open" && it.draft ? "draft" : it.state) : null;
   const waiting = s.drafts.filter((d) => d.status === "waiting");
   const asked = s.wants.some((w) => w.kind === "review");
+  const canComment = mayWrite && it?.state === "open";
   return (
     <div class="review ws forge" data-forge-block={id}>
       <div class="review-bar">
@@ -435,17 +557,20 @@ function PrBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeState 
       )}
       {pr && it && (
         <div class="review-body ws-body">
-          <div class="dim forge-meta">
-            {it.author} wants to merge <code>{it.head.repo && it.head.repo !== s.repo ? `${it.head.repo}:` : ""}{it.head.branch}</code> into <code>{it.base.branch}</code>
-            {" · "}
-            {s.login && `as ${s.me ?? "?"} (${gitlab ? s.login.replace(/^glab:/, "glab, ") : s.provider === "github" ? `gh on ${s.login}` : `tea login ${s.login}`})`}
-            {!s.login && s.read_only && "anonymously, read-only"}
-            {it.labels.length > 0 && " · "}
-            {it.labels.map((l) => (
-              <span key={l} class="ws-tag">
-                {l}
-              </span>
-            ))}
+          <div class="forge-head">
+            <div class="dim forge-meta">
+              {it.author} wants to merge <code>{it.head.repo && it.head.repo !== s.repo ? `${it.head.repo}:` : ""}{it.head.branch}</code> into <code>{it.base.branch}</code>
+              {" · "}
+              {s.login && `as ${s.me ?? "?"} (${gitlab ? s.login.replace(/^glab:/, "glab, ") : s.provider === "github" ? `gh on ${s.login}` : `tea login ${s.login}`})`}
+              {!s.login && s.read_only && "anonymously, read-only"}
+              {it.labels.length > 0 && " · "}
+              {it.labels.map((l) => (
+                <span key={l} class="ws-tag">
+                  {l}
+                </span>
+              ))}
+            </div>
+            <Chips pr={pr} />
           </div>
           {(s.wants.length > 0 || waiting.length > 0) && (
             <section class="ws-gates" data-forge-wants>
@@ -488,81 +613,76 @@ function PrBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeState 
           )}
           {s.said && <p class="ws-said" data-forge-said>{s.said}</p>}
           {s.drafts.length > 0 && <Drafts s={s} />}
-          <section data-forge-checks>
-            <h4>
-              Checks {pr.rollup ? <span class={`ws-tag forge-check ${pr.rollup}`}>{words(pr.rollup)}</span> : <span class="dim">none</span>}
-            </h4>
-            {pr.checks.map((c) => (
-              <div key={c.name} class="forge-row" data-check={c.state}>
-                <span class={`forge-dot ${c.state}`} title={words(c.state)} />
-                {c.url ? (
-                  <a href={c.url} target="_blank" rel="noopener">
-                    {c.name}
-                  </a>
-                ) : (
-                  c.name
-                )}
-                {c.description && <span class="dim"> · {c.description}</span>}
-              </div>
-            ))}
-          </section>
-          <section data-forge-reviews>
-            <h4>Reviews ({pr.reviews.length})</h4>
-            {it.requested.length > 0 && (
-              <p class="dim">
-                Asked: {it.requested.map((r) => ("user" in r ? r.user : r.team)).join(", ")}
-                {asked && " (you)"}
-              </p>
-            )}
-            {pr.reviews.map((r) => (
-              <div key={r.id} class="forge-row" data-review={r.state}>
-                <b>{r.author ?? "a team"}</b> <span class={`ws-tag forge-review ${r.state}`}>{words(r.state)}</span>
-                {r.stale && <span class="dim"> (an older head)</span>}
-                {r.body && <div class="forge-body">{r.body}</div>}
-              </div>
-            ))}
-          </section>
-          {it.body.trim() && (
-            <section>
-              <h4>Description</h4>
-              <div class="forge-body">{it.body}</div>
-            </section>
-          )}
-          <section data-forge-timeline>
-            <h4>Timeline</h4>
-            {[...pr.events].reverse().map((e) => (
-              <div key={e.id} class="forge-row forge-event">
-                <span class="dim">{ago(e.at)}</span> <b>{e.actor ?? "someone"}</b> {eventLine(e)}
-                {e.body && <div class="forge-body">{e.body}</div>}
-              </div>
-            ))}
-          </section>
-          {(mayWrite || mayOwn) && (
-            <div class="ws-actions forge-actions">
-              {mayWrite && it.state === "open" && <button onClick={() => void comment()}>Comment…</button>}
-              {mayWrite && it.state === "open" && !asked && <button onClick={() => void review("comment")}>Review…</button>}
-              {mayWrite && it.state === "open" && <button onClick={() => void merge()}>Merge…</button>}
-              {mayOwn && (
-                <button data-forge-diff disabled={busy !== null} onClick={() => void call("diff", {}, "couldn't show the changes")}>
-                  Diff
-                </button>
-              )}
-              {mayOwn && (
-                <button data-forge-checkout disabled={busy !== null} onClick={() => void call("checkout", {}, "couldn't check it out")}>
-                  Checkout
-                </button>
-              )}
-              {mayOwn && s.provider !== "github" && !s.read_only && (
-                <button data-forge-live disabled={busy !== null} title="A webhook on the repository, straight to this daemon" onClick={() => void call("live", { on: !s.hook }, "couldn't change live updates")}>
-                  {s.hook ? "Stop live updates" : "Live updates"}
-                </button>
-              )}
-            </div>
-          )}
-          <p class="dim ws-note" data-forge-live-state title={s.live_why ?? undefined}>
-            {s.polls} polls, {s.reads} full reads · read {ago(s.updated_ms)}
-            {s.live && ` · ${s.live === "webhook" ? `live (${s.live_via === "github-app" ? "GitHub App" : "webhook"})` : "polling"}`}
-          </p>
+          <Cols
+            s={s}
+            body={it.body}
+            side={[
+              pr.checks.length > 0 && (
+                <section key="c" data-forge-checks>
+                  <h4>Checks</h4>
+                  {pr.checks.map((c) => (
+                    <div key={c.name} class="forge-row" data-check={c.state}>
+                      <span class={`forge-dot ${c.state}`} title={words(c.state)} />
+                      {c.url ? (
+                        <a href={c.url} target="_blank" rel="noopener">
+                          {c.name}
+                        </a>
+                      ) : (
+                        c.name
+                      )}
+                      {c.description && <span class="dim"> · {c.description}</span>}
+                    </div>
+                  ))}
+                </section>
+              ),
+              (pr.reviews.length > 0 || it.requested.length > 0) && (
+                <section key="r" data-forge-reviews>
+                  <h4>Reviews ({pr.reviews.length})</h4>
+                  {it.requested.length > 0 && (
+                    <p class="dim">
+                      Asked: {it.requested.map((r) => ("user" in r ? r.user : r.team)).join(", ")}
+                      {asked && " (you)"}
+                    </p>
+                  )}
+                  {pr.reviews.map((r) => (
+                    <div key={r.id} class="forge-row" data-review={r.state}>
+                      <b>{r.author ?? "a team"}</b> <span class={`ws-tag forge-review ${r.state}`}>{words(r.state)}</span>
+                      {r.stale && <span class="dim"> (an older head)</span>}
+                      {r.body && <Body text={r.body} s={s} />}
+                    </div>
+                  ))}
+                </section>
+              ),
+              <Timeline key="t" events={pr.events} s={s} />,
+            ]}
+          />
+          <Foot
+            s={s}
+            buttons={
+              (canComment || mayOwn) && (
+                <>
+                  {canComment && <button onClick={() => void comment()}>Comment…</button>}
+                  {canComment && !asked && <button onClick={() => void review("comment")}>Review…</button>}
+                  {canComment && <button onClick={() => void merge()}>Merge…</button>}
+                  {mayOwn && (
+                    <button data-forge-diff disabled={busy !== null} onClick={() => void call("diff", {}, "couldn't show the changes")}>
+                      Diff
+                    </button>
+                  )}
+                  {mayOwn && (
+                    <button data-forge-checkout disabled={busy !== null} onClick={() => void call("checkout", {}, "couldn't check it out")}>
+                      Checkout
+                    </button>
+                  )}
+                  {mayOwn && s.provider !== "github" && !s.read_only && (
+                    <button data-forge-live disabled={busy !== null} title="A webhook on the repository, straight to this daemon" onClick={() => void call("live", { on: !s.hook }, "couldn't change live updates")}>
+                      {s.hook ? "Stop live updates" : "Live updates"}
+                    </button>
+                  )}
+                </>
+              )
+            }
+          />
         </div>
       )}
     </div>

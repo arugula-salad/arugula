@@ -4329,14 +4329,258 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   overflow-wrap: anywhere;
 }
 
+.review.forge {
+  container-type: inline-size;
+}
+
+.forge-head {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.forge-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.forge-chips .ws-tag {
+  font-size: 12px;
+  padding: 2px 9px;
+  border-radius: 11px;
+  border: 1px solid var(--divider);
+  background: var(--surface);
+  color: var(--fg);
+}
+
+.forge-chips .forge-check.none,
+.forge-chips .forge-chip:not(.good, .bad, .wait) {
+  color: var(--dim);
+}
+
+.forge-chips .forge-check.failure,
+.forge-chips .forge-check.success {
+  border-color: transparent;
+}
+
+.forge-chip.good {
+  color: #a6e3a1;
+}
+
+.forge-chip.bad {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 50%, transparent);
+}
+
+.forge-chip.wait {
+  color: #f9e2af;
+}
+
+/* The description takes the block; the side column opens up at 720px. */
+.forge-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 18px;
+  flex: 1 0 auto;
+  align-content: start;
+}
+
+.forge-main,
+.forge-side {
+  min-width: 0;
+}
+
+.forge-side {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+@container (min-width: 720px) {
+  .forge-cols.forge-two {
+    grid-template-columns: minmax(0, 1fr) 260px;
+    gap: 24px;
+  }
+
+  .forge-two > .forge-side {
+    border-left: 1px solid var(--divider);
+    padding-left: 18px;
+  }
+}
+
 .forge-body {
-  white-space: pre-wrap;
   font-size: 12px;
   margin: 3px 0 0 12px;
   padding-left: 8px;
   border-left: 2px solid var(--divider);
+  overflow-wrap: anywhere;
+}
+
+.forge-body.forge-desc {
+  font-size: 13px;
+  margin: 0;
+  padding-left: 0;
+  border-left: 0;
+}
+
+.forge-clamp {
   max-height: 12em;
-  overflow: auto;
+  overflow: hidden;
+}
+
+/* Cut mid-line: fade the last line out rather than show half of it. */
+.forge-clamp.cut {
+  mask-image: linear-gradient(#000 calc(100% - 2.5em), transparent);
+}
+
+.forge-more {
+  color: var(--accent);
+  font-size: 12px;
+  padding: 2px 0;
+}
+
+/* The actions stay in view while the body scrolls under them. */
+.forge-foot {
+  position: sticky;
+  /* The scroller's own 14px of padding is inside the sticky edge. */
+  bottom: -14px;
+  z-index: 1;
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  margin: 0 -12px -14px;
+  padding: 8px 12px calc(8px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--divider);
+  background: var(--bg);
+}
+
+.forge-foot .forge-polls {
+  margin-left: auto;
+}
+
+@container (max-width: 460px) {
+  .forge-foot .forge-polls {
+    margin-left: 0;
+    width: 100%;
+  }
+}
+
+/* Markdown (ui/markdown.tsx): a body's blocks. */
+.md {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+
+.md > :first-child {
+  margin-top: 0;
+}
+
+.md > :last-child {
+  margin-bottom: 0;
+}
+
+.md p,
+.md ul,
+.md ol,
+.md blockquote,
+.md pre,
+.md .md-table {
+  margin: 0 0 0.7em;
+}
+
+.md h1,
+.md h2,
+.md h3 {
+  margin: 1em 0 0.4em;
+  line-height: 1.25;
+}
+
+.md h1 {
+  font-size: 17px;
+}
+
+.md h2 {
+  font-size: 15px;
+}
+
+.md h3 {
+  font-size: 13.5px;
+}
+
+.md ul,
+.md ol {
+  padding-left: 1.4em;
+}
+
+.md li {
+  margin: 0.15em 0;
+}
+
+.md li > ul,
+.md li > ol {
+  margin: 0.15em 0 0.2em;
+}
+
+.md li > p {
+  margin: 0.25em 0;
+}
+
+.md .md-task {
+  list-style: none;
+  margin-left: -1.3em;
+}
+
+.md code {
+  font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
+  background: var(--raised);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.md pre {
+  background: var(--surface);
+  border: 1px solid var(--divider);
+  border-radius: 6px;
+  padding: 8px 10px;
+  overflow-x: auto;
+  font: 11.5px/1.45 ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+.md blockquote {
+  padding-left: 10px;
+  border-left: 3px solid var(--raised-hover);
+  color: var(--dim);
+}
+
+.md a {
+  color: var(--accent);
+}
+
+.md hr {
+  border: 0;
+  border-top: 1px solid var(--divider);
+  margin: 1em 0;
+}
+
+.md .md-table {
+  overflow-x: auto;
+}
+
+.md table {
+  overflow-wrap: normal;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.md th,
+.md td {
+  border: 1px solid var(--divider);
+  padding: 3px 8px;
+  text-align: left;
 }
 
 .forge-dot {
@@ -4398,10 +4642,6 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 
 .forge-want {
   margin: 0 0 4px;
-}
-
-.forge-actions {
-  margin-top: 6px;
 }
 
 /* ---- getting started (#110) */

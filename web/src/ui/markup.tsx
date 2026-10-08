@@ -42,24 +42,52 @@ function Lines({ text, isMe, landed }: { text: string; isMe?: IsMe; landed?: (to
 const INLINE =
   /(`[^`\n]+`)|(\*\*[^*\n]+\*\*)|((?:^|(?<=[\s(]))[*_][^*_\s][^*_\n]*[*_](?=$|[\s.,;:!?)]))|(https?:\/\/[^\s<>()]+[^\s<>().,;:!?'"])|((?:^|(?<=[^\w]))@[\w.-]*\w)/g;
 
-export function inline(text: string, isMe?: IsMe, landed?: (token: string) => boolean): ComponentChildren[] {
+// The forge pass (PR and issue bodies) adds two forms after those: a
+// `[text](url)` link and a `#N` reference.
+const FORGE_INLINE = new RegExp(`${INLINE.source}|(\\[([^\\]\\n]+)\\]\\(([^)\\s]+)\\))|((?:^|(?<=[^\\w]))#\\d+\\b)`, "g");
+
+/** The forge-only pass of `inline`: `[text](url)` links and `#N` references.
+ * `refs` is the URL a reference's number goes after (`…/issues/`), or null
+ * to leave `#N` as text. */
+export type ForgeInline = { refs: string | null };
+
+/** Only these hrefs come out of a body: whoever opened the PR wrote it. */
+const safeHref = (u: string) => /^https?:\/\/[^\s/]/i.test(u);
+
+export function inline(text: string, isMe?: IsMe, landed?: (token: string) => boolean, forge?: ForgeInline): ComponentChildren[] {
   const out: ComponentChildren[] = [];
   let at = 0;
   let k = 0;
-  for (const m of text.matchAll(INLINE)) {
+  for (const m of text.matchAll(forge ? FORGE_INLINE : INLINE)) {
     const i = m.index!;
     if (i > at) out.push(text.slice(at, i));
     const s = m[0];
     if (m[1]) out.push(<code key={k++}>{s.slice(1, -1)}</code>);
-    else if (m[2]) out.push(<b key={k++}>{inline(s.slice(2, -2), isMe, landed)}</b>);
-    else if (m[3]) out.push(<i key={k++}>{inline(s.slice(1, -1), isMe, landed)}</i>);
+    else if (m[2]) out.push(forge ? <strong key={k++}>{inline(s.slice(2, -2), isMe, landed, forge)}</strong> : <b key={k++}>{inline(s.slice(2, -2), isMe, landed)}</b>);
+    else if (m[3]) out.push(forge ? <em key={k++}>{inline(s.slice(1, -1), isMe, landed, forge)}</em> : <i key={k++}>{inline(s.slice(1, -1), isMe, landed)}</i>);
     else if (m[4])
       out.push(
         <a key={k++} href={s} target="_blank" rel="noopener noreferrer">
           {s}
         </a>,
       );
-    else if (landed && !landed(s.slice(1).toLowerCase())) out.push(s);
+    else if (m[6]) {
+      if (safeHref(m[8]))
+        out.push(
+          <a key={k++} href={m[8]} target="_blank" rel="noopener noreferrer">
+            {inline(m[7], isMe, landed, forge)}
+          </a>,
+        );
+      else out.push(s);
+    } else if (m[9]) {
+      if (forge?.refs)
+        out.push(
+          <a key={k++} href={forge.refs + s.slice(1)} target="_blank" rel="noopener noreferrer">
+            {s}
+          </a>,
+        );
+      else out.push(s);
+    } else if (landed && !landed(s.slice(1).toLowerCase())) out.push(s);
     else {
       const token = s.slice(1).toLowerCase();
       out.push(
