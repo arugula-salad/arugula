@@ -61,6 +61,8 @@ Each chant process loads chant's TypeScript source through tsx. That cost is the
 
 Not shown, and not needed for a first milestone: `graph`, which only runs members of kind `chant` (on chant itself, 24 of 25 are `skipped`, `kind-not-run`), and `lineage`, which needs `.chant/workspace.lock.json`.
 
+Later (#620): chant 0.95 reads terraform members too (INTENTIUS/chant#2874), so `graph` no longer skips most of an estate. The block still doesn't read it. behold draws the graph: *Graph* on a member card runs `behold serve` on the block's host and frames it in the block (DECISIONS.md, "A workspace block's graph is behold, run by the block").
+
 ## Answers
 
 1. **Can a useful block be drawn from the read contract alone? Yes.** The gate read I thought was missing is there. `workspace status <env> --json` carries each member's `gateLedger` and `gates[]`, with chant's `approve` command (#70 said otherwise; `operator status --json` and `run … --json` aren't needed). The action loop works too:

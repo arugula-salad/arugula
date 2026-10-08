@@ -7077,3 +7077,42 @@ html.chat-open .huddle-bar {
     display: none;
   }
 }
+
+/* #620: behold's graph, framed in a workspace block. */
+.ws-graph {
+  flex: 3 1 0;
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid var(--divider);
+}
+
+.ws-graph + .review-body {
+  flex: 2 1 0;
+}
+
+.ws-graph-bar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 3px 8px;
+  font-size: 12px;
+  background: var(--surface);
+  white-space: nowrap;
+}
+
+.ws-graph-bar > span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ws-graph-bar button {
+  border: 0;
+  border-radius: 4px;
+  background: var(--raised);
+  color: var(--fg);
+  min-width: 24px;
+  height: 22px;
+}

@@ -3585,6 +3585,7 @@ A [chant](https://intentius.io/chant) workspace (a repo with a `chant.workspace.
 - **Read contract alone is enough.**
   - `workspace ls`, `check --format json`, `records --current` and `status <env>` (all `--json`) give members, findings per member, records with `blockedBy` and drift, releases, and **each member's pending gates with chant's approve command**.
   - No chant change is needed. `graph` runs only kind-`chant` members (24 of chant's 25 are `skipped`), and `lineage` needs a lock file, so neither is used.
+  - Since chant 0.95 `graph` reads terraform members too (INTENTIUS/chant#2874). The block still doesn't read it: behold draws it in the block (#620).
 - **It works end to end on a dev daemon.** A gated op shows as `needs_input` ("delivery: ship waits at gate approve-ship") about 1 s after `chant run` exits. *Approve* runs `chant approve` in the member, and the attention clears. *Shell* opens a pane in the member, and a nested workspace opens as a second block.
 - **Cost:**
   - A full read takes 1.2–1.5 s wall and **about 7.5 CPU-s** (four chant processes, each loading TypeScript through tsx; 285 MB peak).

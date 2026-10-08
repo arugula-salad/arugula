@@ -10,7 +10,9 @@
 // on a member starts a gated op in a pane, *Approve* clears it, and *Run
 // op* again walks through (#309). The pane menu and the picker offer "Open
 // as workspace" in a workspace's directory. The owner sets who approvals
-// are recorded as from the block's bar (#302).
+// are recorded as from the block's bar (#302). *Graph* on a member frames
+// behold on it, and behold's pick opens that member's Shell or Changes
+// (#620; needs behold: $ARUGULA_BEHOLD or `behold` on PATH, else skipped).
 //
 // The first run installs the fixture's chant (`npm ci`, a few seconds).
 
@@ -80,7 +82,7 @@ test.beforeAll(async () => {
   daemon = spawn(
     "../target/debug/arugulad",
     [
-      ...["--listen", ANY, "--state-dir", labs(join(dir, "state")), "--owner", OWNER, "--tailscale-socket", "/nonexistent/sock"],
+      ...["--listen", ANY, "--block-listen", ANY, "--state-dir", labs(join(dir, "state")), "--owner", OWNER, "--tailscale-socket", "/nonexistent/sock"],
       ...["--shell", "bash --norc --noprofile", "--no-manager-env", "--wisp-token-file", "/nonexistent"],
     ],
     { stdio: "ignore" },
@@ -395,4 +397,76 @@ test("the owner sets who approvals are recorded as, from the block's bar (#302)"
   // Cleared again: approvals name the owner by their Arugula name.
   expect((await post(`/api/blocks/${block}/call/principals`, { actor: null, principals: {} })).ok).toBe(true);
   await expect(shown.locator("[data-ws-actor]")).toHaveText("as you");
+});
+
+// #620: behold for the graph, as the daemon finds it.
+const BEHOLD = process.env.ARUGULA_BEHOLD || (spawnSync("sh", ["-c", "command -v behold"]).status === 0 ? "behold" : "");
+
+test("Graph on a member frames behold on it; behold's pick opens that member's Shell or Changes (#620)", async ({ page }) => {
+  test.skip(!BEHOLD, "no behold: set ARUGULA_BEHOLD or put behold on PATH");
+  test.setTimeout(120_000);
+  await open(page);
+  await page.evaluate((b) => window.__arugula.client.setActive(b), block);
+  const shown = page.locator(`[data-workspace-block="${block}"]`);
+  const before = (await panesOf(page)).map((p) => p.id);
+  await shown.locator('[data-member="delivery"] [data-graph]').click();
+  // behold reads the workspace through chant before it answers.
+  const frame = shown.locator("[data-ws-graph] iframe");
+  await expect(frame).toBeVisible({ timeout: 90_000 });
+  const src = new URL((await frame.getAttribute("src"))!);
+  const app = new URL(base()).origin;
+  expect(src.hostname).toMatch(new RegExp(`^b-${block}-\\w+\\.localhost$`));
+  expect(Object.fromEntries(src.searchParams)).toEqual({ member: "delivery", env: "", gates: "local", embed: "1", host: app, theme: "dark" });
+  // Started with no env, so behold reads nothing live by itself.
+  const cmdline = spawnSync("pgrep", ["-lf", `serve ${ws} `], { encoding: "utf8" }).stdout;
+  expect(cmdline).toContain("--port 0");
+  expect(cmdline).not.toContain("--env");
+  // It's behold answering, through the block's site.
+  await expect.poll(async () => (await fetch(`${base()}/api/blocks/${block}`).then((r) => r.json())).state.graph.is).toBe("running");
+  const behold = page.frameLocator(`[data-workspace-block="${block}"] [data-ws-graph] iframe`);
+  await expect(behold.locator("#panel")).toBeAttached({ timeout: 30_000 });
+  // behold answers only its own loopback name and refuses cross-site writes:
+  // the block's site hands it `Host: localhost:<port>` and, for a write,
+  // `Origin: http://localhost:<port>`, so a write from the frame goes through
+  // with no --allow-host.
+  const wrote = await page
+    .frames()
+    .find((f) => f.url().startsWith(src.origin))!
+    .evaluate(async () => (await fetch("/api/refresh?notify=1", { method: "POST" })).status);
+  expect(wrote).toBe(200);
+  // What behold posts when a member's box is picked, from behold's origin.
+  // The toy's delivery has no lexicon for behold to draw boxes from, so it's
+  // posted the way behold's embedSelected posts it.
+  const pick = (member: string) =>
+    page
+      .frames()
+      .find((f) => f.url().startsWith(src.origin))!
+      .evaluate(([m, host]) => window.parent.postMessage({ type: "behold:select", member: m, node: null }, host), [member, app]);
+  // The same message from anywhere else (the app page itself) opens nothing.
+  await page.evaluate(() => window.postMessage({ type: "behold:select", member: "delivery", node: null }, "*"));
+  await pick("delivery");
+  await expect
+    .poll(async () => (await panesOf(page)).filter((p) => !before.includes(p.id)).map((p) => [p.type, p.cwd]))
+    .toEqual([["terminal", join(ws, "delivery")]]);
+  // Changes, when the frame's bar says so: a diff block on the member.
+  const opened = (await panesOf(page)).map((p) => p.id);
+  await shown.locator("[data-ws-graph-clicks]").selectOption("changes");
+  await pick("delivery");
+  await expect
+    .poll(async () => (await panesOf(page)).filter((p) => !opened.includes(p.id)).map((p) => p.type))
+    .toEqual(["diff"]);
+  // An env switch moves behold's gate strip (the frame loads again), not behold:
+  // the same run keeps going.
+  expect((await post(`/api/blocks/${block}/call/env`, { name: "staging" })).ok).toBe(true);
+  await expect.poll(async () => (await fetch(`${base()}/api/blocks/${block}`).then((r) => r.json())).state.env).toBe("staging");
+  // behold reads `gates` as it loads, so the frame loads again on it.
+  await expect.poll(async () => new URL((await frame.getAttribute("src"))!).searchParams.get("gates")).toBe("staging");
+  expect((await fetch(`${base()}/api/blocks/${block}`).then((r) => r.json())).state.graph).toMatchObject({ is: "running", run: 1 });
+  expect((await post(`/api/blocks/${block}/call/env`, { name: "local" })).ok).toBe(true);
+  await shown.locator("[data-ws-graph] button[title='Close the graph']").click();
+  await expect(shown.locator("[data-ws-graph]")).toHaveCount(0);
+  // behold is the block's: closing the block stops it.
+  expect(spawnSync("pgrep", ["-f", `serve ${ws} `]).status).toBe(0);
+  expect((await post(`/api/panes/${block}/close`, {})).ok).toBe(true);
+  await expect.poll(() => spawnSync("pgrep", ["-f", `serve ${ws} `]).status, { timeout: 10_000 }).toBe(1);
 });

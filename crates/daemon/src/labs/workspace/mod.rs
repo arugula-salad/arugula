@@ -90,13 +90,19 @@
 //! each env is another `status`, another chant process (about 2-3
 //! CPU-seconds) on every full read, for every block, VM or not.
 //!
+//! **The graph (#620).** `graph` starts behold on the workspace and frames
+//! it through the block's site ([`graph`]); a settled read tells behold.
+//!
 //! Methods: `refresh`, `approve {member, op, gate}` (or `{key}`; the first
 //! gate if none), `expire` (the same), `member {name}` (its directory, for
 //! opening panes there), `env {name}`, `principals {actor, principals}`,
-//! `why {member, open}`, `hud {url}`, `state`.
+//! `why {member, open}`, `hud {url}`, `graph`, `state`.
 
+mod graph;
 mod model;
 pub mod why;
+
+pub use graph::stop_all as stop_beholds;
 
 use std::{
     collections::{HashMap, HashSet},
@@ -283,6 +289,8 @@ pub struct Workspace {
     intent_reading: tokio::sync::Mutex<()>,
     live: Live,
     reading: tokio::sync::Mutex<()>,
+    /// behold, once someone asked for the graph.
+    graph: Arc<graph::Graph>,
 }
 
 impl Workspace {
@@ -318,6 +326,7 @@ impl Workspace {
             intent_reading: tokio::sync::Mutex::new(()),
             live: Live::default(),
             reading: tokio::sync::Mutex::new(()),
+            graph: Arc::default(),
         });
         let me = w.clone();
         w.ctx.rt.spawn(async move {
@@ -468,6 +477,7 @@ impl Workspace {
         };
         self.raise(&gates);
         self.ctx.changed();
+        self.graph.notify(&self.ctx, self.seen.lock().unwrap().clone().as_deref());
     }
 
     /// The run ledger: `chant workspace runs --json` in the root. A run's
@@ -946,6 +956,7 @@ impl Block for Workspace {
         v["actor"] = json!(who.actor);
         v["principals"] = json!(who.principals);
         v["hud"] = json!(*self.hud.lock().unwrap());
+        v["graph"] = json!(self.graph.status());
         v
     }
 
@@ -1072,6 +1083,18 @@ impl Block for Workspace {
                 me.ctx.changed();
                 Ok(json!({ "hud": url }))
             }),
+            "graph" => Box::pin(async move {
+                let me = me.ok_or("closed")?;
+                let runner = me.runner().await?;
+                let weak = me.me.clone();
+                let changed = move || {
+                    if let Some(w) = weak.upgrade() {
+                        w.ctx.changed();
+                    }
+                };
+                let src = me.graph.ensure(&me.ctx, &runner, &me.config.root, changed).await?;
+                Ok(json!({ "src": src }))
+            }),
             "state" => {
                 let s = self.state();
                 Box::pin(async move { Ok(s) })
@@ -1102,6 +1125,7 @@ impl Block for Workspace {
 
     fn close(&self) {
         self.live.close();
+        self.graph.close(&self.ctx);
     }
 
     fn summary(&self) -> Summary {
