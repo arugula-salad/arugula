@@ -63,6 +63,7 @@ use crate::{
 /// workspace through chant first).
 const START: Duration = Duration::from_secs(90);
 /// How long a stopped behold has after `SIGTERM`, before `SIGKILL`.
+#[cfg(unix)]
 const STOP_GRACE: Duration = Duration::from_secs(2);
 
 /// `sh -c SERVE sh ROOT BEHOLD`: behold, as the module says, on a port it
