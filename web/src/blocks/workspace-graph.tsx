@@ -50,11 +50,11 @@ export function Graph({ client, id, s, member, close, picked }: {
   const frame = useRef<HTMLIFrameElement>(null);
   const [clicks, setClicks] = useState<Clicks>("shell");
   const [live, setLive] = useState(false);
-  // The address a run of behold loads with; later moves are messages.
-  // behold reads `gates` once, as it loads: a new block env loads it again.
-  const loaded = useRef<{ run: number; gates: string; src: string } | null>(null);
-  if (g.is === "running" && (loaded.current?.run !== g.run || loaded.current.gates !== s.env)) {
-    loaded.current = { run: g.run, gates: s.env, src: beholdSrc(g.src, member, live ? s.env : "", s.env, location.origin) };
+  // The address a run of behold loads with; later moves, the block's env
+  // included, are `behold:view` messages, and behold keeps them in its URL.
+  const loaded = useRef<{ run: number; src: string } | null>(null);
+  if (g.is === "running" && loaded.current?.run !== g.run) {
+    loaded.current = { run: g.run, src: beholdSrc(g.src, member, live ? s.env : "", s.env, location.origin) };
   }
   const origin = g.is === "running" ? new URL(g.src).origin : "";
   const view = (v: Record<string, unknown>) => {
@@ -62,7 +62,9 @@ export function Graph({ client, id, s, member, close, picked }: {
   };
   useEffect(() => view({ member }), [member, origin]);
   // The live box moves the graph between the source and the block's env.
-  useEffect(() => view({ env: live ? s.env : "" }), [live, origin]);
+  useEffect(() => view({ env: live ? s.env : "" }), [live, s.env, origin]);
+  // The gate strip follows the block's env, whatever the graph shows.
+  useEffect(() => view({ gates: s.env }), [s.env, origin]);
   // Read when a pick comes, so one right after a change in the bar (before
   // effects run again) goes by the bar as it is now.
   const now = useRef({ clicks, picked });
@@ -100,7 +102,7 @@ export function Graph({ client, id, s, member, close, picked }: {
       {g.is === "running" && loaded.current ? (
         // Its own origin, the block's site, never the app's.
         <iframe
-          key={`${loaded.current.run}:${loaded.current.gates}`}
+          key={loaded.current.run}
           ref={frame}
           class="browser-frame"
           src={loaded.current.src}

@@ -455,12 +455,18 @@ test("Graph on a member frames behold on it; behold's pick opens that member's S
   await expect
     .poll(async () => (await panesOf(page)).filter((p) => !opened.includes(p.id)).map((p) => p.type))
     .toEqual(["diff"]);
-  // An env switch moves behold's gate strip (the frame loads again), not behold:
-  // the same run keeps going.
+  // An env switch moves behold's gate strip with a behold:view message: the
+  // frame doesn't load again, behold reads the new env's gates and keeps
+  // `gates` in its own URL, and the same run keeps going.
+  const beholdFrame = () => page.frames().find((f) => f.url().startsWith(src.origin))!;
+  await beholdFrame().evaluate(() => ((window as unknown as { __stay: number }).__stay = 1));
+  const gatesRead = page.waitForRequest((r) => r.url().startsWith(src.origin) && new URL(r.url()).pathname === "/api/workspace/gates" && new URL(r.url()).searchParams.get("env") === "staging");
   expect((await post(`/api/blocks/${block}/call/env`, { name: "staging" })).ok).toBe(true);
   await expect.poll(async () => (await fetch(`${base()}/api/blocks/${block}`).then((r) => r.json())).state.env).toBe("staging");
-  // behold reads `gates` as it loads, so the frame loads again on it.
-  await expect.poll(async () => new URL((await frame.getAttribute("src"))!).searchParams.get("gates")).toBe("staging");
+  await gatesRead;
+  await expect.poll(() => new URL(beholdFrame().url()).searchParams.get("gates")).toBe("staging");
+  expect(new URL((await frame.getAttribute("src"))!).searchParams.get("gates")).toBe("local");
+  expect(await beholdFrame().evaluate(() => (window as unknown as { __stay?: number }).__stay)).toBe(1);
   expect((await fetch(`${base()}/api/blocks/${block}`).then((r) => r.json())).state.graph).toMatchObject({ is: "running", run: 1 });
   expect((await post(`/api/blocks/${block}/call/env`, { name: "local" })).ok).toBe(true);
   await shown.locator("[data-ws-graph] button[title='Close the graph']").click();
