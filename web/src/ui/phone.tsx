@@ -19,6 +19,7 @@ import { NotifySection } from "./notify";
 import { openGettingStarted } from "./welcome";
 import { openPalette } from "./palette";
 import { InLabs } from "./in-labs";
+import { GateWhy } from "./gate-why";
 
 export function PhoneHeader({ client }: { client: Client }) {
   const [open, setOpen] = useState(false);
@@ -91,7 +92,10 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
                 <div key={p.id} class="sheet-row" data-wants={p.id}>
                   <button class="sheet-item" onClick={act(() => client.setActive(p.id))}>
                     <AttentionBadge state={p.attention} reason={p.reason} />{" "}
-                    {p.reason?.headline || client.title(p.id) || p.current?.text || p.last?.text || p.cwd || `pane %${p.id}`}
+                    <span class="sheet-wants">
+                      {p.reason?.headline || client.title(p.id) || p.current?.text || p.last?.text || p.cwd || `pane %${p.id}`}
+                      {gate && <GateWhy gate={gate} compact />}
+                    </span>
                   </button>
                   {rerun && (
                     <button class="sheet-act" data-rerun={p.id} onClick={act(() => void client.act({ action: "rerun", pane: p.id }))}>

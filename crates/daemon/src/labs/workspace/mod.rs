@@ -40,6 +40,18 @@
 //! `--relayed-by` the owner, and a signed gate is the owner's to approve
 //! here. It's logged, with who, in the block's log and its history.
 //!
+//! **What a gate enforces (#617).** A gate's card names the decisions
+//! covering its member, from chant's intent graph over the member's
+//! directory (`graph --intent <dir>`, [`model::INTENT`]): chant does the
+//! `member:` and `path:` covering and follows supersession, so the block
+//! joins nothing. That read runs `git log` over the member (about a second
+//! on a small repository, 40 s and more on chant's own), so it runs only
+//! for a member with a gate waiting, after the full read and apart from it,
+//! one member at a time, and is kept until the fingerprint moves. The gate
+//! shows at once and its decisions when they come; the attention is asked
+//! again with them. The plan digest and the member's last release come
+//! from `status`.
+//!
 //! `expire` (same arguments, same people, logged the same way) turns a gate
 //! down (#310): `chant approve <op> <gate> --expire` clears its pending fact
 //! without approving it, so the next run stops there again.
@@ -65,6 +77,7 @@
 mod model;
 
 use std::{
+    collections::HashMap,
     sync::{Arc, Mutex, Weak},
     time::Duration,
 };
@@ -210,10 +223,16 @@ pub struct Workspace {
     seen: Mutex<Option<String>>,
     /// A changed fingerprint the last poll saw, waiting to hold still.
     pending: Mutex<Option<String>>,
-    /// The gate attention last asked for (its headline), so it's asked once
-    /// per change. Starts as `Some("")` so the first read clears any left
-    /// from before a restart.
+    /// The gates attention last asked for (as JSON), so it's asked once per
+    /// change: another gate, or the decisions behind one read meanwhile.
+    /// Starts as `Some("")` so the first read clears any left from before a
+    /// restart.
     raised: Mutex<Option<String>>,
+    /// Each member's intent read (#617), by name, with the fingerprint it
+    /// was read at: kept until the fingerprint moves.
+    intents: Mutex<HashMap<String, Known>>,
+    /// One intent read at a time.
+    intent_reading: tokio::sync::Mutex<()>,
     live: Live,
     reading: tokio::sync::Mutex<()>,
 }
@@ -245,6 +264,8 @@ impl Workspace {
             seen: Mutex::new(None),
             pending: Mutex::new(None),
             raised: Mutex::new(Some(String::new())),
+            intents: Mutex::default(),
+            intent_reading: tokio::sync::Mutex::new(()),
             live: Live::default(),
             reading: tokio::sync::Mutex::new(()),
         });
@@ -309,15 +330,84 @@ impl Workspace {
                 machine.clone_from(&self.ctx.sprite);
             }
         }
+        self.attach(&mut st);
         self.raise(&st.gates);
+        let wanted = !self.wanted(&st).is_empty();
         *self.state.lock().unwrap() = st;
         self.ctx.changed();
+        if wanted && let Some(me) = self.me.upgrade() {
+            self.ctx.rt.spawn(async move { me.read_intents().await });
+        }
+    }
+
+    /// The members whose intent read is wanted and not had at this
+    /// fingerprint: those with a gate waiting.
+    fn wanted(&self, st: &model::State) -> Vec<(String, String)> {
+        wanted(st, &self.intents.lock().unwrap(), self.seen.lock().unwrap().as_deref())
+    }
+
+    /// What the intent reads had at this fingerprint, onto the gates.
+    fn attach(&self, st: &mut model::State) {
+        attach(st, &self.intents.lock().unwrap(), self.seen.lock().unwrap().as_deref());
+    }
+
+    /// Reads the intent of each member [`Workspace::wanted`] names, one at
+    /// a time, and puts what each says on the state as it lands (and on
+    /// the gate's attention).
+    async fn read_intents(&self) {
+        let _one = self.intent_reading.lock().await;
+        loop {
+            let (wanted, chant, version, root) = {
+                let st = self.state.lock().unwrap();
+                (self.wanted(&st), st.chant.clone(), st.version.clone(), st.root.clone())
+            };
+            let Some((name, dir)) = wanted.into_iter().next() else { return };
+            if self.live.closed() {
+                return;
+            }
+            let print = self.seen.lock().unwrap().clone();
+            let got = match (chant, version) {
+                (None, _) => Err(model::NO_CHANT.to_owned()),
+                (_, Some(v)) if !model::at_least(&v, model::INTENT_FLOOR) => Err(format!(
+                    "chant {v} can't say which decisions cover a member: {} or newer can",
+                    model::INTENT_FLOOR
+                )),
+                (Some(chant), _) => self.intent(&root, &chant, &dir).await,
+            };
+            if let Err(e) = &got {
+                log(&self.ctx, &json!({ "e": "intent", "member": name, "error": e }));
+            } else if let Ok(i) = &got {
+                log(&self.ctx, &json!({ "e": "intent", "member": name, "ms": i.ms, "decisions": i.decisions.len() }));
+            }
+            self.intents.lock().unwrap().insert(name, Known { print, got });
+            let gates = {
+                let mut st = self.state.lock().unwrap();
+                self.attach(&mut st);
+                st.gates.clone()
+            };
+            self.raise(&gates);
+            self.ctx.changed();
+        }
+    }
+
+    /// One member's intent read: `graph --intent <dir>` in the root.
+    async fn intent(&self, root: &str, chant: &str, dir: &str) -> Result<model::Intent, String> {
+        let r = self.runner().await?;
+        let t = std::time::Instant::now();
+        let args = [root.to_owned(), chant.to_owned(), dir.to_owned()];
+        // The host's limit on a command (30 s) cuts off a long one.
+        let (out, _) = r.sh(model::INTENT, &args).await.map_err(|e| {
+            if e.contains("too long") { "chant took too long to read them (over 30 s)".to_owned() } else { e }
+        })?;
+        let ms = t.elapsed().as_millis() as u64;
+        let doc = serde_json::from_slice::<Value>(&out).unwrap_or(Value::Null);
+        model::intent(&doc, ms)
     }
 
     /// Gates waiting are attention; none, and it's let go.
     fn raise(&self, gates: &[Gate]) {
         let reason = crate::gate::reason(gates);
-        let now = reason.as_ref().map(|r| r.headline.clone());
+        let now = reason.as_ref().map(|_| serde_json::to_string(gates).unwrap_or_default());
         let mut raised = self.raised.lock().unwrap();
         if *raised == now {
             return;
@@ -515,6 +605,41 @@ impl Workspace {
         let said = result?;
         self.load().await;
         Ok(json!({ done: gate.key(), "gate": gate, "by": by, "said": said }))
+    }
+}
+
+/// An intent read, and the fingerprint it was read at.
+struct Known {
+    print: Option<String>,
+    got: Result<model::Intent, String>,
+}
+
+/// The members (name, directory) whose intent read isn't had at the
+/// fingerprint `seen`: those with a chant gate waiting.
+fn wanted(st: &model::State, intents: &HashMap<String, Known>, seen: Option<&str>) -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = Vec::new();
+    for g in st.gates.iter().filter(|g| matches!(g.source, GateSource::Chant { .. })) {
+        let fresh = intents.get(&g.member).is_some_and(|k| k.print.as_deref() == seen);
+        if !fresh && !out.iter().any(|(n, _)| *n == g.member) {
+            let dir = st.members.iter().find(|m| m.name == g.member).map(|m| m.dir.clone());
+            out.push((g.member.clone(), dir.unwrap_or_else(|| ".".into())));
+        }
+    }
+    out
+}
+
+/// What the intent reads had at the fingerprint `seen`, onto the gates of
+/// their members; one read at another fingerprint is left off.
+fn attach(st: &mut model::State, intents: &HashMap<String, Known>, seen: Option<&str>) {
+    for g in &mut st.gates {
+        let (Some(why), Some(k)) = (g.why.as_mut(), intents.get(&g.member)) else { continue };
+        if k.print.as_deref() != seen {
+            continue;
+        }
+        match &k.got {
+            Ok(i) => (why.decisions, why.note) = (Some(i.decisions.clone()), None),
+            Err(e) => (why.decisions, why.note) = (None, Some(e.clone())),
+        }
     }
 }
 
@@ -736,9 +861,43 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        Look, Next, POLL, Principals, REF_POLL, VM_QUIET, VM_RESTING, VmIdle, env_name, envs, look, next, ref_moved,
-        set_principals, vm_look, vm_looked,
+        HashMap, Known, Look, Next, POLL, Principals, REF_POLL, VM_QUIET, VM_RESTING, VmIdle, attach, env_name, envs,
+        look, model, next, ref_moved, set_principals, vm_look, vm_looked, wanted,
     };
+
+    #[test]
+    fn a_gate_s_decisions_are_read_once_per_fingerprint() {
+        // #617: a gate waiting wants its member's intent read; once had at
+        // this fingerprint it goes on the gate, and isn't read again until
+        // the fingerprint moves.
+        let raw: serde_json::Value = serde_json::from_str(include_str!("fixtures/reference-raw.json")).unwrap();
+        let doc: serde_json::Value = serde_json::from_str(include_str!("fixtures/intent-delivery.json")).unwrap();
+        let mut st = model::compose(&raw, "local");
+        let mut intents = HashMap::new();
+        assert_eq!(wanted(&st, &intents, Some("a 1")), [("delivery".to_owned(), "delivery".to_owned())]);
+        intents.insert(
+            "delivery".to_owned(),
+            Known { print: Some("a 1".into()), got: Ok(model::intent(&doc, 1400).unwrap()) },
+        );
+        assert!(wanted(&st, &intents, Some("a 1")).is_empty());
+        attach(&mut st, &intents, Some("a 1"));
+        let why = st.gates[0].why.clone().unwrap();
+        assert_eq!(why.decisions.unwrap()[0].id, "toy-001");
+        assert!(st.text().contains("    enforces toy-001 A person approves each ship\n"), "{}", st.text());
+        // The fingerprint moved: read again, and the old one isn't put on.
+        assert_eq!(wanted(&st, &intents, Some("a 2")).len(), 1);
+        let mut fresh = model::compose(&raw, "local");
+        attach(&mut fresh, &intents, Some("a 2"));
+        assert_eq!(fresh.gates[0].why.as_ref().unwrap().decisions, None);
+        // A failure is a note on the gate, and is kept like an answer.
+        intents.insert("delivery".to_owned(), Known { print: Some("a 2".into()), got: Err("too slow".into()) });
+        attach(&mut fresh, &intents, Some("a 2"));
+        assert_eq!(fresh.gates[0].why.as_ref().unwrap().note.as_deref(), Some("too slow"));
+        assert!(wanted(&fresh, &intents, Some("a 2")).is_empty());
+        // No gate, no read.
+        fresh.gates.clear();
+        assert!(wanted(&fresh, &HashMap::new(), Some("a 2")).is_empty());
+    }
 
     /// A fingerprint: the lifecycle ref's word, then the tree's checksum.
     fn fp(lifecycle: &str, tree: u32) -> String {

@@ -137,3 +137,57 @@ impl PinState {
         })
     }
 }
+
+/// A decision covering a region, as chant's intent read ranks it
+/// (`graph --intent <dir>`'s `why.decisions`, #617): chant does the
+/// `member:` and `path:` covering and follows supersession.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct DecisionRef {
+    pub id: String,
+    pub title: Option<String>,
+    pub state: Option<String>,
+    /// How it covers the region: `carried`, `path`, `contract`, `issue`,
+    /// `member`, or `related` (only through supersession or a commit).
+    pub relevance: String,
+    /// Not superseded.
+    pub current: bool,
+    /// In a state its kind closes, such as ratified.
+    pub closed: bool,
+}
+
+impl DecisionRef {
+    /// Whether it governs the region itself: current, decided (not
+    /// proposed or withdrawn), and covering it by more than a link.
+    pub fn governs(&self) -> bool {
+        self.current && self.relevance != "related" && !matches!(self.state.as_deref(), Some("proposed" | "withdrawn"))
+    }
+}
+
+/// What someone about to approve a gate wants to know (#617): the
+/// decisions it enforces, the plan it binds and the member's last
+/// release.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct GateWhy {
+    /// The decisions covering the gate's member, most relevant first. None
+    /// until chant has been asked.
+    pub decisions: Option<Vec<DecisionRef>>,
+    /// Why they couldn't be read.
+    pub note: Option<String>,
+    /// The plan the gate was reached for (`status`'s `planDigest`).
+    pub plan_digest: Option<String>,
+    /// The member's latest release in the env watched.
+    pub last_release: Option<GateRelease>,
+}
+
+/// A release, from `status`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct GateRelease {
+    pub component: String,
+    /// When (RFC 3339), who and from which commit.
+    pub at: String,
+    pub actor: Option<String>,
+    pub git_sha: Option<String>,
+}

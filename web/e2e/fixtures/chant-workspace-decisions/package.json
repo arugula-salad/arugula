@@ -1,0 +1,9 @@
+{
+  "name": "arugula-e2e-chant-workspace-decisions",
+  "private": true,
+  "type": "module",
+  "description": "#617/#618's e2e fixture: the toy workspace with decision records, read by a chant with graph --intent (web/e2e/workspace-why.spec.ts).",
+  "dependencies": {
+    "@intentius/chant": "0.108.1"
+  }
+}

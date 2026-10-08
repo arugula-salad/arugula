@@ -838,6 +838,7 @@ impl ForgeBlock {
                     needed: 1,
                     command: Some(format!("arugula call %{} review '{{\"event\":\"approve\"}}'", self.ctx.id)),
                     source: GateSource::Forge { api, url, number },
+                    why: None,
                 };
                 *self.gate.lock().unwrap() = Some(gate.clone());
                 let mut r = crate::gate::reason(&[gate])?;

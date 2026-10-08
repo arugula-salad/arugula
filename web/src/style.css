@@ -4055,6 +4055,33 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   min-width: 200px;
 }
 
+/* #617: what a gate enforces, its plan and the last release, on the
+   block, the swarm's card and the phone's sheet. */
+.gate-why {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.gate-why-decision:not(.dim) {
+  color: var(--fg);
+}
+
+.swarm-card .gate-why {
+  margin: -2px 0 8px;
+}
+
+.sheet-wants {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 4px 0;
+}
+
+.sheet-wants .gate-why {
+  margin-top: 2px;
+}
+
 .ws-gate-when {
   font-size: 12px;
   margin-top: 2px;

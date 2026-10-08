@@ -963,6 +963,7 @@ mod tests {
             needed: 1,
             command: Some("chant approve ship approve-ship".into()),
             source: arugula_proto::GateSource::Chant { root: "/w".into(), dir: "/w/delivery".into(), machine: None },
+            why: None,
         };
         let v = push_reason(&crate::gate::reason(&[gate]).unwrap());
         assert_eq!(v["kind"], "gate");

@@ -236,6 +236,7 @@ mod tests {
             needed: 1,
             command: Some("chant approve ship approve-ship".into()),
             source: GateSource::Chant { root: "/w".into(), dir: format!("/w/{member}"), machine: None },
+            why: None,
         }
     }
 
