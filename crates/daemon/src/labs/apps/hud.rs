@@ -982,6 +982,7 @@ pub fn board_gates(origin: &str, app: &str, board: &Value) -> Vec<arugula_proto:
                 needed: g["needed"].as_u64().unwrap_or(1),
                 command: g["approve"].as_str().map(str::to_owned),
                 source: arugula_proto::GateSource::Hud { box_url: origin.to_owned(), app: app.to_owned() },
+                why: None,
             })
         })
         .collect()

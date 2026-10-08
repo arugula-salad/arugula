@@ -294,6 +294,26 @@ state: "running" | "paused",
 reason?: string | null, file?: string | null, line?: number | null, };
 
 /**
+ * A decision covering a region, as chant's intent read ranks it
+ * (`graph --intent <dir>`'s `why.decisions`, #617): chant does the
+ * `member:` and `path:` covering and follows supersession.
+ */
+export type DecisionRef = { id: string, title: string | null, state: string | null, 
+/**
+ * How it covers the region: `carried`, `path`, `contract`, `issue`,
+ * `member`, or `related` (only through supersession or a commit).
+ */
+relevance: string, 
+/**
+ * Not superseded.
+ */
+current: boolean, 
+/**
+ * In a state its kind closes, such as ratified.
+ */
+closed: boolean, };
+
+/**
  * Changes to the last [`State`]: each pane in `panes` is `{id, ...}` with
  * only the fields that changed (a field set to `null` went back to its
  * default, absent); `gone` panes left this client's view. `machines` and
@@ -602,7 +622,21 @@ approvals: number, needed: number,
 /**
  * The source's own command for approving it, to show.
  */
-command?: string, source: GateSource, };
+command?: string, source: GateSource, 
+/**
+ * A chant gate: the decisions it enforces, its plan and the member's
+ * last release (#617).
+ */
+why?: GateWhy, };
+
+/**
+ * A release, from `status`.
+ */
+export type GateRelease = { component: string, 
+/**
+ * When (RFC 3339), who and from which commit.
+ */
+at: string, actor: string | null, git_sha: string | null, };
 
 /**
  * Where a gate was read, which is how it's approved.
@@ -625,6 +659,30 @@ box_url: string, app: string, } | { "kind": "forge",
  * address for the PR.
  */
 api: string, url: string, number: number, };
+
+/**
+ * What someone about to approve a gate wants to know (#617): the
+ * decisions it enforces, the plan it binds and the member's last
+ * release.
+ */
+export type GateWhy = { 
+/**
+ * The decisions covering the gate's member, most relevant first. None
+ * until chant has been asked.
+ */
+decisions: Array<DecisionRef> | null, 
+/**
+ * Why they couldn't be read.
+ */
+note: string | null, 
+/**
+ * The plan the gate was reached for (`status`'s `planDigest`).
+ */
+plan_digest: string | null, 
+/**
+ * The member's latest release in the env watched.
+ */
+last_release: GateRelease | null, };
 
 /**
  * An ssh invite to a pane (M65). `token`, `command` and the pinning lines

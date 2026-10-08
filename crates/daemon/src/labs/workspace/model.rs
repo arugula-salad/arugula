@@ -12,7 +12,7 @@
 
 use arugula_proto::{
     Gate, GateSource,
-    workspace::{PinState, Record, RecordChoice, RecordEvidence},
+    workspace::{DecisionRef, GateRelease, GateWhy, PinState, Record, RecordChoice, RecordEvidence},
 };
 use serde::Serialize;
 use serde_json::Value;
@@ -104,8 +104,10 @@ function run(args) {
 
 /// `sh -c FINGERPRINT sh ROOT`: one line that changes when anything a read
 /// would see might have: the `chant/lifecycle` ref (releases and gates)
-/// first, as its own word, then a checksum of a commit, chant's other refs
-/// and the working tree (the declaration, records, member sources). About
+/// first, as its own word, then `HEAD`, then a checksum of a commit, chant's
+/// other refs and the working tree (the declaration, records, member
+/// sources). The first two words are what an intent read depends on
+/// (#617): its history and the committed records, not the working tree. About
 /// 0.01 CPU-seconds where a full read is about 7 (four chant processes,
 /// each loading chant's TypeScript through tsx), so the block polls this
 /// and reads only when it changes. It never fetches.
@@ -134,6 +136,7 @@ function run(args) {
 pub const FINGERPRINT: &str = r#"cd "$1" 2>/dev/null || { echo gone; exit 0; }
 export GIT_OPTIONAL_LOCKS=0
 printf '%s ' "$(git rev-parse -q --verify refs/heads/chant/lifecycle 2>/dev/null || echo -)"
+printf '%s ' "$(git rev-parse -q --verify HEAD 2>/dev/null || echo -)"
 if stat -c %s . >/dev/null 2>&1; then set -- -c '%y %s %n'; else set -- -f '%Fm %z %N'; fi
 { git rev-parse -q --verify HEAD; git for-each-ref --format='%(objectname) %(refname)' refs/chant refs/heads/chant/work; git status --porcelain=v1; git diff-index -p HEAD --
 git ls-files -o --exclude-standard -z | tr '\0' '\n' | head -n 1000 | tr '\n' '\0' | xargs -0 stat "$@"; } 2>/dev/null | cksum"#;
@@ -502,6 +505,13 @@ pub fn compose(raw: &Value, env: &str) -> State {
                 needed: g["needed"].as_u64().unwrap_or(1),
                 command,
                 source: GateSource::Chant { root: root.clone(), dir: m.path.clone(), machine: None },
+                // The decisions come from another read, when a gate is
+                // raised ([`intent`]).
+                why: Some(GateWhy {
+                    plan_digest: s(&g["planDigest"]),
+                    last_release: last_release(sm, &g["component"]),
+                    ..Default::default()
+                }),
             });
         }
     }
@@ -531,6 +541,112 @@ pub fn compose(raw: &Value, env: &str) -> State {
         }
     }
     st.headlined()
+}
+
+/// A member's latest release in the env `status` read (`status` lists the
+/// latest of each component): the gate's own op's when it has one, else
+/// the newest.
+fn last_release(member: &Value, op: &Value) -> Option<GateRelease> {
+    let all: Vec<&Value> = member["environments"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .flat_map(|e| e["releases"].as_array().into_iter().flatten())
+        .collect();
+    let r = all
+        .iter()
+        .find(|r| r["component"] == *op)
+        .or_else(|| all.iter().max_by_key(|r| r["timestamp"].as_str().unwrap_or("")))?;
+    Some(GateRelease {
+        component: s(&r["component"]).unwrap_or_default(),
+        at: s(&r["timestamp"]).unwrap_or_default(),
+        actor: s(&r["actor"]),
+        git_sha: s(&r["gitSha"]),
+    })
+}
+
+/// `sh -c INTENT sh ROOT CHANT DIR`: chant's intent graph over a member's
+/// directory (`graph --intent`, chant 0.102 and newer), the decisions
+/// covering it ranked by `why`. It runs `git log` over the directory, so
+/// it's read only when a gate is raised or a member card is opened, and
+/// kept until the fingerprint moves (#617).
+pub const INTENT: &str = r#"cd "$1" 2>/dev/null || exit 0
+exec "$2" workspace graph --intent "$3" --json"#;
+
+/// The first chant whose intent read has `why`.
+pub const INTENT_FLOOR: &str = "0.102.0";
+
+/// What a member's intent read says, for its gate and card.
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct Intent {
+    /// Most relevant first (`why.decisions`), current before superseded.
+    pub decisions: Vec<DecisionRef>,
+    /// Commits that changed the member while no decision constrained it
+    /// (`intent-commit-undecided`).
+    pub undecided: usize,
+    /// The agent runs that made commits there, newest first.
+    pub runs: Vec<String>,
+    /// How long chant took.
+    pub ms: u64,
+}
+
+/// A member's intent document as [`Intent`], or chant's reason it isn't one.
+pub fn intent(doc: &Value, ms: u64) -> Result<Intent, String> {
+    if !doc.is_object() {
+        return Err("chant said nothing readable about the decisions".into());
+    }
+    if let Some(e) = doc["error"].as_object() {
+        let m = e.get("message").and_then(Value::as_str).unwrap_or_default();
+        let c = e.get("code").and_then(Value::as_str).unwrap_or_default();
+        return Err(if m.is_empty() { c.to_owned() } else { format!("{m} ({c})") });
+    }
+    match doc["contract"].as_u64() {
+        Some(CONTRACT) => {}
+        n => return Err(format!("the intent read names contract {n:?}; this Arugula reads contract {CONTRACT}")),
+    }
+    let want = schema_id("intent");
+    if let Some(other) = doc["$schema"].as_str().filter(|s| *s != want) {
+        return Err(format!("the intent read follows {other}, not {want}"));
+    }
+    let nodes = doc["nodes"].as_array().map(Vec::as_slice).unwrap_or_default();
+    let node = |id: &str| nodes.iter().find(|n| n["id"] == id);
+    let of_kind = |k: &'static str| nodes.iter().filter(move |n| n["kind"] == k);
+    let decision = |n: &Value, relevance: String, current: bool| DecisionRef {
+        id: s(&n["record"]).unwrap_or_default(),
+        title: s(&n["title"]),
+        state: s(&n["state"]),
+        relevance,
+        current,
+        closed: n["closed"].as_bool().unwrap_or(false),
+    };
+    // chant's own ranking; a document without `why` (before 0.102) in the
+    // graph's order, current first.
+    let decisions = match doc["why"]["decisions"].as_array() {
+        Some(ranked) => ranked
+            .iter()
+            .filter_map(|w| {
+                let n = node(w["decision"].as_str()?)?;
+                Some(decision(n, s(&w["relevance"]).unwrap_or_default(), w["current"].as_bool().unwrap_or(true)))
+            })
+            .collect(),
+        None => {
+            let mut all: Vec<DecisionRef> = of_kind("decision")
+                .map(|n| {
+                    let current = n["supersededBy"].is_null();
+                    let by = n["constrains"].as_array().and_then(|c| c.first()).and_then(|c| s(&c["granularity"]));
+                    decision(n, by.unwrap_or_else(|| "related".into()), current)
+                })
+                .collect();
+            all.sort_by_key(|d| !d.current);
+            all
+        }
+    };
+    Ok(Intent {
+        decisions,
+        undecided: of_kind("finding").filter(|f| f["code"] == "intent-commit-undecided").count(),
+        runs: of_kind("run").filter_map(|r| s(&r["run"])).collect(),
+        ms,
+    })
 }
 
 /// The strings in a list, or in each object's `key` (a list of either).
@@ -656,6 +772,20 @@ impl State {
                     g.needed,
                     g.command.as_deref().unwrap_or("")
                 );
+                if let Some(why) = &g.why {
+                    for d in why.decisions.iter().flatten().filter(|d| d.governs()) {
+                        out += &format!("    enforces {} {}\n", d.id, d.title.as_deref().unwrap_or(""));
+                    }
+                    if let Some(n) = &why.note {
+                        out += &format!("    decisions: {n}\n");
+                    }
+                    if let Some(p) = &why.plan_digest {
+                        out += &format!("    plan {p}\n");
+                    }
+                    if let Some(r) = &why.last_release {
+                        out += &format!("    last release {} at {}\n", r.component, r.at);
+                    }
+                }
             }
         }
         out += &format!("\nmembers ({})\n", self.members.len());
@@ -817,6 +947,84 @@ mod tests {
         assert_eq!(d.evidence.iter().find_map(|e| e.pin), Some(PinState::Drifted));
         assert_eq!(d.attested, Some(true));
         assert_eq!(d.choice, None);
+    }
+
+    #[test]
+    fn a_gate_carries_its_plan_and_the_member_s_last_release() {
+        // #617: status's planDigest, and the member's latest release in the
+        // env read (its own op's when it has one).
+        let mut raw = fixture(include_str!("fixtures/reference-raw.json"));
+        let delivery = &mut raw["reads"]["status"]["json"]["members"][1];
+        delivery["gates"][0]["planDigest"] = "sha256:ab12".into();
+        let release = |component: &str, at: &str| {
+            serde_json::json!({ "component": component, "digest": "d", "gitSha": "1234abcd", "inputDigest": null,
+                "runId": "r", "timestamp": at, "actor": "jake", "flags": [], "plan": null })
+        };
+        delivery["environments"][0]["releases"] =
+            serde_json::json!([release("deploy", "2026-10-03T00:00:00Z"), release("ship", "2026-10-01T00:00:00Z")]);
+        let st = compose(&raw, "local");
+        let why = st.gates[0].why.clone().unwrap();
+        assert_eq!(why.plan_digest.as_deref(), Some("sha256:ab12"));
+        // release has none of its own: the newest.
+        let last = why.last_release.unwrap();
+        assert_eq!((last.component.as_str(), last.at.as_str()), ("deploy", "2026-10-03T00:00:00Z"));
+        assert_eq!((last.actor.as_deref(), last.git_sha.as_deref()), (Some("jake"), Some("1234abcd")));
+        // Not read yet: no decisions, and no note.
+        assert_eq!((why.decisions, why.note), (None, None));
+        // With its own op's release, that one.
+        for g in raw["reads"]["status"]["json"]["members"][1]["gates"].as_array_mut().unwrap() {
+            g["state"] = "pending".into();
+        }
+        let st = compose(&raw, "local");
+        let ship = st.gates.iter().find(|g| g.op == "ship").unwrap();
+        assert_eq!(ship.why.as_ref().unwrap().last_release.as_ref().unwrap().component, "ship");
+        // No releases: none.
+        let st = compose(&fixture(include_str!("fixtures/reference-raw.json")), "local");
+        assert_eq!(st.gates[0].why.as_ref().unwrap().last_release, None);
+    }
+
+    #[test]
+    fn the_decisions_covering_a_member_as_chant_ranks_them() {
+        // Real `chant workspace graph --intent delivery --json` (0.108.1) on
+        // the e2e toy with three decisions: toy-001 constrains
+        // member:delivery and supersedes toy-000; toy-002, proposed,
+        // constrains one file in it.
+        let doc = fixture(include_str!("fixtures/intent-delivery.json"));
+        let i = intent(&doc, 1400).unwrap();
+        let ids: Vec<(&str, &str, bool)> =
+            i.decisions.iter().map(|d| (d.id.as_str(), d.relevance.as_str(), d.current)).collect();
+        assert_eq!(ids, [("toy-001", "member", true), ("toy-002", "related", true), ("toy-000", "member", false)]);
+        let first = &i.decisions[0];
+        assert_eq!(
+            (first.title.as_deref(), first.state.as_deref(), first.closed),
+            (Some("A person approves each ship"), Some("decided"), false)
+        );
+        // Only toy-001 governs the member: current, and covering it.
+        assert_eq!(i.decisions.iter().filter(|d| d.governs()).map(|d| d.id.as_str()).collect::<Vec<_>>(), ["toy-001"]);
+        assert_eq!(i.undecided, 2);
+        assert!(i.runs.is_empty());
+        assert_eq!(i.ms, 1400);
+
+        // A chant without `why`: the graph's decisions, current first.
+        let mut old = doc.clone();
+        old.as_object_mut().unwrap().remove("why");
+        let i = intent(&old, 0).unwrap();
+        assert_eq!(i.decisions.iter().map(|d| d.id.as_str()).collect::<Vec<_>>(), ["toy-001", "toy-002", "toy-000"]);
+        assert!(!i.decisions[2].current);
+    }
+
+    #[test]
+    fn an_intent_read_that_fails_says_why() {
+        let failure = serde_json::json!({
+            "$schema": "https://intentius.io/chant/schemas/workspace/intent/v1/intent.schema.json",
+            "contract": 1, "chant": "0.108.1", "error": { "code": "not-a-git-repository", "message": "not in git" },
+        });
+        assert_eq!(intent(&failure, 0).unwrap_err(), "not in git (not-a-git-repository)");
+        assert!(intent(&Value::Null, 0).is_err());
+        let mut other = fixture(include_str!("fixtures/intent-delivery.json"));
+        other["contract"] = 2.into();
+        assert!(intent(&other, 0).unwrap_err().contains("contract"));
+        assert!(INTENT.contains(r#"workspace graph --intent "$3" --json"#));
     }
 
     #[test]

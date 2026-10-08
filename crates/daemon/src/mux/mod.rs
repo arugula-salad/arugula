@@ -1000,6 +1000,15 @@ impl Daemon {
                     self.set_attention_with(pane, state, &why, Some(reason));
                 }
             }
+            #[cfg(feature = "labs")]
+            What::Update(reason) => {
+                if attention::updates(self.attention.get(&pane).copied(), self.reasons.get(&pane), &reason) {
+                    let state = Attention::NeedsInput;
+                    self.reasons.insert(pane, reason);
+                    self.emit(Some(pane), EventKind::Attention { state, reason: self.live_reason(pane) });
+                    self.touch(pane);
+                }
+            }
             What::Clear(kind) => {
                 // A question held on the block still wants you.
                 if self.asks.contains_key(&pane) && self.reasons.get(&pane).is_some_and(|r| r.kind == kind) {

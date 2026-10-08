@@ -204,6 +204,10 @@ pub enum What {
     /// A block asks for attention with a reason of its own (M28: an
     /// editor's debugger paused, say).
     Reason(arugula_proto::Attention, arugula_proto::Reason),
+    /// ...or says more about it, if that's still why it wants you, asking
+    /// nothing again (#617: a workspace gate's decisions).
+    #[cfg(feature = "labs")]
+    Update(arugula_proto::Reason),
     /// ...or lets go of it, if that's still why it wants you.
     Clear(arugula_proto::ReasonKind),
     /// What an editor sends its followers (M28).

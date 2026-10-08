@@ -11,6 +11,7 @@ import type { Client } from "../client";
 import { EXPIRE_TITLE, gateKey, type Gate, type PaneId, type RunRequest, type WorkspaceRecord } from "../proto";
 import { openWorkspace } from "./open-labs";
 import type { BlockRenderer, BlockView } from "./view";
+import { ago, decisionLine, GateWhy } from "../ui/gate-why";
 
 interface Diagnostic { rule: string; severity: string; message: string; file: string | null; line: number | null }
 interface Member {
@@ -78,16 +79,6 @@ function Principals({ client, id, s, close }: { client: Client; id: PaneId; s: W
       </div>
     </div>
   );
-}
-
-/** "3m ago", "2h ago" from an RFC 3339 time. */
-function ago(t: string | undefined): string {
-  if (!t) return "";
-  const s = Math.max(0, (Date.now() - Date.parse(t)) / 1000);
-  if (s < 60) return "just now";
-  if (s < 3600) return `${Math.round(s / 60)}m ago`;
-  if (s < 86400) return `${Math.round(s / 3600)}h ago`;
-  return `${Math.round(s / 86400)}d ago`;
 }
 
 /** What to do about a failure, by chant's reason code (or the reader's). */
@@ -256,6 +247,7 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
                       {g.since && ` · ${ago(g.since)}`}
                       {g.expires && ` · expires ${new Date(g.expires).toLocaleString()}`}
                     </div>
+                    <GateWhy gate={g} />
                   </div>
                   <div class="ws-actions">
                     {mayApprove && (
@@ -390,7 +382,11 @@ function plain(s: WorkspaceState | null): string {
   if (!s) return "";
   const lines = [`${s.name ?? "workspace"} ${s.root}`];
   if (s.error) lines.push(s.error);
-  for (const g of s.gates) lines.push(`waiting: ${g.member}: ${g.op} at gate ${g.gate}`);
+  for (const g of s.gates) {
+    lines.push(`waiting: ${g.member}: ${g.op} at gate ${g.gate}`);
+    const d = decisionLine(g);
+    if (d) lines.push(`  ${d}`);
+  }
   for (const m of s.members) lines.push(`${m.name} ${m.kind} ${m.dir}`);
   for (const r of s.records) lines.push(`${r.id} ${r.state ?? ""} ${r.title ?? ""}`);
   return lines.join("\n");

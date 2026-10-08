@@ -1127,6 +1127,7 @@ mod wire {
                 needed: 1,
                 command: None,
                 source: GateSource::Forge { api: "https://git.example/api/v1".into(), url: "u".into(), number: 7 },
+                why: None,
             };
             let w = Written {
                 sent: "an approval".into(),

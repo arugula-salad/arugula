@@ -343,6 +343,11 @@ pub struct Gate {
     #[cfg_attr(feature = "ts", ts(optional))]
     pub command: Option<String>,
     pub source: GateSource,
+    /// A chant gate: the decisions it enforces, its plan and the member's
+    /// last release (#617).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub why: Option<workspace::GateWhy>,
 }
 
 /// Where a gate was read, which is how it's approved.

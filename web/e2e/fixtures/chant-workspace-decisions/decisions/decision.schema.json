@@ -1,0 +1,512 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "urn:intentius:chant:decision:1",
+  "title": "Decision file front matter",
+  "description": "The front matter of one decision file in docs/design/decisions/. The format is described in README.md beside this file. Values stay within what YAML and JSON share, so a file can be sealed later (#2524 D4).",
+  "type": "object",
+  "additionalProperties": false,
+  "patternProperties": {
+    "^x-": {}
+  },
+  "required": [
+    "schema",
+    "id",
+    "title",
+    "state",
+    "area",
+    "source",
+    "question",
+    "options",
+    "choice",
+    "rejected",
+    "supersedes",
+    "evidence",
+    "decided_by",
+    "decided_on",
+    "reviews",
+    "constrains"
+  ],
+  "properties": {
+    "schema": {
+      "description": "Format version of this file. Bumped only by a change to this schema.",
+      "const": 1
+    },
+    "id": {
+      "description": "Stable id: a lowercase prefix per epic, a dash and three or more digits. Never reused, never renumbered.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]{0,15}-[0-9]{3,}$"
+    },
+    "title": {
+      "description": "Short topic, as the source table names it, without revision markers.",
+      "type": "string",
+      "minLength": 1
+    },
+    "state": {
+      "description": "Lifecycle state, from #2555.",
+      "enum": ["proposed", "decided", "ratified", "superseded", "withdrawn"]
+    },
+    "area": {
+      "description": "The design section the decision belongs to, such as \"D5\". Groups the review queue. Null only in an importer draft.",
+      "type": ["string", "null"]
+    },
+    "source": {
+      "description": "Where the decision was first recorded: a row of an issue's decisions table, the workspace itself when no issue holds the decision (#2654), or a harness session when neither does (#2708). Each form may also say where the proposal came from: the fields via, client, harness, model, session, turns and transcript, which the kind opts in to with source: { field: \"source\" }.",
+      "oneOf": [{ "$ref": "#/definitions/sourceIssue" }, { "$ref": "#/definitions/sourceWorkspace" }, { "$ref": "#/definitions/sourceHarness" }]
+    },
+    "question": {
+      "description": "One sentence. Null only in an importer draft.",
+      "type": ["string", "null"]
+    },
+    "options": {
+      "description": "Every option considered, the chosen one included.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/option" }
+    },
+    "choice": {
+      "description": "The chosen option and why. Null in state proposed or withdrawn.",
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["option", "reason"],
+          "properties": {
+            "option": { "$ref": "#/definitions/optionId" },
+            "reason": { "type": ["string", "null"] }
+          }
+        }
+      ]
+    },
+    "rejected": {
+      "description": "The options not chosen, kept on the record.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["option", "why"],
+        "properties": {
+          "option": { "$ref": "#/definitions/optionId" },
+          "why": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "supersedes": {
+      "description": "Earlier choices this decision replaced: another decision file, or an option chosen in an earlier revision of the same design before decision files existed.",
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["decision"],
+            "properties": {
+              "decision": { "$ref": "#/definitions/decisionId" }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["revision", "option"],
+            "properties": {
+              "revision": { "type": "string", "pattern": "^v[0-9]+$" },
+              "option": { "$ref": "#/definitions/optionId" }
+            }
+          }
+        ]
+      }
+    },
+    "remediates": {
+      "description": "Closed decisions this one fixes the consequence of, without replacing them: each names the decision by id and may say why (#2774). The named decision's status never changes because of a remediates link; a decision still open is amended instead, never remediated. Optional: most decisions remediate nothing.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["decision"],
+        "properties": {
+          "decision": { "$ref": "#/definitions/decisionId" },
+          "reason": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "evidence": {
+      "description": "The research, audits, design sections and workspace files behind the decision. A public link carries a url; a file in the workspace carries a path and the hash of its bytes (#2549). May be empty when the decision cites nothing; chant workspace records then warns decision-no-evidence (#2654).",
+      "type": "array",
+      "items": {
+        "oneOf": [{ "$ref": "#/definitions/evidenceLink" }, { "$ref": "#/definitions/evidencePin" }]
+      }
+    },
+    "decided_by": {
+      "description": "Who chose. A forge login. Null in state proposed or withdrawn.",
+      "type": ["string", "null"]
+    },
+    "proposed_by": {
+      "description": "Who proposed this decision: the name chant workspace records new --by or the MCP records-new tool's by wrote, for a decision that opened proposed (#2756). Null or absent when nobody named a proposer, or the decision opened straight into a later state. Never cleared by a later decide, ratify or supersede.",
+      "type": ["string", "null"]
+    },
+    "decided_on": {
+      "description": "When the choice was made, as YYYY-MM-DD. Quoted, so YAML reads it as a string.",
+      "type": ["string", "null"],
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    },
+    "reviews": {
+      "description": "Each reviewer's verdict. Empty until a review happens.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["reviewer", "verdict", "on"],
+        "properties": {
+          "reviewer": { "type": "string", "minLength": 1 },
+          "verdict": { "enum": ["agree", "dissent", "abstain"] },
+          "note": { "type": ["string", "null"] },
+          "on": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+          "digest": {
+            "description": "The digest of the record text the verdict judged: the lowercase hex SHA-256 of the file with LF line endings and without its reviews block (#2672). A verdict whose digest is not the record's digest now stops counting toward the quorum. A verdict without one still counts, with the warning review-undigested.",
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "session": {
+            "description": "The id of the review session the verdict was given in, as the session names it (#2650 C10). chant workspace records review --session writes it (#2670).",
+            "type": "string",
+            "minLength": 1
+          },
+          "seal": {
+            "description": "The reviewer's ssh signature over the verdict (#2687): the bytes <id>\\n<digest>\\n<verdict>\\n<reviewer>\\n<on>, in the ssh-keygen namespace chant-review. chant workspace records review --sign writes it. Once a signers file is active at base, a verdict counts toward the quorum only when its seal verifies for its reviewer against that file. A seal needs a digest.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["signer", "key", "signature"],
+            "properties": {
+              "signer": { "description": "Who signed: the reviewer, as the signers file names them.", "type": "string", "minLength": 1 },
+              "key": { "description": "The signing key's fingerprint. Reported, never trusted: the signature is the proof.", "type": "string", "pattern": "^SHA256:[A-Za-z0-9+/]+=*$" },
+              "signature": { "description": "The armored ssh signature, as ssh-keygen -Y sign prints it.", "type": "string", "pattern": "^-----BEGIN SSH SIGNATURE-----\\n" }
+            }
+          },
+          "proposes": {
+            "description": "With a dissent, the id of a new proposed decision the reviewer opened.",
+            "$ref": "#/definitions/decisionId"
+          },
+          "addressed_by": {
+            "description": "With a dissent, where the decider or the group answered the concern: a decision id, an issue or pull request (owner/repo#n) or an https link. An answer addresses a concern without necessarily accommodating it (RFC 7282, section 3).",
+            "anyOf": [
+              { "$ref": "#/definitions/decisionId" },
+              { "$ref": "#/definitions/issueRef" },
+              { "type": "string", "pattern": "^https://" }
+            ]
+          },
+          "withdrawn_on": {
+            "description": "With a dissent, the date its author withdrew the concern. Only the reviewer who raised a concern withdraws it.",
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+          }
+        },
+        "dependencies": { "seal": ["digest"] },
+        "if": {
+          "required": ["verdict"],
+          "properties": { "verdict": { "const": "dissent" } }
+        },
+        "then": {
+          "description": "A dissent needs a reason: the dissent by {reviewer} has no note.",
+          "required": ["note"],
+          "properties": { "note": { "type": "string", "pattern": "\\S" } }
+        },
+        "else": {
+          "description": "Only a dissent is a concern: the {verdict} by {reviewer} cannot carry addressed_by or withdrawn_on.",
+          "properties": { "addressed_by": false, "withdrawn_on": false }
+        }
+      }
+    },
+    "seal": {
+      "description": "The author's ssh signature over the record (#2688): the bytes <id>\\n<digest>\\n<decided_by>\\n<state>, in the ssh-keygen namespace chant-record, where digest is the record's digest, which leaves this field and reviews out. chant workspace records new --sign and amend --sign write it, and an amendment without --sign removes it. Optional: under a signers file at base, a record with decided_by and no seal that verifies is read with the warning record-unattested.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["signer", "key", "signature"],
+      "properties": {
+        "signer": { "description": "Who signed: decided_by, as the signers file names them.", "type": "string", "minLength": 1 },
+        "key": { "description": "The signing key's fingerprint. Reported, never trusted: the signature is the proof.", "type": "string", "pattern": "^SHA256:[A-Za-z0-9+/]+=*$" },
+        "signature": { "description": "The armored ssh signature, as ssh-keygen -Y sign prints it.", "type": "string", "pattern": "^-----BEGIN SSH SIGNATURE-----\\n" }
+      }
+    },
+    "closed_digest": {
+      "description": "The decision's whole-file seal (#2546, ws-063): sha256: and the lowercase hex SHA-256 of the JCS form of {body, core}, where core is this front matter without closed_digest and body is the text below it, line endings LF. chant workspace records amend and new write it when the decision enters a closed state (ratified or superseded), and records reports record-seal-mismatch if the file changes afterwards. It covers the reviews, the author seal and the state, which the review digest leaves out, and the digest leaves this field out.",
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "constrains": {
+      "description": "What this decision governs: issues (owner/repo#n), other decisions (their ids), workspace members (member:<name>), contracts (contract:<id>, #3148) or files and directories in the workspace (path:<path>, the grammar of an evidence path, #2549). At least one entry: a decision that governs nothing is refused.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "pattern": "^([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[0-9]+|[a-z][a-z0-9]{0,15}-[0-9]{3,}|member:[a-z0-9][a-z0-9-]{0,39}|contract:[A-Za-z0-9][A-Za-z0-9._-]{0,99}|path:(?!/)(?!(?:[^/]*/)*\\.{1,2}(?:/|$))(?!.*//)[^\\\\\\u0000-\\u001f]*[^/\\\\\\u0000-\\u001f])$"
+      }
+    },
+    "out_of_scope": {
+      "description": "Workspace paths this decision puts out of scope (#2773): files or directories, from the workspace root, that a change carrying out the decision must not touch. chant workspace check --changes reports a change to one as change-out-of-scope while the decision is in hand, and the decision does not cover it even where its constrains would. Optional.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^(?!/)(?!(?:[^/]*/)*\\.{1,2}(?:/|$))(?!.*//)[^\\\\\\u0000-\\u001f]*[^/\\\\\\u0000-\\u001f]$"
+      },
+      "uniqueItems": true
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "state": { "enum": ["decided", "ratified", "superseded"] } }
+      },
+      "then": {
+        "properties": {
+          "area": { "type": "string" },
+          "question": { "type": "string", "minLength": 1 },
+          "choice": {
+            "type": "object",
+            "properties": { "reason": { "type": "string", "minLength": 1 } }
+          },
+          "rejected": {
+            "items": { "properties": { "why": { "type": "string", "minLength": 1 } } }
+          },
+          "options": {
+            "items": {
+              "properties": {
+                "how": { "type": "string", "minLength": 1 },
+                "tradeoff": { "type": "string", "minLength": 1 }
+              }
+            }
+          },
+          "decided_by": { "type": "string" },
+          "decided_on": { "type": "string" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "state": { "enum": ["proposed", "withdrawn"] } }
+      },
+      "then": {
+        "properties": { "choice": { "type": "null" } }
+      }
+    }
+  ],
+  "definitions": {
+    "workspacePath": {
+      "description": "A path from the workspace root, with / separators: no leading /, no . or .. segment, no empty segment, no backslash and no trailing /.",
+      "type": "string",
+      "pattern": "^(?!/)(?!(?:[^/]*/)*\\.{1,2}(?:/|$))(?!.*//)[^\\\\\\u0000-\\u001f]*[^/\\\\\\u0000-\\u001f]$"
+    },
+    "evidenceLink": {
+      "description": "A public link.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "url"],
+      "properties": {
+        "title": { "type": "string", "minLength": 1 },
+        "url": { "type": "string", "pattern": "^https://" },
+        "as_of": {
+          "description": "When the linked text was read, as an ISO 8601 timestamp. Lets a reader flag evidence that changed afterwards.",
+          "type": ["string", "null"]
+        },
+        "sha256": {
+          "description": "Hex SHA-256 of the linked content, once evidence is pinned by hash (#2555). Null until then.",
+          "type": ["string", "null"],
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "evidencePin": {
+      "description": "A file in the workspace, pinned by the hash of its bytes (#2524 D18, #2549). chant workspace records reports a file that changed or went missing since.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "path", "sha256"],
+      "properties": {
+        "title": { "type": "string", "minLength": 1 },
+        "path": {
+          "description": "The file, from the workspace root. It sits inside a member, such as design/screens/home.json.",
+          "$ref": "#/definitions/workspacePath"
+        },
+        "sha256": {
+          "description": "Hex SHA-256 of the file's bytes when the decision was written. chant workspace records pin <path> prints it.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "as_of": {
+          "description": "When the file was read, as an ISO 8601 timestamp.",
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "sourceIssue": {
+      "description": "A row of the decisions table in an issue.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["issue", "row"],
+      "properties": {
+        "issue": { "$ref": "#/definitions/issueRef" },
+        "row": {
+          "description": "The row's topic cell, verbatim, including any revision marker.",
+          "type": "string"
+        },
+        "revision": {
+          "description": "The design revision that last changed this row, such as \"v8\". Null when the row carries no marker.",
+          "type": ["string", "null"]
+        },
+        "session": { "$ref": "#/definitions/sourceSession" },
+        "via": { "$ref": "#/definitions/sourceVia" },
+        "client": { "$ref": "#/definitions/sourceClient" },
+        "harness": { "$ref": "#/definitions/sourceHarnessId" },
+        "model": { "$ref": "#/definitions/sourceModel" },
+        "turns": { "$ref": "#/definitions/sourceTurns" },
+        "transcript": { "$ref": "#/definitions/sourceTranscript" }
+      }
+    },
+    "sourceWorkspace": {
+      "description": "A decision made in the workspace, such as in a product's own design flow, with no issue behind it (#2654).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "member"],
+      "properties": {
+        "kind": { "const": "workspace" },
+        "member": {
+          "description": "The workspace member the decision was made in, by its name in the declaration.",
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{0,39}$"
+        },
+        "session": {
+          "description": "The id of the session the decision was made in, as the member names it, or the harness's session with the chant session record it was held in. Null or absent when there was none.",
+          "$ref": "#/definitions/sourceSession"
+        },
+        "issue": {
+          "description": "An issue the decision relates to, when there is one.",
+          "$ref": "#/definitions/issueRef"
+        },
+        "via": { "$ref": "#/definitions/sourceVia" },
+        "client": { "$ref": "#/definitions/sourceClient" },
+        "harness": { "$ref": "#/definitions/sourceHarnessId" },
+        "model": { "$ref": "#/definitions/sourceModel" },
+        "turns": { "$ref": "#/definitions/sourceTurns" },
+        "transcript": { "$ref": "#/definitions/sourceTranscript" }
+      }
+    },
+    "sourceHarness": {
+      "description": "A decision proposed in a harness session, with no issue row or workspace member behind it (#2708). It says how it arrived, in via, and may say the rest of where the proposal came from.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["via"],
+      "properties": {
+        "issue": {
+          "description": "An issue the decision relates to, when there is one.",
+          "$ref": "#/definitions/issueRef"
+        },
+        "session": { "$ref": "#/definitions/sourceSession" },
+        "via": { "$ref": "#/definitions/sourceVia" },
+        "client": { "$ref": "#/definitions/sourceClient" },
+        "harness": { "$ref": "#/definitions/sourceHarnessId" },
+        "model": { "$ref": "#/definitions/sourceModel" },
+        "turns": { "$ref": "#/definitions/sourceTurns" },
+        "transcript": { "$ref": "#/definitions/sourceTranscript" }
+      }
+    },
+    "sourceVia": {
+      "description": "How the record reached the workspace: cli, a person or script at chant workspace records new; mcp, a harness through chant serve mcp, which fills this and client itself; harvest, a transcript read after the fact. A harvested decision is written proposed, and a person decides it. Data about the proposal, not trust.",
+      "enum": ["cli", "mcp", "harvest"]
+    },
+    "sourceClient": {
+      "description": "What wrote the record: the MCP client's clientInfo, or the CLI.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 }
+      }
+    },
+    "sourceHarnessId": {
+      "description": "The harness the decision was proposed in, such as claude-code, codex, gemini-cli, opencode, fountain or hud.",
+      "type": "string",
+      "minLength": 1
+    },
+    "sourceModel": {
+      "description": "The model id the harness reports.",
+      "type": "string",
+      "minLength": 1
+    },
+    "sourceSession": {
+      "description": "The session the decision was made in: its id as a string, or an object with the harness's session or conversation id and the chant session record it was held in (#2697). Null when there was none.",
+      "oneOf": [
+        { "type": "string", "minLength": 1 },
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "id": { "description": "The harness's session or conversation id.", "type": "string", "minLength": 1 },
+            "record": { "description": "The id of the chant session record the decision was held in.", "type": "string", "minLength": 1 }
+          }
+        }
+      ]
+    },
+    "sourceTurns": {
+      "description": "The turns of the session the decision was made in, from and to, counted as the harness counts them. to is not before from.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "to"],
+      "properties": {
+        "from": { "type": "integer", "minimum": 0 },
+        "to": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "sourceTranscript": {
+      "description": "The session's transcript, pinned by a path or URI and the lowercase hex SHA-256 of its bytes, never copied into the record. A reader checks the transcript it holds is the one meant; chant workspace records warns source-transcript-drift when the file can be read here and hashes to something else. A path is absolute, starts ~/ from the home directory, or starts at the workspace root; of URIs, only file: ones are read.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sha256"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "uri": { "type": "string", "minLength": 1 },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      },
+      "oneOf": [{ "required": ["path"] }, { "required": ["uri"] }]
+    },
+    "issueRef": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[0-9]+$"
+    },
+    "decisionId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]{0,15}-[0-9]{3,}$"
+    },
+    "optionId": {
+      "type": "string",
+      "pattern": "^[a-z]$"
+    },
+    "option": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label", "how", "tradeoff"],
+      "properties": {
+        "id": { "$ref": "#/definitions/optionId" },
+        "label": {
+          "description": "The option as the source table words it, without revision markers.",
+          "type": "string",
+          "minLength": 1
+        },
+        "how": {
+          "description": "How the option works.",
+          "type": ["string", "null"]
+        },
+        "tradeoff": {
+          "description": "What choosing it costs or gains.",
+          "type": ["string", "null"]
+        },
+        "chosen_in": {
+          "description": "The earlier design revision that had chosen this option, when a later revision replaced it.",
+          "type": "string",
+          "pattern": "^v[0-9]+$"
+        }
+      }
+    }
+  }
+}

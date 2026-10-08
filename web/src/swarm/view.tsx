@@ -21,6 +21,7 @@ import { usePhone, useSubscribe } from "../ui/hooks";
 import { Field, type FieldHooks, type FieldPane, type HistoryRun, type SwarmScene } from "./field";
 import { FollowView, appName } from "./follow";
 import { DiffCard } from "../ui/diff-card";
+import { GateWhy } from "../ui/gate-why";
 import { runnerLabel, runners, subscribeRunners, watchRunners } from "../runners";
 import { activityOf, bundleOf, cardTitle, followable, GROUPINGS, groupOf, isPresence, kindOf, KINDS, REASON_COL, reasonOf, type GroupBy } from "./model";
 
@@ -762,6 +763,7 @@ function Card({
           {r.command && r.kind !== "ask" && r.kind !== "gate" && !r.headline.includes(r.command) ? <code> {r.command}</code> : null}
         </div>
       )}
+      {r.kind === "gate" && r.gate && <GateWhy gate={r.gate} />}
       {diff ? (
         <DiffCard
           key={diff.id}
