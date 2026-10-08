@@ -332,6 +332,28 @@ impl BlockCtx {
         rx.await.map_err(|_| "the daemon is stopping".to_owned())?
     }
 
+    /// The agent blocks open now, each with its config and state (#619:
+    /// which pane made a chant run, or runs as a lease's holder).
+    #[cfg_attr(not(feature = "labs"), allow(dead_code))]
+    pub async fn agents(&self) -> Vec<(PaneId, Value, Value)> {
+        let Some(cmds) = self.cmds.as_ref() else { return vec![] };
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        if cmds.send(crate::mux::Cmd::Api(crate::mux::Api::Panes(tx))).is_err() {
+            return vec![];
+        }
+        let mut out = vec![];
+        for p in rx.await.unwrap_or_default().into_iter().filter(|p| p.info.kind == BlockType::Agent) {
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            if cmds.send(crate::mux::Cmd::Api(crate::mux::Api::Block(p.info.id, tx))).is_err() {
+                break;
+            }
+            if let Some(b) = rx.await.ok().flatten() {
+                out.push((p.info.id, b.config(), b.state()));
+            }
+        }
+        out
+    }
+
     /// Start a terminal (M36: a shell in a PR's worktree).
     pub async fn run(&self, req: arugula_proto::api::RunRequest) -> Result<PaneId, String> {
         let cmds = self.cmds.as_ref().ok_or("this block can't open others")?;

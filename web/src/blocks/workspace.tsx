@@ -253,7 +253,13 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
       },
       "couldn't start the agent",
     );
-  const changes = (m: Member) => void client.openBlock({ type: "diff", config: { repo: m.path }, ...beside }, "couldn't show the changes");
+  // #619: since the member's branch left the default one, each hunk naming
+  // the decision and run that made it.
+  const changes = (m: Member) =>
+    void client.openBlock(
+      { type: "diff", config: { repo: m.path, base: true, chant: { root: s?.root, member: m.name, chant: s?.chant ?? undefined } }, ...beside },
+      "couldn't show the changes",
+    );
   const nested = (m: Member) => openWorkspace(client, m.path, id, s?.env ?? "local");
   const run = (cwd: string, op: string) =>
     void client.make("/api/run", { ...beside, cwd, command: `${s?.chant ?? "chant"} run ${op}` } satisfies RunRequest).then((e) => e && client.toast(e));

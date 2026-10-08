@@ -436,6 +436,13 @@ rest stay, each with a comment at the spot:
   or `.jsonc` (its comments and trailing commas taken out), since no read
   prints which session is bound to which member (#590), until `ls --json`
   does (INTENTIUS/chant#3615).
+- *Changes* on a member (#619) joins what chant can't know, and nothing
+  else: a run in `graph --intent`'s `why` is linked to the open agent block
+  whose recent turns wrote that run id, and a lease's holder to the open
+  agent block of the workspace running as that session. The lease itself
+  is `status`'s, matched to the walk's `work` nodes by record id, as the
+  read contract joins documents; a lease on no work item the walk names
+  isn't shown.
 - `dist/fountain.yaml` and `src/agents` are read by hand: agent-specs is a
   chant project, not a workspace, and asking chant would mean a build.
 - A forge issue keeps its own branch, not a chant work lease: the issue isn't
@@ -463,8 +470,8 @@ because chant has no document that does them (#618):
   `constrains` (chant's statement that it covers the member).
 - A lease's pane: the run whose `lease` is the lease's token, and that run's
   pane. A lease is never linked by its holder's name.
-Where: `crates/daemon/src/workspace/model.rs` (`READER`, `FINGERPRINT`, `INTENT`, `member_why`), `apps/hud.rs`, `rules.rs`, `cli/src/ask.rs`, `fountain/wear.rs`, `forge/issue.rs`.
-From: [M34](docs/plan-archive.md#m34-chant-workspace-blocks-73), #303, #305, #617, #618.
+Where: `crates/daemon/src/labs/workspace/model.rs` (`READER`, `FINGERPRINT`, `INTENT`, `member_why`) and `why.rs`, `apps/hud.rs`, `rules.rs`, `cli/src/ask.rs`, `fountain/wear.rs`, `forge/issue.rs`.
+From: [M34](docs/plan-archive.md#m34-chant-workspace-blocks-73), #303, #305, #617, #618, #619.
 
 ### Threads live on the daemon that owns the pane
 Pane and session threads are kept in `<state>/threads/`, outside the pane's

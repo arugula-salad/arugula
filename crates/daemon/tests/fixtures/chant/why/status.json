@@ -1,0 +1,95 @@
+{
+  "$schema": "https://intentius.io/chant/schemas/workspace/status/v1/status.schema.json",
+  "contract": 1,
+  "chant": "0.108.1",
+  "env": "local",
+  "compareTo": null,
+  "lifecycle": {
+    "ref": "chant/lifecycle",
+    "commit": "872ac897da3bd600b53439330e4259daa6be0400"
+  },
+  "checkout": {
+    "branch": "work",
+    "head": "25a084c6574488fae9606f5dcf8e5034122770b8",
+    "base": "ae66789f253a4c63ccdacfd7db631f7d69c08564",
+    "baseFrom": "main"
+  },
+  "workspace": {
+    "name": "why",
+    "root": ".",
+    "file": "chant.workspace.json"
+  },
+  "plantable": {
+    "plantable": false,
+    "box": null,
+    "reason": {
+      "code": "box-none",
+      "message": "no member's box block declares services, so there is no box to plant"
+    }
+  },
+  "members": [
+    {
+      "name": "app",
+      "dir": "app",
+      "kind": "other",
+      "fields": null,
+      "environments": [
+        {
+          "env": "local",
+          "ledger": {
+            "layout": "flat",
+            "path": "local/releases.jsonl",
+            "shared": false
+          },
+          "releases": [],
+          "reason": null
+        }
+      ],
+      "compare": null,
+      "readable": true,
+      "gateLedger": {
+        "layout": "flat",
+        "path": "_gates",
+        "shared": false,
+        "malformed": 0,
+        "reason": {
+          "code": "gates-no-gate-ledger",
+          "message": "_gates does not exist on chant/lifecycle: no run has reached a gate"
+        }
+      },
+      "gates": [],
+      "box": null,
+      "stewards": [],
+      "stewardReasons": []
+    }
+  ],
+  "leases": [
+    {
+      "item": "W-001",
+      "holder": "app",
+      "token": "5aa9653b-8913-41d4-9bb3-114c9f8014e4",
+      "acquiredAt": "2026-10-08T00:57:00.893Z",
+      "expiresAt": "2036-10-05T00:57:00.893Z",
+      "state": "active",
+      "ref": "refs/chant/lease/work/W-001",
+      "member": null
+    }
+  ],
+  "acceptance": [
+    {
+      "member": null,
+      "kind": "work/work.kind.mjs",
+      "item": "W-001",
+      "state": "open",
+      "met": 0,
+      "total": 1
+    }
+  ],
+  "replication": null,
+  "summary": {
+    "members": 1,
+    "released": 0,
+    "unreadable": 0,
+    "differing": null
+  }
+}

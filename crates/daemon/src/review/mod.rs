@@ -6,6 +6,9 @@
 //!   file list with +/− first, each file opening to its unified hunks;
 //! - a **file block** ([`file`]): one file, followed live, at a line.
 //!
+//! A diff block opened from a chant workspace member's card also says which
+//! decision and run made each hunk (#619), through Labs' chant workspaces.
+//!
 //! What they share, beyond the block contract:
 //!
 //! - **Live only while drawn.** They poll their host (a file's size and

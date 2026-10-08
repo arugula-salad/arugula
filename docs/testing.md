@@ -311,6 +311,7 @@ Recorded from real systems and checked in, so tests see real shapes:
 | `crates/daemon/tests/fixtures/conversations/desktop/` | the Claude desktop app's Code tab session records (#81, #83), made up from the fields S20 saw | by hand |
 | `crates/daemon/tests/fixtures/s13-*`, `s18-*` | Claude Code hook payloads | by hand |
 | `crates/daemon/tests/fixtures/fountain/`, `chant/` | Fountain API and chant output | by hand |
+| `crates/daemon/tests/fixtures/chant/why/` | `graph --intent app/server.mjs --json` and `status local --json` (chant 0.108.1) over a workspace with a committed agent run, an uncommitted line, a decision and a held lease (#619) | `make.sh DIR CHANT OUT` beside them, with the chant from `web/e2e/fixtures/chant-why` |
 | `crates/daemon/tests/fixtures/chant/audit-agents.json` | `chant audit --agents --scope system,user --format json` (chant 0.95.0), with only Claude Code configured | `chant audit --agents` with `HOME` a scratch dir holding only `.claude/CLAUDE.md` and `.claude/settings.json` |
 | `crates/proto/fixtures/` | client fixtures: what a client and the daemon said to each other ([below](#client-fixtures)) | `just record-fixtures [names]` |
 | `crates/proto/fixtures/releases/<version>/` | the client fixtures as each release shipped them | `just release-fixtures`, when releasing |
@@ -1144,8 +1145,8 @@ still has exactly one machine, and wisp lists no other
 rename), nor any once the tabs close. With a token and no wispd answering
 at 127.0.0.1:7788 it fails rather than skips.
 
-`workspace.spec.ts` needs the network on its first run, to install the
-pinned chant.
+`workspace.spec.ts` and `changes-why.spec.ts` need the network on their
+first run, to install the pinned chant.
 
 ## By hand
 

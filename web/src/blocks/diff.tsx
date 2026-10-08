@@ -3,7 +3,9 @@
 // unified hunks (highlighted with the follow view's languages and colours),
 // and tapping a line opens a file block there. Everything drawn comes from
 // the daemon's state, so a shared session's viewers see the same; only
-// editors open files and change what's open.
+// editors open files and change what's open. Opened from a chant workspace
+// member (#619), each hunk also says which decision and run made it, and a
+// run's agent pane opens from there while it's open.
 
 import { render } from "preact";
 import { useEffect, useMemo, useState } from "preact/hooks";
@@ -14,6 +16,16 @@ import type { Span } from "../swarm/code";
 
 type Line = [" " | "+" | "-" | "\\", number, number, string];
 
+/** What made a hunk's added lines, by chant's `graph --intent` (#619). */
+export interface HunkWhy {
+  uncommitted: number;
+  committed: number;
+  commits: { sha: string; subject: string | null }[];
+  runs: { id: string; agent: string | null; harness: string | null; model: string | null; pane?: PaneId }[];
+  decisions: { id: string; title: string | null; state: string | null; relevance: string }[];
+  holder?: { name: string; item: string; pane?: PaneId };
+}
+
 export interface DiffFile {
   path: string;
   old?: string;
@@ -23,7 +35,9 @@ export interface DiffFile {
   binary?: boolean;
   big?: boolean;
   open?: boolean;
-  hunks?: { at: string; lines: Line[] }[];
+  hunks?: { at: string; lines: Line[]; why?: HunkWhy }[];
+  /** #619: while its why is read, or why it couldn't be. */
+  why?: { reading?: boolean; error?: string };
 }
 
 export interface DiffState {
@@ -43,7 +57,22 @@ export interface DiffState {
   /** M45b: git run as this user (a Fountain runner's sandbox). Its files
    * aren't yours to read, so there's no *Open file*. */
   run_as?: string | null;
+  /** #619: against the default branch's merge base (a member's Changes),
+   * so another base can be picked; the branch HEAD is on when that base is
+   * HEAD itself; the base picked instead. */
+  base?: boolean;
+  on_default?: string | null;
+  picked?: string | null;
 }
+
+/** Bases offered in place of the merge base (#619). */
+const BASES: [string, string][] = [
+  ["", "since the branch point"],
+  ["HEAD~1", "the last commit"],
+  ["HEAD~3", "the last 3 commits"],
+  ["HEAD~10", "the last 10 commits"],
+];
+const OTHER_BASE = "\u0000other";
 
 /** What changed where `from` runs (its repository, on its machine), in a
  * diff block beside it. */
@@ -87,7 +116,74 @@ function useCode() {
   return mod;
 }
 
-function Hunks({ f, can, open }: { f: DiffFile; can: boolean; open?: (line: number) => void }) {
+/** How a decision bears on a hunk, in words (chant's relevance). */
+const BEARS: Record<string, string> = {
+  carried: "carried out by the change that made these lines",
+  path: "constrains this file",
+  member: "constrains the member",
+  contract: "constrains it through a contract",
+  issue: "constrains it through an issue",
+  related: "related",
+};
+
+/** #619: what made a hunk: its decision, its run (a tap opens the agent
+ * pane that made it, while that's open), or that it isn't committed yet
+ * and who holds the member's lease. */
+function Why({ w, show }: { w: HunkWhy; show?: (pane: PaneId) => void }) {
+  const pane = (p: PaneId | undefined) => (p !== undefined && show ? () => show(p) : undefined);
+  return (
+    <div class="diff-why" data-why>
+      {w.decisions.map((d) => (
+        <span key={d.id} class="diff-why-dec" data-decision={d.id} title={`${d.state ?? "?"}: ${BEARS[d.relevance] ?? d.relevance}`}>
+          <b>{d.id}</b> {d.title}
+        </span>
+      ))}
+      {!w.decisions.length && <span class="dim">No decision covers these lines.</span>}
+      {w.runs.map((r) => {
+        const go = pane(r.pane);
+        const what = [r.agent, r.harness].filter(Boolean).join(", ");
+        const label = `Run ${r.id}${what ? ` (${what})` : ""}`;
+        const title = [r.model, w.commits.map((c) => `${c.sha} ${c.subject ?? ""}`.trim()).join("\n")].filter(Boolean).join("\n");
+        return go ? (
+          <button key={r.id} class="diff-why-run" data-run={r.id} title={`${title}\nOpen the agent that made it`.trim()} onClick={go}>
+            {label}
+          </button>
+        ) : (
+          <span key={r.id} class="diff-why-run" data-run={r.id} title={title}>
+            {label}
+          </span>
+        );
+      })}
+      {w.committed > 0 && !w.runs.length && (
+        <span class="dim" title={w.commits.map((c) => c.subject ?? "").join("\n")}>
+          {w.commits.map((c) => c.sha).join(", ")}, no agent run
+        </span>
+      )}
+      {w.uncommitted > 0 && (
+        <span class="diff-why-wip" data-uncommitted={w.uncommitted}>
+          {w.committed > 0 ? `${w.uncommitted} not committed yet` : "Not committed yet"}
+          {w.holder ? (
+            <>
+              {"; "}
+              {pane(w.holder.pane) ? (
+                <button class="diff-why-run" data-holder={w.holder.name} title="Open the agent that holds it" onClick={pane(w.holder.pane)}>
+                  {w.holder.name}
+                </button>
+              ) : (
+                <b data-holder={w.holder.name}>{w.holder.name}</b>
+              )}{" "}
+              holds the lease on {w.holder.item}
+            </>
+          ) : (
+            "; nobody holds a lease on it"
+          )}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function Hunks({ f, can, open, show }: { f: DiffFile; can: boolean; open?: (line: number) => void; show?: (pane: PaneId) => void }) {
   const code = useCode();
   const lit = useMemo(() => (code && f.hunks ? f.hunks.map((h) => code.highlightLines(f.path, h.lines.map((l) => l[3]))) : null), [code, f.hunks, f.path]);
   if (f.binary) return <div class="diff-note">Binary file</div>;
@@ -96,9 +192,12 @@ function Hunks({ f, can, open }: { f: DiffFile; can: boolean; open?: (line: numb
   const gone = f.status === "deleted";
   return (
     <div class="diff-hunks">
+      {f.why?.reading && <div class="diff-note">Reading which decision and run made these lines…</div>}
+      {f.why?.error && <div class="diff-note">Can't say which decision and run made these lines: {f.why.error}</div>}
       {f.hunks.map((h, i) => (
         <div class="diff-hunk" key={`${i}:${h.at}`}>
           <div class="diff-at">{h.at}</div>
+          {h.why && <Why w={h.why} show={show} />}
           {h.lines.map((l, j) => {
             const [k, o, n, text] = l;
             const spans: Span[] | undefined = lit?.[i]?.[j] ?? undefined;
@@ -150,6 +249,28 @@ function DiffBlock({ client, id, s }: { client: Client; id: PaneId; s: DiffState
         <span class={`review-live ${s.watching ? "on" : ""}`} title={s.watching ? "Updates as files change" : "Not watching: nobody's looking"}>
           {s.watching ? "live" : "paused"}
         </span>
+        {can && s.base && (
+          <select
+            class="diff-base"
+            data-diff-base
+            title="What the working tree is compared with"
+            value={s.picked ?? ""}
+            onChange={(e) => {
+              let rev: string | null = e.currentTarget.value;
+              e.currentTarget.value = s.picked ?? "";
+              if (rev === OTHER_BASE) rev = window.prompt("Compare with which revision?", s.picked ?? "")?.trim() ?? null;
+              if (rev !== null) void client.api(`/api/blocks/${id}/call/base`, { rev }, "couldn't compare with that");
+            }}
+          >
+            {BASES.map(([rev, label]) => (
+              <option key={rev} value={rev}>
+                {label}
+              </option>
+            ))}
+            {s.picked && !BASES.some(([rev]) => rev === s.picked) && <option value={s.picked}>{s.picked}</option>}
+            <option value={OTHER_BASE}>a revision…</option>
+          </select>
+        )}
         {can && (
           <button title="Read it again" onClick={() => call("refresh")}>
             ↻
@@ -157,6 +278,11 @@ function DiffBlock({ client, id, s }: { client: Client; id: PaneId; s: DiffState
         )}
       </div>
       <div class="review-body">
+        {s.on_default && (
+          <div class="diff-note" data-on-default>
+            On {s.on_default}, so committed work on this branch isn't shown. Pick a base above to see it.
+          </div>
+        )}
         {s.error ? (
           <div class="browser-card error">
             <p>Can't show the changes</p>
@@ -189,7 +315,14 @@ function DiffBlock({ client, id, s }: { client: Client; id: PaneId; s: DiffState
                     </>
                   )}
                 </button>
-                {f.open && <Hunks f={f} can={can} open={s.run_as ? undefined : (line) => void openFile(client, id, where(f.path), line)} />}
+                {f.open && (
+                  <Hunks
+                    f={f}
+                    can={can}
+                    open={s.run_as ? undefined : (line) => void openFile(client, id, where(f.path), line)}
+                    show={(pane) => (client.info(pane) ? client.setActive(pane) : client.toast("That agent's pane is closed"))}
+                  />
+                )}
               </div>
             );
           })
@@ -200,6 +333,15 @@ function DiffBlock({ client, id, s }: { client: Client; id: PaneId; s: DiffState
   );
 }
 
+/** A hunk's why, in a line. */
+function whyText(w: HunkWhy): string {
+  const parts = w.decisions.map((d) => `${d.id} ${d.title ?? ""}`.trim());
+  if (!parts.length) parts.push("no decision");
+  for (const r of w.runs) parts.push(`run ${r.id}`);
+  if (w.uncommitted) parts.push(`${w.uncommitted} not committed${w.holder ? `, ${w.holder.name} holds ${w.holder.item}` : ""}`);
+  return `# ${parts.join("; ")}`;
+}
+
 /** The diff as text: the list, then the open files' hunks. */
 function asText(s: DiffState): string {
   const out = [`${s.name ?? ""} ${s.against} +${s.add} -${s.del}`];
@@ -207,6 +349,7 @@ function asText(s: DiffState): string {
     out.push(`${LETTER[f.status]} ${f.path} +${f.add} -${f.del}`);
     for (const h of f.hunks ?? []) {
       out.push(h.at);
+      if (h.why) out.push(whyText(h.why));
       for (const [k, , , t] of h.lines) out.push(`${k}${t}`);
     }
   }

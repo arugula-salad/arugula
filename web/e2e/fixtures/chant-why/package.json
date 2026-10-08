@@ -1,0 +1,9 @@
+{
+  "name": "arugula-e2e-chant-why",
+  "private": true,
+  "type": "module",
+  "description": "#619's e2e fixture: the chant that crates/daemon/tests/fixtures/chant/why/make.sh builds a workspace with (web/e2e/changes-why.spec.ts).",
+  "dependencies": {
+    "@intentius/chant": "0.108.1"
+  }
+}

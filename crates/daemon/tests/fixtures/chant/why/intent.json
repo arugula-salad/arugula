@@ -1,0 +1,381 @@
+{
+  "$schema": "https://intentius.io/chant/schemas/workspace/intent/v1/intent.schema.json",
+  "contract": 1,
+  "chant": "0.108.1",
+  "at": null,
+  "workspace": {
+    "name": "why",
+    "root": "."
+  },
+  "region": "region:app/server.mjs",
+  "history": {
+    "rev": "25a084c6574488fae9606f5dcf8e5034122770b8",
+    "follows": "file",
+    "shallow": false
+  },
+  "kinds": [
+    {
+      "file": "decisions/decision.kind.mjs",
+      "name": "decision",
+      "records": "decision",
+      "joins": null
+    },
+    {
+      "file": "work/work.kind.mjs",
+      "name": "work",
+      "records": "work",
+      "joins": null
+    }
+  ],
+  "nodes": [
+    {
+      "id": "region:app/server.mjs",
+      "kind": "region",
+      "path": "app/server.mjs",
+      "lines": null,
+      "member": "app",
+      "at": null,
+      "type": "file",
+      "generated": false,
+      "node": null,
+      "symbol": null
+    },
+    {
+      "id": "member:app",
+      "kind": "member",
+      "name": "app",
+      "dir": "app",
+      "memberKind": "other"
+    },
+    {
+      "id": "commit:25a084c6574488fae9606f5dcf8e5034122770b8",
+      "kind": "commit",
+      "sha": "25a084c6574488fae9606f5dcf8e5034122770b8",
+      "subject": "port: read PORT, default 8080",
+      "author": {
+        "name": "t",
+        "email": "t@example.com"
+      },
+      "date": "2026-10-01T10:04:00Z",
+      "trailers": {
+        "Chant-Agent": [
+          "app"
+        ],
+        "Chant-Run": [
+          "arugula-7-1790848800000"
+        ]
+      },
+      "pullRequest": null,
+      "signature": {
+        "level": "unattested",
+        "reason": "no signers file (.chant/allowed_signers) at base; attestation is off"
+      },
+      "lines": null,
+      "state": "decided-by-window",
+      "joins": {
+        "agent": "app",
+        "lease": null,
+        "run": "arugula-7-1790848800000",
+        "records": [],
+        "applied": null
+      }
+    },
+    {
+      "id": "commit:ae66789f253a4c63ccdacfd7db631f7d69c08564",
+      "kind": "commit",
+      "sha": "ae66789f253a4c63ccdacfd7db631f7d69c08564",
+      "subject": "the workspace",
+      "author": {
+        "name": "t",
+        "email": "t@example.com"
+      },
+      "date": "2026-10-01T09:00:00Z",
+      "trailers": {},
+      "pullRequest": null,
+      "signature": {
+        "level": "unattested",
+        "reason": "no signers file (.chant/allowed_signers) at base; attestation is off"
+      },
+      "lines": null,
+      "state": "decided-by-window",
+      "joins": {
+        "agent": null,
+        "lease": null,
+        "run": null,
+        "records": [],
+        "applied": null
+      }
+    },
+    {
+      "id": "run:arugula-7-1790848800000",
+      "kind": "run",
+      "run": "arugula-7-1790848800000",
+      "recorded": true,
+      "state": "ended",
+      "harness": {
+        "name": "claude-code",
+        "version": null
+      },
+      "model": "claude-opus-5-5",
+      "provider": null,
+      "by": null,
+      "agent": "app",
+      "unit": null,
+      "startedAt": "2026-10-01T10:00:00.000Z",
+      "endedAt": "2026-10-01T10:05:00.000Z",
+      "outcome": "end_turn",
+      "usage": {
+        "cacheReadTokens": null,
+        "cacheWriteTokens": null,
+        "inputTokens": null,
+        "outputTokens": null,
+        "turns": 1
+      },
+      "cost": null,
+      "transcript": null,
+      "instruction": {
+        "bytes": null,
+        "ref": null,
+        "sha256": "61683a8bcf46c257d8497db977e948e5e52764dc06d56d7beb0de8692181b83a"
+      },
+      "lease": null
+    },
+    {
+      "id": "record:decision/why-001",
+      "kind": "decision",
+      "recordKind": "decision",
+      "record": "why-001",
+      "path": "decisions/why-001-the-server-answers-on-one-port.md",
+      "title": "The server answers on one port",
+      "state": "decided",
+      "closed": false,
+      "valid": false,
+      "reasons": [
+        {
+          "code": "record-schema-invalid",
+          "message": "/source/issue must be string; /source/row must be string; /source must have required property 'kind'; /source must have required property 'member'; /source must NOT have additional properties; /source must NOT have additional properties; /source/issue must be string; /source must have required property 'via'; /source must NOT have additional properties; /source must NOT have additional properties; /source/issue must be string; /source must match exactly one schema in oneOf"
+        }
+      ],
+      "provenance": {
+        "level": "unattested",
+        "commit": null,
+        "reason": "no signers file (.chant/allowed_signers) at base ae66789f; attestation is off"
+      },
+      "decided_by": "t",
+      "decided_on": "2026-10-01",
+      "decidedIn": {
+        "sha": "ae66789f253a4c63ccdacfd7db631f7d69c08564",
+        "date": "2026-10-01T09:00:00Z",
+        "subject": "the workspace"
+      },
+      "reviews": {
+        "agree": 0,
+        "dissent": 0,
+        "abstain": 0,
+        "openConcerns": 0
+      },
+      "supersededBy": null,
+      "supersedes": [],
+      "constrains": [
+        {
+          "entry": "path:app/server.mjs",
+          "granularity": "path"
+        }
+      ]
+    },
+    {
+      "id": "record:work/W-001",
+      "kind": "work",
+      "recordKind": "work",
+      "record": "W-001",
+      "path": "work/W-001-greet-with-punctuation.md",
+      "title": "Greet with punctuation",
+      "state": "open",
+      "closed": false,
+      "valid": true,
+      "reasons": [],
+      "provenance": {
+        "level": "unattested",
+        "commit": null,
+        "reason": "no signers file (.chant/allowed_signers) at base ae66789f; attestation is off"
+      },
+      "owner": "t",
+      "ready": true,
+      "blockedBy": [],
+      "implements": [],
+      "needs": [],
+      "source": null,
+      "supersededBy": null,
+      "constrains": [
+        {
+          "entry": "member:app",
+          "granularity": "member"
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "id": "finding:intent-decision-provisional:1",
+      "kind": "finding",
+      "code": "intent-decision-provisional",
+      "message": "the decisions constraining app/server.mjs are decided, and none is in a closed state",
+      "concerns": [
+        "region:app/server.mjs",
+        "record:decision/why-001"
+      ],
+      "addressed": false,
+      "addressedBy": []
+    }
+  ],
+  "edges": [
+    {
+      "kind": "touched-by",
+      "from": "region:app/server.mjs",
+      "to": "commit:25a084c6574488fae9606f5dcf8e5034122770b8",
+      "lines": null
+    },
+    {
+      "kind": "touched-by",
+      "from": "region:app/server.mjs",
+      "to": "commit:ae66789f253a4c63ccdacfd7db631f7d69c08564",
+      "lines": null
+    },
+    {
+      "kind": "made-by",
+      "from": "commit:25a084c6574488fae9606f5dcf8e5034122770b8",
+      "to": "run:arugula-7-1790848800000",
+      "joinedBy": [
+        "trailer",
+        "record"
+      ]
+    },
+    {
+      "kind": "constrains",
+      "from": "record:decision/why-001",
+      "to": "region:app/server.mjs",
+      "granularity": "path",
+      "entry": "path:app/server.mjs"
+    },
+    {
+      "kind": "constrains",
+      "from": "record:work/W-001",
+      "to": "region:app/server.mjs",
+      "granularity": "member",
+      "entry": "member:app"
+    },
+    {
+      "kind": "within",
+      "from": "commit:25a084c6574488fae9606f5dcf8e5034122770b8",
+      "to": "record:decision/why-001",
+      "state": "decided-by-window"
+    },
+    {
+      "kind": "within",
+      "from": "commit:ae66789f253a4c63ccdacfd7db631f7d69c08564",
+      "to": "record:decision/why-001",
+      "state": "decided-by-window"
+    }
+  ],
+  "reasons": [],
+  "summary": {
+    "commits": 2,
+    "decisions": 1,
+    "artifacts": 0,
+    "findings": 1
+  },
+  "why": {
+    "lines": {
+      "start": 1,
+      "end": 8
+    },
+    "blame": [
+      {
+        "start": 1,
+        "end": 2,
+        "commit": "commit:ae66789f253a4c63ccdacfd7db631f7d69c08564",
+        "sha": "ae66789f253a4c63ccdacfd7db631f7d69c08564",
+        "runs": [],
+        "narrowedBy": null,
+        "joinedBy": []
+      },
+      {
+        "start": 3,
+        "end": 3,
+        "commit": "commit:25a084c6574488fae9606f5dcf8e5034122770b8",
+        "sha": "25a084c6574488fae9606f5dcf8e5034122770b8",
+        "runs": [
+          "run:arugula-7-1790848800000"
+        ],
+        "narrowedBy": "hunks",
+        "joinedBy": [
+          "trailer",
+          "record"
+        ]
+      },
+      {
+        "start": 4,
+        "end": 6,
+        "commit": "commit:ae66789f253a4c63ccdacfd7db631f7d69c08564",
+        "sha": "ae66789f253a4c63ccdacfd7db631f7d69c08564",
+        "runs": [],
+        "narrowedBy": null,
+        "joinedBy": []
+      },
+      {
+        "start": 7,
+        "end": 7,
+        "commit": null,
+        "sha": null,
+        "runs": [],
+        "narrowedBy": null,
+        "joinedBy": []
+      },
+      {
+        "start": 8,
+        "end": 8,
+        "commit": "commit:ae66789f253a4c63ccdacfd7db631f7d69c08564",
+        "sha": "ae66789f253a4c63ccdacfd7db631f7d69c08564",
+        "runs": [],
+        "narrowedBy": null,
+        "joinedBy": []
+      }
+    ],
+    "decisions": [
+      {
+        "decision": "record:decision/why-001",
+        "relevance": "path",
+        "current": true,
+        "closed": false,
+        "lines": 0
+      }
+    ],
+    "runs": [
+      {
+        "run": "run:arugula-7-1790848800000",
+        "lines": 1,
+        "commits": [
+          "commit:25a084c6574488fae9606f5dcf8e5034122770b8"
+        ],
+        "unit": null,
+        "decisions": [],
+        "joinedBy": [
+          "trailer",
+          "record"
+        ]
+      }
+    ],
+    "explained": true,
+    "gaps": [
+      {
+        "code": "intent-why-uncommitted",
+        "message": "1 line is not committed yet",
+        "lines": [
+          {
+            "start": 7,
+            "end": 7
+          }
+        ]
+      }
+    ]
+  }
+}

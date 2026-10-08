@@ -38,7 +38,7 @@ CI runs; `just e2e` drives the system Chrome
 against throwaway daemons, or `just e2e https://home.<tailnet>.ts.net`
 against the running one. `workspace.spec.ts` runs the real chant: its first run
 installs the pinned version into `web/e2e/fixtures/chant-workspace` with
-`npm ci` (CI doesn't run the browser tests; the daemon's own workspace
+`npm ci` (`changes-why.spec.ts` likewise, into `web/e2e/fixtures/chant-why`) (CI doesn't run the browser tests; the daemon's own workspace
 tests use a stand-in chant). `just screenshots` regenerates the site's images
 from a throwaway daemon with a scripted demo session, into a checkout of
 [arugula-salad/site](https://github.com/arugula-salad/site) (`../site`, or
