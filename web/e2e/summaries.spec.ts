@@ -115,7 +115,19 @@ test("a summaries-only client gets kind, project and activity as deltas, and no 
   const repo = join(dir, "work", "myrepo");
   repoPane = (await (await api("/api/run", { cwd: repo })).json()).pane;
   privatePane = (await (await api("/api/run", { cwd: repo, split: repoPane })).json()).pane;
-  await owner.evaluate(() => window.__arugula.client.intent({ op: "new_session", name: "mine", from_pane: null }));
+  // The client drops what it sends while its link is down (send()), and on
+  // a loaded runner the link can be reconnecting by now: send the intent
+  // only over an open link, again if it wasn't (#524).
+  await expect
+    .poll(() =>
+      owner.evaluate(() => {
+        const c = window.__arugula.client as unknown as { connected: boolean; link?: { open: boolean }; intent: (i: object) => void };
+        if (!c.connected || !c.link?.open) return false;
+        c.intent({ op: "new_session", name: "mine", from_pane: null });
+        return true;
+      }),
+    )
+    .toBe(true);
   await explained(owner, () => expect.poll(() => owner.evaluate(() => window.__arugula.client.state!.sessions.length)).toBe(2));
   [shared, otherPane] = await owner.evaluate((p) => {
     const c = window.__arugula.client;
