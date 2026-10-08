@@ -43,11 +43,17 @@ pub(super) async fn new_config(c: &Value, mut out: Value, dir: Option<String>) -
     let title = c["title"].as_str().map(str::trim).filter(|t| !t.is_empty()).ok_or("a new issue needs a title")?;
     match (c["repo"].as_str().map(|r| r.trim_matches('/')).filter(|r| !r.is_empty()), dir) {
         (Some(repo), dir) => {
-            if let Some(d) = dir
-                && let Some((top, host)) = clone_of(&d, Some(repo)).await
-            {
-                out["dir"] = json!(top);
-                out["host"] = json!(host);
+            if let Some(d) = dir {
+                if let Some((top, host)) = clone_of(&d, Some(repo)).await {
+                    out["dir"] = json!(top);
+                    out["host"] = json!(host);
+                } else if let Ok((_, host, _)) = remote_of(&d).await
+                    && super::github::is_github_host(&host)
+                {
+                    // As OWNER/REPO#N (M38): OWNER/REPO from a GitHub clone,
+                    // another repository's, is on GitHub.
+                    out["host"] = json!("github.com");
+                }
             }
             out["repo"] = json!(repo);
         }
@@ -729,6 +735,20 @@ mod tests {
         assert!(
             resolve_config(&json!({ "issue": "new", "title": "T" })).await.unwrap_err().contains("which repository")
         );
+        // OWNER/REPO from a clone of another repository on GitHub: GitHub's.
+        let dir = std::env::temp_dir().join(format!("arugula-new-issue-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let st = std::process::Command::new("sh")
+            .arg("-c")
+            .arg("git init -q && git remote add origin git@github.com:someone/elsewhere.git")
+            .current_dir(&dir)
+            .status()
+            .unwrap();
+        assert!(st.success());
+        let c = resolve_config(&json!({ "issue": "new", "title": "T", "repo": "o/r", "dir": dir })).await.unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!((c["provider"].as_str(), c["host"].as_str()), (Some("github"), Some("github.com")), "{c}");
         // An issue by its link, or a PR link given as an issue's.
         let c = resolve_config(&json!({ "issue": "https://git.example/o/r/issues/7" })).await.unwrap();
         assert_eq!((c["kind"].as_str(), c["number"].as_u64()), (Some("issue"), Some(7)));
