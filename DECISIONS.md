@@ -442,9 +442,13 @@ The decisions a gate enforces come from `graph --intent <member dir>`
 It's read per member with a gate waiting, outside the full read, and kept
 until `HEAD` or the lifecycle ref moves (once per gate while nobody looks): it runs `git log` over the member, about a
 second on a small repository and 40 s or more on chant's own, where the 30 s
-limit on a host command cuts it off and the card says so.
+limit on a host command cuts it off and the card says so. A member card
+opened (#618) gets the same read, and the run ledger, only while a client
+draws the block. A run's or lease's pane comes from the run id Arugula
+writes (`arugula-<pane>-<ms>`): chant knows the agent session, only
+Arugula knows the pane.
 Where: `crates/daemon/src/workspace/model.rs` (`READER`, `FINGERPRINT`, `INTENT`), `apps/hud.rs`, `rules.rs`, `cli/src/ask.rs`, `fountain/wear.rs`, `forge/issue.rs`.
-From: [M34](docs/plan-archive.md#m34-chant-workspace-blocks-73), #303, #305, #617.
+From: [M34](docs/plan-archive.md#m34-chant-workspace-blocks-73), #303, #305, #617, #618.
 
 ### Threads live on the daemon that owns the pane
 Pane and session threads are kept in `<state>/threads/`, outside the pane's

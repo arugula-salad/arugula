@@ -1,0 +1,578 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "urn:intentius:chant:work:1",
+  "title": "Work item front matter",
+  "description": "The front matter of one work item in work/ (#2683): a record in the workspace, with its dependencies inside it, that people and agents share as one queue. The Markdown body after the front matter is the description. Values stay within what YAML and JSON share.",
+  "type": "object",
+  "additionalProperties": false,
+  "patternProperties": {
+    "^x-": {}
+  },
+  "required": [
+    "schema",
+    "id",
+    "title",
+    "state",
+    "implements",
+    "needs",
+    "constrains",
+    "evidence",
+    "opened_on",
+    "source",
+    "supersedes"
+  ],
+  "properties": {
+    "schema": {
+      "description": "Format version of this file. Bumped only by a change to this schema.",
+      "const": 1
+    },
+    "id": {
+      "description": "Stable id: W, a dash and three or more digits. Never reused, never renumbered.",
+      "$ref": "#/definitions/workId"
+    },
+    "title": {
+      "description": "What the work is, in a few words.",
+      "type": "string",
+      "minLength": 1
+    },
+    "state": {
+      "description": "proposed: suggested, by an agent or a decision point's model decider, and not yet kept by a person. open: nobody has started it. in-progress: someone has. done: finished, with its proof in evidence. dropped: not going to happen. done and dropped are closed. A person keeps a proposed item by moving it to open, or drops it.",
+      "enum": [
+        "proposed",
+        "open",
+        "in-progress",
+        "done",
+        "dropped"
+      ]
+    },
+    "implements": {
+      "description": "The decisions this work carries out, by id. May be empty. chant workspace records warns work-implements-undecided when one is still proposed.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/decisionId"
+      },
+      "uniqueItems": true
+    },
+    "needs": {
+      "description": "The work items that must be done before this one is ready, by id. May be empty.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/workId"
+      },
+      "uniqueItems": true
+    },
+    "constrains": {
+      "description": "What this work touches, in the grammar a decision's constrains uses: issues (owner/repo#n), decision ids, workspace members (member:<name>) or workspace paths (path:<path>). At least one entry.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "pattern": "^([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[0-9]+|[a-z][a-z0-9]{0,15}-[0-9]{3,}|member:[a-z0-9][a-z0-9-]{0,39}|path:(?!/)(?!(?:[^/]*/)*\\.{1,2}(?:/|$))(?!.*//)[^\\\\\\u0000-\\u001f]*[^/\\\\\\u0000-\\u001f])$"
+      }
+    },
+    "out_of_scope": {
+      "description": "Workspace paths this work puts out of scope (#2773): files or directories, from the workspace root, that the change doing the work must not touch. chant workspace check --changes --work <id> reports a change to one as change-out-of-scope, and the item does not cover it even where its constrains would. Optional.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/workspacePath"
+      },
+      "uniqueItems": true
+    },
+    "evidence": {
+      "description": "The proof of done: public links, or workspace files pinned by the hash of their bytes (chant workspace records pin <path>). May be empty while the work is open; a done item with none gets the warning work-done-unpinned. An entry that names a criterion from acceptance carries the verification it is and its result, and a manual verdict names who gave it in by (#2772).",
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "$ref": "#/definitions/evidenceLink"
+          },
+          {
+            "$ref": "#/definitions/evidencePin"
+          }
+        ]
+      }
+    },
+    "proposed_by": {
+      "description": "Who proposed this work item: the name chant workspace records new --by or the MCP records-new tool's by wrote, for an item that opened proposed (#2756). Null or absent when nobody named a proposer, or the item opened straight into a later state. Never cleared when a person keeps or drops the item.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "acceptance": {
+      "description": "What done means for this item, stated up front (#2772): each criterion with an id, its text and the verification it expects. Optional; an item without it is read as before. A done item whose criterion has no evidence naming it, with result pass and the same verification, gets the warning work-acceptance-unmet, and chant workspace check fails on it (WSP117). A manual verdict counts only when its by is someone other than the owner.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/criterion"
+      }
+    },
+    "owner": {
+      "description": "Who has taken the work: a principal, such as a forge login or an agent's name. Null or absent while nobody has.",
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1
+    },
+    "contract": {
+      "description": "The contract record this item builds, by id (#3147). A kind whose work block names a contract kind reads its state into the record's contract, and warns work-contract-unknown or work-contract-undecided. Null or absent for work that builds no contract.",
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$"
+    },
+    "tier": {
+      "description": "The builder tier this item is built at, when it is fixed rather than asked of the slice-tier decision point (#3147). One of the tiers the kind's work.tier declares; another is warned work-tier-unknown. Null or absent to leave it to the point.",
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[a-z][a-z0-9-]{0,31}$"
+    },
+    "max_attempts": {
+      "description": "How many failed attempts this item gets before a runner leaves it to people, overriding the kind's work.attempts.max (#3147). chant workspace work history counts them from the item's lease history. Null or absent for the kind's default.",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1
+    },
+    "result": {
+      "description": "What the last build of the item ran under (#3147): only the lease token, which joins the item to the run record and to the commits carrying it. Build provenance (agent, model, harness, session, cost) is the run record's, never the item's.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "lease"
+      ],
+      "properties": {
+        "lease": {
+          "description": "The fencing token of the lease the build ran under.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "opened_on": {
+      "description": "When the item was written, as YYYY-MM-DD. Quoted, so YAML reads it as a string.",
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    },
+    "closed_on": {
+      "description": "When the item became done or dropped, as YYYY-MM-DD. chant workspace records warns work-closed-without-date when a closed item has none.",
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    },
+    "source": {
+      "description": "Where the work came from: a gap the intent graph reported, an issue, the workspace itself, a person's ask, or the box's intent once a person decided it.",
+      "oneOf": [
+        {
+          "$ref": "#/definitions/sourceGap"
+        },
+        {
+          "$ref": "#/definitions/sourceIssue"
+        },
+        {
+          "$ref": "#/definitions/sourceWorkspace"
+        },
+        {
+          "$ref": "#/definitions/sourceAsk"
+        },
+        {
+          "$ref": "#/definitions/sourceIntent"
+        }
+      ]
+    },
+    "supersedes": {
+      "description": "Earlier work items this one replaces. Takes effect once this item is done or dropped.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "work"
+        ],
+        "properties": {
+          "work": {
+            "$ref": "#/definitions/workId"
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "workId": {
+      "type": "string",
+      "pattern": "^W-[0-9]{3,}$"
+    },
+    "decisionId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]{0,15}-[0-9]{3,}$"
+    },
+    "issueRef": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[0-9]+$"
+    },
+    "workspacePath": {
+      "description": "A path from the workspace root, with / separators: no leading /, no . or .. segment, no empty segment, no backslash and no trailing /.",
+      "type": "string",
+      "pattern": "^(?!/)(?!(?:[^/]*/)*\\.{1,2}(?:/|$))(?!.*//)[^\\\\\\u0000-\\u001f]*[^/\\\\\\u0000-\\u001f]$"
+    },
+    "evidenceLink": {
+      "description": "A public link.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "title",
+        "url"
+      ],
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "url": {
+          "type": "string",
+          "pattern": "^https://"
+        },
+        "as_of": {
+          "description": "When the linked text was read, as an ISO 8601 timestamp. Lets a reader flag evidence that changed afterwards.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sha256": {
+          "description": "Hex SHA-256 of the linked content, once evidence is pinned by hash (#2555). Null until then.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "criterion": {
+          "description": "The acceptance criterion this evidence is for, by id (#2772).",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+        },
+        "verification": {
+          "$ref": "#/definitions/verification"
+        },
+        "result": {
+          "description": "Whether the evidence shows the criterion met.",
+          "enum": [
+            "pass",
+            "fail"
+          ]
+        },
+        "by": {
+          "description": "Who produced the evidence: the lease holder for a steward's, the person for a manual verdict.",
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "dependencies": {
+        "criterion": [
+          "verification",
+          "result"
+        ]
+      }
+    },
+    "evidencePin": {
+      "description": "A file in the workspace, pinned by the hash of its bytes. chant workspace records reports a file that changed or went missing since.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "title",
+        "path",
+        "sha256"
+      ],
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "path": {
+          "description": "The file, from the workspace root. It sits inside a member, such as design/screens/home.json.",
+          "$ref": "#/definitions/workspacePath"
+        },
+        "sha256": {
+          "description": "Hex SHA-256 of the file's bytes when the work was done. chant workspace records pin <path> prints it.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "as_of": {
+          "description": "When the file was read, as an ISO 8601 timestamp.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "criterion": {
+          "description": "The acceptance criterion this evidence is for, by id (#2772).",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+        },
+        "verification": {
+          "$ref": "#/definitions/verification"
+        },
+        "result": {
+          "description": "Whether the evidence shows the criterion met.",
+          "enum": [
+            "pass",
+            "fail"
+          ]
+        },
+        "by": {
+          "description": "Who produced the evidence: the lease holder for a steward's, the person for a manual verdict.",
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "dependencies": {
+        "criterion": [
+          "verification",
+          "result"
+        ]
+      }
+    },
+    "sourceGap": {
+      "description": "The gap the work closes, as chant workspace graph --intent reported it (#2683). The honest way to finish the work is to make the finding stop firing on the region; graph --intent and records warn work-done-gap-open on a done item whose finding still fires.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "finding",
+        "region"
+      ],
+      "properties": {
+        "finding": {
+          "description": "The finding's code: one of chant's intent finding codes, a change finding of chant workspace check --changes (#2773), or a plugin's plugin:<name>:<code>.",
+          "anyOf": [
+            {
+              "enum": [
+                "intent-commit-undecided",
+                "intent-commit-bare",
+                "intent-pin-drifted",
+                "intent-pin-missing",
+                "intent-pin-stale",
+                "intent-artifact-unpinned",
+                "intent-decision-superseded-live",
+                "intent-decision-provisional",
+                "intent-decision-contested",
+                "intent-constraint-coarse",
+                "intent-constraint-lost",
+                "intent-evidence-unpinned",
+                "intent-trailer-unverified",
+                "intent-region-unconstrained",
+                "intent-decision-unimplemented",
+                "intent-work-blocked",
+                "intent-work-open-decided-code",
+                "change-uncovered",
+                "change-out-of-scope"
+              ]
+            },
+            {
+              "type": "string",
+              "pattern": "^plugin:[^:\\s]+:[a-z0-9]+(-[a-z0-9]+)*$"
+            }
+          ]
+        },
+        "region": {
+          "description": "The region the finding fired on, as graph --intent takes it: a workspace path, path:line or path:start-end, or . for the whole workspace.",
+          "type": "string",
+          "pattern": "^(\\.|(?!/)(?!(?:[^/]*/)*\\.{1,2}(?:/|:|$))(?!.*//)[^\\\\\\u0000-\\u001f:]*[^/\\\\\\u0000-\\u001f:](:[1-9][0-9]*(-[1-9][0-9]*)?)?)$"
+        },
+        "decision": {
+          "description": "The decision the finding concerned, when it concerned one.",
+          "$ref": "#/definitions/decisionId"
+        },
+        "artifact": {
+          "description": "The artifact the finding concerned, from the workspace root, when it concerned one.",
+          "$ref": "#/definitions/workspacePath"
+        },
+        "answer": {
+          "description": "The finding-triage answer that made the finding this work item, by record id (ws-058), when a decision point triaged it.",
+          "type": "string",
+          "pattern": "^finding-triage-[0-9a-f]{12}$"
+        }
+      }
+    },
+    "sourceIssue": {
+      "description": "An issue that asked for the work.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "issue"
+      ],
+      "properties": {
+        "issue": {
+          "$ref": "#/definitions/issueRef"
+        },
+        "row": {
+          "description": "A row of the issue's table the work comes from, verbatim, when there is one.",
+          "type": "string"
+        }
+      }
+    },
+    "sourceWorkspace": {
+      "description": "Work that came up in the workspace, such as in a member's own session, with no issue behind it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "member"
+      ],
+      "properties": {
+        "kind": {
+          "const": "workspace"
+        },
+        "member": {
+          "description": "The workspace member the work came up in, by its name in the declaration.",
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{0,39}$"
+        },
+        "session": {
+          "description": "The id of the session the work came up in, as the member names it. Null or absent when there was none.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "issue": {
+          "description": "An issue the work relates to, when there is one.",
+          "$ref": "#/definitions/issueRef"
+        }
+      }
+    },
+    "sourceAsk": {
+      "description": "A person's ask, taken up as work with no gap, issue or workspace session behind it (chaff#39, chant#2851): what they said and who said it, recorded so hud's sidebar and the kit's ask flow can read it as an ordinary work record.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ask"
+      ],
+      "properties": {
+        "ask": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "said",
+            "by"
+          ],
+          "properties": {
+            "said": {
+              "description": "The person's words, verbatim.",
+              "type": "string",
+              "minLength": 1
+            },
+            "by": {
+              "description": "Who asked.",
+              "type": "string",
+              "minLength": 1
+            },
+            "at": {
+              "description": "When the ask was made, as an ISO 8601 timestamp.",
+              "type": "string"
+            },
+            "via": {
+              "description": "Where the ask came in: hud's sidebar, a shell command, or an MCP tool call.",
+              "enum": [
+                "hud",
+                "shell",
+                "mcp"
+              ]
+            },
+            "session": {
+              "description": "The id of the session the ask came up in, as the client names it. Absent when there was none.",
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    },
+    "sourceIntent": {
+      "description": "The first build of a box, opened from its intent (#3147; the box intent is #2850): the decision the box block names as its intent, once a person decided it, and their answer. Replaces studio's x-factory.intent and x-factory.question.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "intent"
+      ],
+      "properties": {
+        "intent": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "decision",
+            "answer",
+            "by"
+          ],
+          "properties": {
+            "decision": {
+              "description": "The intent's decision record, by id.",
+              "$ref": "#/definitions/decisionId"
+            },
+            "question": {
+              "description": "The question the intent asked, as its record words it.",
+              "type": "string",
+              "minLength": 1
+            },
+            "answer": {
+              "description": "The person's answer: the label of the option the decision chose, verbatim.",
+              "type": "string",
+              "minLength": 1
+            },
+            "by": {
+              "description": "Who decided it.",
+              "type": "string",
+              "minLength": 1
+            },
+            "at": {
+              "description": "When it was decided, as an ISO 8601 timestamp.",
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "criterion": {
+      "description": "One acceptance criterion.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "text",
+        "verification"
+      ],
+      "properties": {
+        "id": {
+          "description": "Stable within the item, such as AC-1. Evidence names it in criterion.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+        },
+        "text": {
+          "description": "What must be true, in a sentence.",
+          "type": "string",
+          "minLength": 1
+        },
+        "verification": {
+          "$ref": "#/definitions/verification"
+        }
+      }
+    },
+    "verification": {
+      "description": "How a criterion is verified: unit, integration or e2e by a test of that level, runtime by the running system, manual by a person other than the implementer.",
+      "enum": [
+        "unit",
+        "integration",
+        "e2e",
+        "runtime",
+        "manual"
+      ]
+    }
+  }
+}

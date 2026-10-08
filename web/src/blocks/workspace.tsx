@@ -8,16 +8,21 @@
 import { render } from "preact";
 import { useState } from "preact/hooks";
 import type { Client } from "../client";
-import { EXPIRE_TITLE, gateKey, type Gate, type PaneId, type RunRequest, type WorkspaceRecord } from "../proto";
+import { EXPIRE_TITLE, gateKey, type DecisionRef, type Gate, type Lease, type MemberWhy, type PaneId, type RunRequest, type WorkspaceRecord, type WorkspaceRun } from "../proto";
 import { openWorkspace } from "./open-labs";
 import type { BlockRenderer, BlockView } from "./view";
-import { ago, decisionLine, GateWhy } from "../ui/gate-why";
+import { ago, decisionLine, GateWhy, governs } from "../ui/gate-why";
 
 interface Diagnostic { rule: string; severity: string; message: string; file: string | null; line: number | null }
 interface Member {
   name: string; dir: string; path: string; kind: string; because: string | null; roles: string[]; nested: boolean;
   unreadable: string | null; errors: number; warnings: number; diagnostics: Diagnostic[]; releases: number; gates: number;
   agents: string[]; ops: string[];
+  /** Work leases on it (#618): from status, and once its why is read, on
+   * work items covering it. */
+  leases: Lease[];
+  /** Read while its card is open (#618). */
+  why: MemberWhy | null;
 }
 interface Read { name: string; ms: number; code: number; ok: boolean; note: string | null; reason: string | null }
 export interface WorkspaceState {
@@ -30,6 +35,8 @@ export interface WorkspaceState {
    * principal, and editors' by their Arugula name. */
   actor?: string | null;
   principals?: Record<string, string>;
+  /** hud's address, for a proposed decision's review (#618). */
+  hud?: string | null;
 }
 
 /** Editors' principals as lines, `name=principal`, and back. */
@@ -99,6 +106,99 @@ function hint(error: string, code: string | null, root: string): string | null {
   return error.startsWith("no chant.workspace.json") ? "This directory isn't in a chant workspace." : null;
 }
 
+/** "until 1:23 PM" for a time today, else the date too. */
+function until(t: string | null): string {
+  if (!t) return "";
+  const d = new Date(t);
+  return d.toDateString() === new Date().toDateString() ? d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : d.toLocaleString();
+}
+
+/** A member card's why (#618): the decisions covering it, the commits no
+ * decision covers, the leases and runs on it, each linked to its pane while
+ * that pane is open. Proposed decisions are reviewed in hud. */
+function WhyCard({ client, id, s, m, mayOpen }: { client: Client; id: PaneId; s: WorkspaceState; m: Member; mayOpen: boolean }) {
+  const w = m.why;
+  const open = (pane: number | null) => (pane !== null && client.state?.panes.some((p) => p.id === pane) ? pane : null);
+  const paneLink = (pane: number | null) => {
+    const p = open(pane);
+    return p === null ? null : (
+      <button class="link" data-why-pane={p} onClick={() => client.setActive(p)}>
+        pane %{p}
+      </button>
+    );
+  };
+  const review = async (d: DecisionRef) => {
+    let hud = s.hud ?? "";
+    if (!hud) {
+      hud = window.prompt("hud's address, where this workspace's records are reviewed", "http://localhost:")?.trim() ?? "";
+      if (!hud || !(await client.api(`/api/blocks/${id}/call/hud`, { url: hud }, "couldn't keep hud's address"))) return;
+    }
+    window.open(`${hud.replace(/\/$/, "")}/decisions#${encodeURIComponent(d.id)}`, "_blank", "noopener");
+  };
+  if (!w) return <div class="dim ws-why">Reading…</div>;
+  const current = (w.decisions ?? []).filter((d) => d.current);
+  const replaced = (w.decisions ?? []).filter((d) => !d.current);
+  const runLine = (r: WorkspaceRun) =>
+    [r.state === "running" ? "running" : r.outcome ?? r.state, r.agent && `as ${r.agent}`, r.unit, r.started_at && ago(r.started_at)].filter(Boolean).join(" · ");
+  return (
+    <div class="ws-why" data-why={m.name}>
+      <h5>Decisions</h5>
+      {w.note ? (
+        <p class="dim">{w.note}</p>
+      ) : !w.decisions ? (
+        <p class="dim">Reading the decisions…</p>
+      ) : current.length === 0 ? (
+        <p class="dim">No decision covers {m.name}.</p>
+      ) : (
+        current.map((d) => (
+          <div key={d.id} class={`ws-why-row${governs(d) ? "" : " dim"}`} data-why-decision={d.id} title={`covers ${m.name} by ${d.relevance}`}>
+            <b>{d.id}</b> <span class="ws-kind">{d.state ?? "-"}</span> {d.title}
+            {d.state === "proposed" &&
+              (s.hud || mayOpen ? (
+                <>
+                  {" "}
+                  <button class="link" data-why-review={d.id} onClick={() => void review(d)}>
+                    Review in hud
+                  </button>
+                </>
+              ) : (
+                <span class="dim"> · for review in hud</span>
+              ))}
+          </div>
+        ))
+      )}
+      {replaced.length > 0 && <p class="dim">Replaced: {replaced.map((d) => `${d.id} ${d.title ?? ""}`.trim()).join(", ")}</p>}
+      {(w.undecided ?? 0) > 0 && (
+        <p class="dim" data-why-undecided>
+          {w.undecided === 1 ? "1 commit" : `${w.undecided} commits`} changed {m.name} while no decision covered it.
+        </p>
+      )}
+      <h5>Leases</h5>
+      {m.leases.length === 0 ? (
+        <p class="dim">Nobody holds a lease on its work.</p>
+      ) : (
+        m.leases.map((l) => (
+          <div key={l.item} class="ws-why-row" data-why-lease={l.item}>
+            <b>{l.item}</b> held by {l.holder} · {l.state === "active" ? `until ${until(l.expires_at)}` : l.state} {paneLink(l.pane)}
+          </div>
+        ))
+      )}
+      <h5>Runs</h5>
+      {w.runs_note ? (
+        <p class="dim">{w.runs_note}</p>
+      ) : w.runs.length === 0 ? (
+        <p class="dim">No agent runs recorded here.</p>
+      ) : (
+        w.runs.map((r) => (
+          <div key={r.id} class="ws-why-row" data-why-run={r.id} title={r.decisions.length ? `carries out ${r.decisions.join(", ")}` : undefined}>
+            <code>{r.id}</code> {runLine(r)} {paneLink(r.pane)}
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
 /** The env menu's entry for one it doesn't list. */
 const OTHER = "\u0000other";
 
@@ -109,6 +209,15 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
   const [picking, setPicking] = useState<string | null>(null);
   const [typed, setTyped] = useState("");
   const [who, setWho] = useState(false);
+  // #618: the member cards opened here; the daemon reads their why.
+  const [why, setWhy] = useState<Set<string>>(() => new Set());
+  const toggleWhy = (m: Member) => {
+    const next = new Set(why);
+    const open = !next.delete(m.name);
+    if (open) next.add(m.name);
+    setWhy(next);
+    void client.api(`/api/blocks/${id}/call/why`, { member: m.name, open }, "couldn't read why");
+  };
   const session = client.sessionOfTab(client.tabOfPane(id)?.id ?? -1) ?? null;
   const role = client.role(session);
   // Approving is for the owner and editors (#75); opening panes and blocks
@@ -298,6 +407,16 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
                       {m.errors > 0 && <span class="ws-tag bad">{m.errors} errors</span>}
                       {m.warnings > 0 && <span class="ws-tag">{m.warnings} warnings</span>}
                       {m.releases > 0 && <span class="ws-tag">{m.releases} releases</span>}
+                      {m.leases.some((l) => l.state === "active") && (
+                        <span class="ws-tag" data-tag-leases>
+                          {m.leases.filter((l) => l.state === "active").length} leased
+                        </span>
+                      )}
+                      {(m.why?.undecided ?? 0) > 0 && (
+                        <span class="ws-tag" data-tag-undecided title="Commits that changed it while no decision covered it">
+                          {m.why!.undecided} undecided
+                        </span>
+                      )}
                       {m.unreadable && <span class="ws-tag bad">{m.unreadable}</span>}
                       {m.roles.map((r) => (
                         <span key={r} class="ws-tag">
@@ -328,6 +447,14 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
                         )}
                       </div>
                     )}
+                    {!m.nested && mayApprove && (
+                      <div class="ws-actions">
+                        <button data-why-toggle={m.name} title="The decisions covering it, the leases and runs on it" onClick={() => toggleWhy(m)}>
+                          {why.has(m.name) ? "Hide why" : "Why"}
+                        </button>
+                      </div>
+                    )}
+                    {why.has(m.name) && <WhyCard client={client} id={id} s={s} m={m} mayOpen={mayOpen} />}
                     {mayOpen && picking === m.name && (
                       <div class="ws-actions" data-run-ops={m.name}>
                         {m.ops.map((op) => (

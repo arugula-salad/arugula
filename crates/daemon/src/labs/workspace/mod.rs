@@ -56,6 +56,19 @@
 //! a gate dismissed stays dismissed. The plan digest and the member's last
 //! release come from `status`.
 //!
+//! **Why a member is the way it is (#618).** `why {member, open}` opens a
+//! member card (or closes it): while some client draws the block, an open
+//! card's member gets the same intent read, and the run ledger (`chant
+//! workspace runs`) is read once for all of them, each kept until the
+//! fingerprint moves. The card shows the decisions covering the member,
+//! how many commits no decision covers (`intent-commit-undecided`, a tag:
+//! only gates are attention), its recent runs (its declared agent
+//! sessions', and those chant's walk joined to its commits) and the leases
+//! on it (`status`'s `leases`, in its ledger or on a work item covering
+//! it). An Arugula run's id names the pane that ran it, so a run, and a
+//! lease a run works under, link to that pane. `hud {url}` keeps hud's
+//! address, where a proposed decision is reviewed.
+//!
 //! `expire` (same arguments, same people, logged the same way) turns a gate
 //! down (#310): `chant approve <op> <gate> --expire` clears its pending fact
 //! without approving it, so the next run stops there again.
@@ -76,12 +89,12 @@
 //! Methods: `refresh`, `approve {member, op, gate}` (or `{key}`; the first
 //! gate if none), `expire` (the same), `member {name}` (its directory, for
 //! opening panes there), `env {name}`, `principals {actor, principals}`,
-//! `state`.
+//! `why {member, open}`, `hud {url}`, `state`.
 
 mod model;
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     sync::{Arc, Mutex, Weak},
     time::Duration,
 };
@@ -138,6 +151,19 @@ fn envs(ledgers: &str, watched: &str) -> Vec<String> {
     out
 }
 
+/// hud's address as given: an http(s) URL, without a trailing slash; empty
+/// clears it.
+fn hud_url(url: &str) -> Result<Option<String>, String> {
+    let url = url.trim().trim_end_matches('/');
+    if url.is_empty() {
+        return Ok(None);
+    }
+    if !(url.starts_with("http://") || url.starts_with("https://")) || url.contains(char::is_whitespace) {
+        return Err(format!("{url:?} isn't hud's address (http://... or https://...)"));
+    }
+    Ok(Some(url.to_owned()))
+}
+
 /// An env name `status` can take as its argument.
 fn env_name(name: &str) -> Result<String, String> {
     let name = name.trim();
@@ -158,6 +184,10 @@ struct Config {
     /// Arugula names (an editor's login) to chant principals.
     #[serde(default)]
     principals: std::collections::BTreeMap<String, String>,
+    /// Where hud reviews this workspace's records (#618): its address, for
+    /// a proposed decision's link (`<hud>/decisions#<id>`).
+    #[serde(default)]
+    hud: Option<String>,
 }
 
 fn local() -> String {
@@ -231,9 +261,11 @@ pub struct Workspace {
     /// once per change of gate. Starts as `Some("")` so the first read
     /// clears any left from before a restart.
     raised: Mutex<Option<String>>,
-    /// Each member's intent read (#617), by name, with the fingerprint it
-    /// was read at: kept until the fingerprint moves.
-    intents: Mutex<HashMap<String, Known>>,
+    /// The intent reads (#617), the run ledger and the cards open (#618),
+    /// kept until the fingerprint moves.
+    why: Mutex<Why>,
+    /// `config.hud` at open, then what `hud` set.
+    hud: Mutex<Option<String>>,
     /// One intent read at a time.
     intent_reading: tokio::sync::Mutex<()>,
     live: Live,
@@ -246,6 +278,7 @@ impl Workspace {
         if config.root.is_empty() {
             return Err("a workspace block needs a root".into());
         }
+        config.hud = hud_url(config.hud.as_deref().unwrap_or_default())?;
         let who =
             set_principals(&Principals::default(), &json!({ "actor": config.actor, "principals": config.principals }))?;
         (config.actor, config.principals) = (who.actor, who.principals);
@@ -261,13 +294,14 @@ impl Workspace {
             env: Mutex::new(config.env.clone()),
             envs: Mutex::new(envs("", &config.env)),
             who: Mutex::new(Principals { actor: config.actor.clone(), principals: config.principals.clone() }),
+            hud: Mutex::new(config.hud.clone()),
             config,
             runner: tokio::sync::OnceCell::new(),
             state: Mutex::new(state),
             seen: Mutex::new(None),
             pending: Mutex::new(None),
             raised: Mutex::new(Some(String::new())),
-            intents: Mutex::default(),
+            why: Mutex::default(),
             intent_reading: tokio::sync::Mutex::new(()),
             live: Live::default(),
             reading: tokio::sync::Mutex::new(()),
@@ -343,26 +377,35 @@ impl Workspace {
         };
         self.raise(&gates);
         self.ctx.changed();
-        if wanted && let Some(me) = self.me.upgrade() {
+        if wanted {
+            self.read_why();
+        }
+    }
+
+    /// What's wanted and not had ([`wanted`]): open cards' only while some
+    /// client draws the block, so a card left open in a closed tab costs
+    /// nothing.
+    fn wanted(&self, st: &model::State) -> Wanted {
+        let seen = self.seen.lock().unwrap().clone();
+        wanted(st, &self.why.lock().unwrap(), intent_key(seen.as_deref()), self.live.drawn())
+    }
+
+    /// What the reads had last, onto the gates and open cards.
+    fn attach(&self, st: &mut model::State) {
+        attach(st, &self.why.lock().unwrap());
+    }
+
+    /// Reads what's wanted, apart from the full read.
+    fn read_why(&self) {
+        if let Some(me) = self.me.upgrade() {
             self.ctx.rt.spawn(async move { me.read_intents().await });
         }
     }
 
-    /// The members whose intent read is wanted and not had: those with a
-    /// gate waiting ([`wanted`]).
-    fn wanted(&self, st: &model::State) -> Vec<(String, String)> {
-        let seen = self.seen.lock().unwrap().clone();
-        wanted(st, &self.intents.lock().unwrap(), intent_key(seen.as_deref()), self.live.drawn())
-    }
-
-    /// What the intent reads had last, onto the gates.
-    fn attach(&self, st: &mut model::State) {
-        attach(st, &self.intents.lock().unwrap());
-    }
-
-    /// Reads the intent of each member [`Workspace::wanted`] names, one at
-    /// a time, and puts what each says on the state as it lands (and on
-    /// the gate's attention).
+    /// Reads what [`Workspace::wanted`] names, one read at a time: the run
+    /// ledger first (one quick read for every open card), then each
+    /// member's intent. What each says goes on the state as it lands (and
+    /// on the gate's attention).
     async fn read_intents(&self) {
         let _one = self.intent_reading.lock().await;
         loop {
@@ -370,11 +413,20 @@ impl Workspace {
                 let st = self.state.lock().unwrap();
                 (self.wanted(&st), st.chant.clone(), st.version.clone(), st.root.clone())
             };
-            let Some((name, dir)) = wanted.into_iter().next() else { return };
             if self.live.closed() {
                 return;
             }
             let print = intent_key(self.seen.lock().unwrap().as_deref()).map(str::to_owned);
+            if wanted.runs {
+                let got = match &chant {
+                    None => Err(model::NO_CHANT.to_owned()),
+                    Some(chant) => self.ledger(&root, chant).await,
+                };
+                self.why.lock().unwrap().ledger = Some(Known { print, got, gates: vec![] });
+                self.changed_why();
+                continue;
+            }
+            let Some((name, dir)) = wanted.members.into_iter().next() else { return };
             let got = match (chant, version) {
                 (None, _) => Err(model::NO_CHANT.to_owned()),
                 (_, Some(v)) if !model::at_least(&v, model::INTENT_FLOOR) => Err(format!(
@@ -389,15 +441,27 @@ impl Workspace {
                 log(&self.ctx, &json!({ "e": "intent", "member": name, "ms": i.ms, "decisions": i.decisions.len() }));
             }
             let gates = self.state.lock().unwrap().gates.iter().filter(|g| g.member == name).map(Gate::key).collect();
-            self.intents.lock().unwrap().insert(name, Known { print, got, gates });
-            let gates = {
-                let mut st = self.state.lock().unwrap();
-                self.attach(&mut st);
-                st.gates.clone()
-            };
-            self.raise(&gates);
-            self.ctx.changed();
+            self.why.lock().unwrap().intents.insert(name, Known { print, got, gates });
+            self.changed_why();
         }
+    }
+
+    /// A read landed: onto the state, the gate's attention and the clients.
+    fn changed_why(&self) {
+        let gates = {
+            let mut st = self.state.lock().unwrap();
+            self.attach(&mut st);
+            st.gates.clone()
+        };
+        self.raise(&gates);
+        self.ctx.changed();
+    }
+
+    /// The run ledger: `chant workspace runs --json` in the root.
+    async fn ledger(&self, root: &str, chant: &str) -> Result<Vec<arugula_proto::workspace::RunRef>, String> {
+        let r = self.runner().await?;
+        let (out, _) = r.sh(model::RUNS, &[root.to_owned(), chant.to_owned()]).await?;
+        model::runs(&serde_json::from_slice::<Value>(&out).unwrap_or(Value::Null))
     }
 
     /// One member's intent read: `graph --intent <dir>` in the root.
@@ -615,59 +679,102 @@ impl Workspace {
     }
 }
 
-/// An intent read, what it was read at ([`intent_key`]), and the gates
-/// waiting in its member when it was read.
-struct Known {
+/// A read, what it was read at ([`intent_key`]), and for a member's
+/// intent the gates waiting in it when it was read.
+struct Known<T> {
     print: Option<String>,
-    got: Result<model::Intent, String>,
+    got: Result<T, String>,
     gates: Vec<String>,
 }
 
-/// What an intent read depends on, from a fingerprint: its first two
-/// words, the `chant/lifecycle` ref and a checksum of `HEAD` and chant's
-/// refs ([`model::FINGERPRINT`]). An edit in the working tree doesn't move
-/// it; a commit, a record committed, a gate or a release does.
+/// What an intent read (and the run ledger) depends on, from a
+/// fingerprint: its first two words, the `chant/lifecycle` ref and `HEAD`
+/// ([`model::FINGERPRINT`]). An edit in the working tree doesn't move it;
+/// a commit, a gate, a release or a run recorded does.
 fn intent_key(print: Option<&str>) -> Option<&str> {
     let p = print?;
     let end = p.match_indices(' ').nth(1).map_or(p.len(), |(i, _)| i);
     Some(&p[..end])
 }
 
-/// The members (name, directory) whose intent read is wanted: those with a
-/// chant gate waiting, whose read isn't had at `key`. While nobody draws the
-/// block (`drawn` false), only a gate no read was made for yet: the one
-/// read when it's raised, for the swarm and the phone.
-fn wanted(
-    st: &model::State,
-    intents: &HashMap<String, Known>,
-    key: Option<&str>,
-    drawn: bool,
-) -> Vec<(String, String)> {
-    let mut out: Vec<(String, String)> = Vec::new();
+/// The reads behind a gate's decisions (#617) and a member card's why
+/// (#618).
+#[derive(Default)]
+struct Why {
+    /// Each member's intent read, by name.
+    intents: HashMap<String, Known<model::Intent>>,
+    /// The run ledger, for open cards.
+    ledger: Option<Known<Vec<arugula_proto::workspace::RunRef>>>,
+    /// The members whose cards a client opened (`why {member}`), until
+    /// one closes it or no client draws the block.
+    open: HashSet<String>,
+}
+
+/// What [`wanted`] says to read.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct Wanted {
+    /// Members (name, directory) whose intent read isn't had.
+    members: Vec<(String, String)>,
+    /// The run ledger.
+    runs: bool,
+}
+
+impl Wanted {
+    fn is_empty(&self) -> bool {
+        self.members.is_empty() && !self.runs
+    }
+}
+
+/// What isn't had at `key`: the intent of each member with a chant gate
+/// waiting, and while some client draws the block (`drawn`), of each
+/// member whose card is open, and the run ledger. While nobody draws it,
+/// only a gate no read was made for yet: the one read when it's raised,
+/// for the swarm and the phone.
+fn wanted(st: &model::State, why: &Why, key: Option<&str>, drawn: bool) -> Wanted {
+    let mut out = Wanted::default();
+    let mut want = |name: &String| {
+        if !out.members.iter().any(|(n, _)| n == name) {
+            let dir = st.members.iter().find(|m| m.name == *name).map(|m| m.dir.clone());
+            out.members.push((name.clone(), dir.unwrap_or_else(|| ".".into())));
+        }
+    };
     for g in st.gates.iter().filter(|g| matches!(g.source, GateSource::Chant { .. })) {
-        let known = intents.get(&g.member);
-        let fresh = match known {
+        let fresh = match why.intents.get(&g.member) {
             Some(k) if drawn => k.print.as_deref() == key,
             Some(k) => k.gates.contains(&g.key()),
             None => false,
         };
-        if !fresh && !out.iter().any(|(n, _)| *n == g.member) {
-            let dir = st.members.iter().find(|m| m.name == g.member).map(|m| m.dir.clone());
-            out.push((g.member.clone(), dir.unwrap_or_else(|| ".".into())));
+        if !fresh {
+            want(&g.member);
         }
     }
+    let open: Vec<&String> = st.members.iter().map(|m| &m.name).filter(|n| drawn && why.open.contains(*n)).collect();
+    for name in &open {
+        if !why.intents.get(*name).is_some_and(|k| k.print.as_deref() == key) {
+            want(name);
+        }
+    }
+    out.runs = !open.is_empty() && !why.ledger.as_ref().is_some_and(|k| k.print.as_deref() == key);
     out
 }
 
-/// What the intent reads had last onto the gates of their members, until
-/// a fresh read replaces it: the card keeps its decisions while the next
-/// read runs.
-fn attach(st: &mut model::State, intents: &HashMap<String, Known>) {
+/// What the reads had last, onto the gates of their members and the open
+/// cards, until a fresh read replaces it: a card keeps what it shows while
+/// the next read runs.
+fn attach(st: &mut model::State, why: &Why) {
+    let intent = |name: &str| why.intents.get(name).map(|k| &k.got);
     for g in &mut st.gates {
-        let (Some(why), Some(k)) = (g.why.as_mut(), intents.get(&g.member)) else { continue };
-        match &k.got {
-            Ok(i) => (why.decisions, why.note) = (Some(i.decisions.clone()), None),
-            Err(e) => (why.decisions, why.note) = (None, Some(e.clone())),
+        let (Some(w), Some(got)) = (g.why.as_mut(), intent(&g.member)) else { continue };
+        match got {
+            Ok(i) => (w.decisions, w.note) = (Some(i.decisions.clone()), None),
+            Err(e) => (w.decisions, w.note) = (None, Some(e.clone())),
+        }
+    }
+    let ledger = why.ledger.as_ref().map(|k| &k.got);
+    let leases = st.leases.clone();
+    for m in &mut st.members {
+        if why.open.contains(&m.name) {
+            model::member_why(m, &leases, intent(&m.name), ledger);
         }
     }
 }
@@ -802,7 +909,10 @@ impl Block for Workspace {
 
     fn config(&self) -> Value {
         let who = self.who.lock().unwrap();
-        json!({ "root": self.config.root, "env": *self.env.lock().unwrap(), "actor": who.actor, "principals": who.principals })
+        json!({
+            "root": self.config.root, "env": *self.env.lock().unwrap(), "actor": who.actor, "principals": who.principals,
+            "hud": *self.hud.lock().unwrap(),
+        })
     }
 
     fn state(&self) -> Value {
@@ -812,6 +922,7 @@ impl Block for Workspace {
         let who = self.who.lock().unwrap();
         v["actor"] = json!(who.actor);
         v["principals"] = json!(who.principals);
+        v["hud"] = json!(*self.hud.lock().unwrap());
         v
     }
 
@@ -830,8 +941,14 @@ impl Block for Workspace {
                 let me = me.ok_or("closed")?;
                 // Read the decisions again too (an uncommitted record moves
                 // no key); what's shown stays until they land.
-                for k in me.intents.lock().unwrap().values_mut() {
-                    (k.print, k.gates) = (None, vec![]);
+                {
+                    let mut why = me.why.lock().unwrap();
+                    for k in why.intents.values_mut() {
+                        (k.print, k.gates) = (None, vec![]);
+                    }
+                    if let Some(k) = why.ledger.as_mut() {
+                        k.print = None;
+                    }
                 }
                 me.load().await;
                 let st = me.state.lock().unwrap();
@@ -891,6 +1008,47 @@ impl Block for Workspace {
                 );
                 Box::pin(async move { m.ok_or_else(|| format!("no member {name:?}")) })
             }
+            // #618: a member card opened (or closed): its decisions, runs
+            // and leases are read now, and kept up while it's open.
+            "why" => {
+                let name = args["member"].as_str().unwrap_or_default().to_owned();
+                let open = args["open"].as_bool().unwrap_or(true);
+                let known = self.state.lock().unwrap().members.iter().any(|m| m.name == name);
+                if known {
+                    let mut why = self.why.lock().unwrap();
+                    if open {
+                        why.open.insert(name.clone())
+                    } else {
+                        why.open.remove(&name)
+                    };
+                }
+                if known {
+                    let mut st = self.state.lock().unwrap();
+                    if !open && let Some(m) = st.members.iter_mut().find(|m| m.name == name) {
+                        m.why = None;
+                    }
+                    self.attach(&mut st);
+                    drop(st);
+                    self.ctx.changed();
+                    if open {
+                        self.read_why();
+                    }
+                }
+                Box::pin(async move {
+                    if !known {
+                        return Err(format!("no member {name:?}"));
+                    }
+                    Ok(json!({ "member": name, "open": open }))
+                })
+            }
+            "hud" => Box::pin(async move {
+                let me = me.ok_or("closed")?;
+                let url = hud_url(args["url"].as_str().unwrap_or_default())?;
+                log(&me.ctx, &json!({ "e": "hud", "url": url }));
+                *me.hud.lock().unwrap() = url.clone();
+                me.ctx.changed();
+                Ok(json!({ "hud": url }))
+            }),
             "state" => {
                 let s = self.state();
                 Box::pin(async move { Ok(s) })
@@ -905,6 +1063,8 @@ impl Block for Workspace {
     fn drawn(&self, on: bool) {
         if let Some(round) = self.live.set(on) {
             self.watch(round);
+            // Cards left open while nobody looked are read again.
+            self.read_why();
         }
         self.ctx.changed();
     }
@@ -929,8 +1089,9 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        HashMap, Known, Look, Next, POLL, Principals, REF_POLL, Raise, VM_QUIET, VM_RESTING, VmIdle, attach, env_name,
-        envs, intent_key, look, model, next, raise, raised_key, ref_moved, set_principals, vm_look, vm_looked, wanted,
+        HashMap, Known, Look, Next, POLL, Principals, REF_POLL, Raise, VM_QUIET, VM_RESTING, VmIdle, Wanted, Why,
+        attach, env_name, envs, hud_url, intent_key, look, model, next, raise, raised_key, ref_moved, set_principals,
+        vm_look, vm_looked, wanted,
     };
 
     #[test]
@@ -941,53 +1102,54 @@ mod tests {
         let raw: serde_json::Value = serde_json::from_str(include_str!("fixtures/reference-raw.json")).unwrap();
         let doc: serde_json::Value = serde_json::from_str(include_str!("fixtures/intent-delivery.json")).unwrap();
         let mut st = model::compose(&raw, "local");
-        let mut intents = HashMap::new();
+        let mut why = Why::default();
         let delivery = vec![("delivery".to_owned(), "delivery".to_owned())];
         let key = |print: &str| intent_key(Some(print)).map(str::to_owned);
-        assert_eq!(wanted(&st, &intents, key("lc h1 9 9").as_deref(), true), delivery);
+        assert_eq!(wanted(&st, &why, key("lc h1 9 9").as_deref(), true), delivery);
         let gates = vec!["delivery/release/approve-release".to_owned()];
         let got = Ok(model::intent(&doc, 1400).unwrap());
-        intents.insert("delivery".to_owned(), Known { print: key("lc h1 9 9"), got, gates: gates.clone() });
+        why.intents.insert("delivery".to_owned(), Known { print: key("lc h1 9 9"), got, gates: gates.clone() });
         // An edit in the tree: the same key, no read.
-        assert!(wanted(&st, &intents, key("lc h1 7 7").as_deref(), true).is_empty());
-        attach(&mut st, &intents);
+        assert!(wanted(&st, &why, key("lc h1 7 7").as_deref(), true).is_empty());
+        attach(&mut st, &why);
         assert_eq!(st.gates[0].why.as_ref().unwrap().decisions.as_ref().unwrap()[0].id, "toy-001");
         assert!(st.text().contains("    enforces toy-001 A person approves each ship\n"), "{}", st.text());
         // A commit: read again, and meanwhile the gate keeps what it had
         // (no flicker to "Reading").
-        assert_eq!(wanted(&st, &intents, key("lc h2 7 7").as_deref(), true), delivery);
+        assert_eq!(wanted(&st, &why, key("lc h2 7 7").as_deref(), true), delivery);
         let mut fresh = model::compose(&raw, "local");
-        attach(&mut fresh, &intents);
+        attach(&mut fresh, &why);
         assert_eq!(fresh.gates[0].why.as_ref().unwrap().decisions.as_ref().unwrap()[0].id, "toy-001");
         // ...until a fresh read replaces it; a failure is a note.
-        intents.insert("delivery".to_owned(), Known { print: key("lc h2 7 7"), got: Err("too slow".into()), gates });
-        attach(&mut fresh, &intents);
+        why.intents
+            .insert("delivery".to_owned(), Known { print: key("lc h2 7 7"), got: Err("too slow".into()), gates });
+        attach(&mut fresh, &why);
         let why = fresh.gates[0].why.as_ref().unwrap();
         assert_eq!((why.decisions.as_ref(), why.note.as_deref()), (None, Some("too slow")));
         // No gate, no read.
         fresh.gates.clear();
-        assert!(wanted(&fresh, &HashMap::new(), key("lc h2 7 7").as_deref(), true).is_empty());
+        assert!(wanted(&fresh, &Why::default(), key("lc h2 7 7").as_deref(), true).is_empty());
     }
 
     #[test]
     fn nobody_looking_reads_a_gate_once_when_it_s_raised() {
         let raw: serde_json::Value = serde_json::from_str(include_str!("fixtures/reference-raw.json")).unwrap();
         let st = model::compose(&raw, "local");
-        let mut intents = HashMap::new();
+        let mut why = Why::default();
         // Raised while nobody draws the block: read, for the swarm and phone.
-        assert_eq!(wanted(&st, &intents, Some("lc h1"), false).len(), 1);
+        assert_eq!(wanted(&st, &why, Some("lc h1"), false).len(), 1);
         let gates = vec!["delivery/release/approve-release".to_owned()];
-        intents.insert("delivery".to_owned(), Known { print: Some("lc h1".into()), got: Err("x".into()), gates });
+        why.intents.insert("delivery".to_owned(), Known { print: Some("lc h1".into()), got: Err("x".into()), gates });
         // Commits since, still nobody looking: no more reads.
-        assert!(wanted(&st, &intents, Some("lc h9"), false).is_empty());
+        assert!(wanted(&st, &why, Some("lc h9"), false).is_empty());
         // Someone looks: read at this commit.
-        assert_eq!(wanted(&st, &intents, Some("lc h9"), true).len(), 1);
+        assert_eq!(wanted(&st, &why, Some("lc h9"), true).len(), 1);
         // Another gate raised in the member while nobody looks: read once.
         let mut raw2 = raw.clone();
         for g in raw2["reads"]["status"]["json"]["members"][1]["gates"].as_array_mut().unwrap() {
             g["state"] = "pending".into();
         }
-        assert_eq!(wanted(&model::compose(&raw2, "local"), &intents, Some("lc h9"), false).len(), 1);
+        assert_eq!(wanted(&model::compose(&raw2, "local"), &why, Some("lc h9"), false).len(), 1);
     }
 
     #[test]
@@ -1007,10 +1169,10 @@ mod tests {
         assert!(matches!(raise(was.as_deref(), &moved.gates), Raise::Update(_)));
         // The decisions landed.
         let mut read = moved.clone();
-        let mut intents = HashMap::new();
+        let mut why = Why::default();
         let got = Ok(model::intent(&doc, 1).unwrap());
-        intents.insert("delivery".to_owned(), Known { print: None, got, gates: vec![] });
-        attach(&mut read, &intents);
+        why.intents.insert("delivery".to_owned(), Known { print: None, got, gates: vec![] });
+        attach(&mut read, &why);
         let Raise::Update(r) = raise(was.as_deref(), &read.gates) else { panic!("asked again") };
         assert_eq!(r.gate.unwrap().why.unwrap().decisions.unwrap()[0].id, "toy-001");
         // Another gate is a new ask; none is let go.
@@ -1028,6 +1190,67 @@ mod tests {
         assert_eq!(intent_key(Some("lc h1 123 45")), Some("lc h1"));
         assert_eq!(intent_key(Some("gone")), Some("gone"));
         assert_eq!(intent_key(None), None);
+        #[test]
+        fn an_open_card_reads_its_member_and_the_runs_while_drawn() {
+            // #618: a card opened wants its member's intent and the run ledger,
+            // only while some client draws the block; what they say goes on
+            // the card, with its leases linked to the pane behind them.
+            let mut raw: serde_json::Value = serde_json::from_str(include_str!("fixtures/reference-raw.json")).unwrap();
+            // delivery's gates approved: nothing but the card wants a read.
+            for g in raw["reads"]["status"]["json"]["members"][1]["gates"].as_array_mut().unwrap() {
+                g["state"] = "approved".into();
+            }
+            raw["agents"] = serde_json::json!([{ "name": "shipper", "member": "delivery" }]);
+            raw["reads"]["status"]["json"]["leases"] = serde_json::json!([{ "item": "W-001", "holder": "shipper",
+            "token": "106ffd19-97f5-476c-824e-12ec93af6f28", "acquiredAt": "2026-10-08T01:13:30.857Z",
+            "expiresAt": "2026-10-08T01:23:30.857Z", "state": "active", "ref": "refs/chant/lease/work/W-001",
+            "member": null }]);
+            let mut st = model::compose(&raw, "local");
+            let mut why = Why::default();
+            assert!(wanted(&st, &why, Some("lc h1"), true).is_empty());
+            why.open.insert("delivery".into());
+            let want = Wanted { members: vec![("delivery".into(), "delivery".into())], runs: true };
+            assert_eq!(wanted(&st, &why, Some("lc h1"), true), want);
+            // Nobody draws it: nothing, however long the card was left open.
+            assert!(wanted(&st, &why, Some("lc h1"), false).is_empty());
+            // Open, nothing read yet: the card says it's reading.
+            attach(&mut st, &why);
+            let card = st.members.iter().find(|m| m.name == "delivery").unwrap();
+            assert_eq!(card.why.as_ref().unwrap().decisions, None);
+            // Read. The daemon names a run's pane only once the agent block in
+            // that pane says it wrote the run (`ledger`): here, pane 7 did.
+            let intent: serde_json::Value =
+                serde_json::from_str(include_str!("fixtures/intent-delivery-work.json")).unwrap();
+            let runs: serde_json::Value = serde_json::from_str(include_str!("fixtures/runs.json")).unwrap();
+            let mut runs = model::runs(&runs).unwrap();
+            assert_eq!(runs[0].pane, None);
+            runs[0].pane = Some(7);
+            let key = || Some("lc h1".to_owned());
+            why.intents
+                .insert("delivery".into(), Known { print: key(), got: model::intent(&intent, 900), gates: vec![] });
+            why.ledger = Some(Known { print: key(), got: Ok(runs), gates: vec![] });
+            assert!(wanted(&st, &why, Some("lc h1"), true).is_empty());
+            attach(&mut st, &why);
+            let card = st.members.iter().find(|m| m.name == "delivery").unwrap();
+            let w = card.why.as_ref().unwrap();
+            assert_eq!(w.decisions.as_ref().unwrap()[0].id, "toy-001");
+            assert_eq!(
+                w.runs.iter().map(|r| (r.id.as_str(), r.pane)).collect::<Vec<_>>(),
+                [("arugula-7-1759880000000", Some(7))]
+            );
+            // The flat ledger's lease is on delivery through W-001, which chant's
+            // walk says covers it, and the run under its token ran in pane 7.
+            assert_eq!(card.leases.iter().map(|l| (l.item.as_str(), l.pane)).collect::<Vec<_>>(), [("W-001", Some(7))]);
+            // The app card isn't open: no why, no lease.
+            let app = st.members.iter().find(|m| m.name == "app").unwrap();
+            assert!(app.why.is_none() && app.leases.is_empty());
+            // A commit: read again, and the card keeps what it shows meanwhile.
+            assert_eq!(wanted(&st, &why, Some("lc h2"), true), want);
+            let mut fresh = model::compose(&raw, "local");
+            attach(&mut fresh, &why);
+            let card = fresh.members.iter().find(|m| m.name == "delivery").unwrap();
+            assert_eq!(card.why.as_ref().unwrap().decisions.as_ref().unwrap()[0].id, "toy-001");
+        }
     }
 
     /// A fingerprint: the lifecycle ref's word, then the tree's checksum.
@@ -1150,6 +1373,15 @@ mod tests {
             json!({ "principals": { "x": "-y" } }),
         ] {
             assert!(set_principals(&q, &bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn hud_s_address_is_a_url() {
+        assert_eq!(hud_url(" https://hud.example/ "), Ok(Some("https://hud.example".into())));
+        assert_eq!(hud_url(""), Ok(None));
+        for bad in ["hud.example", "javascript:alert(1)", "https://a b"] {
+            assert!(hud_url(bad).is_err(), "{bad}");
         }
     }
 
