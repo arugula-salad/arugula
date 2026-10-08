@@ -122,8 +122,9 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       <GettingStartedLayer />
       {phone && state && <InstallHint />}
       <DragGhost />
-      <ControlRequests client={client} />
+      {/* An ask to drive shows over the share dialog (#551). */}
       <ShareDialog client={client} />
+      <ControlRequests client={client} />
       <StatusPill client={client} />
     </div>
   );

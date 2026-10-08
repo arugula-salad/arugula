@@ -2,7 +2,7 @@
 // drives each pane, handing control over, following someone, and sharing a
 // session.
 
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useState } from "preact/hooks";
 import type { Client } from "../client";
 import type { InviteRequest, Invited, PaneId, Presence, Role, SessionId } from "../proto";
 import { roleLabel } from "./roles";
@@ -236,6 +236,8 @@ export function ShareDialog({ client }: { client: Client }) {
   const [note, setNote] = useState("");
   const [told, setTold] = useState<{ delivery: string; text: string } | null>(null);
   const [link, setLink] = useState<string | null>(null);
+  // After a share with someone outside your teams: what they see next.
+  const [asked, setAsked] = useState<string | null>(null);
   const load = async (s: SessionId | null = session) => {
     const r = await client.request("GET", "/api/acl");
     if (r.ok) setGrants((await r.json<{ grants: Grant[] }>()).grants);
@@ -248,14 +250,30 @@ export function ShareDialog({ client }: { client: Client }) {
     openShare = (s) => {
       setSession(s);
       setErr("");
+      setAsked(null);
       void load(s);
     };
     return () => {
       openShare = null;
     };
   }, [client]);
+  // As soon as it's drawn (an effect waits for the next frame), and before
+  // the terminal, which keeps the keys it takes.
+  useLayoutEffect(() => {
+    if (session === null) return;
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopPropagation();
+      setSession(null);
+    };
+    window.addEventListener("keydown", key, true);
+    return () => window.removeEventListener("keydown", key, true);
+  }, [session]);
   if (session === null) return null;
   const name = client.state?.sessions.find((s) => s.id === session)?.name ?? `$${session}`;
+  // Control mode: where a person it's shared with finds it (#551).
+  const machine = control && client.e2e ? (control.daemons.find((d) => d.id === client.e2e!.daemon.id)?.name ?? "this machine") : null;
   const mine = grants.filter((g) => g.session === session);
   const set = async (principal: string, r: Role | null, withHistory = true, extra: Record<string, string> = {}) => {
     const res = await client.request("POST", "/api/acl", { session, principal, role: r, history: withHistory, ...extra });
@@ -329,8 +347,12 @@ export function ShareDialog({ client }: { client: Client }) {
           ))}
         <p class="dim" data-share-note>
           {client.has("vms")
-            ? "People you share with open their own panes on throwaway VMs; they can't type on this machine unless you trust them with a pane."
-            : "People you share with see its panes but can't open their own here, and can't type on this machine unless you trust them with a pane."}
+            ? "People you share with open their own panes on throwaway VMs."
+            : "People you share with see its panes but can't open their own here."}{" "}
+          {machine
+            ? `Someone outside your teams accepts it first; then it's under ${machine} in their host menu. Your teams aren't asked. `
+            : ""}
+          Unless this machine is in their team, even people who drive ask you before typing in one of its panes.
         </p>
         {found ? (
           <div class="share-confirm" data-found={found.account}>
@@ -349,6 +371,7 @@ export function ShareDialog({ client }: { client: Client }) {
                       ? invite(`account:${found.account}`, { root: found.root })
                       : set(`account:${found.account}`, role, history, { root: found.root, name: found.name })
                   ).then(() => {
+                    setAsked(`If ${found.name} isn't in one of your teams, they're asked first. Then it's under ${machine ?? "this machine"} in their host menu.`);
                     setFound(null);
                     setWho("");
                   })
@@ -429,6 +452,11 @@ export function ShareDialog({ client }: { client: Client }) {
             Share and notify
           </button>
         </form>
+        {asked ? (
+          <p class="dim" data-share-asked>
+            {asked}
+          </p>
+        ) : null}
         {told ? (
           <p class="dim" data-invite-delivery={told.delivery}>
             {told.text}
