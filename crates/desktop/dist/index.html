@@ -13,6 +13,7 @@
   pre { background: #11111b; padding: 10px; border-radius: 6px; white-space: pre-wrap; color: #a6adc8; }
   button { background: #cba6f7; color: #1e1e2e; border: 0; border-radius: 6px; padding: 8px 14px; font: inherit; font-weight: 600; cursor: pointer; }
   button:disabled { opacity: 0.5; }
+  button.quiet { background: transparent; color: #bac2de; border: 1px solid #45475a; margin-left: 8px; }
 </style>
 </head>
 <body>
@@ -25,12 +26,14 @@
   <pre id="why">…</pre>
   <button id="retry" hidden>Retry</button>
   <button id="fix" hidden></button>
+  <button id="skip" class="quiet" hidden></button>
 </main>
 <script>
   const invoke = window.__TAURI__.core.invoke;
   const why = document.getElementById("why");
   const button = document.getElementById("retry");
   const fix = document.getElementById("fix");
+  const skip = document.getElementById("skip");
   // The daemon and the app don't match (#390): say which is behind, and
   // offer its update when the app can do it.
   const compat = async () => {
@@ -39,12 +42,16 @@
     why.textContent = c.message;
     fix.textContent = c.action ?? "";
     fix.hidden = !c.action;
+    // An older daemon still works (#661): going on with it is allowed.
+    skip.textContent = c.skip ?? "";
+    skip.hidden = !c.skip;
     button.hidden = !!c.action;
     return true;
   };
   const go = async () => {
     button.hidden = true;
     fix.hidden = true;
+    skip.hidden = true;
     why.textContent = await invoke("daemon_status");
     try {
       await invoke("retry");
@@ -64,7 +71,24 @@
     }
     fix.disabled = false;
   };
+  skip.onclick = async () => {
+    skip.disabled = true;
+    try {
+      await invoke("compat_skip");
+    } catch (e) {
+      why.textContent = String(e);
+    }
+    skip.disabled = false;
+  };
   button.onclick = go;
+  // As a Mac dialog: Return presses the offered update, Escape Not now.
+  document.addEventListener("keydown", (e) => {
+    const b = e.key === "Enter" ? fix : e.key === "Escape" ? skip : null;
+    if (b && !b.hidden && !b.disabled) {
+      e.preventDefault();
+      b.click();
+    }
+  });
   go();
 </script>
 </body>

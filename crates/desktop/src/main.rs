@@ -21,7 +21,9 @@
 //!   a machine with none (first run, offline), and may be older than the
 //!   one running. On macOS the app's launch agent runs the bundle's copy,
 //!   which hands on to a newer one the daemon's update put in
-//!   `~/.local/bin`.
+//!   `~/.local/bin`. A running daemon older than the bundled one (or an
+//!   illogicald from before the rename) is offered its update on the setup
+//!   page, never updated unasked (#661, `compat.rs`).
 //! - **Every key reaches the page** (S25), except a Mac's own: on macOS
 //!   the app menu has Hide (Cmd-H), Hide Others and Quit (Cmd-Q, #320) and
 //!   Close Window (Cmd-Shift-W, #323), and the rest is Edit only, so Cmd-W,
@@ -1091,6 +1093,7 @@ fn main() {
         retry,
         compat::compat,
         compat::compat_fix,
+        compat::compat_skip,
         cloud::cloud_status,
         cloud::cloud_signin,
         cloud::cloud_local,
@@ -1108,6 +1111,7 @@ fn main() {
         retry,
         compat::compat,
         compat::compat_fix,
+        compat::compat_skip,
         cloud::cloud_status,
         cloud::cloud_signin,
         cloud::cloud_local

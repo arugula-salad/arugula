@@ -125,7 +125,8 @@ pub fn read() -> Status {
     let (control, behind, update) = match (&v, &info) {
         (Some(v), Some(info)) => (
             ControlState::of_host(v),
-            compat::judge(compat::protocol_of(v), &info.version, &compat::SUPPORTED),
+            compat::judge(compat::protocol_of(v), &info.version, &compat::SUPPORTED)
+                .or_else(|| compat::older(&info.version).then_some(Behind::Older)),
             get("/api/update").as_ref().and_then(update_of),
         ),
         _ => (None, None, None),
@@ -160,6 +161,7 @@ pub fn entries(s: &Status, busy: Option<&str>) -> Vec<Entry> {
         // (compat.rs).
         (Some(Behind::Daemon), _) => out.push(entry("daemon-compat", "Too old for this app: Update…", busy.is_none())),
         (Some(Behind::App), _) => out.push(entry("daemon-compat", "Newer than this app knows: Update the app…", true)),
+        (Some(Behind::Older), _) => out.push(entry("daemon-compat", "Older than this app's: Update…", busy.is_none())),
         (None, Some(u)) if u.apply => out.push(entry(
             "daemon-update",
             format!("Update to arugulad {} (panes keep running)", u.latest),
@@ -436,6 +438,7 @@ pub fn menu_event(app: &AppHandle, id: &str) -> bool {
         "daemon-update" => act(app, Action::Update),
         // The setup page: which side is behind, and its update (compat.rs).
         "daemon-compat" => {
+            compat::unskip();
             compat::check();
             let _ = crate::open_window(app, crate::target(app));
         }
@@ -937,6 +940,10 @@ mod tests {
         assert!(find(&es, "daemon-update").is_none(), "one way to update, the setup page's");
         let es = entries(&behind(Behind::App), None);
         assert_eq!(find(&es, "daemon-compat").unwrap().text, "Newer than this app knows: Update the app…");
+        // #661: older than the app's own, still in range.
+        let es = entries(&behind(Behind::Older), None);
+        assert_eq!(find(&es, "daemon-compat").unwrap().text, "Older than this app's: Update…");
+        assert!(find(&es, "daemon-update").is_none());
 
         let v = |s: &str| serde_json::from_str::<serde_json::Value>(s).unwrap();
         assert_eq!(update_of(&v(r#"{"current":"0.24.0","newer":false,"apply":true}"#)), None);

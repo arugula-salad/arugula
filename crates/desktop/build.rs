@@ -7,6 +7,7 @@ fn main() {
         "retry",
         "compat",
         "compat_fix",
+        "compat_skip",
         "cloud_status",
         "cloud_signin",
         "cloud_local",

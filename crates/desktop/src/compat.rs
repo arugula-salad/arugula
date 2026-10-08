@@ -12,6 +12,15 @@
 //! A daemon that reports no protocol (0.23 and earlier) is judged by its
 //! version too: below [`MIN_VERSION`] it's behind (#317), whatever the
 //! baseline says.
+//!
+//! A daemon in range but older than the `arugulad` this app carries
+//! (#661), or an illogicald from before the rename, works, but the setup
+//! page says so and offers the update all the same, with *Not now* to go
+//! on with it this time. The update is the daemon's own when it has one
+//! that works (#392); illogicald's points at the old project's releases,
+//! so for it, and for any daemon that can't update itself, the bundled
+//! `arugulad install`, which takes over the old service and keeps its
+//! panes.
 
 use std::{ops::RangeInclusive, path::Path, sync::Mutex, time::Duration};
 
@@ -45,6 +54,9 @@ pub enum Behind {
     Daemon,
     /// The daemon speaks a newer one than this app knows.
     App,
+    /// The daemon works with this app, but is older than the one it
+    /// carries (#661).
+    Older,
 }
 
 /// A daemon speaking `protocol` (`None`: it doesn't say) at `version`,
@@ -76,6 +88,39 @@ fn numbers(version: &str) -> Option<(u64, u64, u64)> {
     Some((parts.next()??, parts.next()??, parts.next().unwrap_or(Some(0))?))
 }
 
+/// The release that renamed illogicald to arugulad (#505). Older
+/// daemons' own updates look for illogical's releases.
+const RENAMED: &str = "0.26.0";
+
+/// A daemon at `version` is arugulad, not illogicald from before the
+/// rename. A version that doesn't parse is taken for arugulad.
+fn renamed(version: &str) -> bool {
+    !matches!((numbers(version), numbers(RENAMED)), (Some(v), Some(r)) if v < r)
+}
+
+/// `version` is older than `bundled`; either not parsing, it isn't.
+fn older_than(version: &str, bundled: &str) -> bool {
+    matches!((numbers(version), numbers(bundled)), (Some(v), Some(b)) if v < b)
+}
+
+/// The version of the `arugulad` this app carries, from its `--version`
+/// (`arugulad X.Y.Z`).
+fn bundled_version() -> Option<String> {
+    static V: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+    V.get_or_init(|| {
+        let bin = crate::bundled("arugulad")?;
+        let out = std::process::Command::new(bin).arg("--version").output().ok()?;
+        let said = String::from_utf8_lossy(&out.stdout);
+        said.split_whitespace().last().filter(|v| numbers(v).is_some()).map(str::to_owned)
+    })
+    .clone()
+}
+
+/// A daemon at `version` is older than the one this app carries.
+pub fn older(version: &str) -> bool {
+    bundled_version().is_some_and(|b| older_than(version, &b))
+}
+
 /// The daemon's protocol, from what `GET /api/host` answered.
 pub fn protocol_of(host: &Value) -> Option<u32> {
     host["protocol"].as_u64().and_then(|p| u32::try_from(p).ok())
@@ -88,6 +133,8 @@ pub struct Mismatch {
     /// The daemon's version, and its protocol if it reports one.
     pub version: String,
     pub protocol: Option<u32>,
+    /// The version of the `arugulad` this app carries, if it carries one.
+    pub bundled: Option<String>,
 }
 
 impl Mismatch {
@@ -109,11 +156,29 @@ impl Mismatch {
                  Update the app to use this daemon.",
                 SUPPORTED.end()
             ),
+            Behind::Older => {
+                let b = self.bundled.as_deref().unwrap_or("newer");
+                if renamed(v) {
+                    format!(
+                        "arugulad here is {v}, older than the {b} this app carries. Update it to {b} \
+                         or newer; your panes keep running."
+                    )
+                } else {
+                    format!(
+                        "The daemon here is illogicald {v}, from before Arugula's rename. This app \
+                         carries arugulad {b}, which takes over from it; your panes keep running."
+                    )
+                }
+            }
         }
     }
 }
 
 static MISMATCH: Mutex<Option<Mismatch>> = Mutex::new(None);
+
+/// The older daemon's version the person said *Not now* to, until the app
+/// quits (or the *Daemon* menu asks again).
+static SKIPPED: Mutex<Option<String>> = Mutex::new(None);
 
 /// Ask the daemon, and remember whether it's out of range. One that
 /// doesn't answer isn't judged: the setup page starts it, then checks.
@@ -124,11 +189,19 @@ pub fn check() {
     };
     let protocol = protocol_of(&host);
     let version = host["version"].as_str().unwrap_or("unknown").to_owned();
-    let found = judge(protocol, &version, &SUPPORTED).map(|behind| Mismatch { behind, version, protocol });
+    let skipped = SKIPPED.lock().unwrap().as_deref() == Some(version.as_str());
+    let behind =
+        judge(protocol, &version, &SUPPORTED).or_else(|| (older(&version) && !skipped).then_some(Behind::Older));
+    let found = behind.map(|behind| Mismatch { behind, version, protocol, bundled: bundled_version() });
     if let Some(m) = &found {
         eprintln!("arugula: {}", m.message());
     }
     *MISMATCH.lock().unwrap() = found;
+}
+
+/// Offer the update of an older daemon again, *Not now* or not.
+pub fn unskip() {
+    *SKIPPED.lock().unwrap() = None;
 }
 
 /// What the last check found, if the daemon and the app don't match.
@@ -209,6 +282,37 @@ fn daemon_update() -> DaemonUpdate {
 pub struct Problem {
     message: String,
     action: Option<&'static str>,
+    /// A second button, to go on with the daemon as it is (`compat_skip`).
+    skip: Option<String>,
+}
+
+/// How a daemon that's behind gets updated from the setup page.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum How {
+    /// Its own update (#391).
+    Apply,
+    /// The bundled `arugulad install`: the daemon can't update itself, or
+    /// is illogicald, whose update looks for the old project's releases.
+    Bundled,
+    /// Neither: the command to run.
+    Command(String),
+}
+
+/// `update`: what the daemon at `version` says of its own update.
+/// `bundled`: the version this app carries.
+fn how(version: &str, update: DaemonUpdate, bundled: Option<&str>) -> How {
+    let newer_here = bundled.is_some_and(|b| older_than(version, b));
+    match update {
+        DaemonUpdate::Apply if renamed(version) || !newer_here => How::Apply,
+        _ if newer_here => How::Bundled,
+        DaemonUpdate::Apply => How::Apply,
+        DaemonUpdate::Command(c) => How::Command(c),
+        DaemonUpdate::ByHand => How::Command(by_hand().to_owned()),
+    }
+}
+
+fn how_now(version: String) -> How {
+    how(&version, daemon_update(), bundled_version().as_deref())
 }
 
 #[tauri::command]
@@ -216,19 +320,16 @@ pub async fn compat(app: AppHandle) -> Result<Option<Problem>, String> {
     let Some(m) = mismatch() else { return Ok(None) };
     let mut message = m.message();
     let action = match m.behind {
-        Behind::Daemon => {
-            match tauri::async_runtime::spawn_blocking(daemon_update).await.map_err(|e| e.to_string())? {
-                DaemonUpdate::Apply => {
+        Behind::Daemon | Behind::Older => {
+            let version = m.version.clone();
+            match tauri::async_runtime::spawn_blocking(move || how_now(version)).await.map_err(|e| e.to_string())? {
+                How::Apply => {
                     message.push_str(" Or run:\n\n  arugulad update");
                     Some("Update arugulad")
                 }
-                DaemonUpdate::Command(c) => {
+                How::Bundled => Some("Update arugulad"),
+                How::Command(c) => {
                     message.push_str(&format!(" To update it, run:\n\n  {c}"));
-                    None
-                }
-                DaemonUpdate::ByHand => {
-                    let c = by_hand();
-                    message.push_str(&format!(" To update it the way it was installed, run:\n\n  {c}"));
                     None
                 }
             }
@@ -236,7 +337,9 @@ pub async fn compat(app: AppHandle) -> Result<Option<Problem>, String> {
         Behind::App if app_updates(&app) => Some("Update the app"),
         Behind::App => Some("Download the app"),
     };
-    Ok(Some(Problem { message, action }))
+    // An older daemon still works: going on with it is the person's call.
+    let skip = (m.behind == Behind::Older).then(|| format!("Not now: use {} as it is", m.version));
+    Ok(Some(Problem { message, action, skip }))
 }
 
 /// The setup page's button: update whichever side is behind.
@@ -244,8 +347,14 @@ pub async fn compat(app: AppHandle) -> Result<Option<Problem>, String> {
 pub async fn compat_fix(app: AppHandle, window: WebviewWindow) -> Result<(), String> {
     let Some(m) = mismatch() else { return Ok(()) };
     match m.behind {
-        Behind::Daemon => {
-            tauri::async_runtime::spawn_blocking(update_daemon).await.map_err(|e| e.to_string())??;
+        Behind::Daemon | Behind::Older => {
+            let version = m.version.clone();
+            tauri::async_runtime::spawn_blocking(move || match how_now(version) {
+                How::Bundled => update_bundled(),
+                _ => update_daemon(),
+            })
+            .await
+            .map_err(|e| e.to_string())??;
             let to =
                 tauri::async_runtime::spawn_blocking(move || crate::home(&app)).await.map_err(|e| e.to_string())?;
             window.navigate(to).map_err(|e| e.to_string())
@@ -259,6 +368,16 @@ pub async fn compat_fix(app: AppHandle, window: WebviewWindow) -> Result<(), Str
             Ok(())
         }
     }
+}
+
+/// The setup page's *Not now*: the older daemon as it is, this time.
+#[tauri::command]
+pub async fn compat_skip(app: AppHandle, window: WebviewWindow) -> Result<(), String> {
+    let Some(m) = mismatch().filter(|m| m.behind == Behind::Older) else { return Ok(()) };
+    *SKIPPED.lock().unwrap() = Some(m.version);
+    *MISMATCH.lock().unwrap() = None;
+    let to = tauri::async_runtime::spawn_blocking(move || crate::home(&app)).await.map_err(|e| e.to_string())?;
+    window.navigate(to).map_err(|e| e.to_string())
 }
 
 /// This app can update itself.
@@ -297,11 +416,50 @@ fn update_daemon() -> Result<(), String> {
     }
 }
 
+/// The bundled `arugulad install` (#661): it copies itself to
+/// `~/.local/bin` and takes over the service the older daemon runs as
+/// (illogicald's too, #505), keeping its panes. Then the app waits for the
+/// new one to answer.
+fn update_bundled() -> Result<(), String> {
+    let bin = crate::bundled("arugulad").ok_or("this app doesn't carry arugulad")?;
+    let out =
+        std::process::Command::new(&bin).arg("install").output().map_err(|e| format!("{}: {e}", bin.display()))?;
+    if !out.status.success() {
+        return Err(format!(
+            "{} install failed:\n{}{}",
+            bin.display(),
+            String::from_utf8_lossy(&out.stdout).trim(),
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    if let Some(home) = std::env::var_os("HOME") {
+        crate::unquarantine(&std::path::PathBuf::from(home).join(".local/bin/arugulad"));
+    }
+    crate::install_cli();
+    // The old one may answer for a moment before it goes.
+    for _ in 0..120 {
+        std::thread::sleep(Duration::from_millis(500));
+        if crate::reachable() && host().is_some() {
+            check();
+            if mismatch().is_none() {
+                return Ok(());
+            }
+        }
+    }
+    check();
+    match mismatch() {
+        None => Ok(()),
+        Some(m) => Err(format!("Ran {} install, but a minute on: {}", bin.display(), m.message())),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::Path;
 
-    use super::{Behind, DaemonUpdate, Mismatch, command_for, daemon_update_of, judge, protocol_of};
+    use super::{
+        Behind, DaemonUpdate, How, Mismatch, command_for, daemon_update_of, how, judge, older_than, protocol_of,
+    };
 
     #[test]
     fn judges_both_directions() {
@@ -348,14 +506,57 @@ mod tests {
 
     #[test]
     fn says_which_version_runs_and_which_the_app_needs() {
-        let m = Mismatch { behind: Behind::Daemon, version: "0.8.0".into(), protocol: None };
+        let m = Mismatch { behind: Behind::Daemon, version: "0.8.0".into(), protocol: None, bundled: None };
         let said = m.message();
         assert!(said.contains("arugulad here is 0.8.0"), "{said}");
         assert!(said.contains("needs 0.19.0 or newer"), "{said}");
         assert!(said.contains("titlebar"), "{said}");
         // Behind on the protocol: says so, as before.
-        let m = Mismatch { behind: Behind::Daemon, version: "0.30.0".into(), protocol: Some(1) };
+        let m = Mismatch { behind: Behind::Daemon, version: "0.30.0".into(), protocol: Some(1), bundled: None };
         assert!(m.message().contains("speaks protocol 1"), "{}", m.message());
+    }
+
+    /// #661: in range, but older than the app's own.
+    #[test]
+    fn older_than_the_bundled_one() {
+        assert!(older_than("0.21.0", "0.26.2"));
+        assert!(older_than("0.26.1", "0.26.2"));
+        assert!(!older_than("0.26.2", "0.26.2"));
+        assert!(!older_than("0.28.0", "0.26.2"), "never a downgrade (#392)");
+        assert!(!older_than("0.26.2-rc.1", "0.26.2"));
+        assert!(!older_than("unknown", "0.26.2"));
+    }
+
+    #[test]
+    fn says_an_illogicald_is_from_before_the_rename() {
+        let m = |v: &str| Mismatch {
+            behind: Behind::Older,
+            version: v.into(),
+            protocol: None,
+            bundled: Some("0.26.2".into()),
+        };
+        let said = m("0.21.0").message();
+        assert!(said.contains("illogicald 0.21.0, from before Arugula's rename"), "{said}");
+        assert!(said.contains("arugulad 0.26.2"), "{said}");
+        let said = m("0.26.0").message();
+        assert!(said.contains("arugulad here is 0.26.0, older than the 0.26.2 this app carries"), "{said}");
+    }
+
+    /// #661: illogicald's own update looks for the old project's releases,
+    /// so the bundled one takes over; arugulad's own update stays first.
+    #[test]
+    fn how_an_older_daemon_updates() {
+        let b = Some("0.26.2");
+        // illogicald 0.21: no apply; 0.24: an apply that can't find the new releases.
+        assert_eq!(how("0.21.0", DaemonUpdate::Command("curl … | sh".into()), b), How::Bundled);
+        assert_eq!(how("0.24.0", DaemonUpdate::Apply, b), How::Bundled);
+        // arugulad that can update itself: its own, to the newest release.
+        assert_eq!(how("0.26.0", DaemonUpdate::Apply, b), How::Apply);
+        // arugulad that can't: the bundled copy, when it's newer.
+        assert_eq!(how("0.26.0", DaemonUpdate::Command("brew upgrade arugula".into()), b), How::Bundled);
+        // Nothing newer here: its own update, or its command.
+        assert_eq!(how("0.24.0", DaemonUpdate::Apply, None), How::Apply);
+        assert_eq!(how("0.30.0", DaemonUpdate::Command("c".into()), b), How::Command("c".into()));
     }
 
     #[test]
