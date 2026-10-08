@@ -12,6 +12,7 @@ import { EXPIRE_TITLE, gateKey, type DecisionRef, type Gate, type Lease, type Me
 import { openWorkspace } from "./open-labs";
 import type { BlockRenderer, BlockView } from "./view";
 import { ago, decisionLine, GateWhy, governs } from "../ui/gate-why";
+import { Graph, type Clicks, type GraphStatus } from "./workspace-graph";
 
 interface Diagnostic { rule: string; severity: string; message: string; file: string | null; line: number | null }
 interface Member {
@@ -37,6 +38,8 @@ export interface WorkspaceState {
   principals?: Record<string, string>;
   /** hud's address, for a proposed decision's review (#618). */
   hud?: string | null;
+  /** behold on this workspace, once someone asked for the graph (#620). */
+  graph?: GraphStatus;
 }
 
 /** Editors' principals as lines, `name=principal`, and back. */
@@ -235,6 +238,8 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
       }
     }
   }, [s, why]);
+  // #620: the member behold is open on, or null: closed.
+  const [graphOn, setGraphOn] = useState<string | null>(null);
   const session = client.sessionOfTab(client.tabOfPane(id)?.id ?? -1) ?? null;
   const role = client.role(session);
   // Approving is for the owner and editors (#75); opening panes and blocks
@@ -260,6 +265,17 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
       { type: "diff", config: { repo: m.path, base: true, chant: { root: s?.root, member: m.name, chant: s?.chant ?? undefined } }, ...beside },
       "couldn't show the changes",
     );
+  const graph = (m: Member) => {
+    setGraphOn(m.name);
+    if (s?.graph?.is !== "running") void client.api(`/api/blocks/${id}/call/graph`, {}, "couldn't start behold");
+  };
+  // A click in the graph, on a member it can open panes on.
+  const picked = (name: string, clicks: Clicks) => {
+    const m = s?.members.find((x) => x.name === name);
+    if (!m || m.nested || !mayOpen) return;
+    if (clicks === "changes") changes(m);
+    else shell(m.path);
+  };
   const nested = (m: Member) => openWorkspace(client, m.path, id, s?.env ?? "local");
   const run = (cwd: string, op: string) =>
     void client.make("/api/run", { ...beside, cwd, command: `${s?.chant ?? "chant"} run ${op}` } satisfies RunRequest).then((e) => e && client.toast(e));
@@ -350,6 +366,9 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
         <span class={`review-live ${s.watching ? "on" : ""}`}>{s.watching ? "live" : "paused"}</span>
       </div>
       {mayOpen && who && <Principals client={client} id={id} s={s} close={() => setWho(false)} />}
+      {mayOpen && graphOn !== null && (
+        <Graph client={client} id={id} s={s} member={graphOn} close={() => setGraphOn(null)} picked={picked} />
+      )}
       {s.error ? (
         <div class="browser-card" data-ws-error>
           <p>Can't show this workspace</p>
@@ -463,6 +482,9 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
                               Agent
                             </button>
                             <button onClick={() => changes(m)}>Changes</button>
+                            <button data-graph title="behold's estate graph, on this member" onClick={() => graph(m)}>
+                              Graph
+                            </button>
                             <button data-run-op onClick={() => (setPicking(picking === m.name ? null : m.name), setTyped(""))}>
                               Run op
                             </button>

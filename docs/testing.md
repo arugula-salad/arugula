@@ -1146,7 +1146,10 @@ rename), nor any once the tabs close. With a token and no wispd answering
 at 127.0.0.1:7788 it fails rather than skips.
 
 `workspace.spec.ts` and `changes-why.spec.ts` need the network on their
-first run, to install the pinned chant.
+first run, to install the pinned chant. `workspace.spec.ts`'s graph test
+(#620) needs behold: `ARUGULA_BEHOLD` (a command, such as
+`node ~/src/behold/bin/behold.js`) or `behold` on `PATH`; without either it
+skips.
 
 ## By hand
 

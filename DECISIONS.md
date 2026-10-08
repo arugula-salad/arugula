@@ -473,6 +473,25 @@ because chant has no document that does them (#618):
 Where: `crates/daemon/src/labs/workspace/model.rs` (`READER`, `FINGERPRINT`, `INTENT`, `member_why`) and `why.rs`, `apps/hud.rs`, `rules.rs`, `cli/src/ask.rs`, `fountain/wear.rs`, `forge/issue.rs`.
 From: [M34](docs/plan-archive.md#m34-chant-workspace-blocks-73), #303, #305, #617, #618, #619.
 
+### A workspace block's graph is behold, run by the block
+The estate graph (resources, drift, the ops track) is behold's to draw; the
+block doesn't read chant's `graph`. *Graph* on a member card has the block
+start `behold serve <root> --env <env>` on this host and frame it through
+the block's own site, as an editor block frames code-server. It's the
+Workspace block's process, not a Browser block beside it or a new block
+type: a pick in behold has to reach this block (to open the member's Shell
+or Changes), the block's env and fingerprint drive it, and its lifetime is
+the block's. behold gets the environment a Shell pane in the member gets
+(the user's login shell over the daemon's), so it sees the credentials that
+shell has and Arugula adds none; the frame opens on the source graph, and a
+live read of the env is the person's choice in the frame. A settled read
+tells behold (`POST /api/refresh?notify=1`), so behold doesn't poll the
+repo too. Framed, behold draws gates without an approve button: the block
+approves (one approve path per gate). `$ARUGULA_BEHOLD` picks the behold to
+run. This host only for now.
+Where: `crates/daemon/src/workspace/graph.rs`, `web/src/blocks/workspace.tsx` (`Graph`).
+From: #620, INTENTIUS/behold#474.
+
 ### Threads live on the daemon that owns the pane
 Pane and session threads are kept in `<state>/threads/`, outside the pane's
 own directory (closing a pane keeps its conversation), with the pane's access
