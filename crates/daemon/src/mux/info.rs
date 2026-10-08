@@ -136,6 +136,9 @@ impl Daemon {
         self.last_saved = None;
         self.save();
         info!(panes = self.panes.len(), "saved for shutdown");
+        // Workspace blocks' behold (#620): its own process group, so it
+        // wouldn't go with the daemon.
+        crate::labs::stop_beholds();
     }
 
     /// A pane's directory and foreground command from the OS, read at most

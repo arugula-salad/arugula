@@ -102,6 +102,8 @@ mod graph;
 mod model;
 pub mod why;
 
+pub use graph::stop_all as stop_beholds;
+
 use std::{
     collections::{HashMap, HashSet},
     sync::{Arc, Mutex, Weak},
@@ -1008,10 +1010,6 @@ impl Block for Workspace {
                     }
                     // The gates of the env it watched aren't its any more.
                     me.state.lock().unwrap().gates.clear();
-                    // Nor behold's: the next Graph starts it on this env.
-                    if me.graph.env().is_some_and(|e| e != name) {
-                        me.graph.stop(&me.ctx);
-                    }
                     me.load().await;
                 }
                 Ok(json!({ "env": name, "was": was }))
@@ -1088,15 +1086,14 @@ impl Block for Workspace {
             "graph" => Box::pin(async move {
                 let me = me.ok_or("closed")?;
                 let runner = me.runner().await?;
-                let env = me.env.lock().unwrap().clone();
                 let weak = me.me.clone();
                 let changed = move || {
                     if let Some(w) = weak.upgrade() {
                         w.ctx.changed();
                     }
                 };
-                let src = me.graph.ensure(&me.ctx, &runner, &me.config.root, &env, changed).await?;
-                Ok(json!({ "src": src, "env": env }))
+                let src = me.graph.ensure(&me.ctx, &runner, &me.config.root, changed).await?;
+                Ok(json!({ "src": src }))
             }),
             "state" => {
                 let s = self.state();

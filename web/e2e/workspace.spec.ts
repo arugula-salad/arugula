@@ -416,11 +416,24 @@ test("Graph on a member frames behold on it; behold's pick opens that member's S
   const src = new URL((await frame.getAttribute("src"))!);
   const app = new URL(base()).origin;
   expect(src.hostname).toMatch(new RegExp(`^b-${block}-\\w+\\.localhost$`));
-  expect(Object.fromEntries(src.searchParams)).toEqual({ member: "delivery", env: "", embed: "1", host: app, theme: "dark" });
+  expect(Object.fromEntries(src.searchParams)).toEqual({ member: "delivery", env: "", gates: "local", embed: "1", host: app, theme: "dark" });
+  // Started with no env, so behold reads nothing live by itself.
+  const cmdline = spawnSync("pgrep", ["-lf", `serve ${ws} `], { encoding: "utf8" }).stdout;
+  expect(cmdline).toContain("--port 0");
+  expect(cmdline).not.toContain("--env");
   // It's behold answering, through the block's site.
   await expect.poll(async () => (await fetch(`${base()}/api/blocks/${block}`).then((r) => r.json())).state.graph.is).toBe("running");
   const behold = page.frameLocator(`[data-workspace-block="${block}"] [data-ws-graph] iframe`);
   await expect(behold.locator("#panel")).toBeAttached({ timeout: 30_000 });
+  // behold answers only its own loopback name and refuses cross-site writes:
+  // the block's site hands it `Host: localhost:<port>` and, for a write,
+  // `Origin: http://localhost:<port>`, so a write from the frame goes through
+  // with no --allow-host.
+  const wrote = await page
+    .frames()
+    .find((f) => f.url().startsWith(src.origin))!
+    .evaluate(async () => (await fetch("/api/refresh?notify=1", { method: "POST" })).status);
+  expect(wrote).toBe(200);
   // What behold posts when a member's box is picked, from behold's origin.
   // The toy's delivery has no lexicon for behold to draw boxes from, so it's
   // posted the way behold's embedSelected posts it.
@@ -442,11 +455,13 @@ test("Graph on a member frames behold on it; behold's pick opens that member's S
   await expect
     .poll(async () => (await panesOf(page)).filter((p) => !opened.includes(p.id)).map((p) => p.type))
     .toEqual(["diff"]);
-  // The env switch stops behold; the frame starts it again on the new env.
+  // An env switch moves behold's gate strip (the frame loads again), not behold:
+  // the same run keeps going.
   expect((await post(`/api/blocks/${block}/call/env`, { name: "staging" })).ok).toBe(true);
-  await expect
-    .poll(async () => (await fetch(`${base()}/api/blocks/${block}`).then((r) => r.json())).state.graph, { timeout: 90_000 })
-    .toMatchObject({ is: "running", env: "staging", run: 2 });
+  await expect.poll(async () => (await fetch(`${base()}/api/blocks/${block}`).then((r) => r.json())).state.env).toBe("staging");
+  // behold reads `gates` as it loads, so the frame loads again on it.
+  await expect.poll(async () => new URL((await frame.getAttribute("src"))!).searchParams.get("gates")).toBe("staging");
+  expect((await fetch(`${base()}/api/blocks/${block}`).then((r) => r.json())).state.graph).toMatchObject({ is: "running", run: 1 });
   expect((await post(`/api/blocks/${block}/call/env`, { name: "local" })).ok).toBe(true);
   await shown.locator("[data-ws-graph] button[title='Close the graph']").click();
   await expect(shown.locator("[data-ws-graph]")).toHaveCount(0);

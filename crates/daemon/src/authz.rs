@@ -83,8 +83,9 @@ fn policy(method: &Method, path: &str) -> Policy {
         // `fountain`, and which view (the runner's reads the unit).
         ["api", "blocks", _, "call", "view" | "follow" | "changes" | "shell"] => Policy::Owner,
         // #302: who chant records a workspace's gates as approved by is
-        // the owner's to say.
-        ["api", "blocks", _, "call", "principals"] => Policy::Owner,
+        // the owner's to say. #620: so is starting behold on the owner's
+        // host for a workspace's graph.
+        ["api", "blocks", _, "call", "principals" | "graph"] => Policy::Owner,
         // #618: where a workspace's proposed decisions link to.
         ["api", "blocks", _, "call", "hud"] => Policy::Owner,
         ["api", "blocks", id, "call", _] if !get => pane(id).map_or(Policy::Owner, |p| Policy::On(p, Role::Editor)),
@@ -212,6 +213,7 @@ mod tests {
         assert_eq!(policy(&p, "/api/blocks/7/call/principals"), Policy::Owner);
         assert_eq!(policy(&p, "/api/blocks/7/call/hud"), Policy::Owner);
         assert_eq!(policy(&p, "/api/blocks/7/call/why"), Policy::On(7, Role::Editor));
+        assert_eq!(policy(&p, "/api/blocks/7/call/graph"), Policy::Owner);
         assert_eq!(policy(&p, "/api/blocks/7/call/comment"), Policy::On(7, Role::Editor));
         assert_eq!(policy(&p, "/api/blocks/7/call/answer"), Policy::On(7, Role::Editor));
         assert_eq!(policy(&p, "/api/studio"), Policy::Owner);

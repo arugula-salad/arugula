@@ -1,20 +1,32 @@
 //! A workspace block's graph (#620): behold's estate graph for its
 //! members, drawn in the block.
 //!
-//! The block runs `behold serve <root> --port <p> --env <env>` on this host
-//! the first time someone asks for the graph, and frames it through a site
-//! of its own (`sites.rs`), as an editor block frames code-server. behold
-//! runs until the block closes, or until the block's env changes (then the
-//! next *Graph* starts it again on the new env). It stays in the daemon's
-//! process group, so it goes when the daemon does.
+//! The block runs `behold serve <root> --port 0` on this host the first
+//! time someone asks for the graph, reads the port behold says it bound,
+//! and frames it through a site of its own (`sites.rs`), as an editor block
+//! frames code-server. behold runs in a process group of its own until the
+//! block closes or the daemon stops; either stops the whole group (behold,
+//! a wrapper such as `npx`, and the chant processes behold started):
+//! `SIGTERM`, then `SIGKILL` after [`STOP_GRACE`].
+//!
+//! **No env on the command line.** behold started with `--env` reads the
+//! env live (`chant graph --live`) at startup and on every source change.
+//! The block's env reaches behold through the frame instead: `gates=<env>`
+//! for the gates behold draws, and `env=<env>` only when the person asks
+//! for a live read there, since that needs the host's credentials. Never
+//! `--local`, which starts emulators.
 //!
 //! **Its environment** is the one a member's Shell pane gets on this host:
-//! the user's login shell's over the daemon's ([`Runner::user`]). Whatever
-//! credentials that shell has, behold has; Arugula adds none. `--env` is
-//! the block's env, for the gates behold draws (`status <env>`). The frame
-//! opens on the source graph; a live read of an env is the person's choice
-//! in the frame, since it needs the host's credentials. Never `--local`,
-//! which starts emulators.
+//! the user's login shell's over the daemon's ([`Runner::user`]), without
+//! the service manager's variables or a VS Code terminal's (as code-server
+//! starts, `editor/server.rs`). Whatever credentials that shell has, behold
+//! has; Arugula adds none.
+//!
+//! **Who reaches it.** behold listens on loopback. The block's site proxies
+//! to it with `Host: localhost:<port>` and, for a request that has one,
+//! `Origin: http://localhost:<port>` (`sites.rs` `rewrite_request`), so
+//! behold sees its own loopback name and no `--allow-host` is needed.
+//! Starting it is the owner's (`authz.rs`).
 //!
 //! **Which behold:** `$ARUGULA_BEHOLD` in the daemon's environment (a
 //! command, split on spaces: `node /src/behold/bin/behold.js`), else
@@ -27,8 +39,12 @@
 //! Not on a VM yet: the block says so.
 
 use std::{
+    collections::HashSet,
     net::{Ipv4Addr, SocketAddr},
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
     time::{Duration, Instant},
 };
 
@@ -46,15 +62,62 @@ use crate::{
 /// How long behold may take to answer once started (it reads the
 /// workspace through chant first).
 const START: Duration = Duration::from_secs(90);
+/// How long a stopped behold has after `SIGTERM`, before `SIGKILL`.
+const STOP_GRACE: Duration = Duration::from_secs(2);
 
-/// `sh -c SERVE sh ROOT PORT ENV BEHOLD`: behold, as the module says.
-/// `$BEHOLD` is split on spaces on purpose.
+/// `sh -c SERVE sh ROOT BEHOLD`: behold, as the module says, on a port it
+/// picks. `$BEHOLD` is split on spaces on purpose.
 const SERVE: &str = r#"cd "$1" || exit 1
-if [ -n "$4" ]; then exec $4 serve "$1" --port "$2" --env "$3"; fi
-if [ -x node_modules/.bin/behold ]; then exec node_modules/.bin/behold serve "$1" --port "$2" --env "$3"; fi
-if command -v behold >/dev/null 2>&1; then exec behold serve "$1" --port "$2" --env "$3"; fi
+if [ -n "$2" ]; then exec $2 serve "$1" --port 0; fi
+if [ -x node_modules/.bin/behold ]; then exec node_modules/.bin/behold serve "$1" --port 0; fi
+if command -v behold >/dev/null 2>&1; then exec behold serve "$1" --port 0; fi
 echo "no behold here: not in node_modules/.bin and not on PATH (npm install -g @intentius/behold, or set ARUGULA_BEHOLD for the daemon)" >&2
 exit 127"#;
+
+/// The process groups of every behold this daemon runs, for [`stop_all`].
+static GROUPS: Mutex<Option<HashSet<i32>>> = Mutex::new(None);
+
+fn group(pid: i32, on: bool) {
+    let mut all = GROUPS.lock().unwrap();
+    let all = all.get_or_insert_with(HashSet::new);
+    if on {
+        all.insert(pid);
+    } else {
+        all.remove(&pid);
+    }
+}
+
+/// Send `sig` to process group `pgid`; whether it's still there.
+#[cfg(unix)]
+fn signal(pgid: i32, sig: nix::sys::signal::Signal) -> bool {
+    nix::sys::signal::killpg(nix::unistd::Pid::from_raw(pgid), sig).is_ok()
+}
+
+/// Whether process group `pgid` has a process left.
+#[cfg(unix)]
+fn alive(pgid: i32) -> bool {
+    nix::sys::signal::killpg(nix::unistd::Pid::from_raw(pgid), None).is_ok()
+}
+
+/// The daemon is stopping: every behold's group gets `SIGTERM`, and
+/// `SIGKILL` if anything is left after [`STOP_GRACE`]. Blocks.
+pub fn stop_all() {
+    let groups: Vec<i32> = GROUPS.lock().unwrap().take().map(|g| g.into_iter().collect()).unwrap_or_default();
+    #[cfg(unix)]
+    {
+        use nix::sys::signal::Signal;
+        let groups: Vec<i32> = groups.into_iter().filter(|g| signal(*g, Signal::SIGTERM)).collect();
+        let t0 = Instant::now();
+        while groups.iter().any(|g| alive(*g)) && t0.elapsed() < STOP_GRACE {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        for g in groups {
+            signal(g, Signal::SIGKILL);
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = groups;
+}
 
 /// What the block's state says of its graph.
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
@@ -67,7 +130,6 @@ pub(super) enum Status {
     /// counts starts, so a frame loads again after a restart.
     Running {
         src: String,
-        env: String,
         run: u64,
     },
     Failed {
@@ -77,7 +139,6 @@ pub(super) enum Status {
 
 struct Running {
     port: u16,
-    env: String,
     stop: tokio::sync::oneshot::Sender<()>,
 }
 
@@ -92,7 +153,7 @@ pub(super) struct Graph {
     /// The fingerprint behold last heard about.
     told: Mutex<Option<String>>,
     /// The block closed: a start still under way stops what it started.
-    closed: std::sync::atomic::AtomicBool,
+    closed: AtomicBool,
 }
 
 impl Graph {
@@ -105,26 +166,27 @@ impl Graph {
         ctx.changed();
     }
 
-    /// behold on `root`, started if it isn't running on `env`: the site's
-    /// root. `changed` says the block's state changed (behold stopped by itself).
+    /// behold on `root`, started if it isn't running: the site's root. A
+    /// second caller while it starts waits for that start. `changed` says
+    /// the block's state changed (behold stopped by itself).
     pub async fn ensure(
         self: &Arc<Self>,
         ctx: &BlockCtx,
         runner: &Runner,
         root: &str,
-        env: &str,
         changed: impl Fn() + Send + 'static,
     ) -> Result<String, String> {
         let _one = self.starting.lock().await;
-        if let Status::Running { src, env: on, .. } = self.status()
-            && on == env
+        if self.closed.load(Ordering::SeqCst) {
+            return Err("the block closed".into());
+        }
+        if let Status::Running { src, .. } = self.status()
             && self.running.lock().unwrap().is_some()
         {
             return Ok(src);
         }
-        self.stop(ctx);
         self.set(ctx, Status::Starting);
-        match self.start(ctx, runner, root, env, changed).await {
+        match self.start(ctx, runner, root, changed).await {
             Ok(src) => Ok(src),
             Err(e) => {
                 warn!(block = ctx.id, error = %e, "behold didn't start");
@@ -139,53 +201,61 @@ impl Graph {
         ctx: &BlockCtx,
         runner: &Runner,
         root: &str,
-        env: &str,
         changed: impl Fn() + Send + 'static,
     ) -> Result<String, String> {
         let Runner::Local { env: vars, home } = runner else {
             return Err("the graph runs on this host only for now: this workspace is on a VM".into());
         };
         let sites = sites::get().ok_or("the graph needs block sites: start arugulad with --block-listen")?;
-        let port = free_port()?;
-        sites.allowed(&Target::Local(port))?;
         let log_path = ctx.dir.join("behold.log");
         let log = std::fs::File::create(&log_path).map_err(|e| format!("{}: {e}", log_path.display()))?;
         let behold = std::env::var("ARUGULA_BEHOLD").unwrap_or_default();
-        let mut child = tokio::process::Command::new("sh")
-            .arg("-c")
+        let mut cmd = tokio::process::Command::new("sh");
+        cmd.arg("-c")
             .arg(SERVE)
-            .args(["sh", root, &port.to_string(), env, behold.trim()])
+            .args(["sh", root, behold.trim()])
             .envs(vars.iter().map(|(k, v)| (k, v)))
-            // Its own pages, not a pane's.
-            .env_remove("ARUGULA_PANE")
-            .env_remove("ILLOGICAL_PANE")
             .current_dir(home)
             .stdin(std::process::Stdio::null())
             .stdout(log.try_clone().map_err(|e| e.to_string())?)
             .stderr(log)
-            .kill_on_drop(true)
-            .spawn()
-            .map_err(|e| format!("can't run sh: {e}"))?;
-        let pid = child.id().unwrap_or(0);
-        info!(block = ctx.id, pid, port, root, env, "behold starting");
+            .kill_on_drop(true);
+        let daemon: Vec<String> = std::env::vars_os().map(|(k, _)| k.to_string_lossy().into_owned()).collect();
+        for k in clean_env(vars.iter().map(|(k, _)| k.as_str()).chain(daemon.iter().map(String::as_str))) {
+            cmd.env_remove(k);
+        }
+        #[cfg(unix)]
+        cmd.process_group(0);
+        let mut child = cmd.spawn().map_err(|e| format!("can't run sh: {e}"))?;
+        let pid = child.id().unwrap_or(0) as i32;
+        group(pid, true);
+        info!(block = ctx.id, pid, root, "behold starting");
         let t0 = Instant::now();
-        loop {
-            if tokio::net::TcpStream::connect(SocketAddr::from((Ipv4Addr::LOCALHOST, port))).await.is_ok() {
-                break;
+        let port = loop {
+            if self.closed.load(Ordering::SeqCst) {
+                stop_group(pid, &mut child).await;
+                return Err("the block closed".into());
             }
-            if self.closed.load(std::sync::atomic::Ordering::SeqCst) {
-                break;
+            if let Some(port) = bound_port(&std::fs::read_to_string(&log_path).unwrap_or_default())
+                && tokio::net::TcpStream::connect(SocketAddr::from((Ipv4Addr::LOCALHOST, port))).await.is_ok()
+            {
+                break port;
             }
             if let Ok(Some(st)) = child.try_wait() {
+                group(pid, false);
                 return Err(format!("behold exited ({st}): {}", tail(&log_path)));
             }
             if t0.elapsed() > START {
-                let _ = child.start_kill();
+                stop_group(pid, &mut child).await;
                 return Err(format!("behold didn't answer in {}s: {}", START.as_secs(), tail(&log_path)));
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
+        };
+        if let Err(e) = sites.allowed(&Target::Local(port)) {
+            stop_group(pid, &mut child).await;
+            return Err(e);
         }
-        info!(block = ctx.id, pid, ms = t0.elapsed().as_millis() as u64, "behold is up");
+        info!(block = ctx.id, pid, port, ms = t0.elapsed().as_millis() as u64, "behold is up");
         let site = {
             let mut site = self.site.lock().unwrap();
             let key = self.key.lock().unwrap().get_or_insert_with(crate::browser::new_key).clone();
@@ -193,12 +263,14 @@ impl Graph {
         };
         site.set_target(Target::Local(port));
         let (stop, stopped) = tokio::sync::oneshot::channel();
-        *self.running.lock().unwrap() = Some(Running { port, env: env.to_owned(), stop });
+        *self.running.lock().unwrap() = Some(Running { port, stop });
         *self.told.lock().unwrap() = None;
-        // Closed while it started: `close` found nothing to stop.
-        if self.closed.load(std::sync::atomic::Ordering::SeqCst) {
+        // Closed while it started, after the last look: `close` found
+        // nothing to stop, and may have closed the site before it opened.
+        if self.closed.load(Ordering::SeqCst) {
             self.running.lock().unwrap().take();
-            let _ = child.start_kill();
+            self.close_site(ctx);
+            stop_group(pid, &mut child).await;
             return Err("the block closed".into());
         }
         let run = {
@@ -207,13 +279,15 @@ impl Graph {
             *runs
         };
         let src = site.url("/");
-        self.set(ctx, Status::Running { src: src.clone(), env: env.to_owned(), run });
+        self.set(ctx, Status::Running { src: src.clone(), run });
         // It goes when told to, or by itself (then the next Graph starts it).
         let me = Arc::downgrade(self);
         ctx.rt.spawn(async move {
             tokio::select! {
                 st = child.wait() => {
                     info!(pid, status = ?st, "behold stopped");
+                    // What it started may still be there.
+                    stop_group(pid, &mut child).await;
                     let why = format!(
                         "behold stopped ({}): {}",
                         st.map(|s| s.to_string()).unwrap_or_else(|e| e.to_string()),
@@ -224,8 +298,7 @@ impl Graph {
                     }
                 }
                 _ = stopped => {
-                    let _ = child.start_kill();
-                    let _ = child.wait().await;
+                    stop_group(pid, &mut child).await;
                     info!(pid, "behold stopped");
                 }
             }
@@ -255,11 +328,6 @@ impl Graph {
         }
     }
 
-    /// The env behold was started on, while it runs.
-    pub fn env(&self) -> Option<String> {
-        self.running.lock().unwrap().as_ref().map(|r| r.env.clone())
-    }
-
     /// The block's read settled on `print`: tell behold, if it runs and
     /// hasn't heard of this one.
     pub fn notify(&self, ctx: &BlockCtx, print: Option<&str>) {
@@ -279,16 +347,62 @@ impl Graph {
         });
     }
 
-    /// Close the site and stop behold (the block closed).
-    pub fn close(&self, ctx: &BlockCtx) {
-        self.closed.store(true, std::sync::atomic::Ordering::SeqCst);
-        self.stop(ctx);
+    fn close_site(&self, ctx: &BlockCtx) {
         if self.site.lock().unwrap().take().is_some()
             && let Some(sites) = sites::get()
         {
             sites.close(ctx.id);
         }
     }
+
+    /// Close the site and stop behold (the block closed).
+    pub fn close(&self, ctx: &BlockCtx) {
+        self.closed.store(true, Ordering::SeqCst);
+        self.stop(ctx);
+        self.close_site(ctx);
+    }
+}
+
+/// Stop behold's process group: `SIGTERM`, then `SIGKILL` if anything is
+/// left after [`STOP_GRACE`]; and reap `child`.
+async fn stop_group(pid: i32, child: &mut tokio::process::Child) {
+    #[cfg(unix)]
+    {
+        use nix::sys::signal::Signal;
+        if pid > 0 && signal(pid, Signal::SIGTERM) {
+            let t0 = Instant::now();
+            while alive(pid) && t0.elapsed() < STOP_GRACE {
+                let _ = tokio::time::timeout(Duration::from_millis(50), child.wait()).await;
+            }
+            signal(pid, Signal::SIGKILL);
+        }
+    }
+    let _ = child.start_kill();
+    let _ = child.wait().await;
+    group(pid, false);
+}
+
+/// The variables behold doesn't get, of `names`: the service manager's,
+/// and a VS Code terminal's, as code-server (`editor/server.rs`), and a
+/// pane's own.
+fn clean_env<'a>(names: impl Iterator<Item = &'a str>) -> Vec<String> {
+    let mut out: Vec<String> = crate::sys::SERVICE_ENV.iter().map(|k| (*k).to_owned()).collect();
+    out.extend(["ARUGULA_PANE", "ILLOGICAL_PANE"].map(str::to_owned));
+    out.extend(names.filter(|k| k.starts_with("VSCODE_")).map(str::to_owned));
+    out.sort();
+    out.dedup();
+    out
+}
+
+/// The port behold says it listens on, from its log: the first
+/// `http://<host>:<port>` it prints (`behold → http://localhost:4600`).
+fn bound_port(log: &str) -> Option<u16> {
+    log.lines().find_map(|l| {
+        let at = l.find("http://")?;
+        let rest = &l[at + "http://".len()..];
+        let authority = rest.split(['/', ' ']).next()?;
+        authority.rsplit_once(':')?.1.parse().ok().filter(|p| *p > 0)
+    })
 }
 
 /// Whether a settled read on `now` is news to behold, which last heard of
@@ -324,12 +438,6 @@ pub(super) async fn refresh(port: u16) -> Result<(), String> {
     }
 }
 
-/// A port nothing listens on now, on loopback.
-fn free_port() -> Result<u16, String> {
-    let l = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).map_err(|e| format!("no free port: {e}"))?;
-    l.local_addr().map(|a| a.port()).map_err(|e| e.to_string())
-}
-
 /// The last lines of behold's log, for an error.
 fn tail(path: &std::path::Path) -> String {
     let text = std::fs::read_to_string(path).unwrap_or_default();
@@ -339,7 +447,30 @@ fn tail(path: &std::path::Path) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{refresh, should_tell};
+    use super::{bound_port, clean_env, refresh, should_tell};
+
+    #[test]
+    fn the_port_is_the_one_behold_says() {
+        let log = "behold: serving chant workspace toy (chant.workspace.json), 1 of 2 members drawn\n\
+                   behold \u{2192} http://localhost:53536\n  project: /w/delivery\n";
+        assert_eq!(bound_port(log), Some(53536));
+        assert_eq!(bound_port("behold \u{2192} http://127.0.0.1:4600/\n"), Some(4600));
+        // Nothing yet, or a port of 0.
+        assert_eq!(bound_port("behold: serving chant workspace toy\n"), None);
+        assert_eq!(bound_port("http://localhost:0\n"), None);
+    }
+
+    #[test]
+    fn behold_gets_no_service_or_vscode_variables() {
+        let gone = clean_env(["PATH", "VSCODE_IPC_HOOK_CLI", "AWS_PROFILE"].into_iter());
+        assert!(gone.contains(&"VSCODE_IPC_HOOK_CLI".to_owned()));
+        assert!(gone.contains(&"ARUGULA_PANE".to_owned()));
+        for k in crate::sys::SERVICE_ENV {
+            assert!(gone.contains(&(*k).to_owned()), "{k}");
+        }
+        // The shell's own, credentials included, stay.
+        assert!(!gone.contains(&"AWS_PROFILE".to_owned()) && !gone.contains(&"PATH".to_owned()));
+    }
 
     #[test]
     fn behold_hears_of_each_new_fingerprint_once() {

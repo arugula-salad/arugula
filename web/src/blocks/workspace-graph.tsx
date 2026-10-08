@@ -11,18 +11,20 @@ import type { WorkspaceState } from "./workspace";
 export type GraphStatus =
   | { is: "off" }
   | { is: "starting" }
-  | { is: "running"; src: string; env: string; run: number }
+  | { is: "running"; src: string; run: number }
   | { is: "failed"; error: string };
 
 /** What a click in the graph opens on its member. */
 export type Clicks = "shell" | "changes" | "none";
 
 /** behold at `root` (its site), framed in this page (`host`, an origin), on
- * `member` (or the whole estate) and `env` ("" is the source graph). */
-function beholdSrc(root: string, member: string | null, env: string, host: string): string {
+ * `member` (or the whole estate) and `env` ("" is the source graph), its
+ * gate strip reading `gates` (the block's env, whatever the graph shows). */
+function beholdSrc(root: string, member: string | null, env: string, gates: string, host: string): string {
   const q = new URLSearchParams();
   if (member) q.set("member", member);
   q.set("env", env);
+  q.set("gates", gates);
   q.set("embed", "1");
   q.set("host", host);
   q.set("theme", "dark");
@@ -49,20 +51,18 @@ export function Graph({ client, id, s, member, close, picked }: {
   const [clicks, setClicks] = useState<Clicks>("shell");
   const [live, setLive] = useState(false);
   // The address a run of behold loads with; later moves are messages.
-  const loaded = useRef<{ run: number; src: string } | null>(null);
-  if (g.is === "running" && loaded.current?.run !== g.run) {
-    loaded.current = { run: g.run, src: beholdSrc(g.src, member, live ? s.env : "", location.origin) };
+  // behold reads `gates` once, as it loads: a new block env loads it again.
+  const loaded = useRef<{ run: number; gates: string; src: string } | null>(null);
+  if (g.is === "running" && (loaded.current?.run !== g.run || loaded.current.gates !== s.env)) {
+    loaded.current = { run: g.run, gates: s.env, src: beholdSrc(g.src, member, live ? s.env : "", s.env, location.origin) };
   }
   const origin = g.is === "running" ? new URL(g.src).origin : "";
   const view = (v: Record<string, unknown>) => {
     if (origin) frame.current?.contentWindow?.postMessage({ type: "behold:view", ...v }, origin);
   };
   useEffect(() => view({ member }), [member, origin]);
-  useEffect(() => view({ env: live ? s.env : "" }), [live, s.env, origin]);
-  // behold was stopped (the env changed) while shown: start it again.
-  useEffect(() => {
-    if (g.is === "off") void client.api(`/api/blocks/${id}/call/graph`, {}, "couldn't start behold");
-  }, [g.is]);
+  // The live box moves the graph between the source and the block's env.
+  useEffect(() => view({ env: live ? s.env : "" }), [live, origin]);
   // Read when a pick comes, so one right after a change in the bar (before
   // effects run again) goes by the bar as it is now.
   const now = useRef({ clicks, picked });
@@ -100,7 +100,7 @@ export function Graph({ client, id, s, member, close, picked }: {
       {g.is === "running" && loaded.current ? (
         // Its own origin, the block's site, never the app's.
         <iframe
-          key={loaded.current.run}
+          key={`${loaded.current.run}:${loaded.current.gates}`}
           ref={frame}
           class="browser-frame"
           src={loaded.current.src}

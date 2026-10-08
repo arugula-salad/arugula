@@ -160,6 +160,16 @@ pub fn forge_allowed(provider: ForgeProvider, state_dir: &Path) -> Result<(), St
     }
 }
 
+/// The daemon is stopping: stop every behold a workspace block runs for
+/// its graph (#620), which is in a process group of its own. Blocks.
+#[cfg(feature = "labs")]
+pub fn stop_beholds() {
+    workspace::stop_beholds();
+}
+
+#[cfg(not(feature = "labs"))]
+pub fn stop_beholds() {}
+
 /// Adds the Forgejo and GitLab webhook routes to the router, outside the
 /// API's authorization: a delivery is trusted by its signature.
 #[cfg(feature = "labs")]
