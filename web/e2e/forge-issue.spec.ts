@@ -6,8 +6,8 @@
 //
 // Opened from a pane's menu ("Open issue…"), the block shows the issue,
 // what waits on you (it was given to you) and the PRs that refer to it. An
-// agent's new issue is a draft on its own block, edited and sent from the
-// card. *Agent on this* makes a branch and worktree from main in a clone,
+// agent's new issue is a draft on its own block, edited and sent (or
+// dropped) there. *Agent on this* makes a branch and worktree from main in a clone,
 // starts the agent there with the issue as its prompt, puts the two in a
 // tab of their own, and when the fake lists a PR from that branch, its PR
 // block joins them.
@@ -119,7 +119,7 @@ test.afterAll(() => {
 const info = (page: Page, id: number) => page.evaluate((b) => window.__arugula.client.state!.panes.find((p) => p.id === b) ?? null, id);
 const tabOf = (page: Page, id: number) => page.evaluate((b) => window.__arugula.client.tabOfPane(b)?.id ?? null, id);
 
-test("an issue opens from the menu, given to you; an agent's new issue is a draft sent from its card", async ({ page }) => {
+test("an issue opens from the menu, given to you; an agent's new issue is a draft sent from its block", async ({ page }) => {
   fresh();
   await reset(page);
   const term = (await panes(page))[0];
@@ -142,29 +142,39 @@ test("an issue opens from the menu, given to you; an agent's new issue is a draf
   // Opened from a link with no clone of ours: the owner still gets the button.
   await expect(el.locator("[data-agent-on]")).toBeVisible();
 
-  // An agent's new issue: a draft on a block of its own, on the card.
-  const r = await page.evaluate(
-    ([repo, t]) =>
-      window.__arugula.client
-        .request("POST", "/api/blocks", { type: "forge", config: { issue: "new", repo, title: "Frobs leak", body: "Memory grows.", agent: true }, split: t, local: true })
-        .then((r) => r.json<{ block: number }>()),
-    [REPO, term] as const,
-  );
+  // An agent's new issue: a draft on a block of its own, its text shown once
+  // (as Markdown), with the actions on the block rather than a card over it.
+  const draftNew = (title: string) =>
+    page.evaluate(
+      ([repo, t, title]) =>
+        window.__arugula.client
+          .request("POST", "/api/blocks", { type: "forge", config: { issue: "new", repo, title, body: "Memory grows.\n\n- **per frob**", agent: true }, split: t, local: true })
+          .then((r) => r.json<{ block: number }>()),
+      [REPO, term, title] as const,
+    );
+  const r = await draftNew("Frobs leak");
   const draft = page.locator(`[data-forge-block="${r.block}"]`);
   await expect(draft).toHaveAttribute("data-forge-new", "waiting");
-  const card = page.locator('.pane-ask .ask[data-ask="new"]');
-  await expect(card).toContainText(`an agent drafted a new issue on ${REPO}`);
-  await expect(card.locator('input[name="title"]')).toHaveValue("Frobs leak");
-  await expect(card.locator('textarea[name="body"]')).toHaveValue("Memory grows.");
+  await expect(draft.locator(".forge-new-title")).toHaveText("Frobs leak");
+  await expect(draft.locator(".forge-new-text li strong")).toHaveText("per frob");
+  await expect.poll(async () => (await info(page, r.block))?.ask?.id).toBe("new");
+  await expect(page.locator('.pane-ask .ask[data-ask="new"]')).toHaveCount(0);
   expect(writes).toEqual([]);
-  await card.locator('input[name="title"]').fill("Frobs leak memory");
-  await card.locator("[data-ask-submit]").click();
+  // Edited in place and sent.
+  await draft.locator("[data-new-edit]").click();
+  await draft.locator("[data-new-title]").fill("Frobs leak memory");
+  await draft.locator("[data-new-send]").click();
   await expect.poll(() => writes.length).toBe(1);
-  expect(writes[0]).toEqual({ route: "/issues", body: { title: "Frobs leak memory", body: "Memory grows." }, auth: `token ${TOKEN}` });
+  expect(writes[0]).toEqual({ route: "/issues", body: { title: "Frobs leak memory", body: "Memory grows.\n\n- **per frob**" }, auth: `token ${TOKEN}` });
   // The block is the issue now.
   await expect(draft).toHaveAttribute("data-forge-kind", "issue");
   await expect(draft.locator(".review-path")).toContainText("Frobs leak memory");
-  await expect(card).toHaveCount(0);
+  // Another, dropped from the block: nothing goes.
+  const other = page.locator(`[data-forge-block="${(await draftNew("Nope")).block}"]`);
+  await other.locator("[data-new-drop]").click();
+  await expect(other).toHaveAttribute("data-forge-new", "dropped");
+  await expect(other.locator("[data-new-dropped]")).toContainText("Dropped by");
+  expect(writes.length).toBe(1);
 });
 
 test("Agent on this: the issue and its agent in a tab, on a branch of their own, and its PR joins them", async ({ page }) => {

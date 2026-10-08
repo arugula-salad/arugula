@@ -19,7 +19,7 @@ import { useWorkspaceDir } from "../blocks";
 import { AgentDialogLayer } from "./agent-dialog";
 import { ConversationsLayer } from "./conversations";
 import { PickerLayer, usePickerShortcut } from "./picker";
-import { TermAnswered, TermAsk, TermDiff } from "./term-ask";
+import { drawsItsOwn, TermAnswered, TermAsk, TermDiff } from "./term-ask";
 import { InstallHint } from "./notify";
 import { GettingStartedLayer, useFirstRun } from "./welcome";
 import { machineState, newTabItems, PALETTE_KEY, paneItems, sessionItems, tabItems } from "./commands";
@@ -592,7 +592,7 @@ function PaneSlot({
           {info.reason?.kind === "failed" ? "failed" : info.reason?.kind === "exited" ? "exited" : info.attention === "done" ? "done" : "needs you"}
         </div>
       )}
-      {info?.diff ? <TermDiff client={client} id={id} diff={info.diff} /> : info?.ask && <TermAsk client={client} id={id} ask={info.ask} />}
+      {info?.diff ? <TermDiff client={client} id={id} diff={info.diff} /> : info?.ask && !drawsItsOwn(info.ask) && <TermAsk client={client} id={id} ask={info.ask} />}
       {!info?.ask && !info?.diff && info?.answered && info.type === "terminal" && <TermAnswered client={client} id={id} answered={info.answered} />}
       {waiting && (
         <button

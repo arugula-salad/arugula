@@ -563,10 +563,43 @@ fn agent_on_this_makes_a_branch_an_agent_and_a_tab_and_its_pr_joins_them() {
     let drafted = r["block"].as_u64().unwrap();
     assert_eq!(r["status"], "waiting", "{r}");
     d.wait_for("the new issue's card", || info(&d, drafted)["ask"]["id"] == "new");
-    assert!(info(&d, drafted)["ask"]["message"].as_str().unwrap().ends_with(&format!("drafted a new issue on {REPO}")));
+    let message = info(&d, drafted)["ask"]["message"].as_str().unwrap().to_owned();
+    assert!(message.ends_with(&format!("drafted a new issue on {REPO}: Frobnicate needs docs")), "{message}");
     assert_eq!(info(&d, drafted)["tab"], ta, "beside the agent");
     assert_eq!(d.state(drafted)["new"]["by"].as_str().map(|b| b.starts_with("mcp:")), Some(true));
-    d.post(&format!("/api/blocks/{drafted}/call/decline"), json!({ "id": "new" }));
+    assert_eq!(d.state(drafted)["new"]["pane"], agent, "who to ask for changes");
+
+    // Asked for changes: the note goes to the agent, the card waits, and
+    // the agent's next draft replaces the text on the same block.
+    let r = d.post(&format!("/api/blocks/{drafted}/call/revise"), json!({ "note": "Say which page." }));
+    assert_eq!((r["pane"].as_u64(), r["delivered"].as_bool()), (Some(agent), Some(true)), "{r}");
+    d.wait_for("the card gone", || info(&d, drafted)["ask"].is_null());
+    d.wait_for("the note at the agent", || {
+        entries(&d.state(agent)).iter().any(|e| e["text"].as_str().is_some_and(|t| t.contains("Say which page.")))
+    });
+    let asked = &d.state(drafted)["new"]["asked"];
+    assert_eq!((asked["note"].as_str(), asked["by"].as_str()), (Some("Say which page."), Some(OWNER)), "{asked}");
+    let r = agent_mcp(
+        &d,
+        agent,
+        "draft",
+        json!({ "kind": "issue", "block": drafted, "title": "Frobnicate needs a docs page", "body": "On the CLI's page." }),
+    )
+    .unwrap();
+    assert_eq!(r["block"], drafted, "{r}");
+    d.wait_for("the card back", || info(&d, drafted)["ask"]["id"] == "new");
+    let st = d.state(drafted);
+    assert_eq!(
+        (st["new"]["title"].as_str(), st["new"]["body"].as_str()),
+        (Some("Frobnicate needs a docs page"), Some("On the CLI's page.")),
+        "{st}"
+    );
+    assert!(st["new"]["asked"]["revised_ms"].is_u64(), "{st}");
+    // Dropped on the block.
+    d.post(&format!("/api/blocks/{drafted}/call/drop"), json!({}));
+    d.wait_for("dropped", || d.state(drafted)["new"]["status"] == "dropped");
+    assert_eq!(d.state(drafted)["new"]["settled_by"], OWNER);
+    assert!(info(&d, drafted)["ask"].is_null());
     d.post(&format!("/api/blocks/{block}/call/decline"), json!({ "id": info(&d, block)["ask"]["id"] }));
     d.post(&format!("/api/panes/{drafted}/close"), json!({}));
 
@@ -637,8 +670,8 @@ fn a_new_issue_from_a_person_goes_out_and_an_agents_waits() {
     let draft: u64 = serde_json::from_str::<Value>(&body).unwrap()["block"].as_u64().unwrap();
     d.wait_for("the card", || info(&d, draft)["ask"]["id"] == "new");
     let i = info(&d, draft);
-    assert_eq!(i["ask"]["message"], format!("an agent drafted a new issue on {REPO}"));
-    assert_eq!(i["ask"]["schema"]["properties"]["title"]["default"], "Frobs leak");
+    assert_eq!(i["ask"]["message"], format!("an agent drafted a new issue on {REPO}: Frobs leak"));
+    assert_eq!(d.state(draft)["new"]["title"], "Frobs leak");
     assert_eq!(i["attention"], "needs_input");
     assert_eq!(forge.f.writes().len(), 1, "an agent's issue went out");
     assert_eq!(d.state(draft)["loading"], false);

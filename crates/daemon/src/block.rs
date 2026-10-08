@@ -313,6 +313,25 @@ impl BlockCtx {
         rx.await.ok().flatten().is_some()
     }
 
+    /// A follow-up for the agent in a pane (M29), as `by`: an agent block's
+    /// next prompt, or Claude Code's in a terminal through its inbox hook.
+    /// Whether it went straight in (else it waits for the agent).
+    pub async fn follow_up(&self, pane: PaneId, text: String, by: arugula_proto::Driver) -> Result<bool, String> {
+        let cmds = self.cmds.as_ref().ok_or("this block can't reach other panes")?;
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        cmds.send(crate::mux::Cmd::Api(crate::mux::Api::Block(pane, tx)))
+            .map_err(|_| "the daemon is stopping".to_owned())?;
+        if let Some(b) = rx.await.ok().flatten() {
+            let name = (by.who != "owner").then_some(by.name.as_str());
+            b.call_by("send", serde_json::json!({ "text": text }), name).await?;
+            return Ok(true);
+        }
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        cmds.send(crate::mux::Cmd::Api(crate::mux::Api::FollowUp(pane, text, by, tx)))
+            .map_err(|_| "the daemon is stopping".to_owned())?;
+        rx.await.map_err(|_| "the daemon is stopping".to_owned())?
+    }
+
     /// Start a terminal (M36: a shell in a PR's worktree).
     pub async fn run(&self, req: arugula_proto::api::RunRequest) -> Result<PaneId, String> {
         let cmds = self.cmds.as_ref().ok_or("this block can't open others")?;

@@ -193,6 +193,15 @@ export type CallSignal = { type: SdpKind, sdp: string,
  */
 sig?: string, };
 
+/**
+ * A person's note asking an agent to change its draft.
+ */
+export type ChangesAsked = { note: string, by: string, at_ms: number, 
+/**
+ * When the agent drafted again.
+ */
+revised_ms?: number, };
+
 export type Check = { name: string, source: CheckSource, state: CheckState, allow_failure: boolean, 
 /**
  * Absolute (Forgejo's own are relative to the site; the adapter makes
@@ -1070,7 +1079,16 @@ agent: boolean, at_ms: number, status: DraftStatus, settled_by?: string, url?: s
 /**
  * The last try failed: why.
  */
-error?: string, };
+error?: string, 
+/**
+ * The agent's pane, where *Ask for changes* sends a person's note.
+ */
+pane?: number, 
+/**
+ * The last note asking the agent for changes: it's revising until it
+ * drafts again (`revised_ms`).
+ */
+asked?: ChangesAsked, };
 
 export type Node = { "type": "pane", pane: number, } | { "type": "split", id: number, dir: Dir, children: Array<Child>, };
 

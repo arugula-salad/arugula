@@ -28,9 +28,13 @@
 //! **A new issue** (`{issue: "new", title, body}`): a person's goes out
 //! when the block opens, with the owner's login, and the block becomes that
 //! issue. An agent's (MCP, or the CLI under one) is a draft on the block
-//! itself, a form card with the title and text to edit: *Send* opens it on
-//! the forge (and the block becomes it), *Drop* leaves the block saying who
-//! dropped it.
+//! itself, which draws its title and text with the actions; its card is a
+//! line for wherever attention goes. *Send* (as it is, or edited on the
+//! block) opens it on the forge, and the block becomes it. *Drop* leaves
+//! the block saying who dropped it. *Ask for changes* (`revise`) sends a
+//! person's note to the agent's pane as a follow-up, and the card waits
+//! until the agent drafts again on the same block (`redraft`, MCP `draft`
+//! with `block`).
 
 use super::*;
 use arugula_proto::{PaneId, api::HistoryKind, forge::Issue};
@@ -85,6 +89,7 @@ pub(super) async fn new_config(c: &Value, mut out: Value, dir: Option<String>) -
         by: if agent && !by.starts_with("mcp:") { "an agent".into() } else { by },
         agent,
         at_ms: now_ms(),
+        pane: c["pane"].as_u64().filter(|_| agent).map(|p| p as PaneId),
         ..NewIssue::default()
     };
     out["new"] = serde_json::to_value(new).unwrap_or_default();
@@ -150,6 +155,13 @@ pub(super) fn text(st: &ForgeState) -> String {
     {
         out.push_str(&format!("{} new issue: {}\n", st.repo, n.title));
         match n.status {
+            DraftStatus::Waiting if n.revising() => {
+                let a = n.asked.as_ref().map(|a| (a.by.as_str(), a.note.as_str())).unwrap_or_default();
+                out.push_str(&format!(
+                    "drafted by {}; {} asked for changes: {}\n(draft again with block set to this block)\n",
+                    n.by, a.0, a.1
+                ));
+            }
             DraftStatus::Waiting if n.agent => {
                 out.push_str(&format!("drafted by {}: waits for a person to send it\n", n.by));
             }
@@ -467,7 +479,9 @@ impl ForgeBlock {
             if self.asking.lock().unwrap().is_some() || self.live.closed() {
                 return;
             }
-            let Some(n) = self.config.lock().unwrap().new.clone().filter(|n| n.status == DraftStatus::Waiting) else {
+            let Some(n) =
+                self.config.lock().unwrap().new.clone().filter(|n| n.status == DraftStatus::Waiting && !n.revising())
+            else {
                 return;
             };
             let (repo, _) = self.repo();
@@ -522,6 +536,96 @@ impl ForgeBlock {
                 self.state.lock().unwrap().new = c.new.clone();
             }
             _ => {}
+        }
+        self.ctx.changed();
+        self.reassert();
+    }
+
+    /// *Ask for changes* (`revise {note}`): the note goes to the agent that
+    /// drafted it, as a follow-up, and the card waits until it drafts again
+    /// (`redraft`).
+    pub(super) async fn revise(&self, args: Value, by: Option<String>) -> Result<Value, String> {
+        let note =
+            args["note"].as_str().map(str::trim).filter(|t| !t.is_empty()).ok_or("revise needs {\"note\": TEXT}")?;
+        let n = self.draft_new()?;
+        let pane = n.pane.ok_or("this draft doesn't say which agent made it, so it can't be asked for changes")?;
+        let who = by.clone().unwrap_or_else(|| "the owner".into());
+        let (repo, _) = self.repo();
+        let id = self.ctx.id;
+        let text = format!(
+            "{who} asked for changes to your new-issue draft on {repo} (block %{id}):\n\n{note}\n\n\
+             Revise it with the draft tool, kind issue, block {id}: give the whole new title and text. \
+             It replaces the draft on the same card."
+        );
+        let driver =
+            arugula_proto::Driver { who: args["by_who"].as_str().unwrap_or("owner").to_owned(), name: who.clone() };
+        let delivered = self.ctx.follow_up(pane, text, driver).await?;
+        crate::review::log(&self.ctx, &json!({ "e": "revise", "id": NEW, "by": by, "note": note, "pane": pane }));
+        if let Some((ask, token)) = self.asking.lock().unwrap().take() {
+            self.ctx.withdraw(&ask, token);
+        }
+        let asked = ChangesAsked { note: note.to_owned(), by: who, at_ms: now_ms(), revised_ms: None };
+        self.set_new(|x| x.asked = Some(asked));
+        Ok(json!({ "pane": pane, "delivered": delivered }))
+    }
+
+    /// The agent's draft again (MCP `draft` with `block`): its new title and
+    /// text, back on the card.
+    pub(super) async fn redraft(&self, args: Value) -> Result<Value, String> {
+        let title =
+            args["title"].as_str().map(str::trim).filter(|t| !t.is_empty()).ok_or("a new issue needs a title")?;
+        let body = args["body"].as_str().unwrap_or_default().to_owned();
+        self.draft_new()?;
+        if let Some((ask, token)) = self.asking.lock().unwrap().take() {
+            self.ctx.withdraw(&ask, token);
+        }
+        crate::review::log(&self.ctx, &json!({ "e": "redraft", "id": NEW, "title": title }));
+        self.set_new(|x| {
+            x.title = title.to_owned();
+            x.body = body;
+            x.at_ms = now_ms();
+            x.error = None;
+            if let Some(a) = x.asked.as_mut().filter(|a| a.revised_ms.is_none()) {
+                a.revised_ms = Some(now_ms());
+            }
+        });
+        self.raise_new().await;
+        Ok(json!({ "block": self.ctx.id }))
+    }
+
+    /// *Drop* on the block: as the card's, and also while the agent revises
+    /// (when there's no card).
+    pub(super) async fn drop_new(&self, by: Option<String>) -> Result<Value, String> {
+        self.draft_new()?;
+        if let Some((ask, token)) = self.asking.lock().unwrap().take() {
+            self.ctx.withdraw(&ask, token);
+        }
+        crate::review::log(&self.ctx, &json!({ "e": "dropped", "id": NEW, "by": by }));
+        self.set_new(|x| {
+            x.status = DraftStatus::Dropped;
+            x.settled_by = by;
+        });
+        Ok(json!({}))
+    }
+
+    /// An agent's new issue, still a draft.
+    fn draft_new(&self) -> Result<NewIssue, String> {
+        let c = self.config.lock().unwrap();
+        match c.new.clone() {
+            Some(n) if c.number == 0 && n.agent && n.status == DraftStatus::Waiting => Ok(n),
+            Some(_) if c.number != 0 => Err("this issue was sent already".into()),
+            Some(n) if n.status == DraftStatus::Dropped => Err("this draft was dropped".into()),
+            _ => Err("this block isn't an agent's new-issue draft".into()),
+        }
+    }
+
+    fn set_new(&self, f: impl FnOnce(&mut NewIssue)) {
+        {
+            let mut c = self.config.lock().unwrap();
+            if let Some(x) = c.new.as_mut() {
+                f(x);
+            }
+            self.state.lock().unwrap().new = c.new.clone();
         }
         self.ctx.changed();
         self.reassert();
@@ -596,10 +700,12 @@ impl ForgeBlock {
     }
 }
 
-/// A new issue's draft as a form card: the title and text to edit.
+/// A new issue's draft as a card. The block draws the title and text, with
+/// Edit and Ask for changes; the card is a line for wherever attention goes
+/// (the swarm, the phone), to send it as it is or drop it.
 fn new_ask(n: &NewIssue, repo: &str) -> Ask {
     let who = n.by.strip_prefix("mcp:").unwrap_or(&n.by).to_owned();
-    let mut message = format!("{who} drafted a new issue on {repo}");
+    let mut message = format!("{who} drafted a new issue on {repo}: {}", n.title);
     if let Some(e) = &n.error {
         message.push_str(&format!(". Sending it failed: {e}"));
     }
@@ -608,11 +714,7 @@ fn new_ask(n: &NewIssue, repo: &str) -> Ask {
         kind: AskKind::Form,
         message,
         questions: None,
-        schema: Some(json!({ "type": "object", "required": ["title"], "properties": {
-            "title": { "type": "string", "title": "Title", "default": n.title },
-            "body": { "type": "string", "title": "Text", "default": n.body, "format": "markdown",
-                "description": "Edit it before sending; it goes out with your forge login" },
-        } })),
+        schema: Some(json!({ "type": "object", "properties": {} })),
         url: None,
         accepted: false,
         tool_call_id: None,
@@ -705,7 +807,7 @@ mod tests {
     }
 
     #[test]
-    fn a_new_issues_draft_is_a_card_with_its_title_and_text() {
+    fn a_new_issues_draft_is_a_one_line_card() {
         let n = NewIssue {
             title: "Flaky test".into(),
             body: "It fails".into(),
@@ -714,10 +816,9 @@ mod tests {
             ..NewIssue::default()
         };
         let a = new_ask(&n, "o/r");
-        assert_eq!(a.message, "claude-code drafted a new issue on o/r");
-        let s = a.schema.unwrap();
-        assert_eq!(s["properties"]["title"]["default"], "Flaky test");
-        assert_eq!(s["properties"]["body"]["format"], "markdown");
+        assert_eq!(a.message, "claude-code drafted a new issue on o/r: Flaky test");
+        // The block shows the text; the card doesn't repeat it.
+        assert_eq!(a.schema.unwrap()["properties"], json!({}));
         assert_eq!((a.kind, a.source.as_str()), (AskKind::Form, "forge"));
     }
 
