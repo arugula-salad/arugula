@@ -5,7 +5,7 @@
 // private pane shows only that it's there.
 
 import { spawn, type ChildProcess } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { closeSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
@@ -34,14 +34,17 @@ const api = (path: string, body?: unknown, headers: Record<string, string> = {})
 test.beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "arugula-e2e-summaries-"));
   mkdirSync(join(dir, "work", "myrepo", ".git"), { recursive: true });
+  const log = openSync(join(dir, "daemon.log"), "w");
   daemon = spawn(
     "../target/debug/arugulad",
     [
       ...["--listen", ANY, "--state-dir", labs(join(dir, "state")), "--owner", OWNER],
       ...["--shell", "bash --norc --noprofile", "--no-manager-env", "--tailscale-socket", "/nonexistent/sock"],
     ],
-    { stdio: "ignore" },
+    // Its log, for what a failure says (#524).
+    { stdio: ["ignore", log, log] },
   );
+  closeSync(log);
   base = `http://127.0.0.1:${await daemonPort(join(dir, "state"), daemon)}`;
   for (let i = 0; i < 100; i++) {
     try {
@@ -74,6 +77,34 @@ async function openSummaries(page: Page) {
   await expect.poll(() => page.evaluate(() => (window as any).sums.state !== null)).toBe(true);
 }
 
+/** Run `check`; if it fails, say what the page and the daemon saw (#524:
+ * CI's runs keep no traces). */
+async function explained(page: Page, check: () => Promise<unknown>) {
+  try {
+    await check();
+  } catch (e) {
+    const seen = await page
+      .evaluate(() => {
+        const c = window.__arugula.client as unknown as Record<string, any>;
+        const s = c.state;
+        return JSON.stringify({
+          connected: c.connected,
+          open: c.link?.open ?? null,
+          client: c.clientId,
+          error: c.error,
+          rev: s?.rev,
+          sessions: s?.sessions,
+          panes: s?.panes.map((p: { id: number }) => p.id),
+        });
+      })
+      .catch((x) => `(page: ${x})`);
+    const log = readFileSync(join(dir, "daemon.log"), "utf8").replace(/\x1b\[[0-9;]*m/g, "");
+    const lines = log.split("\n").filter((l) => / (WARN|ERROR) |intent|client (dis)?connected|exited|started process/.test(l));
+    (e as Error).message += `\n\npage: ${seen}\n\ndaemon:\n${lines.slice(-40).join("\n")}`;
+    throw e;
+  }
+}
+
 const sum = (page: Page, pane: number) =>
   page.evaluate((p) => (window as any).sums.state.panes.find((x: { id: number }) => x.id === p) ?? null, pane);
 
@@ -85,7 +116,7 @@ test("a summaries-only client gets kind, project and activity as deltas, and no 
   repoPane = (await (await api("/api/run", { cwd: repo })).json()).pane;
   privatePane = (await (await api("/api/run", { cwd: repo, split: repoPane })).json()).pane;
   await owner.evaluate(() => window.__arugula.client.intent({ op: "new_session", name: "mine", from_pane: null }));
-  await expect.poll(() => owner.evaluate(() => window.__arugula.client.state!.sessions.length)).toBe(2);
+  await explained(owner, () => expect.poll(() => owner.evaluate(() => window.__arugula.client.state!.sessions.length)).toBe(2));
   [shared, otherPane] = await owner.evaluate((p) => {
     const c = window.__arugula.client;
     const s = c.state!;
@@ -93,6 +124,18 @@ test("a summaries-only client gets kind, project and activity as deltas, and no 
     const t = s.tabs.find((x) => x.id === mine.tabs[0])!;
     return [s.sessions.find((x) => x.tabs.includes(c.tabOfPane(p)!.id))!.id, t.layout.panes[0][0]];
   }, repoPane);
+  // The page shows the session it just made and sizes its tab, a layout
+  // change (a new State). Let that land before counting States below: on
+  // a slow page it came after `before` was read.
+  await owner.evaluate((p) => window.__arugula.client.setActive(p), otherPane);
+  await expect
+    .poll(() =>
+      owner.evaluate((p) => {
+        const c = window.__arugula.client;
+        return c.tabOfPane(p)?.owner === c.clientId && (window as any).sums.state.rev === c.state!.rev;
+      }, otherPane),
+    )
+    .toBe(true);
 
   await expect.poll(() => sum(owner, repoPane).then((p) => p?.project?.name)).toBe("myrepo");
   const first = await sum(owner, repoPane);
