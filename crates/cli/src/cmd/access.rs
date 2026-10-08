@@ -9,7 +9,8 @@ pub enum AccessCmd {
     /// Let someone reach a session, at once.
     ///
     /// As a viewer (watch), an editor (drive its panes, make and close tabs
-    /// and splits) or an owner.
+    /// and splits) or an owner. WHO is a tailnet login: everyone signed in
+    /// to Tailscale as it gets the role, on any device.
     Grant { session: String, who: String, role: String },
     /// Take it away; they're cut off at once.
     Revoke { session: String, who: String },
@@ -76,6 +77,62 @@ pub fn run(cmd: Option<AccessCmd>, ctx: Ctx) -> anyhow::Result<i32> {
                 g["principal"].as_str().unwrap_or("")
             );
         }
+        for note in caller_notes(&v["callers"]) {
+            println!("note: {note}");
+        }
     }
     Ok(0)
+}
+
+/// What `GET /api/acl`'s `callers` says (#663): a granted login seen from
+/// more than one device, whose people share its one role, and tagged
+/// devices, refused for having no login. Also `arugula status`'s.
+pub fn caller_notes(callers: &serde_json::Value) -> Vec<String> {
+    let names = |v: &serde_json::Value, key: &str| -> Vec<String> {
+        v.as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|x| x[key].as_str().or_else(|| x.as_str()).map(str::to_owned))
+            .collect()
+    };
+    let mut out = Vec::new();
+    for s in callers["shared"].as_array().into_iter().flatten() {
+        let devices = names(&s["devices"], "device");
+        out.push(format!(
+            "{} is signed in on {} devices ({}): everyone on them has its role, and Arugula can't tell them apart",
+            s["login"].as_str().unwrap_or("?"),
+            devices.len(),
+            devices.join(", ")
+        ));
+    }
+    for t in callers["tagged"].as_array().into_iter().flatten() {
+        let tags = names(&t["tags"], "");
+        out.push(format!(
+            "{} ({}) is a tagged device: it has no login, so it was refused and nothing can be shared with it",
+            t["device"].as_str().unwrap_or("?"),
+            tags.join(", ")
+        ));
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn says_who_shares_a_login_and_which_tagged_devices_called() {
+        let v = serde_json::json!({
+            "shared": [{"login": "bob@x.com", "devices": [{"device": "ipad", "at": 1}, {"device": "laptop", "at": 2}]}],
+            "tagged": [{"device": "ci-1", "tags": ["tag:ci"], "at": 3}],
+        });
+        let n = super::caller_notes(&v);
+        assert_eq!(
+            n,
+            [
+                "bob@x.com is signed in on 2 devices (ipad, laptop): everyone on them has its role, and Arugula can't tell them apart",
+                "ci-1 (tag:ci) is a tagged device: it has no login, so it was refused and nothing can be shared with it",
+            ]
+        );
+        // An older daemon says nothing of callers.
+        assert!(super::caller_notes(&serde_json::Value::Null).is_empty());
+    }
 }

@@ -362,6 +362,11 @@ impl Access {
         )
     }
 
+    /// The request is for one of this machine's tailnet names.
+    pub fn is_public_host(&self, headers: &HeaderMap) -> bool {
+        self.public.contains(&host(headers))
+    }
+
     /// The login let in from the tailnet.
     pub fn owner(&self) -> Option<&str> {
         self.owner.as_deref()

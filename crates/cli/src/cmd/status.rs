@@ -4,8 +4,9 @@
 //! app's *Daemon* menu says them; its standing with Arugula control
 //! (#325): joined where and whether connected, not joined, or dropped by
 //! control and what it said; and the agents (#335): each ACP adapter's
-//! state and whether Claude Code has Arugula's MCP server. Each part is
-//! a [`Line`].
+//! state and whether Claude Code has Arugula's MCP server; and who shares
+//! a login or called from a tagged device (#663). Each part is a
+//! [`Line`].
 //!
 //! The service, binary and log are this machine's: with `--host` or
 //! `--ssh` only the daemon's own answer is shown.
@@ -188,6 +189,12 @@ pub fn run(ctx: Ctx) -> anyhow::Result<i32> {
     // (no adapters), or not at all.
     let agents =
         host.as_ref().and_then(|_| request(&sock, "GET", "/api/setup?part=agents", None).and_then(|r| r.json()).ok());
+    // #663: logins several people share, tagged devices refused.
+    let callers = host
+        .as_ref()
+        .and_then(|_| request(&sock, "GET", "/api/acl", None).and_then(|r| r.json()).ok())
+        .map(|v| v["callers"].clone())
+        .filter(|c| !c.is_null());
     if json_out {
         let svc = here.as_ref().and_then(|h| h.service.as_ref());
         let v: Value = json!({
@@ -203,11 +210,17 @@ pub fn run(ctx: Ctx) -> anyhow::Result<i32> {
             "log": here.as_ref().and_then(|h| h.log.as_ref()).map(|l| l.to_string()),
             "control": control,
             "agents": agents,
+            "callers": callers,
         });
         println!("{}", serde_json::to_string_pretty(&v).unwrap_or_default());
     } else {
         let mut ls = lines(host.as_ref().map(|h| (h, control.as_ref())), err.as_deref(), here.as_ref());
         ls.extend(agents.as_ref().map(agent_lines).unwrap_or_default());
+        ls.extend(callers.iter().flat_map(super::access::caller_notes).map(|says| Line {
+            part: "access",
+            says,
+            fix: Some("`arugula access` lists what's shared".into()),
+        }));
         for l in ls {
             println!("{:<8} {}", l.part, l.says);
             if let Some(f) = l.fix {

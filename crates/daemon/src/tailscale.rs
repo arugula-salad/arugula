@@ -13,16 +13,21 @@
 //! the same JSON.
 
 use std::{
+    collections::HashMap,
     net::{IpAddr, SocketAddr},
     path::{Path, PathBuf},
-    time::Duration,
+    sync::{Arc, Mutex},
+    time::{Duration, Instant},
 };
 
 use anyhow::{Context, bail};
 use serde_json::Value;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-use crate::access::Peer;
+use crate::{
+    access::Peer,
+    callers::{Callers, Device},
+};
 
 /// Where tailscaled listens unless told otherwise (`--socket`).
 const DEFAULT_SOCKETS: [&str; 2] = ["/run/tailscale/tailscaled.sock", "/var/run/tailscale/tailscaled.sock"];
@@ -160,9 +165,10 @@ impl LocalApi {
     /// Who is at `addr` (the far end of a TCP connection we accepted), or
     /// `None` if tailscaled doesn't know it: then it isn't a tailnet
     /// connection.
-    pub async fn whois(&self, addr: SocketAddr) -> anyhow::Result<Option<Peer>> {
+    /// `addr` is an `IP:port`, or a bare IP (any connection from it).
+    pub async fn whois(&self, addr: &str) -> anyhow::Result<Option<(Peer, Option<Device>)>> {
         if let Via::Cli(cli) = &self.via {
-            return match self.cli(cli, &["whois", "--json", &addr.to_string()]).await? {
+            return match self.cli(cli, &["whois", "--json", addr]).await? {
                 Ok(out) => Ok(Some(parse_whois(&serde_json::from_slice(&out)?))),
                 Err(e) if e.contains("not found") => Ok(None),
                 Err(e) => bail!("tailscale whois: {e}"),
@@ -207,24 +213,88 @@ fn parse_status(v: &Value) -> Option<Status> {
 }
 
 /// A tagged node is owned by its tags, not a person: it has no login here,
-/// whatever placeholder ("tagged-devices") the profile carries.
-fn parse_whois(v: &Value) -> Peer {
-    let tagged = v.pointer("/Node/Tags").and_then(Value::as_array).is_some_and(|t| !t.is_empty());
-    let login = v.pointer("/UserProfile/LoginName").and_then(Value::as_str).filter(|_| !tagged).map(str::to_owned);
-    Peer::Tailnet { login }
+/// whatever placeholder ("tagged-devices") the profile carries. And the
+/// device, by its short name, with its tags (#663).
+fn parse_whois(v: &Value) -> (Peer, Option<Device>) {
+    let tags: Vec<String> = v
+        .pointer("/Node/Tags")
+        .and_then(Value::as_array)
+        .map(|t| t.iter().filter_map(|x| x.as_str().map(str::to_owned)).collect())
+        .unwrap_or_default();
+    let login =
+        v.pointer("/UserProfile/LoginName").and_then(Value::as_str).filter(|_| tags.is_empty()).map(str::to_owned);
+    let name = v
+        .pointer("/Node/ComputedName")
+        .and_then(Value::as_str)
+        .filter(|n| !n.is_empty())
+        .or_else(|| v.pointer("/Node/Name").and_then(Value::as_str).and_then(|n| n.split('.').next()))
+        .filter(|n| !n.is_empty());
+    let device = name.map(|n| Device { name: n.to_owned(), tags });
+    (Peer::Tailnet { login }, device)
 }
 
-/// Decides who a TCP peer is, per connection.
-#[derive(Debug, Clone, Default)]
+/// Decides who a TCP peer is, per connection, and notes the device it
+/// called from (`callers.rs`).
+#[derive(Clone, Default)]
 pub struct Identify {
     api: Option<LocalApi>,
     /// Ask about loopback peers too (tailscaled in userspace mode).
     loopback: bool,
+    callers: Arc<Callers>,
+    /// `tailscale serve`'s forwarded addresses, asked about once a minute
+    /// at most: serve passes on every request.
+    forwarded: Arc<Mutex<HashMap<IpAddr, (Forwarded, Instant)>>>,
 }
+
+impl std::fmt::Debug for Identify {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Identify").field("api", &self.api).field("loopback", &self.loopback).finish_non_exhaustive()
+    }
+}
+
+/// What WhoIs said of a forwarded address: its login (`None`: tagged) and
+/// device, or nothing.
+type Forwarded = Option<(Option<String>, Device)>;
+
+/// How long a forwarded address's device is kept.
+const FORWARDED_FOR: Duration = Duration::from_secs(60);
 
 impl Identify {
     pub fn new(api: Option<LocalApi>, userspace: bool) -> Self {
-        Self { api, loopback: userspace }
+        Self { api, loopback: userspace, ..Self::default() }
+    }
+
+    pub fn callers(&self) -> &Callers {
+        &self.callers
+    }
+
+    /// A request `tailscale serve` passed on, from the tailnet address in
+    /// its `X-Forwarded-For`: note the device and its login, or that it's
+    /// tagged (#663). Only for a request known to come from tailscaled.
+    pub async fn saw_forwarded(&self, forwarded_for: &str) {
+        let Some(api) = &self.api else { return };
+        let Some(ip) = forwarded_for.split(',').next().and_then(|a| a.trim().parse::<IpAddr>().ok()) else { return };
+        let cached = self
+            .forwarded
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(&ip)
+            .filter(|(_, at)| at.elapsed() < FORWARDED_FOR)
+            .map(|(d, _)| d.clone());
+        let found = match cached {
+            Some(f) => f,
+            None => {
+                let f = match api.whois(&ip.to_string()).await {
+                    Ok(Some((Peer::Tailnet { login }, Some(d)))) => Some((login, d)),
+                    _ => None,
+                };
+                self.forwarded.lock().unwrap_or_else(|e| e.into_inner()).insert(ip, (f.clone(), Instant::now()));
+                f
+            }
+        };
+        if let Some((login, d)) = found {
+            self.callers.saw(login.as_deref(), &d, crate::store::now_ms());
+        }
     }
 
     pub async fn peer(&self, addr: SocketAddr) -> Peer {
@@ -235,8 +305,13 @@ impl Identify {
         let Some(api) = &self.api else {
             return if local { Peer::Local } else { Peer::Other };
         };
-        match api.whois(addr).await {
-            Ok(Some(peer)) => peer,
+        match api.whois(&addr.to_string()).await {
+            Ok(Some((peer, device))) => {
+                if let (Peer::Tailnet { login }, Some(d)) = (&peer, &device) {
+                    self.callers.saw(login.as_deref(), d, crate::store::now_ms());
+                }
+                peer
+            }
             Ok(None) if local => Peer::Local,
             Ok(None) => Peer::Other,
             Err(e) => {
@@ -281,9 +356,75 @@ mod tests {
     #[test]
     fn whois_of_a_tagged_node_has_no_login() {
         let user = json!({"Node": {"Name": "phone."}, "UserProfile": {"LoginName": "me@x.com"}});
-        assert_eq!(parse_whois(&user), Peer::Tailnet { login: Some("me@x.com".into()) });
+        assert_eq!(parse_whois(&user).0, Peer::Tailnet { login: Some("me@x.com".into()) });
         let tagged = json!({"Node": {"Tags": ["tag:k8s"]}, "UserProfile": {"LoginName": "tagged-devices"}});
-        assert_eq!(parse_whois(&tagged), Peer::Tailnet { login: None });
+        assert_eq!(parse_whois(&tagged).0, Peer::Tailnet { login: None });
+    }
+
+    /// #663: the device, by its short name, and a tagged one's tags.
+    #[test]
+    fn whois_names_the_device() {
+        let user = json!({"Node": {"Name": "phone.tail1.ts.net.", "ComputedName": "phone"}, "UserProfile": {"LoginName": "me@x.com"}});
+        assert_eq!(parse_whois(&user).1, Some(Device { name: "phone".into(), tags: vec![] }));
+        let bare = json!({"Node": {"Name": "ipad.tail1.ts.net."}, "UserProfile": {"LoginName": "me@x.com"}});
+        assert_eq!(parse_whois(&bare).1.map(|d| d.name), Some("ipad".into()));
+        let tagged = json!({"Node": {"Name": "ci-1.tail1.ts.net.", "Tags": ["tag:ci"]}, "UserProfile": {"LoginName": "tagged-devices"}});
+        assert_eq!(parse_whois(&tagged).1, Some(Device { name: "ci-1".into(), tags: vec!["tag:ci".into()] }));
+        assert_eq!(parse_whois(&json!({"Node": {}})).1, None);
+    }
+
+    /// #663, through a stand-in for tailscaled's socket: a direct
+    /// connection and one serve passed on, both as bob from two devices,
+    /// and a tagged node.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn notes_the_devices_callers_use() {
+        // Short: a Unix socket's path has a length limit.
+        let dir = std::env::temp_dir().join(format!("arugula-ts-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let sock = dir.join("ts.sock");
+        let listener = tokio::net::UnixListener::bind(&sock).unwrap();
+        tokio::spawn(async move {
+            loop {
+                let Ok((mut s, _)) = listener.accept().await else { return };
+                let mut buf = vec![0u8; 2048];
+                let n = s.read(&mut buf).await.unwrap_or(0);
+                let req = String::from_utf8_lossy(&buf[..n]).into_owned();
+                let node = |name: &str, tags: &[&str], login: &str| json!({"Node": {"ComputedName": name, "Tags": tags}, "UserProfile": {"LoginName": login}});
+                let body = if req.contains("addr=100.64.0.1") {
+                    node("laptop", &[], "bob@x.com")
+                } else if req.contains("addr=100.64.0.2") {
+                    node("ipad", &[], "Bob@x.com")
+                } else if req.contains("addr=100.64.0.3") {
+                    node("ci-1", &["tag:ci"], "tagged-devices")
+                } else {
+                    let _ = s.write_all(b"HTTP/1.0 404 Not Found\r\n\r\n").await;
+                    continue;
+                };
+                let body = body.to_string();
+                let _ = s
+                    .write_all(format!("HTTP/1.0 200 OK\r\nContent-Length: {}\r\n\r\n{body}", body.len()).as_bytes())
+                    .await;
+            }
+        });
+        let id = Identify::new(LocalApi::find(Some(&sock)), false);
+        assert_eq!(
+            id.peer("100.64.0.1:5000".parse().unwrap()).await,
+            Peer::Tailnet { login: Some("bob@x.com".into()) }
+        );
+        id.saw_forwarded("100.64.0.2").await;
+        assert_eq!(id.peer("100.64.0.3:5000".parse().unwrap()).await, Peer::Tailnet { login: None });
+        let r = id.callers().report(&["bob@x.com".into()]);
+        assert_eq!(r.shared.len(), 1, "{r:?}");
+        let devices: Vec<&str> = r.shared[0].devices.iter().map(|d| d.device.as_str()).collect();
+        assert_eq!(devices, ["ipad", "laptop"]);
+        assert_eq!(r.tagged.len(), 1);
+        assert_eq!((r.tagged[0].device.as_str(), r.tagged[0].tags.as_slice()), ("ci-1", &["tag:ci".to_owned()][..]));
+        // Not a tailnet address: nothing noted.
+        id.saw_forwarded("not an address").await;
+        assert_eq!(id.callers().report(&["bob@x.com".into()]).shared[0].devices.len(), 2);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

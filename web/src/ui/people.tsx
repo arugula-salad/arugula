@@ -214,6 +214,12 @@ interface Grant {
   from?: Record<string, number>;
 }
 
+/** #663: granted logins seen on several devices, and tagged devices refused (none from an older daemon). */
+interface Callers {
+  shared: { login: string; devices: { device: string; at: number }[] }[];
+  tagged: { device: string; tags: string[]; at: number }[];
+}
+
 let openShare: ((s: SessionId) => void) | null = null;
 
 export function shareSession(session: SessionId) {
@@ -224,6 +230,7 @@ export function shareSession(session: SessionId) {
 export function ShareDialog({ client }: { client: Client }) {
   const [session, setSession] = useState<SessionId | null>(null);
   const [grants, setGrants] = useState<Grant[]>([]);
+  const [callers, setCallers] = useState<Callers>({ shared: [], tagged: [] });
   const [who, setWho] = useState("");
   const [role, setRole] = useState<Role>("viewer");
   // A team's role, picked beside its Share button (#551).
@@ -242,7 +249,11 @@ export function ShareDialog({ client }: { client: Client }) {
   const [asked, setAsked] = useState<string | null>(null);
   const load = async (s: SessionId | null = session) => {
     const r = await client.request("GET", "/api/acl");
-    if (r.ok) setGrants((await r.json<{ grants: Grant[] }>()).grants);
+    if (r.ok) {
+      const v = await r.json<{ grants: Grant[]; callers?: Callers }>();
+      setGrants(v.grants);
+      setCallers(v.callers ?? { shared: [], tagged: [] });
+    }
     if (s !== null) {
       const x = await client.request("GET", `/api/sessions/${s}/secrets`);
       if (x.ok) setSecrets(await x.json());
@@ -331,6 +342,19 @@ export function ShareDialog({ client }: { client: Client }) {
         ) : (
           <p class="dim">Only you can reach it.</p>
         )}
+        {callers.shared
+          .filter((c) => mine.some((g) => g.principal === `tailnet:${c.login}`))
+          .map((c) => (
+            <p key={c.login} class="share-warning" data-shared-login={c.login}>
+              {c.login} is signed in on {c.devices.length} devices ({c.devices.map((d) => d.device).join(", ")}): everyone on them has
+              this role, and Arugula can't tell them apart.
+            </p>
+          ))}
+        {callers.tagged.map((t) => (
+          <p key={t.device} class="dim" data-tagged-caller={t.device}>
+            {t.device} ({t.tags.join(", ")}) is a tagged device: it has no login, so it was refused and nothing can be shared with it.
+          </p>
+        ))}
         {secrets
           .filter((x) => !client.info(x.pane)?.private)
           .map((x) => (

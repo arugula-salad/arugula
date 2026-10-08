@@ -8,6 +8,7 @@ mod args;
 mod authz;
 mod block;
 mod browser;
+mod callers;
 mod classify;
 mod control;
 // Windows panes on a pseudoconsole (M56).

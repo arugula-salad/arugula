@@ -250,6 +250,8 @@ async fn guard(
 ) -> Response {
     let peer = app.identify.peer(addr).await;
     let mut req = req;
+    // A request serve passed on: the tailnet address it came from (#663).
+    let mut forwarded: Option<String> = None;
     let checked = app.access.check_host(req.headers()).and_then(|()| match class(&req, &app.access) {
         Class::Owner => {
             // serve's identity header, on loopback: only from tailscaled.
@@ -262,6 +264,15 @@ async fn guard(
                     StatusCode::FORBIDDEN,
                     "a Tailscale-User-Login header from a local account other than tailscaled's".into(),
                 ));
+            }
+            // From serve: a person's request (the header), or a tagged
+            // node's (none, for a tailnet name), which is refused below.
+            if peer == crate::access::Peer::Local
+                && !app.access.tunnelled()
+                && (req.headers().contains_key("tailscale-user-login") || app.access.is_public_host(req.headers()))
+                && crate::localauth::serve_peer_ok(addr, app.access.port())
+            {
+                forwarded = req.headers().get("x-forwarded-for").and_then(|v| v.to_str().ok()).map(str::to_owned);
             }
             let pic = req.headers().get("tailscale-user-profile-pic").and_then(|v| v.to_str().ok()).map(str::to_owned);
             let who = app.access.check_identity(req.headers(), &peer)?.with_pic(pic);
@@ -296,6 +307,9 @@ async fn guard(
         }
         Class::McpToken => Ok(()),
     });
+    if let Some(f) = forwarded {
+        app.identify.saw_forwarded(&f).await;
+    }
     let mut res = match checked {
         Ok(()) => next.run(req).await,
         Err((status, why)) => {
