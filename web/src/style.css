@@ -2817,6 +2817,15 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   background: var(--raised-hover);
 }
 
+.pane-take {
+  padding: 1px 6px;
+  border-radius: 4px;
+  font: 600 11px system-ui, sans-serif;
+  color: var(--letterbox);
+  background: var(--accent);
+  pointer-events: auto;
+}
+
 .share-dialog h2 {
   margin: 0 0 8px;
   font-size: 16px;
