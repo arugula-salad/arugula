@@ -8,3 +8,9 @@ db8b86c7546e24247115edb20d95502d0ca6adcb:spikes/s22-apps/results/bridge.jsonl:ge
 c29b336228678aff8718d3f4d419bce1b8b26ad4:spikes/s30-talk/mls/Cargo.lock:generic-api-key:1005
 # Agent images: a test's made-up image file name ("0123456789abcdef"), not a key.
 ab044d8ce14c808344962e3b98629b739289927d:crates/daemon/src/agent/images.rs:generic-api-key:128
+# #618, #619: chant lease tokens (random UUIDs) in test fixtures from scratch workspaces, not secrets.
+2919322de029e32643c3462355f4d6baff318f44:crates/daemon/tests/fixtures/chant/why/status.json:generic-api-key:70
+e771ade639388899e13ce76f9b0a6eb7b26c9bbd:crates/daemon/tests/fixtures/chant/why/status.json:generic-api-key:70
+949dee980f0ce90108c4a41a83660de0104845c2:crates/daemon/src/labs/workspace/mod.rs:generic-api-key:1237
+0b60e885ed02a363bfbeefb5d1dce1ba0adefd77:crates/daemon/src/labs/workspace/mod.rs:generic-api-key:1237
+79bb79c3ee6639621d73deffcbaa1834ece23704:crates/daemon/src/labs/workspace/mod.rs:generic-api-key:1205
