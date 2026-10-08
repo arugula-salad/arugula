@@ -56,6 +56,7 @@ pub trait Block: Send + Sync {
     /// Whether it wrote this chant agent run (#618: an agent block started
     /// from a workspace member writes one per turn), so a workspace block
     /// links the run to it.
+    #[cfg(feature = "labs")]
     fn wrote_run(&self, _id: &str) -> bool {
         false
     }
@@ -294,6 +295,7 @@ impl BlockCtx {
     }
 
     /// Another block, if it's open.
+    #[cfg(feature = "labs")]
     pub async fn block(&self, id: PaneId) -> Option<Arc<dyn Block>> {
         let cmds = self.cmds.as_ref()?;
         let (tx, rx) = tokio::sync::oneshot::channel();
