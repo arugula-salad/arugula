@@ -609,7 +609,15 @@ pub mod api {
     async fn list(State(app): State<Arc<App>>) -> Response {
         let audit = app.acl.audit();
         let recent = &audit[audit.len().saturating_sub(200)..];
-        Json(json!({ "grants": app.acl.list(), "audit": recent })).into_response()
+        let grants = app.acl.list();
+        // #663: granted logins seen from more than one device share one
+        // role; tagged devices that called have no login to grant to.
+        let mut logins: Vec<String> =
+            grants.iter().filter_map(|g| g.principal.strip_prefix("tailnet:").map(str::to_owned)).collect();
+        logins.sort();
+        logins.dedup();
+        let callers = app.identify.callers().report(&logins);
+        Json(json!({ "grants": grants, "audit": recent, "callers": callers })).into_response()
     }
 
     #[derive(Deserialize)]
