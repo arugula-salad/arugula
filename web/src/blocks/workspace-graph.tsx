@@ -63,15 +63,20 @@ export function Graph({ client, id, s, member, close, picked }: {
   useEffect(() => {
     if (g.is === "off") void client.api(`/api/blocks/${id}/call/graph`, {}, "couldn't start behold");
   }, [g.is]);
+  // Read when a pick comes, so one right after a change in the bar (before
+  // effects run again) goes by the bar as it is now.
+  const now = useRef({ clicks, picked });
+  now.current = { clicks, picked };
   useEffect(() => {
     const on = (e: MessageEvent) => {
       if (e.source !== frame.current?.contentWindow) return;
       const m = beholdPick(e.data, e.origin, origin);
+      const { clicks, picked } = now.current;
       if (m && clicks !== "none") picked(m, clicks);
     };
     window.addEventListener("message", on);
     return () => window.removeEventListener("message", on);
-  }, [origin, clicks, picked]);
+  }, [origin]);
   return (
     <section class="ws-graph" data-ws-graph>
       <div class="ws-graph-bar">

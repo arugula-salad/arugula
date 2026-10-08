@@ -450,4 +450,8 @@ test("Graph on a member frames behold on it; behold's pick opens that member's S
   expect((await post(`/api/blocks/${block}/call/env`, { name: "local" })).ok).toBe(true);
   await shown.locator("[data-ws-graph] button[title='Close the graph']").click();
   await expect(shown.locator("[data-ws-graph]")).toHaveCount(0);
+  // behold is the block's: closing the block stops it.
+  expect(spawnSync("pgrep", ["-f", `serve ${ws} `]).status).toBe(0);
+  expect((await post(`/api/panes/${block}/close`, {})).ok).toBe(true);
+  await expect.poll(() => spawnSync("pgrep", ["-f", `serve ${ws} `]).status, { timeout: 10_000 }).toBe(1);
 });

@@ -91,6 +91,8 @@ pub(super) struct Graph {
     runs: Mutex<u64>,
     /// The fingerprint behold last heard about.
     told: Mutex<Option<String>>,
+    /// The block closed: a start still under way stops what it started.
+    closed: std::sync::atomic::AtomicBool,
 }
 
 impl Graph {
@@ -171,6 +173,9 @@ impl Graph {
             if tokio::net::TcpStream::connect(SocketAddr::from((Ipv4Addr::LOCALHOST, port))).await.is_ok() {
                 break;
             }
+            if self.closed.load(std::sync::atomic::Ordering::SeqCst) {
+                break;
+            }
             if let Ok(Some(st)) = child.try_wait() {
                 return Err(format!("behold exited ({st}): {}", tail(&log_path)));
             }
@@ -190,6 +195,12 @@ impl Graph {
         let (stop, stopped) = tokio::sync::oneshot::channel();
         *self.running.lock().unwrap() = Some(Running { port, env: env.to_owned(), stop });
         *self.told.lock().unwrap() = None;
+        // Closed while it started: `close` found nothing to stop.
+        if self.closed.load(std::sync::atomic::Ordering::SeqCst) {
+            self.running.lock().unwrap().take();
+            let _ = child.start_kill();
+            return Err("the block closed".into());
+        }
         let run = {
             let mut runs = self.runs.lock().unwrap();
             *runs += 1;
@@ -270,6 +281,7 @@ impl Graph {
 
     /// Close the site and stop behold (the block closed).
     pub fn close(&self, ctx: &BlockCtx) {
+        self.closed.store(true, std::sync::atomic::Ordering::SeqCst);
         self.stop(ctx);
         if self.site.lock().unwrap().take().is_some()
             && let Some(sites) = sites::get()
