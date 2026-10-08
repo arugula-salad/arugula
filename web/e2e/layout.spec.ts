@@ -106,6 +106,8 @@ test("dragging a pane onto another pane's edge moves it; vim inside is untouched
 test("tabs: create, rename, reorder by dragging, dock into a split, close", async ({ page }) => {
   await reset(page);
   const [t1] = await tabsInSession(page);
+  // + says which machine the tab opens on (#551).
+  await expect(page.locator(".new-tab")).toHaveAttribute("title", /^New tab on \S+ \(right-click for more\)$/);
   await page.getByTitle("New tab").click();
   await expect.poll(() => tabsInSession(page)).toHaveLength(2);
   const t2 = (await tabsInSession(page))[1];
