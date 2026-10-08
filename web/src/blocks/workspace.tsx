@@ -257,7 +257,7 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
   // the decision and run that made it.
   const changes = (m: Member) =>
     void client.openBlock(
-      { type: "diff", config: { repo: m.path, base: true, chant: { root: s?.root, chant: s?.chant ?? undefined } }, ...beside },
+      { type: "diff", config: { repo: m.path, base: true, chant: { root: s?.root, member: m.name, chant: s?.chant ?? undefined } }, ...beside },
       "couldn't show the changes",
     );
   const nested = (m: Member) => openWorkspace(client, m.path, id, s?.env ?? "local");

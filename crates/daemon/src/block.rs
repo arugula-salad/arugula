@@ -332,9 +332,9 @@ impl BlockCtx {
         rx.await.map_err(|_| "the daemon is stopping".to_owned())?
     }
 
-    /// The agent blocks open now, each with its config (#619: which pane
-    /// made a chant run, or holds a lease).
-    pub async fn agents(&self) -> Vec<(PaneId, Value)> {
+    /// The agent blocks open now, each with its config and state (#619:
+    /// which pane made a chant run, or runs as a lease's holder).
+    pub async fn agents(&self) -> Vec<(PaneId, Value, Value)> {
         let Some(cmds) = self.cmds.as_ref() else { return vec![] };
         let (tx, rx) = tokio::sync::oneshot::channel();
         if cmds.send(crate::mux::Cmd::Api(crate::mux::Api::Panes(tx))).is_err() {
@@ -347,7 +347,7 @@ impl BlockCtx {
                 break;
             }
             if let Some(b) = rx.await.ok().flatten() {
-                out.push((p.info.id, b.config()));
+                out.push((p.info.id, b.config(), b.state()));
             }
         }
         out

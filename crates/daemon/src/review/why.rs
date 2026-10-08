@@ -11,18 +11,18 @@
 //! decision chant ranks first for the file. Lines not committed yet say so,
 //! and name who holds a lease on the file's work: `status`'s `leases`, by
 //! the work items the same walk says cover the file (joined by record id,
-//! as the read contract joins documents).
+//! as the read contract joins documents). A lease on no work item the walk
+//! names isn't said.
 //!
-//! Arugula's own piece is the pane: a run id an agent block picked
-//! (`arugula-<block>-<ms>`, #590) and a lease held by a member's agent
-//! session are linked to that agent block while it's open.
+//! Arugula's own piece is the pane: a run is linked to the open agent
+//! block whose recent turns wrote that run id (#590), and a lease's holder
+//! to the open agent block of this workspace running as that session.
+//! DECISIONS.md lists these joins.
 
 use std::collections::{BTreeSet, HashMap};
 
 use serde::Serialize;
 use serde_json::Value;
-
-use crate::agent::chant;
 
 /// `sh -c READ sh ROOT CHANT ARGS…`: one chant read in the workspace root,
 /// its document on stdout.
@@ -85,34 +85,47 @@ pub struct Holder {
 }
 
 /// The open agent blocks of this workspace, for linking runs and leases to
-/// panes: each block's id with its config's `chant` (#304).
+/// panes.
 #[derive(Debug, Clone, Default)]
 pub struct Panes {
-    /// (block, agent session) for each agent block started from a member
-    /// of the workspace.
-    agents: Vec<(u32, Option<String>)>,
+    agents: Vec<Agent>,
+}
+
+/// An open agent block started from one of the workspace's members (#304).
+#[derive(Debug, Clone)]
+struct Agent {
+    block: u32,
+    /// The agent session it runs as.
+    session: Option<String>,
+    /// The runs its recent turns wrote to the ledger.
+    runs: Vec<String>,
 }
 
 impl Panes {
-    /// From the open agent blocks' configs, those whose `chant.root` is
-    /// `root`.
-    pub fn of(root: &str, blocks: &[(u32, Value)]) -> Self {
+    /// From the open agent blocks' configs and states, those whose
+    /// `chant.root` is `root`.
+    pub fn of(root: &str, blocks: &[(u32, Value, Value)]) -> Self {
         let same = |r: &str| r.trim_end_matches('/') == root.trim_end_matches('/');
         let agents = blocks
             .iter()
-            .filter(|(_, c)| c["chant"]["root"].as_str().is_some_and(same))
-            .map(|(id, c)| (*id, c["chant"]["agent"].as_str().map(str::to_owned)))
+            .filter(|(_, c, _)| c["chant"]["root"].as_str().is_some_and(same))
+            .map(|(id, c, st)| Agent {
+                block: *id,
+                session: c["chant"]["agent"].as_str().map(str::to_owned),
+                runs: strings_at(&st["recent_turns"], "run"),
+            })
             .collect();
         Self { agents }
     }
 
+    /// The block that wrote `run`, while it's open.
     fn run(&self, run: &str) -> Option<u32> {
-        let block = chant::run_block(run)?;
-        self.agents.iter().any(|(id, _)| *id == block).then_some(block)
+        self.agents.iter().find(|a| a.runs.iter().any(|r| r == run)).map(|a| a.block)
     }
 
+    /// The block running as the session `name`.
     fn session(&self, name: &str) -> Option<u32> {
-        self.agents.iter().find(|(_, a)| a.as_deref() == Some(name)).map(|(id, _)| *id)
+        self.agents.iter().find(|a| a.session.as_deref() == Some(name)).map(|a| a.block)
     }
 }
 
@@ -202,14 +215,12 @@ impl Why {
             .filter(|n| n["kind"] == "work")
             .filter_map(|n| n["record"].as_str().map(str::to_owned))
             .collect();
-        let member = nodes.values().find(|n| n["kind"] == "region").and_then(|n| n["member"].as_str());
-        // A lease on a work item covering the file, else one in the
-        // member's own ledger.
+        // A live lease on a work item covering the file.
         let holder = status.and_then(|s| {
-            let active = s["leases"].as_array()?.iter().filter(|l| l["state"] == "active");
-            let mut on = active.clone().filter(|l| l["item"].as_str().is_some_and(|i| work.contains(i)));
-            let lease =
-                on.next().or_else(|| active.clone().find(|l| member.is_some() && l["member"].as_str() == member))?;
+            let lease = s["leases"]
+                .as_array()?
+                .iter()
+                .find(|l| l["state"] == "active" && l["item"].as_str().is_some_and(|i| work.contains(i)))?;
             let name = lease["holder"].as_str()?.to_owned();
             Some(Holder {
                 pane: panes.session(&name),
@@ -320,6 +331,11 @@ impl Why {
     }
 }
 
+/// Each object's `key`, where it's a string.
+fn strings_at(v: &Value, key: &str) -> Vec<String> {
+    v.as_array().into_iter().flatten().filter_map(|o| o[key].as_str().map(str::to_owned)).collect()
+}
+
 fn strings(v: &Value) -> Vec<String> {
     v.as_array().into_iter().flatten().filter_map(|s| s.as_str().map(str::to_owned)).collect()
 }
@@ -340,13 +356,15 @@ mod tests {
         (serde_json::from_str(INTENT).unwrap(), serde_json::from_str(STATUS).unwrap())
     }
 
-    /// Agent block 7 runs as `app` in this workspace; 9 is another's.
+    /// Agent block 7 runs as `app` in this workspace and wrote the run; 9
+    /// is another workspace's, and claims the run too.
     fn panes() -> Panes {
+        let turns = json!({ "recent_turns": [{ "run": "arugula-7-1790848800000" }, { "run": "arugula-7-1" }] });
         Panes::of(
             "/ws/",
             &[
-                (7, json!({ "chant": { "root": "/ws", "member": "app", "agent": "app" } })),
-                (9, json!({ "chant": { "root": "/elsewhere", "member": "app", "agent": "app" } })),
+                (9, json!({ "chant": { "root": "/elsewhere", "member": "app", "agent": "app" } }), turns.clone()),
+                (7, json!({ "chant": { "root": "/ws", "member": "app", "agent": "app" } }), turns),
             ],
         )
     }
@@ -404,6 +422,17 @@ mod tests {
         released["leases"] = json!([]);
         let why = Why::read(&intent, Some(&released), &panes()).unwrap();
         assert_eq!(why.hunk(&[7]).unwrap().holder, None);
+        // A lease on another item, in the member's own ledger: not said.
+        let mut other = status.clone();
+        other["leases"][0]["item"] = json!("W-002");
+        other["leases"][0]["member"] = json!("app");
+        let why = Why::read(&intent, Some(&other), &panes()).unwrap();
+        assert_eq!(why.hunk(&[7]).unwrap().holder, None);
+        // A block running as the session that didn't write the run.
+        let fresh = Panes::of("/ws", &[(3, json!({ "chant": { "root": "/ws", "agent": "app" } }), json!({}))]);
+        let why = Why::read(&intent, Some(&status), &fresh).unwrap();
+        assert_eq!(why.hunk(&[3]).unwrap().runs[0].pane, None, "only the block that wrote it");
+        assert_eq!(why.hunk(&[7]).unwrap().holder.unwrap().pane, Some(3));
     }
 
     #[test]

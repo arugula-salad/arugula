@@ -57,7 +57,22 @@ export interface DiffState {
   /** M45b: git run as this user (a Fountain runner's sandbox). Its files
    * aren't yours to read, so there's no *Open file*. */
   run_as?: string | null;
+  /** #619: against the default branch's merge base (a member's Changes),
+   * so another base can be picked; the branch HEAD is on when that base is
+   * HEAD itself; the base picked instead. */
+  base?: boolean;
+  on_default?: string | null;
+  picked?: string | null;
 }
+
+/** Bases offered in place of the merge base (#619). */
+const BASES: [string, string][] = [
+  ["", "since the branch point"],
+  ["HEAD~1", "the last commit"],
+  ["HEAD~3", "the last 3 commits"],
+  ["HEAD~10", "the last 10 commits"],
+];
+const OTHER_BASE = "\u0000other";
 
 /** What changed where `from` runs (its repository, on its machine), in a
  * diff block beside it. */
@@ -234,6 +249,28 @@ function DiffBlock({ client, id, s }: { client: Client; id: PaneId; s: DiffState
         <span class={`review-live ${s.watching ? "on" : ""}`} title={s.watching ? "Updates as files change" : "Not watching: nobody's looking"}>
           {s.watching ? "live" : "paused"}
         </span>
+        {can && s.base && (
+          <select
+            class="diff-base"
+            data-diff-base
+            title="What the working tree is compared with"
+            value={s.picked ?? ""}
+            onChange={(e) => {
+              let rev: string | null = e.currentTarget.value;
+              e.currentTarget.value = s.picked ?? "";
+              if (rev === OTHER_BASE) rev = window.prompt("Compare with which revision?", s.picked ?? "")?.trim() ?? null;
+              if (rev !== null) void client.api(`/api/blocks/${id}/call/base`, { rev }, "couldn't compare with that");
+            }}
+          >
+            {BASES.map(([rev, label]) => (
+              <option key={rev} value={rev}>
+                {label}
+              </option>
+            ))}
+            {s.picked && !BASES.some(([rev]) => rev === s.picked) && <option value={s.picked}>{s.picked}</option>}
+            <option value={OTHER_BASE}>a revision…</option>
+          </select>
+        )}
         {can && (
           <button title="Read it again" onClick={() => call("refresh")}>
             ↻
@@ -241,6 +278,11 @@ function DiffBlock({ client, id, s }: { client: Client; id: PaneId; s: DiffState
         )}
       </div>
       <div class="review-body">
+        {s.on_default && (
+          <div class="diff-note" data-on-default>
+            On {s.on_default}, so committed work on this branch isn't shown. Pick a base above to see it.
+          </div>
+        )}
         {s.error ? (
           <div class="browser-card error">
             <p>Can't show the changes</p>

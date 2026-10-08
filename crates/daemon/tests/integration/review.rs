@@ -451,6 +451,7 @@ fn a_member_s_hunks_name_their_decision_and_run() {
         )
     };
     std::fs::write(ws.join("app/server.mjs"), server("3000", "hello ${name}")).unwrap();
+    std::fs::write(ws.join("README.md"), "the toy\n").unwrap();
     git(&ws, &["add", "-A"]);
     git(&ws, &["commit", "-qm", "the workspace"]);
     git(&ws, &["checkout", "-qb", "work"]);
@@ -466,6 +467,8 @@ fn a_member_s_hunks_name_their_decision_and_run() {
         ],
     );
     std::fs::write(ws.join("app/server.mjs"), server("Number(process.env.PORT ?? 8080)", "hello, ${name}!")).unwrap();
+    // Outside the member: not in its Changes.
+    std::fs::write(ws.join("README.md"), "the toy, changed\n").unwrap();
 
     let fixtures = format!("{}/tests/fixtures/chant/why", env!("CARGO_MANIFEST_DIR"));
     let chant = d.sessions.join("chant");
@@ -485,7 +488,8 @@ fn a_member_s_hunks_name_their_decision_and_run() {
         "chant": { "root": ws, "member": "app", "agent": "app", "chant": chant },
     } }));
 
-    let config = json!({ "repo": ws.join("app"), "base": true, "chant": { "root": ws, "chant": chant } });
+    let config =
+        json!({ "repo": ws.join("app"), "base": true, "chant": { "root": ws, "member": "app", "chant": chant } });
     let id = d.open_with(json!({ "type": "diff", "config": config }));
     let s = loaded(&d, id);
     assert!(s["against"].as_str().unwrap().starts_with("the working tree against where it left main ("), "{s}");
@@ -499,6 +503,8 @@ fn a_member_s_hunks_name_their_decision_and_run() {
     assert_eq!(w["decisions"][0]["relevance"], "path");
     assert_eq!(w["runs"][0]["id"], "arugula-7-1790848800000");
     assert_eq!(w["runs"][0]["agent"], "app");
+    // That run isn't one this daemon's agent blocks wrote: no pane.
+    assert!(w["runs"][0].get("pane").is_none(), "{w}");
     assert_eq!(w["holder"], json!({ "name": "app", "item": "W-001", "pane": agent }));
     // chant was asked in the workspace root, about the file by its path.
     let asked = std::fs::read_to_string(&asked).unwrap();
@@ -516,4 +522,25 @@ fn a_member_s_hunks_name_their_decision_and_run() {
     let s = wait_state(&d, plain, "its hunks", |s| file(s, "app/server.mjs")["hunks"].is_array());
     assert!(file(&s, "app/server.mjs")["hunks"][0].get("why").is_none(), "{s}");
     assert_eq!(std::fs::read_to_string(d.sessions.join("chant.asked")).unwrap().lines().count(), 2);
+    assert!(files(&s).iter().any(|f| f.0 == "README.md"), "the whole repository: {s}");
+
+    // On main itself the merge base is HEAD: the block says committed work
+    // isn't shown, and another base can be picked, and dropped again.
+    git(&ws, &["stash", "-q", "-u"]);
+    git(&ws, &["checkout", "-q", "main"]);
+    git(&ws, &["merge", "-q", "--ff-only", "work"]);
+    let on_main = d.open_with(json!({ "type": "diff", "config": config }));
+    let s = loaded(&d, on_main);
+    assert_eq!(
+        (s["on_default"].as_str(), s["against"].as_str()),
+        (Some("main"), Some("the working tree against HEAD, on main"))
+    );
+    assert!(s["files"].as_array().unwrap().is_empty(), "{s}");
+    assert_eq!(d.call(on_main, "base", json!({ "rev": "HEAD~1" }))["against"], "the working tree against HEAD~1");
+    let s = d.state(on_main);
+    assert_eq!((s["picked"].as_str(), s.get("on_default")), (Some("HEAD~1"), None), "{s}");
+    assert_eq!(files(&s), [("app/server.mjs".to_owned(), "modified".to_owned(), 1, 1)]);
+    assert_eq!(d.call(on_main, "base", json!({}))["against"], "the working tree against HEAD, on main");
+    assert_eq!(d.raw("POST", &format!("/api/blocks/{on_main}/call/base"), Some(json!({ "rev": "--output=x" }))).0, 400);
+    assert_eq!(d.raw("POST", &format!("/api/blocks/{plain}/call/base"), Some(json!({ "rev": "HEAD~1" }))).0, 400);
 }

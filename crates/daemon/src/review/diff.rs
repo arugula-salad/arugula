@@ -30,7 +30,10 @@
 //! and no revisions, the working tree is compared with where `HEAD` left
 //! the default branch (the merge base with `origin/HEAD`, `main` or
 //! `master`), so a member's committed work shows beside what isn't
-//! committed yet.
+//! committed yet; `chant.member` keeps it to the member's directory
+//! (`repo`). When `HEAD` is on the default branch the merge base is `HEAD`,
+//! and the state says so (`on_default`); `base {rev}` picks another base
+//! (`HEAD~3`), `base {}` goes back to the merge base.
 //!
 //! Methods (editor role): `refresh`, and `file {path, open?}` to open or
 //! close a file's hunks. "Open file" at a line is an ordinary file block
@@ -75,18 +78,21 @@ const EMPTY_TREE: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 
 /// Everything in one `sh -c`: `$1` the directory, `$2` 1 to add untracked
 /// files, `$3` the cap, `$4` 1 to compare with the default branch's merge
-/// base when no revision is given, then the revisions. The first line is
-/// `ok HEAD BASE TOP` (BASE `<branch>:<merge base>`; `-` for no `HEAD`,
-/// or no base) or `err WHY`; then
-/// the diff, `arugula-untracked`, untracked files' diffs, `arugula-big
+/// base when no revision is given, `$5` 1 to keep to `$1` (a member's
+/// directory) rather than the whole repository, then the revisions. The
+/// first line is `ok HEAD BASE TOP` (BASE `<branch>:<merge base>`, or
+/// `=<branch>` when `HEAD` is on it; `-` for no `HEAD`, or no base) or
+/// `err WHY`; then the diff, `arugula-untracked`, untracked files' diffs, `arugula-big
 /// PATH` for one too big to read and `arugula-more` past the cap on how
 /// many.
-const SCRIPT: &str = r#"r=$1; u=$2; cap=$3; b=$4; shift 4
+const SCRIPT: &str = r#"r=$1; u=$2; cap=$3; b=$4; p=$5; shift 5
 case $r in "~") r=$HOME ;; "~/"*) r=$HOME/${r#"~/"} ;; esac
 g="-c core.quotePath=false -c core.fsmonitor=false"
 cd -- "$r" 2>/dev/null || { printf 'err no such directory: %s\n' "$r"; exit 0; }
 command -v git >/dev/null 2>&1 || { echo "err git isn't installed here"; exit 0; }
 top=$(git rev-parse --show-toplevel 2>&1) || { printf 'err %s\n' "$(printf '%s\n' "$top" | head -n 1)"; exit 0; }
+ps=.
+if [ "$p" = 1 ]; then ps=$(git rev-parse --show-prefix 2>/dev/null); ps=${ps:-.}; fi
 cd -- "$top" || exit 0
 for x; do git rev-parse -q --verify "$x^{tree}" >/dev/null 2>&1 || { printf 'err no such revision: %s\n' "$x"; exit 0; }; done
 h=$(git rev-parse -q --verify HEAD 2>/dev/null) || h=-
@@ -96,17 +102,17 @@ if [ $# -eq 0 ]; then
   if [ "$b" = 1 ] && [ "$h" != - ]; then
     for x in origin/HEAD main master; do
       m=$(git merge-base HEAD "$x" 2>/dev/null) || continue
-      [ "$m" = "$h" ] || { set -- "$m"; base=$x:$m; }
+      if [ "$m" = "$h" ]; then base==$x; else set -- "$m"; base=$x:$m; fi
       break
     done
   fi
 fi
 printf 'ok %s %s %s\n' "$h" "$base" "$top"
 {
-  git $g diff --no-color --no-ext-diff --no-textconv -M "$@" 2>/dev/null
+  git $g diff --no-color --no-ext-diff --no-textconv -M "$@" -- "$ps" 2>/dev/null
   if [ "$u" = 1 ]; then
     echo arugula-untracked
-    git $g ls-files --others --exclude-standard 2>/dev/null | {
+    git $g ls-files --others --exclude-standard -- "$ps" 2>/dev/null | {
       n=0
       while IFS= read -r f; do
         n=$((n+1))
@@ -147,32 +153,47 @@ struct Config {
     /// #619: with no revisions, against the default branch's merge base.
     #[serde(default)]
     base: bool,
+    /// #619: the revision picked in its place.
+    #[serde(default)]
+    picked: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 struct ChantConfig {
     /// The workspace root, where chant is asked.
     root: String,
+    /// The member it was opened for: the diff keeps to `repo`, its
+    /// directory.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    member: Option<String>,
     /// The workspace's chant, as the workspace block found it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     chant: Option<String>,
 }
 
-/// How long a file's why waits after its last read before the next.
+/// How long a file's why waits after its last read before the next, at
+/// first; while its added lines keep moving it waits twice as long each
+/// time, up to [`WHY_GAP_MAX`].
 const WHY_GAP: Duration = Duration::from_secs(3);
+const WHY_GAP_MAX: Duration = Duration::from_secs(30);
 
-/// One open file's why: the diff it was read for, and what chant said.
+/// One open file's why: the added lines it was read for, and what chant
+/// said. The last answer stays drawn until the next lands.
 #[derive(Default)]
 struct WhyRead {
-    /// [`why_key`] of the diff and `HEAD` read for.
+    /// [`why_key`] of the added lines and `HEAD` read for.
     key: u64,
     read: Option<Result<Why, String>>,
     reading: bool,
     last: Option<Instant>,
+    gap: Option<Duration>,
 }
 
 /// What a `base` diff is compared with, in words.
 fn against_base(base: &str) -> String {
+    if let Some(branch) = base.strip_prefix('=') {
+        return format!("the working tree against HEAD, on {branch}");
+    }
     match base.split_once(':') {
         Some((branch, sha)) => {
             format!("the working tree against where it left {branch} ({})", &sha[..sha.len().min(8)])
@@ -181,12 +202,14 @@ fn against_base(base: &str) -> String {
     }
 }
 
-/// What a file's why was read for: its section of the diff and `HEAD`
-/// (a commit moves lines from uncommitted to committed without changing a
-/// diff against a fixed base).
+/// What a file's why is read for: which of its lines were added, and
+/// `HEAD` (a commit moves lines from uncommitted to committed without
+/// changing a diff against a fixed base). An edit within lines already
+/// added changes neither, so it reads nothing.
 fn why_key(text: &str, head: &str) -> u64 {
+    let added: Vec<u32> = hunks(text).iter().flat_map(|h| h.lines.iter()).filter(|l| l.0 == '+').map(|l| l.2).collect();
     let mut h = DefaultHasher::new();
-    (text, head).hash(&mut h);
+    (added, head).hash(&mut h);
     h.finish()
 }
 
@@ -234,6 +257,17 @@ struct State {
     rev_b: Option<String>,
     /// What it's compared with, in words.
     against: String,
+    /// #619: compared with the default branch's merge base (a member's
+    /// *Changes*), so another base can be picked.
+    #[serde(skip_serializing_if = "is_false")]
+    base: bool,
+    /// The default branch `HEAD` is on, when the merge base is `HEAD`
+    /// itself: committed work on it isn't shown.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    on_default: Option<String>,
+    /// The revision picked in place of the merge base.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    picked: Option<String>,
     /// Whose git it runs (M45b: `fountain`), when not yours.
     #[serde(skip_serializing_if = "Option::is_none")]
     run_as: Option<String>,
@@ -276,6 +310,8 @@ pub struct Diff {
     whys: Mutex<HashMap<String, WhyRead>>,
     /// One chant read at a time.
     asking: tokio::sync::Mutex<()>,
+    /// #619: the revision picked in place of the merge base.
+    picked: Mutex<Option<String>>,
 }
 
 impl Diff {
@@ -307,6 +343,7 @@ impl Diff {
             (Some(a), Some(b)) => format!("{a}..{b}"),
         };
         let state = State {
+            base: config.base && config.rev_a.is_none(),
             rev_a: config.rev_a.clone(),
             rev_b: config.rev_b.clone(),
             against,
@@ -316,6 +353,7 @@ impl Diff {
         };
         super::log(&ctx, &json!({ "e": "diff", "repo": repo, "rev_a": config.rev_a, "rev_b": config.rev_b }));
         let open = config.open.iter().take(OPEN_MAX).cloned().collect();
+        let picked = config.picked.clone().filter(|r| !r.starts_with('-') && !r.chars().any(char::is_whitespace));
         let config = Config { repo: Some(repo), ..config };
         let restoring = ctx.restoring;
         let d = Arc::new_cyclic(|me| Self {
@@ -330,6 +368,7 @@ impl Diff {
             reading: tokio::sync::Mutex::new(()),
             whys: Mutex::new(HashMap::new()),
             asking: tokio::sync::Mutex::new(()),
+            picked: Mutex::new(picked),
         });
         // Read once now, so `capture` and `describe` have it; brought back
         // after a restart, only once someone looks.
@@ -356,8 +395,11 @@ impl Diff {
             if untracked { "1" } else { "0" }.to_owned(),
             OUT_MAX.to_string(),
             if self.config.base { "1" } else { "0" }.to_owned(),
+            if self.config.chant.as_ref().is_some_and(|c| c.member.is_some()) { "1" } else { "0" }.to_owned(),
         ];
-        args.extend(self.config.rev_a.iter().chain(self.config.rev_b.iter()).cloned());
+        // #619: a revision picked in place of the merge base.
+        let picked = self.picked.lock().unwrap().clone().filter(|_| self.config.rev_a.is_none());
+        args.extend(self.config.rev_a.iter().chain(picked.iter()).chain(self.config.rev_b.iter()).cloned());
         let run = match &self.config.run_as {
             // Through sudo, as the runner's user.
             Some(_) => crate::labs::git_as_runner(&script(), &args).await,
@@ -399,8 +441,13 @@ impl Diff {
                 return;
             }
             st.error = None;
-            if self.config.base && self.config.rev_a.is_none() {
-                st.against = against_base(&base);
+            if st.base {
+                st.on_default = base.strip_prefix('=').filter(|_| picked.is_none()).map(str::to_owned);
+                st.against = match &picked {
+                    Some(p) => format!("the working tree against {p}"),
+                    None => against_base(&base),
+                };
+                st.picked = picked;
             }
             st.name = std::path::Path::new(&top).file_name().map(|n| n.to_string_lossy().into_owned());
             st.repo = Some(top);
@@ -441,8 +488,9 @@ impl Diff {
                         let hs = hunks(&f.text);
                         v["hunks"] = serde_json::to_value(&hs).unwrap_or_default();
                         if self.config.chant.is_some() && !hs.is_empty() {
-                            let w = whys.get(&f.path).filter(|w| w.key == why_key(&f.text, &read.head));
-                            match w.and_then(|w| w.read.as_ref()) {
+                            // The last answer, until the next lands: a hunk takes
+                            // the blamed lines it falls in.
+                            match whys.get(&f.path).and_then(|w| w.read.as_ref()) {
                                 Some(Ok(why)) => {
                                     for (i, h) in hs.iter().enumerate() {
                                         let added: Vec<u32> =
@@ -472,11 +520,12 @@ impl Diff {
         self.ask_why();
     }
 
-    /// #619: read the why of each open file whose diff or `HEAD` moved
-    /// since its last read, one chant read at a time, each file at most
-    /// every [`WHY_GAP`].
+    /// #619: read the why of each open file whose added lines or `HEAD`
+    /// moved since its last read, one chant read at a time, each file at
+    /// most every [`WHY_GAP`], backing off while its lines keep moving.
+    /// Nothing once the block is closed.
     fn ask_why(&self) {
-        if self.config.chant.is_none() {
+        if self.config.chant.is_none() || self.live.closed() {
             return;
         }
         let want: Vec<String> = {
@@ -500,25 +549,30 @@ impl Diff {
             let Some(me) = self.me.upgrade() else { return };
             self.ctx.rt.spawn(async move {
                 let _one = me.asking.lock().await;
-                let last = me.whys.lock().unwrap().get(&path).and_then(|w| w.last);
-                if let Some(wait) = last.and_then(|l| WHY_GAP.checked_sub(l.elapsed())) {
+                let (last, gap) = me.whys.lock().unwrap().get(&path).map(|w| (w.last, w.gap)).unwrap_or_default();
+                let gap = gap.unwrap_or(WHY_GAP);
+                if let Some(wait) = last.and_then(|l| gap.checked_sub(l.elapsed())) {
                     tokio::time::sleep(wait).await;
                 }
-                // Read for the diff as it is now.
-                let key = {
+                if me.live.closed() {
+                    return;
+                }
+                // Read for the lines as they are now.
+                let key = |me: &Diff| {
                     let read = me.read.lock().unwrap();
                     read.files.iter().find(|f| f.path == path).map(|f| why_key(&f.text, &read.head))
                 };
-                let got = match key {
-                    Some(_) if !me.live.closed() => Some(me.why(&path).await),
-                    _ => None,
-                };
-                if let Some(w) = me.whys.lock().unwrap().get_mut(&path) {
-                    w.reading = false;
-                    w.last = Some(Instant::now());
-                    if let (Some(key), Some(got)) = (key, got) {
-                        (w.key, w.read) = (key, Some(got));
+                let Some(asked) = key(&me) else {
+                    if let Some(w) = me.whys.lock().unwrap().get_mut(&path) {
+                        w.reading = false;
                     }
+                    return;
+                };
+                let got = me.why(&path).await;
+                let moved = key(&me) != Some(asked);
+                if let Some(w) = me.whys.lock().unwrap().get_mut(&path) {
+                    (w.reading, w.last, w.key, w.read) = (false, Some(Instant::now()), asked, Some(got));
+                    w.gap = Some(if moved { (gap * 2).min(WHY_GAP_MAX) } else { WHY_GAP });
                 }
                 me.redraw();
             });
@@ -616,6 +670,9 @@ impl Block for Diff {
         if let Some(c) = &self.config.chant {
             v["chant"] = json!(c);
         }
+        if let Some(p) = &*self.picked.lock().unwrap() {
+            v["picked"] = json!(p);
+        }
         if self.config.base {
             v["base"] = json!(true);
         }
@@ -660,6 +717,33 @@ impl Block for Diff {
                     None => Err("file needs {\"path\": …}".into()),
                 };
                 Box::pin(async move { r })
+            }
+            // #619: another base than the merge base (`rev`), or back to
+            // it (none).
+            "base" => {
+                let rev = args["rev"].as_str().map(str::trim).filter(|r| !r.is_empty()).map(str::to_owned);
+                let ok = match (&rev, self.state.lock().unwrap().base) {
+                    (_, false) => Err("this diff wasn't opened against a merge base".to_owned()),
+                    (Some(r), _) if r.starts_with('-') || r.chars().any(|c| c.is_whitespace() || c.is_control()) => {
+                        Err(format!("not a revision: {r:?}"))
+                    }
+                    _ => Ok(()),
+                };
+                if ok.is_ok() {
+                    *self.picked.lock().unwrap() = rev.clone();
+                    self.read.lock().unwrap().hash = 0;
+                    self.whys.lock().unwrap().clear();
+                }
+                Box::pin(async move {
+                    ok?;
+                    let me = me.ok_or("closed")?;
+                    me.load().await;
+                    let st = me.state.lock().unwrap();
+                    match &st.error {
+                        Some(e) => Err(e.clone()),
+                        None => Ok(json!({ "against": st.against })),
+                    }
+                })
             }
             "state" => {
                 let s = self.state();

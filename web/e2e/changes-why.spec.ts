@@ -6,8 +6,8 @@
 // the member's agent committed in a recorded run (its commit carrying
 // Chant-Agent and Chant-Run, #590), a line not committed yet, a decision
 // constraining the file by path, and a work item whose lease the member's
-// agent session holds. The run's id is the agent block's own, as an agent
-// block picks it, so the run links to that block.
+// agent session holds. The run's id is one the agent block wrote for a turn
+// of its own, so the run links to that block.
 //
 // The first run installs the fixture's chant (`npm ci`, a few seconds).
 
@@ -77,14 +77,19 @@ test("a hunk in Changes names its decision and run, and the run opens its agent"
   test.setTimeout(120_000);
   // The member's agent, running as its session `app`: its run is the one
   // the workspace records.
+  // Its ledger writes go to `true` here, so make.sh records the run.
   const agentRes = await post("/api/blocks", {
     type: "agent",
-    config: { agent: "claude", cwd: dir, chant: { root: ws, member: "app", agent: "app", chant: CHANT } },
+    config: { agent: "claude", cwd: dir, prompt: "hello", chant: { root: ws, member: "app", agent: "app", chant: "true" } },
     local: true,
   });
   expect(agentRes.ok).toBe(true);
   const agent: number = (await agentRes.json()).block;
-  execFileSync("sh", [MAKE, ws, CHANT], { env: { ...process.env, RUN: `arugula-${agent}-1790848800000` }, stdio: "ignore" });
+  const turnRun = async (): Promise<string | undefined> =>
+    (await (await fetch(`${base()}/api/blocks/${agent}`)).json()).state?.recent_turns?.[0]?.run;
+  await expect.poll(turnRun, { timeout: 20_000 }).toMatch(new RegExp(`^arugula-${agent}-\\d+$`));
+  const runId = (await turnRun())!;
+  execFileSync("sh", [MAKE, ws, CHANT], { env: { ...process.env, RUN: runId }, stdio: "ignore" });
 
   const out = cli("workspace", ws);
   const block = Number(/^%(\d+)/.exec(out)![1]);
@@ -102,8 +107,8 @@ test("a hunk in Changes names its decision and run, and the run opens its agent"
   const why = diff.locator("[data-why]").first();
   await expect(why).toBeVisible({ timeout: 20_000 });
   await expect(why.locator('[data-decision="why-001"]')).toHaveText("why-001 The server answers on one port");
-  const run = why.locator(`[data-run="arugula-${agent}-1790848800000"]`);
-  await expect(run).toHaveText(`Run arugula-${agent}-1790848800000 (app, claude-code)`);
+  const run = why.locator(`[data-run="${runId}"]`);
+  await expect(run).toHaveText(`Run ${runId} (app, claude-code)`);
   await expect(why.locator("[data-uncommitted]")).toHaveText("1 not committed yet; app holds the lease on W-001");
   await why.screenshot({ path: info.outputPath("hunk-why.png") });
   await diff.screenshot({ path: info.outputPath("changes.png") });
