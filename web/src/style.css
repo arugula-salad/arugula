@@ -3496,6 +3496,21 @@ html[data-native-tabs][data-desktop="macos"] .bar {
     max-height: 150px;
     overflow-y: auto;
   }
+  /* The lower row stays one row: its buttons share the card's width. */
+  .swarm-card .ca-nav {
+    flex-wrap: nowrap;
+  }
+  .swarm-card .ca-nav button {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 5px 6px;
+  }
+  /* One line, so a card's buttons fit its 150px without scrolling. */
+  .swarm-card .cq {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
   .swarm-waiting {
     display: none;
   }

@@ -765,7 +765,7 @@ function Card({
       {diff ? null : ask?.kind === "permission" ? (
         <PermissionBody ask={ask} />
       ) : (
-        <div class="cq">
+        <div class="cq" title={r.headline}>
           {r.headline}
           {r.command && r.kind !== "ask" && r.kind !== "gate" && !r.headline.includes(r.command) ? <code> {r.command}</code> : null}
         </div>
