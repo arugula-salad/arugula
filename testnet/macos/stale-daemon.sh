@@ -21,8 +21,9 @@
 # lex00's Mac had), installed as its install script did, in a fresh clone:
 #   illogical_running  it runs, with a pane counting: the app says it's
 #            illogicald from before the rename and offers the update, and
-#            updates nothing unasked; *Update arugulad* (pressed through
-#            accessibility, button.js) brings up the app's arugulad, the
+#            updates nothing unasked; *Update arugulad* (Return, the page's
+#            default button, typed through System Events) brings up the
+#            app's arugulad, the
 #            illogicald agent is gone and the pane is the same process,
 #            still counting
 #   illogical_stopped  the same with its service stopped: the app starts
@@ -82,11 +83,14 @@ fresh() {
   v push "$work/old/illogicald" "$work/old/illogical" /tmp/old/
   v push "$work/ill/illogicald" "$work/ill/illogical" /tmp/ill/
   vs 'xattr -dr com.apple.quarantine /tmp/old /tmp/ill 2>/dev/null; chmod +x /tmp/old/* /tmp/ill/*; true'
-  v push "$HERE/button.js" /tmp/button.js
 }
 fresh
 
-answers() { vs 'curl -s http://127.0.0.1:7681/api/host' | python3 -c 'import json, sys; print(json.load(sys.stdin).get("version", ""))' 2>/dev/null || true; }
+# With the local token, which 0.21.0 asks for (0.8.0 has none), from either state directory (after
+# the takeover arugula is a link to illogical: one file, read once).
+answers() { vs 'curl -s -H "Authorization: Bearer $(cat ~/.local/state/arugula/local-token 2>/dev/null || cat ~/.local/state/illogical/local-token 2>/dev/null)" http://127.0.0.1:7681/api/host' | python3 -c 'import json, sys; print(json.load(sys.stdin).get("version", ""))' 2>/dev/null || true; }
+# What 7681 says, raw, for a failure's message.
+raw() { vs 'curl -s -i -m 5 -H "Authorization: Bearer $(cat ~/.local/state/arugula/local-token 2>/dev/null || cat ~/.local/state/illogical/local-token 2>/dev/null)" http://127.0.0.1:7681/api/host | head -1; ls ~/.local/state 2>&1 | tr "\n" " "' 2>&1 || true; }
 answers_old() { [ "$(answers)" = "$OLD" ]; }
 nothing_answers() { [ -z "$(answers)" ]; }
 said_why() { vs "grep -q 'arugulad here is $OLD; this app needs 0.19.0 or newer' /tmp/app.log"; }
@@ -138,7 +142,7 @@ count() { vs 'cat /tmp/count' 2>/dev/null || echo 0; }
 install_ill() {
   fresh
   vs '/tmp/ill/illogicald install >/dev/null'
-  wait_for 30 answers_ill || fail "$1" "illogicald $ILL didn't answer after its install ($(answers))"
+  wait_for 30 answers_ill || fail "$1" "illogicald $ILL didn't answer after its install ($(raw))"
 }
 # The setup page offers the update and nothing changes until it's pressed.
 offered() {
@@ -149,12 +153,18 @@ offered() {
     return 1
   fi
   sleep 10
-  if answers_ill; then pass "$1" "illogicald $ILL still answers: nothing updated unasked"; else fail "$1" "the daemon became '$(answers)' unasked"; fi
+  if answers_ill && vs 'launchctl print gui/$(id -u)/illogicald >/dev/null 2>&1 && ! test -e ~/Library/LaunchAgents/arugulad.plist'; then
+    pass "$1" "illogicald $ILL still answers under its own agent: nothing updated unasked"
+  else
+    fail "$1" "the daemon became '$(answers)' unasked ($(raw))"
+  fi
 }
 # *Update arugulad*: the app's own arugulad takes over.
 update() {
   local new; new=$(bundled_version)
-  local how; how=$(vs 'osascript -l JavaScript /tmp/button.js "Update arugulad"' 2>&1) || { fail "$1" "pressing Update arugulad: $how"; return 1; }
+  local how
+  how=$(vs 'osascript -e "tell application \"System Events\" to set frontmost of process \"arugula-desktop\" to true" -e "delay 1" -e "tell application \"System Events\" to key code 36"' 2>&1) \
+    || { fail "$1" "pressing Return for Update arugulad: $how"; return 1; }
   if wait_for 120 eval '[ "$(answers)" = "$new" ]'; then
     pass "$1" "Update arugulad brought up arugulad $new"
   else

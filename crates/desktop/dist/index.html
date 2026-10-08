@@ -81,6 +81,14 @@
     skip.disabled = false;
   };
   button.onclick = go;
+  // As a Mac dialog: Return presses the offered update, Escape Not now.
+  document.addEventListener("keydown", (e) => {
+    const b = e.key === "Enter" ? fix : e.key === "Escape" ? skip : null;
+    if (b && !b.hidden && !b.disabled) {
+      e.preventDefault();
+      b.click();
+    }
+  });
   go();
 </script>
 </body>
