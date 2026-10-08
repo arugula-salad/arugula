@@ -217,6 +217,8 @@ test("J2c: #551's evening: a machine already in one team, a friend's second team
       async (p) => {
         await show(p, "sammac");
         await p.getByRole("button", { name: /share/i }).first().click();
+        // Riley's to drive: the team's role is picked beside its button.
+        await p.getByRole("combobox", { name: "Role for DLex Corp" }).selectOption({ label: "drives" });
         await p.getByRole("button", { name: "Share with everyone in DLex Corp" }).click();
         await expect(p.getByText("DLex Corp").first()).toBeVisible();
         const row = p.getByRole("listitem").filter({ hasText: "DLex Corp" }).first();
@@ -372,7 +374,8 @@ test("J2c: #551's evening: a machine already in one team, a friend's second team
         const v = p.viewportSize()!;
         await p.mouse.click(v.width / 2, v.height / 2, { button: "right" });
         const ask = p.getByRole("menuitem", { name: "Ask the owner to let me drive it" });
-        if (!(await ask.isVisible({ timeout: 3_000 }).catch(() => false))) {
+        // isVisible doesn't wait: the menu may not be drawn yet.
+        if (!(await ask.waitFor({ state: "visible", timeout: 3_000 }).then(() => true, () => false))) {
           const items = await p.getByRole("menuitem").allInnerTexts();
           throw new Error(`no "Ask the owner to let me drive it" in the pane menu; it has: ${items.map((t) => t.trim()).join(" | ")}`);
         }
@@ -448,6 +451,5 @@ test("J2c: #551's evening: a machine already in one team, a friend's second team
   await j.finish({
     // Filed on #551 and #550.
     "find-arugulad": "#550: the app's arugulad isn't on PATH, and nothing says where it is",
-    "riley-asks": "#551: after the role change the screen still says you're watching; nothing says to ask",
   });
 });

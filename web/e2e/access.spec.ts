@@ -126,6 +126,8 @@ test("made an editor, they type at once, without reconnecting", async () => {
   const clientId = await friend.evaluate(() => window.__arugula.client.clientId);
   expect((await api("/api/acl", { session: shared, principal: `tailnet:${FRIEND}`, role: "editor" })).ok).toBe(true);
   await expect.poll(() => friend.evaluate(() => window.__arugula.client.role())).toBe("editor");
+  // Their screen says so, in place of "you're watching" (#551).
+  await expect(friend.getByText(/^you may drive .+ now$/)).toBeVisible();
   // It runs on the owner's machine, so they trust the friend with it (M14),
   // and the owner typed there last, so drives it (M13): take control.
   await owner.evaluate(
