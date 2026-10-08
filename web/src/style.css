@@ -5657,6 +5657,16 @@ button.thread-quote:hover {
   outline: 2px solid #a6e3a1;
   outline-offset: 1px;
 }
+.share-button {
+  padding: 3px 8px;
+  border-radius: 6px;
+  color: var(--dim);
+  flex: none;
+}
+.share-button:hover {
+  background: var(--raised);
+  color: var(--fg);
+}
 .huddle-count {
   font: 600 11px system-ui, sans-serif;
 }
