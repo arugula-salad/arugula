@@ -33,8 +33,22 @@ enum Policy {
     Owner,
 }
 
+/// The path's segments, decoded as the router decodes the ones it hands a
+/// handler (`{id}`, `{method}`): a policy is decided on what the handler
+/// sees, so `call/%70rincipals` is `call/principals`. None when a segment
+/// isn't UTF-8 once decoded (the router refuses those).
+fn segments(path: &str) -> Option<Vec<String>> {
+    path.trim_start_matches('/')
+        .split('/')
+        .map(|s| percent_encoding::percent_decode_str(s).decode_utf8().ok().map(|s| s.into_owned()))
+        .collect()
+}
+
 fn policy(method: &Method, path: &str) -> Policy {
-    let parts: Vec<&str> = path.trim_start_matches('/').split('/').collect();
+    let Some(parts) = segments(path) else {
+        return Policy::Owner;
+    };
+    let parts: Vec<&str> = parts.iter().map(String::as_str).collect();
     let pane = |s: &str| s.parse::<PaneId>().ok();
     let get = method == Method::GET;
     match parts.as_slice() {
@@ -109,7 +123,12 @@ fn policy(method: &Method, path: &str) -> Policy {
 /// A follow-up (M29) is an instruction to an agent running there; an upload
 /// (M70) writes a file where the pane runs, and a paste is typing.
 fn drives(path: &str) -> bool {
-    ["/send", "/keys", "/mouse", "/followup", "/upload", "/paste"].iter().any(|s| path.ends_with(s))
+    last(path).is_some_and(|s| ["send", "keys", "mouse", "followup", "upload", "paste"].contains(&s.as_str()))
+}
+
+/// The path's last segment, decoded (`segments`).
+fn last(path: &str) -> Option<String> {
+    segments(path).and_then(|mut s| s.pop())
 }
 
 fn refuse(status: StatusCode, why: &str) -> Response {
@@ -152,20 +171,23 @@ pub async fn check(State(app): State<Arc<App>>, req: Request, next: Next) -> Res
 /// screen, live output, and tails from at or after it.
 fn from_now(path: &str, query: &str, floor: u64) -> Result<(), &'static str> {
     let param = |k: &str| url_param(query, k);
-    if path.ends_with("/export.cast") {
+    let last = last(path).unwrap_or_default();
+    if last == "export.cast" {
         return Err("shared from now on: no history to export");
     }
-    if path.ends_with("/capture") && param("scope").is_some_and(|s| s != "screen") {
+    if last == "capture" && param("scope").is_some_and(|s| s != "screen") {
         return Err("shared from now on: the screen only");
     }
-    if path.ends_with("/tail") && !param("from").and_then(|f| f.parse::<u64>().ok()).is_some_and(|f| f >= floor) {
+    if last == "tail" && !param("from").and_then(|f| f.parse::<u64>().ok()).is_some_and(|f| f >= floor) {
         return Err("shared from now on: tail with from at or after where the share began");
     }
     Ok(())
 }
 
+/// A query parameter, decoded as the handler's `Query` decodes it: else
+/// `%73cope=scrollback` would be no scope here and the scrollback there.
 fn url_param(query: &str, key: &str) -> Option<String> {
-    query.split('&').filter_map(|kv| kv.split_once('=')).find(|(k, _)| *k == key).map(|(_, v)| v.to_owned())
+    url::form_urlencoded::parse(query.as_bytes()).find(|(k, _)| k == key).map(|(_, v)| v.into_owned())
 }
 
 #[cfg(test)]
@@ -220,6 +242,21 @@ mod tests {
         assert_eq!(policy(&g, "/api/studio/apps"), Policy::Owner);
     }
 
+    /// The router hands handlers decoded path segments, so the policy is
+    /// decided on them too: an encoded name is the same call.
+    #[test]
+    fn encoded_paths() {
+        let p = Method::POST;
+        for m in ["%70rincipals", "%65nter", "agen%74", "run%5Fhere", "%6C%6F%67%69%6E", "%76iew", "%68ud", "gr%61ph"] {
+            assert_eq!(policy(&p, &format!("/api/blocks/7/call/{m}")), Policy::Owner, "{m}");
+        }
+        assert_eq!(policy(&p, "/api/blocks/7/call/%61pprove"), Policy::On(7, Role::Editor));
+        assert_eq!(policy(&p, "/api/blocks/%37/call/approve"), Policy::On(7, Role::Editor));
+        // Not UTF-8 once decoded: the router refuses it, and so do we.
+        assert_eq!(policy(&p, "/api/blocks/7/call/%FF"), Policy::Owner);
+        assert!(drives("/api/panes/3/%73end"));
+    }
+
     #[test]
     fn from_now_shares() {
         assert!(from_now("/api/panes/3/capture", "", 100).is_ok());
@@ -230,5 +267,10 @@ mod tests {
         assert!(from_now("/api/panes/3/tail", "from=100&follow=1", 100).is_ok());
         assert!(from_now("/api/panes/3/export.cast", "", 100).is_err());
         assert!(from_now("/api/panes/3/process", "", 100).is_ok());
+        // The handler's query is decoded: so is ours.
+        assert!(from_now("/api/panes/3/capture", "%73cope=scrollback", 100).is_err());
+        assert!(from_now("/api/panes/3/capture", "scope=%73creen", 100).is_ok());
+        assert!(from_now("/api/panes/3/tail", "%66rom=100", 100).is_ok());
+        assert!(from_now("/api/panes/3/%74ail", "", 100).is_err());
     }
 }

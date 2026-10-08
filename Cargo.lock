@@ -325,6 +325,7 @@ dependencies = [
  "instant-acme",
  "nix",
  "p256",
+ "percent-encoding",
  "rcgen",
  "regex",
  "reqwest",
