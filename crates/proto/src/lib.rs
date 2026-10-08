@@ -26,6 +26,7 @@ pub mod forge;
 pub mod fs;
 pub mod hosts;
 pub mod keys;
+pub mod op;
 pub mod service;
 #[cfg(all(test, feature = "ts"))]
 mod ts;

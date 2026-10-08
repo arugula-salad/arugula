@@ -228,6 +228,20 @@ Grants are data (`acl.json`) with an audit log (`audit.jsonl`).
 Where: `crates/core/src/access.rs`, `crates/daemon/src/acl.rs`, `crates/daemon/src/authz.rs`, `crates/daemon/src/mux/who_may.rs`.
 From: [M12](docs/plan-archive.md#m12-principals-and-roles), [Multiplayer track](docs/plan-archive.md#multiplayer-track-m12m15-added-2026-10-01).
 
+### Operations are declared once, and listed in two checked-in files
+An operation (a route a client calls, and sometimes an MCP tool or kind) is one
+`Op` declaration in `proto` (name, method, path, types, `ACCESS`, `DRIVES`,
+`CREDENTIAL`) and one `Handle` impl in the daemon; its HTTP route, its access
+check, its MCP row and the CLI's call come from that. A GET is read-only for an
+MCP token unless it declares `CREDENTIAL`. Two tests compare every operation's
+access (`ops-access.txt`) and what a read-only token reaches
+(`ops-read-only.txt`) against files in `crates/daemon/tests/fixtures/`, so a
+change shows in review (`ARUGULA_BLESS=1` rewrites them). A new route in
+`api.rs` is an operation unless it is on `HAND_WRITTEN` with a reason. The
+design and what doesn't fit it are in [docs/operations.md](docs/operations.md).
+Where: `crates/proto/src/op.rs`, `crates/daemon/src/ops/`, `crates/daemon/src/mcp/ops.rs`.
+From: #451, #572, #387.
+
 ### Who can reach a daemon
 The daemon listens on loopback; `tailscale serve` adds `Tailscale-User-Login`
 and strips any copy a client sends, and direct tailnet connections are

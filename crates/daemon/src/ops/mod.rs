@@ -1,0 +1,461 @@
+//! Operations (#451, #572): the daemon's half of each declaration in
+//! `arugula_proto::op`. An operation is handled once ([`Handle`]); its HTTP
+//! route ([`OpRoutes::op`]), its line in the access check ([`policy`]) and,
+//! where it has one, its MCP tool or kind (`mcp/ops.rs`) come from that.
+//!
+//! The handler runs the same for every surface. Where the surfaces differ on
+//! purpose, it asks [`Cx`]: who is calling and by which way in (an access
+//! check an MCP agent's token needs and HTTP's middleware already made), and
+//! its errors ([`OpError`]) are worded by each surface as before. The design
+//! is in `docs/operations.md`.
+
+mod close;
+mod panes;
+mod shell_env;
+
+use std::sync::Arc;
+
+use arugula_core::Role;
+use arugula_proto::{
+    PaneId,
+    op::{Access, Method, Op, Request},
+};
+use axum::{
+    Json, Router,
+    extract::{FromRequest, FromRequestParts, Path, State},
+    http::{StatusCode, request::Parts},
+    response::{IntoResponse, Response},
+    routing::{MethodRouter, delete, get, post, put},
+};
+
+use crate::{acl::Principal, api::ApiError, mcp::tools::Call, server::App};
+
+/// Every operation, in one place: the access check and the MCP tool list
+/// look each one up here.
+macro_rules! every_op {
+    ($m:ident) => {
+        $m!(arugula_proto::op::ops::ListPanes);
+        $m!(arugula_proto::op::ops::ClosePane);
+        $m!(arugula_proto::op::ops::ShellEnvGet);
+        $m!(arugula_proto::op::ops::ShellEnvRefresh);
+    };
+}
+
+/// Why an operation didn't happen. Each surface words it: HTTP as a status
+/// and the sentence it always sent, MCP as a sentence an agent can act on.
+#[derive(Debug)]
+pub enum OpError {
+    /// No such pane: HTTP's 404 "no pane %N"; MCP says what became of it.
+    NoPane(PaneId),
+    /// Not this caller's to do (403).
+    Forbidden(String),
+    /// What an MCP agent's token doesn't reach. HTTP's middleware checks
+    /// before a handler runs, so it never sees one.
+    Unreachable(String),
+}
+
+impl OpError {
+    pub fn http(self) -> ApiError {
+        match self {
+            OpError::NoPane(id) => ApiError(StatusCode::NOT_FOUND, format!("no pane %{id}")),
+            OpError::Forbidden(why) | OpError::Unreachable(why) => ApiError(StatusCode::FORBIDDEN, why),
+        }
+    }
+}
+
+/// Which way a call came in.
+pub enum Via<'a> {
+    /// An HTTP request, past `authz::check`: whether it's the owner's, and
+    /// whether the owner's CLI says an agent runs it.
+    Http { owner: bool, agent: bool },
+    /// An MCP tool call, with its caller's scope.
+    Mcp(&'a Call<'a>),
+}
+
+/// What a handler knows about the call.
+pub struct Cx<'a> {
+    pub app: &'a Arc<App>,
+    pub via: Via<'a>,
+}
+
+impl Cx<'_> {
+    /// What `access` means for this caller on `pane`, where the way in
+    /// hasn't checked it: an MCP agent block's token reads its own tab and
+    /// drives what it started. Over HTTP, `authz::check` already did.
+    pub async fn may(&self, access: Access, pane: PaneId) -> Result<(), OpError> {
+        let Via::Mcp(call) = &self.via else { return Ok(()) };
+        let r = match access {
+            Access::Pane(Role::Viewer) => call.readable(pane).await.map(|_| ()),
+            Access::Pane(_) => call.drivable(pane).await.map(|_| ()),
+            Access::Owner | Access::Handler | Access::Anyone => Ok(()),
+        };
+        r.map_err(OpError::Unreachable)
+    }
+
+    /// An agent, or someone who isn't the owner: what the owner keeps for
+    /// themselves (an invite block, #234) refuses them. Every MCP caller is
+    /// an agent.
+    pub fn agent_or_guest(&self) -> bool {
+        match self.via {
+            Via::Http { owner, agent } => !owner || agent,
+            Via::Mcp(_) => true,
+        }
+    }
+}
+
+/// The daemon's half of an operation: what it does, once for every way in.
+pub trait Handle: Op {
+    fn handle(cx: &Cx<'_>, path: Self::Path, req: Self::Req)
+    -> impl Future<Output = Result<Self::Res, OpError>> + Send;
+}
+
+/// A route's path segment, as axum extracts it: nothing, or a pane (with
+/// axum's own answer to one that isn't a number, as before).
+pub trait FromPath: Sized {
+    fn from_parts(parts: &mut Parts) -> impl Future<Output = Result<Self, Response>> + Send;
+}
+
+impl FromPath for () {
+    async fn from_parts(_: &mut Parts) -> Result<Self, Response> {
+        Ok(())
+    }
+}
+
+impl FromPath for PaneId {
+    async fn from_parts(parts: &mut Parts) -> Result<Self, Response> {
+        Path::<PaneId>::from_request_parts(parts, &()).await.map(|Path(id)| id).map_err(IntoResponse::into_response)
+    }
+}
+
+/// An operation's HTTP handler: the path, the body (or none), who asks, the
+/// owner's check for an owner's operation (`authz::check` makes it first;
+/// this is the handler's own, as `owner_only` was), then the handler.
+async fn serve<O>(State(app): State<Arc<App>>, req: axum::extract::Request) -> Response
+where
+    O: Handle,
+    O::Path: FromPath,
+{
+    let (mut parts, body) = req.into_parts();
+    let path = match O::Path::from_parts(&mut parts).await {
+        Ok(p) => p,
+        Err(r) => return r,
+    };
+    let owner = parts.extensions.get::<Principal>().is_none_or(Principal::is_owner);
+    let agent = crate::invite::agent(&parts.headers);
+    let body = match <O::Req as Request>::without_body() {
+        Some(none) => none,
+        None => {
+            let req = axum::extract::Request::from_parts(parts, body);
+            match Json::<O::Req>::from_request(req, &()).await {
+                Ok(Json(b)) => b,
+                Err(r) => return r.into_response(),
+            }
+        }
+    };
+    if O::ACCESS == Access::Owner && !owner {
+        return ApiError(StatusCode::FORBIDDEN, "only the owner can".into()).into_response();
+    }
+    let cx = Cx { app: &app, via: Via::Http { owner, agent } };
+    match O::handle(&cx, path, body).await {
+        Ok(res) => Json(res).into_response(),
+        Err(e) => e.http().into_response(),
+    }
+}
+
+/// Routes for operations, beside the hand-written ones.
+pub trait OpRoutes {
+    /// `O`'s route, at its path and method.
+    fn op<O>(self) -> Self
+    where
+        O: Handle,
+        O::Path: FromPath;
+}
+
+impl OpRoutes for Router<Arc<App>> {
+    fn op<O>(self) -> Self
+    where
+        O: Handle,
+        O::Path: FromPath,
+    {
+        let m: MethodRouter<Arc<App>> = match O::METHOD {
+            Method::Get => get(serve::<O>),
+            Method::Post => post(serve::<O>),
+            Method::Put => put(serve::<O>),
+            Method::Delete => delete(serve::<O>),
+        };
+        self.route(O::PATH, m)
+    }
+}
+
+/// Whether `parts` (a path's decoded segments) are the route `template`
+/// (`{…}` matches any one segment), and the segment it matched, if any.
+fn matches<'p>(template: &str, parts: &[&'p str]) -> Option<Option<&'p str>> {
+    let t: Vec<&str> = template.trim_start_matches('/').split('/').collect();
+    if t.len() != parts.len() {
+        return None;
+    }
+    let mut hole = None;
+    for (t, p) in t.iter().zip(parts) {
+        if t.starts_with('{') && t.ends_with('}') {
+            hole = Some(*p);
+        } else if t != p {
+            return None;
+        }
+    }
+    Some(hole)
+}
+
+/// What an operation's route needs from someone who isn't the owner, for
+/// `authz::check`: `None` for a route that isn't an operation. It matches
+/// the path's segments decoded, as `authz::policy` does and the router does
+/// for the ones it hands a handler, so `/api/panes/%31/close` is pane 1's.
+/// A segment that isn't UTF-8 once decoded is `None` too, and `authz` gives
+/// that the owner.
+pub fn policy(method: &axum::http::Method, path: &str) -> Option<crate::authz::Policy> {
+    use crate::authz::Policy;
+    let parts = crate::authz::segments(path)?;
+    let parts: Vec<&str> = parts.iter().map(String::as_str).collect();
+    let mut found = None;
+    macro_rules! look {
+        ($o:ty) => {
+            if found.is_none()
+                && method.as_str() == <$o as Op>::METHOD.as_str()
+                && let Some(hole) = matches(<$o as Op>::PATH, &parts)
+            {
+                let pane = || hole.and_then(|s| s.parse::<PaneId>().ok());
+                found = Some(match <$o as Op>::ACCESS {
+                    Access::Owner => Policy::Owner,
+                    Access::Anyone => Policy::Anyone,
+                    Access::Handler => Policy::Handler,
+                    Access::Pane(role) => pane().map_or(Policy::Owner, |p| Policy::On(p, role)),
+                });
+            }
+        };
+    }
+    every_op!(look);
+    found
+}
+
+/// Whether a read-only MCP token may call `O`: only a GET reads, unless its
+/// answer grants access (`Op::CREDENTIAL`).
+pub const fn read_only<O: Op>() -> bool {
+    matches!(O::METHOD, Method::Get) && !O::CREDENTIAL
+}
+
+/// The routes in `api.rs` that are not operations, each with why. A new
+/// route is an operation unless it is here (`every_api_route_is_an_operation_or_hand_written`).
+/// Entries leave as their operations arrive (#573–#578).
+#[cfg(test)]
+const HAND_WRITTEN: &[(&str, &str)] = &[
+    // Streams, text and bytes: the answer isn't one JSON value.
+    ("/api/events", "NDJSON stream"),
+    ("/api/panes/{id}/tail", "follows as a stream"),
+    ("/api/panes/{id}/capture", "plain text"),
+    ("/api/panes/{id}/export.cast", "asciicast"),
+    ("/api/editors/vsix", "binary download"),
+    ("/api/panes/{id}/upload", "raw bytes, its own body limit"),
+    ("/api/panes/{id}/paste", "types a path into the pane (with upload)"),
+    // Block calls: the arguments depend on the block's type and method (#459).
+    ("/api/blocks/{id}/call/{method}", "block calls, decided per method"),
+    // The pane verbs (#574).
+    ("/api/panes/{id}/send", "pane verb, #574"),
+    ("/api/panes/{id}/prompt", "waits on the agent, #576"),
+    ("/api/panes/{id}/keys", "pane verb, #574"),
+    ("/api/panes/{id}/mouse", "pane verb, #574"),
+    ("/api/panes/{id}/attention", "pane verb, #574"),
+    ("/api/panes/{id}/followup", "pane verb, #574"),
+    ("/api/panes/{id}/process", "pane verb, #574"),
+    ("/api/panes/{id}/detection", "pane verb, #574"),
+    ("/api/panes/{id}/diff", "pane verb, #574"),
+    ("/api/panes/{id}/drivers", "pane verb, #574"),
+    ("/api/panes/{id}/ask", "long wait, #576"),
+    ("/api/panes/{id}/ask/withdraw", "long wait, #576"),
+    ("/api/panes/{id}/permit", "long wait, #576"),
+    ("/api/panes/{id}/inbox", "long wait, #576"),
+    ("/api/panes/{id}/hook", "hook input, not yet converted"),
+    ("/api/panes/{id}/wait", "GET with a query, #573"),
+    ("/api/panes/{id}/share-machine", "not yet converted, #575"),
+    // Other path types and GET queries (#573).
+    ("/api/rules", "other path types, #573"),
+    ("/api/rules/{index}", "other path types, #573"),
+    ("/api/threads/{target}", "other path types, #573"),
+    ("/api/threads/{target}/read", "other path types, #573"),
+    ("/api/history", "GET with a query, #573"),
+    ("/api/search", "GET with a query, #573"),
+    ("/api/conversations", "GET with a query, #573"),
+    ("/api/sessions/{id}/secrets", "other path types, #573"),
+    // The owner's settings routes (#575).
+    ("/api/ide", "settings, #575"),
+    ("/api/ide/mention", "settings, #575"),
+    ("/api/hosts/self/agents", "settings, #575"),
+    ("/api/hosts/self/agents/refresh", "settings, #575"),
+    ("/api/editors", "settings, #575"),
+    ("/api/agents/adapters", "settings, #575"),
+    ("/api/agents/adapters/{kind}/install", "settings, #575"),
+    ("/api/conversations/open", "settings, #575"),
+    ("/api/machines", "settings, #575"),
+    ("/api/machines/{id}/reset", "settings, #575"),
+    ("/api/push/key", "settings, #575"),
+    ("/api/push/subscribe", "settings, #575"),
+    ("/api/push/test", "settings, #575"),
+    ("/api/notify", "settings, #575"),
+    // Not yet converted for other reasons.
+    ("/api/run", "composes several calls"),
+    ("/api/turn", "not yet converted"),
+    ("/api/attention", "not yet converted"),
+    ("/api/attention/act", "not yet converted"),
+    ("/api/blocks", "not yet converted"),
+    ("/api/blocks/{id}", "not yet converted"),
+];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parts(path: &str) -> Vec<&str> {
+        path.trim_start_matches('/').split('/').collect()
+    }
+
+    #[test]
+    fn routes_match_their_templates() {
+        assert_eq!(matches("/api/panes/{id}/close", &parts("/api/panes/3/close")), Some(Some("3")));
+        assert_eq!(matches("/api/panes", &parts("/api/panes")), Some(None));
+        assert_eq!(matches("/api/panes/{id}/close", &parts("/api/panes/3/send")), None);
+        assert_eq!(matches("/api/panes", &parts("/api/panes/3")), None);
+    }
+
+    #[test]
+    fn each_operation_is_its_own_policy() {
+        use crate::authz::Policy;
+        let (g, p) = (axum::http::Method::GET, axum::http::Method::POST);
+        assert_eq!(policy(&p, "/api/panes/3/close"), Some(Policy::On(3, Role::Editor)));
+        assert_eq!(policy(&p, "/api/panes/x/close"), Some(Policy::Owner));
+        assert_eq!(policy(&g, "/api/panes/3/close"), None);
+        assert_eq!(policy(&g, "/api/panes"), Some(Policy::Owner));
+        assert_eq!(policy(&g, "/api/hosts/self/shell-env"), Some(Policy::Owner));
+        assert_eq!(policy(&p, "/api/hosts/self/shell-env/refresh"), Some(Policy::Owner));
+        assert_eq!(policy(&g, "/api/panes/3/capture"), None);
+    }
+
+    /// The policy is decided on what the router hands the handler (4a974df),
+    /// not on the raw path: an encoded path is the plain one.
+    #[test]
+    fn an_encoded_path_has_its_plain_paths_policy() {
+        use crate::authz::Policy;
+        let p = axum::http::Method::POST;
+        assert_eq!(policy(&p, "/api/panes/%33/close"), policy(&p, "/api/panes/3/close"));
+        assert_eq!(policy(&p, "/api/panes/%33/close"), Some(Policy::On(3, Role::Editor)));
+        // Owner operations, encoded in the literal segments.
+        assert_eq!(policy(&p, "/api/hosts/self/shell-env/%72efresh"), Some(Policy::Owner));
+        assert_eq!(policy(&axum::http::Method::GET, "/api/%70anes"), Some(Policy::Owner));
+        // A segment that isn't UTF-8 once decoded isn't matched: authz gives the owner.
+        assert_eq!(policy(&p, "/api/panes/%ff/close"), None);
+    }
+
+    /// One row per operation, from its declaration.
+    fn rows() -> Vec<[String; 7]> {
+        let mut rows = Vec::new();
+        macro_rules! row {
+            ($o:ty) => {
+                rows.push([
+                    <$o as Op>::NAME.to_owned(),
+                    <$o as Op>::METHOD.as_str().to_owned(),
+                    <$o as Op>::PATH.to_owned(),
+                    format!("{:?}", <$o as Op>::ACCESS),
+                    <$o as Op>::DRIVES.to_string(),
+                    <$o as Op>::CREDENTIAL.to_string(),
+                    read_only::<$o>().to_string(),
+                ]);
+            };
+        }
+        every_op!(row);
+        rows.sort();
+        rows
+    }
+
+    /// `ARUGULA_BLESS=1` rewrites `file` (under `tests/fixtures/`) after a
+    /// change meant to alter it.
+    fn against_fixture(file: &str, got: String) {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures").join(file);
+        if std::env::var_os("ARUGULA_BLESS").is_some() {
+            std::fs::write(&path, &got).unwrap();
+        }
+        let want = std::fs::read_to_string(&path)
+            .unwrap_or_else(|_| panic!("tests/fixtures/{file} (ARUGULA_BLESS=1 writes it)"));
+        assert!(got == want, "{file} changed; ARUGULA_BLESS=1 rewrites {}", path.display());
+    }
+
+    /// Who may call what, in one reviewable place: every operation's
+    /// `ACCESS`, `DRIVES` and `CREDENTIAL`.
+    #[test]
+    fn every_operations_access_is_this_table() {
+        let mut got = String::from("# name method path access drives credential\n");
+        for r in rows() {
+            got += &format!("{} {} {} {} drives={} credential={}\n", r[0], r[1], r[2], r[3], r[4], r[5]);
+        }
+        against_fixture("ops-access.txt", got);
+    }
+
+    /// A read-only MCP token reaches a GET operation that isn't a
+    /// `CREDENTIAL`, and nothing else. A new one shows up in review here.
+    #[test]
+    fn a_read_only_token_reaches_only_these_operations() {
+        let mut got = String::from("# name method path\n");
+        for r in rows().iter().filter(|r| r[6] == "true") {
+            assert_eq!(r[1], "GET", "{} reads without being a GET", r[0]);
+            assert_eq!(r[5], "false", "{} is a credential", r[0]);
+            got += &format!("{} {} {}\n", r[0], r[1], r[2]);
+        }
+        against_fixture("ops-read-only.txt", got);
+    }
+
+    /// The paths `api.rs`'s `routes()` adds, and the operations it adds with
+    /// `.op::<…>()`, read from the source (the router can't be walked once
+    /// built). Routes other modules add (`labs::routes`, `fs`, `hosts` …) are
+    /// outside it.
+    fn api_routes() -> (Vec<String>, Vec<String>) {
+        let src = std::fs::read_to_string(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/api.rs")).unwrap();
+        let start = src.find("pub fn routes()").unwrap();
+        let body = &src[start..start + src[start..].find("\n}\n").unwrap()];
+        let (mut paths, mut ops) = (Vec::new(), Vec::new());
+        for (i, _) in body.match_indices(".route(") {
+            let rest = body[i + ".route(".len()..].trim_start();
+            let rest = rest.strip_prefix('"').expect("a route's path is a string literal");
+            paths.push(rest[..rest.find('"').unwrap()].to_owned());
+        }
+        for (i, _) in body.match_indices(".op::<") {
+            let rest = &body[i + ".op::<".len()..];
+            ops.push(rest[..rest.find(">()").unwrap()].to_owned());
+        }
+        (paths, ops)
+    }
+
+    #[test]
+    fn every_api_route_is_an_operation_or_hand_written() {
+        let (paths, declared) = api_routes();
+        assert!(paths.len() > 40 && !declared.is_empty(), "read {} routes, {} operations", paths.len(), declared.len());
+        let mut every = Vec::new();
+        macro_rules! name {
+            ($o:ty) => {
+                every.push(stringify!($o).replace(' ', "").rsplit("::").next().unwrap().to_owned());
+            };
+        }
+        every_op!(name);
+        for o in &declared {
+            assert!(every.contains(o), "api.rs routes {o}, which is not in every_op!");
+        }
+        for p in &paths {
+            let hand = HAND_WRITTEN.iter().any(|(h, _)| h == p);
+            assert!(
+                hand,
+                "{p} is a hand-written route not on HAND_WRITTEN: declare it as an operation, or list it with why"
+            );
+        }
+        for (h, why) in HAND_WRITTEN {
+            assert!(paths.iter().any(|p| p == h), "{h} ({why}) is on HAND_WRITTEN but api.rs doesn't route it");
+        }
+        for o in &every {
+            assert!(declared.contains(o), "{o} is an operation api.rs doesn't route");
+        }
+    }
+}
