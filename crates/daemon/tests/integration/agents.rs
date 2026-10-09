@@ -395,6 +395,22 @@ fn wait_reconnects_when_the_daemon_restarts() {
 }
 
 #[test]
+fn a_turn_whose_prompt_is_held_for_background_work_is_not_working() {
+    // #681: claude-agent-acp delivers a turn's result, then holds the answer
+    // to `session/prompt` while background subagents live. The block says
+    // so, and `wait --idle` returns.
+    let d = Daemon::child();
+    let name = "FAKE_ACP_NAME=@agentclientprotocol/claude-agent-acp";
+    let config =
+        json!({ "agent": "acp", "command": ["env", name, "python3", fake()], "cwd": d.sessions, "prompt": "held" });
+    let id = d.open_with(json!({ "type": "agent", "config": config }));
+    assert_eq!(d.wait(id, "idle"), "idle");
+    let s = d.state(id);
+    assert_eq!(s["status"], "working", "the prompt is still open: {s}");
+    assert!(entries(&s).iter().any(|e| e["type"] == "agent" && e["text"] == "All done; the report is above."), "{s}");
+}
+
+#[test]
 fn an_agent_that_dies_says_so_and_starts_again_on_send() {
     let d = Daemon::child();
     let id = d.open("crash");

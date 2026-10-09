@@ -370,3 +370,30 @@ fn a_turn_s_run_id_is_rebuilt_from_the_log_and_carried_through_a_retry() {
     ));
     assert!(g.t.markdown().contains("Couldn't record the end of run arugula-1-1000 in chant: run-unknown: no run"));
 }
+
+#[test]
+fn a_turn_whose_result_is_in_but_prompt_is_held_is_not_working() {
+    // #681: claude-agent-acp sends the result's `usage_update` (the one with
+    // a cost), then holds the prompt's answer while background subagents live.
+    let mut g = rebuilt();
+    g.pending.clear();
+    g.agent_info = json!({ "name": "@agentclientprotocol/claude-agent-acp" });
+    let u = |update: Value| json!({ "jsonrpc": "2.0", "method": "session/update", "params": { "update": update } });
+    // Mid-turn usage has no cost; an autonomous cycle's names its origin.
+    g.on_in(&u(json!({ "sessionUpdate": "usage_update", "used": 5, "size": 100 })), 2000);
+    assert_eq!(g.attention(), (Attention::Working, "working".into()));
+    g.on_in(
+        &u(json!({ "sessionUpdate": "usage_update", "cost": { "amount": 1.0 }, "_meta": { "_claude/origin": { "kind": "task-notification" } } })),
+        2100,
+    );
+    assert_eq!(g.attention().0, Attention::Working);
+    g.on_in(&u(json!({ "sessionUpdate": "usage_update", "cost": { "amount": 1.0 } })), 2200);
+    assert_eq!(g.attention(), (Attention::Idle, "waiting on a background task".into()));
+    // Stray updates after it change nothing; a queued prompt is working again.
+    g.on_in(&u(json!({ "sessionUpdate": "tool_call_update", "toolCallId": "t1", "status": "in_progress" })), 2300);
+    assert_eq!(g.attention().0, Attention::Idle);
+    // The answer, when it comes, ends the turn as it always did.
+    g.on_in(&json!({ "jsonrpc": "2.0", "id": 3, "result": { "stopReason": "end_turn" } }), 2400);
+    assert_eq!(g.attention().0, Attention::Done);
+    assert!(!g.result_in);
+}
