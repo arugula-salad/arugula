@@ -449,6 +449,12 @@ struct DelegateReq {
     /// Seconds to wait for it to finish or ask (default 0).
     #[serde(default)]
     wait: u64,
+    /// review, apply: the checkout.
+    #[serde(default)]
+    dir: Option<String>,
+    /// review: the pane to open its diff block beside.
+    #[serde(default)]
+    beside: Option<arugula_proto::PaneId>,
 }
 
 /// A task for another machine's agent, as this machine's owner (the CLI's;
@@ -464,6 +470,38 @@ async fn delegate_post(
     }
     if !own_account(&app, &who, &dev) {
         return refuse(StatusCode::FORBIDDEN, "this machine's own account delegates from it");
+    }
+    // M80: a kept result, reviewed or applied here.
+    if r.kind == "review" || r.kind == "apply" {
+        let (Some(task), Some(dir)) = (r.task.as_deref(), r.dir.as_deref()) else {
+            return refuse(StatusCode::BAD_REQUEST, "review and apply take task and dir");
+        };
+        let state = app.control.state_dir().to_owned();
+        if r.kind == "apply" {
+            return match delegate::apply(&state, &delegate::review_root(), task, Path::new(dir)).await {
+                Ok(a) => Json(json!({ "applied": a, "summary": a.text(task) })).into_response(),
+                Err(e) => refuse(StatusCode::BAD_REQUEST, &e),
+            };
+        }
+        let (wt, a) = match delegate::review(&state, &delegate::review_root(), task, Path::new(dir)).await {
+            Ok(x) => x,
+            Err(e) => return refuse(StatusCode::BAD_REQUEST, &e),
+        };
+        let req = arugula_proto::api::OpenRequest {
+            kind: arugula_proto::BlockType::Diff,
+            config: json!({ "repo": wt }),
+            split: r.beside,
+            from_pane: r.beside,
+            local: true,
+            ..Default::default()
+        };
+        let block = match app.mux.api(|x| crate::mux::Api::Open(req, None, x)).await {
+            Some(Ok(b)) => b,
+            Some(Err(e)) => return refuse(StatusCode::BAD_REQUEST, &e),
+            None => return refuse(StatusCode::SERVICE_UNAVAILABLE, "the daemon is stopping"),
+        };
+        let summary = format!("Task {task}'s patch is in diff block %{block}, on a copy of {dir}. {}", a.text(task));
+        return Json(json!({ "block": block, "worktree": wt, "applied": a, "summary": summary })).into_response();
     }
     let (m, a) = (r.machine.as_str(), r.agent.as_str());
     let claims = json!({ "machine": app.hosts.name() });

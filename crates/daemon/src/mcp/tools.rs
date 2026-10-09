@@ -710,6 +710,9 @@ pub struct DelegateArgs {
     /// (seconds; default 300, at most 1800; 0: don't wait).
     #[serde(default)]
     pub wait: Option<u64>,
+    /// review, apply: your checkout (default: where you work).
+    #[serde(default)]
+    pub dir: Option<String>,
 }
 
 /// `delegate`'s jobs.
@@ -730,6 +733,16 @@ const DELEGATE: &[Kind] = &[
         schema: schema_for_type::<DelegateArgs>,
     },
     Kind { name: "cancel", description: "Stop a task you sent.", schema: schema_for_type::<DelegateArgs> },
+    Kind {
+        name: "review",
+        description: "A finished task's patch, applied to a scratch copy of your checkout and shown in a diff block beside you, for the user to look at before anything changes here. Says whether it applies cleanly.",
+        schema: schema_for_type::<DelegateArgs>,
+    },
+    Kind {
+        name: "apply",
+        description: "Apply a finished task's patch in your checkout (git apply --3way): which files changed, conflicts to resolve, hunks that didn't apply, and new binary files the task left out.",
+        schema: schema_for_type::<DelegateArgs>,
+    },
 ];
 
 // Read only by the catalog's handler, which a build without Labs lacks.
@@ -1630,7 +1643,8 @@ impl<'a> Call<'a> {
                 Err(e) => Err(e),
             },
             ("list", Some("devices")) => self.list_devices(),
-            ("delegate", Some(kind @ ("send" | "get" | "answer" | "cancel"))) => match parse(args) {
+            ("delegate", Some(kind @ ("send" | "get" | "answer" | "cancel" | "review" | "apply"))) => match parse(args)
+            {
                 Ok(a) => self.delegate(kind, a).await,
                 Err(e) => Err(e),
             },
@@ -2837,6 +2851,38 @@ impl Call<'_> {
             return Err("only the owner's own agents delegate to other machines".into());
         }
         let app = self.app.clone();
+        // M80: the work comes back, from what's kept here.
+        if kind == "review" || kind == "apply" {
+            let task = a.task.as_deref().filter(|t| !t.is_empty()).ok_or_else(|| format!("{kind} needs task"))?;
+            let dir = match a.dir.as_deref().filter(|d| !d.is_empty()) {
+                Some(d) => d.to_owned(),
+                None => match self.me() {
+                    Some(me) => self.readable(me).await?.info.cwd.ok_or("say where your checkout is: dir")?,
+                    None => return Err("say where your checkout is: dir".into()),
+                },
+            };
+            let state = app.control.state_dir().to_owned();
+            if kind == "apply" {
+                let r = d::apply(&state, &d::review_root(), task, std::path::Path::new(&dir)).await?;
+                return done(r.text(task), json!({ "task": task, "applied": r }));
+            }
+            let (wt, r) = d::review(&state, &d::review_root(), task, std::path::Path::new(&dir)).await?;
+            let beside = self.own_pane();
+            let req = OpenRequest {
+                kind: BlockType::Diff,
+                config: json!({ "repo": wt }),
+                split: beside,
+                from_pane: beside,
+                local: true,
+                ..Default::default()
+            };
+            let block = self.open(req).await?;
+            let text = format!(
+                "Task {task}'s patch is in diff block %{block}, on a copy of {dir}; nothing here changed yet. {}",
+                r.text(task)
+            );
+            return done(text, json!({ "task": task, "block": block, "worktree": wt, "applied": r }));
+        }
         let (machine, agent) = (a.machine.as_str(), a.agent.as_str());
         let limit = Duration::from_secs(a.wait.unwrap_or(300).min(1800));
         let task_of = || a.task.as_deref().filter(|t| !t.is_empty()).ok_or_else(|| format!("{kind} needs task"));
@@ -4110,6 +4156,8 @@ mod tests {
         ("delegate", Some("get")),
         ("delegate", Some("answer")),
         ("delegate", Some("cancel")),
+        ("delegate", Some("review")),
+        ("delegate", Some("apply")),
     ];
 
     /// About half as many tools (#349), and every old job is still there:
