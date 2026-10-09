@@ -16,6 +16,7 @@ import { pickConversation } from "./conversations";
 import { pickApp, openSandboxes } from "../labs-load";
 import { openPicker } from "./picker";
 import { NotifySection } from "./notify";
+import { openDeveloper } from "./developer";
 import { openGettingStarted } from "./welcome";
 import { openPalette } from "./palette";
 import { InLabs } from "./in-labs";
@@ -41,7 +42,7 @@ export function PhoneHeader({ client }: { client: Client }) {
             </>
           )}
         </button>
-        {session && <InLabs on={client.hasLabs()}>{(l) => <l.HuddleButton client={client} session={session.id} />}</InLabs>}
+        {session && <InLabs on={client.hasCalls()}>{(l) => <l.HuddleButton client={client} session={session.id} />}</InLabs>}
         {panes.length > 1 && (
           <span class="pane-count">
             {panes.indexOf(active ?? -1) + 1}/{panes.length}
@@ -260,6 +261,7 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
             <button data-getting-started-open onClick={act(() => openGettingStarted(undefined, client))}>
               Getting started
             </button>
+            {owner && client.hasDev() && <button onClick={act(() => openDeveloper(client))}>Developer settings</button>}
           </div>
         </section>
         <NotifySection client={client} session={session} />

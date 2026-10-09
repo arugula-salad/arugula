@@ -10,6 +10,7 @@ use std::{future::Future, sync::Arc, time::Duration};
 use arugula_proto::{
     Attention, BlockType, Driver, PaneId, Policy, SessionId, StartedBy, ThreadTarget,
     api::{ActRequest, HistoryEntry, HistoryKind, OpenRequest, PaneSummary, RunRequest, WaitResult},
+    flags::{self, On},
     forge::{ForgeState, ItemKind, ReviewEvent, Write},
     op::ops::{ClosePane, ListPanes},
 };
@@ -866,39 +867,45 @@ const LIST: &[Kind] = &[
     },
 ];
 
-/// The jobs that work but aren't listed without `labs`: they're for setups
-/// a stranger doesn't have (Fountain, the studio, chant workspaces). Each is
-/// a kind of a grouped tool, so without `labs` it's filtered out of its
-/// group's table, and its arguments and its line in the description go with
-/// it. A caller who names one still reaches it (`dispatch`), by its kind or
-/// its name before #349.
-const UNLISTED: [(&str, &str); 5] = [
-    ("show", "app"),
-    ("show", "workspace"),
-    ("show", "fountain"),
-    ("list", "fountain_agents"),
-    ("list", "fountain_agent"),
+/// The jobs that work but aren't listed without their Labs flag: they're for
+/// setups a stranger doesn't have (Fountain, the studio, chant workspaces).
+/// Each is a kind of a grouped tool, so without its flag it's filtered out
+/// of its group's table, and its arguments and its line in the description
+/// go with it. A caller who names one still reaches it (`dispatch`), by its
+/// kind or its name before #349.
+const UNLISTED: [(&str, &str, &str); 5] = [
+    ("show", "app", flags::STUDIO),
+    ("show", "workspace", flags::WORKSPACES),
+    ("show", "fountain", flags::FOUNTAIN),
+    ("list", "fountain_agents", flags::FOUNTAIN),
+    ("list", "fountain_agent", flags::FOUNTAIN),
 ];
 
-/// Chat's two tools, unlisted without `labs` like the rest.
+/// Chat's two tools, unlisted without the `chat` flag like the rest.
 const UNLISTED_THREADS: [&str; 2] = ["read_thread", "post_thread"];
 
-/// Arguments of listed tools that aren't listed without `labs`, by tool:
-/// throwaway VMs and sandboxes, and Fountain agents. A caller who gives one
-/// still reaches it.
-const UNLISTED_ARGS: [(&str, &[&str]); 2] =
-    [("run", &["vm", "vm_tab", "image", "machine"]), ("start_agent", &["fountain_agent", "as_fountain", "vm"])];
+/// Arguments of listed tools that aren't listed without their flag, by
+/// tool: throwaway VMs and sandboxes, and Fountain agents. A caller who
+/// gives one still reaches it.
+const UNLISTED_ARGS: [(&str, &[&str], &str); 3] = [
+    ("run", &["vm", "vm_tab", "image", "machine"], flags::VMS),
+    ("start_agent", &["fountain_agent", "as_fountain"], flags::FOUNTAIN),
+    ("start_agent", &["vm"], flags::VMS),
+];
 
-/// Values of a listed tool's arguments that aren't listed without `labs`:
-/// start_agent's agent `fountain`.
-const UNLISTED_VALUES: [(&str, &str); 1] = [("start_agent", "fountain")];
+/// Values of a listed tool's arguments that aren't listed without their
+/// flag: start_agent's agent `fountain`.
+const UNLISTED_VALUES: [(&str, &str, &str); 1] = [("start_agent", "fountain", flags::FOUNTAIN)];
 
-/// A tool's schema without the arguments and values it lists only with
-/// `labs`.
-fn without_labs(tool: &str, schema: Schema) -> Schema {
-    let args: Vec<&str> =
-        UNLISTED_ARGS.iter().filter(|(t, _)| *t == tool).flat_map(|(_, a)| a.iter().copied()).collect();
-    let values: Vec<&str> = UNLISTED_VALUES.iter().filter(|(t, _)| *t == tool).map(|(_, v)| *v).collect();
+/// A tool's schema without the arguments and values whose flag is off.
+fn without_labs(tool: &str, schema: Schema, on: On) -> Schema {
+    let args: Vec<&str> = UNLISTED_ARGS
+        .iter()
+        .filter(|(t, _, f)| *t == tool && !on.has(f))
+        .flat_map(|(_, a, _)| a.iter().copied())
+        .collect();
+    let values: Vec<&str> =
+        UNLISTED_VALUES.iter().filter(|(t, _, f)| *t == tool && !on.has(f)).map(|(_, v, _)| *v).collect();
     if args.is_empty() && values.is_empty() {
         return schema;
     }
@@ -944,21 +951,21 @@ fn drop_values(schema: &mut Value, values: &[&str]) {
     }
 }
 
-/// Whether a grouped tool's kind is listed, with `labs` or without.
-fn listed_kind(labs: bool, tool: &str, kind: &str) -> bool {
-    labs || !UNLISTED.contains(&(tool, kind))
+/// Whether a grouped tool's kind is listed with the flags in `on`.
+fn listed_kind(on: On, tool: &str, kind: &str) -> bool {
+    UNLISTED.iter().all(|(t, k, f)| (*t, *k) != (tool, kind) || on.has(f))
 }
 
-/// The tools `tools/list` shows: all of them with `labs`, else without those
-/// a stranger can't use, and without the kinds they can't use in the rest.
-fn defs(labs: bool) -> Vec<Def> {
+/// The tools `tools/list` shows: each one a stranger can't use needs its
+/// flag, and so does each kind they can't use in the rest.
+fn defs(on: On) -> Vec<Def> {
     all_defs()
         .into_iter()
-        .filter(|d| labs || !UNLISTED_THREADS.contains(&d.name))
+        .filter(|d| on.has(flags::CHAT) || !UNLISTED_THREADS.contains(&d.name))
         .map(|mut d| {
             let name = d.name;
             if let Args::Kinds { kinds, .. } = &mut d.args {
-                kinds.retain(|k| listed_kind(labs, name, k.name));
+                kinds.retain(|k| listed_kind(on, name, k.name));
             }
             d
         })
@@ -1335,15 +1342,14 @@ pub struct DeviceCallArgs {
     pub timeout: Option<f64>,
 }
 
-/// The tools `scope` may call, with `labs` or without.
-pub fn list(scope: Scope, labs: bool) -> Vec<Tool> {
-    defs(labs)
+/// The tools `scope` may call, with the flags in `on`.
+pub fn list(scope: Scope, on: On) -> Vec<Tool> {
+    defs(on)
         .into_iter()
         .filter(|d| scope != Scope::Read || d.read_only)
         .map(|d| {
             let (description, schema) = match &d.args {
-                Args::One(schema) if labs => (d.description.to_owned(), schema()),
-                Args::One(schema) => (d.description.to_owned(), without_labs(d.name, schema())),
+                Args::One(schema) => (d.description.to_owned(), without_labs(d.name, schema(), on)),
                 Args::Kinds { kinds, default } => {
                     (kinds_text(d.description, kinds, *default), grouped_schema(kinds, *default))
                 }
@@ -1361,9 +1367,9 @@ pub fn list(scope: Scope, labs: bool) -> Vec<Tool> {
 
 /// What a call reaches: its tool (by its name now, for an old one), the
 /// kind it picks for a grouped one, and its arguments without the kind.
-/// Every kind answers, listed or not; `labs` only says which ones an error
+/// Every kind answers, listed or not; `on` only says which ones an error
 /// names.
-fn route(name: &str, mut args: Value, labs: bool) -> Result<(Def, Option<&'static str>, Value), String> {
+fn route(name: &str, mut args: Value, on: On) -> Result<(Def, Option<&'static str>, Value), String> {
     let name = match renamed(name) {
         Some((tool, set)) => {
             if let (Some((key, v)), Some(o)) = (set, args.as_object_mut()) {
@@ -1377,7 +1383,7 @@ fn route(name: &str, mut args: Value, labs: bool) -> Result<(Def, Option<&'stati
     let kind = match &def.args {
         Args::One(_) => None,
         Args::Kinds { kinds, default } => {
-            let shown: Vec<&str> = kinds.iter().map(|k| k.name).filter(|k| listed_kind(labs, def.name, k)).collect();
+            let shown: Vec<&str> = kinds.iter().map(|k| k.name).filter(|k| listed_kind(on, def.name, k)).collect();
             Some(pick_kind(def.name, kinds, &shown, *default, &mut args)?)
         }
     };
@@ -1464,8 +1470,8 @@ impl<'a> Call<'a> {
 
     pub async fn dispatch(&self, name: &str, args: Value) -> CallToolResult {
         let fail = |e: String| CallToolResult::error(vec![ContentBlock::text(e)]);
-        let labs = arugula_proto::flags::get(self.app.control.state_dir(), arugula_proto::flags::LABS);
-        let (def, kind, args) = match route(name, args, labs) {
+        let on = flags::on(self.app.control.state_dir());
+        let (def, kind, args) = match route(name, args, on) {
             Ok(r) => r,
             Err(e) => return fail(e),
         };
@@ -3640,6 +3646,11 @@ fn may_start(caller_on_machine: bool, on_machine: bool, vm: bool, worn: bool) ->
 
 #[cfg(test)]
 mod tests {
+    /// Every Labs flag on, or none.
+    fn fl(labs: bool) -> arugula_proto::flags::On {
+        if labs { arugula_proto::flags::On::all() } else { arugula_proto::flags::On::none() }
+    }
+
     #[test]
     fn who_may_start_what_where() {
         use super::may_start;
@@ -3701,7 +3712,7 @@ mod tests {
         let mut all = serde_json::Map::new();
         for (scope_name, scope) in [("full", Scope::Full), ("read", Scope::Read), ("block", Scope::Block(1))] {
             for labs in [true, false] {
-                let tools = serde_json::to_value(list(scope, labs)).unwrap();
+                let tools = serde_json::to_value(list(scope, fl(labs))).unwrap();
                 all.insert(format!("{scope_name}, labs {labs}"), tools);
             }
         }
@@ -3723,13 +3734,15 @@ mod tests {
     fn a_build_without_labs_never_lists_fountain() {
         let dir = std::env::temp_dir().join(format!("arugula-nolabs-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        arugula_proto::flags::set(&dir, arugula_proto::flags::LABS, true).unwrap();
-        assert!(arugula_proto::flags::get(&dir, arugula_proto::flags::LABS), "the flag is on");
-        let labs = crate::labs::enabled(&dir);
+        for f in arugula_proto::flags::FLAGS {
+            arugula_proto::flags::set(&dir, f.name, true).unwrap();
+        }
+        assert_eq!(arugula_proto::flags::on(&dir), arugula_proto::flags::On::all(), "the flags are on");
+        let labs = crate::labs::flags(&dir).any();
         std::fs::remove_dir_all(&dir).unwrap();
         assert!(!labs, "labs is on in a build without it");
         for scope in [Scope::Full, Scope::Read, Scope::Block(1)] {
-            let tools = serde_json::to_string(&list(scope, labs)).unwrap().to_lowercase();
+            let tools = serde_json::to_string(&list(scope, fl(labs))).unwrap().to_lowercase();
             assert!(!tools.contains("fountain"), "the tool list mentions Fountain");
             assert!(!tools.contains("studio"), "the tool list mentions studio");
             assert!(!tools.contains("workspace"), "the tool list mentions workspaces");
@@ -3788,7 +3801,7 @@ mod tests {
 
     #[test]
     fn annotations_are_honest() {
-        let all = list(Scope::Full, false);
+        let all = list(Scope::Full, fl(false));
         assert_eq!(all.len(), 18);
         let ro: Vec<&str> = all
             .iter()
@@ -3796,7 +3809,7 @@ mod tests {
             .map(|t| t.name.as_ref())
             .collect();
         assert_eq!(ro, ["read_output", "wait", "list", "history", "read_forge", "read_invite", "read_file"]);
-        assert_eq!(list(Scope::Read, false).len(), ro.len(), "a read token sees the read-only tools only");
+        assert_eq!(list(Scope::Read, fl(false)).len(), ro.len(), "a read token sees the read-only tools only");
         let hint = |n: &str| all.iter().find(|t| t.name == n).unwrap().annotations.clone().unwrap();
         assert_eq!(hint("close").destructive_hint, Some(true));
         // A group is as careful as its most careful kind: draft has merge.
@@ -3806,7 +3819,7 @@ mod tests {
 
     /// The kinds of a group a tool has, listed with `labs` or without.
     fn kinds_of(labs: bool, tool: &str) -> Vec<&'static str> {
-        defs(labs)
+        defs(fl(labs))
             .into_iter()
             .find(|d| d.name == tool)
             .map(|d| match d.args {
@@ -3823,50 +3836,50 @@ mod tests {
     #[test]
     fn unlisted_tools_are_not_listed_without_labs_but_are_there() {
         for scope in [Scope::Full, Scope::Read] {
-            let listed: Vec<String> = list(scope, false).iter().map(|t| t.name.to_string()).collect();
+            let listed: Vec<String> = list(scope, fl(false)).iter().map(|t| t.name.to_string()).collect();
             for name in UNLISTED_THREADS {
                 assert!(!listed.contains(&name.to_string()), "{name} is listed for {scope:?} without labs");
             }
-            let with: Vec<String> = list(scope, true).iter().map(|t| t.name.to_string()).collect();
+            let with: Vec<String> = list(scope, fl(true)).iter().map(|t| t.name.to_string()).collect();
             for d in all_defs().iter().filter(|d| scope == Scope::Full || d.read_only) {
                 assert!(with.contains(&d.name.to_string()), "{} isn't listed for {scope:?} with labs", d.name);
             }
         }
         // A hidden kind is filtered out of its group: not in kind's enum,
         // nor its line in the description, nor the arguments only it takes.
-        for (tool, kind) in UNLISTED {
+        for (tool, kind, _) in UNLISTED {
             assert!(!kinds_of(false, tool).contains(&kind), "{tool} kind {kind} is listed without labs");
             assert!(kinds_of(true, tool).contains(&kind), "{tool} kind {kind} isn't listed with labs");
-            let t = list(Scope::Full, false).into_iter().find(|t| t.name == tool).unwrap();
+            let t = list(Scope::Full, fl(false)).into_iter().find(|t| t.name == tool).unwrap();
             let kinds = t.input_schema["properties"]["kind"]["enum"].clone();
             assert!(!kinds.as_array().unwrap().contains(&json!(kind)), "{tool}: {kinds}");
             assert!(!t.description.as_deref().unwrap().contains(&format!("\n- {kind}")), "{tool}: {kind}");
             // Still there: by its kind, and by its name before #349.
-            route(tool, json!({ "kind": kind }), false).unwrap_or_else(|e| panic!("{tool} {kind}: {e}"));
+            route(tool, json!({ "kind": kind }), fl(false)).unwrap_or_else(|e| panic!("{tool} {kind}: {e}"));
         }
         for old in ["open_app", "open_workspace", "open_fountain", "list_agents", "read_agent"] {
-            let (def, kind, _) = route(old, json!({}), false).unwrap_or_else(|e| panic!("{old}: {e}"));
-            assert!(UNLISTED.contains(&(def.name, kind.unwrap())), "{old}");
+            let (def, kind, _) = route(old, json!({}), fl(false)).unwrap_or_else(|e| panic!("{old}: {e}"));
+            assert!(UNLISTED.iter().any(|(t, k, _)| (*t, *k) == (def.name, kind.unwrap())), "{old}");
         }
-        let show = list(Scope::Full, false).into_iter().find(|t| t.name == "show").unwrap();
+        let show = list(Scope::Full, fl(false)).into_iter().find(|t| t.name == "show").unwrap();
         for arg in ["app", "env", "view", "source", "profile"] {
             assert!(show.input_schema["properties"].get(arg).is_none(), "show takes {arg} without labs");
         }
-        let list_tool = list(Scope::Full, false).into_iter().find(|t| t.name == "list").unwrap();
+        let list_tool = list(Scope::Full, fl(false)).into_iter().find(|t| t.name == "list").unwrap();
         for arg in ["name", "source", "profile"] {
             assert!(list_tool.input_schema["properties"].get(arg).is_none(), "list takes {arg} without labs");
         }
         // An error names only the kinds that are listed.
-        let e = route("show", json!({ "kind": "terminal" }), false).err().unwrap();
+        let e = route("show", json!({ "kind": "terminal" }), fl(false)).err().unwrap();
         assert!(e.contains("port") && !e.contains("fountain") && !e.contains("workspace"), "{e}");
         let every: Vec<&str> = all_defs().iter().map(|d| d.name).collect();
         for name in UNLISTED_THREADS {
             assert!(every.contains(&name), "{name} no longer has a definition");
         }
         assert_eq!(every.len(), 20);
-        assert_eq!(defs(false).len(), 18);
-        assert_eq!(defs(true).len(), 20);
-        assert_eq!(every.len(), defs(false).len() + UNLISTED_THREADS.len());
+        assert_eq!(defs(fl(false)).len(), 18);
+        assert_eq!(defs(fl(true)).len(), 20);
+        assert_eq!(every.len(), defs(fl(false)).len() + UNLISTED_THREADS.len());
     }
 
     /// The 39 tools before #349, by their old names.
@@ -3921,7 +3934,7 @@ mod tests {
         assert!(now.len() * 2 <= BEFORE.len() + 1, "{} tools", now.len());
         let mut jobs = std::collections::BTreeSet::new();
         for old in BEFORE {
-            let (def, kind, _) = route(old, json!({}), true).unwrap_or_else(|e| panic!("{old}: {e}"));
+            let (def, kind, _) = route(old, json!({}), fl(true)).unwrap_or_else(|e| panic!("{old}: {e}"));
             let was_ro = matches!(
                 old,
                 "read_output"
@@ -3987,7 +4000,7 @@ mod tests {
             ("issue_new", json!({ "repo": "o/r", "title": "t" }), "draft", Some("issue")),
         ];
         for (old, args, tool, kind) in calls {
-            let (def, k, args) = route(old, args, false).unwrap_or_else(|e| panic!("{old}: {e}"));
+            let (def, k, args) = route(old, args, fl(false)).unwrap_or_else(|e| panic!("{old}: {e}"));
             assert_eq!((def.name, k), (tool, kind), "{old}");
             let ok = match (tool, kind) {
                 ("read_output", _) => parse::<ReadArgs>(args).map(|a| assert!(a.screen)).is_ok(),
@@ -4023,7 +4036,7 @@ mod tests {
     /// show and draft don't.
     #[test]
     fn kinds_are_picked_and_checked() {
-        let kind = |tool: &str, args: Value| route(tool, args, true).map(|(_, k, a)| (k, a));
+        let kind = |tool: &str, args: Value| route(tool, args, fl(true)).map(|(_, k, a)| (k, a));
         assert_eq!(kind("list", json!({})).unwrap(), (Some("panes"), json!({})));
         assert_eq!(kind("list", json!({ "kind": "conversations", "live": true })).unwrap().0, Some("conversations"));
         let e = kind("show", json!({ "port": 3000 })).unwrap_err();
@@ -4051,7 +4064,7 @@ mod tests {
     #[test]
     fn grouped_schemas_merge_their_kinds() {
         for labs in [false, true] {
-            for d in defs(labs) {
+            for d in defs(fl(labs)) {
                 let Args::Kinds { kinds, default } = d.args else { continue };
                 let s = grouped_schema(&kinds, default);
                 let props = s["properties"].as_object().unwrap();
@@ -4108,8 +4121,8 @@ mod tests {
     /// `labs`.
     #[test]
     fn the_prose_leaves_out_what_a_stranger_cant_use() {
-        let mut prose = vec![crate::mcp::instructions(false)];
-        prose.extend(list(Scope::Full, false).iter().map(|t| {
+        let mut prose = vec![crate::mcp::instructions(fl(false))];
+        prose.extend(list(Scope::Full, fl(false)).iter().map(|t| {
             format!(
                 "{}: {} {}",
                 t.name,
@@ -4142,8 +4155,8 @@ mod tests {
             }
         }
         // With labs, run and start_agent take them again.
-        let with = list(Scope::Full, true);
-        for (tool, args) in UNLISTED_ARGS {
+        let with = list(Scope::Full, fl(true));
+        for (tool, args, _) in UNLISTED_ARGS {
             let t = with.iter().find(|t| t.name == tool).unwrap();
             for arg in args {
                 assert!(t.input_schema["properties"].get(*arg).is_some(), "{tool} lacks {arg} with labs");
@@ -4151,10 +4164,10 @@ mod tests {
         }
         let start = with.iter().find(|t| t.name == "start_agent").unwrap();
         assert!(Value::Object((*start.input_schema).clone()).to_string().contains("\"fountain\""));
-        let with = crate::mcp::instructions(true);
+        let with = crate::mcp::instructions(fl(true));
         assert!(with.contains("read_thread and post_thread") && with.contains("@agent"), "{with}");
         // Labs only adds the thread sentence.
-        let without = crate::mcp::instructions(false);
+        let without = crate::mcp::instructions(fl(false));
         assert!(with.len() > without.len() && with.replace(crate::mcp::THREAD_INSTRUCTIONS, "") == without);
     }
 
@@ -4174,7 +4187,7 @@ mod tests {
             body.split('"').filter_map(|s| s.strip_prefix("mcp__arugula__")).collect()
         };
         // The snippet lists what a stranger sees; the two chat tools join with labs.
-        let defs = defs(false);
+        let defs = defs(fl(false));
         let want = |ro: bool| -> Vec<&str> { defs.iter().filter(|d| d.read_only == ro).map(|d| d.name).collect() };
         assert_eq!(
             list("allow"),

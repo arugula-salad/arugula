@@ -211,7 +211,7 @@ class E2ELink implements Link {
 }
 
 /** The host features that follow `labs`: also off without it. */
-const LABS_FEATURES: (keyof HostFeatures)[] = ["vms", "fountain", "studio"];
+const LABS_FEATURES: Exclude<keyof HostFeatures, "flags">[] = ["vms", "fountain", "studio"];
 
 export class Client {
   /** The daemon's origin (`https://box.….ts.net`), or "" for the one this
@@ -694,17 +694,32 @@ export class Client {
 
   /** Is `f` set up here? Yes when the daemon didn't say, except for what
    * labs turns on (VMs, Fountain, studio): those need `hasLabs()` as well. */
-  has(f: keyof HostFeatures): boolean {
+  has(f: Exclude<keyof HostFeatures, "flags">): boolean {
     if (LABS_FEATURES.includes(f) && !this.hasLabs()) return false;
     return this.features?.[f] ?? true;
   }
 
-  /** Whether this machine has the `labs` flag on, which turns on what a stranger
-   * doesn't get: chat, huddles, Fountain, studio, VMs, guest ssh and the
-   * swarm's extra views. Unlike `has`, unknown means no: control serves this
-   * page to older daemons too, which never say. */
+  /** Whether this machine has any Labs flag on: something a stranger
+   * doesn't get (chat, huddles, Fountain, studio, VMs, guest ssh, the
+   * swarm's extra views). `flag` says which. Unlike `has`, unknown means no:
+   * control serves this page to older daemons too, which never say. */
   hasLabs(): boolean {
     return this.features?.labs === true;
+  }
+
+  /** Whether the Labs flag `name` is on here, whatever else its feature
+   * needs (`has` says that for VMs, Fountain and studio). A daemon from
+   * before flags says only `labs`, which was all of them. */
+  flag(name: string): boolean {
+    const f = this.features;
+    if (f?.labs !== true) return false;
+    return f.flags ? f.flags.includes(name) : true;
+  }
+
+  /** Whether this machine has asked for Developer settings (`arugulad flags`),
+   * so the menus offer them. */
+  hasDev(): boolean {
+    return this.features?.dev === true;
   }
 
   /** Whether this machine keeps threads: labs, and a daemon that has them.
@@ -1283,11 +1298,11 @@ export class Client {
   }
 
   /** What a link in terminal output opens as: a PR or an issue block, or
-   * null for a plain link. Forgejo and GitLab are Labs: without it only
-   * GitHub's links (`/pull/N`; issues on github.com) become blocks. */
+   * null for a plain link. Forgejo and GitLab are Labs: without their flag
+   * only GitHub's links (`/pull/N`; issues on github.com) become blocks. */
   forgeLink(uri: string): "pr" | "issue" | null {
     const what = forgePr(uri) ? "pr" : forgeIssue(uri) ? "issue" : null;
-    if (!what || this.hasLabs()) return what;
+    if (!what || this.flag("forges")) return what;
     try {
       const u = new URL(uri);
       if (what === "pr") return /^\/[^/]+\/[^/]+\/pull\/\d+(?:\/|$)/.test(u.pathname) ? what : null;

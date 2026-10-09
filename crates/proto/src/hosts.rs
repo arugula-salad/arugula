@@ -271,11 +271,17 @@ mod control_state_tests {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct HostFeatures {
-    /// The `labs` flag is on here (see [`crate::flags`]): what a stranger
-    /// doesn't get is on. Absent from older daemons, and pages treat that
-    /// as off.
+    /// Some Labs flag is on here (see [`crate::flags`]). Absent from older
+    /// daemons, and pages treat that as off. Daemons from before each
+    /// feature had a flag (#665) say only this, so a page reads it for
+    /// every flag where `flags` is missing.
     #[serde(default)]
     pub labs: bool,
+    /// The owner has asked for Developer settings here
+    /// ([`crate::flags::unlocked`]), so the page offers them.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    pub dev: bool,
     /// Browser blocks on ports and editor blocks: block sites are on
     /// (`--block-listen`).
     pub blocks: bool,
@@ -286,7 +292,7 @@ pub struct HostFeatures {
     pub fountain: bool,
     /// A studio is linked (`arugula studio login`).
     pub studio: bool,
-    /// Threads on panes and sessions: with `labs`. Older daemons leave it
+    /// Threads on panes and sessions: the `chat` flag. Older daemons leave it
     /// out, and pages hide threads there.
     #[serde(default)]
     #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
@@ -295,6 +301,11 @@ pub struct HostFeatures {
     #[serde(default)]
     #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
     pub calls: bool,
+    /// The names of the Labs flags that are on, whatever else each needs
+    /// (a login, a provider). `None` from a daemon before #665: see `labs`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub flags: Option<Vec<String>>,
 }
 
 /// A machine's Fountain runner, for its line in the machine panel and the

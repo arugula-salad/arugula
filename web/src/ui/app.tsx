@@ -14,7 +14,7 @@ import { AttentionBadge, tabAttention } from "./attention";
 import { getFleet, HostButton, HostPicker, NewMachineNote } from "./hosts";
 import { ControlRequests, PaneMarks, PeopleBar, ShareDialog, shareSession, TabPeople } from "./people";
 import { directory } from "../hosts";
-import { FlagsLayer } from "./flags";
+import { DeveloperLayer } from "./developer";
 import { RulesLayer } from "./rules";
 import { useWorkspaceDir } from "../blocks";
 import { AgentDialogLayer } from "./agent-dialog";
@@ -111,13 +111,13 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       <PromptLayer />
       <AgentDialogLayer />
       <ThreadLayer phone={phone} />
-      <InLabs on={client.hasLabs()}>{(l) => <l.HuddleBar />}</InLabs>
-      {state && <InLabs on={client.hasLabs()}>{(l) => <l.ChatPage client={client} />}</InLabs>}
+      <InLabs on={client.hasCalls()}>{(l) => <l.HuddleBar />}</InLabs>
+      {state && <InLabs on={client.hasThreads()}>{(l) => <l.ChatPage client={client} />}</InLabs>}
       <ConversationsLayer />
-      <InLabs on={client.hasLabs()}>{(l) => <l.AppsLayer />}</InLabs>
-      <InLabs on={client.hasLabs()}>{(l) => <l.SandboxesLayer />}</InLabs>
+      <InLabs on={client.flag("studio")}>{(l) => <l.AppsLayer />}</InLabs>
+      <InLabs on={client.flag("vms")}>{(l) => <l.SandboxesLayer />}</InLabs>
       <RulesLayer />
-      <FlagsLayer />
+      <DeveloperLayer />
       <PickerLayer />
       <PaletteLayer />
       <GettingStartedLayer />
@@ -209,7 +209,7 @@ function TopBar({
               <span class="caret">▾</span>
             </button>
           )}
-          <InLabs on={client.hasLabs()}>{(l) => <l.HuddleButton client={client} session={session.id} />}</InLabs>
+          <InLabs on={client.hasCalls()}>{(l) => <l.HuddleButton client={client} session={session.id} />}</InLabs>
           {/* Sharing is the daemon's owner's (M13), and on the bar so it's found (#551). */}
           {state.roles ? null : (
             <button class="share-button" aria-label="Share session" title="Share this session with someone" onClick={() => shareSession(session.id)}>

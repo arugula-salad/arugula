@@ -861,6 +861,20 @@ async fn labs_lists_all_the_tools_and_the_thread_text() {
         s2.cancel().await.unwrap();
 
         arugula_testkit::labs(&d.state, false);
+        // #665: chat's flag alone lists its two tools and the thread text,
+        // and none of the others' kinds.
+        arugula_proto::flags::set(&d.state, "chat", true).unwrap();
+        let chat = s.list_all_tools().await.unwrap();
+        assert_eq!(chat.len(), 20, "{:?}", names(&chat));
+        assert!(!kinds(&chat, "show").contains(&"fountain".to_owned()), "show lists fountain with only chat on");
+        assert!(!kinds(&chat, "show").contains(&"app".to_owned()), "show lists app with only chat on");
+        arugula_proto::flags::set(&d.state, "chat", false).unwrap();
+        arugula_proto::flags::set(&d.state, "fountain", true).unwrap();
+        let fountain = s.list_all_tools().await.unwrap();
+        assert_eq!(fountain.len(), 18, "{:?}", names(&fountain));
+        assert!(kinds(&fountain, "show").contains(&"fountain".to_owned()));
+        assert!(!kinds(&fountain, "show").contains(&"workspace".to_owned()));
+        arugula_proto::flags::set(&d.state, "fountain", false).unwrap();
         let without = s.list_all_tools().await.unwrap();
         assert_eq!(without.len(), 18);
         assert!(!kinds(&without, "show").contains(&"fountain".to_owned()));

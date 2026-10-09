@@ -1,5 +1,5 @@
-//! `flags`: the named flags in the state dir's `flags.json` (#464), listed
-//! and set for the owner's Settings. HTTP only; owner settings are not an
+//! `flags`: the named flags in the state dir's `flags.json` (#464, #665),
+//! listed and set for the owner's Developer settings. HTTP only; owner settings are not an
 //! agent's business, so there is no MCP tool.
 
 use arugula_proto::{
@@ -10,14 +10,17 @@ use arugula_proto::{
 
 use super::{Cx, Handle, OpError};
 
-/// Whether this build has what `flag` turns on. A build without Labs can
-/// still set `labs`: the file is the same, and nothing follows.
-fn built(flag: &str) -> bool {
-    flag != flags::LABS || crate::labs::BUILT
-}
-
+/// Every flag is a Labs feature's, so a build without Labs can still set
+/// one: the file is the same, and nothing follows.
 fn info(f: flags::Flag, on: bool) -> FlagInfo {
-    FlagInfo { name: f.name.into(), about: f.about.into(), on, default: f.default, built: built(f.name) }
+    FlagInfo {
+        name: f.name.into(),
+        title: f.title.into(),
+        about: f.about.into(),
+        on,
+        default: f.default,
+        built: crate::labs::BUILT,
+    }
 }
 
 impl Handle for FlagsList {

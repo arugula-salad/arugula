@@ -38,6 +38,7 @@ mod tmux {
 
 use std::path::PathBuf;
 
+use arugula_proto::flags::{self, On};
 use clap::{FromArgMatches, Parser, Subcommand};
 use cmd::claude::ClaudeCmd;
 #[cfg(feature = "labs")]
@@ -439,30 +440,31 @@ fn state_dir() -> Option<PathBuf> {
 }
 
 /// Commands and options that work but stay out of `--help` unless the machine
-/// has the `labs` file: they're for what a stranger doesn't have. Others that
-/// are `hide = true` are internals, and stay hidden.
+/// has turned their Labs flag on: they're for what a stranger doesn't have.
+/// Others that are `hide = true` are internals, and stay hidden.
 ///
 /// Fountain's command is not in a build without the `labs` feature.
-const LABS_COMMANDS: &[&str] = &[
+const LABS_COMMANDS: &[(&str, &str)] = &[
     #[cfg(feature = "labs")]
-    "fountain",
-    "studio",
-    "app",
-    "workspace",
-    "guests",
-    "machines",
-    "sandboxes",
+    ("fountain", flags::FOUNTAIN),
+    ("studio", flags::STUDIO),
+    ("app", flags::STUDIO),
+    ("workspace", flags::WORKSPACES),
+    ("guests", flags::GUEST_SSH),
+    ("machines", flags::VMS),
+    ("sandboxes", flags::VMS),
 ];
-const LABS_OPTIONS: [(&str, &[&str]); 5] = [
-    ("agent", &["fountain", "as_fountain", "vault", "vm", "machine"]),
-    ("run", &["vm", "vm_tab", "image", "sandbox"]),
-    ("share", &["guest", "rw", "reusable", "relay", "addr", "name"]),
-    ("open", &["machine"]),
-    ("edit", &["machine"]),
+const LABS_OPTIONS: [(&str, &[&str], &str); 6] = [
+    ("agent", &["fountain", "as_fountain", "vault"], flags::FOUNTAIN),
+    ("agent", &["vm", "machine"], flags::VMS),
+    ("run", &["vm", "vm_tab", "image", "sandbox"], flags::VMS),
+    ("share", &["guest", "rw", "reusable", "relay", "addr", "name"], flags::GUEST_SSH),
+    ("open", &["machine"], flags::VMS),
+    ("edit", &["machine"], flags::VMS),
 ];
 
-/// Machines (`mN`) are labs too: with `labs`, `fs` and `view` say their
-/// paths take one.
+/// Machines (`mN`) are Labs too: with the `vms` flag, `fs` and `view` say
+/// their paths take one.
 fn labs_machine_paths(cmd: clap::Command) -> clap::Command {
     cmd.mut_subcommand("fs", |fs| {
         fs.long_about(
@@ -482,17 +484,18 @@ fn labs_machine_paths(cmd: clap::Command) -> clap::Command {
     })
 }
 
-/// The command line, listing the labs set in `--help` when `labs`.
-fn labs_command(labs: bool) -> clap::Command {
+/// The command line, listing in `--help` what the flags that are `on`
+/// turn on.
+fn labs_command(on: On) -> clap::Command {
     use clap::CommandFactory;
     let mut cmd = Cli::command();
-    if labs {
-        for name in LABS_COMMANDS {
-            cmd = cmd.mut_subcommand(*name, |s| s.hide(false));
-        }
-        for (name, opts) in LABS_OPTIONS {
-            cmd = cmd.mut_subcommand(name, |s| opts.iter().fold(s, |s, o| s.mut_arg(*o, |a| a.hide(false))));
-        }
+    for (name, _) in LABS_COMMANDS.iter().filter(|(_, f)| on.has(f)) {
+        cmd = cmd.mut_subcommand(*name, |s| s.hide(false));
+    }
+    for (name, opts, _) in LABS_OPTIONS.iter().filter(|(_, _, f)| on.has(f)) {
+        cmd = cmd.mut_subcommand(*name, |s| opts.iter().fold(s, |s, o| s.mut_arg(*o, |a| a.hide(false))));
+    }
+    if on.has(flags::VMS) {
         cmd = labs_machine_paths(cmd);
     }
     cmd
@@ -540,9 +543,9 @@ fn main() {
         }
     }
     // What a stranger doesn't get shows in `--help` where this machine has
-    // the `labs` flag on; everything works either way.
-    let labs = state_dir().is_some_and(|d| arugula_proto::flags::get(&d, arugula_proto::flags::LABS));
-    let cli = Cli::from_arg_matches(&labs_command(labs).get_matches()).unwrap_or_else(|e| e.exit());
+    // turned its flag on; everything works either way.
+    let on = state_dir().as_deref().map(flags::on).unwrap_or_default();
+    let cli = Cli::from_arg_matches(&labs_command(on).get_matches()).unwrap_or_else(|e| e.exit());
     match real_main(cli) {
         Ok(code) => std::process::exit(code),
         Err(e) => {
@@ -721,6 +724,12 @@ fn real_main(cli: Cli) -> anyhow::Result<i32> {
 
 #[cfg(test)]
 mod tests {
+    /// The command line with every Labs flag on, or none.
+    fn labs_command(labs: bool) -> clap::Command {
+        use arugula_proto::flags::On;
+        super::labs_command(if labs { On::all() } else { On::none() })
+    }
+
     #[test]
     fn machine_is_not_the_global_host() {
         use clap::Parser;
@@ -745,7 +754,7 @@ mod tests {
         let listed = root.render_long_help().to_string();
         let listed: Vec<&str> =
             listed.lines().filter_map(|l| l.strip_prefix("  ")?.split_whitespace().next()).collect();
-        for hidden in super::LABS_COMMANDS.iter().copied() {
+        for hidden in super::LABS_COMMANDS.iter().map(|(c, _)| *c) {
             assert!(root.find_subcommand(hidden).unwrap().is_hide_set(), "{hidden} isn't hidden");
             assert!(!listed.contains(&hidden), "{hidden} is in `arugula --help`");
             // Asking for it by name still gives its help.
@@ -796,8 +805,8 @@ mod tests {
             out.sort();
             out
         }
-        let (off, on) = (hidden(&super::labs_command(false)), hidden(&super::labs_command(true)));
-        let mut set: Vec<String> = super::LABS_COMMANDS.iter().map(|c| (*c).to_owned()).collect();
+        let (off, on) = (hidden(&labs_command(false)), hidden(&labs_command(true)));
+        let mut set: Vec<String> = super::LABS_COMMANDS.iter().map(|(c, _)| (*c).to_owned()).collect();
         for (cmd, opts) in [
             ("agent", &["fountain", "as_fountain", "vault", "vm", "machine"][..]),
             ("run", &["vm", "vm_tab", "image", "sandbox"][..]),
@@ -819,19 +828,19 @@ mod tests {
 
         // The help lists them with labs and not without.
         let listed = |labs: bool| {
-            let help = super::labs_command(labs).render_long_help().to_string();
+            let help = labs_command(labs).render_long_help().to_string();
             help.lines()
                 .filter_map(|l| l.strip_prefix("  ")?.split_whitespace().next().map(str::to_owned))
                 .collect::<Vec<_>>()
         };
         let (without, with) = (listed(false), listed(true));
-        for name in super::LABS_COMMANDS.iter().copied() {
+        for name in super::LABS_COMMANDS.iter().map(|(c, _)| *c) {
             assert!(!without.iter().any(|l| l == name), "{name} in `arugula --help` without labs");
             assert!(with.iter().any(|l| l == name), "{name} isn't in `arugula --help` with labs");
         }
         assert!(!with.iter().any(|l| l == "bridge"), "an internal is listed with labs");
         let sub_help = |labs: bool, cmd: &str| {
-            let mut root = super::labs_command(labs);
+            let mut root = labs_command(labs);
             root.find_subcommand_mut(cmd).unwrap().render_long_help().to_string()
         };
         for (cmd, flag) in [
@@ -849,7 +858,7 @@ mod tests {
             assert!(sub_help(true, cmd).contains(flag), "{cmd} {flag} with labs");
         }
         let fs_help = |labs: bool, sub: &str| {
-            let mut root = super::labs_command(labs);
+            let mut root = labs_command(labs);
             root.find_subcommand_mut("fs").unwrap().find_subcommand_mut(sub).unwrap().render_long_help().to_string()
         };
         for sub in ["ls", "recent"] {
@@ -859,9 +868,8 @@ mod tests {
         // And either way they parse.
         for labs in [false, true] {
             use clap::FromArgMatches;
-            let parse = |a: &[&str]| {
-                super::Cli::from_arg_matches(&super::labs_command(labs).try_get_matches_from(a).unwrap()).is_ok()
-            };
+            let parse =
+                |a: &[&str]| super::Cli::from_arg_matches(&labs_command(labs).try_get_matches_from(a).unwrap()).is_ok();
             assert!(parse(&["arugula", "run", "--vm", "--", "make"]));
             assert!(parse(&["arugula", "guests"]));
         }

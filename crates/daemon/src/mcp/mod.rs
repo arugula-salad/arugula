@@ -37,7 +37,10 @@ pub(crate) mod tools;
 
 use std::sync::Arc;
 
-use arugula_proto::{BlockType, PaneId};
+use arugula_proto::{
+    BlockType, PaneId,
+    flags::{self, On},
+};
 use axum::{
     Json, Router,
     extract::{Request, State},
@@ -218,10 +221,10 @@ pub struct McpServer {
 }
 
 impl McpServer {
-    /// This machine has the `labs` flag on: read on each call, so it needs no
+    /// This machine's Labs flags: read on each call, so a change needs no
     /// restart.
-    fn labs(&self) -> bool {
-        crate::labs::enabled(self.app.control.state_dir())
+    fn flags(&self) -> On {
+        crate::labs::flags(self.app.control.state_dir())
     }
 
     fn caller(&self, ctx: &RequestContext<RoleServer>) -> Caller {
@@ -286,12 +289,14 @@ answer), follow-ups (arugula inbox) and attention on cards; without them your qu
 `arugula hooks install` adds them: ask your person first.";
 
 /// What the people's conversation about a pane or session adds to the
-/// instructions: only on a machine with `labs`, where those tools are listed.
+/// instructions: only on a machine with the `chat` flag, where those tools
+/// are listed.
 const THREAD_INSTRUCTIONS: &str = "read_thread and post_thread for the people's conversation about a pane or session (an @agent message there reaches you as a follow-up: answer with post_thread), ";
 
-/// The server's instructions: without `labs`, they leave out threads.
-pub(crate) fn instructions(labs: bool) -> String {
-    if !labs {
+/// The server's instructions: without the `chat` flag, they leave out
+/// threads.
+pub(crate) fn instructions(on: On) -> String {
+    if !on.has(flags::CHAT) {
         return INSTRUCTIONS_BASE.to_owned();
     }
     let at = INSTRUCTIONS_BASE.find("history for what").expect("the instructions name history");
@@ -302,7 +307,7 @@ impl ServerHandler for McpServer {
     fn get_info(&self) -> ServerConfig {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().enable_resources().build())
             .with_server_info(Implementation::new("arugula", env!("CARGO_PKG_VERSION")))
-            .with_instructions(instructions(self.labs()))
+            .with_instructions(instructions(self.flags()))
     }
 
     async fn list_tools(
@@ -311,7 +316,7 @@ impl ServerHandler for McpServer {
         ctx: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, McpError> {
         let scope = self.caller(&ctx).scope;
-        Ok(fresh(ListToolsResult::with_all_items(tools::list(scope, self.labs()))))
+        Ok(fresh(ListToolsResult::with_all_items(tools::list(scope, self.flags()))))
     }
 
     async fn call_tool(

@@ -3,9 +3,9 @@
 //! and chat, and the Forgejo and GitLab forges: everything listed in
 //! #452 to #457 is here), behind the cargo feature `labs`. The feature is on by default, so a release build has all of it;
 //! `--no-default-features` leaves it out, for fast local builds, for agents
-//! working on core, and for the CI job `core`. (The runtime switch, the
-//! `labs` file in the state dir, is separate: it decides what a machine
-//! shows, and [`enabled`] ANDs it with this build.)
+//! working on core, and for the CI job `core`. (The runtime switches, the
+//! flags in the state dir, are separate: they decide what a machine
+//! shows, and [`flags`] ANDs them with this build.)
 //!
 //! **The pattern.** A Labs feature is a module in this directory, declared
 //! here under `#[cfg(feature = "labs")]`, and nothing outside `labs/` names
@@ -19,7 +19,7 @@
 //! **What stays unconditional.** Everything in `arugula-proto` (block types,
 //! agent kinds, request and answer types), so every client and daemon speaks
 //! one protocol, and the argument structs of MCP's tools (their schemas are
-//! filtered by [`enabled`], not by the build). Only the daemon's handling is
+//! filtered by [`flags`], not by the build). Only the daemon's handling is
 //! gated.
 //!
 //! **Adding a feature.** Put its code in `labs/<name>/`, add
@@ -35,7 +35,7 @@ use std::{
     sync::Arc,
 };
 
-use arugula_proto::{BlockType, hosts::FountainRunnerInfo};
+use arugula_proto::{BlockType, flags::On, hosts::FountainRunnerInfo};
 use axum::Router;
 use serde_json::Value;
 
@@ -105,10 +105,16 @@ pub fn not_built(what: &str) -> String {
     format!("{what} isn't in this build (built without labs)")
 }
 
-/// Whether Labs is on here: this build has it, and the machine has the
-/// `labs` flag on (`flags.json` in its state directory, read on each call).
-pub fn enabled(state_dir: &Path) -> bool {
-    BUILT && arugula_proto::flags::get(state_dir, arugula_proto::flags::LABS)
+/// The Labs flags that are on here: none in a build without Labs, else
+/// what the machine's state directory says (read on each call).
+pub fn flags(state_dir: &Path) -> On {
+    if BUILT { arugula_proto::flags::on(state_dir) } else { On::none() }
+}
+
+/// Whether `flag` is on here: this build has Labs, and the machine has
+/// turned the flag on.
+pub fn on(state_dir: &Path, flag: &str) -> bool {
+    flags(state_dir).has(flag)
 }
 
 /// Adds Labs' HTTP routes to the API's.
@@ -144,14 +150,14 @@ pub fn create_block(kind: BlockType, _ctx: BlockCtx, _config: Value) -> Result<A
 
 /// Whether a forge block of `provider` may be made or opened here. GitHub's
 /// always may; Forgejo's and GitLab's are Labs, so they need this build to
-/// have it and the machine to have turned it on (the `labs` flag).
+/// have it and the machine to have turned on the `forges` flag.
 pub fn forge_allowed(provider: ForgeProvider, state_dir: &Path) -> Result<(), String> {
     let name = match provider {
         ForgeProvider::Github => return Ok(()),
         ForgeProvider::Forgejo => "Forgejo",
         ForgeProvider::Gitlab => "GitLab",
     };
-    if enabled(state_dir) {
+    if on(state_dir, arugula_proto::flags::FORGES) {
         Ok(())
     } else if BUILT {
         Err(format!("{name} blocks are in Labs (turn Labs on to open them)"))

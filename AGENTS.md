@@ -103,13 +103,16 @@ and tested, but get no new features.
 
 ## Labs
 
-The `labs` flag turns on what a stranger doesn't get (#385, #464). It's a
-named flag in `flags.json` in the state dir (`arugula_proto::flags`: the
-`FLAGS` registry, `get`, `set`, `all`; read on every call, never cached),
-set by `arugulad flags labs on` or the owner's *Labs…* in the web client
-(`flags.list` and `flag.set` operations); a daemon moves the old empty `labs`
-file into it at startup, and `get` still honours that file until the
-fallback goes. `ARUGULA_STATE_DIR` moves the state dir. A `labs` cargo feature (on by default) compiles Labs
+A flag per feature turns on what a stranger doesn't get (#385, #464, #665):
+`chat`, `huddles`, `vms`, `fountain`, `studio`, `workspaces`, `guest-ssh`,
+`swarm-themes`, `forges`. They're named flags in `flags.json` in the state
+dir (`arugula_proto::flags`: the `FLAGS` registry, `get`, `on`, `set`, `all`;
+read on every call, never cached), set by `arugulad flags chat on` or the
+owner's *Developer settings…* in the web client (`flags.list` and `flag.set`
+operations). A new Labs feature adds a row to `FLAGS` and gates itself on
+`labs::on(dir, flags::NAME)`. `labs` in the file, or the old empty `labs`
+file (which a daemon moves into it at startup), means every flag the file
+doesn't name. `ARUGULA_STATE_DIR` moves the state dir. A `labs` cargo feature (on by default) compiles Labs
 code in or out: it lives in `crates/daemon/src/labs/`, and core reaches it
 only through the surface in `labs/mod.rs`, which explains the pattern. Fountain,
 studio apps, chant workspaces, and VMs (the Sprites adapter, machines, resident

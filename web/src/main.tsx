@@ -26,6 +26,7 @@ import { fakeSwarm } from "./swarm/fake";
 import { closeSwarm, onSwarmRoute, swarmRoute } from "./swarm/route";
 import { setupDesktop } from "./desktop";
 import { openThread } from "./ui/threads";
+import { openDeveloper } from "./ui/developer";
 import { openGettingStarted, type Section } from "./ui/welcome";
 
 // Served by Arugula control (M17), not a daemon: sign in, enroll this
@@ -324,6 +325,18 @@ if (startAt) {
   openGettingStarted(startAt[1] as Section, client);
   history.replaceState(null, "", "/");
 }
+
+// Developer settings (#665), from the desktop app's Daemon menu: on an open
+// page (the event) or a new one (`#developer`). The owner's; the dialog
+// says so for anyone else, since the daemon refuses them.
+window.addEventListener("arugula:developer", () => openDeveloper(client));
+const developerAtHash = () => {
+  if (location.hash !== "#developer") return;
+  openDeveloper(client);
+  history.replaceState(null, "", "/");
+};
+developerAtHash();
+window.addEventListener("hashchange", developerAtHash);
 
 // For end-to-end tests.
 Object.assign(window, {
