@@ -449,6 +449,13 @@ fn log_to_file(argv: &[String]) {
 static VERSION_MARK: &str = concat!("\0arugula-version=", env!("CARGO_PKG_VERSION"), "\0");
 
 fn main() -> anyhow::Result<()> {
+    // A closed pipe (`| head`) ends the process quietly, not with a panic
+    // from `println!` (#682): Rust starts with SIGPIPE ignored.
+    // SAFETY: nothing else runs yet, and SIG_DFL is no handler.
+    #[cfg(unix)]
+    unsafe {
+        let _ = nix::sys::signal::signal(nix::sys::signal::Signal::SIGPIPE, nix::sys::signal::SigHandler::SigDfl);
+    }
     // The pane shim forks, so it runs before any threads exist.
     let argv: Vec<String> = std::env::args().collect();
     #[cfg(unix)]

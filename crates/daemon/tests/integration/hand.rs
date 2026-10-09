@@ -31,6 +31,7 @@ fn cli_bin() -> PathBuf {
 
 async fn agent(d: &Daemon) -> RunningService<rmcp::RoleClient, ()> {
     let mut cmd = tokio::process::Command::new(cli_bin());
+    arugula_testkit::scrub_env(cmd.as_std_mut());
     cmd.arg("--socket").arg(d.sock()).arg("mcp");
     ().serve(TokioChildProcess::new(cmd).unwrap()).await.expect("connecting through arugula mcp")
 }

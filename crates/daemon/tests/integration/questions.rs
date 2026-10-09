@@ -439,7 +439,7 @@ fn claude_code_in_a_terminal_asks_through_its_hook() {
 
 #[test]
 fn outside_arugula_the_hook_does_nothing() {
-    let out = Command::new(cli_bin())
+    let out = arugula_testkit::command(cli_bin())
         .arg("ask")
         .env_remove("ARUGULA_PANE")
         .env("ARUGULA_SOCK", "/nonexistent")
@@ -449,7 +449,7 @@ fn outside_arugula_the_hook_does_nothing() {
     assert!(out.status.success());
     assert!(out.stdout.is_empty() && out.stderr.is_empty());
     // Not AskUserQuestion's input: nothing either, even in a pane.
-    let mut child = Command::new(cli_bin())
+    let mut child = arugula_testkit::command(cli_bin())
         .arg("ask")
         .env("ARUGULA_PANE", "1")
         .env("ARUGULA_SOCK", "/nonexistent")

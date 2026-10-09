@@ -80,6 +80,7 @@ async fn bridge(d: &Daemon, client: Client) -> Session {
 /// none: not the pane this test runs in, if it runs in one.
 async fn bridge_in(d: &Daemon, client: Client, pane: Option<u64>) -> Session {
     let mut cmd = tokio::process::Command::new(cli_bin());
+    arugula_testkit::scrub_env(cmd.as_std_mut());
     cmd.arg("--socket").arg(d.sock()).arg("mcp").env_remove("ARUGULA_PANE");
     if let Some(p) = pane {
         cmd.env("ARUGULA_PANE", p.to_string());
@@ -373,6 +374,7 @@ async fn start_agent_gives_the_agent_its_callers_login() {
     let d = Daemon::child();
     let theirs = d.sessions.join("second-account");
     let mut cmd = tokio::process::Command::new(cli_bin());
+    arugula_testkit::scrub_env(cmd.as_std_mut());
     cmd.arg("--socket").arg(d.sock()).arg("mcp").env_remove("ARUGULA_PANE").env("CLAUDE_CONFIG_DIR", &theirs);
     let s = Client::named("claude-code").serve(TokioChildProcess::new(cmd).unwrap()).await.unwrap();
     let args = json!({ "agent": "acp", "command": format!("python3 {}", fake()), "prompt": "env CLAUDE_CONFIG_DIR",
