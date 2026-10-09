@@ -18,6 +18,8 @@
 #                                              Safari, graphed (journey-j1.ts)
 #   testnet/macos/test.sh journey-j2a          #551, J2a: Sam on the real app,
 #                                              Riley in a browser (journey-j2a.ts)
+#   testnet/macos/test.sh journey-j3           #664, J3: the app by hand from the
+#                                              site, Gatekeeper, an older daemon (journey-j3.ts)
 #   testnet/macos/test.sh journey-j4           #664, J4: an agent installs over
 #                                              ssh from the site and --help (journey-j4.ts)
 #   KEEP=1 ...                                 leave the clone running
@@ -222,6 +224,7 @@ case "$test" in
   app) cd "$ROOT" && exec node --experimental-strip-types --no-warnings testnet/macos/app-cloud.ts "$@" ;;
   journey) cd "$ROOT" && exec node --experimental-strip-types --no-warnings testnet/macos/journey-j1.ts "$@" ;;
   journey-j2a) cd "$ROOT" && exec node --experimental-strip-types --no-warnings testnet/macos/journey-j2a.ts "$@" ;;
+  journey-j3) cd "$ROOT" && exec node --experimental-strip-types --no-warnings testnet/macos/journey-j3.ts "$@" ;;
   journey-j4) cd "$ROOT" && exec node --experimental-strip-types --no-warnings testnet/macos/journey-j4.ts "$@" ;;
   *) sed -n '3,48p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2 ;;
 esac
