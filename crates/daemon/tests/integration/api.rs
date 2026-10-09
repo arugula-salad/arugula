@@ -599,6 +599,52 @@ fn uploads_are_refused_past_their_limits_and_swept_after_a_restart() {
     let _ = std::fs::remove_dir_all(&tmp);
 }
 
+/// #573: the standing-rules routes are the owner's, and `wait` is a
+/// viewer's (any guest on the pane's session may read it): a guest is refused
+/// the first and, until shared with, the second, and `wait`'s query string
+/// is read as the CLI writes it.
+#[test]
+fn a_guest_reads_wait_but_not_the_rules() {
+    const FRIEND: &str = "friend@example.com";
+    let d = arugulad!("api")
+        .env("PS1", "$ ")
+        .args(["--owner", "me@example.com", "--tailscale-socket", "/nonexistent/sock"])
+        .wait_secs(10)
+        .start();
+    d.wait_for("the first prompt", || d.get("/api/panes")[0]["cwd"].is_string());
+    let pane = d.get("/api/panes")[0]["id"].as_u64().unwrap();
+    let session = d.get("/api/panes")[0]["session"].as_u64().unwrap();
+    let as_friend = |method: &str, path: &str| {
+        let (status, _, body) = d.tcp(method, path, &[("tailscale-user-login", FRIEND)], None);
+        (status, body)
+    };
+    let wait = format!("/api/panes/{pane}/wait?until=exit&timeout=0.2");
+    // Nobody shared with them: nothing.
+    assert_eq!(as_friend("GET", &wait).0, 403);
+    for role in ["viewer", "editor"] {
+        d.post("/api/acl", json!({ "session": session, "principal": format!("tailnet:{FRIEND}"), "role": role }));
+        for (method, path) in [("GET", "/api/rules"), ("DELETE", "/api/rules"), ("DELETE", "/api/rules/0")] {
+            let (status, body) = as_friend(method, path);
+            assert_eq!(
+                (status, body.as_str()),
+                (403, r#"{"error":"only the owner can do that"}"#),
+                "{role}: {method} {path}"
+            );
+        }
+        let (status, body) = as_friend("GET", &wait);
+        assert_eq!((status, body.as_str()), (200, r#"{"result":"timeout"}"#), "{role}");
+    }
+    // The owner: the rules, the same wait, and the errors it always gave.
+    assert_eq!(d.get("/api/rules")["rules"].as_array().unwrap().len(), 0);
+    assert_eq!(d.get(&wait)["result"], "timeout");
+    assert_eq!(d.raw("DELETE", "/api/rules/x", None).0, 400);
+    assert_eq!(d.raw("GET", &format!("/api/panes/{pane}/wait?until=sideways"), None).0, 400);
+    assert_eq!(d.raw("GET", &format!("/api/panes/{pane}/wait?until=match"), None).0, 400);
+    assert_eq!(d.raw("GET", &format!("/api/panes/{pane}/wait"), None).0, 400);
+    assert_eq!(d.raw("GET", "/api/panes/999/wait?until=exit", None).0, 404);
+    assert_eq!(d.raw("GET", &format!("/api/panes/{pane}/wait?until=match&re=a%20b%2A&timeout=0.2"), None).0, 200);
+}
+
 /// #233: an invite is in the audit log: who invited whom, as what, to
 /// which pane, and how it went.
 #[test]

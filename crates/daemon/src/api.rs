@@ -20,11 +20,14 @@ use arugula_proto::{
         HistoryKind, IdeDiffs, IdeDiffsRequest, IdeInfo, IdeMentionRequest, IdeMentioned, IdeOther, InboxAnswer,
         Invitable, KeysRequest, MouseRequest, NoDetection, NotifyPref, NotifyRequest, OpenConversationRequest,
         OpenConversationResponse, OpenResponse, PaneDiff, PermitAnswer, PermitRequest, Process, PromptRequest,
-        PromptResult, PushSubscriptions, Rules, RunRequest, RunResponse, SecretFinding, SendRequest, StandingRule,
-        ThreadAgent, ThreadMessages, ThreadPostRequest, ThreadPosted, ThreadReadRequest, Unreached, UnreachedWhy,
+        PromptResult, PushSubscriptions, RunRequest, RunResponse, SecretFinding, SendRequest, ThreadAgent,
+        ThreadMessages, ThreadPostRequest, ThreadPosted, ThreadReadRequest, Unreached, UnreachedWhy, WaitRequest,
         WaitResult, WithdrawRequest,
     },
-    op::ops::{ClosePane, FlagSet, FlagsList, ListPanes, ShellEnvGet, ShellEnvRefresh},
+    op::ops::{
+        ClosePane, FlagSet, FlagsList, ListPanes, PaneWait, RuleForget, RulesForgetAll, RulesList, ShellEnvGet,
+        ShellEnvRefresh,
+    },
 };
 use axum::{
     Json, Router,
@@ -78,13 +81,14 @@ pub fn routes() -> Router<Arc<App>> {
         .route("/api/panes/{id}/process", get(process))
         .route("/api/panes/{id}/detection", get(detection))
         .route("/api/panes/{id}/tail", get(tail))
-        .route("/api/panes/{id}/wait", get(wait))
         .route("/api/panes/{id}/export.cast", get(export))
         .route("/api/panes/{id}/drivers", get(drivers))
         .route("/api/panes/{id}/diff", get(diff_of))
         .route("/api/ide", get(ide_get).put(ide_set))
-        .route("/api/rules", get(rules_get).delete(rules_forget_all))
-        .route("/api/rules/{index}", axum::routing::delete(rules_forget))
+        .op::<RulesList>()
+        .op::<RulesForgetAll>()
+        .op::<RuleForget>()
+        .op::<PaneWait>()
         .op::<ShellEnvGet>()
         .op::<ShellEnvRefresh>()
         .op::<FlagsList>()
@@ -1632,7 +1636,7 @@ fn tail_block(app: Arc<App>, id: PaneId, b: Arc<dyn crate::block::Block>, follow
 /// `until=idle` (whatever it's doing, it's not working any more) or
 /// `until=needs-input`, for any block. An agent's own state says this as
 /// soon as a call returns; others go by the daemon's attention.
-async fn wait_attention(app: &App, id: PaneId, needs_input: bool) -> Res<WaitResult> {
+pub(crate) async fn wait_attention(app: &App, id: PaneId, needs_input: bool) -> Res<WaitResult> {
     use arugula_proto::Attention;
     use arugula_proto::ask::Ask;
     loop {
@@ -1718,36 +1722,9 @@ async fn tail(State(app): AppState, Path(id): Path<PaneId>, Query(q): Query<Tail
     Ok(Body::from_stream(body).into_response())
 }
 
-#[derive(Deserialize)]
-struct WaitQuery {
-    until: String,
-    #[serde(default)]
-    re: Option<String>,
-    /// Seconds; default forever.
-    #[serde(default)]
-    timeout: Option<f64>,
-}
-
-async fn wait(State(app): AppState, Path(id): Path<PaneId>, Query(q): Query<WaitQuery>) -> Res<Json<WaitResult>> {
-    let limit = q.timeout.map(Duration::from_secs_f64).unwrap_or(Duration::from_secs(365 * 24 * 3600));
-    if q.until == "idle" || q.until == "needs-input" {
-        let result = tokio::time::timeout(limit, wait_attention(&app, id, q.until == "needs-input")).await;
-        return Ok(Json(match result {
-            Ok(r) => r?,
-            Err(_) => WaitResult::Timeout,
-        }));
-    }
-    let p = pane(&app, id).await?;
-    let result = tokio::time::timeout(limit, wait_for(&app, id, p, &q)).await;
-    Ok(Json(match result {
-        Ok(r) => r?,
-        Err(_) => WaitResult::Timeout,
-    }))
-}
-
 /// What happened after the last input sent to the pane (so `send` then
 /// `wait` never misses a command that finished in between).
-async fn wait_for(app: &App, id: PaneId, p: PaneHandle, q: &WaitQuery) -> Res<WaitResult> {
+pub(crate) async fn wait_for(app: &App, id: PaneId, p: PaneHandle, q: &WaitRequest) -> Res<WaitResult> {
     let mut events = app.mux.events();
     let status = p.status();
     let since = status.input_at;
@@ -1817,7 +1794,7 @@ pub(crate) async fn wait_until(app: &App, id: PaneId, until: &str, re: Option<St
         return wait_attention(app, id, until == "needs-input").await.map_err(|e| e.1);
     }
     let p = pane(app, id).await.map_err(|e| e.1)?;
-    let q = WaitQuery { until: until.to_owned(), re, timeout: None };
+    let q = WaitRequest { until: until.to_owned(), re, timeout: None };
     wait_for(app, id, p, &q).await.map_err(|e| e.1)
 }
 
@@ -2291,47 +2268,6 @@ async fn ide_set(
 /// `GET /api/rules` (#166): the standing permission rules agent blocks on
 /// this daemon answer from, in order (`DELETE /api/rules/{index}` forgets
 /// one; `DELETE /api/rules`, all).
-async fn rules_get(State(app): AppState, who: Option<axum::Extension<crate::acl::Principal>>) -> Res<Json<Rules>> {
-    owner_only(&who)?;
-    let list: Vec<StandingRule> = app
-        .mux
-        .rules
-        .list()
-        .into_iter()
-        .enumerate()
-        .map(|(i, r)| StandingRule {
-            text: r.describe(),
-            index: i,
-            tool: r.tool,
-            prefix: r.prefix,
-            cwd: r.cwd,
-            sprite: r.sprite,
-            at_ms: r.at_ms,
-            from: r.from,
-        })
-        .collect();
-    Ok(Json(Rules { rules: list }))
-}
-
-async fn rules_forget(
-    State(app): AppState,
-    who: Option<axum::Extension<crate::acl::Principal>>,
-    Path(index): Path<usize>,
-) -> Res<Json<Empty>> {
-    owner_only(&who)?;
-    app.mux.rules.forget(Some(index)).map_err(|e| ApiError(StatusCode::NOT_FOUND, e))?;
-    Ok(Json(Empty {}))
-}
-
-async fn rules_forget_all(
-    State(app): AppState,
-    who: Option<axum::Extension<crate::acl::Principal>>,
-) -> Res<Json<Empty>> {
-    owner_only(&who)?;
-    app.mux.rules.forget(None).map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e))?;
-    Ok(Json(Empty {}))
-}
-
 /// `GET /api/hosts/self/agents` (#145): the agents configured on this
 /// machine, as `chant audit --agents` last found them, and which screen
 /// rule sets run here because of it.

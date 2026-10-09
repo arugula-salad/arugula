@@ -12,7 +12,9 @@
 mod close;
 mod flags;
 mod panes;
+mod rules;
 mod shell_env;
+mod wait;
 
 use std::sync::Arc;
 
@@ -23,7 +25,7 @@ use arugula_proto::{
 };
 use axum::{
     Json, Router,
-    extract::{FromRequest, FromRequestParts, Path, State},
+    extract::{FromRequest, FromRequestParts, Path, Query, State},
     http::{StatusCode, request::Parts},
     response::{IntoResponse, Response},
     routing::{MethodRouter, delete, get, post, put},
@@ -41,6 +43,10 @@ macro_rules! every_op {
         $m!(arugula_proto::op::ops::ShellEnvRefresh);
         $m!(arugula_proto::op::ops::FlagsList);
         $m!(arugula_proto::op::ops::FlagSet);
+        $m!(arugula_proto::op::ops::RulesList);
+        $m!(arugula_proto::op::ops::RulesForgetAll);
+        $m!(arugula_proto::op::ops::RuleForget);
+        $m!(arugula_proto::op::ops::PaneWait);
     };
 }
 
@@ -59,6 +65,15 @@ pub enum OpError {
     /// What an MCP agent's token doesn't reach. HTTP's middleware checks
     /// before a handler runs, so it never sees one.
     Unreachable(String),
+    /// Any other refusal, with the status and sentence its handler had before
+    /// it was an operation (a pane that closed while waited on, 410).
+    Status(StatusCode, String),
+}
+
+impl From<ApiError> for OpError {
+    fn from(ApiError(code, why): ApiError) -> Self {
+        OpError::Status(code, why)
+    }
 }
 
 impl OpError {
@@ -68,6 +83,7 @@ impl OpError {
             OpError::Forbidden(why) | OpError::Unreachable(why) => ApiError(StatusCode::FORBIDDEN, why),
             OpError::NoFlag(why) => ApiError(StatusCode::NOT_FOUND, why),
             OpError::Failed(why) => ApiError(StatusCode::INTERNAL_SERVER_ERROR, why),
+            OpError::Status(code, why) => ApiError(code, why),
         }
     }
 }
@@ -130,9 +146,25 @@ impl FromPath for () {
     }
 }
 
+/// A pane, or a session (the same `u32`).
 impl FromPath for PaneId {
     async fn from_parts(parts: &mut Parts) -> Result<Self, Response> {
         Path::<PaneId>::from_request_parts(parts, &()).await.map(|Path(id)| id).map_err(IntoResponse::into_response)
+    }
+}
+
+impl FromPath for usize {
+    async fn from_parts(parts: &mut Parts) -> Result<Self, Response> {
+        Path::<usize>::from_request_parts(parts, &()).await.map(|Path(i)| i).map_err(IntoResponse::into_response)
+    }
+}
+
+/// `pane-7` or `session-2`; anything else is the 404 the thread routes gave.
+impl FromPath for arugula_proto::ThreadTarget {
+    async fn from_parts(parts: &mut Parts) -> Result<Self, Response> {
+        let Path(key) = Path::<String>::from_request_parts(parts, &()).await.map_err(IntoResponse::into_response)?;
+        Self::parse(&key)
+            .ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "a thread is pane-N or session-N".into()).into_response())
     }
 }
 
@@ -159,6 +191,11 @@ where
     let agent = crate::invite::agent(&parts.headers);
     let body = match <O::Req as Request>::without_body() {
         Some(none) => none,
+        // A GET's request is its query string.
+        None if O::METHOD == Method::Get => match Query::<O::Req>::try_from_uri(&parts.uri) {
+            Ok(Query(q)) => q,
+            Err(r) => return r.into_response(),
+        },
         None => {
             let req = axum::extract::Request::from_parts(parts, body);
             match Json::<O::Req>::from_request(req, &()).await {
@@ -288,16 +325,13 @@ const HAND_WRITTEN: &[(&str, &str)] = &[
     ("/api/panes/{id}/permit", "long wait, #576"),
     ("/api/panes/{id}/inbox", "long wait, #576"),
     ("/api/panes/{id}/hook", "hook input, not yet converted"),
-    ("/api/panes/{id}/wait", "GET with a query, #573"),
     ("/api/panes/{id}/share-machine", "not yet converted, #575"),
     // Other path types and GET queries (#573).
-    ("/api/rules", "other path types, #573"),
-    ("/api/rules/{index}", "other path types, #573"),
     ("/api/threads/{target}", "other path types, #573"),
     ("/api/threads/{target}/read", "other path types, #573"),
-    ("/api/history", "GET with a query, #573"),
-    ("/api/search", "GET with a query, #573"),
-    ("/api/conversations", "GET with a query, #573"),
+    ("/api/history", "GET with a query"),
+    ("/api/search", "GET with a query"),
+    ("/api/conversations", "GET with a query"),
     ("/api/sessions/{id}/secrets", "other path types, #573"),
     // The owner's settings routes (#575).
     ("/api/ide", "settings, #575"),

@@ -6,8 +6,9 @@
 //! through [`Op`] instead of spelling the method and path itself.
 //!
 //! The design, and what doesn't fit it, is in `docs/operations.md`. Only
-//! the operations in [`ops`] are declared so far; every other route is
-//! still written out in the daemon's `api.rs`.
+//! the operations in [`ops`] are declared so far (the pilot's, and `rules`
+//! and `wait`, #573); every other route is still written out in the
+//! daemon's `api.rs`.
 
 use arugula_core::Role;
 use serde::{Serialize, de::DeserializeOwned};
@@ -61,6 +62,8 @@ impl PathArgs for () {
     }
 }
 
+/// A pane, or a session (`/api/sessions/{id}/…`): `SessionId` is the same
+/// `u32`.
 impl PathArgs for PaneId {
     fn fill(&self, template: &str) -> String {
         fill_hole(template, self)
@@ -74,6 +77,20 @@ impl PathArgs for String {
     }
 }
 
+/// An index, as a standing rule's (`DELETE /api/rules/{index}`).
+impl PathArgs for usize {
+    fn fill(&self, template: &str) -> String {
+        fill_hole(template, self)
+    }
+}
+
+/// A thread's target, `pane-7` or `session-2` (`/api/threads/{target}`).
+impl PathArgs for crate::ThreadTarget {
+    fn fill(&self, template: &str) -> String {
+        fill_hole(template, &self.key())
+    }
+}
+
 /// `template` with its `{…}` replaced by `value`.
 fn fill_hole(template: &str, value: &dyn std::fmt::Display) -> String {
     match (template.find('{'), template.find('}')) {
@@ -82,8 +99,10 @@ fn fill_hole(template: &str, value: &dyn std::fmt::Display) -> String {
     }
 }
 
-/// A request's body. A type the route takes as JSON says nothing more; one
-/// that stands for "no body" says what it is without one.
+/// A request's body, or for a GET its query string (the CLI writes it as
+/// the same `key=value` pairs, and the daemon reads it with axum's `Query`).
+/// A type the route takes as JSON says nothing more; one that stands for "no
+/// body" says what it is without one.
 pub trait Request: Serialize + DeserializeOwned + Send + 'static {
     /// The request when a route takes no body (a GET, or a POST like
     /// close's): then nothing is sent and nothing is read.
@@ -99,6 +118,8 @@ impl Request for crate::api::Empty {
 }
 
 impl Request for crate::flags::FlagSetRequest {}
+
+impl Request for crate::api::WaitRequest {}
 
 /// One operation's wire half.
 pub trait Op: Send + Sync + 'static {
@@ -135,7 +156,7 @@ pub mod ops {
     use super::{Access, Method, Op, Role};
     use crate::{
         PaneId,
-        api::{Empty, PaneSummary, ShellEnv},
+        api::{Empty, PaneSummary, Rules, ShellEnv, WaitRequest, WaitResult},
         flags::{FlagInfo, FlagSetRequest},
     };
 
@@ -222,6 +243,63 @@ pub mod ops {
         type Req = FlagSetRequest;
         type Res = FlagInfo;
     }
+
+    /// `GET /api/rules` (#166): the standing permission rules agent blocks
+    /// answer from (`arugula rules`).
+    pub struct RulesList;
+
+    impl Op for RulesList {
+        const NAME: &'static str = "rules.list";
+        const METHOD: Method = Method::Get;
+        const PATH: &'static str = "/api/rules";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = Empty;
+        type Res = Rules;
+    }
+
+    /// `DELETE /api/rules`: forget every standing rule (`arugula rules
+    /// --forget-all`).
+    pub struct RulesForgetAll;
+
+    impl Op for RulesForgetAll {
+        const NAME: &'static str = "rules.forget_all";
+        const METHOD: Method = Method::Delete;
+        const PATH: &'static str = "/api/rules";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = Empty;
+        type Res = Empty;
+    }
+
+    /// `DELETE /api/rules/N`: forget one standing rule (`arugula rules
+    /// --forget N`).
+    pub struct RuleForget;
+
+    impl Op for RuleForget {
+        const NAME: &'static str = "rule.forget";
+        const METHOD: Method = Method::Delete;
+        const PATH: &'static str = "/api/rules/{index}";
+        const ACCESS: Access = Access::Owner;
+        type Path = usize;
+        type Req = Empty;
+        type Res = Empty;
+    }
+
+    /// `GET /api/panes/N/wait?until=…`: wait for a command's end, an exit, a
+    /// match or an agent's attention (`arugula wait`). The query string is
+    /// the request.
+    pub struct PaneWait;
+
+    impl Op for PaneWait {
+        const NAME: &'static str = "pane.wait";
+        const METHOD: Method = Method::Get;
+        const PATH: &'static str = "/api/panes/{id}/wait";
+        const ACCESS: Access = Access::Pane(Role::Viewer);
+        type Path = PaneId;
+        type Req = WaitRequest;
+        type Res = WaitResult;
+    }
 }
 
 #[cfg(test)]
@@ -233,6 +311,10 @@ mod tests {
         assert_eq!(ops::ClosePane::path(&7), "/api/panes/7/close");
         assert_eq!(ops::ListPanes::path(&()), "/api/panes");
         assert_eq!(ops::FlagSet::path(&"labs".to_owned()), "/api/flags/labs");
+        assert_eq!(ops::RuleForget::path(&3), "/api/rules/3");
+        assert_eq!(ops::PaneWait::path(&7), "/api/panes/7/wait");
+        assert_eq!(1u32.fill("/api/sessions/{id}/secrets"), "/api/sessions/1/secrets");
+        assert_eq!(crate::ThreadTarget::Session(2).fill("/api/threads/{target}"), "/api/threads/session-2");
         assert!(crate::api::Empty::without_body().is_some());
     }
 }

@@ -1,9 +1,12 @@
 //! `arugula rules`: the standing permission rules for agent blocks.
 
 use super::Ctx;
-use crate::http::request;
+use crate::http::{call, call_raw};
 use crate::util::print_json;
-use arugula_proto::api::{Empty, Rules};
+use arugula_proto::{
+    api::Empty,
+    op::ops::{RuleForget, RulesForgetAll, RulesList},
+};
 
 #[derive(clap::Args)]
 pub struct Args {
@@ -17,11 +20,11 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
     let Ctx { sock, json_out, .. } = ctx;
     let Args { forget, forget_all } = args;
     if forget_all {
-        request(&sock, "DELETE", "/api/rules", None)?.parse::<Empty>()?;
+        call::<RulesForgetAll>(&sock, &(), &Empty {})?;
     } else if let Some(i) = forget {
-        request(&sock, "DELETE", &format!("/api/rules/{i}"), None)?.parse::<Empty>()?;
+        call::<RuleForget>(&sock, &i, &Empty {})?;
     }
-    let (rules, v) = request(&sock, "GET", "/api/rules", None)?.parse_raw::<Rules>()?;
+    let (rules, v) = call_raw::<RulesList>(&sock, &(), &Empty {})?;
     if json_out {
         print_json(&v);
         return Ok(0);
