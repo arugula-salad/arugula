@@ -19,6 +19,8 @@ Each has a `README.md` with where to start reading.
 - `crates/vt`: a pane's terminal state on libghostty-vt (`VtEngine`).
 - `crates/e2e`: end-to-end encryption between client devices and daemons
   (Noise IK; design in [docs/control-e2e.md](docs/control-e2e.md)).
+- `crates/mux`: `arugula-mux`, the daemon's core as a library: the state
+  directory, the access model (`acl`) and the pane's process helpers.
 - `crates/daemon`: `arugulad`.
 - `crates/cli`: `arugula`, the CLI, plus `arugula tui` and
   `arugula tmux -CC`.

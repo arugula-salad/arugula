@@ -1,7 +1,11 @@
 //! arugulad: owns the terminals; clients attach over WebSocket.
 
 mod access;
-mod acl;
+mod acl {
+    pub(crate) use crate::acl_api as api;
+    pub use arugula_mux::acl::*;
+}
+mod acl_api;
 mod agent;
 mod api;
 mod args;
@@ -9,11 +13,11 @@ mod authz;
 mod block;
 mod browser;
 mod callers;
-mod classify;
+use arugula_mux::classify;
 mod control;
 // Windows panes on a pseudoconsole (M56).
 #[cfg(windows)]
-mod conpty;
+use arugula_mux::conpty;
 mod conversations;
 mod dial;
 mod e2e;
@@ -22,10 +26,10 @@ mod forge;
 mod fs;
 mod gate;
 mod hand;
-mod heap;
+use arugula_mux::heap;
 mod history;
 #[cfg(unix)]
-mod holder;
+use arugula_mux::holder;
 // The pane host on Windows (M58): the shim's part there.
 #[cfg(windows)]
 mod host;
@@ -34,27 +38,27 @@ mod ide;
 mod install;
 mod inventory;
 mod invite;
-mod keys;
+use arugula_mux::keys;
 mod labs;
 mod localauth;
 mod mcp;
 mod mux;
 mod ops;
-mod osc;
+use arugula_mux::osc;
 mod pane;
-mod paths;
+use arugula_mux::paths;
 #[cfg_attr(not(feature = "labs"), allow(dead_code))]
 mod peer;
-mod perm;
+use arugula_mux::perm;
 // The local socket on Windows: a named pipe (M56).
 #[cfg(windows)]
 mod pipe;
 mod ports;
-mod procinfo;
+use arugula_mux::procinfo;
 mod provider;
 mod push;
 mod remote;
-mod resume;
+use arugula_mux::resume;
 mod review;
 mod roots;
 mod rules;
@@ -65,11 +69,13 @@ mod setup;
 mod share;
 mod shellenv;
 mod shellint;
-mod shim;
+use arugula_mux::shim;
 mod sites;
-mod store;
+use arugula_mux::store;
 mod sync;
-mod sys;
+use arugula_mux::sys;
+use arugula_mux::sys::conpty_command_line;
+pub(crate) use arugula_mux::sys::home;
 mod tailscale;
 mod tls;
 mod update;
@@ -378,29 +384,12 @@ fn daemon_running(state_dir: &std::path::Path) -> bool {
     std::fs::read_to_string(state_dir.join("sock.path")).is_ok_and(|p| pipe::answering(p.trim()))
 }
 
-/// A command line from words, quoted as Windows programs split them (cmd's
-/// `/k` takes one). On Unix, the words joined (never used there).
-fn conpty_command_line(argv: &[String]) -> String {
-    #[cfg(windows)]
-    return argv.split_first().map(|(p, rest)| conpty::command_line(p, rest)).unwrap_or_default();
-    #[cfg(not(windows))]
-    argv.join(" ")
-}
-
 /// This computer's name, for joining.
 fn hostname() -> Option<String> {
     #[cfg(unix)]
     return nix::unistd::gethostname().ok().and_then(|h| h.into_string().ok());
     #[cfg(not(unix))]
     std::env::var("COMPUTERNAME").ok()
-}
-
-/// `$HOME`, or `%USERPROFILE%` on Windows.
-pub(crate) fn home() -> PathBuf {
-    std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .map(PathBuf::from)
-        .unwrap_or_else(|| "/".into())
 }
 
 /// `ARUGULA_LOG_FILE` (or `--log-file`): stdout and stderr appended to

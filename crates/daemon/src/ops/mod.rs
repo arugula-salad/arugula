@@ -469,7 +469,7 @@ const ROUTERS: &[(&str, &str)] = &[
     // #578 part b: access and credentials.
     ("src/share.rs", "pub fn api_routes()"),
     // Nested in `mod api`: its function ends at its own indent.
-    ("src/acl.rs", "    pub fn routes()"),
+    ("src/acl_api.rs", "pub fn routes()"),
     ("src/invite/mod.rs", "pub fn routes()"),
     ("src/mcp/tokens.rs", "pub fn api_routes()"),
     ("src/labs/guest_ssh.rs", "pub fn routes()"),

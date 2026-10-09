@@ -21,6 +21,7 @@ hyper-util = { version = "0.1.21", features = ["tokio"] }
 arugula-control-wire = { workspace = true }
 arugula-core = { workspace = true }
 arugula-e2e = { workspace = true }
+arugula-mux = { workspace = true }
 arugula-proto = { workspace = true }
 arugula-vt = { workspace = true }
 instant-acme = { version = "0.8.5", features = ["rcgen"] }

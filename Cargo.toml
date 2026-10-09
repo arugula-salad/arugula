@@ -21,6 +21,7 @@ repository = "https://github.com/arugula-salad/arugula"
 arugula-control-wire = { version = "0.30.2", path = "crates/control-wire" }
 arugula-core = { version = "0.30.2", path = "crates/core" }
 arugula-e2e = { version = "0.30.2", path = "crates/e2e" }
+arugula-mux = { version = "0.30.2", path = "crates/mux" }
 arugula-proto = { version = "0.30.2", path = "crates/proto" }
 arugula-vt = { version = "0.30.2", path = "crates/vt" }
 aes-gcm = "0.11.1"

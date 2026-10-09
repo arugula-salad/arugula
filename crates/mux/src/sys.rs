@@ -1,13 +1,13 @@
 //! The bits of systemd the daemon uses without linking libsystemd. On
 //! Windows there's no systemd: notifying does nothing and nothing is kept.
 
-use std::process::Command;
 #[cfg(unix)]
 use std::{
     collections::HashMap,
     io::IoSlice,
     os::fd::{AsRawFd, BorrowedFd, FromRawFd, OwnedFd, RawFd},
 };
+use std::{path::PathBuf, process::Command};
 
 #[cfg(unix)]
 use nix::{
@@ -164,6 +164,23 @@ fn unescape(s: &str) -> String {
         }
     }
     out
+}
+
+/// A command line from words, quoted as Windows programs split them (cmd's
+/// `/k` takes one). On Unix, the words joined (never used there).
+pub fn conpty_command_line(argv: &[String]) -> String {
+    #[cfg(windows)]
+    return argv.split_first().map(|(p, rest)| crate::conpty::command_line(p, rest)).unwrap_or_default();
+    #[cfg(not(windows))]
+    argv.join(" ")
+}
+
+/// `$HOME`, or `%USERPROFILE%` on Windows.
+pub fn home() -> PathBuf {
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+        .unwrap_or_else(|| "/".into())
 }
 
 #[cfg(test)]
