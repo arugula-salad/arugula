@@ -12,6 +12,7 @@ export { HuddleBar, HuddleButton, huddleItems } from "./ui/huddle";
 export { ChatPage } from "./ui/chat";
 export { AppsLayer, pickApp } from "./ui/apps";
 export { SandboxesLayer, openSandboxes } from "./ui/sandboxes";
+export { agentsBlock } from "./blocks/agents";
 export { appBlock } from "./blocks/app";
 export { fountainBlock } from "./blocks/fountain";
 export { workspaceBlock } from "./blocks/workspace";

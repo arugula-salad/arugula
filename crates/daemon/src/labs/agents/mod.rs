@@ -18,6 +18,7 @@
 //! - **Wearing it** in an agent block ([`wear`]) is M44's wearing of a
 //!   Fountain agent, with the recipe as the source.
 
+pub mod block;
 pub mod catalog;
 pub mod wear;
 

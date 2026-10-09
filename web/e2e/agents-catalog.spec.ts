@@ -101,9 +101,42 @@ test("offered on the team box and on Bob's own machine: Alice's machine lists bo
   await expect.poll(() => catalog(bob, "bobs"), { timeout: 60_000, intervals: [2_000] }).toEqual(["bobs/reviewer", "teambox/fixer (alice)"]);
 });
 
+test("the Team agents block: by machine and owner, offering from it, and Run here", async () => {
+  test.setTimeout(120_000);
+  await show(alice, "alices");
+  const block = await alice.evaluate(() => window.__arugula.client.openBlock({ type: "agents", config: {}, local: true }));
+  const el = alice.locator(`[data-agents-block="${block}"]`);
+  await expect(el.locator('[data-shelf="teambox"] [data-agent="fixer"]')).toBeVisible({ timeout: 30_000 });
+  await expect(el.locator('[data-shelf="bobs"] [data-agent="reviewer"]')).toBeVisible();
+  await expect(el.locator('[data-shelf="bobs"] .agents-shelf-head')).toContainText("bob's");
+  await expect(el.locator('[data-send-task="reviewer"]')).toBeDisabled();
+
+  // A project's recipes, offered from the block.
+  const dir = project("helper", "Help out");
+  await el.locator("[data-pick-dir]").click();
+  await alice.locator(".prompt input").fill(dir);
+  await alice.locator(".prompt input").press("Enter");
+  await expect(el.locator('[data-recipe="helper"][data-offered="false"]')).toBeVisible();
+  await el.locator('[data-offer="helper"]').click();
+  await expect(el.locator('[data-recipe="helper"][data-offered="true"]')).toBeVisible();
+  await expect(el.locator('[data-shelf="alices"] [data-agent="helper"]')).toBeVisible();
+  // Bob's machine finds it, as Alice's.
+  await expect.poll(() => catalog(bob, "bobs"), { timeout: 60_000, intervals: [2_000] }).toContain("alices/helper (alice)");
+
+  // Run here: a Claude Code block beside it, as the recipe.
+  await show(alice, "alices");
+  const before = await alice.evaluate(() => window.__arugula.client.state!.panes.filter((p) => p.type === "agent").length);
+  await el.locator('[data-run-here="helper"]').click();
+  await alice.locator(".prompt input").press("Enter");
+  await expect.poll(() => alice.evaluate(() => window.__arugula.client.state!.panes.filter((p) => p.type === "agent").length)).toBe(before + 1);
+  const agent = await alice.evaluate(() => window.__arugula.client.state!.panes.filter((p) => p.type === "agent").at(-1)!.id);
+  const st = (await call(alice, "GET", `/api/blocks/${agent}`)).body as { state?: { recipe?: string; cwd?: string } } | null;
+  expect(st?.state).toMatchObject({ recipe: "helper", cwd: dir });
+});
+
 test("once Bob stops offering, his machine shuts Alice's out again", async () => {
   test.setTimeout(120_000);
   await show(bob, "bobs");
   expect((await call(bob, "POST", "/api/a2a/offers", { agent: "reviewer" })).status).toBe(200);
-  await expect.poll(() => catalog(alice, "alices"), { timeout: 60_000, intervals: [2_000] }).toEqual(["teambox/fixer"]);
+  await expect.poll(() => catalog(alice, "alices"), { timeout: 60_000, intervals: [2_000] }).toEqual(["alices/helper", "teambox/fixer"]);
 });

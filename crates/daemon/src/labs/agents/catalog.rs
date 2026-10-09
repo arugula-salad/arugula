@@ -87,6 +87,53 @@ impl Catalog {
     }
 }
 
+/// A machine as the directory gave it.
+struct Seen<'a> {
+    id: &'a str,
+    name: &'a str,
+    owner: &'a str,
+    account: &'a str,
+    team: Option<&'a str>,
+}
+
+/// A machine's shelf now: from what it answered (`None`: it's offline, so
+/// not asked), else its cards as last seen, with why.
+fn shelf(m: Seen, before: Option<&Shelf>, got: Option<anyhow::Result<(u16, Vec<u8>)>>, now: u64) -> Shelf {
+    let before = before.cloned().unwrap_or_default();
+    let mut s = Shelf {
+        machine: m.id.to_owned(),
+        name: m.name.to_owned(),
+        owner: m.owner.to_owned(),
+        account: m.account.to_owned(),
+        team: m.team.map(str::to_owned),
+        agents: before.agents,
+        fetched_ms: before.fetched_ms,
+        ..Default::default()
+    };
+    match got {
+        None => s.note = Some("offline: its agents as last seen".into()),
+        Some(Ok((200, body))) => {
+            let v: Value = serde_json::from_slice(&body).unwrap_or_default();
+            s.agents = v["agents"].as_array().cloned().unwrap_or_default();
+            s.online = true;
+            s.fetched_ms = Some(now);
+        }
+        // The flag is off there, or it's older than M76: nothing offered.
+        Some(Ok((404, _))) => {
+            s.agents.clear();
+            s.online = true;
+            s.fetched_ms = Some(now);
+        }
+        Some(Ok((status, body))) => {
+            let said = serde_json::from_slice::<Value>(&body).ok().and_then(|v| v["error"].as_str().map(str::to_owned));
+            let said = said.map(|w| format!(" ({w})")).unwrap_or_default();
+            s.note = Some(format!("it said {status}{said}: its agents as last seen"));
+        }
+        Some(Err(e)) => s.note = Some(format!("not reached ({e:#}): its agents as last seen")),
+    }
+    s
+}
+
 pub fn read(state_dir: &Path) -> Catalog {
     std::fs::read(state_dir.join(FILE)).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
 }
@@ -145,45 +192,10 @@ async fn refresh(app: &Arc<App>, last: &Catalog) -> Catalog {
         }
     };
     let asks = peers.iter().map(|m| async move {
-        let before = last.machines.iter().find(|s| s.machine == m.id).cloned().unwrap_or_default();
-        let mut s = Shelf {
-            machine: m.id.clone(),
-            name: m.name.clone(),
-            owner: m.owner.clone(),
-            account: m.account.clone(),
-            team: m.team.clone(),
-            agents: before.agents.clone(),
-            fetched_ms: before.fetched_ms,
-            ..Default::default()
-        };
-        if !m.online {
-            s.note = Some("offline: its agents as last seen".into());
-            return s;
-        }
-        match crate::peer::get(&app.control, m, "/api/a2a/agents").await {
-            Ok((200, body)) => {
-                let v: Value = serde_json::from_slice(&body).unwrap_or_default();
-                s.agents = v["agents"].as_array().cloned().unwrap_or_default();
-                s.online = true;
-                s.fetched_ms = Some(now_ms());
-            }
-            // The flag is off there, or it's older than M76: nothing offered.
-            Ok((404, _)) => {
-                s.agents.clear();
-                s.online = true;
-                s.fetched_ms = Some(now_ms());
-            }
-            Ok((status, body)) => {
-                let said =
-                    serde_json::from_slice::<Value>(&body).ok().and_then(|v| v["error"].as_str().map(str::to_owned));
-                s.note = Some(format!(
-                    "it said {status}{}: its agents as last seen",
-                    said.map(|w| format!(" ({w})")).unwrap_or_default()
-                ));
-            }
-            Err(e) => s.note = Some(format!("not reached ({e:#}): its agents as last seen")),
-        }
-        s
+        let before = last.machines.iter().find(|s| s.machine == m.id);
+        let got = if m.online { Some(crate::peer::get(&app.control, m, "/api/a2a/agents").await) } else { None };
+        let seen = Seen { id: &m.id, name: &m.name, owner: &m.owner, account: &m.account, team: m.team.as_deref() };
+        shelf(seen, before, got, now_ms())
     });
     let mut others: Vec<Shelf> = futures_util::future::join_all(asks).await;
     // A machine with nothing offered, now or before, isn't worth a row.
@@ -197,6 +209,29 @@ async fn refresh(app: &Arc<App>, last: &Catalog) -> Catalog {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn an_offline_machine_keeps_its_last_cards_and_one_that_offers_nothing_has_none() {
+        let seen = || Seen { id: "d1", name: "ale-box", owner: "ale", account: "a2", team: None };
+        let card = json!({ "name": "fixer" });
+        let answer = |v: Value| Some(Ok((200, serde_json::to_vec(&v).unwrap())));
+        let first = shelf(seen(), None, answer(json!({ "agents": [card] })), 10);
+        assert!(first.online && first.note.is_none());
+        assert_eq!((first.agents.len(), first.fetched_ms), (1, Some(10)));
+        // Offline: not asked; last cards kept, said so.
+        let off = shelf(seen(), Some(&first), None, 20);
+        assert!(!off.online);
+        assert_eq!((off.agents.len(), off.fetched_ms), (1, Some(10)));
+        assert!(off.note.as_deref().unwrap().contains("as last seen"));
+        // Unreachable, or refusing: the same, with why.
+        let err = shelf(seen(), Some(&first), Some(Err(anyhow::anyhow!("timed out"))), 20);
+        assert!(!err.online && err.agents.len() == 1 && err.note.as_deref().unwrap().contains("timed out"));
+        let refused = shelf(seen(), Some(&first), Some(Ok((403, br#"{"error":"no"}"#.to_vec()))), 20);
+        assert!(refused.note.as_deref().unwrap().contains("403 (no)"));
+        // The flag off there: answered, nothing offered.
+        let none = shelf(seen(), Some(&first), Some(Ok((404, vec![]))), 30);
+        assert!(none.online && none.agents.is_empty() && none.note.is_none());
+    }
 
     #[test]
     fn a_line_says_where_whose_and_whether_its_current() {

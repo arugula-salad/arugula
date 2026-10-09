@@ -57,6 +57,13 @@ export function openWorkspace(client: Client, root: string, from?: PaneId, env =
   );
 }
 
+/** "Team agents…" (M77): the team's agent catalog beside `split`, or in a
+ * new tab of `session`. */
+export async function openAgents(client: Client, where: { split?: PaneId; session?: number }) {
+  const place = where.split !== undefined ? { split: where.split, from_pane: where.split } : { session: where.session !== undefined ? String(where.session) : undefined };
+  await client.openBlock({ type: "agents", config: {}, local: true, ...place }, "couldn't open the agent catalog");
+}
+
 /** "Fountain agents…" (or, M45b, "Fountain runner…"): the block beside
  * `split`, or in a new tab of `session`. */
 export async function openFountain(client: Client, where: { split?: PaneId; session?: number }, view: "catalog" | "runner" = "catalog") {

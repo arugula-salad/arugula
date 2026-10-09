@@ -149,6 +149,7 @@ pub fn routes(r: Router<Arc<App>>) -> Router<Arc<App>> {
 pub fn create_block(kind: BlockType, ctx: BlockCtx, config: Value) -> Result<Arc<dyn Block>, String> {
     match kind {
         BlockType::Fountain => fountain::FountainBlock::create(ctx, config),
+        BlockType::Agents => agents::block::AgentsBlock::create(ctx, config),
         BlockType::App => apps::AppBlock::create(ctx, config),
         BlockType::Workspace => workspace::Workspace::create(ctx, config),
         other => Err(format!("{other:?} isn't a Labs block")),
@@ -160,6 +161,7 @@ pub fn create_block(kind: BlockType, _ctx: BlockCtx, _config: Value) -> Result<A
     Err(not_built(&match kind {
         BlockType::App => "An app block".to_owned(),
         BlockType::Workspace => "A chant workspace".to_owned(),
+        BlockType::Agents => "The agent catalog".to_owned(),
         kind => format!("A {kind:?} block"),
     }))
 }

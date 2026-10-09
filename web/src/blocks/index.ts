@@ -14,5 +14,5 @@ export { openPort } from "./browser";
 export { openEditor } from "./editor";
 export { newRemote, remoteHosts, remotes } from "./remote";
 export { openChanges, openFile } from "./diff";
-export { isWorkspace, openFountain, openWorkspace, useWorkspaceDir } from "./open-labs";
+export { isWorkspace, openAgents, openFountain, openWorkspace, useWorkspaceDir } from "./open-labs";
 export { openIssue, openPr } from "./forge";

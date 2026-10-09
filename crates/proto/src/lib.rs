@@ -1025,6 +1025,10 @@ pub enum BlockType {
     /// An agent's invites into the session (#234), waiting for the owner:
     /// a card each, beside the agent. Config `{drafter, drafts}`.
     Invite,
+    /// The team's agent catalog (M77): every agent offered on the machines
+    /// this one reaches, and this machine's recipes to offer. Config
+    /// `{dir?}`.
+    Agents,
     /// A type a newer daemon has and this build doesn't know: its state
     /// still parses. Nothing opens one, and the web client's types leave
     /// it out.
