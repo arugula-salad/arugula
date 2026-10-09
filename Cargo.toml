@@ -14,6 +14,52 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/arugula-salad/arugula"
 
+[workspace.dependencies]
+# The versions every crate shares; a crate adds its own features, `optional`
+# and (for the Unix and Windows tables) its target with
+# `dep = { workspace = true, ... }`.
+arugula-control-wire = { version = "0.30.2", path = "crates/control-wire" }
+arugula-core = { version = "0.30.2", path = "crates/core" }
+arugula-e2e = { version = "0.30.2", path = "crates/e2e" }
+arugula-proto = { version = "0.30.2", path = "crates/proto" }
+arugula-vt = { version = "0.30.2", path = "crates/vt" }
+aes-gcm = "0.11.1"
+anyhow = "1.0.104"
+axum = "0.8.9"
+base64 = "0.23.1"
+clap = "4.6.7"
+ed25519-dalek = "3.0.0"
+futures-util = "0.3.34"
+# The OS's random source on every system (not /dev/urandom, which Windows lacks).
+getrandom = "0.4.3"
+hex = "0.4.3"
+hkdf = "0.13.0"
+hmac = "0.13.0"
+nix = "0.31.3"
+p256 = "0.14.0"
+proptest = "1.11.0"
+regex = "1.13.1"
+reqwest = { version = "0.13.5", default-features = false }
+russh = { version = "0.64.0", default-features = false }
+rust-embed = "8.12.0"
+rustls-platform-verifier = "0.7.1"
+serde = "1.0.229"
+serde_json = "1.0.151"
+serde_urlencoded = "0.7.1"
+sha2 = "0.11.0"
+tokio = "1.53.1"
+tokio-tungstenite = "0.30.0"
+tracing = "0.1.44"
+tracing-subscriber = "0.3.23"
+# Its warnings are for serde attributes it can't read (`from`, `other`):
+# they change only how a type parses, not how it looks.
+ts-rs = "12.0.1"
+tungstenite = "0.30.0"
+url = "2.5.8"
+webpki-root-certs = "1.0.9"
+windows-sys = "0.60"
+zstd = "0.14.0"
+
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"
 

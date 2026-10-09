@@ -6,14 +6,12 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-arugula-core = { version = "0.30.2", path = "../core" }
-serde = { version = "1.0.229", features = ["derive"] }
-serde_json = "1.0.151"
-# Its warnings are for serde attributes it can't read (`from`, `other`):
-# they change only how a type parses, not how it looks.
-ts-rs = { version = "12.0.1", optional = true, features = ["no-serde-warnings"] }
-tungstenite = { version = "0.30.0", optional = true }
-tracing = "0.1.44"
+arugula-core = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+ts-rs = { workspace = true, optional = true, features = ["no-serde-warnings"] }
+tungstenite = { workspace = true, optional = true }
+tracing = { workspace = true }
 
 [features]
 # TypeScript for the types the web client uses: `just proto-ts` writes

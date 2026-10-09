@@ -6,26 +6,26 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-aes-gcm = "0.11.1"
-anyhow = "1.0.104"
-ed25519-dalek = "3.0.0"
-getrandom = "0.4.3"
-hex = "0.4.3"
-hkdf = "0.13.0"
-p256 = { version = "0.14.0", features = ["ecdh"] }
-serde = { version = "1.0.229", features = ["derive"] }
-serde_json = "1.0.151"
-sha2 = "0.11.0"
+aes-gcm = { workspace = true }
+anyhow = { workspace = true }
+ed25519-dalek = { workspace = true }
+getrandom = { workspace = true }
+hex = { workspace = true }
+hkdf = { workspace = true }
+p256 = { workspace = true, features = ["ecdh"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
 # Its RustCrypto resolver only: its `std` feature turns on `ring/std`, which
 # builds ring (a second crypto backend beside aws-lc-rs) for nothing (#466).
 snow = { version = "0.10.0", default-features = false, features = ["default-resolver-crypto"] }
-tokio = { version = "1.53.1", features = ["sync", "io-util", "rt", "macros"] }
+tokio = { workspace = true, features = ["sync", "io-util", "rt", "macros"] }
 
 [lints]
 workspace = true
 
 [dev-dependencies]
-futures-util = "0.3.34"
-tokio = { version = "1.53.1", features = ["full"] }
+futures-util = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
 
-tokio-tungstenite = "0.30.0"
+tokio-tungstenite = { workspace = true }

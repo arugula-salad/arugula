@@ -501,4 +501,11 @@ mod tests {
         // And on the drop, off control's page to the daemon's.
         assert!(moves(Some("https://control.test"), None, &url("https://control.test/"), false));
     }
+
+    #[test]
+    fn the_sign_in_challenge_is_the_lowercase_hex_of_the_verifiers_sha256() {
+        use sha2::{Digest, Sha256};
+        assert_eq!(hex(&[0x00, 0x0f, 0xab, 0xff]), "000fabff");
+        assert_eq!(hex(&Sha256::digest(b"abc")), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+    }
 }

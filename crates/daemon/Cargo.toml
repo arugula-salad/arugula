@@ -6,68 +6,67 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-aes-gcm = "0.11.1"
-anyhow = "1.0.104"
-axum = { version = "0.8.9", features = ["ws"] }
-base64 = "0.23.1"
-clap = { version = "4.6.7", features = ["derive", "env"] }
+aes-gcm = { workspace = true }
+anyhow = { workspace = true }
+axum = { workspace = true, features = ["ws"] }
+base64 = { workspace = true }
+clap = { workspace = true, features = ["derive", "env"] }
 crossbeam-channel = "0.5.17"
-futures-util = "0.3.34"
-# The OS's random source on every system (not /dev/urandom, which Windows lacks).
-getrandom = "0.4"
-hkdf = "0.13.0"
+futures-util = { workspace = true }
+getrandom = { workspace = true }
+hkdf = { workspace = true }
 http-body-util = "0.1.5"
 hyper = { version = "1.11.1", features = ["http1", "client", "server"] }
 hyper-util = { version = "0.1.21", features = ["tokio"] }
-arugula-control-wire = { version = "0.30.2", path = "../control-wire" }
-arugula-core = { version = "0.30.2", path = "../core" }
-arugula-e2e = { version = "0.30.2", path = "../e2e" }
-arugula-proto = { version = "0.30.2", path = "../proto" }
-arugula-vt = { version = "0.30.2", path = "../vt" }
+arugula-control-wire = { workspace = true }
+arugula-core = { workspace = true }
+arugula-e2e = { workspace = true }
+arugula-proto = { workspace = true }
+arugula-vt = { workspace = true }
 instant-acme = { version = "0.8.5", features = ["rcgen"] }
-p256 = { version = "0.14.0", features = ["ecdh", "ecdsa"] }
+p256 = { workspace = true, features = ["ecdh", "ecdsa"] }
 # Path segments decoded as the router decodes them, for the access checks.
 percent-encoding = "2.3.2"
-regex = "1.13.1"
-reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "http2", "json"] }
-rustls-platform-verifier = "0.7.1"
+regex = { workspace = true }
+reqwest = { workspace = true, features = ["rustls", "http2", "json"] }
+rustls-platform-verifier = { workspace = true }
 # The guest ssh server (M65), part of Labs.
-russh = { version = "0.64.0", default-features = false, features = ["aws-lc-rs"], optional = true }
+russh = { workspace = true, features = ["aws-lc-rs"], optional = true }
 # Agent recipes (#398): a Claude Code subagent file's frontmatter.
 serde_norway = { version = "0.9.42", optional = true }
-rust-embed = { version = "8.12.0", features = ["mime-guess"] }
+rust-embed = { workspace = true, features = ["mime-guess"] }
 # MCP (M16), pinned: 3.x moves fast (S14).
 rmcp = { version = "=3.5.0", default-features = false, features = ["server", "schemars", "transport-io", "transport-streamable-http-server"] }
 schemars = "1.0"
-serde = { version = "1.0.229", features = ["derive"] }
-serde_json = "1.0.151"
-hmac = "0.13.0"
-sha2 = "0.11.0"
-tokio = { version = "1.53.1", features = ["full"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+hmac = { workspace = true }
+sha2 = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
 tokio-rustls = { version = "0.26.6", default-features = false, features = ["aws_lc_rs", "logging", "tls12"] }
-tokio-tungstenite = "0.30.0"
-tracing = "0.1.44"
-tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+tokio-tungstenite = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
 x509-parser = "0.18.1"
 tower = { version = "0.5.3", features = ["util"] }
-hex = "0.4.3"
-url = "2.5.8"
-webpki-root-certs = "1.0.9"
-zstd = "0.14.0"
+hex = { workspace = true }
+url = { workspace = true }
+webpki-root-certs = { workspace = true }
+zstd = { workspace = true }
 
 # ptys, signals, sockets: Unix only. Windows gets ConPTY and named pipes (M56).
 [target.'cfg(unix)'.dependencies]
-nix = { version = "0.31.3", features = ["term", "process", "fs", "ioctl", "signal", "poll", "socket", "uio", "hostname", "user", "dir"] }
+nix = { workspace = true, features = ["term", "process", "fs", "ioctl", "signal", "poll", "socket", "uio", "hostname", "user", "dir"] }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.60", features = ["Wdk_System_Threading", "Win32_Foundation", "Win32_NetworkManagement_IpHelper", "Win32_Security", "Win32_Security_Authorization", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_System_Diagnostics_Debug", "Win32_System_Diagnostics_ToolHelp", "Win32_System_IO", "Win32_System_JobObjects", "Win32_System_LibraryLoader", "Win32_System_Pipes", "Win32_System_Threading", "Win32_System_Time", "Win32_UI_Shell"] }
+windows-sys = { workspace = true, features = ["Wdk_System_Threading", "Win32_Foundation", "Win32_NetworkManagement_IpHelper", "Win32_Security", "Win32_Security_Authorization", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_System_Diagnostics_Debug", "Win32_System_Diagnostics_ToolHelp", "Win32_System_IO", "Win32_System_JobObjects", "Win32_System_LibraryLoader", "Win32_System_Pipes", "Win32_System_Threading", "Win32_System_Time", "Win32_UI_Shell"] }
 
 [lints]
 workspace = true
 
 [dev-dependencies]
-futures-util = "0.3.34"
-arugula-proto = { version = "0.30.2", path = "../proto", features = ["fixtures"] }
+futures-util = { workspace = true }
+arugula-proto = { workspace = true, features = ["fixtures"] }
 arugula-testkit = { path = "../testkit" }
 rmcp = { version = "=3.5.0", default-features = false, features = ["client", "transport-streamable-http-client-reqwest", "transport-child-process"] }
 # instant-acme's features (aws-lc-rs): the defaults add ring (#466).

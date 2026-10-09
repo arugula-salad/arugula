@@ -40,7 +40,7 @@ tungstenite = "0.30"
 # Control's ticket for signing in (M48), and the local daemon's /api/host.
 ureq = { version = "3", features = ["json"] }
 # Signing in binds the browser's yes to this app: a verifier only it holds.
-getrandom = "0.3"
+getrandom = "0.4"
 sha2 = "0.10"
 
 [target.'cfg(target_os = "linux")'.dependencies]

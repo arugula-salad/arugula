@@ -11,41 +11,41 @@ name = "arugula-control"
 path = "src/main.rs"
 
 [dependencies]
-anyhow = "1.0.104"
+anyhow = { workspace = true }
 aws-lc-rs = "1.18.1"
-axum = { version = "0.8.9", features = ["ws"] }
-base64 = "0.23.1"
+axum = { workspace = true, features = ["ws"] }
+base64 = { workspace = true }
 ciborium = "0.2.2"
-clap = { version = "4.6.7", features = ["derive", "env"] }
-ed25519-dalek = "3.0.0"
-futures-util = "0.3.34"
-hex = "0.4.3"
-hmac = "0.13.0"
-arugula-core = { version = "0.30.2", path = "../core" }
-arugula-control-wire = { version = "0.30.2", path = "../control-wire" }
-arugula-e2e = { version = "0.30.2", path = "../e2e" }
+clap = { workspace = true, features = ["derive", "env"] }
+ed25519-dalek = { workspace = true }
+futures-util = { workspace = true }
+hex = { workspace = true }
+hmac = { workspace = true }
+arugula-core = { workspace = true }
+arugula-control-wire = { workspace = true }
+arugula-e2e = { workspace = true }
 libc = "0.2.189"
-p256 = { version = "0.14.0", features = ["ecdh", "ecdsa"] }
-reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "json"] }
+p256 = { workspace = true, features = ["ecdh", "ecdsa"] }
+reqwest = { workspace = true, features = ["rustls", "json"] }
 rusqlite = { version = "0.40.2", features = ["bundled", "fallible_uint"] }
-russh = { version = "0.64.0", default-features = false, features = ["aws-lc-rs"] }
-rust-embed = { version = "8.12.0", features = ["mime-guess"] }
-serde = { version = "1.0.229", features = ["derive"] }
-serde_json = "1.0.151"
-sha2 = "0.11.0"
-tokio = { version = "1.53.1", features = ["full"] }
-tokio-tungstenite = { version = "0.30.0", features = ["rustls-tls-native-roots"] }
-tracing = "0.1.44"
-tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
-url = "2.5.8"
-webpki-root-certs = "1.0.9"
+russh = { workspace = true, features = ["aws-lc-rs"] }
+rust-embed = { workspace = true, features = ["mime-guess"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+tokio-tungstenite = { workspace = true, features = ["rustls-tls-native-roots"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+url = { workspace = true }
+webpki-root-certs = { workspace = true }
 
 [lints]
 workspace = true
 
 [dev-dependencies]
-aes-gcm = "0.11.1"
-hkdf = "0.13.0"
+aes-gcm = { workspace = true }
+hkdf = { workspace = true }
 
 [features]
 # Embed web/dist even in a debug build (rust-embed reads it from the source
