@@ -1,8 +1,8 @@
 # Arugula control: keys, channels and the relay
 
 Written 2026-10-01, from the control spike ([spikes/s15-control](../spikes/s15-control/README.md)).
-This is the design the web client's sign-in, device keys, shared sessions,
-the relay and push build. It turns the control track's promise
+This is the design the control track builds: accounts and devices, the
+end-to-end relay, teams, hosted sandboxes and push. It turns the control track's promise
 (plan-archive.md, "Control track") into mechanisms: **control can refuse service,
 but it can't read.** That promise has limits, set out in
 [What holds against control](#what-holds-against-control): the client code
@@ -160,7 +160,7 @@ device nobody trusted. Now:
   first device) and caches it on disk.
 - A client's Noise static key must belong to a certificate that chains to
   that root, isn't revoked, and has a role on the session it touches
-  (the daemon's principals; role grants are signed the same way).
+  (the multiplayer principals; role grants are signed the same way).
 - Control serves the chain, but it can't extend it: it holds no `sign`
   private key.
 
@@ -204,7 +204,7 @@ Ed25519 seed.
   already carries as a login.
 - Where PRF isn't available, losing storage means a new device key and an
   approval from another device. That is safe, just less convenient. **So
-  PRF is an improvement, not a requirement:** the web client's sign-in ships either way.
+  PRF is an improvement, not a requirement:** control's accounts ship either way.
 
 **Go/no-go per platform:**
 
@@ -362,7 +362,7 @@ writes:
   - revoking someone needs a key rotation that every remaining device
     acknowledges.
 - **Decision: per-viewer channels.**
-  - Shared sessions target small teams (2–5 people). Five viewers of a busy build
+  - Teams are for small groups (2–5 people). Five viewers of a busy build
     log cost five times its output on the daemon's uplink, which a home
     connection carries.
   - Per-viewer channels mean one mechanism for direct, relayed and shared
@@ -448,7 +448,7 @@ relay. The spike found a wrinkle:
 - A page served by control (`https://control.arugula.io`)
   therefore can't open `wss://geek.<tailnet>.ts.net` until the user grants
   the *local network access* permission. Granting it worked in the spike.
-- **So the web client:**
+- **So control's web client:**
   - asks for local network access the first time the directory lists a
     direct URL, with a line saying why ("connect straight to your machines
     when you're on the same network");

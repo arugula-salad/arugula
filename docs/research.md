@@ -159,7 +159,7 @@ resume, run/send/wait/read, multi-host list). **Theirs only:** runs
 in any terminal (ours: `tmux -CC`), Windows, broad agent detection,
 plugins, agents driving the mux (ours, not built). **Ours only:** web and
 phone client, push and answering from it, agent blocks, multiplayer
-(principals, shares, guests, invites), control's E2E relay and hosted sandboxes, machines per
+(principals and roles, live sharing, safe write access, reaching beyond the tailnet), control's E2E relay and hosted sandboxes, machines per
 pane or tab, OSC 133 command structure and history search, the
 swarm view.
 
