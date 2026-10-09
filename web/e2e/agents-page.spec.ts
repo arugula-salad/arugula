@@ -44,11 +44,11 @@ test.afterAll(() => {
 test("make a recipe in a project from the form, edit it, offer it, run it, delete it", async ({ page }) => {
   test.setTimeout(120_000);
   await open(page);
-  // The session menu offers the page.
-  await page.locator(".session-button").click();
-  await page.getByRole("menuitem", { name: "Agents…" }).click();
+  // The page is a place in the bar, beside Panes, Swarm and Chat.
+  await page.locator(".app > .bar [data-open-agents]").click();
   const p = page.locator("[data-agents-page=recipes]");
   await expect(p).toBeVisible();
+  await expect(p.locator("[data-open-agents]")).toHaveAttribute("aria-pressed", "true");
 
   // A project of ours.
   await p.locator("[data-add-project]").click();

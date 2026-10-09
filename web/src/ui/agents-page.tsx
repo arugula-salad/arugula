@@ -15,6 +15,7 @@ import type { Client } from "../client";
 import { askText } from "./menu";
 import { ConfirmRemove } from "./confirm";
 import { agentsRoute, closeAgentsPage, openAgentsPage, type AgentsTab } from "./agents-route";
+import { Places } from "./places";
 
 interface Recipe {
   name: string;
@@ -72,7 +73,7 @@ function Page({ client, tab }: { client: Client; tab: AgentsTab }) {
   return (
     <div class="chat agents-page" data-agents-page={tab}>
       <div class="review-bar chat-bar">
-        <b>Agents</b>
+        <Places client={client} at="agents" />
         <span class="agents-tabs">
           <button class={tab === "recipes" ? "on" : ""} data-agents-tab="recipes" onClick={() => openAgentsPage("recipes")}>
             Recipes

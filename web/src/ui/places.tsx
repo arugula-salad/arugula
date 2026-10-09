@@ -1,4 +1,4 @@
-// The places a person moves between (the panes, the swarm, chat) and chat's
+// The places a person moves between (the panes, the swarm, chat, agents) and chat's
 // route in the URL hash. Core: the panes' bar shows the places, and the page
 // has to know whether chat is open, with or without Labs. The chat page itself
 // (./chat) is Labs and loads only with it.
@@ -8,6 +8,7 @@ import type { Client } from "../client";
 import type { Fleet } from "../fleet";
 import { directory } from "../hosts";
 import { openSwarm } from "../swarm/route";
+import { closeAgentsPage, openAgentsPage } from "./agents-route";
 import { threadKey, type ThreadTarget } from "../proto";
 import { getFleet } from "./hosts";
 import { closeThread } from "./threads";
@@ -144,15 +145,23 @@ export function useChatTick(client: Client) {
   }, [client]);
 }
 
-// ---- the places: the panes, the swarm and chat
+// ---- the places: the panes, the swarm, chat and agents
 
-/** Panes · Swarm · Chat, in the panes' bar and in chat's. */
-export function Places({ client, at }: { client: Client; at: "panes" | "chat" }) {
+/** Panes · Swarm · Chat · Agents, in the panes' bar, chat's and the Agents
+ * page's. Agents (#403) is the machine owner's, with its flag. */
+export function Places({ client, at }: { client: Client; at: "panes" | "chat" | "agents" }) {
   useChatTick(client);
   const { n, mention } = client.hasThreads() ? chatUnread(client) : { n: 0, mention: false };
+  const agents = client.flag("agents") && !client.state?.roles;
   return (
     <div class="places" role="group" aria-label="Places">
-      <button class={at === "panes" ? "place here" : "place"} title="Your panes" data-open-panes aria-pressed={at === "panes"} onClick={() => at === "chat" && closeChat()}>
+      <button
+        class={at === "panes" ? "place here" : "place"}
+        title="Your panes"
+        data-open-panes
+        aria-pressed={at === "panes"}
+        onClick={() => (at === "chat" ? closeChat() : at === "agents" && closeAgentsPage())}
+      >
         Panes
       </button>
       <button class="place" title="Every pane, everywhere (the swarm)" data-open-swarm onClick={openSwarm}>
@@ -164,10 +173,21 @@ export function Places({ client, at }: { client: Client; at: "panes" | "chat" })
           title="Chat: every thread, on every machine"
           data-open-chat
           aria-pressed={at === "chat"}
-          onClick={() => at === "panes" && openChat()}
+          onClick={() => at !== "chat" && openChat()}
         >
           Chat
           {n > 0 && <span class={mention ? "chat-count mention" : "chat-count"}>{mention ? `@${n}` : n}</span>}
+        </button>
+      )}
+      {agents && (
+        <button
+          class={at === "agents" ? "place here" : "place"}
+          title="Agents: this machine's recipes and your team's agents"
+          data-open-agents
+          aria-pressed={at === "agents"}
+          onClick={() => at !== "agents" && openAgentsPage()}
+        >
+          Agents
         </button>
       )}
     </div>
