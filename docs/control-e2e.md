@@ -1,7 +1,8 @@
-# Arugula control: keys, channels and the relay (S15 spec)
+# Arugula control: keys, channels and the relay
 
-Written 2026-10-01, from S15 ([spikes/s15-control](../spikes/s15-control/README.md)).
-This is the design M17–M21 build. It turns the control track's promise
+Written 2026-10-01, from the control spike ([spikes/s15-control](../spikes/s15-control/README.md)).
+This is the design the web client's sign-in, device keys, shared sessions,
+the relay and push build. It turns the control track's promise
 (plan-archive.md, "Control track") into mechanisms: **control can refuse service,
 but it can't read.** That promise has limits, set out in
 [What holds against control](#what-holds-against-control): the client code
@@ -29,8 +30,8 @@ control serves, and the first account a machine joins, are trusted.
   - a joining machine pins its account's root only once the person has
     compared the account's fingerprint on the machine with the one on the
     device that approved it ([Joining](#joining-a-machine-the-accounts-fingerprint)).
-- **Relay:** control keeps each enrolled daemon's dial-out socket (M4c's
-  mux) and splices clients onto it. It sees connection metadata and byte
+- **Relay:** control keeps each enrolled daemon's dial-out socket (the daemon's
+  dial-out mux) and splices clients onto it. It sees connection metadata and byte
   counts only.
 - **Read-only links:** a link carries a one-off device key in its fragment
   (`#k=…`). The daemon lists that key as a viewer of one session until the
@@ -51,7 +52,7 @@ control serves, and the first account a machine joins, are trusted.
 | Daemon | X25519 `noise`, Ed25519 `sign` | `<state>/daemon.key`, 0600 | the state directory is deleted (re-enroll) |
 | Recovery code | Ed25519 seed | printed once at first sign-in, never stored | the user loses the paper |
 
-S15 checked in Chrome 153 (desktop, headless) that:
+The spike checked in Chrome 153 (desktop, headless) that:
 
 - both key types generate as non-extractable (an export attempt throws);
 - they survive a reload from IndexedDB;
@@ -159,7 +160,7 @@ device nobody trusted. Now:
   first device) and caches it on disk.
 - A client's Noise static key must belong to a certificate that chains to
   that root, isn't revoked, and has a role on the session it touches
-  (M12's principals; role grants are signed the same way).
+  (the daemon's principals; role grants are signed the same way).
 - Control serves the chain, but it can't extend it: it holds no `sign`
   private key.
 
@@ -203,7 +204,7 @@ Ed25519 seed.
   already carries as a login.
 - Where PRF isn't available, losing storage means a new device key and an
   approval from another device. That is safe, just less convenient. **So
-  PRF is an improvement, not a requirement:** M17 ships either way.
+  PRF is an improvement, not a requirement:** the web client's sign-in ships either way.
 
 **Go/no-go per platform:**
 
@@ -323,7 +324,7 @@ it came from.
   covers snapshots over the Noise limit of 65,535 bytes. Senders chunk at
   16 KB.
 
-**Costs, measured in S15:**
+**Costs, measured in the spike:**
 
 | | Result |
 |---|---|
@@ -341,7 +342,7 @@ Channels are re-handshaken on every reconnect anyway.
 
 ## Shared sessions: per-viewer channels
 
-The plan suggested a session key wrapped for each member device. S15
+The plan suggested a session key wrapped for each member device. The spike
 compared that with plain per-viewer channels, for 10 MB of output in 4 KB
 writes:
 
@@ -361,7 +362,7 @@ writes:
   - revoking someone needs a key rotation that every remaining device
     acknowledges.
 - **Decision: per-viewer channels.**
-  - M19's target is small teams (2–5 people). Five viewers of a busy build
+  - Shared sessions target small teams (2–5 people). Five viewers of a busy build
     log cost five times its output on the daemon's uplink, which a home
     connection carries.
   - Per-viewer channels mean one mechanism for direct, relayed and shared
@@ -382,7 +383,7 @@ Nothing in this spec blocks it.
 
 ## The relay
 
-Control's relay is M4c's dial-out transport with control at the home end:
+Control's relay is the daemon's dial-out transport with control at the home end:
 
 - An enrolled daemon keeps one WebSocket to `wss://control/dial`,
   authenticated by a Noise handshake with its daemon key. (The spike
@@ -390,8 +391,8 @@ Control's relay is M4c's dial-out transport with control at the home end:
 - A client connects to `wss://control/c/<daemon id>`. Control checks that
   the account may reach that daemon (metadata it has anyway), opens a mux
   stream and splices the two. It forwards opaque Noise messages and counts
-  bytes per account (M18's fair use, M22's meter).
-- The mux is unchanged from M4c: per-stream credit, 256 KB windows, 16 KB
+  bytes per account (for fair use and the meter).
+- The mux is unchanged from the daemon's dial-out transport: per-stream credit, 256 KB windows, 16 KB
   frames.
 
 **Measured** (spike relay on Fly, `shared-cpu-1x`, 256 MB):
@@ -439,7 +440,7 @@ daemon today: 41.7 ms against 1.4 ms direct. The daemon now sets
 ### Direct paths, and Chrome's Local Network Access
 
 The client tries the tailnet or LAN URLs from the directory first, then the
-relay. S15 found a wrinkle:
+relay. The spike found a wrinkle:
 
 - **Chrome (153) blocks a public origin from connecting to a private
   address**, and that includes the tailnet's 100.64.0.0/10:
@@ -447,7 +448,7 @@ relay. S15 found a wrinkle:
 - A page served by control (`https://control.arugula.io`)
   therefore can't open `wss://geek.<tailnet>.ts.net` until the user grants
   the *local network access* permission. Granting it worked in the spike.
-- **So M17's web client:**
+- **So the web client:**
   - asks for local network access the first time the directory lists a
     direct URL, with a line saying why ("connect straight to your machines
     when you're on the same network");
@@ -471,7 +472,7 @@ The host chip says "direct" or "relayed" either way.
 - **Control sees** that the link id was opened, never the key or the
   content. Fragments are never sent in requests.
 - **Link previews:** an unfurler that ran the page's script would see the
-  fragment. S15's share page reports what a script-running fetcher saw:
+  fragment. The spike's share page reports what a script-running fetcher saw:
 
   | Previewer | Fetched the page | Ran its script (saw the fragment) |
   |---|---|---|
@@ -510,7 +511,7 @@ leaves it. So:
   page, with the fingerprint.
 
 This is confirmed by construction: the daemon's existing RFC 8291 encrypt
-plus a separate VAPID signer is exactly what the RFC allows. M21 adds the
+plus a separate VAPID signer is exactly what the RFC allows. The push work adds the
 handoff.
 
 ## Identity
@@ -518,7 +519,7 @@ handoff.
 Signing in proves who the account is. It doesn't make a device trusted:
 only an approval does.
 
-- **M17:** GitHub OAuth, and passkeys as a first-class login (the same
+- **First:** GitHub OAuth, and passkeys as a first-class login (the same
   passkey can supply PRF).
 - **Later:** Google OAuth, and email magic links for invitees.
 - Control's session cookie is for control's API only (directory, approvals,
@@ -542,5 +543,5 @@ logged.
 These are pending the phone runs (see the spike README):
 
 - PRF on Safari iOS and Chrome Android (the go/no-go above);
-- the cellular round trip through the relay, against M18's 30 ms budget;
+- the cellular round trip through the relay, against the relay's 30 ms budget;
 - link-preview behaviour in Slack and iMessage.
