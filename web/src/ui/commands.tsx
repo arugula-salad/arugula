@@ -14,7 +14,6 @@ import { openPicker } from "./picker";
 import { agentNotifyItems, notificationItems } from "./notify";
 import { openGettingStarted } from "./welcome";
 import { openDeveloper } from "./developer";
-import { openAgentsPage } from "./agents-route";
 import { openRules } from "./rules";
 import { desktopApp, desktopPlatform, openInNewWindow } from "../desktop";
 import { sessionThreadItems, threadItems } from "./threads";
@@ -214,8 +213,6 @@ export function sessionItems(client: Client, session: SessionId, rename: () => v
     ...agentNotifyItems(client, session),
     // #166: this machine's standing permission rules, the owner's.
     ...(client.state?.roles ? [] : [{ label: "Permission rules…", run: () => openRules(client) } as MenuItem]),
-    // #403: this machine's agent recipes and the team's agents, the owner's.
-    ...(client.flag("agents") && !client.state?.roles ? [{ label: "Agents…", run: () => openAgentsPage() } as MenuItem] : []),
     // #665: this machine's Labs flags, the owner's, once asked for.
     ...(!client.state?.roles && client.hasDev() ? [{ label: "Developer settings…", run: () => openDeveloper(client) } as MenuItem] : []),
     { label: "Getting started", run: () => openGettingStarted(undefined, client) },

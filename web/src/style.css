@@ -6326,8 +6326,8 @@ button.thread-quote:hover {
   color: var(--letterbox);
 }
 
-/* Panes · Swarm · Chat (M73): the three places, in the panes' bar and
-   chat's. */
+/* Panes · Swarm · Chat · Agents (M73, #403): the places, in the panes'
+   bar, chat's and the Agents page's. */
 .places {
   display: flex;
   align-items: center;
