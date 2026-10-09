@@ -1378,7 +1378,9 @@ async fn history_(State(app): AppState, Query(q): Query<HistoryQuery>) -> Res<Re
     let kind = q
         .kind
         .as_deref()
-        .map(|k| HistoryKind::parse(k).ok_or_else(|| bad(format!("kind: {k:?} isn't command, answer or agent"))))
+        .map(|k| {
+            HistoryKind::parse(k).ok_or_else(|| bad(format!("kind: {k:?} isn't command, answer, agent or action")))
+        })
         .transpose()?;
     let filter = Filter {
         pane: q.pane,

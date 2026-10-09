@@ -1007,7 +1007,7 @@ impl ForgeBlock {
                     text: Some(text),
                     cwd: None,
                     by: by.map(str::to_owned),
-                    kind: HistoryKind::Command,
+                    kind: HistoryKind::Action,
                 },
             );
             let _ = l.record(at, crate::store::Event::End { at_ms: now_ms(), exit: Some(if ok { 0 } else { 1 }) });

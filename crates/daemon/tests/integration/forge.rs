@@ -60,6 +60,8 @@ struct Inner {
     /// Requests by route, and the writes with the token they came with.
     gets: HashMap<&'static str, u32>,
     writes: Vec<(String, Value, String)>,
+    /// Refuse comments, as a forge does when it's down.
+    fail_comments: bool,
     next: u64,
 }
 
@@ -159,6 +161,9 @@ async fn comment(State(f): State<Fake>, h: HeaderMap, Json(body): Json<Value>) -
     guard!(h);
     let origin = f.origin.lock().unwrap().clone();
     f.with(|i| {
+        if i.fail_comments {
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "message": "down" }))).into_response();
+        }
         i.writes.push(("comment".into(), body.clone(), token_of(&h)));
         i.next += 1;
         let id = 5000 + i.next;
@@ -667,6 +672,32 @@ fn a_persons_writes_go_straight_out() {
     assert_eq!(status, 400, "{body}");
     assert!(body.contains("no method"), "{body}");
     assert_eq!(forge.f.writes().len(), 2);
+}
+
+/// #411: a forge action is no shell command. One the forge refused has an
+/// exit code of 1, and still isn't among a pane's failed commands.
+#[test]
+fn a_failed_forge_action_is_an_action_not_a_failed_command() {
+    let dir = scratch("failed-action");
+    let forge = Forge::start(&dir, "jhgaylor", None);
+    let d = forge.daemon();
+    let block = open_pr(&d, &forge);
+    read(&d, block);
+    forge.f.with(|i| i.fail_comments = true);
+    let (status, body) = d.raw("POST", &format!("/api/blocks/{block}/call/comment"), Some(json!({ "body": "hi" })));
+    assert_ne!(status, 200, "{body}");
+    let texts = |q: &str| -> Vec<(String, i64)> {
+        d.get(&format!("/api/history?pane={block}{q}"))
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|h| (h["text"].as_str().unwrap().to_owned(), h["exit"].as_i64().unwrap_or(-1)))
+            .collect()
+    };
+    let want = vec![("a comment on jhgaylor/illogical#84: hi".to_owned(), 1)];
+    assert_eq!(texts("&kind=action"), want);
+    assert!(texts("&failed=1").is_empty(), "an action in the failed commands");
+    assert!(texts("&kind=command").is_empty());
 }
 
 #[test]

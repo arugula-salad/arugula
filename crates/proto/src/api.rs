@@ -465,6 +465,10 @@ pub enum HistoryKind {
     /// What an agent block did: a tool call that isn't a shell command,
     /// or a turn.
     Agent,
+    /// Something done for a person through an integration: a forge action
+    /// or an app prompt. Its exit code says whether it failed, but it ran
+    /// no shell command.
+    Action,
 }
 
 impl HistoryKind {
@@ -472,12 +476,13 @@ impl HistoryKind {
         *self == HistoryKind::Command
     }
 
-    /// `command`, `answer` or `agent`.
+    /// `command`, `answer`, `agent` or `action`.
     pub fn parse(s: &str) -> Option<HistoryKind> {
         match s {
             "command" => Some(HistoryKind::Command),
             "answer" => Some(HistoryKind::Answer),
             "agent" => Some(HistoryKind::Agent),
+            "action" => Some(HistoryKind::Action),
             _ => None,
         }
     }
@@ -504,7 +509,7 @@ pub struct HistoryEntry {
     /// Who typed it (M13).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub by: Option<String>,
-    /// Command, answer or agent. Older records have none: commands.
+    /// Command, answer, agent or action. Older records have none: commands.
     #[serde(default)]
     pub kind: HistoryKind,
 }

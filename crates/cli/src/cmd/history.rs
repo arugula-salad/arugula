@@ -14,7 +14,7 @@ pub struct Args {
     failed: bool,
     /// Only this kind: command (ran in a shell), answer (an answer or
     /// approval) or agent (an agent block's steps that aren't commands).
-    #[arg(long, value_parser = ["command", "answer", "agent"])]
+    #[arg(long, value_parser = ["command", "answer", "agent", "action"])]
     kind: Option<String>,
     /// e.g. 30m, 2h, 7d.
     #[arg(long)]
@@ -74,6 +74,7 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
         let by = match c.kind {
             HistoryKind::Answer => format!("  (answer){by}"),
             HistoryKind::Agent => format!("  (agent){by}"),
+            HistoryKind::Action => format!("  (action){by}"),
             HistoryKind::Command => by,
         };
         println!(

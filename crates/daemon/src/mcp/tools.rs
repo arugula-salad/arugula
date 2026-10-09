@@ -1163,7 +1163,7 @@ fn all_defs() -> Vec<Def> {
         Def {
             name: "history",
             title: "Command history and output",
-            description: "What happened across panes (open and recently closed), newest first: commands with exit codes, directories, when, and who ran them, and answers and approvals with who gave them. Each has a kind (command, answer or agent); filter by kind, failed (commands only), since/before (\"2d\", \"36h\"), cwd, a regex. kind output instead: lines of output across panes (and agents' transcripts) matching pattern, a regex, with the pane and command each came from (since and limit apply).",
+            description: "What happened across panes (open and recently closed), newest first: commands with exit codes, directories, when, and who ran them, and answers and approvals with who gave them. Each has a kind (command, answer, agent or action: a forge action or an app prompt); filter by kind, failed (commands only), since/before (\"2d\", \"36h\"), cwd, a regex. kind output instead: lines of output across panes (and agents' transcripts) matching pattern, a regex, with the pane and command each came from (since and limit apply).",
             args: Args::One(schema_for_type::<HistoryArgs>),
             read_only: true,
             destructive: false,
@@ -2512,7 +2512,7 @@ impl<'a> Call<'a> {
             .as_deref()
             .map(|k| {
                 HistoryKind::parse(k).ok_or_else(|| {
-                    format!("kind: {k:?} isn't command, answer or agent (or output, for lines of output)")
+                    format!("kind: {k:?} isn't command, answer, agent or action (or output, for lines of output)")
                 })
             })
             .transpose()?;
