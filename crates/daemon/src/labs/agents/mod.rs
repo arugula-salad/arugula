@@ -20,10 +20,12 @@
 
 pub mod block;
 pub mod catalog;
+pub mod delegate;
+pub mod tasks;
 pub mod wear;
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashMap},
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -323,6 +325,21 @@ pub fn routes(r: Router<Arc<App>>) -> Router<Arc<App>> {
         .route("/api/a2a/offers", get(offers_get).post(offers_set))
         .route("/api/a2a/recipes", get(recipes_get))
         .route("/api/a2a/catalog", get(catalog_get))
+        .route("/api/a2a/waiting", get(waiting_get))
+        .route("/api/a2a/tasks/{id}/consent", post(consent_set))
+        .route("/api/a2a/grants", get(grants_get).post(grants_revoke))
+        .route("/api/a2a/delegate", post(delegate_post))
+}
+
+/// Whether the request is this machine's own account's: the owner, and (over
+/// a channel) a device of this account, not a team's other owner.
+pub fn own_account(
+    app: &App,
+    who: &Option<axum::Extension<Principal>>,
+    dev: &Option<axum::Extension<crate::e2e::Caller>>,
+) -> bool {
+    let own = app.control.enrolled().map(|e| e.saved.cert.account.clone());
+    owner(who) && dev.as_ref().is_none_or(|d| Some(&d.0.account) == own.as_ref())
 }
 
 fn refuse(status: StatusCode, why: &str) -> Response {
@@ -381,20 +398,184 @@ async fn card_get(State(app): AppState, UrlPath(name): UrlPath<String>) -> Respo
 
 /// The card's interface. Tasks are M78's: until then every method is A2A's
 /// `UnsupportedOperationError`, as JSON-RPC.
-async fn rpc(State(app): AppState, UrlPath(name): UrlPath<String>, body: axum::body::Bytes) -> Response {
+/// The card's interface: A2A 1.0 JSON-RPC (`tasks.rs`).
+async fn rpc(
+    State(app): AppState,
+    UrlPath(name): UrlPath<String>,
+    dev: Option<axum::Extension<crate::e2e::Caller>>,
+    headers: axum::http::HeaderMap,
+    axum::extract::Query(q): axum::extract::Query<HashMap<String, String>>,
+    body: axum::body::Bytes,
+) -> Response {
     if let Some(r) = off(&app) {
         return r;
     }
-    let id = serde_json::from_slice::<Value>(&body).ok().map(|v| v["id"].clone()).unwrap_or(Value::Null);
-    if !offers(app.control.state_dir()).iter().any(|o| o.agent == name) {
-        return refuse(StatusCode::NOT_FOUND, &format!("{name} isn't offered here"));
+    let req: Value = serde_json::from_slice(&body).unwrap_or_default();
+    let id = req["id"].clone();
+    let rpc_err = |code: i64, m: &str| {
+        Json(json!({ "jsonrpc": "2.0", "id": id, "error": { "code": code, "message": m } })).into_response()
+    };
+    // A2A's version: its header (the channel carries it since #400), or
+    // the query, as S34 sent it.
+    let v = headers
+        .get("a2a-version")
+        .and_then(|v| v.to_str().ok())
+        .or(q.get("a2a-version").map(String::as_str))
+        .unwrap_or("0.3");
+    if !v.starts_with("1.") {
+        return rpc_err(-32009, &format!("A2A {v} isn't supported: this speaks {A2A_VERSION}"));
     }
-    Json(json!({
-        "jsonrpc": "2.0",
-        "id": id,
-        "error": { "code": -32004, "message": "This machine lists its agents but doesn't take tasks for them yet." },
-    }))
-    .into_response()
+    let Some(o) = offers(app.control.state_dir()).into_iter().find(|o| o.agent == name) else {
+        return rpc_err(-32004, &format!("{name} isn't offered here"));
+    };
+    if find(Path::new(&o.dir), &home(&app), &name).is_err() {
+        return rpc_err(-32004, &format!("{name} is offered but its recipe is gone"));
+    }
+    let claims = req["params"]["message"]["metadata"]["arugula"].clone();
+    let caller = tasks::asker(&app, dev.as_ref().map(|d| &d.0), claims);
+    Json(tasks::rpc(app.clone(), &name, &o.dir, caller, req).await).into_response()
+}
+
+#[derive(Deserialize)]
+struct DelegateReq {
+    /// send, get, answer or cancel.
+    kind: String,
+    machine: String,
+    agent: String,
+    #[serde(default)]
+    text: Option<String>,
+    #[serde(default)]
+    task: Option<String>,
+    /// Seconds to wait for it to finish or ask (default 0).
+    #[serde(default)]
+    wait: u64,
+}
+
+/// A task for another machine's agent, as this machine's owner (the CLI's;
+/// agents use MCP's `delegate`).
+async fn delegate_post(
+    State(app): AppState,
+    who: Option<axum::Extension<Principal>>,
+    dev: Option<axum::Extension<crate::e2e::Caller>>,
+    Json(r): Json<DelegateReq>,
+) -> Response {
+    if let Some(x) = off(&app) {
+        return x;
+    }
+    if !own_account(&app, &who, &dev) {
+        return refuse(StatusCode::FORBIDDEN, "this machine's own account delegates from it");
+    }
+    let (m, a) = (r.machine.as_str(), r.agent.as_str());
+    let claims = json!({ "machine": app.hosts.name() });
+    let text = r.text.as_deref().filter(|t| !t.trim().is_empty());
+    let task = r.task.as_deref().filter(|t| !t.is_empty());
+    let got = match (r.kind.as_str(), text, task) {
+        ("send", Some(t), _) => delegate::send(&app, m, a, t, None, claims).await,
+        ("answer", Some(t), Some(id)) => delegate::send(&app, m, a, t, Some(id), claims).await,
+        ("get", _, Some(id)) => delegate::get(&app, m, a, id).await,
+        ("cancel", _, Some(id)) => delegate::cancel(&app, m, a, id).await,
+        _ => Err("kind: send {text}, answer {task, text}, get {task} or cancel {task}".into()),
+    };
+    let got = match got {
+        Ok(t) if r.kind != "cancel" && r.wait > 0 && !delegate::settled(&t) => match t["id"].as_str() {
+            Some(id) => delegate::wait(&app, m, a, id, std::time::Duration::from_secs(r.wait.min(1800))).await,
+            None => Ok(t),
+        },
+        other => other,
+    };
+    match got {
+        Ok(t) => Json(json!({ "task": t, "summary": delegate::summary(m, a, &t) })).into_response(),
+        Err(e) => refuse(StatusCode::BAD_GATEWAY, &e),
+    }
+}
+
+/// Tasks waiting for this machine's own account.
+async fn waiting_get(
+    State(app): AppState,
+    who: Option<axum::Extension<Principal>>,
+    dev: Option<axum::Extension<crate::e2e::Caller>>,
+) -> Response {
+    if let Some(r) = off(&app) {
+        return r;
+    }
+    if !own_account(&app, &who, &dev) {
+        return refuse(StatusCode::FORBIDDEN, "this machine's own account's");
+    }
+    let v: Vec<Value> = tasks::waiting().iter().map(|t| t.json(None)).collect();
+    Json(json!({ "waiting": v })).into_response()
+}
+
+#[derive(Deserialize)]
+struct ConsentReq {
+    /// once, hour or deny.
+    answer: String,
+}
+
+/// The owner's answer to a waiting task (the CLI's; the page answers the
+/// card): only this machine's own account, never a team's other owner.
+async fn consent_set(
+    State(app): AppState,
+    UrlPath(id): UrlPath<String>,
+    who: Option<axum::Extension<Principal>>,
+    dev: Option<axum::Extension<crate::e2e::Caller>>,
+    Json(req): Json<ConsentReq>,
+) -> Response {
+    if let Some(r) = off(&app) {
+        return r;
+    }
+    if !own_account(&app, &who, &dev) {
+        tracing::warn!(task = id, "refused a task's answer from another account");
+        return refuse(StatusCode::FORBIDDEN, "only this machine's own account allows tasks for its agents");
+    }
+    let Some(a) = tasks::Answer::parse(&req.answer) else {
+        return refuse(StatusCode::BAD_REQUEST, "answer: once, hour or deny");
+    };
+    match tasks::answer(&id, a) {
+        Ok(()) => {
+            block::consent_settled(&app);
+            Json(json!({ "task": id, "answer": req.answer })).into_response()
+        }
+        Err(e) => refuse(StatusCode::NOT_FOUND, &e),
+    }
+}
+
+async fn grants_get(
+    State(app): AppState,
+    who: Option<axum::Extension<Principal>>,
+    dev: Option<axum::Extension<crate::e2e::Caller>>,
+) -> Response {
+    if let Some(r) = off(&app) {
+        return r;
+    }
+    if !own_account(&app, &who, &dev) {
+        return refuse(StatusCode::FORBIDDEN, "this machine's own account's");
+    }
+    Json(tasks::grants(app.control.state_dir())).into_response()
+}
+
+#[derive(Deserialize)]
+struct RevokeReq {
+    account: String,
+    agent: String,
+}
+
+/// Take a standing grant back.
+async fn grants_revoke(
+    State(app): AppState,
+    who: Option<axum::Extension<Principal>>,
+    dev: Option<axum::Extension<crate::e2e::Caller>>,
+    Json(req): Json<RevokeReq>,
+) -> Response {
+    if let Some(r) = off(&app) {
+        return r;
+    }
+    if !own_account(&app, &who, &dev) {
+        return refuse(StatusCode::FORBIDDEN, "only this machine's own account takes grants back");
+    }
+    match tasks::revoke(app.control.state_dir(), &req.account, &req.agent) {
+        Ok(had) => Json(json!({ "revoked": had })).into_response(),
+        Err(e) => refuse(StatusCode::INTERNAL_SERVER_ERROR, &e),
+    }
 }
 
 async fn offers_get(State(app): AppState, who: Option<axum::Extension<Principal>>) -> Response {

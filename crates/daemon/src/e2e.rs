@@ -258,6 +258,9 @@ pub struct Caller {
     pub name: String,
 }
 
+/// The request headers a channel carries besides `Content-Type` (#400).
+const PASSED_HEADERS: [&str; 2] = ["A2A-Version", "A2A-Extensions"];
+
 /// Whether `path` is one an agent-calling daemon may ask for: under
 /// `/api/a2a/`, as the router will see it (decoded, no `..`).
 fn agents_only(path: &str) -> bool {
@@ -403,6 +406,14 @@ async fn call(
     let mut req = Request::builder().method(head.method.as_str()).uri(head.path.as_str());
     if let Some(ct) = &head.content_type {
         req = req.header(header::CONTENT_TYPE, ct);
+    }
+    // The few other headers a caller may send (#400): A2A's service
+    // parameters. Anything else is dropped, so nothing that means
+    // something to the router or authz comes from a channel.
+    for (k, v) in &head.headers {
+        if PASSED_HEADERS.iter().any(|h| h.eq_ignore_ascii_case(k)) {
+            req = req.header(k.as_str(), v.as_str());
+        }
     }
     let mut req = req.body(Body::from(body))?;
     // Who's asking: the API's checks (authz.rs) go by it.

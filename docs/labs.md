@@ -537,3 +537,38 @@ people's agents. With `agents` on (M76, #398):
   That's the A2A-only grant: control routes those accounts' daemons to it
   (`AccessList.agents`) and lists it to them, but never to the people's
   browsers. Stopping every offer takes it away again.
+
+### Tasks and consent (M78, M79)
+
+- **Sending:** an agent uses MCP `delegate` (`send`, `get`, `answer`,
+  `cancel`, each with `machine` and `agent`). A person uses `arugula agents
+  send MACHINE AGENT TEXT` and `arugula agents task MACHINE AGENT TASK
+  [--answer TEXT | --cancel]`. Either way it's A2A 1.0 JSON-RPC over the
+  same relay channel as the catalog, as this machine's account. `send`
+  waits (five minutes by default) for the task to finish or ask something,
+  and comes back with its reply and its patch's stat. The whole result,
+  patch included, is kept in `<state>/a2a/results/TASK.json`, because the
+  other machine cleans up once it's been read.
+- **Receiving:** a task runs the offered recipe as an agent block in session
+  `a2a`, in a git worktree of the offer's project at its `HEAD`
+  (`<state>/a2a/work/TASK`). A permission it asks for is answered on that
+  block, by this machine's people. A question it asks goes back to the
+  caller as `input_required`. When it ends, the reply and a patch against
+  that commit are its artifacts. New binary files are left out and named.
+  Once the caller has read the ended task, its block closes and its
+  worktree goes.
+- **Consent:** a task from another account waits until this machine's own
+  account allows it. The card is held by the Team agents block, one is
+  opened in session `a2a` if none is, and it's pushed like any card. The
+  choices are *Allow once*, *Allow for an hour* (that account's tasks for
+  that agent) and *Deny*. The answer is checked by account, so a team's
+  other owner, though `Owner` on a team box, can't allow tasks there. Grants
+  are listed in the block, with *Revoke*, and by `arugula agents grants
+  [--revoke ACCOUNT AGENT]`. `arugula agents waiting`, `allow TASK
+  [--hour]` and `deny TASK` work from the CLI too.
+- **Durable:** tasks are `<state>/a2a/tasks/TASK.json`, and a restarted
+  daemon follows the running ones and puts the waiting ones' cards back.
+  Grants are `<state>/a2a/grants.json`.
+- **Not yet:** applying a patch in the caller's checkout, and a diff block
+  to review it first (M80). There's no streaming (`SendStreamingMessage`):
+  the caller polls `GetTask`.

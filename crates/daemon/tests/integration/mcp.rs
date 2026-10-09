@@ -844,8 +844,8 @@ async fn labs_lists_all_the_tools_and_the_thread_text() {
     {
         arugula_testkit::labs(&d.state, true);
         let with = s.list_all_tools().await.unwrap();
-        assert_eq!(with.len(), 20, "{:?}", names(&with));
-        for name in ["read_thread", "post_thread"] {
+        assert_eq!(with.len(), 21, "{:?}", names(&with));
+        for name in ["read_thread", "post_thread", "delegate"] {
             assert!(with.iter().any(|t| t.name == name), "{name} isn't listed with labs");
         }
         for (tool, kind) in [

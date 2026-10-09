@@ -63,6 +63,11 @@ pub struct RequestHead {
     /// The answer may come in parts (see the module docs).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub stream: bool,
+    /// More request headers (#400: A2A's `A2A-Version` and
+    /// `A2A-Extensions`). The daemon passes on only those it allows; an
+    /// older one ignores them.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub headers: std::collections::BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -277,6 +282,7 @@ mod tests {
                     path: "/api/run?x=1".into(),
                     content_type: Some("application/json".into()),
                     stream: true,
+                    headers: [("A2A-Version".to_owned(), "1.0".to_owned())].into_iter().collect(),
                 },
                 body: b"{}".to_vec(),
             },

@@ -884,6 +884,8 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
         hand::Hands::open(&state_dir),
     );
     app.guests.run(&app);
+    // M78: tasks for this machine's agents that a restart interrupted.
+    crate::labs::resume_tasks(&app);
     control.start(app.clone());
     if let Some(serve) = mcp_serve {
         let _ = serve.set(mcp::pipe_server(&app));

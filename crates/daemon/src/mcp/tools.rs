@@ -691,6 +691,47 @@ pub struct ReadInviteArgs {
     pub pane: Option<PaneArg>,
 }
 
+// Read only by the delegate handler, which a build without Labs lacks.
+#[cfg_attr(not(feature = "labs"), allow(dead_code))]
+#[derive(Deserialize, JsonSchema)]
+pub struct DelegateArgs {
+    /// The machine that offers the agent, by name (as list kind agents
+    /// gives it) or id.
+    pub machine: String,
+    /// The agent, by name.
+    pub agent: String,
+    /// send: the task; answer: the answer to the question it asked.
+    #[serde(default)]
+    pub text: Option<String>,
+    /// get, answer, cancel: the task's id, as send returned it.
+    #[serde(default)]
+    pub task: Option<String>,
+    /// How long to wait for it to finish, or to ask you something
+    /// (seconds; default 300, at most 1800; 0: don't wait).
+    #[serde(default)]
+    pub wait: Option<u64>,
+}
+
+/// `delegate`'s jobs.
+const DELEGATE: &[Kind] = &[
+    Kind {
+        name: "send",
+        description: "Hand a task to an agent another machine offers (list kind agents lists them): text is what to do, in that agent's project there. Its owner may first have to allow it. Waits for it to finish (or ask you something) and returns its reply and the patch's stat; the patch itself is kept here.",
+        schema: schema_for_type::<DelegateArgs>,
+    },
+    Kind {
+        name: "get",
+        description: "A task's state now (with wait: once it finishes or asks): its status, reply and patch's stat.",
+        schema: schema_for_type::<DelegateArgs>,
+    },
+    Kind {
+        name: "answer",
+        description: "Answer the question a task asked (its state says input_required), or send a finished task a follow-up: text, then wait as send does.",
+        schema: schema_for_type::<DelegateArgs>,
+    },
+    Kind { name: "cancel", description: "Stop a task you sent.", schema: schema_for_type::<DelegateArgs> },
+];
+
 // Read only by the catalog's handler, which a build without Labs lacks.
 #[cfg_attr(not(feature = "labs"), allow(dead_code))]
 #[derive(Deserialize, JsonSchema)]
@@ -987,6 +1028,8 @@ fn defs(on: On) -> Vec<Def> {
     all_defs()
         .into_iter()
         .filter(|d| on.has(flags::CHAT) || !UNLISTED_THREADS.contains(&d.name))
+        // M78: delegating is the agent catalog's.
+        .filter(|d| on.has(flags::AGENTS) || d.name != "delegate")
         .map(|mut d| {
             let name = d.name;
             if let Args::Kinds { kinds, .. } = &mut d.args {
@@ -1054,6 +1097,16 @@ fn all_defs() -> Vec<Def> {
             destructive: false,
             idempotent: true,
             open_world: false,
+        },
+        Def {
+            name: "delegate",
+            title: "Delegate to a teammate's agent",
+            description: "A task for an agent another machine offers (your own, your team's, a teammate's), over A2A: send it, follow it, answer its questions, or cancel it.",
+            args: Args::Kinds { kinds: table(DELEGATE), default: None },
+            read_only: false,
+            destructive: false,
+            idempotent: false,
+            open_world: true,
         },
         Def {
             name: "list",
@@ -1577,6 +1630,10 @@ impl<'a> Call<'a> {
                 Err(e) => Err(e),
             },
             ("list", Some("devices")) => self.list_devices(),
+            ("delegate", Some(kind @ ("send" | "get" | "answer" | "cancel"))) => match parse(args) {
+                Ok(a) => self.delegate(kind, a).await,
+                Err(e) => Err(e),
+            },
             ("list", Some("agents")) => match parse(args) {
                 Ok(a) => self.team_agents(a).await,
                 Err(e) => Err(e),
@@ -2767,6 +2824,43 @@ impl Call<'_> {
         )
     }
 
+    /// Delegating (M78): a task for another machine's agent.
+    async fn delegate(&self, kind: &str, a: DelegateArgs) -> Out {
+        use crate::labs::agents::delegate as d;
+        if !crate::labs::on(self.app.control.state_dir(), flags::AGENTS) {
+            return Err("delegating is in Labs: `arugulad flags agents on` turns it on here".into());
+        }
+        // The owner's agents': a guest's agent asks no one's agents.
+        if let Some(me) = self.me()
+            && self.app.mux.api(|r| Api::GuestBehind(me, r)).await.flatten().is_some()
+        {
+            return Err("only the owner's own agents delegate to other machines".into());
+        }
+        let app = self.app.clone();
+        let (machine, agent) = (a.machine.as_str(), a.agent.as_str());
+        let limit = Duration::from_secs(a.wait.unwrap_or(300).min(1800));
+        let task_of = || a.task.as_deref().filter(|t| !t.is_empty()).ok_or_else(|| format!("{kind} needs task"));
+        let text_of = || a.text.as_deref().filter(|t| !t.trim().is_empty()).ok_or_else(|| format!("{kind} needs text"));
+        let claims = json!({ "machine": app.hosts.name(), "pane": self.me() });
+        let t = match kind {
+            "send" => d::send(&app, machine, agent, text_of()?, None, claims).await?,
+            "answer" => d::send(&app, machine, agent, text_of()?, Some(task_of()?), claims).await?,
+            "cancel" => d::cancel(&app, machine, agent, task_of()?).await?,
+            _ => d::get(&app, machine, agent, task_of()?).await?,
+        };
+        let id = t["id"].as_str().unwrap_or_default().to_owned();
+        let t = if kind != "cancel" && !limit.is_zero() && !d::settled(&t) && !id.is_empty() {
+            let what = format!("{agent} on {machine}");
+            match self.waiting(&what, limit, d::wait(&app, machine, agent, &id, limit)).await {
+                Some(r) => r?,
+                None => d::get(&app, machine, agent, &id).await?,
+            }
+        } else {
+            t
+        };
+        done(d::summary(machine, agent, &t), json!({ "machine": machine, "agent": agent, "task": t }))
+    }
+
     /// The team's agent catalog (M77): the cards each machine offers.
     async fn team_agents(&self, a: ListTeamAgentsArgs) -> Out {
         use crate::labs::agents::catalog;
@@ -2928,6 +3022,10 @@ impl Call<'_> {
 
     async fn team_agents(&self, _: ListTeamAgentsArgs) -> Out {
         Err(crate::labs::not_built("The agent catalog"))
+    }
+
+    async fn delegate(&self, _: &str, _: DelegateArgs) -> Out {
+        Err(crate::labs::not_built("Delegating"))
     }
 
     async fn read_agent(&self, _: ReadAgentArgs) -> Out {
@@ -3953,10 +4051,10 @@ mod tests {
         for name in UNLISTED_THREADS {
             assert!(every.contains(&name), "{name} no longer has a definition");
         }
-        assert_eq!(every.len(), 20);
+        assert_eq!(every.len(), 21);
         assert_eq!(defs(fl(false)).len(), 18);
-        assert_eq!(defs(fl(true)).len(), 20);
-        assert_eq!(every.len(), defs(fl(false)).len() + UNLISTED_THREADS.len());
+        assert_eq!(defs(fl(true)).len(), 21);
+        assert_eq!(every.len(), defs(fl(false)).len() + UNLISTED_THREADS.len() + 1, "and delegate");
     }
 
     /// The 39 tools before #349, by their old names.
@@ -4002,8 +4100,17 @@ mod tests {
         "device_call",
     ];
 
+    /// Tools added after #349 for jobs no old tool did: delegating (M78).
+    const SINCE_TOOLS: usize = 1;
+
     /// Kinds added after #349, each a job no old tool did.
-    const SINCE: &[(&str, Option<&str>)] = &[("list", Some("agents"))];
+    const SINCE: &[(&str, Option<&str>)] = &[
+        ("list", Some("agents")),
+        ("delegate", Some("send")),
+        ("delegate", Some("get")),
+        ("delegate", Some("answer")),
+        ("delegate", Some("cancel")),
+    ];
 
     /// About half as many tools (#349), and every old job is still there:
     /// each old name is a tool now, or reaches the tool and kind that does
@@ -4011,7 +4118,12 @@ mod tests {
     #[test]
     fn every_old_tool_is_a_tool_or_a_kind() {
         let now = all_defs();
-        assert!(now.len() * 2 <= BEFORE.len() + 1, "{} tools", now.len());
+        // The old jobs in half as many tools; a tool for a job none of them
+        // did (SINCE) counts apart.
+        let new_tools =
+            now.iter().filter(|d| SINCE.iter().any(|(t, _)| *t == d.name) && !BEFORE.contains(&d.name)).count();
+        let new_tools = new_tools.min(SINCE_TOOLS);
+        assert!((now.len() - new_tools) * 2 <= BEFORE.len() + 1, "{} tools", now.len());
         let mut jobs = std::collections::BTreeSet::new();
         for old in BEFORE {
             let (def, kind, _) = route(old, json!({}), fl(true)).unwrap_or_else(|e| panic!("{old}: {e}"));

@@ -8,6 +8,7 @@ Prompts:
   hello          a reply, a usage_update (cost grows by 0.01 per turn)
   run CMD        a tool call that asks permission, then "prints" its output
   read PATH      a Read tool call with no command that fails (not a shell command)
+  write NAME TEXT  writes TEXT to NAME in its session's folder, unasked
   slow           streams for ~10s unless cancelled
   remember WORD  remembers WORD; "recall" says it (across processes)
   crash          exits with code 3 mid-turn
@@ -389,6 +390,14 @@ def prompt(mid, p):
         images = [c.get("mimeType") for c in blocks if c.get("type") == "image"]
         others = [c.get("text", "") for c in blocks[1:] if c.get("type") == "text"]
         msg(f"Saw {len(images)} image(s) {images}; text {others}")
+    elif text.startswith("write "):
+        # A file in its session's folder, without asking (an agent allowed
+        # to edit), so a task has something to show (#400).
+        parts = text.split(" ", 2)
+        name, body = parts[1], parts[2] if len(parts) > 2 else ""
+        with open(os.path.join(s.get("cwd") or ".", name), "w") as f:
+            f.write(body + "\n")
+        msg(f"Wrote {name}.")
     elif text.startswith("run "):
         cmd = text[4:]
         tid = f"tool{n}"

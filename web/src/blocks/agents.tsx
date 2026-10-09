@@ -3,8 +3,10 @@
 // for its A2A cards; here they're grouped by machine, its owner named, an
 // offline machine's shown as last seen. Below, this machine's recipes (Claude
 // Code subagent files in a project): *Offer* and *Stop offering*, and *Run
-// here* for one this machine offers. Those are the owner's; *Send a task*
-// to another machine's agent comes with M78.
+// here* for one this machine offers. Those are the owner's. M79: tasks
+// from other people wait here for the owner (the card on this block allows
+// or denies one), and standing grants are listed with *Revoke*. Agents send
+// tasks with MCP's `delegate`; people with `arugula agents send`.
 
 import { render } from "preact";
 import { useState } from "preact/hooks";
@@ -36,7 +38,24 @@ interface Recipe {
   model: string | null;
   offered_from: string | null;
 }
+interface WaitingTask {
+  id: string;
+  agent: string;
+  caller: string;
+  device: string | null;
+  text: string;
+  dir: string;
+  at_ms: number;
+}
+interface Grant {
+  account: string;
+  name: string;
+  agent: string;
+  until_ms: number;
+}
 export interface AgentsState {
+  waiting?: WaitingTask[];
+  grants?: Grant[];
   catalog: { machines: Shelf[]; refreshed_ms: number; note: string | null };
   loading: boolean;
   error: string | null;
@@ -113,6 +132,21 @@ function AgentsBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentsS
         </div>
       )}
       {s.said && <p class="dim fountain-said">{s.said}</p>}
+      {(s.waiting?.length ?? 0) > 0 && (
+        <section class="agents-recipes" data-agents-waiting>
+          <h4 class="agents-shelf-head">Waiting for you</h4>
+          <ul class="agents-recipe-list">
+            {s.waiting!.map((t) => (
+              <li key={t.id} data-waiting={t.id}>
+                <b>{t.caller}</b>
+                <span class="dim">
+                  asks {t.agent}: {t.text}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       {s.catalog.note && <p class="dim fountain-said">{s.catalog.note}</p>}
       <div class="review-body">
         {total === 0 && !s.error && <p class="dim fountain-empty">No agents offered on any machine you reach</p>}
@@ -143,9 +177,9 @@ function AgentsBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentsS
                       </button>
                     )}
                     {!m.here && (
-                      <button data-send-task={c.name} disabled title="Sending another person's agent a task comes next (M78)">
-                        Send a task
-                      </button>
+                      <span class="dim" data-send-task={c.name} title={`An agent of yours: delegate {kind: send, machine: "${m.name}", agent: "${c.name}"}; or arugula agents send ${m.name} ${c.name} …`}>
+                        your agents can delegate to it
+                      </span>
                     )}
                   </div>
                 </li>
@@ -153,6 +187,24 @@ function AgentsBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentsS
             </ul>
           </section>
         ))}
+        {mayOwn && (s.grants?.length ?? 0) > 0 && (
+          <section class="agents-recipes" data-agents-grants>
+            <h4 class="agents-shelf-head">Standing grants</h4>
+            <ul class="agents-recipe-list">
+              {s.grants!.map((g) => (
+                <li key={`${g.account}/${g.agent}`} data-grant={`${g.name}/${g.agent}`}>
+                  <b>{g.name}</b>
+                  <span class="dim">
+                    {g.agent}, until {new Date(g.until_ms).toLocaleTimeString()}
+                  </span>
+                  <button data-revoke={`${g.name}/${g.agent}`} disabled={busy !== null} onClick={() => void call("revoke", { account: g.account, agent: g.agent }, "couldn't take it back")}>
+                    Revoke
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
         {mayOwn && (
           <section class="agents-recipes" data-agents-recipes>
             <h4 class="agents-shelf-head">

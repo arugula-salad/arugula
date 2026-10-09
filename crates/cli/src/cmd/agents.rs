@@ -36,6 +36,49 @@ enum Cmd {
     },
     /// One offered agent's A2A card.
     Card { agent: String },
+    /// Hand a task to an agent another machine offers, and wait for it.
+    Send {
+        /// The machine (its name, as `agents catalog` shows it).
+        machine: String,
+        agent: String,
+        /// What to do.
+        #[arg(required = true)]
+        text: Vec<String>,
+        /// Seconds to wait for it to finish, or ask something (0: don't).
+        #[arg(long, default_value_t = 300)]
+        wait: u64,
+    },
+    /// A task you sent: its state, or answer it, or stop it.
+    Task {
+        machine: String,
+        agent: String,
+        task: String,
+        /// Answer its question (or send it a follow-up).
+        #[arg(long, conflicts_with = "cancel")]
+        answer: Option<String>,
+        #[arg(long)]
+        cancel: bool,
+        /// Seconds to wait for it to finish, or ask something.
+        #[arg(long, default_value_t = 0)]
+        wait: u64,
+    },
+    /// Tasks from other people waiting for you to allow them here.
+    Waiting,
+    /// Allow a waiting task (once, or with --hour its caller's tasks for that
+    /// agent for an hour).
+    Allow {
+        task: String,
+        #[arg(long)]
+        hour: bool,
+    },
+    /// Turn a waiting task down.
+    Deny { task: String },
+    /// Standing grants (`allow --hour`), or take one back.
+    Grants {
+        /// Take back ACCOUNT's grant for AGENT.
+        #[arg(long, num_args = 2, value_names = ["ACCOUNT", "AGENT"])]
+        revoke: Option<Vec<String>>,
+    },
     /// The agents your team offers, on every machine you reach.
     ///
     /// Yours, your teams', and teammates' that offer agents, as this machine
@@ -45,6 +88,21 @@ enum Cmd {
         #[arg(long)]
         fresh: bool,
     },
+}
+
+/// A task as the daemon answered: its summary, or the JSON. Exit 2 when it
+/// waits on you (a question), 1 when it failed or was turned down.
+fn task_out(v: Value, json_out: bool) -> anyhow::Result<i32> {
+    if json_out {
+        print_json(&v);
+    } else {
+        print!("{}", v["summary"].as_str().unwrap_or_default());
+    }
+    Ok(match v["task"]["status"]["state"].as_str().unwrap_or_default() {
+        "TASK_STATE_INPUT_REQUIRED" => 2,
+        "TASK_STATE_FAILED" | "TASK_STATE_REJECTED" => 1,
+        _ => 0,
+    })
 }
 
 /// The project's whole path [default: here], `.` and `..` resolved.
@@ -138,6 +196,108 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
             }
             if let Some(n) = v["note"].as_str() {
                 eprintln!("{n}");
+            }
+        }
+        Cmd::Send { machine, agent, text, wait } => {
+            let body =
+                json!({ "kind": "send", "machine": machine, "agent": agent, "text": text.join(" "), "wait": wait });
+            return task_out(request(&sock, "POST", "/api/a2a/delegate", Some(&body))?.json()?, json_out);
+        }
+        Cmd::Task { machine, agent, task, answer, cancel, wait } => {
+            let kind = if cancel {
+                "cancel"
+            } else if answer.is_some() {
+                "answer"
+            } else {
+                "get"
+            };
+            let body =
+                json!({ "kind": kind, "machine": machine, "agent": agent, "task": task, "text": answer, "wait": wait });
+            return task_out(request(&sock, "POST", "/api/a2a/delegate", Some(&body))?.json()?, json_out);
+        }
+        Cmd::Waiting => {
+            let v = request(&sock, "GET", "/api/a2a/waiting", None)?.json()?;
+            if json_out {
+                print_json(&v);
+                return Ok(0);
+            }
+            let list = v["waiting"].as_array().cloned().unwrap_or_default();
+            if list.is_empty() {
+                println!("nothing waits for you");
+            }
+            for t in &list {
+                let m = &t["metadata"]["arugula"];
+                let text = t["history"][0]["parts"][0]["text"].as_str().unwrap_or("");
+                println!(
+                    "{}\t{} for {}\t{text}",
+                    t["id"].as_str().unwrap_or("?"),
+                    m["caller"].as_str().unwrap_or("?"),
+                    m["agent"].as_str().unwrap_or("?")
+                );
+            }
+        }
+        Cmd::Allow { task, hour } => {
+            let answer = if hour { "hour" } else { "once" };
+            let v = request(
+                &sock,
+                "POST",
+                &format!("/api/a2a/tasks/{}/consent", enc(&task)),
+                Some(&json!({ "answer": answer })),
+            )?
+            .json()?;
+            if json_out {
+                print_json(&v);
+            } else {
+                println!(
+                    "{task}: allowed{}",
+                    if hour { ", and its caller's tasks for that agent for an hour" } else { "" }
+                );
+            }
+        }
+        Cmd::Deny { task } => {
+            let v = request(
+                &sock,
+                "POST",
+                &format!("/api/a2a/tasks/{}/consent", enc(&task)),
+                Some(&json!({ "answer": "deny" })),
+            )?
+            .json()?;
+            if json_out {
+                print_json(&v);
+            } else {
+                println!("{task}: denied");
+            }
+        }
+        Cmd::Grants { revoke } => {
+            if let Some(r) = revoke {
+                let v = request(&sock, "POST", "/api/a2a/grants", Some(&json!({ "account": r[0], "agent": r[1] })))?
+                    .json()?;
+                if json_out {
+                    print_json(&v);
+                } else if v["revoked"] == true {
+                    println!("taken back: {}'s grant for {}", r[0], r[1]);
+                } else {
+                    println!("no such grant");
+                }
+                return Ok(0);
+            }
+            let v = request(&sock, "GET", "/api/a2a/grants", None)?.json()?;
+            if json_out {
+                print_json(&v);
+                return Ok(0);
+            }
+            let list = v.as_array().cloned().unwrap_or_default();
+            if list.is_empty() {
+                println!("no grants");
+            }
+            for g in &list {
+                println!(
+                    "{} ({})\t{}\tuntil {}",
+                    g["name"].as_str().unwrap_or("?"),
+                    g["account"].as_str().unwrap_or("?"),
+                    g["agent"].as_str().unwrap_or("?"),
+                    g["until_ms"]
+                );
             }
         }
         Cmd::Card { agent } => {
