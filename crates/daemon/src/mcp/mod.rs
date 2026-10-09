@@ -288,7 +288,8 @@ diff), file (at a line), pr, issue, conversation (a Claude Code conversation, to
 one instead of describing it, and wait (until idle or needs_input) instead of polling output. \
 Claude Code hooks put your questions (arugula ask), permission prompts (arugula hook, which anyone allowed can \
 answer), follow-ups (arugula inbox) and attention on cards; without them your questions stay in the terminal. \
-`arugula hooks install` adds them: ask your person first.";
+`arugula hooks install` adds them: ask your person first. \
+Run each `arugula ...` command on its own, not in a pipeline or an `&&` chain, so the allow rules match it.";
 
 /// What the people's conversation about a pane or session adds to the
 /// instructions: only on a machine with the `chat` flag, where those tools
