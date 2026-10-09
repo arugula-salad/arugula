@@ -380,7 +380,8 @@ what it calls; each CLI request site by its route.
   for `/api/rules/N`, `ThreadTarget` for `/api/threads/…`, `SessionId`,
   a name for `/api/studio/followers/APP` and `/api/agents/adapters/KIND`),
   and a query string as the request for a GET (`wait`, `history`,
-  `search`, `conversations`, `fountain/agents`). 7 don't fit: `capture`,
+  `search`, `conversations`, `fountain/agents`). #573 built both and
+  converted `rules` and `wait`; the rest follow. 7 don't fit: `capture`,
   `tail`, `export.cast`, `events`, `vsix`, `upload`, and block `call`.
   So about 61 of 68.
 - **HTTP, other modules** (`fs`, `hosts`, `share`, `labs/guest_ssh`, `acl`,
@@ -416,7 +417,9 @@ Each is one PR. Filed on 2026-10-07 as #572–#580, in this order.
    `usize`, `SessionId`, `ThreadTarget` and names; a GET's `Req` as its
    query, read with axum's `Query`, and the CLI building the same query
    string it does today. Converts `rules` (three routes) and `wait` as the
-   proof. After 1.
+   proof. Done: `rules.list`, `rules.forget_all`, `rule.forget` and
+   `pane.wait`; `SessionId` is `PaneId`'s `u32`, so it needed no impl of its
+   own. After 1.
 3. (#574) **Operations: the pane verbs.** `send`, `keys`, `mouse`, `attention`,
    `followup`, `process`, `detection`, `diff`, `drivers`, and the CLI sites
    that call them; `DRIVES` as a declared flag replacing `authz::drives`.

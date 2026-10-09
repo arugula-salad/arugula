@@ -6,8 +6,9 @@
 //! through [`Op`] instead of spelling the method and path itself.
 //!
 //! The design, and what doesn't fit it, is in `docs/operations.md`. Only
-//! the operations in [`ops`] are declared so far; every other route is
-//! still written out in the daemon's `api.rs`.
+//! the operations in [`ops`] are declared so far (the pilot's, and `rules`
+//! and `wait`, #573); every other route is still written out in the
+//! daemon's `api.rs`.
 
 use arugula_core::Role;
 use serde::{Serialize, de::DeserializeOwned};

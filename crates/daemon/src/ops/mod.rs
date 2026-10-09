@@ -329,9 +329,9 @@ const HAND_WRITTEN: &[(&str, &str)] = &[
     // Other path types and GET queries (#573).
     ("/api/threads/{target}", "other path types, #573"),
     ("/api/threads/{target}/read", "other path types, #573"),
-    ("/api/history", "GET with a query, #573"),
-    ("/api/search", "GET with a query, #573"),
-    ("/api/conversations", "GET with a query, #573"),
+    ("/api/history", "GET with a query"),
+    ("/api/search", "GET with a query"),
+    ("/api/conversations", "GET with a query"),
     ("/api/sessions/{id}/secrets", "other path types, #573"),
     // The owner's settings routes (#575).
     ("/api/ide", "settings, #575"),
