@@ -1,11 +1,14 @@
 //! `arugula invite`: bring someone into a session.
 
 use super::Ctx;
-use crate::http::{request, request_as};
+use crate::http::{call_raw, request};
 use crate::util::{Pane, env_pane, print_json};
 use anyhow::{Context, bail};
 use arugula_core::Role;
-use arugula_proto::api::{InviteDelivery, InviteRequest, Invited};
+use arugula_proto::{
+    api::{InviteDelivery, InviteRequest},
+    op::ops::InviteSend,
+};
 use std::io::Write;
 
 #[derive(clap::Args)]
@@ -81,7 +84,7 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
         msg: None,
         whole_thread: false,
     };
-    let (v, raw) = request_as(&sock, "POST", "/api/invite", &body)?.parse_raw::<Invited>()?;
+    let (v, raw) = call_raw::<InviteSend>(&sock, &(), &body)?;
     if json_out {
         print_json(&raw);
         return Ok(0);

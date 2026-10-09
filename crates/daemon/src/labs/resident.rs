@@ -19,14 +19,8 @@
 
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
-use arugula_proto::hosts::{Host, PromoteRequest, ProviderInfo, ProviderRef, SandboxInfo, SandboxList};
-use axum::{
-    Json, Router,
-    extract::{Path, State},
-    http::StatusCode,
-    response::{IntoResponse, Response},
-    routing::{delete, get, post},
-};
+use arugula_proto::hosts::{Demoted, Host, PromoteRequest, ProviderInfo, ProviderRef, SandboxInfo, SandboxList};
+use axum::{Router, http::StatusCode};
 use sha2::{Digest, Sha256};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tracing::info;
@@ -51,24 +45,20 @@ pub struct Binaries {
     pub dir: PathBuf,
 }
 
+/// The sandboxes routes, as operations (`ops/sandboxes.rs`).
 pub fn routes() -> Router<Arc<App>> {
-    Router::new()
-        .route("/api/sandboxes", get(list))
-        .route("/api/sandboxes/{name}/promote", post(promote))
-        .route("/api/sandboxes/{name}/resident", delete(demote))
+    use crate::ops::OpRoutes;
+    use arugula_proto::op::ops::{SandboxDemote, SandboxPromote, SandboxesList};
+    Router::new().op::<SandboxesList>().op::<SandboxPromote>().op::<SandboxDemote>()
 }
 
-fn error(status: StatusCode, msg: impl Into<String>) -> Response {
-    (status, Json(serde_json::json!({ "error": msg.into() }))).into_response()
-}
-
-async fn list(State(app): State<Arc<App>>) -> Response {
+pub async fn list(app: &App) -> Result<SandboxList, Failed> {
     let Some(p) = app.mux.provider.clone() else {
-        return error(StatusCode::SERVICE_UNAVAILABLE, "no sandbox provider is set up here");
+        return Err((StatusCode::SERVICE_UNAVAILABLE, "no sandbox provider is set up here".into()));
     };
     let all = match p.list("").await {
         Ok(l) => l,
-        Err(e) => return error(StatusCode::BAD_GATEWAY, format!("{}: {e}", p.name())),
+        Err(e) => return Err((StatusCode::BAD_GATEWAY, format!("{}: {e}", p.name()))),
     };
     let hosts = app.hosts.list().hosts;
     let resident = |name: &str| {
@@ -85,7 +75,7 @@ async fn list(State(app): State<Arc<App>>) -> Response {
     let caps = p.caps();
     let provider =
         ProviderInfo { name: p.name().to_owned(), exec_replay: caps.exec_replay, resident: caps.fs && caps.services };
-    Json(SandboxList { provider, sandboxes }).into_response()
+    Ok(SandboxList { provider, sandboxes })
 }
 
 fn hex(b: &[u8]) -> String {
@@ -97,27 +87,15 @@ fn mint_token() -> String {
     format!("ilp_{}", hex(&b))
 }
 
-async fn promote(
-    State(app): State<Arc<App>>,
-    Path(sandbox): Path<String>,
-    body: Option<Json<PromoteRequest>>,
-) -> Response {
-    let req = body.map(|Json(r)| r).unwrap_or_default();
-    match make_resident(&app, &sandbox, req).await {
-        Ok(h) => Json(h).into_response(),
-        Err((status, why)) => error(status, why),
-    }
-}
-
 /// Stop the resident daemon in a sandbox (its provider service) and take
 /// its host off the list. Its panes end with it; its state stays on the
 /// sandbox's disk.
-async fn demote(State(app): State<Arc<App>>, Path(sandbox): Path<String>) -> Response {
+pub async fn demote(app: &App, sandbox: &str) -> Result<Demoted, Failed> {
     let Some(p) = app.mux.provider.clone() else {
-        return error(StatusCode::SERVICE_UNAVAILABLE, "no sandbox provider is set up here");
+        return Err((StatusCode::SERVICE_UNAVAILABLE, "no sandbox provider is set up here".into()));
     };
-    if let Err(e) = p.delete_service(&sandbox, SERVICE).await {
-        return error(StatusCode::BAD_GATEWAY, format!("{e:#}"));
+    if let Err(e) = p.delete_service(sandbox, SERVICE).await {
+        return Err((StatusCode::BAD_GATEWAY, format!("{e:#}")));
     }
     let hosts: Vec<String> = app
         .hosts
@@ -131,12 +109,12 @@ async fn demote(State(app): State<Arc<App>>, Path(sandbox): Path<String>) -> Res
         app.hosts.remove(h);
     }
     info!(sandbox, ?hosts, "resident daemon stopped");
-    Json(serde_json::json!({ "removed": hosts })).into_response()
+    Ok(Demoted { removed: hosts })
 }
 
-type Failed = (StatusCode, String);
+pub type Failed = (StatusCode, String);
 
-async fn make_resident(app: &App, sandbox: &str, req: PromoteRequest) -> Result<Host, Failed> {
+pub async fn make_resident(app: &App, sandbox: &str, req: PromoteRequest) -> Result<Host, Failed> {
     let bad = |s: String| (StatusCode::BAD_REQUEST, s);
     let gateway = |e: anyhow::Error| (StatusCode::BAD_GATEWAY, format!("{e:#}"));
     let p = app.mux.provider.clone().ok_or((StatusCode::SERVICE_UNAVAILABLE, "no sandbox provider here".into()))?;

@@ -29,6 +29,7 @@ pub mod hosts;
 pub mod keys;
 pub mod op;
 pub mod service;
+pub mod setup;
 #[cfg(all(test, feature = "ts"))]
 mod ts;
 pub mod workspace;

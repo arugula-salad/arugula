@@ -593,11 +593,14 @@ fn listening(p: &Path) -> bool {
 
 pub fn bridge(sock: &Path, probe: bool) -> anyhow::Result<i32> {
     if probe {
-        let daemon_version =
-            crate::http::request(&crate::http::Target::Socket(sock.to_owned()), "GET", "/api/host", None)
-                .and_then(|r| r.json())
-                .ok()
-                .and_then(|v| v["version"].as_str().map(String::from));
+        let daemon_version = crate::http::send_op::<arugula_proto::op::ops::HostGet>(
+            &crate::http::Target::Socket(sock.to_owned()),
+            &(),
+            &arugula_proto::api::Empty {},
+        )
+        .and_then(|r| r.json())
+        .ok()
+        .and_then(|v| v["version"].as_str().map(String::from));
         let v = json!({
             "installed": true,
             "version": VERSION,

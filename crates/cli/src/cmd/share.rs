@@ -1,9 +1,12 @@
 //! `arugula share`: a read-only link to a pane, an ssh invite with `--guest`, and the lists of both.
 
 use super::Ctx;
-use crate::http::{request, request_as};
+use crate::http::{call, call_raw};
 use crate::util::{Pane, duration, here, now_ms, print_json, span, time};
-use arugula_proto::api::{Empty, GuestInvite, GuestInviteRequest, Share, ShareRequest};
+use arugula_proto::{
+    api::{Empty, GuestInviteRequest, ShareRequest},
+    op::ops::{GuestMint, GuestRevoke, GuestsList, ShareMint, ShareRevoke, SharesList},
+};
 
 #[derive(clap::Subcommand)]
 pub enum SharesCmd {
@@ -54,7 +57,7 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
                 host: addr,
                 relay: relay.then_some(true),
             };
-            let (g, v) = request_as(&sock, "POST", "/api/guests", &body)?.parse_raw::<GuestInvite>()?;
+            let (g, v) = call_raw::<GuestMint>(&sock, &(), &body)?;
             if json_out {
                 print_json(&v);
             } else {
@@ -82,7 +85,7 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
         }
         Args { pane, ttl, .. } => {
             let body = ShareRequest { pane: here(pane)?, ttl_secs: Some(duration(&ttl)?) };
-            let (s, v) = request_as(&sock, "POST", "/api/shares", &body)?.parse_raw::<Share>()?;
+            let (s, v) = call_raw::<ShareMint>(&sock, &(), &body)?;
             if json_out {
                 print_json(&v);
             } else {
@@ -97,7 +100,7 @@ pub fn guests(cmd: Option<SharesCmd>, ctx: Ctx) -> anyhow::Result<i32> {
     let Ctx { sock, json_out, .. } = ctx;
     match cmd {
         None => {
-            let (list, v) = request(&sock, "GET", "/api/guests", None)?.parse_raw::<Vec<GuestInvite>>()?;
+            let (list, v) = call_raw::<GuestsList>(&sock, &(), &Empty {})?;
             if json_out {
                 print_json(&v);
                 return Ok(0);
@@ -126,7 +129,7 @@ pub fn guests(cmd: Option<SharesCmd>, ctx: Ctx) -> anyhow::Result<i32> {
             }
         }
         Some(SharesCmd::Revoke { id }) => {
-            request(&sock, "DELETE", &format!("/api/guests/{id}"), None)?.parse::<Empty>()?;
+            call::<GuestRevoke>(&sock, &id, &Empty {})?;
         }
     }
     Ok(0)
@@ -136,7 +139,7 @@ pub fn shares(cmd: Option<SharesCmd>, ctx: Ctx) -> anyhow::Result<i32> {
     let Ctx { sock, json_out, .. } = ctx;
     match cmd {
         None => {
-            let (shares, v) = request(&sock, "GET", "/api/shares", None)?.parse_raw::<Vec<Share>>()?;
+            let (shares, v) = call_raw::<SharesList>(&sock, &(), &Empty {})?;
             if json_out {
                 print_json(&v);
                 return Ok(0);
@@ -147,7 +150,7 @@ pub fn shares(cmd: Option<SharesCmd>, ctx: Ctx) -> anyhow::Result<i32> {
             }
         }
         Some(SharesCmd::Revoke { id }) => {
-            request(&sock, "DELETE", &format!("/api/shares/{id}"), None)?.parse::<Empty>()?;
+            call::<ShareRevoke>(&sock, &id, &Empty {})?;
         }
     }
     Ok(0)

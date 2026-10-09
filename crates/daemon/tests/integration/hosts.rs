@@ -407,6 +407,67 @@ fn the_flags_are_the_owners() {
     assert!(!arugula_proto::flags::on(&d.state).any());
 }
 
+/// The files, host-list and setup routes are the owner's (#578): someone a
+/// session is shared with, even as an editor, is refused every one, but
+/// `GET /api/host` (anyone's, without how the machine stands with control)
+/// and `cd` in a pane they may type in (an editor's, not a viewer's).
+#[test]
+fn the_files_hosts_and_setup_routes_are_the_owners() {
+    let d = arugulad!("hosts")
+        .args(["--name", "plain", "--owner", "me@example.com"])
+        .no_wisp()
+        .no_tailscale()
+        .env("PS1", "$ ")
+        .env("ARUGULA_LOCAL_TOKEN_FILE", token_file())
+        .start();
+    let pane = d.get("/api/panes")[0].clone();
+    let (id, session) = (pane["id"].as_u64().unwrap(), pane["session"].as_u64().unwrap());
+    for (who, role) in [("friend", "editor"), ("watcher", "viewer")] {
+        d.post(
+            "/api/acl",
+            serde_json::json!({ "session": session, "principal": format!("tailnet:{who}@example.com"), "role": role }),
+        );
+    }
+    let as_ = |who: &str, method: &str, path: &str, body: Option<&str>| {
+        let login = format!("{who}@example.com");
+        d.tcp(method, path, &[("tailscale-user-login", login.as_str()), ("Content-Type", "application/json")], body)
+    };
+    for (method, path, body) in [
+        ("GET", "/api/fs/list", None),
+        ("GET", "/api/fs/stat?path=/", None),
+        ("GET", "/api/fs/recent", None),
+        ("GET", "/api/fs/read?path=/etc/hosts", None),
+        ("GET", "/api/hosts", None),
+        ("POST", "/api/hosts", Some(r#"{"name":"x","urls":["https://x.example"]}"#)),
+        ("POST", "/api/hosts/invite", None),
+        ("DELETE", "/api/hosts/x", None),
+        ("POST", "/api/hosts/x/token", None),
+        ("DELETE", "/api/hosts/x/token", None),
+        ("GET", "/api/setup", None),
+        ("POST", "/api/setup/tailscale", None),
+        ("POST", "/api/setup/control", None),
+        ("POST", "/api/setup/control/confirm", Some(r#"{"same":false}"#)),
+        ("POST", "/api/setup/claude", None),
+        ("POST", "/api/setup/agents/claude", None),
+    ] {
+        let (status, _, text) = as_("friend", method, path, body);
+        assert_eq!(status, 403, "{method} {path}: {text}");
+        assert!(text.contains("only the owner can"), "{method} {path}: {text}");
+    }
+    // Anyone may ask who this is; only the owner hears how it stands with control.
+    let (status, _, text) = as_("watcher", "GET", "/api/host", None);
+    assert_eq!(status, 200, "{text}");
+    let host: Value = serde_json::from_str(&text).unwrap();
+    assert!(host["name"] == "plain" && host.get("control_state").is_none(), "{host}");
+    assert!(d.get("/api/host").get("control_state").is_some());
+    // `cd` is typed input: an editor's, not a viewer's.
+    let path = format!("/api/panes/{id}/cd");
+    let (status, _, text) = as_("watcher", "POST", &path, Some(r#"{"path":"/tmp"}"#));
+    assert_eq!((status, text.contains("you're watching")), (403, true), "{text}");
+    let (status, _, text) = as_("friend", "POST", &path, Some(r#"{"path":"/tmp"}"#));
+    assert!(status != 403 && status != 404, "{status}: {text}");
+}
+
 /// The `labs` file of #385, the one test that still writes it: a daemon
 /// that hasn't moved it yet (or a CLI newer than its daemon) still sees
 /// Labs, and a starting daemon moves it into `flags.json` and removes it.

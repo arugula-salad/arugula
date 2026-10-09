@@ -1,8 +1,12 @@
 //! `arugula access`: who else can reach which sessions.
 
 use super::Ctx;
-use crate::http::request;
+use crate::http::{request, request_op, send_op};
 use crate::util::{print_json, time};
+use arugula_proto::{
+    api::Empty,
+    op::ops::{AclGet, AclSet},
+};
 
 #[derive(clap::Subcommand)]
 pub enum AccessCmd {
@@ -34,19 +38,19 @@ pub fn run(cmd: Option<AccessCmd>, ctx: Ctx) -> anyhow::Result<i32> {
     };
     let log = matches!(cmd, Some(AccessCmd::Log));
     let v = match cmd {
-        None | Some(AccessCmd::Log) => request(&sock, "GET", "/api/acl", None)?.json()?,
+        None | Some(AccessCmd::Log) => send_op::<AclGet>(&sock, &(), &Empty {})?.json()?,
         Some(AccessCmd::Grant { session, who, role }) => {
             if !matches!(role.as_str(), "viewer" | "editor" | "owner") {
                 anyhow::bail!("a role is viewer, editor or owner");
             }
             let body =
                 serde_json::json!({ "session": session_id(&session)?, "principal": principal(&who), "role": role });
-            request(&sock, "POST", "/api/acl", Some(&body))?.json()?
+            request_op::<AclSet>(&sock, &(), &body)?.json()?
         }
         Some(AccessCmd::Revoke { session, who }) => {
             let body =
                 serde_json::json!({ "session": session_id(&session)?, "principal": principal(&who), "role": null });
-            request(&sock, "POST", "/api/acl", Some(&body))?.json()?
+            request_op::<AclSet>(&sock, &(), &body)?.json()?
         }
     };
     if json_out {

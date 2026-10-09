@@ -18,6 +18,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::{MachineId, PaneId};
+
 /// The most entries one listing returns (`truncated` says there were more).
 pub const LIST_MAX: usize = 5000;
 /// The most bytes one read returns; read a longer file in ranges.
@@ -103,4 +105,25 @@ pub enum FsChange {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CdRequest {
     pub path: String,
+}
+
+/// The query of `list`, `stat`, `read`, `watch` and `recent`. As a request
+/// its fields go out in this order (the host first), a `None` left out.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FsQuery {
+    /// On the host this block runs on.
+    #[serde(default)]
+    pub pane: Option<PaneId>,
+    /// On this machine.
+    #[serde(default)]
+    pub machine: Option<MachineId>,
+    #[serde(default)]
+    pub path: Option<String>,
+    /// Only directories (and links to them): `1`.
+    #[serde(default)]
+    pub dirs: Option<u8>,
+    #[serde(default)]
+    pub offset: Option<u64>,
+    #[serde(default)]
+    pub len: Option<u64>,
 }

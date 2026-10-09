@@ -34,13 +34,11 @@ use arugula_core::{Role, SessionId};
 use arugula_proto::{
     PaneId, ThreadTarget,
     api::{InviteDelivery, InviteGrant, InviteRequest, Invited, TeamPins, TeamPinsRequest},
+    op::ops::{InviteSend, TeamPinsGet, TeamPinsSet},
 };
 use axum::{
-    Json, Router,
-    extract::State,
+    Router,
     http::{HeaderMap, StatusCode},
-    response::{IntoResponse, Response},
-    routing::{get, post},
 };
 use serde_json::json;
 
@@ -48,16 +46,13 @@ use crate::{
     acl::{Principal, ThreadFrom},
     control::{REFRESH_WAIT, Waiting},
     mux::{Api, Cmd},
+    ops::OpRoutes,
     server::App,
     store::now_ms,
 };
 
 pub fn routes() -> Router<Arc<App>> {
-    Router::new().route("/api/invite", post(invite)).route("/api/team-pins", get(pins).post(add_pins))
-}
-
-fn refuse(status: StatusCode, why: impl Into<String>) -> Response {
-    (status, Json(json!({ "error": why.into() }))).into_response()
+    Router::new().op::<InviteSend>().op::<TeamPinsGet>().op::<TeamPinsSet>()
 }
 
 fn no(status: StatusCode, why: impl Into<String>) -> (StatusCode, String) {
@@ -214,16 +209,6 @@ pub fn resolve(app: &App, who: &str, root: Option<String>) -> Result<Person, (St
             let ids: Vec<&str> = found.iter().map(|p| p.id.as_str()).collect();
             Err(no(StatusCode::CONFLICT, format!("{who} could be {}: name one", ids.join(" or "))))
         }
-    }
-}
-
-async fn invite(State(app): State<Arc<App>>, headers: HeaderMap, Json(b): Json<InviteRequest>) -> Response {
-    if agent(&headers) {
-        return refuse(StatusCode::FORBIDDEN, AGENT_ASKS);
-    }
-    match run(&app, b, None).await {
-        Ok(v) => Json(v).into_response(),
-        Err((status, why)) => refuse(status, why),
     }
 }
 
@@ -458,38 +443,34 @@ async fn deliver(
     (InviteDelivery::Pending, Some(why.into()))
 }
 
-fn pins_now(app: &App) -> Response {
-    Json(TeamPins { pins: app.control.team_pins(), checked: app.control.checked_teams() }).into_response()
-}
-
-async fn pins(State(app): State<Arc<App>>) -> Response {
-    pins_now(&app)
+pub(crate) fn team_pins(app: &App) -> TeamPins {
+    TeamPins { pins: app.control.team_pins(), checked: app.control.checked_teams() }
 }
 
 /// The owner's browser hands over the teams it pinned (#233), and those
 /// it left; their rosters are fetched and checked against these, now.
-async fn add_pins(State(app): State<Arc<App>>, headers: HeaderMap, Json(b): Json<TeamPinsRequest>) -> Response {
-    if agent(&headers) {
-        return refuse(StatusCode::FORBIDDEN, "the owner's browser pins teams, not an agent");
+pub(crate) async fn add_pins(app: &App, agent: bool, b: TeamPinsRequest) -> Result<TeamPins, (StatusCode, String)> {
+    if agent {
+        return Err(no(StatusCode::FORBIDDEN, "the owner's browser pins teams, not an agent"));
     }
     if app.control.enrolled().is_none() {
-        return refuse(StatusCode::BAD_REQUEST, "this machine isn't joined to Arugula control");
+        return Err(no(StatusCode::BAD_REQUEST, "this machine isn't joined to Arugula control"));
     }
     let well_formed = |team: &str, root: &str| {
         ok_id(team) && root.split_once('.').is_some_and(|(f, r)| ok_id(f) && ok_id(r) && !r.contains('.'))
     };
     if b.pins.len() > 50 || !b.pins.iter().all(|(t, r)| well_formed(t, r)) {
-        return refuse(StatusCode::BAD_REQUEST, "pins: team id to <founder>.<founder's root>, 50 at most");
+        return Err(no(StatusCode::BAD_REQUEST, "pins: team id to <founder>.<founder's root>, 50 at most"));
     }
     if b.drop.len() > 50 || !b.drop.iter().all(|t| ok_id(t)) {
-        return refuse(StatusCode::BAD_REQUEST, "drop: team ids, 50 at most");
+        return Err(no(StatusCode::BAD_REQUEST, "drop: team ids, 50 at most"));
     }
     match app.control.set_team_pins(b.pins, &b.drop) {
         Ok(true) => {
             app.control.refresh_now(REFRESH_WAIT).await;
         }
         Ok(false) => {}
-        Err(e) => return refuse(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+        Err(e) => return Err(no(StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
     }
-    pins_now(&app)
+    Ok(team_pins(app))
 }

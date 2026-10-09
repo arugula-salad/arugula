@@ -43,14 +43,9 @@ use std::{
 use arugula_proto::{
     BlockType, ClientId, Driver, EventKind, Frame, FrameKind, PaneId,
     api::{GuestInvite, GuestInviteRequest},
+    op::ops::{GuestMint, GuestRevoke, GuestsList},
 };
-use axum::{
-    Json, Router,
-    extract::{Path, State},
-    http::StatusCode,
-    response::{IntoResponse, Response},
-    routing::{delete, get},
-};
+use axum::{Router, http::StatusCode};
 use russh::{
     Channel, ChannelId, MethodKind, MethodSet,
     keys::{HashAlg, PrivateKey, ssh_key},
@@ -61,8 +56,10 @@ use tokio::sync::{mpsc, oneshot, watch};
 use tracing::{debug, info, warn};
 
 use crate::{
+    api::ApiError,
     hosts::digest,
     mux::Api,
+    ops::OpRoutes,
     pane::{Subscriber, ToClient, Want, client_queue},
     server::App,
     store::{now_ms, write_atomic},
@@ -940,30 +937,24 @@ async fn attach(
 
 // ---------------------------------------------------------------- routes
 
-type AppState = State<Arc<App>>;
-
 /// The owner's: making, listing and revoking invites.
 pub fn routes() -> Router<Arc<App>> {
-    Router::new().route("/api/guests", get(list).post(mint)).route("/api/guests/{id}", delete(revoke))
-}
-
-fn error(status: StatusCode, msg: impl Into<String>) -> Response {
-    (status, Json(serde_json::json!({ "error": msg.into() }))).into_response()
+    Router::new().op::<GuestsList>().op::<GuestMint>().op::<GuestRevoke>()
 }
 
 fn hostname() -> String {
     crate::hostname().unwrap_or_else(|| "localhost".into())
 }
 
-async fn mint(State(app): AppState, Json(req): Json<GuestInviteRequest>) -> Response {
+pub async fn mint_invite(app: &Arc<App>, req: GuestInviteRequest) -> Result<GuestInvite, ApiError> {
     let summaries = app.mux.api(Api::Panes).await.unwrap_or_default();
     match summaries.iter().find(|p| p.info.id == req.pane) {
-        None => return error(StatusCode::NOT_FOUND, format!("no pane %{}", req.pane)),
+        None => return Err(ApiError(StatusCode::NOT_FOUND, format!("no pane %{}", req.pane))),
         Some(p) if p.info.kind != BlockType::Terminal => {
-            return error(
+            return Err(ApiError(
                 StatusCode::BAD_REQUEST,
                 format!("%{} isn't a terminal; only terminals can be shared", req.pane),
-            );
+            ));
         }
         Some(_) => {}
     }
@@ -973,30 +964,30 @@ async fn mint(State(app): AppState, Json(req): Json<GuestInviteRequest>) -> Resp
     // and no address for guests is set: it may well be behind NAT.
     let relay = req.relay.unwrap_or(named.is_none() && app.control.enrolled().is_some() && !app.control.no_relay);
     if relay {
-        match relayed(&app, &req).await {
-            Ok(invite) => return Json(invite).into_response(),
+        match relayed(app, &req).await {
+            Ok(invite) => return Ok(invite),
             // Asked for nothing in particular: the direct path, then.
             Err((false, why)) if req.relay.is_none() => info!(%why, "guest ssh: not through control"),
-            Err((_, why)) => return error(StatusCode::SERVICE_UNAVAILABLE, why),
+            Err((_, why)) => return Err(ApiError(StatusCode::SERVICE_UNAVAILABLE, why)),
         }
     }
     let host = named.unwrap_or_else(hostname);
     if !plain_host(&host) {
-        return error(StatusCode::BAD_REQUEST, format!("{host:?} isn't a host name or address"));
+        return Err(ApiError(StatusCode::BAD_REQUEST, format!("{host:?} isn't a host name or address")));
     }
     let key = match guests.host_key() {
         Ok(k) => k,
-        Err(e) => return error(StatusCode::INTERNAL_SERVER_ERROR, format!("no host key: {e}")),
+        Err(e) => return Err(ApiError(StatusCode::INTERNAL_SERVER_ERROR, format!("no host key: {e}"))),
     };
     // The invite first, then the listener: listening with no invite yet,
     // the once-a-second idle check could close it under the command.
     let (mut invite, token) = guests.mint(&req, None);
-    let addr = match guests.ensure_listening(&app).await {
+    let addr = match guests.ensure_listening(app).await {
         Ok(a) => a,
         Err(e) => {
             guests.revoke(invite.id);
             guests.stop_if_idle().await;
-            return error(StatusCode::SERVICE_UNAVAILABLE, e.to_string());
+            return Err(ApiError(StatusCode::SERVICE_UNAVAILABLE, e.to_string()));
         }
     };
     let public = key.public_key().to_openssh().unwrap_or_default();
@@ -1007,7 +998,7 @@ async fn mint(State(app): AppState, Json(req): Json<GuestInviteRequest>) -> Resp
     invite.host = Some(host);
     invite.port = Some(addr.port());
     invite.token = Some(token);
-    Json(invite).into_response()
+    Ok(invite)
 }
 
 /// An invite through control's jump host, or why not (`true`: control
@@ -1046,16 +1037,16 @@ async fn relayed(app: &Arc<App>, req: &GuestInviteRequest) -> Result<GuestInvite
     Ok(invite)
 }
 
-async fn list(State(app): AppState) -> Json<Vec<GuestInvite>> {
-    Json(app.guests.list())
+pub fn list_invites(app: &App) -> Vec<GuestInvite> {
+    app.guests.list()
 }
 
-async fn revoke(State(app): AppState, Path(id): Path<u32>) -> Response {
+pub async fn revoke_invite(app: &App, id: u32) -> Result<(), ApiError> {
     if app.guests.revoke(id) {
         app.guests.stop_if_idle().await;
-        Json(serde_json::json!({})).into_response()
+        Ok(())
     } else {
-        error(StatusCode::NOT_FOUND, format!("no invite {id}"))
+        Err(ApiError(StatusCode::NOT_FOUND, format!("no invite {id}")))
     }
 }
 

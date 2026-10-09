@@ -18,14 +18,11 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use arugula_proto::PaneId;
-use axum::{
-    Json, Router,
-    extract::{Path as UrlPath, State},
-    http::StatusCode,
-    response::{IntoResponse, Response},
-    routing::{delete, get},
+use arugula_proto::{
+    PaneId,
+    op::ops::{McpTokenMint, McpTokenRevoke, McpTokensList},
 };
+use axum::Router;
 use hkdf::hmac::{Hmac, KeyInit, Mac};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
@@ -33,6 +30,7 @@ use tracing::{info, warn};
 
 use crate::{
     hosts::digest,
+    ops::OpRoutes,
     server::App,
     store::{now_ms, private_dir, write_atomic},
 };
@@ -40,16 +38,7 @@ use crate::{
 const CLIENT_PREFIX: &str = "ilm_";
 const BLOCK_PREFIX: &str = "ilb_";
 
-/// What a client token may do.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TokenScope {
-    /// Everything the owner may.
-    #[default]
-    Full,
-    /// The read-only tools.
-    Read,
-}
+pub use arugula_proto::api::{TokenInfo, TokenScope};
 
 #[derive(Clone, Serialize, Deserialize)]
 struct Saved {
@@ -60,19 +49,6 @@ struct Saved {
     created_ms: u64,
     #[serde(default)]
     used_ms: Option<u64>,
-}
-
-/// A client token as listed (never the token itself).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TokenInfo {
-    pub name: String,
-    pub scope: TokenScope,
-    pub created_ms: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub used_ms: Option<u64>,
-    /// Only when it was just made.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub token: Option<String>,
 }
 
 /// What a bearer token turned out to be.
@@ -215,41 +191,9 @@ impl Tokens {
 
 // ---------------------------------------------------------------- routes
 
-type AppState = State<Arc<App>>;
-
 /// The owner's: minting, listing and revoking client tokens.
 pub fn api_routes() -> Router<Arc<App>> {
-    Router::new().route("/api/mcp/tokens", get(list).post(mint)).route("/api/mcp/tokens/{name}", delete(revoke))
-}
-
-fn error(status: StatusCode, msg: impl Into<String>) -> Response {
-    (status, Json(serde_json::json!({ "error": msg.into() }))).into_response()
-}
-
-#[derive(Deserialize)]
-struct MintRequest {
-    name: String,
-    #[serde(default)]
-    scope: TokenScope,
-}
-
-async fn mint(State(app): AppState, Json(req): Json<MintRequest>) -> Response {
-    match app.mcp.mint(&req.name, req.scope) {
-        Ok(t) => Json(t).into_response(),
-        Err(e) => error(StatusCode::BAD_REQUEST, e),
-    }
-}
-
-async fn list(State(app): AppState) -> Response {
-    Json(app.mcp.list()).into_response()
-}
-
-async fn revoke(State(app): AppState, UrlPath(name): UrlPath<String>) -> Response {
-    if app.mcp.revoke(&name) {
-        Json(serde_json::json!({})).into_response()
-    } else {
-        error(StatusCode::NOT_FOUND, format!("no mcp token named {name}"))
-    }
+    Router::new().op::<McpTokensList>().op::<McpTokenMint>().op::<McpTokenRevoke>()
 }
 
 #[cfg(test)]

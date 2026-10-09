@@ -92,7 +92,8 @@ pub async fn call<O: McpOp>(call: &Call<'_>, args: serde_json::Value) -> Out {
             | OpError::Unreachable(why)
             | OpError::NoFlag(why)
             | OpError::Failed(why)
-            | OpError::Status(_, why),
+            | OpError::Status(_, why)
+            | OpError::Text(_, why),
         ) => Err(why),
     }
 }

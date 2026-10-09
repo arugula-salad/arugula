@@ -1,10 +1,13 @@
 //! `arugula studio`: your studio's token and follower links.
 
 use super::Ctx;
-use crate::http::{enc, request, request_as};
+use crate::http::{call_raw, enc};
 use crate::{term, util::print_json};
 use anyhow::bail;
-use arugula_proto::api::{Empty, FollowerLinkRequest, StudioLoggedIn, StudioLoginRequest, StudioStatus};
+use arugula_proto::{
+    api::{Empty, FollowerLinkRequest, StudioLoggedIn, StudioLoginRequest, StudioStatus},
+    op::ops::{StudioFollow, StudioGet, StudioLogin, StudioLogout, StudioUnfollow},
+};
 use std::io::Write;
 
 /// What a studio route said, for people.
@@ -41,26 +44,21 @@ pub fn run(cmd: Option<StudioCmd>, ctx: Ctx) -> anyhow::Result<i32> {
     let Ctx { sock, json_out, .. } = ctx;
     let (said, v) = match cmd {
         None => {
-            let (s, v) = request(&sock, "GET", "/api/studio", None)?.parse_raw::<StudioStatus>()?;
+            let (s, v) = call_raw::<StudioGet>(&sock, &(), &Empty {})?;
             (Said::Status(s), v)
         }
         Some(StudioCmd::Login { url }) => {
             let token = secret_input("Studio token: ")?;
-            let (l, v) = request_as(&sock, "POST", "/api/studio", &StudioLoginRequest { url, token })?
-                .parse_raw::<StudioLoggedIn>()?;
+            let (l, v) = call_raw::<StudioLogin>(&sock, &(), &StudioLoginRequest { url, token })?;
             (Said::LoggedIn(l), v)
         }
-        Some(StudioCmd::Logout) => {
-            (Said::Nothing, request(&sock, "DELETE", "/api/studio", None)?.parse_raw::<Empty>()?.1)
-        }
+        Some(StudioCmd::Logout) => (Said::Nothing, call_raw::<StudioLogout>(&sock, &(), &Empty {})?.1),
         Some(StudioCmd::Follower { app, forget: true }) => {
-            let path = format!("/api/studio/followers/{}", enc(&app));
-            (Said::Nothing, request(&sock, "DELETE", &path, None)?.parse_raw::<Empty>()?.1)
+            (Said::Nothing, call_raw::<StudioUnfollow>(&sock, &enc(&app), &Empty {})?.1)
         }
         Some(StudioCmd::Follower { app, forget: false }) => {
             let link = secret_input("Follower link: ")?;
-            let path = format!("/api/studio/followers/{}", enc(&app));
-            (Said::Nothing, request_as(&sock, "PUT", &path, &FollowerLinkRequest { link })?.parse_raw::<Empty>()?.1)
+            (Said::Nothing, call_raw::<StudioFollow>(&sock, &enc(&app), &FollowerLinkRequest { link })?.1)
         }
     };
     if json_out {

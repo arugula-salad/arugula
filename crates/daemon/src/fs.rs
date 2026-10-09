@@ -50,23 +50,24 @@ use std::{
 };
 
 use arugula_proto::{
-    Attention, BlockType, MachineId, PaneId,
-    fs::{CdRequest, FsChange, FsEntry, FsKind, FsList, LIST_MAX, READ_DEFAULT, READ_MAX},
+    Attention, BlockType, PaneId,
+    fs::{CdRequest, FsChange, FsEntry, FsKind, FsList, FsQuery, LIST_MAX, READ_DEFAULT, READ_MAX},
+    op::ops::{FsListGet, FsRecentGet, FsStatGet, PaneCd},
 };
 use axum::{
     Json, Router,
     body::{Body, Bytes},
-    extract::{Path as UrlPath, Query, State},
+    extract::{Query, State},
     http::{HeaderValue, StatusCode},
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::get,
 };
 use futures_util::stream;
-use serde::Deserialize;
 
 use crate::{
     history::{self, Filter},
     mux::{Api, Cmd},
+    ops::OpRoutes,
     provider::Provider,
     server::App,
 };
@@ -94,7 +95,7 @@ impl std::fmt::Display for FsError {
 impl std::error::Error for FsError {}
 
 impl FsError {
-    fn status(&self) -> StatusCode {
+    pub(crate) fn status(&self) -> StatusCode {
         match self {
             FsError::NotFound(_) => StatusCode::NOT_FOUND,
             FsError::Denied(_) => StatusCode::FORBIDDEN,
@@ -431,34 +432,15 @@ impl Machine {
 
 pub fn routes() -> Router<Arc<App>> {
     Router::new()
-        .route("/api/fs/list", get(list))
-        .route("/api/fs/stat", get(stat))
+        .op::<FsListGet>()
+        .op::<FsStatGet>()
         .route("/api/fs/read", get(read))
         .route("/api/fs/watch", get(watch))
-        .route("/api/fs/recent", get(recent))
-        .route("/api/panes/{id}/cd", post(cd))
+        .op::<FsRecentGet>()
+        .op::<PaneCd>()
 }
 
 type AppState = State<Arc<App>>;
-
-#[derive(Deserialize, Default)]
-struct FsQuery {
-    #[serde(default)]
-    path: Option<String>,
-    /// On the host this block runs on.
-    #[serde(default)]
-    pane: Option<PaneId>,
-    /// On this machine.
-    #[serde(default)]
-    machine: Option<MachineId>,
-    /// Only directories (and links to them).
-    #[serde(default)]
-    dirs: Option<u8>,
-    #[serde(default)]
-    offset: Option<u64>,
-    #[serde(default)]
-    len: Option<u64>,
-}
 
 /// Where files are read: this host, or a machine through its provider.
 /// M11's file and diff blocks keep one.
@@ -549,17 +531,17 @@ fn path_of(q: &FsQuery) -> String {
     q.path.clone().filter(|p| !p.is_empty()).unwrap_or_else(|| "~".into())
 }
 
-async fn list(State(app): AppState, Query(q): Query<FsQuery>) -> Res<Json<FsList>> {
-    let t = target(&app, &q).await?;
-    Ok(Json(t.list(path_of(&q), q.dirs == Some(1)).await?))
+pub(crate) async fn list(app: &App, q: &FsQuery) -> Res<FsList> {
+    let t = target(app, q).await?;
+    t.list(path_of(q), q.dirs == Some(1)).await
 }
 
-async fn stat(State(app): AppState, Query(q): Query<FsQuery>) -> Res<Json<FsEntry>> {
-    let path = path_of(&q);
-    Ok(Json(match target(&app, &q).await? {
+pub(crate) async fn stat(app: &App, q: &FsQuery) -> Res<FsEntry> {
+    let path = path_of(q);
+    Ok(match target(app, q).await? {
         Target::Local(s) => blocking(move || s.stat(&path)).await?,
         Target::Machine(m) => m.stat(&path).await?,
-    }))
+    })
 }
 
 async fn read(State(app): AppState, Query(q): Query<FsQuery>) -> Res<Response> {
@@ -659,8 +641,8 @@ fn diff(before: &BTreeMap<String, FsEntry>, after: &BTreeMap<String, FsEntry>) -
 /// Directories used lately on the host `pane`/`machine` names, newest
 /// first: where its blocks are now, then where commands ran (the shell
 /// integration's history). On this host, only ones that still exist.
-async fn recent(State(app): AppState, Query(q): Query<FsQuery>) -> Res<Json<Vec<String>>> {
-    let host = machine_of(&app, &q).await?.map(|m| m.id);
+pub(crate) async fn recent(app: &App, q: &FsQuery) -> Res<Vec<String>> {
+    let host = machine_of(app, q).await?.map(|m| m.id);
     let panes = app.mux.api(Api::Panes).await.unwrap_or_default();
     let same: HashSet<PaneId> = panes.iter().filter(|s| s.info.host == host).map(|s| s.info.id).collect();
     let mut dirs: Vec<(u64, String)> =
@@ -690,19 +672,14 @@ async fn recent(State(app): AppState, Query(q): Query<FsQuery>) -> Res<Json<Vec<
             .await?
         }
     };
-    Ok(Json(out))
+    Ok(out)
 }
 
 /// `cd` typed into a shell waiting at its prompt; refused otherwise (it
 /// would be typed into whatever program is running).
-async fn cd(
-    State(app): AppState,
-    UrlPath(id): UrlPath<PaneId>,
-    Json(req): Json<CdRequest>,
-) -> Res<Json<serde_json::Value>> {
+pub(crate) async fn cd(app: &App, id: PaneId, req: CdRequest) -> Res<()> {
     let line = cd_line(&req.path).ok_or_else(|| FsError::Bad(format!("can't cd to {:?}", req.path)))?;
-    type_line(&app, id, line, "cd").await?;
-    Ok(Json(serde_json::json!({})))
+    type_line(app, id, line, "cd").await
 }
 
 /// Type `line` into a terminal whose shell waits at its prompt: `cd`, and

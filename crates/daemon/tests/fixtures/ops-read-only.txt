@@ -1,9 +1,15 @@
 # name method path
+acl.get GET /api/acl
 adapters.list GET /api/agents/adapters
 agents.get GET /api/hosts/self/agents
 conversations.list GET /api/conversations
 flags.list GET /api/flags
 fountain.agents GET /api/fountain/agents
+fs.list GET /api/fs/list
+fs.recent GET /api/fs/recent
+fs.stat GET /api/fs/stat
+host.get GET /api/host
+hosts.list GET /api/hosts
 ide.get GET /api/ide
 machines.list GET /api/machines
 notify.get GET /api/notify
@@ -15,5 +21,11 @@ pane.wait GET /api/panes/{id}/wait
 panes.list GET /api/panes
 push.key GET /api/push/key
 rules.list GET /api/rules
+sandboxes.list GET /api/sandboxes
+setup.get GET /api/setup
 shell_env.get GET /api/hosts/self/shell-env
+studio.apps GET /api/studio/apps
+studio.get GET /api/studio
+synced.list GET /api/synced
+team_pins.get GET /api/team-pins
 thread.get GET /api/threads/{target}

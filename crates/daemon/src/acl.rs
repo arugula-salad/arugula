@@ -547,51 +547,34 @@ fn hex_sha(s: &str) -> String {
 pub mod api {
     use std::sync::Arc;
 
-    use arugula_core::{Role, SessionId};
-    use axum::{
-        Json, Router,
-        extract::State,
-        http::StatusCode,
-        response::{IntoResponse, Response},
-        routing::get,
+    use arugula_proto::{
+        api::{AclSetRequest, LinkRequest},
+        op::ops::{AclGet, AclSet, LinkMint},
     };
-    use serde::Deserialize;
-    use serde_json::json;
+    use axum::{Router, http::StatusCode};
+    use serde_json::{Value, json};
 
-    use crate::{mux::Cmd, server::App};
+    use crate::{api::ApiError, mux::Cmd, ops::OpRoutes, server::App};
 
     pub fn routes() -> Router<Arc<App>> {
-        Router::new().route("/api/acl", get(list).post(set)).route("/api/links", axum::routing::post(link))
+        Router::new().op::<AclGet>().op::<AclSet>().op::<LinkMint>()
     }
 
-    #[derive(Deserialize)]
-    struct NewLink {
-        session: SessionId,
-        /// The link's X25519 public key, hex (its private half travels in
-        /// the link's fragment and never reaches us).
-        key: String,
-        #[serde(default = "hour")]
-        ttl_secs: u64,
-        /// With history (default: from now on).
-        #[serde(default)]
-        history: bool,
-    }
-
-    fn hour() -> u64 {
-        3600
+    fn refuse(status: StatusCode, why: impl Into<String>) -> ApiError {
+        ApiError(status, why.into())
     }
 
     /// A read-only link (M19): one session, live, until it expires.
-    async fn link(State(app): State<Arc<App>>, Json(b): Json<NewLink>) -> Response {
+    pub(crate) async fn link(app: &App, b: LinkRequest) -> Result<Value, ApiError> {
         if b.key.len() != 64 || !b.key.bytes().all(|c| c.is_ascii_hexdigit()) {
-            return (StatusCode::BAD_REQUEST, Json(json!({ "error": "key: 32 bytes of hex" }))).into_response();
+            return Err(refuse(StatusCode::BAD_REQUEST, "key: 32 bytes of hex"));
         }
         let from = if b.history {
             None
         } else {
             match app.mux.api(|r| crate::mux::Api::SessionEnds(b.session, r)).await.flatten() {
                 Some(ends) => Some(ends),
-                None => return (StatusCode::NOT_FOUND, Json(json!({ "error": "no such session" }))).into_response(),
+                None => return Err(refuse(StatusCode::NOT_FOUND, "no such session")),
             }
         };
         let expires = crate::store::now_ms() + b.ttl_secs.clamp(10, 7 * 86_400) * 1000;
@@ -600,13 +583,13 @@ pub mod api {
                 app.mux.send(Cmd::AclChanged);
                 // Control lets its viewers through the relay once it knows.
                 app.control.poke();
-                Json(json!({ "link": id, "expires": expires })).into_response()
+                Ok(json!({ "link": id, "expires": expires }))
             }
-            Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
+            Err(e) => Err(refuse(StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
         }
     }
 
-    async fn list(State(app): State<Arc<App>>) -> Response {
+    pub(crate) fn list(app: &App) -> Value {
         let audit = app.acl.audit();
         let recent = &audit[audit.len().saturating_sub(200)..];
         let grants = app.acl.list();
@@ -617,44 +600,16 @@ pub mod api {
         logins.sort();
         logins.dedup();
         let callers = app.identify.callers().report(&logins);
-        Json(json!({ "grants": grants, "audit": recent, "callers": callers })).into_response()
+        json!({ "grants": grants, "audit": recent, "callers": callers })
     }
 
-    #[derive(Deserialize)]
-    struct Set {
-        session: SessionId,
-        /// `tailnet:<login>` (or `account:<id>` from control).
-        principal: String,
-        #[serde(default)]
-        name: Option<String>,
-        /// `null` revokes.
-        role: Option<Role>,
-        /// False: "from now", no history from before this (M13).
-        #[serde(default = "yes")]
-        history: bool,
-        /// For `account:<id>` (M19): their root device, as the owner saw it
-        /// (they compare its fingerprint with the person). For `team:<id>`
-        /// (M30): `<founder device>.<founder's root>`, as the owner's
-        /// browser pinned the team.
-        #[serde(default)]
-        root: Option<String>,
-    }
-
-    fn yes() -> bool {
-        true
-    }
-
-    async fn set(State(app): State<Arc<App>>, Json(b): Json<Set>) -> Response {
+    pub(crate) async fn set(app: &App, b: AclSetRequest) -> Result<Value, ApiError> {
         let ok_id = |rest: &str| !rest.is_empty() && rest.len() <= 200 && !rest.chars().any(char::is_control);
         let valid = b.principal.strip_prefix("tailnet:").is_some_and(ok_id)
             || b.principal.strip_prefix("account:").is_some_and(ok_id)
             || b.principal.strip_prefix("team:").is_some_and(ok_id);
         if !valid {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(json!({ "error": "principal is tailnet:<login>, account:<id> or team:<id>" })),
-            )
-                .into_response();
+            return Err(refuse(StatusCode::BAD_REQUEST, "principal is tailnet:<login>, account:<id> or team:<id>"));
         }
         // Account ids are as control made them; logins aren't case-sensitive.
         let principal =
@@ -664,11 +619,10 @@ pub mod api {
             && b.root.is_none()
             && app.acl.list().iter().all(|g| g.principal != principal)
         {
-            return (
+            return Err(refuse(
                 StatusCode::BAD_REQUEST,
-                Json(json!({ "error": "sharing with an account needs its root device (a team: its founder's)" })),
-            )
-                .into_response();
+                "sharing with an account needs its root device (a team: its founder's)",
+            ));
         }
         let name = b.name.unwrap_or_else(|| principal.split_once(':').map(|(_, n)| n.to_owned()).unwrap_or_default());
         let from = if b.history || b.role.is_none() {
@@ -676,17 +630,17 @@ pub mod api {
         } else {
             match app.mux.api(|r| crate::mux::Api::SessionEnds(b.session, r)).await.flatten() {
                 Some(ends) => Some(ends),
-                None => return (StatusCode::NOT_FOUND, Json(json!({ "error": "no such session" }))).into_response(),
+                None => return Err(refuse(StatusCode::NOT_FOUND, "no such session")),
             }
         };
         if let Err(e) = app.acl.set_full(b.session, &principal, &name, b.role, "owner", from, b.root, None) {
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response();
+            return Err(refuse(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
         }
         // Takes effect at once: new state for everyone, and a hang-up for
         // whoever has nothing left; someone new from control needs their
         // certificates fetched.
         app.mux.send(Cmd::AclChanged);
         app.control.poke();
-        Json(json!({ "grants": app.acl.list() })).into_response()
+        Ok(json!({ "grants": app.acl.list() }))
     }
 }

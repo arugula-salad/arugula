@@ -6,8 +6,9 @@ use crate::util::{Pane, REMOTE, env_pane, print_json};
 use anyhow::bail;
 use arugula_proto::{
     BlockType, Policy,
-    api::{OpenRequest, OpenResponse, RunRequest, RunResponse, WaitResult},
+    api::{Empty, OpenRequest, OpenResponse, RunRequest, RunResponse, WaitResult},
     hosts::HostList,
+    op::ops::HostsList,
 };
 use serde_json::json;
 
@@ -95,7 +96,7 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
             anyhow::bail!("--home needs --host NAME, a host in this daemon's list");
         };
         let local = http::Target::Socket(local_sock);
-        let this = request(&local, "GET", "/api/hosts", None)?.parse::<HostList>()?.this;
+        let this = http::send_op::<HostsList>(&local, &(), &Empty {})?.parse::<HostList>()?.this;
         // On the host first, in a session named after us...
         let body = RunRequest {
             command: (!command.is_empty()).then(|| shell_command(&command)),

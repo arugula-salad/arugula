@@ -9,19 +9,30 @@
 //! its errors ([`OpError`]) are worded by each surface as before. The design
 //! is in `docs/operations.md`.
 
+mod acl;
 mod close;
 mod conversations;
 mod flags;
 mod fountain;
+mod fs;
+mod hosts;
 mod input;
 mod inspect;
+mod invite;
 mod notify;
 mod panes;
 pub(crate) mod prompt;
 mod rules;
+mod sandboxes;
 mod settings;
+mod setup;
+mod shares;
 mod shell_env;
+mod signin;
+mod studio;
+mod synced;
 mod threads;
+mod tokens;
 mod wait;
 mod waits;
 
@@ -90,6 +101,53 @@ macro_rules! every_op {
         $m!(arugula_proto::op::ops::ThreadPost);
         $m!(arugula_proto::op::ops::ThreadRead);
         $m!(arugula_proto::op::ops::FountainAgentsGet);
+        // #578 part a: fs, hosts, setup.
+        $m!(arugula_proto::op::ops::FsListGet);
+        $m!(arugula_proto::op::ops::FsStatGet);
+        $m!(arugula_proto::op::ops::FsRecentGet);
+        $m!(arugula_proto::op::ops::PaneCd);
+        $m!(arugula_proto::op::ops::HostGet);
+        $m!(arugula_proto::op::ops::HostsList);
+        $m!(arugula_proto::op::ops::HostAdd);
+        $m!(arugula_proto::op::ops::HostRemove);
+        $m!(arugula_proto::op::ops::HostTokenMint);
+        $m!(arugula_proto::op::ops::HostTokenRevoke);
+        $m!(arugula_proto::op::ops::SetupGet);
+        $m!(arugula_proto::op::ops::SetupTailscale);
+        $m!(arugula_proto::op::ops::SetupControl);
+        $m!(arugula_proto::op::ops::SetupControlConfirm);
+        $m!(arugula_proto::op::ops::SetupClaude);
+        $m!(arugula_proto::op::ops::SetupAgent);
+        // #578 part b: access and credentials.
+        $m!(arugula_proto::op::ops::SharesList);
+        $m!(arugula_proto::op::ops::ShareMint);
+        $m!(arugula_proto::op::ops::ShareRevoke);
+        $m!(arugula_proto::op::ops::GuestsList);
+        $m!(arugula_proto::op::ops::GuestMint);
+        $m!(arugula_proto::op::ops::GuestRevoke);
+        $m!(arugula_proto::op::ops::AclGet);
+        $m!(arugula_proto::op::ops::AclSet);
+        $m!(arugula_proto::op::ops::LinkMint);
+        $m!(arugula_proto::op::ops::InviteSend);
+        $m!(arugula_proto::op::ops::TeamPinsGet);
+        $m!(arugula_proto::op::ops::TeamPinsSet);
+        $m!(arugula_proto::op::ops::McpTokensList);
+        $m!(arugula_proto::op::ops::McpTokenMint);
+        $m!(arugula_proto::op::ops::McpTokenRevoke);
+        $m!(arugula_proto::op::ops::SigninLinkGet);
+        // #578 part c: synced history, sandboxes, studio.
+        $m!(arugula_proto::op::ops::SyncedList);
+        $m!(arugula_proto::op::ops::SyncedRotate);
+        $m!(arugula_proto::op::ops::SyncedForget);
+        $m!(arugula_proto::op::ops::SandboxesList);
+        $m!(arugula_proto::op::ops::SandboxPromote);
+        $m!(arugula_proto::op::ops::SandboxDemote);
+        $m!(arugula_proto::op::ops::StudioGet);
+        $m!(arugula_proto::op::ops::StudioLogin);
+        $m!(arugula_proto::op::ops::StudioLogout);
+        $m!(arugula_proto::op::ops::StudioAppsList);
+        $m!(arugula_proto::op::ops::StudioFollow);
+        $m!(arugula_proto::op::ops::StudioUnfollow);
     };
 }
 
@@ -111,6 +169,10 @@ pub enum OpError {
     /// Any other refusal, with the status and sentence its handler had before
     /// it was an operation (a pane that closed while waited on, 410).
     Status(StatusCode, String),
+    /// A refusal whose body is plain text, not `{"error": …}`, as its
+    /// handler sent it before it was an operation (HTTP only: the other
+    /// surfaces word it as `Status`).
+    Text(StatusCode, String),
 }
 
 impl From<ApiError> for OpError {
@@ -126,7 +188,7 @@ impl OpError {
             OpError::Forbidden(why) | OpError::Unreachable(why) => ApiError(StatusCode::FORBIDDEN, why),
             OpError::NoFlag(why) => ApiError(StatusCode::NOT_FOUND, why),
             OpError::Failed(why) => ApiError(StatusCode::INTERNAL_SERVER_ERROR, why),
-            OpError::Status(code, why) => ApiError(code, why),
+            OpError::Status(code, why) | OpError::Text(code, why) => ApiError(code, why),
         }
     }
 }
@@ -270,6 +332,7 @@ where
     let cx = Cx { app: &app, via: Via::Http { who, owner, agent } };
     match O::handle(&cx, path, body).await {
         Ok(res) => Json(res).into_response(),
+        Err(OpError::Text(code, why)) => (code, why).into_response(),
         Err(e) => e.http().into_response(),
     }
 }
@@ -392,7 +455,33 @@ pub const fn read_only<O: Op>() -> bool {
     matches!(O::METHOD, Method::Get) && !O::CREDENTIAL
 }
 
-/// The routes in `api.rs` that are not operations, each with why. A new
+/// The routers whose routes are checked: each file, and the start of the
+/// function that builds its router. An operation is added on the router its
+/// route was on, so it keeps that router's place in `server.rs` (which
+/// ways in reach it) and its layers (#578).
+#[cfg(test)]
+const ROUTERS: &[(&str, &str)] = &[
+    ("src/api.rs", "pub fn routes()"),
+    // #578 part a: fs, hosts, setup.
+    ("src/fs.rs", "pub fn routes()"),
+    ("src/hosts.rs", "pub fn routes()"),
+    ("src/setup.rs", "pub fn routes()"),
+    // #578 part b: access and credentials.
+    ("src/share.rs", "pub fn api_routes()"),
+    // Nested in `mod api`: its function ends at its own indent.
+    ("src/acl.rs", "    pub fn routes()"),
+    ("src/invite/mod.rs", "pub fn routes()"),
+    ("src/mcp/tokens.rs", "pub fn api_routes()"),
+    ("src/labs/guest_ssh.rs", "pub fn routes()"),
+    // The Unix socket's router: the only one with the sign-in link.
+    ("src/server.rs", "pub fn local_router("),
+    // #578 part c.
+    ("src/sync.rs", "pub fn routes()"),
+    ("src/labs/resident.rs", "pub fn routes()"),
+    ("src/labs/apps/routes.rs", "pub fn routes("),
+];
+
+/// The routes in [`ROUTERS`] that are not operations, each with why. A new
 /// route is an operation unless it is here (`every_api_route_is_an_operation_or_hand_written`).
 /// Entries leave as their operations arrive (#575–#578).
 #[cfg(test)]
@@ -422,6 +511,20 @@ const HAND_WRITTEN: &[(&str, &str)] = &[
     ("/api/attention/act", "not yet converted"),
     ("/api/blocks", "not yet converted"),
     ("/api/blocks/{id}", "not yet converted"),
+    // #578 part a: fs, hosts, setup.
+    ("/api/fs/read", "bytes, with the file's size in headers"),
+    ("/api/fs/watch", "NDJSON stream"),
+    ("/api/hosts/invite", "a POST whose ttl is in the query, not a body"),
+    ("/api/hosts/join", "the token in the body is the credential: no user identity (server::guard)"),
+    // #578 part b: `local_router`'s own routes that stay as they are.
+    ("/ws", "websocket"),
+    ("/api/editors/connect", "websocket, editors join the swarm (M28)"),
+    ("/api/daemon/stop", "stops the daemon, over the socket only"),
+    // #578 part c: daemon-to-daemon pushes, a host token's, not a person's.
+    ("/api/sync/state", "a pushing host's token is the credential (server::guard); not a person's call"),
+    ("/api/sync/{pane}/log", "a host's push of raw bytes, 1 MB at most"),
+    ("/api/sync/{pane}/index", "a host's push of raw bytes, 1 MB at most"),
+    ("/api/sync/{pane}/closed", "a host's push, authorized by its host token"),
 ];
 
 #[cfg(test)]
@@ -525,23 +628,35 @@ mod tests {
         against_fixture("ops-read-only.txt", got);
     }
 
-    /// The paths `api.rs`'s `routes()` adds, and the operations it adds with
+    /// The paths [`ROUTERS`] add, and the operations they add with
     /// `.op::<…>()`, read from the source (the router can't be walked once
-    /// built). Routes other modules add (`labs::routes`, `fs`, `hosts` …) are
-    /// outside it.
+    /// built). Routers not listed there are outside it.
     fn api_routes() -> (Vec<String>, Vec<String>) {
-        let src = std::fs::read_to_string(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/api.rs")).unwrap();
-        let start = src.find("pub fn routes()").unwrap();
-        let body = &src[start..start + src[start..].find("\n}\n").unwrap()];
         let (mut paths, mut ops) = (Vec::new(), Vec::new());
-        for (i, _) in body.match_indices(".route(") {
-            let rest = body[i + ".route(".len()..].trim_start();
-            let rest = rest.strip_prefix('"').expect("a route's path is a string literal");
-            paths.push(rest[..rest.find('"').unwrap()].to_owned());
-        }
-        for (i, _) in body.match_indices(".op::<") {
-            let rest = &body[i + ".op::<".len()..];
-            ops.push(rest[..rest.find(">()").unwrap()].to_owned());
+        for (file, start) in ROUTERS {
+            let src = std::fs::read_to_string(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(file)).unwrap();
+            let start = src.find(start).unwrap_or_else(|| panic!("{file} has no {start}"));
+            // The function ends at a `}` at the indent it starts at.
+            let line = &src[src[..start].rfind('\n').map_or(0, |i| i + 1)..];
+            let end = format!("\n{}}}\n", &line[..line.len() - line.trim_start_matches(' ').len()]);
+            let body = &src[start..start + src[start..].find(&end).unwrap()];
+            for (i, _) in body.match_indices(".route(") {
+                let rest = body[i + ".route(".len()..].trim_start();
+                // A path is a string literal, or a `const NAME: &str = "…";` in the same file.
+                let literal = match rest.strip_prefix('"') {
+                    Some(lit) => lit,
+                    None => {
+                        let name = &rest[..rest.find(',').unwrap()];
+                        let at = src.find(&format!("const {name}: &str = \"")).expect("a route's path is a string");
+                        &src[at + format!("const {name}: &str = \"").len()..]
+                    }
+                };
+                paths.push(literal[..literal.find('"').unwrap()].to_owned());
+            }
+            for (i, _) in body.match_indices(".op::<") {
+                let rest = &body[i + ".op::<".len()..];
+                ops.push(rest[..rest.find(">()").unwrap()].to_owned());
+            }
         }
         (paths, ops)
     }
@@ -559,7 +674,7 @@ mod tests {
         }
         every_op!(name);
         for o in &declared {
-            assert!(every.contains(o), "api.rs routes {o}, which is not in every_op!");
+            assert!(every.contains(o), "a router routes {o}, which is not in every_op!");
         }
         for p in &paths {
             let hand = HAND_WRITTEN.iter().any(|(h, _)| h == p);
@@ -569,10 +684,10 @@ mod tests {
             );
         }
         for (h, why) in HAND_WRITTEN {
-            assert!(paths.iter().any(|p| p == h), "{h} ({why}) is on HAND_WRITTEN but api.rs doesn't route it");
+            assert!(paths.iter().any(|p| p == h), "{h} ({why}) is on HAND_WRITTEN but no router in ROUTERS routes it");
         }
         for o in &every {
-            assert!(declared.contains(o), "{o} is an operation api.rs doesn't route");
+            assert!(declared.contains(o), "{o} is an operation no router in ROUTERS routes");
         }
     }
 }

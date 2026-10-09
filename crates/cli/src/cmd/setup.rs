@@ -7,7 +7,7 @@
 use serde_json::json;
 
 use super::Ctx;
-use crate::{http::request, util::print_json};
+use crate::{http::request_op, util::print_json};
 
 #[derive(clap::Args)]
 pub struct Args {
@@ -22,7 +22,7 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
     if !json_out {
         eprintln!("Setting up {agent} (installing its adapter can take a minute)…");
     }
-    let v = request(&sock, "POST", &format!("/api/setup/agents/{agent}"), Some(&json!({})))?.json()?;
+    let v = request_op::<arugula_proto::op::ops::SetupAgent>(&sock, &agent, &json!({}))?.json()?;
     if json_out {
         print_json(&v);
     } else {

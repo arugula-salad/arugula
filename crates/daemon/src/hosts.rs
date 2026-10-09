@@ -33,20 +33,23 @@ use std::{
 
 use arugula_proto::flags;
 use arugula_proto::hosts::{
-    AddHost, Host, HostFeatures, HostInfo, HostList, HostToken, Invite, JoinRequest, Joined, ProviderRef, Transport,
+    AddHost, Host, HostAnswer, HostFeatures, HostInfo, HostList, HostToken, Invite, JoinRequest, Joined, ProviderRef,
+    Transport,
 };
+use arugula_proto::op::ops::{HostAdd, HostGet, HostRemove, HostTokenMint, HostTokenRevoke, HostsList};
 use axum::{
     Json, Router,
-    extract::{Path, Query, State},
+    extract::{Query, State},
     http::StatusCode,
     response::{IntoResponse, Response},
-    routing::{delete, get, post},
+    routing::post,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tracing::{info, warn};
 
 use crate::{
+    ops::OpRoutes,
     provider::Provider,
     server::App,
     store::{now_ms, write_atomic},
@@ -498,12 +501,14 @@ type AppState = State<Arc<App>>;
 
 pub fn routes() -> Router<Arc<App>> {
     Router::new()
-        .route("/api/host", get(host))
-        .route("/api/hosts", get(list).post(add))
+        .op::<HostGet>()
+        .op::<HostsList>()
+        .op::<HostAdd>()
         .route("/api/hosts/invite", post(invite))
         .route(JOIN_PATH, post(join))
-        .route("/api/hosts/{name}", delete(remove))
-        .route("/api/hosts/{name}/token", post(mint_token).delete(revoke_token))
+        .op::<HostRemove>()
+        .op::<HostTokenMint>()
+        .op::<HostTokenRevoke>()
 }
 
 /// The one route a caller without a user identity may reach (the token in
@@ -514,19 +519,9 @@ fn error(status: StatusCode, msg: impl Into<String>) -> Response {
     (status, Json(serde_json::json!({ "error": msg.into() }))).into_response()
 }
 
-/// `GET /api/host`: [`HostInfo`], and for the owner this machine's
+/// `GET /api/host`'s answer: [`HostInfo`], and for the owner this machine's
 /// standing with control (#325), beside it.
-#[derive(Serialize)]
-struct HostAnswer {
-    #[serde(flatten)]
-    info: HostInfo,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    control_state: Option<arugula_proto::hosts::ControlState>,
-}
-
-async fn host(State(app): AppState, who: Option<axum::Extension<crate::acl::Principal>>) -> Json<HostAnswer> {
-    // Only the owner hears how this machine stands with control (#325).
-    let owner = who.is_none_or(|axum::Extension(p)| p.is_owner());
+pub(crate) fn answer(app: &App, owner: bool) -> HostAnswer {
     let joined = app.control.enrolled();
     let saved = joined.as_ref().map(|e| &e.saved);
     let info = HostInfo {
@@ -541,9 +536,9 @@ async fn host(State(app): AppState, who: Option<axum::Extension<crate::acl::Prin
             .and_then(|s| s.roster.as_ref().map(|r| r.name.clone()).or_else(|| Some(s.team.as_ref()?.team.clone()))),
         // M45b: only where the runner's unit is; from what was last read.
         fountain_runner: crate::labs::fountain_runner_info(&app.mux.shell_env),
-        features: Some(features(&app)),
+        features: Some(features(app)),
     };
-    Json(HostAnswer { info, control_state: owner.then(|| crate::setup::control_state(&app)) })
+    HostAnswer { info, control_state: owner.then(|| crate::setup::control_state(app)) }
 }
 
 /// What this machine is set up for, so the menus offer only that (#180)
@@ -568,34 +563,6 @@ pub(crate) fn features(app: &App) -> HostFeatures {
     }
 }
 
-async fn list(State(app): AppState) -> Json<HostList> {
-    // Sandboxes' states are cheap to ask for (and asking doesn't wake
-    // them), so the list a client gets is current.
-    let _ = tokio::time::timeout(Duration::from_secs(3), app.hosts.ask_providers()).await;
-    Json(app.hosts.list())
-}
-
-async fn add(State(app): AppState, Json(req): Json<AddHost>) -> Response {
-    match app.hosts.add(req) {
-        Ok(h) => {
-            let hosts = app.hosts.clone();
-            tokio::spawn(async move { hosts.probe().await });
-            Json(h).into_response()
-        }
-        Err(e) => error(StatusCode::BAD_REQUEST, e),
-    }
-}
-
-async fn remove(State(app): AppState, Path(name): Path<String>) -> Response {
-    // Its tunnel goes with it.
-    app.dial_outs.drop_host(&name);
-    if app.hosts.remove(&name) {
-        Json(serde_json::json!({})).into_response()
-    } else {
-        error(StatusCode::NOT_FOUND, format!("no host {name}"))
-    }
-}
-
 #[derive(Deserialize)]
 struct InviteQuery {
     #[serde(default)]
@@ -604,27 +571,6 @@ struct InviteQuery {
 
 async fn invite(State(app): AppState, Query(q): Query<InviteQuery>) -> Json<Invite> {
     Json(app.hosts.invite(q.ttl.unwrap_or(DEFAULT_INVITE_TTL_SECS)))
-}
-
-async fn mint_token(State(app): AppState, Path(name): Path<String>) -> Response {
-    match app.hosts.mint_token(&name) {
-        // A new token replaces the old one: so does the connection.
-        Ok(t) => {
-            app.dial_outs.drop_host(&name);
-            Json(t).into_response()
-        }
-        Err(e) => error(StatusCode::BAD_REQUEST, e),
-    }
-}
-
-async fn revoke_token(State(app): AppState, Path(name): Path<String>) -> Response {
-    let had = app.hosts.revoke_token(&name);
-    let connected = app.dial_outs.drop_host(&name);
-    if had || connected {
-        Json(serde_json::json!({})).into_response()
-    } else {
-        error(StatusCode::NOT_FOUND, format!("{name} has no token"))
-    }
 }
 
 async fn join(State(app): AppState, Json(req): Json<JoinRequest>) -> Response {

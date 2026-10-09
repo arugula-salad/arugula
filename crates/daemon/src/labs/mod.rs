@@ -259,6 +259,129 @@ pub async fn fountain_agents(
     Err(crate::api::ApiError(axum::http::StatusCode::NOT_FOUND, not_built("Fountain")))
 }
 
+/// `POST /api/guests`'s answer: an ssh invite, or in a build without Labs
+/// the 501 the route gave every method.
+#[cfg(feature = "labs")]
+pub async fn guest_mint(
+    app: &Arc<App>,
+    req: arugula_proto::api::GuestInviteRequest,
+) -> Result<arugula_proto::api::GuestInvite, crate::api::ApiError> {
+    guest_ssh::mint_invite(app, req).await
+}
+
+#[cfg(not(feature = "labs"))]
+pub async fn guest_mint(
+    _: &Arc<App>,
+    _: arugula_proto::api::GuestInviteRequest,
+) -> Result<arugula_proto::api::GuestInvite, crate::api::ApiError> {
+    Err(guests_absent())
+}
+
+/// `GET /api/guests`'s answer (as `guest_mint`).
+#[cfg(feature = "labs")]
+pub fn guest_list(app: &App) -> Result<Vec<arugula_proto::api::GuestInvite>, crate::api::ApiError> {
+    Ok(guest_ssh::list_invites(app))
+}
+
+#[cfg(not(feature = "labs"))]
+pub fn guest_list(_: &App) -> Result<Vec<arugula_proto::api::GuestInvite>, crate::api::ApiError> {
+    Err(guests_absent())
+}
+
+/// `DELETE /api/guests/{id}`'s answer (as `guest_mint`).
+#[cfg(feature = "labs")]
+pub async fn guest_revoke(app: &App, id: u32) -> Result<(), crate::api::ApiError> {
+    guest_ssh::revoke_invite(app, id).await
+}
+
+#[cfg(not(feature = "labs"))]
+pub async fn guest_revoke(_: &App, _: u32) -> Result<(), crate::api::ApiError> {
+    Err(guests_absent())
+}
+
+/// What a build without Labs answers to `/api/guests`.
+#[cfg(not(feature = "labs"))]
+fn guests_absent() -> crate::api::ApiError {
+    crate::api::ApiError(axum::http::StatusCode::NOT_IMPLEMENTED, not_built("Guest ssh"))
+}
+
+/// Studio's and the sandboxes' operations (#578): each calls its Labs
+/// function here. The routes are Labs' (`apps/routes.rs`, `resident.rs`), so a
+/// build without Labs has none: its twins are never reached over HTTP, where a
+/// path no router has is the 404 it always was, and say the same if they were.
+#[cfg(feature = "labs")]
+pub use apps::routes::{studio_apps, studio_follow, studio_login, studio_logout, studio_status};
+#[cfg(feature = "labs")]
+pub use resident::{
+    Failed as SandboxFailed, demote as sandbox_demote, list as sandboxes, make_resident as sandbox_promote,
+};
+
+#[cfg(not(feature = "labs"))]
+mod studio_off {
+    use arugula_proto::api::{Empty, StudioApps, StudioLoggedIn, StudioLoginRequest, StudioStatus};
+    use axum::http::StatusCode;
+
+    use super::not_built;
+    use crate::{api::ApiError, server::App};
+
+    fn gone<T>() -> Result<T, ApiError> {
+        Err(ApiError(StatusCode::NOT_FOUND, not_built("Studio")))
+    }
+
+    pub async fn studio_status() -> Result<StudioStatus, ApiError> {
+        gone()
+    }
+
+    pub async fn studio_login(_: StudioLoginRequest) -> Result<StudioLoggedIn, ApiError> {
+        gone()
+    }
+
+    pub async fn studio_logout() -> Result<Empty, ApiError> {
+        gone()
+    }
+
+    pub async fn studio_apps(_: &App) -> Result<StudioApps, ApiError> {
+        gone()
+    }
+
+    pub async fn studio_follow(_: &str, _: Option<&str>) -> Result<Empty, ApiError> {
+        gone()
+    }
+}
+
+#[cfg(not(feature = "labs"))]
+pub use studio_off::{studio_apps, studio_follow, studio_login, studio_logout, studio_status};
+
+#[cfg(not(feature = "labs"))]
+mod sandboxes_off {
+    use arugula_proto::hosts::{Demoted, Host, PromoteRequest, SandboxList};
+    use axum::http::StatusCode;
+
+    use super::not_built;
+    use crate::server::App;
+
+    pub type SandboxFailed = (StatusCode, String);
+
+    fn gone<T>() -> Result<T, SandboxFailed> {
+        Err((StatusCode::NOT_FOUND, not_built("Sandboxes")))
+    }
+
+    pub async fn sandboxes(_: &App) -> Result<SandboxList, SandboxFailed> {
+        gone()
+    }
+
+    pub async fn sandbox_promote(_: &App, _: &str, _: PromoteRequest) -> Result<Host, SandboxFailed> {
+        gone()
+    }
+
+    pub async fn sandbox_demote(_: &App, _: &str) -> Result<Demoted, SandboxFailed> {
+        gone()
+    }
+}
+
+#[cfg(not(feature = "labs"))]
+pub use sandboxes_off::{SandboxFailed, sandbox_demote, sandbox_promote, sandboxes};
+
 /// Whether chat is in this build: `Ok`, or the refusal for a request that
 /// needs it.
 #[cfg(feature = "labs")]

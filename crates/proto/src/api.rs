@@ -685,6 +685,13 @@ pub struct SyncedHost {
     pub panes: std::collections::BTreeMap<PaneId, SyncedPane>,
 }
 
+/// `POST /api/synced/rotate-key`: the id of the key all synced history is
+/// now sealed under.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SyncedRotated {
+    pub key: u32,
+}
+
 /// What a route answers when it has nothing to say: `{}`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Empty {}
@@ -924,6 +931,91 @@ pub struct TeamPinsRequest {
 pub struct TeamPins {
     pub pins: std::collections::BTreeMap<String, String>,
     pub checked: Vec<String>,
+}
+
+/// `POST /api/acl`: give someone a role on a session, or take it away
+/// (`role` null). The owner's.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AclSetRequest {
+    pub session: SessionId,
+    /// `tailnet:<login>` (or `account:<id>` from control).
+    pub principal: String,
+    #[serde(default)]
+    pub name: Option<String>,
+    /// `null` revokes.
+    pub role: Option<arugula_core::Role>,
+    /// False: "from now", no history from before this (M13).
+    #[serde(default = "acl_history")]
+    pub history: bool,
+    /// For `account:<id>` (M19): their root device, as the owner saw it
+    /// (they compare its fingerprint with the person). For `team:<id>`
+    /// (M30): `<founder device>.<founder's root>`, as the owner's browser
+    /// pinned the team.
+    #[serde(default)]
+    pub root: Option<String>,
+}
+
+fn acl_history() -> bool {
+    true
+}
+
+/// `POST /api/links`: a read-only link to one session (M19), live until it
+/// expires. The owner's.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LinkRequest {
+    pub session: SessionId,
+    /// The link's X25519 public key, hex (its private half travels in the
+    /// link's fragment and never reaches the daemon).
+    pub key: String,
+    #[serde(default = "link_ttl")]
+    pub ttl_secs: u64,
+    /// With history (default: from now on).
+    #[serde(default)]
+    pub history: bool,
+}
+
+fn link_ttl() -> u64 {
+    3600
+}
+
+/// What an MCP client token may do.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TokenScope {
+    /// Everything the owner may.
+    #[default]
+    Full,
+    /// The read-only tools.
+    Read,
+}
+
+/// `POST /api/mcp/tokens`: a token for an MCP client that reaches `/mcp`
+/// over HTTP. The owner's.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct McpTokenRequest {
+    pub name: String,
+    #[serde(default)]
+    pub scope: TokenScope,
+}
+
+/// A client token as listed (never the token itself).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TokenInfo {
+    pub name: String,
+    pub scope: TokenScope,
+    pub created_ms: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub used_ms: Option<u64>,
+    /// Only when it was just made.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub token: Option<String>,
+}
+
+/// `GET /api/signin-link`: the link that signs a browser in on this
+/// machine (`arugula web`). Over the socket only.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SigninLink {
+    pub url: String,
 }
 
 /// What "needs you" notifications someone other than the owner gets (M29):

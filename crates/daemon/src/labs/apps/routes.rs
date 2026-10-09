@@ -6,17 +6,9 @@ use std::{collections::HashMap, sync::Arc};
 
 use arugula_proto::{
     PaneId,
-    api::{
-        Empty, FollowerLinkRequest, StudioApp, StudioAppRow, StudioApps, StudioLoggedIn, StudioLoginRequest,
-        StudioStatus,
-    },
+    api::{Empty, StudioApp, StudioAppRow, StudioApps, StudioLoggedIn, StudioLoginRequest, StudioStatus},
 };
-use axum::{
-    Json, Router,
-    extract::{Path, State},
-    http::StatusCode,
-    routing::get,
-};
+use axum::{Router, http::StatusCode};
 
 use crate::{
     api::{ApiError, Res, bad},
@@ -24,13 +16,16 @@ use crate::{
     server::App,
 };
 
-type AppState = State<Arc<App>>;
-
-/// Adds studio's routes to the API's.
+/// Adds studio's routes to the API's: operations (`ops/studio.rs`).
 pub fn routes(r: Router<Arc<App>>) -> Router<Arc<App>> {
-    r.route("/api/studio", get(studio_status).post(studio_login).delete(studio_logout))
-        .route("/api/studio/apps", get(studio_apps))
-        .route("/api/studio/followers/{app}", axum::routing::put(studio_follower).delete(studio_unfollow))
+    use crate::ops::OpRoutes;
+    use arugula_proto::op::ops::{StudioAppsList, StudioFollow, StudioGet, StudioLogin, StudioLogout, StudioUnfollow};
+    r.op::<StudioGet>()
+        .op::<StudioLogin>()
+        .op::<StudioLogout>()
+        .op::<StudioAppsList>()
+        .op::<StudioFollow>()
+        .op::<StudioUnfollow>()
 }
 
 /// A studio app block's config (M35) from `{app}` (and optionally `to`,
@@ -69,27 +64,27 @@ fn studio() -> Res<Arc<super::studio::Studio>> {
 
 /// `GET /api/studio` (M35): which studio, and whether there's a token.
 /// Never the token.
-async fn studio_status() -> Res<Json<StudioStatus>> {
-    Ok(Json(studio()?.status()))
+pub async fn studio_status() -> Res<StudioStatus> {
+    Ok(studio()?.status())
 }
 
 /// `arugula studio login`: keep a studio token, once studio takes it.
-async fn studio_login(Json(req): Json<StudioLoginRequest>) -> Res<Json<StudioLoggedIn>> {
+pub async fn studio_login(req: StudioLoginRequest) -> Res<StudioLoggedIn> {
     let apps = studio()?.login(&req.url, &req.token).await.map_err(bad)?;
-    Ok(Json(StudioLoggedIn { apps: apps.into_iter().map(studio_app).collect() }))
+    Ok(StudioLoggedIn { apps: apps.into_iter().map(studio_app).collect() })
 }
 
 fn studio_app(a: super::studio::AppInfo) -> StudioApp {
     StudioApp { name: a.name, title: a.title, url: a.url, status: a.status }
 }
 
-async fn studio_logout() -> Res<Json<Empty>> {
+pub async fn studio_logout() -> Res<Empty> {
     studio()?.logout().map_err(bad)?;
-    Ok(Json(Empty {}))
+    Ok(Empty {})
 }
 
 /// The person's apps, from studio, with the app blocks that show them.
-async fn studio_apps(State(app): AppState) -> Res<Json<StudioApps>> {
+pub async fn studio_apps(app: &App) -> Res<StudioApps> {
     let s = studio()?;
     let apps = s.apps().await.map_err(bad)?;
     let mut blocks: HashMap<String, Vec<PaneId>> = HashMap::new();
@@ -108,18 +103,13 @@ async fn studio_apps(State(app): AppState) -> Res<Json<StudioApps>> {
             StudioAppRow { app: studio_app(a), blocks }
         })
         .collect();
-    Ok(Json(StudioApps { studio: s.url(), apps: list }))
+    Ok(StudioApps { studio: s.url(), apps: list })
 }
 
 /// Keep a hud follower link for an app (`hud share --role follower` in
-/// its box): app blocks with `follower` enter with it and name who
-/// answered.
-async fn studio_follower(Path(name): Path<String>, Json(req): Json<FollowerLinkRequest>) -> Res<Json<Empty>> {
-    studio()?.set_follower(&name, Some(&req.link)).map_err(bad)?;
-    Ok(Json(Empty {}))
-}
-
-async fn studio_unfollow(Path(name): Path<String>) -> Res<Json<Empty>> {
-    studio()?.set_follower(&name, None).map_err(bad)?;
-    Ok(Json(Empty {}))
+/// its box), or with none drop it: app blocks with `follower` enter with it
+/// and name who answered.
+pub async fn studio_follow(name: &str, link: Option<&str>) -> Res<Empty> {
+    studio()?.set_follower(name, link).map_err(bad)?;
+    Ok(Empty {})
 }

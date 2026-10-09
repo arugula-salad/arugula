@@ -1,9 +1,12 @@
 //! `arugula synced`: the history other hosts synced here.
 
 use super::Ctx;
-use crate::http::{enc, request};
+use crate::http::{call_raw, enc};
 use crate::util::{print_json, time};
-use arugula_proto::api::{Empty, SyncedHost};
+use arugula_proto::{
+    api::Empty,
+    op::ops::{SyncedForget, SyncedList, SyncedRotate},
+};
 
 #[derive(clap::Subcommand)]
 pub enum SyncedCmd {
@@ -16,16 +19,15 @@ pub enum SyncedCmd {
 pub fn run(cmd: Option<SyncedCmd>, ctx: Ctx) -> anyhow::Result<i32> {
     let Ctx { sock, json_out, .. } = ctx;
     let (hosts, v) = match cmd {
-        None => request(&sock, "GET", "/api/synced", None)?.parse_raw::<Vec<SyncedHost>>()?,
+        None => call_raw::<SyncedList>(&sock, &(), &Empty {})?,
         Some(SyncedCmd::Rm { name }) => {
-            let (_, v) =
-                request(&sock, "DELETE", &format!("/api/synced/{}", enc(&name)), None)?.parse_raw::<Empty>()?;
+            let (_, v) = // A path argument goes in as it is: the name is encoded here, as it was.
+            call_raw::<SyncedForget>(&sock, &enc(&name), &Empty {})?;
             print_json(&v);
             return Ok(0);
         }
-        // `{"key": id}`: no type in proto for it.
         Some(SyncedCmd::RotateKey) => {
-            print_json(&request(&sock, "POST", "/api/synced/rotate-key", None)?.json()?);
+            print_json(&call_raw::<SyncedRotate>(&sock, &(), &Empty {})?.1);
             return Ok(0);
         }
     };

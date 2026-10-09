@@ -7,13 +7,13 @@ use std::io::{BufRead, BufReader, Write};
 
 use anyhow::Context;
 use arugula_proto::{
-    api::Empty,
-    fs::{CdRequest, FsEntry, FsKind, FsList},
+    fs::{CdRequest, FsEntry, FsKind, FsQuery},
+    op::ops::{FsListGet, FsRecentGet, FsStatGet, PaneCd},
 };
 use clap::Subcommand;
 use serde_json::Value;
 
-use crate::http::{Target, enc, request, request_as};
+use crate::http::{Target, call, call_raw, enc, request};
 
 #[derive(Subcommand)]
 pub enum FsCmd {
@@ -76,6 +76,13 @@ fn query(on: &str, path: &str, extra: &[String]) -> String {
     q.join("&")
 }
 
+/// `place`'s query for where (`pane=N`, `machine=N` or none), and a path,
+/// as the request the file routes take.
+fn fs_query(on: &str, path: Option<&str>) -> FsQuery {
+    let n = |k: &str| on.strip_prefix(k).and_then(|n| n.parse().ok());
+    FsQuery { pane: n("pane="), machine: n("machine="), path: path.map(str::to_owned), ..Default::default() }
+}
+
 fn print_json(v: &Value) {
     println!("{}", serde_json::to_string_pretty(v).unwrap_or_default());
 }
@@ -93,9 +100,8 @@ pub fn run(sock: &Target, cmd: FsCmd, json_out: bool, remote: bool) -> anyhow::R
     match cmd {
         FsCmd::Ls { path, dirs, long } => {
             let (on, path) = place(path.as_deref().unwrap_or("~"), remote)?;
-            let extra = if dirs { vec!["dirs=1".to_owned()] } else { vec![] };
-            let (list, v) = request(sock, "GET", &format!("/api/fs/list?{}", query(&on, &path, &extra)), None)?
-                .parse_raw::<FsList>()?;
+            let q = FsQuery { dirs: dirs.then_some(1), ..fs_query(&on, Some(&path)) };
+            let (list, v) = call_raw::<FsListGet>(sock, &(), &q)?;
             if json_out {
                 print_json(&v);
                 return Ok(0);
@@ -115,8 +121,7 @@ pub fn run(sock: &Target, cmd: FsCmd, json_out: bool, remote: bool) -> anyhow::R
         }
         FsCmd::Stat { path } => {
             let (on, path) = place(&path, remote)?;
-            let (e, v) = request(sock, "GET", &format!("/api/fs/stat?{}", query(&on, &path, &[])), None)?
-                .parse_raw::<FsEntry>()?;
+            let (e, v) = call_raw::<FsStatGet>(sock, &(), &fs_query(&on, Some(&path)))?;
             if json_out {
                 print_json(&v);
             } else {
@@ -159,7 +164,7 @@ pub fn run(sock: &Target, cmd: FsCmd, json_out: bool, remote: bool) -> anyhow::R
                 None => String::new(),
                 Some(o) => place(&format!("{o}:"), remote)?.0,
             };
-            let (dirs, v) = request(sock, "GET", &format!("/api/fs/recent?{q}"), None)?.parse_raw::<Vec<String>>()?;
+            let (dirs, v) = call_raw::<FsRecentGet>(sock, &(), &fs_query(&q, None))?;
             if json_out {
                 print_json(&v);
             } else {
@@ -175,13 +180,26 @@ pub fn run(sock: &Target, cmd: FsCmd, json_out: bool, remote: bool) -> anyhow::R
 /// `arugula cd %N DIR`: typed into pane N's shell if it's idle at its
 /// prompt; refused (with why) otherwise.
 pub fn cd(sock: &Target, pane: u32, path: &str) -> anyhow::Result<i32> {
-    request_as(sock, "POST", &format!("/api/panes/{pane}/cd"), &CdRequest { path: path.to_owned() })?
-        .parse::<Empty>()?;
+    call::<PaneCd>(sock, &pane, &CdRequest { path: path.to_owned() })?;
     Ok(0)
 }
 
 #[cfg(test)]
 mod tests {
+    /// `place`'s query for where, read back as the request, writes the URL
+    /// `query` wrote.
+    #[test]
+    fn the_request_is_the_query_as_it_was() {
+        use arugula_proto::op::ops::{FsListGet, FsStatGet};
+        let (on, path) = super::place("%3:src dir", false).unwrap();
+        let q = arugula_proto::fs::FsQuery { dirs: Some(1), ..super::fs_query(&on, Some(&path)) };
+        let old = format!("/api/fs/list?{}", super::query(&on, &path, &["dirs=1".to_owned()]));
+        assert_eq!(crate::http::route::<FsListGet>(&(), &q).unwrap(), old);
+        let (on, path) = super::place("m2:/etc", false).unwrap();
+        let old = format!("/api/fs/stat?{}", super::query(&on, &path, &[]));
+        assert_eq!(crate::http::route::<FsStatGet>(&(), &super::fs_query(&on, Some(&path))).unwrap(), old);
+    }
+
     #[test]
     fn places() {
         assert_eq!(super::place("%3:src", false).unwrap(), ("pane=3".into(), "src".into()));

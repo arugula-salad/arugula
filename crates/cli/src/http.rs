@@ -715,6 +715,58 @@ mod tests {
         assert_eq!(withdraw.to_string(), r#"{"id":"q1"}"#);
     }
 
+    /// The access routes' paths and bodies as the commands wrote them by
+    /// hand before they were operations (#578): the same paths, and the same
+    /// JSON. A revoke goes out with no body, a name percent-encoded as `enc`.
+    #[test]
+    fn an_access_call_goes_out_as_it_was_written_by_hand() {
+        use super::{enc, route};
+        use arugula_proto::{
+            api::{Empty, GuestInviteRequest, ShareRequest},
+            op::{Method, Op, Request, ops::*},
+        };
+        for (got, want) in [
+            (SharesList::path(&()), "/api/shares"),
+            (ShareMint::path(&()), "/api/shares"),
+            (ShareRevoke::path(&4), "/api/shares/4"),
+            (GuestsList::path(&()), "/api/guests"),
+            (GuestMint::path(&()), "/api/guests"),
+            (GuestRevoke::path(&4), "/api/guests/4"),
+            (AclGet::path(&()), "/api/acl"),
+            (AclSet::path(&()), "/api/acl"),
+            (LinkMint::path(&()), "/api/links"),
+            (InviteSend::path(&()), "/api/invite"),
+            (TeamPinsGet::path(&()), "/api/team-pins"),
+            (TeamPinsSet::path(&()), "/api/team-pins"),
+            (McpTokensList::path(&()), "/api/mcp/tokens"),
+            (McpTokenMint::path(&()), "/api/mcp/tokens"),
+            (McpTokenRevoke::path(&enc("a b")), "/api/mcp/tokens/a%20b"),
+            (SigninLinkGet::path(&()), "/api/signin-link"),
+        ] {
+            assert_eq!(got, want);
+        }
+        assert_eq!(
+            (SharesList::METHOD, ShareRevoke::METHOD, AclGet::METHOD),
+            (Method::Get, Method::Delete, Method::Get)
+        );
+        assert_eq!(
+            (ShareMint::METHOD, AclSet::METHOD, McpTokenMint::METHOD),
+            (Method::Post, Method::Post, Method::Post)
+        );
+        // The lists and the revokes take no body and no `?`.
+        assert!(Empty::without_body().is_some());
+        assert_eq!(route::<SharesList>(&(), &Empty {}).unwrap(), "/api/shares");
+        assert_eq!(route::<SigninLinkGet>(&(), &Empty {}).unwrap(), "/api/signin-link");
+        let share = serde_json::to_value(ShareRequest { pane: 3, ttl_secs: Some(3600) }).unwrap();
+        assert_eq!(share.to_string(), r#"{"pane":3,"ttl_secs":3600}"#);
+        let guest =
+            GuestInviteRequest { pane: 3, ttl_secs: Some(60), rw: true, relay: Some(true), ..Default::default() };
+        assert_eq!(
+            serde_json::to_value(guest).unwrap().to_string(),
+            r#"{"host":null,"label":null,"pane":3,"relay":true,"reusable":false,"rw":true,"ttl_secs":60}"#
+        );
+    }
+
     /// The settings routes' paths and bodies as the commands wrote them by
     /// hand before they were operations (#575).
     #[test]
@@ -753,6 +805,93 @@ mod tests {
             serde_json::json!({ "id": "abc", "then": null, "session": null, "split": null, "from_pane": 2 })
                 .to_string(),
         );
+    }
+
+    /// The file, host and setup routes' paths, queries and bodies as the
+    /// commands wrote them by hand before they were operations (#578).
+    #[test]
+    fn a_file_host_or_setup_call_goes_out_as_it_was_written_by_hand() {
+        use super::{enc, route};
+        use arugula_proto::{
+            api::Empty,
+            fs::{CdRequest, FsQuery},
+            op::{Op, ops::*},
+            setup::SetupQuery,
+        };
+        // The host first, then the path, then dirs: what `query(on, path, extra)` wrote.
+        let on_pane = FsQuery { pane: Some(3), path: Some("/a b".into()), dirs: Some(1), ..Default::default() };
+        assert_eq!(route::<FsListGet>(&(), &on_pane).unwrap(), "/api/fs/list?pane=3&path=%2Fa%20b&dirs=1");
+        let on_machine = FsQuery { machine: Some(2), path: Some("~/x".into()), ..Default::default() };
+        assert_eq!(route::<FsStatGet>(&(), &on_machine).unwrap(), "/api/fs/stat?machine=2&path=~%2Fx");
+        let here = FsQuery { path: Some("/etc".into()), ..Default::default() };
+        assert_eq!(route::<FsListGet>(&(), &here).unwrap(), "/api/fs/list?path=%2Fetc");
+        // `recent` with nothing to say about where still ended in `?`.
+        assert_eq!(route::<FsRecentGet>(&(), &FsQuery::default()).unwrap(), "/api/fs/recent?");
+        assert_eq!(
+            route::<FsRecentGet>(&(), &FsQuery { pane: Some(3), ..Default::default() }).unwrap(),
+            "/api/fs/recent?pane=3"
+        );
+        assert_eq!(PaneCd::path(&7), "/api/panes/7/cd");
+        assert_eq!(serde_json::to_value(CdRequest { path: "x".into() }).unwrap().to_string(), r#"{"path":"x"}"#);
+        // A name is percent-encoded by the caller, as `enc` always did.
+        let name = enc("a b/c");
+        assert_eq!(HostRemove::path(&name), "/api/hosts/a%20b%2Fc");
+        assert_eq!(HostTokenMint::path(&name), "/api/hosts/a%20b%2Fc/token");
+        assert_eq!(HostTokenRevoke::path(&name), "/api/hosts/a%20b%2Fc/token");
+        assert_eq!(route::<HostsList>(&(), &Empty {}).unwrap(), "/api/hosts");
+        assert_eq!(
+            route::<HostAdd>(
+                &(),
+                &arugula_proto::hosts::AddHost {
+                    name: "n".into(),
+                    urls: vec![],
+                    transport: Default::default(),
+                    ssh: None,
+                }
+            )
+            .unwrap(),
+            "/api/hosts"
+        );
+        assert_eq!(route::<HostGet>(&(), &Empty {}).unwrap(), "/api/host");
+        assert_eq!(
+            route::<SetupGet>(&(), &SetupQuery { part: Some("agents".into()) }).unwrap(),
+            "/api/setup?part=agents"
+        );
+        assert_eq!(SetupAgent::path(&"claude".to_owned()), "/api/setup/agents/claude");
+    }
+
+    /// Part c's routes (#578): the paths as the commands wrote them by hand
+    /// (`enc` of the name in the path), and the bodies as the types serialize.
+    #[test]
+    fn a_synced_sandbox_or_studio_call_goes_out_as_it_was_written_by_hand() {
+        use super::{enc, route};
+        use arugula_proto::{
+            api::{Empty, FollowerLinkRequest, StudioLoginRequest},
+            hosts::PromoteRequest,
+            op::{Op, Request, ops::*},
+        };
+        // A path argument is filled in as it is, so the commands pass `enc(name)`.
+        let name = "a b/é".to_owned();
+        let encoded = enc(&name);
+        assert_eq!(route::<SyncedList>(&(), &Empty {}).unwrap(), "/api/synced");
+        assert_eq!(SyncedRotate::path(&()), "/api/synced/rotate-key");
+        assert_eq!(SyncedForget::path(&encoded), "/api/synced/a%20b%2F%C3%A9");
+        assert_eq!(route::<SandboxesList>(&(), &Empty {}).unwrap(), "/api/sandboxes");
+        assert_eq!(SandboxPromote::path(&encoded), "/api/sandboxes/a%20b%2F%C3%A9/promote");
+        assert_eq!(SandboxDemote::path(&encoded), "/api/sandboxes/a%20b%2F%C3%A9/resident");
+        assert_eq!(route::<StudioGet>(&(), &Empty {}).unwrap(), "/api/studio");
+        assert_eq!(StudioLogin::path(&()), "/api/studio");
+        assert_eq!(StudioLogout::path(&()), "/api/studio");
+        assert_eq!(route::<StudioAppsList>(&(), &Empty {}).unwrap(), "/api/studio/apps");
+        assert_eq!(StudioFollow::path(&encoded), "/api/studio/followers/a%20b%2F%C3%A9");
+        assert_eq!(StudioUnfollow::path(&encoded), "/api/studio/followers/a%20b%2F%C3%A9");
+        assert!(Empty::without_body().is_some());
+        let promote = PromoteRequest { host: Some("h".into()), port: None };
+        assert_eq!(serde_json::to_value(promote).unwrap().to_string(), r#"{"host":"h","port":null}"#);
+        let login = StudioLoginRequest { url: "u".into(), token: "t".into() };
+        assert_eq!(serde_json::to_value(login).unwrap().to_string(), r#"{"token":"t","url":"u"}"#);
+        let link = serde_json::to_value(FollowerLinkRequest { link: "l".into() }).unwrap();
+        assert_eq!(link.to_string(), r#"{"link":"l"}"#);
     }
 
     #[test]

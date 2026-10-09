@@ -57,7 +57,6 @@ fn policy(method: &Method, path: &str) -> Policy {
     let pane = |s: &str| s.parse::<PaneId>().ok();
     let get = method == Method::GET;
     match parts.as_slice() {
-        ["api", "host"] if get => Policy::Anyone,
         // M63: for huddles, which anyone with a session may join.
         ["api", "turn"] if get => Policy::Anyone,
         ["api", "panes", id, "capture" | "tail" | "wait" | "export.cast"] if get => {
@@ -66,7 +65,7 @@ fn policy(method: &Method, path: &str) -> Policy {
         ["api", "blocks", id] if get => pane(id).map_or(Policy::Owner, |p| Policy::On(p, Role::Viewer)),
         // M28: the handlers check each editor, and the pane mentioned to.
         ["api", "editors"] if get => Policy::Handler,
-        ["api", "panes", id, "cd" | "hook" | "upload" | "paste"] if !get => {
+        ["api", "panes", id, "hook" | "upload" | "paste"] if !get => {
             pane(id).map_or(Policy::Owner, |p| Policy::On(p, Role::Editor))
         }
         // M35: a way into a studio box is the owner's (it signs in as them).
@@ -220,6 +219,76 @@ mod tests {
         }
     }
 
+    /// The files, host-list and setup routes (#578): what each needs, written
+    /// out. `cd` is an editor's on the pane; `GET /api/host` is anyone's; the
+    /// rest, and every other method on these paths, are the owner's.
+    #[test]
+    fn the_files_hosts_and_setup_routes_keep_their_policies() {
+        let (g, p, d, u) = (Method::GET, Method::POST, Method::DELETE, Method::PUT);
+        for (m, path, want) in [
+            (&g, "/api/fs/list", Policy::Owner),
+            (&g, "/api/fs/stat", Policy::Owner),
+            (&g, "/api/fs/read", Policy::Owner),
+            (&g, "/api/fs/watch", Policy::Owner),
+            (&g, "/api/fs/recent", Policy::Owner),
+            (&p, "/api/panes/3/cd", Policy::On(3, Role::Editor)),
+            (&p, "/api/panes/x/cd", Policy::Owner),
+            (&g, "/api/panes/3/cd", Policy::Owner),
+            (&g, "/api/host", Policy::Anyone),
+            (&p, "/api/host", Policy::Owner),
+            (&g, "/api/hosts", Policy::Owner),
+            (&p, "/api/hosts", Policy::Owner),
+            (&p, "/api/hosts/invite", Policy::Owner),
+            (&p, "/api/hosts/join", Policy::Owner),
+            (&d, "/api/hosts/box", Policy::Owner),
+            (&p, "/api/hosts/box/token", Policy::Owner),
+            (&d, "/api/hosts/box/token", Policy::Owner),
+            // A host named like a pane is still a host.
+            (&d, "/api/hosts/3", Policy::Owner),
+            (&p, "/api/hosts/3/token", Policy::Owner),
+            (&d, "/api/hosts/3/token", Policy::Owner),
+            (&g, "/api/setup", Policy::Owner),
+            (&p, "/api/setup/tailscale", Policy::Owner),
+            (&p, "/api/setup/control", Policy::Owner),
+            (&p, "/api/setup/control/confirm", Policy::Owner),
+            (&p, "/api/setup/claude", Policy::Owner),
+            (&p, "/api/setup/agents/claude", Policy::Owner),
+        ] {
+            assert_eq!(policy(m, path), want, "{m} {path}");
+        }
+        // The other methods on a pane's `cd` never were the editor's route.
+        assert_eq!(policy(&u, "/api/hosts/box"), Policy::Owner);
+    }
+
+    /// The access routes (#578): sharing, ssh invites, who may do what, an
+    /// invite, the team pins, MCP tokens, and the sign-in link. Every one is
+    /// the owner's, as they were when `authz` had no arm for them; an editor
+    /// or a viewer is refused whatever the method.
+    #[test]
+    fn the_access_routes_are_the_owners() {
+        let (g, p, d) = (Method::GET, Method::POST, Method::DELETE);
+        for (m, path) in [
+            (&g, "/api/shares"),
+            (&p, "/api/shares"),
+            (&d, "/api/shares/3"),
+            (&g, "/api/guests"),
+            (&p, "/api/guests"),
+            (&d, "/api/guests/3"),
+            (&g, "/api/acl"),
+            (&p, "/api/acl"),
+            (&p, "/api/links"),
+            (&p, "/api/invite"),
+            (&g, "/api/team-pins"),
+            (&p, "/api/team-pins"),
+            (&g, "/api/mcp/tokens"),
+            (&p, "/api/mcp/tokens"),
+            (&d, "/api/mcp/tokens/laptop"),
+            (&g, "/api/signin-link"),
+        ] {
+            assert_eq!(policy(m, path), Policy::Owner, "{m} {path}");
+        }
+    }
+
     #[test]
     fn policies() {
         let g = Method::GET;
@@ -268,6 +337,36 @@ mod tests {
         assert_eq!(policy(&p, "/api/blocks/7/call/answer"), Policy::On(7, Role::Editor));
         assert_eq!(policy(&p, "/api/studio"), Policy::Owner);
         assert_eq!(policy(&g, "/api/studio/apps"), Policy::Owner);
+    }
+
+    /// #578 part c: synced history, sandboxes and studio were the owner's by
+    /// the default arm; as operations they say so, and an editor, a viewer or
+    /// a guest is refused all of them (studio's login is a way into a box as
+    /// the owner).
+    #[test]
+    fn synced_sandboxes_and_studio_stay_the_owners() {
+        let (g, p, u, d) = (Method::GET, Method::POST, Method::PUT, Method::DELETE);
+        for (m, path) in [
+            (&g, "/api/synced"),
+            (&p, "/api/synced/rotate-key"),
+            (&d, "/api/synced/geek"),
+            // A name that is a number is still not a pane.
+            (&d, "/api/synced/7"),
+            (&p, "/api/sandboxes/7/promote"),
+            (&d, "/api/sandboxes/7/resident"),
+            (&u, "/api/studio/followers/7"),
+            (&g, "/api/sandboxes"),
+            (&p, "/api/sandboxes/box/promote"),
+            (&d, "/api/sandboxes/box/resident"),
+            (&g, "/api/studio"),
+            (&p, "/api/studio"),
+            (&d, "/api/studio"),
+            (&g, "/api/studio/apps"),
+            (&u, "/api/studio/followers/pinboard"),
+            (&d, "/api/studio/followers/pinboard"),
+        ] {
+            assert_eq!(policy(m, path), Policy::Owner, "{m} {path}");
+        }
     }
 
     /// The router hands handlers decoded path segments, so the policy is

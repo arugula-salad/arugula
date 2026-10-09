@@ -37,21 +37,19 @@ use std::{
     time::Duration,
 };
 
-use axum::{
-    Json, Router,
-    extract::{Query, State},
-    routing::{get, post},
+use arugula_proto::{
+    op::ops::{SetupAgent, SetupClaude, SetupControl, SetupControlConfirm, SetupGet, SetupTailscale},
+    setup::{ControlConfirmRequest, ControlJoinRequest, Outcome, SetupQuery},
 };
-use serde::{Deserialize, Serialize};
+use axum::Router;
+use serde::Serialize;
 use serde_json::Value;
 
 use crate::agent::{
     adapters::{ADAPTERS, Adapter, State as AdapterState},
     defs::Kind,
 };
-use crate::server::App;
-
-type AppState = State<Arc<App>>;
+use crate::{ops::OpRoutes, server::App};
 
 pub const CONTROL: &str = "https://control.arugula.io";
 const TAILSCALE_ADMIN_DNS: &str = "https://login.tailscale.com/admin/dns";
@@ -59,53 +57,12 @@ const TAILSCALE_DOWNLOAD: &str = "https://tailscale.com/download";
 
 pub fn routes() -> Router<Arc<App>> {
     Router::new()
-        .route("/api/setup", get(status))
-        .route("/api/setup/tailscale", post(tailscale_serve))
-        .route("/api/setup/control", post(control_join))
-        .route("/api/setup/control/confirm", post(control_confirm))
-        .route("/api/setup/claude", post(claude_mcp))
-        .route("/api/setup/agents/{kind}", post(use_agent))
-}
-
-/// What a button did: done, or why not and what fixes it.
-#[derive(Serialize, Default)]
-struct Outcome {
-    ok: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    error: Option<String>,
-    /// A command for the person to run once (it needs sudo, say).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    fix: Option<String>,
-    /// A page for the person to open (Tailscale's admin console, say).
-    /// (Boxed: an `Err` of its own in `install` and `add_mcp`.)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    link: Option<Box<Link>>,
-    /// What changed, a line each (#335).
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    done: Vec<String>,
-}
-
-#[derive(Serialize, Clone)]
-struct Link {
-    label: String,
-    url: String,
-}
-
-impl Outcome {
-    fn ok() -> Self {
-        Self { ok: true, ..Default::default() }
-    }
-    fn err(e: impl Into<String>) -> Self {
-        Self { error: Some(e.into()), ..Default::default() }
-    }
-    fn fix(mut self, cmd: impl Into<String>) -> Self {
-        self.fix = Some(cmd.into());
-        self
-    }
-    fn link(mut self, label: &str, url: impl Into<String>) -> Self {
-        self.link = Some(Box::new(Link { label: label.into(), url: url.into() }));
-        self
-    }
+        .op::<SetupGet>()
+        .op::<SetupTailscale>()
+        .op::<SetupControl>()
+        .op::<SetupControlConfirm>()
+        .op::<SetupClaude>()
+        .op::<SetupAgent>()
 }
 
 #[derive(Serialize)]
@@ -304,39 +261,33 @@ fn serves(json: &str, port: u16) -> bool {
     })
 }
 
-async fn tailscale_serve(State(app): AppState) -> Json<Outcome> {
-    let Some(ts) = tailscale(&app).await else {
-        return Json(
-            Outcome::err("Tailscale isn't installed on this machine.").link("Get Tailscale", TAILSCALE_DOWNLOAD),
-        );
+pub(crate) async fn tailscale_serve(app: &Arc<App>) -> Outcome {
+    let Some(ts) = tailscale(app).await else {
+        return Outcome::err("Tailscale isn't installed on this machine.").link("Get Tailscale", TAILSCALE_DOWNLOAD);
     };
-    let st = tailscale_status(&app).await;
+    let st = tailscale_status(app).await;
     match st.state {
         "running" => {}
         "needs-login" => {
-            return Json(
-                Outcome::err("Tailscale is installed but not signed in.").fix(format!("{} up", tailscale_cmd(&ts))),
-            );
+            return Outcome::err("Tailscale is installed but not signed in.").fix(format!("{} up", tailscale_cmd(&ts)));
         }
-        _ => return Json(Outcome::err("Tailscale isn't running.").fix(format!("{} up", tailscale_cmd(&ts)))),
+        _ => return Outcome::err("Tailscale isn't running.").fix(format!("{} up", tailscale_cmd(&ts))),
     }
     if st.serving {
-        return Json(Outcome::ok());
+        return Outcome::ok();
     }
     if !st.https {
-        return Json(
-            Outcome::err("Turn on MagicDNS and HTTPS certificates for your tailnet first, then try again.")
-                .link("Tailscale's DNS settings", TAILSCALE_ADMIN_DNS),
-        );
+        return Outcome::err("Turn on MagicDNS and HTTPS certificates for your tailnet first, then try again.")
+            .link("Tailscale's DNS settings", TAILSCALE_ADMIN_DNS);
     }
-    let target = format!("http://127.0.0.1:{}", port(&app));
+    let target = format!("http://127.0.0.1:{}", port(app));
     // Serve may stop to ask for Serve to be turned on for the tailnet: it
     // prints the link and waits, so this gives up after a while and passes
     // the link on.
-    match run(&app, &ts, &["serve", "--bg", "--yes", "--https=443", &target], Duration::from_secs(20)).await {
-        Ok((true, _, _)) => Json(Outcome::ok()),
-        Ok((false, out, err)) => Json(serve_failed(&ts, &format!("{out}\n{err}"))),
-        Err(e) => Json(Outcome::err(e)),
+    match run(app, &ts, &["serve", "--bg", "--yes", "--https=443", &target], Duration::from_secs(20)).await {
+        Ok((true, _, _)) => Outcome::ok(),
+        Ok((false, out, err)) => serve_failed(&ts, &format!("{out}\n{err}")),
+        Err(e) => Outcome::err(e),
     }
 }
 
@@ -359,15 +310,6 @@ fn serve_failed(ts: &Path, said: &str) -> Outcome {
 }
 
 // ---- control
-
-#[derive(Deserialize, Default)]
-#[serde(default)]
-struct JoinReq {
-    /// Control's address (Arugula's cloud by default).
-    url: Option<String>,
-    /// A team to put it in ahead of time (its id).
-    team: Option<String>,
-}
 
 fn control_status(app: &App) -> ControlStatus {
     let state = control_state(app);
@@ -414,27 +356,26 @@ pub fn control_state(app: &App) -> crate::control::State {
     s
 }
 
-async fn control_join(State(app): AppState, body: Option<Json<JoinReq>>) -> Json<Value> {
-    let req = body.map(|Json(b)| b).unwrap_or_default();
+pub(crate) async fn control_join(app: &Arc<App>, req: ControlJoinRequest) -> Value {
     let dropped = app.control.state().is_dropped();
     if (app.control.enrolled().is_some() && !dropped) || APPROVED.lock().unwrap().is_some() {
-        return Json(serde_json::to_value(control_status(&app)).unwrap());
+        return serde_json::to_value(control_status(app)).unwrap();
     }
     // One at a time: asking again while a code is open returns that code.
     if let (Some(p), _) = &*JOIN.lock().unwrap()
         && p.expires_ms > now_ms()
     {
-        return Json(serde_json::json!({ "pending": p }));
+        return serde_json::json!({ "pending": p });
     }
     // Control dropped this machine (#325): set what it had aside, so the
     // join starts fresh.
     if dropped && let Err(e) = app.control.forget_dropped() {
         let e = format!("can't set the dropped enrollment aside: {e}");
         JOIN.lock().unwrap().1 = Some(e.clone());
-        return Json(serde_json::json!({ "error": e }));
+        return serde_json::json!({ "error": e });
     }
     let url = req.url.filter(|u| !u.trim().is_empty()).unwrap_or_else(|| app.control.default_url.clone());
-    Json(start_join(&app, &url, req.team.as_deref()).await)
+    start_join(app, &url, req.team.as_deref()).await
 }
 
 /// Control said this machine's key was removed (#330): ask `url` to add
@@ -505,17 +446,11 @@ async fn start_join(app: &Arc<App>, url: &str, team: Option<&str>) -> Value {
     }
 }
 
-#[derive(Deserialize)]
-struct ConfirmReq {
-    /// The fingerprint here is the one the approving device shows.
-    same: bool,
-}
-
 /// The person compared the account's fingerprints: save the join (where the
 /// running daemon picks it up), or drop it.
-async fn control_confirm(State(app): AppState, Json(req): Json<ConfirmReq>) -> Json<Value> {
+pub(crate) async fn control_confirm(app: &Arc<App>, req: ControlConfirmRequest) -> Value {
     let Some(a) = APPROVED.lock().unwrap().take() else {
-        return Json(serde_json::json!({ "control": control_status(&app) }));
+        return serde_json::json!({ "control": control_status(app) });
     };
     let error = if !req.same {
         let e = format!(
@@ -533,7 +468,7 @@ async fn control_confirm(State(app): AppState, Json(req): Json<ConfirmReq>) -> J
         r.err().map(|e| e.to_string())
     };
     JOIN.lock().unwrap().1 = error;
-    Json(serde_json::json!({ "control": control_status(&app) }))
+    serde_json::json!({ "control": control_status(app) })
 }
 
 // ---- claude code
@@ -583,11 +518,11 @@ async fn claude_status(app: &App) -> ClaudeStatus {
     ClaudeStatus { installed: true, tools: tools.is_some(), old: old.is_some() }
 }
 
-async fn claude_mcp(State(app): AppState) -> Json<Outcome> {
-    Json(match add_mcp(&app).await {
+pub(crate) async fn claude_mcp(app: &Arc<App>) -> Outcome {
+    match add_mcp(app).await {
         Ok(done) => Outcome { done, ..Outcome::ok() },
         Err(o) => o,
-    })
+    }
 }
 
 /// What `add_mcp` does, given what Claude Code has: `claude` arguments,
@@ -765,22 +700,22 @@ async fn install(app: &App, a: &'static Adapter) -> Result<Option<String>, Outco
 /// `POST /api/setup/agents/{kind}`: "Use Claude Code with Arugula" (or
 /// Codex): its adapter installed or brought up to the pin, and for Claude
 /// Code Arugula's MCP server added. Run by the person, never by itself.
-async fn use_agent(State(app): AppState, axum::extract::Path(kind): axum::extract::Path<String>) -> Json<Outcome> {
+pub(crate) async fn use_agent(app: &Arc<App>, kind: String) -> Outcome {
     let Some(a) = ADAPTERS.iter().find(|a| a.dir == kind || a.cli == kind) else {
-        return Json(Outcome::err(format!("no agent {kind} to set up (claude or codex)")));
+        return Outcome::err(format!("no agent {kind} to set up (claude or codex)"));
     };
     let mut done = Vec::new();
-    match install(&app, a).await {
+    match install(app, a).await {
         Ok(Some(line)) => done.push(line),
         Ok(None) => {}
-        Err(o) => return Json(o),
+        Err(o) => return o,
     }
     if a.kind == Kind::Claude {
-        match add_mcp(&app).await {
+        match add_mcp(app).await {
             Ok(lines) => done.extend(lines),
             Err(o) => {
                 done.extend(o.done.iter().cloned());
-                return Json(Outcome { done, ..o });
+                return Outcome { done, ..o };
             }
         }
     }
@@ -790,31 +725,22 @@ async fn use_agent(State(app): AppState, axum::extract::Path(kind): axum::extrac
             _ => format!("Already set up: {} runs as agent panes here.", a.label),
         });
     }
-    Json(Outcome { done, ..Outcome::ok() })
+    Outcome { done, ..Outcome::ok() }
 }
 
 // ---- status
 
-#[derive(Deserialize, Default)]
-#[serde(default)]
-struct StatusQuery {
-    /// `control`: only that (cheap, for polling while a join waits);
-    /// `agents`: Claude Code's MCP server and the adapters (#335). The
-    /// whole runs `tailscale`, `claude` and `node`.
-    part: Option<String>,
-}
-
-async fn status(State(app): AppState, Query(q): Query<StatusQuery>) -> Json<Value> {
+/// `GET /api/setup`: how far along each part is (`?part=` for one).
+pub(crate) async fn status(app: &Arc<App>, q: SetupQuery) -> Value {
     if q.part.as_deref() == Some("control") {
-        return Json(serde_json::json!({ "control": control_status(&app) }));
+        return serde_json::json!({ "control": control_status(app) });
     }
     if q.part.as_deref() == Some("agents") {
-        let (claude, adapters) = tokio::join!(claude_status(&app), adapters_status(&app));
-        return Json(serde_json::json!({ "claude": claude, "adapters": adapters }));
+        let (claude, adapters) = tokio::join!(claude_status(app), adapters_status(app));
+        return serde_json::json!({ "claude": claude, "adapters": adapters });
     }
-    let (tailscale, claude, adapters) =
-        tokio::join!(tailscale_status(&app), claude_status(&app), adapters_status(&app));
-    Json(serde_json::to_value(Status { tailscale, control: control_status(&app), claude, adapters }).unwrap())
+    let (tailscale, claude, adapters) = tokio::join!(tailscale_status(app), claude_status(app), adapters_status(app));
+    serde_json::to_value(Status { tailscale, control: control_status(app), claude, adapters }).unwrap()
 }
 
 #[cfg(test)]

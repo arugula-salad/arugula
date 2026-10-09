@@ -14,12 +14,15 @@ use std::path::PathBuf;
 use anyhow::{Context, bail};
 use arugula_proto::{
     api::Empty,
-    hosts::{AddHost, Host, HostList, HostToken, Invite, PromoteRequest, SandboxList, Transport},
+    hosts::{AddHost, HostList, Invite, PromoteRequest, Transport},
+    op::ops::{
+        HostAdd, HostRemove, HostTokenMint, HostTokenRevoke, HostsList, SandboxDemote, SandboxPromote, SandboxesList,
+    },
 };
 use clap::Subcommand;
 use serde_json::{Value, json};
 
-use crate::http::{Target, Url, request, request_as};
+use crate::http::{Target, Url, call_raw, request, send_op};
 
 #[derive(Subcommand)]
 pub enum HostsCmd {
@@ -76,7 +79,7 @@ pub enum SandboxesCmd {
 pub fn sandboxes(target: &Target, cmd: Option<SandboxesCmd>, json_out: bool) -> anyhow::Result<()> {
     let v = match cmd {
         None => {
-            let (list, v) = request(target, "GET", "/api/sandboxes", None)?.parse_raw::<SandboxList>()?;
+            let (list, v) = call_raw::<SandboxesList>(target, &(), &Empty {})?;
             if !json_out {
                 let p = &list.provider;
                 println!(
@@ -94,9 +97,7 @@ pub fn sandboxes(target: &Target, cmd: Option<SandboxesCmd>, json_out: bool) -> 
         }
         Some(SandboxesCmd::Promote { sandbox, name, port }) => {
             let body = PromoteRequest { host: name, port };
-            let (host, v) =
-                request_as(target, "POST", &format!("/api/sandboxes/{}/promote", crate::http::enc(&sandbox)), &body)?
-                    .parse_raw::<Host>()?;
+            let (host, v) = call_raw::<SandboxPromote>(target, &crate::http::enc(&sandbox), &body)?;
             if !json_out {
                 println!("{} is resident in {sandbox}: `arugula --host {0} …`", or_unknown(&host.name));
                 return Ok(());
@@ -104,8 +105,7 @@ pub fn sandboxes(target: &Target, cmd: Option<SandboxesCmd>, json_out: bool) -> 
             v
         }
         Some(SandboxesCmd::Demote { sandbox }) => {
-            request(target, "DELETE", &format!("/api/sandboxes/{}/resident", crate::http::enc(&sandbox)), None)?
-                .json()?
+            call_raw::<SandboxDemote>(target, &crate::http::enc(&sandbox), &Empty {})?.1
         }
     };
     if json_out {
@@ -123,7 +123,7 @@ pub fn target(socket: PathBuf, host: Option<&str>) -> anyhow::Result<Target> {
     }
     // The local daemon's list first; then control's directory (M49), which
     // needs no local daemon at all.
-    let list = request(&local, "GET", "/api/hosts", None).and_then(|r| r.parse::<HostList>());
+    let list = send_op::<HostsList>(&local, &(), &Empty {}).and_then(|r| r.parse::<HostList>());
     if let Ok(l) = &list
         && l.this == host
     {
@@ -208,7 +208,7 @@ pub fn run(
         None => {
             // This daemon's list (if one runs here), and control's
             // directory (if this CLI is logged in), marked apart.
-            let local = request(target, "GET", "/api/hosts", None).and_then(|r| r.parse_raw::<HostList>());
+            let local = send_op::<HostsList>(target, &(), &Empty {}).and_then(|r| r.parse_raw::<HostList>());
             let control = crate::control::listing();
             let local = match (local, &control) {
                 (Ok(l), _) => Some(l),
@@ -283,15 +283,13 @@ pub fn run(
             let [dest] = urls.as_slice() else { bail!("an ssh host has one ssh:// destination and no other URL") };
             let dest = crate::ssh::Remote::parse(dest)?.dest;
             let body = AddHost { name, urls: vec![], transport: Transport::Ssh, ssh: Some(dest) };
-            request_as(target, "POST", "/api/hosts", &body)?.parse_raw::<Host>()?.1
+            call_raw::<HostAdd>(target, &(), &body)?.1
         }
         Some(HostsCmd::Add { name, urls }) => {
             let body = AddHost { name, urls, transport: Transport::Tailnet, ssh: None };
-            request_as(target, "POST", "/api/hosts", &body)?.parse_raw::<Host>()?.1
+            call_raw::<HostAdd>(target, &(), &body)?.1
         }
-        Some(HostsCmd::Rm { name }) => {
-            request(target, "DELETE", &format!("/api/hosts/{}", crate::http::enc(&name)), None)?.parse_raw::<Empty>()?.1
-        }
+        Some(HostsCmd::Rm { name }) => call_raw::<HostRemove>(target, &crate::http::enc(&name), &Empty {})?.1,
         Some(HostsCmd::Invite { ttl }) => {
             let (invite, v) = request(target, "POST", &format!("/api/hosts/invite?ttl={}", secs(&ttl)?), None)?
                 .parse_raw::<Invite>()?;
@@ -302,19 +300,14 @@ pub fn run(
             v
         }
         Some(HostsCmd::Token { name }) => {
-            let path = format!("/api/hosts/{}/token", crate::http::enc(&name));
-            let (minted, v) = request(target, "POST", &path, None)?.parse_raw::<HostToken>()?;
+            let (minted, v) = call_raw::<HostTokenMint>(target, &crate::http::enc(&name), &Empty {})?;
             if !json_out {
                 println!("{}", minted.token);
                 return Ok(());
             }
             v
         }
-        Some(HostsCmd::Revoke { name }) => {
-            request(target, "DELETE", &format!("/api/hosts/{}/token", crate::http::enc(&name)), None)?
-                .parse_raw::<Empty>()?
-                .1
-        }
+        Some(HostsCmd::Revoke { name }) => call_raw::<HostTokenRevoke>(target, &crate::http::enc(&name), &Empty {})?.1,
     };
     if json_out {
         println!("{}", serde_json::to_string_pretty(&v).unwrap_or_default());
@@ -343,7 +336,7 @@ pub fn each(
     mut each: impl FnMut(&str, Answer),
 ) -> anyhow::Result<()> {
     let local = Target::Socket(socket.clone());
-    let list: HostList = request(&local, "GET", "/api/hosts", None)?.parse()?;
+    let list: HostList = send_op::<HostsList>(&local, &(), &Empty {})?.parse()?;
     let mut names = vec![if list.this.is_empty() { "this".to_owned() } else { list.this.clone() }];
     let (tx, rx) = std::sync::mpsc::channel();
     for h in &list.hosts {

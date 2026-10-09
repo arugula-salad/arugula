@@ -8,6 +8,7 @@ use std::{
     },
 };
 
+use arugula_proto::op::ops::SigninLinkGet;
 use arugula_proto::{ClientId, ClientMsg, Frame, FrameKind};
 use axum::{
     Extension, Router,
@@ -30,6 +31,7 @@ use crate::{
     acl::Principal,
     hosts::Hosts,
     mux::{Cmd, MuxHandle},
+    ops::OpRoutes,
     pane::{Subscriber, ToClient, client_queue},
     tailscale::Identify,
 };
@@ -165,7 +167,7 @@ pub fn local_router(app: Arc<App>) -> Router {
         // Editors on this machine join the swarm here (M28).
         .route("/api/editors/connect", get(crate::editor::link::connect))
         // `arugula web`: only over the socket, which is the owner's.
-        .route("/api/signin-link", get(signin_link))
+        .op::<SigninLinkGet>()
         // Stop: save every pane and exit, as on Ctrl-C (an upgrade on
         // Windows, where there's no service manager to ask; M59).
         .route("/api/daemon/stop", axum::routing::post(stop))
@@ -438,16 +440,6 @@ async fn signin(State(app): State<Arc<App>>, axum::extract::Query(q): axum::extr
 async fn stop() -> &'static str {
     crate::STOP.notify_one();
     "stopping"
-}
-
-/// `arugula web`'s link: the local token in a sign-in link.
-async fn signin_link(State(app): State<Arc<App>>) -> Response {
-    match app.access.signin_link() {
-        Some(url) => axum::Json(serde_json::json!({ "url": url })).into_response(),
-        None => {
-            (StatusCode::NOT_FOUND, "this daemon has no local token (it's reached through a tunnel)").into_response()
-        }
-    }
 }
 
 async fn asset(uri: Uri) -> Response {

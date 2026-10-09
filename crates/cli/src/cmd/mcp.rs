@@ -1,12 +1,16 @@
 //! `arugula mcp`: an MCP server on stdio, and tokens for MCP clients that reach `/mcp` over HTTP.
 
 use super::Ctx;
-use crate::http::{enc, request};
+use crate::http::{enc, request_op, send_op};
 use crate::{
     mcp,
     util::{print_json, time},
 };
 use anyhow::bail;
+use arugula_proto::{
+    api::Empty,
+    op::ops::{McpTokenMint, McpTokenRevoke, McpTokensList},
+};
 use serde_json::json;
 
 #[derive(clap::Subcommand)]
@@ -45,7 +49,7 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
     match args {
         Args { token, cmd: None } => return mcp::run(sock, token),
         Args { cmd: Some(McpCmd::Token { list: true, .. }), .. } => {
-            let v = request(&sock, "GET", "/api/mcp/tokens", None)?.json()?;
+            let v = send_op::<McpTokensList>(&sock, &(), &Empty {})?.json()?;
             if json_out {
                 print_json(&v);
                 return Ok(0);
@@ -65,15 +69,14 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
             }
         }
         Args { cmd: Some(McpCmd::Token { revoke: Some(name), .. }), .. } => {
-            request(&sock, "DELETE", &format!("/api/mcp/tokens/{}", enc(&name)), None)?.json()?;
+            send_op::<McpTokenRevoke>(&sock, &enc(&name), &Empty {})?.json()?;
             eprintln!("revoked {name}: a client using it is cut off at its next call");
         }
         Args { cmd: Some(McpCmd::Token { name, scope, .. }), .. } => {
             if !matches!(scope.as_str(), "full" | "read") {
                 bail!("--scope: full or read");
             }
-            let v =
-                request(&sock, "POST", "/api/mcp/tokens", Some(&json!({ "name": name, "scope": scope })))?.json()?;
+            let v = request_op::<McpTokenMint>(&sock, &(), &json!({ "name": name, "scope": scope }))?.json()?;
             if json_out {
                 print_json(&v);
                 return Ok(0);

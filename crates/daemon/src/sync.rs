@@ -38,7 +38,7 @@ use axum::{
     extract::{Path as UrlPath, Query, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
-    routing::{delete, get, post},
+    routing::{get, post},
 };
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -416,14 +416,16 @@ type AppState = State<Arc<App>>;
 pub const PUSH_PREFIX: &str = "/api/sync/";
 
 pub fn routes() -> Router<Arc<App>> {
+    use crate::ops::OpRoutes;
+    use arugula_proto::op::ops::{SyncedForget, SyncedList, SyncedRotate};
     Router::new()
         .route("/api/sync/state", get(state))
         .route("/api/sync/{pane}/log", post(push_log))
         .route("/api/sync/{pane}/index", post(push_index))
         .route("/api/sync/{pane}/closed", post(push_closed))
-        .route("/api/synced", get(list))
-        .route("/api/synced/rotate-key", post(rotate))
-        .route("/api/synced/{host}", delete(forget))
+        .op::<SyncedList>()
+        .op::<SyncedRotate>()
+        .op::<SyncedForget>()
 }
 
 fn error(status: StatusCode, msg: impl Into<String>) -> Response {
@@ -514,27 +516,6 @@ async fn push_closed(
     };
     match app.synced.push_closed(&host, pane, q.at) {
         Ok(p) => Json(p).into_response(),
-        Err(e) => error(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
-    }
-}
-
-async fn list(State(app): AppState) -> Json<Vec<SyncedHost>> {
-    Json(app.synced.hosts())
-}
-
-async fn forget(State(app): AppState, UrlPath(host): UrlPath<String>) -> Response {
-    if app.synced.remove_host(&host) {
-        Json(serde_json::json!({})).into_response()
-    } else {
-        error(StatusCode::NOT_FOUND, format!("no synced history from {host}"))
-    }
-}
-
-async fn rotate(State(app): AppState) -> Response {
-    let synced = app.synced.clone();
-    match tokio::task::spawn_blocking(move || synced.rotate()).await {
-        Ok(Ok(id)) => Json(serde_json::json!({ "key": id })).into_response(),
-        Ok(Err(e)) => error(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
         Err(e) => error(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
     }
 }

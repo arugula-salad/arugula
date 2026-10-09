@@ -24,8 +24,9 @@ use std::{
 };
 
 use arugula_proto::{
-    BlockType, EventKind, Frame, FrameKind, PaneId, ServerMsg,
-    api::{Share, ShareRequest},
+    EventKind, Frame, FrameKind, PaneId, ServerMsg,
+    api::Share,
+    op::ops::{ShareMint, ShareRevoke, SharesList},
 };
 use axum::{
     Json, Router,
@@ -36,7 +37,7 @@ use axum::{
     },
     http::{HeaderMap, HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
-    routing::{delete, get},
+    routing::get,
 };
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
@@ -45,12 +46,13 @@ use tracing::{info, warn};
 use crate::{
     hosts::digest,
     mux::Api,
+    ops::OpRoutes,
     pane::{Subscriber, ToClient, client_queue},
     server::App,
     store::{now_ms, write_atomic},
 };
 
-const DEFAULT_TTL_SECS: u64 = 3600;
+pub(crate) const DEFAULT_TTL_SECS: u64 = 3600;
 const MAX_TTL_SECS: u64 = 7 * 24 * 3600;
 /// Path prefix of everything a viewer reaches.
 pub const PREFIX: &str = "/share/";
@@ -179,7 +181,7 @@ type AppState = State<Arc<App>>;
 
 /// The owner's: minting, listing, revoking.
 pub fn api_routes() -> Router<Arc<App>> {
-    Router::new().route("/api/shares", get(list).post(mint)).route("/api/shares/{id}", delete(revoke))
+    Router::new().op::<SharesList>().op::<ShareMint>().op::<ShareRevoke>()
 }
 
 /// A viewer's: the page and its WebSocket.
@@ -189,35 +191,6 @@ pub fn viewer_routes() -> Router<Arc<App>> {
 
 fn error(status: StatusCode, msg: impl Into<String>) -> Response {
     (status, Json(serde_json::json!({ "error": msg.into() }))).into_response()
-}
-
-async fn mint(State(app): AppState, Json(req): Json<ShareRequest>) -> Response {
-    let summaries = app.mux.api(Api::Panes).await.unwrap_or_default();
-    match summaries.iter().find(|p| p.info.id == req.pane) {
-        None => return error(StatusCode::NOT_FOUND, format!("no pane %{}", req.pane)),
-        Some(p) if p.info.kind != BlockType::Terminal => {
-            return error(
-                StatusCode::BAD_REQUEST,
-                format!("%{} isn't a terminal; only terminals can be shared", req.pane),
-            );
-        }
-        Some(_) => {}
-    }
-    let mut share = app.shares.mint(req.pane, req.ttl_secs.unwrap_or(DEFAULT_TTL_SECS).max(1));
-    share.url = share.path.as_ref().map(|p| format!("{}{p}", app.access.page_origin()));
-    Json(share).into_response()
-}
-
-async fn list(State(app): AppState) -> Json<Vec<Share>> {
-    Json(app.shares.list())
-}
-
-async fn revoke(State(app): AppState, Path(id): Path<u32>) -> Response {
-    if app.shares.revoke(id) {
-        Json(serde_json::json!({})).into_response()
-    } else {
-        error(StatusCode::NOT_FOUND, format!("no share {id}"))
-    }
 }
 
 fn gone() -> Response {

@@ -166,11 +166,55 @@ impl Request for crate::api::FountainQuery {}
 
 impl Request for crate::api::NotifyRequest {}
 
+impl Request for crate::api::StudioLoginRequest {}
+
+impl Request for crate::api::FollowerLinkRequest {}
+
+/// A promote's body may be left off (`Content-Type` and all).
+impl Request for crate::hosts::PromoteRequest {
+    fn absent() -> Option<Self> {
+        Some(Self::default())
+    }
+}
+
 impl Request for crate::api::InstallAdapterRequest {
     fn absent() -> Option<Self> {
         Some(Self::default())
     }
 }
+
+// #578 part a: fs, hosts, setup.
+impl Request for crate::fs::FsQuery {}
+
+impl Request for crate::fs::CdRequest {}
+
+impl Request for crate::hosts::AddHost {}
+
+impl Request for crate::setup::SetupQuery {}
+
+/// The body may be left off (the page sends none to start a join).
+impl Request for crate::setup::ControlJoinRequest {
+    fn absent() -> Option<Self> {
+        Some(Self::default())
+    }
+}
+
+impl Request for crate::setup::ControlConfirmRequest {}
+
+// #578 part b: access and credentials.
+impl Request for crate::api::ShareRequest {}
+
+impl Request for crate::api::GuestInviteRequest {}
+
+impl Request for crate::api::AclSetRequest {}
+
+impl Request for crate::api::LinkRequest {}
+
+impl Request for crate::api::InviteRequest {}
+
+impl Request for crate::api::TeamPinsRequest {}
+
+impl Request for crate::api::McpTokenRequest {}
 
 /// One operation's wire half.
 pub trait Op: Send + Sync + 'static {
@@ -209,15 +253,19 @@ pub mod ops {
     use crate::{
         Machine, PaneId,
         api::{
-            Adapters, AgentsInventory, AskAnswer, AskRequest, AttentionRequest, ConversationList, ConversationsQuery,
-            DetectionAnswer, DriverEntry, Empty, FollowUpRequest, FollowedUp, FountainAgents, FountainQuery, IdeDiffs,
-            IdeDiffsRequest, IdeInfo, IdeMentionRequest, IdeMentioned, InboxAnswer, InstallAdapterRequest, KeysRequest,
-            MouseRequest, NotifyPref, NotifyRequest, OpenConversationRequest, OpenConversationResponse, PaneDiff,
-            PaneSummary, PermitAnswer, PermitRequest, Process, PromptRequest, PromptResult, PushKey, PushSubscriptions,
-            Rules, RunResponse, SendRequest, ShellEnv, Subscription, ThreadMessages, ThreadPostRequest, ThreadPosted,
-            ThreadReadRequest, WaitRequest, WaitResult, WithdrawRequest,
+            AclSetRequest, Adapters, AgentsInventory, AskAnswer, AskRequest, AttentionRequest, ConversationList,
+            ConversationsQuery, DetectionAnswer, DriverEntry, Empty, FollowUpRequest, FollowedUp, FollowerLinkRequest,
+            FountainAgents, FountainQuery, GuestInvite, GuestInviteRequest, IdeDiffs, IdeDiffsRequest, IdeInfo,
+            IdeMentionRequest, IdeMentioned, InboxAnswer, InstallAdapterRequest, InviteRequest, Invited, KeysRequest,
+            LinkRequest, McpTokenRequest, MouseRequest, NotifyPref, NotifyRequest, OpenConversationRequest,
+            OpenConversationResponse, PaneDiff, PaneSummary, PermitAnswer, PermitRequest, Process, PromptRequest,
+            PromptResult, PushKey, PushSubscriptions, Rules, RunResponse, SendRequest, Share, ShareRequest, ShellEnv,
+            SigninLink, StudioApps, StudioLoggedIn, StudioLoginRequest, StudioStatus, Subscription, SyncedHost,
+            SyncedRotated, TeamPins, TeamPinsRequest, ThreadMessages, ThreadPostRequest, ThreadPosted,
+            ThreadReadRequest, TokenInfo, WaitRequest, WaitResult, WithdrawRequest,
         },
         flags::{FlagInfo, FlagSetRequest},
+        hosts::{Demoted, Host, PromoteRequest, SandboxList},
     };
 
     /// `GET /api/panes`: every pane and block (`arugula ls`, MCP's `list`
@@ -849,6 +897,619 @@ pub mod ops {
         type Path = ();
         type Req = NotifyRequest;
         type Res = NotifyPref;
+    }
+    // #578 part a: fs, hosts, setup.
+
+    /// `GET /api/fs/list` (M7): a directory's entries, on this host or the one a
+    /// pane or machine names (`arugula fs ls`). The query string is the request.
+    pub struct FsListGet;
+
+    impl Op for FsListGet {
+        const NAME: &'static str = "fs.list";
+        const METHOD: Method = Method::Get;
+        const PATH: &'static str = "/api/fs/list";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = crate::fs::FsQuery;
+        type Res = crate::fs::FsList;
+    }
+
+    /// `GET /api/fs/stat` (M7): one file or directory (`arugula fs stat`).
+    pub struct FsStatGet;
+
+    impl Op for FsStatGet {
+        const NAME: &'static str = "fs.stat";
+        const METHOD: Method = Method::Get;
+        const PATH: &'static str = "/api/fs/stat";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = crate::fs::FsQuery;
+        type Res = crate::fs::FsEntry;
+    }
+
+    /// `GET /api/fs/recent` (M7): directories used lately on a host, newest
+    /// first (`arugula fs recent`).
+    pub struct FsRecentGet;
+
+    impl Op for FsRecentGet {
+        const NAME: &'static str = "fs.recent";
+        const METHOD: Method = Method::Get;
+        const PATH: &'static str = "/api/fs/recent";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = crate::fs::FsQuery;
+        type Res = Vec<String>;
+    }
+
+    /// `POST /api/panes/N/cd` (M7): `cd` typed into a shell waiting at its
+    /// prompt (`arugula cd`). An editor's on the pane; it isn't `DRIVES`.
+    pub struct PaneCd;
+
+    impl Op for PaneCd {
+        const NAME: &'static str = "pane.cd";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/panes/{id}/cd";
+        const ACCESS: Access = Access::Pane(Role::Editor);
+        type Path = PaneId;
+        type Req = crate::fs::CdRequest;
+        type Res = Empty;
+    }
+
+    /// `GET /api/host`: who this daemon is. Anyone who reached it may ask; the
+    /// owner also hears how it stands with control (#325).
+    pub struct HostGet;
+
+    impl Op for HostGet {
+        const NAME: &'static str = "host.get";
+        const METHOD: Method = Method::Get;
+        const PATH: &'static str = "/api/host";
+        const ACCESS: Access = Access::Anyone;
+        type Path = ();
+        type Req = Empty;
+        type Res = crate::hosts::HostAnswer;
+    }
+
+    /// `GET /api/hosts`: the daemons a client can switch between (`arugula hosts`).
+    pub struct HostsList;
+
+    impl Op for HostsList {
+        const NAME: &'static str = "hosts.list";
+        const METHOD: Method = Method::Get;
+        const PATH: &'static str = "/api/hosts";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = Empty;
+        type Res = crate::hosts::HostList;
+    }
+
+    /// `POST /api/hosts`: add a host, replacing one with the same name
+    /// (`arugula hosts add`).
+    pub struct HostAdd;
+
+    impl Op for HostAdd {
+        const NAME: &'static str = "host.add";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/hosts";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = crate::hosts::AddHost;
+        type Res = crate::hosts::Host;
+    }
+
+    /// `DELETE /api/hosts/NAME`: drop a host and its tunnel (`arugula hosts rm`).
+    pub struct HostRemove;
+
+    impl Op for HostRemove {
+        const NAME: &'static str = "host.remove";
+        const METHOD: Method = Method::Delete;
+        const PATH: &'static str = "/api/hosts/{name}";
+        const ACCESS: Access = Access::Owner;
+        type Path = String;
+        type Req = Empty;
+        type Res = Empty;
+    }
+
+    /// `POST /api/hosts/NAME/token` (M4c): mint the per-host token that lets one
+    /// host dial in, replacing the last (`arugula hosts token`). A POST, so
+    /// not read-only whatever it hands back.
+    pub struct HostTokenMint;
+
+    impl Op for HostTokenMint {
+        const NAME: &'static str = "host_token.mint";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/hosts/{name}/token";
+        const ACCESS: Access = Access::Owner;
+        type Path = String;
+        type Req = Empty;
+        type Res = crate::hosts::HostToken;
+    }
+
+    /// `DELETE /api/hosts/NAME/token`: revoke it and drop the host's dial-out
+    /// connection (`arugula hosts revoke`).
+    pub struct HostTokenRevoke;
+
+    impl Op for HostTokenRevoke {
+        const NAME: &'static str = "host_token.revoke";
+        const METHOD: Method = Method::Delete;
+        const PATH: &'static str = "/api/hosts/{name}/token";
+        const ACCESS: Access = Access::Owner;
+        type Path = String;
+        type Req = Empty;
+        type Res = Empty;
+    }
+
+    /// `GET /api/setup`: how far along each part of Getting started is;
+    /// `?part=control` or `?part=agents` for one part. A JSON object whose keys
+    /// depend on the part.
+    pub struct SetupGet;
+
+    impl Op for SetupGet {
+        const NAME: &'static str = "setup.get";
+        const METHOD: Method = Method::Get;
+        const PATH: &'static str = "/api/setup";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = crate::setup::SetupQuery;
+        type Res = serde_json::Value;
+    }
+
+    /// `POST /api/setup/tailscale`: `tailscale serve` in front of this daemon.
+    pub struct SetupTailscale;
+
+    impl Op for SetupTailscale {
+        const NAME: &'static str = "setup.tailscale";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/setup/tailscale";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = Empty;
+        type Res = crate::setup::Outcome;
+    }
+
+    /// `POST /api/setup/control`: ask Arugula control to add this machine; the
+    /// answer is the code and where to approve it. The body may be left off.
+    pub struct SetupControl;
+
+    impl Op for SetupControl {
+        const NAME: &'static str = "setup.control";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/setup/control";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = crate::setup::ControlJoinRequest;
+        type Res = serde_json::Value;
+    }
+
+    /// `POST /api/setup/control/confirm`: save the join, or drop it, once the
+    /// person has compared the account's fingerprints.
+    pub struct SetupControlConfirm;
+
+    impl Op for SetupControlConfirm {
+        const NAME: &'static str = "setup.control_confirm";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/setup/control/confirm";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = crate::setup::ControlConfirmRequest;
+        type Res = serde_json::Value;
+    }
+
+    /// `POST /api/setup/claude`: add Arugula's MCP server to Claude Code.
+    pub struct SetupClaude;
+
+    impl Op for SetupClaude {
+        const NAME: &'static str = "setup.claude";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/setup/claude";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = Empty;
+        type Res = crate::setup::Outcome;
+    }
+
+    /// `POST /api/setup/agents/KIND` (#335): an agent's adapter installed or
+    /// brought up to the pin, and for Claude Code the MCP server added
+    /// (`arugula setup`).
+    pub struct SetupAgent;
+
+    impl Op for SetupAgent {
+        const NAME: &'static str = "setup.agent";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/setup/agents/{kind}";
+        const ACCESS: Access = Access::Owner;
+        type Path = String;
+        type Req = Empty;
+        type Res = crate::setup::Outcome;
+    }
+
+    // #578 part b: access and credentials. Every one is the owner's (the
+    // default of `authz`'s policy, which had no arm for any of them).
+
+    /// `GET /api/shares`: the read-only share links made here, without their
+    /// tokens. A credential: a link is access.
+    pub struct SharesList;
+
+    impl Op for SharesList {
+        const NAME: &'static str = "shares.list";
+        const METHOD: Method = Method::Get;
+        const PATH: &'static str = "/api/shares";
+        const ACCESS: Access = Access::Owner;
+        const CREDENTIAL: bool = true;
+        type Path = ();
+        type Req = Empty;
+        type Res = Vec<Share>;
+    }
+
+    /// `POST /api/shares`: a read-only link to one terminal pane (`arugula
+    /// share`).
+    pub struct ShareMint;
+
+    impl Op for ShareMint {
+        const NAME: &'static str = "share.mint";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/shares";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = ShareRequest;
+        type Res = Share;
+    }
+
+    /// `DELETE /api/shares/N`: end a share link now (`arugula shares revoke`).
+    pub struct ShareRevoke;
+
+    impl Op for ShareRevoke {
+        const NAME: &'static str = "share.revoke";
+        const METHOD: Method = Method::Delete;
+        const PATH: &'static str = "/api/shares/{id}";
+        const ACCESS: Access = Access::Owner;
+        type Path = u32;
+        type Req = Empty;
+        type Res = Empty;
+    }
+
+    /// `GET /api/guests` (M65): the ssh invites made here. A credential. A
+    /// build without Labs answers 501 to every method.
+    pub struct GuestsList;
+
+    impl Op for GuestsList {
+        const NAME: &'static str = "guests.list";
+        const METHOD: Method = Method::Get;
+        const PATH: &'static str = "/api/guests";
+        const ACCESS: Access = Access::Owner;
+        const CREDENTIAL: bool = true;
+        type Path = ();
+        type Req = Empty;
+        type Res = Vec<GuestInvite>;
+    }
+
+    /// `POST /api/guests`: an ssh invite to one terminal pane (`arugula share
+    /// --guest`).
+    pub struct GuestMint;
+
+    impl Op for GuestMint {
+        const NAME: &'static str = "guest.mint";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/guests";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = GuestInviteRequest;
+        type Res = GuestInvite;
+    }
+
+    /// `DELETE /api/guests/N`: end an ssh invite (`arugula guests revoke`).
+    pub struct GuestRevoke;
+
+    impl Op for GuestRevoke {
+        const NAME: &'static str = "guest.revoke";
+        const METHOD: Method = Method::Delete;
+        const PATH: &'static str = "/api/guests/{id}";
+        const ACCESS: Access = Access::Owner;
+        type Path = u32;
+        type Req = Empty;
+        type Res = Empty;
+    }
+
+    /// `GET /api/acl`: who may do what in each session, the audit log and the
+    /// devices that called (`arugula access`).
+    pub struct AclGet;
+
+    impl Op for AclGet {
+        const NAME: &'static str = "acl.get";
+        const METHOD: Method = Method::Get;
+        const PATH: &'static str = "/api/acl";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = Empty;
+        type Res = serde_json::Value;
+    }
+
+    /// `POST /api/acl`: give someone a role on a session, or take it away.
+    pub struct AclSet;
+
+    impl Op for AclSet {
+        const NAME: &'static str = "acl.set";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/acl";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = AclSetRequest;
+        type Res = serde_json::Value;
+    }
+
+    /// `POST /api/links` (M19): a read-only link to one session, for a
+    /// browser that holds the key.
+    pub struct LinkMint;
+
+    impl Op for LinkMint {
+        const NAME: &'static str = "link.mint";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/links";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = LinkRequest;
+        type Res = serde_json::Value;
+    }
+
+    /// `POST /api/invite` (#233): share a session with someone and tell them
+    /// (`arugula invite`). An agent asks the user instead (the handler
+    /// refuses it).
+    pub struct InviteSend;
+
+    impl Op for InviteSend {
+        const NAME: &'static str = "invite.send";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/invite";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = InviteRequest;
+        type Res = Invited;
+    }
+
+    /// `GET /api/team-pins` (#233): the teams pinned here.
+    pub struct TeamPinsGet;
+
+    impl Op for TeamPinsGet {
+        const NAME: &'static str = "team_pins.get";
+        const METHOD: Method = Method::Get;
+        const PATH: &'static str = "/api/team-pins";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = Empty;
+        type Res = TeamPins;
+    }
+
+    /// `POST /api/team-pins`: the teams the owner's browser pinned, and those
+    /// it left.
+    pub struct TeamPinsSet;
+
+    impl Op for TeamPinsSet {
+        const NAME: &'static str = "team_pins.set";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/team-pins";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = TeamPinsRequest;
+        type Res = TeamPins;
+    }
+
+    /// `GET /api/mcp/tokens` (M16): the client tokens made here, without the
+    /// tokens. A credential.
+    pub struct McpTokensList;
+
+    impl Op for McpTokensList {
+        const NAME: &'static str = "mcp_tokens.list";
+        const METHOD: Method = Method::Get;
+        const PATH: &'static str = "/api/mcp/tokens";
+        const ACCESS: Access = Access::Owner;
+        const CREDENTIAL: bool = true;
+        type Path = ();
+        type Req = Empty;
+        type Res = Vec<TokenInfo>;
+    }
+
+    /// `POST /api/mcp/tokens`: a token for an MCP client (`arugula mcp
+    /// token`); a token of the same name is replaced.
+    pub struct McpTokenMint;
+
+    impl Op for McpTokenMint {
+        const NAME: &'static str = "mcp_token.mint";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/mcp/tokens";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = McpTokenRequest;
+        type Res = TokenInfo;
+    }
+
+    /// `DELETE /api/mcp/tokens/NAME`: cut a client token off.
+    pub struct McpTokenRevoke;
+
+    impl Op for McpTokenRevoke {
+        const NAME: &'static str = "mcp_token.revoke";
+        const METHOD: Method = Method::Delete;
+        const PATH: &'static str = "/api/mcp/tokens/{name}";
+        const ACCESS: Access = Access::Owner;
+        type Path = String;
+        type Req = Empty;
+        type Res = Empty;
+    }
+
+    /// `GET /api/signin-link`: the link that signs a browser in here
+    /// (`arugula web`). A credential, and served over the Unix socket only:
+    /// `authz` never sees a socket request, so its `ACCESS` is what the
+    /// socket's owner is.
+    pub struct SigninLinkGet;
+
+    impl Op for SigninLinkGet {
+        const NAME: &'static str = "signin_link.get";
+        const METHOD: Method = Method::Get;
+        const PATH: &'static str = "/api/signin-link";
+        const ACCESS: Access = Access::Owner;
+        const CREDENTIAL: bool = true;
+        type Path = ();
+        type Req = Empty;
+        type Res = SigninLink;
+    }
+
+    // #578 part c: the home daemon's synced history and sandboxes, and studio.
+
+    /// `GET /api/synced`: the hosts whose history this daemon keeps
+    /// (`arugula synced`).
+    pub struct SyncedList;
+
+    impl Op for SyncedList {
+        const NAME: &'static str = "synced.list";
+        const METHOD: Method = Method::Get;
+        const PATH: &'static str = "/api/synced";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = Empty;
+        type Res = Vec<SyncedHost>;
+    }
+
+    /// `POST /api/synced/rotate-key`: re-encrypt it all under a new key.
+    pub struct SyncedRotate;
+
+    impl Op for SyncedRotate {
+        const NAME: &'static str = "synced.rotate";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/synced/rotate-key";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = Empty;
+        type Res = SyncedRotated;
+    }
+
+    /// `DELETE /api/synced/NAME`: forget a host's synced history.
+    pub struct SyncedForget;
+
+    impl Op for SyncedForget {
+        const NAME: &'static str = "synced.forget";
+        const METHOD: Method = Method::Delete;
+        const PATH: &'static str = "/api/synced/{host}";
+        const ACCESS: Access = Access::Owner;
+        type Path = String;
+        type Req = Empty;
+        type Res = Empty;
+    }
+
+    /// `GET /api/sandboxes`: the provider's sandboxes (`arugula sandboxes`).
+    /// Labs; home daemons only.
+    pub struct SandboxesList;
+
+    impl Op for SandboxesList {
+        const NAME: &'static str = "sandboxes.list";
+        const METHOD: Method = Method::Get;
+        const PATH: &'static str = "/api/sandboxes";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = Empty;
+        type Res = SandboxList;
+    }
+
+    /// `POST /api/sandboxes/NAME/promote`: keep a daemon running in a sandbox.
+    pub struct SandboxPromote;
+
+    impl Op for SandboxPromote {
+        const NAME: &'static str = "sandbox.promote";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/sandboxes/{name}/promote";
+        const ACCESS: Access = Access::Owner;
+        type Path = String;
+        type Req = PromoteRequest;
+        type Res = Host;
+    }
+
+    /// `DELETE /api/sandboxes/NAME/resident`: stop that daemon, take its host off the list.
+    pub struct SandboxDemote;
+
+    impl Op for SandboxDemote {
+        const NAME: &'static str = "sandbox.demote";
+        const METHOD: Method = Method::Delete;
+        const PATH: &'static str = "/api/sandboxes/{name}/resident";
+        const ACCESS: Access = Access::Owner;
+        type Path = String;
+        type Req = Empty;
+        type Res = Demoted;
+    }
+
+    /// `GET /api/studio` (M35): which studio, and whether there's a token.
+    /// Labs. A way into a studio box is the owner's.
+    pub struct StudioGet;
+
+    impl Op for StudioGet {
+        const NAME: &'static str = "studio.get";
+        const METHOD: Method = Method::Get;
+        const PATH: &'static str = "/api/studio";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = Empty;
+        type Res = StudioStatus;
+    }
+
+    /// `POST /api/studio`: keep a studio token (`arugula studio login`).
+    pub struct StudioLogin;
+
+    impl Op for StudioLogin {
+        const NAME: &'static str = "studio.login";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/studio";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = StudioLoginRequest;
+        type Res = StudioLoggedIn;
+    }
+
+    /// `DELETE /api/studio`: forget the token and every follower link.
+    pub struct StudioLogout;
+
+    impl Op for StudioLogout {
+        const NAME: &'static str = "studio.logout";
+        const METHOD: Method = Method::Delete;
+        const PATH: &'static str = "/api/studio";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = Empty;
+        type Res = Empty;
+    }
+
+    /// `GET /api/studio/apps`: the person's apps, with the blocks that show them.
+    pub struct StudioAppsList;
+
+    impl Op for StudioAppsList {
+        const NAME: &'static str = "studio.apps";
+        const METHOD: Method = Method::Get;
+        const PATH: &'static str = "/api/studio/apps";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = Empty;
+        type Res = StudioApps;
+    }
+
+    /// `PUT /api/studio/followers/APP`: keep an app's hud follower link.
+    pub struct StudioFollow;
+
+    impl Op for StudioFollow {
+        const NAME: &'static str = "studio.follow";
+        const METHOD: Method = Method::Put;
+        const PATH: &'static str = "/api/studio/followers/{app}";
+        const ACCESS: Access = Access::Owner;
+        type Path = String;
+        type Req = FollowerLinkRequest;
+        type Res = Empty;
+    }
+
+    /// `DELETE /api/studio/followers/APP`: drop it.
+    pub struct StudioUnfollow;
+
+    impl Op for StudioUnfollow {
+        const NAME: &'static str = "studio.unfollow";
+        const METHOD: Method = Method::Delete;
+        const PATH: &'static str = "/api/studio/followers/{app}";
+        const ACCESS: Access = Access::Owner;
+        type Path = String;
+        type Req = Empty;
+        type Res = Empty;
     }
 }
 

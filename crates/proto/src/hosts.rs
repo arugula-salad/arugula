@@ -129,6 +129,16 @@ pub struct HostInfo {
     pub features: Option<HostFeatures>,
 }
 
+/// `GET /api/host`'s answer: [`HostInfo`], and for the owner this machine's
+/// standing with control (#325), beside it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HostAnswer {
+    #[serde(flatten)]
+    pub info: HostInfo,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub control_state: Option<ControlState>,
+}
+
 /// The `control_state` key of `GET /api/host`, sent beside [`HostInfo`]'s
 /// keys to the machine's owner only (#325). Read it from the answer's JSON:
 /// older daemons, and anyone else, leave it out.
@@ -404,6 +414,13 @@ pub struct SandboxInfo {
     /// The host in the list whose daemon lives there, if one does.
     #[serde(default)]
     pub host: Option<String>,
+}
+
+/// `DELETE /api/sandboxes/{name}/resident`: the hosts taken off the list.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Demoted {
+    #[serde(default)]
+    pub removed: Vec<String>,
 }
 
 /// `POST /api/sandboxes/{name}/promote`: copy the static daemon in and keep

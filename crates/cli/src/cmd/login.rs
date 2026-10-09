@@ -22,11 +22,15 @@ pub fn run(args: &Args, cli: &Cli) -> anyhow::Result<i32> {
     let Args { url, name, account } = args;
     let url = match url {
         Some(u) => u.clone(),
-        None => http::request(&http::Target::Socket(socket(cli)), "GET", "/api/host", None)
-            .and_then(|r| r.json())
-            .ok()
-            .and_then(|v| v["control"].as_str().map(String::from))
-            .unwrap_or_else(|| ssh::CONTROL.to_owned()),
+        None => http::send_op::<arugula_proto::op::ops::HostGet>(
+            &http::Target::Socket(socket(cli)),
+            &(),
+            &arugula_proto::api::Empty {},
+        )
+        .and_then(|r| r.json())
+        .ok()
+        .and_then(|v| v["control"].as_str().map(String::from))
+        .unwrap_or_else(|| ssh::CONTROL.to_owned()),
     };
     let name = name.clone().unwrap_or_else(|| {
         let h = util::hostname().unwrap_or_default();

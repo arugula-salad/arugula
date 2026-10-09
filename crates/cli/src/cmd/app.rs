@@ -1,11 +1,12 @@
 //! `arugula app`: a studio app's box as a block, or the list of apps.
 
 use super::Ctx;
-use crate::http::request;
+use crate::http::call_raw;
 use crate::util::{Pane, env_pane, here, open_block, print_json};
 use arugula_proto::{
     BlockType,
-    api::{OpenRequest, StudioApps},
+    api::{Empty, OpenRequest},
+    op::ops::StudioAppsList,
 };
 use serde_json::json;
 
@@ -30,7 +31,7 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
     let Ctx { sock, json_out, .. } = ctx;
     match args {
         Args { name: None, .. } => {
-            let (list, v) = request(&sock, "GET", "/api/studio/apps", None)?.parse_raw::<StudioApps>()?;
+            let (list, v) = call_raw::<StudioAppsList>(&sock, &(), &Empty {})?;
             if json_out {
                 print_json(&v);
                 return Ok(0);

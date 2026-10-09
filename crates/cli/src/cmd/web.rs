@@ -1,7 +1,8 @@
 //! `arugula web`: this machine's page in your browser, signed in.
 
-use crate::http::{self, request};
+use crate::http::{self, send_op};
 use anyhow::bail;
+use arugula_proto::{api::Empty, op::ops::SigninLinkGet};
 
 #[derive(clap::Args)]
 pub struct Args {
@@ -13,7 +14,7 @@ pub struct Args {
 /// With `--ssh`, the box daemon's link: printed, since its page is on the
 /// box, with how to forward its port from here.
 pub fn web(sock: &http::Target, print: bool) -> anyhow::Result<i32> {
-    let v = request(sock, "GET", "/api/signin-link", None)?.json()?;
+    let v = send_op::<SigninLinkGet>(sock, &(), &Empty {})?.json()?;
     let Some(url) = v["url"].as_str() else { bail!("the daemon has no sign-in link: {v}") };
     let page = url.split("/auth?").next().unwrap_or(url);
     if print {

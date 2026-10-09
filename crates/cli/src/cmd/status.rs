@@ -12,13 +12,16 @@
 //! `--ssh` only the daemon's own answer is shown.
 
 use arugula_proto::{
+    api::Empty,
     hosts::{ControlState, HostInfo},
+    op::ops::{AclGet, HostGet, SetupGet},
     service::{self, Service},
+    setup::SetupQuery,
 };
 use serde_json::{Value, json};
 
 use super::Ctx;
-use crate::http::{Target, request};
+use crate::http::{Target, send_op};
 
 /// One part's line: what it is, how it's doing, and what to do about it.
 pub struct Line {
@@ -177,7 +180,7 @@ pub fn agent_lines(v: &Value) -> Vec<Line> {
 
 pub fn run(ctx: Ctx) -> anyhow::Result<i32> {
     let Ctx { sock, json_out, .. } = ctx;
-    let got = request(&sock, "GET", "/api/host", None).and_then(|r| r.json());
+    let got = send_op::<HostGet>(&sock, &(), &Empty {}).and_then(|r| r.json());
     let (raw, err) = match got {
         Ok(v) => (Some(v), None),
         Err(e) => (None, Some(format!("{e:#}"))),
@@ -187,12 +190,13 @@ pub fn run(ctx: Ctx) -> anyhow::Result<i32> {
     let here = matches!(sock, Target::Socket(_)).then(|| Here { service: service::find(), log: service::log() });
     // The agents (#335): an older daemon answers with all of /api/setup
     // (no adapters), or not at all.
-    let agents =
-        host.as_ref().and_then(|_| request(&sock, "GET", "/api/setup?part=agents", None).and_then(|r| r.json()).ok());
+    let agents = host.as_ref().and_then(|_| {
+        send_op::<SetupGet>(&sock, &(), &SetupQuery { part: Some("agents".into()) }).and_then(|r| r.json()).ok()
+    });
     // #663: logins several people share, tagged devices refused.
     let callers = host
         .as_ref()
-        .and_then(|_| request(&sock, "GET", "/api/acl", None).and_then(|r| r.json()).ok())
+        .and_then(|_| send_op::<AclGet>(&sock, &(), &Empty {}).and_then(|r| r.json()).ok())
         .map(|v| v["callers"].clone())
         .filter(|c| !c.is_null());
     if json_out {
