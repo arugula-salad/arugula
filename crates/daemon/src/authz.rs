@@ -66,7 +66,6 @@ fn policy(method: &Method, path: &str) -> Policy {
         ["api", "blocks", id] if get => pane(id).map_or(Policy::Owner, |p| Policy::On(p, Role::Viewer)),
         // M28: the handlers check each editor, and the pane mentioned to.
         ["api", "editors"] if get => Policy::Handler,
-        ["api", "ide", "mention"] if !get => Policy::Handler,
         ["api", "panes", id, "prompt" | "ask" | "cd" | "permit" | "hook" | "inbox" | "upload" | "paste"] if !get => {
             pane(id).map_or(Policy::Owner, |p| Policy::On(p, Role::Editor))
         }
@@ -107,10 +106,6 @@ fn policy(method: &Method, path: &str) -> Policy {
         // M24: the handler shows each person what they may read, and checks
         // each pane acted on.
         ["api", "attention"] if get => Policy::Handler,
-        // M29: anyone here may be notified about what they may answer.
-        ["api", "push", "key"] if get => Policy::Anyone,
-        ["api", "push", "subscribe" | "test"] if !get => Policy::Handler,
-        ["api", "notify"] => Policy::Handler,
         ["api", "attention", "act"] if !get => Policy::Handler,
         // An editor's agent (M14): the handler puts it on a VM of theirs.
         ["api", "blocks"] if !get => Policy::Handler,
@@ -185,6 +180,34 @@ fn url_param(query: &str, key: &str) -> Option<String> {
 mod tests {
     use super::*;
     use crate::ops::drives;
+
+    /// The owner's settings routes (#575): what each needs, written out. The
+    /// push and notify routes and a mention are the handler's to check; the
+    /// push key is anyone's; the rest are the owner's.
+    #[test]
+    fn the_settings_routes_keep_their_policies() {
+        let (g, p, u) = (Method::GET, Method::POST, Method::PUT);
+        for (m, path, want) in [
+            (&g, "/api/ide", Policy::Owner),
+            (&u, "/api/ide", Policy::Owner),
+            (&p, "/api/ide/mention", Policy::Handler),
+            (&g, "/api/agents/adapters", Policy::Owner),
+            (&p, "/api/agents/adapters/claude/install", Policy::Owner),
+            (&g, "/api/conversations", Policy::Owner),
+            (&p, "/api/conversations/open", Policy::Owner),
+            (&g, "/api/machines", Policy::Owner),
+            (&p, "/api/machines/4/reset", Policy::Owner),
+            (&g, "/api/push/key", Policy::Anyone),
+            (&p, "/api/push/subscribe", Policy::Handler),
+            (&p, "/api/push/test", Policy::Handler),
+            (&g, "/api/notify", Policy::Handler),
+            (&p, "/api/notify", Policy::Handler),
+            (&g, "/api/hosts/self/agents", Policy::Owner),
+            (&p, "/api/hosts/self/agents/refresh", Policy::Owner),
+        ] {
+            assert_eq!(policy(m, path), want, "{m} {path}");
+        }
+    }
 
     #[test]
     fn policies() {

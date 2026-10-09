@@ -3265,7 +3265,7 @@ impl Call<'_> {
     }
 
     async fn list_conversations(&self, a: ListConversationsArgs) -> Out {
-        let q = crate::api::ConversationsQuery {
+        let q = arugula_proto::api::ConversationsQuery {
             all: a.all,
             q: a.query,
             cwd: a.cwd,

@@ -1154,6 +1154,52 @@ pub struct ConversationRow {
     pub block: Option<PaneId>,
 }
 
+/// What `GET /api/conversations` takes as its query string (M33). It is
+/// written as `limit`, `all`, `live`, `cwd` and `q` in that order, a flag
+/// as `1` and left out when off, as `arugula claude ls` always wrote it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConversationsQuery {
+    pub limit: Option<usize>,
+    /// Everything: other sources, archived ones, ones whose folder is gone.
+    #[serde(default, deserialize_with = "flag", serialize_with = "on", skip_serializing_if = "is_off")]
+    pub all: bool,
+    /// Only ones a process holds now.
+    #[serde(default, deserialize_with = "flag", serialize_with = "on", skip_serializing_if = "is_off")]
+    pub live: bool,
+    /// Under this folder.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
+    /// Words in the title, prompts or folder.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub q: Option<String>,
+}
+
+/// A query flag: `1`, `true`, `yes` or empty (`?all`) are on.
+fn flag<'de, D: serde::Deserializer<'de>>(d: D) -> Result<bool, D::Error> {
+    let s = String::deserialize(d)?;
+    Ok(matches!(s.as_str(), "" | "1" | "true" | "yes" | "on"))
+}
+
+fn on<S: serde::Serializer>(_: &bool, s: S) -> Result<S::Ok, S::Error> {
+    s.serialize_str("1")
+}
+
+fn is_off(b: &bool) -> bool {
+    !b
+}
+
+/// What `POST /api/agents/adapters/KIND/install` takes, all of it optional
+/// (a call with no body is `Default`): where its pane goes.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InstallAdapterRequest {
+    #[serde(default)]
+    pub split: Option<PaneId>,
+    #[serde(default)]
+    pub session: Option<String>,
+    #[serde(default)]
+    pub from_pane: Option<PaneId>,
+}
+
 /// `GET /api/agents/adapters` (#111): whether Claude Code's and Codex's
 /// adapters can start here (each one's own record).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1458,6 +1504,30 @@ pub struct FountainAgents {
     /// Rows Fountain sent that didn't parse.
     #[serde(default)]
     pub unreadable: usize,
+}
+
+/// `GET /api/push/key`: the daemon's public VAPID key, which a browser
+/// subscribes with. It is not a credential.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PushKey {
+    pub key: String,
+}
+
+/// A browser's subscription, as `PushSubscription.toJSON()` gives it
+/// (`POST /api/push/subscribe`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Subscription {
+    pub endpoint: String,
+    pub keys: SubscriptionKeys,
+    /// Whose it is (M29): a principal id; none is the owner's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub who: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SubscriptionKeys {
+    pub p256dh: String,
+    pub auth: String,
 }
 
 /// What `POST /api/push/subscribe` and `/api/push/test` answer: how many

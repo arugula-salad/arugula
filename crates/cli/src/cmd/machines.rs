@@ -1,13 +1,13 @@
 //! `arugula machines`: the machines panes run on.
 
 use super::Ctx;
-use crate::http::request;
+use crate::http::call_raw;
 use crate::util::{print_json, snake};
-use arugula_proto::{Machine, Owner};
+use arugula_proto::{Owner, api::Empty, op::ops::MachinesList};
 
 pub fn run(ctx: Ctx) -> anyhow::Result<i32> {
     let Ctx { sock, json_out, .. } = ctx;
-    let (machines, v) = request(&sock, "GET", "/api/machines", None)?.parse_raw::<Vec<Machine>>()?;
+    let (machines, v) = call_raw::<MachinesList>(&sock, &(), &Empty {})?;
     if json_out {
         print_json(&v);
         return Ok(0);

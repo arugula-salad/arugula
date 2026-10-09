@@ -16,26 +16,11 @@ use p256::{
     SecretKey,
     ecdsa::{Signature, SigningKey, signature::Signer},
 };
-use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
 use crate::store::{now_ms, write_atomic};
 
-/// A browser's subscription, as `PushSubscription.toJSON()` gives it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Subscription {
-    pub endpoint: String,
-    pub keys: SubscriptionKeys,
-    /// Whose it is (M29): a principal id; none is the owner's.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub who: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SubscriptionKeys {
-    pub p256dh: String,
-    pub auth: String,
-}
+pub use arugula_proto::api::Subscription;
 
 #[derive(Clone)]
 pub struct Push {

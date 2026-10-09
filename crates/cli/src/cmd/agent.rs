@@ -1,12 +1,13 @@
 //! `arugula agent`: an agent block with a prompt, or a Claude Code conversation continued.
 
 use super::Ctx;
-use crate::http::{request, request_as};
+use crate::http::{call, call_raw, request, request_as};
 use crate::util::{Pane, REMOTE, absolute, env_pane, print_json};
 use anyhow::Context;
 use arugula_proto::{
     Attention, BlockType,
-    api::{Adapters, OpenConversationRequest, OpenConversationResponse, OpenRequest, OpenResponse, WaitResult},
+    api::{Empty, OpenConversationRequest, OpenRequest, OpenResponse, WaitResult},
+    op::ops::{AdaptersList, ConversationOpen},
 };
 use serde_json::{Value, json};
 
@@ -104,8 +105,7 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
                 split: split.map(|p| p.0),
                 from_pane: env_pane(),
             };
-            let (opened, v) =
-                request_as(&sock, "POST", "/api/conversations/open", &body)?.parse_raw::<OpenConversationResponse>()?;
+            let (opened, v) = call_raw::<ConversationOpen>(&sock, &(), &body)?;
             let block = opened.block;
             if let Some(e) = &opened.error {
                 eprintln!("%{block}: {e}");
@@ -238,7 +238,7 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
 /// Why an agent of `kind` can't start on this daemon, and how to fix it
 /// (#335); `None` when it can, or the daemon doesn't say.
 fn adapter_missing(sock: &crate::http::Target, kind: &str) -> Option<String> {
-    let v: Adapters = request(sock, "GET", "/api/agents/adapters", None).ok()?.parse().ok()?;
+    let v = call::<AdaptersList>(sock, &(), &Empty {}).ok()?;
     let a = v.adapters.iter().find(|a| a["kind"] == kind)?;
     adapter_fix(a)
 }
