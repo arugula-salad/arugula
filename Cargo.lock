@@ -184,6 +184,7 @@ dependencies = [
  "rustls-platform-verifier",
  "serde",
  "serde_json",
+ "serde_urlencoded",
  "tungstenite 0.30.0",
  "webpki-root-certs",
  "windows-sys 0.60.2",

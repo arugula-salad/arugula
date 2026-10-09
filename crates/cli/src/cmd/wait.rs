@@ -1,9 +1,12 @@
 //! `arugula wait`: for a command, an exit, a match, or an agent.
 
 use super::Ctx;
-use crate::http::{enc, request};
+use crate::http::call_raw;
 use crate::util::{Pane, here, print_json, snake};
-use arugula_proto::api::WaitResult;
+use arugula_proto::{
+    api::{WaitRequest, WaitResult},
+    op::ops::PaneWait,
+};
 
 #[derive(clap::Args)]
 pub struct Args {
@@ -31,17 +34,15 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
     let Ctx { sock, json_out, .. } = ctx;
     let Args { pane, command_end, exit, matching, idle, needs_input, timeout } = args;
     let pane = here(pane)?;
-    let mut q = match (command_end, exit, &matching) {
-        _ if idle => "until=idle".to_owned(),
-        _ if needs_input => "until=needs-input".to_owned(),
-        (_, true, _) => "until=exit".to_owned(),
-        (_, _, Some(re)) => format!("until=match&re={}", enc(re)),
-        _ => "until=command-end".to_owned(),
+    let (until, re) = match (command_end, exit, matching) {
+        _ if idle => ("idle", None),
+        _ if needs_input => ("needs-input", None),
+        (_, true, _) => ("exit", None),
+        (_, _, Some(re)) => ("match", Some(re)),
+        _ => ("command-end", None),
     };
-    if let Some(t) = timeout {
-        q.push_str(&format!("&timeout={t}"));
-    }
-    let (w, v) = request(&sock, "GET", &format!("/api/panes/{pane}/wait?{q}"), None)?.parse_raw::<WaitResult>()?;
+    let req = WaitRequest { until: until.to_owned(), re, timeout };
+    let (w, v) = call_raw::<PaneWait>(&sock, &pane, &req)?;
     if json_out {
         print_json(&v);
     }

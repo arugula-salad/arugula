@@ -1,4 +1,6 @@
 # name method path
 flags.list GET /api/flags
+pane.wait GET /api/panes/{id}/wait
 panes.list GET /api/panes
+rules.list GET /api/rules
 shell_env.get GET /api/hosts/self/shell-env
