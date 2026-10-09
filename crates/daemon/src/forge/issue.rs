@@ -434,7 +434,7 @@ impl ForgeBlock {
                     text: Some(text),
                     cwd: Some(wt.clone()),
                     by: None,
-                    kind: HistoryKind::Command,
+                    kind: HistoryKind::Action,
                 },
             );
             let _ = l.record(at, crate::store::Event::End { at_ms: now_ms(), exit: Some(0) });
@@ -658,7 +658,7 @@ impl ForgeBlock {
                     text: Some(text),
                     cwd: None,
                     by: by.clone(),
-                    kind: HistoryKind::Command,
+                    kind: HistoryKind::Action,
                 },
             );
             let _ =
