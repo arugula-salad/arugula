@@ -349,7 +349,7 @@ fn a_block_uses_the_login_of_whoever_started_it() {
     let theirs = d.sessions.join("their-claude");
     let cmd = format!("python3 {}", fake());
     let cli = |dir: Option<&std::path::Path>| {
-        let mut c = std::process::Command::new(cli_bin());
+        let mut c = arugula_testkit::command(cli_bin());
         c.arg("--socket").arg(d.sock()).args(["agent", "--acp", &cmd, "--cwd"]).arg(&d.sessions);
         c.args(["env", "CLAUDE_CONFIG_DIR"]).env_remove("ARUGULA_PANE").env_remove("CLAUDE_CONFIG_DIR");
         if let Some(dir) = dir {

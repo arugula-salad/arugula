@@ -524,6 +524,13 @@ fn default_socket() -> PathBuf {
 static VERSION_MARK: &str = concat!("\0arugula-version=", env!("CARGO_PKG_VERSION"), "\0");
 
 fn main() {
+    // A closed pipe (`| head`) ends the process quietly, not with a panic
+    // from `println!` (#682): Rust starts with SIGPIPE ignored.
+    // SAFETY: nothing else runs yet, and SIG_DFL is no handler.
+    #[cfg(unix)]
+    unsafe {
+        let _ = nix::sys::signal::signal(nix::sys::signal::Signal::SIGPIPE, nix::sys::signal::SigHandler::SigDfl);
+    }
     // ILLOGICAL_X stands in for ARUGULA_X (#505), before any thread exists.
     // SAFETY: nothing else runs yet.
     unsafe { arugula_proto::rename::alias_env() };

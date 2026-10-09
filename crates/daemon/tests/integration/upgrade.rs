@@ -231,7 +231,7 @@ impl Plain {
     fn start(&mut self) {
         // Not the last one's port.
         let _ = std::fs::remove_file(self.state.join("listen"));
-        let child = Command::new(env!("CARGO_BIN_EXE_arugulad"))
+        let child = arugula_testkit::command(env!("CARGO_BIN_EXE_arugulad"))
             .args(["--listen", listen::ANY, "--shell", "bash --norc --noprofile"])
             .args(["--no-manager-env", "--keep-panes", "--state-dir"])
             .arg(&self.state)

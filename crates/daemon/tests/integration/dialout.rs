@@ -86,7 +86,13 @@ fn cli_bin() -> PathBuf {
 }
 
 fn cli(home: &Daemon, args: &[&str]) -> Output {
-    Command::new(cli_bin()).arg("--socket").arg(home.sock()).args(args).env_remove("ARUGULA_PANE").output().unwrap()
+    arugula_testkit::command(cli_bin())
+        .arg("--socket")
+        .arg(home.sock())
+        .args(args)
+        .env_remove("ARUGULA_PANE")
+        .output()
+        .unwrap()
 }
 
 fn stdout(o: &Output) -> String {
@@ -161,7 +167,7 @@ fn a_sandbox_that_only_dials_out_is_used_through_home_and_its_history_outlives_i
     let here: Value = serde_json::from_str(&stdout(&cli(&home, &["--json", "ls"]))).unwrap();
     assert_eq!(here.as_array().unwrap().len(), 1, "nothing new on the home daemon");
     // Streaming responses work through the tunnel too (follow, then stop).
-    let mut follow = Command::new(cli_bin())
+    let mut follow = arugula_testkit::command(cli_bin())
         .arg("--socket")
         .arg(home.sock())
         .args(["--host", "sbx", "tail", &format!("%{pane}"), "-f", "--text"])

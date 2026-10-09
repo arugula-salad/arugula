@@ -28,7 +28,12 @@ fn cli_bin() -> PathBuf {
 
 /// `arugula attention --json`.
 fn attention(d: &Daemon) -> Vec<Value> {
-    let out = Command::new(cli_bin()).arg("--socket").arg(d.sock()).args(["attention", "--json"]).output().unwrap();
+    let out = arugula_testkit::command(cli_bin())
+        .arg("--socket")
+        .arg(d.sock())
+        .args(["attention", "--json"])
+        .output()
+        .unwrap();
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
     serde_json::from_slice::<Value>(&out.stdout).unwrap().as_array().cloned().unwrap()
 }

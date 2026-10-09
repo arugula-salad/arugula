@@ -63,7 +63,13 @@ fn cli_bin() -> PathBuf {
 }
 
 fn cli(home: &Home, args: &[&str]) -> Output {
-    Command::new(cli_bin()).arg("--socket").arg(home.d.sock()).args(args).env_remove("ARUGULA_PANE").output().unwrap()
+    arugula_testkit::command(cli_bin())
+        .arg("--socket")
+        .arg(home.d.sock())
+        .args(args)
+        .env_remove("ARUGULA_PANE")
+        .output()
+        .unwrap()
 }
 
 fn stdout(o: &Output) -> String {
