@@ -11,6 +11,8 @@
 
 mod close;
 mod flags;
+mod input;
+mod inspect;
 mod panes;
 mod rules;
 mod shell_env;
@@ -47,6 +49,15 @@ macro_rules! every_op {
         $m!(arugula_proto::op::ops::RulesForgetAll);
         $m!(arugula_proto::op::ops::RuleForget);
         $m!(arugula_proto::op::ops::PaneWait);
+        $m!(arugula_proto::op::ops::PaneSend);
+        $m!(arugula_proto::op::ops::PaneKeys);
+        $m!(arugula_proto::op::ops::PaneMouse);
+        $m!(arugula_proto::op::ops::PaneAttention);
+        $m!(arugula_proto::op::ops::PaneFollowUp);
+        $m!(arugula_proto::op::ops::PaneProcess);
+        $m!(arugula_proto::op::ops::PaneDetection);
+        $m!(arugula_proto::op::ops::PaneDiffOf);
+        $m!(arugula_proto::op::ops::PaneDrivers);
     };
 }
 
@@ -90,9 +101,9 @@ impl OpError {
 
 /// Which way a call came in.
 pub enum Via<'a> {
-    /// An HTTP request, past `authz::check`: whether it's the owner's, and
-    /// whether the owner's CLI says an agent runs it.
-    Http { owner: bool, agent: bool },
+    /// An HTTP request, past `authz::check`: who asks (and whether that's
+    /// the owner), and whether the owner's CLI says an agent runs it.
+    Http { who: Principal, owner: bool, agent: bool },
     /// An MCP tool call, with its caller's scope.
     Mcp(&'a Call<'a>),
 }
@@ -117,12 +128,21 @@ impl Cx<'_> {
         r.map_err(OpError::Unreachable)
     }
 
+    /// Who asks, for what is recorded as theirs or shown by what they may
+    /// see. Only HTTP knows: an MCP caller is an agent's token, not a person.
+    pub fn principal(&self) -> Result<Principal, OpError> {
+        match &self.via {
+            Via::Http { who, .. } => Ok(who.clone()),
+            Via::Mcp(_) => Err(OpError::Unreachable("that is for a person, not an agent's token".into())),
+        }
+    }
+
     /// An agent, or someone who isn't the owner: what the owner keeps for
     /// themselves (an invite block, #234) refuses them. Every MCP caller is
     /// an agent.
     pub fn agent_or_guest(&self) -> bool {
         match self.via {
-            Via::Http { owner, agent } => !owner || agent,
+            Via::Http { owner, agent, .. } => !owner || agent,
             Via::Mcp(_) => true,
         }
     }
@@ -187,7 +207,8 @@ where
         Ok(p) => p,
         Err(r) => return r,
     };
-    let owner = parts.extensions.get::<Principal>().is_none_or(Principal::is_owner);
+    let who = parts.extensions.get::<Principal>().cloned().unwrap_or(Principal::Owner);
+    let owner = who.is_owner();
     let agent = crate::invite::agent(&parts.headers);
     let body = match <O::Req as Request>::without_body() {
         Some(none) => none,
@@ -207,7 +228,7 @@ where
     if O::ACCESS == Access::Owner && !owner {
         return ApiError(StatusCode::FORBIDDEN, "only the owner can".into()).into_response();
     }
-    let cx = Cx { app: &app, via: Via::Http { owner, agent } };
+    let cx = Cx { app: &app, via: Via::Http { who, owner, agent } };
     match O::handle(&cx, path, body).await {
         Ok(res) => Json(res).into_response(),
         Err(e) => e.http().into_response(),
@@ -288,6 +309,44 @@ pub fn policy(method: &axum::http::Method, path: &str) -> Option<crate::authz::P
     found
 }
 
+/// The routes that drive a pane and are not operations (`Op::DRIVES` is how
+/// an operation says it does), as `POST` templates: `authz::check` asks the
+/// mux whether an editor may drive the pane for these too (M14).
+const DRIVES_HAND_WRITTEN: &[&str] = &[
+    // M70: writes a file where the pane runs.
+    "/api/panes/{id}/upload",
+    // Typing a path into the pane (with upload).
+    "/api/panes/{id}/paste",
+    // A block call is any method of any block: on a pane that isn't a block,
+    // `send` and `keys` type into it (`api::call`), and `mouse`, `followup`,
+    // `upload` and `paste` were driving by their name before DRIVES (#574).
+    "/api/blocks/{id}/call/send",
+    "/api/blocks/{id}/call/keys",
+    "/api/blocks/{id}/call/mouse",
+    "/api/blocks/{id}/call/followup",
+    "/api/blocks/{id}/call/upload",
+    "/api/blocks/{id}/call/paste",
+];
+
+/// Whether `method path` types into a pane, so needs the owner's trust on
+/// their machine for an editor to call it (M14): an operation with `DRIVES`,
+/// or a hand-written route on `DRIVES_HAND_WRITTEN`. Matched on the decoded
+/// segments, as `policy` is. A route that merely ends in `send` isn't one.
+pub fn drives(method: &axum::http::Method, path: &str) -> bool {
+    let Some(parts) = crate::authz::segments(path) else { return false };
+    let parts: Vec<&str> = parts.iter().map(String::as_str).collect();
+    let mut found = false;
+    macro_rules! look {
+        ($o:ty) => {
+            found |= <$o as Op>::DRIVES
+                && method.as_str() == <$o as Op>::METHOD.as_str()
+                && matches(<$o as Op>::PATH, &parts).is_some();
+        };
+    }
+    every_op!(look);
+    found || (method == axum::http::Method::POST && DRIVES_HAND_WRITTEN.iter().any(|t| matches(t, &parts).is_some()))
+}
+
 /// Whether a read-only MCP token may call `O`: only a GET reads, unless its
 /// answer grants access (`Op::CREDENTIAL`).
 pub const fn read_only<O: Op>() -> bool {
@@ -296,7 +355,7 @@ pub const fn read_only<O: Op>() -> bool {
 
 /// The routes in `api.rs` that are not operations, each with why. A new
 /// route is an operation unless it is here (`every_api_route_is_an_operation_or_hand_written`).
-/// Entries leave as their operations arrive (#573–#578).
+/// Entries leave as their operations arrive (#575–#578).
 #[cfg(test)]
 const HAND_WRITTEN: &[(&str, &str)] = &[
     // Streams, text and bytes: the answer isn't one JSON value.
@@ -305,21 +364,11 @@ const HAND_WRITTEN: &[(&str, &str)] = &[
     ("/api/panes/{id}/capture", "plain text"),
     ("/api/panes/{id}/export.cast", "asciicast"),
     ("/api/editors/vsix", "binary download"),
-    ("/api/panes/{id}/upload", "raw bytes, its own body limit"),
-    ("/api/panes/{id}/paste", "types a path into the pane (with upload)"),
+    ("/api/panes/{id}/upload", "raw bytes, its own body limit (drives: DRIVES_HAND_WRITTEN)"),
+    ("/api/panes/{id}/paste", "types a path into the pane (drives: DRIVES_HAND_WRITTEN)"),
     // Block calls: the arguments depend on the block's type and method (#459).
     ("/api/blocks/{id}/call/{method}", "block calls, decided per method"),
-    // The pane verbs (#574).
-    ("/api/panes/{id}/send", "pane verb, #574"),
     ("/api/panes/{id}/prompt", "waits on the agent, #576"),
-    ("/api/panes/{id}/keys", "pane verb, #574"),
-    ("/api/panes/{id}/mouse", "pane verb, #574"),
-    ("/api/panes/{id}/attention", "pane verb, #574"),
-    ("/api/panes/{id}/followup", "pane verb, #574"),
-    ("/api/panes/{id}/process", "pane verb, #574"),
-    ("/api/panes/{id}/detection", "pane verb, #574"),
-    ("/api/panes/{id}/diff", "pane verb, #574"),
-    ("/api/panes/{id}/drivers", "pane verb, #574"),
     ("/api/panes/{id}/ask", "long wait, #576"),
     ("/api/panes/{id}/ask/withdraw", "long wait, #576"),
     ("/api/panes/{id}/permit", "long wait, #576"),

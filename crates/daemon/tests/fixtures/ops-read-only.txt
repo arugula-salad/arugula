@@ -1,5 +1,9 @@
 # name method path
 flags.list GET /api/flags
+pane.detection GET /api/panes/{id}/detection
+pane.diff GET /api/panes/{id}/diff
+pane.drivers GET /api/panes/{id}/drivers
+pane.process GET /api/panes/{id}/process
 pane.wait GET /api/panes/{id}/wait
 panes.list GET /api/panes
 rules.list GET /api/rules

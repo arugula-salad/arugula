@@ -1,9 +1,12 @@
 //! `arugula attention`: what wants you, or tell Arugula a pane needs you.
 
 use super::Ctx;
-use crate::http::request;
+use crate::http::{request, request_op};
 use crate::util::{Pane, here, print_json, snake};
-use arugula_proto::api::{AttentionItem, Empty};
+use arugula_proto::{
+    api::{AttentionItem, Empty},
+    op::ops::PaneAttention,
+};
 use serde_json::{Value, json};
 
 /// A hook's `message` (Claude Code's Notification: "Claude needs your
@@ -47,10 +50,10 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
             // Hooks (Claude Code's, say) run this in every terminal; outside an
             // Arugula pane there's nobody to tell, and that's fine.
             let Ok(pane) = here(pane) else { return Ok(0) };
-            let path = format!("/api/panes/{pane}/attention");
             // The state stays the string typed here: the daemon names the
             // ones it doesn't know, as it always did.
-            request(&sock, "POST", &path, Some(&json!({"state": state, "why": hook_message()})))?.parse::<Empty>()?;
+            request_op::<PaneAttention>(&sock, &pane, &json!({"state": state, "why": hook_message()}))?
+                .parse::<Empty>()?;
         }
     }
     Ok(0)

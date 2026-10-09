@@ -60,22 +60,16 @@ fn policy(method: &Method, path: &str) -> Policy {
         ["api", "host"] if get => Policy::Anyone,
         // M63: for huddles, which anyone with a session may join.
         ["api", "turn"] if get => Policy::Anyone,
-        ["api", "panes", id, "capture" | "process" | "detection" | "tail" | "wait" | "export.cast"] if get => {
+        ["api", "panes", id, "capture" | "tail" | "wait" | "export.cast"] if get => {
             pane(id).map_or(Policy::Owner, |p| Policy::On(p, Role::Viewer))
         }
         ["api", "blocks", id] if get => pane(id).map_or(Policy::Owner, |p| Policy::On(p, Role::Viewer)),
-        // M28: the edit a diff card shows.
-        ["api", "panes", id, "diff"] if get => pane(id).map_or(Policy::Owner, |p| Policy::On(p, Role::Viewer)),
         // M28: the handlers check each editor, and the pane mentioned to.
         ["api", "editors"] if get => Policy::Handler,
         ["api", "ide", "mention"] if !get => Policy::Handler,
-        [
-            "api",
-            "panes",
-            id,
-            "send" | "prompt" | "keys" | "mouse" | "attention" | "ask" | "cd" | "permit" | "hook" | "inbox"
-            | "followup" | "upload" | "paste",
-        ] if !get => pane(id).map_or(Policy::Owner, |p| Policy::On(p, Role::Editor)),
+        ["api", "panes", id, "prompt" | "ask" | "cd" | "permit" | "hook" | "inbox" | "upload" | "paste"] if !get => {
+            pane(id).map_or(Policy::Owner, |p| Policy::On(p, Role::Editor))
+        }
         ["api", "panes", id, "ask", "withdraw"] if !get => {
             pane(id).map_or(Policy::Owner, |p| Policy::On(p, Role::Editor))
         }
@@ -132,13 +126,6 @@ fn policy(method: &Method, path: &str) -> Policy {
     }
 }
 
-/// What drives a pane, so needs the owner's trust on their machine (M14).
-/// A follow-up (M29) is an instruction to an agent running there; an upload
-/// (M70) writes a file where the pane runs, and a paste is typing.
-fn drives(path: &str) -> bool {
-    last(path).is_some_and(|s| ["send", "keys", "mouse", "followup", "upload", "paste"].contains(&s.as_str()))
-}
-
 /// The path's last segment, decoded (`segments`).
 fn last(path: &str) -> Option<String> {
     segments(path).and_then(|mut s| s.pop())
@@ -165,8 +152,7 @@ pub async fn check(State(app): State<Arc<App>>, req: Request, next: Next) -> Res
                 }
                 // Typing into a pane on the owner's machine needs their trust
                 // (M14).
-                let path = req.uri().path();
-                if drives(path) {
+                if crate::ops::drives(req.method(), req.uri().path()) {
                     let who = req.extensions().get::<Principal>().cloned().unwrap_or(Principal::Owner);
                     if let Some(Err(why)) = app.mux.api(|r| Api::MayDrive(who, pane, r)).await {
                         return refuse(StatusCode::FORBIDDEN, &why);
@@ -206,6 +192,7 @@ fn url_param(query: &str, key: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ops::drives;
 
     #[test]
     fn policies() {
@@ -217,9 +204,10 @@ mod tests {
         assert_eq!(policy(&p, "/api/panes/3/close"), Policy::On(3, Role::Editor));
         for path in ["/api/panes/3/upload", "/api/panes/3/paste"] {
             assert_eq!(policy(&p, path), Policy::On(3, Role::Editor), "{path}");
-            assert!(drives(path), "{path}");
+            assert!(drives(&p, path), "{path}");
         }
-        assert!(!drives("/api/panes/3/capture"));
+        assert!(!drives(&p, "/api/panes/3/capture"));
+        assert!(!drives(&g, "/api/panes/3/capture"));
         assert_eq!(policy(&p, "/api/blocks/7/call/approve"), Policy::On(7, Role::Editor));
         assert_eq!(policy(&p, "/api/blocks/7/call/expire"), Policy::On(7, Role::Editor));
         assert_eq!(policy(&p, "/api/panes/3/capture"), Policy::Owner);
@@ -268,7 +256,29 @@ mod tests {
         assert_eq!(policy(&p, "/api/blocks/%37/call/approve"), Policy::On(7, Role::Editor));
         // Not UTF-8 once decoded: the router refuses it, and so do we.
         assert_eq!(policy(&p, "/api/blocks/7/call/%FF"), Policy::Owner);
-        assert!(drives("/api/panes/3/%73end"));
+        assert!(drives(&p, "/api/panes/3/%73end"));
+    }
+
+    /// What drives a pane is declared (`Op::DRIVES`) or listed
+    /// (`DRIVES_HAND_WRITTEN`), not guessed from a path's last segment (#574).
+    #[test]
+    fn what_drives_a_pane_is_declared() {
+        let (g, p) = (Method::GET, Method::POST);
+        for verb in ["send", "keys", "mouse", "followup", "upload", "paste"] {
+            assert!(drives(&p, &format!("/api/panes/3/{verb}")), "{verb}");
+            assert!(drives(&p, &format!("/api/blocks/3/call/{verb}")), "block call {verb}");
+            // Only a POST types.
+            assert!(!drives(&g, &format!("/api/panes/3/{verb}")), "GET {verb}");
+        }
+        // An editor's other calls on a pane don't.
+        for verb in ["attention", "close", "prompt", "ask", "permit", "hook", "inbox", "capture", "diff", "process"] {
+            assert!(!drives(&p, &format!("/api/panes/3/{verb}")), "{verb}");
+        }
+        assert!(!drives(&p, "/api/blocks/3/call/approve"));
+        // A route that is no operation and ends in one of the names doesn't.
+        assert!(!drives(&p, "/api/foo/send"));
+        assert!(!drives(&p, "/api/panes/3/send/extra"));
+        assert!(!drives(&p, "/api/panes/3/%ff"));
     }
 
     /// An operation (`ops::policy`) is decided on the decoded path too: an
