@@ -354,7 +354,7 @@ fn each_flag_turns_on_its_part_of_what_a_stranger_doesnt_get() {
     assert_eq!((f["calls"].clone(), f["fountain"].clone()), (false.into(), false.into()), "{f}");
     assert_eq!(f["flags"], serde_json::json!(["chat"]));
     let all = d.get("/api/flags");
-    assert_eq!(all.as_array().map(Vec::len), Some(9), "{all}");
+    assert_eq!(all.as_array().map(Vec::len), Some(arugula_proto::flags::FLAGS.len()), "{all}");
     for row in all.as_array().unwrap() {
         assert_eq!(
             (row["on"].clone(), row["default"].clone()),

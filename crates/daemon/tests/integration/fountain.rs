@@ -1663,7 +1663,7 @@ fn a_worn_agent_is_put_on_again_after_a_reboot() {
     let env = w.env(&dir);
     let env: Vec<(&str, &str)> = env.iter().map(|(k, v)| (*k, v.as_str())).collect();
     let mut d = fz.daemon(&env);
-    // As `arugula agent --as` opens it.
+    // As `arugula agent --as-fountain` opens it.
     let config = json!({ "agent": "claude", "as_fountain": "fixture-wearer", "specs": w.specs, "cwd": w.work, "prompt": "remember kestrel" });
     let id = d.open_with(json!({ "type": "agent", "config": config }));
     assert_eq!(d.wait(id, "idle"), "done", "{}", d.state(id));
@@ -1817,7 +1817,7 @@ fn what_cant_be_worn_says_why() {
     assert!(body.contains("isn't a directory"), "{body}");
     assert_eq!(d.get("/api/panes").as_array().unwrap().len(), panes, "nothing opened");
 
-    // Opened directly (`arugula agent --as`): it says why, and doesn't start.
+    // Opened directly (`arugula agent --as-fountain`): it says why, and doesn't start.
     let id = d.open_with(json!({ "type": "agent", "config": { "agent": "claude", "as_fountain": "orchestrator" } }));
     d.wait_for("the refusal", || d.state(id)["status"] == "exited");
     let st = d.state(id);

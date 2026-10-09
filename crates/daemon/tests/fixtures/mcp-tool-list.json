@@ -2579,6 +2579,14 @@
             "description": "What to ask it.",
             "type": "string"
           },
+          "recipe": {
+            "default": null,
+            "description": "For claude: run as this recipe, a Claude Code subagent by its name\n(`.claude/agents/NAME.md` in cwd's project, or the user's), on this\nhost: its prompt, model, tools, skills and MCP servers.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "session": {
             "default": null,
             "description": "The session for a new tab, when not beside a pane.",
@@ -5742,6 +5750,14 @@
           "prompt": {
             "description": "What to ask it.",
             "type": "string"
+          },
+          "recipe": {
+            "default": null,
+            "description": "For claude: run as this recipe, a Claude Code subagent by its name\n(`.claude/agents/NAME.md` in cwd's project, or the user's), on this\nhost: its prompt, model, tools, skills and MCP servers.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "session": {
             "default": null,

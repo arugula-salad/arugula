@@ -67,7 +67,8 @@ rest. A starting daemon moves the old file into `flags.json` and removes it.
 ## What labs unhides
 
 - **CLI (`arugula --help`):** `fountain`, `studio`, `app`, `workspace`,
-  `guests`, `machines`, `sandboxes`; `agent --fountain/--as/--vault/--vm`,
+  `agents`, `guests`, `machines`, `sandboxes`;
+  `agent --fountain/--as-fountain/--vault/--vm/--as`,
   `run --vm/--vm-tab/--image/--sandbox`, and
   `share --guest/--rw/--reusable/--relay/--addr/--name`
   (`LABS_COMMANDS`, `LABS_OPTIONS` in `crates/cli/src/main.rs`).
@@ -76,7 +77,8 @@ rest. A starting daemon moves the old file into `flags.json` and removes it.
   (`LABS_OPTIONS` in `crates/daemon/src/args.rs`).
 - **MCP:** `read_thread` and `post_thread`, and the kinds `show:app`,
   `show:workspace`, `show:fountain`, `list:fountain_agents`,
-  `list:fountain_agent` (`UNLISTED` in `crates/daemon/src/mcp/tools.rs`).
+  `list:fountain_agent`, and `start_agent`'s `recipe` (`UNLISTED` and
+  `UNLISTED_ARGS` in `crates/daemon/src/mcp/tools.rs`).
   Unlisted tools still answer when called by name.
 - **Web client:** `Client.has("vms" | "fountain" | "studio")` and
   `hasLabs()`/`hasThreads()` in `web/src/client.ts`: VM panes and tabs,
@@ -472,3 +474,40 @@ only, and only the owner starts or reaches it. It runs until the block
 closes or the daemon stops, either of which stops its process group. One
 that exits by itself shows the end of its log and *Try again*. It isn't
 available for a workspace on a VM; the block says so.
+
+## Agent recipes
+
+The first part of the AGENTS track (#403): agents one person offers to other
+people's agents. With `agents` on (M76, #398):
+
+- **A recipe is a Claude Code subagent file**, as it is:
+  `.claude/agents/NAME.md` in a project, or `~/.claude/agents/NAME.md`. Its
+  frontmatter (`name`, `description`, `tools`, `disallowedTools`, `model`,
+  `permissionMode`, `skills`, `mcpServers`) and its body, the prompt, are
+  all Arugula reads. Nothing writes to it.
+- **`arugula agent --as NAME`** (MCP: `start_agent {recipe}`) runs one in an
+  agent block here, in the current project. The prompt is appended to
+  Claude Code's, after a line naming the agent, because Claude Code's
+  adapter doesn't select a subagent. The model, tool lists and permission
+  mode are applied, and so are the skills: each `SKILL.md` is preloaded
+  into the prompt, as Claude Code does for a subagent, and the whole
+  skill is put in a local plugin for its other files. The MCP servers
+  are named ones (from the project's local config in `~/.claude.json`,
+  its `.mcp.json`, then the user's `~/.claude.json`) and ones written into
+  the recipe. Their `${VAR}`s come from your shell environment, and
+  credentials go by reference, as M44's do for a worn Fountain agent.
+  Nothing else comes along: the session runs with `--strict-mcp-config`,
+  so the account's claude.ai connectors are left out too. The block's
+  header shows what came along and what didn't, and why. (Fountain's
+  `--as` is `--as-fountain` now.)
+- **Offering one** is the machine owner's choice: `arugula agents offer
+  NAME [--dir PROJECT]` (`--stop` to stop), kept in
+  `<state>/agent-offers.json`. Nothing is offered by default. `arugula
+  agents recipes` lists the recipes a project has, offered or not.
+- **Cards:** `arugula agents` (`GET /api/a2a/agents`) lists what's offered
+  here as A2A 1.0 agent cards, and `arugula agents card NAME` shows one.
+  A card's interface is `arugula://MACHINE/api/a2a/agents/NAME`, JSON-RPC,
+  with a required extension saying it's reached over Arugula's own
+  channel. That interface takes no tasks yet: every method answers A2A's
+  `UnsupportedOperationError` until M78 (#400). The cards are for anyone
+  who reaches the machine, and offering is the owner's alone.

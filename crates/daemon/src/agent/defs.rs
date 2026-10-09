@@ -104,6 +104,11 @@ pub struct Def {
     /// cache, and its secrets in memory.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub as_fountain: Option<String>,
+    /// M76: Claude Code as a recipe, a Claude Code subagent file by its name
+    /// (in the block's project's `.claude/agents/`, then the user's). Read
+    /// again each time it's put on: the file is the recipe.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recipe: Option<String>,
     /// M44: the agent-specs checkout whose Infisical mapping a worn agent's
     /// `${VAR}`s go through (`~/…` allowed; the default one if it's there).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -160,9 +165,15 @@ fn installed(home: &Path, name: &str) -> String {
 }
 
 impl Def {
+    /// Whether it wears something before it starts: a Fountain agent (M44)
+    /// or a recipe (M76).
+    pub fn wears(&self) -> bool {
+        self.as_fountain.is_some() || self.recipe.is_some()
+    }
+
     pub fn label(&self) -> String {
         match self.agent {
-            Kind::Claude => match &self.as_fountain {
+            Kind::Claude => match self.as_fountain.as_ref().or(self.recipe.as_ref()) {
                 Some(a) => format!("Claude Code as {a}"),
                 None => "Claude Code".into(),
             },
@@ -186,6 +197,16 @@ impl Def {
             }
             _ if self.as_fountain.as_deref().is_some_and(|a| a.trim().is_empty()) => {
                 Err("as_fountain needs the Fountain agent's name or id".into())
+            }
+            _ if !crate::labs::BUILT && self.recipe.is_some() => Err(crate::labs::not_built("Agent recipes")),
+            _ if self.recipe.is_some() && self.agent != Kind::Claude => {
+                Err("only Claude Code runs a recipe (agent: claude)".into())
+            }
+            _ if self.recipe.is_some() && self.as_fountain.is_some() => {
+                Err("a recipe or a Fountain agent to wear, not both".into())
+            }
+            _ if self.recipe.as_deref().is_some_and(|a| a.trim().is_empty()) => {
+                Err("recipe needs the agent's name (its .claude/agents file)".into())
             }
             _ if self.user_settings && self.agent != Kind::Claude => {
                 Err("user_settings is Claude Code's (agent: claude)".into())

@@ -133,6 +133,13 @@ enum Command {
     /// gates.
     #[command(hide = true)]
     Workspace(cmd::workspace::Args),
+    /// The agents this machine offers to other people's agents.
+    ///
+    /// Each is a Claude Code subagent file (`.claude/agents/NAME.md` in a
+    /// project, or `~/.claude/agents/`), offered with the project it works in,
+    /// and listed as an A2A agent card. `arugula agent --as NAME` runs one here.
+    #[command(hide = true)]
+    Agents(cmd::agents::Args),
     /// Show a pull request as a block.
     ///
     /// Forgejo through your `tea` login, GitHub through `gh`'s, a GitLab merge
@@ -450,12 +457,14 @@ const LABS_COMMANDS: &[(&str, &str)] = &[
     ("studio", flags::STUDIO),
     ("app", flags::STUDIO),
     ("workspace", flags::WORKSPACES),
+    ("agents", flags::AGENTS),
     ("guests", flags::GUEST_SSH),
     ("machines", flags::VMS),
     ("sandboxes", flags::VMS),
 ];
-const LABS_OPTIONS: [(&str, &[&str], &str); 6] = [
+const LABS_OPTIONS: [(&str, &[&str], &str); 7] = [
     ("agent", &["fountain", "as_fountain", "vault"], flags::FOUNTAIN),
+    ("agent", &["recipe"], flags::AGENTS),
     ("agent", &["vm", "machine"], flags::VMS),
     ("run", &["vm", "vm_tab", "image", "sandbox"], flags::VMS),
     ("share", &["guest", "rw", "reusable", "relay", "addr", "name"], flags::GUEST_SSH),
@@ -682,6 +691,7 @@ fn real_main(cli: Cli) -> anyhow::Result<i32> {
         Command::Diff(args) => cmd::diff::run(args, ctx),
         Command::View(args) => cmd::view::run(args, ctx),
         Command::Workspace(args) => cmd::workspace::run(args, ctx),
+        Command::Agents(args) => cmd::agents::run(args, ctx),
         Command::Pr(args) => cmd::pr::run(args, ctx),
         #[cfg(feature = "labs")]
         Command::Fountain(args) => cmd::fountain::run(args, ctx),
@@ -764,7 +774,7 @@ mod tests {
         assert!(listed.contains(&"run") && listed.contains(&"pr"), "{listed:?}");
         // Options: out of the subcommand's help, still parsed.
         for (cmd, opts) in [
-            ("agent", &["fountain", "as_fountain", "vault", "vm", "machine"][..]),
+            ("agent", &["fountain", "as_fountain", "recipe", "vault", "vm", "machine"][..]),
             ("run", &["vm", "vm_tab", "image", "sandbox"][..]),
             ("share", &["guest", "rw", "reusable", "relay", "addr", "name"][..]),
             ("open", &["machine"][..]),
@@ -808,7 +818,7 @@ mod tests {
         let (off, on) = (hidden(&labs_command(false)), hidden(&labs_command(true)));
         let mut set: Vec<String> = super::LABS_COMMANDS.iter().map(|(c, _)| (*c).to_owned()).collect();
         for (cmd, opts) in [
-            ("agent", &["fountain", "as_fountain", "vault", "vm", "machine"][..]),
+            ("agent", &["fountain", "as_fountain", "recipe", "vault", "vm", "machine"][..]),
             ("run", &["vm", "vm_tab", "image", "sandbox"][..]),
             ("share", &["guest", "rw", "reusable", "relay", "addr", "name"][..]),
             ("open", &["machine"][..]),

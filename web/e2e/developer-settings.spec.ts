@@ -82,11 +82,18 @@ async function shown(page: Page, pane: number): Promise<Flag[]> {
   if (items.includes("Invite over ssh…")) out.push("guest-ssh");
   const page_says = await page.evaluate(() => {
     const c = window.__arugula.client as unknown as { flag(n: string): boolean; forgeLink(u: string): string | null };
-    return { workspaces: c.flag("workspaces"), themes: c.flag("swarm-themes"), forges: c.forgeLink("https://gitlab.com/g/p/-/merge_requests/2") };
+    return {
+      workspaces: c.flag("workspaces"),
+      themes: c.flag("swarm-themes"),
+      forges: c.forgeLink("https://gitlab.com/g/p/-/merge_requests/2"),
+      // M76 is the daemon's and the CLI's; the page's catalog is M77's.
+      agents: c.flag("agents"),
+    };
   });
   if (page_says.workspaces) out.push("workspaces");
   if (page_says.themes) out.push("swarm-themes");
   if (page_says.forges) out.push("forges");
+  if (page_says.agents) out.push("agents");
   return FLAGS.filter((f) => out.includes(f));
 }
 

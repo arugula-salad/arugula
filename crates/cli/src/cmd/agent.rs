@@ -27,12 +27,17 @@ pub struct Args {
     fountain: Option<String>,
     /// Claude Code wearing a Fountain agent (name or id), on this host:
     /// its system prompt, skills and MCP servers.
-    #[arg(long = "as", value_name = "AGENT", hide = true, conflicts_with_all = ["acp", "fountain", "codex", "vm", "machine"])]
+    #[arg(long = "as-fountain", value_name = "AGENT", hide = true, conflicts_with_all = ["acp", "fountain", "codex", "vm", "machine"])]
     as_fountain: Option<String>,
+    /// Claude Code as a recipe, a Claude Code subagent (its `name`, from
+    /// `.claude/agents/` here or `~/.claude/agents/`): its prompt, model,
+    /// tools, permission mode, skills and MCP servers.
+    #[arg(long = "as", value_name = "AGENT", hide = true, conflicts_with_all = ["acp", "fountain", "codex", "vm", "machine", "as_fountain"])]
+    recipe: Option<String>,
     /// Codex instead of Claude Code.
     #[arg(long)]
     codex: bool,
-    /// Fountain: a vault for its secrets (with `--as`: whose agent-specs
+    /// Fountain: a vault for its secrets (with `--as-fountain`: whose agent-specs
     /// mapping its `${VAR}`s go through, over its environment's).
     #[arg(long, hide = true)]
     vault: Option<String>,
@@ -67,11 +72,11 @@ pub struct Args {
     cwd: Option<String>,
     /// Continue a Claude Code conversation from a terminal or the
     /// desktop app (its id, or the start of it; `arugula claude ls`).
-    #[arg(long, value_name = "ID", conflicts_with_all = ["acp", "fountain", "codex", "vm", "machine", "fork", "as_fountain"])]
+    #[arg(long, value_name = "ID", conflicts_with_all = ["acp", "fountain", "codex", "vm", "machine", "fork", "as_fountain", "recipe"])]
     resume: Option<String>,
     /// Fork a Claude Code conversation and go on in the fork (for one
     /// that's still open somewhere else).
-    #[arg(long, value_name = "ID", conflicts_with_all = ["acp", "fountain", "codex", "vm", "machine", "as_fountain"])]
+    #[arg(long, value_name = "ID", conflicts_with_all = ["acp", "fountain", "codex", "vm", "machine", "as_fountain", "recipe"])]
     fork: Option<String>,
     #[arg(long)]
     session: Option<String>,
@@ -139,6 +144,7 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
             acp,
             fountain,
             as_fountain,
+            recipe,
             codex,
             vault,
             model,
@@ -159,13 +165,14 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
                 (Some(cmd), _) => json!({ "agent": "acp", "command": cmd }),
                 (_, Some(name)) => json!({ "agent": "fountain", "fountain_agent": name, "vault": vault }),
                 _ if codex => json!({ "agent": "codex" }),
-                _ => match &as_fountain {
-                    Some(name) => json!({ "agent": "claude", "as_fountain": name, "vault": vault }),
-                    None => json!({ "agent": "claude" }),
+                _ => match (&as_fountain, &recipe) {
+                    (Some(name), _) => json!({ "agent": "claude", "as_fountain": name, "vault": vault }),
+                    (_, Some(name)) => json!({ "agent": "claude", "recipe": name }),
+                    _ => json!({ "agent": "claude" }),
                 },
             };
             if vault.is_some() && fountain.is_none() && as_fountain.is_none() {
-                anyhow::bail!("--vault goes with --fountain or --as");
+                anyhow::bail!("--vault goes with --fountain or --as-fountain");
             }
             // A VM, or another daemon's machine, has none of this host's
             // directories.
