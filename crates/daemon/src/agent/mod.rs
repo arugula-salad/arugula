@@ -311,6 +311,10 @@ struct Inner {
     caps: Value,
     title: Option<String>,
     prompt_id: Option<u64>,
+    /// The turn's result has come (claude-agent-acp's closing `usage_update`,
+    /// the only one with a cost) but its `session/prompt` has not been
+    /// answered: the adapter holds it open for background subagents.
+    result_in: bool,
     queue: VecDeque<Queued>,
     cost: Option<f64>,
     currency: Option<String>,
@@ -411,6 +415,7 @@ impl Inner {
             caps: Value::Null,
             title: None,
             prompt_id: None,
+            result_in: false,
             queue: VecDeque::new(),
             cost: None,
             currency: None,
@@ -733,6 +738,7 @@ impl Inner {
                         let Queued { text, images } = sent;
                         self.t.user(&text, images, at);
                         self.prompt_id = Some(id);
+                        self.result_in = false;
                         self.status = Status::Working;
                         self.error = None;
                         self.last_stop = None;
@@ -835,6 +841,7 @@ impl Inner {
                     // The prompt goes again, as if this one hadn't happened.
                     (Purpose::Prompt, Some(e)) if e.contains("retry") => {
                         self.prompt_id = None;
+                        self.result_in = false;
                         self.status = Status::Ready;
                         // Its run goes on with the prompt sent again.
                         self.carry_run = self.turns.pop().and_then(|t| t.run);
@@ -845,6 +852,7 @@ impl Inner {
                     }
                     (Purpose::Prompt, result) => {
                         self.prompt_id = None;
+                        self.result_in = false;
                         if self.status == Status::Working {
                             self.status = Status::Ready;
                         }
@@ -885,6 +893,19 @@ impl Inner {
                 let u = &m["params"]["update"];
                 match u["sessionUpdate"].as_str().unwrap_or("") {
                     "usage_update" => {
+                        // A user turn's result: claude-agent-acp sends it before it
+                        // answers the prompt, and holds the answer while background
+                        // subagents live. An autonomous cycle's names its origin.
+                        let origin = u["_meta"]["_claude/origin"]["kind"].as_str().unwrap_or("human");
+                        let claude = self.agent_info["name"].as_str().is_some_and(|n| n.contains("claude-agent-acp"));
+                        if claude
+                            && self.replay.is_none()
+                            && self.prompt_id.is_some()
+                            && u["cost"].is_object()
+                            && origin == "human"
+                        {
+                            self.result_in = true;
+                        }
                         if let Some(amount) = u["cost"]["amount"].as_f64() {
                             self.cost = Some(amount);
                             self.currency = u["cost"]["currency"].as_str().map(str::to_owned);
@@ -1068,6 +1089,9 @@ impl Inner {
         }
         match self.status {
             Status::Exited => (Attention::NeedsInput, self.error.clone().unwrap_or_else(|| "the agent stopped".into())),
+            Status::Working if self.result_in && self.queue.is_empty() => {
+                (Attention::Idle, "waiting on a background task".into())
+            }
             Status::Working | Status::Remote => (Attention::Working, "working".into()),
             Status::Starting | Status::Ready if !self.queue.is_empty() => (Attention::Working, "starting".into()),
             Status::Ready | Status::Starting if self.error.is_some() => {
