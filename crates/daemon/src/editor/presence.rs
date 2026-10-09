@@ -12,7 +12,7 @@ use futures_util::future::BoxFuture;
 use serde_json::{Value, json};
 
 use super::link::Link;
-use crate::block::{Block, Summary, no_method};
+use crate::block::{Block, EditorLink, Summary, no_method};
 
 pub struct Presence {
     link: Arc<Link>,
@@ -103,7 +103,7 @@ impl Block for Presence {
         }
     }
 
-    fn link(&self) -> Option<Arc<Link>> {
+    fn link(&self) -> Option<Arc<dyn EditorLink>> {
         Some(self.link.clone())
     }
 

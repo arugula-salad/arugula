@@ -41,7 +41,7 @@ use tracing::info;
 
 use self::server::{On, Server, Status};
 use crate::{
-    block::{Block, BlockCtx, Summary, no_method},
+    block::{Block, BlockCtx, EditorLink, Summary, no_method},
     ports::{Service, Target},
     sites::{self, Report, Site},
 };
@@ -116,7 +116,7 @@ pub struct Editor {
     missed: AtomicBool,
     closed: AtomicBool,
     /// Its window's Arugula extension, connected (M28).
-    link: Mutex<Option<Arc<link::Link>>>,
+    link: Mutex<Option<Arc<dyn EditorLink>>>,
 }
 
 impl Editor {
@@ -389,20 +389,20 @@ impl Block for Editor {
         }
     }
 
-    fn link(&self) -> Option<Arc<link::Link>> {
+    fn link(&self) -> Option<Arc<dyn EditorLink>> {
         self.link.lock().unwrap().clone()
     }
 
-    fn attach(&self, l: Arc<link::Link>) -> bool {
+    fn attach(&self, l: Arc<dyn EditorLink>) -> bool {
         if self.closed.load(Ordering::Relaxed) {
             return false;
         }
         let me = self.me.clone();
-        l.on_peek(move |p| {
+        l.on_peek(Box::new(move |p| {
             if let Some(e) = me.upgrade() {
                 e.peeked(p);
             }
-        });
+        }));
         l.bind(self.ctx.id, self.ctx.sink());
         // A reload of the window connects again before the old one has gone.
         *self.link.lock().unwrap() = Some(l);
@@ -410,7 +410,7 @@ impl Block for Editor {
         true
     }
 
-    fn detach(&self, l: &Arc<link::Link>) {
+    fn detach(&self, l: &Arc<dyn EditorLink>) {
         let mut cur = self.link.lock().unwrap();
         if cur.as_ref().is_some_and(|c| Arc::ptr_eq(c, l)) {
             *cur = None;

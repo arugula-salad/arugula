@@ -43,15 +43,11 @@ pub struct Config {
     pub provider: Option<Arc<dyn Provider>>,
     /// Names this daemon's sprites, so a crash sweep only touches ours.
     pub daemon_id: String,
-    /// Where agents in VMs get their credentials from.
-    pub secrets: crate::block::Secrets,
     /// Secrets the `fs` methods never serve (the provider's token, agents'
     /// credentials); the state directory is added to these.
     pub private: Vec<PathBuf>,
-    /// Where agent blocks reach MCP (M16); `None`: they don't.
-    pub mcp: Option<crate::mcp::Link>,
-    /// What runs an invite the owner sent from an agent's card (#234).
-    pub invite: crate::invite::Hook,
+    /// The block types this build makes.
+    pub kinds: Arc<crate::block::BlockKinds>,
     /// arugulad as Claude Code's IDE (M28); `None`: off.
     pub ide: Option<Arc<crate::ide::Ide>>,
 }

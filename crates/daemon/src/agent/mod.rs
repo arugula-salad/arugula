@@ -78,7 +78,7 @@ use self::{
     transcript::{Applied, Entry, Transcript},
 };
 use crate::{
-    block::{Block, BlockCtx, no_method},
+    block::{Block, BlockCtx, BlockKind, Secrets, no_method},
     review::Runner,
     store::{Event, PaneLog, now_ms},
 };
@@ -398,8 +398,47 @@ enum Msg {
     Changed,
 }
 
+/// The agent type's kind: what an agent block is given beside what every
+/// block is, so the daemon's core never carries it.
+pub struct AgentKind {
+    /// How an agent reaches the daemon's MCP server (M16).
+    pub mcp: Option<crate::mcp::Link>,
+    /// Where agents in VMs get their credentials from.
+    pub secrets: Secrets,
+    /// Standing permission rules (#166).
+    pub rules: Arc<crate::rules::Rules>,
+}
+
+impl BlockKind for AgentKind {
+    fn create(&self, ctx: BlockCtx, config: Value) -> Result<Arc<dyn Block>, String> {
+        let ctx =
+            AgentCtx { block: ctx, mcp: self.mcp.clone(), secrets: self.secrets.clone(), rules: self.rules.clone() };
+        Agent::create(ctx, config)
+    }
+
+    fn stored_text(&self, dir: &Path) -> Option<String> {
+        transcript_of(dir)
+    }
+}
+
+/// What an agent block gets: the block's own, and what its kind holds.
+#[derive(Clone)]
+struct AgentCtx {
+    block: BlockCtx,
+    mcp: Option<crate::mcp::Link>,
+    secrets: Secrets,
+    rules: Arc<crate::rules::Rules>,
+}
+
+impl std::ops::Deref for AgentCtx {
+    type Target = BlockCtx;
+    fn deref(&self) -> &BlockCtx {
+        &self.block
+    }
+}
+
 pub struct Agent {
-    ctx: BlockCtx,
+    ctx: AgentCtx,
     inner: Arc<Mutex<Inner>>,
     tx: mpsc::UnboundedSender<Msg>,
 }
@@ -493,7 +532,7 @@ impl Inner {
     /// environment. A VM's agent can't reach the host, so it gets a client
     /// for the relay the daemon opens into its VM (#59). Not for a Fountain
     /// agent (it runs in Fountain's sandbox).
-    fn servers(&self, ctx: &BlockCtx) -> Vec<Value> {
+    fn servers(&self, ctx: &AgentCtx) -> Vec<Value> {
         let mut list = self.cfg.mcp_servers.clone();
         // M44: a worn Fountain agent's, values resolved.
         if let Some(w) = &self.worn {
@@ -1154,7 +1193,7 @@ impl Inner {
             .unwrap_or_else(|| "finished".into())
     }
 
-    fn state(&self, ctx: &BlockCtx) -> Value {
+    fn state(&self, ctx: &AgentCtx) -> Value {
         let (from, entries) = self.t.for_state(ENTRIES_IN_STATE);
         let (attention, _) = self.attention();
         let total_tokens: u64 = self.turns.iter().filter_map(|t| t.tokens.as_ref()?["totalTokens"].as_u64()).sum();
@@ -1205,7 +1244,7 @@ impl Inner {
 }
 
 impl Agent {
-    pub fn create(ctx: BlockCtx, config: Value) -> Result<Arc<dyn Block>, String> {
+    fn create(ctx: AgentCtx, config: Value) -> Result<Arc<dyn Block>, String> {
         let mut config = config;
         // A command line as one string is split into words.
         if let Some(c) = config["command"].as_str() {
@@ -1691,7 +1730,7 @@ fn local_login(env: &[(String, String)], remove: &[String]) -> String {
 }
 
 /// #379: the login an agent in a VM uses (see [`secret_env`]).
-fn vm_login(ctx: &BlockCtx) -> String {
+fn vm_login(ctx: &AgentCtx) -> String {
     let has = |p: &Path| std::fs::metadata(p).is_ok_and(|m| m.len() > 0);
     if has(&ctx.secrets.anthropic_key) {
         format!("It used the API key in {}: put a working one there.", ctx.secrets.anthropic_key.display())
@@ -1732,7 +1771,7 @@ fn adapter_fix(adapter: &Value, block: arugula_proto::PaneId) -> Option<String> 
 
 /// The credentials an agent in a VM gets in its environment: an Anthropic
 /// API key if there's one, else a Claude Code token.
-fn secret_env(ctx: &BlockCtx) -> Result<Vec<(String, String)>, String> {
+fn secret_env(ctx: &AgentCtx) -> Result<Vec<(String, String)>, String> {
     let read = |p: &Path| std::fs::read_to_string(p).ok().map(|s| s.trim().to_owned()).filter(|s| !s.is_empty());
     if let Some(k) = read(&ctx.secrets.anthropic_key) {
         return Ok(vec![("ANTHROPIC_API_KEY".into(), k)]);
@@ -1789,7 +1828,7 @@ fn mise_node(installs: &Path) -> Option<std::path::PathBuf> {
 
 /// The block's task: frames from the agent server, and publishing.
 async fn run(
-    ctx: BlockCtx,
+    ctx: AgentCtx,
     inner: Arc<Mutex<Inner>>,
     tx: mpsc::UnboundedSender<Msg>,
     mut rx: mpsc::UnboundedReceiver<Msg>,
@@ -1929,7 +1968,7 @@ async fn fountain_busy(def: &Def, session: &str) -> Option<bool> {
 
 /// An opened conversation, read again if its transcript changed; and who
 /// holds it now. True if anything changed.
-fn refresh_import(ctx: &BlockCtx, g: &mut Inner) -> bool {
+fn refresh_import(ctx: &AgentCtx, g: &mut Inner) -> bool {
     let Some(imp) = g.cfg.import.clone() else { return false };
     let held = g.cfg.session_id.as_deref().and_then(|sid| {
         crate::conversations::Index::global().lock().unwrap().live_for(sid).filter(|l| l.block != Some(ctx.id))
@@ -1965,7 +2004,7 @@ fn refresh_import(ctx: &BlockCtx, g: &mut Inner) -> bool {
     changed
 }
 
-fn publish(ctx: &BlockCtx, inner: &Arc<Mutex<Inner>>, first: bool) {
+fn publish(ctx: &AgentCtx, inner: &Arc<Mutex<Inner>>, first: bool) {
     let mut g = inner.lock().unwrap();
     let (a, why) = g.attention();
     if g.reported != Some(a) {
@@ -2005,7 +2044,7 @@ fn cut_reason(headline: String) -> arugula_proto::Reason {
 }
 
 /// Act on what a frame asked for.
-fn act(ctx: &BlockCtx, g: &mut Inner, f: Effect) {
+fn act(ctx: &AgentCtx, g: &mut Inner, f: Effect) {
     match f {
         Effect::OpenSession => {
             let cwd = g.cfg.cwd.clone().unwrap_or_else(|| match ctx.sprite {
@@ -2220,7 +2259,7 @@ fn redacted<'a>(frame: &'a Value, secrets: &[String]) -> std::borrow::Cow<'a, Va
 }
 
 /// A worn Fountain agent's `_meta` (M44): Claude's, dressed as the agent.
-fn worn_meta(ctx: &BlockCtx, g: &Inner) -> Option<Value> {
+fn worn_meta(ctx: &AgentCtx, g: &Inner) -> Option<Value> {
     let w = g.worn.as_ref()?;
     let mut meta = g.cfg.def.launch(&ctx.home, ctx.sprite.is_some()).map(|l| l.meta).unwrap_or_default();
     w.dress(&mut meta);
@@ -2246,7 +2285,7 @@ fn follow_failed(g: &mut Inner, why: &str) {
 }
 
 /// The agent's own `_meta` (Claude's `settingSources: []`), if it has one.
-fn launch_meta(ctx: &BlockCtx, g: &Inner) -> Option<Value> {
+fn launch_meta(ctx: &AgentCtx, g: &Inner) -> Option<Value> {
     let m = g.cfg.def.launch(&ctx.home, ctx.sprite.is_some()).ok()?.meta;
     m.as_object().is_some_and(|o| !o.is_empty()).then_some(m)
 }
@@ -2259,7 +2298,7 @@ pub const MCP_TOKEN_ENV: &str = "ARUGULA_MCP_BLOCK_TOKEN";
 /// local Claude Code (its own adapter or another command), which expands
 /// `${…}` in its MCP config itself. Codex and other ACP agents aren't
 /// known to, so they get values.
-fn by_reference(def: &Def, ctx: &BlockCtx) -> bool {
+fn by_reference(def: &Def, ctx: &AgentCtx) -> bool {
     def.agent == Kind::Claude && ctx.sprite.is_none()
 }
 
@@ -2268,7 +2307,7 @@ fn by_reference(def: &Def, ctx: &BlockCtx) -> bool {
 /// older daemon hasn't, and is started again when taken over.
 const TOKEN_IN_ENV: &str = "mcp-token-env";
 
-fn new_session(ctx: &BlockCtx, g: &mut Inner, cwd: &str) {
+fn new_session(ctx: &AgentCtx, g: &mut Inner, cwd: &str) {
     // A worn agent never opens a plain session (M44).
     if g.cfg.def.wears() && g.worn.is_none() {
         g.note(json!({ "e": "error", "message": "The agent it wears isn't put on yet: no session opened" }));
@@ -2300,7 +2339,7 @@ fn session_env(cfg: &Config) -> Option<(String, String)> {
 
 /// #304: the start of a turn's run in the chant ledger, once its prompt has
 /// gone (not again for a prompt sent again after "retry").
-fn start_run(ctx: &BlockCtx, g: &mut Inner, prompt: &str) {
+fn start_run(ctx: &AgentCtx, g: &mut Inner, prompt: &str) {
     let picked = g.next_run.take();
     let (Some(c), Some(t)) = (g.cfg.chant.clone(), g.turns.last()) else { return };
     if g.runs.is_none() || t.run.is_some() {
@@ -2322,7 +2361,7 @@ fn start_run(ctx: &BlockCtx, g: &mut Inner, prompt: &str) {
 }
 
 /// Send the next queued prompt, if the agent can take it.
-fn send_next(ctx: &BlockCtx, g: &mut Inner) {
+fn send_next(ctx: &AgentCtx, g: &mut Inner) {
     if g.status != Status::Ready || g.prompt_id.is_some() || g.cfg.session_id.is_none() {
         return;
     }
@@ -2826,7 +2865,7 @@ fn strings(v: &Value) -> Vec<String> {
 /// A prompt's files (M71), uploaded for this block with M70's route: an
 /// image is kept in the block's folder (and its upload goes); anything else
 /// goes as its path.
-fn attach(ctx: &BlockCtx, q: &mut Queued, files: &[String]) -> Result<(), String> {
+fn attach(ctx: &AgentCtx, q: &mut Queued, files: &[String]) -> Result<(), String> {
     #[cfg(unix)]
     for f in files {
         let path = crate::upload::take(ctx.id, f).map_err(|e| format!("{f}: {e}"))?;

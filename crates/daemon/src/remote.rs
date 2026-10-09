@@ -17,7 +17,20 @@ use arugula_proto::{BlockType, RemoteRef};
 use futures_util::future::BoxFuture;
 use serde_json::Value;
 
-use crate::block::{Block, BlockCtx, no_method};
+use crate::block::{Block, BlockCtx, BlockKind, no_method};
+
+/// The remote type's kind: it checks a config before the block is placed.
+pub struct RemoteKind;
+
+impl BlockKind for RemoteKind {
+    fn create(&self, ctx: BlockCtx, config: Value) -> Result<std::sync::Arc<dyn Block>, String> {
+        Remote::create(ctx, config)
+    }
+
+    fn check(&self, config: &Value) -> Result<(), String> {
+        parse(config).map(|_| ())
+    }
+}
 
 pub struct Remote {
     at: RemoteRef,

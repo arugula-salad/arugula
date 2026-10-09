@@ -236,10 +236,12 @@ impl Daemon {
                 let d = self.diffs.iter().find(|d| d.pane == Some(pane));
                 let _ = reply.send(d.map(|d| (d.info.clone(), d.old.clone(), d.new.clone())));
             }
-            Api::EditorJoin(link, reply) => {
+            Api::EditorJoin(block, reply) => {
                 let id = self.mux.reserve_pane();
-                link.bind(id, self.notices.clone());
-                self.blocks.insert(id, crate::editor::presence::Presence::make(link));
+                if let Some(link) = block.link() {
+                    link.bind(id, self.notices.clone());
+                }
+                self.blocks.insert(id, block);
                 // A new entry: everyone gets a whole State with it.
                 self.full = true;
                 self.broadcast();

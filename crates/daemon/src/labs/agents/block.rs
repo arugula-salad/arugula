@@ -157,8 +157,19 @@ struct State {
     grants: Vec<tasks::Grant>,
 }
 
+/// The agent catalog's kind: it holds what runs an invite from a card
+/// (#234), which is set once the daemon is up.
+pub struct AgentsKind(pub crate::invite::Hook);
+
+impl crate::block::BlockKind for AgentsKind {
+    fn create(&self, ctx: BlockCtx, config: Value) -> Result<Arc<dyn Block>, String> {
+        AgentsBlock::create(ctx, self.0.clone(), config)
+    }
+}
+
 pub struct AgentsBlock {
     ctx: BlockCtx,
+    hook: crate::invite::Hook,
     me: Weak<AgentsBlock>,
     config: Mutex<Config>,
     state: Mutex<State>,
@@ -169,11 +180,12 @@ pub struct AgentsBlock {
 }
 
 impl AgentsBlock {
-    pub fn create(ctx: BlockCtx, config: Value) -> Result<Arc<dyn Block>, String> {
+    fn create(ctx: BlockCtx, hook: crate::invite::Hook, config: Value) -> Result<Arc<dyn Block>, String> {
         let config: Config = serde_json::from_value(config).map_err(|e| format!("agents config: {e}"))?;
         let state = State { loading: true, dir: config.dir.clone(), ..State::default() };
         let b = Arc::new_cyclic(|me| Self {
             ctx,
+            hook,
             me: me.clone(),
             config: Mutex::new(config),
             state: Mutex::new(state),
@@ -262,7 +274,7 @@ impl AgentsBlock {
 
     /// The daemon (set once the server is: blocks are made first).
     fn app(&self) -> Result<Arc<App>, String> {
-        self.ctx.invite.get().and_then(Weak::upgrade).ok_or_else(|| "the daemon is starting".to_owned())
+        self.hook.get().and_then(Weak::upgrade).ok_or_else(|| "the daemon is starting".to_owned())
     }
 
     async fn read(&self, max_age_ms: u64) {

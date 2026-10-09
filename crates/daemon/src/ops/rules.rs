@@ -14,7 +14,6 @@ impl Handle for RulesList {
     async fn handle(cx: &Cx<'_>, _: (), _: Empty) -> Result<Rules, OpError> {
         let rules = cx
             .app
-            .mux
             .rules
             .list()
             .into_iter()
@@ -36,14 +35,14 @@ impl Handle for RulesList {
 
 impl Handle for RulesForgetAll {
     async fn handle(cx: &Cx<'_>, _: (), _: Empty) -> Result<Empty, OpError> {
-        cx.app.mux.rules.forget(None).map_err(|e| OpError::Status(StatusCode::INTERNAL_SERVER_ERROR, e))?;
+        cx.app.rules.forget(None).map_err(|e| OpError::Status(StatusCode::INTERNAL_SERVER_ERROR, e))?;
         Ok(Empty {})
     }
 }
 
 impl Handle for RuleForget {
     async fn handle(cx: &Cx<'_>, index: usize, _: Empty) -> Result<Empty, OpError> {
-        cx.app.mux.rules.forget(Some(index)).map_err(|e| OpError::Status(StatusCode::NOT_FOUND, e))?;
+        cx.app.rules.forget(Some(index)).map_err(|e| OpError::Status(StatusCode::NOT_FOUND, e))?;
         Ok(Empty {})
     }
 }

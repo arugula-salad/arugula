@@ -2571,9 +2571,11 @@ impl<'a> Call<'a> {
         let since = a.since.as_deref().map(seconds).transpose()?.map(|s| now_ms().saturating_sub(s * 1000));
         let only = self.tab_panes().await;
         let store = self.app.mux.store.clone();
+        let kinds = self.app.mux.kinds.clone();
         let want = if only.is_some() { 2000 } else { limit };
-        let hits =
-            tokio::task::spawn_blocking(move || history::search(&store, &re, since, want)).await.unwrap_or_default();
+        let hits = tokio::task::spawn_blocking(move || history::search(&store, &kinds, &re, since, want))
+            .await
+            .unwrap_or_default();
         let hits: Vec<results::Hit> = hits
             .into_iter()
             .filter(|h| only.as_ref().is_none_or(|o| o.contains(&h.pane)))

@@ -23,7 +23,7 @@
 
 use std::{
     collections::HashMap,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
 
@@ -87,16 +87,16 @@ pub trait Block: Send + Sync {
     }
     /// The editor connected to it (M28): an editor block's window, or an
     /// editor that joined the swarm.
-    fn link(&self) -> Option<Arc<crate::editor::link::Link>> {
+    fn link(&self) -> Option<Arc<dyn EditorLink>> {
         None
     }
     /// An editor says it's this block's window (M28): keep it, if this is
     /// an editor block.
-    fn attach(&self, _link: Arc<crate::editor::link::Link>) -> bool {
+    fn attach(&self, _link: Arc<dyn EditorLink>) -> bool {
         false
     }
     /// ...and it went away.
-    fn detach(&self, _link: &Arc<crate::editor::link::Link>) {}
+    fn detach(&self, _link: &Arc<dyn EditorLink>) {}
     /// It isn't in the layout: an editor that joined the swarm (M28).
     fn detached(&self) -> bool {
         false
@@ -152,9 +152,6 @@ pub struct BlockEnv {
     /// The environment they get (as a pane's shell would).
     pub env: Vec<(String, String)>,
     pub home: PathBuf,
-    pub secrets: Secrets,
-    /// How an agent reaches the daemon's MCP server (M16).
-    pub mcp: Option<crate::mcp::Link>,
     /// This host's files, as `/api/fs` serves them (M7).
     pub fs: Arc<crate::fs::Scope>,
     /// The user's shell environment (#74), for blocks that run the user's
@@ -164,10 +161,6 @@ pub struct BlockEnv {
     pub cmds: Option<tokio::sync::mpsc::UnboundedSender<crate::mux::Cmd>>,
     /// The daemon's panes and blocks.
     pub ids: PaneIds,
-    /// Standing permission rules (#166).
-    pub rules: Arc<crate::rules::Rules>,
-    /// What runs an invite the owner sent from its card (#234).
-    pub invite: crate::invite::Hook,
     /// The daemon's state directory, where the machine's `labs` file is.
     pub state_dir: PathBuf,
 }
@@ -197,15 +190,10 @@ pub struct BlockCtx {
     /// Descriptors systemd kept for it across a restart, by name; take what
     /// you use.
     pub kept: Arc<Mutex<HashMap<String, Kept>>>,
-    pub secrets: Secrets,
-    pub mcp: Option<crate::mcp::Link>,
     pub fs: Arc<crate::fs::Scope>,
     pub shell_env: Arc<crate::shellenv::ShellEnv>,
     cmds: Option<tokio::sync::mpsc::UnboundedSender<crate::mux::Cmd>>,
     ids: PaneIds,
-    /// Standing permission rules (#166).
-    pub rules: Arc<crate::rules::Rules>,
-    pub invite: crate::invite::Hook,
     /// The daemon's state directory, where the machine's `labs` file is.
     pub state_dir: PathBuf,
 }
@@ -233,14 +221,10 @@ impl BlockCtx {
             env: base.env,
             home: base.home,
             kept: Arc::new(Mutex::new(kept)),
-            secrets: base.secrets,
-            mcp: base.mcp,
             fs: base.fs,
             shell_env: base.shell_env,
             cmds: base.cmds,
             ids: base.ids,
-            rules: base.rules,
-            invite: base.invite,
             state_dir: base.state_dir,
         }
     }
@@ -424,22 +408,99 @@ impl BlockCtx {
     }
 }
 
-/// Make a block of `kind` from its config.
-pub fn create(kind: BlockType, ctx: BlockCtx, config: Value) -> Result<Arc<dyn Block>, String> {
-    match kind {
-        BlockType::Terminal => Err("terminals aren't made here".into()),
-        BlockType::Browser => crate::browser::Browser::create(ctx, config),
-        BlockType::Agent => crate::agent::Agent::create(ctx, config),
-        BlockType::Editor => crate::editor::Editor::create(ctx, config),
-        BlockType::Remote => crate::remote::Remote::create(ctx, config),
-        BlockType::Diff => crate::review::diff::Diff::create(ctx, config),
-        BlockType::File => crate::review::file::FileView::create(ctx, config),
-        BlockType::Workspace | BlockType::App => crate::labs::create_block(kind, ctx, config),
-        BlockType::Forge => crate::forge::ForgeBlock::create(ctx, config),
-        BlockType::Fountain | BlockType::Agents => crate::labs::create_block(kind, ctx, config),
-        BlockType::Invite => crate::invite::card::InviteBlock::create(ctx, config),
-        BlockType::Unknown => Err("a block type this build doesn't know".into()),
+/// A block type's part of the registry: how to make one, and what the
+/// daemon asks of the type besides.
+pub trait BlockKind: Send + Sync + 'static {
+    /// Make one from its config.
+    fn create(&self, ctx: BlockCtx, config: Value) -> Result<Arc<dyn Block>, String>;
+    /// Check a config before the block is placed.
+    fn check(&self, _config: &Value) -> Result<(), String> {
+        Ok(())
     }
+    /// A stored log as text, for history and search.
+    fn stored_text(&self, _dir: &Path) -> Option<String> {
+        None
+    }
+}
+
+/// A kind that is a function: most types are made by their `create`, and
+/// ask nothing else.
+pub struct Make(pub fn(BlockCtx, Value) -> Result<Arc<dyn Block>, String>);
+
+impl BlockKind for Make {
+    fn create(&self, ctx: BlockCtx, config: Value) -> Result<Arc<dyn Block>, String> {
+        (self.0)(ctx, config)
+    }
+}
+
+/// The block types this build makes, filled in before the multiplexer
+/// starts.
+#[derive(Default)]
+pub struct BlockKinds(HashMap<BlockType, Arc<dyn BlockKind>>);
+
+impl std::fmt::Debug for BlockKinds {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_set().entries(self.0.keys()).finish()
+    }
+}
+
+impl BlockKinds {
+    pub fn add(&mut self, kind: BlockType, k: impl BlockKind) {
+        self.0.insert(kind, Arc::new(k));
+    }
+
+    /// Whether a type is made here.
+    #[cfg(test)]
+    pub fn has(&self, kind: BlockType) -> bool {
+        self.0.contains_key(&kind)
+    }
+
+    /// Make a block of `kind` from its config.
+    pub fn create(&self, kind: BlockType, ctx: BlockCtx, config: Value) -> Result<Arc<dyn Block>, String> {
+        match self.0.get(&kind) {
+            Some(k) => k.create(ctx, config),
+            None if kind == BlockType::Terminal => Err("terminals aren't made here".into()),
+            None => Err("a block type this build doesn't know".into()),
+        }
+    }
+
+    /// Check a config of `kind` before the block is placed.
+    pub fn check(&self, kind: BlockType, config: &Value) -> Result<(), String> {
+        self.0.get(&kind).map_or(Ok(()), |k| k.check(config))
+    }
+
+    /// A stored block's log as text, if its type keeps one (the block
+    /// directory says which type it is).
+    pub fn stored_text(&self, dir: &Path) -> Option<String> {
+        self.0.values().find_map(|k| k.stored_text(dir))
+    }
+}
+
+/// What the multiplexer and an editor block call on the editor that is
+/// connected to them.
+pub trait EditorLink: Send + Sync {
+    /// It's pane `id` now: notices about it go to `sink`.
+    fn bind(&self, id: PaneId, sink: NoticeSink);
+    fn info(&self) -> arugula_proto::EditorInfo;
+    /// An editor block's: told of each peek.
+    fn on_peek(&self, f: Box<dyn Fn(&Peek) + Send + Sync>);
+    /// The debugger: run on.
+    fn resume(&self) -> Result<(), String>;
+    /// How many follow it now.
+    fn followers(&self, n: u32, new: bool);
+    /// What a new follower needs to draw it now.
+    fn snapshot(&self) -> Vec<Value>;
+}
+
+/// The lines around an editor's cursor.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Peek {
+    pub file: Option<String>,
+    pub line: Option<u32>,
+    pub col: Option<u32>,
+    pub top: Option<u32>,
+    pub lines: Vec<String>,
+    pub dirty: u32,
 }
 
 /// A method name the type doesn't have.

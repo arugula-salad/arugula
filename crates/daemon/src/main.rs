@@ -570,6 +570,29 @@ fn flags_cli(name: Option<&str>, switch: Option<args::Switch>, dir: &std::path::
     Ok(())
 }
 
+/// The block types this build makes. A type with no entry here is refused
+/// when someone opens one (`BlockKinds::create` says why).
+fn kinds(
+    mcp: Option<mcp::Link>,
+    secrets: block::Secrets,
+    rules: std::sync::Arc<rules::Rules>,
+    invite: &invite::Hook,
+) -> block::BlockKinds {
+    use arugula_proto::BlockType;
+    use block::Make;
+    let mut kinds = block::BlockKinds::default();
+    kinds.add(BlockType::Browser, Make(browser::Browser::create));
+    kinds.add(BlockType::Agent, agent::AgentKind { mcp, secrets, rules });
+    kinds.add(BlockType::Editor, Make(editor::Editor::create));
+    kinds.add(BlockType::Remote, remote::RemoteKind);
+    kinds.add(BlockType::Diff, Make(review::diff::Diff::create));
+    kinds.add(BlockType::File, Make(review::file::FileView::create));
+    kinds.add(BlockType::Forge, Make(forge::ForgeBlock::create));
+    kinds.add(BlockType::Invite, invite::card::InviteKind(invite.clone()));
+    labs::kinds(&mut kinds, invite);
+    kinds
+}
+
 async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane::Kept>) -> anyhow::Result<()> {
     // Bound first: a port that's taken fails at once, and port 0 is known
     // before anything uses it (#66).
@@ -812,6 +835,8 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
         }
     };
     let invite_hook = invite::Hook::default();
+    let rules = rules::Rules::open(store.root().join("rules.json"));
+    let kinds = std::sync::Arc::new(kinds(mcp_link.clone(), secrets.clone(), rules.clone(), &invite_hook));
     let config = mux::Config {
         acl: acl.clone(),
         control: control.clone(),
@@ -828,10 +853,8 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
         socket: socket.clone(),
         provider: provider.clone(),
         daemon_id: daemon_id(&store),
-        secrets,
         private,
-        mcp: mcp_link,
-        invite: invite_hook.clone(),
+        kinds,
         ide: ide.clone(),
     };
     let mux = mux::start(config, store, kept, push.clone());
@@ -871,6 +894,7 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
         mcp_tokens,
         guests,
         hand::Hands::open(&state_dir),
+        rules,
     );
     app.guests.run(&app);
     // M78: tasks for this machine's agents that a restart interrupted.
@@ -972,5 +996,60 @@ async fn signalled() {
         _ = tokio::signal::ctrl_c() => {}
         _ = STOP.notified() => {}
         _ = term.recv() => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use arugula_proto::BlockType;
+
+    /// Every type that was made when `block::create` was a `match` has an
+    /// entry in the table, in a build with Labs and in one without; the
+    /// two that never were (`Terminal`, `Unknown`) still have none.
+    #[test]
+    fn every_type_the_daemon_makes_has_a_kind() {
+        let kinds = super::kinds(
+            None,
+            Default::default(),
+            crate::rules::Rules::open(std::env::temp_dir().join("arugula-kinds-test-rules.json")),
+            &Default::default(),
+        );
+        let all = [
+            BlockType::Terminal,
+            BlockType::Browser,
+            BlockType::Agent,
+            BlockType::Editor,
+            BlockType::Diff,
+            BlockType::File,
+            BlockType::Remote,
+            BlockType::Workspace,
+            BlockType::App,
+            BlockType::Forge,
+            BlockType::Fountain,
+            BlockType::Invite,
+            BlockType::Agents,
+            BlockType::Unknown,
+        ];
+        // A new type is a compile error here until it is listed above.
+        for kind in all {
+            match kind {
+                BlockType::Terminal
+                | BlockType::Browser
+                | BlockType::Agent
+                | BlockType::Editor
+                | BlockType::Diff
+                | BlockType::File
+                | BlockType::Remote
+                | BlockType::Workspace
+                | BlockType::App
+                | BlockType::Forge
+                | BlockType::Fountain
+                | BlockType::Invite
+                | BlockType::Agents
+                | BlockType::Unknown => {}
+            }
+            let made = !matches!(kind, BlockType::Terminal | BlockType::Unknown);
+            assert_eq!(kinds.has(kind), made, "{kind:?}");
+        }
     }
 }

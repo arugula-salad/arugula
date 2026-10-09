@@ -12,6 +12,7 @@ use arugula_proto::{
 use regex::Regex;
 
 use crate::{
+    block::BlockKinds,
     osc::strip,
     store::{Event, PaneLog, StateDir, read_events},
 };
@@ -109,13 +110,13 @@ pub fn filtered(all: impl Iterator<Item = HistoryEntry>, f: &Filter, limit: usiz
 
 /// Lines of output (escape sequences stripped) matching `re`, newest panes
 /// first, with the command each came from.
-pub fn search(store: &StateDir, re: &Regex, since_ms: Option<u64>, limit: usize) -> Vec<SearchHit> {
+pub fn search(store: &StateDir, kinds: &BlockKinds, re: &Regex, since_ms: Option<u64>, limit: usize) -> Vec<SearchHit> {
     let mut hits = Vec::new();
     for (pane, open, dir) in store.pane_dirs() {
         let events = read_events(&dir);
         // An agent's log is its JSON-RPC stream: search what it said and
         // ran instead (offsets are line numbers in `capture --text`).
-        if let Some(text) = crate::agent::transcript_of(&dir) {
+        if let Some(text) = kinds.stored_text(&dir) {
             if since_ms
                 .is_some_and(|s| !events.iter().any(|(_, e)| matches!(e, Event::Command { at_ms, .. } if *at_ms >= s)))
             {
@@ -349,7 +350,7 @@ mod tests {
         assert_eq!(h[0].text.as_deref(), Some("make test"));
         assert_eq!((h[0].exit, h[0].cwd.as_deref(), h[0].start), (Some(2), Some("/src"), 13));
 
-        let hits = search(&store, &Regex::new("FAILED").unwrap(), None, 10);
+        let hits = search(&store, &BlockKinds::default(), &Regex::new("FAILED").unwrap(), None, 10);
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].line, "FAILED: 2 tests");
         assert_eq!(hits[0].command.as_deref(), Some("make test"));

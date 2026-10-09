@@ -67,6 +67,8 @@ pub struct App {
     pub guests: Arc<crate::labs::Guests>,
     /// Devices lending their tools to agents (S33).
     pub hands: Arc<crate::hand::Hands>,
+    /// Standing permission rules (#166).
+    pub rules: Arc<crate::rules::Rules>,
     next_client: AtomicU64,
     /// The owner has reached us over the tailnet (#110: the phone step).
     pub tailnet_seen: std::sync::atomic::AtomicBool,
@@ -88,6 +90,7 @@ impl App {
         mcp: Arc<crate::mcp::Tokens>,
         guests: Arc<crate::labs::Guests>,
         hands: Arc<crate::hand::Hands>,
+        rules: Arc<crate::rules::Rules>,
     ) -> Arc<Self> {
         Arc::new(Self {
             access,
@@ -104,6 +107,7 @@ impl App {
             mcp,
             guests,
             hands,
+            rules,
             next_client: AtomicU64::new(1),
             tailnet_seen: Default::default(),
         })

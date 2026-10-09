@@ -45,7 +45,8 @@ use serde_json::{Value, json};
 use tracing::{info, warn};
 
 use crate::{
-    block::{Block, BlockCtx, Summary, no_method},
+    block::{Block, BlockCtx, BlockKind, Summary, no_method},
+    invite::Hook,
     mux::AskReply,
     store::now_ms,
 };
@@ -127,8 +128,19 @@ struct Config {
     drafts: Vec<Draft>,
 }
 
+/// The invite type's kind: it holds what runs an invite the owner sent
+/// from its card (#234), which is set once the daemon is up.
+pub struct InviteKind(pub Hook);
+
+impl BlockKind for InviteKind {
+    fn create(&self, ctx: BlockCtx, config: Value) -> Result<Arc<dyn Block>, String> {
+        InviteBlock::create(ctx, self.0.clone(), config)
+    }
+}
+
 pub struct InviteBlock {
     ctx: BlockCtx,
+    hook: Hook,
     me: Weak<Self>,
     config: Mutex<Config>,
     /// The draft on the card, and its ask's token.
@@ -140,13 +152,14 @@ pub struct InviteBlock {
 }
 
 impl InviteBlock {
-    pub fn create(ctx: BlockCtx, config: Value) -> Result<Arc<dyn Block>, String> {
+    fn create(ctx: BlockCtx, hook: Hook, config: Value) -> Result<Arc<dyn Block>, String> {
         let config: Config = serde_json::from_value(config).map_err(|e| format!("invite config: {e}"))?;
         if config.drafter.is_empty() {
             return Err("an invite block needs its drafter".into());
         }
         let b = Arc::new_cyclic(|me| Self {
             ctx,
+            hook,
             me: me.clone(),
             config: Mutex::new(config),
             asking: Mutex::new(None),
@@ -238,7 +251,7 @@ impl InviteBlock {
     /// A draft as sending it would go, now: its session's name, and its
     /// person's as this machine knows them; or why it can't.
     async fn as_now(&self, d: Draft) -> Result<Draft, String> {
-        let Some(app) = self.ctx.invite.get().and_then(Weak::upgrade) else { return Ok(d) };
+        let Some(app) = self.hook.get().and_then(Weak::upgrade) else { return Ok(d) };
         let session_name = match app.mux.api(|r| crate::mux::Api::InviteTo(d.session, Some(d.pane), r)).await {
             Some(r) => r?.1,
             None => return Ok(d),
@@ -324,7 +337,7 @@ impl InviteBlock {
             whole_thread: false,
         };
         let drafted = super::Drafted { by: d.by.clone(), pane: d.from, approved_by: by.name.clone() };
-        let app = self.ctx.invite.get().and_then(Weak::upgrade);
+        let app = self.hook.get().and_then(Weak::upgrade);
         let out = match app {
             Some(app) => super::run(&app, req, Some(&drafted)).await.map_err(|(_, why)| why),
             None => Err("the daemon isn't serving yet".into()),

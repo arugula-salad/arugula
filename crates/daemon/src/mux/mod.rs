@@ -228,7 +228,7 @@ pub enum Api {
     /// Typing by an MCP client (M16): as theirs, in the pane's history.
     InputBy(PaneId, Vec<u8>, String),
     /// An editor joined the swarm (M28): it gets an id of its own.
-    EditorJoin(Arc<crate::editor::link::Link>, oneshot::Sender<PaneId>),
+    EditorJoin(Arc<dyn Block>, oneshot::Sender<PaneId>),
     /// ...and left.
     EditorLeave(PaneId),
     /// What Claude Code's IDE connections did (M28).
@@ -324,8 +324,8 @@ pub struct MuxHandle {
     pub ide: Option<Arc<crate::ide::Ide>>,
     /// The user's shell environment, here and on machines (#74).
     pub shell_env: Arc<crate::shellenv::ShellEnv>,
-    /// Standing permission rules for agent blocks (#166).
-    pub rules: Arc<crate::rules::Rules>,
+    /// The block types this build makes.
+    pub kinds: Arc<crate::block::BlockKinds>,
     /// The agents configured here, from `chant audit --agents` (#145).
     pub inventory: Arc<crate::inventory::Inventory>,
 }
@@ -406,7 +406,6 @@ struct Daemon {
     /// This host's files, as `/api/fs` serves them.
     fs: Arc<crate::fs::Scope>,
     shell_env: Arc<crate::shellenv::ShellEnv>,
-    rules: Arc<crate::rules::Rules>,
     inventory: Arc<crate::inventory::Inventory>,
     /// The inventory's generation the panes were last watched by.
     inventory_seen: u64,
@@ -551,10 +550,10 @@ pub fn start(config: Config, store: StateDir, kept: HashMap<String, Kept>, push:
         crate::shellenv::TIMEOUT,
     );
     shell_env.start();
-    let rules = crate::rules::Rules::open(store.root().join("rules.json"));
     // Which agents are configured here (#145), read in the background.
     let inventory = crate::inventory::Inventory::new(shell_env.clone(), config.home.clone());
     inventory.refresh();
+    let kinds = config.kinds.clone();
     let mut d = Daemon {
         mux: Mux::new(),
         panes: HashMap::new(),
@@ -574,7 +573,6 @@ pub fn start(config: Config, store: StateDir, kept: HashMap<String, Kept>, push:
         drawn: Default::default(),
         fs: fs.clone(),
         shell_env: shell_env.clone(),
-        rules: rules.clone(),
         inventory: inventory.clone(),
         inventory_seen: 0,
         drivers: HashMap::new(),
@@ -632,7 +630,7 @@ pub fn start(config: Config, store: StateDir, kept: HashMap<String, Kept>, push:
     d.sweep_machines();
     let (provider, daemon_id, ide) = (d.config.provider.clone(), d.config.daemon_id.clone(), d.config.ide.clone());
     tokio::spawn(d.run(rx, notices_rx));
-    MuxHandle { tx, events, store, provider, daemon_id, fs, ide, shell_env, rules, inventory }
+    MuxHandle { tx, events, store, provider, daemon_id, fs, ide, shell_env, kinds, inventory }
 }
 
 /// A reason with nothing but its headline.
@@ -841,20 +839,16 @@ impl Daemon {
             // VS Code's own terminals (M28).
             env: self.config.env(id).into_iter().filter(|(k, _)| k != "CLAUDE_CODE_SSE_PORT").collect(),
             home: self.config.home.clone(),
-            secrets: self.config.secrets.clone(),
-            mcp: self.config.mcp.clone(),
             fs: self.fs.clone(),
             shell_env: self.shell_env.clone(),
             cmds: Some(self.tx.clone()),
             ids: self.ids.clone(),
-            rules: self.rules.clone(),
-            invite: self.config.invite.clone(),
             state_dir: self.store.root().to_owned(),
         };
         let is_restore = restoring.is_some();
         let (policy, kept) = restoring.unwrap_or_default();
         let ctx = BlockCtx::new(id, dir, base, sprite, is_restore, policy, kept);
-        let b = crate::block::create(kind, ctx, config)?;
+        let b = self.config.kinds.create(kind, ctx, config)?;
         self.blocks.insert(id, b);
         self.ids.lock().unwrap().insert(id);
         Ok(())

@@ -45,7 +45,9 @@ use tokio::{
 };
 use tracing::{debug, info};
 
+pub use crate::block::Peek;
 use crate::{
+    block::EditorLink,
     mux::Api,
     pane::{Notice, NoticeSink, What},
     server::App,
@@ -81,17 +83,6 @@ pub struct Hello {
     pub block: Option<PaneId>,
 }
 
-/// The lines around an editor's cursor.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Peek {
-    pub file: Option<String>,
-    pub line: Option<u32>,
-    pub col: Option<u32>,
-    pub top: Option<u32>,
-    pub lines: Vec<String>,
-    pub dirty: u32,
-}
-
 /// One connected editor.
 pub struct Link {
     pub hello: Hello,
@@ -120,6 +111,32 @@ struct St {
     stale: bool,
     /// The reason it raised, while it stands.
     raised: Option<ReasonKind>,
+}
+
+impl EditorLink for Link {
+    fn bind(&self, id: PaneId, sink: NoticeSink) {
+        Link::bind(self, id, sink)
+    }
+
+    fn info(&self) -> EditorInfo {
+        Link::info(self)
+    }
+
+    fn on_peek(&self, f: Box<dyn Fn(&Peek) + Send + Sync>) {
+        Link::on_peek(self, f)
+    }
+
+    fn resume(&self) -> Result<(), String> {
+        Link::resume(self)
+    }
+
+    fn followers(&self, n: u32, new: bool) {
+        Link::followers(self, n, new)
+    }
+
+    fn snapshot(&self) -> Vec<Value> {
+        Link::snapshot(self)
+    }
 }
 
 impl Link {
@@ -461,13 +478,17 @@ where
     let (tx, mut rx) = mpsc::unbounded_channel::<String>();
     let link = Link::new(hello.clone(), tx);
     // An editor block's window (M27), or an editor of its own.
+    let handle: Arc<dyn EditorLink> = link.clone();
     let block = match hello.block {
-        Some(id) => app.mux.api(|r| Api::Block(id, r)).await.flatten().filter(|b| b.attach(link.clone())),
+        Some(id) => app.mux.api(|r| Api::Block(id, r)).await.flatten().filter(|b| b.attach(handle.clone())),
         None => None,
     };
     let id = match &block {
         Some(_) => link.id(),
-        None => app.mux.api(|r| Api::EditorJoin(link.clone(), r)).await,
+        None => {
+            let presence = super::presence::Presence::make(link.clone());
+            app.mux.api(|r| Api::EditorJoin(presence, r)).await
+        }
     };
     let Some(id) = id else { return };
     info!(pane = id, editor = hello.editor, remote = hello.remote.as_deref().unwrap_or(""), "editor joined");
@@ -486,7 +507,7 @@ where
     }
     link.gone();
     match block {
-        Some(b) => b.detach(&link),
+        Some(b) => b.detach(&handle),
         None => app.mux.send(crate::mux::Cmd::Api(Api::EditorLeave(id))),
     }
     info!(pane = id, "editor left");

@@ -1416,11 +1416,12 @@ async fn search(State(app): AppState, Query(q): Query<SearchQuery>) -> Res<Respo
     let re = Regex::new(&q.re).map_err(|e| bad(format!("re: {e}")))?;
     let since = q.since.map(|s| now_ms().saturating_sub(s * 1000));
     let store = app.mux.store.clone();
+    let kinds = app.mux.kinds.clone();
     let limit = q.limit.unwrap_or(100);
     let synced = app.synced.clone();
     let hits = tokio::task::spawn_blocking(move || match &q.host {
         Some(host) => synced.search(host, &re, since, limit),
-        None => history::search(&store, &re, since, limit),
+        None => history::search(&store, &kinds, &re, since, limit),
     })
     .await
     .unwrap_or_default();

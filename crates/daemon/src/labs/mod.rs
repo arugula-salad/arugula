@@ -25,7 +25,7 @@
 //! **Adding a feature.** Put its code in `labs/<name>/`, add
 //! `#[cfg(feature = "labs")] pub mod <name>;` below, and add what core needs
 //! to the surface, twin included: a route set goes into [`routes`], a block
-//! type into [`create_block`], host info into the host functions. Where core
+//! type into [`kinds`], host info into the host functions. Where core
 //! is too tangled for a function (an MCP handler, say), a `cfg` at the call
 //! site with a twin next to it is the fallback; keep the list of those short.
 //! Tests that need the feature are `#[cfg(feature = "labs")]`.
@@ -37,10 +37,13 @@ use std::{
 
 use arugula_proto::{BlockType, flags::On, hosts::FountainRunnerInfo};
 use axum::Router;
+#[cfg(not(feature = "labs"))]
 use serde_json::Value;
 
+#[cfg(not(feature = "labs"))]
+use crate::block::{Block, BlockCtx, BlockKind};
 use crate::{
-    block::{Block, BlockCtx},
+    block::BlockKinds,
     forge::model::Provider as ForgeProvider,
     provider::{Begin, Exec, ExecEvent, Provider},
     server::App,
@@ -156,26 +159,33 @@ pub fn routes(r: Router<Arc<App>>) -> Router<Arc<App>> {
     r
 }
 
-/// Makes a block of a Labs type (the others are [`crate::block::create`]'s).
+/// Registers the Labs block types (the others are in `main.rs`'s table).
+/// `invite` is what the agent catalog's card sends an invite with.
 #[cfg(feature = "labs")]
-pub fn create_block(kind: BlockType, ctx: BlockCtx, config: Value) -> Result<Arc<dyn Block>, String> {
-    match kind {
-        BlockType::Fountain => fountain::FountainBlock::create(ctx, config),
-        BlockType::Agents => agents::block::AgentsBlock::create(ctx, config),
-        BlockType::App => apps::AppBlock::create(ctx, config),
-        BlockType::Workspace => workspace::Workspace::create(ctx, config),
-        other => Err(format!("{other:?} isn't a Labs block")),
+pub fn kinds(kinds: &mut BlockKinds, invite: &crate::invite::Hook) {
+    kinds.add(BlockType::Fountain, crate::block::Make(fountain::FountainBlock::create));
+    kinds.add(BlockType::Agents, agents::block::AgentsKind(invite.clone()));
+    kinds.add(BlockType::App, crate::block::Make(apps::AppBlock::create));
+    kinds.add(BlockType::Workspace, crate::block::Make(workspace::Workspace::create));
+}
+
+/// A kind this build doesn't have: it says so ([`not_built`]).
+#[cfg(not(feature = "labs"))]
+struct NotBuilt(&'static str);
+
+#[cfg(not(feature = "labs"))]
+impl BlockKind for NotBuilt {
+    fn create(&self, _ctx: BlockCtx, _config: Value) -> Result<Arc<dyn Block>, String> {
+        Err(not_built(self.0))
     }
 }
 
 #[cfg(not(feature = "labs"))]
-pub fn create_block(kind: BlockType, _ctx: BlockCtx, _config: Value) -> Result<Arc<dyn Block>, String> {
-    Err(not_built(&match kind {
-        BlockType::App => "An app block".to_owned(),
-        BlockType::Workspace => "A chant workspace".to_owned(),
-        BlockType::Agents => "The agent catalog".to_owned(),
-        kind => format!("A {kind:?} block"),
-    }))
+pub fn kinds(kinds: &mut BlockKinds, _invite: &crate::invite::Hook) {
+    kinds.add(BlockType::Fountain, NotBuilt("A Fountain block"));
+    kinds.add(BlockType::Agents, NotBuilt("The agent catalog"));
+    kinds.add(BlockType::App, NotBuilt("An app block"));
+    kinds.add(BlockType::Workspace, NotBuilt("A chant workspace"));
 }
 
 /// Whether a forge block of `provider` may be made or opened here. GitHub's

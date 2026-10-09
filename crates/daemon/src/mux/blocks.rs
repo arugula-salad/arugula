@@ -175,7 +175,7 @@ impl Daemon {
         // A pane on another daemon (#17): only its place is here, never on
         // a machine of ours.
         if req.kind == BlockType::Remote {
-            crate::remote::parse(&req.config)?;
+            self.config.kinds.check(BlockType::Remote, &req.config)?;
             (req.vm, req.host, req.local) = (false, None, true);
         }
         // A studio box (M35) is its own site: nothing of it runs here or on
