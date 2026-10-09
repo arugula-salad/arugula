@@ -85,7 +85,7 @@ fn cli_bin() -> PathBuf {
 }
 
 fn cli(home: &Daemon, args: &[&str]) -> Output {
-    Command::new(cli_bin())
+    arugula_testkit::command(cli_bin())
         .arg("--socket")
         .arg(home.sock())
         .args(args)

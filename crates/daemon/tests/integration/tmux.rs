@@ -126,7 +126,7 @@ impl Cc {
     }
 
     fn start_with(daemon: &Daemon, args: &[&str], stalled: bool) -> Self {
-        let mut child = Command::new(cli_bin())
+        let mut child = arugula_testkit::command(cli_bin())
             .arg("--socket")
             .arg(daemon.sock())
             .arg("tmux")
@@ -1152,7 +1152,7 @@ fn on_a_terminal_nothing_is_echoed() {
     let daemon = start();
     let pty = nix::pty::openpty(None, None).unwrap();
     let slave = |_| unsafe { Stdio::from_raw_fd(nix::libc::dup(pty.slave.as_raw_fd())) };
-    let mut child = Command::new(cli_bin())
+    let mut child = arugula_testkit::command(cli_bin())
         .arg("--socket")
         .arg(daemon.sock())
         .args(["tmux", "-CC"])

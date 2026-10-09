@@ -45,7 +45,7 @@ fn have_ssh() -> bool {
 fn start(name: &str) -> Daemon {
     let state = std::env::temp_dir().join(format!("ilg-gssh-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&state);
-    let child = Command::new(env!("CARGO_BIN_EXE_arugulad"))
+    let child = arugula_testkit::command(env!("CARGO_BIN_EXE_arugulad"))
         .args(["--listen", listen::ANY, "--shell", "bash --norc --noprofile", "--no-manager-env"])
         .args(["--tailscale-socket", "/nonexistent/tailscaled.sock"])
         .args(["--guest-ssh", "127.0.0.1:0", "--guest-ssh-host", "127.0.0.1"])
@@ -470,7 +470,7 @@ fn the_cli_prints_a_command_that_works_and_lists_and_revokes() {
     d.send(pane, "echo cli-$((9*9))");
     d.wait_capture(pane, "cli-81");
     let cli = |args: &[&str]| {
-        let out = Command::new(cli_bin()).arg("--socket").arg(d.sock()).args(args).output().unwrap();
+        let out = arugula_testkit::command(cli_bin()).arg("--socket").arg(d.sock()).args(args).output().unwrap();
         assert!(out.status.success(), "{args:?}: {out:?}");
         (String::from_utf8(out.stdout).unwrap(), String::from_utf8(out.stderr).unwrap())
     };

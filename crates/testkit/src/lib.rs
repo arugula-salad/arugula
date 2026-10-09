@@ -298,6 +298,27 @@ fn setenv(k: &OsStr, v: &OsStr) -> OsString {
     s
 }
 
+/// Take out of `c` every variable the test process inherited whose name
+/// starts with `ARUGULA_` or `ILLOGICAL_`: an agent block exports some
+/// (`ARUGULA_KEEP_PANES`, `ARUGULA_SOCK`, …) that change what a daemon or CLI
+/// does (#682). Call it before the `env(..)` calls a test wants kept.
+pub fn scrub_env(c: &mut Command) -> &mut Command {
+    for (k, _) in std::env::vars_os() {
+        if k.to_str().is_some_and(|k| k.starts_with("ARUGULA_") || k.starts_with("ILLOGICAL_")) {
+            c.env_remove(k);
+        }
+    }
+    c
+}
+
+/// A [`Command`] for `bin` with [`scrub_env`] applied: what a test runs
+/// (`arugulad`, the `arugula` CLI) with only the environment it sets.
+pub fn command(bin: impl AsRef<OsStr>) -> Command {
+    let mut c = Command::new(bin);
+    scrub_env(&mut c);
+    c
+}
+
 enum Run {
     /// A child of the test: what it started goes with it.
     Child(Option<Child>),
@@ -356,7 +377,7 @@ impl Daemon {
             let _ = std::fs::remove_file(self.state.join("block-listen"));
         }
         let at = |p: u16| if p == 0 { listen::ANY.to_owned() } else { format!("127.0.0.1:{p}") };
-        let mut c = Command::new(&self.b.bin);
+        let mut c = command(&self.b.bin);
         c.args(self.args(&at(self.port), &at(self.block_port)))
             .env_remove("NOTIFY_SOCKET")
             .stdout(Stdio::null())

@@ -176,7 +176,7 @@ fn a_machine_control_drops_says_so_until_it_leaves_or_joins_again() {
     assert_eq!(state(&d)["dropped_ms"].as_u64(), Some(at));
 
     // Leaving takes it off: not joined, not dropped.
-    let out = std::process::Command::new(env!("CARGO_BIN_EXE_arugulad"))
+    let out = arugula_testkit::command(env!("CARGO_BIN_EXE_arugulad"))
         .args(["leave", "--state-dir"])
         .arg(&d.state)
         .output()

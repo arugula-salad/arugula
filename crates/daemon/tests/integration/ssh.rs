@@ -202,7 +202,7 @@ fn ssh_installs_runs_forwards_the_agent_pushes_and_saved_hosts_work() {
 
     // A saved ssh host, on a home daemon of our own.
     let state = env.runtime.join("home");
-    let mut home = Command::new(env!("CARGO_BIN_EXE_arugulad"))
+    let mut home = arugula_testkit::command(env!("CARGO_BIN_EXE_arugulad"))
         .arg("--state-dir")
         .arg(&state)
         .args(["--listen", "127.0.0.1:0", "--name", "home", "--no-manager-env", "--tailscale-socket", "/nonexistent"])

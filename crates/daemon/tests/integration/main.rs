@@ -56,6 +56,7 @@ mod local_auth;
 mod machines;
 mod mcp;
 mod memory;
+mod pipe;
 mod prompt;
 mod questions;
 mod reboot;

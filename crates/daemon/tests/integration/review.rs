@@ -37,7 +37,7 @@ fn cli_bin() -> PathBuf {
 }
 
 fn cli(d: &Daemon, args: &[&str]) -> String {
-    let out = Command::new(cli_bin()).arg("--socket").arg(d.sock()).args(args).output().unwrap();
+    let out = arugula_testkit::command(cli_bin()).arg("--socket").arg(d.sock()).args(args).output().unwrap();
     assert!(out.status.success(), "{args:?}: {}", String::from_utf8_lossy(&out.stderr));
     String::from_utf8_lossy(&out.stdout).into_owned()
 }
