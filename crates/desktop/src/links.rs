@@ -56,9 +56,7 @@ pub fn parse(url: &str) -> Option<Link> {
 
 /// The links among a launch's arguments.
 pub fn in_args<I: IntoIterator<Item = String>>(args: I) -> Vec<String> {
-    args.into_iter()
-        .filter(|a| a.strip_prefix(SCHEME).is_some_and(|r| r.starts_with("://")))
-        .collect()
+    args.into_iter().filter(|a| a.strip_prefix(SCHEME).is_some_and(|r| r.starts_with("://"))).collect()
 }
 
 /// Do what `url` says. Waits (off the main thread) for the daemon, which a

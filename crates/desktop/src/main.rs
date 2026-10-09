@@ -820,9 +820,7 @@ fn open_pane(app: &AppHandle, pane: u32) {
             // shows that new tab, from the daemon's state, as notifications
             // did before M46.
             if !cfg!(target_os = "linux") && w.url().is_ok_and(|u| daemons(&u)) {
-                let _ = w.eval(format!(
-                    "dispatchEvent(new CustomEvent('arugula:open-pane', {{ detail: {pane} }}))"
-                ));
+                let _ = w.eval(format!("dispatchEvent(new CustomEvent('arugula:open-pane', {{ detail: {pane} }}))"));
             } else {
                 let _ = w.navigate(url);
             }

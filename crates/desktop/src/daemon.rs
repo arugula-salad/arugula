@@ -416,9 +416,7 @@ fn on_page(app: &AppHandle, event: &str, detail: &str, hash: &str) {
     let on_page = app.webview_windows().into_values().find(|w| w.url().is_ok_and(|u| crate::daemons(&u)));
     match on_page {
         Some(w) => {
-            let _ = w.eval(format!(
-                "dispatchEvent(new CustomEvent('arugula:{event}', {{ detail: {detail} }}))"
-            ));
+            let _ = w.eval(format!("dispatchEvent(new CustomEvent('arugula:{event}', {{ detail: {detail} }}))"));
             let _ = w.unminimize();
             let _ = w.show();
             let _ = w.set_focus();

@@ -281,10 +281,6 @@ mod windows {
         Ok(())
     }
 
-    fn task_exists(name: &str) -> bool {
-        Command::new("schtasks").args(["/Query", "/TN", name]).output().is_ok_and(|o| o.status.success())
-    }
-
     fn xml(s: &str) -> String {
         s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
     }
