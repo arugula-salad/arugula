@@ -467,7 +467,7 @@ the binary's `crate::store::…`, `crate::pane::…` and `crate::mux::…`
 paths keep resolving. There are 365 such paths to the moving modules
 today. Each move's diff is then `git mv`, the crate's `lib.rs`, the
 visibility changes and the ties above, not every file that names a moved
-module. Rewriting the paths is optional (ticket 7).
+module. The paths aren't rewritten ([Decided](#decided), 3).
 
 **Visibility.** Most of the core's items are already `pub`, because the
 modules are private in `main.rs`. What changes is small:
@@ -501,8 +501,8 @@ tests' count under nextest is unchanged, and the unit tests' total across
    - *Traps:* the shim's `_shim` dispatch stays in `main.rs`, calling
      `arugula_mux::shim::run`, before any thread starts. `conpty.rs` is
      Windows-only. `windows.yml` compiles and tests it only on `main`, so
-     the branch needs a run by hand before it merges (see [Open
-     questions](#open-questions)). `acl`'s `pub mod api` is a nested
+     the branch needs a run by hand before it merges
+     ([Decided](#decided), 2). `acl`'s `pub mod api` is a nested
      module: split it by hand.
 2. **Blocks behind a registry, in place.** `BlockKind` and `BlockKinds`.
    `block::create` and `labs::create_block` become registrations made in
@@ -537,7 +537,8 @@ tests' count under nextest is unchanged, and the unit tests' total across
      ApiError` in the binary, with the same status and text. `host.rs` and
      the pipe security helpers are Windows-only. `pane.rs`'s
      `#[cfg(unix)]` and `#[cfg(windows)]` blocks mean macOS and Linux
-     clippy don't see the Windows half.
+     clippy don't see the Windows half, so this branch gets the same
+     Windows run by hand ([Decided](#decided), 2).
 5. **The mux into `arugula-mux`.** `mux/`, `block.rs` and `history.rs`,
    plus `labs/threads.rs` and `labs/calls.rs` into the core's Labs
    surface. The daemon's `labs` feature forwards `arugula-mux/labs`, and
@@ -554,38 +555,28 @@ tests' count under nextest is unchanged, and the unit tests' total across
    integration". Add a check in `just check` that `cargo tree -p
    arugula-mux -e normal` has no `axum`, `hyper`, `reqwest`, `rmcp`,
    `rust-embed` or `russh`, so the line can't drift back. **S.** After 5.
-7. **Optional: name the core by its crate.** Replace `crate::store::…`
-   and the rest with `arugula_mux::…` in the binary, and drop the root
-   re-exports. Mechanical. **M** in lines, **S** in thought. After 5.
-   Unnecessary if the team prefers the re-exports.
+7. ~~**Optional: name the core by its crate.**~~ Dropped: the root
+   re-exports stay ([Decided](#decided), 3).
 
 After 5, #461 (GitHub forge and editor behind features, build times
 measured) starts from a core that names neither.
 
-## Open questions
+## Decided
 
-1. **The name.** `arugula-mux` matches the `mux/` module it's built
-   around and the ticket's intent (`illogical-mux` before the rename). The
-   cost is that `arugula-core` already calls itself "the multiplexer's
-   state", so the two read alike: `arugula_core::Mux` is the layout model,
-   and `arugula_mux` is the task and the panes. `arugula-panes` is the
-   alternative if that is too close. (`arugula-daemon-core` would be worse
-   beside `arugula-core`.)
-2. **Windows before merging.** `windows.yml` runs clippy (`--workspace
-   --exclude arugula-control --all-targets -D warnings`) and `cargo test`
-   on GitHub's Windows runner on every push to `main`, never on a branch.
-   Tickets 1 and 4 move `conpty.rs`, `host.rs` and the pipe helpers, so a
-   Windows break would show up only after the merge. Should each of those
-   branches get a `gh workflow run windows.yml --ref BRANCH`, passing,
-   before it merges? Recommended: yes.
-3. **Keep the root re-exports, or do ticket 7?** Keeping them makes every
-   later diff smaller. Dropping them makes it obvious at each use which
-   crate a name comes from.
-4. **The IDE's diffs in the core.** This note keeps them in the mux,
-   because they're attention. The other choice is to make each waiting
-   diff a block of its own type, so all of the IDE stays out of the core.
-   That is a visible change (a new block type), so it's not proposed here.
-   Say if it's wanted later.
+The owner answered the open questions on 2026-10-09.
+
+1. **The name: `arugula-mux`.** It matches the `mux/` module it's built
+   around. `arugula_core::Mux` stays the layout model, and `arugula_mux` is
+   the task and the panes.
+2. **Windows before merging: yes, for tickets 1 and 4.** Each of those
+   branches gets a `gh workflow run windows.yml --ref BRANCH`, and it must
+   pass before the branch merges. The other tickets rely on `main`'s run, as
+   today.
+3. **The root re-exports stay.** Ticket 7 is dropped, which keeps every
+   later diff smaller.
+4. **The IDE's diffs stay in the core.** Making each waiting diff a block
+   of its own type is a visible change, so it's filed as a follow-up
+   (#699), not part of these moves.
 
 ## Things that surprised me
 
