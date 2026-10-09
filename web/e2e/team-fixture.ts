@@ -16,6 +16,8 @@ export class TeamControl {
   base = "";
   github = "";
   private procs: ChildProcess[] = [];
+  /** Each machine's daemon, by name, and how it was started. */
+  private machines = new Map<string, { proc: ChildProcess; args: string[] }>();
   private dirs: string[] = [];
   private gh?: Server;
 
@@ -118,16 +120,24 @@ export class TeamControl {
     await page.locator("[data-approve-join]").click();
     joining.stdin!.end(`${account}\n`);
     expect(await exited).toBe(0);
-    this.procs.push(
-      spawn(
-        "../target/debug/arugulad",
-        [
-          ...["--listen", ANY, "--name", name, "--state-dir", labs(state)],
-          ...["--shell", "bash --norc --noprofile", "--no-manager-env", "--tailscale-socket", "/nonexistent/sock"],
-        ],
-        { stdio: "ignore" },
-      ),
-    );
+    const args = [
+      ...["--listen", ANY, "--name", name, "--state-dir", labs(state)],
+      ...["--shell", "bash --norc --noprofile", "--no-manager-env", "--tailscale-socket", "/nonexistent/sock"],
+    ];
+    const proc = spawn("../target/debug/arugulad", args, { stdio: "ignore" });
+    this.procs.push(proc);
+    this.machines.set(name, { proc, args });
+  }
+
+  /** Stop a machine's daemon and start it again, on the same state. */
+  async restartMachine(name: string) {
+    const m = this.machines.get(name)!;
+    const gone = new Promise((r) => m.proc.on("exit", r));
+    m.proc.kill("SIGTERM");
+    await gone;
+    const proc = spawn("../target/debug/arugulad", m.args, { stdio: "ignore" });
+    this.procs.push(proc);
+    this.machines.set(name, { proc, args: m.args });
   }
 }
 

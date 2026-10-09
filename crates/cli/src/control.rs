@@ -588,7 +588,8 @@ impl Link {
     ) -> anyhow::Result<mpsc::Receiver<Part>> {
         let id = self.next.fetch_add(1, Ordering::Relaxed);
         let (tx, rx) = mpsc::channel();
-        let head = RequestHead { method: method.into(), path: path.into(), content_type, stream };
+        let head =
+            RequestHead { method: method.into(), path: path.into(), content_type, stream, headers: Default::default() };
         self.put(Out::Send(Msg::Request { id, head, body }, Some(tx)))?;
         Ok(rx)
     }

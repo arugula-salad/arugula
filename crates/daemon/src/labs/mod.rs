@@ -133,6 +133,18 @@ pub fn offers_agents(_state_dir: &Path) -> bool {
     false
 }
 
+/// Follow again the tasks for this machine's agents (M78) that a restart
+/// interrupted, and ask again for those waiting on the owner.
+#[cfg(feature = "labs")]
+pub fn resume_tasks(app: &Arc<App>) {
+    if on(app.control.state_dir(), arugula_proto::flags::AGENTS) {
+        agents::tasks::resume(app);
+    }
+}
+
+#[cfg(not(feature = "labs"))]
+pub fn resume_tasks(_app: &Arc<App>) {}
+
 /// Adds Labs' HTTP routes to the API's.
 #[cfg(feature = "labs")]
 pub fn routes(r: Router<Arc<App>>) -> Router<Arc<App>> {

@@ -109,7 +109,7 @@ test("the Team agents block: by machine and owner, offering from it, and Run her
   await expect(el.locator('[data-shelf="teambox"] [data-agent="fixer"]')).toBeVisible({ timeout: 30_000 });
   await expect(el.locator('[data-shelf="bobs"] [data-agent="reviewer"]')).toBeVisible();
   await expect(el.locator('[data-shelf="bobs"] .agents-shelf-head')).toContainText("bob's");
-  await expect(el.locator('[data-send-task="reviewer"]')).toBeDisabled();
+  await expect(el.locator(`[data-send-task="reviewer"]`)).toBeVisible();
 
   // A project's recipes, offered from the block.
   const dir = project("helper", "Help out");

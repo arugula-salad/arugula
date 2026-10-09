@@ -438,6 +438,7 @@ async fn attention_list(
 async fn act(
     State(app): AppState,
     who: Option<axum::Extension<crate::acl::Principal>>,
+    dev: Option<axum::Extension<crate::e2e::Caller>>,
     headers: HeaderMap,
     Json(req): Json<arugula_proto::api::ActRequest>,
 ) -> Res<Response> {
@@ -453,6 +454,15 @@ async fn act(
         for p in &panes {
             if is_invite(&app, *p).await {
                 return Err(ApiError(StatusCode::FORBIDDEN, crate::invite::OWNER_ONLY.into()));
+            }
+        }
+    }
+    // M79: a task's consent card is this machine's own account's, not a
+    // team's other owner's (who is `Owner` here too).
+    if !who.is_owner() || foreign(&app, &dev) {
+        for p in &panes {
+            if is_agents(&app, *p).await {
+                return Err(ApiError(StatusCode::FORBIDDEN, OWN_ACCOUNT_ONLY.into()));
             }
         }
     }
@@ -927,6 +937,21 @@ async fn thread_read(
 
 /// Whether a block is an agent's invites (#234): the owner's to answer,
 /// and it shows only its own cards.
+/// What answering a task's card (M79) from another account says.
+const OWN_ACCOUNT_ONLY: &str = "only this machine's own account allows tasks for its agents";
+
+/// Whether the request comes over a channel from a device of another account
+/// than this machine's (a team's other owner is `Owner` here all the same).
+fn foreign(app: &App, dev: &Option<axum::Extension<crate::e2e::Caller>>) -> bool {
+    let own = app.control.enrolled().map(|e| e.saved.cert.account.clone());
+    dev.as_ref().is_some_and(|d| Some(&d.0.account) != own.as_ref())
+}
+
+/// Whether a block is a Team agents block (M77), which holds task cards.
+async fn is_agents(app: &App, id: PaneId) -> bool {
+    app.mux.api(|r| Api::Block(id, r)).await.flatten().is_some_and(|b| b.kind() == arugula_proto::BlockType::Agents)
+}
+
 pub(crate) async fn is_invite(app: &App, id: PaneId) -> bool {
     app.mux.api(|r| Api::Block(id, r)).await.flatten().is_some_and(|b| b.kind() == arugula_proto::BlockType::Invite)
 }
@@ -1365,6 +1390,7 @@ async fn call(
     State(app): AppState,
     Path((id, method)): Path<(PaneId, String)>,
     who: Option<axum::Extension<crate::acl::Principal>>,
+    dev: Option<axum::Extension<crate::e2e::Caller>>,
     headers: HeaderMap,
     body: axum::body::Bytes,
 ) -> Res<Json<serde_json::Value>> {
@@ -1387,6 +1413,14 @@ async fn call(
         // on the owner's CLI either (as a forge's drafts, a courtesy).
         if b.kind() == arugula_proto::BlockType::Invite && (!owner || crate::invite::agent(&headers)) {
             return Err(ApiError(StatusCode::FORBIDDEN, crate::invite::OWNER_ONLY.into()));
+        }
+        // M79: a task's card, and taking a grant back, are this machine's
+        // own account's: not an editor's, nor a team's other owner's.
+        if b.kind() == arugula_proto::BlockType::Agents
+            && matches!(method.as_str(), "answer" | "decline" | "approve" | "deny" | "terminal" | "revoke")
+            && (!owner || foreign(&app, &dev))
+        {
+            return Err(ApiError(StatusCode::FORBIDDEN, OWN_ACCOUNT_ONLY.into()));
         }
         // The CLI says when an agent runs it (CLAUDECODE, AI_AGENT): a forge
         // block makes its writes drafts then (M36). A courtesy, not a
