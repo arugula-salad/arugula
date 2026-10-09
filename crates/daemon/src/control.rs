@@ -2346,6 +2346,28 @@ pub async fn leave(state_dir: &Path, listen: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+impl crate::mux::People for Control {
+    fn is_team(&self) -> bool {
+        Control::is_team(self)
+    }
+
+    fn owns_here(&self, account: &str) -> bool {
+        Control::owns_here(self, account)
+    }
+
+    fn co_owners(&self) -> Vec<Principal> {
+        Control::co_owners(self)
+    }
+
+    fn team_people(&self) -> Vec<Principal> {
+        Control::team_people(self)
+    }
+
+    fn sandbox_done(self: Arc<Self>) {
+        Control::sandbox_done(&self)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use arugula_e2e::{DeviceKeys, Kind};

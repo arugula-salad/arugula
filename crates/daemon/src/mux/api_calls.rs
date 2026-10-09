@@ -71,7 +71,7 @@ impl Daemon {
             }
             Api::Trust(pane, to, minutes, reply) => {
                 let here = self.machine_of(pane).is_none() && !self.blocks.contains_key(&pane);
-                let ok = here && !self.config.control.is_team();
+                let ok = here && !self.config.people.is_team();
                 if ok {
                     self.trust_with(pane, &to, minutes);
                     self.broadcast();

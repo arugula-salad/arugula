@@ -225,10 +225,7 @@ impl Daemon {
                     x.remove("approve");
                     x.remove("ask");
                 }
-                if let Some(push) = &self.push {
-                    push.send_to(pane, title, &body, extra.clone(), |who| who == "owner");
-                }
-                self.config.control.push(pane, title, &body, extra, |who| who.is_owner());
+                self.config.notify.notify(pane, title, &body, extra.clone(), extra, &|who| who.is_owner());
                 self.touch(pane);
                 return;
             }
@@ -238,11 +235,7 @@ impl Daemon {
             // what to approve too.
             let session = self.session_of(pane);
             let acl = self.config.acl.clone();
-            if let Some(push) = &self.push {
-                let acl = acl.clone();
-                push.send_to(pane, title, &body, extra.clone(), move |who| acl.notifies(who, session));
-            }
-            self.config.control.push(pane, title, &body, extra, move |who| acl.notifies(who.id(), session));
+            self.config.notify.notify(pane, title, &body, extra.clone(), extra, &|who| acl.notifies(who.id(), session));
         }
         self.touch(pane);
     }
@@ -329,10 +322,8 @@ impl Daemon {
             Event::Call { conn, id, tool, args } => match tool.as_str() {
                 "openDiff" | "openDiff/here" => {
                     // Another IDE gets diffs, unless passing it on failed.
-                    if tool == "openDiff"
-                        && let Some(to) = ide.target()
-                    {
-                        return ide.forward(to, conn, id, args, self.tx.clone());
+                    if tool == "openDiff" && ide.clone().forward_diff(conn, &id, &args, self.tx.clone()) {
+                        return;
                     }
                     let pane = self.ide_conns.get(&conn).and_then(|c| c.1);
                     let cwd = pane
@@ -694,7 +685,7 @@ impl Daemon {
         // An agent's invite (#234) is the owner's to answer, by whatever
         // route: editors may answer other cards, an agent none of these.
         if self.is_invite(pane) && !by.as_ref().is_some_and(|b| b.who == "owner") {
-            return Err(crate::invite::OWNER_ONLY.into());
+            return Err(super::OWNER_ONLY.into());
         }
         let ask = a.ask.clone();
         let permission = ask.kind == AskKind::Permission;

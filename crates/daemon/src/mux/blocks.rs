@@ -294,7 +294,7 @@ impl Daemon {
             None
         } else {
             self.panes.get(&beside).and_then(|h| h.pid_now()).and_then(|shell| {
-                let var = crate::agent::defs::CLAUDE_CONFIG_DIR;
+                let var = crate::agentenv::CLAUDE_CONFIG_DIR;
                 let fg = crate::procinfo::foreground(shell).filter(|p| *p != shell);
                 fg.and_then(|p| crate::procinfo::env_var(p, var)).or_else(|| crate::procinfo::env_var(shell, var))
             })

@@ -18,9 +18,11 @@ use tracing::info;
 pub struct Config {
     /// Who else may reach which sessions (M12).
     pub acl: Arc<crate::acl::Acl>,
-    /// Arugula control: notifications through it go to people's
+    /// Notifications: Web Push, and through Arugula control to people's
     /// devices (M21).
-    pub control: Arc<crate::control::Control>,
+    pub notify: Arc<dyn super::Notify>,
+    /// Who else is on the team, through Arugula control.
+    pub people: Arc<dyn super::People>,
     /// A hosted sandbox (M20): when its last session closes, it's done.
     pub sandbox_of_control: bool,
     /// What to call the owner to others (M13): their login, else "owner".
@@ -49,7 +51,11 @@ pub struct Config {
     /// The block types this build makes.
     pub kinds: Arc<crate::block::BlockKinds>,
     /// arugulad as Claude Code's IDE (M28); `None`: off.
-    pub ide: Option<Arc<crate::ide::Ide>>,
+    pub ide: Option<Arc<dyn super::IdeLink>>,
+    /// The Claude Code conversations here (#146).
+    pub sessions: Arc<dyn super::AgentSessions>,
+    /// What a pane leaves behind when it closes.
+    pub pane_gone: Arc<dyn super::PaneGone>,
 }
 
 /// How a shell takes a command to run.
@@ -123,7 +129,7 @@ impl Config {
         // Claude Code in a pane finds us as its IDE (M28), and only us.
         if let Some(ide) = &self.ide {
             env.retain(|(k, _)| k != "CLAUDE_CODE_SSE_PORT");
-            env.push(("CLAUDE_CODE_SSE_PORT".into(), ide.port.to_string()));
+            env.push(("CLAUDE_CODE_SSE_PORT".into(), ide.port().to_string()));
         }
         env
     }
@@ -243,10 +249,7 @@ impl Config {
         let note = |s: &str| format!("\x1b[2m[{s}]\x1b[0m\r\n");
         // The agent conversation it ran, by its session id (#146).
         if meta.host.is_none() {
-            let transcript = |id: &str| {
-                let mut ix = crate::conversations::Index::new(crate::conversations::Dirs::from_env());
-                ix.find(id).ok().map(|c| c.path.display().to_string())
-            };
+            let transcript = |id: &str| self.sessions.transcript(id).map(|p| p.display().to_string());
             let cwd = crate::resume::dir(meta).map(PathBuf::from).unwrap_or_else(|| cwd.clone());
             match crate::resume::plan(meta, transcript) {
                 Some(Ok(argv)) => {

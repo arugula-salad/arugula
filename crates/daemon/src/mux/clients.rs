@@ -1,7 +1,7 @@
 //! Connected clients: their messages and layout intents, and the changes,
 //! ticks and state pushes that send them what happened.
 
-use super::{AskReply, Daemon, Dirty, PaneView, People, SAVE_DEBOUNCE, Sent, TYPING, exec_tag, seed};
+use super::{AskReply, Daemon, Dirty, PaneView, SAVE_DEBOUNCE, Seen, Sent, TYPING, exec_tag, seed};
 use crate::{
     acl::Principal,
     pane::{Start, ToClient, Want},
@@ -114,7 +114,7 @@ impl Daemon {
                         _ => vec![],
                     };
                     if closes.iter().any(|p| self.is_invite(*p)) {
-                        let message = crate::invite::CLOSE_OWNER_ONLY.to_owned();
+                        let message = super::CLOSE_OWNER_ONLY.to_owned();
                         let _ = sub.ctrl.send(ToClient::Msg(ServerMsg::Error { id, message }));
                         return;
                     }
@@ -251,7 +251,7 @@ impl Daemon {
             self.config.acl.forget_session(gone);
         }
         if self.config.sandbox_of_control && self.mux.sessions.is_empty() {
-            self.config.control.sandbox_done();
+            self.config.people.clone().sandbox_done();
         }
         info!(?client, ?intent, "intent");
         let rects = self.mux.pane_rects();
@@ -348,8 +348,7 @@ impl Daemon {
                     self.ids.lock().unwrap().remove(&pane);
                     if let Some(p) = self.panes.remove(&pane) {
                         p.close();
-                        #[cfg(unix)]
-                        crate::upload::forget(pane);
+                        self.config.pane_gone.forget(pane);
                     }
                     if let Some(b) = self.blocks.remove(&pane) {
                         b.close();
@@ -363,10 +362,7 @@ impl Daemon {
                         self.delete_machine(m.id);
                     } else if let (Some(m), Some(p)) = (self.machine_of(pane), &self.config.provider) {
                         // M70: a machine that stays keeps nothing of the pane's.
-                        #[cfg(unix)]
-                        crate::upload::forget_on(p.clone(), m.sprite.clone(), pane);
-                        #[cfg(not(unix))]
-                        let _ = (m, p);
+                        self.config.pane_gone.forget_on(p.clone(), m.sprite.clone(), pane);
                     }
                     self.sizes.remove(&pane);
                     self.meta.remove(&pane);
@@ -546,7 +542,7 @@ impl Daemon {
         // Most clients are one person's: work each view out once.
         let mut states: HashMap<Principal, State> = HashMap::new();
         let mut views: HashMap<(Principal, bool), PaneView> = HashMap::new();
-        let mut people: HashMap<Principal, People> = HashMap::new();
+        let mut people: HashMap<Principal, Seen> = HashMap::new();
         for (client, who) in clients {
             let summary = self.summary.contains(&client);
             let stale = full || self.sent.get(&client).is_none_or(|s| s.rev != self.mux.rev);

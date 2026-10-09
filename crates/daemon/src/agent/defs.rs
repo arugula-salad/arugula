@@ -23,8 +23,7 @@ use serde_json::{Value, json};
 pub const CLAUDE_ACP: &str = "@agentclientprotocol/claude-agent-acp@0.85.0";
 pub const CODEX_ACP: &str = "@agentclientprotocol/codex-acp@2.1.0";
 
-/// Where Claude Code keeps its login and sessions (#379).
-pub const CLAUDE_CONFIG_DIR: &str = "CLAUDE_CONFIG_DIR";
+pub use crate::agentenv::CLAUDE_CONFIG_DIR;
 
 /// #379: which login a Claude Code with this environment uses, said when a
 /// turn fails on authentication, with how to log in to that one. Names

@@ -7,6 +7,7 @@ mod acl {
 }
 mod acl_api;
 mod agent;
+mod agentenv;
 mod api;
 mod args;
 mod authz;
@@ -82,7 +83,7 @@ mod update;
 #[cfg(unix)]
 mod upload;
 
-use std::{net::SocketAddr, path::PathBuf};
+use std::{net::SocketAddr, path::PathBuf, sync::Arc};
 
 use args::{Args, BlockArgs, Command, ReachArgs, RunArgs};
 use axum::serve::ListenerExt;
@@ -176,6 +177,18 @@ fn start_sites(
         sites::serve(sites, listener, tls).await;
     });
     Ok(())
+}
+
+/// No uploads on Windows: nothing to forget when a pane closes.
+#[cfg(not(unix))]
+#[derive(Debug)]
+struct NoUploads;
+
+#[cfg(not(unix))]
+impl mux::PaneGone for NoUploads {
+    fn forget(&self, _pane: arugula_proto::PaneId) {}
+
+    fn forget_on(&self, _provider: Arc<dyn provider::Provider>, _sprite: String, _pane: arugula_proto::PaneId) {}
 }
 
 /// Dial out to the home daemon and push history there, if asked to.
@@ -837,9 +850,14 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
     let invite_hook = invite::Hook::default();
     let rules = rules::Rules::open(store.root().join("rules.json"));
     let kinds = std::sync::Arc::new(kinds(mcp_link.clone(), secrets.clone(), rules.clone(), &invite_hook));
+    #[cfg(unix)]
+    let pane_gone: Arc<dyn mux::PaneGone> = Arc::new(upload::Uploads);
+    #[cfg(not(unix))]
+    let pane_gone: Arc<dyn mux::PaneGone> = Arc::new(NoUploads);
     let config = mux::Config {
         acl: acl.clone(),
-        control: control.clone(),
+        notify: Arc::new(push::Notifier { push: push.clone(), control: control.clone() }),
+        people: control.clone(),
         sandbox_of_control: args.sandbox_of_control,
         owner_name: owner_login.clone().unwrap_or_else(|| "owner".into()),
         owner_pic: None,
@@ -855,9 +873,11 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
         daemon_id: daemon_id(&store),
         private,
         kinds,
-        ide: ide.clone(),
+        ide: ide.clone().map(|i| i as Arc<dyn mux::IdeLink>),
+        sessions: Arc::new(conversations::Sessions),
+        pane_gone,
     };
-    let mux = mux::start(config, store, kept, push.clone());
+    let mux = mux::start(config, store, kept);
     if let Some(i) = &ide {
         i.run(mux.clone());
     }
@@ -885,6 +905,7 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
         identify,
         mux.clone(),
         push,
+        ide,
         hosts,
         shares,
         synced,

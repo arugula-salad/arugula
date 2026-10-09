@@ -331,6 +331,21 @@ impl Index {
     }
 }
 
+/// The mux's `AgentSessions`: the conversations in Claude Code's folders.
+#[derive(Debug)]
+pub struct Sessions;
+
+impl crate::mux::AgentSessions for Sessions {
+    fn transcript(&self, id: &str) -> Option<PathBuf> {
+        let mut ix = Index::new(Dirs::from_env());
+        ix.find(id).ok().map(|c| c.path)
+    }
+
+    fn live(&self, panes: HashMap<u32, PaneId>) -> HashMap<PaneId, (String, Option<String>)> {
+        live_in_panes(&Dirs::from_env(), &Ours { panes, ..Default::default() })
+    }
+}
+
 /// The conversation each of our panes' Claude Code holds now, by pane
 /// (#146: the session to resume when its hooks didn't say).
 pub fn live_in_panes(dirs: &Dirs, ours: &Ours) -> HashMap<PaneId, (String, Option<String>)> {

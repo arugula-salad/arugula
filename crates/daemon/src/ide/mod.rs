@@ -15,7 +15,8 @@
 //! or another IDE that registered with Claude Code (VS Code with Claude
 //! Code's extension, say), to which the daemon passes each `openDiff` on.
 
-pub mod diff;
+mod core;
+pub use self::core::{Event, NAME, diff, no_diagnostics, rejected, saved};
 // Over Unix sockets, which Claude Code's IDE support uses.
 #[cfg(unix)]
 pub mod relay;
@@ -49,9 +50,6 @@ use crate::{
     pane::Launcher,
 };
 
-/// What we're called in Claude Code's `/ide` list.
-pub const NAME: &str = "arugula";
-
 /// Where Claude Code looks for IDEs: `$CLAUDE_CONFIG_DIR/ide`, else
 /// `~/.claude/ide`.
 pub fn default_lock_dir(home: &Path) -> PathBuf {
@@ -59,33 +57,6 @@ pub fn default_lock_dir(home: &Path) -> PathBuf {
         Some(d) => PathBuf::from(d).join("ide"),
         None => home.join(".claude/ide"),
     }
-}
-
-/// What the relay tells the daemon.
-#[derive(Debug, Clone)]
-pub enum Event {
-    /// The relay (again): what follows is everything open.
-    Hello,
-    /// A Claude Code connected; the process it is.
-    Conn {
-        conn: u64,
-        pid: Option<u32>,
-    },
-    Gone {
-        conn: u64,
-    },
-    /// A tool call that waits for an answer.
-    Call {
-        conn: u64,
-        id: Value,
-        tool: String,
-        args: Value,
-    },
-    /// Claude Code closed these diffs (its terminal answered).
-    Closed {
-        conn: u64,
-        ids: Vec<Value>,
-    },
 }
 
 /// Which IDE gets diffs.
@@ -325,6 +296,26 @@ impl Ide {
     }
 }
 
+impl crate::mux::IdeLink for Ide {
+    fn port(&self) -> u16 {
+        self.port
+    }
+
+    fn reply(&self, conn: u64, id: &Value, result: Value) {
+        Ide::reply(self, conn, id, result)
+    }
+
+    fn closed(&self, conn: u64, ids: &[Value]) {
+        Ide::closed(self, conn, ids)
+    }
+
+    fn forward_diff(self: Arc<Self>, conn: u64, id: &Value, args: &Value, back: mpsc::UnboundedSender<Cmd>) -> bool {
+        let Some(to) = self.target() else { return false };
+        self.forward(to, conn, id.clone(), args.clone(), back);
+        true
+    }
+}
+
 #[cfg(not(unix))]
 async fn connect(_dir: &Path, _lock_dir: &Path, _launch: &Launcher) -> io::Result<(UnixStream, u16)> {
     Err(io::Error::other("the IDE relay isn't on Windows yet (M56, #219)"))
@@ -431,18 +422,4 @@ where
         }
     }
     anyhow::bail!("it hung up")
-}
-
-/// `openDiff`'s answers, as Claude Code reads them.
-pub fn saved(contents: &str) -> Value {
-    json!({ "content": [{ "type": "text", "text": "FILE_SAVED" }, { "type": "text", "text": contents }] })
-}
-
-pub fn rejected(tab: &str) -> Value {
-    json!({ "content": [{ "type": "text", "text": "DIFF_REJECTED" }, { "type": "text", "text": tab }] })
-}
-
-/// `getDiagnostics` with nothing to say.
-pub fn no_diagnostics() -> Value {
-    json!({ "content": [{ "type": "text", "text": "[]" }] })
 }

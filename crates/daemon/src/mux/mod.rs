@@ -14,11 +14,19 @@ mod info;
 #[cfg(not(feature = "labs"))]
 mod labs_off;
 mod machines;
+mod outside;
 #[cfg(feature = "labs")]
 mod thread_ops;
 mod who_may;
 
 pub use config::Config;
+pub use outside::{AgentSessions, IdeLink, Notify, PaneGone, People};
+
+/// Who answers an invite card: the owner, by any route.
+pub const OWNER_ONLY: &str = "only the session's owner sends or declines an invite";
+
+/// ...and closes the block it waits on (its drafts would go with it).
+pub const CLOSE_OWNER_ONLY: &str = "only the session's owner closes an invite block";
 
 /// A post to a thread (M61).
 #[cfg_attr(not(feature = "labs"), allow(dead_code))]
@@ -45,7 +53,6 @@ use crate::{
     osc::Signal,
     pane::{self, ExecRecord, Kept, Notice, NoticeSink, PaneHandle, Setup, Spawn, Start, Subscriber, ToClient, What},
     provider::Provider,
-    push::Push,
     store::{PaneLog, PaneMeta, Saved, StateDir, now_ms},
 };
 use arugula_core::{Intent, Mux, Role};
@@ -320,8 +327,6 @@ pub struct MuxHandle {
     pub daemon_id: String,
     /// This host's files, as the `fs` methods may read them.
     pub fs: Arc<crate::fs::Scope>,
-    /// Claude Code's IDE (M28), if on.
-    pub ide: Option<Arc<crate::ide::Ide>>,
     /// The user's shell environment, here and on machines (#74).
     pub shell_env: Arc<crate::shellenv::ShellEnv>,
     /// The block types this build makes.
@@ -430,7 +435,6 @@ struct Daemon {
     calls: crate::labs::Calls,
     notices: NoticeSink,
     events: broadcast::Sender<Event>,
-    push: Option<Push>,
     /// Non-terminal blocks (terminals are in `panes`).
     blocks: HashMap<PaneId, Arc<dyn Block>>,
     /// The ids of both, for blocks to tell our panes from another daemon's
@@ -502,7 +506,7 @@ enum Dirty {
 
 /// What one person sees besides panes: machines, who's here, threads,
 /// huddles.
-type People = (Vec<Machine>, Vec<Presence>, Vec<ThreadSummary>, Vec<Call>);
+type Seen = (Vec<Machine>, Vec<Presence>, Vec<ThreadSummary>, Vec<Call>);
 
 /// A pane as one client has it.
 type PaneJson = serde_json::Map<String, serde_json::Value>;
@@ -534,7 +538,7 @@ struct ProcSeen {
 }
 
 /// `kept`: pane terminals systemd kept for us across a restart, by FD name.
-pub fn start(config: Config, store: StateDir, kept: HashMap<String, Kept>, push: Option<Push>) -> MuxHandle {
+pub fn start(config: Config, store: StateDir, kept: HashMap<String, Kept>) -> MuxHandle {
     let (tx, rx) = mpsc::unbounded_channel();
     let (notices, notices_rx) = mpsc::unbounded_channel();
     let (events, _) = broadcast::channel(1024);
@@ -588,7 +592,6 @@ pub fn start(config: Config, store: StateDir, kept: HashMap<String, Kept>, push:
         store: store.clone(),
         notices,
         events: events.clone(),
-        push,
         blocks: HashMap::new(),
         ids: Default::default(),
         asks: HashMap::new(),
@@ -628,9 +631,9 @@ pub fn start(config: Config, store: StateDir, kept: HashMap<String, Kept>, push:
         }
     }
     d.sweep_machines();
-    let (provider, daemon_id, ide) = (d.config.provider.clone(), d.config.daemon_id.clone(), d.config.ide.clone());
+    let (provider, daemon_id) = (d.config.provider.clone(), d.config.daemon_id.clone());
     tokio::spawn(d.run(rx, notices_rx));
-    MuxHandle { tx, events, store, provider, daemon_id, fs, ide, shell_env, kinds, inventory }
+    MuxHandle { tx, events, store, provider, daemon_id, fs, shell_env, kinds, inventory }
 }
 
 /// A reason with nothing but its headline.

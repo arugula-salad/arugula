@@ -79,11 +79,8 @@ impl Daemon {
         // Claude Code without hooks: its session files say which
         // conversation each holds (#146).
         if agents.iter().any(|(_, a)| a.as_deref() == Some("claude")) {
-            let ours = crate::conversations::Ours {
-                panes: self.panes.iter().filter_map(|(id, h)| Some((h.pid_now()?, *id))).collect(),
-                ..Default::default()
-            };
-            let live = crate::conversations::live_in_panes(&crate::conversations::Dirs::from_env(), &ours);
+            let ours = self.panes.iter().filter_map(|(id, h)| Some((h.pid_now()?, *id))).collect();
+            let live = self.config.sessions.live(ours);
             for (id, (sid, cwd)) in live {
                 let claude = agents.iter().any(|(p, a)| *p == id && a.as_deref() == Some("claude"));
                 if claude && crate::resume::valid_id(&sid) {

@@ -67,11 +67,7 @@ fn ok_id(rest: &str) -> bool {
 /// server is, so it's set once it is.
 pub type Hook = Arc<OnceLock<Weak<App>>>;
 
-/// Who answers an invite card: the owner, by any route.
-pub const OWNER_ONLY: &str = "only the session's owner sends or declines an invite";
-
-/// ...and closes the block it waits on (its drafts would go with it).
-pub const CLOSE_OWNER_ONLY: &str = "only the session's owner closes an invite block";
+pub use crate::mux::{CLOSE_OWNER_ONLY, OWNER_ONLY};
 
 /// An agent on the owner's CLI asks; the owner sends.
 pub const AGENT_ASKS: &str = "an agent doesn't invite: ask the user with Arugula's invite_person tool";

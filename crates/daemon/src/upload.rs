@@ -323,6 +323,20 @@ pub fn forget_on(provider: Arc<dyn crate::provider::Provider>, sprite: String, p
     });
 }
 
+/// The mux's `PaneGone`: a closed pane's uploads go with it.
+#[derive(Debug)]
+pub struct Uploads;
+
+impl crate::mux::PaneGone for Uploads {
+    fn forget(&self, pane: PaneId) {
+        forget(pane);
+    }
+
+    fn forget_on(&self, provider: Arc<dyn crate::provider::Provider>, sprite: String, pane: PaneId) {
+        forget_on(provider, sprite, pane);
+    }
+}
+
 #[derive(Deserialize)]
 pub struct PasteRequest {
     paths: Vec<String>,

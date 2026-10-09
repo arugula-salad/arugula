@@ -24,7 +24,7 @@ use crate::{
 
 impl Handle for IdeGet {
     async fn handle(cx: &Cx<'_>, _: (), _: Empty) -> Result<IdeInfo, OpError> {
-        let Some(ide) = &cx.app.mux.ide else {
+        let Some(ide) = &cx.app.ide else {
             return Ok(IdeInfo { on: false, name: None, port: None, lock_dir: None, diffs: None, others: None });
         };
         let others = ide
@@ -45,8 +45,7 @@ impl Handle for IdeGet {
 
 impl Handle for IdeSet {
     async fn handle(cx: &Cx<'_>, _: (), req: IdeDiffsRequest) -> Result<IdeDiffs, OpError> {
-        let ide =
-            cx.app.mux.ide.as_ref().ok_or_else(|| bad("arugulad isn't Claude Code's IDE here (--no-claude-ide)"))?;
+        let ide = cx.app.ide.as_ref().ok_or_else(|| bad("arugulad isn't Claude Code's IDE here (--no-claude-ide)"))?;
         ide.set_diffs_to(Some(req.diffs)).map_err(|e| OpError::Failed(e.to_string()))?;
         Ok(IdeDiffs { diffs: ide.diffs_to().unwrap_or_else(|| crate::ide::NAME.into()) })
     }
@@ -62,7 +61,7 @@ impl Handle for IdeMention {
                 None => return Err(OpError::NoPane(m.pane)),
             }
         }
-        let ide = cx.app.mux.ide.as_ref().ok_or_else(|| bad("arugulad isn't Claude Code's IDE here"))?;
+        let ide = cx.app.ide.as_ref().ok_or_else(|| bad("arugulad isn't Claude Code's IDE here"))?;
         let conns = cx.app.mux.api(|r| Api::IdeConns(m.pane, r)).await.unwrap_or_default();
         if conns.is_empty() {
             return Err(OpError::Status(

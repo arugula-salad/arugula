@@ -31,6 +31,41 @@ pub struct Push {
     http: reqwest::Client,
 }
 
+/// The mux's `Notify`: this daemon's Web Push, then Arugula control.
+pub struct Notifier {
+    pub push: Option<Push>,
+    pub control: Arc<crate::control::Control>,
+}
+
+impl std::fmt::Debug for Notifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Notifier").field("push", &self.push.is_some()).finish_non_exhaustive()
+    }
+}
+
+impl crate::mux::Notify for Notifier {
+    fn notify(
+        &self,
+        pane: u32,
+        title: &str,
+        body: &str,
+        web_extra: Option<serde_json::Value>,
+        extra: Option<serde_json::Value>,
+        to: &dyn Fn(&crate::acl::Principal) -> bool,
+    ) {
+        if let Some(push) = &self.push {
+            // A subscription is its person's id; `to` asks about a principal.
+            push.send_to(pane, title, body, web_extra, |who| {
+                to(&match who {
+                    "owner" => crate::acl::Principal::Owner,
+                    id => crate::acl::Principal::User { id: id.to_owned(), name: String::new(), pic: None },
+                })
+            });
+        }
+        self.control.push(pane, title, body, extra, to);
+    }
+}
+
 pub(crate) fn random<const N: usize>() -> [u8; N] {
     let mut b = [0u8; N];
     getrandom::fill(&mut b).expect("the OS's random source");
@@ -90,15 +125,10 @@ impl Push {
         self.subs.lock().unwrap().len()
     }
 
-    /// Notify every subscribed browser; in the background. `extra` fields
-    /// go in the payload too (an agent's pending approval, which the
-    /// service worker turns into Approve and Deny actions).
-    /// To the owner's subscriptions only.
-    pub fn send(&self, pane: u32, title: &str, body: &str, extra: Option<serde_json::Value>) {
-        self.send_to(pane, title, body, extra, |who| who == "owner");
-    }
-
-    /// To whoever's subscriptions `to` picks, by principal id (M29).
+    /// Notify the subscribed browsers `to` picks, by principal id (M29); in
+    /// the background. `extra` fields go in the payload too (an agent's
+    /// pending approval, which the service worker turns into Approve and
+    /// Deny actions).
     pub fn send_to(
         &self,
         pane: u32,

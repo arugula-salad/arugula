@@ -206,17 +206,15 @@ impl Daemon {
                 let msg = ServerMsg::TrustRequest { pane, who: me.who.clone(), name: me.name.clone() };
                 self.tell("owner", msg);
                 // The owner may only have a phone in their pocket.
-                if let Some(push) = &self.push {
-                    let body = format!("{} asks to drive %{pane}, which runs on this machine", me.name);
-                    push.send(
-                        pane,
-                        "Someone asks to drive a pane",
-                        &body,
-                        Some(serde_json::json!({ "trust": me.who })),
-                    );
-                }
                 let body = format!("{} asks to drive %{pane}, which runs on this machine", me.name);
-                self.config.control.push(pane, "Someone asks to drive a pane", &body, None, |who| who.is_owner());
+                self.config.notify.notify(
+                    pane,
+                    "Someone asks to drive a pane",
+                    &body,
+                    Some(serde_json::json!({ "trust": me.who })),
+                    None,
+                    &|who| who.is_owner(),
+                );
                 if let Some(c) = self.clients.get(&client) {
                     let message = "asked the owner to trust you with it".to_owned();
                     let _ = c.ctrl.send(ToClient::Msg(ServerMsg::Notice { message }));

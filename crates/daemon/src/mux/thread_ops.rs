@@ -97,11 +97,11 @@ impl Daemon {
     /// not), and whoever is connected.
     fn mentionable(&self) -> Vec<Principal> {
         let mut out = vec![Principal::Owner];
-        out.extend(self.config.control.co_owners());
+        out.extend(self.config.people.co_owners());
         for g in self.config.acl.list() {
             out.push(Principal::User { id: g.principal.clone(), name: g.name.clone(), pic: None });
         }
-        out.extend(self.config.control.team_people());
+        out.extend(self.config.people.team_people());
         for c in self.clients.values() {
             out.push(c.principal.clone());
         }
@@ -128,8 +128,7 @@ impl Daemon {
         let by = as_agent.clone().unwrap_or_else(|| self.driver_of(&who));
         let tokens = crate::labs::threads::mentions(&text);
         // A team's other owner reads every thread, as the owner does.
-        let co_owner =
-            |p: &Principal| p.id().strip_prefix("account:").is_some_and(|a| self.config.control.owns_here(a));
+        let co_owner = |p: &Principal| p.id().strip_prefix("account:").is_some_and(|a| self.config.people.owns_here(a));
         let mentions: Vec<String> = self
             .mentionable()
             .into_iter()
@@ -217,12 +216,9 @@ impl Daemon {
         // Its own notification, not the pane's.
         let extra = serde_json::json!({ "thread": target.key(), "tag": format!("thread-{}", target.key()) });
         for id in &msg.mentions {
-            let id = id.clone();
-            if let Some(push) = &self.push {
-                let id = id.clone();
-                push.send_to(pane, &title, &body, Some(extra.clone()), move |w| w == id);
-            }
-            self.config.control.push(pane, &title, &body, Some(extra.clone()), move |p| p.id() == id);
+            self.config
+                .notify
+                .notify(pane, &title, &body, Some(extra.clone()), Some(extra.clone()), &|p| p.id() == id.as_str());
         }
     }
 }

@@ -47,6 +47,8 @@ pub struct App {
     pub identify: Identify,
     pub mux: MuxHandle,
     pub push: Option<crate::push::Push>,
+    /// Claude Code's IDE (M28), if on.
+    pub ide: Option<Arc<crate::ide::Ide>>,
     pub hosts: Arc<Hosts>,
     /// The static binaries a daemon made resident in a sandbox runs.
     #[cfg_attr(not(feature = "labs"), allow(dead_code))]
@@ -81,6 +83,7 @@ impl App {
         identify: Identify,
         mux: MuxHandle,
         push: Option<crate::push::Push>,
+        ide: Option<Arc<crate::ide::Ide>>,
         hosts: Arc<Hosts>,
         shares: Arc<crate::share::Shares>,
         synced: Arc<crate::sync::Synced>,
@@ -97,6 +100,7 @@ impl App {
             identify,
             mux,
             push,
+            ide,
             hosts,
             dial_outs: Default::default(),
             shares,
