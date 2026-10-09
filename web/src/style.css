@@ -5291,30 +5291,241 @@ button.diff-why-run {
   flex: 1;
 }
 
+/* The places and the tabs read as the panes' bar does: only the one
+   you're on is filled. */
+.agents-page .chat-bar .place,
+.agents-tabs button {
+  background: none;
+  color: var(--dim);
+}
+
+.agents-page .chat-bar .place:hover,
+.agents-tabs button:hover {
+  background: var(--raised);
+  color: var(--fg);
+}
+
+.agents-page .chat-bar .place.here,
+.agents-tabs button.on {
+  background: var(--raised);
+  color: var(--fg);
+  font-weight: 600;
+}
+
 .agents-body {
   flex: 1;
   overflow: auto;
-  padding: 8px 16px 24px;
+  padding: 16px 16px 32px;
+}
+
+.agents-body > * {
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+.agents-lead {
+  margin: 0 8px 14px;
+  max-width: 720px;
+  line-height: 1.5;
+  color: var(--dim);
+}
+
+.agents-lead b {
+  color: var(--fg);
+  font-weight: 600;
 }
 
 .agents-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: center;
-  margin: 8px;
+  margin: 0 8px 16px;
+}
+
+/* Every button on the page looks like one: filled, with the main one in
+   the accent and the one that destroys in the danger color. */
+.agents-actions button,
+.agents-buttons button {
+  padding: 5px 12px;
+  border-radius: 6px;
+  background: var(--raised);
+  color: var(--fg);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.agents-actions button:hover:not(:disabled),
+.agents-buttons button:hover:not(:disabled) {
+  background: var(--raised-hover);
+}
+
+.agents-actions button.pri,
+.agents-buttons button.pri {
+  background: var(--accent);
+  color: var(--letterbox);
+  font-weight: 600;
+}
+
+.agents-actions button.pri:hover:not(:disabled),
+.agents-buttons button.pri:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 85%, var(--fg));
+}
+
+.agents-buttons button.danger {
+  background: none;
+  color: var(--danger);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger) 45%, transparent);
+}
+
+.agents-buttons button.danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 18%, transparent);
+}
+
+.agents-actions button:disabled,
+.agents-buttons button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.agents-said {
+  color: var(--accent);
+}
+
+.agents-empty {
+  margin: 0 8px 16px;
+  padding: 16px 18px;
+  border: 1px dashed var(--raised-hover);
+  border-radius: 8px;
+  line-height: 1.5;
+}
+
+.agents-empty p {
+  margin: 4px 0 0;
+  color: var(--dim);
+}
+
+.agents-empty b,
+.agents-none b {
+  color: var(--fg);
+}
+
+.agents-inline {
+  padding: 0;
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.agents-section-head {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  margin: 20px 8px 8px;
+  font-size: 14px;
+  font-weight: 600;
+  min-width: 0;
+}
+
+.agents-section-head .dim {
+  font-weight: normal;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.agents-remove {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--dim);
+  text-decoration: underline;
+}
+
+.agents-remove:hover {
+  color: var(--fg);
+}
+
+.agents-none {
+  margin: 0 8px;
+  color: var(--dim);
+}
+
+.agents-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.agents-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--divider);
+}
+
+.agents-card.waiting {
+  border-color: var(--accent);
+}
+
+.agents-card-text {
+  flex: 1 1 280px;
+  min-width: 0;
+}
+
+.agents-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+}
+
+.agents-card-text p {
+  margin: 2px 0 0;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.agents-how {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--letterbox);
+  color: var(--dim);
+  font-size: 11px;
+  user-select: all;
+}
+
+.agents-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .agents-form {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin: 8px;
+  margin: 0 8px 16px;
   padding: 12px 14px;
   max-width: 760px;
   border-radius: 8px;
   background: var(--surface);
   border: 1px solid var(--divider);
   text-align: left;
+}
+
+.agents-form-title {
+  margin: 0;
+  font-size: 14px;
 }
 
 .agents-form > .dim {
@@ -6326,8 +6537,8 @@ button.thread-quote:hover {
   color: var(--letterbox);
 }
 
-/* Panes · Swarm · Chat (M73): the three places, in the panes' bar and
-   chat's. */
+/* Panes · Swarm · Chat · Agents (M73, #403): the places, in the panes'
+   bar, chat's and the Agents page's. */
 .places {
   display: flex;
   align-items: center;

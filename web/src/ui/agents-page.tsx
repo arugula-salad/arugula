@@ -15,6 +15,7 @@ import type { Client } from "../client";
 import { askText } from "./menu";
 import { ConfirmRemove } from "./confirm";
 import { agentsRoute, closeAgentsPage, openAgentsPage, type AgentsTab } from "./agents-route";
+import { Places } from "./places";
 
 interface Recipe {
   name: string;
@@ -72,7 +73,7 @@ function Page({ client, tab }: { client: Client; tab: AgentsTab }) {
   return (
     <div class="chat agents-page" data-agents-page={tab}>
       <div class="review-bar chat-bar">
-        <b>Agents</b>
+        <Places client={client} at="agents" />
         <span class="agents-tabs">
           <button class={tab === "recipes" ? "on" : ""} data-agents-tab="recipes" onClick={() => openAgentsPage("recipes")}>
             Recipes
@@ -112,6 +113,10 @@ interface Form {
   mcpServers: string;
   prompt: string;
 }
+// An offer changed since the Team tab last asked: its next look asks every
+// machine again, so what you just offered is there.
+let teamStale = false;
+
 const list = (s: string) => s.split(",").map((x) => x.trim()).filter(Boolean);
 const named = (r: Recipe) => r.mcp_servers.filter((m): m is string => typeof m === "string");
 const inline = (r: Recipe) => r.mcp_servers.filter((m) => typeof m !== "string").map((m) => (m as { name: string }).name);
@@ -178,7 +183,9 @@ function RecipesTab({ client }: { client: Client }) {
     }, `${f.name} saved`);
   const offer = async (r: Recipe, project: string | null) => {
     const dir = project ?? (await askText(`Offer ${r.name}, working in`, "", "a project folder (a git checkout)"));
-    if (dir?.trim()) await act(() => json(client, "POST", "/api/a2a/offers", { agent: r.name, dir: dir.trim() }), `${r.name} is offered to your team`);
+    if (!dir?.trim()) return;
+    teamStale = true;
+    await act(() => json(client, "POST", "/api/a2a/offers", { agent: r.name, dir: dir.trim() }), `${r.name} is offered to your team`);
   };
   const runHere = async (r: Recipe, project: string | null) => {
     const cwd = project ?? (await askText(`Run ${r.name} in`, "~", "a folder on this machine"));
@@ -199,64 +206,105 @@ function RecipesTab({ client }: { client: Client }) {
   if (!data) return <p class="dim">Reading this machine's recipes…</p>;
   const where = [{ label: "~/.claude/agents (yours, every project)", dir: "" }, ...data.projects.map((p) => ({ label: p.dir, dir: p.dir }))];
   const rows = (rs: Recipe[], project: string | null) => (
-    <ul class="agents-recipe-list">
+    <ul class="agents-cards">
       {rs.map((r) => (
-        <li key={r.path} data-recipe={r.name} data-offered={String(!!r.offered_from)}>
-          <b>{r.name}</b>
-          {r.model && <span class="ws-tag">{r.model}</span>}
-          <span class="dim">{r.description}</span>
-          {r.offered_from && <span class="ws-tag" title={`Offered, working in ${r.offered_from}`}>offered</span>}
-          <button data-edit={r.name} disabled={busy} onClick={() => edit(r)}>
-            Edit
-          </button>
-          <button data-run-here={r.name} disabled={busy} onClick={() => void runHere(r, project)}>
-            Run here
-          </button>
-          {r.offered_from ? (
-            <button data-unoffer={r.name} disabled={busy} onClick={() => void act(() => json(client, "POST", "/api/a2a/offers", { agent: r.name }), `${r.name} is no longer offered`)}>
-              Stop offering
+        <li key={r.path} class="agents-card" data-recipe={r.name} data-offered={String(!!r.offered_from)}>
+          <div class="agents-card-text">
+            <div class="agents-card-head">
+              <b>{r.name}</b>
+              {r.model && <span class="ws-tag">{r.model}</span>}
+              {r.offered_from && (
+                <span class="ws-tag waits" title={`Your team's agents can send it tasks; it works in ${r.offered_from}`}>
+                  offered to your team
+                </span>
+              )}
+            </div>
+            <p class="dim">{r.description}</p>
+          </div>
+          <div class="agents-buttons">
+            <button class="pri" data-run-here={r.name} disabled={busy} title="Open an agent block wearing this recipe" onClick={() => void runHere(r, project)}>
+              Run here
             </button>
-          ) : (
-            <button data-offer={r.name} disabled={busy} onClick={() => void offer(r, project)}>
-              Offer
+            <button data-edit={r.name} disabled={busy} title="Change its prompt, tools and model" onClick={() => edit(r)}>
+              Edit
             </button>
-          )}
-          <button class="link" data-delete={r.name} disabled={busy} onClick={() => setDeleting(r)}>
-            Delete
-          </button>
+            {r.offered_from ? (
+              <button
+                data-unoffer={r.name}
+                disabled={busy}
+                title="Take it out of your team's catalog"
+                onClick={() => {
+                  teamStale = true;
+                  void act(() => json(client, "POST", "/api/a2a/offers", { agent: r.name }), `${r.name} is no longer offered`);
+                }}
+              >
+                Stop offering
+              </button>
+            ) : (
+              <button data-offer={r.name} disabled={busy} title="Put it in your team's catalog, so their agents can send it tasks" onClick={() => void offer(r, project)}>
+                Offer to team
+              </button>
+            )}
+            <button class="danger" data-delete={r.name} disabled={busy} title="Delete its file" onClick={() => setDeleting(r)}>
+              Delete
+            </button>
+          </div>
         </li>
       ))}
     </ul>
   );
+  const none = !data.user.recipes.length && data.projects.every((p) => !p.recipes.length);
   return (
     <div class="agents-recipes-tab">
+      <p class="agents-lead">
+        A recipe is a Claude Code subagent: a name, a prompt, and the tools and model it uses. <b>Run here</b> opens an agent wearing it on this machine.{" "}
+        <b>Offer to team</b> lets your team's agents send it tasks; you approve each one.
+      </p>
       <div class="agents-actions">
         <button class="pri" data-new-recipe disabled={busy} onClick={() => setForm({ f: { ...EMPTY }, inline: [] })}>
           + New recipe
         </button>
-        <button data-add-project disabled={busy} onClick={() => void addProject()}>
+        <button data-add-project disabled={busy} title="List the recipes in a project's .claude/agents" onClick={() => void addProject()}>
           Add a project…
         </button>
-        {said && <span class="dim">{said}</span>}
+        {said && (
+          <span class="agents-said" data-agents-said>
+            {said}
+          </span>
+        )}
       </div>
+      {none && !form && (
+        <div class="agents-empty" data-agents-empty>
+          <b>No recipes on this machine yet.</b>
+          <p>
+            Make one with <b>+ New recipe</b>, or <b>Add a project…</b> that already has recipes in its <code>.claude/agents</code> folder.
+          </p>
+        </div>
+      )}
       {form && <RecipeForm form={form.f} inline={form.inline} where={where} busy={busy} save={(f) => void save(f)} cancel={() => setForm(null)} />}
       <section class="agents-recipes" data-agents-scope="user">
-        <h4 class="agents-shelf-head">
-          Yours <span class="dim">{data.user.dir}</span>
+        <h4 class="agents-section-head">
+          Yours, in every project <span class="dim">{data.user.dir}</span>
         </h4>
-        {data.user.recipes.length ? rows(data.user.recipes, null) : <p class="dim">None yet.</p>}
+        {data.user.recipes.length ? rows(data.user.recipes, null) : <p class="agents-none">None here yet.</p>}
       </section>
       {data.projects.map((p) => (
         <section key={p.dir} class="agents-recipes" data-agents-scope={p.dir}>
-          <h4 class="agents-shelf-head">
+          <h4 class="agents-section-head">
             {p.dir.split("/").pop()} <span class="dim">{p.dir}</span>
             {p.added && (
-              <button class="link" title="Stop listing it here" onClick={() => void act(() => json(client, "POST", "/api/a2a/recipes/projects", { dir: p.dir, keep: false }))}>
+              <button class="agents-remove" title="Stop listing this project here (its files stay)" onClick={() => void act(() => json(client, "POST", "/api/a2a/recipes/projects", { dir: p.dir, keep: false }))}>
                 Remove
               </button>
             )}
           </h4>
-          {p.recipes.length ? rows(p.recipes, p.dir) : <p class="dim">No recipes in .claude/agents.</p>}
+          {p.recipes.length ? (
+            rows(p.recipes, p.dir)
+          ) : (
+            <p class="agents-none">
+              No recipes in <code>.claude/agents</code> yet. <b>+ New recipe</b> can make one here.
+            </p>
+          )}
         </section>
       ))}
       {deleting && (
@@ -312,6 +360,8 @@ function RecipeForm({
         save(f);
       }}
     >
+      <h4 class="agents-form-title">{f.path ? `Edit ${form.name}` : "New recipe"}</h4>
+      <p class="dim agents-form-help">Saved as a Markdown file Claude Code reads. Name and description are required; leave the rest empty for Claude Code's defaults.</p>
       {!f.path && (
         <label class="agents-field">
           <span>Where</span>
@@ -385,7 +435,11 @@ function TeamTab({ client }: { client: Client }) {
     }
     setBusy(false);
   };
-  useEffect(() => void load(), []);
+  useEffect(() => {
+    const fresh = teamStale;
+    teamStale = false;
+    void load(fresh);
+  }, []);
   const answer = async (id: string, a: "once" | "hour" | "deny") => {
     setBusy(true);
     await client.request("POST", `/api/a2a/tasks/${encodeURIComponent(id)}/consent`, { answer: a }).catch(() => null);
@@ -393,8 +447,13 @@ function TeamTab({ client }: { client: Client }) {
   };
   if (error) return <p class="dim fountain-said">{error}</p>;
   if (!shelves) return <p class="dim">Asking every machine for its agents…</p>;
+  const offered = shelves.filter((s) => s.agents.length || s.note);
   return (
     <div class="agents-team-tab">
+      <p class="agents-lead">
+        The agents your team offers, on every machine. Your agents send them tasks with the <code>delegate</code> tool. When someone else's agent asks one of
+        yours, the task waits here until you allow it.
+      </p>
       <div class="agents-actions">
         <button data-team-refresh disabled={busy} onClick={() => void load(true)}>
           {busy ? "Asking…" : "Ask every machine again"}
@@ -402,31 +461,48 @@ function TeamTab({ client }: { client: Client }) {
       </div>
       {waiting.length > 0 && (
         <section class="agents-recipes" data-agents-waiting>
-          <h4 class="agents-shelf-head">Waiting for you</h4>
-          <ul class="agents-recipe-list">
+          <h4 class="agents-section-head">Waiting for you</h4>
+          <ul class="agents-cards">
             {waiting.map((t) => (
-              <li key={t.id} data-waiting={t.id}>
-                <b>{t.metadata?.arugula?.caller ?? "someone"}</b>
-                <span class="dim">
-                  asks {t.metadata?.arugula?.agent}: {t.history?.[0]?.parts?.[0]?.text}
-                </span>
-                <button class="pri" disabled={busy} onClick={() => void answer(t.id, "once")}>
-                  Allow once
-                </button>
-                <button disabled={busy} onClick={() => void answer(t.id, "hour")}>
-                  For an hour
-                </button>
-                <button disabled={busy} onClick={() => void answer(t.id, "deny")}>
-                  Deny
-                </button>
+              <li key={t.id} class="agents-card waiting" data-waiting={t.id}>
+                <div class="agents-card-text">
+                  <div class="agents-card-head">
+                    <b>{t.metadata?.arugula?.caller ?? "someone"}</b>
+                    <span class="dim">asks {t.metadata?.arugula?.agent}</span>
+                  </div>
+                  <p>{t.history?.[0]?.parts?.[0]?.text}</p>
+                </div>
+                <div class="agents-buttons">
+                  <button class="pri" disabled={busy} onClick={() => void answer(t.id, "once")}>
+                    Allow once
+                  </button>
+                  <button disabled={busy} title="Allow this person's tasks for this agent for an hour" onClick={() => void answer(t.id, "hour")}>
+                    Allow for an hour
+                  </button>
+                  <button class="danger" disabled={busy} onClick={() => void answer(t.id, "deny")}>
+                    Deny
+                  </button>
+                </div>
               </li>
             ))}
           </ul>
         </section>
       )}
-      {shelves.filter((s) => s.agents.length || s.note).map((s) => (
+      {!offered.length && (
+        <div class="agents-empty" data-agents-empty>
+          <b>Nobody on your team offers an agent yet.</b>
+          <p>
+            Offer one of yours: open{" "}
+            <button class="agents-inline" onClick={() => openAgentsPage("recipes")}>
+              Recipes
+            </button>{" "}
+            and choose <b>Offer to team</b> on a recipe.
+          </p>
+        </div>
+      )}
+      {offered.map((s) => (
         <section key={s.machine} class="agents-recipes agents-shelf" data-shelf={s.name}>
-          <h4 class="agents-shelf-head">
+          <h4 class="agents-section-head">
             {s.name}
             <span class="dim">
               {s.here ? " · this machine" : ""}
@@ -435,16 +511,20 @@ function TeamTab({ client }: { client: Client }) {
             </span>
           </h4>
           {s.note && s.online && <p class="dim fountain-said">{s.note}</p>}
-          <ul class="agents-recipe-list">
+          <ul class="agents-cards">
             {s.agents.map((a) => (
-              <li key={a.name} data-agent={a.name}>
-                <b>{a.name}</b>
-                <span class="dim">{a.description}</span>
-                {!s.here && (
-                  <code class="dim" title="How your agents send it a task">
-                    delegate {"{"}machine: {s.name}, agent: {a.name}{"}"}
-                  </code>
-                )}
+              <li key={a.name} class="agents-card" data-agent={a.name}>
+                <div class="agents-card-text">
+                  <div class="agents-card-head">
+                    <b>{a.name}</b>
+                  </div>
+                  <p class="dim">{a.description}</p>
+                  {!s.here && (
+                    <code class="agents-how" title="Ask one of your agents to send it a task with this">
+                      delegate {"{"}machine: {s.name}, agent: {a.name}{"}"}
+                    </code>
+                  )}
+                </div>
               </li>
             ))}
           </ul>
@@ -452,17 +532,23 @@ function TeamTab({ client }: { client: Client }) {
       ))}
       {grants.length > 0 && (
         <section class="agents-recipes" data-agents-grants>
-          <h4 class="agents-shelf-head">Standing grants</h4>
-          <ul class="agents-recipe-list">
+          <h4 class="agents-section-head">Standing grants</h4>
+          <ul class="agents-cards">
             {grants.map((g) => (
-              <li key={`${g.account}/${g.agent}`} data-grant={`${g.name}/${g.agent}`}>
-                <b>{g.name}</b>
-                <span class="dim">
-                  {g.agent}, until {new Date(g.until_ms).toLocaleTimeString()}
-                </span>
-                <button disabled={busy} onClick={() => void client.request("POST", "/api/a2a/grants", { account: g.account, agent: g.agent }).then(() => load())}>
-                  Revoke
-                </button>
+              <li key={`${g.account}/${g.agent}`} class="agents-card" data-grant={`${g.name}/${g.agent}`}>
+                <div class="agents-card-text">
+                  <div class="agents-card-head">
+                    <b>{g.name}</b>
+                    <span class="dim">
+                      may use {g.agent} until {new Date(g.until_ms).toLocaleTimeString()}
+                    </span>
+                  </div>
+                </div>
+                <div class="agents-buttons">
+                  <button class="danger" disabled={busy} onClick={() => void client.request("POST", "/api/a2a/grants", { account: g.account, agent: g.agent }).then(() => load())}>
+                    Revoke
+                  </button>
+                </div>
               </li>
             ))}
           </ul>
