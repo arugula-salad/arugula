@@ -1,6 +1,19 @@
 # name method path access drives credential
+adapter.install POST /api/agents/adapters/{kind}/install Owner drives=false credential=false
+adapters.list GET /api/agents/adapters Owner drives=false credential=false
+agents.get GET /api/hosts/self/agents Owner drives=false credential=false
+agents.refresh POST /api/hosts/self/agents/refresh Owner drives=false credential=false
+conversation.open POST /api/conversations/open Owner drives=false credential=false
+conversations.list GET /api/conversations Owner drives=false credential=false
 flag.set PUT /api/flags/{name} Owner drives=false credential=false
 flags.list GET /api/flags Owner drives=false credential=false
+ide.get GET /api/ide Owner drives=false credential=false
+ide.mention POST /api/ide/mention Handler drives=false credential=false
+ide.set PUT /api/ide Owner drives=false credential=false
+machine.reset POST /api/machines/{id}/reset Owner drives=false credential=false
+machines.list GET /api/machines Owner drives=false credential=false
+notify.get GET /api/notify Handler drives=false credential=false
+notify.set POST /api/notify Handler drives=false credential=false
 pane.attention POST /api/panes/{id}/attention Pane(Editor) drives=false credential=false
 pane.close POST /api/panes/{id}/close Pane(Editor) drives=false credential=false
 pane.detection GET /api/panes/{id}/detection Pane(Viewer) drives=false credential=false
@@ -13,6 +26,9 @@ pane.process GET /api/panes/{id}/process Pane(Viewer) drives=false credential=fa
 pane.send POST /api/panes/{id}/send Pane(Editor) drives=true credential=false
 pane.wait GET /api/panes/{id}/wait Pane(Viewer) drives=false credential=false
 panes.list GET /api/panes Owner drives=false credential=false
+push.key GET /api/push/key Anyone drives=false credential=false
+push.subscribe POST /api/push/subscribe Handler drives=false credential=false
+push.test POST /api/push/test Handler drives=false credential=false
 rule.forget DELETE /api/rules/{index} Owner drives=false credential=false
 rules.forget_all DELETE /api/rules Owner drives=false credential=false
 rules.list GET /api/rules Owner drives=false credential=false

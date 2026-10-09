@@ -15,17 +15,18 @@ use std::{
 use arugula_proto::{
     Driver, EventKind, Frame, FrameKind, PaneId, SessionId,
     api::{
-        Adapters, AgentRules, AgentsInventory, Answered, AskAnswer, AskRequest, ConversationList, ConversationRow,
-        Described, Empty, HistoryKind, IdeDiffs, IdeDiffsRequest, IdeInfo, IdeMentionRequest, IdeMentioned, IdeOther,
-        InboxAnswer, Invitable, KeysRequest, NotifyPref, NotifyRequest, OpenConversationRequest,
-        OpenConversationResponse, OpenResponse, PermitAnswer, PermitRequest, Process, PromptRequest, PromptResult,
-        PushSubscriptions, RunRequest, RunResponse, SecretFinding, SendRequest, ThreadAgent, ThreadMessages,
+        AgentRules, AgentsInventory, Answered, AskAnswer, AskRequest, ConversationList, ConversationRow,
+        ConversationsQuery, Described, Empty, HistoryKind, InboxAnswer, Invitable, KeysRequest,
+        OpenConversationRequest, OpenConversationResponse, OpenResponse, PermitAnswer, PermitRequest, Process,
+        PromptRequest, PromptResult, RunRequest, RunResponse, SecretFinding, SendRequest, ThreadAgent, ThreadMessages,
         ThreadPostRequest, ThreadPosted, ThreadReadRequest, Unreached, UnreachedWhy, WaitRequest, WaitResult,
         WithdrawRequest,
     },
     op::ops::{
-        ClosePane, FlagSet, FlagsList, ListPanes, PaneAttention, PaneDetection, PaneDiffOf, PaneDrivers, PaneFollowUp,
-        PaneKeys, PaneMouse, PaneProcess, PaneSend, PaneWait, RuleForget, RulesForgetAll, RulesList, ShellEnvGet,
+        AdapterInstall, AdaptersList, AgentsGet, AgentsRefresh, ClosePane, ConversationOpen, ConversationsList,
+        FlagSet, FlagsList, IdeGet, IdeMention, IdeSet, ListPanes, MachineReset, MachinesList, NotifyGet, NotifySet,
+        PaneAttention, PaneDetection, PaneDiffOf, PaneDrivers, PaneFollowUp, PaneKeys, PaneMouse, PaneProcess,
+        PaneSend, PaneWait, PushKeyGet, PushSubscribe, PushTest, RuleForget, RulesForgetAll, RulesList, ShellEnvGet,
         ShellEnvRefresh,
     },
 };
@@ -49,7 +50,6 @@ use crate::{
     ops::OpRoutes,
     osc::strip,
     pane::{CaptureFormat, CaptureScope, PaneHandle, Subscriber, ToClient},
-    push::Subscription,
     server::App,
     store::{PaneLog, now_ms},
 };
@@ -84,7 +84,8 @@ pub fn routes() -> Router<Arc<App>> {
         .route("/api/panes/{id}/export.cast", get(export))
         .op::<PaneDrivers>()
         .op::<PaneDiffOf>()
-        .route("/api/ide", get(ide_get).put(ide_set))
+        .op::<IdeGet>()
+        .op::<IdeSet>()
         .op::<RulesList>()
         .op::<RulesForgetAll>()
         .op::<RuleForget>()
@@ -93,29 +94,30 @@ pub fn routes() -> Router<Arc<App>> {
         .op::<ShellEnvRefresh>()
         .op::<FlagsList>()
         .op::<FlagSet>()
-        .route("/api/hosts/self/agents", get(agents_get))
-        .route("/api/hosts/self/agents/refresh", post(agents_refresh))
+        .op::<AgentsGet>()
+        .op::<AgentsRefresh>()
         .route("/api/editors", get(editors))
         .route("/api/editors/vsix", get(vsix))
-        .route("/api/ide/mention", post(ide_mention))
+        .op::<IdeMention>()
         .route("/api/sessions/{id}/secrets", get(secrets))
-        .route("/api/agents/adapters", get(adapters))
-        .route("/api/agents/adapters/{kind}/install", post(install_adapter))
-        .route("/api/conversations", get(conversations))
-        .route("/api/conversations/open", post(open_conversation))
+        .op::<AdaptersList>()
+        .op::<AdapterInstall>()
+        .op::<ConversationsList>()
+        .op::<ConversationOpen>()
         .route("/api/blocks", post(open_block))
         .route("/api/blocks/{id}", get(describe))
         .route("/api/blocks/{id}/call/{method}", post(call))
-        .route("/api/machines", get(machines))
-        .route("/api/machines/{id}/reset", post(reset_machine))
+        .op::<MachinesList>()
+        .op::<MachineReset>()
         .route("/api/panes/{id}/share-machine", post(share_machine))
         .route("/api/events", get(events))
         .route("/api/history", get(history_))
         .route("/api/search", get(search))
-        .route("/api/push/key", get(push_key))
-        .route("/api/push/subscribe", post(push_subscribe))
-        .route("/api/push/test", post(push_test))
-        .route("/api/notify", get(notify_get).post(notify_set));
+        .op::<PushKeyGet>()
+        .op::<PushSubscribe>()
+        .op::<PushTest>()
+        .op::<NotifyGet>()
+        .op::<NotifySet>();
     // Labs' routes, if this build has them.
     let r = crate::labs::routes(r);
     // M70: a file onto the pane's host, and its path pasted.
@@ -1092,27 +1094,6 @@ async fn open_block(
     }
 }
 
-#[derive(Debug, Default, Deserialize)]
-pub struct ConversationsQuery {
-    /// Everything: other sources, archived ones, ones whose folder is gone.
-    #[serde(default, deserialize_with = "flag")]
-    pub all: bool,
-    /// Words in the title, prompts or folder.
-    pub q: Option<String>,
-    /// Under this folder.
-    pub cwd: Option<String>,
-    /// Only ones a process holds now.
-    #[serde(default, deserialize_with = "flag")]
-    pub live: bool,
-    pub limit: Option<usize>,
-}
-
-/// A query flag: `1`, `true`, `yes` or empty (`?all`) are on.
-fn flag<'de, D: serde::Deserializer<'de>>(d: D) -> Result<bool, D::Error> {
-    let s = String::deserialize(d)?;
-    Ok(matches!(s.as_str(), "" | "1" | "true" | "yes" | "on"))
-}
-
 /// Agent blocks by the Claude Code session they have.
 async fn blocks_by_session(app: &App) -> HashMap<String, PaneId> {
     let mut out = HashMap::new();
@@ -1127,12 +1108,6 @@ async fn blocks_by_session(app: &App) -> HashMap<String, PaneId> {
         }
     }
     out
-}
-
-/// `GET /api/conversations` (M33): Claude Code conversations on this
-/// machine, newest first, with the block that has each one open.
-async fn conversations(State(app): AppState, Query(q): Query<ConversationsQuery>) -> Res<Json<ConversationList>> {
-    list_conversations(&app, q).await.map(Json).map_err(bad)
 }
 
 /// Our terminals' and agent blocks' processes on this host (#81): a
@@ -1205,17 +1180,6 @@ pub async fn list_conversations(app: &App, q: ConversationsQuery) -> Result<Conv
         })
         .collect();
     Ok(ConversationList { conversations: out, total })
-}
-
-/// `POST /api/conversations/open` (M33): a conversation as an agent block,
-/// stopped, showing its transcript; the block that already has it, if one
-/// does. `then` continues or forks it.
-async fn open_conversation(
-    State(app): AppState,
-    who: Option<axum::Extension<crate::acl::Principal>>,
-    Json(req): Json<OpenConversationRequest>,
-) -> Res<Json<OpenConversationResponse>> {
-    open_conversation_as(&app, who.map(|axum::Extension(w)| w), req).await.map(Json)
 }
 
 pub async fn open_conversation_as(
@@ -1380,10 +1344,6 @@ async fn call(
     }
 }
 
-async fn machines(State(app): AppState) -> Res<Json<Vec<arugula_proto::Machine>>> {
-    Ok(Json(app.mux.api(Api::Machines).await.unwrap_or_default()))
-}
-
 /// Finds a VM pane's shell by the tag in its environment (a session leader
 /// carrying `ARUGULA_EXEC=$1`) and prints: its pid, the foreground
 /// process's pid, comm, exe, cwd, and argv separated by \x1f.
@@ -1404,14 +1364,6 @@ for d in /proc/[0-9]*; do
 done
 exit 1
 "#;
-
-async fn reset_machine(State(app): AppState, Path(id): Path<u32>) -> Res<Json<Empty>> {
-    match app.mux.api(|r| Api::ResetMachine(id, r)).await {
-        Some(Ok(())) => Ok(Json(Empty {})),
-        Some(Err(e)) => Err(ApiError(StatusCode::NOT_FOUND, e)),
-        None => Err(ApiError(StatusCode::SERVICE_UNAVAILABLE, "daemon is shutting down".into())),
-    }
-}
 
 async fn share_machine(State(app): AppState, Path(id): Path<PaneId>) -> Res<Json<Empty>> {
     match app.mux.api(|r| Api::ShareMachine(id, r)).await {
@@ -1914,74 +1866,6 @@ async fn tail_synced(app: &App, id: PaneId, host: String, q: &TailQuery) -> Res<
     Ok(if q.text == Some(1) { strip(&bytes).into_bytes() } else { bytes }.into_response())
 }
 
-async fn push_key(State(app): AppState) -> Res<Json<HashMap<&'static str, String>>> {
-    let push = app.push.as_ref().ok_or(ApiError(StatusCode::NOT_FOUND, "push is off".into()))?;
-    Ok(Json(HashMap::from([("key", push.public_key())])))
-}
-
-async fn push_subscribe(
-    State(app): AppState,
-    who: Option<axum::Extension<crate::acl::Principal>>,
-    Json(mut sub): Json<Subscription>,
-) -> Res<Json<PushSubscriptions>> {
-    let push = app.push.as_ref().ok_or(ApiError(StatusCode::NOT_FOUND, "push is off".into()))?;
-    // Anyone with access here may subscribe (M29); a subscription is its
-    // subscriber's, never someone else's.
-    let who = who.map(|axum::Extension(w)| w).unwrap_or(crate::acl::Principal::Owner);
-    if !who.is_owner() && !app.acl.knows(&who) {
-        return Err(ApiError(StatusCode::FORBIDDEN, "you have no access here".into()));
-    }
-    sub.who = (!who.is_owner()).then(|| who.id().to_owned());
-    push.subscribe(sub).map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    Ok(Json(PushSubscriptions { subscriptions: push.subscriptions() }))
-}
-
-/// What "needs you" notifications you get here (M29): `GET` yours, `POST`
-/// to opt in or out of a session's agents, or all of them.
-async fn notify_get(
-    State(app): AppState,
-    who: Option<axum::Extension<crate::acl::Principal>>,
-) -> Res<Json<NotifyPref>> {
-    let who = who.map(|axum::Extension(w)| w).unwrap_or(crate::acl::Principal::Owner);
-    if who.is_owner() {
-        return Ok(Json(NotifyPref { all: true, ..Default::default() }));
-    }
-    Ok(Json(app.acl.notify_pref(who.id())))
-}
-
-async fn notify_set(
-    State(app): AppState,
-    who: Option<axum::Extension<crate::acl::Principal>>,
-    Json(req): Json<NotifyRequest>,
-) -> Res<Json<NotifyPref>> {
-    let who = who.map(|axum::Extension(w)| w).unwrap_or(crate::acl::Principal::Owner);
-    if who.is_owner() {
-        return Err(bad("the owner is always told"));
-    }
-    match req.session {
-        Some(s) if app.acl.role(&who, s).is_none_or(|r| r < arugula_core::Role::Editor) => {
-            return Err(ApiError(StatusCode::FORBIDDEN, "only people who may answer are told".into()));
-        }
-        None if !app.acl.knows(&who) => return Err(ApiError(StatusCode::FORBIDDEN, "you have no access here".into())),
-        _ => {}
-    }
-    let pref = app
-        .acl
-        .set_notify(who.id(), req.session, req.on)
-        .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    Ok(Json(pref))
-}
-
-async fn push_test(
-    State(app): AppState,
-    who: Option<axum::Extension<crate::acl::Principal>>,
-) -> Res<Json<PushSubscriptions>> {
-    let push = app.push.as_ref().ok_or(ApiError(StatusCode::NOT_FOUND, "push is off".into()))?;
-    let me = who.map(|axum::Extension(w)| w.id().to_owned()).unwrap_or_else(|| "owner".into());
-    push.send_to(0, "Arugula", "Notifications work.", None, |w| w == me);
-    Ok(Json(PushSubscriptions { subscriptions: push.subscriptions() }))
-}
-
 /// A machine's shell is found by its tag.
 #[cfg(all(test, target_os = "linux"))]
 mod guest_process_tests {
@@ -2006,19 +1890,6 @@ mod guest_process_tests {
     }
 }
 
-#[cfg(test)]
-mod secret_tests {
-    #[test]
-    fn token_shapes() {
-        assert_eq!(super::find_secrets("export GH=ghp_0123456789abcdefghijABCDEFGHIJ012345"), ["a GitHub token"]); // gitleaks:allow (a made-up token)
-        assert_eq!(super::find_secrets("key: sk-ant-api03-abcdefghijklmnopqrstuv"), ["an Anthropic key"]);
-        assert!(super::find_secrets("AKIAIOSFODNN7EXAMPLE").contains(&"an AWS key"));
-        assert!(super::find_secrets("-----BEGIN OPENSSH PRIVATE KEY-----").contains(&"a private key"));
-        assert!(super::find_secrets("PASSWORD=hunter22").contains(&"a password"));
-        assert!(super::find_secrets("cargo build --release\n   Compiling foo").is_empty());
-    }
-}
-
 /// Home and the environment an agent block gets.
 pub(crate) async fn agent_env(app: &App) -> Res<(std::path::PathBuf, Vec<(String, String)>)> {
     let (home, env) = app
@@ -2031,116 +1902,7 @@ pub(crate) async fn agent_env(app: &App) -> Res<(std::path::PathBuf, Vec<(String
     Ok((home, crate::shellenv::merge(&env, &shell, None)))
 }
 
-/// `GET /api/agents/adapters` (#111): whether Claude Code's and Codex's
-/// adapters can start here, and the command that installs each.
-async fn adapters(State(app): AppState) -> Res<Json<Adapters>> {
-    let (home, env) = agent_env(&app).await?;
-    let list = tokio::task::spawn_blocking(move || crate::agent::adapters::all(&home, &env))
-        .await
-        .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    Ok(Json(Adapters { adapters: list }))
-}
-
-#[derive(serde::Deserialize, Default)]
-struct InstallAdapter {
-    #[serde(default)]
-    split: Option<PaneId>,
-    #[serde(default)]
-    session: Option<String>,
-    #[serde(default)]
-    from_pane: Option<PaneId>,
-}
-
-/// `POST /api/agents/adapters/{kind}/install` (#111): its `npm install`, in
-/// a new pane (beside `split`, else a tab) to watch.
-async fn install_adapter(
-    State(app): AppState,
-    Path(kind): Path<String>,
-    body: Option<Json<InstallAdapter>>,
-) -> Res<Json<RunResponse>> {
-    let req = body.map(|b| b.0).unwrap_or_default();
-    let kind: crate::agent::defs::Kind =
-        serde_json::from_value(serde_json::json!(kind)).map_err(|_| bad(format!("no agent {kind}")))?;
-    let a = crate::agent::adapters::of(kind).ok_or_else(|| bad("that agent has no adapter to install"))?;
-    let (home, env) = agent_env(&app).await?;
-    let (st, home) = tokio::task::spawn_blocking(move || (crate::agent::adapters::status(a, &home, &env), home))
-        .await
-        .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    if let crate::agent::adapters::State::NoNode { .. } = st.state {
-        return Err(bad(st.why()));
-    }
-    let run = RunRequest {
-        command: Some(crate::agent::adapters::install_command(&st, &home)),
-        session: req.session,
-        split: req.split,
-        from_pane: req.from_pane.or(req.split),
-        ..Default::default()
-    };
-    match app.mux.api(|r| Api::Run(run, r)).await {
-        Some(Ok(pane)) => Ok(Json(RunResponse { pane })),
-        Some(Err(e)) => Err(bad(e)),
-        None => Err(ApiError(StatusCode::SERVICE_UNAVAILABLE, "daemon is shutting down".into())),
-    }
-}
-
-/// `GET /api/ide` (M28): arugulad as Claude Code's IDE, and the other
-/// IDEs registered beside it.
-async fn ide_get(State(app): AppState, who: Option<axum::Extension<crate::acl::Principal>>) -> Res<Json<IdeInfo>> {
-    owner_only(&who)?;
-    let Some(ide) = &app.mux.ide else {
-        return Ok(Json(IdeInfo { on: false, name: None, port: None, lock_dir: None, diffs: None, others: None }));
-    };
-    let others = ide
-        .others()
-        .into_iter()
-        .map(|o| IdeOther { name: o.name, port: o.port, pid: o.pid, folders: o.folders, alive: o.alive })
-        .collect();
-    Ok(Json(IdeInfo {
-        on: true,
-        name: Some(crate::ide::NAME.into()),
-        port: Some(ide.port),
-        lock_dir: Some(ide.lock_dir.clone()),
-        diffs: Some(ide.diffs_to().unwrap_or_else(|| crate::ide::NAME.into())),
-        others: Some(others),
-    }))
-}
-
-/// `PUT /api/ide {"diffs": NAME}`: which IDE gets Claude Code's diffs.
-async fn ide_set(
-    State(app): AppState,
-    who: Option<axum::Extension<crate::acl::Principal>>,
-    Json(req): Json<IdeDiffsRequest>,
-) -> Res<Json<IdeDiffs>> {
-    owner_only(&who)?;
-    let ide = app.mux.ide.as_ref().ok_or_else(|| bad("arugulad isn't Claude Code's IDE here (--no-claude-ide)"))?;
-    ide.set_diffs_to(Some(req.diffs)).map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    Ok(Json(IdeDiffs { diffs: ide.diffs_to().unwrap_or_else(|| crate::ide::NAME.into()) }))
-}
-
-/// `GET /api/rules` (#166): the standing permission rules agent blocks on
-/// this daemon answer from, in order (`DELETE /api/rules/{index}` forgets
-/// one; `DELETE /api/rules`, all).
-/// `GET /api/hosts/self/agents` (#145): the agents configured on this
-/// machine, as `chant audit --agents` last found them, and which screen
-/// rule sets run here because of it.
-async fn agents_get(
-    State(app): AppState,
-    who: Option<axum::Extension<crate::acl::Principal>>,
-) -> Res<Json<AgentsInventory>> {
-    owner_only(&who)?;
-    Ok(Json(agents_json(&app.mux.inventory.snapshot())))
-}
-
-/// `POST /api/hosts/self/agents/refresh`: ask chant again, and wait.
-async fn agents_refresh(
-    State(app): AppState,
-    who: Option<axum::Extension<crate::acl::Principal>>,
-) -> Res<Json<AgentsInventory>> {
-    owner_only(&who)?;
-    Ok(Json(agents_json(&app.mux.inventory.refresh_now().await)))
-}
-
-fn agents_json(snap: &crate::inventory::Snapshot) -> AgentsInventory {
+pub(crate) fn agents_json(snap: &crate::inventory::Snapshot) -> AgentsInventory {
     let (run, off): (Vec<_>, Vec<_>) = arugula_vt::detect::AGENTS.iter().map(|a| a.id).partition(|id| snap.runs(id));
     let own = |ids: Vec<&str>| ids.into_iter().map(str::to_owned).collect();
     AgentsInventory {
@@ -2149,48 +1911,10 @@ fn agents_json(snap: &crate::inventory::Snapshot) -> AgentsInventory {
     }
 }
 
-fn owner_only(who: &Option<axum::Extension<crate::acl::Principal>>) -> Res<()> {
-    match who {
-        Some(axum::Extension(w)) if !w.is_owner() => Err(ApiError(StatusCode::FORBIDDEN, "only the owner can".into())),
-        _ => Ok(()),
-    }
-}
-
 /// `GET /api/editors` (M28): every editor in the swarm, joined or a block.
 async fn editors(State(app): AppState, who: Option<axum::Extension<crate::acl::Principal>>) -> Json<serde_json::Value> {
     let who = who.map(|axum::Extension(w)| w).filter(|w| !w.is_owner());
     Json(app.mux.api(|r| Api::Editors(who, r)).await.unwrap_or_default().into())
-}
-
-/// `POST /api/ide/mention` (M28): put `@file#Lstart-end` in Claude Code's
-/// prompt in a pane, as an IDE does ("ask Claude about these lines" from a
-/// followed editor). Typing there needs editor access.
-async fn ide_mention(
-    State(app): AppState,
-    who: Option<axum::Extension<crate::acl::Principal>>,
-    Json(m): Json<IdeMentionRequest>,
-) -> Res<Json<IdeMentioned>> {
-    let who = who.map(|axum::Extension(w)| w).unwrap_or(crate::acl::Principal::Owner);
-    if !who.is_owner() {
-        match app.mux.api(|r| Api::RoleOn(who, m.pane, r)).await.flatten() {
-            Some((role, _)) if role >= arugula_core::Role::Editor => {}
-            Some(_) => return Err(ApiError(StatusCode::FORBIDDEN, "you're watching that session".into())),
-            None => return Err(ApiError(StatusCode::NOT_FOUND, format!("no pane %{}", m.pane))),
-        }
-    }
-    let ide = app.mux.ide.as_ref().ok_or_else(|| bad("arugulad isn't Claude Code's IDE here"))?;
-    let conns = app.mux.api(|r| Api::IdeConns(m.pane, r)).await.unwrap_or_default();
-    if conns.is_empty() {
-        return Err(ApiError(StatusCode::CONFLICT, format!("Claude Code in %{} isn't connected to Arugula", m.pane)));
-    }
-    // From 0, as VS Code's extension sends them.
-    let params = serde_json::json!({
-        "filePath": m.file, "lineStart": m.start.saturating_sub(1), "lineEnd": m.end.max(m.start).saturating_sub(1),
-    });
-    for c in &conns {
-        ide.notify(Some(*c), "at_mentioned", params.clone());
-    }
-    Ok(Json(IdeMentioned { sent: conns.len() }))
 }
 
 /// `GET /api/editors/vsix` (M28): Arugula's VS Code extension.
@@ -2209,4 +1933,17 @@ async fn vsix() -> Response {
 /// ICE servers for a huddle (M63): TURN credentials from control, or STUN.
 async fn turn(State(app): AppState) -> Json<arugula_control_wire::IceServers> {
     Json(app.control.ice_servers().await)
+}
+
+#[cfg(test)]
+mod secret_tests {
+    #[test]
+    fn token_shapes() {
+        assert_eq!(super::find_secrets("export GH=ghp_0123456789abcdefghijABCDEFGHIJ012345"), ["a GitHub token"]); // gitleaks:allow (a made-up token)
+        assert_eq!(super::find_secrets("key: sk-ant-api03-abcdefghijklmnopqrstuv"), ["an Anthropic key"]);
+        assert!(super::find_secrets("AKIAIOSFODNN7EXAMPLE").contains(&"an AWS key"));
+        assert!(super::find_secrets("-----BEGIN OPENSSH PRIVATE KEY-----").contains(&"a private key"));
+        assert!(super::find_secrets("PASSWORD=hunter22").contains(&"a password"));
+        assert!(super::find_secrets("cargo build --release\n   Compiling foo").is_empty());
+    }
 }

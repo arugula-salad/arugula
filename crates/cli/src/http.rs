@@ -332,16 +332,24 @@ pub fn request(
 /// is its query string), and the response to read as the caller likes.
 pub fn send_op<O: arugula_proto::op::Op>(target: &Target, path: &O::Path, req: &O::Req) -> anyhow::Result<Response> {
     use arugula_proto::op::{Method, Request};
-    let (mut route, mut body) = (O::path(path), None);
-    if O::Req::without_body().is_none() {
-        if O::METHOD == Method::Get {
-            route.push('?');
-            route.push_str(&query(req)?);
-        } else {
-            body = Some(serde_json::to_value(req)?);
-        }
+    let body = match O::Req::without_body() {
+        Some(_) => None,
+        None if O::METHOD == Method::Get => None,
+        None => Some(serde_json::to_value(req)?),
+    };
+    request(target, O::METHOD.as_str(), &route::<O>(path, req)?, body.as_ref())
+}
+
+/// An operation's route as the CLI sends it: its path filled in, and for a
+/// GET with a request, the request as the query string.
+pub fn route<O: arugula_proto::op::Op>(path: &O::Path, req: &O::Req) -> anyhow::Result<String> {
+    use arugula_proto::op::{Method, Request};
+    let mut route = O::path(path);
+    if O::Req::without_body().is_none() && O::METHOD == Method::Get {
+        route.push('?');
+        route.push_str(&query(req)?);
     }
-    request(target, O::METHOD.as_str(), &route, body.as_ref())
+    Ok(route)
 }
 
 /// A request as a query string: its fields in order, a `None` left out,
@@ -682,6 +690,46 @@ mod tests {
         assert_eq!(send("", false).to_string(), r#"{"enter":false,"text":""}"#);
         let keys = serde_json::to_value(KeysRequest { keys: vec!["C-c".into(), "Up".into()] }).unwrap();
         assert_eq!(keys.to_string(), r#"{"keys":["C-c","Up"]}"#);
+    }
+
+    /// The settings routes' paths and bodies as the commands wrote them by
+    /// hand before they were operations (#575).
+    #[test]
+    fn a_settings_call_goes_out_as_it_was_written_by_hand() {
+        use super::route;
+        use arugula_proto::{
+            api::{Empty, IdeDiffsRequest, OpenConversationRequest},
+            op::{Op, Request, ops::*},
+        };
+        for (got, want) in [
+            (IdeGet::path(&()), "/api/ide"),
+            (IdeSet::path(&()), "/api/ide"),
+            (AgentsGet::path(&()), "/api/hosts/self/agents"),
+            (AgentsRefresh::path(&()), "/api/hosts/self/agents/refresh"),
+            (AdaptersList::path(&()), "/api/agents/adapters"),
+            (ConversationOpen::path(&()), "/api/conversations/open"),
+            (MachinesList::path(&()), "/api/machines"),
+        ] {
+            assert_eq!(got, want);
+        }
+        // The GETs and the refresh take no body, so send none and no `?`.
+        assert!(Empty::without_body().is_some());
+        assert_eq!(route::<IdeGet>(&(), &Empty {}).unwrap(), "/api/ide");
+        assert_eq!(route::<MachinesList>(&(), &Empty {}).unwrap(), "/api/machines");
+        let diffs = serde_json::to_value(IdeDiffsRequest { diffs: "VS Code".into() }).unwrap();
+        assert_eq!(diffs.to_string(), r#"{"diffs":"VS Code"}"#);
+        let open = |then: Option<&str>, session: Option<&str>, split| OpenConversationRequest {
+            id: "abc".into(),
+            then: then.map(Into::into),
+            session: session.map(Into::into),
+            split,
+            from_pane: Some(2),
+        };
+        assert_eq!(
+            serde_json::to_value(open(None, None, None)).unwrap().to_string(),
+            serde_json::json!({ "id": "abc", "then": null, "session": null, "split": null, "from_pane": 2 })
+                .to_string(),
+        );
     }
 
     #[test]

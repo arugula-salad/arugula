@@ -2,11 +2,11 @@
 //! are configured here.
 
 use super::Ctx;
-use crate::http::{call, request};
+use crate::http::{call, call_raw, request};
 use crate::util::{Pane, print_json};
 use arugula_proto::{
     api::{AgentsInventory, DetectionAnswer, Empty},
-    op::ops::PaneDetection,
+    op::ops::{AgentsGet, AgentsRefresh, PaneDetection},
 };
 use serde_json::Value;
 
@@ -114,10 +114,8 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
     match args {
         Args { agents: true, refresh, .. } => {
             let (inv, v) = match refresh {
-                true => {
-                    request(&sock, "POST", "/api/hosts/self/agents/refresh", None)?.parse_raw::<AgentsInventory>()?
-                }
-                false => request(&sock, "GET", "/api/hosts/self/agents", None)?.parse_raw::<AgentsInventory>()?,
+                true => call_raw::<AgentsRefresh>(&sock, &(), &Empty {})?,
+                false => call_raw::<AgentsGet>(&sock, &(), &Empty {})?,
             };
             if json_out {
                 print_json(&v);

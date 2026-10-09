@@ -109,6 +109,12 @@ pub trait Request: Serialize + DeserializeOwned + Send + 'static {
     fn without_body() -> Option<Self> {
         None
     }
+
+    /// The request when the call has no JSON body to read (no
+    /// `Content-Type`), for a route that always took its body as optional.
+    fn absent() -> Option<Self> {
+        None
+    }
 }
 
 impl Request for crate::api::Empty {
@@ -130,6 +136,24 @@ impl Request for crate::api::MouseRequest {}
 impl Request for crate::api::AttentionRequest {}
 
 impl Request for crate::api::FollowUpRequest {}
+
+impl Request for crate::api::IdeDiffsRequest {}
+
+impl Request for crate::api::IdeMentionRequest {}
+
+impl Request for crate::api::ConversationsQuery {}
+
+impl Request for crate::api::OpenConversationRequest {}
+
+impl Request for crate::api::Subscription {}
+
+impl Request for crate::api::NotifyRequest {}
+
+impl Request for crate::api::InstallAdapterRequest {
+    fn absent() -> Option<Self> {
+        Some(Self::default())
+    }
+}
 
 /// One operation's wire half.
 pub trait Op: Send + Sync + 'static {
@@ -165,10 +189,13 @@ pub trait Op: Send + Sync + 'static {
 pub mod ops {
     use super::{Access, Method, Op, Role};
     use crate::{
-        PaneId,
+        Machine, PaneId,
         api::{
-            AttentionRequest, DetectionAnswer, DriverEntry, Empty, FollowUpRequest, FollowedUp, KeysRequest,
-            MouseRequest, PaneDiff, PaneSummary, Process, Rules, SendRequest, ShellEnv, WaitRequest, WaitResult,
+            Adapters, AgentsInventory, AttentionRequest, ConversationList, ConversationsQuery, DetectionAnswer,
+            DriverEntry, Empty, FollowUpRequest, FollowedUp, IdeDiffs, IdeDiffsRequest, IdeInfo, IdeMentionRequest,
+            IdeMentioned, InstallAdapterRequest, KeysRequest, MouseRequest, NotifyPref, NotifyRequest,
+            OpenConversationRequest, OpenConversationResponse, PaneDiff, PaneSummary, Process, PushKey,
+            PushSubscriptions, Rules, RunResponse, SendRequest, ShellEnv, Subscription, WaitRequest, WaitResult,
         },
         flags::{FlagInfo, FlagSetRequest},
     };
@@ -441,6 +468,234 @@ pub mod ops {
         type Req = Empty;
         type Res = Vec<DriverEntry>;
     }
+
+    /// `GET /api/ide` (M28): arugulad as Claude Code's IDE, and the other
+    /// IDEs registered beside it (`arugula ide`).
+    pub struct IdeGet;
+
+    impl Op for IdeGet {
+        const NAME: &'static str = "ide.get";
+        const METHOD: Method = Method::Get;
+        const PATH: &'static str = "/api/ide";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = Empty;
+        type Res = IdeInfo;
+    }
+
+    /// `PUT /api/ide {"diffs": NAME}`: which IDE gets Claude Code's diffs
+    /// (`arugula ide --diffs`).
+    pub struct IdeSet;
+
+    impl Op for IdeSet {
+        const NAME: &'static str = "ide.set";
+        const METHOD: Method = Method::Put;
+        const PATH: &'static str = "/api/ide";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = IdeDiffsRequest;
+        type Res = IdeDiffs;
+    }
+
+    /// `POST /api/ide/mention` (M28): put `@file#Lstart-end` in Claude
+    /// Code's prompt in a pane, as an IDE does. Typing there needs editor
+    /// access, which the handler checks on the pane named in the body.
+    pub struct IdeMention;
+
+    impl Op for IdeMention {
+        const NAME: &'static str = "ide.mention";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/ide/mention";
+        const ACCESS: Access = Access::Handler;
+        type Path = ();
+        type Req = IdeMentionRequest;
+        type Res = IdeMentioned;
+    }
+
+    /// `GET /api/hosts/self/agents` (#145): the agents configured on this
+    /// machine, as `chant audit --agents` last found them, and which screen
+    /// rule sets run here because of it (`arugula describe --agents`).
+    pub struct AgentsGet;
+
+    impl Op for AgentsGet {
+        const NAME: &'static str = "agents.get";
+        const METHOD: Method = Method::Get;
+        const PATH: &'static str = "/api/hosts/self/agents";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = Empty;
+        type Res = AgentsInventory;
+    }
+
+    /// `POST /api/hosts/self/agents/refresh`: ask chant again, and wait
+    /// (`arugula describe --agents --refresh`).
+    pub struct AgentsRefresh;
+
+    impl Op for AgentsRefresh {
+        const NAME: &'static str = "agents.refresh";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/hosts/self/agents/refresh";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = Empty;
+        type Res = AgentsInventory;
+    }
+
+    /// `GET /api/agents/adapters` (#111): whether Claude Code's and Codex's
+    /// adapters can start here, and the command that installs each.
+    pub struct AdaptersList;
+
+    impl Op for AdaptersList {
+        const NAME: &'static str = "adapters.list";
+        const METHOD: Method = Method::Get;
+        const PATH: &'static str = "/api/agents/adapters";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = Empty;
+        type Res = Adapters;
+    }
+
+    /// `POST /api/agents/adapters/KIND/install` (#111): its `npm install`,
+    /// in a new pane (beside `split`, else a tab) to watch. The body is
+    /// optional.
+    pub struct AdapterInstall;
+
+    impl Op for AdapterInstall {
+        const NAME: &'static str = "adapter.install";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/agents/adapters/{kind}/install";
+        const ACCESS: Access = Access::Owner;
+        type Path = String;
+        type Req = InstallAdapterRequest;
+        type Res = RunResponse;
+    }
+
+    /// `GET /api/conversations` (M33): Claude Code conversations on this
+    /// machine, newest first, with the block that has each one open
+    /// (`arugula claude ls`). The query string is the request.
+    pub struct ConversationsList;
+
+    impl Op for ConversationsList {
+        const NAME: &'static str = "conversations.list";
+        const METHOD: Method = Method::Get;
+        const PATH: &'static str = "/api/conversations";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = ConversationsQuery;
+        type Res = ConversationList;
+    }
+
+    /// `POST /api/conversations/open` (M33): a conversation as an agent
+    /// block, stopped, showing its transcript; the block that already has
+    /// it, if one does. `then` continues or forks it.
+    pub struct ConversationOpen;
+
+    impl Op for ConversationOpen {
+        const NAME: &'static str = "conversation.open";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/conversations/open";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = OpenConversationRequest;
+        type Res = OpenConversationResponse;
+    }
+
+    /// `GET /api/machines`: the machines panes run on (`arugula machines`).
+    pub struct MachinesList;
+
+    impl Op for MachinesList {
+        const NAME: &'static str = "machines.list";
+        const METHOD: Method = Method::Get;
+        const PATH: &'static str = "/api/machines";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = Empty;
+        type Res = Vec<Machine>;
+    }
+
+    /// `POST /api/machines/N/reset`: throw a machine away and start it
+    /// again from its image.
+    pub struct MachineReset;
+
+    impl Op for MachineReset {
+        const NAME: &'static str = "machine.reset";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/machines/{id}/reset";
+        const ACCESS: Access = Access::Owner;
+        type Path = u32;
+        type Req = Empty;
+        type Res = Empty;
+    }
+
+    /// `GET /api/push/key` (M29): the daemon's public VAPID key, for a
+    /// browser to subscribe with. Anyone here may: it is not a credential.
+    pub struct PushKeyGet;
+
+    impl Op for PushKeyGet {
+        const NAME: &'static str = "push.key";
+        const METHOD: Method = Method::Get;
+        const PATH: &'static str = "/api/push/key";
+        const ACCESS: Access = Access::Anyone;
+        type Path = ();
+        type Req = Empty;
+        type Res = PushKey;
+    }
+
+    /// `POST /api/push/subscribe` (M29): a browser's subscription. Anyone
+    /// with access here may; it is theirs, never someone else's (the
+    /// handler checks).
+    pub struct PushSubscribe;
+
+    impl Op for PushSubscribe {
+        const NAME: &'static str = "push.subscribe";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/push/subscribe";
+        const ACCESS: Access = Access::Handler;
+        type Path = ();
+        type Req = Subscription;
+        type Res = PushSubscriptions;
+    }
+
+    /// `POST /api/push/test`: send the caller a test notification.
+    pub struct PushTest;
+
+    impl Op for PushTest {
+        const NAME: &'static str = "push.test";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/push/test";
+        const ACCESS: Access = Access::Handler;
+        type Path = ();
+        type Req = Empty;
+        type Res = PushSubscriptions;
+    }
+
+    /// `GET /api/notify` (M29): what "needs you" notifications the caller
+    /// gets here. The handler answers each person for themselves.
+    pub struct NotifyGet;
+
+    impl Op for NotifyGet {
+        const NAME: &'static str = "notify.get";
+        const METHOD: Method = Method::Get;
+        const PATH: &'static str = "/api/notify";
+        const ACCESS: Access = Access::Handler;
+        type Path = ();
+        type Req = Empty;
+        type Res = NotifyPref;
+    }
+
+    /// `POST /api/notify` (M29): opt in or out of a session's agents, or all
+    /// of them.
+    pub struct NotifySet;
+
+    impl Op for NotifySet {
+        const NAME: &'static str = "notify.set";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/notify";
+        const ACCESS: Access = Access::Handler;
+        type Path = ();
+        type Req = NotifyRequest;
+        type Res = NotifyPref;
+    }
 }
 
 #[cfg(test)]
@@ -467,6 +722,8 @@ mod tests {
         ] {
             assert_eq!(got, format!("/api/panes/7/{path}"));
         }
+        assert_eq!(ops::MachineReset::path(&4), "/api/machines/4/reset");
+        assert_eq!(ops::AdapterInstall::path(&"claude".to_owned()), "/api/agents/adapters/claude/install");
         assert_eq!(1u32.fill("/api/sessions/{id}/secrets"), "/api/sessions/1/secrets");
         assert_eq!(crate::ThreadTarget::Session(2).fill("/api/threads/{target}"), "/api/threads/session-2");
         assert!(crate::api::Empty::without_body().is_some());

@@ -1,9 +1,12 @@
 //! `arugula ide`: arugulad as Claude Code's IDE.
 
 use super::Ctx;
-use crate::http::{request, request_as};
+use crate::http::{call, call_raw};
 use crate::util::print_json;
-use arugula_proto::api::{IdeDiffs, IdeDiffsRequest, IdeInfo};
+use arugula_proto::{
+    api::{Empty, IdeDiffsRequest},
+    op::ops::{IdeGet, IdeSet},
+};
 
 #[derive(clap::Args)]
 pub struct Args {
@@ -15,9 +18,9 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
     let Ctx { sock, json_out, .. } = ctx;
     let Args { diffs } = args;
     if let Some(d) = diffs {
-        request_as(&sock, "PUT", "/api/ide", &IdeDiffsRequest { diffs: d })?.parse::<IdeDiffs>()?;
+        call::<IdeSet>(&sock, &(), &IdeDiffsRequest { diffs: d })?;
     }
-    let (ide, v) = request(&sock, "GET", "/api/ide", None)?.parse_raw::<IdeInfo>()?;
+    let (ide, v) = call_raw::<IdeGet>(&sock, &(), &Empty {})?;
     if json_out {
         print_json(&v);
         return Ok(0);

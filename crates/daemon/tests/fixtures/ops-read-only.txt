@@ -1,10 +1,17 @@
 # name method path
+adapters.list GET /api/agents/adapters
+agents.get GET /api/hosts/self/agents
+conversations.list GET /api/conversations
 flags.list GET /api/flags
+ide.get GET /api/ide
+machines.list GET /api/machines
+notify.get GET /api/notify
 pane.detection GET /api/panes/{id}/detection
 pane.diff GET /api/panes/{id}/diff
 pane.drivers GET /api/panes/{id}/drivers
 pane.process GET /api/panes/{id}/process
 pane.wait GET /api/panes/{id}/wait
 panes.list GET /api/panes
+push.key GET /api/push/key
 rules.list GET /api/rules
 shell_env.get GET /api/hosts/self/shell-env

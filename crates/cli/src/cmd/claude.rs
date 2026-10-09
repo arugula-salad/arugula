@@ -1,12 +1,15 @@
 //! `arugula claude`: Claude Code conversations on this machine.
 
 use super::Ctx;
-use crate::http::{enc, request, request_as};
+use crate::http::{call_raw, route};
 use crate::{
     hosts,
     util::{Pane, env_pane, print_json, time},
 };
-use arugula_proto::api::{ConversationList, OpenConversationRequest, OpenConversationResponse};
+use arugula_proto::{
+    api::{ConversationsQuery, OpenConversationRequest},
+    op::ops::{ConversationOpen, ConversationsList},
+};
 use serde_json::{Value, json};
 use std::path::PathBuf;
 
@@ -49,8 +52,8 @@ pub fn run(cmd: ClaudeCmd, ctx: Ctx) -> anyhow::Result<i32> {
     let Ctx { sock, json_out, .. } = ctx;
     match cmd {
         ClaudeCmd::Ls { all, live, cwd, limit, words } => {
-            let path = conversations_path(all, live, cwd, limit, &words);
-            let (list, v) = request(&sock, "GET", &path, None)?.parse_raw::<ConversationList>()?;
+            let (list, v) =
+                call_raw::<ConversationsList>(&sock, &(), &conversations_query(all, live, cwd, limit, &words))?;
             if json_out {
                 print_json(&v);
                 return Ok(0);
@@ -63,8 +66,7 @@ pub fn run(cmd: ClaudeCmd, ctx: Ctx) -> anyhow::Result<i32> {
         ClaudeCmd::Open { id, session, split } => {
             let body =
                 OpenConversationRequest { id, then: None, session, split: split.map(|p| p.0), from_pane: env_pane() };
-            let (opened, v) =
-                request_as(&sock, "POST", "/api/conversations/open", &body)?.parse_raw::<OpenConversationResponse>()?;
+            let (opened, v) = call_raw::<ConversationOpen>(&sock, &(), &body)?;
             if json_out {
                 print_json(&v);
             } else {
@@ -75,26 +77,28 @@ pub fn run(cmd: ClaudeCmd, ctx: Ctx) -> anyhow::Result<i32> {
     Ok(0)
 }
 
-/// `GET /api/conversations` with `claude ls`'s filters.
-pub fn conversations_path(all: bool, live: bool, cwd: Option<String>, limit: usize, words: &[String]) -> String {
-    let mut q = vec![format!("limit={limit}")];
-    if all {
-        q.push("all=1".into());
-    }
-    if live {
-        q.push("live=1".into());
-    }
-    if let Some(d) = cwd {
-        let d = std::fs::canonicalize(&d)
+/// The query `claude ls`'s filters make: a folder as the absolute path it
+/// names, words as one string.
+fn conversations_query(
+    all: bool,
+    live: bool,
+    cwd: Option<String>,
+    limit: usize,
+    words: &[String],
+) -> ConversationsQuery {
+    let cwd = cwd.map(|d| {
+        std::fs::canonicalize(&d)
             .or_else(|_| std::env::current_dir().map(|h| h.join(&d)))
             .map(|p| p.display().to_string())
-            .unwrap_or(d);
-        q.push(format!("cwd={}", enc(&d)));
-    }
-    if !words.is_empty() {
-        q.push(format!("q={}", enc(&words.join(" "))));
-    }
-    format!("/api/conversations?{}", q.join("&"))
+            .unwrap_or(d)
+    });
+    ConversationsQuery { limit: Some(limit), all, live, cwd, q: (!words.is_empty()).then(|| words.join(" ")) }
+}
+
+/// `GET /api/conversations` with `claude ls`'s filters.
+pub fn conversations_path(all: bool, live: bool, cwd: Option<String>, limit: usize, words: &[String]) -> String {
+    route::<ConversationsList>(&(), &conversations_query(all, live, cwd, limit, words))
+        .expect("a conversations query is a query string")
 }
 
 /// One line of `claude ls`; `~` for `home`. `block` is the agent block that
@@ -173,4 +177,52 @@ fn home_of(path: &str) -> Option<&str> {
     let rest = path.strip_prefix("/home/").or_else(|| path.strip_prefix("/Users/"))?;
     let end = path.len() - rest.len() + rest.find('/').unwrap_or(rest.len());
     Some(&path[..end])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::http::enc;
+
+    /// `claude ls`'s route as it was written by hand before `conversations`
+    /// was an operation (#575).
+    fn by_hand(all: bool, live: bool, cwd: Option<String>, limit: usize, words: &[String]) -> String {
+        let mut q = vec![format!("limit={limit}")];
+        if all {
+            q.push("all=1".into());
+        }
+        if live {
+            q.push("live=1".into());
+        }
+        if let Some(d) = cwd {
+            let d = std::fs::canonicalize(&d)
+                .or_else(|_| std::env::current_dir().map(|h| h.join(&d)))
+                .map(|p| p.display().to_string())
+                .unwrap_or(d);
+            q.push(format!("cwd={}", enc(&d)));
+        }
+        if !words.is_empty() {
+            q.push(format!("q={}", enc(&words.join(" "))));
+        }
+        format!("/api/conversations?{}", q.join("&"))
+    }
+
+    #[test]
+    fn a_conversations_route_is_the_one_written_by_hand() {
+        let words = [vec![], vec!["fix".to_owned()], vec!["a b*c".to_owned(), "é&=+%/~".to_owned()]];
+        let cwds = [None, Some("/tmp".to_owned()), Some("no such dir/é & more".to_owned()), Some(String::new())];
+        for (all, live) in [(false, false), (true, false), (false, true), (true, true)] {
+            for limit in [0, 40, 500] {
+                for cwd in &cwds {
+                    for w in &words {
+                        assert_eq!(
+                            conversations_path(all, live, cwd.clone(), limit, w),
+                            by_hand(all, live, cwd.clone(), limit, w),
+                            "{all} {live} {limit} {cwd:?} {w:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
 }

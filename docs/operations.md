@@ -428,7 +428,8 @@ Each is one PR. Filed on 2026-10-07 as #572–#580, in this order.
    Done, as `pane.send` … `pane.drivers`. After 1.
 4. (#575) **Operations: the owner's settings routes.** `ide`, `agents`, `studio`,
    `machines`, `push`, `notify`, `adapters`, `conversations`. Mechanical.
-   After 2.
+   After 2. Done, as `ide.get` … `notify.set`; `studio` lives in
+   `labs/apps/routes.rs` and goes with #578.
 5. (#576) **Operations: the long waits.** `ask`, `permit`, `inbox`, `prompt`;
    MCP's `prompt_agent` calls `Prompt::handle` instead of `api::prompt`.
    After 3.

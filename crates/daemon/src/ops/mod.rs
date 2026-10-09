@@ -10,11 +10,14 @@
 //! is in `docs/operations.md`.
 
 mod close;
+mod conversations;
 mod flags;
 mod input;
 mod inspect;
+mod notify;
 mod panes;
 mod rules;
+mod settings;
 mod shell_env;
 mod wait;
 
@@ -58,6 +61,22 @@ macro_rules! every_op {
         $m!(arugula_proto::op::ops::PaneDetection);
         $m!(arugula_proto::op::ops::PaneDiffOf);
         $m!(arugula_proto::op::ops::PaneDrivers);
+        $m!(arugula_proto::op::ops::IdeGet);
+        $m!(arugula_proto::op::ops::IdeSet);
+        $m!(arugula_proto::op::ops::IdeMention);
+        $m!(arugula_proto::op::ops::AgentsGet);
+        $m!(arugula_proto::op::ops::AgentsRefresh);
+        $m!(arugula_proto::op::ops::AdaptersList);
+        $m!(arugula_proto::op::ops::AdapterInstall);
+        $m!(arugula_proto::op::ops::ConversationsList);
+        $m!(arugula_proto::op::ops::ConversationOpen);
+        $m!(arugula_proto::op::ops::MachinesList);
+        $m!(arugula_proto::op::ops::MachineReset);
+        $m!(arugula_proto::op::ops::PushKeyGet);
+        $m!(arugula_proto::op::ops::PushSubscribe);
+        $m!(arugula_proto::op::ops::PushTest);
+        $m!(arugula_proto::op::ops::NotifyGet);
+        $m!(arugula_proto::op::ops::NotifySet);
     };
 }
 
@@ -219,9 +238,16 @@ where
         },
         None => {
             let req = axum::extract::Request::from_parts(parts, body);
-            match Json::<O::Req>::from_request(req, &()).await {
-                Ok(Json(b)) => b,
-                Err(r) => return r.into_response(),
+            match <O::Req as Request>::absent() {
+                // A body that may be left off (`Content-Type` and all).
+                Some(none) => match Option::<Json<O::Req>>::from_request(req, &()).await {
+                    Ok(b) => b.map_or(none, |Json(b)| b),
+                    Err(r) => return r.into_response(),
+                },
+                None => match Json::<O::Req>::from_request(req, &()).await {
+                    Ok(Json(b)) => b,
+                    Err(r) => return r.into_response(),
+                },
             }
         }
     };
@@ -380,23 +406,9 @@ const HAND_WRITTEN: &[(&str, &str)] = &[
     ("/api/threads/{target}/read", "other path types, #573"),
     ("/api/history", "GET with a query"),
     ("/api/search", "GET with a query"),
-    ("/api/conversations", "GET with a query"),
     ("/api/sessions/{id}/secrets", "other path types, #573"),
-    // The owner's settings routes (#575).
-    ("/api/ide", "settings, #575"),
-    ("/api/ide/mention", "settings, #575"),
-    ("/api/hosts/self/agents", "settings, #575"),
-    ("/api/hosts/self/agents/refresh", "settings, #575"),
+    // Not asked for in #575's list; left.
     ("/api/editors", "settings, #575"),
-    ("/api/agents/adapters", "settings, #575"),
-    ("/api/agents/adapters/{kind}/install", "settings, #575"),
-    ("/api/conversations/open", "settings, #575"),
-    ("/api/machines", "settings, #575"),
-    ("/api/machines/{id}/reset", "settings, #575"),
-    ("/api/push/key", "settings, #575"),
-    ("/api/push/subscribe", "settings, #575"),
-    ("/api/push/test", "settings, #575"),
-    ("/api/notify", "settings, #575"),
     // Not yet converted for other reasons.
     ("/api/run", "composes several calls"),
     ("/api/turn", "not yet converted"),
@@ -531,7 +543,7 @@ mod tests {
     #[test]
     fn every_api_route_is_an_operation_or_hand_written() {
         let (paths, declared) = api_routes();
-        assert!(paths.len() > 40 && !declared.is_empty(), "read {} routes, {} operations", paths.len(), declared.len());
+        assert!(paths.len() > 20 && !declared.is_empty(), "read {} routes, {} operations", paths.len(), declared.len());
         let mut every = Vec::new();
         macro_rules! name {
             ($o:ty) => {
