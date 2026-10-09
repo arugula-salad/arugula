@@ -382,3 +382,28 @@ fn a_turn_whose_result_is_in_but_prompt_is_held_is_not_working() {
     assert_eq!(g.attention().0, Attention::Done);
     assert!(!g.result_in);
 }
+
+#[test]
+fn an_agent_woken_by_a_background_task_works_until_its_cycle_closes() {
+    // #681: output outside any prompt is the adapter's own cycle; an
+    // autonomous-origin usage_update (or a prompt of ours) ends it.
+    let mut g = rebuilt();
+    g.pending.clear();
+    g.agent_info = json!({ "name": "@agentclientprotocol/claude-agent-acp" });
+    g.on_in(&json!({ "jsonrpc": "2.0", "id": 3, "result": { "stopReason": "end_turn" } }), 2000);
+    assert_eq!(g.attention().0, Attention::Done);
+    let u = |update: Value| json!({ "jsonrpc": "2.0", "method": "session/update", "params": { "update": update } });
+    let chunk = u(json!({ "sessionUpdate": "agent_message_chunk", "content": { "type": "text", "text": "back" } }));
+    g.on_in(&chunk, 2100);
+    assert_eq!(g.attention(), (Attention::Working, "working on a background task's result".into()));
+    assert_eq!(g.status, Status::Ready, "no prompt is open");
+    let close =
+        u(json!({ "sessionUpdate": "usage_update", "_meta": { "_claude/origin": { "kind": "task-notification" } } }));
+    g.on_in(&close, 2200);
+    assert_eq!(g.attention().0, Attention::Done);
+    // Only the claude adapter's frames count.
+    g.autonomous_at = None;
+    g.agent_info = json!({ "name": "fake-acp" });
+    g.on_in(&chunk, 2400);
+    assert_eq!(g.attention().0, Attention::Done);
+}

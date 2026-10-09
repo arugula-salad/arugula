@@ -517,6 +517,20 @@ def prompt(mid, p):
     if text == "held":
         time.sleep(30)
     send({"id": mid, "result": {"stopReason": stop, "usage": {"inputTokens": 1, "outputTokens": 2, "totalTokens": 3}}})
+    if text in ("wake", "wake-open"):
+        # As claude-agent-acp when a background task finishes after the turn:
+        # output outside any prompt, closed by an autonomous-origin usage_update
+        # ("wake-open" never closes).
+        time.sleep(0.3)
+        send({"method": "session/update", "params": {"sessionId": sid, "update": {
+            "sessionUpdate": "agent_message_chunk", "messageId": f"w{n}",
+            "content": {"type": "text", "text": "The background task finished."}}}})
+        if text == "wake":
+            time.sleep(2)
+            send({"method": "session/update", "params": {"sessionId": sid, "update": {
+                "sessionUpdate": "usage_update", "used": 12, "size": 1000,
+                "cost": {"amount": s["cost"], "currency": "USD"},
+                "_meta": {"_claude/origin": {"kind": "task-notification"}}}}})
 
 
 def handle(m):
