@@ -146,7 +146,8 @@ fn the_owner_offers_a_recipe_and_its_card_is_a2a() {
     let dir = Scratch::new("recipe-offer");
     let s = setup(&dir);
     let d = daemon(&s, true);
-    let proj = s.proj.display().to_string();
+    // Canonical: a Mac's temp dir is behind a symlink.
+    let proj = s.proj.canonicalize().unwrap().display().to_string();
     // The recipes a project has, none offered.
     let rs = d.get(&format!("/api/a2a/recipes?dir={proj}"));
     assert_eq!(rs[0]["name"], "fixer", "{rs}");

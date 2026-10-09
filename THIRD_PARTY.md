@@ -14,8 +14,8 @@ Arugula is MIT OR Apache-2.0. Its binaries include the software below.
 - **The web client** bundles npm packages: xterm.js, preact, fzstd and three.js (below). three.js draws the swarm's city and loads only when that theme is picked.
 - **Rust crates**, by license:
 
-- Apache License 2.0 (273)
-- MIT License (69)
+- Apache License 2.0 (274)
+- MIT License (70)
 - Unicode License v3 (19)
 - BSD 3-Clause "New" or "Revised" License (11)
 - ISC License (5)
@@ -6147,6 +6147,7 @@ Used by:
 - [serde_derive 1.0.229](https://github.com/serde-rs/serde)
 - [serde_derive_internals 0.30.0](https://github.com/serde-rs/serde)
 - [serde_json 1.0.151](https://github.com/serde-rs/json)
+- [serde_norway 0.9.42](https://github.com/cafkafk/serde-yaml)
 - [serde_path_to_error 0.1.20](https://github.com/dtolnay/path-to-error)
 - [serde_urlencoded 0.7.1](https://github.com/nox/serde_urlencoded)
 - [snow 0.10.0](https://github.com/mcginty/snow)
@@ -7965,6 +7966,7 @@ SOFTWARE.
 ## MIT License
 
 Used by:
+- [unsafe-libyaml-norway 0.2.15](https://github.com/cafkafk/unsafe-libyaml-norway)
 - [zmij 1.0.23](https://github.com/dtolnay/zmij)
 
 ```

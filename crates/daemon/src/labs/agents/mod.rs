@@ -508,7 +508,7 @@ mod tests {
         assert!(set_offer(&state, &home, "nobody", Some(proj.to_str().unwrap())).is_err());
         assert!(set_offer(&state, &home, "fixer", Some("relative")).is_err());
         let l = set_offer(&state, &home, "fixer", Some(proj.to_str().unwrap())).unwrap();
-        assert_eq!(l, [Offer { agent: "fixer".into(), dir: proj.display().to_string() }]);
+        assert_eq!(l, [Offer { agent: "fixer".into(), dir: proj.canonicalize().unwrap().display().to_string() }]);
         let (got, broken) = cards("box", &state, &home);
         assert!(broken.is_empty());
         assert_eq!(got[0]["supportedInterfaces"][0]["url"], "arugula://box/api/a2a/agents/fixer");
