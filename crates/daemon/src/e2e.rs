@@ -225,8 +225,18 @@ async fn serve(app: Arc<App>, mut inbound: mpsc::Receiver<Vec<u8>>, out: mpsc::S
                 }
             }
             Some(o) = ctrl_rx.recv() => {
-                let Some(m) = to_msg(o) else { break Ok(()) };
-                if let Err(e) = out.put(&m).await { break Err(e) }
+                let mut end = None;
+                for o in crate::server::ctrl_batch(o, &mut ctrl_rx) {
+                    let Some(m) = to_msg(o) else {
+                        end = Some(Ok(()));
+                        break;
+                    };
+                    if let Err(e) = out.put(&m).await {
+                        end = Some(Err(e));
+                        break;
+                    }
+                }
+                if let Some(r) = end { break r }
             }
             Some(o) = data_rx.recv() => {
                 let Some(m) = to_msg(o) else { break Ok(()) };
