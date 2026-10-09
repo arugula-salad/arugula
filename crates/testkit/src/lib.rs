@@ -238,28 +238,7 @@ impl Builder {
         let mut d = self.daemon();
         d.make_home();
         let unit = format!("arugula-test-{}", d.state.file_name().unwrap().to_string_lossy());
-        let path = d.b.env.iter().rev().find(|(k, _)| k == "PATH").map(|(_, v)| v.clone());
-        let path = path.unwrap_or_else(|| std::env::var_os("PATH")).unwrap_or_default();
-        let mut c = Command::new("systemd-run");
-        c.args(["--user", "--quiet", &format!("--unit={unit}")])
-            .args(["-p", "Type=notify", "-p", "NotifyAccess=main", "-p", "FileDescriptorStoreMax=64"])
-            .args(["-p", "KillMode=mixed", "-p", "Restart=on-failure", "-p", "RestartSec=100ms"])
-            .arg(setenv(OsStr::new("PATH"), &path));
-        for (k, v) in &d.b.env {
-            if let Some(v) = v
-                && k != "PATH"
-            {
-                c.arg(setenv(k, v));
-            }
-        }
-        c.arg("--").arg(&d.b.bin).args(d.args(listen::ANY, listen::ANY));
-        assert!(c.status().is_ok_and(|s| s.success()), "systemd-run failed");
-        d.run = Run::Service(format!("{unit}.service"));
-        d.port = listen::wait_port(&d.state);
-        if d.b.block_listen {
-            d.block_port = listen::wait_block_port(&d.state);
-        }
-        d.wait_up();
+        d.run_service(&unit);
         Some(d)
     }
 
@@ -496,6 +475,63 @@ impl Daemon {
             Run::Service(u) => Some(u),
             Run::Child(_) => None,
         }
+    }
+
+    /// Start it as the transient service `unit`, and wait until it answers.
+    fn run_service(&mut self, unit: &str) {
+        let path = self.b.env.iter().rev().find(|(k, _)| k == "PATH").map(|(_, v)| v.clone());
+        let path = path.unwrap_or_else(|| std::env::var_os("PATH")).unwrap_or_default();
+        let mut c = Command::new("systemd-run");
+        c.args(["--user", "--quiet", &format!("--unit={unit}")])
+            .args(["-p", "Type=notify", "-p", "NotifyAccess=main", "-p", "FileDescriptorStoreMax=64"])
+            .args(["-p", "KillMode=mixed", "-p", "Restart=on-failure", "-p", "RestartSec=100ms"])
+            .arg(setenv(OsStr::new("PATH"), &path));
+        for (k, v) in &self.b.env {
+            if let Some(v) = v
+                && k != "PATH"
+            {
+                c.arg(setenv(k, v));
+            }
+        }
+        c.arg("--").arg(&self.b.bin).args(self.args(listen::ANY, listen::ANY));
+        assert!(c.status().is_ok_and(|s| s.success()), "systemd-run failed");
+        self.run = Run::Service(format!("{unit}.service"));
+        self.port = listen::wait_port(&self.state);
+        if self.b.block_listen {
+            self.block_port = listen::wait_block_port(&self.state);
+        }
+        self.wait_up();
+    }
+
+    /// A reboot of a service: its unit and the scopes its panes run in are
+    /// stopped together, as a shutdown stops everything (#146: the order
+    /// is theirs to keep), then it starts again on the same state.
+    #[cfg(unix)]
+    pub fn reboot_service(&mut self) {
+        let unit = self.unit().expect("not a service").to_owned();
+        // The scopes of the shims recording into this state dir.
+        let shims =
+            Command::new("pgrep").args(["-f", "--", &format!("--record {}/", self.state.display())]).output().unwrap();
+        let mut scopes: Vec<String> = String::from_utf8_lossy(&shims.stdout)
+            .split_whitespace()
+            .filter_map(|pid| std::fs::read_to_string(format!("/proc/{pid}/cgroup")).ok())
+            .filter_map(|c| Some(c.trim().rsplit('/').next()?.to_owned()))
+            .filter(|u| u.ends_with(".scope"))
+            .collect();
+        scopes.sort();
+        scopes.dedup();
+        assert!(!scopes.is_empty(), "no pane scopes to stop");
+        let mut stop = vec!["stop", unit.as_str()];
+        stop.extend(scopes.iter().map(String::as_str));
+        assert!(systemctl(&stop), "systemctl stop {stop:?}");
+        systemctl(&["reset-failed", &unit]);
+        let _ = std::fs::remove_file(self.state.join("listen"));
+        let _ = std::fs::remove_file(self.state.join("block-listen"));
+        // A stopped transient unit stays loaded a while: start a new one.
+        static N: AtomicU32 = AtomicU32::new(0);
+        let base = unit.strip_suffix(".service").unwrap();
+        let base = base.split_once("-boot").map_or(base, |(b, _)| b);
+        self.run_service(&format!("{base}-boot{}", N.fetch_add(1, Ordering::Relaxed)));
     }
 
     /// `systemctl --user restart` its unit, and wait until it's back.
