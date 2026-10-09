@@ -170,11 +170,16 @@ fn the_owner_offers_a_recipe_and_its_card_is_a2a() {
     assert!(iface["url"].as_str().unwrap().ends_with("/api/a2a/agents/fixer"), "{iface}");
     assert_eq!(card["capabilities"]["extensions"][0]["required"], true);
     assert_eq!(&d.get("/api/a2a/agents/fixer/card"), card);
-    // Its interface answers, but takes no tasks yet (M78).
+    // Its interface speaks A2A 1.0 (M78): a call without the version is
+    // refused as A2A says, and a message with no text is a bad request.
     let r =
         d.post("/api/a2a/agents/fixer", json!({ "jsonrpc": "2.0", "id": 7, "method": "SendMessage", "params": {} }));
-    assert_eq!(r["id"], 7);
-    assert_eq!(r["error"]["code"], -32004);
+    assert_eq!((r["id"].clone(), r["error"]["code"].clone()), (json!(7), json!(-32009)), "{r}");
+    let r = d.post(
+        "/api/a2a/agents/fixer?a2a-version=1.0",
+        json!({ "jsonrpc": "2.0", "id": 8, "method": "SendMessage", "params": { "message": { "parts": [] } } }),
+    );
+    assert_eq!(r["error"]["code"], -32602, "{r}");
 
     // A recipe gone from disk: no card, and the owner sees why.
     std::fs::remove_file(s.proj.join(".claude/agents/fixer.md")).unwrap();
