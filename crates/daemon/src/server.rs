@@ -1,6 +1,7 @@
 //! HTTP: the embedded web client, and the WebSocket protocol at `/ws`.
 
 use std::{
+    collections::HashMap,
     net::SocketAddr,
     sync::{
         Arc,
@@ -9,7 +10,7 @@ use std::{
 };
 
 use arugula_proto::op::ops::SigninLinkGet;
-use arugula_proto::{ClientId, ClientMsg, Frame, FrameKind};
+use arugula_proto::{ClientId, ClientMsg, Frame, FrameKind, ServerMsg};
 use axum::{
     Extension, Router,
     body::Body,
@@ -511,7 +512,14 @@ async fn connection(app: Arc<App>, mut socket: WebSocket, who: Principal) {
                 None => break,
             },
             Some(out) = ctrl_rx.recv() => {
-                if matches!(out, ToClient::Close) || send(&mut socket, out).await.is_err() { break }
+                let mut gone = false;
+                for out in ctrl_batch(out, &mut ctrl_rx) {
+                    if matches!(out, ToClient::Close) || send(&mut socket, out).await.is_err() {
+                        gone = true;
+                        break;
+                    }
+                }
+                if gone { break }
             }
             Some(out) = data_rx.recv() => if send(&mut socket, out).await.is_err() { break },
         }
@@ -542,6 +550,31 @@ pub(crate) fn handle(app: &App, client: ClientId, msg: Message) -> anyhow::Resul
     Ok(())
 }
 
+/// Most a client's control queue is drained by at once.
+const CTRL_BATCH: usize = 1024;
+
+/// `first` and what else is in a client's control queue now, with each
+/// block's state only at its newest (#713). A block's state is sent whole,
+/// so one still queued behind a newer one for the same block is never worth
+/// sending: a client that fell behind (a phone, a slow link, a busy page)
+/// skips to the latest instead of working through every state it missed.
+/// Everything else keeps its order, and nothing after a `Close` is taken.
+pub(crate) fn ctrl_batch(first: ToClient, rx: &mut mpsc::UnboundedReceiver<ToClient>) -> Vec<ToClient> {
+    let mut batch = vec![first];
+    while batch.len() < CTRL_BATCH && !matches!(batch.last(), Some(ToClient::Close)) {
+        match rx.try_recv() {
+            Ok(o) => batch.push(o),
+            Err(_) => break,
+        }
+    }
+    let block = |o: &ToClient| match o {
+        ToClient::Msg(ServerMsg::Block { block, .. }) => Some(*block),
+        _ => None,
+    };
+    let newest: HashMap<_, _> = batch.iter().enumerate().filter_map(|(i, o)| Some((block(o)?, i))).collect();
+    batch.into_iter().enumerate().filter(|(i, o)| block(o).is_none_or(|b| newest[&b] == *i)).map(|(_, o)| o).collect()
+}
+
 async fn send(socket: &mut WebSocket, out: ToClient) -> Result<(), axum::Error> {
     let msg = match out {
         ToClient::Frame(bytes) => Message::Binary(bytes.into()),
@@ -550,4 +583,52 @@ async fn send(socket: &mut WebSocket, out: ToClient) -> Result<(), axum::Error> 
         ToClient::Close => return Ok(()),
     };
     socket.send(msg).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn state(block: u32, n: u64) -> ToClient {
+        ToClient::Msg(ServerMsg::Block { block, state: json!({ "n": n }) })
+    }
+
+    /// What a batch says, as `block:n`, `pong:id` or `close`.
+    fn said(batch: &[ToClient]) -> Vec<String> {
+        batch
+            .iter()
+            .map(|o| match o {
+                ToClient::Msg(ServerMsg::Block { block, state }) => format!("{block}:{}", state["n"]),
+                ToClient::Msg(ServerMsg::Pong { id }) => format!("pong:{id}"),
+                ToClient::Close => "close".into(),
+                other => format!("{other:?}"),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_client_behind_gets_each_blocks_newest_state_and_everything_else_in_order() {
+        // #713: an agent streaming while its client can't keep up queues one
+        // whole state after another; only the newest of each block is sent.
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        for o in [state(7, 2), ToClient::Msg(ServerMsg::Pong { id: 1 }), state(9, 1), state(7, 3), state(7, 4)] {
+            tx.send(o).unwrap();
+        }
+        assert_eq!(said(&ctrl_batch(state(7, 1), &mut rx)), ["pong:1", "9:1", "7:4"]);
+        // The queue was drained: the next one starts afresh.
+        tx.send(state(7, 5)).unwrap();
+        let next = rx.try_recv().unwrap();
+        assert_eq!(said(&ctrl_batch(next, &mut rx)), ["7:5"]);
+    }
+
+    #[test]
+    fn nothing_after_a_close_is_taken() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        for o in [ToClient::Close, state(7, 2)] {
+            tx.send(o).unwrap();
+        }
+        assert_eq!(said(&ctrl_batch(state(7, 1), &mut rx)), ["7:1", "close"]);
+        assert!(rx.try_recv().is_ok(), "what came after the close stays queued");
+    }
 }
