@@ -711,7 +711,8 @@ pub struct Launcher {
     /// The daemon's own service: each scope stops before it, so at a
     /// shutdown the daemon saves while the programs in its panes still run
     /// (an agent killed first would be saved as not running, and not
-    /// resumed).
+    /// resumed). Unix only: Windows has no scopes.
+    #[cfg_attr(windows, allow(dead_code))]
     pub service: Option<String>,
     pub fd_store: bool,
     /// No FD store, but keep panes anyway: each shim holds its terminal
