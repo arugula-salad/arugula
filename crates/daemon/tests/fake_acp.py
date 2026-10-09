@@ -490,6 +490,12 @@ def prompt(mid, p):
         msg(f"Model: {s.get('model', 'default')}")
     elif text == "mode":
         msg(f"Mode: {s.get('mode', 'default')}")
+    elif text == "held":
+        # As claude-agent-acp with a background subagent live: the turn's
+        # report and its closing usage come, the answer to the prompt doesn't.
+        update(sid, s, {"sessionUpdate": "tool_call", "toolCallId": f"bg{n}", "title": "Monitor",
+                        "kind": "other", "status": "in_progress"})
+        msg("All done; the report is above.")
     elif text == "crash":
         msg("bye")
         os._exit(3)
@@ -508,6 +514,8 @@ def prompt(mid, p):
         update(sid, s, {"sessionUpdate": "usage_update", "used": 10, "size": 1000,
                         "cost": {"amount": s["cost"], "currency": "USD"}})
     save(sid, s)
+    if text == "held":
+        time.sleep(30)
     send({"id": mid, "result": {"stopReason": stop, "usage": {"inputTokens": 1, "outputTokens": 2, "totalTokens": 3}}})
 
 
@@ -529,7 +537,7 @@ def handle(m):
         if not no_load:
             agent_caps.update({"loadSession": True, "sessionCapabilities": {"resume": {}, "fork": {}}})
         send({"id": mid, "result": {"protocolVersion": 1, "agentCapabilities": agent_caps,
-            "agentInfo": {"name": "fake-acp", "version": "1"}, "authMethods": []}})
+            "agentInfo": {"name": os.environ.get("FAKE_ACP_NAME", "fake-acp"), "version": "1"}, "authMethods": []}})
     elif method == "session/new":
         sid = f"fake-{os.getpid()}-{int(time.time() * 1000)}"
         save(sid, {"updates": [], "cwd": p.get("cwd"), "mcp": p.get("mcpServers"), "meta": p.get("_meta")})
