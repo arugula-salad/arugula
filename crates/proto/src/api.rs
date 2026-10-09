@@ -414,6 +414,18 @@ pub struct Process {
     pub cwd: Option<String>,
 }
 
+/// `GET /api/panes/N/wait`'s query string.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WaitRequest {
+    /// `command-end`, `exit`, `match`, `idle` or `needs-input`.
+    pub until: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub re: Option<String>,
+    /// Seconds; default forever.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout: Option<f64>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "result", rename_all = "snake_case")]
 pub enum WaitResult {

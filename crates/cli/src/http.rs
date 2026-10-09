@@ -334,15 +334,36 @@ pub fn request(
 }
 
 /// An operation (`arugula_proto::op`): its method and path from its
-/// declaration, its request as the body (none where it takes none), and
-/// the response to read as the caller likes.
+/// declaration, its request as the body (none where it takes none; a GET's
+/// is its query string), and the response to read as the caller likes.
 pub fn send_op<O: arugula_proto::op::Op>(target: &Target, path: &O::Path, req: &O::Req) -> anyhow::Result<Response> {
-    use arugula_proto::op::Request;
-    let body = match O::Req::without_body() {
-        Some(_) => None,
-        None => Some(serde_json::to_value(req)?),
+    use arugula_proto::op::{Method, Request};
+    let (mut route, mut body) = (O::path(path), None);
+    if O::Req::without_body().is_none() {
+        if O::METHOD == Method::Get {
+            route.push('?');
+            route.push_str(&query(req)?);
+        } else {
+            body = Some(serde_json::to_value(req)?);
+        }
+    }
+    request(target, O::METHOD.as_str(), &route, body.as_ref())
+}
+
+/// A request as a query string: its fields in order, a `None` left out,
+/// each value percent-encoded as `enc` does (not as a form, which writes a
+/// space as `+`) and a float as `Display` writes it (`30`, where the form
+/// encoder would write `30.0`).
+fn query(req: &impl serde::Serialize) -> anyhow::Result<String> {
+    let pairs: Vec<(String, String)> = serde_urlencoded::from_str(&serde_urlencoded::to_string(req)?)?;
+    let json = serde_json::to_value(req)?;
+    let value = |k: &str, form: &str| match json.get(k) {
+        Some(serde_json::Value::Number(n)) if n.is_f64() => {
+            n.as_f64().map_or_else(|| form.to_owned(), |f| f.to_string())
+        }
+        _ => form.to_owned(),
     };
-    request(target, O::METHOD.as_str(), &O::path(path), body.as_ref())
+    Ok(pairs.iter().map(|(k, v)| format!("{}={}", enc(k), enc(&value(k, v)))).collect::<Vec<_>>().join("&"))
 }
 
 /// An operation's answer, with the body as the daemon sent it too (`parse_raw`).
@@ -581,7 +602,35 @@ impl Stream for crate::pipe::PipeStream {
 
 #[cfg(test)]
 mod tests {
-    use super::Url;
+    use super::{Url, enc, query};
+    use arugula_proto::api::WaitRequest;
+
+    /// `arugula wait`'s query string as it was built by hand before
+    /// `pane.wait` (#573).
+    fn by_hand(until: &str, re: Option<&str>, timeout: Option<f64>) -> String {
+        let mut q = match re {
+            Some(re) => format!("until={until}&re={}", enc(re)),
+            None => format!("until={until}"),
+        };
+        if let Some(t) = timeout {
+            q.push_str(&format!("&timeout={t}"));
+        }
+        q
+    }
+
+    #[test]
+    fn a_wait_query_is_the_one_written_by_hand() {
+        let res = [None, Some("done"), Some("a b*c~d/é&=+%"), Some("")];
+        let timeouts = [None, Some(30.0), Some(0.5), Some(2.25), Some(1e-7), Some(1e21), Some(0.0), Some(86400.0)];
+        for until in ["command-end", "exit", "match", "idle", "needs-input"] {
+            for re in res {
+                for timeout in timeouts {
+                    let req = WaitRequest { until: until.into(), re: re.map(Into::into), timeout };
+                    assert_eq!(query(&req).unwrap(), by_hand(until, re, timeout), "{req:?}");
+                }
+            }
+        }
+    }
 
     #[test]
     fn urls() {
