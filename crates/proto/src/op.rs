@@ -158,6 +158,12 @@ impl Request for crate::api::OpenConversationRequest {}
 
 impl Request for crate::api::Subscription {}
 
+impl Request for crate::api::ThreadPostRequest {}
+
+impl Request for crate::api::ThreadReadRequest {}
+
+impl Request for crate::api::FountainQuery {}
+
 impl Request for crate::api::NotifyRequest {}
 
 impl Request for crate::api::InstallAdapterRequest {
@@ -176,9 +182,10 @@ pub trait Op: Send + Sync + 'static {
     /// Its route, with `{id}` where [`Op::Path`] goes.
     const PATH: &'static str;
     const ACCESS: Access;
-    /// Only listed where the machine has the `labs` flag on
-    /// (`arugula_proto::flags`); it works either way.
-    const LABS: bool = false;
+    /// The flag (`arugula_proto::flags`) the machine needs on for this
+    /// operation's MCP tool or kind to be listed; it works by name either
+    /// way. HTTP routes don't read it.
+    const FLAG: Option<&'static str> = None;
     /// Types into a pane, so needs the owner's trust on their machine
     /// (M14): `authz::check` asks the mux whether the caller may (`ops::drives`).
     const DRIVES: bool = false;
@@ -203,11 +210,12 @@ pub mod ops {
         Machine, PaneId,
         api::{
             Adapters, AgentsInventory, AskAnswer, AskRequest, AttentionRequest, ConversationList, ConversationsQuery,
-            DetectionAnswer, DriverEntry, Empty, FollowUpRequest, FollowedUp, IdeDiffs, IdeDiffsRequest, IdeInfo,
-            IdeMentionRequest, IdeMentioned, InboxAnswer, InstallAdapterRequest, KeysRequest, MouseRequest, NotifyPref,
-            NotifyRequest, OpenConversationRequest, OpenConversationResponse, PaneDiff, PaneSummary, PermitAnswer,
-            PermitRequest, Process, PromptRequest, PromptResult, PushKey, PushSubscriptions, Rules, RunResponse,
-            SendRequest, ShellEnv, Subscription, WaitRequest, WaitResult, WithdrawRequest,
+            DetectionAnswer, DriverEntry, Empty, FollowUpRequest, FollowedUp, FountainAgents, FountainQuery, IdeDiffs,
+            IdeDiffsRequest, IdeInfo, IdeMentionRequest, IdeMentioned, InboxAnswer, InstallAdapterRequest, KeysRequest,
+            MouseRequest, NotifyPref, NotifyRequest, OpenConversationRequest, OpenConversationResponse, PaneDiff,
+            PaneSummary, PermitAnswer, PermitRequest, Process, PromptRequest, PromptResult, PushKey, PushSubscriptions,
+            Rules, RunResponse, SendRequest, ShellEnv, Subscription, ThreadMessages, ThreadPostRequest, ThreadPosted,
+            ThreadReadRequest, WaitRequest, WaitResult, WithdrawRequest,
         },
         flags::{FlagInfo, FlagSetRequest},
     };
@@ -683,6 +691,67 @@ pub mod ops {
         type Path = ();
         type Req = OpenConversationRequest;
         type Res = OpenConversationResponse;
+    }
+
+    /// `GET /api/threads/{target}` (M61): a thread's messages, as the caller
+    /// may read them (MCP's `read_thread`). The mux checks each thread.
+    pub struct ThreadGet;
+
+    impl Op for ThreadGet {
+        const NAME: &'static str = "thread.get";
+        const METHOD: Method = Method::Get;
+        const PATH: &'static str = "/api/threads/{target}";
+        const ACCESS: Access = Access::Handler;
+        const FLAG: Option<&'static str> = Some(crate::flags::CHAT);
+        type Path = crate::ThreadTarget;
+        type Req = Empty;
+        type Res = ThreadMessages;
+    }
+
+    /// `POST /api/threads/{target}` (M61): post in a thread, which an
+    /// `@agent` in a pane's one carries to the pane's agent (MCP's
+    /// `post_thread`).
+    pub struct ThreadPost;
+
+    impl Op for ThreadPost {
+        const NAME: &'static str = "thread.post";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/threads/{target}";
+        const ACCESS: Access = Access::Handler;
+        const FLAG: Option<&'static str> = Some(crate::flags::CHAT);
+        type Path = crate::ThreadTarget;
+        type Req = ThreadPostRequest;
+        type Res = ThreadPosted;
+    }
+
+    /// `POST /api/threads/{target}/read`: the caller has read a thread up to
+    /// a message.
+    pub struct ThreadRead;
+
+    impl Op for ThreadRead {
+        const NAME: &'static str = "thread.read";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/threads/{target}/read";
+        const ACCESS: Access = Access::Handler;
+        type Path = crate::ThreadTarget;
+        type Req = ThreadReadRequest;
+        type Res = Empty;
+    }
+
+    /// `GET /api/fountain/agents` (M43): the person's Fountain agents, read
+    /// with their own login on this host (`arugula fountain agents`). The
+    /// query string is the request.
+    pub struct FountainAgentsGet;
+
+    impl Op for FountainAgentsGet {
+        const NAME: &'static str = "fountain.agents";
+        const METHOD: Method = Method::Get;
+        const PATH: &'static str = "/api/fountain/agents";
+        const ACCESS: Access = Access::Owner;
+        const FLAG: Option<&'static str> = Some(crate::flags::FOUNTAIN);
+        type Path = ();
+        type Req = FountainQuery;
+        type Res = FountainAgents;
     }
 
     /// `GET /api/machines`: the machines panes run on (`arugula machines`).

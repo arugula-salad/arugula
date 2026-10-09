@@ -32,11 +32,11 @@ impl McpOp for ListPanes {
     };
     type Args = ListArgs;
 
-    fn args(_: &Call<'_>, _: ListArgs) -> Result<((), Empty), String> {
+    async fn args(_: &Call<'_>, _: &ListArgs) -> Result<((), Empty), String> {
         Ok(((), Empty {}))
     }
 
-    fn answer(call: &Call<'_>, _: &(), panes: Vec<PaneSummary>) -> Out {
+    fn answer(call: &Call<'_>, _: &ListArgs, _: &(), panes: Vec<PaneSummary>) -> Out {
         shape(&panes, call.me(), call.own_pane())
     }
 }

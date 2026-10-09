@@ -16,16 +16,16 @@ use arugula_proto::{
     Driver, EventKind, Frame, FrameKind, PaneId, SessionId,
     api::{
         AgentRules, AgentsInventory, Answered, ConversationList, ConversationRow, ConversationsQuery, Described, Empty,
-        HistoryKind, Invitable, KeysRequest, OpenConversationRequest, OpenConversationResponse, OpenResponse, Process,
-        RunRequest, RunResponse, SecretFinding, SendRequest, ThreadAgent, ThreadMessages, ThreadPostRequest,
-        ThreadPosted, ThreadReadRequest, Unreached, UnreachedWhy, WaitRequest, WaitResult,
+        HistoryKind, KeysRequest, OpenConversationRequest, OpenConversationResponse, OpenResponse, Process, RunRequest,
+        RunResponse, SecretFinding, SendRequest, WaitRequest, WaitResult,
     },
     op::ops::{
         AdapterInstall, AdaptersList, AgentsGet, AgentsRefresh, ClosePane, ConversationOpen, ConversationsList,
-        FlagSet, FlagsList, IdeGet, IdeMention, IdeSet, ListPanes, MachineReset, MachinesList, NotifyGet, NotifySet,
-        PaneAsk, PaneAskWithdraw, PaneAttention, PaneDetection, PaneDiffOf, PaneDrivers, PaneFollowUp, PaneInbox,
-        PaneKeys, PaneMouse, PanePermit, PaneProcess, PanePrompt, PaneSend, PaneWait, PushKeyGet, PushSubscribe,
-        PushTest, RuleForget, RulesForgetAll, RulesList, ShellEnvGet, ShellEnvRefresh,
+        FlagSet, FlagsList, FountainAgentsGet, IdeGet, IdeMention, IdeSet, ListPanes, MachineReset, MachinesList,
+        NotifyGet, NotifySet, PaneAsk, PaneAskWithdraw, PaneAttention, PaneDetection, PaneDiffOf, PaneDrivers,
+        PaneFollowUp, PaneInbox, PaneKeys, PaneMouse, PanePermit, PaneProcess, PanePrompt, PaneSend, PaneWait,
+        PushKeyGet, PushSubscribe, PushTest, RuleForget, RulesForgetAll, RulesList, ShellEnvGet, ShellEnvRefresh,
+        ThreadGet, ThreadPost, ThreadRead,
     },
 };
 use axum::{
@@ -72,8 +72,9 @@ pub fn routes() -> Router<Arc<App>> {
         .op::<PaneInbox>()
         .op::<PaneFollowUp>()
         .route("/api/turn", get(turn))
-        .route("/api/threads/{target}", get(thread_get).post(thread_post))
-        .route("/api/threads/{target}/read", post(thread_read))
+        .op::<ThreadGet>()
+        .op::<ThreadPost>()
+        .op::<ThreadRead>()
         .op::<ClosePane>()
         .route("/api/panes/{id}/capture", get(capture))
         .op::<PaneProcess>()
@@ -115,7 +116,8 @@ pub fn routes() -> Router<Arc<App>> {
         .op::<PushSubscribe>()
         .op::<PushTest>()
         .op::<NotifyGet>()
-        .op::<NotifySet>();
+        .op::<NotifySet>()
+        .op::<FountainAgentsGet>();
     // Labs' routes, if this build has them.
     let r = crate::labs::routes(r);
     // M70: a file onto the pane's host, and its path pasted.
@@ -416,118 +418,6 @@ async fn act_one(
 /// `arugula hook`: one of Claude Code's hook events (M29).
 async fn hook(State(app): AppState, Path(id): Path<PaneId>, Json(hook): Json<serde_json::Value>) -> Res<Json<Empty>> {
     app.mux.send(Cmd::Api(Api::Hook(id, hook)));
-    Ok(Json(Empty {}))
-}
-
-// ---- threads (M61)
-
-fn thread_target(key: &str) -> Res<arugula_proto::ThreadTarget> {
-    arugula_proto::ThreadTarget::parse(key)
-        .ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "a thread is pane-N or session-N".into()))
-}
-
-fn thread_err(e: crate::mux::ThreadError) -> ApiError {
-    ApiError(StatusCode::from_u16(e.0).unwrap_or(StatusCode::BAD_REQUEST), e.1)
-}
-
-fn gone() -> ApiError {
-    ApiError(StatusCode::SERVICE_UNAVAILABLE, "daemon is shutting down".into())
-}
-
-/// A thread's messages, as the caller may read them.
-async fn thread_get(
-    State(app): AppState,
-    Path(key): Path<String>,
-    who: Option<axum::Extension<crate::acl::Principal>>,
-) -> Res<Json<ThreadMessages>> {
-    let who = who.map(|axum::Extension(w)| w).unwrap_or(crate::acl::Principal::Owner);
-    let target = thread_target(&key)?;
-    let messages = app.mux.api(|r| Api::ThreadGet(target, who, r)).await.ok_or_else(gone)?.map_err(thread_err)?;
-    Ok(Json(ThreadMessages { target, messages }))
-}
-
-/// Post in a thread. An `@agent` in a pane's thread, from someone who may
-/// drive the pane, also goes to its agent as a follow-up.
-async fn thread_post(
-    State(app): AppState,
-    Path(key): Path<String>,
-    who: Option<axum::Extension<crate::acl::Principal>>,
-    Json(req): Json<ThreadPostRequest>,
-) -> Res<Json<ThreadPosted>> {
-    let who = who.map(|axum::Extension(w)| w).unwrap_or(crate::acl::Principal::Owner);
-    let owner = who.is_owner();
-    let target = thread_target(&key)?;
-    let post = crate::mux::ThreadPost { target, who, as_agent: None, text: req.text, quote: req.quote };
-    let (msg, to_agent, mut unreached) =
-        app.mux.api(|r| Api::ThreadPost(post, r)).await.ok_or_else(gone)?.map_err(thread_err)?;
-    let mut agent = None;
-    if to_agent && let arugula_proto::ThreadTarget::Pane(pane) = target {
-        agent = Some(match tell_agent(&app, pane, &msg).await {
-            Ok(now) => ThreadAgent { delivered: Some(now), error: None },
-            Err(e) => ThreadAgent { delivered: None, error: Some(e) },
-        });
-    }
-    // The owner, who sees every grant and roster already, is offered to
-    // invite whom an @ named but who can't read the thread (#297). Nobody
-    // else's post does any of this, so theirs says nothing about who exists.
-    let invitable = if owner { Some(invitable(&app, target, &mut unreached).await) } else { None };
-    Ok(Json(ThreadPosted { message: msg, agent, unreached, invitable }))
-}
-
-/// Whom an owner's `@`s that reached nobody name, of those an invite may
-/// name, who can't read the thread and could once invited (not on a
-/// private pane's). Their tokens leave `unreached`: the offer says it.
-async fn invitable(app: &App, target: arugula_proto::ThreadTarget, unreached: &mut Vec<Unreached>) -> Vec<Invitable> {
-    let tokens: Vec<String> =
-        unreached.iter().filter(|u| u.why == UnreachedWhy::Nobody).map(|u| u.token.clone()).collect();
-    if tokens.is_empty() {
-        return Vec::new();
-    }
-    let named: Vec<(String, crate::invite::Person)> = crate::invite::nameable(app)
-        .into_iter()
-        .filter_map(|p| {
-            let t = tokens.iter().find(|t| crate::labs::thread_names(t, &p.id, &p.name))?;
-            Some((t.clone(), p))
-        })
-        .collect();
-    if named.is_empty() {
-        return Vec::new();
-    }
-    let ids = named.iter().map(|(_, p)| p.id.clone()).collect();
-    let Some(reads) = app.mux.api(|r| Api::CanRead(target, ids, r)).await.flatten() else { return Vec::new() };
-    let out: Vec<(String, crate::invite::Person)> =
-        named.into_iter().zip(reads).filter(|(_, reads)| !reads).map(|(n, _)| n).collect();
-    unreached.retain(|u| !out.iter().any(|(t, _)| *t == u.token));
-    // One taken for another (a login by an account's name) says whom.
-    out.into_iter().map(|(token, p)| Invitable { token, who: p.id, name: p.name, merged: p.merged }).collect()
-}
-
-/// Hand a thread message to the pane's agent, as a follow-up from its
-/// author (M61). `Ok(true)`: it went straight in; `Ok(false)`: queued.
-async fn tell_agent(app: &App, pane: PaneId, msg: &arugula_proto::ThreadMsg) -> Result<bool, String> {
-    let mut text = format!("{} wrote in this pane's thread: {}", msg.name, msg.text);
-    if let Some(q) = &msg.quote {
-        text.push_str(&format!("\n\nQuoting %{}:\n{}", q.pane, q.text));
-    }
-    text.push_str("\n\n(Answer in the thread with Arugula's post_thread tool.)");
-    let by = Driver { who: msg.who.clone(), name: msg.name.clone() };
-    if let Some(b) = app.mux.api(|r| Api::Block(pane, r)).await.flatten() {
-        let name = (by.who != "owner").then_some(by.name.as_str());
-        return b.call_by("send", serde_json::json!({ "text": text }), name).await.map(|_| true);
-    }
-    app.mux.api(|r| Api::FollowUp(pane, text, by, r)).await.unwrap_or_else(|| Err("daemon is shutting down".into()))
-}
-
-async fn thread_read(
-    State(app): AppState,
-    Path(key): Path<String>,
-    who: Option<axum::Extension<crate::acl::Principal>>,
-    Json(req): Json<ThreadReadRequest>,
-) -> Res<Json<Empty>> {
-    let who = who.map(|axum::Extension(w)| w).unwrap_or(crate::acl::Principal::Owner);
-    crate::labs::chat().map_err(|e| ApiError(StatusCode::NOT_IMPLEMENTED, e))?;
-    let target = thread_target(&key)?;
-    app.mux.send(Cmd::Api(Api::ThreadRead(target, who, req.upto)));
     Ok(Json(Empty {}))
 }
 

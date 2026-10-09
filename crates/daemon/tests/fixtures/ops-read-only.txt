@@ -3,6 +3,7 @@ adapters.list GET /api/agents/adapters
 agents.get GET /api/hosts/self/agents
 conversations.list GET /api/conversations
 flags.list GET /api/flags
+fountain.agents GET /api/fountain/agents
 ide.get GET /api/ide
 machines.list GET /api/machines
 notify.get GET /api/notify
@@ -15,3 +16,4 @@ panes.list GET /api/panes
 push.key GET /api/push/key
 rules.list GET /api/rules
 shell_env.get GET /api/hosts/self/shell-env
+thread.get GET /api/threads/{target}

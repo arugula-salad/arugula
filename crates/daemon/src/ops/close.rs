@@ -38,11 +38,11 @@ impl McpOp for ClosePane {
     };
     type Args = PaneOnly;
 
-    fn args(_: &Call<'_>, a: PaneOnly) -> Result<(arugula_proto::PaneId, Empty), String> {
+    async fn args(_: &Call<'_>, a: &PaneOnly) -> Result<(arugula_proto::PaneId, Empty), String> {
         Ok((a.pane.id()?, Empty {}))
     }
 
-    fn answer(_: &Call<'_>, &pane: &arugula_proto::PaneId, _: Empty) -> Out {
+    fn answer(_: &Call<'_>, _: &PaneOnly, &pane: &arugula_proto::PaneId, _: Empty) -> Out {
         done(format!("Closed %{pane}"), crate::mcp::results::PaneOnly { pane })
     }
 }

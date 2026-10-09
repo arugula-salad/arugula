@@ -148,7 +148,7 @@ pub fn resume_tasks(_app: &Arc<App>) {}
 /// Adds Labs' HTTP routes to the API's.
 #[cfg(feature = "labs")]
 pub fn routes(r: Router<Arc<App>>) -> Router<Arc<App>> {
-    agents::routes(apps::routes::routes(fountain::routes::routes(r)))
+    agents::routes(apps::routes::routes(r))
 }
 
 #[cfg(not(feature = "labs"))]
@@ -239,6 +239,24 @@ pub fn hook_path(provider: ForgeProvider) -> Result<&'static str, String> {
 #[cfg(not(feature = "labs"))]
 pub fn hook_path(provider: ForgeProvider) -> Result<&'static str, String> {
     Err(not_built(&format!("A {provider:?} webhook")))
+}
+
+/// `GET /api/fountain/agents`'s answer: Fountain's agents, or in a build
+/// without Labs the 404 a route that isn't there gives.
+#[cfg(feature = "labs")]
+pub async fn fountain_agents(
+    app: &crate::server::App,
+    q: arugula_proto::api::FountainQuery,
+) -> Result<arugula_proto::api::FountainAgents, crate::api::ApiError> {
+    fountain::agents_answer(app, q).await
+}
+
+#[cfg(not(feature = "labs"))]
+pub async fn fountain_agents(
+    _: &crate::server::App,
+    _: arugula_proto::api::FountainQuery,
+) -> Result<arugula_proto::api::FountainAgents, crate::api::ApiError> {
+    Err(crate::api::ApiError(axum::http::StatusCode::NOT_FOUND, not_built("Fountain")))
 }
 
 /// Whether chat is in this build: `Ok`, or the refusal for a request that

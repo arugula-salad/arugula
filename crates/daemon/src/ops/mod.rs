@@ -12,6 +12,7 @@
 mod close;
 mod conversations;
 mod flags;
+mod fountain;
 mod input;
 mod inspect;
 mod notify;
@@ -20,6 +21,7 @@ pub(crate) mod prompt;
 mod rules;
 mod settings;
 mod shell_env;
+mod threads;
 mod wait;
 mod waits;
 
@@ -84,6 +86,10 @@ macro_rules! every_op {
         $m!(arugula_proto::op::ops::PushTest);
         $m!(arugula_proto::op::ops::NotifyGet);
         $m!(arugula_proto::op::ops::NotifySet);
+        $m!(arugula_proto::op::ops::ThreadGet);
+        $m!(arugula_proto::op::ops::ThreadPost);
+        $m!(arugula_proto::op::ops::ThreadRead);
+        $m!(arugula_proto::op::ops::FountainAgentsGet);
     };
 }
 
@@ -404,8 +410,6 @@ const HAND_WRITTEN: &[(&str, &str)] = &[
     ("/api/panes/{id}/hook", "hook input, not yet converted"),
     ("/api/panes/{id}/share-machine", "not yet converted, #575"),
     // Other path types and GET queries (#573).
-    ("/api/threads/{target}", "other path types, #573"),
-    ("/api/threads/{target}/read", "other path types, #573"),
     ("/api/history", "GET with a query"),
     ("/api/search", "GET with a query"),
     ("/api/sessions/{id}/secrets", "other path types, #573"),
@@ -545,7 +549,8 @@ mod tests {
     #[test]
     fn every_api_route_is_an_operation_or_hand_written() {
         let (paths, declared) = api_routes();
-        assert!(paths.len() > 20 && !declared.is_empty(), "read {} routes, {} operations", paths.len(), declared.len());
+        // Read something: routes still hand-written, and operations.
+        assert!(!paths.is_empty() && declared.len() > 20, "read {} routes, {} operations", paths.len(), declared.len());
         let mut every = Vec::new();
         macro_rules! name {
             ($o:ty) => {

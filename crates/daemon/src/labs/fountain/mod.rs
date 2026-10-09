@@ -47,7 +47,6 @@
 pub mod api;
 pub mod catalog;
 pub mod login;
-pub mod routes;
 pub mod runner;
 pub mod wear;
 
@@ -268,6 +267,29 @@ pub fn find<'a>(agents: &'a [Agent], which: &str) -> Option<&'a Agent> {
 /// Compact rows for MCP's `fountain_agents`: the filter's agents as cards.
 pub fn rows(agents: &[Agent], filter: &Filter) -> Vec<Card> {
     agents.iter().filter(|a| filter.matches(a)).map(|a| catalog::card(a, &BTreeMap::new())).collect()
+}
+
+/// M43: the person's Fountain agents, read with their own login on this
+/// host (`GET /api/fountain/agents`, `arugula fountain agents`): compact
+/// cards, filtered.
+pub async fn agents_answer(
+    app: &crate::server::App,
+    q: arugula_proto::api::FountainQuery,
+) -> Result<arugula_proto::api::FountainAgents, crate::api::ApiError> {
+    use crate::api::bad;
+    let mut f = catalog::Filter::default();
+    f.apply(&json!({ "query": q.query, "source": q.source })).map_err(bad)?;
+    let runner = local_runner(&app.mux.shell_env).await;
+    let got = agents_for(&runner, q.profile.as_deref()).await.map_err(bad)?;
+    let rows = rows(&got.agents, &f);
+    Ok(arugula_proto::api::FountainAgents {
+        base_url: got.login.base_url,
+        profile: got.login.profile,
+        total: got.agents.len(),
+        filter: serde_json::to_value(&f).unwrap_or_default(),
+        agents: rows.iter().map(|r| serde_json::to_value(r).unwrap_or_default()).collect(),
+        unreadable: got.unreadable,
+    })
 }
 
 /// The whole recipe for MCP's `fountain_agent` and the block's `agent`: as Fountain

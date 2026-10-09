@@ -1484,6 +1484,17 @@ pub struct FollowerLinkRequest {
     pub link: String,
 }
 
+/// What `GET /api/fountain/agents` takes as its query string (M43).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FountainQuery {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub query: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile: Option<String>,
+}
+
 /// `GET /api/fountain/agents` (M43): the person's Fountain agents, read with
 /// their own login on this host: compact cards (the daemon's own record of
 /// each, kept as JSON here), filtered.

@@ -7,6 +7,7 @@ conversation.open POST /api/conversations/open Owner drives=false credential=fal
 conversations.list GET /api/conversations Owner drives=false credential=false
 flag.set PUT /api/flags/{name} Owner drives=false credential=false
 flags.list GET /api/flags Owner drives=false credential=false
+fountain.agents GET /api/fountain/agents Owner drives=false credential=false
 ide.get GET /api/ide Owner drives=false credential=false
 ide.mention POST /api/ide/mention Handler drives=false credential=false
 ide.set PUT /api/ide Owner drives=false credential=false
@@ -39,3 +40,6 @@ rules.forget_all DELETE /api/rules Owner drives=false credential=false
 rules.list GET /api/rules Owner drives=false credential=false
 shell_env.get GET /api/hosts/self/shell-env Owner drives=false credential=false
 shell_env.refresh POST /api/hosts/self/shell-env/refresh Owner drives=false credential=false
+thread.get GET /api/threads/{target} Handler drives=false credential=false
+thread.post POST /api/threads/{target} Handler drives=false credential=false
+thread.read POST /api/threads/{target}/read Handler drives=false credential=false

@@ -12,7 +12,7 @@ use arugula_proto::{
     api::{ActRequest, HistoryEntry, HistoryKind, OpenRequest, PaneSummary, RunRequest, WaitResult},
     flags::{self, On},
     forge::{ForgeState, ItemKind, ReviewEvent, Write},
-    op::ops::{ClosePane, ListPanes},
+    op::ops::{ClosePane, ConversationOpen, ConversationsList, ListPanes, ThreadGet, ThreadPost},
 };
 use rmcp::{
     Peer, RoleServer,
@@ -722,27 +722,32 @@ const DELEGATE: &[Kind] = &[
         name: "send",
         description: "Hand a task to an agent another machine offers (list kind agents lists them): text is what to do, in that agent's project there. Its owner may first have to allow it. Waits for it to finish (or ask you something) and returns its reply and the patch's stat; the patch itself is kept here.",
         schema: schema_for_type::<DelegateArgs>,
+        flag: None,
     },
     Kind {
         name: "get",
         description: "A task's state now (with wait: once it finishes or asks): its status, reply and patch's stat.",
         schema: schema_for_type::<DelegateArgs>,
+        flag: None,
     },
     Kind {
         name: "answer",
         description: "Answer the question a task asked (its state says input_required), or send a finished task a follow-up: text, then wait as send does.",
         schema: schema_for_type::<DelegateArgs>,
+        flag: None,
     },
-    Kind { name: "cancel", description: "Stop a task you sent.", schema: schema_for_type::<DelegateArgs> },
+    Kind { name: "cancel", description: "Stop a task you sent.", schema: schema_for_type::<DelegateArgs>, flag: None },
     Kind {
         name: "review",
         description: "A finished task's patch, applied to a scratch copy of your checkout and shown in a diff block beside you, for the user to look at before anything changes here. Says whether it applies cleanly.",
         schema: schema_for_type::<DelegateArgs>,
+        flag: None,
     },
     Kind {
         name: "apply",
         description: "Apply a finished task's patch in your checkout (git apply --3way): which files changed, conflicts to resolve, hunks that didn't apply, and new binary files the task left out.",
         schema: schema_for_type::<DelegateArgs>,
+        flag: None,
     },
 ];
 
@@ -823,6 +828,8 @@ pub(crate) struct Def {
     pub(crate) destructive: bool,
     pub(crate) idempotent: bool,
     pub(crate) open_world: bool,
+    /// The flag the machine needs on for it to be listed (`Op::FLAG`).
+    pub(crate) flag: Option<&'static str>,
 }
 
 /// What a tool takes.
@@ -844,6 +851,8 @@ pub(crate) struct Kind {
     /// What it does, for the tool's description.
     pub(crate) description: &'static str,
     pub(crate) schema: fn() -> Schema,
+    /// The flag the machine needs on for it to be listed (`Op::FLAG`).
+    pub(crate) flag: Option<&'static str>,
 }
 
 /// `show`'s blocks.
@@ -852,46 +861,50 @@ const SHOW: &[Kind] = &[
         name: "port",
         description: "A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.",
         schema: schema_for_type::<OpenPortArgs>,
+        flag: None,
     },
     Kind {
         name: "changes",
         description: "A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.",
         schema: schema_for_type::<ShowChangesArgs>,
+        flag: None,
     },
     Kind {
         name: "file",
         description: "A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.",
         schema: schema_for_type::<ShowFileArgs>,
+        flag: None,
     },
     Kind {
         name: "pr",
         description: "A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.",
         schema: schema_for_type::<OpenPrArgs>,
+        flag: None,
     },
     Kind {
         name: "issue",
         description: "An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.",
         schema: schema_for_type::<OpenIssueArgs>,
+        flag: None,
     },
-    Kind {
-        name: "conversation",
-        description: "A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on.",
-        schema: schema_for_type::<OpenConversationArgs>,
-    },
+    super::ops::kind::<ConversationOpen>(),
     Kind {
         name: "app",
         description: "One of the user's studio apps (a box with its own agent, hud) as an app block: the app in a frame, and its agent's questions as asks on the block; send_input to the block prompts its agent. Without app: lists the user's apps.",
         schema: schema_for_type::<OpenAppArgs>,
+        flag: None,
     },
     Kind {
         name: "workspace",
         description: "A chant workspace block: its members as cards (open a shell, an agent or the changes in one), its records, and the gates waiting for a person, which the user can approve there and which show as attention on the phone and the swarm. Read through the workspace's own chant. Returns its members and the gates waiting.",
         schema: schema_for_type::<OpenWorkspaceArgs>,
+        flag: None,
     },
     Kind {
         name: "fountain",
         description: "The user's Fountain agents as a catalog block: a card per agent with its skills, servers and where it comes from, filters, and Run on Fountain / Spec for each. Returns the (filtered) list as text. With view \"runner\": this host as the account's Fountain runner instead: its status, the other runners, and its sandboxes with their conversations.",
         schema: schema_for_type::<OpenFountainArgs>,
+        flag: None,
     },
 ];
 
@@ -901,47 +914,55 @@ const DRAFT: &[Kind] = &[
         name: "comment",
         description: "A comment on a PR or issue block's pull request or issue.",
         schema: schema_for_type::<CommentArgs>,
+        flag: None,
     },
     Kind {
         name: "review",
         description: "A review (approve, request_changes or comment) of a PR block's pull request.",
         schema: schema_for_type::<PrReviewArgs>,
+        flag: None,
     },
-    Kind { name: "merge", description: "Merging a PR block's pull request.", schema: schema_for_type::<PrMergeArgs> },
+    Kind {
+        name: "merge",
+        description: "Merging a PR block's pull request.",
+        schema: schema_for_type::<PrMergeArgs>,
+        flag: None,
+    },
     Kind {
         name: "issue",
         description: "A new issue on the user's Forgejo or GitHub: a block beside you holding the draft, for the user to send, edit, drop or ask you to change; it shows the issue once sent. Asked for changes, draft again with block set to that block. Returns the block.",
         schema: schema_for_type::<IssueNewArgs>,
+        flag: None,
     },
 ];
 
 /// `list`'s lists.
 const LIST: &[Kind] = &[
     super::ops::kind::<ListPanes>(),
-    Kind {
-        name: "conversations",
-        description: "Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.",
-        schema: schema_for_type::<ListConversationsArgs>,
-    },
+    super::ops::kind::<ConversationsList>(),
     Kind {
         name: "devices",
         description: "The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.",
         schema: schema_for_type::<NoArgs>,
+        flag: None,
     },
     Kind {
         name: "agents",
         description: "The agents the user's team offers: every Claude Code agent recipe offered on this machine, the user's other machines, their teams' and teammates', one line each: name, machine and owner, model, description. A machine that's offline shows its agents as last seen. To run one of this machine's here, start_agent {recipe: NAME}.",
         schema: schema_for_type::<ListTeamAgentsArgs>,
+        flag: None,
     },
     Kind {
         name: "fountain_agents",
         description: "The agents on the user's Fountain account, one compact row each: name, runtime and model, where it comes from (agent-specs: curated; hand: hand-made; app: made by an app), skills, MCP servers and description. query searches names, descriptions, skills and servers. To hand one a task, start_agent {agent: fountain, fountain_agent: NAME}.",
         schema: schema_for_type::<ListAgentsArgs>,
+        flag: Some(flags::FOUNTAIN),
     },
     Kind {
         name: "fountain_agent",
         description: "One Fountain agent's whole recipe, by name: its system prompt, skills (inline or from GitHub), MCP servers, model, runtime, environment, sandbox provider and metadata, as Fountain returns it. Secrets are never in it: a server's credentials show as their ${VAR} references.",
         schema: schema_for_type::<ReadAgentArgs>,
+        flag: None,
     },
 ];
 
@@ -951,17 +972,13 @@ const LIST: &[Kind] = &[
 /// of its group's table, and its arguments and its line in the description
 /// go with it. A caller who names one still reaches it (`dispatch`), by its
 /// kind or its name before #349.
-const UNLISTED: [(&str, &str, &str); 6] = [
+const UNLISTED: [(&str, &str, &str); 5] = [
     ("list", "agents", flags::AGENTS),
     ("show", "app", flags::STUDIO),
     ("show", "workspace", flags::WORKSPACES),
     ("show", "fountain", flags::FOUNTAIN),
-    ("list", "fountain_agents", flags::FOUNTAIN),
     ("list", "fountain_agent", flags::FOUNTAIN),
 ];
-
-/// Chat's two tools, unlisted without the `chat` flag like the rest.
-const UNLISTED_THREADS: [&str; 2] = ["read_thread", "post_thread"];
 
 /// Arguments of listed tools that aren't listed without their flag, by
 /// tool: throwaway VMs and sandboxes, and Fountain agents. A caller who
@@ -1031,9 +1048,10 @@ fn drop_values(schema: &mut Value, values: &[&str]) {
     }
 }
 
-/// Whether a grouped tool's kind is listed with the flags in `on`.
-fn listed_kind(on: On, tool: &str, kind: &str) -> bool {
-    UNLISTED.iter().all(|(t, k, f)| (*t, *k) != (tool, kind) || on.has(f))
+/// Whether a grouped tool's kind is listed with the flags in `on`: its own
+/// (`Op::FLAG`, for an operation's), or the table's.
+fn listed_kind(on: On, tool: &str, kind: &Kind) -> bool {
+    kind.flag.is_none_or(|f| on.has(f)) && UNLISTED.iter().all(|(t, k, f)| (*t, *k) != (tool, kind.name) || on.has(f))
 }
 
 /// The tools `tools/list` shows: each one a stranger can't use needs its
@@ -1041,13 +1059,13 @@ fn listed_kind(on: On, tool: &str, kind: &str) -> bool {
 fn defs(on: On) -> Vec<Def> {
     all_defs()
         .into_iter()
-        .filter(|d| on.has(flags::CHAT) || !UNLISTED_THREADS.contains(&d.name))
+        .filter(|d| d.flag.is_none_or(|f| on.has(f)))
         // M78: delegating is the agent catalog's.
         .filter(|d| on.has(flags::AGENTS) || d.name != "delegate")
         .map(|mut d| {
             let name = d.name;
             if let Args::Kinds { kinds, .. } = &mut d.args {
-                kinds.retain(|k| listed_kind(on, name, k.name));
+                kinds.retain(|k| listed_kind(on, name, k));
             }
             d
         })
@@ -1071,6 +1089,7 @@ fn all_defs() -> Vec<Def> {
             destructive: true,
             idempotent: false,
             open_world: true,
+            flag: None,
         },
         Def {
             name: "send_input",
@@ -1081,6 +1100,7 @@ fn all_defs() -> Vec<Def> {
             destructive: true,
             idempotent: false,
             open_world: false,
+            flag: None,
         },
         Def {
             name: "attach",
@@ -1091,6 +1111,7 @@ fn all_defs() -> Vec<Def> {
             destructive: true,
             idempotent: false,
             open_world: false,
+            flag: None,
         },
         Def {
             name: "read_output",
@@ -1101,6 +1122,7 @@ fn all_defs() -> Vec<Def> {
             destructive: false,
             idempotent: true,
             open_world: false,
+            flag: None,
         },
         Def {
             name: "wait",
@@ -1111,6 +1133,7 @@ fn all_defs() -> Vec<Def> {
             destructive: false,
             idempotent: true,
             open_world: false,
+            flag: None,
         },
         Def {
             name: "delegate",
@@ -1121,6 +1144,7 @@ fn all_defs() -> Vec<Def> {
             destructive: false,
             idempotent: false,
             open_world: true,
+            flag: None,
         },
         Def {
             name: "list",
@@ -1131,28 +1155,11 @@ fn all_defs() -> Vec<Def> {
             destructive: false,
             idempotent: true,
             open_world: true,
+            flag: None,
         },
         super::ops::def::<ClosePane>(),
-        Def {
-            name: "read_thread",
-            title: "Read a thread",
-            description: "The people's conversation about a pane or a session: who said what and when, oldest first, with quoted terminal output. When someone writes @agent in a pane's thread, it reaches that pane's agent as a follow-up; answer with post_thread.",
-            args: Args::One(schema_for_type::<ThreadArgs>),
-            read_only: true,
-            destructive: false,
-            idempotent: true,
-            open_world: false,
-        },
-        Def {
-            name: "post_thread",
-            title: "Post in a thread",
-            description: "Post a message in a pane's or a session's thread, where the people working on it talk; it shows as from an agent. Use it to answer an @agent message or to tell the people something they should see. The result's `unreached` lists any @name that reached no one, and why. Someone who can't see the thread isn't told: call invite_person to ask the user to bring them in.",
-            args: Args::One(schema_for_type::<PostThreadArgs>),
-            read_only: false,
-            destructive: false,
-            idempotent: false,
-            open_world: false,
-        },
+        super::ops::def::<ThreadGet>(),
+        super::ops::def::<ThreadPost>(),
         Def {
             name: "history",
             title: "Command history and output",
@@ -1162,6 +1169,7 @@ fn all_defs() -> Vec<Def> {
             destructive: false,
             idempotent: true,
             open_world: false,
+            flag: None,
         },
         Def {
             name: "show",
@@ -1172,6 +1180,7 @@ fn all_defs() -> Vec<Def> {
             destructive: false,
             idempotent: false,
             open_world: true,
+            flag: None,
         },
         Def {
             name: "start_agent",
@@ -1182,6 +1191,7 @@ fn all_defs() -> Vec<Def> {
             destructive: false,
             idempotent: false,
             open_world: true,
+            flag: None,
         },
         Def {
             name: "prompt_agent",
@@ -1192,6 +1202,7 @@ fn all_defs() -> Vec<Def> {
             destructive: true,
             idempotent: false,
             open_world: false,
+            flag: None,
         },
         Def {
             name: "agent_respond",
@@ -1202,6 +1213,7 @@ fn all_defs() -> Vec<Def> {
             destructive: true,
             idempotent: false,
             open_world: false,
+            flag: None,
         },
         Def {
             name: "read_forge",
@@ -1212,6 +1224,7 @@ fn all_defs() -> Vec<Def> {
             destructive: false,
             idempotent: true,
             open_world: true,
+            flag: None,
         },
         Def {
             name: "draft",
@@ -1222,6 +1235,7 @@ fn all_defs() -> Vec<Def> {
             destructive: true,
             idempotent: false,
             open_world: true,
+            flag: None,
         },
         Def {
             name: "invite_person",
@@ -1232,6 +1246,7 @@ fn all_defs() -> Vec<Def> {
             destructive: false,
             idempotent: false,
             open_world: true,
+            flag: None,
         },
         Def {
             name: "read_invite",
@@ -1242,6 +1257,7 @@ fn all_defs() -> Vec<Def> {
             destructive: false,
             idempotent: true,
             open_world: false,
+            flag: None,
         },
         Def {
             name: "read_file",
@@ -1252,6 +1268,7 @@ fn all_defs() -> Vec<Def> {
             destructive: false,
             idempotent: true,
             open_world: false,
+            flag: None,
         },
         Def {
             name: "device_call",
@@ -1262,6 +1279,7 @@ fn all_defs() -> Vec<Def> {
             destructive: false,
             idempotent: false,
             open_world: true,
+            flag: None,
         },
     ]
 }
@@ -1475,7 +1493,7 @@ fn route(name: &str, mut args: Value, on: On) -> Result<(Def, Option<&'static st
     let kind = match &def.args {
         Args::One(_) => None,
         Args::Kinds { kinds, default } => {
-            let shown: Vec<&str> = kinds.iter().map(|k| k.name).filter(|k| listed_kind(on, def.name, k)).collect();
+            let shown: Vec<&str> = kinds.iter().filter(|k| listed_kind(on, def.name, k)).map(|k| k.name).collect();
             Some(pick_kind(def.name, kinds, &shown, *default, &mut args)?)
         }
     };
@@ -1556,6 +1574,11 @@ impl<'a> Call<'a> {
         format!("mcp:{}", self.client)
     }
 
+    /// The client's name (`claude-code`).
+    pub(crate) fn client(&self) -> &str {
+        &self.client
+    }
+
     fn driver(&self) -> Driver {
         Driver { who: self.by(), name: self.by() }
     }
@@ -1597,14 +1620,8 @@ impl<'a> Call<'a> {
                 Err(e) => Err(e),
             },
             ("close", _) => super::ops::call::<ClosePane>(self, args).await,
-            ("read_thread", _) => match parse(args) {
-                Ok(a) => self.read_thread(a).await,
-                Err(e) => Err(e),
-            },
-            ("post_thread", _) => match parse(args) {
-                Ok(a) => self.post_thread(a).await,
-                Err(e) => Err(e),
-            },
+            ("read_thread", _) => super::ops::call::<ThreadGet>(self, args).await,
+            ("post_thread", _) => super::ops::call::<ThreadPost>(self, args).await,
             ("history", _) => match parse(args) {
                 Ok(a) => self.history_or_output(a).await,
                 Err(e) => Err(e),
@@ -1639,10 +1656,7 @@ impl<'a> Call<'a> {
             },
             // list
             ("list", Some("panes")) => super::ops::call::<ListPanes>(self, args).await,
-            ("list", Some("conversations")) => match parse(args) {
-                Ok(a) => self.list_conversations(a).await,
-                Err(e) => Err(e),
-            },
+            ("list", Some("conversations")) => super::ops::call::<ConversationsList>(self, args).await,
             ("list", Some("devices")) => self.list_devices(),
             ("delegate", Some(kind @ ("send" | "get" | "answer" | "cancel" | "review" | "apply"))) => match parse(args)
             {
@@ -1684,10 +1698,7 @@ impl<'a> Call<'a> {
                 }
                 Err(e) => Err(e),
             },
-            ("show", Some("conversation")) => match parse(args) {
-                Ok(a) => self.open_conversation(a).await,
-                Err(e) => Err(e),
-            },
+            ("show", Some("conversation")) => super::ops::call::<ConversationOpen>(self, args).await,
             ("show", Some("app")) => match parse(args) {
                 Ok(a) => self.open_app(a).await,
                 Err(e) => Err(e),
@@ -1791,7 +1802,7 @@ impl<'a> Call<'a> {
 
     /// Whether this caller is an agent on a machine (a guest's, say): what
     /// it creates must land on a machine too ([`confine`]).
-    async fn on_machine(&self) -> Result<bool, String> {
+    pub(crate) async fn on_machine(&self) -> Result<bool, String> {
         match self.me() {
             Some(me) => Ok(self.readable(me).await?.info.host.is_some()),
             None => Ok(false),
@@ -2466,7 +2477,11 @@ impl<'a> Call<'a> {
 
     /// The thread a call names: a pane's or a session's, within what this
     /// caller reaches (an agent block's token: its own tab and session).
-    async fn thread_of(&self, pane: Option<&PaneArg>, session: Option<SessionId>) -> Result<ThreadTarget, String> {
+    pub(crate) async fn thread_of(
+        &self,
+        pane: Option<&PaneArg>,
+        session: Option<SessionId>,
+    ) -> Result<ThreadTarget, String> {
         match (pane.map(PaneArg::id).transpose()?, session) {
             (Some(_), Some(_)) => Err("give a pane or a session, not both".into()),
             (Some(p), None) => self.readable(p).await.map(|_| ThreadTarget::Pane(p)),
@@ -2483,58 +2498,6 @@ impl<'a> Call<'a> {
                 None => Err("which thread? give a pane or a session".into()),
             },
         }
-    }
-
-    async fn read_thread(&self, a: ThreadArgs) -> Out {
-        let target = self.thread_of(a.pane.as_ref(), a.session).await?;
-        let who = crate::acl::Principal::Owner;
-        let msgs = self
-            .app
-            .mux
-            .api(|r| Api::ThreadGet(target, who, r))
-            .await
-            .ok_or("daemon is shutting down")?
-            .map_err(|e| e.1)?;
-        let after = a.after.unwrap_or(0);
-        let msgs: Vec<_> = msgs.into_iter().filter(|m| m.id > after).collect();
-        let last = msgs.last().map(|m| m.id).unwrap_or(after);
-        let text: Vec<String> = msgs
-            .iter()
-            .map(|m| {
-                let mut t = format!("#{} {}: {}", m.id, m.name, m.text);
-                if let Some(q) = &m.quote {
-                    t.push_str(&format!("\n  > (%{}) {}", q.pane, q.text.replace('\n', "\n  > ")));
-                }
-                t
-            })
-            .collect();
-        done(
-            format!(
-                "{} message(s) in {}{}",
-                msgs.len(),
-                target.key(),
-                if text.is_empty() { String::new() } else { format!(":\n{}", text.join("\n")) }
-            ),
-            results::ThreadRead { thread: target, messages: msgs, last },
-        )
-    }
-
-    async fn post_thread(&self, a: PostThreadArgs) -> Out {
-        let target = self.thread_of(a.pane.as_ref(), a.session).await?;
-        let as_agent = Driver { who: self.by(), name: format!("{} (agent)", self.client) };
-        let post = crate::mux::ThreadPost {
-            target,
-            who: crate::acl::Principal::Owner,
-            as_agent: Some(as_agent),
-            text: a.text,
-            quote: None,
-        };
-        let (msg, _, unreached) =
-            self.app.mux.api(|r| Api::ThreadPost(post, r)).await.ok_or("daemon is shutting down")?.map_err(|e| e.1)?;
-        done(
-            format!("posted #{} in {}", msg.id, target.key()),
-            results::ThreadPosted { thread: target, message: msg, unreached },
-        )
     }
 
     async fn history(&self, a: HistoryArgs) -> Out {
@@ -3486,54 +3449,6 @@ impl Call<'_> {
         )
     }
 
-    async fn list_conversations(&self, a: ListConversationsArgs) -> Out {
-        let q = arugula_proto::api::ConversationsQuery {
-            all: a.all,
-            q: a.query,
-            cwd: a.cwd,
-            live: a.live,
-            limit: Some(a.limit.unwrap_or(30)),
-        };
-        let mut v = serde_json::to_value(crate::api::list_conversations(self.app, q).await?).unwrap_or_default();
-        // The transcript's path is the daemon's business.
-        for c in v["conversations"].as_array_mut().into_iter().flatten() {
-            if let Some(o) = c.as_object_mut() {
-                o.remove("path");
-            }
-        }
-        let n = v["conversations"].as_array().map_or(0, Vec::len);
-        done(format!("{n} conversations; show (kind conversation) shows one as a block"), v)
-    }
-
-    async fn open_conversation(&self, a: OpenConversationArgs) -> Out {
-        // Conversations are this host's, and continue as a Claude Code here.
-        confine(self.on_machine().await?, false)?;
-        let beside = match (a.beside.as_ref().map(PaneArg::id).transpose()?, self.own_pane()) {
-            (Some(b), _) => Some(b),
-            (None, own) => own,
-        };
-        if let Some(b) = beside {
-            self.readable(b).await?;
-        }
-        let req = arugula_proto::api::OpenConversationRequest {
-            id: a.id,
-            then: a.then.map(|t| match t {
-                ConversationThen::Continue => "continue".into(),
-                ConversationThen::Fork => "fork".into(),
-            }),
-            session: None,
-            split: beside,
-            from_pane: beside,
-        };
-        let v = crate::api::open_conversation_as(self.app, None, req).await.map_err(|e| e.1)?;
-        let block = v.block;
-        let summary = match v.error.as_deref() {
-            Some(e) => format!("Opened it in %{block}, but: {e}"),
-            None => format!("It's in %{block}; send_input to it to go on, then wait and read_output"),
-        };
-        done(summary, serde_json::to_value(&v).unwrap_or_default())
-    }
-
     async fn prompt_agent(&self, a: PromptArgs) -> Out {
         use arugula_proto::{
             api::{PromptRequest, PromptResult},
@@ -3848,7 +3763,7 @@ fn ago(ms: u64) -> String {
 /// a block): an agent on a machine (a guest's, say) creates things on a
 /// machine, never on this host, where they'd run as the owner (with the
 /// owner's logins and, for a worn Fountain agent, secrets).
-fn confine(caller_on_machine: bool, lands_on_machine: bool) -> Result<(), String> {
+pub(crate) fn confine(caller_on_machine: bool, lands_on_machine: bool) -> Result<(), String> {
     if caller_on_machine && !lands_on_machine {
         return Err("an agent on a machine creates things on its machine (or a new VM), not on this host".into());
     }
@@ -4048,6 +3963,21 @@ mod tests {
         assert_eq!((hint("show").destructive_hint, hint("show").open_world_hint), (Some(false), Some(true)));
     }
 
+    /// Chat's two tools, unlisted without the `chat` flag (`Op::FLAG`).
+    const CHAT_TOOLS: [&str; 2] = ["read_thread", "post_thread"];
+
+    /// The kinds that aren't listed without a flag: the table's, and the
+    /// operations' own (`Op::FLAG`).
+    fn flagged_kinds() -> Vec<(&'static str, &'static str)> {
+        let mut all: Vec<_> = UNLISTED.iter().map(|(t, k, _)| (*t, *k)).collect();
+        for d in all_defs() {
+            if let Args::Kinds { kinds, .. } = &d.args {
+                all.extend(kinds.iter().filter(|k| k.flag.is_some()).map(|k| (d.name, k.name)));
+            }
+        }
+        all
+    }
+
     /// The kinds of a group a tool has, listed with `labs` or without.
     fn kinds_of(labs: bool, tool: &str) -> Vec<&'static str> {
         defs(fl(labs))
@@ -4068,7 +3998,7 @@ mod tests {
     fn unlisted_tools_are_not_listed_without_labs_but_are_there() {
         for scope in [Scope::Full, Scope::Read] {
             let listed: Vec<String> = list(scope, fl(false)).iter().map(|t| t.name.to_string()).collect();
-            for name in UNLISTED_THREADS {
+            for name in CHAT_TOOLS {
                 assert!(!listed.contains(&name.to_string()), "{name} is listed for {scope:?} without labs");
             }
             let with: Vec<String> = list(scope, fl(true)).iter().map(|t| t.name.to_string()).collect();
@@ -4078,7 +4008,7 @@ mod tests {
         }
         // A hidden kind is filtered out of its group: not in kind's enum,
         // nor its line in the description, nor the arguments only it takes.
-        for (tool, kind, _) in UNLISTED {
+        for (tool, kind) in flagged_kinds() {
             assert!(!kinds_of(false, tool).contains(&kind), "{tool} kind {kind} is listed without labs");
             assert!(kinds_of(true, tool).contains(&kind), "{tool} kind {kind} isn't listed with labs");
             let t = list(Scope::Full, fl(false)).into_iter().find(|t| t.name == tool).unwrap();
@@ -4090,7 +4020,7 @@ mod tests {
         }
         for old in ["open_app", "open_workspace", "open_fountain", "list_agents", "read_agent"] {
             let (def, kind, _) = route(old, json!({}), fl(false)).unwrap_or_else(|e| panic!("{old}: {e}"));
-            assert!(UNLISTED.iter().any(|(t, k, _)| (*t, *k) == (def.name, kind.unwrap())), "{old}");
+            assert!(flagged_kinds().contains(&(def.name, kind.unwrap())), "{old}");
         }
         let show = list(Scope::Full, fl(false)).into_iter().find(|t| t.name == "show").unwrap();
         for arg in ["app", "env", "view", "source", "profile"] {
@@ -4104,13 +4034,13 @@ mod tests {
         let e = route("show", json!({ "kind": "terminal" }), fl(false)).err().unwrap();
         assert!(e.contains("port") && !e.contains("fountain") && !e.contains("workspace"), "{e}");
         let every: Vec<&str> = all_defs().iter().map(|d| d.name).collect();
-        for name in UNLISTED_THREADS {
+        for name in CHAT_TOOLS {
             assert!(every.contains(&name), "{name} no longer has a definition");
         }
         assert_eq!(every.len(), 21);
         assert_eq!(defs(fl(false)).len(), 18);
         assert_eq!(defs(fl(true)).len(), 21);
-        assert_eq!(every.len(), defs(fl(false)).len() + UNLISTED_THREADS.len() + 1, "and delegate");
+        assert_eq!(every.len(), defs(fl(false)).len() + CHAT_TOOLS.len() + 1, "and delegate");
     }
 
     /// The 39 tools before #349, by their old names.

@@ -7,10 +7,13 @@
 //! and there is no path. So the arguments are a type of their own, which
 //! [`McpOp::args`] turns into the operation's, and the answer adds the
 //! `summary` sentence (and may be shaped for agents: `list` kind panes is
-//! confined to an agent block's tab).
+//! confined to an agent block's tab). What an agent's token reaches (its
+//! tab, its session, its machine) is checked in `args`, which may ask.
 
 use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
+
+use std::future::Future;
 
 use super::tools::{Args, Call, Def, Kind, Out, parse};
 use crate::ops::{Cx, Handle, OpError, Via};
@@ -35,13 +38,14 @@ pub enum Surface {
 pub trait McpOp: Handle {
     const SURFACE: Surface;
     /// What an agent passes; its doc comments are the schema's.
-    type Args: DeserializeOwned + JsonSchema + 'static;
+    type Args: DeserializeOwned + JsonSchema + Sync + 'static;
 
-    /// The operation's path and request from the agent's arguments.
-    fn args(call: &Call<'_>, a: Self::Args) -> Result<(Self::Path, Self::Req), String>;
+    /// The operation's path and request from the agent's arguments, once
+    /// what this agent's token reaches has been checked.
+    fn args(call: &Call<'_>, a: &Self::Args) -> impl Future<Output = Result<(Self::Path, Self::Req), String>> + Send;
 
     /// The answer an agent gets, with its `summary` sentence (`done`).
-    fn answer(call: &Call<'_>, path: &Self::Path, res: Self::Res) -> Out;
+    fn answer(call: &Call<'_>, a: &Self::Args, path: &Self::Path, res: Self::Res) -> Out;
 }
 
 /// A tool's row in the list. Whether a read-only token may call it follows
@@ -62,6 +66,7 @@ pub fn def<O: McpOp>() -> Def {
         destructive,
         idempotent,
         open_world,
+        flag: O::FLAG,
     }
 }
 
@@ -70,16 +75,17 @@ pub const fn kind<O: McpOp>() -> Kind {
     let Surface::Kind { kind, description, .. } = O::SURFACE else {
         panic!("an operation that is a tool of its own isn't a kind")
     };
-    Kind { name: kind, description, schema: rmcp::handler::server::common::schema_for_type::<O::Args> }
+    Kind { name: kind, description, schema: rmcp::handler::server::common::schema_for_type::<O::Args>, flag: O::FLAG }
 }
 
 /// A call to the operation's tool (or kind): its arguments, the handler, its
 /// answer; a refusal or a pane that's gone, as a sentence.
 pub async fn call<O: McpOp>(call: &Call<'_>, args: serde_json::Value) -> Out {
-    let (path, req) = O::args(call, parse(args)?)?;
+    let a: O::Args = parse(args)?;
+    let (path, req) = O::args(call, &a).await?;
     let cx = Cx { app: call.app(), via: Via::Mcp(call) };
     match O::handle(&cx, path.clone(), req).await {
-        Ok(res) => O::answer(call, &path, res),
+        Ok(res) => O::answer(call, &a, &path, res),
         Err(OpError::NoPane(id)) => Err(call.gone(id).await),
         Err(
             OpError::Forbidden(why)

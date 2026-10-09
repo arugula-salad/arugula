@@ -53,7 +53,7 @@ pub trait Op: Send + Sync + 'static {
     const METHOD: Method;                // Post
     const PATH: &'static str;            // "/api/panes/{id}/close"
     const ACCESS: Access;                // Pane(Role::Editor)
-    const LABS: bool = false;            // listed only with the labs flag
+    const FLAG: Option<&'static str> = None; // the flag its MCP tool or kind needs to be listed
     const DRIVES: bool = false;          // types into the pane: needs the owner's trust (M14)
     const CREDENTIAL: bool = false;      // a GET whose answer grants access: not for read-only tokens
     type Path: PathArgs;                 // PaneId, or ()
@@ -92,13 +92,13 @@ pub trait McpOp: Handle {
     const SURFACE: Surface;              // Tool { name, title, description, … }
                                          // or Kind { tool: "list", kind: "panes", … }
     type Args: DeserializeOwned + JsonSchema;
-    fn args(call: &Call, a: Self::Args) -> Result<(Self::Path, Self::Req), String>;
-    fn answer(call: &Call, path: &Self::Path, res: Self::Res) -> Out;
+    async fn args(call: &Call, a: &Self::Args) -> Result<(Self::Path, Self::Req), String>;
+    fn answer(call: &Call, a: &Self::Args, path: &Self::Path, res: Self::Res) -> Out;
 }
 ```
 
 That is the whole declaration: name, route, request and answer types,
-required role, labs, the handler, and per surface its text. The CLI's help
+required role, flag, the handler, and per surface its text. The CLI's help
 stays on its clap command; see [Help text](#help-text).
 
 `Cx` is what a handler knows about the call: the `App`, and which way it
@@ -147,7 +147,8 @@ a `const fn`, so it sits in the `LIST`/`SHOW` table as a row like the
 others; the grouped tool itself (its lead sentence, `grouped_schema`, the
 default kind) stays hand-written. A call goes through `ops::call::<O>`:
 parse the agent's arguments, turn them into the operation's path and
-request (`McpOp::args`: `"%7"` becomes 7), run the handler, shape the answer
+request (`McpOp::args`: `"%7"` becomes 7, and what an agent block's token
+reaches is checked there: its tab, its session, its machine), run the handler, shape the answer
 (`McpOp::answer`, which adds the `summary`).
 
 The agent's arguments are a type of their own on purpose. A pane is `7` or
@@ -273,14 +274,16 @@ golden MCP tool list does for tools.
 
 ## Labs
 
-`Op::LABS` says an operation is listed only where the machine has the `labs`
-file. For an MCP tool it replaces the operation's line in `UNLISTED` or
-`UNLISTED_THREADS` (the tool list filters on it). The CLI keeps its own
-`LABS_COMMANDS` list, because a command isn't an operation. When the
-`labs` cargo feature arrives (#452), an operation behind it is
+`Op::FLAG` names the flag (`arugula_proto::flags`, `flags::CHAT` and so on)
+a machine needs on for the operation's MCP tool or kind to be listed. It
+works by name either way, and HTTP routes don't read it. For a tool it
+replaces the operation's line in `UNLISTED` or the old `UNLISTED_THREADS`
+(the tool list filters on it, for a tool and for a kind alike). There is no
+single `labs` file for MCP: each feature has its own flag. The CLI keeps
+its own `LABS_COMMANDS` list, because a command isn't an operation. When
+the `labs` cargo feature arrives (#452), an operation behind it is
 `#[cfg(feature = "labs")]` on its declaration, its impls and its line in
-`every_op!`. None of the pilot's three is labs, so the pilot declares the
-const and doesn't exercise it.
+`every_op!`.
 
 ## Help text
 
@@ -434,9 +437,11 @@ Each is one PR. Filed on 2026-10-07 as #572–#580, in this order.
    MCP's `prompt_agent` calls `Prompt::handle` instead of `api::prompt`.
    After 3.
 6. (#577) **MCP: the tools that are operations.** `read_thread` and `post_thread`
-   (with `LABS` replacing `UNLISTED_THREADS`), `list` kinds `conversations`
+   (with `FLAG` replacing `UNLISTED_THREADS`), `list` kinds `conversations`
    and `fountain_agents`, `show` kind `conversation`. Golden fixture
-   unchanged. After 2 and 4.
+   unchanged. After 2 and 4. Done, as `thread.get`, `thread.post` (and
+   `thread.read`, HTTP only), `fountain.agents`, `conversations.list` and
+   `conversation.open`; `fountain_agents` stays a hand-written kind.
 7. (#578) **Operations: the other modules.** `fs` (not `watch`), `hosts`,
    `shares`, `guests`, `acl`, `invite`, `setup`, `mcp/tokens`, `synced`,
    `sandboxes`. May split by module. After 2.

@@ -571,6 +571,7 @@ fn an_agent_block_works_in_its_own_tab() {
         ("run", json!({ "command": "true", "split": other })),
         ("run", json!({ "command": "true", "vm": true })),
         ("show", json!({ "kind": "port", "port": port, "beside": other })),
+        ("show", json!({ "kind": "conversation", "id": "no-such-conversation", "beside": other })),
     ] {
         let e = agent_mcp(&d, a, tool, args.clone()).expect_err(&format!("{tool} {args}"));
         assert!(e.contains("own tab") || e.contains("another tab"), "{tool}: {e}");
@@ -956,6 +957,41 @@ fn an_agent_blocks_thread_is_its_own() {
     // Another tab's pane isn't its to post in.
     let e = agent_mcp(&d, a, "post_thread", json!({ "pane": other, "text": "hi" })).unwrap_err();
     assert!(e.contains("another tab"), "{e}");
+}
+
+/// An agent block's token reads and posts in the threads of its own tab and
+/// session only: another tab's pane, another session, or a pane that isn't
+/// open, by either tool.
+#[cfg(feature = "labs")]
+#[test]
+fn an_agent_blocks_threads_stop_at_its_tab_and_session() {
+    let d = Daemon::child_with(&["--wisp-token-file", "/nonexistent", "--block-listen", "127.0.0.1:0"]);
+    let other = d.post("/api/run", json!({}))["pane"].as_u64().unwrap();
+    d.post(&format!("/api/threads/pane-{other}"), json!({ "text": "not for the agent" }));
+    let a = d.open("hello");
+    d.wait(a, "idle");
+    let session =
+        d.get("/api/panes").as_array().unwrap().iter().find(|p| p["id"] == a).unwrap()["session"].as_u64().unwrap();
+    // Its own pane and session work.
+    agent_mcp(&d, a, "read_thread", json!({})).unwrap();
+    agent_mcp(&d, a, "read_thread", json!({ "session": session })).unwrap();
+    agent_mcp(&d, a, "post_thread", json!({ "session": session, "text": "mine" })).unwrap();
+    // Another tab's pane is not its to read or post in.
+    let e = agent_mcp(&d, a, "read_thread", json!({ "pane": other })).unwrap_err();
+    assert!(e.contains("another tab") && !e.contains("not for the agent"), "{e}");
+    let e = agent_mcp(&d, a, "post_thread", json!({ "pane": other, "text": "hi" })).unwrap_err();
+    assert!(e.contains("another tab"), "{e}");
+    // Nor another session's.
+    let elsewhere = session + 1000;
+    for (tool, args) in [
+        ("read_thread", json!({ "session": elsewhere })),
+        ("post_thread", json!({ "session": elsewhere, "text": "hi" })),
+    ] {
+        let e = agent_mcp(&d, a, tool, args.clone()).expect_err(&format!("{tool} {args}"));
+        assert!(e.contains("isn't this agent's"), "{tool}: {e}");
+    }
+    // The refusals posted nothing.
+    assert_eq!(d.get(&format!("/api/threads/pane-{other}"))["messages"].as_array().unwrap().len(), 1);
 }
 
 /// A Claude Code in a terminal pane, through `arugula mcp`, is that pane
