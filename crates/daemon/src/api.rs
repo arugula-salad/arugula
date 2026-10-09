@@ -863,9 +863,14 @@ async fn call(
             return Err(ApiError(StatusCode::FORBIDDEN, crate::invite::OWNER_ONLY.into()));
         }
         // M79: a task's card, and taking a grant back, are this machine's
-        // own account's: not an editor's, nor a team's other owner's.
+        // own account's: not an editor's, nor a team's other owner's. So is
+        // *Run there*, which reaches the account's other machines as this
+        // daemon.
         if b.kind() == arugula_proto::BlockType::Agents
-            && matches!(method.as_str(), "answer" | "decline" | "approve" | "deny" | "terminal" | "revoke")
+            && matches!(
+                method.as_str(),
+                "answer" | "decline" | "approve" | "deny" | "terminal" | "revoke" | "run_there"
+            )
             && (!owner || foreign(&app, &dev))
         {
             return Err(ApiError(StatusCode::FORBIDDEN, OWN_ACCOUNT_ONLY.into()));

@@ -12,6 +12,7 @@
 
 import { useEffect, useState } from "preact/hooks";
 import type { Client } from "../client";
+import { getFleet } from "./hosts";
 import { askText } from "./menu";
 import { ConfirmRemove } from "./confirm";
 import { agentsRoute, closeAgentsPage, openAgentsPage, type AgentsTab } from "./agents-route";
@@ -440,6 +441,25 @@ function TeamTab({ client }: { client: Client }) {
     teamStale = false;
     void load(fresh);
   }, []);
+  // One of the account's own agents, run in its project on its machine
+  // (this one or another), and gone to.
+  const run = async (s: Shelf, agent: string) => {
+    const prompt = await askText(`Ask ${agent}${s.here ? "" : ` on ${s.name}`}`, "", "what to do (empty: just open it)");
+    if (prompt === null) return;
+    setBusy(true);
+    try {
+      const r = await json<{ block: number }>(client, "POST", "/api/a2a/run", { machine: s.here ? null : s.machine, agent, prompt: prompt.trim() || null });
+      closeAgentsPage();
+      if (s.here) client.setActive(r.block);
+      else {
+        const fleet = getFleet();
+        fleet?.open(fleet.list.find((h) => h.id === s.machine)?.name ?? s.name, r.block);
+      }
+    } catch (e) {
+      client.toast(`couldn't run ${agent}: ${(e as Error).message}`);
+    }
+    setBusy(false);
+  };
   const answer = async (id: string, a: "once" | "hour" | "deny") => {
     setBusy(true);
     await client.request("POST", `/api/a2a/tasks/${encodeURIComponent(id)}/consent`, { answer: a }).catch(() => null);
@@ -519,12 +539,19 @@ function TeamTab({ client }: { client: Client }) {
                     <b>{a.name}</b>
                   </div>
                   <p class="dim">{a.description}</p>
-                  {!s.here && (
-                    <code class="agents-how" title="Ask one of your agents to send it a task with this">
-                      delegate {"{"}machine: {s.name}, agent: {a.name}{"}"}
-                    </code>
-                  )}
+                  <code class="agents-how" title="Ask one of your agents to send it a task with this (pr: true to have it open a pull request in its own project)">
+                    delegate {"{"}agent: {a.name}
+                    {s.here ? "" : `, machine: ${s.name}`}
+                    {"}"}
+                  </code>
                 </div>
+                {!s.owner && s.online && (
+                  <div class="agents-buttons">
+                    <button class="pri" data-run={a.name} disabled={busy} title={`Run it in its project${s.here ? "" : ` on ${s.name}`}, and go to it`} onClick={() => void run(s, a.name)}>
+                      Run
+                    </button>
+                  </div>
+                )}
               </li>
             ))}
           </ul>

@@ -6,7 +6,9 @@
 //! Methods: `refresh` (ask every machine now); `recipes {dir}` (a project's
 //! recipes, offered or not); `offer {agent, dir}` and `unoffer {agent}`;
 //! `run_here {agent, cwd?, prompt?}`, a Claude Code beside it as one of this
-//! machine's offered recipes; and `revoke {account, agent}`, a standing
+//! machine's offered recipes; `run_there {machine, agent, prompt?}`, one
+//! another of the account's machines offers, run there (in a session of its
+//! name) for the client to go to; and `revoke {account, agent}`, a standing
 //! grant taken back. Those are the owner's (authz.rs).
 //!
 //! **Consent (M79):** one Team agents block holds the cards for tasks that
@@ -100,7 +102,8 @@ fn card(t: &tasks::Task) -> Ask {
         _ => String::new(),
     };
     let text: String = t.text.chars().take(600).collect();
-    let message = format!("{}{device}{claims} asks {} to work in {}: {text}", t.caller.name, t.agent, t.dir);
+    let how = if t.pr { ", and open a pull request from there as you" } else { "" };
+    let message = format!("{}{device}{claims} asks {} to work in {}{how}: {text}", t.caller.name, t.agent, t.dir);
     let schema = json!({
         "type": "object",
         "properties": {
@@ -401,7 +404,7 @@ impl Block for AgentsBlock {
         let mut st = self.state.lock().unwrap();
         st.waiting = tasks::waiting()
             .iter()
-            .map(|t| json!({ "id": t.id, "agent": t.agent, "caller": t.caller.name, "account": t.caller.account, "device": t.caller.device, "claims": t.caller.claims, "text": t.text, "dir": t.dir, "at_ms": t.at_ms }))
+            .map(|t| json!({ "id": t.id, "agent": t.agent, "caller": t.caller.name, "account": t.caller.account, "device": t.caller.device, "claims": t.caller.claims, "text": t.text, "dir": t.dir, "pr": t.pr, "at_ms": t.at_ms }))
             .collect();
         st.grants = tasks::grants(&self.ctx.state_dir);
         serde_json::to_value(&*st).unwrap_or_default()
@@ -455,6 +458,15 @@ impl Block for AgentsBlock {
             "offer" => Box::pin(async move { me.ok_or("closed")?.offer(args, true).await }),
             "unoffer" => Box::pin(async move { me.ok_or("closed")?.offer(args, false).await }),
             "run_here" => Box::pin(async move { me.ok_or("closed")?.run_here(args).await }),
+            "run_there" => Box::pin(async move {
+                let me = me.ok_or("closed")?;
+                let agent = args["agent"].as_str().filter(|a| !a.is_empty()).ok_or("{\"machine\", \"agent\"}")?;
+                let machine = args["machine"].as_str().filter(|m| !m.is_empty()).ok_or("{\"machine\", \"agent\"}")?;
+                let prompt = args["prompt"].as_str();
+                let v = super::delegate::run_there(&me.app()?, machine, agent, prompt).await?;
+                me.said(format!("{agent} runs on {} in %{}", v["machine"].as_str().unwrap_or(machine), v["block"]));
+                Ok(v)
+            }),
             "revoke" => Box::pin(async move {
                 let me = me.ok_or("closed")?;
                 let account = args["account"].as_str().ok_or("{\"account\", \"agent\"}")?;

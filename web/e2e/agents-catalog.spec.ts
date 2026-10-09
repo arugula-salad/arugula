@@ -8,6 +8,11 @@
 // its machine and owner. Bob's machine let Alice's daemon in only because it
 // offers something (the A2A-only grant): once Bob stops offering, it's gone
 // from the catalog, and Alice's daemon is refused there.
+//
+// Run there (#403's follow-up): from her own machine's block, Alice runs the
+// team box's `fixer` (the box is her account's) and the page goes to it,
+// on the box, in its project. Bob's account, though an owner of the team,
+// gets no such button, and the box refuses him.
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -25,6 +30,8 @@ test.afterAll(async ({ browser }) => {
 
 let alice: Page;
 let bob: Page;
+/** The project the team box offers `fixer` from. */
+let fixerDir = "";
 
 /** A project with one recipe, `name`. */
 function project(name: string, description: string): string {
@@ -79,7 +86,8 @@ test("a team, its box, and a machine each", async ({ browser }) => {
 test("offered on the team box and on Bob's own machine: Alice's machine lists both", async () => {
   test.setTimeout(120_000);
   await show(alice, "teambox");
-  const offered = await call(alice, "POST", "/api/a2a/offers", { agent: "fixer", dir: project("fixer", "Fix failing tests") });
+  fixerDir = project("fixer", "Fix failing tests");
+  const offered = await call(alice, "POST", "/api/a2a/offers", { agent: "fixer", dir: fixerDir });
   expect(offered.status, JSON.stringify(offered.body)).toBe(200);
   // Bob's machine has his teams pinned once his browser shows it (#233).
   await show(bob, "bobs");
@@ -132,6 +140,39 @@ test("the Team agents block: by machine and owner, offering from it, and Run her
   const agent = await alice.evaluate(() => window.__arugula.client.state!.panes.filter((p) => p.type === "agent").at(-1)!.id);
   const st = (await call(alice, "GET", `/api/blocks/${agent}`)).body as { state?: { recipe?: string; cwd?: string } } | null;
   expect(st?.state).toMatchObject({ recipe: "helper", cwd: dir });
+});
+
+test("Run there: the team box's agent, run on the box in its project, and gone to", async () => {
+  test.setTimeout(120_000);
+  await show(alice, "alices");
+  const block = await alice.evaluate(() => window.__arugula.client.state!.panes.find((p) => p.type === "agents")!.id);
+  const el = alice.locator(`[data-agents-block="${block}"]`);
+  // Bob's machine is his account's: nothing to run there from here.
+  await expect(el.locator('[data-shelf="bobs"] [data-run-there]')).toHaveCount(0);
+  await el.locator('[data-shelf="teambox"] [data-run-there="fixer"]').click();
+  await alice.locator(".prompt input").press("Enter");
+  // The page is on the box now, on an agent block wearing fixer, in its
+  // project there, in a session of its name.
+  await expect
+    .poll(
+      () =>
+        alice.evaluate(() => {
+          const c = window.__arugula.client;
+          const p = c.state?.panes.find((x) => x.id === c.active());
+          const session = c.state?.sessions.find((x) => c.tab !== null && x.tabs.includes(c.tab));
+          return p ? `${p.type}/${session?.name}` : "";
+        }),
+      { timeout: 30_000 },
+    )
+    .toBe("agent/fixer");
+  const agent = await alice.evaluate(() => window.__arugula.client.active());
+  const st = (await call(alice, "GET", `/api/blocks/${agent}`)).body as { state?: { recipe?: string; cwd?: string } } | null;
+  expect(st?.state).toMatchObject({ recipe: "fixer", cwd: fixerDir });
+
+  // Bob, an owner of the team (so `Owner` on the box), isn't its account.
+  await show(bob, "teambox");
+  const refused = await call(bob, "POST", "/api/a2a/agents/fixer/run", {});
+  expect(refused.status, JSON.stringify(refused.body)).toBe(403);
 });
 
 test("once Bob stops offering, his machine shuts Alice's out again", async () => {
