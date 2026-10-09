@@ -302,6 +302,98 @@ fn after_a_reboot_the_transcript_is_back_and_the_session_resumes() {
     d.wait(id, "idle");
 }
 
+const CUT_PROMPT: &str = "Arugula restarted while you were working and your last turn was cut off. Check what you had started (background shells may still be running), then carry on.";
+
+/// #680: a turn the daemon's restart cut off comes back as a card with
+/// Continue, which sends the agent on; nothing is sent without it.
+#[test]
+fn a_turn_cut_off_by_a_restart_asks_whether_to_continue() {
+    let mut d = Daemon::child();
+    let id = d.open("hello");
+    d.wait(id, "idle");
+    d.call(id, "send", json!({ "text": "slow" }));
+    d.wait_for("the turn to run", || d.state(id)["status"] == "working");
+    d.stop();
+    d.start();
+    d.wait_for("the block", || d.raw("GET", &format!("/api/blocks/{id}"), None).0 == 200);
+    assert_eq!(d.wait(id, "needs-input"), "needs_input");
+    let text = d.raw("GET", &format!("/api/panes/{id}/capture"), None).1;
+    assert!(
+        text.contains("Started the agent again") && text.contains("The daemon restarted during this turn"),
+        "{text}"
+    );
+    let list = d.get("/api/attention");
+    let card = list.as_array().unwrap().iter().find(|i| i["pane"] == id).unwrap_or_else(|| panic!("{list}"));
+    assert_eq!(card["reason"]["actions"], json!(["continue", "dismiss"]), "{card}");
+    assert!(card["reason"]["headline"].as_str().unwrap().contains("cut"), "{card}");
+    assert!(!text.contains(CUT_PROMPT), "nothing is sent on its own: {text}");
+
+    d.post("/api/attention/act", json!({ "action": "continue", "pane": id }));
+    d.wait_for("the prompt to be sent", || {
+        entries(&d.state(id)).iter().any(|e| e["type"] == "user" && e["text"] == CUT_PROMPT)
+    });
+    d.wait(id, "idle");
+    let list = d.get("/api/attention");
+    assert!(
+        list.as_array().unwrap().iter().all(|i| i["pane"] != id || i["state"] != "needs_input"),
+        "the card went: {list}"
+    );
+}
+
+/// #680: only a real interruption is a card: a block that was idle comes
+/// back idle.
+#[test]
+fn an_idle_agent_comes_back_idle_after_a_restart() {
+    let mut d = Daemon::child();
+    let id = d.open("hello");
+    d.wait(id, "idle");
+    d.stop();
+    d.start();
+    d.wait_for("the block", || d.raw("GET", &format!("/api/blocks/{id}"), None).0 == 200);
+    d.wait_for("the session", || d.state(id)["status"] == "ready");
+    let text = d.raw("GET", &format!("/api/panes/{id}/capture"), None).1;
+    assert!(text.contains("Started the agent again") && !text.contains("The daemon restarted"), "{text}");
+    let list = d.get("/api/attention");
+    assert!(list.as_array().unwrap().iter().all(|i| i["pane"] != id || i["state"] != "needs_input"), "no card: {list}");
+}
+
+/// #680: `arugula wait` rides out a daemon restart and returns what the
+/// daemon answers after it; a timeout ends it even if the daemon never
+/// comes back.
+#[test]
+fn wait_reconnects_when_the_daemon_restarts() {
+    // Built before the turn starts: a cold build outlasts it.
+    let cli = cli_bin();
+    let mut d = Daemon::child();
+    let id = d.open("hello");
+    d.wait(id, "idle");
+    d.call(id, "send", json!({ "text": "slow" }));
+    d.wait_for("the turn to run", || d.state(id)["status"] == "working");
+    let sock = d.sock();
+    let wait = |args: &[&str]| {
+        let mut c = std::process::Command::new(&cli);
+        c.arg("--socket").arg(&sock).args(["wait", &format!("%{id}")]).args(args);
+        c.env_remove("ARUGULA_PANE").stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped());
+        c
+    };
+    let child = wait(&["--needs-input", "--timeout", "60"]).spawn().unwrap();
+    std::thread::sleep(Duration::from_millis(700));
+    d.stop();
+    std::thread::sleep(Duration::from_millis(700));
+    d.start();
+    let out = child.wait_with_output().unwrap();
+    let (so, se) = (String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+    assert!(out.status.success(), "{so}{se}");
+    assert_eq!(so.trim(), "needs-input", "the real result, from the new daemon");
+    assert_eq!(se.matches("the daemon went away; waiting for it").count(), 1, "said once: {se}");
+
+    // Gone for good: it gives up at its own timeout, as a timeout.
+    d.stop();
+    let out = wait(&["--idle", "--timeout", "1"]).output().unwrap();
+    assert_eq!(out.status.code(), Some(124), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("timed out"));
+}
+
 #[test]
 fn an_agent_that_dies_says_so_and_starts_again_on_send() {
     let d = Daemon::child();

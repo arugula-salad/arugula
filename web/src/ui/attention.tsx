@@ -10,14 +10,15 @@ export function tabAttention(client: Client, tab: TabView): { state: Attention; 
   return top ? { state: top.attention, reason: top.reason, pane: top.id } : { state: "idle" };
 }
 
-/** What can be done about a pane's reason from a menu (M11: Rerun, and
- * Dismiss), for someone who may. */
+/** What can be done about a pane's reason from a menu (M11: Rerun, #680:
+ * Continue, and Dismiss), for someone who may. */
 export function reasonItems(client: Client, pane: PaneId, reason: Reason | null | undefined): MenuItem[] {
   const tab = client.tabOfPane(pane);
   const session = tab ? client.sessionOfTab(tab.id) : undefined;
   if (!reason || client.role(session ?? null) === "viewer") return [];
   const items: MenuItem[] = [];
   if (reason.actions.includes("rerun")) items.push({ label: `Rerun ${reason.command ?? ""}`.trim(), run: () => void client.act({ action: "rerun", pane }) });
+  if (reason.actions.includes("continue")) items.push({ label: "Continue", run: () => void client.act({ action: "continue", pane }) });
   if (reason.actions.includes("dismiss")) items.push({ label: "Dismiss", run: () => void client.act({ action: "dismiss", pane }) });
   return items;
 }
@@ -29,7 +30,7 @@ export function AttentionBadge({ state, reason, pane, client }: { state: Attenti
   if (state !== "needs_input" && state !== "done") return null;
   const failed = reason?.kind === "failed" || reason?.kind === "exited";
   const label = reason?.headline ?? (state === "done" ? "Finished" : "Needs you");
-  const items = client && pane !== undefined && reason?.actions.includes("rerun") ? reasonItems(client, pane, reason) : [];
+  const items = client && pane !== undefined && (reason?.actions.includes("rerun") || reason?.actions.includes("continue")) ? reasonItems(client, pane, reason) : [];
   return (
     <span
       class={`att ${state}${failed ? " failed" : ""}${items.length ? " acts" : ""}`}

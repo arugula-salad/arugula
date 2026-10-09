@@ -375,6 +375,22 @@ pub fn call_raw<O: arugula_proto::op::Op>(
     send_op::<O>(target, path, req)?.parse_raw::<O::Res>()
 }
 
+/// `call_raw`, told apart by where it failed: the outer error is the
+/// connection's (refused, reset, closed before a status line or mid-body),
+/// which a daemon that is restarting causes; the inner is the daemon's
+/// answer, a status like 404 or 410 included.
+pub fn call_raw_conn<O: arugula_proto::op::Op>(
+    target: &Target,
+    path: &O::Path,
+    req: &O::Req,
+) -> anyhow::Result<anyhow::Result<(O::Res, serde_json::Value)>> {
+    let mut resp = send_op::<O>(target, path, req)?;
+    let (status, route) = (resp.status, resp.route.clone());
+    let mut text = String::new();
+    resp.read_to_string(&mut text)?;
+    Ok(parse_body(status, &route, &text))
+}
+
 /// An operation's answer (`parse`).
 pub fn call<O: arugula_proto::op::Op>(target: &Target, path: &O::Path, req: &O::Req) -> anyhow::Result<O::Res> {
     Ok(call_raw::<O>(target, path, req)?.0)
