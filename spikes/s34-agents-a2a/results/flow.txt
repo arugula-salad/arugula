@@ -1,0 +1,58 @@
+__pycache__
+   0.3s jake lists ale-box's agents:
+ale-box/fixer                Fixes failing Python tests in this repository with the smallest change, and says what it changed.
+   0.5s jake sends a task
+   0.7s task t1791269830497; ale's waiting list:
+t1791269830497 fixer from jake on jake's cli (e95a8f3e735c3d01) (says {"machine":"geek","pane":null}): test_calc.py fails. Fix calc.py so the tests pass.
+   1.0s jake tries to allow it himself:
+illogical: only this machine's own account allows tasks for its agents
+   1.2s ale allows jake for an hour:
+{"answer":"hour","task":"t1791269830497"}
+   1.7s TASK_STATE_WORKING 
+   6.2s TASK_STATE_WORKING waiting for this machine's owner to approve: python3 -m pytest -q test_calc.py
+   6.2s ale approves on ale-box: 200 {"results":[{"pane":3,"ok":true}]}
+   8.5s TASK_STATE_WORKING 
+  15.2s TASK_STATE_WORKING waiting for this machine's owner to approve: Edit calc.py
+  15.2s ale approves on ale-box: 200 {"results":[{"pane":3,"ok":true}]}
+  17.6s TASK_STATE_WORKING 
+  19.8s TASK_STATE_WORKING waiting for this machine's owner to approve: Edit calc.py
+  19.8s ale approves on ale-box: 200 {"results":[{"pane":3,"ok":true}]}
+  22.2s TASK_STATE_WORKING waiting for this machine's owner to approve: python3 -m pytest -q test_calc.py
+  22.2s ale approves on ale-box: 200 {"results":[{"pane":3,"ok":true}]}
+  24.6s TASK_STATE_WORKING 
+  26.9s TASK_STATE_COMPLETED 
+t1791269830497 completed
+
+Fixed. The `mean` function was dividing by `len(xs) - 1` instead of `len(xs)`, causing it to return 3 instead of 2. The `median` function didn't handle even-length lists—it was picking just one middle element instead of averaging the two middle elements. Both issues are now corrected.
+
+patch against d1c24f85b3e5673edd62225e732113348bb41cb9:
+ calc.py | 8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/calc.py b/calc.py
+index 6896a7c..e42baaf 100644
+--- a/calc.py
++++ b/calc.py
+@@ -1,8 +1,12 @@
+ def mean(xs):
+     """The arithmetic mean of a non-empty list."""
+-    return sum(xs) / (len(xs) - 1)
++    return sum(xs) / len(xs)
+ 
+ 
+ def median(xs):
+     s = sorted(xs)
+-    return s[len(s) // 2]
++    n = len(s)
++    if n % 2 == 1:
++        return s[n // 2]
++    else:
++        return (s[n // 2 - 1] + s[n // 2]) / 2
+
+  27.1s jake applies the patch in his clone:
+Applied patch to 'calc.py' cleanly.
+M  calc.py
+?? __pycache__/
+..                                                                       [100%]
+2 passed in 0.00s
+  27.7s done
