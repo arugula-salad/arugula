@@ -21,6 +21,7 @@
 pub mod block;
 pub mod catalog;
 pub mod delegate;
+pub mod manage;
 pub mod tasks;
 pub mod wear;
 
@@ -154,7 +155,7 @@ fn servers_of(v: serde_norway::Value) -> Result<Vec<RecipeServer>, String> {
 }
 
 /// A name a card, a URL and a file can all carry.
-fn good_name(n: &str) -> bool {
+pub(crate) fn good_name(n: &str) -> bool {
     !n.is_empty()
         && n.len() <= 64
         && n.chars().all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c))
@@ -329,6 +330,10 @@ pub fn routes(r: Router<Arc<App>>) -> Router<Arc<App>> {
         .route("/api/a2a/tasks/{id}/consent", post(consent_set))
         .route("/api/a2a/grants", get(grants_get).post(grants_revoke))
         .route("/api/a2a/delegate", post(delegate_post))
+        .route("/api/a2a/recipes/all", get(recipes_all))
+        .route("/api/a2a/recipes/save", post(recipes_save))
+        .route("/api/a2a/recipes/delete", post(recipes_delete))
+        .route("/api/a2a/recipes/projects", post(recipes_projects))
 }
 
 /// Whether the request is this machine's own account's: the owner, and (over
@@ -434,6 +439,98 @@ async fn rpc(
     let claims = req["params"]["message"]["metadata"]["arugula"].clone();
     let caller = tasks::asker(&app, dev.as_ref().map(|d| &d.0), claims);
     Json(tasks::rpc(app.clone(), &name, &o.dir, caller, req).await).into_response()
+}
+
+/// Every recipe on this machine, for the Agents page.
+async fn recipes_all(State(app): AppState, who: Option<axum::Extension<Principal>>) -> Response {
+    if let Some(r) = off(&app) {
+        return r;
+    }
+    if !owner(&who) {
+        return refuse(StatusCode::FORBIDDEN, "the owner's");
+    }
+    // The repositories this machine's own panes are in.
+    let panes = app.mux.api(crate::mux::Api::Panes).await.unwrap_or_default();
+    let open: Vec<String> = panes
+        .iter()
+        .filter(|p| p.info.host.is_none())
+        .filter_map(|p| p.info.project.as_ref().map(|x| x.root.clone()))
+        .collect();
+    Json(manage::every(app.control.state_dir(), &home(&app), &open)).into_response()
+}
+
+/// Write a recipe from the page's form: this machine's own account's.
+async fn recipes_save(
+    State(app): AppState,
+    who: Option<axum::Extension<Principal>>,
+    dev: Option<axum::Extension<crate::e2e::Caller>>,
+    Json(f): Json<manage::Form>,
+) -> Response {
+    if let Some(r) = off(&app) {
+        return r;
+    }
+    if !own_account(&app, &who, &dev) {
+        return refuse(StatusCode::FORBIDDEN, "only this machine's own account writes its recipes");
+    }
+    match manage::save(&home(&app), &f) {
+        Ok(p) => Json(json!({ "path": p })).into_response(),
+        Err(e) => refuse(StatusCode::BAD_REQUEST, &e),
+    }
+}
+
+#[derive(Deserialize)]
+struct PathReq {
+    path: String,
+}
+
+async fn recipes_delete(
+    State(app): AppState,
+    who: Option<axum::Extension<Principal>>,
+    dev: Option<axum::Extension<crate::e2e::Caller>>,
+    Json(r): Json<PathReq>,
+) -> Response {
+    if let Some(x) = off(&app) {
+        return x;
+    }
+    if !own_account(&app, &who, &dev) {
+        return refuse(StatusCode::FORBIDDEN, "only this machine's own account removes its recipes");
+    }
+    match manage::delete(app.control.state_dir(), &home(&app), &r.path) {
+        Ok(()) => {
+            app.control.poke();
+            Json(json!({ "deleted": r.path })).into_response()
+        }
+        Err(e) => refuse(StatusCode::BAD_REQUEST, &e),
+    }
+}
+
+#[derive(Deserialize)]
+struct ProjectReq {
+    dir: String,
+    #[serde(default = "yes")]
+    keep: bool,
+}
+
+fn yes() -> bool {
+    true
+}
+
+/// Add a project to the page's list, or drop it.
+async fn recipes_projects(
+    State(app): AppState,
+    who: Option<axum::Extension<Principal>>,
+    Json(r): Json<ProjectReq>,
+) -> Response {
+    if let Some(x) = off(&app) {
+        return x;
+    }
+    if !owner(&who) {
+        return refuse(StatusCode::FORBIDDEN, "the owner's");
+    }
+    match manage::set_project(app.control.state_dir(), &home(&app), &r.dir, r.keep) {
+        Ok(l) => Json(json!({ "projects": l })).into_response(),
+        Err(e) => refuse(StatusCode::BAD_REQUEST, &e),
+    }
 }
 
 #[derive(Deserialize)]

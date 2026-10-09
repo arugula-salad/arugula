@@ -512,6 +512,29 @@ people's agents. With `agents` on (M76, #398):
   `UnsupportedOperationError` until M78 (#400). The cards are for anyone
   who reaches the machine, and offering is the owner's alone.
 
+### The Agents page
+
+**Agents…** in the session menu, or the phone's sheet, opens a page at
+`#agents` (the owner's). It has two tabs:
+
+- **Recipes** lists every recipe this machine has: yours in
+  `~/.claude/agents`, and those in `.claude/agents` of each project it
+  knows. A project is known if you added it on the page, if a recipe is
+  offered from it, or if a pane here is open in it.
+  - **New recipe** and **Edit** use a form (name, description, model, tools,
+    permission mode, skills, MCP servers, prompt) that writes the file as
+    Claude Code reads it. An edit keeps any keys the form doesn't know, and
+    MCP servers written inline in the file. A new recipe never replaces a
+    file that's already there.
+  - **Run here** opens an agent block wearing the recipe.
+  - **Offer** and **Stop offering** put it in, or take it out of, the
+    team's catalog.
+  - **Delete** removes the file, after asking, and its offer with it.
+  - Writing and deleting are this machine's own account's.
+- **Team** (`#agents=team`) shows the team's catalog by machine and owner,
+  tasks from other people waiting for you (*Allow once*, *For an hour*,
+  *Deny*), and standing grants with *Revoke*.
+
 ### The team's catalog (M77)
 
 - **Team agents…** (the session and pane menus, the owner's) opens a block with

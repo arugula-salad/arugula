@@ -9,6 +9,7 @@ import { closeMenu, MenuLayer, openMenu, PromptLayer, type MenuItem } from "./me
 import { KeyBar, PhoneHeader } from "./phone";
 import { ThreadBadge, ThreadLayer } from "./threads";
 import { InLabs } from "./in-labs";
+import { agentsRoute } from "./agents-route";
 import { Places, useChatOpen } from "./places";
 import { AttentionBadge, tabAttention } from "./attention";
 import { getFleet, HostButton, HostPicker, NewMachineNote } from "./hosts";
@@ -113,6 +114,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       <ThreadLayer phone={phone} />
       <InLabs on={client.hasCalls()}>{(l) => <l.HuddleBar />}</InLabs>
       {state && <InLabs on={client.hasThreads()}>{(l) => <l.ChatPage client={client} />}</InLabs>}
+      {state && <AgentsPageLayer client={client} />}
       <ConversationsLayer />
       <InLabs on={client.flag("studio")}>{(l) => <l.AppsLayer />}</InLabs>
       <InLabs on={client.flag("vms")}>{(l) => <l.SandboxesLayer />}</InLabs>
@@ -888,4 +890,16 @@ function useReportFocus(client: Client, phone: boolean) {
       document.removeEventListener("visibilitychange", report);
     };
   }, [client, active, phone, client.connected]);
+}
+
+/** The Agents page (#403): loads Labs only while its route is up. */
+function AgentsPageLayer({ client }: { client: Client }) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const fn = () => setTick((t) => t + 1);
+    window.addEventListener("hashchange", fn);
+    return () => window.removeEventListener("hashchange", fn);
+  }, []);
+  if (!agentsRoute()) return null;
+  return <InLabs on={client.flag("agents")}>{(l) => <l.AgentsPage client={client} />}</InLabs>;
 }

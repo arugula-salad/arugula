@@ -2,6 +2,7 @@
 // tabs and panes to switch between, and a key bar supplies the keys a phone
 // keyboard lacks.
 
+import { openAgentsPage } from "./agents-route";
 import { useState } from "preact/hooks";
 import { paneIds, tabLabel, type Client } from "../client";
 import { EXPIRE_TITLE, gateKey } from "../proto";
@@ -232,6 +233,11 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
             {owner && (
               <button data-open-issue onClick={act(() => void openIssue(client, { session: where }))}>
                 Issue
+              </button>
+            )}
+            {owner && client.flag("agents") && (
+              <button data-open-agents onClick={act(() => openAgentsPage())}>
+                Agents
               </button>
             )}
             {owner && client.has("fountain") && (

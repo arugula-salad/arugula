@@ -108,6 +108,9 @@ fn policy(method: &Method, path: &str) -> Policy {
         // choose; the cards (and, from M78, their tasks) are for anyone who
         // reaches this machine.
         ["api", "a2a", "offers" | "recipes" | "catalog" | "waiting" | "grants" | "delegate"] => Policy::Owner,
+        // The Agents page's recipes: listing and writing them is the owner's
+        // (writing, this machine's own account's: the handler checks).
+        ["api", "a2a", "recipes", ..] => Policy::Owner,
         // M79: the handler checks the account too (a team's other owner is
         // `Owner` here, and may not answer).
         ["api", "a2a", "tasks", _, "consent"] => Policy::Owner,
