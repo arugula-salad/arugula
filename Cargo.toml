@@ -9,7 +9,7 @@ exclude = ["vendor/libghostty-vt-sys", "crates/desktop"]
 libghostty-vt-sys = { path = "vendor/libghostty-vt-sys" }
 
 [workspace.package]
-version = "0.30.2"
+version = "0.31.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/arugula-salad/arugula"
@@ -18,12 +18,12 @@ repository = "https://github.com/arugula-salad/arugula"
 # The versions every crate shares; a crate adds its own features, `optional`
 # and (for the Unix and Windows tables) its target with
 # `dep = { workspace = true, ... }`.
-arugula-control-wire = { version = "0.30.2", path = "crates/control-wire" }
-arugula-core = { version = "0.30.2", path = "crates/core" }
-arugula-e2e = { version = "0.30.2", path = "crates/e2e" }
-arugula-mux = { version = "0.30.2", path = "crates/mux" }
-arugula-proto = { version = "0.30.2", path = "crates/proto" }
-arugula-vt = { version = "0.30.2", path = "crates/vt" }
+arugula-control-wire = { version = "0.31.0", path = "crates/control-wire" }
+arugula-core = { version = "0.31.0", path = "crates/core" }
+arugula-e2e = { version = "0.31.0", path = "crates/e2e" }
+arugula-mux = { version = "0.31.0", path = "crates/mux" }
+arugula-proto = { version = "0.31.0", path = "crates/proto" }
+arugula-vt = { version = "0.31.0", path = "crates/vt" }
 aes-gcm = "0.11.1"
 anyhow = "1.0.104"
 axum = "0.8.9"
