@@ -360,6 +360,14 @@ e2e url="": web e2e-build
 journey which="": web e2e-build
     cd web && pnpm exec playwright test --project=chrome e2e/journey-{{ if which == "" { "" } else { which } }}
     @echo "Graphs: web/journey-reports/ (open the .html; the .svg is the graph alone)"
+    @just journey-map
+
+# Every journey on one page (#664): a metro map of the journeys' paths and a
+# grid of what each reaches, from the newest reports in web/journey-reports/
+# (the real-Mac ones too), into web/journey-reports/map.html. Fails when a
+# step has no station in web/e2e/journey/map.ts.
+journey-map:
+    cd web && node --experimental-strip-types --no-warnings e2e/journey/map.ts
 
 # Only the WebKit specs (`*.webkit.spec.ts`), as the macOS runner runs them.
 e2e-webkit: web e2e-build
