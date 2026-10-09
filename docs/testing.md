@@ -621,6 +621,16 @@ surface (app, browser, terminal, a message between people), steps top to
 bottom, each annotated with what led to it or what went wrong. The
 directory is in `web/.gitignore`. `JOURNEY_REPORT_DIR` puts it elsewhere.
 
+`just journey-map` (also the end of `just journey`) puts every journey on
+one page, `web/journey-reports/map.html`, from the newest reports there (the
+real-Mac ones too): a metro map with each journey a line through the steps
+it takes and each shared step a station (outlined in amber where a run noted
+friction, red where a step was unguided), and a grid of which journey
+reaches which part of the product, with the parts none reaches yet. A
+journey with no report yet is drawn dashed. `web/e2e/journey/map.ts` maps
+every step id to a station and stops when one has none, so a new or renamed
+step needs a line there; stations are placed by hand in the same file.
+
 ## A device that approves things
 
 Anything that waits for a person to approve it on a signed-in device (a
