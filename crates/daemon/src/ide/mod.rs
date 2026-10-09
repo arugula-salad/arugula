@@ -15,8 +15,7 @@
 //! or another IDE that registered with Claude Code (VS Code with Claude
 //! Code's extension, say), to which the daemon passes each `openDiff` on.
 
-mod core;
-pub use self::core::{Event, NAME, diff, no_diagnostics, rejected, saved};
+pub use arugula_mux::ide::{Event, NAME};
 // Over Unix sockets, which Claude Code's IDE support uses.
 #[cfg(unix)]
 pub mod relay;

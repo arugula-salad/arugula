@@ -7,11 +7,11 @@ mod acl {
 }
 mod acl_api;
 mod agent;
-mod agentenv;
+use arugula_mux::agentenv;
 mod api;
 mod args;
 mod authz;
-mod block;
+use arugula_mux::block;
 mod browser;
 mod callers;
 use arugula_mux::classify;
@@ -28,7 +28,7 @@ mod fs;
 mod gate;
 mod hand;
 use arugula_mux::heap;
-mod history;
+use arugula_mux::history;
 #[cfg(unix)]
 use arugula_mux::holder;
 // The pane host on Windows (M58): the shim's part there.
@@ -43,7 +43,7 @@ use arugula_mux::keys;
 mod labs;
 mod localauth;
 mod mcp;
-mod mux;
+use arugula_mux::mux;
 mod ops;
 use arugula_mux::osc;
 use arugula_mux::pane;
@@ -59,7 +59,6 @@ use arugula_mux::procinfo;
 use arugula_mux::provider;
 mod push;
 mod remote;
-use arugula_mux::resume;
 mod review;
 mod roots;
 mod rules;
@@ -75,7 +74,6 @@ mod sites;
 use arugula_mux::store;
 mod sync;
 use arugula_mux::sys;
-use arugula_mux::sys::conpty_command_line;
 pub(crate) use arugula_mux::sys::home;
 mod tailscale;
 mod tls;
@@ -876,6 +874,7 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
         ide: ide.clone().map(|i| i as Arc<dyn mux::IdeLink>),
         sessions: Arc::new(conversations::Sessions),
         pane_gone,
+        at_exit: Some(mux::AtExit(Arc::new(labs::stop_beholds))),
     };
     let mux = mux::start(config, store, kept);
     if let Some(i) = &ide {

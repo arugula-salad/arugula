@@ -51,9 +51,6 @@ use crate::{
 pub mod agents;
 #[cfg(feature = "labs")]
 pub mod apps;
-// Huddles (M63): who is in each voice call on a session.
-#[cfg(feature = "labs")]
-pub mod calls;
 // Forgejo and GitLab as forges (#457): their adapters, the `tea` logins
 // Forgejo reads with, and the webhooks they send. GitHub is core's. The
 // parts of a forge block that connect to them are `forge/labs_forges.rs`,
@@ -83,11 +80,9 @@ pub mod sandbox;
 pub mod sprites;
 #[cfg(feature = "labs")]
 pub mod tea;
-// Chat (M61): the threads on panes and sessions. The mux's handling of
-// both is `mux/thread_ops.rs` and `mux/call_ops.rs`, which need Daemon's
-// private fields; `mux/labs_off.rs` has their twins.
-#[cfg(feature = "labs")]
-pub mod threads;
+// Chat (M61) and huddles (M63) are the core's: `arugula_mux::labs::{threads,
+// calls}`, with the mux's handling in `mux/thread_ops.rs` and
+// `mux/call_ops.rs` (twins in `mux/labs_off.rs`).
 #[cfg(feature = "labs")]
 pub mod workspace;
 
@@ -101,10 +96,7 @@ pub const GUEST_STREAM_KIND: &[u8] = b"ssh-guest";
 /// Whether this build has Labs.
 pub const BUILT: bool = cfg!(feature = "labs");
 
-/// What a request that needs a Labs feature this build lacks answers.
-pub fn not_built(what: &str) -> String {
-    format!("{what} isn't in this build (built without labs)")
-}
+pub use arugula_mux::labs::{not_built, thread_names};
 
 /// The Labs flags that are on here: none in a build without Labs, else
 /// what the machine's state directory says (read on each call).
@@ -399,28 +391,6 @@ pub fn chat() -> Result<(), String> {
     Err(not_built("Chat"))
 }
 
-/// Threads on panes and sessions, and huddles on sessions. Always made, so
-/// each has a twin that holds nothing and touches nothing on disk: a build
-/// without Labs never opens, writes or deletes the state dir's `threads/`,
-/// so a later build with Labs finds it as it was.
-#[cfg(feature = "labs")]
-pub use calls::Calls;
-#[cfg(feature = "labs")]
-pub use threads::Threads;
-
-#[cfg(not(feature = "labs"))]
-pub use absent::{Calls, Threads};
-
-/// Whether `token` (an `@name` in a message) names this person: see
-/// `threads::names`. Nobody is named where there is no chat.
-#[cfg(feature = "labs")]
-pub use threads::names as thread_names;
-
-#[cfg(not(feature = "labs"))]
-pub fn thread_names(_token: &str, _id: &str, _name: &str) -> bool {
-    false
-}
-
 /// Sets up the studio token store (M35) at start-up. A build without Labs
 /// has no studio: a file given with `--studio` is ignored, with a warning.
 #[cfg(feature = "labs")]
@@ -578,9 +548,8 @@ pub async fn wear_recipe(
 /// worn, so an agent block's `worn` stays `None`.
 #[cfg(not(feature = "labs"))]
 mod absent {
-    use std::{path::Path, sync::Arc};
+    use std::sync::Arc;
 
-    use arugula_proto::{CallMember, ClientId, SessionId, ThreadMsg, ThreadTarget};
     use serde_json::Value;
 
     use crate::{review::Runner, server::App};
@@ -613,44 +582,6 @@ mod absent {
 
         /// Dropped: control has no guest to hand through.
         pub fn serve_relayed(self: &Arc<Self>, _app: &Arc<App>, _stream: tokio::io::DuplexStream) {}
-    }
-
-    /// Threads of a build without Labs: none, and nothing read from or
-    /// written to the state dir.
-    pub struct Threads;
-
-    impl Threads {
-        pub fn open(_root: &Path) -> Self {
-            Threads
-        }
-
-        pub fn get(&self, _target: ThreadTarget) -> &[ThreadMsg] {
-            &[]
-        }
-
-        pub fn targets(&self) -> impl Iterator<Item = ThreadTarget> + '_ {
-            std::iter::empty()
-        }
-
-        pub fn mark_read(&mut self, _who: &str, _target: ThreadTarget, _upto: u64) -> bool {
-            false
-        }
-
-        pub fn save(&mut self) {}
-    }
-
-    /// Huddles of a build without Labs: none.
-    #[derive(Default)]
-    pub struct Calls;
-
-    impl Calls {
-        pub fn leave_all(&mut self, _client: ClientId) -> bool {
-            false
-        }
-
-        pub fn retain(&mut self, _keep: impl FnMut(SessionId, &CallMember) -> bool) -> bool {
-            false
-        }
     }
 
     /// Uninhabited: no build without Labs puts an agent on.
@@ -775,19 +706,6 @@ pub fn open_provider(url: &str, _token_file: &Path, given: bool) -> Option<Arc<d
         tracing::warn!(url, "{}", not_built("VMs"));
     }
     None
-}
-
-/// Why a request that needs VM panes can't have them: `why` when there is
-/// no provider here, and that this build has no VMs when it was built without
-/// Labs.
-#[cfg(feature = "labs")]
-pub fn vms_unavailable(why: &str) -> String {
-    why.to_owned()
-}
-
-#[cfg(not(feature = "labs"))]
-pub fn vms_unavailable(_why: &str) -> String {
-    "VMs aren't in this build (built without labs)".to_owned()
 }
 
 /// The static binaries to copy into a sandbox when making a daemon resident

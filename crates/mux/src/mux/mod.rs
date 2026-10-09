@@ -19,7 +19,7 @@ mod outside;
 mod thread_ops;
 mod who_may;
 
-pub use config::Config;
+pub use config::{AtExit, Config};
 pub use outside::{AgentSessions, IdeLink, Notify, PaneGone, People};
 
 /// Who answers an invite card: the owner, by any route.
@@ -29,7 +29,6 @@ pub const OWNER_ONLY: &str = "only the session's owner sends or declines an invi
 pub const CLOSE_OWNER_ONLY: &str = "only the session's owner closes an invite block";
 
 /// A post to a thread (M61).
-#[cfg_attr(not(feature = "labs"), allow(dead_code))]
 pub struct ThreadPost {
     pub target: ThreadTarget,
     pub who: crate::acl::Principal,

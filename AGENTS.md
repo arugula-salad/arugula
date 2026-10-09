@@ -21,7 +21,8 @@ Each has a `README.md` with where to start reading.
   (Noise IK; design in [docs/control-e2e.md](docs/control-e2e.md)).
 - `crates/mux`: `arugula-mux`, the daemon's core as a library: the state
   directory, the access model (`acl`), the pane's process helpers, the pane
-  itself, `provider`, the shell integration and the files it can read (`fs`).
+  itself, `provider`, the shell integration and the files it can read (`fs`),
+  and the mux (`mux/`, `block.rs`, `history.rs`, `ide/`).
   Its `labs` feature is on when the daemon's is.
 - `crates/daemon`: `arugulad`.
 - `crates/cli`: `arugula`, the CLI, plus `arugula tui` and
@@ -54,12 +55,13 @@ Paths are under `crates/daemon/src/`.
   or kind) handled once (`mod.rs` holds the list and `HAND_WRITTEN`), with
   `mcp/ops.rs`; declared in `crates/proto/src/op.rs`
   ([docs/operations.md](docs/operations.md)).
-- **The mux:** `mux/`: the task that owns the layout, the panes and every
+- **The mux:** `mux/` (in `crates/mux/src/`, with `block.rs`, `history.rs`,
+  `agentenv.rs` and the mux's half of the IDE, `ide/`): the task that owns the layout, the panes and every
   client (`mod.rs`), with one file per area: `attention.rs`, `clients.rs`,
   `blocks.rs`, `api_calls.rs`, `who_may.rs`, `thread_ops.rs`, `machines.rs`,
   `call_ops.rs`, `info.rs`, `config.rs` (`thread_ops.rs` and `call_ops.rs` are
   Labs; `labs_off.rs` has their twins). Next to it: threads on panes
-  (`labs/threads.rs`), huddles (`labs/calls.rs`), gates waiting for a person
+  (`crates/mux/src/labs/threads.rs`), huddles (`labs/calls.rs`, same place), gates waiting for a person
   (`gate.rs`), hands (`hand.rs`), Web Push (`push.rs`).
 - **Panes:** a process on a PTY and its VT thread (`pane.rs`), Windows'
   pseudoconsole (`conpty.rs`), what survives a restart (`store.rs`),
@@ -122,9 +124,9 @@ only through the surface in `labs/mod.rs`, which explains the pattern. Fountain,
 studio apps, chant workspaces, and VMs (the Sprites adapter, machines, resident
 daemons, the provider tunnel and the tailnet sandbox supervisor) and guest ssh
 (`labs/guest_ssh.rs`; `russh` is an optional dependency, and a build without
-Labs answers `/api/guests` with 501), and chat and huddles (`labs/threads.rs`,
-`labs/calls.rs`, with the mux's handling in `mux/thread_ops.rs` and
-`mux/call_ops.rs`, which need `Daemon`'s fields; a build without Labs answers
+Labs answers `/api/guests` with 501), and chat and huddles (`crates/mux/src/labs/threads.rs`,
+`labs/calls.rs`, with the mux's handling in `crates/mux/src/mux/thread_ops.rs` and
+`call_ops.rs`, which need `Daemon`'s fields; a build without Labs answers
 the thread routes with 501 and a huddle message with an error, and never
 touches the state dir's `threads/`), and the Forgejo and GitLab forges
 (`labs/forgejo.rs`, `labs/gitlab.rs`, `labs/tea.rs`, `labs/forge_live.rs`,

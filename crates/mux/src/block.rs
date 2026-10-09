@@ -155,7 +155,7 @@ pub struct BlockEnv {
     /// This host's files, as `/api/fs` serves them (M7).
     pub fs: Arc<crate::fs::Scope>,
     /// The user's shell environment (#74), for blocks that run the user's
-    /// tools: see [`crate::review::Runner::user`].
+    /// tools: see `review::Runner::user` in the daemon.
     pub shell_env: Arc<crate::shellenv::ShellEnv>,
     /// The multiplexer, for a block that raises questions on itself (M35).
     pub cmds: Option<tokio::sync::mpsc::UnboundedSender<crate::mux::Cmd>>,
@@ -318,7 +318,6 @@ impl BlockCtx {
 
     /// The agent blocks open now, each with its config and state (#619:
     /// which pane made a chant run, or runs as a lease's holder).
-    #[cfg_attr(not(feature = "labs"), allow(dead_code))]
     pub async fn agents(&self) -> Vec<(PaneId, Value, Value)> {
         let Some(cmds) = self.cmds.as_ref() else { return vec![] };
         let (tx, rx) = tokio::sync::oneshot::channel();
@@ -450,7 +449,6 @@ impl BlockKinds {
     }
 
     /// Whether a type is made here.
-    #[cfg(test)]
     pub fn has(&self, kind: BlockType) -> bool {
         self.0.contains_key(&kind)
     }
