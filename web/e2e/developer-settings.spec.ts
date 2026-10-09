@@ -51,7 +51,7 @@ test.afterAll(() => {
   if (state) rmSync(state, { recursive: true, force: true });
 });
 
-const FLAGS = ["chat", "huddles", "vms", "fountain", "studio", "workspaces", "guest-ssh", "swarm-themes", "forges"] as const;
+const FLAGS = ["chat", "huddles", "vms", "fountain", "studio", "workspaces", "guest-ssh", "swarm-themes", "forges", "agents"] as const;
 type Flag = (typeof FLAGS)[number];
 
 const setFlag = (flag: string, on: boolean, as?: string) =>

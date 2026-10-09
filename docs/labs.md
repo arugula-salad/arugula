@@ -23,6 +23,7 @@ Each feature has a flag, off on a new install:
 | `guest-ssh` | *Invite over ssh…* for a guest with only OpenSSH |
 | `swarm-themes` | The swarm's city, hive and timeline views |
 | `forges` | GitLab and Forgejo pull request and issue blocks (GitHub's are always on) |
+| `agents` | Offering Claude Code subagents from this machine as A2A agents, and the team's agent catalog (#403) |
 
 A flag also lists its feature's tools, commands and options in `arugula mcp`,
 `arugula --help` and `arugulad --help`. They all keep working without it, and

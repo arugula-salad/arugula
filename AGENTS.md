@@ -105,7 +105,7 @@ and tested, but get no new features.
 
 A flag per feature turns on what a stranger doesn't get (#385, #464, #665):
 `chat`, `huddles`, `vms`, `fountain`, `studio`, `workspaces`, `guest-ssh`,
-`swarm-themes`, `forges`. They're named flags in `flags.json` in the state
+`swarm-themes`, `forges`, `agents`. They're named flags in `flags.json` in the state
 dir (`arugula_proto::flags`: the `FLAGS` registry, `get`, `on`, `set`, `all`;
 read on every call, never cached), set by `arugulad flags chat on` or the
 owner's *Developer settings…* in the web client (`flags.list` and `flag.set`
