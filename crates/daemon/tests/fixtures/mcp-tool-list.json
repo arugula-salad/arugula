@@ -876,6 +876,14 @@
               "null"
             ]
           },
+          "title": {
+            "default": null,
+            "description": "A short name for the block, shown instead of the agent's name.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "user_settings": {
             "default": false,
             "description": "For claude: the user's Claude Code settings (allow and deny lists,\ndefault mode, CLAUDE.md), without their hooks.",
@@ -2676,6 +2684,14 @@
               "null"
             ]
           },
+          "title": {
+            "default": null,
+            "description": "A short name for the block, shown instead of the agent's name.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "user_settings": {
             "default": false,
             "description": "For claude: the user's Claude Code settings (allow and deny lists,\ndefault mode, CLAUDE.md), without their hooks.",
@@ -4124,6 +4140,14 @@
           "session": {
             "default": null,
             "description": "The session for a new tab, when not beside a pane.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "default": null,
+            "description": "A short name for the block, shown instead of the agent's name.",
             "type": [
               "string",
               "null"
@@ -5924,6 +5948,14 @@
           "session": {
             "default": null,
             "description": "The session for a new tab, when not beside a pane.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "default": null,
+            "description": "A short name for the block, shown instead of the agent's name.",
             "type": [
               "string",
               "null"

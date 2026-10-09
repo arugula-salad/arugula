@@ -117,6 +117,10 @@ pub struct Config {
     /// Where it works (on its machine, for a VM agent).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cwd: Option<String>,
+    /// A name the person gave the block (`--title`, `set_title`), shown
+    /// instead of the session's own title (#629).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
     /// The ACP session, once there is one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
@@ -321,6 +325,8 @@ struct Inner {
     next_id: u64,
     agent_info: Value,
     caps: Value,
+    /// The session's own title, as the adapter last said it. The person's is
+    /// `cfg.title`, which outranks it.
     title: Option<String>,
     prompt_id: Option<u64>,
     /// The turn's result has come (claude-agent-acp's closing `usage_update`,
@@ -1193,6 +1199,11 @@ impl Inner {
             .unwrap_or_else(|| "finished".into())
     }
 
+    /// What the block is called: the person's title, else the session's.
+    fn shown_title(&self) -> Option<String> {
+        self.cfg.title.clone().or_else(|| self.title.clone())
+    }
+
     fn state(&self, ctx: &AgentCtx) -> Value {
         let (from, entries) = self.t.for_state(ENTRIES_IN_STATE);
         let (attention, _) = self.attention();
@@ -1200,7 +1211,7 @@ impl Inner {
         let mut state = json!({
             "agent": self.cfg.def.agent,
             "label": self.cfg.def.label(),
-            "title": self.title,
+            "title": self.shown_title(),
             "cwd": self.cfg.cwd,
             "vm": ctx.sprite.is_some(),
             "session_id": self.cfg.session_id,
@@ -2728,6 +2739,10 @@ impl Block for Agent {
         serde_json::to_value(&self.inner.lock().unwrap().cfg).unwrap_or_default()
     }
 
+    fn summary(&self) -> crate::block::Summary {
+        crate::block::Summary { title: self.inner.lock().unwrap().shown_title(), ..Default::default() }
+    }
+
     fn state(&self) -> Value {
         self.inner.lock().unwrap().state(&self.ctx)
     }
@@ -2739,7 +2754,7 @@ impl Block for Agent {
 
     fn text(&self) -> String {
         let g = self.inner.lock().unwrap();
-        let mut head = format!("# {}", g.title.clone().unwrap_or_else(|| g.cfg.def.label()));
+        let mut head = format!("# {}", g.shown_title().unwrap_or_else(|| g.cfg.def.label()));
         if let Some(cwd) = &g.cfg.cwd {
             head.push_str(&format!(" in {cwd}"));
         }
@@ -2792,6 +2807,12 @@ impl Block for Agent {
                 drop(g);
                 self.changed();
                 Ok(json!({}))
+            }
+            "set_title" => {
+                let t = args["title"].as_str().map(str::trim).filter(|t| !t.is_empty());
+                self.inner.lock().unwrap().cfg.title = t.map(str::to_owned);
+                self.changed();
+                Ok(self.state())
             }
             "state" => Ok(self.state()),
             "image" => images::read(&self.ctx.dir, args["name"].as_str().unwrap_or_default()),
