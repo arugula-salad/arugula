@@ -3,21 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "@playwright/test";
+// First, before any module below sets ARUGULA_* for the run (#682).
+import "./e2e/scrub-env.ts";
 // Loopback callers show the daemon's local token: every daemon of the run
 // shares one, which browsers carry as a cookie.
 import { tokenCookies } from "./e2e/local-token.ts";
-
-// #682: an agent block exports ARUGULA_* (and ILLOGICAL_*) variables
-// (ARUGULA_KEEP_PANES, ARUGULA_SOCK, …) that change what every daemon the
-// specs start does. Take them out once, before the run sets its own below;
-// workers load this config again and find the marker. The opt-ins specs
-// read (testnet, Wisp, VS Code) stay.
-if (!process.env.E2E_ENV_SCRUBBED) {
-  for (const k of Object.keys(process.env)) {
-    if (/^(ARUGULA|ILLOGICAL)_/.test(k) && !/^ARUGULA_(TESTNET|WISP|VSCODE)/.test(k)) delete process.env[k];
-  }
-  process.env.E2E_ENV_SCRUBBED = "1";
-}
 
 // Directories for the run, made once (workers load this config too, and
 // inherit them) and removed when the runner exits, after the daemon (#62).
