@@ -81,10 +81,9 @@ pub const CLOSE_OWNER_ONLY: &str = "only the session's owner closes an invite bl
 /// An agent on the owner's CLI asks; the owner sends.
 pub const AGENT_ASKS: &str = "an agent doesn't invite: ask the user with Arugula's invite_person tool";
 
-/// Whether the owner's CLI says an agent runs it (as for a forge's drafts),
-/// under either name (#504).
+/// Whether the owner's CLI says an agent runs it (as for a forge's drafts).
 pub(crate) fn agent(headers: &HeaderMap) -> bool {
-    arugula_proto::rename::either(arugula_proto::rename::AGENT, |n| headers.get(n)).is_some()
+    headers.contains_key("x-arugula-agent")
 }
 
 /// An invite an agent drafted and the owner sent (#234), for the audit

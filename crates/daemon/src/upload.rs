@@ -272,7 +272,7 @@ async fn store(app: &App, id: PaneId, q: UploadQuery, body: Bytes) -> Res<serde_
 
 /// On a machine: `~/.cache/arugula/uploads/<pane>`, `0700`, made by
 /// `run` as its user. Clears what's older than a day there first, and in
-/// the folder a daemon from before the rename used (#505).
+/// the folder a daemon from before the rename used (#505, kept where it is).
 const MACHINE_FOLDER: &str = r#"set -e
 d="$HOME/.cache/arugula/uploads"
 for x in "$d" "$HOME/.cache/illogical/uploads"; do
@@ -316,7 +316,7 @@ const FORGET: &str = r#"rm -rf "$HOME/.cache/arugula/uploads/$1" "$HOME/.cache/i
 /// machine stays.
 pub fn forget_on(provider: Arc<dyn crate::provider::Provider>, sprite: String, pane: PaneId) {
     tokio::spawn(async move {
-        // (#505) A pane from before the rename has its uploads in the old folder.
+        // (#505, kept where it is) A pane from before the rename has its uploads in the old folder.
         let script = FORGET;
         let tag = pane.to_string();
         let _ = provider.run(&sprite, &["sh", "-c", script, "arugula-upload", &tag]).await;
@@ -426,7 +426,7 @@ mod tests {
     use super::*;
 
     /// A machine's uploads from before the rename are aged out and removed
-    /// with their pane like the new ones (#505).
+    /// with their pane like the new ones (#505, kept where it is).
     #[cfg(unix)]
     #[test]
     fn a_machines_old_uploads_still_go() {

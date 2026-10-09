@@ -9,7 +9,7 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Old and new names across the rename to Arugula (#504).
+/// What keeps illogical's name after the rename to Arugula (#504).
 pub use arugula_core::rename;
 pub use arugula_core::{
     ClientId, Dir, Edge, Intent, Layout, Node, NodeId, OptionMap, OptionScope, Options, PaneId, Rect, Session,

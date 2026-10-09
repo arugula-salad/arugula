@@ -150,14 +150,10 @@ async fn daemon_signatures_cover_the_request_and_are_good_once() {
     assert_eq!(get(forged, pq).await.unwrap().status(), 401);
     assert_eq!(c.http.get(format!("{}{pq}", c.base)).send().await.unwrap().status(), 401);
 
-    // #505: an illogical daemon's header, checked the same way.
+    // A good signature under illogical's header, from before the rename,
+    // isn't one (#534).
     let h = v2(&d, "GET", pq, b"");
-    let old = || c.http.get(format!("{}{pq}", c.base)).header("x-illogical-auth", h.clone()).send();
-    assert_eq!(old().await.unwrap().status(), 200);
-    assert_eq!(old().await.unwrap().status(), 401);
-    assert_eq!(get(h.clone(), pq).await.unwrap().status(), 401, "good once under either name");
-    let forged = v2(&other, "GET", pq, b"").replacen(&other.id(), &d.id(), 1);
-    let r = c.http.get(format!("{}{pq}", c.base)).header("x-illogical-auth", forged).send().await.unwrap();
+    let r = c.http.get(format!("{}{pq}", c.base)).header("x-illogical-auth", h).send().await.unwrap();
     assert_eq!(r.status(), 401);
 
     // A daemon from before 0.17 signs the old way: taken, once each.

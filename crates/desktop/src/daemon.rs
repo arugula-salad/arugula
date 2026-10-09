@@ -416,10 +416,7 @@ fn on_page(app: &AppHandle, event: &str, detail: &str, hash: &str) {
     let on_page = app.webview_windows().into_values().find(|w| w.url().is_ok_and(|u| crate::daemons(&u)));
     match on_page {
         Some(w) => {
-            let _ = w.eval(format!(
-                "dispatchEvent(new CustomEvent({}+':{event}', {{ detail: {detail} }}))",
-                crate::PAGE_EVENT_PREFIX
-            ));
+            let _ = w.eval(format!("dispatchEvent(new CustomEvent('arugula:{event}', {{ detail: {detail} }}))"));
             let _ = w.unminimize();
             let _ = w.show();
             let _ = w.set_focus();
@@ -675,7 +672,7 @@ fn open_log() {
 
 fn journal() -> Result<PathBuf, String> {
     let out = Command::new("journalctl")
-        .args(["--user", "-u", service::LABELS[0], "-u", service::LABELS[1], "-n", "5000", "--no-pager"])
+        .args(["--user", "-u", service::UNIT, "-n", "5000", "--no-pager"])
         .output()
         .map_err(|e| format!("journalctl: {e}"))?;
     let file = std::env::temp_dir().join("arugulad-journal.log");

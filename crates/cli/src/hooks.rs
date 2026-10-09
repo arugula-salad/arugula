@@ -5,6 +5,8 @@
 //! added twice, so a second `install` changes nothing. The one exception is
 //! our own hooks under the old name (`illogical hook`, #505): `install`
 //! renames those in place rather than adding a second copy beside them.
+//! `arugulad install` does the same, with Claude Code's MCP server, before
+//! it takes the old names off this machine (`rename-old`, #534).
 
 use std::{
     fs,
@@ -56,14 +58,27 @@ pub enum HooksCmd {
         #[arg(long, value_name = "DIR")]
         project: Option<PathBuf>,
     },
+    /// Move Claude Code's config off the old name (for `arugulad install`).
+    ///
+    /// In each Claude Code config here: our hooks under the old name renamed, and an MCP server that runs
+    /// `illogical mcp` pointed at `arugula` (its name kept, so its tools'
+    /// names and permission rules stay). Prints `{"old": true}` while
+    /// anything there still runs `illogical`.
+    #[command(hide = true)]
+    RenameOld,
 }
 
 pub fn run(cmd: HooksCmd, json_out: bool) -> anyhow::Result<i32> {
     match cmd {
         HooksCmd::Install { project, dry_run } => install(&settings_path(project)?, dry_run),
         HooksCmd::Status { project } => status(&settings_path(project)?, json_out),
+        HooksCmd::RenameOld => rename_old_here(),
     }
     .map(|()| 0)
+}
+
+fn home() -> anyhow::Result<PathBuf> {
+    std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).map(PathBuf::from).context("no HOME")
 }
 
 fn settings_path(project: Option<PathBuf>) -> anyhow::Result<PathBuf> {
@@ -106,7 +121,7 @@ fn our_commands() -> Vec<String> {
     out
 }
 
-/// One of our commands under the old name (#505), as `arugula` would
+/// One of our commands under the old name (#505, #534), as `arugula` would
 /// write it: `illogical hook` is `arugula hook`. Only the exact commands
 /// install wrote; a path or anything else someone typed is theirs.
 fn renamed(command: &str, ours: &[String]) -> Option<String> {
@@ -115,7 +130,7 @@ fn renamed(command: &str, ours: &[String]) -> Option<String> {
     ours.contains(&new).then_some(new)
 }
 
-/// Our hooks under the old name, renamed in place (#505), across every
+/// Our hooks under the old name, renamed in place (#505, #534), across every
 /// event; a group that then repeats one already there (same matcher, same
 /// commands, all ours) goes. Whether anything changed.
 fn rename_old(hooks: &mut Map<String, Value>) -> bool {
@@ -166,7 +181,7 @@ fn rename_old(hooks: &mut Map<String, Value>) -> bool {
 struct Merged {
     /// Hooks that weren't there.
     added: bool,
-    /// Ours under the old name, now under the new (#505).
+    /// Ours under the old name, now under the new (#505, #534).
     renamed: bool,
 }
 
@@ -225,9 +240,10 @@ fn read_settings(path: &Path) -> anyhow::Result<Value> {
 /// mode of an existing file is kept.
 fn write_atomic(path: &Path, text: &str) -> anyhow::Result<()> {
     let target = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-    let dir = target.parent().context("settings.json has no directory")?;
+    let dir = target.parent().with_context(|| format!("{} has no directory", path.display()))?;
     fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
-    let tmp = dir.join(format!(".settings.json.arugula-{}", std::process::id()));
+    let name = target.file_name().and_then(|n| n.to_str()).unwrap_or("settings.json");
+    let tmp = dir.join(format!(".{name}.arugula-{}", std::process::id()));
     let result = (|| {
         fs::write(&tmp, text)?;
         if let Ok(meta) = fs::metadata(&target) {
@@ -271,8 +287,9 @@ fn install(path: &Path, dry_run: bool) -> anyhow::Result<()> {
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Has {
     Present,
-    /// All there, some under the old name (#505): they still work (the old
-    /// command is the new one's link) until `install` renames them.
+    /// All there, some under the old name (#505, #534): they run `illogical`,
+    /// which this machine may no longer have (#534), until `install`
+    /// renames them.
     Old,
     Missing,
 }
@@ -306,7 +323,7 @@ fn status(path: &Path, json_out: bool) -> anyhow::Result<()> {
     let installed = events.iter().all(|(_, h)| *h != Has::Missing);
     let old: Vec<&str> = events.iter().filter(|(_, h)| *h == Has::Old).map(|(e, _)| e.as_str()).collect();
     if json_out {
-        // `events` stays a bool per event: an old-named hook still runs.
+        // `events` stays a bool per event: an old-named hook counts.
         let map: Map<String, Value> =
             events.iter().map(|(e, h)| (e.clone(), Value::Bool(*h != Has::Missing))).collect();
         let v = json!({ "settings": path, "installed": installed, "events": map, "old_name": old });
@@ -327,6 +344,122 @@ fn status(path: &Path, json_out: bool) -> anyhow::Result<()> {
         (true, false) => println!("`arugula hooks install` updates them to the new name."),
         (true, true) => {}
     }
+    Ok(())
+}
+
+/// The program a command runs is ours under the old name: `illogical` or
+/// `illogicald`, bare or as a path, `.exe` or not.
+fn runs_old(command: &str) -> bool {
+    let program = command.split_whitespace().next().unwrap_or("");
+    let name = program.rsplit(['/', '\\']).next().unwrap_or("");
+    let name =
+        name.len().checked_sub(4).filter(|&i| name[i..].eq_ignore_ascii_case(".exe")).map_or(name, |i| &name[..i]);
+    name == "illogical" || name == "illogicald"
+}
+
+/// Each `mcpServers` in Claude Code's `.claude.json`: the user's, and each
+/// project's.
+fn mcp_servers(v: &mut Value) -> Vec<&mut Map<String, Value>> {
+    let Some(root) = v.as_object_mut() else { return vec![] };
+    let mut out = vec![];
+    for (k, x) in root.iter_mut() {
+        match k.as_str() {
+            "mcpServers" => out.extend(x.as_object_mut()),
+            "projects" => {
+                for p in x.as_object_mut().into_iter().flat_map(|p| p.values_mut()) {
+                    out.extend(p.get_mut("mcpServers").and_then(Value::as_object_mut));
+                }
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+/// MCP servers that run `illogical mcp`, run with `arugula` (`cli`, where
+/// the old one was a path and none is beside it) instead. Their names
+/// stay. Whether anything changed.
+fn rename_mcp(v: &mut Value, cli: &Path) -> bool {
+    let mut changed = false;
+    for servers in mcp_servers(v) {
+        for server in servers.values_mut() {
+            let Some(command) = server["command"].as_str().filter(|c| runs_old(c)) else { continue };
+            if server["args"][0] != "mcp" || command.contains(char::is_whitespace) {
+                continue;
+            }
+            let new = if !command.contains(['/', '\\']) {
+                "arugula".to_owned()
+            } else {
+                let exe = if command.to_ascii_lowercase().ends_with(".exe") { "arugula.exe" } else { "arugula" };
+                let beside = Path::new(command).with_file_name(exe);
+                if beside.is_file() { beside } else { cli.to_path_buf() }.display().to_string()
+            };
+            server["command"] = Value::String(new);
+            changed = true;
+        }
+    }
+    changed
+}
+
+/// Something in `settings` (its hooks) or `claude_json` (its MCP servers)
+/// still runs `illogical`.
+fn calls_old(settings: &Value, claude_json: &mut Value) -> bool {
+    let hooks = settings["hooks"].as_object().into_iter().flat_map(|m| m.values());
+    let groups = hooks.flat_map(|g| g.as_array().into_iter().flatten());
+    let commands = groups.flat_map(|g| g["hooks"].as_array().into_iter().flatten());
+    commands.filter_map(|h| h["command"].as_str()).any(runs_old)
+        || mcp_servers(claude_json).iter().flat_map(|s| s.values()).filter_map(|s| s["command"].as_str()).any(runs_old)
+}
+
+/// Claude Code's configs here: its settings.json and its `.claude.json`,
+/// under `~` and under `CLAUDE_CONFIG_DIR` when that's set.
+fn configs(home: &Path, config_dir: Option<PathBuf>) -> Vec<(PathBuf, PathBuf)> {
+    let mut out = vec![(home.join(".claude/settings.json"), home.join(".claude.json"))];
+    if let Some(d) = config_dir.filter(|d| d != &home.join(".claude")) {
+        out.push((d.join("settings.json"), d.join(".claude.json")));
+    }
+    out
+}
+
+/// [`HooksCmd::RenameOld`] on `configs`, with `cli` for the MCP server:
+/// whether anything there still runs `illogical` after.
+fn rename_old_in(configs: &[(PathBuf, PathBuf)], cli: &Path) -> bool {
+    let mut old = false;
+    for (settings_file, claude_file) in configs {
+        let settings = read_settings(settings_file).map(|mut v| {
+            if let Some(hooks) = v.get_mut("hooks").and_then(Value::as_object_mut)
+                && rename_old(hooks)
+            {
+                match write_atomic(settings_file, &pretty(&v)) {
+                    Ok(()) => println!("{}: hooks renamed from `illogical` to `arugula`", settings_file.display()),
+                    Err(e) => eprintln!("arugula: {e:#}"),
+                }
+            }
+        });
+        let claude = read_settings(claude_file).map(|mut v| {
+            if rename_mcp(&mut v, cli) {
+                match write_atomic(claude_file, &pretty(&v)) {
+                    Ok(()) => println!("{}: Claude Code's MCP server runs `arugula` now", claude_file.display()),
+                    Err(e) => eprintln!("arugula: {e:#}"),
+                }
+            }
+        });
+        // Read again: Claude Code may have written either meanwhile, and
+        // one we can't read could be calling anything.
+        old |= settings.is_err() || claude.is_err();
+        match (read_settings(settings_file), read_settings(claude_file)) {
+            (Ok(s), Ok(mut c)) => old |= calls_old(&s, &mut c),
+            _ => old = true,
+        }
+    }
+    old
+}
+
+fn rename_old_here() -> anyhow::Result<()> {
+    let configs = configs(&home()?, std::env::var_os("CLAUDE_CONFIG_DIR").map(PathBuf::from));
+    let cli = std::env::current_exe()?;
+    let old = rename_old_in(&configs, &cli);
+    println!("{}", json!({ "old": old }));
     Ok(())
 }
 
@@ -463,7 +596,7 @@ mod tests {
         assert!(p.iter().any(|(e, h)| e == "Stop" && *h == Has::Missing));
     }
 
-    /// What `illogical hooks install` wrote before the rename (#505), in
+    /// What `illogical hooks install` wrote before the rename (#505, #534), in
     /// a settings file with the user's own hooks and one that only looks
     /// like ours.
     fn old_install() -> Value {
@@ -567,5 +700,77 @@ mod tests {
         install(&path, false).unwrap();
         assert_eq!(first, fs::read(&path).unwrap());
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn knows_the_old_programs() {
+        for c in
+            ["illogical", "illogical hook", "/home/me/.local/bin/illogical mcp", r"C:\x\illogical.EXE", "illogicald"]
+        {
+            assert!(runs_old(c), "{c}");
+        }
+        for c in ["arugula hook", "my-illogical", "/opt/illogical/bin/arugula", "say illogical", ""] {
+            assert!(!runs_old(c), "{c}");
+        }
+    }
+
+    /// #534: `arugulad install` renames our hooks and points the MCP
+    /// server at `arugula`, keeping its name; whatever else still runs
+    /// `illogical` is reported.
+    #[test]
+    fn rename_old_renames_hooks_and_the_mcp_server() {
+        let home = temp("rename-old");
+        let (settings, claude) = (home.join(".claude/settings.json"), home.join(".claude.json"));
+        fs::create_dir_all(settings.parent().unwrap()).unwrap();
+        let bin = home.join(".local/bin");
+        fs::create_dir_all(&bin).unwrap();
+        fs::write(bin.join("arugula"), "").unwrap();
+        let mut old = old_install();
+        // Not ours to rename (a path someone typed), so still old.
+        old["hooks"]["Stop"].as_array_mut().unwrap().pop();
+        fs::write(&settings, pretty(&old)).unwrap();
+        let path = bin.join("illogical").display().to_string();
+        fs::write(
+            &claude,
+            pretty(&json!({
+                "numStartups": 9,
+                "mcpServers": {
+                    "illogical": { "type": "stdio", "command": "illogical", "args": ["mcp"], "env": {} },
+                    "other": { "command": "illogical-ish", "args": ["mcp"] }
+                },
+                "projects": { "/p": { "mcpServers": { "mine": { "command": path, "args": ["mcp", "--socket", "/s"] } } } }
+            })),
+        )
+        .unwrap();
+        let configs = configs(&home, None);
+        let cli = Path::new("/elsewhere/arugula");
+        assert!(!rename_old_in(&configs, cli), "nothing runs illogical after");
+        let s = read_settings(&settings).unwrap();
+        assert!(present(&s).iter().all(|(_, h)| *h == Has::Present));
+        assert_eq!(s["model"], "opus");
+        let c = read_settings(&claude).unwrap();
+        assert_eq!(c["mcpServers"]["illogical"]["command"], "arugula", "renamed program, same name");
+        assert_eq!(c["mcpServers"]["illogical"]["args"], json!(["mcp"]));
+        assert_eq!(c["mcpServers"]["other"]["command"], "illogical-ish");
+        assert_eq!(c["projects"]["/p"]["mcpServers"]["mine"]["command"], bin.join("arugula").display().to_string());
+        assert_eq!(c["numStartups"], 9);
+        // Again: nothing to do, nothing written.
+        let before = (fs::read(&settings).unwrap(), fs::read(&claude).unwrap());
+        assert!(!rename_old_in(&configs, cli));
+        assert_eq!(before, (fs::read(&settings).unwrap(), fs::read(&claude).unwrap()));
+
+        // A hook by path is someone's own: kept, and reported.
+        let mut s = s;
+        s["hooks"]["Stop"].as_array_mut().unwrap().push(json!({ "hooks": [
+            { "type": "command", "command": "/opt/illogical/bin/illogical hook" }
+        ] }));
+        fs::write(&settings, pretty(&s)).unwrap();
+        assert!(rename_old_in(&configs, cli));
+        // No config at all: nothing runs illogical.
+        let none = temp("rename-old-none");
+        assert!(!rename_old_in(&super::configs(&none, None), cli));
+        assert!(!none.join(".claude.json").exists());
+        let _ = fs::remove_dir_all(&home);
+        let _ = fs::remove_dir_all(&none);
     }
 }

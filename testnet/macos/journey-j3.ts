@@ -1,12 +1,12 @@
 // J3 (#664): someone installs the Mac app by hand, from the site's steps
-// alone, on a Mac that already runs an older daemon (illogicald 0.21.0,
-// from before the rename: #661). They download the app as the site says,
+// alone, on a Mac that already runs an older daemon (arugulad 0.26.1:
+// #661). They download the app as the site says,
 // move it to Applications and open it; macOS refuses it
 // ("Arugula" Not Opened), and they follow the site: Done, then Open
 // Anyway in System Settings › Privacy & Security, Open Anyway again in
 // macOS's second dialog (Open "Arugula"?) and their password. The app
 // opens, says the daemon is older, and offers the update; they take it,
-// and the app's arugulad takes over, with their pane still running.
+// and the daemon updates itself, with their pane still running.
 //
 // A fresh tart VM, with Gatekeeper on (the base image turns it off) and
 // the app from app-latest marked as Safari marks a download. Every step
@@ -21,16 +21,24 @@
 //
 // Exit codes: 0 the journey held (every step led), 1 it didn't.
 
-import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { Journey, Stopped } from "../../web/e2e/journey/record.ts";
 
 process.env.ARUGULA_MACOS_VM ??= "arugula-j3";
 const lib = await import("./journey-lib.ts");
-const { APP, ax, here, root, sh, shot, shows, until, v, zip } = lib;
+const { APP, ax, root, sh, shot, shows, until, v, zip } = lib;
 process.env.JOURNEY_REPORT_DIR ??= join(root, "web/journey-reports");
 
-const ILL = "0.21.0";
+/** The older daemon: the oldest whose own update finds the renamed
+ * repository's releases (#525). */
+const OLD = "0.26.1";
+/** `a` is a newer `X.Y.Z` than `b`. */
+const newerThan = (a: string, b: string) => {
+  const n = (v: string) => v.split(/[-+]/)[0].split(".").map(Number);
+  const [x, y] = [n(a), n(b)];
+  for (let i = 0; i < 3; i++) if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) > (y[i] ?? 0);
+  return false;
+};
 const PAGE = "https://docs.arugula.io/install/";
 const GK = "CoreServicesUIAgent";
 const SETTINGS = "System Settings";
@@ -60,7 +68,7 @@ const keys = (script: string) => sh(`osascript -e ${JSON.stringify(`tell applica
 const daemonVersion = () => {
   try {
     return sh(
-      `curl -s -m 5 -H "Authorization: Bearer $(cat ~/.local/state/arugula/local-token 2>/dev/null || cat ~/.local/state/illogical/local-token)" http://127.0.0.1:7681/api/host | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])'`,
+      `curl -s -m 5 -H "Authorization: Bearer $(cat ~/.local/state/arugula/local-token)" http://127.0.0.1:7681/api/host | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])'`,
     );
   } catch {
     return "";
@@ -74,13 +82,13 @@ const step = (id: string, title: string, surface: "app" | "browser" | "terminal"
 
 let ok = false;
 try {
-  // --- The Mac as this person has it: illogicald 0.21.0 running, with a pane.
+  // --- The Mac as this person has it: arugulad 0.26.1 running, with a pane.
   v("down");
   v("up");
-  const tgz = `illogical-${ILL}-aarch64-apple-darwin.tar.gz`;
-  sh(`set -e; mkdir -p /tmp/ill; cd /tmp/ill; curl -fsSL -o ${tgz} https://github.com/arugula-salad/arugula/releases/download/v${ILL}/${tgz}; tar -xzf ${tgz} --strip-components 1; ./illogicald install >/dev/null`);
-  await until("illogicald answering", () => (daemonVersion() === ILL ? true : null), 60_000);
-  sh(`~/.local/bin/illogical run --session work "i=0; while :; do i=\\$((i+1)); echo \\$i > /tmp/count; sleep 0.2; done" >/dev/null`);
+  const tgz = `arugula-${OLD}-aarch64-apple-darwin.tar.gz`;
+  sh(`set -e; mkdir -p /tmp/old; cd /tmp/old; curl -fsSL -o ${tgz} https://github.com/arugula-salad/arugula/releases/download/v${OLD}/${tgz}; tar -xzf ${tgz} --strip-components 1; ./arugulad install >/dev/null`);
+  await until(`arugulad ${OLD} answering`, () => (daemonVersion() === OLD ? true : null), 60_000);
+  sh(`~/.local/bin/arugula run --session work "i=0; while :; do i=\\$((i+1)); echo \\$i > /tmp/count; sleep 0.2; done" >/dev/null`);
   const pane = () => sh("pgrep -f '[>] /tmp/count; sleep' | head -1 || true");
   await until("the counting pane", () => pane() || null, 20_000);
   const pane0 = pane();
@@ -138,16 +146,15 @@ try {
     await until("the app's window", () => (ax(APP, "proc.windows.length") !== "0" ? true : null), 60_000);
   }, { expect: "the password prompt" });
 
-  await step("offered", "The app says the daemon is older and offers the update", "app", shows(APP, /illogicald 0\.21\.0, from before/), async () => {
-    if (daemonVersion() !== ILL) throw new Error(`the daemon changed before anyone asked: ${daemonVersion()}`);
+  await step("offered", "The app says the daemon is older and offers the update", "app", shows(APP, /arugulad 0\.26\.1, older than/), async () => {
+    if (daemonVersion() !== OLD) throw new Error(`the daemon changed before anyone asked: ${daemonVersion()}`);
   }, { expect: "the app saying the daemon is older" });
 
   await step("update", "Takes the update: Update arugulad", "app", shows(APP, /^Update arugulad$/), async () => {
     keys(`set frontmost of process "${APP}" to true`);
     keys("key code 36");
-    const want = execFileSync(join(here, "vm.sh"), ["ssh", process.env.ARUGULA_MACOS_VM!, "/Applications/Arugula.app/Contents/MacOS/arugulad --version"], { encoding: "utf8" }).trim().split(/\s+/).pop()!;
-    await until(`arugulad ${want} answering`, () => (daemonVersion() === want ? true : null), 120_000);
-    if (sh("launchctl print gui/$(id -u)/illogicald >/dev/null 2>&1 && echo loaded || true") === "loaded") throw new Error("the illogicald agent is still loaded");
+    await until(`an arugulad newer than ${OLD} answering`, () => (newerThan(daemonVersion(), OLD) ? true : null), 180_000);
+    if (sh("launchctl print gui/$(id -u)/arugulad >/dev/null 2>&1 && echo loaded || true") !== "loaded") throw new Error("the arugulad agent isn't loaded");
     if (pane() !== pane0) j.issue(`the pane was ${pane0}, now ${pane() || "gone"}`);
   }, { expect: "the update button" });
 

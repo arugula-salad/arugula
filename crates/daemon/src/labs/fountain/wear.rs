@@ -567,7 +567,7 @@ pub fn cache_root(env: &[(String, String)], home: &Path) -> PathBuf {
         .or_else(|| std::env::var("XDG_CACHE_HOME").ok())
         .filter(|v| v.starts_with('/'));
     let base = xdg.map(PathBuf::from).unwrap_or_else(|| home.join(".cache"));
-    // (#505) Bundles cached before the rename are used where they are.
+    // Bundles cached before the rename are used where they are.
     arugula_core::rename::kept(base.join("arugula/fountain"), base.join("illogical/fountain"))
 }
 
@@ -1289,7 +1289,7 @@ pub fn scrub(line: &str, secrets: &[String]) -> Option<String> {
 mod tests {
     use super::*;
 
-    /// Bundles cached before the rename are used where they are (#505).
+    /// Bundles cached before the rename are used where they are.
     /// Unix: the runner's XDG_CACHE_HOME is a Unix path.
     #[cfg(unix)]
     #[test]

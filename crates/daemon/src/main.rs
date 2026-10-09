@@ -365,7 +365,7 @@ fn editors_socket(state_dir: &std::path::Path) -> std::io::Result<tokio::net::Un
 
 /// Windows: beside the desktop app, which its installer puts in
 /// %LOCALAPPDATA%\arugula (M54). A machine set up as illogical keeps its
-/// `illogical` one, in place (#505).
+/// `illogical` one, in place.
 fn default_state_dir() -> PathBuf {
     arugula_proto::dirs::default_state_dir().unwrap_or_else(|| home().join(".local/state/arugula"))
 }
@@ -437,11 +437,8 @@ fn log_to_file(argv: &[String]) {
             SetStdHandle(STD_ERROR_HANDLE, h);
         }
     }
-    // Panes don't inherit it (under either name, #505).
-    unsafe {
-        std::env::remove_var("ARUGULA_LOG_FILE");
-        std::env::remove_var("ILLOGICAL_LOG_FILE");
-    };
+    // Panes don't inherit it.
+    unsafe { std::env::remove_var("ARUGULA_LOG_FILE") };
 }
 
 /// The version, findable in the binary's bytes: the testnet tests read it
@@ -450,9 +447,6 @@ fn log_to_file(argv: &[String]) {
 static VERSION_MARK: &str = concat!("\0arugula-version=", env!("CARGO_PKG_VERSION"), "\0");
 
 fn main() -> anyhow::Result<()> {
-    // ILLOGICAL_X stands in for ARUGULA_X (#505), before any thread exists.
-    // SAFETY: nothing else runs yet.
-    unsafe { arugula_proto::rename::alias_env() };
     // The pane shim forks, so it runs before any threads exist.
     let argv: Vec<String> = std::env::args().collect();
     #[cfg(unix)]
@@ -861,7 +855,7 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
     synced.prune(sync::RETAIN_MS);
     let static_dir = args.static_dir.clone().unwrap_or_else(|| {
         let data = std::env::var_os("XDG_DATA_HOME").map(PathBuf::from).unwrap_or_else(|| home().join(".local/share"));
-        // The one from before the rename, where it is (#505).
+        // The one from before the rename, where it is.
         arugula_proto::dirs::named_in(&data, "arugula", "illogical").join("static")
     });
     let binaries = labs::binaries(static_dir);

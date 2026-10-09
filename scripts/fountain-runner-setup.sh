@@ -86,7 +86,8 @@ node_dir=/opt/fountain-node
 bin=/usr/local/bin/fountain
 unit=/etc/systemd/system/$svc.service
 sudoers=/etc/sudoers.d/arugula-fountain
-# The rule's name before the rename (#505): replaced by the new one.
+# The rule's name before the rename, still on machines set up then (geek):
+# replaced by the new one.
 old_sudoers=/etc/sudoers.d/illogical-fountain
 
 # Run a command, or print it in a dry run.

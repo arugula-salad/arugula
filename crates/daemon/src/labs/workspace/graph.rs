@@ -389,7 +389,7 @@ async fn stop_group(pid: i32, child: &mut tokio::process::Child) {
 /// pane's own.
 fn clean_env<'a>(names: impl Iterator<Item = &'a str>) -> Vec<String> {
     let mut out: Vec<String> = crate::sys::SERVICE_ENV.iter().map(|k| (*k).to_owned()).collect();
-    out.extend(["ARUGULA_PANE", "ILLOGICAL_PANE"].map(str::to_owned));
+    out.push("ARUGULA_PANE".to_owned());
     out.extend(names.filter(|k| k.starts_with("VSCODE_")).map(str::to_owned));
     out.sort();
     out.dedup();

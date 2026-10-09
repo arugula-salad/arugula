@@ -140,7 +140,7 @@ pub struct Launch {
 
 /// Where Arugula keeps agent adapters on this host: under
 /// `~/.local/share/illogical` on a machine that installed them before the
-/// rename, where they are (#505).
+/// rename, where they are.
 pub fn agents_dir(home: &Path) -> PathBuf {
     std::env::var_os("ARUGULA_AGENTS_DIR").map(PathBuf::from).unwrap_or_else(|| {
         arugula_proto::dirs::named_in(&home.join(".local/share"), "arugula", "illogical").join("agents")
@@ -329,7 +329,7 @@ pub fn split_command(s: &str) -> Vec<String> {
 mod tests {
     use super::*;
 
-    /// #505: adapters installed before the rename are used where they are.
+    /// Adapters installed before the rename are used where they are.
     #[test]
     fn adapters_from_before_the_rename_stay_where_they_are() {
         if std::env::var_os("ARUGULA_AGENTS_DIR").is_some() {

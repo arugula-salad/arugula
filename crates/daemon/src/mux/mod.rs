@@ -547,11 +547,7 @@ pub fn start(config: Config, store: StateDir, kept: HashMap<String, Kept>, push:
         config.shell.clone(),
         config.shell_args.iter().filter(|a| a.starts_with("--") && *a != "--login").cloned().collect(),
         config.home.clone(),
-        config
-            .env(0)
-            .into_iter()
-            .filter(|(k, _)| !arugula_proto::rename::is_ours(k) && k != "CLAUDE_CODE_SSE_PORT")
-            .collect(),
+        config.env(0).into_iter().filter(|(k, _)| !k.starts_with("ARUGULA_") && k != "CLAUDE_CODE_SSE_PORT").collect(),
         crate::shellenv::TIMEOUT,
     );
     shell_env.start();

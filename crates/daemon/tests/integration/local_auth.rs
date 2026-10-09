@@ -59,9 +59,6 @@ fn loopback_programs_and_browsers_show_the_local_token() {
     // A browser: the cookie.
     let cookie = format!("arugula_{}={token}", d.port);
     assert_eq!(tcp(&d, "GET", "/api/panes", &[("cookie", &cookie), ("sec-fetch-site", "same-origin")]).0, 200);
-    // A browser signed in before the rename keeps its old cookie (#505).
-    let old = format!("illogical_{}={token}", d.port);
-    assert_eq!(tcp(&d, "GET", "/api/panes", &[("cookie", &old), ("sec-fetch-site", "same-origin")]).0, 200);
     // The socket is the owner's already.
     assert_eq!(socket(&d, "/api/panes").0, 200);
 }

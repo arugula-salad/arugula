@@ -14,13 +14,11 @@
 //! baseline says.
 //!
 //! A daemon in range but older than the `arugulad` this app carries
-//! (#661), or an illogicald from before the rename, works, but the setup
-//! page says so and offers the update all the same, with *Not now* to go
-//! on with it this time. The update is the daemon's own when it has one
-//! that works (#392); illogicald's points at the old project's releases,
-//! so for it, and for any daemon that can't update itself, the bundled
-//! `arugulad install`, which takes over the old service and keeps its
-//! panes.
+//! (#661) works, but the setup page says so and offers the update all
+//! the same, with *Not now* to go on with it this time. The update is the
+//! daemon's own when it has one (#392); for a daemon that can't update
+//! itself, the bundled `arugulad install`, which takes over the service
+//! and keeps its panes.
 
 use std::{ops::RangeInclusive, path::Path, sync::Mutex, time::Duration};
 
@@ -88,16 +86,6 @@ fn numbers(version: &str) -> Option<(u64, u64, u64)> {
     Some((parts.next()??, parts.next()??, parts.next().unwrap_or(Some(0))?))
 }
 
-/// The release that renamed illogicald to arugulad (#505). Older
-/// daemons' own updates look for illogical's releases.
-const RENAMED: &str = "0.26.0";
-
-/// A daemon at `version` is arugulad, not illogicald from before the
-/// rename. A version that doesn't parse is taken for arugulad.
-fn renamed(version: &str) -> bool {
-    !matches!((numbers(version), numbers(RENAMED)), (Some(v), Some(r)) if v < r)
-}
-
 /// `version` is older than `bundled`; either not parsing, it isn't.
 fn older_than(version: &str, bundled: &str) -> bool {
     matches!((numbers(version), numbers(bundled)), (Some(v), Some(b)) if v < b)
@@ -158,17 +146,10 @@ impl Mismatch {
             ),
             Behind::Older => {
                 let b = self.bundled.as_deref().unwrap_or("newer");
-                if renamed(v) {
-                    format!(
-                        "arugulad here is {v}, older than the {b} this app carries. Update it to {b} \
-                         or newer; your panes keep running."
-                    )
-                } else {
-                    format!(
-                        "The daemon here is illogicald {v}, from before Arugula's rename. This app \
-                         carries arugulad {b}, which takes over from it; your panes keep running."
-                    )
-                }
+                format!(
+                    "arugulad here is {v}, older than the {b} this app carries. Update it to {b} or newer; \
+                     your panes keep running."
+                )
             }
         }
     }
@@ -291,8 +272,7 @@ pub struct Problem {
 enum How {
     /// Its own update (#391).
     Apply,
-    /// The bundled `arugulad install`: the daemon can't update itself, or
-    /// is illogicald, whose update looks for the old project's releases.
+    /// The bundled `arugulad install`: the daemon can't update itself.
     Bundled,
     /// Neither: the command to run.
     Command(String),
@@ -303,9 +283,8 @@ enum How {
 fn how(version: &str, update: DaemonUpdate, bundled: Option<&str>) -> How {
     let newer_here = bundled.is_some_and(|b| older_than(version, b));
     match update {
-        DaemonUpdate::Apply if renamed(version) || !newer_here => How::Apply,
-        _ if newer_here => How::Bundled,
         DaemonUpdate::Apply => How::Apply,
+        _ if newer_here => How::Bundled,
         DaemonUpdate::Command(c) => How::Command(c),
         DaemonUpdate::ByHand => How::Command(by_hand().to_owned()),
     }
@@ -417,8 +396,8 @@ fn update_daemon() -> Result<(), String> {
 }
 
 /// The bundled `arugulad install` (#661): it copies itself to
-/// `~/.local/bin` and takes over the service the older daemon runs as
-/// (illogicald's too, #505), keeping its panes. Then the app waits for the
+/// `~/.local/bin` and takes over the service the older daemon runs as,
+/// keeping its panes. Then the app waits for the
 /// new one to answer.
 fn update_bundled() -> Result<(), String> {
     let bin = crate::bundled("arugulad").ok_or("this app doesn't carry arugulad")?;
@@ -528,34 +507,28 @@ mod tests {
     }
 
     #[test]
-    fn says_an_illogicald_is_from_before_the_rename() {
+    fn says_the_daemon_is_older() {
         let m = |v: &str| Mismatch {
             behind: Behind::Older,
             version: v.into(),
             protocol: None,
             bundled: Some("0.26.2".into()),
         };
-        let said = m("0.21.0").message();
-        assert!(said.contains("illogicald 0.21.0, from before Arugula's rename"), "{said}");
-        assert!(said.contains("arugulad 0.26.2"), "{said}");
         let said = m("0.26.0").message();
         assert!(said.contains("arugulad here is 0.26.0, older than the 0.26.2 this app carries"), "{said}");
     }
 
-    /// #661: illogicald's own update looks for the old project's releases,
-    /// so the bundled one takes over; arugulad's own update stays first.
+    /// #661: the daemon's own update first; the bundled one when it has
+    /// none.
     #[test]
     fn how_an_older_daemon_updates() {
         let b = Some("0.26.2");
-        // illogicald 0.21: no apply; 0.24: an apply that can't find the new releases.
-        assert_eq!(how("0.21.0", DaemonUpdate::Command("curl … | sh".into()), b), How::Bundled);
-        assert_eq!(how("0.24.0", DaemonUpdate::Apply, b), How::Bundled);
         // arugulad that can update itself: its own, to the newest release.
         assert_eq!(how("0.26.0", DaemonUpdate::Apply, b), How::Apply);
         // arugulad that can't: the bundled copy, when it's newer.
         assert_eq!(how("0.26.0", DaemonUpdate::Command("brew upgrade arugula".into()), b), How::Bundled);
         // Nothing newer here: its own update, or its command.
-        assert_eq!(how("0.24.0", DaemonUpdate::Apply, None), How::Apply);
+        assert_eq!(how("0.26.0", DaemonUpdate::Apply, None), How::Apply);
         assert_eq!(how("0.30.0", DaemonUpdate::Command("c".into()), b), How::Command("c".into()));
     }
 

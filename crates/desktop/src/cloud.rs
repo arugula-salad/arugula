@@ -275,11 +275,8 @@ pub fn init_script() -> String {
         std::env::var_os("ARUGULA_TEST_SCRIPT").and_then(|f| std::fs::read_to_string(f).ok()).unwrap_or_default();
     #[cfg(not(debug_assertions))]
     let test = String::new();
-    // `__illogicalApp` too (#505): a daemon from before the rename serves
-    // a page that reads only that.
     let s = format!(
         "window.__arugulaApp = {{ name: {}, platform: {:?}, nativeCalls: {} }};\n\
-         window.__illogicalApp = window.__arugulaApp;\n\
          if ({control:?} && location.origin === new URL({control:?}).origin) {{\n\
            addEventListener('DOMContentLoaded', () => {{\n\
              const s = document.createElement('style');\n\
@@ -417,9 +414,7 @@ fn await_grant(listener: &std::net::TcpListener, id: &str, control: &str) -> Opt
             continue;
         }
         let target = line.split_whitespace().nth(1).unwrap_or_default();
-        // A control from before the rename sends the old path (#505).
-        let query =
-            ["/arugula-signin?", "/illogical-signin?"].iter().find_map(|p| target.strip_prefix(p)).unwrap_or_default();
+        let query = target.strip_prefix("/arugula-signin?").unwrap_or_default();
         let param = |k: &str| {
             query.split('&').find_map(|kv| kv.strip_prefix(k).and_then(|v| v.strip_prefix('='))).map(str::to_owned)
         };

@@ -24,8 +24,7 @@ mkdir -p "dist/$name"
 cp "$target/arugulad.exe" "$target/arugula.exe" "dist/$name/"
 cp "$tmp/conpty/runtimes/win-x64/native/conpty.dll" "$tmp/conpty/build/native/runtimes/x64/OpenConsole.exe" "dist/$name/"
 cp LICENSE-MIT LICENSE-APACHE THIRD_PARTY.md README.md packaging/windows/ConPTY-LICENSE.txt "dist/$name/"
-# The zip, and the same under its old name, illogical-VERSION-TARGET.zip,
-# for older daemons' self-update (#505).
+# The zip.
 scripts/dist-pack "dist/$name"
 
 # The desktop app carries them (tauri.windows.conf.json).

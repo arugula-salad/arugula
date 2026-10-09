@@ -45,12 +45,10 @@ local S = {
   folder = nil,
   retry = nil,
   backoff = 500,
-  -- The upgrade's protocol name. A daemon from before the rename (0.25 and
-  -- older) knows only the old one and refuses the new with a 400 (#505).
-  proto = "arugula-editor",
 }
 
-local OLD_PROTO = "illogical-editor"
+-- The upgrade's protocol name.
+local PROTO = "arugula-editor"
 
 -- ---- where things are
 
@@ -66,10 +64,9 @@ end
 
 local function socket_path()
   if M.opts.socket then return M.opts.socket end
-  -- The old names too: a shell started before the update, a daemon whose
-  -- state is still in the old directory (#505).
-  local set = env("ARUGULA_SOCK") or env("ILLOGICAL_SOCK")
+  local set = env("ARUGULA_SOCK")
   if set then return set end
+  -- A daemon whose state is still in illogical's directory, where it is.
   for _, name in ipairs({ "arugula", "illogical" }) do
     local dir = state_dir(name)
     local f = io.open(dir .. "/sock.path", "r")
@@ -84,13 +81,12 @@ local function socket_path()
 end
 
 -- Folders that joined, remembered.
-local function remembered_path(name)
-  return vim.fn.stdpath("data") .. "/" .. (name or "arugula") .. "/folders.json"
+local function remembered_path()
+  return vim.fn.stdpath("data") .. "/arugula/folders.json"
 end
 
 local function remembered()
-  -- Where they were remembered before the rename, until one changes (#505).
-  local f = io.open(remembered_path(), "r") or io.open(remembered_path("illogical"), "r")
+  local f = io.open(remembered_path(), "r")
   if not f then return {} end
   local ok, v = pcall(vim.json.decode, f:read("*a") or "")
   f:close()
@@ -407,7 +403,7 @@ connect = function()
   local upgraded = false
   pipe:connect(socket_path(), function(err)
     if err then return vim.schedule(lost) end
-    pipe:write("GET /api/editors/connect HTTP/1.1\r\nHost: localhost\r\nConnection: Upgrade\r\nUpgrade: " .. S.proto .. "\r\n\r\n")
+    pipe:write("GET /api/editors/connect HTTP/1.1\r\nHost: localhost\r\nConnection: Upgrade\r\nUpgrade: " .. PROTO .. "\r\n\r\n")
     pipe:read_start(function(rerr, data)
       if rerr or not data then return vim.schedule(lost) end
       vim.schedule(function()
@@ -416,13 +412,7 @@ connect = function()
         if not upgraded then
           local i = S.buf:find("\r\n\r\n", 1, true)
           if not i then return end
-          if not S.buf:match("^HTTP/1.1 101") then
-            -- Refused: the daemon may know the protocol by its other name.
-            if S.buf:match("^HTTP/1.1 400") then
-              S.proto = S.proto == OLD_PROTO and "arugula-editor" or OLD_PROTO
-            end
-            return lost()
-          end
+          if not S.buf:match("^HTTP/1.1 101") then return lost() end
           upgraded = true
           S.buf = S.buf:sub(i + 4)
           local cur = file_of()

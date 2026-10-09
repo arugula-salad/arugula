@@ -668,8 +668,6 @@ mod tests {
         let cookie = format!("other=1; arugula_7681={token}");
         assert!(check(&a, &[host, ("cookie", &cookie)]).is_ok());
         assert!(check(&a, &[host, ("cookie", "arugula_7681=ilt_wrong")]).is_err());
-        // The cookie set before the rename still signs the browser in (#505).
-        assert!(check(&a, &[host, ("cookie", &format!("illogical_7681={token}"))]).is_ok());
         let same = ("sec-fetch-site", "same-origin");
         assert!(check(&a, &[host, ("cookie", &cookie), same]).is_ok());
         // Typed in the address bar, or a link from elsewhere: a page load.

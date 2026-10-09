@@ -87,7 +87,7 @@ chmod +x "$stubs"/*
 # fresh HOME, over ssh (so no Mac app unless an ARG or $with says so),
 # with the app put in $home/Apps, never the real /Applications. $with is
 # more VAR=value for env; $release is how it names the release and asks
-# not to start (the old ILLOGICAL_ names work too, #505); $path is PATH.
+# not to start; $path is PATH.
 # Sets $home, $status and $out.
 with=()
 release=("ARUGULA_VERSION=$version" "ARUGULA_NO_START=1")
@@ -96,7 +96,7 @@ run() {
   home=$work/home-$1
   mkdir -p "$home"
   status=0
-  out=$(env -u ARUGULA_VERSION -u ARUGULA_NO_START -u ILLOGICAL_VERSION -u ILLOGICAL_NO_START \
+  out=$(env -u ARUGULA_VERSION -u ARUGULA_NO_START \
     HOME="$home" PATH="$path" FAKE_OS="$2" FAKE_ARCH="$3" FAKE_ARM64="${4:-}" \
     SSH_CONNECTION="10.0.0.1 22 10.0.0.2 22" ARUGULA_APP_DIR="$home/Apps" \
     "${release[@]}" ${with[@]+"${with[@]}"} \
@@ -232,55 +232,20 @@ else
 fi
 cp "$work/good.zip" "$zip"
 
-# The names from before the rename (#505). ILLOGICAL_VERSION and
-# ILLOGICAL_NO_START still pick the release and keep it from starting.
-# A Linux with systemd, whatever this machine has (a Mac has no systemctl,
-# and install.sh would take the no-systemd path, which never starts it).
-mkdir -p "$work/systemd"
-printf '#!/bin/sh\nexit 0\n' >"$work/systemd/systemctl"
-chmod +x "$work/systemd/systemctl"
-path=$work/systemd:$stubs:$PATH
-release=("ILLOGICAL_VERSION=$version" "ILLOGICAL_NO_START=1")
-run old-env Linux x86_64
-if [ "$status" = 0 ] && grep -qx ".*/releases/download/$version/arugula-${version#v}-x86_64-unknown-linux-musl.tar.gz" "$home/fetched" \
-  && grep -qx 'arugulad install --no-start' "$home/calls"; then
-  ok "ILLOGICAL_VERSION and ILLOGICAL_NO_START"
-else
-  bad old-env "didn't honour ILLOGICAL_VERSION and ILLOGICAL_NO_START: $(cat "$home/calls" 2>/dev/null)"
-fi
-# The new name wins over the old.
-release=("ARUGULA_VERSION=$version" "ILLOGICAL_VERSION=v0.0.1" "ARUGULA_NO_START=1")
-run both-env Linux x86_64
-if [ "$status" = 0 ] && ! grep -q 'v0.0.1' "$home/fetched"; then ok "ARUGULA_VERSION over ILLOGICAL_VERSION"; else bad both-env "took ILLOGICAL_VERSION over ARUGULA_VERSION"; fi
-release=("ARUGULA_VERSION=$version" "ARUGULA_NO_START=1")
-path=$stubs:$PATH
-
 # A Mac with the app from before the rename: illogical.app goes, Arugula.app
-# takes its place (#505).
+# takes its place (an app updated in place since keeps that folder).
 mkdir -p "$work/home-mac-old-app/Apps/illogical.app"
 app mac-old-app Darwin arm64 "" arm64 --app
 if [ -e "$home/Apps/illogical.app" ]; then bad mac-old-app "left illogical.app beside Arugula.app"; else ok "illogical.app replaced"; fi
 
-# No systemd, over an install from before the rename: illogicald and
-# illogical in ~/.local/bin lead to the new binaries (#505). PATH without
-# systemctl: the stubs and the few tools install.sh uses.
+# No systemd: the binaries, and no links under illogical's names (#534).
+# PATH without systemctl: the stubs and the few tools install.sh uses.
 nosd=$work/nosd
 mkdir -p "$nosd"
 for c in sh mktemp rm mkdir cp mv ln grep cut sed tar gzip sha256sum shasum id cat tr basename dirname sleep chmod; do
   w=$(command -v "$c" 2>/dev/null) && ln -sf "$w" "$nosd/$c"
 done
 path=$stubs:$nosd
-mkdir -p "$work/home-nosystemd-old/.local/bin"
-printf 'old\n' >"$work/home-nosystemd-old/.local/bin/illogicald"
-printf 'old\n' >"$work/home-nosystemd-old/.local/bin/illogical"
-run nosystemd-old Linux x86_64
-b=$home/.local/bin
-if [ "$status" = 0 ] && [ -x "$b/arugulad" ] && [ "$(readlink "$b/illogicald")" = arugulad ] && [ "$(readlink "$b/illogical")" = arugula ]; then
-  ok "no systemd: the old names lead to the new binaries"
-else
-  bad nosystemd-old "illogicald → $(readlink "$b/illogicald"), illogical → $(readlink "$b/illogical")"
-fi
-# A fresh one gets no old names.
 run nosystemd-new Linux x86_64
 if [ "$status" = 0 ] && [ -x "$home/.local/bin/arugula" ] && [ ! -e "$home/.local/bin/illogical" ]; then ok "no systemd, fresh: no old names"; else bad nosystemd-new "made old names on a fresh install"; fi
 path=$stubs:$PATH

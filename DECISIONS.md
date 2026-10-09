@@ -34,7 +34,7 @@ Where: `crates/proto/src/lib.rs` (`FrameKind`, `HEADER_LEN`), `crates/daemon/src
 From: [Decisions table](docs/plan-archive.md#decisions-on-the-briefs-open-questions), M1, M2.
 
 ### Some names outlive the rename to Arugula
-The product is being renamed (#509). Names that something stored or running
+The product was renamed (#509). Names that something stored or running
 depends on stay "illogical" for good: the domains signed or hashed into
 certificates, rosters, proofs and push and call tokens, the Noise prologue,
 the sync key's HKDF info, the key file header, the checkpoint magic, agent
@@ -42,11 +42,15 @@ blocks' MCP token MAC (`illogical block N`), control's hash of a deleted
 machine (`illogical gone daemon`), the
 browser's IndexedDB `illogical-device`, and the names a restarted daemon or
 another version finds running panes and sandboxes by (holder socket, Windows'
-pane pipe, systemd scopes, `illogical-eph-`, the resident service). Where a
-name crosses between versions (headers, `ILLOGICAL_*` variables, service and
-binary names, `window.__illogicalApp`), the bridge release accepts both.
+pane pipe, systemd scopes, `illogical-eph-`, the resident service). The
+state, config, data and cache directories made under the old name are used
+where they are. Names that only cross between versions (headers,
+`ILLOGICAL_*` variables, service and binary names, download names,
+`window.__illogicalApp`) were accepted under both names from the bridge
+release (0.25) until every install was on 0.26 or later; since #534 they
+are Arugula's alone.
 Where: `crates/core/src/rename.rs`, `crates/e2e/src/frozen.rs` (pins the signed domains as hex), "Frozen (#504)" comments.
-From: #504.
+From: #504, #534.
 
 ### The server sends whole layouts, and deltas for summaries
 `State` carries the full tree and a `rev` on every layout change (trees are
@@ -629,7 +633,7 @@ mechanism #347's per-feature flags extend:
   `BUILT && flags::get(…)`; a build without Labs can set the flag and
   nothing follows, and *Labs…* says so.
 It was a file, not an environment variable, because `shellenv::clean()` drops
-every `ILLOGICAL_*` a shell prints and the desktop app starts the daemon from
+every `ARUGULA_*` a shell prints and the desktop app starts the daemon from
 a fixed plist; that holds for `flags.json` too. The state dir survives
 `arugulad uninstall`, install.sh and the desktop app's updates. Labs is per
 machine, visibility rather than enforcement (a machine without it still

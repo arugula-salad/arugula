@@ -232,7 +232,7 @@ fn parse(out: &[u8]) -> Option<Vec<(String, String)>> {
 fn clean(vars: Vec<(String, String)>, given: &[(String, String)]) -> Vec<(String, String)> {
     vars.into_iter()
         .filter(|(k, _)| !matches!(k.as_str(), "PWD" | "OLDPWD" | "SHLVL" | "_" | "CLAUDE_CODE_SSE_PORT"))
-        .filter(|(k, _)| !arugula_proto::rename::is_ours(k))
+        .filter(|(k, _)| !k.starts_with("ARUGULA_"))
         .filter(|kv| !given.contains(kv))
         .collect()
 }
@@ -343,11 +343,11 @@ mod tests {
 
     use super::*;
 
-    /// #505: the daemon's variables under either name are its own.
+    /// The daemon's variables are its own.
     #[test]
-    fn ours_are_left_out_under_either_name() {
+    fn ours_are_left_out() {
         let vars = vec![
-            ("ILLOGICAL_SOCK".into(), "/a".into()),
+            ("ARUGULA_SOCK".into(), "/a".into()),
             ("ARUGULA_PANE".into(), "1".into()),
             ("EDITOR".into(), "vi".into()),
         ];

@@ -206,13 +206,11 @@ impl Bridge {
         if let Some(a) = &auth {
             headers.push(("Authorization", a));
         }
-        // Under both names (#505): the daemon may be older than 0.25.
-        use arugula_proto::rename::{CLAUDE_CONFIG_DIR, PANE};
         if let Some(p) = &self.pane {
-            headers.extend(PANE.map(|n| (n, p.as_str())));
+            headers.push(("x-arugula-pane", p));
         }
         if let Some(d) = &self.claude_config_dir {
-            headers.extend(CLAUDE_CONFIG_DIR.map(|n| (n, d.as_str())));
+            headers.push(("arugula-claude-config-dir", d));
         }
         let res = http::send(&self.target, "POST", PATH, &headers, line.as_bytes())?;
         let status = res.status;
@@ -293,7 +291,7 @@ impl Bridge {
             headers.push(("Authorization", a));
         }
         if let Some(p) = &self.pane {
-            headers.extend(arugula_proto::rename::PANE.map(|n| (n, p.as_str())));
+            headers.push(("x-arugula-pane", p));
         }
         let res = http::send(&self.target, "POST", PATH, &headers, init.as_bytes())?;
         let id = res.header("mcp-session-id").map(str::to_owned);

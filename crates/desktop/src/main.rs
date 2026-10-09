@@ -21,8 +21,8 @@
 //!   a machine with none (first run, offline), and may be older than the
 //!   one running. On macOS the app's launch agent runs the bundle's copy,
 //!   which hands on to a newer one the daemon's update put in
-//!   `~/.local/bin`. A running daemon older than the bundled one (or an
-//!   illogicald from before the rename) is offered its update on the setup
+//!   `~/.local/bin`. A running daemon older than the bundled one is offered
+//!   its update on the setup
 //!   page, never updated unasked (#661, `compat.rs`).
 //! - **Every key reaches the page** (S25), except a Mac's own: on macOS
 //!   the app menu has Hide (Cmd-H), Hide Others and Quit (Cmd-Q, #320) and
@@ -149,8 +149,8 @@ static ADDR: OnceLock<String> = OnceLock::new();
 static ONE: Mutex<()> = Mutex::new(());
 
 /// The daemon's state directories, the one to read first first: its own
-/// name's, then the old name's (#505), which a daemon from before the
-/// rename (or one that kept its state where it was) writes to.
+/// name's, then the old name's: a daemon set up before the rename keeps
+/// its state where it was.
 fn state_dirs() -> Vec<PathBuf> {
     if let Some(d) = std::env::var_os("ARUGULA_STATE_DIR") {
         return vec![PathBuf::from(d)];
@@ -240,8 +240,7 @@ fn installed(names: &[&str]) -> Option<PathBuf> {
     let mut dirs: Vec<PathBuf> = home.iter().map(|h| h.join(".local/bin")).collect();
     if cfg!(windows) {
         let local = std::env::var_os("LOCALAPPDATA").map(PathBuf::from);
-        // An install from before the rename is in Programs\illogical (#505).
-        dirs.extend(local.iter().flat_map(|l| ["arugula", "illogical"].map(|n| l.join("Programs").join(n))));
+        dirs.extend(local.iter().map(|l| l.join("Programs").join("arugula")));
     } else {
         dirs.extend(["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"].map(PathBuf::from));
     }
@@ -255,9 +254,8 @@ fn installed(names: &[&str]) -> Option<PathBuf> {
     })
 }
 
-/// The daemon, under its name or (installed before the rename, #505) its
-/// old one.
-const DAEMON: [&str; 2] = ["arugulad", "illogicald"];
+/// The daemon.
+const DAEMON: [&str; 1] = ["arugulad"];
 
 /// The copy of `name` this app carries, next to its own executable.
 fn bundled(name: &str) -> Option<PathBuf> {
@@ -822,9 +820,7 @@ fn open_pane(app: &AppHandle, pane: u32) {
             // shows that new tab, from the daemon's state, as notifications
             // did before M46.
             if !cfg!(target_os = "linux") && w.url().is_ok_and(|u| daemons(&u)) {
-                let _ = w.eval(format!(
-                    "dispatchEvent(new CustomEvent({PAGE_EVENT_PREFIX}+':open-pane', {{ detail: {pane} }}))"
-                ));
+                let _ = w.eval(format!("dispatchEvent(new CustomEvent('arugula:open-pane', {{ detail: {pane} }}))"));
             } else {
                 let _ = w.navigate(url);
             }
@@ -1037,18 +1033,9 @@ fn watch_once(app: &AppHandle) -> anyhow::Result<()> {
     }
 }
 
-/// The prefix of the events the app sends into a daemon's page, as JS: a
-/// page from after the rename (#505) says so (`window.__arugulaPage`) and
-/// listens for `arugula:`, one from a daemon on 0.25 or older only for
-/// `illogical:`. One event either way, so a new page doesn't hear it twice.
-pub(crate) const PAGE_EVENT_PREFIX: &str = "(window.__arugulaPage ? 'arugula' : 'illogical')";
-
 fn main() {
     // Finder throws stderr away: write panics down where they can be found.
     panics::install();
-    // ILLOGICAL_X stands in for ARUGULA_X (#505), before any thread exists.
-    // SAFETY: nothing else runs yet.
-    unsafe { arugula_proto::rename::alias_env() };
     // `arugula-desktop --agent status|register|unregister|restart`: the
     // daemon's launch agent, for tests and for fixing a Mac by hand.
     #[cfg(target_os = "macos")]
@@ -1190,35 +1177,15 @@ fn main() {
                     if let Err(e) = app.deep_link().register_all() {
                         eprintln!("arugula: registering arugula:// links: {e}");
                     }
-                    // #505: the app from before the rename claimed
-                    // illogical:// in its own file, which this one now does.
-                    if let Some(h) = std::env::var_os("HOME") {
-                        let old = PathBuf::from(h).join(".local/share/applications/illogical-desktop-handler.desktop");
-                        let _ = std::fs::remove_file(old);
-                    }
                 }
             }
             settings::adopt_old(app.handle());
             profile::init(app.handle());
             #[cfg(target_os = "macos")]
             finder::init(app.handle());
-            // #505: the app from before the rename's launch agent gives way
-            // to this app's daemon (a window finding none waits for this).
             #[cfg(target_os = "macos")]
             std::thread::spawn(|| {
                 let one = ONE.lock().unwrap_or_else(|e| e.into_inner());
-                if service::retire_old() {
-                    // Its daemon has up to its ExitTimeOut (15 s) to go.
-                    for _ in 0..80 {
-                        if !reachable() {
-                            break;
-                        }
-                        std::thread::sleep(Duration::from_millis(250));
-                    }
-                    if let Err(e) = start_daemon() {
-                        eprintln!("arugula: starting the daemon after the old app's: {e}");
-                    }
-                }
                 // The agent already runs the daemon: `arugulad` and the CLI
                 // on PATH all the same (#550).
                 if service::registered() {
@@ -1371,7 +1338,7 @@ mod tests {
     }
 
     /// The identifier and the launch agent's names live in tauri.conf.json
-    /// and the plist as well as in proto: they agree (#505).
+    /// and the plist as well as in proto: they agree.
     #[test]
     fn the_names_agree() {
         let conf: serde_json::Value = serde_json::from_str(&file("tauri.conf.json")).unwrap();
@@ -1383,8 +1350,7 @@ mod tests {
         let plist = file(&format!("macos/{plist_name}"));
         assert!(plist.contains(&format!("<key>Label</key>\n  <string>{APP_LABEL}</string>")), "{plist}");
         assert!(plist.contains(&format!("<string>{APP_ID}</string>")), "{plist}");
-        // Both schemes, old links keep working.
-        assert_eq!(conf["plugins"]["deep-link"]["desktop"]["schemes"], serde_json::json!(["arugula", "illogical"]));
+        assert_eq!(conf["plugins"]["deep-link"]["desktop"]["schemes"], serde_json::json!(["arugula"]));
     }
 
     /// #505: the daemon's state under its new name, else its old one.

@@ -571,14 +571,8 @@ async fn read(State(app): AppState, Query(q): Query<FsQuery>) -> Res<Response> {
     };
     let mut res = bytes.into_response();
     let h = res.headers_mut();
-    // Under both names (#505), for an older CLI.
-    use arugula_proto::rename::{OFFSET, SIZE};
-    for n in SIZE {
-        h.insert(n, HeaderValue::from(size));
-    }
-    for n in OFFSET {
-        h.insert(n, HeaderValue::from(offset));
-    }
+    h.insert("x-arugula-size", HeaderValue::from(size));
+    h.insert("x-arugula-offset", HeaderValue::from(offset));
     h.insert(axum::http::header::CONTENT_TYPE, HeaderValue::from_static("application/octet-stream"));
     Ok(res)
 }

@@ -30,16 +30,7 @@
 #                           are, instead of GitHub
 # ARUGULA_APP_DIR=DIR     where Arugula.app goes, instead of
 #                           /Applications or ~/Applications
-# Each ARUGULA_X can also be ILLOGICAL_X, its name before the rename.
 set -eu
-
-# The names from before the rename, for scripts that set them (#505, drop
-# in #508). The new one wins when both are set.
-for v in VERSION NO_START DOWNLOAD_URL APP APP_VERSION APP_DOWNLOAD_URL APP_DIR; do
-  if eval "[ -z \"\${ARUGULA_$v+x}\" ] && [ -n \"\${ILLOGICAL_$v+x}\" ]"; then
-    eval "ARUGULA_$v=\$ILLOGICAL_$v"
-  fi
-done
 
 repo=https://github.com/arugula-salad/arugula
 
@@ -163,15 +154,6 @@ if [ "$os" = Linux ] && ! command -v systemctl >/dev/null 2>&1; then
     cp "$tmp/$name/$b" "$HOME/.local/bin/.$b.new" && mv "$HOME/.local/bin/.$b.new" "$HOME/.local/bin/$b"
   done
   say "installed ~/.local/bin/arugulad and ~/.local/bin/arugula"
-  # An install from before the rename: its names now lead to the new
-  # binaries, for the panes and hooks that call them (#505, drop in #508).
-  # `arugulad install` does this where there's a service.
-  for b in arugulad arugula; do
-    o=illogical${b#arugula}
-    if [ -e "$HOME/.local/bin/$o" ] || [ -L "$HOME/.local/bin/$o" ]; then
-      ln -sf "$b" "$HOME/.local/bin/.$o.new" && mv -f "$HOME/.local/bin/.$o.new" "$HOME/.local/bin/$o"
-    fi
-  done
   nosystemd=1
 elif [ -n "${ARUGULA_NO_START:-}" ]; then
   "$tmp/$name/arugulad" install --no-start
@@ -185,15 +167,11 @@ fi
 listen=127.0.0.1:7681
 if [ "$os" = Darwin ]; then
   plist="$HOME/Library/LaunchAgents/arugulad.plist"
-  # Or the LaunchDaemon `arugulad install --system` wrote, or (not started,
-  # on a machine from before the rename) the old one's (#505).
-  for p in "/Library/LaunchDaemons/arugulad.$(id -un).plist" "$HOME/Library/LaunchAgents/illogicald.plist" "/Library/LaunchDaemons/illogicald.$(id -un).plist"; do
-    [ -f "$plist" ] || plist=$p
-  done
+  # Or the LaunchDaemon `arugulad install --system` wrote.
+  [ -f "$plist" ] || plist="/Library/LaunchDaemons/arugulad.$(id -un).plist"
   args=$(sed -n 's:.*<string>\(.*\)</string>.*:\1:p' "$plist" 2>/dev/null || true)
 else
   unit="$HOME/.config/systemd/user/arugulad.service"
-  [ -f "$unit" ] || unit="$HOME/.config/systemd/user/illogicald.service"
   args=$(sed -n 's/^ExecStart=[^ ]*//p' "$unit" 2>/dev/null || true)
 fi
 prev=""
@@ -236,7 +214,7 @@ elif [ -n "${nosystemd:-}" ]; then
     # An upgrade: the old daemon is still the one running.
     say "Arugula $version is installed. A daemon is already running here (the old one): restart it"
     say "to run this version. Panes started with --keep-panes keep running:"
-    say "  kill \$(pgrep -f '^$HOME/.local/bin/(arugulad|illogicald) --keep-panes')"
+    say "  kill \$(pgrep -f '^$HOME/.local/bin/arugulad --keep-panes')"
   else
     say "Arugula $version is installed. No systemd here, so no service: start the daemon with"
   fi
@@ -271,9 +249,9 @@ if [ "$app" = 1 ]; then
   mv "$appdir/.$bundle.new" "$appdir/$bundle"
   say ""
   say "The app is in $appdir/$bundle."
-  # The app from before the rename, illogical.app, is this one now: it
-  # goes, so Spotlight and the Dock don't keep opening it (#505, drop in
-  # #508).
+  # The app from before the rename, illogical.app (an app updated in place
+  # since keeps that folder), is this one now: it goes, so Spotlight and
+  # the Dock don't keep opening it.
   if [ "$bundle" != illogical.app ] && [ -d "$appdir/illogical.app" ]; then
     if rm -rf "${appdir:?}/illogical.app" 2>/dev/null; then
       say "  It replaces $appdir/illogical.app (illogical is Arugula now)."

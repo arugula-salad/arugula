@@ -4,8 +4,6 @@
 #          arugula it carries), ~/.local/bin/arugula-desktop, its icons
 #          and a launcher entry.
 #   macOS: ~/Applications/Arugula.app (ad-hoc signed, carrying both).
-# An install from before the rename (illogical-desktop, illogical.app) is
-# replaced, not left beside it (#505).
 # The daemon stays its own service: the app starts the installed one, or
 # installs the one it carries (`arugulad install`) when there is none.
 # The carried binaries come from ./sidecars.sh (built when missing; it needs
@@ -22,12 +20,6 @@ Linux)
   bin="$HOME/.local/bin"
   lib="$HOME/.local/lib/arugula-desktop"
   share="$HOME/.local/share"
-  # The app from before the rename (#505): its files go, so there's one app.
-  rm -rf "$HOME/.local/lib/illogical-desktop"
-  rm -f "$bin/illogical-desktop" "$share/applications/illogical.desktop"
-  for size in 32x32 128x128 512x512; do
-    rm -f "$share/icons/hicolor/$size/apps/illogical-desktop.png"
-  done
   mkdir -p "$bin" "$lib" "$share/applications"
   install -m 755 target/release/arugula-desktop "$lib/arugula-desktop"
   install -m 755 "binaries/arugulad-$triple" "$lib/arugulad"
@@ -57,7 +49,7 @@ DESKTOP
 Darwin)
   cargo tauri build --bundles app
   mkdir -p "$HOME/Applications"
-  rm -rf "$HOME/Applications/Arugula.app" "$HOME/Applications/illogical.app"
+  rm -rf "$HOME/Applications/Arugula.app"
   cp -R target/release/bundle/macos/Arugula.app "$HOME/Applications/"
   echo "installed: $HOME/Applications/Arugula.app"
   ;;

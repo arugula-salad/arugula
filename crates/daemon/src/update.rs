@@ -209,7 +209,7 @@ fn kind(exe: &Path, home: &Path, exists: impl Fn(&Path) -> Option<PathBuf>) -> K
     if brew {
         return Kind::Brew;
     }
-    // The app under either name (#505): one from before the rename that
+    // The app under either name: one from before the rename that
     // updated in place is still illogical.app.
     let bundles = ["Arugula.app", "illogical.app"];
     let app = std::iter::once(deb.to_path_buf())
@@ -247,29 +247,22 @@ struct Status {
 
 /// Windows: `arugulad install` puts it in `%LOCALAPPDATA%\Programs\arugula`
 /// (from install.ps1 or the desktop app, which lives in
-/// `%LOCALAPPDATA%\Arugula`, or before the rename `%LOCALAPPDATA%\illogical`,
-/// #505).
+/// `%LOCALAPPDATA%\Arugula`).
 #[cfg(windows)]
 fn this_kind() -> Kind {
     let exe = std::env::current_exe().ok().and_then(|e| e.canonicalize().ok()).unwrap_or_default();
     let local = PathBuf::from(std::env::var_os("LOCALAPPDATA").unwrap_or_default());
-    // Ours, or illogical's (#505).
-    let installed = [("arugula", "arugulad.exe"), ("illogical", "illogicald.exe")]
-        .iter()
-        .any(|(d, b)| local.join("Programs").join(d).join(b).canonicalize().ok().as_ref() == Some(&exe));
+    let installed = local.join(r"Programs\arugula\arugulad.exe").canonicalize().ok().as_ref() == Some(&exe);
     if !installed {
         return Kind::Source;
     }
     if desktop_app(&local) { Kind::App } else { Kind::Script }
 }
 
-/// The desktop app is installed (Windows): Arugula, or the app from before
-/// the rename (#505), which stays until the new app's installer removes it.
-#[cfg(any(windows, test))]
+/// The desktop app is installed (Windows).
+#[cfg(windows)]
 fn desktop_app(local: &Path) -> bool {
-    [("Arugula", "arugula-desktop.exe"), ("illogical", "illogical-desktop.exe")]
-        .iter()
-        .any(|(dir, exe)| local.join(dir).join(exe).is_file())
+    local.join(r"Arugula\arugula-desktop.exe").is_file()
 }
 
 #[cfg(unix)]
@@ -344,21 +337,6 @@ pub fn routes() -> Router<Arc<App>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// #505: the Windows app under either name.
-    #[test]
-    fn finds_the_windows_app_under_either_name() {
-        let local = std::env::temp_dir().join(format!("arugula-local-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&local);
-        assert!(!desktop_app(&local));
-        for (dir, exe) in [("illogical", "illogical-desktop.exe"), ("Arugula", "arugula-desktop.exe")] {
-            std::fs::create_dir_all(local.join(dir)).unwrap();
-            std::fs::write(local.join(dir).join(exe), "").unwrap();
-            assert!(desktop_app(&local), "{dir}");
-            let _ = std::fs::remove_dir_all(local.join(dir));
-        }
-        let _ = std::fs::remove_dir_all(&local);
-    }
 
     /// #506: the old repository's name redirects to the new one's
     /// `releases/latest`, which redirects to the tag.

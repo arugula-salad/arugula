@@ -27,8 +27,7 @@
 #   release app-publish TAG        SHA256SUMS and latest.json, notes from
 #                                  docs/releases/app-X.md, published (never as
 #                                  latest), and copied to the rolling app-latest
-#                                  release the site and the updater read (with
-#                                  the old illogical-desktop-* names, #505)
+#                                  release the site and the updater read
 #
 # Both lanes:
 #   release check-green TAG        TAG's commit passed CI: GitHub has its
@@ -487,14 +486,10 @@ case "${1:-}" in
     gh release view "$app_latest" -R "$repo" >/dev/null 2>&1 \
       || gh release create "$app_latest" -R "$repo" --verify-tag --latest=false --title "Arugula app (latest)" \
         --notes "The newest desktop app, always: its downloads keep these names. Each version's own release is app-vX.Y.Z." >/dev/null
-    # Its downloads under their old names too, illogical-desktop-*: the site
-    # before the rename, older docs and links point at those here (#505,
-    # drop in #508). Its SHA256SUMS lists both. latest.json (what apps from
-    # before the rename read here too) points at the new names in $tag.
+    # latest.json points at the downloads in $tag.
     r=$dir/rolling; mkdir "$r"
     cp "$dir"/arugula-desktop-* "$dir/latest.json" "$r/"
-    for f in $(eval "echo $app_downloads"); do cp "$dir/$f" "$r/illogical-desktop-${f#arugula-desktop-}"; done
-    (cd "$r" && sha256sum -- arugula-desktop-* illogical-desktop-* > SHA256SUMS)
+    (cd "$r" && sha256sum -- arugula-desktop-* > SHA256SUMS)
     gh release upload "$app_latest" -R "$repo" --clobber "$r"/*
     gh release edit "$app_latest" -R "$repo" --latest=false --notes "The newest desktop app, always: $v ($tag). Its downloads keep these names." >/dev/null
     check_latest
@@ -502,17 +497,13 @@ case "${1:-}" in
   sums)
     ensure_release "$2"
     dir=$(mktemp -d)
-    gh release download "$2" -R "$repo" -p '*.tar.gz' -p 'arugula-[0-9]*.zip' -p 'illogical-[0-9]*.zip' -D "$dir"
-    # Each under its old name too, for older daemons' self-update
-    # (scripts/dist-pack, #505, drop in #508).
-    for p in arugula illogical; do
-      n=$(find "$dir" -name "$p-[0-9]*.tar.gz" | wc -l | tr -d " ")
-      [ "$n" = 4 ] || { echo "expected 4 $p tarballs, found $n" >&2; exit 1; }
-      # Windows' zip (install.ps1's, M59).
-      w=$(find "$dir" -name "$p-[0-9]*-x86_64-pc-windows-msvc.zip" | wc -l | tr -d " ")
-      [ "$w" = 1 ] || { echo "expected the $p Windows zip, found $w" >&2; exit 1; }
-    done
-    (cd "$dir" && sha256sum -- arugula-[0-9]*.tar.gz arugula-[0-9]*.zip illogical-[0-9]*.tar.gz illogical-[0-9]*.zip > SHA256SUMS && cat SHA256SUMS)
+    gh release download "$2" -R "$repo" -p 'arugula-[0-9]*.tar.gz' -p 'arugula-[0-9]*.zip' -D "$dir"
+    n=$(find "$dir" -name "arugula-[0-9]*.tar.gz" | wc -l | tr -d " ")
+    [ "$n" = 4 ] || { echo "expected 4 tarballs, found $n" >&2; exit 1; }
+    # Windows' zip (install.ps1's, M59).
+    w=$(find "$dir" -name "arugula-[0-9]*-x86_64-pc-windows-msvc.zip" | wc -l | tr -d " ")
+    [ "$w" = 1 ] || { echo "expected the Windows zip, found $w" >&2; exit 1; }
+    (cd "$dir" && sha256sum -- arugula-[0-9]*.tar.gz arugula-[0-9]*.zip > SHA256SUMS && cat SHA256SUMS)
     gh release upload "$2" -R "$repo" --clobber "$dir/SHA256SUMS"
     ;;
   tap-files)
@@ -536,7 +527,8 @@ case "${1:-}" in
     sed "${sed[@]}" packaging/homebrew/arugula.rb.in > "$dir/Formula/arugula.rb"
     # The formula was `illogical`: Homebrew moves its installs to `arugula`
     # on `brew upgrade` when formula_renames.json says so and the old
-    # formula is gone (#505). Kept: the rename outlives #508.
+    # formula is gone. Kept for good: a Mac that hasn't upgraded since
+    # still has `illogical` installed.
     rm -f "$dir/Formula/illogical.rb"
     python3 -I - "$dir/formula_renames.json" <<'PY'
 import json, os, sys

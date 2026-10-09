@@ -57,20 +57,12 @@ let saved = false;
 /** The debugger, as its adapter said. */
 let debug = null;
 const timers = {};
-/** The upgrade's protocol name. A daemon from before the rename (0.25 and
- * older) knows only the old one and refuses the new with a 400 (#505). */
-let proto = "arugula-editor";
-const OLD_PROTO = "illogical-editor";
-/** The extension's id before the rename (#505). */
-const OLD_ID = "illogical.illogical-editor";
+/** The upgrade's protocol name. */
+const PROTO = "arugula-editor";
 
-/** A setting, or its name from before the rename, `illogical.*` (#505):
- * the workspace of an editor block made before the update says
- * `illogical.block`. */
+/** One of our settings, `arugula.*`. */
 function setting(key) {
-  const v = vscode.workspace.getConfiguration("arugula").get(key);
-  if (v) return v;
-  return vscode.workspace.getConfiguration("illogical").get(key);
+  return vscode.workspace.getConfiguration("arugula").get(key);
 }
 
 function activate(context) {
@@ -106,23 +98,6 @@ function activate(context) {
   );
   if (on) connect();
   else showStatus();
-  replaceOld();
-}
-
-// The extension under its old name (#505): it's this one, so it goes, and
-// the theme picked under the old name is this one's.
-async function replaceOld() {
-  try {
-    const theme = vscode.workspace.getConfiguration("workbench").inspect("colorTheme");
-    if (theme?.globalValue === "illogical") {
-      await vscode.workspace.getConfiguration("workbench").update("colorTheme", "arugula", vscode.ConfigurationTarget.Global);
-    }
-    if (vscode.extensions.getExtension(OLD_ID)) {
-      await vscode.commands.executeCommand("workbench.extensions.uninstallExtension", OLD_ID);
-    }
-  } catch {
-    // left as it is; both work
-  }
 }
 
 // ---- joining and leaving
@@ -174,17 +149,11 @@ function rememberedFile() {
 }
 
 function remembered() {
-  // The old extension's, until this one remembers something (#505). Its
-  // storage is beside this one's, under its id.
-  const old = path.join(path.dirname(ctx.globalStorageUri.fsPath), OLD_ID, "folders.json");
-  for (const f of [rememberedFile(), old]) {
-    try {
-      return JSON.parse(fs.readFileSync(f, "utf8"));
-    } catch {
-      // next
-    }
+  try {
+    return JSON.parse(fs.readFileSync(rememberedFile(), "utf8"));
+  } catch {
+    return [];
   }
-  return [];
 }
 
 function remember(folder, yes) {
@@ -209,10 +178,8 @@ function folderPath() {
 function socketPath() {
   const set = setting("socket");
   if (set) return set;
-  // The old names too: a shell started before the update, a daemon whose
-  // state is still in the old directory (#505).
   if (process.env.ARUGULA_SOCK) return process.env.ARUGULA_SOCK;
-  if (process.env.ILLOGICAL_SOCK) return process.env.ILLOGICAL_SOCK;
+  // A daemon whose state is still in illogical's directory, where it is.
   const base = process.env.XDG_STATE_HOME || path.join(os.homedir(), ".local", "state");
   for (const name of ["arugula", "illogical"]) {
     const state = path.join(base, name);
@@ -241,7 +208,7 @@ function connect() {
   const req = http.request({
     socketPath: socketPath(),
     path: "/api/editors/connect",
-    headers: { Connection: "Upgrade", Upgrade: proto },
+    headers: { Connection: "Upgrade", Upgrade: PROTO },
   });
   req.on("upgrade", (_res, s, head) => {
     sock = s;
@@ -275,8 +242,6 @@ function connect() {
   });
   req.on("response", (res) => {
     res.resume();
-    // Refused: the daemon may know the protocol by its other name.
-    if (res.statusCode === 400) proto = proto === OLD_PROTO ? "arugula-editor" : OLD_PROTO;
     lost();
   });
   req.on("error", () => lost());

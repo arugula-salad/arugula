@@ -1,7 +1,5 @@
 // Arugula web client: tabs and splits of terminals owned by the daemon.
 
-// First: storage kept under the old names (#505), before anything reads it.
-import "./rename";
 import { setLending } from "./hand";
 import type { TeamPins, TeamPinsRequest } from "./proto";
 import { render } from "preact";
@@ -288,13 +286,8 @@ const openPane = (pane: number, daemon?: string, thread?: string) => {
     const off = client.subscribe(() => go() && off());
   }
 };
-// The desktop app sends this page its events as arugula:… once it says
-// it's from after the rename (#505); an app from before sends illogical:….
-(window as { __arugulaPage?: boolean }).__arugulaPage = true;
 // A pane opened on the home daemon from elsewhere (a sandbox shell).
-for (const name of ["arugula:open-pane", "illogical:open-pane"]) {
-  window.addEventListener(name, (e) => openPane((e as CustomEvent<number>).detail));
-}
+window.addEventListener("arugula:open-pane", (e) => openPane((e as CustomEvent<number>).detail));
 const fromHash = /^#pane=(?:([0-9a-f]+)\.)?(\d+)(?:&thread=((?:pane|session)-\d+))?$/.exec(location.hash);
 if (fromHash) {
   const [, daemon, pane, thread] = fromHash;
@@ -317,9 +310,9 @@ if (!linkTarget) void registerWorker(openPane);
 // Daemon menu (#325): Join… and Join again… open Getting started at the
 // cloud step, on an open page (the event) or a new one
 // (`#getting-started=cloud`).
-for (const name of ["arugula:getting-started", "illogical:getting-started"]) {
-  window.addEventListener(name, (e) => openGettingStarted((e as CustomEvent<Section>).detail, client));
-}
+window.addEventListener("arugula:getting-started", (e) =>
+  openGettingStarted((e as CustomEvent<Section>).detail, client),
+);
 const startAt = /^#getting-started=(\w+)$/.exec(location.hash);
 if (startAt) {
   openGettingStarted(startAt[1] as Section, client);

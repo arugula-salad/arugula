@@ -18,33 +18,19 @@ use std::{
 /// names a test checks against these.
 pub const APP_ID: &str = "io.arugula.desktop";
 pub const APP_LABEL: &str = "io.arugula.desktop.daemon";
-/// The app: `Arugula.app`, or `illogical.app` (#505), which is where an app
+/// The app: `Arugula.app`, or `illogical.app`, which is where an app
 /// from 0.25 or before still is after it updates: Tauri's updater
 /// replaces the bundle in place, keeping its name.
 pub const APP_BUNDLES: [&str; 2] = ["/Applications/Arugula.app", "/Applications/illogical.app"];
 /// Its plist inside the app, which is where it runs the daemon from.
 pub const APP_PLIST: &str = "/Applications/Arugula.app/Contents/Library/LaunchAgents/io.arugula.desktop.daemon.plist";
 pub const APP_PROGRAM: &str = "/Applications/Arugula.app/Contents/MacOS/arugulad";
-/// The app before the rename (#505): its identifier, its launch agent, and
-/// where that ran the daemon from. The new app stops that agent (it can't
-/// unregister another bundle's) and registers its own: both would run on
-/// one state directory.
+/// The app's identifier before the rename, #505: its settings are
+/// still under on a Mac that had it (`crates/desktop/src/settings.rs`).
 pub const OLD_APP_ID: &str = "wtf.widgets.illogical";
-pub const OLD_APP_LABEL: &str = "wtf.widgets.illogical.daemon";
-pub const OLD_APP_PLIST: &str =
-    "/Applications/illogical.app/Contents/Library/LaunchAgents/wtf.widgets.illogical.daemon.plist";
-pub const OLD_APP_PROGRAM: &str = "/Applications/illogical.app/Contents/MacOS/illogicald";
 /// `arugulad install`'s launchd label, and its systemd unit.
 pub const LABEL: &str = "arugulad";
 pub const UNIT: &str = "arugulad.service";
-/// What illogical's install called them, which a machine not yet
-/// reinstalled still has (#505).
-pub const OLD_LABEL: &str = "illogicald";
-pub const OLD_UNIT: &str = "illogicald.service";
-/// Both, the new names first: a machine whose daemon illogical set up still
-/// has its service found here (#505).
-pub const LABELS: [&str; 2] = [LABEL, OLD_LABEL];
-pub const UNITS: [&str; 2] = [UNIT, OLD_UNIT];
 
 /// The app's plist and the daemon it carries, in the app that's in
 /// /Applications under either name ([`APP_BUNDLES`]); [`APP_PLIST`] and
@@ -100,7 +86,6 @@ impl Service {
         // The label, unit or task: the target's last part.
         let label = self.target.rsplit('/').next().unwrap_or(&self.target);
         match self.kind {
-            Kind::AppAgent if label == OLD_APP_LABEL => format!("the old app's launch agent ({label})"),
             Kind::AppAgent => format!("the app's launch agent ({label})"),
             Kind::Agent => format!("arugulad install's launch agent ({label})"),
             Kind::LaunchDaemon => format!("arugulad install's LaunchDaemon ({})", self.target),
@@ -113,8 +98,7 @@ impl Service {
     /// `ExecStart` (`%h` is the home directory).
     pub fn program(&self) -> Option<PathBuf> {
         if self.kind == Kind::AppAgent {
-            let old = self.target.rsplit('/').next() == Some(OLD_APP_LABEL);
-            return Some(if old { OLD_APP_PROGRAM.into() } else { app_paths().1 });
+            return Some(app_paths().1);
         }
         program_in(&std::fs::read_to_string(&self.file).ok()?, home().as_deref())
     }
@@ -157,15 +141,9 @@ fn candidates() -> Vec<Service> {
     // app would register (no `arugulad install` plist).
     let app = launchd(&format!("{gui}/{APP_LABEL}"));
     let file = |p: PathBuf| p.is_file().then_some(p);
-    let (label, agent_plist) = LABELS
-        .iter()
-        .find_map(|l| Some((*l, file(home()?.join(format!("Library/LaunchAgents/{l}.plist")))?)))
-        .map_or((LABEL, None), |(l, p)| (l, Some(p)));
+    let agent_plist = home().and_then(|h| file(h.join(format!("Library/LaunchAgents/{LABEL}.plist"))));
     let user_name = std::env::var("USER").unwrap_or_default();
-    let (system_label, daemon_plist) = LABELS
-        .iter()
-        .find_map(|l| Some((*l, file(format!("/Library/LaunchDaemons/{l}.{user_name}.plist").into())?)))
-        .map_or((LABEL, PathBuf::new()), |(l, p)| (l, p));
+    let daemon_plist = PathBuf::from(format!("/Library/LaunchDaemons/{LABEL}.{user_name}.plist"));
     let scripted = agent_plist.as_ref().is_some_and(|p| p.is_file()) || daemon_plist.is_file();
     let app_plist = app_paths().0;
     if app.is_some() || (!scripted && app_plist.is_file()) {
@@ -177,20 +155,8 @@ fn candidates() -> Vec<Service> {
             loaded: app.is_some(),
         });
     }
-    // The app's from before the rename (#505), until the new app stops it,
-    // or while it's the only app here.
-    let old = launchd(&format!("{gui}/{OLD_APP_LABEL}"));
-    if old.is_some() || (out.is_empty() && !scripted && Path::new(OLD_APP_PLIST).is_file()) {
-        out.push(Service {
-            kind: Kind::AppAgent,
-            target: format!("{gui}/{OLD_APP_LABEL}"),
-            file: OLD_APP_PLIST.into(),
-            running: old == Some(true),
-            loaded: old.is_some(),
-        });
-    }
     if daemon_plist.is_file() {
-        let target = format!("system/{system_label}.{user_name}");
+        let target = format!("system/{LABEL}.{user_name}");
         let state = launchd(&target);
         out.push(Service {
             kind: Kind::LaunchDaemon,
@@ -204,13 +170,13 @@ fn candidates() -> Vec<Service> {
         // Loaded in the GUI domain, or the background one (no GUI login).
         let (target, state) = [&gui, &user]
             .into_iter()
-            .map(|d| format!("{d}/{label}"))
+            .map(|d| format!("{d}/{LABEL}"))
             .map(|t| {
                 let s = launchd(&t);
                 (t, s)
             })
             .find(|(_, s)| s.is_some())
-            .unwrap_or((format!("{gui}/{label}"), None));
+            .unwrap_or((format!("{gui}/{LABEL}"), None));
         out.push(Service {
             kind: Kind::Agent,
             target,
@@ -225,25 +191,20 @@ fn candidates() -> Vec<Service> {
 #[cfg(all(unix, not(target_os = "macos")))]
 fn candidates() -> Vec<Service> {
     let Some(dir) = home().map(|h| h.join(".config/systemd/user")) else { return Vec::new() };
-    let Some((name, unit)) = UNITS.iter().map(|u| (*u, dir.join(u))).find(|(_, f)| f.is_file()) else {
+    let unit = dir.join(UNIT);
+    if !unit.is_file() {
         return Vec::new();
-    };
-    let running = quiet(Command::new("systemctl").args(["--user", "is-active", "--quiet", name]));
-    vec![Service { kind: Kind::Systemd, target: name.into(), file: unit, running, loaded: true }]
+    }
+    let running = quiet(Command::new("systemctl").args(["--user", "is-active", "--quiet", UNIT]));
+    vec![Service { kind: Kind::Systemd, target: UNIT.into(), file: unit, running, loaded: true }]
 }
 
 #[cfg(windows)]
 fn candidates() -> Vec<Service> {
-    LABELS
-        .iter()
-        .find_map(|l| {
-            let out = Command::new("schtasks").args(["/Query", "/TN", l, "/FO", "LIST"]).output();
-            let out = out.ok().filter(|o| o.status.success())?;
-            let running = String::from_utf8_lossy(&out.stdout).contains("Running");
-            Some(Service { kind: Kind::Task, target: (*l).into(), file: PathBuf::new(), running, loaded: true })
-        })
-        .into_iter()
-        .collect()
+    let out = Command::new("schtasks").args(["/Query", "/TN", LABEL, "/FO", "LIST"]).output();
+    let Some(out) = out.ok().filter(|o| o.status.success()) else { return Vec::new() };
+    let running = String::from_utf8_lossy(&out.stdout).contains("Running");
+    vec![Service { kind: Kind::Task, target: LABEL.into(), file: PathBuf::new(), running, loaded: true }]
 }
 
 /// This user's id, for launchd's domains.
@@ -291,7 +252,7 @@ pub fn log() -> Option<Log> {
     if cfg!(windows) {
         return Some(Log::File(crate::dirs::default_state_dir()?.join("arugulad.log")));
     }
-    Some(Log::Journal(format!("journalctl --user -u {} -u {} -e", LABELS[0], LABELS[1])))
+    Some(Log::Journal(format!("journalctl --user -u {UNIT} -e")))
 }
 
 /// How the daemon here is doing, in one line: what the app's *Daemon*
@@ -328,21 +289,12 @@ mod tests {
             line(Some("0.21.0"), Some(&svc(Kind::AppAgent, true))),
             "arugulad 0.21.0, running as the app's launch agent (io.arugula.desktop.daemon)"
         );
-        let old = Service { target: format!("gui/501/{OLD_APP_LABEL}"), ..svc(Kind::AppAgent, true) };
-        assert_eq!(
-            line(Some("0.25.0"), Some(&old)),
-            "arugulad 0.25.0, running as the old app's launch agent (wtf.widgets.illogical.daemon)"
-        );
-        assert_eq!(old.program(), Some(OLD_APP_PROGRAM.into()));
         assert_eq!(
             line(Some("0.21.0"), Some(&svc(Kind::Agent, false))),
             "arugulad 0.21.0, running, not as a service (arugulad install's launch agent (arugulad) is stopped)"
         );
         assert_eq!(line(Some("0.21.0"), None), "arugulad 0.21.0, running, not as a service");
         assert_eq!(line(None, Some(&svc(Kind::Systemd, false))), "Stopped (the systemd user unit arugulad.service)");
-        // #505: a unit an older release set up is named as it is.
-        let old = Service { target: UNITS[1].into(), ..svc(Kind::Systemd, false) };
-        assert_eq!(line(None, Some(&old)), "Stopped (the systemd user unit illogicald.service)");
         assert_eq!(line(None, None), "Not running, and not set up as a service");
     }
 
@@ -359,13 +311,8 @@ mod tests {
     #[test]
     fn the_agent_is_named_after_the_app() {
         assert_eq!(APP_LABEL, format!("{APP_ID}.daemon"));
-        assert_eq!(OLD_APP_LABEL, format!("{OLD_APP_ID}.daemon"));
         assert!(APP_PLIST.starts_with(APP_BUNDLES[0]) && APP_PLIST.ends_with(&format!("/{APP_LABEL}.plist")));
         assert!(APP_PROGRAM.starts_with(APP_BUNDLES[0]));
-        assert!(
-            OLD_APP_PLIST.starts_with(APP_BUNDLES[1]) && OLD_APP_PLIST.ends_with(&format!("/{OLD_APP_LABEL}.plist"))
-        );
-        assert!(OLD_APP_PROGRAM.starts_with(APP_BUNDLES[1]));
     }
 
     /// #505: the app under its new name, or still under its old one after
@@ -380,8 +327,8 @@ mod tests {
             std::fs::write(p, "").unwrap();
         };
         assert_eq!(app_paths_in(&root), (at(APP_PLIST), at(APP_PROGRAM)));
-        // The app from before the rename isn't this one.
-        put(at(OLD_APP_PLIST));
+        // The app from before the rename, not yet updated, isn't this one.
+        put(at("/Applications/illogical.app/Contents/Library/LaunchAgents/wtf.widgets.illogical.daemon.plist"));
         assert_eq!(app_paths_in(&root), (at(APP_PLIST), at(APP_PROGRAM)));
         // Updated in place: the old bundle, the new app.
         let old = at(APP_BUNDLES[1]);
