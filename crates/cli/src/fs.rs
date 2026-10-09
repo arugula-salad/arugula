@@ -135,7 +135,7 @@ pub fn run(sock: &Target, cmd: FsCmd, json_out: bool, remote: bool) -> anyhow::R
                 }
                 let extra = [format!("offset={at}"), format!("len={want}")];
                 let res = request(sock, "GET", &format!("/api/fs/read?{}", query(&on, &path, &extra)), None)?.ok()?;
-                let size: u64 = arugula_proto::rename::either(arugula_proto::rename::SIZE, |n| res.header(n))
+                let size: u64 = res.header("x-arugula-size")
                     .and_then(|s| s.parse().ok())
                     .unwrap_or(0);
                 let bytes = res.bytes()?;

@@ -320,13 +320,7 @@ pub fn request(
             target,
             method,
             path,
-            // Under both names (#505): a daemon older than 0.25 must not
-            // take an agent for the owner.
-            &[
-                ("Content-Type", "application/json"),
-                (arugula_proto::rename::AGENT[0], "1"),
-                (arugula_proto::rename::AGENT[1], "1"),
-            ],
+            &[("Content-Type", "application/json"), ("x-arugula-agent", "1")],
             body.as_bytes(),
         );
     }

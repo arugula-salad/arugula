@@ -232,7 +232,7 @@ fn parse(out: &[u8]) -> Option<Vec<(String, String)>> {
 fn clean(vars: Vec<(String, String)>, given: &[(String, String)]) -> Vec<(String, String)> {
     vars.into_iter()
         .filter(|(k, _)| !matches!(k.as_str(), "PWD" | "OLDPWD" | "SHLVL" | "_" | "CLAUDE_CODE_SSE_PORT"))
-        .filter(|(k, _)| !arugula_proto::rename::is_ours(k))
+        .filter(|(k, _)| !k.starts_with("ARUGULA_"))
         .filter(|kv| !given.contains(kv))
         .collect()
 }

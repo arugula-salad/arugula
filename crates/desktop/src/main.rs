@@ -1046,9 +1046,6 @@ pub(crate) const PAGE_EVENT_PREFIX: &str = "(window.__arugulaPage ? 'arugula' : 
 fn main() {
     // Finder throws stderr away: write panics down where they can be found.
     panics::install();
-    // ILLOGICAL_X stands in for ARUGULA_X (#505), before any thread exists.
-    // SAFETY: nothing else runs yet.
-    unsafe { arugula_proto::rename::alias_env() };
     // `arugula-desktop --agent status|register|unregister|restart`: the
     // daemon's launch agent, for tests and for fixing a Mac by hand.
     #[cfg(target_os = "macos")]

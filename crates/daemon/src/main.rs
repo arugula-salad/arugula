@@ -450,9 +450,6 @@ fn log_to_file(argv: &[String]) {
 static VERSION_MARK: &str = concat!("\0arugula-version=", env!("CARGO_PKG_VERSION"), "\0");
 
 fn main() -> anyhow::Result<()> {
-    // ILLOGICAL_X stands in for ARUGULA_X (#505), before any thread exists.
-    // SAFETY: nothing else runs yet.
-    unsafe { arugula_proto::rename::alias_env() };
     // The pane shim forks, so it runs before any threads exist.
     let argv: Vec<String> = std::env::args().collect();
     #[cfg(unix)]

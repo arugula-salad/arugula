@@ -310,21 +310,6 @@ fn the_agent_withdraws_its_question_and_links_close_when_complete() {
     assert!(g.asks.is_empty());
 }
 
-/// #505: a running agent server an illogical daemon started (its marker
-/// empty) has the token under the old name; one of ours, under both.
-#[test]
-fn the_token_is_referenced_by_the_name_its_server_has() {
-    let dir = std::env::temp_dir().join(format!("arugula-token-env-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(dir.join(TOKEN_IN_ENV), "").unwrap();
-    assert_eq!(token_env(&dir), "ILLOGICAL_MCP_BLOCK_TOKEN");
-    std::fs::write(dir.join(TOKEN_IN_ENV), MCP_TOKEN_ENV).unwrap();
-    assert_eq!(token_env(&dir), "ARUGULA_MCP_BLOCK_TOKEN");
-    std::fs::remove_file(dir.join(TOKEN_IN_ENV)).unwrap();
-    assert_eq!(token_env(&dir), "ARUGULA_MCP_BLOCK_TOKEN");
-    std::fs::remove_dir_all(&dir).unwrap();
-}
-
 #[test]
 fn a_member_s_agent_runs_as_its_session_and_keeps_its_runs_in_its_config() {
     let cfg: Config = serde_json::from_value(json!({
