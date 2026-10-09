@@ -87,6 +87,18 @@ use crate::{
 const ENTRIES_IN_STATE: usize = 400;
 /// Clients get the new state at most this often while the agent streams.
 const PUBLISH_EVERY: Duration = Duration::from_millis(120);
+
+/// An autonomous cycle (the adapter waking the agent for a finished
+/// background task) that has sent nothing for this long, and never closed, is
+/// over: the block mustn't sit at working forever (#681). `ARUGULA_AUTONOMOUS_QUIET_MS`
+/// overrides it, for tests.
+fn autonomous_quiet() -> Duration {
+    static QUIET: std::sync::OnceLock<Duration> = std::sync::OnceLock::new();
+    *QUIET.get_or_init(|| {
+        let ms = std::env::var("ARUGULA_AUTONOMOUS_QUIET_MS").ok().and_then(|v| v.parse().ok());
+        Duration::from_millis(ms.unwrap_or(60_000))
+    })
+}
 /// How often to ask Fountain whether a turn that ran while we were away is
 /// over.
 const REMOTE_POLL: Duration = Duration::from_secs(15);
@@ -315,6 +327,10 @@ struct Inner {
     /// the only one with a cost) but its `session/prompt` has not been
     /// answered: the adapter holds it open for background subagents.
     result_in: bool,
+    /// The last out-of-turn frame of a cycle the agent started itself, woken
+    /// by a finished background task; it ends with an autonomous
+    /// `usage_update`, a prompt of ours, or [`autonomous_quiet`].
+    autonomous_at: Option<std::time::Instant>,
     queue: VecDeque<Queued>,
     cost: Option<f64>,
     currency: Option<String>,
@@ -416,6 +432,7 @@ impl Inner {
             title: None,
             prompt_id: None,
             result_in: false,
+            autonomous_at: None,
             queue: VecDeque::new(),
             cost: None,
             currency: None,
@@ -743,6 +760,7 @@ impl Inner {
                         self.t.user(&text, images, at);
                         self.prompt_id = Some(id);
                         self.result_in = false;
+                        self.autonomous_at = None;
                         self.status = Status::Working;
                         self.error = None;
                         self.last_stop = None;
@@ -910,6 +928,10 @@ impl Inner {
                         {
                             self.result_in = true;
                         }
+                        // An autonomous cycle's close.
+                        if claude && self.replay.is_none() && origin != "human" {
+                            self.autonomous_at = None;
+                        }
                         if let Some(amount) = u["cost"]["amount"].as_f64() {
                             self.cost = Some(amount);
                             self.currency = u["cost"]["currency"].as_str().map(str::to_owned);
@@ -926,7 +948,18 @@ impl Inner {
                     // Your prompts come from what we sent; an agent echoing
                     // them live would say them twice. (A replay's count.)
                     "user_message_chunk" if self.replay.is_none() => {}
-                    _ => {
+                    kind => {
+                        // The agent waking itself: output with no prompt outstanding.
+                        if matches!(
+                            kind,
+                            "agent_message_chunk" | "agent_thought_chunk" | "tool_call" | "tool_call_update"
+                        ) && self.replay.is_none()
+                            && self.prompt_id.is_none()
+                            && self.status == Status::Ready
+                            && self.agent_info["name"].as_str().is_some_and(|n| n.contains("claude-agent-acp"))
+                        {
+                            self.autonomous_at = Some(std::time::Instant::now());
+                        }
                         let applied = match self.replay.as_mut() {
                             Some(r) => r.apply(u, at),
                             None => self.t.apply(u, at),
@@ -1095,6 +1128,9 @@ impl Inner {
             Status::Exited => (Attention::NeedsInput, self.error.clone().unwrap_or_else(|| "the agent stopped".into())),
             Status::Working if self.result_in && self.queue.is_empty() => {
                 (Attention::Idle, "waiting on a background task".into())
+            }
+            Status::Ready if self.autonomous_at.is_some() => {
+                (Attention::Working, "working on a background task's result".into())
             }
             Status::Working | Status::Remote => (Attention::Working, "working".into()),
             Status::Starting | Status::Ready if !self.queue.is_empty() => (Attention::Working, "starting".into()),
@@ -1819,6 +1855,13 @@ async fn run(
                 }
             }
             _ = tick.tick() => {
+                {
+                    let mut g = inner.lock().unwrap();
+                    if g.autonomous_at.is_some_and(|t| t.elapsed() >= autonomous_quiet()) {
+                        g.autonomous_at = None;
+                        dirty = true;
+                    }
+                }
                 if dirty {
                     dirty = false;
                     publish(&ctx, &inner, false);

@@ -410,6 +410,57 @@ fn a_turn_whose_prompt_is_held_for_background_work_is_not_working() {
     assert!(entries(&s).iter().any(|e| e["type"] == "agent" && e["text"] == "All done; the report is above."), "{s}");
 }
 
+/// A claude-agent-acp block whose first prompt is `prompt`.
+fn open_claude(d: &Daemon, prompt: &str) -> u64 {
+    let name = "FAKE_ACP_NAME=@agentclientprotocol/claude-agent-acp";
+    let config =
+        json!({ "agent": "acp", "command": ["env", name, "python3", fake()], "cwd": d.sessions, "prompt": prompt });
+    d.open_with(json!({ "type": "agent", "config": config }))
+}
+
+/// Whether the block is between turns (ready) and yet shows working.
+fn woken(d: &Daemon, id: u64) -> bool {
+    let panes = d.get("/api/panes");
+    d.state(id)["status"] == "ready"
+        && panes.as_array().unwrap().iter().any(|p| p["id"] == id && p["attention"] == "working")
+}
+
+#[test]
+fn an_agent_woken_by_a_background_task_shows_working_then_done() {
+    // #681: after the turn, claude-agent-acp runs a cycle of its own, outside
+    // any prompt, and closes it with an autonomous-origin usage_update.
+    let d = Daemon::child();
+    let id = open_claude(&d, "wake");
+    d.wait_for("the woken agent to show working", || woken(&d, id));
+    assert_eq!(d.wait(id, "idle"), "done");
+    assert!(!woken(&d, id));
+    let s = d.state(id);
+    assert!(entries(&s).iter().any(|e| e["text"] == "The background task finished."), "{s}");
+}
+
+#[test]
+fn a_woken_agent_that_never_closes_goes_back_to_idle() {
+    let d = Daemon::child_env(&[], &[("ARUGULA_AUTONOMOUS_QUIET_MS", "1500")]);
+    let id = open_claude(&d, "wake-open");
+    d.wait_for("the woken agent to show working", || woken(&d, id));
+    assert_eq!(d.wait(id, "idle"), "done");
+    assert!(!woken(&d, id));
+}
+
+#[test]
+fn a_prompt_during_a_woken_cycle_is_a_normal_turn() {
+    let d = Daemon::child();
+    let id = open_claude(&d, "wake-open");
+    d.wait_for("the woken agent to show working", || woken(&d, id));
+    d.call(id, "send", json!({ "text": "hello" }));
+    d.wait_for("the turn to finish", || {
+        d.state(id)["status"] == "ready" && entries(&d.state(id)).iter().any(|e| e["text"] == "Hello! I am fake.")
+    });
+    // Its own turn took over and ended: not still woken (the quiet period is a minute).
+    assert!(!woken(&d, id));
+    assert_eq!(d.wait(id, "idle"), "done");
+}
+
 #[test]
 fn an_agent_that_dies_says_so_and_starts_again_on_send() {
     let d = Daemon::child();
