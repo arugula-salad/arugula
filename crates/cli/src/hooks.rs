@@ -7,6 +7,12 @@
 //! renames those in place rather than adding a second copy beside them.
 //! `arugulad install` does the same, with Claude Code's MCP server, before
 //! it takes the old names off this machine (`rename-old`, #534).
+//!
+//! `install` also adds `permissions.allow` rules (#655), in two tiers, so an
+//! agent in auto mode can use the CLI it was just wired to: the read-only
+//! commands and MCP tools by default, the acting ones only with
+//! `--allow-acting`. Those only ever add too, and `status` says which tier
+//! is there.
 
 use std::{
     fs,
@@ -39,11 +45,89 @@ pub const HOOKS_SNIPPET: &str = r#"{
   }
 }"#;
 
+/// The `permissions.allow` rules `install` adds by default (#655): what only
+/// reads. Claude Code's `Bash(prefix:*)` matches a command that starts with
+/// the prefix, so each is one subcommand and never `Bash(arugula:*)`. `hosts`
+/// and `shares` are exact, with no `:*`: `hosts add|rm|token|revoke` and
+/// `shares revoke` change things. `attention` sets attention, so it is in
+/// neither tier.
+const READ_RULES: &[&str] = &[
+    "Bash(arugula ls:*)",
+    "Bash(arugula describe:*)",
+    "Bash(arugula tail:*)",
+    "Bash(arugula wait:*)",
+    "Bash(arugula history:*)",
+    "Bash(arugula log:*)",
+    "Bash(arugula search:*)",
+    "Bash(arugula capture:*)",
+    "Bash(arugula process:*)",
+    "Bash(arugula status:*)",
+    "Bash(arugula fs:*)",
+    "Bash(arugula hooks status:*)",
+    "Bash(arugula hosts)",
+    "Bash(arugula shares)",
+    // The MCP tools with `read_only_hint` in crates/daemon/src/mcp/tools.rs
+    // (the CLI can't depend on the daemon; docs/mcp-permissions.json lists
+    // the same, and a test here checks it).
+    "mcp__arugula__read_output",
+    "mcp__arugula__wait",
+    "mcp__arugula__list",
+    "mcp__arugula__history",
+    "mcp__arugula__read_forge",
+    "mcp__arugula__read_invite",
+    "mcp__arugula__read_file",
+    "mcp__arugula__read_thread",
+];
+
+/// What `install --allow-acting` adds beside [`READ_RULES`] (#655): what
+/// types into panes, starts agents, closes things or shares. Allowing these
+/// lets an agent do all of that without asking.
+const ACTING_RULES: &[&str] = &[
+    "Bash(arugula agent:*)",
+    "Bash(arugula run:*)",
+    "Bash(arugula send:*)",
+    "Bash(arugula keys:*)",
+    "Bash(arugula close:*)",
+    "Bash(arugula call:*)",
+    "Bash(arugula open:*)",
+    "Bash(arugula edit:*)",
+    "Bash(arugula view:*)",
+    "Bash(arugula diff:*)",
+    "Bash(arugula pr:*)",
+    "Bash(arugula issue:*)",
+    "Bash(arugula cd:*)",
+    "Bash(arugula rerun:*)",
+    "Bash(arugula upload:*)",
+    "Bash(arugula mouse:*)",
+    "Bash(arugula share:*)",
+    "Bash(arugula invite:*)",
+    // Every other MCP tool; see the comment above `READ_RULES`.
+    "mcp__arugula__run",
+    "mcp__arugula__send_input",
+    "mcp__arugula__attach",
+    "mcp__arugula__close",
+    "mcp__arugula__show",
+    "mcp__arugula__delegate",
+    "mcp__arugula__start_agent",
+    "mcp__arugula__prompt_agent",
+    "mcp__arugula__agent_respond",
+    "mcp__arugula__draft",
+    "mcp__arugula__invite_person",
+    "mcp__arugula__device_call",
+    "mcp__arugula__post_thread",
+];
+
 #[derive(Subcommand)]
 pub enum HooksCmd {
     /// Merge the hooks into Claude Code's settings.json.
     ///
     /// Everything already there is kept. Running it again changes nothing.
+    ///
+    /// Also adds `permissions.allow` rules for the commands and MCP tools
+    /// that only read (`arugula ls`, `list`, `read_output`, ...). The ones
+    /// that act (`arugula agent`, `run`, `send`, `send_input`, ...)
+    /// only with `--allow-acting`. Run each `arugula` command on its own,
+    /// not in a pipeline or `&&` chain, or the rules don't match it.
     Install {
         /// Write DIR/.claude/settings.json instead of ~/.claude/settings.json.
         #[arg(long, value_name = "DIR")]
@@ -51,8 +135,12 @@ pub enum HooksCmd {
         /// Print the resulting JSON; write nothing.
         #[arg(long)]
         dry_run: bool,
+        /// Also allow the commands and tools that act: an agent can then
+        /// start other agents and type into panes without asking.
+        #[arg(long)]
+        allow_acting: bool,
     },
-    /// Which events have the arugula hook (exits 0 even if some don't).
+    /// Which hooks and permission rules are there (exits 0 even if some aren't).
     Status {
         /// Check DIR/.claude/settings.json instead of ~/.claude/settings.json.
         #[arg(long, value_name = "DIR")]
@@ -70,7 +158,9 @@ pub enum HooksCmd {
 
 pub fn run(cmd: HooksCmd, json_out: bool) -> anyhow::Result<i32> {
     match cmd {
-        HooksCmd::Install { project, dry_run } => install(&settings_path(project)?, dry_run),
+        HooksCmd::Install { project, dry_run, allow_acting } => {
+            install(&settings_path(project)?, dry_run, allow_acting)
+        }
         HooksCmd::Status { project } => status(&settings_path(project)?, json_out),
         HooksCmd::RenameOld => rename_old_here(),
     }
@@ -183,20 +273,53 @@ struct Merged {
     added: bool,
     /// Ours under the old name, now under the new (#505, #534).
     renamed: bool,
+    /// Permission rules that weren't there (#655).
+    allowed: bool,
 }
 
 impl Merged {
     fn changed(&self) -> bool {
-        self.added || self.renamed
+        self.added || self.renamed || self.allowed
     }
 }
 
-/// `settings` with our old-named hooks renamed and the snippet's hooks
-/// added where missing: what changed.
-fn merge(settings: &mut Value) -> anyhow::Result<Merged> {
+/// `permissions.allow` of `root`, made if it isn't there; refused if it
+/// isn't an array.
+fn allow_list(root: &mut Map<String, Value>) -> anyhow::Result<&mut Vec<Value>> {
+    let permissions = root.entry("permissions").or_insert_with(|| json!({}));
+    let Some(permissions) = permissions.as_object_mut() else {
+        bail!("`permissions` in settings.json isn't an object; leaving it alone");
+    };
+    let allow = permissions.entry("allow").or_insert_with(|| json!([]));
+    match allow.as_array_mut() {
+        Some(allow) => Ok(allow),
+        None => bail!("`permissions.allow` in settings.json isn't an array; leaving it alone"),
+    }
+}
+
+/// The rules (the read-only tier, and the acting one with `allow_acting`)
+/// that `allow` doesn't have, added at the end. Whether any were.
+fn add_rules(allow: &mut Vec<Value>, allow_acting: bool) -> bool {
+    let acting = if allow_acting { ACTING_RULES } else { &[] };
+    let mut added = false;
+    for rule in READ_RULES.iter().chain(acting) {
+        if !allow.iter().any(|a| a.as_str() == Some(rule)) {
+            allow.push(json!(rule));
+            added = true;
+        }
+    }
+    added
+}
+
+/// `settings` with our old-named hooks renamed, the snippet's hooks added
+/// where missing, and the permission rules (read-only, and acting with
+/// `allow_acting`) added where missing: what changed.
+fn merge(settings: &mut Value, allow_acting: bool) -> anyhow::Result<Merged> {
     let Some(root) = settings.as_object_mut() else {
         bail!("settings.json isn't a JSON object; leaving it alone");
     };
+    // Refused before anything changes, so a refusal leaves settings whole.
+    allow_list(root)?;
     let hooks = root.entry("hooks").or_insert_with(|| json!({}));
     let Some(hooks) = hooks.as_object_mut() else {
         bail!("`hooks` in settings.json isn't an object; leaving it alone");
@@ -221,7 +344,8 @@ fn merge(settings: &mut Value) -> anyhow::Result<Merged> {
             }
         }
     }
-    Ok(Merged { added: changed, renamed })
+    let allowed = add_rules(allow_list(root)?, allow_acting);
+    Ok(Merged { added: changed, renamed, allowed })
 }
 
 fn read_settings(path: &Path) -> anyhow::Result<Value> {
@@ -261,25 +385,34 @@ fn pretty(v: &Value) -> String {
     format!("{}\n", serde_json::to_string_pretty(v).unwrap_or_default())
 }
 
-fn install(path: &Path, dry_run: bool) -> anyhow::Result<()> {
+fn install(path: &Path, dry_run: bool, allow_acting: bool) -> anyhow::Result<()> {
     let mut settings = read_settings(path)?;
-    let merged = merge(&mut settings)?;
+    let merged = merge(&mut settings, allow_acting)?;
     let text = pretty(&settings);
     if dry_run {
         print!("{text}");
         return Ok(());
     }
     if !merged.changed() && path.exists() {
-        println!("{}: the hooks are already there", path.display());
+        println!("{}: the hooks and permission rules are already there", path.display());
         return Ok(());
     }
     write_atomic(path, &text)?;
-    let said = match (merged.renamed, merged.added) {
-        (true, true) => "hooks renamed from `illogical` to `arugula`, and the missing ones added",
-        (true, false) => "hooks renamed from `illogical` to `arugula`",
-        _ => "hooks added",
-    };
-    println!("{}: {said}", path.display());
+    let mut said = vec![];
+    match (merged.renamed, merged.added) {
+        (true, true) => said.push("hooks renamed from `illogical` to `arugula`, and the missing ones added"),
+        (true, false) => said.push("hooks renamed from `illogical` to `arugula`"),
+        (false, true) => said.push("hooks added"),
+        (false, false) => {}
+    }
+    if merged.allowed {
+        said.push(if allow_acting {
+            "permission rules added (read-only, and acting)"
+        } else {
+            "permission rules added (read-only)"
+        });
+    }
+    println!("{}: {}", path.display(), said.join("; "));
     Ok(())
 }
 
@@ -318,15 +451,52 @@ fn present(settings: &Value) -> Vec<(String, Has)> {
         .collect()
 }
 
+/// How much of a tier's rules `permissions.allow` has.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Tier {
+    Present,
+    Partial,
+    Missing,
+}
+
+impl Tier {
+    fn says(self) -> &'static str {
+        match self {
+            Tier::Present => "present",
+            Tier::Partial => "partial",
+            Tier::Missing => "missing",
+        }
+    }
+}
+
+/// The read-only tier and the acting tier of `settings`' `permissions.allow`.
+fn tiers(settings: &Value) -> (Tier, Tier) {
+    let allow = settings["permissions"]["allow"].as_array().map(Vec::as_slice).unwrap_or_default();
+    let tier = |rules: &[&str]| {
+        let has = rules.iter().filter(|r| allow.iter().any(|a| a.as_str() == Some(r))).count();
+        match has {
+            0 => Tier::Missing,
+            n if n == rules.len() => Tier::Present,
+            _ => Tier::Partial,
+        }
+    };
+    (tier(READ_RULES), tier(ACTING_RULES))
+}
+
 fn status(path: &Path, json_out: bool) -> anyhow::Result<()> {
-    let events = present(&read_settings(path)?);
+    let settings = read_settings(path)?;
+    let events = present(&settings);
+    let (read, acting) = tiers(&settings);
     let installed = events.iter().all(|(_, h)| *h != Has::Missing);
     let old: Vec<&str> = events.iter().filter(|(_, h)| *h == Has::Old).map(|(e, _)| e.as_str()).collect();
     if json_out {
         // `events` stays a bool per event: an old-named hook counts.
         let map: Map<String, Value> =
             events.iter().map(|(e, h)| (e.clone(), Value::Bool(*h != Has::Missing))).collect();
-        let v = json!({ "settings": path, "installed": installed, "events": map, "old_name": old });
+        let permissions = json!({ "read": read.says(), "acting": acting.says() });
+        let v = json!({
+            "settings": path, "installed": installed, "events": map, "old_name": old, "permissions": permissions
+        });
         println!("{}", serde_json::to_string_pretty(&v).unwrap_or_default());
         return Ok(());
     }
@@ -339,10 +509,21 @@ fn status(path: &Path, json_out: bool) -> anyhow::Result<()> {
         };
         println!("  {event:<20} {says}");
     }
+    println!("permissions.allow");
+    println!("  {:<20} {}", "read", read.says());
+    println!("  {:<20} {}", "acting", acting.says());
     match (installed, old.is_empty()) {
         (false, _) => println!("`arugula hooks install` adds the missing ones."),
         (true, false) => println!("`arugula hooks install` updates them to the new name."),
         (true, true) => {}
+    }
+    if read != Tier::Present {
+        println!("`arugula hooks install` adds the read-only permission rules.");
+    }
+    if acting != Tier::Present {
+        println!(
+            "`arugula hooks install --allow-acting` adds the acting ones (an agent can then start agents and type into panes without asking)."
+        );
     }
     Ok(())
 }
@@ -488,7 +669,7 @@ mod tests {
 
     fn merged(text: &str) -> (Value, bool) {
         let mut v: Value = serde_json::from_str(text).unwrap();
-        let changed = merge(&mut v).unwrap().changed();
+        let changed = merge(&mut v, false).unwrap().changed();
         (v, changed)
     }
 
@@ -498,6 +679,7 @@ mod tests {
         assert!(changed);
         assert_eq!(v["model"], "opus");
         assert_eq!(v["permissions"]["allow"][0], "Bash(ls:*)");
+        assert_eq!(v["permissions"]["allow"].as_array().unwrap().len(), 1 + READ_RULES.len());
         let pre = v["hooks"]["PreToolUse"].as_array().unwrap();
         assert_eq!(pre[0]["hooks"][0]["command"], "my-lint");
         assert_eq!(pre.len(), 3);
@@ -540,7 +722,7 @@ mod tests {
     fn odd_settings_are_refused_not_replaced() {
         for bad in [r#"[]"#, r#"{"hooks": []}"#, r#"{"hooks": {"Stop": {}}}"#] {
             let mut v: Value = serde_json::from_str(bad).unwrap();
-            assert!(merge(&mut v).is_err(), "{bad}");
+            assert!(merge(&mut v, false).is_err(), "{bad}");
         }
     }
 
@@ -550,9 +732,9 @@ mod tests {
         let path = dir.join(".claude/settings.json");
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(&path, MINE).unwrap();
-        install(&path, false).unwrap();
+        install(&path, false, false).unwrap();
         let first = fs::read(&path).unwrap();
-        install(&path, false).unwrap();
+        install(&path, false, false).unwrap();
         assert_eq!(first, fs::read(&path).unwrap());
         let v: Value = serde_json::from_slice(&first).unwrap();
         assert_eq!(v["hooks"]["Stop"][0]["hooks"][0]["command"], "say done");
@@ -567,9 +749,9 @@ mod tests {
     fn install_creates_the_file_and_dry_run_writes_nothing() {
         let dir = temp("create");
         let path = dir.join(".claude/settings.json");
-        install(&path, true).unwrap();
+        install(&path, true, false).unwrap();
         assert!(!path.exists());
-        install(&path, false).unwrap();
+        install(&path, false, false).unwrap();
         assert!(present(&read_settings(&path).unwrap()).iter().all(|(_, p)| *p == Has::Present));
         let _ = fs::remove_dir_all(&dir);
     }
@@ -579,7 +761,7 @@ mod tests {
         let dir = temp("invalid");
         let path = dir.join("settings.json");
         fs::write(&path, "{ not json").unwrap();
-        assert!(install(&path, false).is_err());
+        assert!(install(&path, false, false).is_err());
         assert_eq!(fs::read_to_string(&path).unwrap(), "{ not json");
         let _ = fs::remove_dir_all(&dir);
     }
@@ -629,8 +811,8 @@ mod tests {
     fn old_named_hooks_are_renamed_not_doubled() {
         let mut v = old_install();
         assert!(present(&v).iter().all(|(_, h)| *h == Has::Old));
-        let m = merge(&mut v).unwrap();
-        assert_eq!(m, Merged { added: false, renamed: true });
+        let m = merge(&mut v, false).unwrap();
+        assert_eq!(m, Merged { added: false, renamed: true, allowed: true });
         assert!(present(&v).iter().all(|(_, h)| *h == Has::Present));
         // As many groups as a fresh install beside the user's own.
         let (fresh, _) = merged(MINE);
@@ -649,7 +831,7 @@ mod tests {
         assert_eq!(v["model"], "opus");
         // Again: nothing.
         let before = v.clone();
-        assert_eq!(merge(&mut v).unwrap(), Merged::default());
+        assert_eq!(merge(&mut v, false).unwrap(), Merged::default());
         assert_eq!(v, before);
     }
 
@@ -662,7 +844,7 @@ mod tests {
             v["hooks"][event].as_array_mut().unwrap().extend(groups.as_array().unwrap().iter().cloned());
         }
         assert!(present(&v).iter().all(|(_, h)| *h == Has::Present));
-        let m = merge(&mut v).unwrap();
+        let m = merge(&mut v, false).unwrap();
         assert!(m.renamed && !m.added);
         let (fresh, _) = merged(MINE);
         assert_eq!(v["hooks"]["PreToolUse"], fresh["hooks"]["PreToolUse"]);
@@ -683,7 +865,7 @@ mod tests {
         assert!(p.iter().any(|(e, h)| e == "Stop" && *h == Has::Old));
         assert!(p.iter().any(|(e, h)| e == "Notification" && *h == Has::Missing));
         let mut v = v;
-        assert_eq!(merge(&mut v).unwrap(), Merged { added: true, renamed: true });
+        assert_eq!(merge(&mut v, false).unwrap(), Merged { added: true, renamed: true, allowed: true });
         let (from_empty, _) = merged("{}");
         assert_eq!(v, from_empty);
     }
@@ -694,10 +876,10 @@ mod tests {
         let path = dir.join(".claude/settings.json");
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(&path, pretty(&old_install())).unwrap();
-        install(&path, false).unwrap();
+        install(&path, false, false).unwrap();
         let first = fs::read(&path).unwrap();
         assert!(present(&serde_json::from_slice(&first).unwrap()).iter().all(|(_, h)| *h == Has::Present));
-        install(&path, false).unwrap();
+        install(&path, false, false).unwrap();
         assert_eq!(first, fs::read(&path).unwrap());
         let _ = fs::remove_dir_all(&dir);
     }
@@ -772,5 +954,187 @@ mod tests {
         assert!(!none.join(".claude.json").exists());
         let _ = fs::remove_dir_all(&home);
         let _ = fs::remove_dir_all(&none);
+    }
+
+    /// `permissions.allow` of `v`, as strings.
+    fn allowed(v: &Value) -> Vec<String> {
+        v["permissions"]["allow"].as_array().unwrap().iter().map(|a| a.as_str().unwrap().to_owned()).collect()
+    }
+
+    #[test]
+    fn rules_are_exactly_these() {
+        // The strings Claude Code matches on, so a typo or a widened
+        // `Bash(arugula:*)` shows here.
+        let read = [
+            "Bash(arugula ls:*)",
+            "Bash(arugula describe:*)",
+            "Bash(arugula tail:*)",
+            "Bash(arugula wait:*)",
+            "Bash(arugula history:*)",
+            "Bash(arugula log:*)",
+            "Bash(arugula search:*)",
+            "Bash(arugula capture:*)",
+            "Bash(arugula process:*)",
+            "Bash(arugula status:*)",
+            "Bash(arugula fs:*)",
+            "Bash(arugula hooks status:*)",
+            "Bash(arugula hosts)",
+            "Bash(arugula shares)",
+            "mcp__arugula__read_output",
+            "mcp__arugula__wait",
+            "mcp__arugula__list",
+            "mcp__arugula__history",
+            "mcp__arugula__read_forge",
+            "mcp__arugula__read_invite",
+            "mcp__arugula__read_file",
+            "mcp__arugula__read_thread",
+        ];
+        assert_eq!(READ_RULES, read);
+        let acting_cli = [
+            "agent", "run", "send", "keys", "close", "call", "open", "edit", "view", "diff", "pr", "issue", "cd",
+            "rerun", "upload", "mouse", "share", "invite",
+        ];
+        let acting: Vec<&str> = ACTING_RULES.iter().copied().filter(|r| r.starts_with("Bash(")).collect();
+        let want: Vec<String> = acting_cli.iter().map(|c| format!("Bash(arugula {c}:*)")).collect();
+        assert_eq!(acting, want);
+        for rule in READ_RULES.iter().chain(ACTING_RULES) {
+            assert_ne!(*rule, "Bash(arugula:*)");
+            assert!(!rule.contains("hooks install") && !rule.contains("attention"), "{rule}");
+            assert!(!ACTING_RULES.contains(rule) || !READ_RULES.contains(rule), "{rule} is in both tiers");
+        }
+    }
+
+    #[test]
+    fn mcp_rules_follow_the_permissions_snippet() {
+        // docs/mcp-permissions.json is what the daemon's own test checks
+        // against `read_only` (tools.rs), so tying the CLI's lists to it
+        // ties them to the tools. The chat tools and `delegate` are the
+        // ones it leaves out (flags).
+        let snippet: Value = serde_json::from_str(include_str!("../../../docs/mcp-permissions.json")).unwrap();
+        let list = |key: &str| -> Vec<String> {
+            snippet["permissions"][key].as_array().unwrap().iter().map(|s| s.as_str().unwrap().to_owned()).collect()
+        };
+        let mcp = |rules: &[&str]| -> Vec<String> {
+            rules.iter().filter(|r| r.starts_with("mcp__")).map(|r| (*r).to_owned()).collect()
+        };
+        let (read, acting) = (mcp(READ_RULES), mcp(ACTING_RULES));
+        let flagged = ["mcp__arugula__read_thread", "mcp__arugula__post_thread", "mcp__arugula__delegate"];
+        let without =
+            |v: &[String]| -> Vec<String> { v.iter().filter(|r| !flagged.contains(&r.as_str())).cloned().collect() };
+        assert_eq!(without(&read), list("allow"));
+        let mut a = without(&acting);
+        let mut want = list("ask");
+        a.sort();
+        want.sort();
+        assert_eq!(a, want);
+    }
+
+    #[test]
+    fn install_adds_the_read_tier_only_by_default() {
+        let (v, changed) = merged("{}");
+        assert!(changed);
+        assert_eq!(allowed(&v), READ_RULES);
+        assert!(allowed(&v).iter().all(|r| !ACTING_RULES.contains(&r.as_str())));
+        assert_eq!(tiers(&v), (Tier::Present, Tier::Missing));
+    }
+
+    #[test]
+    fn allow_acting_adds_both_and_keeps_every_existing_entry() {
+        let mut v: Value = serde_json::from_str(MINE).unwrap();
+        v["permissions"]["deny"] = json!(["Bash(rm:*)"]);
+        // One of ours already there, and an entry that only looks like one.
+        v["permissions"]["allow"] = json!(["Bash(ls:*)", "Bash(arugula ls:*)", "Bash(arugula lsx:*)", 7]);
+        assert!(merge(&mut v, true).unwrap().allowed);
+        let allow = v["permissions"]["allow"].as_array().unwrap();
+        assert_eq!(
+            allow[..4],
+            [json!("Bash(ls:*)"), json!("Bash(arugula ls:*)"), json!("Bash(arugula lsx:*)"), json!(7)]
+        );
+        let rules = allowed_strings(allow);
+        for rule in READ_RULES.iter().chain(ACTING_RULES) {
+            assert_eq!(rules.iter().filter(|r| *r == rule).count(), 1, "{rule}");
+        }
+        assert_eq!(allow.len(), 4 + READ_RULES.len() + ACTING_RULES.len() - 1);
+        assert_eq!(v["permissions"]["deny"], json!(["Bash(rm:*)"]));
+        assert_eq!(v["model"], "opus");
+        assert_eq!(tiers(&v), (Tier::Present, Tier::Present));
+        // Again, with or without the flag: nothing, and nothing taken away.
+        let before = v.clone();
+        assert_eq!(merge(&mut v, true).unwrap(), Merged::default());
+        assert_eq!(merge(&mut v, false).unwrap(), Merged::default());
+        assert_eq!(v, before);
+    }
+
+    fn allowed_strings(a: &[Value]) -> Vec<String> {
+        a.iter().filter_map(|a| a.as_str().map(str::to_owned)).collect()
+    }
+
+    #[test]
+    fn a_later_install_without_the_flag_keeps_the_acting_rules() {
+        let mut v = json!({});
+        merge(&mut v, true).unwrap();
+        let before = v.clone();
+        assert_eq!(merge(&mut v, false).unwrap(), Merged::default());
+        assert_eq!(v, before);
+        // The other way: read first, acting added later, nothing doubled.
+        let mut v = json!({});
+        merge(&mut v, false).unwrap();
+        assert!(merge(&mut v, true).unwrap().allowed);
+        let mut w = json!({});
+        merge(&mut w, true).unwrap();
+        assert_eq!(v, w);
+    }
+
+    #[test]
+    fn odd_permissions_are_refused_not_replaced() {
+        for bad in [r#"{"permissions": []}"#, r#"{"permissions": {"allow": "x"}}"#, r#"{"permissions": {"allow": {}}}"#]
+        {
+            let mut v: Value = serde_json::from_str(bad).unwrap();
+            let before = v.clone();
+            assert!(merge(&mut v, true).is_err(), "{bad}");
+            assert_eq!(v, before, "{bad}: left whole");
+        }
+    }
+
+    #[test]
+    fn status_says_present_partial_or_missing_per_tier() {
+        let none: Value = serde_json::from_str(MINE).unwrap();
+        assert_eq!(tiers(&none), (Tier::Missing, Tier::Missing));
+        assert_eq!(tiers(&json!({})), (Tier::Missing, Tier::Missing));
+        let one = json!({ "permissions": { "allow": [READ_RULES[0], ACTING_RULES[0]] } });
+        assert_eq!(tiers(&one), (Tier::Partial, Tier::Partial));
+        let (v, _) = merged(MINE);
+        assert_eq!(tiers(&v), (Tier::Present, Tier::Missing));
+        let mut w: Value = serde_json::from_str(MINE).unwrap();
+        merge(&mut w, true).unwrap();
+        assert_eq!(tiers(&w), (Tier::Present, Tier::Present));
+        // A tier missing one rule is partial.
+        w["permissions"]["allow"].as_array_mut().unwrap().retain(|r| r != READ_RULES[3]);
+        assert_eq!(tiers(&w), (Tier::Partial, Tier::Present));
+        assert_eq!(
+            (Tier::Present.says(), Tier::Partial.says(), Tier::Missing.says()),
+            ("present", "partial", "missing")
+        );
+    }
+
+    #[test]
+    fn install_on_disk_adds_tiers_once_and_dry_run_writes_nothing() {
+        let dir = temp("tiers");
+        let path = dir.join(".claude/settings.json");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, MINE).unwrap();
+        install(&path, true, true).unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), MINE);
+        install(&path, false, false).unwrap();
+        let read_only = read_settings(&path).unwrap();
+        assert_eq!(allowed(&read_only)[0], "Bash(ls:*)");
+        assert_eq!(tiers(&read_only), (Tier::Present, Tier::Missing));
+        install(&path, false, true).unwrap();
+        let first = fs::read(&path).unwrap();
+        assert_eq!(tiers(&serde_json::from_slice(&first).unwrap()), (Tier::Present, Tier::Present));
+        install(&path, false, true).unwrap();
+        install(&path, false, false).unwrap();
+        assert_eq!(first, fs::read(&path).unwrap());
+        let _ = fs::remove_dir_all(&dir);
     }
 }
