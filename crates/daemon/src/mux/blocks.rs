@@ -11,6 +11,15 @@ use arugula_proto::{
 };
 use std::path::PathBuf;
 
+/// Where a new pane goes (`resolve_session`).
+enum Session {
+    Existing(u32),
+    /// A session of this name, made with the pane.
+    Create(String),
+    /// No session to go in: a fresh, unnamed one.
+    Any,
+}
+
 impl Daemon {
     /// `arugula run`: a new tab (or a split) running a command.
     pub(super) fn run_command(&mut self, req: RunRequest) -> Result<PaneId, String> {
@@ -24,15 +33,7 @@ impl Daemon {
         // A session that doesn't exist yet starts with this pane, not a
         // shell beside it (#17: a home daemon's remote panes go in a
         // session of its name here).
-        let fresh = req.session.clone().filter(|n| {
-            req.split.is_none()
-                && !req.vm_tab
-                && !self.mux.sessions.iter().any(|s| s.name == *n || s.id.to_string() == *n)
-        });
-        let session = match fresh {
-            Some(_) => None,
-            None => self.resolve_session(req.session.as_deref(), from)?,
-        };
+        let session = self.resolve_session(req.session.as_deref(), from);
         let before: Vec<PaneId> = self.mux.panes();
         // Joining a split pane's host: its tab's machine (which a split
         // takes anyway), or a sandbox it has a shell on (borrowed again).
@@ -72,8 +73,9 @@ impl Daemon {
                 let local = !matches!(join, Join::TabMachine);
                 Intent::Split { pane, edge: arugula_proto::Edge::Right, local, cwd: None }
             }
-            (None, Some(session)) => Intent::NewTab { session, from_pane: from, cwd: None },
-            (None, None) => Intent::NewSession { name: fresh, from_pane: from },
+            (None, Session::Existing(session)) => Intent::NewTab { session, from_pane: from, cwd: None },
+            (None, Session::Create(name)) => Intent::NewSession { name: Some(name), from_pane: from },
+            (None, Session::Any) => Intent::NewSession { name: None, from_pane: from },
         };
         let result = self.intent(None, intent);
         self.next_spawn = None;
@@ -105,24 +107,22 @@ impl Daemon {
         Err(format!("%{pane}'s machine is its own: share it with the tab first (Share machine with tab)"))
     }
 
-    /// Which session a new tab goes in: one named (made if missing), else
-    /// `from`'s, else the first.
-    fn resolve_session(&mut self, name: Option<&str>, from: Option<PaneId>) -> Result<Option<u32>, String> {
-        Ok(match name {
+    /// Which session a new tab goes in: one named, else `from`'s, else the
+    /// first. A named one that doesn't exist is for the caller to make, with
+    /// its pane (and its spawn settings) in place, so the session holds only
+    /// that.
+    fn resolve_session(&self, name: Option<&str>, from: Option<PaneId>) -> Session {
+        match name {
             Some(name) => match self.mux.sessions.iter().find(|s| s.name == name || s.id.to_string() == name) {
-                Some(s) => Some(s.id),
-                None => {
-                    // A new session starts with a shell; the block gets a
-                    // tab of its own next to it.
-                    self.intent(None, Intent::NewSession { name: Some(name.to_owned()), from_pane: None })?;
-                    self.mux.sessions.last().map(|s| s.id)
-                }
+                Some(s) => Session::Existing(s.id),
+                None => Session::Create(name.to_owned()),
             },
             None => from
                 .and_then(|p| self.mux.tab_of(p).ok())
                 .and_then(|t| self.mux.session_of_tab(t).ok())
-                .or_else(|| self.mux.sessions.first().map(|s| s.id)),
-        })
+                .or_else(|| self.mux.sessions.first().map(|s| s.id))
+                .map_or(Session::Any, Session::Existing),
+        }
     }
 
     /// `POST /api/blocks`: a new block of any type, in a tab of its own or
@@ -183,7 +183,7 @@ impl Daemon {
         if req.kind == BlockType::App {
             (req.vm, req.host, req.local) = (false, None, true);
         }
-        let session = self.resolve_session(req.session.as_deref(), from)?;
+        let session = self.resolve_session(req.session.as_deref(), from);
         let before: Vec<PaneId> = self.mux.panes();
         self.last_block_error = None;
         // On a new machine of its own, or one that exists (a tab's).
@@ -203,8 +203,9 @@ impl Daemon {
         self.next_block = Some((req.kind, req.config));
         let intent = match (req.split, session) {
             (Some(pane), _) => Intent::Split { pane, edge: arugula_proto::Edge::Right, local, cwd: None },
-            (None, Some(session)) => Intent::NewTab { session, from_pane: from, cwd: None },
-            (None, None) => Intent::NewSession { name: None, from_pane: from },
+            (None, Session::Existing(session)) => Intent::NewTab { session, from_pane: from, cwd: None },
+            (None, Session::Create(name)) => Intent::NewSession { name: Some(name), from_pane: from },
+            (None, Session::Any) => Intent::NewSession { name: None, from_pane: from },
         };
         let result = self.intent(None, intent);
         let unused = self.next_block.take();

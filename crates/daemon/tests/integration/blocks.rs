@@ -89,3 +89,42 @@ fn a_browser_block_opens_describes_calls_restores_and_closes() {
     let closed: Vec<_> = std::fs::read_dir(d.state.join("closed")).unwrap().flatten().collect();
     assert!(closed.iter().any(|e| e.file_name().to_string_lossy().starts_with(&format!("{id}-"))));
 }
+
+/// A block or a command started in a session that doesn't exist yet is that
+/// session's only pane (#236): no shell tab beside it.
+#[test]
+fn a_block_or_command_in_a_new_session_is_all_it_holds() {
+    let d = start();
+    let first = d.get("/api/panes")[0]["session"].as_u64().unwrap();
+    let in_session = |d: &Daemon, session: u64| -> Vec<serde_json::Value> {
+        let all = d.get("/api/panes");
+        all.as_array().unwrap().iter().filter(|p| p["session"] == session).cloned().collect()
+    };
+
+    let app = format!("http://127.0.0.1:{}/", d.port);
+    let block = d.post("/api/blocks", json!({"type": "browser", "config": {"url": app}, "session": "fresh"}))["block"]
+        .as_u64()
+        .unwrap();
+    let panes = d.get("/api/panes");
+    let b = panes.as_array().unwrap().iter().find(|p| p["id"] == block).unwrap().clone();
+    let session = b["session"].as_u64().unwrap();
+    assert_ne!(session, first, "a session of its own");
+    let held = in_session(&d, session);
+    assert_eq!(held.len(), 1, "only the block: {held:?}");
+    assert_eq!((held[0]["id"].as_u64(), held[0]["type"].as_str()), (Some(block), Some("browser")));
+    assert_eq!(held[0]["session_name"], "fresh");
+    assert_eq!(held.iter().map(|p| p["tab"].clone()).collect::<std::collections::HashSet<_>>().len(), 1);
+
+    let run = d.post("/api/run", json!({"command": "sleep 600", "session": "other"}))["pane"].as_u64().unwrap();
+    let panes = d.get("/api/panes");
+    let r = panes.as_array().unwrap().iter().find(|p| p["id"] == run).unwrap().clone();
+    let session = r["session"].as_u64().unwrap();
+    assert!(session != first && session != b["session"].as_u64().unwrap());
+    let held = in_session(&d, session);
+    assert_eq!(held.len(), 1, "only the command: {held:?}");
+    // The command is the pane, not a shell that was there first.
+    assert_eq!(
+        (held[0]["session_name"].as_str(), held[0]["current"]["text"].as_str()),
+        (Some("other"), Some("sleep 600"))
+    );
+}
