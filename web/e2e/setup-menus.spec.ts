@@ -47,12 +47,15 @@ test("menus offer only what this machine is set up for", async ({ page }) => {
   await reset(page);
   expect(await page.evaluate(() => fetch("/api/host").then((r) => r.json()).then((h) => h.features))).toEqual({
     labs: true,
+    dev: true,
     blocks: false,
     vms: false,
     fountain: false,
     studio: false,
     threads: true,
     calls: true,
+    // `labs` in flags.json is every flag (#665).
+    flags: ["chat", "huddles", "vms", "fountain", "studio", "workspaces", "guest-ssh", "swarm-themes", "forges"],
   });
   const [term] = await panes(page);
   const hidden = ["New VM pane on the right", "New VM tab", "Sandboxes…", "Fountain agents…", "Fountain runner…", "Open a studio app…"];
