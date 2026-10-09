@@ -18,6 +18,8 @@
 //! - **Wearing it** in an agent block ([`wear`]) is M44's wearing of a
 //!   Fountain agent, with the recipe as the source.
 
+pub mod block;
+pub mod catalog;
 pub mod wear;
 
 use std::{
@@ -320,6 +322,7 @@ pub fn routes(r: Router<Arc<App>>) -> Router<Arc<App>> {
         .route("/api/a2a/agents/{name}", post(rpc))
         .route("/api/a2a/offers", get(offers_get).post(offers_set))
         .route("/api/a2a/recipes", get(recipes_get))
+        .route("/api/a2a/catalog", get(catalog_get))
 }
 
 fn refuse(status: StatusCode, why: &str) -> Response {
@@ -343,9 +346,16 @@ fn home(_app: &App) -> PathBuf {
 
 /// The agents offered here, as cards: for anyone who reaches this machine.
 /// The owner also sees offers that are broken, and why.
-async fn list(State(app): AppState, who: Option<axum::Extension<Principal>>) -> Response {
+async fn list(
+    State(app): AppState,
+    who: Option<axum::Extension<Principal>>,
+    caller: Option<axum::Extension<crate::e2e::Caller>>,
+) -> Response {
     if let Some(r) = off(&app) {
         return r;
+    }
+    if let Some(c) = caller {
+        tracing::debug!(account = c.account, device = c.device, name = c.name, "agent cards read");
     }
     let machine = app.hosts.name().to_owned();
     let (cards, broken) = cards(&machine, app.control.state_dir(), &home(&app));
@@ -418,9 +428,37 @@ async fn offers_set(
         return refuse(StatusCode::FORBIDDEN, "only this machine's owner offers its agents");
     }
     match set_offer(app.control.state_dir(), &home(&app), &req.agent, req.dir.as_deref()) {
-        Ok(list) => Json(list).into_response(),
+        Ok(list) => {
+            // Who gets in follows what's offered (#399): tell control now.
+            app.control.poke();
+            Json(list).into_response()
+        }
         Err(e) => refuse(StatusCode::BAD_REQUEST, &e),
     }
+}
+
+#[derive(Deserialize)]
+struct CatalogQuery {
+    /// `1` (or `true`): ask every machine now.
+    #[serde(default)]
+    fresh: Option<String>,
+}
+
+/// The team's catalog (#399), as this machine sees it: the owner's (and
+/// their agents', through MCP).
+async fn catalog_get(
+    State(app): AppState,
+    who: Option<axum::Extension<Principal>>,
+    axum::extract::Query(q): axum::extract::Query<CatalogQuery>,
+) -> Response {
+    if let Some(r) = off(&app) {
+        return r;
+    }
+    if !owner(&who) {
+        return refuse(StatusCode::FORBIDDEN, "the owner's");
+    }
+    let fresh = matches!(q.fresh.as_deref(), Some("1" | "true"));
+    Json(catalog::get(&app, if fresh { 0 } else { catalog::FRESH_MS }).await).into_response()
 }
 
 #[derive(Deserialize)]

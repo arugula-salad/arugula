@@ -120,6 +120,19 @@ pub fn on(state_dir: &Path, flag: &str) -> bool {
     flags(state_dir).has(flag)
 }
 
+/// Whether this machine offers agents to its teams' members (#399): the
+/// `agents` flag is on and at least one recipe is offered. Until then no
+/// teammate's daemon gets in to a personal machine.
+#[cfg(feature = "labs")]
+pub fn offers_agents(state_dir: &Path) -> bool {
+    on(state_dir, arugula_proto::flags::AGENTS) && !agents::offers(state_dir).is_empty()
+}
+
+#[cfg(not(feature = "labs"))]
+pub fn offers_agents(_state_dir: &Path) -> bool {
+    false
+}
+
 /// Adds Labs' HTTP routes to the API's.
 #[cfg(feature = "labs")]
 pub fn routes(r: Router<Arc<App>>) -> Router<Arc<App>> {
@@ -136,6 +149,7 @@ pub fn routes(r: Router<Arc<App>>) -> Router<Arc<App>> {
 pub fn create_block(kind: BlockType, ctx: BlockCtx, config: Value) -> Result<Arc<dyn Block>, String> {
     match kind {
         BlockType::Fountain => fountain::FountainBlock::create(ctx, config),
+        BlockType::Agents => agents::block::AgentsBlock::create(ctx, config),
         BlockType::App => apps::AppBlock::create(ctx, config),
         BlockType::Workspace => workspace::Workspace::create(ctx, config),
         other => Err(format!("{other:?} isn't a Labs block")),
@@ -147,6 +161,7 @@ pub fn create_block(kind: BlockType, _ctx: BlockCtx, _config: Value) -> Result<A
     Err(not_built(&match kind {
         BlockType::App => "An app block".to_owned(),
         BlockType::Workspace => "A chant workspace".to_owned(),
+        BlockType::Agents => "The agent catalog".to_owned(),
         kind => format!("A {kind:?} block"),
     }))
 }

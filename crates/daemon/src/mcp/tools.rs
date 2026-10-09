@@ -691,6 +691,19 @@ pub struct ReadInviteArgs {
     pub pane: Option<PaneArg>,
 }
 
+// Read only by the catalog's handler, which a build without Labs lacks.
+#[cfg_attr(not(feature = "labs"), allow(dead_code))]
+#[derive(Deserialize, JsonSchema)]
+pub struct ListTeamAgentsArgs {
+    /// Words to find in an agent's name or description, or its machine's
+    /// or owner's name.
+    #[serde(default)]
+    pub query: Option<String>,
+    /// Ask every machine now, not from the last minute's read.
+    #[serde(default)]
+    pub fresh: bool,
+}
+
 // Read only by Fountain's handlers, which a build without Labs lacks.
 #[cfg_attr(not(feature = "labs"), allow(dead_code))]
 #[derive(Deserialize, JsonSchema)]
@@ -861,6 +874,11 @@ const LIST: &[Kind] = &[
         schema: schema_for_type::<NoArgs>,
     },
     Kind {
+        name: "agents",
+        description: "The agents the user's team offers: every Claude Code agent recipe offered on this machine, the user's other machines, their teams' and teammates', one line each: name, machine and owner, model, description. A machine that's offline shows its agents as last seen. To run one of this machine's here, start_agent {recipe: NAME}.",
+        schema: schema_for_type::<ListTeamAgentsArgs>,
+    },
+    Kind {
         name: "fountain_agents",
         description: "The agents on the user's Fountain account, one compact row each: name, runtime and model, where it comes from (agent-specs: curated; hand: hand-made; app: made by an app), skills, MCP servers and description. query searches names, descriptions, skills and servers. To hand one a task, start_agent {agent: fountain, fountain_agent: NAME}.",
         schema: schema_for_type::<ListAgentsArgs>,
@@ -878,7 +896,8 @@ const LIST: &[Kind] = &[
 /// of its group's table, and its arguments and its line in the description
 /// go with it. A caller who names one still reaches it (`dispatch`), by its
 /// kind or its name before #349.
-const UNLISTED: [(&str, &str, &str); 5] = [
+const UNLISTED: [(&str, &str, &str); 6] = [
+    ("list", "agents", flags::AGENTS),
     ("show", "app", flags::STUDIO),
     ("show", "workspace", flags::WORKSPACES),
     ("show", "fountain", flags::FOUNTAIN),
@@ -1558,6 +1577,10 @@ impl<'a> Call<'a> {
                 Err(e) => Err(e),
             },
             ("list", Some("devices")) => self.list_devices(),
+            ("list", Some("agents")) => match parse(args) {
+                Ok(a) => self.team_agents(a).await,
+                Err(e) => Err(e),
+            },
             ("list", Some("fountain_agents")) => match parse(args) {
                 Ok(a) => self.list_agents(a).await,
                 Err(e) => Err(e),
@@ -2744,6 +2767,46 @@ impl Call<'_> {
         )
     }
 
+    /// The team's agent catalog (M77): the cards each machine offers.
+    async fn team_agents(&self, a: ListTeamAgentsArgs) -> Out {
+        use crate::labs::agents::catalog;
+        if !crate::labs::on(self.app.control.state_dir(), flags::AGENTS) {
+            return Err("the agent catalog is in Labs: `arugulad flags agents on` turns it on here".into());
+        }
+        // The owner's agents': a guest's agent sees no catalog (#234's rule).
+        if let Some(me) = self.me()
+            && self.app.mux.api(|r| Api::GuestBehind(me, r)).await.flatten().is_some()
+        {
+            return Err("only the owner's own agents read the team's agent catalog".into());
+        }
+        let c = catalog::get(self.app, if a.fresh { 0 } else { catalog::FRESH_MS }).await;
+        let q = a.query.as_deref().map(str::to_lowercase).filter(|q| !q.trim().is_empty());
+        let hit = |s: &catalog::Shelf, card: &Value| {
+            q.as_ref().is_none_or(|q| {
+                let hay = format!("{} {} {} {}", card["name"], card["description"], s.name, s.owner).to_lowercase();
+                q.split_whitespace().all(|w| hay.contains(w))
+            })
+        };
+        let rows: Vec<(&catalog::Shelf, &Value)> = c.agents().filter(|(s, card)| hit(s, card)).collect();
+        let total = c.agents().count();
+        let mut text = match rows.len() {
+            0 if total == 0 => "No agents offered on any machine the user's team can reach.\n".to_owned(),
+            n => format!("{n} of {total} agents on {} machines:\n", c.machines.len()),
+        };
+        for (s, card) in &rows {
+            text.push_str(&catalog::Catalog::line(s, card));
+            text.push('\n');
+        }
+        for s in c.machines.iter().filter(|s| s.note.is_some()) {
+            text.push_str(&format!("{}: {}\n", s.name, s.note.as_deref().unwrap_or_default()));
+        }
+        if let Some(n) = &c.note {
+            text.push_str(n);
+            text.push('\n');
+        }
+        done(text, &c)
+    }
+
     /// The account's agents (M43), read with the user's own login on this
     /// host.
     async fn fountain_agents(&self, profile: Option<&str>) -> Result<crate::labs::fountain::Agents, String> {
@@ -2861,6 +2924,10 @@ impl Call<'_> {
 
     async fn list_agents(&self, _: ListAgentsArgs) -> Out {
         Err(crate::labs::not_built("Fountain"))
+    }
+
+    async fn team_agents(&self, _: ListTeamAgentsArgs) -> Out {
+        Err(crate::labs::not_built("The agent catalog"))
     }
 
     async fn read_agent(&self, _: ReadAgentArgs) -> Out {
@@ -3935,6 +4002,9 @@ mod tests {
         "device_call",
     ];
 
+    /// Kinds added after #349, each a job no old tool did.
+    const SINCE: &[(&str, Option<&str>)] = &[("list", Some("agents"))];
+
     /// About half as many tools (#349), and every old job is still there:
     /// each old name is a tool now, or reaches the tool and kind that does
     /// its job, with its old arguments; and it stays read-only or not.
@@ -3968,7 +4038,9 @@ mod tests {
             // does one thing.
             jobs.insert((def.name, kind));
         }
-        // Every tool and kind there is now does one of the old jobs.
+        // Jobs since: the team's agent catalog (M77).
+        jobs.extend(SINCE.iter().copied());
+        // Every tool and kind there is now does one of the old jobs, or a new one.
         let mut all = std::collections::BTreeSet::new();
         for d in &now {
             match &d.args {

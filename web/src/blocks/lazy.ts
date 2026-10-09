@@ -1,4 +1,4 @@
-// The Fountain, studio app and workspace blocks are Labs: their code is in
+// The Fountain, studio app, workspace and agents blocks are Labs: their code is in
 // the Labs chunk. Here, in the main bundle, is what stands in their slot: a
 // "Loading…" while the chunk arrives, then the real block inside it. A
 // machine without labs gets a plain note instead (an old saved layout can
@@ -9,15 +9,16 @@ import { loadLabs, type Labs } from "../labs-load";
 import type { BlockType, PaneId } from "../proto";
 import { registerBlock, type BlockView } from "./view";
 
-const LABS_BLOCKS = ["fountain", "app", "workspace"] as const;
+const LABS_BLOCKS = ["fountain", "app", "workspace", "agents"] as const;
 type LabsBlock = (typeof LABS_BLOCKS)[number];
 
 /** The Labs flag each needs. */
-const FLAGS: Record<LabsBlock, string> = { fountain: "fountain", app: "studio", workspace: "workspaces" };
-const TITLES: Record<LabsBlock, string> = { fountain: "Fountain", app: "App", workspace: "Workspace" };
+const FLAGS: Record<LabsBlock, string> = { fountain: "fountain", app: "studio", workspace: "workspaces", agents: "agents" };
+const TITLES: Record<LabsBlock, string> = { fountain: "Fountain", app: "App", workspace: "Workspace", agents: "Team agents" };
 
 function rendererOf(labs: Labs, type: LabsBlock) {
-  return type === "fountain" ? labs.fountainBlock : type === "app" ? labs.appBlock : labs.workspaceBlock;
+  const of = { fountain: labs.fountainBlock, app: labs.appBlock, workspace: labs.workspaceBlock, agents: labs.agentsBlock };
+  return of[type];
 }
 
 function lazyView(type: LabsBlock, client: Client, id: PaneId): BlockView {

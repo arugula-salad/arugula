@@ -511,3 +511,29 @@ people's agents. With `agents` on (M76, #398):
   channel. That interface takes no tasks yet: every method answers A2A's
   `UnsupportedOperationError` until M78 (#400). The cards are for anyone
   who reaches the machine, and offering is the owner's alone.
+
+### The team's catalog (M77)
+
+- **Team agents…** (the session and pane menus, the owner's) opens a block with
+  every agent offered on the machines this one reaches: the account's own,
+  its teams', and teammates' own machines that offer something. Cards are
+  grouped by machine and named with their owner. A machine that's offline,
+  or doesn't answer, keeps the cards it last had, marked as such. Below
+  them, a project's recipes, with *Offer* and *Stop offering*. *Run here*
+  runs one of this machine's offered recipes beside the block. *Send a
+  task* is M78's.
+- **For agents:** MCP `list {kind: agents}` (with `query`, `fresh`). **For
+  people:** `arugula agents catalog [--fresh]`. Both read
+  `GET /api/a2a/catalog` (the owner's), which is kept in
+  `<state>/agent-catalog.json` and asked again once it's a minute old.
+- **How it's read:** this daemon asks each machine's `GET /api/a2a/agents`
+  itself, through control's relay, signed with its own key (`peer.rs`).
+  Control never sees a card. Another account's machine is trusted only
+  through the root a checked team roster gives for that account.
+- **Who gets in:** a machine lets in other machines' daemons as their
+  account, never as the owner, for `/api/a2a/` and nothing else. Those are
+  this account's machines and its team's. Once it offers something with
+  the flag on, they're also the members' of every team its owner is on.
+  That's the A2A-only grant: control routes those accounts' daemons to it
+  (`AccessList.agents`) and lists it to them, but never to the people's
+  browsers. Stopping every offer takes it away again.

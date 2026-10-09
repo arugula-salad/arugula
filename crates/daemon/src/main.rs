@@ -43,6 +43,8 @@ mod ops;
 mod osc;
 mod pane;
 mod paths;
+#[cfg_attr(not(feature = "labs"), allow(dead_code))]
+mod peer;
 mod perm;
 // The local socket on Windows: a named pipe (M56).
 #[cfg(windows)]

@@ -819,10 +819,11 @@ pub async fn answer_share(
 /// daemon decides for itself; control routes only those it would anyway
 /// (see the top): this list narrows that, never widens it.
 pub async fn daemon_access(State(app): State<Arc<App>>, d: DaemonAuth, Json(b): Json<wire::AccessList>) -> R {
-    if b.accounts.len() > 500 {
+    if b.accounts.len() > 500 || b.agents.len() > 500 {
         return Err(err(StatusCode::BAD_REQUEST, "too many"));
     }
     app.db.set_access(&d.cert.device, &b.accounts, b.links_until)?;
+    app.db.set_agent_access(&d.cert.device, &b.agents)?;
     crate::reply(&wire::Ack {})
 }
 
@@ -842,6 +843,33 @@ pub fn may_reach(app: &App, account: &str, id: &str) -> anyhow::Result<bool> {
         }
     }
     Ok(app.db.daemon_lets_in(id, account)? && Relations::of(app, id, &owner)?.routes(app, account)?)
+}
+
+/// May `account`'s daemon reach daemon `id` (#399)? Wherever its person
+/// may, and also where `id` lets that account's daemons in for its agents
+/// (a teammate's own machine): routed only as far as the person would be,
+/// by the same relations.
+pub fn daemon_may_reach(app: &App, account: &str, id: &str) -> anyhow::Result<bool> {
+    if may_reach(app, account, id)? {
+        return Ok(true);
+    }
+    let Some((owner, _)) = app.db.daemon_row(id)? else { return Ok(false) };
+    Ok(app.db.daemon_lets_agents_in(id, account)? && Relations::of(app, id, &owner)?.routes(app, account)?)
+}
+
+/// What [`reachable`] adds for an account's daemons (#399): machines that
+/// let them in for their agents.
+pub fn reachable_for_agents(app: &App, account: &str) -> anyhow::Result<Vec<String>> {
+    let mut ids = reachable(app, account)?;
+    for id in app.db.agent_daemons(account)? {
+        let Some(owner) = app.db.daemon_account(&id)? else { continue };
+        if owner != account && Relations::of(app, &id, &owner)?.routes(app, account)? {
+            ids.push(id);
+        }
+    }
+    ids.sort();
+    ids.dedup();
+    Ok(ids)
 }
 
 /// Daemons beyond an account's own that it may reach: its teams' and

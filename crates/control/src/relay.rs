@@ -463,14 +463,15 @@ fn browser(headers: &HeaderMap) -> bool {
 
 pub async fn client(
     State(app): State<Arc<App>>,
-    s: Session,
+    s: crate::auth::Reacher,
     Path(id): Path<String>,
     headers: HeaderMap,
     up: WebSocketUpgrade,
 ) -> Response {
     // Its owner's, a team's member, or someone it was shared with (the
     // daemon checks for itself; this only routes).
-    match crate::teams::may_reach(&app, &s.account, &id) {
+    let reach = if s.daemon { crate::teams::daemon_may_reach } else { crate::teams::may_reach };
+    match reach(&app, &s.account, &id) {
         Ok(true) => {}
         Ok(false) => return err(StatusCode::NOT_FOUND, "no such daemon").into_response(),
         Err(e) => return crate::ApiError::from(e).into_response(),

@@ -7,7 +7,7 @@ import type { Machine, OpenRequest, PaneId, Policy, SessionId, TabView } from ".
 import { askText, type MenuItem } from "./menu";
 import { labsNow, openSandboxes, pickApp } from "../labs-load";
 import { driveItems, shareSession } from "./people";
-import { newRemote, openChanges, openEditor, openFountain, openIssue, openPort, openPr, openWorkspace, remoteHosts } from "../blocks";
+import { newRemote, openAgents, openChanges, openEditor, openFountain, openIssue, openPort, openPr, openWorkspace, remoteHosts } from "../blocks";
 import { startAgent } from "./agent-dialog";
 import { pickConversation } from "./conversations";
 import { openPicker } from "./picker";
@@ -225,6 +225,8 @@ export function sessionItems(client: Client, session: SessionId, rename: () => v
  * runner's unit is (#180). */
 function fountainItems(client: Client, where: { session?: number; split?: PaneId }): MenuItem[] {
   return [
+    // M77: the team's agents, for the owner (offering is theirs).
+    ...(client.flag("agents") && !client.state?.roles ? [{ label: "Team agents…", run: () => void openAgents(client, where) } as MenuItem] : []),
     ...(client.has("fountain") ? [{ label: "Fountain agents…", run: () => void openFountain(client, where) } as MenuItem] : []),
     ...(client.flag("fountain") && (client.features === null || client.fountainRunner)
       ? [{ label: "Fountain runner…", run: () => void openFountain(client, where, "runner") } as MenuItem]

@@ -1887,7 +1887,7 @@
         "readOnlyHint": true,
         "title": "List panes and more"
       },
-      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- fountain_agents {profile?, query?, source?}: The agents on the user's Fountain account, one compact row each: name, runtime and model, where it comes from (agent-specs: curated; hand: hand-made; app: made by an app), skills, MCP servers and description. query searches names, descriptions, skills and servers. To hand one a task, start_agent {agent: fountain, fountain_agent: NAME}.\n- fountain_agent {name, profile?}: One Fountain agent's whole recipe, by name: its system prompt, skills (inline or from GitHub), MCP servers, model, runtime, environment, sandbox provider and metadata, as Fountain returns it. Secrets are never in it: a server's credentials show as their ${VAR} references.",
+      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- agents {fresh?, query?}: The agents the user's team offers: every Claude Code agent recipe offered on this machine, the user's other machines, their teams' and teammates', one line each: name, machine and owner, model, description. A machine that's offline shows its agents as last seen. To run one of this machine's here, start_agent {recipe: NAME}.\n- fountain_agents {profile?, query?, source?}: The agents on the user's Fountain account, one compact row each: name, runtime and model, where it comes from (agent-specs: curated; hand: hand-made; app: made by an app), skills, MCP servers and description. query searches names, descriptions, skills and servers. To hand one a task, start_agent {agent: fountain, fountain_agent: NAME}.\n- fountain_agent {name, profile?}: One Fountain agent's whole recipe, by name: its system prompt, skills (inline or from GitHub), MCP servers, model, runtime, environment, sandbox provider and metadata, as Fountain returns it. Secrets are never in it: a server's credentials show as their ${VAR} references.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -1904,6 +1904,11 @@
               "null"
             ]
           },
+          "fresh": {
+            "default": false,
+            "description": "agents: Ask every machine now, not from the last minute's read.",
+            "type": "boolean"
+          },
           "kind": {
             "default": "panes",
             "description": "Which one (see the tool's description).",
@@ -1911,6 +1916,7 @@
               "panes",
               "conversations",
               "devices",
+              "agents",
               "fountain_agents",
               "fountain_agent"
             ],
@@ -1945,7 +1951,7 @@
           },
           "query": {
             "default": null,
-            "description": "conversations: Words in the title, prompts or folder. fountain_agents: Words to look for in each agent's name, description, skills and MCP\nservers (all must match): a skill's name finds the agents that have\nit.",
+            "description": "conversations: Words in the title, prompts or folder. agents: Words to find in an agent's name or description, or its machine's\nor owner's name. fountain_agents: Words to look for in each agent's name, description, skills and MCP\nservers (all must match): a skill's name finds the agents that have\nit.",
             "type": [
               "string",
               "null"
@@ -5059,7 +5065,7 @@
         "readOnlyHint": true,
         "title": "List panes and more"
       },
-      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- fountain_agents {profile?, query?, source?}: The agents on the user's Fountain account, one compact row each: name, runtime and model, where it comes from (agent-specs: curated; hand: hand-made; app: made by an app), skills, MCP servers and description. query searches names, descriptions, skills and servers. To hand one a task, start_agent {agent: fountain, fountain_agent: NAME}.\n- fountain_agent {name, profile?}: One Fountain agent's whole recipe, by name: its system prompt, skills (inline or from GitHub), MCP servers, model, runtime, environment, sandbox provider and metadata, as Fountain returns it. Secrets are never in it: a server's credentials show as their ${VAR} references.",
+      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- agents {fresh?, query?}: The agents the user's team offers: every Claude Code agent recipe offered on this machine, the user's other machines, their teams' and teammates', one line each: name, machine and owner, model, description. A machine that's offline shows its agents as last seen. To run one of this machine's here, start_agent {recipe: NAME}.\n- fountain_agents {profile?, query?, source?}: The agents on the user's Fountain account, one compact row each: name, runtime and model, where it comes from (agent-specs: curated; hand: hand-made; app: made by an app), skills, MCP servers and description. query searches names, descriptions, skills and servers. To hand one a task, start_agent {agent: fountain, fountain_agent: NAME}.\n- fountain_agent {name, profile?}: One Fountain agent's whole recipe, by name: its system prompt, skills (inline or from GitHub), MCP servers, model, runtime, environment, sandbox provider and metadata, as Fountain returns it. Secrets are never in it: a server's credentials show as their ${VAR} references.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -5076,6 +5082,11 @@
               "null"
             ]
           },
+          "fresh": {
+            "default": false,
+            "description": "agents: Ask every machine now, not from the last minute's read.",
+            "type": "boolean"
+          },
           "kind": {
             "default": "panes",
             "description": "Which one (see the tool's description).",
@@ -5083,6 +5094,7 @@
               "panes",
               "conversations",
               "devices",
+              "agents",
               "fountain_agents",
               "fountain_agent"
             ],
@@ -5117,7 +5129,7 @@
           },
           "query": {
             "default": null,
-            "description": "conversations: Words in the title, prompts or folder. fountain_agents: Words to look for in each agent's name, description, skills and MCP\nservers (all must match): a skill's name finds the agents that have\nit.",
+            "description": "conversations: Words in the title, prompts or folder. agents: Words to find in an agent's name or description, or its machine's\nor owner's name. fountain_agents: Words to look for in each agent's name, description, skills and MCP\nservers (all must match): a skill's name finds the agents that have\nit.",
             "type": [
               "string",
               "null"
@@ -7012,7 +7024,7 @@
         "readOnlyHint": true,
         "title": "List panes and more"
       },
-      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- fountain_agents {profile?, query?, source?}: The agents on the user's Fountain account, one compact row each: name, runtime and model, where it comes from (agent-specs: curated; hand: hand-made; app: made by an app), skills, MCP servers and description. query searches names, descriptions, skills and servers. To hand one a task, start_agent {agent: fountain, fountain_agent: NAME}.\n- fountain_agent {name, profile?}: One Fountain agent's whole recipe, by name: its system prompt, skills (inline or from GitHub), MCP servers, model, runtime, environment, sandbox provider and metadata, as Fountain returns it. Secrets are never in it: a server's credentials show as their ${VAR} references.",
+      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- agents {fresh?, query?}: The agents the user's team offers: every Claude Code agent recipe offered on this machine, the user's other machines, their teams' and teammates', one line each: name, machine and owner, model, description. A machine that's offline shows its agents as last seen. To run one of this machine's here, start_agent {recipe: NAME}.\n- fountain_agents {profile?, query?, source?}: The agents on the user's Fountain account, one compact row each: name, runtime and model, where it comes from (agent-specs: curated; hand: hand-made; app: made by an app), skills, MCP servers and description. query searches names, descriptions, skills and servers. To hand one a task, start_agent {agent: fountain, fountain_agent: NAME}.\n- fountain_agent {name, profile?}: One Fountain agent's whole recipe, by name: its system prompt, skills (inline or from GitHub), MCP servers, model, runtime, environment, sandbox provider and metadata, as Fountain returns it. Secrets are never in it: a server's credentials show as their ${VAR} references.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -7029,6 +7041,11 @@
               "null"
             ]
           },
+          "fresh": {
+            "default": false,
+            "description": "agents: Ask every machine now, not from the last minute's read.",
+            "type": "boolean"
+          },
           "kind": {
             "default": "panes",
             "description": "Which one (see the tool's description).",
@@ -7036,6 +7053,7 @@
               "panes",
               "conversations",
               "devices",
+              "agents",
               "fountain_agents",
               "fountain_agent"
             ],
@@ -7070,7 +7088,7 @@
           },
           "query": {
             "default": null,
-            "description": "conversations: Words in the title, prompts or folder. fountain_agents: Words to look for in each agent's name, description, skills and MCP\nservers (all must match): a skill's name finds the agents that have\nit.",
+            "description": "conversations: Words in the title, prompts or folder. agents: Words to find in an agent's name or description, or its machine's\nor owner's name. fountain_agents: Words to look for in each agent's name, description, skills and MCP\nservers (all must match): a skill's name finds the agents that have\nit.",
             "type": [
               "string",
               "null"

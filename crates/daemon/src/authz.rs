@@ -96,6 +96,9 @@ fn policy(method: &Method, path: &str) -> Policy {
         ["api", "blocks", _, "call", "profile" | "specs" | "run" | "run_fountain" | "spec" | "run_here"] => {
             Policy::Owner
         }
+        // M77: what this machine offers its team, and which project's
+        // recipes the agents block lists, are the owner's.
+        ["api", "blocks", _, "call", "offer" | "unoffer" | "recipes"] => Policy::Owner,
         // M45b: the runner view and what it opens: an agent block on a
         // runner conversation (the owner's login), a diff whose git runs
         // as `fountain` through the owner's sudoers rule, a shell as
@@ -111,7 +114,7 @@ fn policy(method: &Method, path: &str) -> Policy {
         // M76: what's offered to other people's agents is the owner's to
         // choose; the cards (and, from M78, their tasks) are for anyone who
         // reaches this machine.
-        ["api", "a2a", "offers" | "recipes"] => Policy::Owner,
+        ["api", "a2a", "offers" | "recipes" | "catalog"] => Policy::Owner,
         ["api", "a2a", "agents", ..] => Policy::Handler,
         // M61: the mux checks each thread (a pane's, or a session's).
         ["api", "threads", ..] => Policy::Handler,

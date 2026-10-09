@@ -11,7 +11,10 @@
 
 use std::sync::Arc;
 
-use arugula_e2e::channel::{Channel, MAX_MSG, MAX_WIRE, Msg, RequestHead, Responder, ResponseHead, prologue};
+use arugula_e2e::{
+    Kind,
+    channel::{Channel, MAX_MSG, MAX_WIRE, Msg, RequestHead, Responder, ResponseHead, prologue},
+};
 use axum::{
     Router,
     body::{Body, HttpBody},
@@ -155,6 +158,12 @@ async fn serve(app: Arc<App>, mut inbound: mpsc::Receiver<Vec<u8>>, out: mpsc::S
     let (m2, ch) = responder.finish(&[])?;
     out.send(m2).await?;
     let out = Arc::new(Out { ch: Arc::new(ch), q: tokio::sync::Mutex::new(out) });
+    let caller = Caller { account: device.account.clone(), device: device.device.clone(), name: device.name.clone() };
+    // #399: another machine, for this one's agents: requests to `/api/a2a/`
+    // and nothing else (no mux, no panes, no hands).
+    if device.kind == Kind::Daemon {
+        return serve_agent_caller(app, inbound, out, who, device, principal, caller).await;
+    }
     let ch = out.ch.clone();
 
     // An owner here through control has a name of their own (M30).
@@ -209,7 +218,7 @@ async fn serve(app: Arc<App>, mut inbound: mpsc::Receiver<Vec<u8>>, out: mpsc::S
                         }
                     }
                     Ok(Some(Msg::Request { id, head, body })) => {
-                        tokio::spawn(answer(router.clone(), out.clone(), id, head, body, principal.clone()));
+                        tokio::spawn(answer(router.clone(), out.clone(), id, head, body, principal.clone(), caller.clone()));
                     }
                     Ok(Some(Msg::Response { .. })) => break Err(anyhow::anyhow!("a client doesn't answer requests")),
                     Err(e) => break Err(e),
@@ -236,6 +245,72 @@ async fn serve(app: Arc<App>, mut inbound: mpsc::Receiver<Vec<u8>>, out: mpsc::S
             }
         }
     }
+}
+
+/// The device on the other end of a channel (S34, #399): which account it
+/// is, whatever its principal (every team owner is `Owner` on a team box).
+/// Handlers that decide by account (the agents') read it.
+#[derive(Debug, Clone)]
+#[cfg_attr(not(feature = "labs"), allow(dead_code))]
+pub struct Caller {
+    pub account: String,
+    pub device: String,
+    pub name: String,
+}
+
+/// Whether `path` is one an agent-calling daemon may ask for: under
+/// `/api/a2a/`, as the router will see it (decoded, no `..`).
+fn agents_only(path: &str) -> bool {
+    let path = path.split('?').next().unwrap_or_default();
+    crate::authz::segments(path).is_some_and(|s| {
+        s.len() > 2 && s[0] == "api" && s[1] == "a2a" && !s.iter().any(|x| x == ".." || x == "." || x.contains('/'))
+    })
+}
+
+/// A daemon's channel (#399): its requests under `/api/a2a/` answered as
+/// its account, anything else refused, and closed when it's no longer let
+/// in.
+async fn serve_agent_caller(
+    app: Arc<App>,
+    mut inbound: mpsc::Receiver<Vec<u8>>,
+    out: Arc<Out>,
+    who: [u8; 32],
+    device: arugula_e2e::Cert,
+    principal: crate::acl::Principal,
+    caller: Caller,
+) -> anyhow::Result<()> {
+    info!(device = device.device, account = device.account, name = device.name, "agent channel open");
+    let router = crate::server::channel_router(app.clone());
+    let ch = out.ch.clone();
+    let mut changed = app.control.changed.subscribe();
+    let r = loop {
+        tokio::select! {
+            w = inbound.recv() => {
+                let Some(w) = w else { break Ok(()) };
+                match ch.open(&w) {
+                    Ok(None) => {}
+                    Ok(Some(Msg::Request { id, head, body })) if agents_only(&head.path) => {
+                        tokio::spawn(answer(router.clone(), out.clone(), id, head, body, principal.clone(), caller.clone()));
+                    }
+                    Ok(Some(Msg::Request { id, .. })) => {
+                        let body = serde_json::to_vec(&serde_json::json!({ "error": "a machine reaches only the agents here (/api/a2a/)" })).unwrap();
+                        let m = Msg::Response { id, head: ResponseHead { status: 403, content_type: Some("application/json".to_owned()), more: false }, body };
+                        if let Err(e) = out.put(&m).await { break Err(e) }
+                    }
+                    Ok(Some(_)) => break Err(anyhow::anyhow!("a machine's channel carries requests only")),
+                    Err(e) => break Err(e),
+                }
+            }
+            Ok(()) = changed.changed() => {
+                if app.control.device(&who).is_none() {
+                    info!(device = device.device, "machine no longer let in: closing its agent channel");
+                    break Ok(());
+                }
+            }
+        }
+    };
+    info!(device = device.device, "agent channel closed");
+    r
 }
 
 /// A channel's client leaving the mux and the hands, however the channel ends.
@@ -267,14 +342,22 @@ fn to_msg(o: ToClient) -> Option<Msg> {
     }
 }
 
-async fn answer(router: Router, out: Arc<Out>, id: u32, head: RequestHead, body: Vec<u8>, who: crate::acl::Principal) {
+async fn answer(
+    router: Router,
+    out: Arc<Out>,
+    id: u32,
+    head: RequestHead,
+    body: Vec<u8>,
+    who: crate::acl::Principal,
+    caller: Caller,
+) {
     let say = |status, content_type, more, body| Msg::Response {
         id,
         head: ResponseHead { status, content_type, more },
         body,
     };
     let stream = head.stream;
-    let (status, content_type, body) = match call(router, head, body, who).await {
+    let (status, content_type, body) = match call(router, head, body, who, caller).await {
         Ok(r) => r,
         Err(e) => {
             let body = serde_json::to_vec(&serde_json::json!({ "error": e.to_string() })).unwrap();
@@ -314,6 +397,7 @@ async fn call(
     head: RequestHead,
     body: Vec<u8>,
     who: crate::acl::Principal,
+    caller: Caller,
 ) -> anyhow::Result<(u16, Option<String>, Body)> {
     anyhow::ensure!(head.path.starts_with("/api/"), "only the API is reachable this way");
     let mut req = Request::builder().method(head.method.as_str()).uri(head.path.as_str());
@@ -323,8 +407,34 @@ async fn call(
     let mut req = req.body(Body::from(body))?;
     // Who's asking: the API's checks (authz.rs) go by it.
     req.extensions_mut().insert(who);
+    // Which account's device it is (a team owner is `Owner` above, whichever
+    // account they are).
+    req.extensions_mut().insert(caller);
     let res = router.oneshot(req).await?;
     let status = res.status().as_u16();
     let ct = res.headers().get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).map(str::to_owned);
     Ok((status, ct, res.into_body()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::agents_only;
+
+    #[test]
+    fn a_machine_reaches_only_the_agents() {
+        for ok in ["/api/a2a/agents", "/api/a2a/agents/fixer/card", "/api/a2a/agents/fixer?x=1"] {
+            assert!(agents_only(ok), "{ok}");
+        }
+        for no in [
+            "/api/a2a",
+            "/api/panes",
+            "/api/a2a/../panes",
+            "/api/a2a/%2e%2e/panes",
+            "/api/a2a/agents/%2F..%2Fpanes",
+            "/api/blocks/1/call/send",
+            "/e2e",
+        ] {
+            assert!(!agents_only(no), "{no}");
+        }
+    }
 }

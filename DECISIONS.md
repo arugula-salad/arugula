@@ -548,6 +548,25 @@ owner's (`<state>/agent-offers.json`). A card is A2A 1.0 with an
 Where: `crates/daemon/src/labs/agents/`, `crates/daemon/src/labs/fountain/wear.rs` (`Worn`), `crates/cli/src/cmd/agents.rs`.
 From: [S34](https://github.com/arugula-salad/arugula/issues/397), M76 (#398), #403.
 
+### A machine reaches another's agents as its account, through the relay
+The team's catalog (M77) is read by the daemon itself, not by a page that
+happens to be open, so its agents can use it. A daemon signs its relay
+socket and its directory read with its own key, and control routes it
+exactly as it would route its person. On the far end a daemon certificate
+gets in as `account:<id>`, never as the owner (on a team box every owner is
+`Owner`, and a daemon reaching for agents gets the agents and nothing
+more). Its channel answers `/api/a2a/` only: no mux, no panes, no hands.
+Another account's machine is trusted through the root a checked team roster
+names for that account, not through first sight, because a teammate's
+roster is already verified. A teammate's own machine is reachable only while it
+offers agents (the A2A-only grant). It names those accounts in a separate
+`agents` list. Control routes their daemons with it and lists it to them,
+but never to their browsers, so a person's fleet doesn't gain machines it
+can't open. One request a channel for now: tasks (M78) will want one that
+stays.
+Where: `crates/daemon/src/peer.rs`, `crates/daemon/src/e2e.rs` (`serve_agent_caller`, `agents_only`), `crates/daemon/src/control.rs` (`agent_callers`, `known_root`), `crates/control/src/auth.rs` (`Reacher`), `crates/control/src/teams.rs` (`daemon_may_reach`).
+From: [S34](https://github.com/arugula-salad/arugula/issues/397) q3, q7; M77 (#399).
+
 ### Threads live on the daemon that owns the pane
 Pane and session threads are kept in `<state>/threads/`, outside the pane's
 own directory (closing a pane keeps its conversation), with the pane's access

@@ -36,6 +36,15 @@ enum Cmd {
     },
     /// One offered agent's A2A card.
     Card { agent: String },
+    /// The agents your team offers, on every machine you reach.
+    ///
+    /// Yours, your teams', and teammates' that offer agents, as this machine
+    /// last read them (a minute at most).
+    Catalog {
+        /// Ask every machine now.
+        #[arg(long)]
+        fresh: bool,
+    },
 }
 
 /// The project's whole path [default: here], `.` and `..` resolved.
@@ -102,6 +111,33 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
                 println!("{agent}: no longer offered");
             } else {
                 println!("{agent}: offered from {}", dir.as_str().unwrap_or_default());
+            }
+        }
+        Cmd::Catalog { fresh } => {
+            let path = if fresh { "/api/a2a/catalog?fresh=1" } else { "/api/a2a/catalog" };
+            let v = request(&sock, "GET", path, None)?.json()?;
+            if json_out {
+                print_json(&v);
+                return Ok(0);
+            }
+            for m in v["machines"].as_array().into_iter().flatten() {
+                let owner =
+                    m["owner"].as_str().filter(|o| !o.is_empty()).map(|o| format!(" ({o}'s)")).unwrap_or_default();
+                let stale = if m["online"].as_bool().unwrap_or(false) { "" } else { " [offline: as last seen]" };
+                for c in m["agents"].as_array().into_iter().flatten() {
+                    println!(
+                        "{}\t{}{owner}{stale}\t{}",
+                        c["name"].as_str().unwrap_or("?"),
+                        m["name"].as_str().unwrap_or("?"),
+                        c["description"].as_str().unwrap_or("")
+                    );
+                }
+                if let Some(n) = m["note"].as_str() {
+                    eprintln!("{}: {n}", m["name"].as_str().unwrap_or("?"));
+                }
+            }
+            if let Some(n) = v["note"].as_str() {
+                eprintln!("{n}");
             }
         }
         Cmd::Card { agent } => {

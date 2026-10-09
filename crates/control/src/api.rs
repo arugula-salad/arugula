@@ -758,7 +758,7 @@ pub async fn daemon_leave(State(app): State<Arc<App>>, d: DaemonAuth) -> R {
 
 // ---------------------------------------------------------------- directory
 
-pub async fn directory(State(app): State<Arc<App>>, s: Session) -> R {
+pub async fn directory(State(app): State<Arc<App>>, s: crate::auth::Reacher) -> R {
     let mut daemons: Vec<Value> = app
         .db
         .daemons(&s.account)?
@@ -774,7 +774,12 @@ pub async fn directory(State(app): State<Arc<App>>, s: Session) -> R {
         .collect();
     // Teams' machines and those shared with me (M19), with their owner
     // account's certificates to check them by.
-    for id in crate::teams::reachable(&app, &s.account)? {
+    let reachable = if s.daemon {
+        crate::teams::reachable_for_agents(&app, &s.account)?
+    } else {
+        crate::teams::reachable(&app, &s.account)?
+    };
+    for id in reachable {
         let Some((owner, d)) = app.db.daemon_row(&id)? else { continue };
         if owner == s.account {
             continue;
@@ -787,9 +792,10 @@ pub async fn directory(State(app): State<Arc<App>>, s: Session) -> R {
             "account": owner, "owner_name": owner_name, "team": team, "chain": crate::teams::chain_of(&app, &owner)?,
         }));
     }
-    // Sessions someone offers to share with me, for me to answer first.
+    // Sessions someone offers to share with me, for me to answer first
+    // (a person's to answer: a daemon is told none).
     let mut offers = Vec::new();
-    for id in app.db.offers_for(&s.account)? {
+    for id in if s.daemon { vec![] } else { app.db.offers_for(&s.account)? } {
         let Some((owner, d)) = app.db.daemon_row(&id)? else { continue };
         let Some(who) = app.db.account(&owner)? else { continue };
         offers.push(json!({ "daemon": d.id, "name": d.name, "account": owner, "owner_name": who.name, "owner_login": who.login }));
