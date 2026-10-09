@@ -1,9 +1,12 @@
 //! `arugula log`: a pane's commands and who ran each.
 
 use super::Ctx;
-use crate::http::request;
+use crate::http::{call_raw, request};
 use crate::util::{Pane, here, print_json, time};
-use arugula_proto::api::{DriverEntry, HistoryEntry};
+use arugula_proto::{
+    api::{Empty, HistoryEntry},
+    op::ops::PaneDrivers,
+};
 
 #[derive(clap::Args)]
 pub struct Args {
@@ -33,8 +36,7 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
         }
         return Ok(0);
     }
-    let (drivers, v) =
-        request(&sock, "GET", &format!("/api/panes/{id}/drivers"), None)?.parse_raw::<Vec<DriverEntry>>()?;
+    let (drivers, v) = call_raw::<PaneDrivers>(&sock, &id, &Empty {})?;
     if json_out {
         print_json(&v);
         return Ok(0);

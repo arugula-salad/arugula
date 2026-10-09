@@ -1,9 +1,12 @@
 //! `arugula send`: type text into a pane, or prompt the agent there and wait.
 
 use super::Ctx;
-use crate::http::request_as;
+use crate::http::{call, request_as};
 use crate::util::Pane;
-use arugula_proto::api::{Empty, PromptRequest, PromptResult, SendRequest};
+use arugula_proto::{
+    api::{PromptRequest, PromptResult, SendRequest},
+    op::ops::PaneSend,
+};
 use std::io::Read;
 
 /// What `send --wait` came to, for people, and its exit code.
@@ -58,7 +61,6 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
         println!("{line}");
         return Ok(code);
     }
-    request_as(&sock, "POST", &format!("/api/panes/{}/send", pane.0), &SendRequest { text, enter })?
-        .parse::<Empty>()?;
+    call::<PaneSend>(&sock, &pane.0, &SendRequest { text, enter })?;
     Ok(0)
 }

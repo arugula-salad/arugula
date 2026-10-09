@@ -15,17 +15,17 @@ use std::{
 use arugula_proto::{
     Driver, EventKind, Frame, FrameKind, PaneId, SessionId,
     api::{
-        Adapters, AgentRules, AgentsInventory, Answered, AskAnswer, AskRequest, AttentionRequest, ConversationList,
-        ConversationRow, Described, Detection, DetectionAnswer, DetectionRule, Empty, FollowUpRequest, FollowedUp,
-        HistoryKind, IdeDiffs, IdeDiffsRequest, IdeInfo, IdeMentionRequest, IdeMentioned, IdeOther, InboxAnswer,
-        Invitable, KeysRequest, MouseRequest, NoDetection, NotifyPref, NotifyRequest, OpenConversationRequest,
-        OpenConversationResponse, OpenResponse, PaneDiff, PermitAnswer, PermitRequest, Process, PromptRequest,
-        PromptResult, PushSubscriptions, RunRequest, RunResponse, SecretFinding, SendRequest, ThreadAgent,
-        ThreadMessages, ThreadPostRequest, ThreadPosted, ThreadReadRequest, Unreached, UnreachedWhy, WaitRequest,
-        WaitResult, WithdrawRequest,
+        Adapters, AgentRules, AgentsInventory, Answered, AskAnswer, AskRequest, ConversationList, ConversationRow,
+        Described, Empty, HistoryKind, IdeDiffs, IdeDiffsRequest, IdeInfo, IdeMentionRequest, IdeMentioned, IdeOther,
+        InboxAnswer, Invitable, KeysRequest, NotifyPref, NotifyRequest, OpenConversationRequest,
+        OpenConversationResponse, OpenResponse, PermitAnswer, PermitRequest, Process, PromptRequest, PromptResult,
+        PushSubscriptions, RunRequest, RunResponse, SecretFinding, SendRequest, ThreadAgent, ThreadMessages,
+        ThreadPostRequest, ThreadPosted, ThreadReadRequest, Unreached, UnreachedWhy, WaitRequest, WaitResult,
+        WithdrawRequest,
     },
     op::ops::{
-        ClosePane, FlagSet, FlagsList, ListPanes, PaneWait, RuleForget, RulesForgetAll, RulesList, ShellEnvGet,
+        ClosePane, FlagSet, FlagsList, ListPanes, PaneAttention, PaneDetection, PaneDiffOf, PaneDrivers, PaneFollowUp,
+        PaneKeys, PaneMouse, PaneProcess, PaneSend, PaneWait, RuleForget, RulesForgetAll, RulesList, ShellEnvGet,
         ShellEnvRefresh,
     },
 };
@@ -60,11 +60,11 @@ pub fn routes() -> Router<Arc<App>> {
     let r = Router::new()
         .op::<ListPanes>()
         .route("/api/run", post(run))
-        .route("/api/panes/{id}/send", post(send))
+        .op::<PaneSend>()
         .route("/api/panes/{id}/prompt", post(prompt_))
-        .route("/api/panes/{id}/keys", post(keys_))
-        .route("/api/panes/{id}/mouse", post(mouse))
-        .route("/api/panes/{id}/attention", post(attention))
+        .op::<PaneKeys>()
+        .op::<PaneMouse>()
+        .op::<PaneAttention>()
         .route("/api/attention", get(attention_list))
         .route("/api/attention/act", post(act))
         .route("/api/panes/{id}/ask", post(ask))
@@ -72,18 +72,18 @@ pub fn routes() -> Router<Arc<App>> {
         .route("/api/panes/{id}/permit", post(permit))
         .route("/api/panes/{id}/hook", post(hook))
         .route("/api/panes/{id}/inbox", post(inbox))
-        .route("/api/panes/{id}/followup", post(followup))
+        .op::<PaneFollowUp>()
         .route("/api/turn", get(turn))
         .route("/api/threads/{target}", get(thread_get).post(thread_post))
         .route("/api/threads/{target}/read", post(thread_read))
         .op::<ClosePane>()
         .route("/api/panes/{id}/capture", get(capture))
-        .route("/api/panes/{id}/process", get(process))
-        .route("/api/panes/{id}/detection", get(detection))
+        .op::<PaneProcess>()
+        .op::<PaneDetection>()
         .route("/api/panes/{id}/tail", get(tail))
         .route("/api/panes/{id}/export.cast", get(export))
-        .route("/api/panes/{id}/drivers", get(drivers))
-        .route("/api/panes/{id}/diff", get(diff_of))
+        .op::<PaneDrivers>()
+        .op::<PaneDiffOf>()
         .route("/api/ide", get(ide_get).put(ide_set))
         .op::<RulesList>()
         .op::<RulesForgetAll>()
@@ -209,16 +209,6 @@ async fn run(State(app): AppState, Json(req): Json<RunRequest>) -> Res<Json<RunR
         Some(Err(e)) => Err(bad(e)),
         None => Err(ApiError(StatusCode::SERVICE_UNAVAILABLE, "daemon is shutting down".into())),
     }
-}
-
-async fn send(State(app): AppState, Path(id): Path<PaneId>, Json(req): Json<SendRequest>) -> Res<Json<Empty>> {
-    pane(&app, id).await?.mark_input();
-    let mut data = req.text.into_bytes();
-    if req.enter {
-        data.push(b'\r');
-    }
-    app.mux.send(Cmd::Input { client: None, pane: id, data });
-    Ok(Json(Empty {}))
 }
 
 /// `arugula send %N --wait`: prompt the agent there and wait for its
@@ -395,35 +385,6 @@ async fn screen(app: &App, id: PaneId) -> String {
         .unwrap_or_default();
     let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
     lines[lines.len().saturating_sub(15)..].join("\n")
-}
-
-async fn keys_(State(app): AppState, Path(id): Path<PaneId>, Json(req): Json<KeysRequest>) -> Res<Json<Empty>> {
-    let p = pane(&app, id).await?;
-    let modes = p.status().modes;
-    let data: Vec<u8> = req.keys.iter().flat_map(|k| keys::key(k, modes)).collect();
-    p.mark_input();
-    app.mux.send(Cmd::Input { client: None, pane: id, data });
-    Ok(Json(Empty {}))
-}
-
-async fn mouse(State(app): AppState, Path(id): Path<PaneId>, Json(req): Json<MouseRequest>) -> Res<Json<Empty>> {
-    let p = pane(&app, id).await?;
-    let data = keys::mouse(req.x, req.y, req.button, req.action, p.status().modes)
-        .ok_or_else(|| bad("the program in that pane isn't listening to the mouse"))?;
-    p.mark_input();
-    app.mux.send(Cmd::Input { client: None, pane: id, data });
-    Ok(Json(Empty {}))
-}
-
-async fn attention(
-    State(app): AppState,
-    Path(id): Path<PaneId>,
-    Json(req): Json<AttentionRequest>,
-) -> Res<Json<Empty>> {
-    match app.mux.api(|r| Api::Attention(id, req.state, req.why, r)).await {
-        Some(true) => Ok(Json(Empty {})),
-        _ => Err(ApiError(StatusCode::NOT_FOUND, format!("no pane %{id}"))),
-    }
 }
 
 /// Every pane that wants you, and why (M24): what `arugula attention`
@@ -779,32 +740,6 @@ async fn inbox(
     }))
 }
 
-/// A follow-up for the agent in a pane (M29), from whoever may drive it:
-/// an agent block's next prompt, or Claude Code's in a terminal (through
-/// its inbox hook, never typed). Recorded as theirs. `{delivered}`: it went
-/// straight in (else it waits for the agent).
-async fn followup(
-    State(app): AppState,
-    Path(id): Path<PaneId>,
-    who: Option<axum::Extension<crate::acl::Principal>>,
-    Json(req): Json<FollowUpRequest>,
-) -> Res<Json<FollowedUp>> {
-    let who = who.map(|axum::Extension(w)| w).unwrap_or(crate::acl::Principal::Owner);
-    let by = who_is(&app, who)
-        .await
-        .ok_or_else(|| ApiError(StatusCode::SERVICE_UNAVAILABLE, "daemon is shutting down".into()))?;
-    if let Some(b) = app.mux.api(|r| Api::Block(id, r)).await.flatten() {
-        let name = (by.who != "owner").then_some(by.name.as_str());
-        b.call_by("send", serde_json::json!({ "text": req.text }), name).await.map_err(bad)?;
-        return Ok(Json(FollowedUp { delivered: true }));
-    }
-    match app.mux.api(|r| Api::FollowUp(id, req.text, by, r)).await {
-        Some(Ok(now)) => Ok(Json(FollowedUp { delivered: now })),
-        Some(Err(e)) => Err(bad(e)),
-        None => Err(ApiError(StatusCode::SERVICE_UNAVAILABLE, "daemon is shutting down".into())),
-    }
-}
-
 async fn ask_withdraw(
     State(app): AppState,
     Path(id): Path<PaneId>,
@@ -940,7 +875,7 @@ fn not_on_invites() -> ApiError {
 }
 
 /// What to call whoever made a request (M13), to attribute what they did.
-async fn who_is(app: &App, who: crate::acl::Principal) -> Option<Driver> {
+pub(crate) async fn who_is(app: &App, who: crate::acl::Principal) -> Option<Driver> {
     app.mux.api(|r| Api::Who(who, r)).await
 }
 
@@ -1487,7 +1422,7 @@ async fn share_machine(State(app): AppState, Path(id): Path<PaneId>) -> Res<Json
     }
 }
 
-async fn guest_process(app: &App, pane: PaneId, machine: &arugula_proto::Machine) -> Res<Json<Process>> {
+pub(crate) async fn guest_process(app: &App, pane: PaneId, machine: &arugula_proto::Machine) -> Res<Process> {
     let unavailable = |why: String| ApiError(StatusCode::SERVICE_UNAVAILABLE, why);
     let provider = app.mux.provider.clone().ok_or_else(|| unavailable("VM panes aren't set up".into()))?;
     let tag = crate::mux::exec_tag(&app.mux.daemon_id, pane);
@@ -1500,70 +1435,14 @@ async fn guest_process(app: &App, pane: PaneId, machine: &arugula_proto::Machine
         return Err(ApiError(StatusCode::CONFLICT, "nothing is running in that pane".into()));
     }
     let some = |s: &str| (!s.is_empty()).then(|| s.to_owned());
-    Ok(Json(Process {
+    Ok(Process {
         pid: lines[0].parse().unwrap_or(0),
         foreground: lines[1].parse().unwrap_or(0),
         comm: lines[2].to_owned(),
         exe: some(lines[3]),
         cwd: some(lines[4]),
         argv: lines[5].split('\x1f').filter(|a| !a.is_empty()).map(str::to_owned).collect(),
-    }))
-}
-
-async fn process(State(app): AppState, Path(id): Path<PaneId>) -> Res<Json<Process>> {
-    let p = pane(&app, id).await?;
-    // On a machine: ask it (its processes aren't ours to read).
-    if let Some(Some(m)) = app.mux.api(|r| Api::MachineOf(id, r)).await {
-        return guest_process(&app, id, &m).await;
-    }
-    let pid = p.pid_now().ok_or_else(|| ApiError(StatusCode::CONFLICT, "nothing is running in that pane".into()))?;
-    use crate::procinfo;
-    let tpgid = procinfo::foreground(pid).unwrap_or(pid);
-    Ok(Json(Process {
-        pid,
-        foreground: tpgid,
-        comm: procinfo::comm(tpgid).unwrap_or_default(),
-        argv: procinfo::argv(tpgid).unwrap_or_default(),
-        exe: procinfo::exe(tpgid).map(|p| p.display().to_string()),
-        cwd: procinfo::cwd(tpgid).map(|p| p.display().to_string()),
-    }))
-}
-
-/// How the screen of the agent in a pane reads, rule by rule (#145,
-/// `arugula describe %N --detection`): `{agent: null, command}` when no
-/// agent's screen is read there.
-async fn detection(State(app): AppState, Path(id): Path<PaneId>) -> Res<Json<DetectionAnswer>> {
-    let p = pane(&app, id).await?;
-    let (found, command) = tokio::task::spawn_blocking(move || (p.detection(), p.command()))
-        .await
-        .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    Ok(Json(match found {
-        Some(d) => DetectionAnswer::Read(Detection {
-            agent: d.agent.into(),
-            name: d.name.into(),
-            shown: d.shown.map(Into::into),
-            fired: d.fired.map(Into::into),
-            title: d.title,
-            rules: d
-                .rules
-                .into_iter()
-                .map(|r| DetectionRule {
-                    rule: r.rule.into(),
-                    state: r.state.into(),
-                    priority: r.priority,
-                    region: r.region,
-                    text: r.text,
-                    matched: r.matched,
-                })
-                .collect(),
-            unread: d.unread,
-            // Not read here: what chant found configured instead.
-            configured: d
-                .unread
-                .then(|| app.mux.inventory.snapshot().runtimes().into_iter().map(str::to_owned).collect()),
-        }),
-        None => DetectionAnswer::NoAgent(NoDetection { agent: None, command }),
-    }))
+    })
 }
 
 #[derive(Deserialize)]
@@ -1964,13 +1843,6 @@ async fn secrets(State(app): AppState, Path(id): Path<SessionId>) -> Res<Respons
     Ok(Json(found).into_response())
 }
 
-/// Who typed in a pane, by handoff (M13).
-async fn drivers(State(app): AppState, Path(id): Path<PaneId>) -> Res<Response> {
-    let dir = app.mux.store.pane_dir(id);
-    let list = tokio::task::spawn_blocking(move || history::drivers(&dir)).await.unwrap_or_default();
-    Ok(Json(list).into_response())
-}
-
 async fn history_(State(app): AppState, Query(q): Query<HistoryQuery>) -> Res<Response> {
     let matching = q.matching.as_deref().map(Regex::new).transpose().map_err(|e| bad(format!("match: {e}")))?;
     let kind = q
@@ -2149,26 +2021,6 @@ mod secret_tests {
         assert!(super::find_secrets("PASSWORD=hunter22").contains(&"a password"));
         assert!(super::find_secrets("cargo build --release\n   Compiling foo").is_empty());
     }
-}
-
-/// `GET /api/panes/{id}/diff` (M28): the edit a pane's diff card shows,
-/// before and after, for changing it before accepting.
-async fn diff_of(
-    State(app): AppState,
-    who: Option<axum::Extension<crate::acl::Principal>>,
-    Path(id): Path<PaneId>,
-) -> Res<Json<PaneDiff>> {
-    let who = who.map(|axum::Extension(w)| w).unwrap_or(crate::acl::Principal::Owner);
-    if !who.is_owner() && app.mux.api(|r| Api::RoleOn(who, id, r)).await.flatten().is_none() {
-        return Err(ApiError(StatusCode::NOT_FOUND, format!("no pane %{id}")));
-    }
-    let (info, old, new) = app
-        .mux
-        .api(|r| Api::DiffOf(id, r))
-        .await
-        .flatten()
-        .ok_or_else(|| ApiError(StatusCode::NOT_FOUND, format!("%{id} has no edit waiting")))?;
-    Ok(Json(PaneDiff { diff: info, old, new }))
 }
 
 /// Home and the environment an agent block gets.

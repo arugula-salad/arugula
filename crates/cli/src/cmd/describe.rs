@@ -2,9 +2,12 @@
 //! are configured here.
 
 use super::Ctx;
-use crate::http::request;
+use crate::http::{call, request};
 use crate::util::{Pane, print_json};
-use arugula_proto::api::{AgentsInventory, DetectionAnswer};
+use arugula_proto::{
+    api::{AgentsInventory, DetectionAnswer, Empty},
+    op::ops::PaneDetection,
+};
 use serde_json::Value;
 
 /// `describe %N --detection` for people: what fired, then each rule with
@@ -123,8 +126,7 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
             }
         }
         Args { block: Some(block), detection: true, .. } => {
-            let v: DetectionAnswer =
-                request(&sock, "GET", &format!("/api/panes/{}/detection", block.0), None)?.parse()?;
+            let v = call::<PaneDetection>(&sock, &block.0, &Empty {})?;
             print!("{}", detection_text(block.0, &v));
         }
         Args { block: Some(block), .. } => {

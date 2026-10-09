@@ -1,9 +1,9 @@
 //! `arugula keys`: press named keys in a pane.
 
 use super::Ctx;
-use crate::http::request_as;
+use crate::http::call;
 use crate::util::Pane;
-use arugula_proto::api::{Empty, KeysRequest};
+use arugula_proto::{api::KeysRequest, op::ops::PaneKeys};
 
 #[derive(clap::Args)]
 pub struct Args {
@@ -15,6 +15,6 @@ pub struct Args {
 pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
     let Ctx { sock, .. } = ctx;
     let Args { pane, keys } = args;
-    request_as(&sock, "POST", &format!("/api/panes/{}/keys", pane.0), &KeysRequest { keys })?.parse::<Empty>()?;
+    call::<PaneKeys>(&sock, &pane.0, &KeysRequest { keys })?;
     Ok(0)
 }

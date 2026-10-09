@@ -1,7 +1,16 @@
 # name method path access drives credential
 flag.set PUT /api/flags/{name} Owner drives=false credential=false
 flags.list GET /api/flags Owner drives=false credential=false
+pane.attention POST /api/panes/{id}/attention Pane(Editor) drives=false credential=false
 pane.close POST /api/panes/{id}/close Pane(Editor) drives=false credential=false
+pane.detection GET /api/panes/{id}/detection Pane(Viewer) drives=false credential=false
+pane.diff GET /api/panes/{id}/diff Pane(Viewer) drives=false credential=false
+pane.drivers GET /api/panes/{id}/drivers Owner drives=false credential=false
+pane.followup POST /api/panes/{id}/followup Pane(Editor) drives=true credential=false
+pane.keys POST /api/panes/{id}/keys Pane(Editor) drives=true credential=false
+pane.mouse POST /api/panes/{id}/mouse Pane(Editor) drives=true credential=false
+pane.process GET /api/panes/{id}/process Pane(Viewer) drives=false credential=false
+pane.send POST /api/panes/{id}/send Pane(Editor) drives=true credential=false
 pane.wait GET /api/panes/{id}/wait Pane(Viewer) drives=false credential=false
 panes.list GET /api/panes Owner drives=false credential=false
 rule.forget DELETE /api/rules/{index} Owner drives=false credential=false

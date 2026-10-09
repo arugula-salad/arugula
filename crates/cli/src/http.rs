@@ -366,6 +366,17 @@ fn query(req: &impl serde::Serialize) -> anyhow::Result<String> {
     Ok(pairs.iter().map(|(k, v)| format!("{}={}", enc(k), enc(&value(k, v)))).collect::<Vec<_>>().join("&"))
 }
 
+/// An operation with a JSON body of the caller's own, where its typed
+/// request would refuse what the daemon words better (`mouse`'s button, an
+/// attention state typed on the command line).
+pub fn request_op<O: arugula_proto::op::Op>(
+    target: &Target,
+    path: &O::Path,
+    body: &serde_json::Value,
+) -> anyhow::Result<Response> {
+    request(target, O::METHOD.as_str(), &O::path(path), Some(body))
+}
+
 /// An operation's answer, with the body as the daemon sent it too (`parse_raw`).
 pub fn call_raw<O: arugula_proto::op::Op>(
     target: &Target,
@@ -630,6 +641,37 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// The pane verbs' routes and bodies as the commands wrote them by hand
+    /// before they were operations (#574): the same path, the same JSON, and
+    /// no query string on a GET that takes none.
+    #[test]
+    fn a_pane_verb_goes_out_as_it_was_written_by_hand() {
+        use arugula_proto::{
+            api::{Empty, KeysRequest, SendRequest},
+            op::{Op, Request, ops::*},
+        };
+        let pane = 7;
+        assert_eq!(PaneSend::path(&pane), format!("/api/panes/{pane}/send"));
+        assert_eq!(PaneKeys::path(&pane), format!("/api/panes/{pane}/keys"));
+        assert_eq!(PaneMouse::path(&pane), format!("/api/panes/{pane}/mouse"));
+        assert_eq!(PaneAttention::path(&pane), format!("/api/panes/{pane}/attention"));
+        for path in
+            [PaneProcess::path(&pane), PaneDetection::path(&pane), PaneDrivers::path(&pane), PaneDiffOf::path(&pane)]
+        {
+            assert!(path.starts_with("/api/panes/7/") && !path.contains('?'), "{path}");
+        }
+        assert_eq!(PaneProcess::path(&pane), format!("/api/panes/{pane}/process"));
+        assert_eq!(PaneDetection::path(&pane), format!("/api/panes/{pane}/detection"));
+        assert_eq!(PaneDrivers::path(&pane), format!("/api/panes/{pane}/drivers"));
+        // A GET with no query sends no body and no `?`.
+        assert!(Empty::without_body().is_some());
+        let send = |text: &str, enter| serde_json::to_value(SendRequest { text: text.into(), enter }).unwrap();
+        assert_eq!(send("ls", true).to_string(), r#"{"enter":true,"text":"ls"}"#);
+        assert_eq!(send("", false).to_string(), r#"{"enter":false,"text":""}"#);
+        let keys = serde_json::to_value(KeysRequest { keys: vec!["C-c".into(), "Up".into()] }).unwrap();
+        assert_eq!(keys.to_string(), r#"{"keys":["C-c","Up"]}"#);
     }
 
     #[test]

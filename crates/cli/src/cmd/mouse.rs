@@ -1,9 +1,9 @@
 //! `arugula mouse`: a click, press, release or drag at a cell.
 
 use super::Ctx;
-use crate::http::request;
+use crate::http::request_op;
 use crate::util::Pane;
-use arugula_proto::api::Empty;
+use arugula_proto::{api::Empty, op::ops::PaneMouse};
 use serde_json::json;
 
 #[derive(clap::Args)]
@@ -25,6 +25,6 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
     let body = json!({"x": x, "y": y, "button": button, "action": action});
     // The button and action stay the strings typed here: the daemon names
     // the ones it doesn't know, as it always did.
-    request(&sock, "POST", &format!("/api/panes/{}/mouse", pane.0), Some(&body))?.parse::<Empty>()?;
+    request_op::<PaneMouse>(&sock, &pane.0, &body)?.parse::<Empty>()?;
     Ok(0)
 }
