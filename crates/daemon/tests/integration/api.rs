@@ -645,6 +645,57 @@ fn a_guest_reads_wait_but_not_the_rules() {
     assert_eq!(d.raw("GET", &format!("/api/panes/{pane}/wait?until=match&re=a%20b%2A&timeout=0.2"), None).0, 200);
 }
 
+/// #574, M14: what drives a pane is what its operation declares (`DRIVES`),
+/// or a hand-written route lists. An editor the owner hasn't trusted with the
+/// pane is refused on every one of them with the owner's-machine sentence,
+/// and a viewer on all of them as a viewer; `attention` is an editor's call
+/// that types nothing, so the editor gets it.
+#[test]
+fn an_untrusted_editor_may_not_drive_the_owners_pane() {
+    const FRIEND: &str = "friend@example.com";
+    let d = arugulad!("api")
+        .env("PS1", "$ ")
+        .args(["--owner", "me@example.com", "--tailscale-socket", "/nonexistent/sock"])
+        .wait_secs(10)
+        .start();
+    d.wait_for("the first prompt", || d.get("/api/panes")[0]["cwd"].is_string());
+    let pane = d.get("/api/panes")[0]["id"].as_u64().unwrap();
+    let session = d.get("/api/panes")[0]["session"].as_u64().unwrap();
+    let as_friend = |path: &str, body: &str| {
+        let (status, _, body) = d.tcp(
+            "POST",
+            &format!("/api/panes/{pane}/{path}"),
+            &[("tailscale-user-login", FRIEND), ("Content-Type", "application/json")],
+            Some(body),
+        );
+        (status, body)
+    };
+    let drives = [
+        ("send", r#"{"text":"x"}"#),
+        ("keys", r#"{"keys":["a"]}"#),
+        ("mouse", r#"{"x":1,"y":1}"#),
+        ("followup", r#"{"text":"x"}"#),
+        ("paste", r#"{"paths":["/etc/passwd"]}"#),
+    ];
+    d.post("/api/acl", json!({ "session": session, "principal": format!("tailnet:{FRIEND}"), "role": "viewer" }));
+    for (verb, body) in drives.iter().chain(&[("attention", r#"{"state":"done"}"#)]) {
+        let (status, why) = as_friend(verb, body);
+        assert_eq!(status, 403, "viewer: {verb}: {why}");
+        assert!(why.contains("you're watching this session"), "viewer: {verb}: {why}");
+    }
+    d.post("/api/acl", json!({ "session": session, "principal": format!("tailnet:{FRIEND}"), "role": "editor" }));
+    for (verb, body) in drives {
+        let (status, why) = as_friend(verb, body);
+        assert_eq!(status, 403, "editor: {verb}: {why}");
+        assert!(why.contains("ask them to trust you"), "editor: {verb}: {why}");
+    }
+    let (status, why) = as_friend("attention", r#"{"state":"done"}"#);
+    assert_eq!(status, 200, "editor: attention: {why}");
+    // Something that isn't a driving route is not the trust's to refuse, and
+    // the owner's own calls are never asked.
+    assert_eq!(d.raw("POST", &format!("/api/panes/{pane}/keys"), Some(json!({ "keys": ["a"] }))).0, 200);
+}
+
 /// #233: an invite is in the audit log: who invited whom, as what, to
 /// which pane, and how it went.
 #[test]

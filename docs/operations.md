@@ -255,10 +255,12 @@ file, so a new one shows up in review.
 **`authz.rs`'s special cases:**
 
 - `drives` (typing into a pane on the owner's machine needs their trust,
-  M14) becomes `DRIVES: true` on `send`, `keys`, `mouse`, `followup`,
-  `upload` and `paste` as they convert. Today it matches path suffixes, so
-  a new route ending in `/send` gets it by accident and a renamed one loses
-  it; the flag ends that.
+  M14) is `DRIVES: true` on `send`, `keys`, `mouse` and `followup` (#574),
+  and `ops::drives(method, path)` asks it. It used to match path suffixes, so
+  a new route ending in `/send` got it by accident and a renamed one lost
+  it. The hand-written routes that drive (`upload`, `paste`, and the block
+  call's `send`, `keys`, `mouse`, `followup`, `upload` and `paste`) are on
+  `DRIVES_HAND_WRITTEN` in `ops/mod.rs`, each as a `POST` template.
 - `from_now` (a share from now on reads nothing before it began, M13)
   applies only to `capture`, `tail` and `export.cast`, which stay
   hand-written ([What doesn't fit](#what-doesnt-fit-and-what-it-does-instead)),
@@ -423,7 +425,7 @@ Each is one PR. Filed on 2026-10-07 as #572–#580, in this order.
 3. (#574) **Operations: the pane verbs.** `send`, `keys`, `mouse`, `attention`,
    `followup`, `process`, `detection`, `diff`, `drivers`, and the CLI sites
    that call them; `DRIVES` as a declared flag replacing `authz::drives`.
-   After 1.
+   Done, as `pane.send` … `pane.drivers`. After 1.
 4. (#575) **Operations: the owner's settings routes.** `ide`, `agents`, `studio`,
    `machines`, `push`, `notify`, `adapters`, `conversations`. Mechanical.
    After 2.
