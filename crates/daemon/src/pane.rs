@@ -708,6 +708,11 @@ pub struct Launcher {
     /// systemd-run expands `$VAR` and `$$` in the command it's given
     /// (since systemd 254) unless told not to: the shell is to do that.
     pub no_expand: bool,
+    /// The daemon's own service: each scope stops before it, so at a
+    /// shutdown the daemon saves while the programs in its panes still run
+    /// (an agent killed first would be saved as not running, and not
+    /// resumed).
+    pub service: Option<String>,
     pub fd_store: bool,
     /// No FD store, but keep panes anyway: each shim holds its terminal
     /// for the next daemon (`--keep-panes`, see [`crate::holder`]).
@@ -734,6 +739,7 @@ impl Launcher {
             exe: std::env::current_exe().unwrap_or_else(|_| "arugulad".into()),
             scopes: systemd && version.is_some(),
             no_expand: version.flatten().is_some_and(|v| v >= 254),
+            service: std::fs::read_to_string("/proc/self/cgroup").ok().and_then(|c| own_service(&c)),
             fd_store: systemd,
             hold: keep_panes && !systemd,
             #[cfg(windows)]
@@ -752,6 +758,9 @@ impl Launcher {
             if self.no_expand {
                 c.arg("--expand-environment=no");
             }
+            if let Some(s) = &self.service {
+                c.arg(format!("--property=Before={s}"));
+            }
             c.arg(format!("--unit={unit}")).arg("--").arg(&self.exe);
             c
         } else {
@@ -762,6 +771,13 @@ impl Launcher {
         }
         c
     }
+}
+
+/// The service a process runs in, from its `/proc/self/cgroup`
+/// ("0::/user.slice/…/app.slice/arugulad.service").
+fn own_service(cgroup: &str) -> Option<String> {
+    let unit = cgroup.lines().find_map(|l| l.strip_prefix("0::"))?.trim().rsplit('/').next()?;
+    unit.ends_with(".service").then(|| unit.to_owned())
 }
 
 fn systemd_version(out: &str) -> Option<u32> {
@@ -2430,6 +2446,10 @@ mod tests {
         assert_eq!(systemd_version("systemd 259 (259.5-0ubuntu3.4)\n+PAM +AUDIT"), Some(259));
         assert_eq!(systemd_version("systemd 252 (252.33-1~deb12u1)"), Some(252));
         assert_eq!(systemd_version(""), None);
+        let ours = "0::/user.slice/user-1000.slice/user@1000.service/app.slice/arugulad.service\n";
+        assert_eq!(own_service(ours).as_deref(), Some("arugulad.service"));
+        assert_eq!(own_service("0::/user.slice/user-1000.slice/session-2.scope\n"), None);
+        assert_eq!(own_service(""), None);
     }
 
     #[test]

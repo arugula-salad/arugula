@@ -36,6 +36,11 @@ struct Rig {
 /// A daemon whose panes find the replayed `claude` first on PATH, and a
 /// repository to run it in.
 fn start(tag: &str) -> Rig {
+    start_with(tag, |env| Some(Daemon::child_env(&[], env))).unwrap()
+}
+
+/// ...the daemon started by `daemon` (as a service, say: `None` skips).
+fn start_with(tag: &str, daemon: impl FnOnce(&[(&str, &str)]) -> Option<Daemon>) -> Option<Rig> {
     let scratch = Scratch::new(tag);
     let claude = Replay::install(&scratch.join("bin"), "claude", "claude_turn");
     let repo = scratch.join("repo");
@@ -44,8 +49,8 @@ fn start(tag: &str) -> Rig {
     let path = format!("{}:{}", scratch.join("bin").display(), std::env::var("PATH").unwrap());
     let config_dir = config.to_str().unwrap();
     let env = [("PATH", path.as_str()), ("CLAUDE_CONFIG_DIR", config_dir), ("ARUGULA_REPLAY_CONFIG", config_dir)];
-    let d = Daemon::child_env(&[], &env);
-    Rig { d, claude, repo, config, _scratch: scratch }
+    let d = daemon(&env)?;
+    Some(Rig { d, claude, repo, config, _scratch: scratch })
 }
 
 fn send(d: &Daemon, pane: u64, text: &str) {
@@ -144,6 +149,23 @@ fn two_panes_in_one_repo_each_resume_their_own_conversation() {
     });
     assert_eq!(starts_in(&b.claude, 1, before), vec![json!(["--resume", A])]);
     assert_eq!(starts_in(&b.claude, two, before), vec![json!(["--resume", B])]);
+}
+
+/// A real shutdown stops the daemon's service and its panes' scopes
+/// together: the agent (killed by its scope's stop) mustn't be gone before
+/// the daemon saves, or it's saved as not running and comes back a shell.
+/// Under systemd; skipped without a user manager.
+#[test]
+fn a_shutdown_that_stops_the_panes_too_still_resumes() {
+    let Some(mut b) = start_with("resume-shutdown", Daemon::service_env) else { return };
+    claude_in(&b, 1, A);
+    hook(&b, 1, A);
+    until("its conversation known", || pane(&b.d, 1)["resumes"] == format!("Claude Code conversation {}", &A[..8]));
+    let before = b.claude.starts().len();
+    std::thread::sleep(Duration::from_millis(1500));
+    b.d.reboot_service();
+    until("resumed", || starts_in(&b.claude, 1, before).len() == 1);
+    assert_eq!(starts_in(&b.claude, 1, before), vec![json!(["--resume", A])]);
 }
 
 #[test]
