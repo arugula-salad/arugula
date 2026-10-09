@@ -39,7 +39,7 @@ fn first_request(name: &str, args: &[&str], env: &[(&str, &str)], stdin: Option<
     let listener = UnixListener::bind(&sock).unwrap();
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_arugula"));
     cmd.arg("--socket").arg(&sock).args(args).stdin(Stdio::piped()).stdout(Stdio::piped());
-    for k in ["ARUGULA_PANE", "ILLOGICAL_PANE", "CLAUDE_CONFIG_DIR", "CLAUDECODE", "AI_AGENT"] {
+    for k in ["ARUGULA_PANE", "CLAUDE_CONFIG_DIR", "CLAUDECODE", "AI_AGENT"] {
         cmd.env_remove(k);
     }
     cmd.envs(env.iter().copied());
@@ -98,24 +98,17 @@ fn the_bridge_says_which_pane_it_runs_in() {
 #[test]
 fn the_bridge_says_it_under_both_names() {
     let head = headers_sent_with("ARUGULA_PANE", Some("7"), &[("CLAUDE_CONFIG_DIR", "/c")]);
-    for h in ["x-arugula-pane: 7\r\n", "x-illogical-pane: 7\r\n"] {
+    for h in ["x-arugula-pane: 7\r\n", "arugula-claude-config-dir: /c\r\n"] {
         assert!(head.contains(h), "{head}");
     }
-    for h in ["arugula-claude-config-dir: /c\r\n", "illogical-claude-config-dir: /c\r\n"] {
-        assert!(head.contains(h), "{head}");
-    }
-    let head = headers_sent_with("ILLOGICAL_PANE", Some("8"), &[]);
-    assert!(head.contains("x-arugula-pane: 8\r\n"), "{head}");
+    assert!(!head.contains("illogical"), "{head}");
 }
 
-/// #505: the CLI under Claude Code says an agent runs it under both names,
-/// so a daemon older than 0.25 doesn't take it for the owner.
+/// The CLI under Claude Code says an agent runs it.
 #[test]
-fn an_agent_says_so_under_both_names() {
+fn an_agent_says_so() {
     let head = first_request("agent", &["attention", "--json"], &[("CLAUDECODE", "1")], None, "[]");
-    for h in ["x-arugula-agent: 1\r\n", "x-illogical-agent: 1\r\n"] {
-        assert!(head.contains(h), "{head}");
-    }
+    assert!(head.contains("x-arugula-agent: 1\r\n"), "{head}");
     let head = first_request("owner", &["attention", "--json"], &[], None, "[]");
     assert!(!head.contains("agent"), "{head}");
 }

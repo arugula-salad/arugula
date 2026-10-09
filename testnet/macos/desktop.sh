@@ -127,14 +127,14 @@ claim_install() {
 
 claim_agent() {
   vs 'open -a /Applications/arugula.app'
-  if wait_for 60 vs 'launchctl print gui/$(id -u)/wtf.widgets.illogical.daemon 2>/dev/null | grep -q "state = running"'; then
-    pass agent "the launch agent runs: $(vs 'launchctl print gui/$(id -u)/wtf.widgets.illogical.daemon | grep -m1 "program ="' | xargs)"
+  if wait_for 60 vs 'launchctl print gui/$(id -u)/io.arugula.desktop.daemon 2>/dev/null | grep -q "state = running"'; then
+    pass agent "the launch agent runs: $(vs 'launchctl print gui/$(id -u)/io.arugula.desktop.daemon | grep -m1 "program ="' | xargs)"
   else
-    fail agent "the launch agent isn't running: $(vs 'launchctl print gui/$(id -u)/wtf.widgets.illogical.daemon 2>&1 | grep -E "state|exit"' | xargs)"
+    fail agent "the launch agent isn't running: $(vs 'launchctl print gui/$(id -u)/io.arugula.desktop.daemon 2>&1 | grep -E "state|exit"' | xargs)"
   fi
   local s; s=$(vs '/Applications/arugula.app/Contents/MacOS/arugula-desktop --agent status' || true)
   if [ "$s" = enabled ]; then pass agent "SMAppService: $s"; else fail agent "SMAppService: $s"; fi
-  if vs 'sudo sfltool dumpbtm 2>/dev/null | grep -q "8.wtf.widgets.illogical.daemon"'; then
+  if vs 'sudo sfltool dumpbtm 2>/dev/null | grep -q "8.io.arugula.desktop.daemon"'; then
     pass agent "Login Items (BTM) lists it"
   else
     fail agent "BTM has no record of the agent"
@@ -466,7 +466,7 @@ claim_hotkey() {
   else
     fail hotkey "with no settings the hotkey hid the app"
   fi
-  vs 'osascript -e "quit app \"arugula\""; sleep 2; pkill -x arugula-desktop; d=~/Library/Application\ Support/wtf.widgets.illogical; mkdir -p "$d"; echo "{\"hotkey_on\": true}" > "$d/desktop.json"; open -a /Applications/arugula.app'
+  vs 'osascript -e "quit app \"arugula\""; sleep 2; pkill -x arugula-desktop; d=~/Library/Application\ Support/io.arugula.desktop; mkdir -p "$d"; echo "{\"hotkey_on\": true}" > "$d/desktop.json"; open -a /Applications/arugula.app'
   wait_for 30 has_window || { fail hotkey "the app didn't come back"; return; }
   sleep 3
   front
@@ -526,7 +526,7 @@ claim_installsh() {
   # An admin can write /Applications, so the first run goes there.
   installsh_into /Applications || return
   if vs 'launchctl print gui/$(id -u)/arugulad 2>/dev/null | grep -q "state = running"' \
-    && ! vs 'launchctl print gui/$(id -u)/wtf.widgets.illogical.daemon >/dev/null 2>&1'; then
+    && ! vs 'launchctl print gui/$(id -u)/io.arugula.desktop.daemon >/dev/null 2>&1'; then
     pass installsh "the app adopted install.sh's daemon (no agent of its own)"
   else
     fail installsh "the app didn't adopt install.sh's daemon: $(vs 'launchctl list | grep -i arugula' | xargs)"

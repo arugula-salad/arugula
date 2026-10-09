@@ -514,7 +514,7 @@ mod tests {
         let dropin = root.join("etc/systemd/system/fountain-runner.service.d");
         std::fs::create_dir_all(&dropin).unwrap();
         std::fs::write(dropin.join("10-protect-proc.conf"), "[Service]\nProtectProc=invisible\n").unwrap();
-        // The rule as the setup named it before the rename (#505): the new one
+        // The rule as the setup named it before the rename (#505, kept: a runner set up then still has it): the new one
         // replaces it.
         let old_rule = root.join("etc/sudoers.d/illogical-fountain");
         std::fs::create_dir_all(old_rule.parent().unwrap()).unwrap();

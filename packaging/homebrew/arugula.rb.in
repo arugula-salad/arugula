@@ -30,11 +30,6 @@ class Arugula < Formula
 
   def install
     bin.install "arugulad", "arugula"
-    # The old names, for hooks and scripts that call them (#505, drop in
-    # #508). The formula was `illogical`; the tap's formula_renames.json
-    # moves its installs here.
-    bin.install_symlink "arugulad" => "illogicald"
-    bin.install_symlink "arugula" => "illogical"
   end
 
   def caveats
@@ -42,8 +37,6 @@ class Arugula < Formula
       Start the daemon as a service (a launchd agent on macOS, a systemd
       user unit on Linux), and again after each upgrade:
         arugulad install
-      Coming from illogical: that replaces the illogicald service with
-      arugulad's, keeping your panes, state and settings.
       It copies itself to ~/.local/bin, runs from there, and prints the
       next steps: where to open it, its logs, your phone (Tailscale) and
       Arugula control. Then, for Claude Code:

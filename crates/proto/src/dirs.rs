@@ -4,7 +4,7 @@
 //! desktop app all ask here, so they agree.
 //!
 //! A machine set up as illogical has them under the old name, and they stay
-//! there (#505): pane records hold their paths, holder sockets are named by
+//! there: pane records hold their paths, holder sockets are named by
 //! a hash of them, and running shims were started with them. Moving the
 //! directory would strand those panes; using it in place never does. Beside
 //! it goes a link under the new name, so people (and docs) find it there.

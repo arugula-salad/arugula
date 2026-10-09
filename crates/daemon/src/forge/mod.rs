@@ -1195,7 +1195,7 @@ impl ForgeBlock {
 /// `.arugula/worktrees/pr-N` (or `.claude/worktrees/pr-N` where the repo
 /// keeps its worktrees there), left alone if it has changes of its own.
 /// One an illogical daemon made in `.illogical/worktrees` is used where it
-/// is (#505).
+/// is.
 /// Says `ok WORKTREE MERGE_BASE` or `err WHY` last.
 const WORKTREE: &str = r#"dir=$1; n=$2; head=$3; base=$4; repo=$5; mb=$6
 case $dir in "~") dir=$HOME ;; "~/"*) dir=$HOME/${dir#"~/"} ;; esac
@@ -1837,7 +1837,7 @@ mod tests {
         assert_eq!(c.link.unwrap().pr, None);
     }
 
-    /// #505: a git repository with a commit on `main`, its own `origin`,
+    /// A git repository with a commit on `main`, its own `origin`,
     /// and a worktree an illogical daemon made in `.illogical/worktrees/NAME`.
     #[cfg(unix)]
     fn repo_with_old_worktree(tag: &str, name: &str, detached: bool) -> std::path::PathBuf {

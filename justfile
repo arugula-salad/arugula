@@ -70,9 +70,7 @@ build-macos-x86_64: web
 
 # Release tarballs in dist/: arugula-VERSION-TARGET.tar.gz with both
 # binaries and the licenses, for the targets already built (`just static`,
-# `just static aarch64`, `just build` and `just build-macos-x86_64` on a Mac),
-# and each under its old name, illogical-VERSION-TARGET.tar.gz, for older
-# daemons' self-update (scripts/dist-pack, #505).
+# `just static aarch64`, `just build` and `just build-macos-x86_64` on a Mac).
 dist:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -86,7 +84,6 @@ dist:
       [ -x "$d/arugulad" ] || continue
       n=arugula-$v-$t; rm -rf "dist/$n"; mkdir -p "dist/$n"
       cp "$d/arugulad" "$d/arugula" LICENSE-MIT LICENSE-APACHE THIRD_PARTY.md README.md "dist/$n/"
-      # And illogical-VERSION-TARGET.tar.gz for older daemons (#505).
       scripts/dist-pack "dist/$n"
       rm -rf "dist/$n"
     done

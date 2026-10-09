@@ -11,5 +11,3 @@ Puts your editor in your [Arugula](https://arugula.io) swarm, beside your termin
 It talks only to the Arugula daemon on its own machine, over a local socket. Your files and cursor go only to the people following you, over Arugula's end-to-end channels.
 
 It also brings Arugula's colour theme.
-
-It was called illogical before, and what you set up then keeps working: `illogical.*` settings are read when the `arugula.*` ones aren't set, folders that joined stay joined, and the illogical extension (`illogical.illogical-editor`) is uninstalled when this one starts, since both would join.

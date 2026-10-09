@@ -88,19 +88,19 @@ fn home_dir() -> anyhow::Result<PathBuf> {
 
 // A sandbox installed before the rename keeps its config, and its
 // tailscaled's state (so it stays the same tailnet node) under the old
-// names (#505).
+// names.
 fn config_path(home: &Path) -> PathBuf {
     arugula_proto::dirs::config_dir().unwrap_or_else(|| home.join(".config/arugula")).join("sandbox.json")
 }
 
-/// tailscaled's state is in it: one illogical made is used where it is
-/// (#505), so the sandbox stays the same node.
+/// tailscaled's state is in it: one illogical made is used where it is,
+/// so the sandbox stays the same node.
 fn sandbox_dir(home: &Path) -> PathBuf {
     arugula_proto::dirs::state_home("arugula-sandbox", "illogical-sandbox")
         .unwrap_or_else(|| home.join(".local/state/arugula-sandbox"))
 }
 
-/// Where a downloaded tailscale is kept (#505: the old place, if it's there).
+/// Where a downloaded tailscale is kept (the old place, if it's there).
 fn tailscale_lib(home: &Path) -> PathBuf {
     arugula_core::rename::kept(home.join(".local/lib/arugula/tailscale"), home.join(".local/lib/illogical/tailscale"))
 }

@@ -80,7 +80,7 @@ pub fn source(a: &Agent) -> (Source, Option<String>) {
 /// `metadata.arugula.local` (flat or nested): `false` (or `"false"`, as
 /// some metadata keeps every value a string) says it's for Fountain only,
 /// not to be worn here (M44). Agents written before the rename say it as
-/// `illogical.local` (#505).
+/// `illogical.local`, which still counts.
 pub fn local_ok(a: &Agent) -> bool {
     let said = ["arugula", "illogical"]
         .into_iter()
@@ -437,7 +437,7 @@ mod tests {
         orch.metadata.insert("arugula.local".into(), json!("true"));
         assert!(card(&orch, &envs).local);
         orch.metadata.remove("arugula.local");
-        // As agents written before the rename say it (#505).
+        // As agents written before the rename say it.
         orch.metadata.insert("illogical.local".into(), json!(false));
         assert!(!card(&orch, &envs).local);
         orch.metadata.remove("illogical.local");

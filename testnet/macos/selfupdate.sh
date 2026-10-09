@@ -27,7 +27,7 @@
 #                checksum doesn't match; the daemon is still NEW
 #   check-app    after `arugulad uninstall`, a fake app bundle holding OLD
 #                (/Applications/arugula.app/Contents/MacOS) and its agent
-#                (wtf.widgets.illogical.daemon, as the app's plist) answer
+#                (io.arugula.desktop.daemon, as the app's plist) answer
 #                as OLD and offer apply
 #   apply-app    POST apply: it answers as NEW, run from ~/.local/bin under
 #                the app's label, and there's no arugulad agent (plist or
@@ -95,20 +95,17 @@ echo "daemons: OLD $OLD, NEW $NEW (debug builds)"
 
 # The fake releases.
 srvdir=$work/srv
-# Packed as a release is (scripts/dist-pack), so under the old name too: a
-# daemon from before the rename fetches illogical-VERSION-TARGET (#505).
+# Packed as a release is (scripts/dist-pack).
 release() { # VERSION FROM-DIR [lie]
   local stem="arugula-$1-$TARGET" d="$srvdir/releases/download/v$1" f sum
   mkdir -p "$d/$stem"
   cp "$2/arugulad" "$2/arugula" "$d/$stem/"
   "$ROOT/scripts/dist-pack" "$d/$stem" >/dev/null
   rm -rf "${d:?}/$stem"
-  : >"$d/SHA256SUMS"
-  for f in "$stem.tar.gz" "illogical-$1-$TARGET.tar.gz"; do
-    sum=$(shasum -a 256 "$d/$f" | awk '{print $1}')
-    [ -z "${3:-}" ] || sum=$(printf '0%.0s' $(seq 64))
-    printf '%s  %s\n' "$sum" "$f" >>"$d/SHA256SUMS"
-  done
+  f=$stem.tar.gz
+  sum=$(shasum -a 256 "$d/$f" | awk '{print $1}')
+  [ -z "${3:-}" ] || sum=$(printf '0%.0s' $(seq 64))
+  printf '%s  %s\n' "$sum" "$f" >"$d/SHA256SUMS"
 }
 release $NEW "$sudir/$NEW"
 release $BAD "$sudir/$NEW" lie
@@ -214,13 +211,13 @@ vs '$HOME/.local/bin/arugulad uninstall' >/dev/null
 vs 'pkill -f "[>] /tmp/count; sleep" || true; rm -f $HOME/.local/bin/arugulad* $HOME/.local/bin/arugula $HOME/.local/state/arugula/update-check.json'
 vs 'set -e; sudo mkdir -p /Applications/arugula.app/Contents/MacOS; sudo chown -R $(id -un) /Applications/arugula.app
   cp /tmp/old/arugulad /tmp/old/arugula /Applications/arugula.app/Contents/MacOS/'
-vs "cat > /tmp/wtf.widgets.illogical.daemon.plist" <<PLIST
+vs "cat > /tmp/io.arugula.desktop.daemon.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>wtf.widgets.illogical.daemon</string>
+  <string>io.arugula.desktop.daemon</string>
   <key>Program</key>
   <string>/Applications/arugula.app/Contents/MacOS/arugulad</string>
   <key>RunAtLoad</key>
@@ -246,7 +243,7 @@ vs "cat > /tmp/wtf.widgets.illogical.daemon.plist" <<PLIST
 </dict>
 </plist>
 PLIST
-APP=wtf.widgets.illogical.daemon
+APP=io.arugula.desktop.daemon
 vs "launchctl bootstrap gui/\$(id -u) /tmp/$APP.plist"
 wait_for 30 is $OLD || { echo "the app's agent never answered as $OLD: $(answers)" >&2; diag; exit 1; }
 if wait_for 30 offers $NEW; then

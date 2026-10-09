@@ -504,11 +504,7 @@ impl Inner {
                 "name": crate::mcp::SERVER_NAME,
                 "command": link.cli.display().to_string(),
                 "args": ["mcp", "--socket", link.socket.display().to_string()],
-                // Under the old name too (#505), for an illogical CLI.
-                "env": [
-                    { "name": "ARUGULA_MCP_TOKEN", "value": token },
-                    { "name": "ILLOGICAL_MCP_TOKEN", "value": token },
-                ],
+                "env": [{ "name": "ARUGULA_MCP_TOKEN", "value": token }],
             })
         });
         list

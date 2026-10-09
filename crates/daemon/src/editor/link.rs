@@ -54,10 +54,6 @@ use crate::{
 
 /// The upgrade's protocol name.
 pub const PROTOCOL: &str = "arugula-editor";
-/// Its name before the rename (#505): an extension installed before the
-/// update still asks for it until it's replaced, and the daemon answers in
-/// the name it was asked for.
-const OLD_PROTOCOL: &str = "illogical-editor";
 /// The longest line an editor may send (a file opened for followers).
 const MAX_LINE: usize = 4 << 20;
 /// Edits kept after the last `open`, for a new follower; past this the
@@ -443,13 +439,9 @@ pub async fn connect(State(app): State<Arc<App>>, mut req: Request) -> Response 
         .unwrap()
 }
 
-/// The protocol an `Upgrade` header asks for (the first we know of a list),
-/// under either name.
+/// The protocol an `Upgrade` header asks for, if it's ours (one of a list).
 fn protocol(upgrade: &str) -> Option<&'static str> {
-    upgrade
-        .split(',')
-        .map(str::trim)
-        .find_map(|p| [PROTOCOL, OLD_PROTOCOL].into_iter().find(|ours| p.eq_ignore_ascii_case(ours)))
+    upgrade.split(',').map(str::trim).any(|p| p.eq_ignore_ascii_case(PROTOCOL)).then_some(PROTOCOL)
 }
 
 async fn serve<S>(app: Arc<App>, io: S)
@@ -576,13 +568,12 @@ mod tests {
     }
 
     #[test]
-    fn the_upgrade_takes_either_name() {
+    fn the_upgrade_is_ours() {
         assert_eq!(protocol("arugula-editor"), Some(PROTOCOL));
         assert_eq!(protocol("Arugula-Editor"), Some(PROTOCOL));
-        // An extension from before the rename (#505).
-        assert_eq!(protocol("illogical-editor"), Some(OLD_PROTOCOL));
-        assert_eq!(protocol("websocket, illogical-editor"), Some(OLD_PROTOCOL));
-        assert_eq!(protocol("arugula-editor, illogical-editor"), Some(PROTOCOL));
+        assert_eq!(protocol("websocket, arugula-editor"), Some(PROTOCOL));
+        // illogical's name, from before the rename, isn't.
+        assert_eq!(protocol("illogical-editor"), None);
         assert_eq!(protocol("websocket"), None);
         assert_eq!(protocol(""), None);
     }

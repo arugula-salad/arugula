@@ -141,8 +141,8 @@ pub async fn enrolled(app: &App, sandbox: &str, cert: &arugula_e2e::Cert) -> any
 }
 
 /// Where the box's daemon waits for its enrollment: beside its join
-/// request. A box provisioned before the rename runs a script that waits
-/// in `~/.local/state/illogical` (#505).
+/// request. A box set up before the rename keeps its state in
+/// `~/.local/state/illogical`, where it is.
 async fn state_dir(sprites: &Sprites, sandbox: &str) -> anyhow::Result<&'static str> {
     const NEW: &str = ".local/state/arugula";
     const OLD: &str = ".local/state/illogical";
@@ -233,8 +233,8 @@ mod tests {
         Sprites::new(&format!("http://{at}"), "t".into()).unwrap()
     }
 
-    /// A box provisioned before the rename waits for its enrollment in the
-    /// old state directory (#505); a new one in the new.
+    /// A box set up before the rename waits for its enrollment in its old
+    /// state directory, kept where it is; a new one in the new.
     #[tokio::test]
     async fn enrollment_goes_where_the_box_asked() {
         let new = provider(&[".local/state/arugula/join-request.json"]).await;

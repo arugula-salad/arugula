@@ -193,8 +193,9 @@ struct ClaudeStatus {
     installed: bool,
     /// `claude mcp get arugula` finds it.
     tools: bool,
-    /// `claude mcp get illogical` finds it (#505): it still works (the old
-    /// command is a link to the new), and setting up again renames it.
+    /// `claude mcp get illogical` finds it (#505, #534): it still works
+    /// (`arugulad install` makes it run `arugula`, #534), and setting up
+    /// again renames it.
     old: bool,
 }
 
@@ -558,7 +559,7 @@ async fn cli(app: &App) -> Option<PathBuf> {
 
 /// The MCP server's name in Claude Code: its tools are `mcp__arugula__*`.
 const MCP_NAME: &str = crate::mcp::SERVER_NAME;
-/// What it was registered as before the rename (#505).
+/// What it was registered as before the rename (#505, #534).
 const MCP_OLD: &str = arugula_proto::rename::OLD;
 
 /// `claude mcp get NAME`: the scope it's registered in (`user`, `local`
@@ -604,12 +605,12 @@ fn mcp_plan(has_new: bool, old_scope: Option<&str>, cli: &str) -> Vec<Vec<String
     steps
 }
 
-/// What a replaced registration says (#505).
+/// What a replaced registration says (#505, #534).
 const RENAMED: &str = "Renamed Claude Code's MCP server from illogical to arugula. Its tools are now \
 mcp__arugula__*: rename any permission rules for mcp__illogical__* to match.";
 
 /// Claude Code's MCP server added, and one under the old name replaced
-/// (#505): what changed, a line each (none: it was there already).
+/// (#505, #534): what changed, a line each (none: it was there already).
 async fn add_mcp(app: &App) -> Result<Vec<String>, Outcome> {
     let Some(c) = claude(app).await else {
         return Err(Outcome::err("Claude Code isn't installed on this machine.")

@@ -76,7 +76,7 @@
   "plugins": {
     "deep-link": {
       "desktop": {
-        "schemes": ["arugula", "illogical"]
+        "schemes": ["arugula"]
       }
     },
     "updater": {

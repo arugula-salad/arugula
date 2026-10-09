@@ -1744,10 +1744,7 @@ impl<'a> Call<'a> {
     /// #379: the `CLAUDE_CONFIG_DIR` the stdio bridge sent for its client.
     fn claude_config_dir(&self) -> Option<String> {
         let parts = self.ctx.extensions.get::<axum::http::request::Parts>()?;
-        let d = parts.headers.get("arugula-claude-config-dir")?
-            .to_str()
-            .ok()?
-            .trim();
+        let d = parts.headers.get("arugula-claude-config-dir")?.to_str().ok()?.trim();
         (!d.is_empty()).then(|| d.to_owned())
     }
 

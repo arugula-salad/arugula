@@ -388,7 +388,7 @@ pub const GUEST_BOOT: &str = r#"
 set -e
 pkg=$1; dir=$2; shift 2
 A=$HOME/.arugula/agents
-# What an illogical daemon installed, where it is (#505).
+# What an illogical daemon installed, where it is.
 if ! [ -d "$A" ] && [ -d "$HOME/.illogical/agents" ]; then A=$HOME/.illogical/agents; fi
 exec 3>&1 1>&2
 if [ -n "$pkg" ]; then

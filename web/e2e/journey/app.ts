@@ -288,7 +288,7 @@ export class App {
     let ticket = "";
     const grants = createServer((req, res) => {
       const u = new URL(req.url!, "http://127.0.0.1");
-      const grant = u.pathname === "/illogical-signin" && u.searchParams.get("ticket") === ticket ? (u.searchParams.get("grant") ?? "") : "";
+      const grant = u.pathname === "/arugula-signin" && u.searchParams.get("ticket") === ticket ? (u.searchParams.get("grant") ?? "") : "";
       if (!/^[0-9a-f]+$/.test(grant)) return res.writeHead(404).end();
       res.writeHead(303, { location: `${control}/#app-done` }).end();
       grants.close();

@@ -343,11 +343,11 @@ mod tests {
 
     use super::*;
 
-    /// #505: the daemon's variables under either name are its own.
+    /// The daemon's variables are its own.
     #[test]
-    fn ours_are_left_out_under_either_name() {
+    fn ours_are_left_out() {
         let vars = vec![
-            ("ILLOGICAL_SOCK".into(), "/a".into()),
+            ("ARUGULA_SOCK".into(), "/a".into()),
             ("ARUGULA_PANE".into(), "1".into()),
             ("EDITOR".into(), "vi".into()),
         ];

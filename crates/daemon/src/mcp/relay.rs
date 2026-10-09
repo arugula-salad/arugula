@@ -31,7 +31,7 @@ pub const CLIENT: &str = include_str!("guest_client.py");
 pub type Serve = Arc<dyn Fn(PaneId, DuplexStream) + Send + Sync>;
 
 /// The relay's socket in the guest, per block (a VM tab can hold several).
-/// Frozen (#505): an agent started before the rename has this path in its
+/// Frozen (#504): an agent started before the rename has this path in its
 /// `mcpServers`, and the relay a restarted daemon opens must be there.
 pub fn socket(id: PaneId) -> String {
     format!("/tmp/illogical-mcp-{id}.sock")
@@ -414,33 +414,6 @@ mod tests {
 
         let _ = a.child.kill();
         let _ = relay2.kill();
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    /// A relay an illogical daemon started (before the rename) is replaced
-    /// like one of ours (#505).
-    #[cfg(any(target_os = "linux", target_os = "android"))]
-    #[test]
-    fn an_old_relay_is_replaced_too() {
-        if !Command::new("python3").arg("-V").output().is_ok_and(|o| o.status.success()) {
-            eprintln!("no python3; skipping");
-            return;
-        }
-        let dir = std::env::temp_dir().join(format!("arugula-relay-old-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let sock = dir.join("mcp.sock").display().to_string();
-        let mut old = Command::new("python3")
-            .args(["-c", "import time; time.sleep(60)", "illogical-mcp-relay", &sock])
-            .spawn()
-            .unwrap();
-        std::fs::write(format!("{sock}.pid"), old.id().to_string()).unwrap();
-        let (mut relay, _pipe) = local_relay(&sock, "arugula-mcp-relay");
-        let t0 = std::time::Instant::now();
-        while old.try_wait().unwrap().is_none() {
-            assert!(t0.elapsed() < Duration::from_secs(10), "the old relay is still there");
-            std::thread::sleep(Duration::from_millis(50));
-        }
-        let _ = relay.kill();
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

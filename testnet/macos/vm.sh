@@ -67,7 +67,7 @@ key() {
 
 ip() { tart ip --wait 120 "$name"; }
 have() { tart list -q 2>/dev/null | grep -qx "$1"; }
-# A base made before the rename keeps its name (#505).
+# A base made before the rename keeps its name.
 if [ "$BASE" = arugula-macos-base ] && ! have "$BASE" && have illogical-macos-base; then BASE=illogical-macos-base; fi
 
 # Fresh VMs get fresh host keys, so none are kept.

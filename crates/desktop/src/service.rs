@@ -10,12 +10,6 @@
 //! rename updates in place and keeps that name): an app run from anywhere
 //! else installs the daemon with `arugulad install` instead.
 //!
-//! #505: the app before the rename had its own agent
-//! (`wtf.widgets.illogical.daemon`). Both would run on one state
-//! directory, so this app stops that one (`retire_old`) before it runs its
-//! own; it can't unregister another bundle's agent, so it unloads and
-//! disables it in launchd.
-//!
 //! The plist is the bundle's, so it carries no daemon flags: `arugulad
 //! install -- FLAGS` keeps them in the state dir's `daemon-args.json`,
 //! which the daemon reads when this agent starts it with none (#550).
@@ -27,7 +21,7 @@
 
 use std::process::Command;
 
-use arugula_proto::service::{APP_BUNDLES, APP_LABEL, LABELS, OLD_APP_LABEL};
+use arugula_proto::service::{APP_BUNDLES, APP_LABEL};
 use objc2_foundation::NSString;
 use objc2_service_management::{SMAppService, SMAppServiceStatus};
 
@@ -101,35 +95,16 @@ pub fn restart() -> Result<(), String> {
     }
 }
 
-/// #505: stop the launch agent of the app from before the rename, if
-/// launchd has it: unload it (its daemon stops; panes keep running) and
-/// disable it, so a login doesn't start it again beside this app's. True
-/// when there was one.
-pub fn retire_old() -> bool {
-    let uid = unsafe { libc_getuid() };
-    let target = format!("gui/{uid}/{OLD_APP_LABEL}");
-    let loaded = Command::new("launchctl").args(["print", &target]).output().is_ok_and(|o| o.status.success());
-    if !loaded {
-        return false;
-    }
-    let _ = Command::new("launchctl").args(["bootout", &target]).output();
-    let _ = Command::new("launchctl").args(["disable", &target]).output();
-    eprintln!("arugula: stopped the old app's launch agent ({OLD_APP_LABEL}); this app runs the daemon from now on");
-    true
-}
-
 /// A plist from `arugulad install` is there: that install owns the daemon.
 /// Its launch agent (label `arugulad`, what install.sh sets up), or the
 /// LaunchDaemon `arugulad install --system` wrote, which a later
 /// `arugulad install` (install.sh run again) keeps.
 pub fn installed_by_script() -> bool {
-    // Under either name (#505).
+    let l = arugula_proto::service::LABEL;
     let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
     let user = std::env::var("USER").unwrap_or_default();
-    LABELS.iter().any(|l| {
-        home.as_ref().is_some_and(|h| h.join(format!("Library/LaunchAgents/{l}.plist")).is_file())
-            || std::path::Path::new(&format!("/Library/LaunchDaemons/{l}.{user}.plist")).is_file()
-    })
+    home.is_some_and(|h| h.join(format!("Library/LaunchAgents/{l}.plist")).is_file())
+        || std::path::Path::new(&format!("/Library/LaunchDaemons/{l}.{user}.plist")).is_file()
 }
 
 #[cfg(test)]

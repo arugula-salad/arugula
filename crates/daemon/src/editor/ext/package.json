@@ -31,7 +31,7 @@
         "arugula.socket": {
           "type": "string",
           "default": "",
-          "description": "The Arugula daemon's socket on this machine [default: $ARUGULA_SOCK, else ~/.local/state/arugula/sock]. Read as `illogical.socket` if this isn't set."
+          "description": "The Arugula daemon's socket on this machine [default: $ARUGULA_SOCK, else ~/.local/state/arugula/sock]."
         },
         "arugula.sshHost": {
           "type": "string",

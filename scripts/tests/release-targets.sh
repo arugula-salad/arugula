@@ -128,52 +128,33 @@ while IFS=: read -r f name; do
   printf '%s\n' "${downloads[@]}" | grep -qx "$name" || bad "$f links $name, which no release makes"
 done < <(grep -oH 'arugula-desktop-[A-Za-z0-9_.-]*[A-Za-z0-9]' README.md docs/*.md | sort -u)
 
-# The old names (#505, drop in #508): daemons on 0.24 and 0.25 update
-# themselves by fetching illogical-VERSION-TARGET.{tar.gz,zip}, and the
-# site's older links point at app-latest's illogical-desktop-*. Every
-# archive is packed by scripts/dist-pack, which makes both.
-# shellcheck disable=SC2016 # literal $n, $name and ${f#…} in the scripts
+# Every archive is packed by scripts/dist-pack, and only under Arugula's
+# name: every install is on 0.26 or later (#534).
+# shellcheck disable=SC2016 # literal $n and $name in the scripts
 sed -n '/^dist:/,/^[^ ]/p' justfile | grep -q 'scripts/dist-pack "dist/\$n"' || bad "just dist doesn't pack with scripts/dist-pack"
 # shellcheck disable=SC2016
 grep -q 'scripts/dist-pack "dist/\$name"' scripts/windows-dist || bad "scripts/windows-dist doesn't pack with scripts/dist-pack"
-grep -q 'dist/illogical-\*-x86_64-pc-windows-msvc.zip' "$wf" || bad "$wf doesn't upload the Windows zip's old name"
-grep -q '^    for p in arugula illogical; do$' scripts/release || bad "scripts/release sums doesn't count the old names"
-grep -q 'sha256sum -- arugula-\[0-9\]\*.tar.gz arugula-\[0-9\]\*.zip illogical-\[0-9\]\*.tar.gz illogical-\[0-9\]\*.zip > SHA256SUMS' scripts/release \
-  || bad "scripts/release's SHA256SUMS doesn't list the old names"
-# shellcheck disable=SC2016
-grep -q 'illogical-desktop-\${f#arugula-desktop-}' scripts/release || bad "scripts/release doesn't put app-latest's downloads under their old names"
+! grep -Eq 'illogical-(\[0-9|\*|\$|desktop)' "$wf" scripts/release scripts/dist-pack || bad "an old illogical-* download name is still made"
 
-# What scripts/dist-pack makes, from stand-in binaries: the old archive
-# holds illogical-VERSION-TARGET/illogicald, where 0.24 looks (and 0.25
-# first), beside the arugulad and arugula the new install copies.
+# What scripts/dist-pack makes, from stand-in binaries.
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 for t in x86_64-unknown-linux-musl x86_64-pc-windows-msvc; do
   case "$t" in *-windows-*) x=.exe e=zip ;; *) x="" e=tar.gz ;; esac
-  n=arugula-1.2.3-$t o=illogical-1.2.3-$t
+  n=arugula-1.2.3-$t
   mkdir -p "$work/$n" "$work/$t"
   echo daemon >"$work/$n/arugulad$x"; echo cli >"$work/$n/arugula$x"; echo license >"$work/$n/LICENSE-MIT"
   scripts/dist-pack "$work/$n" >/dev/null || { bad "scripts/dist-pack failed for $t"; continue; }
-  for a in "$n.$e" "$o.$e"; do [ -f "$work/$a" ] || bad "scripts/dist-pack made no $a"; done
-  [ ! -e "$work/$o" ] || bad "scripts/dist-pack left its $o folder behind"
+  [ -f "$work/$n.$e" ] || bad "scripts/dist-pack made no $n.$e"
+  [ ! -e "$work/illogical-1.2.3-$t.$e" ] || bad "scripts/dist-pack still makes the old name"
   if [ "$e" = zip ]; then
     python3 -I -m zipfile -e "$work/$n.$e" "$work/$t/new"
-    python3 -I -m zipfile -e "$work/$o.$e" "$work/$t/old"
   else
-    mkdir -p "$work/$t/new" "$work/$t/old"
+    mkdir -p "$work/$t/new"
     tar -xzf "$work/$n.$e" -C "$work/$t/new"
-    tar -xzf "$work/$o.$e" -C "$work/$t/old"
   fi
   got=$(cd "$work/$t/new" && find . -type f | LC_ALL=C sort | tr '\n' ' ')
   [ "$got" = "./$n/LICENSE-MIT ./$n/arugula$x ./$n/arugulad$x " ] || bad "$n.$e holds $got"
-  got=$(cd "$work/$t/old" && find . -mindepth 1 -maxdepth 1)
-  [ "$got" = "./$o" ] || bad "$o.$e holds $got, not $o/"
-  for f in illogicald arugulad; do
-    [ "$(cat "$work/$t/old/$o/$f$x" 2>/dev/null)" = daemon ] || bad "$o.$e has no $o/$f$x that's arugulad"
-  done
-  for f in "illogical$x" "arugula$x" LICENSE-MIT; do
-    [ "$(cat "$work/$t/old/$o/$f")" = "$(cat "$work/$n/$f" 2>/dev/null || echo cli)" ] || bad "$o.$e has no $o/$f, or not arugula's"
-  done
 done
 
 # The Homebrew tap's files: the formula (named arugula now, every checksum

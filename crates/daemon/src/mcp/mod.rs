@@ -71,7 +71,7 @@ pub const PATH: &str = "/mcp";
 pub const SERVER_NAME: &str = "arugula";
 
 /// Whether a permission rule's tool is `tool`. A rule made before the
-/// rename (#505) names our tools `mcp__illogical__X`; they're now
+/// rename names our tools `mcp__illogical__X`; they're now
 /// `mcp__arugula__X`, and the rule still means them.
 pub fn same_tool(rule: &str, tool: &str) -> bool {
     rule == tool
@@ -186,7 +186,9 @@ async fn authenticate(State(app): State<Arc<App>>, mut req: Request, next: Next)
             }
         }
     };
-    let pane = req.headers().get("x-arugula-pane")
+    let pane = req
+        .headers()
+        .get("x-arugula-pane")
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.trim().trim_start_matches('%').parse::<PaneId>().ok());
     let caller = match bearer {

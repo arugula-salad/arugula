@@ -196,7 +196,7 @@ pub(super) fn text(st: &ForgeState) -> String {
 /// `.arugula/worktrees/BRANCH` on a new branch from it that tracks
 /// nothing (or on the branch, if it's there already). An existing
 /// worktree is left as it is, and one an illogical daemon made in
-/// `.illogical/worktrees` is used where it is (#505). Says `ok WORKTREE
+/// `.illogical/worktrees` is used where it is. Says `ok WORKTREE
 /// BASE` or `err WHY` last.
 const WORKTREE: &str = r#"dir=$1; branch=$2; base=$3; repo=$4
 case $dir in "~") dir=$HOME ;; "~/"*) dir=$HOME/${dir#"~/"} ;; esac
@@ -732,7 +732,7 @@ fn new_ask(n: &NewIssue, repo: &str) -> Ask {
 mod tests {
     use super::*;
 
-    /// #505: a git repository with a commit on `main`, its own `origin`,
+    /// A git repository with a commit on `main`, its own `origin`,
     /// and a worktree an illogical daemon made in `.illogical/worktrees/NAME`.
     #[cfg(unix)]
     fn repo_with_old_worktree(tag: &str, name: &str, detached: bool) -> std::path::PathBuf {

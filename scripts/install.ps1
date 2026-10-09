@@ -13,22 +13,16 @@
 # $env:ARUGULA_NO_START = '1'        register the task without starting it
 # $env:ARUGULA_DOWNLOAD_URL = '...'  where the release's files are, instead
 #                                      of GitHub (a mirror, or a local folder)
-# Each can also be ILLOGICAL_..., its name before the rename.
-#
-# On a machine with illogical, `arugulad install` moves it over: it replaces
-# the illogicald task and keeps illogical.exe and illogicald.exe callable.
 
 # A block of its own: `iex` runs this in your shell, which an `exit` would end.
 & {
   $ErrorActionPreference = 'Stop'
   $ProgressPreference = 'SilentlyContinue'
   $repo = 'https://github.com/arugula-salad/arugula'
-  # ARUGULA_X, or ILLOGICAL_X, its name before the rename, for scripts that
-  # set that (#505, drop in #508). Read, not set: this runs in your shell.
+  # ARUGULA_X. Read, not set: this runs in your shell.
   $setting = {
     param($n)
-    $new = [Environment]::GetEnvironmentVariable("ARUGULA_$n")
-    if ($null -ne $new) { $new } else { [Environment]::GetEnvironmentVariable("ILLOGICAL_$n") }
+    [Environment]::GetEnvironmentVariable("ARUGULA_$n")
   }
 
   # x64 builds; Windows on Arm runs them too.

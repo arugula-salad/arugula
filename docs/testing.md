@@ -37,7 +37,7 @@ or an account skip without it and name what's missing
 | `just desktop-check` | rustfmt and clippy for `crates/desktop` | Linux |
 | `just desktop-xvfb` | the Linux desktop app under Xvfb in a container (`packaging/desktop/xvfb/`): `join` (#204), `m46` (`bare` and `links` among its claims), `m47` and `stale` (#317) (see [The desktop app's tests](#the-desktop-apps-tests)) | Linux |
 | `just desktop-packages ARCH` | the .deb on Ubuntu 22.04 and the .rpm on Fedora 42 install and claim `arugula://` (after `just desktop-linux ARCH`) | no |
-| `testnet/macos/desktop.sh`, `testnet/macos/update.sh`, `testnet/macos/stale-daemon.sh` | the macOS app from its .dmg in a fresh tart VM, its updater, a daemon too old for it (#317), and one older than the app's (#661) | no |
+| `testnet/macos/desktop.sh`, `testnet/macos/update.sh`, `testnet/macos/stale-daemon.sh` | the macOS app from its .dmg in a fresh tart VM, its updater, and a daemon older than the app's (#661) | no |
 | `just check-core` | clippy and the daemon's and CLI's tests without the `labs` feature (the core, with no Fountain; #452) | Linux and macOS |
 | `just check-macos` | clippy for the macOS target from Linux (compiles, doesn't link) | Linux |
 
@@ -544,7 +544,7 @@ works. Run them with `just journey` (or `just journey j2c` for one).
 | J2a | two friends, each through J1 first: one shares a session with the other (not a teammate), who accepts, finds the machine, asks to drive, is allowed, takes control and types; the owner sees it |
 | J2b | the same through a team: a one-click invite, the owner's machine moved into the team with *In …*, the friend driving it by role |
 | J2c | the evening #551 audits: the owner's machine already in a team, a friend's second team, the team page's `arugulad join … --team` (not on the app's PATH, #550, and the machine is already in a team), *In …*, sharing with the team, the Swarm, *+* on a teammate's machine |
-| J3 | (#664, on a real Mac only, below) installs the app by hand from the site's steps, with Gatekeeper on and an older daemon (illogicald 0.21.0) already running: *"Arugula" Not Opened*, *Done*, *Open Anyway* in Privacy & Security, *Open "Arugula"?*, the password; the app offers the daemon's update, and the pane keeps running |
+| J3 | (#664, on a real Mac only, below) installs the app by hand from the site's steps, with Gatekeeper on and an older daemon (arugulad 0.26.1) already running: *"Arugula" Not Opened*, *Done*, *Open Anyway* in Privacy & Security, *Open "Arugula"?*, the password; the app offers the daemon's update, and the pane keeps running |
 | J4 | (#664, on a real Mac only, below) an agent installs over ssh: it reads docs.arugula.io/install/, runs its command, and then runs only commands it has read (the page, what they print, `--help`); one it would have to make up is unguided |
 | J5 | (#664) won't read docs: Getting started from the first screen (no phone, no account), *Use Claude Code with Arugula*, *Start an agent…*, a task, the agent's question approved, its work shown |
 | J6 | (#664) two people on one tailnet with no control: the owner shares a session to the other's tailnet login and sends the address Share shows; they watch, then drive once allowed; a third person on the same login gets the same role, and Share says the login is on two devices (#663). A stand-in for tailscaled answers WhoIs, and the others come in as `tailscale serve` passes a request on |
@@ -600,7 +600,7 @@ screen, unlike J2a's.
 
 `just macos journey-j3` (`testnet/macos/journey-j3.ts`) is J3: a fresh VM
 with Gatekeeper turned back on (the base image turns it off, so no other
-test meets it), an illogicald 0.21.0 installed and running a pane, and the
+test meets it), an arugulad 0.26.1 installed and running a pane, and the
 app (app-latest, or `ARUGULA_MACOS_APP_ZIP`) marked as a browser marks a
 download. Each step's prompt is the install page's sentence for it or the
 dialog's own text; the password prompt is `coreautha`'s window. Finder
@@ -699,8 +699,8 @@ logged-in session over ssh.
 | Panes outlive the app | | `restart`: the daemon's pids and panes are the same after the app restarts | |
 | Right-click a folder (M47) | `m47` (`just desktop-xvfb m47`): with the packages' .desktop file and Nautilus extension, a right-click on a folder (and inside one) in Nautilus, *Open in Arugula*, opens a tab there in the running app and shows it | `finder`: the service is registered (`pbs`); a right-click on a folder in Finder, *New Arugula Tab Here*, opens a tab there; a `.command` file opened with the app runs in a new pane | the file manager's menu has no entry, or it starts a second app |
 | Packages | `just desktop-packages ARCH`: .deb and .rpm install, libraries resolve, xdg-mime hands `arugula://` to the app, the .desktop file passes the link (`%u`) and has a New Tab action, the Nautilus extension is in place | `install` above | |
-| A daemon too old for the app (#317) | `just desktop-xvfb stale`: a 0.8.0 stand-in (`old-daemon.py`, no protocol) installed as the service, stopped (`stopped`) or running (`running`): the app says 0.8.0 runs and 0.19.0 is needed, 0.8.0 still answers afterwards, and it served no page | `stale-daemon.sh`: the same with the released 0.8.0 (`OLD=` another below 0.19.0), installed with its own `illogicald install` | the app shows an old daemon's page, or replaces a daemon (#392) |
-| A daemon older than the app's (#661) | | `stale-daemon.sh illogical_running illogical_stopped`: illogicald 0.21.0 (`ILL=`) as its install script left it, running with a pane or stopped: the app says it's from before the rename and changes nothing unasked; Return (*Update arugulad*) brings up the bundled arugulad, the illogicald agent is gone and the pane is the same process | the app keeps an old daemon with no word, or updates it unasked |
+| A daemon too old for the app (#317) | `just desktop-xvfb stale`: a 0.8.0 stand-in (`old-daemon.py`, no protocol) installed as the service, stopped (`stopped`) or running (`running`): the app says 0.8.0 runs and 0.19.0 is needed, 0.8.0 still answers afterwards, and it served no page | (none since #534: every release below 0.19.0 is illogicald, which nothing runs) | the app shows an old daemon's page, or replaces a daemon (#392) |
+| A daemon older than the app's (#661) | | `stale-daemon.sh running stopped`: arugulad 0.26.1 (`OLD=`) as its install script left it, running with a pane or stopped: the app says it's older than its own and changes nothing unasked; Return (*Update arugulad*) updates it under its own agent to a newer release and the pane is the same process | the app keeps an old daemon with no word, or updates it unasked |
 | Updates | | `update.sh`: 0.17.0 refuses a manifest signed with another key, then replaces itself with 0.17.1 and restarts; the new app carries a newer daemon and leaves the running one alone (#392); a running vim and a counting build carry on | |
 
 `update.sh` makes a throwaway updater key and builds the app twice with
@@ -1213,7 +1213,7 @@ Real gaps, each one automatable:
   `--ios` with it.
 - **The tart tests in CI** on the macos-arm64 runner ([above](#on-the-macos-arm64-runner)),
   the desktop app's (`testnet/macos/desktop.sh`, `stale-daemon.sh`) first
-  (#317); it needs tart and the base VM on jake-mini (#263).
+  (#317, #661); it needs tart and the base VM on jake-mini (#263).
 - **Control checking GitHub's signature on a real webhook delivery**: it
   needs a URL github.com can reach.
 - **Cursor's Remote-SSH and the Dev Containers extension** (M28).

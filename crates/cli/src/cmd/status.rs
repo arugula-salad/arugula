@@ -156,7 +156,7 @@ pub fn agent_lines(v: &Value) -> Vec<Line> {
     let c = &v["claude"];
     if c.is_object() {
         let (says, fix) = match (c["installed"].as_bool(), c["tools"].as_bool()) {
-            // Under the old name too (#505): setup takes that one out.
+            // Under the old name too (#505, #534): setup takes that one out.
             (_, Some(true)) if c["old"] == true => (
                 "Claude Code has Arugula's MCP server, and also one under the old name (illogical)".to_owned(),
                 Some(SETUP.to_owned()),
@@ -315,7 +315,7 @@ mod tests {
         assert!(ls[1].fix.is_none());
         assert_eq!(ls[2].says, "Claude Code has Arugula's MCP server");
 
-        // Registered under the old name (#505): there, with a fix.
+        // Registered under the old name (#505, #534): there, with a fix.
         let old = agent_lines(&json!({ "claude": { "installed": true, "tools": false, "old": true } }));
         assert!(old[0].says.contains("under the old name"), "{}", old[0].says);
         assert!(old[0].fix.is_some());

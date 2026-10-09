@@ -622,16 +622,15 @@ fn an_invite_is_audited() {
     );
 }
 
-/// #505: a pane's variables under the old names too, for a user's script or
-/// an illogical CLI; the daemon takes `ILLOGICAL_X` for `ARUGULA_X` (here
-/// its log file), and its own settings reach no pane under either name.
+/// A pane's variables, under Arugula's names only (#534), and the
+/// daemon's own settings (here its log file) reach no pane.
 #[test]
-fn panes_get_our_variables_under_both_names() {
-    let log = std::env::temp_dir().join(format!("ilg-505-log-{}", std::process::id()));
+fn panes_get_our_variables() {
+    let log = std::env::temp_dir().join(format!("ilg-534-log-{}", std::process::id()));
     let _ = std::fs::remove_file(&log);
-    let d = start_with(&[("ILLOGICAL_LOG_FILE", log.as_os_str())]);
-    assert!(log.exists(), "the old name of the log file is taken");
-    let vars = "ARUGULA_PANE ILLOGICAL_PANE ARUGULA_SOCK ILLOGICAL_SOCK ARUGULA_LOG_FILE ILLOGICAL_LOG_FILE";
+    let d = start_with(&[("ARUGULA_LOG_FILE", log.as_os_str())]);
+    assert!(log.exists(), "the log file is taken");
+    let vars = "ARUGULA_PANE ILLOGICAL_PANE ARUGULA_SOCK ILLOGICAL_SOCK ARUGULA_LOG_FILE";
     let print = |out: &std::path::Path| {
         format!(
             "for v in {vars}; do printf '%s=%s\\n' $v \"$(printenv $v)\"; done >{}.tmp && mv {0}.tmp {0}",
@@ -640,9 +639,7 @@ fn panes_get_our_variables_under_both_names() {
     };
     let want = |pane: u64| {
         let sock = d.sock().display().to_string();
-        format!(
-            "ARUGULA_PANE={pane}\nILLOGICAL_PANE={pane}\nARUGULA_SOCK={sock}\nILLOGICAL_SOCK={sock}\nARUGULA_LOG_FILE=\nILLOGICAL_LOG_FILE=\n"
-        )
+        format!("ARUGULA_PANE={pane}\nILLOGICAL_PANE=\nARUGULA_SOCK={sock}\nILLOGICAL_SOCK=\nARUGULA_LOG_FILE=\n")
     };
     // A shell's pane, and a command's.
     let shell = d.state.join("env-shell");

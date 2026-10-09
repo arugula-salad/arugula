@@ -123,11 +123,9 @@ fn this_hosts_files_cd_and_names() {
     assert_eq!(names(&d.get(&format!("/api/fs/list?path={}&dirs=1", enc(&r)))), ["src"]);
     let (status, body) = d.raw("GET", &format!("/api/fs/read?path={}/notes.txt&offset=3&len=4", enc(&r)), None);
     assert_eq!((status, body.as_str()), (200, "3456"));
-    // #505: its size and offset under both names, for an older CLI.
+    // Its size and offset.
     let head = head_of(&d, &format!("/api/fs/read?path={}/notes.txt&offset=3&len=4", enc(&r)));
-    for h in
-        ["x-arugula-size: 10\r\n", "x-illogical-size: 10\r\n", "x-arugula-offset: 3\r\n", "x-illogical-offset: 3\r\n"]
-    {
+    for h in ["x-arugula-size: 10\r\n", "x-arugula-offset: 3\r\n"] {
         assert!(head.contains(h), "{head}");
     }
     assert_eq!(d.get(&format!("/api/fs/stat?path={}/notes.txt", enc(&r)))["size"], 10);

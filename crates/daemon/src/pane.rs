@@ -853,10 +853,8 @@ impl Process {
             .env("TERM", "xterm-256color")
             .env("COLORTERM", "truecolor")
             .env("ARUGULA_PANE", pane.to_string())
-            .env("ILLOGICAL_PANE", pane.to_string())
             // The daemon's own setting, not the pane's.
             .env_remove("ARUGULA_KEEP_PANES")
-            .env_remove("ILLOGICAL_KEEP_PANES")
             .stdin(stdio(&pty.slave)?)
             .stdout(stdio(&pty.slave)?)
             .stderr(stdio(&pty.slave)?);
@@ -1030,7 +1028,6 @@ impl Process {
             .env("TERM", "xterm-256color")
             .env("COLORTERM", "truecolor")
             .env("ARUGULA_PANE", pane.to_string())
-            .env("ILLOGICAL_PANE", pane.to_string())
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null());

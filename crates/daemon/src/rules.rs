@@ -196,7 +196,8 @@ mod tests {
 
     #[test]
     fn an_old_named_mcp_rule_still_holds() {
-        // Made before the rename (#505): our tools were mcp__illogical__*.
+        // Made before the rename: our tools were mcp__illogical__*, and a
+        // server still registered under that name keeps them so.
         let r = rule("mcp__illogical__run", None, None);
         assert!(r.allows("mcp__arugula__run", "run", None, None));
         assert!(r.allows("mcp__illogical__run", "run", None, None));
