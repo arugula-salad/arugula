@@ -138,6 +138,15 @@ expect mac-intel-arm64-key-0 Darwin x86_64 0 x86_64-apple-darwin
 # A shell under Rosetta says x86_64 on Apple silicon; it gets the native build.
 expect mac-rosetta Darwin x86_64 1 aarch64-apple-darwin
 refuse freebsd FreeBSD amd64
+
+# #664 (J4): with ~/.local/bin off PATH, the summary's commands carry the
+# path, so an agent over ssh can run them as printed.
+run check-line Linux x86_64 ""
+if grep -qF "Check     $home/.local/bin/arugula status" <<<"$out" && grep -qF "Open      $home/.local/bin/arugula web" <<<"$out"; then
+  ok "the summary runs arugula by its path"
+else
+  bad check-line "no Check line, or Open without the path"
+fi
 refuse linux-riscv Linux riscv64
 
 # A tarball that doesn't match SHA256SUMS is refused, not installed.

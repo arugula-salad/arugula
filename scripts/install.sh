@@ -328,10 +328,11 @@ fi
 
 say ""
 if [ -n "$started" ]; then
-  say "  Open      arugula web   ($url, with your browser signed in)"
+  say "  Open      ${bin}arugula web   ($url, with your browser signed in)"
 else
-  say "  Open      arugula web   ($url signed in, once it's running)"
+  say "  Open      ${bin}arugula web   ($url signed in, once it's running)"
 fi
+say "  Check     ${bin}arugula status"
 serve="tailscale serve --bg --https=443 $url"
 if [ -n "$dns" ]; then
   if "$ts" serve status 2>/dev/null | grep -q "$listen"; then
