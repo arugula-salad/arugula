@@ -85,6 +85,8 @@ export interface AgentState {
   /** M44: the Fountain agent it wears (by name), what came along, and
    *  what didn't. */
   as_fountain?: string | null;
+  /** M76: the recipe it runs as (a Claude Code subagent), by name. */
+  recipe?: string | null;
   worn?: Worn | null;
   wearing?: boolean;
   /** A Claude Code conversation this block opened (M33). */
@@ -109,24 +111,28 @@ interface Worn {
   skills_missing: string[];
   servers: { name: string; kind: string; vars: string[] }[];
   left_out: { name: string; why: string }[];
+  /** M76: worn from this subagent file, not from Fountain. */
+  recipe?: string | null;
 }
 
-/** M44: what a worn Fountain agent brought (its skills and MCP servers),
- *  and what didn't carry over. */
+/** M44: what a worn Fountain agent (or, M76, a recipe) brought (its
+ *  skills and MCP servers), and what didn't carry over. */
 function WornBar({ s }: { s: AgentState }) {
-  if (!s.as_fountain) return null;
+  const as = s.as_fountain || s.recipe;
+  if (!as) return null;
   const w = s.worn;
   if (!w) {
     return (
-      <div class="agent-worn" data-worn={s.as_fountain}>
-        <span class="agent-worn-as">as {s.as_fountain}</span> <span class="dim">{s.wearing ? "putting it on…" : ""}</span>
+      <div class="agent-worn" data-worn={as}>
+        <span class="agent-worn-as">as {as}</span> <span class="dim">{s.wearing ? "putting it on…" : ""}</span>
       </div>
     );
   }
+  const from = w.recipe ? `the recipe ${w.recipe}` : `Fountain's ${w.agent}, worn here`;
   const missing = [...w.left_out.map((l) => `${l.name}: ${l.why}`), ...w.skills_missing.map((m) => `skill ${m}`)];
   return (
     <div class="agent-worn" data-worn={w.agent}>
-      <span class="agent-worn-as" title={`Fountain's ${w.agent}, worn here${w.model ? ` (${w.model})` : ""}`}>as {w.agent}</span>
+      <span class="agent-worn-as" title={`${from}${w.model ? ` (${w.model})` : ""}`}>as {w.agent}</span>
       <span class="ws-tags">
         {w.skills.map((k) => (
           <span key={`s-${k}`} class="ws-tag" title={`skill (${w.plugin}:${k})`} data-worn-skill={k}>

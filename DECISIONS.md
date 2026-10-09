@@ -527,6 +527,27 @@ host only for now.
 Where: `crates/daemon/src/labs/workspace/graph.rs`, `web/src/blocks/workspace-graph.tsx`.
 From: #620, INTENTIUS/behold#474.
 
+### A recipe is a Claude Code subagent file, worn as M44 wears a Fountain agent
+The agents a person offers to other people's agents (#403) are
+`.claude/agents/NAME.md` files, read as they are and never written, so the
+same file is a subagent in the person's own Claude Code. Claude Code's ACP
+adapter drops the SDK's `agent` option, so a block can't select one: it wears
+it through M44's `Worn` instead. The prompt is appended after a line naming
+the agent, and model, `tools`, `disallowedTools` and `permissionMode` are
+applied (a block's own `permission_mode` wins). Skills are preloaded into the
+prompt, as Claude Code does for a subagent: a recipe's `tools` can leave out
+the Skill tool, and a plugin alone was never read in a real run. Named MCP
+servers come from the scopes Claude Code reads (local, `.mcp.json`, user),
+through Fountain's by-reference server code. The session gets
+`--strict-mcp-config`, because an agent other people will task mustn't
+carry the account's claude.ai connectors (Gmail and the like), and a real
+run showed those come along otherwise. Offering is per machine and the
+owner's (`<state>/agent-offers.json`). A card is A2A 1.0 with an
+`arugula://` JSON-RPC interface and a required channel extension. Fountain's
+`agent --as` became `--as-fountain`, so `--as` names a recipe.
+Where: `crates/daemon/src/labs/agents/`, `crates/daemon/src/labs/fountain/wear.rs` (`Worn`), `crates/cli/src/cmd/agents.rs`.
+From: [S34](https://github.com/arugula-salad/arugula/issues/397), M76 (#398), #403.
+
 ### Threads live on the daemon that owns the pane
 Pane and session threads are kept in `<state>/threads/`, outside the pane's
 own directory (closing a pane keeps its conversation), with the pane's access

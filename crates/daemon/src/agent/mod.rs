@@ -1084,7 +1084,7 @@ impl Inner {
         let (from, entries) = self.t.for_state(ENTRIES_IN_STATE);
         let (attention, _) = self.attention();
         let total_tokens: u64 = self.turns.iter().filter_map(|t| t.tokens.as_ref()?["totalTokens"].as_u64()).sum();
-        json!({
+        let mut state = json!({
             "agent": self.cfg.def.agent,
             "label": self.cfg.def.label(),
             "title": self.title,
@@ -1122,7 +1122,11 @@ impl Inner {
             })),
             "entries_from": from,
             "entries": entries,
-        })
+        });
+        // M76: the recipe it wears, by name (as `as_fountain` is the
+        // Fountain agent's).
+        state["recipe"] = json!(self.cfg.def.recipe);
+        state
     }
 }
 
@@ -1163,6 +1167,9 @@ impl Agent {
         }
         if vm && cfg.def.as_fountain.is_some() {
             return Err("a worn Fountain agent runs on this host (with your secrets), not in a VM".into());
+        }
+        if vm && cfg.def.recipe.is_some() {
+            return Err("a recipe runs on this host (with your skills and servers), not in a VM".into());
         }
         let log = ctx.log().map_err(|e| format!("agent log: {e}"))?;
         let _ = std::fs::write(ctx.dir.join("kind"), "agent\n");
@@ -1223,7 +1230,7 @@ impl Agent {
             // M44: a worn agent is put on again before anything it says is
             // read (its secrets to scrub, its _meta and servers for a new
             // session), then taken over.
-            if inner.cfg.def.as_fountain.is_some() && inner.worn.is_none() {
+            if inner.cfg.def.wears() && inner.worn.is_none() {
                 self.wear(&mut inner, true);
                 return;
             }
@@ -1369,7 +1376,7 @@ impl Agent {
         }
         // M44: put the Fountain agent on first (its bundle, its servers'
         // secrets), then start.
-        if inner.cfg.def.as_fountain.is_some() && inner.worn.is_none() {
+        if inner.cfg.def.wears() && inner.worn.is_none() {
             self.wear(inner, false);
             return;
         }
@@ -1524,8 +1531,8 @@ impl Agent {
         });
     }
 
-    /// Put on the Fountain agent it wears (M44), then start it; or say why
-    /// it can't be.
+    /// Put on the Fountain agent (M44) or the recipe (M76) it wears, then
+    /// start it; or say why it can't be.
     fn wear(&self, inner: &mut Inner, take_over: bool) {
         if inner.wearing {
             return;
@@ -1534,10 +1541,15 @@ impl Agent {
         inner.status = Status::Starting;
         inner.error = None;
         let def = inner.cfg.def.clone();
+        let cwd = inner.cfg.cwd.clone();
         let agent = Agent { ctx: self.ctx.clone(), inner: self.inner.clone(), tx: self.tx.clone() };
         self.ctx.rt.spawn(async move {
-            let which = def.as_fountain.clone().unwrap_or_default();
+            let which = def.as_fountain.clone().or_else(|| def.recipe.clone()).unwrap_or_default();
             let worn = match Runner::user(&agent.ctx).await {
+                Ok(runner) if def.recipe.is_some() => {
+                    let cwd = cwd.map(std::path::PathBuf::from).unwrap_or_else(|| agent.ctx.home.clone());
+                    crate::labs::wear_recipe(&runner, &agent.ctx.state_dir, &cwd, &which).await
+                }
                 Ok(runner) => {
                     let (profile, specs, vault) = (def.profile.as_deref(), def.specs.as_deref(), def.vault.as_deref());
                     crate::labs::wear(&runner, profile, specs, vault, &which).await
@@ -1964,7 +1976,14 @@ fn act(ctx: &BlockCtx, g: &mut Inner, f: Effect) {
             }
             // #163: after the model, which decides whether `auto` is there.
             // Again on each reopen: a resumed session starts in its default.
-            if let Some(mode) = g.cfg.def.permission_mode.clone() {
+            // M76: else the mode a recipe asks for.
+            let mode = g
+                .cfg
+                .def
+                .permission_mode
+                .clone()
+                .or_else(|| g.worn.as_ref().and_then(|w| w.permission_mode()).map(str::to_owned));
+            if let Some(mode) = mode {
                 let session = g.session();
                 g.request("session/set_mode", json!({ "sessionId": session, "modeId": mode }));
             }
@@ -2144,8 +2163,8 @@ const TOKEN_IN_ENV: &str = "mcp-token-env";
 
 fn new_session(ctx: &BlockCtx, g: &mut Inner, cwd: &str) {
     // A worn agent never opens a plain session (M44).
-    if g.cfg.def.as_fountain.is_some() && g.worn.is_none() {
-        g.note(json!({ "e": "error", "message": "The Fountain agent isn't worn yet: no session opened" }));
+    if g.cfg.def.wears() && g.worn.is_none() {
+        g.note(json!({ "e": "error", "message": "The agent it wears isn't put on yet: no session opened" }));
         return;
     }
     let mut meta = imported_meta(g)

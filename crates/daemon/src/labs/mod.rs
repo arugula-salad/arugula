@@ -47,6 +47,9 @@ use crate::{
     shellenv::ShellEnv,
 };
 
+// Agent recipes and their A2A cards (M76): the `agents` flag.
+#[cfg(feature = "labs")]
+pub mod agents;
 #[cfg(feature = "labs")]
 pub mod apps;
 // Huddles (M63): who is in each voice call on a session.
@@ -120,7 +123,7 @@ pub fn on(state_dir: &Path, flag: &str) -> bool {
 /// Adds Labs' HTTP routes to the API's.
 #[cfg(feature = "labs")]
 pub fn routes(r: Router<Arc<App>>) -> Router<Arc<App>> {
-    apps::routes::routes(fountain::routes::routes(r))
+    agents::routes(apps::routes::routes(fountain::routes::routes(r)))
 }
 
 #[cfg(not(feature = "labs"))]
@@ -372,6 +375,32 @@ pub use fountain::wear::{Worn, scrub, wear};
 #[cfg(not(feature = "labs"))]
 pub use absent::{Worn, scrub, wear};
 
+/// A recipe (a Claude Code subagent file, M76) worn on this host by a block
+/// working in `cwd`, as [`wear`] wears a Fountain agent. Needs the `agents`
+/// flag.
+#[cfg(feature = "labs")]
+pub async fn wear_recipe(
+    runner: &crate::review::Runner,
+    state_dir: &Path,
+    cwd: &Path,
+    name: &str,
+) -> Result<Worn, String> {
+    if !on(state_dir, arugula_proto::flags::AGENTS) {
+        return Err("agent recipes are in Labs: `arugulad flags agents on` turns them on here".into());
+    }
+    agents::wear::wear(runner, cwd, name).await
+}
+
+#[cfg(not(feature = "labs"))]
+pub async fn wear_recipe(
+    _runner: &crate::review::Runner,
+    _state_dir: &Path,
+    _cwd: &Path,
+    _name: &str,
+) -> Result<Worn, String> {
+    Err(not_built("Agent recipes"))
+}
+
 /// The twins of what [`Worn`] is, for a build without Labs: nothing is ever
 /// worn, so an agent block's `worn` stays `None`.
 #[cfg(not(feature = "labs"))]
@@ -476,6 +505,10 @@ mod absent {
         }
 
         pub fn text(&self) -> String {
+            match *self {}
+        }
+
+        pub fn permission_mode(&self) -> Option<&str> {
             match *self {}
         }
     }

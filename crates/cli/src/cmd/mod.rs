@@ -3,6 +3,7 @@
 
 pub mod access;
 pub mod agent;
+pub mod agents;
 pub mod app;
 pub mod attention;
 pub mod call;

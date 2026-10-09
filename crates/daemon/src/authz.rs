@@ -108,6 +108,11 @@ fn policy(method: &Method, path: &str) -> Policy {
         // #618: where a workspace's proposed decisions link to.
         ["api", "blocks", _, "call", "hud"] => Policy::Owner,
         ["api", "blocks", id, "call", _] if !get => pane(id).map_or(Policy::Owner, |p| Policy::On(p, Role::Editor)),
+        // M76: what's offered to other people's agents is the owner's to
+        // choose; the cards (and, from M78, their tasks) are for anyone who
+        // reaches this machine.
+        ["api", "a2a", "offers" | "recipes"] => Policy::Owner,
+        ["api", "a2a", "agents", ..] => Policy::Handler,
         // M61: the mux checks each thread (a pane's, or a session's).
         ["api", "threads", ..] => Policy::Handler,
         // M24: the handler shows each person what they may read, and checks

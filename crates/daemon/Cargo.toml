@@ -33,6 +33,8 @@ reqwest = { version = "0.13.5", default-features = false, features = ["rustls", 
 rustls-platform-verifier = "0.7.1"
 # The guest ssh server (M65), part of Labs.
 russh = { version = "0.64.0", default-features = false, features = ["aws-lc-rs"], optional = true }
+# Agent recipes (#398): a Claude Code subagent file's frontmatter.
+serde_norway = { version = "0.9.42", optional = true }
 rust-embed = { version = "8.12.0", features = ["mime-guess"] }
 # MCP (M16), pinned: 3.x moves fast (S14).
 rmcp = { version = "=3.5.0", default-features = false, features = ["server", "schemars", "transport-io", "transport-streamable-http-server"] }
@@ -78,7 +80,7 @@ rmcp = { version = "=3.5.0", default-features = false, features = ["transport-st
 # Labs (Fountain first; see src/labs/mod.rs): on by default. Release builds
 # have it all; `--no-default-features` leaves it out.
 default = ["labs"]
-labs = ["dep:russh"]
+labs = ["dep:russh", "dep:serde_norway"]
 # Embed web/dist even in a debug build (rust-embed reads it from the source
 # tree at run time otherwise): CI's e2e shards run binaries built in another
 # job's checkout.

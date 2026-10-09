@@ -385,6 +385,11 @@ pub struct StartAgentArgs {
     /// lists them).
     #[serde(default)]
     pub as_fountain: Option<String>,
+    /// For claude: run as this recipe, a Claude Code subagent by its name
+    /// (`.claude/agents/NAME.md` in cwd's project, or the user's), on this
+    /// host: its prompt, model, tools, skills and MCP servers.
+    #[serde(default)]
+    pub recipe: Option<String>,
     /// A model to switch to (`haiku`, ...).
     #[serde(default)]
     pub model: Option<String>,
@@ -887,10 +892,11 @@ const UNLISTED_THREADS: [&str; 2] = ["read_thread", "post_thread"];
 /// Arguments of listed tools that aren't listed without their flag, by
 /// tool: throwaway VMs and sandboxes, and Fountain agents. A caller who
 /// gives one still reaches it.
-const UNLISTED_ARGS: [(&str, &[&str], &str); 3] = [
+const UNLISTED_ARGS: [(&str, &[&str], &str); 4] = [
     ("run", &["vm", "vm_tab", "image", "machine"], flags::VMS),
     ("start_agent", &["fountain_agent", "as_fountain"], flags::FOUNTAIN),
     ("start_agent", &["vm"], flags::VMS),
+    ("start_agent", &["recipe"], flags::AGENTS),
 ];
 
 /// Values of a listed tool's arguments that aren't listed without their
@@ -3183,7 +3189,11 @@ impl Call<'_> {
             Some(b) => self.readable(b).await?.info.host,
             None => None,
         };
-        may_start(self.on_machine().await?, host.is_some(), a.vm, a.as_fountain.is_some())?;
+        let recipe = a.recipe.as_deref().map(str::trim).filter(|n| !n.is_empty());
+        may_start(self.on_machine().await?, host.is_some(), a.vm, a.as_fountain.is_some() || recipe.is_some())?;
+        if recipe.is_some() && !matches!(a.agent, AgentKind::Claude) {
+            return Err("recipe is for agent claude: Claude Code runs the recipe".into());
+        }
         // An agent doesn't hand another one every check switched off.
         if let Some(m) = a.permission_mode.as_deref().filter(|m| SKIPS_CHECKS.contains(m)) {
             return Err(format!("permission_mode {m} skips every check: only the user starts an agent like that"));
@@ -3214,6 +3224,9 @@ impl Call<'_> {
         }
         if let Some(f) = a.as_fountain.as_deref().map(str::trim).filter(|n| !n.is_empty()) {
             config["as_fountain"] = json!(f);
+        }
+        if let Some(r) = recipe {
+            config["recipe"] = json!(r);
         }
         if let Some(m) = &a.model {
             config["model"] = json!(m);
@@ -3636,7 +3649,7 @@ fn open_lands_on_machine(req: &OpenRequest) -> bool {
 fn may_start(caller_on_machine: bool, on_machine: bool, vm: bool, worn: bool) -> Result<(), String> {
     confine(caller_on_machine, on_machine || vm)?;
     if worn && (on_machine || vm) {
-        return Err("a worn Fountain agent runs on this host, not on a machine".into());
+        return Err("a worn agent (a Fountain agent or a recipe) runs on this host, not on a machine".into());
     }
     Ok(())
 }

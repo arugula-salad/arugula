@@ -73,6 +73,8 @@ pub const GUEST_SSH: &str = "guest-ssh";
 pub const SWARM_THEMES: &str = "swarm-themes";
 /// Forgejo and GitLab blocks, beside GitHub's.
 pub const FORGES: &str = "forges";
+/// Agent recipes offered from this machine, and the team's agent catalog.
+pub const AGENTS: &str = "agents";
 
 /// One flag.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -102,6 +104,7 @@ pub const FLAGS: &[Flag] = &[
     row(GUEST_SSH, "Guest ssh", "Invite a guest to a pane over plain ssh."),
     row(SWARM_THEMES, "Extra swarm views", "The swarm's other views beside the default."),
     row(FORGES, "Forgejo and GitLab", "PR and issue blocks for Forgejo and GitLab, beside GitHub's."),
+    row(AGENTS, "Agent catalog", "Offer Claude Code subagents from this machine, and see the ones your team offers."),
 ];
 
 /// The flags that are on, from one read: what a listing or a `--help` is

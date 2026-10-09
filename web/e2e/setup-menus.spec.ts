@@ -55,7 +55,7 @@ test("menus offer only what this machine is set up for", async ({ page }) => {
     threads: true,
     calls: true,
     // `labs` in flags.json is every flag (#665).
-    flags: ["chat", "huddles", "vms", "fountain", "studio", "workspaces", "guest-ssh", "swarm-themes", "forges"],
+    flags: ["chat", "huddles", "vms", "fountain", "studio", "workspaces", "guest-ssh", "swarm-themes", "forges", "agents"],
   });
   const [term] = await panes(page);
   const hidden = ["New VM pane on the right", "New VM tab", "Sandboxes…", "Fountain agents…", "Fountain runner…", "Open a studio app…"];

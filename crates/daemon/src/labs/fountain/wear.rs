@@ -64,7 +64,7 @@ credentials.\n\n---\n\n";
 const FRESH: Duration = Duration::from_secs(24 * 3600);
 
 /// A bundle version this old is removed (no block runs that long on one).
-const OLD: Duration = Duration::from_secs(7 * 24 * 3600);
+pub(crate) const OLD: Duration = Duration::from_secs(7 * 24 * 3600);
 
 /// How long one `infisical`, `gh` or `git` may take.
 const TOOL_TIMEOUT: Duration = Duration::from_secs(60);
@@ -572,20 +572,20 @@ pub fn cache_root(env: &[(String, String)], home: &Path) -> PathBuf {
 }
 
 /// A name safe as one path component.
-fn component(s: &str) -> String {
+pub(crate) fn component(s: &str) -> String {
     let s: String = s.chars().map(|c| if c.is_ascii_alphanumeric() || "._-@".contains(c) { c } else { '-' }).collect();
     let s = s.trim_matches('.').to_owned();
     if s.is_empty() { "_".into() } else { s }
 }
 
-fn slug(s: &str) -> String {
+pub(crate) fn slug(s: &str) -> String {
     let s: String = s.to_ascii_lowercase().chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '-' }).collect();
     let s = s.split('-').filter(|p| !p.is_empty()).collect::<Vec<_>>().join("-");
     if s.is_empty() { "agent".into() } else { s }
 }
 
 /// A file's age, if it's there.
-fn age(p: &Path) -> Option<Duration> {
+pub(crate) fn age(p: &Path) -> Option<Duration> {
     std::fs::metadata(p).ok()?.modified().ok()?.elapsed().ok()
 }
 
@@ -689,7 +689,7 @@ fn skill_dirs(root: &Path) -> Vec<PathBuf> {
     out
 }
 
-fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {
+pub(crate) fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {
     std::fs::create_dir_all(to)?;
     for e in std::fs::read_dir(from)? {
         let e = e?;
@@ -861,6 +861,10 @@ pub struct Info {
     pub skills_missing: Vec<String>,
     pub servers: Vec<ServerInfo>,
     pub left_out: Vec<LeftOut>,
+    /// M76: worn from a recipe (a Claude Code subagent file) at this path,
+    /// not from Fountain.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recipe: Option<String>,
 }
 
 impl Info {
@@ -868,12 +872,11 @@ impl Info {
     pub fn text(&self) -> String {
         let list = |v: &[String]| if v.is_empty() { "none".to_owned() } else { v.join(", ") };
         let servers: Vec<String> = self.servers.iter().map(|s| s.name.clone()).collect();
-        let mut out = format!(
-            "As the Fountain agent {}, locally. Skills: {}. MCP servers: {}.",
-            self.agent,
-            list(&self.skills),
-            list(&servers)
-        );
+        let what = match &self.recipe {
+            Some(path) => format!("As the agent {} ({path})", self.agent),
+            None => format!("As the Fountain agent {}, locally", self.agent),
+        };
+        let mut out = format!("{what}. Skills: {}. MCP servers: {}.", list(&self.skills), list(&servers));
         let mut missing: Vec<String> = self.left_out.iter().map(|l| format!("{} ({})", l.name, l.why)).collect();
         missing.extend(self.skills_missing.iter().map(|s| format!("skill {s}")));
         if !missing.is_empty() {
@@ -896,6 +899,15 @@ pub struct Worn {
     /// Every value that went into them which may be secret, to keep out of
     /// logs.
     pub secrets: Vec<String>,
+    /// M76: a recipe's tool lists (Claude Code's `tools`, `disallowedTools`).
+    pub tools: Vec<String>,
+    pub disallowed_tools: Vec<String>,
+    /// M76: the permission mode a recipe's session starts in, unless the
+    /// block says another.
+    pub permission_mode: Option<String>,
+    /// M76: only its own MCP servers (and Arugula's): none of the account's
+    /// claude.ai connectors, which Claude Code adds otherwise.
+    pub strict_mcp: bool,
 }
 
 impl std::fmt::Debug for Worn {
@@ -909,6 +921,22 @@ impl Worn {
     /// the model, keeping `settingSources: []`.
     pub fn dress(&self, meta: &mut Value) {
         crate::agent::defs::wear_meta(meta, &self.system, &self.plugin, self.info.model.as_deref());
+        let o = &mut meta["claudeCode"]["options"];
+        if !self.tools.is_empty() {
+            o["tools"] = json!(self.tools);
+        }
+        if !self.disallowed_tools.is_empty() {
+            o["disallowedTools"] = json!(self.disallowed_tools);
+        }
+        if self.strict_mcp {
+            // As the adapter passes its own flags ("" is no value).
+            o["extraArgs"]["strict-mcp-config"] = json!("");
+        }
+    }
+
+    /// The permission mode it asks for (a recipe's `permissionMode`).
+    pub fn permission_mode(&self) -> Option<&str> {
+        self.permission_mode.as_deref()
     }
 
     /// The servers it adds to the agent's own, each credential a reference.
@@ -1256,12 +1284,17 @@ pub async fn wear(
             skills_missing: b.contents.skills_missing.clone(),
             servers: served.infos,
             left_out: served.left,
+            recipe: None,
         },
         system: b.system,
         plugin: b.plugin,
         servers: served.list,
         env: served.env,
         secrets: served.secrets,
+        tools: vec![],
+        disallowed_tools: vec![],
+        permission_mode: None,
+        strict_mcp: false,
     })
 }
 
