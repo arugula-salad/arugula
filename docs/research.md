@@ -17,7 +17,7 @@ marked *(unverified)* were not checked against a primary source.
 its modes extra switches screens before writing content. While vim or htop is
 running, the attach would show the alt screen correctly but an empty primary
 screen and no scrollback. The Zig side can format the screens separately; the
-C API does not expose that *(unverified)*. Fix options are in plan-archive.md, spike S1.
+C API does not expose that *(unverified)*. Fix options are in plan-archive.md, the first spike.
 
 Links: [ghostty](https://github.com/ghostty-org/ghostty),
 [formatter.h](https://github.com/ghostty-org/ghostty/blob/main/include/ghostty/vt/formatter.h),
@@ -36,7 +36,7 @@ Links: [ghostty](https://github.com/ghostty-org/ghostty),
   `csum,WxH,X,Y{..}` / `[..]`.
   -> Copy the ID model (`$session @window %pane`, never reused). Keep sizes
   derivable in cells. Map every event 1:1 to a `%` notification. Add request
-  correlation numbers. Before M5, capture iTerm2's attach sequence with a
+  correlation numbers. Before building `tmux -CC`, capture iTerm2's attach sequence with a
   logging proxy. [wiki](https://github.com/tmux/tmux/wiki/Control-Mode),
   [layout-custom.c](https://github.com/tmux/tmux/blob/master/layout-custom.c)
 - **Size reconciliation.** tmux offers `window-size largest|smallest|manual|latest`
@@ -66,7 +66,7 @@ Links: [ghostty](https://github.com/ghostty-org/ghostty),
   -> Bytes for xterm.js and `-CC`. If a client falls too far behind, drop its
   queue and send a fresh snapshot (the cheap 80% of SSP).
 - **HTM** (Eternal Terminal's headless multiplexer) speaks tmux control mode
-  from a non-tmux daemon. It is the closest prior art for M5. Windows Terminal
+  from a non-tmux daemon. It is the closest prior art for `tmux -CC`. Windows Terminal
   integration PR is open:
   [microsoft/terminal#20639](https://github.com/microsoft/terminal/pull/20639).
 - **sshx.** Each chunk carries an absolute byte offset; clients request what
@@ -154,17 +154,17 @@ Arugula so far, and the same engine bet (a `crates/ghostty-vt` crate).
   (`worktree.created`, …), panes and link handlers; any argv command. A
   marketplace is coming (1,445 community plugins claimed).
 
-**Overlap:** M0–M3 almost entirely (daemon-owned PTYs, layout restore, agent
-resume, run/send/wait/read, multi-host list as in M25). **Theirs only:** runs
-in any terminal (ours: M5's `tmux -CC`), Windows, broad agent detection,
-plugins, agents driving the mux (our M16, not built). **Ours only:** web and
+**Overlap:** the daemon's core almost entirely (daemon-owned PTYs, layout restore, agent
+resume, run/send/wait/read, multi-host list). **Theirs only:** runs
+in any terminal (ours: `tmux -CC`), Windows, broad agent detection,
+plugins, agents driving the mux (ours, not built). **Ours only:** web and
 phone client, push and answering from it, agent blocks, multiplayer
-(M12–M15), control's E2E relay and hosted sandboxes (M17–M22), machines per
-pane or tab (M3b/M3c), OSC 133 command structure and history search, the
+(principals and roles, live sharing, safe write access, reaching beyond the tailnet), control's E2E relay and hosted sandboxes, machines per
+pane or tab, OSC 133 command structure and history search, the
 swarm view.
 
 -> Compete on browser, phone, team and control, not the local mux. Take:
-screen manifests as the fallback for M24's `input` prompts (`[sudo]
+screen manifests as the fallback for `input` prompts (`[sudo]
 password`, `[y/N]`); an `arugula wait --until done|needs_input` verb;
 several layout snapshots plus a corrupt-file backup; revisit replaying
 scrollback by default. Watch Herdr Cloud: with a web client it lands on
