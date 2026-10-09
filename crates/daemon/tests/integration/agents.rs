@@ -211,6 +211,38 @@ fn a_title_the_person_gave_outranks_the_session_s_and_can_be_cleared() {
 }
 
 #[test]
+fn a_burst_of_chunks_is_sent_to_clients_once_per_tick() {
+    // #713: each publish sends the block's whole state to every client, so a
+    // stream of small chunks, with gaps (as Claude Code's), is drawn on the
+    // 120 ms tick, not once per chunk.
+    let d = Daemon::child();
+    let id = d.open("hello");
+    assert_eq!(d.wait(id, "idle"), "done");
+    let s = d.fixture("agent_burst", "an agent streams 50 chunks, 10 ms apart");
+    let mut ws = s.ws();
+    ws.until("the block's state", |m| m["type"] == "block" && m["block"] == id);
+    let started = std::time::Instant::now();
+    d.call(id, "send", json!({ "text": "stream 50 10" }));
+    let mut sent = 0;
+    let end = loop {
+        let m = ws.until("a block state", |m| m["type"] == "block" && m["block"] == id);
+        sent += 1;
+        if m["state"]["status"] == "ready"
+            && entries(&m["state"]).iter().any(|e| e["text"].as_str().is_some_and(|t| t.contains("w49")))
+        {
+            break started.elapsed();
+        }
+    };
+    // Whatever is still on its way.
+    while ws.recv(Duration::from_millis(300)).is_some() {
+        sent += 1;
+    }
+    let ticks = end.as_millis() as usize / 120;
+    eprintln!("{sent} block states in {end:?}");
+    assert!(sent <= ticks + 4, "{sent} block states in {end:?} for 50 chunks");
+}
+
+#[test]
 fn standing_rules_outlive_the_block_that_made_them() {
     // #166: "Always" for a directory or everywhere is the daemon's, not the
     // block's: the next block checks it, it survives a restart, and
@@ -456,10 +488,15 @@ fn open_claude(d: &Daemon, prompt: &str) -> u64 {
     d.open_with(json!({ "type": "agent", "config": config }))
 }
 
-/// Whether the block is between turns (ready) and yet shows working.
+/// Whether the block is between turns (ready), has heard from its woken
+/// cycle, and yet shows working. The woken text matters: the pane's attention
+/// follows at the next publish tick (#713), so just after a turn ends a block
+/// is ready while its pane still shows that turn working.
 fn woken(d: &Daemon, id: u64) -> bool {
+    let s = d.state(id);
     let panes = d.get("/api/panes");
-    d.state(id)["status"] == "ready"
+    s["status"] == "ready"
+        && entries(&s).iter().any(|e| e["text"] == "The background task finished.")
         && panes.as_array().unwrap().iter().any(|p| p["id"] == id && p["attention"] == "working")
 }
 
@@ -471,7 +508,8 @@ fn an_agent_woken_by_a_background_task_shows_working_then_done() {
     let id = open_claude(&d, "wake");
     d.wait_for("the woken agent to show working", || woken(&d, id));
     assert_eq!(d.wait(id, "idle"), "done");
-    assert!(!woken(&d, id));
+    // The pane shows it at the next publish tick (#713).
+    d.wait_for("the pane to stop showing working", || !woken(&d, id));
     let s = d.state(id);
     assert!(entries(&s).iter().any(|e| e["text"] == "The background task finished."), "{s}");
 }
@@ -482,7 +520,8 @@ fn a_woken_agent_that_never_closes_goes_back_to_idle() {
     let id = open_claude(&d, "wake-open");
     d.wait_for("the woken agent to show working", || woken(&d, id));
     assert_eq!(d.wait(id, "idle"), "done");
-    assert!(!woken(&d, id));
+    // The pane shows it at the next publish tick (#713).
+    d.wait_for("the pane to stop showing working", || !woken(&d, id));
 }
 
 #[test]
@@ -495,7 +534,8 @@ fn a_prompt_during_a_woken_cycle_is_a_normal_turn() {
         d.state(id)["status"] == "ready" && entries(&d.state(id)).iter().any(|e| e["text"] == "Hello! I am fake.")
     });
     // Its own turn took over and ended: not still woken (the quiet period is a minute).
-    assert!(!woken(&d, id));
+    // The pane shows it at the next publish tick (#713).
+    d.wait_for("the pane to stop showing working", || !woken(&d, id));
     assert_eq!(d.wait(id, "idle"), "done");
 }
 

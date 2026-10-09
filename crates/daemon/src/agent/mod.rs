@@ -1856,6 +1856,8 @@ async fn run(
         tokio::select! {
             m = rx.recv() => {
                 let Some(m) = m else { return };
+                // A method call (approve, send, set_title) has a person waiting.
+                let at_once = matches!(m, Msg::Changed);
                 let mut fx = vec![];
                 {
                     let mut g = inner.lock().unwrap();
@@ -1908,8 +1910,9 @@ async fn run(
                     }
                 }
                 dirty = true;
-                // A burst of frames: draw once it settles.
-                if rx.is_empty() {
+                // A frame is drawn at the next tick: each publish sends the whole
+                // state to every client (#713).
+                if at_once && rx.is_empty() {
                     publish(&ctx, &inner, false);
                 }
             }
