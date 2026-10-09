@@ -826,6 +826,22 @@ async fn prompt_agent_waits_for_the_turn() {
     assert_eq!(v["result"], "blocked", "{v}");
 }
 
+/// #576: who a prompt_agent turn is recorded as: the MCP client, never the
+/// owner.
+#[tokio::test(flavor = "multi_thread")]
+async fn prompt_agent_records_the_client_as_who_prompted() {
+    let d = Daemon::child();
+    let s = bridge(&d, Client::named("claude-code")).await;
+    let b = d.open("hello");
+    d.wait(b, "idle");
+    let v = call(&s, "prompt_agent", json!({ "pane": b, "text": "recall" })).await;
+    assert_eq!(v["result"], "done", "{v}");
+    // The block notes who the turn is from, just before it.
+    let entries = d.state(b)["entries"].clone();
+    let at = entries.as_array().unwrap().iter().position(|e| e["text"] == "recall").unwrap();
+    assert_eq!(entries[at - 1]["text"], "A follow-up from mcp:claude-code", "{entries}");
+}
+
 /// The `labs` file in the state dir lists chat's two tools and the other
 /// five jobs (kinds of show and list), and brings
 /// back the thread text in the instructions, and removing it takes them away

@@ -135,6 +135,17 @@ impl Request for crate::api::MouseRequest {}
 
 impl Request for crate::api::AttentionRequest {}
 
+impl Request for crate::api::PromptRequest {}
+
+impl Request for crate::api::AskRequest {}
+
+impl Request for crate::api::WithdrawRequest {}
+
+impl Request for crate::api::PermitRequest {}
+
+/// The hook input `arugula inbox` passes on as it got it.
+impl Request for serde_json::Value {}
+
 impl Request for crate::api::FollowUpRequest {}
 
 impl Request for crate::api::IdeDiffsRequest {}
@@ -191,11 +202,12 @@ pub mod ops {
     use crate::{
         Machine, PaneId,
         api::{
-            Adapters, AgentsInventory, AttentionRequest, ConversationList, ConversationsQuery, DetectionAnswer,
-            DriverEntry, Empty, FollowUpRequest, FollowedUp, IdeDiffs, IdeDiffsRequest, IdeInfo, IdeMentionRequest,
-            IdeMentioned, InstallAdapterRequest, KeysRequest, MouseRequest, NotifyPref, NotifyRequest,
-            OpenConversationRequest, OpenConversationResponse, PaneDiff, PaneSummary, Process, PushKey,
-            PushSubscriptions, Rules, RunResponse, SendRequest, ShellEnv, Subscription, WaitRequest, WaitResult,
+            Adapters, AgentsInventory, AskAnswer, AskRequest, AttentionRequest, ConversationList, ConversationsQuery,
+            DetectionAnswer, DriverEntry, Empty, FollowUpRequest, FollowedUp, IdeDiffs, IdeDiffsRequest, IdeInfo,
+            IdeMentionRequest, IdeMentioned, InboxAnswer, InstallAdapterRequest, KeysRequest, MouseRequest, NotifyPref,
+            NotifyRequest, OpenConversationRequest, OpenConversationResponse, PaneDiff, PaneSummary, PermitAnswer,
+            PermitRequest, Process, PromptRequest, PromptResult, PushKey, PushSubscriptions, Rules, RunResponse,
+            SendRequest, ShellEnv, Subscription, WaitRequest, WaitResult, WithdrawRequest,
         },
         flags::{FlagInfo, FlagSetRequest},
     };
@@ -411,6 +423,79 @@ pub mod ops {
         type Path = PaneId;
         type Req = FollowUpRequest;
         type Res = FollowedUp;
+    }
+
+    /// `POST /api/panes/N/prompt` (#147): prompt the agent in a pane and
+    /// wait for its turn (`arugula send --wait`, MCP's `prompt_agent`). It
+    /// types as someone, but a pane's agent waiting is not `DRIVES`: it
+    /// never was.
+    pub struct PanePrompt;
+
+    impl Op for PanePrompt {
+        const NAME: &'static str = "pane.prompt";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/panes/{id}/prompt";
+        const ACCESS: Access = Access::Pane(Role::Editor);
+        type Path = PaneId;
+        type Req = PromptRequest;
+        type Res = PromptResult;
+    }
+
+    /// `POST /api/panes/N/ask` (`arugula ask`): AskUserQuestion's questions
+    /// on a card beside the pane, until someone answers. The card goes if
+    /// the caller does.
+    pub struct PaneAsk;
+
+    impl Op for PaneAsk {
+        const NAME: &'static str = "pane.ask";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/panes/{id}/ask";
+        const ACCESS: Access = Access::Pane(Role::Editor);
+        type Path = PaneId;
+        type Req = AskRequest;
+        type Res = AskAnswer;
+    }
+
+    /// `POST /api/panes/N/ask/withdraw`: the asker gave up.
+    pub struct PaneAskWithdraw;
+
+    impl Op for PaneAskWithdraw {
+        const NAME: &'static str = "pane.ask_withdraw";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/panes/{id}/ask/withdraw";
+        const ACCESS: Access = Access::Pane(Role::Editor);
+        type Path = PaneId;
+        type Req = WithdrawRequest;
+        type Res = Empty;
+    }
+
+    /// `POST /api/panes/N/permit` (M29, `arugula hook`): Claude Code's
+    /// permission prompt on a card, until someone answers. The card goes if
+    /// the caller does.
+    pub struct PanePermit;
+
+    impl Op for PanePermit {
+        const NAME: &'static str = "pane.permit";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/panes/{id}/permit";
+        const ACCESS: Access = Access::Pane(Role::Editor);
+        type Path = PaneId;
+        type Req = PermitRequest;
+        type Res = PermitAnswer;
+    }
+
+    /// `POST /api/panes/N/inbox` (M29, `arugula inbox`): wait for a
+    /// follow-up for the agent. The waiter goes if the caller does.
+    pub struct PaneInbox;
+
+    impl Op for PaneInbox {
+        const NAME: &'static str = "pane.inbox";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/panes/{id}/inbox";
+        const ACCESS: Access = Access::Pane(Role::Editor);
+        type Path = PaneId;
+        type Req = serde_json::Value;
+        type Res = InboxAnswer;
     }
 
     /// `GET /api/panes/N/process`: a pane's foreground process (`arugula
@@ -715,6 +800,11 @@ mod tests {
             ("mouse", ops::PaneMouse::path(&7)),
             ("attention", ops::PaneAttention::path(&7)),
             ("followup", ops::PaneFollowUp::path(&7)),
+            ("prompt", ops::PanePrompt::path(&7)),
+            ("ask", ops::PaneAsk::path(&7)),
+            ("ask/withdraw", ops::PaneAskWithdraw::path(&7)),
+            ("permit", ops::PanePermit::path(&7)),
+            ("inbox", ops::PaneInbox::path(&7)),
             ("process", ops::PaneProcess::path(&7)),
             ("detection", ops::PaneDetection::path(&7)),
             ("diff", ops::PaneDiffOf::path(&7)),

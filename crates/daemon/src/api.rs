@@ -15,19 +15,17 @@ use std::{
 use arugula_proto::{
     Driver, EventKind, Frame, FrameKind, PaneId, SessionId,
     api::{
-        AgentRules, AgentsInventory, Answered, AskAnswer, AskRequest, ConversationList, ConversationRow,
-        ConversationsQuery, Described, Empty, HistoryKind, InboxAnswer, Invitable, KeysRequest,
-        OpenConversationRequest, OpenConversationResponse, OpenResponse, PermitAnswer, PermitRequest, Process,
-        PromptRequest, PromptResult, RunRequest, RunResponse, SecretFinding, SendRequest, ThreadAgent, ThreadMessages,
-        ThreadPostRequest, ThreadPosted, ThreadReadRequest, Unreached, UnreachedWhy, WaitRequest, WaitResult,
-        WithdrawRequest,
+        AgentRules, AgentsInventory, Answered, ConversationList, ConversationRow, ConversationsQuery, Described, Empty,
+        HistoryKind, Invitable, KeysRequest, OpenConversationRequest, OpenConversationResponse, OpenResponse, Process,
+        RunRequest, RunResponse, SecretFinding, SendRequest, ThreadAgent, ThreadMessages, ThreadPostRequest,
+        ThreadPosted, ThreadReadRequest, Unreached, UnreachedWhy, WaitRequest, WaitResult,
     },
     op::ops::{
         AdapterInstall, AdaptersList, AgentsGet, AgentsRefresh, ClosePane, ConversationOpen, ConversationsList,
         FlagSet, FlagsList, IdeGet, IdeMention, IdeSet, ListPanes, MachineReset, MachinesList, NotifyGet, NotifySet,
-        PaneAttention, PaneDetection, PaneDiffOf, PaneDrivers, PaneFollowUp, PaneKeys, PaneMouse, PaneProcess,
-        PaneSend, PaneWait, PushKeyGet, PushSubscribe, PushTest, RuleForget, RulesForgetAll, RulesList, ShellEnvGet,
-        ShellEnvRefresh,
+        PaneAsk, PaneAskWithdraw, PaneAttention, PaneDetection, PaneDiffOf, PaneDrivers, PaneFollowUp, PaneInbox,
+        PaneKeys, PaneMouse, PanePermit, PaneProcess, PanePrompt, PaneSend, PaneWait, PushKeyGet, PushSubscribe,
+        PushTest, RuleForget, RulesForgetAll, RulesList, ShellEnvGet, ShellEnvRefresh,
     },
 };
 use axum::{
@@ -46,7 +44,7 @@ use tokio::sync::mpsc;
 use crate::{
     history::{self, Filter},
     keys,
-    mux::{Api, AskReply, Cmd, InboxReply, MuxHandle},
+    mux::{Api, AskReply, Cmd},
     ops::OpRoutes,
     osc::strip,
     pane::{CaptureFormat, CaptureScope, PaneHandle, Subscriber, ToClient},
@@ -61,17 +59,17 @@ pub fn routes() -> Router<Arc<App>> {
         .op::<ListPanes>()
         .route("/api/run", post(run))
         .op::<PaneSend>()
-        .route("/api/panes/{id}/prompt", post(prompt_))
+        .op::<PanePrompt>()
         .op::<PaneKeys>()
         .op::<PaneMouse>()
         .op::<PaneAttention>()
         .route("/api/attention", get(attention_list))
         .route("/api/attention/act", post(act))
-        .route("/api/panes/{id}/ask", post(ask))
-        .route("/api/panes/{id}/ask/withdraw", post(ask_withdraw))
-        .route("/api/panes/{id}/permit", post(permit))
+        .op::<PaneAsk>()
+        .op::<PaneAskWithdraw>()
+        .op::<PanePermit>()
         .route("/api/panes/{id}/hook", post(hook))
-        .route("/api/panes/{id}/inbox", post(inbox))
+        .op::<PaneInbox>()
         .op::<PaneFollowUp>()
         .route("/api/turn", get(turn))
         .route("/api/threads/{target}", get(thread_get).post(thread_post))
@@ -211,182 +209,6 @@ async fn run(State(app): AppState, Json(req): Json<RunRequest>) -> Res<Json<RunR
         Some(Err(e)) => Err(bad(e)),
         None => Err(ApiError(StatusCode::SERVICE_UNAVAILABLE, "daemon is shutting down".into())),
     }
-}
-
-/// `arugula send %N --wait`: prompt the agent there and wait for its
-/// turn (#147).
-async fn prompt_(
-    State(app): AppState,
-    Path(id): Path<PaneId>,
-    Json(req): Json<PromptRequest>,
-) -> Res<Json<PromptResult>> {
-    let stall = secs(req.stall, STALL);
-    let limit = secs(req.timeout, Duration::from_secs(100));
-    match tokio::time::timeout(limit, prompt(&app, id, req.text, req.answering, stall, None)).await {
-        Ok(Ok(r)) => Ok(Json(r)),
-        Ok(Err(e)) => Err(bad(e)),
-        Err(_) => Ok(Json(PromptResult::StillRunning)),
-    }
-}
-
-/// How long a prompted agent has to show any sign of work (#147).
-pub(crate) const STALL: Duration = Duration::from_secs(5);
-
-/// Seconds from a request, or a default.
-pub(crate) fn secs(s: Option<f64>, default: Duration) -> Duration {
-    s.filter(|s| s.is_finite() && *s >= 0.0).map(Duration::from_secs_f64).unwrap_or(default)
-}
-
-/// Prompt the agent in a pane (a terminal running one, or an agent block)
-/// and wait for its turn: `Done` when it ends, `NeedsInput` when it asks
-/// for someone, `Stalled` when nothing shows it working within `stall` (no
-/// agent there, the prompt not submitted, the agent gone). The wait starts
-/// before anything is typed, so a quick turn can't slip past it. An agent
-/// already waiting on someone isn't typed at, unless `answering`: typing
-/// into its approval dialog would answer it.
-pub(crate) async fn prompt(
-    app: &App,
-    id: PaneId,
-    text: String,
-    answering: bool,
-    stall: Duration,
-    by: Option<String>,
-) -> Result<PromptResult, String> {
-    use arugula_proto::{Attention, BlockType, WorkKind};
-    let info = pane_info(app, id).await.ok_or_else(|| format!("no pane %{id}"))?;
-    let block = match info.kind {
-        BlockType::Terminal => None,
-        BlockType::Agent => Some(app.mux.api(|r| Api::Block(id, r)).await.flatten().ok_or(format!("no block %{id}"))?),
-        k => return Err(format!("%{id} is a {k:?} block, not an agent")),
-    };
-    if block.is_none() && info.work != Some(WorkKind::Agent) {
-        let why = match &info.command {
-            Some(c) => format!("%{id} runs `{c}`, not an agent; nothing was typed"),
-            None => format!("%{id} is at its shell, with no agent running; nothing was typed"),
-        };
-        return Ok(PromptResult::Stalled { why, screen: screen(app, id).await });
-    }
-    // What it waits on: a terminal's question card, or an agent block's
-    // first question not yet opened (as `wait` finds it).
-    let question = |info: &arugula_proto::PaneInfo| {
-        let ask = info.ask.clone().or_else(|| {
-            let s = block.as_ref()?.state();
-            let a = s["asks"].as_array()?.iter().find(|a| a["accepted"] != true)?.clone();
-            serde_json::from_value::<arugula_proto::ask::Ask>(a).ok()
-        });
-        (info.reason.as_ref().map(|r| r.headline.clone()), ask.map(Box::new))
-    };
-    if info.attention == Attention::NeedsInput && !answering {
-        let (question, ask) = question(&info);
-        return Ok(PromptResult::Blocked { question, ask });
-    }
-    // Listen first, then type.
-    let mut events = app.mux.events();
-    // Typing alone makes a terminal pane "working" (someone's busy in
-    // it), so where its agent's screen can be read, that says when the
-    // agent starts instead.
-    let reads_screen = block.is_none() && screen_state(app, id).await.is_some();
-    let started_now = async |attention: Attention| {
-        if reads_screen {
-            matches!(screen_state(app, id).await.flatten(), Some("working" | "blocked"))
-        } else {
-            attention == Attention::Working
-        }
-    };
-    let mut started = started_now(info.attention).await;
-    match &block {
-        Some(b) => {
-            b.call_by("send", serde_json::json!({ "text": text }), by.as_deref()).await?;
-        }
-        None => {
-            let p = pane(app, id).await.map_err(|e| e.1)?;
-            p.mark_input();
-            let input = |data: Vec<u8>| match &by {
-                Some(by) => Cmd::Api(Api::InputBy(id, data, by.clone())),
-                None => Cmd::Input { client: None, pane: id, data },
-            };
-            app.mux.send(input(text.into_bytes()));
-            // Enter on its own: in the same read as the text, an agent can
-            // take it for part of a paste and not submit.
-            tokio::time::sleep(Duration::from_millis(150)).await;
-            app.mux.send(input(b"\r".to_vec()));
-        }
-    }
-    let stall_at = tokio::time::Instant::now() + stall;
-    let mut attention = info.attention;
-    loop {
-        let next = if started {
-            Some(events.recv().await)
-        } else {
-            if tokio::time::Instant::now() >= stall_at {
-                let why = format!("no sign of work within {}s of the prompt", stall.as_secs_f64());
-                return Ok(PromptResult::Stalled { why, screen: screen(app, id).await });
-            }
-            // Look at its screen again now and then: it can start working
-            // with its attention already "working" from the typing.
-            tokio::time::timeout(Duration::from_millis(100), events.recv()).await.ok()
-        };
-        let state = match next {
-            None => attention,
-            Some(Ok(e)) if e.pane != Some(id) => continue,
-            Some(Ok(e)) => match e.kind {
-                EventKind::Attention { state, .. } => state,
-                EventKind::Closed => return Err(format!("%{id} closed")),
-                EventKind::Exit { .. } if !started => {
-                    let why = "its program exited".to_owned();
-                    return Ok(PromptResult::Stalled { why, screen: screen(app, id).await });
-                }
-                _ => continue,
-            },
-            // Missed some: where it is now.
-            Some(Err(tokio::sync::broadcast::error::RecvError::Lagged(_))) => {
-                pane_info(app, id).await.ok_or_else(|| format!("%{id} closed"))?.attention
-            }
-            Some(Err(_)) => return Err("the daemon is shutting down".into()),
-        };
-        attention = state;
-        if state == Attention::NeedsInput {
-            let info = pane_info(app, id).await.ok_or_else(|| format!("%{id} closed"))?;
-            let (question, ask) = question(&info);
-            return Ok(PromptResult::NeedsInput { question, ask });
-        }
-        if !started {
-            started = started_now(state).await;
-        } else if matches!(state, Attention::Idle | Attention::Done) {
-            return Ok(PromptResult::Done);
-        }
-    }
-}
-
-/// What a terminal pane's agent screen was last read as (`working`,
-/// `blocked`, `idle`; `Some(None)` before its first reading), or `None`
-/// when no agent's screen is read there.
-async fn screen_state(app: &App, id: PaneId) -> Option<Option<&'static str>> {
-    let p = pane(app, id).await.ok()?;
-    tokio::task::spawn_blocking(move || p.detection()).await.ok().flatten().filter(|d| !d.unread).map(|d| d.shown)
-}
-
-async fn pane_info(app: &App, id: PaneId) -> Option<arugula_proto::PaneInfo> {
-    app.mux.api(Api::Panes).await.unwrap_or_default().into_iter().find(|p| p.info.id == id).map(|p| p.info)
-}
-
-/// The last lines of a pane's screen, for a caller to see why.
-async fn screen(app: &App, id: PaneId) -> String {
-    let Ok(p) = pane(app, id).await else {
-        return match app.mux.api(|r| Api::Block(id, r)).await.flatten() {
-            Some(b) => {
-                b.text().lines().rev().take(15).collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>().join("\n")
-            }
-            None => String::new(),
-        };
-    };
-    let text = tokio::task::spawn_blocking(move || p.capture(CaptureFormat::Text, CaptureScope::Screen))
-        .await
-        .ok()
-        .flatten()
-        .unwrap_or_default();
-    let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
-    lines[lines.len().saturating_sub(15)..].join("\n")
 }
 
 /// Every pane that wants you, and why (M24): what `arugula attention`
@@ -591,176 +413,9 @@ async fn act_one(
     }
 }
 
-/// Withdraws a terminal's question if whoever asked it goes away first.
-struct AskGuard {
-    mux: MuxHandle,
-    pane: PaneId,
-    token: u64,
-    armed: bool,
-}
-
-impl Drop for AskGuard {
-    fn drop(&mut self) {
-        if self.armed {
-            self.mux.send(Cmd::Api(Api::AskWithdraw(self.pane, None, Some(self.token))));
-        }
-    }
-}
-
-/// `arugula ask`: show AskUserQuestion's questions beside a terminal and
-/// wait for the answer. Answers `{action: accept, content, output, by}`
-/// (the hook's output for Claude Code, and who answered), `{action:
-/// decline, output, by}`, `{action: terminal}` (answer in the terminal) or
-/// `{action: withdrawn}`. A browser or app block takes questions too
-/// (M35), from whatever follows a page's agent: `source` and `agent` say
-/// who asks.
-async fn ask(State(app): AppState, Path(id): Path<PaneId>, Json(req): Json<AskRequest>) -> Res<Json<AskAnswer>> {
-    use arugula_proto::ask::{self, Ask, AskKind};
-    if is_invite(&app, id).await {
-        return Err(not_on_invites());
-    }
-    let questions = req.questions.as_array().filter(|q| !q.is_empty()).ok_or_else(|| bad("no questions"))?;
-    let message = match questions.as_slice() {
-        [q] => q["question"].as_str().unwrap_or_default().to_owned(),
-        _ => "Please answer the following questions.".to_owned(),
-    };
-    let a = Ask {
-        id: req.id.clone().unwrap_or_else(|| format!("q{}", now_ms())),
-        kind: AskKind::Questions,
-        message,
-        questions: Some(req.questions.clone()),
-        schema: None,
-        url: None,
-        accepted: false,
-        tool_call_id: req.id,
-        source: req.source.filter(|s| !s.trim().is_empty()).unwrap_or_else(|| "hook".into()),
-        agent: req.agent.filter(|s| !s.trim().is_empty()),
-        at_ms: now_ms(),
-        tool: None,
-        input: None,
-        suggestions: None,
-        session: None,
-    };
-    let (token, rx) = match app.mux.api(|r| Api::Ask(id, Box::new(a), r)).await {
-        Some(Ok(r)) => r,
-        Some(Err(e)) => return Err(ApiError(StatusCode::NOT_FOUND, e)),
-        None => return Err(ApiError(StatusCode::SERVICE_UNAVAILABLE, "daemon is shutting down".into())),
-    };
-    let mut guard = AskGuard { mux: app.mux.clone(), pane: id, token, armed: true };
-    let reply = rx.await;
-    guard.armed = false;
-    Ok(Json(match reply {
-        Ok((AskReply::Answer(content), by)) => {
-            let output = ask::hook_output(&req.questions, &content);
-            AskAnswer::Accept { content, output, by }
-        }
-        Ok((AskReply::Decline, by)) => AskAnswer::Decline { output: ask::hook_declined(), by },
-        Ok((AskReply::Terminal, _)) => AskAnswer::Terminal,
-        // A question is never allowed or denied (the mux refuses that).
-        Ok((AskReply::Withdrawn | AskReply::Allow { .. } | AskReply::Deny { .. }, _)) => AskAnswer::Withdrawn,
-        // The daemon is going away; the asker asks the next one.
-        Err(_) => return Err(ApiError(StatusCode::SERVICE_UNAVAILABLE, "daemon is shutting down".into())),
-    }))
-}
-
-/// `arugula hook` on Claude Code's `PermissionRequest` (M29): a card
-/// with the tool, its input and Claude's suggestions, beside the terminal,
-/// until someone answers it or the terminal does. Answers `{action: allow
-/// | deny, output}` (the hook's output) or `{action: withdrawn}`.
-async fn permit(
-    State(app): AppState,
-    Path(id): Path<PaneId>,
-    Json(hook): Json<PermitRequest>,
-) -> Res<Json<PermitAnswer>> {
-    use arugula_proto::ask::{self, Ask, AskKind};
-    if is_invite(&app, id).await {
-        return Err(not_on_invites());
-    }
-    let tool = hook.tool_name.ok_or_else(|| bad("no tool_name"))?;
-    let input = hook.tool_input;
-    let session = format!("{}/{}", hook.session_id.as_deref().unwrap_or(""), hook.agent_id.as_deref().unwrap_or(""));
-    let a = Ask {
-        id: format!("p{}", now_ms()),
-        kind: AskKind::Permission,
-        message: ask::permission_message(&tool, &input),
-        questions: None,
-        schema: None,
-        url: None,
-        accepted: false,
-        tool_call_id: None,
-        source: "hook".into(),
-        agent: None,
-        at_ms: now_ms(),
-        tool: Some(tool),
-        input: Some(input),
-        suggestions: hook.permission_suggestions.filter(|s| s.is_array()),
-        session: Some(session),
-    };
-    let (token, rx) = match app.mux.api(|r| Api::Ask(id, Box::new(a), r)).await {
-        Some(Ok(r)) => r,
-        Some(Err(e)) => return Err(ApiError(StatusCode::NOT_FOUND, e)),
-        None => return Err(ApiError(StatusCode::SERVICE_UNAVAILABLE, "daemon is shutting down".into())),
-    };
-    let mut guard = AskGuard { mux: app.mux.clone(), pane: id, token, armed: true };
-    let reply = rx.await;
-    guard.armed = false;
-    Ok(Json(match reply {
-        Ok((AskReply::Allow { always }, _)) => PermitAnswer::Allow { output: ask::permit_allow(always.as_ref()) },
-        Ok((AskReply::Deny { message }, _)) => PermitAnswer::Deny { output: ask::permit_deny(&message) },
-        Ok(_) => PermitAnswer::Withdrawn,
-        Err(_) => return Err(ApiError(StatusCode::SERVICE_UNAVAILABLE, "daemon is shutting down".into())),
-    }))
-}
-
 /// `arugula hook`: one of Claude Code's hook events (M29).
 async fn hook(State(app): AppState, Path(id): Path<PaneId>, Json(hook): Json<serde_json::Value>) -> Res<Json<Empty>> {
     app.mux.send(Cmd::Api(Api::Hook(id, hook)));
-    Ok(Json(Empty {}))
-}
-
-/// Drops a follow-up waiter if whoever waits goes away first.
-struct InboxGuard {
-    mux: MuxHandle,
-    pane: PaneId,
-    token: u64,
-}
-
-impl Drop for InboxGuard {
-    fn drop(&mut self) {
-        self.mux.send(Cmd::Api(Api::InboxGone(self.pane, self.token)));
-    }
-}
-
-/// `arugula inbox` (Claude Code's background `Stop` and `SessionStart`
-/// hook, M29): wait for a follow-up. `{action: follow_up, text, by}`, or
-/// `{action: replaced}` when a newer waiter took over.
-async fn inbox(
-    State(app): AppState,
-    Path(id): Path<PaneId>,
-    Json(hook): Json<serde_json::Value>,
-) -> Res<Json<InboxAnswer>> {
-    let (token, rx) = match app.mux.api(|r| Api::Inbox(id, hook, r)).await {
-        Some(Ok(r)) => r,
-        Some(Err(e)) => return Err(ApiError(StatusCode::NOT_FOUND, e)),
-        None => return Err(ApiError(StatusCode::SERVICE_UNAVAILABLE, "daemon is shutting down".into())),
-    };
-    let _guard = InboxGuard { mux: app.mux.clone(), pane: id, token };
-    Ok(Json(match rx.await {
-        Ok(InboxReply::FollowUp { text, by }) => InboxAnswer::FollowUp { text, by },
-        Ok(InboxReply::Replaced) => InboxAnswer::Replaced,
-        Err(_) => return Err(ApiError(StatusCode::SERVICE_UNAVAILABLE, "daemon is shutting down".into())),
-    }))
-}
-
-async fn ask_withdraw(
-    State(app): AppState,
-    Path(id): Path<PaneId>,
-    Json(req): Json<WithdrawRequest>,
-) -> Res<Json<Empty>> {
-    if is_invite(&app, id).await {
-        return Err(not_on_invites());
-    }
-    app.mux.send(Cmd::Api(Api::AskWithdraw(id, req.id, None)));
     Ok(Json(Empty {}))
 }
 
@@ -897,7 +552,7 @@ pub(crate) async fn is_invite(app: &App, id: PaneId) -> bool {
     app.mux.api(|r| Api::Block(id, r)).await.flatten().is_some_and(|b| b.kind() == arugula_proto::BlockType::Invite)
 }
 
-fn not_on_invites() -> ApiError {
+pub(crate) fn not_on_invites() -> ApiError {
     ApiError(StatusCode::FORBIDDEN, "an invite block shows only its own cards".into())
 }
 

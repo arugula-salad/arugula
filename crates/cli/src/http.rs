@@ -692,6 +692,29 @@ mod tests {
         assert_eq!(keys.to_string(), r#"{"keys":["C-c","Up"]}"#);
     }
 
+    /// The long waits' routes and bodies as the commands wrote them by hand
+    /// before they were operations (#576): the same paths, and the same JSON.
+    #[test]
+    fn a_long_wait_goes_out_as_it_was_written_by_hand() {
+        use arugula_proto::{
+            api::{PromptRequest, WithdrawRequest},
+            op::{Op, ops::*},
+        };
+        let pane = 7;
+        assert_eq!(PanePrompt::path(&pane), "/api/panes/7/prompt");
+        assert_eq!(PaneAsk::path(&pane), "/api/panes/7/ask");
+        assert_eq!(PaneAskWithdraw::path(&pane), "/api/panes/7/ask/withdraw");
+        assert_eq!(PanePermit::path(&pane), "/api/panes/7/permit");
+        assert_eq!(PaneInbox::path(&pane), "/api/panes/7/inbox");
+        let prompt = PromptRequest { text: "go".into(), answering: true, stall: None, timeout: Some(30.0) };
+        assert_eq!(
+            serde_json::to_value(prompt).unwrap().to_string(),
+            r#"{"answering":true,"stall":null,"text":"go","timeout":30.0}"#
+        );
+        let withdraw = serde_json::to_value(WithdrawRequest { id: Some("q1".into()) }).unwrap();
+        assert_eq!(withdraw.to_string(), r#"{"id":"q1"}"#);
+    }
+
     /// The settings routes' paths and bodies as the commands wrote them by
     /// hand before they were operations (#575).
     #[test]

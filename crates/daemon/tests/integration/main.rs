@@ -77,6 +77,7 @@ mod upgrade;
 mod vm_layout;
 #[cfg(feature = "labs")]
 mod vm_reboot;
+mod waits;
 mod windows;
 #[cfg(feature = "labs")]
 mod workspace;

@@ -66,10 +66,7 @@ fn policy(method: &Method, path: &str) -> Policy {
         ["api", "blocks", id] if get => pane(id).map_or(Policy::Owner, |p| Policy::On(p, Role::Viewer)),
         // M28: the handlers check each editor, and the pane mentioned to.
         ["api", "editors"] if get => Policy::Handler,
-        ["api", "panes", id, "prompt" | "ask" | "cd" | "permit" | "hook" | "inbox" | "upload" | "paste"] if !get => {
-            pane(id).map_or(Policy::Owner, |p| Policy::On(p, Role::Editor))
-        }
-        ["api", "panes", id, "ask", "withdraw"] if !get => {
+        ["api", "panes", id, "cd" | "hook" | "upload" | "paste"] if !get => {
             pane(id).map_or(Policy::Owner, |p| Policy::On(p, Role::Editor))
         }
         // M35: a way into a studio box is the owner's (it signs in as them).

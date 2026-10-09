@@ -24,12 +24,15 @@ use std::{
     time::{Duration, Instant},
 };
 
-use arugula_proto::api::{AskAnswer, AskRequest, WithdrawRequest};
+use arugula_proto::{
+    api::{AskAnswer, AskRequest, WithdrawRequest},
+    op::ops::{PaneAsk, PaneAskWithdraw},
+};
 #[cfg(unix)]
 use nix::sys::signal::{SigSet, Signal};
 use serde_json::Value;
 
-use crate::http::{Target, request_as};
+use crate::http::{Target, send_op};
 
 /// How long to keep asking a daemon that doesn't answer before leaving the
 /// question to the terminal.
@@ -66,7 +69,7 @@ fn wait_for_answer(sock: &Target, pane: u32, questions: &Value, id: Option<Strin
     let body = AskRequest { questions: questions.clone(), id, source: None, agent: None };
     let mut failing_since: Option<Instant> = None;
     loop {
-        let answer = request_as(sock, "POST", &format!("/api/panes/{pane}/ask"), &body);
+        let answer = send_op::<PaneAsk>(sock, &pane, &body);
         match answer {
             Ok(res) if res.status == 503 => {}
             Ok(res) => {
@@ -102,7 +105,7 @@ pub fn withdraw_on_signals(sock: Target, pane: u32, id: Option<String>) {
     }
     std::thread::spawn(move || {
         if set.wait().is_ok() {
-            let _ = request_as(&sock, "POST", &format!("/api/panes/{pane}/ask/withdraw"), &WithdrawRequest { id });
+            let _ = send_op::<PaneAskWithdraw>(&sock, &pane, &WithdrawRequest { id });
             std::process::exit(0);
         }
     });
@@ -121,12 +124,7 @@ pub fn withdraw_on_signals(sock: Target, pane: u32, id: Option<String>) {
     }
     unsafe extern "system" fn on_ctrl(_event: u32) -> windows_sys::core::BOOL {
         if let Some((sock, pane, id)) = CARD.get() {
-            let _ = request_as(
-                sock,
-                "POST",
-                &format!("/api/panes/{pane}/ask/withdraw"),
-                &WithdrawRequest { id: id.clone() },
-            );
+            let _ = send_op::<PaneAskWithdraw>(sock, pane, &WithdrawRequest { id: id.clone() });
         }
         std::process::exit(0);
     }

@@ -16,10 +16,12 @@ mod input;
 mod inspect;
 mod notify;
 mod panes;
+pub(crate) mod prompt;
 mod rules;
 mod settings;
 mod shell_env;
 mod wait;
+mod waits;
 
 use std::sync::Arc;
 
@@ -57,6 +59,11 @@ macro_rules! every_op {
         $m!(arugula_proto::op::ops::PaneMouse);
         $m!(arugula_proto::op::ops::PaneAttention);
         $m!(arugula_proto::op::ops::PaneFollowUp);
+        $m!(arugula_proto::op::ops::PanePrompt);
+        $m!(arugula_proto::op::ops::PaneAsk);
+        $m!(arugula_proto::op::ops::PaneAskWithdraw);
+        $m!(arugula_proto::op::ops::PanePermit);
+        $m!(arugula_proto::op::ops::PaneInbox);
         $m!(arugula_proto::op::ops::PaneProcess);
         $m!(arugula_proto::op::ops::PaneDetection);
         $m!(arugula_proto::op::ops::PaneDiffOf);
@@ -394,11 +401,6 @@ const HAND_WRITTEN: &[(&str, &str)] = &[
     ("/api/panes/{id}/paste", "types a path into the pane (drives: DRIVES_HAND_WRITTEN)"),
     // Block calls: the arguments depend on the block's type and method (#459).
     ("/api/blocks/{id}/call/{method}", "block calls, decided per method"),
-    ("/api/panes/{id}/prompt", "waits on the agent, #576"),
-    ("/api/panes/{id}/ask", "long wait, #576"),
-    ("/api/panes/{id}/ask/withdraw", "long wait, #576"),
-    ("/api/panes/{id}/permit", "long wait, #576"),
-    ("/api/panes/{id}/inbox", "long wait, #576"),
     ("/api/panes/{id}/hook", "hook input, not yet converted"),
     ("/api/panes/{id}/share-machine", "not yet converted, #575"),
     // Other path types and GET queries (#573).

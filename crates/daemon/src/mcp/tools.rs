@@ -32,6 +32,7 @@ use super::{
 use crate::{
     history::{self, Filter},
     mux::Api,
+    ops::{Cx, Handle, Via},
     osc::strip,
     pane::{CaptureFormat, CaptureScope},
     server::App,
@@ -1551,7 +1552,7 @@ impl<'a> Call<'a> {
         self.app
     }
 
-    fn by(&self) -> String {
+    pub(crate) fn by(&self) -> String {
         format!("mcp:{}", self.client)
     }
 
@@ -3534,18 +3535,27 @@ impl Call<'_> {
     }
 
     async fn prompt_agent(&self, a: PromptArgs) -> Out {
-        use arugula_proto::api::PromptResult;
+        use arugula_proto::{
+            api::{PromptRequest, PromptResult},
+            op::ops::PanePrompt,
+        };
         let pane = a.pane.id()?;
         self.drivable(pane).await?;
         let limit = Self::limit(a.timeout);
-        let app = self.app.clone();
-        let by = self.by();
-        let fut = async move { crate::api::prompt(&app, pane, a.text, a.answering, crate::api::STALL, Some(by)).await };
+        let cx = Cx { app: self.app, via: Via::Mcp(self) };
+        let req =
+            PromptRequest { text: a.text, answering: a.answering, stall: None, timeout: Some(limit.as_secs_f64()) };
+        let fut = PanePrompt::handle(&cx, pane, req);
         let r = self.waiting(&format!("waiting for %{pane}'s turn"), limit, fut).await;
+        // The handler has its own deadline, the same `limit`: whichever
+        // fires first, the answer at the limit is the same.
         let r = match r {
-            Some(r) => r?,
+            Some(r) => r.map_err(|e| e.http().1)?,
             None => return self.not_yet(pane, limit, Some("end of its turn")).await,
         };
+        if r == PromptResult::StillRunning {
+            return self.not_yet(pane, limit, Some("end of its turn")).await;
+        }
         let summary = match &r {
             PromptResult::Done => {
                 format!("%{pane} finished its turn; read_output (screen: true for what it shows) for what it said")

@@ -612,7 +612,7 @@ async fn turn(app: Arc<App>, t: String, text: String, answering: bool) {
     // The receiver's permission cards say whose task they're for.
     let by = Some(format!("{}'s A2A task {t}", task.caller.name));
     // The recipe's worn first: that can take a while.
-    match crate::api::prompt(&app, block, text, answering, Duration::from_secs(300), by).await {
+    match crate::ops::prompt::prompt(&app, block, text, answering, Duration::from_secs(300), by).await {
         Ok(PromptResult::Stalled { why, .. }) => return fail(&t, why),
         Err(e) => return fail(&t, e),
         Ok(_) => {}

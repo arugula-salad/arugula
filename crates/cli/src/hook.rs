@@ -30,9 +30,12 @@ use std::{
 
 use serde_json::Value;
 
-use arugula_proto::api::{InboxAnswer, PermitAnswer};
+use arugula_proto::{
+    api::{InboxAnswer, PermitAnswer},
+    op::ops::{PaneInbox, PanePermit},
+};
 
-use crate::http::{Target, request};
+use crate::http::{Target, request, request_op, send_op};
 
 /// How long to keep asking a daemon that doesn't answer before leaving the
 /// permission to the terminal.
@@ -59,7 +62,7 @@ pub fn run(sock: Target) -> i32 {
     crate::ask::withdraw_on_signals(sock.clone(), pane, None);
     let mut failing_since: Option<Instant> = None;
     loop {
-        match request(&sock, "POST", &format!("/api/panes/{pane}/permit"), Some(&hook)) {
+        match request_op::<PanePermit>(&sock, &pane, &hook) {
             Ok(res) if res.status == 503 => {}
             Ok(res) => {
                 let Ok(answer) = res.parse::<PermitAnswer>() else { return 0 };
@@ -91,7 +94,7 @@ pub fn inbox(sock: Target) -> i32 {
         return 0;
     }
     loop {
-        match request(&sock, "POST", &format!("/api/panes/{pane}/inbox"), Some(&hook)) {
+        match send_op::<PaneInbox>(&sock, &pane, &hook) {
             Ok(res) if res.status == 503 => {}
             Ok(res) if res.status >= 400 => return 0,
             Ok(res) => {

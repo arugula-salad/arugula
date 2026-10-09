@@ -1,11 +1,11 @@
 //! `arugula send`: type text into a pane, or prompt the agent there and wait.
 
 use super::Ctx;
-use crate::http::{call, request_as};
+use crate::http::{call, send_op};
 use crate::util::Pane;
 use arugula_proto::{
     api::{PromptRequest, PromptResult, SendRequest},
-    op::ops::PaneSend,
+    op::ops::{PanePrompt, PaneSend},
 };
 use std::io::Read;
 
@@ -56,7 +56,7 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
     }
     if wait {
         let body = PromptRequest { text, answering, stall: None, timeout };
-        let r: PromptResult = request_as(&sock, "POST", &format!("/api/panes/{}/prompt", pane.0), &body)?.parse()?;
+        let r: PromptResult = send_op::<PanePrompt>(&sock, &pane.0, &body)?.parse()?;
         let (line, code) = prompted(pane.0, &r);
         println!("{line}");
         return Ok(code);
