@@ -613,8 +613,8 @@ people's agents. With `agents` on (M76, #398):
   the task left out. It also says when your checkout lacks the commit the
   task started from.
 - **Or a pull request:** `delegate {kind: send, pr: true}` (or `agents send
-  --pr`) is for work on the agent's own project, not yours ("have
-  fountain-hand fix the bug I found in Fountain"). The task's worktree is a
+  --pr`) is for work on the agent's own project, not yours (fixing a bug
+  you found in its code). The task's worktree is a
   new branch, `a2a/AGENT-TASK`, off its origin's default branch as just
   fetched, and the agent is told, after its own prompt, to commit there,
   push, and open a pull request with the project's own tooling, without

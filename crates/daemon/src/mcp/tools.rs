@@ -707,8 +707,8 @@ pub struct DelegateArgs {
     /// The agent, by name.
     pub agent: String,
     /// send: deliver the work as a pull request in the agent's own project,
-    /// which it opens there (not as a patch for you to apply). For work on
-    /// someone else's code: "have fountain-hand fix the bug I found".
+    /// which it opens there (not as a patch for you to apply): for a fix
+    /// in its project's code, not yours.
     #[serde(default)]
     pub pr: bool,
     /// send: the task; answer: the answer to the question it asked.

@@ -54,8 +54,10 @@ enum Cmd {
         #[arg(long)]
         pr: bool,
     },
-    /// Run an offered agent to talk to, wherever it's offered: in its
-    /// project, on its machine (one of yours), in a session named after it.
+    /// Run an offered agent to talk to, wherever it's offered.
+    ///
+    /// It starts in its project, on its machine (one of yours), in a
+    /// session named after it.
     Run {
         agent: String,
         /// The machine [default: whichever offers it, this one first].
