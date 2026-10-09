@@ -88,7 +88,7 @@ rest. A starting daemon moves the old file into `flags.json` and removes it.
   (`web/src/swarm/view.tsx`).
 - **Machines (VMs).** A *machine* (`--machine mN`, `mN:PATH`, `--machine
   local`, MCP `run`'s `machine`) is a VM or sandbox from the provider
-  (`crates/daemon/src/labs/machine.rs`). Examples that use them: `arugula open
+  (`crates/mux/src/labs/machine.rs`). Examples that use them: `arugula open
   --machine m2 :3000`, `arugula edit --machine m2 ~/app`, `arugula view
   m2:src/main.rs`, `arugula fs cat m2:~/log.txt`, `arugula agent --machine
   m3 …`, and `arugula --host s1 ls` for a sandbox with a resident daemon

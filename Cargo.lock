@@ -271,16 +271,24 @@ dependencies = [
 name = "arugula-mux"
 version = "0.30.2"
 dependencies = [
+ "anyhow",
  "arugula-core",
+ "arugula-e2e",
  "arugula-proto",
+ "arugula-vt",
+ "base64 0.23.1",
+ "crossbeam-channel",
+ "futures-util",
  "hex",
  "nix",
  "regex",
  "serde",
  "serde_json",
  "sha2 0.11.0",
+ "tokio",
  "tracing",
  "windows-sys 0.60.2",
+ "zstd",
 ]
 
 [[package]]

@@ -447,6 +447,8 @@ mod tests {
         let ans = Event::Command { at_ms: 5, text: None, cwd: None, by: None, kind: HistoryKind::Answer };
         assert!(serde_json::to_string(&ans).unwrap().contains(r#""kind":"answer""#));
         assert_eq!(HistoryKind::parse("answer"), Some(HistoryKind::Answer));
+        assert_eq!(HistoryKind::parse("action"), Some(HistoryKind::Action));
+        assert_eq!(serde_json::to_value(HistoryKind::Action).unwrap(), "action");
         assert_eq!(HistoryKind::parse("nope"), None);
     }
 }

@@ -6,21 +6,34 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+anyhow = { workspace = true }
 arugula-core = { workspace = true }
+arugula-e2e = { workspace = true }
 arugula-proto = { workspace = true }
+arugula-vt = { workspace = true }
+base64 = { workspace = true }
+crossbeam-channel = "0.5.17"
+futures-util = { workspace = true }
 hex = { workspace = true }
 regex = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
 tracing = { workspace = true }
+zstd = { workspace = true }
 
 # ptys, signals, sockets: Unix only. Windows gets ConPTY (M56).
 [target.'cfg(unix)'.dependencies]
 nix = { workspace = true, features = ["term", "process", "fs", "ioctl", "signal", "poll", "socket", "uio", "hostname", "user", "dir"] }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { workspace = true, features = ["Wdk_System_Threading", "Win32_Foundation", "Win32_Security", "Win32_System_Console", "Win32_System_Diagnostics_Debug", "Win32_System_Diagnostics_ToolHelp", "Win32_System_IO", "Win32_System_JobObjects", "Win32_System_LibraryLoader", "Win32_System_Pipes", "Win32_System_Threading", "Win32_UI_Shell"] }
+windows-sys = { workspace = true, features = ["Wdk_System_Threading", "Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_System_Diagnostics_Debug", "Win32_System_Diagnostics_ToolHelp", "Win32_System_IO", "Win32_System_JobObjects", "Win32_System_LibraryLoader", "Win32_System_Pipes", "Win32_System_Threading", "Win32_System_Time", "Win32_UI_Shell"] }
+
+[features]
+# Labs, for what runs inside the mux (see src/labs.rs); arugulad's `labs`
+# turns it on.
+labs = []
 
 [lints]
 workspace = true

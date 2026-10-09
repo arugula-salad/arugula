@@ -517,7 +517,7 @@
         "readOnlyHint": true,
         "title": "Command history and output"
       },
-      "description": "What happened across panes (open and recently closed), newest first: commands with exit codes, directories, when, and who ran them, and answers and approvals with who gave them. Each has a kind (command, answer or agent); filter by kind, failed (commands only), since/before (\"2d\", \"36h\"), cwd, a regex. kind output instead: lines of output across panes (and agents' transcripts) matching pattern, a regex, with the pane and command each came from (since and limit apply).",
+      "description": "What happened across panes (open and recently closed), newest first: commands with exit codes, directories, when, and who ran them, and answers and approvals with who gave them. Each has a kind (command, answer, agent or action: a forge action or an app prompt); filter by kind, failed (commands only), since/before (\"2d\", \"36h\"), cwd, a regex. kind output instead: lines of output across panes (and agents' transcripts) matching pattern, a regex, with the pane and command each came from (since and limit apply).",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -2229,7 +2229,7 @@
         "readOnlyHint": true,
         "title": "Command history and output"
       },
-      "description": "What happened across panes (open and recently closed), newest first: commands with exit codes, directories, when, and who ran them, and answers and approvals with who gave them. Each has a kind (command, answer or agent); filter by kind, failed (commands only), since/before (\"2d\", \"36h\"), cwd, a regex. kind output instead: lines of output across panes (and agents' transcripts) matching pattern, a regex, with the pane and command each came from (since and limit apply).",
+      "description": "What happened across panes (open and recently closed), newest first: commands with exit codes, directories, when, and who ran them, and answers and approvals with who gave them. Each has a kind (command, answer, agent or action: a forge action or an app prompt); filter by kind, failed (commands only), since/before (\"2d\", \"36h\"), cwd, a regex. kind output instead: lines of output across panes (and agents' transcripts) matching pattern, a regex, with the pane and command each came from (since and limit apply).",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -3786,7 +3786,7 @@
         "readOnlyHint": true,
         "title": "Command history and output"
       },
-      "description": "What happened across panes (open and recently closed), newest first: commands with exit codes, directories, when, and who ran them, and answers and approvals with who gave them. Each has a kind (command, answer or agent); filter by kind, failed (commands only), since/before (\"2d\", \"36h\"), cwd, a regex. kind output instead: lines of output across panes (and agents' transcripts) matching pattern, a regex, with the pane and command each came from (since and limit apply).",
+      "description": "What happened across panes (open and recently closed), newest first: commands with exit codes, directories, when, and who ran them, and answers and approvals with who gave them. Each has a kind (command, answer, agent or action: a forge action or an app prompt); filter by kind, failed (commands only), since/before (\"2d\", \"36h\"), cwd, a regex. kind output instead: lines of output across panes (and agents' transcripts) matching pattern, a regex, with the pane and command each came from (since and limit apply).",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -5498,7 +5498,7 @@
         "readOnlyHint": true,
         "title": "Command history and output"
       },
-      "description": "What happened across panes (open and recently closed), newest first: commands with exit codes, directories, when, and who ran them, and answers and approvals with who gave them. Each has a kind (command, answer or agent); filter by kind, failed (commands only), since/before (\"2d\", \"36h\"), cwd, a regex. kind output instead: lines of output across panes (and agents' transcripts) matching pattern, a regex, with the pane and command each came from (since and limit apply).",
+      "description": "What happened across panes (open and recently closed), newest first: commands with exit codes, directories, when, and who ran them, and answers and approvals with who gave them. Each has a kind (command, answer, agent or action: a forge action or an app prompt); filter by kind, failed (commands only), since/before (\"2d\", \"36h\"), cwd, a regex. kind output instead: lines of output across panes (and agents' transcripts) matching pattern, a regex, with the pane and command each came from (since and limit apply).",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -6770,7 +6770,7 @@
         "readOnlyHint": true,
         "title": "Command history and output"
       },
-      "description": "What happened across panes (open and recently closed), newest first: commands with exit codes, directories, when, and who ran them, and answers and approvals with who gave them. Each has a kind (command, answer or agent); filter by kind, failed (commands only), since/before (\"2d\", \"36h\"), cwd, a regex. kind output instead: lines of output across panes (and agents' transcripts) matching pattern, a regex, with the pane and command each came from (since and limit apply).",
+      "description": "What happened across panes (open and recently closed), newest first: commands with exit codes, directories, when, and who ran them, and answers and approvals with who gave them. Each has a kind (command, answer, agent or action: a forge action or an app prompt); filter by kind, failed (commands only), since/before (\"2d\", \"36h\"), cwd, a regex. kind output instead: lines of output across panes (and agents' transcripts) matching pattern, a regex, with the pane and command each came from (since and limit apply).",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -7363,7 +7363,7 @@
         "readOnlyHint": true,
         "title": "Command history and output"
       },
-      "description": "What happened across panes (open and recently closed), newest first: commands with exit codes, directories, when, and who ran them, and answers and approvals with who gave them. Each has a kind (command, answer or agent); filter by kind, failed (commands only), since/before (\"2d\", \"36h\"), cwd, a regex. kind output instead: lines of output across panes (and agents' transcripts) matching pattern, a regex, with the pane and command each came from (since and limit apply).",
+      "description": "What happened across panes (open and recently closed), newest first: commands with exit codes, directories, when, and who ran them, and answers and approvals with who gave them. Each has a kind (command, answer, agent or action: a forge action or an app prompt); filter by kind, failed (commands only), since/before (\"2d\", \"36h\"), cwd, a regex. kind output instead: lines of output across panes (and agents' transcripts) matching pattern, a regex, with the pane and command each came from (since and limit apply).",
       "inputSchema": {
         "$defs": {
           "PaneArg": {

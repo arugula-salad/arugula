@@ -265,7 +265,7 @@ impl AppBlock {
                     text: Some(format!("prompted {}: {text}", tab.title)),
                     cwd: None,
                     by: by.clone(),
-                    kind: HistoryKind::Command,
+                    kind: HistoryKind::Action,
                 },
             );
             let _ = l.record(

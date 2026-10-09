@@ -194,7 +194,7 @@ async fn tools_through_the_stdio_bridge() {
     let h = call(&s, "history", json!({ "kind": "command", "cwd": dir })).await;
     assert!(!h["commands"].as_array().unwrap().is_empty(), "{h}");
     let e = refused(&s, "history", json!({ "kind": "nope" })).await;
-    assert!(e.contains("command, answer or agent"), "{e}");
+    assert!(e.contains("command, answer, agent or action"), "{e}");
 
     // Paged output: a long command's, a page at a time, all of it.
     let r = call(&s, "run", json!({ "command": "seq 1 4000", "wait": true })).await;

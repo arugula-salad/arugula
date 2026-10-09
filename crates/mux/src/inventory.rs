@@ -290,7 +290,7 @@ fn executable(p: &Path) -> bool {
 mod tests {
     use super::*;
 
-    const RECORDED: &str = include_str!("../tests/fixtures/chant/audit-agents.json");
+    const RECORDED: &str = include_str!("../../daemon/tests/fixtures/chant/audit-agents.json");
 
     #[test]
     fn reads_chants_document() {
