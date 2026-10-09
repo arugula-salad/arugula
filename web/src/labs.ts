@@ -10,6 +10,7 @@
 export { activeHuddle } from "./call";
 export { HuddleBar, HuddleButton, huddleItems } from "./ui/huddle";
 export { ChatPage } from "./ui/chat";
+export { AgentsPage } from "./ui/agents-page";
 export { AppsLayer, pickApp } from "./ui/apps";
 export { SandboxesLayer, openSandboxes } from "./ui/sandboxes";
 export { agentsBlock } from "./blocks/agents";

@@ -5270,6 +5270,122 @@ button.diff-why-run {
   height: 26px;
 }
 
+/* #403: the Agents page, over everything like the chat page. */
+.agents-page .chat-bar {
+  display: flex;
+  gap: 10px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--divider);
+}
+
+.agents-tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.agents-tabs .on {
+  background: var(--raised-hover);
+}
+
+.agents-spacer {
+  flex: 1;
+}
+
+.agents-body {
+  flex: 1;
+  overflow: auto;
+  padding: 8px 16px 24px;
+}
+
+.agents-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 8px;
+}
+
+.agents-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 8px;
+  padding: 12px 14px;
+  max-width: 760px;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--divider);
+  text-align: left;
+}
+
+.agents-form > .dim {
+  margin: 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.agents-field {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 10px;
+  align-items: center;
+}
+
+.agents-field > span {
+  color: var(--dim);
+}
+
+.agents-field input,
+.agents-field select,
+.agents-field textarea {
+  font: inherit;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--divider);
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.agents-field textarea {
+  resize: vertical;
+  font-family: var(--mono, monospace);
+}
+
+.agents-prompt {
+  align-items: start;
+}
+
+.agents-prompt > span {
+  padding-top: 4px;
+}
+
+.agents-form .ws-actions {
+  justify-content: flex-start;
+  padding-left: 120px;
+}
+
+.agents-shelf-head .dim {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.phone .agents-field {
+  grid-template-columns: 1fr;
+  gap: 2px;
+}
+
+.phone .agents-form .ws-actions {
+  padding-left: 0;
+}
+
+.agents-recipe-list li code {
+  font-size: 11px;
+}
+
 /* M77: the agents block's machines, and the recipes to offer. */
 .agents-shelf-head {
   margin: 8px 8px 0;
