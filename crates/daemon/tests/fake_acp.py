@@ -33,6 +33,8 @@ Prompts:
                  would)
   retitle TEXT   a session_info_update naming the session TEXT, as Claude
                  Code does when it has titled the conversation, #629
+  stream N MS    N one-word chunks of a reply, MS milliseconds apart, as
+                 Claude Code streams, #713
   model          says the model set_config_option chose
   mode           says the permission mode session/set_mode chose (it knows
                  claude-agent-acp's: default, acceptEdits, plan, auto)
@@ -499,6 +501,11 @@ def prompt(mid, p):
         msg("SERVERS " + json.dumps(expand(s.get("mcp")), sort_keys=True))
     elif text.startswith("retitle "):
         update(sid, s, {"sessionUpdate": "session_info_update", "title": text[len("retitle "):]})
+    elif text.startswith("stream "):
+        _, count, gap = text.split()
+        for i in range(int(count)):
+            msg(f"w{i} ")
+            time.sleep(int(gap) / 1000)
     elif text == "model":
         msg(f"Model: {s.get('model', 'default')}")
     elif text == "mode":
