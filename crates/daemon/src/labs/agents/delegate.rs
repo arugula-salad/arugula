@@ -385,19 +385,22 @@ mod tests {
         )
         .unwrap();
 
+        // A file's text, its line endings as written (a Windows checkout's
+        // are CRLF).
+        let read = |p: PathBuf| std::fs::read_to_string(p).unwrap().replace("\r\n", "\n");
         // Review: the checkout is untouched; the worktree has it.
         let scratch = root.join("review");
         let (wt, r) = review(&state, &scratch, "t9", &repo).await.unwrap();
         assert!(r.clean, "{r:?}");
-        assert_eq!(std::fs::read_to_string(wt.join("calc.py")).unwrap(), "a = 1\nx\ny\nz\nb = 3\n");
-        assert_eq!(std::fs::read_to_string(repo.join("calc.py")).unwrap(), "a = 1\nx\ny\nz\nb = 2\n");
+        assert_eq!(read(wt.join("calc.py")), "a = 1\nx\ny\nz\nb = 3\n");
+        assert_eq!(read(repo.join("calc.py")), "a = 1\nx\ny\nz\nb = 2\n");
         // Apply, after a change of ours elsewhere in the file: three-way.
         std::fs::write(repo.join("calc.py"), "a = 10\nx\ny\nz\nb = 2\n").unwrap();
         g(&["commit", "-q", "-am", "ours"]).await;
         let a = apply(&state, &scratch, "t9", &repo).await.unwrap();
         assert!(a.clean, "{a:?}");
         assert_eq!(a.files, ["calc.py", "notes.txt"]);
-        assert_eq!(std::fs::read_to_string(repo.join("calc.py")).unwrap(), "a = 10\nx\ny\nz\nb = 3\n");
+        assert_eq!(read(repo.join("calc.py")), "a = 10\nx\ny\nz\nb = 3\n");
         assert!(repo.join("notes.txt").is_file());
         assert!(a.text("t9").contains("x.pyc"), "the left-out file is named");
         assert!(!wt.exists(), "the review worktree went");
