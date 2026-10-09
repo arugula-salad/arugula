@@ -194,6 +194,27 @@ fn config_keeps_rules_but_not_the_first_prompt() {
     );
 }
 
+/// #629: the person's title is in the saved config, and what the block
+/// shows is that title, else the session's, however the updates arrive.
+#[test]
+fn a_title_the_person_gave_is_saved_and_outranks_the_session_s() {
+    let cfg: Config = serde_json::from_value(json!({ "agent": "claude", "title": "Review lane" })).unwrap();
+    let saved = serde_json::to_value(&cfg).unwrap();
+    assert_eq!(saved, json!({ "agent": "claude", "title": "Review lane" }));
+    let back: Config = serde_json::from_value(saved).unwrap();
+    assert_eq!(back.title.as_deref(), Some("Review lane"));
+
+    let mut inner = Inner::new(back, None);
+    inner.rebuild_line(&frame(
+        "in",
+        json!({ "jsonrpc": "2.0", "method": "session/update", "params": { "sessionId": "s1", "update": { "sessionUpdate": "session_info_update", "title": "Fix the parser" } } }),
+    ));
+    assert_eq!(inner.title.as_deref(), Some("Fix the parser"));
+    assert_eq!(inner.shown_title().as_deref(), Some("Review lane"));
+    inner.cfg.title = None;
+    assert_eq!(inner.shown_title().as_deref(), Some("Fix the parser"));
+}
+
 #[test]
 fn a_real_node_from_mise_not_its_shims() {
     let root = std::env::temp_dir().join(format!("ilg-node-{}", std::process::id()));

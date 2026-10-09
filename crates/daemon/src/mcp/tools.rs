@@ -394,6 +394,9 @@ pub struct StartAgentArgs {
     /// A model to switch to (`haiku`, ...).
     #[serde(default)]
     pub model: Option<String>,
+    /// A short name for the block, shown instead of the agent's name.
+    #[serde(default)]
+    pub title: Option<String>,
     /// Where it works.
     #[serde(default)]
     pub cwd: Option<String>,
@@ -3407,6 +3410,9 @@ impl Call<'_> {
         }
         if let Some(m) = &a.model {
             config["model"] = json!(m);
+        }
+        if let Some(t) = a.title.as_ref().filter(|t| !t.trim().is_empty()) {
+            config["title"] = json!(t.trim());
         }
         if let Some(c) = &a.cwd {
             config["cwd"] = json!(c);

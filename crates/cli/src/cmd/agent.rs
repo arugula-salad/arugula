@@ -45,6 +45,9 @@ pub struct Args {
     /// A model to switch to (e.g. `haiku`).
     #[arg(long)]
     model: Option<String>,
+    /// A short name for the block, shown instead of the agent's name.
+    #[arg(long)]
+    title: Option<String>,
     /// An MCP server for the session, `NAME=COMMAND LINE` (stdio; may be
     /// repeated). Its forms and sign-in links show as cards.
     #[arg(long = "mcp", value_name = "NAME=COMMAND")]
@@ -148,6 +151,7 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
             codex,
             vault,
             model,
+            title,
             mcp,
             allow,
             permission_mode,
@@ -187,6 +191,7 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
                 config["claude_config_dir"] = json!(dir.map(|d| absolute(&d)).transpose()?.unwrap_or_default());
             }
             config["model"] = json!(model);
+            config["title"] = json!(title);
             if !mcp.is_empty() {
                 config["mcp_servers"] = json!(mcp);
             }

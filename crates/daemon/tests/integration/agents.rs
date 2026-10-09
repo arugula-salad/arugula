@@ -173,6 +173,44 @@ fn a_block_starts_with_the_rules_and_mode_it_was_given() {
 }
 
 #[test]
+fn a_title_the_person_gave_outranks_the_session_s_and_can_be_cleared() {
+    // #629: the adapter titles its session at any time; the person's name
+    // for the block stays, and `set_title` changes or clears it.
+    let d = Daemon::child();
+    let config = json!({
+        "agent": "acp", "command": ["python3", fake()], "cwd": d.sessions, "prompt": "hello", "title": "Review lane",
+    });
+    let id = d.open_with(json!({ "type": "agent", "config": config }));
+    assert_eq!(d.wait(id, "idle"), "done");
+    assert_eq!(d.state(id)["title"], "Review lane");
+
+    // The adapter's update comes after: it doesn't replace it.
+    d.call(id, "send", json!({ "text": "retitle Fix the parser" }));
+    assert_eq!(d.wait(id, "idle"), "done");
+    assert_eq!(d.state(id)["title"], "Review lane");
+    let panes = d.get("/api/panes");
+    let card = panes.as_array().unwrap().iter().find(|p| p["id"] == id).unwrap().clone();
+    assert_eq!(card["title"], "Review lane", "{card}");
+
+    // Renamed, then cleared: the session's title is back.
+    d.call(id, "set_title", json!({ "title": "Parser lane" }));
+    assert_eq!(d.state(id)["title"], "Parser lane");
+    d.call(id, "set_title", json!({ "title": "" }));
+    assert_eq!(d.state(id)["title"], "Fix the parser");
+    d.call(id, "set_title", json!({ "title": "Again" }));
+    d.call(id, "set_title", json!({ "title": null }));
+    assert_eq!(d.state(id)["title"], "Fix the parser");
+
+    // It's in the config the block is saved with, so a restart keeps it.
+    d.call(id, "set_title", json!({ "title": "Kept" }));
+    d.wait_for("the title saved in its config", || {
+        let saved: Value =
+            serde_json::from_str(&std::fs::read_to_string(d.state.join("layout.json")).unwrap()).unwrap();
+        saved["panes"][id.to_string()]["config"]["title"] == "Kept"
+    });
+}
+
+#[test]
 fn standing_rules_outlive_the_block_that_made_them() {
     // #166: "Always" for a directory or everywhere is the daemon's, not the
     // block's: the next block checks it, it survives a restart, and
@@ -488,6 +526,21 @@ fn cli_bin() -> std::path::PathBuf {
     let status = std::process::Command::new(env!("CARGO")).args(["build", "-q", "-p", "arugula"]).status().unwrap();
     assert!(status.success(), "building the CLI");
     bin
+}
+
+/// #629: `arugula agent --title` names the block.
+#[test]
+fn the_cli_names_the_block_it_starts() {
+    let d = Daemon::child();
+    let cmd = format!("python3 {}", fake());
+    let mut c = arugula_testkit::command(cli_bin());
+    c.arg("--socket").arg(d.sock()).args(["agent", "--acp", &cmd, "--title", "Parser lane", "--cwd"]).arg(&d.sessions);
+    c.arg("hello").env_remove("ARUGULA_PANE");
+    let out = c.output().unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let id = String::from_utf8_lossy(&out.stdout).trim().trim_start_matches('%').parse::<u64>().unwrap();
+    d.wait(id, "idle");
+    assert_eq!(d.state(id)["title"], "Parser lane");
 }
 
 /// What the fake adapter said `env NAME` was, on its last turn.

@@ -226,7 +226,7 @@ enum Command {
     ///
     /// Claude Code by default. Then: `wait %N --idle`, `tail %N`, `call %N
     /// approve`.
-    Agent(cmd::agent::Args),
+    Agent(Box<cmd::agent::Args>),
     /// Type text into a pane (`-` reads stdin).
     ///
     /// With `--wait`, it's a prompt for the agent there (Claude Code or Codex in
@@ -701,7 +701,7 @@ fn real_main(cli: Cli) -> anyhow::Result<i32> {
         Command::Fountain(args) => cmd::fountain::run(args, ctx),
         Command::Issue(args) => cmd::issue::run(args, ctx),
         Command::Rerun(args) => cmd::rerun::run(args, ctx),
-        Command::Agent(args) => cmd::agent::run(args, ctx),
+        Command::Agent(args) => cmd::agent::run(*args, ctx),
         Command::Claude { cmd } => cmd::claude::run(cmd, ctx),
         Command::Studio { cmd } => cmd::studio::run(cmd, ctx),
         Command::App(args) => cmd::app::run(args, ctx),

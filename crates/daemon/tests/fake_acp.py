@@ -31,6 +31,8 @@ Prompts:
   servers        says the MCP servers its session got, ${VAR}s expanded from
                  its environment (as an agent that leaks what it was given
                  would)
+  retitle TEXT   a session_info_update naming the session TEXT, as Claude
+                 Code does when it has titled the conversation, #629
   model          says the model set_config_option chose
   mode           says the permission mode session/set_mode chose (it knows
                  claude-agent-acp's: default, acceptEdits, plan, auto)
@@ -495,6 +497,8 @@ def prompt(mid, p):
         msg("META " + json.dumps(s.get("meta"), sort_keys=True))
     elif text == "servers":
         msg("SERVERS " + json.dumps(expand(s.get("mcp")), sort_keys=True))
+    elif text.startswith("retitle "):
+        update(sid, s, {"sessionUpdate": "session_info_update", "title": text[len("retitle "):]})
     elif text == "model":
         msg(f"Model: {s.get('model', 'default')}")
     elif text == "mode":

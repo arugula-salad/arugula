@@ -387,6 +387,19 @@ async fn start_agent_gives_the_agent_its_callers_login() {
     s.cancel().await.unwrap();
 }
 
+/// #629: `start_agent {title}` names the block.
+#[tokio::test(flavor = "multi_thread")]
+async fn start_agent_names_the_block() {
+    let d = Daemon::child();
+    let s = bridge(&d, Client::named("claude-code")).await;
+    let args = json!({ "agent": "acp", "command": format!("python3 {}", fake()), "prompt": "hello",
+        "title": "Parser lane", "cwd": d.sessions });
+    let b = call(&s, "start_agent", args).await["block"].as_u64().unwrap();
+    call(&s, "wait", json!({ "pane": b, "until": "idle", "timeout": 30 })).await;
+    assert_eq!(d.state(b)["title"], "Parser lane");
+    s.cancel().await.unwrap();
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn the_bridge_outlives_a_daemon_restart() {
     let mut d = Daemon::child();
