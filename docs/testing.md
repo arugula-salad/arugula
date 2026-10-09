@@ -29,11 +29,11 @@ or an account skip without it and name what's missing
 | `just e2e-interop` (in `just test`) | the browser's end-to-end crypto (`web/src/e2e`) against Rust's (`crates/e2e`): certificate vectors made by `crates/e2e/examples/interop.rs` and the ones checked in (`crates/e2e/fixtures/`), and a Noise handshake with its `responder` | Linux and macOS |
 | `just control-smoke` (in `just test`) | `web/control-smoke.ts`: a fake GitHub, Stripe, push service and Sprites API, the real `arugula-control` and real daemons; headless devices sign in, enroll, approve the daemons' join codes and reach them directly and through the relay; the CLI (M49) logs in with a code the device approves and, with no daemon of its own, runs, lists and captures on one machine directly and one through the relay | Linux and macOS |
 | `just e2e` | the Playwright specs in `web/e2e/` against throwaway daemons (`just e2e <url>` tests a running one): the `chrome` project, and `webkit` for `*.webkit.spec.ts` | Linux (Playwright's Chromium and WebKit) |
-| `just journey [j1\|j2a\|j2b\|j2c]` | a new user's journeys ([below](#a-new-users-journeys)): one person from no account to a terminal, and two people linking up; each ends with an annotated graph in `web/journey-reports/` (local, never committed) | Linux, in the e2e shards (they're specs in `web/e2e/`) |
+| `just journey [j1\|j2a\|j2b\|j2c\|j5\|j6]` | a new user's journeys ([below](#a-new-users-journeys)): one person from no account to a terminal, two people linking up, someone who won't read docs, and two people on a tailnet with no control; each ends with an annotated graph in `web/journey-reports/` (local, never committed) | Linux, in the e2e shards (they're specs in `web/e2e/`) |
 | `just e2e-webkit` | only the `webkit` project: Safari's engine, for device keys (#94) and the one-click invite (#137) | macOS |
 | `just testnet up`, `test`, `break` (`ssh`, then `control`) | the Docker test stack's claims ([testnet/README.md](../testnet/README.md)), then each claim under `BREAK=1`, where it must fail | Linux |
 | `just forges`, `just testnet-hosts`, `just testnet-editors` | real forges, two hosts and VS Code over Remote-SSH, in Docker ([below](#real-forges-two-hosts-vs-code-over-remote-ssh)) | the forges nightly (`forges-nightly.yml`) |
-| `just macos <test>` | the tart VM's checks: launchd with no GUI session, real Safari, Safari in the iOS Simulator, iTerm2, the desktop app ([below](#a-fresh-mac-the-tart-vm-harness)), `journey`: J1 on the real app and Safari, and `journey-j2a`: Sam on the real app, Riley in a browser, both graphed ([below](#a-new-users-journeys)) | no |
+| `just macos <test>` | the tart VM's checks: launchd with no GUI session, real Safari, Safari in the iOS Simulator, iTerm2, the desktop app ([below](#a-fresh-mac-the-tart-vm-harness)), `journey`: J1 on the real app and Safari, `journey-j2a`: Sam on the real app, Riley in a browser, `journey-j3`: the app installed by hand over an older daemon, and `journey-j4`: an agent installing over ssh, all graphed ([below](#a-new-users-journeys)) | no |
 | `just desktop-check` | rustfmt and clippy for `crates/desktop` | Linux |
 | `just desktop-xvfb` | the Linux desktop app under Xvfb in a container (`packaging/desktop/xvfb/`): `join` (#204), `m46` (`bare` and `links` among its claims), `m47` and `stale` (#317) (see [The desktop app's tests](#the-desktop-apps-tests)) | Linux |
 | `just desktop-packages ARCH` | the .deb on Ubuntu 22.04 and the .rpm on Fedora 42 install and claim `arugula://` (after `just desktop-linux ARCH`) | no |
@@ -544,6 +544,10 @@ works. Run them with `just journey` (or `just journey j2c` for one).
 | J2a | two friends, each through J1 first: one shares a session with the other (not a teammate), who accepts, finds the machine, asks to drive, is allowed, takes control and types; the owner sees it |
 | J2b | the same through a team: a one-click invite, the owner's machine moved into the team with *In …*, the friend driving it by role |
 | J2c | the evening #551 audits: the owner's machine already in a team, a friend's second team, the team page's `arugulad join … --team` (not on the app's PATH, #550, and the machine is already in a team), *In …*, sharing with the team, the Swarm, *+* on a teammate's machine |
+| J3 | (#664, on a real Mac only, below) installs the app by hand from the site's steps, with Gatekeeper on and an older daemon (illogicald 0.21.0) already running: *"Arugula" Not Opened*, *Done*, *Open Anyway* in Privacy & Security, *Open "Arugula"?*, the password; the app offers the daemon's update, and the pane keeps running |
+| J4 | (#664, on a real Mac only, below) an agent installs over ssh: it reads docs.arugula.io/install/, runs its command, and then runs only commands it has read (the page, what they print, `--help`); one it would have to make up is unguided |
+| J5 | (#664) won't read docs: Getting started from the first screen (no phone, no account), *Use Claude Code with Arugula*, *Start an agent…*, a task, the agent's question approved, its work shown |
+| J6 | (#664) two people on one tailnet with no control: the owner shares a session to the other's tailnet login and sends the address Share shows; they watch, then drive once allowed; a third person on the same login gets the same role, and Share says the login is on two devices (#663). A stand-in for tailscaled answers WhoIs, and the others come in as `tailscale serve` passes a request on |
 
 The rules, which are the point:
 
@@ -593,6 +597,19 @@ the Mac shows, Riley's what the page shows; the report is `J2a-mac`, with
 each person's screen at their steps. Riley has no machine of their own
 here, so after *Accept* the window shows Sam's: that step is led by the
 screen, unlike J2a's.
+
+`just macos journey-j3` (`testnet/macos/journey-j3.ts`) is J3: a fresh VM
+with Gatekeeper turned back on (the base image turns it off, so no other
+test meets it), an illogicald 0.21.0 installed and running a pane, and the
+app (app-latest, or `ARUGULA_MACOS_APP_ZIP`) marked as a browser marks a
+download. Each step's prompt is the install page's sentence for it or the
+dialog's own text; the password prompt is `coreautha`'s window. Finder
+can't be scripted over ssh there, so the app is moved with `mv` and runs
+translocated, as one moved in Terminal does. Its report is `J3`.
+
+`just macos journey-j4` (`testnet/macos/journey-j4.ts`) is J4, over ssh in
+a fresh VM with no screen involved: the page's text and the commands its
+code blocks carry, then the released install.sh. Its report is `J4`.
 
 Every run ends with a report, in `web/journey-reports/` (newest run;
 each run also under `history/`) and attached to the Playwright report:
