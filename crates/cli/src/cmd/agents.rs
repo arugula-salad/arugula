@@ -62,6 +62,20 @@ enum Cmd {
         #[arg(long, default_value_t = 0)]
         wait: u64,
     },
+    /// A finished task's patch, in a diff block on a copy of your checkout.
+    Review {
+        task: String,
+        /// Your checkout [default: here].
+        #[arg(long)]
+        dir: Option<String>,
+    },
+    /// Apply a finished task's patch in your checkout.
+    Apply {
+        task: String,
+        /// Your checkout [default: here].
+        #[arg(long)]
+        dir: Option<String>,
+    },
     /// Tasks from other people waiting for you to allow them here.
     Waiting,
     /// Allow a waiting task (once, or with --hour its caller's tasks for that
@@ -214,6 +228,28 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
             let body =
                 json!({ "kind": kind, "machine": machine, "agent": agent, "task": task, "text": answer, "wait": wait });
             return task_out(request(&sock, "POST", "/api/a2a/delegate", Some(&body))?.json()?, json_out);
+        }
+        Cmd::Review { task, dir } => {
+            let beside = std::env::var("ARUGULA_PANE").ok().and_then(|p| p.parse::<u32>().ok());
+            let body = json!({ "kind": "review", "machine": "", "agent": "", "task": task, "dir": project(dir.as_deref())?, "beside": beside });
+            let v = request(&sock, "POST", "/api/a2a/delegate", Some(&body))?.json()?;
+            if json_out {
+                print_json(&v);
+            } else {
+                print!("{}", v["summary"].as_str().unwrap_or_default());
+            }
+            return Ok(if v["applied"]["clean"] == true { 0 } else { 1 });
+        }
+        Cmd::Apply { task, dir } => {
+            let body =
+                json!({ "kind": "apply", "machine": "", "agent": "", "task": task, "dir": project(dir.as_deref())? });
+            let v = request(&sock, "POST", "/api/a2a/delegate", Some(&body))?.json()?;
+            if json_out {
+                print_json(&v);
+            } else {
+                print!("{}", v["summary"].as_str().unwrap_or_default());
+            }
+            return Ok(if v["applied"]["clean"] == true { 0 } else { 1 });
         }
         Cmd::Waiting => {
             let v = request(&sock, "GET", "/api/a2a/waiting", None)?.json()?;

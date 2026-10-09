@@ -13,7 +13,7 @@
 // card is back, and Bob's cancel ends the task there.
 
 import { execFileSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { closeContexts } from "./helpers";
@@ -30,6 +30,9 @@ test.afterAll(async ({ browser }) => {
 let alice: Page;
 let bob: Page;
 let block = 0;
+/** The project fixer works in, and the first task that changed it. */
+let project = "";
+let firstTask = "";
 
 interface Task {
   id: string;
@@ -85,6 +88,7 @@ test("Acme's team box offers fixer; Bob is an owner of Acme too", async ({ brows
   git("init", "-q");
   git("add", "-A");
   git("commit", "-q", "-m", "calc");
+  project = dir;
   await show(alice, "teambox");
   const r = await call(alice, "POST", "/api/a2a/offers", { agent: "fixer", dir });
   expect(r.status, JSON.stringify(r.body)).toBe(200);
@@ -120,6 +124,7 @@ test("a task from Bob's machine waits for the box's own account: not Bob's, thou
   const done = await delegate({ kind: "get", task: sent.task.id, wait: 60 });
   expect(done.task.status.state, done.summary).toBe("TASK_STATE_COMPLETED");
   expect(done.summary).toContain("Wrote notes.txt.");
+  firstTask = sent.task.id;
   const patch = done.task.artifacts.find((a) => a.name === "patch")!;
   expect(patch.parts[0].text).toContain("+hello from bob");
   expect(patch.metadata?.arugula?.stat).toContain("notes.txt");
@@ -127,6 +132,31 @@ test("a task from Bob's machine waits for the box's own account: not Bob's, thou
   await show(alice, "teambox");
   const grants = (await call(alice, "GET", "/api/a2a/grants")).body as unknown as { name: string; agent: string }[];
   expect(grants.map((g) => `${g.name}/${g.agent}`)).toEqual(["bob/fixer"]);
+});
+
+test("Bob reviews the work in a diff block on a copy of his checkout, then applies it (M80)", async () => {
+  test.setTimeout(120_000);
+  const mine = t.temp("bobs-clone");
+  execFileSync("git", ["clone", "-q", project, mine]);
+  await show(bob, "bobs");
+  const before = await bob.evaluate(() => window.__arugula.client.state!.panes.length);
+  const review = await call(bob, "POST", "/api/a2a/delegate", { kind: "review", machine: "", agent: "", task: firstTask, dir: mine });
+  expect(review.status, JSON.stringify(review.body)).toBe(200);
+  const body = review.body as unknown as { block: number; applied: { clean: boolean; files: string[] }; summary: string };
+  expect(body.applied.clean, body.summary).toBe(true);
+  expect(body.applied.files).toEqual(["notes.txt"]);
+  // The diff block shows it; the checkout itself hasn't changed.
+  await expect.poll(() => bob.evaluate(() => window.__arugula.client.state!.panes.length)).toBe(before + 1);
+  const diff = (await call(bob, "GET", `/api/blocks/${body.block}`)).body as { state?: { files?: { path: string }[] } } | null;
+  await expect
+    .poll(async () => ((await call(bob, "GET", `/api/blocks/${body.block}`)).body as typeof diff)?.state?.files?.map((f) => f.path))
+    .toEqual(["notes.txt"]);
+  expect(existsSync(join(mine, "notes.txt"))).toBe(false);
+
+  const applied = await call(bob, "POST", "/api/a2a/delegate", { kind: "apply", machine: "", agent: "", task: firstTask, dir: mine });
+  expect(applied.status, JSON.stringify(applied.body)).toBe(200);
+  expect((applied.body as unknown as { applied: { clean: boolean } }).applied.clean).toBe(true);
+  expect(readFileSync(join(mine, "notes.txt"), "utf8")).toBe("hello from bob\n");
 });
 
 test("the grant lets the next one through; revoked, the card is back; Bob's cancel ends it", async () => {

@@ -1887,7 +1887,7 @@
         "readOnlyHint": false,
         "title": "Delegate to a teammate's agent"
       },
-      "description": "A task for an agent another machine offers (your own, your team's, a teammate's), over A2A: send it, follow it, answer its questions, or cancel it.\n- send {agent, machine, task?, text?, wait?}: Hand a task to an agent another machine offers (list kind agents lists them): text is what to do, in that agent's project there. Its owner may first have to allow it. Waits for it to finish (or ask you something) and returns its reply and the patch's stat; the patch itself is kept here.\n- get {agent, machine, task?, text?, wait?}: A task's state now (with wait: once it finishes or asks): its status, reply and patch's stat.\n- answer {agent, machine, task?, text?, wait?}: Answer the question a task asked (its state says input_required), or send a finished task a follow-up: text, then wait as send does.\n- cancel {agent, machine, task?, text?, wait?}: Stop a task you sent.",
+      "description": "A task for an agent another machine offers (your own, your team's, a teammate's), over A2A: send it, follow it, answer its questions, or cancel it.\n- send {agent, machine, dir?, task?, text?, wait?}: Hand a task to an agent another machine offers (list kind agents lists them): text is what to do, in that agent's project there. Its owner may first have to allow it. Waits for it to finish (or ask you something) and returns its reply and the patch's stat; the patch itself is kept here.\n- get {agent, machine, dir?, task?, text?, wait?}: A task's state now (with wait: once it finishes or asks): its status, reply and patch's stat.\n- answer {agent, machine, dir?, task?, text?, wait?}: Answer the question a task asked (its state says input_required), or send a finished task a follow-up: text, then wait as send does.\n- cancel {agent, machine, dir?, task?, text?, wait?}: Stop a task you sent.\n- review {agent, machine, dir?, task?, text?, wait?}: A finished task's patch, applied to a scratch copy of your checkout and shown in a diff block beside you, for the user to look at before anything changes here. Says whether it applies cleanly.\n- apply {agent, machine, dir?, task?, text?, wait?}: Apply a finished task's patch in your checkout (git apply --3way): which files changed, conflicts to resolve, hunks that didn't apply, and new binary files the task left out.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -1895,13 +1895,23 @@
             "description": "The agent, by name.",
             "type": "string"
           },
+          "dir": {
+            "default": null,
+            "description": "review, apply: your checkout (default: where you work).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "kind": {
             "description": "Which one (see the tool's description).",
             "enum": [
               "send",
               "get",
               "answer",
-              "cancel"
+              "cancel",
+              "review",
+              "apply"
             ],
             "type": "string"
           },
@@ -5130,7 +5140,7 @@
         "readOnlyHint": false,
         "title": "Delegate to a teammate's agent"
       },
-      "description": "A task for an agent another machine offers (your own, your team's, a teammate's), over A2A: send it, follow it, answer its questions, or cancel it.\n- send {agent, machine, task?, text?, wait?}: Hand a task to an agent another machine offers (list kind agents lists them): text is what to do, in that agent's project there. Its owner may first have to allow it. Waits for it to finish (or ask you something) and returns its reply and the patch's stat; the patch itself is kept here.\n- get {agent, machine, task?, text?, wait?}: A task's state now (with wait: once it finishes or asks): its status, reply and patch's stat.\n- answer {agent, machine, task?, text?, wait?}: Answer the question a task asked (its state says input_required), or send a finished task a follow-up: text, then wait as send does.\n- cancel {agent, machine, task?, text?, wait?}: Stop a task you sent.",
+      "description": "A task for an agent another machine offers (your own, your team's, a teammate's), over A2A: send it, follow it, answer its questions, or cancel it.\n- send {agent, machine, dir?, task?, text?, wait?}: Hand a task to an agent another machine offers (list kind agents lists them): text is what to do, in that agent's project there. Its owner may first have to allow it. Waits for it to finish (or ask you something) and returns its reply and the patch's stat; the patch itself is kept here.\n- get {agent, machine, dir?, task?, text?, wait?}: A task's state now (with wait: once it finishes or asks): its status, reply and patch's stat.\n- answer {agent, machine, dir?, task?, text?, wait?}: Answer the question a task asked (its state says input_required), or send a finished task a follow-up: text, then wait as send does.\n- cancel {agent, machine, dir?, task?, text?, wait?}: Stop a task you sent.\n- review {agent, machine, dir?, task?, text?, wait?}: A finished task's patch, applied to a scratch copy of your checkout and shown in a diff block beside you, for the user to look at before anything changes here. Says whether it applies cleanly.\n- apply {agent, machine, dir?, task?, text?, wait?}: Apply a finished task's patch in your checkout (git apply --3way): which files changed, conflicts to resolve, hunks that didn't apply, and new binary files the task left out.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -5138,13 +5148,23 @@
             "description": "The agent, by name.",
             "type": "string"
           },
+          "dir": {
+            "default": null,
+            "description": "review, apply: your checkout (default: where you work).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "kind": {
             "description": "Which one (see the tool's description).",
             "enum": [
               "send",
               "get",
               "answer",
-              "cancel"
+              "cancel",
+              "review",
+              "apply"
             ],
             "type": "string"
           },

@@ -512,7 +512,7 @@ fn rand_u16() -> u16 {
     u16::from_be_bytes(b)
 }
 
-async fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
+pub(super) async fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
     let out = tokio::process::Command::new("git")
         .arg("-C")
         .arg(dir)

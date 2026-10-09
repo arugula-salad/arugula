@@ -569,6 +569,16 @@ people's agents. With `agents` on (M76, #398):
 - **Durable:** tasks are `<state>/a2a/tasks/TASK.json`, and a restarted
   daemon follows the running ones and puts the waiting ones' cards back.
   Grants are `<state>/a2a/grants.json`.
-- **Not yet:** applying a patch in the caller's checkout, and a diff block
-  to review it first (M80). There's no streaming (`SendStreamingMessage`):
-  the caller polls `GetTask`.
+- **The work comes back (M80):** `delegate {kind: review}` (or `arugula
+  agents review TASK`) applies a finished task's patch to a scratch
+  worktree of your checkout at its `HEAD` (`~/.cache/arugula/review/TASK`)
+  and opens a diff block on it, so nothing here changes until you've looked.
+  `delegate {kind: apply}` (or `arugula agents apply TASK`) applies it to
+  the checkout itself with `git apply --3way`. The result names every
+  change it made, and every file with conflicts to resolve, hunks that
+  didn't apply (as `.rej` files, when nothing merged), and new binary files
+  the task left out. It also says when your checkout lacks the commit the
+  task started from.
+- **Not yet:** a branch instead of a patch (pushed with the receiver's own
+  forge credentials), and files that aren't in a repository. There's no
+  streaming (`SendStreamingMessage`): the caller polls `GetTask`.

@@ -8,8 +8,22 @@
 //! Each ended task's result (its reply, and its patch) is kept in
 //! `<state>/a2a/results/TASK.json`, since the other machine cleans up once
 //! it's been read.
+//!
+//! **Its work comes back (M80, #402)** as that patch, against the commit
+//! the task started from. `review` applies it to a scratch worktree of the
+//! caller's repository at its `HEAD` (`~/.cache/arugula/review/TASK`: not
+//! the state dir, which no block shows), for a
+//! diff block to show before anything changes; `apply` applies it to the
+//! checkout itself with `git apply --3way`, and, if that can't take all of
+//! it, with `--reject`, saying which hunks didn't apply. Either way the
+//! new binary files the task left out of the patch are named: nothing is
+//! dropped silently.
 
-use std::{sync::Arc, time::Duration};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::Duration,
+};
 
 use serde_json::{Value, json};
 
@@ -110,6 +124,182 @@ fn keep(app: &App, machine: &str, agent: &str, t: &Value) {
     }
 }
 
+/// A kept result: `(machine, agent, task)`.
+pub fn kept(state_dir: &Path, task: &str) -> Result<(String, String, Value), String> {
+    let file =
+        state_dir.join("a2a").join("results").join(format!("{}.json", super::super::fountain::wear::component(task)));
+    let b =
+        std::fs::read(&file).map_err(|_| format!("no result kept here for task {task} (get it once it has ended)"))?;
+    let v: Value = serde_json::from_slice(&b).map_err(|e| format!("its result: {e}"))?;
+    Ok((
+        v["machine"].as_str().unwrap_or_default().to_owned(),
+        v["agent"].as_str().unwrap_or_default().to_owned(),
+        v["task"].clone(),
+    ))
+}
+
+/// The task's patch: its text, its base, and the files left out of it.
+pub struct Patch {
+    pub text: String,
+    pub base: String,
+    pub left_out: Vec<String>,
+}
+
+pub fn patch_of(t: &Value) -> Option<Patch> {
+    let a = t["artifacts"].as_array()?.iter().find(|a| a["name"] == "patch")?;
+    let m = &a["metadata"]["arugula"];
+    Some(Patch {
+        text: a["parts"][0]["text"].as_str()?.to_owned(),
+        base: m["base"].as_str().unwrap_or_default().to_owned(),
+        left_out: m["left_out"].as_array().into_iter().flatten().filter_map(Value::as_str).map(str::to_owned).collect(),
+    })
+}
+
+/// What applying a patch did.
+#[derive(Debug, Default, serde::Serialize)]
+pub struct Applied {
+    /// Where.
+    pub dir: String,
+    /// The files it changed.
+    pub files: Vec<String>,
+    /// All of it applied (three-way where it had to).
+    pub clean: bool,
+    /// Files merged with conflict markers to resolve (three-way).
+    pub conflicts: Vec<String>,
+    /// Hunks that didn't apply, each in a `.rej` beside its file.
+    pub rejected: Vec<String>,
+    /// What git said when it didn't apply cleanly.
+    pub said: Option<String>,
+    /// New binary files the task made that the patch leaves out.
+    pub left_out: Vec<String>,
+    /// The commit the task started from isn't in this checkout (another
+    /// clone, or not fetched): three-way merging had less to go on.
+    pub base_missing: Option<String>,
+}
+
+impl Applied {
+    pub fn text(&self, task: &str) -> String {
+        let mut out = if self.clean {
+            format!("Task {task}'s patch applied in {}: {}.\n", self.dir, self.files.join(", "))
+        } else {
+            format!("Task {task}'s patch applied in {} only in part: {}.\n", self.dir, self.files.join(", "))
+        };
+        if !self.conflicts.is_empty() {
+            out.push_str(&format!("Merged with conflicts to resolve: {}\n", self.conflicts.join(", ")));
+        }
+        if !self.rejected.is_empty() {
+            out.push_str(&format!("Hunks that didn't apply (see the .rej files): {}\n", self.rejected.join(", ")));
+        }
+        if let Some(s) = &self.said {
+            out.push_str(&format!("git said: {s}\n"));
+        }
+        if let Some(b) = &self.base_missing {
+            out.push_str(&format!(
+                "This checkout doesn't have {b}, the commit the task started from: fetch it for a better merge.\n"
+            ));
+        }
+        if !self.left_out.is_empty() {
+            out.push_str(&format!(
+                "Not in the patch (new binary files on the other machine): {}\n",
+                self.left_out.join(", ")
+            ));
+        }
+        out
+    }
+}
+
+/// The files a patch touches.
+fn files_of(patch: &str) -> Vec<String> {
+    let mut f: Vec<String> = patch
+        .lines()
+        .filter_map(|l| l.strip_prefix("+++ b/").or_else(|| l.strip_prefix("--- a/")))
+        .map(str::to_owned)
+        .collect();
+    f.sort();
+    f.dedup();
+    f
+}
+
+/// Apply `p` in `dir` (a git checkout): three-way, else what applies with
+/// the rest rejected.
+async fn apply_in(dir: &Path, p: &Patch, state_dir: &Path, task: &str) -> Result<Applied, String> {
+    use super::tasks::git;
+    let top = git(dir, &["rev-parse", "--show-toplevel"])
+        .await
+        .map_err(|_| format!("{} isn't in a git checkout", dir.display()))?;
+    let top = PathBuf::from(top.trim());
+    let file =
+        state_dir.join("a2a").join("results").join(format!("{}.patch", super::super::fountain::wear::component(task)));
+    std::fs::write(&file, &p.text).map_err(|e| format!("can't write the patch: {e}"))?;
+    let f = file.display().to_string();
+    let mut out = Applied {
+        dir: top.display().to_string(),
+        files: files_of(&p.text),
+        left_out: p.left_out.clone(),
+        ..Default::default()
+    };
+    if !p.base.is_empty() && git(&top, &["cat-file", "-e", &format!("{}^{{commit}}", p.base)]).await.is_err() {
+        out.base_missing = Some(p.base.clone());
+    }
+    match git(&top, &["apply", "--3way", "--whitespace=nowarn", &f]).await {
+        Ok(_) => out.clean = true,
+        Err(e) => {
+            out.said = Some(e.lines().take(6).collect::<Vec<_>>().join(" / "));
+            // Merged, with conflict markers in these (`U path`): they're
+            // for someone to resolve, and nothing else is tried over them.
+            out.conflicts = e.lines().filter_map(|l| l.strip_prefix("U ")).map(str::to_owned).collect();
+            if out.conflicts.is_empty() {
+                // Nothing went in: what applies does, the rest as .rej files.
+                let _ = git(&top, &["apply", "--reject", "--whitespace=nowarn", &f]).await;
+                out.rejected =
+                    files_of(&p.text).into_iter().filter(|x| top.join(format!("{x}.rej")).exists()).collect();
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Where review worktrees go: the user's cache.
+pub fn review_root() -> PathBuf {
+    super::super::fountain::wear::cache_root(&[], &crate::home()).with_file_name("review")
+}
+
+/// Apply task `task`'s kept patch in the checkout at `dir` (and drop its
+/// review worktree, under `scratch`, if there is one).
+pub async fn apply(state_dir: &Path, scratch: &Path, task: &str, dir: &Path) -> Result<Applied, String> {
+    let (_, _, t) = kept(state_dir, task)?;
+    let p = patch_of(&t).ok_or_else(|| format!("task {task} changed nothing: no patch to apply"))?;
+    let out = apply_in(dir, &p, state_dir, task).await?;
+    // Its review worktree, if any, has done its job.
+    let review = review_dir(scratch, task);
+    if review.exists() {
+        let _ = super::tasks::git(dir, &["worktree", "remove", "--force", &review.display().to_string()]).await;
+    }
+    Ok(out)
+}
+
+fn review_dir(scratch: &Path, task: &str) -> PathBuf {
+    scratch.join(super::super::fountain::wear::component(task))
+}
+
+/// Task `task`'s patch in a scratch worktree of `dir`'s repository at its
+/// `HEAD`, for a diff block to show: where, and how it applied.
+pub async fn review(state_dir: &Path, scratch: &Path, task: &str, dir: &Path) -> Result<(PathBuf, Applied), String> {
+    use super::tasks::git;
+    let (_, _, t) = kept(state_dir, task)?;
+    let p = patch_of(&t).ok_or_else(|| format!("task {task} changed nothing: no patch to review"))?;
+    let wt = review_dir(scratch, task);
+    if wt.exists() {
+        let _ = git(dir, &["worktree", "remove", "--force", &wt.display().to_string()]).await;
+    }
+    let _ = std::fs::create_dir_all(scratch);
+    git(dir, &["worktree", "add", "-q", "--detach", &wt.display().to_string(), "HEAD"])
+        .await
+        .map_err(|e| format!("{} isn't in a git checkout ({e})", dir.display()))?;
+    let applied = apply_in(&wt, &p, state_dir, task).await?;
+    Ok((wt, applied))
+}
+
 /// A task in a few lines for an agent: its state, what it says or waits
 /// on, its reply, and its patch's stat (and what was left out of it).
 pub fn summary(machine: &str, agent: &str, t: &Value) -> String {
@@ -144,6 +334,11 @@ pub fn summary(machine: &str, agent: &str, t: &Value) -> String {
             _ => {}
         }
     }
+    if state == "completed" && t["artifacts"].as_array().into_iter().flatten().any(|a| a["name"] == "patch") {
+        out.push_str(
+            "delegate {kind: review} shows the patch in a diff block on your checkout; {kind: apply} applies it.\n",
+        );
+    }
     match state.as_str() {
         "input_required" => out.push_str("It asks you: answer with delegate {kind: answer, …, text}.\n"),
         "submitted" => out.push_str("It waits for that machine's owner to allow it.\n"),
@@ -156,6 +351,67 @@ pub fn summary(machine: &str, agent: &str, t: &Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn a_patch_reviews_in_a_worktree_then_applies_saying_what_it_left_out() {
+        use super::super::tasks::git;
+        let root = std::env::temp_dir().join(format!("arugula-apply-{}-{}", std::process::id(), now_ms()));
+        let (repo, state) = (root.join("repo"), root.join("state"));
+        std::fs::create_dir_all(&repo).unwrap();
+        std::fs::create_dir_all(state.join("a2a/results")).unwrap();
+        let g = |args: &'static [&'static str]| {
+            let repo = repo.clone();
+            async move { git(&repo, &[&["-c", "user.name=t", "-c", "user.email=t@e"][..], args].concat()).await.unwrap() }
+        };
+        std::fs::write(repo.join("calc.py"), "a = 1\nx\ny\nz\nb = 2\n").unwrap();
+        g(&["init", "-q"]).await;
+        g(&["add", "-A"]).await;
+        g(&["commit", "-q", "-m", "c"]).await;
+        let base = git(&repo, &["rev-parse", "HEAD"]).await.unwrap().trim().to_owned();
+        // The patch as a task makes it (tasks.rs): `git diff --binary` of
+        // the work against its base, new files included.
+        std::fs::write(repo.join("calc.py"), "a = 1\nx\ny\nz\nb = 3\n").unwrap();
+        std::fs::write(repo.join("notes.txt"), "hi\n").unwrap();
+        g(&["add", "-N", "notes.txt"]).await;
+        let patch = git(&repo, &["diff", "--binary", &base]).await.unwrap();
+        g(&["reset", "-q", "--hard"]).await;
+        let _ = std::fs::remove_file(repo.join("notes.txt"));
+        let task = json!({ "id": "t9", "status": { "state": "TASK_STATE_COMPLETED" }, "artifacts": [
+            { "name": "patch", "parts": [{ "text": patch }], "metadata": { "arugula": { "base": base, "left_out": ["x.pyc"] } } },
+        ] });
+        std::fs::write(
+            state.join("a2a/results/t9.json"),
+            json!({ "machine": "m", "agent": "a", "task": task }).to_string(),
+        )
+        .unwrap();
+
+        // Review: the checkout is untouched; the worktree has it.
+        let scratch = root.join("review");
+        let (wt, r) = review(&state, &scratch, "t9", &repo).await.unwrap();
+        assert!(r.clean, "{r:?}");
+        assert_eq!(std::fs::read_to_string(wt.join("calc.py")).unwrap(), "a = 1\nx\ny\nz\nb = 3\n");
+        assert_eq!(std::fs::read_to_string(repo.join("calc.py")).unwrap(), "a = 1\nx\ny\nz\nb = 2\n");
+        // Apply, after a change of ours elsewhere in the file: three-way.
+        std::fs::write(repo.join("calc.py"), "a = 10\nx\ny\nz\nb = 2\n").unwrap();
+        g(&["commit", "-q", "-am", "ours"]).await;
+        let a = apply(&state, &scratch, "t9", &repo).await.unwrap();
+        assert!(a.clean, "{a:?}");
+        assert_eq!(a.files, ["calc.py", "notes.txt"]);
+        assert_eq!(std::fs::read_to_string(repo.join("calc.py")).unwrap(), "a = 10\nx\ny\nz\nb = 3\n");
+        assert!(repo.join("notes.txt").is_file());
+        assert!(a.text("t9").contains("x.pyc"), "the left-out file is named");
+        assert!(!wt.exists(), "the review worktree went");
+        // On a line we changed too: merged with conflicts, said so.
+        g(&["checkout", "-q", "--", "."]).await;
+        let _ = std::fs::remove_file(repo.join("notes.txt"));
+        std::fs::write(repo.join("calc.py"), "a = 10\nx\ny\nz\nb = 4\n").unwrap();
+        g(&["commit", "-q", "-am", "ours again"]).await;
+        let again = apply(&state, &scratch, "t9", &repo).await.unwrap();
+        assert!(!again.clean, "{again:?}");
+        assert_eq!(again.conflicts, ["calc.py"], "{again:?}");
+        assert!(again.text("t9").contains("conflicts to resolve: calc.py"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
 
     #[test]
     fn a_summary_says_state_reply_and_patch() {
