@@ -168,7 +168,7 @@ dependencies = [
 
 [[package]]
 name = "arugula"
-version = "0.28.0"
+version = "0.29.0"
 dependencies = [
  "anyhow",
  "arugula-control-wire",
@@ -192,7 +192,7 @@ dependencies = [
 
 [[package]]
 name = "arugula-control"
-version = "0.28.0"
+version = "0.29.0"
 dependencies = [
  "aes-gcm 0.11.1",
  "anyhow",
@@ -228,7 +228,7 @@ dependencies = [
 
 [[package]]
 name = "arugula-control-wire"
-version = "0.28.0"
+version = "0.29.0"
 dependencies = [
  "arugula-e2e",
  "serde",
@@ -238,7 +238,7 @@ dependencies = [
 
 [[package]]
 name = "arugula-core"
-version = "0.28.0"
+version = "0.29.0"
 dependencies = [
  "proptest",
  "serde",
@@ -248,7 +248,7 @@ dependencies = [
 
 [[package]]
 name = "arugula-e2e"
-version = "0.28.0"
+version = "0.29.0"
 dependencies = [
  "aes-gcm 0.11.1",
  "anyhow",
@@ -268,7 +268,7 @@ dependencies = [
 
 [[package]]
 name = "arugula-proto"
-version = "0.28.0"
+version = "0.29.0"
 dependencies = [
  "arugula-core",
  "serde",
@@ -280,7 +280,7 @@ dependencies = [
 
 [[package]]
 name = "arugula-testkit"
-version = "0.28.0"
+version = "0.29.0"
 dependencies = [
  "arugula-proto",
  "nix",
@@ -290,7 +290,7 @@ dependencies = [
 
 [[package]]
 name = "arugula-vt"
-version = "0.28.0"
+version = "0.29.0"
 dependencies = [
  "libghostty-vt",
  "regex",
@@ -301,7 +301,7 @@ dependencies = [
 
 [[package]]
 name = "arugulad"
-version = "0.28.0"
+version = "0.29.0"
 dependencies = [
  "aes-gcm 0.11.1",
  "anyhow",

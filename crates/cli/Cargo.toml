@@ -8,11 +8,11 @@ repository.workspace = true
 [dependencies]
 anyhow = "1.0.104"
 clap = { version = "4.6.7", features = ["derive", "env"] }
-arugula-control-wire = { version = "0.28.0", path = "../control-wire" }
-arugula-core = { version = "0.28.0", path = "../core" }
-arugula-e2e = { version = "0.28.0", path = "../e2e" }
-arugula-proto = { version = "0.28.0", path = "../proto" }
-arugula-vt = { version = "0.28.0", path = "../vt" }
+arugula-control-wire = { version = "0.29.0", path = "../control-wire" }
+arugula-core = { version = "0.29.0", path = "../core" }
+arugula-e2e = { version = "0.29.0", path = "../e2e" }
+arugula-proto = { version = "0.29.0", path = "../proto" }
+arugula-vt = { version = "0.29.0", path = "../vt" }
 ratatui = "0.29.0"
 rustls = "0.23.45"
 rustls-platform-verifier = "0.7.1"
@@ -39,5 +39,5 @@ labs = []
 workspace = true
 
 [dev-dependencies]
-arugula-proto = { version = "0.28.0", path = "../proto", features = ["fixture-server"] }
+arugula-proto = { version = "0.29.0", path = "../proto", features = ["fixture-server"] }
 proptest = "1.11.0"
