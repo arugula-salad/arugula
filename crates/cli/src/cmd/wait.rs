@@ -1,7 +1,7 @@
 //! `arugula wait`: for a command, an exit, a match, or an agent.
 
 use super::Ctx;
-use crate::http::call_raw;
+use crate::http::call_raw_conn;
 use crate::util::{Pane, here, print_json, snake};
 use arugula_proto::{
     api::{WaitRequest, WaitResult},
@@ -42,7 +42,7 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
         _ => ("command-end", None),
     };
     let req = WaitRequest { until: until.to_owned(), re, timeout };
-    let (w, v) = call_raw::<PaneWait>(&sock, &pane, &req)?;
+    let (w, v) = wait_through_restarts(&sock, &pane, req)?;
     if json_out {
         print_json(&v);
     }
@@ -79,4 +79,38 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
             0
         }
     })
+}
+
+/// The wait, kept going when the daemon goes away (an update restarts it):
+/// the connection is tried again, backing off from 0.25 s to 2 s, until the
+/// wait's own timeout (never, without one). What the daemon answers, even an
+/// error, ends it.
+fn wait_through_restarts(
+    sock: &crate::http::Target,
+    pane: &<PaneWait as arugula_proto::op::Op>::Path,
+    req: WaitRequest,
+) -> anyhow::Result<(WaitResult, serde_json::Value)> {
+    use std::time::{Duration, Instant};
+    let deadline = req.timeout.map(|t| Instant::now() + Duration::from_secs_f64(t.max(0.0)));
+    let mut backoff = Duration::from_millis(250);
+    let mut told = false;
+    loop {
+        // Only what's left of the timeout is asked of the daemon each time.
+        let left = deadline.map(|d| d.saturating_duration_since(Instant::now()));
+        let attempt = WaitRequest { timeout: left.map(|l| l.as_secs_f64()), ..req.clone() };
+        match call_raw_conn::<PaneWait>(sock, pane, &attempt) {
+            Ok(answer) => return answer,
+            Err(_) if left.is_some_and(|l| l.is_zero()) => {
+                return Ok((WaitResult::Timeout, serde_json::to_value(WaitResult::Timeout)?));
+            }
+            Err(_) => {
+                if !std::mem::replace(&mut told, true) {
+                    eprintln!("arugula: the daemon went away; waiting for it");
+                }
+                let nap = left.map_or(backoff, |l| backoff.min(l));
+                std::thread::sleep(nap);
+                backoff = (backoff * 2).min(Duration::from_secs(2));
+            }
+        }
+    }
 }

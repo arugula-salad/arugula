@@ -318,6 +318,10 @@ struct Inner {
     last_stop: Option<String>,
     /// A turn was outstanding when the server we followed went away.
     interrupted: bool,
+    /// The daemon restarted under a turn (or a question) that was
+    /// outstanding (#680): the block asks whether to go on, until someone
+    /// sends the agent anything.
+    cut: bool,
     log: Option<PaneLog>,
     link: Option<Link>,
     /// A VM agent's MCP relay (#59); it lasts as long as the block.
@@ -413,6 +417,7 @@ impl Inner {
             turns: vec![],
             last_stop: None,
             interrupted: false,
+            cut: false,
             log,
             link: None,
             relay: None,
@@ -558,8 +563,10 @@ impl Inner {
             "login" => self.login = e["login"].as_str().map(str::to_owned),
             "spawn" => {
                 // A new server: nothing outstanding carries over.
-                if self.prompt_id.is_some() || !self.pending.is_empty() || !self.asks.is_empty() {
+                let cut_now = self.prompt_id.is_some() || !self.pending.is_empty() || !self.asks.is_empty();
+                if cut_now {
                     self.interrupted = true;
+                    self.cut = true;
                 }
                 self.ours.clear();
                 self.pending.clear();
@@ -576,6 +583,9 @@ impl Inner {
                 // loads the session, which replays it.
                 if e["resume"].as_bool() == Some(true) && !just_continued && !self.t.entries.is_empty() {
                     self.t.note("Started the agent again", at);
+                    if cut_now {
+                        self.t.note("The daemon restarted during this turn", at);
+                    }
                 }
             }
             "exit" | "stopped" => {
@@ -727,6 +737,7 @@ impl Inner {
                         self.error = None;
                         self.last_stop = None;
                         self.interrupted = false;
+                        self.cut = false;
                         self.turns.push(TurnStat {
                             prompt: text.chars().take(120).collect(),
                             started_ms: at,
@@ -1051,6 +1062,9 @@ impl Inner {
         }
         if let Some(a) = self.open_ask() {
             return (Attention::NeedsInput, a.ask.headline());
+        }
+        if self.cut && self.queue.is_empty() && matches!(self.status, Status::Starting | Status::Ready) {
+            return (Attention::NeedsInput, CUT_OFF.into());
         }
         match self.status {
             Status::Exited => (Attention::NeedsInput, self.error.clone().unwrap_or_else(|| "the agent stopped".into())),
@@ -1891,10 +1905,36 @@ fn publish(ctx: &BlockCtx, inner: &Arc<Mutex<Inner>>, first: bool) {
         g.reported = Some(a);
         // Coming back after a restart, a finished turn isn't news.
         let a = if first && a == Attention::Done { Attention::Idle } else { a };
-        ctx.attention(a, why);
+        if why == CUT_OFF {
+            ctx.reason(a, cut_reason(why));
+        } else {
+            ctx.attention(a, why);
+        }
     }
     drop(g);
     ctx.changed();
+}
+
+/// Why a block whose turn the daemon's restart cut off needs you (#680).
+const CUT_OFF: &str = "the daemon restarted and cut its turn off";
+
+/// What `continue` sends the agent after a restart cut its turn.
+const CUT_PROMPT: &str = "Arugula restarted while you were working and your last turn was cut off. Check what you had started (background shells may still be running), then carry on.";
+
+/// The reason for [`CUT_OFF`]: a card with a Continue action.
+fn cut_reason(headline: String) -> arugula_proto::Reason {
+    arugula_proto::Reason {
+        kind: arugula_proto::ReasonKind::Input,
+        since_ms: now_ms(),
+        headline,
+        command: None,
+        exit: None,
+        duration_ms: None,
+        bundle: None,
+        ask: None,
+        gate: None,
+        actions: vec![arugula_proto::Action::Continue, arugula_proto::Action::Dismiss],
+    }
 }
 
 /// Act on what a frame asked for.
@@ -2554,6 +2594,12 @@ impl Agent {
         Ok(json!({}))
     }
 
+    /// A restart cut a turn off, and the agent is back to be told so.
+    fn cut_off(&self) -> bool {
+        let g = self.inner.lock().unwrap();
+        g.cut && matches!(g.status, Status::Starting | Status::Ready)
+    }
+
     fn start(&self) -> Result<Value, String> {
         let mut g = self.inner.lock().unwrap();
         if g.link.is_some() && !matches!(g.status, Status::Exited | Status::Stopped) {
@@ -2619,6 +2665,12 @@ impl Block for Agent {
             "answer" => self.answer(&args, by),
             "decline" => self.decline(&args, by),
             "cancel" => self.cancel(),
+            // After a restart cut a turn off, Continue sends the agent on
+            // (#680); otherwise it starts a stopped agent.
+            "continue" if self.cut_off() => {
+                self.inner.lock().unwrap().cut = false;
+                self.send(&json!({ "text": CUT_PROMPT }), by)
+            }
             "start" | "resume" | "continue" => self.start(),
             "fork" => self.fork(),
             "forget" => {
