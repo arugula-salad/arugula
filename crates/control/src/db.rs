@@ -129,6 +129,11 @@ CREATE TABLE IF NOT EXISTS daemon_access (
     account TEXT NOT NULL,
     PRIMARY KEY (daemon, account)
 );
+CREATE TABLE IF NOT EXISTS daemon_agent_access (
+    daemon TEXT NOT NULL,
+    account TEXT NOT NULL,
+    PRIMARY KEY (daemon, account)
+);
 CREATE TABLE IF NOT EXISTS daemon_offers (
     daemon TEXT NOT NULL,
     account TEXT NOT NULL,
@@ -1087,6 +1092,7 @@ impl Db {
         // What it shared, and the answers: a machine that joins again (to
         // another account, say) asks again.
         c.execute("DELETE FROM daemon_access WHERE daemon = ?1", params![id])?;
+        c.execute("DELETE FROM daemon_agent_access WHERE daemon = ?1", params![id])?;
         c.execute("DELETE FROM daemon_links WHERE daemon = ?1", params![id])?;
         c.execute("DELETE FROM daemon_offers WHERE daemon = ?1", params![id])?;
         c.execute("DELETE FROM daemon_offer_pushes WHERE daemon = ?1", params![id])?;
@@ -1508,6 +1514,41 @@ impl Db {
         Ok(())
     }
 
+    /// #399: the accounts whose daemons a daemon lets in for its agents.
+    pub fn set_agent_access(&self, daemon: &str, accounts: &[String]) -> anyhow::Result<()> {
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        tx.execute("DELETE FROM daemon_agent_access WHERE daemon = ?1", params![daemon])?;
+        for a in accounts {
+            tx.execute(
+                "INSERT OR IGNORE INTO daemon_agent_access (daemon, account) VALUES (?1, ?2)",
+                params![daemon, a],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn daemon_lets_agents_in(&self, daemon: &str, account: &str) -> anyhow::Result<bool> {
+        Ok(self
+            .c()
+            .query_row(
+                "SELECT 1 FROM daemon_agent_access WHERE daemon = ?1 AND account = ?2",
+                params![daemon, account],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some())
+    }
+
+    /// Daemons that let an account's daemons in for their agents.
+    pub fn agent_daemons(&self, account: &str) -> anyhow::Result<Vec<String>> {
+        let c = self.c();
+        let mut q = c.prepare("SELECT daemon FROM daemon_agent_access WHERE account = ?1")?;
+        let rows = q.query_map(params![account], |r| r.get(0))?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
     pub fn daemon_lets_in(&self, daemon: &str, account: &str) -> anyhow::Result<bool> {
         Ok(self
             .c()
@@ -1877,6 +1918,7 @@ impl Db {
             )?;
             for sql in [
                 "DELETE FROM daemon_access WHERE daemon = ?1",
+                "DELETE FROM daemon_agent_access WHERE daemon = ?1",
                 "DELETE FROM daemon_links WHERE daemon = ?1",
                 "DELETE FROM daemon_watches WHERE daemon = ?1",
                 "DELETE FROM daemon_offers WHERE daemon = ?1",
@@ -1896,6 +1938,7 @@ impl Db {
             "DELETE FROM joins WHERE account = ?1",
             "DELETE FROM daemons WHERE account = ?1",
             "DELETE FROM daemon_access WHERE account = ?1",
+            "DELETE FROM daemon_agent_access WHERE account = ?1",
             "DELETE FROM daemon_offers WHERE account = ?1",
             "DELETE FROM daemon_offer_pushes WHERE account = ?1",
             "DELETE FROM share_answers WHERE account = ?1",

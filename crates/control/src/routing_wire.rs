@@ -1116,3 +1116,96 @@ fn join_proofs_and_signatures_are_what_daemons_sign() {
     let body = hex::encode(Sha256::digest(b"{}"));
     assert_eq!(msg, format!("illogical daemon auth v2\nPOST\n/api/x?y=1\n5\nab\n{body}\n"));
 }
+
+#[tokio::test]
+async fn a_daemon_reaches_the_machines_its_account_may_for_their_agents() {
+    // #399: Cy's machine lists and calls the agents on Mo's team box, signed
+    // as Cy's daemon; a stranger's daemon is routed nowhere.
+    let c = control(|_| {}).await;
+    let fran = person(&c.app, "fran", "f1");
+    let cy = person(&c.app, "cy", "c1");
+    person(&c.app, "ox", "x1");
+    let team = "0011223344556677";
+    let r = roster(team, 1, vec![member("f1", &fran, TeamRole::Owner), member("c1", &cy, TeamRole::Editor)], &fran);
+    let t = Team { id: team.into(), name: "Acme".into(), founder: "f1".into(), founder_root: fran.id(), locked: false };
+    c.app.db.add_team(&t, 1, &serde_json::to_string(&r).unwrap(), now_ms()).unwrap();
+    let team_box = daemon(&c.app, "f1", "team-box");
+    c.app.db.set_daemon_team(&team_box.id(), team).unwrap();
+    let _box_socket = dial_relay(&c, &team_box).await;
+    for _ in 0..50 {
+        if c.app.relay.online(&team_box.id()) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    let cys_box = daemon(&c.app, "c1", "cys-box");
+    let oxs_box = daemon(&c.app, "x1", "oxs-box");
+
+    // The directory, as a daemon: the team's box, and no shares to answer.
+    let (st, dir) = c.daemon_get(&cys_box, "/api/directory").await;
+    assert_eq!(st, 200, "{dir}");
+    let ids: Vec<&str> = dir["daemons"].as_array().unwrap().iter().map(|d| d["id"].as_str().unwrap()).collect();
+    assert!(ids.contains(&team_box.id().as_str()), "{dir}");
+    assert_eq!(dir["offers"], json!([]));
+    let (_, dir) = c.daemon_get(&oxs_box, "/api/directory").await;
+    assert!(!dir.to_string().contains(&team_box.id()), "{dir}");
+
+    let to_box = |d: &DeviceKeys| {
+        let path = format!("/api/relay/c/{}", team_box.id());
+        let mut req = format!("{}{path}", c.base.replace("http://", "ws://")).into_client_request().unwrap();
+        req.headers_mut().insert("x-arugula-auth", v2(d, "GET", &path, b"").parse().unwrap());
+        req
+    };
+    let (_ws, res) = tokio_tungstenite::connect_async(to_box(&cys_box)).await.expect("Cy's daemon is routed");
+    assert_eq!(res.status(), 101);
+    match tokio_tungstenite::connect_async(to_box(&oxs_box)).await {
+        Err(tokio_tungstenite::tungstenite::Error::Http(r)) => assert_eq!(r.status(), 404),
+        other => panic!("a stranger's daemon got {:?}", other.map(|(_, r)| r.status())),
+    }
+}
+
+#[tokio::test]
+async fn a_machine_that_offers_agents_is_routed_to_teammates_daemons_only() {
+    // #399: Bob's own machine lets Cy's daemons in for its agents. Control
+    // routes Cy's daemon there, not Cy's browser, and lists it to the
+    // daemon alone; a stranger named in the list gets nothing.
+    let c = control(|_| {}).await;
+    let fran = person(&c.app, "fran", "f1");
+    let bob = person(&c.app, "bob", "b1");
+    let cy = person(&c.app, "cy", "c1");
+    person(&c.app, "ox", "x1");
+    let team = "8899aabbccddeeff";
+    let r = roster(
+        team,
+        1,
+        vec![
+            member("f1", &fran, TeamRole::Owner),
+            member("b1", &bob, TeamRole::Editor),
+            member("c1", &cy, TeamRole::Editor),
+        ],
+        &fran,
+    );
+    let t = Team { id: team.into(), name: "Acme".into(), founder: "f1".into(), founder_root: fran.id(), locked: false };
+    c.app.db.add_team(&t, 1, &serde_json::to_string(&r).unwrap(), now_ms()).unwrap();
+    let bobs = daemon(&c.app, "b1", "bobs");
+    let cys = daemon(&c.app, "c1", "cys");
+    let oxs = daemon(&c.app, "x1", "oxs");
+
+    let (st, _) = c.daemon_post(&bobs, "/api/daemon/access", &json!({ "accounts": [], "agents": ["c1", "x1"] })).await;
+    assert_eq!(st, 200);
+    assert!(crate::teams::daemon_may_reach(&c.app, "c1", &bobs.id()).unwrap());
+    assert!(!crate::teams::may_reach(&c.app, "c1", &bobs.id()).unwrap(), "not Cy herself");
+    assert!(!crate::teams::daemon_may_reach(&c.app, "x1", &bobs.id()).unwrap(), "no relation: not routed");
+    let (_, dir) = c.daemon_get(&cys, "/api/directory").await;
+    assert!(dir.to_string().contains(&bobs.id()), "listed to Cy's daemon: {dir}");
+    let cy_session = session(&c.app, "c1");
+    let (_, dir) = c.as_person(&cy_session, "GET", "/api/directory", None).await;
+    assert!(!dir.to_string().contains(&bobs.id()), "not to Cy's browser: {dir}");
+    let (_, dir) = c.daemon_get(&oxs, "/api/directory").await;
+    assert!(!dir.to_string().contains(&bobs.id()), "{dir}");
+
+    // An older daemon's list (no `agents`) takes them away again.
+    let (st, _) = c.daemon_post(&bobs, "/api/daemon/access", &json!({ "accounts": [], "links_until": null })).await;
+    assert_eq!(st, 200);
+    assert!(!crate::teams::daemon_may_reach(&c.app, "c1", &bobs.id()).unwrap());
+}

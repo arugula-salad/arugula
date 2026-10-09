@@ -111,7 +111,7 @@ fn policy(method: &Method, path: &str) -> Policy {
         // M76: what's offered to other people's agents is the owner's to
         // choose; the cards (and, from M78, their tasks) are for anyone who
         // reaches this machine.
-        ["api", "a2a", "offers" | "recipes"] => Policy::Owner,
+        ["api", "a2a", "offers" | "recipes" | "catalog"] => Policy::Owner,
         ["api", "a2a", "agents", ..] => Policy::Handler,
         // M61: the mux checks each thread (a pane's, or a session's).
         ["api", "threads", ..] => Policy::Handler,

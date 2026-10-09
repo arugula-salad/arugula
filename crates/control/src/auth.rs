@@ -102,6 +102,30 @@ impl FromRequestParts<Arc<App>> for Session {
     }
 }
 
+/// Someone reaching a machine through the relay: a signed-in person, or
+/// (#399) one of their daemons, which reaches another machine's agents for
+/// its own agents. The daemon on the other end decides what a daemon may
+/// do there (`/api/a2a/` only); control only routes, as for a person.
+pub struct Reacher {
+    pub account: String,
+    /// A daemon's signature, not a person's.
+    pub daemon: bool,
+}
+
+impl FromRequestParts<Arc<App>> for Reacher {
+    type Rejection = ApiError;
+
+    async fn from_request_parts(parts: &mut Parts, app: &Arc<App>) -> Result<Self, ApiError> {
+        if let Some(Signed(Ok(cert))) = parts.extensions.get::<Signed>()
+            && cert.kind == Kind::Daemon
+        {
+            return Ok(Reacher { account: cert.account.clone(), daemon: true });
+        }
+        let s = Session::from_request_parts(parts, app).await?;
+        Ok(Reacher { account: s.account, daemon: false })
+    }
+}
+
 /// An enrolled daemon, by its signature (checked by [`verify_daemon`],
 /// which sees the body).
 pub struct DaemonAuth {

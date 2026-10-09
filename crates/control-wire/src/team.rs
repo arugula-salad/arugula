@@ -79,6 +79,12 @@ pub struct AccessList {
     pub accounts: Vec<String>,
     /// Until when (ms) read-only links may reach it through the relay.
     pub links_until: Option<u64>,
+    /// #399: accounts whose daemons may reach it for its agents only (a
+    /// teammate's machine, for the team's agent catalog). Routed for their
+    /// daemons, never for the people: their browsers don't list it. An
+    /// older daemon sends none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub agents: Vec<String>,
 }
 
 /// What a daemon says it understands, comma-separated (older ones send
