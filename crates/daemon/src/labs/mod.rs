@@ -43,11 +43,7 @@ use serde_json::Value;
 #[cfg(not(feature = "labs"))]
 use crate::block::{Block, BlockCtx, BlockKind};
 use crate::{
-    block::BlockKinds,
-    forge::model::Provider as ForgeProvider,
-    provider::{Begin, Exec, ExecEvent, Provider},
-    server::App,
-    shellenv::ShellEnv,
+    block::BlockKinds, forge::model::Provider as ForgeProvider, provider::Provider, server::App, shellenv::ShellEnv,
 };
 
 // Agent recipes and their A2A cards (M76): the `agents` flag.
@@ -74,9 +70,8 @@ pub mod gitlab;
 // dependency of the daemon, enabled by this feature.
 #[cfg(feature = "labs")]
 pub mod guest_ssh;
-// VMs: the machines panes run on, and the sandboxes they come from.
-#[cfg(feature = "labs")]
-pub mod machine;
+// VMs: the machines panes run on, and the sandboxes they come from. The
+// terminal on one is the core's (`arugula_mux::labs::machine`).
 #[cfg(feature = "labs")]
 pub mod provider_tunnel;
 #[cfg(feature = "labs")]
@@ -793,34 +788,6 @@ pub fn vms_unavailable(why: &str) -> String {
 #[cfg(not(feature = "labs"))]
 pub fn vms_unavailable(_why: &str) -> String {
     "VMs aren't in this build (built without labs)".to_owned()
-}
-
-/// Starts (or resumes) a session on `sprite`, a VM pane's terminal. There is
-/// no pane on a machine without a provider, which a build without Labs
-/// never has; if it is asked anyway, the session is lost at once.
-#[cfg(feature = "labs")]
-pub fn machine_start(
-    rt: &tokio::runtime::Handle,
-    provider: Arc<dyn Provider>,
-    sprite: String,
-    begin: Begin,
-    size: (u16, u16),
-    sink: impl Fn(ExecEvent) -> bool + Send + 'static,
-) -> Exec {
-    machine::start(rt, provider, sprite, begin, size, sink)
-}
-
-#[cfg(not(feature = "labs"))]
-pub fn machine_start(
-    _rt: &tokio::runtime::Handle,
-    _provider: Arc<dyn Provider>,
-    _sprite: String,
-    _begin: Begin,
-    _size: (u16, u16),
-    sink: impl Fn(ExecEvent) -> bool + Send + 'static,
-) -> Exec {
-    sink(ExecEvent::Lost { machine_gone: true });
-    Exec { tx: tokio::sync::mpsc::unbounded_channel().0 }
 }
 
 /// The static binaries to copy into a sandbox when making a daemon resident

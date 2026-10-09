@@ -138,7 +138,7 @@ fn append(record: &Path, line: &str) {
 
 /// One instance of a pipe this user alone may open; fails if the name is
 /// taken (another host, or someone squatting it).
-fn server(name: &str, access: u32, sa: &mut crate::pipe::Sa) -> io::Result<OwnedHandle> {
+fn server(name: &str, access: u32, sa: &mut crate::sys::Sa) -> io::Result<OwnedHandle> {
     let wide: Vec<u16> = name.encode_utf16().chain(Some(0)).collect();
     // SAFETY: a valid name and security attributes.
     let h = unsafe {
@@ -168,7 +168,7 @@ fn accept(h: &OwnedHandle) -> io::Result<()> {
         if ok == 0 && unsafe { GetLastError() } != ERROR_PIPE_CONNECTED {
             return Err(io::Error::last_os_error());
         }
-        if crate::pipe::same_user(h.as_raw_handle() as HANDLE).unwrap_or(false) {
+        if crate::sys::same_user(h.as_raw_handle() as HANDLE).unwrap_or(false) {
             return Ok(());
         }
         tracing::warn!("pane host: refused a client that isn't this user");
@@ -195,7 +195,7 @@ enum Out {
 fn host(args: &[String]) -> io::Result<()> {
     let o = parse(args).ok_or_else(|| io::Error::other("usage: _host --record FILE --pipe NAME -- PROGRAM ARGS"))?;
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let mut sa = crate::pipe::Sa::mine()?;
+    let mut sa = crate::sys::Sa::mine()?;
     // The pipes first: a second host for this pane fails here, before
     // starting anything.
     let out = server(&format!("{}-out", o.pipe), PIPE_ACCESS_OUTBOUND, &mut sa)?;

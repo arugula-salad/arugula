@@ -121,7 +121,7 @@ pub enum ExecEvent {
     },
 }
 
-pub(crate) enum ExecInput {
+pub enum ExecInput {
     Data(Vec<u8>),
     Resize(u16, u16),
     HangUp,
@@ -146,7 +146,7 @@ pub enum Begin {
 /// A pane's terminal on a machine. Dropping it detaches, leaving the session
 /// running for the next daemon.
 pub struct Exec {
-    pub(crate) tx: mpsc::UnboundedSender<ExecInput>,
+    pub tx: mpsc::UnboundedSender<ExecInput>,
 }
 
 impl Exec {

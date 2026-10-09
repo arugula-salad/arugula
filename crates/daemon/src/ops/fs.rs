@@ -17,7 +17,7 @@ use crate::fs::FsError;
 /// `FsError`'s answer as it was: its status and `{"error": …}`.
 impl From<FsError> for OpError {
     fn from(e: FsError) -> Self {
-        OpError::Status(e.status(), e.to_string())
+        OpError::Status(crate::fs::status_of(&e), e.to_string())
     }
 }
 
