@@ -140,7 +140,7 @@ pub enum HooksCmd {
         #[arg(long)]
         allow_acting: bool,
     },
-    /// Which events have the arugula hook, and which permission rules (exits 0 even if some don't).
+    /// Which hooks and permission rules are there (exits 0 even if some aren't).
     Status {
         /// Check DIR/.claude/settings.json instead of ~/.claude/settings.json.
         #[arg(long, value_name = "DIR")]
