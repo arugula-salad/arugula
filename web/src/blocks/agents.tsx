@@ -3,7 +3,9 @@
 // for its A2A cards; here they're grouped by machine, its owner named, an
 // offline machine's shown as last seen. Below, this machine's recipes (Claude
 // Code subagent files in a project): *Offer* and *Stop offering*, and *Run
-// here* for one this machine offers. Those are the owner's. M79: tasks
+// here* for one this machine offers, *Run there* for one another of the
+// account's machines offers (it starts there, and the page goes to it).
+// Those are the owner's. M79: tasks
 // from other people wait here for the owner (the card on this block allows
 // or denies one), and standing grants are listed with *Revoke*. Agents send
 // tasks with MCP's `delegate`; people with `arugula agents send`.
@@ -12,6 +14,7 @@ import { render } from "preact";
 import { useState } from "preact/hooks";
 import type { Client } from "../client";
 import type { PaneId } from "../proto";
+import { getFleet } from "../ui/hosts";
 import { askText } from "../ui/menu";
 import type { BlockRenderer, BlockView } from "./view";
 
@@ -112,6 +115,26 @@ function AgentsBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentsS
     if (prompt === null) return;
     await call("run_here", { agent: name, prompt: prompt.trim() }, `couldn't run ${name} here`, `run:${name}`);
   };
+  // Started on that machine, in its project: go there.
+  const runThere = async (m: Shelf, name: string) => {
+    const prompt = await askText(`Ask ${name} on ${m.name}`, "", "what to do (empty: just open it)");
+    if (prompt === null) return;
+    setBusy(`there:${m.machine}/${name}`);
+    try {
+      const res = await client.request("POST", `/api/blocks/${id}/call/run_there`, { machine: m.machine, agent: name, prompt: prompt.trim() });
+      const body = await res.json<{ block?: number; error?: string }>().catch(() => null);
+      if (!res.ok || typeof body?.block !== "number") {
+        client.toast(body?.error ?? `couldn't run ${name} on ${m.name} (${res.status})`);
+        return;
+      }
+      const fleet = getFleet();
+      fleet?.open(fleet.list.find((h) => h.id === m.machine)?.name ?? m.name, body.block);
+    } catch {
+      client.toast(`couldn't run ${name} on ${m.name}`);
+    } finally {
+      setBusy(null);
+    }
+  };
   return (
     <div class="review ws fountain agents" data-agents-block={id}>
       <div class="review-bar">
@@ -176,8 +199,13 @@ function AgentsBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentsS
                         Run here
                       </button>
                     )}
+                    {!m.here && !m.owner && mayOwn && m.online && (
+                      <button class="pri" data-run-there={c.name} disabled={busy !== null} title={`Starts it on ${m.name}, in its project there, and goes to it`} onClick={() => void runThere(m, c.name)}>
+                        Run there
+                      </button>
+                    )}
                     {!m.here && (
-                      <span class="dim" data-send-task={c.name} title={`An agent of yours: delegate {kind: send, machine: "${m.name}", agent: "${c.name}"}; or arugula agents send ${m.name} ${c.name} …`}>
+                      <span class="dim" data-send-task={c.name} title={`An agent of yours: delegate {kind: send, agent: "${c.name}"} (pr: true for a fix in its own project); or arugula agents send ${m.name} ${c.name} …`}>
                         your agents can delegate to it
                       </span>
                     )}

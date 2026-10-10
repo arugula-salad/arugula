@@ -150,6 +150,10 @@ pub struct Config {
     /// member's agent session and writes a run record per turn.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub chant: Option<chant::Chant>,
+    /// Said to a Claude agent after its system prompt: how an A2A task's
+    /// work is to be delivered (a pull request, say).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub brief: Option<String>,
 }
 
 /// Where an opened conversation came from (M33). Until it's continued the
@@ -2339,6 +2343,16 @@ fn new_session(ctx: &AgentCtx, g: &mut Inner, cwd: &str) {
         }
         let had = meta["systemPrompt"]["append"].as_str().map(|a| format!("{a}\n\n")).unwrap_or_default();
         meta["systemPrompt"]["append"] = json!(format!("{had}{say}"));
+    }
+    // An A2A task's delivery (a pull request), after the rest.
+    if g.cfg.def.agent == Kind::Claude
+        && let Some(b) = g.cfg.brief.as_deref().map(str::trim).filter(|b| !b.is_empty())
+    {
+        if !meta.is_object() {
+            meta = json!({});
+        }
+        let had = meta["systemPrompt"]["append"].as_str().map(|a| format!("{a}\n\n")).unwrap_or_default();
+        meta["systemPrompt"]["append"] = json!(format!("{had}{b}"));
     }
     let mcp = g.servers(ctx);
     g.request("session/new", json!({ "cwd": cwd, "mcpServers": mcp, "_meta": meta }));

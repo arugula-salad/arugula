@@ -36,9 +36,11 @@ enum Cmd {
     },
     /// One offered agent's A2A card.
     Card { agent: String },
-    /// Hand a task to an agent another machine offers, and wait for it.
+    /// Hand a task to an agent a machine offers (this one's too), and wait
+    /// for it.
     Send {
-        /// The machine (its name, as `agents catalog` shows it).
+        /// The machine (its name, as `agents catalog` shows it; `here` for
+        /// this one; `-` for whichever offers the agent).
         machine: String,
         agent: String,
         /// What to do.
@@ -47,6 +49,22 @@ enum Cmd {
         /// Seconds to wait for it to finish, or ask something (0: don't).
         #[arg(long, default_value_t = 300)]
         wait: u64,
+        /// Have it open a pull request in its own project, not hand back a
+        /// patch.
+        #[arg(long)]
+        pr: bool,
+    },
+    /// Run an offered agent to talk to, wherever it's offered.
+    ///
+    /// It starts in its project, on its machine (one of yours), in a
+    /// session named after it.
+    Run {
+        agent: String,
+        /// The machine [default: whichever offers it, this one first].
+        #[arg(long)]
+        on: Option<String>,
+        /// What to ask it first.
+        prompt: Vec<String>,
     },
     /// A task you sent: its state, or answer it, or stop it.
     Task {
@@ -212,10 +230,24 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
                 eprintln!("{n}");
             }
         }
-        Cmd::Send { machine, agent, text, wait } => {
-            let body =
-                json!({ "kind": "send", "machine": machine, "agent": agent, "text": text.join(" "), "wait": wait });
+        Cmd::Send { machine, agent, text, wait, pr } => {
+            let machine = if machine == "-" { String::new() } else { machine };
+            let body = json!({ "kind": "send", "machine": machine, "agent": agent, "text": text.join(" "), "wait": wait, "pr": pr });
             return task_out(request(&sock, "POST", "/api/a2a/delegate", Some(&body))?.json()?, json_out);
+        }
+        Cmd::Run { agent, on, prompt } => {
+            let prompt = Some(prompt.join(" ")).filter(|p| !p.trim().is_empty());
+            let body = json!({ "machine": on, "agent": agent, "prompt": prompt });
+            let v = request(&sock, "POST", "/api/a2a/run", Some(&body))?.json()?;
+            if json_out {
+                print_json(&v);
+            } else {
+                println!(
+                    "{agent} runs on {} in %{} (session {agent})",
+                    v["machine"].as_str().unwrap_or("?"),
+                    v["block"]
+                );
+            }
         }
         Cmd::Task { machine, agent, task, answer, cancel, wait } => {
             let kind = if cancel {

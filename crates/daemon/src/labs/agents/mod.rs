@@ -323,6 +323,8 @@ pub fn routes(r: Router<Arc<App>>) -> Router<Arc<App>> {
     r.route("/api/a2a/agents", get(list))
         .route("/api/a2a/agents/{name}/card", get(card_get))
         .route("/api/a2a/agents/{name}", post(rpc))
+        .route("/api/a2a/agents/{name}/run", post(run_post))
+        .route("/api/a2a/run", post(run_anywhere))
         .route("/api/a2a/offers", get(offers_get).post(offers_set))
         .route("/api/a2a/recipes", get(recipes_get))
         .route("/api/a2a/catalog", get(catalog_get))
@@ -441,6 +443,94 @@ async fn rpc(
     Json(tasks::rpc(app.clone(), &name, &o.dir, caller, req).await).into_response()
 }
 
+/// Open an agent block wearing the offered recipe `agent`, in the project
+/// it's offered from, in a session of its name, for a person to talk to.
+pub async fn run_offered(app: &Arc<App>, agent: &str, prompt: Option<&str>) -> Result<arugula_proto::PaneId, String> {
+    let Some(o) = offers(app.control.state_dir()).into_iter().find(|o| o.agent == agent) else {
+        return Err(format!("{agent} isn't offered on {}", app.hosts.name()));
+    };
+    find(Path::new(&o.dir), &home(app), agent)?;
+    let mut config = json!({ "agent": "claude", "recipe": agent, "cwd": o.dir });
+    if let Some(p) = prompt.map(str::trim).filter(|p| !p.is_empty()) {
+        config["prompt"] = json!(p);
+    }
+    let req = arugula_proto::api::OpenRequest {
+        kind: arugula_proto::BlockType::Agent,
+        config,
+        session: Some(agent.to_owned()),
+        local: true,
+        ..Default::default()
+    };
+    match app.mux.api(|r| crate::mux::Api::Open(req, None, r)).await {
+        Some(r) => r,
+        None => Err("the daemon is stopping".into()),
+    }
+}
+
+#[derive(Deserialize)]
+struct RunReq {
+    /// Another machine (name or id); none: the one that offers it.
+    #[serde(default)]
+    machine: Option<String>,
+    #[serde(default)]
+    agent: String,
+    #[serde(default)]
+    prompt: Option<String>,
+}
+
+/// *Run there*'s other half (#403's follow-up): one of this machine's
+/// offered recipes run here for a person, asked by a device or a daemon of
+/// this machine's own account (another account sends tasks instead).
+async fn run_post(
+    State(app): AppState,
+    UrlPath(name): UrlPath<String>,
+    who: Option<axum::Extension<Principal>>,
+    dev: Option<axum::Extension<crate::e2e::Caller>>,
+    Json(r): Json<RunReq>,
+) -> Response {
+    if let Some(x) = off(&app) {
+        return x;
+    }
+    // A daemon is never let in as the owner (control.rs), so another of
+    // the account's machines is known by the account its channel proves.
+    let own = app.control.enrolled().map(|e| e.saved.cert.account.clone());
+    let mine = match &dev {
+        Some(d) => Some(&d.0.account) == own.as_ref(),
+        None => owner(&who),
+    };
+    if !mine {
+        return refuse(StatusCode::FORBIDDEN, "only this machine's own account runs its agents here (send a task)");
+    }
+    match run_offered(&app, &name, r.prompt.as_deref()).await {
+        Ok(block) => Json(json!({ "agent": name, "block": block })).into_response(),
+        Err(e) => refuse(StatusCode::BAD_REQUEST, &e),
+    }
+}
+
+/// Run an offered agent wherever it's offered, for the owner here (the
+/// CLI's `agents run`): on this machine, or on another of the account's.
+async fn run_anywhere(
+    State(app): AppState,
+    who: Option<axum::Extension<Principal>>,
+    dev: Option<axum::Extension<crate::e2e::Caller>>,
+    Json(r): Json<RunReq>,
+) -> Response {
+    if let Some(x) = off(&app) {
+        return x;
+    }
+    if !own_account(&app, &who, &dev) {
+        return refuse(StatusCode::FORBIDDEN, "this machine's own account's");
+    }
+    let machine = match delegate::locate(&app, r.machine.as_deref(), &r.agent).await {
+        Ok(m) => m,
+        Err(e) => return refuse(StatusCode::NOT_FOUND, &e),
+    };
+    match delegate::run_there(&app, &machine, &r.agent, r.prompt.as_deref()).await {
+        Ok(v) => Json(v).into_response(),
+        Err(e) => refuse(StatusCode::BAD_GATEWAY, &e),
+    }
+}
+
 /// Every recipe on this machine, for the Agents page.
 async fn recipes_all(State(app): AppState, who: Option<axum::Extension<Principal>>) -> Response {
     if let Some(r) = off(&app) {
@@ -537,8 +627,13 @@ async fn recipes_projects(
 struct DelegateReq {
     /// send, get, answer or cancel.
     kind: String,
+    /// None or empty: the machine that offers the agent ([`delegate::locate`]).
+    #[serde(default)]
     machine: String,
     agent: String,
+    /// send: deliver it as a pull request.
+    #[serde(default)]
+    pr: bool,
     #[serde(default)]
     text: Option<String>,
     #[serde(default)]
@@ -600,13 +695,17 @@ async fn delegate_post(
         let summary = format!("Task {task}'s patch is in diff block %{block}, on a copy of {dir}. {}", a.text(task));
         return Json(json!({ "block": block, "worktree": wt, "applied": a, "summary": summary })).into_response();
     }
-    let (m, a) = (r.machine.as_str(), r.agent.as_str());
+    let machine = match delegate::locate(&app, Some(r.machine.as_str()), &r.agent).await {
+        Ok(m) => m,
+        Err(e) => return refuse(StatusCode::NOT_FOUND, &e),
+    };
+    let (m, a) = (machine.as_str(), r.agent.as_str());
     let claims = json!({ "machine": app.hosts.name() });
     let text = r.text.as_deref().filter(|t| !t.trim().is_empty());
     let task = r.task.as_deref().filter(|t| !t.is_empty());
     let got = match (r.kind.as_str(), text, task) {
-        ("send", Some(t), _) => delegate::send(&app, m, a, t, None, claims).await,
-        ("answer", Some(t), Some(id)) => delegate::send(&app, m, a, t, Some(id), claims).await,
+        ("send", Some(t), _) => delegate::send(&app, m, a, t, None, claims, r.pr).await,
+        ("answer", Some(t), Some(id)) => delegate::send(&app, m, a, t, Some(id), claims, false).await,
         ("get", _, Some(id)) => delegate::get(&app, m, a, id).await,
         ("cancel", _, Some(id)) => delegate::cancel(&app, m, a, id).await,
         _ => Err("kind: send {text}, answer {task, text}, get {task} or cancel {task}".into()),

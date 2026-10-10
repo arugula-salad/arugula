@@ -9,6 +9,13 @@
 //! - **A task** runs the recipe as an agent block (session `a2a`) in a git
 //!   worktree of the offer's project, detached at its `HEAD`. It ends with
 //!   the agent's last reply and a patch against that commit, as artifacts.
+//! - **Or a pull request** (`deliver: pr` in the message's `arugula`
+//!   metadata): the worktree is a new branch, `a2a/AGENT-TASK`, off the
+//!   project's origin's default branch as just fetched, and the agent is
+//!   told (after its prompt) to commit there, push and open a pull request
+//!   with the project's own tooling, as this machine's owner, without
+//!   merging it. The reply names the pull request: a `pr` artifact carries
+//!   its link and the branch. The patch comes too, in case it didn't.
 //! - **Consent (M79):** a task from another account waits (`SUBMITTED`)
 //!   until this machine's own account allows it on a card, held by the
 //!   Team agents block (opened in session `a2a` when none is) and pushed:
@@ -22,8 +29,9 @@
 //! - **Durable:** each task is `<state>/a2a/tasks/ID.json`, written on every
 //!   change; a restarted daemon follows those still running and asks again
 //!   for those still waiting. Grants are `<state>/a2a/grants.json`.
-//! - **Cleaned up** once the caller has read the ended task: its block
-//!   closes and its worktree goes.
+//! - **Cleaned up** once its caller has read the ended task (not when this
+//!   machine's owner looks at someone else's): its block closes and its
+//!   worktree goes, and a pull request's branch too once it's pushed.
 
 use std::{
     collections::HashMap,
@@ -99,6 +107,14 @@ pub struct Task {
     /// Its caller read it once it ended: what it left behind can go.
     #[serde(default)]
     pub collected: bool,
+    /// Delivered as a pull request, not only a patch.
+    #[serde(default)]
+    pub pr: bool,
+    /// A pull request's branch, and what it's off (`origin/main`).
+    #[serde(default)]
+    pub branch: Option<String>,
+    #[serde(default)]
+    pub from: Option<String>,
 }
 
 struct Live {
@@ -306,6 +322,8 @@ impl Task {
                 "base": self.base,
                 "caller": self.caller.name,
                 "at_ms": self.at_ms,
+                "deliver": if self.pr { "pr" } else { "patch" },
+                "branch": self.branch,
             } },
         });
         let h: Vec<Value> = match history {
@@ -385,7 +403,7 @@ pub async fn rpc(app: Arc<App>, name: &str, dir: &str, caller: Asker, req: Value
             let Some(t) = p["id"].as_str().and_then(snapshot).filter(|t| may_see(&caller, t) && t.agent == name) else {
                 return err(&id, -32001, "no such task");
             };
-            if TERMINAL.contains(&t.state.as_str()) && !t.collected && !caller.own() {
+            if TERMINAL.contains(&t.state.as_str()) && !t.collected && caller.account == t.caller.account {
                 update(&t.id, |x| x.collected = true);
                 tokio::spawn(clean_up(app.clone(), t.id.clone()));
             }
@@ -476,6 +494,7 @@ async fn send(app: Arc<App>, id: Value, name: &str, dir: &str, caller: Asker, p:
             state: SUBMITTED.into(),
             text: text.clone(),
             dir: dir.to_owned(),
+            pr: message["metadata"]["arugula"]["deliver"] == "pr",
             history: vec![message.clone()],
             at_ms: now_ms(),
             ..Default::default()
@@ -578,14 +597,62 @@ async fn after_consent(app: Arc<App>, t: String, text: String) {
     turn(app, t, text, false).await;
 }
 
+/// The branch an origin's pull requests go to, as `origin/NAME`: what its
+/// `HEAD` names, else `main` or `master`.
+async fn default_branch(dir: &Path) -> Result<String, String> {
+    if let Ok(r) = git(dir, &["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"]).await {
+        return Ok(r.trim().to_owned());
+    }
+    for b in ["origin/main", "origin/master"] {
+        if git(dir, &["rev-parse", "--verify", "--quiet", &format!("{b}^{{commit}}")]).await.is_ok() {
+            return Ok(b.to_owned());
+        }
+    }
+    Err("its origin has no default branch (origin/HEAD, main or master) to open a pull request against".into())
+}
+
+/// What a pull request's agent is told, after its own prompt.
+fn pr_brief(dir: &str, branch: &str, from: &str, base: &str) -> String {
+    let short: String = base.chars().take(12).collect();
+    format!(
+        "Deliver this task as a pull request. You're in a fresh worktree of {dir} on the branch `{branch}`, \
+         made from {from} ({short}) as just fetched: work here, not in another checkout or worktree. Commit your \
+         work on this branch, push it to origin, and open a pull request against {} with this project's own \
+         tooling and conventions (its contributing guide or CLAUDE.md says how). Don't merge it. End your reply \
+         with the pull request's URL, or with why there isn't one.",
+        from.trim_start_matches("origin/")
+    )
+}
+
 /// A worktree of the offer's project and an agent block wearing the recipe.
 async fn start(app: &Arc<App>, t: &str) -> Result<(), String> {
     let task = snapshot(t).ok_or("gone")?;
     let dir = PathBuf::from(&task.dir);
-    let base = git(&dir, &["rev-parse", "HEAD"]).await?.trim().to_owned();
     let wt = app.control.state_dir().join("a2a").join("work").join(t);
-    git(&dir, &["worktree", "add", "-q", "--detach", &wt.display().to_string(), &base]).await?;
+    let mut brief = None;
+    let base = if task.pr {
+        git(&dir, &["fetch", "--quiet", "origin"])
+            .await
+            .map_err(|e| format!("a pull request needs its origin: {e}"))?;
+        let from = default_branch(&dir).await?;
+        let base = git(&dir, &["rev-parse", &format!("{from}^{{commit}}")]).await?.trim().to_owned();
+        let branch = format!("a2a/{}-{t}", task.agent);
+        git(&dir, &["worktree", "add", "-q", "-b", &branch, &wt.display().to_string(), &base]).await?;
+        brief = Some(pr_brief(&task.dir, &branch, &from, &base));
+        update(t, |x| {
+            x.branch = Some(branch.clone());
+            x.from = Some(from.clone());
+        });
+        base
+    } else {
+        let base = git(&dir, &["rev-parse", "HEAD"]).await?.trim().to_owned();
+        git(&dir, &["worktree", "add", "-q", "--detach", &wt.display().to_string(), &base]).await?;
+        base
+    };
     let mut config = json!({ "agent": "claude", "recipe": task.agent, "cwd": wt.display().to_string() });
+    if let Some(b) = brief {
+        config["brief"] = json!(b);
+    }
     // Someone else's task never runs with every check off: a recipe that
     // asks for that runs in the default mode instead (S34). Its other
     // modes (acceptEdits, plan) stand.
@@ -693,6 +760,9 @@ async fn finish(app: &App, t: &str, block: PaneId) {
     {
         artifacts.push(p);
     }
+    if let (Some(branch), Some(wt), Some(base)) = (&task.branch, &task.worktree, &task.base) {
+        artifacts.push(pr_artifact(t, &reply, branch, task.from.as_deref().unwrap_or_default(), wt, base).await);
+    }
     let short: String = reply.chars().take(2000).collect();
     let msg = agent_message(&short, t, &task.context);
     update(t, |x| {
@@ -747,17 +817,72 @@ async fn patch(t: &str, wt: &Path, base: &str) -> Option<Value> {
     }
 }
 
-/// The caller has the result: close the task's block and drop its worktree.
+/// The last pull request link in `reply`: GitHub's, Forgejo's and Gitea's
+/// (`/pull/N`, `/pulls/N`), GitLab's (`/merge_requests/N`).
+pub fn pr_link(reply: &str) -> Option<String> {
+    reply
+        .split(|c: char| c.is_whitespace() || "()<>[]\"'`".contains(c))
+        .filter(|w| w.starts_with("https://") || w.starts_with("http://"))
+        .map(|w| w.trim_end_matches(['.', ',', ';', ':', '!', '?']))
+        .rfind(|w| {
+            let mut parts = w.rsplit('/');
+            let n = parts.next().unwrap_or_default();
+            !n.is_empty()
+                && n.chars().all(|c| c.is_ascii_digit())
+                && matches!(parts.next(), Some("pull" | "pulls" | "merge_requests"))
+        })
+        .map(str::to_owned)
+}
+
+/// A pull request task's own artifact: its link (from the reply), its
+/// branch, the commits on it and whether origin has them.
+async fn pr_artifact(t: &str, reply: &str, branch: &str, from: &str, wt: &Path, base: &str) -> Value {
+    let url = pr_link(reply);
+    let commits: u64 = git(wt, &["rev-list", "--count", &format!("{base}..HEAD")])
+        .await
+        .ok()
+        .and_then(|n| n.trim().parse().ok())
+        .unwrap_or(0);
+    let pushed =
+        match (git(wt, &["rev-parse", "HEAD"]).await, git(wt, &["rev-parse", &format!("origin/{branch}")]).await) {
+            (Ok(a), Ok(b)) => a.trim() == b.trim(),
+            _ => false,
+        };
+    let text = match &url {
+        Some(u) => format!("{u} (branch {branch}, {commits} commit(s) off {from})"),
+        None => format!(
+            "No pull request link in its reply. Its branch is {branch}, {commits} commit(s) off {from}, {}.",
+            if pushed { "pushed" } else { "not pushed" }
+        ),
+    };
+    json!({
+        "artifactId": format!("{t}-pr"),
+        "name": "pr",
+        "parts": [{ "text": text }],
+        "metadata": { "arugula": { "url": url, "branch": branch, "from": from, "commits": commits, "pushed": pushed } },
+    })
+}
+
+/// The caller has the result: close the task's block and drop its worktree
+/// (and a pull request's branch here, once origin has it).
 async fn clean_up(app: Arc<App>, t: String) {
     let Some(task) = snapshot(&t) else { return };
     if let Some(b) = task.block {
         let _ = app.mux.api(|r| Api::Close(b, r)).await;
     }
-    if let Some(wt) = &task.worktree {
-        let dir = PathBuf::from(&task.dir);
-        if let Err(e) = git(&dir, &["worktree", "remove", "--force", &wt.display().to_string()]).await {
-            warn!(task = t, error = e, "worktree not removed");
-        }
+    let dir = PathBuf::from(&task.dir);
+    if let Some(wt) = &task.worktree
+        && let Err(e) = git(&dir, &["worktree", "remove", "--force", &wt.display().to_string()]).await
+    {
+        warn!(task = t, error = e, "worktree not removed");
+    }
+    // Unpushed, it stays: it's the work.
+    if let Some(b) = &task.branch
+        && let (Ok(here), Ok(there)) =
+            (git(&dir, &["rev-parse", b]).await, git(&dir, &["rev-parse", &format!("origin/{b}")]).await)
+        && here.trim() == there.trim()
+    {
+        let _ = git(&dir, &["branch", "-D", b]).await;
     }
     info!(task = t, "A2A task cleaned up");
 }
@@ -782,6 +907,31 @@ mod tests {
         let t = Task { caller: ale.clone(), ..Default::default() };
         assert!(may_see(&ale, &t) && !may_see(&bo, &t));
         assert!(may_see(&Asker::default(), &t), "this machine's owner sees every task");
+    }
+
+    #[test]
+    fn a_pull_request_link_is_the_last_one_in_the_reply() {
+        assert_eq!(
+            pr_link("Opened https://github.com/o/r/pull/12. (Was https://github.com/o/r/pull/9)").as_deref(),
+            Some("https://github.com/o/r/pull/9")
+        );
+        assert_eq!(
+            pr_link("PR: <https://git.example/me/r/pulls/3>, merged? No.").as_deref(),
+            Some("https://git.example/me/r/pulls/3")
+        );
+        assert_eq!(
+            pr_link("see https://gitlab.com/g/p/-/merge_requests/41").as_deref(),
+            Some("https://gitlab.com/g/p/-/merge_requests/41")
+        );
+        assert_eq!(pr_link("https://github.com/o/r/pulls and https://github.com/o/r/issues/4"), None);
+        assert_eq!(pr_link("no link"), None);
+    }
+
+    #[test]
+    fn a_pull_request_brief_names_the_branch_and_where_it_goes() {
+        let b = pr_brief("/p", "a2a/fixer-t1", "origin/trunk", "0123456789abcdef");
+        assert!(b.contains("`a2a/fixer-t1`") && b.contains("origin/trunk (0123456789ab)"), "{b}");
+        assert!(b.contains("against trunk") && b.contains("Don't merge"), "{b}");
     }
 
     #[test]

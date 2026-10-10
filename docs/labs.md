@@ -543,8 +543,13 @@ people's agents. With `agents` on (M76, #398):
   grouped by machine and named with their owner. A machine that's offline,
   or doesn't answer, keeps the cards it last had, marked as such. Below
   them, a project's recipes, with *Offer* and *Stop offering*. *Run here*
-  runs one of this machine's offered recipes beside the block. *Send a
-  task* is M78's.
+  runs one of this machine's offered recipes beside the block. *Run there*
+  runs one another of your account's machines offers: it starts there, in
+  the project it's offered from, in a session named after it, and the page
+  goes to it. The Agents page's **Team** tab has the same as *Run* on each
+  of your account's agents, and `arugula agents run AGENT [--on MACHINE]
+  [PROMPT]` does it from a shell, finding the machine that offers it (this
+  one first). Another account's agents only take tasks.
 - **For agents:** MCP `list {kind: agents}` (with `query`, `fresh`). **For
   people:** `arugula agents catalog [--fresh]`. Both read
   `GET /api/a2a/catalog` (the owner's), which is kept in
@@ -564,9 +569,14 @@ people's agents. With `agents` on (M76, #398):
 ### Tasks and consent (M78, M79)
 
 - **Sending:** an agent uses MCP `delegate` (`send`, `get`, `answer`,
-  `cancel`, each with `machine` and `agent`). A person uses `arugula agents
-  send MACHINE AGENT TEXT` and `arugula agents task MACHINE AGENT TASK
-  [--answer TEXT | --cancel]`. Either way it's A2A 1.0 JSON-RPC over the
+  `cancel`, each with `agent`, and `machine` if more than one machine
+  offers it). A person uses `arugula agents send MACHINE AGENT TEXT`
+  (`here` for this machine, `-` for whichever offers it) and `arugula
+  agents task MACHINE AGENT TASK [--answer TEXT | --cancel]`.
+- **This machine's own agents** take tasks too: the same JSON-RPC, answered
+  here without control, as this machine's own account (no consent card).
+  Leave the machine out and the one that offers the agent is used, this
+  one first. Either way it's A2A 1.0 JSON-RPC over the
   same relay channel as the catalog, as this machine's account. `send`
   waits (five minutes by default) for the task to finish or ask something,
   and comes back with its reply and its patch's stat. The whole result,
@@ -602,6 +612,20 @@ people's agents. With `agents` on (M76, #398):
   didn't apply (as `.rej` files, when nothing merged), and new binary files
   the task left out. It also says when your checkout lacks the commit the
   task started from.
-- **Not yet:** a branch instead of a patch (pushed with the receiver's own
-  forge credentials), and files that aren't in a repository. There's no
+- **Or a pull request:** `delegate {kind: send, pr: true}` (or `agents send
+  --pr`) is for work on the agent's own project, not yours (fixing a bug
+  you found in its code). The task's worktree is a
+  new branch, `a2a/AGENT-TASK`, off its origin's default branch as just
+  fetched, and the agent is told, after its own prompt, to commit there,
+  push, and open a pull request with the project's own tooling, without
+  merging it. That runs with the receiving machine's forge credentials, as
+  its owner, so the consent card says so for another account's task. The
+  reply ends with the link, and a `pr` artifact carries it, the branch, its
+  commits and whether origin has them. The patch comes too. Once the task
+  is read, the branch goes from the project's checkout only if origin has
+  it.
+- **Cleaned up** once its own caller reads it, this machine's owner
+  included for a task they sent (before, only another account's tasks
+  were).
+- **Not yet:** files that aren't in a repository. There's no
   streaming (`SendStreamingMessage`): the caller polls `GetTask`.

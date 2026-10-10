@@ -3,6 +3,15 @@
 //! (`peer.rs`), signed with this daemon's own key, so the other machine
 //! knows which account asks.
 //!
+//! **An agent this machine offers** is reached the same way without the
+//! relay: the same JSON-RPC, answered here as this machine's own account
+//! (#403's follow-up). The machine can be left out: [`locate`] finds the
+//! one that offers the agent, this one first.
+//!
+//! **Delivered as a pull request** (`pr`): the receiver works on a branch
+//! off its origin's default branch and opens the pull request itself
+//! (`tasks.rs`); the reply and a `pr` artifact carry its link.
+//!
 //! An agent here uses it through MCP's `delegate` tool: `send` (and wait),
 //! `get` (and wait), `answer` (a question the task asked) and `cancel`.
 //! Each ended task's result (its reply, and its patch) is kept in
@@ -32,10 +41,46 @@ use crate::{server::App, store::now_ms};
 
 const HEADERS: [(&str, &str); 1] = [("A2A-Version", super::A2A_VERSION)];
 
+/// Whether `machine` names this one: its name, its id in control, or
+/// `here`.
+pub fn is_here(app: &App, machine: &str) -> bool {
+    let id = app.control.enrolled().map(|e| e.saved.cert.device.clone());
+    machine == "here" || machine == app.hosts.name() || Some(machine) == id.as_deref()
+}
+
+/// The machine that offers `agent`: `machine` if it's given, else this one
+/// if it offers it, else the one machine in the team's catalog that does.
+pub async fn locate(app: &Arc<App>, machine: Option<&str>, agent: &str) -> Result<String, String> {
+    if let Some(m) = machine.map(str::trim).filter(|m| !m.is_empty()) {
+        return Ok(m.to_owned());
+    }
+    if super::offers(app.control.state_dir()).iter().any(|o| o.agent == agent) {
+        return Ok(app.hosts.name().to_owned());
+    }
+    let c = super::catalog::get(app, super::catalog::FRESH_MS).await;
+    let mut on: Vec<&super::catalog::Shelf> =
+        c.machines.iter().filter(|s| !s.here && s.agents.iter().any(|a| a["name"] == agent)).collect();
+    // Two machines with one name: the ids tell them apart.
+    let named = |s: &super::catalog::Shelf| {
+        if c.machines.iter().filter(|o| o.name == s.name).count() > 1 { s.machine.clone() } else { s.name.clone() }
+    };
+    match on.len() {
+        0 => Err(format!("no machine you reach offers {agent} (list kind agents shows what's offered)")),
+        1 => Ok(named(on.remove(0))),
+        _ => Err(format!(
+            "{agent} is offered on {}: say which machine",
+            on.iter().map(|s| named(s)).collect::<Vec<_>>().join(", ")
+        )),
+    }
+}
+
 /// One JSON-RPC call to `agent` on `machine`: its result, or its error.
 async fn call(app: &Arc<App>, machine: &str, agent: &str, method: &str, params: Value) -> Result<Value, String> {
-    let m = crate::peer::find(&app.control, machine).await.map_err(|e| e.to_string())?;
     let body = json!({ "jsonrpc": "2.0", "id": now_ms(), "method": method, "params": params });
+    if is_here(app, machine) {
+        return local(app, agent, body).await;
+    }
+    let m = crate::peer::find(&app.control, machine).await.map_err(|e| e.to_string())?;
     let path = format!("/api/a2a/agents/{}", agent);
     let (status, bytes) = crate::peer::request(&app.control, &m, "POST", &path, Some(&body), &HEADERS)
         .await
@@ -52,16 +97,41 @@ async fn call(app: &Arc<App>, machine: &str, agent: &str, method: &str, params: 
     Ok(v["result"].clone())
 }
 
+/// A call on an agent this machine offers, answered here as this machine's
+/// own account (the route's handler, without the channel).
+async fn local(app: &Arc<App>, agent: &str, req: Value) -> Result<Value, String> {
+    let Some(o) = super::offers(app.control.state_dir()).into_iter().find(|o| o.agent == agent) else {
+        return Err(format!("{agent} isn't offered on this machine (arugula agents offer {agent})"));
+    };
+    super::find(std::path::Path::new(&o.dir), &crate::home(), agent)
+        .map_err(|_| format!("{agent} is offered here but its recipe is gone"))?;
+    let claims = req["params"]["message"]["metadata"]["arugula"].clone();
+    let caller = super::tasks::asker(app, None, claims);
+    let v = super::tasks::rpc(app.clone(), agent, &o.dir, caller, req).await;
+    if let Some(e) = v.get("error").filter(|e| !e.is_null()) {
+        return Err(format!("{agent}: {}", e["message"].as_str().unwrap_or("an error")));
+    }
+    Ok(v["result"].clone())
+}
+
 /// Send `text` to `agent` on `machine`: a new task, or (with `task`) the
-/// next message on one (an answer to its question, or a follow-up).
+/// next message on one (an answer to its question, or a follow-up). A new
+/// one with `pr` is delivered as a pull request.
 pub async fn send(
     app: &Arc<App>,
     machine: &str,
     agent: &str,
     text: &str,
     task: Option<&str>,
-    claims: Value,
+    mut claims: Value,
+    pr: bool,
 ) -> Result<Value, String> {
+    if pr && task.is_none() {
+        if !claims.is_object() {
+            claims = json!({});
+        }
+        claims["deliver"] = json!("pr");
+    }
     let mut message = json!({
         "messageId": format!("m{}", now_ms()),
         "role": "ROLE_USER",
@@ -300,6 +370,30 @@ pub async fn review(state_dir: &Path, scratch: &Path, task: &str, dir: &Path) ->
     Ok((wt, applied))
 }
 
+/// Run `agent` on `machine` for a person to talk to: an agent block wearing
+/// the recipe in the project it's offered from, there (the own account's
+/// machines only; `POST /api/a2a/agents/NAME/run` there). Answers the
+/// machine's name and id (none: this one) and the block.
+pub async fn run_there(app: &Arc<App>, machine: &str, agent: &str, prompt: Option<&str>) -> Result<Value, String> {
+    let body = json!({ "prompt": prompt });
+    if is_here(app, machine) {
+        let block = super::run_offered(app, agent, prompt).await?;
+        return Ok(json!({ "machine": app.hosts.name(), "id": null, "block": block }));
+    }
+    let m = crate::peer::find(&app.control, machine).await.map_err(|e| e.to_string())?;
+    let path = format!("/api/a2a/agents/{agent}/run");
+    let (status, bytes) = crate::peer::request(&app.control, &m, "POST", &path, Some(&body), &HEADERS)
+        .await
+        .map_err(|e| format!("{machine}: {e:#}"))?;
+    let v: Value = serde_json::from_slice(&bytes).unwrap_or_default();
+    if status != 200 {
+        let why =
+            v["error"].as_str().map(str::to_owned).unwrap_or_else(|| String::from_utf8_lossy(&bytes).into_owned());
+        return Err(format!("{} said {status}: {why}", m.name));
+    }
+    Ok(json!({ "machine": m.name, "id": m.id, "block": v["block"] }))
+}
+
 /// A task in a few lines for an agent: its state, what it says or waits
 /// on, its reply, and its patch's stat (and what was left out of it).
 pub fn summary(machine: &str, agent: &str, t: &Value) -> String {
@@ -318,6 +412,10 @@ pub fn summary(machine: &str, agent: &str, t: &Value) -> String {
                     out.push_str(&format!("Its reply:\n{r}\n"));
                 }
             }
+            Some("pr") => {
+                let r = a["parts"][0]["text"].as_str().unwrap_or_default();
+                out.push_str(&format!("Its pull request: {r}\n"));
+            }
             Some("patch") => {
                 let m = &a["metadata"]["arugula"];
                 out.push_str(&format!(
@@ -334,7 +432,8 @@ pub fn summary(machine: &str, agent: &str, t: &Value) -> String {
             _ => {}
         }
     }
-    if state == "completed" && t["artifacts"].as_array().into_iter().flatten().any(|a| a["name"] == "patch") {
+    let has = |name: &str| t["artifacts"].as_array().into_iter().flatten().any(|a| a["name"] == name);
+    if state == "completed" && has("patch") && !has("pr") {
         out.push_str(
             "delegate {kind: review} shows the patch in a diff block on your checkout; {kind: apply} applies it.\n",
         );

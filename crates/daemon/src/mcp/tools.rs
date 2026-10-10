@@ -700,10 +700,17 @@ pub struct ReadInviteArgs {
 #[derive(Deserialize, JsonSchema)]
 pub struct DelegateArgs {
     /// The machine that offers the agent, by name (as list kind agents
-    /// gives it) or id.
-    pub machine: String,
+    /// gives it) or id; this one's too. Leave it out to use the one that
+    /// offers it (this machine first).
+    #[serde(default)]
+    pub machine: Option<String>,
     /// The agent, by name.
     pub agent: String,
+    /// send: deliver the work as a pull request in the agent's own project,
+    /// which it opens there (not as a patch for you to apply): for a fix
+    /// in its project's code, not yours.
+    #[serde(default)]
+    pub pr: bool,
     /// send: the task; answer: the answer to the question it asked.
     #[serde(default)]
     pub text: Option<String>,
@@ -723,7 +730,7 @@ pub struct DelegateArgs {
 const DELEGATE: &[Kind] = &[
     Kind {
         name: "send",
-        description: "Hand a task to an agent another machine offers (list kind agents lists them): text is what to do, in that agent's project there. Its owner may first have to allow it. Waits for it to finish (or ask you something) and returns its reply and the patch's stat; the patch itself is kept here.",
+        description: "Hand a task to an agent offered on this machine or another (list kind agents lists them; machine can be left out): text is what to do, in that agent's project there, with what it needs to know (it doesn't see your conversation). Its owner may first have to allow it. Waits for it to finish (or ask you something) and returns its reply and the patch's stat; the patch itself is kept here. With pr: true it opens a pull request in its own project instead, and the reply links it.",
         schema: schema_for_type::<DelegateArgs>,
         flag: None,
     },
@@ -951,7 +958,7 @@ const LIST: &[Kind] = &[
     },
     Kind {
         name: "agents",
-        description: "The agents the user's team offers: every Claude Code agent recipe offered on this machine, the user's other machines, their teams' and teammates', one line each: name, machine and owner, model, description. A machine that's offline shows its agents as last seen. To run one of this machine's here, start_agent {recipe: NAME}.",
+        description: "The agents the user's team offers: every Claude Code agent recipe offered on this machine, the user's other machines, their teams' and teammates', one line each: name, machine and owner, model, description. A machine that's offline shows its agents as last seen. To hand one a task (this machine's too), delegate {kind: send, agent: NAME}; for a fix in its own project, with pr: true. To run one of this machine's beside you, start_agent {recipe: NAME}.",
         schema: schema_for_type::<ListTeamAgentsArgs>,
         flag: None,
     },
@@ -1141,7 +1148,7 @@ fn all_defs() -> Vec<Def> {
         Def {
             name: "delegate",
             title: "Delegate to a teammate's agent",
-            description: "A task for an agent another machine offers (your own, your team's, a teammate's), over A2A: send it, follow it, answer its questions, or cancel it.",
+            description: "A task for an agent offered on this machine or another (your own, your team's, a teammate's), over A2A: send it, follow it, answer its questions, or cancel it.",
             args: Args::Kinds { kinds: table(DELEGATE), default: None },
             read_only: false,
             destructive: false,
@@ -2852,14 +2859,15 @@ impl Call<'_> {
             );
             return done(text, json!({ "task": task, "block": block, "worktree": wt, "applied": r }));
         }
-        let (machine, agent) = (a.machine.as_str(), a.agent.as_str());
+        let machine = d::locate(&app, a.machine.as_deref(), &a.agent).await?;
+        let (machine, agent) = (machine.as_str(), a.agent.as_str());
         let limit = Duration::from_secs(a.wait.unwrap_or(300).min(1800));
         let task_of = || a.task.as_deref().filter(|t| !t.is_empty()).ok_or_else(|| format!("{kind} needs task"));
         let text_of = || a.text.as_deref().filter(|t| !t.trim().is_empty()).ok_or_else(|| format!("{kind} needs text"));
         let claims = json!({ "machine": app.hosts.name(), "pane": self.me() });
         let t = match kind {
-            "send" => d::send(&app, machine, agent, text_of()?, None, claims).await?,
-            "answer" => d::send(&app, machine, agent, text_of()?, Some(task_of()?), claims).await?,
+            "send" => d::send(&app, machine, agent, text_of()?, None, claims, a.pr).await?,
+            "answer" => d::send(&app, machine, agent, text_of()?, Some(task_of()?), claims, false).await?,
             "cancel" => d::cancel(&app, machine, agent, task_of()?).await?,
             _ => d::get(&app, machine, agent, task_of()?).await?,
         };

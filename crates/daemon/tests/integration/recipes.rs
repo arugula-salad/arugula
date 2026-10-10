@@ -9,6 +9,12 @@
 //! what can't come along is named with why; a recipe needs the `agents`
 //! flag; offering is the owner's and checks the recipe; the cards and the
 //! routes go with the flag.
+//!
+//! And, after #403: a task for an agent this machine offers runs here,
+//! without control or a machine named, and is cleaned up once read; one
+//! delivered as a pull request works on a branch off the origin's default
+//! branch and is told so; *Run* opens one in its project, in a session of
+//! its name.
 
 // Over the daemon's Unix socket.
 #![cfg(unix)]
@@ -189,4 +195,148 @@ fn the_owner_offers_a_recipe_and_its_card_is_a2a() {
     assert_eq!(d.raw("GET", "/api/a2a/agents/fixer/card", None).0, 404);
     // Stopped.
     assert_eq!(d.post("/api/a2a/offers", json!({ "agent": "fixer" })), json!([]));
+}
+
+fn git(dir: &Path, args: &[&str]) -> String {
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(["-c", "user.name=t", "-c", "user.email=t@e", "-c", "init.defaultBranch=main"])
+        .args(args)
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&out.stderr));
+    String::from_utf8_lossy(&out.stdout).trim().to_owned()
+}
+
+/// The project as a clone of an origin that has moved on since: its
+/// `HEAD` is behind `origin/main`, once fetched.
+fn with_origin(dir: &Path, proj: &Path) -> String {
+    let origin = dir.join("origin.git");
+    git(dir, &["init", "-q", "--bare", origin.to_str().unwrap()]);
+    git(proj, &["init", "-q"]);
+    git(proj, &["add", "-A"]);
+    git(proj, &["commit", "-q", "-m", "first"]);
+    git(proj, &["remote", "add", "origin", origin.to_str().unwrap()]);
+    git(proj, &["push", "-q", "origin", "HEAD:main"]);
+    git(proj, &["fetch", "-q", "origin"]);
+    git(proj, &["remote", "set-head", "origin", "main"]);
+    let other = dir.join("other");
+    git(dir, &["clone", "-q", origin.to_str().unwrap(), other.to_str().unwrap()]);
+    std::fs::write(other.join("upstream.txt"), "newer\n").unwrap();
+    git(&other, &["add", "-A"]);
+    git(&other, &["commit", "-q", "-m", "upstream"]);
+    git(&other, &["push", "-q", "origin", "HEAD:main"]);
+    git(&other, &["rev-parse", "HEAD"])
+}
+
+fn task_of(r: &Value) -> &Value {
+    &r["task"]
+}
+
+fn artifact<'a>(t: &'a Value, name: &str) -> &'a Value {
+    t["artifacts"].as_array().unwrap().iter().find(|a| a["name"] == name).unwrap_or(&Value::Null)
+}
+
+#[test]
+fn a_task_for_an_agent_offered_here_runs_here_and_cleans_up_once_read() {
+    let dir = Scratch::new("recipe-task-here");
+    let s = setup(&dir);
+    with_origin(&dir, &s.proj);
+    let d = daemon(&s, true);
+    let proj = s.proj.canonicalize().unwrap();
+    let head = git(&proj, &["rev-parse", "HEAD"]);
+    d.post("/api/a2a/offers", json!({ "agent": "fixer", "dir": proj }));
+
+    // No machine named: this one offers it. No control needed.
+    let r = d.post(
+        "/api/a2a/delegate",
+        json!({ "kind": "send", "agent": "fixer", "text": "write notes.txt hi", "wait": 60 }),
+    );
+    let t = task_of(&r);
+    assert_eq!(t["status"]["state"], "TASK_STATE_COMPLETED", "{r}");
+    assert_eq!(t["metadata"]["arugula"]["deliver"], "patch", "{t}");
+    let patch = artifact(t, "patch");
+    assert_eq!(patch["metadata"]["arugula"]["base"], head.as_str(), "from the project's HEAD: {t}");
+    assert!(patch["parts"][0]["text"].as_str().unwrap().contains("+++ b/notes.txt"), "{patch}");
+    assert!(artifact(t, "pr").is_null(), "{t}");
+    assert!(r["summary"].as_str().unwrap().contains("{kind: review}"), "{r}");
+    // Read by its caller once it ended: its worktree and block go.
+    let id = t["id"].as_str().unwrap();
+    let wt = d.state.join("a2a/work").join(id);
+    d.wait_for("its worktree removed", || !wt.exists());
+    // A machine named as this one works too.
+    let r = d.post(
+        "/api/a2a/delegate",
+        json!({ "kind": "send", "machine": "here", "agent": "fixer", "text": "hello", "wait": 60 }),
+    );
+    assert_eq!(task_of(&r)["status"]["state"], "TASK_STATE_COMPLETED", "{r}");
+    // One that isn't offered here, with no machine to ask: said so.
+    let (status, body) =
+        d.raw("POST", "/api/a2a/delegate", Some(json!({ "kind": "send", "agent": "nobody", "text": "hi" })));
+    assert_eq!(status, 404, "{body}");
+    assert!(body.contains("no machine you reach offers nobody"), "{body}");
+}
+
+#[test]
+fn a_task_delivered_as_a_pull_request_works_on_a_branch_off_the_origin() {
+    let dir = Scratch::new("recipe-task-pr");
+    let s = setup(&dir);
+    let upstream = with_origin(&dir, &s.proj);
+    let d = daemon(&s, true);
+    let proj = s.proj.canonicalize().unwrap();
+    d.post("/api/a2a/offers", json!({ "agent": "fixer", "dir": proj }));
+
+    // `meta`: the fake says what its session was told.
+    let r = d
+        .post("/api/a2a/delegate", json!({ "kind": "send", "agent": "fixer", "text": "meta", "pr": true, "wait": 60 }));
+    let t = task_of(&r);
+    assert_eq!(t["status"]["state"], "TASK_STATE_COMPLETED", "{r}");
+    let id = t["id"].as_str().unwrap();
+    let branch = format!("a2a/fixer-{id}");
+    assert_eq!(t["metadata"]["arugula"]["deliver"], "pr", "{t}");
+    assert_eq!(t["metadata"]["arugula"]["branch"], branch.as_str(), "{t}");
+    // Off origin's main as fetched, not the project's own HEAD.
+    assert_eq!(t["metadata"]["arugula"]["base"], upstream.as_str(), "{t}");
+    // Told after its own prompt.
+    let reply = artifact(t, "reply")["parts"][0]["text"].as_str().unwrap();
+    assert!(reply.contains("You fix tests."), "{reply}");
+    assert!(reply.contains("Deliver this task as a pull request") && reply.contains(&branch), "{reply}");
+    assert!(reply.contains("against main"), "{reply}");
+    // No link in its reply, nothing pushed: said so.
+    let pr = artifact(t, "pr");
+    let m = &pr["metadata"]["arugula"];
+    assert_eq!(
+        (m["url"].clone(), m["pushed"].clone(), m["from"].clone()),
+        (Value::Null, json!(false), json!("origin/main"))
+    );
+    assert!(r["summary"].as_str().unwrap().contains("Its pull request: No pull request link"), "{r}");
+    assert!(!r["summary"].as_str().unwrap().contains("{kind: review}"), "{r}");
+    // Cleaned up once read; the branch stays, being unpushed work.
+    let wt = d.state.join("a2a/work").join(id);
+    d.wait_for("its worktree removed", || !wt.exists());
+    assert_eq!(git(&proj, &["rev-parse", &branch]), upstream);
+}
+
+#[test]
+fn run_opens_an_offered_agent_in_its_project_in_a_session_of_its_name() {
+    let dir = Scratch::new("recipe-run");
+    let s = setup(&dir);
+    let d = daemon(&s, true);
+    let proj = s.proj.canonicalize().unwrap();
+    let (status, body) = d.raw("POST", "/api/a2a/run", Some(json!({ "agent": "fixer" })));
+    assert_eq!(status, 404, "not offered anywhere: {body}");
+    d.post("/api/a2a/offers", json!({ "agent": "fixer", "dir": proj }));
+    let r = d.post("/api/a2a/run", json!({ "agent": "fixer", "prompt": "hello" }));
+    let block = r["block"].as_u64().unwrap_or_else(|| panic!("{r}"));
+    assert!(r["id"].is_null(), "this machine: {r}");
+    assert_eq!(d.wait(block, "idle"), "done", "{}", d.state(block));
+    assert_eq!(d.state(block)["recipe"], "fixer");
+    let panes = d.get("/api/panes");
+    let p = panes.as_array().unwrap().iter().find(|p| p["id"] == block).unwrap();
+    assert_eq!(p["session_name"], "fixer", "{p}");
+    assert_eq!(session(&d, block)["cwd"], proj.display().to_string(), "in its project");
+    // The route another machine of the account calls: the same.
+    let again = d.post("/api/a2a/agents/fixer/run", json!({}));
+    assert!(again["block"].as_u64().is_some(), "{again}");
 }

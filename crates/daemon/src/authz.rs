@@ -88,6 +88,8 @@ fn policy(method: &Method, path: &str) -> Policy {
         // M77: what this machine offers its team, and which project's
         // recipes the agents block lists, are the owner's.
         ["api", "blocks", _, "call", "offer" | "unoffer" | "recipes"] => Policy::Owner,
+        // So is *Run there*: an agent on another of the owner's machines.
+        ["api", "blocks", _, "call", "run_there"] => Policy::Owner,
         // M45b: the runner view and what it opens: an agent block on a
         // runner conversation (the owner's login), a diff whose git runs
         // as `fountain` through the owner's sudoers rule, a shell as
@@ -103,7 +105,7 @@ fn policy(method: &Method, path: &str) -> Policy {
         // M76: what's offered to other people's agents is the owner's to
         // choose; the cards (and, from M78, their tasks) are for anyone who
         // reaches this machine.
-        ["api", "a2a", "offers" | "recipes" | "catalog" | "waiting" | "grants" | "delegate"] => Policy::Owner,
+        ["api", "a2a", "offers" | "recipes" | "catalog" | "waiting" | "grants" | "delegate" | "run"] => Policy::Owner,
         // The Agents page's recipes: listing and writing them is the owner's
         // (writing, this machine's own account's: the handler checks).
         ["api", "a2a", "recipes", ..] => Policy::Owner,
