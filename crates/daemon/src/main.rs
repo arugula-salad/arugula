@@ -476,7 +476,8 @@ fn main() -> anyhow::Result<()> {
     log_to_file(&argv);
     tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "arugulad=info,arugula_mux=info".into()),
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "arugulad=info,arugula_mux=info".into()),
         )
         .init();
     // `just vsix`: Arugula's VS Code extension, for the marketplaces.
