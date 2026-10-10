@@ -6,6 +6,7 @@
 // TURN credentials from control, which gets them from Cloudflare (a fake
 // one here).
 
+import { createSocket, type Socket } from "node:dgram";
 import { createServer, type Server } from "node:http";
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { listen } from "./ports";
@@ -13,6 +14,11 @@ import { call, show, TeamControl } from "./team-fixture";
 
 const t = new TeamControl("huddles");
 let cf: Server;
+// The TURN server control hands out: a UDP port that takes packets and never
+// answers, as an unreachable relay looks. A closed port (port 9, as this
+// was) answers with ICMP errors instead, which on a host with one interface
+// (a CI pod) break Chrome's direct checks too, since they share its socket.
+let relay: Socket;
 const asked: { path: string; auth: string; body: string }[] = [];
 
 test.describe.configure({ mode: "serial" });
@@ -21,6 +27,9 @@ test.use({
 });
 
 test.beforeAll(async () => {
+  relay = createSocket("udp4");
+  await new Promise<void>((done) => relay.bind(0, "127.0.0.1", done));
+  const relayPort = relay.address().port;
   cf = createServer((req, res) => {
     let body = "";
     req.on("data", (d) => (body += d));
@@ -30,7 +39,7 @@ test.beforeAll(async () => {
         JSON.stringify({
           iceServers: [
             { urls: ["stun:stun.cloudflare.com:3478"] },
-            { urls: ["turn:127.0.0.1:9?transport=udp"], username: "fake-user", credential: "fake-pass" },
+            { urls: [`turn:127.0.0.1:${relayPort}?transport=udp`], username: "fake-user", credential: "fake-pass" },
           ],
         }),
       );
@@ -45,6 +54,7 @@ test.afterAll(async () => {
   t.stop();
   cf?.closeAllConnections();
   cf?.close();
+  relay?.close();
 });
 
 let alice: Page;
