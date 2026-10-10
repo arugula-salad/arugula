@@ -380,7 +380,6 @@ try {
   const refusal = logs.split("\n").find((l) => l.includes("refused") && l.includes(phone.id)) ?? "";
   check("a refused approval is logged with its reason and ids", refusal.includes("isn't one the account trusts") && refusal.includes(me.account), refusal);
   check("but not its signature", !logs.includes(forged.sig));
-  spy.close();
 
   // 8. Billing (M22). The free account used the relay past its allowance
   // (none, here): it's told.
@@ -534,6 +533,10 @@ try {
   }
   rows.close();
   check("no row in control's database mentions the account", left.length === 0, left.join(", "));
+  // Only now: the phone still approves joins in 9 and 9b through the spy.
+  // Closed earlier, those worked only while fetch kept an idle socket to it
+  // (#736).
+  spy.close();
 } catch (e) {
   console.log("FAIL", e);
   failed++;
