@@ -32,12 +32,17 @@ env:
   ARUGULA_RELEASE_SKIP_GREEN: ${{ vars.ARUGULA_RELEASE_SKIP_GREEN }}
 
 jobs:
+  # On the home cloud's runners (arugula-amd64, docs/development.md). The
+  # app builds in its own container (`just desktop-linux`), as linux-arm64's
+  # does on GitHub's runner.
   linux:
-    runs-on: [self-hosted, linux-x86_64]
+    runs-on: arugula-amd64
     steps:
       - uses: actions/checkout@v4
-      - run: echo "CARGO_TARGET_DIR=$HOME/.cache/illogical-ci/app-release" >> "$GITHUB_ENV"
-      - run: scripts/ci-cap-target 30
+      - uses: ./.github/actions/setup
+        with:
+          rust: "false"
+          packages: gh
       - run: just bootstrap
       - run: scripts/release check-app-version "$GITHUB_REF_NAME"
       - run: scripts/release sidecars x86_64-unknown-linux-musl "$RUNNER_TEMP/sidecars"
@@ -153,9 +158,13 @@ jobs:
 
   publish:
     needs: [linux, linux-arm64, macos, windows]
-    runs-on: [self-hosted, linux-x86_64]
+    runs-on: arugula-amd64
     steps:
       - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          rust: "false"
+          packages: gh
       - run: scripts/release app-publish "$GITHUB_REF_NAME"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

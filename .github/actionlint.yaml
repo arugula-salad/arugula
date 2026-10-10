@@ -3,3 +3,5 @@
 self-hosted-runner:
   labels:
     - arugula-amd64
+    # jake-mini's runner (releases).
+    - macos-arm64

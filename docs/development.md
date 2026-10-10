@@ -74,7 +74,8 @@ daemon's update check read it.
    THIRD_PARTY.md is stale), push it to main, wait for CI to pass on it, and
    tag the commit `chant ci last-green` names: `git tag -a vX.Y.Z -m
    "arugula X.Y.Z" "$sha" && git push origin vX.Y.Z`.
-   `.github/workflows/release.yml` builds the Linux tarballs on geek, the
+   `.github/workflows/release.yml` builds the Linux tarballs in the home
+   cloud (`arugula-amd64`, [CI](#ci)), the
    macOS ones on jake-mini (Apple silicon natively, Intel cross-compiled
    with `just build-macos-x86_64`) and the Windows zip on GitHub's runner,
    attaches them and `SHA256SUMS` to the GitHub release, publishes it as
@@ -99,8 +100,8 @@ daemon's update check read it.
    -m "arugula app X.Y.Z" "$sha" && git push origin app-vX.Y.Z`.
    `.github/workflows/app-release.yml` downloads arugulad
    and Arugula from the latest daemon release (checked against its
-   `SHA256SUMS`) for the app to carry, builds and signs the apps (Linux on
-   geek, macOS on jake-mini, notarized with the Developer ID when its
+   `SHA256SUMS`) for the app to carry, builds and signs the apps (Linux in
+   the home cloud, macOS on jake-mini, notarized with the Developer ID when its
    secrets are set, Windows on GitHub's runner), and publishes the release
    with its own `SHA256SUMS` and the updater's `latest.json`. It's never
    marked latest.
@@ -175,16 +176,15 @@ and 8 GB for Docker, and up to eight run at once. Until 2026-10-10 these
 jobs ran on eight host runners on geek, which kept builds warm on its
 disk but held up to 96 GB of a machine that is now also a cluster node.
 
-The release workflows' Linux jobs (`linux-x86_64`: release.yml,
-app-release.yml, forges-nightly.yml) still run on geek, as a systemd user
-service (`~/.config/systemd/user/actions-runner-illogical.service`,
-runner in `~/.local/share/actions-runner-illogical`), in
-`illogical-ci.slice` (CPUWeight 50 under the desktop; 40 GB), with
-`KillMode=control-group` (`process` stopped `run.sh` alone and the next
-start ran a second listener). Its jobs keep their build in
-`~/.cache/illogical-ci/`, which a job deletes first once it passes 30 GB
-(`scripts/ci-cap-target`): cargo never prunes it, and on 2026-10-02 it
-grew to 136 GB, filled jake-mini's disk and took the home cluster down.
+The release workflows' Linux jobs (release.yml's and app-release.yml's
+`linux` and `publish`) and forges-nightly.yml's run there too, on the same
+pods and the same setup, plus `gh` for publishing. A tag's run can only
+read main's caches, so release.yml's build takes check.yml's `static`
+cache; the nightly saves its own. Until 2026-10-10 they ran on a host
+runner on geek that kept its builds in `~/.cache/illogical-ci/`, which
+`scripts/ci-cap-target` kept under 30 GB a job: cargo never prunes it, and
+on 2026-10-02 it grew to 136 GB, filled jake-mini's disk and took the home
+cluster down.
 jake-mini (`macos-arm64`, releases only: check.yml's macos job runs on
 GitHub's `macos-15`, as one runner kept every run waiting) runs as a
 launchd agent, `~/Library/LaunchAgents/arugula.actions-runner.plist`,
@@ -197,7 +197,7 @@ a trigger of its own and reach them. Intel Macs are the exception:
 tarball and the app on GitHub's `macos-15-intel` runner, which isn't
 ours. It takes about an hour cold, so it runs weekly on main and by hand
 (`gh workflow run macos-intel.yml --ref BRANCH`), and keeps both as
-artifacts; every push lints the Intel build on geek (`just check-macos
+artifacts; every push lints the Intel build in the home cloud (`just check-macos
 x86_64`). A job's log: `gh run view --log
 <run id>` (or `--log-failed`).
 
