@@ -1,0 +1,50 @@
+# TEMPORARY (release-in-cluster branch only; removed before merge): the
+# release workflows' Linux builds on arugula-amd64 without a tag and without
+# uploading or publishing anything.
+name: release-dryrun
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  linux:
+    runs-on: arugula-amd64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          cache-key: static
+          packages: gh
+      - run: just bootstrap
+      - run: just static x86_64
+      - run: just static aarch64
+      - run: just dist
+      - run: ls -la dist && file dist/* | head
+  app-linux:
+    runs-on: arugula-amd64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          rust: "false"
+          packages: gh
+      - run: just bootstrap
+      - run: scripts/release sidecars x86_64-unknown-linux-musl "$RUNNER_TEMP/sidecars"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - run: just desktop-linux x86_64
+        env:
+          ARUGULA_DESKTOP_BINARIES: ${{ runner.temp }}/sidecars
+      - run: ls -la dist
+  publish-tools:
+    runs-on: arugula-amd64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          rust: "false"
+          packages: gh
+      - run: gh --version && git --version && ssh -V && jq --version
+      - run: gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

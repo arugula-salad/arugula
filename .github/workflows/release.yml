@@ -20,12 +20,17 @@ env:
   ARUGULA_RELEASE_SKIP_GREEN: ${{ vars.ARUGULA_RELEASE_SKIP_GREEN }}
 
 jobs:
+  # On the home cloud's runners (arugula-amd64, a fresh pod per job,
+  # docs/development.md). A tag's run can only read main's caches, so it
+  # takes check.yml's static one: x86_64's build starts warm.
   linux:
-    runs-on: [self-hosted, linux-x86_64]
+    runs-on: arugula-amd64
     steps:
       - uses: actions/checkout@v4
-      - run: echo "CARGO_TARGET_DIR=$HOME/.cache/illogical-ci/release" >> "$GITHUB_ENV"
-      - run: scripts/ci-cap-target 30
+      - uses: ./.github/actions/setup
+        with:
+          cache-key: static
+          packages: gh
       - run: just bootstrap
       - run: scripts/release check-version "$GITHUB_REF_NAME"
       - run: just static x86_64
@@ -73,9 +78,13 @@ jobs:
 
   publish:
     needs: [linux, macos, windows]
-    runs-on: [self-hosted, linux-x86_64]
+    runs-on: arugula-amd64
     steps:
       - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          rust: "false"
+          packages: gh
       - run: scripts/release sums "$GITHUB_REF_NAME"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
