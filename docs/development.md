@@ -179,7 +179,7 @@ The release workflows' Linux jobs (`linux-x86_64`: release.yml,
 app-release.yml, forges-nightly.yml) still run on geek, as a systemd user
 service (`~/.config/systemd/user/actions-runner-illogical.service`,
 runner in `~/.local/share/actions-runner-illogical`), in
-`illogical-ci.slice` (CPUWeight 50 under the desktop; 40 GB), with
+`illogical-ci.slice` (CPUWeight 50 under the desktop; 32 GB, throttled from 24), with
 `KillMode=control-group` (`process` stopped `run.sh` alone and the next
 start ran a second listener). Its jobs keep their build in
 `~/.cache/illogical-ci/`, which a job deletes first once it passes 30 GB
