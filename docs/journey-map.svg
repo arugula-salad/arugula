@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 600" role="img" aria-label="Metro map of the journeys: each is a coloured line through the steps it takes, from installing Arugula to two people working together."><style>:root {
+  --bg: #f4f6f8; --panel: #ffffff; --fg: #16202b; --muted: #5b6876; --rule: #d5dce3; --zone: #e9eef3;
+  --led: #1f8a4c; --friction: #b86e00; --unguided: #c4322b; --skipped: #7a8794;
+  --j1: #d8412f; --j2a: #2f6fdb; --j2b: #1b9aa6; --j2c: #6a49c9; --j5: #e08a16; --j6: #2e9a5a; --j3: #c43d8a; --j4: #8a7a2e;
+  --display: "Overpass", "Helvetica Neue", Arial, sans-serif;
+  --body: "Public Sans", "Helvetica Neue", Arial, sans-serif;
+  --mono: "Overpass Mono", ui-monospace, Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #11161c; --panel: #181f27; --fg: #e4e9ee; --muted: #93a1af; --rule: #2b3640; --zone: #1c242d;
+    --led: #4cc37f; --friction: #f0a33a; --unguided: #f06a60; --skipped: #8c99a6;
+    --j1: #f06a58; --j2a: #6a9cf5; --j2b: #43c3cf; --j2c: #a38bf0; --j5: #f5a93f; --j6: #55c582; --j3: #ec6fb3; --j4: #c8b45a;
+    color-scheme: dark;
+  }
+}
+.zone { fill: var(--zone); }
+.zone-label { font-family: var(--display); font-weight: 800; font-size: 12px; letter-spacing: .16em; fill: var(--muted); }
+.track { fill: none; stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; transition: opacity .15s; }
+.tag text { font-family: var(--display); font-weight: 800; font-size: 11px; fill: #fff; }
+.station rect { fill: var(--panel); stroke: var(--fg); stroke-width: 2.5; }
+.station.friction rect { stroke: var(--friction); stroke-width: 3.5; }
+.station.unguided rect { stroke: var(--unguided); stroke-width: 3.5; }
+.station.none rect, .station.skipped rect { stroke: var(--skipped); stroke-dasharray: 3 3; }
+.slabel { font-family: var(--display); font-weight: 700; font-size: 13px; fill: currentColor; paint-order: stroke; stroke: var(--panel); stroke-width: 4px; stroke-linejoin: round; }
+.snote { font-family: var(--display); font-weight: 700; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; paint-order: stroke; stroke: var(--panel); stroke-width: 4px; }
+.snote.friction { fill: var(--friction); } .snote.unguided { fill: var(--unguided); } .snote.skipped { fill: var(--skipped); }
+svg { color: var(--fg); font-family: var(--display); }</style><rect width="1400" height="600" rx="14" style="fill: var(--panel)"/>
+<rect class="zone" x="40" y="40" width="720" height="190" rx="14"/><text class="zone-label" x="58" y="218">GET IT</text>
+<rect class="zone" x="40" y="252" width="1020" height="210" rx="14"/><text class="zone-label" x="58" y="276">FIRST RUN</text>
+<text class="zone-label" x="1362" y="196" text-anchor="end">TOGETHER</text>
+<g class="line" data-line="J1"><title>J1: one person, Mac app, from no account to a terminal</title><polyline class="track" points="110.0,327.0 270.0,327.0 420.0,330.0 570.0,283.0 720.0,283.0 870.0,283.0 1020.0,283.0" style="stroke: var(--j1)"/></g>
+<g class="line" data-line="J2a"><title>J2a: two friends: a session shared to an account</title><polyline class="track" points="110.0,333.0 270.0,333.0 420.0,336.0 570.0,289.0 720.0,289.0 870.0,289.0 1020.0,289.0 1170.0,212.0 1170.0,443.0" style="stroke: var(--j2a)"/></g>
+<g class="line" data-line="J2b"><title>J2b: two friends through a team</title><polyline class="track" points="110.0,339.0 270.0,339.0 420.0,342.0 570.0,295.0 720.0,295.0 870.0,295.0 1020.0,295.0 1290.0,319.0 1170.0,449.0" style="stroke: var(--j2b)"/></g>
+<g class="line" data-line="J2c"><title>J2c: a machine in one team, a friend&#39;s second team</title><polyline class="track" points="110.0,345.0 270.0,345.0 420.0,348.0 570.0,301.0 720.0,301.0 870.0,301.0 1020.0,301.0 1290.0,325.0 1170.0,455.0" style="stroke: var(--j2c)"/></g>
+<g class="line" data-line="J5"><title>J5: won&#39;t read docs: to a working agent</title><polyline class="track" points="110.0,351.0 270.0,351.0 420.0,354.0 570.0,412.0 720.0,412.0 870.0,412.0" style="stroke: var(--j5)"/></g>
+<g class="line" data-line="J6"><title>J6: two people on a tailnet, no control</title><polyline class="track" points="110.0,357.0 270.0,357.0 720.0,532.0 1170.0,461.0 1290.0,532.0" style="stroke: var(--j6)"/></g>
+<g class="line" data-line="J3"><title>J3: installs the Mac app by hand, over an older daemon</title><polyline class="track" points="110.0,89.0 300.0,92.0 490.0,92.0 680.0,92.0" style="stroke: var(--j3)"/></g>
+<g class="line" data-line="J4"><title>J4: an agent installs over ssh</title><polyline class="track" points="110.0,95.0 300.0,182.0 490.0,182.0" style="stroke: var(--j4)"/></g>
+<g class="tag" data-line="J1"><rect x="1036" y="284" width="34" height="16" rx="8" style="fill: var(--j1)"/><text x="1053" y="296" text-anchor="middle">J1</text></g>
+<g class="tag" data-line="J2a"><rect x="1186" y="444" width="34" height="16" rx="8" style="fill: var(--j2a)"/><text x="1203" y="456" text-anchor="middle">J2a</text></g>
+<g class="tag" data-line="J2b"><rect x="1224" y="444" width="34" height="16" rx="8" style="fill: var(--j2b)"/><text x="1241" y="456" text-anchor="middle">J2b</text></g>
+<g class="tag" data-line="J2c"><rect x="1262" y="444" width="34" height="16" rx="8" style="fill: var(--j2c)"/><text x="1279" y="456" text-anchor="middle">J2c</text></g>
+<g class="tag" data-line="J5"><rect x="886" y="404" width="34" height="16" rx="8" style="fill: var(--j5)"/><text x="903" y="416" text-anchor="middle">J5</text></g>
+<g class="tag" data-line="J6"><rect x="1306" y="524" width="34" height="16" rx="8" style="fill: var(--j6)"/><text x="1323" y="536" text-anchor="middle">J6</text></g>
+<g class="tag" data-line="J3"><rect x="696" y="84" width="34" height="16" rx="8" style="fill: var(--j3)"/><text x="713" y="96" text-anchor="middle">J3</text></g>
+<g class="tag" data-line="J4"><rect x="506" y="174" width="34" height="16" rx="8" style="fill: var(--j4)"/><text x="523" y="186" text-anchor="middle">J4</text></g>
+<g class="station led"><title>Install page: J3, J4</title><rect x="102" y="83.0" width="16" height="18" rx="8"/></g>
+<text class="slabel" x="110" y="74.0" text-anchor="middle">Install page</text>
+<g class="station led"><title>Download the app: J3</title><rect x="292" y="86.0" width="16" height="12" rx="8"/></g>
+<text class="slabel" x="300" y="77.0" text-anchor="middle">Download the app</text>
+<g class="station led"><title>Gatekeeper: J3</title><rect x="482" y="86.0" width="16" height="12" rx="8"/></g>
+<text class="slabel" x="490" y="77.0" text-anchor="middle">Gatekeeper</text>
+<g class="station led"><title>Older daemon: update: J3</title><rect x="672" y="86.0" width="16" height="12" rx="8"/></g>
+<text class="slabel" x="680" y="77.0" text-anchor="middle">Older daemon: update</text>
+<g class="station led"><title>install.sh: J4</title><rect x="292" y="176.0" width="16" height="12" rx="8"/></g>
+<text class="slabel" x="300" y="204.0" text-anchor="middle">install.sh</text>
+<g class="station led"><title>arugula status: J4</title><rect x="482" y="176.0" width="16" height="12" rx="8"/></g>
+<text class="slabel" x="490" y="204.0" text-anchor="middle">arugula status</text>
+<g class="station led"><title>App opens: J1, J2a, J2b, J2c, J5, J6</title><rect x="102" y="321.0" width="16" height="42" rx="8"/></g>
+<text class="slabel" x="110" y="312.0" text-anchor="middle">App opens</text>
+<g class="station led"><title>Getting started: J1, J2a, J2b, J2c, J5, J6</title><rect x="262" y="321.0" width="16" height="42" rx="8"/></g>
+<text class="slabel" x="270" y="312.0" text-anchor="middle">Getting started</text>
+<g class="station led skipped"><title>Phone step: J1, J2a, J2b, J2c, J5</title><rect x="412" y="324.0" width="16" height="36" rx="8"/></g>
+<text class="slabel" x="420" y="315.0" text-anchor="middle">Phone step</text>
+<text class="snote skipped" x="420" y="376.0" text-anchor="middle">always skipped</text>
+<g class="station led"><title>Connect to control: J1, J2a, J2b, J2c</title><rect x="562" y="277.0" width="16" height="30" rx="8"/></g>
+<text class="slabel" x="570" y="268.0" text-anchor="middle">Connect to control</text>
+<g class="station led"><title>Account, machine approved: J1, J2a, J2b, J2c</title><rect x="712" y="277.0" width="16" height="30" rx="8"/></g>
+<text class="slabel" x="720" y="268.0" text-anchor="middle">Account, machine approved</text>
+<g class="station led"><title>App signed in: J1, J2a, J2b, J2c</title><rect x="862" y="277.0" width="16" height="30" rx="8"/></g>
+<text class="slabel" x="870" y="268.0" text-anchor="middle">App signed in</text>
+<g class="station led"><title>A terminal: J1, J2a, J2b, J2c</title><rect x="1012" y="277.0" width="16" height="30" rx="8"/></g>
+<text class="slabel" x="1020" y="268.0" text-anchor="middle">A terminal</text>
+<g class="station led"><title>No account: J5</title><rect x="562" y="406.0" width="16" height="12" rx="8"/></g>
+<text class="slabel" x="570" y="434.0" text-anchor="middle">No account</text>
+<g class="station led"><title>Claude Code set up: J5</title><rect x="712" y="406.0" width="16" height="12" rx="8"/></g>
+<text class="slabel" x="720" y="434.0" text-anchor="middle">Claude Code set up</text>
+<g class="station led"><title>An agent asks; approved: J5</title><rect x="862" y="406.0" width="16" height="12" rx="8"/></g>
+<text class="slabel" x="870" y="434.0" text-anchor="middle">An agent asks; approved</text>
+<g class="station led"><title>Share to an account: J2a</title><rect x="1162" y="206.0" width="16" height="12" rx="8"/></g>
+<text class="slabel" x="1170" y="197.0" text-anchor="middle">Share to an account</text>
+<g class="station led"><title>Team and invite: J2b, J2c</title><rect x="1282" y="313.0" width="16" height="18" rx="8"/></g>
+<text class="slabel" x="1290" y="347.0" text-anchor="middle">Team and invite</text>
+<g class="station led"><title>Share to a tailnet login: J6</title><rect x="712" y="526.0" width="16" height="12" rx="8"/></g>
+<text class="slabel" x="720" y="554.0" text-anchor="middle">Share to a tailnet login</text>
+<g class="station led"><title>Ask to drive, allowed: J2a, J2b, J2c, J6</title><rect x="1162" y="437.0" width="16" height="30" rx="8"/></g>
+<text class="slabel" x="1170" y="483.0" text-anchor="middle">Ask to drive, allowed</text>
+<g class="station led"><title>One login, two devices: J6</title><rect x="1282" y="526.0" width="16" height="12" rx="8"/></g>
+<text class="slabel" x="1290" y="554.0" text-anchor="middle">One login, two devices</text>
+</svg>
