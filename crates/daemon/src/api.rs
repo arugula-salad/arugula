@@ -21,11 +21,10 @@ use arugula_proto::{
     },
     op::ops::{
         AdapterInstall, AdaptersList, AgentsGet, AgentsRefresh, ClosePane, ConversationOpen, ConversationsList,
-        FlagSet, FlagsList, FountainAgentsGet, IdeGet, IdeMention, IdeSet, ListPanes, MachineReset, MachinesList,
-        NotifyGet, NotifySet, PaneAsk, PaneAskWithdraw, PaneAttention, PaneDetection, PaneDiffOf, PaneDrivers,
-        PaneFollowUp, PaneInbox, PaneKeys, PaneMouse, PanePermit, PaneProcess, PanePrompt, PaneSend, PaneWait,
-        PushKeyGet, PushSubscribe, PushTest, RuleForget, RulesForgetAll, RulesList, ShellEnvGet, ShellEnvRefresh,
-        ThreadGet, ThreadPost, ThreadRead,
+        FlagSet, FlagsList, FountainAgentsGet, ListPanes, MachineReset, MachinesList, NotifyGet, NotifySet, PaneAsk,
+        PaneAskWithdraw, PaneAttention, PaneDetection, PaneDiffOf, PaneDrivers, PaneFollowUp, PaneInbox, PaneKeys,
+        PaneMouse, PanePermit, PaneProcess, PanePrompt, PaneSend, PaneWait, PushKeyGet, PushSubscribe, PushTest,
+        RuleForget, RulesForgetAll, RulesList, ShellEnvGet, ShellEnvRefresh, ThreadGet, ThreadPost, ThreadRead,
     },
 };
 use axum::{
@@ -83,8 +82,6 @@ pub fn routes() -> Router<Arc<App>> {
         .route("/api/panes/{id}/export.cast", get(export))
         .op::<PaneDrivers>()
         .op::<PaneDiffOf>()
-        .op::<IdeGet>()
-        .op::<IdeSet>()
         .op::<RulesList>()
         .op::<RulesForgetAll>()
         .op::<RuleForget>()
@@ -96,8 +93,6 @@ pub fn routes() -> Router<Arc<App>> {
         .op::<AgentsGet>()
         .op::<AgentsRefresh>()
         .route("/api/editors", get(editors))
-        .route("/api/editors/vsix", get(vsix))
-        .op::<IdeMention>()
         .route("/api/sessions/{id}/secrets", get(secrets))
         .op::<AdaptersList>()
         .op::<AdapterInstall>()
@@ -118,8 +113,9 @@ pub fn routes() -> Router<Arc<App>> {
         .op::<NotifyGet>()
         .op::<NotifySet>()
         .op::<FountainAgentsGet>();
-    // Labs' routes, if this build has them.
+    // Labs' routes, if this build has them, and the editor's.
     let r = crate::labs::routes(r);
+    let r = crate::editors::routes(r);
     // M70: a file onto the pane's host, and its path pasted.
     #[cfg(unix)]
     let r = r
@@ -643,7 +639,7 @@ async fn open_block(
                 req.config["agent"] = true.into();
             }
         }
-        req.config = crate::forge::open_config(&req.config, app.control.state_dir()).await.map_err(bad)?;
+        req.config = crate::forges::open_config(&req.config, app.control.state_dir()).await.map_err(bad)?;
     }
     // A pane on another daemon (#17) names a host in our list: that's
     // where clients look it up.
@@ -1502,19 +1498,6 @@ pub(crate) fn agents_json(snap: &crate::inventory::Snapshot) -> AgentsInventory 
 async fn editors(State(app): AppState, who: Option<axum::Extension<crate::acl::Principal>>) -> Json<serde_json::Value> {
     let who = who.map(|axum::Extension(w)| w).filter(|w| !w.is_owner());
     Json(app.mux.api(|r| Api::Editors(who, r)).await.unwrap_or_default().into())
-}
-
-/// `GET /api/editors/vsix` (M28): Arugula's VS Code extension.
-async fn vsix() -> Response {
-    let name = crate::editor::vsix::file_name();
-    (
-        [
-            (header::CONTENT_TYPE, "application/vsix".to_owned()),
-            (header::CONTENT_DISPOSITION, format!("attachment; filename=\"{name}\"")),
-        ],
-        crate::editor::vsix::build(),
-    )
-        .into_response()
 }
 
 /// ICE servers for a huddle (M63): TURN credentials from control, or STUN.

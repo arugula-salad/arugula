@@ -1378,6 +1378,7 @@ impl Control {
     /// M40: a read-only installation token for a GitHub repository from
     /// control's GitHub App (for a box with no `gh` login), and the
     /// account's GitHub login. Never logged.
+    #[cfg(feature = "forge")]
     pub async fn github_token(&self, repo: &str) -> Result<wire::forge::GithubToken, String> {
         let e = self.enrolled().ok_or("not joined to Arugula control")?;
         let res = self
@@ -1667,11 +1668,11 @@ async fn relay_once(
     let guests = app.guests.clone();
     let on_text = move |t: &str| {
         if !guests.heard_from_control(t) {
-            crate::forge::live::from_control(t);
+            crate::forges::from_control(t);
         }
     };
     let mut out = vec![app.guests.routes_messages()];
-    out.extend(crate::forge::live::watch_messages());
+    out.extend(crate::forges::watch_messages());
     let texts = crate::dial::Texts { on_text: &on_text, out };
     crate::dial::serve_mux(ws, accept, Some(raw), Some(&control.nudge), Some(texts)).await
 }

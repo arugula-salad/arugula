@@ -13,6 +13,20 @@ pub fn file_name() -> String {
     format!("arugula-editor-{EXT_VERSION}.vsix")
 }
 
+/// `GET /api/editors/vsix` (M28): Arugula's VS Code extension.
+pub async fn download() -> axum::response::Response {
+    use axum::{http::header, response::IntoResponse};
+    let name = file_name();
+    (
+        [
+            (header::CONTENT_TYPE, "application/vsix".to_owned()),
+            (header::CONTENT_DISPOSITION, format!("attachment; filename=\"{name}\"")),
+        ],
+        build(),
+    )
+        .into_response()
+}
+
 /// The VSIX's bytes.
 pub fn build() -> Vec<u8> {
     let pkg: serde_json::Value = serde_json::from_str(EXT_FILES[0].1).expect("package.json");

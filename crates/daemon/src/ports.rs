@@ -13,6 +13,7 @@ use std::{
     time::Duration,
 };
 
+#[cfg(feature = "editor")]
 use futures_util::future::BoxFuture;
 
 pub use crate::provider::Conn;
@@ -28,12 +29,14 @@ pub enum Target {
     Local(u16),
     /// A machine's, through its provider.
     Sprite { provider: Arc<dyn Provider>, sprite: String, port: u16 },
-    /// A server of Arugula's own, reached however it says.
+    /// A server of Arugula's own, reached however it says (the editor's).
+    #[cfg(feature = "editor")]
     Service(Arc<dyn Service>),
 }
 
 /// A server Arugula runs itself: dialing it starts it if it isn't
 /// running (it stops itself when idle).
+#[cfg(feature = "editor")]
 pub trait Service: Send + Sync {
     fn dial(&self) -> BoxFuture<'static, io::Result<Conn>>;
     /// What to call it in errors.
@@ -45,6 +48,7 @@ impl std::fmt::Debug for Target {
         match self {
             Self::Local(p) => write!(f, "localhost:{p}"),
             Self::Sprite { sprite, port, .. } => write!(f, "{sprite}:{port}"),
+            #[cfg(feature = "editor")]
             Self::Service(s) => write!(f, "{}", s.name()),
         }
     }
@@ -55,6 +59,7 @@ impl PartialEq for Target {
         match (self, other) {
             (Self::Local(a), Self::Local(b)) => a == b,
             (Self::Sprite { sprite: a, port: p, .. }, Self::Sprite { sprite: b, port: q, .. }) => a == b && p == q,
+            #[cfg(feature = "editor")]
             (Self::Service(a), Self::Service(b)) => Arc::ptr_eq(a, b),
             _ => false,
         }
@@ -67,6 +72,7 @@ impl Target {
     pub fn authority(&self) -> String {
         match self {
             Self::Local(p) | Self::Sprite { port: p, .. } => format!("localhost:{p}"),
+            #[cfg(feature = "editor")]
             Self::Service(_) => "localhost".into(),
         }
     }
@@ -75,6 +81,7 @@ impl Target {
     pub fn what(&self) -> String {
         match self {
             Self::Local(p) | Self::Sprite { port: p, .. } => format!("port {p}"),
+            #[cfg(feature = "editor")]
             Self::Service(s) => s.name(),
         }
     }
@@ -99,6 +106,7 @@ impl Target {
                 Ok(Box::new(s))
             }
             Self::Sprite { provider, sprite, port } => provider.dial(sprite, *port).await,
+            #[cfg(feature = "editor")]
             Self::Service(s) => s.dial().await,
         }
     }

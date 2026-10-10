@@ -42,9 +42,9 @@ use serde_json::Value;
 
 #[cfg(not(feature = "labs"))]
 use crate::block::{Block, BlockCtx, BlockKind};
-use crate::{
-    block::BlockKinds, forge::model::Provider as ForgeProvider, provider::Provider, server::App, shellenv::ShellEnv,
-};
+#[cfg(feature = "forge")]
+use crate::forge::model::Provider as ForgeProvider;
+use crate::{block::BlockKinds, provider::Provider, server::App, shellenv::ShellEnv};
 
 // Agent recipes and their A2A cards (M76): the `agents` flag.
 #[cfg(feature = "labs")]
@@ -106,6 +106,7 @@ pub fn flags(state_dir: &Path) -> On {
 
 /// Whether `flag` is on here: this build has Labs, and the machine has
 /// turned the flag on.
+#[cfg(feature = "forge")]
 pub fn on(state_dir: &Path, flag: &str) -> bool {
     flags(state_dir).has(flag)
 }
@@ -178,6 +179,7 @@ pub fn kinds(kinds: &mut BlockKinds, _invite: &crate::invite::Hook) {
 /// Whether a forge block of `provider` may be made or opened here. GitHub's
 /// always may; Forgejo's and GitLab's are Labs, so they need this build to
 /// have it and the machine to have turned on the `forges` flag.
+#[cfg(feature = "forge")]
 pub fn forge_allowed(provider: ForgeProvider, state_dir: &Path) -> Result<(), String> {
     let name = match provider {
         ForgeProvider::Github => return Ok(()),
@@ -228,12 +230,12 @@ pub fn is_forge_hook(_path: &str) -> bool {
 }
 
 /// The path a webhook for `provider` is made to deliver to.
-#[cfg(feature = "labs")]
+#[cfg(all(feature = "labs", feature = "forge"))]
 pub fn hook_path(provider: ForgeProvider) -> Result<&'static str, String> {
     Ok(forge_live::path(provider))
 }
 
-#[cfg(not(feature = "labs"))]
+#[cfg(all(not(feature = "labs"), feature = "forge"))]
 pub fn hook_path(provider: ForgeProvider) -> Result<&'static str, String> {
     Err(not_built(&format!("A {provider:?} webhook")))
 }

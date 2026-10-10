@@ -140,6 +140,7 @@ impl Site {
 
     /// Put `js` first in this site's pages (HTML navigations), served from
     /// [`HEAD_SCRIPT`]. Once per site.
+    #[cfg(feature = "editor")]
     pub fn set_head_script(&self, js: &'static str) {
         let _ = self.head.set(js);
     }

@@ -22,9 +22,15 @@ use arugula_mux::conpty;
 mod conversations;
 mod dial;
 mod e2e;
+#[cfg(feature = "editor")]
 mod editor;
+mod editors;
+#[cfg(feature = "forge")]
 mod forge;
+mod forges;
 mod fs;
+// The gates a forge block and Labs' blocks raise.
+#[cfg(feature = "forge")]
 mod gate;
 mod hand;
 use arugula_mux::heap;
@@ -35,6 +41,7 @@ use arugula_mux::holder;
 #[cfg(windows)]
 use arugula_mux::host;
 mod hosts;
+#[cfg(feature = "editor")]
 mod ide;
 mod install;
 use arugula_mux::inventory;
@@ -369,7 +376,7 @@ fn daemon_running(state_dir: &std::path::Path) -> bool {
 
 /// `<state>/editors/sock`, in a 0700 directory with nothing else in it, for
 /// a dev container to mount (M28).
-#[cfg(unix)]
+#[cfg(all(unix, feature = "editor"))]
 fn editors_socket(state_dir: &std::path::Path) -> std::io::Result<tokio::net::UnixListener> {
     use std::os::unix::fs::PermissionsExt;
     let dir = state_dir.join("editors");
@@ -481,6 +488,7 @@ fn main() -> anyhow::Result<()> {
         )
         .init();
     // `just vsix`: Arugula's VS Code extension, for the marketplaces.
+    #[cfg(feature = "editor")]
     if argv.get(1).map(String::as_str) == Some("_vsix") && argv.len() >= 3 {
         let out = std::path::Path::new(&argv[2]).join(editor::vsix::file_name());
         std::fs::write(&out, editor::vsix::build())?;
@@ -488,7 +496,7 @@ fn main() -> anyhow::Result<()> {
         return Ok(());
     }
     // Claude Code's IDE connections, kept across daemon restarts (M28).
-    #[cfg(unix)]
+    #[cfg(all(unix, feature = "editor"))]
     if argv.get(1).map(String::as_str) == Some("_ide_relay") && argv.len() >= 4 {
         let args = ide::relay::Args { dir: argv[2].clone().into(), lock_dir: argv[3].clone().into() };
         return Ok(tokio::runtime::Runtime::new()?.block_on(ide::relay::run(args))?);
@@ -595,11 +603,11 @@ fn kinds(
     let mut kinds = block::BlockKinds::default();
     kinds.add(BlockType::Browser, Make(browser::Browser::create));
     kinds.add(BlockType::Agent, agent::AgentKind { mcp, secrets, rules });
-    kinds.add(BlockType::Editor, Make(editor::Editor::create));
+    editors::kinds(&mut kinds);
     kinds.add(BlockType::Remote, remote::RemoteKind);
     kinds.add(BlockType::Diff, Make(review::diff::Diff::create));
     kinds.add(BlockType::File, Make(review::file::FileView::create));
-    kinds.add(BlockType::Forge, Make(forge::ForgeBlock::create));
+    forges::kinds(&mut kinds);
     kinds.add(BlockType::Invite, invite::card::InviteKind(invite.clone()));
     labs::kinds(&mut kinds, invite);
     kinds
@@ -742,6 +750,7 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
         }
     };
     let socket = socket_path(&state_dir)?;
+    #[cfg(feature = "editor")]
     editor::server::install(editor::server::Settings {
         dir: state_dir.join("editor"),
         // Beside the CLI's socket, which is kept short enough.
@@ -832,20 +841,10 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
         args.no_relay,
     );
     // M40: forge blocks' live updates (control's GitHub App, hooks here).
-    forge::live::init(state_dir.clone(), Some(&control), direct_urls.clone());
+    forges::start(state_dir.clone(), Some(&control), direct_urls.clone());
     // Claude Code's IDE (M28): its relay keeps the connections.
-    let ide = if args.no_claude_ide {
-        None
-    } else {
-        let lock_dir = args.claude_ide_dir.clone().unwrap_or_else(|| ide::default_lock_dir(&home()));
-        match ide::Ide::start(state_dir.join("ide"), lock_dir, launch.clone()).await {
-            Ok(i) => Some(i),
-            Err(e) => {
-                warn!(error = %e, "can't be Claude Code's IDE");
-                None
-            }
-        }
-    };
+    let ide =
+        editors::start_ide(args.no_claude_ide, args.claude_ide_dir.clone(), &state_dir, &home(), launch.clone()).await;
     let invite_hook = invite::Hook::default();
     let rules = rules::Rules::open(store.root().join("rules.json"));
     let kinds = std::sync::Arc::new(kinds(mcp_link.clone(), secrets.clone(), rules.clone(), &invite_hook));
@@ -872,15 +871,13 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
         daemon_id: daemon_id(&store),
         private,
         kinds,
-        ide: ide.clone().map(|i| i as Arc<dyn mux::IdeLink>),
+        ide: editors::ide_link(&ide),
         sessions: Arc::new(conversations::Sessions),
         pane_gone,
         at_exit: Some(mux::AtExit(Arc::new(labs::stop_beholds))),
     };
     let mux = mux::start(config, store, kept);
-    if let Some(i) = &ide {
-        i.run(mux.clone());
-    }
+    editors::run_ide(&ide, mux.clone());
 
     let hosts = hosts::Hosts::open(&state_dir, name.clone(), provider);
     hosts.spawn_probe();
@@ -959,6 +956,7 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
         }
         tokio::spawn(axum::serve(local, server::local_router(app.clone())).into_future());
         // Editors in dev containers join here (M28): a directory of its own.
+        #[cfg(feature = "editor")]
         match editors_socket(&state_dir) {
             Ok(l) => {
                 tokio::spawn(axum::serve(l, server::editors_router(app.clone())).into_future());

@@ -26,17 +26,23 @@ mod control_moves;
 mod control_state;
 mod conversations;
 mod dialout;
+#[cfg(feature = "editor")]
 mod editor_swarm;
+#[cfg(feature = "editor")]
 mod editors;
 #[cfg(feature = "labs")]
 mod forge;
+#[cfg(feature = "forge")]
 mod forge_github;
 #[cfg(feature = "labs")]
 mod forge_gitlab;
 #[cfg(feature = "labs")]
 mod forge_issues;
+#[cfg(feature = "forge")]
 mod forge_labs_off;
+#[cfg(feature = "forge")]
 mod forge_live;
+#[cfg(feature = "forge")]
 mod forges_github_real;
 #[cfg(feature = "labs")]
 mod forges_real;
@@ -47,6 +53,7 @@ mod fs;
 mod guest_ssh;
 mod hand;
 mod hosts;
+#[cfg(feature = "editor")]
 mod ide;
 mod invite;
 #[cfg(not(feature = "labs"))]

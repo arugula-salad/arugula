@@ -77,10 +77,17 @@ rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs"
 rmcp = { version = "=3.5.0", default-features = false, features = ["transport-streamable-http-client-unix-socket"] }
 
 [features]
-# Labs (Fountain first; see src/labs/mod.rs): on by default. Release builds
-# have it all; `--no-default-features` leaves it out.
-default = ["labs"]
-labs = ["arugula-mux/labs", "dep:russh", "dep:serde_norway"]
+# Labs (Fountain first; see src/labs/mod.rs), the GitHub forge (src/forge/,
+# surface src/forges.rs) and the editor server with Claude Code's IDE
+# (src/editor/ and src/ide/, surface src/editors.rs): each on by default.
+# Release builds have them all; `--no-default-features` leaves them out.
+# None of the three has a dependency of its own: what they use, the rest of
+# the daemon uses too.
+default = ["labs", "forge", "editor"]
+forge = []
+editor = []
+# Labs' GitLab and Forgejo are forges built on the forge module.
+labs = ["forge", "arugula-mux/labs", "dep:russh", "dep:serde_norway"]
 # Embed web/dist even in a debug build (rust-embed reads it from the source
 # tree at run time otherwise): CI's e2e shards run binaries built in another
 # job's checkout.

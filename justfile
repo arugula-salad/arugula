@@ -544,9 +544,18 @@ check: test mux-guard
 # The daemon and the CLI without Labs (#452): clippy and the tests with the
 # `labs` feature off, which CI runs as the `core` job. Run it after touching
 # anything in or beside crates/daemon/src/labs; `just check` covers the rest.
+# The forge and the editor stay on (#461): "core" is everything but Labs.
 check-core: web mux-guard
-    {{cargo}} clippy -p arugulad -p arugula-mux -p arugula --no-default-features --all-targets -- -D warnings
-    {{cargo}} nextest run -p arugulad -p arugula-mux -p arugula --no-default-features
+    {{cargo}} clippy -p arugulad -p arugula-mux -p arugula --no-default-features --features arugulad/forge,arugulad/editor --all-targets -- -D warnings
+    {{cargo}} nextest run -p arugulad -p arugula-mux -p arugula --no-default-features --features arugulad/forge,arugulad/editor
+
+# The daemon with none of its integrations (#461), and with only the forge
+# or only the editor: clippy for each, which finds what one feature's code
+# left unused in the others. Not part of `check` or CI.
+check-features:
+    {{cargo}} clippy -p arugulad --no-default-features --all-targets -- -D warnings
+    {{cargo}} clippy -p arugulad --no-default-features --features forge --all-targets -- -D warnings
+    {{cargo}} clippy -p arugulad --no-default-features --features editor --all-targets -- -D warnings
 
 # Type-check and lint the macOS build from Linux: ARCH is aarch64 (Apple
 # silicon) or x86_64 (Intel). Zig is the C compiler; this compiles but

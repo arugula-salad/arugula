@@ -38,7 +38,8 @@ or an account skip without it and name what's missing
 | `just desktop-xvfb` | the Linux desktop app under Xvfb in a container (`packaging/desktop/xvfb/`): `join` (#204), `m46` (`bare` and `links` among its claims), `m47` and `stale` (#317) (see [The desktop app's tests](#the-desktop-apps-tests)) | Linux |
 | `just desktop-packages ARCH` | the .deb on Ubuntu 22.04 and the .rpm on Fedora 42 install and claim `arugula://` (after `just desktop-linux ARCH`) | no |
 | `testnet/macos/desktop.sh`, `testnet/macos/update.sh`, `testnet/macos/stale-daemon.sh` | the macOS app from its .dmg in a fresh tart VM, its updater, and a daemon older than the app's (#661) | no |
-| `just check-core` | clippy and the daemon's and CLI's tests without the `labs` feature (the core, with no Fountain; #452) | Linux and macOS |
+| `just check-core` | clippy and the daemon's and CLI's tests without the `labs` feature (the core, with no Fountain; #452), the `forge` and `editor` features on | Linux and macOS |
+| `just check-features` | clippy for the daemon with no features, with only `forge` and with only `editor` (#461); not in `check` or CI | Linux and macOS |
 | `just check-macos` | clippy for the macOS target from Linux (compiles, doesn't link) | Linux |
 
 CI (`.github/workflows/check.yml`) runs on pushes, every job it can at

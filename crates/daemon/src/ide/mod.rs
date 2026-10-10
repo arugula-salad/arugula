@@ -16,6 +16,7 @@
 //! Code's extension, say), to which the daemon passes each `openDiff` on.
 
 pub use arugula_mux::ide::{Event, NAME};
+mod ops;
 // Over Unix sockets, which Claude Code's IDE support uses.
 #[cfg(unix)]
 pub mod relay;

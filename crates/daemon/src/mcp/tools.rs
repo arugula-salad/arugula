@@ -1058,10 +1058,21 @@ fn drop_values(schema: &mut Value, values: &[&str]) {
     }
 }
 
+/// The tools of the forge: a build without it (`forge` feature) lists none.
+const FORGE_TOOLS: [&str; 2] = ["read_forge", "draft"];
+
+/// Whether `tool`'s kind is the forge's (`show` a PR or an issue), which a
+/// build without the forge doesn't list.
+fn forge_kind(tool: &str, kind: &str) -> bool {
+    tool == "show" && matches!(kind, "pr" | "issue")
+}
+
 /// Whether a grouped tool's kind is listed with the flags in `on`: its own
 /// (`Op::FLAG`, for an operation's), or the table's.
 fn listed_kind(on: On, tool: &str, kind: &Kind) -> bool {
-    kind.flag.is_none_or(|f| on.has(f)) && UNLISTED.iter().all(|(t, k, f)| (*t, *k) != (tool, kind.name) || on.has(f))
+    kind.flag.is_none_or(|f| on.has(f))
+        && UNLISTED.iter().all(|(t, k, f)| (*t, *k) != (tool, kind.name) || on.has(f))
+        && (crate::forges::BUILT || !forge_kind(tool, kind.name))
 }
 
 /// The tools `tools/list` shows: each one a stranger can't use needs its
@@ -1070,6 +1081,7 @@ fn defs(on: On) -> Vec<Def> {
     all_defs()
         .into_iter()
         .filter(|d| d.flag.is_none_or(|f| on.has(f)))
+        .filter(|d| crate::forges::BUILT || !FORGE_TOOLS.contains(&d.name))
         // M78: delegating is the agent catalog's.
         .filter(|d| on.has(flags::AGENTS) || d.name != "delegate")
         .map(|mut d| {
@@ -3071,7 +3083,7 @@ impl Call<'_> {
             _ => None,
         };
         what.dir = dir;
-        let config = crate::forge::open_config(
+        let config = crate::forges::open_config(
             &serde_json::to_value(&what).map_err(|e| e.to_string())?,
             self.app.control.state_dir(),
         )
@@ -3865,6 +3877,41 @@ mod tests {
 
     use super::*;
 
+    /// The golden's tool list as a build without the forge lists it: no
+    /// `read_forge` or `draft`, and `show` without its `pr` and `issue`
+    /// kinds (their lines, their arguments and the mention in `beside`).
+    fn without_forge(tools: &mut Value) {
+        let tools = tools.as_array_mut().unwrap();
+        tools.retain(|t| !FORGE_TOOLS.contains(&t["name"].as_str().unwrap()));
+        for t in tools.iter_mut().filter(|t| t["name"] == "show") {
+            let text = t["description"].as_str().unwrap();
+            t["description"] = text
+                .split('\n')
+                .filter(|l| !l.starts_with("- pr ") && !l.starts_with("- issue "))
+                .collect::<Vec<_>>()
+                .join("\n")
+                .into();
+            let schema = &mut t["inputSchema"]["properties"];
+            for arg in ["pr", "issue"] {
+                schema.as_object_mut().unwrap().remove(arg);
+            }
+            // `dir` is also the workspace's, with labs.
+            let dir = schema["dir"]["description"].as_str().unwrap();
+            match dir.find("workspace: ") {
+                // Then only the workspace takes it, and it must.
+                Some(at) => {
+                    schema["dir"] = json!({ "description": dir[at..], "type": "string" });
+                }
+                None => {
+                    schema.as_object_mut().unwrap().remove("dir");
+                }
+            }
+            schema["kind"]["enum"].as_array_mut().unwrap().retain(|k| k != "pr" && k != "issue");
+            let beside = schema["beside"]["description"].as_str().unwrap().replace(" pr, issue,", "");
+            schema["beside"]["description"] = beside.into();
+        }
+    }
+
     /// `tools/list` for every scope, with and without labs, against the
     /// checked-in file: names, descriptions, annotations and every input
     /// schema. `ARUGULA_BLESS=1` rewrites the file after a change meant to
@@ -3880,11 +3927,20 @@ mod tests {
         }
         let got = serde_json::to_string_pretty(&Value::Object(all)).unwrap() + "\n";
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mcp-tool-list.json");
-        if std::env::var_os("ARUGULA_BLESS").is_some() {
+        if crate::forges::BUILT && std::env::var_os("ARUGULA_BLESS").is_some() {
             std::fs::write(&path, &got).unwrap();
         }
         let want =
             std::fs::read_to_string(&path).expect("tests/fixtures/mcp-tool-list.json (ARUGULA_BLESS=1 writes it)");
+        // A build without the forge lists what the golden does, less the
+        // forge's tools and kinds.
+        let want = if crate::forges::BUILT {
+            want
+        } else {
+            let mut all: Value = serde_json::from_str(&want).unwrap();
+            all.as_object_mut().unwrap().values_mut().for_each(without_forge);
+            serde_json::to_string_pretty(&all).unwrap() + "\n"
+        };
         assert!(got == want, "the tool list changed; ARUGULA_BLESS=1 rewrites {}", path.display());
     }
 
@@ -3964,23 +4020,30 @@ mod tests {
     #[test]
     fn annotations_are_honest() {
         let all = list(Scope::Full, fl(false));
-        assert_eq!(all.len(), 18);
+        assert_eq!(all.len(), 18 - NO_FORGE);
         let ro: Vec<&str> = all
             .iter()
             .filter(|t| t.annotations.as_ref().and_then(|a| a.read_only_hint) == Some(true))
             .map(|t| t.name.as_ref())
             .collect();
-        assert_eq!(ro, ["read_output", "wait", "list", "history", "read_forge", "read_invite", "read_file"]);
+        let mut want = vec!["read_output", "wait", "list", "history", "read_forge", "read_invite", "read_file"];
+        want.retain(|n| crate::forges::BUILT || !FORGE_TOOLS.contains(n));
+        assert_eq!(ro, want);
         assert_eq!(list(Scope::Read, fl(false)).len(), ro.len(), "a read token sees the read-only tools only");
         let hint = |n: &str| all.iter().find(|t| t.name == n).unwrap().annotations.clone().unwrap();
         assert_eq!(hint("close").destructive_hint, Some(true));
         // A group is as careful as its most careful kind: draft has merge.
-        assert_eq!(hint("draft").destructive_hint, Some(true));
+        if crate::forges::BUILT {
+            assert_eq!(hint("draft").destructive_hint, Some(true));
+        }
         assert_eq!((hint("show").destructive_hint, hint("show").open_world_hint), (Some(false), Some(true)));
     }
 
     /// Chat's two tools, unlisted without the `chat` flag (`Op::FLAG`).
     const CHAT_TOOLS: [&str; 2] = ["read_thread", "post_thread"];
+
+    /// How many of the tools a build without the forge doesn't list.
+    const NO_FORGE: usize = if crate::forges::BUILT { 0 } else { FORGE_TOOLS.len() };
 
     /// The kinds that aren't listed without a flag: the table's, and the
     /// operations' own (`Op::FLAG`).
@@ -4019,6 +4082,9 @@ mod tests {
             }
             let with: Vec<String> = list(scope, fl(true)).iter().map(|t| t.name.to_string()).collect();
             for d in all_defs().iter().filter(|d| scope == Scope::Full || d.read_only) {
+                if !crate::forges::BUILT && FORGE_TOOLS.contains(&d.name) {
+                    continue;
+                }
                 assert!(with.contains(&d.name.to_string()), "{} isn't listed for {scope:?} with labs", d.name);
             }
         }
@@ -4054,9 +4120,9 @@ mod tests {
             assert!(every.contains(&name), "{name} no longer has a definition");
         }
         assert_eq!(every.len(), 21);
-        assert_eq!(defs(fl(false)).len(), 18);
-        assert_eq!(defs(fl(true)).len(), 21);
-        assert_eq!(every.len(), defs(fl(false)).len() + CHAT_TOOLS.len() + 1, "and delegate");
+        assert_eq!(defs(fl(false)).len(), 18 - NO_FORGE);
+        assert_eq!(defs(fl(true)).len(), 21 - NO_FORGE);
+        assert_eq!(every.len(), defs(fl(false)).len() + CHAT_TOOLS.len() + 1 + NO_FORGE, "and delegate");
     }
 
     /// The 39 tools before #349, by their old names.
@@ -4382,7 +4448,10 @@ mod tests {
                 .unwrap_or_else(|| panic!("no {key} list in docs/mcp-permissions.json"));
             let body = &SNIPPET[at..];
             let body = &body[..body.find(']').unwrap()];
-            body.split('"').filter_map(|s| s.strip_prefix("mcp__arugula__")).collect()
+            body.split('"')
+                .filter_map(|s| s.strip_prefix("mcp__arugula__"))
+                .filter(|n| crate::forges::BUILT || !FORGE_TOOLS.contains(n))
+                .collect()
         };
         // The snippet lists what a stranger sees; the two chat tools join with labs.
         let defs = defs(fl(false));

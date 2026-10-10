@@ -319,7 +319,7 @@ pub(crate) struct EditorArgs {
     #[arg(long, env = "ARUGULA_EDITOR_IDLE", default_value_t = 900)]
     pub(crate) editor_idle: u64,
     /// Where code-server releases are downloaded from.
-    #[arg(long, env = "ARUGULA_CODE_SERVER_RELEASES", default_value = crate::editor::server::RELEASES, hide = true)]
+    #[arg(long, env = "ARUGULA_CODE_SERVER_RELEASES", default_value = crate::editors::RELEASES, hide = true)]
     pub(crate) code_server_releases: String,
 }
 

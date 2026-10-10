@@ -53,9 +53,6 @@ const SHA256: &[(&str, &str)] = &[
     ("macos-arm64", "82c7144406ac31c373acfa786b6705c7c5463d895f728fde2cb94402b945b301"),
 ];
 
-/// Where releases are downloaded from.
-pub const RELEASES: &str = "https://github.com/coder/code-server/releases/download";
-
 /// The port code-server listens on inside a VM (loopback there).
 pub const VM_PORT: u16 = 13340;
 

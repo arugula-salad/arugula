@@ -148,6 +148,12 @@ and each read, so a saved one comes back unavailable; with Labs off a bare
 in core (`provider/`); a build without Labs never has a provider, and a saved
 VM pane comes back exited, with the reason. `just check-core`
 runs clippy and the tests of `arugulad` and `arugula` with the feature off.
+The GitHub forge (`forge/`, surface `forges.rs`) and the editor server with
+Claude Code's IDE (`editor/` and `ide/`, surface `editors.rs`) are features of
+their own, `forge` and `editor`, on by default the way `labs` is, and built
+on the same pattern: one surface, a twin for each item, no `cfg` at call sites.
+`labs` turns `forge` on (Forgejo and GitLab are forges); `just check-features`
+lints the daemon with neither, and with each alone.
 
 ## Commands
 

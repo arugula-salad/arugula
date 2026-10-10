@@ -49,7 +49,8 @@ pub struct App {
     pub mux: MuxHandle,
     pub push: Option<crate::push::Push>,
     /// Claude Code's IDE (M28), if on.
-    pub ide: Option<Arc<crate::ide::Ide>>,
+    #[cfg_attr(not(feature = "editor"), allow(dead_code))]
+    pub ide: Option<Arc<crate::editors::Ide>>,
     pub hosts: Arc<Hosts>,
     /// The static binaries a daemon made resident in a sandbox runs.
     #[cfg_attr(not(feature = "labs"), allow(dead_code))]
@@ -84,7 +85,7 @@ impl App {
         identify: Identify,
         mux: MuxHandle,
         push: Option<crate::push::Push>,
-        ide: Option<Arc<crate::ide::Ide>>,
+        ide: Option<Arc<crate::editors::Ide>>,
         hosts: Arc<Hosts>,
         shares: Arc<crate::share::Shares>,
         synced: Arc<crate::sync::Synced>,
@@ -171,10 +172,8 @@ pub fn router(app: Arc<App>) -> Router {
 /// Over the Unix socket (the CLI, programs in panes): the socket lives in
 /// the user's private state directory, so reaching it is the check.
 pub fn local_router(app: Arc<App>) -> Router {
-    Router::new()
-        .route("/ws", get(local_ws))
-        // Editors on this machine join the swarm here (M28).
-        .route("/api/editors/connect", get(crate::editor::link::connect))
+    // Editors on this machine join the swarm here (M28).
+    crate::editors::local_routes(Router::new().route("/ws", get(local_ws)))
         // `arugula web`: only over the socket, which is the owner's.
         .op::<SigninLinkGet>()
         // Stop: save every pane and exit, as on Ctrl-C (an upgrade on
@@ -184,7 +183,7 @@ pub fn local_router(app: Arc<App>) -> Router {
         .with_state(app)
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, feature = "editor"))]
 /// Editors only (M28): `<state>/editors/sock`, the one socket a dev
 /// container gets (its directory mounted): joining the swarm as an editor
 /// is all it can do there, not drive the daemon.
