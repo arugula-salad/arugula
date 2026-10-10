@@ -25,16 +25,7 @@ let dir: string;
 test.describe.configure({ mode: "serial" });
 test.use({
   baseURL: async ({}, use) => use(base),
-  // Host candidates by address, not as mDNS .local names, which nothing
-  // resolves where there's no mDNS responder (CI's pods).
-  launchOptions: {
-    args: [
-      "--use-fake-ui-for-media-stream",
-      "--use-fake-device-for-media-stream",
-      "--autoplay-policy=no-user-gesture-required",
-      "--disable-features=WebRtcHideLocalIpsWithMdns",
-    ],
-  },
+  launchOptions: { args: ["--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream", "--autoplay-policy=no-user-gesture-required"] },
 });
 
 test.beforeAll(async () => {

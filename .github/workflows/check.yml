@@ -203,7 +203,11 @@ jobs:
           fetch: run-debug run-static
       - run: scripts/ci-env testnet
       - run: just bootstrap
-      # Google Chrome itself, not Playwright's Chromium: m52's phones (web/fixtures/m52-phones.ts) launch it. geek had it.
+      # m52's phones (web/fixtures/m52-phones.ts): a Pixel in Google Chrome
+      # itself, not Playwright's Chromium, and an iPhone in WebKit. geek had
+      # both, with their system libraries.
+      - name: Playwright's browsers
+        run: just browsers
       - name: Google Chrome
         run: cd web && pnpm exec playwright install --with-deps chrome
       - name: Its binaries, this run's
