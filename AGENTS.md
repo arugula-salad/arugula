@@ -19,12 +19,18 @@ Each has a `README.md` with where to start reading.
 - `crates/vt`: a pane's terminal state on libghostty-vt (`VtEngine`).
 - `crates/e2e`: end-to-end encryption between client devices and daemons
   (Noise IK; design in [docs/control-e2e.md](docs/control-e2e.md)).
-- `crates/mux`: `arugula-mux`, the daemon's core as a library: the state
-  directory, the access model (`acl`), the pane's process helpers, the pane
-  itself, `provider`, the shell integration and the files it can read (`fs`),
-  and the mux (`mux/`, `block.rs`, `history.rs`, `ide/`).
-  Its `labs` feature is on when the daemon's is.
-- `crates/daemon`: `arugulad`.
+- `crates/mux`: `arugula-mux`, the daemon's core as a library: the mux task
+  (`mux/`), panes, blocks and their registry (`block.rs`, `BlockKinds`), the
+  access model (`acl`), history, the state directory (`store`), the pane's
+  process helpers, `provider`, the shell integration and the files it can read
+  (`fs`), and the mux's half of the IDE (`ide/`). The mux names no
+  integration: no HTTP or MCP, and nothing the binary adds (agents, browsers,
+  forges). The binary reaches it through `BlockKinds`, the traits in
+  `mux/outside.rs`, `Config::at_exit` and `MuxHandle`; `just mux-guard` checks
+  its dependency tree (see [its README](crates/mux/README.md)). Its `labs`
+  feature is on when the daemon's is.
+- `crates/daemon`: `arugulad`, the binary: the edge and the integrations
+  around `arugula-mux`, wired together in `main.rs`.
 - `crates/cli`: `arugula`, the CLI, plus `arugula tui` and
   `arugula tmux -CC`.
 - `crates/control`: Arugula control: accounts, devices, the directory and the
@@ -42,58 +48,62 @@ Each has a `README.md` with where to start reading.
 
 ## The daemon, by layer
 
-Paths are under `crates/daemon/src/`.
+Paths are under `crates/daemon/src/`, except those marked `mux:`, which are in
+`crates/mux/src/` (`arugula-mux`). The rule: the mux names no integration, so
+nothing marked `mux:` names the edge or the block kinds.
 
 - **Edge:** the embedded web client and `/ws` (`server.rs`), the HTTP API
   (`api.rs`), MCP (`mcp/`), share links (`share.rs`), file uploads (`upload.rs`), the dial-out transport
   (`dial.rs`), end-to-end channels from client devices (`e2e.rs`), enrolment in
   control (`control.rs`), Windows' named pipe (`pipe.rs`).
 - **Who may:** who may talk to the daemon (`access.rs`, `localauth.rs`),
-  principals and grants (`acl.rs`), the API for someone who isn't the owner
-  (`authz.rs`), standing permission rules (`rules.rs`), file modes (`perm.rs`).
+  principals and grants (`mux:acl.rs`), the API for someone who isn't the owner
+  (`authz.rs`), standing permission rules (`rules.rs`), file modes (`mux:perm.rs`).
 - **Operations:** `ops/`: each operation (a route, its access, its MCP tool
   or kind) handled once (`mod.rs` holds the list and `HAND_WRITTEN`), with
   `mcp/ops.rs`; declared in `crates/proto/src/op.rs`
   ([docs/operations.md](docs/operations.md)).
-- **The mux:** `mux/` (in `crates/mux/src/`, with `block.rs`, `history.rs`,
-  `agentenv.rs` and the mux's half of the IDE, `ide/`): the task that owns the layout, the panes and every
-  client (`mod.rs`), with one file per area: `attention.rs`, `clients.rs`,
-  `blocks.rs`, `api_calls.rs`, `who_may.rs`, `thread_ops.rs`, `machines.rs`,
-  `call_ops.rs`, `info.rs`, `config.rs` (`thread_ops.rs` and `call_ops.rs` are
-  Labs; `labs_off.rs` has their twins). Next to it: threads on panes
-  (`crates/mux/src/labs/threads.rs`), huddles (`labs/calls.rs`, same place), gates waiting for a person
-  (`gate.rs`), hands (`hand.rs`), Web Push (`push.rs`).
-- **Panes:** a process on a PTY and its VT thread (`pane.rs`), Windows'
-  pseudoconsole (`conpty.rs`), what survives a restart (`store.rs`),
+- **The mux:** `mux/` (`mux:`, with `block.rs`, `history.rs`, `agentenv.rs`
+  and the mux's half of the IDE, `ide/`): the task that owns the layout, the
+  panes and every client (`mod.rs`), with one file per area: `attention.rs`,
+  `clients.rs`, `blocks.rs`, `api_calls.rs`, `who_may.rs`, `thread_ops.rs`,
+  `machines.rs`, `call_ops.rs`, `info.rs`, `config.rs`, and the traits it
+  calls out through, `outside.rs` (`thread_ops.rs` and `call_ops.rs` are Labs;
+  `labs_off.rs` has their twins). Next to it: threads on panes
+  (`mux:labs/threads.rs`), huddles (`mux:labs/calls.rs`), and, in the daemon,
+  gates waiting for a person (`gate.rs`), hands (`hand.rs`), Web Push
+  (`push.rs`).
+- **Panes** (`mux:`): a process on a PTY and its VT thread (`pane.rs`),
+  Windows' pseudoconsole (`conpty.rs`), what survives a restart (`store.rs`),
   keeping terminals open across restarts (`holder.rs`, `shim.rs`, `sys.rs`),
   prompts and commands in the output (`osc.rs`), shell integration
   (`shellint.rs`, `shellenv.rs`), what a pane is busy with (`classify.rs`),
   process info (`procinfo.rs`), history (`history.rs`), resuming an agent's
   conversation (`resume.rs`), named keys (`keys.rs`).
-- **Blocks:** what every block provides (`block.rs`), agents (`agent/`),
+- **Blocks:** what every block provides and the registry of kinds (`mux:block.rs`), agents (`agent/`),
   browsers (`browser.rs`) and block sites (`sites.rs`, `tls.rs`, `ports.rs`),
-  editors (`editor/`), review (`review/`), files (`fs.rs`), forges (`forge/`),
+  editors (`editor/`), review (`review/`), files (`fs.rs`, with its types in `mux:fs.rs`), forges (`forge/`),
   Fountain (`labs/fountain/`), workspaces (`labs/workspace/`), studio apps
   (`labs/apps/`),
-  conversations (`conversations/`), the IDE bridge (`ide/`), invites
+  conversations (`conversations/`), the IDE bridge (`ide/`, with the mux's half in `mux:ide/`), invites
   (`invite/`), remote blocks (`remote.rs`), configured agent harnesses
-  (`inventory.rs`).
+  (`mux:inventory.rs`).
 - **Reach:** other daemons (`hosts.rs`), machines that aren't this host
-  (`labs/machine.rs`), sandbox providers (the trait in `provider/`; the
+  (`mux:labs/machine.rs`), sandbox providers (the trait in `mux:provider/`; the
   Sprites adapter, `labs/provider_tunnel.rs`, `labs/resident.rs` and
   `labs/sandbox.rs` in Labs), synced history (`sync.rs`, `seal.rs`),
   tailscaled (`tailscale.rs`), outgoing TLS roots (`roots.rs`).
 - **Lifecycle:** the command line (`args.rs`), startup (`main.rs`), `install`
   (`install.rs`), Getting started (`setup.rs`), updates (`update.rs`,
-  `selfupdate.rs`), `_host` (`host.rs`), malloc settings (`heap.rs`), paths
-  through links (`paths.rs`).
+  `selfupdate.rs`), `_host` (`mux:host.rs`), malloc settings (`mux:heap.rs`), paths
+  through links (`mux:paths.rs`).
 
 ## Invariants
 
 - The mux task decides the order of every change. Other tasks send it a
-  `Cmd` and wait for the answer (`mux/mod.rs`).
+  `Cmd` and wait for the answer (`crates/mux/src/mux/mod.rs`).
 - libghostty's terminal is `!Send`: each pane's VT thread owns it, and
-  everything else asks that thread (`pane.rs`, `crates/vt`).
+  everything else asks that thread (`crates/mux/src/pane.rs`, `crates/vt`).
 - The web client's wire types are generated: after changing a type it uses,
   run `just proto-ts`. CI fails if `web/src/proto.gen.ts` is stale.
 - Every request passes the access checks before it reaches the mux

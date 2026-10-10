@@ -30,7 +30,7 @@ byte has an offset in the pane's log, so a client resumes by offset, and
 `tail`, replay and scrollback restore are seeks. A client that is within 1 MB
 of the log's end gets a replay; anyone further behind gets a snapshot.
 Why: asciicast has no offsets and inflates the data.
-Where: `crates/proto/src/lib.rs` (`FrameKind`, `HEADER_LEN`), `crates/daemon/src/pane.rs`.
+Where: `crates/proto/src/lib.rs` (`FrameKind`, `HEADER_LEN`), `crates/mux/src/pane.rs`.
 From: [Decisions table](docs/plan-archive.md#decisions-on-the-briefs-open-questions), M1, M2.
 
 ### Some names outlive the rename to Arugula
@@ -68,7 +68,7 @@ asks gets them as `SnapshotZstd`, with scrollback capped at what it keeps
 (`history`). After a resync a client asks again with `history: 0`: the screen
 alone, with a visible "output skipped" rule, so a flood can't keep it
 resyncing. Visible-first attach was measured (S10) and is not built.
-Where: `crates/vt/src/ghostty/wire.rs`, `crates/proto/src/lib.rs` (`AttachPane`), `crates/daemon/src/pane.rs`.
+Where: `crates/vt/src/ghostty/wire.rs`, `crates/proto/src/lib.rs` (`AttachPane`), `crates/mux/src/pane.rs`.
 From: [S1/S5 follow-ups](docs/plan-archive.md#s-spikes-each-about-half-a-day-before-the-milestone-named), #1, #49, #53.
 
 ### Flow control: acks, a window, and a log that absorbs slow clients
@@ -80,7 +80,7 @@ paused only when the daemon itself falls behind, through a bounded queue (64
 chunks), and client requests are served before that queue, so Ctrl-C stops a
 flood at once. Clients that don't ack (`attach`, the tmux front end, the share
 viewer) get `resync` on a full queue.
-Where: `crates/daemon/src/pane.rs` (`ACK_WINDOW`, `PROGRAM_QUEUE`).
+Where: `crates/mux/src/pane.rs` (`ACK_WINDOW`, `PROGRAM_QUEUE`).
 From: [Protocol, flow control](docs/plan-archive.md#protocol-one-protocol-two-transports), #52.
 
 ### Size: a tab has one size, set by its owner
@@ -105,7 +105,7 @@ suffer whenever the phone is open. The hold is #333: two editors typing in
 turn, or one person with two windows, resized the PTY at every handover, and
 each resize is a SIGWINCH and a redraw. tmux's "smallest client wins" as a
 pairing mode isn't done; add it per session if pairing asks for it.
-Where: `crates/core/src/mux.rs` (`Mux::view`, `SizeHold`), `crates/proto/src/lib.rs` (`ClientMsg::View`), `crates/daemon/src/mux/clients.rs`.
+Where: `crates/core/src/mux.rs` (`Mux::view`, `SizeHold`), `crates/proto/src/lib.rs` (`ClientMsg::View`), `crates/mux/src/mux/clients.rs`.
 From: [Size arbitration](docs/plan-archive.md#size-arbitration), [M1](docs/plan-archive.md#m1-multiplexer), [M5](docs/plan-archive.md#m5-tmux-control-mode--cc-front-end), #333.
 
 ### TypeScript types are generated from `proto`
@@ -123,7 +123,7 @@ A pane's history is raw output in 4 MB segments with a sidecar index
 that wrote it) speeds up restore, but one that doesn't decode is discarded
 and the log tail replayed, because the format changed incompatibly once
 without a version bump. Retention is 256 MB a pane.
-Where: `crates/daemon/src/store.rs` (`RETAIN_BYTES`, `PaneLog`), `crates/vt/src/ghostty.rs`.
+Where: `crates/mux/src/store.rs` (`RETAIN_BYTES`, `PaneLog`), `crates/vt/src/ghostty.rs`.
 From: [S5](docs/plan-archive.md#s-spikes-each-about-half-a-day-before-the-milestone-named), [M2](docs/plan-archive.md#m2-durability).
 
 ### The state dir holds secrets: 0700 and 0600
@@ -131,14 +131,14 @@ Logs and checkpoints hold what was typed or echoed, tokens included. The state
 dir is `0700` and its files `0600`; retention is enforced;
 `illogical purge %p` deletes a pane's history. Logs synced from other hosts
 are sealed with a key only the home daemon holds.
-Where: `crates/daemon/src/store.rs`, `crates/daemon/src/perm.rs`, `crates/daemon/src/seal.rs`.
+Where: `crates/mux/src/store.rs`, `crates/mux/src/perm.rs`, `crates/daemon/src/seal.rs`.
 From: [M2](docs/plan-archive.md#m2-durability), [M4](docs/plan-archive.md#m4-reach-a-shell-on-any-machine-or-sandbox) (M4c).
 
 ### Layout is a file written atomically
 `layout.json` holds sessions, tabs, splits, machines and every block's config.
 It is written to a temp file, renamed, and the directory fsynced, debounced
 to 250 ms, with a schema version. Grants (`acl.json`) are written the same way.
-Where: `crates/daemon/src/store.rs`, `crates/daemon/src/acl.rs`.
+Where: `crates/mux/src/store.rs`, `crates/mux/src/acl.rs`.
 From: [M2](docs/plan-archive.md#m2-durability), M12.
 
 ### Restart policies decide what runs after a restore
@@ -149,7 +149,7 @@ OSC 7 directory), `rerun` (the foreground command, asking first by default),
 `claude --resume <id>`; the default for a pane running Claude Code). Restoring
 feeds a fresh engine the checkpoint and log tail, then writes a reset and a
 dim "restored" rule before the new process starts.
-Where: `crates/proto/src/lib.rs` (`Policy`), `crates/daemon/src/resume.rs`, `crates/daemon/src/store.rs`.
+Where: `crates/proto/src/lib.rs` (`Policy`), `crates/mux/src/resume.rs`, `crates/mux/src/store.rs`.
 From: [Restart policies](docs/plan-archive.md#restart-policies-m2), [Restoring scrollback](docs/plan-archive.md#restoring-scrollback), #146.
 
 ### Panes outlive the daemon
@@ -160,7 +160,7 @@ holds the master and lends it to whichever daemon connects, ending the pane
 after a grace period if none does. Stopping the daemon still ends its panes.
 The shim writes the exit status because a restarted daemon is not the
 program's parent. On Windows the shim is a pty host (ConPTY).
-Where: `crates/daemon/src/shim.rs`, `crates/daemon/src/holder.rs`, `crates/daemon/src/sys.rs`, `crates/daemon/src/conpty.rs`, `crates/daemon/src/install.rs`.
+Where: `crates/mux/src/shim.rs`, `crates/mux/src/holder.rs`, `crates/mux/src/sys.rs`, `crates/mux/src/conpty.rs`, `crates/daemon/src/install.rs`.
 From: [M2b](docs/plan-archive.md#m2b-in-place-daemon-upgrade-start-of-daily-use), S3, #35, [M58](docs/plan-archive.md#m58-panes-survive-daemon-restarts-on-windows-221).
 
 ## The mux and panes
@@ -171,7 +171,7 @@ client message, API call and pane notice goes through it. A pane's VT thread
 owns libghostty's terminal (it is `!Send`), and PTY output, attaches, resizes
 and exits arrive on one channel, so a snapshot and the live output after it
 are always in order and the log sees the same bytes.
-Where: `crates/daemon/src/mux/mod.rs`, `crates/daemon/src/pane.rs`.
+Where: `crates/mux/src/mux/mod.rs`, `crates/mux/src/pane.rs`.
 From: [Cargo workspace](docs/plan-archive.md#cargo-workspace), M1.
 
 ### The model is pure: `core` has no I/O
@@ -192,6 +192,25 @@ state than xterm's serializer.
 Where: `crates/vt/src/lib.rs`, `crates/vt/src/ghostty.rs`.
 From: [Decisions table](docs/plan-archive.md#decisions-on-the-briefs-open-questions), S1.
 
+### The mux names no integration
+`arugula-mux` holds the core (the mux task, panes, blocks and their registry,
+the access model, history, the state directory) and `arugulad` the binary
+around it: the edge, MCP, and every integration. The line runs one way: the
+daemon names the mux, never the other. Nothing in the mux names an HTTP
+server or client, MCP, SSH, the embedded web client or control. Three
+mechanisms carry what crosses it: registration (the daemon adds a `BlockKind`
+per block type to `BlockKinds` before the mux starts), traits (what the mux
+calls out to is a trait in `Config`, in `mux/outside.rs`, and `Config::at_exit`
+for the daemon's own cleanup), and features (`arugula-mux/labs`, which the
+daemon's `labs` forwards). `just mux-guard`, run by `just check` and
+`just check-core`, fails if `axum`, `hyper`, `reqwest`, `rmcp`, `rust-embed` or
+`russh` is in `cargo tree -p arugula-mux`, with or without `labs`.
+Why: a core that can't reach an integration can't depend on one by accident, so
+it stays testable and movable without them, and the order of changes stays
+decided in one task.
+Where: `crates/mux/src/mux/outside.rs`, `crates/mux/src/block.rs` (`BlockKinds`), `crates/mux/src/mux/config.rs` (`Config`), `crates/daemon/src/main.rs` (the wiring), `justfile` (`mux-guard`), `crates/mux/README.md`.
+From: [docs/mux-crate.md](docs/mux-crate.md), #459 (the design, #387 item 4), moved in #460 and #701–#705.
+
 ### A block is a leaf with a type; a terminal is the first type
 Every leaf of the tree is a block with a `type`. A terminal keeps its own fast
 path (PTY bytes, offsets, snapshots). Every other type implements `Block`:
@@ -200,7 +219,7 @@ the same notices as terminals (so badges, "needs you" and push work for all of
 them), a text rendering for `capture`/history/search, and methods. A pane
 (`%N`) is a terminal block; OSC 133 command ranges are *command marks*, never
 "blocks".
-Where: `crates/daemon/src/block.rs`, `crates/daemon/src/pane.rs`, `crates/daemon/src/mux/blocks.rs`.
+Where: `crates/mux/src/block.rs`, `crates/mux/src/pane.rs`, `crates/mux/src/mux/blocks.rs`.
 From: [M6](docs/plan-archive.md#m6-non-terminal-blocks-after-m4b-m5-is-independent-of-it), [Architecture](docs/plan-archive.md#architecture).
 
 ### Layout belongs to a host; a remote block references a pane elsewhere
@@ -216,7 +235,7 @@ From: [M4](docs/plan-archive.md#m4-reach-a-shell-on-any-machine-or-sandbox), #17
 bash `ENV`, zsh `ZDOTDIR` and fish `XDG_DATA_DIRS` load scripts that report
 prompts, commands, exit codes and the directory (OSC 133, 7, 633), without
 touching the user's dotfiles; a pane can switch it off.
-Where: `crates/daemon/src/shellint.rs`, `crates/daemon/src/osc.rs`.
+Where: `crates/mux/src/shellint.rs`, `crates/mux/src/osc.rs`.
 From: [M3](docs/plan-archive.md#m3-structure-and-cli).
 
 ## Access and identity
@@ -229,7 +248,7 @@ daemon enforces it on every path: the WebSocket (in the mux, per message), the
 HTTP API (`authz.rs`), the Unix socket, the channel and the tmux front end.
 The unit of sharing is the session; tabs, blocks and machines inherit it.
 Grants are data (`acl.json`) with an audit log (`audit.jsonl`).
-Where: `crates/core/src/access.rs`, `crates/daemon/src/acl.rs`, `crates/daemon/src/authz.rs`, `crates/daemon/src/mux/who_may.rs`.
+Where: `crates/core/src/access.rs`, `crates/mux/src/acl.rs`, `crates/daemon/src/authz.rs`, `crates/mux/src/mux/who_may.rs`.
 From: [M12](docs/plan-archive.md#m12-principals-and-roles), [Multiplayer track](docs/plan-archive.md#multiplayer-track-m12m15-added-2026-10-01).
 
 ### Operations are declared once, and listed in two checked-in files
@@ -261,7 +280,7 @@ panes run in a VM (or join the tab's), and driving one of the owner's local
 panes needs a per-pane, time-limited trust grant. Anything that types into a
 pane, including uploads, checks both the role and `MayDrive`; a new route that
 types must be added to that check by path.
-Where: `crates/daemon/src/authz.rs` (`Api::MayDrive`), `crates/daemon/src/mux/who_may.rs`, `crates/daemon/src/upload.rs`.
+Where: `crates/daemon/src/authz.rs` (`Api::MayDrive`), `crates/mux/src/mux/who_may.rs`, `crates/daemon/src/upload.rs`.
 From: [M14](docs/plan-archive.md#m14-safe-write-access), [M70](docs/plan-archive.md#m70-images-into-terminal-panes-249).
 
 ### Only the owner's agent reaches panes over ssh
@@ -378,7 +397,7 @@ or a message about authenticating, says in the transcript and the card's
 error which login it used and how to log in to that one
 (`CLAUDE_CONFIG_DIR=… claude`, or `env -u CLAUDE_CONFIG_DIR claude`, then
 `/login`); a VM block names its token or key file.
-Where: `crates/daemon/src/agent/defs.rs` (`claude_config_dir`, `login_hint`), `crates/daemon/src/agent/mod.rs` (`local_login`, `auth_failed`), `crates/daemon/src/mux/blocks.rs` (`agent_login`), `crates/daemon/src/mcp/tools.rs` (`start_agent`), `crates/cli/src/cmd/agent.rs`, `crates/cli/src/mcp.rs`.
+Where: `crates/daemon/src/agent/defs.rs` (`claude_config_dir`, `login_hint`), `crates/daemon/src/agent/mod.rs` (`local_login`, `auth_failed`), `crates/mux/src/mux/blocks.rs` (`agent_login`), `crates/daemon/src/mcp/tools.rs` (`start_agent`), `crates/cli/src/cmd/agent.rs`, `crates/cli/src/mcp.rs`.
 From: #379.
 
 ### Attention comes from signals, hooks and a fallback
@@ -387,7 +406,7 @@ sequences (OSC 9/777/99, BEL), Claude Code hooks (`illogical hook`, which also
 turns a permission request into an approval card), and a quiet-output
 heuristic. Every answer has an author. Web Push goes to the phone when no
 client is focused on the pane.
-Where: `crates/daemon/src/mux/attention.rs`, `crates/cli/src/hook.rs`, `crates/daemon/src/push.rs`.
+Where: `crates/mux/src/mux/attention.rs`, `crates/cli/src/hook.rs`, `crates/daemon/src/push.rs`.
 From: [M3](docs/plan-archive.md#m3-structure-and-cli), [M29](docs/plan-archive.md#m29-team-answers), M24.
 
 ### MCP is served by the daemon, with the API's own checks
@@ -742,5 +761,5 @@ From: [S5](docs/plan-archive.md#s-spikes-each-about-half-a-day-before-the-milest
 The daemon runs panes on Windows (ConPTY, named pipes, a logon task), not just
 drives them. Unix-only code stays behind `cfg` gates, and Windows CI runs
 clippy and tests on every change (`illogical-control` is excluded).
-Where: `crates/daemon/src/conpty.rs`, `crates/daemon/src/pipe.rs`, `.github/workflows/windows.yml`.
+Where: `crates/mux/src/conpty.rs`, `crates/daemon/src/pipe.rs`, `.github/workflows/windows.yml`.
 From: [Windows track](docs/plan-archive.md#windows-track-s29-m54m60-added-2026-10-05), M55-M60.
