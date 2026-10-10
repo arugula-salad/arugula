@@ -128,11 +128,16 @@ async function store() {
   await kv("readwrite", (s) => void s.clear());
   const before = {};
   for (const c of CHECKS) {
-    try {
-      await put(c.key, await c.make());
-      before[c.key] = await run(c);
-    } catch (e) {
-      before[c.key] = { ok: false, why: `can't make or store it: ${(e && e.message) || e}` };
+    // WebKit fails to store a CryptoKey now and then (#501): a few tries,
+    // as Arugula itself makes, before calling it a fail.
+    for (let i = 0; i < 3; i++) {
+      try {
+        await put(c.key, await c.make());
+        before[c.key] = await run(c);
+        break;
+      } catch (e) {
+        before[c.key] = { ok: false, why: `can't make or store it: ${(e && e.message) || e}` };
+      }
     }
   }
   await put("before", before);
