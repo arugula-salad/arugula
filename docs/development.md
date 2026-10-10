@@ -175,16 +175,15 @@ and 8 GB for Docker, and up to eight run at once. Until 2026-10-10 these
 jobs ran on eight host runners on geek, which kept builds warm on its
 disk but held up to 96 GB of a machine that is now also a cluster node.
 
-The release workflows' Linux jobs (`linux-x86_64`: release.yml,
-app-release.yml, forges-nightly.yml) still run on geek, as a systemd user
-service (`~/.config/systemd/user/actions-runner-illogical.service`,
-runner in `~/.local/share/actions-runner-illogical`), in
-`illogical-ci.slice` (CPUWeight 50 under the desktop; 40 GB), with
-`KillMode=control-group` (`process` stopped `run.sh` alone and the next
-start ran a second listener). Its jobs keep their build in
-`~/.cache/illogical-ci/`, which a job deletes first once it passes 30 GB
-(`scripts/ci-cap-target`): cargo never prunes it, and on 2026-10-02 it
-grew to 136 GB, filled jake-mini's disk and took the home cluster down.
+The release workflows' Linux jobs (release.yml's and app-release.yml's
+`linux` and `publish`) and forges-nightly.yml's run there too, on the same
+pods and the same setup, plus `gh` for publishing. A tag's run can only
+read main's caches, so release.yml's build takes check.yml's `static`
+cache; the nightly saves its own. Until 2026-10-10 they ran on a host
+runner on geek that kept its builds in `~/.cache/illogical-ci/`, which
+`scripts/ci-cap-target` kept under 30 GB a job: cargo never prunes it, and
+on 2026-10-02 it grew to 136 GB, filled jake-mini's disk and took the home
+cluster down.
 jake-mini (`macos-arm64`, releases only: check.yml's macos job runs on
 GitHub's `macos-15`, as one runner kept every run waiting) runs as a
 launchd agent, `~/Library/LaunchAgents/arugula.actions-runner.plist`,
