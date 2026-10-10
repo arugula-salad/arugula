@@ -3,7 +3,8 @@
 # uploading or publishing anything.
 name: release-dryrun
 on:
-  workflow_dispatch:
+  push:
+    branches: [release-in-cluster]
 permissions:
   contents: read
 jobs:
