@@ -43,7 +43,7 @@ pids+=($!)
 wait_for 10 test -s "$work/control-port" || fail "the stand-in control didn't start"
 control="http://127.0.0.1:$(cat "$work/control-port")"
 
-RUST_LOG=arugulad=info "$daemon" --listen 127.0.0.1:0 --state-dir "$state" --shell "bash --norc --noprofile" \
+RUST_LOG=arugulad=info,arugula_mux=info "$daemon" --listen 127.0.0.1:0 --state-dir "$state" --shell "bash --norc --noprofile" \
   --no-manager-env --tailscale-socket /nonexistent/sock >"$work/daemon.log" 2>&1 &
 pids+=($!)
 wait_for 20 test -s "$state/listen" || fail "the daemon didn't start"

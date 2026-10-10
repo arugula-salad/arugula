@@ -63,7 +63,7 @@ openbox >/dev/null 2>&1 &
 pids+=($!)
 
 chmod +x "$here/recorder.sh" 2>/dev/null || true
-RUST_LOG=arugulad=info "$daemon" --listen 127.0.0.1:0 --state-dir "$state" --shell "$here/recorder.sh" \
+RUST_LOG=arugulad=info,arugula_mux=info "$daemon" --listen 127.0.0.1:0 --state-dir "$state" --shell "$here/recorder.sh" \
   --no-manager-env --tailscale-socket /nonexistent/sock >"$work/daemon.log" 2>&1 &
 pids+=($!)
 wait_for 20 test -s "$state/listen" || { echo "the daemon didn't start" >&2; exit 1; }
