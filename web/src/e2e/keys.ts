@@ -139,15 +139,31 @@ async function storeChecked(record: DeviceKeys | Wrapped): Promise<DeviceKeys | 
   return (await checkKeys(back)) ?? back;
 }
 
+/** `storeChecked`, tried again if storing throws: WebKit fails to put a
+ * record holding a CryptoKey now and then ("The operation failed for an
+ * operation-specific reason"), and once isn't the browser's answer (#501).
+ * Keys that don't come back are, so those aren't tried again. */
+async function storeTried(make: () => Promise<DeviceKeys | Wrapped>): Promise<DeviceKeys | string> {
+  let why = "";
+  for (let i = 0; i < 3; i++) {
+    try {
+      return await storeChecked(await make());
+    } catch (e) {
+      why = `storing them failed: ${(e as Error).message ?? e}`;
+    }
+  }
+  return why;
+}
+
 /** This browser's keys, made on first use, or again if the ones it kept
  * no longer work (they were never usable after a reload, so nothing
  * trusted them that this browser can still answer for). */
 export async function loadKeys(): Promise<DeviceKeys> {
   const have = await storedKeys();
   if (have && !(await checkKeys(have))) return have;
-  let keys = await storeChecked(await generateKeys());
+  let keys = await storeTried(generateKeys);
   // #94: non-extractable keys don't survive IndexedDB here: wrap them.
-  if (typeof keys === "string") keys = await storeChecked(await wrapKeys(await generateKeys(true)));
+  if (typeof keys === "string") keys = await storeTried(async () => wrapKeys(await generateKeys(true)));
   if (typeof keys === "string") {
     await kv("readwrite", (s) => void s.delete("keys"));
     throw new Error(`this browser can't keep a device key between page loads (${keys}); use another browser, or update this one`);

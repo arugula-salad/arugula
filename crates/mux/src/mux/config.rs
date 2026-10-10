@@ -13,9 +13,24 @@ use arugula_proto::{PaneId, Policy};
 use std::{path::PathBuf, sync::Arc};
 use tracing::info;
 
+/// What runs when the daemon is stopping (see [`Config::at_exit`]); a
+/// newtype so `Config` can stay `Debug`.
+#[derive(Clone)]
+pub struct AtExit(pub Arc<dyn Fn() + Send + Sync>);
+
+impl std::fmt::Debug for AtExit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("AtExit")
+    }
+}
+
 /// How panes run their shell.
 #[derive(Clone, Debug)]
 pub struct Config {
+    /// Run at the end of `shutdown()`, after the save: the daemon's own
+    /// cleanup (the Labs workspace's beholds, #620), which the mux doesn't
+    /// know.
+    pub at_exit: Option<AtExit>,
     /// Who else may reach which sessions (M12).
     pub acl: Arc<crate::acl::Acl>,
     /// Notifications: Web Push, and through Arugula control to people's
@@ -184,7 +199,7 @@ impl Config {
             }
             Dialect::Cmd => {
                 let script = match &run {
-                    Run::Argv(argv) => crate::conpty_command_line(argv),
+                    Run::Argv(argv) => crate::sys::conpty_command_line(argv),
                     Run::Note(note) => format!("echo [{note}]"),
                 };
                 let mut args = shell.args.clone();

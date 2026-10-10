@@ -964,6 +964,32 @@ pub(super) fn updates(attention: Option<Attention>, current: Option<&Reason>, ne
 mod tests {
     use super::push_reason;
 
+    /// What the daemon's `gate::reason` makes of these gates (kept in step by
+    /// hand: the daemon's tests build the same one): the first gate, with how
+    /// many more. Its `since_ms` is now, which nothing here reads.
+    fn reason(gates: &[arugula_proto::Gate]) -> Option<arugula_proto::Reason> {
+        use arugula_proto::{Action, GateSource, Reason, ReasonKind};
+        let g = gates.first()?;
+        let actions = match g.source {
+            GateSource::Chant { .. } => vec![Action::Allow, Action::Expire, Action::Dismiss],
+            GateSource::Point { .. } => vec![Action::Answer, Action::Dismiss],
+            _ => vec![Action::Allow, Action::Dismiss],
+        };
+        let more = if gates.len() > 1 { format!(" (+{} more)", gates.len() - 1) } else { String::new() };
+        Some(Reason {
+            kind: ReasonKind::Gate,
+            since_ms: crate::store::now_ms(),
+            headline: format!("{}{more}", g.headline()),
+            command: g.command.clone(),
+            exit: None,
+            duration_ms: None,
+            bundle: Some(g.bundle()),
+            ask: None,
+            gate: Some(Box::new(g.clone())),
+            actions,
+        })
+    }
+
     #[cfg(feature = "labs")]
     #[test]
     fn an_update_says_more_only_while_the_reason_still_wants_you() {
@@ -982,8 +1008,8 @@ mod tests {
         };
         use super::updates;
         use arugula_proto::{Attention, ReasonKind};
-        let was = crate::gate::reason(&[gate(false)]).unwrap();
-        let more = crate::gate::reason(&[gate(true)]).unwrap();
+        let was = reason(&[gate(false)]).unwrap();
+        let more = reason(&[gate(true)]).unwrap();
         assert!(updates(Some(Attention::NeedsInput), Some(&was), &more));
         // Dismissed: idle, and it stays so.
         assert!(!updates(Some(Attention::Idle), Some(&was), &more));
@@ -1008,7 +1034,7 @@ mod tests {
             source: arugula_proto::GateSource::Chant { root: "/w".into(), dir: "/w/delivery".into(), machine: None },
             why: None,
         };
-        let v = push_reason(&crate::gate::reason(&[gate]).unwrap());
+        let v = push_reason(&reason(&[gate]).unwrap());
         assert_eq!(v["kind"], "gate");
         assert_eq!(v["actions"], serde_json::json!(["allow", "expire", "dismiss"]));
         assert_eq!(v["gate"]["id"], "delivery/ship/approve-ship");
@@ -1041,7 +1067,7 @@ mod tests {
             },
             why: None,
         };
-        let r = crate::gate::reason(std::slice::from_ref(&q)).unwrap();
+        let r = reason(std::slice::from_ref(&q)).unwrap();
         assert_eq!(super::push_title(arugula_proto::Attention::NeedsInput, Some(&r)), "A decision waits on you");
         let v = push_reason(&r);
         assert_eq!(v["actions"], serde_json::json!(["answer", "dismiss"]));
@@ -1055,6 +1081,6 @@ mod tests {
         if let GateSource::Point { choices, .. } = &mut q.source {
             choices.push(choice("maybe", "maybe"));
         }
-        assert!(push_reason(&crate::gate::reason(&[q]).unwrap())["gate"].get("choices").is_none());
+        assert!(push_reason(&reason(&[q]).unwrap())["gate"].get("choices").is_none());
     }
 }

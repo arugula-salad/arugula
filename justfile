@@ -516,8 +516,27 @@ test-scripts:
     scripts/tests/suite-lock.sh
     scripts/tests/release-bump.sh
 
+# arugula-mux names no integration (DECISIONS.md, "The mux names no
+# integration"): none of these crates may be in its dependency tree, with or
+# without Labs. Whole package names, so `hyper-util` isn't `hyper`.
+mux-guard:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    banned='axum hyper reqwest rmcp rust-embed russh'
+    status=0
+    for features in "" "--features labs"; do
+      tree=$({{cargo}} tree -p arugula-mux -e normal --prefix none $features)
+      for crate in $banned; do
+        if printf '%s\n' "$tree" | awk '{print $1}' | grep -qx "$crate"; then
+          echo "mux-guard: arugula-mux depends on $crate${features:+ ($features)}: the mux names no integration (DECISIONS.md, docs/mux-crate.md)" >&2
+          status=1
+        fi
+      done
+    done
+    exit $status
+
 # What CI runs.
-check: test
+check: test mux-guard
     just proto-ts check
     {{cargo}} fmt --all --check
     {{cargo}} clippy --workspace --all-targets -- -D warnings
@@ -525,7 +544,7 @@ check: test
 # The daemon and the CLI without Labs (#452): clippy and the tests with the
 # `labs` feature off, which CI runs as the `core` job. Run it after touching
 # anything in or beside crates/daemon/src/labs; `just check` covers the rest.
-check-core: web
+check-core: web mux-guard
     {{cargo}} clippy -p arugulad -p arugula-mux -p arugula --no-default-features --all-targets -- -D warnings
     {{cargo}} nextest run -p arugulad -p arugula-mux -p arugula --no-default-features
 

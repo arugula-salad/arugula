@@ -1,5 +1,8 @@
 # The daemon's core as a lib crate
 
+> The moves are done (tickets #460, #701–#705); this note is now the design record.
+
+
 A design note for #459 (part of #387, item 4). It proposes what moves out
 of `crates/daemon` into a new crate, `arugula-mux`, and what stays in
 `arugulad` (the binary and the integrations). It covers the interface

@@ -32,13 +32,10 @@ pub trait People: Send + Sync + Debug {
     /// Whether this daemon is a team's (M19).
     fn is_team(&self) -> bool;
     /// Whether this daemon's own team has `account` as an owner.
-    #[cfg_attr(not(feature = "labs"), allow(dead_code))]
     fn owns_here(&self, account: &str) -> bool;
     /// The team's other owners (#386), by account.
-    #[cfg_attr(not(feature = "labs"), allow(dead_code))]
     fn co_owners(&self) -> Vec<Principal>;
     /// People who have a team role here, connected or not.
-    #[cfg_attr(not(feature = "labs"), allow(dead_code))]
     fn team_people(&self) -> Vec<Principal>;
     /// A hosted sandbox's last session closed (M20).
     fn sandbox_done(self: Arc<Self>);

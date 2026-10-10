@@ -286,6 +286,11 @@ const openPane = (pane: number, daemon?: string, thread?: string) => {
     const off = client.subscribe(() => go() && off());
   }
 };
+// The desktop app up to 0.26.3 names its events `arugula:…` only when the
+// page says it's from after the rename (#505); without this they arrive as
+// `illogical:…`, which nothing here hears (#708). Newer apps always send
+// `arugula:…`. Keep it until no 0.26 app is in use.
+(window as { __arugulaPage?: boolean }).__arugulaPage = true;
 // A pane opened on the home daemon from elsewhere (a sandbox shell).
 window.addEventListener("arugula:open-pane", (e) => openPane((e as CustomEvent<number>).detail));
 const fromHash = /^#pane=(?:([0-9a-f]+)\.)?(\d+)(?:&thread=((?:pane|session)-\d+))?$/.exec(location.hash);

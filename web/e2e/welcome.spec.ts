@@ -60,6 +60,22 @@ test("opens once on first run, a step at a time, then from the session menu", as
   await ctx.close();
 });
 
+test("the desktop app up to 0.26.3 opens it from its Daemon menu", async ({ page }) => {
+  // #708: that app names the event by the page's `__arugulaPage`, exactly so.
+  await reset(page);
+  const panel = page.getByRole("dialog", { name: "Getting started" });
+  await expect(panel).toBeHidden();
+  await page.evaluate(() =>
+    dispatchEvent(
+      new CustomEvent(((window as { __arugulaPage?: boolean }).__arugulaPage ? "arugula" : "illogical") + ":getting-started", {
+        detail: "cloud",
+      }),
+    ),
+  );
+  await expect(panel).toBeVisible();
+  await expect(panel.locator("[data-start-progress]")).toHaveText("Step 3 / 5 · Cloud");
+});
+
 test("the daemon's setup status, and the cheap poll for a join", async ({ page }) => {
   await reset(page);
   const status = await page.evaluate(async () => (await fetch("/api/setup")).json());

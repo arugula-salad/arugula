@@ -92,6 +92,22 @@ test("Acme's team box offers fixer; Bob is an owner of Acme too", async ({ brows
   await show(alice, "teambox");
   const r = await call(alice, "POST", "/api/a2a/offers", { agent: "fixer", dir });
   expect(r.status, JSON.stringify(r.body)).toBe(200);
+
+  // Bob's machine reaches teambox only once it has Acme's roster, which
+  // comes on its next refresh from control (#711): wait until its catalog
+  // (`list kind agents`) names fixer there.
+  await show(bob, "bobs");
+  await expect
+    .poll(
+      async () => {
+        const c = (await call(bob, "GET", "/api/a2a/catalog?fresh=1")).body as unknown as {
+          machines?: { name: string; agents: { name: string }[] }[];
+        };
+        return c.machines?.find((m) => m.name === "teambox")?.agents.map((a) => a.name) ?? [];
+      },
+      { timeout: 90_000, intervals: [1_000, 2_000, 5_000] },
+    )
+    .toContain("fixer");
 });
 
 test("a task from Bob's machine waits for the box's own account: not Bob's, though he's an owner of the team", async () => {

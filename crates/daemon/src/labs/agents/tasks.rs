@@ -438,6 +438,12 @@ pub async fn rpc(app: Arc<App>, name: &str, dir: &str, caller: Asker, req: Value
 
 /// Stop a task, by whoever: its turn canceled, and it's `CANCELED`.
 pub async fn cancel(app: &App, t: &Task, by: &str) {
+    // `CANCELED` first: a task waiting on its owner wakes to the Deny below
+    // and must find it ended, not still `SUBMITTED` to call rejected (#719).
+    update(&t.id, |x| {
+        x.state = CANCELED.into();
+        x.status = Some(format!("canceled by {by}"));
+    });
     let was_waiting = PENDING.lock().unwrap().remove(&t.id);
     if let Some(tx) = was_waiting {
         let _ = tx.send(Answer::Deny);
@@ -448,10 +454,6 @@ pub async fn cancel(app: &App, t: &Task, by: &str) {
     {
         let _ = block.call("cancel", json!({})).await;
     }
-    update(&t.id, |x| {
-        x.state = CANCELED.into();
-        x.status = Some(format!("canceled by {by}"));
-    });
     info!(task = t.id, by, "A2A task canceled");
 }
 
@@ -569,12 +571,14 @@ async fn after_consent(app: Arc<App>, t: String, text: String) {
             Ok(Answer::Once) => {}
             Ok(Answer::Hour) => grant(&state, &task.caller, &task.agent),
             Ok(Answer::Deny) | Err(_) => {
-                if snapshot(&t).is_some_and(|x| x.state == SUBMITTED) {
-                    update(&t, |x| {
+                // Checked under the store's lock: a cancel may land between
+                // a look and a write.
+                update(&t, |x| {
+                    if x.state == SUBMITTED {
                         x.state = REJECTED.into();
                         x.status = Some("this machine's owner said no".into());
-                    });
-                }
+                    }
+                });
                 return;
             }
         }

@@ -184,7 +184,7 @@ export default defineConfig({
     ? undefined
     : {
         // Only the daemon's cache: Playwright keeps its browsers in XDG_CACHE_HOME.
-        command: `XDG_CACHE_HOME="${runDir("ARUGULA_E2E_CACHE", "arugula-e2e-cache-")}" RUST_LOG=arugulad=debug ../target/debug/arugulad --listen 127.0.0.1:${port} --shell "bash --norc --noprofile" --no-manager-env --state-dir "${runDir("ARUGULA_E2E_STATE", "arugula-e2e-")}"${log}`,
+        command: `XDG_CACHE_HOME="${runDir("ARUGULA_E2E_CACHE", "arugula-e2e-cache-")}" RUST_LOG=arugulad=debug,arugula_mux=debug ../target/debug/arugulad --listen 127.0.0.1:${port} --shell "bash --norc --noprofile" --no-manager-env --state-dir "${runDir("ARUGULA_E2E_STATE", "arugula-e2e-")}"${log}`,
         url: `http://127.0.0.1:${port}/`,
         reuseExistingServer: false,
         stdout: "ignore",

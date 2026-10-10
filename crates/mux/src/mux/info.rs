@@ -1,7 +1,7 @@
 //! What the multiplexer knows about itself: refreshing pane metadata, saving
 //! the layout, shutdown, and the pane, block and state summaries sent out.
 
-use super::{Daemon, ProcSeen, agent_in};
+use super::{AtExit, Daemon, ProcSeen, agent_in};
 use crate::{
     block::Block,
     pane::{CommandRec, PaneHandle},
@@ -135,7 +135,9 @@ impl Daemon {
         info!(panes = self.panes.len(), "saved for shutdown");
         // Workspace blocks' behold (#620): its own process group, so it
         // wouldn't go with the daemon.
-        crate::labs::stop_beholds();
+        if let Some(AtExit(at_exit)) = &self.config.at_exit {
+            at_exit();
+        }
     }
 
     /// A pane's directory and foreground command from the OS, read at most
