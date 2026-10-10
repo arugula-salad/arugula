@@ -1,0 +1,105 @@
+# What geek's disk used to give check.yml's jobs, for a fresh Linux runner
+# (the home cloud's arugula-amd64 pods, docs/development.md): the toolchain,
+# caches in place of the kept build directories, and the run's binaries from
+# the jobs that built them in place of the shared run directory.
+name: setup
+description: Toolchain, caches and this run's binaries for a check.yml job on an ephemeral Linux runner
+inputs:
+  rust:
+    description: The Rust toolchain and a build cache (false for jobs that only run built binaries)
+    default: "true"
+  cache-key:
+    description: The build cache's key; jobs that build different things keep different caches
+    default: ""
+  fetch:
+    description: This run's binaries to fetch into $CI_RUN (scripts/ci-env), by artifact - any of run-debug, run-static
+    default: ""
+  packages:
+    description: More apt packages
+    default: ""
+runs:
+  using: composite
+  steps:
+    - name: Where things go
+      shell: bash
+      run: |
+        # On the job's own volume (_work), which the Docker sidecar shares:
+        # the test stack mounts the binaries, and ci-env hard-links into it.
+        echo "CI_RUNS=$RUNNER_TEMP/runs" >> "$GITHUB_ENV"
+        echo "CARGO_TARGET_DIR=$GITHUB_WORKSPACE/target" >> "$GITHUB_ENV"
+        echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+    - name: Packages (tmux for the tmux tests, zstd for the caches)
+      shell: bash
+      run: |
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq --no-install-recommends tmux zstd ${{ inputs.packages }} >/dev/null
+    - name: Rust (rust-toolchain.toml's)
+      if: inputs.rust == 'true'
+      shell: bash
+      run: |
+        command -v rustup >/dev/null || curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none --no-modify-path
+        "$HOME/.cargo/bin/rustup" toolchain install "$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)" --profile minimal -c rustfmt,clippy
+    - name: mise (Zig for libghostty, nextest)
+      shell: bash
+      run: |
+        command -v mise >/dev/null || curl -fsSL https://mise.run | sh
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+    # mise's Zig and nextest: Zig's community mirror answered 429 once and
+    # failed a job (#524).
+    - uses: actions/cache@v4
+      with:
+        path: ~/.local/share/mise/installs
+        key: mise-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.mise.toml') }}
+    - uses: taiki-e/install-action@v2
+      with:
+        tool: just
+    # geek's: MISE_NODE_VERSION=24 and pnpm 12.
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 24
+    - uses: pnpm/action-setup@v4
+      with:
+        version: 12
+    - name: pnpm's store
+      id: pnpm
+      shell: bash
+      run: echo "store=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+    - uses: actions/cache@v4
+      with:
+        path: ${{ steps.pnpm.outputs.store }}
+        key: pnpm-${{ runner.os }}-${{ hashFiles('web/pnpm-lock.yaml') }}
+        restore-keys: pnpm-${{ runner.os }}-
+    # Playwright's browsers (`just browsers` installs their system packages
+    # each time; the downloads are what this keeps).
+    - uses: actions/cache@v4
+      with:
+        path: ~/.cache/ms-playwright
+        key: playwright-${{ runner.os }}-${{ hashFiles('web/pnpm-lock.yaml') }}
+        restore-keys: playwright-${{ runner.os }}-
+    # In place of the build directories geek kept (scripts/ci-cap-target).
+    # Saved from main only, so branches don't evict main's.
+    - uses: Swatinem/rust-cache@v2
+      if: inputs.rust == 'true'
+      with:
+        key: ${{ inputs.cache-key }}
+        workspaces: ". -> target"
+        save-if: ${{ github.ref == 'refs/heads/main' }}
+    - name: This run's debug binaries and web client
+      if: contains(inputs.fetch, 'run-debug')
+      uses: actions/download-artifact@v4
+      with:
+        name: run-debug
+        path: ${{ runner.temp }}/artifacts
+    - name: This run's static binaries
+      if: contains(inputs.fetch, 'run-static')
+      uses: actions/download-artifact@v4
+      with:
+        name: run-static
+        path: ${{ runner.temp }}/artifacts
+    - name: Into the run directory (scripts/ci-env's $CI_RUN)
+      if: inputs.fetch != ''
+      shell: bash
+      run: |
+        run=$CI_RUNS/$GITHUB_RUN_ID
+        mkdir -p "$run"
+        for t in "$RUNNER_TEMP"/artifacts/*.tar; do tar -xf "$t" -C "$run"; done

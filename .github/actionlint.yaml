@@ -1,0 +1,5 @@
+# The home cloud's runner scale set (docs/development.md), named alone in
+# runs-on rather than beside `self-hosted`.
+self-hosted-runner:
+  labels:
+    - arugula-amd64

@@ -156,37 +156,40 @@ daemon's workflow builds an app, or if the downloads the app's workflow
 makes, the ones `scripts/release` requires and the ones the site links
 drift apart.
 
-CI runs on two self-hosted GitHub Actions runners in the arugula-salad
-org's `arugula` runner group, which only this repo may use: geek
-(`linux-x86_64`, a systemd user service,
-`~/.config/systemd/user/actions-runner-illogical.service`, runner in
-`~/.local/share/actions-runner-illogical`), geek's CI pool (eight more,
-`linux-x86_64-ci`, `actions-runner-illogical-e2e@1…8.service` from one
-template unit, runners in `~/.local/share/actions-runner-illogical-e2e-N`,
-which run check.yml's jobs on geek side by side; 9–12 are registered but
-disabled: twelve with no limits kept geek at load 30+ and failed the tests
-that time things. The drop-in `actions-runner-illogical-e2e@.service.d/limits.conf`
-puts them in `illogical-ci.slice` (CPUWeight 50 under the desktop, 96 GB
-for all of CI) and gives each 20 GB; `scripts/ci-env` caps nextest and
-cargo at six threads, rather than a CPUQuota, which stalls a runner for
-the rest of its period and times tests out. The drop-in also sets
-`KillMode=control-group` (the template's `process` stopped `run.sh`
-alone, and the next start ran a second listener beside the old one), so
-stopping a runner cancels its job: drain it first, `gh api -X DELETE
-orgs/arugula-salad/actions/runners/ID/labels` (needs `admin:org`), wait
-for `.busy` false, restart, then `PUT` its three labels back. More is `cp -a` of one
-without `_work`, `.runner` and `.credentials*`, `config.sh --runnergroup
-arugula --labels linux-x86_64,linux-x86_64-e2e,linux-x86_64-ci` with an
-org registration token, and `systemctl --user enable --now` of the next
-number) and jake-mini (`macos-arm64`, releases only: check.yml's macos job
-runs on GitHub's `macos-15`, as one runner kept every run waiting; a
+<a id="ci"></a>CI's Linux jobs run in two places. check.yml's (the push checks)
+run in the home cloud (`runs-on: arugula-amd64`): Actions Runner
+Controller starts a fresh pod for each job and deletes it after, from
+home-cloud's `platform/arc/runner-scale-set-arugula-amd64.yaml`, in the
+org's `illogical` runner group, which only this repo may use. A pod has
+nothing of its own: `.github/actions/setup` installs the toolchain (Rust
+from rust-toolchain.toml, mise's Zig and nextest, just, Node 24, pnpm 12,
+tmux), restores GitHub's caches in place of kept build directories (the
+Rust build per job, saved from main only; pnpm's store; Playwright's
+browsers), and fetches build's and static's binaries, which those jobs
+upload as artifacts, into `$CI_RUN` (`scripts/ci-env`), so the jobs after
+them find the run directory where it always was. Each pod has Docker (a
+privileged dind sidecar) for the test stack and the ssh tests, but no
+systemd user manager: the tests that start the daemon as a service skip
+there. Pods ask for 2.5 CPUs and 5 GB and may use 16 GB for the build
+and 8 GB for Docker, and up to eight run at once. Until 2026-10-10 these
+jobs ran on eight host runners on geek, which kept builds warm on its
+disk but held up to 96 GB of a machine that is now also a cluster node.
+
+The release workflows' Linux jobs (`linux-x86_64`: release.yml,
+app-release.yml, forges-nightly.yml) still run on geek, as a systemd user
+service (`~/.config/systemd/user/actions-runner-illogical.service`,
+runner in `~/.local/share/actions-runner-illogical`), in
+`illogical-ci.slice` (CPUWeight 50 under the desktop; 40 GB), with
+`KillMode=control-group` (`process` stopped `run.sh` alone and the next
+start ran a second listener). Its jobs keep their build in
+`~/.cache/illogical-ci/`, which a job deletes first once it passes 30 GB
+(`scripts/ci-cap-target`): cargo never prunes it, and on 2026-10-02 it
+grew to 136 GB, filled jake-mini's disk and took the home cluster down.
+jake-mini (`macos-arm64`, releases only: check.yml's macos job runs on
+GitHub's `macos-15`, as one runner kept every run waiting) runs as a
 launchd agent, `~/Library/LaunchAgents/arugula.actions-runner.plist`,
 with `ProcessType` Interactive: launchd's throttling of background agents
-made daemon tests time out; Docker is colima, a Homebrew service). All run jobs on the host and keep their
-build in `~/.cache/illogical-ci/`, which each job deletes first once it
-passes 30 GB (`scripts/ci-cap-target`): cargo never prunes it, and on
-2026-10-02 it grew to 136 GB, filled jake-mini's disk and took the home
-cluster down. Workflows run on pushes and tags only, never on pull
+made daemon tests time out; Docker is colima, a Homebrew service. Workflows run on pushes and tags only, never on pull
 requests, since they run on those hosts; and the repo asks for approval
 before any outside contributor's workflow runs, so a fork's PR can't add
 a trigger of its own and reach them. Intel Macs are the exception:

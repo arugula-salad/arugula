@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
-# Set up a CI job on geek's runner pool (#287). Every form sets CI_RUN in
-# $GITHUB_ENV: this run's binaries, which the build jobs keep there for
-# the jobs that need them (laid out as target/ is).
+# Set up a check.yml job (#287). Every form sets CI_RUN in $GITHUB_ENV:
+# this run's binaries, which the build jobs keep there for the jobs that
+# need them (laid out as target/ is). Under $CI_RUNS when it's set: on the
+# cluster's ephemeral runners .github/actions/setup sets it and moves the
+# run directory between jobs as artifacts; on a host that keeps its disk,
+# ~/.cache/illogical-ci/runs is shared by the jobs directly.
 #   ci-env target JOB   a kept build directory (CARGO_TARGET_DIR) for JOB,
 #                       one of two, so two runs' JOBs never share one, and
 #                       rustc at the lowest priority (scripts/ci-rustc);
@@ -14,7 +17,7 @@
 #   ci-env use          make target/ and web/dist this run's.
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-runs=$HOME/.cache/illogical-ci/runs
+runs=${CI_RUNS:-$HOME/.cache/illogical-ci/runs}
 run=$runs/$GITHUB_RUN_ID
 echo "CI_RUN=$run" >> "$GITHUB_ENV"
 # Six threads for the tests and the builds: nextest's default is one per

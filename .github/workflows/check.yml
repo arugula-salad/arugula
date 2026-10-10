@@ -1,6 +1,7 @@
 # Every push to main, as parallel as it goes (#287):
 # - lint: the quick checks, on GitHub's runners;
-# - on geek's runner pool (label linux-x86_64-ci, docs/development.md):
+# - on the home cloud's runners (arugula-amd64: a fresh pod per job,
+#   docs/development.md):
 #   - build and static: the debug and the box's (static) binaries, once;
 #   - clippy: Linux, both Macs (cross), the desktop app (when the push
 #     changes it: scripts/app-changed), and notices;
@@ -13,12 +14,15 @@
 # - macos: test and, beside it, the WebKit specs, on GitHub's macOS
 #   runners (when the push changes what runs there: scripts/macos-changed;
 #   main always).
-# Jobs on geek take a build directory and a test stack of their own
-# (scripts/ci-env), so runs and jobs don't wait on each other. geek needs
-# Docker: the test stack (testnet/README.md) and the ssh
-# tests in `just test` fail without it. Only main's pushes (never other
-# branches or pull requests), since most of it runs on our own machines; a
-# branch runs by hand: `gh workflow run check.yml --ref BRANCH`.
+# Those jobs start from nothing (.github/actions/setup): the toolchain,
+# GitHub's cache in place of kept build directories, and build's and
+# static's binaries as artifacts in place of a shared run directory
+# (scripts/ci-env). Each pod has Docker (a dind sidecar): the test stack
+# (testnet/README.md) and the ssh tests in `just test` fail without it. No
+# systemd user manager, so the tests that start the daemon as a service
+# skip. Only main's pushes (never other branches or pull requests), since
+# most of it runs on our own machines; a branch runs by hand:
+# `gh workflow run check.yml --ref BRANCH`.
 name: check
 on:
   push:
@@ -36,6 +40,9 @@ concurrency:
 
 env:
   NEXTEST_PROFILE: ci
+  # mise's GitHub downloads (nextest): unauthenticated, they share the
+  # runner's IP's rate limit.
+  GITHUB_TOKEN: ${{ github.token }}
   # Debug and test builds keep line tables only (backtraces keep their
   # files and lines; no variables for a debugger): a full rebuild's test
   # binaries were 1.2 GB instead of 2.3 GB, which the kept build
@@ -83,31 +90,59 @@ jobs:
   # The debug binaries, web/dist embedded (debug-embed: the specs run them
   # from other checkouts), for the specs and the test stack's CLI.
   build:
-    runs-on: [self-hosted, linux-x86_64-ci]
+    runs-on: arugula-amd64
     steps:
       - uses: actions/checkout@v4
-      - run: scripts/ci-env target build
+      - uses: ./.github/actions/setup
+        with:
+          cache-key: build
       - run: just bootstrap
       - run: just web
       - run: mise exec -- cargo build -p arugulad -p arugula -p arugula-control --features arugulad/debug-embed,arugula-control/debug-embed
       - run: scripts/ci-env keep debug
+      - name: Hand them to the jobs that need them
+        run: tar -cf "$RUNNER_TEMP/run-debug.tar" -C "$CI_RUN" debug dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: run-debug
+          path: ${{ runner.temp }}/run-debug.tar
+          retention-days: 1
+          compression-level: 1
 
   # The box's binaries: for the ssh tests, the test stack and
   # team-swarm-phones' box behind netem.
   static:
-    runs-on: [self-hosted, linux-x86_64-ci]
+    runs-on: arugula-amd64
     steps:
       - uses: actions/checkout@v4
-      - run: scripts/ci-env target static
+      - uses: ./.github/actions/setup
+        with:
+          cache-key: static
       - run: just bootstrap
       - run: just static x86_64
       - run: scripts/ci-env keep static
+      - name: Hand them to the jobs that need them
+        run: tar -cf "$RUNNER_TEMP/run-static.tar" -C "$CI_RUN" x86_64-unknown-linux-musl
+      - uses: actions/upload-artifact@v4
+        with:
+          name: run-static
+          path: ${{ runner.temp }}/run-static.tar
+          retention-days: 1
+          compression-level: 1
 
   clippy:
-    runs-on: [self-hosted, linux-x86_64-ci]
+    runs-on: arugula-amd64
     steps:
       - uses: actions/checkout@v4
-      - run: scripts/ci-env target clippy
+      - uses: ./.github/actions/setup
+        with:
+          cache-key: clippy
+          # The desktop app's system libraries (packaging/desktop/Containerfile),
+          # for `just desktop-check` below.
+          packages: libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev libxdo-dev libasound2-dev libopus-dev
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-about@0.9.2
       - run: just bootstrap
       - run: just web
       - run: mise exec -- cargo clippy --workspace --all-targets -- -D warnings
@@ -124,10 +159,12 @@ jobs:
   # src/labs/mod.rs): clippy and the tests. The ssh tests, which need
   # Docker, run in `test`.
   core:
-    runs-on: [self-hosted, linux-x86_64-ci]
+    runs-on: arugula-amd64
     steps:
       - uses: actions/checkout@v4
-      - run: scripts/ci-env target core
+      - uses: ./.github/actions/setup
+        with:
+          cache-key: core
       - run: just bootstrap
       - run: just check-core
         env:
@@ -135,10 +172,13 @@ jobs:
 
   test:
     needs: static
-    runs-on: [self-hosted, linux-x86_64-ci]
+    runs-on: arugula-amd64
     steps:
       - uses: actions/checkout@v4
-      - run: scripts/ci-env target test
+      - uses: ./.github/actions/setup
+        with:
+          cache-key: test
+          fetch: run-static
       - run: scripts/ci-env testnet
       - run: just bootstrap
       # reboot.rs drives Chromium (its watcher).
@@ -153,9 +193,13 @@ jobs:
   # it must fail.
   testnet:
     needs: [build, static]
-    runs-on: [self-hosted, linux-x86_64-ci]
+    runs-on: arugula-amd64
     steps:
       - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          rust: "false"
+          fetch: run-debug run-static
       - run: scripts/ci-env testnet
       - run: just bootstrap
       - name: Its binaries, this run's
@@ -173,13 +217,17 @@ jobs:
 
   e2e:
     needs: build
-    runs-on: [self-hosted, linux-x86_64-ci]
+    runs-on: arugula-amd64
     strategy:
       fail-fast: false
       matrix:
         shard: [1, 2, 3, 4, 5, 6]
     steps:
       - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          rust: "false"
+          fetch: run-debug
       - run: scripts/ci-env use
       - run: just bootstrap
       - name: Playwright's browsers
@@ -193,9 +241,13 @@ jobs:
   # The specs on the test stack (team-swarm-phones' box behind netem).
   stack:
     needs: [build, static]
-    runs-on: [self-hosted, linux-x86_64-ci]
+    runs-on: arugula-amd64
     steps:
       - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          rust: "false"
+          fetch: run-debug run-static
       - run: scripts/ci-env use
       - run: scripts/ci-env testnet
       - run: just bootstrap
@@ -212,13 +264,18 @@ jobs:
 
   # The specs that time things (E2E_SET=perf: the frame rates, editors'
   # files in under 3 s) wait for the shards: beside six browsers they
-  # measured geek's load.
+  # measured geek's load. Each job has its own pod now, but the wait stays:
+  # the pods share nodes.
   perf:
     needs: [build, e2e]
     if: ${{ !cancelled() && needs.build.result == 'success' }}
-    runs-on: [self-hosted, linux-x86_64-ci]
+    runs-on: arugula-amd64
     steps:
       - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          rust: "false"
+          fetch: run-debug
       - run: scripts/ci-env use
       - run: just bootstrap
       # editors.spec opens a file from an iPhone (WebKit) too.
@@ -235,10 +292,12 @@ jobs:
   # stale. The recipe builds the box's binaries and the app itself. Not
   # named desktop: that's the Windows job chant.workspace.json requires.
   desktop-xvfb:
-    runs-on: [self-hosted, linux-x86_64-ci]
+    runs-on: arugula-amd64
     steps:
       - uses: actions/checkout@v4
-      - run: scripts/ci-env target desktop-xvfb
+      - uses: ./.github/actions/setup
+        with:
+          cache-key: desktop-xvfb
       - run: just bootstrap
       - name: The desktop app under Xvfb (join, m46, m47, stale)
         run: just desktop-xvfb
@@ -257,7 +316,7 @@ jobs:
   # GitHub's Apple silicon runner (free for a public repo, up to five at
   # once): jake-mini's one runner kept every run waiting 12-27 min for it,
   # and stays for releases. No Docker there, so the ssh tests skip
-  # (ARUGULA_SKIP_DOCKER=1, loudly); test runs them on geek. `just test`
+  # (ARUGULA_SKIP_DOCKER=1, loudly); test runs them in the cluster. `just test`
   # and the WebKit specs on runners of their own: one after the other they
   # were the run's longest job.
   macos:
