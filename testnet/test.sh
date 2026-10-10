@@ -539,5 +539,8 @@ failed=""
 for c in $claims; do
   case " $CLAIMS " in *" $c "*) ;; *) echo "unknown claim '$c' (claims: $CLAIMS)" >&2; exit 2 ;; esac
   if "claim_$c"; then echo "[testnet $PROFILE $c] PASS${BREAK:+ (BREAK=1: not caught)}"; else echo "[testnet $PROFILE $c] FAIL${BREAK:+ (BREAK=1: caught)}"; failed="$failed $c"; fi
+  # A claim that failed with the bastion paused (m52's) left it so: every
+  # claim after it would wait out its ssh timeouts through a dead hop.
+  if [ -n "${PAUSED:-}" ]; then docker unpause "$TESTNET-bastion" >/dev/null 2>&1 || true; PAUSED=; fi
 done
 [ -z "$failed" ] || exit 1
