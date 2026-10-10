@@ -74,7 +74,8 @@ daemon's update check read it.
    THIRD_PARTY.md is stale), push it to main, wait for CI to pass on it, and
    tag the commit `chant ci last-green` names: `git tag -a vX.Y.Z -m
    "arugula X.Y.Z" "$sha" && git push origin vX.Y.Z`.
-   `.github/workflows/release.yml` builds the Linux tarballs on geek, the
+   `.github/workflows/release.yml` builds the Linux tarballs in the home
+   cloud (`arugula-amd64`, [CI](#ci)), the
    macOS ones on jake-mini (Apple silicon natively, Intel cross-compiled
    with `just build-macos-x86_64`) and the Windows zip on GitHub's runner,
    attaches them and `SHA256SUMS` to the GitHub release, publishes it as
@@ -99,8 +100,8 @@ daemon's update check read it.
    -m "arugula app X.Y.Z" "$sha" && git push origin app-vX.Y.Z`.
    `.github/workflows/app-release.yml` downloads arugulad
    and Arugula from the latest daemon release (checked against its
-   `SHA256SUMS`) for the app to carry, builds and signs the apps (Linux on
-   geek, macOS on jake-mini, notarized with the Developer ID when its
+   `SHA256SUMS`) for the app to carry, builds and signs the apps (Linux in
+   the home cloud, macOS on jake-mini, notarized with the Developer ID when its
    secrets are set, Windows on GitHub's runner), and publishes the release
    with its own `SHA256SUMS` and the updater's `latest.json`. It's never
    marked latest.
@@ -196,7 +197,7 @@ a trigger of its own and reach them. Intel Macs are the exception:
 tarball and the app on GitHub's `macos-15-intel` runner, which isn't
 ours. It takes about an hour cold, so it runs weekly on main and by hand
 (`gh workflow run macos-intel.yml --ref BRANCH`), and keeps both as
-artifacts; every push lints the Intel build on geek (`just check-macos
+artifacts; every push lints the Intel build in the home cloud (`just check-macos
 x86_64`). A job's log: `gh run view --log
 <run id>` (or `--log-failed`).
 
