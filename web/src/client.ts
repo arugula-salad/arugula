@@ -65,6 +65,15 @@ const ACK_EVERY = 64 * 1024;
 /** #369: a link up this long was a good one: the next reconnect starts
  * from the shortest delay again. */
 const STABLE_MS = 10_000;
+/** #713: send a lag probe this often, busy link or not... */
+const PROBE_MS = 10_000;
+/** ...and drop a link whose probe is unanswered this long. */
+const LAG_MS = 30_000;
+/** The probe's timings; a test sets `window.__arugulaLag` to shorten them. */
+function lagTimes() {
+  const o = (globalThis as { __arugulaLag?: { probeMs: number; lagMs: number } }).__arugulaLag;
+  return o ?? { probeMs: PROBE_MS, lagMs: LAG_MS };
+}
 
 export interface PaneEntry {
   view: TerminalView;
@@ -287,6 +296,7 @@ export class Client {
    * before it was asked. True if it dropped the link. */
   keepAlive(now: number, heartbeatMs: number, answerMs: number): boolean {
     if (!this.connected) return false;
+    if (this.probeLag(now)) return true;
     if (this.asked && now - this.asked > answerMs) {
       // What it was waiting on, to tell a lost answer from a stuck socket
       // or a slowed page.
@@ -298,6 +308,44 @@ export class Client {
       return true;
     }
     if (!this.asked && now - this.lastHeard > heartbeatMs) this.heartbeat();
+    return false;
+  }
+
+  /** #713: the probe under way: its ping's id and when it was sent (ms). */
+  private probe: { id: number; at: number } | null = null;
+  /** #713: when the last probe was sent (ms), or 0 for "as soon as visible". */
+  private probedAt = 0;
+
+  /** #713: a link can stay busy and still be far behind: a backlog of
+   * block states trickles in, so it is never quiet and every message
+   * "answers" the heartbeat. The daemon's pong rides the same queue as
+   * those states, so how long the pong to a ping takes is how far behind
+   * the link is. Every `PROBE_MS`, busy or not, send a ping and wait for
+   * that pong (no other message answers it); unanswered for `LAG_MS`, drop
+   * the link, and the reconnect's hello brings current state. A hidden
+   * page doesn't judge (its timers run late, and it needn't be current):
+   * a probe from before it was hidden is forgotten and a fresh one goes
+   * out once it's visible. True if it dropped the link. */
+  private probeLag(now: number): boolean {
+    const { probeMs, lagMs } = lagTimes();
+    if (document.hidden) {
+      this.probe = null;
+      this.probedAt = 0;
+      return false;
+    }
+    if (this.probe) {
+      if (now - this.probe.at <= lagMs) return false;
+      this.drop(
+        `behind: a probe sent ${Math.round((now - this.probe.at) / 1000)}s ago is unanswered ` +
+          `(last heard ${Math.round((now - this.lastHeard) / 1000)}s ago)`,
+      );
+      return true;
+    }
+    if (now - this.probedAt >= probeMs) {
+      this.probe = { id: this.nextId++, at: now };
+      this.probedAt = now;
+      this.send({ type: "ping", id: this.probe.id });
+    }
     return false;
   }
 
@@ -1115,6 +1163,9 @@ export class Client {
         this.connected = true;
         this.focused = undefined;
         this.helloAt = Date.now();
+        // #713: a new link starts its probing afresh.
+        this.probe = null;
+        this.probedAt = this.helloAt;
         if (this.summary) this.send({ type: "subscribe", summary: true });
         // A new connection: follow again what was followed.
         for (const pane of this.editorFollows.keys()) this.send({ type: "follow", pane, on: true });
@@ -1122,6 +1173,10 @@ export class Client {
         if (msg.state.roles) void this.loadNotify();
         void this.loadFeatures();
         this.onHello?.();
+        break;
+      case "pong":
+        // #713: the pong to the probe's ping says the link is current.
+        if (this.probe?.id === msg.id) this.probe = null;
         break;
       case "state": {
         // Someone changed what you may do here (#551): say so, or the

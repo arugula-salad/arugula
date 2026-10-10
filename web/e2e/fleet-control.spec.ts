@@ -241,6 +241,46 @@ test("a big message arriving in pieces keeps a relayed link; real silence drops 
   await expect.poll(() => hosts(laptop).then((h) => h.mac?.state), { timeout: 30_000 }).toBe("connected");
 });
 
+test("a busy link far behind is dropped for it, saying why, and reconnects (#713)", async () => {
+  await everyMachine(laptop);
+  const lines: string[] = [];
+  laptop.on("console", (m) => lines.push(m.text()));
+  type Sock = { onText: (t: string) => void; onBinary: (b: Uint8Array) => void; onWire: () => void };
+  type Inside = { hosts: Map<string, { client: { clientId: number | null; link?: { sock?: Sock } } | null }> };
+  const id = () =>
+    laptop.evaluate(() => (window.__arugula.fleet as unknown as Inside).hosts.get("mac")?.client?.clientId ?? null);
+  const before = await id();
+  // Probe often, give up soon.
+  await laptop.evaluate(() => {
+    (window as unknown as { __arugulaLag: unknown }).__arugulaLag = { probeMs: 500, lagMs: 3000 };
+  });
+  // mac's link stays busy, with pieces and pongs (to nothing asked) coming
+  // every 200 ms, but the control stream is behind: the pong to the probe
+  // never lands. Longer than the heartbeat and its answer (6 s) before it
+  // is dropped, so only the probe can be what does it.
+  await laptop.evaluate(() => {
+    const sock = (window.__arugula.fleet as unknown as Inside).hosts.get("mac")!.client!.link!.sock!;
+    const other = sock.onText;
+    sock.onText = () => {};
+    sock.onBinary = () => {};
+    const w = window as unknown as { busy?: number };
+    w.busy = window.setInterval(() => {
+      sock.onWire();
+      other('{"type":"pong","id":999999}');
+    }, 200);
+  });
+  await expect.poll(() => lines.find((l) => l.includes("behind:")), { timeout: 15_000 }).toBeTruthy();
+  const line = lines.find((l) => l.includes("behind:"))!;
+  expect(line).toMatch(/behind: a probe sent \d+s ago is unanswered \(last heard 0s ago\)/);
+  expect(lines.some((l) => l.includes("no answer to a heartbeat"))).toBe(false);
+  await laptop.evaluate(() => {
+    window.clearInterval((window as unknown as { busy?: number }).busy);
+    delete (window as unknown as { __arugulaLag?: unknown }).__arugulaLag;
+  });
+  await expect.poll(() => hosts(laptop).then((h) => h.mac?.state), { timeout: 30_000 }).toBe("connected");
+  expect(await id()).not.toBe(before);
+});
+
 test("twenty machines, nineteen of them relayed: one socket, back after a wake without failures", async () => {
   test.setTimeout(180_000);
   for (let i = 0; i < 17; i++) await addMachine(laptop, `r${String(i).padStart(2, "0")}`, false);
