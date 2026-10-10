@@ -185,8 +185,13 @@ const journeyOf = (name: string) => (name === "J1-mac" || name.includes("-setup-
 /** The grid column a report counts toward: J1-mac under J1, a setup under its J2. */
 const columnOf = (name: string) => (name === "J1-mac" ? "J1" : name.replace(/-setup-.*/, ""));
 
-export function build(dir: string): { html: string; runs: number; steps: number; missing: string[] } {
-  const runs: Report[] = readdirSync(dir)
+/**
+ * The map from the reports in `dir`. With no `dir`, the design alone, for
+ * docs/journey-map.svg: every line solid and every station plain, as no run
+ * is behind it.
+ */
+export function build(dir?: string): { html: string; svg: string; runs: number; steps: number; missing: string[] } {
+  const runs: Report[] = !dir ? [] : readdirSync(dir)
     .filter((f) => /^J[0-9][a-z]?(-mac|-setup-[a-z0-9]+)?\.json$/.test(f))
     .sort()
     .map((f) => JSON.parse(readFileSync(join(dir, f), "utf8")) as Report);
@@ -206,6 +211,7 @@ export function build(dir: string): { html: string; runs: number; steps: number;
     !steps.length ? "none" : steps.some(([, s]) => s.result !== "ok") ? "unguided" : steps.some(([, s]) => s.issues.length) ? "friction" : "led";
   const reported = new Set(runs.map((r) => columnOf(r.name)));
   const missing = LINES.map(([n]) => n).filter((n) => !reported.has(n));
+  const dashed = dir ? missing : [];
 
   // --- the map
   const through: Record<string, string[]> = Object.fromEntries(Object.keys(STATIONS).map((k) => [k, []]));
@@ -216,14 +222,14 @@ export function build(dir: string): { html: string; runs: number; steps: number;
     return [x, y + (names.indexOf(name) - (names.length - 1) / 2) * GAP] as const;
   };
   const svg: string[] = [
-    `<svg viewBox="0 0 1400 600" role="img" aria-label="Metro map of the journeys: each is a coloured line through the steps it takes, from installing Arugula to two people working together.">`,
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 600" role="img" aria-label="Metro map of the journeys: each is a coloured line through the steps it takes, from installing Arugula to two people working together.">`,
     `<rect class="zone" x="40" y="40" width="720" height="190" rx="14"/><text class="zone-label" x="58" y="218">GET IT</text>`,
     `<rect class="zone" x="40" y="252" width="1020" height="210" rx="14"/><text class="zone-label" x="58" y="276">FIRST RUN</text>`,
     `<text class="zone-label" x="1362" y="196" text-anchor="end">TOGETHER</text>`,
   ];
   for (const [name, title, path] of LINES) {
     const pts = path.map((s) => pt(name, s).map((n) => n.toFixed(1)).join(",")).join(" ");
-    const dash = missing.includes(name) ? ' stroke-dasharray="2 9"' : "";
+    const dash = dashed.includes(name) ? ' stroke-dasharray="2 9"' : "";
     svg.push(`<g class="line" data-line="${name}"><title>${name}: ${esc(title)}${dash ? " (no report yet)" : ""}</title><polyline class="track" points="${pts}"${dash} style="stroke: var(--${name.toLowerCase()})"/></g>`);
   }
   const ends: Record<string, string[]> = {};
@@ -239,9 +245,9 @@ export function build(dir: string): { html: string; runs: number; steps: number;
   }
   for (const [sid, [x, y, label]] of Object.entries(STATIONS)) {
     const h = 12 + (Math.max(1, through[sid].length) - 1) * GAP;
-    const state = stateOf(atStation[sid]);
+    const state = dir ? stateOf(atStation[sid]) : "led";
     const steps = atStation[sid];
-    const tip = `${label}: ${steps.length ? steps.slice(0, 6).map(([n, s]) => `${n}: ${s.title}`).join("; ") + (steps.length > 6 ? `; and ${steps.length - 6} more` : "") : "no report reaches it yet"}`;
+    const tip = `${label}: ${!dir ? through[sid].join(", ") : steps.length ? steps.slice(0, 6).map(([n, s]) => `${n}: ${s.title}`).join("; ") + (steps.length > 6 ? `; and ${steps.length - 6} more` : "") : "no report reaches it yet"}`;
     svg.push(`<g class="station ${state}${sid === "phone" ? " skipped" : ""}"><title>${esc(tip)}</title><rect x="${x - 8}" y="${(y - h / 2).toFixed(1)}" width="16" height="${h}" rx="8"/></g>`);
     const ty = BELOW.has(sid) ? y + h / 2 + 16 : y - h / 2 - 9;
     svg.push(`<text class="slabel" x="${x}" y="${ty.toFixed(1)}" text-anchor="middle">${esc(label)}</text>`);
@@ -294,20 +300,15 @@ export function build(dir: string): { html: string; runs: number; steps: number;
     friction: friction.length ? friction.map(([n, s]) => `<li><b>${esc(n)} · ${esc(s.title)}</b>: ${esc(s.issues.join("; "))}</li>`).join("") : "<li>None.</li>",
     facts: `<li>${runs.length} <span>runs</span></li><li>${all.length} <span>steps</span></li><li>${unguided.length} <span>unguided</span></li><li>${friction.length} <span>with friction</span></li><li><span>newest run</span> ${esc(at.slice(0, 16).replace("T", " "))} <span>UTC${rev ? `, built at ${esc(rev)}` : ""}</span></li>${missing.length ? `<li><span>no report yet:</span> ${missing.join(", ")}</li>` : ""}`,
   });
-  return { html, runs: runs.length, steps: all.length, missing };
+  // The map on its own, styled, for an <img> (docs/journey-map.svg).
+  const alone = svg
+    .join("\n")
+    .replace(/^(<svg[^>]*>)/, `$1<style>${MAP_CSS}\nsvg { color: var(--fg); font-family: var(--display); }</style><rect width="1400" height="600" rx="14" style="fill: var(--panel)"/>`);
+  return { html, svg: alone, runs: runs.length, steps: all.length, missing };
 }
 
-function page(p: { svg: string; legend: string; head: string; rows: string; friction: string; facts: string }): string {
-  return `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Arugula Journey Map</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Overpass:wght@500;700;800&family=Overpass+Mono:wght@500&family=Public+Sans:wght@400;600&display=swap">
-<style>
-/* A wayfinding sheet: the map across the page; facts, legend and the coverage grid under it in one column. */
-:root {
+/** The map's own styles: the page's, and docs/journey-map.svg's inside it. */
+const MAP_CSS = `:root {
   --bg: #f4f6f8; --panel: #ffffff; --fg: #16202b; --muted: #5b6876; --rule: #d5dce3; --zone: #e9eef3;
   --led: #1f8a4c; --friction: #b86e00; --unguided: #c4322b; --skipped: #7a8794;
   --j1: #d8412f; --j2a: #2f6fdb; --j2b: #1b9aa6; --j2c: #6a49c9; --j5: #e08a16; --j6: #2e9a5a; --j3: #c43d8a; --j4: #8a7a2e;
@@ -324,6 +325,29 @@ function page(p: { svg: string; legend: string; head: string; rows: string; fric
     color-scheme: dark;
   }
 }
+.zone { fill: var(--zone); }
+.zone-label { font-family: var(--display); font-weight: 800; font-size: 12px; letter-spacing: .16em; fill: var(--muted); }
+.track { fill: none; stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; transition: opacity .15s; }
+.tag text { font-family: var(--display); font-weight: 800; font-size: 11px; fill: #fff; }
+.station rect { fill: var(--panel); stroke: var(--fg); stroke-width: 2.5; }
+.station.friction rect { stroke: var(--friction); stroke-width: 3.5; }
+.station.unguided rect { stroke: var(--unguided); stroke-width: 3.5; }
+.station.none rect, .station.skipped rect { stroke: var(--skipped); stroke-dasharray: 3 3; }
+.slabel { font-family: var(--display); font-weight: 700; font-size: 13px; fill: currentColor; paint-order: stroke; stroke: var(--panel); stroke-width: 4px; stroke-linejoin: round; }
+.snote { font-family: var(--display); font-weight: 700; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; paint-order: stroke; stroke: var(--panel); stroke-width: 4px; }
+.snote.friction { fill: var(--friction); } .snote.unguided { fill: var(--unguided); } .snote.skipped { fill: var(--skipped); }`;
+
+function page(p: { svg: string; legend: string; head: string; rows: string; friction: string; facts: string }): string {
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arugula Journey Map</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Overpass:wght@500;700;800&family=Overpass+Mono:wght@500&family=Public+Sans:wght@400;600&display=swap">
+<style>
+/* A wayfinding sheet: the map across the page; facts, legend and the coverage grid under it in one column. */
+${MAP_CSS}
 body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 15px; line-height: 1.5; }
 main { max-width: 1240px; margin: 0 auto; padding: 28px 20px 56px; display: grid; gap: 28px; }
 header { display: grid; gap: 8px; }
@@ -339,17 +363,6 @@ figure { margin: 0; background: var(--panel); border: 1px solid var(--rule); bor
 .mapwrap { overflow-x: auto; }
 .mapwrap svg { display: block; width: 100%; min-width: 900px; height: auto; color: var(--fg); }
 figcaption { color: var(--muted); font-size: 14px; max-width: 80ch; }
-.zone { fill: var(--zone); }
-.zone-label { font-family: var(--display); font-weight: 800; font-size: 12px; letter-spacing: .16em; fill: var(--muted); }
-.track { fill: none; stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; transition: opacity .15s; }
-.tag text { font-family: var(--display); font-weight: 800; font-size: 11px; fill: #fff; }
-.station rect { fill: var(--panel); stroke: var(--fg); stroke-width: 2.5; }
-.station.friction rect { stroke: var(--friction); stroke-width: 3.5; }
-.station.unguided rect { stroke: var(--unguided); stroke-width: 3.5; }
-.station.none rect, .station.skipped rect { stroke: var(--skipped); stroke-dasharray: 3 3; }
-.slabel { font-family: var(--display); font-weight: 700; font-size: 13px; fill: currentColor; paint-order: stroke; stroke: var(--panel); stroke-width: 4px; stroke-linejoin: round; }
-.snote { font-family: var(--display); font-weight: 700; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; paint-order: stroke; stroke: var(--panel); stroke-width: 4px; }
-.snote.friction { fill: var(--friction); } .snote.unguided { fill: var(--unguided); } .snote.skipped { fill: var(--skipped); }
 svg.isolating .line:not(.on) .track, svg.isolating .tag:not(.on) { opacity: .12; }
 @media (hover: hover) { .line:hover .track { stroke-width: 7; } }
 .legend { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -433,8 +446,14 @@ code { font-family: var(--mono); font-size: 13px; }
 `;
 }
 
-// Run as a script: build the map from the reports directory.
+// Run as a script: build the map from the reports directory (map.html and
+// map.svg there), or with --design FILE the design alone into FILE.
 if (import.meta.url === `file://${process.argv[1]}`) {
+  if (process.argv[2] === "--design") {
+    writeFileSync(process.argv[3], build().svg + "\n");
+    console.log(`Journey map, the design alone: ${process.argv[3]}`);
+    process.exit(0);
+  }
   const dir = process.argv[2] ?? reports();
   if (!existsSync(dir)) {
     console.error(`no reports in ${dir}: run a journey first (just journey)`);
@@ -443,6 +462,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   try {
     const out = build(dir);
     writeFileSync(join(dir, "map.html"), out.html);
+    writeFileSync(join(dir, "map.svg"), out.svg);
     console.log(`Journey map: ${out.runs} runs, ${out.steps} steps${out.missing.length ? `; no report yet for ${out.missing.join(", ")}` : ""}. ${join(dir, "map.html")}`);
   } catch (e) {
     console.error((e as Error).message);

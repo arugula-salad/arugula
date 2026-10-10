@@ -538,6 +538,15 @@ VM](#a-fresh-mac-the-tart-vm-harness); parked, #257).
 check that the screen leads them along it, not only that each piece
 works. Run them with `just journey` (or `just journey j2c` for one).
 
+![The journeys as a metro map: each journey a coloured line through the steps it takes, from installing Arugula, through the first run, to two people working together](journey-map.svg)
+
+Each journey is a line and each shared step a station. J1's whole first
+run is shared by J2a, J2b and J2c, which run it for each person first. The
+phone step is one every journey skips. This is the design alone, with no
+runs behind it; `just journey-map` draws the same map from the newest runs,
+coloured by how they went (below). `just journey-map-doc` redraws this file after a
+station or a line changes in `web/e2e/journey/map.ts`.
+
 | Journey | What |
 |---|---|
 | J1 | one person on the Mac app, from no account to a command in a terminal: Getting started's Cloud step, an account made from the machine's approval link, recovery codes, the machine approved and its account's fingerprint checked, the app signed in through the browser and approved as a device, the app reopened |
@@ -622,7 +631,8 @@ bottom, each annotated with what led to it or what went wrong. The
 directory is in `web/.gitignore`. `JOURNEY_REPORT_DIR` puts it elsewhere.
 
 `just journey-map` (also the end of `just journey`) puts every journey on
-one page, `web/journey-reports/map.html`, from the newest reports there (the
+one page, `web/journey-reports/map.html` (and the map alone in `map.svg`),
+from the newest reports there (the
 real-Mac ones too): a metro map with each journey a line through the steps
 it takes and each shared step a station (outlined in amber where a run noted
 friction, red where a step was unguided), and a grid of which journey
