@@ -179,6 +179,7 @@ jobs:
         with:
           cache-key: test
           fetch: run-static
+          claude-code: "true"
       - run: scripts/ci-env testnet
       - run: just bootstrap
       # reboot.rs drives Chromium (its watcher).
@@ -202,6 +203,9 @@ jobs:
           fetch: run-debug run-static
       - run: scripts/ci-env testnet
       - run: just bootstrap
+      # Google Chrome itself, not Playwright's Chromium: m52's phones (web/fixtures/m52-phones.ts) launch it. geek had it.
+      - name: Google Chrome
+        run: cd web && pnpm exec playwright install --with-deps chrome
       - name: Its binaries, this run's
         run: |
           echo "ARUGULA_TESTNET_BINARIES=$CI_RUN/x86_64-unknown-linux-musl/release" >> "$GITHUB_ENV"
@@ -228,6 +232,7 @@ jobs:
         with:
           rust: "false"
           fetch: run-debug
+          claude-code: "true"
       - run: scripts/ci-env use
       - run: just bootstrap
       - name: Playwright's browsers
@@ -248,11 +253,13 @@ jobs:
         with:
           rust: "false"
           fetch: run-debug run-static
+          claude-code: "true"
       - run: scripts/ci-env use
       - run: scripts/ci-env testnet
       - run: just bootstrap
-      - name: Playwright's Chromium
-        run: just browsers chromium
+      # team-swarm-phones' phones are WebKit's.
+      - name: Playwright's browsers
+        run: just browsers
       - name: The Playwright specs on the test stack
         run: port=$(scripts/free-port) && cd web && E2E_PORT=$port pnpm exec playwright test
         env:
@@ -276,11 +283,15 @@ jobs:
         with:
           rust: "false"
           fetch: run-debug
+          claude-code: "true"
       - run: scripts/ci-env use
       - run: just bootstrap
       # editors.spec opens a file from an iPhone (WebKit) too.
       - name: Playwright's browsers
         run: just browsers
+      # Google Chrome itself, not Playwright's Chromium: editors.spec's blocked third-party cookies are a real Chrome profile's. geek had it.
+      - name: Google Chrome
+        run: cd web && pnpm exec playwright install --with-deps chrome
       - name: The specs that time things
         run: port=$(scripts/free-port) && cd web && E2E_PORT=$port pnpm exec playwright test
         env:

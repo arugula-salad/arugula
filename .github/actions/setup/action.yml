@@ -17,6 +17,9 @@ inputs:
   packages:
     description: More apt packages
     default: ""
+  claude-code:
+    description: The Claude Code CLI, which the specs that set it up (journey-j5) find on PATH, as they did on geek
+    default: "false"
 runs:
   using: composite
   steps:
@@ -28,11 +31,14 @@ runs:
         echo "CI_RUNS=$RUNNER_TEMP/runs" >> "$GITHUB_ENV"
         echo "CARGO_TARGET_DIR=$GITHUB_WORKSPACE/target" >> "$GITHUB_ENV"
         echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-    - name: Packages (tmux for the tmux tests, zstd for the caches)
+    # geek had these: tmux, vi and nvim for the tmux tests and the layout
+    # spec; myhostname resolves *.localhost (browser-ports' sites) for Node,
+    # as systemd's resolver did there; zstd for the caches.
+    - name: Packages
       shell: bash
       run: |
         sudo apt-get update -qq
-        sudo apt-get install -y -qq --no-install-recommends tmux zstd ${{ inputs.packages }} >/dev/null
+        sudo apt-get install -y -qq --no-install-recommends tmux vim-tiny neovim libnss-myhostname zstd ${{ inputs.packages }} >/dev/null
     - name: Rust (rust-toolchain.toml's)
       if: inputs.rust == 'true'
       shell: bash
@@ -60,6 +66,10 @@ runs:
     - uses: pnpm/action-setup@v4
       with:
         version: 12
+    - name: Claude Code
+      if: inputs.claude-code == 'true'
+      shell: bash
+      run: npm install -g --silent @anthropic-ai/claude-code@2.1.296
     - name: pnpm's store
       id: pnpm
       shell: bash
