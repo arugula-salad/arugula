@@ -1974,28 +1974,32 @@ function Notice({ s, n }: { s: ControlSession; n: ControlSession["notices"][numb
 }
 
 /** An Ask me first link: `code` is its one-time key's seed (#762), or,
- * for a link from before (`old`), a code that no longer works. */
+ * for a link from before (`old`), a code that no longer works. A link that
+ * can't be used (old, expired, never was) says so plainly with Close: it
+ * isn't the person's mistake. */
 function InvitePrompt({ s, team, code, old }: { s: ControlSession; team: string; code: string; old: boolean }) {
   const [info, setInfo] = useState<{ name: string; role: TeamRole } | null>(null);
+  const [gone, setGone] = useState("");
   const [err, setErr] = useState("");
   const [done, setDone] = useState(false);
   useEffect(() => {
-    if (old) return setErr("This invite link is from an older version of Arugula. Ask for a new one.");
-    s.showInvite(team, code).then(setInfo, (e: Error) => setErr(e.message));
+    if (old) return setGone("This invite link is from an older version of Arugula. Ask for a new one.");
+    s.showInvite(team, code).then(setInfo, (e: Error) => setGone(e.message));
   }, [team, code, old]);
   return (
     <Modal close={clearHash}>
       <h2>Join a team?</h2>
+      {gone ? <p data-invite-gone>{gone}</p> : null}
       {err ? <p class="control-error">{err}</p> : null}
       {info && !done ? (
         <p>
-          You're invited to <b data-invite-team={team}>{info.name}</b> as {roleAs(info.role)}.
+          You're invited to <b data-invite-team={team}>{info.name}</b> {roleAs(info.role)}.
         </p>
       ) : null}
       {done ? <p data-invite-pending>Asked to join. An owner adds you when they're next here; their machines appear once they do.</p> : null}
       <div class="prompt-buttons">
-        <button onClick={clearHash}>{done ? "Done" : "Not now"}</button>
-        {!done ? (
+        <button onClick={clearHash}>{gone ? "Close" : done ? "Done" : "Not now"}</button>
+        {!done && !gone ? (
           <button
             class="primary"
             data-accept-invite
