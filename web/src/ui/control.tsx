@@ -1145,18 +1145,17 @@ function SignedIn({ sessions, end }: { sessions: SessionRow[] | null; end: (id: 
   );
 }
 
-/** When a device was added and which device approved it (#327). */
-function Approved({ s, c }: { s: ControlSession; c: Cert }) {
-  if (c.approver === c.device) return <span class="dim"> · added {since(c.created)}, the first device</span>;
+/** When a device was added and which device approved it (#327): a
+ * row's tooltip, since it matters least of what a row says. */
+function approvedText(s: ControlSession, c: Cert): string {
+  if (c.approver === c.device) return `Added ${since(c.created)}, the account's first device`;
   const by = s.trusted.get(c.approver);
   const on = !by ? "on a device since removed" : by.kind === "recovery" ? `with ${by.name}` : `on ${shownName(by.name)}${by.device === s.keys.id ? " (this browser)" : ""}`;
-  return (
-    <span class="dim" data-approved-by={c.approver}>
-      {" "}
-      · added {since(c.created)}, approved {on}
-    </span>
-  );
+  return `Added ${since(c.created)}, approved ${on}`;
 }
+
+/** Not used for this long, and signed out: offered for removal. */
+const UNUSED_MS = 30 * 24 * 3600 * 1000;
 
 function Devices({ s, close }: { s: ControlSession; close: () => void }) {
   const [err, setErr] = useState("");
@@ -1165,7 +1164,10 @@ function Devices({ s, close }: { s: ControlSession; close: () => void }) {
   const [renewing, setRenewing] = useState(false);
   const devices = [...s.trusted.values()].filter((c) => c.kind !== "recovery");
   const machines = devices.filter((c) => c.kind === "daemon");
-  const browsers = devices.filter((c) => c.kind !== "daemon");
+  // The ones in use first.
+  const browsers = devices
+    .filter((c) => c.kind !== "daemon")
+    .sort((a, b) => +(b.device === s.keys.id) - +(a.device === s.keys.id) || (s.used.get(b.device) ?? 0) - (s.used.get(a.device) ?? 0));
   const remove = (c: Cert) => (
     <button class="control-revoke" data-remove={c.device} onClick={() => setRemoving(c)}>
       Remove
@@ -1183,6 +1185,25 @@ function Devices({ s, close }: { s: ControlSession; close: () => void }) {
     );
   useEffect(loadSessions, []);
   const endSession = (id: string) => api(`/api/me/sessions/${id}/end`, {}).then(loadSessions, (e: Error) => setErr(e.message));
+  // Signed out (once the sign-ins have loaded), and not used in 30 days or
+  // never seen used: what "clean up" offers. Never this browser.
+  const unused = sessions
+    ? browsers.filter((c) => {
+        if (c.device === s.keys.id || sessions.some((x) => x.device === c.device)) return false;
+        const at = s.used.get(c.device);
+        return !at || Date.now() - at > UNUSED_MS;
+      })
+    : [];
+  const [clearing, setClearing] = useState(false);
+  const removeUnused = async () => {
+    setClearing(false);
+    try {
+      for (const c of unused) await s.revoke(c.device);
+      await s.refresh();
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  };
   return (
     <Modal close={close}>
       <h2>Devices and machines</h2>
@@ -1211,9 +1232,11 @@ function Devices({ s, close }: { s: ControlSession; close: () => void }) {
           const path = d?.name === directory.current && directory.path ? directory.path : d?.urls.length ? "direct" : "relayed";
           return (
             <li key={c.device} data-device={c.device}>
-              <span>
+              <span title={approvedText(s, c)}>
                 {c.name}
-                {team ? (
+                {/* The team's name is in "In" below, when there are teams to
+                    pick from: once is enough. */}
+                {team && !s.teams.length ? (
                   <span class="control-badge" data-team-badge>
                     {team}
                   </span>
@@ -1223,7 +1246,6 @@ function Devices({ s, close }: { s: ControlSession; close: () => void }) {
                   {d ? machineState(d.name) : "offline"}
                   {d?.online ? ` · ${path}` : ""}
                 </span>
-                <Approved s={s} c={c} />
               </span>
               <span class="dim">{fingerprint(c.device)}</span>
               {remove(c)}
@@ -1237,19 +1259,49 @@ function Devices({ s, close }: { s: ControlSession; close: () => void }) {
       </button>
       <h3 class="control-group">Browsers and phones</h3>
       <p class="dim">They reach your machines.</p>
+      {unused.length ? (
+        <p class="dim control-unused" data-unused={unused.length}>
+          {clearing ? (
+            <>
+              Remove {unused.length} unused {unused.length === 1 ? "device" : "devices"}? Their keys stop reaching your machines.{" "}
+              <button class="control-revoke danger" data-remove-unused onClick={() => void removeUnused()}>
+                Remove {unused.length}
+              </button>{" "}
+              <button class="control-linkish" onClick={() => setClearing(false)}>
+                Cancel
+              </button>
+            </>
+          ) : (
+            <>
+              {unused.length} {unused.length === 1 ? "looks" : "look"} unused: signed out, and not used in 30 days.{" "}
+              <button class="control-linkish" data-clear-unused onClick={() => setClearing(true)}>
+                Remove them…
+              </button>
+            </>
+          )}
+        </p>
+      ) : null}
       <ul class="control-devices" data-browsers>
-        {browsers.map((c) => (
-          <li key={c.device} data-device={c.device}>
-            <span>
-              {shownName(c.name)}
-              {c.device === s.keys.id ? <b data-this-browser> (this browser)</b> : ""}
-              <SignedIn sessions={sessions?.filter((x) => x.device === c.device) ?? null} end={endSession} />
-              <Approved s={s} c={c} />
-            </span>
-            <span class="dim">{fingerprint(c.device)}</span>
-            {c.device !== s.keys.id ? remove(c) : <span />}
-          </li>
-        ))}
+        {browsers.map((c) => {
+          const at = s.used.get(c.device);
+          const old = unused.includes(c);
+          return (
+            <li key={c.device} data-device={c.device} class={old ? "unused" : undefined}>
+              <span title={approvedText(s, c)}>
+                {shownName(c.name)}
+                {c.device === s.keys.id ? <b data-this-browser> (this browser)</b> : ""}
+                <span class="dim" data-used={at ?? ""}>
+                  {" · "}
+                  {c.device === s.keys.id ? "using it now" : at ? `used ${since(at)}` : "no use noted yet"}
+                </span>
+                {old ? <span class="control-badge unused-badge">unused</span> : null}
+                <SignedIn sessions={sessions?.filter((x) => x.device === c.device) ?? null} end={endSession} />
+              </span>
+              <span class="dim">{fingerprint(c.device)}</span>
+              {c.device !== s.keys.id ? remove(c) : <span />}
+            </li>
+          );
+        })}
       </ul>
       <button data-add-device onClick={openPanel("add-device")}>
         Add a phone or browser…
@@ -1616,7 +1668,10 @@ function TeamSection({ s, t, act }: { s: ControlSession; t: Team; act: (f: () =>
           <TeamJoin s={s} t={t} here />
         </>
       )}
-      <ul class="control-devices">
+      <h4 class="control-subgroup" data-team-members-head>
+        Members <span class="dim">· {t.roster.members.length}</span>
+      </h4>
+      <ul class="control-devices" data-team-members={t.team}>
         {t.roster.members.map((m) => (
           <li key={m.account} data-member={m.account}>
             <span data-member-name>
@@ -1660,6 +1715,9 @@ function TeamSection({ s, t, act }: { s: ControlSession; t: Team; act: (f: () =>
           <p>They lose the team's machines at once. To come back, they need a new invite.</p>
         </ConfirmRemove>
       ) : null}
+      <h4 class="control-subgroup" data-team-machines-head>
+        Machines <span class="dim">· {machines.length}</span>
+      </h4>
       {machines.length ? (
         <ul class="control-devices" data-team-machines={t.team}>
           {machines.map((d) => {
@@ -1702,7 +1760,9 @@ function TeamSection({ s, t, act }: { s: ControlSession; t: Team; act: (f: () =>
             );
           })}
         </ul>
-      ) : null}
+      ) : (
+        <p class="dim">None yet.</p>
+      )}
       {owner ? (
         <>
           <div class="control-code control-invite">

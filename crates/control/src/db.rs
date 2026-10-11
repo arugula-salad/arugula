@@ -267,6 +267,11 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     if !has("sessions", "device")? {
         conn.execute_batch("ALTER TABLE sessions ADD COLUMN device TEXT")?;
     }
+    // When a device last used the account (its page loaded), for Devices
+    // to say, and to tell unused ones apart.
+    if !has("devices", "used")? {
+        conn.execute_batch("ALTER TABLE devices ADD COLUMN used INTEGER")?;
+    }
     // Poll hashes a later join from the same machine took over from (#329).
     if !has("joins", "replaced")? {
         conn.execute_batch("ALTER TABLE joins ADD COLUMN replaced TEXT NOT NULL DEFAULT ''")?;
@@ -590,6 +595,21 @@ impl Db {
     pub fn drop_session(&self, token_hash: &str) -> anyhow::Result<()> {
         self.c().execute("DELETE FROM sessions WHERE token_hash = ?1", params![token_hash])?;
         Ok(())
+    }
+
+    /// A device of the account's was just used.
+    pub fn touch_device(&self, account: &str, device: &str, now: u64) -> anyhow::Result<()> {
+        self.c()
+            .execute("UPDATE devices SET used = ?3 WHERE account = ?1 AND id = ?2", params![account, device, now])?;
+        Ok(())
+    }
+
+    /// When each of the account's devices was last used, where known.
+    pub fn devices_used(&self, account: &str) -> anyhow::Result<Vec<(String, u64)>> {
+        let c = self.c();
+        let mut q = c.prepare("SELECT id, used FROM devices WHERE account = ?1 AND used IS NOT NULL")?;
+        let rows = q.query_map(params![account], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        Ok(rows.collect::<Result<_, _>>()?)
     }
 
     /// The device a session is, once it says (one of the account's own).

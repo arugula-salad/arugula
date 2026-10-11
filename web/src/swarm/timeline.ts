@@ -480,7 +480,7 @@ export class Timeline extends Flat {
     }
     cx.textAlign = "start";
     cx.fillStyle = C.mute;
-    cx.fillText(labelW > 100 ? "pane · command" : "pane", 10, f.y + AXIS / 2);
+    cx.fillText(labelW > 100 ? "pane · doing" : "pane", 10, f.y + AXIS / 2);
     cx.textBaseline = "alphabetic";
   }
 }

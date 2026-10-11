@@ -110,6 +110,7 @@ pub async fn session_device(
         return Err(err(StatusCode::NOT_FOUND, "no such device"));
     }
     app.db.set_session_device(&crate::auth::hash(token), &s.account, &b.device)?;
+    app.db.touch_device(&s.account, &b.device, now_ms())?;
     Ok(Json(json!({})))
 }
 
@@ -597,6 +598,20 @@ mod tests {
         assert_eq!(db.drop_session_of("acct-a", &h[..4]).unwrap(), 0, "too short to name one");
         assert_eq!(db.drop_session_of("acct-a", &h[..16]).unwrap(), 1);
         assert!(db.session(&h, 2).unwrap().is_none());
+    }
+
+    #[test]
+    fn a_device_is_used_only_in_its_own_account() {
+        use arugula_e2e::{Cert, DeviceKeys, Kind};
+        let db = Db::memory();
+        db.account_for("github", "1", "a", "acct-a", 1).unwrap();
+        let c = Cert::new(&DeviceKeys::generate(), "acct-a", Kind::Browser, "Safari on iPhone");
+        db.put_device(&c, true, 1).unwrap();
+        assert!(db.devices_used("acct-a").unwrap().is_empty(), "never used yet");
+        db.touch_device("acct-b", &c.device, 5).unwrap();
+        assert!(db.devices_used("acct-a").unwrap().is_empty(), "another account's can't");
+        db.touch_device("acct-a", &c.device, 7).unwrap();
+        assert_eq!(db.devices_used("acct-a").unwrap(), vec![(c.device.clone(), 7)]);
     }
 
     #[test]

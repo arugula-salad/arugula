@@ -13,6 +13,7 @@
 import { useEffect, useState } from "preact/hooks";
 import type { Client } from "../client";
 import { getFleet } from "./hosts";
+import { directory } from "../hosts";
 import { askText } from "./menu";
 import { ConfirmRemove } from "./confirm";
 import { agentsRoute, closeAgentsPage, openAgentsPage, type AgentsTab } from "./agents-route";
@@ -202,6 +203,16 @@ function RecipesTab({ client }: { client: Client }) {
   if (error) return <p class="dim fountain-said" data-agents-error>{error}</p>;
   if (!data) return <p class="dim">Reading this machine's recipes…</p>;
   const where = [{ label: "~/.claude/agents (yours, every project)", dir: "" }, ...data.projects.map((p) => ({ label: p.dir, dir: p.dir }))];
+  // Paths under the home directory read from ~ (the full ones are long).
+  const home = data.user.dir.replace(/\/\.claude\/agents\/?$/, "");
+  const tilde = (d: string) => (home && (d === home || d.startsWith(`${home}/`)) ? `~${d.slice(home.length)}` : d);
+  const withRecipes = data.projects.filter((p) => p.recipes.length);
+  const empty = data.projects.filter((p) => !p.recipes.length);
+  const removeProject = (dir: string) => (
+    <button class="agents-remove" title="Stop listing this project here (its files stay)" onClick={() => void act(() => json(client, "POST", "/api/a2a/recipes/projects", { dir, keep: false }))}>
+      Remove
+    </button>
+  );
   const rows = (rs: Recipe[], project: string | null) => (
     <ul class="agents-cards">
       {rs.map((r) => (
@@ -279,31 +290,50 @@ function RecipesTab({ client }: { client: Client }) {
         </div>
       )}
       {form && <RecipeForm form={form.f} inline={form.inline} where={where} busy={busy} save={(f) => void save(f)} cancel={() => setForm(null)} />}
-      <section class="agents-recipes" data-agents-scope="user">
-        <h4 class="agents-section-head">
-          Yours, in every project <span class="dim">{data.user.dir}</span>
-        </h4>
-        {data.user.recipes.length ? rows(data.user.recipes, null) : <p class="agents-none">None here yet.</p>}
-      </section>
-      {data.projects.map((p) => (
+      {/* The machine these are on: the Recipes tab is one machine's. */}
+      <h3 class="agents-machine" data-agents-machine>
+        Recipes on {directory.current || "this machine"}
+      </h3>
+      {/* Where there are recipes first; the places with none, after, on
+          one line each. */}
+      {data.user.recipes.length ? (
+        <section class="agents-recipes" data-agents-scope="user">
+          <h4 class="agents-section-head">
+            Yours, in every project <span class="dim">{tilde(data.user.dir)}</span>
+          </h4>
+          {rows(data.user.recipes, null)}
+        </section>
+      ) : null}
+      {withRecipes.map((p) => (
         <section key={p.dir} class="agents-recipes" data-agents-scope={p.dir}>
           <h4 class="agents-section-head">
-            {p.dir.split("/").pop()} <span class="dim">{p.dir}</span>
-            {p.added && (
-              <button class="agents-remove" title="Stop listing this project here (its files stay)" onClick={() => void act(() => json(client, "POST", "/api/a2a/recipes/projects", { dir: p.dir, keep: false }))}>
-                Remove
-              </button>
-            )}
+            {p.dir.split("/").pop()} <span class="dim">{tilde(p.dir)}</span>
+            {p.added && removeProject(p.dir)}
           </h4>
-          {p.recipes.length ? (
-            rows(p.recipes, p.dir)
-          ) : (
-            <p class="agents-none">
-              No recipes in <code>.claude/agents</code> yet. <b>+ New recipe</b> can make one here.
-            </p>
-          )}
+          {rows(p.recipes, p.dir)}
         </section>
       ))}
+      {(empty.length > 0 || !data.user.recipes.length) && (
+        <section class="agents-recipes agents-empties">
+          <h4 class="agents-section-head">No recipes yet</h4>
+          <ul class="agents-empty-list">
+            {!data.user.recipes.length && (
+              <li data-agents-scope="user">
+                Yours, in every project <span class="dim">{tilde(data.user.dir)}</span>
+              </li>
+            )}
+            {empty.map((p) => (
+              <li key={p.dir} data-agents-scope={p.dir}>
+                {p.dir.split("/").pop()} <span class="dim">{tilde(p.dir)} · No recipes in .claude/agents</span>
+                {p.added && removeProject(p.dir)}
+              </li>
+            ))}
+          </ul>
+          <p class="dim">
+            <b>+ New recipe</b> can make one in any of them.
+          </p>
+        </section>
+      )}
       {deleting && (
         <ConfirmRemove
           title={`Delete ${deleting.name}?`}
@@ -463,7 +493,8 @@ function TeamTab({ client }: { client: Client }) {
   };
   if (error) return <p class="dim fountain-said">{error}</p>;
   if (!shelves) return <p class="dim">Asking every machine for its agents…</p>;
-  const offered = shelves.filter((s) => s.agents.length || s.note);
+  const offered = shelves.filter((s) => s.agents.length);
+  const quiet = shelves.filter((s) => !s.agents.length);
   return (
     <div class="agents-team-tab">
       <p class="agents-lead">
@@ -552,6 +583,26 @@ function TeamTab({ client }: { client: Client }) {
           </ul>
         </section>
       ))}
+      {/* Every other machine of the team's, and why it lists none: so a
+          missing machine isn't a mystery. */}
+      {quiet.length > 0 && (
+        <section class="agents-recipes agents-empties" data-agents-quiet>
+          <h4 class="agents-section-head">No agents listed</h4>
+          <ul class="agents-empty-list">
+            {quiet.map((q) => (
+              <li key={q.machine} data-quiet={q.name} title={q.note ?? undefined}>
+                {q.name}
+                <span class="dim">
+                  {q.here ? " · this machine" : ""}
+                  {q.owner ? ` · ${q.owner}'s` : ""}
+                  {" · "}
+                  {q.online ? "offers none" : q.note?.startsWith("offline") ? "offline" : "didn't answer"}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       {grants.length > 0 && (
         <section class="agents-recipes" data-agents-grants>
           <h4 class="agents-section-head">Standing grants</h4>

@@ -198,8 +198,9 @@ async fn refresh(app: &Arc<App>, last: &Catalog) -> Catalog {
         shelf(seen, before, got, now_ms())
     });
     let mut others: Vec<Shelf> = futures_util::future::join_all(asks).await;
-    // A machine with nothing offered, now or before, isn't worth a row.
-    others.retain(|s| !s.agents.is_empty() || (s.note.is_some() && s.fetched_ms.is_some()));
+    // Every machine stays, nothing offered too: the page says why each
+    // lists none (offline, didn't answer, offers none) rather than leave it
+    // out, which reads as if it weren't asked.
     others.sort_by(|a, b| (a.owner.as_str(), a.name.as_str()).cmp(&(b.owner.as_str(), b.name.as_str())));
     machines.extend(others);
     Catalog { machines, refreshed_ms: now_ms(), note: None }

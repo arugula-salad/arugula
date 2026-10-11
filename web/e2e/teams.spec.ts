@@ -589,7 +589,9 @@ test("Move to… puts a machine in a team and back, signed by the device", async
   // Control lists it as the team's, and the daemon pinned the team itself.
   await expect.poll(() => alice.evaluate((id) => window.__arugula.control!.daemons.find((d) => d.id === id)?.team, minebox)).toBe(team);
   await expect.poll(() => pinned(mineState), { timeout: 15_000 }).toBe(team);
-  await expect(alice.locator(`[data-device="${minebox}"] [data-team-badge]`)).toHaveText("Acme");
+  // Its team shows once: in "In", not also as a badge beside its name.
+  await expect(alice.locator(`[data-device="${minebox}"] [data-move-to]`)).toHaveValue(team);
+  await expect(alice.locator(`[data-device="${minebox}"] [data-team-badge]`)).toHaveCount(0);
 
   // Control refuses a move nobody signed, and an old one again.
   const forged = await alice.evaluate(

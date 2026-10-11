@@ -474,6 +474,9 @@ export class ControlSession {
   /** #326: the machine's join code a waiting device came to approve, by
    * the device's id, while that join is open: approved together. */
   pendingJoins = new Map<string, string>();
+  /** When each device last loaded the page, as control saw (none before it
+   * kept it, or from an older control). */
+  used = new Map<string, number>();
   revocations: Revocation[] = [];
   daemons: DirDaemon[] = [];
   /** Shares waiting for this account's yes. */
@@ -735,7 +738,7 @@ export class ControlSession {
     if (!e) return;
     try {
       const [devs, dir] = await Promise.all([
-        api<{ trust: { account: string; root: string } | null; certs: Cert[]; revocations: Revocation[]; pending: Cert[]; joins?: Record<string, string> }>("/api/devices"),
+        api<{ trust: { account: string; root: string } | null; certs: Cert[]; revocations: Revocation[]; pending: Cert[]; joins?: Record<string, string>; used?: Record<string, number> }>("/api/devices"),
         api<{ daemons: ForeignEntry[]; offers?: ShareOffer[] }>("/api/directory"),
       ]);
       this.rootMismatch = !!devs.trust && devs.trust.root !== e.root;
@@ -750,6 +753,7 @@ export class ControlSession {
       else if (mine && this.phase === "untrusted") this.phase = "ready";
       this.pending = devs.pending;
       this.pendingJoins = new Map(Object.entries(devs.joins ?? {}));
+      this.used = new Map(Object.entries(devs.used ?? {}));
       const daemons: DirDaemon[] = [];
       for (const d of dir.daemons) {
         const { chain, ...entry } = d;
