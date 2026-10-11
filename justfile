@@ -574,6 +574,13 @@ install: build
     {{target_dir}}/release/arugulad install
 
 # Dev loop: separate daemon on 7682 + Vite on 5173; leaves the real one alone.
+# This checkout's web client as control.arugula.io serves it: a local
+# control (fake GitHub sign-in) on 7690 with machines joined to it
+# (default: workstation laptop), rebuilt on every change (web/dev-control.ts).
+dev-control *machines:
+    {{cargo}} build -p arugulad -p arugula-control
+    cd web && TARGET_DIR="{{target_dir}}/debug" node --experimental-strip-types --no-warnings dev-control.ts {{machines}}
+
 dev:
     {{cargo}} build -p arugulad
     trap 'kill 0' EXIT; \

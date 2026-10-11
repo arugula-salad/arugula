@@ -1806,7 +1806,7 @@ fn whose(s: &Saved) -> String {
 /// it's approved again, so that's the last thing to try, not the first.
 fn already_in(s: &Saved, team: Option<&str>) -> String {
     let here = format!("this machine is already in {} on {}", whose(s), s.url);
-    let move_it = "use In … beside it in Devices and machines… (the host menu)";
+    let move_it = "use In … beside it in Devices and machines… (the account menu)";
     let leave = "`arugulad leave`, then join again, also moves it, but takes it off control until it's approved again";
     match team {
         Some(t) if s.team.as_ref().is_some_and(|p| p.team == t) => here,
@@ -2272,7 +2272,7 @@ fn confirm_account(a: &Approved) -> anyhow::Result<()> {
     println!("    {}", a.joined.account);
     println!();
     println!("  The device you approved on shows its account's fingerprint when it approves,");
-    println!("  and under Devices and machines… in the host menu.");
+    println!("  and under Devices and machines… in the account menu.");
     print!("  Is it the same? [y/N, or type the fingerprint] ");
     std::io::stdout().flush()?;
     let mut line = String::new();

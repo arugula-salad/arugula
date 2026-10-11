@@ -29,7 +29,15 @@ yourself, operating the hosted one and testing it are in
 
 `just dev` runs a separate daemon on 7682 (state in
 `~/.local/state/arugula-dev`) plus Vite on 5173, leaving the real one
-alone. [testing.md](testing.md) covers the tests, fakes and fixtures.
+alone. `just dev-control [machine…]` shows the web client as
+control.arugula.io serves it, signed in, with machines: a local control
+on 7690 with a fake GitHub, daemons joined to it through its relay
+(default `workstation laptop`, with Labs; `DEV_CONTROL_LABS=0` without),
+and the web client rebuilt on every change (reload the page). A headless
+device of the account approves the joins and your browser, so the one
+click is *Sign in with GitHub*. State stays in
+`~/.local/state/arugula-dev-control` (`DEV_CONTROL_DIR`) between runs;
+`DEV_CONTROL_LOGIN` and `DEV_CONTROL_PORT` change who and where. [testing.md](testing.md) covers the tests, fakes and fixtures.
 `just test-scripts` tests install.sh and checks that what a release
 ships (targets, desktop downloads) is named the same in release.yml,
 app-release.yml, scripts/release, the Homebrew formula, install.sh and the site: add a
