@@ -26,7 +26,7 @@ import { createRequire } from "node:module";
 import { join } from "node:path";
 import type { Browser, Locator, Page } from "@playwright/test";
 import { Journey, Stopped, type Surface } from "../../web/e2e/journey/record.ts";
-import { APP, FP, byHelp, capture, firstRunMac, press, read, root, shot, shows, sleep, startMac, stopMac, typeInto, until } from "./journey-lib.ts";
+import { APP, byHelp, capture, firstRunMac, press, read, root, shot, shows, sleep, startMac, stopMac, typeInto, until } from "./journey-lib.ts";
 
 const { chromium } = createRequire(join(root, "web/package.json"))("@playwright/test") as typeof import("@playwright/test");
 const asPerson = () => Object.defineProperty(Navigator.prototype, "webdriver", { get: () => false });
@@ -86,8 +86,6 @@ try {
   const ri = (id: string, title: string, prompt: Locator | null, act: () => Promise<void>, wanted?: string) =>
     j.step({ id, title, actor: "riley", surface: "browser", page: riley, prompt, expect: wanted }, act);
   const marker = "hi-from-riley-$((6*7))";
-  let fpShown = "";
-  let rileyFp = "";
 
   await j.step({ id: "agree", title: "Riley tells Sam their Arugula login", actor: "riley", surface: "message", prompt: null, own: "the friends agree to link up; Riley sends their login (riley)" }, async () => {});
 
@@ -96,32 +94,14 @@ try {
     press(APP, "AXButton", /^Share session$/);
   }, "a Share button on the main screen");
 
-  await sam("share-who", "Sam enters Riley's login, as someone who drives", "app", shows(APP, /^Who$/), async () => {
+  await sam("share-who", "Sam enters Riley's login, as someone who drives, and shares", "app", shows(APP, /^Who$/), async () => {
     typeInto(APP, "AXTextField", /^Who$/, "riley");
     // The role: a select; typing its first letter picks "drives".
     typeInto(APP, "AXPopUpButton", /^Role$|watches/, "d");
     press(APP, "AXButton", /^Share$/);
-    fpShown = await until("Riley's first device", () => read(APP, FP, /first device is/) || null);
-  });
-
-  await sam("ask-fingerprint", "Sam asks Riley for their first device's fingerprint", "message", shows(APP, /check it with them/), async () => {});
-
-  // Sam's dialog says where it is, and Sam passes that on with the ask.
-  await j.step({ id: "find-fingerprint", title: "Riley finds their own fingerprint", actor: "riley", surface: "browser", page: riley, prompt: shows(APP, /fingerprint in Devices and machines…, in the account menu/) }, async () => {
-    // In the account menu, top right (#742).
-    await riley.locator("[data-account-menu]").first().click();
-    await riley.getByRole("menuitem", { name: "Devices and machines…" }).click();
-    rileyFp = (/[0-9a-f]{4}(?:-[0-9a-f]{4}){3,}/.exec(await riley.getByText(/account/i).filter({ hasText: /[0-9a-f]{4}-[0-9a-f]{4}/ }).first().innerText())?.[0] ?? "").toLowerCase();
-    await riley.getByRole("button", { name: "Done" }).click();
-  });
-
-  await j.step({ id: "send-fingerprint", title: "Riley sends Sam the fingerprint", actor: "riley", surface: "message", prompt: null, own: "a message to Sam, as Sam asked" }, async () => {});
-
-  await sam("confirm-share", "Sam checks the fingerprint and shares", "app", shows(APP, /^Share with riley/), async () => {
-    j.compared(`Riley's first device ${fpShown} (Sam's Mac) = ${rileyFp} (Riley's browser)`);
-    if (fpShown !== rileyFp) j.issue(`the fingerprint Sam is shown (${fpShown}) isn't the one Riley found (${rileyFp})`);
-    press(APP, "AXButton", /^Share with riley/);
-    await sleep(1500);
+    // #763: shared at once, Riley's key pinned on first use.
+    const said = await until("the dialog saying Riley is asked", () => read(APP, /.*they're asked first.*/, /they're asked first/) || null);
+    if (!/accept|asked|wait/i.test(said)) j.issue("the dialog doesn't say what Riley sees next, or that Riley must accept first");
     press(APP, "AXButton", /^Done$/);
   });
 
@@ -186,8 +166,7 @@ try {
   });
 
   // Nothing known left, as in web/e2e/journey-j2a.spec.ts: Share is on the
-  // bar (#586), the dialog says where the fingerprint is (#599), and the
-  // pane offers Take control (#584).
+  // bar (#586) and the pane offers Take control (#584).
   await j.finish();
   // J1's report and verdict, as when it ran alone: no step unguided.
   await j1.finish();

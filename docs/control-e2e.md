@@ -417,6 +417,41 @@ The desktop app's window signs in through the person's browser
   it, as before. A newer app on an older control gets a code back and shows
   it; that control's page never signs, so the window asks to be approved.
 
+### Sharing with a person: their key on first use
+
+Sharing a session with someone found by their login (#763) is Signal's
+model: control says who `@name` is, and there's no other channel here, so
+nothing is compared on the way.
+
+- **Trust on first use.** The first share pins their account's root (its
+  first device's id) in the sharing browser, in the same `localStorage`
+  map (`arugula.control.pins`) that already pins the root of each other
+  account whose machines the directory lists. A second map
+  (`arugula.control.pin-meta`) keeps when each was pinned, and whether it
+  was verified. Control can't rewrite either: they're on your device. The
+  machine's grant keeps the root too (it's what the machine checks that
+  person's devices against), so a machine you've shared from before also
+  counts as a pin: sharing from a second device of yours checks against
+  it.
+- **A changed key stops the share.** If control names a root for `@name`
+  other than the one pinned in this browser, or held by a grant to them on
+  this machine, nothing is shared: the dialog says their account key
+  changed since you first shared with them, with the date of the first
+  share and the date this browser first saw the new key.
+- **Verifying is optional.** *Verify* beside the person (or on the
+  warning): their *Devices and machines…* has *Someone verifying you?*, a
+  QR code of `arugula-verify:<account>.<root>` and the same as eight words
+  (the first 8 bytes of SHA-256 over `arugula verify v1`, the account and
+  the root, a word per byte from a fixed list of 256). Their side uses the
+  root their device pinned, not control's word for it. Scanning it, or
+  pressing *The words match*, pins that root (replacing a changed one) and
+  marks the person verified; the mark goes if the pinned root changes.
+- **Accepted risks:** control can name someone else on the very first
+  share, unless you verify. Pins live per browser, so a device of yours
+  that never shared with them and shares to a machine with no grant to
+  them trusts on first use again. Inviting them to a team by link (#762)
+  avoids trusting control at all; the dialog says so beside *Verify*.
+
 ## What holds against control
 
 Who can read your terminals, depending on what control (the hosted service,
@@ -429,6 +464,7 @@ or whoever runs yours) does:
 | turns malicious **after** your machines and devices are set up, without changing the page it serves | can't add a reader: daemons check every device against the root they pinned. It can withhold revocations and refuse service |
 | lies at **join** about which account a machine joins | refused by the machine: the approving device's answer to the secret in its link doesn't match (an older daemon or CLI: caught by the account fingerprint, if you compare it) |
 | lies about which account a **new browser or phone** is approved into | refused by that device: the approving device's answer to the code it showed doesn't match (approved from a page from before codes: it shows the account fingerprint to check) |
+| lies about who **@name** is when you share with them | believed on the first share unless you verify them; after that the share stops, saying their key changed |
 | serves a **modified web client** | can read what that client shows and use its keys while it runs |
 
 The last row is the important limit. The browser client at control's

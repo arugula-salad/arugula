@@ -3267,6 +3267,22 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   color: var(--danger);
 }
 
+/* #763: someone's key changed since the first share; verifying someone. */
+.share-changed,
+.share-verify {
+  margin: 8px 0;
+}
+
+.share-verify-words {
+  font: 600 15px ui-monospace, monospace;
+  letter-spacing: 0.02em;
+  color: var(--accent);
+}
+
+.share-verified {
+  color: var(--dim);
+}
+
 .team h3 {
   margin: 12px 0 4px;
   font-size: 15px;

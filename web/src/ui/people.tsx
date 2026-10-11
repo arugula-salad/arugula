@@ -8,9 +8,10 @@ import type { Client } from "../client";
 import type { InviteRequest, Invited, PaneId, Presence, Role, SessionId } from "../proto";
 import { roleLabel } from "./roles";
 import type { MenuItem } from "./menu";
-import type { ControlSession } from "../control";
-import { fingerprint } from "../e2e/cert.ts";
+import { keyChangeSeen, personPin, pinPerson, verifyPerson, type ControlSession } from "../control";
+import { readVerifyCode, verifyWords } from "../e2e/words.ts";
 import { CopyText } from "./copy";
+import { canScan, Scanner } from "./scan";
 
 /** Control mode (M19): people are accounts there, and links go through it. */
 let control: ControlSession | null = null;
@@ -226,7 +227,70 @@ interface Grant {
   principal: string;
   name: string;
   role: Role;
+  at: number;
   from?: Record<string, number>;
+  /** An account's root, as the owner pinned it when sharing. */
+  root?: string;
+}
+
+/** Someone on control, as `control.person` finds them. */
+interface Person {
+  account: string;
+  name: string;
+  root: string;
+}
+
+const day = (ms: number) => new Date(ms).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+
+/** #763: verify someone you share with, if you want to: scan the code in
+ * their Devices and machines…, or compare its words. Off the main path:
+ * sharing pins their key on first use either way. */
+function VerifyPerson({ who, done, close }: { who: Person; done: () => void; close: () => void }) {
+  const [words, setWords] = useState<string[]>([]);
+  const [scanning, setScanning] = useState(false);
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    void verifyWords(who.account, who.root).then(setWords);
+  }, [who.account, who.root]);
+  const ok = () => {
+    verifyPerson(who.account, who.root);
+    done();
+  };
+  return (
+    <div class="share-verify" data-verify={who.account}>
+      <p>
+        Scan the code in {who.name}'s <i>Devices and machines…</i>, or check it shows these words:
+      </p>
+      <p class="share-verify-words" data-verify-words>
+        {words.join(" ")}
+      </p>
+      {scanning ? (
+        <Scanner
+          accept={(t) => {
+            const c = readVerifyCode(t);
+            if (!c) return false;
+            if (c.account === who.account && c.root === who.root) ok();
+            else setErr(`That code isn't the key control gave for ${who.name}. Don't share with them here.`);
+            return true;
+          }}
+          close={() => setScanning(false)}
+        />
+      ) : null}
+      {err ? <p class="share-warning">{err}</p> : null}
+      <div class="prompt-buttons">
+        <button onClick={close}>Cancel</button>
+        {canScan() && !scanning ? (
+          <button data-verify-scan onClick={() => setScanning(true)}>
+            Scan their code
+          </button>
+        ) : null}
+        <button class="primary" data-verify-match onClick={ok}>
+          The words match
+        </button>
+      </div>
+      <p class="dim">Inviting them to a team by link doesn't trust control at all.</p>
+    </div>
+  );
 }
 
 /** #663: granted logins seen on several devices, and tagged devices refused (none from an older daemon). */
@@ -255,9 +319,10 @@ export function ShareDialog({ client }: { client: Client }) {
   const [history, setHistory] = useState(false);
   const [err, setErr] = useState("");
   const [secrets, setSecrets] = useState<{ pane: PaneId; kinds: string[] }[]>([]);
-  // Control mode: the person found, to confirm by fingerprint (and then
-  // to notify, if that's what was asked).
-  const [found, setFound] = useState<{ account: string; name: string; root: string; notify?: boolean } | null>(null);
+  // Control mode (#763): someone whose key isn't the one first shared
+  // with, stopped; and someone being verified, with what to do after.
+  const [changed, setChanged] = useState<{ p: Person; login: string; notify: boolean; first?: number; seen: number } | null>(null);
+  const [verifying, setVerifying] = useState<{ p: Person; then?: () => void } | null>(null);
   // An invite (#233): what the notification says, and how it went.
   const [note, setNote] = useState("");
   const [told, setTold] = useState<{ delivery: string; text: string } | null>(null);
@@ -307,21 +372,28 @@ export function ShareDialog({ client }: { client: Client }) {
   // Control mode: where a person it's shared with finds it (#551).
   const machine = control && client.e2e ? (control.daemons.find((d) => d.id === client.e2e!.daemon.id)?.name ?? "this machine") : null;
   const mine = grants.filter((g) => g.session === session);
+  // The root a grant to an account holds, or this browser's pin for them.
+  const rootOf = (g: Grant) => g.root ?? personPin(g.principal.slice("account:".length))?.root;
+  const verified = (g: Grant) => {
+    if (!g.principal.startsWith("account:")) return false;
+    const p = personPin(g.principal.slice("account:".length));
+    return !!p?.verified && p.root === rootOf(g);
+  };
   const set = async (principal: string, r: Role | null, withHistory = true, extra: Record<string, string> = {}) => {
     const res = await client.request(OPS["acl.set"].method, opPath("acl.set"), { session, principal, role: r, history: withHistory, ...extra });
     if (!res.ok) setErr((await res.json<{ error?: string }>().catch(() => null))?.error ?? `HTTP ${res.status}`);
     await load();
   };
   // Share and notify (#233): the machine grants and pushes them alone. A
-  // name it doesn't know is looked up on control and checked by its
-  // fingerprint first, as for a plain share.
+  // name it doesn't know is looked up on control and shared with as a
+  // plain share is (`offer`).
   const invite = async (whom: string, extra: Record<string, string> = {}) => {
     setErr("");
     setTold(null);
     const res = await client.request(OPS["invite.send"].method, opPath("invite.send"), { session, who: whom, role, history, note, ...extra } satisfies InviteRequest);
     const body = await res.json<Partial<Invited> & { error?: string }>().catch(() => null);
     if (res.status === 404 && control && client.e2e && !extra.root) {
-      control.person(whom).then((p) => setFound({ ...p, notify: true }), (x: Error) => setErr(x.message));
+      control.person(whom).then((p) => offer(p, whom, true), (x: Error) => setErr(x.message));
       return;
     }
     if (!res.ok || !body?.delivery) {
@@ -336,6 +408,28 @@ export function ShareDialog({ client }: { client: Client }) {
     setNote("");
     await load();
   };
+  const share = async (p: Person, notify: boolean) => {
+    await (notify ? invite(`account:${p.account}`, { root: p.root }) : set(`account:${p.account}`, role, history, { root: p.root, name: p.name }));
+    setAsked(`If ${p.name} isn't in one of your teams, they're asked first. Then it's under ${machine ?? "this machine"} in their host menu.`);
+    setWho("");
+  };
+  // #763: trust on first use. The first share pins their root in this
+  // browser; after that, a root control names that isn't the one pinned
+  // here, or the one a grant on this machine holds (shared from another
+  // device of yours), stops the share.
+  const offer = async (p: Person, login: string, notify: boolean) => {
+    setChanged(null);
+    setVerifying(null);
+    const held = grants.find((g) => g.principal === `account:${p.account}` && g.root);
+    const pinned = personPin(p.account);
+    const old = pinned && pinned.root !== p.root ? pinned : held && held.root !== p.root ? held : null;
+    if (old) {
+      setChanged({ p, login, notify, first: old.at, seen: keyChangeSeen(p.account, p.root) });
+      return;
+    }
+    pinPerson(p.account, p.root, held?.at);
+    await share(p, notify);
+  };
   return (
     <div class="prompt-backdrop" onClick={(e) => e.target === e.currentTarget && setSession(null)}>
       <div class="prompt share-dialog" data-share={session}>
@@ -345,13 +439,30 @@ export function ShareDialog({ client }: { client: Client }) {
             {mine.map((g) => (
               <li key={g.principal} data-grant={g.principal}>
                 <Avatar p={{ who: g.principal, name: g.name }} />
-                <span>{g.name}</span>
+                <span>
+                  {g.name}
+                  {verified(g) ? (
+                    <span class="share-verified" title="You verified their key" aria-label="verified" data-verified>
+                      {" "}
+                      ✓
+                    </span>
+                  ) : null}
+                </span>
                 <select value={g.role} onChange={(e) => void set(g.principal, (e.target as HTMLSelectElement).value as Role)}>
                   <option value="viewer">{roleLabel("viewer")}</option>
                   <option value="editor">{roleLabel("editor")}</option>
                   <option value="owner">{roleLabel("owner")}</option>
                 </select>
                 <span class="dim">{g.from ? "from now" : "with history"}</span>
+                {control && g.principal.startsWith("account:") && !verified(g) && rootOf(g) ? (
+                  <button
+                    class="control-linkish"
+                    data-verify-person={g.principal}
+                    onClick={() => setVerifying({ p: { account: g.principal.slice("account:".length), name: g.name, root: rootOf(g)! } })}
+                  >
+                    Verify
+                  </button>
+                ) : null}
                 <button class="control-revoke quiet-danger" onClick={() => void set(g.principal, null)}>
                   Remove
                 </button>
@@ -404,34 +515,44 @@ export function ShareDialog({ client }: { client: Client }) {
             : ""}
           Unless this machine is in their team, even people who drive ask you before typing in one of its panes.
         </p>
-        {found ? (
-          <div class="share-confirm" data-found={found.account}>
-            <p>
-              <b>{found.name}</b>'s first device is <span class="fingerprint">{fingerprint(found.root)}</span>. If you can, check it with them: they find
-              it as their account's fingerprint in Devices and machines…, in the account menu.
+        {changed ? (
+          <div class="share-changed" data-key-changed={changed.p.account}>
+            <p class="share-warning">
+              <b>
+                ⚠ {/\s/.test(changed.login) ? changed.p.name : `@${changed.login.replace(/^@/, "")}`}'s account key changed since you first shared with
+                them.
+              </b>
+            </p>
+            <p class="dim">
+              {changed.first ? `You first shared on ${day(changed.first)}; control has named a new key since ${day(changed.seen)}.` : `Control has named a new key since ${day(changed.seen)}.`}{" "}
+              Nothing was shared. Unless they started over with a new account, this may not be them.
             </p>
             <div class="prompt-buttons">
-              <button onClick={() => setFound(null)}>Cancel</button>
+              <button onClick={() => setChanged(null)}>Cancel</button>
               <button
                 class="primary"
-                data-share-confirm
-                onClick={() =>
-                  void (
-                    found.notify
-                      ? invite(`account:${found.account}`, { root: found.root })
-                      : set(`account:${found.account}`, role, history, { root: found.root, name: found.name })
-                  ).then(() => {
-                    setAsked(`If ${found.name} isn't in one of your teams, they're asked first. Then it's under ${machine ?? "this machine"} in their host menu.`);
-                    setFound(null);
-                    setWho("");
-                  })
-                }
+                data-key-verify
+                onClick={() => {
+                  const c = changed;
+                  setChanged(null);
+                  setVerifying({ p: c.p, then: () => void share(c.p, c.notify) });
+                }}
               >
-                Share with {found.name}
-                {found.notify ? " and notify" : ""}
+                Verify {changed.p.name}
               </button>
             </div>
           </div>
+        ) : null}
+        {verifying ? (
+          <VerifyPerson
+            who={verifying.p}
+            close={() => setVerifying(null)}
+            done={() => {
+              const then = verifying.then;
+              setVerifying(null);
+              then?.();
+            }}
+          />
         ) : null}
         {control && client.e2e
           ? control.teams
@@ -471,7 +592,7 @@ export function ShareDialog({ client }: { client: Client }) {
             const p = who.trim();
             if (!p) return;
             if (control && client.e2e) {
-              control.person(p).then(setFound, (x: Error) => setErr(x.message));
+              control.person(p).then((x) => offer(x, p, false), (x: Error) => setErr(x.message));
               return;
             }
             void set(p.includes(":") ? p : `tailnet:${p}`, role, history).then(() => setWho(""));
