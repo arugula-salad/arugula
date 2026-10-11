@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# M46 on Linux, in the Xvfb container (`just desktop-xvfb m46`): the app
-# ($1, a debug build), a daemon ($2) and its CLI ($3), under Openbox (a
-# window manager, for minimize, maximize and moving the window).
+# The desktop app on Linux (M46, M47), in the Xvfb container (`just
+# desktop-xvfb app`): the app ($1, a debug build), a daemon ($2) and its
+# CLI ($3), under Openbox (a window manager, for minimize, maximize and
+# moving the window).
 #
 #   keys      every chord reaches the page: Ctrl-W, T, N, Q, Tab, F1, F10
 #             (GTK's menu key) and Alt as Meta arrive in the pane as bytes
@@ -14,22 +15,24 @@
 #             the running app and shows it; `arugula://pane/%N` shows pane N
 #   hotkey    off by default (Ctrl+Alt+Space does nothing); on
 #             (desktop.json), it hides the focused window and brings it back
-#   nautilus  M47 (`just desktop-xvfb m47`): with the packages' .desktop
-#             file claiming arugula:// and their Nautilus extension, a
-#             right-click on a folder in Nautilus, *Open in Arugula*,
-#             opens a tab there in the running app and shows it; so does
-#             the same item on a folder's background
+#   nautilus  M47: with the packages' .desktop file claiming arugula://
+#             and their Nautilus extension, a right-click on a folder in
+#             Nautilus, *Open in Arugula*, opens a tab there in the running
+#             app and shows it; so does the same item on a folder's
+#             background
 #
-# Claims run in that order; name some to run only those (nautilus runs
-# only when named). KEEP=1 leaves everything running afterwards (for a
-# look with xdotool and xwd).
+# Claims run in that order, all on one X server, Openbox and daemon; name
+# some to run only those (`just desktop-xvfb app nautilus`). nautilus is
+# last so the others run as they did before it joined them: before it
+# installs the .desktop file and opens Nautilus's windows. KEEP=1 leaves
+# everything running afterwards (for a look with xdotool and xwd).
 set -euo pipefail
 app=$1
 daemon=$2
 cli=$3
 shift 3
 claims=("$@")
-[ ${#claims[@]} -gt 0 ] || claims=(keys titlebar bare links hotkey)
+[ ${#claims[@]} -gt 0 ] || claims=(keys titlebar bare links hotkey nautilus)
 here=$(cd "$(dirname "$0")" && pwd)
 desktop_dir=$(cd "$here/../../../crates/desktop" && pwd)
 work=$(mktemp -d)
@@ -41,8 +44,8 @@ app_pid=
 failed=0
 trap 'kill "${pids[@]}" $app_pid 2>/dev/null || true; [ "$failed" = 0 ] && [ "${done_:-}" = 1 ] || { echo "--- app"; tail -60 "$work/app.log"; echo "--- daemon"; tail -40 "$work/daemon.log"; }' EXIT
 
-ok() { echo "[m46 $1] ok${2:+: $2}"; }
-bad() { echo "[m46 $1] FAIL: $2" >&2; failed=1; }
+ok() { echo "[app $1] ok${2:+: $2}"; }
+bad() { echo "[app $1] FAIL: $2" >&2; failed=1; }
 wait_for() {
   local until=$((SECONDS + $1)); shift
   until "$@"; do
@@ -396,6 +399,10 @@ claim_hotkey() {
   fi
 }
 
+# A wrong name fails here, before the app's slow start.
+for c in "${claims[@]}"; do
+  declare -F "claim_$c" >/dev/null || { echo "no claim $c (keys, titlebar, bare, links, hotkey, nautilus)" >&2; done_=1; exit 2; }
+done
 start_app
 for c in "${claims[@]}"; do
   "claim_$c"
@@ -403,7 +410,7 @@ done
 done_=1
 if [ -n "${KEEP:-}" ]; then
   echo "KEEP: DISPLAY=$DISPLAY state=$state work=$work"
-  echo "$work" >/tmp/m46-work
+  echo "$work" >/tmp/app-work
   sleep infinity
 fi
 exit $failed
