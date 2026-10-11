@@ -13,7 +13,6 @@
 import { OPS, opPath } from "../ops";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { Fleet, FleetPane } from "../fleet";
-import { cleanTitle } from "../client";
 import { EXPIRE_TITLE, gateKey, type Action, type ActRequest, type ActResponse, type OpenRequest, type OpenResponse, type Reason } from "../proto";
 import { AskCard, type Answered } from "../blocks/ask";
 import { ANSWERED_MS, answeredLine, FollowUpBox, PermissionBody, PermissionButtons, VIEWER_NOTE, type Requester } from "../ui/answer-card";
@@ -26,7 +25,7 @@ import { DiffCard } from "../ui/diff-card";
 import { GateWhy } from "../ui/gate-why";
 import { PointChoices, pointOf, proposalLine } from "../ui/point-choices";
 import { runnerLabel, runners, subscribeRunners, watchRunners } from "../runners";
-import { activityOf, bundleOf, cardTitle, shortPaths, followable, GROUPINGS, groupOf, isPresence, kindOf, KINDS, REASON_COL, reasonOf, type GroupBy } from "./model";
+import { activityOf, bundleOf, cardTitle, holdStill, whatItDoes, shortPaths, shownNow, wantsYou, followable, GROUPINGS, groupOf, isPresence, kindOf, KINDS, REASON_COL, reasonOf, type GroupBy } from "./model";
 
 const BY_KEY = "arugula.swarm.by";
 const THEME_KEY = "arugula.swarm.theme";
@@ -45,7 +44,6 @@ export function offeredThemes(labs: boolean): Theme[] {
 }
 
 /** A done card leaves the rail by itself after this long. */
-export const DONE_MS = 15_000;
 
 function savedBy(): GroupBy {
   try {
@@ -74,17 +72,19 @@ export interface Bundle {
   reason: Reason;
   panes: FleetPane[];
   since: number;
+  /** Cleared while the pointer was over the rail: kept in place, faded,
+   * until it leaves, so the cards under it don't move. */
+  gone?: boolean;
 }
 
-/** Finished cards that already left the rail, for this page's life. */
-const seenDone = new Set<string>();
+
 
 /** What's on the rail: the bundles that fit, and the rest waiting. */
-export function bundlesOf(panes: FleetPane[], hidden: Set<string>): Bundle[] {
+export function bundlesOf(panes: FleetPane[]): Bundle[] {
   const out = new Map<string, Bundle>();
   for (const p of panes) {
     const r = reasonOf(p);
-    if (!r || hidden.has(`${p.key}@${r.since_ms}`)) continue;
+    if (!r || !wantsYou(p)) continue;
     const key = bundleOf(p, r);
     const b = out.get(key);
     if (b) {
@@ -138,15 +138,6 @@ export function SwarmView({
       return false;
     }
   });
-  const [hidden, setHiddenNow] = useState<Set<string>>(() => new Set(seenDone));
-  // Kept for the page's life: opening the swarm again, or another view,
-  // doesn't bring back cards that already left.
-  const setHidden = (f: (h: Set<string>) => Set<string>) =>
-    setHiddenNow((h) => {
-      const n = f(h);
-      for (const k of n) seenDone.add(k);
-      return n;
-    });
   const [answered, setAnswered] = useState<Done[]>([]);
   /** M28: the editor being followed, by its key. */
   const [following, setFollowing] = useState<string | null>(null);
@@ -158,7 +149,6 @@ export function SwarmView({
   const rail = useRef<HTMLDivElement>(null);
   const bar = useRef<HTMLDivElement>(null);
   const prev = useRef<Map<string, FleetPane>>(new Map());
-  const firstSeen = useRef<Map<string, number>>(new Map());
   const peekCache = useRef<Map<string, { at: number; text: string }>>(new Map());
   // The field calls these; they see this render's panes.
   const handlers = useRef<{
@@ -172,10 +162,16 @@ export function SwarmView({
   });
 
   const panes = fleet.panes;
-  const bundles = bundlesOf(panes, hidden);
+  const bundles = bundlesOf(panes);
   const cap = phone ? 4 : Math.max(2, Math.floor((innerHeight - 120) / 170));
   const shown = bundles.slice(0, cap);
   const waiting = bundles.slice(cap).reduce((n, b) => n + b.panes.length, 0);
+  // Cards hold still under the pointer: one cleared elsewhere fades in
+  // place rather than letting the next one slide under a click.
+  const [held, setHeld] = useState(false);
+  const kept = useRef<Bundle[]>([]);
+  const railed = holdStill(held, kept.current, shown, (b) => ({ ...b, gone: true }));
+  kept.current = railed;
   const wanting = new Set(bundles.flatMap((b) => b.panes.map((p) => p.key)));
   const onRail = new Map<string, string>();
   for (const b of shown) for (const p of b.panes) onRail.set(p.key, b.key);
@@ -314,24 +310,12 @@ export function SwarmView({
     }
     prev.current = new Map(panes.filter((p) => reasonOf(p)).map((p) => [p.key, p]));
     if (next.length) setAnswered((d) => [...d.filter((x) => x.until > now), ...next]);
-    for (const b of bundles) {
-      if (b.reason.kind !== "done") continue;
-      if (!firstSeen.current.has(b.key)) firstSeen.current.set(b.key, now);
-    }
+    // A finished card's 15 s start when it's on the rail (wantsYou).
+    shownNow(shown.flatMap((b) => b.panes), now);
   });
-  const live = useRef(bundles);
-  live.current = bundles;
   useEffect(() => {
     const t = setInterval(() => {
       const now = Date.now();
-      const gone = live.current.filter((b) => b.reason.kind === "done" && now - (firstSeen.current.get(b.key) ?? now) > DONE_MS);
-      if (gone.length) {
-        setHidden((h) => {
-          const n = new Set(h);
-          for (const b of gone) for (const p of b.panes) n.add(`${p.key}@${p.info.reason!.since_ms}`);
-          return n;
-        });
-      }
       setAnswered((d) => (d.some((x) => x.until <= now) ? d.filter((x) => x.until > now) : d));
       tick((n) => n + 1);
     }, 1000);
@@ -444,7 +428,7 @@ export function SwarmView({
           </div>
           {fountainRunners.map(([host, r]) => (
             <div key={host} class={`swarm-runner${r.problem ? " needs" : ""}`} data-stat="fountain-runner" data-runner={r.name} title={r.problem ?? `${host}: ${runnerLabel(r, host)}`}>
-              <b>{host}</b>Fountain runner {r.online === true ? "online" : r.online === false ? "offline" : "…"}
+              <b>Fountain runner</b>on {host}, {r.online === true ? "online" : r.online === false ? "offline" : "…"}
             </div>
           ))}
         </div>
@@ -513,11 +497,11 @@ export function SwarmView({
           <h2>Needs you</h2>
           <span>bundled by cause</span>
         </header>
-        <div class="swarm-cards">
+        <div class="swarm-cards" onPointerEnter={() => setHeld(true)} onPointerLeave={() => setHeld(false)}>
           {shown.length === 0 && answered.length === 0 && (
             <p class="swarm-empty">Nothing needs you. Panes that ask, fail, finish or wait for input lift out of the swarm and land here.</p>
           )}
-          {shown.map((b) => (
+          {railed.map((b) => (
             <Card
               key={b.key}
               b={b}
@@ -526,7 +510,6 @@ export function SwarmView({
               show={() => field.current?.diveTo(b.panes[0].key)}
               open={() => openKey(b.panes[0].key)}
               follow={() => setFollowing(b.panes[0].key)}
-              back={back}
             />
           ))}
           {answered.map((d) => (
@@ -589,14 +572,6 @@ const ARIA: Record<Theme, string> = {
 /** #551: where a pane's project comes from. */
 const PROJECTS = "A pane's project is the git repository it's in; one outside a repository goes by its directory.";
 
-/** What a pane is doing, in a word or a line: the title its program set
- * (Claude Code's is the task, so eight `claude --resume` panes read
- * apart), unless that's a shell's own "user@host: dir"; else its command. */
-function whatItDoes(p: FleetPane): string {
-  const title = cleanTitle(p.info.title ?? "");
-  const shells = /^[^\s@]+@[^\s:]+:/.test(title);
-  return (!shells && title) || p.info.current?.text || p.info.command || kindOf(p);
-}
 
 /** The how-to tip, once put away. */
 const TIP_KEY = "arugula.swarm.tipSeen";
@@ -776,7 +751,6 @@ function Card({
   show,
   open,
   follow,
-  back,
 }: {
   b: Bundle;
   fleet: Fleet;
@@ -784,7 +758,6 @@ function Card({
   show: () => void;
   open: () => void;
   follow: () => void;
-  back: () => void;
 }) {
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -794,7 +767,9 @@ function Card({
   const machines = [...new Set(b.panes.map((p) => p.host))];
   const can = b.panes.every((p) => fleet.role(p) !== "viewer");
   const ids = b.panes.slice(0, 4).map((p) => `%${p.id}`).join(" ") + (n > 4 ? " …" : "");
-  const project = first.info.project?.name ?? groupOf(first, "project");
+  // Every project the card's panes are in, not only the first one's.
+  const projects = [...new Set(b.panes.map((p) => p.info.project?.name ?? groupOf(p, "project")))];
+  const project = projects.length > 2 ? `${projects.length} projects` : projects.join(", ");
   // Someone else's panes say whose (a teammate's machine in a team too).
   const owners = [...new Set(b.panes.map((p) => fleet.host(p.host)?.owner).filter(Boolean))];
   const whose = owners.length === 1 && b.panes.every((p) => fleet.host(p.host)?.owner) ? `${owners[0]}'s` : owners.length > 1 ? "several people's" : null;
@@ -812,27 +787,31 @@ function Card({
   // bundle's is Dismiss all). With a main button, Dismiss goes down with
   // Show and Edit.
   const verb = ["rerun", "continue", "allow"].some((a) => r.actions.includes(a as Action)) || r.ask?.what === "question";
-  const openFirst = !verb && n === 1 && !isPresence(first) && r.kind !== "ask" && r.kind !== "diff";
-  const cta = verb || openFirst;
+  // Open is the main button when there's nothing else to do: a bundle
+  // opens its first pane.
+  const openFirst = !verb && !isPresence(first) && r.kind !== "ask" && r.kind !== "diff";
   const kind = r.kind === "exited" || r.kind === "errors" ? "failed" : r.kind === "diff" ? "ask" : r.kind;
   const diff = n === 1 && r.kind === "diff" ? first.info.diff : null;
   const focused = focus && b.panes.some((p) => p.host === focus.host && p.id === focus.pane);
   return (
     <div
-      class={`swarm-card in t-${kind}${focused ? " focus" : ""}`}
+      class={`swarm-card in t-${kind}${focused ? " focus" : ""}${b.gone ? " gone" : ""}`}
+      inert={b.gone}
       data-bundle={b.key}
       data-panes={b.panes.map((p) => p.key).join(" ")}
       data-kind={r.kind}
       style={{ "--c": `rgb(${REASON_COL[r.kind]})` }}
     >
       <div class="ch">
-        <b>{cardTitle(r, n, machines)}</b>
+        <b class="ct" role="button" tabIndex={0} title="Find it in the swarm" onClick={show} onKeyDown={(e) => e.key === "Enter" && show()}>
+          {cardTitle(r, n, machines)}
+        </b>
         <Watching fleet={fleet} panes={b.panes} />
         {n > 1 && <span class="n">×{n}</span>}
       </div>
-      <div class="cm">
+      <div class="cm" title={ids}>
         {whose ? <b class="whose">{whose} · </b> : null}
-        {ids} · {machines.length > 1 ? `${machines.length} machines` : machines[0]} · {project}
+        {n === 1 ? whatItDoes(first) : `${n} panes`} · {machines.length > 1 ? `${machines.length} machines` : machines[0]} · {project}
       </div>
       {diff ? null : ask?.kind === "permission" ? (
         <PermissionBody ask={ask} />
@@ -914,13 +893,10 @@ function Card({
               Answer…
             </button>
           )}
-          {r.actions.includes("dismiss") && r.kind !== "ask" && !cta && (
-            <button class="pri" data-dismiss-card disabled={busy} onClick={() => void run("dismiss")}>
-              {all("Dismiss")}
-            </button>
-          )}
         </div>
       )}
+      {/* The same two everywhere (as in Chat's Activity): Open, unless
+          it's the main button above, and Dismiss. */}
       <div class="ca ca-nav">
         {!isPresence(first) && !openFirst && (
           <button class="ghost" onClick={open}>
@@ -932,15 +908,7 @@ function Card({
             Follow
           </button>
         )}
-        <button class="ghost" onClick={show}>
-          Show
-        </button>
-        {n === 1 && canEdit(fleet, first) && (
-          <button class="ghost" data-edit onClick={() => void editIn(fleet, first, back).then(setErr)}>
-            Edit
-          </button>
-        )}
-        {can && (r.kind === "ask" || r.kind === "diff" || (cta && r.actions.includes("dismiss"))) && (
+        {can && !point && (r.actions.includes("dismiss") || r.kind === "ask" || r.kind === "diff") && (
           <button class="ghost" data-dismiss-card disabled={busy} onClick={() => void run("dismiss")}>
             {all("Dismiss")}
           </button>

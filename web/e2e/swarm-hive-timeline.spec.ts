@@ -121,7 +121,7 @@ for (const theme of ["hive", "timeline"] as const) {
         .poll(() => scene(page, (c, k) => c.runsOf!(k).some((r) => r.exit === 101), `workstation:${failed[0]}`), { timeout: 45_000 })
         .toBe(true);
     }
-    await card.getByRole("button", { name: "Show", exact: true }).click();
+    await card.locator(".ct").click();
     await expect.poll(() => offCentre(page, `workstation:${failed[0]}`), { timeout: 5_000 }).toBeLessThan(30);
     await page.locator("[data-fit]").click();
     await clearRail(page);

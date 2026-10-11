@@ -178,7 +178,10 @@ pub fn project(cwd: &str) -> Option<Project> {
         Path::new(cwd).ancestors().take_while(|p| *p != Path::new("/")).find(|p| p.join(".git").exists()).map(|root| {
             Project {
                 root: root.display().to_string(),
-                name: root.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
+                // The repository's own name, from its origin: a worktree's
+                // folder or a clone's renamed folder isn't the project.
+                name: origin_name(root)
+                    .unwrap_or_else(|| root.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()),
             }
         });
     let mut cache = PROJECTS.lock().unwrap();
@@ -188,6 +191,44 @@ pub fn project(cwd: &str) -> Option<Project> {
     }
     cache.insert(cwd.to_owned(), found.clone());
     found
+}
+
+/// The repository `origin` names (`…/arugula-salad/arugula.git` →
+/// `arugula`), read from the git config, a worktree's through its common
+/// directory.
+fn origin_name(root: &Path) -> Option<String> {
+    let dot = root.join(".git");
+    let git_dir = if dot.is_dir() {
+        dot
+    } else {
+        // A worktree: `gitdir: <its dir under the main repository>`, whose
+        // `commondir` is the main repository's .git.
+        let text = std::fs::read_to_string(&dot).ok()?;
+        let d = Path::new(text.strip_prefix("gitdir:")?.trim()).to_path_buf();
+        let d = if d.is_absolute() { d } else { root.join(d) };
+        match std::fs::read_to_string(d.join("commondir")) {
+            Ok(c) => d.join(c.trim()),
+            Err(_) => d,
+        }
+    };
+    origin_in(&std::fs::read_to_string(git_dir.join("config")).ok()?)
+}
+
+/// `[remote "origin"]`'s url's last part, without `.git`.
+fn origin_in(config: &str) -> Option<String> {
+    let mut in_origin = false;
+    for line in config.lines().map(str::trim) {
+        if line.starts_with('[') {
+            in_origin = line.replace(' ', "") == "[remote\"origin\"]";
+        } else if in_origin
+            && let Some(url) = line.strip_prefix("url").map(str::trim_start).and_then(|l| l.strip_prefix('='))
+        {
+            let last = url.trim().trim_end_matches('/').rsplit(['/', ':']).next()?;
+            let name = last.strip_suffix(".git").unwrap_or(last);
+            return (!name.is_empty()).then(|| name.to_owned());
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -340,5 +381,25 @@ mod tests {
         std::fs::write(wt.join(".git"), "gitdir: elsewhere").unwrap();
         assert_eq!(project(&wt.display().to_string()).unwrap().name, "wt");
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_project_is_named_by_its_origin() {
+        let cfg = "[core]\n\tbare = false\n[remote \"upstream\"]\n\turl = git@github.com:x/other.git\n[remote \"origin\"]\n\turl = https://github.com/arugula-salad/arugula.git\n";
+        assert_eq!(origin_in(cfg).as_deref(), Some("arugula"));
+        assert_eq!(origin_in("[remote \"origin\"]\n url = git@github.com:a/b\n").as_deref(), Some("b"));
+        assert_eq!(origin_in("[core]\n"), None);
+        // A worktree reads its main repository's config.
+        let dir = std::env::temp_dir().join(format!("arugula-origin-{}", std::process::id()));
+        let main = dir.join("main");
+        let wt = dir.join("wt");
+        std::fs::create_dir_all(main.join(".git/worktrees/wt")).unwrap();
+        std::fs::create_dir_all(&wt).unwrap();
+        std::fs::write(main.join(".git/config"), cfg).unwrap();
+        std::fs::write(main.join(".git/worktrees/wt/commondir"), "../..\n").unwrap();
+        std::fs::write(wt.join(".git"), format!("gitdir: {}\n", main.join(".git/worktrees/wt").display())).unwrap();
+        assert_eq!(origin_name(&wt).as_deref(), Some("arugula"));
+        assert_eq!(origin_name(&main).as_deref(), Some("arugula"));
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

@@ -42,11 +42,29 @@ const web = join(dir, "web");
 
 const procs: ChildProcess[] = [];
 let github: Server | undefined;
+/** Each child leads a process group of its own (`detached`), and goes with
+ * its whole group: `npx vite` runs vite under a shell, and a daemon its
+ * panes' shims, which a signal to the child alone would leave running. */
+const stop = (p: ChildProcess) => {
+  try {
+    if (p.pid) process.kill(-p.pid, "SIGTERM");
+  } catch {
+    p.kill("SIGTERM");
+  }
+};
 const bye = (code = 0) => {
-  for (const p of procs) p.kill("SIGTERM");
+  for (const p of procs) stop(p);
+  // Panes' shims outlive their daemon on purpose (they keep terminals
+  // across a restart): anything still running from this state directory.
+  try {
+    execFileSync("pkill", ["-f", dir], { stdio: "ignore" });
+  } catch {
+    // none left, or no pkill
+  }
   github?.close();
   process.exit(code);
 };
+process.on("exit", () => procs.forEach(stop));
 process.on("SIGINT", () => bye());
 process.on("SIGTERM", () => bye());
 const fail = (what: string) => {
@@ -62,7 +80,7 @@ mkdirSync(join(dir, "control"), { recursive: true });
 // service worker is built once beside it.
 async function webBuild() {
   execFileSync("npx", ["vite", "build", "--logLevel", "error", "--config", "vite.sw.config.ts", "--outDir", web], { stdio: "inherit" });
-  const watch = spawn("npx", ["vite", "build", "--watch", "--emptyOutDir", "false", "--outDir", web], { stdio: ["ignore", "pipe", "inherit"] });
+  const watch = spawn("npx", ["vite", "build", "--watch", "--emptyOutDir", "false", "--outDir", web], { stdio: ["ignore", "pipe", "inherit"], detached: true });
   procs.push(watch);
   let first = true;
   await new Promise<void>((ready) => {
@@ -90,6 +108,16 @@ async function up(url: string, proc: ChildProcess) {
   fail(`${url} didn't come up`);
 }
 
+/** Nothing else on the port: an earlier dev-control's control would
+ * answer the checks below, and this one would serve nothing. */
+async function portFree() {
+  const taken = await fetch(`${base}/control.json`).then(
+    () => true,
+    () => false,
+  );
+  if (taken) fail(`${base} is in use (an earlier dev-control still running?). Stop it, or set DEV_CONTROL_PORT.`);
+}
+
 async function startControl() {
   github = fakeGithub(0, "127.0.0.1", () => login);
   await new Promise((r) => github!.once("listening", r));
@@ -101,7 +129,7 @@ async function startControl() {
       ...["--static-dir", web, "--github-client-id", "dev", "--github-client-secret", "dev"],
       ...["--github-url", gh, "--github-api", gh],
     ],
-    { stdio: ["ignore", "ignore", "inherit"] },
+    { stdio: ["ignore", "ignore", "inherit"], detached: true },
   );
   procs.push(control);
   await up(`${base}/control.json`, control);
@@ -154,7 +182,7 @@ async function startMachines(d: Device) {
       spawn(
         `${bin}/arugulad`,
         [...["--listen", "127.0.0.1:0", "--name", name, "--state-dir", state], "--no-manager-env", ...["--tailscale-socket", "/nonexistent/sock"]],
-        { stdio: "ignore" },
+        { stdio: "ignore", detached: true },
       ),
     );
   }
@@ -182,6 +210,7 @@ async function approveBrowsers(d: Device) {
   }
 }
 
+await portFree();
 console.log("dev-control: building the web client…");
 await webBuild();
 await startControl();

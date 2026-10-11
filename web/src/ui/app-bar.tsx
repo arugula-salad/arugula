@@ -35,6 +35,7 @@ export function AppBar({
   inert,
   children,
   end,
+  all,
 }: {
   client: Client;
   at: Place;
@@ -43,11 +44,20 @@ export function AppBar({
   children?: ComponentChildren;
   /** Before the account menu: the panes' people. */
   end?: ComponentChildren;
+  /** The place shows every machine (the swarm, chat, the team's agents):
+   * the machine picker would read as a filter it isn't, so it says so. */
+  all?: boolean;
 }) {
   useSubscribe((fn) => client.subscribe(fn));
   return (
     <header class="bar app-bar" data-tauri-drag-region inert={inert} data-at={at}>
-      <HostButton />
+      {all ? (
+        <span class="scope-label" data-scope="all" title="This shows every machine. Panes shows one: pick it there.">
+          All machines
+        </span>
+      ) : (
+        <HostButton />
+      )}
       <Places client={client} at={at} />
       {children}
       <div class="bar-fill" data-tauri-drag-region />
