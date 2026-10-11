@@ -203,10 +203,13 @@ export function shownNow(panes: FleetPane[], now = Date.now()) {
 /** While `held` (the pointer is over the list), the items as they were:
  * cleared ones kept in place (`gone`), new ones after them, so nothing
  * slides under a click. Else just `now`. */
-export function holdStill<T extends { key: string }>(held: boolean, kept: T[], now: T[], gone: (t: T) => T): T[] {
+export function holdStill<T extends { key: string }>(held: boolean, kept: T[], now: T[], gone: (t: T) => T, done: Set<string> = new Set()): T[] {
   if (!held) return now;
   const byKey = new Map(now.map((t) => [t.key, t]));
-  return [...kept.map((k) => byKey.get(k.key) ?? gone(k)), ...now.filter((t) => !kept.some((k) => k.key === t.key))];
+  // One you acted on here goes at once: holding still is for those that
+  // clear elsewhere, under your pointer.
+  const still = kept.filter((k) => byKey.has(k.key) || !done.has(k.key));
+  return [...still.map((k) => byKey.get(k.key) ?? gone(k)), ...now.filter((t) => !still.some((k) => k.key === t.key))];
 }
 
 /** What a pane is doing, in a word or a line: the title its program set

@@ -170,7 +170,9 @@ export function SwarmView({
   // place rather than letting the next one slide under a click.
   const [held, setHeld] = useState(false);
   const kept = useRef<Bundle[]>([]);
-  const railed = holdStill(held, kept.current, shown, (b) => ({ ...b, gone: true }));
+  /** Cards acted on here (dismissed, continued…): they don't linger. */
+  const acted = useRef(new Set<string>());
+  const railed = holdStill(held, kept.current, shown, (b) => ({ ...b, gone: true }), acted.current);
   kept.current = railed;
   const wanting = new Set(bundles.flatMap((b) => b.panes.map((p) => p.key)));
   const onRail = new Map<string, string>();
@@ -510,6 +512,7 @@ export function SwarmView({
               show={() => field.current?.diveTo(b.panes[0].key)}
               open={() => openKey(b.panes[0].key)}
               follow={() => setFollowing(b.panes[0].key)}
+              acted={() => acted.current.add(b.key)}
             />
           ))}
           {answered.map((d) => (
@@ -752,6 +755,7 @@ function Card({
   show,
   open,
   follow,
+  acted,
 }: {
   b: Bundle;
   fleet: Fleet;
@@ -759,6 +763,8 @@ function Card({
   show: () => void;
   open: () => void;
   follow: () => void;
+  /** Says this card was acted on here. */
+  acted: () => void;
 }) {
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -777,6 +783,7 @@ function Card({
   const ask = n === 1 ? first.info.ask : null;
   const point = r.kind === "gate" ? pointOf(r.gate) : null;
   const run = async (action: Action, extra: Record<string, unknown> = {}) => {
+    acted();
     setBusy(true);
     const e = await act(fleet, b.panes, action, extra);
     setBusy(false);

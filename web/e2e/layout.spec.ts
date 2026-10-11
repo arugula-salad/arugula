@@ -107,8 +107,10 @@ test("tabs: create, rename, reorder by dragging, dock into a split, close", asyn
   await reset(page);
   const [t1] = await tabsInSession(page);
   // + says which machine the tab opens on (#551).
-  // Right-click offers a VM tab where the machine has VMs (Linux CI does).
-  await expect(page.locator(".new-tab")).toHaveAttribute("title", /^New tab on \S+ \(right-click for (more|a VM tab)\)$/);
+  // The other kinds of tab are on the ▾ beside it (#753), not only a
+  // right-click.
+  await expect(page.locator(".new-tab")).toHaveAttribute("title", /^New tab on \S+$/);
+  await expect(page.locator("[data-new-tab-more]")).toBeVisible();
   await page.getByTitle("New tab").click();
   await expect.poll(() => tabsInSession(page)).toHaveLength(2);
   const t2 = (await tabsInSession(page))[1];
