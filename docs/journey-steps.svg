@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1302 1966" role="img" aria-label="Table of the journeys' steps: stations down the side, journeys across, each cell the step ids that journey takes at that station, then the parts of the product no journey reaches yet.">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1302 2000" role="img" aria-label="Table of the journeys' steps: stations down the side, journeys across, each cell the step ids that journey takes at that station, then the parts of the product no journey reaches yet.">
 <style>:root {
   --bg: #f4f6f8; --panel: #ffffff; --fg: #16202b; --muted: #5b6876; --rule: #d5dce3; --zone: #e9eef3;
   --led: #1f8a4c; --friction: #b86e00; --unguided: #c4322b; --skipped: #7a8794;
@@ -40,7 +40,7 @@ svg { color: var(--fg); font-family: var(--display); }
 line.asj1 { stroke: var(--rule); stroke-width: 1; stroke-dasharray: 3 4; }
 text.asj1 { font-family: var(--body); font-size: 12px; fill: var(--muted); paint-order: stroke; stroke: var(--panel); stroke-width: 8px; stroke-linejoin: round; }
 .cmp rect { fill: none; stroke: currentColor; stroke-width: 1.5; }
-.cmp text { font-family: var(--mono); font-weight: 700; font-size: 11px; fill: currentColor; }</style><rect width="1302" height="1966" rx="14" style="fill: var(--panel)"/>
+.cmp text { font-family: var(--mono); font-weight: 700; font-size: 11px; fill: currentColor; }</style><rect width="1302" height="2000" rx="14" style="fill: var(--panel)"/>
 <text class="title" x="24" y="42">The journeys' steps, station by station</text>
 <text class="sub" x="24" y="62">Each step id of each journey (web/e2e/journey/map.ts, STEPS), in order, at the station it maps to.</text>
 <rect x="272" y="86" width="22" height="6" rx="3" style="fill: var(--j1)"/><text class="head" x="272" y="110">J1</text>
@@ -119,103 +119,102 @@ text.asj1 { font-family: var(--body); font-size: 12px; fill: var(--muted); paint
 <text class="station" x="34" y="803"><tspan x="34">App signed in</tspan></text>
 <text class="step" x="272" y="803">app-signin</text>
 <text class="step" x="272" y="819">allow-app</text>
-<g class="cmp"><rect x="340.1" y="809" width="16" height="13" rx="6.5"/><text x="348.1" y="819" text-anchor="middle">=</text></g>
-<text class="step" x="272" y="835">approve-app</text>
-<g class="cmp"><rect x="353.9" y="825" width="16" height="13" rx="6.5"/><text x="361.9" y="835" text-anchor="middle">=</text></g>
-<line class="asj1" x1="421.5" x2="739.9000000000001" y1="815" y2="815"/><text class="asj1" x="580.7" y="819" text-anchor="middle">J1's steps, for each person</text>
-<line class="rule" x1="24" x2="1277.6000000000001" y1="848" y2="848"/>
-<text class="station" x="34" y="869"><tspan x="34">A terminal</tspan></text>
-<text class="step" x="272" y="869">terminal</text>
-<text class="step" x="272" y="885">restart</text>
-<line class="asj1" x1="421.5" x2="739.9000000000001" y1="873" y2="873"/><text class="asj1" x="580.7" y="877" text-anchor="middle">J1's steps, for each person</text>
-<line class="rule" x1="24" x2="1277.6000000000001" y1="898" y2="898"/>
-<text class="station" x="34" y="919"><tspan x="34">No account</tspan></text>
-<text class="step" x="993.2" y="919">skip-cloud</text>
-<line class="rule" x1="24" x2="1277.6000000000001" y1="932" y2="932"/>
-<text class="station" x="34" y="953"><tspan x="34">Claude Code set up</tspan></text>
-<text class="step" x="993.2" y="953">use-claude</text>
-<line class="rule" x1="24" x2="1277.6000000000001" y1="966" y2="966"/>
-<text class="station" x="34" y="987"><tspan x="34">An agent asks; approved</tspan></text>
-<text class="step" x="993.2" y="987">start-agent</text>
-<text class="step" x="993.2" y="1003">task</text>
-<text class="step" x="993.2" y="1019">approve</text>
-<text class="step" x="993.2" y="1035">done</text>
-<line class="rule" x1="24" x2="1277.6000000000001" y1="1048" y2="1048"/>
-<rect class="band" x="24" y="1048" width="1253.6000000000001" height="24"/><text class="zone-label" x="34" y="1064">TOGETHER</text>
-<text class="station" x="34" y="1093"><tspan x="34">Share to an account</tspan></text>
-<text class="step" x="421.5" y="1093">agree</text>
-<text class="step" x="421.5" y="1109">open-share</text>
-<text class="step" x="421.5" y="1125">share-who</text>
-<text class="step" x="421.5" y="1141">ask-fingerprint</text>
-<text class="step" x="421.5" y="1157">find-fingerprint</text>
-<text class="step" x="421.5" y="1173">send-fingerprint</text>
-<text class="step" x="421.5" y="1189">confirm-share</text>
-<g class="cmp"><rect x="517.2" y="1179" width="16" height="13" rx="6.5"/><text x="525.2" y="1189" text-anchor="middle">=</text></g>
-<text class="step" x="421.5" y="1205">accept</text>
-<text class="step" x="421.5" y="1221">find-machine</text>
-<line class="rule" x1="24" x2="1277.6000000000001" y1="1234" y2="1234"/>
-<text class="station" x="34" y="1255"><tspan x="34">Team and invite</tspan></text>
-<text class="step" x="557.2" y="1255">make-team</text>
-<text class="step" x="557.2" y="1271">send-invite</text>
-<text class="step" x="557.2" y="1287">sam-joins</text>
-<text class="step" x="557.2" y="1303">how-to-add</text>
-<text class="step" x="557.2" y="1319">move-in</text>
-<text class="step" x="557.2" y="1335">riley-finds</text>
-<text class="step" x="657.1" y="1255">dlex</text>
-<text class="step" x="657.1" y="1271">send-invite</text>
-<text class="step" x="657.1" y="1287">sam-joins</text>
-<text class="step" x="657.1" y="1303">team-page</text>
-<text class="step" x="657.1" y="1319">copied-join</text>
-<text class="step" x="657.1" y="1335">try-move</text>
-<text class="step" x="657.1" y="1351">share-team</text>
-<text class="step" x="657.1" y="1367">riley-finds</text>
-<text class="step" x="657.1" y="1383">swarm</text>
-<line class="rule" x1="24" x2="1277.6000000000001" y1="1396" y2="1396"/>
-<text class="station" x="34" y="1417"><tspan x="34">Share to a tailnet login</tspan></text>
-<text class="step" x="1120.7" y="1417">share</text>
-<text class="step" x="1120.7" y="1433">share-who</text>
-<text class="step" x="1120.7" y="1449">tell-ben</text>
-<g class="cmp"><rect x="1181.9" y="1439" width="16" height="13" rx="6.5"/><text x="1189.9" y="1449" text-anchor="middle">=</text></g>
-<text class="step" x="1120.7" y="1465">ben-opens</text>
-<text class="step" x="1120.7" y="1481">ben-watches</text>
-<text class="step" x="1120.7" y="1497">ben-tries</text>
-<line class="rule" x1="24" x2="1277.6000000000001" y1="1510" y2="1510"/>
-<text class="station" x="34" y="1531"><tspan x="34">Ask to drive, allowed</tspan></text>
-<text class="step" x="421.5" y="1531">try-typing</text>
-<text class="step" x="421.5" y="1547">ask-to-drive</text>
-<text class="step" x="421.5" y="1563">allow</text>
-<text class="step" x="421.5" y="1579">riley-types</text>
-<text class="step" x="421.5" y="1595">take-control</text>
-<text class="step" x="421.5" y="1611">riley-drives</text>
-<text class="step" x="421.5" y="1627">sam-sees</text>
-<text class="step" x="557.2" y="1531">riley-types</text>
-<text class="step" x="557.2" y="1547">sam-sees</text>
-<text class="step" x="657.1" y="1531">riley-tries</text>
-<text class="step" x="657.1" y="1547">riley-asks</text>
-<text class="step" x="657.1" y="1563">allow</text>
-<text class="step" x="657.1" y="1579">take-control</text>
-<text class="step" x="657.1" y="1595">riley-drives</text>
-<text class="step" x="657.1" y="1611">plus-on-geek</text>
-<text class="step" x="1120.7" y="1531">make-driver</text>
-<text class="step" x="1120.7" y="1547">ask-to-drive</text>
-<text class="step" x="1120.7" y="1563">allow</text>
-<text class="step" x="1120.7" y="1579">take-control</text>
-<text class="step" x="1120.7" y="1595">ben-drives</text>
-<line class="rule" x1="24" x2="1277.6000000000001" y1="1640" y2="1640"/>
-<text class="station" x="34" y="1661"><tspan x="34">One login, two devices</tspan></text>
-<text class="step" x="1120.7" y="1661">cam-opens</text>
-<text class="step" x="1120.7" y="1677">ana-sees-shared-login</text>
-<line class="rule" x1="24" x2="1277.6000000000001" y1="1690" y2="1690"/>
-<rect class="band" x="24" y="1690" width="1253.6000000000001" height="24"/><text class="zone-label" x="34" y="1706">NO JOURNEY YET</text>
-<text class="station gap" x="34" y="1735"><tspan x="34">Phone paired (QR,</tspan><tspan x="34" dy="16">notifications)</tspan></text><text class="why" x="272" y="1735"><tspan x="272">Getting started&#39;s Phone step: every journey skips it</tspan></text>
-<line class="rule" x1="24" x2="1277.6000000000001" y1="1764" y2="1764"/>
-<text class="station gap" x="34" y="1785"><tspan x="34">Homebrew install</tspan></text><text class="why" x="272" y="1785"><tspan x="272">on the install page; no journey</tspan></text>
-<line class="rule" x1="24" x2="1277.6000000000001" y1="1798" y2="1798"/>
-<text class="station gap" x="34" y="1819"><tspan x="34">Linux or Windows app</tspan></text><text class="why" x="272" y="1819"><tspan x="272">the journeys run the Mac app or a browser</tspan></text>
-<line class="rule" x1="24" x2="1277.6000000000001" y1="1832" y2="1832"/>
-<text class="station gap" x="34" y="1853"><tspan x="34">Read-only share link</tspan></text><text class="why" x="272" y="1853"><tspan x="272">Share&#39;s link for people with no login; no journey</tspan></text>
-<line class="rule" x1="24" x2="1277.6000000000001" y1="1866" y2="1866"/>
-<text class="station gap" x="34" y="1887"><tspan x="34">Dropped by control, join</tspan><tspan x="34" dy="16">again</tspan></text><text class="why" x="272" y="1887"><tspan x="272">control-dropped.spec covers the screens, not a person&#39;s path</tspan></text>
-<line class="rule" x1="24" x2="1277.6000000000001" y1="1916" y2="1916"/>
-<g class="cmp"><rect x="24" y="1932" width="16" height="13" rx="6.5"/><text x="32" y="1942" text-anchor="middle">=</text></g><text class="key" x="48" y="1942">compares: the person checks a code or fingerprint (J6: an address) on one screen against another (j.compared)</text>
+<line class="asj1" x1="421.5" x2="739.9000000000001" y1="807" y2="807"/><text class="asj1" x="580.7" y="811" text-anchor="middle">J1's steps, for each person</text>
+<line class="rule" x1="24" x2="1277.6000000000001" y1="832" y2="832"/>
+<text class="station" x="34" y="853"><tspan x="34">A terminal</tspan></text>
+<text class="step" x="272" y="853">terminal</text>
+<text class="step" x="272" y="869">restart</text>
+<line class="asj1" x1="421.5" x2="739.9000000000001" y1="857" y2="857"/><text class="asj1" x="580.7" y="861" text-anchor="middle">J1's steps, for each person</text>
+<line class="rule" x1="24" x2="1277.6000000000001" y1="882" y2="882"/>
+<text class="station" x="34" y="903"><tspan x="34">No account</tspan></text>
+<text class="step" x="993.2" y="903">skip-cloud</text>
+<line class="rule" x1="24" x2="1277.6000000000001" y1="916" y2="916"/>
+<text class="station" x="34" y="937"><tspan x="34">Claude Code set up</tspan></text>
+<text class="step" x="993.2" y="937">use-claude</text>
+<line class="rule" x1="24" x2="1277.6000000000001" y1="950" y2="950"/>
+<text class="station" x="34" y="971"><tspan x="34">An agent asks; approved</tspan></text>
+<text class="step" x="993.2" y="971">start-agent</text>
+<text class="step" x="993.2" y="987">task</text>
+<text class="step" x="993.2" y="1003">approve</text>
+<text class="step" x="993.2" y="1019">done</text>
+<line class="rule" x1="24" x2="1277.6000000000001" y1="1032" y2="1032"/>
+<rect class="band" x="24" y="1032" width="1253.6000000000001" height="24"/><text class="zone-label" x="34" y="1048">TOGETHER</text>
+<text class="station" x="34" y="1077"><tspan x="34">Share to an account</tspan></text>
+<text class="step" x="421.5" y="1077">agree</text>
+<text class="step" x="421.5" y="1093">open-share</text>
+<text class="step" x="421.5" y="1109">share-who</text>
+<text class="step" x="421.5" y="1125">ask-fingerprint</text>
+<text class="step" x="421.5" y="1141">find-fingerprint</text>
+<text class="step" x="421.5" y="1157">send-fingerprint</text>
+<text class="step" x="421.5" y="1173">confirm-share</text>
+<g class="cmp"><rect x="517.2" y="1163" width="16" height="13" rx="6.5"/><text x="525.2" y="1173" text-anchor="middle">=</text></g>
+<text class="step" x="421.5" y="1189">accept</text>
+<text class="step" x="421.5" y="1205">find-machine</text>
+<line class="rule" x1="24" x2="1277.6000000000001" y1="1218" y2="1218"/>
+<text class="station" x="34" y="1239"><tspan x="34">Team and invite</tspan></text>
+<text class="step" x="557.2" y="1239">make-team</text>
+<text class="step" x="557.2" y="1255">send-invite</text>
+<text class="step" x="557.2" y="1271">sam-joins</text>
+<text class="step" x="557.2" y="1287">how-to-add</text>
+<text class="step" x="557.2" y="1303">move-in</text>
+<text class="step" x="557.2" y="1319">riley-finds</text>
+<text class="step" x="657.1" y="1239">dlex</text>
+<text class="step" x="657.1" y="1255">send-invite</text>
+<text class="step" x="657.1" y="1271">sam-joins</text>
+<text class="step" x="657.1" y="1287">team-page</text>
+<text class="step" x="657.1" y="1303">copied-join</text>
+<text class="step" x="657.1" y="1319">try-move</text>
+<text class="step" x="657.1" y="1335">share-team</text>
+<text class="step" x="657.1" y="1351">riley-finds</text>
+<text class="step" x="657.1" y="1367">swarm</text>
+<line class="rule" x1="24" x2="1277.6000000000001" y1="1380" y2="1380"/>
+<text class="station" x="34" y="1401"><tspan x="34">Share to a tailnet login</tspan></text>
+<text class="step" x="1120.7" y="1401">share</text>
+<text class="step" x="1120.7" y="1417">share-who</text>
+<text class="step" x="1120.7" y="1433">tell-ben</text>
+<g class="cmp"><rect x="1181.9" y="1423" width="16" height="13" rx="6.5"/><text x="1189.9" y="1433" text-anchor="middle">=</text></g>
+<text class="step" x="1120.7" y="1449">ben-opens</text>
+<text class="step" x="1120.7" y="1465">ben-watches</text>
+<text class="step" x="1120.7" y="1481">ben-tries</text>
+<line class="rule" x1="24" x2="1277.6000000000001" y1="1494" y2="1494"/>
+<text class="station" x="34" y="1515"><tspan x="34">Ask to drive, allowed</tspan></text>
+<text class="step" x="421.5" y="1515">try-typing</text>
+<text class="step" x="421.5" y="1531">ask-to-drive</text>
+<text class="step" x="421.5" y="1547">allow</text>
+<text class="step" x="421.5" y="1563">riley-types</text>
+<text class="step" x="421.5" y="1579">take-control</text>
+<text class="step" x="421.5" y="1595">riley-drives</text>
+<text class="step" x="421.5" y="1611">sam-sees</text>
+<text class="step" x="557.2" y="1515">riley-types</text>
+<text class="step" x="557.2" y="1531">sam-sees</text>
+<text class="step" x="657.1" y="1515">riley-tries</text>
+<text class="step" x="657.1" y="1531">riley-asks</text>
+<text class="step" x="657.1" y="1547">allow</text>
+<text class="step" x="657.1" y="1563">take-control</text>
+<text class="step" x="657.1" y="1579">riley-drives</text>
+<text class="step" x="657.1" y="1595">plus-on-geek</text>
+<text class="step" x="1120.7" y="1515">make-driver</text>
+<text class="step" x="1120.7" y="1531">ask-to-drive</text>
+<text class="step" x="1120.7" y="1547">allow</text>
+<text class="step" x="1120.7" y="1563">take-control</text>
+<text class="step" x="1120.7" y="1579">ben-drives</text>
+<line class="rule" x1="24" x2="1277.6000000000001" y1="1624" y2="1624"/>
+<text class="station" x="34" y="1645"><tspan x="34">One login, two devices</tspan></text>
+<text class="step" x="1120.7" y="1645">cam-opens</text>
+<text class="step" x="1120.7" y="1661">ana-sees-shared-login</text>
+<line class="rule" x1="24" x2="1277.6000000000001" y1="1674" y2="1674"/>
+<rect class="band" x="24" y="1674" width="1253.6000000000001" height="24"/><text class="zone-label" x="34" y="1690">NO JOURNEY YET</text>
+<text class="station gap" x="34" y="1719"><tspan x="34">Phone paired (QR,</tspan><tspan x="34" dy="16">notifications)</tspan></text><text class="why" x="272" y="1719"><tspan x="272">Getting started&#39;s Phone step: every journey skips it</tspan></text>
+<line class="rule" x1="24" x2="1277.6000000000001" y1="1748" y2="1748"/>
+<text class="station gap" x="34" y="1769"><tspan x="34">Homebrew install</tspan></text><text class="why" x="272" y="1769"><tspan x="272">on the install page; no journey</tspan></text>
+<line class="rule" x1="24" x2="1277.6000000000001" y1="1782" y2="1782"/>
+<text class="station gap" x="34" y="1803"><tspan x="34">Linux or Windows app</tspan></text><text class="why" x="272" y="1803"><tspan x="272">the journeys run the Mac app or a browser</tspan></text>
+<line class="rule" x1="24" x2="1277.6000000000001" y1="1816" y2="1816"/>
+<text class="station gap" x="34" y="1837"><tspan x="34">Read-only share link</tspan></text><text class="why" x="272" y="1837"><tspan x="272">Share&#39;s link for people with no login; no journey</tspan></text>
+<line class="rule" x1="24" x2="1277.6000000000001" y1="1850" y2="1850"/>
+<text class="station gap" x="34" y="1871"><tspan x="34">Dropped by control, join</tspan><tspan x="34" dy="16">again</tspan></text><text class="why" x="272" y="1871"><tspan x="272">control-dropped.spec covers the screens, not a person&#39;s path</tspan></text>
+<line class="rule" x1="24" x2="1277.6000000000001" y1="1900" y2="1900"/>
+<text class="station gap" x="34" y="1921"><tspan x="34">App approved as a device</tspan><tspan x="34" dy="16">after its sign-in</tspan></text><text class="why" x="272" y="1921"><tspan x="272">the fallback when Allow can&#39;t sign the app&#39;s keys (#758); control.spec covers it, no journey</tspan></text>
+<line class="rule" x1="24" x2="1277.6000000000001" y1="1950" y2="1950"/>
+<g class="cmp"><rect x="24" y="1966" width="16" height="13" rx="6.5"/><text x="32" y="1976" text-anchor="middle">=</text></g><text class="key" x="48" y="1976">compares: the person checks a code or fingerprint (J6: an address) on one screen against another (j.compared)</text>
 </svg>
