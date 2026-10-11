@@ -5,7 +5,7 @@
 
 import { execFileSync, spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { evaluate, certBody, joinCode, type Cert } from "./src/e2e/cert.ts";
+import { evaluate, certBody, joinCode, joinMac, splitJoinCode, type Cert } from "./src/e2e/cert.ts";
 import { generateKeys, signText } from "./src/e2e/keys.ts";
 import { E2ESocket } from "./src/e2e/channel.ts";
 import { follows, newInviteKey, redeemInvite, signInvite, signRedeem, signRoster, type Roster, type TeamPin } from "./src/e2e/team.ts";
@@ -30,6 +30,18 @@ check("same join code", (await joinCode(fx.daemon)) === fx.joinCode, fx.joinCode
   const got = [...(await evaluate(v.trust, v.certs, v.revocations)).keys()].sort();
   check("checked-in vectors: the trusted set", JSON.stringify(got) === JSON.stringify(v.trusted), got.join(","));
   check("checked-in vectors: the join code", (await joinCode(v.daemon)) === v.joinCode, v.joinCode);
+}
+
+// 1c. The join secret's MAC (#760): the same answer as Rust's
+// `the_join_mac_is_fixed` (crates/e2e/src/cert.rs), dashes or none.
+{
+  const c = { v: 1, account: "", device: "fedcba9876543210", kind: "daemon", name: "box", noise: "aa", sign: "bb", created: 0, approver: "", sig: "" } as Cert;
+  const trust = { account: "a1", root: "0123456789abcdef" };
+  const want = "21ec725fbc58f0e2aac0c21b84b6c9f99ca6f4a15bf48f5cf2d98598eaab135b";
+  check("the join MAC", (await joinMac("ABCD-EFGH-JKMN-PQRS", trust, c)) === want);
+  check("the join MAC without dashes", (await joinMac("ABCDEFGHJKMNPQRS", trust, c)) === want);
+  const split = splitJoinCode("abcde-fghjk.abcd efgh jkmn pqrs");
+  check("a whole code splits", split?.code === "ABCDE-FGHJK" && split.secret === "ABCD-EFGH-JKMN-PQRS", JSON.stringify(split));
 }
 
 // 2. Certificates signed here, evaluated by Rust.

@@ -3,8 +3,8 @@
 // list, and how to add a machine.
 
 import { useEffect, useState } from "preact/hooks";
-import { AlongsideError, api, cameToRecover, deviceName, inApp, inviteInHash, joinInHash, passkeyRegister, passkeySignIn, previewInvite, RefusedError, shownName, signedAppIn, signInNext, type AppLogin, type ControlSession, type JoinRequest } from "../control";
-import { fingerprint, normalizeCode, type Cert } from "../e2e/cert.ts";
+import { AlongsideError, api, cameToRecover, deviceName, inApp, inviteInHash, JOIN_HASH, joinInHash, passkeyRegister, passkeySignIn, previewInvite, RefusedError, shownName, signedAppIn, signInNext, takesSecret, wholeJoinInHash, type AppLogin, type ControlSession, type JoinRequest } from "../control";
+import { fingerprint, normalizeCode, normalizeSecret, splitJoinCode, type Cert } from "../e2e/cert.ts";
 import { useSubscribe } from "./hooks";
 import { directory } from "../hosts";
 import { CopyButton, CopyText, download } from "./copy";
@@ -166,6 +166,8 @@ function Waiting({ s }: { s: ControlSession }) {
     return () => removeEventListener("hashchange", on);
   }, []);
   const code = joinInHash(hash);
+  // The link to hand on keeps the secret (#760); control is told the code.
+  const whole = wholeJoinInHash(hash) ?? code;
   const name = deviceName();
   // "the Arugula app on jake-air", or "this browser (Chrome on Mac)".
   const what = inApp() ? `the ${name}` : `this browser (${name})`;
@@ -182,7 +184,7 @@ function Waiting({ s }: { s: ControlSession }) {
           You're signed in as <b>{s.login}</b>, here to add a machine with code <b>{code}</b>. Only a device already in your account can approve it,
           and this browser isn't one yet. On a browser or phone you use with Arugula, open:
         </p>
-        <CopyText text={`${s.info.url}/#join=${code}`} data-control-join-link />
+        <CopyText text={`${s.info.url}/#join=${whole}`} data-control-join-link />
         <p>Approve the code there, and pick where the machine goes: your account, or a team you own. That's the one approval the machine needs.</p>
         <p class="dim" data-waiting-also>
           That device also lists {what} next to the machine, with this fingerprint. Approve it too only if you want this browser to reach your
@@ -505,10 +507,12 @@ function JoinCodeForm({ s }: { s: ControlSession }) {
       class="control-code"
       onSubmit={(e) => {
         e.preventDefault();
-        location.hash = `join=${code.trim()}`;
+        // The whole code, secret too (#760): it stays in this page.
+        const j = splitJoinCode(code.trim());
+        location.hash = `join=${j ? (j.secret ? `${j.code}.${j.secret}` : j.code) : code.trim()}`;
       }}
     >
-      <input placeholder="XXXXX-XXXXX" value={code} onInput={(e) => setCode((e.target as HTMLInputElement).value)} aria-label="Join code" />
+      <input class="control-join-code" placeholder="XXXXX-XXXXX.XXXX-XXXX-XXXX-XXXX" value={code} onInput={(e) => setCode((e.target as HTMLInputElement).value)} aria-label="Join code" />
       <button type="submit" disabled={!code.trim() || s.phase !== "ready"}>
         Look up
       </button>
@@ -545,7 +549,7 @@ export function ControlOverlay({ s }: { s: ControlSession }) {
   }, []);
   if (s.phase !== "ready") return null;
   if (s.recoveryCodes) return <RecoveryCodes s={s} />;
-  const join = /^#join=([A-Za-z0-9-]+)$/.exec(hash)?.[1];
+  const join = JOIN_HASH.exec(hash)?.[1];
   if (join) return <JoinPrompt s={s} code={join} />;
   // The app's device asking to be approved comes first: it's the next step
   // after allowing its sign-in.
@@ -628,8 +632,20 @@ function dropHash() {
 /** A machine's join, by its code: from its approval link, typed in, or
  * (#326) brought by a waiting device that came to approve it (`from`).
  * Devices waiting with this code are listed alongside, and one Approve
- * covers the machine and them. */
-function JoinPrompt({ s, code, from }: { s: ControlSession; code: string; from?: Cert }) {
+ * covers the machine and them.
+ *
+ * #760: a machine whose link carries a secret (`CODE.SECRET`) is approved
+ * with a MAC under it, and there's nothing to compare: the code was
+ * recomputed from its key, and the machine checks the account itself. One
+ * that made a secret but reached this page without it (the code alone, or
+ * brought by a waiting device) asks for the whole code. An older machine
+ * makes none, and its code and the account's fingerprint are compared, as
+ * before. */
+function JoinPrompt({ s, code: whole, from }: { s: ControlSession; code: string; from?: Cert }) {
+  const parts = splitJoinCode(whole);
+  const code = parts?.code ?? whole;
+  // #760: the rest of the code, typed when the page has only the first half.
+  const [typed, setTyped] = useState<{ rest: string; bad: string | null }>({ rest: "", bad: null });
   const [j, setJ] = useState<JoinRequest | null>(null);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
@@ -641,6 +657,8 @@ function JoinPrompt({ s, code, from }: { s: ControlSession; code: string; from?:
   // Devices alongside that the person unticked.
   const [skip, setSkip] = useState<Set<string>>(new Set());
   useEffect(() => {
+    // Another code: nothing typed for the last one carries over.
+    setTyped({ rest: "", bad: null });
     // This browser's own trust, fresh, before it offers Approve (#327).
     void s.refresh();
     s.showJoin(code).then(
@@ -656,7 +674,7 @@ function JoinPrompt({ s, code, from }: { s: ControlSession; code: string; from?:
   if (from && err && !j) return <DevicePrompt s={s} c={from} />;
   // This browser waited with this code (#326), and it's gone: most likely
   // approved with this browser, on the device that approved both.
-  if (!from && err && !j && s.brought === normalizeCode(code))
+  if (!from && err && !j && s.brought === code)
     return (
       <Modal close={clearHash}>
         <h2>Add a machine?</h2>
@@ -690,16 +708,28 @@ function JoinPrompt({ s, code, from }: { s: ControlSession; code: string; from?:
     if (e instanceof RefusedError) setRefused(true);
     setBusy(false);
   };
+  // #760: the secret from the link (or the whole code typed in Look up),
+  // else the rest of the code typed here.
+  const secret = parts?.secret ?? (typed.bad ? null : normalizeSecret(typed.rest));
+  const sealed = !!j && (!!parts?.secret || takesSecret(j));
+  const askWhole = j && sealed && !parts?.secret ? <RestOfCode code={j.code} rest={typed.rest} bad={typed.bad} set={setTyped} cli={j.cert.kind === "cli"} /> : null;
   // M49: the Arugula CLI on a machine, asking to be one of your devices.
-  if (j?.cert.kind === "cli") return <CliJoin s={s} j={j} cancel={cancel} refused={refused} failed={failed} />;
+  if (j?.cert.kind === "cli")
+    return <CliJoin s={s} j={j} cancel={cancel} refused={refused} failed={failed} sealed={sealed} secret={secret} whole={askWhole} />;
   const machine = j ? (
-    <>
-      <p>
-        <b>{j.cert.name}</b> asks to join {j.team ? <>the team <b data-join-team={j.team.team}>{j.team.name}</b></> : "your account"} with code{" "}
-        <b data-join-code={j.code}>{j.code}</b>. Check it's the code the machine shows (in Getting started, or where you ran <code>arugulad join</code>).
+    sealed ? (
+      <p data-join-sealed>
+        <b>{j.cert.name}</b> asks to join {j.team ? <>the team <b data-join-team={j.team.team}>{j.team.name}</b></> : "your account"}.
       </p>
-      <p class="dim">Its key: {fingerprint(j.cert.device)}</p>
-    </>
+    ) : (
+      <>
+        <p>
+          <b>{j.cert.name}</b> asks to join {j.team ? <>the team <b data-join-team={j.team.team}>{j.team.name}</b></> : "your account"} with code{" "}
+          <b data-join-code={j.code}>{j.code}</b>. Check it's the code the machine shows (in Getting started, or where you ran <code>arugulad join</code>).
+        </p>
+        <p class="dim">Its key: {fingerprint(j.cert.device)}</p>
+      </>
+    )
   ) : null;
   return (
     <Modal close={from ? undefined : clearHash}>
@@ -744,7 +774,8 @@ function JoinPrompt({ s, code, from }: { s: ControlSession; code: string; from?:
           ) : (
             machine
           )}
-          {s.enrollment ? (
+          {askWhole}
+          {s.enrollment && !sealed ? (
             <p>
               Your account:{" "}
               <b class="fingerprint" data-join-account={s.enrollment.root}>
@@ -798,13 +829,13 @@ function JoinPrompt({ s, code, from }: { s: ControlSession; code: string; from?:
         <button
           class="primary"
           data-approve-join
-          disabled={!j || busy || cant}
+          disabled={!j || busy || cant || (sealed && !secret)}
           onClick={async () => {
             if (!j) return;
             setBusy(true);
             try {
               // The machine, then the devices that came with it.
-              await s.approveJoin(j.code, j.cert, team?.team ?? null, also);
+              await s.approveJoin(j.code, j.cert, team?.team ?? null, also, secret);
               clearHash();
             } catch (e) {
               // The machine is in: only the device is left to ask again.
@@ -820,12 +851,109 @@ function JoinPrompt({ s, code, from }: { s: ControlSession; code: string; from?:
   );
 }
 
+/** Letters people read for digits in a join code: its alphabet has no
+ * I, L or O, so they can only be 1, 1 and 0 (as Crockford's base32). */
+const LOOKALIKE: Record<string, string> = { I: "1", L: "1", O: "0" };
+
+/** What's typed in the rest-of-the-code field, as it's shown: the 16
+ * characters after the dot, uppercase, dashed every four. A whole code,
+ * pasted or typed, is fine when it starts with this `code`, and that half
+ * is stripped. Once there's a dot (or more than 16 characters) what comes
+ * first is a claimed code: one that isn't this one stays in the field, as
+ * typed, with the error, until it's fixed or cleared. */
+function restOf(raw: string, code: string): { rest: string; bad: string | null } {
+  let r = raw;
+  const dot = r.indexOf(".");
+  const squash = (t: string) => t.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const claimed = dot >= 0 ? squash(r.slice(0, dot)) : squash(r).length > 16 ? squash(r).slice(0, -16) : null;
+  if (dot >= 0) r = r.slice(dot + 1);
+  else if (claimed) r = squash(r).slice(-16);
+  if (claimed && normalizeCode(claimed) !== code) {
+    // Kept as typed, but tidied: the claimed code in its own shape, one
+    // dot, and what follows dashed as the rest is.
+    const after = squash(r).match(/.{1,4}/g)?.join("-") ?? "";
+    const head = normalizeCode(claimed) ?? claimed;
+    return { rest: dot >= 0 ? `${head}.${after}` : `${head}${after}`, bad: `That code starts ${head}, not ${code}.` };
+  }
+  const chars = r
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "")
+    .replace(/[ILO]/g, (c) => LOOKALIKE[c]);
+  const odd = chars.match(/[^ABCDEFGHJKMNPQRSTVWXYZ0-9]/)?.[0];
+  const kept = chars.replace(/[^ABCDEFGHJKMNPQRSTVWXYZ0-9]/g, "").slice(0, 16);
+  const rest = kept.match(/.{1,4}/g)?.join("-") ?? "";
+  if (odd) return { rest, bad: `Codes have no ${odd}.` };
+  return { rest, bad: null };
+}
+
+/** #760: a machine (or the CLI) made a join secret, but this page has only
+ * its code (typed alone, or brought by a waiting browser, #326). The code
+ * is shown as a fixed prefix, and only the rest is typed. */
+function RestOfCode({ code, rest, bad, set, cli }: { code: string; rest: string; bad: string | null; set: (r: { rest: string; bad: string | null }) => void; cli: boolean }) {
+  return (
+    <div class="control-rest" data-join-rest>
+      <p>Enter the rest of its code to approve.</p>
+      <div class="control-rest-field">
+        <span class="control-rest-known" aria-hidden="true">
+          {code}.
+        </span>
+        <input
+          data-join-whole
+          aria-label={`The rest of the code, after ${code}.`}
+          placeholder="XXXX-XXXX-XXXX-XXXX"
+          value={rest}
+          autoComplete="off"
+          autoCapitalize="characters"
+          spellcheck={false}
+          onInput={(e) => {
+            const el = e.target as HTMLInputElement;
+            const r = restOf(el.value, code);
+            el.value = r.rest;
+            set(r);
+          }}
+        />
+      </div>
+      {bad ? (
+        <p class="control-error" data-join-rest-error>
+          {bad}
+        </p>
+      ) : (
+        <p class="dim">
+          It's after the dot, {cli ? "" : "in Getting started or "}where you ran <code>{cli ? "arugula login" : "arugulad join"}</code>.
+        </p>
+      )}
+    </div>
+  );
+}
+
 /** M49: the Arugula CLI on some machine asks to be one of this account's
  * devices (`arugula login`). Approved, it reaches the account's machines
- * and can approve devices and machines, as this browser can. */
-function CliJoin({ s, j, cancel, refused, failed }: { s: ControlSession; j: JoinRequest; cancel: () => void; refused: boolean; failed: (e: unknown) => void }) {
+ * and can approve devices and machines, as this browser can. `sealed`:
+ * its link carries a secret (#760), so nothing is compared. */
+function CliJoin({
+  s,
+  j,
+  cancel,
+  refused,
+  failed,
+  sealed,
+  secret,
+  whole,
+}: {
+  s: ControlSession;
+  j: JoinRequest;
+  cancel: () => void;
+  refused: boolean;
+  failed: (e: unknown) => void;
+  sealed: boolean;
+  secret: string | null;
+  whole: preact.ComponentChildren;
+}) {
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  // Its name is "Arugula CLI on <host>" unless `--name` said otherwise:
+  // the machine, here, since the sentence says it's the command line.
+  const host = j.cert.name.replace(/^(Arugula|illogical) CLI on /, "");
   return (
     <Modal close={clearHash}>
       <h2>Add a terminal?</h2>
@@ -834,12 +962,21 @@ function CliJoin({ s, j, cancel, refused, failed }: { s: ControlSession; j: Join
           {err}
         </p>
       ) : null}
-      <p data-join-cli={j.cert.name}>
-        The Arugula command line on <b>{j.cert.name}</b> asks to be one of your devices, with code <b data-join-code={j.code}>{j.code}</b>. Check it's the code
-        it shows where you ran <code>arugula login</code>.
-      </p>
-      <p class="dim">Its key: {fingerprint(j.cert.device)}</p>
-      {s.enrollment ? (
+      {sealed ? (
+        <p data-join-cli={j.cert.name} data-join-sealed>
+          The Arugula command line on <b>{host}</b> asks to be one of your devices.
+        </p>
+      ) : (
+        <>
+          <p data-join-cli={j.cert.name}>
+            The Arugula command line on <b>{host}</b> asks to be one of your devices, with code <b data-join-code={j.code}>{j.code}</b>. Check it's the
+            code it shows where you ran <code>arugula login</code>.
+          </p>
+          <p class="dim">Its key: {fingerprint(j.cert.device)}</p>
+        </>
+      )}
+      {whole}
+      {s.enrollment && !sealed ? (
         <p>
           Your account:{" "}
           <b class="fingerprint" data-join-account={s.enrollment.root}>
@@ -856,11 +993,11 @@ function CliJoin({ s, j, cancel, refused, failed }: { s: ControlSession; j: Join
         <button
           class="primary"
           data-approve-join
-          disabled={busy}
+          disabled={busy || (sealed && !secret)}
           onClick={async () => {
             setBusy(true);
             try {
-              await s.approveJoin(j.code, j.cert);
+              await s.approveJoin(j.code, j.cert, null, [], secret);
               clearHash();
             } catch (e) {
               setErr((e as Error).message);

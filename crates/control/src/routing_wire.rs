@@ -579,6 +579,63 @@ async fn the_cli_joins_with_a_code_and_then_signs_as_its_account() {
     assert_eq!(c.daemon_get(&cli, "/api/directory").await.0, 401);
 }
 
+/// #760: a machine that joins with a secret says so (`join-secret`), the
+/// page sees that, and the approving device's MAC goes to the machine as
+/// it was sent. Control checks only its form: it can't check the MAC.
+#[tokio::test]
+async fn a_join_secrets_mac_passes_through_control_to_the_machine() {
+    let c = control(|_| {}).await;
+    let root = person(&c.app, "jake", "a1");
+    let ctl: Value = c.http.get(format!("{}/control.json", c.base)).send().await.unwrap().json().await.unwrap();
+    assert_eq!(ctl["join_secret"], 1);
+    let keys = DeviceKeys::generate();
+    let mut b = join_body(&keys, true);
+    b["features"] = json!("presigned-invites,owner-moves,join-secret");
+    let r: Value = c.http.post(format!("{}/api/join", c.base)).json(&b).send().await.unwrap().json().await.unwrap();
+    let (code, poll) = (r["code"].as_str().unwrap().to_owned(), r["poll"].as_str().unwrap().to_owned());
+    let cookie = session(&c.app, "a1");
+    let (st, shown) = c.as_person(&cookie, "GET", &format!("/api/joins/{code}"), None).await;
+    assert_eq!(st, 200);
+    assert!(shown["features"].as_str().unwrap().split(',').any(|f| f == "join-secret"), "{shown}");
+
+    let ask: Cert = serde_json::from_value(b["cert"].clone()).unwrap();
+    let mut approval = Cert { account: "a1".into(), ..ask };
+    approval.sign_with(&root);
+    let path = format!("/api/joins/{code}/approve");
+    let (st, _) = c.as_person(&cookie, "POST", &path, Some(json!({ "cert": approval, "mac": "not hex" }))).await;
+    assert_eq!(st, 400, "a MAC is 64 hex digits");
+    let mac = "ab".repeat(32);
+    let (st, _) = c.as_person(&cookie, "POST", &path, Some(json!({ "cert": approval, "mac": mac }))).await;
+    assert_eq!(st, 200);
+    let got: Value =
+        c.http.get(format!("{}/api/join/{code}?poll={poll}", c.base)).send().await.unwrap().json().await.unwrap();
+    assert_eq!(got["approved"], true);
+    assert_eq!(got["mac"], mac);
+}
+
+/// An approval without a MAC (an older page, or a machine with no secret)
+/// answers the machine as before: no `mac` at all.
+#[tokio::test]
+async fn an_approval_without_a_mac_answers_as_before() {
+    let c = control(|_| {}).await;
+    let root = person(&c.app, "jake", "a1");
+    let keys = DeviceKeys::generate();
+    let b = join_body(&keys, true);
+    let r: Value = c.http.post(format!("{}/api/join", c.base)).json(&b).send().await.unwrap().json().await.unwrap();
+    let (code, poll) = (r["code"].as_str().unwrap().to_owned(), r["poll"].as_str().unwrap().to_owned());
+    let ask: Cert = serde_json::from_value(b["cert"].clone()).unwrap();
+    let mut approval = Cert { account: "a1".into(), ..ask };
+    approval.sign_with(&root);
+    let cookie = session(&c.app, "a1");
+    let (st, _) =
+        c.as_person(&cookie, "POST", &format!("/api/joins/{code}/approve"), Some(json!({ "cert": approval }))).await;
+    assert_eq!(st, 200);
+    let got: Value =
+        c.http.get(format!("{}/api/join/{code}?poll={poll}", c.base)).send().await.unwrap().json().await.unwrap();
+    assert_eq!(got["approved"], true);
+    assert!(got.get("mac").is_none(), "{got}");
+}
+
 fn roster(team: &str, version: u64, members: Vec<Member>, by: &DeviceKeys) -> Roster {
     let mut r = Roster {
         v: 1,

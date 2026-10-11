@@ -5,9 +5,10 @@
 //!   front of this daemon, so the phone reaches it on the tailnet.
 //! - `POST /api/setup/control`: ask Arugula control to add this machine
 //!   (`arugulad join`); the answer is the code and where to approve it,
-//!   and the daemon waits for the approval in the background. Once
-//!   approved, the page shows the account's fingerprint to check against
-//!   the approving device, and
+//!   and the daemon waits for the approval in the background. The link
+//!   carries a join secret (#760), so an approval whose MAC checks out is
+//!   saved at once. With an older control (no secret), the page shows the
+//!   account's fingerprint to check against the approving device, and
 //!   `POST /api/setup/control/confirm` (`{"same": true}`) saves the join;
 //!   `false` drops it. On a machine control dropped (#325), the same
 //!   button joins again: the old enrollment is set aside first.
@@ -49,7 +50,7 @@ use crate::agent::{
     adapters::{ADAPTERS, Adapter, State as AdapterState},
     defs::Kind,
 };
-use crate::{ops::OpRoutes, server::App};
+use crate::{control::AccountCheck, ops::OpRoutes, server::App};
 
 pub const CONTROL: &str = "https://control.arugula.io";
 const TAILSCALE_ADMIN_DNS: &str = "https://login.tailscale.com/admin/dns";
@@ -128,6 +129,8 @@ struct ControlStatus {
 
 #[derive(Serialize, Clone)]
 struct Pending {
+    /// The whole code, with the join secret after a dot (#760) when there
+    /// is one: what to type where the link can't be opened.
     code: String,
     approve: String,
     /// When the code stops working (ms since the epoch).
@@ -402,7 +405,7 @@ async fn start_join(app: &Arc<App>, url: &str, team: Option<&str>) -> Value {
     match crate::control::join_start(url, &name, team, None, &dir, "Getting started").await {
         Ok(p) => {
             let pending = Pending {
-                code: p.code.clone(),
+                code: p.whole_code(),
                 approve: p.approve_url(),
                 expires_ms: now_ms() + p.expires_in_secs * 1000,
             };
@@ -414,16 +417,30 @@ async fn start_join(app: &Arc<App>, url: &str, team: Option<&str>) -> Value {
             let app = app.clone();
             tokio::spawn(async move {
                 let r = crate::control::join_finish(p).await;
-                // Back into the account it was removed from: the person
-                // checked its fingerprint when it first joined.
+                // The approving device answered the link's secret (#760),
+                // or it's back in the account it was removed from (the
+                // person checked that one when it first joined): saved.
                 let r = match r {
-                    Ok(a) if rejoining.as_deref().is_some_and(|root| a.is_account(root)) => {
+                    Ok(a)
+                        if a.check == AccountCheck::Proven
+                            || rejoining.as_deref().is_some_and(|root| a.is_account(root)) =>
+                    {
                         let saved = a.save(app.control.state_dir()).map(|_| ());
                         if saved.is_ok() {
                             *REMOVED.lock().unwrap() = None;
                         }
                         app.control.poke();
                         *JOIN.lock().unwrap() = (None, saved.err().map(|e| e.to_string()));
+                        return;
+                    }
+                    // The link had a secret, and the approval no answer to
+                    // it: the account is only control's word.
+                    Ok(a) if a.check == AccountCheck::Missing => {
+                        a.refuse(app.control.state_dir()).await;
+                        *JOIN.lock().unwrap() = (
+                            None,
+                            Some("Not joined: the approval came without the approving device's answer to this machine's secret (approved from the code alone?), so the account is only control's word. Connect again, and open the link, or type the whole code.".into()),
+                        );
                         return;
                     }
                     r => r,

@@ -54,8 +54,10 @@ interface Setup {
   control: {
     joined?: string;
     team?: string;
+    /** `code` is the whole code: with the join secret after a dot (#760). */
     pending?: { code: string; approve: string; expires_ms: number };
-    /** Approved: the account's fingerprint, to check before it's saved. */
+    /** Approved by an older control's page (no join secret, #760): the
+     * account's fingerprint, to check before it's saved. */
     confirm?: { account: string; approver: string; place: string };
     error?: string;
     /** #330: control said this machine's old key was removed, so the join
@@ -518,6 +520,25 @@ function hostOf(url: string): string {
   }
 }
 
+/** A join code to approve, big: with a join secret (#760), the secret
+ * goes on a line of its own after the code. The link carries both; typed,
+ * it's all of it, dot included. */
+function WholeCode({ code }: { code: string }) {
+  const dot = code.indexOf(".");
+  return (
+    <div class="start-code-big" data-start-code>
+      {dot < 0 ? (
+        code
+      ) : (
+        <>
+          {code.slice(0, dot)}
+          <span class="start-code-secret">{code.slice(dot)}</span>
+        </>
+      )}
+    </div>
+  );
+}
+
 /** #326: joining this machine is one approval, of its code, on a device
  * already in the account, where the account or team is picked. Approving
  * a browser (or the app's window) as a device is another, for reaching
@@ -563,7 +584,8 @@ function Cloud({
     await refresh();
     setBusy(false);
   };
-  // The person compared the account's fingerprints: keep the join, or drop it.
+  // The person compared the account's fingerprints (an older control, with
+  // no join secret, #760): keep the join, or drop it.
   const confirm = async (same: boolean) => {
     setBusy(true);
     const r = await post(opPath("setup.control_confirm"), { same });
@@ -641,15 +663,13 @@ function Cloud({
         <div class="start-code" data-start-pending>
           {droppedNote}
           <div class="start-kicker">Approve this code on a device you use</div>
-          <div class="start-code-big" data-start-code>
-            {c.pending.code}
-          </div>
+          <WholeCode code={c.pending.code} />
           <a class="start-btn primary big" href={c.pending.approve} target="_blank" rel="noreferrer" data-start-approve>
             Approve in Arugula cloud ↗
           </a>
           <p class="start-dim">
-            <span class="start-pulse" /> Waiting for the approval. Open the link (or type the code) on a browser or phone you already use with Arugula; that's
-            where you pick where {name} goes: your account, or a team you own. New here? It signs you up first (a passkey or GitHub).
+            <span class="start-pulse" /> Waiting for the approval. Open the link (or type the whole code) on a browser or phone you already use with
+            Arugula; that's where you pick where {name} goes: your account, or a team you own. New here? It signs you up first (a passkey or GitHub).
           </p>
           <p class="start-dim" data-start-one-approval>
             That's the only approval {name} needs. A browser that isn't one of your devices yet asks to be approved itself; that's separate, and only for
@@ -660,11 +680,7 @@ function Cloud({
         <div class="start-code" data-start-elsewhere>
           {droppedNote}
           <div class="start-kicker">{c.elsewhere.by} is joining this machine</div>
-          {c.elsewhere.code && (
-            <div class="start-code-big" data-start-code>
-              {c.elsewhere.code}
-            </div>
-          )}
+          {c.elsewhere.code && <WholeCode code={c.elsewhere.code} />}
           {c.elsewhere.approve && (
             <a class="start-btn primary big" href={c.elsewhere.approve} target="_blank" rel="noreferrer" data-start-approve>
               Approve in Arugula cloud ↗

@@ -12,8 +12,9 @@ pub struct Args {
     /// <hostname>].
     #[arg(long)]
     name: Option<String>,
-    /// The account's fingerprint, as the approving device shows it:
-    /// checked instead of asking.
+    /// The account's fingerprint, as the approving device shows it
+    /// (Devices and machines…): checked too. Only needed with an older
+    /// control or daemon, whose link has no secret to answer.
     #[arg(long, value_name = "FINGERPRINT")]
     account: Option<String>,
 }

@@ -556,6 +556,7 @@ pub async fn join_poll(State(app): State<Arc<App>>, Path(code): Path<String>, Qu
         team,
         certs,
         revocations: revs,
+        mac: j.mac,
     })
 }
 
@@ -572,7 +573,11 @@ pub async fn join_show(State(app): State<Arc<App>>, _s: Session, Path(code): Pat
         Some(t) => app.db.team(t)?.map(|t| json!({ "team": t.id, "name": t.name })),
         None => None,
     };
-    Ok(Json(json!({ "code": code, "cert": j.cert, "urls": j.urls, "created": j.created, "team": team })))
+    // `features` says whether it made a join secret (#760): then the page
+    // answers with a MAC, from the whole code, and nothing is compared.
+    Ok(Json(json!({
+        "code": code, "cert": j.cert, "urls": j.urls, "created": j.created, "team": team, "features": j.features,
+    })))
 }
 
 #[derive(Deserialize)]
@@ -584,6 +589,20 @@ pub struct JoinApprove {
     team: Option<String>,
     #[serde(default)]
     team_sig: Option<String>,
+    /// The approving device's MAC under the machine's join secret (#760),
+    /// passed on to the machine: control never sees the secret.
+    #[serde(default)]
+    mac: Option<String>,
+}
+
+/// A join secret's MAC as the page sends it: HMAC-SHA256, hex.
+fn mac_ok(mac: &Option<String>) -> Result<(), ApiError> {
+    match mac {
+        Some(m) if m.len() != 64 || !m.bytes().all(|b| b.is_ascii_hexdigit()) => {
+            Err(err(StatusCode::BAD_REQUEST, "the approval's MAC is 64 hex digits"))
+        }
+        _ => Ok(()),
+    }
 }
 
 pub async fn join_approve(
@@ -601,6 +620,7 @@ pub async fn join_approve(
             warn!(what = "join_approve", account = %s.account, why = "no such code (expired, used or turned down)", "refused");
             err(StatusCode::NOT_FOUND, "no such code (expired?)")
         })?;
+    mac_ok(&b.mac)?;
     let c = b.cert;
     if c.account != s.account || c.kind != j.cert.kind || !c.same_request(&j.cert) {
         refused("join_approve", &s.account, &c, "not the daemon that asked");
@@ -614,7 +634,7 @@ pub async fn join_approve(
             return Err(err(StatusCode::BAD_REQUEST, "a CLI joins your account, not a team"));
         }
         app.db.put_device(&c, true, now_ms())?;
-        app.db.approve_join(&code, &c, None)?;
+        app.db.approve_join(&code, &c, None, b.mac.as_deref())?;
         nudge(&app, &s.account);
         return Ok(Json(json!({ "approved": true, "device": c.device })));
     }
@@ -655,7 +675,7 @@ pub async fn join_approve(
         app.db.set_sandbox_daemon(sandbox, &c.device)?;
         crate::sandboxes::enrolled(&app, sandbox, &c).await?;
     }
-    app.db.approve_join(&code, &c, team.as_ref().map(|(t, sig)| (t.as_str(), sig.as_str())))?;
+    app.db.approve_join(&code, &c, team.as_ref().map(|(t, sig)| (t.as_str(), sig.as_str())), b.mac.as_deref())?;
     Ok(Json(json!({ "approved": true, "daemon": c.device })))
 }
 

@@ -279,6 +279,10 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     if !has("joins", "proven")? {
         conn.execute_batch("ALTER TABLE joins ADD COLUMN proven INTEGER NOT NULL DEFAULT 0")?;
     }
+    // #760: the approving device's MAC under the machine's join secret.
+    if !has("joins", "mac")? {
+        conn.execute_batch("ALTER TABLE joins ADD COLUMN mac TEXT")?;
+    }
     // #326: the machine's join code a waiting browser came to approve.
     if !has("devices", "join_code")? {
         conn.execute_batch("ALTER TABLE devices ADD COLUMN join_code TEXT")?;
@@ -433,6 +437,9 @@ pub struct Join {
     /// Poll hashes of requests a later one from this machine took over
     /// from, space-separated (#329).
     pub replaced: String,
+    /// The approving device's MAC under the machine's join secret (#760),
+    /// passed on to the machine as it is.
+    pub mac: Option<String>,
 }
 
 /// What asking for a join code did (#329).
@@ -1018,7 +1025,7 @@ impl Db {
             .c()
             .query_row(
                 "SELECT cert, poll_hash, urls, created, account, team, sandbox, team_sig, rejected,
-                 COALESCE(features, ''), proven, replaced FROM joins
+                 COALESCE(features, ''), proven, replaced, mac FROM joins
                  WHERE code = ?1 AND created >= ?2",
                 params![code, now.saturating_sub(JOIN_TTL_MS)],
                 |r| {
@@ -1035,6 +1042,7 @@ impl Db {
                         features: r.get(9)?,
                         proven: r.get(10)?,
                         replaced: r.get(11)?,
+                        mac: r.get(12)?,
                     })
                 },
             )
@@ -1043,10 +1051,17 @@ impl Db {
 
     /// Approved: the signed certificate replaces the request, and the team
     /// the approver chose (with their signature) replaces the one asked for.
-    pub fn approve_join(&self, code: &str, cert: &Cert, team: Option<(&str, &str)>) -> anyhow::Result<()> {
+    /// `mac` is the approving device's answer to the join secret (#760).
+    pub fn approve_join(
+        &self,
+        code: &str,
+        cert: &Cert,
+        team: Option<(&str, &str)>,
+        mac: Option<&str>,
+    ) -> anyhow::Result<()> {
         self.c().execute(
-            "UPDATE joins SET cert = ?2, account = ?3, team = ?4, team_sig = ?5 WHERE code = ?1",
-            params![code, serde_json::to_string(cert)?, cert.account, team.map(|t| t.0), team.map(|t| t.1)],
+            "UPDATE joins SET cert = ?2, account = ?3, team = ?4, team_sig = ?5, mac = ?6 WHERE code = ?1",
+            params![code, serde_json::to_string(cert)?, cert.account, team.map(|t| t.0), team.map(|t| t.1), mac],
         )?;
         Ok(())
     }

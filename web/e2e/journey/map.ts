@@ -59,7 +59,6 @@ const J1: Record<string, string> = {
   "github-authorize": "account",
   "recovery-codes": "account",
   "approve-machine": "account",
-  "confirm-account": "account",
   joined: "account",
   "app-signin": "signin",
   "allow-app": "signin",
@@ -162,7 +161,6 @@ const STEPS: Record<string, Record<string, string>> = {
  * docs/journey-steps.svg; each must be a step in `STEPS`.
  */
 const COMPARED: Record<string, string[]> = {
-  J1: ["approve-machine", "confirm-account"],
   J2a: ["confirm-share"],
   J6: ["tell-ben"],
 };
@@ -186,6 +184,7 @@ const UNCOVERED: [string, string][] = [
   ["Read-only share link", "Share's link for people with no login; no journey"],
   ["Dropped by control, join again", "control-dropped.spec covers the screens, not a person's path"],
   ["App approved as a device after its sign-in", "the fallback when Allow can't sign the app's keys (#758); control.spec covers it, no journey"],
+  ["The CLI signed in, or a machine joined over ssh", "arugula login, and arugulad join run over ssh (#760): control-smoke and the testnet cover them, no journey"],
 ];
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);

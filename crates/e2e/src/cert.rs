@@ -388,19 +388,22 @@ impl Refusal {
     }
 }
 
-/// The code a daemon shows when joining, derived from its keys: the device
 /// What a daemon signs with its own key when it asks to join (0.17 and
 /// newer): that whoever asks holds the key, not just its certificate.
 pub fn join_proof_body(cert: &Cert, ms: u64) -> String {
     format!("illogical join proof v1\n{ms}\n{}", cert.body())
 }
 
+/// The letters join codes and join secrets are written in: base32 without
+/// I, L, O and U.
+const ALPHABET: &[u8] = b"ABCDEFGHJKMNPQRSTVWXYZ0123456789";
+
+/// The code a daemon shows when joining, derived from its keys: the device
 /// approving it recomputes it from the certificate control shows, so
 /// control can't swap in a key of its own. Ten base32 characters, as
 /// `XXXXX-XXXXX`.
 pub fn join_code(cert: &Cert) -> String {
     use sha2::{Digest, Sha256};
-    const ALPHABET: &[u8] = b"ABCDEFGHJKMNPQRSTVWXYZ0123456789";
     let h = Sha256::digest(format!("illogical join\n{}\n{}\n", cert.noise, cert.sign).as_bytes());
     let mut bits: u64 = u64::from_be_bytes(h[..8].try_into().unwrap());
     let mut s = String::new();
@@ -434,6 +437,92 @@ pub fn normalize_code(s: &str) -> anyhow::Result<String> {
         bail!("a join code is ten letters and digits");
     }
     Ok(format!("{}-{}", &c[..5], &c[5..]))
+}
+
+// ---------------------------------------------------------------- the join secret (#760)
+//
+// A machine (or the CLI) joining makes a secret of its own and puts it in
+// the approval link after the code: `#join=<code>.<secret>`. The fragment
+// never reaches control's server, and the page sends control only the
+// code. The approving device answers with a MAC under the secret over the
+// account it approves into and the machine's keys ([`join_mac`]); the
+// machine checks it and pins that root without asking anyone to compare
+// fingerprints. Control sees the MAC but not the secret, so it can't make
+// one for an account of its own, nor for a key of its own.
+//
+// Control does see a MAC, so it could try secrets offline against it: the
+// secret is 16 characters (80 bits), not the code's 10, which puts that out
+// of reach in the ten minutes a join lasts. A wrong MAC ends the join
+// (the machine drops its key), so the online guess is one per code.
+
+/// The feature a daemon (or the CLI) names when it asks to join with a
+/// secret, so the page knows to send a MAC (`features=join-secret`).
+pub const JOIN_SECRET: &str = "join-secret";
+
+/// How many characters a join secret has (5 bits each).
+const SECRET_LEN: usize = 16;
+
+/// A new join secret, as `XXXX-XXXX-XXXX-XXXX`.
+pub fn join_secret() -> String {
+    let raw: String = crate::random::<SECRET_LEN>().iter().map(|b| ALPHABET[usize::from(b & 31)] as char).collect();
+    group_secret(&raw)
+}
+
+fn group_secret(raw: &str) -> String {
+    raw.as_bytes().chunks(4).map(|c| std::str::from_utf8(c).unwrap_or_default()).collect::<Vec<_>>().join("-")
+}
+
+/// A join secret as typed: 16 letters and digits, any case, dashes and
+/// spaces ignored. `None` if it isn't one.
+pub fn normalize_secret(s: &str) -> Option<String> {
+    let c: String = s.chars().filter(|c| c.is_ascii_alphanumeric()).map(|c| c.to_ascii_uppercase()).collect();
+    (c.len() == SECRET_LEN && c.bytes().all(|b| ALPHABET.contains(&b))).then(|| group_secret(&c))
+}
+
+/// A whole join code as the page or a person has it, `CODE.SECRET` or
+/// just `CODE`: the code (normalized) and the secret, if there is one.
+pub fn split_join_code(s: &str) -> anyhow::Result<(String, Option<String>)> {
+    match s.split_once('.') {
+        Some((code, secret)) => {
+            let secret = normalize_secret(secret)
+                .ok_or_else(|| anyhow::anyhow!("a join code's second half is 16 letters and digits"))?;
+            Ok((normalize_code(code)?, Some(secret)))
+        }
+        None => Ok((normalize_code(s)?, None)),
+    }
+}
+
+/// What the approving device MACs under the secret: the account it
+/// approves the machine into (its id and root device) and the machine's
+/// keys. Domain-separated from every other use of these keys.
+fn join_mac_body(trust: &Trust, cert: &Cert) -> String {
+    format!(
+        "arugula join secret v1\naccount {}\nroot {}\ndevice {}\nnoise {}\nsign {}\n",
+        trust.account, trust.root, cert.device, cert.noise, cert.sign
+    )
+}
+
+fn join_hmac(secret: &str, trust: &Trust, cert: &Cert) -> hkdf::hmac::Hmac<sha2::Sha256> {
+    use hkdf::hmac::{KeyInit, Mac};
+    // The key is the secret's 16 characters, without the dashes.
+    let key: String = secret.chars().filter(|c| *c != '-').collect();
+    let mut m = <hkdf::hmac::Hmac<sha2::Sha256> as KeyInit>::new_from_slice(key.as_bytes()).expect("any key length");
+    m.update(join_mac_body(trust, cert).as_bytes());
+    m
+}
+
+/// The approving device's answer (hex HMAC-SHA256): `secret` binds the
+/// account `trust` names to the machine whose keys are in `cert`.
+pub fn join_mac(secret: &str, trust: &Trust, cert: &Cert) -> String {
+    use hkdf::hmac::Mac;
+    hex::encode(join_hmac(secret, trust, cert).finalize().into_bytes())
+}
+
+/// Whether `mac` (hex) is [`join_mac`]'s, compared in constant time.
+pub fn join_mac_ok(secret: &str, trust: &Trust, cert: &Cert, mac: &str) -> bool {
+    use hkdf::hmac::Mac;
+    let Ok(mac) = hex::decode(mac.trim()) else { return false };
+    join_hmac(secret, trust, cert).verify_slice(&mac).is_ok()
 }
 
 #[cfg(test)]
@@ -572,6 +661,54 @@ mod tests {
         other.account = "elsewhere".into();
         other.sign_with(&rk);
         assert_eq!(t.refusal(&have, &[], &other), Some(Refusal::NoChain));
+    }
+
+    #[test]
+    fn join_secrets() {
+        let (_, root) = root("acct");
+        let k = DeviceKeys::generate();
+        let machine = Cert::new(&k, "", Kind::Daemon, "box");
+        let s = join_secret();
+        assert_eq!(s.len(), 19);
+        assert_eq!(normalize_secret(&s.to_lowercase().replace('-', " ")).as_deref(), Some(s.as_str()));
+        assert!(normalize_secret("ILOU-ILOU-ILOU-ILOU").is_none(), "not in the alphabet");
+        let code = join_code(&machine);
+        assert_eq!(split_join_code(&format!("{code}.{s}")).unwrap(), (code.clone(), Some(s.clone())));
+        assert_eq!(split_join_code(&code.to_lowercase()).unwrap(), (code.clone(), None));
+        assert!(split_join_code(&format!("{code}.ABCD")).is_err());
+
+        let trust = Trust { account: "acct".into(), root: root.device.clone() };
+        let mac = join_mac(&s, &trust, &machine);
+        assert!(join_mac_ok(&s, &trust, &machine, &mac));
+        // Another account, another key, another secret: none check out.
+        let theirs = Trust { account: "acct".into(), root: DeviceKeys::generate().id() };
+        assert!(!join_mac_ok(&s, &theirs, &machine, &mac));
+        let other = Cert::new(&DeviceKeys::generate(), "", Kind::Daemon, "box");
+        assert!(!join_mac_ok(&s, &trust, &other, &mac));
+        assert!(!join_mac_ok(&join_secret(), &trust, &machine, &mac));
+        assert!(!join_mac_ok(&s, &trust, &machine, "zz"));
+    }
+
+    /// The page computes the same MAC (`web/src/e2e/cert.ts`'s `joinMac`):
+    /// fixed inputs, fixed answer.
+    #[test]
+    fn the_join_mac_is_fixed() {
+        let trust = Trust { account: "a1".into(), root: "0123456789abcdef".into() };
+        let c = Cert {
+            v: 1,
+            account: String::new(),
+            device: "fedcba9876543210".into(),
+            kind: Kind::Daemon,
+            name: "box".into(),
+            noise: "aa".into(),
+            sign: "bb".into(),
+            created: 0,
+            approver: String::new(),
+            sig: String::new(),
+        };
+        let mac = join_mac("ABCD-EFGH-JKMN-PQRS", &trust, &c);
+        assert_eq!(mac, "21ec725fbc58f0e2aac0c21b84b6c9f99ca6f4a15bf48f5cf2d98598eaab135b");
+        assert_eq!(mac, join_mac("ABCDEFGHJKMNPQRS", &trust, &c), "dashes aside");
     }
 
     #[test]

@@ -88,28 +88,49 @@ async function signIn(page: Page) {
   await expect(page.locator(".control-center, .control-page, .app")).toBeVisible();
 }
 
-/** `arugulad join`, approved from `page`; then the daemon runs. */
-async function addMachine(page: Page, name: string, direct: boolean) {
+/** What an Arugula from before #760 says it understands: no
+ * `join-secret`, so no secret in its link, and the account is compared. */
+const BEFORE_SECRETS = { ARUGULA_FEATURES: "presigned-invites,owner-moves" };
+
+/** `arugulad join`, approved from `page`; then the daemon runs. `older`
+ * plays an Arugula from before #760 at the join, against this control and
+ * page: its link has only the code, the page shows the code and the
+ * account to compare, and it asks. */
+async function addMachine(page: Page, name: string, direct: boolean, older = false) {
   const state = temp(name);
   states[name] = state;
-  const joining = spawn("../target/debug/arugulad", ["join", base, "--name", name, "--state-dir", state], { stdio: ["pipe", "pipe", "ignore"] });
+  const joining = spawn("../target/debug/arugulad", ["join", base, "--name", name, "--state-dir", state], {
+    stdio: ["pipe", "pipe", "ignore"],
+    env: { ...process.env, ...(older ? BEFORE_SECRETS : {}) },
+  });
   procs.push(joining);
   const link = await new Promise<string>((res) => {
     let out = "";
     joining.stdout!.on("data", (d) => {
       out += d;
-      const m = out.match(/(http\S+#join=[A-Z0-9-]+)/);
+      const m = out.match(/(http\S+#join=[A-Z0-9.-]+)/);
       if (m) res(m[1]);
     });
   });
   const code = link.split("#join=")[1];
   const exited = new Promise<number | null>((r) => joining.on("exit", r));
   await page.goto(link);
-  await expect(page.locator("[data-join-code]")).toHaveText(code);
-  // The machine asks whether the account is the one this browser shows.
-  const account = await page.locator("[data-join-account]").getAttribute("data-join-account");
-  await page.locator("[data-approve-join]").click();
-  joining.stdin!.end(`${account}\n`);
+  if (older) {
+    expect(code).toMatch(/^[A-Z0-9]{5}-[A-Z0-9]{5}$/);
+    await expect(page.locator("[data-join-code]")).toHaveText(code);
+    // The machine asks whether the account is the one this browser shows.
+    const account = await page.locator("[data-join-account]").getAttribute("data-join-account");
+    await page.locator("[data-approve-join]").click();
+    joining.stdin!.end(`${account}\n`);
+  } else {
+    // #760: the code and the machine's secret after it, which control
+    // never sees. Nothing to compare, and the machine finishes by itself.
+    expect(code).toMatch(/^[A-Z0-9]{5}-[A-Z0-9]{5}\.[A-Z0-9]{4}(-[A-Z0-9]{4}){3}$/);
+    await expect(page.locator("[data-join-sealed]")).toBeVisible();
+    await expect(page.locator("[data-join-code]")).toHaveCount(0);
+    await expect(page.locator("[data-join-account]")).toHaveCount(0);
+    await page.locator("[data-approve-join]").click();
+  }
   expect(await exited).toBe(0);
   procs.push(
     spawn(
@@ -241,7 +262,8 @@ test("with no machine yet, the account's menu is there (#97)", async () => {
 
 test("two machines join by code; one direct, one only through the relay", async () => {
   await addMachine(laptop, "box", true);
-  await addMachine(laptop, "mac", false);
+  // #760: an older daemon still joins, through the compare path.
+  await addMachine(laptop, "mac", false, true);
   await laptop.goto("/");
   await expect.poll(() => hostNames(laptop), { timeout: 20_000 }).toEqual(["box", "mac"]);
   await expect
@@ -677,7 +699,50 @@ test("a browser the account removed says so before offering Approve, and enrolls
   await expect(phone.locator("[data-turned-down]")).toBeVisible({ timeout: 10_000 });
 });
 
-test("Getting started asks to check the account's fingerprint before the machine trusts it", async ({ browser }) => {
+test("Getting started joins as soon as a device approves: nothing to compare (#760)", async ({ browser }) => {
+  const state = temp("sealed");
+  procs.push(
+    spawn(
+      "../target/debug/arugulad",
+      [
+        ...["--listen", ANY, "--name", "sealed", "--state-dir", labs(state), "--control", base],
+        ...["--shell", "bash --norc --noprofile", "--no-manager-env", "--tailscale-socket", "/nonexistent/sock"],
+      ],
+      { stdio: "ignore" },
+    ),
+  );
+  const local = `http://127.0.0.1:${await daemonPort(state, procs.at(-1))}`;
+  const page = await (await browser.newContext()).newPage();
+  await page.goto(local);
+  await expect(page.locator(".session-button")).toBeVisible();
+  const start = page.getByRole("dialog", { name: "Getting started" });
+  if (!(await start.isVisible())) {
+    await page.locator(".app > .bar [data-account-menu]").click();
+    await page.getByRole("menuitem", { name: "Getting started" }).click();
+  }
+  await start.locator('[data-start-seg="cloud"]').click();
+  await start.locator("[data-start-connect]").click();
+  await expect(start.locator("[data-start-approve]")).toBeVisible({ timeout: 20_000 });
+  // The link carries the secret after the code; the panel shows both, for
+  // typing where the link can't be opened.
+  const link = (await start.locator("[data-start-approve]").getAttribute("href"))!;
+  const whole = link.split("#join=")[1];
+  expect(whole).toMatch(/^[A-Z0-9]{5}-[A-Z0-9]{5}\.[A-Z0-9]{4}(-[A-Z0-9]{4}){3}$/);
+  await expect(start.locator("[data-start-pending] [data-start-code]")).toHaveText(whole);
+  await laptop.goto(link);
+  await expect(laptop.locator("[data-join-sealed]")).toBeVisible();
+  await expect(laptop.locator("[data-join-code]")).toHaveCount(0);
+  await expect(laptop.locator("[data-join-account]")).toHaveCount(0);
+  await laptop.locator("[data-approve-join]").click();
+  // Straight to joined: no fingerprint to check.
+  await expect(start.locator("[data-start-joined]")).toHaveText("Joined to your account", { timeout: 20_000 });
+  await expect(start.locator("[data-start-confirm]")).toHaveCount(0);
+  await page.context().close();
+  await laptop.goto("/");
+  await expect.poll(() => hostNames(laptop), { timeout: 20_000 }).toContain("sealed");
+});
+
+test("an older daemon: Getting started asks to check the account's fingerprint before the machine trusts it", async ({ browser }) => {
   const state = temp("starter");
   procs.push(
     spawn(
@@ -686,7 +751,8 @@ test("Getting started asks to check the account's fingerprint before the machine
         ...["--listen", ANY, "--name", "starter", "--state-dir", labs(state), "--control", base],
         ...["--shell", "bash --norc --noprofile", "--no-manager-env", "--tailscale-socket", "/nonexistent/sock"],
       ],
-      { stdio: "ignore" },
+      // From before #760: no join secret, so the account is compared.
+      { stdio: "ignore", env: { ...process.env, ...BEFORE_SECRETS } },
     ),
   );
   const local = `http://127.0.0.1:${await daemonPort(state, procs.at(-1))}`;
@@ -756,11 +822,13 @@ test("a browser that isn't a device yet, here to approve a machine, leads with i
     let out = "";
     joining.stdout!.on("data", (d) => {
       out += d;
-      const m = out.match(/(http\S+#join=[A-Z0-9-]+)/);
+      const m = out.match(/(http\S+#join=[A-Z0-9.-]+)/);
       if (m) res(m[1]);
     });
   });
-  const code = link.split("#join=")[1];
+  // #760: the code, and the machine's secret after it.
+  const whole = link.split("#join=")[1];
+  const code = whole.split(".")[0];
   const exited = new Promise<number | null>((r) => joining.on("exit", r));
 
   // The machine's approval link, in a browser that isn't one of the
@@ -771,20 +839,34 @@ test("a browser that isn't a device yet, here to approve a machine, leads with i
   await visitor.locator("[data-signin=github]").click();
   await expect(visitor.locator(`[data-waiting-join="${code}"]`)).toBeVisible({ timeout: 20_000 });
   await expect(visitor.getByRole("heading", { name: "Approve the machine on a device you use" })).toBeVisible();
-  await expect(visitor.locator("[data-control-join-link]")).toHaveText(`${base}/#join=${code}`);
+  // The link it hands on keeps the secret; control was told the code.
+  await expect(visitor.locator("[data-control-join-link]")).toHaveText(`${base}/#join=${whole}`);
   await expect(visitor.locator("[data-waiting-also]")).toContainText("the machine joins either way");
   const fp = (await visitor.locator("[data-fingerprint]").getAttribute("data-fingerprint"))!;
 
   // The laptop gets one prompt with both, side by side.
   await laptop.goto("/");
   await expect(laptop.locator("[data-join-both]")).toBeVisible({ timeout: 20_000 });
-  await expect(laptop.locator("[data-join-machine] [data-join-code]")).toHaveText(code);
+  await expect(laptop.locator("[data-join-machine] [data-join-sealed]")).toBeVisible();
   await expect(laptop.locator(`[data-join-alongside="${fp}"] [data-pending="${fp}"]`)).toBeVisible();
   await expect(laptop.locator(`[data-join-also="${fp}"]`)).toBeChecked();
-  const account = await laptop.locator("[data-join-account]").getAttribute("data-join-account");
   await expect(laptop.locator("[data-approve-join]")).toHaveText("Approve both");
+  // Brought by the visitor, the laptop has only the code: it shows that
+  // half, asks for the rest, and Approve waits for it.
+  await expect(laptop.locator("[data-join-rest]")).toContainText(`${code}.`);
+  await expect(laptop.locator("[data-approve-join]")).toBeDisabled();
+  const secret = whole.split(".")[1];
+  await laptop.locator("[data-join-whole]").fill(secret.slice(0, 9));
+  await expect(laptop.locator("[data-approve-join]")).toBeDisabled();
+  // A whole code pasted in is taken, but only this machine's.
+  await laptop.locator("[data-join-whole]").fill(`${code === "AAAAA-AAAAA" ? "BBBBB-BBBBB" : "AAAAA-AAAAA"}.${secret}`);
+  await expect(laptop.locator("[data-join-rest-error]")).toBeVisible();
+  await expect(laptop.locator("[data-approve-join]")).toBeDisabled();
+  await laptop.locator("[data-join-whole]").fill(whole.toLowerCase());
+  await expect(laptop.locator("[data-join-whole]")).toHaveValue(secret);
+  await expect(laptop.locator("[data-approve-join]")).toBeEnabled();
+  await expect(laptop.locator("[data-join-account]")).toHaveCount(0);
   await laptop.locator("[data-approve-join]").click();
-  joining.stdin!.end(`${account}\n`);
   expect(await exited).toBe(0);
   // One approval: the browser is in too, and nothing else waits.
   await booted(visitor);
@@ -793,6 +875,81 @@ test("a browser that isn't a device yet, here to approve a machine, leads with i
   await expect(laptop.locator("[data-pending]")).toHaveCount(0);
   await expect(laptop.locator(".prompt")).toHaveCount(0);
   await visitor.context().close();
+});
+
+test("the rest of a code: typed key by key, another machine's stays an error, and nothing carries over to the next code (#760)", async () => {
+  // Two machines waiting; the laptop is given only their codes.
+  const ask = async (name: string) => {
+    const joining = spawn("../target/debug/arugulad", ["join", base, "--name", name, "--state-dir", temp(name)], { stdio: ["pipe", "pipe", "ignore"] });
+    procs.push(joining);
+    const whole = await new Promise<string>((res) => {
+      let out = "";
+      joining.stdout!.on("data", (d) => {
+        out += d;
+        const m = out.match(/#join=([A-Z0-9.-]+)\s/);
+        if (m) res(m[1]);
+      });
+    });
+    return { whole, code: whole.split(".")[0], secret: whole.split(".")[1] };
+  };
+  const a = await ask("rest-a");
+  const b = await ask("rest-b");
+  const field = laptop.locator("[data-join-whole]");
+  await laptop.goto(`/#join=${a.code}`);
+  await expect(laptop.locator("[data-join-rest]")).toContainText(`${a.code}.`);
+  // b's whole code, a key at a time: once the dot comes, it's b's, and it
+  // stays an error (and in the field) as the rest is typed.
+  await field.pressSequentially(b.whole);
+  await expect(laptop.locator("[data-join-rest-error]")).toContainText(b.code);
+  // Shown tidied: b's code in its own shape, one dot, then the rest.
+  await expect(field).toHaveValue(b.whole);
+  await expect(laptop.locator("[data-approve-join]")).toBeDisabled();
+  // On to b's code: what was typed for a is gone, error and all.
+  await laptop.evaluate((h) => (location.hash = h), `#join=${b.code}`);
+  await expect(laptop.locator("[data-join-rest]")).toContainText(`${b.code}.`);
+  await expect(field).toHaveValue("");
+  await expect(laptop.locator("[data-join-rest-error]")).toHaveCount(0);
+  // Its own whole code typed by hand: the matching half is dropped.
+  await field.pressSequentially(b.whole.toLowerCase());
+  await expect(field).toHaveValue(b.secret);
+  await expect(laptop.locator("[data-approve-join]")).toBeEnabled();
+  // Neither is wanted here.
+  await laptop.locator("[data-cancel-join]").click();
+  await laptop.goto(`/#join=${a.code}`);
+  await laptop.locator("[data-cancel-join]").click();
+  await expect(laptop.locator(".prompt")).toHaveCount(0);
+});
+
+test("a join link kept over a sign-in comes back only to its own code, and never over a link with a secret (#760)", async () => {
+  const KEY = "arugula:presigned-invite";
+  const code = "ABCDE-FGHJK";
+  const kept = `#join=${code}.AAAA-AAAA-AAAA-AAAA`;
+  const keep = (at: number) => laptop.evaluate(([k, h, t]) => sessionStorage.setItem(k as string, JSON.stringify({ hash: h, at: t })), [KEY, kept, at] as const);
+  const stored = () => laptop.evaluate((k) => sessionStorage.getItem(k), KEY);
+  await laptop.goto("/");
+  // Back from signing in: the code alone in the URL, so the kept link
+  // (with its secret) is put back, and read once.
+  await keep(Date.now());
+  await laptop.goto(`/#join=${code}`);
+  await expect.poll(() => laptop.evaluate(() => location.hash)).toBe(kept);
+  expect(await stored()).toBeNull();
+  // A retried join (same code, new secret) opened in the same tab: its
+  // link wins, and the kept one is gone.
+  const fresh = `#join=${code}.BBBB-BBBB-BBBB-BBBB`;
+  await laptop.goto("/");
+  await keep(Date.now());
+  await laptop.goto(`/${fresh}`);
+  await laptop.waitForFunction(() => window.__arugula?.control?.phase === "ready");
+  expect(await laptop.evaluate(() => location.hash)).toBe(fresh);
+  expect(await stored()).toBeNull();
+  // Kept longer than a join lasts: not put back, even for its code.
+  await laptop.goto("/");
+  await keep(Date.now() - 60 * 60 * 1000);
+  await laptop.goto(`/#join=${code}`);
+  await laptop.waitForFunction(() => window.__arugula?.control?.phase === "ready");
+  expect(await laptop.evaluate(() => location.hash)).toBe(`#join=${code}`);
+  expect(await stored()).toBeNull();
+  await laptop.goto("/");
 });
 
 test("sessions: where you're signed in, and signing out everywhere (#173)", async () => {

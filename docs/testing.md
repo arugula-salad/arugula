@@ -561,7 +561,7 @@ journey shows the change.
 
 | Journey | What |
 |---|---|
-| J1 | one person on the Mac app, from no account to a command in a terminal: Getting started's Cloud step, an account made from the machine's approval link, recovery codes, the machine approved and its account's fingerprint checked, the app signed in through the browser (one Allow, which also makes it a device: no code or fingerprint to compare, #758), the app reopened |
+| J1 | one person on the Mac app, from no account to a command in a terminal: Getting started's Cloud step, an account made from the machine's approval link, recovery codes, the machine approved (one Approve: the link carries the machine's secret, so there's no code or account fingerprint to compare, #760), the app signed in through the browser (one Allow, which also makes it a device: no code or fingerprint to compare, #758), the app reopened |
 | J2a | two friends, each through J1 first: one shares a session with the other (not a teammate), who accepts, finds the machine, asks to drive, is allowed, takes control and types; the owner sees it |
 | J2b | the same through a team: a one-click invite, the owner's machine moved into the team with *Team …*, the friend driving it by role |
 | J2c | the evening #551 audits: the owner's machine already in a team, a friend's second team, the team page's `arugulad join … --team` (not on the app's PATH, #550, and the machine is already in a team), *Team …*, sharing with the team, the Swarm, *+* on a teammate's machine |
@@ -575,7 +575,10 @@ The rules, which are the point:
 - Steps act only on what a person sees: roles, visible text, a tooltip.
   No `window.__arugula`, `data-*` hooks or API calls to act (the page's
   own hooks only to read a terminal's text, which is canvas). Codes and
-  fingerprints are read off one screen and checked on the other.
+  fingerprints are read off one screen and checked on the other. A
+  journey that follows a link carrying a secret (a machine's approval
+  link, #760) has none to check there; a typed code is still read off one
+  screen and typed on the other.
   Commands run as the page printed them, in a shell whose PATH is what
   the app leaves (`~/.local/bin` with only `arugula` in it).
 - Each person starts with an empty home and no account; control is the
@@ -671,7 +674,7 @@ import { Device } from "./fixtures/device.ts";
 const me = await Device.signIn({ control, login: "alice" }); // the account's first device: trusted
 const phone = await Device.signIn({ control, login: "alice", name: "phone" }); // waits
 await me.approveDevice(phone);
-await me.approveJoin("ABCDE-FGHIJ");              // the code after #join=
+await me.approveJoin("ABCDE-FGHIJ.KLMN-PQRS-TVWX-YZ01"); // the whole code after #join=
 const box = await me.waitOnline("box");          // control's directory
 await me.roundTrip(box.id, "MARKER");            // echo through its first pane, over the relay
 const sock = await me.connect(box.id);           // or an E2ESocket of your own
@@ -691,17 +694,23 @@ the device in a state file; each command prints one JSON object:
 ```sh
 d() { node --experimental-strip-types web/fixtures/device-cli.ts --state /tmp/dev.json "$@"; }
 d signin --control http://127.0.0.1:7690 --login alice   # {account, fingerprint, device, approved}
-d approve ABCDE-FGHIJ                                     # {device, name}
+d approve ABCDE-FGHIJ.KLMN-PQRS-TVWX-YZ01                 # {device, name}
 d devices                                                 # {devices: [{id, kind, name}]}
 d online box 30                                           # wait up to 30s
 d pane box MARKER                                         # round-trip through its first pane
 ```
 
-`arugulad join --account <fingerprint>` (and `arugula join
---account`, and `arugula login --account`) takes the account without
-asking; the fingerprint is what `signin` printed. `just control-smoke` and
-the testnet's `control` claims use both. `approve` takes a CLI's code from
-`arugula login` as well as a daemon's.
+`approveJoin(…)` and `approve` take the whole code `arugulad join` or
+`arugula login` prints after `#join=`: the code, a dot, and the machine's
+secret (#760). With the secret, the approval carries the MAC the machine
+checks, and it finishes without asking anything. With the code alone (an
+older daemon or CLI prints no secret), `arugulad join --account
+<fingerprint>` (and `arugula join --account`, and `arugula login
+--account`) takes the account without asking; the fingerprint is what
+`signin` printed. A machine that made a secret and gets an approval
+without its MAC refuses unless `--account` names the account. `just
+control-smoke` and the testnet's `control` claims pass both. `approve`
+takes a CLI's code from `arugula login` as well as a daemon's.
 
 ## The desktop app's tests
 

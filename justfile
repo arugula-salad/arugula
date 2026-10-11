@@ -586,6 +586,7 @@ install: build
 # This checkout's web client as control.arugula.io serves it: a local
 # control (fake GitHub sign-in) on 7690 with machines joined to it
 # (default: workstation laptop), rebuilt on every change (web/dev-control.ts).
+# DEV_CONTROL_APPROVE_BROWSERS=0 leaves a signed-in browser waiting.
 dev-control *machines:
     {{cargo}} build -p arugulad -p arugula-control
     cd web && TARGET_DIR="{{target_dir}}/debug" node --experimental-strip-types --no-warnings dev-control.ts {{machines}}

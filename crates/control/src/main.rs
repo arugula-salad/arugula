@@ -535,6 +535,9 @@ async fn control_json(
         daemon_auth: 2,
         // The CLI joins with a code and signs its requests (M49).
         cli_join: 1,
+        // A join's approval carries the approving device's MAC under the
+        // secret in the machine's link (#760), passed on to the machine.
+        join_secret: 1,
         // The ssh jump host for guests of daemons behind NAT (M65).
         guest_ssh: app.jump.as_ref().map(guest_jump::Jump::describe),
     })

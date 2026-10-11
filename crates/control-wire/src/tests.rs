@@ -126,6 +126,13 @@ fn a_join_poll_has_three_shapes() {
     let mut unsigned = approved;
     unsigned["team"] = json!({ "team": "t1", "founder": "a1", "founder_root": "r1", "name": "crew", "sig": null });
     round::<JoinPoll>(unsigned);
+    // With the approving device's MAC under the join secret (#760).
+    let mut with_mac = json!({
+        "approved": true, "cert": cert(), "trust": { "account": "a1", "root": "r1" },
+        "certs": [], "revocations": [], "team": null,
+    });
+    with_mac["mac"] = json!("ab12");
+    assert_eq!(round::<JoinPoll>(with_mac).mac.as_deref(), Some("ab12"));
     // What the constructors say is what control said.
     assert_eq!(serde_json::to_value(JoinPoll::waiting()).unwrap(), json!({ "approved": false }));
     assert_eq!(
@@ -296,7 +303,7 @@ fn the_dial_query_carries_the_direct_urls_as_json() {
 fn control_json_is_what_control_says() {
     let full = json!({
         "control": true, "url": "https://control.example", "github": true, "passkeys": true,
-        "vapid": "BKey", "github_app": null, "daemon_auth": 2, "cli_join": 1,
+        "vapid": "BKey", "github_app": null, "daemon_auth": 2, "cli_join": 1, "join_secret": 1,
         "guest_ssh": { "host": "jump.example", "port": 22, "known_hosts": "jump.example ssh-ed25519 AAAA", "fingerprint": "SHA256:x" },
     });
     let c = round::<ControlInfo>(full.clone());
@@ -316,6 +323,19 @@ fn an_older_controls_control_json_parses() {
     assert!(c.guest_ssh.is_none() && c.cli_join == 0);
     let old: ControlInfo = parse(&json!({ "control": true, "url": "u" }));
     assert_eq!(old.daemon_auth, 0);
+    assert_eq!(old.join_secret, 0);
+    // Without it, it isn't said at all.
+    assert!(serde_json::to_value(&old).unwrap().get("join_secret").is_none());
+}
+
+/// A machine or the CLI reads only `join_secret` to decide on a secret
+/// (#760); an older control doesn't say, and a malformed field elsewhere
+/// doesn't hide it.
+#[test]
+fn join_secret_is_read_on_its_own() {
+    let c: ControlJoinSecret = parse(&json!({ "join_secret": 1, "vapid": 5, "guest_ssh": "nope" }));
+    assert_eq!(c.join_secret, 1);
+    assert_eq!(parse::<ControlJoinSecret>(&json!({ "daemon_auth": 2 })).join_secret, 0);
 }
 
 /// A `/control.json` with a field this daemon can't take still says how to
@@ -364,6 +384,11 @@ fn the_cli_joins_with_a_cert_and_a_proof_only() {
     // Control reads it as the daemon's request, the rest defaulted.
     let r: JoinRequest = parse(&recorded);
     assert!(r.urls.is_empty() && r.team.is_none() && r.ticket.is_none() && r.features.is_empty());
+    // With a secret in its link (#760), it says so.
+    let mut secret = recorded;
+    secret["features"] = json!("join-secret");
+    round::<CliJoinRequest>(secret.clone());
+    assert_eq!(parse::<JoinRequest>(&secret).features, "join-secret");
 }
 
 /// The CLI read `expires_in_secs` with a default of ten minutes.
