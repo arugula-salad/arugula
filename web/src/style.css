@@ -8500,12 +8500,6 @@ html[data-finish="glass"] .prompt-backdrop {
   letter-spacing: 0.03em;
 }
 
-.control-device-type {
-  display: grid;
-  gap: 6px;
-  margin: 8px 0;
-}
-
 .control-older {
   margin: 8px 0;
 }

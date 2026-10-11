@@ -763,7 +763,7 @@ function JoinPrompt({ s, code: whole, from, device }: { s: ControlSession; code:
   const parts = splitJoinCode(whole);
   const code = parts?.code ?? whole;
   // #760: the rest of the code, typed when the page has only the first half.
-  const [typed, setTyped] = useState<{ rest: string; bad: string | null }>({ rest: "", bad: null });
+  const [typed, setTyped] = useState<Rest>(NO_REST);
   const [j, setJ] = useState<JoinRequest | null>(null);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
@@ -775,7 +775,7 @@ function JoinPrompt({ s, code: whole, from, device }: { s: ControlSession; code:
   // Devices alongside that the person unticked.
   const [skip, setSkip] = useState<Set<string>>(new Set());
   // #761: codes typed or scanned for devices alongside, by id.
-  const [typedCodes, setTypedCodes] = useState<Map<string, string>>(new Map());
+  const [typedCodes, setTypedCodes] = useState<Map<string, Rest>>(new Map());
   useEffect(() => {
     // Another code: nothing typed for the last one carries over.
     setTyped({ rest: "", bad: null });
@@ -823,7 +823,7 @@ function JoinPrompt({ s, code: whole, from, device }: { s: ControlSession; code:
   const codes = new Map<string, DeviceCode>();
   for (const c of alongside) {
     const want = s.pendingCodes.get(c.device);
-    const given = [linked, splitDeviceCode(typedCodes.get(c.device) ?? "")].find((d) => d && d.code === want);
+    const given = (want && linked?.code === want ? linked : null) ?? typedCode(want ?? "", typedCodes.get(c.device) ?? NO_REST);
     if (given) codes.set(c.device, given);
   }
   const ready = (c: Cert) => !s.sealed(c) || codes.has(c.device);
@@ -886,11 +886,10 @@ function JoinPrompt({ s, code: whole, from, device }: { s: ControlSession; code:
                         {codes.has(c.device) && linked?.code === codes.get(c.device)!.code ? " Its code came with the link." : null}
                       </p>
                       {codes.has(c.device) && linked?.code === codes.get(c.device)!.code ? null : (
-                        <DeviceCodeInput
-                          name={c.name}
-                          ok={codes.has(c.device)}
-                          typed={typedCodes.get(c.device) ?? ""}
-                          setTyped={(t) => setTypedCodes(new Map(typedCodes).set(c.device, t))}
+                        <DeviceRest
+                          code={s.pendingCodes.get(c.device) ?? ""}
+                          typed={typedCodes.get(c.device) ?? NO_REST}
+                          set={(t) => setTypedCodes(new Map(typedCodes).set(c.device, t))}
                         />
                       )}
                     </>
@@ -1035,19 +1034,63 @@ function restOf(raw: string, code: string): { rest: string; bad: string | null }
   return { rest, bad: null };
 }
 
+/** What's typed in a `RestOfCode` field. */
+type Rest = { rest: string; bad: string | null };
+const NO_REST: Rest = { rest: "", bad: null };
+
 /** #760: a machine (or the CLI) made a join secret, but this page has only
  * its code (typed alone, or brought by a waiting browser, #326). The code
- * is shown as a fixed prefix, and only the rest is typed. */
-function RestOfCode({ code, rest, bad, set, cli }: { code: string; rest: string; bad: string | null; set: (r: { rest: string; bad: string | null }) => void; cli: boolean }) {
+ * is shown as a fixed prefix, and only the rest is typed. #761: the same
+ * for a waiting device's code (`what="device"`), whose first half is its
+ * request's keys' code; there the rest can be scanned too. */
+function RestOfCode({
+  code,
+  rest,
+  bad,
+  set,
+  cli = false,
+  what = "join",
+  hint,
+}: {
+  code: string;
+  rest: string;
+  bad: string | null;
+  set: (r: Rest) => void;
+  cli?: boolean;
+  what?: "join" | "device";
+  hint?: preact.ComponentChildren;
+}) {
+  const [scanning, setScanning] = useState(false);
+  const tag = (t: string) => ({ [`data-${what}-${t}`]: "" });
   return (
-    <div class="control-rest" data-join-rest>
-      <p>Enter the rest of its code to approve.</p>
+    <div class="control-rest" {...tag("rest")}>
+      <p>
+        Enter the rest of its code to approve.
+        {what === "device" && canScan() && !scanning ? (
+          <>
+            {" "}
+            <button type="button" class="control-linkish" data-scan onClick={() => setScanning(true)}>
+              Scan it
+            </button>
+          </>
+        ) : null}
+      </p>
+      {scanning ? (
+        <Scanner
+          accept={(t) => {
+            const d = splitDeviceCode(t);
+            if (d) set(restOf(`${d.code}.${d.secret}`, code));
+            return !!d;
+          }}
+          close={() => setScanning(false)}
+        />
+      ) : null}
       <div class="control-rest-field">
         <span class="control-rest-known" aria-hidden="true">
           {code}.
         </span>
         <input
-          data-join-whole
+          {...tag("whole")}
           aria-label={`The rest of the code, after ${code}.`}
           placeholder="XXXX-XXXX-XXXX-XXXX"
           value={rest}
@@ -1063,12 +1106,16 @@ function RestOfCode({ code, rest, bad, set, cli }: { code: string; rest: string;
         />
       </div>
       {bad ? (
-        <p class="control-error" data-join-rest-error>
+        <p class="control-error" {...tag("rest-error")}>
           {bad}
         </p>
       ) : (
         <p class="dim">
-          It's after the dot, {cli ? "" : "in Getting started or "}where you ran <code>{cli ? "arugula login" : "arugulad join"}</code>.
+          {hint ?? (
+            <>
+              It's after the dot, {cli ? "" : "in Getting started or "}where you ran <code>{cli ? "arugula login" : "arugulad join"}</code>.
+            </>
+          )}
         </p>
       )}
     </div>
@@ -1306,18 +1353,18 @@ function ShareOfferPrompt({ s, o }: { s: ControlSession; o: ShareOffer }) {
  * compare. One from before codes shows its fingerprint, as before. */
 function DevicePrompt({ s, c, given, done }: { s: ControlSession; c: Cert; given?: DeviceCode; done?: () => void }) {
   const [err, setErr] = useState("");
-  const [typed, setTyped] = useState("");
+  const [typed, setTyped] = useState<Rest>(NO_REST);
   const act = (f: () => Promise<void>) => f().then(() => done?.(), (e: Error) => setErr(e.message));
   const sealed = s.sealed(c);
-  const want = s.pendingCodes.get(c.device);
-  const code = [given, splitDeviceCode(typed)].find((d) => d && d.code === want) ?? null;
+  const want = s.pendingCodes.get(c.device) ?? "";
+  const code = (given?.code === want ? given : null) ?? typedCode(want, typed);
   return (
     <Modal>
       <h2>New device?</h2>
       {sealed ? (
         <p data-pending={c.device} data-device-sealed>
           <b>{c.name}</b> wants to reach your machines.{" "}
-          {code && code === given ? "Approve it if it's the one that showed you this code." : "Approve it with the code it shows: scan it, or type it."}
+          {code && code === given ? "Approve it if it's the one that showed you this code." : null}
         </p>
       ) : (
         <>
@@ -1329,7 +1376,7 @@ function DevicePrompt({ s, c, given, done }: { s: ControlSession; c: Cert; given
           </p>
         </>
       )}
-      {sealed && !(code && code === given) ? <DeviceCodeInput name={c.name} ok={!!code} typed={typed} setTyped={setTyped} /> : null}
+      {sealed && !(code && code === given) ? <DeviceRest code={want} typed={typed} set={setTyped} /> : null}
       {err ? <p class="control-error">{err}</p> : null}
       <p class="dim">If you didn't just sign in on it, turn it down.</p>
       <div class="prompt-buttons">
@@ -1344,48 +1391,15 @@ function DevicePrompt({ s, c, given, done }: { s: ControlSession; c: Cert; given
   );
 }
 
-/** #761: the code a waiting device shows, scanned with this device's
- * camera or typed: `XXXXX-XXXXX.XXXX-XXXX-XXXX-XXXX`. */
-function DeviceCodeInput({ name, ok, typed, setTyped }: { name: string; ok: boolean; typed: string; setTyped: (t: string) => void }) {
-  const [scanning, setScanning] = useState(false);
-  const parsed = splitDeviceCode(typed);
-  return (
-    <div class="control-whole-code">
-      {scanning ? (
-        <Scanner
-          accept={(t) => {
-            const d = splitDeviceCode(t);
-            if (d) setTyped(`${d.code}.${d.secret}`);
-            return !!d;
-          }}
-          close={() => setScanning(false)}
-        />
-      ) : canScan() ? (
-        <p>
-          <button type="button" data-scan onClick={() => setScanning(true)}>
-            Scan its code
-          </button>
-        </p>
-      ) : null}
-      <label class="control-device-type">
-        {canScan() ? "Or type" : "Type"} the code {name} shows:
-        <input
-          class="control-join-code"
-          data-device-whole
-          placeholder="XXXXX-XXXXX.XXXX-XXXX-XXXX-XXXX"
-          value={typed}
-          autoComplete="off"
-          spellcheck={false}
-          onInput={(e) => setTyped((e.target as HTMLInputElement).value)}
-        />
-      </label>
-      {typed.trim() && !ok ? (
-        <p class="control-error" data-device-mismatch>
-          {parsed ? `That isn't the code ${name} shows.` : "That isn't a whole code yet: ten letters and digits, a dot, and four groups of four."}
-        </p>
-      ) : null}
-    </div>
-  );
+/** #761: the rest of a waiting device's code, after its lookup. */
+function DeviceRest({ code, typed, set }: { code: string; typed: Rest; set: (r: Rest) => void }) {
+  return <RestOfCode what="device" code={code} rest={typed.rest} bad={typed.bad} set={set} hint="It's after the dot, on the screen asking to be approved." />;
+}
+
+/** #761: the code typed after `lookup`, once it's whole. */
+function typedCode(lookup: string, typed: Rest): DeviceCode | null {
+  const secret = typed.bad ? null : normalizeSecret(typed.rest);
+  return lookup && secret ? { code: lookup, secret } : null;
 }
 
 /** #761: here from a waiting device's QR code or link (`#device=`): the

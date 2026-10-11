@@ -320,10 +320,11 @@ fingerprint:
   certificate and `features: "device-secret"` with its request, and
   signing in with GitHub from a `#device=` link keeps the link in
   sessionStorage rather than in `next`.
-- **The approving device** reads it: a phone's camera opens the link, the
-  *Scan its code* button reads it in the page (`BarcodeDetector`, or jsQR
-  where there's none), or it's typed into *New device?*. The page finds the
-  request whose keys give that lookup, so control can't swap the key, and
+- **The approving device** reads it: a phone's camera opens the link,
+  *Scan it* reads it in the page (`BarcodeDetector`, or jsQR where there's
+  none), or the rest of it is typed into *New device?* after the lookup,
+  which the page shows fixed (the request's keys give it). The lookup
+  must be that request's keys' code, so control can't swap the key, and
   sends with the certificate it signs
   `HMAC-SHA256(secret, "arugula device secret v1", account, root, the device's id and keys)`
   (`deviceMac` in `web/src/e2e/cert.ts`), where the root is the one the

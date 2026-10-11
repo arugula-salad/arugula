@@ -337,11 +337,18 @@ test("a phone needs the laptop's approval", async ({ browser }) => {
   await expect(laptop.locator(`[data-pending="${fp}"][data-device-sealed]`)).toBeVisible({ timeout: 20_000 });
   await expect(laptop.locator(".prompt .fingerprint")).toHaveCount(0);
   await expect(laptop.locator("[data-approve]")).toBeDisabled();
-  // Another device's code (the right shape) isn't this one's.
+  // Its first half is shown, fixed: only the rest is typed.
+  const [lookup, rest] = code.split(".");
+  await expect(laptop.locator("[data-device-rest] .control-rest-known")).toHaveText(`${lookup}.`);
+  // Another device's whole code, pasted, isn't this one's.
   await laptop.locator("[data-device-whole]").fill("ABCDE-FGHJK.ABCD-EFGH-JKMN-PQRS");
-  await expect(laptop.locator("[data-device-mismatch]")).toBeVisible();
+  await expect(laptop.locator("[data-device-rest-error]")).toBeVisible();
   await expect(laptop.locator("[data-approve]")).toBeDisabled();
-  await laptop.locator("[data-device-whole]").fill(code.toLowerCase());
+  // Half of the rest: still waiting for it.
+  await laptop.locator("[data-device-whole]").fill(rest.slice(0, 9).toLowerCase());
+  await expect(laptop.locator("[data-approve]")).toBeDisabled();
+  await laptop.locator("[data-device-whole]").fill(rest.toLowerCase().replace(/-/g, ""));
+  await expect(laptop.locator("[data-device-whole]")).toHaveValue(rest);
   await laptop.locator("[data-approve]").click();
   await expect.poll(() => hostNames(phone), { timeout: 20_000 }).toEqual(["box", "mac"]);
   // It pinned the laptop's root, without asking.
