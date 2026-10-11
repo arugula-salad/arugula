@@ -1759,7 +1759,7 @@ function Devices({ s, close }: { s: ControlSession; close: () => void }) {
           <span class="fingerprint-inline" data-account-fingerprint={s.enrollment.root}>
             {fingerprint(s.enrollment.root)}
           </span>
-          , your first device's. A machine shows it when it joins; check they match.
+          , your first device's. Someone verifying you uses it (below), and an older machine may ask you to check it when it joins.
         </p>
       ) : null}
       {s.enrollment && !s.rootMismatch ? <VerifyMe account={s.account} root={s.enrollment.root} /> : null}

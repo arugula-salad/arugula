@@ -437,7 +437,10 @@ nothing is compared on the way.
   other than the one pinned in this browser, or held by a grant to them on
   this machine, nothing is shared: the dialog says their account key
   changed since you first shared with them, with the date of the first
-  share and the date this browser first saw the new key.
+  share and the date this browser first saw the new key. It remembers the
+  new key it saw, so their row in the list says so from then on (never
+  just losing its verified mark), and a role change there stops the same
+  way, until they're verified.
 - **Verifying is optional.** *Verify* beside the person (or on the
   warning): their *Devices and machines…* has *Someone verifying you?*, a
   QR code of `arugula-verify:<account>.<root>` and the same as eight words

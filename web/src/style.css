@@ -3221,9 +3221,21 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 
 .share-list li {
   display: grid;
-  grid-template-columns: auto 1fr auto auto auto;
+  /* Avatar, name, role, history, Verify (or the key's mark), Remove: one
+   * line at the dialog's width, the name giving way. */
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto auto;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+}
+
+.share-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.share-key {
+  white-space: nowrap;
 }
 
 .share-add {

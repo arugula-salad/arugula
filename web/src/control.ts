@@ -235,6 +235,14 @@ export function personPin(account: string): PersonPin | null {
   return { root, at: m.at, verified: m.verified === root };
 }
 
+/** A new key control named for `account` that this browser hasn't taken
+ * (#763): the root and when it was first seen, or null. */
+export function keyChanged(account: string): { root: string; at: number } | null {
+  const root = pins()[account];
+  const seen = pinMetas()[account]?.seen;
+  return root && seen && seen.root !== root ? seen : null;
+}
+
 /** Control names `root` for `account`, which this browser pinned as
  * another: when it first saw that (kept, so the date doesn't move). */
 export function keyChangeSeen(account: string, root: string): number {

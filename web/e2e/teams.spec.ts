@@ -695,10 +695,17 @@ test("someone whose key changed since the first share: sharing stops and says so
   await dialog.getByRole("button", { name: "Share", exact: true }).click();
   const warning = dialog.locator(`[data-key-changed="${who.account}"]`);
   await expect(warning).toContainText("@erin's account key changed since you first shared with them.");
-  await expect(warning).toContainText(new Date(2026, 9, 1, 12).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }));
+  await expect(warning).toContainText(`You first shared on ${new Date(2026, 9, 1, 12).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`);
   await expect(warning).toContainText("Nothing was shared.");
-  // Nothing was: Erin is still a viewer.
-  await expect(dialog.locator(`[data-grant="account:${who.account}"] select`)).toHaveValue("viewer");
+  // Nothing was: Erin is still a viewer, and her row says her key changed.
+  const row = dialog.locator(`[data-grant="account:${who.account}"]`);
+  await expect(row.locator("select")).toHaveValue("viewer");
+  await expect(row.locator("[data-key-changed-row]")).toBeVisible();
+  // A role change stops the same way.
+  await warning.getByRole("button", { name: "Cancel" }).click();
+  await row.locator("select").selectOption("editor");
+  await expect(warning).toBeVisible();
+  await expect(row.locator("select")).toHaveValue("viewer");
   // Verifying her (the words match) takes the new key, and the share goes.
   await warning.locator("[data-key-verify]").click();
   await expect(dialog.locator("[data-verify-words]")).toHaveText(/^(\w+ ){7}\w+$/);
