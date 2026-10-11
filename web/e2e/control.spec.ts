@@ -901,8 +901,8 @@ test("the rest of a code: typed key by key, another machine's stays an error, an
   // stays an error (and in the field) as the rest is typed.
   await field.pressSequentially(b.whole);
   await expect(laptop.locator("[data-join-rest-error]")).toContainText(b.code);
-  // (Dashed as it came in: the first half took the rest's shape until the dot.)
-  await expect(field).toHaveValue(new RegExp(`\\.${b.secret}$`));
+  // Shown tidied: b's code in its own shape, one dot, then the rest.
+  await expect(field).toHaveValue(b.whole);
   await expect(laptop.locator("[data-approve-join]")).toBeDisabled();
   // On to b's code: what was typed for a is gone, error and all.
   await laptop.evaluate((h) => (location.hash = h), `#join=${b.code}`);
@@ -918,6 +918,38 @@ test("the rest of a code: typed key by key, another machine's stays an error, an
   await laptop.goto(`/#join=${a.code}`);
   await laptop.locator("[data-cancel-join]").click();
   await expect(laptop.locator(".prompt")).toHaveCount(0);
+});
+
+test("a join link kept over a sign-in comes back only to its own code, and never over a link with a secret (#760)", async () => {
+  const KEY = "arugula:presigned-invite";
+  const code = "ABCDE-FGHJK";
+  const kept = `#join=${code}.AAAA-AAAA-AAAA-AAAA`;
+  const keep = (at: number) => laptop.evaluate(([k, h, t]) => sessionStorage.setItem(k as string, JSON.stringify({ hash: h, at: t })), [KEY, kept, at] as const);
+  const stored = () => laptop.evaluate((k) => sessionStorage.getItem(k), KEY);
+  await laptop.goto("/");
+  // Back from signing in: the code alone in the URL, so the kept link
+  // (with its secret) is put back, and read once.
+  await keep(Date.now());
+  await laptop.goto(`/#join=${code}`);
+  await expect.poll(() => laptop.evaluate(() => location.hash)).toBe(kept);
+  expect(await stored()).toBeNull();
+  // A retried join (same code, new secret) opened in the same tab: its
+  // link wins, and the kept one is gone.
+  const fresh = `#join=${code}.BBBB-BBBB-BBBB-BBBB`;
+  await laptop.goto("/");
+  await keep(Date.now());
+  await laptop.goto(`/${fresh}`);
+  await laptop.waitForFunction(() => window.__arugula?.control?.phase === "ready");
+  expect(await laptop.evaluate(() => location.hash)).toBe(fresh);
+  expect(await stored()).toBeNull();
+  // Kept longer than a join lasts: not put back, even for its code.
+  await laptop.goto("/");
+  await keep(Date.now() - 60 * 60 * 1000);
+  await laptop.goto(`/#join=${code}`);
+  await laptop.waitForFunction(() => window.__arugula?.control?.phase === "ready");
+  expect(await laptop.evaluate(() => location.hash)).toBe(`#join=${code}`);
+  expect(await stored()).toBeNull();
+  await laptop.goto("/");
 });
 
 test("sessions: where you're signed in, and signing out everywhere (#173)", async () => {

@@ -866,9 +866,15 @@ function restOf(raw: string, code: string): { rest: string; bad: string | null }
   const dot = r.indexOf(".");
   const squash = (t: string) => t.toUpperCase().replace(/[^A-Z0-9]/g, "");
   const claimed = dot >= 0 ? squash(r.slice(0, dot)) : squash(r).length > 16 ? squash(r).slice(0, -16) : null;
-  if (claimed && normalizeCode(claimed) !== code) return { rest: raw, bad: `That code starts ${normalizeCode(claimed) ?? claimed}, not ${code}.` };
   if (dot >= 0) r = r.slice(dot + 1);
   else if (claimed) r = squash(r).slice(-16);
+  if (claimed && normalizeCode(claimed) !== code) {
+    // Kept as typed, but tidied: the claimed code in its own shape, one
+    // dot, and what follows dashed as the rest is.
+    const after = squash(r).match(/.{1,4}/g)?.join("-") ?? "";
+    const head = normalizeCode(claimed) ?? claimed;
+    return { rest: dot >= 0 ? `${head}.${after}` : `${head}${after}`, bad: `That code starts ${head}, not ${code}.` };
+  }
   const chars = r
     .toUpperCase()
     .replace(/[^A-Z0-9]/g, "")

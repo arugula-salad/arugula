@@ -269,6 +269,8 @@ export function inviteInHash(hash: string): { team: string; code: string; presig
 }
 
 const PENDING_INVITE = "arugula:presigned-invite";
+/** How long a kept join link counts (a join lasts ten minutes). */
+const KEPT_JOIN_MS = 15 * 60 * 1000;
 
 /** Where signing in with GitHub comes back to: this page, but never with a
  * presigned invite's seed or a machine's join secret (#760), which control
@@ -280,7 +282,7 @@ export function signInNext(): string {
   const secret = join ? splitJoinCode(join)?.secret : null;
   if (!inviteInHash(location.hash)?.presigned && !secret) return location.pathname + location.hash;
   try {
-    sessionStorage.setItem(PENDING_INVITE, location.hash);
+    sessionStorage.setItem(PENDING_INVITE, JSON.stringify({ hash: location.hash, at: Date.now() }));
   } catch {
     // Without storage the link has to be opened again after signing in.
   }
@@ -291,13 +293,19 @@ export function signInNext(): string {
  * join link, that `signInNext` kept. */
 export function restoreInvite() {
   try {
-    const hash = sessionStorage.getItem(PENDING_INVITE);
+    const kept = sessionStorage.getItem(PENDING_INVITE);
+    // Used or not, it's read once.
     sessionStorage.removeItem(PENDING_INVITE);
-    if (!hash) return;
-    const back = (!location.hash && inviteInHash(hash)?.presigned) || (joinInHash(hash) !== null && joinInHash() === joinInHash(hash));
-    if (back) history.replaceState(null, "", location.pathname + location.search + hash);
+    const { hash, at } = JSON.parse(kept ?? "null") as { hash: string; at: number };
+    if (typeof hash !== "string") return;
+    // A join comes back as its code alone (`signInNext`), soon: then the
+    // kept link has its secret. A link that brings its own secret wins,
+    // and so does any link once the kept one is older than a join lasts
+    // (a retried join has the same code and a new secret, #760).
+    const join = joinInHash(hash) !== null && wholeJoinInHash() === joinInHash(hash) && Date.now() - at < KEPT_JOIN_MS;
+    if ((!location.hash && inviteInHash(hash)?.presigned) || join) history.replaceState(null, "", location.pathname + location.search + hash);
   } catch {
-    // Nothing kept.
+    // Nothing kept, or not in this shape.
   }
 }
 
