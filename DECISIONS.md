@@ -704,6 +704,21 @@ that.
 Where: `crates/e2e/src/team.rs` (`AskInvite`), `crates/control/src/teams.rs` (`invite`, `accept_invite`), `web/src/e2e/team.ts` (`askOk`), `web/src/control.ts` (`makeInvite`, `acceptInvite`, `loadTeams`), `web/src/ui/control.tsx` (`AdmitPrompt`), [docs/control-e2e.md](docs/control-e2e.md).
 From: #762, #765.
 
+### A passkey with PRF is a device: one wherever it syncs
+Where a passkey gives PRF output, the browser's device keys come from it
+(two fixed salts, then HKDF), so clearing site data and signing in again,
+or a new computer the passkey syncs to, is the same device with no
+approval. That device signs the root it pinned once it's approved, and a
+browser that derives its keys checks that signature before it takes the
+root, so control still can't hand it an account of its own. A browser that
+is already a working device keeps its own keys. A removed device, or one
+whose signature is missing or wrong, gives way to an ordinary approval.
+Why: the approval (#761) is the step people trip on, and a synced passkey
+already lets its holder sign in. The cost is written down: whoever holds
+the synced passkey is that device, on every machine it reaches.
+Where: `web/src/e2e/keys.ts` (`adoptPrfKeys`, `PRF_SALTS`), `web/src/control.ts` (`takePrfKeys`, `rejoin`, `savePin`, `usePasskey`), `crates/control/src/passkey.rs`, `crates/control/src/api.rs` (`pin`), `crates/e2e/src/cert.rs` (`device_pin_body`), [docs/control-e2e.md](docs/control-e2e.md#prf-re-deriving-a-browsers-keys).
+From: #764, #765.
+
 ### Control's code is open, only the hosted control is supported; the tailnet stays first class
 `arugula-control` lives in this repo and the hosted one
 (control.arugula.io) runs the same code. For now only the hosted one is

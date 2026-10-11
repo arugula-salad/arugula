@@ -179,7 +179,8 @@ function Waiting({ s }: { s: ControlSession }) {
   const mine = s.deviceCode;
   const name = deviceName();
   // "the Arugula app on jake-air", or "this browser (Chrome on Mac)".
-  const what = inApp() ? `the ${name}` : `this browser (${name})`;
+  // #764: keys from a passkey are that passkey's device, on every browser.
+  const what = s.fromPasskey ? "your passkey" : inApp() ? `the ${name}` : `this browser (${name})`;
   const fp = (
     <p class="fingerprint" data-fingerprint={s.keys.id}>
       {fingerprint(s.keys.id)}
@@ -224,6 +225,7 @@ function Waiting({ s }: { s: ControlSession }) {
           </>
         )}
         <p class="dim">Waiting…</p>
+        <PasskeyInstead s={s} />
         <RecoveryForm s={s} open={recovering()} />
         <SignOuts s={s} />
       </Center>
@@ -234,9 +236,9 @@ function Waiting({ s }: { s: ControlSession }) {
       <h1>{inApp() ? "Approve this app as a device" : "Approve this browser"}</h1>
       {mine ? (
         <>
-          <p data-waiting-browser={name}>
-            You're signed in as <b>{s.login}</b>. This approves {what} as one of your devices, so it can reach your machines. On a device you already
-            use, scan this code with its camera, or open <CopyText inline text={s.info.url} data-control-url /> there and type the code when it asks.
+          <p data-waiting-browser={name} data-waiting-passkey={s.fromPasskey ? "" : undefined}>
+            You're signed in as <b>{s.login}</b>. This approves {what} as one of your devices, so it can reach your machines.
+            {s.fromPasskey ? " Approve it once, and it comes back on any browser the passkey is synced to." : ""} On a device you already use, scan this code with its camera, or open <CopyText inline text={s.info.url} data-control-url /> there and type the code when it asks.
           </p>
           <div class="control-device-code" data-device-code={mine}>
             <QrCode text={`${s.info.url}/#device=${mine}`} label="QR code for this browser's code" />
@@ -260,9 +262,25 @@ function Waiting({ s }: { s: ControlSession }) {
         Here to add a machine to your account or a team? That's a separate approval, and it doesn't need this one. The machine shows a code (in
         Getting started, or where you ran <code>arugulad join</code>): approve that code on a device you already use.
       </p>
+      <PasskeyInstead s={s} />
       <RecoveryForm s={s} open={recovering()} />
       <SignOuts s={s} />
     </Center>
+  );
+}
+
+/** #764: a passkey whose PRF output gives the device another browser
+ * enrolled with it: this browser becomes that device, with no approval. */
+function PasskeyInstead({ s }: { s: ControlSession }) {
+  const [err, setErr] = useState("");
+  if (!s.info.passkeys || !s.passkeys || s.fromPasskey || inApp()) return null;
+  return (
+    <>
+      <button class="control-secondary" data-use-passkey onClick={() => s.usePasskey().catch((e: Error) => setErr(e.name === "NotAllowedError" ? "Cancelled." : e.message))}>
+        Use your passkey instead
+      </button>
+      {err ? <p class="control-error">{err}</p> : null}
+    </>
   );
 }
 
@@ -397,7 +415,7 @@ function PasskeyButtons() {
   // #102: a new account says what teammates call it first.
   const [naming, setNaming] = useState(false);
   const [name, setName] = useState("");
-  const go = (f: () => Promise<void>) =>
+  const go = (f: () => Promise<unknown>) =>
     f().then(
       () => location.reload(),
       (e: Error) => setErr(e.name === "NotAllowedError" ? "Cancelled." : e.message),
@@ -1880,6 +1898,7 @@ function Devices({ s, close }: { s: ControlSession; close: () => void }) {
           ) : (
             <p data-remove-explain>It loses access to your machines at once. To use it again, add it as a new device: it gets a new key.</p>
           )}
+          {s.passkeyDevices.has(removing.device) ? <p data-remove-passkey-device>It's your passkey's device, so this signs it out on every browser the passkey is synced to.</p> : null}
           <div data-remove-which>
             <b>{shownName(removing.name)}</b> <DeviceLabel s={s} c={removing} />
           </div>

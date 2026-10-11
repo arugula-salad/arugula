@@ -9,8 +9,24 @@
 // directory and the keys, but it can't slip in a daemon of its own (and a
 // daemon can't be reached by a device it hasn't approved).
 
-import { certBody, DEVICE_SECRET, deviceId, deviceMac, deviceMacOk, evaluate, hex, JOIN_SECRET, joinCode, joinMac, newSecret, normalizeCode, normalizeSecret, splitJoinCode, type Cert, type Revocation, revocationBody, unhex } from "./e2e/cert.ts";
-import { adoptKeys, forget, loadEnrollment, loadKeys, saveEnrollment, saveWorkerDirectory, signText, type DeviceKeys, type Enrollment } from "./e2e/keys.ts";
+import { certBody, DEVICE_SECRET, deviceId, deviceMac, deviceMacOk, devicePinBody, devicePinOk, evaluate, hex, JOIN_SECRET, joinCode, joinMac, newSecret, normalizeCode, normalizeSecret, splitJoinCode, type Cert, type Revocation, revocationBody, unhex } from "./e2e/cert.ts";
+import {
+  adoptKeys,
+  adoptPrfKeys,
+  existingKeys,
+  forget,
+  forgetEnrollment,
+  freshKeys,
+  loadEnrollment,
+  loadKeys,
+  PRF_SALTS,
+  prfDevice,
+  saveEnrollment,
+  saveWorkerDirectory,
+  signText,
+  type DeviceKeys,
+  type Enrollment,
+} from "./e2e/keys.ts";
 import { newKeyPair } from "./e2e/noise.ts";
 import type { E2ETarget } from "./client";
 import { desktopApp } from "./desktop";
@@ -334,20 +350,57 @@ const b64u = (b: ArrayBuffer | Uint8Array) =>
     .replace(/=+$/, "");
 const unb64u = (s: string) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
 
-/** Sign in with a passkey (any registered on this control). */
-export async function passkeySignIn(): Promise<void> {
+/** #764: the `prf` extension, evaluated at both salts in the same
+ * ceremony (`first` for the X25519 key, `second` for Ed25519). */
+const PRF_ASK = { prf: { eval: { first: PRF_SALTS.noise, second: PRF_SALTS.sign } } } as AuthenticationExtensionsClientInputs;
+
+interface PrfOut {
+  enabled?: boolean;
+  results?: { first?: ArrayBuffer; second?: ArrayBuffer };
+}
+
+const prfOf = (cred: PublicKeyCredential) => (cred.getClientExtensionResults() as { prf?: PrfOut }).prf;
+
+/** #764: a passkey's PRF output as this browser's device keys, the same on
+ * every browser with that passkey, so they're one device. Not while this
+ * browser is a working device of that account already: it keeps its own.
+ * Whether it took them. */
+async function takePrfKeys(prf: PrfOut | undefined, account: string, provider: string | null | undefined): Promise<boolean> {
+  const r = prf?.results;
+  if (!r?.first || !r.second) return false;
+  const e = await loadEnrollment(location.origin);
+  const have = await existingKeys();
+  if (e && e.account === account && have?.id === e.cert.device) return false;
+  try {
+    await adoptPrfKeys(r.first, r.second, provider ? `${provider} passkey` : "Passkey");
+  } catch (err) {
+    // This browser can't keep them: it's approved as before.
+    console.warn("arugula: not using the passkey's keys:", err);
+    return false;
+  }
+  // Whatever it was enrolled as, it's that device now.
+  if (e) await forgetEnrollment(location.origin);
+  return true;
+}
+
+/** Sign in with a passkey (any registered on this control). Whether this
+ * browser took device keys from it (#764). */
+export async function passkeySignIn(): Promise<boolean> {
   const o = await api<{ challenge: string; rpId: string; userVerification: UserVerificationRequirement; timeout: number }>("/auth/passkey/login", {});
   const cred = (await navigator.credentials.get({
-    publicKey: { challenge: unb64u(o.challenge), rpId: o.rpId, userVerification: o.userVerification, timeout: o.timeout },
+    publicKey: { challenge: unb64u(o.challenge), rpId: o.rpId, userVerification: o.userVerification, timeout: o.timeout, extensions: PRF_ASK },
   })) as PublicKeyCredential | null;
   if (!cred) throw new Error("no passkey chosen");
   const r = cred.response as AuthenticatorAssertionResponse;
-  await api("/auth/passkey/login/finish", {
+  const prf = prfOf(cred);
+  const done = await api<{ account?: string; provider?: string | null }>("/auth/passkey/login/finish", {
     id: b64u(cred.rawId),
     clientDataJSON: b64u(r.clientDataJSON),
     authenticatorData: b64u(r.authenticatorData),
     signature: b64u(r.signature),
+    prf: !!(prf?.results?.first && prf.results.second),
   });
+  return done.account ? takePrfKeys(prf, done.account, done.provider) : false;
 }
 
 /** Make a passkey: for the account signed in, or a new account called
@@ -364,15 +417,20 @@ export async function passkeyRegister(name?: string): Promise<void> {
   };
   const o = await api<Options>("/auth/passkey/register", name === undefined ? {} : { name });
   const cred = (await navigator.credentials.create({
-    publicKey: { ...o, challenge: unb64u(o.challenge), user: { ...o.user, id: unb64u(o.user.id) } },
+    publicKey: { ...o, challenge: unb64u(o.challenge), user: { ...o.user, id: unb64u(o.user.id) }, extensions: PRF_ASK },
   })) as PublicKeyCredential | null;
   if (!cred) throw new Error("no passkey made");
   const r = cred.response as AuthenticatorAttestationResponse;
-  await api("/auth/passkey/register/finish", {
+  // #764: some authenticators give PRF output as the passkey is made;
+  // others say only that they will, at sign-in.
+  const prf = prfOf(cred);
+  const done = await api<{ account?: string; provider?: string | null }>("/auth/passkey/register/finish", {
     id: b64u(cred.rawId),
     clientDataJSON: b64u(r.clientDataJSON),
     attestationObject: b64u(r.attestationObject),
+    prf: prf?.enabled ?? (prf?.results ? true : undefined),
   });
+  if (done.account) await takePrfKeys(prf, done.account, done.provider);
 }
 
 /** What a signed-out page may know about an invite (#103): the team's
@@ -734,6 +792,9 @@ export class ControlSession {
   /** Asks again after a turn-down. */
   private askAgain: (() => void) | null = null;
   keys!: DeviceKeys;
+  /** #764: this browser's keys came from a passkey's PRF, and this is
+   * the name its certificate takes ("iCloud Keychain passkey"). */
+  fromPasskey: string | null = null;
   enrollment: Enrollment | undefined;
   /** Every device the account trusts, by this browser's reckoning. */
   trusted = new Map<string, Cert>();
@@ -760,6 +821,9 @@ export class ControlSession {
   /** When each device last loaded the page, as control saw (none before it
    * kept it, or from an older control). */
   used = new Map<string, number>();
+  /** #764: devices whose keys come from a passkey, as control says (they
+   * pinned their root): one device on every browser with that passkey. */
+  passkeyDevices = new Set<string>();
   revocations: Revocation[] = [];
   daemons: DirDaemon[] = [];
   /** Shares waiting for this account's yes. */
@@ -817,6 +881,8 @@ export class ControlSession {
           this.keys = await loadKeys();
         }
       }
+      const prf = await prfDevice();
+      this.fromPasskey = prf?.device === this.keys.id ? prf.name : null;
       if (this.enrollment && this.enrollment.cert.device !== this.keys.id) {
         // #94: the key this browser enrolled with didn't come back from
         // its storage (WebKit loses X25519 keys there), so it would sign
@@ -861,13 +927,16 @@ export class ControlSession {
   }
 
   private async enroll(root: string | null) {
+    // #764: keys from a passkey another browser enrolled already: this
+    // browser is that device, with no approval.
+    if (this.fromPasskey && root !== null && (await this.rejoin())) return;
     const k = this.keys;
     const cert: Cert = {
       v: 1,
       account: this.account,
       device: k.id,
       kind: "browser",
-      name: deviceName(),
+      name: this.fromPasskey ?? deviceName(),
       noise: k.noisePub,
       sign: k.signPub,
       created: Date.now(),
@@ -951,6 +1020,54 @@ export class ControlSession {
     await saveEnrollment(this.enrollment);
     dropDeviceSecret();
     this.deviceCode = null;
+    if (this.fromPasskey) await this.savePin();
+  }
+
+  /** #764: this browser's keys came from a passkey. If the account has
+   * that device (another browser with the passkey enrolled it), this
+   * browser is it, once the device's pin shows the root is the one that
+   * device pinned, not just control's word for it. True if so. A device
+   * that was removed, or whose pin doesn't check out, gives way to keys of
+   * this browser's own, approved as any new browser is; a device the
+   * account doesn't have yet is approved once, then pinned. */
+  private async rejoin(): Promise<boolean> {
+    const k = this.keys;
+    const all = await api<{ trust: { account: string; root: string } | null; certs: Cert[]; revocations: Revocation[] }>("/api/devices");
+    const removed = all.revocations.some((r) => r.device === k.id);
+    if (!removed && !all.certs.some((c) => c.device === k.id)) return false;
+    const pin = removed ? undefined : (await api<{ approved: boolean; pin?: string }>(`/api/devices/${k.id}`).catch(() => null))?.pin;
+    const pinned = !!all.trust && (all.trust.root === k.id || (!!pin && (await devicePinOk(all.trust, k.id, k.signPub, pin))));
+    const mine = pinned && all.trust ? (await evaluate(all.trust, all.certs, all.revocations)).get(k.id) : undefined;
+    if (!mine || !all.trust) {
+      console.warn(`arugula: not this account's passkey device (${removed ? "removed" : "its pin doesn't check out"}): asking to be approved instead`);
+      this.keys = await freshKeys();
+      this.fromPasskey = null;
+      return false;
+    }
+    this.enrollment = { control: location.origin, account: this.account, root: all.trust.root, cert: mine };
+    await saveEnrollment(this.enrollment);
+    return true;
+  }
+
+  /** #764: this device's signature over the root it pinned, for the next
+   * browser that derives its keys from the same passkey. Without it that
+   * browser asks to be approved, so a failure here costs only that. */
+  private async savePin() {
+    const e = this.enrollment;
+    if (!e) return;
+    const pin = await signText(this.keys, devicePinBody({ account: e.account, root: e.root }, this.keys.id));
+    await api(`/api/devices/${this.keys.id}/pin`, { pin }).catch((err) => console.warn("arugula: couldn't save this device's pin:", err));
+  }
+
+  /** #764: while waiting, sign in with a passkey instead. If it gives PRF
+   * output this browser takes its keys: the device another browser with
+   * that passkey enrolled, or one approved once for all of them. */
+  async usePasskey() {
+    const old = this.keys.id;
+    if (!(await passkeySignIn())) throw new Error("That passkey can't stand in for an approval. Approve this browser instead.");
+    // The request with this browser's old keys goes from the list.
+    await api(`/api/devices/${old}/reject`, {}).catch(() => {});
+    location.reload();
   }
 
   /** #761: whether to pin the root control names, by the approving
@@ -1120,6 +1237,7 @@ export class ControlSession {
           joins?: Record<string, string>;
           features?: Record<string, string>;
           used?: Record<string, number>;
+          passkeys?: string[];
         }>("/api/devices"),
         api<{ daemons: ForeignEntry[]; offers?: ShareOffer[] }>("/api/directory"),
       ]);
@@ -1142,6 +1260,7 @@ export class ControlSession {
           .map(([d]) => d),
       );
       this.used = new Map(Object.entries(devs.used ?? {}));
+      this.passkeyDevices = new Set(devs.passkeys ?? []);
       const daemons: DirDaemon[] = [];
       for (const d of dir.daemons) {
         const { chain, ...entry } = d;

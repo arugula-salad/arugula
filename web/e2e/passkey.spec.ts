@@ -96,3 +96,81 @@ test("make an account with a passkey, sign out, sign back in", async ({ page }) 
   await ask.locator("[data-confirm-remove]").click();
   await expect(page.locator("[data-passkeys] li")).toHaveCount(1);
 });
+
+// #764: a passkey with PRF gives the same 32 bytes every time, and those
+// are the browser's device keys. Clearing site data and signing in again
+// is the same device, with no approval; removing it sends the passkey's
+// browsers back to being approved one by one.
+test("a passkey with PRF brings the same device back after site data is cleared", async ({ page, context }) => {
+  const cdp = await context.newCDPSession(page);
+  await cdp.send("WebAuthn.enable");
+  await cdp.send("WebAuthn.addVirtualAuthenticator", {
+    options: { protocol: "ctap2", ctap2Version: "ctap2_1", transport: "internal", hasResidentKey: true, hasUserVerification: true, isUserVerified: true, hasPrf: true },
+  });
+  const me = () =>
+    page.evaluate(() => {
+      const c = window.__arugula.control!;
+      return { id: c.keys.id, passkey: c.fromPasskey, account: c.account };
+    });
+  const home = page.getByRole("heading", { name: "Add a machine" });
+  const clear = async (signOut: boolean) => {
+    await cdp.send("Storage.clearDataForOrigin", { origin: new URL(page.url()).origin, storageTypes: "indexeddb,local_storage" });
+    if (signOut) await context.clearCookies();
+    await page.goto("/");
+  };
+
+  await page.goto("/");
+  await page.locator("[data-signup=passkey]").click();
+  await page.locator("[data-signup-name]").fill("Pat");
+  await page.locator("[data-signup-go]").click();
+  await expect(home).toBeVisible();
+  const codes = await page.evaluate(() => window.__arugula.control!.recoveryCodes!);
+  const first = await me();
+  await page.locator("[data-stored-codes]").check();
+  await page.locator("[data-saved-codes]").click();
+
+  // Site data cleared and signed out: signing in derives the passkey's keys.
+  await clear(true);
+  await page.locator("[data-signin=passkey]").click();
+  let device = first.id;
+  if (first.passkey) {
+    // The authenticator gave PRF output as the passkey was made, so the
+    // account's first device was the passkey's already.
+    await expect(home).toBeVisible();
+  } else {
+    // It gave it only at sign-in: the passkey's device is new, approved
+    // once (a recovery code here), and from then on it comes back.
+    await expect(page.locator("[data-waiting-passkey]")).toBeVisible();
+    await expect(page.locator("[data-use-passkey]")).toHaveCount(0);
+    await page.locator("[data-use-recovery]").click();
+    await page.locator("[data-recovery-input]").fill(codes[0]);
+    await page.getByRole("button", { name: "Use it" }).click();
+    await expect(home).toBeVisible();
+    device = (await me()).id;
+    expect(device).not.toBe(first.id);
+  }
+  // The virtual authenticator's AAGUID names no provider.
+  expect(await me()).toMatchObject({ id: device, passkey: "Passkey", account: first.account });
+  const passkeys = await page.evaluate(() => fetch("/api/me/passkeys").then((r) => r.json()));
+  expect(passkeys.passkeys[0].prf).toBe(true);
+
+  // Cleared again, still signed in: the browser asks to be approved with
+  // keys of its own, and the passkey brings the device back instead.
+  await clear(false);
+  await page.locator("[data-use-passkey]").click();
+  await expect(home).toBeVisible();
+  expect(await me()).toMatchObject({ id: device, passkey: "Passkey" });
+  // The request it made with its own keys went with it.
+  const left = await page.evaluate(() => fetch("/api/devices").then((r) => r.json()));
+  expect(left.pending).toHaveLength(0);
+
+  // Removed, the passkey's keys never come back as a device: the next
+  // browser with it is approved like any other, with keys of its own.
+  await page.evaluate((id) => window.__arugula.control!.revoke(id), device);
+  await clear(true);
+  await page.locator("[data-signin=passkey]").click();
+  await expect(page.locator("[data-device-code]").first()).toBeVisible();
+  const after = await me();
+  expect(after.passkey).toBeNull();
+  expect(after.id).not.toBe(device);
+});
