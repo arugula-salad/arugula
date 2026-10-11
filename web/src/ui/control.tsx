@@ -179,7 +179,8 @@ function Waiting({ s }: { s: ControlSession }) {
   const mine = s.deviceCode;
   const name = deviceName();
   // "the Arugula app on jake-air", or "this browser (Chrome on Mac)".
-  const what = inApp() ? `the ${name}` : `this browser (${name})`;
+  // #764: keys from a passkey are that passkey's device, on every browser.
+  const what = s.fromPasskey ? "your passkey" : inApp() ? `the ${name}` : `this browser (${name})`;
   const fp = (
     <p class="fingerprint" data-fingerprint={s.keys.id}>
       {fingerprint(s.keys.id)}
@@ -235,16 +236,15 @@ function Waiting({ s }: { s: ControlSession }) {
       <h1>{inApp() ? "Approve this app as a device" : "Approve this browser"}</h1>
       {mine ? (
         <>
-          <p data-waiting-browser={name}>
-            You're signed in as <b>{s.login}</b>. This approves {what} as one of your devices, so it can reach your machines. On a device you already
-            use, scan this code with its camera, or open <CopyText inline text={s.info.url} data-control-url /> there and type the code when it asks.
+          <p data-waiting-browser={name} data-waiting-passkey={s.fromPasskey ? "" : undefined}>
+            You're signed in as <b>{s.login}</b>. This approves {what} as one of your devices, so it can reach your machines.
+            {s.fromPasskey ? " Approve it once, and it comes back on any browser the passkey is synced to." : ""} On a device you already use, scan this code with its camera, or open <CopyText inline text={s.info.url} data-control-url /> there and type the code when it asks.
           </p>
           <div class="control-device-code" data-device-code={mine}>
             <QrCode text={`${s.info.url}/#device=${mine}`} label="QR code for this browser's code" />
             <CopyText text={mine} data-device-code-text />
           </div>
           <p class="dim">Waiting…</p>
-          {s.fromPasskey ? <p class="dim" data-waiting-passkey>Approve it once, and your passkey brings it back on any browser it's synced to.</p> : null}
           {older}
         </>
       ) : (
