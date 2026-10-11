@@ -710,7 +710,7 @@ function JoinPrompt({ s, code: whole, from }: { s: ControlSession; code: string;
   const secret = parts?.secret ?? (typedParts?.code === code ? typedParts.secret : null);
   const sealed = !!j && (!!parts?.secret || takesSecret(j));
   const askWhole = j && sealed && !parts?.secret ? (
-    <WholeCode name={j.cert.name} code={j.code} typed={typed} setTyped={setTyped} ok={!!secret} where={j.cert.kind === "cli" ? "arugula login" : "arugulad join"} />
+    <WholeCode name={j.cert.name} code={j.code} typed={typed} setTyped={setTyped} ok={!!secret} cli={j.cert.kind === "cli"} />
   ) : null;
   // M49: the Arugula CLI on a machine, asking to be one of your devices.
   if (j?.cert.kind === "cli")
@@ -851,17 +851,28 @@ function JoinPrompt({ s, code: whole, from }: { s: ControlSession; code: string;
 }
 
 /** #760: a machine (or the CLI) made a join secret, but this page has only
- * its code: the whole code it shows, typed here, brings the secret. */
-function WholeCode({ name, code, typed, setTyped, ok, where }: { name: string; code: string; typed: string; setTyped: (t: string) => void; ok: boolean; where: string }) {
+ * its code: the whole code it shows, typed here, brings the secret. `cli`:
+ * `arugula login` shows it; a machine shows it in Getting started or where
+ * `arugulad join` ran. The sentence is a paragraph that labels the input
+ * (a `<label>` in a prompt lays out as a grid, a line per element). */
+function WholeCode({ name, code, typed, setTyped, ok, cli }: { name: string; code: string; typed: string; setTyped: (t: string) => void; ok: boolean; cli: boolean }) {
   return (
     <div class="control-whole-code">
-      <p>
-        <label for="join-whole">
-          Type the whole code {name} shows (in Getting started, or where you ran <code>{where}</code>): <b>{code}</b>, a dot, and four more groups.
-        </label>
+      <p id="join-whole-label">
+        {cli ? (
+          <>
+            Type the whole code <code>arugula login</code> shows on {name}:{" "}
+          </>
+        ) : (
+          <>
+            Type the whole code {name} shows (in Getting started, or where you ran <code>arugulad join</code>):{" "}
+          </>
+        )}
+        <b>{code}</b>, a dot, and four more groups.
       </p>
       <input
         id="join-whole"
+        aria-labelledby="join-whole-label"
         class="control-join-code"
         data-join-whole
         placeholder={`${code}.XXXX-XXXX-XXXX-XXXX`}

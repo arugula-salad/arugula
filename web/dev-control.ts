@@ -29,6 +29,11 @@
 //                      first browser is their account's first device;
 //                      nothing approves their others.
 //   DEV_CONTROL_LABS=0 machines without Labs (a stranger's view)
+//   DEV_CONTROL_APPROVE_BROWSERS=0
+//                      the device leaves browsers alone: one that signs in
+//                      stays waiting, not yet a device (for the waiting
+//                      screens, *Add a machine and a device?* and #326).
+//                      The machines' own joins are still approved.
 //
 // Start over: delete the state directory.
 
@@ -53,6 +58,7 @@ const port = Number(process.env.DEV_CONTROL_PORT ?? 7690);
 const login = process.env.DEV_CONTROL_LOGIN ?? userInfo().username;
 const logins = (process.env.DEV_CONTROL_LOGINS ?? "").split(",").map((l) => l.trim()).filter(Boolean);
 const labs = process.env.DEV_CONTROL_LABS !== "0";
+const approveAll = process.env.DEV_CONTROL_APPROVE_BROWSERS !== "0";
 const machines = process.argv.slice(2).length ? process.argv.slice(2) : ["workstation", "laptop"];
 const bin = process.env.TARGET_DIR ?? "../target/debug";
 const base = `http://${host}:${port}`;
@@ -241,7 +247,9 @@ await startMachines(d);
 console.log(`
 dev-control: ${base}${host === "127.0.0.1" ? " (no passkeys on an IP address: DEV_CONTROL_HOST=localhost)" : ""}
   Sign in with GitHub (the fake one signs you in as ${login}${logins.length ? `, or asks: ${[login, ...logins].join(", ")}` : ""});
-  ${login}'s browsers are approved. Machines: ${machines.join(", ")}${labs ? ", with Labs" : ""}.
+  ${approveAll ? `${login}'s browsers are approved` : `${login}'s browsers stay waiting to be approved (DEV_CONTROL_APPROVE_BROWSERS=0)`}. Machines: ${machines.join(", ")}${labs ? ", with Labs" : ""}.
   Edit web/src, wait for "web rebuilt", reload. State: ${dir}. Ctrl-C stops.
 `);
-await approveBrowsers(d);
+// Leaving browsers alone: stay up for the web build and the machines.
+if (approveAll) await approveBrowsers(d);
+else setInterval(() => {}, 1 << 30);
