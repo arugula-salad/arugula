@@ -335,7 +335,7 @@ function WhyHere() {
   }, []);
   useEffect(() => {
     setTeam(null);
-    if (invite) void previewInvite(invite.team, invite.code, invite.presigned).then(setTeam);
+    if (invite) void previewInvite(invite).then(setTeam);
   }, [hash]);
   if (invite)
     return (
@@ -675,7 +675,7 @@ export function ControlOverlay({ s }: { s: ControlSession }) {
     return invite.presigned ? (
       <PresignedPrompt s={s} team={invite.team} seed={invite.code} />
     ) : (
-      <InvitePrompt s={s} team={invite.team} code={invite.code} />
+      <InvitePrompt s={s} team={invite.team} code={invite.code} old={invite.old} />
     );
   // Someone used an invite to a team I own: add them (sign the roster)?
   const req = s.teams.flatMap((t) => (t.role === "owner" ? t.requests.map((r) => ({ t, r })) : []))[0];
@@ -1973,13 +1973,16 @@ function Notice({ s, n }: { s: ControlSession; n: ControlSession["notices"][numb
   );
 }
 
-function InvitePrompt({ s, team, code }: { s: ControlSession; team: string; code: string }) {
+/** An Ask me first link: `code` is its one-time key's seed (#762), or,
+ * for a link from before (`old`), a code that no longer works. */
+function InvitePrompt({ s, team, code, old }: { s: ControlSession; team: string; code: string; old: boolean }) {
   const [info, setInfo] = useState<{ name: string; role: TeamRole } | null>(null);
   const [err, setErr] = useState("");
   const [done, setDone] = useState(false);
   useEffect(() => {
+    if (old) return setErr("This invite link is from an older version of Arugula. Ask for a new one.");
     s.showInvite(team, code).then(setInfo, (e: Error) => setErr(e.message));
-  }, [team, code]);
+  }, [team, code, old]);
   return (
     <Modal close={clearHash}>
       <h2>Join a team?</h2>
@@ -2060,21 +2063,24 @@ function PresignedPrompt({ s, team, seed }: { s: ControlSession; team: string; s
   );
 }
 
+/** Someone used an Ask me first link (#762). The link's one-time key
+ * vouched for their account (`askOk`), so there's nothing to compare:
+ * the owner only decides. Not now turns the request down; the link still
+ * works if they ask again. */
 function AdmitPrompt({ s, team, req }: { s: ControlSession; team: Team; req: Team["requests"][number] }) {
   const [err, setErr] = useState("");
+  const whose = req.by === s.account ? "your" : `${team.names?.[req.by] ?? team.roster.members.find((m) => m.account === req.by)?.name ?? "an owner"}'s`;
   return (
     <Modal>
       <h2>Add to {team.roster.name}?</h2>
-      <p>
-        <b>{req.name}</b> used an invite, {roleAs(req.role)}. Their account's first device:
+      <p data-admit={req.account}>
+        <b>{req.name}</b> used {whose} invite link (made {addedAt(req.invite.made)}, for {roleFor(req.invite.role)}).
       </p>
-      <p class="fingerprint" data-admit={req.account}>
-        {fingerprint(req.root)}
-      </p>
-      <p class="dim">If you can, check it with them. Adding them signs the team's new member list on this device.</p>
       {err ? <p class="control-error">{err}</p> : null}
       <div class="prompt-buttons">
-        <button onClick={() => s.rejectRequest(team.team, req.account).catch((e: Error) => setErr(e.message))}>Turn down</button>
+        <button data-admit-no onClick={() => s.rejectRequest(team.team, req.account).catch((e: Error) => setErr(e.message))}>
+          Not now
+        </button>
         <button class="primary" data-admit-yes onClick={() => s.admit(team.team, req).catch((e: Error) => setErr(e.message))}>
           Add them
         </button>
@@ -2082,6 +2088,9 @@ function AdmitPrompt({ s, team, req }: { s: ControlSession; team: Team; req: Tea
     </Modal>
   );
 }
+
+/** "an owner", "someone who drives". */
+const roleFor = (role: TeamRole) => (role === "owner" ? "an owner" : `someone who ${roleLabel(role)}`);
 
 function Teams({ s, close }: { s: ControlSession; close: () => void }) {
   const [name, setName] = useState("");

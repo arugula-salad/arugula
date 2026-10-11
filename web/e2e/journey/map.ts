@@ -186,6 +186,7 @@ const UNCOVERED: [string, string][] = [
   ["App approved as a device after its sign-in", "the fallback when Allow can't sign the app's keys (#758); control.spec covers it, no journey"],
   ["A second browser or phone approved as a device", "scanning or typing the code it shows (#761): control.spec covers it, no journey"],
   ["The CLI signed in, or a machine joined over ssh", "arugula login, and arugulad join run over ssh (#760): control-smoke and the testnet cover them, no journey"],
+  ["An Ask me first invite, admitted by the owner", "the link carries a one-time key that vouches for whoever asks (#762): teams.spec covers it, no journey"],
 ];
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);

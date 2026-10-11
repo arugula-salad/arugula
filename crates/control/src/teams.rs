@@ -22,7 +22,7 @@ use std::{
 use arugula_control_wire as wire;
 use arugula_e2e::{
     Cert, Revocation, Trust,
-    team::{AccountCerts, Invite, Roster, TeamPin, TeamRole},
+    team::{AccountCerts, AskInvite, Invite, Roster, TeamPin, TeamRole},
 };
 use axum::{
     Json,
@@ -34,7 +34,7 @@ use serde_json::{Value, json};
 
 use crate::{
     ApiError, App,
-    auth::{DaemonAuth, Session, hash, token},
+    auth::{DaemonAuth, Session, hash},
     db::{Team, TeamRequest},
     err,
 };
@@ -393,17 +393,31 @@ pub async fn set_roster(
 #[derive(Deserialize)]
 pub struct NewInvite {
     role: TeamRole,
-    #[serde(default = "week")]
-    ttl_secs: u64,
     /// An invite the owner's device signed: accepting it adds the invitee
     /// with no owner's yes. Its one-time key's private half stays in the
     /// link and never comes here.
     #[serde(default)]
     presigned: Option<Invite>,
+    /// An Ask me first invite the owner's device signed (#762): the same
+    /// one-time key in the link, but the owner still says yes to each.
+    #[serde(default)]
+    ask: Option<AskInvite>,
 }
 
-fn week() -> u64 {
-    7 * 86_400
+/// The longest an Ask me first link lasts.
+const ASK_MAX_MS: u64 = 30 * 86_400 * 1000;
+
+fn is_key(k: &str) -> bool {
+    k.len() == 64 && k.bytes().all(|c| matches!(c, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+/// Whether one of `account`'s own devices (from `root`) signed `ask`.
+fn ask_signed_by(app: &App, account: &str, root: &str, ask: &AskInvite) -> anyhow::Result<bool> {
+    let (c, rv) = certs_of(app, account)?;
+    Ok(Trust { account: account.to_owned(), root: root.to_owned() }
+        .evaluate(&c, &rv)
+        .get(&ask.by)
+        .is_some_and(|d| ask.signed_by(d)))
 }
 
 pub async fn invite(State(app): State<Arc<App>>, s: Session, Path(team): Path<String>, Json(b): Json<NewInvite>) -> R {
@@ -449,12 +463,36 @@ pub async fn invite(State(app): State<Arc<App>>, s: Session, Path(team): Path<St
         })?;
         return Ok(Json(json!({ "key": inv.key, "expires": inv.expires })));
     }
-    let code = token()[..20].to_owned();
-    let expires = arugula_e2e::now_ms() + b.ttl_secs.min(30 * 86_400) * 1000;
-    app.db.add_invite(&hash(&code), &team, b.role.as_str(), expires, &s.account)?;
-    Ok(Json(
-        json!({ "code": code, "link": format!("{}/#invite={team}.{code}", app.cfg.public_url), "expires": expires }),
-    ))
+    // Every link carries a one-time key now (#762): a page from before
+    // that would make a link whose requests owners' pages no longer show.
+    let ask = b.ask.ok_or_else(|| err(StatusCode::BAD_REQUEST, "reload this page to make an invite link"))?;
+    let now = arugula_e2e::now_ms();
+    let me = r.member(&s.account).ok_or_else(|| err(StatusCode::FORBIDDEN, "owners invite"))?;
+    if ask.team != team
+        || ask.role != b.role
+        || ask.expires <= now
+        || ask.expires > now + ASK_MAX_MS
+        || ask.made > ask.expires
+        || !is_key(&ask.key)
+        || !ask_signed_by(&app, &s.account, &me.root, &ask)?
+    {
+        return Err(err(
+            StatusCode::BAD_REQUEST,
+            "an invite is for this team, at most 30 days, with a one-time key, and signed by your device",
+        ));
+    }
+    // Named by its key, as a presigned one is: the key is public, and only
+    // the link holds its private half.
+    app.db
+        .add_invite(&hash(&ask.key), &team, ask.role.as_str(), ask.expires, &s.account, &serde_json::to_string(&ask)?)
+        .map_err(|e| {
+            if e.is::<crate::db::Taken>() {
+                err(StatusCode::CONFLICT, "that invite key is already used")
+            } else {
+                e.into()
+            }
+        })?;
+    Ok(Json(json!({ "key": ask.key, "expires": ask.expires })))
 }
 
 /// A team's outstanding presigned invites, for its owners (#134): who
@@ -488,18 +526,24 @@ pub async fn cancel_presigned(State(app): State<Arc<App>>, s: Session, Path((tea
     Ok(Json(json!({})))
 }
 
-pub async fn show_invite(State(app): State<Arc<App>>, _s: Session, Path((team, code)): Path<(String, String)>) -> R {
-    let (t, role) = app
-        .db
-        .invite(&hash(&code), arugula_e2e::now_ms())?
-        .filter(|(t, _)| *t == team)
-        .ok_or_else(|| err(StatusCode::NOT_FOUND, "that invite expired, or never was"))?;
+/// A live Ask me first invite by its key: (team, the signed invite).
+fn ask_invite(app: &App, team: &str, key: &str) -> Result<(String, AskInvite), ApiError> {
+    let gone = || err(StatusCode::NOT_FOUND, "that invite expired, or never was");
+    let (t, _, body) =
+        app.db.invite(&hash(key), arugula_e2e::now_ms())?.filter(|(t, _, _)| t == team).ok_or_else(gone)?;
+    let ask: AskInvite = body.and_then(|b| serde_json::from_str(&b).ok()).ok_or_else(gone)?;
+    Ok((t, ask))
+}
+
+pub async fn show_invite(State(app): State<Arc<App>>, _s: Session, Path((team, key)): Path<(String, String)>) -> R {
+    let (t, ask) = ask_invite(&app, &team, &key)?;
     let name = app.db.team(&t)?.map(|t| t.name).unwrap_or_default();
-    Ok(Json(json!({ "team": t, "name": name, "role": role })))
+    Ok(Json(json!({ "team": t, "name": name, "role": ask.role })))
 }
 
 /// What a signed-out page may say about an invite (#103): the team's name
-/// and who made it, nothing else. The code is the secret, as for accepting.
+/// and who made it, nothing else. Named by its one-time key's public half;
+/// only the link holds the private half that accepting needs (#762).
 pub async fn preview_invite(
     State(app): State<Arc<App>>,
     axum::extract::ConnectInfo(peer): axum::extract::ConnectInfo<std::net::SocketAddr>,
@@ -551,19 +595,41 @@ pub async fn preview_presigned(
     Ok(Json(json!({ "name": name, "by": by })))
 }
 
-pub async fn accept_invite(State(app): State<Arc<App>>, s: Session, Path((team, code)): Path<(String, String)>) -> R {
-    let (t, role) = app
-        .db
-        .invite(&hash(&code), arugula_e2e::now_ms())?
-        .filter(|(t, _)| *t == team)
-        .ok_or_else(|| err(StatusCode::NOT_FOUND, "that invite expired, or never was"))?;
+#[derive(Deserialize)]
+pub struct Accept {
+    /// The link's one-time key's signature over this account and its root
+    /// (`AskInvite::ask_body`, #762).
+    #[serde(default)]
+    proof: String,
+}
+
+pub async fn accept_invite(
+    State(app): State<Arc<App>>,
+    s: Session,
+    Path((team, key)): Path<(String, String)>,
+    Json(b): Json<Accept>,
+) -> R {
+    let (t, ask) = ask_invite(&app, &team, &key)?;
     let me = app.db.account(&s.account)?.ok_or_else(|| err(StatusCode::UNAUTHORIZED, "no account"))?;
     let root = me.root.clone().ok_or_else(|| err(StatusCode::CONFLICT, "enroll a device first"))?;
+    // Owners' pages check this too, and show nothing that fails: control
+    // only refuses early what they'd never show.
+    if !ask.proves(&s.account, &root, &b.proof) {
+        return Err(err(StatusCode::FORBIDDEN, "that request doesn't come from the invite link; open the link again"));
+    }
     let name = member_name(&me);
     let new = !app.db.requests(&t)?.iter().any(|r| r.account == s.account);
     app.db.add_request(
         &t,
-        &TeamRequest { account: s.account.clone(), root, name, role, created: arugula_e2e::now_ms() },
+        &TeamRequest {
+            account: s.account.clone(),
+            root,
+            name,
+            role: ask.role.as_str().to_owned(),
+            created: arugula_e2e::now_ms(),
+            invite: Some(ask),
+            proof: Some(b.proof),
+        },
     )?;
     // The team's owners hear of it (#104), once.
     if new && let Some(team) = app.db.team(&t)? {

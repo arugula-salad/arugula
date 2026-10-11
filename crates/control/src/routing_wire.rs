@@ -6,7 +6,7 @@ use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use arugula_e2e::{
     Cert, DeviceKeys, Kind, now_ms,
-    team::{Invite, Member, Roster, TeamRole},
+    team::{AskInvite, Invite, Member, Roster, TeamRole},
 };
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
@@ -842,12 +842,121 @@ async fn rosters_add_only_people_who_asked() {
     let path = format!("/api/teams/{team}/roster");
     let (st, _) = c.as_person(&cookie, "POST", &path, Some(json!({ "roster": add.clone() }))).await;
     assert_eq!(st, 403);
-    let (_, inv) =
-        c.as_person(&cookie, "POST", &format!("/api/teams/{team}/invites"), Some(json!({ "role": "editor" }))).await;
+    let (ask, once) = ask_link(team, TeamRole::Editor, &owner_root);
+    let (st, _) = c
+        .as_person(
+            &cookie,
+            "POST",
+            &format!("/api/teams/{team}/invites"),
+            Some(json!({ "role": "editor", "ask": ask })),
+        )
+        .await;
+    assert_eq!(st, 200);
     let vic = session(&c.app, "vic1");
-    let code = inv["code"].as_str().unwrap();
-    assert_eq!(c.as_person(&vic, "POST", &format!("/api/invites/{team}/{code}/accept"), Some(json!({}))).await.0, 200);
+    let proof = json!({ "proof": ask_proof(&ask, &once, "vic1", &vic_root) });
+    let accept = format!("/api/invites/{team}/{}/accept", ask.key);
+    assert_eq!(c.as_person(&vic, "POST", &accept, Some(proof)).await.0, 200);
     assert_eq!(c.as_person(&cookie, "POST", &path, Some(json!({ "roster": add }))).await.0, 200);
+}
+
+/// An Ask me first link to `team` as `role`, signed by `owner`, and its
+/// one-time key (#762).
+fn ask_link(team: &str, role: TeamRole, owner: &DeviceKeys) -> (AskInvite, DeviceKeys) {
+    let once = DeviceKeys::generate();
+    let mut ask = AskInvite {
+        team: team.into(),
+        role,
+        made: now_ms(),
+        expires: now_ms() + 7 * 86_400 * 1000,
+        key: hex::encode(once.sign_public()),
+        by: String::new(),
+        sig: String::new(),
+    };
+    ask.sign_with(owner);
+    (ask, once)
+}
+
+/// What the page that opened the link sends: the one-time key's signature
+/// over `account` and its root.
+fn ask_proof(ask: &AskInvite, once: &DeviceKeys, account: &str, root: &DeviceKeys) -> String {
+    hex::encode(once.signature(ask.ask_body(account, &root.id()).as_bytes()))
+}
+
+/// #762: every invite link carries a one-time key, and a request to join
+/// carries its proof. Control can't put someone in front of an owner who
+/// didn't hold the link: a request it made up has no proof for its account,
+/// and the owner's page refuses it (`askOk` in `web/src/e2e/team.ts` checks
+/// what `AskInvite::proves` does here).
+#[tokio::test]
+async fn an_ask_me_first_request_carries_the_links_proof() {
+    let c = control(|_| {}).await;
+    let owner_root = person(&c.app, "owner", "own1");
+    let sam_root = person(&c.app, "sam", "sam1");
+    let mal_root = person(&c.app, "mallory", "mal1");
+    let team = "0123456789abcde1";
+    let owner = session(&c.app, "own1");
+    let one = roster(team, 1, vec![member("own1", &owner_root, TeamRole::Owner)], &owner_root);
+    assert_eq!(c.as_person(&owner, "POST", "/api/teams", Some(json!({ "roster": one }))).await.0, 200);
+    let make = format!("/api/teams/{team}/invites");
+
+    // A page from before: a link with no key isn't made.
+    assert_eq!(c.as_person(&owner, "POST", &make, Some(json!({ "role": "editor" }))).await.0, 400);
+    // Nor one signed by someone else's device, or bent after signing.
+    let (theirs, _) = ask_link(team, TeamRole::Editor, &sam_root);
+    assert_eq!(c.as_person(&owner, "POST", &make, Some(json!({ "role": "editor", "ask": theirs }))).await.0, 400);
+    let (mut bent, _) = ask_link(team, TeamRole::Editor, &owner_root);
+    bent.role = TeamRole::Owner;
+    assert_eq!(c.as_person(&owner, "POST", &make, Some(json!({ "role": "owner", "ask": bent }))).await.0, 400);
+    // The owner's link, for an owner even (they still say yes).
+    let (ask, once) = ask_link(team, TeamRole::Owner, &owner_root);
+    let (st, made) = c.as_person(&owner, "POST", &make, Some(json!({ "role": "owner", "ask": ask }))).await;
+    assert_eq!((st, made["key"].as_str()), (200, Some(ask.key.as_str())));
+    assert!(made.get("link").is_none(), "the page makes the link: control never has its key");
+    let (_, shown) = c.as_person(&owner, "GET", &format!("/api/invites/{team}/{}", ask.key), None).await;
+    assert_eq!(shown["role"], "owner");
+
+    let accept = format!("/api/invites/{team}/{}/accept", ask.key);
+    let sam = session(&c.app, "sam1");
+    let mal = session(&c.app, "mal1");
+    // Without a proof, or with one for another account, it's refused.
+    assert_eq!(c.as_person(&mal, "POST", &accept, Some(json!({}))).await.0, 403);
+    let sams = ask_proof(&ask, &once, "sam1", &sam_root);
+    assert_eq!(c.as_person(&mal, "POST", &accept, Some(json!({ "proof": sams }))).await.0, 403);
+    // Signed with a key that isn't the link's.
+    let forged = ask_proof(&ask, &mal_root, "mal1", &mal_root);
+    assert_eq!(c.as_person(&mal, "POST", &accept, Some(json!({ "proof": forged }))).await.0, 403);
+    // Sam held the link: his request carries the owner's invite and proof.
+    assert_eq!(c.as_person(&sam, "POST", &accept, Some(json!({ "proof": sams }))).await.0, 200);
+    let (_, teams) = c.as_person(&owner, "GET", "/api/teams", None).await;
+    let reqs = teams["teams"][0]["requests"].as_array().unwrap().clone();
+    assert_eq!(reqs.len(), 1);
+    let got: AskInvite = serde_json::from_value(reqs[0]["invite"].clone()).unwrap();
+    assert_eq!(got, ask);
+    assert!(got.proves("sam1", &sam_root.id(), reqs[0]["proof"].as_str().unwrap()));
+
+    // Control lying: a request for Mallory, with Sam's proof (all it has).
+    // It's listed, but the proof doesn't name her, so no owner's page
+    // shows it.
+    c.app
+        .db
+        .add_request(
+            team,
+            &crate::db::TeamRequest {
+                account: "mal1".into(),
+                root: mal_root.id(),
+                name: "mallory".into(),
+                role: "owner".into(),
+                created: now_ms(),
+                invite: Some(ask.clone()),
+                proof: Some(sams.clone()),
+            },
+        )
+        .unwrap();
+    let (_, teams) = c.as_person(&owner, "GET", "/api/teams", None).await;
+    let lie =
+        teams["teams"][0]["requests"].as_array().unwrap().iter().find(|r| r["account"] == "mal1").unwrap().clone();
+    let inv: AskInvite = serde_json::from_value(lie["invite"].clone()).unwrap();
+    assert!(!inv.proves("mal1", &mal_root.id(), lie["proof"].as_str().unwrap()));
 }
 
 /// A team "Acme" founded by `owner` (account `own1`), its first roster
@@ -924,10 +1033,11 @@ async fn owners_list_and_cancel_presigned_invites() {
     let one = roster(team, 1, vec![member("own1", &owner_root, TeamRole::Owner)], &owner_root);
     assert_eq!(c.as_person(&owner, "POST", "/api/teams", Some(json!({ "roster": one.clone() }))).await.0, 200);
     let mate = session(&c.app, "mate1");
-    let (_, inv) =
-        c.as_person(&owner, "POST", &format!("/api/teams/{team}/invites"), Some(json!({ "role": "editor" }))).await;
-    let code = inv["code"].as_str().unwrap();
-    c.as_person(&mate, "POST", &format!("/api/invites/{team}/{code}/accept"), Some(json!({}))).await;
+    let (ask, once) = ask_link(team, TeamRole::Editor, &owner_root);
+    c.as_person(&owner, "POST", &format!("/api/teams/{team}/invites"), Some(json!({ "role": "editor", "ask": ask })))
+        .await;
+    let proof = json!({ "proof": ask_proof(&ask, &once, "mate1", &mate_root) });
+    c.as_person(&mate, "POST", &format!("/api/invites/{team}/{}/accept", ask.key), Some(proof)).await;
     let two = roster(
         team,
         2,

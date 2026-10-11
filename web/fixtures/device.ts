@@ -18,7 +18,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { certBody, deviceMac, evaluate, joinCode, joinMac, revocationBody, splitJoinCode, unhex, type Cert, type Revocation } from "../src/e2e/cert.ts";
 import { E2ESocket } from "../src/e2e/channel.ts";
 import { generateKeys, signText, type DeviceKeys } from "../src/e2e/keys.ts";
-import { signRoster, teamJoinBody, word, type Roster, type TeamPin, type TeamRole } from "../src/e2e/team.ts";
+import { askBody, askOk, inviteKey, newInviteKey, signAskInvite, signRoster, teamJoinBody, word, type AccountCerts, type AskInvite, type Roster, type TeamPin, type TeamRole } from "../src/e2e/team.ts";
 
 const subtle = globalThis.crypto.subtle;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -226,7 +226,13 @@ export class Device {
   // ---- teams (M19), as the page's owner does them
 
   /** A team this account is in, as control lists it. */
-  async team(id: string): Promise<{ team: string; pin: TeamPin; roster: Roster; requests: { account: string; root: string; name: string; role: TeamRole }[] }> {
+  async team(id: string): Promise<{
+    team: string;
+    pin: TeamPin;
+    roster: Roster;
+    certs: AccountCerts;
+    requests: { account: string; root: string; name: string; role: TeamRole; invite?: AskInvite; proof?: string }[];
+  }> {
     const { teams } = await this.api<{ teams: Awaited<ReturnType<Device["team"]>>[] }>("/api/teams");
     const t = teams.find((x) => x.team === id);
     if (!t) throw new Error(`this account isn't in team ${id}`);
@@ -242,28 +248,39 @@ export class Device {
     return team;
   }
 
-  /** An invite code (ask-first: the owner admits whoever accepts it). */
+  /** An Ask me first invite (the owner admits whoever accepts it): the
+   * seed of its one-time key, what `#askinvite=TEAM.SEED` carries (#762). */
   async invite(team: string, role: TeamRole = "editor"): Promise<string> {
-    return (await this.api<{ code: string }>(`/api/teams/${team}/invites`, { role })).code;
+    const { seed, key } = await newInviteKey();
+    const made = Date.now();
+    const ask = await signAskInvite({ team, role, made, expires: made + 7 * 86_400_000, key }, this.keys);
+    await this.api(`/api/teams/${team}/invites`, { role, ask });
+    return seed;
   }
 
-  /** Accept an invite: this account asks to join. */
-  async acceptInvite(team: string, code: string): Promise<void> {
-    await this.api(`/api/invites/${team}/${code}/accept`, {});
+  /** Accept an invite by its seed (or a whole `#askinvite=` link): this
+   * account asks to join, with the one-time key's proof. */
+  async acceptInvite(team: string, seed: string): Promise<void> {
+    const k = await inviteKey(/#askinvite=[0-9a-f]+\.([0-9a-f]+)/.exec(seed)?.[1] ?? seed);
+    const proof = await k.sign(askBody({ team, key: k.key }, this.account, this.root));
+    await this.api(`/api/invites/${team}/${k.key}/accept`, { proof });
   }
 
   /** Admit everyone who asked: the next roster, signed by this owner. */
   async admitAll(team: string): Promise<number> {
     const t = await this.team(team);
-    if (!t.requests.length) return 0;
-    const asked = new Set(t.requests.map((r) => r.account));
+    // As an owner's page does (#762): only those the link vouches for.
+    const ok: (typeof t.requests[number] & { invite: AskInvite })[] = [];
+    for (const r of t.requests) if (r.invite && (await askOk(t.roster, t.certs, r))) ok.push({ ...r, invite: r.invite });
+    if (!ok.length) return 0;
+    const asked = new Set(ok.map((r) => r.account));
     const members = [
       ...t.roster.members.filter((m) => !asked.has(m.account)),
-      ...t.requests.map((r) => ({ account: r.account, root: r.root, role: r.role, name: word(r.name) })),
+      ...ok.map((r) => ({ account: r.account, root: r.root, role: r.invite.role, name: word(r.name) })),
     ];
     const next = await signRoster({ v: 1, team, name: t.roster.name, version: t.roster.version + 1, at: Date.now(), members }, this.keys);
     await this.api(`/api/teams/${team}/roster`, { roster: next });
-    return t.requests.length;
+    return ok.length;
   }
 
   /** The account's devices and machines that chain back to the root this

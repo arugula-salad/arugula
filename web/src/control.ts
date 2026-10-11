@@ -20,11 +20,15 @@ import {
   moveBody,
   newInviteKey,
   redeemInvite,
+  askBody,
+  askOk,
+  signAskInvite,
   signInvite,
   signRoster,
   teamJoinBody,
   word,
   type AccountCerts,
+  type AskInvite,
   type Invite,
   type Roster,
   type TeamPin,
@@ -108,7 +112,10 @@ export interface Team {
   locked: boolean;
   roster: Roster;
   role: TeamRole | null;
-  requests: { account: string; root: string; name: string; role: TeamRole; created: number }[];
+  /** Who used an invite link and waits for an owner (owners only). Only
+   * those whose link's one-time key vouches for them (#762): `by` is the
+   * owner whose device made the link. */
+  requests: { account: string; root: string; name: string; role: TeamRole; created: number; invite: AskInvite; proof: string; by: string }[];
   certs: AccountCerts;
   /** Members' names as they set them, by account (#208): the roster's
    * one-word form ("Sam-Stranger") is only what's signed. */
@@ -283,29 +290,43 @@ export async function passkeyRegister(name?: string): Promise<void> {
 
 /** What a signed-out page may know about an invite (#103): the team's
  * name and who made it. */
-export async function previewInvite(team: string, code: string, presigned: boolean): Promise<{ name: string; by: string } | null> {
-  if (presigned) {
-    const key = await inviteKey(code).then((k) => k.key, () => null);
-    return key ? api<{ name: string; by: string }>(`/api/presigned/${team}/${key}/preview`).catch(() => null) : null;
-  }
-  return api<{ name: string; by: string }>(`/api/invites/${team}/${code}/preview`).catch(() => null);
+export async function previewInvite(i: LinkInvite): Promise<{ name: string; by: string } | null> {
+  if (i.old) return null;
+  const key = await inviteKey(i.code).then((k) => k.key, () => null);
+  if (!key) return null;
+  return api<{ name: string; by: string }>(i.presigned ? `/api/presigned/${i.team}/${key}/preview` : `/api/invites/${i.team}/${key}/preview`).catch(() => null);
 }
 
-/** A team invite in a link's fragment: `#invite=<team>.<code>` asks an
- * owner first; `#pinvite=<team>.<seed>` is presigned and carries its
- * one-time key's seed. A page from before presigned invites doesn't know
- * the second, so it never sends the seed to control as a code. */
-export function inviteInHash(hash: string): { team: string; code: string; presigned: boolean } | null {
-  const m = /^#(p?)invite=([0-9a-f]+)\.([0-9a-f]+)$/.exec(hash);
-  return m ? { team: m[2], code: m[3], presigned: m[1] === "p" } : null;
+/** A team invite in a link's fragment. Both kinds carry a one-time key's
+ * seed (`code`), which control never sees: `#pinvite=<team>.<seed>` is
+ * presigned, and `#askinvite=<team>.<seed>` asks an owner first (#762).
+ * Pages from before don't know these, so they never send the seed to
+ * control as a code. `#invite=<team>.<code>` is a link from before #762
+ * (`old`), which no longer works. */
+export interface LinkInvite {
+  team: string;
+  code: string;
+  presigned: boolean;
+  old: boolean;
 }
+
+export function inviteInHash(hash: string): LinkInvite | null {
+  const m = /^#(p|ask)?invite=([0-9a-f]+)\.([0-9a-f]+)$/.exec(hash);
+  return m ? { team: m[2], code: m[3], presigned: m[1] === "p", old: !m[1] } : null;
+}
+
+/** A link whose fragment holds an invite's seed. */
+const seedInHash = (hash: string) => {
+  const i = inviteInHash(hash);
+  return !!i && !i.old;
+};
 
 const PENDING_INVITE = "arugula:presigned-invite";
 /** How long a kept join link counts (a join lasts ten minutes). */
 const KEPT_JOIN_MS = 15 * 60 * 1000;
 
 /** Where signing in with GitHub comes back to: this page, but never with a
- * presigned invite's seed or a machine's join secret (#760), which control
+ * an invite's seed (#762) or a machine's join secret (#760), which control
  * mustn't see. The link waits in this tab's sessionStorage for
  * `restoreInvite`; a join (or #761, a waiting device's code) comes back
  * with its code alone meanwhile, so the page still says what it's for. */
@@ -314,7 +335,7 @@ export function signInNext(): string {
   // #761: a waiting device's code carries its secret too, on its own
   // (`#device=`) or with the machine it came to approve (`&device=`).
   const secret = join ? splitJoinCode(join[1])?.secret || join[2] : DEVICE_HASH.test(location.hash);
-  if (!inviteInHash(location.hash)?.presigned && !secret) return location.pathname + location.hash;
+  if (!seedInHash(location.hash) && !secret) return location.pathname + location.hash;
   try {
     sessionStorage.setItem(PENDING_INVITE, JSON.stringify({ hash: location.hash, at: Date.now() }));
   } catch {
@@ -324,8 +345,9 @@ export function signInNext(): string {
   return location.pathname + (join ? `#join=${joinInHash()}` : device ? `#device=${device.code}` : "");
 }
 
-/** Back from signing in: the presigned invite link, or the machine's whole
- * join link, that `signInNext` kept. */
+/** Back from signing in: the invite link with its seed (presigned or, since
+ * #762, Ask me first), or the machine's whole join link, that `signInNext`
+ * kept. */
 export function restoreInvite() {
   try {
     const kept = sessionStorage.getItem(PENDING_INVITE);
@@ -343,7 +365,7 @@ export function restoreInvite() {
     const join = joinInHash(hash) !== null && wholeJoinInHash() === joinInHash(hash) && fresh;
     const lookup = DEVICE_HASH.test(hash) ? splitDeviceCode(hash)?.code : null;
     const device = !!lookup && location.hash === `#device=${lookup}` && fresh;
-    if ((!location.hash && inviteInHash(hash)?.presigned) || join || device) history.replaceState(null, "", location.pathname + location.search + hash);
+    if ((!location.hash && seedInHash(hash)) || join || device) history.replaceState(null, "", location.pathname + location.search + hash);
   } catch {
     // Nothing kept, or not in this shape.
   }
@@ -351,6 +373,9 @@ export function restoreInvite() {
 
 /** How long a presigned invite lasts unless the owner says otherwise. */
 const PRESIGNED_TTL_MS = 24 * 3600_000;
+
+/** How long an Ask me first link lasts. */
+const ASK_TTL_MS = 7 * 24 * 3600_000;
 
 export type Phase = "loading" | "signed-out" | "waiting" | "turned-down" | "lost-key" | "untrusted" | "unvouched" | "ready" | "error";
 
@@ -1173,7 +1198,14 @@ export class ControlSession {
       // The founder pinned on first sight. The team's daemons check each
       // roster version against it; this browser checks the ones it signs.
       const ok = pin(`team:${t.team}`, `${t.pin.founder}.${t.pin.founder_root}`);
-      out.push({ ...t, verified: ok });
+      // #762: only someone who held an owner's link; anything else control
+      // says waits is refused here, never shown.
+      const requests: Team["requests"] = [];
+      for (const q of t.requests ?? []) {
+        const by = await askOk(t.roster, t.certs, q);
+        if (by) requests.push({ ...q, role: q.invite.role, by });
+      }
+      out.push({ ...t, requests, verified: ok });
     }
     const now = r.asked ?? [];
     const yes = this.asked.find((a) => !now.some((x) => x.team === a.team) && out.some((t) => t.team === a.team));
@@ -1259,12 +1291,13 @@ export class ControlSession {
   }
 
   async admit(team: string, req: Team["requests"][number]) {
-    await this.changeTeam(team, (ms) => [...ms.filter((m) => m.account !== req.account), { account: req.account, root: req.root, role: req.role, name: word(req.name) }]);
+    // The role and root the link's proof vouches for, not control's word.
+    await this.changeTeam(team, (ms) => [...ms.filter((m) => m.account !== req.account), { account: req.account, root: req.root, role: req.invite.role, name: word(req.name) }]);
   }
 
   /** An invite link. Presigned unless `askFirst` (or for an owner): this
    * device signs it now, and whoever opens it is in as soon as they accept.
-   * The one-time key's seed goes only into the link's fragment. */
+   * Either kind's one-time key seed goes only into the link's fragment. */
   async invite(team: string, role: TeamRole, askFirst = false): Promise<string> {
     return (await this.makeInvite(team, role, askFirst)).link;
   }
@@ -1273,9 +1306,14 @@ export class ControlSession {
    * when it does though it wasn't asked to: control makes a presigned one
    * only once every machine checking the team's rosters understands it. */
   async makeInvite(team: string, role: TeamRole, askFirst = false): Promise<{ link: string; asks: boolean; why?: string }> {
+    // #762: an Ask me first link carries a one-time key too, so a request
+    // to join proves it came from the link.
     const old = async (why?: string) => {
-      const r = await api<{ link: string }>(`/api/teams/${team}/invites`, { role });
-      return { link: r.link, asks: true, why };
+      const { seed, key } = await newInviteKey();
+      const made = Date.now();
+      const ask = await signAskInvite({ team, role, made, expires: made + ASK_TTL_MS, key }, this.keys);
+      await api(`/api/teams/${team}/invites`, { role, ask });
+      return { link: `${location.origin}/#askinvite=${team}.${seed}`, asks: true, why };
     };
     if (askFirst || role === "owner") return old();
     const { seed, key } = await newInviteKey();
@@ -1316,12 +1354,18 @@ export class ControlSession {
     await this.refresh();
   }
 
-  async showInvite(team: string, code: string) {
-    return api<{ team: string; name: string; role: TeamRole }>(`/api/invites/${team}/${code}`);
+  /** What an Ask me first link says, as control has it. */
+  async showInvite(team: string, seed: string) {
+    const { key } = await inviteKey(seed);
+    return api<{ team: string; name: string; role: TeamRole }>(`/api/invites/${team}/${key}`);
   }
 
-  async acceptInvite(team: string, code: string) {
-    await api(`/api/invites/${team}/${code}/accept`, {});
+  /** Ask to join with an Ask me first link: its one-time key signs for
+   * this account and its root, which owners' pages check (#762). */
+  async acceptInvite(team: string, seed: string) {
+    const k = await inviteKey(seed);
+    const proof = await k.sign(askBody({ team, key: k.key }, this.account, this.enrollment!.root));
+    await api(`/api/invites/${team}/${k.key}/accept`, { proof });
     await this.refresh();
   }
 

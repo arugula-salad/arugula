@@ -146,6 +146,83 @@ impl Invite {
     }
 }
 
+/// An *Ask me first* invite (#762): an owner's device signs it with a
+/// one-time key whose private half lives only in the link, as a presigned
+/// [`Invite`] does. Whoever uses the link proves they held it by signing
+/// [`AskInvite::ask_body`] (their account and root) with that key, and an
+/// owner then admits them by signing the next roster (a plain v1, so older
+/// daemons follow it). Control never holds the key, so it can't put a
+/// request of its own in front of an owner. Its own domain, so an owner
+/// can't be made to have presigned one.
+///
+/// ```text
+/// arugula team ask invite v1
+/// team <id>
+/// role <owner|editor|viewer>
+/// made <ms>
+/// expires <ms>
+/// key <ed25519 public key, hex>
+/// by <device id>
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AskInvite {
+    pub team: String,
+    pub role: TeamRole,
+    /// When the owner made the link, as their device's clock said.
+    pub made: u64,
+    pub expires: u64,
+    /// The one-time key; it also names the invite.
+    pub key: String,
+    /// The owner's signing device.
+    pub by: String,
+    pub sig: String,
+}
+
+impl AskInvite {
+    pub fn body(&self) -> String {
+        format!(
+            "arugula team ask invite v1\nteam {}\nrole {}\nmade {}\nexpires {}\nkey {}\nby {}\n",
+            self.team,
+            self.role.as_str(),
+            self.made,
+            self.expires,
+            self.key,
+            self.by
+        )
+    }
+
+    pub fn sign_with(&mut self, keys: &DeviceKeys) {
+        self.by = keys.id();
+        self.sig = hex::encode(keys.signature(self.body().as_bytes()));
+    }
+
+    /// Signed by `by`, a device that may approve.
+    pub fn signed_by(&self, by: &Cert) -> bool {
+        by.device == self.by && by.kind.approves() && verify_hex(&by.sign, self.body().as_bytes(), &self.sig)
+    }
+
+    /// What the one-time key signs for whoever used the link: their
+    /// account and its root device, so the proof can't be moved to
+    /// another account.
+    ///
+    /// ```text
+    /// arugula team ask v1
+    /// team <id>
+    /// account <account>
+    /// root <root device>
+    /// key <one-time key>
+    /// ```
+    pub fn ask_body(&self, account: &str, root: &str) -> String {
+        format!("arugula team ask v1\nteam {}\naccount {account}\nroot {root}\nkey {}\n", self.team, self.key)
+    }
+
+    /// Whether `proof` is the one-time key's signature for `account` and
+    /// `root`.
+    pub fn proves(&self, account: &str, root: &str, proof: &str) -> bool {
+        verify_hex(&self.key, self.ask_body(account, root).as_bytes(), proof)
+    }
+}
+
 /// An invite that's been used, kept until it would have expired anyway.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Spent {
@@ -517,6 +594,46 @@ mod tests {
         assert!(v1.follows(None, &pin, &all));
         assert!(v2.follows(Some(&v1), &pin, &all));
         assert!(v3.follows(Some(&v2), &pin, &all));
+    }
+
+    #[test]
+    fn an_ask_invites_proof_names_its_holder() {
+        let (alice, bob, mallory) = (person("alice"), person("bob"), person("mallory"));
+        let k = DeviceKeys::generate();
+        let mut inv = AskInvite {
+            team: "t1".into(),
+            role: TeamRole::Owner,
+            made: 1,
+            expires: 2,
+            key: hex::encode(k.sign_public()),
+            by: String::new(),
+            sig: String::new(),
+        };
+        inv.sign_with(&alice.keys);
+        assert!(inv.signed_by(&alice.cert));
+        assert!(!inv.signed_by(&bob.cert), "another device's");
+        let proof = hex::encode(k.signature(inv.ask_body("bob", &bob.cert.device).as_bytes()));
+        assert!(inv.proves("bob", &bob.cert.device, &proof));
+        // Control can't move Bob's proof to an account (or a root) of its own.
+        assert!(!inv.proves("mallory", &mallory.cert.device, &proof));
+        assert!(!inv.proves("bob", &mallory.cert.device, &proof));
+        // Nor sign one without the link's key.
+        let forged = hex::encode(mallory.keys.signature(inv.ask_body("mallory", &mallory.cert.device).as_bytes()));
+        assert!(!inv.proves("mallory", &mallory.cert.device, &forged));
+        // A changed role or expiry no longer carries the owner's signature.
+        let mut bent = inv.clone();
+        bent.expires = 99;
+        assert!(!bent.signed_by(&alice.cert));
+        // Nor does it read as a presigned invite.
+        let as_presigned = Invite {
+            team: inv.team.clone(),
+            role: TeamRole::Editor,
+            expires: inv.expires,
+            key: inv.key.clone(),
+            by: inv.by.clone(),
+            sig: inv.sig.clone(),
+        };
+        assert!(!verify_hex(&alice.cert.sign, as_presigned.body().as_bytes(), &as_presigned.sig));
     }
 
     #[test]

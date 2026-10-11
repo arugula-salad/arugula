@@ -152,8 +152,11 @@ test("two people at different companies join a team by invite", async ({ browser
   const section = alice.locator(`[data-team="${team}"]`);
   await section.locator("[data-invite-ask-first]").check();
   await alice.locator(`[data-invite="${team}"]`).click();
-  await expect(section.locator("[data-invite-link]")).toContainText("#invite=");
+  // It carries a one-time key in its fragment too (#762), as a presigned
+  // link does, but its own kind.
+  await expect(section.locator("[data-invite-link]")).toContainText("#askinvite=");
   const link = (await section.locator("[data-invite-link]").textContent())!;
+  expect(link).toMatch(/#askinvite=[0-9a-f]{16}\.[0-9a-f]{64}$/);
   await expect(section.locator("[data-invite-link] + [data-copy]")).toBeVisible();
   await alice.getByRole("button", { name: "Done" }).click();
   // Bob follows it with no account: the sign-in page says who invited him
@@ -171,10 +174,33 @@ test("two people at different companies join a team by invite", async ({ browser
   await bob.getByRole("button", { name: "Done" }).click();
   await expect(bob.locator(`[data-asked="${team}"]`)).toHaveText("Waiting for alice to add you to Acme. Their machines appear here when they do.");
   await expect(bob.getByRole("heading", { name: "Add your own machine" })).toBeVisible();
-  // Alice is asked, sees Bob's fingerprint, and adds him (signing the roster).
+  // #762: control lying. It adds requests of its own in front of Alice:
+  // one with Bob's invite and proof moved to another account, one with no
+  // proof, one with a proof for another invite key. Her page shows none.
+  await alice.route("**/api/teams", async (route) => {
+    const res = await route.fetch();
+    const j = await res.json();
+    for (const t of j.teams) {
+      const real = t.requests?.[0];
+      if (!real) continue;
+      t.requests = [
+        { ...real, account: "mallory0000000001", name: "mallory", role: "owner" },
+        { ...real, account: "mallory0000000002", name: "mallory2", proof: undefined },
+        { ...real, account: "mallory0000000003", name: "mallory3", invite: { ...real.invite, key: "ab".repeat(32) } },
+        ...t.requests,
+      ];
+    }
+    await route.fulfill({ response: res, json: j });
+  });
   await alice.evaluate(() => window.__arugula.control!.refresh());
   await expect(alice.locator("[data-admit-yes]")).toBeVisible({ timeout: 15_000 });
-  await expect(alice.locator(".control-prompt")).toContainText("used an invite, as someone who drives");
+  expect(await alice.evaluate(() => window.__arugula.control!.teams[0].requests.map((r) => r.name))).toEqual(["bob"]);
+  await alice.unroute("**/api/teams");
+  // Alice is asked, with nothing to compare, and adds him (signing the
+  // roster).
+  await expect(alice.locator(".control-prompt")).toContainText(/bob used your invite link \(made .+, for someone who drives\)\./);
+  await expect(alice.locator(".control-prompt .fingerprint")).toHaveCount(0);
+  await expect(alice.locator("[data-admit-no]")).toHaveText("Not now");
   await alice.locator("[data-admit-yes]").click();
   await expect
     .poll(() => alice.evaluate(() => window.__arugula.control!.teams[0].roster.members.map((m) => `${m.name}:${m.role}`)), { timeout: 15_000 })
