@@ -22,7 +22,6 @@ async function measure(page: Page, theme: "blocks" | "city" | "hive" | "timeline
   if (theme !== "blocks") {
     await expect.poll(() => page.evaluate((m) => !!(window.__arugula.swarm as Record<string, unknown> | null)?.[m], MARK[theme]), { timeout: 10_000 }).toBe(true);
     await page.waitForTimeout(2000);
-    await page.screenshot({ path: `test-results/${theme}-500.png` });
   }
   return page.evaluate(() => (window.__arugula.swarm as { measure(ms: number): Promise<{ fps: number; workP50: number; frames: number }> }).measure(5000));
 }

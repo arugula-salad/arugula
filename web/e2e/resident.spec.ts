@@ -183,7 +183,6 @@ test("a resident daemon's layout and scrollback come back after the sandbox goes
       .poll(() => page.evaluate((p) => window.__arugula.screen(p), pane), { timeout: 60_000 })
       .toMatch(/Welcome to Claude|text style|Claude Code v\d|Try "|limit/i);
     expect(await paneText(page, pane)).not.toContain(token.slice(0, 12));
-    await page.screenshot({ path: "test-results/m4b-claude-before-cold.png" });
   }
   const before = await page.evaluate(() => window.__arugula.client.state!.panes.map((p) => p.id));
   // Let the checkpoint land (5s idle).
@@ -229,7 +228,6 @@ test("a resident daemon's layout and scrollback come back after the sandbox goes
   expect(boots.at(-1), `booted ${bootBefore}, then ${boots.join(", ")}:\n${tail}`).not.toBe(bootBefore);
   // Claude Code's screen is in the restored scrollback.
   if (claude) expect(await paneText(page, pane)).toMatch(/text style|Claude Code v\d|limit/i);
-  await page.screenshot({ path: "test-results/m4b-after-cold.png" });
 
   // Over the CLI's route too: the tunnel answers for the API.
   expect((await tunnel("/api/host")).ok).toBe(true);

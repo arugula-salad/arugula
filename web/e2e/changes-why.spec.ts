@@ -73,7 +73,7 @@ test.afterAll(() => {
   if (dir) rmSync(dir, { recursive: true, force: true });
 });
 
-test("a hunk in Changes names its decision and run, and the run opens its agent", async ({ page }, info) => {
+test("a hunk in Changes names its decision and run, and the run opens its agent", async ({ page }) => {
   test.setTimeout(120_000);
   // The member's agent, running as its session `app`: its run is the one
   // the workspace records.
@@ -110,8 +110,6 @@ test("a hunk in Changes names its decision and run, and the run opens its agent"
   const run = why.locator(`[data-run="${runId}"]`);
   await expect(run).toHaveText(`Run ${runId} (app, claude-code)`);
   await expect(why.locator("[data-uncommitted]")).toHaveText("1 not committed yet; app holds the lease on W-001");
-  await why.screenshot({ path: info.outputPath("hunk-why.png") });
-  await diff.screenshot({ path: info.outputPath("changes.png") });
 
   // A tap on the run opens the agent that made it.
   expect(await active(page)).not.toBe(agent);

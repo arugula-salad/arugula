@@ -164,6 +164,8 @@ export default defineConfig({
     baseURL: external ?? `http://127.0.0.1:${port}`,
     viewport: { width: 1000, height: 640 },
     storageState: { cookies: tokenCookies, origins: [] },
+    // Only a failed spec leaves a picture, in test-results/: CI uploads it.
+    screenshot: "only-on-failure",
   },
   projects: [
     // Chrome hands a granted notification to the desktop over the session's
