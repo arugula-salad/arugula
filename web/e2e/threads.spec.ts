@@ -119,13 +119,15 @@ test("a message reaches everyone on the pane, live", async ({ browser }) => {
   await expect(badge(owner)).not.toHaveClass(/unread/);
 });
 
-test("an @ that reached no one stays plain and tells only its poster", async () => {
+test("an @ that reached no one is marked as missed and tells only its poster", async () => {
   const panel = owner.locator(".thread-panel");
   await panel.locator("textarea").fill("@notreal what's up");
   await panel.locator("textarea").press("Enter");
   const msg = panel.locator(".thread-msg").filter({ hasText: "what's up" });
   await expect(msg).toBeVisible();
   await expect(msg.locator(".mention")).toHaveCount(0);
+  // Marked as one that reached nobody, not as a person.
+  await expect(msg.locator(".mention-missed")).toHaveText("@notreal");
   await expect(panel.locator(".thread-note.unreached")).toHaveText("Nobody here called notreal can read this thread");
   // Typing again clears the note.
   await panel.locator("textarea").fill("x");

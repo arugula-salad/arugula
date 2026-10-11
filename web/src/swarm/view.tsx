@@ -534,8 +534,9 @@ export function SwarmView({
             ))}
           </div>
           {theme !== "blocks" && <ThemeKey theme={theme} />}
+          {/* Once, not twice: under the bar while the tip is up. */}
           <div class="swarm-hint">
-            {HINT[theme][phone ? 1 : 0]}
+            {tipGone ? HINT[theme][phone ? 1 : 0] : ""}
             {by === "project" ? ` ${PROJECTS}` : ""}
           </div>
         </div>

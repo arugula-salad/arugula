@@ -734,7 +734,9 @@ export class Field implements SwarmScene {
     // Panes.
     const w = TW * z;
     const h = TH * z;
-    const textMode = w > 70;
+    // Big enough to read a label on: say what each is (a tile is a pane to
+    // open, not a pixel).
+    const textMode = w > 48;
     const fs = Math.max(6, h / 9);
     if (textMode) cx.font = `${fs}px "JetBrains Mono", ui-monospace, monospace`;
     for (const t of this.tiles.values()) {
