@@ -445,7 +445,9 @@ test("devices and machines, grouped; new recovery codes retire the old", async (
   // The laptop, the phone and the browser the recovery code let in.
   await expect(laptop.locator("[data-browsers] li")).toHaveCount(3);
   await expect(laptop.locator("[data-browsers] li [data-this-browser]")).toHaveCount(1);
-  // One code was spent.
+  // One code was spent: Sign-in and account says so.
+  await laptop.getByRole("button", { name: "Done" }).click();
+  await controlPanel(laptop, "account");
   await expect(laptop.locator("[data-recovery-left]")).toHaveAttribute("data-recovery-left", "1");
   await laptop.locator("[data-new-codes]").click();
   await laptop.locator("[data-new-codes]").click();

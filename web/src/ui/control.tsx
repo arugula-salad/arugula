@@ -471,7 +471,7 @@ function TeamJoin({ s, t, here }: { s: ControlSession; t: Team; here?: boolean }
   return (
     <>
       <span class="dim">
-        To add a machine to <b>{t.roster.name}</b>, run this on it, or move one you have with <i>In …</i> in <i>Devices and machines…</i>:
+        To add a machine to <b>{t.roster.name}</b>, run this on it, or move one you have with <i>Team …</i> in <i>Devices and machines…</i>:
       </span>
       <CopyText text={`arugulad join ${s.info.url} --team ${t.team}`} {...(here ? { "data-team-join": true } : { "data-team-join-step": t.team })} />
     </>
@@ -589,10 +589,19 @@ export function ControlOverlay({ s }: { s: ControlSession }) {
   return null;
 }
 
+/** A control dialog: as tall as the window allows, scrolling inside, with
+ * its close button pinned where it can always be seen. */
 function Modal({ children, close }: { children: preact.ComponentChildren; close?: () => void }) {
   return (
     <div class="prompt-backdrop" onClick={(e) => e.target === e.currentTarget && close?.()}>
-      <div class="prompt control-prompt">{children}</div>
+      <div class="prompt control-prompt">
+        {close ? (
+          <button class="modal-close" aria-label="Close dialog" title="Close" onClick={close}>
+            ×
+          </button>
+        ) : null}
+        {children}
+      </div>
     </div>
   );
 }
@@ -1064,8 +1073,8 @@ function MoveMachine({ s, c, team, online }: { s: ControlSession; c: Cert; team:
   const name = (id: string | null) => (id ? s.teams.find((t) => t.team === id)?.roster.name ?? "a team" : "just you");
   return (
     <div class="control-move" data-move={c.device}>
-      <label class="dim">
-        In{" "}
+      <label class="dim control-move-label">
+        Team{" "}
         <select
           class="control-select"
           data-move-to
@@ -1121,6 +1130,38 @@ function MoveMachine({ s, c, team, online }: { s: ControlSession; c: Cert; team:
   );
 }
 
+/** The account's recovery codes and its name: Sign-in and account's, with
+ * the passkeys (they were at the foot of Devices and machines). */
+export function RecoveryAndName({ s }: { s: ControlSession }) {
+  const [renewing, setRenewing] = useState(false);
+  const [err, setErr] = useState("");
+  const left = s.recoveryLeft;
+  return (
+    <>
+      <h3 class="control-group">Recovery codes</h3>
+      <p class="dim">
+        <span data-recovery-left={left}>
+          {left === 0 ? "No recovery codes left." : `${left} recovery code${left === 1 ? "" : "s"} left.`}
+        </span>{" "}
+        {renewing ? "New codes replace these: the old ones stop working. " : ""}
+        <button
+          class={renewing ? "control-linkish danger" : "control-linkish"}
+          data-new-codes
+          onClick={() => {
+            if (!renewing) return setRenewing(true);
+            setRenewing(false);
+            s.newRecoveryCodes().catch((e: Error) => setErr(e.message));
+          }}
+        >
+          {renewing ? "Make new ones" : "Make new codes"}
+        </button>
+      </p>
+      <NameLine s={s} />
+      {err ? <p class="control-error">{err}</p> : null}
+    </>
+  );
+}
+
 /** Whether a browser is signed in, with Sign out for one that isn't this
  * one. Nothing until the sign-ins load, or from a control that doesn't
  * say which sign-in is which device. */
@@ -1161,7 +1202,6 @@ function Devices({ s, close }: { s: ControlSession; close: () => void }) {
   const [err, setErr] = useState("");
   // The machine or device whose Remove was clicked: a dialog asks.
   const [removing, setRemoving] = useState<Cert | null>(null);
-  const [renewing, setRenewing] = useState(false);
   const devices = [...s.trusted.values()].filter((c) => c.kind !== "recovery");
   const machines = devices.filter((c) => c.kind === "daemon");
   // The ones in use first.
@@ -1169,11 +1209,10 @@ function Devices({ s, close }: { s: ControlSession; close: () => void }) {
     .filter((c) => c.kind !== "daemon")
     .sort((a, b) => +(b.device === s.keys.id) - +(a.device === s.keys.id) || (s.used.get(b.device) ?? 0) - (s.used.get(a.device) ?? 0));
   const remove = (c: Cert) => (
-    <button class="control-revoke" data-remove={c.device} onClick={() => setRemoving(c)}>
+    <button class="control-revoke quiet-danger" data-remove={c.device} onClick={() => setRemoving(c)}>
       Remove
     </button>
   );
-  const left = s.recoveryLeft;
   // Which browsers are signed in: a device and a sign-in are two things
   // (Remove takes the key away; Sign out only ends the sign-in), shown
   // on one row.
@@ -1195,6 +1234,7 @@ function Devices({ s, close }: { s: ControlSession; close: () => void }) {
       })
     : [];
   const [clearing, setClearing] = useState(false);
+  const [showUnused, setShowUnused] = useState(false);
   const removeUnused = async () => {
     setClearing(false);
     try {
@@ -1273,7 +1313,11 @@ function Devices({ s, close }: { s: ControlSession; close: () => void }) {
             </>
           ) : (
             <>
-              {unused.length} {unused.length === 1 ? "looks" : "look"} unused: signed out, and not used in 30 days.{" "}
+              {unused.length} more {unused.length === 1 ? "looks" : "look"} unused: signed out, and not used in 30 days.{" "}
+              <button class="control-linkish" data-show-unused aria-expanded={showUnused} onClick={() => setShowUnused(!showUnused)}>
+                {showUnused ? "Hide them" : "Show them"}
+              </button>
+              {" · "}
               <button class="control-linkish" data-clear-unused onClick={() => setClearing(true)}>
                 Remove them…
               </button>
@@ -1285,6 +1329,8 @@ function Devices({ s, close }: { s: ControlSession; close: () => void }) {
         {browsers.map((c) => {
           const at = s.used.get(c.device);
           const old = unused.includes(c);
+          // Unused ones are folded into the line above until asked for.
+          if (old && !showUnused) return null;
           return (
             <li key={c.device} data-device={c.device} class={old ? "unused" : undefined}>
               <span title={approvedText(s, c)}>
@@ -1306,35 +1352,12 @@ function Devices({ s, close }: { s: ControlSession; close: () => void }) {
       <button data-add-device onClick={openPanel("add-device")}>
         Add a phone or browser…
       </button>
-      <h3 class="control-group">Recovery codes</h3>
       <p class="dim">
-        <span data-recovery-left={left}>
-          {left === 0 ? "No recovery codes left." : `${left} recovery code${left === 1 ? "" : "s"} left.`}
-        </span>{" "}
-        {renewing ? "New codes replace these: the old ones stop working. " : ""}
-        <button
-          class={renewing ? "control-linkish danger" : "control-linkish"}
-          data-new-codes
-          onClick={() => {
-            if (!renewing) return setRenewing(true);
-            setRenewing(false);
-            s.newRecoveryCodes().catch((e: Error) => setErr(e.message));
-          }}
-        >
-          {renewing ? "Make new ones" : "Make new codes"}
+        Recovery codes, your name and passkeys are in{" "}
+        <button class="control-linkish" data-to-account onClick={panel("account")}>
+          Sign-in and account…
         </button>
       </p>
-      <NameLine s={s} />
-      {s.info.passkeys && s.passkeys ? (
-        <p class="dim">
-          {`${s.passkeys} passkey${s.passkeys === 1 ? "" : "s"} can sign in to this account. `}
-          <button class="control-linkish" data-add-passkey onClick={() => s.addPasskey().catch((e: Error) => setErr(e.message))}>
-            Add one
-          </button>
-        </p>
-      ) : (
-        <PasskeyNudge s={s} />
-      )}
       {err ? <p class="control-error">{err}</p> : null}
       {removing ? (
         <ConfirmRemove

@@ -16,8 +16,8 @@ import type { PaneId } from "../proto";
 import { fuzzy } from "../fs";
 import { useWorkspaceDir } from "../blocks";
 import { closeSwarm, openSwarm, swarmRoute } from "../swarm/route";
-import { closeChat, isChatOpen, openChat } from "./places";
-import { agentsRoute, closeAgentsPage } from "./agents-route";
+import { closeChat, isChatOpen, openChat, openChatView } from "./places";
+import { agentsRoute, closeAgentsPage, openAgentsPage } from "./agents-route";
 import { askText, closeMenu, type MenuItem } from "./menu";
 import { newTabItems, PALETTE_KEY, paneItems, sessionItems, settingsItems, tabItems } from "./commands";
 
@@ -106,10 +106,10 @@ function remember(key: string) {
 
 /** A menu's items as commands: headers name the items after them, up to
  * the next separator; a header that opens the menu says what it's for. */
-function fromMenu(group: string, items: MenuItem[]): Command[] {
+function fromMenu(group: string, items: MenuItem[], about?: string): Command[] {
   const out: Command[] = [];
   let under: string | null = null;
-  let detail: string | undefined;
+  let detail: string | undefined = about;
   items.forEach((item, i) => {
     if (item === "separator") under = null;
     else if ("header" in item) {
@@ -132,7 +132,8 @@ export function commands(client: Client, phone: boolean, workspace: string | nul
   const tab = client.tabView();
   const session = client.session;
 
-  if (pane !== undefined) out.push(...fromMenu("Pane", paneItems(client, pane, phone, workspace)));
+  // Which pane each acts on, beside it: "Pane" alone says nothing.
+  if (pane !== undefined) out.push(...fromMenu("Pane", paneItems(client, pane, phone, workspace), client.title(pane) || client.info(pane)?.command || `pane %${pane}`));
   if (tab) {
     const rename = async () => {
       const name = await askText("Rename tab", tab.name ?? tabLabel(client, tab));
@@ -189,6 +190,7 @@ export function commands(client: Client, phone: boolean, workspace: string | nul
     detail: next === undefined ? "nothing needs you" : client.title(next) || `pane %${next}`,
     run: () => next !== undefined && client.setActive(next),
   });
+  out.push(...places(client));
   out.push({
     key: "Swarm/next-in-swarm",
     group: "Swarm",
@@ -199,7 +201,38 @@ export function commands(client: Client, phone: boolean, workspace: string | nul
   return out;
 }
 
+/** Where the palette was opened: the panes, or a place over them. */
+function here(): "panes" | "swarm" | "chat" | "agents" {
+  return swarmRoute() ? "swarm" : isChatOpen() ? "chat" : agentsRoute() ? "agents" : "panes";
+}
+
+/** The places, and what the one you're in offers: first when you're not
+ * on the panes, so the palette starts with the view it's opened over. */
+function places(client: Client): Command[] {
+  const at = here();
+  const toPanes = () => {
+    if (swarmRoute()) closeSwarm();
+    if (isChatOpen()) closeChat();
+    if (agentsRoute()) closeAgentsPage();
+  };
+  const out: Command[] = [];
+  const go = (key: string, label: string, run: () => void) => out.push({ key: `Places/${key}`, group: "Places", label, run });
+  if (at !== "panes") go("panes", "Go to Panes", toPanes);
+  if (at !== "swarm") go("swarm", "Go to Swarm", openSwarm);
+  if (client.hasThreads()) {
+    if (at !== "chat") go("chat", "Go to Chat", () => openChat());
+    go("activity", "Chat: Activity, what needs you", () => openChatView("activity"));
+  }
+  if (client.flag("agents") && !client.state?.roles) {
+    go("recipes", "Agents: Recipes", () => openAgentsPage("recipes"));
+    go("team", "Agents: Team", () => openAgentsPage("team"));
+  }
+  return out;
+}
+
 function rank(list: Command[], query: string, recent: string[]): Command[] {
+  // Over a place, its commands come first, before the pane's.
+  if (here() !== "panes") list = [...list.filter((c) => c.group === "Places"), ...list.filter((c) => c.group !== "Places")];
   const q = query.trim();
   const at = (c: Command) => {
     const i = recent.indexOf(c.key);
@@ -257,9 +290,9 @@ function Palette({ client, phone, close }: { client: Client; phone: boolean; clo
     remember(c.key);
     close();
     // The panes are under the swarm, chat and agents: show them, unless
-    // it's the swarm's or chat's.
-    if (c.group !== "Swarm" && swarmRoute()) closeSwarm();
-    if (c.group !== "Swarm" && c.group !== "Chat") {
+    // it's the swarm's or chat's, or a place's (it goes there itself).
+    if (c.group !== "Swarm" && c.group !== "Places" && swarmRoute()) closeSwarm();
+    if (c.group !== "Swarm" && c.group !== "Chat" && c.group !== "Places") {
       if (isChatOpen()) closeChat();
       if (agentsRoute()) closeAgentsPage();
     }

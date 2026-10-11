@@ -1,6 +1,6 @@
 // What a person does in the app's window, by what's on screen: the
 // account menu's items, switching machines, teams and their invite links,
-// moving a machine with In …. Shared by the J2 journeys (#551).
+// moving a machine with Team …. Shared by the J2 journeys (#551).
 
 import { expect, type Page } from "@playwright/test";
 import type { App } from "./app";
@@ -47,7 +47,7 @@ export async function join(app: App, link: string, team: string) {
   return tab;
 }
 
-/** Devices and machines…: put `machine` in `team` with In …, Move. */
+/** Devices and machines…: put `machine` in `team` with Team …, Move. */
 export async function moveInto(p: Page, machine: string, team: string) {
   await account(p, "Devices and machines…");
   const row = p

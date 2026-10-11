@@ -1,6 +1,6 @@
 // J2b (#551): two friends link up through a team. Riley makes DLex Corp
 // and sends Sam a one-click invite; Sam joins, puts his own machine in the
-// team (as the Teams panel says: In … in Devices and machines…), and Riley,
+// team (as the Teams panel says: Team … in Devices and machines…), and Riley,
 // who drives in the team, types in Sam's terminal with no ask, as a team
 // machine allows. Each person's first run is its own report
 // (J2b-setup-<login>). Rules as in journey-j1.spec.ts.
@@ -66,7 +66,7 @@ test("J2b: two friends link up through a team; the friend types on the owner's t
           .getByText(/You're in DLex Corp/)
           .locator("..")
           .innerText();
-        if (!/machine|In …|join/i.test(said)) j.issue("joining doesn't say how to bring a machine into the team");
+        if (!/machine|Team …|join/i.test(said)) j.issue("joining doesn't say how to bring a machine into the team");
         await tab.close();
       },
     );
@@ -94,7 +94,7 @@ test("J2b: two friends link up through a team; the friend types on the owner's t
 
     await step(
       "move-in",
-      "Sam puts sammac in DLex Corp with In …",
+      "Sam puts sammac in DLex Corp with Team …",
       "sam",
       "app",
       at(sam),

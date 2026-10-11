@@ -13,7 +13,7 @@ import { agentsRoute } from "./agents-route";
 import { useChatOpen } from "./places";
 import { AppBar } from "./app-bar";
 import { AttentionBadge, tabAttention } from "./attention";
-import { getFleet, HostPicker, NewMachineNote } from "./hosts";
+import { getFleet, HostPicker, NewMachineNote, setMachineItems } from "./hosts";
 import { ControlRequests, PaneMarks, PeopleBar, ShareDialog, shareSession, TabPeople } from "./people";
 import { directory } from "../hosts";
 import { DeveloperLayer } from "./developer";
@@ -25,7 +25,7 @@ import { PickerLayer, usePickerShortcut } from "./picker";
 import { drawsItsOwn, TermAnswered, TermAsk, TermDiff } from "./term-ask";
 import { InstallHint } from "./notify";
 import { GettingStartedLayer, useFirstRun } from "./welcome";
-import { machineState, newTabItems, paneItems, sessionItems, tabItems } from "./commands";
+import { machineSettingsItems, machineState, newTabItems, paneItems, sessionItems, tabItems } from "./commands";
 import { PaletteLayer, usePaletteShortcut } from "./palette";
 import { ControlBanner } from "./control-state";
 import { AgentsNudge } from "./agents-setup";
@@ -77,6 +77,8 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
   }, [client]);
 
   useHoverToSwitchTabs(client);
+  // The machine menu's "This machine" items are this client's.
+  useEffect(() => setMachineItems(() => machineSettingsItems(client)), [client]);
   useReportFocus(client, phone);
   usePickerShortcut(client, phone);
   usePaletteShortcut(client, phone);

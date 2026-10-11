@@ -1806,7 +1806,7 @@ fn whose(s: &Saved) -> String {
 /// it's approved again, so that's the last thing to try, not the first.
 fn already_in(s: &Saved, team: Option<&str>) -> String {
     let here = format!("this machine is already in {} on {}", whose(s), s.url);
-    let move_it = "use In … beside it in Devices and machines… (the account menu)";
+    let move_it = "use Team … beside it in Devices and machines… (the account menu)";
     let leave = "`arugulad leave`, then join again, also moves it, but takes it off control until it's approved again";
     match team {
         Some(t) if s.team.as_ref().is_some_and(|p| p.team == t) => here,
@@ -2410,20 +2410,20 @@ mod tests {
         // Into the team it's in: nothing to do.
         assert_eq!(already_in(&s, Some("t1")), "this machine is already in the team t1 on https://c.example");
         // Another team: it's named (by id, unless a share here names it),
-        // sharing a session and In … come first, and leave last (#551).
+        // sharing a session and Team … come first, and leave last (#551).
         let other = already_in(&s, Some("t2"));
         assert!(other.contains("To work with the team t2"), "{other}");
         let (share, move_it, leave) = (
             other.find("share a session").unwrap(),
-            other.find("In …").unwrap(),
+            other.find("Team …").unwrap(),
             other.find("arugulad leave").unwrap(),
         );
         assert!(share < move_it && move_it < leave, "{other}");
-        // Its account, not a team: In … first, then leave.
+        // Its account, not a team: Team … first, then leave.
         s.team = None;
         let mine = already_in(&s, None);
         assert!(
-            mine.starts_with("this machine is already in sam's account on https://c.example. To move it, use In …"),
+            mine.starts_with("this machine is already in sam's account on https://c.example. To move it, use Team …"),
             "{mine}"
         );
         assert!(mine.contains("takes it off control until it's approved again"), "{mine}");

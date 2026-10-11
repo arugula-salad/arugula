@@ -87,6 +87,20 @@ export function setHostMenuExtras(f: () => MenuItem[]) {
   extras = f;
 }
 
+/** The machine settings the shown machine's menu adds (set by the app,
+ * which has its client). */
+let machineItems: () => MenuItem[] = () => [];
+export function setMachineItems(f: () => MenuItem[]) {
+  machineItems = f;
+}
+
+/** Whether the bar has the machine menu (else its settings go to the
+ * account menu). */
+export function hostMenuShown(): boolean {
+  const dropped = controlState()?.state === "dropped";
+  return directory.control || directory.names.length > 1 || directory.shown !== null || !!directory.joined || dropped;
+}
+
 /** Only worth showing once there is somewhere else to go. */
 function useHosts(): boolean {
   useSubscribe((fn) => directory.subscribe(fn));
@@ -141,6 +155,9 @@ export function HostButton() {
       }
     }
     items.push("separator", { label: "Swarm: every pane at once", run: openSwarm });
+    // The shown machine's own settings: here, not in the account menu.
+    const mine = machineItems();
+    if (mine.length) items.push("separator", { header: `This machine: ${directory.current}` } as MenuItem, ...mine);
     if (fleet?.notice) items.push("separator", { label: fleet.notice, disabled: true, run: () => {} });
     if (directory.stale) {
       const what = directory.control ? "Control unreachable: saved list" : "Home daemon unreachable: saved list";

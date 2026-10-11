@@ -2,6 +2,7 @@
 // the `+` button's menu and the session menu are built here, and the
 // command palette reads the same lists, so the two can't drift.
 
+import { hostMenuShown } from "./hosts";
 import { opPath } from "../ops";
 import { paneIds, type Client } from "../client";
 import type { Machine, OpenRequest, PaneId, Policy, SessionId, TabView } from "../proto";
@@ -224,15 +225,9 @@ export function sessionItems(client: Client, session: SessionId, rename: () => v
  * same everywhere (the panes, the swarm, chat, agents), with or without a
  * session. */
 export function settingsItems(client: Client | null): MenuItem[] {
-  const owner = !!client?.state && !client.state.roles;
-  const machine: MenuItem[] = client?.state
-    ? [
-        // #166: this machine's standing permission rules, the owner's.
-        ...(owner ? [{ label: "Permission rules…", run: () => openRules(client) } as MenuItem] : []),
-        // #665: this machine's Labs flags, the owner's, once asked for.
-        ...(owner && client.hasDev() ? [{ label: "Developer settings…", run: () => openDeveloper(client) } as MenuItem] : []),
-      ]
-    : [];
+  // The machine's own settings are in the machine menu, where there is
+  // one; else (a daemon's page with no other machine) here.
+  const machine = client && !hostMenuShown() ? machineSettingsItems(client) : [];
   return [
     ...(machine.length ? [{ header: "This machine" } as MenuItem, ...machine, "separator" as const] : []),
     ...(client?.state ? [{ header: "This device" } as MenuItem, ...notificationItems(client), "separator" as const] : []),
@@ -242,6 +237,16 @@ export function settingsItems(client: Client | null): MenuItem[] {
           { label: "Command palette…", shortcut: PALETTE_KEY, run: () => openPalette(client) } as MenuItem,
         ]
       : []),
+  ];
+}
+
+/** The shown machine's settings: its standing permission rules (#166) and
+ * its Labs flags (#665), the owner's. In the machine menu. */
+export function machineSettingsItems(client: Client): MenuItem[] {
+  if (!client.state || client.state.roles) return [];
+  return [
+    { label: "Permission rules…", run: () => openRules(client) },
+    ...(client.hasDev() ? [{ label: "Developer settings…", run: () => openDeveloper(client) } as MenuItem] : []),
   ];
 }
 
