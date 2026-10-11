@@ -5699,6 +5699,60 @@ button.diff-why-run {
   border-color: var(--accent);
 }
 
+/* Chat's Activity: what needs you on every machine, above the messages. */
+.activity-head {
+  margin: 12px 16px 4px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--dim);
+}
+
+.activity-need {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 12px;
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--divider);
+}
+
+.activity-need-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.activity-need-text p {
+  margin: 2px 0 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg);
+}
+
+.activity-need[data-kind="failed"] b,
+.activity-need[data-kind="exited"] b {
+  color: var(--danger);
+}
+
+.activity-need-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+.activity-need-buttons button {
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: var(--raised);
+}
+
+.activity-need-buttons button.pri {
+  background: var(--accent);
+  color: var(--letterbox);
+  font-weight: 600;
+}
+
 /* Recipes: which machine's, and the places with none yet, compact. */
 .agents-machine {
   margin: 4px 8px 4px;

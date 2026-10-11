@@ -9,7 +9,11 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { fuzzy } from "../fs";
 import { threadKey, type ThreadMsg, type ThreadSummary, type ThreadTarget } from "../proto";
-import { openChat, openChatView, type ChatRoute, type Source } from "./places";
+import { closeChat, openChat, openChatView, type ChatRoute, type Source } from "./places";
+import { getFleet } from "./hosts";
+import { useSubscribe } from "./hooks";
+import type { Fleet, FleetPane } from "../fleet";
+import { cardTitle, reasonOf, shortPaths } from "../swarm/model";
 import { paneLabel, sessionName, type Row } from "./chat";
 import { Markup } from "./markup";
 import { MsgAvatar } from "./threads";
@@ -134,7 +138,7 @@ function ViewHead({ title, sub, phone }: { title: string; sub?: string; phone: b
 
 /** Threads with a mention of you that you haven't read: the sidebar's count. */
 export function activityCount(all: Source[]): number {
-  let n = 0;
+  let n = needing(getFleet()).length;
   for (const s of all) for (const t of s.client.state?.threads ?? []) if (t.mention && t.unread) n++;
   return n;
 }
@@ -161,14 +165,74 @@ function activity(index: Indexed[]): Hit[] {
 export function ActivityView({ all, multi, phone }: { all: Source[]; multi: boolean; phone: boolean }) {
   const { index, busy } = useIndex(all);
   const hits = activity(index);
+  const fleet = getFleet();
+  useSubscribe((fn) => fleet?.subscribe(fn) ?? (() => {}));
+  const needs = needing(fleet);
   return (
     <section class="chat-thread chat-view" aria-label="Activity" data-chat-activity-view>
-      <ViewHead title="Activity" sub="Mentions of you, and agents' answers to you" phone={phone} />
+      <ViewHead title="Activity" sub="What needs you on every machine, mentions of you, and agents' answers to you" phone={phone} />
       <div class="thread-list">
-        {hits.length === 0 && <p class="thread-empty">{busy ? "Loading…" : "Nothing for you yet. When someone @mentions you, or an agent answers you, it's here."}</p>}
+        {fleet && needs.length > 0 && <NeedsYou fleet={fleet} panes={needs} />}
+        {hits.length === 0 && needs.length === 0 && (
+          <p class="thread-empty">
+            {busy ? "Loading…" : "Nothing for you yet. When an agent asks you something or finishes, when a command fails, or when someone @mentions you, it's here."}
+          </p>
+        )}
+        {hits.length > 0 && needs.length > 0 && <h3 class="activity-head">Messages</h3>}
         <HitList hits={hits} multi={multi} />
       </div>
     </section>
+  );
+}
+
+/** Every pane on every machine that wants you: what the swarm's rail
+ * shows, so Chat isn't quiet while agents ask and finish. */
+function needing(fleet: Fleet | null): FleetPane[] {
+  return (fleet?.panes ?? []).filter((p) => reasonOf(p)).sort((a, b) => (reasonOf(b)!.since_ms ?? 0) - (reasonOf(a)!.since_ms ?? 0));
+}
+
+function NeedsYou({ fleet, panes }: { fleet: Fleet; panes: FleetPane[] }) {
+  const [err, setErr] = useState("");
+  const dismiss = async (p: FleetPane) => {
+    setErr("");
+    const res = await fleet.request(p.host, "POST", "/api/attention/act", { action: "dismiss", pane: p.id }).catch((e: Error) => e);
+    if (res instanceof Error) setErr(res.message);
+    else if (!res.ok) setErr(`couldn't dismiss (${res.status})`);
+  };
+  return (
+    <div class="activity-needs" data-activity-needs>
+      <h3 class="activity-head">Needs you</h3>
+      {panes.map((p) => {
+        const r = reasonOf(p)!;
+        const owner = fleet.host(p.host)?.owner;
+        return (
+          <div key={p.key} class="activity-need" data-need={p.key} data-kind={r.kind}>
+            <div class="activity-need-text">
+              <b>{cardTitle(r, 1, [p.host])}</b>
+              <span class="dim">
+                {" "}
+                · {owner ? `${owner}'s · ` : ""}%{p.id} on {p.host}
+                {p.info.project?.name ? ` · ${p.info.project.name}` : ""}
+              </span>
+              <p title={r.headline}>{shortPaths(r.headline)}</p>
+            </div>
+            <div class="activity-need-buttons">
+              <button
+                class="pri"
+                onClick={() => {
+                  closeChat();
+                  fleet.open(p.host, p.id);
+                }}
+              >
+                Open
+              </button>
+              <button onClick={() => void dismiss(p)}>Dismiss</button>
+            </div>
+          </div>
+        );
+      })}
+      {err && <p class="control-error">{err}</p>}
+    </div>
   );
 }
 

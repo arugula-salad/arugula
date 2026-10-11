@@ -166,3 +166,9 @@ function titleCase(s: string): string {
   if (s === "hud") return s;
   return s === "claude" ? "Claude Code" : s.charAt(0).toUpperCase() + s.slice(1);
 }
+
+/** A card's text with long paths cut to their last part (a scratchpad
+ * path is most of a command otherwise); the card's tooltip has it all. */
+export function shortPaths(t: string): string {
+  return t.replace(/(?:\/[^\s/]+){3,}\/([^\s/]+)/g, "…/$1");
+}

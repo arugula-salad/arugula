@@ -94,8 +94,25 @@ export class HostDirectory {
   private listeners = new Set<() => void>();
 
   constructor() {
+    // A link to a machine (`?machine=geek`) shows it, over the one this
+    // browser showed last.
+    const asked = linkedMachine();
+    if (asked !== null && this.find(asked)) this.shown = asked;
     if (this.shown !== null && !this.find(this.shown)) this.shown = null;
     if (this.shown !== null) void this.upgrade(this.shown);
+  }
+
+  /** Keep the address on the machine shown (`?machine=NAME`), so the view
+   * can be linked to and survives a reload; the home daemon's own page
+   * needs none. A route in the hash (#chat, #swarm…) stays. */
+  private syncUrl() {
+    const name = this.control || this.shown !== null ? this.current : "";
+    const params = new URLSearchParams(location.search);
+    if ((params.get("machine") ?? "") === name) return;
+    if (name) params.set("machine", name);
+    else params.delete("machine");
+    const q = params.toString();
+    history.replaceState(history.state, "", `${location.pathname}${q ? `?${q}` : ""}${location.hash}`);
   }
 
   subscribe(fn: () => void): () => void {
@@ -133,8 +150,12 @@ export class HostDirectory {
     this.control = true;
     this.list = { this: "", hosts };
     this.stale = stale;
-    if (first) this.shown = load<string>(CONTROL_SHOWN_KEY);
+    if (first) {
+      const asked = linkedMachine();
+      this.shown = asked !== null && this.find(asked) ? asked : load<string>(CONTROL_SHOWN_KEY);
+    }
     if (this.shown !== null && !this.find(this.shown)) this.shown = null;
+    if (hosts.length) this.syncUrl();
     this.emit();
   }
 
@@ -192,6 +213,7 @@ export class HostDirectory {
     if (shown === this.shown) return;
     this.shown = shown;
     save(this.control ? CONTROL_SHOWN_KEY : SHOWN_KEY, shown);
+    this.syncUrl();
     this.emit();
     if (shown !== null) void this.upgrade(shown);
   }
@@ -210,6 +232,10 @@ export class HostDirectory {
         this.shown = null;
         save(SHOWN_KEY, null);
       }
+      // A link to a machine the cached list didn't have yet.
+      const asked = linkedMachine();
+      if (asked !== null && asked !== this.shown && this.find(asked)) this.shown = asked;
+      this.syncUrl();
     } catch {
       this.stale = true;
     }
@@ -220,6 +246,15 @@ export class HostDirectory {
       // Keep what we knew.
     }
     this.emit();
+  }
+}
+
+/** The machine the address names (`?machine=NAME`), if any. */
+function linkedMachine(): string | null {
+  try {
+    return new URLSearchParams(location.search).get("machine");
+  } catch {
+    return null;
   }
 }
 

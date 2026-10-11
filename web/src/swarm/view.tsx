@@ -26,7 +26,7 @@ import { DiffCard } from "../ui/diff-card";
 import { GateWhy } from "../ui/gate-why";
 import { PointChoices, pointOf, proposalLine } from "../ui/point-choices";
 import { runnerLabel, runners, subscribeRunners, watchRunners } from "../runners";
-import { activityOf, bundleOf, cardTitle, followable, GROUPINGS, groupOf, isPresence, kindOf, KINDS, REASON_COL, reasonOf, type GroupBy } from "./model";
+import { activityOf, bundleOf, cardTitle, shortPaths, followable, GROUPINGS, groupOf, isPresence, kindOf, KINDS, REASON_COL, reasonOf, type GroupBy } from "./model";
 
 const BY_KEY = "arugula.swarm.by";
 const THEME_KEY = "arugula.swarm.theme";
@@ -596,12 +596,6 @@ function whatItDoes(p: FleetPane): string {
   const title = cleanTitle(p.info.title ?? "");
   const shells = /^[^\s@]+@[^\s:]+:/.test(title);
   return (!shells && title) || p.info.current?.text || p.info.command || kindOf(p);
-}
-
-/** A card's text with long paths cut to their last part (a scratchpad
- * path is most of a command otherwise); the card's tooltip has it all. */
-export function shortPaths(t: string): string {
-  return t.replace(/(?:\/[^\s/]+){3,}\/([^\s/]+)/g, "…/$1");
 }
 
 /** The how-to tip, once put away. */
