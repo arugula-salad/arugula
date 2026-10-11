@@ -54,8 +54,19 @@ fn an_agent_question_is_a_card_answered_by_its_fields() {
     let s = d.state(id);
     assert_eq!(asks(&s).len(), 1);
     assert_eq!(s["attention"], "needs_input");
-    let panes = d.get("/api/panes");
-    assert!(panes.as_array().unwrap().iter().any(|p| p["id"] == id && p["attention"] == "needs_input"));
+    // The wait and the block's state read the block itself; the pane list
+    // has the attention the block last published, which it does on its
+    // next tick (agent::PUBLISH_EVERY, batched since #713). On a busy
+    // machine that tick can come after the wait returns (#784), so poll.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let panes = d.get("/api/panes");
+        if panes.as_array().unwrap().iter().any(|p| p["id"] == id && p["attention"] == "needs_input") {
+            break;
+        }
+        assert!(Instant::now() < deadline, "the pane list never said needs_input: {panes}");
+        std::thread::sleep(Duration::from_millis(50));
+    }
     let text = d.raw("GET", &format!("/api/panes/{id}/capture"), None).1;
     assert!(text.contains("**Waiting for your answer:** Which colour do you prefer?"), "{text}");
 
