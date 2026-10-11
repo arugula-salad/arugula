@@ -877,6 +877,49 @@ test("a browser that isn't a device yet, here to approve a machine, leads with i
   await visitor.context().close();
 });
 
+test("the rest of a code: typed key by key, another machine's stays an error, and nothing carries over to the next code (#760)", async () => {
+  // Two machines waiting; the laptop is given only their codes.
+  const ask = async (name: string) => {
+    const joining = spawn("../target/debug/arugulad", ["join", base, "--name", name, "--state-dir", temp(name)], { stdio: ["pipe", "pipe", "ignore"] });
+    procs.push(joining);
+    const whole = await new Promise<string>((res) => {
+      let out = "";
+      joining.stdout!.on("data", (d) => {
+        out += d;
+        const m = out.match(/#join=([A-Z0-9.-]+)\s/);
+        if (m) res(m[1]);
+      });
+    });
+    return { whole, code: whole.split(".")[0], secret: whole.split(".")[1] };
+  };
+  const a = await ask("rest-a");
+  const b = await ask("rest-b");
+  const field = laptop.locator("[data-join-whole]");
+  await laptop.goto(`/#join=${a.code}`);
+  await expect(laptop.locator("[data-join-rest]")).toContainText(`${a.code}.`);
+  // b's whole code, a key at a time: once the dot comes, it's b's, and it
+  // stays an error (and in the field) as the rest is typed.
+  await field.pressSequentially(b.whole);
+  await expect(laptop.locator("[data-join-rest-error]")).toContainText(b.code);
+  // (Dashed as it came in: the first half took the rest's shape until the dot.)
+  await expect(field).toHaveValue(new RegExp(`\\.${b.secret}$`));
+  await expect(laptop.locator("[data-approve-join]")).toBeDisabled();
+  // On to b's code: what was typed for a is gone, error and all.
+  await laptop.evaluate((h) => (location.hash = h), `#join=${b.code}`);
+  await expect(laptop.locator("[data-join-rest]")).toContainText(`${b.code}.`);
+  await expect(field).toHaveValue("");
+  await expect(laptop.locator("[data-join-rest-error]")).toHaveCount(0);
+  // Its own whole code typed by hand: the matching half is dropped.
+  await field.pressSequentially(b.whole.toLowerCase());
+  await expect(field).toHaveValue(b.secret);
+  await expect(laptop.locator("[data-approve-join]")).toBeEnabled();
+  // Neither is wanted here.
+  await laptop.locator("[data-cancel-join]").click();
+  await laptop.goto(`/#join=${a.code}`);
+  await laptop.locator("[data-cancel-join]").click();
+  await expect(laptop.locator(".prompt")).toHaveCount(0);
+});
+
 test("sessions: where you're signed in, and signing out everywhere (#173)", async () => {
   await controlPanel(laptop, "account");
   await expect(laptop.getByRole("heading", { name: "Sign-in and account" })).toBeVisible();

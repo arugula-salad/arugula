@@ -657,6 +657,8 @@ function JoinPrompt({ s, code: whole, from }: { s: ControlSession; code: string;
   // Devices alongside that the person unticked.
   const [skip, setSkip] = useState<Set<string>>(new Set());
   useEffect(() => {
+    // Another code: nothing typed for the last one carries over.
+    setTyped({ rest: "", bad: null });
     // This browser's own trust, fresh, before it offers Approve (#327).
     void s.refresh();
     s.showJoin(code).then(
@@ -854,16 +856,19 @@ function JoinPrompt({ s, code: whole, from }: { s: ControlSession; code: string;
 const LOOKALIKE: Record<string, string> = { I: "1", L: "1", O: "0" };
 
 /** What's typed in the rest-of-the-code field, as it's shown: the 16
- * characters after the dot, uppercase, dashed every four. A whole code
- * pasted in is fine when it starts with this `code`. */
+ * characters after the dot, uppercase, dashed every four. A whole code,
+ * pasted or typed, is fine when it starts with this `code`, and that half
+ * is stripped. Once there's a dot (or more than 16 characters) what comes
+ * first is a claimed code: one that isn't this one stays in the field, as
+ * typed, with the error, until it's fixed or cleared. */
 function restOf(raw: string, code: string): { rest: string; bad: string | null } {
   let r = raw;
   const dot = r.indexOf(".");
-  if (dot >= 0) {
-    const head = normalizeCode(r.slice(0, dot));
-    if (head && head !== code) return { rest: "", bad: `That code starts ${head}, not ${code}.` };
-    r = r.slice(dot + 1);
-  }
+  const squash = (t: string) => t.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const claimed = dot >= 0 ? squash(r.slice(0, dot)) : squash(r).length > 16 ? squash(r).slice(0, -16) : null;
+  if (claimed && normalizeCode(claimed) !== code) return { rest: raw, bad: `That code starts ${normalizeCode(claimed) ?? claimed}, not ${code}.` };
+  if (dot >= 0) r = r.slice(dot + 1);
+  else if (claimed) r = squash(r).slice(-16);
   const chars = r
     .toUpperCase()
     .replace(/[^A-Z0-9]/g, "")
