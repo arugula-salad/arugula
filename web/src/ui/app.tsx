@@ -410,8 +410,13 @@ export function TabArea({ client, tab, cell, phone }: { client: Client; tab: Tab
     return () => ro.disconnect();
   }, []);
 
+  // With more than one pane, each gets a header, one cell row above it:
+  // a pane below another has its header in the divider row between them,
+  // and the top row's take a row above the grid (like tmux's
+  // pane-border-status). A phone shows one pane at a time: none.
+  const headers = !phone && tab.layout.panes.length > 1;
   const cols = area ? Math.max(2, Math.floor(area.w / cell.width)) : 0;
-  const rows = area ? Math.max(1, Math.floor(area.h / cell.height)) : 0;
+  const rows = area ? Math.max(1, Math.floor((area.h - (headers ? cell.height : 0)) / cell.height)) : 0;
   const active = client.active(tab.id) ?? null;
   const zoom = phone ? active : null;
 
@@ -456,12 +461,18 @@ export function TabArea({ client, tab, cell, phone }: { client: Client; tab: Tab
   return (
     <div class={scale < 1 ? "tab-area scaled" : "tab-area"} ref={ref}>
       <div
-        class="grid"
-        style={{ width: len(gridW), height: len(gridH), transform: scale < 1 ? `scale(${scale})` : undefined }}
+        class={headers ? "grid with-headers" : "grid"}
+        style={{
+          width: len(gridW),
+          height: len(gridH),
+          marginTop: headers ? len(cell.height) : undefined,
+          transform: scale < 1 ? `scale(${scale})` : undefined,
+        }}
       >
         {tab.layout.panes.map(([id, r]) => (
           <PaneSlot key={id} client={client} id={id} rect={r} cell={cell} active={id === active} phone={phone} />
         ))}
+        {headers && tab.layout.panes.map(([id, r]) => <PaneHeader key={`h${id}`} client={client} id={id} rect={r} cell={cell} active={id === active} />)}
         {!phone &&
           tab.layout.splits.map((s) =>
             s.extents.slice(0, -1).map((_, i) => (
@@ -471,10 +482,36 @@ export function TabArea({ client, tab, cell, phone }: { client: Client; tab: Tab
         <DropOverlay client={client} tab={tab} cell={cell} />
       </div>
       {elsewhere && (
-        <button class="sized-elsewhere" onClick={() => client.claim(tab.id)}>
-          Sized for another window · use this size
-        </button>
+        <div class="sized-elsewhere" data-sized-elsewhere>
+          Another window set this tab's size.
+          <button onClick={() => client.claim(tab.id)}>Use this window's size</button>
+        </div>
       )}
+    </div>
+  );
+}
+
+/** What names a pane, above it: what it's running (its title, without the
+ * spinner a program puts in front), its project or directory, the
+ * machine when it isn't the tab's, and which pane has the keys. A label
+ * only: the divider under it stays draggable. */
+function PaneHeader({ client, id, rect, cell, active }: { client: Client; id: PaneId; rect: Rect; cell: Cell; active: boolean }) {
+  const info = client.info(id);
+  const title = client.title(id) || info?.command || `pane %${id}`;
+  const cwd = client.cwd(id);
+  const where = info?.project?.name ?? (cwd ? cwd.split("/").filter(Boolean).pop() ?? "/" : null);
+  const m = client.machine(id);
+  return (
+    <div
+      class={active ? "pane-header active" : "pane-header"}
+      data-pane-header={id}
+      aria-current={active ? "true" : undefined}
+      title={active ? "This pane has the keyboard" : undefined}
+      style={{ left: len(rect.x * cell.width), top: len((rect.y - 1) * cell.height), width: len(rect.cols * cell.width), height: len(cell.height) }}
+    >
+      <span class="pane-header-title">{title}</span>
+      {where && title !== where ? <span class="pane-header-where">{where}</span> : null}
+      {m ? <span class="pane-header-where">{m.name ?? m.sprite}</span> : null}
     </div>
   );
 }

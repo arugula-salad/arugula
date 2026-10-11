@@ -286,9 +286,9 @@ export class Field implements SwarmScene {
           const a = i * 2.39996 + d * 0.004;
           tx = Math.cos(a) * d * sx;
           ty = Math.sin(a) * d * sy;
-          // Upright, names sit between clusters stacked above each other:
-          // leave room for them.
-          if (placed.every((q) => Math.hypot(q.tx - tx, q.ty - ty) > q.r + r + (tall ? 150 : 70))) break;
+          // Room for a name between clusters (upright, stacked above each
+          // other, more of it).
+          if (placed.every((q) => Math.hypot(q.tx - tx, q.ty - ty) > q.r + r + (tall ? 150 : 110))) break;
         }
       }
       let g = this.groups.get(name);
@@ -857,15 +857,29 @@ export class Field implements SwarmScene {
     const { cx, W } = this;
     const big = clamp(14 + z * 10, 14, 30);
     const placed: Label[] = [];
+    // A little air between names, so two never read as one.
+    const PAD = 4;
+    // Each cluster's tiles, on screen: a name doesn't go over another
+    // cluster's panes.
+    const discs = [...this.groups].map(([n, g]) => {
+      const c = this.toScreen(g.x, g.y);
+      return { n, x: c.x, y: c.y, r: g.r * z * 0.8 };
+    });
+    const onDisc = (l: Label) =>
+      discs.some((d) => {
+        if (d.n === l.name) return false;
+        const nx = clamp(d.x, l.box.x0, l.box.x1);
+        const ny = clamp(d.y, l.box.y0, l.box.y1);
+        return Math.hypot(nx - d.x, ny - d.y) < d.r;
+      });
     const hits = (l: Label) =>
-      placed.some((q) => l.box.x0 < q.box.x1 && q.box.x0 < l.box.x1 && l.box.y0 < q.box.y1 && q.box.y0 < l.box.y1);
+      onDisc(l) ||
+      placed.some((q) => l.box.x0 < q.box.x1 + PAD && q.box.x0 - PAD < l.box.x1 && l.box.y0 < q.box.y1 + PAD && q.box.y0 - PAD < l.box.y1);
     // Clusters that need you first, then the biggest: they keep the most.
     const order = [...this.groups].sort(([, a], [, b]) => b.need - a.need || b.n - a.n);
     for (const [name, g] of order) {
       const s = this.toScreen(g.x, g.y - g.r);
       const title = name.toUpperCase();
-      cx.font = `800 ${big}px "Big Shoulders Display", "Arial Narrow", sans-serif`;
-      const titleW = cx.measureText(title).width;
       cx.font = META_FONT;
       const panes = `${g.n} pane${g.n === 1 ? "" : "s"}`;
       const needText = g.need ? `${g.need} need you` : "";
@@ -877,15 +891,16 @@ export class Field implements SwarmScene {
         ...(!terse && !needText ? [[panes, ""] as [string, string]] : []),
         ["", ""],
       ];
-      const make = (meta: string, need: string, dy: number): Label => {
+      const make = (meta: string, need: string, dy: number, size = big): Label => {
         cx.font = META_FONT;
         const metaW = cx.measureText(meta + need).width;
         const lines = meta || need;
-        const w = Math.max(titleW, metaW) + 8;
+        cx.font = `800 ${size}px "Big Shoulders Display", "Arial Narrow", sans-serif`;
+        const w = Math.max(cx.measureText(title).width, metaW) + 8;
         const y = s.y + dy;
         return {
-          name, title, meta, needText: need, need: g.need, big, metaW, x: s.x, y,
-          box: { x0: s.x - w / 2, x1: s.x + w / 2, y0: y - 12 - big * 0.85, y1: lines ? y + 6 : y - 8 },
+          name, title, meta, needText: need, need: g.need, big: size, metaW, x: s.x, y,
+          box: { x0: s.x - w / 2, x1: s.x + w / 2, y0: y - 12 - size * 0.85, y1: lines ? y + 6 : y - 8 },
         };
       };
       let chosen: Label | null = null;
@@ -908,6 +923,16 @@ export class Field implements SwarmScene {
               chosen = l;
               break;
             }
+          }
+        }
+      }
+      // Then small, before going without a name.
+      if (!chosen) {
+        for (const dy of [0, -10, 10]) {
+          const l = make("", "", dy, 12);
+          if (!hits(l)) {
+            chosen = l;
+            break;
           }
         }
       }

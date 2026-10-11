@@ -1625,6 +1625,7 @@ function TeamSection({ s, t, act }: { s: ControlSession; t: Team; act: (f: () =>
             </span>
             {owner && m.account !== s.account ? (
               <select
+                class="control-select"
                 value={m.role}
                 aria-label={`${t.names?.[m.account] ?? m.name}'s role`}
                 onChange={(e) => {
@@ -1638,7 +1639,7 @@ function TeamSection({ s, t, act }: { s: ControlSession; t: Team; act: (f: () =>
               <span class="dim">{roleLabel(m.role)}</span>
             )}
             {owner && m.account !== s.account ? (
-              <button class="control-revoke" data-remove-member={m.account} title="They lose access to the team's machines at once" onClick={() => setRemoving(m.account)}>
+              <button class="control-revoke quiet-danger" data-remove-member={m.account} title="They lose access to the team's machines at once" onClick={() => setRemoving(m.account)}>
                 Remove
               </button>
             ) : (
@@ -1673,7 +1674,7 @@ function TeamSection({ s, t, act }: { s: ControlSession; t: Team; act: (f: () =>
                   {machineState(d.name)}
                 </span>
                 {owner && !mine ? (
-                  <button class="control-revoke" data-take-out={d.id} title="Take it out of the team; it stays its owner's" onClick={() => setTakingOut(d.id)}>
+                  <button class="control-revoke quiet-danger" data-take-out={d.id} title="Take it out of the team; it stays its owner's" onClick={() => setTakingOut(d.id)}>
                     Take out
                   </button>
                 ) : (
@@ -1707,7 +1708,7 @@ function TeamSection({ s, t, act }: { s: ControlSession; t: Team; act: (f: () =>
           <div class="control-code control-invite">
             <label>
               Invite{" "}
-              <select value={role} aria-label="Invite as" data-invite-role={t.team} onChange={(e) => setRole((e.target as HTMLSelectElement).value as TeamRole)}>
+              <select class="control-select" value={role} aria-label="Invite as" data-invite-role={t.team} onChange={(e) => setRole((e.target as HTMLSelectElement).value as TeamRole)}>
                 {ROLE_HELP.map(([r]) => (
                   <option key={r} value={r}>
                     {roleAs(r).replace(/^as /, "")}
@@ -1776,15 +1777,15 @@ function TeamSection({ s, t, act }: { s: ControlSession; t: Team; act: (f: () =>
               </ul>
             </>
           ) : null}
-          {confirming === "lock" ? (
-            <p class="control-error" data-lock-warning>
-              Lock: only owners reach the team's machines; open invites and requests are dropped.
+          <div class="team-lock">
+            <p class={confirming === "lock" ? "control-error" : "dim"} data-lock-warning={confirming === "lock" ? "" : undefined}>
+              {t.locked
+                ? "Locked: only owners reach the team's machines and add to it."
+                : "Locking lets only owners reach the team's machines; open invites and requests are dropped."}
             </p>
-          ) : null}
-          <div class="prompt-buttons">
             {confirming === "lock" ? <button onClick={() => setConfirming(null)}>Cancel</button> : null}
             <button
-              class={t.locked ? "" : "control-revoke danger"}
+              class={t.locked ? "control-revoke" : confirming === "lock" ? "control-revoke danger" : "control-revoke quiet-danger"}
               data-lock={t.team}
               onClick={() => {
                 if (!t.locked && confirming !== "lock") return setConfirming("lock");
@@ -1793,7 +1794,7 @@ function TeamSection({ s, t, act }: { s: ControlSession; t: Team; act: (f: () =>
                 act(() => s.lockTeam(t.team, !t.locked));
               }}
             >
-              {t.locked ? "Unlock" : confirming === "lock" ? "Lock it" : "Lock (owners only)"}
+              {t.locked ? "Unlock" : confirming === "lock" ? "Lock it" : "Lock team…"}
             </button>
           </div>
         </>

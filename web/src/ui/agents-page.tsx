@@ -17,6 +17,7 @@ import { askText } from "./menu";
 import { ConfirmRemove } from "./confirm";
 import { agentsRoute, closeAgentsPage, openAgentsPage, type AgentsTab } from "./agents-route";
 import { AppBar } from "./app-bar";
+import { CopyText } from "./copy";
 
 interface Recipe {
   name: string;
@@ -526,7 +527,8 @@ function TeamTab({ client }: { client: Client }) {
             </span>
           </h4>
           {s.note && s.online && <p class="dim fountain-said">{s.note}</p>}
-          <ul class="agents-cards">
+          {/* Rows, not cards: what you do with one is its Run and its Copy. */}
+          <ul class="agents-cards agents-rows">
             {s.agents.map((a) => (
               <li key={a.name} class="agents-card" data-agent={a.name}>
                 <div class="agents-card-text">
@@ -534,11 +536,9 @@ function TeamTab({ client }: { client: Client }) {
                     <b>{a.name}</b>
                   </div>
                   <p class="dim">{a.description}</p>
-                  <code class="agents-how" title="Ask one of your agents to send it a task with this (pr: true to have it open a pull request in its own project)">
-                    delegate {"{"}agent: {a.name}
-                    {s.here ? "" : `, machine: ${s.name}`}
-                    {"}"}
-                  </code>
+                  <span class="agents-how" title="Ask one of your agents to send it a task with this (pr: true to have it open a pull request in its own project)">
+                    <CopyText inline text={`delegate {agent: ${a.name}${s.here ? "" : `, machine: ${s.name}`}}`} data-delegate={a.name} />
+                  </span>
                 </div>
                 {!s.owner && s.online && (
                   <div class="agents-buttons">

@@ -500,7 +500,7 @@ export class Client {
 
   /** What a block calls itself: a terminal's title, or its view's. */
   title(id: PaneId): string {
-    return this.panes.get(id)?.title || this.blocks.get(id)?.view.title() || "";
+    return cleanTitle(this.panes.get(id)?.title || this.blocks.get(id)?.view.title() || "");
   }
 
   // ---- other people (M13)
@@ -1494,6 +1494,13 @@ export function paneIds(tab: TabView): PaneId[] {
 }
 
 /** What to call a tab: its name, else its active pane's title or folder. */
+/** A title as people read it: a program's status marks in front of it
+ * (Claude Code's ✳ and spinner, a prompt's ‹ or ❯, braille spinners) mean
+ * nothing outside its terminal, and change while it works. */
+export function cleanTitle(t: string): string {
+  return t.replace(/^[^\p{L}\p{N}~/.@(["'_-]+/u, "").trim();
+}
+
 export function tabLabel(client: Client, tab: TabView): string {
   if (tab.name) return tab.name;
   const pane = client.active(tab.id);

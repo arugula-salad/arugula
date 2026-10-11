@@ -130,6 +130,13 @@ export function SwarmView({
   const themes = offeredThemes(!!home && !!fleet.clientOf(home)?.flag("swarm-themes"));
   const theme = themes.includes(chosen) ? chosen : "blocks";
   const [peek, setPeek] = useState<{ key: string; x: number; y: number; text: string } | null>(null);
+  const [tipGone, setTipGone] = useState(() => {
+    try {
+      return localStorage.getItem(TIP_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
   const [hidden, setHiddenNow] = useState<Set<string>>(() => new Set(seenDone));
   // Kept for the page's life: opening the swarm again, or another view,
   // doesn't bring back cards that already left.
@@ -472,7 +479,31 @@ export function SwarmView({
               Panes
             </button>
           )}
+          {tipGone && (
+            <button data-swarm-how title="How to move around" onClick={() => setTipGone(false)}>
+              ?
+            </button>
+          )}
         </div>
+        {/* How to move around, where it's seen, until it's put away (then
+            the ? beside Fit brings it back). */}
+        {!tipGone && (
+          <div class="swarm-tip" data-swarm-tip>
+            <span>{HINT[theme][phone ? 1 : 0]}</span>
+            <button
+              onClick={() => {
+                setTipGone(true);
+                try {
+                  localStorage.setItem(TIP_KEY, "1");
+                } catch {
+                  // no storage: it comes back next time
+                }
+              }}
+            >
+              Got it
+            </button>
+          </div>
+        )}
       </div>
       {fleet.notice && <div class="swarm-notice">{fleet.notice}</div>}
 
@@ -556,6 +587,9 @@ const ARIA: Record<Theme, string> = {
 /** What to do with each theme: [laptop, phone]. */
 /** #551: where a pane's project comes from. */
 const PROJECTS = "A pane's project is the git repository it's in; one outside a repository goes by its directory.";
+
+/** The how-to tip, once put away. */
+const TIP_KEY = "arugula.swarm.tipSeen";
 
 const HINT: Record<Theme, [string, string]> = {
   blocks: ["Scroll to zoom. Drag to pan. Click a cluster name to dive in, a pane to open it.", "Pinch to zoom, drag to pan. Tap a pane to open it."],
