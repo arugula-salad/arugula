@@ -99,7 +99,8 @@ test("clusters by project (with fallback groups), machine, kind, session and per
 
 test("Panes and Escape lead back to the panes (#551)", async ({ page }) => {
   await swarm(page);
-  await page.locator(".swarm").getByRole("button", { name: "Panes", exact: true }).click();
+  // The bar every place shares is over the swarm: its Panes.
+  await page.locator(".swarm-shell > .bar").getByRole("button", { name: "Panes", exact: true }).click();
   await expect(page.locator(".swarm")).toBeHidden();
   expect(new URL(page.url()).hash).toBe("");
   await page.goto("/#swarm");

@@ -64,9 +64,18 @@ export function AppBar({
  * is in it (and in a pane's right-click menu). */
 function CommandsButton({ client }: { client: Client }) {
   return (
-    <button class="commands-button" data-open-palette title="Every command for this pane, tab and session" onClick={() => openPalette(client)}>
+    <button
+      class="commands-button"
+      data-open-palette
+      title="Every command for this pane, tab and session"
+      // Its name is "Commands": the chord beside it is for the eye, and
+      // would otherwise make it a button named "…+Shift+P".
+      aria-label="Commands"
+      aria-keyshortcuts={PALETTE_KEY.replace("Ctrl", "Control")}
+      onClick={() => openPalette(client)}
+    >
       <span>Commands</span>
-      <kbd>{PALETTE_KEY}</kbd>
+      <kbd aria-hidden="true">{PALETTE_KEY}</kbd>
     </button>
   );
 }
