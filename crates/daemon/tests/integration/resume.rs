@@ -151,6 +151,32 @@ fn two_panes_in_one_repo_each_resume_their_own_conversation() {
     assert_eq!(starts_in(&b.claude, two, before), vec![json!(["--resume", B])]);
 }
 
+/// With zsh as the shell the resumed agent gets the terminal too: zsh's
+/// `-c` with `set -m` left it in a group of its own without it, so it
+/// stopped (SIGTTOU) at its first raw mode and the pane hung, `^C` and
+/// all. Skipped without zsh.
+#[test]
+fn an_agent_resumed_under_zsh_gets_the_terminal() {
+    if std::process::Command::new("zsh").args(["-fc", "true"]).status().is_err() {
+        return;
+    }
+    let mut b = start_with("resume-zsh", |env| Some(Daemon::child_shell_env("zsh -f", env))).unwrap();
+    claude_in(&b, 1, A);
+    hook(&b, 1, A);
+    until("its conversation known", || pane(&b.d, 1)["resumes"] == format!("Claude Code conversation {}", &A[..8]));
+    b.claude.reached("start", 1);
+    let before = b.claude.starts().len();
+    std::thread::sleep(Duration::from_millis(1500));
+    b.d.stop();
+    b.d.start();
+    until("resumed", || starts_in(&b.claude, 1, before).len() == 1);
+    assert_eq!(starts_in(&b.claude, 1, before), vec![json!(["--resume", A])]);
+    // Past its raw mode: it logs `start` only once it has the terminal.
+    b.claude.reached("start", 2);
+    std::thread::sleep(Duration::from_millis(2500));
+    assert_eq!(pane(&b.d, 1)["resumes"], format!("Claude Code conversation {}", &A[..8]));
+}
+
 /// A real shutdown stops the daemon's service and its panes' scopes
 /// together: the agent (killed by its scope's stop) mustn't be gone before
 /// the daemon saves, or it's saved as not running and comes back a shell.

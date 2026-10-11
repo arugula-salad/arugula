@@ -213,12 +213,21 @@ impl Config {
         }
         let then = std::iter::once(shell.program.as_str()).chain(shell.args.iter().map(String::as_str));
         let then = then.collect::<Vec<_>>().join(" ");
-        let fish = std::path::Path::new(&self.shell).file_name().is_some_and(|n| n == "fish");
+        let name = std::path::Path::new(&self.shell).file_name();
+        let fish = name.is_some_and(|n| n == "fish");
         // With job control the program is the terminal's foreground group,
         // as if typed: without it the shell is, and the pane reads as
-        // running no agent (#376).
+        // running no agent (#376). zsh's `-c` puts the job in its own group
+        // but never hands it the terminal, so the agent stops (SIGTTOU) on
+        // its first raw mode: zsh runs it through `sh`, which does, with
+        // the login shell's environment still around it.
+        let set_m = if name.is_some_and(|n| n == "zsh") {
+            "/bin/sh -c 'set -m; \"$@\"' arugula \"$@\""
+        } else {
+            "set -m; \"$@\""
+        };
         let (script, words) = match (run, fish) {
-            (Run::Argv(argv), false) => (format!("set -m; \"$@\"; exec {then}"), argv),
+            (Run::Argv(argv), false) => (format!("{set_m}; exec {then}"), argv),
             (Run::Argv(argv), true) => (format!("status job-control full; $argv; exec {then}"), argv),
             (Run::Note(note), false) => (format!("printf '\\033[2m[%s]\\033[0m\\n' \"$1\"; exec {then}"), vec![note]),
             (Run::Note(note), true) => (format!("printf '\\033[2m[%s]\\033[0m\\n' $argv[1]; exec {then}"), vec![note]),

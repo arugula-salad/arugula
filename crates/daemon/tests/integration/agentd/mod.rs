@@ -105,6 +105,20 @@ impl Daemon {
     /// ...with its state directory made by `setup` first (a control
     /// enrollment, say).
     pub fn child_in(args: &[&str], env: &[(&str, &str)], setup: impl FnOnce(&std::path::Path)) -> Self {
+        Self::child_built(args, env, setup, |b| b)
+    }
+
+    /// ...with panes in `shell` (`zsh -f`) instead of the testkit's bash.
+    pub fn child_shell_env(shell: &str, env: &[(&str, &str)]) -> Self {
+        Self::child_built(&[], env, |_| {}, |b| b.shell(shell))
+    }
+
+    fn child_built(
+        args: &[&str],
+        env: &[(&str, &str)],
+        setup: impl FnOnce(&std::path::Path),
+        build: impl FnOnce(Builder) -> Builder,
+    ) -> Self {
         static N: AtomicU32 = AtomicU32::new(0);
         let n = N.fetch_add(1, Ordering::Relaxed);
         // Short: Unix socket paths are limited to about 100 bytes.
@@ -113,7 +127,7 @@ impl Daemon {
         std::fs::create_dir_all(&state).unwrap();
         setup(&state);
         let sessions = sessions();
-        let b = Self::builder(&sessions).state_dir(state);
+        let b = build(Self::builder(&sessions).state_dir(state));
         let b = if args.is_empty() { b.no_wisp() } else { b.args(args) };
         Self { d: b.envs(env.iter().copied()).start(), sessions }
     }
