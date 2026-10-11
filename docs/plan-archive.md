@@ -3649,10 +3649,11 @@ A [chant](https://intentius.io/chant) workspace (a repo with a `chant.workspace.
   - **A run inside a nested workspace** writes its gates under the outer prefix (`_members/reference-workspace/_members/delivery/_gates`), and neither the outer nor the inner `status` shows them (#76).
   - **A gate is per op and gate name, and an approval lasts.** Re-running an approved op walks through, so a test needs a fresh op name each time.
   - **The phone hides a gate's card when it's tapped,** and the daemon clears it once chant has written the approval, about 2.7 s later.
-- **Not covered:**
-  - a real phone (only Pixel 7 emulation; editor and viewer on the phone are in `workspace.spec.ts`);
-  - a workspace on a VM tab (the path exists, untried);
-  - jake-mini's resolve time.
+- **Run later (#314, 2026-10-11, 0.34.0 dev build on geek):**
+  - **A workspace on a VM tab:** the toy fixture on a fresh VM from geek's wisp (default image, node 24). The block opened on the VM and read both members in about 3 s. A gate reached while nothing drew the block was attention 24 s later (the 30 s idle watch). *Approve* worked, and the next `chant run` walked through.
+  - **A real phone:** Jake's phone, signed in to the dev daemon over the tailnet, approved a VM gate from the sheet (history: `by jhgaylor@gmail.com`). The attention cleared, and the next `chant run` walked through.
+  - **jake-mini's resolve time:** `shell-env --refresh` took 410 ms, then 190 ms (zsh, arm64), close to geek's.
+  - **The idle VM watch (#313):** each look runs about 0.011 CPU-s of fingerprint on the VM. The daemon's own cost and sandpitd's status calls were lost in the noise. The real cost: geek's sandpit suspends a VM after 30 s idle, and a look every 30 s kept the VM running for the first 10 quiet minutes (623 s). Once the looks slowed to one every 2.5 min, the VM slept, and asking for its status didn't wake it.
 
 ### Studio apps track (S22, added 2026-10-02)
 
