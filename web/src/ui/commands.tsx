@@ -18,6 +18,7 @@ import { agentNotifyItems, notificationItems } from "./notify";
 import { openGettingStarted } from "./welcome";
 import { openDeveloper } from "./developer";
 import { openRules } from "./rules";
+import { openAppearance } from "./appearance";
 import { desktopApp, desktopPlatform, openInNewWindow } from "../desktop";
 import { sessionThreadItems, threadItems } from "./threads";
 
@@ -230,9 +231,13 @@ export function settingsItems(client: Client | null): MenuItem[] {
   const machine = client && !hostMenuShown() ? machineSettingsItems(client) : [];
   return [
     ...(machine.length ? [{ header: "This machine" } as MenuItem, ...machine, "separator" as const] : []),
-    ...(client?.state ? [{ header: "This device" } as MenuItem, ...notificationItems(client), "separator" as const] : []),
+    // How the page looks is this device's, with or without a machine.
+    { header: "This device" },
+    ...(client?.state ? notificationItems(client) : []),
+    { label: "Appearance…", run: openAppearance },
     ...(client?.state
       ? [
+          "separator" as const,
           { label: "Getting started", run: () => openGettingStarted(undefined, client) } as MenuItem,
           { label: "Command palette…", shortcut: PALETTE_KEY, run: () => openPalette(client) } as MenuItem,
         ]

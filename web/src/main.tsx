@@ -5,6 +5,8 @@ import { setLending } from "./hand";
 import type { TeamPins, TeamPinsRequest } from "./proto";
 import { render } from "preact";
 import "./style.css";
+import { apply as applyAppearance } from "./appearance";
+import { AppearanceLayer } from "./ui/appearance";
 import { Client } from "./client";
 import { Fleet, type HostRef } from "./fleet";
 import { directory } from "./hosts";
@@ -32,6 +34,8 @@ import { openGettingStarted, type Section } from "./ui/welcome";
 // Served by Arugula control (M17), not a daemon: sign in, enroll this
 // browser, and reach daemons through end-to-end channels. A read-only link
 // (M19, `#link=…`) needs no account: its key is in the fragment.
+// This device's palette and finish, before anything draws.
+applyAppearance();
 const info = await detectControl();
 // Back from signing in with a presigned invite's link (kept off control).
 if (info) restoreInvite();
@@ -278,6 +282,7 @@ const draw = () =>
     <>
       {session ? <ControlRoot key={client.base} s={session} /> : <App key={client.base} client={client} cell={cell} />}
       <Swarm key={client.base} client={client} />
+      <AppearanceLayer />
     </>,
     root,
   );

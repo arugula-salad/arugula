@@ -9,6 +9,17 @@
   --accent: #cba6f7;
   --danger: #f38ba8;
   --divider: #313244;
+  /* The rest of the palette (appearance.ts sets them all for the one
+     picked): status colors, and text on a colored fill. */
+  --ok: #a6e3a1;
+  --warn: #f9e2af;
+  --info: #89b4fa;
+  --peach: #fab387;
+  --teal: #94e2d5;
+  --pink: #f5c2e7;
+  --muted: #585b70;
+  --subtle: #a6adc8;
+  --on-color: #11111b;
   --bar-h: env(titlebar-area-height, 36px);
   --app-height: 100dvh;
   color-scheme: dark;
@@ -515,7 +526,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   padding: 4px 10px;
   border-radius: 6px;
   background: var(--accent);
-  color: var(--letterbox);
+  color: var(--on-color);
   font-weight: 600;
 }
 
@@ -576,7 +587,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   padding: 8px 16px;
   border-radius: 8px;
   background: var(--accent);
-  color: var(--letterbox);
+  color: var(--on-color);
   font-weight: 600;
 }
 
@@ -661,7 +672,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 
 #status.error {
   background: var(--danger);
-  color: var(--letterbox);
+  color: var(--on-color);
 }
 
 /* ---- phone */
@@ -805,7 +816,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   padding: 0 14px;
   border-radius: 8px;
   background: var(--accent);
-  color: var(--letterbox);
+  color: var(--on-color);
   font-weight: 600;
 }
 
@@ -1038,7 +1049,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 
 .key.on {
   background: var(--accent);
-  color: var(--letterbox);
+  color: var(--on-color);
 }
 
 /* ---- restored panes waiting to start */
@@ -1051,7 +1062,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   padding: 6px 14px;
   border-radius: 8px;
   background: var(--accent);
-  color: var(--letterbox);
+  color: var(--on-color);
   font-weight: 600;
   box-shadow: 0 4px 16px #0008;
 }
@@ -1131,11 +1142,11 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 }
 
 .cmd-mark.ok {
-  background: #a6e3a1;
+  background: var(--ok);
 }
 
 .cmd-mark.fail {
-  background: #f38ba8;
+  background: var(--danger);
   opacity: 0.85;
 }
 
@@ -1152,11 +1163,11 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 }
 
 .att.done {
-  color: #a6e3a1;
+  color: var(--ok);
 }
 
 .att.failed {
-  color: #f38ba8;
+  color: var(--danger);
 }
 
 @keyframes pulse {
@@ -1187,12 +1198,12 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 
 .pane-badge.needs_input {
   background: var(--accent);
-  color: var(--letterbox);
+  color: var(--on-color);
 }
 
 .pane-badge.done {
-  background: #a6e3a1;
-  color: var(--letterbox);
+  background: var(--ok);
+  color: var(--on-color);
 }
 
 .needs-you h2 {
@@ -1212,9 +1223,9 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   letter-spacing: 0.04em;
   pointer-events: auto;
   cursor: default;
-  background: #89b4fa33;
-  color: #89b4fa;
-  border: 1px solid #89b4fa66;
+  background: var(--info)33;
+  color: var(--info);
+  border: 1px solid var(--info)66;
   opacity: 0.85;
 }
 
@@ -1233,22 +1244,22 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   font-weight: 600;
   pointer-events: auto;
   cursor: default;
-  background: #cba6f722;
-  color: #cba6f7;
-  border: 1px solid #cba6f766;
+  background: var(--accent)22;
+  color: var(--accent);
+  border: 1px solid var(--accent)66;
   opacity: 0.85;
 }
 
 .host-badge.starting {
-  color: #f9e2af;
-  border-color: #f9e2af66;
-  background: #f9e2af22;
+  color: var(--warn);
+  border-color: var(--warn)66;
+  background: var(--warn)22;
 }
 
 .host-badge.gone {
-  color: #f38ba8;
-  border-color: #f38ba866;
-  background: #f38ba822;
+  color: var(--danger);
+  border-color: var(--danger)66;
+  background: var(--danger)22;
 }
 
 .host-tag {
@@ -1259,14 +1270,14 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   font-weight: 700;
   letter-spacing: 0.04em;
   vertical-align: 1px;
-  color: #89b4fa;
-  border: 1px solid #89b4fa66;
+  color: var(--info);
+  border: 1px solid var(--info)66;
 }
 
 .host-badge.local {
-  color: #a6adc8;
-  border-color: #a6adc866;
-  background: #a6adc822;
+  color: var(--subtle);
+  border-color: var(--subtle)66;
+  background: var(--subtle)22;
 }
 
 .host-tag.idle {
@@ -1274,13 +1285,13 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 }
 
 .host-tag.starting {
-  color: #f9e2af;
-  border-color: #f9e2af66;
+  color: var(--warn);
+  border-color: var(--warn)66;
 }
 
 .host-tag.gone {
-  color: #f38ba8;
-  border-color: #f38ba866;
+  color: var(--danger);
+  border-color: var(--danger)66;
 }
 
 /* Non-terminal blocks fill their slot like a terminal does. */
@@ -1315,9 +1326,9 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.04em;
-  background: #94e2d522;
-  color: #94e2d5;
-  border: 1px solid #94e2d566;
+  background: var(--teal)22;
+  color: var(--teal);
+  border: 1px solid var(--teal)66;
   opacity: 0.85;
   pointer-events: none;
 }
@@ -1325,9 +1336,9 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 .block-remote[data-state="unreachable"] .remote-badge,
 .block-remote[data-state="gone"] .remote-badge,
 .block-remote[data-state="unknown"] .remote-badge {
-  color: #f38ba8;
-  border-color: #f38ba866;
-  background: #f38ba822;
+  color: var(--danger);
+  border-color: var(--danger)66;
+  background: var(--danger)22;
 }
 
 .remote-note {
@@ -1344,8 +1355,8 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 }
 
 .host-tag.remote {
-  color: #94e2d5;
-  border-color: #94e2d566;
+  color: var(--teal);
+  border-color: var(--teal)66;
 }
 
 .browser {
@@ -1427,7 +1438,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   border: 0;
   border-radius: 6px;
   background: var(--accent);
-  color: var(--letterbox);
+  color: var(--on-color);
   text-decoration: none;
   font-weight: 600;
 }
@@ -1461,7 +1472,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 .host-button {
   padding: 0 10px;
   white-space: nowrap;
-  color: #89b4fa;
+  color: var(--info);
   border-right: 1px solid var(--divider);
 }
 
@@ -1483,8 +1494,8 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   margin-right: 6px;
   padding: 0 5px;
   border-radius: 4px;
-  color: #89b4fa;
-  border: 1px solid #89b4fa66;
+  color: var(--info);
+  border: 1px solid var(--info)66;
 }
 
 .host-seen {
@@ -1575,7 +1586,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 .agent-status.working,
 .agent-status.starting,
 .agent-status.remote {
-  color: #f9e2af;
+  color: var(--warn);
 }
 
 .agent-status.exited {
@@ -1665,7 +1676,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 }
 
 .agent-tool.completed {
-  border-left-color: #a6e3a1;
+  border-left-color: var(--ok);
 }
 
 .agent-tool.failed {
@@ -1674,7 +1685,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 
 .agent-tool.in_progress,
 .agent-tool.pending {
-  border-left-color: #f9e2af;
+  border-left-color: var(--warn);
 }
 
 .agent-tool-head {
@@ -1730,7 +1741,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 
 .agent-output {
   padding: 4px 6px;
-  background: #11111b;
+  background: var(--letterbox);
   overflow-x: auto;
 }
 
@@ -1782,7 +1793,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 
 .agent-perm-buttons button.primary {
   background: var(--accent);
-  color: var(--letterbox);
+  color: var(--on-color);
 }
 
 .agent-perm-buttons button.danger {
@@ -1887,7 +1898,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   margin: 0 8px 8px;
   padding: 6px 10px;
   border-radius: 6px;
-  background: #f38ba822;
+  background: var(--danger)22;
   color: var(--danger);
 }
 
@@ -1930,7 +1941,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 
 .agent-composer button.primary {
   background: var(--accent);
-  color: var(--letterbox);
+  color: var(--on-color);
 }
 
 .agent-composer button:disabled {
@@ -2109,7 +2120,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 }
 
 .sandbox-status.running {
-  color: #a6e3a1;
+  color: var(--ok);
 }
 
 .sandbox-actions {
@@ -2120,9 +2131,9 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 }
 
 .host-badge.borrowed {
-  color: #fab387;
-  border-color: #fab38766;
-  background: #fab38722;
+  color: var(--peach);
+  border-color: var(--peach)66;
+  background: var(--peach)22;
 }
 
 /* ---- directory picker (M7) */
@@ -2535,7 +2546,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 
 .ask-buttons button.primary {
   background: var(--accent);
-  color: var(--letterbox);
+  color: var(--on-color);
 }
 
 .ask-buttons button.primary:disabled {
@@ -2587,7 +2598,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   padding: 8px 14px;
   border-radius: 999px;
   background: var(--accent);
-  color: var(--letterbox);
+  color: var(--on-color);
   font-weight: 600;
 }
 
@@ -2743,7 +2754,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 
 .control-revoke.danger {
   background: var(--danger);
-  color: var(--letterbox);
+  color: var(--on-color);
 }
 
 /* Takes something away, but asks first: reads as destructive without
@@ -2867,7 +2878,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 /* Deleting an account (#173): type its login to confirm. */
 .prompt-buttons button.danger:not(:disabled) {
   background: var(--danger);
-  color: var(--letterbox);
+  color: var(--on-color);
 }
 
 .prompt label.control-confirm {
@@ -3032,7 +3043,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   border-radius: 50%;
   overflow: hidden;
   font: 600 10px system-ui, sans-serif;
-  color: var(--letterbox);
+  color: var(--on-color);
   background: var(--who);
   box-shadow: 0 0 0 2px var(--who);
   cursor: pointer;
@@ -3093,7 +3104,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   padding: 1px 6px;
   border-radius: 4px;
   font: 600 11px system-ui, sans-serif;
-  color: var(--letterbox);
+  color: var(--on-color);
   background: var(--who, var(--accent));
 }
 
@@ -3106,7 +3117,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   padding: 1px 6px;
   border-radius: 4px;
   font: 600 11px system-ui, sans-serif;
-  color: var(--letterbox);
+  color: var(--on-color);
   background: var(--accent);
   pointer-events: auto;
 }
@@ -3334,11 +3345,11 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 }
 
 .perm-diff .del {
-  color: #f38ba8;
+  color: var(--danger);
 }
 
 .perm-diff .add {
-  color: #a6e3a1;
+  color: var(--ok);
 }
 
 /* ---- the swarm (M26): the prototype's look (archive/spikes:spikes/s16-swarm/canvas.html) */
@@ -4331,7 +4342,7 @@ button.diff-why-run {
 
 .conv-host.away .conv-host-state,
 .conv-host.asleep .conv-host-state {
-  color: #f9e2af;
+  color: var(--warn);
 }
 
 .conv-folder {
@@ -4363,14 +4374,14 @@ button.diff-why-run {
 }
 
 .conv-source.desktop {
-  color: #cba6f7;
-  border-color: #cba6f766;
+  color: var(--accent);
+  border-color: var(--accent)66;
 }
 
 .conv-live {
   flex: none;
   font-size: 11px;
-  color: #a6e3a1;
+  color: var(--ok);
 }
 
 .conv-when {
@@ -4511,7 +4522,7 @@ button.diff-why-run {
 
 .ws-said {
   margin: 0;
-  color: #a6e3a1;
+  color: var(--ok);
 }
 
 .ws-members {
@@ -4569,12 +4580,12 @@ button.diff-why-run {
 
 .ws-tag.waits {
   background: var(--accent);
-  color: var(--letterbox);
+  color: var(--on-color);
 }
 
 .ws-tag.bad {
   background: var(--danger);
-  color: var(--letterbox);
+  color: var(--on-color);
 }
 
 .ws-tags {
@@ -4607,7 +4618,7 @@ button.diff-why-run {
 
 .ws-actions button.pri {
   background: var(--accent);
-  color: var(--letterbox);
+  color: var(--on-color);
   font-weight: 600;
 }
 
@@ -4695,18 +4706,18 @@ button.diff-why-run {
 }
 
 .forge-state.open {
-  background: #a6e3a1;
-  color: var(--letterbox);
+  background: var(--ok);
+  color: var(--on-color);
 }
 
 .forge-state.merged {
-  background: #cba6f7;
-  color: var(--letterbox);
+  background: var(--accent);
+  color: var(--on-color);
 }
 
 .forge-state.closed {
   background: var(--danger);
-  color: var(--letterbox);
+  color: var(--on-color);
 }
 
 .forge-row {
@@ -4751,7 +4762,7 @@ button.diff-why-run {
 }
 
 .forge-chip.good {
-  color: #a6e3a1;
+  color: var(--ok);
 }
 
 .forge-chip.bad {
@@ -4760,7 +4771,7 @@ button.diff-why-run {
 }
 
 .forge-chip.wait {
-  color: #f9e2af;
+  color: var(--warn);
 }
 
 /* The description takes the block; the side column opens up at 720px. */
@@ -4979,7 +4990,7 @@ button.diff-why-run {
 }
 
 .forge-dot.success {
-  background: #a6e3a1;
+  background: var(--ok);
 }
 
 .forge-dot.failure,
@@ -4995,22 +5006,22 @@ button.diff-why-run {
 
 .forge-check.failure {
   background: var(--danger);
-  color: var(--letterbox);
+  color: var(--on-color);
 }
 
 .forge-check.success {
-  background: #a6e3a1;
-  color: var(--letterbox);
+  background: var(--ok);
+  color: var(--on-color);
 }
 
 .forge-review.changes_requested {
   background: var(--danger);
-  color: var(--letterbox);
+  color: var(--on-color);
 }
 
 .forge-review.approved {
-  background: #a6e3a1;
-  color: var(--letterbox);
+  background: var(--ok);
+  color: var(--on-color);
 }
 
 .forge-draft {
@@ -5516,7 +5527,7 @@ button.diff-why-run {
   padding: 4px 12px;
   border-radius: 6px;
   background: var(--accent);
-  color: var(--letterbox);
+  color: var(--on-color);
   font-weight: 600;
 }
 
@@ -5562,11 +5573,11 @@ button.diff-why-run {
 .fountain-chip.on {
   background: var(--accent);
   border-color: var(--accent);
-  color: var(--letterbox);
+  color: var(--on-color);
 }
 
 .fountain-chip.on .dim {
-  color: var(--letterbox);
+  color: var(--on-color);
 }
 
 .fountain-said,
@@ -5675,7 +5686,7 @@ button.diff-why-run {
 .agents-actions button.pri,
 .agents-buttons button.pri {
   background: var(--accent);
-  color: var(--letterbox);
+  color: var(--on-color);
   font-weight: 600;
 }
 
@@ -5849,7 +5860,7 @@ button.diff-why-run {
 
 .activity-need-buttons button.pri {
   background: var(--accent);
-  color: var(--letterbox);
+  color: var(--on-color);
   font-weight: 600;
 }
 
@@ -6102,7 +6113,7 @@ button.diff-why-run {
 
 .fountain-src.agent-specs {
   background: var(--accent);
-  color: var(--letterbox);
+  color: var(--on-color);
 }
 
 .fountain-meta {
@@ -6281,12 +6292,12 @@ button.diff-why-run {
 
 .thread-badge.unread {
   opacity: 1;
-  color: var(--letterbox);
+  color: var(--on-color);
   background: var(--accent);
 }
 
 .thread-badge.mention {
-  background: #f9e2af;
+  background: var(--warn);
 }
 
 .thread-panel {
@@ -6427,7 +6438,7 @@ button.diff-why-run {
 @keyframes msg-flash {
   0%,
   40% {
-    background: color-mix(in srgb, #f9e2af 22%, transparent);
+    background: color-mix(in srgb, var(--warn) 22%, transparent);
   }
   100% {
     background: transparent;
@@ -6435,8 +6446,8 @@ button.diff-why-run {
 }
 
 .thread-msg.for-me {
-  background: color-mix(in srgb, #f9e2af 8%, transparent);
-  box-shadow: inset 2px 0 0 #f9e2af;
+  background: color-mix(in srgb, var(--warn) 8%, transparent);
+  box-shadow: inset 2px 0 0 var(--warn);
 }
 
 .msg-gutter {
@@ -6453,7 +6464,7 @@ button.diff-why-run {
   overflow: hidden;
   flex: none;
   font: 700 13px system-ui, sans-serif;
-  color: var(--letterbox);
+  color: var(--on-color);
 }
 
 .msg-avatar img {
@@ -6522,19 +6533,19 @@ button.diff-why-run {
   border-radius: 4px;
   border: 1px solid var(--divider);
   background: var(--letterbox);
-  color: #fab387;
+  color: var(--peach);
   font: 12px ui-monospace, monospace;
 }
 
 .thread-text a {
-  color: #89b4fa;
+  color: var(--info);
 }
 
 .mention {
   padding: 0 2px;
   border-radius: 3px;
-  background: color-mix(in srgb, #89b4fa 18%, transparent);
-  color: #89b4fa;
+  background: color-mix(in srgb, var(--info) 18%, transparent);
+  color: var(--info);
   font-weight: 600;
 }
 
@@ -6547,8 +6558,8 @@ button.diff-why-run {
 }
 
 .mention.me {
-  background: color-mix(in srgb, #f9e2af 25%, transparent);
-  color: #f9e2af;
+  background: color-mix(in srgb, var(--warn) 25%, transparent);
+  color: var(--warn);
 }
 
 .msg-code {
@@ -6794,7 +6805,7 @@ button.thread-quote:hover {
 }
 
 .session-unread.mention {
-  background: #f9e2af;
+  background: var(--warn);
 }
 
 /* ---- huddles (M63) */
@@ -6817,15 +6828,15 @@ button.thread-quote:hover {
   cursor: default;
 }
 .huddle-button.live {
-  color: var(--letterbox);
-  background: #a6e3a1;
+  color: var(--on-color);
+  background: var(--ok);
 }
 .huddle-button.live:hover:not(:disabled) {
-  background: #94e2d5;
-  color: var(--letterbox);
+  background: var(--teal);
+  color: var(--on-color);
 }
 .huddle-button.here {
-  outline: 2px solid #a6e3a1;
+  outline: 2px solid var(--ok);
   outline-offset: 1px;
 }
 .share-button {
@@ -6846,7 +6857,7 @@ button.thread-quote:hover {
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  color: #a6e3a1;
+  color: var(--ok);
 }
 .huddle-chip .avatar {
   width: 16px;
@@ -6871,7 +6882,7 @@ button.thread-quote:hover {
   max-width: calc(100vw - 24px);
   padding: 6px 8px 6px 10px;
   background: var(--surface);
-  border: 1px solid color-mix(in srgb, #a6e3a1 45%, var(--divider));
+  border: 1px solid color-mix(in srgb, var(--ok) 45%, var(--divider));
   border-radius: 10px;
   box-shadow: 0 6px 24px rgb(0 0 0 / 0.35);
 }
@@ -6885,7 +6896,7 @@ button.thread-quote:hover {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: #a6e3a1;
+  color: var(--ok);
   font-weight: 600;
   min-width: 0;
 }
@@ -6910,7 +6921,7 @@ button.thread-quote:hover {
   transition: box-shadow 0.12s;
 }
 .huddle-member.speaking .avatar {
-  box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px #a6e3a1;
+  box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--ok);
 }
 .huddle-member.connecting .avatar {
   opacity: 0.5;
@@ -6925,8 +6936,8 @@ button.thread-quote:hover {
   right: -4px;
   top: -4px;
   font: 700 9px system-ui, sans-serif;
-  color: var(--letterbox);
-  background: #f9e2af;
+  color: var(--on-color);
+  background: var(--warn);
   border-radius: 50%;
   width: 11px;
   height: 11px;
@@ -6943,7 +6954,7 @@ button.thread-quote:hover {
   height: 14px;
   border-radius: 50%;
   background: var(--danger);
-  color: var(--letterbox);
+  color: var(--on-color);
 }
 .huddle-muted svg {
   width: 10px;
@@ -6967,14 +6978,14 @@ button.thread-quote:hover {
 }
 .huddle-act.on {
   background: var(--danger);
-  color: var(--letterbox);
+  color: var(--on-color);
 }
 .huddle-act.leave {
   background: color-mix(in srgb, var(--danger) 25%, var(--raised));
 }
 .huddle-act.leave:hover {
   background: var(--danger);
-  color: var(--letterbox);
+  color: var(--on-color);
 }
 
 /* Panes · Swarm · Chat · Agents (M73, #403): the places, in the panes'
@@ -7024,7 +7035,7 @@ button.thread-quote:hover {
 }
 
 .chat-count.mention {
-  background: #f9e2af;
+  background: var(--warn);
 }
 
 .chat {
@@ -7099,7 +7110,7 @@ input.chat-search {
 }
 
 .chat-hit.unread {
-  border-left: 3px solid #f9e2af;
+  border-left: 3px solid var(--warn);
 }
 
 .chat-hit-where {
@@ -7762,11 +7773,11 @@ html.chat-open .huddle-bar {
 }
 
 .forge-status.asked {
-  border-color: color-mix(in srgb, #f9e2af 45%, transparent);
+  border-color: color-mix(in srgb, var(--warn) 45%, transparent);
 }
 
 .forge-status.ok {
-  border-color: color-mix(in srgb, #a6e3a1 45%, transparent);
+  border-color: color-mix(in srgb, var(--ok) 45%, transparent);
 }
 
 .forge-status.bad {
@@ -7786,7 +7797,7 @@ html.chat-open .huddle-bar {
 }
 
 .forge-state.revising {
-  background: color-mix(in srgb, #f9e2af 25%, var(--raised));
+  background: color-mix(in srgb, var(--warn) 25%, var(--raised));
   color: var(--fg);
 }
 
@@ -7952,4 +7963,446 @@ html.chat-open .huddle-bar {
   color: var(--fg);
   min-width: 24px;
   height: 22px;
+}
+
+/* ---- appearance: the picker, the finishes and the corners (appearance.ts) */
+
+.prompt-backdrop:has(.appearance) {
+  padding-top: 5vh;
+}
+
+.prompt.appearance {
+  width: min(720px, calc(100vw - 32px));
+  max-height: calc(100vh - 5vh - 16px);
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+
+.appearance h2 {
+  margin: 0 0 4px;
+  font-size: 16px;
+}
+
+.appearance h3 {
+  margin: 16px 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--dim);
+}
+
+.appearance .hint {
+  margin: 0;
+  color: var(--dim);
+}
+
+.appearance-palettes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 6px;
+}
+
+.appearance-palette {
+  display: grid;
+  gap: 4px;
+  padding: 6px;
+  text-align: left;
+  border-radius: 10px;
+  outline: 2px solid transparent;
+}
+
+.appearance-palette:hover,
+.appearance-finish:hover,
+.appearance-corners button:hover {
+  background: var(--raised-hover);
+}
+
+.appearance-palette.on,
+.appearance-finish.on,
+.appearance-corners button.on {
+  outline-color: var(--accent);
+}
+
+.palette-sample {
+  display: grid;
+  grid-template-rows: 12px 1fr auto;
+  height: 56px;
+  overflow: hidden;
+  border: 1px solid;
+  border-radius: 6px;
+  font: 10px/1.2 ui-monospace, monospace;
+}
+
+.palette-sample-bar {
+  display: flex;
+  align-items: center;
+  padding: 0 6px;
+}
+
+.palette-sample-bar span {
+  width: 18px;
+  height: 4px;
+  border-radius: 2px;
+}
+
+.palette-sample-text {
+  padding: 4px 6px 0;
+  white-space: nowrap;
+}
+
+.palette-sample-dots {
+  display: flex;
+  gap: 3px;
+  padding: 0 6px 6px;
+}
+
+.palette-sample-dots span {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.palette-name {
+  font-weight: 600;
+}
+
+.palette-hint {
+  font-size: 11px;
+  margin-top: -3px;
+}
+
+.appearance-finishes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 10px;
+}
+
+.appearance-finish {
+  display: grid;
+  gap: 4px;
+  padding: 6px;
+  text-align: left;
+  border-radius: 10px;
+  outline: 2px solid transparent;
+}
+
+.appearance-finish .dim {
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+/* Each finish's card shows it whatever the page wears. */
+.appearance-finish-sample {
+  display: grid;
+  grid-template-rows: 14px 1fr;
+  height: 52px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: var(--bg);
+  border: 1px solid var(--divider);
+}
+
+.sample-bar {
+  background: var(--surface);
+}
+
+.sample-button {
+  place-self: center;
+  padding: 2px 14px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 5px;
+  background: var(--accent);
+  color: var(--on-color);
+}
+
+[data-look="aqua"] .sample-bar {
+  background: linear-gradient(#fff8, #fff2 50%, #0001 51%, #0000), var(--surface);
+}
+
+[data-look="aqua"] .appearance-finish-sample {
+  background: repeating-linear-gradient(var(--bg) 0 2px, color-mix(in srgb, var(--bg) 92%, var(--fg)) 2px 4px);
+}
+
+[data-look="aqua"] .sample-button,
+html[data-finish="aqua"] .primary,
+html[data-finish="aqua"] .prompt-buttons button.primary,
+html[data-finish="aqua"] .sized-elsewhere button {
+  border-radius: 999px;
+  background:
+    linear-gradient(#fffa, #fff3 45%, #0000 50%, #fff3 100%),
+    var(--accent);
+  box-shadow:
+    inset 0 -2px 4px color-mix(in srgb, var(--accent) 60%, #fff),
+    inset 0 1px 1px #fff8,
+    0 1px 3px #0006;
+  color: var(--on-color);
+  text-shadow: 0 1px 0 #fff4;
+}
+
+[data-look="brushed"] .sample-bar,
+[data-look="brushed"] .appearance-finish-sample {
+  background:
+    repeating-linear-gradient(90deg, #fff0 0 1px, #ffffff0d 1px 2px, #0000000a 2px 3px, #fff0 3px 5px),
+    linear-gradient(#fff3, #0000 60%, #0002),
+    var(--surface);
+}
+
+[data-look="brushed"] .sample-button,
+html[data-finish="brushed"] .primary,
+html[data-finish="brushed"] .prompt-buttons button,
+html[data-finish="brushed"] .sized-elsewhere button {
+  border-radius: 4px;
+  background: linear-gradient(#fff6, #fff0 50%, #0001 51%, #0002), var(--raised);
+  color: var(--fg);
+  border: 1px solid color-mix(in srgb, var(--raised) 60%, #000);
+  box-shadow: inset 0 1px 0 #fff6, 0 1px 1px #0004;
+}
+
+[data-look="glass"] .appearance-finish-sample {
+  background:
+    radial-gradient(circle at 20% 80%, color-mix(in srgb, var(--accent) 60%, transparent), transparent 55%),
+    radial-gradient(circle at 85% 30%, color-mix(in srgb, var(--info) 55%, transparent), transparent 55%),
+    var(--bg);
+}
+
+[data-look="glass"] .sample-bar {
+  background: color-mix(in srgb, var(--surface) 55%, transparent);
+  backdrop-filter: blur(6px);
+}
+
+[data-look="glass"] .sample-button {
+  background: color-mix(in srgb, var(--raised) 50%, transparent);
+  color: var(--fg);
+  border: 1px solid #fff3;
+  backdrop-filter: blur(6px);
+}
+
+.appearance-corners {
+  display: flex;
+  gap: 10px;
+}
+
+.appearance-corners button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px 8px 10px;
+  border-radius: 8px;
+  outline: 2px solid transparent;
+}
+
+.corner-sample {
+  width: 22px;
+  height: 16px;
+  border: 2px solid var(--fg);
+  border-right: 0;
+  border-bottom: 0;
+}
+
+.corner-sample.soft {
+  border-top-left-radius: 5px;
+}
+
+.corner-sample.round {
+  border-top-left-radius: 11px;
+}
+
+/* -- corners: panes become cards on the letterbox, headers on top */
+
+html[data-corners="soft"] {
+  --radius: 6px;
+}
+
+html[data-corners="round"] {
+  --radius: 12px;
+}
+
+/* Under any finish's own background (low specificity on purpose). */
+:where(html:not([data-corners="square"]) .app:not(.phone)) .tab-area:not(.scaled) {
+  background: var(--letterbox);
+}
+
+html:not([data-corners="square"]) .app:not(.phone) .grid {
+  background: none;
+}
+
+html:not([data-corners="square"]) .app:not(.phone) .pane,
+html:not([data-corners="square"]) .app:not(.phone) .pane::after {
+  border-radius: var(--radius);
+}
+
+html:not([data-corners="square"]) .app:not(.phone) .pane::after {
+  box-shadow: inset 0 0 0 1px var(--divider);
+}
+
+html:not([data-corners="square"]) .app:not(.phone) .grid.with-headers .pane,
+html:not([data-corners="square"]) .app:not(.phone) .grid.with-headers .pane::after {
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+
+html:not([data-corners="square"]) .pane-header {
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+
+html:not([data-corners="square"]) .menu {
+  border-radius: calc(var(--radius) + 2px);
+}
+
+html[data-corners="round"] .prompt {
+  border-radius: 18px;
+}
+
+html[data-corners="round"] .prompt-buttons button,
+html[data-corners="round"] .primary {
+  border-radius: 999px;
+}
+
+/* -- Aqua: a lit title bar, pinstripes behind the panes, gel buttons,
+      blue-lit selection */
+
+html[data-finish="aqua"] .bar {
+  background:
+    linear-gradient(#fff5, #fff1 50%, #0000 51%, #0001),
+    var(--surface);
+  box-shadow: inset 0 -1px 0 #0003;
+}
+
+html[data-finish="aqua"] .tab.selected {
+  background: linear-gradient(#fff4, #fff0 60%), var(--bg);
+  box-shadow: inset 0 1px 0 #fff6, 0 0 0 1px #0002;
+}
+
+html[data-finish="aqua"] .tab-area:not(.scaled),
+html[data-finish="aqua"] .control-page {
+  background: repeating-linear-gradient(
+    var(--letterbox) 0 2px,
+    color-mix(in srgb, var(--letterbox) 90%, var(--fg)) 2px 4px
+  );
+}
+
+html[data-finish="aqua"] .pane-header.active {
+  color: var(--on-color);
+  background:
+    linear-gradient(#fff9, #fff3 50%, #0000 51%, #fff2),
+    var(--accent);
+  box-shadow: none;
+}
+
+html[data-finish="aqua"] .menu {
+  background: color-mix(in srgb, var(--raised) 88%, transparent);
+  backdrop-filter: blur(10px) saturate(1.4);
+  box-shadow: 0 10px 30px #0006, 0 0 0 1px #0002;
+}
+
+html[data-finish="aqua"] .menu-item:hover:not(:disabled) {
+  color: var(--on-color);
+  background: linear-gradient(#fff5, #fff0 50%, #0000 51%, #fff2), var(--accent);
+}
+
+html[data-finish="aqua"] .prompt {
+  background: linear-gradient(#fff2, #fff0 30px), var(--raised);
+  box-shadow: 0 20px 50px #0007, 0 0 0 1px #0002;
+}
+
+html[data-finish="aqua"] .account-avatar {
+  background: radial-gradient(circle at 50% 20%, #fffb, #fff0 55%), var(--accent);
+  color: var(--on-color);
+}
+
+/* -- Brushed metal: fine horizontal grain over a sheen, on the bars, the
+      headers and the dialogs; bevelled buttons */
+
+html[data-finish="brushed"] {
+  --grain: repeating-linear-gradient(90deg, #fff0 0 1px, #ffffff1a 1px 2px, #00000014 2px 3px, #fff0 3px 5px, #ffffff0d 5px 7px);
+}
+
+html[data-finish="brushed"] .bar {
+  background: var(--grain), linear-gradient(#fff3, #fff0 45%, #0001 100%), var(--surface);
+  box-shadow: inset 0 1px 0 #fff3, inset 0 -1px 0 #0004;
+}
+
+html[data-finish="brushed"] .tab.selected {
+  background: var(--grain), linear-gradient(#fff2, #fff0), var(--bg);
+  box-shadow: inset 0 1px 0 #fff4, inset 1px 0 0 #fff1, inset -1px 0 0 #0002;
+}
+
+html[data-finish="brushed"] .tab-area:not(.scaled),
+html[data-finish="brushed"] .control-page {
+  background: var(--grain), linear-gradient(#fff1, #0001), var(--letterbox);
+}
+
+html[data-finish="brushed"] .pane-header {
+  background: var(--grain), linear-gradient(#fff2, #0001), var(--surface);
+}
+
+html[data-finish="brushed"] .pane-header.active {
+  color: var(--fg);
+  background: var(--grain), linear-gradient(#fff3, #0001), color-mix(in srgb, var(--accent) 25%, var(--surface));
+}
+
+html[data-finish="brushed"] .menu,
+html[data-finish="brushed"] .prompt {
+  background: var(--grain), linear-gradient(#fff2, #fff0 40px, #0001), var(--raised);
+  box-shadow: inset 0 1px 0 #fff3, 0 12px 36px #0008, 0 0 0 1px #0003;
+}
+
+html[data-finish="brushed"] .prompt-buttons button.primary,
+html[data-finish="brushed"] .primary {
+  background: linear-gradient(#fff6, #fff0 50%, #0001 51%, #0002), var(--accent);
+  color: var(--on-color);
+}
+
+html[data-finish="brushed"] .account-avatar {
+  background: radial-gradient(circle at 35% 30%, #fff8, #fff0 60%), var(--raised-hover);
+  box-shadow: inset 0 0 0 1px #0003;
+}
+
+/* -- Glass: a soft glow behind everything; the bar, menus and dialogs are
+      frosted panes over it */
+
+html[data-finish="glass"] .app,
+html[data-finish="glass"] .control-page {
+  background:
+    radial-gradient(ellipse at 10% 90%, color-mix(in srgb, var(--accent) 35%, transparent), transparent 50%),
+    radial-gradient(ellipse at 90% 15%, color-mix(in srgb, var(--info) 30%, transparent), transparent 50%),
+    radial-gradient(ellipse at 60% 60%, color-mix(in srgb, var(--pink) 18%, transparent), transparent 55%),
+    var(--letterbox);
+}
+
+html[data-finish="glass"] .bar {
+  background: color-mix(in srgb, var(--surface) 55%, transparent);
+  backdrop-filter: blur(16px) saturate(1.5);
+  box-shadow: inset 0 -1px 0 #fff1;
+}
+
+html[data-finish="glass"] .tab.selected {
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
+  box-shadow: inset 0 1px 0 #fff2;
+}
+
+html[data-finish="glass"] .tab-area:not(.scaled) {
+  background: none;
+}
+
+html[data-finish="glass"] .pane-header {
+  background: color-mix(in srgb, var(--surface) 65%, transparent);
+  backdrop-filter: blur(12px);
+}
+
+html[data-finish="glass"] .pane-header.active {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+html[data-finish="glass"] .menu,
+html[data-finish="glass"] .prompt {
+  background: color-mix(in srgb, var(--raised) 62%, transparent);
+  backdrop-filter: blur(20px) saturate(1.6);
+  box-shadow: inset 0 1px 0 #fff2, 0 0 0 1px #fff1, 0 16px 40px #0006;
+}
+
+html[data-finish="glass"] .prompt-backdrop {
+  background: #0003;
+  backdrop-filter: blur(3px);
 }
