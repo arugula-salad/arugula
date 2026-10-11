@@ -588,6 +588,9 @@ test("Cancel turns a join down; Just me keeps a machine apart from the team's", 
   const j = await startJoin("minebox", state, ["--team", team]);
   await alice.goto(j.link);
   await expect(alice.locator("[data-join-to]")).toHaveValue(team);
+  // #778: in a team already, she's told what each place means, and led to
+  // Just me and sharing for working with more than one team.
+  await expect(alice.locator("[data-join-place]")).toContainText("pick Just me, then share a session with each team");
   await alice.locator("[data-join-to]").selectOption("");
   await expect(alice.locator("[data-join-grants]")).toContainText("Only your devices reach it");
   const answer = await j.confirm(alice);
@@ -604,6 +607,12 @@ test("Cancel turns a join down; Just me keeps a machine apart from the team's", 
   await alice.locator(".host-button").click();
   await expect(alice.locator(".menu-header", { hasText: "Team Acme" })).toBeVisible();
   await expect(alice.locator(".menu-header", { hasText: "Yours" })).toBeVisible();
+  // #778: each says its place, and the shown one what that means.
+  await expect(alice.getByRole("menuitem", { name: /minebox\b.* · Just me$/ })).toBeVisible();
+  await expect(alice.getByRole("menuitem", { name: /buildbox\b.* · In Acme$/ })).toBeVisible();
+  const shown = await alice.evaluate(() => window.__arugula.hosts.current);
+  await expect(alice.getByRole("menuitem", { name: shown === "minebox" ? /^Just me: only your devices/ : /^In Acme: everyone in Acme sees its panes/ })).toBeVisible();
+  await alice.keyboard.press("Escape");
 });
 
 test("Move to… puts a machine in a team and back, signed by the device", async () => {
@@ -615,6 +624,8 @@ test("Move to… puts a machine in a team and back, signed by the device", async
     .poll(() => alice.evaluate((id) => window.__arugula.control!.daemons.find((d) => d.id === id)?.online, minebox), { timeout: 30_000 })
     .toBe(true);
   await controlPanel(alice, "devices");
+  // #778: its place, said before anything is picked.
+  await expect(alice.locator(`[data-device="${minebox}"] [data-place]`)).toContainText("Just me: only your devices see its panes");
   const row = alice.locator(`[data-move="${minebox}"]`);
   await row.locator("[data-move-to]").selectOption(team);
   await expect(row.locator("[data-move-explain]")).toContainText("Everyone in Acme sees minebox and reaches it by their role");
@@ -623,9 +634,10 @@ test("Move to… puts a machine in a team and back, signed by the device", async
   // Control lists it as the team's, and the daemon pinned the team itself.
   await expect.poll(() => alice.evaluate((id) => window.__arugula.control!.daemons.find((d) => d.id === id)?.team, minebox)).toBe(team);
   await expect.poll(() => pinned(mineState), { timeout: 15_000 }).toBe(team);
-  // Its team shows once: in "In", not also as a badge beside its name.
+  // Its place, under it with what it means (#778), not as a badge beside
+  // its name.
   await expect(alice.locator(`[data-device="${minebox}"] [data-move-to]`)).toHaveValue(team);
-  await expect(alice.locator(`[data-device="${minebox}"] [data-team-badge]`)).toHaveCount(0);
+  await expect(alice.locator(`[data-device="${minebox}"] [data-place]`)).toContainText("In Acme: everyone in Acme sees its panes");
 
   // Control refuses a move nobody signed, and an old one again.
   const forged = await alice.evaluate(

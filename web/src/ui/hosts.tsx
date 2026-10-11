@@ -75,10 +75,35 @@ export function machineState(name: string): string {
   return d ? seen(name) : "offline";
 }
 
-/** The host menu's line for a machine: its panes, when known, and how it is. */
+/** #778: where a machine is, in the same words wherever machines are
+ * listed: *Just me*, or *In {team}* (a machine is in one team at a time).
+ * Someone else's machine outside a team is theirs: you see what they share. */
+export function machinePlace(team: string | null | undefined, owner?: string): string {
+  if (team) return `In ${team}`;
+  return owner ? `${owner}'s` : "Just me";
+}
+
+/** #778: what the place means: who sees its panes, who counts as its owner. */
+export function placeMeans(team: string | null | undefined, owner?: string): string {
+  if (team) return `everyone in ${team} sees its panes, except private ones, and ${team}'s owners count as its owners too.`;
+  if (owner) return `you see what ${owner} shares with you.`;
+  return "only your devices see its panes (and whoever you share a session with), and you're its only owner.";
+}
+
+/** A machine's place from the fleet, when control says whose it is. */
+function placeIn(name: string): { place: string; means: string } | null {
+  const h = fleet?.host(name);
+  if (!directory.control || !h) return null;
+  const team = h.team ? (h.teamName ?? "a team") : null;
+  return { place: machinePlace(team, h.owner), means: placeMeans(team, h.owner) };
+}
+
+/** The host menu's line for a machine: its panes, when known, how it is,
+ * and where it is (#778). */
 export function fleetLabel(name: string): string {
   const n = fleet?.host(name)?.summary?.panes.length;
-  return `${n === undefined ? "" : `${n} pane${n === 1 ? "" : "s"} · `}${machineState(name)}`;
+  const at = placeIn(name);
+  return `${n === undefined ? "" : `${n} pane${n === 1 ? "" : "s"} · `}${machineState(name)}${at ? ` · ${at.place}` : ""}`;
 }
 
 /** More for the host menu (control mode: adding a machine, hosted VMs). */
@@ -157,7 +182,11 @@ export function HostButton() {
     items.push("separator", { label: "Swarm: every pane at once", run: openSwarm });
     // The shown machine's own settings: here, not in the account menu.
     const mine = machineItems();
-    if (mine.length) items.push("separator", { header: `This machine: ${directory.current}` } as MenuItem, ...mine);
+    // #778: what the shown machine's place means, before someone joins or
+    // shares from it.
+    const at = placeIn(directory.current);
+    const means: MenuItem[] = at ? [{ label: `${at.place}: ${at.means}`, disabled: true, run: () => {} }] : [];
+    if (mine.length || at) items.push("separator", { header: `This machine: ${directory.current}` } as MenuItem, ...means, ...mine);
     if (fleet?.notice) items.push("separator", { label: fleet.notice, disabled: true, run: () => {} });
     if (directory.stale) {
       const what = directory.control ? "Control unreachable: saved list" : "Home daemon unreachable: saved list";
