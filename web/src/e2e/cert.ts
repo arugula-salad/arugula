@@ -240,3 +240,16 @@ export async function deviceMacOk(secret: string, trust: Trust, c: Keys, mac: st
   const key = await macKey(secret, "verify");
   return subtle.verify("HMAC", key, unhex(mac), enc.encode(deviceMacBody(trust, c)));
 }
+
+/** #764: what a device whose keys come from a passkey's PRF signs to pin
+ * its account's root (`arugula_e2e::cert::device_pin_body`). Another
+ * browser that derives the same keys checks it, made by those keys, so
+ * control can't hand it an account of its own. */
+export const devicePinBody = (trust: Trust, device: string) => `arugula device pin v1\naccount ${trust.account}\nroot ${trust.root}\ndevice ${device}\n`;
+
+/** Whether `pin` (hex) is `signPub`'s Ed25519 signature over `devicePinBody`. */
+export async function devicePinOk(trust: Trust, device: string, signPub: string, pin: string): Promise<boolean> {
+  if (!/^[0-9a-f]{128}$/.test(pin)) return false;
+  const key = await subtle.importKey("raw", unhex(signPub), { name: "Ed25519" }, false, ["verify"]);
+  return subtle.verify("Ed25519", key, unhex(pin), enc.encode(devicePinBody(trust, device)));
+}

@@ -10,7 +10,7 @@ use std::sync::Arc;
 use arugula_control_wire as wire;
 use arugula_e2e::{
     Cert, Kind, Refusal, Revocation, Trust,
-    cert::{join_code, normalize_code},
+    cert::{device_pin_ok, join_code, normalize_code},
     now_ms,
     team::{TeamPin, TeamRole},
 };
@@ -328,7 +328,35 @@ pub async fn device(State(app): State<Arc<App>>, s: Session, Path(id): Path<Stri
     if approved && let Some(mac) = app.db.device_mac(&s.account, &id)? {
         body["mac"] = Value::String(mac);
     }
+    // #764: the device's own signature over the account's root, for a
+    // browser that derives its keys from the same passkey to check.
+    if approved && let Some(pin) = app.db.device_pin(&s.account, &id)? {
+        body["pin"] = Value::String(pin);
+    }
     Ok(Json(body).into_response())
+}
+
+#[derive(Deserialize)]
+pub struct Pin {
+    pin: String,
+}
+
+/// `POST /api/devices/{id}/pin` (#764): a browser whose keys come from a
+/// passkey's PRF signs the account's root with them once it's approved.
+/// Another browser with that passkey derives the same keys and checks this
+/// before it takes the root, so control can't hand it an account of its
+/// own. Kept only if it's that device's signature over this account's root.
+pub async fn pin(State(app): State<Arc<App>>, s: Session, Path(id): Path<String>, Json(b): Json<Pin>) -> R {
+    let (trust, certs, revs) = trusted(&app, &s.account)?;
+    let trust = trust.ok_or_else(|| err(StatusCode::CONFLICT, "this account has no devices yet"))?;
+    let now = trust.evaluate(&certs, &revs);
+    let cert =
+        now.get(&id).filter(|c| c.kind == Kind::Browser).ok_or_else(|| err(StatusCode::NOT_FOUND, "no such device"))?;
+    if !device_pin_ok(&trust, cert, &b.pin) {
+        return Err(err(StatusCode::BAD_REQUEST, "that isn't this device's signature over the account's root"));
+    }
+    app.db.set_device_pin(&s.account, &id, &b.pin)?;
+    Ok(Json(json!({})))
 }
 
 pub async fn approve(State(app): State<Arc<App>>, s: Session, Path(id): Path<String>, Json(b): Json<Enroll>) -> R {

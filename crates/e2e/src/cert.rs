@@ -518,6 +518,19 @@ pub fn join_mac(secret: &str, trust: &Trust, cert: &Cert) -> String {
     hex::encode(join_hmac(secret, trust, cert).finalize().into_bytes())
 }
 
+/// What a device signs to pin its account's root (#764), when its keys
+/// come from a passkey's PRF: another browser that derives the same keys
+/// checks this, made by those keys, rather than take control's word for
+/// the root. The page's `devicePinBody` is the same text.
+pub fn device_pin_body(trust: &Trust, device: &str) -> String {
+    format!("arugula device pin v1\naccount {}\nroot {}\ndevice {}\n", trust.account, trust.root, device)
+}
+
+/// Whether `pin` is `cert`'s own signature over [`device_pin_body`].
+pub fn device_pin_ok(trust: &Trust, cert: &Cert, pin: &str) -> bool {
+    verify_hex(&cert.sign, device_pin_body(trust, &cert.device).as_bytes(), pin)
+}
+
 /// Whether `mac` (hex) is [`join_mac`]'s, compared in constant time.
 pub fn join_mac_ok(secret: &str, trust: &Trust, cert: &Cert, mac: &str) -> bool {
     use hkdf::hmac::Mac;
@@ -709,6 +722,24 @@ mod tests {
         let mac = join_mac("ABCD-EFGH-JKMN-PQRS", &trust, &c);
         assert_eq!(mac, "21ec725fbc58f0e2aac0c21b84b6c9f99ca6f4a15bf48f5cf2d98598eaab135b");
         assert_eq!(mac, join_mac("ABCDEFGHJKMNPQRS", &trust, &c), "dashes aside");
+    }
+
+    /// #764: a device's pin is its own signature; another device's, or one
+    /// over another root, isn't.
+    #[test]
+    fn device_pins() {
+        let (k, c) = root("acct");
+        let trust = Trust { account: "acct".into(), root: c.device.clone() };
+        assert_eq!(
+            device_pin_body(&trust, "d1"),
+            format!("arugula device pin v1\naccount acct\nroot {}\ndevice d1\n", c.device)
+        );
+        let pin = hex::encode(k.signature(device_pin_body(&trust, &c.device).as_bytes()));
+        assert!(device_pin_ok(&trust, &c, &pin));
+        let other = Trust { account: "acct".into(), root: "0123456789abcdef".into() };
+        assert!(!device_pin_ok(&other, &c, &pin));
+        let (_, c2) = root("acct");
+        assert!(!device_pin_ok(&trust, &c2, &pin));
     }
 
     #[test]

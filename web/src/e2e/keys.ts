@@ -15,8 +15,11 @@
 // plain non-extractable keys it can only use them while it runs here.
 // Both forms are equally readable on disk to someone who has the browser
 // profile, and the keys are non-extractable in memory either way.
+//
+// #764: or the keys come from a passkey's PRF output (`adoptPrfKeys`), the
+// same on every browser that has the passkey, so they are one device.
 
-import { deviceKey, newKeyPair, publicRaw } from "./noise.ts";
+import { cat, deviceKey, newKeyPair, publicRaw, type Bytes } from "./noise.ts";
 import { deviceId, hex, unhex, type Cert } from "./cert.ts";
 
 const subtle = globalThis.crypto.subtle;
@@ -201,6 +204,77 @@ export async function adoptKeys(noise: Uint8Array<ArrayBuffer>, sign: Uint8Array
   return keys;
 }
 
+/** #764: what the passkey's PRF is evaluated at, one salt per key (WebAuthn
+ * hashes each with its own "WebAuthn PRF" prefix before the authenticator
+ * sees it). Frozen: changing one makes every passkey a new device. */
+export const PRF_SALTS = { noise: new TextEncoder().encode("arugula device noise v1"), sign: new TextEncoder().encode("arugula device sign v1") };
+
+// PKCS#8 for a 32-byte seed: the fixed prefix, then the seed (RFC 8410).
+const PKCS8 = { X25519: unhex("302e020100300506032b656e04220420"), Ed25519: unhex("302e020100300506032b657004220420") };
+
+/** A key's 32-byte seed from one PRF output: HKDF-SHA256, no salt (the
+ * output is already uniform), with `info` naming the key's use. */
+async function seedOf(prf: BufferSource, info: string): Promise<Bytes> {
+  const ikm = await subtle.importKey("raw", prf, "HKDF", false, ["deriveBits"]);
+  return new Uint8Array(await subtle.deriveBits({ name: "HKDF", hash: "SHA-256", salt: new Uint8Array(), info: new TextEncoder().encode(info) }, ikm, 256));
+}
+
+/** A seed as PKCS#8, and its public key. WebCrypto has no way to compute
+ * a public key from a private one, but a private JWK carries it (`x`), so
+ * the key is imported once as extractable for that. */
+async function fromSeed(alg: "X25519" | "Ed25519", seed: Bytes): Promise<{ pkcs8: Bytes; pub: string }> {
+  const pkcs8 = cat(PKCS8[alg], seed);
+  seed.fill(0);
+  const k = await subtle.importKey("pkcs8", pkcs8, { name: alg }, true, alg === "X25519" ? ["deriveBits"] : ["sign"]);
+  const x = (await subtle.exportKey("jwk", k)).x ?? "";
+  return { pkcs8, pub: hex(Uint8Array.from(atob(x.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0))) };
+}
+
+/** A device whose keys this browser derived from a passkey (#764). */
+export interface PrfDevice {
+  device: string;
+  /** Its certificate's name: "iCloud Keychain passkey", or "Passkey". */
+  name: string;
+}
+
+/** #764: this browser's keys from a passkey's PRF output (`noise` and
+ * `sign`, at `PRF_SALTS`), replacing any it had, stored as `adoptKeys`
+ * stores them. Every browser with that passkey derives the same keys, so
+ * they are one device. */
+export async function adoptPrfKeys(noise: BufferSource, sign: BufferSource, name: string): Promise<DeviceKeys> {
+  const n = await fromSeed("X25519", await seedOf(noise, "arugula device x25519 v1"));
+  const s = await fromSeed("Ed25519", await seedOf(sign, "arugula device ed25519 v1"));
+  try {
+    const keys = await adoptKeys(n.pkcs8, s.pkcs8, n.pub, s.pub);
+    await kv("readwrite", (st) => void st.put({ device: keys.id, name } satisfies PrfDevice, "prf"));
+    return keys;
+  } finally {
+    n.pkcs8.fill(0);
+    s.pkcs8.fill(0);
+  }
+}
+
+/** The device this browser's keys came from a passkey as, if they did. */
+export async function prfDevice(): Promise<PrfDevice | undefined> {
+  return kv<PrfDevice>("readonly", (s) => s.get("prf"));
+}
+
+/** #764: keys of this browser's own instead of a passkey's (that device
+ * was removed, or its pin doesn't check out): made as on first use. */
+export async function freshKeys(): Promise<DeviceKeys> {
+  await kv("readwrite", (s) => {
+    s.delete("keys");
+    s.delete("prf");
+  });
+  return loadKeys();
+}
+
+/** Forget this browser's place in an account, keeping its keys (#764: it
+ * took a passkey's keys, which aren't that device's). */
+export async function forgetEnrollment(control: string): Promise<void> {
+  await kv("readwrite", (s) => void s.delete(`enrollment:${control}`));
+}
+
 export async function signText(keys: DeviceKeys, text: string): Promise<string> {
   return hex(new Uint8Array(await subtle.sign("Ed25519", keys.sign.privateKey, new TextEncoder().encode(text))));
 }
@@ -217,6 +291,7 @@ export async function forget(control: string): Promise<void> {
   await kv("readwrite", (s) => {
     s.delete(`enrollment:${control}`);
     s.delete("keys");
+    s.delete("prf");
   });
 }
 

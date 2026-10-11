@@ -427,6 +427,7 @@ pub fn router(app: Arc<App>) -> Router {
         .route("/api/devices", get(api::devices).post(api::enroll))
         .route("/api/devices/{id}", get(api::device))
         .route("/api/devices/{id}/approve", post(api::approve))
+        .route("/api/devices/{id}/pin", post(api::pin))
         .route("/api/devices/{id}/reject", post(api::reject))
         .route("/api/revocations", post(api::revoke))
         .route("/api/recovery", post(api::add_recovery))

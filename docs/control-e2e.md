@@ -21,8 +21,9 @@ control serves, and the first account a machine joins, are trusted.
   - a browser keeps a non-extractable X25519 key (for Noise) and an Ed25519
     key (for signing approvals) in IndexedDB;
   - the CLI and daemons keep key files;
-  - a passkey's PRF output can re-derive a browser's keys after storage is
-    lost (go/no-go per platform: see [PRF](#prf-re-deriving-a-browsers-keys)).
+  - a passkey's PRF output re-derives a browser's keys after storage is
+    lost, and a synced passkey is one device everywhere it syncs (see
+    [PRF](#prf-re-deriving-a-browsers-keys)).
 - **Trust:**
   - control distributes keys, but each device certificate is signed by a
     device the account already trusts;
@@ -219,29 +220,72 @@ device nobody trusted. Now:
 ### PRF: re-deriving a browser's keys
 
 A passkey created with the `prf` extension returns 32 bytes per salt, the
-same every time for that credential. With a fixed salt
-(`"arugula device key v1"`), those bytes are imported as an X25519 PKCS#8
-seed, non-extractable (the spike does this). A second salt gives the
-Ed25519 seed.
+same every time for that credential. Since #764 those bytes are the
+browser's device keys, where the passkey gives them:
 
-- If storage is cleared, signing in with the passkey restores the same
-  device: no approval needed, and no new certificate.
-- **A synced passkey is one device.** iCloud Keychain and Google Password
-  Manager sync the credential, so every device sharing it derives the same
-  keys. The certificate's `name` says so ("iCloud Keychain passkey"), and
-  revoking it removes all of them. That is the same trust the passkey
-  already carries as a login.
+- **Derivation** (`adoptPrfKeys` in `web/src/e2e/keys.ts`): every passkey
+  ceremony (making one, signing in) asks for PRF at two fixed salts,
+  `"arugula device noise v1"` and `"arugula device sign v1"`. Each output
+  goes through HKDF-SHA256 (no salt, `info` `"arugula device x25519 v1"` or
+  `"arugula device ed25519 v1"`) to a 32-byte seed, imported as PKCS#8
+  (X25519 and Ed25519). The public halves come from exporting a private
+  JWK once; the keys are then stored non-extractable, as `adoptKeys` stores
+  any (wrapped where WebKit needs it). The salts and `info` strings are
+  frozen: changing one makes every passkey a new device.
+- **Recorded per passkey:** the page tells control whether the passkey
+  gave PRF (`enabled` when it's made, output at sign-in), kept in
+  `passkeys.prf` and listed in `/api/me/passkeys`. Control never sees the
+  output.
+- **Which browsers take the keys:** a passkey sign-in on a browser that
+  isn't a working device of that account (new, site data cleared, keys
+  lost). One that is keeps its own keys. A browser waiting for approval
+  offers *Use your passkey instead*, which signs in again and takes them.
+- **The first time**, the passkey's keys are a new device, named for what
+  keeps the passkey when control knows it from the AAGUID ("iCloud
+  Keychain passkey", else "Passkey"). It's approved once like any other
+  browser (with its code), unless the authenticator gave PRF as the
+  passkey was made, at sign-up: then it's the account's first device.
+- **The pin.** Once approved, that device signs
+  `arugula device pin v1`, the account and the root it pinned
+  (`devicePinBody`, `arugula_e2e::cert::device_pin_body`), and control keeps
+  it (`POST /api/devices/{id}/pin`, checked against the device's key).
+- **Every later time** (storage cleared, another browser the passkey syncs
+  to) the browser derives the same keys, finds the device in the account,
+  and checks the pin with its own key before it takes the root. Control
+  can't make that signature, so it can't hand the browser an account of
+  its own, which is what the code does for a browser approved normally
+  (below). No approval, no new certificate.
+- **A device that was removed, or whose pin is missing or doesn't check
+  out,** gives way: the browser drops the passkey's keys, makes its own and
+  asks to be approved, as before. Revoked keys never come back, so once the
+  passkey's device is removed, that passkey only signs in.
 - Where PRF isn't available, losing storage means a new device key and an
   approval from another device. That is safe, just less convenient. **So
-  PRF is an improvement, not a requirement:** control's accounts ship either way.
+  PRF is an improvement, not a requirement:** control's accounts ship either
+  way, and nothing changes for a passkey without it.
+
+**The trade-off: a synced passkey is one device.** iCloud Keychain and
+Google Password Manager sync the credential, so every device sharing it
+derives the same keys and is that device: whoever holds the passkey (or the
+account it syncs through) reaches your machines without an approval.
+That's the trust the passkey already carries as a login, now carried to the
+machines too. Removing the device removes it on all of them at once; a
+passkey you don't want to stand for a device is one to remove from the
+account.
 
 **Go/no-go per platform:**
 
-| Platform | `extension:prf` | Same seed after reload | Verdict |
-|---|---|---|---|
-| Chrome 153, Linux (headless) | reported `true` | needs a real authenticator | pending a real device |
-| Safari, iOS | pending phone run | | |
-| Chrome, Android | pending phone run | | |
+| Platform | `extension:prf` | Same device after clearing site data | New computer, same synced passkey | Verdict |
+|---|---|---|---|---|
+| Chrome, Linux | not yet checked | not yet checked | not yet checked | not yet checked |
+| Chrome, Mac | not yet checked | not yet checked | not yet checked | not yet checked |
+| Safari, Mac (iCloud Keychain) | not yet checked | not yet checked | not yet checked | not yet checked |
+| Safari, iOS | not yet checked | not yet checked | not yet checked | not yet checked |
+| Chrome, Android | not yet checked | not yet checked | not yet checked | not yet checked |
+
+The spike saw Chrome 153 (Linux, headless) report `true`.
+`passkey.spec.ts` runs the round trip on Chromium's virtual authenticator
+(`hasPrf`), which says nothing about real ones.
 
 ### Joining a machine: the secret in its link
 
@@ -738,6 +782,6 @@ logged.
 
 These are pending the phone runs (see the spike README):
 
-- PRF on Safari iOS and Chrome Android (the go/no-go above);
+- PRF on real devices (the go/no-go table above);
 - the cellular round trip through the relay, against the relay's 30 ms budget;
 - link-preview behaviour in Slack and iMessage.

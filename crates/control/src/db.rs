@@ -319,6 +319,16 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     if !has("passkeys", "used")? {
         conn.execute_batch("ALTER TABLE passkeys ADD COLUMN used INTEGER")?;
     }
+    // #764: whether a passkey gives PRF output (NULL: not known yet), and a
+    // device's pin: its own signature over the account's root, made when
+    // its keys came from a passkey's PRF, so another browser that derives
+    // the same keys can check the root without taking control's word.
+    if !has("passkeys", "prf")? {
+        conn.execute_batch("ALTER TABLE passkeys ADD COLUMN prf INTEGER")?;
+    }
+    if !has("devices", "pin")? {
+        conn.execute_batch("ALTER TABLE devices ADD COLUMN pin TEXT")?;
+    }
     Ok(())
 }
 
@@ -430,6 +440,8 @@ pub struct PasskeyRow {
     pub provider: Option<String>,
     /// Its last sign-in, if any since #208.
     pub used: Option<u64>,
+    /// Whether it gives PRF output (#764), when known.
+    pub prf: Option<bool>,
 }
 
 #[derive(Debug, Clone)]
@@ -438,6 +450,8 @@ pub struct Passkey {
     pub alg: i64,
     pub public: Vec<u8>,
     pub sign_count: u32,
+    /// What keeps it (iCloud Keychain, Windows Hello...), when known.
+    pub provider: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -723,9 +737,19 @@ impl Db {
     pub fn passkey(&self, id: &str) -> anyhow::Result<Option<Passkey>> {
         Ok(self
             .c()
-            .query_row("SELECT account, alg, public, sign_count FROM passkeys WHERE id = ?1", params![id], |r| {
-                Ok(Passkey { account: r.get(0)?, alg: r.get(1)?, public: r.get(2)?, sign_count: r.get(3)? })
-            })
+            .query_row(
+                "SELECT account, alg, public, sign_count, provider FROM passkeys WHERE id = ?1",
+                params![id],
+                |r| {
+                    Ok(Passkey {
+                        account: r.get(0)?,
+                        alg: r.get(1)?,
+                        public: r.get(2)?,
+                        sign_count: r.get(3)?,
+                        provider: r.get(4)?,
+                    })
+                },
+            )
             .optional()?)
     }
 
@@ -734,6 +758,13 @@ impl Db {
     pub fn note_passkey(&self, id: &str, agent: &str, provider: Option<&str>) -> anyhow::Result<()> {
         self.c()
             .execute("UPDATE passkeys SET agent = ?2, provider = ?3 WHERE id = ?1", params![id, agent, provider])?;
+        Ok(())
+    }
+
+    /// Whether a passkey gives PRF output (#764), as the browser that used
+    /// it saw: `enabled` when it was made, results when it signs in.
+    pub fn passkey_prf(&self, id: &str, prf: bool) -> anyhow::Result<()> {
+        self.c().execute("UPDATE passkeys SET prf = ?2 WHERE id = ?1", params![id, prf])?;
         Ok(())
     }
 
@@ -749,8 +780,9 @@ impl Db {
     /// An account's passkeys, oldest first.
     pub fn passkeys(&self, account: &str) -> anyhow::Result<Vec<PasskeyRow>> {
         let c = self.c();
-        let mut q =
-            c.prepare("SELECT id, created, agent, provider, used FROM passkeys WHERE account = ?1 ORDER BY created")?;
+        let mut q = c.prepare(
+            "SELECT id, created, agent, provider, used, prf FROM passkeys WHERE account = ?1 ORDER BY created",
+        )?;
         let rows = q.query_map(params![account], |r| {
             Ok(PasskeyRow {
                 id: r.get(0)?,
@@ -758,6 +790,7 @@ impl Db {
                 agent: r.get::<_, Option<String>>(2)?.unwrap_or_default(),
                 provider: r.get(3)?,
                 used: r.get(4)?,
+                prf: r.get(5)?,
             })
         })?;
         Ok(rows.collect::<Result<_, _>>()?)
@@ -1135,6 +1168,21 @@ impl Db {
         Ok(self
             .c()
             .query_row("SELECT mac FROM devices WHERE account = ?1 AND id = ?2", params![account, id], |r| r.get(0))
+            .optional()?
+            .flatten())
+    }
+
+    /// A device's pin (#764): its own signature over the account's root,
+    /// checked by the caller.
+    pub fn set_device_pin(&self, account: &str, id: &str, pin: &str) -> anyhow::Result<()> {
+        self.c().execute("UPDATE devices SET pin = ?3 WHERE account = ?1 AND id = ?2", params![account, id, pin])?;
+        Ok(())
+    }
+
+    pub fn device_pin(&self, account: &str, id: &str) -> anyhow::Result<Option<String>> {
+        Ok(self
+            .c()
+            .query_row("SELECT pin FROM devices WHERE account = ?1 AND id = ?2", params![account, id], |r| r.get(0))
             .optional()?
             .flatten())
     }

@@ -12,6 +12,11 @@
 //!   Windows Hello setups and security keys that only do RSA, #205);
 //! - user verification required, the RP id is control's host, and the
 //!   origin must be control's own.
+//!
+//! #764: the page asks for the `prf` extension too, and says whether the
+//! passkey gave it (`prf`), kept per passkey. Its output never comes here:
+//! the page derives its device keys from it. Control says what keeps the
+//! passkey, for the page to name that device.
 
 use std::{
     collections::HashMap,
@@ -32,7 +37,7 @@ use serde::Deserialize;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
-use crate::{ApiError, App, Site, auth, err};
+use crate::{ApiError, App, Site, auth, db::Passkey, err};
 
 const CHALLENGE_TTL_MS: u64 = 5 * 60 * 1000;
 const ES256: i64 = -7;
@@ -157,6 +162,9 @@ pub struct Registration {
     client_data: String,
     #[serde(rename = "attestationObject")]
     attestation: String,
+    /// Whether the browser says the passkey gives PRF output (#764).
+    #[serde(default)]
+    prf: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -252,8 +260,8 @@ fn provider(aaguid: &str) -> Option<&'static str> {
 
 pub async fn register_finish(State(app): State<Arc<App>>, headers: HeaderMap, Json(r): Json<Registration>) -> Response {
     match register(&app, &headers, r).await {
-        Ok((account, new_session)) => {
-            let mut res = Json(json!({ "account": account })).into_response();
+        Ok((account, provider, new_session)) => {
+            let mut res = Json(json!({ "account": account, "provider": provider })).into_response();
             if let Some(cookie) = new_session {
                 res.headers_mut().append(header::SET_COOKIE, cookie);
             }
@@ -267,7 +275,7 @@ async fn register(
     app: &Arc<App>,
     headers: &HeaderMap,
     r: Registration,
-) -> Result<(String, Option<header::HeaderValue>), ApiError> {
+) -> Result<(String, Option<&'static str>, Option<header::HeaderValue>), ApiError> {
     same_origin(app, headers)?;
     let site = app.cfg.site(headers);
     let (cd, _) = client_data(site, &r.client_data, "webauthn.create")?;
@@ -305,8 +313,12 @@ async fn register(
     };
     app.db.add_passkey(&r.id, &account, alg, &public, now)?;
     let aaguid = hex::encode(&rest[..16]);
-    app.db.note_passkey(&r.id, &crate::account::agent(headers), provider(&aaguid))?;
-    Ok((account, cookie))
+    let provider = provider(&aaguid);
+    app.db.note_passkey(&r.id, &crate::account::agent(headers), provider)?;
+    if let Some(prf) = r.prf {
+        app.db.passkey_prf(&r.id, prf)?;
+    }
+    Ok((account, provider, cookie))
 }
 
 pub async fn login_start(
@@ -330,12 +342,17 @@ pub struct Assertion {
     #[serde(rename = "authenticatorData")]
     authenticator_data: String,
     signature: String,
+    /// The browser got PRF output from it (#764).
+    #[serde(default)]
+    prf: bool,
 }
 
 pub async fn login_finish(State(app): State<Arc<App>>, headers: HeaderMap, Json(a): Json<Assertion>) -> Response {
     match login(&app, &headers, a) {
-        Ok(cookie) => {
-            let mut res = Json(json!({})).into_response();
+        Ok((cookie, pk)) => {
+            // Which account, and what keeps the passkey: the page names a
+            // device whose keys came from it by that (#764).
+            let mut res = Json(json!({ "account": pk.account, "provider": pk.provider })).into_response();
             res.headers_mut().append(header::SET_COOKIE, cookie);
             res
         }
@@ -343,7 +360,7 @@ pub async fn login_finish(State(app): State<Arc<App>>, headers: HeaderMap, Json(
     }
 }
 
-fn login(app: &Arc<App>, headers: &HeaderMap, a: Assertion) -> Result<header::HeaderValue, ApiError> {
+fn login(app: &Arc<App>, headers: &HeaderMap, a: Assertion) -> Result<(header::HeaderValue, Passkey), ApiError> {
     same_origin(app, headers)?;
     let site = app.cfg.site(headers);
     let (cd, raw) = client_data(site, &a.client_data, "webauthn.get")?;
@@ -387,7 +404,10 @@ fn login(app: &Arc<App>, headers: &HeaderMap, a: Assertion) -> Result<header::He
         return Err(err(StatusCode::UNAUTHORIZED, "this passkey's counter went backwards; it may have been copied"));
     }
     app.db.passkey_used(&a.id, count, now_ms())?;
-    auth::start_session(app, &pk.account)
+    if a.prf {
+        app.db.passkey_prf(&a.id, true)?;
+    }
+    Ok((auth::start_session(app, &pk.account)?, pk))
 }
 
 #[cfg(test)]
@@ -476,8 +496,10 @@ mod tests {
             id: B64.encode(&cred),
             client_data: client("webauthn.create", &challenge),
             attestation: B64.encode(&att_bytes),
+            prf: None,
         };
-        let (account, cookie) = register(&app, &h, r).await.unwrap();
+        let (account, provider, cookie) = register(&app, &h, r).await.unwrap();
+        assert_eq!(provider, Some("Windows Hello"));
         assert!(cookie.is_some());
         let stored = app.db.passkey(&B64.encode(&cred)).unwrap().unwrap();
         assert_eq!((stored.alg, stored.account.as_str()), (RS256, account.as_str()));
@@ -500,6 +522,7 @@ mod tests {
                     client_data: cd,
                     authenticator_data: B64.encode(&data),
                     signature: B64.encode(&sig),
+                    prf: true,
                 },
             )
         };
@@ -508,8 +531,12 @@ mod tests {
         assert_eq!(listed.provider.as_deref(), Some("Windows Hello"));
         assert!(listed.agent.contains("Windows NT"));
         assert_eq!(listed.used, None);
+        assert_eq!(listed.prf, None, "not known until a browser says");
         assert!(sign_in(&k).is_ok());
-        assert!(app.db.passkeys(&account).unwrap()[0].used.is_some());
+        let listed = &app.db.passkeys(&account).unwrap()[0];
+        assert!(listed.used.is_some());
+        // #764: it gave PRF output at sign-in.
+        assert_eq!(listed.prf, Some(true));
         // Another key's signature doesn't.
         let other = aws_lc_rs::rsa::KeyPair::generate(KeySize::Rsa2048).unwrap();
         assert!(sign_in(&other).is_err());
@@ -567,6 +594,7 @@ mod tests {
             id: B64.encode(&cred),
             client_data: client("webauthn.create", &challenge, "http://old.test"),
             attestation: B64.encode(&att_bytes),
+            prf: Some(false),
         };
         register(&app, &old, r).await.unwrap();
 
@@ -585,6 +613,7 @@ mod tests {
                 client_data: cd,
                 authenticator_data: B64.encode(&data),
                 signature: B64.encode(&sig),
+                prf: false,
             };
             login(&app, h, a)
         };

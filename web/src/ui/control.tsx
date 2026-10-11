@@ -224,6 +224,7 @@ function Waiting({ s }: { s: ControlSession }) {
           </>
         )}
         <p class="dim">Waiting…</p>
+        <PasskeyInstead s={s} />
         <RecoveryForm s={s} open={recovering()} />
         <SignOuts s={s} />
       </Center>
@@ -243,6 +244,7 @@ function Waiting({ s }: { s: ControlSession }) {
             <CopyText text={mine} data-device-code-text />
           </div>
           <p class="dim">Waiting…</p>
+          {s.fromPasskey ? <p class="dim" data-waiting-passkey>Approve it once, and your passkey brings it back on any browser it's synced to.</p> : null}
           {older}
         </>
       ) : (
@@ -260,9 +262,25 @@ function Waiting({ s }: { s: ControlSession }) {
         Here to add a machine to your account or a team? That's a separate approval, and it doesn't need this one. The machine shows a code (in
         Getting started, or where you ran <code>arugulad join</code>): approve that code on a device you already use.
       </p>
+      <PasskeyInstead s={s} />
       <RecoveryForm s={s} open={recovering()} />
       <SignOuts s={s} />
     </Center>
+  );
+}
+
+/** #764: a passkey whose PRF output gives the device another browser
+ * enrolled with it: this browser becomes that device, with no approval. */
+function PasskeyInstead({ s }: { s: ControlSession }) {
+  const [err, setErr] = useState("");
+  if (!s.info.passkeys || !s.passkeys || s.fromPasskey || inApp()) return null;
+  return (
+    <>
+      <button class="control-secondary" data-use-passkey onClick={() => s.usePasskey().catch((e: Error) => setErr(e.name === "NotAllowedError" ? "Cancelled." : e.message))}>
+        Use your passkey instead
+      </button>
+      {err ? <p class="control-error">{err}</p> : null}
+    </>
   );
 }
 
@@ -397,7 +415,7 @@ function PasskeyButtons() {
   // #102: a new account says what teammates call it first.
   const [naming, setNaming] = useState(false);
   const [name, setName] = useState("");
-  const go = (f: () => Promise<void>) =>
+  const go = (f: () => Promise<unknown>) =>
     f().then(
       () => location.reload(),
       (e: Error) => setErr(e.name === "NotAllowedError" ? "Cancelled." : e.message),

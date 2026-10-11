@@ -5,7 +5,9 @@
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use arugula_e2e::{
-    Cert, DeviceKeys, Kind, now_ms,
+    Cert, DeviceKeys, Kind, Trust,
+    cert::device_pin_body,
+    now_ms,
     team::{AskInvite, Invite, Member, Roster, TeamRole},
 };
 use futures_util::{SinkExt, StreamExt};
@@ -691,6 +693,41 @@ async fn a_waiting_devices_mac_passes_through_control_to_it() {
     let got = get(format!("/api/devices/{}", old.id())).await;
     assert_eq!(got["approved"], true);
     assert!(got.get("mac").is_none(), "{got}");
+}
+
+/// #764: a browser whose keys come from a passkey's PRF pins the
+/// account's root with its own signature, and control keeps it only if it
+/// is that: another browser with the same passkey checks it.
+#[tokio::test]
+async fn a_device_pins_its_root_with_its_own_signature() {
+    let c = control(|_| {}).await;
+    let root = person(&c.app, "jake", "a1");
+    let cookie = session(&c.app, "a1");
+    let trust = Trust { account: "a1".into(), root: root.id() };
+    let keys = DeviceKeys::generate();
+    let mut cert = Cert::new(&keys, "a1", Kind::Browser, "iCloud Keychain passkey");
+    cert.sign_with(&root);
+    let pin_of = |k: &DeviceKeys, t: &Trust| hex::encode(k.signature(device_pin_body(t, &keys.id()).as_bytes()));
+    let pin = |p: String| {
+        let (c, cookie, id) = (&c, cookie.clone(), keys.id());
+        async move { c.as_person(&cookie, "POST", &format!("/api/devices/{id}/pin"), Some(json!({ "pin": p }))).await.0 }
+    };
+    let get = || {
+        let (c, cookie, id) = (&c, cookie.clone(), keys.id());
+        async move { c.as_person(&cookie, "GET", &format!("/api/devices/{id}"), None).await.1 }
+    };
+    // Not a device of the account yet.
+    assert_eq!(pin(pin_of(&keys, &trust)).await, 404);
+    let (st, r) = c.as_person(&cookie, "POST", "/api/devices", Some(json!({ "cert": cert }))).await;
+    assert_eq!((st, &r["approved"]), (200, &json!(true)), "{r}");
+    assert!(get().await.get("pin").is_none());
+    // Another key's signature, or one over another root: refused.
+    assert_eq!(pin(pin_of(&DeviceKeys::generate(), &trust)).await, 400);
+    let other = Trust { account: "a1".into(), root: "0123456789abcdef".into() };
+    assert_eq!(pin(pin_of(&keys, &other)).await, 400);
+    let good = pin_of(&keys, &trust);
+    assert_eq!(pin(good.clone()).await, 200);
+    assert_eq!(get().await["pin"], json!(good));
 }
 
 fn roster(team: &str, version: u64, members: Vec<Member>, by: &DeviceKeys) -> Roster {
