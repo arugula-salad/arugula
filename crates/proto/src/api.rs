@@ -758,6 +758,7 @@ pub struct ThreadAgent {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub enum UnreachedWhy {
     /// `@agent` in a session's thread: an agent is a pane's.
     AgentNeedsPane,
@@ -770,6 +771,7 @@ pub enum UnreachedWhy {
 /// An `@` in a post that reached no one, for the poster alone.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Unreached {
     pub token: String,
     pub why: UnreachedWhy,

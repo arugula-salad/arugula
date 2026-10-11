@@ -37,6 +37,7 @@ impl McpOp for ClosePane {
         open_world: false,
     };
     type Args = PaneOnly;
+    type Answer = crate::mcp::results::PaneOnly;
 
     async fn args(_: &Call<'_>, a: &PaneOnly) -> Result<(arugula_proto::PaneId, Empty), String> {
         Ok((a.pane.id()?, Empty {}))

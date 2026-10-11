@@ -11,11 +11,11 @@
 //! tab, its session, its machine) is checked in `args`, which may ask.
 
 use schemars::JsonSchema;
-use serde::de::DeserializeOwned;
+use serde::{Serialize, de::DeserializeOwned};
 
 use std::future::Future;
 
-use super::tools::{Args, Call, Def, Kind, Out, parse};
+use super::tools::{Args, Call, Def, Kind, Out, output_schema, parse};
 use crate::ops::{Cx, Handle, OpError, Via};
 
 /// Where an operation shows in the tool list.
@@ -39,6 +39,11 @@ pub trait McpOp: Handle {
     const SURFACE: Surface;
     /// What an agent passes; its doc comments are the schema's.
     type Args: DeserializeOwned + JsonSchema + Sync + 'static;
+
+    /// What `answer` hands to `done`, for a tool of its own: its
+    /// `outputSchema` is this type's, with `summary` (`output_schema`). A
+    /// kind of a grouped tool lists none, and says `Value`.
+    type Answer: Serialize + JsonSchema + 'static;
 
     /// The operation's path and request from the agent's arguments, once
     /// what this agent's token reaches has been checked.
@@ -67,6 +72,7 @@ pub fn def<O: McpOp>() -> Def {
         idempotent,
         open_world,
         flag: O::FLAG,
+        output: Some(output_schema::<O::Answer>),
     }
 }
 

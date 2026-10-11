@@ -1325,6 +1325,7 @@ pub struct Presence {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub enum ThreadTarget {
     Pane(PaneId),
     Session(SessionId),
@@ -1350,6 +1351,7 @@ impl ThreadTarget {
 /// One message in a thread (M61).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ThreadMsg {
     /// 1, 2, 3, ... within its thread.
     pub id: u64,
@@ -1388,6 +1390,7 @@ pub struct ThreadMsg {
 /// after the pane scrolls or closes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Quote {
     pub pane: PaneId,
     pub text: String,

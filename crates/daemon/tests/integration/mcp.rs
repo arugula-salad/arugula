@@ -289,6 +289,73 @@ async fn tools_through_the_stdio_bridge() {
     s.cancel().await.unwrap();
 }
 
+/// #580: a tool that always answers with one type lists it as its
+/// `outputSchema`, and a client may refuse an answer that doesn't fit it. So
+/// what the real server sends fits what the real server lists, in each shape
+/// `run` answers with, and in the others.
+#[tokio::test(flavor = "multi_thread")]
+async fn what_a_tool_answers_fits_the_output_schema_it_lists() {
+    let d = Daemon::child();
+    let s = bridge(&d, Client::named("claude-code")).await;
+    let tools = s.list_all_tools().await.unwrap();
+    // The grouped tools and the ones that answer in more than one shape list none.
+    for name in ["list", "show", "send_input", "attach", "read_output", "wait", "history", "prompt_agent"] {
+        let t = tools.iter().find(|t| t.name == name).unwrap_or_else(|| panic!("no {name}"));
+        assert!(t.output_schema.is_none(), "{name} lists an outputSchema");
+    }
+    let schema = |name: &str| {
+        let t = tools.iter().find(|t| t.name == name).unwrap_or_else(|| panic!("no {name}"));
+        let schema = t.output_schema.as_ref().unwrap_or_else(|| panic!("{name} lists no outputSchema"));
+        assert_eq!(schema.get("type"), Some(&json!("object")), "{name}: MCP wants an object at the root");
+        Value::Object((**schema).clone())
+    };
+    let fits = |name: &str, answer: &Value| {
+        if let Err(e) = arugula_testkit::schema::conforms(answer, &schema(name)) {
+            panic!("{name} answered {answer}, which doesn't fit its outputSchema: {e}");
+        }
+    };
+
+    let dir = d.sessions.join("repo");
+    std::fs::create_dir_all(&dir).unwrap();
+    let started = call(&s, "run", json!({ "cwd": dir })).await;
+    assert_eq!(started["state"], "started", "{started}");
+    fits("run", &started);
+    let done =
+        call(&s, "run", json!({ "command": "echo fits-$((6*7))", "cwd": dir, "wait": true, "timeout": 20 })).await;
+    assert_eq!(done["state"], "done", "{done}");
+    fits("run", &done);
+    let slow = call(&s, "run", json!({ "command": "sleep 30", "cwd": dir, "wait": true, "timeout": 1 })).await;
+    assert_eq!(slow["state"], "still running", "{slow}");
+    fits("run", &slow);
+
+    std::fs::write(dir.join("notes.txt"), "line one\nline two\n").unwrap();
+    let pane = done["pane"].as_u64().unwrap();
+    fits("read_file", &call(&s, "read_file", json!({ "path": "notes.txt", "pane": pane })).await);
+    for p in [&started, &done, &slow] {
+        fits("close", &call(&s, "close", json!({ "pane": p["pane"] })).await);
+    }
+
+    #[cfg(feature = "labs")]
+    {
+        arugula_testkit::labs(&d.state, true);
+        let tools = s.list_all_tools().await.unwrap();
+        let first = d.get("/api/panes")[0]["id"].as_u64().unwrap();
+        for name in ["read_thread", "post_thread"] {
+            assert!(tools.iter().any(|t| t.name == name && t.output_schema.is_some()), "{name} lists no outputSchema");
+        }
+        let schema = |name: &str| {
+            Value::Object((**tools.iter().find(|t| t.name == name).unwrap().output_schema.as_ref().unwrap()).clone())
+        };
+        let posted = call(&s, "post_thread", json!({ "pane": first, "text": "@nobody does this fit?" })).await;
+        assert_eq!(posted["unreached"][0]["why"], "nobody", "{posted}");
+        arugula_testkit::schema::conforms(&posted, &schema("post_thread")).unwrap();
+        let read = call(&s, "read_thread", json!({ "pane": first })).await;
+        arugula_testkit::schema::conforms(&read, &schema("read_thread")).unwrap();
+        arugula_testkit::labs(&d.state, false);
+    }
+    s.cancel().await.unwrap();
+}
+
 /// `show`'s blocks (#349): a diff of a repository and a file at a line, by
 /// kind, as show_changes and show_file did; and by those names too.
 #[tokio::test(flavor = "multi_thread")]

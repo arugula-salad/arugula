@@ -290,6 +290,7 @@ pub struct Issue {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum ReviewEvent {
     Approve,
@@ -301,6 +302,7 @@ pub enum ReviewEvent {
 /// `rerun_checks` and `live`, with what each takes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(tag = "method", rename_all = "snake_case")]
 pub enum Write {
     Comment {
@@ -329,6 +331,7 @@ pub enum Write {
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum DraftStatus {
     #[default]
@@ -340,6 +343,7 @@ pub enum DraftStatus {
 /// An agent's write, waiting for a person.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Draft {
     pub id: String,
     #[serde(flatten)]
@@ -455,6 +459,7 @@ impl NewIssue {
 /// What a PR or issue wants of you, as the client draws it: its kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum ForgeWantKind {
     Review,
@@ -482,6 +487,7 @@ impl ForgeWantKind {
 /// What it wants of you, as the client draws it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ForgeWant {
     pub kind: ForgeWantKind,
     pub why: String,

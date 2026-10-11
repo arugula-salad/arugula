@@ -94,6 +94,182 @@
         "type": "object"
       },
       "name": "run",
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "oneOf": [
+          {
+            "properties": {
+              "pane": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "state": {
+                "const": "started",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "pane"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "command": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "last_lines": {
+                "type": "string"
+              },
+              "next_offset": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "pane": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "state": {
+                "const": "still running",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "pane",
+              "next_offset",
+              "last_lines"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "command": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "exit": {
+                "format": "int32",
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "last_lines": {
+                "type": "string"
+              },
+              "next_offset": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "output_offset": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "pane": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "state": {
+                "const": "done",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "pane",
+              "output_offset",
+              "next_offset",
+              "last_lines"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "exit": {
+                "format": "int32",
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "last_lines": {
+                "type": "string"
+              },
+              "pane": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "state": {
+                "const": "exited",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "pane",
+              "last_lines"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "match": {
+                "type": "string"
+              },
+              "next_offset": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "offset": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "pane": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "state": {
+                "const": "matched",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "pane",
+              "match",
+              "offset",
+              "next_offset"
+            ],
+            "type": "object"
+          }
+        ],
+        "properties": {
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "summary"
+        ],
+        "type": "object"
+      },
       "title": "Run a command in a pane"
     },
     {
@@ -507,6 +683,24 @@
         "type": "object"
       },
       "name": "close",
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "pane": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "pane",
+          "summary"
+        ],
+        "type": "object"
+      },
       "title": "Close a pane"
     },
     {
@@ -897,6 +1091,24 @@
         "type": "object"
       },
       "name": "start_agent",
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "block": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "block",
+          "summary"
+        ],
+        "type": "object"
+      },
       "title": "Start an agent"
     },
     {
@@ -1059,6 +1271,24 @@
         "type": "object"
       },
       "name": "agent_respond",
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "pane": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "pane",
+          "summary"
+        ],
+        "type": "object"
+      },
       "title": "Answer an agent"
     },
     {
@@ -1101,6 +1331,237 @@
         "type": "object"
       },
       "name": "read_forge",
+      "outputSchema": {
+        "$defs": {
+          "Draft": {
+            "description": "An agent's write, waiting for a person.",
+            "oneOf": [
+              {
+                "properties": {
+                  "body": {
+                    "type": "string"
+                  },
+                  "method": {
+                    "const": "comment",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "method",
+                  "body"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "body": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "event": {
+                    "$ref": "#/$defs/ReviewEvent"
+                  },
+                  "method": {
+                    "const": "review",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "method",
+                  "event"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "method": {
+                    "const": "merge",
+                    "type": "string"
+                  },
+                  "style": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "method"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Run the failed checks again (GitLab: retry the head pipeline).",
+                "properties": {
+                  "method": {
+                    "const": "rerun_checks",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "method"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "M40: a webhook to this daemon on the repository, made or removed\nwith the person's login (Forgejo, GitLab).",
+                "properties": {
+                  "method": {
+                    "const": "live",
+                    "type": "string"
+                  },
+                  "on": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "method",
+                  "on"
+                ],
+                "type": "object"
+              }
+            ],
+            "properties": {
+              "at_ms": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "by": {
+                "description": "Who drafted it (`mcp:claude-code`, `agent`).",
+                "type": "string"
+              },
+              "error": {
+                "description": "The last send failed: why (it waits again, text kept).",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "settled_by": {
+                "description": "Who sent or dropped it, and when.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "settled_ms": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "status": {
+                "$ref": "#/$defs/DraftStatus",
+                "default": "waiting"
+              },
+              "url": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "by",
+              "at_ms"
+            ],
+            "type": "object"
+          },
+          "DraftStatus": {
+            "enum": [
+              "waiting",
+              "sent",
+              "dropped"
+            ],
+            "type": "string"
+          },
+          "ForgeWant": {
+            "description": "What it wants of you, as the client draws it.",
+            "properties": {
+              "kind": {
+                "$ref": "#/$defs/ForgeWantKind"
+              },
+              "why": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "why"
+            ],
+            "type": "object"
+          },
+          "ForgeWantKind": {
+            "description": "What a PR or issue wants of you, as the client draws it: its kind.",
+            "enum": [
+              "review",
+              "failed",
+              "changes",
+              "mention",
+              "done",
+              "assigned"
+            ],
+            "type": "string"
+          },
+          "ReviewEvent": {
+            "enum": [
+              "approve",
+              "request_changes",
+              "comment"
+            ],
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "block": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "drafts": {
+            "items": {
+              "$ref": "#/$defs/Draft"
+            },
+            "type": "array"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "summary": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "wants": {
+            "items": {
+              "$ref": "#/$defs/ForgeWant"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "block",
+          "text",
+          "wants",
+          "drafts",
+          "summary"
+        ],
+        "type": "object"
+      },
       "title": "Read a PR or issue block"
     },
     {
@@ -1281,6 +1742,57 @@
         "type": "object"
       },
       "name": "invite_person",
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "block": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "draft": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "pane": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "role": {
+            "description": "`viewer` or `editor`.",
+            "type": "string"
+          },
+          "session": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "who": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "draft",
+          "status",
+          "block",
+          "who",
+          "name",
+          "role",
+          "session",
+          "pane",
+          "summary"
+        ],
+        "type": "object"
+      },
       "title": "Ask to invite a person"
     },
     {
@@ -1405,6 +1917,48 @@
         "type": "object"
       },
       "name": "read_file",
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "more": {
+            "type": "boolean"
+          },
+          "next_offset": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "offset": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          },
+          "size": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "size",
+          "offset",
+          "next_offset",
+          "more",
+          "text",
+          "summary"
+        ],
+        "type": "object"
+      },
       "title": "Read a file"
     },
     {
@@ -1452,6 +2006,42 @@
         "type": "object"
       },
       "name": "device_call",
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "answer_ms": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "device": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "result": true,
+          "summary": {
+            "type": "string"
+          },
+          "woke_ms": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "device",
+          "name",
+          "result",
+          "answer_ms",
+          "summary"
+        ],
+        "type": "object"
+      },
       "title": "Use a tool on the user's device"
     }
   ],
@@ -1576,6 +2166,182 @@
         "type": "object"
       },
       "name": "run",
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "oneOf": [
+          {
+            "properties": {
+              "pane": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "state": {
+                "const": "started",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "pane"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "command": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "last_lines": {
+                "type": "string"
+              },
+              "next_offset": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "pane": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "state": {
+                "const": "still running",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "pane",
+              "next_offset",
+              "last_lines"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "command": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "exit": {
+                "format": "int32",
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "last_lines": {
+                "type": "string"
+              },
+              "next_offset": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "output_offset": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "pane": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "state": {
+                "const": "done",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "pane",
+              "output_offset",
+              "next_offset",
+              "last_lines"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "exit": {
+                "format": "int32",
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "last_lines": {
+                "type": "string"
+              },
+              "pane": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "state": {
+                "const": "exited",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "pane",
+              "last_lines"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "match": {
+                "type": "string"
+              },
+              "next_offset": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "offset": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "pane": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "state": {
+                "const": "matched",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "pane",
+              "match",
+              "offset",
+              "next_offset"
+            ],
+            "type": "object"
+          }
+        ],
+        "properties": {
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "summary"
+        ],
+        "type": "object"
+      },
       "title": "Run a command in a pane"
     },
     {
@@ -2101,6 +2867,24 @@
         "type": "object"
       },
       "name": "close",
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "pane": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "pane",
+          "summary"
+        ],
+        "type": "object"
+      },
       "title": "Close a pane"
     },
     {
@@ -2166,6 +2950,163 @@
         "type": "object"
       },
       "name": "read_thread",
+      "outputSchema": {
+        "$defs": {
+          "Quote": {
+            "description": "Output quoted in a thread message: kept as text, so it stays readable\nafter the pane scrolls or closes.",
+            "properties": {
+              "pane": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "pane",
+              "text"
+            ],
+            "type": "object"
+          },
+          "ThreadMsg": {
+            "description": "One message in a thread (M61).",
+            "properties": {
+              "agent": {
+                "description": "An agent posted it (through MCP).",
+                "type": "boolean"
+              },
+              "at": {
+                "description": "When it was posted (ms since the epoch).",
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "id": {
+                "description": "1, 2, 3, ... within its thread.",
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "landed": {
+                "description": "The `@` tokens (lowercase) that reached someone: each one naming a\nperson in `mentions`, and the agent's when `to_agent`. The page\nmarks only these; an `@word` that reached no one stays plain.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "mentions": {
+                "description": "Principal ids it @mentions.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "name": {
+                "type": "string"
+              },
+              "pic": {
+                "description": "M74: the poster's picture when they posted, if they have one.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "quote": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Quote"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Terminal output it quotes."
+              },
+              "text": {
+                "type": "string"
+              },
+              "to_agent": {
+                "description": "It @mentioned the pane's agent, and went to it as a follow-up.",
+                "type": "boolean"
+              },
+              "who": {
+                "description": "Who posted it: a principal id (`owner`, `tailnet:…`, `account:…`),\nor `mcp:…` for an agent.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "at",
+              "who",
+              "name",
+              "text"
+            ],
+            "type": "object"
+          },
+          "ThreadTarget": {
+            "description": "What a thread (M61) is about: a pane, or a session.",
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "pane": {
+                    "format": "uint32",
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "pane"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "session": {
+                    "format": "uint32",
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "session"
+                ],
+                "type": "object"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "last": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/$defs/ThreadMsg"
+            },
+            "type": "array"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "thread": {
+            "$ref": "#/$defs/ThreadTarget"
+          }
+        },
+        "required": [
+          "thread",
+          "messages",
+          "last",
+          "summary"
+        ],
+        "type": "object"
+      },
       "title": "Read a thread"
     },
     {
@@ -2228,6 +3169,197 @@
         "type": "object"
       },
       "name": "post_thread",
+      "outputSchema": {
+        "$defs": {
+          "Quote": {
+            "description": "Output quoted in a thread message: kept as text, so it stays readable\nafter the pane scrolls or closes.",
+            "properties": {
+              "pane": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "pane",
+              "text"
+            ],
+            "type": "object"
+          },
+          "ThreadMsg": {
+            "description": "One message in a thread (M61).",
+            "properties": {
+              "agent": {
+                "description": "An agent posted it (through MCP).",
+                "type": "boolean"
+              },
+              "at": {
+                "description": "When it was posted (ms since the epoch).",
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "id": {
+                "description": "1, 2, 3, ... within its thread.",
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "landed": {
+                "description": "The `@` tokens (lowercase) that reached someone: each one naming a\nperson in `mentions`, and the agent's when `to_agent`. The page\nmarks only these; an `@word` that reached no one stays plain.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "mentions": {
+                "description": "Principal ids it @mentions.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "name": {
+                "type": "string"
+              },
+              "pic": {
+                "description": "M74: the poster's picture when they posted, if they have one.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "quote": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Quote"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Terminal output it quotes."
+              },
+              "text": {
+                "type": "string"
+              },
+              "to_agent": {
+                "description": "It @mentioned the pane's agent, and went to it as a follow-up.",
+                "type": "boolean"
+              },
+              "who": {
+                "description": "Who posted it: a principal id (`owner`, `tailnet:…`, `account:…`),\nor `mcp:…` for an agent.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "at",
+              "who",
+              "name",
+              "text"
+            ],
+            "type": "object"
+          },
+          "ThreadTarget": {
+            "description": "What a thread (M61) is about: a pane, or a session.",
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "pane": {
+                    "format": "uint32",
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "pane"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "session": {
+                    "format": "uint32",
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "session"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "Unreached": {
+            "description": "An `@` in a post that reached no one, for the poster alone.",
+            "properties": {
+              "token": {
+                "type": "string"
+              },
+              "why": {
+                "$ref": "#/$defs/UnreachedWhy"
+              }
+            },
+            "required": [
+              "token",
+              "why"
+            ],
+            "type": "object"
+          },
+          "UnreachedWhy": {
+            "description": "Why an `@` in a post reached no one.",
+            "oneOf": [
+              {
+                "const": "agent_needs_pane",
+                "description": "`@agent` in a session's thread: an agent is a pane's.",
+                "type": "string"
+              },
+              {
+                "const": "may_not_drive",
+                "description": "`@agent` from someone who may not drive the pane.",
+                "type": "string"
+              },
+              {
+                "const": "nobody",
+                "description": "The name is unknown, or its owner can't read the thread.",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "message": {
+            "$ref": "#/$defs/ThreadMsg"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "thread": {
+            "$ref": "#/$defs/ThreadTarget"
+          },
+          "unreached": {
+            "items": {
+              "$ref": "#/$defs/Unreached"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "thread",
+          "message",
+          "unreached",
+          "summary"
+        ],
+        "type": "object"
+      },
       "title": "Post in a thread"
     },
     {
@@ -2719,6 +3851,24 @@
         "type": "object"
       },
       "name": "start_agent",
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "block": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "block",
+          "summary"
+        ],
+        "type": "object"
+      },
       "title": "Start an agent"
     },
     {
@@ -2881,6 +4031,24 @@
         "type": "object"
       },
       "name": "agent_respond",
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "pane": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "pane",
+          "summary"
+        ],
+        "type": "object"
+      },
       "title": "Answer an agent"
     },
     {
@@ -2923,6 +4091,237 @@
         "type": "object"
       },
       "name": "read_forge",
+      "outputSchema": {
+        "$defs": {
+          "Draft": {
+            "description": "An agent's write, waiting for a person.",
+            "oneOf": [
+              {
+                "properties": {
+                  "body": {
+                    "type": "string"
+                  },
+                  "method": {
+                    "const": "comment",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "method",
+                  "body"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "body": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "event": {
+                    "$ref": "#/$defs/ReviewEvent"
+                  },
+                  "method": {
+                    "const": "review",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "method",
+                  "event"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "method": {
+                    "const": "merge",
+                    "type": "string"
+                  },
+                  "style": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "method"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Run the failed checks again (GitLab: retry the head pipeline).",
+                "properties": {
+                  "method": {
+                    "const": "rerun_checks",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "method"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "M40: a webhook to this daemon on the repository, made or removed\nwith the person's login (Forgejo, GitLab).",
+                "properties": {
+                  "method": {
+                    "const": "live",
+                    "type": "string"
+                  },
+                  "on": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "method",
+                  "on"
+                ],
+                "type": "object"
+              }
+            ],
+            "properties": {
+              "at_ms": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "by": {
+                "description": "Who drafted it (`mcp:claude-code`, `agent`).",
+                "type": "string"
+              },
+              "error": {
+                "description": "The last send failed: why (it waits again, text kept).",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "settled_by": {
+                "description": "Who sent or dropped it, and when.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "settled_ms": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "status": {
+                "$ref": "#/$defs/DraftStatus",
+                "default": "waiting"
+              },
+              "url": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "by",
+              "at_ms"
+            ],
+            "type": "object"
+          },
+          "DraftStatus": {
+            "enum": [
+              "waiting",
+              "sent",
+              "dropped"
+            ],
+            "type": "string"
+          },
+          "ForgeWant": {
+            "description": "What it wants of you, as the client draws it.",
+            "properties": {
+              "kind": {
+                "$ref": "#/$defs/ForgeWantKind"
+              },
+              "why": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "why"
+            ],
+            "type": "object"
+          },
+          "ForgeWantKind": {
+            "description": "What a PR or issue wants of you, as the client draws it: its kind.",
+            "enum": [
+              "review",
+              "failed",
+              "changes",
+              "mention",
+              "done",
+              "assigned"
+            ],
+            "type": "string"
+          },
+          "ReviewEvent": {
+            "enum": [
+              "approve",
+              "request_changes",
+              "comment"
+            ],
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "block": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "drafts": {
+            "items": {
+              "$ref": "#/$defs/Draft"
+            },
+            "type": "array"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "summary": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "wants": {
+            "items": {
+              "$ref": "#/$defs/ForgeWant"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "block",
+          "text",
+          "wants",
+          "drafts",
+          "summary"
+        ],
+        "type": "object"
+      },
       "title": "Read a PR or issue block"
     },
     {
@@ -3103,6 +4502,57 @@
         "type": "object"
       },
       "name": "invite_person",
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "block": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "draft": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "pane": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "role": {
+            "description": "`viewer` or `editor`.",
+            "type": "string"
+          },
+          "session": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "who": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "draft",
+          "status",
+          "block",
+          "who",
+          "name",
+          "role",
+          "session",
+          "pane",
+          "summary"
+        ],
+        "type": "object"
+      },
       "title": "Ask to invite a person"
     },
     {
@@ -3227,6 +4677,48 @@
         "type": "object"
       },
       "name": "read_file",
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "more": {
+            "type": "boolean"
+          },
+          "next_offset": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "offset": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          },
+          "size": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "size",
+          "offset",
+          "next_offset",
+          "more",
+          "text",
+          "summary"
+        ],
+        "type": "object"
+      },
       "title": "Read a file"
     },
     {
@@ -3274,6 +4766,42 @@
         "type": "object"
       },
       "name": "device_call",
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "answer_ms": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "device": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "result": true,
+          "summary": {
+            "type": "string"
+          },
+          "woke_ms": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "device",
+          "name",
+          "result",
+          "answer_ms",
+          "summary"
+        ],
+        "type": "object"
+      },
       "title": "Use a tool on the user's device"
     }
   ],
@@ -3372,6 +4900,182 @@
         "type": "object"
       },
       "name": "run",
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "oneOf": [
+          {
+            "properties": {
+              "pane": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "state": {
+                "const": "started",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "pane"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "command": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "last_lines": {
+                "type": "string"
+              },
+              "next_offset": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "pane": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "state": {
+                "const": "still running",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "pane",
+              "next_offset",
+              "last_lines"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "command": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "exit": {
+                "format": "int32",
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "last_lines": {
+                "type": "string"
+              },
+              "next_offset": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "output_offset": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "pane": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "state": {
+                "const": "done",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "pane",
+              "output_offset",
+              "next_offset",
+              "last_lines"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "exit": {
+                "format": "int32",
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "last_lines": {
+                "type": "string"
+              },
+              "pane": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "state": {
+                "const": "exited",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "pane",
+              "last_lines"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "match": {
+                "type": "string"
+              },
+              "next_offset": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "offset": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "pane": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "state": {
+                "const": "matched",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "pane",
+              "match",
+              "offset",
+              "next_offset"
+            ],
+            "type": "object"
+          }
+        ],
+        "properties": {
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "summary"
+        ],
+        "type": "object"
+      },
       "title": "Run a command in a pane"
     },
     {
@@ -3785,6 +5489,24 @@
         "type": "object"
       },
       "name": "close",
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "pane": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "pane",
+          "summary"
+        ],
+        "type": "object"
+      },
       "title": "Close a pane"
     },
     {
@@ -4175,6 +5897,24 @@
         "type": "object"
       },
       "name": "start_agent",
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "block": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "block",
+          "summary"
+        ],
+        "type": "object"
+      },
       "title": "Start an agent"
     },
     {
@@ -4337,6 +6077,24 @@
         "type": "object"
       },
       "name": "agent_respond",
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "pane": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "pane",
+          "summary"
+        ],
+        "type": "object"
+      },
       "title": "Answer an agent"
     },
     {
@@ -4379,6 +6137,237 @@
         "type": "object"
       },
       "name": "read_forge",
+      "outputSchema": {
+        "$defs": {
+          "Draft": {
+            "description": "An agent's write, waiting for a person.",
+            "oneOf": [
+              {
+                "properties": {
+                  "body": {
+                    "type": "string"
+                  },
+                  "method": {
+                    "const": "comment",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "method",
+                  "body"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "body": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "event": {
+                    "$ref": "#/$defs/ReviewEvent"
+                  },
+                  "method": {
+                    "const": "review",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "method",
+                  "event"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "method": {
+                    "const": "merge",
+                    "type": "string"
+                  },
+                  "style": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "method"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Run the failed checks again (GitLab: retry the head pipeline).",
+                "properties": {
+                  "method": {
+                    "const": "rerun_checks",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "method"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "M40: a webhook to this daemon on the repository, made or removed\nwith the person's login (Forgejo, GitLab).",
+                "properties": {
+                  "method": {
+                    "const": "live",
+                    "type": "string"
+                  },
+                  "on": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "method",
+                  "on"
+                ],
+                "type": "object"
+              }
+            ],
+            "properties": {
+              "at_ms": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "by": {
+                "description": "Who drafted it (`mcp:claude-code`, `agent`).",
+                "type": "string"
+              },
+              "error": {
+                "description": "The last send failed: why (it waits again, text kept).",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "settled_by": {
+                "description": "Who sent or dropped it, and when.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "settled_ms": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "status": {
+                "$ref": "#/$defs/DraftStatus",
+                "default": "waiting"
+              },
+              "url": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "by",
+              "at_ms"
+            ],
+            "type": "object"
+          },
+          "DraftStatus": {
+            "enum": [
+              "waiting",
+              "sent",
+              "dropped"
+            ],
+            "type": "string"
+          },
+          "ForgeWant": {
+            "description": "What it wants of you, as the client draws it.",
+            "properties": {
+              "kind": {
+                "$ref": "#/$defs/ForgeWantKind"
+              },
+              "why": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "why"
+            ],
+            "type": "object"
+          },
+          "ForgeWantKind": {
+            "description": "What a PR or issue wants of you, as the client draws it: its kind.",
+            "enum": [
+              "review",
+              "failed",
+              "changes",
+              "mention",
+              "done",
+              "assigned"
+            ],
+            "type": "string"
+          },
+          "ReviewEvent": {
+            "enum": [
+              "approve",
+              "request_changes",
+              "comment"
+            ],
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "block": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "drafts": {
+            "items": {
+              "$ref": "#/$defs/Draft"
+            },
+            "type": "array"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "summary": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "wants": {
+            "items": {
+              "$ref": "#/$defs/ForgeWant"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "block",
+          "text",
+          "wants",
+          "drafts",
+          "summary"
+        ],
+        "type": "object"
+      },
       "title": "Read a PR or issue block"
     },
     {
@@ -4559,6 +6548,57 @@
         "type": "object"
       },
       "name": "invite_person",
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "block": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "draft": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "pane": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "role": {
+            "description": "`viewer` or `editor`.",
+            "type": "string"
+          },
+          "session": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "who": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "draft",
+          "status",
+          "block",
+          "who",
+          "name",
+          "role",
+          "session",
+          "pane",
+          "summary"
+        ],
+        "type": "object"
+      },
       "title": "Ask to invite a person"
     },
     {
@@ -4683,6 +6723,48 @@
         "type": "object"
       },
       "name": "read_file",
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "more": {
+            "type": "boolean"
+          },
+          "next_offset": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "offset": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          },
+          "size": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "size",
+          "offset",
+          "next_offset",
+          "more",
+          "text",
+          "summary"
+        ],
+        "type": "object"
+      },
       "title": "Read a file"
     },
     {
@@ -4730,6 +6812,42 @@
         "type": "object"
       },
       "name": "device_call",
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "answer_ms": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "device": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "result": true,
+          "summary": {
+            "type": "string"
+          },
+          "woke_ms": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "device",
+          "name",
+          "result",
+          "answer_ms",
+          "summary"
+        ],
+        "type": "object"
+      },
       "title": "Use a tool on the user's device"
     }
   ],
@@ -4854,6 +6972,182 @@
         "type": "object"
       },
       "name": "run",
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "oneOf": [
+          {
+            "properties": {
+              "pane": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "state": {
+                "const": "started",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "pane"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "command": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "last_lines": {
+                "type": "string"
+              },
+              "next_offset": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "pane": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "state": {
+                "const": "still running",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "pane",
+              "next_offset",
+              "last_lines"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "command": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "exit": {
+                "format": "int32",
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "last_lines": {
+                "type": "string"
+              },
+              "next_offset": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "output_offset": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "pane": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "state": {
+                "const": "done",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "pane",
+              "output_offset",
+              "next_offset",
+              "last_lines"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "exit": {
+                "format": "int32",
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "last_lines": {
+                "type": "string"
+              },
+              "pane": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "state": {
+                "const": "exited",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "pane",
+              "last_lines"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "match": {
+                "type": "string"
+              },
+              "next_offset": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "offset": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "pane": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "state": {
+                "const": "matched",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "pane",
+              "match",
+              "offset",
+              "next_offset"
+            ],
+            "type": "object"
+          }
+        ],
+        "properties": {
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "summary"
+        ],
+        "type": "object"
+      },
       "title": "Run a command in a pane"
     },
     {
@@ -5379,6 +7673,24 @@
         "type": "object"
       },
       "name": "close",
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "pane": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "pane",
+          "summary"
+        ],
+        "type": "object"
+      },
       "title": "Close a pane"
     },
     {
@@ -5444,6 +7756,163 @@
         "type": "object"
       },
       "name": "read_thread",
+      "outputSchema": {
+        "$defs": {
+          "Quote": {
+            "description": "Output quoted in a thread message: kept as text, so it stays readable\nafter the pane scrolls or closes.",
+            "properties": {
+              "pane": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "pane",
+              "text"
+            ],
+            "type": "object"
+          },
+          "ThreadMsg": {
+            "description": "One message in a thread (M61).",
+            "properties": {
+              "agent": {
+                "description": "An agent posted it (through MCP).",
+                "type": "boolean"
+              },
+              "at": {
+                "description": "When it was posted (ms since the epoch).",
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "id": {
+                "description": "1, 2, 3, ... within its thread.",
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "landed": {
+                "description": "The `@` tokens (lowercase) that reached someone: each one naming a\nperson in `mentions`, and the agent's when `to_agent`. The page\nmarks only these; an `@word` that reached no one stays plain.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "mentions": {
+                "description": "Principal ids it @mentions.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "name": {
+                "type": "string"
+              },
+              "pic": {
+                "description": "M74: the poster's picture when they posted, if they have one.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "quote": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Quote"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Terminal output it quotes."
+              },
+              "text": {
+                "type": "string"
+              },
+              "to_agent": {
+                "description": "It @mentioned the pane's agent, and went to it as a follow-up.",
+                "type": "boolean"
+              },
+              "who": {
+                "description": "Who posted it: a principal id (`owner`, `tailnet:…`, `account:…`),\nor `mcp:…` for an agent.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "at",
+              "who",
+              "name",
+              "text"
+            ],
+            "type": "object"
+          },
+          "ThreadTarget": {
+            "description": "What a thread (M61) is about: a pane, or a session.",
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "pane": {
+                    "format": "uint32",
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "pane"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "session": {
+                    "format": "uint32",
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "session"
+                ],
+                "type": "object"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "last": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/$defs/ThreadMsg"
+            },
+            "type": "array"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "thread": {
+            "$ref": "#/$defs/ThreadTarget"
+          }
+        },
+        "required": [
+          "thread",
+          "messages",
+          "last",
+          "summary"
+        ],
+        "type": "object"
+      },
       "title": "Read a thread"
     },
     {
@@ -5506,6 +7975,197 @@
         "type": "object"
       },
       "name": "post_thread",
+      "outputSchema": {
+        "$defs": {
+          "Quote": {
+            "description": "Output quoted in a thread message: kept as text, so it stays readable\nafter the pane scrolls or closes.",
+            "properties": {
+              "pane": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "pane",
+              "text"
+            ],
+            "type": "object"
+          },
+          "ThreadMsg": {
+            "description": "One message in a thread (M61).",
+            "properties": {
+              "agent": {
+                "description": "An agent posted it (through MCP).",
+                "type": "boolean"
+              },
+              "at": {
+                "description": "When it was posted (ms since the epoch).",
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "id": {
+                "description": "1, 2, 3, ... within its thread.",
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "landed": {
+                "description": "The `@` tokens (lowercase) that reached someone: each one naming a\nperson in `mentions`, and the agent's when `to_agent`. The page\nmarks only these; an `@word` that reached no one stays plain.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "mentions": {
+                "description": "Principal ids it @mentions.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "name": {
+                "type": "string"
+              },
+              "pic": {
+                "description": "M74: the poster's picture when they posted, if they have one.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "quote": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Quote"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Terminal output it quotes."
+              },
+              "text": {
+                "type": "string"
+              },
+              "to_agent": {
+                "description": "It @mentioned the pane's agent, and went to it as a follow-up.",
+                "type": "boolean"
+              },
+              "who": {
+                "description": "Who posted it: a principal id (`owner`, `tailnet:…`, `account:…`),\nor `mcp:…` for an agent.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "at",
+              "who",
+              "name",
+              "text"
+            ],
+            "type": "object"
+          },
+          "ThreadTarget": {
+            "description": "What a thread (M61) is about: a pane, or a session.",
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "pane": {
+                    "format": "uint32",
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "pane"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "session": {
+                    "format": "uint32",
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "session"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "Unreached": {
+            "description": "An `@` in a post that reached no one, for the poster alone.",
+            "properties": {
+              "token": {
+                "type": "string"
+              },
+              "why": {
+                "$ref": "#/$defs/UnreachedWhy"
+              }
+            },
+            "required": [
+              "token",
+              "why"
+            ],
+            "type": "object"
+          },
+          "UnreachedWhy": {
+            "description": "Why an `@` in a post reached no one.",
+            "oneOf": [
+              {
+                "const": "agent_needs_pane",
+                "description": "`@agent` in a session's thread: an agent is a pane's.",
+                "type": "string"
+              },
+              {
+                "const": "may_not_drive",
+                "description": "`@agent` from someone who may not drive the pane.",
+                "type": "string"
+              },
+              {
+                "const": "nobody",
+                "description": "The name is unknown, or its owner can't read the thread.",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "message": {
+            "$ref": "#/$defs/ThreadMsg"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "thread": {
+            "$ref": "#/$defs/ThreadTarget"
+          },
+          "unreached": {
+            "items": {
+              "$ref": "#/$defs/Unreached"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "thread",
+          "message",
+          "unreached",
+          "summary"
+        ],
+        "type": "object"
+      },
       "title": "Post in a thread"
     },
     {
@@ -5997,6 +8657,24 @@
         "type": "object"
       },
       "name": "start_agent",
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "block": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "block",
+          "summary"
+        ],
+        "type": "object"
+      },
       "title": "Start an agent"
     },
     {
@@ -6159,6 +8837,24 @@
         "type": "object"
       },
       "name": "agent_respond",
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "pane": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "pane",
+          "summary"
+        ],
+        "type": "object"
+      },
       "title": "Answer an agent"
     },
     {
@@ -6201,6 +8897,237 @@
         "type": "object"
       },
       "name": "read_forge",
+      "outputSchema": {
+        "$defs": {
+          "Draft": {
+            "description": "An agent's write, waiting for a person.",
+            "oneOf": [
+              {
+                "properties": {
+                  "body": {
+                    "type": "string"
+                  },
+                  "method": {
+                    "const": "comment",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "method",
+                  "body"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "body": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "event": {
+                    "$ref": "#/$defs/ReviewEvent"
+                  },
+                  "method": {
+                    "const": "review",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "method",
+                  "event"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "method": {
+                    "const": "merge",
+                    "type": "string"
+                  },
+                  "style": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "method"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Run the failed checks again (GitLab: retry the head pipeline).",
+                "properties": {
+                  "method": {
+                    "const": "rerun_checks",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "method"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "M40: a webhook to this daemon on the repository, made or removed\nwith the person's login (Forgejo, GitLab).",
+                "properties": {
+                  "method": {
+                    "const": "live",
+                    "type": "string"
+                  },
+                  "on": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "method",
+                  "on"
+                ],
+                "type": "object"
+              }
+            ],
+            "properties": {
+              "at_ms": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "by": {
+                "description": "Who drafted it (`mcp:claude-code`, `agent`).",
+                "type": "string"
+              },
+              "error": {
+                "description": "The last send failed: why (it waits again, text kept).",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "settled_by": {
+                "description": "Who sent or dropped it, and when.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "settled_ms": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "status": {
+                "$ref": "#/$defs/DraftStatus",
+                "default": "waiting"
+              },
+              "url": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "by",
+              "at_ms"
+            ],
+            "type": "object"
+          },
+          "DraftStatus": {
+            "enum": [
+              "waiting",
+              "sent",
+              "dropped"
+            ],
+            "type": "string"
+          },
+          "ForgeWant": {
+            "description": "What it wants of you, as the client draws it.",
+            "properties": {
+              "kind": {
+                "$ref": "#/$defs/ForgeWantKind"
+              },
+              "why": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "why"
+            ],
+            "type": "object"
+          },
+          "ForgeWantKind": {
+            "description": "What a PR or issue wants of you, as the client draws it: its kind.",
+            "enum": [
+              "review",
+              "failed",
+              "changes",
+              "mention",
+              "done",
+              "assigned"
+            ],
+            "type": "string"
+          },
+          "ReviewEvent": {
+            "enum": [
+              "approve",
+              "request_changes",
+              "comment"
+            ],
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "block": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "drafts": {
+            "items": {
+              "$ref": "#/$defs/Draft"
+            },
+            "type": "array"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "summary": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "wants": {
+            "items": {
+              "$ref": "#/$defs/ForgeWant"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "block",
+          "text",
+          "wants",
+          "drafts",
+          "summary"
+        ],
+        "type": "object"
+      },
       "title": "Read a PR or issue block"
     },
     {
@@ -6381,6 +9308,57 @@
         "type": "object"
       },
       "name": "invite_person",
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "block": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "draft": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "pane": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "role": {
+            "description": "`viewer` or `editor`.",
+            "type": "string"
+          },
+          "session": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "who": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "draft",
+          "status",
+          "block",
+          "who",
+          "name",
+          "role",
+          "session",
+          "pane",
+          "summary"
+        ],
+        "type": "object"
+      },
       "title": "Ask to invite a person"
     },
     {
@@ -6505,6 +9483,48 @@
         "type": "object"
       },
       "name": "read_file",
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "more": {
+            "type": "boolean"
+          },
+          "next_offset": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "offset": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          },
+          "size": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "size",
+          "offset",
+          "next_offset",
+          "more",
+          "text",
+          "summary"
+        ],
+        "type": "object"
+      },
       "title": "Read a file"
     },
     {
@@ -6552,6 +9572,42 @@
         "type": "object"
       },
       "name": "device_call",
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "answer_ms": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "device": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "result": true,
+          "summary": {
+            "type": "string"
+          },
+          "woke_ms": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "device",
+          "name",
+          "result",
+          "answer_ms",
+          "summary"
+        ],
+        "type": "object"
+      },
       "title": "Use a tool on the user's device"
     }
   ],
@@ -6928,6 +9984,237 @@
         "type": "object"
       },
       "name": "read_forge",
+      "outputSchema": {
+        "$defs": {
+          "Draft": {
+            "description": "An agent's write, waiting for a person.",
+            "oneOf": [
+              {
+                "properties": {
+                  "body": {
+                    "type": "string"
+                  },
+                  "method": {
+                    "const": "comment",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "method",
+                  "body"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "body": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "event": {
+                    "$ref": "#/$defs/ReviewEvent"
+                  },
+                  "method": {
+                    "const": "review",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "method",
+                  "event"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "method": {
+                    "const": "merge",
+                    "type": "string"
+                  },
+                  "style": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "method"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Run the failed checks again (GitLab: retry the head pipeline).",
+                "properties": {
+                  "method": {
+                    "const": "rerun_checks",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "method"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "M40: a webhook to this daemon on the repository, made or removed\nwith the person's login (Forgejo, GitLab).",
+                "properties": {
+                  "method": {
+                    "const": "live",
+                    "type": "string"
+                  },
+                  "on": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "method",
+                  "on"
+                ],
+                "type": "object"
+              }
+            ],
+            "properties": {
+              "at_ms": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "by": {
+                "description": "Who drafted it (`mcp:claude-code`, `agent`).",
+                "type": "string"
+              },
+              "error": {
+                "description": "The last send failed: why (it waits again, text kept).",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "settled_by": {
+                "description": "Who sent or dropped it, and when.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "settled_ms": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "status": {
+                "$ref": "#/$defs/DraftStatus",
+                "default": "waiting"
+              },
+              "url": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "by",
+              "at_ms"
+            ],
+            "type": "object"
+          },
+          "DraftStatus": {
+            "enum": [
+              "waiting",
+              "sent",
+              "dropped"
+            ],
+            "type": "string"
+          },
+          "ForgeWant": {
+            "description": "What it wants of you, as the client draws it.",
+            "properties": {
+              "kind": {
+                "$ref": "#/$defs/ForgeWantKind"
+              },
+              "why": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "why"
+            ],
+            "type": "object"
+          },
+          "ForgeWantKind": {
+            "description": "What a PR or issue wants of you, as the client draws it: its kind.",
+            "enum": [
+              "review",
+              "failed",
+              "changes",
+              "mention",
+              "done",
+              "assigned"
+            ],
+            "type": "string"
+          },
+          "ReviewEvent": {
+            "enum": [
+              "approve",
+              "request_changes",
+              "comment"
+            ],
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "block": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "drafts": {
+            "items": {
+              "$ref": "#/$defs/Draft"
+            },
+            "type": "array"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "summary": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "wants": {
+            "items": {
+              "$ref": "#/$defs/ForgeWant"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "block",
+          "text",
+          "wants",
+          "drafts",
+          "summary"
+        ],
+        "type": "object"
+      },
       "title": "Read a PR or issue block"
     },
     {
@@ -7052,6 +10339,48 @@
         "type": "object"
       },
       "name": "read_file",
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "more": {
+            "type": "boolean"
+          },
+          "next_offset": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "offset": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          },
+          "size": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "size",
+          "offset",
+          "next_offset",
+          "more",
+          "text",
+          "summary"
+        ],
+        "type": "object"
+      },
       "title": "Read a file"
     }
   ],
@@ -7371,6 +10700,163 @@
         "type": "object"
       },
       "name": "read_thread",
+      "outputSchema": {
+        "$defs": {
+          "Quote": {
+            "description": "Output quoted in a thread message: kept as text, so it stays readable\nafter the pane scrolls or closes.",
+            "properties": {
+              "pane": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "pane",
+              "text"
+            ],
+            "type": "object"
+          },
+          "ThreadMsg": {
+            "description": "One message in a thread (M61).",
+            "properties": {
+              "agent": {
+                "description": "An agent posted it (through MCP).",
+                "type": "boolean"
+              },
+              "at": {
+                "description": "When it was posted (ms since the epoch).",
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "id": {
+                "description": "1, 2, 3, ... within its thread.",
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "landed": {
+                "description": "The `@` tokens (lowercase) that reached someone: each one naming a\nperson in `mentions`, and the agent's when `to_agent`. The page\nmarks only these; an `@word` that reached no one stays plain.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "mentions": {
+                "description": "Principal ids it @mentions.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "name": {
+                "type": "string"
+              },
+              "pic": {
+                "description": "M74: the poster's picture when they posted, if they have one.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "quote": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Quote"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Terminal output it quotes."
+              },
+              "text": {
+                "type": "string"
+              },
+              "to_agent": {
+                "description": "It @mentioned the pane's agent, and went to it as a follow-up.",
+                "type": "boolean"
+              },
+              "who": {
+                "description": "Who posted it: a principal id (`owner`, `tailnet:…`, `account:…`),\nor `mcp:…` for an agent.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "at",
+              "who",
+              "name",
+              "text"
+            ],
+            "type": "object"
+          },
+          "ThreadTarget": {
+            "description": "What a thread (M61) is about: a pane, or a session.",
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "pane": {
+                    "format": "uint32",
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "pane"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "session": {
+                    "format": "uint32",
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "session"
+                ],
+                "type": "object"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "last": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/$defs/ThreadMsg"
+            },
+            "type": "array"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "thread": {
+            "$ref": "#/$defs/ThreadTarget"
+          }
+        },
+        "required": [
+          "thread",
+          "messages",
+          "last",
+          "summary"
+        ],
+        "type": "object"
+      },
       "title": "Read a thread"
     },
     {
@@ -7521,6 +11007,237 @@
         "type": "object"
       },
       "name": "read_forge",
+      "outputSchema": {
+        "$defs": {
+          "Draft": {
+            "description": "An agent's write, waiting for a person.",
+            "oneOf": [
+              {
+                "properties": {
+                  "body": {
+                    "type": "string"
+                  },
+                  "method": {
+                    "const": "comment",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "method",
+                  "body"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "body": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "event": {
+                    "$ref": "#/$defs/ReviewEvent"
+                  },
+                  "method": {
+                    "const": "review",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "method",
+                  "event"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "method": {
+                    "const": "merge",
+                    "type": "string"
+                  },
+                  "style": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "method"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Run the failed checks again (GitLab: retry the head pipeline).",
+                "properties": {
+                  "method": {
+                    "const": "rerun_checks",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "method"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "M40: a webhook to this daemon on the repository, made or removed\nwith the person's login (Forgejo, GitLab).",
+                "properties": {
+                  "method": {
+                    "const": "live",
+                    "type": "string"
+                  },
+                  "on": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "method",
+                  "on"
+                ],
+                "type": "object"
+              }
+            ],
+            "properties": {
+              "at_ms": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "by": {
+                "description": "Who drafted it (`mcp:claude-code`, `agent`).",
+                "type": "string"
+              },
+              "error": {
+                "description": "The last send failed: why (it waits again, text kept).",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "settled_by": {
+                "description": "Who sent or dropped it, and when.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "settled_ms": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "status": {
+                "$ref": "#/$defs/DraftStatus",
+                "default": "waiting"
+              },
+              "url": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "by",
+              "at_ms"
+            ],
+            "type": "object"
+          },
+          "DraftStatus": {
+            "enum": [
+              "waiting",
+              "sent",
+              "dropped"
+            ],
+            "type": "string"
+          },
+          "ForgeWant": {
+            "description": "What it wants of you, as the client draws it.",
+            "properties": {
+              "kind": {
+                "$ref": "#/$defs/ForgeWantKind"
+              },
+              "why": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "why"
+            ],
+            "type": "object"
+          },
+          "ForgeWantKind": {
+            "description": "What a PR or issue wants of you, as the client draws it: its kind.",
+            "enum": [
+              "review",
+              "failed",
+              "changes",
+              "mention",
+              "done",
+              "assigned"
+            ],
+            "type": "string"
+          },
+          "ReviewEvent": {
+            "enum": [
+              "approve",
+              "request_changes",
+              "comment"
+            ],
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "block": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "drafts": {
+            "items": {
+              "$ref": "#/$defs/Draft"
+            },
+            "type": "array"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "summary": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "wants": {
+            "items": {
+              "$ref": "#/$defs/ForgeWant"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "block",
+          "text",
+          "wants",
+          "drafts",
+          "summary"
+        ],
+        "type": "object"
+      },
       "title": "Read a PR or issue block"
     },
     {
@@ -7645,6 +11362,48 @@
         "type": "object"
       },
       "name": "read_file",
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "more": {
+            "type": "boolean"
+          },
+          "next_offset": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "offset": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          },
+          "size": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "size",
+          "offset",
+          "next_offset",
+          "more",
+          "text",
+          "summary"
+        ],
+        "type": "object"
+      },
       "title": "Read a file"
     }
   ]

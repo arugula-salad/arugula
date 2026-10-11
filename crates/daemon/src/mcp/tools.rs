@@ -840,6 +840,10 @@ pub(crate) struct Def {
     pub(crate) open_world: bool,
     /// The flag the machine needs on for it to be listed (`Op::FLAG`).
     pub(crate) flag: Option<&'static str>,
+    /// Its answer's schema (`outputSchema`), when it is always one type: the
+    /// answer's, with `summary`. A grouped tool answers by kind, and a tool
+    /// that answers with more than one type in some case, has none.
+    pub(crate) output: Option<fn() -> Schema>,
 }
 
 /// What a tool takes.
@@ -1112,6 +1116,7 @@ fn all_defs() -> Vec<Def> {
             idempotent: false,
             open_world: true,
             flag: None,
+            output: Some(output_schema::<results::RunState>),
         },
         Def {
             name: "send_input",
@@ -1123,6 +1128,7 @@ fn all_defs() -> Vec<Def> {
             idempotent: false,
             open_world: false,
             flag: None,
+            output: None,
         },
         Def {
             name: "attach",
@@ -1134,6 +1140,7 @@ fn all_defs() -> Vec<Def> {
             idempotent: false,
             open_world: false,
             flag: None,
+            output: None,
         },
         Def {
             name: "read_output",
@@ -1145,6 +1152,7 @@ fn all_defs() -> Vec<Def> {
             idempotent: true,
             open_world: false,
             flag: None,
+            output: None,
         },
         Def {
             name: "wait",
@@ -1156,6 +1164,7 @@ fn all_defs() -> Vec<Def> {
             idempotent: true,
             open_world: false,
             flag: None,
+            output: None,
         },
         Def {
             name: "delegate",
@@ -1167,6 +1176,7 @@ fn all_defs() -> Vec<Def> {
             idempotent: false,
             open_world: true,
             flag: None,
+            output: None,
         },
         Def {
             name: "list",
@@ -1178,6 +1188,7 @@ fn all_defs() -> Vec<Def> {
             idempotent: true,
             open_world: true,
             flag: None,
+            output: None,
         },
         super::ops::def::<ClosePane>(),
         super::ops::def::<ThreadGet>(),
@@ -1192,6 +1203,7 @@ fn all_defs() -> Vec<Def> {
             idempotent: true,
             open_world: false,
             flag: None,
+            output: None,
         },
         Def {
             name: "show",
@@ -1203,6 +1215,7 @@ fn all_defs() -> Vec<Def> {
             idempotent: false,
             open_world: true,
             flag: None,
+            output: None,
         },
         Def {
             name: "start_agent",
@@ -1214,6 +1227,7 @@ fn all_defs() -> Vec<Def> {
             idempotent: false,
             open_world: true,
             flag: None,
+            output: Some(output_schema::<results::BlockOnly>),
         },
         Def {
             name: "prompt_agent",
@@ -1225,6 +1239,7 @@ fn all_defs() -> Vec<Def> {
             idempotent: false,
             open_world: false,
             flag: None,
+            output: None,
         },
         Def {
             name: "agent_respond",
@@ -1236,6 +1251,7 @@ fn all_defs() -> Vec<Def> {
             idempotent: false,
             open_world: false,
             flag: None,
+            output: Some(output_schema::<results::PaneOnly>),
         },
         Def {
             name: "read_forge",
@@ -1247,6 +1263,7 @@ fn all_defs() -> Vec<Def> {
             idempotent: true,
             open_world: true,
             flag: None,
+            output: Some(output_schema::<results::ForgeRead>),
         },
         Def {
             name: "draft",
@@ -1258,6 +1275,7 @@ fn all_defs() -> Vec<Def> {
             idempotent: false,
             open_world: true,
             flag: None,
+            output: None,
         },
         Def {
             name: "invite_person",
@@ -1269,6 +1287,7 @@ fn all_defs() -> Vec<Def> {
             idempotent: false,
             open_world: true,
             flag: None,
+            output: Some(output_schema::<results::InviteDrafted>),
         },
         Def {
             name: "read_invite",
@@ -1280,6 +1299,7 @@ fn all_defs() -> Vec<Def> {
             idempotent: true,
             open_world: false,
             flag: None,
+            output: None,
         },
         Def {
             name: "read_file",
@@ -1291,6 +1311,7 @@ fn all_defs() -> Vec<Def> {
             idempotent: true,
             open_world: false,
             flag: None,
+            output: Some(output_schema::<results::FileRead>),
         },
         Def {
             name: "device_call",
@@ -1302,6 +1323,7 @@ fn all_defs() -> Vec<Def> {
             idempotent: false,
             open_world: true,
             flag: None,
+            output: Some(output_schema::<results::DeviceCalled>),
         },
     ]
 }
@@ -1486,13 +1508,17 @@ pub fn list(scope: Scope, on: On) -> Vec<Tool> {
                     (kinds_text(d.description, kinds, *default), grouped_schema(kinds, *default))
                 }
             };
-            Tool::new(d.name, description, schema).with_title(d.title).with_annotations(
+            let tool = Tool::new(d.name, description, schema).with_title(d.title).with_annotations(
                 ToolAnnotations::with_title(d.title)
                     .read_only(d.read_only)
                     .destructive(d.destructive)
                     .idempotent(d.idempotent)
                     .open_world(d.open_world),
-            )
+            );
+            match d.output {
+                Some(output) => tool.with_raw_output_schema(output()),
+                None => tool,
+            }
         })
         .collect()
 }
@@ -1559,6 +1585,23 @@ fn pick_kind(
 // ---------------------------------------------------------------- calls
 
 pub(crate) type Out = Result<Value, String>;
+
+/// The `outputSchema` of a tool whose successful answer is always a `T`: the
+/// schema of `T` as `done` sends it, which is the object with `summary` in it
+/// (a required string). The root is `type: object` (an enum's `oneOf` gets
+/// it here), since MCP clients may check `structuredContent` against it.
+pub(crate) fn output_schema<T: JsonSchema + 'static>() -> Schema {
+    let mut s = (*schema_for_type::<T>()).clone();
+    // The wrapper type's name and doc are noise to an agent.
+    s.remove("title");
+    s.remove("description");
+    s.entry("type").or_insert_with(|| Value::String("object".into()));
+    let props = s.entry("properties").or_insert_with(|| Value::Object(Default::default()));
+    props["summary"] = json!({ "type": "string" });
+    let required = s.entry("required").or_insert_with(|| Value::Array(vec![]));
+    required.as_array_mut().expect("required is a list").push(Value::String("summary".into()));
+    Arc::new(s)
+}
 
 /// A result, with the `summary` sentence in it.
 pub(crate) fn done(summary: impl Into<String>, v: impl Serialize) -> Out {
@@ -3942,6 +3985,26 @@ mod tests {
             serde_json::to_string_pretty(&all).unwrap() + "\n"
         };
         assert!(got == want, "the tool list changed; ARUGULA_BLESS=1 rewrites {}", path.display());
+    }
+
+    /// #580: an `outputSchema` is an object at the root (MCP's rule) that
+    /// says what `done` adds, `summary`, and no grouped tool lists one.
+    #[test]
+    fn an_output_schema_is_an_object_with_a_summary() {
+        let mut with = 0;
+        for tool in list(Scope::Full, fl(true)) {
+            let grouped = all_defs().into_iter().any(|d| d.name == tool.name && matches!(d.args, Args::Kinds { .. }));
+            let Some(schema) = &tool.output_schema else {
+                continue;
+            };
+            with += 1;
+            assert!(!grouped, "{} answers by kind and lists an outputSchema", tool.name);
+            let schema = Value::Object((**schema).clone());
+            assert_eq!(schema["type"], "object", "{}", tool.name);
+            assert_eq!(schema["properties"]["summary"], json!({ "type": "string" }), "{}", tool.name);
+            assert!(schema["required"].as_array().unwrap().contains(&json!("summary")), "{}", tool.name);
+        }
+        assert!(with >= 8, "only {with} tools list an outputSchema");
     }
 
     /// A build without Labs lists nothing of Fountain, studio apps or chant

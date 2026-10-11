@@ -2,7 +2,9 @@
 //! JSON agents see. `tools.rs` adds the `summary` sentence (`done`).
 //!
 //! They live here, not in proto, because only agents read them: no Rust or
-//! TypeScript client deserializes them, so they derive `Serialize` alone.
+//! TypeScript client deserializes them, so they derive `Serialize`, and
+//! `JsonSchema` where a tool lists them as its `outputSchema` (#580: the
+//! tools that always answer with one of them; see `tools::output_schema`).
 //! Where a result is an API type already (`PromptResult`, `ThreadMsg`,
 //! `ForgeWant`, `Draft`, `Ask`, `AppInfo`…) it is that type, so the tool and
 //! the API can't drift. The JSON of each is what the old `json!` literal
@@ -19,6 +21,7 @@ use arugula_proto::{
     ask::Ask,
     forge::{Draft, ForgeWant},
 };
+use schemars::JsonSchema;
 use serde::Serialize;
 use serde_json::Value;
 
@@ -26,7 +29,7 @@ use serde_json::Value;
 use crate::labs::apps::studio::AppInfo;
 
 /// Only the pane: closed, answered, or sent a prompt.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, JsonSchema)]
 pub struct PaneOnly {
     pub pane: PaneId,
 }
@@ -57,7 +60,7 @@ pub struct Prompted {
 }
 
 /// A command's pane, by what it's doing (`state`).
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, JsonSchema)]
 #[serde(tag = "state")]
 pub enum RunState {
     #[serde(rename = "started")]
@@ -175,7 +178,7 @@ pub struct BlockResource {
 }
 
 /// `read_thread`.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, JsonSchema)]
 pub struct ThreadRead {
     pub thread: ThreadTarget,
     pub messages: Vec<arugula_proto::ThreadMsg>,
@@ -183,7 +186,7 @@ pub struct ThreadRead {
 }
 
 /// `post_thread`.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, JsonSchema)]
 pub struct ThreadPosted {
     pub thread: ThreadTarget,
     pub message: arugula_proto::ThreadMsg,
@@ -253,7 +256,7 @@ pub struct Apps {
 }
 
 /// A block opened, with nothing more to say: a file, a started agent.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, JsonSchema)]
 pub struct BlockOnly {
     pub block: PaneId,
 }
@@ -348,7 +351,7 @@ pub struct ForgeOpened {
 }
 
 /// `read_forge`.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, JsonSchema)]
 pub struct ForgeRead {
     pub block: PaneId,
     pub text: String,
@@ -358,13 +361,15 @@ pub struct ForgeRead {
 }
 
 /// An invite drafted on the user's card.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, JsonSchema)]
 pub struct InviteDrafted {
     pub draft: String,
     pub status: &'static str,
     pub block: PaneId,
     pub who: String,
     pub name: String,
+    /// `viewer` or `editor`.
+    #[schemars(with = "String")]
     pub role: arugula_core::Role,
     pub session: arugula_core::SessionId,
     pub pane: PaneId,
@@ -390,7 +395,7 @@ pub struct PromptedAgent {
 }
 
 /// `read_file`.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, JsonSchema)]
 pub struct FileRead {
     pub path: String,
     pub size: u64,
@@ -407,7 +412,7 @@ pub struct Devices {
 }
 
 /// `device_call`. `result` is whatever the device answered.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, JsonSchema)]
 pub struct DeviceCalled {
     pub device: String,
     pub name: String,
@@ -426,9 +431,22 @@ mod tests {
         assert_eq!(serde_json::to_value(got).unwrap(), want);
     }
 
+    /// The same, and the JSON fits the `outputSchema` of the tool that
+    /// answers with it, `summary` added as `done` does (#580): a client may
+    /// check `structuredContent` against the schema.
+    fn shaped<T: Serialize + JsonSchema + 'static>(got: T, want: Value) {
+        let mut sent = serde_json::to_value(&got).unwrap();
+        assert_eq!(sent, want);
+        sent["summary"] = Value::String("said".into());
+        let schema = Value::Object((*super::super::tools::output_schema::<T>()).clone());
+        if let Err(e) = arugula_testkit::schema::conforms(&sent, &schema) {
+            panic!("{sent} doesn't fit its schema: {e}\n{schema:#}");
+        }
+    }
+
     #[test]
     fn a_pane_alone_and_the_small_ones() {
-        same(PaneOnly { pane: 7 }, json!({ "pane": 7 }));
+        shaped(PaneOnly { pane: 7 }, json!({ "pane": 7 }));
         #[cfg(unix)]
         same(Pasted { pane: 7, path: "/tmp/a.png".into() }, json!({ "pane": 7, "path": "/tmp/a.png" }));
         same(Typed { pane: 7, next_offset: 120 }, json!({ "pane": 7, "next_offset": 120 }));
@@ -436,14 +454,14 @@ mod tests {
             Prompted { pane: 7, tab: "its tab".into(), chat: json!("c1"), position: Value::Null },
             json!({ "pane": 7, "tab": "its tab", "chat": "c1", "position": null }),
         );
-        same(BlockOnly { block: 9 }, json!({ "block": 9 }));
+        shaped(BlockOnly { block: 9 }, json!({ "block": 9 }));
         same(PortOpened { block: 9, port: 3000 }, json!({ "block": 9, "port": 3000 }));
         #[cfg(feature = "labs")]
         same(AppOpened { block: 9, app: "notes".into() }, json!({ "block": 9, "app": "notes" }));
         #[cfg(feature = "labs")]
         same(BlockText { block: 9, text: "t".into() }, json!({ "block": 9, "text": "t" }));
         same(Screen { pane: 7, text: "hi".into() }, json!({ "pane": 7, "text": "hi" }));
-        same(
+        shaped(
             FileRead { path: "/a".into(), size: 10, offset: 0, next_offset: 10, more: false, text: "x".into() },
             json!({ "path": "/a", "size": 10, "offset": 0, "next_offset": 10, "more": false, "text": "x" }),
         );
@@ -455,16 +473,16 @@ mod tests {
 
     #[test]
     fn the_states_of_a_command() {
-        same(RunState::Started { pane: 7 }, json!({ "pane": 7, "state": "started" }));
-        same(
+        shaped(RunState::Started { pane: 7 }, json!({ "pane": 7, "state": "started" }));
+        shaped(
             RunState::StillRunning { pane: 7, command: None, next_offset: 9, last_lines: String::new() },
             json!({ "pane": 7, "state": "still running", "command": null, "next_offset": 9, "last_lines": "" }),
         );
-        same(
+        shaped(
             RunState::StillRunning { pane: 7, command: Some("make".into()), next_offset: 9, last_lines: "x".into() },
             json!({ "pane": 7, "state": "still running", "command": "make", "next_offset": 9, "last_lines": "x" }),
         );
-        same(
+        shaped(
             RunState::Done {
                 pane: 7,
                 command: None,
@@ -476,7 +494,7 @@ mod tests {
             json!({ "pane": 7, "state": "done", "command": null, "exit": null, "output_offset": 1,
                 "next_offset": 2, "last_lines": "l" }),
         );
-        same(
+        shaped(
             RunState::Done {
                 pane: 7,
                 command: Some("ls".into()),
@@ -488,11 +506,11 @@ mod tests {
             json!({ "pane": 7, "state": "done", "command": "ls", "exit": 2, "output_offset": 1,
                 "next_offset": 2, "last_lines": "l" }),
         );
-        same(
+        shaped(
             RunState::Exited { pane: 7, exit: None, last_lines: "bye".into() },
             json!({ "pane": 7, "state": "exited", "exit": null, "last_lines": "bye" }),
         );
-        same(
+        shaped(
             RunState::Matched { pane: 7, matched: "ready".into(), offset: 3, next_offset: 8 },
             json!({ "pane": 7, "state": "matched", "match": "ready", "offset": 3, "next_offset": 8 }),
         );
@@ -682,15 +700,15 @@ mod tests {
             ForgeOpened { block: 5, text: "t".into(), wants: vec![] },
             json!({ "block": 5, "text": "t", "wants": [] }),
         );
-        same(
+        shaped(
             ForgeRead { block: 5, text: "t".into(), wants: vec![], drafts: vec![], error: None },
             json!({ "block": 5, "text": "t", "wants": [], "drafts": [], "error": null }),
         );
-        same(
+        shaped(
             ForgeRead { block: 5, text: "t".into(), wants: vec![], drafts: vec![], error: Some("no".into()) },
             json!({ "block": 5, "text": "t", "wants": [], "drafts": [], "error": "no" }),
         );
-        same(
+        shaped(
             InviteDrafted {
                 draft: "d1".into(),
                 status: "waiting",
@@ -727,11 +745,11 @@ mod tests {
             PromptedAgent { result: PromptResult::NeedsInput { question: None, ask: None }, pane: 7 },
             json!({ "result": "needs_input", "pane": 7 }),
         );
-        same(
+        shaped(
             ThreadRead { thread: ThreadTarget::Pane(3), messages: vec![], last: 0 },
             json!({ "thread": ThreadTarget::Pane(3), "messages": [], "last": 0 }),
         );
-        same(
+        shaped(
             ThreadPosted {
                 thread: ThreadTarget::Session(1),
                 message: serde_json::from_value(json!({ "id": 1, "at": 2, "who": "mcp:x", "name": "x", "text": "hi" }))
@@ -742,7 +760,7 @@ mod tests {
                 "message": { "id": 1, "at": 2, "who": "mcp:x", "name": "x", "text": "hi" }, "unreached": [] }),
         );
         same(Devices { devices: vec![] }, json!({ "devices": [] }));
-        same(
+        shaped(
             DeviceCalled {
                 device: "d".into(),
                 name: "Phone".into(),

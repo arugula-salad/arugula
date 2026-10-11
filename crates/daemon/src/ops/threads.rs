@@ -149,6 +149,7 @@ impl McpOp for ThreadGet {
         open_world: false,
     };
     type Args = ThreadArgs;
+    type Answer = crate::mcp::results::ThreadRead;
 
     async fn args(call: &Call<'_>, a: &ThreadArgs) -> Result<(ThreadTarget, Empty), String> {
         Ok((call.thread_of(a.pane.as_ref(), a.session).await?, Empty {}))
@@ -190,6 +191,7 @@ impl McpOp for ThreadPost {
         open_world: false,
     };
     type Args = PostThreadArgs;
+    type Answer = crate::mcp::results::ThreadPosted;
 
     async fn args(call: &Call<'_>, a: &PostThreadArgs) -> Result<(ThreadTarget, ThreadPostRequest), String> {
         let target = call.thread_of(a.pane.as_ref(), a.session).await?;

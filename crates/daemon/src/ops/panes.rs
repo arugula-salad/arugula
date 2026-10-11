@@ -31,6 +31,7 @@ impl McpOp for ListPanes {
         description: "Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.",
     };
     type Args = ListArgs;
+    type Answer = serde_json::Value;
 
     async fn args(_: &Call<'_>, _: &ListArgs) -> Result<((), Empty), String> {
         Ok(((), Empty {}))
