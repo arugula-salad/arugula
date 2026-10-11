@@ -161,7 +161,6 @@ const STEPS: Record<string, Record<string, string>> = {
  * docs/journey-steps.svg; each must be a step in `STEPS`.
  */
 const COMPARED: Record<string, string[]> = {
-  J1: ["approve-machine", "confirm-account"],
   J2a: ["confirm-share"],
   J6: ["tell-ben"],
 };
