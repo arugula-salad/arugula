@@ -547,8 +547,17 @@ Each journey is a line and each shared step a station. J1's whole first
 run is shared by J2a, J2b and J2c, which run it for each person first. The
 phone step is one every journey skips. This is the design alone, with no
 runs behind it; `just journey-map` draws the same map from the newest runs,
-coloured by how they went (below). `just journey-map-doc` redraws this file after a
-station or a line changes in `web/e2e/journey/map.ts`.
+coloured by how they went (below).
+
+![The journeys' steps as a table: stations down the side, journeys across, each cell the step ids that journey takes at that station, with the steps that compare a code or fingerprint marked, then the parts of the product no journey reaches yet](journey-steps.svg)
+
+The steps behind the map: each journey's step ids at each station (`STEPS`
+in `web/e2e/journey/map.ts`), the ones where the person compares a code or
+fingerprint between two screens marked (`COMPARED`), and under them what no
+journey reaches yet (`UNCOVERED`). `just journey-map-doc` redraws both
+files; run it after changing anything in `map.ts` (a station, a line, a
+step, a compared step or a gap) and commit them, so a PR that changes a
+journey shows the change.
 
 | Journey | What |
 |---|---|

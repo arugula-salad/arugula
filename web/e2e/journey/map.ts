@@ -10,6 +10,7 @@
 // Stations are placed by hand; colours and states come from the reports.
 //   just journey-map                 (also the end of `just journey`)
 //   node --experimental-strip-types e2e/journey/map.ts [DIR]
+//   just journey-map-doc             (docs/journey-map.svg, docs/journey-steps.svg)
 
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -155,6 +156,16 @@ const STEPS: Record<string, Record<string, string>> = {
     "cam-opens": "samelogin",
     "ana-sees-shared-login": "samelogin",
   },
+};
+/**
+ * The steps that call `j.compared`: the person reads a code or fingerprint
+ * (J6: an address) off one screen and checks it on another. Marked in
+ * docs/journey-steps.svg; each must be a step in `STEPS`.
+ */
+const COMPARED: Record<string, string[]> = {
+  J1: ["approve-machine", "confirm-account", "allow-app", "approve-app"],
+  J2a: ["confirm-share"],
+  J6: ["tell-ben"],
 };
 const FIRST_RUN = ["open", "gs", "phone", "connect", "account", "signin", "terminal"];
 /** The lines, in drawing order (it sets where each sits in a bundle). */
@@ -307,6 +318,118 @@ export function build(dir?: string): { html: string; svg: string; runs: number; 
   return { html, svg: alone, runs: runs.length, steps: all.length, missing };
 }
 
+/**
+ * The steps each journey takes at each station, from `STEPS` alone, for
+ * docs/journey-steps.svg: stations down the side, journeys across, each
+ * cell the step ids in order, with `COMPARED` marked, and under them the
+ * parts no journey reaches yet (`UNCOVERED`). A journey that runs J1 for
+ * each person first takes J1's steps through the first run; its cells there
+ * say so rather than repeat them.
+ */
+export function stepsFigure(): string {
+  for (const [name, ids] of Object.entries(COMPARED))
+    for (const id of ids) if (!STEPS[name]?.[id]) throw new Error(`COMPARED names ${name}: ${id}, which isn't in STEPS (e2e/journey/map.ts)`);
+  const cols = LINES.map(([n]) => n).sort((a, b) => a.localeCompare(b, "en", { numeric: true }));
+  const pathOf = Object.fromEntries(LINES.map(([n, , p]) => [n, p]));
+  const viaJ1 = new Set(cols.filter((c) => c !== "J1" && FIRST_RUN.every((s, i) => pathOf[c][i] === s)));
+  const stepsAt = (c: string, sid: string) => Object.entries(STEPS[c] ?? {}).filter(([, s]) => s === sid).map(([id]) => id);
+
+  // Sizes: the ids are monospace, so a column is as wide as its longest.
+  const CH = 6.9, LH = 16, PADX = 12, PADY = 9, LABEL = 236, M = 24;
+  const colW = cols.map((c) => Math.max(64, ...Object.keys(STEPS[c] ?? {}).map((id) => id.length * CH + (COMPARED[c]?.includes(id) ? 22 : 0))) + PADX * 2);
+  const colX = cols.map((_, i) => M + LABEL + colW.slice(0, i).reduce((a, b) => a + b, 0));
+  const W = colX.at(-1)! + colW.at(-1)! + M;
+  const zoneName: Record<Zone, string> = { get: "GET IT", first: "FIRST RUN", together: "TOGETHER" };
+
+  const out: string[] = [];
+  let y = M;
+  out.push(`<text class="title" x="${M}" y="${y + 18}">The journeys' steps, station by station</text>`);
+  out.push(`<text class="sub" x="${M}" y="${y + 38}">Each step id of each journey (web/e2e/journey/map.ts, STEPS), in order, at the station it maps to.</text>`);
+  y += 62;
+  // Column heads: the line's colour and name.
+  cols.forEach((c, i) => {
+    const x = colX[i] + PADX;
+    out.push(`<rect x="${x}" y="${y}" width="22" height="6" rx="3" style="fill: var(--${c.toLowerCase()})"/><text class="head" x="${x}" y="${y + 24}">${c}</text>`);
+  });
+  out.push(`<text class="head" x="${M}" y="${y + 24}">Station</text>`);
+  y += 34;
+  const rule = (yy: number) => out.push(`<line class="rule" x1="${M}" x2="${W - M}" y1="${yy}" y2="${yy}"/>`);
+  const band = (label: string) => {
+    out.push(`<rect class="band" x="${M}" y="${y}" width="${W - 2 * M}" height="24"/><text class="zone-label" x="${M + 10}" y="${y + 16}">${label}</text>`);
+    y += 24;
+  };
+
+  let zone: Zone | null = null;
+  for (const [sid, [, , label, z]] of Object.entries(STATIONS)) {
+    if (z !== zone) band(zoneName[(zone = z)]);
+    const cells = cols.map((c) => stepsAt(c, sid));
+    const sharedJ1 = zone === "first" && FIRST_RUN.includes(sid);
+    const lines = Math.max(1, ...cells.map((s) => s.length));
+    const h = lines * LH + PADY * 2;
+    out.push(`<text class="station" x="${M + 10}" y="${y + PADY + 12}">${esc(label)}</text>`);
+    cols.forEach((c, i) => {
+      if (sharedJ1 && viaJ1.has(c)) return;
+      cells[i].forEach((id, k) => {
+        const cmp = COMPARED[c]?.includes(id);
+        const tx = colX[i] + PADX;
+        const ty = y + PADY + 12 + k * LH;
+        out.push(`<text class="step" x="${tx}" y="${ty}">${esc(id)}</text>`);
+        if (cmp) {
+          const bx = tx + id.length * CH + 6;
+          out.push(`<g class="cmp"><rect x="${bx}" y="${ty - 10}" width="16" height="13" rx="6.5"/><text x="${bx + 8}" y="${ty}" text-anchor="middle">=</text></g>`);
+        }
+      });
+      if (!cells[i].length && pathOf[c].includes(sid)) out.push(`<text class="none" x="${colX[i] + PADX}" y="${y + PADY + 12}">on the line, no step</text>`);
+    });
+    // The J2 journeys' first runs: one note across their columns.
+    if (sharedJ1) {
+      const idx = cols.map((c, i) => (viaJ1.has(c) ? i : -1)).filter((i) => i >= 0);
+      for (let a = 0; a < idx.length; ) {
+        let b = a;
+        while (b + 1 < idx.length && idx[b + 1] === idx[b] + 1) b++;
+        const x1 = colX[idx[a]] + PADX, x2 = colX[idx[b]] + colW[idx[b]] - PADX;
+        out.push(`<line class="asj1" x1="${x1}" x2="${x2}" y1="${y + h / 2}" y2="${y + h / 2}"/><text class="asj1" x="${(x1 + x2) / 2}" y="${y + h / 2 + 4}" text-anchor="middle">J1's steps, for each person</text>`);
+        a = b + 1;
+      }
+    }
+    y += h;
+    rule(y);
+  }
+  band("NO JOURNEY YET");
+  for (const [label, why] of UNCOVERED) {
+    const h = LH + PADY * 2;
+    out.push(`<text class="station gap" x="${M + 10}" y="${y + PADY + 12}">${esc(label)}</text><text class="why" x="${colX[0] + PADX}" y="${y + PADY + 12}">${esc(why)}</text>`);
+    y += h;
+    rule(y);
+  }
+  y += 26;
+  out.push(
+    `<g class="cmp"><rect x="${M}" y="${y - 10}" width="16" height="13" rx="6.5"/><text x="${M + 8}" y="${y}" text-anchor="middle">=</text></g><text class="key" x="${M + 24}" y="${y}">compares: the person checks a code or fingerprint (J6: an address) on one screen against another (j.compared)</text>`,
+  );
+  y += M;
+  return [
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W.toFixed(0)} ${y}" role="img" aria-label="Table of the journeys' steps: stations down the side, journeys across, each cell the step ids that journey takes at that station, then the parts of the product no journey reaches yet.">`,
+    `<style>${MAP_CSS}\n${STEPS_CSS}</style><rect width="${W.toFixed(0)}" height="${y}" rx="14" style="fill: var(--panel)"/>`,
+    ...out,
+    "</svg>",
+  ].join("\n");
+}
+
+const STEPS_CSS = `svg { color: var(--fg); font-family: var(--display); }
+.title { font-family: var(--display); font-weight: 800; font-size: 20px; fill: currentColor; }
+.sub, .why, .key { font-family: var(--body); font-size: 12.5px; fill: var(--muted); }
+.head { font-family: var(--display); font-weight: 800; font-size: 13px; fill: currentColor; }
+.band { fill: var(--zone); }
+.station { font-family: var(--display); font-weight: 700; font-size: 13px; fill: currentColor; }
+.station.gap { fill: var(--muted); }
+.step { font-family: var(--mono); font-size: 11.5px; fill: currentColor; }
+.none { font-family: var(--body); font-style: italic; font-size: 11.5px; fill: var(--muted); }
+.rule { stroke: var(--rule); stroke-width: 1; }
+line.asj1 { stroke: var(--rule); stroke-width: 1; stroke-dasharray: 3 4; }
+text.asj1 { font-family: var(--body); font-size: 12px; fill: var(--muted); paint-order: stroke; stroke: var(--panel); stroke-width: 8px; stroke-linejoin: round; }
+.cmp rect { fill: none; stroke: currentColor; stroke-width: 1.5; }
+.cmp text { font-family: var(--mono); font-weight: 700; font-size: 11px; fill: currentColor; }`;
+
 /** The map's own styles: the page's, and docs/journey-map.svg's inside it. */
 const MAP_CSS = `:root {
   --bg: #f4f6f8; --panel: #ffffff; --fg: #16202b; --muted: #5b6876; --rule: #d5dce3; --zone: #e9eef3;
@@ -447,11 +570,14 @@ code { font-family: var(--mono); font-size: 13px; }
 }
 
 // Run as a script: build the map from the reports directory (map.html and
-// map.svg there), or with --design FILE the design alone into FILE.
+// map.svg there), or with --design DIR the design alone into DIR: the map
+// (journey-map.svg) and the steps and coverage (journey-steps.svg).
 if (import.meta.url === `file://${process.argv[1]}`) {
   if (process.argv[2] === "--design") {
-    writeFileSync(process.argv[3], build().svg + "\n");
-    console.log(`Journey map, the design alone: ${process.argv[3]}`);
+    const dir = process.argv[3];
+    writeFileSync(join(dir, "journey-map.svg"), build().svg + "\n");
+    writeFileSync(join(dir, "journey-steps.svg"), stepsFigure() + "\n");
+    console.log(`Journey map, the design alone: ${join(dir, "journey-map.svg")}, ${join(dir, "journey-steps.svg")}`);
     process.exit(0);
   }
   const dir = process.argv[2] ?? reports();
