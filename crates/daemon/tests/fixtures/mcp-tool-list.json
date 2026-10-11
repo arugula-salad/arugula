@@ -100,7 +100,6 @@
           {
             "properties": {
               "pane": {
-                "format": "uint32",
                 "minimum": 0,
                 "type": "integer"
               },
@@ -127,12 +126,10 @@
                 "type": "string"
               },
               "next_offset": {
-                "format": "uint64",
                 "minimum": 0,
                 "type": "integer"
               },
               "pane": {
-                "format": "uint32",
                 "minimum": 0,
                 "type": "integer"
               },
@@ -158,7 +155,6 @@
                 ]
               },
               "exit": {
-                "format": "int32",
                 "type": [
                   "integer",
                   "null"
@@ -168,17 +164,14 @@
                 "type": "string"
               },
               "next_offset": {
-                "format": "uint64",
                 "minimum": 0,
                 "type": "integer"
               },
               "output_offset": {
-                "format": "uint64",
                 "minimum": 0,
                 "type": "integer"
               },
               "pane": {
-                "format": "uint32",
                 "minimum": 0,
                 "type": "integer"
               },
@@ -199,7 +192,6 @@
           {
             "properties": {
               "exit": {
-                "format": "int32",
                 "type": [
                   "integer",
                   "null"
@@ -209,7 +201,6 @@
                 "type": "string"
               },
               "pane": {
-                "format": "uint32",
                 "minimum": 0,
                 "type": "integer"
               },
@@ -231,17 +222,14 @@
                 "type": "string"
               },
               "next_offset": {
-                "format": "uint64",
                 "minimum": 0,
                 "type": "integer"
               },
               "offset": {
-                "format": "uint64",
                 "minimum": 0,
                 "type": "integer"
               },
               "pane": {
-                "format": "uint32",
                 "minimum": 0,
                 "type": "integer"
               },
@@ -687,7 +675,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "pane": {
-            "format": "uint32",
             "minimum": 0,
             "type": "integer"
           },
@@ -1095,7 +1082,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "block": {
-            "format": "uint32",
             "minimum": 0,
             "type": "integer"
           },
@@ -1275,7 +1261,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "pane": {
-            "format": "uint32",
             "minimum": 0,
             "type": "integer"
           },
@@ -1425,7 +1410,6 @@
             ],
             "properties": {
               "at_ms": {
-                "format": "uint64",
                 "minimum": 0,
                 "type": "integer"
               },
@@ -1451,7 +1435,6 @@
                 ]
               },
               "settled_ms": {
-                "format": "uint64",
                 "minimum": 0,
                 "type": [
                   "integer",
@@ -1524,7 +1507,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "block": {
-            "format": "uint32",
             "minimum": 0,
             "type": "integer"
           },
@@ -1746,7 +1728,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "block": {
-            "format": "uint32",
             "minimum": 0,
             "type": "integer"
           },
@@ -1757,7 +1738,6 @@
             "type": "string"
           },
           "pane": {
-            "format": "uint32",
             "minimum": 0,
             "type": "integer"
           },
@@ -1766,7 +1746,6 @@
             "type": "string"
           },
           "session": {
-            "format": "uint32",
             "minimum": 0,
             "type": "integer"
           },
@@ -1924,12 +1903,10 @@
             "type": "boolean"
           },
           "next_offset": {
-            "format": "uint64",
             "minimum": 0,
             "type": "integer"
           },
           "offset": {
-            "format": "uint64",
             "minimum": 0,
             "type": "integer"
           },
@@ -1937,7 +1914,6 @@
             "type": "string"
           },
           "size": {
-            "format": "uint64",
             "minimum": 0,
             "type": "integer"
           },
@@ -2010,7 +1986,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "answer_ms": {
-            "format": "uint64",
             "minimum": 0,
             "type": "integer"
           },
@@ -2025,7 +2000,6 @@
             "type": "string"
           },
           "woke_ms": {
-            "format": "uint64",
             "minimum": 0,
             "type": [
               "integer",
@@ -2172,7 +2146,6 @@
           {
             "properties": {
               "pane": {
-                "format": "uint32",
                 "minimum": 0,
                 "type": "integer"
               },
@@ -2199,12 +2172,10 @@
                 "type": "string"
               },
               "next_offset": {
-                "format": "uint64",
                 "minimum": 0,
                 "type": "integer"
               },
               "pane": {
-                "format": "uint32",
                 "minimum": 0,
                 "type": "integer"
               },
@@ -2230,7 +2201,6 @@
                 ]
               },
               "exit": {
-                "format": "int32",
                 "type": [
                   "integer",
                   "null"
@@ -2240,17 +2210,14 @@
                 "type": "string"
               },
               "next_offset": {
-                "format": "uint64",
                 "minimum": 0,
                 "type": "integer"
               },
               "output_offset": {
-                "format": "uint64",
                 "minimum": 0,
                 "type": "integer"
               },
               "pane": {
-                "format": "uint32",
                 "minimum": 0,
                 "type": "integer"
               },
@@ -2271,7 +2238,6 @@
           {
             "properties": {
               "exit": {
-                "format": "int32",
                 "type": [
                   "integer",
                   "null"
@@ -2281,7 +2247,6 @@
                 "type": "string"
               },
               "pane": {
-                "format": "uint32",
                 "minimum": 0,
                 "type": "integer"
               },
@@ -2303,17 +2268,14 @@
                 "type": "string"
               },
               "next_offset": {
-                "format": "uint64",
                 "minimum": 0,
                 "type": "integer"
               },
               "offset": {
-                "format": "uint64",
                 "minimum": 0,
                 "type": "integer"
               },
               "pane": {
-                "format": "uint32",
                 "minimum": 0,
                 "type": "integer"
               },
@@ -2871,7 +2833,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "pane": {
-            "format": "uint32",
             "minimum": 0,
             "type": "integer"
           },
@@ -2956,7 +2917,6 @@
             "description": "Output quoted in a thread message: kept as text, so it stays readable\nafter the pane scrolls or closes.",
             "properties": {
               "pane": {
-                "format": "uint32",
                 "minimum": 0,
                 "type": "integer"
               },
@@ -2979,13 +2939,11 @@
               },
               "at": {
                 "description": "When it was posted (ms since the epoch).",
-                "format": "uint64",
                 "minimum": 0,
                 "type": "integer"
               },
               "id": {
                 "description": "1, 2, 3, ... within its thread.",
-                "format": "uint64",
                 "minimum": 0,
                 "type": "integer"
               },
@@ -3052,7 +3010,6 @@
                 "additionalProperties": false,
                 "properties": {
                   "pane": {
-                    "format": "uint32",
                     "minimum": 0,
                     "type": "integer"
                   }
@@ -3066,7 +3023,6 @@
                 "additionalProperties": false,
                 "properties": {
                   "session": {
-                    "format": "uint32",
                     "minimum": 0,
                     "type": "integer"
                   }
@@ -3082,7 +3038,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "last": {
-            "format": "uint64",
             "minimum": 0,
             "type": "integer"
           },
@@ -3175,7 +3130,6 @@
             "description": "Output quoted in a thread message: kept as text, so it stays readable\nafter the pane scrolls or closes.",
             "properties": {
               "pane": {
-                "format": "uint32",
                 "minimum": 0,
                 "type": "integer"
               },
@@ -3198,13 +3152,11 @@
               },
               "at": {
                 "description": "When it was posted (ms since the epoch).",
-                "format": "uint64",
                 "minimum": 0,
                 "type": "integer"
               },
               "id": {
                 "description": "1, 2, 3, ... within its thread.",
-                "format": "uint64",
                 "minimum": 0,
                 "type": "integer"
               },
@@ -3271,7 +3223,6 @@
                 "additionalProperties": false,
                 "properties": {
                   "pane": {
-                    "format": "uint32",
                     "minimum": 0,
                     "type": "integer"
                   }
@@ -3285,7 +3236,6 @@
                 "additionalProperties": false,
                 "properties": {
                   "session": {
-                    "format": "uint32",
                     "minimum": 0,
                     "type": "integer"
                   }
@@ -3855,7 +3805,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "block": {
-            "format": "uint32",
             "minimum": 0,
             "type": "integer"
           },
@@ -4035,7 +3984,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "pane": {
-            "format": "uint32",
             "minimum": 0,
             "type": "integer"
           },
@@ -4185,7 +4133,6 @@
             ],
             "properties": {
               "at_ms": {
-                "format": "uint64",
                 "minimum": 0,
                 "type": "integer"
               },
@@ -4211,7 +4158,6 @@
                 ]
               },
               "settled_ms": {
-                "format": "uint64",
                 "minimum": 0,
                 "type": [
                   "integer",
@@ -4284,7 +4230,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "block": {
-            "format": "uint32",
             "minimum": 0,
             "type": "integer"
           },
@@ -4506,7 +4451,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "block": {
-            "format": "uint32",
             "minimum": 0,
             "type": "integer"
           },
@@ -4517,7 +4461,6 @@
             "type": "string"
           },
           "pane": {
-            "format": "uint32",
             "minimum": 0,
             "type": "integer"
           },
@@ -4526,7 +4469,6 @@
             "type": "string"
           },
           "session": {
-            "format": "uint32",
             "minimum": 0,
             "type": "integer"
           },
@@ -4684,12 +4626,10 @@
             "type": "boolean"
           },
           "next_offset": {
-            "format": "uint64",
             "minimum": 0,
             "type": "integer"
           },
           "offset": {
-            "format": "uint64",
             "minimum": 0,
             "type": "integer"
           },
@@ -4697,7 +4637,6 @@
             "type": "string"
           },
           "size": {
-            "format": "uint64",
             "minimum": 0,
             "type": "integer"
           },
@@ -4770,7 +4709,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "answer_ms": {
-            "format": "uint64",
             "minimum": 0,
             "type": "integer"
           },
@@ -4785,7 +4723,6 @@
             "type": "string"
           },
           "woke_ms": {
-            "format": "uint64",
             "minimum": 0,
             "type": [
               "integer",
@@ -4906,7 +4843,6 @@
           {
             "properties": {
               "pane": {
-                "format": "uint32",
                 "minimum": 0,
                 "type": "integer"
               },
@@ -4933,12 +4869,10 @@
                 "type": "string"
               },
               "next_offset": {
-                "format": "uint64",
                 "minimum": 0,
                 "type": "integer"
               },
               "pane": {
-                "format": "uint32",
                 "minimum": 0,
                 "type": "integer"
               },
@@ -4964,7 +4898,6 @@
                 ]
               },
               "exit": {
-                "format": "int32",
                 "type": [
                   "integer",
                   "null"
@@ -4974,17 +4907,14 @@
                 "type": "string"
               },
               "next_offset": {
-                "format": "uint64",
                 "minimum": 0,
                 "type": "integer"
               },
               "output_offset": {
-                "format": "uint64",
                 "minimum": 0,
                 "type": "integer"
               },
               "pane": {
-                "format": "uint32",
                 "minimum": 0,
                 "type": "integer"
               },
@@ -5005,7 +4935,6 @@
           {
             "properties": {
               "exit": {
-                "format": "int32",
                 "type": [
                   "integer",
                   "null"
@@ -5015,7 +4944,6 @@
                 "type": "string"
               },
               "pane": {
-                "format": "uint32",
                 "minimum": 0,
                 "type": "integer"
               },
@@ -5037,17 +4965,14 @@
                 "type": "string"
               },
               "next_offset": {
-                "format": "uint64",
                 "minimum": 0,
                 "type": "integer"
               },
               "offset": {
-                "format": "uint64",
                 "minimum": 0,
                 "type": "integer"
               },
               "pane": {
-                "format": "uint32",
                 "minimum": 0,
                 "type": "integer"
               },
@@ -5493,7 +5418,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "pane": {
-            "format": "uint32",
             "minimum": 0,
             "type": "integer"
           },
@@ -5901,7 +5825,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "block": {
-            "format": "uint32",
             "minimum": 0,
             "type": "integer"
           },
@@ -6081,7 +6004,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "pane": {
-            "format": "uint32",
             "minimum": 0,
             "type": "integer"
           },
@@ -6231,7 +6153,6 @@
             ],
             "properties": {
               "at_ms": {
-                "format": "uint64",
                 "minimum": 0,
                 "type": "integer"
               },
@@ -6257,7 +6178,6 @@
                 ]
               },
               "settled_ms": {
-                "format": "uint64",
                 "minimum": 0,
                 "type": [
                   "integer",
@@ -6330,7 +6250,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "block": {
-            "format": "uint32",
             "minimum": 0,
             "type": "integer"
           },
@@ -6552,7 +6471,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "block": {
-            "format": "uint32",
             "minimum": 0,
             "type": "integer"
           },
@@ -6563,7 +6481,6 @@
             "type": "string"
           },
           "pane": {
-            "format": "uint32",
             "minimum": 0,
             "type": "integer"
           },
@@ -6572,7 +6489,6 @@
             "type": "string"
           },
           "session": {
-            "format": "uint32",
             "minimum": 0,
             "type": "integer"
           },
@@ -6730,12 +6646,10 @@
             "type": "boolean"
           },
           "next_offset": {
-            "format": "uint64",
             "minimum": 0,
             "type": "integer"
           },
           "offset": {
-            "format": "uint64",
             "minimum": 0,
             "type": "integer"
           },
@@ -6743,7 +6657,6 @@
             "type": "string"
           },
           "size": {
-            "format": "uint64",
             "minimum": 0,
             "type": "integer"
           },
@@ -6816,7 +6729,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "answer_ms": {
-            "format": "uint64",
             "minimum": 0,
             "type": "integer"
           },
@@ -6831,7 +6743,6 @@
             "type": "string"
           },
           "woke_ms": {
-            "format": "uint64",
             "minimum": 0,
             "type": [
               "integer",
@@ -6978,7 +6889,6 @@
           {
             "properties": {
               "pane": {
-                "format": "uint32",
                 "minimum": 0,
                 "type": "integer"
               },
@@ -7005,12 +6915,10 @@
                 "type": "string"
               },
               "next_offset": {
-                "format": "uint64",
                 "minimum": 0,
                 "type": "integer"
               },
               "pane": {
-                "format": "uint32",
                 "minimum": 0,
                 "type": "integer"
               },
@@ -7036,7 +6944,6 @@
                 ]
               },
               "exit": {
-                "format": "int32",
                 "type": [
                   "integer",
                   "null"
@@ -7046,17 +6953,14 @@
                 "type": "string"
               },
               "next_offset": {
-                "format": "uint64",
                 "minimum": 0,
                 "type": "integer"
               },
               "output_offset": {
-                "format": "uint64",
                 "minimum": 0,
                 "type": "integer"
               },
               "pane": {
-                "format": "uint32",
                 "minimum": 0,
                 "type": "integer"
               },
@@ -7077,7 +6981,6 @@
           {
             "properties": {
               "exit": {
-                "format": "int32",
                 "type": [
                   "integer",
                   "null"
@@ -7087,7 +6990,6 @@
                 "type": "string"
               },
               "pane": {
-                "format": "uint32",
                 "minimum": 0,
                 "type": "integer"
               },
@@ -7109,17 +7011,14 @@
                 "type": "string"
               },
               "next_offset": {
-                "format": "uint64",
                 "minimum": 0,
                 "type": "integer"
               },
               "offset": {
-                "format": "uint64",
                 "minimum": 0,
                 "type": "integer"
               },
               "pane": {
-                "format": "uint32",
                 "minimum": 0,
                 "type": "integer"
               },
@@ -7677,7 +7576,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "pane": {
-            "format": "uint32",
             "minimum": 0,
             "type": "integer"
           },
@@ -7762,7 +7660,6 @@
             "description": "Output quoted in a thread message: kept as text, so it stays readable\nafter the pane scrolls or closes.",
             "properties": {
               "pane": {
-                "format": "uint32",
                 "minimum": 0,
                 "type": "integer"
               },
@@ -7785,13 +7682,11 @@
               },
               "at": {
                 "description": "When it was posted (ms since the epoch).",
-                "format": "uint64",
                 "minimum": 0,
                 "type": "integer"
               },
               "id": {
                 "description": "1, 2, 3, ... within its thread.",
-                "format": "uint64",
                 "minimum": 0,
                 "type": "integer"
               },
@@ -7858,7 +7753,6 @@
                 "additionalProperties": false,
                 "properties": {
                   "pane": {
-                    "format": "uint32",
                     "minimum": 0,
                     "type": "integer"
                   }
@@ -7872,7 +7766,6 @@
                 "additionalProperties": false,
                 "properties": {
                   "session": {
-                    "format": "uint32",
                     "minimum": 0,
                     "type": "integer"
                   }
@@ -7888,7 +7781,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "last": {
-            "format": "uint64",
             "minimum": 0,
             "type": "integer"
           },
@@ -7981,7 +7873,6 @@
             "description": "Output quoted in a thread message: kept as text, so it stays readable\nafter the pane scrolls or closes.",
             "properties": {
               "pane": {
-                "format": "uint32",
                 "minimum": 0,
                 "type": "integer"
               },
@@ -8004,13 +7895,11 @@
               },
               "at": {
                 "description": "When it was posted (ms since the epoch).",
-                "format": "uint64",
                 "minimum": 0,
                 "type": "integer"
               },
               "id": {
                 "description": "1, 2, 3, ... within its thread.",
-                "format": "uint64",
                 "minimum": 0,
                 "type": "integer"
               },
@@ -8077,7 +7966,6 @@
                 "additionalProperties": false,
                 "properties": {
                   "pane": {
-                    "format": "uint32",
                     "minimum": 0,
                     "type": "integer"
                   }
@@ -8091,7 +7979,6 @@
                 "additionalProperties": false,
                 "properties": {
                   "session": {
-                    "format": "uint32",
                     "minimum": 0,
                     "type": "integer"
                   }
@@ -8661,7 +8548,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "block": {
-            "format": "uint32",
             "minimum": 0,
             "type": "integer"
           },
@@ -8841,7 +8727,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "pane": {
-            "format": "uint32",
             "minimum": 0,
             "type": "integer"
           },
@@ -8991,7 +8876,6 @@
             ],
             "properties": {
               "at_ms": {
-                "format": "uint64",
                 "minimum": 0,
                 "type": "integer"
               },
@@ -9017,7 +8901,6 @@
                 ]
               },
               "settled_ms": {
-                "format": "uint64",
                 "minimum": 0,
                 "type": [
                   "integer",
@@ -9090,7 +8973,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "block": {
-            "format": "uint32",
             "minimum": 0,
             "type": "integer"
           },
@@ -9312,7 +9194,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "block": {
-            "format": "uint32",
             "minimum": 0,
             "type": "integer"
           },
@@ -9323,7 +9204,6 @@
             "type": "string"
           },
           "pane": {
-            "format": "uint32",
             "minimum": 0,
             "type": "integer"
           },
@@ -9332,7 +9212,6 @@
             "type": "string"
           },
           "session": {
-            "format": "uint32",
             "minimum": 0,
             "type": "integer"
           },
@@ -9490,12 +9369,10 @@
             "type": "boolean"
           },
           "next_offset": {
-            "format": "uint64",
             "minimum": 0,
             "type": "integer"
           },
           "offset": {
-            "format": "uint64",
             "minimum": 0,
             "type": "integer"
           },
@@ -9503,7 +9380,6 @@
             "type": "string"
           },
           "size": {
-            "format": "uint64",
             "minimum": 0,
             "type": "integer"
           },
@@ -9576,7 +9452,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "answer_ms": {
-            "format": "uint64",
             "minimum": 0,
             "type": "integer"
           },
@@ -9591,7 +9466,6 @@
             "type": "string"
           },
           "woke_ms": {
-            "format": "uint64",
             "minimum": 0,
             "type": [
               "integer",
@@ -10078,7 +9952,6 @@
             ],
             "properties": {
               "at_ms": {
-                "format": "uint64",
                 "minimum": 0,
                 "type": "integer"
               },
@@ -10104,7 +9977,6 @@
                 ]
               },
               "settled_ms": {
-                "format": "uint64",
                 "minimum": 0,
                 "type": [
                   "integer",
@@ -10177,7 +10049,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "block": {
-            "format": "uint32",
             "minimum": 0,
             "type": "integer"
           },
@@ -10346,12 +10217,10 @@
             "type": "boolean"
           },
           "next_offset": {
-            "format": "uint64",
             "minimum": 0,
             "type": "integer"
           },
           "offset": {
-            "format": "uint64",
             "minimum": 0,
             "type": "integer"
           },
@@ -10359,7 +10228,6 @@
             "type": "string"
           },
           "size": {
-            "format": "uint64",
             "minimum": 0,
             "type": "integer"
           },
@@ -10706,7 +10574,6 @@
             "description": "Output quoted in a thread message: kept as text, so it stays readable\nafter the pane scrolls or closes.",
             "properties": {
               "pane": {
-                "format": "uint32",
                 "minimum": 0,
                 "type": "integer"
               },
@@ -10729,13 +10596,11 @@
               },
               "at": {
                 "description": "When it was posted (ms since the epoch).",
-                "format": "uint64",
                 "minimum": 0,
                 "type": "integer"
               },
               "id": {
                 "description": "1, 2, 3, ... within its thread.",
-                "format": "uint64",
                 "minimum": 0,
                 "type": "integer"
               },
@@ -10802,7 +10667,6 @@
                 "additionalProperties": false,
                 "properties": {
                   "pane": {
-                    "format": "uint32",
                     "minimum": 0,
                     "type": "integer"
                   }
@@ -10816,7 +10680,6 @@
                 "additionalProperties": false,
                 "properties": {
                   "session": {
-                    "format": "uint32",
                     "minimum": 0,
                     "type": "integer"
                   }
@@ -10832,7 +10695,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "last": {
-            "format": "uint64",
             "minimum": 0,
             "type": "integer"
           },
@@ -11101,7 +10963,6 @@
             ],
             "properties": {
               "at_ms": {
-                "format": "uint64",
                 "minimum": 0,
                 "type": "integer"
               },
@@ -11127,7 +10988,6 @@
                 ]
               },
               "settled_ms": {
-                "format": "uint64",
                 "minimum": 0,
                 "type": [
                   "integer",
@@ -11200,7 +11060,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "block": {
-            "format": "uint32",
             "minimum": 0,
             "type": "integer"
           },
@@ -11369,12 +11228,10 @@
             "type": "boolean"
           },
           "next_offset": {
-            "format": "uint64",
             "minimum": 0,
             "type": "integer"
           },
           "offset": {
-            "format": "uint64",
             "minimum": 0,
             "type": "integer"
           },
@@ -11382,7 +11239,6 @@
             "type": "string"
           },
           "size": {
-            "format": "uint64",
             "minimum": 0,
             "type": "integer"
           },

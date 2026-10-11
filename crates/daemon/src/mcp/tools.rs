@@ -1600,7 +1600,48 @@ pub(crate) fn output_schema<T: JsonSchema + 'static>() -> Schema {
     props["summary"] = json!({ "type": "string" });
     let required = s.entry("required").or_insert_with(|| Value::Array(vec![]));
     required.as_array_mut().expect("required is a list").push(Value::String("summary".into()));
+    let mut s = Value::Object(s);
+    strip_formats(&mut s);
+    let Value::Object(s) = s else { unreachable!() };
     Arc::new(s)
+}
+
+/// The formats JSON Schema 2020-12 defines; schemars' others (`uint32`,
+/// `int64`, `double`…) are Rust's, and clients warn about each one.
+const STANDARD_FORMATS: &[&str] = &[
+    "date-time",
+    "date",
+    "time",
+    "duration",
+    "email",
+    "idn-email",
+    "hostname",
+    "idn-hostname",
+    "ipv4",
+    "ipv6",
+    "uri",
+    "uri-reference",
+    "iri",
+    "iri-reference",
+    "uuid",
+    "uri-template",
+    "json-pointer",
+    "relative-json-pointer",
+    "regex",
+];
+
+/// Drops every `format` that isn't a standard one, anywhere in the schema.
+fn strip_formats(v: &mut Value) {
+    match v {
+        Value::Object(o) => {
+            if o.get("format").and_then(Value::as_str).is_some_and(|f| !STANDARD_FORMATS.contains(&f)) {
+                o.remove("format");
+            }
+            o.values_mut().for_each(strip_formats);
+        }
+        Value::Array(a) => a.iter_mut().for_each(strip_formats),
+        _ => {}
+    }
 }
 
 /// A result, with the `summary` sentence in it.
@@ -4003,6 +4044,21 @@ mod tests {
             assert_eq!(schema["type"], "object", "{}", tool.name);
             assert_eq!(schema["properties"]["summary"], json!({ "type": "string" }), "{}", tool.name);
             assert!(schema["required"].as_array().unwrap().contains(&json!("summary")), "{}", tool.name);
+            let mut found = vec![];
+            fn formats(v: &Value, found: &mut Vec<String>) {
+                match v {
+                    Value::Object(o) => {
+                        if let Some(f) = o.get("format").and_then(Value::as_str) {
+                            found.push(f.to_owned());
+                        }
+                        o.values().for_each(|x| formats(x, found));
+                    }
+                    Value::Array(a) => a.iter().for_each(|x| formats(x, found)),
+                    _ => {}
+                }
+            }
+            formats(&schema, &mut found);
+            assert!(found.iter().all(|f| STANDARD_FORMATS.contains(&f.as_str())), "{}: {found:?}", tool.name);
         }
         assert!(with >= 8, "only {with} tools list an outputSchema");
     }
