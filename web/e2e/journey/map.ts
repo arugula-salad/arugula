@@ -63,7 +63,6 @@ const J1: Record<string, string> = {
   joined: "account",
   "app-signin": "signin",
   "allow-app": "signin",
-  "approve-app": "signin",
   terminal: "terminal",
   restart: "terminal",
 };
@@ -163,7 +162,7 @@ const STEPS: Record<string, Record<string, string>> = {
  * docs/journey-steps.svg; each must be a step in `STEPS`.
  */
 const COMPARED: Record<string, string[]> = {
-  J1: ["approve-machine", "confirm-account", "allow-app", "approve-app"],
+  J1: ["approve-machine", "confirm-account"],
   J2a: ["confirm-share"],
   J6: ["tell-ben"],
 };
@@ -186,6 +185,7 @@ const UNCOVERED: [string, string][] = [
   ["Linux or Windows app", "the journeys run the Mac app or a browser"],
   ["Read-only share link", "Share's link for people with no login; no journey"],
   ["Dropped by control, join again", "control-dropped.spec covers the screens, not a person's path"],
+  ["App approved as a device after its sign-in", "the fallback when Allow can't sign the app's keys (#758); control.spec covers it, no journey"],
 ];
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);

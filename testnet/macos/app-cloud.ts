@@ -163,7 +163,9 @@ try {
     60_000,
   );
   check("signin opens control's page in the browser", true, id);
-  const shown = await alice.api<{ name: string; code: string }>(`/api/app-login/${id}`);
+  // alice allows it without signing the app's keys (a browser page would,
+  // #758): this checks the fallback, the window approved as a device.
+  const shown = await alice.api<{ name: string }>(`/api/app-login/${id}`);
   const { redirect } = await alice.api<{ redirect: string }>(`/api/app-login/${id}/allow`, {});
   // What alice's page does with it: open the app's loopback address.
   v("ssh", `curl -sS -o /dev/null -w '%{http_code}\\n' '${redirect}'`);

@@ -31,6 +31,9 @@ const APP = "http://tauri.localhost";
 const SIGNIN = readFileSync(resolve("../crates/desktop/dist/signin.html"), "utf8");
 const JOIN_POLL = 2_000;
 
+/** What signin.html hands `cloud_signin` (cloud.rs `Keys`). */
+type Keys = { noise: string; sign: string; secretNoise: string; secretSign: string };
+
 export class App {
   /** cloud.json's `signed_in`, kept across restarts. */
   private signedIn = new Set<string>();
@@ -66,11 +69,11 @@ export class App {
         // signin.html's invoke(), answered by the test (cloud.rs's commands).
         const call = (
           window as unknown as {
-            __appInvoke: (cmd: string) => Promise<unknown>;
+            __appInvoke: (cmd: string, args?: unknown) => Promise<unknown>;
           }
         ).__appInvoke;
         Object.assign(window, {
-          __TAURI__: { core: { invoke: (cmd: string) => call(cmd) } },
+          __TAURI__: { core: { invoke: (cmd: string, args?: unknown) => call(cmd, args) } },
         });
         // on_new_window gets the whole URL, #fragment and all; a request
         // (what route() sees) never carries the fragment. So new windows
@@ -103,7 +106,7 @@ export class App {
       },
       { name: app.deviceName(), control: person.world.control },
     );
-    await ctx.exposeBinding("__appInvoke", (source, cmd: string) => app.invoke(source.page, cmd));
+    await ctx.exposeBinding("__appInvoke", (source, cmd: string, args?: { keys?: Keys | null }) => app.invoke(source.page, cmd, args));
     await ctx.exposeBinding("__appNewWindow", (_source, url: string) => app.newWindow(url));
     await ctx.route("**/*", (route) => app.route(route));
     return app;
@@ -259,7 +262,7 @@ export class App {
     return p;
   }
 
-  private async invoke(page: Page, cmd: string): Promise<unknown> {
+  private async invoke(page: Page, cmd: string, args?: { keys?: Keys | null }): Promise<unknown> {
     if (cmd === "cloud_status") {
       await this.read();
       return {
@@ -275,12 +278,14 @@ export class App {
       await page.goto(this.pageAt("/"));
       return null;
     }
-    if (cmd === "cloud_signin") return this.signin(page);
+    if (cmd === "cloud_signin") return this.signin(page, args?.keys ?? null);
     throw new Error(`no command ${cmd}`);
   }
 
-  /** cloud.rs `cloud_signin` and `await_grant`. */
-  private async signin(page: Page) {
+  /** cloud.rs `cloud_signin` and `await_grant`: the window's keys (from
+   * signin.html) go with the ask, and come back to control's page in the
+   * window with the certificate the browser signed for them (#758). */
+  private async signin(page: Page, keys: Keys | null) {
     const control = this.control;
     if (!control) throw "this machine isn't joined to Arugula cloud";
     const verifier = randomBytes(32).toString("hex");
@@ -290,10 +295,12 @@ export class App {
       const u = new URL(req.url!, "http://127.0.0.1");
       const grant = u.pathname === "/arugula-signin" && u.searchParams.get("ticket") === ticket ? (u.searchParams.get("grant") ?? "") : "";
       if (!/^[0-9a-f]+$/.test(grant)) return res.writeHead(404).end();
+      const cert = u.searchParams.get("cert") ?? "";
       res.writeHead(303, { location: `${control}/#app-done` }).end();
       grants.close();
       this.signedIn.add(control);
-      void page.goto(`${control}/#app-redeem=${ticket}.${grant}.${verifier}`).catch(() => {});
+      const handed = keys && /^[A-Za-z0-9_-]+$/.test(cert) ? `.${keys.secretNoise}.${keys.secretSign}.${cert}` : "";
+      void page.goto(`${control}/#app-redeem=${ticket}.${grant}.${verifier}${handed}`).catch(() => {});
     });
     this.grants.push(grants);
     await new Promise<void>((ok) => grants.listen(0, "127.0.0.1", ok));
@@ -301,17 +308,23 @@ export class App {
     const r = await fetch(`${control}/auth/app`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: this.deviceName(), challenge, port }),
+      body: JSON.stringify({
+        name: this.deviceName(),
+        challenge,
+        port,
+        features: ["no-code"],
+        ...(keys ? { device: { noise: keys.noise, sign: keys.sign } } : {}),
+      }),
     });
     const t = (await r.json()) as {
       ticket: string;
-      code: string;
+      code?: string;
       url: string;
       error?: string;
     };
     if (!r.ok) throw t.error ?? "control refused the sign-in";
     ticket = t.ticket;
     void this.outside(t.url);
-    return { code: t.code, url: t.url };
+    return { code: t.code ?? null, url: t.url };
   }
 }

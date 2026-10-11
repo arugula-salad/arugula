@@ -173,6 +173,34 @@ export async function loadKeys(): Promise<DeviceKeys> {
   return keys;
 }
 
+/** #758: keys made elsewhere (the desktop app's sign-in page, PKCS#8) as
+ * this browser's, replacing any it had: imported non-extractable, checked
+ * against the public keys given (a certificate's), and stored as
+ * `loadKeys` stores its own (wrapped where it must). Throws if they don't
+ * match or can't be kept. */
+export async function adoptKeys(noise: Uint8Array<ArrayBuffer>, sign: Uint8Array<ArrayBuffer>, noisePub: string, signPub: string): Promise<DeviceKeys> {
+  const make = async (extractable: boolean): Promise<DeviceKeys> => ({
+    noise: {
+      privateKey: await subtle.importKey("pkcs8", noise, { name: "X25519" }, extractable, ["deriveBits"]),
+      publicKey: await subtle.importKey("raw", unhex(noisePub), { name: "X25519" }, true, []),
+    },
+    sign: {
+      privateKey: await subtle.importKey("pkcs8", sign, { name: "Ed25519" }, extractable, ["sign"]),
+      publicKey: await subtle.importKey("raw", unhex(signPub), { name: "Ed25519" }, true, ["verify"]),
+    },
+    id: await deviceId(unhex(noisePub), unhex(signPub)),
+    noisePub,
+    signPub,
+  });
+  const why = await checkKeys(await make(false));
+  if (why) throw new Error(`they aren't the certificate's keys: ${why}`);
+  let keys = await storeTried(() => make(false));
+  if (typeof keys === "string") keys = await storeTried(async () => wrapKeys(await make(true)));
+  if (typeof keys === "string") throw new Error(`this browser can't keep them (${keys})`);
+  await navigator.storage?.persist?.().catch(() => false);
+  return keys;
+}
+
 export async function signText(keys: DeviceKeys, text: string): Promise<string> {
   return hex(new Uint8Array(await subtle.sign("Ed25519", keys.sign.privateKey, new TextEncoder().encode(text))));
 }

@@ -10,7 +10,7 @@
 // daemon can't be reached by a device it hasn't approved).
 
 import { certBody, deviceId, evaluate, hex, joinCode, normalizeCode, type Cert, type Revocation, revocationBody, unhex } from "./e2e/cert.ts";
-import { forget, loadEnrollment, loadKeys, saveEnrollment, saveWorkerDirectory, signText, type DeviceKeys, type Enrollment } from "./e2e/keys.ts";
+import { adoptKeys, forget, loadEnrollment, loadKeys, saveEnrollment, saveWorkerDirectory, signText, type DeviceKeys, type Enrollment } from "./e2e/keys.ts";
 import { newKeyPair } from "./e2e/noise.ts";
 import type { E2ETarget } from "./client";
 import { desktopApp } from "./desktop";
@@ -313,6 +313,40 @@ const SELF_REFUSED = new Set(["approver_untrusted", "bad_signature"]);
  * form (#327). */
 const RECOVER_KEY = "arugula.control.recover";
 
+/** Where `allowAppLogin` notes that it signed the app's certificate, for
+ * the page the app sends this tab back to (#758). */
+const APP_SIGNED_KEY = "arugula.control.app-signed";
+
+let appSigned: boolean | null = null;
+
+/** Whether this tab just signed the desktop app in as a device. Taken out
+ * of sessionStorage on the first call, so a later reload doesn't say it
+ * again, and kept for the rest of this page load: the prompts mount afresh
+ * when the page picks a machine (`ControlRoot` is keyed by the client's
+ * base), and the second mount must say the same. */
+export function signedAppIn(): boolean {
+  if (appSigned !== null) return appSigned;
+  try {
+    appSigned = sessionStorage.getItem(APP_SIGNED_KEY) === "1";
+    sessionStorage.removeItem(APP_SIGNED_KEY);
+  } catch {
+    appSigned = false;
+  }
+  return appSigned;
+}
+
+/** A desktop app asking to sign in (`GET /api/app-login/{id}`). */
+export interface AppLogin {
+  name: string;
+  allowed: boolean;
+  from: string;
+  same_network: boolean;
+  /** Only from an app before #758: a code it shows too. */
+  code?: string;
+  /** From #758 on: the public half of the app's device keys, hex. */
+  device?: { noise: string; sign: string };
+}
+
 /** The page came from forgetting a stale browser: offer the recovery code
  * at once. Read once. */
 export function cameToRecover(): boolean {
@@ -424,16 +458,44 @@ export function inApp(): boolean {
   return !!desktopApp();
 }
 
+/** What the browser that allowed the desktop app's sign-in hands the app
+ * (#758): a certificate for the app's keys, signed by that browser, and
+ * the account root it pinned. */
+export interface AppEnrollment {
+  cert: Cert;
+  root: string;
+}
+
+/** The app's keys (PKCS#8) and what came with them, from the redeem link. */
+interface AppHandOff extends AppEnrollment {
+  noise: Uint8Array<ArrayBuffer>;
+  sign: Uint8Array<ArrayBuffer>;
+}
+
+const b64url = (s: string) => btoa(String.fromCharCode(...new TextEncoder().encode(s))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const unb64url = (s: string) => new TextDecoder().decode(Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0)));
+
 /** M48: the desktop app's window, after the person allowed its sign-in in
  * their browser: `#app-redeem=<ticket>.<grant>.<verifier>` from the app,
  * posted here for the session cookie. Only in the app's own window (a link
- * to this in a browser would sign it in as someone else). */
-async function redeemAppLogin() {
-  const m = /^#app-redeem=([0-9a-f]+)\.([0-9a-f]+)\.([0-9a-f]+)$/.exec(location.hash);
-  if (!m) return;
+ * to this in a browser would sign it in as someone else). #758: when the
+ * browser that allowed it signed the app's certificate, the link also
+ * carries the keys the app made (`.<noise>.<sign>.<cert>`): the window
+ * takes them as its own. */
+async function redeemAppLogin(): Promise<AppHandOff | null> {
+  const m = /^#app-redeem=([0-9a-f]+)\.([0-9a-f]+)\.([0-9a-f]+)(?:\.([0-9a-f]+)\.([0-9a-f]+)\.([A-Za-z0-9_-]+))?$/.exec(location.hash);
+  if (!m) return null;
   history.replaceState(null, "", location.pathname + location.search);
-  if (!inApp()) return;
+  if (!inApp()) return null;
   await api(`/auth/app/${m[1]}/redeem`, { grant: m[2], verifier: m[3] }).catch(() => {});
+  if (!m[6]) return null;
+  try {
+    const e = JSON.parse(unb64url(m[6])) as AppEnrollment;
+    if (typeof e.root !== "string" || typeof e.cert?.device !== "string") return null;
+    return { cert: e.cert, root: e.root, noise: unhex(m[4]), sign: unhex(m[5]) };
+  } catch {
+    return null;
+  }
 }
 
 /** Someone offering to share a session on their machine with this
@@ -515,9 +577,25 @@ export class ControlSession {
   /** Sign-in state, enrollment, then the directory, kept fresh. */
   async boot() {
     try {
-      await redeemAppLogin();
+      const handed = await redeemAppLogin();
       this.keys = await loadKeys();
       this.enrollment = await loadEnrollment(location.origin);
+      // #758: the app's window, handed its keys and a certificate for them
+      // by the browser that allowed its sign-in. Taken unless the window is
+      // already a working device of that account.
+      const e = this.enrollment;
+      if (handed && (!e || e.account !== handed.cert.account || e.cert.device !== this.keys.id)) {
+        try {
+          this.keys = await adoptKeys(handed.noise, handed.sign, handed.cert.noise, handed.cert.sign);
+          this.handed = handed;
+          if (e?.cert.device !== this.keys.id) this.enrollment = undefined;
+        } catch (err) {
+          // Not keys for that certificate (or this webview can't keep
+          // them): ask to be approved, as before.
+          console.warn("arugula: not using the keys the sign-in handed over:", err);
+          this.keys = await loadKeys();
+        }
+      }
       if (this.enrollment && this.enrollment.cert.device !== this.keys.id) {
         // #94: the key this browser enrolled with didn't come back from
         // its storage (WebKit loses X25519 keys there), so it would sign
@@ -580,13 +658,23 @@ export class ControlSession {
       cert.approver = k.id;
       cert.sig = await signText(k, certBody(cert));
     }
+    // #758: signed already by the browser that allowed the app's sign-in.
+    const handed = this.handed;
+    this.handed = null;
+    const signed = root !== null && handed?.cert.device === k.id && handed.cert.account === this.account ? handed : null;
     this.request = cert;
     // #326: here to approve a machine, which this browser can't until it's
     // one of the account's devices: the device that approves it is shown
     // the machine alongside, and approves both at once.
     const join = joinInHash();
     const ask = () => api<{ approved: boolean; cert?: Cert }>("/api/devices", { cert, join });
-    let r = await ask();
+    let r = signed ? await api<{ approved: boolean; cert?: Cert }>("/api/devices", { cert: signed.cert }) : await ask();
+    if (signed && !r.approved) {
+      // An older control keeps it waiting: approve it with the same
+      // signature (a control that refused it leaves it to a device).
+      await api(`/api/devices/${k.id}/approve`, { cert: signed.cert }).catch(() => {});
+      r = await api<{ approved: boolean; cert: Cert }>(`/api/devices/${k.id}`).catch(() => r);
+    }
     if (!r.approved) this.brought = join;
     while (!r.approved) {
       this.set("waiting");
@@ -607,6 +695,9 @@ export class ControlSession {
     // Pin the root as control reports it now, and check that our own
     // certificate chains back to it.
     const all = await api<{ trust: { account: string; root: string }; certs: Cert[]; revocations: Revocation[] }>("/api/devices");
+    // #758: the app's window takes the root the browser that signed it
+    // pinned, not control's word for it.
+    if (signed && all.trust.root !== signed.root) throw new Error("control says this account's root is a different device than the browser that signed this app in has: not trusting it");
     const trusted = await evaluate(all.trust, all.certs, all.revocations);
     const mine = trusted.get(k.id);
     if (!mine) throw new Error("control approved this device, but the approval doesn't check out");
@@ -645,6 +736,10 @@ export class ControlSession {
 
   /** This browser's request, as it asks to join. */
   private request: Cert | null = null;
+
+  /** #758: the app's window's certificate, as the browser that allowed
+   * its sign-in signed it, until it enrolls with it. */
+  private handed: AppHandOff | null = null;
 
   /** #326: the machine's join code this browser waited with, which the
    * device that approved it may have approved alongside. */
@@ -1211,16 +1306,56 @@ export class ControlSession {
 
   /** Turn a daemon's join down: it stops waiting. */
   /** M48: a desktop app asking to sign in as this account (`#app=`):
-   * where it asked from, and whether that's this browser's network. */
-  async showAppLogin(id: string): Promise<{ name: string; code: string; allowed: boolean; from: string; same_network: boolean }> {
+   * where it asked from, and whether that's this browser's network. An
+   * app from #758 on sends its device keys; one from before has a code. */
+  async showAppLogin(id: string): Promise<AppLogin> {
     return api(`/api/app-login/${encodeURIComponent(id)}`);
   }
 
+  /** Whether allowing `a` also makes the app one of the account's devices
+   * (#758): it sent keys, and this browser is a device that can sign. */
+  signsApp(a: AppLogin): boolean {
+    return !!a.device && !!this.enrollment && this.phase === "ready" && !this.rootMismatch;
+  }
+
   /** Allow it: control answers with the app's loopback address, which this
-   * browser hands the grant to (only the app on this computer hears it). */
-  async allowAppLogin(id: string): Promise<string> {
+   * browser hands the grant to (only the app on this computer hears it).
+   * #758: with a certificate for the app's keys, signed here, and the root
+   * this browser pinned. They go only to the app: if control showed keys
+   * of its own, the app finds the certificate isn't for its keys. */
+  async allowAppLogin(id: string, a: AppLogin): Promise<string> {
     const r = await api<{ redirect: string }>(`/api/app-login/${encodeURIComponent(id)}/allow`, {});
-    return r.redirect;
+    const url = new URL(r.redirect);
+    if (url.protocol !== "http:" || url.hostname !== "127.0.0.1" || url.pathname !== "/arugula-signin")
+      throw new Error("control sent the sign-in somewhere other than the app on this computer: not following it");
+    if (a.device && this.signsApp(a)) {
+      try {
+        const cert: Cert = {
+          v: 1,
+          account: this.account,
+          device: await deviceId(unhex(a.device.noise), unhex(a.device.sign)),
+          kind: "browser",
+          name: a.name.slice(0, 64),
+          noise: a.device.noise,
+          sign: a.device.sign,
+          created: Date.now(),
+          approver: this.keys.id,
+          sig: "",
+        };
+        cert.sig = await signText(this.keys, certBody(cert));
+        const handOff: AppEnrollment = { cert, root: this.enrollment!.root };
+        url.searchParams.set("cert", b64url(JSON.stringify(handOff)));
+        try {
+          sessionStorage.setItem(APP_SIGNED_KEY, "1");
+        } catch {
+          // The page after says less.
+        }
+      } catch (e) {
+        // Signed in all the same; the app asks to be approved instead.
+        console.warn("arugula: couldn't sign the app's certificate:", e);
+      }
+    }
+    return url.href;
   }
 
   /** Answer a share someone offered: accepted, it's listed and reachable. */

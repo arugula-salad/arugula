@@ -3,7 +3,7 @@
 // list, and how to add a machine.
 
 import { useEffect, useState } from "preact/hooks";
-import { AlongsideError, api, cameToRecover, deviceName, inApp, inviteInHash, joinInHash, passkeyRegister, passkeySignIn, previewInvite, RefusedError, shownName, signInNext, type ControlSession, type JoinRequest } from "../control";
+import { AlongsideError, api, cameToRecover, deviceName, inApp, inviteInHash, joinInHash, passkeyRegister, passkeySignIn, previewInvite, RefusedError, shownName, signedAppIn, signInNext, type AppLogin, type ControlSession, type JoinRequest } from "../control";
 import { fingerprint, normalizeCode, type Cert } from "../e2e/cert.ts";
 import { useSubscribe } from "./hooks";
 import { directory } from "../hosts";
@@ -873,12 +873,14 @@ function CliJoin({ s, j, cancel, refused, failed }: { s: ControlSession; j: Join
   );
 }
 
-/** M48: the desktop app asks to sign in as this account. Its device key
- * is approved separately afterwards (the "New device?" prompt), so this
- * only lets it ask. Allowing hands a grant to the app on this computer
- * (its loopback port): an app elsewhere that sent this link gets nothing. */
+/** M48: the desktop app asks to sign in as this account. Allowing hands a
+ * grant to the app on this computer (its loopback port): an app elsewhere
+ * that sent this link gets nothing, so there's nothing to compare (#758).
+ * From a device, it also signs the app's certificate, so the app is a
+ * device at once; otherwise its window asks to be approved afterwards (the
+ * "New device?" prompt). An app from before #758 still shows a code. */
 function AppLoginPrompt({ s, id }: { s: ControlSession; id: string }) {
-  const [a, setA] = useState<{ name: string; code: string; allowed: boolean; from: string; same_network: boolean } | null>(null);
+  const [a, setA] = useState<AppLogin | null>(null);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   useEffect(() => {
@@ -893,7 +895,14 @@ function AppLoginPrompt({ s, id }: { s: ControlSession; id: string }) {
       ) : a ? (
         <>
           <p>
-            <b data-app-login-name>{a.name}</b> asks to sign in as you. Check the app shows <b data-app-login-code={a.code}>{a.code}</b>.
+            <b data-app-login-name>{a.name}</b> asks to sign in as you.
+            {a.code ? (
+              <>
+                {" "}
+                Check the app shows <b data-app-login-code={a.code}>{a.code}</b>.
+              </>
+            ) : null}
+            {s.signsApp(a) ? <span data-app-login-device> Allowing also makes it one of your devices, so its window reaches your machines.</span> : null}
           </p>
           {a.same_network ? null : (
             <p class="control-error" data-app-login-elsewhere>
@@ -914,7 +923,7 @@ function AppLoginPrompt({ s, id }: { s: ControlSession; id: string }) {
                 setBusy(true);
                 try {
                   // To the app's loopback port; it sends this page back.
-                  location.href = await s.allowAppLogin(id);
+                  location.href = await s.allowAppLogin(id, a);
                 } catch (e) {
                   setErr((e as Error).message);
                   setBusy(false);
@@ -932,8 +941,10 @@ function AppLoginPrompt({ s, id }: { s: ControlSession; id: string }) {
   );
 }
 
-/** Back from handing the app its grant. */
+/** Back from handing the app its grant (and, from a device, its
+ * certificate). */
 function AppLoginDone() {
+  const [signed] = useState(signedAppIn);
   useEffect(() => {
     // Out of the way of the device prompt that follows.
     const t = setTimeout(clearHash, 6000);
@@ -942,10 +953,17 @@ function AppLoginDone() {
   return (
     <Modal close={clearHash}>
       <h2>Sign in the app?</h2>
-      <p data-app-login-done>
-        Signed in. Next the app's window asks to be approved as a device, so it reaches your machines: the prompt shows here in a moment. Its own
-        machine joins separately, with a code, and doesn't need this.
-      </p>
+      {signed ? (
+        <p data-app-login-done>
+          Signed in, and the app is one of your devices now: its window reaches your machines. Its own machine joins separately, with a code, and
+          doesn't need this.
+        </p>
+      ) : (
+        <p data-app-login-done>
+          Signed in. Next the app's window asks to be approved as a device, so it reaches your machines: the prompt shows here in a moment. Its own
+          machine joins separately, with a code, and doesn't need this.
+        </p>
+      )}
       <div class="prompt-buttons">
         <button class="primary" onClick={clearHash}>
           Done

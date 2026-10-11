@@ -31,7 +31,7 @@ export async function clickTerminal(page: Page) {
 
 /** J1's steps, recorded in `j` as `actor`, on `app` (whose machine is
  * `machine`). Leaves the app open on control's page, signed in. */
-export async function firstRun(j: Journey, world: World, app: App, actor: string, machine: string) {
+export async function firstRun(j: Journey, app: App, actor: string, machine: string) {
   const step = (
     id: string,
     title: string,
@@ -46,7 +46,6 @@ export async function firstRun(j: Journey, world: World, app: App, actor: string
   const start = () => win().getByRole("dialog", { name: "Getting started" });
   let machineCode = "";
   let account = "";
-  let appCode = "";
 
   await j.step(
     {
@@ -214,41 +213,26 @@ export async function firstRun(j: Journey, world: World, app: App, actor: string
       await expect(p.getByRole("heading", { name: "This window, every machine" })).toBeVisible({ timeout: 20_000 });
       const before = app.opened.length;
       await p.getByRole("button", { name: "Sign the app in" }).click();
-      await expect(p.getByText("Check your browser shows")).toBeVisible({
-        timeout: 20_000,
-      });
-      appCode = await read(p.getByText("Check your browser shows").locator(".."), /\b[A-Z0-9-]{4,}\b/);
+      // #758: no code to read; the browser opens on the sign-in.
+      await expect(p.getByText("Allow it in your browser.")).toBeVisible({ timeout: 20_000 });
+      await expect(p.getByText("Check your browser shows")).toBeHidden();
       await expect.poll(() => app.opened.length, { timeout: 10_000 }).toBeGreaterThan(before);
     },
   );
 
+  // #758: Allow signs the app in and makes it a device: nothing to
+  // compare, and no "New device?" to approve after.
   await step(
     "allow-app",
-    "Allow the app in the browser, checking its code",
+    "Allow the app in the browser",
     "browser",
     tab,
     (p) => p.getByRole("heading", { name: "Sign in the app?" }),
     async (p) => {
-      const shown = (await p.getByText(/asks to sign in as you/).innerText()).includes(appCode);
-      j.compared(`app sign-in code ${appCode} (app) shown in the browser: ${shown}`);
-      expect(shown).toBe(true);
+      await expect(p.getByText(/Allowing also makes it one of your devices/)).toBeVisible();
       await p.getByRole("button", { name: "Allow" }).click();
-    },
-  );
-
-  let appFp = "";
-  await step(
-    "approve-app",
-    "Approve the app as a device, checking its fingerprint",
-    "browser",
-    () => app.opened.find((t) => !t.isClosed() && t.url().startsWith(world.control)) ?? tab(),
-    (p) => p.getByRole("heading", { name: "New device?" }),
-    async (p) => {
-      appFp = await read(win().getByText("It shows this fingerprint").locator(".."), FP);
-      const shown = await read(p.getByRole("heading", { name: "New device?" }).locator(".."), FP);
-      j.compared(`app device ${appFp} (app) = ${shown} (browser)`);
-      expect(shown).toBe(appFp);
-      await p.getByRole("button", { name: "Approve" }).click();
+      await expect(p.getByText(/the app is one of your devices now/)).toBeVisible({ timeout: 20_000 });
+      await expect(win().getByText("Approve this app as a device")).toBeHidden();
     },
   );
 
@@ -297,7 +281,7 @@ export async function onboarded(world: World, browser: Browser, info: TestInfo, 
   const j = new Journey(`${journey}-setup-${login}`, `${login}'s first run (J1), before ${journey}`, info, [login]);
   app.onOutside = (url) => j.opened(url);
   try {
-    await firstRun(j, world, app, login, machine);
+    await firstRun(j, app, login, machine);
   } finally {
     await j.attach();
   }
