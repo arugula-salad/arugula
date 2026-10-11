@@ -2,6 +2,7 @@
 // drives each pane, handing control over, following someone, and sharing a
 // session.
 
+import { OPS, opPath } from "../ops";
 import { useEffect, useLayoutEffect, useState } from "preact/hooks";
 import type { Client } from "../client";
 import type { InviteRequest, Invited, PaneId, Presence, Role, SessionId } from "../proto";
@@ -264,13 +265,13 @@ export function ShareDialog({ client }: { client: Client }) {
   // After a share with someone outside your teams: what they see next.
   const [asked, setAsked] = useState<string | null>(null);
   const load = async (s: SessionId | null = session) => {
-    const r = await client.request("GET", "/api/acl");
+    const r = await client.request(OPS["acl.get"].method, opPath("acl.get"));
     if (r.ok) {
       const v = await r.json<{ grants: Grant[]; callers?: Callers }>();
       setGrants(v.grants);
       setCallers(v.callers ?? { shared: [], tagged: [] });
     }
-    const h = await client.request("GET", "/api/host");
+    const h = await client.request(OPS["host.get"].method, opPath("host.get"));
     if (h.ok) setAddress((await h.json<{ tailnet_url?: string }>()).tailnet_url ?? null);
     if (s !== null) {
       const x = await client.request("GET", `/api/sessions/${s}/secrets`);
@@ -307,7 +308,7 @@ export function ShareDialog({ client }: { client: Client }) {
   const machine = control && client.e2e ? (control.daemons.find((d) => d.id === client.e2e!.daemon.id)?.name ?? "this machine") : null;
   const mine = grants.filter((g) => g.session === session);
   const set = async (principal: string, r: Role | null, withHistory = true, extra: Record<string, string> = {}) => {
-    const res = await client.request("POST", "/api/acl", { session, principal, role: r, history: withHistory, ...extra });
+    const res = await client.request(OPS["acl.set"].method, opPath("acl.set"), { session, principal, role: r, history: withHistory, ...extra });
     if (!res.ok) setErr((await res.json<{ error?: string }>().catch(() => null))?.error ?? `HTTP ${res.status}`);
     await load();
   };
@@ -317,7 +318,7 @@ export function ShareDialog({ client }: { client: Client }) {
   const invite = async (whom: string, extra: Record<string, string> = {}) => {
     setErr("");
     setTold(null);
-    const res = await client.request("POST", "/api/invite", { session, who: whom, role, history, note, ...extra } satisfies InviteRequest);
+    const res = await client.request(OPS["invite.send"].method, opPath("invite.send"), { session, who: whom, role, history, note, ...extra } satisfies InviteRequest);
     const body = await res.json<Partial<Invited> & { error?: string }>().catch(() => null);
     if (res.status === 404 && control && client.e2e && !extra.root) {
       control.person(whom).then((p) => setFound({ ...p, notify: true }), (x: Error) => setErr(x.message));

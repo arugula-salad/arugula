@@ -1,5 +1,6 @@
 // Arugula web client: tabs and splits of terminals owned by the daemon.
 
+import { OPS, opPath } from "./ops";
 import { setLending } from "./hand";
 import type { TeamPins, TeamPinsRequest } from "./proto";
 import { render } from "preact";
@@ -109,13 +110,13 @@ async function syncPins(c: Client, session: ControlSession) {
   const pins = session.teamPins();
   let drop: string[] = [];
   if (session.teamsLoaded) {
-    const r = await c.request("GET", "/api/team-pins");
+    const r = await c.request(OPS["team_pins.get"].method, opPath("team_pins.get"));
     const had = r.ok ? ((await r.json<TeamPins>()).pins ?? {}) : {};
     const mine = new Set(session.teams.map((t) => t.team));
     drop = Object.keys(had).filter((t) => !mine.has(t));
   }
   if (!Object.keys(pins).length && !drop.length) return;
-  const r = await c.request("POST", "/api/team-pins", { pins, drop } satisfies TeamPinsRequest);
+  const r = await c.request(OPS["team_pins.set"].method, opPath("team_pins.set"), { pins, drop } satisfies TeamPinsRequest);
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
 }
 

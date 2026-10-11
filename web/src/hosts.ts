@@ -10,6 +10,7 @@
 // it also has a tailnet URL, that's tried once it's awake, and used when it
 // answers within about 5s (S4: wake through the provider first, because
 // tailnet packets don't wake a sleeping sandbox).
+import { opPath } from "./ops";
 import type { HostInfo } from "./proto";
 
 export interface ProviderRef {
@@ -168,7 +169,7 @@ export class HostDirectory {
     const until = Date.now() + 5000;
     while (Date.now() < until && this.shown === name) {
       try {
-        const res = await fetch(`${url}/api/host`, { signal: AbortSignal.timeout(1500) });
+        const res = await fetch(`${url}${opPath("host.get")}`, { signal: AbortSignal.timeout(1500) });
         if (res.ok) {
           this.upgraded.add(name);
           this.emit();
@@ -199,7 +200,7 @@ export class HostDirectory {
   async refresh() {
     if (this.control) return;
     try {
-      const res = await fetch("/api/hosts");
+      const res = await fetch(opPath("hosts.list"));
       if (!res.ok) throw new Error(String(res.status));
       this.list = (await res.json()) as HostList;
       this.stale = false;
@@ -213,7 +214,7 @@ export class HostDirectory {
       this.stale = true;
     }
     try {
-      const res = await fetch("/api/host");
+      const res = await fetch(opPath("host.get"));
       if (res.ok) this.joined = ((await res.json()) as Partial<HostInfo>).control ?? null;
     } catch {
       // Keep what we knew.

@@ -11,6 +11,7 @@
 // asked again every half minute, so a drop shows within a minute or two of
 // control's.
 
+import { opPath } from "../ops";
 import { useEffect } from "preact/hooks";
 import type { Client } from "../client";
 import { desktopApp } from "../desktop";
@@ -45,7 +46,7 @@ export function setControlState(s: ControlState | null | undefined) {
 }
 
 async function fetchState() {
-  const r = await fetch("/api/host").catch(() => null);
+  const r = await fetch(opPath("host.get")).catch(() => null);
   if (!r?.ok) return;
   const host = (await r.json().catch(() => null)) as { control_state?: ControlState } | null;
   // An older daemon, or not the owner: nothing to say.

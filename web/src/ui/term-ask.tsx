@@ -8,6 +8,7 @@
 // people don't answer differently (the first answer wins). Once answered,
 // the card says who did, and offers to send the agent a follow-up.
 
+import { OPS, opPath } from "../ops";
 import { useEffect, useState } from "preact/hooks";
 import { openMenu } from "./menu";
 import type { Client } from "../client";
@@ -110,7 +111,7 @@ export function TermDiff({ client, id, diff }: { client: Client; id: PaneId; dif
   useEffect(() => {
     if (!owner) return;
     void client
-      .request("GET", "/api/ide")
+      .request(OPS["ide.get"].method, opPath("ide.get"))
       .then((r) => (r.ok ? r.json<{ others?: { name: string; alive: boolean }[] }>() : null))
       .then((v) => setOthers([...new Set((v?.others ?? []).filter((o) => o.alive).map((o) => o.name))]))
       .catch(() => {});
@@ -137,7 +138,7 @@ export function TermDiff({ client, id, diff }: { client: Client; id: PaneId; dif
                 e,
                 others.map((name) => ({
                   label: `Send diffs to ${name} from now on`,
-                  run: () => void client.request("PUT", "/api/ide", { diffs: name }).then(() => client.toast(`Claude Code's diffs go to ${name} now`)),
+                  run: () => void client.request(OPS["ide.set"].method, opPath("ide.set"), { diffs: name }).then(() => client.toast(`Claude Code's diffs go to ${name} now`)),
                 })),
               )
             }
@@ -157,7 +158,7 @@ export function TermDiff({ client, id, diff }: { client: Client; id: PaneId; dif
           await client.act({ action, pane: id, id: diff.id, ...extra });
         }}
         full={async () => {
-          const res = await client.request("GET", `/api/panes/${id}/diff`);
+          const res = await client.request(OPS["pane.diff"].method, opPath("pane.diff", { id }));
           return res.ok ? (await res.json<{ new: string }>()).new : null;
         }}
       />

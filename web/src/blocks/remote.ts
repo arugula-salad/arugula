@@ -13,6 +13,7 @@
 // too, when the host can be reached; a pane its host closed (it exited, or
 // was closed on the host's own page) loses its place here.
 
+import { OPS, opPath } from "../ops";
 import { Client, paneIds } from "../client";
 import { directory } from "../hosts";
 import type { OpenRequest, PaneId, RemoteRef, RunRequest, RunResponse, TabId } from "../proto";
@@ -142,7 +143,7 @@ export async function newRemote(home: Client, host: string, where: { split?: Pan
   if (failed) {
     home.toast(failed);
     // Nothing here shows it: don't leave it running there.
-    void there.request("POST", `/api/panes/${pane}/close`).catch(() => {});
+    void there.request(OPS["pane.close"].method, opPath("pane.close", { id: pane })).catch(() => {});
   }
 }
 

@@ -11,6 +11,7 @@
 // asked, and one that doesn't answer in a few seconds says so. Opening
 // one of another host's opens it on that host and shows it there.
 
+import { OPS, opPath } from "../ops";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { ApiResponse, Client } from "../client";
 import { directory } from "../hosts";
@@ -151,7 +152,7 @@ function Picker({ client, where, phone, close }: { client: Client; where: Conver
     const q = new URLSearchParams({ limit: "1000" });
     if (all) q.set("all", "1");
     if (liveOnly) q.set("live", "1");
-    const path = `/api/conversations?${q}`;
+    const path = `${opPath("conversations.list")}?${q}`;
     const others = multi ? fleet!.list.filter((h) => h.name !== here) : [];
     const start: HostConvs[] = [
       { host: here, state: "reading", list: [] },
@@ -165,7 +166,7 @@ function Picker({ client, where, phone, close }: { client: Client; where: Conver
     const set = (h: HostConvs) => gen === loads.current && setHosts((cur) => cur && cur.map((x) => (x.host === h.host ? h : x)));
     for (const h of start) {
       if (h.state !== "reading") continue;
-      const ask: Promise<ApiResponse> = h.host === here ? client.request("GET", path) : fleet!.request(h.host, "GET", path);
+      const ask: Promise<ApiResponse> = h.host === here ? client.request(OPS["conversations.list"].method, path) : fleet!.request(h.host, OPS["conversations.list"].method, path);
       within(ask, HOST_MS)
         .then(async (res) => {
           if (!res.ok) throw new Error(`couldn't list them (${res.status})`);
@@ -264,7 +265,7 @@ function Picker({ client, where, phone, close }: { client: Client; where: Conver
     }
     setBusy(true);
     try {
-      const res = await within(f.request(host, "POST", "/api/conversations/open", { id: c.id, then: then ?? null } satisfies OpenConversationRequest), HOST_MS);
+      const res = await within(f.request(host, OPS["conversation.open"].method, opPath("conversation.open"), { id: c.id, then: then ?? null } satisfies OpenConversationRequest), HOST_MS);
       const v = await res.json<Partial<OpenConversationResponse>>().catch(() => null);
       if (!res.ok || typeof v?.block !== "number") {
         client.toast(v?.error ?? `couldn't open it on ${host} (${res.status})`);

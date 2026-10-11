@@ -3,6 +3,7 @@
 // in the main bundle, so a menu can offer them without loading Labs (the
 // blocks themselves are drawn by ./lazy and the Labs chunk).
 
+import { OPS, opPath } from "../ops";
 import { useEffect, useState } from "preact/hooks";
 import type { Client } from "../client";
 import type { PaneId } from "../proto";
@@ -22,7 +23,7 @@ export async function isWorkspace(client: Client, pane: PaneId, dir: string): Pr
     let yes = false;
     for (const file of ["chant.workspace.json", "chant.workspace.jsonc"]) {
       const path = `${dir.replace(/\/$/, "")}/${file}`;
-      if ((yes = (await client.request("GET", `/api/fs/stat?pane=${pane}&path=${encodeURIComponent(path)}`)).ok)) break;
+      if ((yes = (await client.request(OPS["fs.stat"].method, `${opPath("fs.stat")}?pane=${pane}&path=${encodeURIComponent(path)}`)).ok)) break;
     }
     known.set(key, yes);
     return yes;

@@ -10,6 +10,7 @@
 // (archive/spikes:spikes/s16-swarm/canvas.html). On a phone the rail is a strip of cards
 // along the bottom, and the field pinches and pans.
 
+import { OPS, opPath } from "../ops";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { Fleet, FleetPane } from "../fleet";
 import { EXPIRE_TITLE, gateKey, type Action, type ActRequest, type ActResponse, type OpenRequest, type OpenResponse, type Reason } from "../proto";
@@ -781,7 +782,7 @@ function Card({
           can={can}
           act={(action, extra) => run(action, { ...extra, id: diff.id })}
           full={async () => {
-            const res = await fleet.request(first.host, "GET", `/api/panes/${first.id}/diff`);
+            const res = await fleet.request(first.host, OPS["pane.diff"].method, opPath("pane.diff", { id: first.id }));
             return res.ok ? (await res.json<{ new: string }>()).new : null;
           }}
         />

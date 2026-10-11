@@ -18,6 +18,7 @@
 // then says what changed. Where Claude Code is on the machine and isn't
 // set up, the first screen offers that click too.
 
+import { opPath } from "../ops";
 import qrcode from "qrcode-generator";
 import { useEffect, useState } from "preact/hooks";
 import type { Client } from "../client";
@@ -205,7 +206,7 @@ function GettingStarted({ client, section, close }: { client: Client | null; sec
 
   const refresh = async () => {
     try {
-      const r = await fetch("/api/setup");
+      const r = await fetch(opPath("setup.get"));
       if (!r.ok) throw new Error(String(r.status));
       setSetup((await r.json()) as Setup);
     } catch {
@@ -220,18 +221,18 @@ function GettingStarted({ client, section, close }: { client: Client | null; sec
   // it's what that step and the offer read, refreshed after their clicks.
   const [agentsPart, setAgentsPart] = useState<AgentsSetup | null>(null);
   const refreshAgents = async () => {
-    const r = await fetch("/api/setup?part=agents").catch(() => null);
+    const r = await fetch(`${opPath("setup.get")}?part=agents`).catch(() => null);
     if (r?.ok) setAgentsPart((await r.json()) as AgentsSetup);
   };
   const agents: AgentsSetup | null = agentsPart ?? setup;
   useEffect(() => {
     void refresh();
     void refreshAgents();
-    fetch("/api/setup?part=control")
+    fetch(`${opPath("setup.get")}?part=control`)
       .then((r) => (r.ok ? (r.json() as Promise<Pick<Setup, "control">>) : null))
       .then((r) => r && setEarly(r.control))
       .catch(() => {});
-    fetch("/api/host")
+    fetch(opPath("host.get"))
       .then((r) => (r.ok ? (r.json() as Promise<HostSays>) : null))
       .then(setHost)
       .catch(() => {});
@@ -244,7 +245,7 @@ function GettingStarted({ client, section, close }: { client: Client | null; sec
   useEffect(() => {
     if (!waiting) return;
     const t = setInterval(async () => {
-      const r = await fetch("/api/setup?part=control").catch(() => null);
+      const r = await fetch(`${opPath("setup.get")}?part=control`).catch(() => null);
       const got = r?.ok ? ((await r.json()) as Pick<Setup, "control">) : null;
       if (got) setSetup((s) => (s ? { ...s, control: got.control } : s));
     }, 2000);
@@ -455,7 +456,7 @@ function Phone({ name, setup, host, manual, refresh }: { name: string; setup: Se
   const blocked = notifyBlocker();
   const serve = async () => {
     setBusy(true);
-    const o = await post("/api/setup/tailscale");
+    const o = await post(opPath("setup.tailscale"));
     setOutcome(o);
     await refresh();
     setBusy(false);
@@ -556,7 +557,7 @@ function Cloud({
   const connect = async () => {
     setBusy(true);
     setError(null);
-    const r = await post("/api/setup/control", { url: control });
+    const r = await post(opPath("setup.control"), { url: control });
     if (r.error) setError(r.error);
     else if (r.pending) setSetup((s) => (s ? { ...s, control: { ...s.control, pending: r.pending as NonNullable<Setup["control"]["pending"]> } } : s));
     await refresh();
@@ -565,7 +566,7 @@ function Cloud({
   // The person compared the account's fingerprints: keep the join, or drop it.
   const confirm = async (same: boolean) => {
     setBusy(true);
-    const r = await post("/api/setup/control/confirm", { same });
+    const r = await post(opPath("setup.control_confirm"), { same });
     const got = (r as { control?: Setup["control"] }).control;
     if (got) setSetup((s) => (s ? { ...s, control: got } : s));
     if (same) {
@@ -698,7 +699,7 @@ function UseClaude({ setup, refresh }: { setup: AgentsSetup | null; refresh: () 
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const go = async () => {
     setBusy(true);
-    setOutcome(await post("/api/setup/agents/claude"));
+    setOutcome(await post(opPath("setup.claude")));
     await refresh();
     setBusy(false);
   };

@@ -4,6 +4,7 @@
 // button's menu and the phone's sheet. On a phone it is a full-height
 // sheet.
 
+import { OPS, opPath } from "../ops";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { Client } from "../client";
 import type { OpenRequest, OpenResponse, PaneId } from "../proto";
@@ -87,7 +88,7 @@ function Picker({ client, where, phone, close }: { client: Client; where: AppsWh
   useEffect(() => {
     void (async () => {
       try {
-        const res = await client.request("GET", "/api/studio/apps");
+        const res = await client.request(OPS["studio.apps"].method, opPath("studio.apps"));
         const v = await res.json<{ apps?: StudioApp[]; studio?: string; error?: string }>();
         if (!res.ok) throw new Error(v.error ?? `couldn't list them (${res.status})`);
         setList(v.apps ?? []);
