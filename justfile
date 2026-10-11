@@ -366,6 +366,12 @@ journey which="": web e2e-build
 journey-map:
     cd web && node --experimental-strip-types --no-warnings e2e/journey/map.ts
 
+# The map's design alone (lines and stations, no runs) into
+# docs/journey-map.svg, which docs/testing.md shows. Run it after changing a
+# station or a line in web/e2e/journey/map.ts.
+journey-map-doc:
+    cd web && node --experimental-strip-types --no-warnings e2e/journey/map.ts --design ../docs/journey-map.svg
+
 # Only the WebKit specs (`*.webkit.spec.ts`), as the macOS runner runs them.
 e2e-webkit: web e2e-build
     cd web && {{suite_lock}} pnpm exec playwright test --project=webkit
