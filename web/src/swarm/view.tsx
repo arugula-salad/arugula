@@ -13,6 +13,7 @@
 import { OPS, opPath } from "../ops";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { Fleet, FleetPane } from "../fleet";
+import { cleanTitle } from "../client";
 import { EXPIRE_TITLE, gateKey, type Action, type ActRequest, type ActResponse, type OpenRequest, type OpenResponse, type Reason } from "../proto";
 import { AskCard, type Answered } from "../blocks/ask";
 import { ANSWERED_MS, answeredLine, FollowUpBox, PermissionBody, PermissionButtons, VIEWER_NOTE, type Requester } from "../ui/answer-card";
@@ -252,7 +253,7 @@ export function SwarmView({
           stale: p.stale,
           label: p.info.editor
             ? `%${p.id} ${p.info.file?.split("/").pop() ?? p.info.title ?? "editor"} · ${appName(p.info.editor.app)}`
-            : `%${p.id} ${p.info.current?.text ?? p.info.command ?? p.info.title ?? kindOf(p)}`,
+            : `%${p.id} ${whatItDoes(p)}`,
           where: p.host,
           lastOut: p.info.activity?.last_ms ?? 0,
           att: r && wanting.has(p.key) ? { col: REASON_COL[r.kind], bundle: onRail.get(p.key) ?? null, since: r.since_ms } : null,
@@ -588,6 +589,21 @@ const ARIA: Record<Theme, string> = {
 /** #551: where a pane's project comes from. */
 const PROJECTS = "A pane's project is the git repository it's in; one outside a repository goes by its directory.";
 
+/** What a pane is doing, in a word or a line: the title its program set
+ * (Claude Code's is the task, so eight `claude --resume` panes read
+ * apart), unless that's a shell's own "user@host: dir"; else its command. */
+function whatItDoes(p: FleetPane): string {
+  const title = cleanTitle(p.info.title ?? "");
+  const shells = /^[^\s@]+@[^\s:]+:/.test(title);
+  return (!shells && title) || p.info.current?.text || p.info.command || kindOf(p);
+}
+
+/** A card's text with long paths cut to their last part (a scratchpad
+ * path is most of a command otherwise); the card's tooltip has it all. */
+export function shortPaths(t: string): string {
+  return t.replace(/(?:\/[^\s/]+){3,}\/([^\s/]+)/g, "…/$1");
+}
+
 /** The how-to tip, once put away. */
 const TIP_KEY = "arugula.swarm.tipSeen";
 
@@ -785,6 +801,9 @@ function Card({
   const can = b.panes.every((p) => fleet.role(p) !== "viewer");
   const ids = b.panes.slice(0, 4).map((p) => `%${p.id}`).join(" ") + (n > 4 ? " …" : "");
   const project = first.info.project?.name ?? groupOf(first, "project");
+  // Someone else's panes say whose (a teammate's machine in a team too).
+  const owners = [...new Set(b.panes.map((p) => fleet.host(p.host)?.owner).filter(Boolean))];
+  const whose = owners.length === 1 && b.panes.every((p) => fleet.host(p.host)?.owner) ? `${owners[0]}'s` : owners.length > 1 ? "several people's" : null;
   const ask = n === 1 ? first.info.ask : null;
   const point = r.kind === "gate" ? pointOf(r.gate) : null;
   const run = async (action: Action, extra: Record<string, unknown> = {}) => {
@@ -818,14 +837,15 @@ function Card({
         {n > 1 && <span class="n">×{n}</span>}
       </div>
       <div class="cm">
+        {whose ? <b class="whose">{whose} · </b> : null}
         {ids} · {machines.length > 1 ? `${machines.length} machines` : machines[0]} · {project}
       </div>
       {diff ? null : ask?.kind === "permission" ? (
         <PermissionBody ask={ask} />
       ) : (
-        <div class="cq" title={r.headline}>
-          {r.headline}
-          {r.command && r.kind !== "ask" && r.kind !== "gate" && !r.headline.includes(r.command) ? <code> {r.command}</code> : null}
+        <div class="cq" title={r.command && !r.headline.includes(r.command) ? `${r.headline}\n${r.command}` : r.headline}>
+          {shortPaths(r.headline)}
+          {r.command && r.kind !== "ask" && r.kind !== "gate" && !r.headline.includes(r.command) ? <code> {shortPaths(r.command)}</code> : null}
         </div>
       )}
       {r.kind === "gate" && r.gate && <GateWhy gate={r.gate} />}

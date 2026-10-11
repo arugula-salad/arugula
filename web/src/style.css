@@ -2694,6 +2694,31 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   background: color-mix(in srgb, var(--danger) 15%, transparent);
 }
 
+/* A team's members and its machines, each under its own heading. */
+.control-subgroup {
+  margin: 14px 0 0;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--dim);
+}
+
+/* Devices nobody has used lately: marked, and offered for removal. */
+.control-devices li.unused > span:first-child {
+  opacity: 0.7;
+}
+
+.unused-badge {
+  background: none;
+  color: var(--dim);
+  border: 1px solid var(--raised-hover);
+}
+
+.control-unused {
+  margin: 4px 0;
+}
+
 /* Locking a team: what it does, beside its button. */
 .team-lock {
   display: flex;
@@ -3573,6 +3598,16 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   font: 500 13px/1.35 var(--f-ui);
   margin-bottom: 6px;
   word-break: break-word;
+  /* Two lines at most: the tooltip has the rest. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+.swarm-card .cm .whose {
+  color: var(--ink);
+  font-weight: 600;
 }
 .swarm-card code {
   font: 500 12px/1 var(--f-mono);
@@ -5662,6 +5697,29 @@ button.diff-why-run {
 
 .agents-card.waiting {
   border-color: var(--accent);
+}
+
+/* Recipes: which machine's, and the places with none yet, compact. */
+.agents-machine {
+  margin: 4px 8px 4px;
+  font-size: 15px;
+}
+
+.agents-empty-list {
+  list-style: none;
+  margin: 4px 0;
+  padding: 0 8px;
+}
+
+.agents-empty-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 0;
+}
+
+.agents-empties > p {
+  margin: 4px 8px;
 }
 
 /* The team's agents: a list, each row with its own buttons, so a row

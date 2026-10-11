@@ -273,7 +273,12 @@ pub async fn devices(State(app): State<Arc<App>>, s: Session) -> R {
     // while that join is open.
     let joins: serde_json::Map<String, Value> =
         app.db.device_joins(&s.account, now_ms())?.into_iter().map(|(d, code)| (d, Value::String(code))).collect();
-    Ok(Json(json!({ "trust": trust, "certs": certs, "revocations": revs, "pending": pending, "joins": joins })))
+    // When each device last loaded the page, where control has seen it.
+    let used: serde_json::Map<String, Value> =
+        app.db.devices_used(&s.account)?.into_iter().map(|(d, at)| (d, Value::from(at))).collect();
+    Ok(Json(
+        json!({ "trust": trust, "certs": certs, "revocations": revs, "pending": pending, "joins": joins, "used": used }),
+    ))
 }
 
 pub async fn device(State(app): State<Arc<App>>, s: Session, Path(id): Path<String>) -> Result<Response, ApiError> {
