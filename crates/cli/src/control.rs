@@ -423,7 +423,7 @@ fn confirm(approver: &str, fp: &str, root: &str) -> anyhow::Result<()> {
     println!("    {fp}");
     println!();
     println!(
-        "  The device you approved on shows its account's fingerprint under Devices and machines… in the host menu."
+        "  The device you approved on shows its account's fingerprint under Devices and machines… in the account menu."
     );
     print!("  Is it the same? [y/N, or type the fingerprint] ");
     std::io::stdout().flush()?;
