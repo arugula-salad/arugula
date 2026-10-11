@@ -79,7 +79,14 @@ export async function desktop(page: Page, mod: "Control" | "Meta" = "Control") {
   // Type and run: Split right on the active pane.
   await pick(page, "split right", "Pane/Split right");
   await expect.poll(async () => (await panes(page)).length).toBe(2);
-  expect(await text(page, first)).toBe(before);
+  // Nothing reached the first pane: its prompt line is as it was (a stray
+  // Ctrl+P would have recalled history there), and its output is still
+  // there. Not the whole text: a second pane gives each a header (#747),
+  // a row off the first pane's terminal.
+  const lastLine = (t: string) => t.trimEnd().split("\n").at(-1);
+  const after = await text(page, first);
+  expect(lastLine(after)).toBe(lastLine(before));
+  expect(after).toContain("palette-5");
 
   // A restart policy (a checked item) on the new pane, which is active.
   const second = await active(page);
