@@ -3,6 +3,8 @@
 # macOS checks that need a whole Mac, each in a fresh tart VM clone
 # (testnet/macos/vm.sh), with no person and no GUI on the host.
 #
+#   testnet/macos/test.sh tools                safari, iterm2 and launchd in
+#                                              one VM, booted once
 #   testnet/macos/test.sh launchd [claim...]   claims below
 #   BREAK=1 testnet/macos/test.sh launchd      every claim must fail
 #   testnet/macos/test.sh safari               web/safari against real Safari
@@ -11,29 +13,35 @@
 #                                              the iOS Simulator (ios.sh; the
 #                                              Xcode base, `vm.sh base --xcode`;
 #                                              parked, #257)
-#   testnet/macos/test.sh iterm2 [claim...]    M5 and M32 in iTerm2 (iterm2.sh)
+#   testnet/macos/test.sh iterm2 [claim...]    M5 and M32 in iTerm2 (iterm2.sh;
+#                                              BREAK=both adds the break pass
+#                                              in the same VM)
 #   testnet/macos/test.sh app                  #178, the app in cloud mode
 #                                              (app-cloud.ts)
 #   testnet/macos/test.sh journey              #551, J1 on the real app and
-#                                              Safari, graphed (journey-j1.ts)
-#   testnet/macos/test.sh journey-j2a          #551, J2a: Sam on the real app,
-#                                              Riley in a browser (journey-j2a.ts)
+#                                              Safari, then J2a: Riley in a
+#                                              browser, graphed (journey-j2a.ts)
 #   testnet/macos/test.sh journey-j3           #664, J3: the app by hand from the
 #                                              site, Gatekeeper, an older daemon (journey-j3.ts)
 #   testnet/macos/test.sh journey-j4           #664, J4: an agent installs over
 #                                              ssh from the site and --help (journey-j4.ts)
 #   KEEP=1 ...                                 leave the clone running
 #
+# tools runs launchd last: its reboot restarts the VM, it leaves a sudoers
+# drop-in, and its user must never have had a GUI session. safari and
+# iterm2 install no service and run as admin; what they leave running is
+# stopped before launchd starts.
+#
 # launchd (S28 #153, M52 #155): a user made with sysadminctl who has never
 # logged in to the GUI, reached only over ssh, installs the daemon with
 # `arugulad install` and starts a pane, then switches to --system and
 # uninstalls. In order, all in one VM:
-#   install   `arugulad install` over ssh exits 0 and the daemon answers
-#   warning   it said the daemon won't start after a reboot by itself and
+#   install   `arugulad install` over ssh exits 0 and the daemon answers;
+#             it said the daemon won't start after a reboot by itself and
 #             named `arugulad install --system`
 #   logout    after that ssh session ends, the daemon and its pane are there
-#   uninstall-agent  `arugulad uninstall` leaves no plist, no service in
-#             gui/UID or user/UID, and no arugulad running as the user
+#   uninstall `arugulad uninstall` leaves no plist, no service in gui/UID
+#             or user/UID, and no arugulad running as the user
 #   ssh       `arugula --ssh illo@vm ls` from the host (M52's path) starts
 #             the daemon there and passes the warning through
 #   system    `arugulad install --system` (sudo) switches cleanly: a
@@ -41,13 +49,13 @@
 #             user/UID service, and the daemon answers
 #   reboot    after a clean shutdown and `tart run`, with nobody logged in as that
 #             user, the daemon is running with the pane made under --system
-#   uninstall `arugulad uninstall` removes the LaunchDaemon: no plist, no
-#             service, no arugulad running as the user
+#   system-uninstall  `arugulad uninstall` removes the LaunchDaemon: no
+#             plist, no service, no arugulad running as the user
 # BREAK=1: the daemon's launchd service is disabled and booted out before
-# install, logout, system and reboot are checked; the install's `note:`
-# line is dropped before warning; each uninstall is followed by an install
-# (something left behind); and the daemon is already running when the ssh
-# check starts it, so nothing is said.
+# install, logout, system and reboot are checked, and the install's
+# `note:` line is dropped (both of install's checks fail); each uninstall
+# is followed by an install (something left behind); and the daemon is
+# already running when the ssh check starts it, so nothing is said.
 #
 # Binaries come from $ARUGULA_MACOS_BIN (default target/debug, as `cargo
 # build -p arugulad -p arugula` leaves them). Exit codes: 0 every claim
@@ -138,12 +146,16 @@ clean() {
 }
 want() { case " $claims " in *" $1 "*) return 0 ;; esac; return 1; }
 
+LAUNCHD="install logout uninstall ssh system reboot system-uninstall"
+launchd_claims() {
+  claims="${*:-$LAUNCHD}"
+  local c
+  for c in $claims; do case " $LAUNCHD " in *" $c "*) ;; *) echo "unknown claim $c ($LAUNCHD)" >&2; exit 2 ;; esac; done
+}
+
+# In the VM that's up.
 t_launchd() {
-  claims="${*:-install warning logout uninstall-agent ssh system reboot uninstall}"
-  local out left c
-  for c in $claims; do case $c in install | warning | logout | uninstall-agent | ssh | system | reboot | uninstall) ;;
-    *) echo "unknown claim $c (install warning logout uninstall-agent ssh system reboot uninstall)" >&2; exit 2 ;; esac; done
-  fresh
+  local out left
   make_user
   # Never a GUI session for this user, only ssh logins.
   [ "$(logged_in)" = 0 ]
@@ -156,10 +168,8 @@ t_launchd() {
   if want install; then
     if [ -n "$ok" ] && answers >/dev/null; then pass install "no GUI login, background agent"
     else fail install "$(echo "$out" | tail -2 | tr '\n' ' ')"; fi
-  fi
-  if want warning; then
-    if echo "$out" | grep "^note:" | grep "after a reboot it won't start" | grep -q "arugulad install --system"; then pass warning
-    else fail warning "no reboot warning in: $(echo "$out" | tail -3 | tr '\n' ' ')"; fi
+    if echo "$out" | grep "^note:" | grep "after a reboot it won't start" | grep -q "arugulad install --system"; then pass install "it says a reboot won't start it, and names --system"
+    else fail install "no reboot warning in: $(echo "$out" | tail -3 | tr '\n' ' ')"; fi
   fi
   if want logout; then
     sleep 5
@@ -169,9 +179,9 @@ t_launchd() {
 
   as_user "$D uninstall" >/dev/null 2>&1 || true
   [ -z "$BREAK" ] || as_user "$D install" >/dev/null 2>&1 || true
-  if want uninstall-agent; then
-    if left=$(clean); then pass uninstall-agent
-    else fail uninstall-agent "left behind: $left"; fi
+  if want uninstall; then
+    if left=$(clean); then pass uninstall
+    else fail uninstall "left behind: $left"; fi
   fi
 
   # M52's path: the host's CLI over ssh, which starts the daemon there.
@@ -207,25 +217,42 @@ t_launchd() {
     else fail reboot "no daemon with its pane for $USER_NAME after a restart with nobody logged in as them"; fi
   fi
 
-  if want uninstall; then
+  if want system-uninstall; then
     as_user "$D uninstall" >/dev/null 2>&1 || true
     [ -z "$BREAK" ] || as_user "$D install --system" >/dev/null 2>&1 || true
-    if left=$(clean); then pass uninstall
-    else fail uninstall "left behind: $left"; fi
+    if left=$(clean); then pass system-uninstall
+    else fail system-uninstall "left behind: $left"; fi
   fi
+}
+
+# One boot for safari, iterm2 and launchd, in that order.
+t_tools() {
+  [ $# = 0 ] || { echo "tools takes no claims: name them with launchd or iterm2 alone" >&2; exit 2; }
+  [ -z "$BREAK" ] || { echo "BREAK=1 is one test's: launchd or iterm2" >&2; exit 2; }
+  launchd_claims
+  fresh
+  local t
+  for t in safari iterm2; do
+    if ARUGULA_MACOS_UP=1 "$HERE/$t.sh"; then echo "[macos $t] ok"; else echo "[macos $t] FAIL" >&2; failed=1; fi
+  done
+  # iterm2's daemons and iTerm2 run as admin from /tmp/arugula, where
+  # make_user puts the user's binaries, and safaridriver stays up.
+  v ssh 'pkill -9 -x iTerm2; pkill -f "^/tmp/arugula/arugula"; pkill -x safaridriver; true'
+  test=launchd
+  t_launchd
 }
 
 failed=
 case "$test" in
-  launchd) t_launchd "$@" ;;
+  tools) t_tools "$@" ;;
+  launchd) launchd_claims "$@"; fresh; t_launchd ;;
   safari) exec "$HERE/safari.sh" "$@" ;;
   ios) exec "$HERE/ios.sh" "$@" ;;
   iterm2) exec "$HERE/iterm2.sh" "$@" ;;
   app) cd "$ROOT" && exec node --experimental-strip-types --no-warnings testnet/macos/app-cloud.ts "$@" ;;
-  journey) cd "$ROOT" && exec node --experimental-strip-types --no-warnings testnet/macos/journey-j1.ts "$@" ;;
-  journey-j2a) cd "$ROOT" && exec node --experimental-strip-types --no-warnings testnet/macos/journey-j2a.ts "$@" ;;
+  journey) cd "$ROOT" && exec node --experimental-strip-types --no-warnings testnet/macos/journey-j2a.ts "$@" ;;
   journey-j3) cd "$ROOT" && exec node --experimental-strip-types --no-warnings testnet/macos/journey-j3.ts "$@" ;;
   journey-j4) cd "$ROOT" && exec node --experimental-strip-types --no-warnings testnet/macos/journey-j4.ts "$@" ;;
-  *) sed -n '3,48p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2 ;;
+  *) sed -n '3,58p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2 ;;
 esac
 [ -z "$failed" ]

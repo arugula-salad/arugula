@@ -493,12 +493,13 @@ forges cmd="test" forge="forgejo":
       *) echo "usage: just forges up|test|down [forgejo|gitlab|all]" >&2; exit 2 ;;
     esac
 
-# macOS checks in a throwaway tart VM (testnet/macos/README.md):
-# `just macos launchd`, `just macos safari`, `just macos ios` (the iOS
-# Simulator, on the Xcode base: `just macos base --xcode` once; parked,
-# #257), or base|up|down|ssh for the VM.
+# macOS checks in a throwaway tart VM (docs/testing.md, "A fresh Mac"):
+# `just macos tools` (safari, iterm2 and launchd in one VM, booted once),
+# each alone (`just macos launchd`, `safari`, `iterm2`), `just macos ios`
+# (the iOS Simulator, on the Xcode base: `just macos base --xcode` once;
+# parked, #257), or base|up|down|ssh for the VM.
 # Fails without tart or the base VM; ARUGULA_SKIP_MACOS_VM=1 skips loudly.
-macos cmd="launchd" *args:
+macos cmd="tools" *args:
     #!/usr/bin/env bash
     set -euo pipefail
     case "{{cmd}}" in

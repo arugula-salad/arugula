@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# #661 on macOS, in a fresh tart VM: a daemon older than the arugulad the
+# #661 on macOS, in one fresh tart VM: a daemon older than the arugulad the
 # app carries still works, so the app says so and offers its update, and
 # changes nothing until asked (#392: the daemon updates itself).
 #
@@ -10,9 +10,10 @@
 # A released arugulad (OLD, default 0.26.1: the oldest whose own update
 # finds the renamed repository's releases, #525) is installed as the
 # service with its own `arugulad install` (~/.local/bin and
-# ~/Library/LaunchAgents/arugulad.plist, as install.sh does), in a fresh
-# clone, then the app from $ARUGULA_DMG (default
-# dist/arugula-desktop-macos-arm64.dmg) starts:
+# ~/Library/LaunchAgents/arugulad.plist, as install.sh does), then the app
+# from $ARUGULA_DMG (default dist/arugula-desktop-macos-arm64.dmg) starts.
+# Both claims share one boot: before the second, the app, its daemon and
+# everything either left is removed and the old daemon installed again.
 #   running  it runs, with a pane counting: the app says it's older than
 #            its own and offers the update, and updates nothing unasked;
 #            *Update arugulad* (Return, the page's default button, typed
@@ -68,15 +69,13 @@ fetch() {
 fetch "$OLD" old
 
 # A fresh clone with the app in /Applications and the old daemon in /tmp.
-fresh() {
-  v down >/dev/null
-  v up >/dev/null
-  v push "$DMG" /tmp/arugula.dmg
-  vs 'set -e; hdiutil attach -nobrowse -quiet -mountpoint /tmp/d /tmp/arugula.dmg; cp -R /tmp/d/Arugula.app /Applications/; hdiutil detach -quiet /tmp/d'
-  vs 'mkdir -p /tmp/old'
-  v push "$work/old/arugulad" "$work/old/arugula" /tmp/old/
-  vs 'xattr -dr com.apple.quarantine /tmp/old 2>/dev/null; chmod +x /tmp/old/*; true'
-}
+v down >/dev/null
+v up >/dev/null
+v push "$DMG" /tmp/arugula.dmg
+vs 'set -e; hdiutil attach -nobrowse -quiet -mountpoint /tmp/d /tmp/arugula.dmg; cp -R /tmp/d/Arugula.app /Applications/; hdiutil detach -quiet /tmp/d'
+vs 'mkdir -p /tmp/old'
+v push "$work/old/arugulad" "$work/old/arugula" /tmp/old/
+vs 'xattr -dr com.apple.quarantine /tmp/old 2>/dev/null; chmod +x /tmp/old/*; true'
 
 # With the local token.
 answers() { vs 'curl -s -H "Authorization: Bearer $(cat ~/.local/state/arugula/local-token 2>/dev/null)" http://127.0.0.1:7681/api/host' | python3 -c 'import json, sys; print(json.load(sys.stdin).get("version", ""))' 2>/dev/null || true; }
@@ -90,9 +89,19 @@ said_older() { vs "grep -q 'arugulad here is $OLD, older than the' /tmp/app.log"
 start_app() { vs '(nohup /Applications/Arugula.app/Contents/MacOS/arugula-desktop >>/tmp/app.log 2>&1 &)'; }
 pane_pid() { vs "pgrep -f '[>] /tmp/count; sleep'" | head -1 || true; }
 count() { vs 'cat /tmp/count' 2>/dev/null || echo 0; }
-# The older daemon as install.sh leaves it, in a fresh clone.
+# The older daemon as install.sh leaves it, on an account as the clone
+# came: a claim before this one leaves the app running, a newer daemon
+# with its panes, the app's settings and /tmp/app.log, which said_older
+# reads. ~/.local/bin holds nothing else in a fresh clone.
 install_old() {
-  fresh
+  vs 'pkill -x arugula-desktop
+    ~/.local/bin/arugulad uninstall >/dev/null 2>&1
+    launchctl bootout gui/$(id -u)/arugulad 2>/dev/null
+    pkill -9 -x arugulad; pkill -f "[>] /tmp/count"
+    rm -rf ~/.local/bin ~/.local/state/arugula ~/.local/share/arugula ~/.config/arugula ~/.cache/arugula \
+      ~/Library/LaunchAgents/arugulad.plist ~/Library/Application\ Support/io.arugula.desktop \
+      ~/Library/Caches/io.arugula.desktop ~/Library/WebKit/io.arugula.desktop /tmp/app.log /tmp/count
+    true'
   vs '/tmp/old/arugulad install >/dev/null'
   wait_for 30 answers_old || fail "$1" "arugulad $OLD didn't answer after its install ($(raw))"
 }

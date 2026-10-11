@@ -9,6 +9,8 @@
 #
 # Needs `cargo build -p arugula-control` and web/dist (`just web`).
 # SAFARI_DRIVER_PORT (default 7744) is the local end of safaridriver.
+# ARUGULA_MACOS_UP=1: the VM is already up (test.sh tools); use it and
+# leave it up.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -20,12 +22,14 @@ PORT="${SAFARI_DRIVER_PORT:-7744}"
 # shellcheck source=testnet/macos/need-tart.sh
 . "$HERE/need-tart.sh"
 
-"$V" down "$VM" >/dev/null
-"$V" up "$VM" >/dev/null
+if [ -z "${ARUGULA_MACOS_UP:-}" ]; then
+  "$V" down "$VM" >/dev/null
+  "$V" up "$VM" >/dev/null
+fi
 fwd=""
 cleanup() {
   [ -z "$fwd" ] || kill "$fwd" 2>/dev/null || true
-  [ -n "${KEEP:-}" ] || "$V" down "$VM" >/dev/null
+  [ -n "${KEEP:-}${ARUGULA_MACOS_UP:-}" ] || "$V" down "$VM" >/dev/null
 }
 trap cleanup EXIT
 

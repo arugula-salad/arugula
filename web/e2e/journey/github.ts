@@ -1,5 +1,5 @@
 // A fake GitHub for the journeys (#551), plain enough to load in a Node
-// script as well as in Playwright (testnet/macos/journey-j1.ts).
+// script as well as in Playwright (testnet/macos/journey-j2a.ts).
 
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import { githubId } from "../../fixtures/fakes.ts";

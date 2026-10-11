@@ -33,7 +33,7 @@ or an account skip without it and name what's missing
 | `just e2e-webkit` | only the `webkit` project: Safari's engine, for device keys (#94) and the one-click invite (#137) | macOS |
 | `just testnet up`, `test`, `break` (`ssh`, then `control`) | the Docker test stack's claims ([testnet/README.md](../testnet/README.md)), then each claim under `BREAK=1`, where it must fail | Linux |
 | `just forges`, `just testnet-hosts`, `just testnet-editors` | real forges, two hosts and VS Code over Remote-SSH, in Docker ([below](#real-forges-two-hosts-vs-code-over-remote-ssh)) | the forges nightly (`forges-nightly.yml`) |
-| `just macos <test>` | the tart VM's checks: launchd with no GUI session, real Safari, Safari in the iOS Simulator, iTerm2, the desktop app ([below](#a-fresh-mac-the-tart-vm-harness)), `journey`: J1 on the real app and Safari, `journey-j2a`: Sam on the real app, Riley in a browser, `journey-j3`: the app installed by hand over an older daemon, and `journey-j4`: an agent installing over ssh, all graphed ([below](#a-new-users-journeys)) | no |
+| `just macos <test>` | the tart VM's checks: `tools` (real Safari, iTerm2, then launchd with no GUI session, in one VM), Safari in the iOS Simulator, the desktop app ([below](#a-fresh-mac-the-tart-vm-harness)), `journey`: J1 on the real app and Safari, then J2a with Riley in a browser, `journey-j3`: the app installed by hand over an older daemon, and `journey-j4`: an agent installing over ssh, all graphed ([below](#a-new-users-journeys)) | no |
 | `just desktop-check` | rustfmt and clippy for `crates/desktop` | Linux |
 | `just desktop-xvfb` | the Linux desktop app under Xvfb in a container (`packaging/desktop/xvfb/`): `join` (#204), `app` (`bare`, `links` and `nautilus` among its claims) and `stale` (#317) (see [The desktop app's tests](#the-desktop-apps-tests)) | Linux |
 | `just desktop-packages ARCH` | the .deb on Ubuntu 22.04 and the .rpm on Fedora 42 install and claim `arugula://` (after `just desktop-linux ARCH`) | no |
@@ -586,10 +586,10 @@ The rules, which are the point:
 - Each J2 journey runs J1 for each person first, as its own report
   (`J2a-setup-sam`), so a signup failure can't hide a linking failure.
 
-On a real Mac, `just macos journey` (`testnet/macos/journey-j1.ts`) takes
-J1 with the released app (its zip from the `app-latest` release, what a
-new user downloads, unless `ARUGULA_MACOS_APP_ZIP` says otherwise) in a
-fresh tart VM ([the tart VM](#a-fresh-mac-the-tart-vm-harness)): its own
+On a real Mac, `just macos journey` (`testnet/macos/journey-j2a.ts`) takes
+J1, then J2a, in one VM. J1 is with the released app (its zip from the
+`app-latest` release, what a new user downloads, unless
+`ARUGULA_MACOS_APP_ZIP` says otherwise) in a fresh tart VM ([the tart VM](#a-fresh-mac-the-tart-vm-harness)): its own
 launch agent and daemon, and the real Safari it opens links in. It
 presses buttons and links by their visible names through System Events
 and reads what they say; only the terminal's text comes from `arugula
@@ -597,12 +597,13 @@ capture`. Control and the fake GitHub run on the host, tunnelled into the
 VM at the same loopback addresses; the daemon gets this control from
 `ARUGULA_CONTROL` in the app's launch agent (the bundle signed again, ad
 hoc as released), and the run stops before *Connect* if the app would
-reach any other control. Its report is `J1-mac`, with the Mac's screen at
-each step; a step's time includes the accessibility reads (seconds
-each), so only one over 30 s reads as slow.
+reach any other control. Its report is `J1-mac` (and the same steps again
+as `J2a-mac-setup-sam`), with the Mac's screen at each step; a step's time
+includes the accessibility reads (seconds each), so only one over 30 s
+reads as slow. An unguided J1 step fails the run, as it did when J1 ran
+alone.
 
-`just macos journey-j2a` (`testnet/macos/journey-j2a.ts`) is J2a with Sam
-on the real app in the VM (after J1 there, as its own report) and Riley a
+J2a follows with Sam on the real app in the same VM and Riley a
 friend on another computer, in a browser on the host (Chrome, through
 Playwright) with an account made on control's page. Sam's steps press what
 the Mac shows, Riley's what the page shows; the report is `J2a-mac`, with
@@ -703,18 +704,22 @@ logged-in session over ssh.
 | Claim | Linux (`just desktop-xvfb app CLAIM`) | macOS (`testnet/macos/desktop.sh CLAIM`) | A failure means |
 |---|---|---|---|
 | Chords reach the page | `keys`: Ctrl-W, T, N, Q, Tab, F1, F10, Alt-x arrive in a recording pane as bytes | `keys`: Ctrl-W, T, N, Q, Tab as bytes; Cmd-W closes the pane and not the window; Cmd-T opens a tab; Cmd-M leaves the app up; Cmd-H hides it and Cmd-Q quits it, the panes still running | a menu or the toolkit took a key the terminal needs |
-| Tabs in the titlebar | `titlebar`: no decorations; dragging the bar moves the window; the bar's maximize and minimize work | `tabs`: Cmd-N opens a window as a native tab; with two and three tabs the page's bar starts below AppKit's tab bar, and Cmd-Shift-W back to one tab hides the strip (#323). `this`: the tray's *This machine*, clicked three times, adds no window or tab | the window can't be moved or managed without the system's titlebar |
+| Tabs in the titlebar | `titlebar`: no decorations; dragging the bar moves the window; the bar's maximize and minimize work | `tabs`: Cmd-N opens a window as a native tab; with two and three tabs the page's bar starts below AppKit's tab bar, and Cmd-Shift-W back to one tab hides the strip (#323). `tray`: the tray's *This machine*, clicked three times, adds no window or tab | the window can't be moved or managed without the system's titlebar |
 | App-supplied dragging (#316) | `bare`: a plain page with no drag markup at `ARUGULA_URL` moves by its top strip, not below it, and a double-click on the strip maximizes | `drag` (drag.js, CGEvents): the page's bar moves the window as before; a plain page with no drag markup moves by its top strip, not below it, and a double-click there zooms | a page from an older daemon leaves the window stuck |
 | `arugula://` | `links`: a second launch with `arugula://open?cwd=DIR` opens a tab in DIR in the running app and shows it; `arugula://pane/%N` shows N | `links`: the same through `open URL` (the URL scheme in Info.plist) | links start a second app, or open nothing |
 | Global hotkey | `hotkey`: off by default; on, Ctrl+Alt+Space hides the focused window and brings it back | `hotkey`: the same with Ctrl-Option-Space | |
-| Service registration | (the systemd unit: `arugulad install`, unchanged) | `agent`: the first start registers the launch agent through SMAppService, BTM lists it, the bundle's daemon answers the linked CLI, no second plist | the app runs a daemon that isn't the one Login Items shows, or two |
-| Working pane, no terminal | | `install`, `pane`: the .dmg installs, and a command typed into the window runs | |
+| Service registration | (the systemd unit: `arugulad install`, unchanged) | `install`: the first start registers the launch agent through SMAppService, BTM lists it, the bundle's daemon answers the linked CLI, no second plist | the app runs a daemon that isn't the one Login Items shows, or two |
+| Working pane, no terminal | | `install`: the .dmg installs, and a command typed into the window runs | |
 | Panes outlive the app | | `restart`: the daemon's pids and panes are the same after the app restarts | |
 | Right-click a folder (M47) | `nautilus`: with the packages' .desktop file and Nautilus extension, a right-click on a folder (and inside one) in Nautilus, *Open in Arugula*, opens a tab there in the running app and shows it | `finder`: the service is registered (`pbs`); a right-click on a folder in Finder, *New Arugula Tab Here*, opens a tab there; a `.command` file opened with the app runs in a new pane | the file manager's menu has no entry, or it starts a second app |
 | Packages | `just desktop-packages ARCH`: .deb and .rpm install, libraries resolve, xdg-mime hands `arugula://` to the app, the .desktop file passes the link (`%u`) and has a New Tab action, the Nautilus extension is in place | `install` above | |
 | A daemon too old for the app (#317) | `just desktop-xvfb stale`: a 0.8.0 stand-in (`old-daemon.py`, no protocol) installed as the service, stopped (`stopped`) or running (`running`): the app says 0.8.0 runs and 0.19.0 is needed, 0.8.0 still answers afterwards, and it served no page | (none since #534: every release below 0.19.0 is illogicald, which nothing runs) | the app shows an old daemon's page, or replaces a daemon (#392) |
-| A daemon older than the app's (#661) | | `stale-daemon.sh running stopped`: arugulad 0.26.1 (`OLD=`) as its install script left it, running with a pane or stopped: the app says it's older than its own and changes nothing unasked; Return (*Update arugulad*) updates it under its own agent to a newer release and the pane is the same process | the app keeps an old daemon with no word, or updates it unasked |
+| A daemon older than the app's (#661) | | `stale-daemon.sh running stopped`, in one VM: arugulad 0.26.1 (`OLD=`) as its install script left it, running with a pane or stopped (installed again, with what the app and the first claim left removed): the app says it's older than its own and changes nothing unasked; Return (*Update arugulad*) updates it under its own agent to a newer release and the pane is the same process | the app keeps an old daemon with no word, or updates it unasked |
 | Updates | | `update.sh`: 0.17.0 refuses a manifest signed with another key, then replaces itself with 0.17.1 and restarts; the new app carries a newer daemon and leaves the running one alone (#392); a running vim and a counting build carry on | |
+
+`desktop.sh script` (install.sh `--app` from a published release, #318,
+#319) isn't run by default and runs alone: it needs the fresh account
+and an empty `/Applications`, which the other claims fill.
 
 `update.sh` makes a throwaway updater key and builds the app twice with
 it. The installed one carries a daemon one minor version older than the
@@ -1052,20 +1057,32 @@ in to its own GUI session at boot. The scripts are in `testnet/macos/`.
 
 ```sh
 just macos base              # make the base VM, once (about 30 GB)
+just macos tools             # safari, iterm2, then launchd, in one VM
 just macos launchd           # launchd with no GUI session (S28, M52)
 just macos safari            # web/safari against real Safari (#94, #137)
 just macos base --xcode      # the Xcode base for `ios`, once (about 60 GB more)
 just macos ios               # #94 and #137 in the iOS Simulator (#257; parked, below)
 just macos iterm2            # M5 (tmux -CC) and M32 (OSC 52) in iTerm2
 just macos app               # the desktop app in cloud mode (#178)
+just macos journey           # J1, then J2a, on the real app (#551)
 just macos up | ssh CMD | down   # the VM by hand
 ```
 
 `just macos <test>` builds the debug binaries first, then runs
 `testnet/macos/test.sh <test>`. Each test clones a fresh VM, runs, and
-deletes the clone (`KEEP=1` leaves it running for a look). `BREAK=1` breaks
-what each check is about, and every check must then fail, as in the
-testnet's claims.
+deletes the clone (`KEEP=1` leaves it running for a look). `tools` boots
+one VM for `safari`, `iterm2` and `launchd`, in that order: launchd goes
+last because its `reboot` restarts the VM, it leaves a sudoers drop-in,
+and its user must never have had a GUI session. Safari and iTerm2 run as
+`admin` and install no service, and what they leave running is stopped
+before launchd starts, so they can't change its results.
+
+`launchd`, `iterm2` and `app` have a `BREAK=1` form that breaks what each
+check is about, and every check must then fail, as in the testnet's
+claims. `BREAK=both` with `iterm2` runs the normal pass, then the break
+pass in the same VM, with fresh daemons, and passes when every check held
+in the first and none in the second. `tools` takes no `BREAK`: run
+`launchd` or `iterm2` alone for that.
 
 Without tart, or without the base VM, every script fails and says what to
 run; a test that didn't run isn't a pass. Only `ARUGULA_SKIP_MACOS_VM=1`
@@ -1104,10 +1121,10 @@ for the images, iTerm2 and the app's zip.
 
 | Test | Checks | How |
 |---|---|---|
-| `launchd` (`install`, `warning`, `logout`, `uninstall-agent`, `ssh`, `system`, `reboot`, `uninstall`) | A user made with `sysadminctl`, who never had a GUI session and is reached only over ssh, runs `arugulad install`. With no GUI session that's the background agent (with one it's the usual GUI LaunchAgent, which this VM's `admin` has and `illo` never does): it installs, warns that the daemon won't start after a reboot by itself, and the daemon and a pane outlive the ssh session. `arugulad uninstall` leaves nothing behind. `arugula --ssh illo@vm ls` from the host starts the daemon there and passes the warning through. `arugulad install --system` switches to a LaunchDaemon cleanly; after a clean shutdown and `tart run`, with nobody logged in as them, the daemon is back with its pane's output; `arugulad uninstall` removes the LaunchDaemon too. | One VM, in that order. "Nothing behind" means no plist in `~/Library/LaunchAgents` or `/Library/LaunchDaemons`, no `arugulad` service in `gui/UID`, `user/UID` or `system`, and no `arugulad` process for the user. The user gets passwordless sudo before `system`, as an admin would have. `BREAK=1` boots the service out before install, logout, system and reboot, drops the `note:` line before warning, installs again after each uninstall, and has the daemon already running when the ssh check would start it. |
+| `launchd` (`install`, `logout`, `uninstall`, `ssh`, `system`, `reboot`, `system-uninstall`) | A user made with `sysadminctl`, who never had a GUI session and is reached only over ssh, runs `arugulad install`. With no GUI session that's the background agent (with one it's the usual GUI LaunchAgent, which this VM's `admin` has and `illo` never does): it installs, warns that the daemon won't start after a reboot by itself, and the daemon and a pane outlive the ssh session. `arugulad uninstall` leaves nothing behind. `arugula --ssh illo@vm ls` from the host starts the daemon there and passes the warning through. `arugulad install --system` switches to a LaunchDaemon cleanly; after a clean shutdown and `tart run`, with nobody logged in as them, the daemon is back with its pane's output; `arugulad uninstall` removes the LaunchDaemon too. | One VM, in that order. "Nothing behind" means no plist in `~/Library/LaunchAgents` or `/Library/LaunchDaemons`, no `arugulad` service in `gui/UID`, `user/UID` or `system`, and no `arugulad` process for the user. The user gets passwordless sudo before `system`, as an admin would have. `BREAK=1` boots the service out before install, logout, system and reboot, drops the `note:` line (install checks both), installs again after each uninstall, and has the daemon already running when the ssh check would start it. |
 | `safari` | `/key-probe.html` puts its verdict in the DOM (`data-verdict` on `#verdict`: `keys`, `wrapped` or `none`, and JSON in `#result`), and it's `keys` or `wrapped`. A signed-out invitee opens a presigned invite, signs in through GitHub and joins in one click; the owner's Chrome sees them in the roster. | `web/safari/safari.spec.ts` with a small WebDriver client (`web/safari/webdriver.ts`). safaridriver runs in the VM (`sudo safaridriver --enable` once); its port comes to the host over ssh, and control and the fake GitHub, run on the host, are forwarded to the same ports on the VM's loopback. `SAFARIDRIVER_URL` alone runs the spec against any safaridriver. |
 | `ios` (`probe`, `invite`, `s27`), parked (#257) | The same key probe and presigned invite as `safari`, in Safari on an iPhone in the iOS Simulator (the probe reports `Safari N on iPhone, iOS N`), and, when named, S27's `safari/safari.ts --ios`, whose verdict must be a go. | `testnet/macos/ios.sh`, in a clone of the Xcode base (`arugula-macos-ios`). In the VM: `safaridriver --enable`, the newest iOS runtime's iPhone (`ARUGULA_IOS_DEVICE` names another device type; one is made if the image has none, and the runtime downloaded with `xcodebuild -downloadPlatform iOS` if it has no iOS runtime) booted with `simctl bootstatus -b`. The Simulator shares the VM's network, so the ports forwarded to the VM's loopback reach it as for `safari`. The spec picks it with `safari:useSimulator` and `safari:deviceUDID` (`SAFARI_IOS=1`, `SAFARI_DEVICE_UDID`). `just macos ios` builds `web/dist` and control first. `s27` needs `ARUGULA_S27_DIR`, the spike built in a worktree of `archive/spikes`: its CA is then trusted in the Mac's keychain and added to the Simulator's (`simctl keychain add-root-cert`), and its block names go in `/etc/hosts`. |
-| `iterm2` (`attach`, `type`, `output`, `split`, `tab`, `osc52`) | iTerm2 runs `arugula tmux -CC` and opens a native window for the daemon's tab; text written there runs in the pane; the pane's output shows in iTerm2; a split in iTerm2 adds a pane; a daemon tab becomes an iTerm2 tab. `arugula tui` in iTerm2 copies a line in copy mode, and `pbpaste` has it. | iTerm2's latest stable zip, driven by AppleScript over ssh. The VM's TCC database (SIP is off in the image) gets Apple Events for sshd and osascript to iTerm2 before it starts, so nothing asks. |
+| `iterm2` (`attach`, `split`, `tab`, `copy`) | iTerm2 runs `arugula tmux -CC` and opens a native window for the daemon's tab, text written there runs in the pane, and the pane's output shows in iTerm2 (all three `attach`); a split in iTerm2 adds a pane; a daemon tab becomes an iTerm2 tab. `arugula tui` in iTerm2 copies a line in copy mode, and `pbpaste` has it (`copy`). | iTerm2's latest stable zip, driven by AppleScript over ssh. The VM's TCC database (SIP is off in the image) gets Apple Events for sshd and osascript to iTerm2 before it starts, so nothing asks. |
 | `app` (`signin`, `approve`, `machines`, `reach`) | The release's app (`ARUGULA_MACOS_APP_ZIP` for another) signs in to control through the browser hand-over, is approved as a new device, lists every machine on the account (one on the host, and the Mac's own daemon once it joins), and keystrokes in its terminal run in that machine's pane. | `testnet/macos/app-cloud.ts`. Control, the fake GitHub and the host's machine run here; `web/fixtures/device.ts` is the person: it reads the app's `/#app=` page from Safari (AppleScript), allows it, hands the grant to the app's loopback port, and approves the app. The app's window is read through accessibility (JXA and System Events). |
 
 `ios` is parked: on the Xcode image's `:latest` (Xcode 27, iOS 27
@@ -1147,9 +1164,9 @@ What they found (2026-10-05, macOS 26.6.2 in the VM):
 
 The same scripts can run on the self-hosted runner (jake-mini) once tart
 is installed there: Apple silicon runs the VMs without nesting. A job
-would run `just macos launchd`, `safari`, `iterm2` and `app` in turn (never
-two at once), and needs about 35 GB free for the base and one clone; `ios`
-needs the Xcode base as well, about 60 GB more. It
+would run `just macos tools` and `app` in turn (never two at once), and
+needs about 35 GB free for the base and one clone; `ios` needs the Xcode
+base as well, about 60 GB more. It
 should make the base once and keep it between runs (the prune leaves no
 cache behind), and always end with `vm.sh down`. Not tried there yet: tart
 needs the runner's user to be able to use Virtualization.framework from
