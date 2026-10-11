@@ -204,12 +204,12 @@ impl Daemon {
                     self.broadcast();
                 }
             }
-            Api::Ide(ev) => self.ide_event(ev),
-            Api::IdeConns(pane, reply) => {
-                let mut v: Vec<u64> =
-                    self.ide_conns.iter().filter(|(_, c)| c.1 == Some(pane)).map(|(n, _)| *n).collect();
-                v.sort();
-                let _ = reply.send(v);
+            Api::Cards(call) => {
+                // Lent to the call, with the mux: nothing reads it meanwhile.
+                if let Some(mut cards) = self.cards.take() {
+                    call(&mut *cards, self);
+                    self.cards = Some(cards);
+                }
             }
             Api::Editors(who, reply) => {
                 let mut out: Vec<(PaneId, serde_json::Value)> = self
@@ -228,13 +228,6 @@ impl Daemon {
                     .collect();
                 out.sort_by_key(|(id, _)| *id);
                 let _ = reply.send(out.into_iter().map(|(_, v)| v).collect());
-            }
-            Api::DiffAnswer(pane, id, accept, text, by, reply) => {
-                let _ = reply.send(self.diff_answer(pane, id, accept, text, by));
-            }
-            Api::DiffOf(pane, reply) => {
-                let d = self.diffs.iter().find(|d| d.pane == Some(pane));
-                let _ = reply.send(d.map(|d| (d.info.clone(), d.old.clone(), d.new.clone())));
             }
             Api::EditorJoin(block, reply) => {
                 let id = self.mux.reserve_pane();

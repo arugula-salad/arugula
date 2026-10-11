@@ -21,8 +21,11 @@ How an integration reaches the mux, since the mux can't reach it:
   Browsers, agents, editors, forges and the rest are the binary's; the mux
   only asks the registry to make one.
 - **Traits.** What the mux calls out to is a trait in `src/mux/outside.rs`
-  (`Notify`, `People`, `AgentSessions`, `IdeLink`, `PaneGone`), plus
+  (`Notify`, `People`, `AgentSessions`, `PaneGone`), plus
   `Provider` for machines, all held in `Config`. The binary implements them.
+  `PaneCards` is the one that `start` takes: a card that makes a terminal
+  wait on you (the IDE's diffs), run on the mux task and lent to each
+  `Api::Cards` call.
 - **At exit.** `Config::at_exit` is what the binary runs when the mux shuts
   down, after the save.
 - **The other way.** The routes and tools call in through `MuxHandle`, which

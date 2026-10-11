@@ -871,12 +871,13 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
         daemon_id: daemon_id(&store),
         private,
         kinds,
-        ide: editors::ide_link(&ide),
+        pane_env: editors::pane_env(&ide),
+        shell_env_skip: vec!["CLAUDE_CODE_SSE_PORT".into()],
         sessions: Arc::new(conversations::Sessions),
         pane_gone,
         at_exit: Some(mux::AtExit(Arc::new(labs::stop_beholds))),
     };
-    let mux = mux::start(config, store, kept);
+    let mux = mux::start(config, store, kept, editors::pane_cards(&ide));
     editors::run_ide(&ide, mux.clone());
 
     let hosts = hosts::Hosts::open(&state_dir, name.clone(), provider);

@@ -1,5 +1,6 @@
-//! What needs a person: a pane's attention state and its reasons, the IDE
-//! connection and diffs, questions asked in a terminal, hooks and follow-ups.
+//! What needs a person: a pane's attention state and its reasons, the cards
+//! that make a terminal wait, questions asked in a terminal, hooks and
+//! follow-ups.
 
 use super::{AskReply, Daemon, InboxReply, Replied, SAVE_DEBOUNCE, agent_in, plain_reason};
 use crate::{acl::Principal, store::now_ms};
@@ -12,25 +13,6 @@ use arugula_vt::detect::AgentState;
 use std::collections::HashMap;
 use tokio::{sync::oneshot, time::Instant};
 use tracing::{info, warn};
-
-/// An edit Claude Code proposes through its IDE connection (M28).
-pub(super) struct PendingDiff {
-    /// Its pane, once its Claude Code's process is found in one.
-    pub(super) pane: Option<PaneId>,
-    /// The relay's connection, and the call's id there.
-    pub(super) conn: u64,
-    pub(super) call: serde_json::Value,
-    pub(super) tab: String,
-    /// The file as it is, and as it would be.
-    pub(super) old: String,
-    pub(super) new: String,
-    pub(super) info: arugula_proto::DiffInfo,
-}
-
-/// How much of a file a diff card keeps.
-const MAX_DIFF_FILE: u64 = 4 << 20;
-/// ...and of its diff.
-const MAX_DIFF_TEXT: usize = 16 << 10;
 
 /// A follow-up waiter.
 pub(super) struct Waiter {
@@ -100,53 +82,6 @@ fn push_title(state: Attention, reason: Option<&Reason>) -> &'static str {
         Some(ReasonKind::Gate) => "Waits at a gate",
         None if state == Attention::Done => "Done",
         None => "Needs you",
-    }
-}
-
-/// "Claude Code wants to edit src/main.rs (+3 −1)".
-fn diff_headline(d: &arugula_proto::DiffInfo) -> String {
-    let verb = if d.new { "create" } else { "edit" };
-    format!("Claude Code wants to {verb} {} (+{} −{})", d.file, d.added, d.removed)
-}
-
-/// An `openDiff` call as a diff card: the file as it is now, and as it
-/// would be.
-fn new_diff(
-    pane: Option<PaneId>,
-    conn: u64,
-    call: serde_json::Value,
-    args: &serde_json::Value,
-    cwd: Option<&str>,
-) -> PendingDiff {
-    use std::io::Read;
-    let path = args["new_file_path"].as_str().or(args["old_file_path"].as_str()).unwrap_or("").to_owned();
-    let old_path = args["old_file_path"].as_str().unwrap_or(&path).to_owned();
-    let mut old = String::new();
-    let exists = std::fs::File::open(&old_path).and_then(|f| f.take(MAX_DIFF_FILE).read_to_string(&mut old)).is_ok();
-    let new: String = args["new_file_contents"].as_str().unwrap_or("").to_owned();
-    let (added, removed, text) = crate::ide::diff::unified(&old, &new, MAX_DIFF_TEXT);
-    let file = match cwd {
-        Some(c) => crate::paths::relative(c, &path),
-        None => path.clone(),
-    };
-    let id = format!("d{conn}-{}", call.to_string().trim_matches('"'));
-    PendingDiff {
-        pane,
-        conn,
-        call,
-        tab: args["tab_name"].as_str().unwrap_or("").to_owned(),
-        info: arugula_proto::DiffInfo {
-            id,
-            file,
-            added,
-            removed,
-            text,
-            new: !exists,
-            at_ms: now_ms(),
-            ide: crate::ide::NAME.into(),
-        },
-        old,
-        new,
     }
 }
 
@@ -248,163 +183,21 @@ impl Daemon {
             return None;
         }
         if state == Attention::NeedsInput
-            && let Some(r) = self.diff_reason(pane).or_else(|| self.ask_reason(pane))
+            && let Some(r) = self.card_of.get(&pane).map(|c| c.0.clone()).or_else(|| self.ask_reason(pane))
         {
             return Some(r);
         }
         self.reasons.get(&pane).cloned()
     }
 
-    /// An edit waiting as a diff in a pane (M28): it comes before the
-    /// hook's permission card for the same edit.
-    fn diff_reason(&self, pane: PaneId) -> Option<Reason> {
-        let d = &self.diffs.iter().find(|d| d.pane == Some(pane))?.info;
-        Some(Reason {
-            kind: ReasonKind::Diff,
-            since_ms: d.at_ms,
-            headline: diff_headline(d),
-            command: None,
-            exit: None,
-            duration_ms: None,
-            bundle: None,
-            ask: None,
-            gate: None,
-            actions: vec![Action::Accept, Action::Reject, Action::Dismiss],
-        })
-    }
-
-    /// The process `pid` runs in one of our terminals: which (M28: the
-    /// Claude Code behind an IDE connection).
-    fn pane_of_pid(&self, pid: u32) -> Option<PaneId> {
-        let shells: HashMap<u32, PaneId> = self.panes.iter().filter_map(|(id, h)| Some((h.pid_now()?, *id))).collect();
-        let mut p = pid;
-        for _ in 0..64 {
-            if let Some(id) = shells.get(&p) {
-                return Some(*id);
-            }
-            p = crate::procinfo::ppid(p).filter(|p| *p > 1)?;
-        }
-        None
-    }
-
-    /// What Claude Code's IDE connections did (M28).
-    pub(super) fn ide_event(&mut self, ev: crate::ide::Event) {
-        use crate::ide::Event;
-        let Some(ide) = self.config.ide.clone() else { return };
-        match ev {
-            Event::Hello => {
-                // The relay says again what's open; start from nothing.
-                let panes: Vec<PaneId> = self.diffs.drain(..).filter_map(|d| d.pane).collect();
-                self.ide_conns.clear();
-                for p in panes {
-                    self.diff_changed(p);
-                }
-            }
-            Event::Conn { conn, pid } => {
-                let pane = pid.and_then(|p| self.pane_of_pid(p));
-                info!(conn, ?pid, ?pane, "Claude Code connected to its IDE");
-                self.ide_conns.insert(conn, (pid, pane));
-                self.rehome(conn, pane);
-                if let Some(p) = pane {
-                    self.touch(p);
-                }
-            }
-            Event::Gone { conn } => {
-                if let Some((_, Some(p))) = self.ide_conns.remove(&conn) {
-                    self.touch(p);
-                }
-                let gone: Vec<PaneId> = self.diffs.iter().filter(|d| d.conn == conn).filter_map(|d| d.pane).collect();
-                self.diffs.retain(|d| d.conn != conn);
-                for p in gone {
-                    self.diff_changed(p);
-                }
-            }
-            Event::Call { conn, id, tool, args } => match tool.as_str() {
-                "openDiff" | "openDiff/here" => {
-                    // Another IDE gets diffs, unless passing it on failed.
-                    if tool == "openDiff" && ide.clone().forward_diff(conn, &id, &args, self.tx.clone()) {
-                        return;
-                    }
-                    let pane = self.ide_conns.get(&conn).and_then(|c| c.1);
-                    let cwd = pane
-                        .and_then(|p| self.panes.get(&p))
-                        .and_then(|h| h.status().cwd.or_else(|| h.cwd().map(|c| c.display().to_string())));
-                    let d = new_diff(pane, conn, id, &args, cwd.as_deref());
-                    info!(conn, ?pane, file = d.info.file, "an edit waits as a diff");
-                    self.diffs.retain(|x| !(x.conn == d.conn && x.call == d.call));
-                    self.diffs.push(d);
-                    if let Some(p) = pane {
-                        self.diff_changed(p);
-                    }
-                }
-                "getDiagnostics" => ide.reply(conn, &id, crate::ide::no_diagnostics()),
-                _ => ide.reply(conn, &id, serde_json::json!({ "content": [] })),
-            },
-            Event::Closed { conn, ids, .. } => {
-                ide.closed(conn, &ids);
-                let (gone, keep): (Vec<PendingDiff>, Vec<PendingDiff>) =
-                    self.diffs.drain(..).partition(|d| d.conn == conn && ids.contains(&d.call));
-                self.diffs = keep;
-                for d in gone {
-                    let Some(p) = d.pane else { continue };
-                    // The terminal answered it (M29's "Allowed, 14:02").
-                    self.answered.insert(
-                        p,
-                        arugula_proto::ask::Answered {
-                            id: d.info.id.clone(),
-                            how: "answered".into(),
-                            who: "terminal".into(),
-                            name: "the terminal".into(),
-                            at_ms: now_ms(),
-                            headline: diff_headline(&d.info),
-                        },
-                    );
-                    self.diff_changed(p);
-                }
-            }
-        }
-    }
-
-    /// The pane an IDE connection's diffs belong to is known now.
-    fn rehome(&mut self, conn: u64, pane: Option<PaneId>) {
-        let Some(p) = pane else { return };
-        let mut found = false;
-        for d in self.diffs.iter_mut().filter(|d| d.conn == conn && d.pane.is_none()) {
-            d.pane = Some(p);
-            found = true;
-        }
-        if found {
-            self.diff_changed(p);
-        }
-    }
-
-    /// IDE connections whose Claude Code wasn't found in a pane yet (the
-    /// panes come back after a restart a moment after the relay speaks):
-    /// look again.
-    pub(super) fn find_ide_panes(&mut self) {
-        let lost: Vec<(u64, u32)> = self
-            .ide_conns
-            .iter()
-            .filter(|(_, (_, p))| p.is_none())
-            .filter_map(|(c, (pid, _))| Some((*c, (*pid)?)))
-            .collect();
-        for (conn, pid) in lost {
-            if let Some(pane) = self.pane_of_pid(pid) {
-                info!(conn, pid, pane, "found Claude Code's pane");
-                self.ide_conns.insert(conn, (Some(pid), Some(pane)));
-                self.rehome(conn, Some(pane));
-                self.touch(pane);
-            }
-        }
-    }
-
-    /// A pane's diffs changed: its card and its attention follow.
-    fn diff_changed(&mut self, pane: PaneId) {
-        match self.diff_reason(pane) {
-            Some(r) => {
+    /// A pane's card changed (#699): its reason and attention follow.
+    fn card_changed(&mut self, pane: PaneId, card: Option<(Reason, arugula_proto::DiffInfo)>) {
+        match card {
+            Some((r, d)) => {
+                self.card_of.insert(pane, (r.clone(), d));
                 let state = self.attention.get(&pane).copied().unwrap_or_default();
                 if state == Attention::NeedsInput {
-                    // Already asking: the card shows the diff now.
+                    // Already asking: the card shows now.
                     self.reasons.insert(pane, r);
                     self.emit(Some(pane), EventKind::Attention { state, reason: self.live_reason(pane) });
                 } else {
@@ -413,6 +206,7 @@ impl Daemon {
                 }
             }
             None => {
+                self.card_of.remove(&pane);
                 if self.reasons.get(&pane).is_some_and(|r| r.kind == ReasonKind::Diff) {
                     if self.asks.contains_key(&pane) {
                         self.reasons.remove(&pane);
@@ -425,34 +219,25 @@ impl Daemon {
         self.touch(pane);
     }
 
-    /// Someone answered a diff card (M28).
-    pub(super) fn diff_answer(
-        &mut self,
-        pane: PaneId,
-        id: Option<String>,
-        accept: bool,
-        text: Option<String>,
-        by: Driver,
-    ) -> Result<(), String> {
-        let ide = self.config.ide.clone().ok_or("Arugula isn't Claude Code's IDE here")?;
-        let at = self
-            .diffs
-            .iter()
-            .position(|d| d.pane == Some(pane) && id.as_ref().is_none_or(|i| *i == d.info.id))
-            .ok_or_else(|| format!("%{pane} has no edit waiting (the terminal answered it, or it was closed)"))?;
-        let d = self.diffs.remove(at);
-        let changed = text.as_ref().is_some_and(|t| *t != d.new);
-        let result =
-            if accept { crate::ide::saved(text.as_deref().unwrap_or(&d.new)) } else { crate::ide::rejected(&d.tab) };
-        ide.reply(d.conn, &d.call, result);
-        let how = match (accept, changed) {
-            (true, false) => "accepted",
-            (true, true) => "accepted with changes",
-            (false, _) => "rejected",
-        };
-        self.record_answer(pane, &by, &d.info.id, how, &diff_headline(&d.info));
-        self.diff_changed(pane);
-        Ok(())
+    /// The process `pid` runs in one of our terminals: which.
+    fn pane_of_pid(&self, pid: u32) -> Option<PaneId> {
+        let shells: HashMap<u32, PaneId> = self.panes.iter().filter_map(|(id, h)| Some((h.pid_now()?, *id))).collect();
+        let mut p = pid;
+        for _ in 0..64 {
+            if let Some(id) = shells.get(&p) {
+                return Some(*id);
+            }
+            p = crate::procinfo::ppid(p).filter(|p| *p > 1)?;
+        }
+        None
+    }
+
+    /// The cards' turn on each tick of the mux task.
+    pub(super) fn tick_cards(&mut self) {
+        if let Some(mut cards) = self.cards.take() {
+            cards.tick(self);
+            self.cards = Some(cards);
+        }
     }
 
     /// An open question in a terminal (Claude Code's hook), or a block's
@@ -958,6 +743,37 @@ impl Daemon {
 /// left alone, and nothing is asked again.
 pub(super) fn updates(attention: Option<Attention>, current: Option<&Reason>, new: &Reason) -> bool {
     attention == Some(Attention::NeedsInput) && current.is_some_and(|r| r.kind == new.kind)
+}
+
+/// What a card's owner may do (#699), each as the mux does it for its own.
+impl super::CardsCx for Daemon {
+    fn pane_of_pid(&self, pid: u32) -> Option<PaneId> {
+        Daemon::pane_of_pid(self, pid)
+    }
+
+    fn pane_cwd(&self, pane: PaneId) -> Option<String> {
+        self.panes.get(&pane).and_then(|h| h.status().cwd.or_else(|| h.cwd().map(|c| c.display().to_string())))
+    }
+
+    fn card(&mut self, pane: PaneId, card: Option<(Reason, arugula_proto::DiffInfo)>) {
+        self.card_changed(pane, card);
+    }
+
+    fn answered(&mut self, pane: PaneId, answered: arugula_proto::ask::Answered) {
+        self.answered.insert(pane, answered);
+    }
+
+    fn record_answer(&mut self, pane: PaneId, by: &Driver, id: &str, how: &str, headline: &str) {
+        Daemon::record_answer(self, pane, by, id, how, headline);
+    }
+
+    fn touch(&mut self, pane: PaneId) {
+        Daemon::touch(self, pane);
+    }
+
+    fn sender(&self) -> tokio::sync::mpsc::UnboundedSender<super::Cmd> {
+        self.tx.clone()
+    }
 }
 
 #[cfg(test)]

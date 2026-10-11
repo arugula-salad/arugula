@@ -12,7 +12,7 @@
 //! feature has no editor blocks (a saved one says so when it's opened), no
 //! socket for editors to join on, so none ever does, no extension to
 //! download and no IDE settings. The mux's half of each is the core's
-//! (`arugula_mux::ide`, the `EditorLink` and `IdeLink` traits).
+//! (the `EditorLink` and `PaneCards` traits).
 //!
 //! Tests that need the editor are `#[cfg(feature = "editor")]`.
 
@@ -21,7 +21,7 @@ use std::{
     sync::Arc,
 };
 
-use arugula_proto::BlockType;
+use arugula_proto::{BlockType, DiffInfo, Driver, PaneId};
 use axum::Router;
 #[cfg(not(feature = "editor"))]
 use serde_json::Value;
@@ -29,6 +29,8 @@ use serde_json::Value;
 use crate::block::BlockKinds;
 #[cfg(not(feature = "editor"))]
 use crate::block::{Block, BlockCtx, BlockKind};
+#[cfg(feature = "editor")]
+use crate::mux::Api;
 use crate::{mux::MuxHandle, pane::Launcher, server::App};
 
 /// Where code-server's releases are downloaded from. (The flag that says
@@ -134,14 +136,85 @@ pub async fn start_ide(
     None
 }
 
-/// The IDE as the mux calls it.
+/// The edits Claude Code proposes through the IDE, as the mux holds them
+/// (#699): cards that make a pane wait.
 #[cfg(feature = "editor")]
-pub fn ide_link(ide: &Option<Arc<Ide>>) -> Option<Arc<dyn crate::mux::IdeLink>> {
-    ide.clone().map(|i| i as Arc<dyn crate::mux::IdeLink>)
+pub fn pane_cards(ide: &Option<Arc<Ide>>) -> Option<Box<dyn crate::mux::PaneCards>> {
+    ide.clone().map(|i| Box::new(crate::ide::Cards::new(i)) as Box<dyn crate::mux::PaneCards>)
 }
 
 #[cfg(not(feature = "editor"))]
-pub fn ide_link(_ide: &Option<Arc<Ide>>) -> Option<Arc<dyn crate::mux::IdeLink>> {
+pub fn pane_cards(_ide: &Option<Arc<Ide>>) -> Option<Box<dyn crate::mux::PaneCards>> {
+    None
+}
+
+/// What every pane's environment gets from the IDE: the port Claude Code
+/// finds it by.
+#[cfg(feature = "editor")]
+pub fn pane_env(ide: &Option<Arc<Ide>>) -> Vec<(String, String)> {
+    ide.iter().map(|i| ("CLAUDE_CODE_SSE_PORT".to_owned(), i.port.to_string())).collect()
+}
+
+#[cfg(not(feature = "editor"))]
+pub fn pane_env(_ide: &Option<Arc<Ide>>) -> Vec<(String, String)> {
+    Vec::new()
+}
+
+/// Someone accepted (`accept`) or rejected an edit waiting as a diff in a
+/// pane, by its id or whichever waits; accepting may change it first (M28).
+#[cfg(feature = "editor")]
+pub async fn answer_diff(
+    ide: &Option<Arc<Ide>>,
+    mux: &MuxHandle,
+    pane: PaneId,
+    id: Option<String>,
+    accept: bool,
+    text: Option<String>,
+    by: Driver,
+) -> Result<(), String> {
+    if ide.is_none() {
+        return Err("Arugula isn't Claude Code's IDE here".into());
+    }
+    mux.api(|r| {
+        Api::Cards(Box::new(move |cards, cx| {
+            if let Some(c) = crate::ide::Cards::of(cards) {
+                let _ = r.send(c.answer(cx, pane, id, accept, text, by));
+            }
+        }))
+    })
+    .await
+    .unwrap_or_else(|| Err("the daemon is stopping".into()))
+}
+
+#[cfg(not(feature = "editor"))]
+pub async fn answer_diff(
+    _ide: &Option<Arc<Ide>>,
+    _mux: &MuxHandle,
+    _pane: PaneId,
+    _id: Option<String>,
+    _accept: bool,
+    _text: Option<String>,
+    _by: Driver,
+) -> Result<(), String> {
+    Err("Arugula isn't Claude Code's IDE here".into())
+}
+
+/// The edit a pane's diff card shows: before and after.
+#[cfg(feature = "editor")]
+pub async fn diff_of(mux: &MuxHandle, pane: PaneId) -> Option<(DiffInfo, String, String)> {
+    mux.api(|r| {
+        Api::Cards(Box::new(move |cards, _| {
+            if let Some(c) = crate::ide::Cards::of(cards) {
+                let _ = r.send(c.diff_of(pane));
+            }
+        }))
+    })
+    .await
+    .flatten()
+}
+
+#[cfg(not(feature = "editor"))]
+pub async fn diff_of(_mux: &MuxHandle, _pane: PaneId) -> Option<(DiffInfo, String, String)> {
     None
 }
 

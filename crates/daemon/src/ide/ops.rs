@@ -4,6 +4,7 @@
 //! an editor may send to a pane they can type in.
 
 use arugula_proto::{
+    PaneId,
     api::{Empty, IdeDiffs, IdeDiffsRequest, IdeInfo, IdeMentionRequest, IdeMentioned, IdeOther},
     op::ops::{IdeGet, IdeMention, IdeSet},
 };
@@ -11,9 +12,22 @@ use axum::http::StatusCode;
 
 use crate::{
     api::bad,
-    mux::Api,
+    mux::{Api, MuxHandle},
     ops::{Cx, Handle, OpError},
 };
+
+/// The IDE connections of Claude Code in a pane.
+async fn ide_conns(mux: &MuxHandle, pane: PaneId) -> Vec<u64> {
+    mux.api(|r| {
+        Api::Cards(Box::new(move |cards, _| {
+            if let Some(c) = super::Cards::of(cards) {
+                let _ = r.send(c.conns_of(pane));
+            }
+        }))
+    })
+    .await
+    .unwrap_or_default()
+}
 
 impl Handle for IdeGet {
     async fn handle(cx: &Cx<'_>, _: (), _: Empty) -> Result<IdeInfo, OpError> {
@@ -55,7 +69,7 @@ impl Handle for IdeMention {
             }
         }
         let ide = cx.app.ide.as_ref().ok_or_else(|| bad("arugulad isn't Claude Code's IDE here"))?;
-        let conns = cx.app.mux.api(|r| Api::IdeConns(m.pane, r)).await.unwrap_or_default();
+        let conns = ide_conns(&cx.app.mux, m.pane).await;
         if conns.is_empty() {
             return Err(OpError::Status(
                 StatusCode::CONFLICT,

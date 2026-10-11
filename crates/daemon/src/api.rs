@@ -301,11 +301,8 @@ async fn act_one(
         Action::Accept | Action::Reject => {
             let by = by.unwrap_or(Driver { who: "owner".into(), name: "owner".into() });
             let accept = req.action == Action::Accept;
-            return app
-                .mux
-                .api(|r| Api::DiffAnswer(pane, req.id.clone(), accept, req.text.clone(), by, r))
-                .await
-                .unwrap_or_else(|| Err("the daemon is stopping".into()));
+            return crate::editors::answer_diff(&app.ide, &app.mux, pane, req.id.clone(), accept, req.text.clone(), by)
+                .await;
         }
         _ => {}
     }

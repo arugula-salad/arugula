@@ -23,7 +23,7 @@ Each has a `README.md` with where to start reading.
   (`mux/`), panes, blocks and their registry (`block.rs`, `BlockKinds`), the
   access model (`acl`), history, the state directory (`store`), the pane's
   process helpers, `provider`, the shell integration and the files it can read
-  (`fs`), and the mux's half of the IDE (`ide/`). The mux names no
+  (`fs`). The mux names no
   integration: no HTTP or MCP, and nothing the binary adds (agents, browsers,
   forges). The binary reaches it through `BlockKinds`, the traits in
   `mux/outside.rs`, `Config::at_exit` and `MuxHandle`; `just mux-guard` checks
@@ -63,8 +63,8 @@ nothing marked `mux:` names the edge or the block kinds.
   or kind) handled once (`mod.rs` holds the list and `HAND_WRITTEN`), with
   `mcp/ops.rs`; declared in `crates/proto/src/op.rs`
   ([docs/operations.md](docs/operations.md)).
-- **The mux:** `mux/` (`mux:`, with `block.rs`, `history.rs`, `agentenv.rs`
-  and the mux's half of the IDE, `ide/`): the task that owns the layout, the
+- **The mux:** `mux/` (`mux:`, with `block.rs`, `history.rs`
+  and `agentenv.rs`): the task that owns the layout, the
   panes and every client (`mod.rs`), with one file per area: `attention.rs`,
   `clients.rs`, `blocks.rs`, `api_calls.rs`, `who_may.rs`, `thread_ops.rs`,
   `machines.rs`, `call_ops.rs`, `info.rs`, `config.rs`, and the traits it
