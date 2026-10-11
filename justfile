@@ -546,6 +546,7 @@ mux-guard:
 # What CI runs.
 check: test mux-guard
     just proto-ts check
+    scripts/check-binaries
     {{cargo}} fmt --all --check
     {{cargo}} clippy --workspace --all-targets -- -D warnings
 

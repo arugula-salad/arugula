@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Fails when the tree at REV (default HEAD) has a binary file that isn't on
+# the list below, or any file over 1 MiB. Screenshots, recordings, builds and
+# archives stay out of the repo: every clone downloads them forever. A PR's
+# pictures go in the PR (drag them into its description), not in a commit or
+# a branch.
+#
+#   scripts/check-binaries [REV]
+set -euo pipefail
+
+rev=${1:-HEAD}
+max=$((1024 * 1024))
+
+# The binaries the repo needs: the desktop app's icons and the web favicon.
+# Add one here only for something the build or the app reads.
+allowed() {
+  case "$1" in
+    crates/desktop/icons/*.png | crates/desktop/icons/icon.icns | crates/desktop/icons/icon.ico) return 0 ;;
+    web/public/favicon.ico) return 0 ;;
+  esac
+  return 1
+}
+
+empty=$(git hash-object -t tree /dev/null)
+bad=0
+
+# git's own test: numstat says "-" for a file it can't diff as text.
+while IFS=$'\t' read -r added _ path; do
+  [ "$added" = - ] || continue
+  allowed "$path" && continue
+  echo "binary file: $path" >&2
+  bad=1
+done < <(git diff --numstat "$empty" "$rev")
+
+while read -r _ _ _ size path; do
+  # A submodule has no size ("-").
+  [[ $size =~ ^[0-9]+$ ]] && [ "$size" -gt "$max" ] || continue
+  echo "over 1 MiB ($((size / 1024)) KiB): $path" >&2
+  bad=1
+done < <(git ls-tree -r -l "$rev")
+
+if [ "$bad" = 1 ]; then
+  echo "check-binaries: keep screenshots, recordings and builds out of the repo (AGENTS.md, \"Binaries\"). A PR's pictures go in its description." >&2
+  exit 1
+fi

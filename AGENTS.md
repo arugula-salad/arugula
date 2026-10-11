@@ -175,6 +175,16 @@ lints the daemon with neither, and with each alone.
   Run suites through `just`: a `cargo nextest run` of your own skips the
   lock.
 
+## Binaries
+
+No screenshots, recordings, builds or archives in the repo, on any branch:
+every clone downloads them for good. A PR's pictures go in its description
+(drag them in on GitHub), not in a commit or a `pr-assets/` branch, which a
+ruleset now refuses. The only binaries are the desktop app's icons and the
+web favicon; `scripts/check-binaries` fails on any other, and on any file
+over 1 MiB. It runs on every PR (`.github/workflows/binaries.yml`) and in
+`just check`.
+
 ## Milestone codes
 
 Comments carry codes like M43 and S21. They name milestones and spikes from
