@@ -353,9 +353,10 @@ e2e url="": web e2e-build
 # A new user's journeys (#551), as a person takes them: J1 (one person,
 # from no account to a terminal) and J2 (two people linking up). Each ends
 # with a graph of the path, every step annotated with what went right or
-# wrong, in web/journey-reports/ (local output, never committed).
+# wrong, in web/journey-reports/ (local output, never committed). They run
+# one worktree at a time, like `just e2e` (scripts/suite-lock).
 journey which="": web e2e-build
-    cd web && pnpm exec playwright test --project=chrome e2e/journey-{{ if which == "" { "" } else { which } }}
+    cd web && {{suite_lock}} pnpm exec playwright test --project=chrome e2e/journey-{{ if which == "" { "" } else { which } }}
     @echo "Graphs: web/journey-reports/ (open the .html; the .svg is the graph alone)"
     @just journey-map
 
