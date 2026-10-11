@@ -8500,7 +8500,6 @@ html[data-finish="glass"] .prompt-backdrop {
   backdrop-filter: blur(3px);
 }
 
-
 /* #761: the code a waiting browser shows (a QR code and the text), what
  * the approving device scans or types, and its camera. */
 .control-device-code {
