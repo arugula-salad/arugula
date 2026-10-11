@@ -728,6 +728,9 @@ async fn a_device_pins_its_root_with_its_own_signature() {
     let good = pin_of(&keys, &trust);
     assert_eq!(pin(good.clone()).await, 200);
     assert_eq!(get().await["pin"], json!(good));
+    // Listed as a passkey's device, for the Remove dialog.
+    let (_, all) = c.as_person(&cookie, "GET", "/api/devices", None).await;
+    assert_eq!(all["passkeys"], json!([keys.id()]));
 }
 
 fn roster(team: &str, version: u64, members: Vec<Member>, by: &DeviceKeys) -> Roster {

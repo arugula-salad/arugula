@@ -821,6 +821,9 @@ export class ControlSession {
   /** When each device last loaded the page, as control saw (none before it
    * kept it, or from an older control). */
   used = new Map<string, number>();
+  /** #764: devices whose keys come from a passkey, as control says (they
+   * pinned their root): one device on every browser with that passkey. */
+  passkeyDevices = new Set<string>();
   revocations: Revocation[] = [];
   daemons: DirDaemon[] = [];
   /** Shares waiting for this account's yes. */
@@ -1234,6 +1237,7 @@ export class ControlSession {
           joins?: Record<string, string>;
           features?: Record<string, string>;
           used?: Record<string, number>;
+          passkeys?: string[];
         }>("/api/devices"),
         api<{ daemons: ForeignEntry[]; offers?: ShareOffer[] }>("/api/directory"),
       ]);
@@ -1256,6 +1260,7 @@ export class ControlSession {
           .map(([d]) => d),
       );
       this.used = new Map(Object.entries(devs.used ?? {}));
+      this.passkeyDevices = new Set(devs.passkeys ?? []);
       const daemons: DirDaemon[] = [];
       for (const d of dir.daemons) {
         const { chain, ...entry } = d;

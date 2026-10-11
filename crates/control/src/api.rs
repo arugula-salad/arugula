@@ -306,9 +306,12 @@ pub async fn devices(State(app): State<Arc<App>>, s: Session) -> R {
     // #761: which waiting devices show a code, for the page to ask for it.
     let features: serde_json::Map<String, Value> =
         app.db.device_features(&s.account)?.into_iter().map(|(d, f)| (d, Value::String(f))).collect();
+    // #764: devices whose keys come from a passkey (they pinned their root),
+    // for the page to say removing one signs out every browser with it.
+    let passkeys = app.db.pinned_devices(&s.account)?;
     Ok(Json(json!({
         "trust": trust, "certs": certs, "revocations": revs, "pending": pending, "joins": joins, "used": used,
-        "features": features,
+        "features": features, "passkeys": passkeys,
     })))
 }
 

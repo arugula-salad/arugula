@@ -1179,6 +1179,15 @@ impl Db {
         Ok(())
     }
 
+    /// Devices of an account that pinned their root (#764): those whose
+    /// keys come from a passkey.
+    pub fn pinned_devices(&self, account: &str) -> anyhow::Result<Vec<String>> {
+        let c = self.c();
+        let mut q = c.prepare("SELECT id FROM devices WHERE account = ?1 AND pin IS NOT NULL")?;
+        let rows = q.query_map(params![account], |r| r.get(0))?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
     pub fn device_pin(&self, account: &str, id: &str) -> anyhow::Result<Option<String>> {
         Ok(self
             .c()

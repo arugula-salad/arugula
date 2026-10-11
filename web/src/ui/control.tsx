@@ -1898,6 +1898,7 @@ function Devices({ s, close }: { s: ControlSession; close: () => void }) {
           ) : (
             <p data-remove-explain>It loses access to your machines at once. To use it again, add it as a new device: it gets a new key.</p>
           )}
+          {s.passkeyDevices.has(removing.device) ? <p data-remove-passkey-device>It's your passkey's device, so this signs it out on every browser the passkey is synced to.</p> : null}
           <div data-remove-which>
             <b>{shownName(removing.name)}</b> <DeviceLabel s={s} c={removing} />
           </div>
