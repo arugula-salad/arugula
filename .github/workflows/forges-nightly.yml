@@ -16,11 +16,11 @@ jobs:
   github:
     runs-on: arugula-amd64
     env:
-      ARUGULA_GH_TEST_REPO: ${{ vars.ILLOGICAL_GH_TEST_REPO }}
-      ARUGULA_GH_AUTHOR_TOKEN: ${{ secrets.ILLOGICAL_GH_AUTHOR_TOKEN }}
-      ARUGULA_GH_REVIEWER_TOKEN: ${{ secrets.ILLOGICAL_GH_REVIEWER_TOKEN }}
-      ARUGULA_GH_APP_ID: ${{ vars.ILLOGICAL_GH_APP_ID }}
-      ARUGULA_GH_APP_PRIVATE_KEY: ${{ secrets.ILLOGICAL_GH_APP_PRIVATE_KEY }}
+      ARUGULA_GH_TEST_REPO: ${{ vars.ARUGULA_GH_TEST_REPO }}
+      ARUGULA_GH_AUTHOR_TOKEN: ${{ secrets.ARUGULA_GH_AUTHOR_TOKEN }}
+      ARUGULA_GH_REVIEWER_TOKEN: ${{ secrets.ARUGULA_GH_REVIEWER_TOKEN }}
+      ARUGULA_GH_APP_ID: ${{ vars.ARUGULA_GH_APP_ID }}
+      ARUGULA_GH_APP_PRIVATE_KEY: ${{ secrets.ARUGULA_GH_APP_PRIVATE_KEY }}
     steps:
       - name: Are the test accounts configured?
         id: have
