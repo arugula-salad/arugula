@@ -27,9 +27,9 @@ control serves, and the first account a machine joins, are trusted.
   - control distributes keys, but each device certificate is signed by a
     device the account already trusts;
   - daemons verify the chain themselves, so control can't add a reader;
-  - a joining machine pins its account's root only once the person has
-    compared the account's fingerprint on the machine with the one on the
-    device that approved it ([Joining](#joining-a-machine-the-accounts-fingerprint)).
+  - a joining machine pins its account's root only once the device that
+    approved it has answered a secret in the machine's approval link,
+    which control never sees ([Joining](#joining-a-machine-the-secret-in-its-link)).
 - **Relay:** control keeps each enrolled daemon's dial-out socket (the daemon's
   dial-out mux) and splices clients onto it. It sees connection metadata and byte
   counts only.
@@ -214,34 +214,70 @@ Ed25519 seed.
 | Safari, iOS | pending phone run | | |
 | Chrome, Android | pending phone run | | |
 
-### Joining a machine: the account's fingerprint
+### Joining a machine: the secret in its link
 
 The chain a daemon checks is only as good as the root it pins, and at
 `join` that root comes from control. A control that wanted to read a
 machine could approve it itself, into an account of its own (its own
 "first device", signing the daemon's certificate), and every check above
-would pass. So the daemon doesn't take the root on control's word:
+would pass. So the daemon doesn't take the root on control's word. Since
+#760 nothing is compared for it; the person carries a secret instead:
 
-- **The account's fingerprint** is its root device's id (the first 8 bytes
-  of SHA-256 over its keys) in four groups, `1a2b-3c4d-5e6f-7a8b`: the same
-  form as every device fingerprint.
-- **The approving device shows it:** in the *Add a machine?* dialog, next to
-  the code, and under *Devices and machines…*. A browser shows the root it
-  pinned when it enrolled (from IndexedDB), not what control says now (when
-  those differ it says so).
-- **The machine shows it** once the approval arrives and checks out, and
-  pins nothing until the person says they match:
-  - `arugulad join` prints it and asks (`y`, or type the fingerprint);
-    `--account FINGERPRINT` checks it without asking, for scripts;
-  - Getting started (the daemon's own page) shows it with *They match* /
-    *They don't*.
-- **If they don't match,** nothing is saved: the daemon asks control to drop
-  it (best effort) and makes a new key, so it can join again.
+- **The code has two halves.** Control gives the machine its code (the
+  lookup: ten characters derived from the machine's keys, which control
+  sees, as before). The machine makes a secret of its own, 16 characters
+  of the same alphabet (80 bits), and prints the approval link as
+  `#join=<code>.<secret>`. The fragment never reaches control's server.
+  Typed, it's one code, `XXXXX-XXXXX.XXXX-XXXX-XXXX-XXXX`; the page splits
+  it and sends control only the code. Signing in with GitHub on the way
+  keeps the whole link in the tab's sessionStorage and gives control only
+  `#join=<code>` to come back to, as a presigned invite's seed is kept.
+- **The code commits to the machine's key.** The approving page recomputes
+  it from the certificate control shows, so control can't swap in a key of
+  its own; the link brings the code from the machine, so nobody compares
+  it by eye.
+- **The approver binds its answer to the secret.** With the certificate it
+  signs, the approving device sends
+  `HMAC-SHA256(secret, "arugula join secret v1", account, root, the machine's device id and keys)`
+  (`arugula_e2e::cert::join_mac`), where the root is the one that device
+  pinned when it enrolled, not control's word now. Control passes it on to
+  the machine as it is (`mac` in the approval and in the machine's poll).
+- **The machine checks it** against the account control says it's in and
+  its own keys, and pins that root without asking anyone: `arugulad join`
+  and `arugula login` finish on their own, and Getting started goes from
+  the code to joined. Control can't make that MAC for a root of its own,
+  or for a key of its own, without the secret.
+- **One guess per code.** A wrong MAC ends the join: the daemon asks
+  control to drop it (best effort) and removes its key, so the next join
+  has a new key, a new code and a new secret. The CLI never saved its key.
+  A mistyped secret ends up here too.
+- **Offline guessing.** Control sees the MAC, so it could try secrets
+  against it offline and then answer for an account of its own. That's
+  why the secret is 80 bits rather than the code's 50: out of reach while
+  the join lasts (ten minutes). A shorter typed code would need a PAKE
+  (CPace or SPAKE2) over it instead of a plain MAC.
+- **Without the secret.** A page that has only the code (typed alone, or
+  brought by a browser that came to approve the machine, #326) asks for
+  the whole code before it offers Approve. An approval that reaches a
+  machine with a secret but no MAC is refused unless `--account
+  FINGERPRINT` names the account (scripts that pass it keep working).
 - **What this rests on:** the machine's side is the daemon's own output
   (terminal, or its local page), which control doesn't serve. The other
   side is the approving device, and it's only as trustworthy as that
   device's own pin (below) and the client code it's running
   ([What holds against control](#what-holds-against-control)).
+- **Older daemons and CLIs** don't say `join-secret` when they ask to join
+  (`features`, as `presigned-invites` is said), print no secret, and get no
+  MAC. The page shows them the old way: the code to check against the
+  machine's, and the account's fingerprint (its root device's id, the first
+  8 bytes of SHA-256 over its keys, as `1a2b-3c4d-5e6f-7a8b`), which the
+  machine then shows and asks about (`y`, or the fingerprint typed;
+  *They match* / *They don't* in Getting started; `--account FINGERPRINT`
+  without asking). A newer daemon or CLI does the same with a control that
+  doesn't say `join_secret` in `/control.json`, so a control that lies
+  about that gets the compare, not a pass. Daemons from 0.16.0 and before
+  pin without a check, as they always did; control's API keeps working for
+  all of them.
 - **Trust on first use, still:**
   - an account's first device is self-signed, and a browser enrolling as a
     later device takes the account's root from control. A browser approved
@@ -258,10 +294,8 @@ would pass. So the daemon doesn't take the root on control's word:
   its provider and writes the sandbox's `control.json` itself
   (`crates/control/src/sandboxes.rs`). The operator runs that machine, so it
   can read it whatever the keys say. A sandbox is end to end encrypted
-  against the network, not against control.
-- **Older daemons** (0.16.0 and before) join as they did, pinning without a
-  check; control's API is unchanged, so they keep working with a newer
-  control, and a new daemon works with an older control.
+  against the network, not against control. Its join has no link, so no
+  secret.
 
 ### Signing in the desktop app: one Allow
 
@@ -314,7 +348,7 @@ or whoever runs yours) does:
 | relays and stores honestly | only your devices and the people you share with read them |
 | has its database or relay copied, or logs everything it sees | still unreadable: it holds certificates and ciphertext, never a private key |
 | turns malicious **after** your machines and devices are set up, without changing the page it serves | can't add a reader: daemons check every device against the root they pinned. It can withhold revocations and refuse service |
-| lies at **join** about which account a machine joins | caught by the account fingerprint, if you compare it |
+| lies at **join** about which account a machine joins | refused by the machine: the approving device's answer to the secret in its link doesn't match (an older daemon or CLI: caught by the account fingerprint, if you compare it) |
 | serves a **modified web client** | can read what that client shows and use its keys while it runs |
 
 The last row is the important limit. The browser client at control's

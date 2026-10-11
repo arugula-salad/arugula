@@ -32,6 +32,10 @@ pub struct JoinRequest {
 pub struct CliJoinRequest {
     pub cert: Cert,
     pub proof: JoinProof,
+    /// `join-secret` when its link carries a secret (#760); left out
+    /// otherwise, as before.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub features: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -74,6 +78,10 @@ pub struct JoinPoll {
     pub certs: Vec<Cert>,
     #[serde(default)]
     pub revocations: Vec<Revocation>,
+    /// The approving device's MAC under the join secret (#760,
+    /// `arugula_e2e::cert::join_mac`), hex; only when it sent one.
+    #[serde(default)]
+    pub mac: Option<String>,
 }
 
 /// The token the daemon polls with: `GET /api/join/{code}?poll=`.
@@ -98,6 +106,7 @@ impl JoinPoll {
             team: None,
             certs: vec![],
             revocations: vec![],
+            mac: None,
         }
     }
 
@@ -110,7 +119,7 @@ impl JoinPoll {
 impl Serialize for JoinPoll {
     /// Control has sent `{approved: false}` while waiting, that and
     /// `rejected` once turned down, and everything (a `null` team and trust
-    /// included) once approved.
+    /// included) once approved, with `mac` only when there is one.
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         if !self.approved {
             let n = 1 + usize::from(self.rejected.is_some());
@@ -121,13 +130,17 @@ impl Serialize for JoinPoll {
             }
             return o.end();
         }
-        let mut o = s.serialize_struct("JoinPoll", 6)?;
+        let mut o = s.serialize_struct("JoinPoll", 6 + usize::from(self.mac.is_some()))?;
         o.serialize_field("approved", &self.approved)?;
         o.serialize_field("cert", &self.cert)?;
         o.serialize_field("trust", &self.trust)?;
         o.serialize_field("certs", &self.certs)?;
         o.serialize_field("revocations", &self.revocations)?;
         o.serialize_field("team", &self.team)?;
+        // Only with a secret's MAC (#760): without one, as before.
+        if let Some(mac) = &self.mac {
+            o.serialize_field("mac", mac)?;
+        }
         o.end()
     }
 }

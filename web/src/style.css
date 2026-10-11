@@ -2721,6 +2721,24 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   width: 10rem;
 }
 
+/* A whole join code (#760): the code, a dot and the machine's secret. */
+.control-code input.control-join-code {
+  width: 22rem;
+  max-width: 100%;
+}
+
+.control-whole-code input {
+  box-sizing: border-box;
+  width: 22rem;
+  max-width: 100%;
+  padding: 6px 8px;
+  font: 14px ui-monospace, monospace;
+  color: var(--fg);
+  background: var(--letterbox);
+  border: 1px solid var(--raised-hover);
+  border-radius: 6px;
+}
+
 /* A checkbox in a code row keeps its own size, beside its label. */
 .control-code input[type="checkbox"] {
   width: auto;
@@ -5445,6 +5463,15 @@ button.diff-why-run {
   letter-spacing: 0.18em;
   color: var(--s-ask);
   text-shadow: 0 0 24px rgba(185, 140, 255, 0.35);
+}
+
+/* A join secret (#760): after the code, smaller, on a line of its own. */
+.start-code-secret {
+  display: block;
+  margin-top: 8px;
+  font: 700 clamp(14px, 4vw, 22px)/1.2 ui-monospace, monospace;
+  letter-spacing: 0.08em;
+  overflow-wrap: anywhere;
 }
 
 .start-code-big.start-fp {

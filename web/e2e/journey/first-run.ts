@@ -44,8 +44,6 @@ export async function firstRun(j: Journey, app: App, actor: string, machine: str
   const win = () => app.window;
   const tab = () => app.lastOpened;
   const start = () => win().getByRole("dialog", { name: "Getting started" });
-  let machineCode = "";
-  let account = "";
 
   await j.step(
     {
@@ -110,7 +108,6 @@ export async function firstRun(j: Journey, app: App, actor: string, machine: str
         .getByRole("button", { name: /^Connect to / })
         .click();
       await expect(start().getByText("Approve this code on a device you use")).toBeVisible({ timeout: 20_000 });
-      machineCode = await read(start().getByText("Approve this code on a device you use").locator(".."), CODE);
     },
   );
 
@@ -164,33 +161,21 @@ export async function firstRun(j: Journey, app: App, actor: string, machine: str
     },
   );
 
+  // #760: the link carries the machine's secret, so Approve is all there
+  // is: no code to compare, and no account fingerprint to carry back.
   await step(
     "approve-machine",
-    "Approve the machine, checking its code",
+    "Approve the machine",
     "browser",
     tab,
     (p) => p.getByRole("heading", { name: "Add a machine?", exact: true }),
     async (p) => {
-      const shown = await read(p.getByText(/asks to join/), CODE);
-      j.compared(`machine code ${machineCode} (app) = ${shown} (browser)`);
-      expect(shown).toBe(machineCode);
-      account = await read(p.getByText(/Your account:/), FP);
+      await expect(p.getByText(/asks to join/)).toBeVisible();
+      await expect(p.getByText(/Check it's the code/)).toBeHidden();
+      await expect(p.getByText(/Your account:/)).toBeHidden();
       await p.getByRole("button", { name: /^Approve/ }).click();
       await expect(p.getByRole("heading", { name: "Add a machine?", exact: true })).toBeHidden({ timeout: 20_000 });
-    },
-  );
-
-  await step(
-    "confirm-account",
-    "Back in the app, check the account's fingerprint",
-    "app",
-    win,
-    () => start().getByText("Is this your account?"),
-    async () => {
-      const shown = await read(start().getByText("Is this your account?").locator(".."), FP);
-      j.compared(`account ${account} (browser) = ${shown} (app)`);
-      expect(shown).toBe(account);
-      await start().getByRole("button", { name: "They match" }).click();
+      await expect(start().getByText("Is this your account?")).toBeHidden();
     },
   );
 

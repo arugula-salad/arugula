@@ -97,6 +97,10 @@ pub struct ControlInfo {
     /// The CLI joins with a code and signs its requests (M49).
     #[serde(default)]
     pub cli_join: u64,
+    /// Control passes a join secret's MAC from the approving device to the
+    /// machine (#760), so a machine's link may carry a secret.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub join_secret: u64,
     /// The ssh jump host for guests of daemons behind NAT (M65).
     #[serde(default)]
     pub guest_ssh: Option<GuestJump>,
@@ -119,6 +123,19 @@ pub struct ControlAuth {
 pub struct ControlCliJoin {
     #[serde(default)]
     pub cli_join: Option<u64>,
+}
+
+fn is_zero(n: &u64) -> bool {
+    *n == 0
+}
+
+/// Just whether control passes a join secret's MAC on (#760), from
+/// `/control.json`, read apart from [`ControlInfo`] like the others. A
+/// machine or the CLI puts a secret in its link only when it does.
+#[derive(Debug, Clone, Copy, Default, Deserialize)]
+pub struct ControlJoinSecret {
+    #[serde(default)]
+    pub join_secret: u64,
 }
 
 /// Just where control is from `/control.json` (#507), read apart from

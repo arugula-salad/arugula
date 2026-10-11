@@ -154,9 +154,9 @@ try {
   await me.approveDevice(phoneDev);
   check("phone approved by the laptop", (await me.trusted()).has(phone.id));
 
-  // 3. A daemon joins with a code. It takes the account only if its
-  // fingerprint is the one the person expects (`--account`, else it asks).
-  // The phone approves it.
+  // 3. A daemon joins with a code. The link carries its secret (#760): the
+  // phone's approval answers it, and the daemon checks that. `--account`
+  // checks the fingerprint too (and is all an older daemon has).
   const joinAs = async (name: string, state: string, account: string, by: Device = phoneDev) => {
     const joining = spawn(`${target}/arugulad`, ["join", base, "--name", name, "--state-dir", state, "--account", account], { stdio: ["ignore", "pipe", "inherit"] });
     procs.push(joining);
@@ -164,12 +164,13 @@ try {
       let out = "";
       joining.stdout!.on("data", (d) => {
         out += d;
-        const m = out.match(/#join=([A-Z0-9]{5}-[A-Z0-9]{5})/);
+        const m = out.match(/#join=([A-Z0-9.-]+)\s/);
         if (m) res(m[1]);
       });
     });
     const approved = await by.approveJoin(code);
-    check("join code matches the daemon's key", (await joinCode(approved)) === code, code);
+    check("the link carries a secret after the code", code.includes("."), code);
+    check("join code matches the daemon's key", (await joinCode(approved)) === code.split(".")[0], code);
     return new Promise<number>((r) => joining.on("exit", r));
   };
   const state = temp("daemon");
@@ -241,12 +242,12 @@ try {
     const cliCode = await new Promise<string>((res) => {
       login.stdout!.on("data", (d) => {
         said += d;
-        const m = said.match(/#join=([A-Z0-9]{5}-[A-Z0-9]{5})/);
+        const m = said.match(/#join=([A-Z0-9.-]+)\s/);
         if (m) res(m[1]);
       });
     });
     const approvedCli = await me.approveJoin(cliCode);
-    check("the CLI's code is its key's, and it's a cli device", approvedCli.kind === "cli" && (await joinCode(approvedCli)) === cliCode, cliCode);
+    check("the CLI's code is its key's, and it's a cli device", approvedCli.kind === "cli" && (await joinCode(approvedCli)) === cliCode.split(".")[0], cliCode);
     const loginExit = await new Promise<number>((r) => login.on("exit", (c) => r(c ?? 1)));
     check("arugula login finished", loginExit === 0 && said.includes("Logged in."), said.split("\n").slice(-3).join(" "));
     check("the CLI is one of the account's devices", (await me.trusted()).get(approvedCli.device)?.kind === "cli");
@@ -493,7 +494,7 @@ try {
     let out = "";
     joining2.stdout!.on("data", (d) => {
       out += d;
-      const m = out.match(/#join=([A-Z0-9]{5}-[A-Z0-9]{5})/);
+      const m = out.match(/#join=([A-Z0-9.-]+)\s/);
       if (m) res(m[1]);
     });
   });

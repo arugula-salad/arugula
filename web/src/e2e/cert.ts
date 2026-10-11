@@ -151,3 +151,44 @@ export function normalizeCode(s: string): string | null {
   const c = s.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
   return c.length === 10 ? `${c.slice(0, 5)}-${c.slice(5)}` : null;
 }
+
+// ---- the join secret (#760), as `arugula_e2e::cert`'s
+//
+// A machine (or the CLI) puts a secret after its code in the approval link,
+// `#join=CODE.SECRET`. The fragment never reaches control, and the page
+// sends control only the code. Approving, this device answers with a MAC
+// under the secret over the account it approves into and the machine's
+// keys; the machine pins that root when it checks out, and nobody compares
+// a fingerprint.
+
+/** The feature a machine names when its link carries a secret. */
+export const JOIN_SECRET = "join-secret";
+
+const SECRET_ALPHABET = /^[ABCDEFGHJKMNPQRSTVWXYZ0-9]{16}$/;
+
+/** A join secret as typed: 16 letters and digits, any case, dashes and
+ * spaces ignored; as `XXXX-XXXX-XXXX-XXXX`. */
+export function normalizeSecret(s: string): string | null {
+  const c = s.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+  return SECRET_ALPHABET.test(c) ? (c.match(/.{4}/g) ?? []).join("-") : null;
+}
+
+/** A whole join code, `CODE.SECRET` or just `CODE`: the code and the
+ * secret, normalized; null if either half isn't one. */
+export function splitJoinCode(s: string): { code: string; secret: string | null } | null {
+  const dot = s.indexOf(".");
+  const code = normalizeCode(dot < 0 ? s : s.slice(0, dot));
+  if (!code) return null;
+  if (dot < 0) return { code, secret: null };
+  const secret = normalizeSecret(s.slice(dot + 1));
+  return secret ? { code, secret } : null;
+}
+
+/** The approving device's answer (hex HMAC-SHA256): `secret` binds the
+ * account (its id and the root this device pinned) to the machine whose
+ * keys are in `c`. */
+export async function joinMac(secret: string, trust: { account: string; root: string }, c: Cert): Promise<string> {
+  const key = await subtle.importKey("raw", enc.encode(secret.replace(/-/g, "")), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const body = `arugula join secret v1\naccount ${trust.account}\nroot ${trust.root}\ndevice ${c.device}\nnoise ${c.noise}\nsign ${c.sign}\n`;
+  return hex(new Uint8Array(await subtle.sign("HMAC", key, enc.encode(body))));
+}

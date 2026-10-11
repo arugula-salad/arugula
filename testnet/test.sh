@@ -296,7 +296,7 @@ claim_relay() {
   cli --ssh "$box" join "$CONTROL_URL" --account "$fp" < /dev/null > "$WORK/join.out" 2>&1 &
   pid=$!
   for _ in $(seq 1 120); do
-    code="$(sed -n 's/.*#join=\([A-Z0-9]*-[A-Z0-9]*\).*/\1/p' "$WORK/join.out" | head -1)"
+    code="$(sed -nE 's/.*#join=([A-Z0-9]+-[A-Z0-9]+(\.[A-Z0-9-]+)?).*/\1/p' "$WORK/join.out" | head -1)"
     [ -n "$code" ] && break
     kill -0 "$pid" 2>/dev/null || break
     sleep 0.5
@@ -354,7 +354,7 @@ join_box() {
     < /dev/null > "$WORK/join-$box.out" 2>&1 &
   pid=$!
   for _ in $(seq 1 120); do
-    code="$(sed -n 's/.*#join=\([A-Z0-9]*-[A-Z0-9]*\).*/\1/p' "$WORK/join-$box.out" | head -1)"
+    code="$(sed -nE 's/.*#join=([A-Z0-9]+-[A-Z0-9]+(\.[A-Z0-9-]+)?).*/\1/p' "$WORK/join-$box.out" | head -1)"
     [ -n "$code" ] && break
     kill -0 "$pid" 2>/dev/null || break
     sleep 0.5
@@ -377,7 +377,7 @@ bastion_login() {
   pid=$!
   code=""
   for _ in $(seq 1 60); do
-    code="$(sed -n 's/.*#join=\([A-Z0-9]*-[A-Z0-9]*\).*/\1/p' "$WORK/login.out" | head -1)"
+    code="$(sed -nE 's/.*#join=([A-Z0-9]+-[A-Z0-9]+(\.[A-Z0-9-]+)?).*/\1/p' "$WORK/login.out" | head -1)"
     [ -n "$code" ] && break
     kill -0 "$pid" 2>/dev/null || break
     sleep 0.5

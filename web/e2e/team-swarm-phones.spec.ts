@@ -234,15 +234,15 @@ test("a machine on another network, behind netem, in both phones' swarms", async
       let out = "";
       joining.stdout!.on("data", (d) => {
         out += d;
-        const m = out.match(/(http\S+#join=[A-Z0-9-]+)/);
+        const m = out.match(/(http\S+#join=[A-Z0-9.-]+)/);
         if (m) res(m[1]);
       });
       void exited.then((code) => rej(new Error(`arugulad join in the box exited (${code}) before printing a link`)));
     });
     await alice.goto(link);
-    const account = await alice.locator("[data-join-account]").getAttribute("data-join-account");
+    // #760: the link carries the box's secret: nothing to compare.
+    await expect(alice.locator("[data-join-sealed]")).toBeVisible();
     await alice.locator("[data-approve-join]").tap();
-    joining.stdin!.end(`${account}\n`);
     expect(await exited).toBe(0);
     // With labs, like the rest of the suite's daemons (see labs.ts).
     docker("exec", name, "touch", "/root/state/labs");

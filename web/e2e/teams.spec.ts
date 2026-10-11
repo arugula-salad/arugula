@@ -208,13 +208,20 @@ async function startJoin(name: string, state: string, extra: string[] = [], env:
   const link = await new Promise<string>((res) => {
     joining.stdout!.on("data", (d) => {
       out += d;
-      const m = out.match(/(http\S+#join=[A-Z0-9-]+)/);
+      const m = out.match(/(http\S+#join=[A-Z0-9.-]+)/);
       if (m) res(m[1]);
     });
   });
-  // Answer the machine's question: the account's fingerprint, as `page`
-  // shows it while approving.
+  // #760: a machine whose link carries a secret checks the account by
+  // itself. An older one (no secret: `ARUGULA_FEATURES` without
+  // `join-secret`) asks, and is answered with the account's fingerprint as
+  // `page` shows it while approving.
   const confirm = async (page: Page) => {
+    if (link.split("#join=")[1].includes(".")) {
+      await expect(page.locator("[data-join-sealed]")).toBeVisible();
+      await expect(page.locator("[data-join-account]")).toHaveCount(0);
+      return () => {};
+    }
     const account = await page.locator("[data-join-account]").getAttribute("data-join-account");
     return () => joining.stdin!.end(`${account}\n`);
   };

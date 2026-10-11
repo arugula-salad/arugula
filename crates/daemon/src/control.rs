@@ -3,12 +3,23 @@
 //!
 //! `arugulad join URL` makes this daemon's keys (`<state>/daemon.key`),
 //! asks control for a code, and waits until someone approves it from a
-//! device of theirs. It then shows the account's fingerprint (its root
-//! device's id), which the person checks against the device they approved
-//! on: control could otherwise hand back an account of its own. Only then
-//! does it pin that root and save it all in `<state>/control.json`. The
-//! running daemon notices the file (within a few seconds), and from then
-//! on:
+//! device of theirs. Control could hand back an account of its own, so
+//! the daemon checks which account it's in before it pins that root and
+//! saves it all in `<state>/control.json`:
+//!
+//! - **With a join secret** (#760, when control passes one on): the link
+//!   it prints carries a secret after the code (`#join=CODE.SECRET`), in
+//!   the fragment, which control never sees. The approving device answers
+//!   with a MAC under it over the account and this machine's keys
+//!   ([`arugula_e2e::cert::join_mac`]), and the daemon pins the root when
+//!   it checks out, asking nobody. A wrong one ends the join and drops the
+//!   key; a missing one refuses unless `--account` names the account.
+//! - **Without** (an older control, or `ARUGULA_FEATURES` playing an older
+//!   daemon): it shows the account's fingerprint (its root device's id),
+//!   which the person checks against the device they approved on.
+//!
+//! The running daemon notices the file (within a few seconds), and from
+//! then on:
 //!
 //! - it keeps the account's certificates fresh from control, but decides
 //!   for itself which devices to trust ([`Trust::evaluate`] against the
@@ -47,7 +58,7 @@ use arugula_control_wire as wire;
 use arugula_core::Role;
 use arugula_e2e::{
     Cert, DeviceKeys, Kind, Revocation, Trust,
-    cert::{Trusted, join_code},
+    cert::{self, Trusted, join_code},
     keys::fingerprint,
     now_ms,
     push::PushSub,
@@ -73,7 +84,12 @@ pub const REFRESH_WAIT: Duration = Duration::from_secs(10);
 /// what every daemon checking a team can take (presigned invites' rosters).
 /// `ARUGULA_FEATURES` says otherwise (tests play an older daemon with "").
 fn features() -> String {
-    std::env::var("ARUGULA_FEATURES").unwrap_or_else(|_| "presigned-invites,owner-moves".into())
+    std::env::var("ARUGULA_FEATURES").unwrap_or_else(|_| "presigned-invites,owner-moves,join-secret".into())
+}
+
+/// Whether `features` names `feature`.
+fn has_feature(features: &str, feature: &str) -> bool {
+    features.split(',').any(|f| f == feature)
 }
 const WATCH: Duration = Duration::from_secs(3);
 /// Dropped by control: what it said, and when (#325).
@@ -1927,6 +1943,10 @@ impl Drop for JoinLock {
 pub struct JoinPending {
     pub url: String,
     pub code: String,
+    /// The join secret in the link after the code (#760), when control
+    /// passes its MAC on; never sent to control.
+    secret: Option<String>,
+    state_dir: PathBuf,
     pub expires_in_secs: u64,
     /// The team `--team` named, by name.
     pub team_name: Option<String>,
@@ -1940,10 +1960,39 @@ pub struct JoinPending {
 }
 
 impl JoinPending {
-    /// Where a signed-in device approves it.
+    /// Where a signed-in device approves it: the whole code in the
+    /// fragment.
     pub fn approve_url(&self) -> String {
-        format!("{}/#join={}", self.url, self.code)
+        format!("{}/#join={}", self.url, self.whole_code())
     }
+
+    /// The code to type where the link can't be opened: with the secret,
+    /// `CODE.SECRET`, which the page splits.
+    pub fn whole_code(&self) -> String {
+        match &self.secret {
+            Some(s) => format!("{}.{s}", self.code),
+            None => self.code.clone(),
+        }
+    }
+
+    /// The link carries a secret: nothing to compare after the approval.
+    pub fn has_secret(&self) -> bool {
+        self.secret.is_some()
+    }
+}
+
+/// How the account control approved this machine into was checked.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AccountCheck {
+    /// The approving device's MAC under the join secret checks out (#760):
+    /// it's the account that device is in.
+    Proven,
+    /// The link carried a secret, but the approval came with no MAC (a page
+    /// that had only the code): the account is control's word.
+    Missing,
+    /// No secret was made (an older control): the person compares the
+    /// account's fingerprint, as before.
+    Unasked,
 }
 
 /// A finished join: where this machine went, and who approved it.
@@ -1965,6 +2014,34 @@ pub struct Joined {
 pub struct Approved {
     saved: Saved,
     pub joined: Joined,
+    /// How the account was checked, so far.
+    pub check: AccountCheck,
+}
+
+/// Turned down here: ask control to drop the machine again (best effort),
+/// and remove the key, so the next join starts over with a new one (and a
+/// new code).
+async fn drop_key(url: &str, state_dir: &Path) {
+    let key = state_dir.join(KEY_FILE);
+    if let Ok(keys) = DeviceKeys::load(&key) {
+        let path = wire::LEAVE;
+        let http = crate::roots::client();
+        let v2 = takes_v2(&http, url).await;
+        let _ = http
+            .post(format!("{url}{path}"))
+            .header(AUTH, auth_header(&keys, "POST", path, b"", v2))
+            .timeout(Duration::from_secs(10))
+            .send()
+            .await;
+    }
+    let _ = std::fs::remove_file(key);
+}
+
+/// Whether control passes a join secret's MAC on (#760).
+async fn takes_secret(http: &reqwest::Client, url: &str) -> bool {
+    let Ok(r) = http.get(format!("{url}{}", wire::CONTROL_JSON)).send().await else { return false };
+    let about: wire::ControlJoinSecret = r.json().await.unwrap_or_default();
+    about.join_secret >= 1
 }
 
 impl Approved {
@@ -1985,19 +2062,7 @@ impl Approved {
     /// effort), and start over with a new key, so a later join isn't held
     /// up by this approval.
     pub async fn refuse(self, state_dir: &Path) {
-        let key = state_dir.join(KEY_FILE);
-        if let Ok(keys) = DeviceKeys::load(&key) {
-            let path = wire::LEAVE;
-            let http = crate::roots::client();
-            let v2 = takes_v2(&http, &self.saved.url).await;
-            let _ = http
-                .post(format!("{}{path}", self.saved.url))
-                .header(AUTH, auth_header(&keys, "POST", path, b"", v2))
-                .timeout(Duration::from_secs(10))
-                .send()
-                .await;
-        }
-        let _ = std::fs::remove_file(key);
+        drop_key(&self.saved.url, state_dir).await;
     }
 }
 
@@ -2049,8 +2114,17 @@ pub async fn join_start(
         }
     }
     // One join at a time on this machine (#329).
-    let mut lock = JoinLock::take(state_dir, by)?;
+    let lock = JoinLock::take(state_dir, by)?;
     let http = crate::roots::http().timeout(Duration::from_secs(20)).build()?;
+    // A secret in the link (#760), when this daemon takes them and control
+    // passes the MAC on. A hosted sandbox's join is approved by the device
+    // that asked for it, which has no link: none there.
+    let mut feats = features();
+    let secret = (ticket.is_none() && has_feature(&feats, cert::JOIN_SECRET) && takes_secret(&http, &url).await)
+        .then(cert::join_secret);
+    if secret.is_none() {
+        feats = feats.split(',').filter(|f| *f != cert::JOIN_SECRET).collect::<Vec<_>>().join(",");
+    }
     let mut renewed: Option<Removed> = None;
     let (res, ask) = loop {
         let ask = Cert { account: String::new(), ..Cert::new(&keys, "", Kind::Daemon, name) };
@@ -2067,7 +2141,7 @@ pub async fn join_start(
                 urls: vec![],
                 team: team.map(str::to_owned),
                 ticket: ticket.map(str::to_owned),
-                features: features(),
+                features: feats.clone(),
                 proof: Some(proof),
             })
             .send()
@@ -2095,10 +2169,11 @@ pub async fn join_start(
     }
     let started: wire::JoinStarted = res.json().await?;
     debug_assert_eq!(started.code, join_code(&ask));
-    lock.waiting(&started.code, &format!("{url}/#join={}", started.code), now_ms() + started.expires_in_secs * 1000);
-    Ok(JoinPending {
+    let mut p = JoinPending {
         url,
         code: started.code,
+        secret,
+        state_dir: state_dir.to_owned(),
         expires_in_secs: started.expires_in_secs,
         team_name: started.team_name,
         renewed,
@@ -2106,14 +2181,19 @@ pub async fn join_start(
         ask,
         http,
         _lock: lock,
-    })
+    };
+    let expires_ms = now_ms() + p.expires_in_secs * 1000;
+    let (whole, at) = (p.whole_code(), p.approve_url());
+    p._lock.waiting(&whole, &at, expires_ms);
+    Ok(p)
 }
 
 /// Wait for someone to approve it and check the approval and the team the
-/// approving device chose. Nothing is saved until the person confirms the
-/// account ([`Approved::save`]).
+/// approving device chose, and the MAC under the join secret if there is
+/// one ([`AccountCheck`]): a wrong one refuses here and drops the key.
+/// Nothing is saved until [`Approved::save`].
 pub async fn join_finish(p: JoinPending) -> anyhow::Result<Approved> {
-    let JoinPending { url, code, expires_in_secs, team_name, poll, ask, http, _lock, .. } = p;
+    let JoinPending { url, code, secret, state_dir, expires_in_secs, team_name, poll, ask, http, _lock, .. } = p;
     let mins = expires_in_secs / 60;
     let deadline = std::time::Instant::now() + Duration::from_secs(expires_in_secs);
     let got = loop {
@@ -2166,6 +2246,19 @@ pub async fn join_finish(p: JoinPending) -> anyhow::Result<Approved> {
         }
         None => None,
     };
+    // The account it's in is the approving device's, not control's word
+    // (#760): one guess per code, so a wrong MAC ends this join and its key.
+    let check = match (&secret, &got.mac) {
+        (None, _) => AccountCheck::Unasked,
+        (Some(_), None) => AccountCheck::Missing,
+        (Some(s), Some(mac)) if cert::join_mac_ok(s, &trust, &cert, mac) => AccountCheck::Proven,
+        (Some(_), Some(_)) => {
+            drop_key(&url, &state_dir).await;
+            bail!(
+                "the approval doesn't match the secret in this machine's link: the code was mistyped, or control changed the account it's approved into. Not joining; this machine made a new key, so ask again for a new code"
+            );
+        }
+    };
     let saved = Saved {
         url: url.clone(),
         trust: trust.clone(),
@@ -2192,7 +2285,7 @@ pub async fn join_finish(p: JoinPending) -> anyhow::Result<Approved> {
         key: fingerprint(&cert.device),
         account: fingerprint(&trust.root),
     };
-    Ok(Approved { saved, joined })
+    Ok(Approved { saved, joined, check })
 }
 
 /// `arugulad join URL [--team ID] [--account FINGERPRINT]`: ask, show
@@ -2223,8 +2316,14 @@ pub async fn join(
     println!();
     println!("    {}", p.approve_url());
     println!();
-    println!("  on a device that's signed in, and check the code there is {}.", p.code);
-    println!("  Or sign in at {} and type the code.", p.url);
+    if p.has_secret() {
+        // #760: the link carries a secret; nothing to check by eye.
+        println!("  on a device that's signed in, and approve it there.");
+        println!("  Or sign in at {} and type the whole code, {}.", p.url, p.whole_code());
+    } else {
+        println!("  on a device that's signed in, and check the code there is {}.", p.code);
+        println!("  Or sign in at {} and type the code.", p.url);
+    }
     if team.is_none() {
         println!("  Whoever approves picks their account or a team they own (--team ID picks one ahead).");
     }
@@ -2242,9 +2341,14 @@ pub async fn join(
         // A hosted sandbox runs on control's own provider: there is no
         // second device to check against.
         None if ticket.is_some() => Ok(()),
+        // The approving device's MAC under the link's secret (#760).
+        None if a.check == AccountCheck::Proven => Ok(()),
         // Back into the account it was removed from (#330): the person
         // checked that one's fingerprint when it first joined.
         None if rejoining.as_deref().is_some_and(|root| a.is_account(root)) => Ok(()),
+        None if a.check == AccountCheck::Missing => Err(anyhow::anyhow!(
+            "the approval came without the approving device's answer to this machine's secret (was it approved from the code alone, without the part after the dot?), so control's word is all there is for the account; not joining. Open the whole link, or type the whole code, or pass --account with the fingerprint your device shows"
+        )),
         None => confirm_account(&a),
     };
     if let Err(e) = checked {
@@ -2494,6 +2598,144 @@ mod tests {
 
         join(&url, "box", None, Some(&fingerprint(&root.device)), None, &dir).await.unwrap();
         assert_eq!(read_saved(&dir).unwrap().unwrap().trust.root, root.device);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// #760: a control that passes join secrets on. It approves whatever
+    /// asked into `root`'s account (the person's, or one of its own), with
+    /// whatever `mac` the test gives it.
+    #[derive(Default)]
+    struct SecretFake {
+        asked: Option<Cert>,
+        features: String,
+        root: Option<(Arc<DeviceKeys>, Cert)>,
+        mac: Option<String>,
+        left: usize,
+    }
+
+    async fn secret_fake() -> (String, Arc<std::sync::Mutex<SecretFake>>) {
+        use axum::{
+            Json, Router,
+            routing::{get, post},
+        };
+        let fake: Arc<std::sync::Mutex<SecretFake>> = Default::default();
+        let (f1, f2, f3) = (fake.clone(), fake.clone(), fake.clone());
+        let app = Router::new()
+            .route("/control.json", get(|| async { Json(serde_json::json!({ "daemon_auth": 2, "join_secret": 1 })) }))
+            .route(
+                "/api/join",
+                post(move |Json(b): Json<serde_json::Value>| async move {
+                    let c: Cert = serde_json::from_value(b["cert"].clone()).unwrap();
+                    let code = join_code(&c);
+                    let mut f = f1.lock().unwrap();
+                    f.asked = Some(c);
+                    f.features = b["features"].as_str().unwrap_or_default().to_owned();
+                    Json(serde_json::json!({ "code": code, "poll": "p", "expires_in_secs": 60 }))
+                }),
+            )
+            .route(
+                "/api/join/{code}",
+                get(move || async move {
+                    let f = f2.lock().unwrap();
+                    let (keys, root) = f.root.clone().unwrap();
+                    let mut c = f.asked.clone().unwrap();
+                    c.account = root.account.clone();
+                    c.sign_with(&keys);
+                    let mut v = serde_json::json!({
+                        "approved": true, "cert": c, "trust": { "account": root.account, "root": root.device },
+                        "certs": [root], "revocations": [], "team": null,
+                    });
+                    if let Some(m) = &f.mac {
+                        v["mac"] = serde_json::json!(m);
+                    }
+                    Json(v)
+                }),
+            )
+            .route(
+                "/api/daemon/leave",
+                post(move || async move {
+                    f3.lock().unwrap().left += 1;
+                    Json(serde_json::json!({}))
+                }),
+            );
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", l.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(l, app).await });
+        (url, fake)
+    }
+
+    fn account_root(account: &str) -> (Arc<DeviceKeys>, Cert) {
+        let (keys, mut root) = device(account, Kind::Browser);
+        root.approver = root.device.clone();
+        root.sig = hex::encode(keys.signature(root.body().as_bytes()));
+        (Arc::new(keys), root)
+    }
+
+    /// #760: control answers with a root of its own. The link's secret is
+    /// one control never saw, so it can't make the MAC: the machine
+    /// refuses, says why and drops its key, with nobody asked to compare.
+    /// Without a MAC it refuses too, unless `--account` names the account.
+    /// The approving device's own MAC joins it at once.
+    #[tokio::test]
+    async fn a_join_secret_keeps_controls_own_account_out() {
+        let (url, fake) = secret_fake().await;
+        let dir = std::env::temp_dir().join(format!("arugula-join-secret-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let key = dir.join(KEY_FILE);
+
+        // Control approves into its own account, with a MAC it made up.
+        fake.lock().unwrap().root = Some(account_root("evil"));
+        fake.lock().unwrap().mac = Some("00".repeat(32));
+        let p = join_start(&url, "box", None, None, &dir, "a test").await.unwrap();
+        let secret = p.secret.clone().expect("control passes secrets on: the link has one");
+        assert_eq!(p.approve_url(), format!("{url}/#join={}.{secret}", p.code));
+        assert!(has_feature(&fake.lock().unwrap().features, cert::JOIN_SECRET));
+        let old = DeviceKeys::load(&key).unwrap().id();
+        let e = join_finish(p).await.err().expect("refused");
+        assert!(e.to_string().contains("doesn't match the secret"), "{e}");
+        assert!(!key.exists(), "the key is dropped: one guess per code");
+        assert_eq!(fake.lock().unwrap().left, 1, "control is told to drop it");
+        assert!(read_saved(&dir).unwrap().is_none(), "nothing pinned");
+
+        // No MAC at all: control's word is all there is, so not joined.
+        fake.lock().unwrap().mac = None;
+        let e = join(&url, "box", None, None, None, &dir).await.expect_err("refused");
+        assert!(e.to_string().contains("without the approving device's answer"), "{e}");
+        assert!(read_saved(&dir).unwrap().is_none() && !key.exists());
+
+        // The person's own device answers the secret: joined, no prompt.
+        let (pkeys, proot) = account_root("mine");
+        fake.lock().unwrap().root = Some((pkeys, proot.clone()));
+        let p = join_start(&url, "box", None, None, &dir, "a test").await.unwrap();
+        let now = DeviceKeys::load(&key).unwrap().id();
+        assert_ne!(now, old, "a new key, and so a new code");
+        let trust = Trust { account: "mine".into(), root: proot.device.clone() };
+        let ask = fake.lock().unwrap().asked.clone().unwrap();
+        fake.lock().unwrap().mac = Some(cert::join_mac(p.secret.as_deref().unwrap(), &trust, &ask));
+        let a = join_finish(p).await.unwrap();
+        assert_eq!(a.check, AccountCheck::Proven);
+        a.save(&dir).unwrap();
+        assert_eq!(read_saved(&dir).unwrap().unwrap().trust.root, proot.device);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A join with no link to carry a secret (a hosted sandbox's, approved
+    /// by the device that asked for it) makes none, even on a control that
+    /// takes them: it doesn't say `join-secret`, and the approval is
+    /// checked as before. (`ARUGULA_FEATURES` without `join-secret`, an
+    /// older daemon, goes the same way: the e2e specs play one.)
+    #[tokio::test]
+    async fn a_join_with_no_link_makes_no_secret() {
+        let (url, fake) = secret_fake().await;
+        fake.lock().unwrap().root = Some(account_root("mine"));
+        let dir = std::env::temp_dir().join(format!("arugula-join-nosecret-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let p = join_start(&url, "box", None, Some("ticket"), &dir, "a test").await.unwrap();
+        assert!(!p.has_secret(), "a hosted sandbox's join has no link to carry one");
+        assert!(!has_feature(&fake.lock().unwrap().features, cert::JOIN_SECRET));
+        assert_eq!(p.approve_url(), format!("{url}/#join={}", p.code));
+        let a = join_finish(p).await.unwrap();
+        assert_eq!(a.check, AccountCheck::Unasked);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

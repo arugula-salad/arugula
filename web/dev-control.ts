@@ -176,16 +176,16 @@ async function join_(d: Device, name: string, state: string) {
   const code = await new Promise<string>((res) => {
     joining.stdout!.on("data", (b: Buffer) => {
       out += b;
-      const m = out.match(/#join=([A-Z0-9-]+)/);
+      // The whole code: the machine's secret follows it (#760).
+      const m = out.match(/#join=([A-Z0-9.-]+)\s/);
       if (m) res(m[1]);
     });
     joining.on("exit", (c) => fail(`joining ${name} exited (${c}):\n${out}`));
   });
   joining.removeAllListeners("exit");
   const exited = new Promise<number | null>((r) => joining.on("exit", r));
+  // Its answer to the secret is all the machine needs: it asks nothing.
   await d.approveJoin(code);
-  // The fingerprint it asks about is the one the device approved with.
-  joining.stdin!.end("y\n");
   if ((await exited) !== 0) fail(`joining ${name} failed:\n${out}`);
 }
 

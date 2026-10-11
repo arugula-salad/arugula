@@ -77,9 +77,10 @@ pub(crate) enum Command {
     /// them up (for machines without systemd); stops on SIGTERM.
     Sandbox,
     /// Add this machine to your account on an Arugula control
-    /// (`https://control.example.com`): prints a code to approve from a
-    /// device that's signed in, then the account's fingerprint to check
-    /// against that device. A running daemon picks it up.
+    /// (`https://control.example.com`): prints a link to approve from a
+    /// device that's signed in, and finishes once that device approves (an
+    /// older control: then the account's fingerprint to check against that
+    /// device). A running daemon picks it up.
     Join {
         url: String,
         /// This machine's name in the directory [default: the hostname].
@@ -90,7 +91,8 @@ pub(crate) enum Command {
         #[arg(long)]
         team: Option<String>,
         /// The account's fingerprint, as the approving device shows it
-        /// (Devices and machines…): checked instead of asking.
+        /// (Devices and machines…): checked too. Only needed with an older
+        /// control, whose link has no secret to answer.
         #[arg(long, value_name = "FINGERPRINT")]
         account: Option<String>,
         /// A hosted sandbox's one-time ticket (control passes it).

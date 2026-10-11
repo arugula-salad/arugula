@@ -7,7 +7,7 @@
 // is the browser's behaviour, not a copy of it.
 //
 //   const me = await Device.signIn({ control: "http://127.0.0.1:7690", login: "alice" });
-//   await me.approveJoin("ABCDE-FGHIJ");
+//   await me.approveJoin("ABCDE-FGHIJ.KLMN-PQRS-TVWX-YZ01");
 //   const box = await me.waitOnline("box");
 //   await me.roundTrip(box.id, "MARKER");
 //
@@ -15,7 +15,7 @@
 // docs/testing.md describes both.
 
 import { readFileSync, writeFileSync } from "node:fs";
-import { certBody, evaluate, joinCode, revocationBody, unhex, type Cert, type Revocation } from "../src/e2e/cert.ts";
+import { certBody, evaluate, joinCode, joinMac, revocationBody, splitJoinCode, unhex, type Cert, type Revocation } from "../src/e2e/cert.ts";
 import { E2ESocket } from "../src/e2e/channel.ts";
 import { generateKeys, signText, type DeviceKeys } from "../src/e2e/keys.ts";
 import { signRoster, teamJoinBody, word, type Roster, type TeamPin, type TeamRole } from "../src/e2e/team.ts";
@@ -180,11 +180,17 @@ export class Device {
   }
 
   /** Approve a daemon's join code (what `arugulad join` prints after
-   * `#join=`) into this account, as the approve page does: the code must be
-   * the one the waiting daemon's key gives. Returns its certificate. With
-   * `team` (one this account owns), into that team, signed as the page
-   * signs it. */
-  async approveJoin(code: string, team?: string): Promise<Cert> {
+   * `#join=`, the whole of it) into this account, as the approve page does:
+   * the code must be the one the waiting daemon's key gives. With the join
+   * secret after it (#760, `CODE.SECRET`), the approval carries the MAC
+   * under it, and the daemon needs nothing else; with the code alone, the
+   * daemon is an older one, or joins with `--account`. Returns its
+   * certificate. With `team` (one this account owns), into that team,
+   * signed as the page signs it. */
+  async approveJoin(whole: string, team?: string): Promise<Cert> {
+    const parts = splitJoinCode(whole);
+    if (!parts) throw new Error(`${whole} isn't a join code`);
+    const { code, secret } = parts;
     const shown = await this.api<{ cert: Cert }>(`/api/joins/${code}`);
     const want = await joinCode(shown.cert);
     if (want !== code) throw new Error(`the daemon waiting on ${code} has a key whose code is ${want}`);
@@ -192,7 +198,8 @@ export class Device {
     c.sig = await signText(this.keys, certBody(c));
     let team_sig: string | null = null;
     if (team) team_sig = await signText(this.keys, teamJoinBody(c.device, (await this.team(team)).pin));
-    await this.api(`/api/joins/${code}/approve`, { cert: c, team: team ?? null, team_sig });
+    const mac = secret ? await joinMac(secret, { account: this.account, root: this.root }, shown.cert) : null;
+    await this.api(`/api/joins/${code}/approve`, { cert: c, team: team ?? null, team_sig, ...(mac ? { mac } : {}) });
     return c;
   }
 

@@ -314,9 +314,11 @@ pub fn logged_in() -> bool {
 // ---------------------------------------------------------------- login
 
 /// `arugula login`: join the account at `url` as a `cli` device. Shows
-/// the code to approve on a signed-in device and waits; then checks the
-/// account (`account`, the fingerprint the approving device shows, or by
-/// asking) before pinning it.
+/// the link to approve on a signed-in device and waits; then checks the
+/// account before pinning it. The link carries a join secret (#760) when
+/// control passes its MAC on: the approving device's MAC under it says
+/// which account, with nothing to compare. Otherwise (an older control)
+/// `account`, the fingerprint the approving device shows, or asking.
 pub fn login(url: &str, name: &str, account: Option<&str>) -> anyhow::Result<()> {
     let url = url.trim_end_matches('/').to_owned();
     if let Some(e) = Enrolled::load()? {
@@ -333,7 +335,11 @@ pub fn login(url: &str, name: &str, account: Option<&str>) -> anyhow::Result<()>
     let about =
         get(wire::CONTROL_JSON).and_then(|r| r.json()).with_context(|| format!("can't reach control at {url}"))?;
     // Only this field, so one the CLI never reads can't make control look older.
-    let takes_cli = serde_json::from_value::<wire::ControlCliJoin>(about).ok().and_then(|c| c.cli_join);
+    let takes_cli = serde_json::from_value::<wire::ControlCliJoin>(about.clone()).ok().and_then(|c| c.cli_join);
+    // A secret in the link (#760), never sent to control.
+    let secret = serde_json::from_value::<wire::ControlJoinSecret>(about)
+        .is_ok_and(|c| c.join_secret >= 1)
+        .then(arugula_e2e::cert::join_secret);
     if takes_cli.is_none() {
         bail!("control at {url} doesn't take the Arugula CLI as a device yet (it's older than this CLI)");
     }
@@ -341,7 +347,8 @@ pub fn login(url: &str, name: &str, account: Option<&str>) -> anyhow::Result<()>
     let ask = Cert { account: String::new(), ..Cert::new(&keys, "", Kind::Cli, name) };
     let ms = now_ms();
     let proof = wire::JoinProof { ms, sig: hex(&keys.signature(join_proof_body(&ask, ms).as_bytes())) };
-    let body = serde_json::to_string(&wire::CliJoinRequest { cert: ask.clone(), proof })?;
+    let features = if secret.is_some() { arugula_e2e::cert::JOIN_SECRET.to_owned() } else { String::new() };
+    let body = serde_json::to_string(&wire::CliJoinRequest { cert: ask.clone(), proof, features })?;
     let started = send_on(
         u.connect(Some(Duration::from_secs(10)))?,
         "POST",
@@ -358,13 +365,22 @@ pub fn login(url: &str, name: &str, account: Option<&str>) -> anyhow::Result<()>
     if code != arugula_e2e::cert::join_code(&ask) {
         bail!("control sent a code that isn't this key's; not logging in");
     }
+    let whole = match &secret {
+        Some(s) => format!("{code}.{s}"),
+        None => code.clone(),
+    };
     println!();
     println!("  To make this terminal ({name}) one of your devices, open");
     println!();
-    println!("    {url}/#join={code}");
+    println!("    {url}/#join={whole}");
     println!();
-    println!("  on a device that's signed in, and check the code there is {code}.");
-    println!("  Or sign in at {url} and type the code.");
+    if secret.is_some() {
+        println!("  on a device that's signed in, and approve it there.");
+        println!("  Or sign in at {url} and type the whole code, {whole}.");
+    } else {
+        println!("  on a device that's signed in, and check the code there is {code}.");
+        println!("  Or sign in at {url} and type the code.");
+    }
     println!();
     println!("  Waiting for approval (the code lasts {} minutes)…", secs / 60);
     std::io::stdout().flush()?;
@@ -399,11 +415,24 @@ pub fn login(url: &str, name: &str, account: Option<&str>) -> anyhow::Result<()>
     }
     let approver = trust.evaluate(&certs, &revs).get(&cert.approver).map(|c| c.name.clone()).unwrap_or_default();
     let fp = fingerprint(&trust.root);
+    // The approving device's MAC under the link's secret (#760): one guess
+    // per code, and this key is never saved unless it checks out.
+    let proven = match (&secret, &got.mac) {
+        (Some(s), Some(mac)) if arugula_e2e::cert::join_mac_ok(s, &trust, &cert, mac) => true,
+        (Some(_), Some(_)) => bail!(
+            "the approval doesn't match the secret in this terminal's link: the code was mistyped, or control changed the account it's approved into. Not logging in; run `arugula login` again for a new code (and remove this one under Devices and machines… if it's listed)"
+        ),
+        _ => false,
+    };
     match want {
         Some(w) if w != trust.root => {
             bail!("control approved this CLI into the account {fp}, not {}; not logging in", fingerprint(&w))
         }
         Some(_) => {}
+        None if proven => {}
+        None if secret.is_some() => bail!(
+            "the approval came without the approving device's answer to this terminal's secret (approved from the code alone?), so control's word is all there is for the account; not logging in. Open the whole link, or type the whole code, or pass --account with the fingerprint your device shows"
+        ),
         None => confirm(&approver, &fp, &trust.root)?,
     }
     let dir = config_dir();

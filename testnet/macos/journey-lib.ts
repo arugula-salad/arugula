@@ -250,7 +250,6 @@ export async function firstRunMac(j: Journey, actor: string, control: string) {
 
   await step("skip-phone", "Skip the phone for now", "app", shows(APP, /^Skip for now/), async () => press(APP, "AXButton", /^Skip for now/));
 
-  let machineCode = "";
   await step("connect", "Connect this machine to the cloud", "app", shows(APP, /^Connect to /), async () => {
     const button = await shows(APP, /^Connect to /)();
     // Never the hosted control.
@@ -262,7 +261,7 @@ export async function firstRunMac(j: Journey, actor: string, control: string) {
           .join(" / ")}`,
       );
     press(APP, "AXButton", /^Connect to /);
-    await until("the machine's code", () => (machineCode = read(APP, CODE, /Approve this code/)) || null);
+    await until("the machine's code", () => read(APP, CODE, /Approve this code/) || null);
   });
 
   await step("open-approval", "Open the approval link", "app", shows(APP, /^Approve in Arugula cloud/), async () => {
@@ -291,25 +290,12 @@ export async function firstRunMac(j: Journey, actor: string, control: string) {
     press(SAFARI, "AXButton", /^Continue$/);
   });
 
-  let account = "";
-  await step("approve-machine", "Approve the machine, checking its code", "browser", shows(SAFARI, /^Add a machine\?/), async () => {
-    const shown = read(SAFARI, CODE, /asks to join/);
-    j.compared(`machine code ${machineCode} (app) = ${shown} (Safari)`);
-    if (shown !== machineCode) throw new Error(`Safari shows ${shown}, the app ${machineCode}`);
-    account = read(SAFARI, FP, /^Your account:/);
-    if (!account) {
-      const lines = screen(SAFARI).split("\n");
-      const near = lines.flatMap((l, i) => (new RegExp(FP.source, "i").test(l) || /your account/i.test(l) ? [`${lines[i - 1]} >> ${l}`] : []));
-      throw new Error(`no account fingerprint in Safari; fingerprints and "your account" on it: ${JSON.stringify(near)}`);
-    }
+  // #760: the link carries the machine's secret: Approve is all there is,
+  // with no code to compare and no account fingerprint to carry back.
+  await step("approve-machine", "Approve the machine", "browser", shows(SAFARI, /^Add a machine\?/), async () => {
+    const said = screen(SAFARI);
+    if (/Check it's the code|Your account:/.test(said)) j.issue("Safari still asks to compare a code or the account's fingerprint");
     press(SAFARI, "AXButton", /^Approve/);
-  });
-
-  await step("confirm-account", "Back in the app, check the account's fingerprint", "app", shows(APP, /Is this your account\?/), async () => {
-    const shown = read(APP, FP, /Is this your account/);
-    j.compared(`account ${account} (Safari) = ${shown} (app)`);
-    if (shown !== account) throw new Error(`the app shows ${shown}, Safari ${account}`);
-    press(APP, "AXButton", /^They match$/);
   });
 
   await step("joined", "The app says the machine is in", "app", shows(APP, /^Joined to your account|THIS WINDOW, EVERY MACHINE/i), async () => {});

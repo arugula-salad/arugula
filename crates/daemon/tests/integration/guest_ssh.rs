@@ -577,7 +577,8 @@ fn a_guest_reaches_a_daemon_behind_nat_through_controls_jump_host() {
         let text = std::fs::read_to_string(&out).unwrap_or_default()
             + &std::fs::read_to_string(runtime.join("join.err")).unwrap_or_default();
         if let Some(i) = text.find("#join=") {
-            code = text[i + 6..].chars().take_while(|c| c.is_ascii_alphanumeric() || *c == '-').collect();
+            // The whole code: the machine's secret follows it (#760).
+            code = text[i + 6..].chars().take_while(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '.').collect();
         }
         !code.is_empty()
     });

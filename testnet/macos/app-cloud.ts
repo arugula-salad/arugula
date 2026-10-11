@@ -122,7 +122,7 @@ try {
     let out = "";
     joining.stdout!.on("data", (d) => {
       out += d;
-      const m = out.match(/#join=([A-Z0-9]{5}-[A-Z0-9]{5})/);
+      const m = out.match(/#join=([A-Z0-9.-]+)\s/);
       if (m) res(m[1]);
     });
   });
@@ -191,7 +191,7 @@ try {
     let out = "";
     vmJoin.stdout!.on("data", (d) => {
       out += d;
-      const m = out.match(/#join=([A-Z0-9]{5}-[A-Z0-9]{5})/);
+      const m = out.match(/#join=([A-Z0-9.-]+)\s/);
       if (m) res(m[1]);
     });
   });

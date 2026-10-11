@@ -89,17 +89,15 @@ async function approveJoin(page: Page, name: string) {
     let out = "";
     joining.stdout!.on("data", (d) => {
       out += d;
-      const m = out.match(/(http\S+#join=[A-Z0-9-]+)/);
+      const m = out.match(/(http\S+#join=[A-Z0-9.-]+)/);
       if (m) res(m[1]);
     });
   });
   const exited = new Promise<number | null>((r) => joining.on("exit", r));
   await page.goto(link);
-  await expect(page.locator("[data-join-code]")).toHaveText(link.split("#join=")[1]);
-  // The machine asks whether the account is the one this browser shows.
-  const account = await page.locator("[data-join-account]").getAttribute("data-join-account");
+  // #760: the link carries the machine's secret: nothing to compare.
+  await expect(page.locator("[data-join-sealed]")).toBeVisible();
   await page.locator("[data-approve-join]").click();
-  joining.stdin!.end(`${account}\n`);
   expect(await exited).toBe(0);
 }
 

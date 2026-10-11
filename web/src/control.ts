@@ -9,7 +9,7 @@
 // directory and the keys, but it can't slip in a daemon of its own (and a
 // daemon can't be reached by a device it hasn't approved).
 
-import { certBody, deviceId, evaluate, hex, joinCode, normalizeCode, type Cert, type Revocation, revocationBody, unhex } from "./e2e/cert.ts";
+import { certBody, deviceId, evaluate, hex, JOIN_SECRET, joinCode, joinMac, normalizeCode, splitJoinCode, type Cert, type Revocation, revocationBody, unhex } from "./e2e/cert.ts";
 import { adoptKeys, forget, loadEnrollment, loadKeys, saveEnrollment, saveWorkerDirectory, signText, type DeviceKeys, type Enrollment } from "./e2e/keys.ts";
 import { newKeyPair } from "./e2e/noise.ts";
 import type { E2ETarget } from "./client";
@@ -90,7 +90,14 @@ export interface JoinRequest {
   cert: Cert;
   urls: string[];
   team: { team: string; name: string } | null;
+  /** What the machine said it understands (#760: `join-secret`, its link
+   * carries a secret). An older control leaves it out. */
+  features?: string;
 }
+
+/** The machine made a join secret (#760): the approval answers it with a
+ * MAC, from the whole code, and nothing is compared. */
+export const takesSecret = (j: JoinRequest) => (j.features ?? "").split(",").includes(JOIN_SECRET);
 
 export interface Team {
   team: string;
@@ -264,24 +271,31 @@ export function inviteInHash(hash: string): { team: string; code: string; presig
 const PENDING_INVITE = "arugula:presigned-invite";
 
 /** Where signing in with GitHub comes back to: this page, but never with a
- * presigned invite's seed, which control mustn't see. That waits in this
- * tab's sessionStorage for `restoreInvite`. */
+ * presigned invite's seed or a machine's join secret (#760), which control
+ * mustn't see. The link waits in this tab's sessionStorage for
+ * `restoreInvite`; a join comes back with its code alone meanwhile, so the
+ * page still says what it's for. */
 export function signInNext(): string {
-  if (!inviteInHash(location.hash)?.presigned) return location.pathname + location.hash;
+  const join = JOIN_HASH.exec(location.hash)?.[1];
+  const secret = join ? splitJoinCode(join)?.secret : null;
+  if (!inviteInHash(location.hash)?.presigned && !secret) return location.pathname + location.hash;
   try {
     sessionStorage.setItem(PENDING_INVITE, location.hash);
   } catch {
     // Without storage the link has to be opened again after signing in.
   }
-  return location.pathname;
+  return location.pathname + (secret ? `#join=${joinInHash()}` : "");
 }
 
-/** Back from signing in: the presigned invite link `signInNext` kept. */
+/** Back from signing in: the presigned invite link, or the machine's whole
+ * join link, that `signInNext` kept. */
 export function restoreInvite() {
   try {
     const hash = sessionStorage.getItem(PENDING_INVITE);
     sessionStorage.removeItem(PENDING_INVITE);
-    if (hash && !location.hash && inviteInHash(hash)?.presigned) history.replaceState(null, "", location.pathname + location.search + hash);
+    if (!hash) return;
+    const back = (!location.hash && inviteInHash(hash)?.presigned) || (joinInHash(hash) !== null && joinInHash() === joinInHash(hash));
+    if (back) history.replaceState(null, "", location.pathname + location.search + hash);
   } catch {
     // Nothing kept.
   }
@@ -446,11 +460,23 @@ export function shownName(name: string): string {
   return name.replace(/^illogical app\b/, "Arugula app");
 }
 
+/** The whole join code in `#join=CODE` or `#join=CODE.SECRET` (#760), as
+ * it is there. */
+export const JOIN_HASH = /^#join=([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)?)$/;
+
 /** The machine's join code this page was opened to approve
- * (`#join=CODE`), if any. */
+ * (`#join=CODE`), if any: the code only, which is all control is told. */
 export function joinInHash(hash: string = location.hash): string | null {
-  const m = /^#join=([A-Za-z0-9-]+)$/.exec(hash);
-  return m ? normalizeCode(m[1]) : null;
+  const m = JOIN_HASH.exec(hash);
+  return m ? (splitJoinCode(m[1])?.code ?? null) : null;
+}
+
+/** The whole code in the hash, the secret too (#760), for the link a
+ * waiting browser hands on: `CODE.SECRET`, or just `CODE`. */
+export function wholeJoinInHash(hash: string = location.hash): string | null {
+  const m = JOIN_HASH.exec(hash);
+  const j = m ? splitJoinCode(m[1]) : null;
+  return j ? (j.secret ? `${j.code}.${j.secret}` : j.code) : null;
 }
 
 /** Whether this page is the desktop app's window (M48). */
@@ -1264,17 +1290,25 @@ export class ControlSession {
   /** Approve a daemon into this account, or into `team` (one I'm in): this
    * device signs the team in, so control can't pick one (#100). `devices`
    * waiting with its code (#326) are approved with it, before the page
-   * hears of either, so its prompt stays up until both are done. */
-  async approveJoin(code: string, c: Cert, team: string | null = null, devices: Cert[] = []) {
+   * hears of either, so its prompt stays up until both are done. With the
+   * machine's join `secret` (#760), the approval carries a MAC under it
+   * over this account and the root this device pinned (not control's word
+   * for it), which the machine checks before it pins that root. */
+  async approveJoin(code: string, c: Cert, team: string | null = null, devices: Cert[] = [], secret: string | null = null) {
     const signed: Cert = { ...c, account: this.account, approver: this.keys.id, sig: "" };
     signed.sig = await signText(this.keys, certBody(signed));
+    let mac: string | null = null;
+    if (secret) {
+      if (!this.enrollment || this.rootMismatch) throw new Error("this browser's account root isn't settled: approve from a device you've used before");
+      mac = await joinMac(secret, { account: this.account, root: this.enrollment.root }, c);
+    }
     let teamSig: string | null = null;
     if (team) {
       const t = this.addableTeams().find((x) => x.team === team);
       if (!t) throw new Error("only the team's members add machines to it");
       teamSig = await signText(this.keys, teamJoinBody(c.device, t.pin));
     }
-    await this.approving(api(`/api/joins/${code}/approve`, { cert: signed, team, team_sig: teamSig }));
+    await this.approving(api(`/api/joins/${code}/approve`, { cert: signed, team, team_sig: teamSig, ...(mac ? { mac } : {}) }));
     try {
       for (const d of devices) {
         try {

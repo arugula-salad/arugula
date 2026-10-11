@@ -102,18 +102,18 @@ async function addMachine(page: Page, name: string, direct: boolean) {
     let out = "";
     joining.stdout!.on("data", (d) => {
       out += d;
-      const m = out.match(/(http\S+#join=[A-Z0-9-]+)/);
+      const m = out.match(/(http\S+#join=[A-Z0-9.-]+)/);
       if (m) res(m[1]);
     });
   });
-  const code = link.split("#join=")[1];
   const exited = new Promise<number | null>((r) => joining.on("exit", r));
   await page.goto(link);
-  await expect(page.locator("[data-join-code]")).toHaveText(code);
-  // The machine asks whether the account is the one this browser shows.
-  const account = await page.locator("[data-join-account]").getAttribute("data-join-account");
+  // #760: the link carries the machine's secret: no code or account to
+  // compare, and the machine finishes by itself.
+  await expect(page.locator("[data-join-sealed]")).toBeVisible();
+  await expect(page.locator("[data-join-code]")).toHaveCount(0);
+  await expect(page.locator("[data-join-account]")).toHaveCount(0);
   await page.locator("[data-approve-join]").click();
-  joining.stdin!.end(`${account}\n`);
   expect(await exited).toBe(0);
   const args = [
     ...["--listen", ANY, "--name", name, "--state-dir", labs(state)],
