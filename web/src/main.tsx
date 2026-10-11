@@ -171,12 +171,30 @@ function ControlRoot({ s }: { s: ControlSession }) {
   useControl(s);
   useSubscribe((fn) => directory.subscribe(fn));
   const body =
-    s.phase !== "ready" ? <ControlGate s={s} /> : !client.e2e ? <NoMachines s={s} /> : <App key={client.base} client={client} cell={cell} />;
+    s.phase !== "ready" ? (
+      <ControlGate s={s} />
+    ) : client.e2e ? (
+      <App key={client.base} client={client} cell={cell} />
+    ) : s.daemons.length ? (
+      // Machines, but none picked yet: not "Add a machine" (#749).
+      <Connecting name={directory.current} />
+    ) : (
+      <NoMachines s={s} />
+    );
   return (
     <>
       {body}
       <ControlOverlay s={s} />
     </>
+  );
+}
+
+/** Between knowing the account's machines and showing one. */
+function Connecting({ name }: { name: string }) {
+  return (
+    <div class="empty" data-connecting>
+      <p>Connecting to {name || "your machine"}…</p>
+    </div>
   );
 }
 
@@ -268,14 +286,19 @@ connect();
 
 // A link's page shows its one daemon: no host list.
 if (!linkTarget) {
-  directory.subscribe(() => {
+  const follow = () => {
     const base = directory.base();
     if (base === client.base) return;
     client.close();
     client = makeClient(base);
     draw();
     connect();
-  });
+  };
+  directory.subscribe(follow);
+  // Control's machine list may have come while this module waited on the
+  // fonts above (#749): its change was announced before anyone listened,
+  // and the page would show "Add a machine" until the next refresh.
+  follow();
   void directory.refresh();
 }
 
