@@ -145,7 +145,7 @@ function AgentsBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentsS
           {total} on {s.catalog.machines.length} machine{s.catalog.machines.length === 1 ? "" : "s"}
         </span>
         <span class="dim">{s.loading ? "asking…" : ago(s.catalog.refreshed_ms)}</span>
-        <button title="Ask every machine again" data-agents-refresh disabled={busy !== null || s.loading} onClick={() => void call("refresh", {}, "couldn't refresh the catalog")}>
+        <button title="Ask every machine for its agents again" data-agents-refresh disabled={busy !== null || s.loading} onClick={() => void call("refresh", {}, "couldn't refresh the catalog")}>
           {busy === "refresh" ? "…" : "↻"}
         </button>
       </div>
@@ -196,12 +196,12 @@ function AgentsBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentsS
                   <div class="ws-actions fountain-actions">
                     {m.here && mayOwn && (
                       <button class="pri" data-run-here={c.name} disabled={busy !== null} onClick={() => void runHere(c.name)}>
-                        Run here
+                        Run on {m.name}
                       </button>
                     )}
                     {!m.here && !m.owner && mayOwn && m.online && (
                       <button class="pri" data-run-there={c.name} disabled={busy !== null} title={`Starts it on ${m.name}, in its project there, and goes to it`} onClick={() => void runThere(m, c.name)}>
-                        Run there
+                        Run on {m.name}
                       </button>
                     )}
                     {!m.here && (

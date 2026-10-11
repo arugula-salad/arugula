@@ -181,7 +181,7 @@ function TopBar({
         run: () => client.selectSession(s.id),
       })),
       "separator",
-      ...sessionItems(client, session.id, () => setRenaming({ kind: "session", id: session.id })),
+      ...sessionItems(client, session.id, () => setRenaming({ kind: "session", id: session.id }), { bar: true }),
     ]);
   };
 
@@ -198,7 +198,8 @@ function TopBar({
               }}
             />
           ) : (
-            <button class="session-button" title="Sessions" onClick={sessionMenu} onContextMenu={sessionMenu}>
+            <button class="session-button" title="Sessions" aria-label={`Session: ${session.name}`} onClick={sessionMenu} onContextMenu={sessionMenu}>
+              <span class="session-label">Session</span>
               {session.name}
               {/* M61: the session's thread has messages you haven't read. */}
               {client.thread({ session: session.id })?.unread ? (
@@ -207,7 +208,7 @@ function TopBar({
               <span class="caret">▾</span>
             </button>
           )}
-          <InLabs on={client.hasCalls()}>{(l) => <l.HuddleButton client={client} session={session.id} />}</InLabs>
+          <InLabs on={client.hasCalls()}>{(l) => <l.HuddleButton client={client} session={session.id} label />}</InLabs>
           {/* Sharing is the daemon's owner's (M13), and on the bar so it's found (#551). */}
           {state.roles ? null : (
             <button class="share-button" aria-label="Share session" title="Share this session with someone" onClick={() => shareSession(session.id)}>

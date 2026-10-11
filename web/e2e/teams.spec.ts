@@ -692,8 +692,7 @@ test("Share and notify: a teammate's phone gets the invite, at the pane", async 
   });
   expect(first).toHaveLength(1);
   // The dialog: her name, a note, Share and notify.
-  await alice.locator(".session-button").click();
-  await alice.getByRole("menuitem", { name: "Share session…" }).click();
+  await alice.getByRole("button", { name: "Share session" }).click();
   const dialog = alice.locator(`[data-share="${session}"]`);
   await dialog.getByLabel("Who").fill("carol");
   await dialog.locator("[data-invite-note]").fill("take a look at the flaky test");

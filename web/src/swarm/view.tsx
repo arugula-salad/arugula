@@ -25,7 +25,7 @@ import { DiffCard } from "../ui/diff-card";
 import { GateWhy } from "../ui/gate-why";
 import { PointChoices, pointOf, proposalLine } from "../ui/point-choices";
 import { runnerLabel, runners, subscribeRunners, watchRunners } from "../runners";
-import { activityOf, bundleOf, cardTitle, holdStill, whatItDoes, shortPaths, shownNow, wantsYou, followable, GROUPINGS, groupOf, isPresence, kindOf, KINDS, REASON_COL, reasonOf, type GroupBy } from "./model";
+import { activityOf, bundleOf, cardTitle, holdStill, shortHost, whatItDoes, shortPaths, shownNow, wantsYou, followable, GROUPINGS, groupOf, isPresence, kindOf, KINDS, REASON_COL, reasonOf, type GroupBy } from "./model";
 
 const BY_KEY = "arugula.swarm.by";
 const THEME_KEY = "arugula.swarm.theme";
@@ -410,7 +410,7 @@ export function SwarmView({
       <div class="swarm-bar" ref={bar}>
         <div class="swarm-brand">
           <h1>
-            Swarm <span>/ arugula</span>
+            Swarm
           </h1>
         </div>
         <div class="swarm-stats">
@@ -495,7 +495,7 @@ export function SwarmView({
       <aside class="swarm-rail" aria-label="Needs you" ref={rail}>
         <header>
           <h2>Needs you</h2>
-          <span>bundled by cause</span>
+
         </header>
         <div class="swarm-cards" onPointerEnter={() => setHeld(true)} onPointerLeave={() => setHeld(false)}>
           {shown.length === 0 && answered.length === 0 && (
@@ -804,14 +804,14 @@ function Card({
     >
       <div class="ch">
         <b class="ct" role="button" tabIndex={0} title="Find it in the swarm" onClick={show} onKeyDown={(e) => e.key === "Enter" && show()}>
-          {cardTitle(r, n, machines)}
+          {cardTitle(r, n, machines.map(shortHost))}
         </b>
         <Watching fleet={fleet} panes={b.panes} />
         {n > 1 && <span class="n">×{n}</span>}
       </div>
       <div class="cm" title={ids}>
         {whose ? <b class="whose">{whose} · </b> : null}
-        {n === 1 ? whatItDoes(first) : `${n} panes`} · {machines.length > 1 ? `${machines.length} machines` : machines[0]} · {project}
+        {n === 1 ? whatItDoes(first) : `${n} panes`} · {machines.length > 1 ? `${machines.length} machines` : shortHost(machines[0])} · {project}
       </div>
       {diff ? null : ask?.kind === "permission" ? (
         <PermissionBody ask={ask} />

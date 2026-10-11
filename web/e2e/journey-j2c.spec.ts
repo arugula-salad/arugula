@@ -305,8 +305,8 @@ test("J2c: #551's evening: a machine already in one team, a friend's second team
         (p) => p.getByTitle("Sessions"),
         async (p) => {
           await show(p, "sammac");
-          await p.getByTitle("Sessions").click();
-          await p.getByRole("menuitem", { name: "Share session…" }).click();
+          // Share, on the bar beside the session's name.
+          await p.getByRole("button", { name: "Share session" }).click();
           const row = p.getByRole("listitem").filter({ hasText: "DLex Corp" }).first();
           await row.getByRole("combobox").selectOption({ label: "drives" });
           await p.getByRole("button", { name: "Done" }).click();
