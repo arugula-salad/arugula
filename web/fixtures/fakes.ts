@@ -27,15 +27,24 @@ export const githubId = (login: string) => [...login].reduce((h, c) => (h * 31 +
 
 /** A fake GitHub for OAuth sign-in. Authorize redirects straight back with
  * a code naming who signed in: the `login` query parameter the client adds
- * to the authorize URL, else `user()` (control-smoke switches it). No state
- * on the server, so any number of people can sign in at once. */
-export function fakeGithub(port: number, host = "127.0.0.1", user: () => string = () => "stranger"): Server {
+ * to the authorize URL, else the browser's `fake_github_login` cookie
+ * (dev-browser's --login), else `user()` (control-smoke switches it). No
+ * state on the server, so any number of people can sign in at once.
+ *
+ * With `pick` (dev-control's DEV_CONTROL_LOGINS), authorize without a
+ * `login` shows a page instead: a button for `user()` and each of `pick`,
+ * and a box for any other login, so a second browser signs in as someone
+ * else. */
+export function fakeGithub(port: number, host = "127.0.0.1", user: () => string = () => "stranger", pick: string[] = []): Server {
   return createServer(async (req, res) => {
     const u = new URL(req.url!, `http://${host}:${port}`);
     const json = (v: unknown) => res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(v));
-    if (u.pathname === "/login/oauth/authorize") {
+    const named = u.searchParams.get("login") || /(?:^|;\s*)fake_github_login=([^;]+)/.exec(req.headers.cookie ?? "")?.[1];
+    if (u.pathname === "/login/oauth/authorize" && pick.length && !named) {
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(picker(u.searchParams, [user(), ...pick]));
+    } else if (u.pathname === "/login/oauth/authorize") {
       const back = new URL(u.searchParams.get("redirect_uri")!);
-      back.searchParams.set("code", `c0de.${u.searchParams.get("login") ?? user()}`);
+      back.searchParams.set("code", `c0de.${named || user()}`);
       back.searchParams.set("state", u.searchParams.get("state")!);
       res.writeHead(302, { location: back.href }).end();
     } else if (u.pathname === "/login/oauth/access_token") {
@@ -46,6 +55,21 @@ export function fakeGithub(port: number, host = "127.0.0.1", user: () => string 
       json({ id: githubId(login), login });
     } else res.writeHead(404).end();
   }).listen(port, host);
+}
+
+const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+
+/** The fake GitHub's "who are you?" page: each button submits the authorize
+ * request again with its `login`. */
+function picker(q: URLSearchParams, logins: string[]): string {
+  const keep = [...q].map(([k, v]) => `<input type="hidden" name="${esc(k)}" value="${esc(v)}">`).join("");
+  const buttons = [...new Set(logins)].map((l) => `<button name="login" value="${esc(l)}">Sign in as ${esc(l)}</button>`).join(" ");
+  return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>Fake GitHub</title>
+<style>body{font:16px system-ui;margin:3em auto;max-width:28em;padding:0 16px}button,input{font:inherit;padding:.3em .6em}form{margin:1em 0}</style>
+<h1>Fake GitHub</h1><p>Sign in to dev-control as:</p>
+<form action="/login/oauth/authorize">${keep}${buttons}</form>
+<form action="/login/oauth/authorize">${keep}<input name="login" placeholder="another login" aria-label="Login" required> <button>Sign in</button></form>`;
 }
 
 /** A fake Stripe: customers, checkout, a subscription with a seat item
