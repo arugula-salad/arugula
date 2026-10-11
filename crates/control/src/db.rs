@@ -262,6 +262,11 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     if !has("sessions", "agent")? {
         conn.execute_batch("ALTER TABLE sessions ADD COLUMN agent TEXT")?;
     }
+    // The device a sign-in belongs to, so the two lists can say which is
+    // which: set when the device enrolls, and when its page loads.
+    if !has("sessions", "device")? {
+        conn.execute_batch("ALTER TABLE sessions ADD COLUMN device TEXT")?;
+    }
     // Poll hashes a later join from the same machine took over from (#329).
     if !has("joins", "replaced")? {
         conn.execute_batch("ALTER TABLE joins ADD COLUMN replaced TEXT NOT NULL DEFAULT ''")?;
@@ -357,6 +362,8 @@ pub struct SessionRow {
     pub created: u64,
     pub expires: u64,
     pub agent: String,
+    /// The account's device it is, once known.
+    pub device: Option<String>,
 }
 
 /// What deleting an account (#173) takes with it, besides its own rows.
@@ -585,6 +592,15 @@ impl Db {
         Ok(())
     }
 
+    /// The device a session is, once it says (one of the account's own).
+    pub fn set_session_device(&self, token_hash: &str, account: &str, device: &str) -> anyhow::Result<()> {
+        self.c().execute(
+            "UPDATE sessions SET device = ?3 WHERE token_hash = ?1 AND account = ?2",
+            params![token_hash, account, device],
+        )?;
+        Ok(())
+    }
+
     /// What signed in, as its browser or app said (#173).
     pub fn set_session_agent(&self, token_hash: &str, agent: &str) -> anyhow::Result<()> {
         self.c().execute("UPDATE sessions SET agent = ?2 WHERE token_hash = ?1", params![token_hash, agent])?;
@@ -596,11 +612,17 @@ impl Db {
     pub fn sessions(&self, account: &str, now: u64) -> anyhow::Result<Vec<SessionRow>> {
         let c = self.c();
         let mut q = c.prepare(
-            "SELECT token_hash, created, expires, COALESCE(agent, '') FROM sessions
+            "SELECT token_hash, created, expires, COALESCE(agent, ''), device FROM sessions
              WHERE account = ?1 AND expires > ?2 ORDER BY created DESC",
         )?;
         let rows = q.query_map(params![account, now], |r| {
-            Ok(SessionRow { hash: r.get(0)?, created: r.get(1)?, expires: r.get(2)?, agent: r.get(3)? })
+            Ok(SessionRow {
+                hash: r.get(0)?,
+                created: r.get(1)?,
+                expires: r.get(2)?,
+                agent: r.get(3)?,
+                device: r.get(4)?,
+            })
         })?;
         Ok(rows.collect::<Result<_, _>>()?)
     }

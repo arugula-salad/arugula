@@ -133,7 +133,7 @@ test("every machine's panes in one page, on the laptop and the phone", async ({ 
   expect(await page.evaluate(() => window.__arugula.client.others().length)).toBe(0);
   // The host menu says what each is doing.
   await page.locator(".host-button").click();
-  await expect(page.getByRole("menuitem", { name: /jake-mini\s+· 2 panes · live/ })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: /jake-mini\s+· 2 panes · online/ })).toBeVisible();
   await page.keyboard.press("Escape");
 
   // Opening a pane from the fleet shows it in its tab, attached for real.

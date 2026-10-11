@@ -101,6 +101,8 @@ export function groupOf(p: FleetPane, by: GroupBy): string {
 /** How busy a pane looks, 0..1: brightness, and how hard it's pulled to the
  * middle of its cluster. */
 export function activityOf(p: FleetPane): number {
+  // A machine that isn't reachable: what it last said isn't busy now.
+  if (p.stale) return 0.04;
   const bps = p.info.activity?.bps ?? 0;
   if (bps > 0) return Math.min(1, 0.4 + Math.log10(bps + 1) / 5);
   if (p.info.attention === "working" || p.info.current) return 0.35;

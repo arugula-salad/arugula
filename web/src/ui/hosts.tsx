@@ -32,10 +32,10 @@ export function setFleet(f: Fleet) {
   watchRunners(f);
 }
 
-/** M45b: " · Fountain runner geek online · v0.21.0", for a runner's host. */
+/** M45b: " · Fountain runner online · v0.21.0", for a runner's host. */
 function runnerSuffix(name: string): string {
   const r = runnerOf(name);
-  return r ? ` · ${runnerLabel(r)}` : "";
+  return r ? ` · ${runnerLabel(r, name)}` : "";
 }
 
 /** The fleet, if this page has one (#78: every host's conversations). */
@@ -48,26 +48,37 @@ function ago(ms: number): string {
   return s < 60 ? `${s}s` : s < 3600 ? `${Math.round(s / 60)}m` : s < 86400 ? `${Math.round(s / 3600)}h` : `${Math.round(s / 86400)}d`;
 }
 
-/** What the fleet knows of a host: live with its panes, or how it's away. */
-export function fleetLabel(name: string): string | null {
+/** How a machine is, in the same words wherever it's shown: the host
+ * menu, Devices and machines, Teams, the phone's sheet. Control's word
+ * comes first (a machine it says is offline is offline, though this page
+ * keeps trying it), then this page's own connection to it. */
+export function machineState(name: string): string {
+  const d = directory.find(name);
+  if (d?.transport === "provider") return `${d.status ?? "?"} · ${d.provider?.provider ?? "sandbox"}`;
+  if (d?.transport === "control" && d.status === "offline") return d.last_seen_ms ? `offline, seen ${ago(d.last_seen_ms)} ago` : "offline";
   const h = fleet?.host(name);
-  if (!h) return null;
-  const n = h.summary?.panes.length ?? 0;
-  const panes = `${n} pane${n === 1 ? "" : "s"}`;
-  switch (h.state) {
+  switch (h?.state) {
     case "connected":
-      return `${panes} · live`;
+      return "online";
     case "connecting":
-      return h.summary ? `${panes} · connecting` : "connecting";
+      return "connecting";
     case "stale":
-      return `${panes} · stale, seen ${h.lastSeen ? ago(h.lastSeen) : "?"} ago`;
+      return `reconnecting, seen ${h.lastSeen ? ago(h.lastSeen) : "?"} ago`;
     case "offline":
-      return h.summary ? `${panes} · offline` : "offline";
+      return "offline";
     case "asleep":
-      return `asleep${h.summary ? ` · ${panes}` : ""}`;
+      return "asleep";
     case "capped":
-      return `${h.summary ? `${panes} · ` : ""}not live (too many machines)`;
+      return "online, not live here (too many machines)";
   }
+  if (d?.transport === "control") return "online";
+  return d ? seen(name) : "offline";
+}
+
+/** The host menu's line for a machine: its panes, when known, and how it is. */
+export function fleetLabel(name: string): string {
+  const n = fleet?.host(name)?.summary?.panes.length;
+  return `${n === undefined ? "" : `${n} pane${n === 1 ? "" : "s"} · `}${machineState(name)}`;
 }
 
 /** More for the host menu (control mode: adding a machine, hosted VMs). */
@@ -114,7 +125,7 @@ export function HostButton() {
   const open = (e: MouseEvent) => {
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const item = (name: string): MenuItem => ({
-      label: `${name === directory.current ? "✓ " : "    "}${name}${name === directory.home ? " (home)" : ""}  · ${fleetLabel(name) ?? seen(name)}${runnerSuffix(name)}`,
+      label: `${name === directory.current ? "✓ " : "    "}${name}${name === directory.home ? " (home)" : ""}  · ${fleetLabel(name)}${runnerSuffix(name)}`,
       run: () => directory.select(name),
     });
     const groups = hostGroups();
@@ -209,11 +220,11 @@ export function HostSection({ close }: { close: () => void }) {
                 <span class="host-name">{name}</span>
                 <span class="host-seen" data-fleet={fleet?.host(name)?.state}>
                   {name === directory.home ? "home · " : ""}
-                  {fleetLabel(name) ?? seen(name)}
+                  {fleetLabel(name)}
                 </span>
                 {runnerOf(name) && (
                   <span class={`host-seen host-runner${runnerOf(name)!.problem ? " problem" : ""}`} data-fountain-runner={runnerOf(name)!.name} title={runnerOf(name)!.problem ?? ""}>
-                    {runnerLabel(runnerOf(name)!)}
+                    {runnerLabel(runnerOf(name)!, name)}
                   </span>
                 )}
               </button>

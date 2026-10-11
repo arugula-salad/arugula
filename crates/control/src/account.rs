@@ -84,11 +84,33 @@ pub async fn sessions(State(app): State<Arc<App>>, s: Session, headers: HeaderMa
         .map(|r| {
             json!({
                 "id": &r.hash[..SESSION_ID_LEN], "created": r.created, "expires": r.expires,
-                "agent": r.agent, "current": r.hash == mine,
+                "agent": r.agent, "device": r.device, "current": r.hash == mine,
             })
         })
         .collect();
     Ok(Json(json!({ "sessions": list })))
+}
+
+#[derive(Deserialize)]
+pub struct SessionDevice {
+    device: String,
+}
+
+/// `POST /api/me/sessions/device`: the device this session is, said by its
+/// page when it loads, so Sign-in and Devices name it the same way. Only
+/// one of the account's own devices; it labels the account's own list.
+pub async fn session_device(
+    State(app): State<Arc<App>>,
+    s: Session,
+    headers: HeaderMap,
+    Json(b): Json<SessionDevice>,
+) -> R {
+    let token = session_cookie(&headers).ok_or_else(|| err(StatusCode::BAD_REQUEST, "no session"))?;
+    if app.db.device(&s.account, &b.device)?.is_none() {
+        return Err(err(StatusCode::NOT_FOUND, "no such device"));
+    }
+    app.db.set_session_device(&crate::auth::hash(token), &s.account, &b.device)?;
+    Ok(Json(json!({})))
 }
 
 /// `POST /api/me/sessions/{id}/end`: sign one out.
@@ -575,6 +597,19 @@ mod tests {
         assert_eq!(db.drop_session_of("acct-a", &h[..4]).unwrap(), 0, "too short to name one");
         assert_eq!(db.drop_session_of("acct-a", &h[..16]).unwrap(), 1);
         assert!(db.session(&h, 2).unwrap().is_none());
+    }
+
+    #[test]
+    fn a_session_names_its_device_only_in_its_own_account() {
+        let db = Db::memory();
+        db.account_for("github", "1", "a", "acct-a", 1).unwrap();
+        db.account_for("github", "2", "b", "acct-b", 1).unwrap();
+        db.add_session("ha", "acct-a", 1, i64::MAX as u64).unwrap();
+        assert_eq!(db.sessions("acct-a", 0).unwrap()[0].device, None);
+        db.set_session_device("ha", "acct-b", "dev-b").unwrap();
+        assert_eq!(db.sessions("acct-a", 0).unwrap()[0].device, None, "another account's can't label it");
+        db.set_session_device("ha", "acct-a", "dev-a").unwrap();
+        assert_eq!(db.sessions("acct-a", 0).unwrap()[0].device.as_deref(), Some("dev-a"));
     }
 
     #[test]

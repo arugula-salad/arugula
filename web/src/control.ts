@@ -379,10 +379,37 @@ export function deviceName(): string {
   // M48: the desktop app says what it is ("Arugula app on jake-air").
   const app0 = desktopApp()?.name;
   if (app0) return app0;
-  const ua = navigator.userAgent;
-  const os = /iPhone/.test(ua) ? "iPhone" : /iPad/.test(ua) ? "iPad" : /Android/.test(ua) ? "Android" : /Mac/.test(ua) ? "Mac" : /Windows/.test(ua) ? "Windows" : /Linux/.test(ua) ? "Linux" : "browser";
-  const app = /Edg\//.test(ua) ? "Edge" : /Firefox\//.test(ua) ? "Firefox" : /Chrome\//.test(ua) ? "Chrome" : /Safari\//.test(ua) ? "Safari" : "";
-  return `${app ? `${app} on ` : ""}${os}`;
+  return agentName(navigator.userAgent);
+}
+
+/** "Safari on iPhone", from a User-Agent: what a browser calls itself as a
+ * device, and what Sign-in calls a sign-in no device has claimed, so the
+ * two lists use the same words. */
+export function agentName(ua: string): string {
+  if (/arugula/i.test(ua) && !/Mozilla/.test(ua)) return "Arugula app";
+  const os = /iPhone/.test(ua)
+    ? "iPhone"
+    : /iPad/.test(ua)
+      ? "iPad"
+      : /Android/.test(ua)
+        ? "Android"
+        : /Mac/.test(ua)
+          ? "Mac"
+          : /Windows/.test(ua)
+            ? "Windows"
+            : /Linux|X11/.test(ua)
+              ? "Linux"
+              : "";
+  const app = /Edg\//.test(ua) ? "Edge" : /Firefox\//.test(ua) ? "Firefox" : /Chrome\//.test(ua) ? "Chrome" : /Safari\//.test(ua) ? "Safari" : /node|undici|curl|reqwest/i.test(ua) ? "A program" : "";
+  if (!app && !os) return "A browser";
+  return app && os ? `${app} on ${os}` : app || `A browser on ${os}`;
+}
+
+/** A device's name as the lists show it. The app was called illogical
+ * before 0.26: its devices from then keep the old name in their
+ * certificates, so they read as Arugula's. */
+export function shownName(name: string): string {
+  return name.replace(/^illogical app\b/, "Arugula app");
 }
 
 /** The machine's join code this page was opened to approve
@@ -519,6 +546,9 @@ export class ControlSession {
         await this.revoke(this.usedRecovery).catch(() => {});
         this.usedRecovery = null;
       }
+      // Which device this sign-in is, for Sign-in and Devices to name
+      // it the same (a control without the route says 404).
+      void api("/api/me/sessions/device", { device: this.keys.id }).catch(() => {});
       await this.refresh();
       // #327: a browser the account no longer trusts says so at once.
       this.set(this.phase === "untrusted" ? "untrusted" : "ready");

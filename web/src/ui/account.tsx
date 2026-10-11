@@ -3,15 +3,17 @@
 // account, after typing its login.
 
 import { useEffect, useState } from "preact/hooks";
-import { api, type ControlSession } from "../control";
+import { agentName, api, shownName, type ControlSession } from "../control";
 import { currentHand, lending, setLending } from "../hand";
 import { ConfirmRemove } from "./confirm";
 
-interface SessionRow {
+export interface SessionRow {
   id: string;
   created: number;
   expires: number;
   agent: string;
+  /** The account's device it is, once its page said (null before). */
+  device?: string | null;
   current: boolean;
 }
 
@@ -33,33 +35,18 @@ interface DeletePreview {
 
 const day = (ms: number) => new Date(ms).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 
-/** "Chrome on macOS", from a User-Agent: enough to tell sessions apart. */
+/** What a sign-in or passkey came from, in the words Devices uses for a
+ * browser ("Safari on iPhone"). Sign-ins from before control kept the
+ * browser have none. */
 export function describeAgent(ua: string): string {
-  if (!ua) return "Unknown browser";
-  if (/arugula/i.test(ua) && !/Mozilla/.test(ua)) return "The Arugula app";
-  const browser = /Edg\//.test(ua)
-    ? "Edge"
-    : /Firefox\//.test(ua)
-      ? "Firefox"
-      : /Chrome\//.test(ua)
-        ? "Chrome"
-        : /Safari\//.test(ua)
-          ? "Safari"
-          : /node|undici|curl|reqwest/i.test(ua)
-            ? "A program"
-            : "A browser";
-  const os = /iPhone|iPad/.test(ua)
-    ? "iOS"
-    : /Android/.test(ua)
-      ? "Android"
-      : /Mac OS X|Macintosh/.test(ua)
-        ? "macOS"
-        : /Windows/.test(ua)
-          ? "Windows"
-          : /Linux|X11/.test(ua)
-            ? "Linux"
-            : "";
-  return os ? `${browser} on ${os}` : browser;
+  return ua ? agentName(ua) : "An earlier sign-in";
+}
+
+/** A sign-in's name: its device's, once its page said which it is, so
+ * the same browser has one name in both lists. */
+export function sessionName(s: ControlSession, x: SessionRow): string {
+  const c = x.device ? s.trusted.get(x.device) : undefined;
+  return c ? shownName(c.name) : describeAgent(x.agent);
 }
 
 /** What keeps a passkey (iCloud Keychain, Windows Hello...) when control
@@ -103,8 +90,8 @@ export function AccountPanel({ s, close }: { s: ControlSession; close: () => voi
         {(sessions ?? []).map((x) => (
           <li key={x.id} data-session={x.id}>
             <span>
-              {describeAgent(x.agent)}
-              {x.current ? " (this one)" : ""}
+              {sessionName(s, x)}
+              {x.current ? " (this browser)" : ""}
             </span>
             <span class="dim">since {day(x.created)}</span>
             {x.current ? (
@@ -137,7 +124,7 @@ export function AccountPanel({ s, close }: { s: ControlSession; close: () => voi
           {confirming === "all" ? "Sign out everywhere, here too?" : "Sign out everywhere"}
         </button>
       </p>
-      <p class="dim">Signing out doesn't remove a device: its key still reaches your machines. Remove it in Devices and machines.</p>
+      <p class="dim">Devices and machines lists the same browsers, each with whether it's signed in.</p>
       {s.info.passkeys || keys?.passkeys.length ? (
         <>
           <h3 class="control-group">Passkeys</h3>
