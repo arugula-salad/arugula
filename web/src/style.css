@@ -2766,6 +2766,12 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   padding-left: 8px;
 }
 
+/* Each label, field and hint is one group, spaced as the modal's others
+   (two of them on Add a machine and a device?, #761). */
+.control-rest {
+  margin: 14px 0;
+}
+
 .control-rest p {
   margin: 6px 0;
 }

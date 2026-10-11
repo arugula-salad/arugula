@@ -844,7 +844,22 @@ function JoinPrompt({ s, code: whole, from, device }: { s: ControlSession; code:
   // else the rest of the code typed here.
   const secret = parts?.secret ?? (typed.bad ? null : normalizeSecret(typed.rest));
   const sealed = !!j && (!!parts?.secret || takesSecret(j));
-  const askWhole = j && sealed && !parts?.secret ? <RestOfCode code={j.code} rest={typed.rest} bad={typed.bad} set={setTyped} cli={j.cert.kind === "cli"} /> : null;
+  // Named, so it reads apart from a device's field below it (#761).
+  const askWhole =
+    j && sealed && !parts?.secret ? (
+      <RestOfCode
+        code={j.code}
+        rest={typed.rest}
+        bad={typed.bad}
+        set={setTyped}
+        cli={j.cert.kind === "cli"}
+        prompt={
+          <>
+            Enter the rest of <b>{j.cert.name}</b>'s code to approve.
+          </>
+        }
+      />
+    ) : null;
   // M49: the Arugula CLI on a machine, asking to be one of your devices.
   if (j?.cert.kind === "cli")
     return <CliJoin s={s} j={j} cancel={cancel} refused={refused} failed={failed} sealed={sealed} secret={secret} whole={askWhole} />;
@@ -910,7 +925,8 @@ function JoinPrompt({ s, code: whole, from, device }: { s: ControlSession; code:
                         setSkip(next);
                       }}
                     />{" "}
-                    Approve it too
+                    {/* #761: its code, entered below, ticks it. */}
+                    {ready(c) ? "Approve it too" : "Approve it too, once its code is in below"}
                   </label>
                 </div>
               ))}
