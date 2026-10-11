@@ -40,7 +40,7 @@ use std::sync::Arc;
 
 use arugula_core::Role;
 use arugula_proto::{
-    PaneId,
+    PaneId, every_op,
     op::{Access, Method, Op, Request},
 };
 use axum::{
@@ -52,104 +52,6 @@ use axum::{
 };
 
 use crate::{acl::Principal, api::ApiError, mcp::tools::Call, server::App};
-
-/// Every operation, in one place: the access check and the MCP tool list
-/// look each one up here.
-macro_rules! every_op {
-    ($m:ident) => {
-        $m!(arugula_proto::op::ops::ListPanes);
-        $m!(arugula_proto::op::ops::ClosePane);
-        $m!(arugula_proto::op::ops::ShellEnvGet);
-        $m!(arugula_proto::op::ops::ShellEnvRefresh);
-        $m!(arugula_proto::op::ops::FlagsList);
-        $m!(arugula_proto::op::ops::FlagSet);
-        $m!(arugula_proto::op::ops::RulesList);
-        $m!(arugula_proto::op::ops::RulesForgetAll);
-        $m!(arugula_proto::op::ops::RuleForget);
-        $m!(arugula_proto::op::ops::PaneWait);
-        $m!(arugula_proto::op::ops::PaneSend);
-        $m!(arugula_proto::op::ops::PaneKeys);
-        $m!(arugula_proto::op::ops::PaneMouse);
-        $m!(arugula_proto::op::ops::PaneAttention);
-        $m!(arugula_proto::op::ops::PaneFollowUp);
-        $m!(arugula_proto::op::ops::PanePrompt);
-        $m!(arugula_proto::op::ops::PaneAsk);
-        $m!(arugula_proto::op::ops::PaneAskWithdraw);
-        $m!(arugula_proto::op::ops::PanePermit);
-        $m!(arugula_proto::op::ops::PaneInbox);
-        $m!(arugula_proto::op::ops::PaneProcess);
-        $m!(arugula_proto::op::ops::PaneDetection);
-        $m!(arugula_proto::op::ops::PaneDiffOf);
-        $m!(arugula_proto::op::ops::PaneDrivers);
-        $m!(arugula_proto::op::ops::IdeGet);
-        $m!(arugula_proto::op::ops::IdeSet);
-        $m!(arugula_proto::op::ops::IdeMention);
-        $m!(arugula_proto::op::ops::AgentsGet);
-        $m!(arugula_proto::op::ops::AgentsRefresh);
-        $m!(arugula_proto::op::ops::AdaptersList);
-        $m!(arugula_proto::op::ops::AdapterInstall);
-        $m!(arugula_proto::op::ops::ConversationsList);
-        $m!(arugula_proto::op::ops::ConversationOpen);
-        $m!(arugula_proto::op::ops::MachinesList);
-        $m!(arugula_proto::op::ops::MachineReset);
-        $m!(arugula_proto::op::ops::PushKeyGet);
-        $m!(arugula_proto::op::ops::PushSubscribe);
-        $m!(arugula_proto::op::ops::PushTest);
-        $m!(arugula_proto::op::ops::NotifyGet);
-        $m!(arugula_proto::op::ops::NotifySet);
-        $m!(arugula_proto::op::ops::ThreadGet);
-        $m!(arugula_proto::op::ops::ThreadPost);
-        $m!(arugula_proto::op::ops::ThreadRead);
-        $m!(arugula_proto::op::ops::FountainAgentsGet);
-        // #578 part a: fs, hosts, setup.
-        $m!(arugula_proto::op::ops::FsListGet);
-        $m!(arugula_proto::op::ops::FsStatGet);
-        $m!(arugula_proto::op::ops::FsRecentGet);
-        $m!(arugula_proto::op::ops::PaneCd);
-        $m!(arugula_proto::op::ops::HostGet);
-        $m!(arugula_proto::op::ops::HostsList);
-        $m!(arugula_proto::op::ops::HostAdd);
-        $m!(arugula_proto::op::ops::HostRemove);
-        $m!(arugula_proto::op::ops::HostTokenMint);
-        $m!(arugula_proto::op::ops::HostTokenRevoke);
-        $m!(arugula_proto::op::ops::SetupGet);
-        $m!(arugula_proto::op::ops::SetupTailscale);
-        $m!(arugula_proto::op::ops::SetupControl);
-        $m!(arugula_proto::op::ops::SetupControlConfirm);
-        $m!(arugula_proto::op::ops::SetupClaude);
-        $m!(arugula_proto::op::ops::SetupAgent);
-        // #578 part b: access and credentials.
-        $m!(arugula_proto::op::ops::SharesList);
-        $m!(arugula_proto::op::ops::ShareMint);
-        $m!(arugula_proto::op::ops::ShareRevoke);
-        $m!(arugula_proto::op::ops::GuestsList);
-        $m!(arugula_proto::op::ops::GuestMint);
-        $m!(arugula_proto::op::ops::GuestRevoke);
-        $m!(arugula_proto::op::ops::AclGet);
-        $m!(arugula_proto::op::ops::AclSet);
-        $m!(arugula_proto::op::ops::LinkMint);
-        $m!(arugula_proto::op::ops::InviteSend);
-        $m!(arugula_proto::op::ops::TeamPinsGet);
-        $m!(arugula_proto::op::ops::TeamPinsSet);
-        $m!(arugula_proto::op::ops::McpTokensList);
-        $m!(arugula_proto::op::ops::McpTokenMint);
-        $m!(arugula_proto::op::ops::McpTokenRevoke);
-        $m!(arugula_proto::op::ops::SigninLinkGet);
-        // #578 part c: synced history, sandboxes, studio.
-        $m!(arugula_proto::op::ops::SyncedList);
-        $m!(arugula_proto::op::ops::SyncedRotate);
-        $m!(arugula_proto::op::ops::SyncedForget);
-        $m!(arugula_proto::op::ops::SandboxesList);
-        $m!(arugula_proto::op::ops::SandboxPromote);
-        $m!(arugula_proto::op::ops::SandboxDemote);
-        $m!(arugula_proto::op::ops::StudioGet);
-        $m!(arugula_proto::op::ops::StudioLogin);
-        $m!(arugula_proto::op::ops::StudioLogout);
-        $m!(arugula_proto::op::ops::StudioAppsList);
-        $m!(arugula_proto::op::ops::StudioFollow);
-        $m!(arugula_proto::op::ops::StudioUnfollow);
-    };
-}
 
 /// Why an operation didn't happen. Each surface words it: HTTP as a status
 /// and the sentence it always sent, MCP as a sentence an agent can act on.

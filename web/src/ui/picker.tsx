@@ -5,6 +5,7 @@
 // the `+` button's menu, the phone's sheet, or Ctrl+Shift+G. On a phone it
 // is a full-height sheet.
 
+import { opPath } from "../ops";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { Client } from "../client";
 import type { PaneId, RunRequest } from "../proto";
@@ -177,7 +178,7 @@ function Picker({ client, pane, phone, close }: { client: Client; pane: PaneId; 
     setError(null);
     const path = list.path;
     let err: string | null;
-    if (what === "cd") err = await client.make(`/api/panes/${pane}/cd`, { path });
+    if (what === "cd") err = await client.make(opPath("pane.cd", { id: pane }), { path });
     else if (what === "pane") err = await client.make("/api/run", { split: pane, join: true, cwd: path, from_pane: pane } satisfies RunRequest);
     else
       err = await client.make("/api/run", {

@@ -2,6 +2,7 @@
 // the `+` button's menu and the session menu are built here, and the
 // command palette reads the same lists, so the two can't drift.
 
+import { opPath } from "../ops";
 import { paneIds, type Client } from "../client";
 import type { Machine, OpenRequest, PaneId, Policy, SessionId, TabView } from "../proto";
 import { askText, type MenuItem } from "./menu";
@@ -259,7 +260,7 @@ function machineItems(client: Client, tab: TabView): MenuItem[] {
     {
       label: "Reset machine",
       disabled: on.length === 0,
-      run: () => void client.api(`/api/machines/${m.id}/reset`, {}, "couldn't reset the machine"),
+      run: () => void client.api(opPath("machine.reset", { id: m.id }), {}, "couldn't reset the machine"),
     },
   ];
 }

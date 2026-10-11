@@ -247,6 +247,106 @@ pub trait Op: Send + Sync + 'static {
     }
 }
 
+/// Every operation, in one place: the access check, the MCP tool list and
+/// the web client's table (`proto.gen.ts`) look each one up here. Called as
+/// `every_op!(m)`, it calls `m!(path::to::Op)` for each, in this order.
+#[macro_export]
+macro_rules! every_op {
+    ($m:ident) => {
+        $m!($crate::op::ops::ListPanes);
+        $m!($crate::op::ops::ClosePane);
+        $m!($crate::op::ops::ShellEnvGet);
+        $m!($crate::op::ops::ShellEnvRefresh);
+        $m!($crate::op::ops::FlagsList);
+        $m!($crate::op::ops::FlagSet);
+        $m!($crate::op::ops::RulesList);
+        $m!($crate::op::ops::RulesForgetAll);
+        $m!($crate::op::ops::RuleForget);
+        $m!($crate::op::ops::PaneWait);
+        $m!($crate::op::ops::PaneSend);
+        $m!($crate::op::ops::PaneKeys);
+        $m!($crate::op::ops::PaneMouse);
+        $m!($crate::op::ops::PaneAttention);
+        $m!($crate::op::ops::PaneFollowUp);
+        $m!($crate::op::ops::PanePrompt);
+        $m!($crate::op::ops::PaneAsk);
+        $m!($crate::op::ops::PaneAskWithdraw);
+        $m!($crate::op::ops::PanePermit);
+        $m!($crate::op::ops::PaneInbox);
+        $m!($crate::op::ops::PaneProcess);
+        $m!($crate::op::ops::PaneDetection);
+        $m!($crate::op::ops::PaneDiffOf);
+        $m!($crate::op::ops::PaneDrivers);
+        $m!($crate::op::ops::IdeGet);
+        $m!($crate::op::ops::IdeSet);
+        $m!($crate::op::ops::IdeMention);
+        $m!($crate::op::ops::AgentsGet);
+        $m!($crate::op::ops::AgentsRefresh);
+        $m!($crate::op::ops::AdaptersList);
+        $m!($crate::op::ops::AdapterInstall);
+        $m!($crate::op::ops::ConversationsList);
+        $m!($crate::op::ops::ConversationOpen);
+        $m!($crate::op::ops::MachinesList);
+        $m!($crate::op::ops::MachineReset);
+        $m!($crate::op::ops::PushKeyGet);
+        $m!($crate::op::ops::PushSubscribe);
+        $m!($crate::op::ops::PushTest);
+        $m!($crate::op::ops::NotifyGet);
+        $m!($crate::op::ops::NotifySet);
+        $m!($crate::op::ops::ThreadGet);
+        $m!($crate::op::ops::ThreadPost);
+        $m!($crate::op::ops::ThreadRead);
+        $m!($crate::op::ops::FountainAgentsGet);
+        // #578 part a: fs, hosts, setup.
+        $m!($crate::op::ops::FsListGet);
+        $m!($crate::op::ops::FsStatGet);
+        $m!($crate::op::ops::FsRecentGet);
+        $m!($crate::op::ops::PaneCd);
+        $m!($crate::op::ops::HostGet);
+        $m!($crate::op::ops::HostsList);
+        $m!($crate::op::ops::HostAdd);
+        $m!($crate::op::ops::HostRemove);
+        $m!($crate::op::ops::HostTokenMint);
+        $m!($crate::op::ops::HostTokenRevoke);
+        $m!($crate::op::ops::SetupGet);
+        $m!($crate::op::ops::SetupTailscale);
+        $m!($crate::op::ops::SetupControl);
+        $m!($crate::op::ops::SetupControlConfirm);
+        $m!($crate::op::ops::SetupClaude);
+        $m!($crate::op::ops::SetupAgent);
+        // #578 part b: access and credentials.
+        $m!($crate::op::ops::SharesList);
+        $m!($crate::op::ops::ShareMint);
+        $m!($crate::op::ops::ShareRevoke);
+        $m!($crate::op::ops::GuestsList);
+        $m!($crate::op::ops::GuestMint);
+        $m!($crate::op::ops::GuestRevoke);
+        $m!($crate::op::ops::AclGet);
+        $m!($crate::op::ops::AclSet);
+        $m!($crate::op::ops::LinkMint);
+        $m!($crate::op::ops::InviteSend);
+        $m!($crate::op::ops::TeamPinsGet);
+        $m!($crate::op::ops::TeamPinsSet);
+        $m!($crate::op::ops::McpTokensList);
+        $m!($crate::op::ops::McpTokenMint);
+        $m!($crate::op::ops::McpTokenRevoke);
+        $m!($crate::op::ops::SigninLinkGet);
+        // #578 part c: synced history, sandboxes, studio.
+        $m!($crate::op::ops::SyncedList);
+        $m!($crate::op::ops::SyncedRotate);
+        $m!($crate::op::ops::SyncedForget);
+        $m!($crate::op::ops::SandboxesList);
+        $m!($crate::op::ops::SandboxPromote);
+        $m!($crate::op::ops::SandboxDemote);
+        $m!($crate::op::ops::StudioGet);
+        $m!($crate::op::ops::StudioLogin);
+        $m!($crate::op::ops::StudioLogout);
+        $m!($crate::op::ops::StudioAppsList);
+        $m!($crate::op::ops::StudioFollow);
+        $m!($crate::op::ops::StudioUnfollow);
+    };
+}
+
 /// The operations declared so far.
 pub mod ops {
     use super::{Access, Method, Op, Role};

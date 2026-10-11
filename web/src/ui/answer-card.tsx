@@ -5,6 +5,7 @@
 // the pane is on, through the fleet. Either way it only needs a way to make
 // requests to that pane's daemon.
 
+import { OPS, opPath } from "../ops";
 import { useState } from "preact/hooks";
 import type { Answered, Ask, Suggestion } from "../blocks/ask";
 import type { PaneOp } from "../proto";
@@ -122,7 +123,7 @@ export function FollowUpBox({
     const t = text.trim();
     if (!t) return;
     try {
-      const res = await request("POST", `/api/panes/${pane}/followup`, { text: t });
+      const res = await request(OPS["pane.followup"].method, opPath("pane.followup", { id: pane }), { text: t });
       if (res.ok) {
         const body = await res.json<{ delivered?: boolean }>();
         setText("");

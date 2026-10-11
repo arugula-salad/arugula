@@ -4,6 +4,7 @@
 // from the session menu and the phone's sheet. Always asks the home daemon
 // (this page's own), whichever host is shown: it holds the provider.
 
+import { opPath } from "../ops";
 import { useEffect, useState } from "preact/hooks";
 import { directory } from "../hosts";
 import type { RunRequest, RunResponse } from "../proto";
@@ -68,7 +69,7 @@ function Sandboxes({ close }: { close: () => void }) {
   const [filter, setFilter] = useState("");
 
   useEffect(() => {
-    fetch("/api/sandboxes")
+    fetch(opPath("sandboxes.list"))
       .then(async (r) => {
         const v = await r.json();
         if (!r.ok) throw new Error(v.error ?? `HTTP ${r.status}`);
@@ -92,7 +93,7 @@ function Sandboxes({ close }: { close: () => void }) {
   const promote = async (name: string) => {
     setBusy(name);
     try {
-      const h = (await post(`/api/sandboxes/${encodeURIComponent(name)}/promote`, {})) as { name: string };
+      const h = (await post(opPath("sandbox.promote", { name }), {})) as { name: string };
       await directory.refresh();
       close();
       directory.select(h.name);

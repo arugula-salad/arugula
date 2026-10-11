@@ -2,6 +2,7 @@
 // session menu and the phone's sheet. Whether this device can be notified,
 // turning it on and off, and what's in the way when it can't.
 
+import { OPS, opPath } from "../ops";
 import { useEffect, useState } from "preact/hooks";
 import type { Client } from "../client";
 import { disablePush, enablePush, ios, pushState, standalone, type PushState } from "../push";
@@ -50,7 +51,7 @@ async function toggle(client: Client) {
     else {
       push = await enablePush();
       // Prove it: the daemon sends this device one now.
-      if (push === "on") void fetch("/api/push/test", { method: "POST" }).catch(() => {});
+      if (push === "on") void fetch(opPath("push.test"), { method: OPS["push.test"].method }).catch(() => {});
     }
   } catch (e) {
     client.toast(String(e));

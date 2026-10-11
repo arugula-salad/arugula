@@ -95,6 +95,29 @@ fn generate() -> String {
         out.push_str(decl);
         out.push('\n');
     }
+    out.push('\n');
+    out.push_str(&ops_table());
+    out
+}
+
+/// Each operation's method and path, by name, as a constant the web client
+/// builds its requests from (`opPath` in `web/src/api.ts`).
+fn ops_table() -> String {
+    use crate::op::Op;
+    let mut rows: Vec<(&str, &str, &str)> = Vec::new();
+    macro_rules! row {
+        ($o:ty) => {
+            rows.push((<$o as Op>::NAME, <$o as Op>::METHOD.as_str(), <$o as Op>::PATH));
+        };
+    }
+    crate::every_op!(row);
+    rows.sort();
+    let mut out =
+        String::from("/** Each operation's method and path (`arugula_proto::op`), by name. */\nexport const OPS = {\n");
+    for (name, method, path) in rows {
+        out.push_str(&format!("  \"{name}\": {{ method: \"{method}\", path: \"{path}\" }},\n"));
+    }
+    out.push_str("} as const;\n\nexport type OpName = keyof typeof OPS;\n");
     out
 }
 

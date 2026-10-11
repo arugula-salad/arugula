@@ -5,6 +5,7 @@
 // (never Fountain on the request). Asked of each connected host once a
 // minute over its summary connection.
 
+import { OPS, opPath } from "./ops";
 import type { Fleet } from "./fleet";
 import type { FountainRunnerInfo, HostInfo } from "./proto";
 
@@ -48,7 +49,7 @@ async function ask(fleet: Fleet) {
         const was = known.get(h.name)?.info ?? null;
         known.set(h.name, { info: was, at: now });
         try {
-          const res = await fleet.request(h.name, "GET", "/api/host");
+          const res = await fleet.request(h.name, OPS["host.get"].method, opPath("host.get"));
           if (!res.ok) return;
           const v = await res.json<Partial<HostInfo>>();
           const info = v.fountain_runner ?? null;

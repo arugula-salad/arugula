@@ -3,6 +3,7 @@
 // machine's (in the daemon's state), so the list is the shown host's.
 // Opened from the session menu; each can be forgotten here.
 
+import { OPS, opPath } from "../ops";
 import { useEffect, useState } from "preact/hooks";
 import type { Client } from "../client";
 
@@ -53,7 +54,7 @@ function Rules({ client, close }: { client: Client; close: () => void }) {
 
   const load = async () => {
     try {
-      const res = await client.request("GET", "/api/rules");
+      const res = await client.request(OPS["rules.list"].method, opPath("rules.list"));
       const v = await res.json<{ rules?: Rule[]; error?: string }>();
       if (!res.ok) throw new Error(v.error ?? `HTTP ${res.status}`);
       setRules(v.rules ?? []);
@@ -64,7 +65,7 @@ function Rules({ client, close }: { client: Client; close: () => void }) {
   useEffect(() => void load(), []);
 
   const forget = async (index: number | null) => {
-    const res = await client.request("DELETE", index === null ? "/api/rules" : `/api/rules/${index}`).catch(() => null);
+    const res = await client.request(OPS["rules.forget_all"].method, index === null ? opPath("rules.forget_all") : opPath("rule.forget", { index })).catch(() => null);
     if (!res?.ok) client.toast("couldn't forget it");
     await load();
   };

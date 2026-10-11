@@ -6,6 +6,7 @@
 // the offset just past the last byte it drew and, on reconnect, asks to
 // resume from there; the daemon replays the gap or sends a snapshot.
 
+import { OPS, opPath } from "./ops";
 import {
   decodeFrame,
   encodeFrame,
@@ -556,7 +557,7 @@ export class Client {
   }
 
   async loadThread(t: ThreadTarget): Promise<ThreadMsg[]> {
-    const r = await this.request("GET", `/api/threads/${threadKey(t)}`);
+    const r = await this.request(OPS["thread.get"].method, opPath("thread.get", { target: threadKey(t) }));
     if (!r.ok) throw new Error((await r.json<{ error?: string }>().catch(() => ({ error: undefined }))).error ?? `HTTP ${r.status}`);
     return (await r.json<ThreadMessages>()).messages;
   }
@@ -568,7 +569,7 @@ export class Client {
     text: string,
     quote?: { pane: PaneId; text: string },
   ): Promise<{ message: ThreadMsg; unreached: Unreached[]; invitable: Invitable[] }> {
-    const r = await this.request("POST", `/api/threads/${threadKey(t)}`, { text, quote } satisfies ThreadPostRequest);
+    const r = await this.request(OPS["thread.post"].method, opPath("thread.post", { target: threadKey(t) }), { text, quote } satisfies ThreadPostRequest);
     if (!r.ok) throw new Error((await r.json<{ error?: string }>().catch(() => ({ error: undefined }))).error ?? `HTTP ${r.status}`);
     const body = await r.json<ThreadPosted>();
     if (body.agent?.error) this.showError(`the agent didn't get it: ${body.agent.error}`);
@@ -581,7 +582,7 @@ export class Client {
   async inviteToThread(t: ThreadTarget, who: string, msg: ThreadMsg, wholeThread: boolean): Promise<string> {
     const session = "session" in t ? t.session : this.sessionOfPane(t.pane);
     if (session === null) throw new Error("that pane is gone");
-    const r = await this.request("POST", "/api/invite", {
+    const r = await this.request(OPS["invite.send"].method, opPath("invite.send"), {
       session,
       who,
       role: "viewer",
@@ -602,7 +603,7 @@ export class Client {
   markThreadRead(t: ThreadTarget, upto: number) {
     const s = this.thread(t);
     if (!s || (!s.unread && !s.mention)) return;
-    void this.request("POST", `/api/threads/${threadKey(t)}/read`, { upto } satisfies ThreadReadRequest).catch(() => {});
+    void this.request(OPS["thread.read"].method, opPath("thread.read", { target: threadKey(t) }), { upto } satisfies ThreadReadRequest).catch(() => {});
   }
 
   // ---- huddles (M63)
@@ -726,7 +727,7 @@ export class Client {
    * was last read; a change (a studio linked, say) shows next time. */
   async loadFeatures() {
     try {
-      const res = await this.request("GET", "/api/host");
+      const res = await this.request(OPS["host.get"].method, opPath("host.get"));
       if (!res.ok) return;
       const h = await res.json<HostInfo>();
       const features = h.features ?? null;
@@ -792,7 +793,7 @@ export class Client {
    * to the clipboard when the browser lets us. */
   async share(pane: PaneId, ttlSecs = 3600): Promise<string | null> {
     try {
-      const res = await this.request("POST", "/api/shares", { pane, ttl_secs: ttlSecs } satisfies ShareRequest);
+      const res = await this.request(OPS["share.mint"].method, opPath("share.mint"), { pane, ttl_secs: ttlSecs } satisfies ShareRequest);
       const body = await res.json<Partial<Share> & { error?: string }>().catch(() => null);
       if (!res.ok || !body) {
         this.toast(body?.error ?? `couldn't share it (${res.status})`);
@@ -812,7 +813,7 @@ export class Client {
    * clipboard when the browser lets us. */
   async guestInvite(pane: PaneId): Promise<string | null> {
     try {
-      const res = await this.request("POST", "/api/guests", { pane } satisfies GuestInviteRequest);
+      const res = await this.request(OPS["guest.mint"].method, opPath("guest.mint"), { pane } satisfies GuestInviteRequest);
       const body = await res.json<Partial<GuestInvite> & { error?: string }>().catch(() => null);
       if (!res.ok || !body?.command) {
         this.toast(body?.error ?? `couldn't make an invite (${res.status})`);
@@ -873,7 +874,7 @@ export class Client {
   async openConversation(o: { id: string; then?: "continue" | "fork"; split?: PaneId; session?: number }): Promise<PaneId | null> {
     this.lastIntentAt = Date.now();
     try {
-      const res = await this.request("POST", "/api/conversations/open", {
+      const res = await this.request(OPS["conversation.open"].method, opPath("conversation.open"), {
         id: o.id,
         then: o.then ?? null,
         split: o.split ?? null,
@@ -927,7 +928,7 @@ export class Client {
 
   async loadNotify() {
     try {
-      const res = await this.request("GET", "/api/notify");
+      const res = await this.request(OPS["notify.get"].method, opPath("notify.get"));
       if (res.ok) this.notifyPref = await res.json<NotifyPref>();
       this.emit();
     } catch {
@@ -937,7 +938,7 @@ export class Client {
 
   async setNotify(body: NotifyRequest) {
     try {
-      const res = await this.request("POST", "/api/notify", body);
+      const res = await this.request(OPS["notify.set"].method, opPath("notify.set"), body);
       if (res.ok) this.notifyPref = await res.json<NotifyPref>();
       else this.toast((await res.json<{ error?: string }>().catch(() => null))?.error ?? "couldn't change that");
       this.emit();

@@ -1,5 +1,7 @@
 // Web Push: let the daemon notify this device when a pane needs you.
 
+import { OPS, opPath } from "./ops";
+
 /** `insecure`: plain http, where browsers have no push. `install`: iOS in
  * a Safari tab, which has push only once added to the Home Screen (#96). */
 export type PushState = "unsupported" | "insecure" | "install" | "denied" | "on" | "off";
@@ -59,12 +61,12 @@ export async function enablePush(): Promise<PushState> {
   if ((await Notification.requestPermission()) !== "granted") return "denied";
   const reg = (await navigator.serviceWorker.getRegistration()) ?? (await navigator.serviceWorker.register("/sw.js"));
   await navigator.serviceWorker.ready;
-  const res = await fetch("/api/push/key");
+  const res = await fetch(opPath("push.key"));
   if (!res.ok) throw new Error("this daemon has push turned off");
   const { key: k } = (await res.json()) as { key: string };
   const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key(k) });
-  const saved = await fetch("/api/push/subscribe", {
-    method: "POST",
+  const saved = await fetch(opPath("push.subscribe"), {
+    method: OPS["push.subscribe"].method,
     headers: { "content-type": "application/json" },
     body: JSON.stringify(sub.toJSON()),
   });

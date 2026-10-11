@@ -8,6 +8,7 @@
 // your own editor ("Open here"), or hand the lines to Claude Code in a
 // terminal on the same machine.
 
+import { OPS, opPath } from "../ops";
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { Fleet, FleetPane } from "../fleet";
 import type { ActRequest, ActResponse, FollowMsg, OpenRequest, OpenResponse } from "../proto";
@@ -167,7 +168,7 @@ function mention(fleet: Fleet, host: string, file: string, at: Cursor | null, se
   return claudes(fleet, host).map((c) => ({
     label: `%${c.id} ${c.info.title ?? c.info.current?.text ?? "Claude Code"} · lines ${start}${end > start ? `–${end}` : ""}`,
     run: async () => {
-      const res = await fleet.request(host, "POST", "/api/ide/mention", { pane: c.id, file, start, end });
+      const res = await fleet.request(host, OPS["ide.mention"].method, opPath("ide.mention"), { pane: c.id, file, start, end });
       setErr(res.ok ? null : ((await res.json<{ error?: string }>().catch(() => null))?.error ?? `couldn't (${res.status})`));
     },
   }));

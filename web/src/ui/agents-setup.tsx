@@ -6,6 +6,7 @@
 // (`/api/setup?part=agents`), once per page; each adapter's pin is said
 // once per browser, so a release that moves the pin says it again.
 
+import { opPath } from "../ops";
 import { useEffect, useState } from "preact/hooks";
 import type { Client } from "../client";
 import { adapterReady, type Adapter } from "./adapter";
@@ -55,7 +56,7 @@ export function AgentsNudge({ client }: { client: Client }) {
   const [shown, setShown] = useState<Adapter[]>([]);
   useEffect(() => {
     if (!mine) return;
-    fetch("/api/setup?part=agents")
+    fetch(`${opPath("setup.get")}?part=agents`)
       .then((r) => (r.ok ? (r.json() as Promise<AgentsSetup>) : null))
       .then((s) => {
         const before = said();

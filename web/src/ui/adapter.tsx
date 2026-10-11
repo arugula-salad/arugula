@@ -4,6 +4,7 @@
 // Getting started's Agents step, which also says when one is out of date
 // (#335): older than the daemon's pin, and the same install updates it.
 
+import { OPS, opPath } from "../ops";
 import type { Client } from "../client";
 import type { PaneId } from "../proto";
 import { CopyText } from "./copy";
@@ -47,7 +48,7 @@ export function adapterReady(a: Adapter): boolean {
 /** The adapters' status, or null if this person can't ask (a guest). */
 export async function loadAdapters(client: Client): Promise<Adapter[] | null> {
   try {
-    const res = await client.request("GET", "/api/agents/adapters");
+    const res = await client.request(OPS["adapters.list"].method, opPath("adapters.list"));
     if (!res.ok) return null;
     return (await res.json<{ adapters: Adapter[] }>()).adapters;
   } catch {
@@ -57,7 +58,7 @@ export async function loadAdapters(client: Client): Promise<Adapter[] | null> {
 
 /** Run its install in a new pane: beside `split`, else a tab in `session`. */
 export async function installAdapter(client: Client, kind: string, where: { split?: PaneId; session?: number; from?: PaneId }) {
-  const err = await client.make(`/api/agents/adapters/${kind}/install`, {
+  const err = await client.make(opPath("adapter.install", { kind }), {
     split: where.split ?? null,
     from_pane: where.from ?? where.split ?? null,
     session: where.split === undefined && where.from === undefined ? (where.session?.toString() ?? null) : null,
