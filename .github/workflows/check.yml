@@ -330,8 +330,8 @@ jobs:
           if-no-files-found: ignore
 
   # The Linux desktop app under Xvfb, in a container (#317): `just
-  # desktop-xvfb`'s join, m46 (bare and links among its claims), m47 and
-  # stale. The recipe builds the box's binaries and the app itself. Not
+  # desktop-xvfb`'s join, app (bare, links and nautilus among its claims)
+  # and stale. The recipe builds the box's binaries and the app itself. Not
   # named desktop: that's the Windows job chant.workspace.json requires.
   desktop-xvfb:
     runs-on: arugula-amd64
@@ -341,7 +341,7 @@ jobs:
         with:
           cache-key: desktop-xvfb
       - run: just bootstrap
-      - name: The desktop app under Xvfb (join, m46, m47, stale)
+      - name: The desktop app under Xvfb (join, app, stale)
         run: just desktop-xvfb
 
   # Does the push need the macOS runner (scripts/macos-changed)? main's

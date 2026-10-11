@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Click a showing item by its label in an app, through AT-SPI (m46.sh's
+"""Click a showing item by its label in an app, through AT-SPI (app.sh's
 nautilus claim): `click.py APP LABEL [SECONDS]`. A menu that's open shows
 its items to AT-SPI the way a screen reader sees them, so this finds the
 right-click menu's entry without knowing where it is on the screen.

@@ -35,7 +35,7 @@ or an account skip without it and name what's missing
 | `just forges`, `just testnet-hosts`, `just testnet-editors` | real forges, two hosts and VS Code over Remote-SSH, in Docker ([below](#real-forges-two-hosts-vs-code-over-remote-ssh)) | the forges nightly (`forges-nightly.yml`) |
 | `just macos <test>` | the tart VM's checks: launchd with no GUI session, real Safari, Safari in the iOS Simulator, iTerm2, the desktop app ([below](#a-fresh-mac-the-tart-vm-harness)), `journey`: J1 on the real app and Safari, `journey-j2a`: Sam on the real app, Riley in a browser, `journey-j3`: the app installed by hand over an older daemon, and `journey-j4`: an agent installing over ssh, all graphed ([below](#a-new-users-journeys)) | no |
 | `just desktop-check` | rustfmt and clippy for `crates/desktop` | Linux |
-| `just desktop-xvfb` | the Linux desktop app under Xvfb in a container (`packaging/desktop/xvfb/`): `join` (#204), `m46` (`bare` and `links` among its claims), `m47` and `stale` (#317) (see [The desktop app's tests](#the-desktop-apps-tests)) | Linux |
+| `just desktop-xvfb` | the Linux desktop app under Xvfb in a container (`packaging/desktop/xvfb/`): `join` (#204), `app` (`bare`, `links` and `nautilus` among its claims) and `stale` (#317) (see [The desktop app's tests](#the-desktop-apps-tests)) | Linux |
 | `just desktop-packages ARCH` | the .deb on Ubuntu 22.04 and the .rpm on Fedora 42 install and claim `arugula://` (after `just desktop-linux ARCH`) | no |
 | `testnet/macos/desktop.sh`, `testnet/macos/update.sh`, `testnet/macos/stale-daemon.sh` | the macOS app from its .dmg in a fresh tart VM, its updater, and a daemon older than the app's (#661) | no |
 | `just check-core` | clippy and the daemon's and CLI's tests without the `labs` feature (the core, with no Fountain; #452), the `forge` and `editor` features on | Linux and macOS |
@@ -63,7 +63,7 @@ once (#287); a new push to a branch cancels that branch's run:
     (`E2E_SET=stack`); **perf**: the specs that time things (`E2E_SET=perf`:
     the frame rates, `editors.spec.ts`), after the shards, which leave geek
     too busy to measure them;
-  - **desktop-xvfb**: `just desktop-xvfb` (`join`, `m46`, `m47`, `stale`)
+  - **desktop-xvfb**: `just desktop-xvfb` (`join`, `app`, `stale`)
     in its container. It isn't a required check, and isn't named
     `desktop`, which is Windows' required one.
   Each job takes one of two build directories kept for its kind of job,
@@ -700,7 +700,7 @@ container under Xvfb and Openbox with xdotool typing; macOS runs in a fresh
 tart VM clone (`testnet/macos/vm.sh`) where System Events types into the
 logged-in session over ssh.
 
-| Claim | Linux (`just desktop-xvfb m46 CLAIM`) | macOS (`testnet/macos/desktop.sh CLAIM`) | A failure means |
+| Claim | Linux (`just desktop-xvfb app CLAIM`) | macOS (`testnet/macos/desktop.sh CLAIM`) | A failure means |
 |---|---|---|---|
 | Chords reach the page | `keys`: Ctrl-W, T, N, Q, Tab, F1, F10, Alt-x arrive in a recording pane as bytes | `keys`: Ctrl-W, T, N, Q, Tab as bytes; Cmd-W closes the pane and not the window; Cmd-T opens a tab; Cmd-M leaves the app up; Cmd-H hides it and Cmd-Q quits it, the panes still running | a menu or the toolkit took a key the terminal needs |
 | Tabs in the titlebar | `titlebar`: no decorations; dragging the bar moves the window; the bar's maximize and minimize work | `tabs`: Cmd-N opens a window as a native tab; with two and three tabs the page's bar starts below AppKit's tab bar, and Cmd-Shift-W back to one tab hides the strip (#323). `this`: the tray's *This machine*, clicked three times, adds no window or tab | the window can't be moved or managed without the system's titlebar |
@@ -710,7 +710,7 @@ logged-in session over ssh.
 | Service registration | (the systemd unit: `arugulad install`, unchanged) | `agent`: the first start registers the launch agent through SMAppService, BTM lists it, the bundle's daemon answers the linked CLI, no second plist | the app runs a daemon that isn't the one Login Items shows, or two |
 | Working pane, no terminal | | `install`, `pane`: the .dmg installs, and a command typed into the window runs | |
 | Panes outlive the app | | `restart`: the daemon's pids and panes are the same after the app restarts | |
-| Right-click a folder (M47) | `m47` (`just desktop-xvfb m47`): with the packages' .desktop file and Nautilus extension, a right-click on a folder (and inside one) in Nautilus, *Open in Arugula*, opens a tab there in the running app and shows it | `finder`: the service is registered (`pbs`); a right-click on a folder in Finder, *New Arugula Tab Here*, opens a tab there; a `.command` file opened with the app runs in a new pane | the file manager's menu has no entry, or it starts a second app |
+| Right-click a folder (M47) | `nautilus`: with the packages' .desktop file and Nautilus extension, a right-click on a folder (and inside one) in Nautilus, *Open in Arugula*, opens a tab there in the running app and shows it | `finder`: the service is registered (`pbs`); a right-click on a folder in Finder, *New Arugula Tab Here*, opens a tab there; a `.command` file opened with the app runs in a new pane | the file manager's menu has no entry, or it starts a second app |
 | Packages | `just desktop-packages ARCH`: .deb and .rpm install, libraries resolve, xdg-mime hands `arugula://` to the app, the .desktop file passes the link (`%u`) and has a New Tab action, the Nautilus extension is in place | `install` above | |
 | A daemon too old for the app (#317) | `just desktop-xvfb stale`: a 0.8.0 stand-in (`old-daemon.py`, no protocol) installed as the service, stopped (`stopped`) or running (`running`): the app says 0.8.0 runs and 0.19.0 is needed, 0.8.0 still answers afterwards, and it served no page | (none since #534: every release below 0.19.0 is illogicald, which nothing runs) | the app shows an old daemon's page, or replaces a daemon (#392) |
 | A daemon older than the app's (#661) | | `stale-daemon.sh running stopped`: arugulad 0.26.1 (`OLD=`) as its install script left it, running with a pane or stopped: the app says it's older than its own and changes nothing unasked; Return (*Update arugulad*) updates it under its own agent to a newer release and the pane is the same process | the app keeps an old daemon with no word, or updates it unasked |
