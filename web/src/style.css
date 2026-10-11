@@ -8487,3 +8487,45 @@ html[data-finish="glass"] .prompt-backdrop {
   background: #0003;
   backdrop-filter: blur(3px);
 }
+
+
+/* #761: the code a waiting browser shows (a QR code and the text), what
+ * the approving device scans or types, and its camera. */
+.control-device-code {
+  margin: 8px 0;
+}
+
+.control-device-code .control-cmd {
+  font-size: 15px;
+  letter-spacing: 0.03em;
+}
+
+.control-device-type {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.control-older {
+  margin: 8px 0;
+}
+
+.control-older summary {
+  cursor: pointer;
+  color: var(--dim);
+}
+
+.control-scan {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+  margin: 8px 0;
+}
+
+.control-scan-video {
+  width: min(320px, 100%);
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 6px;
+  background: #000;
+}

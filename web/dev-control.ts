@@ -5,11 +5,13 @@
 // edit, wait for "built", reload the page.
 //
 // A headless device of the account (fixtures/device.ts) approves the
-// machines' joins and any browser that signs in, so the only click is
+// machines' joins and any browser that signs in, so the clicks are
 // *Sign in with GitHub*, which signs in as $DEV_CONTROL_LOGIN (default
-// $USER) with no GitHub. Everything (control's database, the machines,
-// that device) stays in the state directory between runs, and the port
-// stays put, so the browser stays signed in.
+// $USER) with no GitHub, and (#761) *It matches* on the account's
+// fingerprint: that device never sees the code the browser shows, so it
+// approves the way a page from before codes does. Everything (control's
+// database, the machines, that device) stays in the state directory
+// between runs, and the port stays put, so the browser stays signed in.
 //
 // Control is at http://127.0.0.1:PORT, where passkeys are off (WebAuthn
 // refuses an IP address); DEV_CONTROL_HOST=localhost puts it at
@@ -44,7 +46,7 @@ import { join } from "node:path";
 import type { Server } from "node:http";
 import { Device } from "./fixtures/device.ts";
 import { fakeGithub } from "./fixtures/fakes.ts";
-import type { Cert } from "./src/e2e/cert.ts";
+import { fingerprint, type Cert } from "./src/e2e/cert.ts";
 
 // An agent's pane exports ARUGULA_* (the socket, keep-panes…) that would
 // change what these daemons do (#682): not theirs.
@@ -226,8 +228,10 @@ async function approveBrowsers(d: Device) {
     try {
       const { pending } = await d.api<{ pending: Cert[] }>("/api/devices");
       for (const c of pending) {
+        // #761: without the code it shows (only its screen has that), so
+        // the browser asks to check the account's fingerprint.
         await d.approveRequest(c);
-        log(`approved ${c.name || "a browser"}`);
+        log(`approved ${c.name || "a browser"}: check the account is ${fingerprint(d.root)} and press It matches`);
       }
     } catch (e) {
       // Control restarting, or the session gone: sign in again.
@@ -247,7 +251,7 @@ await startMachines(d);
 console.log(`
 dev-control: ${base}${host === "127.0.0.1" ? " (no passkeys on an IP address: DEV_CONTROL_HOST=localhost)" : ""}
   Sign in with GitHub (the fake one signs you in as ${login}${logins.length ? `, or asks: ${[login, ...logins].join(", ")}` : ""});
-  ${approveAll ? `${login}'s browsers are approved` : `${login}'s browsers stay waiting to be approved (DEV_CONTROL_APPROVE_BROWSERS=0)`}. Machines: ${machines.join(", ")}${labs ? ", with Labs" : ""}.
+  ${approveAll ? `${login}'s browsers are approved (press It matches: the account is ${fingerprint(d.root)})` : `${login}'s browsers stay waiting to be approved (DEV_CONTROL_APPROVE_BROWSERS=0)`}. Machines: ${machines.join(", ")}${labs ? ", with Labs" : ""}.
   Edit web/src, wait for "web rebuilt", reload. State: ${dir}. Ctrl-C stops.
 `);
 // Leaving browsers alone: stay up for the web build and the machines.

@@ -184,6 +184,7 @@ const UNCOVERED: [string, string][] = [
   ["Read-only share link", "Share's link for people with no login; no journey"],
   ["Dropped by control, join again", "control-dropped.spec covers the screens, not a person's path"],
   ["App approved as a device after its sign-in", "the fallback when Allow can't sign the app's keys (#758); control.spec covers it, no journey"],
+  ["A second browser or phone approved as a device", "scanning or typing the code it shows (#761): control.spec covers it, no journey"],
   ["The CLI signed in, or a machine joined over ssh", "arugula login, and arugulad join run over ssh (#760): control-smoke and the testnet cover them, no journey"],
 ];
 

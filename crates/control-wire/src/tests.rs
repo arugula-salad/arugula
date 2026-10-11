@@ -303,7 +303,7 @@ fn the_dial_query_carries_the_direct_urls_as_json() {
 fn control_json_is_what_control_says() {
     let full = json!({
         "control": true, "url": "https://control.example", "github": true, "passkeys": true,
-        "vapid": "BKey", "github_app": null, "daemon_auth": 2, "cli_join": 1, "join_secret": 1,
+        "vapid": "BKey", "github_app": null, "daemon_auth": 2, "cli_join": 1, "join_secret": 1, "device_secret": 1,
         "guest_ssh": { "host": "jump.example", "port": 22, "known_hosts": "jump.example ssh-ed25519 AAAA", "fingerprint": "SHA256:x" },
     });
     let c = round::<ControlInfo>(full.clone());
@@ -324,8 +324,10 @@ fn an_older_controls_control_json_parses() {
     let old: ControlInfo = parse(&json!({ "control": true, "url": "u" }));
     assert_eq!(old.daemon_auth, 0);
     assert_eq!(old.join_secret, 0);
-    // Without it, it isn't said at all.
+    assert_eq!(old.device_secret, 0);
+    // Without them, they aren't said at all.
     assert!(serde_json::to_value(&old).unwrap().get("join_secret").is_none());
+    assert!(serde_json::to_value(&old).unwrap().get("device_secret").is_none());
 }
 
 /// A machine or the CLI reads only `join_secret` to decide on a secret

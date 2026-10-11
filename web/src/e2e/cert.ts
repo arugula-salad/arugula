@@ -192,3 +192,51 @@ export async function joinMac(secret: string, trust: { account: string; root: st
   const body = `arugula join secret v1\naccount ${trust.account}\nroot ${trust.root}\ndevice ${c.device}\nnoise ${c.noise}\nsign ${c.sign}\n`;
   return hex(new Uint8Array(await subtle.sign("HMAC", key, enc.encode(body))));
 }
+
+// ---- a device's code (#761)
+//
+// The same mechanism, for a new browser, phone or app window waiting to be
+// approved as a device. It shows a code, `<lookup>.<secret>`, as a QR code
+// (a link, `#device=<lookup>.<secret>`) and as text: the lookup is its
+// keys' code (`joinCode`), so the approving device finds its request among
+// those waiting and knows control didn't swap the key; the secret (80
+// bits, as the join's) never reaches control. Approving, that device sends
+// a MAC under the secret over the account (its id and the root that device
+// pinned) and the new device's keys. The new device checks it before it
+// pins the root control names, so control can't enroll it into an account
+// of its own.
+
+/** The feature a waiting device names when it shows a code, so the
+ * approving device asks for it and sends a MAC. */
+export const DEVICE_SECRET = "device-secret";
+
+/** A new secret for a waiting device, as `XXXX-XXXX-XXXX-XXXX`. */
+export function newSecret(): string {
+  const ALPHABET = "ABCDEFGHJKMNPQRSTVWXYZ0123456789";
+  const raw = [...globalThis.crypto.getRandomValues(new Uint8Array(16))].map((b) => ALPHABET[b & 31]).join("");
+  return normalizeSecret(raw)!;
+}
+
+type Trust = { account: string; root: string };
+type Keys = Pick<Cert, "device" | "noise" | "sign">;
+
+const deviceMacBody = (trust: Trust, c: Keys) =>
+  `arugula device secret v1\naccount ${trust.account}\nroot ${trust.root}\ndevice ${c.device}\nnoise ${c.noise}\nsign ${c.sign}\n`;
+
+const macKey = (secret: string, use: KeyUsage) =>
+  subtle.importKey("raw", enc.encode(secret.replace(/-/g, "")), { name: "HMAC", hash: "SHA-256" }, false, [use]);
+
+/** The approving device's answer to a waiting device's code (hex
+ * HMAC-SHA256), domain-separated from a machine's join MAC. */
+export async function deviceMac(secret: string, trust: Trust, c: Keys): Promise<string> {
+  const key = await macKey(secret, "sign");
+  return hex(new Uint8Array(await subtle.sign("HMAC", key, enc.encode(deviceMacBody(trust, c)))));
+}
+
+/** Whether `mac` is `deviceMac`'s for these, compared in constant time
+ * (HMAC verify). */
+export async function deviceMacOk(secret: string, trust: Trust, c: Keys, mac: string): Promise<boolean> {
+  if (!/^[0-9a-f]{64}$/.test(mac)) return false;
+  const key = await macKey(secret, "verify");
+  return subtle.verify("HMAC", key, unhex(mac), enc.encode(deviceMacBody(trust, c)));
+}

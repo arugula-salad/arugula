@@ -101,6 +101,11 @@ pub struct ControlInfo {
     /// machine (#760), so a machine's link may carry a secret.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub join_secret: u64,
+    /// Control passes an approving device's MAC under a waiting device's
+    /// code to it (#761), so a waiting browser shows a code to scan or type
+    /// rather than a fingerprint to compare.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub device_secret: u64,
     /// The ssh jump host for guests of daemons behind NAT (M65).
     #[serde(default)]
     pub guest_ssh: Option<GuestJump>,

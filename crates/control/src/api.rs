@@ -144,6 +144,15 @@ pub struct Enroll {
     /// device that approves it is shown the machine alongside.
     #[serde(default)]
     join: Option<String>,
+    /// What a waiting device understands (#761): `device-secret`, it shows
+    /// a code, and the device that approves it answers with a MAC.
+    #[serde(default)]
+    features: String,
+    /// Approving: the approving device's MAC under the code the waiting
+    /// device shows (#761), passed on to it: control never sees the code's
+    /// secret.
+    #[serde(default)]
+    mac: Option<String>,
 }
 
 /// A browser or CLI asks to join the account. The first device is
@@ -174,6 +183,9 @@ pub async fn enroll(
     let account = app.db.account(&s.account)?.ok_or_else(|| err(StatusCode::UNAUTHORIZED, "no such account"))?;
     if let Some((have, true)) = app.db.device(&s.account, &c.device)? {
         return Ok(Json(json!({ "approved": true, "cert": have, "root": account.root })));
+    }
+    if b.features.len() > 200 || !b.features.bytes().all(|b| b.is_ascii_lowercase() || b == b'-' || b == b',') {
+        return Err(err(StatusCode::BAD_REQUEST, "features are lowercase words, comma-separated"));
     }
     match account.root {
         None => {
@@ -208,6 +220,7 @@ pub async fn enroll(
             }
             app.db.put_device(&Cert { approver: String::new(), sig: String::new(), ..c.clone() }, false, now_ms())?;
             app.db.set_device_join(&s.account, &c.device, join.as_deref())?;
+            app.db.set_device_features(&s.account, &c.device, &b.features)?;
             // The account's other devices hear of it once (#104), not on
             // every reload of the waiting page.
             if new {
@@ -290,9 +303,13 @@ pub async fn devices(State(app): State<Arc<App>>, s: Session) -> R {
     // When each device last loaded the page, where control has seen it.
     let used: serde_json::Map<String, Value> =
         app.db.devices_used(&s.account)?.into_iter().map(|(d, at)| (d, Value::from(at))).collect();
-    Ok(Json(
-        json!({ "trust": trust, "certs": certs, "revocations": revs, "pending": pending, "joins": joins, "used": used }),
-    ))
+    // #761: which waiting devices show a code, for the page to ask for it.
+    let features: serde_json::Map<String, Value> =
+        app.db.device_features(&s.account)?.into_iter().map(|(d, f)| (d, Value::String(f))).collect();
+    Ok(Json(json!({
+        "trust": trust, "certs": certs, "revocations": revs, "pending": pending, "joins": joins, "used": used,
+        "features": features,
+    })))
 }
 
 pub async fn device(State(app): State<Arc<App>>, s: Session, Path(id): Path<String>) -> Result<Response, ApiError> {
@@ -305,7 +322,13 @@ pub async fn device(State(app): State<Arc<App>>, s: Session, Path(id): Path<Stri
         };
         return Ok((StatusCode::NOT_FOUND, Json(body)).into_response());
     };
-    Ok(Json(json!({ "approved": approved, "cert": cert })).into_response())
+    // #761: the approving device's answer to the code it showed, said
+    // only when there is one.
+    let mut body = json!({ "approved": approved, "cert": cert });
+    if approved && let Some(mac) = app.db.device_mac(&s.account, &id)? {
+        body["mac"] = Value::String(mac);
+    }
+    Ok(Json(body).into_response())
 }
 
 pub async fn approve(State(app): State<Arc<App>>, s: Session, Path(id): Path<String>, Json(b): Json<Enroll>) -> R {
@@ -318,8 +341,10 @@ pub async fn approve(State(app): State<Arc<App>>, s: Session, Path(id): Path<Str
         refused("approve", &s.account, &b.cert, "not the certificate that asked");
         return Err(err(StatusCode::BAD_REQUEST, "that's not the certificate that asked"));
     }
+    mac_ok(&b.mac)?;
     approval_ok(&app, &s.account, &b.cert, "approve")?;
     app.db.put_device(&b.cert, true, now_ms())?;
+    app.db.set_device_mac(&s.account, &id, b.mac.as_deref())?;
     nudge(&app, &s.account);
     Ok(Json(json!({ "approved": true })))
 }

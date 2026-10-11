@@ -15,7 +15,7 @@
 // docs/testing.md describes both.
 
 import { readFileSync, writeFileSync } from "node:fs";
-import { certBody, evaluate, joinCode, joinMac, revocationBody, splitJoinCode, unhex, type Cert, type Revocation } from "../src/e2e/cert.ts";
+import { certBody, deviceMac, evaluate, joinCode, joinMac, revocationBody, splitJoinCode, unhex, type Cert, type Revocation } from "../src/e2e/cert.ts";
 import { E2ESocket } from "../src/e2e/channel.ts";
 import { generateKeys, signText, type DeviceKeys } from "../src/e2e/keys.ts";
 import { signRoster, teamJoinBody, word, type Roster, type TeamPin, type TeamRole } from "../src/e2e/team.ts";
@@ -173,10 +173,22 @@ export class Device {
 
   /** Approve a browser waiting on the account, from the certificate it
    * asked with (its page's `control.request`), as the "New device?"
-   * prompt does. */
-  async approveRequest(asked: Cert): Promise<void> {
+   * prompt does. With the code it shows (#761, its page's
+   * `control.deviceCode`, `LOOKUP.SECRET`), the lookup must be its keys'
+   * code and the approval carries the MAC under the secret, as the prompt
+   * sends it; without one, it's an approval from a page from before codes,
+   * and the browser asks its person to check the account instead. */
+  async approveRequest(asked: Cert, code?: string | null): Promise<void> {
     const k = { id: asked.device, noisePub: asked.noise, signPub: asked.sign } as DeviceKeys;
-    await this.api(`/api/devices/${asked.device}/approve`, { cert: await this.sign(k, asked.kind, asked.name) });
+    let mac: string | undefined;
+    if (code) {
+      const parts = splitJoinCode(code);
+      if (!parts?.secret) throw new Error(`${code} isn't a device's code`);
+      const want = await joinCode(asked);
+      if (want !== parts.code) throw new Error(`the browser waiting has a key whose code is ${want}, not ${parts.code}`);
+      mac = await deviceMac(parts.secret, { account: this.account, root: this.root }, asked);
+    }
+    await this.api(`/api/devices/${asked.device}/approve`, { cert: await this.sign(k, asked.kind, asked.name), ...(mac ? { mac } : {}) });
   }
 
   /** Approve a daemon's join code (what `arugulad join` prints after

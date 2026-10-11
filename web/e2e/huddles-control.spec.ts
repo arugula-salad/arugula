@@ -88,7 +88,8 @@ async function secondDevice(browser: Browser): Promise<Page> {
   await page.goto("/");
   await page.locator("[data-signin=github]").click();
   const fp = await page.locator("[data-fingerprint]").getAttribute("data-fingerprint");
-  await alice.goto("/");
+  // #761: what its QR code says, with its code in it.
+  await alice.goto(`/#device=${await page.locator("[data-device-code]").getAttribute("data-device-code")}`);
   await expect(alice.locator(`[data-pending="${fp}"]`)).toBeVisible({ timeout: 20_000 });
   await alice.locator("[data-approve]").click();
   await page.waitForFunction(() => window.__arugula?.control?.phase === "ready", null, { timeout: 30_000 });
