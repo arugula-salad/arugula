@@ -1,7 +1,7 @@
 // Standing permission rules (#166): what agent blocks on this daemon allow
 // without asking, made by an approval card's "From now on…". They're this
 // machine's (in the daemon's state), so the list is the shown host's.
-// Opened from the session menu; each can be forgotten here.
+// Opened from the account menu; each can be forgotten here.
 
 import { OPS, opPath } from "../ops";
 import { useEffect, useState } from "preact/hooks";

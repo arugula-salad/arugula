@@ -104,9 +104,13 @@ export function SwarmView({
   back,
   focus,
   home,
+  inBar,
 }: {
   fleet: Fleet;
   back: () => void;
+  /** Under the bar every place shares, whose Panes goes back: no button
+   * of its own for that. */
+  inBar?: boolean;
   /** The machine this page is of: its labs say whether the extra themes
    * are offered. */
   home: string | null;
@@ -448,9 +452,11 @@ export function SwarmView({
           <button data-fit onClick={() => field.current?.fitAll()}>
             Fit
           </button>
-          <button data-swarm-back title="Back to the panes (Escape)" onClick={back}>
-            Panes
-          </button>
+          {!inBar && (
+            <button data-swarm-back title="Back to the panes (Escape)" onClick={back}>
+              Panes
+            </button>
+          )}
         </div>
       </div>
       {fleet.notice && <div class="swarm-notice">{fleet.notice}</div>}

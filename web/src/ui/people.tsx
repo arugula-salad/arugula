@@ -408,7 +408,7 @@ export function ShareDialog({ client }: { client: Client }) {
           <div class="share-confirm" data-found={found.account}>
             <p>
               <b>{found.name}</b>'s first device is <span class="fingerprint">{fingerprint(found.root)}</span>. If you can, check it with them: they find
-              it as their account's fingerprint in Devices and machines…, in the host menu.
+              it as their account's fingerprint in Devices and machines…, in the account menu.
             </p>
             <div class="prompt-buttons">
               <button onClick={() => setFound(null)}>Cancel</button>

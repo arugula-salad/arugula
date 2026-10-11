@@ -12,6 +12,7 @@ import { newRemote, openChanges, openEditor, openFountain, openIssue, openPort, 
 import { startAgent } from "./agent-dialog";
 import { pickConversation } from "./conversations";
 import { openPicker } from "./picker";
+import { openPalette } from "./palette";
 import { agentNotifyItems, notificationItems } from "./notify";
 import { openGettingStarted } from "./welcome";
 import { openDeveloper } from "./developer";
@@ -192,7 +193,9 @@ export function newTabItems(client: Client, session: SessionId): MenuItem[] {
   ];
 }
 
-/** The session button's menu, after the list of sessions. */
+/** The session button's menu, after the list of sessions: what acts on
+ * this session, and nothing else. Settings for the device, the machine and
+ * the account are in the account menu (`settingsItems`). */
 export function sessionItems(client: Client, session: SessionId, rename: () => void): MenuItem[] {
   return [
     { label: "New session", run: () => client.intent({ op: "new_session", name: null, from_pane: client.active() ?? null }) },
@@ -209,16 +212,34 @@ export function sessionItems(client: Client, session: SessionId, rename: () => v
     ...(labsNow()?.huddleItems(client, session) ?? []),
     // Sharing is the daemon's owner's (M13).
     ...(client.state?.roles ? [] : [{ label: "Share session…", run: () => shareSession(session) } as MenuItem]),
-    "separator",
-    ...notificationItems(client),
     ...agentNotifyItems(client, session),
-    // #166: this machine's standing permission rules, the owner's.
-    ...(client.state?.roles ? [] : [{ label: "Permission rules…", run: () => openRules(client) } as MenuItem]),
-    // #665: this machine's Labs flags, the owner's, once asked for.
-    ...(!client.state?.roles && client.hasDev() ? [{ label: "Developer settings…", run: () => openDeveloper(client) } as MenuItem] : []),
-    { label: "Getting started", run: () => openGettingStarted(undefined, client) },
     "separator",
     { label: "Close session", danger: true, run: () => client.intent({ op: "close_session", session }) },
+  ];
+}
+
+/** The account menu's settings: this device, this machine, and help. The
+ * same everywhere (the panes, the swarm, chat, agents), with or without a
+ * session. */
+export function settingsItems(client: Client | null): MenuItem[] {
+  const owner = !!client?.state && !client.state.roles;
+  const machine: MenuItem[] = client?.state
+    ? [
+        // #166: this machine's standing permission rules, the owner's.
+        ...(owner ? [{ label: "Permission rules…", run: () => openRules(client) } as MenuItem] : []),
+        // #665: this machine's Labs flags, the owner's, once asked for.
+        ...(owner && client.hasDev() ? [{ label: "Developer settings…", run: () => openDeveloper(client) } as MenuItem] : []),
+      ]
+    : [];
+  return [
+    ...(machine.length ? [{ header: "This machine" } as MenuItem, ...machine, "separator" as const] : []),
+    ...(client?.state ? [{ header: "This device" } as MenuItem, ...notificationItems(client), "separator" as const] : []),
+    ...(client?.state
+      ? [
+          { label: "Getting started", run: () => openGettingStarted(undefined, client) } as MenuItem,
+          { label: "Command palette…", shortcut: PALETTE_KEY, run: () => openPalette(client) } as MenuItem,
+        ]
+      : []),
   ];
 }
 

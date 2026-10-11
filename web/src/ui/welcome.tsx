@@ -1,7 +1,7 @@
 // Getting started (#110): what isn't on the first screen, one step at a
 // time: welcome, the phone (Tailscale), the cloud (Arugula control),
 // agents, and a summary. Opens by itself once per browser, then from the
-// session menu and the phone's sheet, and says so when it closes.
+// account menu (top right) and the phone's sheet, and says so when it closes.
 //
 // The steps that used to be commands to copy are buttons: the daemon runs
 // them for its owner (`/api/setup`, crates/daemon/src/setup.rs) and says
@@ -168,7 +168,7 @@ export function GettingStartedLayer() {
   // Where it went: it doesn't just vanish.
   return closedOnce ? (
     <div class="start-toast" role="status" data-start-toast>
-      Getting started is in the session menu, any time.
+      Getting started is in the account menu, top right, any time.
     </div>
   ) : null;
 }
@@ -319,7 +319,7 @@ function GettingStarted({ client, section, close }: { client: Client | null; sec
           <button class="start-btn ghost" disabled={step === 0} onClick={() => go(step - 1)}>
             ‹ Back
           </button>
-          <span class="start-hint">Always in the session menu: Getting started</span>
+          <span class="start-hint">Always in the account menu: Getting started</span>
           {last ? (
             <button class="start-btn primary" onClick={close}>
               Done
@@ -849,7 +849,7 @@ function Ready({ done, go }: { done: Record<StepId, boolean>; go: (i: number) =>
         ))}
       </ul>
       <p class="start-lede">
-        Anything you skipped is a click away: this is <b>Getting started</b> in the session menu (and the ☰ sheet on a phone), any time.
+        Anything you skipped is a click away: this is <b>Getting started</b> in the account menu, top right (and the ☰ sheet on a phone), any time.
       </p>
     </section>
   );

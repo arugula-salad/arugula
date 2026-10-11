@@ -132,7 +132,7 @@ test("an image pasted into the composer reaches the agent and shows in the trans
 // #166: "From now on…" on a card makes a standing rule the daemon keeps:
 // the next agent block started there never asks, the session menu lists
 // the rule, and forgetting it there brings the card back.
-test("a standing rule outlives its block and is forgotten from the session menu", async ({ page }) => {
+test("a standing rule outlives its block and is forgotten from the account menu", async ({ page }) => {
   await reset(page);
   await page.evaluate(() => window.__arugula.client.request("DELETE", "/api/rules"));
   const [term] = await panes(page);
@@ -160,8 +160,8 @@ test("a standing rule outlives its block and is forgotten from the session menu"
   await expect(second.locator(".agent-msg")).toContainText("Ran it.");
   await expect(second.locator(".agent-note").filter({ hasText: /Allowed make test \(standing rule: Bash make… in / })).toBeVisible();
 
-  // The session menu lists it; Forget, and the next request asks again.
-  await page.locator(".session-button").click();
+  // The account menu lists it; Forget, and the next request asks again.
+  await page.locator(".app > .bar [data-account-menu]").click();
   await page.getByRole("menuitem", { name: "Permission rules…" }).click();
   const dialog = page.getByRole("dialog", { name: "Permission rules" });
   await expect(dialog.locator("[data-rule]")).toHaveCount(1);

@@ -16,9 +16,10 @@ import type { PaneId } from "../proto";
 import { fuzzy } from "../fs";
 import { useWorkspaceDir } from "../blocks";
 import { closeSwarm, openSwarm, swarmRoute } from "../swarm/route";
-import { openChat } from "./places";
+import { closeChat, isChatOpen, openChat } from "./places";
+import { agentsRoute, closeAgentsPage } from "./agents-route";
 import { askText, closeMenu, type MenuItem } from "./menu";
-import { newTabItems, PALETTE_KEY, paneItems, sessionItems, tabItems } from "./commands";
+import { newTabItems, PALETTE_KEY, paneItems, sessionItems, settingsItems, tabItems } from "./commands";
 
 export interface Command {
   /** Stable enough to remember as a recent pick. */
@@ -149,6 +150,10 @@ export function commands(client: Client, phone: boolean, workspace: string | nul
     out.push(...fromMenu("Session", sessionItems(client, session, () => void rename())));
   }
 
+  // The account menu's settings: this machine's, this device's, help.
+  // Without the menu's headers: each would name every item after it.
+  out.push(...fromMenu("Settings", settingsItems(client).filter((i) => typeof i === "object" && "label" in i && i.label !== "Command palette…")));
+
   // Jumps: sessions, tabs, panes and workspaces by name.
   for (const s of state.sessions) {
     if (s.id !== session) out.push({ key: `Go/session ${s.id}`, group: "Go to", label: `Session ${s.name}`, run: () => client.selectSession(s.id) });
@@ -251,8 +256,13 @@ function Palette({ client, phone, close }: { client: Client; phone: boolean; clo
     if (!c || c.disabled) return;
     remember(c.key);
     close();
-    // The panes are under the swarm: show them, unless it's the swarm's.
+    // The panes are under the swarm, chat and agents: show them, unless
+    // it's the swarm's or chat's.
     if (c.group !== "Swarm" && swarmRoute()) closeSwarm();
+    if (c.group !== "Swarm" && c.group !== "Chat") {
+      if (isChatOpen()) closeChat();
+      if (agentsRoute()) closeAgentsPage();
+    }
     // Keys back to the pane first; a prompt the command opens takes them.
     const active = client.active();
     if (!phone && active !== undefined) client.viewOf(active)?.focus();

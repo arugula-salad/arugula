@@ -197,12 +197,16 @@ test("a stranger signs up and becomes the first device", async ({ browser }) => 
 test("with no machine yet, the account's menu is there (#97)", async () => {
   await expect(laptop.locator("[data-signed-in-as]")).toHaveText("stranger");
   // Devices: this browser, and a passkey could be added.
-  await laptop.getByRole("button", { name: "Devices and machines…" }).click();
+  const menu = async (item: string) => {
+    await laptop.locator("[data-account-bar] [data-account-menu]").click();
+    await laptop.getByRole("menuitem", { name: item }).click();
+  };
+  await menu("Devices and machines…");
   await expect(laptop.getByRole("heading", { name: "Devices and machines" })).toBeVisible();
   await expect(laptop.locator(".control-devices li")).toHaveCount(1);
   await laptop.locator(".prompt").getByRole("button", { name: "Done" }).click();
   // A team.
-  await laptop.getByRole("button", { name: "Teams…" }).click();
+  await menu("Teams…");
   await laptop.getByLabel("Team name").fill("Solo");
   await laptop.getByRole("button", { name: "Make a team" }).click();
   await expect(laptop.locator("[data-team] h3")).toHaveText("Solo");
@@ -214,7 +218,7 @@ test("with no machine yet, the account's menu is there (#97)", async () => {
     }),
   );
   await laptop.evaluate(() => window.__arugula.control!.refresh());
-  await laptop.getByRole("button", { name: "Plan and usage…" }).click();
+  await menu("Plan and usage…");
   await expect(laptop.getByRole("heading", { name: "Plan and usage" })).toBeVisible();
   await laptop.locator(".prompt").getByRole("button", { name: "Done" }).click();
   await laptop.unroute("**/api/billing");
@@ -222,7 +226,7 @@ test("with no machine yet, the account's menu is there (#97)", async () => {
   await expect(laptop.locator(".control-steps")).toContainText("--team");
   // Signing out, and the sign-in page says why a #join= link came here
   // (#103); signing back in keeps this browser's place.
-  await laptop.locator("[data-account-bar]").getByRole("button", { name: "Sign out" }).click();
+  await menu("Sign out");
   await expect(laptop.locator("[data-signin=github]")).toBeVisible();
   // Signing out goes to "/" itself: let that load land first, or it can
   // overtake the link's.
@@ -500,7 +504,14 @@ test("with no sessions on the machine shown, control's page still has the host a
   // It says which machine this is and where to switch.
   await expect(laptop.locator("[data-no-sessions-host]")).toHaveText("No sessions on box. Switch machines from the menu at the top left.");
   await expect(laptop.locator("header.bar .host-button")).toHaveText(/box/);
+  // The account's items are the account menu's, on the right, not the
+  // host menu's.
   await laptop.locator(".host-button").click();
+  await expect(laptop.getByRole("menuitem", { name: "Add a machine…" })).toBeVisible();
+  await expect(laptop.getByRole("menuitem", { name: "Teams…" })).toHaveCount(0);
+  await laptop.keyboard.press("Escape");
+  await laptop.locator(".app > .bar [data-account-menu]").click();
+  await expect(laptop.locator(".app > .bar [data-signed-in-as]")).toHaveText("stranger");
   await expect(laptop.getByRole("menuitem", { name: "Teams…" })).toBeVisible();
   await expect(laptop.getByRole("menuitem", { name: "Sign out" })).toBeVisible();
   await laptop.getByRole("menuitem", { name: "Devices and machines…" }).click();
@@ -554,7 +565,7 @@ test("Getting started asks to check the account's fingerprint before the machine
   const start = page.getByRole("dialog", { name: "Getting started" });
   const cloud = async () => {
     if (!(await start.isVisible())) {
-      await page.locator(".session-button").click();
+      await page.locator(".app > .bar [data-account-menu]").click();
       await page.getByRole("menuitem", { name: "Getting started" }).click();
     }
     await start.locator('[data-start-seg="cloud"]').click();

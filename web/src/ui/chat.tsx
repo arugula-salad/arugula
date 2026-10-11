@@ -19,25 +19,20 @@ import { threadKey, type SessionId, type ThreadMsg, type ThreadSummary, type Thr
 import { getFleet } from "./hosts";
 import { usePhone } from "./hooks";
 import { openMenu, type MenuItem } from "./menu";
-import { Places, chatRoute, closeChat, openChat, openChatView, sources, targetOf, useChatTick, type ChatRoute, type Source } from "./places";
+import { chatRoute, closeChat, openChat, openChatView, sources, targetOf, useChatTick, type ChatRoute, type Source } from "./places";
 import { ActivityView, SearchField, SearchView, Switcher, activityCount, useChatKeys } from "./chat-find";
 import { ThreadBody, type Quote } from "./threads";
 import { HuddleButton, HuddleChip, useHuddle } from "./huddle";
 import { Avatar } from "./people";
-import { UpdateChip } from "./update";
-import { WindowButtons } from "./window-buttons";
+import { AppBar } from "./app-bar";
 
-/** Chat's own bar, which is the desktop app's titlebar on this page. */
+/** The bar every place shares, with chat's search in it. It is the
+ * desktop app's titlebar on this page. */
 function ChatBar({ client, route }: { client: Client; route: ChatRoute }) {
   return (
-    <header class="bar chat-bar" data-tauri-drag-region>
-      <Places client={client} at="chat" />
-      <div class="bar-fill" data-tauri-drag-region />
+    <AppBar client={client} at="chat">
       <SearchField route={route} />
-      <div class="bar-fill" data-tauri-drag-region />
-      <UpdateChip client={client} />
-      <WindowButtons />
-    </header>
+    </AppBar>
   );
 }
 

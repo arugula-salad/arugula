@@ -10,9 +10,10 @@ import { KeyBar, PhoneHeader } from "./phone";
 import { ThreadBadge, ThreadLayer } from "./threads";
 import { InLabs } from "./in-labs";
 import { agentsRoute } from "./agents-route";
-import { Places, useChatOpen } from "./places";
+import { useChatOpen } from "./places";
+import { AppBar } from "./app-bar";
 import { AttentionBadge, tabAttention } from "./attention";
-import { getFleet, HostButton, HostPicker, NewMachineNote } from "./hosts";
+import { getFleet, HostPicker, NewMachineNote } from "./hosts";
 import { ControlRequests, PaneMarks, PeopleBar, ShareDialog, shareSession, TabPeople } from "./people";
 import { directory } from "../hosts";
 import { DeveloperLayer } from "./developer";
@@ -24,12 +25,10 @@ import { PickerLayer, usePickerShortcut } from "./picker";
 import { drawsItsOwn, TermAnswered, TermAsk, TermDiff } from "./term-ask";
 import { InstallHint } from "./notify";
 import { GettingStartedLayer, useFirstRun } from "./welcome";
-import { machineState, newTabItems, PALETTE_KEY, paneItems, sessionItems, tabItems } from "./commands";
-import { openPalette, PaletteLayer, usePaletteShortcut } from "./palette";
-import { UpdateChip } from "./update";
+import { machineState, newTabItems, paneItems, sessionItems, tabItems } from "./commands";
+import { PaletteLayer, usePaletteShortcut } from "./palette";
 import { ControlBanner } from "./control-state";
 import { AgentsNudge } from "./agents-setup";
-import { WindowButtons } from "./window-buttons";
 
 /** Where hidden panes' terminals live: off the page but still alive. */
 const parking = document.createElement("div");
@@ -183,14 +182,11 @@ function TopBar({
       })),
       "separator",
       ...sessionItems(client, session.id, () => setRenaming({ kind: "session", id: session.id })),
-      { label: "Command palette…", shortcut: PALETTE_KEY, run: () => openPalette(client) },
     ]);
   };
 
   return (
-    <header class="bar" data-tauri-drag-region inert={inert}>
-      <HostButton />
-      <Places client={client} at="panes" />
+    <AppBar client={client} at="panes" inert={inert} end={<PeopleBar client={client} />}>
       {session && (
         <>
           {renaming?.kind === "session" && renaming.id === session.id ? (
@@ -248,11 +244,7 @@ function TopBar({
           </div>
         </>
       )}
-      <div class="bar-fill" data-tauri-drag-region />
-      <UpdateChip client={client} />
-      <PeopleBar client={client} />
-      <WindowButtons />
-    </header>
+    </AppBar>
   );
 }
 

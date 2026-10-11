@@ -122,7 +122,7 @@ test("chat is a page of its own, over the panes and their bar", async () => {
   expect(await page.evaluate(() => location.hash)).toBe("#chat");
 
   // Its own bar, with the places; the panes' bar is under it and out of reach.
-  await expect(chat.locator(".chat-bar [data-open-chat]")).toHaveAttribute("aria-pressed", "true");
+  await expect(chat.locator(".app-bar [data-open-chat]")).toHaveAttribute("aria-pressed", "true");
   const box = (await chat.boundingBox())!;
   expect(box.y).toBe(0);
   expect(await page.locator(".app > .bar").evaluate((el) => (el as HTMLElement).inert)).toBe(true);
