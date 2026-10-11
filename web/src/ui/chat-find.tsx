@@ -204,6 +204,7 @@ function NeedsYou({ fleet, panes }: { fleet: Fleet; panes: FleetPane[] }) {
   const [err, setErr] = useState("");
 
   const dismiss = async (p: FleetPane) => {
+    acted.current.add(p.key);
     setErr("");
     const res = await fleet.request(p.host, "POST", "/api/attention/act", { action: "dismiss", pane: p.id }).catch((e: Error) => e);
     if (res instanceof Error) setErr(res.message);
@@ -212,7 +213,8 @@ function NeedsYou({ fleet, panes }: { fleet: Fleet; panes: FleetPane[] }) {
   // Rows hold still under the pointer, as the swarm's cards do.
   const [held, setHeld] = useState(false);
   const kept = useRef<(FleetPane & { gone?: boolean })[]>([]);
-  const rows = holdStill<FleetPane & { gone?: boolean }>(held, kept.current, panes, (p) => ({ ...p, gone: true }));
+  const acted = useRef(new Set<string>());
+  const rows = holdStill<FleetPane & { gone?: boolean }>(held, kept.current, panes, (p) => ({ ...p, gone: true }), acted.current);
   kept.current = rows;
   return (
     <div class="activity-needs" data-activity-needs onPointerEnter={() => setHeld(true)} onPointerLeave={() => setHeld(false)}>
