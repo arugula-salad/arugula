@@ -114,10 +114,9 @@ test("J2a: two friends link up by sharing a session; the friend types in the own
         // In the account menu, top right.
         await p.locator("[data-account-menu]").first().click();
         await p.getByRole("menuitem", { name: "Devices and machines…" }).click();
-        const all = await p.getByText(FP).allInnerTexts();
+        // The account's is the one fingerprint shown: each device's waits
+        // behind its Details (#759).
         rileyFp = await read(p.getByText(/account/i).filter({ hasText: FP }), FP);
-        if (all.length > 1 && !(await p.getByText(/first device/).count()))
-          j.issue(`the panel shows ${all.length} fingerprints; which one Sam means ("first device") isn't said`);
         await p.getByRole("button", { name: "Done" }).click();
       },
     );

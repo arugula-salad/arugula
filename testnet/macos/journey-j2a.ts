@@ -112,8 +112,6 @@ try {
     await riley.locator("[data-account-menu]").first().click();
     await riley.getByRole("menuitem", { name: "Devices and machines…" }).click();
     rileyFp = (/[0-9a-f]{4}(?:-[0-9a-f]{4}){3,}/.exec(await riley.getByText(/account/i).filter({ hasText: /[0-9a-f]{4}-[0-9a-f]{4}/ }).first().innerText())?.[0] ?? "").toLowerCase();
-    const all = await riley.getByText(/[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}/).allInnerTexts();
-    if (all.length > 1) j.issue(`the panel shows ${all.length} fingerprints; which one Sam means ("first device") isn't said`);
     await riley.getByRole("button", { name: "Done" }).click();
   });
 
