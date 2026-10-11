@@ -65,8 +65,9 @@ pub struct Config {
     pub private: Vec<PathBuf>,
     /// The block types this build makes.
     pub kinds: Arc<crate::block::BlockKinds>,
-    /// arugulad as Claude Code's IDE (M28); `None`: off.
-    pub ide: Option<Arc<dyn super::IdeLink>>,
+    /// What every pane's environment gets besides its own (the port an
+    /// integration listens on, say): each replaces an entry of the same name.
+    pub pane_env: Vec<(String, String)>,
     /// The Claude Code conversations here (#146).
     pub sessions: Arc<dyn super::AgentSessions>,
     /// What a pane leaves behind when it closes.
@@ -141,10 +142,9 @@ impl Config {
             env.retain(|(k, _)| k != "SSH_AUTH_SOCK");
             env.push(("SSH_AUTH_SOCK".into(), self.socket.with_file_name("agent.sock").display().to_string()));
         }
-        // Claude Code in a pane finds us as its IDE (M28), and only us.
-        if let Some(ide) = &self.ide {
-            env.retain(|(k, _)| k != "CLAUDE_CODE_SSE_PORT");
-            env.push(("CLAUDE_CODE_SSE_PORT".into(), ide.port().to_string()));
+        for (k, v) in &self.pane_env {
+            env.retain(|(e, _)| e != k);
+            env.push((k.clone(), v.clone()));
         }
         env
     }

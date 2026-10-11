@@ -20,7 +20,7 @@ mod thread_ops;
 mod who_may;
 
 pub use config::{AtExit, Config};
-pub use outside::{AgentSessions, IdeLink, Notify, PaneGone, People};
+pub use outside::{AgentSessions, CardsCall, CardsCx, Notify, PaneCards, PaneGone, People};
 
 /// Who answers an invite card: the owner, by any route.
 pub const OWNER_ONLY: &str = "only the session's owner sends or declines an invite";
@@ -46,7 +46,7 @@ pub type Posted = (ThreadMsg, bool, Vec<arugula_proto::api::Unreached>);
 #[derive(Debug)]
 pub struct ThreadError(pub u16, pub String);
 
-use self::attention::{PendingDiff, TermAsk, Waiter};
+use self::attention::{TermAsk, Waiter};
 use crate::{
     block::{Block, BlockCtx},
     osc::Signal,
@@ -237,17 +237,12 @@ pub enum Api {
     EditorJoin(Arc<dyn Block>, oneshot::Sender<PaneId>),
     /// ...and left.
     EditorLeave(PaneId),
-    /// What Claude Code's IDE connections did (M28).
-    Ide(crate::ide::Event),
-    /// Someone accepted (true) or rejected an edit waiting as a diff, by
-    /// its id or whichever waits; accepting may change it first.
-    DiffAnswer(PaneId, Option<String>, bool, Option<String>, Driver, oneshot::Sender<Result<(), String>>),
+    /// A call on the cards that make terminals wait (#699), run on the mux
+    /// task with what they may do to it. It carries its own reply, if it
+    /// has one, and isn't run if there are no cards.
+    Cards(CardsCall),
     /// Every editor in the swarm (M28), as `who` may see them.
     Editors(Option<crate::acl::Principal>, oneshot::Sender<Vec<serde_json::Value>>),
-    /// The IDE connections of Claude Code in a pane (M28).
-    IdeConns(PaneId, oneshot::Sender<Vec<u64>>),
-    /// The edit a pane's diff card shows: before and after.
-    DiffOf(PaneId, oneshot::Sender<Option<(arugula_proto::DiffInfo, String, String)>>),
     /// A pane in a tab of its own (M37: an issue, before its agent joins
     /// it): taken out of the tab it shares, next to it, and named if the
     /// tab has no name.
@@ -491,10 +486,11 @@ struct Daemon {
     procs: std::cell::RefCell<HashMap<PaneId, ProcSeen>>,
     /// Who follows each editor (M28).
     follows: HashMap<PaneId, std::collections::HashSet<ClientId>>,
-    /// Edits waiting as diffs (M28), and the pane each of Claude Code's
-    /// IDE connections runs in.
-    diffs: Vec<PendingDiff>,
-    ide_conns: HashMap<u64, (Option<u32>, Option<PaneId>)>,
+    /// What makes terminals wait on you besides the mux itself (#699), and
+    /// the card each pane shows from it (set through [`CardsCx::card`]).
+    /// `None` while a call on it runs.
+    cards: Option<Box<dyn PaneCards>>,
+    card_of: HashMap<PaneId, (Reason, arugula_proto::DiffInfo)>,
 }
 
 /// Which panes changed.
@@ -540,7 +536,12 @@ struct ProcSeen {
 }
 
 /// `kept`: pane terminals systemd kept for us across a restart, by FD name.
-pub fn start(config: Config, store: StateDir, kept: HashMap<String, Kept>) -> MuxHandle {
+pub fn start(
+    config: Config,
+    store: StateDir,
+    kept: HashMap<String, Kept>,
+    cards: Option<Box<dyn PaneCards>>,
+) -> MuxHandle {
     let (tx, rx) = mpsc::unbounded_channel();
     let (notices, notices_rx) = mpsc::unbounded_channel();
     let (events, _) = broadcast::channel(1024);
@@ -552,7 +553,11 @@ pub fn start(config: Config, store: StateDir, kept: HashMap<String, Kept>) -> Mu
         config.shell.clone(),
         config.shell_args.iter().filter(|a| a.starts_with("--") && *a != "--login").cloned().collect(),
         config.home.clone(),
-        config.env(0).into_iter().filter(|(k, _)| !k.starts_with("ARUGULA_") && k != "CLAUDE_CODE_SSE_PORT").collect(),
+        config
+            .env(0)
+            .into_iter()
+            .filter(|(k, _)| !k.starts_with("ARUGULA_") && !config.pane_env.iter().any(|(e, _)| e == k))
+            .collect(),
         crate::shellenv::TIMEOUT,
     );
     shell_env.start();
@@ -624,8 +629,8 @@ pub fn start(config: Config, store: StateDir, kept: HashMap<String, Kept>) -> Mu
         last_tick: Instant::now(),
         procs: Default::default(),
         follows: HashMap::new(),
-        diffs: Vec::new(),
-        ide_conns: HashMap::new(),
+        cards,
+        card_of: HashMap::new(),
     };
     if !d.restore(kept) {
         // Something to attach to on first start.
@@ -922,7 +927,7 @@ impl Daemon {
                     self.tick_activity();
                     self.tick_drivers();
                     self.tick_inventory();
-                    self.find_ide_panes();
+                    self.tick_cards();
                     self.flush();
                 }
             }

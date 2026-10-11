@@ -330,9 +330,13 @@ Blocks raise attention and push state through `BlockCtx`: `changed`,
 `attention`, `reason`, `clear`, `event`, `machine`, `ask` and `withdraw`.
 This is the M11 design and doesn't change. Terminals get attention from
 the edge through `Cmd::Api`: `Hook`, `Ask`, `Attention`, `FollowUp` and
-`Inbox`. The IDE's diff cards stay in the mux, because a diff waiting for
-you is attention ordered with everything else. Only the IDE's transport
-crosses the line, as `IdeLink` and `Api::Ide`.
+`Inbox`. A card that makes a terminal wait on you, with the IDE's diff
+cards as the one today, is attention ordered with everything else, so the
+mux holds the slot and the binary holds the card (#699). The binary hands
+`start` a `PaneCards`, which runs on the mux task and is lent to each
+`Api::Cards` call with a `CardsCx` for what it may do (its card, the
+terminal's answer, `touch`). The diff, the pending edits and Claude Code's
+connections live in the daemon's `ide/`, and the mux names none of them.
 
 ### Routes and MCP tools: they never reach the core
 
@@ -577,9 +581,11 @@ The owner answered the open questions on 2026-10-09.
    today.
 3. **The root re-exports stay.** Ticket 7 is dropped, which keeps every
    later diff smaller.
-4. **The IDE's diffs stay in the core.** Making each waiting diff a block
-   of its own type is a visible change, so it's filed as a follow-up
-   (#699), not part of these moves.
+4. **The IDE's diffs leave the core, as they are.** The core keeps a
+   generic slot for a card that waits in a terminal (`PaneCards`), and the
+   diff code moves into the daemon's `ide/` (#699). Making each waiting
+   diff a block of its own type is a visible change, so it's a follow-up
+   (#741), not part of these moves.
 
 ## Things that surprised me
 

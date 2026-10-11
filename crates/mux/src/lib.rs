@@ -19,7 +19,6 @@ pub mod holder;
 // The pane host on Windows (M58): the shim's part there.
 #[cfg(windows)]
 pub mod host;
-pub mod ide;
 pub mod inventory;
 pub mod keys;
 pub mod labs;

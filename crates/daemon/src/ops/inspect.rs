@@ -89,11 +89,8 @@ impl Handle for PaneDiffOf {
         if !who.is_owner() && app.mux.api(|r| Api::RoleOn(who, id, r)).await.flatten().is_none() {
             return Err(OpError::NoPane(id));
         }
-        let (info, old, new) = app
-            .mux
-            .api(|r| Api::DiffOf(id, r))
+        let (info, old, new) = crate::editors::diff_of(&app.mux, id)
             .await
-            .flatten()
             .ok_or_else(|| ApiError(StatusCode::NOT_FOUND, format!("%{id} has no edit waiting")))?;
         Ok(PaneDiff { diff: info, old, new })
     }

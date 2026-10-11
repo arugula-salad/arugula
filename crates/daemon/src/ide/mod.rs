@@ -15,7 +15,9 @@
 //! or another IDE that registered with Claude Code (VS Code with Claude
 //! Code's extension, say), to which the daemon passes each `openDiff` on.
 
-pub use arugula_mux::ide::{Event, NAME};
+mod cards;
+pub use cards::Cards;
+pub mod diff;
 mod ops;
 // Over Unix sockets, which Claude Code's IDE support uses.
 #[cfg(unix)]
@@ -49,6 +51,59 @@ use crate::{
     mux::{Api, Cmd, MuxHandle},
     pane::Launcher,
 };
+
+/// What we're called in Claude Code's `/ide` list.
+pub const NAME: &str = "arugula";
+
+/// What the relay tells the daemon.
+#[derive(Debug, Clone)]
+pub enum Event {
+    /// The relay (again): what follows is everything open.
+    Hello,
+    /// A Claude Code connected; the process it is.
+    Conn {
+        conn: u64,
+        pid: Option<u32>,
+    },
+    Gone {
+        conn: u64,
+    },
+    /// A tool call that waits for an answer.
+    Call {
+        conn: u64,
+        id: Value,
+        tool: String,
+        args: Value,
+    },
+    /// Claude Code closed these diffs (its terminal answered).
+    Closed {
+        conn: u64,
+        ids: Vec<Value>,
+    },
+}
+
+/// `openDiff`'s answers, as Claude Code reads them.
+pub fn saved(contents: &str) -> Value {
+    json!({ "content": [{ "type": "text", "text": "FILE_SAVED" }, { "type": "text", "text": contents }] })
+}
+
+pub fn rejected(tab: &str) -> Value {
+    json!({ "content": [{ "type": "text", "text": "DIFF_REJECTED" }, { "type": "text", "text": tab }] })
+}
+
+/// `getDiagnostics` with nothing to say.
+pub fn no_diagnostics() -> Value {
+    json!({ "content": [{ "type": "text", "text": "[]" }] })
+}
+
+/// What the relay told us, as a call on the cards, on the mux task.
+fn event_call(ev: Event) -> Api {
+    Api::Cards(Box::new(move |cards, cx| {
+        if let Some(c) = Cards::of(cards) {
+            c.event(cx, ev);
+        }
+    }))
+}
 
 /// Where Claude Code looks for IDEs: `$CLAUDE_CONFIG_DIR/ide`, else
 /// `~/.claude/ide`.
@@ -185,7 +240,7 @@ impl Ide {
                 "closed" => Event::Closed { conn, ids: v["ids"].as_array().cloned().unwrap_or_default() },
                 _ => continue,
             };
-            mux.send(Cmd::Api(Api::Ide(ev)));
+            mux.send(Cmd::Api(event_call(ev)));
         }
         writer.abort();
     }
@@ -275,7 +330,7 @@ impl Ide {
                     warn!(ide = to.name, error = %e, "couldn't pass a diff on; it waits here");
                     me.forwarded.lock().unwrap().remove(&(conn, id.to_string()));
                     let tool = "openDiff/here".to_owned();
-                    let _ = back.send(Cmd::Api(Api::Ide(Event::Call { conn, id, tool, args })));
+                    let _ = back.send(Cmd::Api(event_call(Event::Call { conn, id, tool, args })));
                     return;
                 }
             };
@@ -296,19 +351,10 @@ impl Ide {
     }
 }
 
-impl crate::mux::IdeLink for Ide {
-    fn port(&self) -> u16 {
-        self.port
-    }
-
-    fn reply(&self, conn: u64, id: &Value, result: Value) {
-        Ide::reply(self, conn, id, result)
-    }
-
-    fn closed(&self, conn: u64, ids: &[Value]) {
-        Ide::closed(self, conn, ids)
-    }
-
+impl Ide {
+    /// Pass a diff to the IDE that gets them, if it isn't us, and answer
+    /// `true`. `false`: keep it here. If passing it on fails, `back` gets
+    /// the call again as `openDiff/here`.
     fn forward_diff(self: Arc<Self>, conn: u64, id: &Value, args: &Value, back: mpsc::UnboundedSender<Cmd>) -> bool {
         let Some(to) = self.target() else { return false };
         self.forward(to, conn, id.clone(), args.clone(), back);
