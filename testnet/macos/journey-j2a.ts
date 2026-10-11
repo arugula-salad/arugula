@@ -1,10 +1,13 @@
-// J2a on a real Mac (#551): web/e2e/journey-j2a.spec.ts's linking up,
-// with Sam on the real app in a fresh tart VM (J1 there first, as the
-// report J2a-mac-setup-sam) and Riley a friend on another computer, in a
-// browser here (Chrome, through Playwright), signed up on control's own
-// page (J2a-mac-setup-riley). Sam shares a session with Riley; Riley
-// accepts, finds Sam's Mac, asks to drive, Sam allows it, Riley takes
-// control and types, and it shows in Sam's terminal on Sam's Mac.
+// J1 and J2a on a real Mac (#551), in one fresh tart VM. J1 first: Sam's
+// first run on the real app and the Safari it opens links in, written as
+// J1-mac and again as J2a-mac-setup-sam (the same steps, so J1 needs no
+// VM of its own; the rules J1 is run by are journey-lib.ts's). Then
+// web/e2e/journey-j2a.spec.ts's linking up, with Riley a friend on
+// another computer, in a browser here (Chrome, through Playwright), signed
+// up on control's own page (J2a-mac-setup-riley). Sam shares a session
+// with Riley; Riley accepts, finds Sam's Mac, asks to drive, Sam allows
+// it, Riley takes control and types, and it shows in Sam's terminal on
+// Sam's Mac.
 //
 // Sam's steps press what the Mac's screen names (System Events) and Riley's
 // what the page shows (roles and text); the report is J2a-mac in
@@ -12,8 +15,12 @@
 // already filed on #551 are drawn, not failed on, as in the spec.
 //
 //   node --experimental-strip-types testnet/macos/journey-j2a.ts
-//   (or: just macos journey-j2a)
-//   KEEP=1  leave the VM up
+//   (or: just macos journey)
+//   ARUGULA_MACOS_APP_ZIP=URL|path  another app (default: app-latest, what a new user downloads)
+//   KEEP=1                          leave the VM up
+//
+// Exit codes: 0 both journeys held (every step led by the screen, or
+// known), 1 either didn't.
 
 import { createRequire } from "node:module";
 import { join } from "node:path";
@@ -26,6 +33,7 @@ const asPerson = () => Object.defineProperty(Navigator.prototype, "webdriver", {
 
 let ok = false;
 let browser: Browser | undefined;
+const j1 = new Journey("J1-mac", "one person, unregistered to working (the real Mac app in a fresh VM, Safari)", undefined, ["sam"]);
 const j = new Journey("J2a-mac", "two friends link up: Sam on the real Mac app, Riley in a browser elsewhere", undefined, ["sam", "riley"]);
 j.slowMs = 30_000;
 
@@ -36,13 +44,15 @@ const riley_screen = (p: Page) => p.evaluate(() => (window as unknown as { __aru
 
 try {
   const { control, github, version } = await startMac("sam");
-  console.log(`J2a-mac: the app ${version}, control ${control}`);
+  console.log(`J1-mac, J2a-mac: the app ${version}, control ${control}`);
 
-  // Sam's first run on the Mac, its own report.
+  // Sam's first run on the Mac: J1, and J2a's setup report.
   const samSetup = new Journey("J2a-mac-setup-sam", "Sam's first run (J1, on the real Mac), before J2a-mac", undefined, ["sam"]);
   try {
-    await firstRunMac(samSetup, "sam", control);
+    await firstRunMac(j1, "sam", control);
   } finally {
+    samSetup.steps.push(...j1.steps);
+    samSetup.slowMs = j1.slowMs;
     samSetup.write();
   }
   const machine = byHelp(APP, "Hosts").replace(/\s*(relayed|direct)?\s*▾?$/, "").trim();
@@ -184,9 +194,12 @@ try {
     // Accept the window shows Sam's.)
     "take-control": "#551: allowed to drive, but the owner has control, and nothing says Take control",
   });
+  // J1's report and verdict, as when it ran alone: no step unguided.
+  await j1.finish();
   ok = true;
 } catch (e) {
   console.error(e instanceof Stopped ? e.message : e);
+  j1.write();
   j.write();
 } finally {
   await browser?.close().catch(() => {});

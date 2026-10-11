@@ -2,8 +2,8 @@
 // app, control and a fake GitHub here (tunnelled in at the same loopback
 // addresses), and what a person does there, through System Events: press
 // what the screen names, read what it says. J1's path on it is
-// `firstRunMac`; journey-j1.ts runs it alone, journey-j2a.ts before a
-// friend links up. Never the hosted control: `startMac` points the app's
+// `firstRunMac`; journey-j2a.ts runs it, as J1's report, before a friend
+// links up. Never the hosted control: `startMac` points the app's
 // daemon at this one, and Connect checks it does.
 
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";

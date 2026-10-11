@@ -8,11 +8,12 @@
 #   KEEP=1 ...     leave the clone running
 #
 # Claims, in this order (each needs the ones before it):
-#   install   the .dmg mounts and the app copies to /Applications
-#   agent     the first start registers the daemon's launch agent through
+#   install   the .dmg mounts and the app copies to /Applications; the
+#             first start registers the daemon's launch agent through
 #             SMAppService (BTM lists it), the daemon answers, the CLI is
-#             linked into ~/.local/bin, and no arugulad install plist exists
-#   pane      the window shows a pane: typing a command into it runs it
+#             linked into ~/.local/bin, and no arugulad install plist
+#             exists; the window shows a pane: typing a command into it
+#             runs it
 #   keys      Ctrl-W, T, N, Q and Tab reach the pane as bytes; Cmd-W closes
 #             the pane and not the window; Cmd-T opens a tab; Cmd-M leaves
 #             the app running and its window up; Cmd-H hides the app and
@@ -23,7 +24,7 @@
 #             folder in Finder and picking *New Arugula Tab Here* opens a
 #             tab there in the running app and shows it; a .command file
 #             opened with the app runs in a new tab
-#   this      #323: the tray's *This machine*, clicked again and again,
+#   tray      #323: the tray's *This machine*, clicked again and again,
 #             brings forward the window already showing this machine: no
 #             new window, no native tab
 #   drag      #316: the page's bar moves the window as before, and so does
@@ -39,8 +40,9 @@
 #             stay (pids unchanged)
 #
 # And one not run by default, as it fetches a published release from
-# GitHub instead of the .dmg (#318, #319):
-#   installsh this tree's scripts/install.sh --app on the fresh account:
+# GitHub instead of the .dmg (#318, #319), and needs a fresh account and
+# /Applications, so it runs in a VM of its own, never after the others:
+#   script    this tree's scripts/install.sh --app on the fresh account:
 #             the app it puts in /Applications has no quarantine flag,
 #             opens with no Gatekeeper window, and adopts install.sh's
 #             daemon (no SMAppService agent); then, with /Applications not
@@ -68,7 +70,12 @@ DMG="${ARUGULA_DMG:-$ROOT/dist/arugula-desktop-macos-arm64.dmg}"
 # shellcheck source=testnet/macos/need-tart.sh
 . "$HERE/need-tart.sh"
 claims=("$@")
-[ ${#claims[@]} -gt 0 ] || claims=(install agent pane keys links finder this drag tabs hotkey restart)
+ALL="install keys links finder tray drag tabs hotkey restart script"
+[ ${#claims[@]} -gt 0 ] || claims=(install keys links finder tray drag tabs hotkey restart)
+for c in "${claims[@]}"; do case " $ALL " in *" $c "*) ;; *) echo "unknown claim $c ($ALL)" >&2; exit 2 ;; esac; done
+if [[ " ${claims[*]} " == *" script "* ]] && [ ${#claims[@]} -gt 1 ]; then
+  echo "script runs alone: it needs the fresh account and /Applications the others use" >&2; exit 2
+fi
 if [[ " ${claims[*]} " == *" install "* ]]; then
   [ -f "$DMG" ] || { echo "no .dmg (ARUGULA_DMG, or build one: just desktop)" >&2; exit 2; }
 fi
@@ -123,41 +130,35 @@ claim_install() {
   else
     fail install "installing from the .dmg failed"
   fi
-}
-
-claim_agent() {
   vs 'open -a /Applications/arugula.app'
   if wait_for 60 vs 'launchctl print gui/$(id -u)/io.arugula.desktop.daemon 2>/dev/null | grep -q "state = running"'; then
-    pass agent "the launch agent runs: $(vs 'launchctl print gui/$(id -u)/io.arugula.desktop.daemon | grep -m1 "program ="' | xargs)"
+    pass install "the launch agent runs: $(vs 'launchctl print gui/$(id -u)/io.arugula.desktop.daemon | grep -m1 "program ="' | xargs)"
   else
-    fail agent "the launch agent isn't running: $(vs 'launchctl print gui/$(id -u)/io.arugula.desktop.daemon 2>&1 | grep -E "state|exit"' | xargs)"
+    fail install "the launch agent isn't running: $(vs 'launchctl print gui/$(id -u)/io.arugula.desktop.daemon 2>&1 | grep -E "state|exit"' | xargs)"
   fi
   local s; s=$(vs '/Applications/arugula.app/Contents/MacOS/arugula-desktop --agent status' || true)
-  if [ "$s" = enabled ]; then pass agent "SMAppService: $s"; else fail agent "SMAppService: $s"; fi
+  if [ "$s" = enabled ]; then pass install "SMAppService: $s"; else fail install "SMAppService: $s"; fi
   if vs 'sudo sfltool dumpbtm 2>/dev/null | grep -q "8.io.arugula.desktop.daemon"'; then
-    pass agent "Login Items (BTM) lists it"
+    pass install "Login Items (BTM) lists it"
   else
-    fail agent "BTM has no record of the agent"
+    fail install "BTM has no record of the agent"
   fi
   if wait_for 30 vs '$HOME/.local/bin/arugula ls >/dev/null 2>&1'; then
-    pass agent "the daemon answers the linked CLI ($(vs 'readlink $HOME/.local/bin/arugula'))"
+    pass install "the daemon answers the linked CLI ($(vs 'readlink $HOME/.local/bin/arugula'))"
   else
-    fail agent "the linked CLI in ~/.local/bin can't reach a daemon"
+    fail install "the linked CLI in ~/.local/bin can't reach a daemon"
   fi
   if vs 'test ! -e $HOME/Library/LaunchAgents/arugulad.plist'; then
-    pass agent "no arugulad install plist beside it"
+    pass install "no arugulad install plist beside it"
   else
-    fail agent "an arugulad install plist exists too"
+    fail install "an arugulad install plist exists too"
   fi
   if vs 'pgrep -fl "Contents/MacOS/arugulad$" >/dev/null'; then
-    pass agent "the daemon is the bundle's"
+    pass install "the daemon is the bundle's"
   else
-    fail agent "the running daemon isn't the bundle's: $(vs 'pgrep -fl arugulad' | head -1)"
+    fail install "the running daemon isn't the bundle's: $(vs 'pgrep -fl arugulad' | head -1)"
   fi
-}
-
-claim_pane() {
-  wait_for 60 has_window || { fail pane "no window"; return; }
+  wait_for 60 has_window || { fail install "no window"; return; }
   sleep 3
   front
   # Getting started opens on a new profile; Escape closes it.
@@ -171,9 +172,9 @@ claim_pane() {
   keys "keystroke \"echo $marker > /tmp/typed\""
   keys 'key code 36'
   if wait_for 10 vs "grep -qx $marker /tmp/typed"; then
-    pass pane "a command typed into the window ran in its pane"
+    pass install "a command typed into the window ran in its pane"
   else
-    fail pane "typing into the window ran nothing"
+    fail install "typing into the window ran nothing"
   fi
 }
 
@@ -336,22 +337,22 @@ tray() { vs "osascript -l JavaScript /tmp/tray.js $(printf %q "$1")" >/dev/null;
 # WINDOW_TOP STRIP_BOTTOM BAR_TOP TABS of the front window (tab-bar.js).
 tab_bar() { vs 'osascript -l JavaScript /tmp/tab-bar.js'; }
 
-claim_this() {
+claim_tray() {
   v push "$HERE/tab-bar.js" "$HERE/tray.js" /tmp/
   front
   local before; before=$(windows)
   for _ in 1 2 3; do
-    tray "This machine" || { fail this "no This machine in the tray's menu"; return; }
+    tray "This machine" || { fail tray "no This machine in the tray's menu"; return; }
     sleep 2
   done
   local t tabs; t=$(tab_bar || echo "? ? ? ?"); tabs=$(echo "$t" | awk '{print $4}')
   if [ "$(windows)" = "$before" ] && [ "$tabs" = 0 ]; then
-    pass this "three clicks on This machine left $before window, no native tabs"
+    pass tray "three clicks on This machine left $before window, no native tabs"
   else
-    fail this "after three clicks: $(windows) windows (was $before), tab bar $t"
+    fail tray "after three clicks: $(windows) windows (was $before), tab bar $t"
   fi
   local front; front=$(osa 'tell application "System Events" to get name of first process whose frontmost is true')
-  if [ "$front" = arugula-desktop ]; then pass this "and brought the app forward"; else fail this "the front app is $front"; fi
+  if [ "$front" = arugula-desktop ]; then pass tray "and brought the app forward"; else fail tray "the front app is $front"; fi
 }
 
 # The page's bar starts below the tab bar, with N native tabs.
@@ -492,53 +493,53 @@ claim_restart() {
   fi
 }
 
-# installsh: one install.sh --app run into DIR's arugula.app.
-installsh_into() {
+# script: one install.sh --app run into DIR's arugula.app.
+script_into() {
   local dir=$1 out
   out=$(vs "ARUGULA_VERSION=${ARUGULA_VERSION:-} ARUGULA_APP_VERSION=${ARUGULA_APP_VERSION:-} sh /tmp/install.sh --app" 2>&1) || {
-    fail installsh "install.sh into $dir exited non-zero: $(tail -3 <<<"$out" | xargs)"; return 1; }
+    fail script "install.sh into $dir exited non-zero: $(tail -3 <<<"$out" | xargs)"; return 1; }
   if ! vs "test -d $dir/arugula.app"; then
-    fail installsh "no app in $dir: $(grep -i app <<<"$out" | xargs)"; return 1
+    fail script "no app in $dir: $(grep -i app <<<"$out" | xargs)"; return 1
   fi
   if vs "! xattr -r $dir/arugula.app | grep -q com.apple.quarantine"; then
-    pass installsh "$dir/arugula.app has no quarantine flag"
+    pass script "$dir/arugula.app has no quarantine flag"
   else
-    fail installsh "$dir/arugula.app is quarantined"
+    fail script "$dir/arugula.app is quarantined"
   fi
-  echo "[macos desktop installsh] spctl, $dir: $(vs "spctl -a -vv $dir/arugula.app 2>&1" | xargs)"
+  echo "[macos desktop script] spctl, $dir: $(vs "spctl -a -vv $dir/arugula.app 2>&1" | xargs)"
   # Hung in Gatekeeper (#315), a binary never gets past dyld: give it 10s.
   if vs "$dir/arugula.app/Contents/MacOS/arugulad --version & p=\$!; for i in \$(seq 20); do kill -0 \$p 2>/dev/null || { wait \$p; exit \$?; }; sleep 0.5; done; kill \$p; exit 1" >/dev/null; then
-    pass installsh "the bundle's arugulad runs from $dir"
+    pass script "the bundle's arugulad runs from $dir"
   else
-    fail installsh "the bundle's arugulad hangs (or fails) in $dir"
+    fail script "the bundle's arugulad hangs (or fails) in $dir"
   fi
   if wait_for 60 has_window; then
-    pass installsh "install.sh opened the app from $dir: $(vs 'pgrep -fl arugula-desktop' | head -1)"
+    pass script "install.sh opened the app from $dir: $(vs 'pgrep -fl arugula-desktop' | head -1)"
   else
-    fail installsh "no window from $dir/arugula.app within 60s"
+    fail script "no window from $dir/arugula.app within 60s"
   fi
   local gk; gk=$(osa 'tell application "System Events" to count windows of process "CoreServicesUIAgent"' 2>/dev/null || echo 0)
-  if [ "${gk:-0}" = 0 ]; then pass installsh "no Gatekeeper window"; else fail installsh "Gatekeeper shows $gk window(s)"; fi
+  if [ "${gk:-0}" = 0 ]; then pass script "no Gatekeeper window"; else fail script "Gatekeeper shows $gk window(s)"; fi
 }
 
-claim_installsh() {
+claim_script() {
   v push "$ROOT/scripts/install.sh" /tmp/install.sh
   # An admin can write /Applications, so the first run goes there.
-  installsh_into /Applications || return
+  script_into /Applications || return
   if vs 'launchctl print gui/$(id -u)/arugulad 2>/dev/null | grep -q "state = running"' \
     && ! vs 'launchctl print gui/$(id -u)/io.arugula.desktop.daemon >/dev/null 2>&1'; then
-    pass installsh "the app adopted install.sh's daemon (no agent of its own)"
+    pass script "the app adopted install.sh's daemon (no agent of its own)"
   else
-    fail installsh "the app didn't adopt install.sh's daemon: $(vs 'launchctl list | grep -i arugula' | xargs)"
+    fail script "the app didn't adopt install.sh's daemon: $(vs 'launchctl list | grep -i arugula' | xargs)"
   fi
   if vs '$HOME/.local/bin/arugula ls >/dev/null 2>&1'; then
-    pass installsh "the CLI reaches it ($(vs '$HOME/.local/bin/arugulad --version'))"
+    pass script "the CLI reaches it ($(vs '$HOME/.local/bin/arugulad --version'))"
   else
-    fail installsh "the CLI can't reach a daemon"
+    fail script "the CLI can't reach a daemon"
   fi
   # A user who can't write /Applications: install.sh puts it in ~/Applications.
   vs 'pkill -x arugula-desktop; sleep 2; sudo chmod 755 /Applications'
-  installsh_into '$HOME/Applications'
+  script_into '$HOME/Applications'
   vs 'pkill -x arugula-desktop; sudo chmod 775 /Applications'
 }
 
