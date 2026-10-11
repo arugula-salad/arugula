@@ -672,7 +672,7 @@ test("sessions: where you're signed in, and signing out everywhere (#173)", asyn
   expect(await laptop.locator("[data-session]").count()).toBeGreaterThanOrEqual(2);
   // The system Chrome's own platform: where the tests run.
   await expect(laptop.locator("[data-sessions]")).toContainText(`Chrome on ${process.platform === "darwin" ? "macOS" : "Linux"}`);
-  await expect(laptop.locator("[data-sessions]")).toContainText("(this one)");
+  await expect(laptop.locator("[data-sessions]")).toContainText("(this browser)");
   // Sign one other out: it's gone from the list.
   const n = await laptop.locator("[data-session]").count();
   const other = laptop.locator("[data-end-session]").first();

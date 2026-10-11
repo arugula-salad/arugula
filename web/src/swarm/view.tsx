@@ -75,6 +75,9 @@ export interface Bundle {
   since: number;
 }
 
+/** Finished cards that already left the rail, for this page's life. */
+const seenDone = new Set<string>();
+
 /** What's on the rail: the bundles that fit, and the rest waiting. */
 export function bundlesOf(panes: FleetPane[], hidden: Set<string>): Bundle[] {
   const out = new Map<string, Bundle>();
@@ -127,7 +130,15 @@ export function SwarmView({
   const themes = offeredThemes(!!home && !!fleet.clientOf(home)?.flag("swarm-themes"));
   const theme = themes.includes(chosen) ? chosen : "blocks";
   const [peek, setPeek] = useState<{ key: string; x: number; y: number; text: string } | null>(null);
-  const [hidden, setHidden] = useState<Set<string>>(new Set());
+  const [hidden, setHiddenNow] = useState<Set<string>>(() => new Set(seenDone));
+  // Kept for the page's life: opening the swarm again, or another view,
+  // doesn't bring back cards that already left.
+  const setHidden = (f: (h: Set<string>) => Set<string>) =>
+    setHiddenNow((h) => {
+      const n = f(h);
+      for (const k of n) seenDone.add(k);
+      return n;
+    });
   const [answered, setAnswered] = useState<Done[]>([]);
   /** M28: the editor being followed, by its key. */
   const [following, setFollowing] = useState<string | null>(null);
@@ -157,6 +168,7 @@ export function SwarmView({
   const cap = phone ? 4 : Math.max(2, Math.floor((innerHeight - 120) / 170));
   const shown = bundles.slice(0, cap);
   const waiting = bundles.slice(cap).reduce((n, b) => n + b.panes.length, 0);
+  const wanting = new Set(bundles.flatMap((b) => b.panes.map((p) => p.key)));
   const onRail = new Map<string, string>();
   for (const b of shown) for (const p of b.panes) onRail.set(p.key, b.key);
 
@@ -236,7 +248,7 @@ export function SwarmView({
             : `%${p.id} ${p.info.current?.text ?? p.info.command ?? p.info.title ?? kindOf(p)}`,
           where: p.host,
           lastOut: p.info.activity?.last_ms ?? 0,
-          att: r ? { col: REASON_COL[r.kind], bundle: onRail.get(p.key) ?? null, since: r.since_ms } : null,
+          att: r && wanting.has(p.key) ? { col: REASON_COL[r.kind], bundle: onRail.get(p.key) ?? null, since: r.since_ms } : null,
           id: p.id,
           sub: by === "machine" ? (p.info.project?.name ?? groupOf(p, "project")) : p.host,
           bps: p.stale ? 0 : (p.info.activity?.bps ?? 0),
@@ -385,9 +397,12 @@ export function SwarmView({
   };
 
   handlers.current = { open: openKey, hover: hoverPane, menu: paneMenu };
-  const machines = new Set(panes.map((p) => p.host)).size;
+  // Every machine the host menu lists, not only those with panes here.
+  const machines = fleet.list.length;
   const busy = panes.filter((p) => activityOf(p) > 0.3).length;
-  const need = panes.filter((p) => reasonOf(p)).length;
+  // What's on the rail (or waiting for room on it): a finished card that
+  // left it stops counting, here and in the views.
+  const need = wanting.size;
   const clusters = field.current?.clusters ?? [];
   // M45b: a machine that is the account's Fountain runner says so.
   const fountainRunners = runners();
@@ -420,8 +435,8 @@ export function SwarmView({
             <b data-stat="need">{need}</b>need you
           </div>
           {fountainRunners.map(([host, r]) => (
-            <div key={host} class={`swarm-runner${r.problem ? " needs" : ""}`} data-stat="fountain-runner" data-runner={r.name} title={r.problem ?? `${host}: ${runnerLabel(r)}`}>
-              <b>{r.name}</b>Fountain runner {r.online === true ? "online" : r.online === false ? "offline" : "…"}
+            <div key={host} class={`swarm-runner${r.problem ? " needs" : ""}`} data-stat="fountain-runner" data-runner={r.name} title={r.problem ?? `${host}: ${runnerLabel(r, host)}`}>
+              <b>{host}</b>Fountain runner {r.online === true ? "online" : r.online === false ? "offline" : "…"}
             </div>
           ))}
         </div>

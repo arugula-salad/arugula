@@ -3,7 +3,7 @@
 // list, and how to add a machine.
 
 import { useEffect, useState } from "preact/hooks";
-import { AlongsideError, cameToRecover, deviceName, inApp, inviteInHash, joinInHash, passkeyRegister, passkeySignIn, previewInvite, RefusedError, signInNext, type ControlSession, type JoinRequest } from "../control";
+import { AlongsideError, api, cameToRecover, deviceName, inApp, inviteInHash, joinInHash, passkeyRegister, passkeySignIn, previewInvite, RefusedError, shownName, signInNext, type ControlSession, type JoinRequest } from "../control";
 import { fingerprint, normalizeCode, type Cert } from "../e2e/cert.ts";
 import { useSubscribe } from "./hooks";
 import { directory } from "../hosts";
@@ -14,7 +14,8 @@ import { AccountButton } from "./app-bar";
 import type { PresignedInvite, ShareOffer, Team } from "../control";
 import type { TeamRole } from "../e2e/team.ts";
 import { qr, qrPath } from "./qr";
-import { AccountPanel } from "./account";
+import { AccountPanel, type SessionRow } from "./account";
+import { machineState } from "./hosts";
 import { ConfirmRemove } from "./confirm";
 
 export function useControl(s: ControlSession) {
@@ -428,8 +429,6 @@ const INSTALL = "curl -fsSL https://arugula.io/install.sh | sh";
 const INSTALL_WINDOWS = "irm https://arugula.io/install.ps1 | iex";
 
 function AddMachine({ s }: { s: ControlSession }) {
-  // Any member adds their own machines to a team (#332).
-  const inTeam = s.teams.length > 0;
   return (
     <div class="control-add">
       <ol class="control-steps">
@@ -447,11 +446,11 @@ function AddMachine({ s }: { s: ControlSession }) {
           <CopyText text={`~/.local/bin/arugulad join ${s.info.url}`} data-join-cmd />
           On Windows, in a new PowerShell window:
           <CopyText text={`arugulad join ${s.info.url}`} data-join-cmd-windows />
-          {inTeam ? (
-            <span class="dim">
-              To make it a team's machine, add <code>--team</code> and the team's id (in Teams…).
-            </span>
-          ) : null}
+          {s.teams
+            .filter((t) => !t.locked || t.role === "owner")
+            .map((t) => (
+              <TeamJoin key={t.team} s={s} t={t} />
+            ))}
         </li>
         <li>
           <b>Approve it here.</b> It prints a link and a code: open the link here, or type the code below. Codes last 15 minutes.
@@ -463,6 +462,19 @@ function AddMachine({ s }: { s: ControlSession }) {
       </p>
       {s.sandboxesOpen ? <HostedVm s={s} /> : null}
     </div>
+  );
+}
+
+/** How a machine joins a team (#332: any member adds their own), in the
+ * same words on Add a machine and in Teams. */
+function TeamJoin({ s, t, here }: { s: ControlSession; t: Team; here?: boolean }) {
+  return (
+    <>
+      <span class="dim">
+        To add a machine to <b>{t.roster.name}</b>, run this on it, or move one you have with <i>In …</i> in <i>Devices and machines…</i>:
+      </span>
+      <CopyText text={`arugulad join ${s.info.url} --team ${t.team}`} {...(here ? { "data-team-join": true } : { "data-team-join-step": t.team })} />
+    </>
   );
 }
 
@@ -1109,11 +1121,35 @@ function MoveMachine({ s, c, team, online }: { s: ControlSession; c: Cert; team:
   );
 }
 
+/** Whether a browser is signed in, with Sign out for one that isn't this
+ * one. Nothing until the sign-ins load, or from a control that doesn't
+ * say which sign-in is which device. */
+function SignedIn({ sessions, end }: { sessions: SessionRow[] | null; end: (id: string) => void }) {
+  if (!sessions) return null;
+  if (!sessions.length) return <span class="dim" data-signed-in="no"> · signed out</span>;
+  const first = Math.min(...sessions.map((x) => x.created));
+  const here = sessions.some((x) => x.current);
+  return (
+    <span class="dim" data-signed-in="yes">
+      {" "}
+      · signed in since {new Date(first).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+      {here ? null : (
+        <>
+          {" · "}
+          <button class="control-linkish" data-sign-out-device onClick={() => sessions.forEach((x) => end(x.id))}>
+            Sign out
+          </button>
+        </>
+      )}
+    </span>
+  );
+}
+
 /** When a device was added and which device approved it (#327). */
 function Approved({ s, c }: { s: ControlSession; c: Cert }) {
   if (c.approver === c.device) return <span class="dim"> · added {since(c.created)}, the first device</span>;
   const by = s.trusted.get(c.approver);
-  const on = !by ? "on a device since removed" : by.kind === "recovery" ? `with ${by.name}` : `on ${by.name}${by.device === s.keys.id ? " (this browser)" : ""}`;
+  const on = !by ? "on a device since removed" : by.kind === "recovery" ? `with ${by.name}` : `on ${shownName(by.name)}${by.device === s.keys.id ? " (this browser)" : ""}`;
   return (
     <span class="dim" data-approved-by={c.approver}>
       {" "}
@@ -1136,6 +1172,17 @@ function Devices({ s, close }: { s: ControlSession; close: () => void }) {
     </button>
   );
   const left = s.recoveryLeft;
+  // Which browsers are signed in: a device and a sign-in are two things
+  // (Remove takes the key away; Sign out only ends the sign-in), shown
+  // on one row.
+  const [sessions, setSessions] = useState<SessionRow[] | null>(null);
+  const loadSessions = () =>
+    void api<{ sessions: SessionRow[] }>("/api/me/sessions").then(
+      (r) => setSessions(r.sessions),
+      () => {},
+    );
+  useEffect(loadSessions, []);
+  const endSession = (id: string) => api(`/api/me/sessions/${id}/end`, {}).then(loadSessions, (e: Error) => setErr(e.message));
   return (
     <Modal close={close}>
       <h2>Devices and machines</h2>
@@ -1173,7 +1220,7 @@ function Devices({ s, close }: { s: ControlSession; close: () => void }) {
                 ) : null}
                 <span class="dim" data-status>
                   {" · "}
-                  {d?.online ? "online" : d?.last_seen ? `seen ${since(d.last_seen)}` : "offline"}
+                  {d ? machineState(d.name) : "offline"}
                   {d?.online ? ` · ${path}` : ""}
                 </span>
                 <Approved s={s} c={c} />
@@ -1194,8 +1241,9 @@ function Devices({ s, close }: { s: ControlSession; close: () => void }) {
         {browsers.map((c) => (
           <li key={c.device} data-device={c.device}>
             <span>
-              {c.name}
+              {shownName(c.name)}
               {c.device === s.keys.id ? <b data-this-browser> (this browser)</b> : ""}
+              <SignedIn sessions={sessions?.filter((x) => x.device === c.device) ?? null} end={endSession} />
               <Approved s={s} c={c} />
             </span>
             <span class="dim">{fingerprint(c.device)}</span>
@@ -1563,9 +1611,9 @@ function TeamSection({ s, t, act }: { s: ControlSession; t: Team; act: (f: () =>
       ) : (
         <>
           <p class="dim">
-            Team id <CopyText inline text={t.team} data-team-id />. Add a machine to it with <i>In …</i> on it in <i>Devices and machines…</i>, or on the machine:
+            Team id <CopyText inline text={t.team} data-team-id />.
           </p>
-          <CopyText text={`arugulad join ${s.info.url} --team ${t.team}`} data-team-join />
+          <TeamJoin s={s} t={t} here />
         </>
       )}
       <ul class="control-devices">
@@ -1621,7 +1669,9 @@ function TeamSection({ s, t, act }: { s: ControlSession; t: Team; act: (f: () =>
                   {d.name}
                   <span class="dim">{mine ? " · yours" : ` · ${d.owner_name || "a member"}'s`}</span>
                 </span>
-                <span class="dim">{d.online ? "online" : "offline"}</span>
+                <span class="dim" data-status>
+                  {machineState(d.name)}
+                </span>
                 {owner && !mine ? (
                   <button class="control-revoke" data-take-out={d.id} title="Take it out of the team; it stays its owner's" onClick={() => setTakingOut(d.id)}>
                     Take out

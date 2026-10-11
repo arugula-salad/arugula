@@ -247,7 +247,7 @@ function ChatView({ client, route }: { client: Client; route: ChatRoute }) {
         return (
           <section key={s.host}>
             <h2 class="chat-section">
-              <button aria-expanded={!shut} onClick={() => toggle(s.host)} title={shut ? "Show its channels" : "Hide its channels"}>
+              <button aria-expanded={!shut} onClick={() => toggle(s.host)} title={shut ? "Show its sessions" : "Hide its sessions"}>
                 <span class="chat-caret" aria-hidden="true">
                   {shut ? "▸" : "▾"}
                 </span>
@@ -300,7 +300,7 @@ function ChatView({ client, route }: { client: Client; route: ChatRoute }) {
       { label: "New session", run: () => client.intent({ op: "new_session", name: null, from_pane: null }) },
       { label: "Mark all as read", run: () => markAllRead(all) },
       "separator",
-      { label: "Show every channel", checked: !unreadOnly, run: () => ((unreadOnly = false), remember("chat.unreadOnly", false), redraw()) },
+      { label: "Show every session", checked: !unreadOnly, run: () => ((unreadOnly = false), remember("chat.unreadOnly", false), redraw()) },
       { label: "Show unread only", checked: unreadOnly, run: () => ((unreadOnly = true), remember("chat.unreadOnly", true), redraw()) },
     ];
     openMenu({ clientX: r.left, clientY: r.bottom + 4, preventDefault: () => e.preventDefault() }, items);

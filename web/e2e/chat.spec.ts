@@ -169,7 +169,7 @@ test("the sidebar remembers a machine folded away, and can show only what's unre
   await expect(chat.locator(".chat-row[data-chat-thread]")).toHaveCount(1);
   await expect(chat.locator(".chat-row.selected")).toHaveCount(1);
   await chat.locator("[data-chat-workspace]").click();
-  await page.locator(".menu").getByText("Show every channel").click();
+  await page.locator(".menu").getByText("Show every session").click();
   await expect(chat.locator(".chat-row").first()).toBeVisible();
   await chat.locator("[data-open-panes]").click();
 });

@@ -52,7 +52,7 @@ pub fn hash(s: &str) -> String {
     hex::encode(Sha256::digest(s.as_bytes()))
 }
 
-fn cookie<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
+pub(crate) fn cookie<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
     headers
         .get_all(header::COOKIE)
         .iter()

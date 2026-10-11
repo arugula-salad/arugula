@@ -315,7 +315,7 @@ export function Switcher({ rows, multi }: { rows: Channel[]; multi: boolean }) {
   };
   return (
     <div class="chat-switcher-back" onMouseDown={(e) => e.target === e.currentTarget && closeSwitcher()}>
-      <div class="chat-switcher" role="dialog" aria-label="Jump to a channel" data-chat-switcher>
+      <div class="chat-switcher" role="dialog" aria-label="Jump to a session" data-chat-switcher>
         <input
           ref={input}
           placeholder="Jump to…"
@@ -355,7 +355,7 @@ export function Switcher({ rows, multi }: { rows: Channel[]; multi: boolean }) {
               {c.r.summary?.unread ? <span class={c.r.summary.mention ? "chat-count mention" : "chat-count"}>{c.r.summary.unread}</span> : null}
             </li>
           ))}
-          {list.length === 0 && <li class="chat-none">No channel matches.</li>}
+          {list.length === 0 && <li class="chat-none">No session matches.</li>}
         </ul>
       </div>
     </div>

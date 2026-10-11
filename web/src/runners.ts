@@ -24,10 +24,12 @@ export function runners(): [string, FountainRunnerInfo][] {
   return [...known].flatMap(([h, v]) => (v.info ? [[h, v.info] as [string, FountainRunnerInfo]] : []));
 }
 
-/** One line: "Fountain runner geek online · v0.21.0 · 2 sandboxes". */
-export function runnerLabel(i: FountainRunnerInfo): string {
+/** One line: "Fountain runner online · v0.21.0 · 2 sandboxes", beside
+ * the machine's name. The runner's own name only when it isn't the
+ * machine's ("Fountain runner build-1 online"). */
+export function runnerLabel(i: FountainRunnerInfo, host?: string): string {
   const state = i.online === true ? "online" : i.online === false ? "offline" : "…";
-  const parts = [`Fountain runner ${i.name} ${state}`];
+  const parts = [i.name && i.name !== host ? `Fountain runner ${i.name} ${state}` : `Fountain runner ${state}`];
   if (i.version) parts.push(i.version);
   if (i.sandboxes != null) parts.push(`${i.sandboxes} sandbox${i.sandboxes === 1 ? "" : "es"}`);
   return parts.join(" · ");

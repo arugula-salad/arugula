@@ -418,6 +418,7 @@ pub fn router(app: Arc<App>) -> Router {
         .route("/api/me/name", post(api::set_name))
         .route("/api/me/sessions", get(account::sessions))
         .route("/api/me/sessions/end-all", post(account::end_all))
+        .route("/api/me/sessions/device", post(account::session_device))
         .route("/api/me/sessions/{id}/end", post(account::end_session))
         .route("/api/me/passkeys", get(account::passkeys))
         .route("/api/me/passkeys/{id}/remove", post(account::remove_passkey))

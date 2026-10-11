@@ -148,8 +148,19 @@ pub struct Enroll {
 
 /// A browser or CLI asks to join the account. The first device is
 /// self-signed and trusted on first use; later ones wait for an approval.
-pub async fn enroll(State(app): State<Arc<App>>, s: Session, Json(b): Json<Enroll>) -> R {
+pub async fn enroll(
+    State(app): State<Arc<App>>,
+    s: Session,
+    headers: axum::http::HeaderMap,
+    Json(b): Json<Enroll>,
+) -> R {
     let c = b.cert;
+    // The sign-in that asked is this device's (Sign-in and Devices say so).
+    if let Some(token) = crate::auth::cookie(&headers, crate::auth::SESSION_COOKIE)
+        && c.account == s.account
+    {
+        app.db.set_session_device(&crate::auth::hash(token), &s.account, &c.device)?;
+    }
     let join = b.join.as_deref().and_then(|j| normalize_code(j).ok());
     if let Err(e) = c.check_request() {
         refused("enroll", &s.account, &c, &e.to_string());

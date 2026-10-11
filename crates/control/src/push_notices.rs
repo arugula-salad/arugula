@@ -145,6 +145,7 @@ async fn waiting_devices_and_requests_push_their_owners() {
         crate::api::enroll(
             State(app.clone()),
             Session { account: "a1jake".into() },
+            axum::http::HeaderMap::new(),
             Json(serde_json::from_value(json!({ "cert": asking })).unwrap()),
         )
     };
