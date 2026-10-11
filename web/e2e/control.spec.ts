@@ -1062,6 +1062,42 @@ test("a join link kept over a sign-in comes back only to its own code, and never
   await laptop.goto("/");
 });
 
+test("a waiting browser that follows another machine's link brings that one instead (#326)", async ({ browser }) => {
+  // Two machines asking; the visitor comes for the first, then follows the
+  // second's link in the same tab: only the hash changes, nothing reloads.
+  const asks = async (name: string) => {
+    const joining = spawn("../target/debug/arugulad", ["join", base, "--name", name, "--state-dir", temp(name)], { stdio: ["pipe", "pipe", "ignore"] });
+    procs.push(joining);
+    return new Promise<string>((res) => {
+      let out = "";
+      joining.stdout!.on("data", (d) => {
+        out += d;
+        const m = out.match(/(http\S+#join=[A-Z0-9.-]+)/);
+        if (m) res(m[1]);
+      });
+    });
+  };
+  const [first, second] = [await asks("firstbox"), await asks("secondbox")];
+  const visitor = await (await browser.newContext()).newPage();
+  await visitor.goto(first);
+  await visitor.locator("[data-signin=github]").click();
+  const firstCode = first.split("#join=")[1].split(".")[0];
+  await expect(visitor.locator(`[data-waiting-join="${firstCode}"]`)).toBeVisible({ timeout: 20_000 });
+  await laptop.goto("/");
+  await expect(laptop.locator("[data-join-machine]")).toContainText("firstbox", { timeout: 20_000 });
+
+  await visitor.goto(second);
+  const secondCode = second.split("#join=")[1].split(".")[0];
+  await expect(visitor.locator(`[data-waiting-join="${secondCode}"]`)).toBeVisible();
+  // Control is told: the laptop now sees the second machine alongside.
+  await expect(laptop.locator("[data-join-machine]")).toContainText("secondbox", { timeout: 30_000 });
+  // Neither is wanted: turn the machine and the browser down.
+  await laptop.locator("[data-cancel-join]").click();
+  await expect(laptop.locator("[data-reject]")).toBeVisible({ timeout: 20_000 });
+  await laptop.locator("[data-reject]").click();
+  await visitor.context().close();
+});
+
 test("sessions: where you're signed in, and signing out everywhere (#173)", async () => {
   await controlPanel(laptop, "account");
   await expect(laptop.getByRole("heading", { name: "Sign-in and account" })).toBeVisible();

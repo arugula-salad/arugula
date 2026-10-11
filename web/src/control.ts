@@ -781,7 +781,7 @@ export class ControlSession {
     // #326: here to approve a machine, which this browser can't until it's
     // one of the account's devices: the device that approves it is shown
     // the machine alongside, and approves both at once.
-    const join = joinInHash();
+    let join = joinInHash();
     const ask = () => api<{ approved: boolean; cert?: Cert }>("/api/devices", { cert, join, ...(secret ? { features: DEVICE_SECRET } : {}) });
     let r = signed ? await api<{ approved: boolean; cert?: Cert }>("/api/devices", { cert: signed.cert }) : await ask();
     if (signed && !r.approved) {
@@ -794,6 +794,22 @@ export class ControlSession {
     while (!r.approved) {
       this.set("waiting");
       await new Promise((res) => setTimeout(res, 2000));
+      // Another machine's link followed in this tab (only the hash changes,
+      // so nothing reloads), or the link left: ask again with that join, so
+      // the approving device sees this machine alongside, not the last one.
+      const now = joinInHash();
+      if (now !== join) {
+        const was = join;
+        join = now;
+        try {
+          r = await ask();
+          this.brought = join;
+        } catch {
+          // Asked again on the next turn.
+          join = was;
+        }
+        continue;
+      }
       try {
         r = await api<{ approved: boolean; cert: Cert }>(`/api/devices/${k.id}`);
       } catch (e) {
