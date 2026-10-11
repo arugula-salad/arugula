@@ -246,6 +246,15 @@ jobs:
         env:
           E2E_CHROMIUM: "1"
           E2E_SET: rest
+      # A failed spec's screenshot (playwright.config.ts), kept a week.
+      - name: Failed specs' screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-failures-${{ matrix.shard }}
+          path: web/test-results/
+          retention-days: 7
+          if-no-files-found: ignore
 
   # The specs on the test stack (team-swarm-phones' box behind netem).
   stack:
@@ -269,6 +278,15 @@ jobs:
         env:
           E2E_CHROMIUM: "1"
           E2E_SET: stack
+      # A failed spec's screenshot (playwright.config.ts), kept a week.
+      - name: Failed specs' screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stack-failures
+          path: web/test-results/
+          retention-days: 7
+          if-no-files-found: ignore
       - name: Take the test stack down
         if: always()
         run: just testnet down
@@ -301,6 +319,15 @@ jobs:
         env:
           E2E_CHROMIUM: "1"
           E2E_SET: perf
+      # A failed spec's screenshot (playwright.config.ts), kept a week.
+      - name: Failed specs' screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-failures
+          path: web/test-results/
+          retention-days: 7
+          if-no-files-found: ignore
 
   # The Linux desktop app under Xvfb, in a container (#317): `just
   # desktop-xvfb`'s join, m46 (bare and links among its claims), m47 and
@@ -392,3 +419,12 @@ jobs:
         run: just e2e-webkit
         env:
           E2E_PORT: "7769"
+      # A failed spec's screenshot (playwright.config.ts), kept a week.
+      - name: Failed specs' screenshots
+        if: failure() && matrix.part == 'webkit'
+        uses: actions/upload-artifact@v4
+        with:
+          name: webkit-failures
+          path: web/test-results/
+          retention-days: 7
+          if-no-files-found: ignore

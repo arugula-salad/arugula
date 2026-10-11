@@ -95,7 +95,7 @@ test.afterAll(() => {
   if (dir) rmSync(dir, { recursive: true, force: true });
 });
 
-test("a waiting gate names the decision it enforces, its plan and the last release (#617)", async ({ page }, info) => {
+test("a waiting gate names the decision it enforces, its plan and the last release (#617)", async ({ page }) => {
   test.setTimeout(90_000);
   const out = cli("workspace", ws);
   block = Number(/^%(\d+)/.exec(out)![1]);
@@ -115,7 +115,6 @@ test("a waiting gate names the decision it enforces, its plan and the last relea
   await expect(gate.locator("[data-gate-decision]")).toHaveAttribute("data-gate-decision", "toy-001");
   // No plan for this gate (the toy op has none) and no release yet.
   await expect(gate.locator(".gate-why-release")).toHaveText("no release yet");
-  await gate.screenshot({ path: info.outputPath("gate-card.png") });
   // The block's text says so too.
   expect(cli("capture", `%${block}`)).toContain("enforces toy-001 A person approves each ship");
 
@@ -130,10 +129,9 @@ test("a waiting gate names the decision it enforces, its plan and the last relea
   await expect(card).toBeVisible({ timeout: 15_000 });
   await expect(card.locator(".cq")).toHaveText("delivery: ship waits at gate approve-ship");
   await expect(card.locator("[data-gate-decision]")).toHaveText(ENFORCES);
-  await card.screenshot({ path: info.outputPath("rail-card.png") });
 });
 
-test("on a phone, the sheet's gate says what it enforces (#617)", async ({ browser }, info) => {
+test("on a phone, the sheet's gate says what it enforces (#617)", async ({ browser }) => {
   const ctx = await browser.newContext({ ...phone, baseURL: base(), extraHTTPHeaders: { "tailscale-user-login": OWNER } });
   const mine = await ctx.newPage();
   await mine.goto("/");
@@ -141,7 +139,6 @@ test("on a phone, the sheet's gate says what it enforces (#617)", async ({ brows
   await mine.locator(".sheet-button").click();
   const row = mine.locator(`.needs-you [data-wants="${block}"]`);
   await expect(row.locator("[data-gate-why]")).toHaveText(`${ENFORCES} · no release yet`);
-  await row.screenshot({ path: info.outputPath("phone-sheet.png") });
   await ctx.close();
 });
 
@@ -165,7 +162,7 @@ test("a gate dismissed stays dismissed when the workspace moves and its decision
   expect((await panesOf(page)).find((p) => p.id === block)?.attention).toBe("idle");
 });
 
-test("an opened member card: its decisions, the lease and run on it with their pane, and undecided commits (#618)", async ({ page }, info) => {
+test("an opened member card: its decisions, the lease and run on it with their pane, and undecided commits (#618)", async ({ page }) => {
   test.setTimeout(120_000);
   await open(page);
   const state = async () => (await (await fetch(`${base()}/api/blocks/${block}`)).json()).state;
@@ -213,7 +210,6 @@ test("an opened member card: its decisions, the lease and run on it with their p
   await expect(why.locator('[data-why-lease="W-001"]')).toContainText("W-001 held by shipper · until");
   await expect(why.locator('[data-why-lease="W-001"] [data-why-pane]')).toHaveCount(0);
   await expect(card.locator("[data-tag-leases]")).toHaveText("1 leased");
-  await card.screenshot({ path: info.outputPath("member-card.png") });
 
   // Another client closes the card: this one, still showing it, asks again.
   expect((await post(`/api/blocks/${block}/call/why`, { member: "delivery", open: false })).ok).toBe(true);

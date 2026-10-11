@@ -150,7 +150,7 @@ test.afterAll(() => {
   if (dir) rmSync(dir, { recursive: true, force: true });
 });
 
-test("an open decision point is a card on the rail, answered from the phone, and chant reads the answer (#621)", async ({ browser, page }, info) => {
+test("an open decision point is a card on the rail, answered from the phone, and chant reads the answer (#621)", async ({ browser, page }) => {
   test.setTimeout(120_000);
   const asked = chant(ws, "workspace", "points", "ask", "slice-tier", "--inputs", '{"work-item.words": 300}', "--subject", "W-001");
   expect(asked.status, asked.stdout + asked.stderr).toBe(0);
@@ -170,7 +170,6 @@ test("an open decision point is a card on the rail, answered from the phone, and
   await expect(card.locator(".cq")).toHaveText("Which builder tier builds this work item (W-001)");
   await expect(card.locator("[data-answer-point]")).toHaveText(["Small", "Medium", "Large"]);
   await expect(card.locator('[data-answer-point="small"]')).toHaveAttribute("title", "A small builder.");
-  await card.screenshot({ path: info.outputPath("rail-card.png") });
 
   // On a phone, from the sheet's "Needs you".
   const ctx = await browser.newContext({ ...phone, baseURL: base(), extraHTTPHeaders: { "tailscale-user-login": OWNER } });
@@ -181,7 +180,6 @@ test("an open decision point is a card on the rail, answered from the phone, and
   const row = mine.locator(`.needs-you [data-wants="${block}"]`);
   await expect(row.locator("[data-answer-point]")).toHaveText(["Small", "Medium", "Large"]);
   await expect(row.locator("[data-approve-gate]")).toHaveCount(0);
-  await row.screenshot({ path: info.outputPath("phone-sheet.png") });
   await row.locator('[data-answer-point="medium"]').tap();
 
   // chant's own read: answered medium, by the owner's Arugula name.
@@ -194,7 +192,7 @@ test("an open decision point is a card on the rail, answered from the phone, and
   await ctx.close();
 });
 
-test("a gate that asks a decision point is answered on its card, and the next run walks through (#621)", async ({ page }, info) => {
+test("a gate that asks a decision point is answered on its card, and the next run walks through (#621)", async ({ page }) => {
   test.setTimeout(120_000);
   const ran = chant(join(ws, "delivery"), "run", "ask");
   expect(ran.status, ran.stdout + ran.stderr).toBe(3);
@@ -209,7 +207,6 @@ test("a gate that asks a decision point is answered on its card, and the next ru
   await expect(gate).toHaveAttribute("data-gate", "delivery/ask/ship-ok");
   await expect(gate.locator(".ws-gate-what")).toContainText("delivery: Ship the toy now");
   await expect(gate.locator("[data-answer-point]")).toHaveText(["Yes", "No"]);
-  await gate.screenshot({ path: info.outputPath("block-gate.png") });
 
   // Answered Yes from the swarm's card.
   await page.goto("/#swarm");
