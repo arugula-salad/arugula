@@ -157,7 +157,6 @@ const STEPS: Record<string, Record<string, string>> = {
  * docs/journey-steps.svg; each must be a step in `STEPS`.
  */
 const COMPARED: Record<string, string[]> = {
-  J2a: ["confirm-share"],
   J6: ["tell-ben"],
 };
 const FIRST_RUN = ["open", "gs", "phone", "connect", "account", "signin", "terminal"];
