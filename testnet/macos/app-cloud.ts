@@ -8,7 +8,7 @@
 //             URL (AppleScript), allows it as alice, and hands the grant to
 //             the app's loopback port, as alice's browser would.
 //   approve   The app's window redeems it, enrolls as a new device and
-//             waits; alice approves it.
+//             waits; alice approves it with the code it shows (#761).
 //   machines  The daemon the app installed on the Mac joins too (macvm).
 //             The app's window, read through the accessibility tree (JXA
 //             and System Events), connects to a machine, and its Hosts menu
@@ -30,8 +30,7 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { certBody, type Cert } from "../../web/src/e2e/cert.ts";
-import { signText } from "../../web/src/e2e/keys.ts";
+import type { Cert } from "../../web/src/e2e/cert.ts";
 import { Device } from "../../web/fixtures/device.ts";
 import { fakeGithub } from "../../web/fixtures/fakes.ts";
 
@@ -178,10 +177,14 @@ try {
   }).catch((e) => {
     throw new Error(`${e}\nthe app's window:\n${page()}`);
   });
-  const signed: Cert = { ...pending, account: alice.account, approver: alice.keys.id, sig: "" };
-  signed.sig = await signText(alice.keys, certBody(signed));
+  // #761: the window shows a code (a QR code, and as text); alice reads
+  // it off the screen, as scanning or typing it would, and approves with
+  // the MAC under its secret, so the window pins her root without asking.
+  const shownCode = await poll("the code the app's window shows", () => /\b[A-Z0-9]{5}-[A-Z0-9]{5}\.[A-Z0-9]{4}(?:-[A-Z0-9]{4}){3}\b/.exec(page())?.[0]).catch((e) => {
+    throw new Error(`${e}\nthe app's window:\n${page()}`);
+  });
   // BREAK=1: nobody approves it, and the checks below must fail.
-  if (!process.env.BREAK) await alice.api(`/api/devices/${pending.device}/approve`, { cert: signed });
+  if (!process.env.BREAK) await alice.approveRequest(pending, shownCode);
   check("approve", (await alice.trusted()).has(pending.device), `${shown.name} (${pending.kind})`);
 
   // The Mac itself joins too: the daemon the app installed there.
