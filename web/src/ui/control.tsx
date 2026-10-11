@@ -777,8 +777,10 @@ function JoinPrompt({ s, code: whole, from, device }: { s: ControlSession; code:
   // #761: codes typed or scanned for devices alongside, by id.
   const [typedCodes, setTypedCodes] = useState<Map<string, Rest>>(new Map());
   useEffect(() => {
-    // Another code: nothing typed for the last one carries over.
+    // Another code: nothing typed for the last one carries over, nor for
+    // the devices that came with it (#761).
     setTyped({ rest: "", bad: null });
+    setTypedCodes(new Map());
     // This browser's own trust, fresh, before it offers Approve (#327).
     void s.refresh();
     s.showJoin(code).then(
@@ -1412,7 +1414,8 @@ function DeviceLinkPrompt({ s, whole }: { s: ControlSession; whole: string }) {
     void s.refresh().finally(() => setLooked(true));
   }, []);
   const c = given ? s.pending.find((p) => s.pendingCodes.get(p.device) === given.code) : undefined;
-  if (c && given) return <DevicePrompt s={s} c={c} given={given} done={clearHash} />;
+  // Keyed, like the overlay's: another device's prompt starts empty.
+  if (c && given) return <DevicePrompt key={c.device} s={s} c={c} given={given} done={clearHash} />;
   return (
     <Modal close={clearHash}>
       <h2>New device?</h2>
