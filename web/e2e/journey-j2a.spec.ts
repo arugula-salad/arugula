@@ -3,9 +3,9 @@
 // team with him; Riley accepts, finds Sam's machine, asks to drive, Sam
 // allows it, and what Riley types shows in Sam's terminal, on Sam's
 // screen. What only two people meet: what they must tell each other
-// outside Arugula (a login, a fingerprint), the offer to accept, finding
-// the shared machine, and the ask to drive a pane on someone's own
-// machine.
+// outside Arugula (a login; Riley's key is pinned on first use, #763),
+// the offer to accept, finding the shared machine, and the ask to drive a
+// pane on someone's own machine.
 //
 // Each person's first run is its own report (J2a-setup-sam, -riley), so a
 // signup failure there can't hide a linking failure here. Rules as in
@@ -14,7 +14,7 @@
 
 import { expect, test, type Page } from "@playwright/test";
 import type { App } from "./journey/app";
-import { clickTerminal, FP, onboarded, read, screenText } from "./journey/first-run";
+import { clickTerminal, onboarded, screenText } from "./journey/first-run";
 import { Journey, type Surface } from "./journey/record";
 import { World } from "./journey/world";
 import { closeContexts } from "./helpers";
@@ -42,7 +42,6 @@ test("J2a: two friends link up by sharing a session; the friend types in the own
     act: (p: Page) => Promise<void>,
     why?: string,
   ) => j.step({ id, title, actor, surface, page, prompt: prompt(page()), why }, () => act(page()));
-  let fpShown = "";
   let pane = "";
   const marker = "hi-from-riley-$((6*7))";
 
@@ -74,7 +73,7 @@ test("J2a: two friends link up by sharing a session; the friend types in the own
 
     await step(
       "share-who",
-      "Sam enters Riley's login, as someone who can drive",
+      "Sam enters Riley's login, as someone who can drive, and shares",
       "sam",
       "app",
       at(sam),
@@ -83,68 +82,9 @@ test("J2a: two friends link up by sharing a session; the friend types in the own
         await p.getByRole("textbox", { name: "Who" }).fill("riley");
         await p.getByRole("combobox", { name: "Role" }).selectOption({ label: "drives" });
         await p.getByRole("button", { name: "Share", exact: true }).click();
-        await expect(p.getByText(/first device is/)).toBeVisible({ timeout: 15_000 });
-        fpShown = await read(p.getByText(/first device is/), FP);
-      },
-    );
-
-    await step(
-      "ask-fingerprint",
-      "Sam asks Riley for their first device's fingerprint",
-      "sam",
-      "message",
-      at(sam),
-      (p) => p.getByText(/check it with them/),
-      async () => {},
-    );
-
-    let rileyFp = "";
-    // Sam's dialog says where it is, and Sam passes that on with the ask.
-    await j.step(
-      {
-        id: "find-fingerprint",
-        title: "Riley finds their own fingerprint",
-        actor: "riley",
-        surface: "app",
-        page: at(riley),
-        prompt: sam.window.getByText(/fingerprint in Devices and machines…, in the account menu/),
-      },
-      async () => {
-        const p = riley.window;
-        // In the account menu, top right.
-        await p.locator("[data-account-menu]").first().click();
-        await p.getByRole("menuitem", { name: "Devices and machines…" }).click();
-        // The account's is the one fingerprint shown: each device's waits
-        // behind its Details (#759).
-        rileyFp = await read(p.getByText(/account/i).filter({ hasText: FP }), FP);
-        await p.getByRole("button", { name: "Done" }).click();
-      },
-    );
-
-    await j.step(
-      {
-        id: "send-fingerprint",
-        title: "Riley sends Sam the fingerprint",
-        actor: "riley",
-        surface: "message",
-        prompt: null,
-        own: "a message to Sam, as Sam asked",
-      },
-      async () => {},
-    );
-
-    await step(
-      "confirm-share",
-      "Sam checks the fingerprint and shares",
-      "sam",
-      "app",
-      at(sam),
-      (p) => p.getByRole("button", { name: /Share with riley/ }),
-      async (p) => {
-        j.compared(`Riley's first device ${fpShown} (Sam's dialog) = ${rileyFp} (Riley's screen)`);
-        if (fpShown !== rileyFp) j.issue(`the fingerprint Sam is shown (${fpShown}) isn't one Riley found on their screen (${rileyFp})`);
-        await p.getByRole("button", { name: /Share with riley/ }).click();
-        await expect(p.getByRole("button", { name: /Share with riley/ })).toBeHidden();
+        // #763: shared at once, Riley's key pinned on first use; nothing to
+        // compare.
+        await expect(p.getByText(/they're asked first/)).toBeVisible({ timeout: 15_000 });
         const said = await p.getByText(/riley/).allInnerTexts();
         if (!said.some((t) => /see|accept|asked|wait/i.test(t))) j.issue("the dialog doesn't say what Riley sees next, or that Riley must accept first");
         await p.keyboard.press("Escape");

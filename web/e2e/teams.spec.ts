@@ -8,6 +8,7 @@
 // lets someone already in another team in with one click, no owner's yes.
 // Share and notify (#233): Alice's machine learns her teams from her
 // browser, and a teammate's phone gets the invite, opening at the pane.
+// Someone whose key changed since the first share (#763): sharing stops.
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { createDecipheriv, createECDH, hkdfSync, randomBytes } from "node:crypto";
@@ -672,6 +673,46 @@ test("a session shared with someone outside your teams waits for their yes", asy
   await expect
     .poll(async () => (await erin.evaluate(() => window.__arugula.control!.refresh()), hostNames(erin)), { timeout: 30_000 })
     .toContain("minebox");
+});
+
+test("someone whose key changed since the first share: sharing stops and says so", async () => {
+  // #763: Erin was shared with above. Alice's browser pinned another root
+  // for her on Oct 1, as if control named Erin differently then.
+  const who = await alice.evaluate(() => window.__arugula.control!.person("erin"));
+  await alice.evaluate((account) => {
+    const pins = JSON.parse(localStorage.getItem("arugula.control.pins") ?? "{}");
+    pins[account] = "00".repeat(32);
+    localStorage.setItem("arugula.control.pins", JSON.stringify(pins));
+    const meta = JSON.parse(localStorage.getItem("arugula.control.pin-meta") ?? "{}");
+    meta[account] = { at: new Date(2026, 9, 1, 12).getTime() };
+    localStorage.setItem("arugula.control.pin-meta", JSON.stringify(meta));
+  }, who.account);
+  const session = await alice.evaluate(() => window.__arugula.client.state!.sessions[0].id);
+  await alice.getByRole("button", { name: "Share session" }).click();
+  const dialog = alice.locator(`[data-share="${session}"]`);
+  await dialog.getByLabel("Who").fill("erin");
+  await dialog.getByLabel("Role").selectOption("editor");
+  await dialog.getByRole("button", { name: "Share", exact: true }).click();
+  const warning = dialog.locator(`[data-key-changed="${who.account}"]`);
+  await expect(warning).toContainText("@erin's account key changed since you first shared with them.");
+  await expect(warning).toContainText(`You first shared on ${new Date(2026, 9, 1, 12).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`);
+  await expect(warning).toContainText("Nothing was shared.");
+  // Nothing was: Erin is still a viewer, and her row says her key changed.
+  const row = dialog.locator(`[data-grant="account:${who.account}"]`);
+  await expect(row.locator("select")).toHaveValue("viewer");
+  await expect(row.locator("[data-key-changed-row]")).toBeVisible();
+  // A role change stops the same way.
+  await warning.getByRole("button", { name: "Cancel" }).click();
+  await row.locator("select").selectOption("editor");
+  await expect(warning).toBeVisible();
+  await expect(row.locator("select")).toHaveValue("viewer");
+  // Verifying her (the words match) takes the new key, and the share goes.
+  await warning.locator("[data-key-verify]").click();
+  await expect(dialog.locator("[data-verify-words]")).toHaveText(/^(\w+ ){7}\w+$/);
+  await dialog.locator("[data-verify-match]").click();
+  await expect(dialog.locator(`[data-grant="account:${who.account}"] select`)).toHaveValue("editor");
+  await expect(dialog.locator(`[data-grant="account:${who.account}"] [data-verified]`)).toBeVisible();
+  await dialog.getByRole("button", { name: "Done" }).click();
 });
 
 /** A notification as the browser holding `phone` and `auth` reads it

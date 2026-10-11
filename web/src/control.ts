@@ -174,7 +174,7 @@ function pins(): Record<string, string> {
   }
 }
 
-function pin(account: string, root: string): boolean {
+function pin(account: string, root: string, at = Date.now()): boolean {
   const p = pins();
   if (p[account] && p[account] !== root) return false;
   if (!p[account]) {
@@ -184,8 +184,95 @@ function pin(account: string, root: string): boolean {
     } catch {
       // not remembered
     }
+    setPinMeta(account, { at });
   }
   return true;
+}
+
+/** #763: about a pin of `PINS_KEY`: when it was made, the root its
+ * person was verified with (scanned or words compared), and when this
+ * browser first saw control name another one. Apart from the pins, so a
+ * page from before reads them as it did. */
+const PIN_META_KEY = "arugula.control.pin-meta";
+
+interface PinMeta {
+  at?: number;
+  verified?: string;
+  seen?: { root: string; at: number };
+}
+
+function pinMetas(): Record<string, PinMeta> {
+  try {
+    return JSON.parse(localStorage.getItem(PIN_META_KEY) ?? "{}");
+  } catch {
+    return {};
+  }
+}
+
+function setPinMeta(account: string, m: PinMeta | null) {
+  const all = pinMetas();
+  if (m) all[account] = m;
+  else delete all[account];
+  try {
+    localStorage.setItem(PIN_META_KEY, JSON.stringify(all));
+  } catch {
+    // not remembered
+  }
+}
+
+/** Someone you share with (#763), as this browser pinned them: their root,
+ * when it was pinned (if known) and whether you verified it. */
+export interface PersonPin {
+  root: string;
+  at?: number;
+  verified: boolean;
+}
+
+export function personPin(account: string): PersonPin | null {
+  const root = pins()[account];
+  if (!root) return null;
+  const m = pinMetas()[account] ?? {};
+  return { root, at: m.at, verified: m.verified === root };
+}
+
+/** A new key control named for `account` that this browser hasn't taken
+ * (#763): the root and when it was first seen, or null. */
+export function keyChanged(account: string): { root: string; at: number } | null {
+  const root = pins()[account];
+  const seen = pinMetas()[account]?.seen;
+  return root && seen && seen.root !== root ? seen : null;
+}
+
+/** Control names `root` for `account`, which this browser pinned as
+ * another: when it first saw that (kept, so the date doesn't move). */
+export function keyChangeSeen(account: string, root: string): number {
+  const m = pinMetas()[account] ?? {};
+  if (m.seen?.root === root) return m.seen.at;
+  const at = Date.now();
+  setPinMeta(account, { ...m, seen: { root, at } });
+  return at;
+}
+
+/** Trust on first use, for a share: pin `root` unless one is pinned, from
+ * `at` (when a machine's grant says it was first shared). False if
+ * another root is pinned. */
+export function pinPerson(account: string, root: string, at?: number): boolean {
+  return pin(account, root, at);
+}
+
+/** Verified with them, by their code or words (#763): `root` is theirs,
+ * pinned in place of any other. */
+export function verifyPerson(account: string, root: string) {
+  const p = pins();
+  const was = p[account];
+  p[account] = root;
+  try {
+    localStorage.setItem(PINS_KEY, JSON.stringify(p));
+  } catch {
+    // not remembered
+  }
+  const m = pinMetas()[account] ?? {};
+  setPinMeta(account, { at: was === root ? (m.at ?? Date.now()) : Date.now(), verified: root });
 }
 
 /** Served by control? (A daemon answers 404.) */

@@ -18,6 +18,7 @@ import { AccountPanel, type SessionRow } from "./account";
 import { machineState } from "./hosts";
 import { ConfirmRemove } from "./confirm";
 import { canScan, Scanner } from "./scan";
+import { verifyCode, verifyWords } from "../e2e/words.ts";
 
 export function useControl(s: ControlSession) {
   useSubscribe((fn) => s.subscribe(fn));
@@ -262,6 +263,26 @@ function Waiting({ s }: { s: ControlSession }) {
       <RecoveryForm s={s} open={recovering()} />
       <SignOuts s={s} />
     </Center>
+  );
+}
+
+/** #763: for someone sharing with you who wants to verify it's you: a QR
+ * code for their camera, and the same as words for over the phone. From
+ * the root this device pinned, not control's word for it. */
+function VerifyMe({ account, root }: { account: string; root: string }) {
+  const [words, setWords] = useState<string[]>([]);
+  useEffect(() => {
+    void verifyWords(account, root).then(setWords);
+  }, [account, root]);
+  return (
+    <details class="control-older" data-verify-me>
+      <summary>Someone verifying you?</summary>
+      <QrCode text={verifyCode(account, root)} label="QR code to verify your account" />
+      <p class="dim">Or read them these words:</p>
+      <p class="share-verify-words" data-verify-me-words>
+        {words.join(" ")}
+      </p>
+    </details>
   );
 }
 
@@ -1738,9 +1759,10 @@ function Devices({ s, close }: { s: ControlSession; close: () => void }) {
           <span class="fingerprint-inline" data-account-fingerprint={s.enrollment.root}>
             {fingerprint(s.enrollment.root)}
           </span>
-          , your first device's. A machine shows it when it joins; check they match. Someone sharing a session with you may ask for it too.
+          , your first device's. Someone verifying you uses it (below), and an older machine may ask you to check it when it joins.
         </p>
       ) : null}
+      {s.enrollment && !s.rootMismatch ? <VerifyMe account={s.account} root={s.enrollment.root} /> : null}
       {s.rootMismatch ? (
         <p class="control-error">Control reports a different first device for this account than this browser pinned. New devices and machines won't be trusted here.</p>
       ) : null}

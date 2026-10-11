@@ -562,7 +562,7 @@ journey shows the change.
 | Journey | What |
 |---|---|
 | J1 | one person on the Mac app, from no account to a command in a terminal: Getting started's Cloud step, an account made from the machine's approval link, recovery codes, the machine approved (one Approve: the link carries the machine's secret, so there's no code or account fingerprint to compare, #760), the app signed in through the browser (one Allow, which also makes it a device: no code or fingerprint to compare, #758), the app reopened |
-| J2a | two friends, each through J1 first: one shares a session with the other (not a teammate), who accepts, finds the machine, asks to drive, is allowed, takes control and types; the owner sees it |
+| J2a | two friends, each through J1 first: one shares a session with the other (not a teammate) by their login, with no fingerprint to compare (their key is pinned on first use, #763), who accepts, finds the machine, asks to drive, is allowed, takes control and types; the owner sees it |
 | J2b | the same through a team: a one-click invite, the owner's machine moved into the team with *Team …*, the friend driving it by role |
 | J2c | the evening #551 audits: the owner's machine already in a team, a friend's second team, the team page's `arugulad join … --team` (not on the app's PATH, #550, and the machine is already in a team), *Team …*, sharing with the team, the Swarm, *+* on a teammate's machine |
 | J3 | (#664, on a real Mac only, below) installs the app by hand from the site's steps, with Gatekeeper on and an older daemon (arugulad 0.26.1) already running: *"Arugula" Not Opened*, *Done*, *Open Anyway* in Privacy & Security, *Open "Arugula"?*, the password; the app offers the daemon's update, and the pane keeps running |
