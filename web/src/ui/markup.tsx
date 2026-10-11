@@ -87,7 +87,13 @@ export function inline(text: string, isMe?: IsMe, landed?: (token: string) => bo
           </a>,
         );
       else out.push(s);
-    } else if (landed && !landed(s.slice(1).toLowerCase())) out.push(s);
+    } else if (landed && !landed(s.slice(1).toLowerCase()))
+      // Marked still, but as one that reached nobody (#296).
+      out.push(
+        <span key={k++} class="mention-missed" title="This reached no one: nobody by that name sees this thread">
+          {s}
+        </span>,
+      );
     else {
       const token = s.slice(1).toLowerCase();
       out.push(

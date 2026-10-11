@@ -320,18 +320,22 @@ function RecipesTab({ client }: { client: Client }) {
             {!data.user.recipes.length && (
               <li data-agents-scope="user">
                 Yours, in every project <span class="dim">{tilde(data.user.dir)}</span>
+                <button class="agents-inline-new" disabled={busy} onClick={() => setForm({ f: { ...EMPTY, dir: "" }, inline: [] })}>
+                  New recipe here
+                </button>
               </li>
             )}
             {empty.map((p) => (
               <li key={p.dir} data-agents-scope={p.dir}>
                 {p.dir.split("/").pop()} <span class="dim">{tilde(p.dir)} · No recipes in .claude/agents</span>
+                <button class="agents-inline-new" disabled={busy} onClick={() => setForm({ f: { ...EMPTY, dir: p.dir }, inline: [] })}>
+                  New recipe here
+                </button>
                 {p.added && removeProject(p.dir)}
               </li>
             ))}
           </ul>
-          <p class="dim">
-            <b>+ New recipe</b> can make one in any of them.
-          </p>
+
         </section>
       )}
       {deleting && (

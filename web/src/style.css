@@ -195,6 +195,18 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   opacity: 1;
 }
 
+.new-tab-more {
+  width: 18px;
+  font-size: 10px;
+  color: var(--dim);
+  border-radius: 6px;
+  margin: 4px 0 0;
+}
+
+.new-tab-more:hover {
+  background: var(--raised);
+}
+
 .new-tab {
   width: 32px;
   font-size: 18px;
@@ -5538,22 +5550,25 @@ button.diff-why-run {
   border-left: 1px solid var(--divider);
 }
 
+/* Recipes and Team are the Agents page's own tabs, not more places: small,
+   underlined, not filled like Panes · Swarm · Chat · Agents. */
 .agents-tabs button {
   height: 26px;
-  padding: 0 10px;
-  border-radius: 6px;
+  padding: 0 8px;
+  border-radius: 0;
+  font-size: 12px;
   color: var(--dim);
+  border-bottom: 2px solid transparent;
 }
 
 .agents-tabs button:hover {
-  background: var(--raised);
   color: var(--fg);
 }
 
 .agents-tabs button.on {
-  background: var(--raised);
   color: var(--fg);
   font-weight: 600;
+  border-bottom-color: var(--accent);
 }
 
 .agents-body {
@@ -5806,6 +5821,24 @@ button.diff-why-run {
 
 .agents-empties > p {
   margin: 4px 8px;
+}
+
+.agents-inline-new {
+  flex: none;
+  white-space: nowrap;
+  margin-left: auto;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--raised);
+  font-size: 12px;
+}
+
+.agents-inline-new:hover:not(:disabled) {
+  background: var(--raised-hover);
+}
+
+.agents-inline-new + .agents-remove {
+  margin-left: 8px;
 }
 
 /* The team's agents: a list, each row with its own buttons, so a row
@@ -6450,6 +6483,14 @@ button.diff-why-run {
   background: color-mix(in srgb, #89b4fa 18%, transparent);
   color: #89b4fa;
   font-weight: 600;
+}
+
+/* An @ that reached no one: still marked, but not as a person. */
+.mention-missed {
+  background: none;
+  color: var(--dim);
+  text-decoration: underline dashed;
+  text-underline-offset: 2px;
 }
 
 .mention.me {

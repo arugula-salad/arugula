@@ -236,11 +236,25 @@ function TopBar({
             {marker === session.tabs.length && <div class="drop-marker" />}
             <button
               class="new-tab"
-              title={`New tab ${newTabWhere()} (right-click for ${client.has("vms") ? "a VM tab" : "more"})`}
+              title={`New tab ${newTabWhere()}`}
               onClick={() => client.intent({ op: "new_tab", session: session.id, from_pane: client.active() ?? null })}
               onContextMenu={(e) => openFresh(client, e, () => newTabItems(client, session.id))}
             >
               +
+            </button>
+            {/* What else a new tab can be (a directory, a PR, a VM…), on a
+                click: not only behind a right-click. */}
+            <button
+              class="new-tab-more"
+              title="More kinds of tab"
+              aria-label="More kinds of tab"
+              data-new-tab-more
+              onClick={(e) => {
+                const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                openFresh(client, { clientX: r.left, clientY: r.bottom + 4, preventDefault: () => e.preventDefault() }, () => newTabItems(client, session.id));
+              }}
+            >
+              ▾
             </button>
           </div>
         </>
