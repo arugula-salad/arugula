@@ -8,6 +8,14 @@ Building, running and releasing are in [docs/development.md](docs/development.md
 tests in [docs/testing.md](docs/testing.md); contributing in
 [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## Size the work to the task
+
+Match the effort to what was asked. A question, an investigation or a one-off
+gets the smallest thing that answers it: no new tests, no pull request and no
+full `just check` unless the task asks for them. New tests are for changes to
+behaviour that ships, and then only for that behaviour, not the code around
+it. When unsure, do the small version and say what you left out.
+
 ## Crates
 
 Each has a `README.md` with where to start reading.
