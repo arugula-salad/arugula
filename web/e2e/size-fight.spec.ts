@@ -19,7 +19,7 @@ test("two windows typing in turn don't resize the pane at every turn", async ({ 
   await ready(b, pane);
   // B showed the tab last, so the size is B's; A asks for it back.
   await expect.poll(async () => (await tab(a)).owner).toBe(await me(b));
-  await a.locator(".sized-elsewhere").click();
+  await a.locator(".sized-elsewhere").getByRole("button", { name: "Use this window's size" }).click();
   await expect.poll(async () => (await tab(a)).owner).toBe(await me(a));
   const sized = await tab(a);
 
