@@ -68,6 +68,9 @@ pub struct Config {
     /// What every pane's environment gets besides its own (the port an
     /// integration listens on, say): each replaces an entry of the same name.
     pub pane_env: Vec<(String, String)>,
+    /// Names never taken from the user's login shell (#74), whether or not
+    /// `pane_env` sets them.
+    pub shell_env_skip: Vec<String>,
     /// The Claude Code conversations here (#146).
     pub sessions: Arc<dyn super::AgentSessions>,
     /// What a pane leaves behind when it closes.

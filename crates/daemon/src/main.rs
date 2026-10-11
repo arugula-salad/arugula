@@ -872,6 +872,7 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
         private,
         kinds,
         pane_env: editors::pane_env(&ide),
+        shell_env_skip: vec!["CLAUDE_CODE_SSE_PORT".into()],
         sessions: Arc::new(conversations::Sessions),
         pane_gone,
         at_exit: Some(mux::AtExit(Arc::new(labs::stop_beholds))),

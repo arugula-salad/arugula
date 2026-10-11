@@ -556,7 +556,7 @@ pub fn start(
         config
             .env(0)
             .into_iter()
-            .filter(|(k, _)| !k.starts_with("ARUGULA_") && !config.pane_env.iter().any(|(e, _)| e == k))
+            .filter(|(k, _)| !k.starts_with("ARUGULA_") && !config.shell_env_skip.contains(k))
             .collect(),
         crate::shellenv::TIMEOUT,
     );
