@@ -3,10 +3,15 @@
 # Run claims against a running profile of the test stack.
 #
 #   testnet/test.sh ssh                 every claim of the ssh profile
-#   testnet/test.sh ssh jump stdio      just those
+#   testnet/test.sh ssh jump bytes      just those
 #   BREAK=1 testnet/test.sh ssh jump    must fail
 #   testnet/test.sh ssh --break         each claim under BREAK=1; passes only
 #                                       if every one of them fails
+#   testnet/test.sh ssh --break jump    just those, under BREAK=1
+#
+# The control profile's stack has every box the ssh profile has, so the ssh
+# claims run on it too: CI brings up control once and runs `ssh`, then
+# `control`. The control claims that recreate box-bare leave it bare again.
 #
 # The ssh profile's claims, and how BREAK=1 breaks each one:
 #
@@ -15,26 +20,26 @@
 #   jump   box-bare is reached through the bastion with ProxyJump.
 #          Broken: the bastion's AllowTcpForwarding is turned off (and back
 #          on afterwards).
-#   inner  box-bare has no route out; only ssh through the bastion reaches
+#   no-route
+#          box-bare has no route out; only ssh through the bastion reaches
 #          it. Broken: the check runs on the bastion, which has one.
 #   bare   box-bare has no arugula: no binary on the login PATH, no state
 #          or config dir. Broken: a stub arugula is put in /usr/local/bin
 #          (and removed afterwards).
-#   stdio  ssh carries a binary stream both ways unchanged: 1 MiB of random
+#   bytes  ssh carries a binary stream both ways unchanged: 1 MiB of random
 #          bytes through `cat` on box-bare comes back identical. This is
 #          what S28's bridge relies on. Broken: a forced tty (-tt).
-#   agent  A key in the client's agent is usable on box-bare when the agent
-#          is forwarded through the bastion (M51's `git push`). Broken:
-#          ForwardAgent=no.
-#   push   `git push` from box-bare to the git server (a bare repository
-#          over ssh) with the client's key only in the forwarded agent
-#          (M51). Broken: ForwardAgent=no.
+#   agent  A key in the client's agent shows on box-bare when the agent is
+#          forwarded through the bastion, and `git push` from box-bare to
+#          the git server (a bare repository over ssh) works with the key
+#          only in that agent (M51). Broken: ForwardAgent=no, which fails
+#          both.
 #   linger On box-systemd, a user turns on lingering for themselves from an
 #          ssh login with no sudo (S28's lifetime question). Broken: polkit
 #          masked (and unmasked afterwards).
 #
 # The control profile's claims (they need node, the web client's packages
-# and Playwright's browsers (m52's phones), and the CLI built:
+# and Playwright's browsers (the relay claim's phones), and the CLI built:
 # `cargo build -p arugula`, or ARUGULA_CLI):
 #
 #   signin  A person signs in to control with (the fake) GitHub, from the
@@ -44,7 +49,7 @@
 #   reach   box-systemd, on the inner network with no route out, reaches
 #           control at its address there. Broken: control taken off the
 #           inner network (and put back).
-#   m52     M52 end to end: on a fresh box-systemd, `arugula --ssh
+#   relay   M52 end to end: on a fresh box-systemd, `arugula --ssh
 #           box-systemd join` installs Arugula and starts its daemon, and
 #           its code is approved by a headless device; the box is then on
 #           the account's device list and online, and with the ssh master
@@ -62,7 +67,7 @@
 #           control, with no route out) says so, naming the box, control
 #           and `arugula --ssh box tui`, and is still reachable over
 #           --ssh. Broken: it joins the stack's control, which it can reach.
-#   m49     M49 end to end: box-systemd and box-bare join the stack's
+#   cli     M49 end to end: box-systemd and box-bare join the stack's
 #           control (approved by the headless device); box-bare's daemon
 #           also listens on the inner network and lists that URL, and
 #           box-systemd lists none. On the bastion, which has the CLI and no
@@ -74,7 +79,7 @@
 #           while they run, and `attach` and `tui` (in a pty from `ssh -tt`)
 #           type into a pane, see the answer, and leave with Ctrl-]. Broken:
 #           the CLI isn't logged in, so neither name resolves.
-#   m49team Another person's machine in a team (#254): an owner signs in,
+#   team    Another person's machine in a team (#254): an owner signs in,
 #           makes a team and joins box-systemd to it; a second person, the
 #           CLI's account, asks to join and is let in. `arugula hosts` on
 #           the bastion lists box-systemd as the owner's, and `--host
@@ -95,8 +100,8 @@ PROFILE="${1:-ssh}"; shift || true
 . "$HERE/env.sh"
 CFG="$STATE/ssh_config"
 BREAK="${BREAK:-}"
-SSH_CLAIMS="login jump inner bare stdio agent push linger"
-CONTROL_CLAIMS="signin reach m52 unreachable m49 m49team"
+SSH_CLAIMS="login jump no-route bare bytes agent linger"
+CONTROL_CLAIMS="signin reach relay unreachable cli team"
 
 need_docker
 
@@ -113,8 +118,11 @@ if [ "$PROFILE" = control ]; then
 fi
 
 if [ "${1:-}" = --break ]; then
+  shift
   held=""
-  for c in $CLAIMS; do
+  claims="${*:-$CLAIMS}"
+  for c in $claims; do
+    case " $CLAIMS " in *" $c "*) ;; *) echo "unknown claim '$c' (claims: $CLAIMS)" >&2; exit 2 ;; esac
     if BREAK=1 "$0" "$PROFILE" "$c" >/dev/null 2>&1; then held="$held $c"; else echo "[testnet $PROFILE $c] caught under BREAK=1"; fi
   done
   [ -z "$held" ] || { echo "FAIL: these claims held under BREAK=1, so they can't catch what they check:$held" >&2; exit 1; }
@@ -167,7 +175,7 @@ claim_jump() {
   fi
 }
 
-claim_inner() {
+claim_no_route() {
   # A default route shows in /proc/net/route as destination 00000000.
   local box=box-bare; [ -n "$BREAK" ] && box=bastion
   ! s "$box" "awk 'NR > 1 && \$2 == \"00000000\"' /proc/net/route | grep -q ."
@@ -183,7 +191,7 @@ claim_bare() {
   return "$rc"
 }
 
-claim_stdio() {
+claim_bytes() {
   local tty="-T"; [ -n "$BREAK" ] && tty="-tt"
   head -c 1048576 /dev/urandom > "$WORK/sent"
   s "$tty" box-bare cat < "$WORK/sent" > "$WORK/back" 2>/dev/null || true
@@ -198,22 +206,27 @@ use_agent() {
   ssh-add -q "$STATE/id_ed25519"
 }
 
+# The forwarded agent: its key shows on the box, and a push from the box
+# works with the key only there. One break fails both, so they're one
+# claim. Both checks always run: under BREAK=1 the claim holds (isn't
+# caught) if either still works, so each one is shown to need the agent.
 claim_agent() {
   use_agent
-  local want fwd="-o ForwardAgent=yes"
+  local want fwd="-o ForwardAgent=yes" branch="claim-$$-$RANDOM" key=0 push=0
   want="$(ssh-keygen -lf "$STATE/id_ed25519.pub" | cut -d' ' -f2)"
   [ -n "$BREAK" ] && fwd="-o ForwardAgent=no"
   # shellcheck disable=SC2086
-  s $fwd box-bare ssh-add -l 2>/dev/null | grep -qF "$want"
-}
-
-claim_push() {
-  use_agent
-  local fwd="-o ForwardAgent=yes" branch="claim-$$-$RANDOM"
-  [ -n "$BREAK" ] && fwd="-o ForwardAgent=no"
+  s $fwd box-bare ssh-add -l 2>/dev/null | grep -qF "$want" && key=1
   # shellcheck disable=SC2086,SC2016 # options split on purpose; $(...) runs on the box
-  s $fwd box-bare 'cd "$(mktemp -d)" && git init -q && git -c user.name=illo -c user.email=illo@box-bare commit -q --allow-empty -m claim && git push -q git@git:/srv/git/repo.git HEAD:refs/heads/'"$branch" 2>/dev/null || return 1
-  docker exec "$TESTNET-git" git --git-dir=/srv/git/repo.git rev-parse -q --verify "refs/heads/$branch" >/dev/null
+  s $fwd box-bare 'cd "$(mktemp -d)" && git init -q && git -c user.name=illo -c user.email=illo@box-bare commit -q --allow-empty -m claim && git push -q git@git:/srv/git/repo.git HEAD:refs/heads/'"$branch" 2>/dev/null &&
+    docker exec "$TESTNET-git" git --git-dir=/srv/git/repo.git rev-parse -q --verify "refs/heads/$branch" >/dev/null && push=1
+  if [ -n "$BREAK" ]; then
+    [ "$key" = 1 ] || [ "$push" = 1 ]
+  else
+    [ "$key" = 1 ] || note "agent: the key isn't in box-bare's agent"
+    [ "$push" = 1 ] || note "agent: git push from box-bare didn't reach the git server"
+    [ "$key" = 1 ] && [ "$push" = 1 ]
+  fi
 }
 
 claim_linger() {
@@ -273,12 +286,12 @@ SH
   return "$rc"
 }
 
-claim_m52() {
+claim_relay() {
   local box=box-systemd fp code="" pid started ok=0
-  fresh "$box" || { note "m52: couldn't recreate $box"; return 1; }
+  fresh "$box" || { note "relay: couldn't recreate $box"; return 1; }
   if [ -n "$BREAK" ]; then docker exec "$TESTNET-$box" systemctl mask --now polkit.service >/dev/null 2>&1; fi
-  fp="$(signin "m52-$$-$RANDOM" | field fingerprint)"
-  [ -n "$fp" ] || { note "m52: no device signed in"; return 1; }
+  fp="$(signin "relay-$$-$RANDOM" | field fingerprint)"
+  [ -n "$fp" ] || { note "relay: no device signed in"; return 1; }
   # One command, as a person types it; its code shows in this terminal.
   cli --ssh "$box" join "$CONTROL_URL" --account "$fp" < /dev/null > "$WORK/join.out" 2>&1 &
   pid=$!
@@ -288,30 +301,30 @@ claim_m52() {
     kill -0 "$pid" 2>/dev/null || break
     sleep 0.5
   done
-  if [ -z "$code" ]; then note "m52: no join code"; cat "$WORK/join.out" >&2; kill "$pid" 2>/dev/null; return 1; fi
+  if [ -z "$code" ]; then note "relay: no join code"; cat "$WORK/join.out" >&2; kill "$pid" 2>/dev/null; return 1; fi
   dev approve "$code" > /dev/null || { kill "$pid" 2>/dev/null; return 1; }
-  wait "$pid" || { note "m52: join failed"; cat "$WORK/join.out" >&2; return 1; }
+  wait "$pid" || { note "relay: join failed"; cat "$WORK/join.out" >&2; return 1; }
   grep -q "Joined." "$WORK/join.out" || return 1
-  dev devices | grep -q "\"kind\":\"daemon\",\"name\":\"$box\"" || { note "m52: $box isn't on the device list"; return 1; }
+  dev devices | grep -q "\"kind\":\"daemon\",\"name\":\"$box\"" || { note "relay: $box isn't on the device list"; return 1; }
   dev online "$box" 60 > /dev/null || return 1
   # ssh is out of the picture: the CLI's master closed, the bastion paused.
   ssh -F "$CFG" -o ControlPath="$RT/arugula-ssh/%C" -O exit "$box" >/dev/null 2>&1 || true
   docker pause "$TESTNET-bastion" > /dev/null && PAUSED=1
-  dev pane "$box" "M52-RELAY-$$" 30 > /dev/null || { note "m52: no pane over the relay"; return 1; }
+  dev pane "$box" "M52-RELAY-$$" 30 > /dev/null || { note "relay: no pane over the relay"; return 1; }
   # From phones: a Pixel 7 (Chrome) and an iPhone (WebKit), signed in to
   # this control and approved by the device, type into the box's pane;
   # then it's restarted (it comes back to the relay by itself) and the
   # same phones type into it again (web/fixtures/m52-phones.ts).
   started="$(docker inspect -f '{{.State.StartedAt}}' "$TESTNET-$box")"
   node --experimental-strip-types --no-warnings "$ROOT/web/fixtures/m52-phones.ts" --state "$WORK/device.json" \
-    --box "$box" --restart "$TESTNET-$box" --marker "M52-$$" > /dev/null || { note "m52: the phones didn't reach the box's pane"; return 1; }
+    --box "$box" --restart "$TESTNET-$box" --marker "M52-$$" > /dev/null || { note "relay: the phones didn't reach the box's pane"; return 1; }
   [ "$(docker inspect -f '{{.State.StartedAt}}' "$TESTNET-$box")" != "$started" ] || return 1
   for _ in $(seq 1 45); do
     if dev pane "$box" "M52-REBOOT-$$" 10 > /dev/null 2>&1; then ok=1; break; fi
     sleep 2
   done
   docker unpause "$TESTNET-bastion" > /dev/null && PAUSED=
-  [ "$ok" = 1 ] || { note "m52: no pane over the relay after the restart"; return 1; }
+  [ "$ok" = 1 ] || { note "relay: no pane over the relay after the restart"; return 1; }
 }
 
 claim_unreachable() {
@@ -432,16 +445,16 @@ rm -f /tmp/ev.out /tmp/tail.out
 SH
 }
 
-claim_m49() {
+claim_cli() {
   local fp code pid b out pane ok
   # The bastion is the CLI's machine: on the inner network, with no daemon.
   # Leave it as it was, whatever happens.
   # shellcheck disable=SC2329,SC2317 # run by the trap below
-  m49_tidy() { s bastion 'rm -rf ~/.local/bin/arugula ~/.config/arugula' >/dev/null 2>&1 || true; }
-  m49_tidy
-  if ! fresh box-bare || ! fresh box-systemd; then note "m49: couldn't recreate the boxes"; return 1; fi
-  fp="$(signin "m49-$$-$RANDOM" | field fingerprint)"
-  [ -n "$fp" ] || { note "m49: no device signed in"; return 1; }
+  bastion_tidy() { s bastion 'rm -rf ~/.local/bin/arugula ~/.config/arugula' >/dev/null 2>&1 || true; }
+  bastion_tidy
+  if ! fresh box-bare || ! fresh box-systemd; then note "cli: couldn't recreate the boxes"; return 1; fi
+  fp="$(signin "cli-$$-$RANDOM" | field fingerprint)"
+  [ -n "$fp" ] || { note "cli: no device signed in"; return 1; }
   join_box box-systemd "$fp" || return 1
   join_box box-bare "$fp" || return 1
   # box-bare: reachable on the inner network too, and says so to control.
@@ -453,93 +466,93 @@ claim_m49() {
     dev online box-bare 2 2>/dev/null | grep -q 'box-bare:7681' && break
     sleep 1
   done
-  dev online box-bare 2 | grep -q 'box-bare:7681' || { note "m49: box-bare doesn't list its direct URL"; return 1; }
+  dev online box-bare 2 | grep -q 'box-bare:7681' || { note "cli: box-bare doesn't list its direct URL"; return 1; }
   # The CLI on the bastion, as the boxes got theirs.
-  bastion_login "$fp" skip-on-break || { m49_tidy; return 1; }
+  bastion_login "$fp" skip-on-break || { bastion_tidy; return 1; }
   ok=1
   s bastion '.local/bin/arugula hosts' > "$WORK/hosts.out" 2>&1 || ok=0
   grep -q '^box-bare .*direct http://box-bare:7681.*(control: ' "$WORK/hosts.out" || ok=0
   grep -q '^box-systemd .*relayed.*(control: ' "$WORK/hosts.out" || ok=0
-  [ "$ok" = 1 ] || { note "m49: arugula hosts on the bastion:"; cat "$WORK/hosts.out" >&2; }
+  [ "$ok" = 1 ] || { note "cli: arugula hosts on the bastion:"; cat "$WORK/hosts.out" >&2; }
   for b in box-bare:direct box-systemd:relayed; do
     local how="${b#*:}"; b="${b%%:*}"
     # shellcheck disable=SC2016 # $((...)) is for the pane's shell
-    out="$(s bastion "ARUGULA_VERBOSE=1 .local/bin/arugula --host $b --json run -- 'echo M49-$b-\$((6*7))'" 2>&1)" || { note "m49: run on $b: $out"; ok=0; continue; }
-    grep -q "$b: $how" <<< "$out" || { note "m49: $b wasn't reached $how: $out"; ok=0; }
+    out="$(s bastion "ARUGULA_VERBOSE=1 .local/bin/arugula --host $b --json run -- 'echo M49-$b-\$((6*7))'" 2>&1)" || { note "cli: run on $b: $out"; ok=0; continue; }
+    grep -q "$b: $how" <<< "$out" || { note "cli: $b wasn't reached $how: $out"; ok=0; }
     pane="$(sed -n 's/.*"pane": *\([0-9]*\).*/\1/p' <<< "$out" | head -1)"
-    [ -n "$pane" ] || { note "m49: no pane from $b: $out"; ok=0; continue; }
-    s bastion ".local/bin/arugula --host $b ls" | grep -q "^%$pane " || { note "m49: ls on $b doesn't show %$pane"; ok=0; }
+    [ -n "$pane" ] || { note "cli: no pane from $b: $out"; ok=0; continue; }
+    s bastion ".local/bin/arugula --host $b ls" | grep -q "^%$pane " || { note "cli: ls on $b doesn't show %$pane"; ok=0; }
     local seen=0
     for _ in $(seq 1 30); do
       if s bastion ".local/bin/arugula --host $b capture $pane" 2>/dev/null | grep -q "M49-$b-42"; then seen=1; break; fi
       sleep 0.5
     done
-    [ "$seen" = 1 ] || { note "m49: capture on $b never showed M49-$b-42"; ok=0; continue; }
+    [ "$seen" = 1 ] || { note "cli: capture on $b never showed M49-$b-42"; ok=0; continue; }
     # The relayed box: streams, attach and tui (#254).
     [ "$b" = box-systemd ] || continue
-    follows "$b" || { note "m49: events/tail --follow on $b:"; cat "$WORK/follow-$b.out" >&2; ok=0; }
+    follows "$b" || { note "cli: events/tail --follow on $b:"; cat "$WORK/follow-$b.out" >&2; ok=0; }
     pty_attach "$b" "$pane" || ok=0
     pty_tui "$b" || ok=0
   done
-  m49_tidy
+  bastion_tidy
   # Leave box-bare bare for the ssh profile's claims.
   fresh box-bare || true
   [ "$ok" = 1 ]
 }
 
-claim_m49team() {
+claim_team() {
   local fp ofp oacct team code ok=1 out="" pane seen=0
   # shellcheck disable=SC2329,SC2317 # run below
-  m49_tidy() { s bastion 'rm -rf ~/.local/bin/arugula ~/.config/arugula' >/dev/null 2>&1 || true; }
-  m49_tidy
-  fresh box-systemd || { note "m49team: couldn't recreate box-systemd"; return 1; }
+  bastion_tidy() { s bastion 'rm -rf ~/.local/bin/arugula ~/.config/arugula' >/dev/null 2>&1 || true; }
+  bastion_tidy
+  fresh box-systemd || { note "team: couldn't recreate box-systemd"; return 1; }
   # The owner: a team of their own, and box-systemd joined to it.
   # shellcheck disable=SC2086 # CONTROL_VIA is several words
   out="$(devs "$WORK/owner.json" signin --control "$CONTROL_URL" $CONTROL_VIA --login "owner$$")"
   ofp="$(field fingerprint <<< "$out")"; oacct="$(field account <<< "$out")"
-  [ -n "$ofp" ] || { note "m49team: the owner didn't sign in"; return 1; }
-  team="$(devs "$WORK/owner.json" team-create "m49 team" | field team)"
-  [ -n "$team" ] || { note "m49team: no team"; return 1; }
+  [ -n "$ofp" ] || { note "team: the owner didn't sign in"; return 1; }
+  team="$(devs "$WORK/owner.json" team-create "the team" | field team)"
+  [ -n "$team" ] || { note "team: no team"; return 1; }
   join_box box-systemd "$ofp" "$WORK/owner.json" "$team" || return 1
   # The CLI's person: signed in, the CLI logged in, then let into the team.
   fp="$(signin "member$$" | field fingerprint)"
-  [ -n "$fp" ] || { note "m49team: no device signed in"; return 1; }
-  bastion_login "$fp" || { m49_tidy; return 1; }
+  [ -n "$fp" ] || { note "team: no device signed in"; return 1; }
+  bastion_login "$fp" || { bastion_tidy; return 1; }
   code="$(devs "$WORK/owner.json" team-invite "$team" | field code)"
-  dev team-accept "$team" "$code" > /dev/null || { note "m49team: couldn't ask to join"; m49_tidy; return 1; }
-  devs "$WORK/owner.json" team-admit "$team" | grep -q '"admitted":1' || { note "m49team: not let in"; m49_tidy; return 1; }
+  dev team-accept "$team" "$code" > /dev/null || { note "team: couldn't ask to join"; bastion_tidy; return 1; }
+  devs "$WORK/owner.json" team-admit "$team" | grep -q '"admitted":1' || { note "team: not let in"; bastion_tidy; return 1; }
   if [ -n "$BREAK" ]; then
     # Control "changes" the owner's root after the CLI first saw it.
     s bastion "sed -i 's/^{/{\n  \"pins\": {\"$oacct\": \"0000000000000000\"},/' ~/.config/arugula/cli-control.json"
   fi
   s bastion '.local/bin/arugula hosts' > "$WORK/hosts.out" 2>&1 || ok=0
   grep -q "^box-systemd .*relayed.*(control: .*, owner$$'s)" "$WORK/hosts.out" ||
-    { note "m49team: arugula hosts doesn't list box-systemd as owner$$'s:"; cat "$WORK/hosts.out" >&2; ok=0; }
+    { note "team: arugula hosts doesn't list box-systemd as owner$$'s:"; cat "$WORK/hosts.out" >&2; ok=0; }
   # The machine's first pane (making panes stays the machine owner's). The
   # owner doesn't type in it: the first to type drives a pane.
   pane="$(devs "$WORK/owner.json" panes box-systemd | sed -n 's/.*"panes":\[\([0-9]*\).*/\1/p')"
-  [ -n "$pane" ] || { note "m49team: box-systemd has no pane"; m49_tidy; return 1; }
+  [ -n "$pane" ] || { note "team: box-systemd has no pane"; bastion_tidy; return 1; }
   # The machine's daemon takes the new member's devices when control
   # nudges it; give it a moment.
   for _ in $(seq 1 30); do
     out="$(s bastion "ARUGULA_VERBOSE=1 .local/bin/arugula --host box-systemd capture $pane" 2>&1)" && { seen=1; break; }
     sleep 1
   done
-  [ "$seen" = 1 ] || { note "m49team: capture of %$pane: $out"; m49_tidy; return 1; }
-  grep -q "box-systemd: relayed" <<< "$out" || { note "m49team: box-systemd wasn't relayed: $out"; ok=0; }
+  [ "$seen" = 1 ] || { note "team: capture of %$pane: $out"; bastion_tidy; return 1; }
+  grep -q "box-systemd: relayed" <<< "$out" || { note "team: box-systemd wasn't relayed: $out"; ok=0; }
   # A team editor types into it, and sees the answer there and in a capture.
   pty_attach box-systemd "$pane" || ok=0
   s bastion ".local/bin/arugula --host box-systemd capture $pane" 2>/dev/null | grep -q "ATTACH-box-systemd-$$-42" ||
-    { note "m49team: a capture after attach doesn't show what was typed"; ok=0; }
-  m49_tidy
+    { note "team: a capture after attach doesn't show what was typed"; ok=0; }
+  bastion_tidy
   [ "$ok" = 1 ]
 }
 
 failed=""
 for c in $claims; do
   case " $CLAIMS " in *" $c "*) ;; *) echo "unknown claim '$c' (claims: $CLAIMS)" >&2; exit 2 ;; esac
-  if "claim_$c"; then echo "[testnet $PROFILE $c] PASS${BREAK:+ (BREAK=1: not caught)}"; else echo "[testnet $PROFILE $c] FAIL${BREAK:+ (BREAK=1: caught)}"; failed="$failed $c"; fi
-  # A claim that failed with the bastion paused (m52's) left it so: every
+  if "claim_${c//-/_}"; then echo "[testnet $PROFILE $c] PASS${BREAK:+ (BREAK=1: not caught)}"; else echo "[testnet $PROFILE $c] FAIL${BREAK:+ (BREAK=1: caught)}"; failed="$failed $c"; fi
+  # A claim that failed with the bastion paused (relay's) left it so: every
   # claim after it would wait out its ssh timeouts through a dead hop.
   if [ -n "${PAUSED:-}" ]; then docker unpause "$TESTNET-bastion" >/dev/null 2>&1 || true; PAUSED=; fi
 done
