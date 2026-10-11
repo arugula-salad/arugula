@@ -15,7 +15,7 @@ import type { PresignedInvite, ShareOffer, Team } from "../control";
 import type { TeamRole } from "../e2e/team.ts";
 import { qr, qrPath } from "./qr";
 import { AccountPanel, type SessionRow } from "./account";
-import { machineState } from "./hosts";
+import { machinePlace, machineState, placeMeans } from "./hosts";
 import { ConfirmRemove } from "./confirm";
 import { canScan, Scanner } from "./scan";
 import { verifyCode, verifyWords } from "../e2e/words.ts";
@@ -1000,24 +1000,33 @@ function JoinPrompt({ s, code: whole, from, device }: { s: ControlSession; code:
             </p>
           ) : null}
           {teams.length || asked ? (
-            <p>
-              <label>
-                Join to{" "}
-                <select class="control-select" data-join-to value={to} onChange={(e) => setTo((e.target as HTMLSelectElement).value)}>
-                  <option value="">Just me</option>
-                  {teams.map((t) => (
-                    <option key={t.team} value={t.team}>
-                      {t.roster.name}
-                    </option>
-                  ))}
-                  {asked ? (
-                    <option value={asked.team}>
-                      {asked.name} ({locked ? "locked" : "you're not in it"})
-                    </option>
-                  ) : null}
-                </select>
-              </label>
-            </p>
+            <>
+              {/* #778: someone already in a team, before they pick: what each
+                  place means, and the way to work with several teams. */}
+              <p class="dim" data-join-place>
+                A machine is in one place: <b>Just me</b> (only your devices see its panes, and the sessions you share) or one team (everyone in it sees
+                them, and the team's owners count as its owners too). To work with more than one team, pick Just me, then share a session with each team
+                (<i>Share</i>, beside the session's name).
+              </p>
+              <p>
+                <label>
+                  Join to{" "}
+                  <select class="control-select" data-join-to value={to} onChange={(e) => setTo((e.target as HTMLSelectElement).value)}>
+                    <option value="">Just me</option>
+                    {teams.map((t) => (
+                      <option key={t.team} value={t.team}>
+                        {t.roster.name}
+                      </option>
+                    ))}
+                    {asked ? (
+                      <option value={asked.team}>
+                        {asked.name} ({locked ? "locked" : "you're not in it"})
+                      </option>
+                    ) : null}
+                  </select>
+                </label>
+              </p>
+            </>
           ) : null}
           {cant ? (
             <p class="control-error" data-join-not-member>
@@ -1029,7 +1038,7 @@ function JoinPrompt({ s, code: whole, from, device }: { s: ControlSession; code:
             <p class="dim" data-join-grants>
               {team
                 ? `Everyone in ${team.roster.name} sees it and reaches it by their role: owners and editors drive its terminals, viewers watch. Its owners also see private panes, and can take it out of the team. It stays yours.`
-                : "Only your devices reach it, and they can drive its terminals."}{" "}
+                : "Only your devices reach it, and they can drive its terminals. You're its only owner."}{" "}
               Control relays the connection but can't read it.
             </p>
           )}
@@ -1584,6 +1593,9 @@ function MoveMachine({ s, c, team, online }: { s: ControlSession; c: Cert; team:
           {to
             ? `Everyone in ${name(to)} sees ${c.name} and reaches it by their role${team ? `, and ${name(team)}'s members lose it` : ""}; its owners also see private panes. It stays yours, and you can take it out again.`
             : `${name(team)}'s members lose ${c.name} at once; only your devices reach it.`}
+          {/* #778: a machine is in one team at a time; sharing reaches the
+              other team without taking it from this one. */}
+          {to && team ? ` To work with both, keep it in ${name(team)} and share a session with ${name(to)} instead (Share, beside the session's name).` : ""}
           {online ? " " : " It's offline, so it moves when it next connects. "}
           <button
             class="primary"
@@ -1796,13 +1808,6 @@ function Devices({ s, close }: { s: ControlSession; close: () => void }) {
             <li key={c.device} data-device={c.device}>
               <span>
                 {c.name}
-                {/* The team's name is in "In" below, when there are teams to
-                    pick from: once is enough. */}
-                {team && !s.teams.length ? (
-                  <span class="control-badge" data-team-badge>
-                    {team}
-                  </span>
-                ) : null}
                 <span class="dim" data-status>
                   {" · "}
                   {d ? machineState(d.name) : "offline"}
@@ -1811,6 +1816,11 @@ function Devices({ s, close }: { s: ControlSession; close: () => void }) {
                 <DeviceLabel s={s} c={c} kind={false} />
               </span>
               {remove(c)}
+              {/* #778: its place and what that means, before a join or a
+                  share elsewhere runs into it. */}
+              <p class="dim control-explain" data-place={team ?? ""}>
+                <b>{machinePlace(team)}</b>: {placeMeans(team)}
+              </p>
               <MoveMachine s={s} c={c} team={d?.team ?? null} online={!!d?.online} />
             </li>
           );

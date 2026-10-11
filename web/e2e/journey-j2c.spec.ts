@@ -1,7 +1,8 @@
 // J2c (#551): the evening #551 audits, replayed. Sam's Mac is already in
 // a team (Arugula, with Jake and his machine geek). Riley makes a second
-// team, DLex Corp, to work with Sam, and invites him. Sam tries what the
-// screens offer to bring his machine into it: the team page's copied
+// team, DLex Corp, to work with Sam, and invites him. Sam reads where his
+// machine is in the host menu (In Arugula, and what that means, #778), then
+// tries what the screens offer to bring it into DLex Corp: the team page's copied
 // `arugulad join … --team` (on his PATH from the app since #550, but the
 // machine is already in Arugula), then *Team …* (which would take it out of
 // Arugula). What works is sharing the session with DLex Corp; Riley finds
@@ -107,6 +108,26 @@ test("J2c: #551's evening: a machine already in one team, a friend's second team
         const tab = await join(sam, invite, "DLex Corp");
         await tab.close();
       },
+    );
+
+    await step(
+      "place",
+      "Sam reads where sammac is before bringing it into DLex Corp",
+      "sam",
+      "app",
+      at(sam),
+      (p) => p.getByTitle("Hosts"),
+      async (p) => {
+        await show(p, "sammac");
+        await p.getByTitle("Hosts").click();
+        // Its place on its line, and what that means under This machine.
+        const line = await p.getByRole("menuitem", { name: /^(✓\s*)?sammac\b/ }).innerText();
+        expect(line).toContain("In Arugula");
+        const means = await p.getByRole("menuitem", { name: /^In Arugula:/ }).innerText();
+        if (!/owner/.test(means)) j.issue(`it doesn't say who counts as sammac's owner: "${means.trim()}"`);
+        await p.keyboard.press("Escape");
+      },
+      "sammac's place (Just me, or In a team) in the host menu",
     );
 
     await step(

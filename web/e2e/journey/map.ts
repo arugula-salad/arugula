@@ -96,6 +96,7 @@ const STEPS: Record<string, Record<string, string>> = {
     dlex: "team",
     "send-invite": "team",
     "sam-joins": "team",
+    place: "team",
     "team-page": "team",
     "copied-join": "team",
     "try-move": "team",
