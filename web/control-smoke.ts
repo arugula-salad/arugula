@@ -416,10 +416,10 @@ try {
   check("the team upgraded", done.ok && (await me.api<{ teams: { plan: string }[] }>("/api/billing")).teams[0].plan === "team");
   // A second person joins (by an invite they accept): the seats follow
   // the roster.
-  const invite = await me.api<{ code: string }>(`/api/teams/${team}/invites`, { role: "editor" });
+  const invite = await me.invite(team, "editor");
   const them = await Device.signIn({ control: base, login: "colleague", name: "their laptop" });
   const theirs = them.keys;
-  await them.api(`/api/invites/${team}/${invite.code}/accept`, {});
+  await them.acceptInvite(team, invite);
   const v2 = await signRoster(
     { ...v1, version: 2, at: Date.now(), members: [...v1.members, { account: them.account, root: theirs.id, role: "editor", name: "colleague" }] },
     laptop,

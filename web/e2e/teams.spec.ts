@@ -691,7 +691,7 @@ test("someone whose key changed since the first share: sharing stops and says so
   await alice.getByRole("button", { name: "Share session" }).click();
   const dialog = alice.locator(`[data-share="${session}"]`);
   await dialog.getByLabel("Who").fill("erin");
-  await dialog.getByLabel("Role").selectOption("editor");
+  await dialog.getByLabel("Role", { exact: true }).selectOption("editor");
   await dialog.getByRole("button", { name: "Share", exact: true }).click();
   const warning = dialog.locator(`[data-key-changed="${who.account}"]`);
   await expect(warning).toContainText("@erin's account key changed since you first shared with them.");
