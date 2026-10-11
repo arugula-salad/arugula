@@ -147,7 +147,8 @@ pub struct Enroll {
 }
 
 /// A browser or CLI asks to join the account. The first device is
-/// self-signed and trusted on first use; later ones wait for an approval.
+/// self-signed and trusted on first use; later ones wait for an approval,
+/// unless they come already signed by a device the account trusts.
 pub async fn enroll(
     State(app): State<Arc<App>>,
     s: Session,
@@ -191,6 +192,19 @@ pub async fn enroll(
             let new = app.db.device(&s.account, &c.device)?.is_none();
             if new {
                 app.limits.check_account(crate::limit::ENROLLS, &s.account)?;
+            }
+            // Already signed by one of the account's devices (#758: the
+            // browser that allowed the desktop app's sign-in signed the
+            // app's certificate there): approved now, with no prompt. One
+            // that doesn't check out waits for an approval like any other.
+            if !c.approver.is_empty()
+                && c.approver != c.device
+                && c.check_form().is_ok()
+                && approval_ok(&app, &s.account, &c, "enroll").is_ok()
+            {
+                app.db.put_device(&c, true, now_ms())?;
+                nudge(&app, &s.account);
+                return Ok(Json(json!({ "approved": true, "cert": c, "root": root })));
             }
             app.db.put_device(&Cert { approver: String::new(), sig: String::new(), ..c.clone() }, false, now_ms())?;
             app.db.set_device_join(&s.account, &c.device, join.as_deref())?;

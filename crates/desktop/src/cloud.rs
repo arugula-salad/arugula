@@ -11,10 +11,16 @@
 //! hands a one-time grant to that port (so only the app on the computer
 //! the browser runs on hears it), and the window opens control's page with
 //! the grant and the verifier, which signs the window in (control's
-//! `app_login.rs`).
-//! The window is then a new device, which a trusted device approves on
-//! control's page as any browser is. All of that is control's page's own
-//! code; this module only routes the window and runs the ticket.
+//! `app_login.rs`). Nothing to compare: the loopback is the check (#758).
+//!
+//! The app's sign-in page also makes the window's device keys and sends
+//! their public half with the ask. A browser that's one of the account's
+//! devices signs the app's certificate when it allows the sign-in, and hands
+//! it over with the grant; the window then takes the keys and the
+//! certificate, and is a device at once. Without a certificate it's a new
+//! device, which a trusted device approves on control's page as any browser
+//! is. All of that is control's page's own code; this module only routes
+//! the window and runs the ticket.
 //!
 //! #326: the machine's join comes first, and is its own approval (a code,
 //! approved on a device the person uses, where the team is picked). A
@@ -329,15 +335,44 @@ pub fn cloud_status() -> Status {
 
 #[derive(serde::Serialize)]
 pub struct Started {
-    code: String,
+    /// A control from before #758 still has the person compare a code.
+    code: Option<String>,
     url: String,
+}
+
+/// The window's device keys, made by the sign-in page (WebCrypto): the
+/// public halves (raw) and the private ones (PKCS#8), hex. The private
+/// halves only go to control's page in this window, in the redeem link's
+/// fragment, and only with a certificate for them.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Keys {
+    noise: String,
+    sign: String,
+    secret_noise: String,
+    secret_sign: String,
+}
+
+impl Keys {
+    fn ok(&self) -> bool {
+        let hex = |s: &str, n: std::ops::RangeInclusive<usize>| {
+            n.contains(&s.len())
+                && s.len().is_multiple_of(2)
+                && s.bytes().all(|c| matches!(c, b'0'..=b'9' | b'a'..=b'f'))
+        };
+        // PKCS#8 is 48 bytes, or more where an engine adds the public key.
+        hex(&self.noise, 64..=64)
+            && hex(&self.sign, 64..=64)
+            && hex(&self.secret_noise, 96..=512)
+            && hex(&self.secret_sign, 96..=512)
+    }
 }
 
 /// Start signing in: a verifier and a loopback port, a ticket from
 /// control, its page in the browser, and a listener that sends `window` to
 /// redeem it once the person's browser hands over the grant.
 #[tauri::command]
-pub async fn cloud_signin(app: AppHandle, window: tauri::WebviewWindow) -> Result<Started, String> {
+pub async fn cloud_signin(app: AppHandle, window: tauri::WebviewWindow, keys: Option<Keys>) -> Result<Started, String> {
     use sha2::{Digest, Sha256};
     let control = control().ok_or("this machine isn't joined to Arugula cloud")?;
     let mut secret = [0u8; 32];
@@ -347,6 +382,11 @@ pub async fn cloud_signin(app: AppHandle, window: tauri::WebviewWindow) -> Resul
     let listener =
         std::net::TcpListener::bind("127.0.0.1:0").map_err(|e| format!("can't listen for the sign-in: {e}"))?;
     let port = listener.local_addr().map_err(|e| e.to_string())?.port();
+    let keys = keys.filter(Keys::ok);
+    let mut ask = json!({ "name": device_name(), "challenge": challenge, "port": port, "features": ["no-code"] });
+    if let Some(k) = &keys {
+        ask["device"] = json!({ "noise": k.noise, "sign": k.sign });
+    }
     let c = control.clone();
     let t: Value = tauri::async_runtime::spawn_blocking(move || {
         let mut r = agent()
@@ -354,7 +394,7 @@ pub async fn cloud_signin(app: AppHandle, window: tauri::WebviewWindow) -> Resul
             .config()
             .http_status_as_error(false)
             .build()
-            .send_json(json!({ "name": device_name(), "challenge": challenge, "port": port }))
+            .send_json(ask)
             .map_err(|e| format!("can't reach {c}: {e}"))?;
         let ok = r.status().is_success();
         let v = r.body_mut().read_json::<Value>().map_err(|e| e.to_string())?;
@@ -366,14 +406,23 @@ pub async fn cloud_signin(app: AppHandle, window: tauri::WebviewWindow) -> Resul
     .await
     .map_err(|e| e.to_string())??;
     let get = |k: &str| t[k].as_str().map(str::to_owned).ok_or(format!("control's answer has no {k}"));
-    let (id, code, url) = (get("ticket")?, get("code")?, get("url")?);
+    let (id, url) = (get("ticket")?, get("url")?);
+    let code = t["code"].as_str().map(str::to_owned);
     if let Ok(u) = url.parse::<tauri::Url>() {
         crate::open_outside(&u);
     }
     let label = window.label().to_owned();
     std::thread::spawn(move || {
-        let Some(grant) = await_grant(&listener, &id, &control) else { return };
-        let redeem: tauri::Url = format!("{control}/#app-redeem={id}.{grant}.{verifier}").parse().unwrap();
+        let Some((grant, cert)) = await_grant(&listener, &id, &control) else { return };
+        let redeem = match (cert, &keys) {
+            // Signed by the browser that allowed it: the window takes its
+            // keys, and is a device at once.
+            (Some(cert), Some(k)) => {
+                format!("{control}/#app-redeem={id}.{grant}.{verifier}.{}.{}.{cert}", k.secret_noise, k.secret_sign)
+            }
+            _ => format!("{control}/#app-redeem={id}.{grant}.{verifier}"),
+        };
+        let redeem: tauri::Url = redeem.parse().unwrap();
         set_signed_in(&app, &control, true);
         let a = app.clone();
         let _ = app.run_on_main_thread(move || {
@@ -391,9 +440,11 @@ fn hex(b: &[u8]) -> String {
 }
 
 /// The grant for ticket `id`, when the person's browser brings it to the
-/// loopback port (`GET /arugula-signin?ticket=…&grant=…`); none if ten
-/// minutes pass. The browser goes back to control's page.
-fn await_grant(listener: &std::net::TcpListener, id: &str, control: &str) -> Option<String> {
+/// loopback port (`GET /arugula-signin?ticket=…&grant=…[&cert=…]`), and
+/// the certificate it signed for the window's keys, if it did (base64url,
+/// passed on as it is: control's page in the window checks it); none if
+/// ten minutes pass. The browser goes back to control's page.
+fn await_grant(listener: &std::net::TcpListener, id: &str, control: &str) -> Option<(String, Option<String>)> {
     use std::io::{BufRead, BufReader, Write};
     let deadline = std::time::Instant::now() + Duration::from_secs(600);
     listener.set_nonblocking(true).ok()?;
@@ -427,8 +478,13 @@ fn await_grant(listener: &std::net::TcpListener, id: &str, control: &str) -> Opt
             None => "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_owned(),
         };
         let _ = (&conn).write_all(reply.as_bytes());
-        if grant.is_some() {
-            return grant;
+        if let Some(grant) = grant {
+            let cert = param("cert").filter(|c| {
+                !c.is_empty()
+                    && c.len() <= 8192
+                    && c.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+            });
+            return Some((grant, cert));
         }
     }
     None
@@ -500,6 +556,21 @@ mod tests {
         assert!(moves(None, Some("https://control.test"), &daemon, true));
         // And on the drop, off control's page to the daemon's.
         assert!(moves(Some("https://control.test"), None, &url("https://control.test/"), false));
+    }
+
+    #[test]
+    fn the_window_keys_are_taken_only_when_they_are_hex_of_the_right_size() {
+        let k = |noise: &str, secret: &str| Keys {
+            noise: noise.into(),
+            sign: "b".repeat(64),
+            secret_noise: secret.into(),
+            secret_sign: "c".repeat(96),
+        };
+        assert!(k(&"a".repeat(64), &"d".repeat(96)).ok());
+        assert!(!k(&"a".repeat(63), &"d".repeat(96)).ok(), "a public key is 32 bytes");
+        assert!(!k(&"A".repeat(64), &"d".repeat(96)).ok(), "lowercase hex only");
+        assert!(!k(&"a".repeat(64), &"d".repeat(40)).ok(), "too short for PKCS#8");
+        assert!(!k(&"a".repeat(64), "d.e").ok(), "nothing that would break the redeem link");
     }
 
     #[test]

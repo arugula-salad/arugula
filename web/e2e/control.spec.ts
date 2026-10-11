@@ -307,9 +307,12 @@ test("a phone needs the laptop's approval", async ({ browser }) => {
   await shell(phone, "phone");
 });
 
-test("the desktop app signs in through the browser, then is approved as a device (M48)", async ({ browser }) => {
+test("an older desktop app signs in through the browser with a code, then is approved as a device (M48)", async ({ browser }) => {
   // The app keeps a verifier, listens on a loopback port for its grant,
-  // asks for a ticket, and opens its page in the person's browser.
+  // asks for a ticket, and opens its page in the person's browser. An app
+  // from before #758 sends no keys and shows a code, and so does the page;
+  // its window is then approved as a device on the prompt (the same
+  // fallback a newer app gets when Allow can't sign its keys).
   const verifier = randomBytes(32).toString("hex");
   const challenge = createHash("sha256").update(verifier).digest("hex");
   let grant = "";
@@ -383,6 +386,132 @@ test("the desktop app signs in through the browser, then is approved as a device
   const id = await app.evaluate(() => window.__arugula.control!.keys.id);
   await laptop.evaluate((d) => window.__arugula.control!.revoke(d), id);
   await expect.poll(() => connected(app), { timeout: 5_000, intervals: [200] }).toBe(false);
+  await app.context().close();
+});
+
+test("the desktop app signs in through the browser with no code, and Allow makes it a device (#758)", async ({ browser }) => {
+  // What crates/desktop/dist/signin.html makes: the window's device keys.
+  const subtle = globalThis.crypto.subtle;
+  const hexOf = (b: ArrayBuffer) => Buffer.from(b).toString("hex");
+  const noise = (await subtle.generateKey({ name: "X25519" }, true, ["deriveBits"])) as CryptoKeyPair;
+  const sign = (await subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"])) as CryptoKeyPair;
+  const keys = {
+    noise: hexOf(await subtle.exportKey("raw", noise.publicKey)),
+    sign: hexOf(await subtle.exportKey("raw", sign.publicKey)),
+    secretNoise: hexOf(await subtle.exportKey("pkcs8", noise.privateKey)),
+    secretSign: hexOf(await subtle.exportKey("pkcs8", sign.privateKey)),
+  };
+  const verifier = randomBytes(32).toString("hex");
+  const challenge = createHash("sha256").update(verifier).digest("hex");
+  let grant = "";
+  let cert = "";
+  const loop = createServer((req, res) => {
+    const u = new URL(req.url!, "http://127.0.0.1");
+    if (u.pathname === "/arugula-signin") {
+      grant = u.searchParams.get("grant") ?? "";
+      cert = u.searchParams.get("cert") ?? "";
+    }
+    res.writeHead(303, { location: `${base}/#app-done` }).end();
+  });
+  await new Promise<void>((r) => loop.listen(0, "127.0.0.1", r));
+  const port = (loop.address() as { port: number }).port;
+  const ask = await fetch(`${base}/auth/app`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: "Arugula app on test-air", challenge, port, features: ["no-code"], device: { noise: keys.noise, sign: keys.sign } }),
+  });
+  expect(ask.status).toBe(200);
+  const t = (await ask.json()) as { ticket: string; code?: string; url: string };
+  expect(t.code).toBeUndefined();
+
+  // The browser (a device) shows no code, and says Allow makes it a device.
+  await laptop.goto(t.url);
+  await expect(laptop.locator("[data-app-login-name]")).toHaveText("Arugula app on test-air");
+  await expect(laptop.locator("[data-app-login-code]")).toHaveCount(0);
+  await expect(laptop.locator("[data-app-login-device]")).toBeVisible();
+  await laptop.locator("[data-app-login-allow]").click();
+  await expect(laptop.locator("[data-app-login-done]")).toContainText("one of your devices now");
+  loop.close();
+  expect(grant).toMatch(/^[0-9a-f]{64}$/);
+  // The certificate went to the app, not to control: signed by the laptop,
+  // for the app's keys, with the root the laptop pinned.
+  const handed = JSON.parse(Buffer.from(cert, "base64url").toString()) as { cert: { noise: string; sign: string; approver: string }; root: string };
+  expect(handed.cert.noise).toBe(keys.noise);
+  expect(handed.cert.sign).toBe(keys.sign);
+  const laptopId = await laptop.evaluate(() => window.__arugula.control!.keys.id);
+  expect(handed.cert.approver).toBe(laptopId);
+
+  // The app's window takes its keys and the certificate: a device at once,
+  // with no "Approve this app as a device" screen.
+  const app = await (await browser.newContext()).newPage();
+  await app.addInitScript(() => Object.assign(window, { __arugulaApp: { name: "Arugula app on test-air" } }));
+  await app.goto(`${base}/#app-redeem=${t.ticket}.${grant}.${verifier}.${keys.secretNoise}.${keys.secretSign}.${cert}`);
+  await expect.poll(() => hostNames(app), { timeout: 20_000 }).toEqual(["box", "mac"]);
+  await expect(app.getByText("Approve this app as a device")).toHaveCount(0);
+  expect(await app.evaluate(() => window.__arugula.control!.keys.signPub)).toBe(keys.sign);
+  await showHost(app, "mac");
+  await shell(app, "air");
+  const id = await app.evaluate(() => window.__arugula.control!.keys.id);
+  await laptop.evaluate((d) => window.__arugula.control!.revoke(d), id);
+  await app.context().close();
+});
+
+test("a desktop app's keys swapped by control aren't signed for anyone else: the app asks to be approved (#758)", async ({ browser }) => {
+  // The certificate the browser hands over is for the keys control showed
+  // it; the app's window checks them against its own and, if they differ,
+  // asks to be approved like any new device.
+  const subtle = globalThis.crypto.subtle;
+  const hexOf = (b: ArrayBuffer) => Buffer.from(b).toString("hex");
+  const pair = async () => {
+    const noise = (await subtle.generateKey({ name: "X25519" }, true, ["deriveBits"])) as CryptoKeyPair;
+    const sign = (await subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"])) as CryptoKeyPair;
+    return {
+      noise: hexOf(await subtle.exportKey("raw", noise.publicKey)),
+      sign: hexOf(await subtle.exportKey("raw", sign.publicKey)),
+      secretNoise: hexOf(await subtle.exportKey("pkcs8", noise.privateKey)),
+      secretSign: hexOf(await subtle.exportKey("pkcs8", sign.privateKey)),
+    };
+  };
+  const [mine, shown] = [await pair(), await pair()];
+  const verifier = randomBytes(32).toString("hex");
+  const challenge = createHash("sha256").update(verifier).digest("hex");
+  let grant = "";
+  let cert = "";
+  const loop = createServer((req, res) => {
+    const u = new URL(req.url!, "http://127.0.0.1");
+    if (u.pathname === "/arugula-signin") {
+      grant = u.searchParams.get("grant") ?? "";
+      cert = u.searchParams.get("cert") ?? "";
+    }
+    res.writeHead(303, { location: `${base}/#app-done` }).end();
+  });
+  await new Promise<void>((r) => loop.listen(0, "127.0.0.1", r));
+  const port = (loop.address() as { port: number }).port;
+  // As if control had put other keys in the ticket than the app sent.
+  const ask = await fetch(`${base}/auth/app`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: "Arugula app on test-swap", challenge, port, features: ["no-code"], device: { noise: shown.noise, sign: shown.sign } }),
+  });
+  const t = (await ask.json()) as { ticket: string; url: string };
+  await laptop.goto(t.url);
+  await laptop.locator("[data-app-login-allow]").click();
+  await expect(laptop.locator("[data-app-login-done]")).toBeVisible();
+  loop.close();
+  expect(cert).not.toBe("");
+
+  const app = await (await browser.newContext()).newPage();
+  await app.addInitScript(() => Object.assign(window, { __arugulaApp: { name: "Arugula app on test-swap" } }));
+  await app.goto(`${base}/#app-redeem=${t.ticket}.${grant}.${verifier}.${mine.secretNoise}.${mine.secretSign}.${cert}`);
+  await expect(app.getByText("Approve this app as a device")).toBeVisible({ timeout: 20_000 });
+  expect(await app.evaluate(() => window.__arugula.control!.keys.signPub)).not.toBe(shown.sign);
+  // Nothing was enrolled for the keys control showed.
+  const devices = await laptop.evaluate(() => [...window.__arugula.control!.trusted.values()].map((c) => c.sign));
+  expect(devices).not.toContain(shown.sign);
+  const fp = await app.locator("[data-fingerprint]").getAttribute("data-fingerprint");
+  await laptop.goto(base);
+  await expect(laptop.locator(`[data-pending="${fp}"]`)).toBeVisible({ timeout: 20_000 });
+  await laptop.locator("[data-reject]").click().catch(() => {});
   await app.context().close();
 });
 

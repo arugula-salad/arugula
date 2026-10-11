@@ -314,25 +314,15 @@ export async function firstRunMac(j: Journey, actor: string, control: string) {
 
   await step("joined", "The app says the machine is in", "app", shows(APP, /^Joined to your account|THIS WINDOW, EVERY MACHINE/i), async () => {});
 
-  let appCode = "";
+  // #758: no code to read or compare, and Allow makes the app a device.
   await step("app-signin", "Sign the app in, so its window reaches the account", "app", shows(APP, /^Sign the app in/), async () => {
     press(APP, "AXButton", /^Sign the app in/);
-    await until("the app's code", () => (appCode = read(APP, /\b[A-Z0-9]{4}-[A-Z0-9]{4}\b/, /Check your browser shows/)) || null);
+    await until("the app waiting for the browser", () => (/Allow it in your browser/.test(screen(APP)) ? true : null));
   });
 
-  await step("allow-app", "Allow the app in Safari, checking its code", "browser", shows(SAFARI, /^Sign in the app\?/), async () => {
-    const shows = screen(SAFARI).toLowerCase().includes(appCode);
-    j.compared(`app sign-in code ${appCode} (app) shown in Safari: ${shows}`);
-    if (!shows) throw new Error(`Safari doesn't show ${appCode}`);
+  await step("allow-app", "Allow the app in Safari", "browser", shows(SAFARI, /^Sign in the app\?/), async () => {
     press(SAFARI, "AXButton", /^Allow$/);
-  });
-
-  await step("approve-app", "Approve the app as a device, checking its fingerprint", "browser", shows(SAFARI, /^New device\?/), async () => {
-    const appFp = await until("the app's fingerprint", () => read(APP, FP, /fingerprint/) || null);
-    const shown = read(SAFARI, FP, /shows this fingerprint/);
-    j.compared(`app device ${appFp} (app) = ${shown} (Safari)`);
-    if (shown !== appFp) throw new Error(`Safari shows ${shown}, the app ${appFp}`);
-    press(SAFARI, "AXButton", /^Approve$/);
+    await until("Safari saying the app is a device", () => (/one of your devices now/.test(screen(SAFARI)) ? true : null));
   });
 
   await step("terminal", "Run a command in a terminal on the machine", "app", shows(APP, /relayed|direct/), async () => {

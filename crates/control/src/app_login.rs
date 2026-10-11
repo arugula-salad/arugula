@@ -5,27 +5,39 @@
 //! person signs in where they always do, in their browser, and hands the
 //! session to the app. The hand-over is bound to the app that asked, as
 //! OAuth does for native apps (RFC 8252 with PKCE): a link someone else
-//! started can't sign their app in as you, and a link to redeem can't sign
-//! your browser in as them.
+//! started can't sign their app in as you, because their app isn't
+//! listening on your computer, and a link to redeem can't sign your browser
+//! in as them. So there's no code to compare (#758).
 //!
 //! 1. The app makes a verifier it keeps, listens on a loopback port, and
-//!    asks for a ticket: `POST /auth/app {name, challenge, port}`
-//!    (`challenge` is the verifier's SHA-256, hex). It gets an id, a short
-//!    code, and the page to open (`/#app=<id>`).
+//!    asks for a ticket: `POST /auth/app {name, challenge, port, features,
+//!    device}` (`challenge` is the verifier's SHA-256, hex; `device` is the
+//!    public half of the device keys it made, `{noise, sign}`, hex). It
+//!    gets an id and the page to open (`/#app=<id>`).
 //! 2. In the browser, signed in, control's page shows "Sign in the
-//!    Arugula app on <name>?" with the code and where the request came
-//!    from (`GET /api/app-login/{id}`). Allow (`POST …/allow`) binds the
+//!    app?" with the app's name and where the request came from
+//!    (`GET /api/app-login/{id}`). Allow (`POST …/allow`) binds the
 //!    ticket to the account and answers with a one-time grant, which the
 //!    page hands to `http://127.0.0.1:<port>/arugula-signin`: only the
-//!    app on this computer hears it.
-//! 3. The app's webview opens control's page with `#app-redeem=<id>.<grant>.<verifier>`,
-//!    which posts them to `POST /auth/app/{id}/redeem` (from control's own
-//!    origin, as JSON) and gets the session cookie there.
+//!    app on this computer hears it. A browser that's one of the account's
+//!    devices also signs a certificate for the app's keys and hands it over
+//!    the same way (`&cert=`), with the account root it pinned.
+//! 3. The app's webview opens control's page with
+//!    `#app-redeem=<id>.<grant>.<verifier>[.<noise key>.<sign key>.<cert>]`,
+//!    which posts the first three to `POST /auth/app/{id}/redeem` (from
+//!    control's own origin, as JSON) and gets the session cookie there. With
+//!    a certificate, it takes the keys as its own and enrolls with it, so
+//!    it's a device at once; without one, it's a new device that a trusted
+//!    device approves, as any browser is.
+//!
+//! The certificate never passes through control before the app has it: if
+//! control showed the browser keys of its own, the app finds the certificate
+//! isn't for its keys and asks to be approved instead. An app from before
+//! #758 sends no `features`: it gets a code to show, and the page shows it
+//! too, as before.
 //!
 //! Tickets are single-use, live ten minutes, and are kept in memory (a
-//! restart only cancels sign-ins in progress). The session alone reaches
-//! no machine: the app is then a new device that a trusted device approves,
-//! as any browser is.
+//! restart only cancels sign-ins in progress).
 
 use std::{
     collections::HashMap,
@@ -68,6 +80,10 @@ struct Ticket {
     account: Option<String>,
     /// Hash of the grant the browser handed the app, once allowed.
     grant: Option<String>,
+    /// An app from before #758 shows a code, and the page does too.
+    code: bool,
+    /// The public half of the app's device keys (noise, sign), hex.
+    device: Option<(String, String)>,
 }
 
 #[derive(Default)]
@@ -82,25 +98,15 @@ impl Tickets {
         map.retain(|_, t| now.saturating_sub(t.created_ms) < TTL_MS);
     }
 
-    fn create(&self, name: &str, challenge: &str, port: u16, from: std::net::IpAddr, now: u64) -> Option<String> {
+    fn create(&self, t: Ticket) -> Option<String> {
+        let now = t.created_ms;
         let mut map = self.0.lock().unwrap();
         Self::sweep(&mut map, now);
         if map.len() >= MAX_OPEN {
             return None;
         }
         let id = token();
-        map.insert(
-            id.clone(),
-            Ticket {
-                challenge: challenge.to_owned(),
-                port,
-                name: name.to_owned(),
-                from,
-                created_ms: now,
-                account: None,
-                grant: None,
-            },
-        );
+        map.insert(id.clone(), t);
         Some(id)
     }
 
@@ -140,7 +146,8 @@ impl Tickets {
     }
 }
 
-/// What both screens show, to check they're the same sign-in.
+/// What both screens show to an app from before #758, to check they're
+/// the same sign-in.
 pub fn code(id: &str) -> String {
     const ALPHABET: &[u8] = b"ABCDEFGHJKMNPQRSTVWXYZ0123456789";
     let h = hash(&format!("arugula app login\n{id}\n"));
@@ -172,6 +179,19 @@ pub struct Ask {
     /// The loopback port the app hears its grant on.
     #[serde(default)]
     port: Option<u16>,
+    /// What the app does: `no-code` (#758) shows no code.
+    #[serde(default)]
+    features: Vec<String>,
+    /// The public half of the app's device keys, for the browser that
+    /// allows it to sign (#758).
+    #[serde(default)]
+    device: Option<AskDevice>,
+}
+
+#[derive(Deserialize)]
+pub struct AskDevice {
+    noise: String,
+    sign: String,
 }
 
 /// `POST /auth/app`: a ticket for an app that wants a session.
@@ -193,23 +213,39 @@ pub async fn ask(
     if name.is_empty() {
         return Err(err(StatusCode::BAD_REQUEST, "the app's name is empty"));
     }
+    let show_code = !b.features.iter().any(|f| f == "no-code");
+    let device = b.device.filter(|d| hex64(&d.noise) && hex64(&d.sign)).map(|d| (d.noise, d.sign));
+    let ticket = Ticket {
+        challenge,
+        port,
+        name,
+        from: ip,
+        created_ms: now_ms(),
+        account: None,
+        grant: None,
+        code: show_code,
+        device,
+    };
     let id = app
         .app_logins
-        .create(&name, &challenge, port, ip, now_ms())
+        .create(ticket)
         .ok_or_else(|| err(StatusCode::SERVICE_UNAVAILABLE, "too many sign-ins waiting; try again in a few minutes"))?;
-    Ok(Json(json!({
+    let mut answer = json!({
         "ticket": id,
-        "code": code(&id),
         // The site the app asked on (#507): the browser that approves
         // signs in there.
         "url": format!("{}/#app={id}", app.cfg.site(&headers).url),
         "expires_in_secs": TTL_MS / 1000,
-    })))
+    });
+    if show_code {
+        answer["code"] = json!(code(&id));
+    }
+    Ok(Json(answer))
 }
 
 /// `GET /api/app-login/{id}`: what the signed-in page asks about: the
-/// app's name and code, where it asked from, and whether that's where
-/// this browser is.
+/// app's name, its device keys (to sign), where it asked from, and whether
+/// that's where this browser is. An app from before #758 has a code.
 pub async fn show(
     State(app): State<Arc<App>>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
@@ -223,10 +259,17 @@ pub async fn show(
         .ok_or_else(|| err(StatusCode::NOT_FOUND, "that sign-in expired; start it again in the app"))?;
     let here = app.limits.client_ip(peer, &headers);
     let same = crate::limit::bucket(here) == crate::limit::bucket(t.from);
-    Ok(Json(json!({
-        "name": t.name, "code": code(&id), "allowed": t.account.is_some(),
+    let mut answer = json!({
+        "name": t.name, "allowed": t.account.is_some(),
         "from": t.from.to_string(), "same_network": same,
-    })))
+    });
+    if t.code {
+        answer["code"] = json!(code(&id));
+    }
+    if let Some((noise, sign)) = t.device {
+        answer["device"] = json!({ "noise": noise, "sign": sign });
+    }
+    Ok(Json(answer))
 }
 
 /// `POST /api/app-login/{id}/allow`: this account, for that app. The
@@ -273,11 +316,25 @@ mod tests {
 
     const HERE: std::net::IpAddr = std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST);
 
+    fn ticket(challenge: &str, port: u16, now: u64) -> Ticket {
+        Ticket {
+            challenge: challenge.to_owned(),
+            port,
+            name: "Arugula app on jake-air".into(),
+            from: HERE,
+            created_ms: now,
+            account: None,
+            grant: None,
+            code: false,
+            device: None,
+        }
+    }
+
     #[test]
     fn a_ticket_is_allowed_once_and_redeemed_once_by_the_app_that_asked() {
         let t = Tickets::default();
         let verifier = "v".repeat(43);
-        let id = t.create("Arugula app on jake-air", &sha256_hex(&verifier), 50123, HERE, 1000).unwrap();
+        let id = t.create(ticket(&sha256_hex(&verifier), 50123, 1000)).unwrap();
         assert_eq!(t.redeem(&id, "", &verifier, 1001), None, "not before it's allowed");
         let (grant, port) = t.allow(&id, "acct", 1002).unwrap();
         assert_eq!(port, 50123);
@@ -291,7 +348,7 @@ mod tests {
     #[test]
     fn tickets_expire() {
         let t = Tickets::default();
-        let id = t.create("app", &sha256_hex("v"), 50000, HERE, 0).unwrap();
+        let id = t.create(ticket(&sha256_hex("v"), 50000, 0)).unwrap();
         assert!(t.allow(&id, "acct", TTL_MS + 1).is_none());
     }
 

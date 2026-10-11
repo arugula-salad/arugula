@@ -247,7 +247,9 @@ would pass. So the daemon doesn't take the root on control's word:
     later device takes the account's root from control. A browser approved
     by your other device checks its own certificate chains to that root, but
     a control that lied at that moment would have to keep lying to it;
-    compare *Devices and machines…* across two devices to check;
+    compare *Devices and machines…* across two devices to check (the
+    desktop app signed in from a device takes that device's root instead:
+    [below](#signing-in-the-desktop-app-one-allow));
   - a machine joined before 0.17.0 pinned whatever root control sent then.
     Its *Devices and machines…* fingerprint and `control.json`'s
     `trust.root` should be the same; if not, `arugulad leave` and join
@@ -260,6 +262,47 @@ would pass. So the daemon doesn't take the root on control's word:
 - **Older daemons** (0.16.0 and before) join as they did, pinning without a
   check; control's API is unchanged, so they keep working with a newer
   control, and a new daemon works with an older control.
+
+### Signing in the desktop app: one Allow
+
+The desktop app's window signs in through the person's browser
+(`crates/control/src/app_login.rs`), and since #758 nothing is compared:
+
+- **No code.** The browser hands the one-time grant to
+  `http://127.0.0.1:<port>`, the app's loopback port on the computer the
+  browser runs on, and redeeming it takes the verifier only the app holds
+  (PKCE). A link someone else started can't sign their app in as you: their
+  app isn't listening on your computer. The page still warns when the app
+  asked from another network than the browser's.
+- **Allow makes the app a device.** The app's own sign-in page (served by
+  the app, not control) makes the window's device keys and sends their
+  public half with the ask. Control shows them to the browser, and a
+  browser that's one of the account's devices signs a certificate for them
+  when the person presses Allow. The certificate and the root that browser
+  pinned go with the grant to the loopback port, never through control.
+  The app hands the keys (PKCS#8, in the redeem link's fragment) and the
+  certificate to control's page in its window, which takes the keys as its
+  own, checks the certificate is for them, enrolls with it (control accepts
+  a certificate already signed by a trusted device), and pins the root the
+  browser had rather than control's word for it.
+- **If control lied about the keys,** the browser signed keys the app
+  doesn't hold, and only the app saw that certificate: the window finds it
+  isn't for its keys, and asks to be approved like any new browser. Control
+  gets nothing it can use.
+- **Falls back to an approval** when there's no certificate: the app
+  couldn't make keys (a webview without WebCrypto's X25519 or Ed25519), or
+  the browser couldn't sign. The window then makes its own keys and waits
+  for a device to approve it, with the fingerprint, as before.
+- **What this rests on:** control's page in the browser, which signs, and
+  in the app's window, which takes the keys: the same page the
+  [last row below](#what-holds-against-control) already trusts. The
+  private keys leave WebCrypto once, from the app's sign-in page to the
+  window's, through the app (in memory) and a URL fragment the page clears
+  at once; they're stored as any browser's are from then on.
+- **Older apps and controls:** an app from before #758 sends no keys and
+  no `features: ["no-code"]`, so control gives it a code and the page shows
+  it, as before. A newer app on an older control gets a code back and shows
+  it; that control's page never signs, so the window asks to be approved.
 
 ## What holds against control
 
