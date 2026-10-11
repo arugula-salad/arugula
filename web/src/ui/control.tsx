@@ -81,8 +81,10 @@ export function ControlGate({ s }: { s: ControlSession }) {
       <Center>
         <h1>This browser lost its device key</h1>
         <p data-lost-key>
-          It can't read back the key it was approved with (<b>{s.enrollment?.cert.name ?? "this browser"}</b>, {fingerprint(s.enrollment?.cert.device ?? "")}), so it can't approve machines or reach them. Some versions of Safari lose keys this way.
+          It can't read back the key it was approved with (<b>{s.enrollment?.cert.name ?? "this browser"}</b>
+          {s.enrollment ? `, added ${addedAt(s.enrollment.cert.created)}` : ""}), so it can't approve machines or reach them. Some versions of Safari lose keys this way.
         </p>
+        {s.enrollment ? <DeviceDetails s={s} c={s.enrollment.cert} /> : null}
         <p>
           Enroll it again as a new device: another of your devices approves it, or a recovery code does. The old entry stays in <i>Devices and machines</i>.
         </p>
@@ -100,9 +102,10 @@ export function ControlGate({ s }: { s: ControlSession }) {
       <Center>
         <h1>This browser isn't trusted any more</h1>
         <p data-untrusted={s.untrustedWhy}>
-          Your account {s.untrustedWhy === "removed" ? "removed this browser" : "no longer trusts this browser"} (<b>{s.enrollment?.cert.name ?? "this browser"}</b>,{" "}
-          {fingerprint(s.keys.id)}), so it can't approve machines or devices, or reach your machines.
+          Your account {s.untrustedWhy === "removed" ? "removed this browser" : "no longer trusts this browser"} (<b>{s.enrollment?.cert.name ?? "this browser"}</b>
+          {s.enrollment ? `, added ${addedAt(s.enrollment.cert.created)}` : ""}), so it can't approve machines or devices, or reach your machines.
         </p>
+        {s.enrollment ? <DeviceDetails s={s} c={s.enrollment.cert} /> : null}
         <p>
           Forget it here and enroll it again as a new device. Another of your devices approves it, or a recovery code does: the next screen asks for one.
         </p>
@@ -1204,8 +1207,44 @@ function SignedIn({ sessions, end }: { sessions: SessionRow[] | null; end: (id: 
   );
 }
 
-/** When a device was added and which device approved it (#327): a
- * row's tooltip, since it matters least of what a row says. */
+/** When a device was added, to the minute: with the last use beside it,
+ * what tells apart two devices of the same name (#759). */
+const addedAt = (ms: number) =>
+  new Date(ms).toLocaleString(undefined, { month: "short", day: "numeric", ...(new Date(ms).getFullYear() === new Date().getFullYear() ? {} : { year: "numeric" }), hour: "numeric", minute: "2-digit" });
+
+/** A device's kind, in a row's words. Machines are under their own
+ * heading, so they don't say it. */
+const kindText = (k: Cert["kind"]) => (k === "cli" ? "command line" : k === "recovery" ? "recovery code" : k === "daemon" ? "machine" : "browser or app");
+
+/** What labels a device in a row, a dialog or a banner (#759): its kind
+ * and when it was added. Its fingerprint labels it too, but nobody
+ * compares it there, so it waits behind *Details*. */
+function DeviceLabel({ s, c, kind = true }: { s: ControlSession; c: Cert; kind?: boolean }) {
+  return (
+    <span class="dim control-device-label">
+      {kind ? `${kindText(c.kind)} · ` : ""}added <span data-added={c.created}>{addedAt(c.created)}</span> <DeviceDetails s={s} c={c} />
+    </span>
+  );
+}
+
+function DeviceDetails({ s, c }: { s: ControlSession; c: Cert }) {
+  return (
+    <details class="control-details" data-details={c.device}>
+      <summary>Details</summary>
+      <span class="control-details-body">
+        <span>
+          Fingerprint <span class="fingerprint-inline">{fingerprint(c.device)}</span>
+        </span>
+        {/* Who approved it, while the account still trusts it: a banner's
+            device may be one it doesn't. */}
+        {s.trusted.has(c.device) ? <span>{approvedText(s, c)}</span> : null}
+      </span>
+    </details>
+  );
+}
+
+/** When a device was added and which device approved it (#327), in its
+ * row's *Details*. */
 function approvedText(s: ControlSession, c: Cert): string {
   if (c.approver === c.device) return `Added ${since(c.created)}, the account's first device`;
   const by = s.trusted.get(c.approver);
@@ -1290,7 +1329,7 @@ function Devices({ s, close }: { s: ControlSession; close: () => void }) {
           const path = d?.name === directory.current && directory.path ? directory.path : d?.urls.length ? "direct" : "relayed";
           return (
             <li key={c.device} data-device={c.device}>
-              <span title={approvedText(s, c)}>
+              <span>
                 {c.name}
                 {/* The team's name is in "In" below, when there are teams to
                     pick from: once is enough. */}
@@ -1304,8 +1343,8 @@ function Devices({ s, close }: { s: ControlSession; close: () => void }) {
                   {d ? machineState(d.name) : "offline"}
                   {d?.online ? ` · ${path}` : ""}
                 </span>
+                <DeviceLabel s={s} c={c} kind={false} />
               </span>
-              <span class="dim">{fingerprint(c.device)}</span>
               {remove(c)}
               <MoveMachine s={s} c={c} team={d?.team ?? null} online={!!d?.online} />
             </li>
@@ -1351,7 +1390,7 @@ function Devices({ s, close }: { s: ControlSession; close: () => void }) {
           if (old && !showUnused) return null;
           return (
             <li key={c.device} data-device={c.device} class={old ? "unused" : undefined}>
-              <span title={approvedText(s, c)}>
+              <span>
                 {shownName(c.name)}
                 {c.device === s.keys.id ? <b data-this-browser> (this browser)</b> : ""}
                 <span class="dim" data-used={at ?? ""}>
@@ -1360,8 +1399,8 @@ function Devices({ s, close }: { s: ControlSession; close: () => void }) {
                 </span>
                 {old ? <span class="control-badge unused-badge">unused</span> : null}
                 <SignedIn sessions={sessions?.filter((x) => x.device === c.device) ?? null} end={endSession} />
+                <DeviceLabel s={s} c={c} />
               </span>
-              <span class="dim">{fingerprint(c.device)}</span>
               {c.device !== s.keys.id ? remove(c) : <span />}
             </li>
           );
@@ -1394,7 +1433,9 @@ function Devices({ s, close }: { s: ControlSession; close: () => void }) {
           ) : (
             <p data-remove-explain>It loses access to your machines at once. To use it again, add it as a new device: it gets a new key.</p>
           )}
-          <p class="fingerprint">{fingerprint(removing.device)}</p>
+          <div data-remove-which>
+            <b>{shownName(removing.name)}</b> <DeviceLabel s={s} c={removing} />
+          </div>
         </ConfirmRemove>
       ) : null}
       <div class="prompt-buttons">

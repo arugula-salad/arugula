@@ -2819,7 +2819,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 
 .control-devices li {
   display: grid;
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: 1fr auto;
   align-items: center;
   gap: 10px;
   padding: 6px 0;
@@ -2844,6 +2844,35 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 .control-devices li .control-explain {
   grid-column: 1 / -1;
   margin: 0;
+}
+
+/* What labels a device (#759): its kind and when it was added on a line
+   of its own, and its fingerprint behind Details. */
+.control-device-label {
+  display: block;
+  font-size: 12px;
+}
+
+.control-details {
+  display: inline;
+}
+
+.control-details > summary {
+  display: inline;
+  cursor: pointer;
+  text-decoration: underline dotted;
+}
+
+.control-details[open] {
+  display: block;
+}
+
+.control-details-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
 }
 
 /* Move to… (#100): its own row under the machine. */
