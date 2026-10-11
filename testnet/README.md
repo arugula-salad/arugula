@@ -10,13 +10,15 @@ just testnet up ssh            # build the image, make keys, start the boxes
 just testnet test ssh          # every claim
 just testnet test ssh jump     # one claim
 just testnet break ssh         # each claim under BREAK=1; all must fail
+just testnet break ssh jump    # one claim under BREAK=1
 just testnet down              # remove containers, networks and .state
 ssh -F testnet/.state/ssh_config box-bare   # or bastion, box-systemd
 
 just testnet up control        # the ssh profile, plus arugula-control and its fakes
-just testnet test control m52  # M52 end to end
-just testnet test control m49  # M49: the CLI logged in, reaching a direct and a relayed box
-just testnet test control m49team  # #254: the CLI reaching a team machine of another account
+just testnet test ssh          # the ssh claims run on control's stack too
+just testnet test control relay # M52 end to end
+just testnet test control cli  # M49: the CLI logged in, reaching a direct and a relayed box
+just testnet test control team # #254: the CLI reaching a team machine of another account
 just testnet up tailnet        # headscale and two Tailscale nodes
 just testnet measure tailnet   # S28: ssh against the tailnet path
 testnet/selfupdate.sh OLD NEW  # #391: the daemon updates itself (two `just static` builds)
@@ -126,11 +128,10 @@ means.
 |---|---|---|
 | `login` | the stack's key logs into the bastion, host key checked | a fresh key the boxes don't know |
 | `jump` | box-bare answers through the bastion with ProxyJump | the bastion's `AllowTcpForwarding` off |
-| `inner` | box-bare has no default route | checking the bastion instead |
+| `no-route` | box-bare has no default route | checking the bastion instead |
 | `bare` | no Arugula on box-bare's login PATH, no state or config dir | a stub `/usr/local/bin/arugula` |
-| `stdio` | 1 MiB of random bytes through `cat` on box-bare come back identical | a forced tty (`-tt`) |
-| `agent` | a key in the client's agent shows on box-bare when forwarded | `ForwardAgent=no` |
-| `push` | `git push` from box-bare to `git` with the key only in the forwarded agent | `ForwardAgent=no` |
+| `bytes` | 1 MiB of random bytes through `cat` on box-bare come back identical | a forced tty (`-tt`) |
+| `agent` | a key in the client's agent shows on box-bare when forwarded, and `git push` from box-bare to `git` works with the key only in the forwarded agent | `ForwardAgent=no`, which must fail both |
 | `linger` | on box-systemd, `loginctl enable-linger` works from an ssh login with no sudo | polkit masked |
 
 The `control` profile's:
@@ -139,10 +140,10 @@ The `control` profile's:
 |---|---|---|
 | `signin` | a person signs in from the host with (the fake) GitHub; their first device is trusted on enrollment | GitHub down (`fakes` stopped) |
 | `reach` | box-systemd, with no route out, reaches control at its inner address | control taken off the inner network |
-| `m52` | on a fresh box-systemd, `arugula --ssh box-systemd join` installs, starts the daemon and shows a code; the device approves it; the box is on the account's device list and online; with the ssh master closed and the bastion paused, a marker round-trips through a pane over the relay; a Pixel 7 (Chrome) and an iPhone (WebKit) signed in to control and approved by the device type a marker into the box's pane, read back by the device (`web/fixtures/m52-phones.ts`); after `docker restart` the box is back on the relay, and the same phones and the device reach the pane again | polkit masked, so no lingering: the daemon doesn't come back after the restart |
+| `relay` | M52 end to end: on a fresh box-systemd, `arugula --ssh box-systemd join` installs, starts the daemon and shows a code; the device approves it; the box is on the account's device list and online; with the ssh master closed and the bastion paused, a marker round-trips through a pane over the relay; a Pixel 7 (Chrome) and an iPhone (WebKit) signed in to control and approved by the device type a marker into the box's pane, read back by the device (`web/fixtures/m52-phones.ts`); after `docker restart` the box is back on the relay, and the same phones and the device reach the pane again | polkit masked, so no lingering: the daemon doesn't come back after the restart |
 | `unreachable` | box-bare joining the hosted control (no route out) is told it can't reach control, with `arugula --ssh box-bare tui` as the way in, and `--ssh` still works | joining the stack's control, which it can reach |
-| `m49` | box-systemd and box-bare join the stack's control (the device approves both); box-bare's daemon also listens on the inner network and lists `http://box-bare:7681`, box-systemd lists no URL. On the bastion (the CLI copied there, no daemon, so no `hosts.json`), `arugula login` shows a code and the device approves it; `arugula hosts` lists both from control, marked; `--host box-bare` (direct) and `--host box-systemd` (relayed) each `run`, `ls` and `capture`; then on box-systemd `events --follow` and `tail --follow` print while running, and `attach` and `tui`, in a pty from `ssh -tt`, type a command, see its answer and leave with Ctrl-] | the CLI isn't logged in: neither name resolves |
-| `m49team` | an owner (a second headless device) makes a team and joins box-systemd to it; the CLI's account asks to join and is let in; `arugula hosts` on the bastion lists box-systemd as the owner's, and `--host box-systemd` captures its pane and attaches to it as a team editor, relayed | the CLI pinned a different root for the owner's account first, so control's chain for it is refused |
+| `cli` | M49 end to end: box-systemd and box-bare join the stack's control (the device approves both); box-bare's daemon also listens on the inner network and lists `http://box-bare:7681`, box-systemd lists no URL. On the bastion (the CLI copied there, no daemon, so no `hosts.json`), `arugula login` shows a code and the device approves it; `arugula hosts` lists both from control, marked; `--host box-bare` (direct) and `--host box-systemd` (relayed) each `run`, `ls` and `capture`; then on box-systemd `events --follow` and `tail --follow` print while running, and `attach` and `tui`, in a pty from `ssh -tt`, type a command, see its answer and leave with Ctrl-] | the CLI isn't logged in: neither name resolves |
+| `team` | another account's machine (#254): an owner (a second headless device) makes a team and joins box-systemd to it; the CLI's account asks to join and is let in; `arugula hosts` on the bastion lists box-systemd as the owner's, and `--host box-systemd` captures its pane and attaches to it as a team editor, relayed | the CLI pinned a different root for the owner's account first, so control's chain for it is refused |
 
 ## Conventions
 
@@ -158,8 +159,10 @@ The `control` profile's:
 - Host ports are off the defaults and each can be overridden with an
   `ARUGULA_TESTNET_*_PORT` variable.
 - The scripts run on Linux and macOS (bash 3.2) and pass `shellcheck`.
-- CI (`.github/workflows/check.yml`) runs `up`, `test` and `break` for the
-  `ssh` and `control` profiles on the Linux runner; both runners run
+- CI (`.github/workflows/check.yml`) brings up the `control` profile once
+  on the Linux runner and runs `test ssh`, `test control`, `break ssh` and
+  `break control` on it: control's stack has all of ssh's boxes, and the
+  control claims that recreate box-bare leave it bare. Both runners run
   `ssh.rs` and `reboot.rs`, so both need Docker.
 
 ## Not yet

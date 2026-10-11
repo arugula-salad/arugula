@@ -1,4 +1,4 @@
-// M52 from phones (testnet/test.sh's m52 claim): a Pixel 7 in Chrome and an
+// M52 from phones (testnet/test.sh's relay claim): a Pixel 7 in Chrome and an
 // iPhone in WebKit sign in to the test stack's control as the approving
 // device's account (device.ts, kept in --state), are approved by it as new
 // devices, open the joined box's pane and type a marker into it, with ssh

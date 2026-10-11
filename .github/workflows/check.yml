@@ -191,7 +191,9 @@ jobs:
         run: just testnet down
 
   # The test stack's claims on fresh boxes, then each under BREAK=1, where
-  # it must fail.
+  # it must fail. One stack, the control profile's: it has every box the
+  # ssh profile has, so the ssh claims run on it first, and building and
+  # starting it once saves a second round.
   testnet:
     needs: [build, static]
     runs-on: arugula-amd64
@@ -203,9 +205,9 @@ jobs:
           fetch: run-debug run-static
       - run: scripts/ci-env testnet
       - run: just bootstrap
-      # m52's phones (web/fixtures/m52-phones.ts): a Pixel in Google Chrome
-      # itself, not Playwright's Chromium, and an iPhone in WebKit. geek had
-      # both, with their system libraries.
+      # The relay claim's phones (web/fixtures/m52-phones.ts): a Pixel in
+      # Google Chrome itself, not Playwright's Chromium, and an iPhone in
+      # WebKit. geek had both, with their system libraries.
       - name: Playwright's browsers
         run: just browsers
       - name: Google Chrome
@@ -215,10 +217,12 @@ jobs:
           echo "ARUGULA_TESTNET_BINARIES=$CI_RUN/x86_64-unknown-linux-musl/release" >> "$GITHUB_ENV"
           echo "ARUGULA_SSH_BINARIES=$CI_RUN/x86_64-unknown-linux-musl/release" >> "$GITHUB_ENV"
           echo "ARUGULA_CLI=$CI_RUN/debug/arugula" >> "$GITHUB_ENV"
-      - name: The ssh profile
-        run: just testnet down && just testnet up ssh && just testnet test ssh && just testnet break ssh
-      - name: The control profile (M52 end to end)
-        run: just testnet down && just testnet up control && just testnet test control && just testnet break control
+      - name: The control profile's stack
+        run: just testnet down && just testnet up control
+      - name: The claims
+        run: just testnet test ssh && just testnet test control
+      - name: The claims under BREAK=1
+        run: just testnet break ssh && just testnet break control
       - name: Take the test stack down
         if: always()
         run: just testnet down

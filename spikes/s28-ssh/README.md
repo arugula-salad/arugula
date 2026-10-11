@@ -176,7 +176,7 @@ jake-mini.
   it: that's where the user accepts the host key or types a password or 2FA
   code, in the client's terminal.
 - **No tty** (`-T`) for the bridge. A forced tty (`-tt`) mangles the stream
-  (the testnet's `stdio` claim).
+  (the testnet's `bytes` claim).
 - **ProxyJump** worked through the bastion with forwarding and the agent, at
   no measurable cost once the master is up.
 - **The user's `~/.ssh/config`** is read as usual, since we run the system

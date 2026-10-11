@@ -451,7 +451,7 @@ testnet cmd="test" profile="ssh" *claims:
     case "{{cmd}}" in
       up) testnet/up.sh {{profile}} ;;
       test) testnet/test.sh {{profile}} {{claims}} ;;
-      break) testnet/test.sh {{profile}} --break ;;
+      break) testnet/test.sh {{profile}} --break {{claims}} ;;
       measure) testnet/measure-{{profile}}.sh {{claims}} ;;
       down) testnet/down.sh ;;
       *) echo "usage: just testnet up|test|break|measure|down [profile] [claim...]" >&2; exit 2 ;;
