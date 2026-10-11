@@ -2,7 +2,7 @@
 // browsers sign each new version; the same rules as daemons decide which
 // follow.
 
-import { evaluate, hex, unhex, type Cert, type Revocation } from "./cert.ts";
+import { approves, evaluate, hex, unhex, type Cert, type Revocation } from "./cert.ts";
 import { signText, type DeviceKeys } from "./keys.ts";
 import { newKeyPair } from "./noise.ts";
 
@@ -35,6 +35,19 @@ export interface Roster {
 export interface Invite {
   team: string;
   role: TeamRole;
+  expires: number;
+  key: string;
+  by: string;
+  sig: string;
+}
+
+/** An *Ask me first* invite (`team::AskInvite`, #762): signed by an
+ * owner's device like a presigned one, with its own one-time key, but an
+ * owner still says yes to each person who uses it. */
+export interface AskInvite {
+  team: string;
+  role: TeamRole;
+  made: number;
   expires: number;
   key: string;
   by: string;
@@ -75,6 +88,14 @@ export const inviteBody = (i: Invite) =>
 export const redeemBody = (i: Invite, version: number, m: Member) =>
   `illogical team redeem v1\nteam ${i.team}\nversion ${version}\nmember ${m.account} ${m.root} ${m.role} ${m.name}\nkey ${i.key}\n`;
 
+export const askInviteBody = (i: AskInvite) =>
+  `arugula team ask invite v1\nteam ${i.team}\nrole ${i.role}\nmade ${i.made}\nexpires ${i.expires}\nkey ${i.key}\nby ${i.by}\n`;
+
+/** What the link's one-time key signs for whoever used it: their account
+ * and its root (`AskInvite::ask_body`). */
+export const askBody = (i: Pick<AskInvite, "team" | "key">, account: string, root: string) =>
+  `arugula team ask v1\nteam ${i.team}\naccount ${account}\nroot ${root}\nkey ${i.key}\n`;
+
 // An Ed25519 private key as PKCS#8 is this prefix and the 32-byte seed, so
 // the link carries only the seed.
 const PKCS8_ED25519 = "302e020100300506032b657004220420";
@@ -100,6 +121,34 @@ export async function signInvite(i: Omit<Invite, "by" | "sig">, keys: DeviceKeys
   const out: Invite = { ...i, by: keys.id, sig: "" };
   out.sig = await signText(keys, inviteBody(out));
   return out;
+}
+
+export async function signAskInvite(i: Omit<AskInvite, "by" | "sig">, keys: DeviceKeys): Promise<AskInvite> {
+  const out: AskInvite = { ...i, by: keys.id, sig: "" };
+  out.sig = await signText(keys, askInviteBody(out));
+  return out;
+}
+
+/** A request to join that an owner's page may show (#762): the invite was
+ * signed by a device of one of `r`'s owners, for this team, and the link's
+ * one-time key vouches for this account and root. Says which owner made
+ * it, or null when it doesn't check out (control made it up, or moved
+ * someone's proof to another account). */
+export async function askOk(
+  r: Roster,
+  certs: AccountCerts,
+  req: { account: string; root: string; invite?: AskInvite | null; proof?: string | null },
+): Promise<string | null> {
+  const i = req.invite;
+  if (!i || typeof req.proof !== "string" || i.team !== r.team || !ROLES.includes(i.role) || !isCount(i.made) || !isCount(i.expires)) return null;
+  if (typeof i.key !== "string" || typeof i.by !== "string" || typeof i.sig !== "string") return null;
+  if (!(await verify(i.key, askBody(i, req.account, req.root), req.proof))) return null;
+  for (const o of r.members.filter((m) => m.role === "owner")) {
+    const [c, rv] = certs[o.account] ?? [[], []];
+    const d = (await evaluate({ account: o.account, root: o.root }, c, rv)).get(i.by);
+    if (d && approves(d.kind) && (await verify(d.sign, askInviteBody(i), i.sig))) return o.account;
+  }
+  return null;
 }
 
 /** The version after `prev` that adds `me` with a presigned invite, signed

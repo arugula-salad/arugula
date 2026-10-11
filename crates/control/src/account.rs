@@ -483,7 +483,7 @@ mod tests {
         );
         found(&app, &v1, "acct-alice", &ac);
         app.db.set_daemon_team(&bobs, "t1").unwrap();
-        app.db.add_invite("inv", "t1", "viewer", i64::MAX as u64, "acct-alice").unwrap();
+        app.db.add_invite("inv", "t1", "viewer", i64::MAX as u64, "acct-alice", "{}").unwrap();
         // Bob's own team, which Alice asked to join.
         let w1 = roster("t2", 1, vec![member("acct-bob", &bc, TeamRole::Owner)], &bk);
         found(&app, &w1, "acct-bob", &bc);
@@ -496,6 +496,8 @@ mod tests {
                     name: "alice".into(),
                     role: "editor".into(),
                     created: 1,
+                    invite: None,
+                    proof: None,
                 },
             )
             .unwrap();

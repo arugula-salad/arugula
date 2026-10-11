@@ -15,8 +15,9 @@
 //                          control's relay: {id, name}
 //   panes NAME             its panes, untouched: {id, name, panes}
 //   team-create NAME       a team, this account its owner: {team}
-//   team-invite TEAM       an ask-first invite code: {code}
-//   team-accept TEAM CODE  this account asks to join with it: {}
+//   team-invite TEAM       an Ask me first invite, its one-time key's seed: {code}
+//   team-accept TEAM CODE  this account asks to join with it (the seed, or
+//                          the whole #askinvite= link): {}
 //   team-admit TEAM        admit everyone who asked: {admitted}
 
 import { fingerprint } from "../src/e2e/cert.ts";

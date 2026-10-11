@@ -688,6 +688,22 @@ approving from a tab opened before the deploy.
 Where: `web/src/control.ts` (`enroll`, `vouched`, `approveDevice`, `DEVICE_HASH`), `web/src/ui/control.tsx` (`Waiting`, `DevicePrompt`, `Unvouched`), `web/src/ui/scan.tsx`, `crates/control/src/api.rs` (`enroll`, `approve`, `device`), [docs/control-e2e.md](docs/control-e2e.md#approving-a-new-browser-or-phone-the-code-it-shows).
 From: #761, #765.
 
+### Every team invite link carries a one-time key; admitting someone compares nothing
+An *Ask me first* link carries a one-time key in its fragment, as a presigned
+link does, and the owner's device signs it (`arugula team ask invite v1`,
+with the role and when it was made). Asking to join sends the key's signature
+over the asker's account and root. The owner's page shows only requests whose
+proof checks out against an invite one of the team's owners signed, and the
+prompt says "<name> used your invite link (made <when>, for <role>)", with no
+fingerprint. Admitting signs the same v1 roster as before, so daemons need no
+feature for it. Links and requests from before were dropped at the update
+rather than kept on a compare path.
+Why: the fingerprint was 16 hex digits of someone else's device, which
+nobody checked; the link already reaches the right person, so make it prove
+that.
+Where: `crates/e2e/src/team.rs` (`AskInvite`), `crates/control/src/teams.rs` (`invite`, `accept_invite`), `web/src/e2e/team.ts` (`askOk`), `web/src/control.ts` (`makeInvite`, `acceptInvite`, `loadTeams`), `web/src/ui/control.tsx` (`AdmitPrompt`), [docs/control-e2e.md](docs/control-e2e.md).
+From: #762, #765.
+
 ### Control's code is open, only the hosted control is supported; the tailnet stays first class
 `arugula-control` lives in this repo and the hosted one
 (control.arugula.io) runs the same code. For now only the hosted one is

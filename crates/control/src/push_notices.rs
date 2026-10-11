@@ -8,7 +8,7 @@ use std::{sync::Arc, time::Duration};
 use arugula_e2e::{
     Cert, DeviceKeys, Kind, now_ms,
     push::PushSub,
-    team::{Member, Roster, TeamRole},
+    team::{AskInvite, Member, Roster, TeamRole},
 };
 use axum::{
     Json,
@@ -193,13 +193,28 @@ async fn waiting_devices_and_requests_push_their_owners() {
             now_ms(),
         )
         .unwrap();
-    let code = "invitecode0123456789";
-    app.db.add_invite(&crate::auth::hash(code), team, "editor", now_ms() + 60_000, "a1jake").unwrap();
+    // An Ask me first link (#762): its one-time key signs for Ada.
+    let k = DeviceKeys::generate();
+    let mut ask = AskInvite {
+        team: team.into(),
+        role: TeamRole::Editor,
+        made: now_ms(),
+        expires: now_ms() + 60_000,
+        key: hex::encode(k.sign_public()),
+        by: String::new(),
+        sig: String::new(),
+    };
+    ask.sign_with(&jake);
+    let code = ask.key.clone();
+    let body = serde_json::to_string(&ask).unwrap();
+    app.db.add_invite(&crate::auth::hash(&code), team, "editor", ask.expires, "a1jake", &body).unwrap();
+    let proof = hex::encode(k.signature(ask.ask_body("a2ada", &ada.id()).as_bytes()));
     let accept = || {
         crate::teams::accept_invite(
             State(app.clone()),
             Session { account: "a2ada".into() },
-            axum::extract::Path((team.to_owned(), code.to_owned())),
+            axum::extract::Path((team.to_owned(), code.clone())),
+            Json(serde_json::from_value(json!({ "proof": proof })).unwrap()),
         )
     };
     assert_eq!(accept().await.unwrap().0["pending"], true);

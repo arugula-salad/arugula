@@ -158,6 +158,30 @@ device nobody trusted. Now:
     every trust refresh). A daemon that was only shared a session with the
     team gets nothing for the team until it's updated: its members lose
     that session there, rather than members who were removed keeping it.
+- An ***Ask me first* invite** carries a one-time key too (#762), so
+  admitting someone needs no fingerprint:
+  - The owner's device signs `arugula team ask invite v1` (team, role,
+    when it was made, expiry, a one-time Ed25519 public key). Its own
+    domain, so it can never be taken for a presigned invite. The private
+    half goes only in the link's fragment (`#askinvite=<team>.<seed>`),
+    kept off control at sign-in as a presigned seed is. Control names the
+    invite by the public key.
+  - Whoever uses the link signs `arugula team ask v1` (team, their account,
+    their root, the key) with the one-time key, and control stores that
+    proof with the request. It refuses a request without one, but that's
+    only a courtesy: the owner's page checks the invite is signed by a
+    device of one of the team's owners and the proof names that account
+    and root, and shows nothing else. So control can't put an account of
+    its own (or move someone's proof to one) in front of an owner.
+  - The prompt says who used the link, when the link was made and for
+    which role, all from what the owner's device signed. *Add them* signs
+    a plain `v: 1` roster with that role and root, so older daemons follow
+    it and no feature gate is needed.
+  - **Accepted risk:** as with a presigned link, it's a bearer token for
+    asking: anyone who has the link can ask, for a week. The owner still
+    says yes to each, by name.
+  - Links and pending requests from before #762 were dropped when control
+    updated (`#invite=<team>.<code>` now says to ask for a new link).
 
 **Verification on the daemon:**
 

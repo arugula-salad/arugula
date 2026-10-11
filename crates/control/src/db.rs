@@ -295,6 +295,19 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     if !has("devices", "mac")? {
         conn.execute_batch("ALTER TABLE devices ADD COLUMN mac TEXT")?;
     }
+    // #762: an Ask me first invite is the owner's signed `AskInvite`, and a
+    // request carries it with the one-time key's proof. Links and requests
+    // from before carry neither, so they go: an owner's page would refuse
+    // them anyway, and the invitee asks again with a new link.
+    if !has("invites", "body")? {
+        conn.execute_batch("ALTER TABLE invites ADD COLUMN body TEXT; DELETE FROM invites;")?;
+    }
+    if !has("team_requests", "proof")? {
+        conn.execute_batch(
+            "ALTER TABLE team_requests ADD COLUMN invite TEXT; ALTER TABLE team_requests ADD COLUMN proof TEXT;
+             DELETE FROM team_requests;",
+        )?;
+    }
     // #208: what a passkey is (its maker, from its AAGUID), the browser
     // that added it, and when it last signed in, to tell them apart.
     if !has("passkeys", "agent")? {
@@ -361,6 +374,11 @@ pub struct TeamRequest {
     pub name: String,
     pub role: String,
     pub created: u64,
+    /// The Ask me first invite it came with, as the owner's device signed
+    /// it (#762), and the link's one-time key's proof over `account` and
+    /// `root`. Owners' pages show only requests these check out for.
+    pub invite: Option<arugula_e2e::team::AskInvite>,
+    pub proof: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1404,22 +1422,35 @@ impl Db {
             .collect())
     }
 
-    pub fn add_invite(&self, code_hash: &str, team: &str, role: &str, expires: u64, by: &str) -> anyhow::Result<()> {
-        self.c().execute(
-            "INSERT INTO invites (code_hash, team, role, expires, by_account) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![code_hash, team, role, expires, by],
-        )?;
+    /// An Ask me first invite, by the hash of its one-time key, with the
+    /// `AskInvite` the owner's device signed (#762). Fails with [`Taken`]
+    /// for a key already used.
+    pub fn add_invite(
+        &self,
+        code_hash: &str,
+        team: &str,
+        role: &str,
+        expires: u64,
+        by: &str,
+        body: &str,
+    ) -> anyhow::Result<()> {
+        self.c()
+            .execute(
+                "INSERT INTO invites (code_hash, team, role, expires, by_account, body) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![code_hash, team, role, expires, by, body],
+            )
+            .map_err(taken)?;
         Ok(())
     }
 
-    /// (team, role) for a live invite.
-    pub fn invite(&self, code_hash: &str, now: u64) -> anyhow::Result<Option<(String, String)>> {
+    /// (team, role, signed invite) for a live invite.
+    pub fn invite(&self, code_hash: &str, now: u64) -> anyhow::Result<Option<(String, String, Option<String>)>> {
         Ok(self
             .c()
             .query_row(
-                "SELECT team, role FROM invites WHERE code_hash = ?1 AND expires > ?2",
+                "SELECT team, role, body FROM invites WHERE code_hash = ?1 AND expires > ?2",
                 params![code_hash, now],
-                |r| Ok((r.get(0)?, r.get(1)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
             .optional()?)
     }
@@ -1487,8 +1518,18 @@ impl Db {
 
     pub fn add_request(&self, team: &str, r: &TeamRequest) -> anyhow::Result<()> {
         self.c().execute(
-            "INSERT OR REPLACE INTO team_requests (team, account, root, name, role, created) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![team, r.account, r.root, r.name, r.role, r.created],
+            "INSERT OR REPLACE INTO team_requests (team, account, root, name, role, created, invite, proof)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                team,
+                r.account,
+                r.root,
+                r.name,
+                r.role,
+                r.created,
+                r.invite.as_ref().map(serde_json::to_string).transpose()?,
+                r.proof
+            ],
         )?;
         Ok(())
     }
@@ -1496,7 +1537,7 @@ impl Db {
     pub fn requests(&self, team: &str) -> anyhow::Result<Vec<TeamRequest>> {
         let c = self.c();
         let mut q =
-            c.prepare("SELECT account, root, name, role, created FROM team_requests WHERE team = ?1 ORDER BY created")?;
+            c.prepare("SELECT account, root, name, role, created, invite, proof FROM team_requests WHERE team = ?1 ORDER BY created")?;
         let rows = q.query_map(params![team], |r| {
             Ok(TeamRequest {
                 account: r.get(0)?,
@@ -1504,6 +1545,8 @@ impl Db {
                 name: r.get(2)?,
                 role: r.get(3)?,
                 created: r.get(4)?,
+                invite: r.get::<_, Option<String>>(5)?.and_then(|b| serde_json::from_str(&b).ok()),
+                proof: r.get(6)?,
             })
         })?;
         Ok(rows.collect::<Result<_, _>>()?)
