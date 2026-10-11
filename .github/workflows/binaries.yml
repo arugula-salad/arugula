@@ -1,0 +1,15 @@
+name: binaries
+
+# No screenshots, recordings or builds in the repo (AGENTS.md, "Binaries").
+# Cheap enough to run on every PR, unlike check.yml, which runs by hand.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  binaries:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: scripts/check-binaries
