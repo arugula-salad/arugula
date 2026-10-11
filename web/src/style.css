@@ -226,6 +226,15 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   font: 11px system-ui, sans-serif;
 }
 
+/* A narrow window keeps the bar's room for tabs (and, in the desktop
+   app, for dragging the window): the chord is in the button's tooltip
+   and the account menu. */
+@media (max-width: 1100px) {
+  .commands-button kbd {
+    display: none;
+  }
+}
+
 .account-button {
   display: flex;
   align-items: center;

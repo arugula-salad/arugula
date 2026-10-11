@@ -145,8 +145,9 @@ claim_titlebar() {
   sleep 1
   eval "$(xdotool getwindowgeometry --shell "$w")"
   local x0=$X y0=$Y
-  # Drag the bar's empty middle (.bar-fill) 150 right and 80 down.
-  xdotool mousemove --window "$w" $((WIDTH - 260)) 16 mousedown 1 sleep 0.3 \
+  # Drag the bar's empty middle (.bar-fill) 150 right and 80 down: left
+  # of the Commands button and the account menu, right of the one tab.
+  xdotool mousemove --window "$w" $((WIDTH - 400)) 16 mousedown 1 sleep 0.3 \
     mousemove_relative 50 30 sleep 0.2 mousemove_relative 100 50 sleep 0.3 mouseup 1
   sleep 1
   eval "$(xdotool getwindowgeometry --shell "$w")"
