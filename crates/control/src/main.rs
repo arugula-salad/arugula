@@ -538,6 +538,9 @@ async fn control_json(
         // A join's approval carries the approving device's MAC under the
         // secret in the machine's link (#760), passed on to the machine.
         join_secret: 1,
+        // An approval of a waiting device carries the approving device's
+        // MAC under the code it shows (#761), passed on to it.
+        device_secret: 1,
         // The ssh jump host for guests of daemons behind NAT (M65).
         guest_ssh: app.jump.as_ref().map(guest_jump::Jump::describe),
     })

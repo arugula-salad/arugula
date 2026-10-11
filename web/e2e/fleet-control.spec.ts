@@ -186,7 +186,10 @@ test("so does a phone", async ({ browser }) => {
   await signIn(phone);
   await expect(phone.getByText("Approve this browser")).toBeVisible();
   const fp = await phone.locator("[data-fingerprint]").getAttribute("data-fingerprint");
+  // #761: the code it shows, typed on the laptop.
+  const code = (await phone.locator("[data-device-code]").getAttribute("data-device-code"))!;
   await expect(laptop.locator(`[data-pending="${fp}"]`)).toBeVisible({ timeout: 20_000 });
+  await laptop.locator("[data-device-whole]").fill(code);
   await laptop.locator("[data-approve]").click();
   const urls = sockets(phone);
   await everyMachine(phone);

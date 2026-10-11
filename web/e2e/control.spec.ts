@@ -307,6 +307,13 @@ test("a relayed page that goes leaves the machine's clients (presence) too", asy
   }
 });
 
+/** #761: the code a waiting page shows, `LOOKUP.SECRET`. */
+async function deviceCode(page: Page): Promise<string> {
+  const code = await page.locator("[data-device-code]").getAttribute("data-device-code", { timeout: 20_000 });
+  expect(code).toMatch(/^[A-Z0-9]{5}-[A-Z0-9]{5}\.[A-Z0-9]{4}(-[A-Z0-9]{4}){3}$/);
+  return code!;
+}
+
 async function phoneContext(browser: Browser) {
   return browser.newContext({ viewport: { width: 390, height: 760 }, isMobile: true, hasTouch: true });
 }
@@ -320,13 +327,106 @@ test("a phone needs the laptop's approval", async ({ browser }) => {
   await expect(phone.locator("[data-control-url]")).toHaveText(base);
   await expect(phone.locator("[data-waiting-machine]")).toContainText("doesn't need this one");
   await expect(phone.locator("[data-sign-out]")).toBeVisible();
+  // #761: it shows a code, as a QR code and as text, and its fingerprint
+  // only for an older approving page, a click away.
+  const code = await deviceCode(phone);
+  await expect(phone.locator("svg[data-qr]")).toHaveAttribute("data-qr", `${base}/#device=${code}`);
+  await expect(phone.locator("[data-fingerprint]")).toBeHidden();
   const fp = await phone.locator("[data-fingerprint]").getAttribute("data-fingerprint");
-  // The laptop is asked, and shows the same fingerprint.
-  await expect(laptop.locator(`[data-pending="${fp}"]`)).toBeVisible({ timeout: 20_000 });
+  // The laptop is asked, and approves with the code: nothing to compare.
+  await expect(laptop.locator(`[data-pending="${fp}"][data-device-sealed]`)).toBeVisible({ timeout: 20_000 });
+  await expect(laptop.locator(".prompt .fingerprint")).toHaveCount(0);
+  await expect(laptop.locator("[data-approve]")).toBeDisabled();
+  // Its first half is shown, fixed: only the rest is typed.
+  const [lookup, rest] = code.split(".");
+  await expect(laptop.locator("[data-device-rest] .control-rest-known")).toHaveText(`${lookup}.`);
+  // Another device's whole code, pasted, isn't this one's.
+  await laptop.locator("[data-device-whole]").fill("ABCDE-FGHJK.ABCD-EFGH-JKMN-PQRS");
+  await expect(laptop.locator("[data-device-rest-error]")).toBeVisible();
+  // It shows once and whole: no fixed half before it, no second dot.
+  await expect(laptop.locator("[data-device-whole]")).toHaveValue("ABCDE-FGHJK.ABCD-EFGH-JKMN-PQRS");
+  await expect(laptop.locator("[data-device-rest] .control-rest-known")).toBeHidden();
+  await expect(laptop.locator("[data-approve]")).toBeDisabled();
+  // Half of the rest: still waiting for it.
+  await laptop.locator("[data-device-whole]").fill(rest.slice(0, 9).toLowerCase());
+  await expect(laptop.locator("[data-approve]")).toBeDisabled();
+  await laptop.locator("[data-device-whole]").fill(rest.toLowerCase().replace(/-/g, ""));
+  await expect(laptop.locator("[data-device-whole]")).toHaveValue(rest);
   await laptop.locator("[data-approve]").click();
   await expect.poll(() => hostNames(phone), { timeout: 20_000 }).toEqual(["box", "mac"]);
+  // It pinned the laptop's root, without asking.
+  expect(await phone.evaluate(() => window.__arugula.control!.enrollment!.root)).toBe(await laptop.evaluate(() => window.__arugula.control!.enrollment!.root));
   await showHost(phone, "mac");
   await shell(phone, "phone");
+});
+
+test("a browser scanned from a phone: its QR code opens the approval with the code in it (#761)", async ({ browser }) => {
+  const other = await (await browser.newContext()).newPage();
+  await signIn(other);
+  const code = await deviceCode(other);
+  const link = (await other.locator("svg[data-qr]").getAttribute("data-qr"))!;
+  const id = await other.evaluate(() => window.__arugula.control!.keys.id);
+  // What a phone's camera opens: the link, on a device of the account.
+  await laptop.goto(link);
+  await expect(laptop.locator(`[data-pending="${id}"][data-device-sealed]`)).toBeVisible({ timeout: 20_000 });
+  await expect(laptop.locator("[data-device-whole]")).toHaveCount(0);
+  await laptop.locator("[data-approve]").click();
+  await booted(other);
+  await expect(laptop).not.toHaveURL(/#device=/);
+  // A link whose code nobody shows any more says so.
+  await laptop.goto(`${base}/#device=${code}`);
+  await expect(laptop.locator("[data-device-gone]")).toBeVisible({ timeout: 20_000 });
+  await laptop.goto(base);
+  await laptop.evaluate((d) => window.__arugula.control!.revoke(d), id);
+  await other.context().close();
+});
+
+test("a new browser refuses an approval that doesn't answer its code (#761)", async ({ browser }) => {
+  const other = await (await browser.newContext()).newPage();
+  await signIn(other);
+  const code = await deviceCode(other);
+  const id = await other.evaluate(() => window.__arugula.control!.keys.id);
+  await expect(laptop.locator(`[data-pending="${id}"]`)).toBeVisible({ timeout: 20_000 });
+  // Its lookup with another secret: what control would have to guess, or
+  // a slip typing it. The laptop approves; the browser doesn't believe it.
+  const wrong = `${code.split(".")[0]}.ABCD-EFGH-JKMN-PQRS`;
+  await laptop.locator("[data-device-whole]").fill(wrong);
+  await laptop.locator("[data-approve]").click();
+  await expect(other.locator('[data-unvouched="wrong"]')).toBeVisible({ timeout: 20_000 });
+  expect(await other.evaluate(() => window.__arugula.control!.enrollment)).toBeUndefined();
+  // Reloaded, it still doesn't: the code was its one guess.
+  await other.reload();
+  await expect(other.locator('[data-unvouched="wrong"]')).toBeVisible({ timeout: 20_000 });
+  await expect(other.locator("[data-enroll-again]")).toBeVisible();
+  await laptop.evaluate((d) => window.__arugula.control!.revoke(d), id);
+  await other.context().close();
+});
+
+test("an approving page from before codes still approves; the new browser checks the account instead (#761)", async ({ browser }) => {
+  const other = await (await browser.newContext()).newPage();
+  await signIn(other);
+  await deviceCode(other);
+  const id = await other.evaluate(() => window.__arugula.control!.keys.id);
+  // Its fingerprint is there for that page to compare.
+  await other.locator("[data-waiting-older] summary").click();
+  await expect(other.locator(`[data-fingerprint="${id}"]`)).toBeVisible();
+  await expect(laptop.locator(`[data-pending="${id}"]`)).toBeVisible({ timeout: 20_000 });
+  // An older page signs the certificate and sends no MAC.
+  await laptop.evaluate(async (d) => {
+    const s = window.__arugula.control as unknown as { pending: { device: string }[]; pendingSealed: Set<string>; approve(c: unknown): Promise<void> };
+    s.pendingSealed.delete(d);
+    await s.approve(s.pending.find((c) => c.device === d));
+  }, id);
+  // The browser doesn't take control's word for the account: it shows the
+  // account's fingerprint to check on the laptop, the old way.
+  const root = await laptop.evaluate(() => window.__arugula.control!.enrollment!.root);
+  await expect(other.locator('[data-unvouched="missing"]')).toBeVisible({ timeout: 20_000 });
+  await expect(other.locator(`[data-unvouched-account="${root}"]`)).toBeVisible();
+  await other.locator("[data-vouch]").click();
+  await booted(other);
+  expect(await other.evaluate(() => window.__arugula.control!.enrollment!.root)).toBe(root);
+  await laptop.evaluate((d) => window.__arugula.control!.revoke(d), id);
+  await other.context().close();
 });
 
 test("an older desktop app signs in through the browser with a code, then is approved as a device (M48)", async ({ browser }) => {
@@ -393,9 +493,12 @@ test("an older desktop app signs in through the browser with a code, then is app
   // It says it's the app being approved, by name (#326).
   await expect(app.getByText("Approve this app as a device")).toBeVisible();
   await expect(app.locator("[data-waiting-browser]")).toContainText("the Arugula app on test-mac");
+  const code = await deviceCode(app);
   const fp = await app.locator("[data-fingerprint]").getAttribute("data-fingerprint");
   await expect(laptop.locator(`[data-pending="${fp}"]`)).toBeVisible({ timeout: 20_000 });
   await expect(laptop.locator(".prompt")).toContainText("Arugula app on test-mac");
+  // #761: the app's window shows a code too; typed on the laptop.
+  await laptop.locator("[data-device-whole]").fill(code);
   await laptop.locator("[data-approve]").click();
   await expect.poll(() => hostNames(app), { timeout: 20_000 }).toEqual(["box", "mac"]);
   await showHost(app, "mac");
@@ -839,8 +942,11 @@ test("a browser that isn't a device yet, here to approve a machine, leads with i
   await visitor.locator("[data-signin=github]").click();
   await expect(visitor.locator(`[data-waiting-join="${code}"]`)).toBeVisible({ timeout: 20_000 });
   await expect(visitor.getByRole("heading", { name: "Approve the machine on a device you use" })).toBeVisible();
-  // The link it hands on keeps the secret; control was told the code.
-  await expect(visitor.locator("[data-control-join-link]")).toHaveText(`${base}/#join=${whole}`);
+  // The link it hands on keeps the secret, and (#761) carries the
+  // visitor's own code; control was told the machine's code.
+  const mine = (await visitor.locator("[data-waiting-also]").getAttribute("data-device-code"))!;
+  await expect(visitor.locator("[data-control-join-link]")).toHaveText(`${base}/#join=${whole}&device=${mine}`);
+  await expect(visitor.locator("svg[data-qr]")).toHaveAttribute("data-qr", `${base}/#join=${whole}&device=${mine}`);
   await expect(visitor.locator("[data-waiting-also]")).toContainText("the machine joins either way");
   const fp = (await visitor.locator("[data-fingerprint]").getAttribute("data-fingerprint"))!;
 
@@ -848,7 +954,11 @@ test("a browser that isn't a device yet, here to approve a machine, leads with i
   await laptop.goto("/");
   await expect(laptop.locator("[data-join-both]")).toBeVisible({ timeout: 20_000 });
   await expect(laptop.locator("[data-join-machine] [data-join-sealed]")).toBeVisible();
-  await expect(laptop.locator(`[data-join-alongside="${fp}"] [data-pending="${fp}"]`)).toBeVisible();
+  await expect(laptop.locator(`[data-join-alongside="${fp}"] [data-pending="${fp}"][data-device-sealed]`)).toBeVisible();
+  // #761: brought by the visitor, the laptop doesn't have its code either:
+  // it's ticked once that's typed.
+  await expect(laptop.locator(`[data-join-also="${fp}"]`)).not.toBeChecked();
+  await laptop.locator("[data-device-rest] [data-device-whole]").fill(mine);
   await expect(laptop.locator(`[data-join-also="${fp}"]`)).toBeChecked();
   await expect(laptop.locator("[data-approve-join]")).toHaveText("Approve both");
   // Brought by the visitor, the laptop has only the code: it shows that
@@ -950,6 +1060,42 @@ test("a join link kept over a sign-in comes back only to its own code, and never
   expect(await laptop.evaluate(() => location.hash)).toBe(`#join=${code}`);
   expect(await stored()).toBeNull();
   await laptop.goto("/");
+});
+
+test("a waiting browser that follows another machine's link brings that one instead (#326)", async ({ browser }) => {
+  // Two machines asking; the visitor comes for the first, then follows the
+  // second's link in the same tab: only the hash changes, nothing reloads.
+  const asks = async (name: string) => {
+    const joining = spawn("../target/debug/arugulad", ["join", base, "--name", name, "--state-dir", temp(name)], { stdio: ["pipe", "pipe", "ignore"] });
+    procs.push(joining);
+    return new Promise<string>((res) => {
+      let out = "";
+      joining.stdout!.on("data", (d) => {
+        out += d;
+        const m = out.match(/(http\S+#join=[A-Z0-9.-]+)/);
+        if (m) res(m[1]);
+      });
+    });
+  };
+  const [first, second] = [await asks("firstbox"), await asks("secondbox")];
+  const visitor = await (await browser.newContext()).newPage();
+  await visitor.goto(first);
+  await visitor.locator("[data-signin=github]").click();
+  const firstCode = first.split("#join=")[1].split(".")[0];
+  await expect(visitor.locator(`[data-waiting-join="${firstCode}"]`)).toBeVisible({ timeout: 20_000 });
+  await laptop.goto("/");
+  await expect(laptop.locator("[data-join-machine]")).toContainText("firstbox", { timeout: 20_000 });
+
+  await visitor.goto(second);
+  const secondCode = second.split("#join=")[1].split(".")[0];
+  await expect(visitor.locator(`[data-waiting-join="${secondCode}"]`)).toBeVisible();
+  // Control is told: the laptop now sees the second machine alongside.
+  await expect(laptop.locator("[data-join-machine]")).toContainText("secondbox", { timeout: 30_000 });
+  // Neither is wanted: turn the machine and the browser down.
+  await laptop.locator("[data-cancel-join]").click();
+  await expect(laptop.locator("[data-reject]")).toBeVisible({ timeout: 20_000 });
+  await laptop.locator("[data-reject]").click();
+  await visitor.context().close();
 });
 
 test("sessions: where you're signed in, and signing out everywhere (#173)", async () => {

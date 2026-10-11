@@ -132,8 +132,12 @@ async function signIn(d: Device, browser: Browser, name: string, options: Browse
   await page.goto("/");
   await page.locator("[data-signin=github]").tap();
   await until(`${name} to ask to be approved`, () => page.evaluate(() => window.__arugula?.control?.phase === "waiting"), 30_000);
-  const asked = await page.evaluate(() => (window.__arugula.control as unknown as { request: unknown }).request);
-  await d.approveRequest(asked as Parameters<Device["approveRequest"]>[0]);
+  const { asked, code } = await page.evaluate(() => {
+    const s = window.__arugula.control as unknown as { request: unknown; deviceCode: string | null };
+    return { asked: s.request, code: s.deviceCode };
+  });
+  // #761: with the code the phone shows, as scanning it would.
+  await d.approveRequest(asked as Parameters<Device["approveRequest"]>[0], code);
   await until(`${name} to be approved`, () => page.evaluate(() => window.__arugula.control?.phase === "ready"), 30_000);
   log(`${name}: signed in and approved`);
   return { name, page };

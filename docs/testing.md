@@ -686,6 +686,13 @@ const sock = await me.connect(box.id);           // or an E2ESocket of your own
 - `trusted()` is the account's devices and machines that chain to the
   pinned root; `api(path, body?)` is any other control call with the
   device's session.
+- `approveRequest(cert, code)` approves a browser page waiting on the
+  account, from its `control.request` and the code it shows
+  (`control.deviceCode`, `LOOKUP.SECRET`, #761), with the MAC the
+  *New device?* prompt sends. Without `code` it approves the way a page
+  from before codes did, and the browser asks its person to check the
+  account's fingerprint (*It matches*); that's what `just dev-control`
+  does.
 - `save(file)` and `Device.load(file)` keep a device between steps.
 
 `web/fixtures/device-cli.ts` is the same from a shell or a Rust test, with

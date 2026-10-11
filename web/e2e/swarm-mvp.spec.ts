@@ -122,9 +122,9 @@ async function phone(browser: Browser, login: string, approver: Page): Promise<P
   await page.locator("[data-signin=github]").click();
   await expect(page.getByText("Approve this browser")).toBeVisible();
   const fp = await page.locator("[data-fingerprint]").getAttribute("data-fingerprint");
-  await approver.goto("/");
+  // #761: the laptop opens what the phone's QR code says, its code in it.
+  await approver.goto(`/#device=${await page.locator("[data-device-code]").getAttribute("data-device-code")}`);
   await approver.waitForFunction(() => window.__arugula?.control?.phase === "ready");
-  await approver.evaluate(() => window.__arugula.control!.refresh());
   await expect(approver.locator(`[data-pending="${fp}"]`)).toBeVisible({ timeout: 20_000 });
   await approver.locator("[data-approve]").click();
   await page.waitForFunction(() => window.__arugula?.control?.phase === "ready", undefined, { timeout: 20_000 });

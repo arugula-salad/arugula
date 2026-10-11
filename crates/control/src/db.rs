@@ -287,6 +287,14 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     if !has("devices", "join_code")? {
         conn.execute_batch("ALTER TABLE devices ADD COLUMN join_code TEXT")?;
     }
+    // #761: what a waiting device said it understands (`device-secret`: it
+    // shows a code), and the approving device's MAC under that code.
+    if !has("devices", "features")? {
+        conn.execute_batch("ALTER TABLE devices ADD COLUMN features TEXT")?;
+    }
+    if !has("devices", "mac")? {
+        conn.execute_batch("ALTER TABLE devices ADD COLUMN mac TEXT")?;
+    }
     // #208: what a passkey is (its maker, from its AAGUID), the browser
     // that added it, and when it last signed in, to tell them apart.
     if !has("passkeys", "agent")? {
@@ -1074,6 +1082,43 @@ impl Db {
             params![account, id, code],
         )?;
         Ok(())
+    }
+
+    /// What a waiting device said it understands (#761), as it said it:
+    /// set on each request, so asking again without it clears it.
+    pub fn set_device_features(&self, account: &str, id: &str, features: &str) -> anyhow::Result<()> {
+        self.c().execute(
+            "UPDATE devices SET features = NULLIF(?3, '') WHERE account = ?1 AND id = ?2 AND approved = 0",
+            params![account, id, features],
+        )?;
+        Ok(())
+    }
+
+    /// Waiting devices of an account that said what they understand
+    /// (#761): (device, features).
+    pub fn device_features(&self, account: &str) -> anyhow::Result<Vec<(String, String)>> {
+        let c = self.c();
+        let mut q =
+            c.prepare("SELECT id, features FROM devices WHERE account = ?1 AND approved = 0 AND features IS NOT NULL")?;
+        let rows = q.query_map(params![account], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    /// The approving device's MAC under a waiting device's code (#761),
+    /// kept for that device to collect with its certificate. `None` clears
+    /// it.
+    pub fn set_device_mac(&self, account: &str, id: &str, mac: Option<&str>) -> anyhow::Result<()> {
+        self.c().execute("UPDATE devices SET mac = ?3 WHERE account = ?1 AND id = ?2", params![account, id, mac])?;
+        Ok(())
+    }
+
+    /// The MAC an approval of this device carried (#761), if any.
+    pub fn device_mac(&self, account: &str, id: &str) -> anyhow::Result<Option<String>> {
+        Ok(self
+            .c()
+            .query_row("SELECT mac FROM devices WHERE account = ?1 AND id = ?2", params![account, id], |r| r.get(0))
+            .optional()?
+            .flatten())
     }
 
     /// Waiting devices of an account with the join code each came to

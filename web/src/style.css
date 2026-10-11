@@ -2760,6 +2760,18 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   outline: none;
 }
 
+/* Another code typed whole (#760, #761): no fixed half, room for it all. */
+.control-rest-field.claims input {
+  width: 32ch;
+  padding-left: 8px;
+}
+
+/* Each label, field and hint is one group, spaced as the modal's others
+   (two of them on Add a machine and a device?, #761). */
+.control-rest {
+  margin: 14px 0;
+}
+
 .control-rest p {
   margin: 6px 0;
 }
@@ -8486,4 +8498,39 @@ html[data-finish="glass"] .prompt {
 html[data-finish="glass"] .prompt-backdrop {
   background: #0003;
   backdrop-filter: blur(3px);
+}
+
+/* #761: the code a waiting browser shows (a QR code and the text), what
+ * the approving device scans or types, and its camera. */
+.control-device-code {
+  margin: 8px 0;
+}
+
+.control-device-code .control-cmd {
+  font-size: 15px;
+  letter-spacing: 0.03em;
+}
+
+.control-older {
+  margin: 8px 0;
+}
+
+.control-older summary {
+  cursor: pointer;
+  color: var(--dim);
+}
+
+.control-scan {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+  margin: 8px 0;
+}
+
+.control-scan-video {
+  width: min(320px, 100%);
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 6px;
+  background: #000;
 }

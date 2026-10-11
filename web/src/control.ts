@@ -9,7 +9,7 @@
 // directory and the keys, but it can't slip in a daemon of its own (and a
 // daemon can't be reached by a device it hasn't approved).
 
-import { certBody, deviceId, evaluate, hex, JOIN_SECRET, joinCode, joinMac, normalizeCode, splitJoinCode, type Cert, type Revocation, revocationBody, unhex } from "./e2e/cert.ts";
+import { certBody, DEVICE_SECRET, deviceId, deviceMac, deviceMacOk, evaluate, hex, JOIN_SECRET, joinCode, joinMac, newSecret, normalizeCode, normalizeSecret, splitJoinCode, type Cert, type Revocation, revocationBody, unhex } from "./e2e/cert.ts";
 import { adoptKeys, forget, loadEnrollment, loadKeys, saveEnrollment, saveWorkerDirectory, signText, type DeviceKeys, type Enrollment } from "./e2e/keys.ts";
 import { newKeyPair } from "./e2e/noise.ts";
 import type { E2ETarget } from "./client";
@@ -41,6 +41,9 @@ export interface ControlInfo {
   vapid: string;
   /** Where control is now, when it answers at more than one URL (#507). */
   primary?: string;
+  /** Control passes an approving device's MAC to a waiting one (#761),
+   * so a waiting browser shows a code rather than a fingerprint. */
+  device_secret?: number;
 }
 
 /** On a URL control is moving away from (#507): a line at the top saying
@@ -124,6 +127,35 @@ export interface PresignedInvite {
 }
 
 const PINS_KEY = "arugula.control.pins";
+
+/** #761: the secret this browser shows while it waits, kept with its key
+ * id so a reload shows the same code (one already scanned still works). */
+const SECRET_KEY = "arugula.control.device-secret";
+
+function deviceSecretFor(id: string): string {
+  try {
+    const kept = JSON.parse(localStorage.getItem(SECRET_KEY) ?? "null") as { id?: string; secret?: string } | null;
+    const secret = kept?.id === id && kept.secret ? normalizeSecret(kept.secret) : null;
+    if (secret) return secret;
+  } catch {
+    // a new one
+  }
+  const secret = newSecret();
+  try {
+    localStorage.setItem(SECRET_KEY, JSON.stringify({ id, secret }));
+  } catch {
+    // A reload shows a new code.
+  }
+  return secret;
+}
+
+function dropDeviceSecret() {
+  try {
+    localStorage.removeItem(SECRET_KEY);
+  } catch {
+    // nothing kept
+  }
+}
 
 /** First sight of another account's root (trust on first use): pinned
  * here, and a different one later is refused, not believed. */
@@ -275,18 +307,21 @@ const KEPT_JOIN_MS = 15 * 60 * 1000;
 /** Where signing in with GitHub comes back to: this page, but never with a
  * presigned invite's seed or a machine's join secret (#760), which control
  * mustn't see. The link waits in this tab's sessionStorage for
- * `restoreInvite`; a join comes back with its code alone meanwhile, so the
- * page still says what it's for. */
+ * `restoreInvite`; a join (or #761, a waiting device's code) comes back
+ * with its code alone meanwhile, so the page still says what it's for. */
 export function signInNext(): string {
-  const join = JOIN_HASH.exec(location.hash)?.[1];
-  const secret = join ? splitJoinCode(join)?.secret : null;
+  const join = JOIN_HASH.exec(location.hash);
+  // #761: a waiting device's code carries its secret too, on its own
+  // (`#device=`) or with the machine it came to approve (`&device=`).
+  const secret = join ? splitJoinCode(join[1])?.secret || join[2] : DEVICE_HASH.test(location.hash);
   if (!inviteInHash(location.hash)?.presigned && !secret) return location.pathname + location.hash;
   try {
     sessionStorage.setItem(PENDING_INVITE, JSON.stringify({ hash: location.hash, at: Date.now() }));
   } catch {
     // Without storage the link has to be opened again after signing in.
   }
-  return location.pathname + (secret ? `#join=${joinInHash()}` : "");
+  const device = join ? null : splitDeviceCode(location.hash);
+  return location.pathname + (join ? `#join=${joinInHash()}` : device ? `#device=${device.code}` : "");
 }
 
 /** Back from signing in: the presigned invite link, or the machine's whole
@@ -301,9 +336,14 @@ export function restoreInvite() {
     // A join comes back as its code alone (`signInNext`), soon: then the
     // kept link has its secret. A link that brings its own secret wins,
     // and so does any link once the kept one is older than a join lasts
-    // (a retried join has the same code and a new secret, #760).
-    const join = joinInHash(hash) !== null && wholeJoinInHash() === joinInHash(hash) && Date.now() - at < KEPT_JOIN_MS;
-    if ((!location.hash && inviteInHash(hash)?.presigned) || join) history.replaceState(null, "", location.pathname + location.search + hash);
+    // (a retried join has the same code and a new secret, #760). A
+    // waiting device's code (#761) comes back the same way, as
+    // `#device=LOOKUP`.
+    const fresh = Date.now() - at < KEPT_JOIN_MS;
+    const join = joinInHash(hash) !== null && wholeJoinInHash() === joinInHash(hash) && fresh;
+    const lookup = DEVICE_HASH.test(hash) ? splitDeviceCode(hash)?.code : null;
+    const device = !!lookup && location.hash === `#device=${lookup}` && fresh;
+    if ((!location.hash && inviteInHash(hash)?.presigned) || join || device) history.replaceState(null, "", location.pathname + location.search + hash);
   } catch {
     // Nothing kept, or not in this shape.
   }
@@ -312,7 +352,7 @@ export function restoreInvite() {
 /** How long a presigned invite lasts unless the owner says otherwise. */
 const PRESIGNED_TTL_MS = 24 * 3600_000;
 
-export type Phase = "loading" | "signed-out" | "waiting" | "turned-down" | "lost-key" | "untrusted" | "ready" | "error";
+export type Phase = "loading" | "signed-out" | "waiting" | "turned-down" | "lost-key" | "untrusted" | "unvouched" | "ready" | "error";
 
 /** What the person reads when control refuses an approval (#327), by its
  * reason code: which check failed, and what to do next. `revoked` isn't
@@ -469,8 +509,28 @@ export function shownName(name: string): string {
 }
 
 /** The whole join code in `#join=CODE` or `#join=CODE.SECRET` (#760), as
- * it is there. */
-export const JOIN_HASH = /^#join=([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)?)$/;
+ * it is there; and (#761) the code of the browser that came to approve
+ * the machine and waits to be approved with it, `&device=LOOKUP.SECRET`. */
+export const JOIN_HASH = /^#join=([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)?)(?:&device=([A-Za-z0-9-]+\.[A-Za-z0-9-]+))?$/;
+
+/** A waiting device's code in a link (#761): `#device=LOOKUP.SECRET`,
+ * what its QR code says. */
+export const DEVICE_HASH = /^#device=([A-Za-z0-9-]+\.[A-Za-z0-9-]+)$/;
+
+/** A waiting device's code, typed or from a link (`LOOKUP.SECRET`, or the
+ * whole link): its lookup and its secret, normalized; null if it isn't
+ * one. */
+export interface DeviceCode {
+  code: string;
+  secret: string;
+}
+
+export function splitDeviceCode(s: string): DeviceCode | null {
+  const t = s.trim();
+  const m = /#device=([^&\s]+)/.exec(t) ?? /&device=([^&\s]+)/.exec(t);
+  const parts = splitJoinCode(m ? decodeURIComponent(m[1]) : t);
+  return parts?.secret ? { code: parts.code, secret: parts.secret } : null;
+}
 
 /** The machine's join code this page was opened to approve
  * (`#join=CODE`), if any: the code only, which is all control is told. */
@@ -570,6 +630,21 @@ export class ControlSession {
   /** #326: the machine's join code a waiting device came to approve, by
    * the device's id, while that join is open: approved together. */
   pendingJoins = new Map<string, string>();
+  /** #761: each waiting device's lookup (its keys' code), by its id, and
+   * those that show a code with a secret (approved with a MAC, from the
+   * code scanned or typed, not by comparing a fingerprint). */
+  pendingCodes = new Map<string, string>();
+  pendingSealed = new Set<string>();
+  /** #761: while this browser waits, the code it shows
+   * (`LOOKUP.SECRET`); null when control doesn't take one (it shows its
+   * fingerprint instead). */
+  deviceCode: string | null = null;
+  /** #761, in the `unvouched` phase: approved, but not with this
+   * browser's code. `missing`: by a page from before codes (the person
+   * checks the account's fingerprint instead); `wrong`: a MAC that doesn't
+   * check out, refused. */
+  vouch: { why: "missing" | "wrong"; root: string; by: string } | null = null;
+  private vouchOk: (() => void) | null = null;
   /** When each device last loaded the page, as control saw (none before it
    * kept it, or from an older control). */
   used = new Map<string, number>();
@@ -697,11 +772,17 @@ export class ControlSession {
     this.handed = null;
     const signed = root !== null && handed?.cert.device === k.id && handed.cert.account === this.account ? handed : null;
     this.request = cert;
+    // #761: a code to show while it waits, whose secret control never
+    // sees: the approving device answers it, and this browser checks the
+    // answer before it pins the root. Not for the first device (nothing
+    // approves it), nor one the app's sign-in signed already.
+    const secret = root !== null && !signed && this.info.device_secret ? deviceSecretFor(k.id) : null;
+    this.deviceCode = secret ? `${await joinCode(cert)}.${secret}` : null;
     // #326: here to approve a machine, which this browser can't until it's
     // one of the account's devices: the device that approves it is shown
     // the machine alongside, and approves both at once.
-    const join = joinInHash();
-    const ask = () => api<{ approved: boolean; cert?: Cert }>("/api/devices", { cert, join });
+    let join = joinInHash();
+    const ask = () => api<{ approved: boolean; cert?: Cert }>("/api/devices", { cert, join, ...(secret ? { features: DEVICE_SECRET } : {}) });
     let r = signed ? await api<{ approved: boolean; cert?: Cert }>("/api/devices", { cert: signed.cert }) : await ask();
     if (signed && !r.approved) {
       // An older control keeps it waiting: approve it with the same
@@ -713,6 +794,22 @@ export class ControlSession {
     while (!r.approved) {
       this.set("waiting");
       await new Promise((res) => setTimeout(res, 2000));
+      // Another machine's link followed in this tab (only the hash changes,
+      // so nothing reloads), or the link left: ask again with that join, so
+      // the approving device sees this machine alongside, not the last one.
+      const now = joinInHash();
+      if (now !== join) {
+        const was = join;
+        join = now;
+        try {
+          r = await ask();
+          this.brought = join;
+        } catch {
+          // Asked again on the next turn.
+          join = was;
+        }
+        continue;
+      }
       try {
         r = await api<{ approved: boolean; cert: Cert }>(`/api/devices/${k.id}`);
       } catch (e) {
@@ -732,11 +829,47 @@ export class ControlSession {
     // #758: the app's window takes the root the browser that signed it
     // pinned, not control's word for it.
     if (signed && all.trust.root !== signed.root) throw new Error("control says this account's root is a different device than the browser that signed this app in has: not trusting it");
+    // #761: the device that approved it answered its code, for this root.
+    // A recovery code approves it without one (this browser holds that).
+    if (secret && !this.usedRecovery && !(await this.vouched(secret, cert, all))) return;
     const trusted = await evaluate(all.trust, all.certs, all.revocations);
     const mine = trusted.get(k.id);
     if (!mine) throw new Error("control approved this device, but the approval doesn't check out");
     this.enrollment = { control: location.origin, account: this.account, root: all.trust.root, cert: mine };
     await saveEnrollment(this.enrollment);
+    dropDeviceSecret();
+    this.deviceCode = null;
+  }
+
+  /** #761: whether to pin the root control names, by the approving
+   * device's MAC under this browser's secret. A MAC that checks out: yes.
+   * A wrong one (control's own account, or the code mistyped): no, and
+   * the secret goes, so there's one guess per code; the `unvouched` screen
+   * says to enroll again. None (approved from a page from before codes):
+   * the person checks the account's fingerprint on that screen, the old
+   * way, and says so with `vouchFor`. */
+  private async vouched(secret: string, mine: Cert, all: { trust: { account: string; root: string }; certs: Cert[] }): Promise<boolean> {
+    const got = await api<{ cert: Cert; mac?: string }>(`/api/devices/${mine.device}`);
+    if (got.mac && (await deviceMacOk(secret, all.trust, mine, got.mac))) return true;
+    const by = all.certs.find((c) => c.device === got.cert.approver)?.name ?? "";
+    this.vouch = { why: got.mac ? "wrong" : "missing", root: all.trust.root, by };
+    if (got.mac) {
+      dropDeviceSecret();
+      this.set("unvouched");
+      return false;
+    }
+    this.set("unvouched");
+    await new Promise<void>((res) => (this.vouchOk = res));
+    this.vouchOk = null;
+    this.vouch = null;
+    this.set("loading");
+    return true;
+  }
+
+  /** #761: the person checked the account's fingerprint on the approving
+   * device, and it's the one this browser was given. */
+  vouchFor() {
+    this.vouchOk?.();
   }
 
   /** Two recovery codes, signed by this device (the first, or one making
@@ -867,7 +1000,15 @@ export class ControlSession {
     if (!e) return;
     try {
       const [devs, dir] = await Promise.all([
-        api<{ trust: { account: string; root: string } | null; certs: Cert[]; revocations: Revocation[]; pending: Cert[]; joins?: Record<string, string>; used?: Record<string, number> }>("/api/devices"),
+        api<{
+          trust: { account: string; root: string } | null;
+          certs: Cert[];
+          revocations: Revocation[];
+          pending: Cert[];
+          joins?: Record<string, string>;
+          features?: Record<string, string>;
+          used?: Record<string, number>;
+        }>("/api/devices"),
         api<{ daemons: ForeignEntry[]; offers?: ShareOffer[] }>("/api/directory"),
       ]);
       this.rootMismatch = !!devs.trust && devs.trust.root !== e.root;
@@ -882,6 +1023,12 @@ export class ControlSession {
       else if (mine && this.phase === "untrusted") this.phase = "ready";
       this.pending = devs.pending;
       this.pendingJoins = new Map(Object.entries(devs.joins ?? {}));
+      this.pendingCodes = new Map(await Promise.all(devs.pending.map(async (c) => [c.device, await joinCode(c)] as const)));
+      this.pendingSealed = new Set(
+        Object.entries(devs.features ?? {})
+          .filter(([, f]) => f.split(",").includes(DEVICE_SECRET))
+          .map(([d]) => d),
+      );
       this.used = new Map(Object.entries(devs.used ?? {}));
       const daemons: DirDaemon[] = [];
       for (const d of dir.daemons) {
@@ -1245,16 +1392,34 @@ export class ControlSession {
     return `${this.info.url}/#link=${d.id}.${d.cert.noise}.${hex(seed)}.${hex(pub)}`;
   }
 
-  /** Approve another device's request: sign its certificate. */
-  async approve(c: Cert) {
-    await this.approveDevice(c);
+  /** Approve another device's request: sign its certificate. With the
+   * code it shows (#761, scanned or typed), the lookup must be its keys'
+   * code, and the approval carries a MAC under the secret over this
+   * account, the root this device pinned and its keys, which it checks
+   * before it pins that root. */
+  async approve(c: Cert, code: DeviceCode | null = null) {
+    await this.approveDevice(c, code);
     await this.refresh();
   }
 
-  private async approveDevice(c: Cert) {
+  /** Whether a waiting device shows a code (#761): approved from it, not
+   * by comparing its fingerprint. */
+  sealed(c: Cert): boolean {
+    return this.pendingSealed.has(c.device);
+  }
+
+  private async approveDevice(c: Cert, code: DeviceCode | null = null) {
+    if (this.sealed(c) && !code) throw new Error(`${c.name} shows a code: scan it or type it to approve it`);
     const signed: Cert = { ...c, account: this.account, approver: this.keys.id, sig: "" };
     signed.sig = await signText(this.keys, certBody(signed));
-    await this.approving(api(`/api/devices/${c.device}/approve`, { cert: signed }));
+    let mac: string | null = null;
+    if (code) {
+      // Recomputed from the key control shows, so control can't swap it.
+      if ((await joinCode(c)) !== code.code) throw new Error(`that isn't the code ${c.name} shows: not approving it`);
+      if (!this.enrollment || this.rootMismatch) throw new Error("this browser's account root isn't settled: approve from a device you've used before");
+      mac = await deviceMac(code.secret, { account: this.account, root: this.enrollment.root }, c);
+    }
+    await this.approving(api(`/api/devices/${c.device}/approve`, { cert: signed, ...(mac ? { mac } : {}) }));
   }
 
   /** An approval's request: refused, it says which check failed and what
@@ -1301,8 +1466,10 @@ export class ControlSession {
    * hears of either, so its prompt stays up until both are done. With the
    * machine's join `secret` (#760), the approval carries a MAC under it
    * over this account and the root this device pinned (not control's word
-   * for it), which the machine checks before it pins that root. */
-  async approveJoin(code: string, c: Cert, team: string | null = null, devices: Cert[] = [], secret: string | null = null) {
+   * for it), which the machine checks before it pins that root. A device
+   * alongside that shows a code (#761) is approved with it, from
+   * `deviceCodes` by its id. */
+  async approveJoin(code: string, c: Cert, team: string | null = null, devices: Cert[] = [], secret: string | null = null, deviceCodes: Map<string, DeviceCode> = new Map()) {
     const signed: Cert = { ...c, account: this.account, approver: this.keys.id, sig: "" };
     signed.sig = await signText(this.keys, certBody(signed));
     let mac: string | null = null;
@@ -1320,7 +1487,7 @@ export class ControlSession {
     try {
       for (const d of devices) {
         try {
-          await this.approveDevice(d);
+          await this.approveDevice(d, deviceCodes.get(d.device) ?? null);
         } catch (e) {
           throw new AlongsideError(d.name, (e as Error).message);
         }

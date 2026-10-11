@@ -29,7 +29,10 @@ control serves, and the first account a machine joins, are trusted.
   - daemons verify the chain themselves, so control can't add a reader;
   - a joining machine pins its account's root only once the device that
     approved it has answered a secret in the machine's approval link,
-    which control never sees ([Joining](#joining-a-machine-the-secret-in-its-link)).
+    which control never sees ([Joining](#joining-a-machine-the-secret-in-its-link));
+  - a new browser, phone or app window does the same with the code it
+    shows, scanned or typed on a device you already use
+    ([Approving a new device](#approving-a-new-browser-or-phone-the-code-it-shows)).
 - **Relay:** control keeps each enrolled daemon's dial-out socket (the daemon's
   dial-out mux) and splices clients onto it. It sees connection metadata and byte
   counts only.
@@ -99,8 +102,10 @@ device nobody trusted. Now:
 - The **first device** of an account is self-signed. It is trusted on
   first use, like an SSH host key.
 - Every later device, daemon or recovery code is signed by an existing
-  device. That is the "approve this device?" prompt, showing a fingerprint
-  to compare (the first 8 bytes of SHA-256 of `noise‖sign`, as words).
+  device. That is the *New device?* prompt. Since #761 a new browser is
+  approved with the code it shows rather than a fingerprint to compare
+  (the first 8 bytes of SHA-256 of `noise‖sign`, which a page from before
+  codes still shows).
 - A daemon's own certificate is signed by the device that approved its
   `join` code. When the approver puts it in a team, that device also
   signs the choice (`illogical team join v1`: the daemon, the team, its
@@ -279,13 +284,16 @@ would pass. So the daemon doesn't take the root on control's word. Since
   pin without a check, as they always did; control's API keeps working for
   all of them.
 - **Trust on first use, still:**
-  - an account's first device is self-signed, and a browser enrolling as a
-    later device takes the account's root from control. A browser approved
-    by your other device checks its own certificate chains to that root, but
-    a control that lied at that moment would have to keep lying to it;
-    compare *Devices and machines…* across two devices to check (the
-    desktop app signed in from a device takes that device's root instead:
-    [below](#signing-in-the-desktop-app-one-allow));
+  - an account's first device is self-signed. A browser enrolling as a
+    later device no longer takes the account's root on control's word: the
+    device that approves it answers the code it shows
+    ([below](#approving-a-new-browser-or-phone-the-code-it-shows)), and the
+    desktop app signed in from a device takes that device's root
+    ([below](#signing-in-the-desktop-app-one-allow)). What's left: a
+    browser let in by a recovery code takes the root control names (the
+    recovery certificate must chain to it, but control picks the chain),
+    and one approved by a page from before codes shows the account's
+    fingerprint to compare;
   - a machine joined before 0.17.0 pinned whatever root control sent then.
     Its *Devices and machines…* fingerprint and `control.json`'s
     `trust.root` should be the same; if not, `arugulad leave` and join
@@ -296,6 +304,53 @@ would pass. So the daemon doesn't take the root on control's word. Since
   can read it whatever the keys say. A sandbox is end to end encrypted
   against the network, not against control. Its join has no link, so no
   secret.
+
+### Approving a new browser or phone: the code it shows
+
+The same mechanism as a machine's join (#761). A browser, phone or the
+app's window that waits to be approved shows a code instead of its
+fingerprint:
+
+- **The code** is `<lookup>.<secret>`, as text and as a QR code of the
+  link `#device=<lookup>.<secret>` on control's page. The lookup is its
+  keys' code (`joinCode`, ten characters); the secret is 16 more of the
+  same alphabet (80 bits), made by the waiting page and kept in its
+  `localStorage` with its key id, so a reload shows the same code. The
+  secret never reaches control: the waiting page sends only its
+  certificate and `features: "device-secret"` with its request, and
+  signing in with GitHub from a `#device=` link keeps the link in
+  sessionStorage rather than in `next`.
+- **The approving device** reads it: a phone's camera opens the link,
+  *Scan it* reads it in the page (`BarcodeDetector`, or jsQR where there's
+  none), or the rest of it is typed into *New device?* after the lookup,
+  which the page shows fixed (the request's keys give it). The lookup
+  must be that request's keys' code, so control can't swap the key, and
+  sends with the certificate it signs
+  `HMAC-SHA256(secret, "arugula device secret v1", account, root, the device's id and keys)`
+  (`deviceMac` in `web/src/e2e/cert.ts`), where the root is the one the
+  approving device pinned. Control keeps it with the device (`mac`) and
+  hands it over with the approval (`GET /api/devices/{id}`).
+- **The new device checks it** against the account and root control names
+  and its own keys before it pins that root. Control can't make that MAC
+  for a root of its own without the secret. A wrong one is refused, and
+  the secret is dropped (one guess per code): the browser says to enroll
+  again. Offline guessing against the MAC is out of reach for the same
+  reason as the join's.
+- **A browser that came to approve a machine** (#326) adds its code to the
+  link it hands on (`#join=<code>.<secret>&device=<lookup>.<secret>`), so
+  the device that approves the machine approves it along with the
+  machine's MAC; without the link, its card asks for its code.
+- **Older pages:** a page from before codes (a tab left open across a
+  deploy) still lists the request with its fingerprint and approves it
+  without a MAC; the waiting page has the fingerprint a click away. The
+  new browser then doesn't pin the root silently: it shows the account's
+  fingerprint and asks the person to check it on the approving device
+  (*It matches*, or forget this browser). A waiting page from before
+  codes says no `device-secret`, and the approving page shows its
+  fingerprint to compare, as before. Control says `device_secret` in
+  `/control.json`; without it the waiting page shows its fingerprint.
+- **Not covered:** a recovery code approves a browser by itself, with no
+  other device to answer a code.
 
 ### Signing in the desktop app: one Allow
 
@@ -349,6 +404,7 @@ or whoever runs yours) does:
 | has its database or relay copied, or logs everything it sees | still unreadable: it holds certificates and ciphertext, never a private key |
 | turns malicious **after** your machines and devices are set up, without changing the page it serves | can't add a reader: daemons check every device against the root they pinned. It can withhold revocations and refuse service |
 | lies at **join** about which account a machine joins | refused by the machine: the approving device's answer to the secret in its link doesn't match (an older daemon or CLI: caught by the account fingerprint, if you compare it) |
+| lies about which account a **new browser or phone** is approved into | refused by that device: the approving device's answer to the code it showed doesn't match (approved from a page from before codes: it shows the account fingerprint to check) |
 | serves a **modified web client** | can read what that client shows and use its keys while it runs |
 
 The last row is the important limit. The browser client at control's

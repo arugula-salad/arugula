@@ -636,6 +636,63 @@ async fn an_approval_without_a_mac_answers_as_before() {
     assert!(got.get("mac").is_none(), "{got}");
 }
 
+/// #761: a waiting browser that shows a code says so (`device-secret`),
+/// the approving page sees that, and its MAC goes back to the browser as
+/// it was sent, only once approved. An approval without one (an older
+/// page) says none, as before.
+#[tokio::test]
+async fn a_waiting_devices_mac_passes_through_control_to_it() {
+    let c = control(|_| {}).await;
+    let root = person(&c.app, "jake", "a1");
+    let cookie = session(&c.app, "a1");
+    let ctl: Value = c.http.get(format!("{}/control.json", c.base)).send().await.unwrap().json().await.unwrap();
+    assert_eq!(ctl["device_secret"], 1);
+    let enrolls = |keys: &DeviceKeys, features: &str| {
+        let cert = Cert::new(keys, "a1", Kind::Browser, "Chrome on Mac");
+        let (c, cookie) = (&c, cookie.clone());
+        let body = json!({ "cert": cert, "features": features });
+        async move { c.as_person(&cookie, "POST", "/api/devices", Some(body)).await }
+    };
+    let get = |path: String| {
+        let (c, cookie) = (&c, cookie.clone());
+        async move { c.as_person(&cookie, "GET", &path, None).await.1 }
+    };
+    let approve = |keys: &DeviceKeys, mac: Option<&str>| {
+        let mut cert = Cert { account: "a1".into(), ..Cert::new(keys, "a1", Kind::Browser, "Chrome on Mac") };
+        cert.sign_with(&root);
+        let (c, cookie, id) = (&c, cookie.clone(), keys.id());
+        let mut body = json!({ "cert": cert });
+        if let Some(m) = mac {
+            body["mac"] = json!(m);
+        }
+        async move { c.as_person(&cookie, "POST", &format!("/api/devices/{id}/approve"), Some(body)).await.0 }
+    };
+
+    let new = DeviceKeys::generate();
+    assert_eq!(enrolls(&new, "nope!").await.0, 400, "features are words");
+    let (st, r) = enrolls(&new, "device-secret").await;
+    assert_eq!((st, &r["approved"]), (200, &json!(false)), "{r}");
+    let old = DeviceKeys::generate();
+    assert_eq!(enrolls(&old, "").await.0, 200);
+    assert_eq!(get("/api/devices".into()).await["features"], json!({ new.id(): "device-secret" }));
+    // Waiting, it has no MAC to collect.
+    assert!(get(format!("/api/devices/{}", new.id())).await.get("mac").is_none());
+
+    assert_eq!(approve(&new, Some("not hex")).await, 400, "a MAC is 64 hex digits");
+    let mac = "cd".repeat(32);
+    assert_eq!(approve(&new, Some(&mac)).await, 200);
+    let got = get(format!("/api/devices/{}", new.id())).await;
+    assert_eq!((&got["approved"], &got["mac"]), (&json!(true), &json!(mac)), "{got}");
+    // Approved, it isn't waiting with its features any more.
+    assert_eq!(get("/api/devices".into()).await["features"], json!({}));
+
+    // An older page approves without one, and the browser hears none.
+    assert_eq!(approve(&old, None).await, 200);
+    let got = get(format!("/api/devices/{}", old.id())).await;
+    assert_eq!(got["approved"], true);
+    assert!(got.get("mac").is_none(), "{got}");
+}
+
 fn roster(team: &str, version: u64, members: Vec<Member>, by: &DeviceKeys) -> Roster {
     let mut r = Roster {
         v: 1,
