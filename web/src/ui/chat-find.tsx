@@ -13,7 +13,7 @@ import { closeChat, openChat, openChatView, type ChatRoute, type Source } from "
 import { getFleet } from "./hosts";
 import { useSubscribe } from "./hooks";
 import type { Fleet, FleetPane } from "../fleet";
-import { cardTitle, reasonOf, shortPaths } from "../swarm/model";
+import { cardTitle, holdStill, reasonOf, shortPaths, shownNow, wantsYou, whatItDoes } from "../swarm/model";
 import { paneLabel, sessionName, type Row } from "./chat";
 import { Markup } from "./markup";
 import { MsgAvatar } from "./threads";
@@ -168,6 +168,15 @@ export function ActivityView({ all, multi, phone }: { all: Source[]; multi: bool
   const fleet = getFleet();
   useSubscribe((fn) => fleet?.subscribe(fn) ?? (() => {}));
   const needs = needing(fleet);
+  // On show here: a finished one leaves after 15 s, as on the swarm's rail.
+  shownNow(needs);
+  const [, tick] = useState(0);
+  const finished = needs.some((p) => reasonOf(p)?.kind === "done");
+  useEffect(() => {
+    if (!finished) return;
+    const t = setInterval(() => tick((n) => n + 1), 1000);
+    return () => clearInterval(t);
+  }, [finished]);
   return (
     <section class="chat-thread chat-view" aria-label="Activity" data-chat-activity-view>
       <ViewHead title="Activity" sub="What needs you on every machine, mentions of you, and agents' answers to you" phone={phone} />
@@ -188,30 +197,38 @@ export function ActivityView({ all, multi, phone }: { all: Source[]; multi: bool
 /** Every pane on every machine that wants you: what the swarm's rail
  * shows, so Chat isn't quiet while agents ask and finish. */
 function needing(fleet: Fleet | null): FleetPane[] {
-  return (fleet?.panes ?? []).filter((p) => reasonOf(p)).sort((a, b) => (reasonOf(b)!.since_ms ?? 0) - (reasonOf(a)!.since_ms ?? 0));
+  return (fleet?.panes ?? []).filter((p) => wantsYou(p)).sort((a, b) => (reasonOf(b)!.since_ms ?? 0) - (reasonOf(a)!.since_ms ?? 0));
 }
 
 function NeedsYou({ fleet, panes }: { fleet: Fleet; panes: FleetPane[] }) {
   const [err, setErr] = useState("");
+
   const dismiss = async (p: FleetPane) => {
     setErr("");
     const res = await fleet.request(p.host, "POST", "/api/attention/act", { action: "dismiss", pane: p.id }).catch((e: Error) => e);
     if (res instanceof Error) setErr(res.message);
     else if (!res.ok) setErr(`couldn't dismiss (${res.status})`);
   };
+  // Rows hold still under the pointer, as the swarm's cards do.
+  const [held, setHeld] = useState(false);
+  const kept = useRef<(FleetPane & { gone?: boolean })[]>([]);
+  const rows = holdStill<FleetPane & { gone?: boolean }>(held, kept.current, panes, (p) => ({ ...p, gone: true }));
+  kept.current = rows;
   return (
-    <div class="activity-needs" data-activity-needs>
+    <div class="activity-needs" data-activity-needs onPointerEnter={() => setHeld(true)} onPointerLeave={() => setHeld(false)}>
       <h3 class="activity-head">Needs you</h3>
-      {panes.map((p) => {
-        const r = reasonOf(p)!;
+      {rows.map((p) => {
+        const r = p.gone ? p.info.reason : reasonOf(p);
+        if (!r) return null;
         const owner = fleet.host(p.host)?.owner;
         return (
-          <div key={p.key} class="activity-need" data-need={p.key} data-kind={r.kind}>
+          <div key={p.key} class={p.gone ? "activity-need gone" : "activity-need"} inert={p.gone} data-need={p.key} data-kind={r.kind}>
             <div class="activity-need-text">
               <b>{cardTitle(r, 1, [p.host])}</b>
-              <span class="dim">
+              <span class="dim" title={`%${p.id}`}>
                 {" "}
-                · {owner ? `${owner}'s · ` : ""}%{p.id} on {p.host}
+                · {owner ? `${owner}'s · ` : ""}
+                {whatItDoes(p)} · {p.host}
                 {p.info.project?.name ? ` · ${p.info.project.name}` : ""}
               </span>
               <p title={r.headline}>{shortPaths(r.headline)}</p>

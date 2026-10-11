@@ -1444,6 +1444,16 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   background: var(--raised);
 }
 
+/* A place that shows every machine: a label, not the picker. */
+.scope-label {
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  white-space: nowrap;
+  color: var(--dim);
+  border-right: 1px solid var(--divider);
+}
+
 .host-crumb {
   margin-right: 6px;
   padding: 0 5px;
@@ -5699,6 +5709,11 @@ button.diff-why-run {
   border-color: var(--accent);
 }
 
+/* Chat's sidebar: the machines it doesn't show, and why. */
+.chat-missing {
+  margin-top: 12px;
+}
+
 /* Chat's Activity: what needs you on every machine, above the messages. */
 .activity-head {
   margin: 12px 16px 4px;
@@ -5716,6 +5731,13 @@ button.diff-why-run {
   margin: 0 12px;
   padding: 8px 4px;
   border-bottom: 1px solid var(--divider);
+}
+
+/* Cleared while the pointer was over the list: held in place, faded. */
+.activity-need.gone,
+.swarm-card.gone {
+  opacity: 0.35;
+  transition: opacity 0.2s;
 }
 
 .activity-need-text {

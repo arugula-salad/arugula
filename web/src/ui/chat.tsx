@@ -30,7 +30,7 @@ import { AppBar } from "./app-bar";
  * desktop app's titlebar on this page. */
 function ChatBar({ client, route }: { client: Client; route: ChatRoute }) {
   return (
-    <AppBar client={client} at="chat">
+    <AppBar client={client} at="chat" all>
       <SearchField route={route} />
     </AppBar>
   );
@@ -163,6 +163,9 @@ function ChatView({ client, route }: { client: Client; route: ChatRoute }) {
   const [, setTick] = useState(0);
   const redraw = () => setTick((t) => t + 1);
   const all = sources(client, fleet);
+  const missing = (fleet?.list ?? [])
+    .filter((h) => !all.some((x) => x.host === h.name))
+    .map((h) => ({ name: h.name, why: h.state !== "connected" ? "offline" : "chat is off there" }));
   const multi = all.length > 1;
   const rows = all.map((s) => ({ s, rows: rowsOf(s) }));
 
@@ -261,6 +264,19 @@ function ChatView({ client, route }: { client: Client; route: ChatRoute }) {
           </section>
         );
       })}
+      {/* The machines chat doesn't show, and why: chat isn't a filter
+          that left them out. */}
+      {missing.length > 0 && (
+        <p class="chat-none chat-missing" data-chat-missing>
+          Not here:{" "}
+          {missing.map((m, i) => (
+            <span key={m.name}>
+              {i ? ", " : ""}
+              {m.name} <span class="dim">({m.why})</span>
+            </span>
+          ))}
+        </p>
+      )}
     </nav>
   );
 

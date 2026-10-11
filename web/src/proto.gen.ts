@@ -1418,7 +1418,7 @@ export type Project = {
  */
 root: string, 
 /**
- * Its last path component.
+ * Its name: the repository its origin names, else its folder's.
  */
 name: string, };
 

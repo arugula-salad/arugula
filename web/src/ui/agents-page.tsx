@@ -75,7 +75,7 @@ export function AgentsPage({ client }: { client: Client }) {
 function Page({ client, tab }: { client: Client; tab: AgentsTab }) {
   return (
     <div class="chat agents-page" data-agents-page={tab}>
-      <AppBar client={client} at="agents">
+      <AppBar client={client} at="agents" all={tab === "team"}>
         <span class="agents-tabs" role="tablist" aria-label="Agents">
           <button role="tab" aria-selected={tab === "recipes"} class={tab === "recipes" ? "on" : ""} data-agents-tab="recipes" onClick={() => openAgentsPage("recipes")}>
             Recipes

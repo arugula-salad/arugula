@@ -802,7 +802,7 @@ pub enum WorkKind {
 pub struct Project {
     /// The repository's top directory.
     pub root: String,
-    /// Its last path component.
+    /// Its name: the repository its origin names, else its folder's.
     pub name: String,
 }
 

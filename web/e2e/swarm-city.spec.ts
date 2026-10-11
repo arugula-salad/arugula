@@ -117,7 +117,7 @@ test("a building peeks and opens its tab; Show and a notification fly to it; a b
   await expect(card).toBeVisible({ timeout: 20_000 });
   await expect.poll(() => city(page, (c) => c.beamKeys.length)).toBe(3);
   // A card's Show flies to its pane.
-  await card.getByRole("button", { name: "Show", exact: true }).click();
+  await card.locator(".ct").click();
   await expect.poll(() => lookingAt(page, `workstation:${failed[0]}`), { timeout: 5_000 }).toBeLessThan(0.5);
   await page.locator("[data-fit]").click();
   await clearRail(page);

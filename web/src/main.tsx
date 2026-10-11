@@ -267,7 +267,7 @@ function Swarm({ client }: { client: Client }) {
   if (!client.state || phone) return view(false);
   return (
     <div class="swarm-shell">
-      <AppBar client={client} at="swarm" />
+      <AppBar client={client} at="swarm" all />
       {view(true)}
     </div>
   );

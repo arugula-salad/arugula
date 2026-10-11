@@ -3,6 +3,7 @@
 // lands on. Pure functions over the fleet's merged panes (M25), so the field
 // and the rail agree and the tests can check them directly.
 
+import { cleanTitle } from "../titles";
 import type { FleetPane } from "../fleet";
 import type { Reason, WorkKind } from "../proto";
 
@@ -171,4 +172,48 @@ function titleCase(s: string): string {
  * path is most of a command otherwise); the card's tooltip has it all. */
 export function shortPaths(t: string): string {
   return t.replace(/(?:\/[^\s/]+){3,}\/([^\s/]+)/g, "…/$1");
+}
+
+/** How long a finished pane still wants you once it's been shown. */
+export const DONE_MS = 15_000;
+
+/** When each finished pane was first shown, on any view (the swarm's rail
+ * or Chat's Activity), by `pane@since`: for this page's life. */
+const doneShown = new Map<string, number>();
+
+/** Whether a pane wants you: it has a reason, and if that's only that it
+ * finished, it hasn't been on show for 15 s yet. The swarm's rail and
+ * Activity both read this, so they list the same. */
+export function wantsYou(p: FleetPane, now = Date.now()): boolean {
+  const r = reasonOf(p);
+  if (!r) return false;
+  if (r.kind !== "done") return true;
+  const at = doneShown.get(`${p.key}@${r.since_ms}`);
+  return at === undefined || now - at < DONE_MS;
+}
+
+/** These panes are on show now: a finished one's 15 s start. */
+export function shownNow(panes: FleetPane[], now = Date.now()) {
+  for (const p of panes) {
+    const r = reasonOf(p);
+    if (r?.kind === "done" && !doneShown.has(`${p.key}@${r.since_ms}`)) doneShown.set(`${p.key}@${r.since_ms}`, now);
+  }
+}
+
+/** While `held` (the pointer is over the list), the items as they were:
+ * cleared ones kept in place (`gone`), new ones after them, so nothing
+ * slides under a click. Else just `now`. */
+export function holdStill<T extends { key: string }>(held: boolean, kept: T[], now: T[], gone: (t: T) => T): T[] {
+  if (!held) return now;
+  const byKey = new Map(now.map((t) => [t.key, t]));
+  return [...kept.map((k) => byKey.get(k.key) ?? gone(k)), ...now.filter((t) => !kept.some((k) => k.key === t.key))];
+}
+
+/** What a pane is doing, in a word or a line: the title its program set
+ * (Claude Code's is the task, so eight `claude --resume` panes read
+ * apart), unless that's a shell's own "user@host: dir"; else its command. */
+export function whatItDoes(p: FleetPane): string {
+  const title = cleanTitle(p.info.title ?? "");
+  const shells = /^[^\s@]+@[^\s:]+:/.test(title);
+  return (!shells && title) || p.info.current?.text || p.info.command || kindOf(p);
 }
