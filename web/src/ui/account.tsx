@@ -6,6 +6,7 @@ import { useEffect, useState } from "preact/hooks";
 import { agentName, api, shownName, type ControlSession } from "../control";
 import { currentHand, lending, setLending } from "../hand";
 import { ConfirmRemove } from "./confirm";
+import { RecoveryAndName } from "./control";
 
 export interface SessionRow {
   id: string;
@@ -85,6 +86,7 @@ export function AccountPanel({ s, close }: { s: ControlSession; close: () => voi
         Signed in as <b>{s.login}</b>
         {keys?.github ? ` (GitHub: ${keys.github})` : ""}.
       </p>
+      <RecoveryAndName s={s} />
       <h3 class="control-group">Where you're signed in</h3>
       <ul class="control-devices" data-sessions>
         {(sessions ?? []).map((x) => (
@@ -138,7 +140,7 @@ export function AccountPanel({ s, close }: { s: ControlSession; close: () => voi
                   {k.used ? `, last used ${day(k.used)}` : ""}
                 </span>
                 <button
-                  class="control-revoke"
+                  class="control-revoke quiet-danger"
                   data-remove-passkey={k.id}
                   disabled={(keys?.ways ?? 0) <= 1}
                   title={(keys?.ways ?? 0) <= 1 ? "Your only way to sign in" : undefined}

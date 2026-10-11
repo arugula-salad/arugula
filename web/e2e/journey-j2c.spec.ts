@@ -3,7 +3,7 @@
 // team, DLex Corp, to work with Sam, and invites him. Sam tries what the
 // screens offer to bring his machine into it: the team page's copied
 // `arugulad join … --team` (on his PATH from the app since #550, but the
-// machine is already in Arugula), then *In …* (which would take it out of
+// machine is already in Arugula), then *Team …* (which would take it out of
 // Arugula). What works is sharing the session with DLex Corp; Riley finds
 // it, the Swarm, and drives Sam's terminal. Sam, looking at Jake's geek,
 // opens a new tab with + and it lands there.
@@ -148,7 +148,7 @@ test("J2c: #551's evening: a machine already in one team, a friend's second team
           if (!/DLex Corp/.test(r.out)) j.issue("it names the team the machine is in, but not DLex Corp, the one asked for");
           if (/arugulad leave/.test(r.out) && !/takes it off/.test(r.out))
             j.issue(
-              "its advice (arugulad leave, then join) takes the machine off the cloud until a fresh approval; In … in Devices and machines… would move it",
+              "its advice (arugulad leave, then join) takes the machine off the cloud until a fresh approval; Team … in Devices and machines… would move it",
             );
           if (!/share/i.test(r.out)) j.issue("it doesn't say a machine is in one place, or offer sharing a session with the other team instead");
         }
@@ -157,7 +157,7 @@ test("J2c: #551's evening: a machine already in one team, a friend's second team
 
     await step(
       "try-move",
-      "Sam tries In … in Devices and machines…",
+      "Sam tries Team … in Devices and machines…",
       "sam",
       "app",
       at(sam),

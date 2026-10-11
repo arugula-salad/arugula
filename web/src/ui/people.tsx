@@ -352,7 +352,7 @@ export function ShareDialog({ client }: { client: Client }) {
                   <option value="owner">{roleLabel("owner")}</option>
                 </select>
                 <span class="dim">{g.from ? "from now" : "with history"}</span>
-                <button class="control-revoke" onClick={() => void set(g.principal, null)}>
+                <button class="control-revoke quiet-danger" onClick={() => void set(g.principal, null)}>
                   Remove
                 </button>
               </li>

@@ -630,9 +630,12 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   letter-spacing: 0.05em;
 }
 
+/* A checkable item's dot hangs in the item's left padding, so its label
+   lines up with the items around it. */
 .menu-check {
   display: inline-block;
-  width: 1.2em;
+  width: 8px;
+  margin-left: -8px;
   color: var(--accent);
   font-size: 9px;
   vertical-align: 1px;
@@ -2614,6 +2617,35 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   text-decoration: none;
 }
 
+/* Never taller than the window: it scrolls inside, and its × stays put. */
+.control-prompt {
+  position: relative;
+  max-height: calc(100vh - 15vh - 24px);
+  max-height: calc(100dvh - 15vh - 24px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.modal-close {
+  position: sticky;
+  top: 0;
+  float: right;
+  width: 28px;
+  height: 28px;
+  margin: -6px -6px 0 8px;
+  border-radius: 6px;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--dim);
+  background: var(--raised);
+  z-index: 1;
+}
+
+.modal-close:hover {
+  background: var(--raised-hover);
+  color: var(--fg);
+}
+
 .control-prompt h2 {
   margin: 0 0 8px;
   font-size: 16px;
@@ -2810,6 +2842,14 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 
 .control-move .control-explain {
   margin: 4px 0 0;
+}
+
+/* "Team [Just me ▾]" on one line, the picker as wide as its choice. */
+.prompt .control-move-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 400;
 }
 
 .control-badge {
@@ -3434,6 +3474,19 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   font: 500 11px/1.4 var(--f-mono);
   color: var(--s-wait);
 }
+/* The city's towers rise into the bar and the key: a backdrop behind
+   them, so its controls and the colour key stay readable. */
+.swarm[data-theme="city"] .swarm-bar {
+  padding-bottom: 12px;
+  background: linear-gradient(to bottom, var(--void) 75%, transparent);
+}
+.swarm[data-theme="city"] .swarm-foot {
+  padding-top: 18px;
+  bottom: 0;
+  padding-bottom: 16px;
+  background: linear-gradient(to top, var(--void) 70%, transparent);
+}
+
 .swarm-foot {
   position: absolute;
   z-index: 5;
