@@ -1,12 +1,12 @@
 // The one place that knows about xterm.js, so the renderer can be swapped
 // (ghostty-web) without touching the rest of the client.
 
-import { Terminal, type IDecoration, type IMarker } from "@xterm/xterm";
+import { Terminal, type IDecoration, type IMarker, type ITheme } from "@xterm/xterm";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import "@xterm/xterm/css/xterm.css";
-import { theme } from "./theme";
+import { onAppearance, terminalTheme } from "./appearance";
 import type { Chip } from "./upload";
 
 export const FONT_FAMILY = '"JetBrains Mono", "Fira Code", ui-monospace, Menlo, monospace';
@@ -31,6 +31,34 @@ export interface CommandMark {
   deco?: IDecoration;
 }
 
+const ANSI_NAMES = [
+  "black", "red", "green", "yellow", "blue", "magenta", "cyan", "white",
+  "brightBlack", "brightRed", "brightGreen", "brightYellow", "brightBlue", "brightMagenta", "brightCyan", "brightWhite",
+] as const;
+
+// Ghostty's default palette (src/terminal/color.zig), which the daemon's
+// terminal starts with: its sixteen, then xterm's cube and grays.
+const GHOSTTY_16 = [
+  "#1d1f21", "#cc6666", "#b5bd68", "#f0c674", "#81a2be", "#b294bb", "#8abeb7", "#c5c8c6",
+  "#666666", "#d54e53", "#b9ca4a", "#e7c547", "#7aa6da", "#c397d8", "#70c0b1", "#eaeaea",
+];
+const hex2 = (n: number) => n.toString(16).padStart(2, "0");
+function ghosttyDefault(i: number): string {
+  if (i < 16) return GHOSTTY_16[i];
+  if (i >= 232) return `#${hex2((i - 232) * 10 + 8).repeat(3)}`;
+  const level = (v: number) => (v ? v * 40 + 55 : 0);
+  const n = i - 16;
+  return `#${hex2(level(Math.floor(n / 36)))}${hex2(level(Math.floor(n / 6) % 6))}${hex2(level(n % 6))}`;
+}
+
+/** An X11 color spec (`rgb:r/g/b`, 1 to 4 hex digits each) or `#rrggbb`,
+ * as `#rrggbb`; null for anything else (a color name). */
+function parseColor(spec: string): string | null {
+  const m = /^rgb:([0-9a-f]{1,4})\/([0-9a-f]{1,4})\/([0-9a-f]{1,4})$/i.exec(spec);
+  if (m) return `#${m.slice(1, 4).map((c) => hex2(Math.round((parseInt(c, 16) / (16 ** c.length - 1)) * 255))).join("")}`;
+  return /^#[0-9a-f]{6}$/i.test(spec) ? spec.toLowerCase() : null;
+}
+
 /** VS Code's OSC 633;E escaping: `\\` and `\xHH`. */
 function unescape633(s: string): string {
   return s.replace(/\\(\\|x([0-9a-fA-F]{2}))/g, (_, all: string, hex?: string) =>
@@ -46,6 +74,9 @@ export class TerminalView {
   private pendingText = "";
   private pending: { text: string; start: IMarker } | null = null;
   private markMenu: ((mark: CommandMark, e: MouseEvent) => void) | undefined;
+  private offAppearance: () => void;
+  /** Palette colors programs set (OSC 4), by index. */
+  private custom = new Map<number, string>();
 
   /** `link`: a link clicked in the terminal, before the browser opens it;
    * true if it was handled (M36: a pull request opens as a block). */
@@ -53,7 +84,7 @@ export class TerminalView {
     this.host = document.createElement("div");
     this.host.className = "term-host";
     this.term = new Terminal({
-      theme,
+      theme: terminalTheme(),
       fontFamily: FONT_FAMILY,
       fontSize: FONT_SIZE,
       cursorBlink: true,
@@ -76,6 +107,7 @@ export class TerminalView {
     this.takeFiles();
     this.term.open(this.host);
     this.touchScroll();
+    this.offAppearance = onAppearance(() => this.applyTheme());
   }
 
   /** xterm.js 6 scrolls on the wheel only (its viewport is VS Code's
@@ -180,10 +212,51 @@ export class TerminalView {
     p.registerCsiHandler({ prefix: "?", intermediates: "$", final: "p" }, yes);
     p.registerCsiHandler({ prefix: "?", final: "u" }, yes); // kitty keyboard query
     p.registerDcsHandler({ intermediates: "$", final: "q" }, yes); // DECRQSS
-    for (const osc of [4, 10, 11, 12]) {
+    for (const osc of [10, 11, 12]) {
       // Color queries contain "?"; setting colors still goes through.
       p.registerOscHandler(osc, (data) => data.includes("?"));
     }
+    this.followPalette();
+  }
+
+  /** The palette is this device's (appearance.ts), but the daemon's
+   * snapshot sets all 256 colors (OSC 4), mostly to Ghostty's defaults,
+   * which would hide it. A color that is Ghostty's default is dropped;
+   * one a program set is kept, over whichever palette is picked. */
+  private followPalette() {
+    const p = this.term.parser;
+    p.registerOscHandler(4, (data) => {
+      const parts = data.split(";");
+      if (parts.length % 2) return true;
+      for (let i = 0; i < parts.length; i += 2) {
+        const index = Number(parts[i]);
+        const spec = parts[i + 1];
+        if (spec === "?" || !Number.isInteger(index) || index < 0 || index > 255) continue;
+        const color = parseColor(spec);
+        if (!color) continue;
+        if (color === ghosttyDefault(index)) this.custom.delete(index);
+        else this.custom.set(index, color);
+      }
+      this.applyTheme();
+      return true;
+    });
+    p.registerOscHandler(104, (data) => {
+      if (!data) this.custom.clear();
+      else for (const i of data.split(";")) this.custom.delete(Number(i));
+      this.applyTheme();
+      return true;
+    });
+  }
+
+  private applyTheme() {
+    const t: ITheme = { ...terminalTheme() };
+    const extended: string[] = [];
+    for (const [i, c] of this.custom) {
+      if (i < 16) (t as Record<string, unknown>)[ANSI_NAMES[i]] = c;
+      else extended[i - 16] = c;
+    }
+    if (extended.length) t.extendedAnsi = Array.from({ length: extended.length }, (_, i) => extended[i] ?? ghosttyDefault(i + 16));
+    this.term.options.theme = t;
   }
 
   /** Follow the shell integration: where each command's output starts and
@@ -487,6 +560,7 @@ export class TerminalView {
   }
 
   dispose() {
+    this.offAppearance();
     this.dropWebgl();
     this.term.dispose();
     this.host.remove();

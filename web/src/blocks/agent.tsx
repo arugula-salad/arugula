@@ -10,7 +10,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import type { Client } from "../client";
 import type { PaneId } from "../proto";
-import { theme } from "../theme";
+import { palette, terminalTheme } from "../appearance";
 import { AdapterHelp, installAdapter, type Adapter } from "../ui/adapter";
 import { askText } from "../ui/menu";
 import { answeredLine, mayAnswer } from "../ui/term-ask";
@@ -180,7 +180,7 @@ function Output({ data }: { data: string }) {
   const lines = Math.min(Math.max(data.split("\n").length, 1), 16);
   useLayoutEffect(() => {
     const t = new Terminal({
-      theme: { ...theme, background: "#11111b" },
+      theme: { ...terminalTheme(), background: palette().ui.letterbox },
       disableStdin: true,
       convertEol: true,
       cursorStyle: "underline",
