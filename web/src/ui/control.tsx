@@ -4,7 +4,7 @@
 
 import { useEffect, useState } from "preact/hooks";
 import { AlongsideError, api, cameToRecover, deviceName, inApp, inviteInHash, JOIN_HASH, joinInHash, passkeyRegister, passkeySignIn, previewInvite, RefusedError, shownName, signedAppIn, signInNext, takesSecret, wholeJoinInHash, type AppLogin, type ControlSession, type JoinRequest } from "../control";
-import { fingerprint, splitJoinCode, type Cert } from "../e2e/cert.ts";
+import { fingerprint, normalizeCode, normalizeSecret, splitJoinCode, type Cert } from "../e2e/cert.ts";
 import { useSubscribe } from "./hooks";
 import { directory } from "../hosts";
 import { CopyButton, CopyText, download } from "./copy";
@@ -644,7 +644,8 @@ function dropHash() {
 function JoinPrompt({ s, code: whole, from }: { s: ControlSession; code: string; from?: Cert }) {
   const parts = splitJoinCode(whole);
   const code = parts?.code ?? whole;
-  const [typed, setTyped] = useState("");
+  // #760: the rest of the code, typed when the page has only the first half.
+  const [typed, setTyped] = useState<{ rest: string; bad: string | null }>({ rest: "", bad: null });
   const [j, setJ] = useState<JoinRequest | null>(null);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
@@ -705,13 +706,11 @@ function JoinPrompt({ s, code: whole, from }: { s: ControlSession; code: string;
     if (e instanceof RefusedError) setRefused(true);
     setBusy(false);
   };
-  // #760: the secret from the link, or from the whole code typed here.
-  const typedParts = splitJoinCode(typed.trim());
-  const secret = parts?.secret ?? (typedParts?.code === code ? typedParts.secret : null);
+  // #760: the secret from the link (or the whole code typed in Look up),
+  // else the rest of the code typed here.
+  const secret = parts?.secret ?? (typed.bad ? null : normalizeSecret(typed.rest));
   const sealed = !!j && (!!parts?.secret || takesSecret(j));
-  const askWhole = j && sealed && !parts?.secret ? (
-    <WholeCode name={j.cert.name} code={j.code} typed={typed} setTyped={setTyped} ok={!!secret} cli={j.cert.kind === "cli"} />
-  ) : null;
+  const askWhole = j && sealed && !parts?.secret ? <RestOfCode code={j.code} rest={typed.rest} bad={typed.bad} set={setTyped} cli={j.cert.kind === "cli"} /> : null;
   // M49: the Arugula CLI on a machine, asking to be one of your devices.
   if (j?.cert.kind === "cli")
     return <CliJoin s={s} j={j} cancel={cancel} refused={refused} failed={failed} sealed={sealed} secret={secret} whole={askWhole} />;
@@ -850,38 +849,68 @@ function JoinPrompt({ s, code: whole, from }: { s: ControlSession; code: string;
   );
 }
 
+/** Letters people read for digits in a join code: its alphabet has no
+ * I, L or O, so they can only be 1, 1 and 0 (as Crockford's base32). */
+const LOOKALIKE: Record<string, string> = { I: "1", L: "1", O: "0" };
+
+/** What's typed in the rest-of-the-code field, as it's shown: the 16
+ * characters after the dot, uppercase, dashed every four. A whole code
+ * pasted in is fine when it starts with this `code`. */
+function restOf(raw: string, code: string): { rest: string; bad: string | null } {
+  let r = raw;
+  const dot = r.indexOf(".");
+  if (dot >= 0) {
+    const head = normalizeCode(r.slice(0, dot));
+    if (head && head !== code) return { rest: "", bad: `That code starts ${head}, not ${code}.` };
+    r = r.slice(dot + 1);
+  }
+  const chars = r
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "")
+    .replace(/[ILO]/g, (c) => LOOKALIKE[c]);
+  const odd = chars.match(/[^ABCDEFGHJKMNPQRSTVWXYZ0-9]/)?.[0];
+  const kept = chars.replace(/[^ABCDEFGHJKMNPQRSTVWXYZ0-9]/g, "").slice(0, 16);
+  const rest = kept.match(/.{1,4}/g)?.join("-") ?? "";
+  if (odd) return { rest, bad: `Codes have no ${odd}.` };
+  return { rest, bad: null };
+}
+
 /** #760: a machine (or the CLI) made a join secret, but this page has only
- * its code: the whole code it shows, typed here, brings the secret. `cli`:
- * `arugula login` shows it; a machine shows it in Getting started or where
- * `arugulad join` ran. The sentence is a paragraph that labels the input
- * (a `<label>` in a prompt lays out as a grid, a line per element). */
-function WholeCode({ name, code, typed, setTyped, ok, cli }: { name: string; code: string; typed: string; setTyped: (t: string) => void; ok: boolean; cli: boolean }) {
+ * its code (typed alone, or brought by a waiting browser, #326). The code
+ * is shown as a fixed prefix, and only the rest is typed. */
+function RestOfCode({ code, rest, bad, set, cli }: { code: string; rest: string; bad: string | null; set: (r: { rest: string; bad: string | null }) => void; cli: boolean }) {
   return (
-    <div class="control-whole-code">
-      <p id="join-whole-label">
-        {cli ? (
-          <>
-            Type the whole code <code>arugula login</code> shows on {name}:{" "}
-          </>
-        ) : (
-          <>
-            Type the whole code {name} shows (in Getting started, or where you ran <code>arugulad join</code>):{" "}
-          </>
-        )}
-        <b>{code}</b>, a dot, and four more groups.
-      </p>
-      <input
-        id="join-whole"
-        aria-labelledby="join-whole-label"
-        class="control-join-code"
-        data-join-whole
-        placeholder={`${code}.XXXX-XXXX-XXXX-XXXX`}
-        value={typed}
-        autoComplete="off"
-        spellcheck={false}
-        onInput={(e) => setTyped((e.target as HTMLInputElement).value)}
-      />
-      {typed.trim() && !ok ? <p class="control-error">That isn't this code's whole code yet.</p> : null}
+    <div class="control-rest" data-join-rest>
+      <p>Enter the rest of its code to approve.</p>
+      <div class="control-rest-field">
+        <span class="control-rest-known" aria-hidden="true">
+          {code}.
+        </span>
+        <input
+          data-join-whole
+          aria-label={`The rest of the code, after ${code}.`}
+          placeholder="XXXX-XXXX-XXXX-XXXX"
+          value={rest}
+          autoComplete="off"
+          autoCapitalize="characters"
+          spellcheck={false}
+          onInput={(e) => {
+            const el = e.target as HTMLInputElement;
+            const r = restOf(el.value, code);
+            el.value = r.rest;
+            set(r);
+          }}
+        />
+      </div>
+      {bad ? (
+        <p class="control-error" data-join-rest-error>
+          {bad}
+        </p>
+      ) : (
+        <p class="dim">
+          It's after the dot, {cli ? "" : "in Getting started or "}where you ran <code>{cli ? "arugula login" : "arugulad join"}</code>.
+        </p>
+      )}
     </div>
   );
 }
@@ -911,6 +940,9 @@ function CliJoin({
 }) {
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  // Its name is "Arugula CLI on <host>" unless `--name` said otherwise:
+  // the machine, here, since the sentence says it's the command line.
+  const host = j.cert.name.replace(/^(Arugula|illogical) CLI on /, "");
   return (
     <Modal close={clearHash}>
       <h2>Add a terminal?</h2>
@@ -921,12 +953,12 @@ function CliJoin({
       ) : null}
       {sealed ? (
         <p data-join-cli={j.cert.name} data-join-sealed>
-          The Arugula command line on <b>{j.cert.name}</b> asks to be one of your devices.
+          The Arugula command line on <b>{host}</b> asks to be one of your devices.
         </p>
       ) : (
         <>
           <p data-join-cli={j.cert.name}>
-            The Arugula command line on <b>{j.cert.name}</b> asks to be one of your devices, with code <b data-join-code={j.code}>{j.code}</b>. Check it's the
+            The Arugula command line on <b>{host}</b> asks to be one of your devices, with code <b data-join-code={j.code}>{j.code}</b>. Check it's the
             code it shows where you ran <code>arugula login</code>.
           </p>
           <p class="dim">Its key: {fingerprint(j.cert.device)}</p>

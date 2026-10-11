@@ -2727,16 +2727,41 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   max-width: 100%;
 }
 
-.control-whole-code input {
-  box-sizing: border-box;
-  width: 22rem;
+/* The rest of a join code (#760): the half the page has, fixed, then a
+   field for the secret, as one monospace box. */
+.control-rest-field {
+  display: inline-flex;
+  align-items: center;
   max-width: 100%;
-  padding: 6px 8px;
   font: 14px ui-monospace, monospace;
-  color: var(--fg);
   background: var(--letterbox);
   border: 1px solid var(--raised-hover);
   border-radius: 6px;
+}
+
+.control-rest-field:focus-within {
+  border-color: var(--accent);
+}
+
+.control-rest-known {
+  padding: 6px 0 6px 8px;
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+.control-rest-field input {
+  width: 20ch;
+  min-width: 0;
+  padding: 6px 8px 6px 1px;
+  font: inherit;
+  color: var(--fg);
+  background: transparent;
+  border: 0;
+  outline: none;
+}
+
+.control-rest p {
+  margin: 6px 0;
 }
 
 /* A checkbox in a code row keeps its own size, beside its label. */

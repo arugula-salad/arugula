@@ -851,12 +851,19 @@ test("a browser that isn't a device yet, here to approve a machine, leads with i
   await expect(laptop.locator(`[data-join-alongside="${fp}"] [data-pending="${fp}"]`)).toBeVisible();
   await expect(laptop.locator(`[data-join-also="${fp}"]`)).toBeChecked();
   await expect(laptop.locator("[data-approve-join]")).toHaveText("Approve both");
-  // Brought by the visitor, the laptop has only the code: it asks for the
-  // whole code the machine shows, and Approve waits for it.
+  // Brought by the visitor, the laptop has only the code: it shows that
+  // half, asks for the rest, and Approve waits for it.
+  await expect(laptop.locator("[data-join-rest]")).toContainText(`${code}.`);
   await expect(laptop.locator("[data-approve-join]")).toBeDisabled();
-  await laptop.locator("[data-join-whole]").fill(code);
+  const secret = whole.split(".")[1];
+  await laptop.locator("[data-join-whole]").fill(secret.slice(0, 9));
+  await expect(laptop.locator("[data-approve-join]")).toBeDisabled();
+  // A whole code pasted in is taken, but only this machine's.
+  await laptop.locator("[data-join-whole]").fill(`${code === "AAAAA-AAAAA" ? "BBBBB-BBBBB" : "AAAAA-AAAAA"}.${secret}`);
+  await expect(laptop.locator("[data-join-rest-error]")).toBeVisible();
   await expect(laptop.locator("[data-approve-join]")).toBeDisabled();
   await laptop.locator("[data-join-whole]").fill(whole.toLowerCase());
+  await expect(laptop.locator("[data-join-whole]")).toHaveValue(secret);
   await expect(laptop.locator("[data-approve-join]")).toBeEnabled();
   await expect(laptop.locator("[data-join-account]")).toHaveCount(0);
   await laptop.locator("[data-approve-join]").click();
