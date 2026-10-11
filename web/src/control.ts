@@ -317,15 +317,22 @@ const RECOVER_KEY = "arugula.control.recover";
  * the page the app sends this tab back to (#758). */
 const APP_SIGNED_KEY = "arugula.control.app-signed";
 
-/** Whether this tab just signed the desktop app in as a device. Read once. */
+let appSigned: boolean | null = null;
+
+/** Whether this tab just signed the desktop app in as a device. Taken out
+ * of sessionStorage on the first call, so a later reload doesn't say it
+ * again, and kept for the rest of this page load: the prompts mount afresh
+ * when the page picks a machine (`ControlRoot` is keyed by the client's
+ * base), and the second mount must say the same. */
 export function signedAppIn(): boolean {
+  if (appSigned !== null) return appSigned;
   try {
-    const yes = sessionStorage.getItem(APP_SIGNED_KEY) === "1";
+    appSigned = sessionStorage.getItem(APP_SIGNED_KEY) === "1";
     sessionStorage.removeItem(APP_SIGNED_KEY);
-    return yes;
   } catch {
-    return false;
+    appSigned = false;
   }
+  return appSigned;
 }
 
 /** A desktop app asking to sign in (`GET /api/app-login/{id}`). */
