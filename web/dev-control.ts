@@ -11,9 +11,23 @@
 // that device) stays in the state directory between runs, and the port
 // stays put, so the browser stays signed in.
 //
-//   DEV_CONTROL_DIR    state [default: ~/.local/state/arugula-dev-control]
+// Control is at http://127.0.0.1:PORT, where passkeys are off (WebAuthn
+// refuses an IP address); DEV_CONTROL_HOST=localhost puts it at
+// http://localhost:PORT, with passkeys, in a state directory of its own.
+// `web/dev-browser.ts` drives either from a headless Chrome, with a
+// virtual passkey authenticator and a login of its choosing, for
+// screenshots.
+//
+//   DEV_CONTROL_DIR    state [default: ~/.local/state/arugula-dev-control,
+//                      or arugula-dev-control-HOST with DEV_CONTROL_HOST]
 //   DEV_CONTROL_PORT   control's port [default: 7690]
+//   DEV_CONTROL_HOST   control's host name [default: 127.0.0.1]; localhost
+//                      for passkeys
 //   DEV_CONTROL_LOGIN  who signs in [default: $USER]
+//   DEV_CONTROL_LOGINS others the fake GitHub offers, comma-separated
+//                      (sam,riley): it asks who on each sign-in. Their
+//                      first browser is their account's first device;
+//                      nothing approves their others.
 //   DEV_CONTROL_LABS=0 machines without Labs (a stranger's view)
 //
 // Start over: delete the state directory.
@@ -31,13 +45,21 @@ import type { Cert } from "./src/e2e/cert.ts";
 // change what these daemons do (#682): not theirs.
 for (const k of Object.keys(process.env)) if (/^(ARUGULA|ILLOGICAL)_/.test(k)) delete process.env[k];
 
-const dir = process.env.DEV_CONTROL_DIR ?? join(homedir(), ".local/state/arugula-dev-control");
+const host = process.env.DEV_CONTROL_HOST || "127.0.0.1";
+// What's joined to control (and the device) names it by its URL: a host
+// of its own, a state directory of its own.
+const dir = process.env.DEV_CONTROL_DIR ?? join(homedir(), ".local/state", host === "127.0.0.1" ? "arugula-dev-control" : `arugula-dev-control-${host}`);
 const port = Number(process.env.DEV_CONTROL_PORT ?? 7690);
 const login = process.env.DEV_CONTROL_LOGIN ?? userInfo().username;
+const logins = (process.env.DEV_CONTROL_LOGINS ?? "").split(",").map((l) => l.trim()).filter(Boolean);
 const labs = process.env.DEV_CONTROL_LABS !== "0";
 const machines = process.argv.slice(2).length ? process.argv.slice(2) : ["workstation", "laptop"];
 const bin = process.env.TARGET_DIR ?? "../target/debug";
-const base = `http://127.0.0.1:${port}`;
+const base = `http://${host}:${port}`;
+/** Where control listens: localhost may be ::1 first to a resolver, and
+ * control listens on IPv4. */
+const direct = `http://127.0.0.1:${port}`;
+const via = { [base]: direct };
 const web = join(dir, "web");
 
 const procs: ChildProcess[] = [];
@@ -111,7 +133,7 @@ async function up(url: string, proc: ChildProcess) {
 /** Nothing else on the port: an earlier dev-control's control would
  * answer the checks below, and this one would serve nothing. */
 async function portFree() {
-  const taken = await fetch(`${base}/control.json`).then(
+  const taken = await fetch(`${direct}/control.json`).then(
     () => true,
     () => false,
   );
@@ -119,7 +141,7 @@ async function portFree() {
 }
 
 async function startControl() {
-  github = fakeGithub(0, "127.0.0.1", () => login);
+  github = fakeGithub(0, "127.0.0.1", () => login, logins);
   await new Promise((r) => github!.once("listening", r));
   const gh = `http://127.0.0.1:${(github.address() as { port: number }).port}`;
   const control = spawn(
@@ -132,7 +154,7 @@ async function startControl() {
     { stdio: ["ignore", "ignore", "inherit"], detached: true },
   );
   procs.push(control);
-  await up(`${base}/control.json`, control);
+  await up(`${direct}/control.json`, control);
 }
 
 /** The account's headless device: made on the first run, kept after. */
@@ -142,7 +164,7 @@ async function device(): Promise<Device> {
   if (existsSync(file)) {
     d = await Device.load(file);
     await d.session(login);
-  } else d = await Device.signIn({ control: base, login, name: "dev-control" });
+  } else d = await Device.signIn({ control: base, via, login, name: "dev-control" });
   await d.save(file);
   return d;
 }
@@ -217,9 +239,9 @@ await startControl();
 const d = await device();
 await startMachines(d);
 console.log(`
-dev-control: ${base}
-  Sign in with GitHub (the fake one signs you in as ${login}); this browser
-  is approved for you. Machines: ${machines.join(", ")}${labs ? ", with Labs" : ""}.
+dev-control: ${base}${host === "127.0.0.1" ? " (no passkeys on an IP address: DEV_CONTROL_HOST=localhost)" : ""}
+  Sign in with GitHub (the fake one signs you in as ${login}${logins.length ? `, or asks: ${[login, ...logins].join(", ")}` : ""});
+  ${login}'s browsers are approved. Machines: ${machines.join(", ")}${labs ? ", with Labs" : ""}.
   Edit web/src, wait for "web rebuilt", reload. State: ${dir}. Ctrl-C stops.
 `);
 await approveBrowsers(d);
