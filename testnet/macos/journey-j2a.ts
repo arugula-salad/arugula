@@ -26,7 +26,7 @@ import { createRequire } from "node:module";
 import { join } from "node:path";
 import type { Browser, Locator, Page } from "@playwright/test";
 import { Journey, Stopped, type Surface } from "../../web/e2e/journey/record.ts";
-import { APP, FP, byHelp, capture, firstRunMac, press, pressHelp, read, root, shot, shows, sleep, startMac, stopMac, typeInto, until } from "./journey-lib.ts";
+import { APP, FP, byHelp, capture, firstRunMac, press, read, root, shot, shows, sleep, startMac, stopMac, typeInto, until } from "./journey-lib.ts";
 
 const { chromium } = createRequire(join(root, "web/package.json"))("@playwright/test") as typeof import("@playwright/test");
 const asPerson = () => Object.defineProperty(Navigator.prototype, "webdriver", { get: () => false });
@@ -91,11 +91,9 @@ try {
 
   await j.step({ id: "agree", title: "Riley tells Sam their Arugula login", actor: "riley", surface: "message", prompt: null, own: "the friends agree to link up; Riley sends their login (riley)" }, async () => {});
 
-  await sam("open-share", "Sam opens Share session…", "app", shows(APP, /^Share$/), async () => {
-    pressHelp(APP, "Sessions");
-    await sleep(800);
-    press(APP, "AXMenuItem|AXButton", /^Share session/);
-    j.issue("Share is inside the session menu; nothing on the main screen says Share");
+  // On the bar, beside the session's name; its accessible name is "Share session".
+  await sam("open-share", "Sam opens Share session…", "app", shows(APP, /^Share( session)?$/), async () => {
+    press(APP, "AXButton", /^Share session$/);
   }, "a Share button on the main screen");
 
   await sam("share-who", "Sam enters Riley's login, as someone who drives", "app", shows(APP, /^Who$/), async () => {
@@ -108,8 +106,11 @@ try {
 
   await sam("ask-fingerprint", "Sam asks Riley for their first device's fingerprint", "message", shows(APP, /check it with them/), async () => {});
 
-  await ri("find-fingerprint", "Riley finds their own fingerprint", riley.getByText(/fingerprint/i), async () => {
-    await riley.getByRole("button", { name: "Devices and machines…" }).click();
+  // Sam's dialog says where it is, and Sam passes that on with the ask.
+  await j.step({ id: "find-fingerprint", title: "Riley finds their own fingerprint", actor: "riley", surface: "browser", page: riley, prompt: shows(APP, /fingerprint in Devices and machines…, in the account menu/) }, async () => {
+    // In the account menu, top right (#742).
+    await riley.locator("[data-account-menu]").first().click();
+    await riley.getByRole("menuitem", { name: "Devices and machines…" }).click();
     rileyFp = (/[0-9a-f]{4}(?:-[0-9a-f]{4}){3,}/.exec(await riley.getByText(/account/i).filter({ hasText: /[0-9a-f]{4}-[0-9a-f]{4}/ }).first().innerText())?.[0] ?? "").toLowerCase();
     const all = await riley.getByText(/[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}/).allInnerTexts();
     if (all.length > 1) j.issue(`the panel shows ${all.length} fingerprints; which one Sam means ("first device") isn't said`);
@@ -186,14 +187,10 @@ try {
     await until("Riley's line in Sam's terminal", () => (/hi-from-riley-42/.test(capture()) ? true : null), 15_000);
   });
 
-  await j.finish({
-    // Filed on #551, as in web/e2e/journey-j2a.spec.ts.
-    "open-share": "#551: Share is only in the session menu",
-    "find-fingerprint": "#551: nothing says where your first device's fingerprint is",
-    // (find-machine isn't here: Riley has no machine of their own, so after
-    // Accept the window shows Sam's.)
-    "take-control": "#551: allowed to drive, but the owner has control, and nothing says Take control",
-  });
+  // Nothing known left, as in web/e2e/journey-j2a.spec.ts: Share is on the
+  // bar (#586), the dialog says where the fingerprint is (#599), and the
+  // pane offers Take control (#584).
+  await j.finish();
   // J1's report and verdict, as when it ran alone: no step unguided.
   await j1.finish();
   ok = true;
