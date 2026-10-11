@@ -111,16 +111,15 @@ async function teamMachine(owner: Page, name: string, team: string) {
     let out = "";
     joining.stdout!.on("data", (d) => {
       out += d;
-      const m = out.match(/(http\S+#join=[A-Z0-9-]+)/);
+      const m = out.match(/(http\S+#join=[A-Z0-9.-]+)/);
       if (m) res(m[1]);
     });
   });
   const exited = new Promise<number | null>((r) => joining.on("exit", r));
   await owner.goto(link);
   await expect(owner.locator("[data-join-to]")).toHaveValue(team);
-  const account = await owner.locator("[data-join-account]").getAttribute("data-join-account");
+  // #760: the link carries the machine's secret: nothing to compare.
   await owner.locator("[data-approve-join]").click();
-  joining.stdin!.end(`${account}\n`);
   expect(await exited).toBe(0);
   procs.push(
     spawn(

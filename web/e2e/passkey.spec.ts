@@ -119,6 +119,20 @@ test("a passkey with PRF brings the same device back after site data is cleared"
     await page.goto("/");
   };
 
+  // As iCloud Keychain does: PRF output only at sign-in, not as the
+  // passkey is made. So the passkey's device isn't the account's root (the
+  // account itself, which can't be removed) and the end below removes it.
+  await page.addInitScript(() => {
+    const create = navigator.credentials.create.bind(navigator.credentials);
+    navigator.credentials.create = async (o) => {
+      const c = (await create(o)) as PublicKeyCredential | null;
+      if (c) {
+        const results = c.getClientExtensionResults.bind(c);
+        c.getClientExtensionResults = () => ({ ...results(), prf: { enabled: true } });
+      }
+      return c;
+    };
+  });
   await page.goto("/");
   await page.locator("[data-signup=passkey]").click();
   await page.locator("[data-signup-name]").fill("Pat");

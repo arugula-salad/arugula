@@ -1207,7 +1207,8 @@ export class ControlSession {
       account: this.account,
       device: k.id,
       kind: "browser",
-      name: deviceName(),
+      // As it asked (#764: a passkey's device is named for the passkey).
+      name: this.request?.name ?? this.fromPasskey ?? deviceName(),
       noise: k.noisePub,
       sign: k.signPub,
       created: Date.now(),

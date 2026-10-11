@@ -377,6 +377,7 @@ test("a browser scanned from a phone: its QR code opens the approval with the co
   await laptop.goto(`${base}/#device=${code}`);
   await expect(laptop.locator("[data-device-gone]")).toBeVisible({ timeout: 20_000 });
   await laptop.goto(base);
+  await booted(laptop);
   await laptop.evaluate((d) => window.__arugula.control!.revoke(d), id);
   await other.context().close();
 });
@@ -1036,26 +1037,36 @@ test("a join link kept over a sign-in comes back only to its own code, and never
   const kept = `#join=${code}.AAAA-AAAA-AAAA-AAAA`;
   const keep = (at: number) => laptop.evaluate(([k, h, t]) => sessionStorage.setItem(k as string, JSON.stringify({ hash: h, at: t })), [KEY, kept, at] as const);
   const stored = () => laptop.evaluate((k) => sessionStorage.getItem(k), KEY);
+  // Coming back from GitHub loads the page; a goto from "/" that changes
+  // only the hash wouldn't. (Each keep waits for the page to boot, or its
+  // own restoreInvite reads it first.)
+  const back = async (url: string) => {
+    await laptop.goto("about:blank");
+    await laptop.goto(url);
+  };
   await laptop.goto("/");
+  await booted(laptop);
   // Back from signing in: the code alone in the URL, so the kept link
   // (with its secret) is put back, and read once.
   await keep(Date.now());
-  await laptop.goto(`/#join=${code}`);
+  await back(`/#join=${code}`);
   await expect.poll(() => laptop.evaluate(() => location.hash)).toBe(kept);
   expect(await stored()).toBeNull();
   // A retried join (same code, new secret) opened in the same tab: its
   // link wins, and the kept one is gone.
   const fresh = `#join=${code}.BBBB-BBBB-BBBB-BBBB`;
   await laptop.goto("/");
+  await booted(laptop);
   await keep(Date.now());
-  await laptop.goto(`/${fresh}`);
+  await back(`/${fresh}`);
   await laptop.waitForFunction(() => window.__arugula?.control?.phase === "ready");
   expect(await laptop.evaluate(() => location.hash)).toBe(fresh);
   expect(await stored()).toBeNull();
   // Kept longer than a join lasts: not put back, even for its code.
   await laptop.goto("/");
+  await booted(laptop);
   await keep(Date.now() - 60 * 60 * 1000);
-  await laptop.goto(`/#join=${code}`);
+  await back(`/#join=${code}`);
   await laptop.waitForFunction(() => window.__arugula?.control?.phase === "ready");
   expect(await laptop.evaluate(() => location.hash)).toBe(`#join=${code}`);
   expect(await stored()).toBeNull();

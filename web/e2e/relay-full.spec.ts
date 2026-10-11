@@ -102,15 +102,14 @@ test("a full relay: the page says so and waits; signing in still works", async (
     let out = "";
     joining.stdout!.on("data", (d) => {
       out += d;
-      const m = out.match(/(http\S+#join=[A-Z0-9-]+)/);
+      const m = out.match(/(http\S+#join=[A-Z0-9.-]+)/);
       if (m) res(m[1]);
     });
   });
   const exited = new Promise<number | null>((r) => joining.on("exit", r));
   await approver.goto(link);
-  const account = await approver.locator("[data-join-account]").getAttribute("data-join-account");
+  // #760: the link carries the machine's secret: nothing to compare.
   await approver.locator("[data-approve-join]").click();
-  joining.stdin!.end(`${account}\n`);
   expect(await exited).toBe(0);
   // Nothing of this page's holds the relay's one socket.
   await approver.close();
