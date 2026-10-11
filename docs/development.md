@@ -34,11 +34,16 @@ control.arugula.io serves it, signed in, with machines: a local control
 on 7690 with a fake GitHub, daemons joined to it through its relay
 (default `workstation laptop`, with Labs; `DEV_CONTROL_LABS=0` without),
 and the web client rebuilt on every change (reload the page). A headless
-device of the account approves the joins and your browser, so the one
-click is *Sign in with GitHub*. `DEV_CONTROL_APPROVE_BROWSERS=0` leaves
-browsers alone (the machines' joins are still approved): one that signs
-in stays waiting, not yet a device, for the waiting screens, *Add a
-machine and a device?* and a join brought by a waiting browser (#326). State stays in
+device of the account approves the joins and your browser. That device
+never sees the code a waiting browser shows (#761), so it approves the
+way a page from before codes does, and the browser asks you to check the
+account's fingerprint: the clicks are *Sign in with GitHub* and *It
+matches*. `DEV_CONTROL_APPROVE_BROWSERS=0` leaves browsers alone (the
+machines' joins are still approved): one that signs in stays waiting, not
+yet a device, for the waiting screens, *Add a machine and a device?* and
+a join brought by a waiting browser (#326). To see the code path, approve
+one browser the default way, then sign in a second browser profile with
+`DEV_CONTROL_APPROVE_BROWSERS=0` and type or open its code on the first. State stays in
 `~/.local/state/arugula-dev-control` (`DEV_CONTROL_DIR`) between runs;
 `DEV_CONTROL_LOGIN` and `DEV_CONTROL_PORT` change who and where.
 `DEV_CONTROL_LOGINS=sam,riley` makes the fake GitHub ask who on each

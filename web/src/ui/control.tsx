@@ -829,6 +829,7 @@ function JoinPrompt({ s, code: whole, from, device }: { s: ControlSession; code:
     if (given) codes.set(c.device, given);
   }
   const ready = (c: Cert) => !s.sealed(c) || codes.has(c.device);
+  const fromLink = (c: Cert) => !!linked && linked.code === s.pendingCodes.get(c.device);
   const also = alongside.filter((c) => !skip.has(c.device) && ready(c));
   const cancel = () => {
     if (j && !refused) void s.rejectJoin(j.code).then(() => s.refresh(), () => {});
@@ -885,15 +886,8 @@ function JoinPrompt({ s, code: whole, from, device }: { s: ControlSession; code:
                     <>
                       <p data-pending={c.device} data-device-sealed>
                         Signed in to come here and approve this machine. Approved too, it reaches your machines.
-                        {codes.has(c.device) && linked?.code === codes.get(c.device)!.code ? " Its code came with the link." : null}
+                        {fromLink(c) ? " Its code came with the link." : " Its code goes below."}
                       </p>
-                      {codes.has(c.device) && linked?.code === codes.get(c.device)!.code ? null : (
-                        <DeviceRest
-                          code={s.pendingCodes.get(c.device) ?? ""}
-                          typed={typedCodes.get(c.device) ?? NO_REST}
-                          set={(t) => setTypedCodes(new Map(typedCodes).set(c.device, t))}
-                        />
-                      )}
                     </>
                   ) : (
                     <>
@@ -925,6 +919,22 @@ function JoinPrompt({ s, code: whole, from, device }: { s: ControlSession; code:
             machine
           )}
           {askWhole}
+          {/* #761: a device's code, at full width under the cards. */}
+          {alongside
+            .filter((c) => s.sealed(c) && !fromLink(c))
+            .map((c) => (
+              <DeviceRest
+                key={c.device}
+                code={s.pendingCodes.get(c.device) ?? ""}
+                typed={typedCodes.get(c.device) ?? NO_REST}
+                set={(t) => setTypedCodes(new Map(typedCodes).set(c.device, t))}
+                prompt={
+                  <>
+                    Enter the rest of <b>{c.name}</b>'s code to approve it too.
+                  </>
+                }
+              />
+            ))}
           {s.enrollment && !sealed ? (
             <p>
               Your account:{" "}
@@ -1044,7 +1054,9 @@ const NO_REST: Rest = { rest: "", bad: null };
  * its code (typed alone, or brought by a waiting browser, #326). The code
  * is shown as a fixed prefix, and only the rest is typed. #761: the same
  * for a waiting device's code (`what="device"`), whose first half is its
- * request's keys' code; there the rest can be scanned too. */
+ * request's keys' code; there the rest can be scanned too. Holding
+ * another code (`restOf` keeps it, its first half and all), the field
+ * drops the fixed half and widens, so it shows that code once and whole. */
 function RestOfCode({
   code,
   rest,
@@ -1053,6 +1065,7 @@ function RestOfCode({
   cli = false,
   what = "join",
   hint,
+  prompt = "Enter the rest of its code to approve.",
 }: {
   code: string;
   rest: string;
@@ -1061,13 +1074,16 @@ function RestOfCode({
   cli?: boolean;
   what?: "join" | "device";
   hint?: preact.ComponentChildren;
+  prompt?: preact.ComponentChildren;
 }) {
   const [scanning, setScanning] = useState(false);
   const tag = (t: string) => ({ [`data-${what}-${t}`]: "" });
+  // More than the 16 characters of a rest: a code of its own, typed whole.
+  const claims = rest.replace(/[^A-Za-z0-9]/g, "").length > 16;
   return (
     <div class="control-rest" {...tag("rest")}>
       <p>
-        Enter the rest of its code to approve.
+        {prompt}
         {what === "device" && canScan() && !scanning ? (
           <>
             {" "}
@@ -1087,8 +1103,9 @@ function RestOfCode({
           close={() => setScanning(false)}
         />
       ) : null}
-      <div class="control-rest-field">
-        <span class="control-rest-known" aria-hidden="true">
+      <div class={claims ? "control-rest-field claims" : "control-rest-field"}>
+        {/* Hidden, not removed, so the input keeps its place and focus. */}
+        <span class="control-rest-known" aria-hidden="true" hidden={claims}>
           {code}.
         </span>
         <input
@@ -1394,8 +1411,8 @@ function DevicePrompt({ s, c, given, done }: { s: ControlSession; c: Cert; given
 }
 
 /** #761: the rest of a waiting device's code, after its lookup. */
-function DeviceRest({ code, typed, set }: { code: string; typed: Rest; set: (r: Rest) => void }) {
-  return <RestOfCode what="device" code={code} rest={typed.rest} bad={typed.bad} set={set} hint="It's after the dot, on the screen asking to be approved." />;
+function DeviceRest({ code, typed, set, prompt }: { code: string; typed: Rest; set: (r: Rest) => void; prompt?: preact.ComponentChildren }) {
+  return <RestOfCode what="device" code={code} rest={typed.rest} bad={typed.bad} set={set} prompt={prompt} hint="It's after the dot, on the screen asking to be approved." />;
 }
 
 /** #761: the code typed after `lookup`, once it's whole. */

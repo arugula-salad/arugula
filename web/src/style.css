@@ -2760,6 +2760,12 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   outline: none;
 }
 
+/* Another code typed whole (#760, #761): no fixed half, room for it all. */
+.control-rest-field.claims input {
+  width: 32ch;
+  padding-left: 8px;
+}
+
 .control-rest p {
   margin: 6px 0;
 }

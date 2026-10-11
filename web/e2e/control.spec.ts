@@ -343,6 +343,9 @@ test("a phone needs the laptop's approval", async ({ browser }) => {
   // Another device's whole code, pasted, isn't this one's.
   await laptop.locator("[data-device-whole]").fill("ABCDE-FGHJK.ABCD-EFGH-JKMN-PQRS");
   await expect(laptop.locator("[data-device-rest-error]")).toBeVisible();
+  // It shows once and whole: no fixed half before it, no second dot.
+  await expect(laptop.locator("[data-device-whole]")).toHaveValue("ABCDE-FGHJK.ABCD-EFGH-JKMN-PQRS");
+  await expect(laptop.locator("[data-device-rest] .control-rest-known")).toBeHidden();
   await expect(laptop.locator("[data-approve]")).toBeDisabled();
   // Half of the rest: still waiting for it.
   await laptop.locator("[data-device-whole]").fill(rest.slice(0, 9).toLowerCase());
@@ -955,7 +958,7 @@ test("a browser that isn't a device yet, here to approve a machine, leads with i
   // #761: brought by the visitor, the laptop doesn't have its code either:
   // it's ticked once that's typed.
   await expect(laptop.locator(`[data-join-also="${fp}"]`)).not.toBeChecked();
-  await laptop.locator(`[data-join-alongside="${fp}"] [data-device-whole]`).fill(mine);
+  await laptop.locator("[data-device-rest] [data-device-whole]").fill(mine);
   await expect(laptop.locator(`[data-join-also="${fp}"]`)).toBeChecked();
   await expect(laptop.locator("[data-approve-join]")).toHaveText("Approve both");
   // Brought by the visitor, the laptop has only the code: it shows that
