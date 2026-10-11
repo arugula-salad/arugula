@@ -1292,7 +1292,7 @@ function Devices({ s, close }: { s: ControlSession; close: () => void }) {
                 {c.device === s.keys.id ? <b data-this-browser> (this browser)</b> : ""}
                 <span class="dim" data-used={at ?? ""}>
                   {" · "}
-                  {c.device === s.keys.id ? "using it now" : at ? `used ${since(at)}` : "no use noted yet"}
+                  {c.device === s.keys.id ? "using it now" : at ? `used ${since(at)}` : "last use unknown"}
                 </span>
                 {old ? <span class="control-badge unused-badge">unused</span> : null}
                 <SignedIn sessions={sessions?.filter((x) => x.device === c.device) ?? null} end={endSession} />

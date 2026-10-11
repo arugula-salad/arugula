@@ -230,8 +230,8 @@ function RecipesTab({ client }: { client: Client }) {
             <p class="dim">{r.description}</p>
           </div>
           <div class="agents-buttons">
-            <button class="pri" data-run-here={r.name} disabled={busy} title="Open an agent block wearing this recipe" onClick={() => void runHere(r, project)}>
-              Run here
+            <button class="pri" data-run-here={r.name} disabled={busy} title="Open an agent block wearing this recipe, in its project" onClick={() => void runHere(r, project)}>
+              Run on {directory.current || "this machine"}
             </button>
             <button data-edit={r.name} disabled={busy} title="Change its prompt, tools and model" onClick={() => edit(r)}>
               Edit
@@ -265,7 +265,7 @@ function RecipesTab({ client }: { client: Client }) {
   return (
     <div class="agents-recipes-tab">
       <p class="agents-lead">
-        A recipe is a Claude Code subagent: a name, a prompt, and the tools and model it uses. <b>Run here</b> opens an agent wearing it on this machine.{" "}
+        A recipe is a Claude Code subagent: a name, a prompt, and the tools and model it uses. <b>Run on {directory.current || "this machine"}</b> opens an agent wearing it on this machine.{" "}
         <b>Offer to team</b> lets your team's agents send it tasks; you approve each one.
       </p>
       <div class="agents-actions">
@@ -503,7 +503,7 @@ function TeamTab({ client }: { client: Client }) {
       </p>
       <div class="agents-actions">
         <button data-team-refresh disabled={busy} onClick={() => void load(true)}>
-          {busy ? "Asking…" : "Ask every machine again"}
+          {busy ? "Refreshing…" : "Refresh"}
         </button>
       </div>
       {waiting.length > 0 && (
@@ -573,8 +573,8 @@ function TeamTab({ client }: { client: Client }) {
                 </div>
                 {!s.owner && s.online && (
                   <div class="agents-buttons">
-                    <button class="pri" data-run={a.name} disabled={busy} title={`Run it in its project${s.here ? "" : ` on ${s.name}`}, and go to it`} onClick={() => void run(s, a.name)}>
-                      Run
+                    <button class="pri" data-run={a.name} disabled={busy} title={`Run it in its project on ${s.name}, and go to it`} onClick={() => void run(s, a.name)}>
+                      Run on {s.name}
                     </button>
                   </div>
                 )}
@@ -596,7 +596,7 @@ function TeamTab({ client }: { client: Client }) {
                   {q.here ? " · this machine" : ""}
                   {q.owner ? ` · ${q.owner}'s` : ""}
                   {" · "}
-                  {q.online ? "offers none" : q.note?.startsWith("offline") ? "offline" : "didn't answer"}
+                  {q.online ? "offers no agents" : q.note?.startsWith("offline") ? "offline" : "didn't answer"}
                 </span>
               </li>
             ))}

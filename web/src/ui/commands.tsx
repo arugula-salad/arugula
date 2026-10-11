@@ -196,7 +196,7 @@ export function newTabItems(client: Client, session: SessionId): MenuItem[] {
 /** The session button's menu, after the list of sessions: what acts on
  * this session, and nothing else. Settings for the device, the machine and
  * the account are in the account menu (`settingsItems`). */
-export function sessionItems(client: Client, session: SessionId, rename: () => void): MenuItem[] {
+export function sessionItems(client: Client, session: SessionId, rename: () => void, opts: { bar?: boolean } = {}): MenuItem[] {
   return [
     { label: "New session", run: () => client.intent({ op: "new_session", name: null, from_pane: client.active() ?? null }) },
     // VMs and sandboxes need wisp (#180).
@@ -209,9 +209,11 @@ export function sessionItems(client: Client, session: SessionId, rename: () => v
     { label: "Rename session", run: rename },
     // M61: the people's conversation about this session.
     ...sessionThreadItems(client, session),
-    ...(labsNow()?.huddleItems(client, session) ?? []),
+    // The bar has Huddle and Share beside the session's button: its menu
+    // doesn't repeat them (the palette has them).
+    ...(opts.bar ? [] : (labsNow()?.huddleItems(client, session) ?? [])),
     // Sharing is the daemon's owner's (M13).
-    ...(client.state?.roles ? [] : [{ label: "Share session…", run: () => shareSession(session) } as MenuItem]),
+    ...(client.state?.roles || opts.bar ? [] : [{ label: "Share session…", run: () => shareSession(session) } as MenuItem]),
     ...agentNotifyItems(client, session),
     "separator",
     { label: "Close session", danger: true, run: () => client.intent({ op: "close_session", session }) },

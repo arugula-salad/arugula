@@ -13,7 +13,7 @@ import { closeChat, openChat, openChatView, type ChatRoute, type Source } from "
 import { getFleet } from "./hosts";
 import { useSubscribe } from "./hooks";
 import type { Fleet, FleetPane } from "../fleet";
-import { cardTitle, holdStill, reasonOf, shortPaths, shownNow, wantsYou, whatItDoes } from "../swarm/model";
+import { cardTitle, holdStill, reasonOf, shortHost, shortPaths, shownNow, wantsYou, whatItDoes } from "../swarm/model";
 import { paneLabel, sessionName, type Row } from "./chat";
 import { Markup } from "./markup";
 import { MsgAvatar } from "./threads";
@@ -225,10 +225,10 @@ function NeedsYou({ fleet, panes }: { fleet: Fleet; panes: FleetPane[] }) {
           <div key={p.key} class={p.gone ? "activity-need gone" : "activity-need"} inert={p.gone} data-need={p.key} data-kind={r.kind}>
             <div class="activity-need-text">
               <b>{cardTitle(r, 1, [p.host])}</b>
-              <span class="dim" title={`%${p.id}`}>
+              <span class="dim" title={`%${p.id} on ${p.host}`}>
                 {" "}
                 · {owner ? `${owner}'s · ` : ""}
-                {whatItDoes(p)} · {p.host}
+                {whatItDoes(p)} · {shortHost(p.host)}
                 {p.info.project?.name ? ` · ${p.info.project.name}` : ""}
               </span>
               <p title={r.headline}>{shortPaths(r.headline)}</p>

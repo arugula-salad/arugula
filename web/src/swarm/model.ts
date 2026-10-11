@@ -217,3 +217,9 @@ export function whatItDoes(p: FleetPane): string {
   const shells = /^[^\s@]+@[^\s:]+:/.test(title);
   return (!shells && title) || p.info.current?.text || p.info.command || kindOf(p);
 }
+
+/** A machine's name as a card shows it: a Mac's `.local` (or a LAN's
+ * `.lan`, `.home`) adds nothing and pushes the rest off the card. */
+export function shortHost(name: string): string {
+  return name.replace(/\.(local|lan|home)$/i, "");
+}

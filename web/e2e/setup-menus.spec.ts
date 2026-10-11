@@ -83,8 +83,7 @@ test("menus offer only what this machine is set up for", async ({ page }) => {
   }
 
   // Sharing says nothing about VMs it has no way to make (#208).
-  await page.locator(".session-button").click();
-  await page.getByRole("menuitem", { name: "Share session…" }).click();
+  await page.getByRole("button", { name: "Share session" }).click();
   await expect(page.locator("[data-share-note]")).toHaveText(
     "People you share with see its panes but can't open their own here. Unless this machine is in their team, even people who drive ask you before typing in one of its panes.",
   );
