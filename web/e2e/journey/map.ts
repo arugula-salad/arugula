@@ -340,6 +340,21 @@ export function stepsFigure(): string {
   const colX = cols.map((_, i) => M + LABEL + colW.slice(0, i).reduce((a, b) => a + b, 0));
   const W = colX.at(-1)! + colW.at(-1)! + M;
   const zoneName: Record<Zone, string> = { get: "GET IT", first: "FIRST RUN", together: "TOGETHER" };
+  // Wrapped text: no font metrics here, so a generous width per character
+  // (13px bold labels, 12.5px body) keeps any length off its neighbour.
+  const wrap = (text: string, px: number, perCh: number) => {
+    const max = Math.max(8, Math.floor(px / perCh));
+    const lines: string[] = [];
+    for (const word of text.split(/\s+/)) {
+      const last = lines.at(-1);
+      if (last !== undefined && last.length + 1 + word.length <= max) lines[lines.length - 1] = `${last} ${word}`;
+      else lines.push(word);
+    }
+    return lines;
+  };
+  const tspans = (x: number, lines: string[]) => lines.map((l, i) => `<tspan x="${x}"${i ? ` dy="${LH}"` : ""}>${esc(l)}</tspan>`).join("");
+  const labelLines = (label: string) => wrap(label, LABEL - 10 - PADX, 7.8);
+  const WHY = Math.min(W - M - colX[0] - PADX, 720);
 
   const out: string[] = [];
   let y = M;
@@ -364,9 +379,10 @@ export function stepsFigure(): string {
     if (z !== zone) band(zoneName[(zone = z)]);
     const cells = cols.map((c) => stepsAt(c, sid));
     const sharedJ1 = zone === "first" && FIRST_RUN.includes(sid);
-    const lines = Math.max(1, ...cells.map((s) => s.length));
+    const ll = labelLines(label);
+    const lines = Math.max(ll.length, ...cells.map((s) => s.length));
     const h = lines * LH + PADY * 2;
-    out.push(`<text class="station" x="${M + 10}" y="${y + PADY + 12}">${esc(label)}</text>`);
+    out.push(`<text class="station" x="${M + 10}" y="${y + PADY + 12}">${tspans(M + 10, ll)}</text>`);
     cols.forEach((c, i) => {
       if (sharedJ1 && viaJ1.has(c)) return;
       cells[i].forEach((id, k) => {
@@ -397,8 +413,10 @@ export function stepsFigure(): string {
   }
   band("NO JOURNEY YET");
   for (const [label, why] of UNCOVERED) {
-    const h = LH + PADY * 2;
-    out.push(`<text class="station gap" x="${M + 10}" y="${y + PADY + 12}">${esc(label)}</text><text class="why" x="${colX[0] + PADX}" y="${y + PADY + 12}">${esc(why)}</text>`);
+    const ll = labelLines(label);
+    const wl = wrap(why, WHY, 6.8);
+    const h = Math.max(ll.length, wl.length) * LH + PADY * 2;
+    out.push(`<text class="station gap" x="${M + 10}" y="${y + PADY + 12}">${tspans(M + 10, ll)}</text><text class="why" x="${colX[0] + PADX}" y="${y + PADY + 12}">${tspans(colX[0] + PADX, wl)}</text>`);
     y += h;
     rule(y);
   }
