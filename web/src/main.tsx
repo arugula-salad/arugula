@@ -13,14 +13,15 @@ import { remotes } from "./blocks";
 import { measureCell } from "./ui/cells";
 import { enableControlPush, registerWorker, setPushBackend } from "./push";
 import { ControlSession, detectControl, restoreInvite, showMoving } from "./control";
-import { ControlGate, ControlOverlay, controlMenuItems, NoMachines, useControl } from "./ui/control";
+import { accountItems, ControlGate, ControlOverlay, controlMenuItems, NoMachines, useControl } from "./ui/control";
 import { setFleet, setHostMenuExtras } from "./ui/hosts";
 import { setControlSession } from "./ui/people";
 import { labsNow } from "./labs-load";
 import { unhex } from "./e2e/cert.ts";
-import { useSubscribe } from "./ui/hooks";
+import { usePhone, useSubscribe } from "./ui/hooks";
 import { useEffect, useState } from "preact/hooks";
 import { SwarmView } from "./swarm/view";
+import { AppBar, setAccount } from "./ui/app-bar";
 import { fakeSwarm } from "./swarm/fake";
 import { closeSwarm, onSwarmRoute, swarmRoute } from "./swarm/route";
 import { setupDesktop } from "./desktop";
@@ -55,6 +56,12 @@ if (info && linkMatch) {
 setLending(session);
 if (session) {
   setHostMenuExtras(() => controlMenuItems(session));
+  setAccount({
+    login: () => session.login || null,
+    items: () => accountItems(session),
+    signOut: () => void session.signOut(false),
+    subscribe: (fn) => session.subscribe(fn),
+  });
   // A tapped notice from control (#104): what waits shows now.
   addEventListener("arugula:control-refresh", () => void session.refresh());
   setPushBackend({
@@ -221,11 +228,14 @@ if (!linkTarget) {
 }
 
 /** The swarm (M26) over the tab view, when `/#swarm` says so. */
-function Swarm() {
+function Swarm({ client }: { client: Client }) {
   const [, set] = useState(0);
   useEffect(() => onSwarmRoute(() => set((n) => n + 1)), []);
   // The home machine's name arrives with the directory, after a cold load.
   useSubscribe((fn) => directory.subscribe(fn));
+  // The shared bar shows once the shown machine has answered.
+  useSubscribe((fn) => client.subscribe(fn));
+  const phone = usePhone();
   const route = swarmRoute();
   if (!route || linkTarget) return null;
   if (session && session.phase !== "ready") return null;
@@ -233,14 +243,23 @@ function Swarm() {
   // A notification through control names its daemon; else it's this page's.
   const host = f ? (f.daemon ? directory.list?.hosts.find((h) => h.id === f.daemon)?.name : (directory.home ?? directory.names[0])) : undefined;
   const home = directory.home ?? directory.names[0] ?? null;
-  return <SwarmView fleet={fleet} back={closeSwarm} home={home} focus={f && host ? { host, pane: f.pane } : null} />;
+  const view = (bar: boolean) => <SwarmView fleet={fleet} back={closeSwarm} home={home} focus={f && host ? { host, pane: f.pane } : null} inBar={bar} />;
+  // The bar every place shares, over it, once a machine is shown; a phone
+  // has its own header, and the swarm its Panes button.
+  if (!client.state || phone) return view(false);
+  return (
+    <div class="swarm-shell">
+      <AppBar client={client} at="swarm" />
+      {view(true)}
+    </div>
+  );
 }
 
 const draw = () =>
   render(
     <>
       {session ? <ControlRoot key={client.base} s={session} /> : <App key={client.base} client={client} cell={cell} />}
-      <Swarm />
+      <Swarm key={client.base} client={client} />
     </>,
     root,
   );

@@ -197,6 +197,79 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   flex: 1;
 }
 
+/* The bar every place shares (ui/app-bar.tsx): the command palette's
+   button and the account menu, on the right of each. */
+.commands-button {
+  align-self: center;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 24px;
+  margin: 0 6px;
+  padding: 0 4px 0 10px;
+  border: 1px solid var(--divider);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+.commands-button:hover {
+  border-color: var(--raised-hover);
+  color: var(--fg);
+}
+
+.commands-button kbd {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--raised);
+  font: 11px system-ui, sans-serif;
+}
+
+.account-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  white-space: nowrap;
+  border-left: 1px solid var(--divider);
+}
+
+.account-button:hover {
+  background: var(--raised);
+}
+
+.account-avatar {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--raised-hover);
+  color: var(--fg);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+/* The swarm under the shared bar. */
+.swarm-shell > .bar {
+  position: fixed;
+  z-index: 21;
+  top: 0;
+  left: 0;
+  right: 0;
+}
+
+.swarm-shell > .swarm {
+  top: var(--bar-h);
+}
+
+/* Chat's search, in the shared bar after the places. */
+.app-bar .chat-search {
+  align-self: center;
+  margin-left: 8px;
+}
+
 .drop-marker {
   width: 2px;
   margin: 6px 1px 2px;
@@ -2952,6 +3025,13 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 
 .control-who {
   margin-right: auto;
+  font-weight: 600;
+}
+
+.control-account .account-button {
+  height: 32px;
+  border-left: 0;
+  border-radius: 6px;
 }
 
 .control-steps {
@@ -5270,42 +5350,28 @@ button.diff-why-run {
   height: 26px;
 }
 
-/* #403: the Agents page, over everything like the chat page. */
-.agents-page .chat-bar {
-  display: flex;
-  gap: 10px;
-  padding: 6px 12px;
-  border-bottom: 1px solid var(--divider);
-}
-
+/* #403: the Agents page, over everything like the chat page. Its tabs
+   sit in the shared bar, after the places, as the panes' sessions do. */
 .agents-tabs {
   display: flex;
-  gap: 4px;
+  align-items: center;
+  gap: 2px;
+  padding-left: 8px;
+  border-left: 1px solid var(--divider);
 }
 
-.agents-tabs .on {
-  background: var(--raised-hover);
-}
-
-.agents-spacer {
-  flex: 1;
-}
-
-/* The places and the tabs read as the panes' bar does: only the one
-   you're on is filled. */
-.agents-page .chat-bar .place,
 .agents-tabs button {
-  background: none;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 6px;
   color: var(--dim);
 }
 
-.agents-page .chat-bar .place:hover,
 .agents-tabs button:hover {
   background: var(--raised);
   color: var(--fg);
 }
 
-.agents-page .chat-bar .place.here,
 .agents-tabs button.on {
   background: var(--raised);
   color: var(--fg);

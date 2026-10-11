@@ -1,13 +1,13 @@
-// What a person does in the app's window, by what's on screen: the host
-// menu's account items, switching machines, teams and their invite links,
+// What a person does in the app's window, by what's on screen: the
+// account menu's items, switching machines, teams and their invite links,
 // moving a machine with In …. Shared by the J2 journeys (#551).
 
 import { expect, type Page } from "@playwright/test";
 import type { App } from "./app";
 
-/** The host menu's account items: Teams…, Devices and machines… */
+/** The account menu's items (top right): Teams…, Devices and machines… */
 export async function account(p: Page, item: "Teams…" | "Devices and machines…") {
-  await p.getByTitle("Hosts").click();
+  await p.locator("[data-account-menu]").first().click();
   await p.getByRole("menuitem", { name: item }).click();
 }
 

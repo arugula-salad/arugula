@@ -70,7 +70,7 @@ export function fleetLabel(name: string): string | null {
   }
 }
 
-/** More for the host menu (control mode: the account's items). */
+/** More for the host menu (control mode: adding a machine, hosted VMs). */
 let extras: () => MenuItem[] = () => [];
 export function setHostMenuExtras(f: () => MenuItem[]) {
   extras = f;

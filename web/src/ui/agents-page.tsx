@@ -16,7 +16,7 @@ import { getFleet } from "./hosts";
 import { askText } from "./menu";
 import { ConfirmRemove } from "./confirm";
 import { agentsRoute, closeAgentsPage, openAgentsPage, type AgentsTab } from "./agents-route";
-import { Places } from "./places";
+import { AppBar } from "./app-bar";
 
 interface Recipe {
   name: string;
@@ -73,21 +73,16 @@ export function AgentsPage({ client }: { client: Client }) {
 function Page({ client, tab }: { client: Client; tab: AgentsTab }) {
   return (
     <div class="chat agents-page" data-agents-page={tab}>
-      <div class="review-bar chat-bar">
-        <Places client={client} at="agents" />
-        <span class="agents-tabs">
-          <button class={tab === "recipes" ? "on" : ""} data-agents-tab="recipes" onClick={() => openAgentsPage("recipes")}>
+      <AppBar client={client} at="agents">
+        <span class="agents-tabs" role="tablist" aria-label="Agents">
+          <button role="tab" aria-selected={tab === "recipes"} class={tab === "recipes" ? "on" : ""} data-agents-tab="recipes" onClick={() => openAgentsPage("recipes")}>
             Recipes
           </button>
-          <button class={tab === "team" ? "on" : ""} data-agents-tab="team" onClick={() => openAgentsPage("team")}>
+          <button role="tab" aria-selected={tab === "team"} class={tab === "team" ? "on" : ""} data-agents-tab="team" onClick={() => openAgentsPage("team")}>
             Team
           </button>
         </span>
-        <span class="agents-spacer" />
-        <button title="Close" data-agents-close onClick={() => closeAgentsPage()}>
-          ✕
-        </button>
-      </div>
+      </AppBar>
       <div class="agents-body">{tab === "recipes" ? <RecipesTab client={client} /> : <TeamTab client={client} />}</div>
     </div>
   );

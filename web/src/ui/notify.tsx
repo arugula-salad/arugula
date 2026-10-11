@@ -1,5 +1,5 @@
 // Notifications on this device (#95, #96): one state machine for the
-// session menu and the phone's sheet. Whether this device can be notified,
+// account menu and the phone's sheet. Whether this device can be notified,
 // turning it on and off, and what's in the way when it can't.
 
 import { OPS, opPath } from "../ops";

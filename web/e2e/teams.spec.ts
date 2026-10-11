@@ -132,8 +132,10 @@ test("two people at different companies join a team by invite", async ({ browser
   team = await alice.evaluate(() => window.__arugula.control!.teams[0].team);
   // The Teams panel (#99): the team's id, its join command and an invite
   // link, each with Copy.
-  // Alice has no machine yet: the Teams panel is on her header (#97).
-  await alice.getByRole("button", { name: "Teams…" }).click();
+  // Alice has no machine yet: the Teams panel is in her header's account
+  // menu (#97).
+  await alice.locator("[data-account-menu]").click();
+  await alice.getByRole("menuitem", { name: "Teams…" }).click();
   await expect(alice.locator("[data-teams-intro]")).toBeVisible();
   await expect(alice.locator(".control-roles")).toContainText("drives: also types");
   await expect(alice.locator("[data-team-id]")).toHaveText(team);
@@ -182,7 +184,8 @@ test("two people at different companies join a team by invite", async ({ browser
   await bob.getByRole("button", { name: "OK", exact: true }).click();
   await expect(bob.locator("[data-asked]")).toHaveCount(0);
   // A member who isn't an owner adds machines too (#332): the panel says how.
-  await bob.getByRole("button", { name: "Teams…" }).click();
+  await bob.locator("[data-account-menu]").click();
+  await bob.getByRole("menuitem", { name: "Teams…" }).click();
   await expect(bob.locator("[data-team-join]")).toHaveText(`arugulad join ${base} --team ${team}`);
   await expect(bob.locator(`[data-member] .dim`).first()).toHaveText("owner");
   await bob.getByRole("button", { name: "Done" }).click();

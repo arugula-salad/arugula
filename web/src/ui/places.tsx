@@ -7,7 +7,7 @@ import { useEffect, useState } from "preact/hooks";
 import type { Client } from "../client";
 import type { Fleet } from "../fleet";
 import { directory } from "../hosts";
-import { openSwarm } from "../swarm/route";
+import { closeSwarm, openSwarm } from "../swarm/route";
 import { closeAgentsPage, openAgentsPage } from "./agents-route";
 import { threadKey, type ThreadTarget } from "../proto";
 import { getFleet } from "./hosts";
@@ -147,9 +147,19 @@ export function useChatTick(client: Client) {
 
 // ---- the places: the panes, the swarm, chat and agents
 
-/** Panes · Swarm · Chat · Agents, in the panes' bar, chat's and the Agents
- * page's. Agents (#403) is the machine owner's, with its flag. */
-export function Places({ client, at }: { client: Client; at: "panes" | "chat" | "agents" }) {
+/** Where a person is: the panes, the swarm, chat or agents. */
+export type Place = "panes" | "swarm" | "chat" | "agents";
+
+/** Back to the panes from wherever you are. */
+function closePlace(at: Place) {
+  if (at === "chat") closeChat();
+  else if (at === "agents") closeAgentsPage();
+  else if (at === "swarm") closeSwarm();
+}
+
+/** Panes · Swarm · Chat · Agents, in the bar every place shares
+ * (./app-bar). Agents (#403) is the machine owner's, with its flag. */
+export function Places({ client, at }: { client: Client; at: Place }) {
   useChatTick(client);
   const { n, mention } = client.hasThreads() ? chatUnread(client) : { n: 0, mention: false };
   const agents = client.flag("agents") && !client.state?.roles;
@@ -160,11 +170,17 @@ export function Places({ client, at }: { client: Client; at: "panes" | "chat" | 
         title="Your panes"
         data-open-panes
         aria-pressed={at === "panes"}
-        onClick={() => (at === "chat" ? closeChat() : at === "agents" && closeAgentsPage())}
+        onClick={() => closePlace(at)}
       >
         Panes
       </button>
-      <button class="place" title="Every pane, everywhere (the swarm)" data-open-swarm onClick={openSwarm}>
+      <button
+        class={at === "swarm" ? "place here" : "place"}
+        title="Every pane, everywhere (the swarm)"
+        data-open-swarm
+        aria-pressed={at === "swarm"}
+        onClick={() => at !== "swarm" && openSwarm()}
+      >
         Swarm
       </button>
       {client.hasThreads() && (

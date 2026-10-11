@@ -9,7 +9,8 @@ import { useSubscribe } from "./hooks";
 import { directory } from "../hosts";
 import { CopyButton, CopyText, download } from "./copy";
 import { ROLE_HELP, roleAs, roleLabel } from "./roles";
-import type { MenuItem } from "./menu";
+import { MenuLayer, type MenuItem } from "./menu";
+import { AccountButton } from "./app-bar";
 import type { PresignedInvite, ShareOffer, Team } from "../control";
 import type { TeamRole } from "../e2e/team.ts";
 import { qr, qrPath } from "./qr";
@@ -403,19 +404,13 @@ function RecoveryCodes({ s }: { s: ControlSession }) {
 /** Ready, but no machine to show yet: the account's menu (#97), any team
  * this account is waiting on (#103), and how to add a machine (#98). */
 export function NoMachines({ s }: { s: ControlSession }) {
-  const items = accountItems(s).filter((i): i is Extract<MenuItem, { label: string }> => typeof i === "object" && "label" in i);
   return (
     <div class="control-page">
       <header class="control-account" data-account-bar>
-        <span class="control-who">
-          Signed in as <b data-signed-in-as>{s.login}</b>
-        </span>
-        {items.map((i) => (
-          <button key={i.label} class="control-linkish" onClick={i.run}>
-            {i.label}
-          </button>
-        ))}
+        <span class="control-who">Arugula</span>
+        <AccountButton client={null} />
       </header>
+      <MenuLayer />
       <main>
         {s.asked.map((a) => (
           <p key={a.team} class="control-asked" data-asked={a.team}>
@@ -1276,24 +1271,22 @@ export function controlMenuItems(s: ControlSession): MenuItem[] {
   const shown = s.daemons.find((d) => d.name === directory.current);
   return [
     "separator",
-    { header: `${s.login}${s.stale ? " · control unreachable" : ""}` },
+    ...(s.stale ? [{ header: "Control unreachable" } as MenuItem] : []),
     ...(s.sandboxesOpen ? [{ label: "New hosted VM", run: () => void s.startSandbox() }] : []),
     ...(shown?.sandbox ? [{ label: "Delete this VM", run: () => void s.deleteSandbox(shown.sandbox!) }] : []),
     { label: "Add a machine…", run: panel("add") },
-    { label: "Add a phone or browser…", run: openPanel("add-device") },
-    ...accountItems(s),
   ];
 }
 
-/** The account's own items: in the host menu, and on the no-machines
- * screen's header (#97). */
-function accountItems(s: ControlSession): MenuItem[] {
+/** The account's own items, in the account menu on every page (the bar's,
+ * and the no-machines screen's, #97). Sign out is the menu's own, last. */
+export function accountItems(s: ControlSession): MenuItem[] {
   return [
     { label: "Teams…", run: panel("teams") },
     { label: "Devices and machines…", run: panel("devices") },
+    { label: "Add a phone or browser…", run: openPanel("add-device") },
     { label: "Sign-in and account…", run: panel("account") },
     ...(s.billing?.billing ? [{ label: s.billing.relay.warning ? "Plan and usage… (over the free relay)" : "Plan and usage…", run: panel("plan") }] : []),
-    { label: "Sign out", run: () => void s.signOut(false) },
   ];
 }
 

@@ -107,12 +107,12 @@ test("J2a: two friends link up by sharing a session; the friend types in the own
         actor: "riley",
         surface: "app",
         page: at(riley),
-        prompt: sam.window.getByText(/fingerprint in Devices and machines…, in the host menu/),
+        prompt: sam.window.getByText(/fingerprint in Devices and machines…, in the account menu/),
       },
       async () => {
         const p = riley.window;
-        // In the host menu (the machine's name), under the account's items.
-        await p.getByTitle("Hosts").click();
+        // In the account menu, top right.
+        await p.locator("[data-account-menu]").first().click();
         await p.getByRole("menuitem", { name: "Devices and machines…" }).click();
         const all = await p.getByText(FP).allInnerTexts();
         rileyFp = await read(p.getByText(/account/i).filter({ hasText: FP }), FP);
