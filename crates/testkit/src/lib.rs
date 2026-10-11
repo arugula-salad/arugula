@@ -10,6 +10,7 @@
 
 pub mod fixture;
 pub mod listen;
+pub mod schema;
 pub mod strays;
 
 use std::{

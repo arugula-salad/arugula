@@ -447,10 +447,10 @@ Each is one PR. Filed on 2026-10-07 as #572–#580, in this order.
    `sandboxes`. May split by module. After 2.
 8. (#579) **Optional: the operations table for the web client.** Emit each
    operation's method and path into `proto.gen.ts` beside its types, so
-   the web client's fetches name the operation too. After 1.
+   the web client's fetches name the operation too. After 1. Done (`OPS` and `web/src/ops.ts`).
 9. (#580) **Optional: `outputSchema`.** `JsonSchema` on `mcp/results.rs`'s types
    and an `Answer` type on `McpOp`, listed as each tool's `outputSchema`.
-   Changes the golden fixture on purpose. After 1.
+   Changes the golden fixture on purpose. After 1. Done, for the tools whose answer is one type.
 
 ## Decided
 

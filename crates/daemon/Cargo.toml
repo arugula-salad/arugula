@@ -22,7 +22,7 @@ arugula-control-wire = { workspace = true }
 arugula-core = { workspace = true }
 arugula-e2e = { workspace = true }
 arugula-mux = { workspace = true }
-arugula-proto = { workspace = true }
+arugula-proto = { workspace = true, features = ["schema"] }
 arugula-vt = { workspace = true }
 instant-acme = { version = "0.8.5", features = ["rcgen"] }
 p256 = { workspace = true, features = ["ecdh", "ecdsa"] }

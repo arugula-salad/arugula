@@ -297,6 +297,7 @@ name = "arugula-proto"
 version = "0.32.0"
 dependencies = [
  "arugula-core",
+ "schemars",
  "serde",
  "serde_json",
  "tracing",
