@@ -66,6 +66,45 @@ function unescape633(s: string): string {
   );
 }
 
+/** A screen's kitty keyboard flags (`CSI > u` push, `CSI < u` pop,
+ * `CSI = u` set), kept as Ghostty keeps them (src/terminal/kitty/key.zig):
+ * eight entries in a ring, a push past the top evicting the oldest, a pop
+ * of eight or more clearing it. */
+class KittyFlags {
+  private flags = new Array<number>(8).fill(0);
+  private idx = 0;
+  get current(): number {
+    return this.flags[this.idx];
+  }
+  push(f: number) {
+    this.idx = (this.idx + 1) & 7;
+    this.flags[this.idx] = f;
+  }
+  pop(n: number) {
+    if (n >= 8) return this.clear();
+    for (let i = 0; i < n; i++) {
+      this.flags[this.idx] = 0;
+      this.idx = (this.idx + 7) & 7;
+    }
+  }
+  set(f: number, mode: number) {
+    const cur = this.flags[this.idx];
+    if (mode === 1) this.flags[this.idx] = f;
+    else if (mode === 2) this.flags[this.idx] = cur | f;
+    else if (mode === 3) this.flags[this.idx] = cur & ~f;
+  }
+  clear() {
+    this.flags.fill(0);
+    this.idx = 0;
+  }
+}
+
+/** A kitty keyboard flags parameter (five bits), or null if it isn't one. */
+function kittyParam(p: number | number[] | undefined): number | null {
+  if (p === undefined) return 0;
+  return typeof p === "number" && p < 32 ? p : null;
+}
+
 export class TerminalView {
   readonly host: HTMLDivElement;
   private term: Terminal;
@@ -77,6 +116,9 @@ export class TerminalView {
   private offAppearance: () => void;
   /** Palette colors programs set (OSC 4), by index. */
   private custom = new Map<number, string>();
+  /** Kitty keyboard flags of the primary and alternate screens, which keep
+   * separate stacks; the stream (and a snapshot, as `CSI = u`) sets them. */
+  private kitty = { normal: new KittyFlags(), alternate: new KittyFlags() };
 
   /** `link`: a link clicked in the terminal, before the browser opens it;
    * true if it was handled (M36: a pull request opens as a block). */
@@ -217,6 +259,47 @@ export class TerminalView {
       p.registerOscHandler(osc, (data) => data.includes("?"));
     }
     this.followPalette();
+    this.followKittyKeys();
+  }
+
+  /** Follow the program's kitty keyboard flags (#412), which say how
+   * Ctrl+Enter is sent. xterm.js ignores these sequences, so taking them
+   * changes nothing it draws. */
+  private followKittyKeys() {
+    const p = this.term.parser;
+    const stack = () => this.kitty[this.term.buffer.active.type];
+    p.registerCsiHandler({ prefix: ">", final: "u" }, (params) => {
+      const f = params.length <= 1 ? kittyParam(params[0]) : null;
+      if (f !== null) stack().push(f);
+      return true;
+    });
+    p.registerCsiHandler({ prefix: "<", final: "u" }, (params) => {
+      // xterm.js reads a missing parameter as 0; the default is 1.
+      const n = params.length === 1 && typeof params[0] === "number" ? params[0] : 1;
+      stack().pop(n || 1);
+      return true;
+    });
+    p.registerCsiHandler({ prefix: "=", final: "u" }, (params) => {
+      const f = kittyParam(params[0]);
+      const mode = params.length >= 2 && typeof params[1] === "number" ? params[1] : 1;
+      if (f !== null) stack().set(f, mode);
+      return true;
+    });
+    // RIS clears both screens; xterm.js still does its own reset.
+    p.registerEscHandler({ final: "c" }, () => {
+      this.clearKitty();
+      return false;
+    });
+  }
+
+  private clearKitty() {
+    this.kitty.normal.clear();
+    this.kitty.alternate.clear();
+  }
+
+  /** The active screen's kitty keyboard flags; 0 when the protocol is off. */
+  get kittyFlags(): number {
+    return this.kitty[this.term.buffer.active.type].current;
   }
 
   /** The palette is this device's (appearance.ts), but the daemon's
@@ -423,8 +506,15 @@ export class TerminalView {
    * browser's paste event, which xterm.js handles. Shift+Enter sends ESC CR
    * (Alt+Enter, a new line in Claude Code and line editors, with or without
    * the kitty protocol, whose state the web can't see) where xterm.js sends
-   * CR; the keypress is stopped too, or it would send CR as well. */
+   * CR; the keypress is stopped too, or it would send CR as well. Ctrl+Enter,
+   * which xterm.js sends as CR, is `CSI 13;5u` (Shift and Alt added in)
+   * while the program has the kitty protocol on, and CR otherwise (#412). */
   private keys(e: KeyboardEvent): boolean {
+    if (e.key === "Enter" && e.ctrlKey && !e.metaKey && !e.isComposing && this.kittyFlags) {
+      const mods = 1 + (e.shiftKey ? 1 : 0) + (e.altKey ? 2 : 0) + 4;
+      if (e.type === "keydown") this.term.input(`\x1b[13;${mods}u`, true);
+      return false;
+    }
     if (e.key === "Enter" && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && !e.isComposing) {
       if (e.type === "keydown") this.term.input("\x1b\r", true);
       return false;
@@ -514,6 +604,8 @@ export class TerminalView {
           "\x1b[!p\x1b[?7h\x1b[?1l\x1b[?66l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1004l\x1b[?2004l" +
           "\x1b]104\x1b\\\x1b[H\x1b[2J",
       ),
+      // Once what came before is parsed, which may have set flags.
+      () => this.clearKitty(),
     );
     this.pending = null;
   }
@@ -521,6 +613,7 @@ export class TerminalView {
   /** Clear everything (screen, scrollback, modes) before a snapshot. */
   reset() {
     this.term.reset();
+    this.clearKitty();
     for (const m of this.marks.splice(0)) m.deco?.dispose();
     this.pending = null;
   }
