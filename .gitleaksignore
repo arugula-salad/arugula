@@ -14,3 +14,6 @@ e771ade639388899e13ce76f9b0a6eb7b26c9bbd:crates/daemon/tests/fixtures/chant/why/
 949dee980f0ce90108c4a41a83660de0104845c2:crates/daemon/src/labs/workspace/mod.rs:generic-api-key:1237
 0b60e885ed02a363bfbeefb5d1dce1ba0adefd77:crates/daemon/src/labs/workspace/mod.rs:generic-api-key:1237
 79bb79c3ee6639621d73deffcbaa1834ece23704:crates/daemon/src/labs/workspace/mod.rs:generic-api-key:1205
+87a9a1627dc7af2fe38b268c22019b5ce4b9f500:crates/control/src/blocks_wire.rs:generic-api-key:446
+d8a5873faca467daa189019deee9419afeed88f3:crates/control/src/blocks_wire.rs:generic-api-key:446
+2d96d82c92eeeae964770d9c4ac1f80568321cc3:crates/control/src/blocks_wire.rs:generic-api-key:446

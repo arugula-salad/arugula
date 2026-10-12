@@ -94,7 +94,7 @@ async function noLabsItems(page: Page, pane: number) {
 }
 
 test("the host says labs is off, and what follows it", async () => {
-  expect(await features()).toEqual({ labs: false, dev: false, blocks: false, vms: false, fountain: false, studio: false, threads: false, calls: false, flags: [] });
+  expect(await features()).toEqual({ labs: false, dev: false, blocks: false, vms: false, fountain: false, studio: false, threads: false, calls: false, block_channels: false, flags: [] });
 });
 
 test("links to Forgejo and GitLab stay plain links; GitHub's still open as blocks", async ({ page }) => {
