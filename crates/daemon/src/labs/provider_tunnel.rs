@@ -35,7 +35,6 @@ use axum::{
     response::{IntoResponse, Response},
     routing::any,
 };
-use hyper_util::rt::TokioIo;
 use tracing::{debug, info, warn};
 
 use crate::{provider::Conn, server::App};
@@ -169,14 +168,7 @@ async fn tunnel(app: Arc<App>, host: String, path: String, mut req: Request) -> 
         Err(e) => return error(StatusCode::BAD_REQUEST, format!("bad path: {e}")),
     };
     let out = axum::http::Request::from_parts(parts, body);
-    let (mut sender, conn) = match hyper::client::conn::http1::handshake(TokioIo::new(conn)).await {
-        Ok(x) => x,
-        Err(e) => return error(StatusCode::BAD_GATEWAY, format!("{host}: {e}")),
-    };
-    tokio::spawn(async move {
-        let _ = conn.with_upgrades().await;
-    });
-    let mut res = match sender.send_request(out).await {
+    let mut res = match crate::http1::once(conn, out).await {
         Ok(r) => r,
         Err(e) => return error(StatusCode::BAD_GATEWAY, format!("{host}: {e}")),
     };
@@ -188,18 +180,16 @@ async fn tunnel(app: Arc<App>, host: String, path: String, mut req: Request) -> 
     }
     crate::dial::defang(res.headers_mut());
     if upgraded && let Some(client) = client_upgrade {
-        let server = hyper::upgrade::on(&mut res);
+        let ends = crate::http1::ends(client, &mut res);
         let host = host.clone();
         tokio::spawn(async move {
-            let (client, server) = tokio::join!(client, server);
-            let (client, server) = match (client, server) {
-                (Ok(c), Ok(s)) => (c, s),
-                (c, s) => {
-                    return warn!(host, client = ?c.err(), server = ?s.err(), "tunnel: upgrade failed");
+            let (mut a, mut b) = match ends.await {
+                Ok(ends) => ends,
+                Err((client, server)) => {
+                    return warn!(host, ?client, ?server, "tunnel: upgrade failed");
                 }
             };
             info!(host, "tunnel open");
-            let (mut a, mut b) = (TokioIo::new(client), TokioIo::new(server));
             let _ = tokio::io::copy_bidirectional(&mut a, &mut b).await;
             info!(host, "tunnel closed");
         });
