@@ -553,7 +553,8 @@ pub(crate) fn features(app: &App) -> HostFeatures {
     HostFeatures {
         labs: on.any(),
         dev: arugula_proto::flags::unlocked(dir),
-        blocks: crate::sites::get().is_some(),
+        blocks: crate::sites::get().is_some_and(|s| s.listens()),
+        block_channels: crate::sites::control_blocks(),
         vms: on.has(flags::VMS) && app.mux.provider.is_some(),
         fountain: on.has(flags::FOUNTAIN) && crate::labs::fountain_login_here(&app.mux.shell_env),
         studio: on.has(flags::STUDIO) && crate::labs::studio_here(),

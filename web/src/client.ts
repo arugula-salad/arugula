@@ -58,7 +58,7 @@ import {
 import { decompress } from "fzstd";
 import { SCROLLBACK, TerminalView } from "./terminal-view";
 import { makeBlockView, type BlockView } from "./blocks";
-import { E2ESocket, type DaemonRef } from "./e2e/channel.ts";
+import { E2ESocket, type DaemonClock, type DaemonRef } from "./e2e/channel.ts";
 import type { DeviceKeys } from "./e2e/keys.ts";
 import { pick, upload } from "./upload";
 
@@ -123,6 +123,9 @@ export interface E2ETarget {
    * control, not a socket of its own. */
   mux?: string;
   keys: DeviceKeys;
+  /** M50: control's block domain, when control serves blocks' origins:
+   * this daemon's port and editor blocks are framed there. */
+  blockDomain?: string;
 }
 
 /** The connection a Client talks over. */
@@ -740,6 +743,31 @@ export class Client {
     } catch {
       // as it was
     }
+  }
+
+  /** M50: control's block domain, when this page reaches the daemon
+   * through a control that serves block origins. */
+  blockDomain(): string | null {
+    return this.e2e?.blockDomain ?? null;
+  }
+
+  /** M50: port and editor blocks can be shown from this page: on the
+   * daemon's own block sites, or through control's block origins. */
+  showsBlocks(): boolean {
+    return this.has("blocks") || (!!this.blockDomain() && this.features?.block_channels === true);
+  }
+
+  /** M50: the daemon's clock, from this page's channel to it. */
+  daemonClock(): DaemonClock | undefined {
+    const sock = (this.link as E2ELink | undefined)?.sock;
+    return sock?.open ? sock.clock : undefined;
+  }
+
+  /** M50: the daemon's own `wss://…/e2e`, when this page reached it
+   * directly rather than through control's relay. */
+  directE2E(): string | null {
+    const sock = (this.link as E2ELink | undefined)?.sock;
+    return this.e2e && this.path === "direct" && sock?.open && /^wss?:\/\/.*\/e2e$/.test(sock.url) ? sock.url : null;
   }
 
   /** Is `f` set up here? Yes when the daemon didn't say, except for what

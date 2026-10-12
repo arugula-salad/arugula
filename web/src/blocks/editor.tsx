@@ -5,6 +5,7 @@
 import { render } from "preact";
 import type { Client } from "../client";
 import type { OpenRequest, PaneId } from "../proto";
+import { BlockFrame } from "./block-frame";
 import { blocksOff } from "./browser";
 import { registerBlock, type BlockView } from "./view";
 
@@ -28,6 +29,8 @@ export interface EditorState {
   dirty: number;
   /** What the frame loads (fixed for the block's life). */
   src: string;
+  /** Its origin's key on control's block domain (M50). */
+  site_key?: string;
   reloads: number;
   server: Server | null;
   machine: string | null;
@@ -39,7 +42,7 @@ export interface EditorState {
  * both in from `from`), in a tab of its own.
  */
 export function openEditor(client: Client, from: PaneId, path?: string) {
-  if (!client.has("blocks")) return blocksOff("editor");
+  if (!client.showsBlocks()) return blocksOff("editor");
   void client.api("/api/blocks", { type: "editor", config: path ? { path } : {}, from_pane: from } satisfies OpenRequest, "couldn't open an editor");
 }
 
@@ -70,14 +73,16 @@ function EditorBlock({ client, id, s }: { client: Client; id: PaneId; s: EditorS
   return (
     <div class="editor">
       {/* Its own origin, never the app's; `allow-same-origin` means that one. */}
-      <iframe
-        key={`${s.src}#${s.reloads}`}
-        class="editor-frame"
+      <BlockFrame
+        client={client}
+        id={id}
+        siteKey={s.site_key}
         src={s.src}
+        reloads={s.reloads}
+        class="editor-frame"
         title={`VS Code: ${s.file ?? s.name}`}
         sandbox="allow-scripts allow-forms allow-same-origin allow-popups allow-downloads"
         allow="clipboard-read; clipboard-write"
-        referrerpolicy="no-referrer"
       />
       {server.is === "starting" && <div class="editor-note">Starting VS Code…</div>}
     </div>

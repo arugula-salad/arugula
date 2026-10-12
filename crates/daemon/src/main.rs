@@ -97,7 +97,10 @@ use axum::serve::ListenerExt;
 use clap::FromArgMatches;
 use tracing::{info, warn};
 
-/// Start serving block sites, if asked to.
+/// Start serving block sites, if asked to. Without `--block-listen` the
+/// registry is still installed, with no listener (M50): blocks then show
+/// through control's block origins while this daemon is joined to a
+/// control that has a block domain, and not on this daemon's own page.
 fn start_sites(
     b: &BlockArgs,
     app: &access::Access,
@@ -105,7 +108,15 @@ fn start_sites(
     listen: SocketAddr,
     state_dir: &std::path::Path,
 ) -> anyhow::Result<()> {
-    let Some(mut addr) = b.block_listen else { return Ok(()) };
+    let Some(mut addr) = b.block_listen else {
+        sites::install(sites::Settings {
+            scheme: sites::Scheme::Channel,
+            owner,
+            app_origins: app.origins(),
+            reserved: vec![listen.port()],
+        });
+        return Ok(());
+    };
     // Port 0: bound now, so blocks are named with the port it got (#67).
     let mut bound = None;
     if addr.port() == 0 {

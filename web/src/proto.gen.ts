@@ -866,10 +866,17 @@ labs: boolean,
  */
 dev?: boolean, 
 /**
- * Browser blocks on ports and editor blocks: block sites are on
- * (`--block-listen`).
+ * Browser blocks on ports and editor blocks, on the daemon's own block
+ * sites (`--block-listen`): what the daemon's own page can show.
  */
 blocks: boolean, 
+/**
+ * The same blocks through Arugula control's block origins (M50): the
+ * daemon is joined to a control with a block domain. Control's page
+ * offers blocks when either is on; the daemon's own page only with
+ * `blocks`. Older daemons leave it out.
+ */
+block_channels?: boolean, 
 /**
  * VM tabs and panes and *Sandboxes…*: a sandbox provider (wisp).
  */

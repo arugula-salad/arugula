@@ -33,9 +33,10 @@
 //! frame-ancestors 'self' <control's origins>` added and redirects to the
 //! port made paths; bodies come uncompressed.
 //!
-//! Blocks reach this only where they have a site, which today needs
-//! `--block-listen` (the dev or tailnet scheme); a block that has none is
-//! refused as `no-block`.
+//! Every port and editor block has a site: on the daemon's own listener
+//! (`--block-listen`, the dev or tailnet scheme), or, without one, a site
+//! reached only from here (`sites::Scheme::Channel`). A block with no site
+//! (a web page, a block that's gone) is refused as `no-block`.
 
 use std::{collections::HashMap, sync::Arc};
 

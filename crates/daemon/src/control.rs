@@ -1079,6 +1079,11 @@ impl Control {
                 }
             }
         }
+        // Not joined: nothing shows this daemon's blocks through control.
+        // Joined again: the next refresh says whether control has blocks.
+        if e.is_none() {
+            crate::sites::set_control_blocks(false);
+        }
         crate::sites::set_control_origins(origins);
         self.acl.set_team_roles(e.as_ref().map(|e| e.team_roles.clone()).unwrap_or_default());
         self.acl.set_shared_teams(e.as_ref().map(|e| e.shared_roles.clone()).unwrap_or_default());
@@ -1141,6 +1146,13 @@ impl Control {
         };
         let here = get(at(url)).await?;
         *self.control_urls.lock().unwrap() = here.urls.clone();
+        // Its page shows this daemon's blocks on control's block origins
+        // (M50), with or without a block listener here.
+        let blocks = here.block_domain.as_deref().is_some_and(|d| !d.is_empty());
+        if blocks != crate::sites::control_blocks() {
+            info!(block_domain = here.block_domain.as_deref().unwrap_or(""), "blocks through control's page");
+        }
+        crate::sites::set_control_blocks(blocks);
         let to = follow(url, &here)?;
         let there = get(at(&to)).await?;
         same(&follow_target(&there), &to).then_some(())?;

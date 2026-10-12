@@ -3,7 +3,9 @@
 //! with a grant that device signed opens one block, whose requests and
 //! WebSockets are answered by the block listener's proxy; grants that
 //! don't hold are refused in message 2; and closing the block closes its
-//! channel.
+//! channel. A daemon with no block flags opens port blocks, and serves them
+//! over block channels, while its control has a block domain (PR 4), and
+//! not otherwise.
 
 // Over the daemon's Unix socket; Windows gets its named pipe in M56 (#219).
 #![cfg(unix)]
@@ -36,11 +38,16 @@ fn free_port() -> u16 {
     TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port()
 }
 
-/// A control that trusts `device` (the account's root) and this daemon.
-async fn fake_control(certs: Vec<Cert>) -> String {
+/// A control that trusts `device` (the account's root) and this daemon,
+/// serving block origins under `block_domain` if it's given.
+async fn fake_control(certs: Vec<Cert>, block_domain: Option<&'static str>) -> String {
     let trust = json!({ "certs": certs, "revocations": [] });
+    let info = match block_domain {
+        Some(d) => json!({ "control": true, "daemon_auth": 2, "block_domain": d }),
+        None => json!({ "control": true, "daemon_auth": 2 }),
+    };
     let app = Router::new()
-        .route("/control.json", get(|| async { Json(json!({ "control": true, "daemon_auth": 2 })) }))
+        .route("/control.json", get(move || async move { Json(info) }))
         .route("/api/daemon/trust", get(move || async move { Json(trust) }))
         .route("/api/daemon/peers", get(|| async { Json(json!({})) }))
         .route("/api/daemon/push-subs", get(|| async { Json(json!({ "subs": [] })) }))
@@ -86,20 +93,22 @@ struct Rig {
 }
 
 async fn rig() -> Rig {
+    rig_with(true, None).await
+}
+
+/// A joined daemon, with `--block-listen` or none, its control serving
+/// block origins under `block_domain` or not.
+async fn rig_with(listen: bool, block_domain: Option<&'static str>) -> Rig {
     let device = DeviceKeys::generate();
     let mut root = Cert::new(&device, "a1", Kind::Browser, "laptop");
     root.sign_with(&device);
-    let mut d = arugulad!("blockchan")
-        .block_listen()
-        .no_wisp()
-        .no_tailscale()
-        .args(["--direct-url", "http://127.0.0.1:0"])
-        .wait_secs(30)
-        .start();
+    let d = arugulad!("blockchan");
+    let d = if listen { d.block_listen() } else { d };
+    let mut d = d.no_wisp().no_tailscale().args(["--direct-url", "http://127.0.0.1:0"]).wait_secs(30).start();
     let daemon = DeviceKeys::load_or_create(&d.state.join("daemon.key")).unwrap();
     let mut cert = Cert::new(&daemon, "a1", Kind::Daemon, "test");
     cert.sign_with(&device);
-    let control = fake_control(vec![root, cert.clone()]).await;
+    let control = fake_control(vec![root, cert.clone()], block_domain).await;
     let saved =
         json!({ "url": control, "trust": { "account": "a1", "root": device.id() }, "cert": cert, "login": "me" });
     std::fs::write(d.state.join("control.json"), saved.to_string()).unwrap();
@@ -282,4 +291,52 @@ async fn a_block_through_its_channel() {
     let (status, body) = r.d.raw("POST", &format!("/api/panes/{id}/close"), Some(json!({})));
     assert_eq!(status, 200, "{body}");
     assert_eq!(next(&mut ws, &ch).await, None);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_daemon_with_no_block_flags_shows_blocks_through_control_only() {
+    let dev_port = free_port();
+    dev_server(dev_port).await;
+    let open_port = |r: &Rig| {
+        r.d.raw("POST", "/api/blocks", Some(json!({"type": "browser", "config": {"port": dev_port, "path": "/"}})))
+    };
+
+    // Joined to a control with no block domain: nowhere to show a port.
+    let r = rig_with(false, None).await;
+    let features = r.d.get("/api/host")["features"].clone();
+    assert_eq!(
+        (features["blocks"].as_bool(), features["block_channels"].as_bool()),
+        (Some(false), Some(false)),
+        "{features}"
+    );
+    let (status, body) = open_port(&r);
+    assert_ne!(status, 200, "{body}");
+    assert!(body.contains("off here"), "{body}");
+    drop(r);
+
+    // A control with a block domain: its page shows them, the daemon's own
+    // page doesn't offer them.
+    let r = rig_with(false, Some("blocks.example")).await;
+    r.d.wait_for("blocks through control", || r.d.get("/api/host")["features"]["block_channels"] == true);
+    assert_eq!(r.d.get("/api/host")["features"]["blocks"], false);
+    let (status, body) = open_port(&r);
+    assert_eq!(status, 200, "{body}");
+    let id = serde_json::from_str::<Value>(&body).unwrap()["block"].as_u64().unwrap();
+    let state = r.d.get(&format!("/api/blocks/{id}"))["state"].clone();
+    // No name of its own: a path, and the key of its origin on control's.
+    assert_eq!(state["src"], "/", "{state}");
+    assert_eq!(state["site_key"].as_str().map(str::len), Some(32), "{state}");
+
+    let (_ws, _, welcome) = open(&r, &r.device, &[]).await.expect("the device's channel");
+    let now = Welcome::decode(&welcome).expect("a welcome").now;
+    let key = DeviceKeys::generate();
+    let hello =
+        Hello { grant: Grant::new(&r.device, &r.daemon.id(), &id.to_string(), &key.noise_public, now + 60_000) };
+    let (mut ws, ch, answer) = open(&r, &key, &hello.encode()).await.unwrap();
+    assert_eq!(Answer::decode(&answer), Ok(()));
+    let (res, page) =
+        fetch(&mut ws, &ch, 1, get_req("/", &[("sec-fetch-mode", "navigate"), ("sec-fetch-dest", "iframe")]), b"")
+            .await;
+    assert_eq!(res.status, 200);
+    assert!(String::from_utf8_lossy(&page).contains("hello"));
 }

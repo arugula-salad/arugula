@@ -11,7 +11,7 @@
 // Built by itself into dist/block/shim.js (vite.block.config.ts) and served
 // by control at /.arugula/shim.js.
 
-import { BlockChannel, channelUrl, type Held, load, NativeWebSocket, Refused, save } from "./channel.ts";
+import { BlockChannel, type Held, load, NativeWebSocket, openChannel, Refused, save } from "./channel.ts";
 import { askParent, giveWorker, TAG, VERSION } from "./page.ts";
 
 let chan: Promise<BlockChannel> | null = null;
@@ -34,11 +34,11 @@ async function connect(): Promise<BlockChannel> {
   let h = await load<Held>("held");
   if (!h) throw new Error("this block has no key");
   try {
-    return await BlockChannel.connect(channelUrl(h.creds, location), h.creds);
+    return await openChannel(h.creds, location);
   } catch (e) {
     if (!(e instanceof Refused && e.code === "expired")) throw e;
     h = await renew(h.parent);
-    return BlockChannel.connect(channelUrl(h.creds, location), h.creds);
+    return openChannel(h.creds, location);
   }
 }
 

@@ -126,7 +126,9 @@ impl Editor {
     pub fn create(ctx: BlockCtx, config: Value) -> Result<Arc<dyn Block>, String> {
         let config: Config = serde_json::from_value(config).map_err(|e| format!("editor config: {e}"))?;
         let settings = server::settings().ok_or("editor blocks are off here")?;
-        let sites = sites::get().ok_or("editor blocks need block sites: start arugulad with --block-listen")?;
+        // A restored block keeps its site: control's answer about block
+        // origins may not be in yet.
+        let sites = if ctx.restoring { sites::get() } else { sites::shown() }.ok_or(sites::OFF)?;
         let on = match (&ctx.sprite, &ctx.provider) {
             (None, _) => On::Here,
             (Some(sprite), Some(provider)) => On::Vm { provider: provider.clone(), sprite: sprite.clone() },
@@ -501,6 +503,13 @@ printf '%s\n%s\n%s\n' "$d" "$f" "$g""#;
 
 /// VS Code's way to open a file as the page loads: `openFile` with the
 /// file on this window's remote (its page's host), at a line.
+///
+/// The remote is the host the page is on. A site with no origin of its own
+/// (no block listener: `sites::Scheme::Channel`) leaves it empty, and the
+/// page that frames the block on control's block origin (M50) puts that
+/// origin's host in, as it does for every `vscode-remote://` in the
+/// address (`web/src/blocks/through-control.ts`, `blockSrc`): which origin
+/// a block is shown on is the viewer's choice, not the daemon's.
 fn open_payload(origin: &str, file: &str, line: Option<u32>) -> String {
     let authority = origin.split_once("://").map_or(origin, |(_, a)| a);
     let mut uri = url::Url::parse(&format!("vscode-remote://{authority}")).expect("authority");
@@ -545,6 +554,10 @@ mod tests {
         assert_eq!(v[1], json!(["gotoLineMode", "true"]));
         let p = open_payload("https://b-4.arugula.example.com", "/x.rs", None);
         assert_eq!(p, r#"[["openFile","vscode-remote://b-4.arugula.example.com/x.rs"]]"#);
+        // No listener: no host, filled in by the page that frames it.
+        let p = open_payload("", "/src/a b/x.rs", Some(3));
+        let v: Value = serde_json::from_str(&p).unwrap();
+        assert_eq!(v[0][1], "vscode-remote:///src/a%20b/x.rs:3");
     }
 
     #[test]

@@ -498,7 +498,7 @@ pub fn router(app: Arc<App>) -> Router {
         .layer(axum::middleware::from_fn_with_state(app.clone(), account::note_agent))
         .layer(axum::middleware::from_fn_with_state(app.clone(), moved))
         .layer(axum::middleware::from_fn_with_state(app.clone(), auth::verify_daemon))
-        .layer(axum::middleware::map_response(headers))
+        .layer(axum::middleware::map_response_with_state(app.clone(), headers))
         // Outermost: a block's origin never reaches anything above (M50).
         .layer(axum::middleware::from_fn_with_state(app.clone(), blocks::split))
         .with_state(app)
@@ -572,17 +572,27 @@ async fn control_json(
 /// Nothing frames control's pages, and nothing on them comes from elsewhere
 /// except the daemons the page connects to (any WebSocket) and the blocks it
 /// shows: a block is a frame on its own site (a daemon's block domain, or a
-/// web page a browser block opened), so frames may come from any https site.
-async fn headers(mut res: Response) -> Response {
+/// web page a browser block opened), so frames may come from any https site,
+/// and from control's own block origins (M50) on whatever scheme control's
+/// page is on (http only for a local control).
+async fn headers(axum::extract::State(app): axum::extract::State<Arc<App>>, mut res: Response) -> Response {
+    let csp = |frames: &str| {
+        format!(
+            "default-src 'self'; connect-src 'self' wss: ws: https:; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; frame-src 'self' https:{frames}; frame-ancestors 'none'"
+        )
+    };
+    let csp = match &app.cfg.block_domain {
+        Some(d) => HeaderValue::from_str(&csp(&format!(" *.{d}:*")))
+            .unwrap_or(HeaderValue::from_static("frame-ancestors 'none'")),
+        None => HeaderValue::from_str(&csp("")).expect("a fixed policy"),
+    };
     let h = res.headers_mut();
     h.insert(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
     h.insert(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff"));
     h.insert(header::REFERRER_POLICY, HeaderValue::from_static("no-referrer"));
     // Browsers ignore it over plain HTTP (a local control), so always.
     h.insert(header::STRICT_TRANSPORT_SECURITY, HeaderValue::from_static("max-age=31536000"));
-    h.entry(header::CONTENT_SECURITY_POLICY).or_insert(HeaderValue::from_static(
-        "default-src 'self'; connect-src 'self' wss: ws: https:; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; frame-src 'self' https:; frame-ancestors 'none'",
-    ));
+    h.entry(header::CONTENT_SECURITY_POLICY).or_insert(csp);
     res
 }
 

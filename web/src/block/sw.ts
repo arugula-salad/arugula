@@ -18,7 +18,7 @@
 // by control at /.arugula/sw.js, with no CSP: hosting an app's own worker
 // (below) runs its code with `new Function`.
 
-import { BlockChannel, channelUrl, type Held, load, Refused, save } from "./channel.ts";
+import { BlockChannel, type Held, load, openChannel, Refused, save } from "./channel.ts";
 import { TAG, VERSION } from "./page.ts";
 
 interface Waiting {
@@ -86,7 +86,7 @@ async function connect(): Promise<BlockChannel> {
   if (!h) throw new Error("this block has no key");
   for (let attempt = 0; ; attempt++) {
     try {
-      return await BlockChannel.connect(channelUrl(h.creds, sw.location), h.creds);
+      return await openChannel(h.creds, sw.location);
     } catch (e) {
       if (e instanceof Refused && e.code === "expired" && attempt === 0) {
         h = await renew();

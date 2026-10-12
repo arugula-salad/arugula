@@ -196,6 +196,11 @@ async fn controls_own_host_is_as_before_and_says_where_blocks_are() {
     assert_eq!(j["block_domain"], DOMAIN);
     let page = c.at("control.test", reqwest::Method::GET, "/").send().await.unwrap();
     assert_eq!(page.headers()[header::X_FRAME_OPTIONS], "DENY");
+    // Its page frames blocks' origins (PR 4), on its own scheme: https
+    // hosted, http for a local control.
+    let csp = page.headers()[header::CONTENT_SECURITY_POLICY].to_str().unwrap().to_owned();
+    assert!(csp.contains(&format!("frame-src 'self' https: *.{DOMAIN}:*;")), "{csp}");
+    assert!(csp.contains("frame-ancestors 'none'"), "{csp}");
     assert!(page.text().await.unwrap().contains("Arugula control"));
     // Blocks' files aren't control's page's.
     assert_eq!(c.at("control.test", reqwest::Method::GET, "/block/sw.js").send().await.unwrap().status(), 404);
@@ -211,6 +216,9 @@ async fn controls_own_host_is_as_before_and_says_where_blocks_are() {
         off.at(&block_host(KEY), reqwest::Method::GET, "/control.json").send().await.unwrap().json().await.unwrap();
     assert_eq!(j["control"], true);
     assert!(j.get("block_domain").is_none());
+    let page = off.at("control.test", reqwest::Method::GET, "/").send().await.unwrap();
+    let csp = page.headers()[header::CONTENT_SECURITY_POLICY].to_str().unwrap().to_owned();
+    assert!(csp.contains("frame-src 'self' https:;"), "{csp}");
 }
 
 // ---- the relay

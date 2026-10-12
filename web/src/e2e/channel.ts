@@ -127,6 +127,36 @@ function openSocket(url: string, timeoutMs: number): Promise<WebSocket> {
   });
 }
 
+/** The daemon's clock, from message 2's payload (`{"now": ms}`, M50):
+ * what block grants' expiry is minted from. */
+export interface DaemonClock {
+  /** Ms since the epoch, by the daemon's clock, when it answered. */
+  now: number;
+  /** `performance.now()` here when that answer was read. */
+  at: number;
+}
+
+/** The daemon's now, estimated from `c`: its clock when it answered, plus
+ * how long ago that was here (a monotonic clock, so this device's own
+ * wall clock never comes into it). */
+export function daemonNow(c: DaemonClock, perfNow = performance.now()): number {
+  return Math.round(c.now + Math.max(0, perfNow - c.at));
+}
+
+/** What message 2's payload says: a clock (a device's channel), or a
+ * refusal (`{"ok":false,"refused":…}`). Anything else is nothing. */
+export function readWelcome(payload: Uint8Array, at: number): { clock?: DaemonClock; refused?: string } {
+  if (!payload.length) return {};
+  try {
+    const j = JSON.parse(dec.decode(payload)) as { now?: unknown; ok?: unknown; refused?: unknown; message?: unknown };
+    if (j.ok === false) return { refused: typeof j.message === "string" ? j.message : String(j.refused ?? "refused") };
+    if (typeof j.now === "number" && Number.isFinite(j.now) && j.now > 0) return { clock: { now: j.now, at } };
+  } catch {
+    // an older or odder daemon: no clock
+  }
+  return {};
+}
+
 export class E2ESocket {
   onText: (t: string) => void = () => {};
   onBinary: (b: Uint8Array) => void = () => {};
@@ -138,6 +168,9 @@ export class E2ESocket {
   /** #369: a piece of a message arrived (any piece: a big message comes
    * in many, and only the last one delivers it). */
   onWire: () => void = () => {};
+  /** The daemon's clock as it answered the handshake (M50); none from a
+   * daemon from before it said. */
+  clock: DaemonClock | undefined;
 
   private sendQ: Promise<void> = Promise.resolve();
   private recvQ: Promise<void> = Promise.resolve();
@@ -201,24 +234,35 @@ export class E2ESocket {
       // handshake reply, and dropping it would skip a nonce.
       const early: Uint8Array[] = [];
       let first = true;
-      ws.onmessage = async (e) => {
+      // Message 2 is read before a close counts: a refusal can come with
+      // the close (M50), and the read is async.
+      let reading: Promise<void> = Promise.resolve();
+      ws.onmessage = (e) => {
         const wire = new Uint8Array(e.data as ArrayBuffer);
         if (!first) return void early.push(wire);
         first = false;
-        try {
-          const { channel } = await ik.read(wire);
-          clearTimeout(t);
-          res(new E2ESocket(ws, channel.send, channel.recv, early));
-        } catch (err) {
-          clearTimeout(t);
-          rej(err);
-        }
+        reading = (async () => {
+          try {
+            const { payload, channel } = await ik.read(wire);
+            clearTimeout(t);
+            const w = readWelcome(payload, performance.now());
+            if (w.refused) return rej(Object.assign(new Error(`the machine refused: ${w.refused}`), { refused: w.refused }));
+            const sock = new E2ESocket(ws, channel.send, channel.recv, early);
+            sock.clock = w.clock;
+            res(sock);
+          } catch (err) {
+            clearTimeout(t);
+            rej(err);
+          }
+        })();
       };
       ws.onclose = (e) => {
-        clearTimeout(t);
         const full = fullReason(e);
-        if (full) rej(Object.assign(new Error(full), { full: true }));
-        else rej(new Error("closed during the handshake (not an approved device?)"));
+        void reading.then(() => {
+          clearTimeout(t);
+          if (full) rej(Object.assign(new Error(full), { full: true }));
+          else rej(new Error("closed during the handshake (not an approved device?)"));
+        });
       };
       void ik
         // Frozen (#504): the prologue both ends agree on.
