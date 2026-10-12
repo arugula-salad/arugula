@@ -350,6 +350,86 @@ pub struct ForgeOpened {
     pub wants: Vec<ForgeWant>,
 }
 
+/// `capabilities` (#229): what this daemon offers the agent asking.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct Capabilities {
+    /// arugulad's version.
+    pub version: String,
+    /// The Labs flags on here (Developer settings): what a stranger's
+    /// machine doesn't have.
+    pub flags: Vec<String>,
+    /// The blocks you can put in front of the user here, and the call that
+    /// opens each.
+    pub blocks: Vec<BlockOffer>,
+    /// The tools listed for you.
+    pub tools: Vec<String>,
+    /// The forges PR and issue blocks reach, and whether the user is
+    /// signed in to each here (what they send from a `draft` goes with
+    /// that login).
+    pub forges: Vec<ForgeSignIn>,
+    /// Whether Claude Code's hooks are live in your pane.
+    pub hooks: HooksLive,
+    /// This machine's standing with Arugula control, and its teams.
+    pub control: ControlJoined,
+}
+
+/// One kind of block.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct BlockOffer {
+    pub kind: String,
+    /// The call that opens one (`show {kind: "port"}`, `run`).
+    pub open: String,
+    pub about: String,
+}
+
+/// A forge, and whether this machine has the user's login for it.
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+pub struct ForgeSignIn {
+    /// `github`, `forgejo` or `gitlab`.
+    pub forge: String,
+    pub host: String,
+    pub signed_in: bool,
+    /// The login's user, where its CLI says.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user: Option<String>,
+    /// What signs in, or what's missing.
+    pub note: String,
+}
+
+/// Claude Code's hooks in the caller's pane.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct HooksLive {
+    /// The pane asked about: yours (`None`: Arugula doesn't know it).
+    pub pane: Option<PaneId>,
+    /// Whether they reach Arugula from it (`None`: can't tell, or they
+    /// don't apply).
+    pub live: Option<bool>,
+    /// How long ago the last hook arrived from it, in seconds.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub heard_secs_ago: Option<u64>,
+    /// Its `arugula inbox` hook waits for a follow-up now.
+    pub inbox: bool,
+    pub note: String,
+}
+
+/// Arugula control, as this machine knows it.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct ControlJoined {
+    /// `not_joined`, `joined` or `dropped`.
+    pub state: String,
+    /// `account` or `team`: whose machine it is.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    /// The account's login, or the team's name.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// Reachable through control now.
+    pub connected: bool,
+    /// The teams whose rosters this machine holds (its own, on a team's
+    /// machine, and those shared with it), by name.
+    pub teams: Vec<String>,
+}
+
 /// `read_forge`.
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct ForgeRead {

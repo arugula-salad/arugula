@@ -82,6 +82,18 @@ pub async fn open_config(_c: &Value, _state_dir: &std::path::Path) -> Result<Val
     Err(not_built("A forge block"))
 }
 
+/// Whether `gh` has a login for `host` now (asked afresh, not a block's
+/// cached answer), for MCP's `capabilities` (#229). `Err`: why not.
+#[cfg(feature = "forge")]
+pub(crate) async fn gh_signed_in(runner: &crate::review::Runner, host: &str) -> Result<(), String> {
+    crate::forge::github::GhToken::new(runner.clone(), host).get(true).await.map(|_| ())
+}
+
+#[cfg(not(feature = "forge"))]
+pub(crate) async fn gh_signed_in(_runner: &crate::review::Runner, _host: &str) -> Result<(), String> {
+    Err(not_built("GitHub"))
+}
+
 /// A text control's socket sent that may be the forge's (a poke or a
 /// heartbeat).
 #[cfg(feature = "forge")]
