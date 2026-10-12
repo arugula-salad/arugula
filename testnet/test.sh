@@ -349,6 +349,9 @@ claim_unreachable() {
 # Its daemon is up when this returns.
 join_box() {
   local box="$1" fp="$2" state="${3:-$WORK/device.json}" team="${4:-}" code="" pid
+  # Empty before the join starts: the background job truncates it only once
+  # it runs, and a box joined before (cli, then team) left a used code here.
+  : > "$WORK/join-$box.out"
   # shellcheck disable=SC2046 # no --team, or --team TEAM
   cli --ssh "$box" join "$CONTROL_URL" --account "$fp" $([ -z "$team" ] || echo --team "$team") \
     < /dev/null > "$WORK/join-$box.out" 2>&1 &

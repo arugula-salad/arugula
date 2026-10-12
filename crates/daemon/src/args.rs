@@ -149,7 +149,8 @@ pub(crate) enum Command {
 pub(crate) enum Switch {
     On,
     Off,
-    /// This machine says nothing: control's word, or the default (#347).
+    /// This machine says nothing: control's word, or the default.
+    // #347.
     Unset,
 }
 
