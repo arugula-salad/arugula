@@ -24,8 +24,6 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   GITHUB_TOKEN: ${{ github.token }}
-  # On the Mac's own disk and kept between runs: the host isn't throwaway.
-  CARGO_TARGET_DIR: ${{ github.workspace }}/../target-macos-vm
 
 jobs:
   tools:
@@ -33,6 +31,11 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
+      # The build is kept between runs, beside the checkout (which checkout
+      # cleans): the host isn't throwaway. A link, not CARGO_TARGET_DIR,
+      # since the scripts and specs take binaries from ./target.
+      - name: Keep the build
+        run: mkdir -p ../target-macos-vm && ln -sfn "$PWD/../target-macos-vm" target
       - name: Rust (rust-toolchain.toml's)
         run: rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)" --profile minimal
       - run: just bootstrap
