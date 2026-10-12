@@ -649,11 +649,16 @@ fn open_window(app: &AppHandle, url: WebviewUrl) -> tauri::Result<tauri::Webview
     w.on_window_event(|e| {
         if let tauri::WindowEvent::Focused(f) = e {
             settings::focus_changed(*f);
+            updates::focus_changed(*f);
         }
     });
     #[cfg(target_os = "macos")]
     tab_in(&w);
-    let _ = w.set_focus();
+    // Back from an update's restart on its own: not in front of whatever
+    // someone's doing now (#561).
+    if !updates::quiet() {
+        let _ = w.set_focus();
+    }
     Ok(w)
 }
 
@@ -668,7 +673,9 @@ fn tab_in(w: &tauri::WebviewWindow) {
         let ns = unsafe { &*(ptr as *const objc2_app_kit::NSWindow) };
         ns.setTabbingMode(objc2_app_kit::NSWindowTabbingMode::Preferred);
         let _ = w2.show();
-        let _ = w2.set_focus();
+        if !updates::quiet() {
+            let _ = w2.set_focus();
+        }
     });
 }
 
@@ -1056,7 +1063,16 @@ fn main() {
     let context = tauri::generate_context!();
     let updater = updates::configured(context.config());
     updates::init(updater);
-    let mut builder = tauri::Builder::default()
+    updates::started();
+    // This start is the app restarting into an update on its own (#561).
+    let quiet = updates::Quiet::take(&context.config().identifier);
+    let mut builder = tauri::Builder::default();
+    // macOS: become the active app only when no other is.
+    #[cfg(target_os = "macos")]
+    {
+        builder = builder.activate_ignoring_other_apps(quiet.is_none());
+    }
+    builder = builder
         // A second launch: its links (Linux runs the app with the link), or
         // a new window.
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
@@ -1202,7 +1218,17 @@ fn main() {
                     false
                 }
             };
-            open_window(app.handle(), target(app.handle()))?;
+            match &quiet {
+                // The windows it had, on their pages; none when it had none.
+                Some(q) => {
+                    for url in q.windows(&target(app.handle()), ours) {
+                        open_window(app.handle(), url)?;
+                    }
+                }
+                None => {
+                    open_window(app.handle(), target(app.handle()))?;
+                }
+            }
             // Linux: a link the app was started with.
             #[cfg(not(target_os = "macos"))]
             for url in links::in_args(std::env::args()) {
