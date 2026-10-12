@@ -45,6 +45,9 @@ fn have_ssh() -> bool {
 fn start(name: &str) -> Daemon {
     let state = std::env::temp_dir().join(format!("ilg-gssh-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&state);
+    // Guest ssh invites are the `guest-ssh` flag's (#347).
+    std::fs::create_dir_all(&state).unwrap();
+    arugula_testkit::labs(&state, true);
     let child = arugula_testkit::command(env!("CARGO_BIN_EXE_arugulad"))
         .args(["--listen", listen::ANY, "--shell", "bash --norc --noprofile", "--no-manager-env"])
         .args(["--tailscale-socket", "/nonexistent/tailscaled.sock"])
@@ -600,6 +603,13 @@ fn a_guest_reaches_a_daemon_behind_nat_through_controls_jump_host() {
         .trim()
         .trim_start_matches('%')
         .to_owned();
+    // Guest ssh invites are the `guest-ssh` flag's on the box (#347); the
+    // daemon reads it on the next request.
+    let on = testnet::ssh()
+        .args(["box-systemd", "sh", "-c", "'$HOME/.local/bin/arugulad flags guest-ssh on'"])
+        .status()
+        .unwrap();
+    assert!(on.success(), "arugulad flags guest-ssh on, on box-systemd");
     let inv: Value = serde_json::from_str(&env.ok(&[
         "--ssh",
         "box-systemd",

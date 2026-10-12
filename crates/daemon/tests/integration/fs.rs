@@ -56,7 +56,7 @@ impl Drop for Daemon {
 
 impl Daemon {
     fn new(tag: &str, wisp: bool) -> Self {
-        let b = arugulad!(&format!("m7-{tag}"));
+        let b = arugulad!(&format!("m7-{tag}")).labs();
         Self(if wisp { b.args(["--wisp-url", WISP]) } else { b.no_wisp() }.start())
     }
 

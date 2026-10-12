@@ -51,6 +51,11 @@ impl Daemon {
         if self.call_role(who, session).is_none() {
             return refuse("no such session".into());
         }
+        // A huddle starts or is joined only where the machine has the flag
+        // (#347); leaving, muting and signalling one already on still work.
+        if let Err(why) = crate::labs::flag(self.store.root(), arugula_proto::flags::HUDDLES) {
+            return refuse(why);
+        }
         // Huddles on sessions that closed end with them.
         let sessions: std::collections::HashSet<SessionId> = self.mux.sessions.iter().map(|s| s.id).collect();
         self.calls.retain(|s, _| sessions.contains(&s));

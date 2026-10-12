@@ -123,6 +123,8 @@ fn claude_code_wears_games() {
         return;
     }
     let d = Daemon::child();
+    // Wearing a Fountain agent is the `fountain` flag's (#347).
+    arugula_testkit::labs(&d.state, true);
     let cwd = scratch(&d);
     let prompt = "Without using any tools: list, one per line, the names of the skills you can use whose names \
                   contain love, pixi or screenshot. Then say DONE.";
@@ -168,6 +170,7 @@ fn a_fountain_agent_asks_and_runs() {
         return;
     };
     let d = Daemon::child();
+    arugula_testkit::labs(&d.state, true);
     let id = d.open_with(
         json!({ "type": "agent", "config": { "agent": "fountain", "fountain_agent": agent, "prompt": PROMPT } }),
     );
@@ -192,6 +195,8 @@ fn claude_code_in_a_vm() {
         return;
     }
     let d = Daemon::child_with(&["--wisp-token-file", token.to_str().unwrap()]);
+    // VMs are the `vms` flag's (#347).
+    arugula_testkit::labs(&d.state, true);
     let config = json!({ "agent": "claude", "model": "haiku", "prompt": PROMPT });
     let id = d.open_with(json!({ "type": "agent", "vm": true, "config": config }));
     // The first start installs Node and the adapter in the machine.
@@ -459,6 +464,9 @@ fn claude_code_outside_runs_a_build_through_mcp() {
         return;
     }
     let d = if on_vm { Daemon::child_with(&["--wisp-token-file", wisp.to_str().unwrap()]) } else { Daemon::child() };
+    if on_vm {
+        arugula_testkit::labs(&d.state, true);
+    }
     let cli = std::path::Path::new(env!("CARGO_BIN_EXE_arugulad")).with_file_name("arugula");
     assert!(
         std::process::Command::new(env!("CARGO")).args(["build", "-q", "-p", "arugula"]).status().unwrap().success()

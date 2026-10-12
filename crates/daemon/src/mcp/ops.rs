@@ -90,7 +90,11 @@ pub async fn call<O: McpOp>(call: &Call<'_>, args: serde_json::Value) -> Out {
     let a: O::Args = parse(args)?;
     let (path, req) = O::args(call, &a).await?;
     let cx = Cx { app: call.app(), via: Via::Mcp(call) };
-    match O::handle(&cx, path.clone(), req).await {
+    let done = match crate::ops::flagged::<O>(call.app()) {
+        Ok(()) => O::handle(&cx, path.clone(), req).await,
+        Err(e) => Err(e),
+    };
+    match done {
         Ok(res) => O::answer(call, &a, &path, res),
         Err(OpError::NoPane(id)) => Err(call.gone(id).await),
         Err(

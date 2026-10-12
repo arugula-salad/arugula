@@ -190,6 +190,18 @@ impl FromPath for String {
     }
 }
 
+/// Whether `O`'s feature is on here (#347): an operation that names a flag
+/// (`Op::FLAG`) is refused, by every way in, where the machine has it off,
+/// as a route that isn't there (404) that says how to turn it on.
+pub fn flagged<O: Op>(app: &App) -> Result<(), OpError> {
+    match O::FLAG {
+        Some(flag) => {
+            crate::labs::flag(app.control.state_dir(), flag).map_err(|why| OpError::Status(StatusCode::NOT_FOUND, why))
+        }
+        None => Ok(()),
+    }
+}
+
 /// An operation's HTTP handler: the path, the body (or none), who asks, the
 /// owner's check for an owner's operation (`authz::check` makes it first;
 /// this is the handler's own, as `owner_only` was), then the handler.
@@ -198,6 +210,9 @@ where
     O: Handle,
     O::Path: FromPath,
 {
+    if let Err(e) = flagged::<O>(&app) {
+        return e.http().into_response();
+    }
     let (mut parts, body) = req.into_parts();
     let path = match O::Path::from_parts(&mut parts).await {
         Ok(p) => p,

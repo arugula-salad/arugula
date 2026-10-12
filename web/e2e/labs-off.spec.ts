@@ -165,12 +165,25 @@ test("a thread message posted through the API shows nowhere", async ({ page }) =
     return [c.state!.panes[0].id, c.state!.sessions[0].id];
   });
   await ready(page, pane);
-  // A friend who drives posts, so there's something new for the owner.
   expect((await api("/api/acl", { session, principal: `tailnet:${FRIEND}`, role: "editor" })).ok).toBe(true);
+  // With chat off the routes refuse, and say how to turn it on (#347).
+  for (const [path, body] of [
+    [`/api/threads/pane-${pane}`, { text: "anyone here? @me" }],
+    [`/api/threads/session-${session}`, undefined],
+  ] as const) {
+    const r = await api(path, body, FRIEND);
+    expect(r.status).toBe(404);
+    expect(((await r.json()) as { error: string }).error).toContain("`arugulad flags chat on`");
+  }
+  // A machine that had chat on keeps its threads when it's turned off: a
+  // friend who drives posts while it's on, so there's something new for the
+  // owner, and then the flags file goes (so the machine hasn't asked for
+  // Developer settings either, as before).
+  writeFileSync(join(state, "flags.json"), JSON.stringify({ flags: { chat: true } }));
   expect((await api(`/api/threads/pane-${pane}`, { text: "anyone here? @me" }, FRIEND)).ok).toBe(true);
   expect((await api(`/api/threads/session-${session}`, { text: "standup in 5" }, FRIEND)).ok).toBe(true);
-  // The daemon still sends the page its threads (this is visibility, not
-  // enforcement)...
+  rmSync(join(state, "flags.json"));
+  // The daemon still sends the page the threads it has...
   await expect
     .poll(() => page.evaluate(() => (window.__arugula.client.state!.threads ?? []).filter((t) => t.unread).length))
     .toBeGreaterThan(0);

@@ -25,7 +25,7 @@ const STRANGER: &str = "stranger@example.com";
 type Ws = WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>;
 
 fn daemon(tag: &str) -> arugula_testkit::Daemon {
-    arugulad!(tag).no_wisp().args(["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock"]).start()
+    arugulad!(tag).labs().no_wisp().args(["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock"]).start()
 }
 
 struct Person {

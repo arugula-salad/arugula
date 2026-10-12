@@ -102,6 +102,19 @@ impl Daemon {
         Self::child_in(args, env, |state| arugula_testkit::labs(state, true))
     }
 
+    /// [`Daemon::child`] with every Labs flag on: a Labs feature's routes
+    /// and blocks are refused where its flag is off (#347).
+    #[cfg(feature = "labs")]
+    pub fn child_labs() -> Self {
+        Self::child_labs_env(&[], &[])
+    }
+
+    /// [`Daemon::child_with`] with every Labs flag on.
+    #[cfg(feature = "labs")]
+    pub fn child_labs_with(args: &[&str]) -> Self {
+        Self::child_labs_env(args, &[])
+    }
+
     /// ...with its state directory made by `setup` first (a control
     /// enrollment, say).
     pub fn child_in(args: &[&str], env: &[(&str, &str)], setup: impl FnOnce(&std::path::Path)) -> Self {
@@ -141,6 +154,17 @@ impl Daemon {
     pub fn service_env(env: &[(&str, &str)]) -> Option<Self> {
         let sessions = sessions();
         let Some(d) = Self::builder(&sessions).no_wisp().envs(env.iter().copied()).service() else {
+            let _ = std::fs::remove_dir_all(&sessions);
+            return None;
+        };
+        Some(Self { d, sessions })
+    }
+
+    /// [`Daemon::service_env`] with every Labs flag on.
+    #[cfg(feature = "labs")]
+    pub fn service_labs_env(env: &[(&str, &str)]) -> Option<Self> {
+        let sessions = sessions();
+        let Some(d) = Self::builder(&sessions).labs().no_wisp().envs(env.iter().copied()).service() else {
             let _ = std::fs::remove_dir_all(&sessions);
             return None;
         };
