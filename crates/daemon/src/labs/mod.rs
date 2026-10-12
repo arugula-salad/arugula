@@ -195,6 +195,68 @@ pub fn forge_allowed(provider: ForgeProvider, state_dir: &Path) -> Result<(), St
     }
 }
 
+/// Labs' forges and the user's logins for them, for MCP's `capabilities`
+/// (#229): `tea`'s Forgejo logins, and whether `glab` has gitlab.com's.
+/// None unless the `forges` flag is on.
+#[cfg(feature = "labs")]
+pub(crate) async fn forge_logins(
+    runner: &crate::review::Runner,
+    state_dir: &Path,
+) -> Vec<crate::mcp::results::ForgeSignIn> {
+    use crate::mcp::results::ForgeSignIn;
+    if !on(state_dir, arugula_proto::flags::FORGES) {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    let tea = tea::Tea { runner: runner.clone() };
+    match tea.logins().await {
+        Ok(logins) if logins.is_empty() => out.push(ForgeSignIn {
+            forge: "forgejo".into(),
+            host: String::new(),
+            signed_in: false,
+            user: None,
+            note: "tea has no logins: `tea login add`".into(),
+        }),
+        Ok(logins) => out.extend(logins.into_iter().map(|l| ForgeSignIn {
+            forge: "forgejo".into(),
+            host: crate::forge::login::url_host(&l.url).unwrap_or(l.url),
+            signed_in: true,
+            user: Some(l.user).filter(|u| !u.is_empty()),
+            note: format!("tea login {}", l.name),
+        })),
+        Err(e) => out.push(ForgeSignIn {
+            forge: "forgejo".into(),
+            host: String::new(),
+            signed_in: false,
+            user: None,
+            note: e,
+        }),
+    }
+    let host = "gitlab.com";
+    let (signed_in, note) = match gitlab::GlabToken::ask(runner, host).await {
+        Ok(gitlab::Glab::Token(_)) => (true, "glab".to_owned()),
+        Ok(gitlab::Glab::NoLogin) => (false, format!("glab has no login for {host}: `glab auth login`")),
+        Ok(gitlab::Glab::Missing) => (false, "no glab here: install GitLab's CLI and `glab auth login`".into()),
+        Err(e) => (false, e),
+    };
+    out.push(ForgeSignIn {
+        forge: "gitlab".into(),
+        host: host.into(),
+        signed_in,
+        user: None,
+        note: format!("{note} (other GitLab hosts: whatever glab knows of each)"),
+    });
+    out
+}
+
+#[cfg(not(feature = "labs"))]
+pub(crate) async fn forge_logins(
+    _runner: &crate::review::Runner,
+    _state_dir: &Path,
+) -> Vec<crate::mcp::results::ForgeSignIn> {
+    Vec::new()
+}
+
 /// The daemon is stopping: stop every behold a workspace block runs for
 /// its graph (#620), which is in a process group of its own. Blocks.
 #[cfg(feature = "labs")]

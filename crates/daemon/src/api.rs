@@ -410,6 +410,7 @@ async fn act_one(
 
 /// `arugula hook`: one of Claude Code's hook events (M29).
 async fn hook(State(app): AppState, Path(id): Path<PaneId>, Json(hook): Json<serde_json::Value>) -> Res<Json<Empty>> {
+    app.hooks_heard.lock().unwrap().insert(id, now_ms());
     app.mux.send(Cmd::Api(Api::Hook(id, hook)));
     Ok(Json(Empty {}))
 }

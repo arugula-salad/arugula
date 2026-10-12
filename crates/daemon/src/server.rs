@@ -76,6 +76,10 @@ pub struct App {
     next_client: AtomicU64,
     /// The owner has reached us over the tailnet (#110: the phone step).
     pub tailnet_seen: std::sync::atomic::AtomicBool,
+    /// When a Claude Code hook (`arugula hook`) last reached us from each
+    /// pane (ms since the epoch): whether a pane's hooks are live, for MCP's
+    /// `capabilities` (#229). Memory only.
+    pub hooks_heard: std::sync::Mutex<std::collections::HashMap<PaneId, u64>>,
 }
 
 impl App {
@@ -116,6 +120,7 @@ impl App {
             rules,
             next_client: AtomicU64::new(1),
             tailnet_seen: Default::default(),
+            hooks_heard: Default::default(),
         })
     }
 
