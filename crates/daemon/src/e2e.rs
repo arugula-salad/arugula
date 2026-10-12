@@ -150,7 +150,7 @@ async fn serve(app: Arc<App>, mut inbound: mpsc::Receiver<Vec<u8>>, out: mpsc::S
         .map_err(|_| anyhow::anyhow!("no handshake"))?
         .ok_or_else(|| anyhow::anyhow!("closed before the handshake"))?;
     let enrolled = app.control.enrolled().ok_or_else(|| anyhow::anyhow!("not enrolled in control"))?;
-    let (responder, who) = Responder::read(&enrolled.keys, &prologue(&enrolled.keys.id()), &m1)?;
+    let (responder, who, _) = Responder::read(&enrolled.keys, &prologue(&enrolled.keys.id()), &m1)?;
     let Some((device, principal)) = app.control.device(&who) else {
         warn!(key = hex::encode(&who[..8]), "refused a channel from a device this daemon doesn't trust");
         anyhow::bail!("unknown device");
