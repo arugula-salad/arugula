@@ -75,8 +75,11 @@ fn detailed() -> String {
 const LIST_WINDOWS: &str =
     "list-windows -F \"#{window_id} #{window_layout} #{window_flags} #{window_visible_layout} #{pane-border-status}\"";
 
+/// A `$HOME` and XDG dirs of its own: what a pane's programs leave there
+/// (nvim's swap files, in `$XDG_STATE_HOME`) goes with the daemon instead
+/// of into the next run's way.
 fn start() -> Daemon {
-    arugulad!("tmux").env("PS1", "$ ").wait_secs(10).start()
+    arugulad!("tmux").env("PS1", "$ ").home_in_state().wait_secs(10).start()
 }
 
 /// The CLI, built next to the daemon (cargo builds only this package's
@@ -719,7 +722,9 @@ fn iterm2s_conversation_gets_tmuxs_answers() {
 
     // ---- vi, typed into, left running
     // A run that died left vi's swap file, and every vi after it opened on
-    // its question: none of those (the fixture has this file's name).
+    // its question: none of those (the fixture has this file's name). That
+    // is vim's, next to the file; nvim (CI's `vi`) keeps its own under
+    // $XDG_STATE_HOME, which is the daemon's (`start`).
     for f in std::fs::read_dir("/tmp").unwrap().flatten() {
         if f.file_name().to_string_lossy().starts_with(".s11-vim.txt.sw") {
             let _ = std::fs::remove_file(f.path());
