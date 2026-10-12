@@ -52,3 +52,21 @@ fn the_set_has_what_clients_use() {
         assert!(names.iter().any(|n| n == want), "no {want}.jsonl in crates/proto/fixtures (`just record-fixtures`)");
     }
 }
+
+/// A shell that takes its time running each command (#818): the daemon
+/// sends who's typing before the command ends, so what a recording got as
+/// one delta comes as two, and the fixtures still play.
+#[test]
+fn fixtures_play_against_a_slow_shell() {
+    let fixtures = fixture::load_dir(&fixture::dir()).unwrap();
+    let mut failed = vec![];
+    for f in &fixtures {
+        // PS0 is expanded after the command's start mark, before it runs.
+        let d = daemon(env!("CARGO_BIN_EXE_arugulad"), "fx").env("PS0", "$(sleep 0.3)").start();
+        ready(&d);
+        if let Err(e) = replay(&d, f) {
+            failed.push(e);
+        }
+    }
+    assert!(failed.is_empty(), "{}", failed.join("\n"));
+}
