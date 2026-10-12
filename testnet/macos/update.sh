@@ -58,7 +58,7 @@ cleanup() {
 trap cleanup EXIT
 
 # A throwaway updater key, no password.
-cargo tauri signer generate --ci -p "" -w "$work/key" >/dev/null
+cargo tauri signer generate --ci -p update-test -w "$work/key" >/dev/null
 pub=$(cat "$work/key.pub")
 host_ip=192.168.64.1
 config() {
@@ -77,7 +77,7 @@ rsync -a --delete --exclude /target --exclude /dist --exclude /.git --exclude /.
   "$ROOT/" "$olddir/src/"
 # The workspace's version, and the path dependencies that pin it.
 for f in "$olddir/src/Cargo.toml" "$olddir"/src/crates/*/Cargo.toml; do
-  sed -i '' -e "s/^version = \"$new\"/version = \"$old\"/" -e "s/\(arugula-[a-z0-9]* = { version = \)\"$new\"/\1\"$old\"/" "$f"
+  sed -i '' -e "s/^version = \"$new\"/version = \"$old\"/" -e "s/\(arugula-[a-z0-9-]* = { version = \)\"$new\"/\1\"$old\"/" "$f"
 done
 # mise runs from this tree (the copy isn't a trusted mise directory).
 CARGO_TARGET_DIR=$olddir/target mise exec -- cargo build --release -q --manifest-path "$olddir/src/Cargo.toml" \
@@ -86,7 +86,7 @@ got=$("$olddir/target/release/arugulad" --version | awk '{print $2}')
 [ "$got" = "$old" ] || { echo "the older daemon says $got, not $old" >&2; exit 1; }
 echo "daemons: the installed app carries $old, the release $new"
 # The release: 0.17.1, archived and signed.
-TAURI_SIGNING_PRIVATE_KEY=$(cat "$work/key") TAURI_SIGNING_PRIVATE_KEY_PASSWORD="" ARUGULA_DESKTOP_BINARIES=$ROOT/target/release \
+TAURI_SIGNING_PRIVATE_KEY=$(cat "$work/key") TAURI_SIGNING_PRIVATE_KEY_PASSWORD=update-test ARUGULA_DESKTOP_BINARIES=$ROOT/target/release \
   just desktop-macos aarch64 --config "'$(config 0.17.1)'" >"$work/build-new.log" 2>&1 || { tail -20 "$work/build-new.log"; exit 1; }
 mkdir -p "$work/srv"
 cp dist/arugula-desktop-macos-arm64.app.tar.gz dist/arugula-desktop-macos-arm64.app.tar.gz.sig "$work/srv/"
@@ -111,8 +111,8 @@ version() { vs 'defaults read /Applications/Arugula.app/Contents/Info.plist CFBu
 [ "$(version)" = 0.17.0 ] || { echo "installed $(version), not 0.17.0" >&2; exit 1; }
 
 # A signature from another key first: refused.
-cargo tauri signer generate --ci -p "" -w "$work/other" >/dev/null
-TAURI_SIGNING_PRIVATE_KEY=$(cat "$work/other") TAURI_SIGNING_PRIVATE_KEY_PASSWORD="" \
+cargo tauri signer generate --ci -p update-test -w "$work/other" >/dev/null
+TAURI_SIGNING_PRIVATE_KEY=$(cat "$work/other") TAURI_SIGNING_PRIVATE_KEY_PASSWORD=update-test \
   cargo tauri signer sign "$work/srv/arugula-desktop-macos-arm64.app.tar.gz" >/dev/null 2>&1
 manifest 0.17.1 "$(cat "$work/srv/arugula-desktop-macos-arm64.app.tar.gz.sig")"
 (cd "$work/srv" && exec python3 -m http.server "$PORT" --bind "$host_ip" >"$work/http.log" 2>&1) &
@@ -146,7 +146,7 @@ v0=$(answers)
 [ "$v0" = "$old" ] || fail daemon "before the update the daemon answers ${v0:-nothing}, not $old"
 
 # The real signature.
-TAURI_SIGNING_PRIVATE_KEY=$(cat "$work/key") TAURI_SIGNING_PRIVATE_KEY_PASSWORD="" \
+TAURI_SIGNING_PRIVATE_KEY=$(cat "$work/key") TAURI_SIGNING_PRIVATE_KEY_PASSWORD=update-test \
   cargo tauri signer sign "$work/srv/arugula-desktop-macos-arm64.app.tar.gz" >/dev/null 2>&1
 manifest 0.17.1 "$(cat "$work/srv/arugula-desktop-macos-arm64.app.tar.gz.sig")"
 start_app
