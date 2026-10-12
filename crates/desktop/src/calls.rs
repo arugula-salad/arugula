@@ -592,6 +592,15 @@ pub async fn call_native_mute(muted: bool) {
     }
 }
 
+/// A huddle is running here (an update's restart waits for it, #561).
+/// Busy taking or ending one counts as live.
+pub fn live() -> bool {
+    match ENGINE.try_lock() {
+        Ok(e) => e.is_some(),
+        Err(_) => true,
+    }
+}
+
 /// End the huddle here: every connection, the mic and the speaker.
 #[tauri::command]
 pub async fn call_native_stop() {

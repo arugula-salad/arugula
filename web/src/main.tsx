@@ -408,7 +408,8 @@ Object.assign(window, {
     remotes,
     control: session,
     fleet,
-    /** M63: the huddle this page is in. */
+    /** M63: the huddle this page is in. The desktop app reads it too: an
+     * update's restart waits while `huddle.live()` (#561). */
     get huddle() {
       return labsNow()?.activeHuddle() ?? null;
     },
