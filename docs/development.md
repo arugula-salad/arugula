@@ -202,9 +202,12 @@ Rust build per job, saved from main only; pnpm's store; Playwright's
 browsers), and fetches build's and static's binaries, which those jobs
 upload as artifacts, into `$CI_RUN` (`scripts/ci-env`), so the jobs after
 them find the run directory where it always was. Each pod has Docker (a
-privileged dind sidecar) for the test stack and the ssh tests, but no
-systemd user manager: the tests that start the daemon as a service skip
-there. Pods ask for 2.5 CPUs and 5 GB and may use 16 GB for the build
+privileged dind sidecar) for the test stack and the ssh tests, and boots
+systemd with a user manager for the runner (home-cloud's
+`images/gha-runner`, target `systemd`; #735), so the tests that start the
+daemon as a service run as they did on geek. check.yml's `test` and `core`
+set `ARUGULA_REQUIRE_SYSTEMD=1`, which fails those tests instead of
+skipping them if a pod ever comes up without one. Pods ask for 2.5 CPUs and 5 GB and may use 16 GB for the build
 and 8 GB for Docker, and up to eight run at once. Until 2026-10-10 these
 jobs ran on eight host runners on geek, which kept builds warm on its
 disk but held up to 96 GB of a machine that is now also a cluster node.

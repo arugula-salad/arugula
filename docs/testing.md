@@ -153,7 +153,8 @@ output goes nowhere. The rest is the test's to say:
 - `.wait_secs()`: how long `wait_for` waits (15 s by default).
 - `.start()` runs it as a child of the test; `.service()` as a transient
   systemd user service (FD store and scopes as in production), or `None`,
-  saying so, without a user manager.
+  saying so, without a user manager (`user_manager()`; a failure instead
+  with `ARUGULA_REQUIRE_SYSTEMD=1`, as in CI).
 
 `start()` returns once the daemon answers on its socket and ports, and
 panics if it exits first. A `Daemon` has its `port`, `block_port` and

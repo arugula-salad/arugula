@@ -242,8 +242,7 @@ impl Builder {
     /// [`Builder::env_remove`] don't apply: a service starts with systemd's
     /// environment, plus `PATH` (the test's unless set) and what was set.
     pub fn service(self) -> Option<Daemon> {
-        if !systemctl(&["show-environment"]) {
-            eprintln!("no systemd user manager; skipping");
+        if !user_manager() {
             return None;
         }
         let mut d = self.daemon();
@@ -714,6 +713,22 @@ pub fn wait_for(what: &str, timeout: Duration, mut f: impl FnMut() -> bool) {
         assert!(Instant::now() < deadline, "timed out waiting for {what}");
         std::thread::sleep(Duration::from_millis(50));
     }
+}
+
+/// Whether there's a systemd user manager to start a test's daemon under,
+/// saying so when there isn't. With `ARUGULA_REQUIRE_SYSTEMD=1` (CI, whose
+/// runners boot systemd: arugula#735) its absence fails the test instead,
+/// so those tests can't quietly stop running.
+pub fn user_manager() -> bool {
+    if systemctl(&["show-environment"]) {
+        return true;
+    }
+    assert!(
+        std::env::var_os("ARUGULA_REQUIRE_SYSTEMD").is_none_or(|v| v != "1"),
+        "no systemd user manager (`systemctl --user show-environment` failed), and ARUGULA_REQUIRE_SYSTEMD=1"
+    );
+    eprintln!("no systemd user manager; skipping");
+    false
 }
 
 /// `systemctl --user`, and whether it worked.
