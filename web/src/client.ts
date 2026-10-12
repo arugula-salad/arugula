@@ -1169,8 +1169,9 @@ export class Client {
         this.probe = null;
         this.probedAt = this.helloAt;
         if (this.summary) this.send({ type: "subscribe", summary: true });
-        // #713: agent blocks' states as what changed. A daemon from before
-        // ignores this and sends them whole.
+        // #713: agent blocks' states as what changed, and (#739) only for
+        // the ones the tab we view shows. A daemon from before ignores this
+        // and sends them all, whole.
         this.send({ type: "block_patches" });
         // A new connection: follow again what was followed.
         for (const pane of this.editorFollows.keys()) this.send({ type: "follow", pane, on: true });

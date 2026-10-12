@@ -878,24 +878,40 @@ impl Daemon {
     }
 
     /// A block's new state to everyone who sees it: as a patch to those that
-    /// take one and have the rest (#713), else whole.
-    fn send_block(&mut self, pane: PaneId) {
+    /// take one and have the rest (#713), else whole. A page is sent an
+    /// agent's only while it shows it (#739, [`Daemon::only_shown`]); with
+    /// `pages`, only they are sent it.
+    fn send_block(&mut self, pane: PaneId, pages: bool) {
+        let to: Vec<(ClientId, bool)> = self
+            .clients
+            .values()
+            .map(|c| {
+                let only_shown = self.only_shown(c.client, pane);
+                let shows = if only_shown { self.shown_by(c.client).contains(&pane) } else { !pages };
+                (c.client, self.sees(&c.principal, pane) && shows)
+            })
+            .collect();
+        for (client, _) in to.iter().filter(|(_, send)| !send) {
+            // It misses what changes meanwhile: it starts whole again.
+            if let Some(h) = self.patched.get_mut(client) {
+                h.remove(&pane);
+            }
+        }
+        if !to.iter().any(|(_, send)| *send) {
+            // Nobody to tell: not even worth making it.
+            return;
+        }
         let Some(b) = self.blocks.get(&pane) else { return };
         let (state, at) = match b.state_and_changed() {
             Some((state, at)) => (state, Some(at)),
             None => (b.state(), None),
         };
-        let seen: Vec<(ClientId, bool)> =
-            self.clients.values().map(|c| (c.client, self.sees(&c.principal, pane))).collect();
         let mut patch = None;
-        for (client, sees) in seen {
-            let has = self.patched.get_mut(&client);
-            if !sees {
-                // It misses what changes meanwhile: it starts whole again.
-                has.map(|h| h.remove(&pane));
+        for (client, send) in to {
+            if !send {
                 continue;
             }
-            let based = has.is_some_and(|h| !h.insert(pane));
+            let based = self.patched.get_mut(&client).is_some_and(|h| !h.insert(pane));
             let state = match at {
                 Some(at) if based => {
                     patch.get_or_insert_with(|| arugula_proto::block_patch::to_patch(&state, at)).clone()
@@ -940,6 +956,7 @@ impl Daemon {
                 }
             }
             self.sync_drawn();
+            self.sync_shown();
             // A new layout goes out at once, in order with what follows.
             if self.full
                 || self.clients.values().any(|c| self.sent.get(&c.client).is_none_or(|s| s.rev != self.mux.rev))
@@ -1018,7 +1035,7 @@ impl Daemon {
                 if self.blocks.get(&pane).is_some_and(|b| b.detached()) {
                     return;
                 }
-                self.send_block(pane);
+                self.send_block(pane, false);
                 // Its config may have changed with it.
                 self.save_due.get_or_insert_with(|| Instant::now() + SAVE_DEBOUNCE);
             }
