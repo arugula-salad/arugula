@@ -786,12 +786,26 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
             .unwrap_or_else(|| home().join(".local/share"))
             .join("wisp/token")
     });
-    let provider: Option<std::sync::Arc<dyn provider::Provider>> = labs::open_provider(
-        &args.wisp_url,
-        &token_file,
-        args.wisp_token_file.is_some() || args.wisp_url != args::DEFAULT_WISP_URL,
-    );
-    info!(url = args.wisp_url, on = provider.is_some(), "VM panes");
+    // loam, when it's named; wispd (or Fly's sprites) otherwise.
+    let loam_key_file = args.loam_key_file.clone().unwrap_or_else(|| {
+        arugula_proto::dirs::config_dir().unwrap_or_else(|| home().join(".config/arugula")).join("loam-key")
+    });
+    let provider: Option<std::sync::Arc<dyn provider::Provider>> = match args.loam_url.as_deref() {
+        Some(url) if !url.is_empty() => {
+            let p = labs::open_loam(url, &loam_key_file);
+            info!(url, on = p.is_some(), "VM panes on loam");
+            p
+        }
+        _ => {
+            let p = labs::open_provider(
+                &args.wisp_url,
+                &token_file,
+                args.wisp_token_file.is_some() || args.wisp_url != args::DEFAULT_WISP_URL,
+            );
+            info!(url = args.wisp_url, on = p.is_some(), "VM panes");
+            p
+        }
+    };
     let secrets = {
         let config = arugula_proto::dirs::config_dir().unwrap_or_else(|| home().join(".config/arugula"));
         block::Secrets {
@@ -805,6 +819,7 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
     // What `fs` never serves, besides the state directory.
     let private = vec![
         token_file.clone(),
+        loam_key_file,
         secrets.anthropic_key.clone(),
         secrets.claude_token.clone(),
         studio_file.clone(),

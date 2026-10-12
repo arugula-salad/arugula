@@ -255,6 +255,14 @@ pub(crate) struct RunArgs {
     /// `$XDG_DATA_HOME/wisp/token`.
     #[arg(long, env = "ARUGULA_WISP_TOKEN_FILE", hide = true)]
     pub(crate) wisp_token_file: Option<PathBuf>,
+    /// The loam API VM panes get their machines from instead of wispd
+    /// (`https://api.loam.inevitable.fyi`, say). Given, it's the provider.
+    #[arg(long, env = "LOAM_API_URL", hide = true)]
+    pub(crate) loam_url: Option<String>,
+    /// The loam project key it uses (`loam_…`), in a file of its own [default:
+    /// ~/.config/arugula/loam-key].
+    #[arg(long, env = "ARUGULA_LOAM_KEY_FILE", hide = true)]
+    pub(crate) loam_key_file: Option<PathBuf>,
     /// Where the static binaries (`just static`) to copy into a sandbox
     /// are, when making a daemon resident there [default:
     /// $XDG_DATA_HOME/arugula/static].
@@ -401,12 +409,14 @@ pub(crate) const DEFAULT_WISP_URL: &str = "http://127.0.0.1:7788";
 /// Options that work but stay out of `--help` unless the machine has turned
 /// their Labs flag on: guest ssh, the studio file and the sandbox provider.
 /// The others that are `hide = true` are internals, and stay hidden.
-const LABS_OPTIONS: [(&str, &str); 5] = [
+const LABS_OPTIONS: [(&str, &str); 7] = [
     ("guest_ssh", flags::GUEST_SSH),
     ("guest_ssh_host", flags::GUEST_SSH),
     ("studio_file", flags::STUDIO),
     ("wisp_url", flags::VMS),
     ("wisp_token_file", flags::VMS),
+    ("loam_url", flags::VMS),
+    ("loam_key_file", flags::VMS),
 ];
 
 /// The command line, listing in `--help` the options `flags` turns on.
@@ -475,6 +485,8 @@ mod tests {
         for flag in [
             "--wisp-url",
             "--wisp-token-file",
+            "--loam-url",
+            "--loam-key-file",
             "--studio-file",
             "--guest-ssh",
             "--guest-ssh-host",
@@ -492,7 +504,15 @@ mod tests {
     /// passes the bool; it reads neither the filesystem nor the environment.
     #[test]
     fn labs_unhides_its_options_and_only_those() {
-        let labs = ["--wisp-url", "--wisp-token-file", "--studio-file", "--guest-ssh", "--guest-ssh-host"];
+        let labs = [
+            "--wisp-url",
+            "--wisp-token-file",
+            "--loam-url",
+            "--loam-key-file",
+            "--studio-file",
+            "--guest-ssh",
+            "--guest-ssh-host",
+        ];
         let hidden_internals = [
             "--guest-machines",
             "--static-dir",

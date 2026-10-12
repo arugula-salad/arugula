@@ -655,7 +655,7 @@ impl WispEntry {
 
 /// `2026-10-01T12:34:56.789Z` as milliseconds since the epoch (UTC only,
 /// which is what the agent sends).
-fn rfc3339_ms(s: &str) -> Option<u64> {
+pub(super) fn rfc3339_ms(s: &str) -> Option<u64> {
     let b = s.as_bytes();
     if b.len() < 20 || b[4] != b'-' || b[7] != b'-' || b[10] != b'T' || !s.ends_with('Z') {
         return None;
@@ -871,8 +871,17 @@ async fn dial_proxy(sp: &Sprites, sprite: &str, port: u16) -> io::Result<Conn> {
             Some(Ok(_)) => {}
         }
     }
-    // Hand back one end of a pipe; a task moves bytes between the other end
-    // and the socket. The pipe's buffer is the backpressure.
+    Ok(bridge(ws))
+}
+
+/// A connected WebSocket whose binary frames carry one TCP connection, as a
+/// byte stream: one end of a pipe is handed back, and a task moves bytes
+/// between the other end and the socket. The pipe's buffer is the
+/// backpressure. The loam adapter's port streams use it too.
+pub(super) fn bridge<S>(ws: tokio_tungstenite::WebSocketStream<S>) -> Conn
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+{
     let (ours, theirs) = tokio::io::duplex(64 * 1024);
     tokio::spawn(async move {
         let (mut from_us, mut to_us) = tokio::io::split(theirs);
@@ -913,7 +922,7 @@ async fn dial_proxy(sp: &Sprites, sprite: &str, port: u16) -> io::Result<Conn> {
             _ = &mut down => {}
         }
     });
-    Ok(Box::new(ours))
+    Box::new(ours)
 }
 
 #[cfg(test)]
