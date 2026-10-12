@@ -266,6 +266,10 @@ test.describe("phone", () => {
         }
       return { n: boxes.length, out };
     };
+    // A slow phone (or a busy CI runner) draws a few frames a second: the
+    // clusters still reach their places in time, not in frames.
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send("Emulation.setCPUThrottlingRate", { rate: 15 });
     for (const by of ["project", "machine"]) {
       await page.locator(`[data-g="${by}"]`).click();
       await page.locator("[data-fit]").tap();

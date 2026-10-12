@@ -133,6 +133,9 @@ export interface HistoryRun {
 const TW = 16;
 const TH = 10;
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
+/** The share of the way to its target an easing `k` per 60 Hz frame
+ * covers in `ms`: the same path over time at any frame rate. */
+const ease = (k: number, ms: number) => 1 - Math.pow(1 - k, ms / (1000 / 60));
 const rnd = (a: number, b: number) => a + Math.random() * (b - a);
 const reduce = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -545,15 +548,21 @@ export class Field implements SwarmScene {
     this.resize();
     this.last = performance.now();
     const frame = (now: number) => {
-      const dt = Math.min(50, now - this.last);
+      // The tiles' springs take at most 50 ms a step, so a stall can't
+      // fling them; the camera and the clusters ease by the time that
+      // passed, so a slow phone gets there as soon as a fast one, in fewer
+      // frames (not 100 frames at whatever rate it draws).
+      const elapsed = Math.min(1000, Math.max(0, now - this.last));
+      const dt = Math.min(50, elapsed);
       this.last = now;
       const t0 = performance.now();
       const cam = this.cam;
       const moving = Math.abs(cam.tx - cam.x) + Math.abs(cam.ty - cam.y) > 0.05 || Math.abs(cam.tz - cam.z) > 1e-4;
-      cam.x += (cam.tx - cam.x) * 0.12;
-      cam.y += (cam.ty - cam.y) * 0.12;
-      cam.z += (cam.tz - cam.z) * 0.12;
-      if (!this.asleep || this.measuring) this.step(now, dt);
+      const k = ease(0.12, elapsed);
+      cam.x += (cam.tx - cam.x) * k;
+      cam.y += (cam.ty - cam.y) * k;
+      cam.z += (cam.tz - cam.z) * k;
+      if (!this.asleep || this.measuring) this.step(now, dt, elapsed);
       const animating = this.flights(now);
       if (this.dirty || moving || !this.asleep || animating || this.measuring) {
         this.draw(now);
@@ -591,16 +600,17 @@ export class Field implements SwarmScene {
     return { fps: gaps.length ? (1000 * gaps.length) / total : 0, workP50: work[Math.floor(work.length / 2)] ?? 0, frames: gaps.length };
   }
 
-  private step(now: number, dt: number) {
+  private step(now: number, dt: number, elapsed: number) {
     for (const t of this.tiles.values()) t.flash *= Math.pow(0.9, dt / 16);
     if (now - this.lastLayout > 1500) {
       this.relayout(true);
       this.lastLayout = now;
     }
     let groupsMoving = false;
+    const k = ease(0.03, elapsed);
     for (const g of this.groups.values()) {
-      g.x += (g.tx - g.x) * 0.03;
-      g.y += (g.ty - g.y) * 0.03;
+      g.x += (g.tx - g.x) * k;
+      g.y += (g.ty - g.y) * k;
       if (Math.abs(g.tx - g.x) + Math.abs(g.ty - g.y) > 0.5) groupsMoving = true;
       g.busy = 0;
       g.need = 0;
