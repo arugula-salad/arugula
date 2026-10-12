@@ -1069,7 +1069,7 @@
             "type": "string"
           },
           "issue": {
-            "description": "issue: The issue: its link, OWNER/REPO#N, or N (in dir's repository).",
+            "description": "issue: The issue: its link (GitHub's or Forgejo's), OWNER/REPO#N, or N (in\ndir's repository).",
             "type": "string"
           },
           "kind": {
@@ -1767,7 +1767,7 @@
         "readOnlyHint": false,
         "title": "Draft a forge write"
       },
-      "description": "Draft a write to a pull request or issue, by kind. Nothing reaches the forge in an agent's name: the draft waits on its block as a card the user (or an editor) edits and sends, or drops. Returns its draft id (a new issue: its block) at once; read_forge shows what became of it.\n- comment {block, body}: A comment on a PR or issue block's pull request or issue.\n- review {block, event, body?}: A review (approve, request_changes or comment) of a PR block's pull request.\n- merge {block, style?}: Merging a PR block's pull request.\n- issue {title, beside?, block?, body?, dir?, repo?}: A new issue on the user's Forgejo or GitHub: a block beside you holding the draft, for the user to send, edit, drop or ask you to change; it shows the issue once sent. Asked for changes, draft again with block set to that block. Returns the block.",
+      "description": "Draft a write to a pull request or issue, by kind. Nothing reaches the forge in an agent's name: the draft waits on its block as a card the user (or an editor) edits and sends, or drops. Returns its draft id (a new issue: its block) at once; read_forge shows what became of it.\n- comment {block, body}: A comment on a PR or issue block's pull request or issue, on GitHub, Forgejo or GitLab.\n- review {block, event, body?}: A review (approve, request_changes or comment) of a PR block's pull request.\n- merge {block, style?}: Merging a PR block's pull request.\n- issue {title, beside?, block?, body?, dir?, repo?}: A new issue on GitHub or the user's Forgejo (repo as a link says which; a clone's remote does too): a block beside you holding the draft, for the user to send, edit, drop or ask you to change; it shows the issue once sent. Asked for changes, draft again with block set to that block. Returns the block.",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -1847,7 +1847,7 @@
           },
           "repo": {
             "default": null,
-            "description": "issue: The repository, OWNER/REPO (default: dir's, or the one beside you).",
+            "description": "issue: The repository: OWNER/REPO (default: dir's, or the one beside you),\nor its link (https://github.com/OWNER/REPO, a Forgejo one's), which\nsays which forge.",
             "type": [
               "string",
               "null"
@@ -3928,7 +3928,7 @@
             "type": "string"
           },
           "issue": {
-            "description": "issue: The issue: its link, OWNER/REPO#N, or N (in dir's repository).",
+            "description": "issue: The issue: its link (GitHub's or Forgejo's), OWNER/REPO#N, or N (in\ndir's repository).",
             "type": "string"
           },
           "kind": {
@@ -4703,7 +4703,7 @@
         "readOnlyHint": false,
         "title": "Draft a forge write"
       },
-      "description": "Draft a write to a pull request or issue, by kind. Nothing reaches the forge in an agent's name: the draft waits on its block as a card the user (or an editor) edits and sends, or drops. Returns its draft id (a new issue: its block) at once; read_forge shows what became of it.\n- comment {block, body}: A comment on a PR or issue block's pull request or issue.\n- review {block, event, body?}: A review (approve, request_changes or comment) of a PR block's pull request.\n- merge {block, style?}: Merging a PR block's pull request.\n- issue {title, beside?, block?, body?, dir?, repo?}: A new issue on the user's Forgejo or GitHub: a block beside you holding the draft, for the user to send, edit, drop or ask you to change; it shows the issue once sent. Asked for changes, draft again with block set to that block. Returns the block.",
+      "description": "Draft a write to a pull request or issue, by kind. Nothing reaches the forge in an agent's name: the draft waits on its block as a card the user (or an editor) edits and sends, or drops. Returns its draft id (a new issue: its block) at once; read_forge shows what became of it.\n- comment {block, body}: A comment on a PR or issue block's pull request or issue, on GitHub, Forgejo or GitLab.\n- review {block, event, body?}: A review (approve, request_changes or comment) of a PR block's pull request.\n- merge {block, style?}: Merging a PR block's pull request.\n- issue {title, beside?, block?, body?, dir?, repo?}: A new issue on GitHub or the user's Forgejo (repo as a link says which; a clone's remote does too): a block beside you holding the draft, for the user to send, edit, drop or ask you to change; it shows the issue once sent. Asked for changes, draft again with block set to that block. Returns the block.",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -4783,7 +4783,7 @@
           },
           "repo": {
             "default": null,
-            "description": "issue: The repository, OWNER/REPO (default: dir's, or the one beside you).",
+            "description": "issue: The repository: OWNER/REPO (default: dir's, or the one beside you),\nor its link (https://github.com/OWNER/REPO, a Forgejo one's), which\nsays which forge.",
             "type": [
               "string",
               "null"
@@ -6238,7 +6238,7 @@
             "type": "string"
           },
           "issue": {
-            "description": "issue: The issue: its link, OWNER/REPO#N, or N (in dir's repository).",
+            "description": "issue: The issue: its link (GitHub's or Forgejo's), OWNER/REPO#N, or N (in\ndir's repository).",
             "type": "string"
           },
           "kind": {
@@ -6936,7 +6936,7 @@
         "readOnlyHint": false,
         "title": "Draft a forge write"
       },
-      "description": "Draft a write to a pull request or issue, by kind. Nothing reaches the forge in an agent's name: the draft waits on its block as a card the user (or an editor) edits and sends, or drops. Returns its draft id (a new issue: its block) at once; read_forge shows what became of it.\n- comment {block, body}: A comment on a PR or issue block's pull request or issue.\n- review {block, event, body?}: A review (approve, request_changes or comment) of a PR block's pull request.\n- merge {block, style?}: Merging a PR block's pull request.\n- issue {title, beside?, block?, body?, dir?, repo?}: A new issue on the user's Forgejo or GitHub: a block beside you holding the draft, for the user to send, edit, drop or ask you to change; it shows the issue once sent. Asked for changes, draft again with block set to that block. Returns the block.",
+      "description": "Draft a write to a pull request or issue, by kind. Nothing reaches the forge in an agent's name: the draft waits on its block as a card the user (or an editor) edits and sends, or drops. Returns its draft id (a new issue: its block) at once; read_forge shows what became of it.\n- comment {block, body}: A comment on a PR or issue block's pull request or issue, on GitHub, Forgejo or GitLab.\n- review {block, event, body?}: A review (approve, request_changes or comment) of a PR block's pull request.\n- merge {block, style?}: Merging a PR block's pull request.\n- issue {title, beside?, block?, body?, dir?, repo?}: A new issue on GitHub or the user's Forgejo (repo as a link says which; a clone's remote does too): a block beside you holding the draft, for the user to send, edit, drop or ask you to change; it shows the issue once sent. Asked for changes, draft again with block set to that block. Returns the block.",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -7016,7 +7016,7 @@
           },
           "repo": {
             "default": null,
-            "description": "issue: The repository, OWNER/REPO (default: dir's, or the one beside you).",
+            "description": "issue: The repository: OWNER/REPO (default: dir's, or the one beside you),\nor its link (https://github.com/OWNER/REPO, a Forgejo one's), which\nsays which forge.",
             "type": [
               "string",
               "null"
@@ -9097,7 +9097,7 @@
             "type": "string"
           },
           "issue": {
-            "description": "issue: The issue: its link, OWNER/REPO#N, or N (in dir's repository).",
+            "description": "issue: The issue: its link (GitHub's or Forgejo's), OWNER/REPO#N, or N (in\ndir's repository).",
             "type": "string"
           },
           "kind": {
@@ -9872,7 +9872,7 @@
         "readOnlyHint": false,
         "title": "Draft a forge write"
       },
-      "description": "Draft a write to a pull request or issue, by kind. Nothing reaches the forge in an agent's name: the draft waits on its block as a card the user (or an editor) edits and sends, or drops. Returns its draft id (a new issue: its block) at once; read_forge shows what became of it.\n- comment {block, body}: A comment on a PR or issue block's pull request or issue.\n- review {block, event, body?}: A review (approve, request_changes or comment) of a PR block's pull request.\n- merge {block, style?}: Merging a PR block's pull request.\n- issue {title, beside?, block?, body?, dir?, repo?}: A new issue on the user's Forgejo or GitHub: a block beside you holding the draft, for the user to send, edit, drop or ask you to change; it shows the issue once sent. Asked for changes, draft again with block set to that block. Returns the block.",
+      "description": "Draft a write to a pull request or issue, by kind. Nothing reaches the forge in an agent's name: the draft waits on its block as a card the user (or an editor) edits and sends, or drops. Returns its draft id (a new issue: its block) at once; read_forge shows what became of it.\n- comment {block, body}: A comment on a PR or issue block's pull request or issue, on GitHub, Forgejo or GitLab.\n- review {block, event, body?}: A review (approve, request_changes or comment) of a PR block's pull request.\n- merge {block, style?}: Merging a PR block's pull request.\n- issue {title, beside?, block?, body?, dir?, repo?}: A new issue on GitHub or the user's Forgejo (repo as a link says which; a clone's remote does too): a block beside you holding the draft, for the user to send, edit, drop or ask you to change; it shows the issue once sent. Asked for changes, draft again with block set to that block. Returns the block.",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -9952,7 +9952,7 @@
           },
           "repo": {
             "default": null,
-            "description": "issue: The repository, OWNER/REPO (default: dir's, or the one beside you).",
+            "description": "issue: The repository: OWNER/REPO (default: dir's, or the one beside you),\nor its link (https://github.com/OWNER/REPO, a Forgejo one's), which\nsays which forge.",
             "type": [
               "string",
               "null"

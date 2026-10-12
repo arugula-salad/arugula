@@ -821,3 +821,49 @@ fn an_issue_on_github_and_a_new_one() {
         "{w:?}"
     );
 }
+
+/// #229: an agent drafts a new issue and a comment on GitHub's issues as it
+/// does on Forgejo's: each waits as a card, and only the person's send
+/// reaches GitHub. With Labs on a bare OWNER/REPO is Forgejo's, so the
+/// agent names the repository by its link.
+#[cfg(feature = "labs")]
+#[test]
+fn an_agents_github_issue_and_comment_are_drafts_until_sent() {
+    let dir = scratch("issue-drafts");
+    let hub = Hub::start(&dir, "someone", &[], &[]);
+    let d = hub.daemon_labs();
+
+    // A new issue, as MCP's `draft {kind: issue, repo: LINK}` opens it.
+    let config = json!({ "issue": "new", "repo": format!("https://github.com/{REPO}"), "title": "Frobs are slow",
+        "body": "Seconds each.", "by": "mcp:claude-code", "agent": true });
+    let made = open(&d, config);
+    d.wait_for("the new issue's card", || info(&d, made)["ask"]["id"] == "new");
+    let st = d.state(made);
+    assert_eq!((st["provider"].as_str(), st["number"].as_u64()), (Some("github"), Some(0)), "{st}");
+    assert!(hub.f.writes().is_empty(), "an agent's new issue went out: {:?}", hub.f.writes());
+    d.post(
+        &format!("/api/blocks/{made}/call/answer"),
+        json!({ "id": "new", "content": { "title": "Frobs are slow", "body": "Seconds each, on every run." } }),
+    );
+    d.wait_for("opened", || d.state(made)["number"] == N);
+    let w = hub.f.writes();
+    assert_eq!(w.len(), 1, "{w:?}");
+    assert_eq!((w[0].0.as_str(), w[0].1["body"].as_str()), ("new issue", Some("Seconds each, on every run.")));
+    assert_eq!(w[0].2, format!("Bearer {TOKEN}"), "sent with gh's login");
+    let st = d.state(made);
+    assert_eq!((st["new"]["status"].as_str(), st["new"]["settled_by"].as_str()), (Some("sent"), Some(OWNER)), "{st}");
+
+    // A comment on a GitHub issue block: a draft, then the person's.
+    let block = open(&d, json!({ "issue": format!("https://github.com/{REPO}/issues/{N}") }));
+    read(&d, block);
+    let draft = d.call(block, "comment", json!({ "body": "Looking.", "agent": true }));
+    assert_eq!(draft["status"], "waiting", "{draft}");
+    assert_eq!(hub.f.writes().len(), 1, "an agent's comment went out");
+    d.wait_for("the comment's card", || info(&d, block)["ask"]["id"] == draft["draft"]);
+    d.post(
+        &format!("/api/blocks/{block}/call/answer"),
+        json!({ "id": draft["draft"], "content": { "body": "Looking." } }),
+    );
+    d.wait_for("the comment", || hub.f.writes().len() == 2);
+    assert_eq!(hub.f.writes()[1].0, "comment");
+}
