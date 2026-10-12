@@ -39,6 +39,8 @@ jobs:
       - name: Rust (rust-toolchain.toml's)
         run: rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)" --profile minimal
       - run: just bootstrap
+      # A debug daemon serves web/dist from disk: the Safari spec's probe page.
+      - run: just web
       # Once per Mac (about 30 GB): the base every test VM is cloned from.
       - name: The base VM
         run: tart list --source local --quiet | grep -qx arugula-macos-base || just macos base
