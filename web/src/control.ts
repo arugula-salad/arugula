@@ -653,6 +653,9 @@ export function deviceName(): string {
   // M48: the desktop app says what it is ("Arugula app on jake-air").
   const app0 = desktopApp()?.name;
   if (app0) return app0;
+  // The app's window without its script's name (#817): Tauri's own
+  // bridge still says it's the app, whatever its WebKit's User-Agent.
+  if ("__TAURI_INTERNALS__" in globalThis) return "Arugula app";
   return agentName(navigator.userAgent);
 }
 
@@ -674,7 +677,24 @@ export function agentName(ua: string): string {
             : /Linux|X11/.test(ua)
               ? "Linux"
               : "";
-  const app = /Edg\//.test(ua) ? "Edge" : /Firefox\//.test(ua) ? "Firefox" : /Chrome\//.test(ua) ? "Chrome" : /Safari\//.test(ua) ? "Safari" : /node|undici|curl|reqwest/i.test(ua) ? "A program" : "";
+  const app = /Edg\//.test(ua)
+    ? "Edge"
+    : /Firefox\//.test(ua)
+      ? "Firefox"
+      : /Chrome\//.test(ua)
+        ? "Chrome"
+        : /Epiphany\//.test(ua)
+          ? "GNOME Web"
+          : /Safari\//.test(ua)
+            ? // Safari's token off Apple's systems is WebKitGTK: the Linux
+              // app's window (when it hasn't said its own name) or GNOME
+              // Web, never Safari (#817).
+              os === "Linux"
+              ? "WebKit"
+              : "Safari"
+            : /node|undici|curl|reqwest/i.test(ua)
+              ? "A program"
+              : "";
   if (!app && !os) return "A browser";
   return app && os ? `${app} on ${os}` : app || `A browser on ${os}`;
 }
