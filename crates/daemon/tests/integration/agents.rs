@@ -251,8 +251,11 @@ fn a_client_that_takes_patches_is_sent_what_changed() {
     assert_eq!(d.wait(id, "idle"), "done");
     let s = d.fixture("agent_patches", "a client that takes patches follows an agent streaming");
     let mut ws = s.ws();
+    let hello = ws.until("hello", |m| m["type"] == "hello");
     let mut state = ws.until("the block's state", |m| m["type"] == "block" && m["block"] == id)["state"].clone();
     ws.send(json!({ "type": "block_patches" }));
+    // A page is sent an agent's states while it shows it (#739).
+    ws.send(view_of(&hello, id));
     d.call(id, "send", json!({ "text": "stream 20 10" }));
     let (mut patches, mut sent, mut whole) = (0, 0, 0);
     loop {
@@ -273,6 +276,73 @@ fn a_client_that_takes_patches_is_sent_what_changed() {
     }
     eprintln!("{patches} patches: {sent} bytes, {whole} bytes whole");
     assert!(patches > 0, "no patches");
+    assert_eq!(entries(&state), entries(&d.state(id)));
+}
+
+/// The `view` a page sends while it shows `pane`'s tab, from its `hello`.
+fn view_of(hello: &Value, pane: u64) -> Value {
+    let tabs = hello["state"]["tabs"].as_array().unwrap();
+    let has = |t: &&Value| t["layout"]["panes"].as_array().unwrap().iter().any(|p| p[0] == pane);
+    let tab = tabs.iter().find(has).map(|t| t["id"].clone()).unwrap();
+    json!({ "type": "view", "tab": tab, "cols": 100, "rows": 30, "zoom": null, "claim": false })
+}
+
+#[test]
+fn a_page_is_sent_an_agent_only_while_it_shows_it() {
+    // #739: a page showing another tab isn't sent a streaming agent's
+    // states. Shown it, it gets the block whole at once, then patches. A
+    // client that doesn't take patches (the CLI's fronts) still gets every
+    // state, shown or not.
+    let d = Daemon::child();
+    let id = d.open("hello");
+    assert_eq!(d.wait(id, "idle"), "done");
+    let s = d.fixture("agent_shown", "a page is sent an agent's states only while it shows its tab");
+    let mut page = s.ws();
+    let hello = page.until("hello", |m| m["type"] == "hello");
+    let (agent_tab, other_tab) = (view_of(&hello, id), view_of(&hello, 1));
+    assert_ne!(agent_tab["tab"], other_tab["tab"], "the agent opened a tab of its own");
+    page.send(json!({ "type": "block_patches" }));
+    page.send(other_tab);
+    page.ping(1);
+    let mut cli = s.ws();
+    cli.until("hello", |m| m["type"] == "hello");
+    cli.ping(1);
+
+    d.call(id, "send", json!({ "text": "stream 10 20" }));
+    assert_eq!(d.wait(id, "idle"), "done");
+    let done = |m: &Value| entries(&m["state"]).iter().any(|e| e["text"].as_str().is_some_and(|t| t.contains("w9")));
+    let mut cli_states = 0;
+    cli.until("the CLI is sent the finished turn", |m| {
+        let is = m["type"] == "block" && m["block"] == id;
+        cli_states += is as usize;
+        is && done(m) && m["state"]["status"] == "ready"
+    });
+    assert!(cli_states > 1, "the CLI follows it: {cli_states} states");
+    page.send(json!({ "type": "ping", "id": 2 }));
+    let mut page_states = 0;
+    page.until("pong", |m| {
+        page_states += (m["type"] == "block" && m["block"] == id) as usize;
+        m["type"] == "pong" && m["id"] == 2
+    });
+    assert_eq!(page_states, 0, "nothing of a block it doesn't show");
+
+    // It shows it: the block whole, as it is now.
+    page.send(agent_tab);
+    let m = page.until("the block, shown", |m| m["type"] == "block" && m["block"] == id);
+    assert!(m["state"].get("entries_at").is_none(), "whole, not a patch: {m}");
+    assert_eq!(entries(&m["state"]), entries(&d.state(id)));
+    // ...and what changes next as a patch on it.
+    let mut state = m["state"].clone();
+    d.call(id, "send", json!({ "text": "stream 3 20" }));
+    loop {
+        let m = page.until("a patch", |m| m["type"] == "block" && m["block"] == id);
+        state = arugula_proto::block_patch::merge(&state, m["state"].clone()).expect("each patch follows the last");
+        if state["status"] == "ready"
+            && entries(&state).iter().any(|e| e["text"].as_str().is_some_and(|t| t.contains("w2")))
+        {
+            break;
+        }
+    }
     assert_eq!(entries(&state), entries(&d.state(id)));
 }
 
