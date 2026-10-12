@@ -41,6 +41,7 @@ use arugula_mux::holder;
 #[cfg(windows)]
 use arugula_mux::host;
 mod hosts;
+mod http1;
 #[cfg(feature = "editor")]
 mod ide;
 mod install;

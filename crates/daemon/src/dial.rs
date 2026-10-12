@@ -38,7 +38,6 @@ use axum::{
     routing::{any, get},
 };
 use futures_util::{SinkExt, StreamExt};
-use hyper_util::rt::TokioIo;
 use tokio::{
     io::DuplexStream,
     sync::{Notify, mpsc},
@@ -220,14 +219,7 @@ async fn forward(app: Arc<App>, name: String, path: String, mut req: Request) ->
         Ok(s) => s,
         Err(e) => return refuse(StatusCode::BAD_GATEWAY, &format!("{name}: {e}")),
     };
-    let (mut sender, conn) = match hyper::client::conn::http1::handshake(TokioIo::new(stream)).await {
-        Ok(x) => x,
-        Err(e) => return refuse(StatusCode::BAD_GATEWAY, &format!("{name}: {e}")),
-    };
-    tokio::spawn(async move {
-        let _ = conn.with_upgrades().await;
-    });
-    let mut res = match sender.send_request(axum::http::Request::from_parts(parts, body)).await {
+    let mut res = match crate::http1::once(stream, axum::http::Request::from_parts(parts, body)).await {
         Ok(r) => r,
         Err(e) => return refuse(StatusCode::BAD_GATEWAY, &format!("{name}: {e}")),
     };
@@ -235,12 +227,7 @@ async fn forward(app: Arc<App>, name: String, path: String, mut req: Request) ->
     if res.status() == StatusCode::SWITCHING_PROTOCOLS
         && let Some(client) = client_upgrade
     {
-        let server = hyper::upgrade::on(&mut res);
-        tokio::spawn(async move {
-            let (Ok(client), Ok(server)) = tokio::join!(client, server) else { return };
-            let (mut a, mut b) = (TokioIo::new(client), TokioIo::new(server));
-            let _ = tokio::io::copy_bidirectional(&mut a, &mut b).await;
-        });
+        crate::http1::splice(client, &mut res);
     }
     res.map(Body::new)
 }

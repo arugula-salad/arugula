@@ -382,12 +382,7 @@ impl Upstream {
 
 async fn connect(target: &Target) -> std::io::Result<SendRequest<Body>> {
     let io = target.dial().await?;
-    let (sender, conn) =
-        hyper::client::conn::http1::handshake(TokioIo::new(io)).await.map_err(std::io::Error::other)?;
-    tokio::spawn(async move {
-        let _ = conn.with_upgrades().await;
-    });
-    Ok(sender)
+    crate::http1::connect(io).await.map_err(std::io::Error::other)
 }
 
 fn full(status: StatusCode, text: impl Into<String>) -> Response<Body> {
@@ -600,12 +595,7 @@ async fn handle(
         return Response::from_parts(parts, Full::new(Bytes::from(page)).map_err(|e| match e {}).boxed());
     }
     if upgraded && let Some(client) = client_upgrade {
-        let server = hyper::upgrade::on(&mut res);
-        tokio::spawn(async move {
-            let (Ok(client), Ok(server)) = tokio::join!(client, server) else { return };
-            let (mut a, mut b) = (TokioIo::new(client), TokioIo::new(server));
-            let _ = tokio::io::copy_bidirectional(&mut a, &mut b).await;
-        });
+        crate::http1::splice(client, &mut res);
     }
     res.map(|b| b.boxed())
 }
