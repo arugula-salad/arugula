@@ -1,0 +1,5 @@
+{
+  "mcpServers": {
+    "arugula": { "command": "arugula", "args": ["mcp"] }
+  }
+}

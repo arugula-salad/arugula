@@ -13,6 +13,15 @@
 //! commands and MCP tools by default, the acting ones only with
 //! `--allow-acting`. Those only ever add too, and `status` says which tier
 //! is there.
+//!
+//! The Claude Code plugin (plugins/claude-code, #229) carries the same
+//! hooks; a test holds its hooks/hooks.json to [`HOOKS_SNIPPET`]. Claude
+//! Code runs a plugin's hook beside an identical one in settings.json (it
+//! only dedupes across settings files), so the plugin's copy stands aside
+//! when a settings file has the same hook ([`plugin_copy_stands_aside`]):
+//! someone who ran `install` and then added the plugin gets each hook once.
+//! `status` names the plugin when settings enable it, and `install` then
+//! adds only the permission rules.
 
 use std::{
     fs,
@@ -44,6 +53,14 @@ pub const HOOKS_SNIPPET: &str = r#"{
     "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "arugula hook" }] }]
   }
 }"#;
+
+/// The Claude Code plugin's name (plugins/claude-code, #229): `enabledPlugins`
+/// lists it as `arugula@<marketplace>`.
+pub const PLUGIN: &str = "arugula";
+
+/// How Claude Code names the plugin's MCP tools: `mcp__plugin_<plugin>_<server>__`,
+/// where the plugin's .mcp.json names its server `arugula` too.
+const PLUGIN_TOOLS: &str = "mcp__plugin_arugula_arugula__";
 
 /// The `permissions.allow` rules `install` adds by default (#655): what only
 /// reads. Claude Code's `Bash(prefix:*)` matches a command that starts with
@@ -160,9 +177,9 @@ pub enum HooksCmd {
 pub fn run(cmd: HooksCmd, json_out: bool) -> anyhow::Result<i32> {
     match cmd {
         HooksCmd::Install { project, dry_run, allow_acting } => {
-            install(&settings_path(project)?, dry_run, allow_acting)
+            install_for(&settings_path(project)?, dry_run, allow_acting, plugin_for_user())
         }
-        HooksCmd::Status { project } => status(&settings_path(project)?, json_out),
+        HooksCmd::Status { project } => status_for(&settings_path(project)?, json_out, plugin_for_user()),
         HooksCmd::RenameOld => rename_old_here(),
     }
     .map(|()| 0)
@@ -178,6 +195,78 @@ fn settings_path(project: Option<PathBuf>) -> anyhow::Result<PathBuf> {
         None => PathBuf::from(std::env::var_os("HOME").context("no HOME")?),
     };
     Ok(base.join(".claude/settings.json"))
+}
+
+/// The user's own settings.json: under `CLAUDE_CONFIG_DIR` when that's set,
+/// and under `~/.claude`.
+fn user_settings() -> Vec<PathBuf> {
+    let config_dir = std::env::var_os("CLAUDE_CONFIG_DIR").map(PathBuf::from);
+    home().map(|h| configs(&h, config_dir).into_iter().map(|(s, _)| s).collect()).unwrap_or_default()
+}
+
+/// The plugin's `enabledPlugins` key (`arugula@arugula`) when `settings`
+/// turns it on.
+fn plugin_enabled(settings: &Value) -> Option<String> {
+    let enabled = settings["enabledPlugins"].as_object()?;
+    enabled
+        .iter()
+        .find(|(k, v)| k.split_once('@').is_some_and(|(name, _)| name == PLUGIN) && v.as_bool() == Some(true))
+        .map(|(k, _)| k.clone())
+}
+
+/// The plugin, when the user's settings enable it (a project's settings.json
+/// may too: `install` and `status` check the file they're given as well).
+fn plugin_for_user() -> Option<String> {
+    user_settings().iter().filter_map(|p| read_settings(p).ok()).find_map(|s| plugin_enabled(&s))
+}
+
+/// Whether `dir` holds the Arugula plugin (its `.claude-plugin/plugin.json`
+/// names it).
+fn is_our_plugin(dir: &Path) -> bool {
+    let manifest = fs::read_to_string(dir.join(".claude-plugin/plugin.json")).unwrap_or_default();
+    serde_json::from_str::<Value>(&manifest).is_ok_and(|m| m["name"] == PLUGIN)
+}
+
+/// The settings files whose hooks this Claude Code session runs, as far as
+/// `install` writes them: the user's, and the project's (`CLAUDE_PROJECT_DIR`,
+/// which Claude Code sets for every hook) with its local one.
+fn session_settings() -> Vec<PathBuf> {
+    let mut out = user_settings();
+    if let Some(p) = std::env::var_os("CLAUDE_PROJECT_DIR").map(PathBuf::from) {
+        out.push(p.join(".claude/settings.json"));
+        out.push(p.join(".claude/settings.local.json"));
+    }
+    out.dedup();
+    out
+}
+
+/// Whether one of `files` has the hook that runs `command` on `event` (any
+/// event of the snippet's, when the hook can't tell, as `attention` can't:
+/// each of its commands is on one event only).
+fn settings_have(files: &[Value], command: &str, event: Option<&str>) -> bool {
+    snippet()
+        .iter()
+        .filter(|(e, _)| event.is_none_or(|ev| ev == e.as_str()))
+        .flat_map(|(e, groups)| groups.as_array().into_iter().flatten().map(move |g| (e, g)))
+        .filter(|(_, g)| g["hooks"].as_array().into_iter().flatten().any(|h| h["command"] == command))
+        .any(|(e, g)| {
+            files.iter().any(|s| s["hooks"][e.as_str()].as_array().is_some_and(|groups| has_group(groups, g)))
+        })
+}
+
+/// Whether this run of a hook (`command`, as the snippet has it) is the
+/// plugin's copy of one a settings file also has, and should do nothing:
+/// Claude Code runs both (it dedupes only across settings files), and two
+/// would put every question and permission prompt on two cards. The
+/// plugin's hooks run with `CLAUDE_PLUGIN_ROOT` set to the plugin; the
+/// settings' ones without it.
+pub fn plugin_copy_stands_aside(command: &str, event: Option<&str>) -> bool {
+    let Some(root) = std::env::var_os("CLAUDE_PLUGIN_ROOT") else { return false };
+    if !is_our_plugin(Path::new(&root)) {
+        return false;
+    }
+    let files: Vec<Value> = session_settings().iter().filter_map(|p| read_settings(p).ok()).collect();
+    settings_have(&files, command, event)
 }
 
 fn snippet() -> Map<String, Value> {
@@ -300,11 +389,22 @@ fn allow_list(root: &mut Map<String, Value>) -> anyhow::Result<&mut Vec<Value>> 
 
 /// The rules (the read-only tier, and the acting one with `allow_acting`)
 /// that `allow` doesn't have, added at the end. Whether any were.
-fn add_rules(allow: &mut Vec<Value>, allow_acting: bool) -> bool {
+fn add_rules(allow: &mut Vec<Value>, allow_acting: bool, plugin: bool) -> bool {
     let acting = if allow_acting { ACTING_RULES } else { &[] };
+    let mut rules: Vec<String> = READ_RULES.iter().chain(acting).map(|r| (*r).to_owned()).collect();
+    if plugin {
+        // The plugin's MCP tools go by another name (#229).
+        let tools: Vec<String> = READ_RULES
+            .iter()
+            .chain(acting)
+            .filter_map(|r| r.strip_prefix("mcp__arugula__"))
+            .map(|t| format!("{PLUGIN_TOOLS}{t}"))
+            .collect();
+        rules.extend(tools);
+    }
     let mut added = false;
-    for rule in READ_RULES.iter().chain(acting) {
-        if !allow.iter().any(|a| a.as_str() == Some(rule)) {
+    for rule in rules {
+        if !allow.iter().any(|a| a.as_str() == Some(&rule)) {
             allow.push(json!(rule));
             added = true;
         }
@@ -312,10 +412,17 @@ fn add_rules(allow: &mut Vec<Value>, allow_acting: bool) -> bool {
     added
 }
 
-/// `settings` with our old-named hooks renamed, the snippet's hooks added
-/// where missing, and the permission rules (read-only, and acting with
-/// `allow_acting`) added where missing: what changed.
+/// [`merge_for`] without the plugin.
+#[cfg(test)]
 fn merge(settings: &mut Value, allow_acting: bool) -> anyhow::Result<Merged> {
+    merge_for(settings, allow_acting, false)
+}
+
+/// `settings` with our old-named hooks renamed, the snippet's hooks added
+/// where missing (unless the plugin has them: `plugin`), and the permission
+/// rules (read-only, and acting with `allow_acting`; with `plugin`, for the
+/// plugin's tools too) added where missing: what changed.
+fn merge_for(settings: &mut Value, allow_acting: bool, plugin: bool) -> anyhow::Result<Merged> {
     let Some(root) = settings.as_object_mut() else {
         bail!("settings.json isn't a JSON object; leaving it alone");
     };
@@ -333,7 +440,7 @@ fn merge(settings: &mut Value, allow_acting: bool) -> anyhow::Result<Merged> {
     }
     let renamed = rename_old(hooks);
     let mut changed = false;
-    for (event, wanted) in want {
+    for (event, wanted) in want.into_iter().filter(|_| !plugin) {
         let groups = hooks.entry(event.clone()).or_insert_with(|| json!([]));
         let Some(groups) = groups.as_array_mut() else {
             bail!("`hooks.{event}` in settings.json isn't an array; leaving it alone");
@@ -345,7 +452,7 @@ fn merge(settings: &mut Value, allow_acting: bool) -> anyhow::Result<Merged> {
             }
         }
     }
-    let allowed = add_rules(allow_list(root)?, allow_acting);
+    let allowed = add_rules(allow_list(root)?, allow_acting, plugin);
     Ok(Merged { added: changed, renamed, allowed })
 }
 
@@ -386,9 +493,23 @@ fn pretty(v: &Value) -> String {
     format!("{}\n", serde_json::to_string_pretty(v).unwrap_or_default())
 }
 
+#[cfg(test)]
 fn install(path: &Path, dry_run: bool, allow_acting: bool) -> anyhow::Result<()> {
+    install_for(path, dry_run, allow_acting, None)
+}
+
+/// `install`, where the user's settings may enable the plugin (`plugin`, its
+/// `enabledPlugins` key): then its hooks are the plugin's, and settings.json
+/// gets only the permission rules.
+fn install_for(path: &Path, dry_run: bool, allow_acting: bool, plugin: Option<String>) -> anyhow::Result<()> {
     let mut settings = read_settings(path)?;
-    let merged = merge(&mut settings, allow_acting)?;
+    let plugin = plugin_enabled(&settings).or(plugin);
+    let merged = merge_for(&mut settings, allow_acting, plugin.is_some())?;
+    if let Some(p) = &plugin
+        && !dry_run
+    {
+        println!("The Claude Code plugin ({p}) brings Arugula's hooks, so none are added to settings.json.");
+    }
     let text = pretty(&settings);
     if dry_run {
         print!("{text}");
@@ -484,11 +605,29 @@ fn tiers(settings: &Value) -> (Tier, Tier) {
     (tier(READ_RULES), tier(ACTING_RULES))
 }
 
-fn status(path: &Path, json_out: bool) -> anyhow::Result<()> {
+/// A `.claude.json` with an MCP server named `arugula` that isn't the
+/// plugin's own command (`arugula mcp`, which Claude Code counts as the same
+/// server): beside the plugin, Claude Code runs both and lists every tool
+/// twice.
+fn manual_mcp_beside_plugin() -> Option<PathBuf> {
+    let config_dir = std::env::var_os("CLAUDE_CONFIG_DIR").map(PathBuf::from);
+    configs(&home().ok()?, config_dir).into_iter().map(|(_, c)| c).find(|c| {
+        let Ok(mut v) = read_settings(c) else { return false };
+        mcp_servers(&mut v)
+            .iter()
+            .filter_map(|s| s.get(PLUGIN))
+            .any(|s| s["command"] != PLUGIN || s["args"] != json!(["mcp"]))
+    })
+}
+
+/// `status`, where the user's settings may enable the plugin (`plugin`, its
+/// `enabledPlugins` key).
+fn status_for(path: &Path, json_out: bool, plugin: Option<String>) -> anyhow::Result<()> {
     let settings = read_settings(path)?;
+    let plugin = plugin_enabled(&settings).or(plugin);
     let events = present(&settings);
     let (read, acting) = tiers(&settings);
-    let installed = events.iter().all(|(_, h)| *h != Has::Missing);
+    let installed = plugin.is_some() || events.iter().all(|(_, h)| *h != Has::Missing);
     let old: Vec<&str> = events.iter().filter(|(_, h)| *h == Has::Old).map(|(e, _)| e.as_str()).collect();
     if json_out {
         // `events` stays a bool per event: an old-named hook counts.
@@ -496,7 +635,8 @@ fn status(path: &Path, json_out: bool) -> anyhow::Result<()> {
             events.iter().map(|(e, h)| (e.clone(), Value::Bool(*h != Has::Missing))).collect();
         let permissions = json!({ "read": read.says(), "acting": acting.says() });
         let v = json!({
-            "settings": path, "installed": installed, "events": map, "old_name": old, "permissions": permissions
+            "settings": path, "installed": installed, "events": map, "old_name": old, "permissions": permissions,
+            "plugin": plugin,
         });
         println!("{}", serde_json::to_string_pretty(&v).unwrap_or_default());
         return Ok(());
@@ -506,15 +646,20 @@ fn status(path: &Path, json_out: bool) -> anyhow::Result<()> {
         let says = match h {
             Has::Present => "present",
             Has::Old => "present, under the old name (illogical)",
+            Has::Missing if plugin.is_some() => "the plugin's",
             Has::Missing => "missing",
         };
         println!("  {event:<20} {says}");
+    }
+    if let Some(p) = &plugin {
+        println!("Claude Code plugin");
+        println!("  {p:<20} enabled: its hooks run where settings.json doesn't have the same one");
     }
     println!("permissions.allow");
     println!("  {:<20} {}", "read", read.says());
     println!("  {:<20} {}", "acting", acting.says());
     match (installed, old.is_empty()) {
-        (false, _) => println!("`arugula hooks install` adds the missing ones."),
+        (false, _) => println!("`arugula hooks install` adds the missing ones (or install the Claude Code plugin)."),
         (true, false) => println!("`arugula hooks install` updates them to the new name."),
         (true, true) => {}
     }
@@ -524,6 +669,14 @@ fn status(path: &Path, json_out: bool) -> anyhow::Result<()> {
     if acting != Tier::Present {
         println!(
             "`arugula hooks install --allow-acting` adds the acting ones (an agent can then start agents and type into panes without asking)."
+        );
+    }
+    if plugin.is_some()
+        && let Some(c) = manual_mcp_beside_plugin()
+    {
+        println!(
+            "{} has an MCP server `arugula` of its own beside the plugin's: `claude mcp remove arugula` leaves one copy of each tool.",
+            c.display()
         );
     }
     Ok(())
@@ -1137,6 +1290,138 @@ mod tests {
         install(&path, false, true).unwrap();
         install(&path, false, false).unwrap();
         assert_eq!(first, fs::read(&path).unwrap());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    const PLUGIN_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../plugins/claude-code");
+
+    fn plugin_file(path: &str) -> Value {
+        let text = fs::read_to_string(format!("{PLUGIN_DIR}/{path}")).unwrap_or_else(|e| panic!("{path}: {e}"));
+        serde_json::from_str(&text).unwrap_or_else(|e| panic!("{path}: {e}"))
+    }
+
+    /// #229: the plugin's hooks are exactly what `install` writes, plus its
+    /// one check for a missing CLI, so the two can't drift. A change to
+    /// HOOKS_SNIPPET goes in plugins/claude-code/hooks/hooks.json too.
+    #[test]
+    fn plugin_hooks_are_the_snippet() {
+        let plugin = plugin_file("hooks/hooks.json");
+        let mut hooks = plugin["hooks"].as_object().unwrap().clone();
+        // Only the plugin's own: the SessionStart check that `arugula` is on PATH.
+        let mut own = vec![];
+        for (event, groups) in hooks.iter_mut() {
+            groups.as_array_mut().unwrap().retain(|g| {
+                let ours = g["hooks"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .all(|h| h["command"].as_str().unwrap().starts_with("arugula "));
+                if !ours {
+                    own.push((event.clone(), g.clone()));
+                }
+                ours
+            });
+        }
+        assert_eq!(
+            Value::Object(hooks),
+            Value::Object(snippet()),
+            "plugins/claude-code/hooks/hooks.json's hooks: HOOKS_SNIPPET's, as `arugula hooks install` writes them"
+        );
+        assert_eq!(own.len(), 1, "{own:?}");
+        let (event, check) = &own[0];
+        assert_eq!(event, "SessionStart");
+        let command = check["hooks"][0]["command"].as_str().unwrap();
+        assert!(command.starts_with("command -v arugula >/dev/null 2>&1 || echo '{"), "{command}");
+        let said: Value = serde_json::from_str(command.split_once("echo '").unwrap().1.trim_end_matches('\'')).unwrap();
+        assert!(said["systemMessage"].as_str().unwrap().contains("not on PATH"), "{said}");
+
+        // The manifest, the MCP server and the marketplace's entry name it
+        // as PLUGIN and PLUGIN_TOOLS do.
+        assert_eq!(plugin_file(".claude-plugin/plugin.json")["name"], PLUGIN);
+        let servers = plugin_file(".mcp.json")["mcpServers"].as_object().unwrap().clone();
+        assert_eq!(servers.len(), 1);
+        let (name, server) = servers.iter().next().unwrap();
+        assert_eq!(PLUGIN_TOOLS, format!("mcp__plugin_{PLUGIN}_{name}__"));
+        assert_eq!((&server["command"], &server["args"]), (&json!("arugula"), &json!(["mcp"])));
+        let market: Value = serde_json::from_str(
+            &fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../.claude-plugin/marketplace.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(market["plugins"][0]["name"], PLUGIN);
+        assert_eq!(market["plugins"][0]["source"], "./plugins/claude-code");
+        assert!(Path::new(PLUGIN_DIR).join("skills/arugula/SKILL.md").is_file());
+    }
+
+    #[test]
+    fn plugin_copy_stands_aside_only_for_a_hook_settings_has() {
+        let (full, _) = merged(MINE);
+        let mine: Value = serde_json::from_str(MINE).unwrap();
+        let stop_only: Value = serde_json::from_str(
+            r#"{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"arugula attention done"}]}]}}"#,
+        )
+        .unwrap();
+        // Installed: every copy of the plugin's stands aside.
+        for (event, groups) in snippet() {
+            for g in groups.as_array().unwrap() {
+                let command = g["hooks"][0]["command"].as_str().unwrap();
+                assert!(settings_have(&[mine.clone(), full.clone()], command, Some(&event)), "{event} {command}");
+            }
+        }
+        // None of ours there: the plugin's run.
+        assert!(!settings_have(std::slice::from_ref(&mine), "arugula hook", Some("PermissionRequest")));
+        assert!(!settings_have(&[], "arugula ask", Some("PreToolUse")));
+        // Only Stop's attention: that one stands aside, the rest run.
+        assert!(settings_have(std::slice::from_ref(&stop_only), "arugula attention done", None));
+        assert!(!settings_have(std::slice::from_ref(&stop_only), "arugula attention needs-input", None));
+        assert!(!settings_have(std::slice::from_ref(&stop_only), "arugula inbox", Some("Stop")));
+        assert!(!settings_have(&[stop_only], "arugula hook", Some("PreToolUse")));
+        // `arugula ask` on PreToolUse is the AskUserQuestion group's, not a bare one.
+        let bare_ask: Value = serde_json::from_str(
+            r#"{"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"arugula ask"}]}]}}"#,
+        )
+        .unwrap();
+        assert!(!settings_have(&[bare_ask], "arugula ask", Some("PreToolUse")));
+    }
+
+    #[test]
+    fn plugin_is_seen_in_enabled_plugins() {
+        let on = json!({ "enabledPlugins": { "other@x": true, "arugula@arugula": true } });
+        assert_eq!(plugin_enabled(&on).as_deref(), Some("arugula@arugula"));
+        for off in [
+            json!({ "enabledPlugins": { "arugula@arugula": false } }),
+            json!({ "enabledPlugins": { "arugula-ish@x": true } }),
+            json!({}),
+        ] {
+            assert_eq!(plugin_enabled(&off), None, "{off}");
+        }
+        assert!(is_our_plugin(Path::new(PLUGIN_DIR)));
+        assert!(!is_our_plugin(&std::env::temp_dir()));
+    }
+
+    #[test]
+    fn with_the_plugin_install_adds_rules_not_hooks() {
+        let mut v: Value = serde_json::from_str(MINE).unwrap();
+        let m = merge_for(&mut v, false, true).unwrap();
+        assert_eq!(m, Merged { added: false, renamed: false, allowed: true });
+        let mine: Value = serde_json::from_str(MINE).unwrap();
+        assert_eq!(v["hooks"], mine["hooks"]);
+        let allow = allowed(&v);
+        assert!(allow.contains(&"mcp__arugula__wait".to_owned()));
+        assert!(allow.contains(&"mcp__plugin_arugula_arugula__wait".to_owned()));
+        assert!(!allow.iter().any(|r| r == "mcp__plugin_arugula_arugula__run"), "acting only with the flag");
+        assert_eq!(tiers(&v), (Tier::Present, Tier::Missing));
+        // Again: nothing.
+        assert_eq!(merge_for(&mut v, false, true).unwrap(), Merged::default());
+
+        // Settings that enable it are enough, on disk.
+        let dir = temp("plugin");
+        let path = dir.join(".claude/settings.json");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, r#"{"enabledPlugins":{"arugula@arugula":true}}"#).unwrap();
+        install(&path, false, false).unwrap();
+        let s = read_settings(&path).unwrap();
+        assert!(s.get("hooks").is_none_or(|h| h.as_object().is_some_and(Map::is_empty)), "{s}");
+        assert!(allowed(&s).contains(&"mcp__plugin_arugula_arugula__list".to_owned()));
         let _ = fs::remove_dir_all(&dir);
     }
 }

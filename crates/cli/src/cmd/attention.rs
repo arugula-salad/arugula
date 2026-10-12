@@ -46,6 +46,11 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
             }
         }
         Args { state: Some(state), pane } => {
+            // The plugin's copy of a hook settings.json has too (#229).
+            if pane.is_none() && crate::hooks::plugin_copy_stands_aside(&format!("arugula attention {state}"), None) {
+                let _ = hook_message();
+                return Ok(0);
+            }
             let state = state.replace('-', "_");
             // Hooks (Claude Code's, say) run this in every terminal; outside an
             // Arugula pane there's nobody to tell, and that's fine.

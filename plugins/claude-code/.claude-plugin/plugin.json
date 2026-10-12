@@ -1,0 +1,9 @@
+{
+  "name": "arugula",
+  "description": "Arugula's MCP tools, the hooks that put Claude Code's questions, permission prompts and follow-ups on cards, and a skill for using them. Calls the arugula CLI you installed.",
+  "author": { "name": "Arugula", "url": "https://arugula.io" },
+  "homepage": "https://arugula.io",
+  "repository": "https://github.com/arugula-salad/arugula",
+  "license": "MIT OR Apache-2.0",
+  "keywords": ["arugula", "terminal", "mcp", "hooks"]
+}

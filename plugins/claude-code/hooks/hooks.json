@@ -1,0 +1,22 @@
+{
+  "description": "What `arugula hooks install` writes (crates/cli/src/hooks.rs HOOKS_SNIPPET, held to it by a test), plus a check that says so once when the arugula CLI isn't on PATH. A copy here stands aside when settings.json has the same hook.",
+  "hooks": {
+    "Notification": [{ "hooks": [{ "type": "command", "command": "arugula attention needs-input" }] }],
+    "Stop": [
+      { "hooks": [{ "type": "command", "command": "arugula attention done" }] },
+      { "hooks": [{ "type": "command", "command": "arugula inbox", "asyncRewake": true, "timeout": 86400 }] }
+    ],
+    "SessionStart": [
+      { "hooks": [{ "type": "command", "command": "arugula inbox", "asyncRewake": true, "timeout": 86400 }] },
+      { "hooks": [{ "type": "command", "shell": "bash", "timeout": 10, "command": "command -v arugula >/dev/null 2>&1 || echo '{\"systemMessage\": \"Arugula plugin: the arugula CLI is not on PATH, so its MCP tools and hooks do nothing here. Install Arugula (https://arugula.io) or disable the plugin in /plugin.\"}'" }] }
+    ],
+    "PreToolUse": [
+      { "matcher": "AskUserQuestion", "hooks": [{ "type": "command", "command": "arugula ask", "timeout": 604800 }] },
+      { "hooks": [{ "type": "command", "command": "arugula hook" }] }
+    ],
+    "PermissionRequest": [{ "hooks": [{ "type": "command", "command": "arugula hook", "timeout": 604800 }] }],
+    "PostToolUse": [{ "hooks": [{ "type": "command", "command": "arugula hook" }] }],
+    "PostToolUseFailure": [{ "hooks": [{ "type": "command", "command": "arugula hook" }] }],
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "arugula hook" }] }]
+  }
+}
