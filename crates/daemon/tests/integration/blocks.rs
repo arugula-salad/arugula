@@ -120,6 +120,9 @@ fn a_block_or_command_in_a_new_session_is_all_it_holds() {
     let r = panes.as_array().unwrap().iter().find(|p| p["id"] == run).unwrap().clone();
     let session = r["session"].as_u64().unwrap();
     assert!(session != first && session != b["session"].as_u64().unwrap());
+    // The pane reports its command a moment after it starts (#819): wait
+    // for it rather than reading it once.
+    d.wait_for("the command to show", || in_session(&d, session).iter().any(|p| p["current"]["text"] == "sleep 600"));
     let held = in_session(&d, session);
     assert_eq!(held.len(), 1, "only the command: {held:?}");
     // The command is the pane, not a shell that was there first.
