@@ -117,8 +117,10 @@ pub enum ClientMsg {
     /// come as [`ServerMsg::Follow`] while `on`. Viewer access is enough.
     Follow { pane: PaneId, on: bool },
     /// Send this client agent blocks' states as what changed since the last
-    /// one it was sent ([`block_patch`], #713) rather than whole. Sent
-    /// again, it starts over: each block's next state comes whole.
+    /// one it was sent ([`block_patch`], #713) rather than whole, and only
+    /// while it shows them (#739: the tab of its last [`ClientMsg::View`],
+    /// or its zoomed pane): one it starts showing comes whole at once.
+    /// Sent again, it starts over: each block's next state comes whole.
     BlockPatches,
     /// Join the huddle on `session` (M63), starting one if there's none.
     /// Anyone with a role in the session may, up to [`CALL_MAX`] people.
@@ -638,7 +640,7 @@ pub enum ServerMsg {
     /// A non-terminal block's state, whole: on connecting, and whenever it
     /// changes. Its type's renderer draws it. For a client that asked for
     /// [`ClientMsg::BlockPatches`], an agent block's may be a patch
-    /// ([`block_patch`]).
+    /// ([`block_patch`]), and comes only while it shows the block (#739).
     Block {
         block: PaneId,
         #[cfg_attr(feature = "ts", ts(type = "unknown"))]

@@ -6,7 +6,7 @@ use super::{Daemon, config::Join};
 use crate::acl::Principal;
 use arugula_core::{Intent, Role};
 use arugula_proto::{
-    BlockType, MachineId, PaneId,
+    BlockType, ClientId, MachineId, PaneId,
     api::{OpenRequest, RunRequest},
 };
 use std::path::PathBuf;
@@ -341,14 +341,8 @@ impl Daemon {
             return;
         }
         let mut now = std::collections::HashSet::new();
-        for (client, tab) in &self.viewing {
-            if self.summary.contains(client) || !self.clients.contains_key(client) {
-                continue;
-            }
-            let Ok(t) = self.mux.tab(*tab) else { continue };
-            let panes = t.root.panes();
-            let zoom = self.zoomed.get(client).filter(|z| panes.contains(z));
-            now.extend(panes.into_iter().filter(|p| self.blocks.contains_key(p) && zoom.is_none_or(|z| z == p)));
+        for client in self.viewing.keys() {
+            now.extend(self.shown_by(*client));
         }
         if now == self.drawn {
             return;
@@ -359,5 +353,50 @@ impl Daemon {
             }
         }
         self.drawn = now;
+    }
+
+    /// The blocks `client` draws: those in the tab it shows, or on a phone
+    /// the one pane it shows. None for a summaries-only client.
+    pub(super) fn shown_by(&self, client: ClientId) -> Vec<PaneId> {
+        if self.summary.contains(&client) || !self.clients.contains_key(&client) {
+            return vec![];
+        }
+        let Some(Ok(t)) = self.viewing.get(&client).map(|tab| self.mux.tab(*tab)) else { return vec![] };
+        let panes = t.root.panes();
+        let zoom = self.zoomed.get(&client).filter(|z| panes.contains(z)).copied();
+        panes.into_iter().filter(|p| self.blocks.contains_key(p) && zoom.is_none_or(|z| z == *p)).collect()
+    }
+
+    /// Whether `client` is sent `pane`'s state only while it shows it
+    /// (#739): an agent block, to a client that takes patches (a page). An
+    /// agent's state is its transcript, which nothing off screen reads; the
+    /// fleet, the swarm and the tab strip go by its summary. Other blocks'
+    /// states name them off screen (a browser's title, a remote's host),
+    /// and the CLI's fronts redraw panes they don't show, so those go to
+    /// everyone who may see them, as before.
+    pub(super) fn only_shown(&self, client: ClientId, pane: PaneId) -> bool {
+        self.patched.contains_key(&client) && self.blocks.get(&pane).is_some_and(|b| b.kind() == BlockType::Agent)
+    }
+
+    /// Send each page the agent blocks it just started showing, whole
+    /// (#739): it was sent nothing of them while it didn't. Runs after
+    /// anything that may change what a client shows (a view, a layout).
+    pub(super) fn sync_shown(&mut self) {
+        let mut new = std::collections::BTreeSet::new();
+        let clients: Vec<ClientId> = self.patched.keys().copied().collect();
+        for client in clients {
+            let shown: Vec<PaneId> =
+                self.shown_by(client).into_iter().filter(|p| self.only_shown(client, *p)).collect();
+            let Some(has) = self.patched.get_mut(&client) else { continue };
+            // What it stopped showing goes stale: whole again next time.
+            has.retain(|p| shown.contains(p));
+            new.extend(shown.into_iter().filter(|p| !has.contains(p)));
+        }
+        // To the pages only: the others were sent every state. The pages
+        // that already show it get it as a patch, which keeps them on the
+        // agent's record of what was sent.
+        for pane in new {
+            self.send_block(pane, true);
+        }
     }
 }
