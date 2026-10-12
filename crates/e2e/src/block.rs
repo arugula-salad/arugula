@@ -258,6 +258,98 @@ impl Answer {
     }
 }
 
+/// What a block channel carries once it's open (S27's wire, unchanged).
+///
+/// Every message is a [`crate::channel::Msg::Binary`] holding one frame:
+/// `kind (1 byte) ‖ stream (u32 BE) ‖ payload`. The client opens streams,
+/// with ids it picks, and the daemon only answers. Many streams share one
+/// channel: a page's requests in parallel, and its WebSockets.
+///
+/// ```text
+/// client to daemon                 daemon to client
+/// 'H' request head (ReqHead)       'R' response head (ResHead)
+/// 'D' body bytes                   'D' body bytes
+/// 'E' end of body                  'E' end of body
+/// 'O' WebSocket open (WsOpen)      'A' WebSocket accepted ({"protocol"})
+/// 'M' message: 0 text / 1 binary   'M' message
+/// 'C' close (WsClose)              'C' close (WsClose)
+/// 'K' cancel the stream            'X' failed ({"message"})
+/// ```
+///
+/// A request's body comes whole before the daemon sends it on ('H', any
+/// 'D's, 'E'); the answer streams. Heads are JSON.
+pub mod wire {
+    use anyhow::bail;
+    use serde::{Deserialize, Serialize};
+
+    pub const HEAD: u8 = b'H';
+    pub const DATA: u8 = b'D';
+    pub const END: u8 = b'E';
+    pub const OPEN: u8 = b'O';
+    pub const MESSAGE: u8 = b'M';
+    pub const CLOSE: u8 = b'C';
+    pub const CANCEL: u8 = b'K';
+    pub const RESPONSE: u8 = b'R';
+    pub const ACCEPTED: u8 = b'A';
+    pub const FAILED: u8 = b'X';
+
+    /// A request, as the page made it: its path and query on the block's
+    /// origin, and its headers (a name may repeat). Browsers don't show a
+    /// worker `Sec-Fetch-*`, so the worker says what the request is with
+    /// `sec-fetch-mode` and `sec-fetch-dest` from its `mode` and
+    /// `destination`: `navigate` and `iframe` tell the daemon where the
+    /// frame is (`sites.rs`) and that a page may get its head script.
+    #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+    pub struct ReqHead {
+        pub method: String,
+        pub path: String,
+        #[serde(default)]
+        pub headers: Vec<(String, String)>,
+    }
+
+    #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+    pub struct ResHead {
+        pub status: u16,
+        #[serde(default)]
+        pub headers: Vec<(String, String)>,
+    }
+
+    #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+    pub struct WsOpen {
+        pub path: String,
+        #[serde(default)]
+        pub protocols: Vec<String>,
+    }
+
+    #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+    pub struct WsClose {
+        #[serde(default)]
+        pub code: u16,
+        #[serde(default)]
+        pub reason: String,
+    }
+
+    pub fn frame(kind: u8, stream: u32, payload: &[u8]) -> Vec<u8> {
+        let mut f = Vec::with_capacity(5 + payload.len());
+        f.push(kind);
+        f.extend_from_slice(&stream.to_be_bytes());
+        f.extend_from_slice(payload);
+        f
+    }
+
+    pub fn json_frame<T: Serialize>(kind: u8, stream: u32, v: &T) -> Vec<u8> {
+        frame(kind, stream, &serde_json::to_vec(v).expect("serialize"))
+    }
+
+    /// `(kind, stream, payload)`.
+    pub fn parse(f: &[u8]) -> anyhow::Result<(u8, u32, &[u8])> {
+        if f.len() < 5 {
+            bail!("short frame");
+        }
+        Ok((f[0], u32::from_be_bytes([f[1], f[2], f[3], f[4]]), &f[5..]))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -439,6 +531,18 @@ mod tests {
         forged.truncate(40);
         assert!(daemon_end.open(&forged).is_err());
         assert!(daemon_end.open(&[0u8; 64]).is_err());
+    }
+
+    #[test]
+    fn frames() {
+        let f = wire::frame(wire::DATA, 7, b"abc");
+        assert_eq!(wire::parse(&f).unwrap(), (b'D', 7, &b"abc"[..]));
+        assert!(wire::parse(&f[..4]).is_err());
+        let h =
+            wire::json_frame(wire::HEAD, 1, &wire::ReqHead { method: "GET".into(), path: "/".into(), headers: vec![] });
+        let (k, s, p) = wire::parse(&h).unwrap();
+        assert_eq!((k, s), (b'H', 1));
+        assert_eq!(serde_json::from_slice::<wire::ReqHead>(p).unwrap().path, "/");
     }
 
     #[test]

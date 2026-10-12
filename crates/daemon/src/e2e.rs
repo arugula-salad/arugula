@@ -13,7 +13,7 @@ use std::sync::Arc;
 
 use arugula_e2e::{
     Kind,
-    channel::{Channel, MAX_MSG, MAX_WIRE, Msg, RequestHead, Responder, ResponseHead, prologue},
+    channel::{Channel, MAX_MSG, MAX_WIRE, Msg, RequestHead, Responder, ResponseHead, Welcome, prologue},
 };
 use axum::{
     Router,
@@ -129,13 +129,17 @@ fn log_end(r: anyhow::Result<()>) {
 
 /// Seals and queues messages, one whole message at a time: the nonces
 /// (and a message's chunks) must reach the socket in order.
-struct Out {
-    ch: Arc<Channel>,
+pub(crate) struct Out {
+    pub(crate) ch: Arc<Channel>,
     q: tokio::sync::Mutex<mpsc::Sender<Vec<u8>>>,
 }
 
 impl Out {
-    async fn put(&self, m: &Msg) -> anyhow::Result<()> {
+    pub(crate) fn new(ch: Channel, q: mpsc::Sender<Vec<u8>>) -> Self {
+        Self { ch: Arc::new(ch), q: tokio::sync::Mutex::new(q) }
+    }
+
+    pub(crate) async fn put(&self, m: &Msg) -> anyhow::Result<()> {
         let q = self.q.lock().await;
         for w in self.ch.seal(m)? {
             q.send(w).await.map_err(|_| anyhow::anyhow!("socket gone"))?;
@@ -150,14 +154,19 @@ async fn serve(app: Arc<App>, mut inbound: mpsc::Receiver<Vec<u8>>, out: mpsc::S
         .map_err(|_| anyhow::anyhow!("no handshake"))?
         .ok_or_else(|| anyhow::anyhow!("closed before the handshake"))?;
     let enrolled = app.control.enrolled().ok_or_else(|| anyhow::anyhow!("not enrolled in control"))?;
-    let (responder, who, _) = Responder::read(&enrolled.keys, &prologue(&enrolled.keys.id()), &m1)?;
+    let (responder, who, payload) = Responder::read(&enrolled.keys, &prologue(&enrolled.keys.id()), &m1)?;
+    // A block's frame (M50): a one-off key and its grant, not a device.
+    if !payload.is_empty() {
+        return crate::block_channel::serve(app, &enrolled.keys.id(), responder, who, &payload, inbound, out).await;
+    }
     let Some((device, principal)) = app.control.device(&who) else {
         warn!(key = hex::encode(&who[..8]), "refused a channel from a device this daemon doesn't trust");
         anyhow::bail!("unknown device");
     };
-    let (m2, ch) = responder.finish(&[])?;
+    // The daemon's clock, for the block grants this device mints (M50).
+    let (m2, ch) = responder.finish(&Welcome { now: arugula_e2e::now_ms() }.encode())?;
     out.send(m2).await?;
-    let out = Arc::new(Out { ch: Arc::new(ch), q: tokio::sync::Mutex::new(out) });
+    let out = Arc::new(Out::new(ch, out));
     let caller = Caller { account: device.account.clone(), device: device.device.clone(), name: device.name.clone() };
     // #399: another machine, for this one's agents: requests to `/api/a2a/`
     // and nothing else (no mux, no panes, no hands).

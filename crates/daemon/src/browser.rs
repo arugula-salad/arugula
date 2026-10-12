@@ -115,6 +115,10 @@ struct State {
     port: Option<u16>,
     path: Option<String>,
     machine: Option<String>,
+    /// For a port: its origin's name on control's block domain,
+    /// `b-<site_key>.<domain>` (M50, `block_channel.rs`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    site_key: Option<String>,
     #[serde(skip)]
     back_pages: Vec<Page>,
 }
@@ -223,6 +227,10 @@ impl Browser {
             };
             st.url = url;
             st.src = src;
+            st.site_key = match (&routed, &page) {
+                (Ok(_), Page::Port { .. }) => self.site.lock().unwrap().as_ref().map(|s| s.site_key().to_owned()),
+                _ => None,
+            };
             st.title = None;
             st.framable = None;
             st.error = None;

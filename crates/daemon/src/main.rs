@@ -12,6 +12,7 @@ mod api;
 mod args;
 mod authz;
 use arugula_mux::block;
+mod block_channel;
 mod browser;
 mod callers;
 use arugula_mux::classify;
