@@ -3,11 +3,13 @@
 //! prologue) stay "illogical …" after the rename to Arugula (#504): a
 //! changed byte orphans every stored signature and key. The expected
 //! bytes are hex, so a find-and-replace across the repo can't change them
-//! along with the code.
+//! along with the code. Block grants (M50) came after the rename and say
+//! "arugula …"; they're pinned here too, since browsers sign the same bytes.
 
 use serde_json::json;
 
 use crate::{
+    block::Grant,
     cert::{Cert, Revocation, join_code, join_proof_body, request_auth, verify_hex},
     channel::prologue,
     keys::{DeviceKeys, HEADER, device_id},
@@ -48,6 +50,14 @@ fn signed_domains_never_change() {
         "v": 1, "account": "a", "device": "d", "endpoint": "e", "p256dh": "p", "auth": "x", "at": 1, "sig": "",
     }))
     .unwrap();
+    let grant = Grant {
+        daemon: "d".into(),
+        block: "b".into(),
+        key: zero.clone(),
+        expires: 1,
+        by: "d".into(),
+        sig: String::new(),
+    };
     let pin = TeamPin { team: "t".into(), founder: "a".into(), founder_root: "r".into() };
 
     let cases = [
@@ -61,6 +71,8 @@ fn signed_domains_never_change() {
         (first_line(roster.body()), "696c6c6f676963616c207465616d207631"),
         (first_line(push.body()), "696c6c6f676963616c2070757368207631"),
         (HEADER.to_owned(), "696c6c6f676963616c2d6465766963652d6b65792031"),
+        // Born after the rename (M50), so "arugula"; frozen all the same.
+        (first_line(grant.body()), "61727567756c6120626c6f636b206772616e74207631"),
     ];
     for (got, want) in cases {
         assert_eq!(got, text(want), "a frozen domain changed (#504)");

@@ -552,7 +552,8 @@ it came from.
 - **Message 1's payload** is encrypted to the daemon's static key only, so
   it is replayable. It may carry only idempotent requests (`hello`, and
   `attach` with offsets). It never carries input, method calls or intents.
-  Message 2's payload carries the `hello` tree.
+  Message 2's payload carries the `hello` tree. A block's channel carries
+  its grant there instead ([Block channels](#block-channels)).
 
 **Framing.**
 
@@ -722,6 +723,43 @@ The host chip says "direct" or "relayed" either way.
   Whatever the results, the share page also refuses to connect until it has
   focus and a user gesture ("Open the live view"). A headless previewer
   never clicks.
+
+## Block channels
+
+M50 (#150, from S27): a port or editor block opened on any joined machine
+shows in control's page. Control serves each block an origin of its own,
+`https://b-<key>.<block domain>`, whose service worker carries the
+block's requests over a Noise channel to the daemon. That origin holds no
+device key, so it opens the channel with a grant
+(`crates/e2e/src/block.rs`):
+
+- Control's page makes a one-off X25519 key for one block and signs, with
+  its device key:
+
+  ```text
+  arugula block grant v1
+  daemon <daemon device id>
+  block <block id>
+  key <the one-off key's public half, hex>
+  expires <ms since the epoch, by the daemon's clock>
+  by <signing device id>
+  ```
+
+  It hands key and grant to the block's frame by `postMessage`.
+- The frame does the handshake with the one-off key as its static key and
+  puts `{"grant": …}` in message 1's payload. The daemon checks it before
+  answering: this daemon, the handshake's key, a device it trusts to open
+  channels, the signature, not expired by its own clock and good for at
+  most ten minutes more, a block it has. Message 2's payload is
+  `{"ok":true}` or `{"ok":false,"refused":"<code>","message":"…"}`,
+  and a refused channel closes. A client reads message 2 before it treats
+  the close as a failed handshake; `expired` means "ask for a new grant".
+- A replayed message 1 gets an answer nobody can read: message 2 and the
+  channel need the one-off key's private half.
+- The expiry comes from the daemon's clock, which the page learns over its
+  own device channel, never from the frame, whose code could stretch its
+  own grant. Expiry gates new channels; an open one lasts until it, the
+  block, or the device's trust ends.
 
 ## Push
 

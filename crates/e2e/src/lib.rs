@@ -7,7 +7,10 @@
 //!   them back to an account's pinned root, which is how a daemon decides
 //!   who may connect without trusting control.
 //! - [`channel`]: the Noise IK channel and what travels inside it.
+//! - [`block`]: block channels' grants (M50): a block's frame opening a
+//!   channel to one block with a key the device signed for it.
 
+pub mod block;
 pub mod cert;
 pub mod channel;
 pub mod keys;

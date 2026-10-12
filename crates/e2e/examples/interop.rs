@@ -91,7 +91,7 @@ async fn main() -> anyhow::Result<()> {
                 tokio::spawn(async move {
                     let mut ws = tokio_tungstenite::accept_async(sock).await?;
                     let Some(Ok(Message::Binary(m1))) = ws.next().await else { anyhow::bail!("no handshake") };
-                    let (r, _who) = Responder::read(&keys, &prologue(&keys.id()), &m1)?;
+                    let (r, _who, _) = Responder::read(&keys, &prologue(&keys.id()), &m1)?;
                     let (m2, ch) = r.finish(&[])?;
                     ws.send(Message::Binary(m2.into())).await?;
                     while let Some(Ok(Message::Binary(w))) = ws.next().await {

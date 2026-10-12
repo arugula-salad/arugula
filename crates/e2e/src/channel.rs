@@ -5,7 +5,9 @@
 //! `illogical/1\n<daemon device id>\n`, so a client spliced onto the wrong
 //! daemon fails the handshake. Message 1's payload is replayable (it's
 //! encrypted to the daemon's static key only), so it carries nothing that
-//! acts: the client sends an empty one.
+//! acts: a device's own channel sends an empty one, and a block's channel
+//! sends its grant (`block.rs`), which only says who may open the channel;
+//! a replay can't finish the handshake without the key it names.
 //!
 //! **Transport.** Each wire message (one WebSocket message, or one
 //! length-prefixed frame on a relay stream) is one Noise message, whose
@@ -194,14 +196,16 @@ pub struct Responder {
 }
 
 impl Responder {
-    /// Take message 1. Returns who is connecting (their static key) so the
-    /// caller can decide before answering.
-    pub fn read(keys: &DeviceKeys, prologue: &[u8], msg1: &[u8]) -> anyhow::Result<(Self, [u8; 32])> {
+    /// Take message 1. Returns who is connecting (their static key) and
+    /// its payload (empty from a device, a grant from a block's frame), so
+    /// the caller can decide before answering.
+    pub fn read(keys: &DeviceKeys, prologue: &[u8], msg1: &[u8]) -> anyhow::Result<(Self, [u8; 32], Vec<u8>)> {
         let mut hs = builder().local_private_key(&keys.noise_private)?.prologue(prologue)?.build_responder()?;
         let mut buf = vec![0u8; msg1.len()];
-        hs.read_message(msg1, &mut buf).context("handshake message 1")?;
+        let n = hs.read_message(msg1, &mut buf).context("handshake message 1")?;
+        buf.truncate(n);
         let who: [u8; 32] = hs.get_remote_static().context("no static key")?.try_into()?;
-        Ok((Self { hs }, who))
+        Ok((Self { hs }, who, buf))
     }
 
     /// Message 2, and the channel.
@@ -220,13 +224,23 @@ pub struct Initiator {
 
 impl Initiator {
     pub fn start(keys: &DeviceKeys, daemon_noise: &[u8; 32], prologue: &[u8]) -> anyhow::Result<(Self, Vec<u8>)> {
+        Self::start_with(keys, daemon_noise, prologue, &[])
+    }
+
+    /// Message 1 with `payload` in it (a block channel's grant).
+    pub fn start_with(
+        keys: &DeviceKeys,
+        daemon_noise: &[u8; 32],
+        prologue: &[u8],
+        payload: &[u8],
+    ) -> anyhow::Result<(Self, Vec<u8>)> {
         let mut hs = builder()
             .local_private_key(&keys.noise_private)?
             .remote_public_key(daemon_noise)?
             .prologue(prologue)?
             .build_initiator()?;
-        let mut buf = vec![0u8; 128];
-        let n = hs.write_message(&[], &mut buf)?;
+        let mut buf = vec![0u8; 128 + payload.len()];
+        let n = hs.write_message(payload, &mut buf)?;
         buf.truncate(n);
         Ok((Self { hs }, buf))
     }
@@ -247,8 +261,9 @@ mod tests {
         let (d, c) = (DeviceKeys::generate(), DeviceKeys::generate());
         let p = prologue(&d.id());
         let (i, m1) = Initiator::start(&c, &d.noise_public, &p).unwrap();
-        let (r, who) = Responder::read(&d, &p, &m1).unwrap();
+        let (r, who, payload) = Responder::read(&d, &p, &m1).unwrap();
         assert_eq!(who, c.noise_public);
+        assert!(payload.is_empty());
         let (m2, server) = r.finish(b"hello").unwrap();
         let (payload, client) = i.finish(&m2).unwrap();
         assert_eq!(payload, b"hello");
@@ -295,6 +310,16 @@ mod tests {
             body: vec![1; 100_000],
         };
         assert_eq!(deliver(&s, &c, &r), r);
+    }
+
+    #[test]
+    fn message_1_carries_a_payload() {
+        let (d, c) = (DeviceKeys::generate(), DeviceKeys::generate());
+        let p = prologue(&d.id());
+        let big = vec![9u8; 4000];
+        let (_, m1) = Initiator::start_with(&c, &d.noise_public, &p, &big).unwrap();
+        let (_, who, payload) = Responder::read(&d, &p, &m1).unwrap();
+        assert_eq!((who, payload), (c.noise_public, big));
     }
 
     #[test]
