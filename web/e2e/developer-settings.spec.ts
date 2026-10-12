@@ -167,6 +167,67 @@ test("each flag turns on its own feature and no other", async ({ page }) => {
   }
 });
 
+/** Requests that are each flag's feature (#347): its routes, and making
+ * its blocks. Configs that don't parse, so with the flag on they fail past
+ * the gate, in their own words, and nothing starts. (Huddles are a
+ * WebSocket message: crates/daemon/tests/integration/flag_gates.rs; the
+ * swarm's views have no route.) */
+const GATED: [Flag, string, string, unknown][] = [
+  ["chat", "GET", "/api/threads/pane-1", undefined],
+  ["vms", "GET", "/api/machines", undefined],
+  ["vms", "GET", "/api/sandboxes", undefined],
+  ["fountain", "GET", "/api/fountain/agents", undefined],
+  ["fountain", "POST", "/api/blocks", { type: "fountain", config: { view: 42 }, local: true }],
+  ["studio", "GET", "/api/studio", undefined],
+  ["studio", "POST", "/api/blocks", { type: "app", config: { app: "nothing-here" }, local: true }],
+  ["workspaces", "POST", "/api/blocks", { type: "workspace", config: {}, local: true }],
+  ["guest-ssh", "GET", "/api/guests", undefined],
+  ["forges", "POST", "/api/blocks", { type: "forge", config: { repo: "o/r", number: 0, provider: "forgejo" }, local: true }],
+  ["agents", "GET", "/api/a2a/agents", undefined],
+];
+
+const ask = async (method: string, path: string, body: unknown) => {
+  const r = await fetch(base + path, {
+    method,
+    headers: body === undefined ? {} : { "content-type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  return { status: r.status, text: await r.text() };
+};
+
+test("each flag's routes and blocks follow it: refused off, saying how to turn it on, and answered on", async () => {
+  for (const [flag, method, path, body] of GATED) {
+    const off = await ask(method, path, body);
+    expect(off.status, `${flag} off: ${method} ${path}`).toBeGreaterThanOrEqual(400);
+    expect(off.text, `${flag} off: ${method} ${path}`).toContain(`\`arugulad flags ${flag} on\``);
+    expect((await setFlag(flag, true)).ok, flag).toBe(true);
+    const on = await ask(method, path, body);
+    expect(on.text, `${flag} on: ${method} ${path}`).not.toContain("arugulad flags");
+    expect((await setFlag(flag, false)).ok, flag).toBe(true);
+    // And off again, with no restart.
+    expect((await ask(method, path, body)).text, `${flag} off again`).toContain(`\`arugulad flags ${flag} on\``);
+  }
+});
+
+test("an ssh invite from the pane's menu works with its flag on, and is refused once it's off", async ({ page }) => {
+  expect((await setFlag("guest-ssh", true)).ok).toBe(true);
+  const pane = await start(page);
+  await page.evaluate(() => window.__arugula.client.loadFeatures());
+  await paneEl(page, pane).click({ button: "right", position: { x: 60, y: 60 } });
+  await page.getByRole("menuitem", { name: "Invite over ssh…" }).click();
+  await expect(page.locator(".prompt-backdrop input")).toHaveValue(/^ssh -p \d+ .* g[0-9a-f]{32}@127\.0\.0\.1$/);
+  await page.keyboard.press("Escape");
+  for (const i of (await (await fetch(`${base}/api/guests`)).json()) as { id: number }[]) {
+    await fetch(`${base}/api/guests/${i.id}`, { method: "DELETE" });
+  }
+  // Off: the menu loses it, and the route behind it says why.
+  expect((await setFlag("guest-ssh", false)).ok).toBe(true);
+  const r = await ask("POST", "/api/guests", { pane });
+  expect(r.status).toBe(404);
+  expect(r.text).toContain("`arugulad flags guest-ssh on`");
+  expect(await shown(page, pane)).toEqual([]);
+});
+
 test("the extra swarm views follow their flag", async ({ page }) => {
   expect((await setFlag("swarm-themes", true)).ok).toBe(true);
   await open(page);

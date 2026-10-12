@@ -96,7 +96,7 @@ pub const GUEST_STREAM_KIND: &[u8] = b"ssh-guest";
 /// Whether this build has Labs.
 pub const BUILT: bool = cfg!(feature = "labs");
 
-pub use arugula_mux::labs::{not_built, thread_names};
+pub use arugula_mux::labs::{flag, flag_off_as, not_built, thread_names};
 
 /// The Labs flags that are on here: none in a build without Labs, else
 /// what the machine's state directory says (read on each call).
@@ -149,12 +149,63 @@ pub fn routes(r: Router<Arc<App>>) -> Router<Arc<App>> {
 
 /// Registers the Labs block types (the others are in `main.rs`'s table).
 /// `invite` is what the agent catalog's card sends an invite with.
+/// Each is made only where the machine has its flag on ([`Flagged`]).
 #[cfg(feature = "labs")]
 pub fn kinds(kinds: &mut BlockKinds, invite: &crate::invite::Hook) {
-    kinds.add(BlockType::Fountain, crate::block::Make(fountain::FountainBlock::create));
-    kinds.add(BlockType::Agents, agents::block::AgentsKind(invite.clone()));
-    kinds.add(BlockType::App, crate::block::Make(apps::AppBlock::create));
-    kinds.add(BlockType::Workspace, crate::block::Make(workspace::Workspace::create));
+    use crate::block::Make;
+    use arugula_proto::flags::{AGENTS, FOUNTAIN, STUDIO, WORKSPACES};
+    kinds.add(BlockType::Fountain, Flagged { flag: FOUNTAIN, kind: Make(fountain::FountainBlock::create) });
+    kinds.add(BlockType::Agents, Flagged { flag: AGENTS, kind: agents::block::AgentsKind(invite.clone()) });
+    kinds.add(BlockType::App, Flagged { flag: STUDIO, kind: Make(apps::AppBlock::create) });
+    kinds.add(BlockType::Workspace, Flagged { flag: WORKSPACES, kind: Make(workspace::Workspace::create) });
+}
+
+/// A Labs block type that is made only where the machine has `flag` on
+/// (#347). One saved while it was on is still brought back when the daemon
+/// starts, as a forge block of Forgejo's is: turning a flag off hides and
+/// refuses the feature, and doesn't throw away what was made with it.
+#[cfg(feature = "labs")]
+struct Flagged<K> {
+    flag: &'static str,
+    kind: K,
+}
+
+#[cfg(feature = "labs")]
+impl<K: crate::block::BlockKind> crate::block::BlockKind for Flagged<K> {
+    fn create(
+        &self,
+        ctx: crate::block::BlockCtx,
+        config: serde_json::Value,
+    ) -> Result<Arc<dyn crate::block::Block>, String> {
+        if !ctx.restoring {
+            flag(&ctx.state_dir, self.flag)?;
+        }
+        self.kind.create(ctx, config)
+    }
+
+    fn check(&self, config: &serde_json::Value) -> Result<(), String> {
+        self.kind.check(config)
+    }
+
+    fn stored_text(&self, dir: &Path) -> Option<String> {
+        self.kind.stored_text(dir)
+    }
+}
+
+/// The flag a new block of `kind` with `config` needs (#347), for a route
+/// to refuse it before it does anything else (an app block asks the studio
+/// where its box is first). The block types check it again when made.
+pub fn block_flag(kind: BlockType, config: &serde_json::Value) -> Option<&'static str> {
+    use arugula_proto::flags;
+    match kind {
+        BlockType::Fountain => Some(flags::FOUNTAIN),
+        BlockType::Agents => Some(flags::AGENTS),
+        BlockType::App => Some(flags::STUDIO),
+        BlockType::Workspace => Some(flags::WORKSPACES),
+        // A Fountain agent, or one wearing a Fountain agent (M44).
+        BlockType::Agent if config["agent"] == "fountain" || !config["as_fountain"].is_null() => Some(flags::FOUNTAIN),
+        _ => None,
+    }
 }
 
 /// A kind this build doesn't have: it says so ([`not_built`]).
@@ -189,7 +240,7 @@ pub fn forge_allowed(provider: ForgeProvider, state_dir: &Path) -> Result<(), St
     if on(state_dir, arugula_proto::flags::FORGES) {
         Ok(())
     } else if BUILT {
-        Err(format!("{name} blocks are in Labs (turn Labs on to open them)"))
+        Err(flag_off_as(&format!("{name} blocks are"), arugula_proto::flags::FORGES))
     } else {
         Err(not_built(&format!("A {name} block")))
     }

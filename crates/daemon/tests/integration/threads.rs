@@ -30,7 +30,7 @@ const DRIVER: &str = "driver@example.com";
 const LATE: &str = "late@example.com";
 
 fn daemon(tag: &str) -> arugula_testkit::Daemon {
-    arugulad!(tag).no_wisp().args(["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock"]).start()
+    arugulad!(tag).labs().no_wisp().args(["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock"]).start()
 }
 
 /// A request as a tailnet guest: status and JSON body.
@@ -363,6 +363,7 @@ async fn a_mention_reaches_team_members_offline_on_a_tag_of_its_own() {
         .collect();
     std::fs::write(state.join("push/subscriptions.json"), serde_json::to_vec(&subs).unwrap()).unwrap();
     let d = arugulad!("threads-team")
+        .labs()
         .state_dir(&state)
         .no_wisp()
         .args(["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock", "--no-relay"])
@@ -503,6 +504,7 @@ fn one_person_known_twice_is_offered_once_as_their_account() {
     let state = dir.join("state");
     std::fs::create_dir_all(&state).unwrap();
     let d = arugulad!("threads-offer-twice")
+        .labs()
         .state_dir(&state)
         .no_wisp()
         .args(["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock", "--no-relay"])

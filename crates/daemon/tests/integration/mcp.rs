@@ -144,8 +144,9 @@ async fn tools_through_the_stdio_bridge() {
     let tools = s.list_all_tools().await.unwrap();
     assert_eq!(tools.len(), 18 - NO_FORGE);
     // Fountain, studio apps, chant workspaces and chat aren't listed without
-    // `labs` (chat's tools, the others' kinds), but a caller who names one
-    // still reaches it (here: no Fountain login, so it says so).
+    // their flags (chat's tools, the others' kinds), and a caller who names
+    // one is told how to turn it on (#347); a build without Labs says it
+    // isn't built.
     for name in ["read_thread", "post_thread"] {
         assert!(tools.iter().all(|t| t.name != name), "{name} is listed");
     }
@@ -162,6 +163,12 @@ async fn tools_through_the_stdio_bridge() {
     assert!(!said.contains("no tool") && !said.contains("no kind"), "an unlisted kind still answers: {said}");
     let said = refused(&s, "read_agent", json!({ "name": "nobody" })).await;
     assert!(!said.contains("no tool") && !said.contains("no kind"), "so does its name before #349: {said}");
+    #[cfg(feature = "labs")]
+    {
+        assert!(said.contains("`arugulad flags fountain on`"), "{said}");
+        let said = refused(&s, "read_thread", json!({ "pane": 1 })).await;
+        assert!(said.contains("`arugulad flags chat on`"), "read_thread by name: {said}");
+    }
     let ro = |n: &str| tools.iter().find(|t| t.name == n).unwrap().annotations.as_ref().unwrap().read_only_hint;
     assert_eq!(
         (ro("read_output"), ro("wait"), ro("run"), ro("close")),
@@ -811,7 +818,7 @@ fn an_agent_block_in_a_vm_gets_mcp_through_the_relay() {
         eprintln!("SKIP: no wisp token on this host (ARUGULA_WISP_TOKEN_FILE or ~/.local/share/wisp/token)");
         return;
     }
-    let mut d = Daemon::child_with(&["--wisp-token-file", token.to_str().unwrap()]);
+    let mut d = Daemon::child_labs_with(&["--wisp-token-file", token.to_str().unwrap()]);
     let other = d.post("/api/run", json!({}))["pane"].as_u64().unwrap();
     // fake_acp.py itself, run in the guest.
     let src = std::fs::read_to_string(fake()).unwrap();
@@ -1000,6 +1007,7 @@ async fn labs_lists_all_the_tools_and_the_thread_text() {
 #[tokio::test(flavor = "multi_thread")]
 async fn an_agent_reads_and_posts_in_threads() {
     let d = Daemon::child();
+    arugula_testkit::labs(&d.state, true);
     let panes = d.get("/api/panes");
     let (pane, session) = (panes[0]["id"].as_u64().unwrap(), panes[0]["session"].as_u64().unwrap());
     d.post(&format!("/api/threads/pane-{pane}"), json!({ "text": "why does the build fail?" }));
@@ -1032,6 +1040,7 @@ async fn an_agent_reads_and_posts_in_threads() {
 #[test]
 fn an_agent_blocks_thread_is_its_own() {
     let d = Daemon::child_with(&["--wisp-token-file", "/nonexistent", "--block-listen", "127.0.0.1:0"]);
+    arugula_testkit::labs(&d.state, true);
     let other = d.post("/api/run", json!({}))["pane"].as_u64().unwrap();
     let a = d.open("hello");
     d.wait(a, "idle");
@@ -1049,6 +1058,7 @@ fn an_agent_blocks_thread_is_its_own() {
 #[test]
 fn an_agent_blocks_threads_stop_at_its_tab_and_session() {
     let d = Daemon::child_with(&["--wisp-token-file", "/nonexistent", "--block-listen", "127.0.0.1:0"]);
+    arugula_testkit::labs(&d.state, true);
     let other = d.post("/api/run", json!({}))["pane"].as_u64().unwrap();
     d.post(&format!("/api/threads/pane-{other}"), json!({ "text": "not for the agent" }));
     let a = d.open("hello");
@@ -1083,6 +1093,7 @@ fn an_agent_blocks_threads_stop_at_its_tab_and_session() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_terminal_pane_is_the_default_of_the_mcp_server_it_runs() {
     let d = Daemon::child();
+    arugula_testkit::labs(&d.state, true);
     let mine = d.get("/api/panes")[0]["id"].as_u64().unwrap();
     let other = d.post("/api/run", json!({}))["pane"].as_u64().unwrap();
     d.post(&format!("/api/threads/pane-{mine}"), json!({ "text": "what is this pane for?" }));
@@ -1138,6 +1149,7 @@ async fn a_terminal_pane_is_the_default_of_the_mcp_server_it_runs() {
 async fn an_agent_blocks_token_is_its_own_pane_whatever_the_header_says() {
     use axum::http::{HeaderName, HeaderValue};
     let d = Daemon::child_with(&["--wisp-token-file", "/nonexistent", "--block-listen", "127.0.0.1:0"]);
+    arugula_testkit::labs(&d.state, true);
     let other = d.post("/api/run", json!({}))["pane"].as_u64().unwrap();
     d.post(&format!("/api/threads/pane-{other}"), json!({ "text": "not for the agent" }));
     let a = d.open("hello");

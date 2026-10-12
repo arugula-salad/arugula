@@ -89,6 +89,7 @@ fn a_shell_then_a_resident_daemon_through_the_tunnel() {
     }
     let sprite = format!("arugula-m4b-test-{}", std::process::id());
     let d = arugulad!("resident")
+        .labs()
         .args(["--name", "home", "--wisp-url", WISP])
         .no_tailscale()
         .arg("--static-dir")

@@ -143,7 +143,7 @@ impl Drop for Daemon {
 
 impl Daemon {
     fn new() -> Self {
-        Self(arugulad!("vmreboot").args(["--wisp-url", WISP]).wait_secs(20).start())
+        Self(arugulad!("vmreboot").labs().args(["--wisp-url", WISP]).wait_secs(20).start())
     }
 
     /// The names this daemon gives its machines' sprites.
