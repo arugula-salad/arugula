@@ -10,4 +10,6 @@ Depends on `arugula-e2e` and `arugula-control-wire` (the messages it
 shares with daemons and the CLI).
 
 Start with `src/main.rs`, then `src/api.rs` (devices, approvals, daemons
-joining, the directory) and `src/relay.rs` (the relay).
+joining, the directory) and `src/relay.rs` (the relay). `src/blocks.rs`
+serves blocks' own origins under `--block-domain` (M50), with their
+scripts from `web/src/block/`.

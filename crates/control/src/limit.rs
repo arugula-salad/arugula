@@ -31,6 +31,10 @@ pub const JOINS: (&str, usize) = ("join", 30);
 pub const ACCOUNTS: (&str, usize) = ("account", 10);
 pub const SIGN_INS: (&str, usize) = ("sign-in", 60);
 pub const LINKS: (&str, usize) = ("link", 240);
+/// Block relay sockets opened, per client address (M50): a dev page's
+/// worker and shim open one each per load, and again after the browser
+/// stops an idle worker.
+pub const BLOCK_RELAYS: (&str, usize) = ("block-relay", 3_000);
 /// Invite previews on the signed-out page (#103).
 pub const INVITES: (&str, usize) = ("invite", 240);
 /// Notifications relayed, all daemons together, per hour: a brake.

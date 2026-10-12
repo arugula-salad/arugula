@@ -109,6 +109,11 @@ pub struct ControlInfo {
     /// The ssh jump host for guests of daemons behind NAT (M65).
     #[serde(default)]
     pub guest_ssh: Option<GuestJump>,
+    /// Blocks get origins of their own under this domain (M50):
+    /// `https://b-<site key>.<block_domain>`. `None`: control doesn't serve
+    /// blocks.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub block_domain: Option<String>,
 }
 
 /// Just the signature version from `/control.json`, for a daemon deciding
