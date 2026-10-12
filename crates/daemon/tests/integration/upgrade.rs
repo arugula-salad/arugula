@@ -40,8 +40,7 @@ impl Drop for Service {
 
 impl Service {
     fn start() -> Option<Self> {
-        if !systemctl(&["show-environment"]) {
-            eprintln!("no systemd user manager; skipping");
+        if !arugula_testkit::user_manager() {
             return None;
         }
         static N: AtomicU32 = AtomicU32::new(0);

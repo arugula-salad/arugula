@@ -18,9 +18,11 @@
 # GitHub's cache in place of kept build directories, and build's and
 # static's binaries as artifacts in place of a shared run directory
 # (scripts/ci-env). Each pod has Docker (a dind sidecar): the test stack
-# (testnet/README.md) and the ssh tests in `just test` fail without it. No
-# systemd user manager, so the tests that start the daemon as a service
-# skip. Only main's pushes (never other branches or pull requests), since
+# (testnet/README.md) and the ssh tests in `just test` fail without it.
+# Each boots systemd with a user manager for the runner (home-cloud's
+# images/gha-runner, target systemd: #735), so the tests that start the
+# daemon as a service run, and ARUGULA_REQUIRE_SYSTEMD fails them in test
+# and core if it's ever missing instead of letting them skip. Only main's pushes (never other branches or pull requests), since
 # most of it runs on our own machines; a branch runs by hand:
 # `gh workflow run check.yml --ref BRANCH`.
 name: check
@@ -169,6 +171,7 @@ jobs:
       - run: just check-core
         env:
           ARUGULA_SKIP_DOCKER: "1"
+          ARUGULA_REQUIRE_SYSTEMD: "1"
 
   test:
     needs: static
@@ -186,6 +189,9 @@ jobs:
       - name: Playwright's Chromium
         run: just browsers chromium
       - run: ARUGULA_SSH_BINARIES="$CI_RUN/x86_64-unknown-linux-musl/release" just test
+        env:
+          # The service tests run, or fail (testkit's user_manager).
+          ARUGULA_REQUIRE_SYSTEMD: "1"
       - name: Take the test stack down
         if: always()
         run: just testnet down
