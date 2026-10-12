@@ -24,6 +24,7 @@ import { InLabs } from "./in-labs";
 import { GateWhy } from "./gate-why";
 import { PointChoices, pointOf } from "./point-choices";
 import { shareSession } from "./people";
+import { accountHeader, useAccount } from "./app-bar";
 
 export function PhoneHeader({ client }: { client: Client }) {
   const [open, setOpen] = useState(false);
@@ -278,6 +279,7 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
           </div>
         </section>
         <NotifySection client={client} session={session} />
+        <AccountSection close={close} />
         {(active !== undefined || closeTab) && (
           <div class="sheet-actions sheet-danger">
             {active !== undefined && (
@@ -294,6 +296,37 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
         )}
       </nav>
     </div>
+  );
+}
+
+/** #820: the account menu's items (the bar's, on a desktop), so a phone
+ * can remove a machine or a device, manage a team and reach sign-in. None
+ * on a daemon's own page. */
+function AccountSection({ close }: { close: () => void }) {
+  const account = useAccount();
+  if (!account) return null;
+  const run = (fn: () => void) => () => {
+    close();
+    fn();
+  };
+  return (
+    <section class="sheet-account" data-sheet-account>
+      <h2>{accountHeader(account.login())}</h2>
+      <div class="sheet-actions">
+        {account.items().flatMap((item) =>
+          typeof item === "object" && "run" in item
+            ? [
+                <button key={item.label} aria-label={item.label} disabled={item.disabled} onClick={run(item.run)}>
+                  {item.label}
+                </button>,
+              ]
+            : [],
+        )}
+        <button data-sheet-sign-out aria-label="Sign out" onClick={run(() => account.signOut())}>
+          Sign out
+        </button>
+      </div>
+    </section>
   );
 }
 

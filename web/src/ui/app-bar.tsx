@@ -29,6 +29,17 @@ export function setAccount(a: Account) {
   account = a;
 }
 
+/** The account, kept current; null on a daemon's own page. The bar's menu
+ * and the phone's sheet (#820) both show its items. */
+export function useAccount(): Account | null {
+  useSubscribe((fn) => account?.subscribe(fn) ?? (() => {}));
+  return account;
+}
+
+/** What the account menu and the phone's sheet head the account's items
+ * with. */
+export const accountHeader = (login: string | null) => (login ? `Signed in as ${login}` : "Your account");
+
 export function AppBar({
   client,
   at,
@@ -93,11 +104,11 @@ function CommandsButton({ client }: { client: Client }) {
 /** The account (through control) and the settings that aren't any one
  * session's: this machine's, this device's, and help. */
 export function AccountButton({ client }: { client: Client | null }) {
-  useSubscribe((fn) => account?.subscribe(fn) ?? (() => {}));
+  const account = useAccount();
   const login = account?.login() ?? null;
   const open = (e: MouseEvent) => {
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const mine: MenuItem[] = account ? [{ header: login ? `Signed in as ${login}` : "Your account" }, ...account.items(), "separator"] : [];
+    const mine: MenuItem[] = account ? [{ header: accountHeader(login) }, ...account.items(), "separator"] : [];
     const items: MenuItem[] = [...mine, ...settingsItems(client)];
     if (account) items.push("separator", { label: "Sign out", run: () => account!.signOut() });
     // Right-aligned under the button; the menu keeps itself on screen.
