@@ -25,7 +25,7 @@
 # admin user's password is admin. `up` puts the key in testnet/macos/.state
 # into admin's authorized_keys through the tart guest agent, so nothing
 # after that needs the password. Runs on any Apple silicon Mac with tart,
-# the self-hosted macos-arm64 runner included.
+# jake-mini's macos-tart runner included (not inside a runner VM).
 #
 # --xcode uses a second base, arugula-macos-xcode-base, made from
 # $ARUGULA_MACOS_XCODE_IMAGE (default
