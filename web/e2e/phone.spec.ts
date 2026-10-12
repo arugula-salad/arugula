@@ -124,3 +124,30 @@ test("with no sessions, the sheet's New tab makes one; New agent and Conversatio
   await expect.poll(() => page.evaluate(() => window.__arugula.client.state!.sessions.length)).toBe(1);
   await expect(page.locator("[data-no-sessions]")).toHaveCount(0);
 });
+
+// #237: share a session from the phone: the sheet's Share session… opens
+// the session menu's picker, and a push's Share (`#pane=N&share`) opens
+// the pane with it.
+test("share a session from the sheet, and from a push's Share", async ({ page }) => {
+  await reset(page);
+  const { session, pane } = await page.evaluate(() => {
+    const c = window.__arugula.client;
+    return { session: c.state!.sessions[0].id, pane: c.state!.panes[0].id };
+  });
+  await page.locator(".sheet-button").tap();
+  await page.locator(".sheet [data-share-session]").tap();
+  await expect(page.locator(".sheet")).toHaveCount(0);
+  const dialog = page.locator(`[data-share="${session}"]`);
+  await expect(dialog).toBeVisible();
+  // The same picker: a person, watch or drive.
+  await expect(dialog.getByLabel("Who")).toBeVisible();
+  await expect(dialog.getByLabel("Role", { exact: true })).toBeVisible();
+  await dialog.getByRole("button", { name: "Done" }).tap();
+  await expect(dialog).toHaveCount(0);
+
+  // A push's Share opens a fresh page there (a hash alone doesn't load it).
+  await page.goto(`/#pane=${pane}&share`);
+  await page.reload();
+  await expect(page.locator(`[data-share="${session}"]`)).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.__arugula.client.active())).toBe(pane);
+});

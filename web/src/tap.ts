@@ -8,6 +8,18 @@ export function tapThread(thread?: string): string | undefined {
   return thread && /^(pane|session)-\d+$/.test(thread) ? thread : undefined;
 }
 
+/** A push's Share (#237): the pane, with its session's share picker open. */
+export function shareUrl(n: { pane: number; daemon?: string }): string {
+  return (n.daemon ? `/#pane=${n.daemon}.${n.pane}` : `/#pane=${n.pane}`) + "&share";
+}
+
+/** #237: a push for a pane that wants you, with room left for another
+ * button (browsers show two), gets Share first: sharing it with someone is
+ * the natural next tap. Approvals, answers and gates keep their two. */
+export function withShare<A extends { action: string; title: string }>(actions: A[], n: { pane?: number; reason?: unknown }): (A | { action: "share"; title: "Share" })[] {
+  return n.pane && n.reason && actions.length < 2 ? [{ action: "share", title: "Share" }, ...actions] : actions;
+}
+
 export function tapUrl(n: { pane?: number; daemon?: string; thread?: string; reason?: unknown }): string {
   if (!n.pane) return "/";
   const where = n.reason ? "swarm" : "pane";

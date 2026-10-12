@@ -355,6 +355,13 @@ export function SwarmView({
     back();
     fleet.open(p.host, p.id);
   };
+  // #237: the pane, with its session's share picker open over it.
+  const shareKey = (key: string) => {
+    const p = byKey(key);
+    if (!p || isPresence(p)) return;
+    back();
+    fleet.open(p.host, p.id, true);
+  };
 
   const hoverPane = async (key: string | null, x: number, y: number) => {
     if (!key) return setPeek(null);
@@ -511,6 +518,7 @@ export function SwarmView({
               focus={focus}
               show={() => field.current?.diveTo(b.panes[0].key)}
               open={() => openKey(b.panes[0].key)}
+              share={() => shareKey(b.panes[0].key)}
               follow={() => setFollowing(b.panes[0].key)}
               acted={() => acted.current.add(b.key)}
             />
@@ -754,6 +762,7 @@ function Card({
   focus,
   show,
   open,
+  share,
   follow,
   acted,
 }: {
@@ -762,6 +771,8 @@ function Card({
   focus?: { host: string; pane: number } | null;
   show: () => void;
   open: () => void;
+  /** Opens the pane with its session's share picker (#237). */
+  share: () => void;
   follow: () => void;
   /** Says this card was acted on here. */
   acted: () => void;
@@ -914,6 +925,13 @@ function Card({
         {n === 1 && followable(first) && (
           <button class="ghost" data-follow-card onClick={follow}>
             Follow
+          </button>
+        )}
+        {/* #237: a pane that wants someone: bring them in. Its owner
+            shares, as in the session menu; one pane's session only. */}
+        {n === 1 && !isPresence(first) && first.session && fleet.role(first) === "owner" && (
+          <button class="ghost" data-share-card title={`Share ${first.session.name} with someone`} onClick={share}>
+            Share
           </button>
         )}
         {can && !point && (r.actions.includes("dismiss") || r.kind === "ask" || r.kind === "diff") && (

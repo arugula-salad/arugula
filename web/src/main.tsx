@@ -17,7 +17,7 @@ import { enableControlPush, registerWorker, setPushBackend } from "./push";
 import { ControlSession, detectControl, restoreInvite, showMoving } from "./control";
 import { accountItems, ControlGate, ControlOverlay, controlMenuItems, NoMachines, useControl } from "./ui/control";
 import { setFleet, setHostMenuExtras } from "./ui/hosts";
-import { setControlSession } from "./ui/people";
+import { setControlSession, shareSession } from "./ui/people";
 import { labsNow } from "./labs-load";
 import { unhex } from "./e2e/cert.ts";
 import { usePhone, useSubscribe } from "./ui/hooks";
@@ -226,16 +226,27 @@ const fleetHosts = (): HostRef[] =>
       teamName: d?.team ? session?.teams.find((t) => t.team === d.team)?.roster.name : undefined,
     };
   });
-fleet.onOpen = (host, pane) => {
+fleet.onOpen = (host, pane, share) => {
   directory.select(host);
   // The host's client is made when the directory switches, then connects:
   // show the pane once it knows it.
   const until = Date.now() + 15_000;
   const go = () => {
-    if (client.base === directory.base(host) && client.info(pane)) return client.setActive(pane);
+    if (client.base === directory.base(host) && client.info(pane)) {
+      client.setActive(pane);
+      if (share) shareFrom(pane);
+      return;
+    }
     if (Date.now() < until) setTimeout(go, 100);
   };
   go();
+};
+/** #237: the share picker for a pane's session, from a card or a push,
+ * once the pane is shown. Only its owner shares (as in the session menu);
+ * anyone else just gets the pane. */
+const shareFrom = (pane: number) => {
+  const s = client.sessionOfPane(pane);
+  if (s !== null && !client.state?.roles) shareSession(s);
 };
 setFleet(fleet);
 if (!linkTarget) {
@@ -311,7 +322,7 @@ if (!linkTarget) {
 // Opened from a notification (`#pane=N`, with `&thread=pane-N` for an
 // @mention, M61), or told to by the service worker. Notifications come
 // from the home daemon, so show it first.
-const openPane = (pane: number, daemon?: string, thread?: string) => {
+const openPane = (pane: number, daemon?: string, thread?: string, share = false) => {
   // From a notification through control: that daemon's host first.
   const host = daemon ? directory.list?.hosts.find((h) => h.id === daemon)?.name : undefined;
   if (host) directory.select(host);
@@ -319,6 +330,7 @@ const openPane = (pane: number, daemon?: string, thread?: string) => {
   const go = () => {
     if (!client.info(pane)) return false;
     client.setActive(pane);
+    if (share) shareFrom(pane);
     const t = /^(pane|session)-(\d+)$/.exec(thread ?? "");
     // Only where the machine has threads, which it says in its features:
     // read them first, so a cold load doesn't open a thread nobody sees.
@@ -341,12 +353,13 @@ const openPane = (pane: number, daemon?: string, thread?: string) => {
 (window as { __arugulaPage?: boolean }).__arugulaPage = true;
 // A pane opened on the home daemon from elsewhere (a sandbox shell).
 window.addEventListener("arugula:open-pane", (e) => openPane((e as CustomEvent<number>).detail));
-const fromHash = /^#pane=(?:([0-9a-f]+)\.)?(\d+)(?:&thread=((?:pane|session)-\d+))?$/.exec(location.hash);
+// A push's Share (#237) adds `&share`: the share picker opens over it.
+const fromHash = /^#pane=(?:([0-9a-f]+)\.)?(\d+)(?:&thread=((?:pane|session)-\d+))?(&share)?$/.exec(location.hash);
 if (fromHash) {
-  const [, daemon, pane, thread] = fromHash;
+  const [, daemon, pane, thread, share] = fromHash;
   // A notification through control names its daemon: once its host is in
   // the list, open the pane there.
-  const go = () => openPane(Number(pane), daemon, thread);
+  const go = () => openPane(Number(pane), daemon, thread, !!share);
   if (daemon && !directory.find?.(directory.list?.hosts.find((h) => h.id === daemon)?.name ?? "")) {
     const off = directory.subscribe(() => {
       if (directory.list?.hosts.some((h) => h.id === daemon)) {
