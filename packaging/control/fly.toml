@@ -17,6 +17,9 @@ kill_timeout = "15s"
 [env]
   ARUGULA_CONTROL_URL = "https://control.arugula.io"
   ARUGULA_CONTROL_ALSO_URLS = "https://control.illogical.widgets.wtf"
+  # Everyone has moved (#507): the old URL's pages redirect to the new one,
+  # while daemons, the API and sign-ins under way are still answered there.
+  ARUGULA_CONTROL_ALSO_REDIRECT = "true"
   ARUGULA_CONTROL_LISTEN = "0.0.0.0:7690"
   ARUGULA_CONTROL_DB = "/data/control.db"
   ARUGULA_CONTROL_PROXY_HEADER = "Fly-Client-IP"
