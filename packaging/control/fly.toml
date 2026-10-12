@@ -21,6 +21,11 @@ kill_timeout = "15s"
   # Relay sockets, all accounts together (#344): below soft_limit, so a
   # full relay leaves room for pages and sign-ins.
   ARUGULA_RELAY_MAX_TOTAL = "5000"
+  # Blocks through control (M50, #150): b-<key>.arugula.run, a domain of
+  # its own so block code is cross-site to control's page. DNS (*.arugula.run
+  # and _acme-challenge, DNS-only) is on Cloudflare; the wildcard certificate
+  # is Fly's (`fly certs list`).
+  ARUGULA_CONTROL_BLOCK_DOMAIN = "arugula.run"
 
 [[mounts]]
   source = "control_data"
