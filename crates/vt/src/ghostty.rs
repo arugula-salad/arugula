@@ -149,12 +149,6 @@ impl GhosttyEngine {
     /// zstd-compressed, behind a header naming the engine that wrote it.
     /// For checkpoints on disk, not for clients (xterm.js needs
     /// [`VtEngine::snapshot`]).
-    /// Whether the program may be told the client speaks the kitty keyboard
-    /// protocol (M31: while a client that does, the TUI, is attached).
-    pub fn set_kitty_keyboard(&mut self, on: bool) {
-        self.caps.kitty_keyboard = on;
-    }
-
     pub fn checkpoint(&self) -> Vec<u8> {
         let snap = self.term.encode_snapshot_alloc(None).ok().flatten().map(|b| b.to_vec()).unwrap_or_default();
         let mut out = Vec::with_capacity(snap.len() / 20 + 64);

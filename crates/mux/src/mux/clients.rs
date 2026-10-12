@@ -34,17 +34,14 @@ impl Daemon {
         };
         let who = sub.principal.clone();
         match msg {
-            ClientMsg::Attach { panes, zstd, acks, kitty_keys } => {
+            ClientMsg::Attach { panes, zstd, acks, kitty_keys: _ } => {
                 for a in panes {
                     if !self.readable(&who, a.pane) {
                         continue;
                     }
                     let floor = self.session_of(a.pane).and_then(|s| self.config.acl.floor(&who, s, a.pane));
                     if let Some(p) = self.panes.get(&a.pane) {
-                        p.attach_with(
-                            sub.clone(),
-                            Want { offset: a.offset, history: a.history, zstd, floor, acks, kitty_keys },
-                        );
+                        p.attach_with(sub.clone(), Want { offset: a.offset, history: a.history, zstd, floor, acks });
                     }
                 }
             }
