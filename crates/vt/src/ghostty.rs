@@ -113,6 +113,8 @@ pub struct GhosttyEngine {
     wire: wire::Cache,
     /// What a client drawing it reuses (M31), made on first use.
     view: Option<Box<view::View>>,
+    /// OSC 7501's feature query, which libghostty doesn't answer (#720).
+    status_query: crate::status_query::StatusQuery,
 }
 
 impl GhosttyEngine {
@@ -192,7 +194,15 @@ impl GhosttyEngine {
             .and_then(|t| t.set_default_bg_color(Some(DEFAULT_BG)))
             .and_then(|t| t.set_default_cursor_color(Some(DEFAULT_CURSOR)))
             .expect("default colors");
-        Self { anchor: None, term, replies, caps, wire: wire::Cache::default(), view: None }
+        Self {
+            anchor: None,
+            term,
+            replies,
+            caps,
+            wire: wire::Cache::default(),
+            view: None,
+            status_query: Default::default(),
+        }
     }
 
     fn format(&self, format: Format, extras: bool, modes: bool) -> Vec<u8> {
@@ -313,7 +323,17 @@ fn sgr_rgb(c: RgbColor) -> String {
 
 impl VtEngine for GhosttyEngine {
     fn feed(&mut self, bytes: &[u8]) {
-        self.term.vt_write(bytes);
+        // OSC 7501's query is answered where it is, in order with what
+        // libghostty answers around it.
+        let mut from = 0;
+        for (end, reply) in self.status_query.feed(bytes) {
+            self.term.vt_write(&bytes[from..end]);
+            self.replies.borrow_mut().extend_from_slice(reply);
+            from = end;
+        }
+        if from < bytes.len() {
+            self.term.vt_write(&bytes[from..]);
+        }
     }
 
     fn resize(&mut self, cols: u16, rows: u16) {

@@ -12,7 +12,7 @@ use arugula_proto::{
 use arugula_vt::detect::AgentState;
 use std::collections::HashMap;
 use tokio::{sync::oneshot, time::Instant};
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 /// A follow-up waiter.
 pub(super) struct Waiter {
@@ -22,6 +22,10 @@ pub(super) struct Waiter {
 
 /// How many follow-ups wait for an agent that isn't listening yet.
 const MAX_QUEUED: usize = 8;
+
+/// The least time between two notifications a pane's status records
+/// (#720) push.
+const STATUS_PUSH_EVERY: std::time::Duration = std::time::Duration::from_secs(10);
 
 /// A question open in a terminal, or raised on a block (M35).
 pub(super) struct TermAsk {
@@ -109,6 +113,11 @@ impl Daemon {
     /// Set a pane's attention, and why (M24). An open ask overrides the
     /// stored reason while it's open (see [`Self::live_reason`]).
     pub(super) fn set_attention_with(&mut self, pane: PaneId, state: Attention, why: &str, reason: Option<Reason>) {
+        self.set_attention_as(pane, state, why, reason, true);
+    }
+
+    /// [`Self::set_attention_with`], pushing a notification only if `push`.
+    fn set_attention_as(&mut self, pane: PaneId, state: Attention, why: &str, reason: Option<Reason>, push: bool) {
         let old = self.attention.get(&pane).copied().unwrap_or_default();
         if !(self.panes.contains_key(&pane) || self.blocks.contains_key(&pane)) {
             return;
@@ -136,7 +145,7 @@ impl Daemon {
         };
         let reason = self.live_reason(pane);
         self.emit(Some(pane), EventKind::Attention { state, reason: reason.clone() });
-        if matches!(state, Attention::NeedsInput | Attention::Done) && !self.focused(pane) {
+        if push && matches!(state, Attention::NeedsInput | Attention::Done) && !self.focused(pane) {
             let title = push_title(state, reason.as_ref());
             let body = reason.as_ref().map_or(why, |r| r.headline.as_str()).to_owned();
             // What lets a notification answer it from its buttons: an
@@ -359,9 +368,12 @@ impl Daemon {
     /// What an agent's screen says it's doing now (#145). Hooks and open
     /// questions say more, so they win; a bell or a notification still
     /// wants you until you answer it.
+    ///
+    /// A program that reports its status (#720) says more than its screen
+    /// does: screen rules step aside for it.
     pub(super) fn agent_screen(&mut self, pane: PaneId, state: AgentState, headline: Option<String>) {
         let before = self.screen.insert(pane, state);
-        if self.asks.contains_key(&pane) {
+        if self.asks.contains_key(&pane) || self.has_status(pane) {
             return;
         }
         let now = self.attention.get(&pane).copied().unwrap_or_default();
@@ -399,6 +411,82 @@ impl Daemon {
                 _ => {}
             },
         }
+    }
+
+    /// Whether a program in the pane has status records (#720).
+    pub(super) fn has_status(&self, pane: PaneId) -> bool {
+        self.status.get(&pane).is_some_and(|b| !b.is_empty())
+    }
+
+    /// A program reported its status (OSC 7501, #720).
+    pub(super) fn status_report(&mut self, pane: PaneId, s: &crate::osc::Status) {
+        if !self.panes.contains_key(&pane) {
+            return;
+        }
+        debug!(pane, id = ?s.id, state = ?s.state, "program status");
+        self.status.entry(pane).or_default().apply(s);
+        self.status_apply(pane);
+    }
+
+    /// A full reset (RIS) clears every record.
+    pub(super) fn status_reset(&mut self, pane: PaneId) {
+        if let Some(b) = self.status.get_mut(&pane)
+            && !b.is_empty()
+        {
+            b.reset();
+            self.status_apply(pane);
+        }
+    }
+
+    /// A prompt started: what was going on is over, what ended stays.
+    /// Whether the pane had records.
+    pub(super) fn status_settle(&mut self, pane: PaneId) -> bool {
+        let Some(b) = self.status.get_mut(&pane).filter(|b| !b.is_empty()) else { return false };
+        b.settle();
+        true
+    }
+
+    /// Put the pane in the attention its records say (#720). Open questions
+    /// and cards (hooks) carry the actual question and how to answer it, so
+    /// they win. With no records left, what they had put it in goes back to
+    /// idle. Pushes about record changes go at most once per
+    /// [`STATUS_PUSH_EVERY`] a pane: a program can flip its state as often
+    /// as it likes.
+    pub(super) fn status_apply(&mut self, pane: PaneId) {
+        if self.asks.contains_key(&pane) || self.card_of.contains_key(&pane) {
+            return;
+        }
+        let now = self.attention.get(&pane).copied().unwrap_or_default();
+        let Some((state, reason, why)) = self.status.get(&pane).and_then(|b| b.attention(now_ms())) else {
+            if self.status_shown.remove(&pane).is_some_and(|s| s == now && s != Attention::Idle) {
+                self.set_attention(pane, Attention::Idle, "status cleared");
+            }
+            return;
+        };
+        self.status_shown.insert(pane, state);
+        if now == state {
+            // The same state, maybe saying something else.
+            let same = match (&reason, self.reasons.get(&pane)) {
+                (Some(a), Some(b)) => a.kind == b.kind && a.headline == b.headline,
+                (None, None) => true,
+                _ => false,
+            };
+            if !same {
+                match reason {
+                    Some(r) => self.reasons.insert(pane, r),
+                    None => self.reasons.remove(&pane),
+                };
+                self.emit(Some(pane), EventKind::Attention { state, reason: self.live_reason(pane) });
+                self.touch(pane);
+            }
+            return;
+        }
+        let push = matches!(state, Attention::NeedsInput | Attention::Done)
+            && self.status_pushed.get(&pane).is_none_or(|t| t.elapsed() >= STATUS_PUSH_EVERY);
+        if push && !self.focused(pane) {
+            self.status_pushed.insert(pane, Instant::now());
+        }
+        self.set_attention_as(pane, state, &why, reason, push);
     }
 
     pub(super) fn looks_like_agent(&self, pane: PaneId) -> bool {

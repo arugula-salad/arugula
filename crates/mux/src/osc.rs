@@ -1,7 +1,8 @@
 //! Picks the structure out of a pane's output: where prompts and commands
 //! begin and end (OSC 133, and VS Code's OSC 633 with the command line), the
-//! working directory (OSC 7), notifications (OSC 9, OSC 777, OSC 99) and the
-//! bell. The bytes themselves pass through untouched; this only watches.
+//! working directory (OSC 7), notifications (OSC 9, OSC 777, OSC 99), the
+//! bell, program status reports (OSC 7501, #720) and a full reset (RIS). The
+//! bytes themselves pass through untouched; this only watches.
 //!
 //! It is a small state machine that survives sequences split across reads,
 //! and it ignores BEL inside strings (an OSC's terminator, or DCS/APC data).
@@ -33,6 +34,50 @@ pub enum Signal {
         body: String,
     },
     Bell,
+    /// A program says what it's doing (OSC 7501, #720).
+    Status(Status),
+    /// A full reset (RIS, `ESC c`): it clears every status record.
+    Reset,
+}
+
+/// What a program reports in OSC 7501 (#720, the spec:
+/// <https://www.superlogical.com/rex/docs/build/program-status>). Every
+/// field came from the program and is untrusted: `msg` and `title` have no
+/// control characters (a report with one is dropped) and no bidi overrides
+/// or invisible formatting characters (removed), and are plain text.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Status {
+    /// The record's path (`deploy/us-east`); `None` is the root.
+    pub id: Option<String>,
+    pub state: StatusState,
+    /// Only with `blocked`.
+    pub kind: Option<StatusKind>,
+    pub app: Option<String>,
+    pub title: Option<String>,
+    pub msg: Option<String>,
+    /// 0 to 100, only with `working` or `blocked`.
+    pub progress: Option<u8>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StatusState {
+    Idle,
+    Working,
+    Done,
+    Blocked,
+    Error,
+    /// Not a state: removes the record and its children (with no `id`,
+    /// every record).
+    Clear,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StatusKind {
+    Permission,
+    Question,
+    Auth,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -86,10 +131,14 @@ impl Scanner {
                     State::Osc
                 }
                 (State::Esc, b'P' | b'X' | b'^' | b'_') => State::Str,
+                (State::Esc, b'c') => {
+                    out.push((at, Signal::Reset));
+                    State::Ground
+                }
                 (State::Esc, 0x1b) => State::Esc,
                 (State::Esc, _) => State::Ground,
                 (State::Osc, 0x07) => {
-                    self.finish(at, &mut out);
+                    self.finish(at, 1, &mut out);
                     State::Ground
                 }
                 (State::Osc, 0x1b) => State::OscEsc,
@@ -103,7 +152,7 @@ impl Scanner {
                     State::Osc
                 }
                 (State::OscEsc, b'\\') => {
-                    self.finish(at, &mut out);
+                    self.finish(at, 2, &mut out);
                     State::Ground
                 }
                 (State::OscEsc, b']') => {
@@ -124,8 +173,18 @@ impl Scanner {
         out
     }
 
-    fn finish(&mut self, at: u64, out: &mut Vec<(u64, Signal)>) {
+    /// An OSC ended, with a terminator `term` bytes long.
+    fn finish(&mut self, at: u64, term: usize, out: &mut Vec<(u64, Signal)>) {
         if self.overflow {
+            return;
+        }
+        if let Some(body) = self.buf.strip_prefix(b"7501;") {
+            // ESC ], the payload, the terminator.
+            if 2 + self.buf.len() + term <= status::MAX_SEQUENCE
+                && let Some(s) = status::parse(body)
+            {
+                out.push((at, Signal::Status(s)));
+            }
             return;
         }
         if let Some(s) = parse_osc(&self.buf) {
@@ -183,6 +242,141 @@ fn parse_osc(payload: &[u8]) -> Option<Signal> {
             })
         }
         _ => None,
+    }
+}
+
+/// OSC 7501's body, by the spec's parsing rules.
+mod status {
+    use super::{Status, StatusKind, StatusState};
+    use base64::Engine;
+
+    /// The whole sequence, from ESC to the terminator.
+    pub(super) const MAX_SEQUENCE: usize = 4096;
+    const MAX_KEY: usize = 16;
+    /// `msg` and `title`: encoded, decoded.
+    const MAX_MSG: (usize, usize) = (2732, 2048);
+    const MAX_TITLE: (usize, usize) = (256, 192);
+    const MAX_APP: usize = 32;
+    const MAX_ID: usize = 128;
+    const MAX_SEGMENT: usize = 32;
+    const MAX_DEPTH: usize = 8;
+
+    /// The body of a report (after `7501;`), or `None` when it's the
+    /// feature query (the VT layer answers that), or a report to throw away.
+    pub(super) fn parse(body: &[u8]) -> Option<Status> {
+        let body = std::str::from_utf8(body).ok()?;
+        if body.trim() == "?" {
+            return None;
+        }
+        let (mut state, mut id, mut kind, mut app, mut title, mut msg, mut progress) =
+            (None, None, None, None, None, None, None);
+        for pair in body.split(':') {
+            // A malformed pair is skipped; the rest still count.
+            let Some((k, v)) = pair.split_once('=') else { continue };
+            let (k, v) = (k.trim(), v.trim());
+            if k.is_empty() || !k.bytes().all(|b| b.is_ascii_lowercase()) {
+                continue;
+            }
+            if k.len() > MAX_KEY {
+                return None;
+            }
+            // The last value of a key wins; unknown keys are ignored.
+            match k {
+                "state" => state = Some(v),
+                "id" => id = Some(v),
+                "kind" => kind = Some(v),
+                "app" => app = Some(v),
+                "title" => title = Some(v),
+                "msg" => msg = Some(v),
+                "progress" => progress = Some(v),
+                _ => {}
+            }
+        }
+        let state = match state? {
+            "idle" => StatusState::Idle,
+            "working" => StatusState::Working,
+            "done" => StatusState::Done,
+            "blocked" => StatusState::Blocked,
+            "error" => StatusState::Error,
+            "clear" => StatusState::Clear,
+            _ => return None,
+        };
+        // A bad id doesn't fall back to the root: the report goes.
+        let id = match id {
+            Some(id) if valid_id(id) => Some(id.to_owned()),
+            Some(_) => return None,
+            None => None,
+        };
+        let kind = match kind.filter(|_| state == StatusState::Blocked) {
+            Some("permission") => Some(StatusKind::Permission),
+            Some("question") => Some(StatusKind::Question),
+            Some("auth") => Some(StatusKind::Auth),
+            _ => None,
+        };
+        let progress = progress
+            .filter(|_| matches!(state, StatusState::Working | StatusState::Blocked))
+            .filter(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()))
+            .and_then(|p| p.parse::<u8>().ok())
+            .filter(|p| *p <= 100);
+        let app = match app.filter(|a| !a.is_empty()) {
+            Some(a) if a.len() > MAX_APP || a.chars().any(forbidden) => return None,
+            Some(a) => Some(visible(a)).filter(|a| !a.is_empty()),
+            None => None,
+        };
+        let title = text(title, MAX_TITLE)?;
+        let msg = text(msg, MAX_MSG)?;
+        Some(Status { id, state, kind, app, title, msg, progress })
+    }
+
+    /// `seg/seg/…`: 1 to 8 segments of 1 to 32 of `[A-Za-z0-9_.+-]`, 128
+    /// bytes in all.
+    fn valid_id(id: &str) -> bool {
+        id.len() <= MAX_ID
+            && id.split('/').count() <= MAX_DEPTH
+            && id.split('/').all(|s| {
+                (1..=MAX_SEGMENT).contains(&s.len())
+                    && s.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'.' | b'+' | b'-'))
+            })
+    }
+
+    /// A base64 text value: `Some(None)` when absent or empty, `None` when
+    /// it breaks a rule (and the whole report goes).
+    fn text(v: Option<&str>, (encoded, decoded): (usize, usize)) -> Option<Option<String>> {
+        let Some(v) = v.filter(|v| !v.is_empty()) else { return Some(None) };
+        if v.len() > encoded {
+            return None;
+        }
+        let bytes = base64::engine::general_purpose::STANDARD_PAD_INDIFFERENT.decode(v).ok()?;
+        if bytes.len() > decoded {
+            return None;
+        }
+        let s = String::from_utf8(bytes).ok()?;
+        if s.chars().any(forbidden) {
+            return None;
+        }
+        Some(Some(visible(&s)).filter(|s| !s.trim().is_empty()))
+    }
+
+    /// Control characters (C0, DEL, C1: newline and tab too) and the line
+    /// and paragraph separators: a report with one is thrown away.
+    fn forbidden(c: char) -> bool {
+        c.is_control() || matches!(c, '\u{2028}' | '\u{2029}')
+    }
+
+    /// The text without bidi overrides and isolates, or invisible
+    /// formatting characters, which could make a card say something other
+    /// than what it seems to (the zero-width joiner and variation selectors
+    /// stay, for emoji).
+    fn visible(s: &str) -> String {
+        s.chars()
+            .filter(|c| {
+                !matches!(*c as u32,
+                    0x00ad | 0x034f | 0x061c | 0x115f | 0x1160 | 0x17b4 | 0x17b5 | 0x180b..=0x180f
+                    | 0x200b | 0x200c | 0x200e | 0x200f | 0x202a..=0x202e | 0x2060..=0x206f
+                    | 0x3164 | 0xfeff | 0xffa0 | 0xfff9..=0xfffb
+                    | 0x1d173..=0x1d17a | 0xe0000..=0xe0fff)
+            })
+            .collect()
     }
 }
 
@@ -410,6 +604,127 @@ mod tests {
                 Signal::Notify { title: "Claude".into(), body: "needs you".into() },
             ]
         );
+    }
+
+    fn status(id: Option<&str>, state: StatusState) -> Status {
+        Status { id: id.map(str::to_owned), state, kind: None, app: None, title: None, msg: None, progress: None }
+    }
+
+    /// What each body says, sent as `OSC 7501 ; body BEL`.
+    fn reports(bodies: &[&str]) -> Vec<Signal> {
+        let seqs: Vec<Vec<u8>> = bodies.iter().map(|b| format!("\x1b]7501;{b}\x07").into_bytes()).collect();
+        scan(&seqs.iter().map(|s| &s[..]).collect::<Vec<_>>())
+    }
+
+    #[test]
+    fn program_status_with_either_terminator() {
+        let s = scan(&[
+            b"\x1b]7501;state=blocked:kind=question:app=deploy:msg=U2hpcCBpdCB0byBwcm9kPw==:progress=40\x07",
+            b"\x1b]7501;state=working:id=deploy/us-east:title=VGVzdHMgcGFzc2Vk\x1b\\",
+        ]);
+        assert_eq!(
+            s,
+            vec![
+                Signal::Status(Status {
+                    kind: Some(StatusKind::Question),
+                    app: Some("deploy".into()),
+                    msg: Some("Ship it to prod?".into()),
+                    progress: Some(40),
+                    ..status(None, StatusState::Blocked)
+                }),
+                Signal::Status(Status {
+                    title: Some("Tests passed".into()),
+                    ..status(Some("deploy/us-east"), StatusState::Working)
+                }),
+            ]
+        );
+    }
+
+    #[test]
+    fn program_status_split_across_reads() {
+        let s = scan(&[b"\x1b]75", b"01;state=do", b"ne:msg=VGVzdHM", b"gcGFzc2Vk\x1b", b"\\"]);
+        assert_eq!(
+            s,
+            vec![Signal::Status(Status { msg: Some("Tests passed".into()), ..status(None, StatusState::Done) })]
+        );
+    }
+
+    #[test]
+    fn program_status_last_value_wins_and_the_rest_is_lenient() {
+        let s = reports(&[
+            // Repeated keys, whitespace, a malformed pair, an unknown key,
+            // padding left off, a kind and progress without blocked.
+            " state = working : app=a :junk: state=error :app=cargo:x=1:msg=eOKArnk:kind=auth:progress=7",
+            "state=working:progress=101",
+            "state=blocked:kind=telepathy:progress=+5",
+            "state=clear:id=a/b",
+        ]);
+        assert_eq!(
+            s,
+            vec![
+                // The bidi override is gone from `x\u{202e}y`.
+                Signal::Status(Status {
+                    app: Some("cargo".into()),
+                    msg: Some("xy".into()),
+                    ..status(None, StatusState::Error)
+                }),
+                Signal::Status(status(None, StatusState::Working)),
+                Signal::Status(status(None, StatusState::Blocked)),
+                Signal::Status(status(Some("a/b"), StatusState::Clear)),
+            ]
+        );
+    }
+
+    #[test]
+    fn program_status_reports_thrown_away() {
+        let long_msg = format!("state=done:msg={}", "A".repeat(2733));
+        // 2049 bytes decoded, from 2732 encoded.
+        let big_msg = format!("state=done:msg={}", "YWFh".repeat(683));
+        let long_title = format!("state=done:title={}", "A".repeat(260));
+        let deep = format!("state=done:id={}", ["a"; 9].join("/"));
+        let seg = format!("state=done:id={}", "a".repeat(33));
+        let long_id = format!("state=done:id={}", std::iter::repeat_n("a".repeat(30), 5).collect::<Vec<_>>().join("/"));
+        let huge = format!("state=working:pad={}", "x".repeat(4096));
+        let bad = [
+            // No state, or one nobody knows.
+            "app=cargo",
+            "state=sleeping",
+            // Bad base64, text with a control character (a newline), text
+            // that isn't UTF-8.
+            "state=done:msg=not*base64",
+            "state=done:msg=YQpi",
+            "state=done:title=//4=",
+            // Limits: msg encoded and decoded, title, app, a key.
+            &long_msg,
+            &big_msg,
+            &long_title,
+            "state=done:app=abcdefghijklmnopqrstuvwxyz0123456789",
+            "state=done:abcdefghijklmnopq=1",
+            // Bad ids: too deep, a long segment, too long, an empty segment,
+            // a character it can't have. None falls back to the root.
+            &deep,
+            &seg,
+            &long_id,
+            "state=done:id=a//b",
+            "state=done:id=",
+            "state=done:id=a b",
+            // The whole sequence over 4096 bytes.
+            &huge,
+            // The feature query is the VT layer's to answer.
+            "?",
+        ];
+        for body in bad {
+            assert_eq!(reports(&[body]), vec![], "{body}");
+        }
+        // A sequence of exactly 4096 bytes is fine: ESC ], `7501;`, the
+        // body, BEL.
+        let fits = format!("state=idle:pad={}", "x".repeat(4096 - 2 - 5 - 15 - 1));
+        assert_eq!(reports(&[&fits]), vec![Signal::Status(status(None, StatusState::Idle))]);
+    }
+
+    #[test]
+    fn a_full_reset() {
+        assert_eq!(scan(&[b"x\x1bc\x1b[0m"]), vec![Signal::Reset]);
     }
 
     #[test]
