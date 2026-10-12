@@ -241,7 +241,7 @@ impl Fountain {
             ("ARUGULA_FOUNTAIN_POLL_MS", "60000"),
         ];
         all.extend_from_slice(env);
-        Daemon::service_env(&all)
+        Daemon::service_labs_env(&all)
     }
 
     fn daemon(&self, env: &[(&str, &str)]) -> Daemon {
@@ -253,7 +253,7 @@ impl Fountain {
             ("ARUGULA_FOUNTAIN_POLL_MS", "60000"),
         ];
         all.extend_from_slice(env);
-        Daemon::child_env(
+        Daemon::child_labs_env(
             &["--wisp-token-file", "/nonexistent", "--owner", OWNER, "--tailscale-socket", "/nonexistent/sock"],
             &all,
         )

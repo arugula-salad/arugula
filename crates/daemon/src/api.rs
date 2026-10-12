@@ -614,6 +614,11 @@ async fn open_block(
     if req.kind == arugula_proto::BlockType::Invite {
         return Err(ApiError(StatusCode::FORBIDDEN, "invite blocks are made by MCP's invite_person".into()));
     }
+    // A Labs block whose flag is off here (#347): refused before anything
+    // else is asked (an app block's box, of the studio).
+    if let Some(flag) = crate::labs::block_flag(req.kind, &req.config) {
+        crate::labs::flag(app.control.state_dir(), flag).map_err(bad)?;
+    }
     // M44: a worn Fountain agent runs on this host with the owner's
     // secrets: the owner's alone.
     if req.kind == arugula_proto::BlockType::Agent

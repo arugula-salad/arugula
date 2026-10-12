@@ -1340,6 +1340,11 @@ impl Agent {
         // #379: "" is the CLI saying it has none (the default login).
         cfg.def.claude_config_dir = cfg.def.claude_config_dir.take().filter(|d| !d.trim().is_empty());
         cfg.def.check()?;
+        // A Fountain agent, or one wearing a Fountain agent, is the
+        // `fountain` flag's (#347). One saved while it was on comes back.
+        if !ctx.restoring && (cfg.def.agent == Kind::Fountain || cfg.def.as_fountain.is_some()) {
+            crate::labs::flag(&ctx.state_dir, arugula_proto::flags::FOUNTAIN)?;
+        }
         let vm = ctx.sprite.is_some();
         if vm && ctx.provider.is_none() {
             return Err("VM agents need wisp (VM panes aren't set up)".into());

@@ -987,7 +987,8 @@ const LIST: &[Kind] = &[
 /// setups a stranger doesn't have (Fountain, the studio, chant workspaces).
 /// Each is a kind of a grouped tool, so without its flag it's filtered out
 /// of its group's table, and its arguments and its line in the description
-/// go with it. A caller who names one still reaches it (`dispatch`), by its
+/// go with it. A caller who names one is refused, saying how to turn the
+/// flag on (#347: the handler or `ops::flagged` asks), by its
 /// kind or its name before #349.
 const UNLISTED: [(&str, &str, &str); 5] = [
     ("list", "agents", flags::AGENTS),
@@ -999,7 +1000,8 @@ const UNLISTED: [(&str, &str, &str); 5] = [
 
 /// Arguments of listed tools that aren't listed without their flag, by
 /// tool: throwaway VMs and sandboxes, and Fountain agents. A caller who
-/// gives one still reaches it.
+/// gives one is refused where the flag is off (a new machine, a Fountain
+/// agent, a recipe: #347), except `machine`, which names one already made.
 const UNLISTED_ARGS: [(&str, &[&str], &str); 4] = [
     ("run", &["vm", "vm_tab", "image", "machine"], flags::VMS),
     ("start_agent", &["fountain_agent", "as_fountain"], flags::FOUNTAIN),
@@ -2874,6 +2876,7 @@ impl<'a> Call<'a> {
 #[cfg(feature = "labs")]
 impl Call<'_> {
     async fn open_app(&self, a: OpenAppArgs) -> Out {
+        crate::labs::flag(self.app.control.state_dir(), flags::STUDIO)?;
         let studio = crate::labs::apps::studio::get().ok_or("no studio here")?;
         let Some(name) = a.app else {
             let apps = studio.apps().await?;
@@ -3076,6 +3079,7 @@ impl Call<'_> {
     /// The account's agents (M43), read with the user's own login on this
     /// host.
     async fn fountain_agents(&self, profile: Option<&str>) -> Result<crate::labs::fountain::Agents, String> {
+        crate::labs::flag(self.app.control.state_dir(), flags::FOUNTAIN)?;
         let runner = crate::labs::fountain::local_runner(&self.app.mux.shell_env).await;
         crate::labs::fountain::agents_for(&runner, profile).await
     }

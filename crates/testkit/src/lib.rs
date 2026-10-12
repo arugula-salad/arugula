@@ -99,6 +99,8 @@ pub struct Builder {
     record: Option<PathBuf>,
     /// `$HOME` is `home` in the state dir.
     home_in_state: bool,
+    /// Every Labs flag on in the state dir before it starts.
+    labs: bool,
 }
 
 impl Builder {
@@ -117,6 +119,7 @@ impl Builder {
             wait: Duration::from_secs(15),
             record: None,
             home_in_state: false,
+            labs: false,
         }
     }
 
@@ -132,6 +135,13 @@ impl Builder {
     /// the user's gets in, and it goes with the state dir.
     pub fn home_in_state(mut self) -> Self {
         self.home_in_state = true;
+        self
+    }
+
+    /// Every Labs flag on ([`labs`]) before it starts: a feature's routes
+    /// and blocks are refused where its flag is off (#347).
+    pub fn labs(mut self) -> Self {
+        self.labs = true;
         self
     }
 
@@ -256,6 +266,10 @@ impl Builder {
             }
         };
         let mut b = self;
+        if b.labs {
+            std::fs::create_dir_all(&state).expect("the state dir");
+            labs(&state, true);
+        }
         if b.home_in_state {
             let home = state.join("home");
             b = b.env("HOME", &home).env_remove("CLAUDE_CONFIG_DIR");

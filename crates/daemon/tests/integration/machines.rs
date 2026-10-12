@@ -64,7 +64,7 @@ impl Drop for Daemon {
 
 impl Daemon {
     fn new() -> Self {
-        Self(arugulad!("vm").args(["--wisp-url", WISP]).wait_secs(20).start())
+        Self(arugulad!("vm").labs().args(["--wisp-url", WISP]).wait_secs(20).start())
     }
 
     fn log(&self, pane: u64) -> String {

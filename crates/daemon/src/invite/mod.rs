@@ -359,6 +359,9 @@ async fn from_thread(app: &App, b: &InviteRequest) -> Result<Option<ThreadFrom>,
         }
         return Ok(None);
     };
+    // Threads are chat's, which the machine may have off (#347).
+    crate::labs::flag(app.control.state_dir(), arugula_proto::flags::CHAT)
+        .map_err(|why| no(StatusCode::BAD_REQUEST, why))?;
     let target = ThreadTarget::parse(key).ok_or_else(|| no(StatusCode::BAD_REQUEST, "thread: pane-N or session-N"))?;
     let (session, at) = match app.mux.api(|r| Api::ThreadPlace(target, b.msg, r)).await {
         Some(Ok(x)) => x,

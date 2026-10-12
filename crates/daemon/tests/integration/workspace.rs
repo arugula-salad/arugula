@@ -42,7 +42,7 @@ const ARGS: &[&str] =
     &["--wisp-token-file", "/nonexistent", "--owner", OWNER, "--tailscale-socket", "/nonexistent/sock"];
 
 fn daemon() -> Daemon {
-    Daemon::child_with(ARGS)
+    Daemon::child_labs_with(ARGS)
 }
 
 /// One whose PATH has no chant on it, whatever the host's has: the host's
@@ -56,7 +56,7 @@ fn daemon_without_chant(scratch: &Scratch) -> Daemon {
     std::os::unix::fs::symlink(&node, scratch.join("node")).unwrap();
     let kept = dirs.into_iter().filter(|d| !d.join("chant").exists());
     let path = std::env::join_paths(std::iter::once(scratch.to_path_buf()).chain(kept)).unwrap();
-    Daemon::child_env(ARGS, &[("PATH", path.to_str().unwrap()), ("CHANT", "")])
+    Daemon::child_labs_env(ARGS, &[("PATH", path.to_str().unwrap()), ("CHANT", "")])
 }
 
 /// A workspace (a git repository with a `chant.workspace.json`) with the

@@ -778,7 +778,8 @@ every `ARUGULA_*` a shell prints and the desktop app starts the daemon from
 a fixed plist; that holds for `flags.json` too. The state dir survives
 `arugulad uninstall`, install.sh and the desktop app's updates. Labs is per
 machine, visibility rather than enforcement (a machine without it still
-answers the routes), and `HostFeatures.labs` tells the page.
+answered the routes, until #347: see "Each flag gates its feature" below),
+and `HostFeatures.labs` tells the page.
 Not done: a flag per team or account on control (#347's last item, #464's
 option 2). It would sit beside `flags.json`: control's answer for a joined
 machine, with the file as the fallback for machines that aren't joined.
@@ -800,7 +801,8 @@ in `FLAGS`, off by default.
 - **Each gate reads its own flag.** `labs::on(dir, flags::NAME)` in the
   daemon; `flags::on(dir)` gives the whole set from one read, for what lists
   many (`tools/list`, both `--help`s). As before this is visibility, not
-  enforcement, except for Forgejo and GitLab, which are refused.
+  enforcement, except for Forgejo and GitLab, which are refused. (#347 made
+  it enforcement: the next entry.)
 - **`HostFeatures` says which.** `labs` is now "any flag on", and `flags`
   names those that are. A page on a daemon from before reads `labs` for every
   flag, which is what it meant there. `Client.flag(name)` is the page's one
@@ -811,10 +813,44 @@ in `FLAGS`, off by default.
   only where `flags.json` exists (`HostFeatures.dev`), which `arugulad flags`
   makes, so a stranger doesn't meet unfinished features. The desktop app's
   *Daemon* menu and `/#developer` open it regardless.
-Not done: per-flag enforcement of routes and block constructors, and flags
-per team on control (#347).
+Not done: per-flag enforcement of routes and block constructors (done since,
+next entry), and flags per team on control (#347).
 Where: `crates/proto/src/flags.rs`, `crates/daemon/src/labs/mod.rs` (`flags`, `on`), `crates/daemon/src/hosts.rs` (`features`), `crates/daemon/src/mcp/tools.rs` (`UNLISTED*`), `crates/cli/src/main.rs` and `crates/daemon/src/args.rs` (`LABS_*`), `web/src/client.ts` (`flag`), `web/src/ui/developer.tsx`, `crates/desktop/src/daemon.rs`.
 From: #665, #464, #347.
+
+### Each flag gates its feature, not just its listing
+A flag off used to hide its feature and leave it working for anyone who
+called the route, named the MCP tool or typed the hidden command. Now
+everything about the feature follows the flag (#347):
+- **Operations** name their flag (`Op::FLAG`), and `ops::flagged` refuses
+  one by every way in, HTTP and MCP by name alike, as a 404 that says how to
+  turn it on. That is the route list: threads (chat); machines and
+  sandboxes (vms); Fountain's agents; studio; ssh guests (guest-ssh). The
+  A2A routes (agents) and the forge webhooks already did; an invite from a
+  thread asks `chat` too.
+- **Block types** a flag owns (Fountain, the agent catalog, app,
+  workspace) are wrapped (`labs::Flagged`) so a new one is refused; an agent
+  block that is or wears a Fountain agent checks `fountain`. `POST
+  /api/blocks` asks `labs::block_flag` first, so an app block doesn't ask
+  the studio before it's refused.
+- **The mux** checks `vms` before it makes or borrows a machine or shares
+  one with a tab, and `huddles` before a join. Leaving, muting and
+  signalling a huddle already on still work, so turning the flag off
+  doesn't strand anyone in one.
+- **What was made with the flag on stays.** A block restored at start-up
+  isn't asked (as a Forgejo block wasn't), threads stay on disk and in the
+  page's state, a VM pane in a saved layout comes back. Turning a flag off
+  stops new use; it doesn't destroy anything, so on again finds it all.
+- **One sentence, from the daemon.** `labs::flag` / `flag_off` in the mux
+  say "X is a Labs feature that's off on this machine: its owner turns it
+  on with `arugulad flags NAME on` there, or in Developer settings". The CLI
+  prints the daemon's error, so a hidden command run with `--host` or
+  `--ssh` against a machine without the flag says the same about that
+  machine; the CLI keeps no list of its own for this.
+- **A build without Labs is unchanged.** `labs::flag` is `Ok` there, and
+  each feature's twin says it isn't built, as before.
+Where: `crates/mux/src/labs/mod.rs` (`flag`, `flag_off`), `crates/daemon/src/ops/mod.rs` (`flagged`), `crates/daemon/src/mcp/ops.rs`, `crates/proto/src/op.rs` (`FLAG`), `crates/daemon/src/labs/mod.rs` (`Flagged`, `block_flag`), `crates/mux/src/mux/machines.rs`, `crates/mux/src/mux/call_ops.rs`, `crates/daemon/tests/integration/flag_gates.rs`.
+From: #347, #665.
 
 ### Zig 0.16 builds Ghostty; the toolchain is pinned
 libghostty-vt needs Zig, pinned in `.mise.toml`; cargo runs under `mise exec`

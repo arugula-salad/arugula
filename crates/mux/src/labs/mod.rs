@@ -21,6 +21,36 @@ pub fn not_built(what: &str) -> String {
     format!("{what} isn't in this build (built without labs)")
 }
 
+/// What a request for a Labs feature whose flag is off on this machine is
+/// told (#347): which feature, and how its owner turns it on. The machine
+/// is the daemon that answered, which `arugula --host` may have reached
+/// from another one.
+pub fn flag_off(flag: &str) -> String {
+    let title = arugula_proto::flags::FLAGS.iter().find(|f| f.name == flag).map_or(flag, |f| f.title);
+    flag_off_as(&format!("{title} is"), flag)
+}
+
+/// [`flag_off`] with its own subject and verb: "Forgejo blocks are".
+pub fn flag_off_as(subject: &str, flag: &str) -> String {
+    format!(
+        "{subject} a Labs feature that's off on this machine: its owner turns it on with `arugulad flags {flag} on` there, or in Developer settings"
+    )
+}
+
+/// `Ok` where the machine has turned on `flag` (#347), else the refusal
+/// ([`flag_off`]). Each gate on a Labs feature asks this, so the feature
+/// follows its flag, not just its listing. A build without Labs answers
+/// `Ok`: what it lacks says so in its own words ([`not_built`]).
+#[cfg(feature = "labs")]
+pub fn flag(state_dir: &std::path::Path, flag: &str) -> Result<(), String> {
+    if arugula_proto::flags::get(state_dir, flag) { Ok(()) } else { Err(flag_off(flag)) }
+}
+
+#[cfg(not(feature = "labs"))]
+pub fn flag(_state_dir: &std::path::Path, _flag: &str) -> Result<(), String> {
+    Ok(())
+}
+
 /// Threads on panes and sessions, and huddles on sessions. Always made, so
 /// each has a twin that holds nothing and touches nothing on disk: a build
 /// without Labs never opens, writes or deletes the state dir's `threads/`,

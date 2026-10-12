@@ -96,6 +96,8 @@ fn a_re_invite_pushes_that_guest_alone() {
 #[test]
 fn an_invite_from_a_thread_opens_it() {
     let d = tailnet_daemon(&[]);
+    // Threads are the `chat` flag's (#347).
+    arugula_testkit::labs(&d.state, true);
     let (pane, session) = first(&d);
     // Someone this machine knows from another session, and no other.
     let elsewhere = d.post("/api/run", json!({ "session": "other" }))["pane"].as_u64().unwrap();
@@ -604,6 +606,8 @@ fn a_teams_other_owner_is_told_not_granted() {
     w.route(&w.bea);
     w.route(&w.dee);
     let d = w.daemon(true);
+    // Its thread below is the `chat` flag's (#347).
+    arugula_testkit::labs(&d.state, true);
     let (pane, session) = first(&d);
 
     let (status, r) =

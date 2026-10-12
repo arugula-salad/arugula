@@ -26,8 +26,27 @@ Each feature has a flag, off on a new install:
 | `agents` | Offering Claude Code subagents from this machine as A2A agents, and the team's agent catalog (#403) |
 
 A flag also lists its feature's tools, commands and options in `arugula mcp`,
-`arugula --help` and `arugulad --help`. They all keep working without it, and
-just aren't offered; GitLab and Forgejo blocks are refused.
+`arugula --help` and `arugulad --help`. Without it they aren't offered, and
+they don't work either: the feature's routes, its blocks, its MCP tools called
+by name and (for huddles) joining a call are refused, saying how to turn the
+flag on (`arugulad flags NAME on` on that machine, or Developer settings). A
+hidden CLI command run against a daemon without the flag says the same, so
+with `--host` or `--ssh` it's the other machine's flag that counts (#347).
+A block made while the flag was on still comes back after a restart; a new
+one isn't made.
+
+| Flag | What is refused without it |
+| --- | --- |
+| `chat` | `/api/threads/…` (get, post, read), `read_thread`/`post_thread` by name, an invite from a thread |
+| `huddles` | joining (or starting) a huddle; leaving, muting and signalling one already on still work |
+| `vms` | `/api/machines`, `/api/sandboxes`, a new VM pane or tab, a borrowed sandbox (`run --sandbox`), *Share machine with tab* |
+| `fountain` | `/api/fountain/agents`, Fountain blocks, Fountain agents and agents wearing one, `list` kinds `fountain_agents`/`fountain_agent` |
+| `studio` | `/api/studio…`, app blocks, `show` kind `app` |
+| `workspaces` | chant workspace blocks |
+| `guest-ssh` | `/api/guests` (list, invite, revoke) |
+| `swarm-themes` | nothing on the daemon: it's only the page's |
+| `forges` | Forgejo and GitLab blocks and webhooks |
+| `agents` | `/api/a2a/…`, the agent catalog block, recipes, `delegate` |
 
 ```
 arugulad flags                # the flags, and which are on
@@ -61,8 +80,8 @@ rest. A starting daemon moves the old file into `flags.json` and removes it.
   otherwise.
 - **No restart.** The daemon reads the flags whenever it's asked.
 - **Each feature still needs its own setup.** Fountain needs a login, studio a
-  link, VMs a sandbox provider, guest ssh its listener; a flag only stops
-  its feature from being hidden.
+  link, VMs a sandbox provider, guest ssh its listener; a flag lets its
+  feature be shown and used, and sets nothing up.
 
 ## What labs unhides
 
@@ -79,7 +98,7 @@ rest. A starting daemon moves the old file into `flags.json` and removes it.
   `show:workspace`, `show:fountain`, `list:fountain_agents`,
   `list:fountain_agent`, and `start_agent`'s `recipe` (`UNLISTED` and
   `UNLISTED_ARGS` in `crates/daemon/src/mcp/tools.rs`).
-  Unlisted tools still answer when called by name.
+  Unlisted tools called by name are refused without their flag.
 - **Web client:** `Client.has("vms" | "fountain" | "studio")` and
   `hasLabs()`/`hasThreads()` in `web/src/client.ts`: VM panes and tabs,
   *Sandboxes…*, *Split (local)* and a VM tab's *Machine* items, studio

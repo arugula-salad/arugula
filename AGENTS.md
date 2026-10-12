@@ -127,7 +127,10 @@ dir (`arugula_proto::flags`: the `FLAGS` registry, `get`, `on`, `set`, `all`;
 read on every call, never cached), set by `arugulad flags chat on` or the
 owner's *Developer settings…* in the web client (`flags.list` and `flag.set`
 operations). A new Labs feature adds a row to `FLAGS` and gates itself on
-`labs::on(dir, flags::NAME)`. `labs` in the file, or the old empty `labs`
+it, refusing as well as hiding (#347): `Op::FLAG` on its operations (refused
+by `ops::flagged`), `labs::Flagged` on its block types, and
+`labs::flag(dir, flags::NAME)` anywhere else, which gives the refusal that
+says how to turn it on. `labs` in the file, or the old empty `labs`
 file (which a daemon moves into it at startup), means every flag the file
 doesn't name. `ARUGULA_STATE_DIR` moves the state dir. A `labs` cargo feature (on by default) compiles Labs
 code in or out: it lives in `crates/daemon/src/labs/`, and core reaches it

@@ -426,7 +426,7 @@ fn no_link_kept(d: &Daemon, f: &Fakes) {
 #[test]
 fn a_box_agents_question_is_an_ask_answered_back_to_hud() {
     let f = Fakes::start();
-    let d = Daemon::child();
+    let d = Daemon::child_labs();
     // Not logged in: no apps.
     let (status, body) = d.raw("GET", "/api/studio/apps", None);
     assert_eq!(status, 400, "{body}");
@@ -535,7 +535,7 @@ fn a_box_agents_question_is_an_ask_answered_back_to_hud() {
 fn a_prompt_to_an_app_block_goes_to_the_box_agent() {
     let f = Fakes::start();
     f.f.inner.lock().unwrap().tabs.push("c2".into());
-    let d = Daemon::child();
+    let d = Daemon::child_labs();
     f.login(&d);
     let b = d.post("/api/blocks", json!({ "type": "app", "config": { "app": "pinboard" } }))["block"].as_u64().unwrap();
     following(&d, b);
@@ -585,7 +585,7 @@ fn a_prompt_to_an_app_block_goes_to_the_box_agent() {
 #[test]
 fn an_app_block_comes_back_after_a_restart_with_no_link_kept() {
     let f = Fakes::start();
-    let mut d = Daemon::child();
+    let mut d = Daemon::child_labs();
     f.login(&d);
     let b = d.post("/api/blocks", json!({ "type": "app", "config": { "app": "pinboard" } }))["block"].as_u64().unwrap();
     following(&d, b);
@@ -608,7 +608,7 @@ fn an_app_block_comes_back_after_a_restart_with_no_link_kept() {
 #[test]
 fn asks_on_a_browser_block_and_who_may_answer() {
     let f = Fakes::start();
-    let d = Daemon::child_with(&[
+    let d = Daemon::child_labs_with(&[
         "--wisp-token-file",
         "/nonexistent",
         "--owner",
@@ -737,7 +737,7 @@ fn asks_on_a_browser_block_and_who_may_answer() {
 #[test]
 fn a_box_gate_is_attention_approved_through_hud_as_whoever_clicked() {
     let f = Fakes::start();
-    let d = Daemon::child_with(&[
+    let d = Daemon::child_labs_with(&[
         "--wisp-token-file",
         "/nonexistent",
         "--owner",

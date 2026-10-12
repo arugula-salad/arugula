@@ -275,8 +275,9 @@ golden MCP tool list does for tools.
 ## Labs
 
 `Op::FLAG` names the flag (`arugula_proto::flags`, `flags::CHAT` and so on)
-a machine needs on for the operation's MCP tool or kind to be listed. It
-works by name either way, and HTTP routes don't read it. For a tool it
+a machine needs on for the operation: without it its MCP tool or kind isn't
+listed, and its route and its tool by name are refused (404, saying how to
+turn it on: `ops::flagged`, #347). For a tool it
 replaces the operation's line in `UNLISTED` or the old `UNLISTED_THREADS`
 (the tool list filters on it, for a tool and for a kind alike). There is no
 single `labs` file for MCP: each feature has its own flag. The CLI keeps

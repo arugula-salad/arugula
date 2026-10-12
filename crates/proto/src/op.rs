@@ -227,8 +227,8 @@ pub trait Op: Send + Sync + 'static {
     const PATH: &'static str;
     const ACCESS: Access;
     /// The flag (`arugula_proto::flags`) the machine needs on for this
-    /// operation's MCP tool or kind to be listed; it works by name either
-    /// way. HTTP routes don't read it.
+    /// operation: its MCP tool or kind is listed only with it, and every way
+    /// in (its route, its tool by name) is refused without it (#347).
     const FLAG: Option<&'static str> = None;
     /// Types into a pane, so needs the owner's trust on their machine
     /// (M14): `authz::check` asks the mux whether the caller may (`ops::drives`).
@@ -881,6 +881,7 @@ pub mod ops {
         const METHOD: Method = Method::Post;
         const PATH: &'static str = "/api/threads/{target}/read";
         const ACCESS: Access = Access::Handler;
+        const FLAG: Option<&'static str> = Some(crate::flags::CHAT);
         type Path = crate::ThreadTarget;
         type Req = ThreadReadRequest;
         type Res = Empty;
@@ -910,6 +911,7 @@ pub mod ops {
         const METHOD: Method = Method::Get;
         const PATH: &'static str = "/api/machines";
         const ACCESS: Access = Access::Owner;
+        const FLAG: Option<&'static str> = Some(crate::flags::VMS);
         type Path = ();
         type Req = Empty;
         type Res = Vec<Machine>;
@@ -924,6 +926,7 @@ pub mod ops {
         const METHOD: Method = Method::Post;
         const PATH: &'static str = "/api/machines/{id}/reset";
         const ACCESS: Access = Access::Owner;
+        const FLAG: Option<&'static str> = Some(crate::flags::VMS);
         type Path = u32;
         type Req = Empty;
         type Res = Empty;
@@ -1276,6 +1279,7 @@ pub mod ops {
         const METHOD: Method = Method::Get;
         const PATH: &'static str = "/api/guests";
         const ACCESS: Access = Access::Owner;
+        const FLAG: Option<&'static str> = Some(crate::flags::GUEST_SSH);
         const CREDENTIAL: bool = true;
         type Path = ();
         type Req = Empty;
@@ -1291,6 +1295,7 @@ pub mod ops {
         const METHOD: Method = Method::Post;
         const PATH: &'static str = "/api/guests";
         const ACCESS: Access = Access::Owner;
+        const FLAG: Option<&'static str> = Some(crate::flags::GUEST_SSH);
         type Path = ();
         type Req = GuestInviteRequest;
         type Res = GuestInvite;
@@ -1304,6 +1309,7 @@ pub mod ops {
         const METHOD: Method = Method::Delete;
         const PATH: &'static str = "/api/guests/{id}";
         const ACCESS: Access = Access::Owner;
+        const FLAG: Option<&'static str> = Some(crate::flags::GUEST_SSH);
         type Path = u32;
         type Req = Empty;
         type Res = Empty;
@@ -1502,6 +1508,7 @@ pub mod ops {
         const METHOD: Method = Method::Get;
         const PATH: &'static str = "/api/sandboxes";
         const ACCESS: Access = Access::Owner;
+        const FLAG: Option<&'static str> = Some(crate::flags::VMS);
         type Path = ();
         type Req = Empty;
         type Res = SandboxList;
@@ -1515,6 +1522,7 @@ pub mod ops {
         const METHOD: Method = Method::Post;
         const PATH: &'static str = "/api/sandboxes/{name}/promote";
         const ACCESS: Access = Access::Owner;
+        const FLAG: Option<&'static str> = Some(crate::flags::VMS);
         type Path = String;
         type Req = PromoteRequest;
         type Res = Host;
@@ -1528,6 +1536,7 @@ pub mod ops {
         const METHOD: Method = Method::Delete;
         const PATH: &'static str = "/api/sandboxes/{name}/resident";
         const ACCESS: Access = Access::Owner;
+        const FLAG: Option<&'static str> = Some(crate::flags::VMS);
         type Path = String;
         type Req = Empty;
         type Res = Demoted;
@@ -1542,6 +1551,7 @@ pub mod ops {
         const METHOD: Method = Method::Get;
         const PATH: &'static str = "/api/studio";
         const ACCESS: Access = Access::Owner;
+        const FLAG: Option<&'static str> = Some(crate::flags::STUDIO);
         type Path = ();
         type Req = Empty;
         type Res = StudioStatus;
@@ -1555,6 +1565,7 @@ pub mod ops {
         const METHOD: Method = Method::Post;
         const PATH: &'static str = "/api/studio";
         const ACCESS: Access = Access::Owner;
+        const FLAG: Option<&'static str> = Some(crate::flags::STUDIO);
         type Path = ();
         type Req = StudioLoginRequest;
         type Res = StudioLoggedIn;
@@ -1568,6 +1579,7 @@ pub mod ops {
         const METHOD: Method = Method::Delete;
         const PATH: &'static str = "/api/studio";
         const ACCESS: Access = Access::Owner;
+        const FLAG: Option<&'static str> = Some(crate::flags::STUDIO);
         type Path = ();
         type Req = Empty;
         type Res = Empty;
@@ -1581,6 +1593,7 @@ pub mod ops {
         const METHOD: Method = Method::Get;
         const PATH: &'static str = "/api/studio/apps";
         const ACCESS: Access = Access::Owner;
+        const FLAG: Option<&'static str> = Some(crate::flags::STUDIO);
         type Path = ();
         type Req = Empty;
         type Res = StudioApps;
@@ -1594,6 +1607,7 @@ pub mod ops {
         const METHOD: Method = Method::Put;
         const PATH: &'static str = "/api/studio/followers/{app}";
         const ACCESS: Access = Access::Owner;
+        const FLAG: Option<&'static str> = Some(crate::flags::STUDIO);
         type Path = String;
         type Req = FollowerLinkRequest;
         type Res = Empty;
@@ -1607,6 +1621,7 @@ pub mod ops {
         const METHOD: Method = Method::Delete;
         const PATH: &'static str = "/api/studio/followers/{app}";
         const ACCESS: Access = Access::Owner;
+        const FLAG: Option<&'static str> = Some(crate::flags::STUDIO);
         type Path = String;
         type Req = Empty;
         type Res = Empty;
