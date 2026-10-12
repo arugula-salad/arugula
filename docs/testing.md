@@ -1185,19 +1185,23 @@ What they found (2026-10-05, macOS 26.6.2 in the VM):
   test copies a line instead.
 - **The app (0.17.0):** every check passes.
 
-### On the macos-arm64 runner
+### In CI: the macos-tart runner
 
-The same scripts can run on the self-hosted runner (jake-mini) once tart
-is installed there: Apple silicon runs the VMs without nesting. A job
-would run `just macos tools` and `app` in turn (never two at once), and
-needs about 35 GB free for the base and one clone; `ios` needs the Xcode
-base as well, about 60 GB more. It
-should make the base once and keep it between runs (the prune leaves no
-cache behind), and always end with `vm.sh down`. Not tried there yet: tart
-needs the runner's user to be able to use Virtualization.framework from
-the runner service. The Safari spec could also run on the runner's own
-Safari, without a VM, after a one-time `sudo safaridriver --enable` there
-and with a GUI login on the runner.
+`.github/workflows/macos-vm.yml` runs `just macos tools` nightly on main
+and by hand (`gh workflow run macos-vm.yml`). It runs on jake-mini itself,
+not in a runner VM: macOS VMs don't nest, and Apple allows two at a time,
+which are this test's VM and the `macos-arm64` runner's. The runner is
+home-cloud's `mac_runner` host slot (label `macos-tart`). It's in the
+`macos-tart` runner group, which only `macos-vm.yml` on main may use, so a
+pull request can't reach it; never give the workflow a `pull_request`
+trigger. jake-mini has no Forgejo slot, which frees that VM for the test.
+
+The job makes the base once and keeps it (about 30 GB), keeps its
+`CARGO_TARGET_DIR` on the Mac between runs, and always ends with `vm.sh
+down`. `app`, the desktop app's scripts (#317, #661) and `ios` (about 60 GB
+more for the Xcode base) aren't in it yet. The Safari spec could also run
+on the Mac's own Safari, without a VM, after a one-time `sudo safaridriver
+--enable` there and with a GUI login.
 
 What the VM can't check is under [By hand](#by-hand); what it could and
 doesn't yet is under [Planned](#planned).
@@ -1267,9 +1271,9 @@ Real gaps, each one automatable:
 - **The iOS Simulator** (#257): `just macos ios` is written but parked
   ([above](#the-tests)); it needs a run on the Xcode 26 base, and S27's
   `--ios` with it.
-- **The tart tests in CI** on the macos-arm64 runner ([above](#on-the-macos-arm64-runner)),
-  the desktop app's (`testnet/macos/desktop.sh`, `stale-daemon.sh`) first
-  (#317, #661); it needs tart and the base VM on jake-mini (#263).
+- **More tart tests in CI** ([above](#in-ci-the-macos-tart-runner)):
+  `tools` runs nightly; the desktop app's (`testnet/macos/desktop.sh`,
+  `stale-daemon.sh`, #317, #661) are next.
 - **Control checking GitHub's signature on a real webhook delivery**: it
   needs a URL github.com can reach.
 - **Cursor's Remote-SSH and the Dev Containers extension** (M28).

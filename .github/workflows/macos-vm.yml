@@ -1,0 +1,47 @@
+# The tart VM tests (#263): `just macos tools` boots one fresh macOS VM on
+# jake-mini and runs real Safari, iTerm2 (tmux -CC, OSC 52), then launchd
+# with no GUI session (docs/testing.md, "A fresh Mac: the tart VM harness").
+# Nightly on main and by hand (`gh workflow run macos-vm.yml`).
+#
+# It runs on jake-mini itself, not in a runner VM: macOS VMs don't nest, and
+# Apple allows two at a time (this test's and the macos-arm64 runner's). The
+# `macos-tart` runner is home-cloud's mac_runner host slot, in a runner group
+# that only this file on main may use, so a pull request can't reach it.
+# Never add a pull_request trigger.
+name: macos-vm
+on:
+  schedule:
+    - cron: "41 8 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-vm
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  GITHUB_TOKEN: ${{ github.token }}
+  # On the Mac's own disk and kept between runs: the host isn't throwaway.
+  CARGO_TARGET_DIR: ${{ github.workspace }}/../target-macos-vm
+
+jobs:
+  tools:
+    runs-on: [self-hosted, macos-tart]
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust (rust-toolchain.toml's)
+        run: rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)" --profile minimal
+      - run: just bootstrap
+      # Once per Mac (about 30 GB): the base every test VM is cloned from.
+      - name: The base VM
+        run: tart list --source local --quiet | grep -qx arugula-macos-base || just macos base
+      - run: just macos tools
+      # A failed run can leave its clone booted, holding one of the two
+      # macOS VM slots.
+      - name: Stop the test VM
+        if: always()
+        run: testnet/macos/vm.sh down || true
