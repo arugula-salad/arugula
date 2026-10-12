@@ -20,7 +20,10 @@ import { createHmac } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 
 // Ports the OS hands out, so runs side by side (CI and a worktree's
-// `just check` on one machine) don't collide.
+// `just check` on one machine) don't collide. Only for what starts at
+// once: a port freed here can be handed to someone else's connection
+// before it's bound again, so a daemon started later in the run listens on
+// port 0 and says which port it got (#724).
 async function freePort(): Promise<number> {
   const s = createTcp().listen(0, "127.0.0.1");
   await new Promise((ok) => s.once("listening", ok));
@@ -28,7 +31,7 @@ async function freePort(): Promise<number> {
   await new Promise((ok) => s.close(ok));
   return port;
 }
-const [CONTROL, GITHUB, DAEMON, SPY, PUSH, STRIPE, SPRITES, DAEMON2, DAEMON3] = await Promise.all(Array.from({ length: 9 }, freePort));
+const [CONTROL, GITHUB, DAEMON, SPY, PUSH, STRIPE, SPRITES] = await Promise.all(Array.from({ length: 7 }, freePort));
 const WHSEC = "whsec_smoke";
 const base = `http://127.0.0.1:${CONTROL}`;
 const target = process.env.TARGET_DIR ?? "../target/debug";
@@ -45,6 +48,42 @@ const temp = (w: string) => {
   return d;
 };
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// A joined daemon, run on a port of its own choosing (#724), with what it
+// says kept: if it dies, the check that waits on it says why instead of
+// timing out on a machine that was never going to come online.
+function runDaemon(name: string, state: string) {
+  rmSync(join(state, "listen"), { force: true });
+  const log: Buffer[] = [];
+  const proc = spawn(`${target}/arugulad`, [
+    ...["--listen", "127.0.0.1:0", "--name", name, "--state-dir", state],
+    ...["--shell", "bash --norc --noprofile", "--no-manager-env", "--tailscale-socket", "/nonexistent", "--no-claude-ide"],
+  ], { stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, RUST_LOG: "info" } });
+  procs.push(proc);
+  proc.stdout!.on("data", (d: Buffer) => log.push(d));
+  proc.stderr!.on("data", (d: Buffer) => log.push(d));
+  const said = () => Buffer.concat(log).toString().replace(/\x1b\[[0-9;]*m/g, "");
+  const exited = new Promise<never>((_, no) =>
+    proc.once("exit", (code, sig) => no(new Error(`${name}'s arugulad exited (${sig ?? code}): ${said().trim().split("\n").slice(-5).join("\n")}`))),
+  );
+  exited.catch(() => {});
+  // Until it's online or it dies. 30 s: it's online within a second when
+  // nothing's wrong, so this only has to outlast a loaded runner.
+  const online = (as: Device, timeoutMs = 30_000) => Promise.race([as.waitOnline(name, timeoutMs), exited]);
+  // The port it listens on, from the file it writes once it has one.
+  const port = async () => {
+    for (let i = 0; i < 300; i++) {
+      if (proc.exitCode !== null || proc.signalCode !== null) await exited;
+      try {
+        return Number(readFileSync(join(state, "listen"), "utf8").trim().split(":").at(-1));
+      } catch {
+        await sleep(100);
+      }
+    }
+    throw new Error(`${name}'s arugulad didn't say what port it listens on: ${said()}`);
+  };
+  return { proc, log, said, online, port };
+}
 
 // Every process the smoke started, however deep. A daemon's panes run in
 // sessions of their own on purpose, so a process group would miss them:
@@ -455,20 +494,16 @@ try {
   {
     const st = temp("removed");
     check("arugulad join finished (removable)", (await joinAs("removable", st, laptop.id)) === 0);
-    procs.push(
-      spawn(`${target}/arugulad`, [
-        ...["--listen", `127.0.0.1:${DAEMON3}`, "--name", "removable", "--state-dir", st],
-        ...["--shell", "bash --norc --noprofile", "--no-manager-env", "--tailscale-socket", "/nonexistent", "--no-claude-ide"],
-      ], { stdio: "ignore" }),
-    );
-    const was = await me.waitOnline("removable", 10_000);
+    const removable = runDaemon("removable", st);
+    const was = await removable.online(me);
+    const port = await removable.port();
     await me.revoke(was.id);
     const token = readFileSync(join(st, "local-token"), "utf8").trim();
     type Setup = { control: { pending?: { code: string }; removed?: { said: string; by?: string; old_key: string; new_key: string; kept: string } } };
     let setup: Setup | undefined;
     for (let i = 0; i < 150 && !setup?.control.pending; i++) {
       await sleep(200);
-      setup = await fetch(`http://127.0.0.1:${DAEMON3}/api/setup?part=control`, { headers: { authorization: `Bearer ${token}` } }).then((r) => r.json() as Promise<Setup>, () => undefined);
+      setup = await fetch(`http://127.0.0.1:${port}/api/setup?part=control`, { headers: { authorization: `Bearer ${token}` } }).then((r) => r.json() as Promise<Setup>, () => undefined);
     }
     const removed = setup?.control.removed;
     check("removed from a browser, the daemon asks to join again with a new key", !!setup?.control.pending && !!removed, JSON.stringify(setup));
@@ -500,15 +535,9 @@ try {
   });
   await leaver.approveJoin(code2);
   await new Promise((r) => joining2.on("exit", r));
-  const daemon2Log: Buffer[] = [];
-  const daemon2 = spawn(`${target}/arugulad`, [
-    ...["--listen", `127.0.0.1:${DAEMON2}`, "--name", "leaving-box", "--state-dir", state2],
-    ...["--shell", "bash --norc --noprofile", "--no-manager-env", "--tailscale-socket", "/nonexistent", "--no-claude-ide"],
-  ], { stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, RUST_LOG: "info" } });
-  procs.push(daemon2);
-  daemon2.stdout!.on("data", (d: Buffer) => daemon2Log.push(d));
-  daemon2.stderr!.on("data", (d: Buffer) => daemon2Log.push(d));
-  const d2 = await leaver.waitOnline("leaving-box", 10_000).catch(() => undefined);
+  const daemon2 = runDaemon("leaving-box", state2);
+  const daemon2Log = daemon2.log;
+  const d2 = await daemon2.online(leaver).catch((e: Error) => (console.log(e.message), undefined));
   check("the leaver's machine is online", d2?.online === true);
   const sessions = await leaver.api<{ sessions: { id: string; current: boolean; agent: string }[] }>("/api/me/sessions");
   check("their sessions list this one, with what signed in", sessions.sessions.some((x) => x.current && x.agent.length > 0), JSON.stringify(sessions));
