@@ -112,6 +112,31 @@ function makeClient(base: string): Client {
 // One client for the host shown (M4a); switching hosts closes it and opens
 // one to the other daemon, so hidden hosts hold no connection.
 let client = makeClient(directory.base());
+const swapped = new Set<() => void>();
+/** Call `done` with the shown machine's client, again on each change it
+ * announces and on each swap to another, until it returns true. What the
+ * page opens from its address on load needs this: on control's page the
+ * client at first is a stand-in on control's own origin, there until the
+ * machine list comes and `follow` swaps in the machine's (relayed) one. A
+ * request through the stand-in reaches control, not the machine. */
+function untilShown(done: (c: Client) => boolean) {
+  let on: Client | null = null;
+  let off = () => {};
+  const check = () => {
+    if (done(client)) {
+      off();
+      swapped.delete(check);
+      return;
+    }
+    // Once per client: re-adding a listener while it emits would revisit it.
+    if (on === client) return;
+    off();
+    on = client;
+    off = client.subscribe(check);
+  };
+  swapped.add(check);
+  check();
+}
 // Inside the desktop app: its titlebar and keys (M46).
 setupDesktop(() => client);
 /** Hand a machine of yours the teams this browser pinned (#233), and drop
@@ -309,6 +334,7 @@ if (!linkTarget) {
     client = makeClient(base);
     draw();
     connect();
+    for (const check of [...swapped]) check();
   };
   directory.subscribe(follow);
   // Control's machine list may have come while this module waited on the
@@ -342,9 +368,7 @@ const openPane = (pane: number, daemon?: string, thread?: string, share = false)
     }
     return true;
   };
-  if (!go()) {
-    const off = client.subscribe(() => go() && off());
-  }
+  untilShown(go);
 };
 // The desktop app up to 0.26.3 names its events `arugula:…` only when the
 // page says it's from after the rename (#505); without this they arrive as
@@ -388,10 +412,18 @@ if (startAt) {
 // Developer settings (#665), from the desktop app's Daemon menu: on an open
 // page (the event) or a new one (`#developer`). The owner's; the dialog
 // says so for anyone else, since the daemon refuses them.
-window.addEventListener("arugula:developer", () => openDeveloper(client));
+// The flags are the machine's: open them once it's connected, not through
+// control's page's stand-in client while the machine list loads.
+const developer = () =>
+  untilShown((c) => {
+    if (!c.connected) return false;
+    openDeveloper(c);
+    return true;
+  });
+window.addEventListener("arugula:developer", developer);
 const developerAtHash = () => {
   if (location.hash !== "#developer") return;
-  openDeveloper(client);
+  developer();
   history.replaceState(null, "", "/");
 };
 developerAtHash();

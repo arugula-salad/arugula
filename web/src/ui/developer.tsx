@@ -73,9 +73,11 @@ function Developer({ client, close }: { client: Client; close: () => void }) {
   const load = async () => {
     try {
       const res = await client.request("GET", "/api/flags");
-      const v = await res.json<FlagInfo[] | { error?: string }>();
+      // Not JSON: something other than the daemon answered (a page, a proxy).
+      const v = await res.json<FlagInfo[] | { error?: string }>().catch(() => null);
       if (res.status === 404) throw new Error("This machine's daemon is too old for flags: update it");
-      if (!res.ok || !Array.isArray(v)) throw new Error((v as { error?: string }).error ?? `HTTP ${res.status}`);
+      if (v === null) throw new Error(`This machine's daemon didn't answer with its flags (${res.status}): reopen this once it's connected`);
+      if (!res.ok || !Array.isArray(v)) throw new Error((v as { error?: string }).error ?? `couldn't read the flags (${res.status})`);
       setFlags(v);
       setError(null);
     } catch (e) {
