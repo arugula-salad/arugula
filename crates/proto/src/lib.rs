@@ -68,8 +68,9 @@ pub enum ClientMsg {
         zstd: bool,
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         acks: bool,
-        /// The client encodes keys for the kitty keyboard protocol, so
-        /// programs asking may be told it's there (M31).
+        /// The client encodes keys for the kitty keyboard protocol (M31).
+        /// Unused since #806: programs asking are told it's there whoever
+        /// is attached. Kept so older clients and daemons still agree.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         kitty_keys: bool,
     },

@@ -9,7 +9,7 @@
 //! same bytes in the same order.
 
 use std::{
-    collections::{HashMap, HashSet, VecDeque},
+    collections::{HashMap, VecDeque},
     path::{Path, PathBuf},
     process::{Command, Stdio},
     sync::{
@@ -393,8 +393,6 @@ pub struct Want {
     pub floor: Option<u64>,
     /// It acks what it has drawn: hold it to [`ACK_WINDOW`] (#52).
     pub acks: bool,
-    /// It speaks the kitty keyboard protocol (M31).
-    pub kitty_keys: bool,
 }
 
 /// Where a client that acks is in a pane's stream.
@@ -1295,9 +1293,6 @@ struct State {
     subs: HashMap<ClientId, Subscriber>,
     /// The subscribers that ack.
     flows: HashMap<ClientId, Flow>,
-    /// The subscribers that speak the kitty keyboard protocol: while there
-    /// are any, a program asking is told it's there.
-    kitty: HashSet<ClientId>,
     closing: bool,
     shell: Spawn,
     launch: Launcher,
@@ -1373,7 +1368,6 @@ pub fn spawn_pane(setup: Setup) -> std::io::Result<PaneHandle> {
             log: Some(log),
             subs: HashMap::new(),
             flows: HashMap::new(),
-            kitty: HashSet::new(),
             closing: false,
             shell,
             launch,
@@ -1565,7 +1559,6 @@ fn run(mut st: State, rx: Receiver<Cmd>, program: Receiver<Cmd>) {
             Cmd::Detach { client } => {
                 st.subs.remove(&client);
                 st.flows.remove(&client);
-                st.forget_kitty(client);
             }
             Cmd::Resize { cols, rows } => st.resize(cols, rows),
             Cmd::Purge => st.purge(),
@@ -1590,7 +1583,6 @@ fn run(mut st: State, rx: Receiver<Cmd>, program: Receiver<Cmd>) {
                 st.closing = true;
                 st.subs.clear();
                 st.flows.clear();
-                st.kitty.clear();
                 match &st.process {
                     Some(p) => p.hang_up(),
                     None => return st.finish(),
@@ -2315,17 +2307,10 @@ impl State {
         self.resync(lagged);
     }
 
-    fn forget_kitty(&mut self, client: ClientId) {
-        if self.kitty.remove(&client) && self.kitty.is_empty() {
-            self.engine.set_kitty_keyboard(false);
-        }
-    }
-
     /// Drop these subscribers and tell them to attach again.
     fn resync(&mut self, ids: Vec<ClientId>) {
         for id in ids {
             self.flows.remove(&id);
-            self.forget_kitty(id);
             if let Some(sub) = self.subs.remove(&id) {
                 debug!(pane = self.id, client = id, "client fell behind; resync");
                 let _ = sub.ctrl.send(ToClient::Msg(ServerMsg::Resync { pane: self.id }));
@@ -2367,7 +2352,7 @@ impl State {
         if self.closing {
             return;
         }
-        let Want { offset, history, zstd, floor, acks, kitty_keys } = want;
+        let Want { offset, history, zstd, floor, acks } = want;
         let end = self.ring.end();
         let (cols, rows) = self.engine.size();
         // Nothing from before the floor: no replay from below it, and the
@@ -2410,12 +2395,6 @@ impl State {
             self.flows.insert(sub.client, Flow { sent: end, acked: has, paused: None });
         } else {
             self.flows.remove(&sub.client);
-        }
-        if kitty_keys {
-            self.kitty.insert(sub.client);
-            self.engine.set_kitty_keyboard(true);
-        } else {
-            self.forget_kitty(sub.client);
         }
         self.subs.insert(sub.client, sub);
     }

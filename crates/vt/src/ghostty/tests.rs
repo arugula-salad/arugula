@@ -397,7 +397,7 @@ fn does_not_promise_what_xterm_js_cannot_draw() {
     let reply = String::from_utf8(e.take_replies()).unwrap();
     assert!(reply.contains("\x1b[?69;0$y"), "DECLRMM must read as unsupported: {reply:?}");
     assert!(reply.contains("\x1b[?2026;2$y"), "sync output is supported: {reply:?}");
-    assert!(!reply.contains('u'), "no kitty keyboard reply: {reply:?}");
+    assert!(reply.contains("\x1b[?0u"), "kitty keyboard answered (#806): {reply:?}");
     assert!(reply.contains("\x1b[?62;"), "DA1 still answered: {reply:?}");
 }
 
