@@ -8,7 +8,7 @@
 // by control at /.arugula/boot.js.
 
 import { save } from "./channel.ts";
-import { askParent, controlOrigins, giveWorker } from "./page.ts";
+import { askParent, controlOrigins, giveWorker, tellFailed } from "./page.ts";
 
 const state = document.getElementById("arugula-block-state");
 const say = (t: string) => {
@@ -41,4 +41,8 @@ async function boot() {
   location.replace(location.href);
 }
 
-boot().catch((e: unknown) => say(`This block can't load: ${e instanceof Error ? e.message : String(e)}`));
+boot().catch((e: unknown) => {
+  const why = e instanceof Error ? e.message : String(e);
+  say(`This block can't load: ${why}`);
+  tellFailed(controlOrigins(document), why);
+});

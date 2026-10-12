@@ -380,7 +380,9 @@ pub(crate) struct BlockArgs {
     /// Serve browser blocks on ports here [default: off]. Without
     /// --block-domain this must be loopback, and blocks are
     /// `http://b-<id>-<key>.localhost:<port>`. Port 0 picks a free one,
-    /// recorded in `block-listen` in the state directory.
+    /// recorded in `block-listen` in the state directory. Not needed to
+    /// show blocks in Arugula control's page, which serves their origins
+    /// itself when it has a block domain.
     #[arg(long, env = "ARUGULA_BLOCK_LISTEN")]
     pub(crate) block_listen: Option<SocketAddr>,
     /// Name blocks `b-<id>.<DOMAIN>`, over HTTPS, for the owner on the

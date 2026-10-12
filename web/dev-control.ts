@@ -31,6 +31,12 @@
 //                      first browser is their account's first device;
 //                      nothing approves their others.
 //   DEV_CONTROL_LABS=0 machines without Labs (a stranger's view)
+//   DEV_CONTROL_BLOCK_DOMAIN
+//                      control's block domain (M50) [default:
+//                      blocks.localhost, which Chrome sends to loopback;
+//                      none with DEV_CONTROL_HOST=localhost]: ports and
+//                      editors on the machines open in control's page,
+//                      at http://b-<key>.<domain>:PORT. Empty for none.
 //   DEV_CONTROL_APPROVE_BROWSERS=0
 //                      the device leaves browsers alone: one that signs in
 //                      stays waiting, not yet a device (for the waiting
@@ -58,6 +64,8 @@ const host = process.env.DEV_CONTROL_HOST || "127.0.0.1";
 const dir = process.env.DEV_CONTROL_DIR ?? join(homedir(), ".local/state", host === "127.0.0.1" ? "arugula-dev-control" : `arugula-dev-control-${host}`);
 const port = Number(process.env.DEV_CONTROL_PORT ?? 7690);
 const login = process.env.DEV_CONTROL_LOGIN ?? userInfo().username;
+// A block domain can't be a parent or child of control's host.
+const blockDomain = process.env.DEV_CONTROL_BLOCK_DOMAIN ?? (host === "localhost" ? "" : "blocks.localhost");
 const logins = (process.env.DEV_CONTROL_LOGINS ?? "").split(",").map((l) => l.trim()).filter(Boolean);
 const labs = process.env.DEV_CONTROL_LABS !== "0";
 const approveAll = process.env.DEV_CONTROL_APPROVE_BROWSERS !== "0";
@@ -110,6 +118,9 @@ mkdirSync(join(dir, "control"), { recursive: true });
 // service worker is built once beside it.
 async function webBuild() {
   execFileSync("npx", ["vite", "build", "--logLevel", "error", "--config", "vite.sw.config.ts", "--outDir", web], { stdio: "inherit" });
+  // Blocks' own scripts (M50), built once like the worker.
+  for (const mode of ["boot", "sw", "shim"])
+    execFileSync("npx", ["vite", "build", "--logLevel", "error", "--config", "vite.block.config.ts", "--mode", mode, "--outDir", join(web, "block")], { stdio: "inherit" });
   const watch = spawn("npx", ["vite", "build", "--watch", "--emptyOutDir", "false", "--outDir", web], { stdio: ["ignore", "pipe", "inherit"], detached: true });
   procs.push(watch);
   let first = true;
@@ -158,6 +169,7 @@ async function startControl() {
       ...["--listen", `127.0.0.1:${port}`, "--public-url", base, "--db", join(dir, "control/control.db")],
       ...["--static-dir", web, "--github-client-id", "dev", "--github-client-secret", "dev"],
       ...["--github-url", gh, "--github-api", gh],
+      ...(blockDomain ? ["--block-domain", blockDomain] : []),
     ],
     { stdio: ["ignore", "ignore", "inherit"], detached: true },
   );
@@ -252,6 +264,7 @@ console.log(`
 dev-control: ${base}${host === "127.0.0.1" ? " (no passkeys on an IP address: DEV_CONTROL_HOST=localhost)" : ""}
   Sign in with GitHub (the fake one signs you in as ${login}${logins.length ? `, or asks: ${[login, ...logins].join(", ")}` : ""});
   ${approveAll ? `${login}'s browsers are approved (press It matches: the account is ${fingerprint(d.root)})` : `${login}'s browsers stay waiting to be approved (DEV_CONTROL_APPROVE_BROWSERS=0)`}. Machines: ${machines.join(", ")}${labs ? ", with Labs" : ""}.
+  ${blockDomain ? `Ports and editors open on b-<key>.${blockDomain} (Chrome; DEV_CONTROL_BLOCK_DOMAIN= for none; the block scripts aren't rebuilt on change).` : "No block domain: ports and editors are off on the machines."}
   Edit web/src, wait for "web rebuilt", reload. State: ${dir}. Ctrl-C stops.
 `);
 // Leaving browsers alone: stay up for the web build and the machines.

@@ -292,9 +292,16 @@ pub struct HostFeatures {
     #[serde(default)]
     #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
     pub dev: bool,
-    /// Browser blocks on ports and editor blocks: block sites are on
-    /// (`--block-listen`).
+    /// Browser blocks on ports and editor blocks, on the daemon's own block
+    /// sites (`--block-listen`): what the daemon's own page can show.
     pub blocks: bool,
+    /// The same blocks through Arugula control's block origins (M50): the
+    /// daemon is joined to a control with a block domain. Control's page
+    /// offers blocks when either is on; the daemon's own page only with
+    /// `blocks`. Older daemons leave it out.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    pub block_channels: bool,
     /// VM tabs and panes and *Sandboxes…*: a sandbox provider (wisp).
     pub vms: bool,
     /// A Fountain login here: `FOUNTAIN_API_KEY`, or the CLI's

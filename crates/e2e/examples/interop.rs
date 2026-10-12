@@ -6,16 +6,22 @@
 //!   say which devices Rust trusts;
 //! - `roster`: read `{pin, prev, roster, certs}` from stdin and say whether
 //!   the roster follows (a team's next version, a presigned invite's too);
+//! - `grant`: read `{grant, daemon, key, now, signer: {id, sign}}` from
+//!   stdin (a block grant the TS code minted, M50) and print what
+//!   `Grant::check` makes of it: `ok`, or the refusal's code;
 //! - `responder ADDR`: a WebSocket daemon stand-in that answers the Noise
-//!   handshake and echoes text and binary messages, and answers requests
-//!   with their method, path and body.
+//!   handshake (with its clock in message 2, as the daemon does) and echoes
+//!   text and binary messages, and answers requests with their method,
+//!   path and body.
 
 use std::io::Read;
 
 use arugula_e2e::{
     Cert, DeviceKeys, Kind, Revocation, Trust,
+    block::{Expect, Grant},
     cert::join_code,
-    channel::{Msg, Responder, ResponseHead, prologue},
+    channel::{Msg, Responder, ResponseHead, Welcome, prologue},
+    keys::hex32,
     team::{AccountCerts, Roster, TeamPin},
 };
 use futures_util::{SinkExt, StreamExt};
@@ -77,6 +83,22 @@ async fn main() -> anyhow::Result<()> {
             let certs: AccountCerts = serde_json::from_value(v["certs"].clone())?;
             println!("{}", roster.is_some_and(|r| r.follows(prev.as_ref(), &pin, &certs)));
         }
+        Some("grant") => {
+            let mut s = String::new();
+            std::io::stdin().read_to_string(&mut s)?;
+            let v: serde_json::Value = serde_json::from_str(&s)?;
+            let grant: Grant = serde_json::from_value(v["grant"].clone())?;
+            let remote = hex32(v["key"].as_str().unwrap_or_default())?;
+            let now = v["now"].as_u64().unwrap_or_default();
+            let want = Expect { daemon: v["daemon"].as_str().unwrap_or_default(), remote: &remote, now };
+            let (id, sign) = (v["signer"]["id"].as_str().unwrap_or_default(), v["signer"]["sign"].as_str());
+            let signer = |by: &str| (by == id).then(|| sign.and_then(|k| hex32(k).ok())).flatten();
+            let block = v["block"].as_str().unwrap_or_default();
+            match grant.check(&want, signer, |b| b == block) {
+                Ok(()) => println!("ok"),
+                Err(r) => println!("{}", r.code()),
+            }
+        }
         Some("responder") => {
             let keys = DeviceKeys::generate();
             let l = tokio::net::TcpListener::bind(args.get(1).map(String::as_str).unwrap_or("127.0.0.1:0")).await?;
@@ -92,7 +114,7 @@ async fn main() -> anyhow::Result<()> {
                     let mut ws = tokio_tungstenite::accept_async(sock).await?;
                     let Some(Ok(Message::Binary(m1))) = ws.next().await else { anyhow::bail!("no handshake") };
                     let (r, _who, _) = Responder::read(&keys, &prologue(&keys.id()), &m1)?;
-                    let (m2, ch) = r.finish(&[])?;
+                    let (m2, ch) = r.finish(&Welcome { now: arugula_e2e::now_ms() }.encode())?;
                     ws.send(Message::Binary(m2.into())).await?;
                     while let Some(Ok(Message::Binary(w))) = ws.next().await {
                         let Some(m) = ch.open(&w)? else { continue };
@@ -118,7 +140,7 @@ async fn main() -> anyhow::Result<()> {
                 });
             }
         }
-        _ => anyhow::bail!("usage: interop fixtures|check|roster|responder [ADDR]"),
+        _ => anyhow::bail!("usage: interop fixtures|check|roster|grant|responder [ADDR]"),
     }
     Ok(())
 }

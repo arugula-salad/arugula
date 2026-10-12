@@ -208,7 +208,10 @@ impl Graph {
         let Runner::Local { env: vars, home } = runner else {
             return Err("the graph runs on this host only for now: this workspace is on a VM".into());
         };
-        let sites = sites::get().ok_or("the graph needs block sites: start arugulad with --block-listen")?;
+        // The graph's page is framed from the daemon's own block site only.
+        let sites = sites::get()
+            .filter(|s| s.listens())
+            .ok_or("the graph needs block sites: start arugulad with --block-listen")?;
         let log_path = ctx.dir.join("behold.log");
         let log = std::fs::File::create(&log_path).map_err(|e| format!("{}: {e}", log_path.display()))?;
         let behold = std::env::var("ARUGULA_BEHOLD").unwrap_or_default();

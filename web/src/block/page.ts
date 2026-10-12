@@ -17,6 +17,14 @@ export interface Ask {
   ask: "hello" | "renew";
 }
 
+/** From the frame to the parent: it can't load the block, and why. The
+ * parent falls back to the daemon's own block site where there is one. */
+export interface Failed {
+  arugula: typeof TAG;
+  v: typeof VERSION;
+  failed: string;
+}
+
 /** From the parent to the frame: credentials, or why there are none. */
 export type Answer = { arugula: typeof TAG; v: typeof VERSION } & ({ creds: Creds } | { refused: string });
 
@@ -52,6 +60,13 @@ export function askParent(origins: string[], ask: Ask["ask"], timeoutMs = 10_000
     const m: Ask = { arugula: TAG, v: VERSION, ask };
     for (const o of origins) parent.postMessage(m, o);
   });
+}
+
+/** Tell the parent this block can't load here. */
+export function tellFailed(origins: string[], why: string) {
+  if (parent === window) return;
+  const m: Failed = { arugula: TAG, v: VERSION, failed: why };
+  for (const o of origins) parent.postMessage(m, o);
 }
 
 /** Give the worker the block's credentials; resolves once it has them. */

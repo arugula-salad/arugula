@@ -97,6 +97,14 @@ arugula-control --public-url https://control.example.com --listen 127.0.0.1:7690
     nothing in 10 seconds, or is idle for an hour, closes. Block sockets
     count against `ARUGULA_RELAY_MAX_TOTAL` and the machine owner's
     traffic, not against the owner's `ARUGULA_RELAY_MAX_SOCKETS`.
+  - Control's page may frame `*.<domain>` on its own scheme (its
+    `frame-src`), so a local control on plain http frames
+    `http://b-<key>.<domain>:<port>`; `blocks.localhost` works locally with
+    no DNS (`web/e2e/blocks-control.spec.ts`).
+  - Joined machines read `block_domain` from `/control.json` on each
+    refresh. With it, port and editor blocks open on them with no block
+    flags (no `--block-listen`); their own page doesn't offer those
+    blocks, since it can't show them.
 - **Billing** (optional) needs both `STRIPE_SECRET_KEY` and
   `STRIPE_WEBHOOK_SECRET`; with the key alone control doesn't start.
 - **Behind a proxy** that passes the client's address in a header, use

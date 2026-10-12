@@ -190,7 +190,7 @@ impl Browser {
         if let Some(s) = &*slot {
             return Ok(s.clone());
         }
-        let sites = sites::get().ok_or("browser blocks on ports are off: start arugulad with --block-listen")?;
+        let sites = sites::get().ok_or(sites::OFF)?;
         let me = self.me.clone();
         let site = sites.open(self.ctx.id, &self.key, move |r| {
             if let Some(b) = me.upgrade() {
@@ -467,11 +467,12 @@ impl Block for Browser {
     }
 }
 
-/// Whether a page can be shown at all: ports need block sites, and this
-/// host's ports exclude the daemon's own.
+/// Whether a page can be shown at all: ports need block sites somewhere to
+/// show them (a listener, or control's block origins), and this host's
+/// ports exclude the daemon's own.
 fn usable(page: &Page, on_machine: bool) -> Result<(), String> {
     let Page::Port { port, .. } = page else { return Ok(()) };
-    let sites = sites::get().ok_or("browser blocks on ports are off: start arugulad with --block-listen")?;
+    let sites = sites::shown().ok_or(sites::OFF)?;
     if on_machine { Ok(()) } else { sites.allowed(&Target::Local(*port)) }
 }
 

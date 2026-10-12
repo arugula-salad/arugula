@@ -1467,6 +1467,14 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   pointer-events: none;
 }
 
+/* A block shown another way than asked (M50): a line above its frame. */
+.block-note {
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--dim);
+  border-bottom: 1px solid var(--divider);
+}
+
 /* ---- hosts (M4a): which daemon this window shows */
 
 .host-button {

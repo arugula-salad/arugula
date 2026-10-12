@@ -158,6 +158,9 @@ pub struct ControlWhere {
     pub primary: String,
     #[serde(default)]
     pub urls: Vec<String>,
+    /// Control serves block origins (M50): blocks show in its page.
+    #[serde(default)]
+    pub block_domain: Option<String>,
 }
 
 /// Just the jump host from `/control.json`, read apart from

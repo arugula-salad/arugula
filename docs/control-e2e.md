@@ -820,9 +820,59 @@ page that framed them with `postMessage`. Every message carries
   origin's IndexedDB (`arugula-block`). Its worker takes them from the page
   over a `MessageChannel` (`{arugula, v, held}`), and asks its pages for a
   renewal with `{arugula, v, ask: "renew"}`.
+- **The frame says when it can't load** the block (no service worker in a
+  cross-site frame, the parent refused, the worker never answering):
+  `{arugula, v, failed: "<a sentence>"}`, to each of control's origins.
+  Control's page, checking source and origin as above, then shows the
+  daemon's own block site where it has one (`--block-listen`), with a line
+  saying why, or says there's none.
 - `route: "relay"` connects to `wss://<the block's host>/.arugula/relay?d=<daemon id>`.
-  S27 kept WebKit on the relay until the worker's direct path is measured
-  in real Safari.
+  A `wss://…/e2e` route that doesn't connect is tried once more through
+  the relay. S27 kept WebKit on the relay until the worker's direct path
+  is measured in real Safari.
+
+### Control's page, the parent
+
+`web/src/blocks/through-control.ts` and `block-frame.tsx` (#150, PR 4):
+
+- **When:** a port or editor block whose state has a `site_key`, on a
+  machine this page reaches through a control whose `/control.json` says
+  `block_domain`. Not a hosted sandbox's (its daemon doesn't dial
+  control's relay). The frame is `<page's scheme>//b-<site_key>.<block
+  domain>[:<page's port>]` plus the daemon's `src` made a path.
+- **The editor's `src`:** code-server opens a file from VS Code's
+  `payload` (`[["openFile","vscode-remote://<host>/path"]]`), where the
+  host must be the page's own. The daemon builds `src` for its own block
+  site, or as a path with an empty host when it has none; the parent puts
+  the block origin's host into every `vscode-remote://` of `payload`
+  (`blockSrc`). The page that frames a block picks its origin, and the
+  same block can be open on the daemon's own page and on control's at
+  once, so the daemon doesn't learn control's block domain for this.
+- **The grant:** a new X25519 key (extractable, handed over as PKCS#8) and
+  a grant signed with the device's Ed25519 key, for that frame's block
+  only. Expiry is the daemon's now plus five minutes; the daemon's now is
+  its `{"now"}` from the device channel's message 2, plus the time since on
+  `performance.now()`, so this device's wall clock never counts. No clock
+  (a daemon too old to send one, or not connected): the frame gets
+  `refused`.
+- **The route:** the daemon's `wss://…/e2e` when this page's own channel
+  went there directly, except in WebKit (Safari, every iOS browser,
+  WebKitGTK); else the relay.
+- **The device channel** (`web/src/e2e/channel.ts`) reads message 2 before
+  it treats a close as a failed handshake, so a refusal with the close
+  reads as one.
+
+### Machines with no block flags
+
+Without `--block-listen` the daemon still keeps a block site per port and
+editor block (`sites::Scheme::Channel`): no listener and no name of its
+own, reached only by block channels. Each refresh reads `block_domain` from
+control's `/control.json`. `GET /api/host`'s features say `blocks` (its own
+block sites, which its own page can show) and `block_channels` (joined to a
+control with a block domain). Control's page offers ports and editors when
+either is on; the daemon's own page only with `blocks`. A new port or
+editor block is refused when neither is on; one restored at startup keeps
+its site, since control's answer may not be in yet.
 
 ## Push
 

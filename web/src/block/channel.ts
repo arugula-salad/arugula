@@ -92,6 +92,18 @@ export function channelUrl(creds: Creds, location: { protocol: string; host: str
   return `${ws}//${location.host}/.arugula/relay?d=${encodeURIComponent(creds.daemon.id)}`;
 }
 
+/** The block's channel by its route, and through the relay if a direct
+ * route doesn't connect (Chrome's Local Network Access asks a frame for
+ * its own permission, say). A refusal is the daemon's answer either way. */
+export async function openChannel(creds: Creds, location: { protocol: string; host: string }): Promise<BlockChannel> {
+  try {
+    return await BlockChannel.connect(channelUrl(creds, location), creds);
+  } catch (e) {
+    if (e instanceof Refused || creds.route === "relay") throw e;
+    return BlockChannel.connect(channelUrl({ ...creds, route: "relay" }, location), creds);
+  }
+}
+
 interface Handler {
   frame(kind: string, payload: Uint8Array): void;
   fail(why: string): void;

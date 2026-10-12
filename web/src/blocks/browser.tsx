@@ -6,6 +6,7 @@ import { render } from "preact";
 import type { Client } from "../client";
 import type { OpenRequest, PaneId } from "../proto";
 import { askText, tellSetup } from "../ui/menu";
+import { BlockFrame } from "./block-frame";
 import { registerBlock, type BlockView } from "./view";
 
 export interface BrowserState {
@@ -23,6 +24,8 @@ export interface BrowserState {
   port: number | null;
   path: string | null;
   machine: string | null;
+  /** For a port: its origin's key on control's block domain (M50). */
+  site_key?: string;
 }
 
 const ADVANCED = "https://docs.arugula.io/advanced/";
@@ -36,9 +39,10 @@ export function blocksOff(what: "port" | "editor") {
       : ["VS Code in blocks is off here", "VS Code beside your terminals", "#editor-blocks"];
   void tellSetup(
     title,
-    `${thing} is optional: each block gets a web origin of its own, so the daemon needs a listener for them. ` +
-      "For a browser on this computer, start arugulad with --block-listen 127.0.0.1:7701 " +
-      "(arugulad install -- --block-listen 127.0.0.1:7701). From your phone or other machines it also needs a domain of yours.",
+    `${thing} is optional: each block gets a web origin of its own. ` +
+      "Join this machine to Arugula control and they open in control's page with nothing else set up. " +
+      "Without control, start arugulad with --block-listen 127.0.0.1:7701 for a browser on this computer " +
+      "(arugulad install -- --block-listen 127.0.0.1:7701); from your phone or other machines it also needs a domain of yours.",
     { label: "How to turn it on (advanced setup)", href: ADVANCED + anchor },
   );
 }
@@ -53,7 +57,7 @@ function shown(s: BrowserState) {
  * on the daemon's host even in a VM tab.
  */
 export async function openPort(client: Client, where: { split?: PaneId; host?: number; local?: boolean }) {
-  if (!client.has("blocks")) return blocksOff("port");
+  if (!client.showsBlocks()) return blocksOff("port");
   const v = await askText("Open a port", "", "5173, or 5173/path");
   const m = v?.trim().match(/^:?(\d{1,5})(\/.*)?$/);
   if (!v) return;
@@ -110,9 +114,11 @@ function BrowserBlock({ client, id, s }: { client: Client; id: PaneId; s: Browse
         >
           <input name="url" value={shown(s)} spellcheck={false} autocomplete="off" />
         </form>
-        <a class="browser-open" href={s.url} target="_blank" rel="noopener noreferrer" title="Open in a new tab">
-          ↗
-        </a>
+        {/^https?:/.test(s.url) && (
+          <a class="browser-open" href={s.url} target="_blank" rel="noopener noreferrer" title="Open in a new tab">
+            ↗
+          </a>
+        )}
       </div>
       {s.error ? (
         <div class="browser-card error">
@@ -130,15 +136,28 @@ function BrowserBlock({ client, id, s }: { client: Client; id: PaneId; s: Browse
         </div>
       ) : s.framable === null ? (
         <div class="browser-card dim">Loading {where}…</div>
+      ) : port ? (
+        // Its own origin, never the app's: the port's block origin, on
+        // control's block domain or the daemon's own block site.
+        // `allow-same-origin` means that origin.
+        <BlockFrame
+          client={client}
+          id={id}
+          siteKey={s.site_key}
+          src={s.src}
+          reloads={s.reloads}
+          class="browser-frame"
+          title={s.title ?? shown(s)}
+          sandbox="allow-scripts allow-forms allow-same-origin"
+        />
       ) : (
-        // Its own origin, never the app's: a port on its block's own name,
-        // or the site's. `allow-same-origin` means that origin.
+        // A web page, on its own site.
         <iframe
           key={`${s.src}#${s.reloads}`}
           class="browser-frame"
           src={s.src}
           title={s.title ?? s.url}
-          sandbox={port ? "allow-scripts allow-forms allow-same-origin" : "allow-scripts allow-forms allow-same-origin allow-popups"}
+          sandbox="allow-scripts allow-forms allow-same-origin allow-popups"
           referrerpolicy="no-referrer"
         />
       )}

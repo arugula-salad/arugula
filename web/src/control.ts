@@ -1669,7 +1669,10 @@ export class ControlSession {
     // Hosted sandboxes go through their provider, a socket each; the rest
     // share the page's one socket to the relay (M25).
     const mux = d.sandbox ? undefined : `${ws}/api/relay/m`;
-    return { daemon: { id: d.id, noise: d.cert.noise }, direct: d.urls, relay: `${ws}/api/relay/c/${d.id}`, mux, keys: this.keys };
+    // M50: blocks on control's block origins, where control serves them.
+    // A hosted sandbox's daemon doesn't dial control's relay, so not there.
+    const blockDomain = d.sandbox ? undefined : this.info.block_domain;
+    return { daemon: { id: d.id, noise: d.cert.noise }, direct: d.urls, relay: `${ws}/api/relay/c/${d.id}`, mux, keys: this.keys, blockDomain };
   }
 
   /** A read-only link to a session on daemon `id` (M19): a one-off key, its

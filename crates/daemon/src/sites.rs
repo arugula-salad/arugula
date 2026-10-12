@@ -6,7 +6,7 @@
 //! terminal. Served from one shared origin, blocks could read each other.
 //! So block 42 is `b-42.<domain>`, at `/`, and dev servers need no base path.
 //!
-//! **Two schemes:**
+//! **Three schemes:**
 //!
 //! - **Tailnet** (`--block-domain`): `https://b-42.<domain>:<port>`. A
 //!   wildcard DNS record points `*.<domain>` at this host's tailnet address,
@@ -18,6 +18,11 @@
 //!   loopback themselves. There is no identity here, so the name carries a
 //!   random key, kept in the block's config: only the app (which learns it
 //!   over its own authenticated socket) and the CLI know the name.
+//! - **Channel only** (no `--block-listen`, M50): no listener and no name
+//!   of the daemon's own. A block is shown only through control's block
+//!   origins (below), so only while this daemon is joined to a control that
+//!   has a block domain ([`set_control_blocks`]); [`shown`] says whether
+//!   new port and editor blocks can be opened.
 //!
 //! **The proxy speaks HTTP, not raw bytes,** so that dev servers work with
 //! no config and their own guards are replaced by ours:
@@ -103,6 +108,10 @@ pub enum Scheme {
     Dev { port: u16 },
     /// `https://b-<id>.<domain>[:<port>]`, the owner only (by WhoIs).
     Tailnet { domain: String, port: u16 },
+    /// No listener (M50): sites are reached only through block channels,
+    /// on control's block origins. A site has no origin of its own here,
+    /// so its URLs are paths.
+    Channel,
 }
 
 pub struct Settings {
@@ -206,10 +215,38 @@ fn control_origins() -> Vec<String> {
     CONTROL_ORIGINS.lock().unwrap().clone()
 }
 
-/// Block sites, if this daemon serves them (`--block-listen`).
+/// Whether this daemon is joined to a control that serves block origins
+/// (`block_domain` in its `/control.json`): then a block shows in
+/// control's page whether or not this daemon has a listener (M50).
+static CONTROL_BLOCKS: AtomicBool = AtomicBool::new(false);
+
+/// Control serves (or stopped serving) block origins for this daemon.
+pub fn set_control_blocks(on: bool) {
+    CONTROL_BLOCKS.store(on, Ordering::Relaxed);
+}
+
+/// Whether control's page can show this daemon's blocks (M50).
+pub fn control_blocks() -> bool {
+    CONTROL_BLOCKS.load(Ordering::Relaxed) && get().is_some()
+}
+
+/// The block site registry, whichever scheme (always installed since M50:
+/// without `--block-listen` it's [`Scheme::Channel`]).
 pub fn get() -> Option<Arc<Sites>> {
     SITES.get().cloned()
 }
+
+/// The registry, if a new port or editor block can be shown somewhere: on
+/// the daemon's own block listener, or through control's block origins. A
+/// block restored at startup doesn't ask: control's answer may not be in
+/// yet.
+pub fn shown() -> Option<Arc<Sites>> {
+    get().filter(|s| s.listens() || CONTROL_BLOCKS.load(Ordering::Relaxed))
+}
+
+/// What a page says when it can't open a port or editor block: neither a
+/// listener of its own nor a control with a block domain.
+pub const OFF: &str = "blocks on ports and editors are off here: join this machine to Arugula control, or start arugulad with --block-listen";
 
 /// Turn block sites on (once per process); `serve` then serves them.
 pub fn install(settings: Settings) -> Arc<Sites> {
@@ -230,6 +267,12 @@ impl Sites {
         Self { settings, sites: Mutex::default(), whois: Mutex::default(), closed: tokio::sync::watch::channel(0).0 }
     }
 
+    /// Whether sites are served by a listener of the daemon's own (not
+    /// [`Scheme::Channel`]).
+    pub fn listens(&self) -> bool {
+        self.settings.scheme != Scheme::Channel
+    }
+
     /// A site for block `id`. `key` is the block's own random key, part of
     /// its name in the dev scheme.
     pub fn open(&self, id: PaneId, key: &str, report: impl Fn(Report) + Send + Sync + 'static) -> Arc<Site> {
@@ -244,6 +287,7 @@ impl Sites {
                 let origin = if *port == 443 { format!("https://{host}") } else { format!("https://{host}:{port}") };
                 (host, origin)
             }
+            Scheme::Channel => (String::new(), String::new()),
         };
         let site = Arc::new(Site {
             id,
@@ -294,6 +338,7 @@ impl Sites {
         let (suffix, want_port) = match &self.settings.scheme {
             Scheme::Dev { port } => (".localhost".to_owned(), *port),
             Scheme::Tailnet { domain, port } => (format!(".{domain}"), *port),
+            Scheme::Channel => return None,
         };
         if port != want_port {
             return None;
@@ -310,6 +355,7 @@ impl Sites {
         match &self.settings.scheme {
             Scheme::Dev { .. } if peer.ip().is_loopback() => Ok(()),
             Scheme::Dev { .. } => Err(format!("{} is not this host", peer.ip())),
+            Scheme::Channel => Err("this daemon has no block listener".to_owned()),
             Scheme::Tailnet { .. } => {
                 let login = self.whois(peer.ip()).await;
                 match (&self.settings.owner, login) {
@@ -818,6 +864,22 @@ mod tests {
         assert_eq!(site.origin, "https://b-7.arugula.example.com");
         assert!(s.site_for("b-7.arugula.example.com").is_some());
         assert!(s.site_for("b-7.arugula.example.com:443").is_some());
+    }
+
+    #[tokio::test]
+    async fn channel_only_sites_have_no_name_of_their_own() {
+        let s = sites(Scheme::Channel);
+        assert!(!s.listens());
+        assert!(sites(Scheme::Dev { port: 7690 }).listens());
+        let site = s.open(9, "k3yk3yk3yk3yk3yk3y", |_| {});
+        // Paths: the page that frames it picks the origin (control's).
+        assert_eq!((site.origin.as_str(), site.url("/a?b").as_str()), ("", "/a?b"));
+        assert_eq!(site.site_key().len(), 32);
+        // Reached from a block channel, never by name.
+        assert!(s.site(9).is_some());
+        assert!(s.site_for("b-9-k3yk3yk3yk3yk3yk3y.localhost:7690").is_none());
+        assert!(s.site_for("").is_none());
+        assert!(s.admit("127.0.0.1:1".parse().unwrap()).await.is_err());
     }
 
     #[tokio::test]
