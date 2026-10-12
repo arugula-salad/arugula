@@ -32,9 +32,23 @@
 //!   offers `labs` as a flag any more.
 //! - **The file's presence is the owner asking.** A machine with a
 //!   `flags.json` (or the old file) has asked for Developer settings
-//!   ([`unlocked`]), and its menus offer them; a new install's don't.
+//!   ([`unlocked`]), and its menus offer them; a new install's don't. So
+//!   has one control sends flags to.
+//! - **Control pushes, the machine overrides (#347).** A machine joined to
+//!   control keeps what control says for its account and its team in a
+//!   second file, `flags.control.json` ([`CONTROL_FILE`]), which only the
+//!   daemon writes, from control's answer ([`write_control`]), and removes
+//!   when it leaves control. A flag is, first match wins: what `flags.json`
+//!   says of it (by name, then `labs`, then the old marker); what control
+//!   says for the machine's account; what control says for the machine's
+//!   team; its default. Account before team because it's the narrower say:
+//!   the account owns the machine, a team only reaches the machines in it.
+//!   So each flag is three-way in `flags.json`: on, off, or not named,
+//!   which follows control ([`unset`]). A [`Flag::local_only`] one
+//!   (`guest-ssh`, `agents`) ignores control: only `flags.json` sets it.
 
 use std::{
+    collections::BTreeMap,
     fs, io,
     path::Path,
     sync::atomic::{AtomicBool, Ordering},
@@ -45,6 +59,10 @@ use serde_json::{Map, Value};
 
 /// The file in the state dir that holds the flags.
 pub const FILE: &str = "flags.json";
+
+/// What control says for this machine (#347), written by the daemon from
+/// control's answer. The owner's word is [`FILE`]; nobody edits this one.
+pub const CONTROL_FILE: &str = "flags.control.json";
 
 /// What #385 used before this: an empty file named `labs`. Read as a
 /// fallback and migrated ([`migrate_legacy`]); nothing writes it any more.
@@ -87,10 +105,19 @@ pub struct Flag {
     pub about: &'static str,
     /// What it is until someone sets it.
     pub default: bool,
+    /// Only this machine's `flags.json` sets it (#347): control's word on
+    /// it, for the account or the team, is ignored. For what opens a way
+    /// in or acts for the machine (guest ssh, offering agents), which the
+    /// machine's owner turns on there or not at all.
+    pub local_only: bool,
 }
 
 const fn row(name: &'static str, title: &'static str, about: &'static str) -> Flag {
-    Flag { name, title, about, default: false }
+    Flag { name, title, about, default: false, local_only: false }
+}
+
+const fn local_row(name: &'static str, title: &'static str, about: &'static str) -> Flag {
+    Flag { local_only: true, ..row(name, title, about) }
 }
 
 /// Every flag there is. A new one is a row here.
@@ -101,10 +128,14 @@ pub const FLAGS: &[Flag] = &[
     row(FOUNTAIN, "Fountain", "Fountain agents and the runner view. Needs a Fountain login."),
     row(STUDIO, "Studio apps", "Studio app blocks. Needs a linked studio."),
     row(WORKSPACES, "Chant workspaces", "Chant workspace blocks."),
-    row(GUEST_SSH, "Guest ssh", "Invite a guest to a pane over plain ssh."),
+    local_row(GUEST_SSH, "Guest ssh", "Invite a guest to a pane over plain ssh."),
     row(SWARM_THEMES, "Extra swarm views", "The swarm's other views beside the default."),
     row(FORGES, "Forgejo and GitLab", "PR and issue blocks for Forgejo and GitLab, beside GitHub's."),
-    row(AGENTS, "Agent catalog", "Offer Claude Code subagents from this machine, and see the ones your team offers."),
+    local_row(
+        AGENTS,
+        "Agent catalog",
+        "Offer Claude Code subagents from this machine, and see the ones your team offers.",
+    ),
 ];
 
 /// The flags that are on, from one read: what a listing or a `--help` is
@@ -138,15 +169,100 @@ impl On {
 
 /// The flags that are on in `state_dir`. Read on every call.
 pub fn on(state_dir: &Path) -> On {
-    let doc = read(state_dir);
-    let bits = FLAGS.iter().enumerate().filter(|(_, f)| doc.resolve(state_dir, f)).fold(0, |b, (i, _)| b | (1 << i));
+    let bits = explain(state_dir).iter().enumerate().filter(|(_, (_, s))| s.on).fold(0, |b, (i, _)| b | (1 << i));
     On(bits)
 }
 
 /// Whether `state_dir`'s owner has asked for Developer settings: it has a
-/// flags file, or the `labs` file from before.
+/// flags file, or the `labs` file from before. Or control sends it flags
+/// (#347), so its owner can see where they come from and override them.
 pub fn unlocked(state_dir: &Path) -> bool {
-    state_dir.join(FILE).exists() || state_dir.join(LEGACY_LABS_FILE).exists()
+    state_dir.join(FILE).exists() || state_dir.join(LEGACY_LABS_FILE).exists() || !read_control(state_dir).is_empty()
+}
+
+/// What control says for this machine (#347): its account's flags and,
+/// for a team's machine, its team's, by name. A name that isn't in
+/// [`FLAGS`] is kept and means nothing here.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Pushed {
+    #[serde(default)]
+    pub account: BTreeMap<String, bool>,
+    #[serde(default)]
+    pub team: BTreeMap<String, bool>,
+}
+
+impl Pushed {
+    pub fn is_empty(&self) -> bool {
+        self.account.is_empty() && self.team.is_empty()
+    }
+}
+
+/// Where a flag's state comes from (#347), first match wins: this
+/// machine's `flags.json`, control for the machine's account, control for
+/// its team, else the flag's default.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "FlagSource"))]
+#[serde(rename_all = "lowercase")]
+pub enum Source {
+    #[default]
+    Default,
+    Team,
+    Account,
+    Machine,
+}
+
+/// One flag's state, and each say in it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct State {
+    pub on: bool,
+    pub source: Source,
+    /// This machine's word (`flags.json` by name, `labs` there, or the old
+    /// marker); `None` follows control.
+    pub local: Option<bool>,
+    /// Control's word for the machine's account.
+    pub account: Option<bool>,
+    /// Control's word for the machine's team.
+    pub team: Option<bool>,
+}
+
+/// Every flag with its state and where it comes from, from one read of
+/// each file.
+pub fn explain(state_dir: &Path) -> Vec<(Flag, State)> {
+    let doc = read(state_dir);
+    let pushed = read_control(state_dir);
+    FLAGS.iter().map(|f| (*f, doc.state(state_dir, &pushed, f))).collect()
+}
+
+/// [`CONTROL_FILE`] as it is: empty if there's none or it doesn't parse
+/// (it's the daemon's alone, and the next refresh writes it again).
+fn read_control(dir: &Path) -> Pushed {
+    fs::read_to_string(dir.join(CONTROL_FILE)).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
+}
+
+/// Keeps what control says for this machine (#347); `true` if it changed.
+/// Nothing pushed removes the file, so a machine control says nothing to
+/// is as it was before it joined.
+pub fn write_control(state_dir: &Path, pushed: &Pushed) -> io::Result<bool> {
+    if pushed.is_empty() {
+        return forget_control(state_dir);
+    }
+    if read_control(state_dir) == *pushed {
+        return Ok(false);
+    }
+    let mut text = serde_json::to_string_pretty(pushed).expect("maps of bools serialize");
+    text.push('\n');
+    write_atomic(&state_dir.join(CONTROL_FILE), text.as_bytes())?;
+    Ok(true)
+}
+
+/// Drops what control said (#347): the machine left control, and only its
+/// own `flags.json` counts again. `true` if there was a file.
+pub fn forget_control(state_dir: &Path) -> io::Result<bool> {
+    match fs::remove_file(state_dir.join(CONTROL_FILE)) {
+        Ok(()) => Ok(true),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(false),
+        Err(e) => Err(e),
+    }
 }
 
 fn flag(name: &str) -> Option<&'static Flag> {
@@ -172,17 +288,41 @@ pub struct FlagInfo {
     #[serde(default = "yes")]
     #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
     pub built: bool,
+    /// Where `on` comes from (#347). Absent from a daemon before it, whose
+    /// flags are all this machine's or their defaults.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts", ts(as = "Option<Source>", optional))]
+    pub source: Source,
+    /// This machine's word on it; absent: it follows control.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub local: Option<bool>,
+    /// Control's word for the machine's account, if it has one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub account: Option<bool>,
+    /// Control's word for the machine's team, if it has one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub team: Option<bool>,
+    /// Only this machine sets it; control's word is ignored
+    /// ([`Flag::local_only`]). Absent: control may set it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    pub local_only: bool,
 }
 
 fn yes() -> bool {
     true
 }
 
-/// `PUT /api/flags/{name}`: the body (the `flag.set` operation).
+/// `PUT /api/flags/{name}`: the body (the `flag.set` operation). `null`
+/// takes this machine's word back, so the flag follows control (#347);
+/// only a daemon that reports [`FlagInfo::source`] takes it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct FlagSetRequest {
-    pub on: bool,
+    pub on: Option<bool>,
 }
 
 /// The file as the last read found it.
@@ -221,38 +361,66 @@ impl Doc {
         }
     }
 
-    /// A flag's state: the file's word on it, else its word on `labs`
-    /// (which was all of them), else the old marker, else its default.
-    fn resolve(&self, dir: &Path, f: &Flag) -> bool {
-        self.says(f.name)
-            .or_else(|| self.says(LABS))
-            .unwrap_or_else(|| dir.join(LEGACY_LABS_FILE).exists() || f.default)
+    /// This machine's word on a flag: the file's on it, else its word on
+    /// `labs` (which was all of them), else the old marker's (on).
+    fn local(&self, dir: &Path, f: &Flag) -> Option<bool> {
+        self.says(f.name).or_else(|| self.says(LABS)).or_else(|| dir.join(LEGACY_LABS_FILE).exists().then_some(true))
+    }
+
+    /// A flag's state: this machine's word, else control's for the
+    /// account, else control's for the team, else its default.
+    fn state(&self, dir: &Path, pushed: &Pushed, f: &Flag) -> State {
+        let local = self.local(dir, f);
+        // A local-only flag doesn't hear control at all.
+        let pushed_for = |m: &BTreeMap<String, bool>| m.get(f.name).copied().filter(|_| !f.local_only);
+        let account = pushed_for(&pushed.account);
+        let team = pushed_for(&pushed.team);
+        let (on, source) = match (local, account, team) {
+            (Some(on), ..) => (on, Source::Machine),
+            (None, Some(on), _) => (on, Source::Account),
+            (None, None, Some(on)) => (on, Source::Team),
+            (None, None, None) => (f.default, Source::Default),
+        };
+        State { on, source, local, account, team }
     }
 }
 
 /// Whether the flag `name` is on in `state_dir`. Read on every call; a
 /// name that isn't in [`FLAGS`] is off.
 pub fn get(state_dir: &Path, name: &str) -> bool {
-    flag(name).is_some_and(|f| read(state_dir).resolve(state_dir, f))
+    flag(name).is_some_and(|f| read(state_dir).state(state_dir, &read_control(state_dir), f).on)
 }
 
-/// Every flag with its state, from one read of the file.
+/// Every flag with its state, from one read of each file.
 pub fn all(state_dir: &Path) -> Vec<(Flag, bool)> {
-    let doc = read(state_dir);
-    FLAGS.iter().map(|f| (*f, doc.resolve(state_dir, f))).collect()
+    explain(state_dir).into_iter().map(|(f, s)| (f, s.on)).collect()
 }
 
 /// Turns the flag `name` on or off, keeping everything else in the file.
 /// An unknown name is `InvalidInput`.
 pub fn set(state_dir: &Path, name: &str, on: bool) -> io::Result<()> {
-    if flag(name).is_none() {
-        let known: Vec<_> = FLAGS.iter().map(|f| f.name).collect();
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            format!("no flag named {name} (the flags are {})", known.join(", ")),
-        ));
+    known(name)?;
+    write(state_dir, Some((name, Some(on))))
+}
+
+fn known(name: &str) -> io::Result<()> {
+    if flag(name).is_some() {
+        return Ok(());
     }
-    write(state_dir, Some((name, on)))
+    let known: Vec<_> = FLAGS.iter().map(|f| f.name).collect();
+    Err(io::Error::new(
+        io::ErrorKind::InvalidInput,
+        format!("no flag named {name} (the flags are {})", known.join(", ")),
+    ))
+}
+
+/// Takes this machine's word on `name` back (#347): the flag follows
+/// control, or its default. Where `labs` (or the old marker) spoke for it,
+/// `labs` is first spelled out as each flag the file didn't name, so the
+/// others stay as they were. An unknown name is `InvalidInput`.
+pub fn unset(state_dir: &Path, name: &str) -> io::Result<()> {
+    known(name)?;
+    write(state_dir, Some((name, None)))
 }
 
 /// Makes the flags file if there is none, with nothing in it: the owner
@@ -261,8 +429,9 @@ pub fn unlock(state_dir: &Path) -> io::Result<()> {
     if state_dir.join(FILE).exists() { Ok(()) } else { write(state_dir, None) }
 }
 
-/// The file written again with `key` set, if one is given.
-fn write(state_dir: &Path, key: Option<(&str, bool)>) -> io::Result<()> {
+/// The file written again with `key` set (`None`: taken out), if one is
+/// given.
+fn write(state_dir: &Path, key: Option<(&str, Option<bool>)>) -> io::Result<()> {
     let mut doc = match read(state_dir) {
         Doc::Ok(m) => m,
         Doc::Missing => Map::new(),
@@ -272,13 +441,36 @@ fn write(state_dir: &Path, key: Option<(&str, bool)>) -> io::Result<()> {
             Map::new()
         }
     };
+    let marker = state_dir.join(LEGACY_LABS_FILE);
+    let mut drop_marker = false;
     let flags = doc.entry("flags").or_insert_with(|| Value::Object(Map::new()));
-    if let (Value::Object(flags), Some((name, on))) = (flags, key) {
-        flags.insert(name.to_owned(), Value::Bool(on));
+    match (flags, key) {
+        (Value::Object(flags), Some((name, Some(on)))) => {
+            flags.insert(name.to_owned(), Value::Bool(on));
+        }
+        (Value::Object(flags), Some((name, None))) => {
+            // `labs` (or the old marker) speaks for every flag the file
+            // doesn't name: name them first, so taking one back leaves
+            // the rest as they were.
+            let labs = flags.get(LABS).and_then(Value::as_bool).or_else(|| marker.exists().then_some(true));
+            if let Some(labs) = labs.filter(|_| !flags.contains_key(name)) {
+                for f in FLAGS {
+                    flags.entry(f.name).or_insert(Value::Bool(labs));
+                }
+                flags.remove(LABS);
+                drop_marker = true;
+            }
+            flags.remove(name);
+        }
+        _ => {}
     }
     let mut text = serde_json::to_string_pretty(&doc).expect("a JSON object serializes");
     text.push('\n');
-    write_atomic(&state_dir.join(FILE), text.as_bytes())
+    write_atomic(&state_dir.join(FILE), text.as_bytes())?;
+    if drop_marker {
+        let _ = fs::remove_file(marker);
+    }
+    Ok(())
 }
 
 /// The old `labs` marker file, moved into `flags.json`: `labs` on there
@@ -291,7 +483,7 @@ pub fn migrate_legacy(state_dir: &Path) -> io::Result<bool> {
         return Ok(false);
     }
     if read(state_dir).says(LABS).is_none() {
-        write(state_dir, Some((LABS, true)))?;
+        write(state_dir, Some((LABS, Some(true))))?;
     }
     fs::remove_file(&marker)?;
     Ok(true)
@@ -475,6 +667,120 @@ mod tests {
         assert!(migrate_legacy(&d).unwrap());
         assert!(!d.join(LEGACY_LABS_FILE).exists());
         assert!(!on(&d).any());
+        fs::remove_dir_all(&d).unwrap();
+    }
+
+    fn pushed(account: &[(&str, bool)], team: &[(&str, bool)]) -> Pushed {
+        let m = |kv: &[(&str, bool)]| kv.iter().map(|(k, v)| (k.to_string(), *v)).collect();
+        Pushed { account: m(account), team: m(team) }
+    }
+
+    fn state_of(d: &Path, name: &str) -> State {
+        explain(d).into_iter().find(|(f, _)| f.name == name).unwrap().1
+    }
+
+    /// #347: this machine's word, then control's for the account, then for
+    /// the team, then the default.
+    #[test]
+    fn the_machine_beats_the_account_which_beats_the_team() {
+        let d = dir("pushed");
+        assert!(!write_control(&d, &Pushed::default()).unwrap(), "nothing to write, nothing written");
+        assert!(!d.join(CONTROL_FILE).exists() && !unlocked(&d));
+
+        assert!(write_control(&d, &pushed(&[("vms", false)], &[(CHAT, true), (VMS, true), ("future", true)])).unwrap());
+        assert!(
+            !write_control(&d, &pushed(&[("vms", false)], &[(CHAT, true), (VMS, true), ("future", true)])).unwrap()
+        );
+        // Control saying something offers Developer settings, to see it.
+        assert!(unlocked(&d) && !d.join(FILE).exists());
+        assert_eq!(names(&d), [CHAT]);
+        assert_eq!(
+            state_of(&d, CHAT),
+            State { on: true, source: Source::Team, local: None, account: None, team: Some(true) }
+        );
+        assert_eq!(state_of(&d, VMS).source, Source::Account);
+        assert!(!state_of(&d, VMS).on);
+        assert_eq!(state_of(&d, HUDDLES).source, Source::Default);
+
+        // The machine forces either way, and taking its word back follows
+        // control again.
+        set(&d, CHAT, false).unwrap();
+        set(&d, VMS, true).unwrap();
+        assert_eq!(names(&d), [VMS]);
+        assert_eq!(
+            state_of(&d, CHAT),
+            State { on: false, source: Source::Machine, local: Some(false), account: None, team: Some(true) }
+        );
+        unset(&d, CHAT).unwrap();
+        unset(&d, VMS).unwrap();
+        assert_eq!(names(&d), [CHAT]);
+        assert_eq!(fs::read_to_string(d.join(FILE)).unwrap().replace(char::is_whitespace, ""), r#"{"flags":{}}"#);
+        assert_eq!(unset(&d, "nope").unwrap_err().kind(), io::ErrorKind::InvalidInput);
+
+        // Leaving control: only the machine's own word counts.
+        assert!(forget_control(&d).unwrap());
+        assert!(!on(&d).any() && !forget_control(&d).unwrap());
+        // And a control that pushes nothing any more takes the file away.
+        write_control(&d, &pushed(&[(CHAT, true)], &[])).unwrap();
+        assert!(get(&d, CHAT));
+        assert!(write_control(&d, &Pushed::default()).unwrap());
+        assert!(!d.join(CONTROL_FILE).exists() && !get(&d, CHAT));
+        fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// `labs` stood for every flag the file doesn't name: taking one back
+    /// spells the rest out, so they stay on.
+    #[test]
+    fn taking_one_back_from_labs_keeps_the_rest() {
+        let d = dir("unset-labs");
+        fs::write(d.join(FILE), r#"{"flags":{"labs":true,"huddles":false}}"#).unwrap();
+        write_control(&d, &pushed(&[], &[(CHAT, false)])).unwrap();
+        assert!(get(&d, CHAT) && state_of(&d, CHAT).source == Source::Machine);
+        unset(&d, CHAT).unwrap();
+        assert_eq!(state_of(&d, CHAT).source, Source::Team);
+        assert!(!get(&d, CHAT) && get(&d, VMS) && !get(&d, HUDDLES));
+        assert_eq!(names(&d).len(), FLAGS.len() - 2);
+        let v: Value = serde_json::from_str(&fs::read_to_string(d.join(FILE)).unwrap()).unwrap();
+        assert!(v["flags"].get(LABS).is_none() && v["flags"].get(CHAT).is_none());
+
+        // The old marker the same way, and it goes.
+        let d2 = dir("unset-marker");
+        fs::write(d2.join(LEGACY_LABS_FILE), "").unwrap();
+        unset(&d2, FOUNTAIN).unwrap();
+        assert!(!d2.join(LEGACY_LABS_FILE).exists());
+        assert!(!get(&d2, FOUNTAIN) && get(&d2, CHAT));
+        fs::remove_dir_all(&d).unwrap();
+        fs::remove_dir_all(&d2).unwrap();
+    }
+
+    /// Guest ssh and the agent catalog are the machine's alone: control
+    /// turns them neither on nor off.
+    #[test]
+    fn control_has_no_say_in_a_local_only_flag() {
+        let local: Vec<_> = FLAGS.iter().filter(|f| f.local_only).map(|f| f.name).collect();
+        assert_eq!(local, [GUEST_SSH, AGENTS]);
+        let d = dir("local-only");
+        write_control(&d, &pushed(&[(GUEST_SSH, true)], &[(AGENTS, true), (CHAT, true)])).unwrap();
+        assert_eq!(names(&d), [CHAT]);
+        assert_eq!(
+            state_of(&d, GUEST_SSH),
+            State { on: false, source: Source::Default, local: None, account: None, team: None }
+        );
+        assert_eq!(state_of(&d, AGENTS).source, Source::Default);
+        // Nor off: the machine's word is all there is.
+        set(&d, AGENTS, true).unwrap();
+        write_control(&d, &pushed(&[(AGENTS, false)], &[])).unwrap();
+        assert!(get(&d, AGENTS) && state_of(&d, AGENTS).source == Source::Machine);
+        fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
+    fn a_control_file_that_doesnt_parse_says_nothing() {
+        let d = dir("pushed-bad");
+        fs::write(d.join(CONTROL_FILE), "{not json").unwrap();
+        assert!(!on(&d).any() && !unlocked(&d));
+        assert!(write_control(&d, &pushed(&[(CHAT, true)], &[])).unwrap());
+        assert!(get(&d, CHAT));
         fs::remove_dir_all(&d).unwrap();
     }
 

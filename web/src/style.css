@@ -1885,6 +1885,16 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   justify-content: flex-start;
 }
 
+/* #347: taking this machine's word back sits at the row's end. */
+.developer .flag-follow {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.developer .flag-source {
+  font-style: italic;
+}
+
 .agent-perm-buttons button.link {
   min-height: 0;
   padding: 4px;
@@ -2847,6 +2857,20 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 
 .control-unused {
   margin: 4px 0;
+}
+
+/* Labs flags on control (#347): folded, under a team or your machines. */
+.labs-flags {
+  margin-top: 12px;
+}
+
+.labs-flags summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.labs-flags > p {
+  margin: 6px 0 0;
 }
 
 /* Locking a team: what it does, beside its button. */

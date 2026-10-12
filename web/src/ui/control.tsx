@@ -11,7 +11,8 @@ import { CopyButton, CopyText, download } from "./copy";
 import { ROLE_HELP, roleAs, roleLabel } from "./roles";
 import { MenuLayer, type MenuItem } from "./menu";
 import { AccountButton } from "./app-bar";
-import type { PresignedInvite, ShareOffer, Team } from "../control";
+import type { LabsFlags, PresignedInvite, ShareOffer, Team } from "../control";
+import { FLAGS } from "../proto.gen";
 import type { TeamRole } from "../e2e/team.ts";
 import { qr, qrPath } from "./qr";
 import { AccountPanel, type SessionRow } from "./account";
@@ -2147,10 +2148,79 @@ function AdmitPrompt({ s, team, req }: { s: ControlSession; team: Team; req: Tea
 /** "an owner", "someone who drives". */
 const roleFor = (role: TeamRole) => (role === "owner" ? "an owner" : `someone who ${roleLabel(role)}`);
 
+/** The flags control may set: guest ssh and the agent catalog are each
+ * machine's alone (`local_only`), set in its own Developer settings. */
+const PUSHED = FLAGS.filter((f) => !f.local_only);
+
+/** Labs flags set on control (#347), for an account's machines or a team's:
+ * each unset (a machine follows its default), on or off. A machine's own
+ * Developer settings win over these, and the account's over the team's. */
+function LabsFlagList({ scope, what, flags, edit, set }: { scope: string; what: string; flags: Record<string, boolean>; edit: boolean; set: (name: string, on: boolean | null) => void }) {
+  const named = PUSHED.filter((f) => flags[f.name] !== undefined).length;
+  return (
+    <details class="labs-flags" data-labs-flags={scope}>
+      <summary>
+        Labs flags <span class="dim">· {named ? `${named} set` : "none set"}</span>
+      </summary>
+      <p class="dim">{what}</p>
+      <ul class="control-devices">
+        {PUSHED.map((f) => {
+          const v = flags[f.name];
+          const value = v === undefined ? "" : v ? "on" : "off";
+          return (
+            <li key={f.name} data-labs-flag={f.name}>
+              <span>
+                {f.title}
+                <span class="control-device-label dim">{f.about}</span>
+              </span>
+              {edit ? (
+                <select
+                  class="control-select"
+                  value={value}
+                  aria-label={`${f.title} for ${scope}`}
+                  onChange={(e) => {
+                    const x = (e.target as HTMLSelectElement).value;
+                    set(f.name, x === "" ? null : x === "on");
+                  }}
+                >
+                  <option value="">Not set</option>
+                  <option value="on">On</option>
+                  <option value="off">Off</option>
+                </select>
+              ) : (
+                <span class="dim">{v === undefined ? "Not set" : v ? "On" : "Off"}</span>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </details>
+  );
+}
+
 function Teams({ s, close }: { s: ControlSession; close: () => void }) {
   const [name, setName] = useState("");
   const [err, setErr] = useState("");
   const act = (f: () => Promise<unknown>) => f().catch((e: Error) => setErr(e.message));
+  // Labs flags (#347): the account's and each team's; null until loaded,
+  // left out by a control from before them, and for someone with no
+  // machine that has Developer settings (strangers never see Labs).
+  const [labs, setLabs] = useState<LabsFlags | null>(null);
+  useEffect(() => {
+    let live = true;
+    s.labsFlags().then(
+      (l) => live && setLabs(l.dev ? l : null),
+      () => live && setLabs(null),
+    );
+    return () => {
+      live = false;
+    };
+  }, [s]);
+  const setFlag = (team: string | undefined) => (flag: string, on: boolean | null) =>
+    act(async () => {
+      const { flags } = await s.setLabsFlag(flag, on, team);
+      setLabs((l) => l && (team ? { ...l, teams: { ...l.teams, [team]: { ...l.teams[team], flags } } } : { ...l, account: flags }));
+    });
   return (
     <Modal close={close}>
       <h2>Teams</h2>
@@ -2171,8 +2241,20 @@ function Teams({ s, close }: { s: ControlSession; close: () => void }) {
         </a>
       </p>
       {s.teams.map((t) => (
-        <TeamSection key={t.team} s={s} t={t} act={act} />
+        <TeamSection key={t.team} s={s} t={t} act={act} labs={labs?.teams[t.team]} setFlag={setFlag(t.team)} />
       ))}
+      {labs ? (
+        <section class="team" data-account-labs>
+          <h3>Your machines</h3>
+          <LabsFlagList
+            scope="your machines"
+            what="For every machine of yours. A machine's own Developer settings win over these, and these over a team's."
+            flags={labs.account}
+            edit
+            set={setFlag(undefined)}
+          />
+        </section>
+      ) : null}
       <form
         class="control-code"
         onSubmit={(e) => {
@@ -2193,7 +2275,19 @@ function Teams({ s, close }: { s: ControlSession; close: () => void }) {
   );
 }
 
-function TeamSection({ s, t, act }: { s: ControlSession; t: Team; act: (f: () => Promise<unknown>) => void }) {
+function TeamSection({
+  s,
+  t,
+  act,
+  labs,
+  setFlag,
+}: {
+  s: ControlSession;
+  t: Team;
+  act: (f: () => Promise<unknown>) => void;
+  labs?: { flags: Record<string, boolean>; owner: boolean };
+  setFlag: (name: string, on: boolean | null) => void;
+}) {
   const [role, setRole] = useState<TeamRole>("editor");
   const [link, setLink] = useState<string | null>(null);
   // An invite that waits for an owner's yes (the old way), not presigned.
@@ -2334,6 +2428,19 @@ function TeamSection({ s, t, act }: { s: ControlSession; t: Team; act: (f: () =>
       ) : (
         <p class="dim">None yet.</p>
       )}
+      {labs ? (
+        <LabsFlagList
+          scope={t.roster.name}
+          what={
+            labs.owner
+              ? "For the team's machines. A machine's own Developer settings win over these, and so do its owner's flags for their machines."
+              : "For the team's machines, set by its owners. A machine's own Developer settings win over these."
+          }
+          flags={labs.flags}
+          edit={labs.owner}
+          set={setFlag}
+        />
+      ) : null}
       {owner ? (
         <>
           <div class="control-code control-invite">

@@ -18,6 +18,7 @@ mod forge;
 #[cfg(test)]
 mod forge_wire;
 mod guest_jump;
+mod labs_flags;
 mod limit;
 mod passkey;
 mod push;
@@ -442,6 +443,7 @@ pub fn router(app: Arc<App>) -> Router {
         .route("/api/directory", get(api::directory))
         .route("/api/shares/{daemon}", post(teams::answer_share))
         .route("/api/people", get(teams::person))
+        .route("/api/flags", get(labs_flags::list).post(labs_flags::set))
         .route("/api/teams", get(teams::list).post(teams::create))
         .route("/api/teams/{id}/roster", post(teams::set_roster))
         .route("/api/teams/{id}/invites", post(teams::invite))

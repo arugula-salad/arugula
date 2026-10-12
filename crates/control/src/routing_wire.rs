@@ -1061,6 +1061,79 @@ fn presigned(team: &str, owner: &DeviceKeys) -> (Invite, DeviceKeys) {
     (inv, once)
 }
 
+/// #347: an account sets flags for its machines, a team's owners for the
+/// team's machines, and each machine gets both with its certificates.
+#[tokio::test]
+async fn labs_flags_go_to_the_machines_they_are_for() {
+    let c = control(|_| {}).await;
+    let owner_root = person(&c.app, "owner", "own1");
+    let mate_root = person(&c.app, "mate", "m1");
+    let team = "00112233445566ee";
+    acme(&c.app, team, &owner_root);
+    let v2 = roster(
+        team,
+        2,
+        vec![member("own1", &owner_root, TeamRole::Owner), member("m1", &mate_root, TeamRole::Editor)],
+        &owner_root,
+    );
+    c.app.db.add_roster(team, 2, &serde_json::to_string(&v2).unwrap()).unwrap();
+    let team_box = daemon(&c.app, "m1", "team-box");
+    c.app.db.set_daemon_team(&team_box.id(), team).unwrap();
+    let own_box = daemon(&c.app, "m1", "laptop");
+    let (owner, mate) = (session(&c.app, "own1"), session(&c.app, "m1"));
+
+    async fn flags(c: &Control, d: &DeviceKeys) -> Value {
+        let (st, v) = c.daemon_get(d, "/api/daemon/trust?features=").await;
+        assert_eq!(st, 200, "{v}");
+        v["flags"].clone()
+    }
+    assert_eq!(flags(&c, &team_box).await, json!({ "account": {}, "team": {} }));
+
+    // A member isn't an owner: the team's flags aren't theirs to set.
+    let set = json!({ "name": "chat", "on": true, "team": team });
+    assert_eq!(c.as_person(&mate, "POST", "/api/flags", Some(set.clone())).await.0, 403);
+    let (st, v) = c.as_person(&owner, "POST", "/api/flags", Some(set)).await;
+    assert_eq!((st, &v["flags"]), (200, &json!({ "chat": true })));
+    // Their own account's are.
+    let (st, _) = c.as_person(&mate, "POST", "/api/flags", Some(json!({ "name": "chat", "on": false }))).await;
+    assert_eq!(st, 200);
+    let bad = json!({ "name": "Not A Flag", "on": true });
+    assert_eq!(c.as_person(&mate, "POST", "/api/flags", Some(bad)).await.0, 400);
+
+    // The team's machine gets both (account over team is the daemon's to
+    // decide); the member's own machine only the account's.
+    assert_eq!(flags(&c, &team_box).await, json!({ "account": { "chat": false }, "team": { "chat": true } }));
+    assert_eq!(flags(&c, &own_box).await, json!({ "account": { "chat": false }, "team": {} }));
+
+    // Guest ssh and the agent catalog are each machine's alone.
+    for name in ["guest-ssh", "agents"] {
+        let set = json!({ "name": name, "on": true, "team": team });
+        let (st, v) = c.as_person(&owner, "POST", "/api/flags", Some(set)).await;
+        assert_eq!(st, 400, "{name}: {v}");
+        let (st, _) = c.as_person(&mate, "POST", "/api/flags", Some(json!({ "name": name, "on": false }))).await;
+        assert_eq!(st, 400, "{name}");
+    }
+
+    // Each sees what they may set; the page shows it only once a machine
+    // of theirs has Developer settings.
+    let (_, v) = c.as_person(&mate, "GET", "/api/flags", None).await;
+    assert_eq!(
+        v,
+        json!({
+            "account": { "chat": false },
+            "teams": { team: { "flags": { "chat": true }, "owner": false } },
+            "dev": false,
+        })
+    );
+    assert_eq!(c.daemon_get(&own_box, "/api/daemon/trust?features=presigned-invites,dev-settings").await.0, 200);
+    assert_eq!(c.as_person(&mate, "GET", "/api/flags", None).await.1["dev"], true);
+    assert_eq!(c.as_person(&owner, "GET", "/api/flags", None).await.1["dev"], false);
+
+    // Unset is gone, not off.
+    c.as_person(&mate, "POST", "/api/flags", Some(json!({ "name": "chat", "on": null }))).await;
+    assert_eq!(flags(&c, &own_box).await, json!({ "account": {}, "team": {} }));
+}
+
 #[tokio::test]
 async fn owners_list_and_cancel_presigned_invites() {
     let c = control(|_| {}).await;

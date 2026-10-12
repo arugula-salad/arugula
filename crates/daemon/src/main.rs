@@ -564,13 +564,20 @@ fn main() -> anyhow::Result<()> {
 fn flags_cli(name: Option<&str>, switch: Option<args::Switch>, dir: &std::path::Path) -> anyhow::Result<()> {
     use arugula_proto::flags;
     let state = |on| if on { "on" } else { "off" };
+    // Where it comes from (#347): this machine, or control.
+    let from = |s: flags::Source| match s {
+        flags::Source::Machine => "here",
+        flags::Source::Account => "account",
+        flags::Source::Team => "team",
+        flags::Source::Default => "default",
+    };
     let Some(name) = name else {
         // Asking is what makes Developer settings show in the menus (#665).
         flags::unlock(dir).map_err(|e| anyhow::anyhow!("{e}"))?;
-        let rows = flags::all(dir);
+        let rows = flags::explain(dir);
         let width = rows.iter().map(|(f, _)| f.name.len()).max().unwrap_or(0);
-        for (f, on) in rows {
-            println!("{:width$}  {:3}  {}", f.name, state(on), f.about);
+        for (f, s) in rows {
+            println!("{:width$}  {:3}  {:7}  {}", f.name, state(s.on), from(s.source), f.about);
         }
         return Ok(());
     };
@@ -578,9 +585,15 @@ fn flags_cli(name: Option<&str>, switch: Option<args::Switch>, dir: &std::path::
         None if flags::FLAGS.iter().any(|f| f.name == name) => println!("{}", state(flags::get(dir, name))),
         None => anyhow::bail!("no flag named {name} (see `arugulad flags`)"),
         Some(s) => {
-            let on = s == args::Switch::On;
-            flags::set(dir, name, on).map_err(|e| anyhow::anyhow!("{e}"))?;
-            println!("{name} is {}", state(on));
+            match s {
+                args::Switch::On => flags::set(dir, name, true),
+                args::Switch::Off => flags::set(dir, name, false),
+                args::Switch::Unset => flags::unset(dir, name),
+            }
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+            let now = flags::explain(dir).into_iter().find(|(f, _)| f.name == name).map(|(_, s)| s);
+            let now = now.expect("set accepted a known flag");
+            println!("{name} is {} ({})", state(now.on), from(now.source));
             if !labs::BUILT {
                 println!("  This build of Arugula has no Labs, so nothing changes.");
             } else if daemon_running(dir) {

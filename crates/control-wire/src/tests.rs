@@ -190,7 +190,23 @@ fn an_older_controls_trust_answer_parses() {
     let a: TrustAnswer = parse(&json!({ "certs": [browser()], "revocations": [] }));
     assert!(a.trust.is_none() && a.moved.is_none());
     let b: TrustAnswer = parse(&json!({ "trust": null, "certs": [], "revocations": [], "moved": null }));
-    assert!(b.moved.is_none());
+    assert!(b.moved.is_none() && b.flags.is_none());
+}
+
+/// #347: the account's and the team's Labs flags ride on the trust answer;
+/// a control from before sends none, and its bytes are as they were.
+#[test]
+fn the_trust_answer_carries_labs_flags() {
+    let a = round::<TrustAnswer>(json!({
+        "trust": null, "certs": [], "revocations": [], "moved": null,
+        "flags": { "account": { "vms": false }, "team": { "chat": true } },
+    }));
+    let f = a.flags.unwrap();
+    assert_eq!((f.account.get("vms"), f.team.get("chat")), (Some(&false), Some(&true)));
+    round::<TrustAnswer>(json!({ "trust": null, "certs": [], "revocations": [], "moved": null }));
+    // An empty side may be left out.
+    let f: Flags = parse(&json!({ "team": { "chat": true } }));
+    assert!(f.account.is_empty());
 }
 
 #[test]

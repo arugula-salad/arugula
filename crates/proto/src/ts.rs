@@ -56,6 +56,7 @@ fn generate() -> String {
     c.visit::<HostFeatures>();
     c.visit::<FlagInfo>();
     c.visit::<FlagSetRequest>();
+    c.visit::<crate::flags::Source>();
     c.visit::<ControlState>();
     c.visit::<HostInfo>();
     c.visit::<ThreadMessages>();
@@ -97,6 +98,7 @@ fn generate() -> String {
     }
     out.push('\n');
     out.push_str(&ops_table());
+    out.push_str(&flags_table());
     out
 }
 
@@ -118,6 +120,27 @@ fn ops_table() -> String {
         out.push_str(&format!("  \"{name}\": {{ method: \"{method}\", path: \"{path}\" }},\n"));
     }
     out.push_str("} as const;\n\nexport type OpName = keyof typeof OPS;\n");
+    out
+}
+
+/// The Labs flags (`arugula_proto::flags::FLAGS`), for control's page,
+/// which sets them for an account or a team without a daemon to ask
+/// (#347).
+fn flags_table() -> String {
+    let mut out =
+        String::from("\n/** The Labs flags (`arugula_proto::flags::FLAGS`), in order. */\nexport const FLAGS = [\n");
+    for f in crate::flags::FLAGS {
+        let s = |v: &str| serde_json::to_string(v).expect("a string serializes");
+        out.push_str(&format!(
+            "  {{ name: {}, title: {}, about: {}, default: {}, local_only: {} }},\n",
+            s(f.name),
+            s(f.title),
+            s(f.about),
+            f.default,
+            f.local_only
+        ));
+    }
+    out.push_str("] as const;\n");
     out
 }
 
