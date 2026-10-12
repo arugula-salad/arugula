@@ -91,6 +91,9 @@ test.beforeAll(async () => {
   procs.push(d);
   mini = `http://127.0.0.1:${await daemonPort(state, d)}`;
   await up(`${mini}/api/host`);
+  // On control's relay: a flag set before it dials is nudged to nobody,
+  // and the next look is a minute off.
+  await me.waitOnline("mini");
 });
 
 test.afterAll(() => {
@@ -118,8 +121,12 @@ test("a team's and an account's flags reach the machine, each saying where it co
   await setOnControl("chat", true, team);
   await setOnControl("huddles", true, team);
   await setOnControl("huddles", false);
-  await expect.poll(() => existsSync(join(state, "flags.control.json")), { timeout: 20_000 }).toBe(true);
-  expect(JSON.parse(readFileSync(join(state, "flags.control.json"), "utf8"))).toEqual({
+  // Each set nudges the machine: the file may come before the last of them.
+  const fromControl = () => {
+    const f = join(state, "flags.control.json");
+    return existsSync(f) ? JSON.parse(readFileSync(f, "utf8")) : null;
+  };
+  await expect.poll(fromControl, { timeout: 20_000 }).toEqual({
     account: { huddles: false },
     team: { chat: true, huddles: true },
   });

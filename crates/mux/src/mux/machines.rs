@@ -14,7 +14,7 @@ impl Daemon {
         crate::labs::flag(self.store.root(), arugula_proto::flags::VMS)?;
         if self.config.provider.is_none() {
             return Err(crate::labs::vms_unavailable(
-                "VM panes aren't set up: arugulad found no wisp token (see --wisp-token-file)",
+                "VM panes aren't set up: arugulad found no sandbox provider (a wisp token, or --loam-url and its key)",
             ));
         }
         let id = self.next_machine;
@@ -28,7 +28,7 @@ impl Daemon {
         crate::labs::flag(self.store.root(), arugula_proto::flags::VMS)?;
         if self.config.provider.is_none() {
             return Err(crate::labs::vms_unavailable(
-                "no sandbox provider: arugulad found no wisp token (see --wisp-token-file)",
+                "no sandbox provider: arugulad found none (a wisp token, or --loam-url and its key)",
             ));
         }
         if sprite.starts_with(&self.config.sprite_prefix()) {
