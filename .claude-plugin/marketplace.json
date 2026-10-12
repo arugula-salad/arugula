@@ -1,0 +1,12 @@
+{
+  "name": "arugula",
+  "description": "Arugula's Claude Code plugin: its MCP tools, its hooks and a skill, in one install.",
+  "owner": { "name": "Arugula", "url": "https://arugula.io" },
+  "plugins": [
+    {
+      "name": "arugula",
+      "source": "./plugins/claude-code",
+      "description": "Arugula's MCP tools, the hooks that put Claude Code's questions, permission prompts and follow-ups on cards, and a skill for using them."
+    }
+  ]
+}
