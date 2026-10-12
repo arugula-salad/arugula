@@ -388,14 +388,16 @@ export class Fleet {
     RelayMux.closeAll();
   }
 
-  /** Shows a pane in the tab view: set by the page. */
-  onOpen: (host: string, pane: number) => void = () => {};
+  /** Shows a pane in the tab view, and with `share` its session's share
+   * picker (#237): set by the page. */
+  onOpen: (host: string, pane: number, share?: boolean) => void = () => {};
 
   /** Open a pane of the merged list in its tab, connected for real (a
-   * sleeping sandbox wakes for it). */
-  open(host: string, pane: number) {
+   * sleeping sandbox wakes for it); `share` opens the share picker for
+   * its session there. */
+  open(host: string, pane: number, share = false) {
     this.touch(host);
-    this.onOpen(host, pane);
+    this.onOpen(host, pane, share);
   }
 
   /** Someone opened this host (or a pane on it): it counts as used. */

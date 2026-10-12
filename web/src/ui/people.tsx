@@ -304,9 +304,13 @@ interface Callers {
 }
 
 let openShare: ((s: SessionId) => void) | null = null;
+// Asked for before the dialog was there to open (#237: a card or a push
+// that switched machines first): it opens once it is.
+let pendingShare: SessionId | null = null;
 
 export function shareSession(session: SessionId) {
-  openShare?.(session);
+  if (openShare) openShare(session);
+  else pendingShare = session;
 }
 
 /** Share a session (M13): who has access, add someone, revoke. */
@@ -355,6 +359,11 @@ export function ShareDialog({ client }: { client: Client }) {
       setAsked(null);
       void load(s);
     };
+    if (pendingShare !== null) {
+      const s = pendingShare;
+      pendingShare = null;
+      openShare(s);
+    }
     return () => {
       openShare = null;
     };

@@ -23,6 +23,7 @@ import { openPalette } from "./palette";
 import { InLabs } from "./in-labs";
 import { GateWhy } from "./gate-why";
 import { PointChoices, pointOf } from "./point-choices";
+import { shareSession } from "./people";
 
 export function PhoneHeader({ client }: { client: Client }) {
   const [open, setOpen] = useState(false);
@@ -153,6 +154,12 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
               onClick={act(() => pickConversation(client, { session: where, cwd: (active !== undefined && client.cwd(active)) || undefined }, true))}
             >
               Conversations
+            </button>
+          )}
+          {/* #237: the session menu's Share session…, the same picker. */}
+          {owner && session !== null && (
+            <button data-share-session onClick={act(() => shareSession(session))}>
+              Share session…
             </button>
           )}
           {active !== undefined && <button onClick={act(() => openPicker(client, active, true))}>Go to directory</button>}

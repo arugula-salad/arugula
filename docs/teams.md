@@ -10,6 +10,7 @@ A machine is in one place: *Just me*, or one team. The host menu and
 means (who sees its panes, who counts as its owner); so does *Join to* when
 you approve a machine. To work with more than one team, keep the machine
 *Just me* and share a session with each team (*Share*, beside the
-session's name). Putting it in a team gives that team every pane that isn't
+session's name; on a phone, *Share session…* in the sheet, or *Share* on a
+pane's card in the swarm and on its notification, #237). Putting it in a team gives that team every pane that isn't
 private, makes the team's owners its owners too, and takes it from any team
 it was in (#778).

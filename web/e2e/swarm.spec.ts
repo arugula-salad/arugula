@@ -321,4 +321,26 @@ test.describe("phone", () => {
     await expect(page.locator(".swarm")).toHaveCount(0);
     await expect.poll(() => page.evaluate(() => window.__arugula.client.active())).toBe(Number(key.split(":")[1]));
   });
+
+  // #237: a card's Share opens its pane, on its machine, with the share
+  // picker for its session over it.
+  test("a card's Share opens the pane with its session's share picker", async ({ page }) => {
+    await swarm(page);
+    await clearRail(page);
+    const [pane] = await fake.trouble("build-02", 1);
+    const card = page.locator(`.swarm-card[data-panes~="build-02:${pane}"]`);
+    await expect(card).toBeVisible({ timeout: 20_000 });
+    await card.locator("[data-share-card]").tap();
+    await expect(page.locator(".swarm")).toHaveCount(0);
+    await expect.poll(() => page.evaluate(() => window.__arugula.hosts.current)).toBe("build-02");
+    await expect.poll(() => page.evaluate(() => window.__arugula.client.active())).toBe(pane);
+    const session = await page.evaluate((p) => window.__arugula.client.sessionOfPane(p), pane);
+    const dialog = page.locator(`[data-share="${session}"]`);
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByLabel("Who")).toBeVisible();
+    await dialog.getByRole("button", { name: "Done" }).tap();
+    await expect(dialog).toHaveCount(0);
+    await swarm(page);
+    await clearRail(page);
+  });
 });
