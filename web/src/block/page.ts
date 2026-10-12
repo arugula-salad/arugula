@@ -4,7 +4,7 @@
 // docs/control-e2e.md ("The frame's contract with control's page");
 // control's page answers them (PR 4 of #150).
 
-import type { Creds, Held } from "./channel.ts";
+import type { Creds, Held, Route } from "./channel.ts";
 
 /** Every message of the contract carries this tag and version. */
 export const TAG = "arugula-block";
@@ -23,6 +23,16 @@ export interface Failed {
   arugula: typeof TAG;
   v: typeof VERSION;
   failed: string;
+}
+
+/** From the frame to the parent: which way the block's channel actually
+ * went. A direct route that doesn't connect falls back to the relay
+ * without asking, so the route in its credentials isn't the answer. The
+ * block's own pages could say anything here: it's for showing only. */
+export interface Routed {
+  arugula: typeof TAG;
+  v: typeof VERSION;
+  route: Route;
 }
 
 /** From the parent to the frame: credentials, or why there are none. */
@@ -67,6 +77,14 @@ export function tellFailed(origins: string[], why: string) {
   if (parent === window) return;
   const m: Failed = { arugula: TAG, v: VERSION, failed: why };
   for (const o of origins) parent.postMessage(m, o);
+}
+
+/** Tell the parent which way the block's channel went: to the origin
+ * that answered, from `Held.parent`. */
+export function tellRoute(parentOrigin: string, route: Route) {
+  if (parent === window) return;
+  const m: Routed = { arugula: TAG, v: VERSION, route };
+  parent.postMessage(m, parentOrigin);
 }
 
 /** Give the worker the block's credentials; resolves once it has them. */

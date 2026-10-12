@@ -5,6 +5,7 @@
 import { Fragment } from "preact";
 import { useState } from "preact/hooks";
 import { directory } from "../hosts";
+import { blockRoutesLabel } from "../blocks/block-route";
 import type { Fleet } from "../fleet";
 import { useSubscribe } from "./hooks";
 import { openMenu, type MenuItem } from "./menu";
@@ -186,7 +187,11 @@ export function HostButton() {
     // shares from it.
     const at = placeIn(directory.current);
     const means: MenuItem[] = at ? [{ label: `${at.place}: ${at.means}`, disabled: true, run: () => {} }] : [];
-    if (mine.length || at) items.push("separator", { header: `This machine: ${directory.current}` } as MenuItem, ...means, ...mine);
+    // M50: which way its blocks through control went, as the button says
+    // for the machine's own connection.
+    const blocks = blockRoutesLabel();
+    if (blocks) means.push({ label: blocks, disabled: true, run: () => {} });
+    if (mine.length || means.length) items.push("separator", { header: `This machine: ${directory.current}` } as MenuItem, ...means, ...mine);
     if (fleet?.notice) items.push("separator", { label: fleet.notice, disabled: true, run: () => {} });
     if (directory.stale) {
       const what = directory.control ? "Control unreachable: saved list" : "Home daemon unreachable: saved list";

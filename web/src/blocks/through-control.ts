@@ -15,12 +15,15 @@
 //   reached it directly, except in WebKit (Safari, iOS, the desktop app's
 //   WebKitGTK), which stays on the relay until its direct path is measured
 //   (S27).
+// - The frame says which way its channel actually went (`route`), since a
+//   direct route that doesn't connect falls back to the relay unasked.
+//   That's for showing only (block-route.ts).
 
 import { hex } from "../e2e/cert.ts";
 import { daemonNow, type DaemonClock, type DaemonRef } from "../e2e/channel.ts";
 import { signText, type DeviceKeys } from "../e2e/keys.ts";
 import { newKeyPair, publicRaw } from "../e2e/noise.ts";
-import type { Creds, Grant } from "../block/channel.ts";
+import type { Creds, Grant, Route } from "../block/channel.ts";
 import { TAG, VERSION } from "../block/page.ts";
 
 /** How far ahead a grant's expiry is put, by the daemon's clock. The
@@ -97,22 +100,25 @@ export interface Framed {
   creds(): Promise<Creds>;
   /** The frame couldn't load the block (its bootstrap said why). */
   failed(why: string): void;
+  /** Which way the block's channel went, by the frame's word. */
+  routed(how: Route): void;
 }
 
 /** What a frame may say. */
-export type Said = { ask: "hello" | "renew" } | { failed: string };
+export type Said = { ask: "hello" | "renew" } | { failed: string } | { route: Route };
 
 /** Which frame a message is from, and what it says, if it's one to act on:
  * from a frame `frames` holds (by `source`), at the origin it was given,
  * tagged and versioned per the contract. Anything else is nothing. */
 export function heard(frames: Iterable<Framed>, e: { source: unknown; origin: string; data: unknown }): { from: Framed; said: Said } | null {
-  const d = e.data as { arugula?: unknown; v?: unknown; ask?: unknown; failed?: unknown } | null;
+  const d = e.data as { arugula?: unknown; v?: unknown; ask?: unknown; failed?: unknown; route?: unknown } | null;
   if (!d || typeof d !== "object" || d.arugula !== TAG || d.v !== VERSION || !e.source) return null;
   for (const f of frames) {
     if (f.frame.contentWindow !== e.source) continue;
     if (f.origin !== e.origin) return null;
     if (d.ask === "hello" || d.ask === "renew") return { from: f, said: { ask: d.ask } };
     if (typeof d.failed === "string") return { from: f, said: { failed: d.failed.slice(0, 300) } };
+    if (d.route === "direct" || d.route === "relayed") return { from: f, said: { route: d.route } };
     return null;
   }
   return null;
@@ -130,6 +136,7 @@ function listen() {
     if (!h) return;
     const { from, said } = h;
     if ("failed" in said) return from.failed(said.failed);
+    if ("route" in said) return from.routed(said.route);
     const win = from.frame.contentWindow as Window | null;
     void from.creds().then(
       (creds) => win?.postMessage({ arugula: TAG, v: VERSION, creds }, from.origin),

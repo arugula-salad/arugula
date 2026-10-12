@@ -830,6 +830,16 @@ page that framed them with `postMessage`. Every message carries
   A `wss://…/e2e` route that doesn't connect is tried once more through
   the relay. S27 kept WebKit on the relay until the worker's direct path
   is measured in real Safari.
+- **The frame says which way it connected**, since that fallback asks
+  no one: `{arugula, v, route: "direct" | "relayed"}`, to the origin in
+  `Held.parent` (#150, PR 5). The worker tells its pages each time it
+  opens a channel, and a page that loaded after the channel opened asks
+  it (`{arugula, v, ask: "route"}`, page to worker); the page's shim
+  passes it on. Control's page hears it with the same checks as an ask
+  (source, origin, that frame's block, tag and version, and a route it
+  knows) and shows it on the block and in the host menu. It's the
+  block's word, and the block's own pages could say anything, so it's
+  for showing only; nothing is decided by it.
 
 ### Control's page, the parent
 
@@ -861,6 +871,13 @@ page that framed them with `postMessage`. Every message carries
 - **The device channel** (`web/src/e2e/channel.ts`) reads message 2 before
   it treats a close as a failed handshake, so a refusal with the close
   reads as one.
+- **Which way it went** (`web/src/blocks/block-route.ts`): each block
+  through control shows "direct" or "relayed" from its frame's `route`,
+  or "own site" once it fell back to the machine's own block site, in a
+  corner of its frame. The host menu's *This machine* section sums them
+  up ("Blocks: relayed", "Blocks: 1 direct, 1 relayed"), in the words
+  the host button uses for the machine's own channel. A block on the
+  daemon's own page says nothing.
 
 ### Machines with no block flags
 

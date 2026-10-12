@@ -1360,6 +1360,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 }
 
 .browser {
+  position: relative;
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -1465,6 +1466,16 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   background: var(--bg);
   color: var(--dim);
   pointer-events: none;
+}
+
+/* Which way a block through control went (M50): direct, relayed or its
+   machine's own site, in a corner of its frame. */
+.block-route {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  pointer-events: none;
+  opacity: 0.9;
 }
 
 /* A block shown another way than asked (M50): a line above its frame. */

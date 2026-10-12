@@ -210,6 +210,13 @@ test("a port and an editor on a machine with no block flags open inside control'
   const frame = await frameOf(port);
   expect(await frame.evaluate(() => !!navigator.serviceWorker.controller)).toBe(true);
   expect(await paneEl(page, port).locator("iframe").getAttribute("sandbox")).toBe("allow-scripts allow-forms allow-same-origin");
+  // It went through control's relay, as this machine does, and says so in
+  // the button's words: on the block, and in the host menu.
+  await expect(paneEl(page, port).locator("[data-block-route]")).toHaveText("relayed", { timeout: 15_000 });
+  await expect(page.locator(".host-button [data-path]")).toHaveText("relayed");
+  await page.locator(".host-button").click();
+  await expect(page.getByRole("menuitem", { name: "Blocks: relayed" })).toBeVisible();
+  await page.keyboard.press("Escape");
   // The frame can't read control's page.
   expect(await frame.evaluate(() => {
     try {
@@ -229,9 +236,11 @@ test("a port and an editor on a machine with no block flags open inside control'
   expect(await frame.evaluate(async () => (await fetch("/set")).text())).toBe("set");
   expect(await frame.evaluate(async () => (await fetch("/cookie")).text())).toBe("cookie=sid=s3cret");
 
-  // A hard reload of the frame comes back through the worker.
+  // A hard reload of the frame comes back through the worker, and says
+  // which way again.
   await frame.evaluate(() => location.reload());
   await expect(view.locator("#h")).toHaveText("hot", { timeout: 15_000 });
+  await expect(paneEl(page, port).locator("[data-block-route]")).toHaveText("relayed");
 
   // An editor on the app's folder, the same way.
   await page.evaluate((path) => window.__arugula.client.api("/api/blocks", { type: "editor", config: { path: `${path}/main.js` }, from_pane: null }), project);
@@ -267,4 +276,6 @@ test("a browser that can't run the block's worker is told so", async () => {
   await expect(card).toContainText("can't show this block through Arugula control", { timeout: 30_000 });
   await expect(card).toContainText("no service workers");
   await expect(card).toContainText("no block site of its own");
+  // It never connected, so it says no route.
+  await expect(paneEl(page, second).locator("[data-block-route]")).toHaveCount(0);
 });
