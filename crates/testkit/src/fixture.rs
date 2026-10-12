@@ -730,18 +730,30 @@ impl Replay<'_> {
         }
     }
 
-    /// A message the daemon sent on `c`.
+    /// A message the daemon sent on `c`. A `delta` may also be matched by
+    /// several that add up to it ([`deltas_like`]). A soft message gives
+    /// up after half a second if none of its type has come; once one has,
+    /// it waits as long as any other step for the rest of it.
     fn msg(&mut self, c: u32, want: &Value) -> Result<(), String> {
         let soft = SOFT.contains(&want["type"].as_str().unwrap_or_default());
-        let deadline = Instant::now() + if soft { Duration::from_millis(500) } else { STEP };
+        let start = Instant::now();
         loop {
             let Some(Conn::Ws { msgs, .. }) = self.conns.get_mut(&c) else { return Err("no such WebSocket".into()) };
             if let Some(i) = msgs.iter().position(|m| fixture::shape(want, m).is_ok()) {
                 msgs.remove(i);
                 return Ok(());
             }
+            if want["type"] == "delta"
+                && let Some(took) = deltas_like(want, msgs)
+            {
+                for i in took.into_iter().rev() {
+                    msgs.remove(i);
+                }
+                return Ok(());
+            }
             let same = msgs.iter().find(|m| m["type"] == want["type"]);
-            if Instant::now() >= deadline {
+            let wait = if soft && same.is_none() { Duration::from_millis(500) } else { STEP };
+            if start.elapsed() >= wait {
                 return match same {
                     Some(m) => Err(fixture::shape(want, m).unwrap_err()),
                     None if soft => Ok(()),
@@ -778,6 +790,73 @@ impl Replay<'_> {
     }
 }
 
+/// The `delta` messages in `msgs`, applied in order as a client applies
+/// them, up to the first point where they add up to `want`'s shape: the
+/// indexes of the ones that took. The daemon sends what changed every
+/// 40 ms (`URGENT` in the mux), so what one recording got as one delta
+/// (the driver taking a pane and the command it ran ending) a slower run
+/// gets as two, the first sent before the shell has ended the command
+/// (#818). Every recorded field still has to come.
+fn deltas_like(want: &Value, msgs: &VecDeque<Value>) -> Option<Vec<usize>> {
+    let mut sum = json!({"type": "delta", "delta": {}});
+    let mut took = vec![];
+    for (i, m) in msgs.iter().enumerate().filter(|(_, m)| m["type"] == "delta") {
+        apply_delta(&mut sum["delta"], &m["delta"]);
+        took.push(i);
+        if took.len() > 1 && fixture::shape(want, &sum).is_ok() {
+            return Some(took);
+        }
+    }
+    None
+}
+
+/// Fold delta `d` into `sum` the way `State::apply` does: each pane's
+/// fields over the ones before (`null` takes one away), panes that went
+/// taken out, and `machines`, `presence` and the rest whole.
+fn apply_delta(sum: &mut Value, d: &Value) {
+    let (Some(sum), Some(d)) = (sum.as_object_mut(), d.as_object()) else { return };
+    for (k, v) in d {
+        match k.as_str() {
+            "panes" => {
+                let panes = sum.entry("panes").or_insert_with(|| json!([]));
+                let Some(panes) = panes.as_array_mut() else { continue };
+                for patch in v.as_array().into_iter().flatten() {
+                    let Some(fields) = patch.as_object() else { continue };
+                    let at = panes.iter().position(|p| p["id"] == patch["id"]);
+                    let pane = match at {
+                        Some(i) => &mut panes[i],
+                        None => {
+                            panes.push(json!({}));
+                            panes.last_mut().unwrap()
+                        }
+                    };
+                    let Some(pane) = pane.as_object_mut() else { continue };
+                    for (f, val) in fields {
+                        if val.is_null() {
+                            pane.remove(f);
+                        } else {
+                            pane.insert(f.clone(), val.clone());
+                        }
+                    }
+                }
+            }
+            "gone" => {
+                let gone = v.as_array().cloned().unwrap_or_default();
+                if let Some(panes) = sum.get_mut("panes").and_then(Value::as_array_mut) {
+                    panes.retain(|p| !gone.contains(&p["id"]));
+                }
+                let all = sum.entry("gone").or_insert_with(|| json!([]));
+                if let Some(all) = all.as_array_mut() {
+                    all.extend(gone);
+                }
+            }
+            _ => {
+                sum.insert(k.clone(), v.clone());
+            }
+        }
+    }
+}
+
 /// Read an answer on its own thread: whole, or line by line if it streams.
 fn read_answer(mut res: Res, stream: bool, tx: mpsc::Sender<Got>) {
     if !stream || res.status != 200 {
@@ -794,5 +873,45 @@ fn read_answer(mut res: Res, stream: bool, tx: mpsc::Sender<Got>) {
         if tx.send(Got::Line(v)).is_err() {
             return;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn delta(panes: Value) -> Value {
+        json!({"type": "delta", "delta": {"panes": panes}})
+    }
+
+    /// The delta #818 recorded, which a slow shell's daemon sends as two.
+    fn recorded() -> Value {
+        delta(json!([{"id": 1, "driver": {"who": "owner"}, "typing": true, "last": {"text": "echo x", "exit": 0}}]))
+    }
+
+    fn typed() -> Value {
+        delta(json!([{"id": 1, "driver": {"who": "owner"}, "typing": true}]))
+    }
+
+    fn ended(pane: u64) -> Value {
+        delta(json!([{"id": pane, "last": {"text": "echo x", "exit": 0}}]))
+    }
+
+    #[test]
+    fn deltas_that_add_up_match() {
+        let msgs = VecDeque::from([typed(), json!({"type": "pong", "id": 2}), ended(1), typed()]);
+        assert_eq!(deltas_like(&recorded(), &msgs), Some(vec![0, 2]));
+    }
+
+    #[test]
+    fn deltas_that_dont_add_up_dont() {
+        // The command never ended, or another pane's did.
+        assert_eq!(deltas_like(&recorded(), &VecDeque::from([typed(), ended(2)])), None);
+        // Typing stopped before it ended: a client has no `typing`.
+        let stopped = delta(json!([{"id": 1, "typing": null}]));
+        assert_eq!(deltas_like(&recorded(), &VecDeque::from([typed(), stopped, ended(1)])), None);
+        // The pane went in between.
+        let gone = json!({"type": "delta", "delta": {"gone": [1]}});
+        assert_eq!(deltas_like(&recorded(), &VecDeque::from([typed(), gone, ended(1)])), None);
     }
 }

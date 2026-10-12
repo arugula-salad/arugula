@@ -426,7 +426,9 @@ put back to that daemon's values, and checks what comes back:
   differ, `null` matches anything, and new fields are fine;
 - each recorded message and streamed line arrives with that shape, in any
   order; `state`, `delta`, `block` and `notice` come as often as things
-  change, so they're checked when one comes but not required;
+  change, so they're checked when one comes but not required, and a
+  recorded `delta` may come as several that add up to it (the daemon
+  sends what changed every 40 ms, so a slow shell splits one; #818);
 - every word (three or more letters) of the recorded output shows up in the
   pane's output before the client's next step.
 
