@@ -33,5 +33,6 @@ pub mod resume;
 pub mod shellenv;
 pub mod shellint;
 pub mod shim;
+pub mod status;
 pub mod store;
 pub mod sys;
