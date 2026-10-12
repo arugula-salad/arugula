@@ -13,6 +13,9 @@ mod app_login;
 mod auth;
 mod backup;
 mod billing;
+mod blocks;
+#[cfg(test)]
+mod blocks_wire;
 mod db;
 mod forge;
 #[cfg(test)]
@@ -76,6 +79,13 @@ struct Args {
     /// sign-ins already under way are still answered there.
     #[arg(long, env = "ARUGULA_CONTROL_ALSO_REDIRECT")]
     also_redirect: bool,
+
+    /// Serve blocks on origins of their own under this domain (M50:
+    /// `b-<key>.<domain>`, `arugula.run` for the hosted one): a registrable
+    /// domain used for nothing else, with a wildcard DNS name and
+    /// certificate pointed here. Off when unset (docs/control-ops.md).
+    #[arg(long, env = "ARUGULA_CONTROL_BLOCK_DOMAIN")]
+    block_domain: Option<String>,
 
     /// The SQLite database.
     #[arg(long, default_value = "control.db", env = "ARUGULA_CONTROL_DB")]
@@ -240,6 +250,8 @@ pub struct Config {
     pub sites: Vec<Site>,
     /// Browsers on any but the first go to it (`--also-redirect`).
     pub also_redirect: bool,
+    /// Blocks' origins are `b-<key>.<this>` (M50, `blocks.rs`).
+    pub block_domain: Option<String>,
     pub github: Option<Github>,
     pub static_dir: Option<PathBuf>,
     /// Take requests signed as daemons before 0.17 sign them.
@@ -309,6 +321,8 @@ pub struct App {
     /// daemons registered for it.
     pub jump: Option<guest_jump::Jump>,
     pub guest_routes: guest_jump::Routes,
+    /// Blocks' relay sockets open (M50).
+    pub blocks: blocks::Open,
 }
 
 #[cfg(test)]
@@ -325,6 +339,7 @@ impl App {
                 origin: origin_of(public_url).unwrap(),
                 sites: vec![Site::new(public_url).unwrap()],
                 also_redirect: false,
+                block_domain: None,
                 github: None,
                 static_dir: None,
                 old_daemon_signatures: true,
@@ -345,6 +360,7 @@ impl App {
             turn: None,
             jump: None,
             guest_routes: Default::default(),
+            blocks: Default::default(),
         }
     }
 }
@@ -483,6 +499,8 @@ pub fn router(app: Arc<App>) -> Router {
         .layer(axum::middleware::from_fn_with_state(app.clone(), moved))
         .layer(axum::middleware::from_fn_with_state(app.clone(), auth::verify_daemon))
         .layer(axum::middleware::map_response(headers))
+        // Outermost: a block's origin never reaches anything above (M50).
+        .layer(axum::middleware::from_fn_with_state(app.clone(), blocks::split))
         .with_state(app)
 }
 
@@ -546,6 +564,8 @@ async fn control_json(
         device_secret: 1,
         // The ssh jump host for guests of daemons behind NAT (M65).
         guest_ssh: app.jump.as_ref().map(guest_jump::Jump::describe),
+        // Where blocks get origins of their own (M50).
+        block_domain: app.cfg.block_domain.clone(),
     })
 }
 
@@ -571,17 +591,22 @@ async fn headers(mut res: Response) -> Response {
 #[allow_missing = true]
 struct Assets;
 
+/// A file of the web client's build (`web/dist`), and its type.
+pub fn static_file(app: &App, path: &str) -> Option<(Vec<u8>, String)> {
+    match &app.cfg.static_dir {
+        Some(dir) => std::fs::read(dir.join(path)).ok().map(|d| (d, mime(path).to_owned())),
+        None => Assets::get(path).map(|f| (f.data.into_owned(), f.metadata.mimetype().to_owned())),
+    }
+}
+
 async fn asset(axum::extract::State(app): axum::extract::State<Arc<App>>, uri: Uri) -> Response {
     let path = uri.path().trim_start_matches('/');
     let path = if path.is_empty() { "index.html" } else { path };
-    if path.split('/').any(|s| s == ".." || s.starts_with('.')) {
+    // Blocks' files are served on block origins only (blocks.rs).
+    if path.split('/').any(|s| s == ".." || s.starts_with('.')) || path.starts_with("block/") {
         return StatusCode::NOT_FOUND.into_response();
     }
-    let data = match &app.cfg.static_dir {
-        Some(dir) => std::fs::read(dir.join(path)).ok().map(|d| (d, mime(path).to_owned())),
-        None => Assets::get(path).map(|f| (f.data.into_owned(), f.metadata.mimetype().to_owned())),
-    };
-    match data {
+    match static_file(&app, path) {
         Some((data, mime)) => {
             let cache = if path.starts_with("assets/") { "public, max-age=31536000, immutable" } else { "no-cache" };
             Response::builder()
@@ -768,16 +793,23 @@ async fn run() -> anyhow::Result<()> {
         Some((l, j)) => (Some(l), Some(j)),
         None => (None, None),
     };
+    let sites: Vec<Site> = std::iter::once(public_url.as_str())
+        .chain(also_urls.iter().map(String::as_str))
+        .map(Site::new)
+        .collect::<anyhow::Result<_>>()?;
+    let block_domain = blocks::domain(a.block_domain.as_deref().unwrap_or(""), &sites)?;
+    match &block_domain {
+        Some(d) => info!(domain = %d, "blocks served at b-<key>.{d}"),
+        None => info!("no ARUGULA_CONTROL_BLOCK_DOMAIN: blocks aren't served through control"),
+    }
     let app = Arc::new(App {
         cfg: Config {
             push_hosts: a.push_hosts,
             relay_free_bytes: a.relay_free_mb * 1_000_000,
             origin: origin_of(&public_url)?,
-            sites: std::iter::once(public_url.as_str())
-                .chain(also_urls.iter().map(String::as_str))
-                .map(Site::new)
-                .collect::<anyhow::Result<_>>()?,
+            sites,
             also_redirect: a.also_redirect,
+            block_domain,
             public_url,
             github,
             static_dir: a.static_dir,
@@ -804,6 +836,7 @@ async fn run() -> anyhow::Result<()> {
         turn,
         jump,
         guest_routes: Default::default(),
+        blocks: Default::default(),
     });
     if let (Some(l), Some(j)) = (guest_listener, &app.jump) {
         info!(addr = %l.local_addr()?, host = %j.host, port = j.port, "guest ssh jump host");

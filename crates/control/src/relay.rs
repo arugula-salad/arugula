@@ -112,10 +112,24 @@ pub enum Refused {
     Full,
 }
 
+/// Which kind of relay socket a [`Ticket`] counts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Side {
+    /// A person's (`/api/relay/c`, `/api/relay/m`, read-only links).
+    Client = 0,
+    /// A daemon dialed in.
+    Daemon = 1,
+    /// A block's frame (M50, `blocks.rs`): it has no account of its own, so
+    /// it counts against the ceiling and the daemon owner's bytes, but not
+    /// against the owner's client sockets, which a stranger could
+    /// otherwise fill. `blocks.rs` caps these per daemon and per origin.
+    Block = 2,
+}
+
 /// One account's open relay sockets.
 struct Use {
-    /// (client sockets, daemon sockets), changed under the map's lock.
-    open: Mutex<(usize, usize)>,
+    /// Sockets open, by [`Side`], changed under the map's lock.
+    open: Mutex<[usize; 3]>,
     /// Today (`YYYY-MM-DD`) and its relayed bytes: the database's count
     /// when the first socket opened, plus what's moved since.
     today: Mutex<(String, u64)>,
@@ -129,7 +143,7 @@ pub struct Ticket {
     account: String,
     u: Arc<Use>,
     open: Arc<Open>,
-    daemon: bool,
+    side: Side,
     /// The byte budget to slow down past (0: none).
     budget: u64,
 }
@@ -156,17 +170,14 @@ impl Ticket {
 impl Drop for Ticket {
     fn drop(&mut self) {
         self.open.all.fetch_sub(1, Ordering::Relaxed);
-        if self.daemon {
+        if self.side == Side::Daemon {
             self.open.daemons.fetch_sub(1, Ordering::Relaxed);
         }
         let mut map = self.map.lock().unwrap();
         let mut open = self.u.open.lock().unwrap();
-        if self.daemon {
-            open.1 = open.1.saturating_sub(1);
-        } else {
-            open.0 = open.0.saturating_sub(1);
-        }
-        if *open == (0, 0) && map.get(&self.account).is_some_and(|u| Arc::ptr_eq(u, &self.u)) {
+        let n = &mut open[self.side as usize];
+        *n = n.saturating_sub(1);
+        if *open == [0; 3] && map.get(&self.account).is_some_and(|u| Arc::ptr_eq(u, &self.u)) {
             drop(open);
             map.remove(&self.account);
         }
@@ -194,6 +205,16 @@ impl Relay {
     /// `billing`: control bills (its own allowance applies, not the
     /// daily budget).
     pub fn admit(&self, db: &crate::db::Db, account: &str, daemon: bool, billing: bool) -> Result<Ticket, Refused> {
+        self.admit_as(db, account, if daemon { Side::Daemon } else { Side::Client }, billing)
+    }
+
+    /// A block's socket (M50), metered against the daemon's owner: it takes
+    /// room under the ceiling, and none of the owner's own sockets.
+    pub fn admit_block(&self, db: &crate::db::Db, owner: &str, billing: bool) -> Result<Ticket, Refused> {
+        self.admit_as(db, owner, Side::Block, billing)
+    }
+
+    fn admit_as(&self, db: &crate::db::Db, account: &str, side: Side, billing: bool) -> Result<Ticket, Refused> {
         let mut map = self.accounts.lock().unwrap();
         let u = match map.get(account) {
             Some(u) => u.clone(),
@@ -201,7 +222,7 @@ impl Relay {
                 let day = crate::day(now_ms());
                 let used = db.relay_bytes(account, &day).unwrap_or(0);
                 let u = Arc::new(Use {
-                    open: Mutex::new((0, 0)),
+                    open: Mutex::new([0; 3]),
                     today: Mutex::new((day, used)),
                     gone: tokio::sync::watch::channel(false).0,
                 });
@@ -210,11 +231,13 @@ impl Relay {
             }
         };
         let mut open = u.open.lock().unwrap();
-        let (n, cap, what) = if daemon {
-            (&mut open.1, self.caps.daemons, "machines connected to the relay")
-        } else {
-            (&mut open.0, self.caps.sockets, "connections through the relay")
+        let empty = *open == [0; 3];
+        let (cap, what) = match side {
+            Side::Daemon => (self.caps.daemons, "machines connected to the relay"),
+            Side::Client => (self.caps.sockets, "connections through the relay"),
+            Side::Block => (0, ""),
         };
+        let n = &mut open[side as usize];
         let all = &self.open.all;
         let why = if cap > 0 && *n >= cap {
             Some(Refused::Account(format!("this account has {n} {what}, the most at once; close some first")))
@@ -224,7 +247,6 @@ impl Relay {
             None
         };
         if let Some(why) = why {
-            let empty = *open == (0, 0);
             drop(open);
             if empty {
                 map.remove(account);
@@ -241,7 +263,7 @@ impl Relay {
         drop(open);
         // Under the map's lock, so the ceiling holds.
         all.fetch_add(1, Ordering::Relaxed);
-        if daemon {
+        if side == Side::Daemon {
             self.open.daemons.fetch_add(1, Ordering::Relaxed);
         }
         if self.open.full.swap(false, Ordering::Relaxed) {
@@ -252,7 +274,7 @@ impl Relay {
             account: account.to_owned(),
             u,
             open: self.open.clone(),
-            daemon,
+            side,
             budget: if billing { 0 } else { self.caps.daily_bytes },
         })
     }
@@ -700,7 +722,7 @@ async fn sandbox_splice(app: &App, sandbox: &str, ws: WebSocket, ticket: &Ticket
 // what crosses.
 
 /// How long `n` bytes take at about 64 KB/s: a slowed account's pace.
-fn throttle(n: usize) -> Duration {
+pub(crate) fn throttle(n: usize) -> Duration {
     Duration::from_micros(n as u64 * 1_000_000 / 65_536)
 }
 

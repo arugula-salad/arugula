@@ -76,6 +76,27 @@ arugula-control --public-url https://control.example.com --listen 127.0.0.1:7690
     the daemon) for an installation token scoped to that repository with
     read-only permissions; control keeps one until five minutes before it
     expires.
+- **Blocks through control** (M50, optional): `--block-domain`
+  (`ARUGULA_CONTROL_BLOCK_DOMAIN`, `arugula.run` for the hosted one) gives
+  each block an origin of its own, `b-<key>.<domain>`, so a port or editor
+  block on any joined machine shows in control's page
+  ([control-e2e.md](control-e2e.md#block-channels)).
+  - Use a registrable domain of its own, used for nothing else: every
+    block must be cross-site to control's page and to every other block.
+    Control refuses to start with control's own host, or a parent or child
+    of it.
+  - Point a wildcard DNS name (`*.<domain>`) at control, with a wildcard
+    certificate: on Fly, `fly certs add "*.arugula.run"`.
+  - On those hosts control serves only the bootstrap page, the block's
+    worker and shim (`/.arugula/…`, from `web/dist/block/`) and the block
+    relay (`/.arugula/relay?d=<daemon>`), never its own page, cookies or
+    API. Anything else under the domain is a 404.
+  - The block relay has no session (control can't read the grant; the
+    daemon checks it). It takes 3000 sockets an hour per client address,
+    64 at once per machine and 16 per block origin. A socket that sends
+    nothing in 10 seconds, or is idle for an hour, closes. Block sockets
+    count against `ARUGULA_RELAY_MAX_TOTAL` and the machine owner's
+    traffic, not against the owner's `ARUGULA_RELAY_MAX_SOCKETS`.
 - **Billing** (optional) needs both `STRIPE_SECRET_KEY` and
   `STRIPE_WEBHOOK_SECRET`; with the key alone control doesn't start.
 - **Behind a proxy** that passes the client's address in a header, use

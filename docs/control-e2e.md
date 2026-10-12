@@ -764,6 +764,66 @@ device key, so it opens the channel with a grant
   HTTP requests the daemon answers from its block proxy (`sites.rs`), and
   the page's WebSockets. The daemon's side is `crates/daemon/src/block_channel.rs`.
 
+### Block origins
+
+Control's side is `crates/control/src/blocks.rs`, on when
+`ARUGULA_CONTROL_BLOCK_DOMAIN` is set (docs/control-ops.md);
+`/control.json` then says `"block_domain"`. A block's origin is
+`https://b-<site_key>.<block_domain>`, with `site_key` from the block's
+state (the daemon's `Site::site_key`). There control serves only:
+
+| Path | What |
+|---|---|
+| any navigation the worker didn't answer | the bootstrap page: `<meta name=arugula-control content="<control's origins>">` and `/.arugula/boot.js`, under `default-src 'none'; script-src 'self'; …; frame-ancestors <control's origins>` |
+| `/.arugula/boot.js`, `/.arugula/sw.js`, `/.arugula/shim.js` | `web/src/block/`'s scripts; the worker gets `Service-Worker-Allowed: /` and no CSP |
+| any request with `Service-Worker: script` | `self.ARUGULA_APP_SW="<path>";importScripts("/.arugula/sw.js")`: the app's own worker, run inside the block's |
+| `/.arugula/relay?d=<daemon id>` | the block's channel through the relay, for a socket whose `Origin` is the block's own |
+| anything else | 503: the worker wasn't in the way |
+
+Control's page, cookies and API never answer on a block's origin, and
+nothing under the block domain that isn't a block's origin answers at all.
+The relay can't read the grant, so it relays ciphertext to the named
+daemon for anyone, with limits instead (docs/control-ops.md); an unknown
+daemon and one that isn't connected get the same 404.
+
+### The frame's contract with control's page
+
+The bootstrap page, the worker and the shim (`web/src/block/`) talk to the
+page that framed them with `postMessage`. Every message carries
+`arugula: "arugula-block"` and `v: 1`.
+
+- **The frame asks** `{arugula, v, ask: "hello"}` on its first load and
+  `{arugula, v, ask: "renew"}` when its grant was refused as `expired`.
+  The bootstrap page sends it to each of control's origins from its
+  `<meta name=arugula-control>`, so only the real parent receives it; later
+  asks go to the origin that answered.
+- **Control's page answers** the frame only when `event.source` is the
+  `contentWindow` of a frame it made, and `event.origin` is the origin it
+  gave that frame. It answers for that frame's block only, whatever the
+  message says, and posts to that origin only:
+
+  ```ts
+  frame.contentWindow.postMessage({ arugula: "arugula-block", v: 1, creds }, blockOrigin);
+  // or, when it can't: { arugula: "arugula-block", v: 1, refused: "<a sentence>" }
+  interface Creds {
+    daemon: { id: string; noise: string }; // device id, Noise key (hex) from a checked cert
+    key: { pkcs8: ArrayBuffer; pub: string }; // a new X25519 key: PKCS#8, public half hex
+    grant: Grant; // arugula_e2e::block::Grant for key.pub, expires by the daemon's clock
+    route: "relay" | string; // "relay", or a wss://…/e2e URL straight to the daemon
+  }
+  ```
+
+  A new key and grant each time; the grant at most ten minutes ahead of
+  the daemon's clock.
+- **The frame accepts** an answer only from `window.parent`, at one of
+  control's origins, and keeps `{creds, parent: event.origin}` in its
+  origin's IndexedDB (`arugula-block`). Its worker takes them from the page
+  over a `MessageChannel` (`{arugula, v, held}`), and asks its pages for a
+  renewal with `{arugula, v, ask: "renew"}`.
+- `route: "relay"` connects to `wss://<the block's host>/.arugula/relay?d=<daemon id>`.
+  S27 kept WebKit on the relay until the worker's direct path is measured
+  in real Safari.
+
 ## Push
 
 RFC 8291 encryption needs only the subscription's public parts

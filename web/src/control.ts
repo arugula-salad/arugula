@@ -64,6 +64,9 @@ export interface ControlInfo {
   /** Control passes an approving device's MAC to a waiting one (#761),
    * so a waiting browser shows a code rather than a fingerprint. */
   device_secret?: number;
+  /** Blocks get origins of their own, `https://b-<site_key>.<this>` (M50);
+   * absent when control doesn't serve blocks. */
+  block_domain?: string;
 }
 
 /** On a URL control is moving away from (#507): a line at the top saying
