@@ -263,7 +263,7 @@ export class TerminalView {
   }
 
   /** Follow the program's kitty keyboard flags (#412), which say how
-   * Ctrl+Enter is sent. xterm.js ignores these sequences, so taking them
+   * Ctrl+Enter and Shift+Enter are sent. xterm.js ignores these sequences, so taking them
    * changes nothing it draws. */
   private followKittyKeys() {
     const p = this.term.parser;
@@ -503,15 +503,18 @@ export class TerminalView {
   };
 
   /** Ctrl+Shift+C copies the selection; Ctrl+Shift+V is left to the
-   * browser's paste event, which xterm.js handles. Shift+Enter sends ESC CR
-   * (Alt+Enter, a new line in Claude Code and line editors, with or without
-   * the kitty protocol, whose state the web can't see) where xterm.js sends
-   * CR; the keypress is stopped too, or it would send CR as well. Ctrl+Enter,
-   * which xterm.js sends as CR, is `CSI 13;5u` (Shift and Alt added in)
-   * while the program has the kitty protocol on, and CR otherwise (#412). */
+   * browser's paste event, which xterm.js handles. While the program has the
+   * kitty keyboard protocol on, Ctrl+Enter and Shift+Enter, which xterm.js
+   * sends as CR, are `CSI 13;<mods>u` (#412, #806): Ctrl+Enter `CSI 13;5u`,
+   * Shift+Enter `CSI 13;2u`, with the other modifiers added in. With it off,
+   * Ctrl+Enter is CR and Shift+Enter ESC CR (Alt+Enter, a new line in Claude
+   * Code and line editors, #334). The keypress is stopped too, or it would
+   * send CR as well. Every other key is xterm.js's legacy encoding, which
+   * programs in kitty mode still read. */
   private keys(e: KeyboardEvent): boolean {
-    if (e.key === "Enter" && e.ctrlKey && !e.metaKey && !e.isComposing && this.kittyFlags) {
-      const mods = 1 + (e.shiftKey ? 1 : 0) + (e.altKey ? 2 : 0) + 4;
+    const chord = e.ctrlKey || e.shiftKey;
+    if (e.key === "Enter" && chord && !e.metaKey && !e.isComposing && this.kittyFlags) {
+      const mods = 1 + (e.shiftKey ? 1 : 0) + (e.altKey ? 2 : 0) + (e.ctrlKey ? 4 : 0);
       if (e.type === "keydown") this.term.input(`\x1b[13;${mods}u`, true);
       return false;
     }

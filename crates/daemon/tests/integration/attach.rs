@@ -384,18 +384,21 @@ async fn ctrl_c_stops_a_flood_at_once() {
     }
 }
 
+/// Programs asking for the kitty keyboard protocol are told it's there
+/// whoever is attached (#806): a client that doesn't claim `kitty_keys`
+/// (the web) as much as one that does (the TUI).
 #[tokio::test]
-async fn programs_hear_of_kitty_keys_while_a_client_that_speaks_them_is_attached() {
+async fn programs_hear_of_kitty_keys_whoever_is_attached() {
     let d = start().await;
     // Ask the terminal for its kitty keyboard flags, as Neovim does, and
-    // print what came back (nothing: the read times out).
+    // print what came back (nothing if the read times out).
     let ask = r#"printf '\033[?u'; IFS= read -rs -d u -t 1 r; echo "kitty[${r#*\?}]""#;
 
     let (mut ws, _) = connect(&d).await;
     attach(&mut ws, None).await;
     let _ = (recv_attach(&mut ws).await, recv_attach(&mut ws).await);
     type_line(&mut ws, ask).await;
-    read_until(&mut ws, None, "kitty[]").await;
+    read_until(&mut ws, None, "kitty[0]").await;
     drop(ws);
 
     let (mut ws, _) = connect(&d).await;

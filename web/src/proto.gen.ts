@@ -220,8 +220,9 @@ export type Child = { weight: number, node: Node, };
  */
 export type ClientMsg = { "type": "attach", panes: Array<AttachPane>, zstd?: boolean, acks?: boolean, 
 /**
- * The client encodes keys for the kitty keyboard protocol, so
- * programs asking may be told it's there (M31).
+ * The client encodes keys for the kitty keyboard protocol (M31).
+ * Unused since #806: programs asking are told it's there whoever
+ * is attached. Kept so older clients and daemons still agree.
  */
 kitty_keys?: boolean, } | { "type": "ack", pane: number, offset: number, } | { "type": "detach", panes: Array<number>, } | { "type": "view", tab: number, cols: number, rows: number, zoom: number | null, claim: boolean, typed?: boolean, } | { "type": "intent", id: number | null, intent: Intent, } | { "type": "pane", pane: number, op: PaneOp, } | { "type": "focus", pane: number | null, } | { "type": "ping", id: number, } | { "type": "subscribe", summary: boolean, } | { "type": "follow", pane: number, on: boolean, } | { "type": "block_patches" } | { "type": "call_join", session: number, } | { "type": "call_leave", session: number, } | { "type": "call_mute", session: number, muted: boolean, } | { "type": "call_signal", session: number, to: number, signal: CallSignal, } | { "type": "hand", tools: Array<HandTool>, name?: string, } | { "type": "hand_reply", id: number, result?: unknown, error?: string, };
 

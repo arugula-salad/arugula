@@ -6,8 +6,10 @@
 //! that left/right margins (DECLRMM, mode 69) work, scrolls vertical splits
 //! with them, and xterm.js, which lacks them, draws garbage. So replies are
 //! rewritten to the client's capabilities: DECRQM answers for unsupported
-//! modes become "not recognized", and the kitty keyboard reply is dropped
-//! (programs read its absence, before the DA1 reply that follows, as "no").
+//! modes become "not recognized". The kitty keyboard reply passes through
+//! for every pane (#806): the TUI encodes kitty keys, and the web encodes
+//! the chords that need them and sends legacy bytes for the rest, which
+//! programs in kitty mode still read.
 //! Kitty graphics are turned off in the engine itself when the client can't
 //! draw them ([`Capabilities::kitty_graphics`]), so a graphics query gets no
 //! answer at all.
@@ -17,7 +19,6 @@
 pub struct Capabilities {
     pub dec_modes: &'static [u16],
     pub ansi_modes: &'static [u16],
-    pub kitty_keyboard: bool,
     /// The Kitty graphics protocol. Without it the engine neither answers
     /// graphics queries nor keeps images (libghostty doesn't parse sixel,
     /// and its DA1 doesn't advertise it, either way).
@@ -32,15 +33,14 @@ impl Capabilities {
             1, 6, 7, 8, 9, 12, 25, 45, 47, 66, 1000, 1002, 1003, 1004, 1006, 1016, 1047, 1048, 1049, 2004, 2026,
         ],
         ansi_modes: &[4, 12, 20],
-        kitty_keyboard: false,
         kitty_graphics: false,
     };
 
     /// Everything libghostty answers passes through unchanged.
-    pub const ALL: Self = Self { dec_modes: &[], ansi_modes: &[], kitty_keyboard: true, kitty_graphics: true };
+    pub const ALL: Self = Self { dec_modes: &[], ansi_modes: &[], kitty_graphics: true };
 
     fn unrestricted(&self) -> bool {
-        self.dec_modes.is_empty() && self.ansi_modes.is_empty() && self.kitty_keyboard
+        self.dec_modes.is_empty() && self.ansi_modes.is_empty()
     }
 
     /// Rewrite a batch of replies the terminal wants sent to the program.
@@ -77,8 +77,6 @@ impl Capabilities {
                 let prefix = if private { "?" } else { "" };
                 Some(format!("\x1b[{prefix}{mode};0$y").into_bytes())
             }
-            // Kitty keyboard flags report: CSI ? flags u.
-            (true, None, b'u') if !self.kitty_keyboard => Some(Vec::new()),
             _ => None,
         }
     }
@@ -135,9 +133,9 @@ mod tests {
     }
 
     #[test]
-    fn kitty_keyboard_reply_dropped_others_kept() {
+    fn kitty_keyboard_reply_kept() {
         let batch = b"\x1b[?69;2$y\x1b[?0u\x1b[?62;22c\x1b[0n";
-        assert_eq!(X.filter_replies(batch), b"\x1b[?69;0$y\x1b[?62;22c\x1b[0n");
+        assert_eq!(X.filter_replies(batch), b"\x1b[?69;0$y\x1b[?0u\x1b[?62;22c\x1b[0n");
     }
 
     #[test]

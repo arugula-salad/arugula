@@ -131,6 +131,20 @@ fn run_wait_capture_history_search_export() {
     assert_eq!(d.raw("POST", &format!("/api/panes/{long}/close"), Some(json!({}))).0, 404);
 }
 
+/// A pane nobody is attached to, as `arugula run` and delegated agents
+/// start, is still told the kitty keyboard protocol is there (#806):
+/// Claude Code and Neovim ask once, at startup.
+#[test]
+fn detached_pane_hears_of_kitty_keys() {
+    let d = start();
+    let ask = r#"printf '\033[?u'; IFS= read -rs -d u -t 2 r; echo "kitty[${r#*\?}]""#;
+    let pane = d.post("/api/run", json!({"command": ask}))["pane"].as_u64().unwrap();
+    let w = d.get(&format!("/api/panes/{pane}/wait?until=exit&timeout=10"));
+    assert_eq!(w["result"], "exit", "{w}");
+    let out = d.raw("GET", &format!("/api/panes/{pane}/capture?scope=last-command"), None).1;
+    assert!(out.contains("kitty[0]"), "no kitty keyboard answer: {out}");
+}
+
 /// Whether everything a daemon's panes ran (whose command lines name its
 /// state dir) is gone within `secs`.
 fn gone_within(state: &std::path::Path, secs: u64) -> bool {
