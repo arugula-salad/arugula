@@ -274,8 +274,9 @@ export class TerminalView {
       return true;
     });
     p.registerCsiHandler({ prefix: "<", final: "u" }, (params) => {
+      // xterm.js reads a missing parameter as 0; the default is 1.
       const n = params.length === 1 && typeof params[0] === "number" ? params[0] : 1;
-      stack().pop(n);
+      stack().pop(n || 1);
       return true;
     });
     p.registerCsiHandler({ prefix: "=", final: "u" }, (params) => {
