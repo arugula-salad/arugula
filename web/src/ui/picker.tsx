@@ -84,17 +84,27 @@ function Picker({ client, pane, phone, close }: { client: Client; pane: PaneId; 
   const input = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const started = useRef(false);
+  // A move to another directory still being listed: the actions wait for
+  // it, so they never act on the directory being left (#805). Only the
+  // latest move lands.
+  const [moving, setMoving] = useState(false);
+  const moves = useRef(0);
 
   const go = async (path: string) => {
+    const n = ++moves.current;
     setError(null);
+    setMoving(true);
     try {
       const l = await listDirs(client, pane, path);
+      if (n !== moves.current) return;
       setList(l);
       setQuery("");
       setSel(0);
     } catch (e) {
+      if (n !== moves.current) return;
       setError((e as Error).message);
     }
+    setMoving(false);
   };
 
   useEffect(() => {
@@ -173,7 +183,7 @@ function Picker({ client, pane, phone, close }: { client: Client; pane: PaneId; 
     machine && !machine.borrowed && machine.id !== tabMachine?.id ? "this VM is the pane's own: share it with the tab first" : null;
 
   const act = async (what: "pane" | "tab" | "cd") => {
-    if (!list || busy) return;
+    if (!list || busy || moving) return;
     setBusy(true);
     setError(null);
     const path = list.path;
@@ -277,16 +287,16 @@ function Picker({ client, pane, phone, close }: { client: Client; pane: PaneId; 
           <span class="picker-target" title={where}>
             {base(where)}
           </span>
-          <button class="primary" disabled={!list || busy || !!paneRefusal} title={paneRefusal ?? "Ctrl+Enter"} onClick={() => void act("pane")}>
+          <button class="primary" disabled={!list || busy || moving || !!paneRefusal} title={paneRefusal ?? "Ctrl+Enter"} onClick={() => void act("pane")}>
             New pane here
           </button>
-          <button disabled={!list || busy || !!tabRefusal} title={tabRefusal ?? undefined} onClick={() => void act("tab")}>
+          <button disabled={!list || busy || moving || !!tabRefusal} title={tabRefusal ?? undefined} onClick={() => void act("tab")}>
             New tab here
           </button>
-          <button disabled={!list || busy || !isTerminal} title={cdRefusal ?? undefined} onClick={() => void act("cd")}>
+          <button disabled={!list || busy || moving || !isTerminal} title={cdRefusal ?? undefined} onClick={() => void act("cd")}>
             cd there
           </button>
-          {workspace && list && (
+          {workspace && list && !moving && (
             <button
               data-open-workspace
               onClick={() => {
