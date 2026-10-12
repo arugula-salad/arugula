@@ -780,9 +780,9 @@ a fixed plist; that holds for `flags.json` too. The state dir survives
 machine, visibility rather than enforcement (a machine without it still
 answered the routes, until #347: see "Each flag gates its feature" below),
 and `HostFeatures.labs` tells the page.
-Not done: a flag per team or account on control (#347's last item, #464's
-option 2). It would sit beside `flags.json`: control's answer for a joined
-machine, with the file as the fallback for machines that aren't joined.
+Flags per account and per team on control (#347's last item, #464's option
+2) were decided on 2026-10-12: **control pushes, and the machine can
+override.** See "Control pushes Labs flags; the machine overrides" below.
 Where: `crates/proto/src/flags.rs`, `crates/proto/src/op.rs` (`FlagsList`, `FlagSet`), `crates/daemon/src/ops/flags.rs`, `crates/daemon/src/labs/mod.rs` (`enabled`), `crates/daemon/src/main.rs` (`flags_cli`, the startup migration), `crates/daemon/src/args.rs` (`labs_command`), `crates/daemon/src/mcp/mod.rs`, `crates/cli/src/main.rs`. The dialog is now `web/src/ui/developer.tsx` (next entry).
 From: #385, #342, #347, #387, #464.
 
@@ -851,6 +851,37 @@ everything about the feature follows the flag (#347):
   each feature's twin says it isn't built, as before.
 Where: `crates/mux/src/labs/mod.rs` (`flag`, `flag_off`), `crates/daemon/src/ops/mod.rs` (`flagged`), `crates/daemon/src/mcp/ops.rs`, `crates/proto/src/op.rs` (`FLAG`), `crates/daemon/src/labs/mod.rs` (`Flagged`, `block_flag`), `crates/mux/src/mux/machines.rs`, `crates/mux/src/mux/call_ops.rs`, `crates/daemon/tests/integration/flag_gates.rs`.
 From: #347, #665.
+
+### Control pushes Labs flags; the machine overrides
+An account sets Labs flags for every machine it owns, and a team's owners
+for the team's machines, on control's page (Teams…). Control sends both to
+each joined machine with its certificates, and nudges the machines a change
+reaches. The machine's own word still wins, so a flag can be forced on or
+off locally:
+- **Precedence, first match wins:** the machine's `flags.json` (the flag by
+  name, then `labs` there, then the old marker); control's word for the
+  machine's account; control's word for its team; the flag's default.
+  Account before team because it's the narrower say: the account owns the
+  machine, and a team reaches only the machines added to it.
+- **Team flags reach the team's machines only** (`daemons.team`), not the
+  members' own machines: a team owner doesn't set what runs on someone
+  else's laptop.
+- **Tri-state locally.** A flag `flags.json` doesn't name follows control;
+  *Follow control* in Developer settings (`PUT /api/flags/{name}` with
+  `{"on": null}`, `arugulad flags NAME unset`) takes the machine's word
+  back. Where `labs` spoke for it, the rest are written out first, so they
+  stay on.
+- **Kept beside, not in, `flags.json`:** the daemon writes control's answer
+  to `flags.control.json` in the state dir and removes it when the machine
+  isn't in control, so a machine that leaves (or never joined) is as before.
+  A control from before this sends no `flags`, and the daemon keeps what it
+  had. Reads stay uncached: `flags::get` reads both files.
+- **Control doesn't know the list.** It stores any short lowercase name
+  (`labs_flags`, owner `account:ID` or `team:ID`), and a daemon ignores one
+  it doesn't have; the page offers the list it was built with (`FLAGS` in
+  `proto.gen.ts`). Developer settings says where each flag comes from.
+Where: `crates/proto/src/flags.rs` (`explain`, `write_control`, `unset`), `crates/control-wire/src/team.rs` (`TrustAnswer::flags`), `crates/control/src/labs_flags.rs`, `crates/control/src/api.rs` (`daemon_trust`), `crates/daemon/src/control.rs` (`refresh`), `web/src/ui/control.tsx` (`LabsFlagList`), `web/src/ui/developer.tsx`.
+From: #347 (decided by Jake, 2026-10-12).
 
 ### Zig 0.16 builds Ghostty; the toolchain is pinned
 libghostty-vt needs Zig, pinned in `.mise.toml`; cargo runs under `mise exec`

@@ -218,6 +218,14 @@ CREATE TABLE IF NOT EXISTS gone_daemons (
     hash TEXT PRIMARY KEY,
     at INTEGER NOT NULL
 );
+-- Labs flags an account or a team set for its machines (#347): `owner` is
+-- `account:ID` or `team:ID`, as billing's is. A flag not here is unset.
+CREATE TABLE IF NOT EXISTS labs_flags (
+    owner TEXT NOT NULL,
+    name TEXT NOT NULL,
+    turned_on INTEGER NOT NULL,
+    PRIMARY KEY (owner, name)
+);
 ";
 
 /// Columns added after a table first shipped.
@@ -1988,6 +1996,30 @@ impl Db {
         Ok(ms.div_ceil(60_000))
     }
 
+    // ---- Labs flags (#347)
+
+    /// The flags `owner` (`account:ID` or `team:ID`) set, by name.
+    pub fn labs_flags(&self, owner: &str) -> anyhow::Result<std::collections::BTreeMap<String, bool>> {
+        let c = self.c();
+        let mut q = c.prepare("SELECT name, turned_on FROM labs_flags WHERE owner = ?1")?;
+        let rows = q.query_map(params![owner], |r| Ok((r.get::<_, String>(0)?, r.get::<_, bool>(1)?)))?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    /// Sets one (`None` unsets it); `true` if that changed anything.
+    pub fn set_labs_flag(&self, owner: &str, name: &str, on: Option<bool>) -> anyhow::Result<bool> {
+        let c = self.c();
+        let n = match on {
+            Some(on) => c.execute(
+                "INSERT INTO labs_flags (owner, name, turned_on) VALUES (?1, ?2, ?3)
+                 ON CONFLICT (owner, name) DO UPDATE SET turned_on = ?3 WHERE turned_on != ?3",
+                params![owner, name, on],
+            )?,
+            None => c.execute("DELETE FROM labs_flags WHERE owner = ?1 AND name = ?2", params![owner, name])?,
+        };
+        Ok(n > 0)
+    }
+
     // ---- settings and push (M21)
 
     pub fn setting(&self, k: &str) -> anyhow::Result<Option<String>> {
@@ -2104,6 +2136,7 @@ impl Db {
                 "DELETE FROM daemon_watches WHERE team = ?1",
                 "DELETE FROM retained_for WHERE team = ?1",
                 "DELETE FROM billing WHERE owner = 'team:' || ?1",
+                "DELETE FROM labs_flags WHERE owner = 'team:' || ?1",
                 "UPDATE daemons SET team = NULL, moved = NULL WHERE team = ?1",
                 "UPDATE joins SET team = NULL, team_sig = NULL WHERE team = ?1",
                 "DELETE FROM teams WHERE id = ?1",
@@ -2148,6 +2181,7 @@ impl Db {
             "DELETE FROM notices WHERE account = ?1",
             "DELETE FROM sandboxes WHERE account = ?1",
             "DELETE FROM billing WHERE owner = 'account:' || ?1",
+            "DELETE FROM labs_flags WHERE owner = 'account:' || ?1",
             "DELETE FROM reported WHERE account = ?1",
             "DELETE FROM usage WHERE account = ?1",
             "DELETE FROM team_requests WHERE account = ?1",

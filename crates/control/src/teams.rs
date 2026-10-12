@@ -126,7 +126,7 @@ pub fn certs_for_test(app: &App, accounts: &[String]) -> AccountCerts {
     certs_for(app, accounts.iter().map(String::as_str)).unwrap()
 }
 
-fn parse(body: &str) -> anyhow::Result<Roster> {
+pub(crate) fn parse(body: &str) -> anyhow::Result<Roster> {
     Ok(serde_json::from_str(body)?)
 }
 
@@ -134,12 +134,12 @@ fn pin(t: &Team) -> TeamPin {
     TeamPin { team: t.id.clone(), founder: t.founder.clone(), founder_root: t.founder_root.clone() }
 }
 
-fn latest(app: &App, team: &str) -> Result<Roster, ApiError> {
+pub(crate) fn latest(app: &App, team: &str) -> Result<Roster, ApiError> {
     let body = app.db.latest_roster(team)?.ok_or_else(|| err(StatusCode::NOT_FOUND, "no such team"))?;
     Ok(parse(&body)?)
 }
 
-fn role_in(r: &Roster, account: &str) -> Option<TeamRole> {
+pub(crate) fn role_in(r: &Roster, account: &str) -> Option<TeamRole> {
     r.member(account).map(|m| m.role)
 }
 

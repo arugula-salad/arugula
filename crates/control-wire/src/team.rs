@@ -22,6 +22,22 @@ pub struct TrustAnswer {
     /// Its last move (#100), for the daemon to check and take.
     #[serde(default)]
     pub moved: Option<Move>,
+    /// The Labs flags its account and team set (#347). Left out by a
+    /// control from before them; a daemon then keeps what it had.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub flags: Option<Flags>,
+}
+
+/// Labs flags control sends a machine (#347): its account's, and its
+/// team's if it's a team's machine, by flag name. On or off; a flag
+/// neither names follows the machine's own default. The daemon's own
+/// `flags.json` wins over both, and account over team.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Flags {
+    #[serde(default)]
+    pub account: BTreeMap<String, bool>,
+    #[serde(default)]
+    pub team: BTreeMap<String, bool>,
 }
 
 /// `GET /api/daemon/team`: a team machine's team, rosters after the version

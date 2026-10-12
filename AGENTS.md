@@ -134,7 +134,9 @@ A flag per feature turns on what a stranger doesn't get (#385, #464, #665):
 dir (`arugula_proto::flags`: the `FLAGS` registry, `get`, `on`, `set`, `all`;
 read on every call, never cached), set by `arugulad flags chat on` or the
 owner's *Developer settings…* in the web client (`flags.list` and `flag.set`
-operations). A new Labs feature adds a row to `FLAGS` and gates itself on
+operations). Control can push flags too, per account and per team
+(`flags.control.json` beside it); the machine's own `flags.json` wins, then
+the account's, then the team's (DECISIONS.md). A new Labs feature adds a row to `FLAGS` and gates itself on
 it, refusing as well as hiding (#347): `Op::FLAG` on its operations (refused
 by `ops::flagged`), `labs::Flagged` on its block types, and
 `labs::flag(dir, flags::NAME)` anywhere else, which gives the refusal that

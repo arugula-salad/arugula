@@ -1160,6 +1160,17 @@ impl Control {
         self.check_auth(&e).await;
         let moved_to = self.where_control_is(&e.saved.url).await;
         let own: wire::TrustAnswer = self.get(&e, &wire::Features::path(&features())).await?;
+        // The Labs flags its account and team set (#347), under this
+        // machine's own; a control from before them says nothing, and
+        // what's kept stays.
+        if let Some(f) = &own.flags {
+            let pushed = arugula_proto::flags::Pushed { account: f.account.clone(), team: f.team.clone() };
+            match arugula_proto::flags::write_control(&self.state_dir, &pushed) {
+                Ok(true) => info!(account = ?f.account, team = ?f.team, "Labs flags from control changed"),
+                Ok(false) => {}
+                Err(e) => warn!(error = %e, "can't keep the Labs flags control sent"),
+            }
+        }
         let mut saved = e.saved.clone();
         if let Some(to) = moved_to {
             info!(from = saved.url, to, "control moved; following it");
@@ -1581,8 +1592,15 @@ impl Control {
                     } else if !me.no_relay && relay.as_ref().is_none_or(|r| r.is_finished()) {
                         relay = Some(relay_with(me.clone()));
                     }
-                } else if let Some(r) = relay.take() {
-                    r.abort();
+                } else {
+                    if let Some(r) = relay.take() {
+                        r.abort();
+                    }
+                    // Not in control: only this machine's own flags count
+                    // (#347). Cheap when there's nothing to remove.
+                    if let Ok(true) = arugula_proto::flags::forget_control(&me.state_dir) {
+                        info!("not in control: its Labs flags no longer apply here");
+                    }
                 }
                 tokio::select! {
                     _ = tokio::time::sleep(WATCH) => {}
@@ -2753,6 +2771,9 @@ mod tests {
         subs: Vec<PushSub>,
         /// Pushes relayed: endpoint and body.
         relayed: Vec<(String, Vec<u8>)>,
+        /// The trust answer's Labs flags (#347); `None` leaves them out,
+        /// as a control from before them did.
+        flags: Option<serde_json::Value>,
     }
 
     struct Rig {
@@ -2814,7 +2835,12 @@ mod tests {
             .route(
                 "/api/daemon/trust",
                 get(|State((f, _, _)): State<St>| async move {
-                    Json(serde_json::json!({ "certs": f.lock().unwrap().own, "revocations": [] }))
+                    let f = f.lock().unwrap();
+                    let mut v = serde_json::json!({ "certs": f.own, "revocations": [] });
+                    if let Some(flags) = &f.flags {
+                        v["flags"] = flags.clone();
+                    }
+                    Json(v)
                 }),
             )
             .route(
@@ -2954,6 +2980,44 @@ mod tests {
 
     fn to_bea(p: &Principal) -> bool {
         p.id() == "account:b1"
+    }
+
+    /// #347: the flags control sends for the account and team apply under
+    /// this machine's own, follow control's changes, stay when an older
+    /// control says nothing of them, and go when the machine leaves.
+    #[tokio::test]
+    async fn control_pushes_labs_flags_and_the_machine_overrides() {
+        use arugula_proto::flags::{self, CHAT, HUDDLES, Source, VMS};
+        let r = rig("flags").await;
+        r.fake.lock().unwrap().flags =
+            Some(serde_json::json!({ "account": { "vms": false }, "team": { "chat": true, "vms": true } }));
+        let c = r.daemon().await;
+        assert!(flags::get(&r.dir, CHAT) && !flags::get(&r.dir, VMS) && !flags::get(&r.dir, HUDDLES));
+        let source = |name| flags::explain(&r.dir).into_iter().find(|(f, _)| f.name == name).unwrap().1.source;
+        assert_eq!((source(CHAT), source(VMS)), (Source::Team, Source::Account));
+
+        // The machine forces one off; a team change doesn't move it.
+        flags::set(&r.dir, CHAT, false).unwrap();
+        r.fake.lock().unwrap().flags =
+            Some(serde_json::json!({ "team": { "chat": true, "huddles": true, "vms": true } }));
+        assert!(c.refresh_now(REFRESH_WAIT).await);
+        assert!(!flags::get(&r.dir, CHAT) && flags::get(&r.dir, HUDDLES));
+        // VMs follow the account's word going away: the team's says on.
+        assert!(flags::get(&r.dir, VMS) && source(VMS) == Source::Team);
+
+        // A control from before flags says nothing: what was sent stays.
+        r.fake.lock().unwrap().flags = None;
+        assert!(c.refresh_now(REFRESH_WAIT).await);
+        assert!(flags::get(&r.dir, HUDDLES));
+
+        // Leaving control: only the machine's own word is left.
+        std::fs::remove_file(r.dir.join(FILE)).unwrap();
+        let t = std::time::Instant::now();
+        while r.dir.join(flags::CONTROL_FILE).exists() && t.elapsed() < Duration::from_secs(10) {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        assert!(!flags::get(&r.dir, HUDDLES) && !flags::get(&r.dir, VMS) && !flags::get(&r.dir, CHAT));
+        let _ = std::fs::remove_dir_all(&r.dir);
     }
 
     /// #232: someone just granted (whom control routes here) is reachable

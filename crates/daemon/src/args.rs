@@ -134,7 +134,8 @@ pub(crate) enum Command {
     Flags {
         /// The flag to show or set [default: list them all].
         name: Option<String>,
-        /// Turn it on or off [default: show it].
+        /// Turn it on or off here, or unset it to follow what control
+        /// says for the account and team [default: show it].
         #[arg(requires = "name", value_enum)]
         switch: Option<Switch>,
         /// The daemon's state directory [default: as the daemon's].
@@ -148,6 +149,8 @@ pub(crate) enum Command {
 pub(crate) enum Switch {
     On,
     Off,
+    /// This machine says nothing: control's word, or the default (#347).
+    Unset,
 }
 
 #[derive(clap::Args, Debug)]

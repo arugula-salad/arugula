@@ -39,6 +39,33 @@ export function DeveloperLayer() {
   );
 }
 
+const onOff = (on: boolean) => (on ? "on" : "off");
+
+/** Whether control has a word on it for this machine (#347). */
+const controlSays = (f: FlagInfo) => f.account !== undefined || f.team !== undefined;
+
+const followLabel = (f: FlagInfo) => (controlSays(f) ? "Follow control" : "Reset");
+
+/** Where a flag's state comes from (#347): this machine, the account or
+ * the team on control, or its default. A daemon from before says nothing. */
+function FlagSource({ f }: { f: FlagInfo }) {
+  if (!f.source) return null;
+  const control = f.account !== undefined ? `${onOff(f.account)} for your account` : f.team !== undefined ? `${onOff(f.team)} for your team` : null;
+  const text =
+    f.source === "machine"
+      ? `Set on this machine${control ? `; control says ${control}` : ""}`
+      : f.source === "account"
+        ? "From your account on control"
+        : f.source === "team"
+          ? "From your team on control"
+          : null;
+  return text ? (
+    <span class="hint flag-source" data-flag-source={f.source}>
+      {text}
+    </span>
+  ) : null;
+}
+
 function Developer({ client, close }: { client: Client; close: () => void }) {
   const [flags, setFlags] = useState<FlagInfo[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -57,7 +84,7 @@ function Developer({ client, close }: { client: Client; close: () => void }) {
   };
   useEffect(() => void load(), []);
 
-  const set = async (name: string, on: boolean) => {
+  const set = async (name: string, on: boolean | null) => {
     const res = await client.request("PUT", `/api/flags/${encodeURIComponent(name)}`, { on }).catch(() => null);
     if (!res?.ok) setError("couldn't change it");
     // The menus and the page follow the host's features: no reload.
@@ -70,7 +97,7 @@ function Developer({ client, close }: { client: Client; close: () => void }) {
         <h2>Developer settings</h2>
         <p class="hint">
           Features that aren't ready for everyone, on this machine. Each takes effect at once; <code>arugulad flags</code> shows the same
-          switches.
+          switches. What you set here wins over what control sets for your account or team.
         </p>
         {error && <p class="error">{error}</p>}
         {flags?.some((f) => f.built === false) && <p class="hint">This daemon was built without Labs: the switches turn nothing on.</p>}
@@ -82,8 +109,15 @@ function Developer({ client, close }: { client: Client; close: () => void }) {
                 <span>
                   <b>{f.title || f.name}</b>
                   <span class="hint">{f.about}</span>
+                  <FlagSource f={f} />
                 </span>
               </label>
+              {/* This machine's word taken back: control's, or the default. */}
+              {f.source && f.local !== undefined ? (
+                <button type="button" class="flag-follow" aria-label={`${followLabel(f)} for ${f.title || f.name}`} onClick={() => void set(f.name, null)}>
+                  {followLabel(f)}
+                </button>
+              ) : null}
             </li>
           ))}
         </ul>

@@ -330,6 +330,12 @@ export class AlongsideError extends Error {
   }
 }
 
+/** `GET /api/flags` on control (#347). */
+export type LabsFlags = {
+  account: Record<string, boolean>;
+  teams: Record<string, { flags: Record<string, boolean>; owner: boolean }>;
+};
+
 export async function api<T>(path: string, body?: unknown): Promise<T> {
   const res = await fetch(path, {
     method: body === undefined ? "GET" : "POST",
@@ -1598,6 +1604,17 @@ export class ControlSession {
   async lockTeam(team: string, locked: boolean) {
     await api(`/api/teams/${team}/lock`, { locked });
     await this.refresh();
+  }
+
+  /** Labs flags this account set for its machines, and each of its teams'
+   * for the team's machines (#347). A flag not named is unset. */
+  async labsFlags() {
+    return api<LabsFlags>("/api/flags");
+  }
+
+  /** Set one of the account's flags, or (an owner) a team's; `null` unsets it. */
+  async setLabsFlag(name: string, on: boolean | null, team?: string) {
+    return api<{ flags: Record<string, boolean> }>("/api/flags", { name, on, team });
   }
 
   /** Someone on control, by their login or name: whom to share with, and the root

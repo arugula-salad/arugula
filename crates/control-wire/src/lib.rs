@@ -28,7 +28,7 @@ pub mod turn;
 pub use join::{CliJoinRequest, JoinPoll, JoinProof, JoinRequest, JoinStarted, JoinTeam, PollQuery};
 pub use push::{PushAnswer, PushRequest, PushSubs};
 pub use team::{
-    AccessList, Features, PeerCerts, PeersQuery, SharedTeamAnswer, TeamAnswer, TeamNone, TeamQuery, TeamsQuery,
+    AccessList, Features, Flags, PeerCerts, PeersQuery, SharedTeamAnswer, TeamAnswer, TeamNone, TeamQuery, TeamsQuery,
     TrustAnswer,
 };
 pub use turn::IceServers;

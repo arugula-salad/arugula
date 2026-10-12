@@ -853,7 +853,9 @@ pub async fn daemon_trust(State(app): State<Arc<App>>, d: DaemonAuth, Query(q): 
             .inspect_err(|e| warn!(daemon = %d.cert.device, error = %e, "a stored move doesn't parse; not sending it"))
             .ok()
     });
-    crate::reply(&wire::TrustAnswer { trust, certs, revocations: revs, moved })
+    // Labs flags its account and team set (#347).
+    let flags = Some(crate::labs_flags::for_daemon(&app, &d.cert.account, &d.cert.device)?);
+    crate::reply(&wire::TrustAnswer { trust, certs, revocations: revs, moved, flags })
 }
 
 pub async fn daemon_leave(State(app): State<Arc<App>>, d: DaemonAuth) -> R {
