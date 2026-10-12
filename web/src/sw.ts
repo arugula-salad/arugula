@@ -6,7 +6,9 @@
 // here, without opening the app: on the daemon's own page with a request to
 // it, and through Arugula control over an end-to-end channel the worker
 // opens itself, with this device's key and the daemon's Noise key from the
-// directory the page checked (S18). It also keeps the last copy of the page
+// directory the page checked (S18). A pane that wants you, with room for
+// another button, also gets Share, which opens the pane with its session's
+// share picker (#237). It also keeps the last copy of the page
 // itself, used only when the daemon that serves it doesn't answer: the page
 // can then still reach the other hosts on its saved list (M4a). Nothing else
 // is cached. Control's own notices (a new device or a team request
@@ -17,7 +19,7 @@
 import { E2ESocket } from "./e2e/channel.ts";
 import type { ActRequest } from "./proto";
 import { existingKeys, loadWorkerDirectory } from "./e2e/keys.ts";
-import { tapThread, tapUrl } from "./tap.ts";
+import { shareUrl, tapThread, tapUrl, withShare } from "./tap.ts";
 
 /** The parts of a service worker's global scope used here (the project's
  * types are the page's). */
@@ -115,7 +117,7 @@ sw.addEventListener("push", (event: PushEvent) => {
   // A decision point's question (#621): a button for each choice.
   const choices = reason?.gate && typeof reason.gate.id === "string" && reason.actions.includes("answer") ? reason.gate.choices : undefined;
   const point = Array.isArray(choices) ? choices : null;
-  const actions = approve
+  const offered = approve
     ? [
         { action: "approve", title: "Allow" },
         { action: "deny", title: "Deny" },
@@ -137,6 +139,7 @@ sw.addEventListener("push", (event: PushEvent) => {
         : reason && reason.actions.includes("dismiss")
           ? [{ action: "dismiss", title: "Dismiss" }]
           : [];
+  const actions = withShare(offered, { pane: msg.pane, reason });
   event.waitUntil(
     sw.registration.showNotification(msg.title || "Arugula", {
       body: msg.body || "",
@@ -250,6 +253,22 @@ sw.addEventListener("notificationclick", (event: ClickEvent) => {
   }
   if (event.action === "dismiss" && pane) {
     event.waitUntil(act(data.daemon, { action: "dismiss", pane }));
+    return;
+  }
+  // Share (#237): the pane, with its session's share picker open.
+  if (event.action === "share" && pane) {
+    event.waitUntil(
+      (async () => {
+        const wins = await sw.clients.matchAll({ type: "window", includeUncontrolled: true });
+        for (const w of wins) {
+          if (w.focus) {
+            w.postMessage({ type: "open-pane", pane, daemon: data.daemon, share: true });
+            return w.focus();
+          }
+        }
+        return sw.clients.openWindow(shareUrl({ pane, daemon: data.daemon }));
+      })(),
+    );
     return;
   }
   // Control's notice (#104): its page shows the prompt, with the
