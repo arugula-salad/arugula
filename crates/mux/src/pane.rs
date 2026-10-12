@@ -2226,6 +2226,8 @@ impl State {
                 self.index(at, Event::Notify { at_ms: ms, title: title.clone(), body: body.clone() })
             }
             Signal::Bell => self.index(at, Event::Bell { at_ms: ms }),
+            // The mux keeps a pane's status records (#720).
+            Signal::Status(_) | Signal::Reset => {}
         }
         self.notify(What::Signal(signal));
     }

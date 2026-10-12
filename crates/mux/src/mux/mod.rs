@@ -384,6 +384,11 @@ struct Daemon {
     /// machine, says the inventory.
     unread: HashMap<PaneId, &'static str>,
     screen: HashMap<PaneId, AgentState>,
+    /// What the programs in each pane say they're doing (OSC 7501, #720),
+    /// the attention that last put the pane in, and when it last pushed.
+    status: HashMap<PaneId, crate::status::Book>,
+    status_shown: HashMap<PaneId, Attention>,
+    status_pushed: HashMap<PaneId, Instant>,
     /// Panes typed in since their agent was last idle: its next idle ends
     /// a turn someone started (a spinner at startup doesn't).
     turn_typed: std::collections::HashSet<PaneId>,
@@ -574,6 +579,9 @@ pub fn start(
         watching: Default::default(),
         unread: Default::default(),
         screen: Default::default(),
+        status: Default::default(),
+        status_shown: Default::default(),
+        status_pushed: Default::default(),
         turn_typed: Default::default(),
         hold: Default::default(),
         clients: HashMap::new(),
@@ -957,6 +965,10 @@ impl Daemon {
         let running_command = || self.panes.get(&pane).is_some_and(|h| h.status().current.is_some());
         match n.what {
             What::Exited { code, close } => {
+                // What its programs were doing is over; what ended stays.
+                if let Some(b) = self.status.get_mut(&pane) {
+                    b.settle();
+                }
                 let machine_gone = self.machine_of(pane).is_some_and(|m| m.state == MachineState::Gone);
                 self.emit(Some(pane), EventKind::Exit { code, machine_gone });
                 if close {
@@ -983,6 +995,7 @@ impl Daemon {
                     };
                     self.set_attention_with(pane, Attention::Done, &headline, Some(reason));
                 }
+                self.status_apply(pane);
                 self.changed();
             }
             What::Machine(up) => {
@@ -1067,7 +1080,9 @@ impl Daemon {
             What::Busy(true) => {
                 // An idle agent redrawing itself (a resize, its status line)
                 // isn't working; its screen says when it is.
+                // A program that reports its status (#720) says when it works.
                 if running_command()
+                    && !self.has_status(pane)
                     && self.screen.get(&pane) != Some(&AgentState::Idle)
                     && matches!(
                         self.attention.get(&pane).copied().unwrap_or_default(),
@@ -1084,6 +1099,7 @@ impl Daemon {
                 // wants you. Quiet alone is idle, unless the screen says
                 // it's still working (a long think).
                 if running_command()
+                    && !self.has_status(pane)
                     && self.looks_like_agent(pane)
                     && self.attention.get(&pane) == Some(&Attention::Working)
                     && self.screen.get(&pane) != Some(&AgentState::Working)
@@ -1096,8 +1112,12 @@ impl Daemon {
                 Signal::Prompt => {
                     self.emit(Some(pane), EventKind::Prompt);
                     self.watch_agent(pane);
+                    let reported = self.status_settle(pane);
                     if self.attention.get(&pane) == Some(&Attention::Working) {
                         self.set_attention(pane, Attention::Idle, "prompt");
+                    }
+                    if reported {
+                        self.status_apply(pane);
                     }
                 }
                 Signal::CommandLine { .. } => {}
@@ -1113,6 +1133,12 @@ impl Daemon {
                     let took_ms = last.as_ref().map(|l| l.ended_ms.unwrap_or(l.started_ms) - l.started_ms).unwrap_or(0);
                     let text = last.and_then(|l| l.text);
                     self.emit(Some(pane), EventKind::CommandEnd { text: text.clone(), exit });
+                    // Its program said how it ended (#720): that's the card.
+                    if self.status.get(&pane).is_some_and(|b| b.ended()) {
+                        self.status_apply(pane);
+                        self.touch(pane);
+                        return;
+                    }
                     // Something that asked for you still wants you after its
                     // command ends; only input (or a client) clears that.
                     if self.attention.get(&pane) == Some(&Attention::NeedsInput) {
@@ -1168,6 +1194,8 @@ impl Daemon {
                         self.set_attention(pane, Attention::NeedsInput, "bell");
                     }
                 }
+                Signal::Status(s) => self.status_report(pane, &s),
+                Signal::Reset => self.status_reset(pane),
             },
         }
     }
@@ -1273,6 +1301,11 @@ impl Daemon {
             return;
         }
         if matches!(self.attention.get(&pane), Some(Attention::NeedsInput | Attention::Done)) {
+            if self.attention.get(&pane) == Some(&Attention::Done)
+                && let Some(b) = self.status.get_mut(&pane)
+            {
+                b.seen();
+            }
             let next = if p.status().current.is_some() { Attention::Working } else { Attention::Idle };
             self.set_attention(pane, next, "input");
         }

@@ -9,6 +9,7 @@
 mod compat;
 pub mod detect;
 mod ghostty;
+mod status_query;
 
 pub use compat::Capabilities;
 pub use ghostty::{

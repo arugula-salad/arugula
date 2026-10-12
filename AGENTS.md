@@ -76,7 +76,8 @@ nothing marked `mux:` names the edge or the block kinds.
 - **Panes** (`mux:`): a process on a PTY and its VT thread (`pane.rs`),
   Windows' pseudoconsole (`conpty.rs`), what survives a restart (`store.rs`),
   keeping terminals open across restarts (`holder.rs`, `shim.rs`, `sys.rs`),
-  prompts and commands in the output (`osc.rs`), shell integration
+  prompts and commands in the output (`osc.rs`), what programs say they're
+  doing (OSC 7501, `status.rs`), shell integration
   (`shellint.rs`, `shellenv.rs`), what a pane is busy with (`classify.rs`),
   process info (`procinfo.rs`), history (`history.rs`), resuming an agent's
   conversation (`resume.rs`), named keys (`keys.rs`).

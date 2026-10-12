@@ -164,7 +164,12 @@ impl Daemon {
                         self.focus.insert(client, p);
                         // Seeing a finished command is enough.
                         if self.attention.get(&p) == Some(&Attention::Done) {
+                            // A program's done or error (#720) too.
+                            if let Some(b) = self.status.get_mut(&p) {
+                                b.seen();
+                            }
                             self.set_attention(p, Attention::Idle, "seen");
+                            self.status_apply(p);
                         }
                     }
                     None => {
@@ -373,6 +378,9 @@ impl Daemon {
                     self.watching.remove(&pane);
                     self.unread.remove(&pane);
                     self.screen.remove(&pane);
+                    self.status.remove(&pane);
+                    self.status_shown.remove(&pane);
+                    self.status_pushed.remove(&pane);
                     self.turn_typed.remove(&pane);
                     if let Some(a) = self.asks.remove(&pane) {
                         let _ = a.reply.send((AskReply::Withdrawn, None));

@@ -64,6 +64,7 @@ mod machines;
 mod mcp;
 mod memory;
 mod pipe;
+mod program_status;
 mod prompt;
 mod questions;
 mod reboot;
