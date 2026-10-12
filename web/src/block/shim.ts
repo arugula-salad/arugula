@@ -6,13 +6,14 @@
 // cut a hot-reload socket that sits quiet for minutes.
 //
 // It also relays renewals: when the worker's grant has expired it asks its
-// pages, and a page asks the parent.
+// pages, and a page asks the parent. And it tells the parent which way the
+// worker's channel went (`route`), which the block shows.
 //
 // Built by itself into dist/block/shim.js (vite.block.config.ts) and served
 // by control at /.arugula/shim.js.
 
 import { BlockChannel, type Held, load, NativeWebSocket, openChannel, Refused, save } from "./channel.ts";
-import { askParent, giveWorker, TAG, VERSION } from "./page.ts";
+import { askParent, giveWorker, tellRoute, TAG, VERSION } from "./page.ts";
 
 let chan: Promise<BlockChannel> | null = null;
 
@@ -24,11 +25,16 @@ async function renew(parent: string): Promise<Held> {
 }
 
 navigator.serviceWorker?.addEventListener("message", async (e) => {
-  const m = e.data as { arugula?: string; v?: number; ask?: string } | null;
-  if (m?.arugula !== TAG || m.v !== VERSION || m.ask !== "renew") return;
+  const m = e.data as { arugula?: string; v?: number; ask?: string; route?: string } | null;
+  if (m?.arugula !== TAG || m.v !== VERSION) return;
   const h = await load<Held>("held");
-  if (h) await renew(h.parent).catch(() => {});
+  if (!h) return;
+  if (m.route === "direct" || m.route === "relayed") tellRoute(h.parent, m.route);
+  else if (m.ask === "renew") await renew(h.parent).catch(() => {});
 });
+// The worker opened its channel for this page's own request, before this
+// page could hear it say so: ask.
+navigator.serviceWorker?.controller?.postMessage({ arugula: TAG, v: VERSION, ask: "route" });
 
 async function connect(): Promise<BlockChannel> {
   let h = await load<Held>("held");

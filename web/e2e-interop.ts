@@ -8,6 +8,7 @@ import { readFileSync } from "node:fs";
 import { evaluate, certBody, joinCode, joinMac, splitJoinCode, type Cert } from "./src/e2e/cert.ts";
 import { generateKeys, signText } from "./src/e2e/keys.ts";
 import { daemonNow, E2ESocket, readWelcome } from "./src/e2e/channel.ts";
+import { blockRoutesLabel } from "./src/blocks/block-route.ts";
 import { blockOrigin, blockSrc, credsFor, grantExpiry, heard, isWebKit, MAX_LIFE_MS, mint, type Framed } from "./src/blocks/through-control.ts";
 import { follows, newInviteKey, redeemInvite, signInvite, signRedeem, signRoster, type Roster, type TeamPin } from "./src/e2e/team.ts";
 
@@ -159,8 +160,8 @@ check("Rust trusts what we signed", JSON.stringify(rust) === JSON.stringify([roo
   // Who's answered: a frame this page made, at the origin it gave it.
   const winA = { name: "a" };
   const winB = { name: "b" };
-  const fA: Framed = { frame: { contentWindow: winA }, origin, creds: async () => c, failed: () => {} };
-  const fB: Framed = { frame: { contentWindow: winB }, origin: "https://b-ffff.arugula.run", creds: async () => c, failed: () => {} };
+  const fA: Framed = { frame: { contentWindow: winA }, origin, creds: async () => c, failed: () => {}, routed: () => {} };
+  const fB: Framed = { frame: { contentWindow: winB }, origin: "https://b-ffff.arugula.run", creds: async () => c, failed: () => {}, routed: () => {} };
   const msg = (data: unknown, source: unknown = winA, o = origin) => heard([fA, fB], { source, origin: o, data });
   const hello = { arugula: "arugula-block", v: 1, ask: "hello" };
   check("a frame's hello is answered, for that frame", msg(hello)?.from === fA);
@@ -172,6 +173,23 @@ check("Rust trusts what we signed", JSON.stringify(rust) === JSON.stringify([roo
   check("another block's frame gets its own", msg(hello, winB, fB.origin)?.from === fB);
   check("nor an untagged or other-version message", msg({ ask: "hello" }) === null && msg({ ...hello, v: 2 }) === null && msg({ ...hello, ask: "steal" }) === null);
   check("nor one with no source", msg(hello, null) === null);
+  // Which way a block's channel went (PR 5): the same checks.
+  const routed = { arugula: "arugula-block", v: 1, route: "relayed" };
+  const said = (m: unknown, source: unknown = winA, o = origin) => (msg(m, source, o)?.said as { route?: string } | undefined)?.route;
+  check("a frame's route is heard, for that frame", said(routed) === "relayed" && msg(routed)?.from === fA && said({ ...routed, route: "direct" }) === "direct");
+  check("…and another block's for its own", msg(routed, winB, fB.origin)?.from === fB);
+  check("a route from a window this page didn't frame isn't", msg(routed, { name: "stranger" }) === null && msg(routed, null) === null);
+  check("…nor from another origin, or another block's", msg(routed, winA, "https://evil.example") === null && msg(routed, winA, fB.origin) === null);
+  check(
+    "…nor an untagged, other-version or unknown route",
+    msg({ route: "relayed" }) === null && msg({ ...routed, v: 2 }) === null && msg({ ...routed, route: "teleport" }) === null && msg({ ...routed, route: 1 }) === null,
+  );
+  check("the host menu sums blocks' routes", blockRoutesLabel([]) === null && blockRoutesLabel(["relayed", "relayed"]) === "Blocks: relayed");
+  check(
+    "…in the button's words",
+    blockRoutesLabel(["relayed", "direct", "own site"]) === "Blocks: 1 direct, 1 relayed, 1 on its own block site" && blockRoutesLabel(["own site"]) === "Blocks: the machine's own block site",
+    String(blockRoutesLabel(["relayed", "direct", "own site"])),
+  );
 }
 
 // 4. A channel to a Rust responder.

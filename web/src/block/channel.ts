@@ -92,15 +92,21 @@ export function channelUrl(creds: Creds, location: { protocol: string; host: str
   return `${ws}//${location.host}/.arugula/relay?d=${encodeURIComponent(creds.daemon.id)}`;
 }
 
+/** Which way a block's channel went: straight to the daemon, or through
+ * control's relay. The host menu's words for a machine's own channel. */
+export type Route = "direct" | "relayed";
+
 /** The block's channel by its route, and through the relay if a direct
  * route doesn't connect (Chrome's Local Network Access asks a frame for
- * its own permission, say). A refusal is the daemon's answer either way. */
+ * its own permission, say). A refusal is the daemon's answer either way.
+ * The channel's `route` says which way it went. */
 export async function openChannel(creds: Creds, location: { protocol: string; host: string }): Promise<BlockChannel> {
+  if (creds.route === "relay") return (await BlockChannel.connect(channelUrl(creds, location), creds)).went("relayed");
   try {
-    return await BlockChannel.connect(channelUrl(creds, location), creds);
+    return (await BlockChannel.connect(channelUrl(creds, location), creds)).went("direct");
   } catch (e) {
-    if (e instanceof Refused || creds.route === "relay") throw e;
-    return BlockChannel.connect(channelUrl({ ...creds, route: "relay" }, location), creds);
+    if (e instanceof Refused) throw e;
+    return (await BlockChannel.connect(channelUrl({ ...creds, route: "relay" }, location), creds)).went("relayed");
   }
 }
 
@@ -112,6 +118,8 @@ interface Handler {
 export class BlockChannel {
   onclose: () => void = () => {};
   closed = false;
+  /** Which way it went (`openChannel`). */
+  route: Route = "relayed";
   private sendQ: Promise<void> = Promise.resolve();
   private recvQ: Promise<void> = Promise.resolve();
   private partial: Uint8Array[] = [];
@@ -121,6 +129,11 @@ export class BlockChannel {
   private ws!: WebSocket;
   private tx!: Cipher;
   private rx!: Cipher;
+
+  went(route: Route): this {
+    this.route = route;
+    return this;
+  }
 
   static async connect(url: string, creds: Creds, timeoutMs = 10_000): Promise<BlockChannel> {
     const c = new BlockChannel();

@@ -13,6 +13,8 @@
 //   don't carry them, so the worker keeps the block's cookie jar itself.
 // - Each request says `sec-fetch-mode` and `sec-fetch-dest` (from its
 //   `mode` and `destination`), which the daemon's proxy reads.
+// - Which way each channel went (direct, or relayed after a direct route
+//   didn't connect) goes to the block's pages, whose shim tells the parent.
 //
 // Built by itself into dist/block/sw.js (vite.block.config.ts) and served
 // by control at /.arugula/sw.js, with no CSP: hosting an app's own worker
@@ -33,6 +35,7 @@ interface FetchEvent extends Waiting {
 interface MessageEvent_ extends Waiting {
   data: unknown;
   ports: readonly MessagePort[];
+  source: { postMessage(m: unknown): void } | null;
 }
 interface Worker {
   clients: {
@@ -57,8 +60,16 @@ sw.addEventListener("install", () => void sw.skipWaiting());
 sw.addEventListener("activate", (e: Waiting) => e.waitUntil(sw.clients.claim()));
 
 sw.addEventListener("message", (e: MessageEvent_) => {
-  const m = e.data as { arugula?: string; v?: number; held?: Held } | null;
-  if (m?.arugula !== TAG || m.v !== VERSION || !m.held) return;
+  const m = e.data as { arugula?: string; v?: number; held?: Held; ask?: string } | null;
+  if (m?.arugula !== TAG || m.v !== VERSION) return;
+  // A page of ours asks which way the channel went (it loaded after the
+  // channel opened, so it missed `told`).
+  if (m.ask === "route") {
+    const to = e.source;
+    if (to && chan) e.waitUntil(chan.then((ch) => to.postMessage({ arugula: TAG, v: VERSION, route: ch.route }), () => {}));
+    return;
+  }
+  if (!m.held) return;
   held = m.held;
   chan = null;
   for (const w of waiting) w(m.held);
@@ -97,12 +108,18 @@ async function connect(): Promise<BlockChannel> {
   }
 }
 
+/** Tell the block's pages which way a new channel went. */
+async function told(ch: BlockChannel) {
+  for (const c of await sw.clients.matchAll({ type: "window" })) c.postMessage({ arugula: TAG, v: VERSION, route: ch.route });
+}
+
 function channel(): Promise<BlockChannel> {
   if (!chan) {
     const p = connect().then((ch) => {
       ch.onclose = () => {
         if (chan === p) chan = null;
       };
+      void told(ch);
       return ch;
     });
     p.catch(() => {
