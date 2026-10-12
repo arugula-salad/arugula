@@ -595,7 +595,8 @@ pub struct OpenPrArgs {
 
 #[derive(Deserialize, JsonSchema)]
 pub struct OpenIssueArgs {
-    /// The issue: its link, OWNER/REPO#N, or N (in dir's repository).
+    /// The issue: its link (GitHub's or Forgejo's), OWNER/REPO#N, or N (in
+    /// dir's repository).
     pub issue: String,
     /// A clone of the repository on this host (absolute): what N means,
     /// and where the user's "Agent on this" makes its worktree.
@@ -623,7 +624,9 @@ pub struct CommentArgs {
 
 #[derive(Deserialize, JsonSchema)]
 pub struct IssueNewArgs {
-    /// The repository, OWNER/REPO (default: dir's, or the one beside you).
+    /// The repository: OWNER/REPO (default: dir's, or the one beside you),
+    /// or its link (https://github.com/OWNER/REPO, a Forgejo one's), which
+    /// says which forge.
     #[serde(default)]
     pub repo: Option<String>,
     /// A clone of it on this host (absolute).
@@ -926,7 +929,7 @@ const SHOW: &[Kind] = &[
 const DRAFT: &[Kind] = &[
     Kind {
         name: "comment",
-        description: "A comment on a PR or issue block's pull request or issue.",
+        description: "A comment on a PR or issue block's pull request or issue, on GitHub, Forgejo or GitLab.",
         schema: schema_for_type::<CommentArgs>,
         flag: None,
     },
@@ -944,7 +947,7 @@ const DRAFT: &[Kind] = &[
     },
     Kind {
         name: "issue",
-        description: "A new issue on the user's Forgejo or GitHub: a block beside you holding the draft, for the user to send, edit, drop or ask you to change; it shows the issue once sent. Asked for changes, draft again with block set to that block. Returns the block.",
+        description: "A new issue on GitHub or the user's Forgejo (repo as a link says which; a clone's remote does too): a block beside you holding the draft, for the user to send, edit, drop or ask you to change; it shows the issue once sent. Asked for changes, draft again with block set to that block. Returns the block.",
         schema: schema_for_type::<IssueNewArgs>,
         flag: None,
     },

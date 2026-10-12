@@ -42,11 +42,48 @@ use arugula_proto::{PaneId, api::HistoryKind, forge::Issue};
 /// The card's id for a new issue's draft.
 const NEW: &str = "new";
 
+/// A new issue's `repo`: `OWNER/REPO`, or the repository's link
+/// (`https://HOST/OWNER/REPO`, `HOST/OWNER/REPO`, a git remote), which also
+/// says its host. `None`: nothing given.
+fn repo_ref(r: &str) -> Result<Option<(Option<String>, String)>, String> {
+    let r = r.trim().trim_end_matches('/');
+    let r = r.strip_suffix(".git").unwrap_or(r).trim_matches('/');
+    if r.is_empty() {
+        return Ok(None);
+    }
+    let bad = || format!("{r}: not a repository (OWNER/REPO, or its link: https://github.com/OWNER/REPO)");
+    let two = |p: &str| p.split('/').count() == 2 && p.split('/').all(|s| !s.is_empty());
+    if r.contains("://") || r.contains('@') {
+        let (host, path) = login::parse_remote(r).ok_or_else(bad)?;
+        return if two(&path) { Ok(Some((Some(host), path))) } else { Err(bad()) };
+    }
+    match r.split_once('/') {
+        Some((host, path)) if (host.contains('.') || host.contains(':')) && two(path) => {
+            Ok(Some((Some(host.to_ascii_lowercase()), path.to_owned())))
+        }
+        _ => Ok(Some((None, r.to_owned()))),
+    }
+}
+
 /// `{issue: "new", title, body?, repo? | dir?, by?, agent?}` as a config.
 pub(super) async fn new_config(c: &Value, mut out: Value, dir: Option<String>) -> Result<Value, String> {
     let title = c["title"].as_str().map(str::trim).filter(|t| !t.is_empty()).ok_or("a new issue needs a title")?;
-    match (c["repo"].as_str().map(|r| r.trim_matches('/')).filter(|r| !r.is_empty()), dir) {
-        (Some(repo), dir) => {
+    let named = c["repo"].as_str().map(repo_ref).transpose()?.flatten();
+    match (named, dir) {
+        (Some((Some(host), repo)), dir) => {
+            // A link says its forge (#229): `github.com/OWNER/REPO` is
+            // GitHub's on any machine, where a bare OWNER/REPO with Labs on
+            // is Forgejo's.
+            if let Some(d) = dir
+                && let Some((top, _)) = clone_of(&d, Some(&repo)).await
+            {
+                out["dir"] = json!(top);
+            }
+            out["host"] = json!(host);
+            out["repo"] = json!(repo);
+        }
+        (Some((None, repo)), dir) => {
+            let repo = repo.as_str();
             if let Some(d) = dir {
                 if let Some((top, host)) = clone_of(&d, Some(repo)).await {
                     out["dir"] = json!(top);
@@ -850,6 +887,24 @@ mod tests {
         let c = resolve_config(&json!({ "issue": "new", "title": "T", "repo": "o/r", "dir": dir })).await.unwrap();
         let _ = std::fs::remove_dir_all(&dir);
         assert_eq!((c["provider"].as_str(), c["host"].as_str()), (Some("github"), Some("github.com")), "{c}");
+        // #229: a repository's link says its forge, Labs or not.
+        for repo in
+            ["https://github.com/o/r", "github.com/o/r/", "git@github.com:o/r.git", "https://github.com/o/r.git"]
+        {
+            let c = resolve_config(&json!({ "issue": "new", "title": "T", "repo": repo })).await.unwrap();
+            assert_eq!(
+                (c["provider"].as_str(), c["host"].as_str(), c["repo"].as_str()),
+                (Some("github"), Some("github.com"), Some("o/r")),
+                "{repo}: {c}"
+            );
+        }
+        let c =
+            resolve_config(&json!({ "issue": "new", "title": "T", "repo": "https://git.example/o/r" })).await.unwrap();
+        assert_eq!((c["provider"].as_str(), c["host"].as_str()), (Some("forgejo"), Some("git.example")), "{c}");
+        let c = resolve_config(&json!({ "issue": "new", "title": "T", "repo": "o/r" })).await.unwrap();
+        assert_eq!((c["provider"].as_str(), c["host"].as_str()), (Some("forgejo"), None), "a bare one, as before");
+        let e = resolve_config(&json!({ "issue": "new", "title": "T", "repo": "https://github.com/o" })).await;
+        assert!(e.unwrap_err().contains("not a repository"));
         // An issue by its link, or a PR link given as an issue's.
         let c = resolve_config(&json!({ "issue": "https://git.example/o/r/issues/7" })).await.unwrap();
         assert_eq!((c["kind"].as_str(), c["number"].as_u64()), (Some("issue"), Some(7)));
