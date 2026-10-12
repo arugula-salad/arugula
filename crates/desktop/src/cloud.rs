@@ -112,9 +112,19 @@ pub fn control() -> Option<String> {
     LOCAL.lock().unwrap().as_ref().and_then(|l| l.control.clone())
 }
 
+/// The app's name as a device: "Arugula app on geek". An AppImage whose
+/// WebKitGTK is older than the profile's keeps a profile of its own
+/// (`profile.rs`), so it's a second device beside the package on the same
+/// machine: "Arugula app (AppImage) on geek" (#817).
 pub fn device_name() -> String {
     let name = LOCAL.lock().unwrap().as_ref().map(|l| l.name.clone()).unwrap_or_default();
-    if name.is_empty() { "Arugula app".into() } else { format!("Arugula app on {name}") }
+    let own_profile = std::env::var_os("APPIMAGE").is_some() && crate::profile::dir().is_some();
+    name_for(&name, own_profile)
+}
+
+fn name_for(machine: &str, appimage: bool) -> String {
+    let app = if appimage { "Arugula app (AppImage)" } else { "Arugula app" };
+    if machine.is_empty() { app.into() } else { format!("{app} on {machine}") }
 }
 
 pub fn set_local_only(on: bool) {
@@ -503,6 +513,14 @@ mod tests {
 
     fn url(s: &str) -> tauri::Url {
         s.parse().unwrap()
+    }
+
+    #[test]
+    fn an_appimage_with_its_own_profile_says_so() {
+        assert_eq!(name_for("geek", false), "Arugula app on geek");
+        assert_eq!(name_for("geek", true), "Arugula app (AppImage) on geek");
+        assert_eq!(name_for("", false), "Arugula app");
+        assert_eq!(name_for("", true), "Arugula app (AppImage)");
     }
 
     #[test]
