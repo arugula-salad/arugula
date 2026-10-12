@@ -46,14 +46,21 @@ export function controlOrigins(doc: Document): string[] {
   return m.split(/\s+/).filter(Boolean);
 }
 
+/** How often the frame asks again until the parent answers. */
+const ASK_EVERY_MS = 300;
+
 /** Ask the parent page for credentials. The message goes to each of
  * control's origins (only the parent's own receives it); an answer counts
- * only from the parent window at one of them. */
+ * only from the parent window at one of them. It's asked again every
+ * `ASK_EVERY_MS` until one comes: a page its worker serves from cache
+ * asks within milliseconds, before the parent may have started answering
+ * this frame (seen live on control.arugula.io, #150). */
 export function askParent(origins: string[], ask: Ask["ask"], timeoutMs = 10_000): Promise<Held> {
   return new Promise((res, rej) => {
     if (parent === window) return rej(new Error("a block opens inside Arugula control's page"));
     const done = (f: () => void) => {
       clearTimeout(t);
+      clearInterval(again);
       removeEventListener("message", on);
       f();
     };
@@ -68,7 +75,11 @@ export function askParent(origins: string[], ask: Ask["ask"], timeoutMs = 10_000
     };
     addEventListener("message", on);
     const m: Ask = { arugula: TAG, v: VERSION, ask };
-    for (const o of origins) parent.postMessage(m, o);
+    const post = () => {
+      for (const o of origins) parent.postMessage(m, o);
+    };
+    const again = setInterval(post, ASK_EVERY_MS);
+    post();
   });
 }
 
