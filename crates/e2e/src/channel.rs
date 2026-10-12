@@ -55,6 +55,27 @@ fn builder() -> snow::Builder<'static> {
     snow::Builder::new(PARAMS.parse().unwrap())
 }
 
+/// Message 2's payload on a device's own channel: the daemon's clock, so
+/// the page mints block grants' expiry by it (`block.rs`) whatever its own
+/// clock says. An older daemon sends an empty payload, and older clients
+/// ignore this one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Welcome {
+    /// Ms since the epoch, when the daemon answered.
+    pub now: u64,
+}
+
+impl Welcome {
+    pub fn encode(&self) -> Vec<u8> {
+        serde_json::to_vec(self).expect("serialize welcome")
+    }
+
+    /// `None` from a daemon that sent none.
+    pub fn decode(payload: &[u8]) -> Option<Self> {
+        serde_json::from_slice(payload).ok()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RequestHead {
     pub method: String,

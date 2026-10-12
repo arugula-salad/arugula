@@ -40,6 +40,18 @@
 //!
 //! The app's side of the rule is in `access.rs`: its WebSocket and API
 //! refuse every origin but the app's own, so a block's page can't reach them.
+//!
+//! **A third way in: block channels** (M50, `block_channel.rs`). Control
+//! serves each block an origin of its own, `https://b-<site key>.<block
+//! domain>` (control's domain, never this daemon's), and its service worker
+//! brings the block's requests here over a Noise channel. They're answered
+//! by the same proxy ([`forward`] with [`Via::Channel`]): the grant that
+//! opened the channel stands in for the listener's admission and origin
+//! checks, redirects stay on whatever origin the page is on (a path), and
+//! only control's pages may frame the answer. The site key
+//! ([`Site::site_key`]) comes from the block's own key, which is kept with
+//! the block, so a reload or a restart finds the same origin (and the
+//! worker and storage it had there).
 
 use std::{
     collections::HashMap,
@@ -66,6 +78,11 @@ use tokio::net::TcpListener;
 use tracing::{debug, info, warn};
 
 use crate::ports::Target;
+
+/// How many connections to its port a block's requests keep open: one per
+/// browser connection on the listener, more for a block channel, whose
+/// requests come at once.
+const KEPT: usize = 8;
 
 type Body = BoxBody<Bytes, hyper::Error>;
 
@@ -120,9 +137,19 @@ pub struct Site {
     down: AtomicBool,
     report: Box<dyn Fn(Report) + Send + Sync>,
     head: OnceLock<&'static str>,
+    site_key: String,
 }
 
 impl Site {
+    /// The stable name of this block's origin on control's block domain:
+    /// `b-<site key>.<block domain>` (M50). Derived from the block's own
+    /// key, which is kept with the block, so it stays put across reloads
+    /// and restarts and changes when a new block gets the id. It's one-way,
+    /// so control, which sees it, doesn't learn the dev scheme's name.
+    pub fn site_key(&self) -> &str {
+        &self.site_key
+    }
+
     /// The page at `path` (starting with `/`), as the browser loads it.
     pub fn url(&self, path: &str) -> String {
         format!("{}{path}", self.origin)
@@ -158,6 +185,8 @@ pub struct Sites {
     settings: Settings,
     sites: Mutex<HashMap<PaneId, Arc<Site>>>,
     whois: Mutex<HashMap<IpAddr, (Instant, Option<String>)>>,
+    /// Bumped when a site closes, so block channels to it close too.
+    closed: tokio::sync::watch::Sender<u64>,
 }
 
 static SITES: OnceLock<Arc<Sites>> = OnceLock::new();
@@ -173,6 +202,10 @@ pub fn set_control_origins(origins: Vec<String>) {
     *CONTROL_ORIGINS.lock().unwrap() = origins;
 }
 
+fn control_origins() -> Vec<String> {
+    CONTROL_ORIGINS.lock().unwrap().clone()
+}
+
 /// Block sites, if this daemon serves them (`--block-listen`).
 pub fn get() -> Option<Arc<Sites>> {
     SITES.get().cloned()
@@ -180,10 +213,23 @@ pub fn get() -> Option<Arc<Sites>> {
 
 /// Turn block sites on (once per process); `serve` then serves them.
 pub fn install(settings: Settings) -> Arc<Sites> {
-    SITES.get_or_init(|| Arc::new(Sites { settings, sites: Mutex::default(), whois: Mutex::default() })).clone()
+    SITES.get_or_init(|| Arc::new(Sites::new(settings))).clone()
+}
+
+/// `hex(SHA-256("arugula block site\n" ‖ key))[..32]`: a DNS label.
+fn site_key(key: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    h.update(b"arugula block site\n");
+    h.update(key.as_bytes());
+    hex::encode(&h.finalize()[..16])
 }
 
 impl Sites {
+    fn new(settings: Settings) -> Self {
+        Self { settings, sites: Mutex::default(), whois: Mutex::default(), closed: tokio::sync::watch::channel(0).0 }
+    }
+
     /// A site for block `id`. `key` is the block's own random key, part of
     /// its name in the dev scheme.
     pub fn open(&self, id: PaneId, key: &str, report: impl Fn(Report) + Send + Sync + 'static) -> Arc<Site> {
@@ -207,6 +253,7 @@ impl Sites {
             down: AtomicBool::new(false),
             report: Box::new(report),
             head: OnceLock::new(),
+            site_key: site_key(key),
         });
         self.sites.lock().unwrap().insert(id, site.clone());
         site
@@ -214,6 +261,17 @@ impl Sites {
 
     pub fn close(&self, id: PaneId) {
         self.sites.lock().unwrap().remove(&id);
+        self.closed.send_modify(|n| *n += 1);
+    }
+
+    /// Block `id`'s site, if it has one.
+    pub fn site(&self, id: PaneId) -> Option<Arc<Site>> {
+        self.sites.lock().unwrap().get(&id).cloned()
+    }
+
+    /// Changes whenever a site closes.
+    pub fn closings(&self) -> tokio::sync::watch::Receiver<u64> {
+        self.closed.subscribe()
     }
 
     /// Whether a port of this host may be proxied.
@@ -335,10 +393,12 @@ pub async fn serve(sites: Arc<Sites>, listener: TcpListener, tls: Option<Arc<tok
     }
 }
 
-/// The connection to the port that one browser connection's requests reuse
-/// (one Sprites proxy socket per browser connection, not per request).
+/// The connections to the port that one browser connection's requests
+/// reuse (one Sprites proxy socket per browser connection, not per
+/// request), or one block channel's (a few, since its requests come at
+/// once and HTTP/1 takes one at a time).
 #[derive(Default)]
-struct Upstream(tokio::sync::Mutex<Option<(PaneId, Target, SendRequest<Body>)>>);
+pub(crate) struct Upstream(tokio::sync::Mutex<Vec<(PaneId, Target, SendRequest<Body>)>>);
 
 /// Why a request didn't get an answer.
 enum Failed {
@@ -353,16 +413,16 @@ impl Upstream {
     /// port has meanwhile closed gets the request back unsent, and it goes
     /// out once more on a new one.
     async fn send(&self, site: &Site, target: &Target, req: Request<Body>) -> Result<Response<Incoming>, Failed> {
-        let mut slot = self.0.lock().await;
-        let kept = match slot.take() {
-            Some((id, t, mut s)) if id == site.id && t == *target => s.ready().await.is_ok().then_some(s),
-            _ => None,
+        let kept = {
+            let mut conns = self.0.lock().await;
+            // Another site or port's, or closed: of no more use.
+            conns.retain(|(id, t, s)| *id == site.id && t == target && !s.is_closed());
+            conns.iter().position(|(_, _, s)| s.is_ready()).map(|i| conns.swap_remove(i).2)
         };
         let mut req = Some(req);
         if let Some(mut s) = kept {
             let sent = s.try_send_request(req.take().expect("request"));
-            *slot = Some((site.id, target.clone(), s));
-            drop(slot);
+            self.keep(site, target, s).await;
             match sent.await {
                 Ok(r) => return Ok(r),
                 Err(mut e) => match e.take_message() {
@@ -370,13 +430,19 @@ impl Upstream {
                     None => return Err(Failed::Http(e.into_error())),
                 },
             }
-            slot = self.0.lock().await;
         }
         let mut s = connect(target).await.map_err(Failed::Dial)?;
         let sent = s.send_request(req.take().expect("request"));
-        *slot = Some((site.id, target.clone(), s));
-        drop(slot);
+        self.keep(site, target, s).await;
         sent.await.map_err(Failed::Http)
+    }
+
+    /// Keep `s` for later requests, if there's room.
+    async fn keep(&self, site: &Site, target: &Target, s: SendRequest<Body>) {
+        let mut conns = self.0.lock().await;
+        if conns.len() < KEPT {
+            conns.push((site.id, target.clone(), s));
+        }
     }
 }
 
@@ -385,7 +451,7 @@ async fn connect(target: &Target) -> std::io::Result<SendRequest<Body>> {
     crate::http1::connect(io).await.map_err(std::io::Error::other)
 }
 
-fn full(status: StatusCode, text: impl Into<String>) -> Response<Body> {
+pub(crate) fn full(status: StatusCode, text: impl Into<String>) -> Response<Body> {
     let mut r = Response::new(Full::new(Bytes::from(text.into())).map_err(|e| match e {}).boxed());
     *r.status_mut() = status;
     r.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_static("text/plain; charset=utf-8"));
@@ -415,7 +481,7 @@ fn check<B>(sites: &Sites, admitted: Result<(), String>, req: &Request<B>) -> Re
 }
 
 /// A refusal, for finding out why a page in a block doesn't work (#69).
-fn refused(req: &Request<Incoming>, status: StatusCode, why: &str) {
+fn refused<B>(req: &Request<B>, status: StatusCode, why: &str) {
     let h = req.headers();
     debug!(
         status = status.as_u16(),
@@ -448,15 +514,24 @@ const HOP: &[&str] = &[
     "upgrade",
 ];
 
+/// Which way a request came in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Via {
+    /// The daemon's own block listener, on the block's own origin here.
+    Listener,
+    /// A block channel (M50): from control's block origin, which this
+    /// daemon doesn't name.
+    Channel,
+}
+
 fn is_upgrade(h: &HeaderMap) -> bool {
     text(h, header::CONNECTION.as_str()).is_some_and(|c| c.to_ascii_lowercase().contains("upgrade"))
         && h.contains_key(header::UPGRADE)
 }
 
 /// The request as the port sees it: from `localhost:<port>`, with nothing
-/// that says who you are.
-fn rewrite_request(h: &mut HeaderMap, site: &Site, local: &str) {
-    let upgrade = is_upgrade(h);
+/// that says who you are. `upgrade`: it's a WebSocket the listener splices.
+fn rewrite_request(h: &mut HeaderMap, site: &Site, local: &str, upgrade: bool, via: Via) {
     let local_origin = format!("http://{local}");
     for name in HOP {
         if !(upgrade && (*name == "connection" || *name == "upgrade")) {
@@ -482,16 +557,30 @@ fn rewrite_request(h: &mut HeaderMap, site: &Site, local: &str) {
     if h.contains_key(header::ORIGIN) {
         h.insert(header::ORIGIN, HeaderValue::from_str(&local_origin).expect("origin"));
     }
-    if let Some(r) = text(h, header::REFERER.as_str()).and_then(|r| r.strip_prefix(&site.origin))
+    let referer = text(h, header::REFERER.as_str()).and_then(|r| match via {
+        Via::Listener => r.strip_prefix(&site.origin),
+        // The page's own URL, on an origin this daemon doesn't name.
+        Via::Channel => {
+            let rest = &r[r.find("://")? + 3..];
+            Some(rest.find('/').map_or("", |i| &rest[i..]))
+        }
+    });
+    if let Some(r) = referer
         && let Ok(v) = HeaderValue::from_str(&format!("{local_origin}{r}"))
     {
         h.insert(header::REFERER, v);
     }
+    if via == Via::Channel {
+        // The worker builds each response from the bytes as they come, and
+        // the browser doesn't decode those: ask for them plain.
+        h.insert(header::ACCEPT_ENCODING, HeaderValue::from_static("identity"));
+    }
 }
 
 /// The answer as the browser sees it: from the block's origin, framed only
-/// by the app.
-fn rewrite_response(h: &mut HeaderMap, site: &Site, local: &str, frame_ancestors: &HeaderValue, upgraded: bool) {
+/// by the app. Redirects to the port go to `base` (the block's origin, or
+/// empty for a path on whatever origin the page is on).
+fn rewrite_response(h: &mut HeaderMap, base: &str, local: &str, frame_ancestors: &HeaderValue, upgraded: bool) {
     for name in HOP {
         if !(upgraded && (*name == "connection" || *name == "upgrade")) {
             h.remove(*name);
@@ -501,7 +590,10 @@ fn rewrite_response(h: &mut HeaderMap, site: &Site, local: &str, frame_ancestors
         let ip = local.replacen("localhost", "127.0.0.1", 1);
         let local = [format!("http://{local}"), format!("http://{ip}")];
         if let Some(rest) = local.iter().find_map(|l| loc.strip_prefix(l.as_str()))
-            && let Ok(v) = HeaderValue::from_str(&format!("{}{rest}", site.origin))
+            && let Ok(v) = HeaderValue::from_str(&match (base, rest) {
+                ("", "") => "/".to_owned(),
+                _ => format!("{base}{rest}"),
+            })
         {
             h.insert(header::LOCATION, v);
         }
@@ -524,6 +616,22 @@ async fn handle(
             return full(status, why);
         }
     };
+    let client_upgrade = is_upgrade(req.headers()).then(|| hyper::upgrade::on(&mut req));
+    forward(sites, &site, up, req.map(|b| b.boxed()), Via::Listener, client_upgrade).await
+}
+
+/// Send a request that came in `via` to `site`'s port and answer it as the
+/// block: the proxy both ways in share. The listener checks who and where
+/// from before this; a block channel's grant did. With `client_upgrade`
+/// (the listener only), a switched answer is spliced to the browser.
+pub(crate) async fn forward(
+    sites: &Sites,
+    site: &Site,
+    up: &Upstream,
+    req: Request<Body>,
+    via: Via,
+    client_upgrade: Option<hyper::upgrade::OnUpgrade>,
+) -> Response<Body> {
     let Some(target) = site.target() else {
         return full(StatusCode::SERVICE_UNAVAILABLE, "this block isn't showing a port");
     };
@@ -550,16 +658,15 @@ async fn handle(
     }
     // A page that gets the head script comes uncompressed, to be edited.
     let edit_page = head.is_some() && navigating;
-    let upgrade = is_upgrade(req.headers());
-    let client_upgrade = upgrade.then(|| hyper::upgrade::on(&mut req));
+    let upgrade = client_upgrade.is_some();
     let (mut parts, body) = req.into_parts();
-    rewrite_request(&mut parts.headers, &site, &local);
+    rewrite_request(&mut parts.headers, site, &local, upgrade, via);
     if edit_page {
         parts.headers.remove(header::ACCEPT_ENCODING);
     }
     // Origin-form only: the port's server sees a request to itself.
     parts.uri = parts.uri.path_and_query().map(|p| p.as_str()).unwrap_or("/").parse().unwrap_or_default();
-    let out = Request::from_parts(parts, body.boxed());
+    let out = Request::from_parts(parts, body);
     // An upgraded connection is used up, so it gets one of its own.
     let sent = if upgrade {
         match connect(&target).await {
@@ -567,7 +674,7 @@ async fn handle(
             Err(e) => Err(Failed::Dial(e)),
         }
     } else {
-        up.send(&site, &target, out).await
+        up.send(site, &target, out).await
     };
     let mut res = match sent {
         Ok(r) => {
@@ -582,8 +689,12 @@ async fn handle(
         Err(Failed::Http(e)) => return full(StatusCode::BAD_GATEWAY, format!("{what}: {e}")),
     };
     let upgraded = res.status() == StatusCode::SWITCHING_PROTOCOLS;
-    let ancestors = frame_ancestors(&pages(&sites.settings.app_origins));
-    rewrite_response(res.headers_mut(), &site, &local, &ancestors, upgraded);
+    let (ancestors, base) = match via {
+        Via::Listener => (frame_ancestors(&pages(&sites.settings.app_origins)), site.origin.as_str()),
+        // Its origin is control's, so only control's pages frame it.
+        Via::Channel => (frame_ancestors(&control_origins()), ""),
+    };
+    rewrite_response(res.headers_mut(), base, &local, &ancestors, upgraded);
     let html = text(res.headers(), header::CONTENT_TYPE.as_str()).is_some_and(|t| t.starts_with("text/html"));
     if edit_page && html && !res.headers().contains_key(header::CONTENT_ENCODING) {
         let (mut parts, body) = res.into_parts();
@@ -666,16 +777,12 @@ mod tests {
     use super::*;
 
     fn sites(scheme: Scheme) -> Sites {
-        Sites {
-            settings: Settings {
-                scheme,
-                owner: Some("me@x.com".into()),
-                app_origins: vec!["http://127.0.0.1:7681".into()],
-                reserved: vec![7681, 7690],
-            },
-            sites: Mutex::default(),
-            whois: Mutex::default(),
-        }
+        Sites::new(Settings {
+            scheme,
+            owner: Some("me@x.com".into()),
+            app_origins: vec!["http://127.0.0.1:7681".into()],
+            reserved: vec![7681, 7690],
+        })
     }
 
     #[test]
@@ -763,7 +870,7 @@ mod tests {
             ("keep-alive", "timeout=5"),
             ("cookie", "a=b"),
         ]);
-        rewrite_request(&mut h, &site, "localhost:5173");
+        rewrite_request(&mut h, &site, "localhost:5173", false, Via::Listener);
         assert_eq!(h["host"], "localhost:5173");
         assert_eq!(h["origin"], "http://localhost:5173");
         assert_eq!(h["referer"], "http://localhost:5173/page?x=1");
@@ -775,9 +882,70 @@ mod tests {
         }
         // WebSocket upgrades keep what makes them upgrades.
         let mut h = headers(&[("connection", "keep-alive, Upgrade"), ("upgrade", "websocket"), ("host", "x")]);
-        rewrite_request(&mut h, &site, "localhost:5173");
+        rewrite_request(&mut h, &site, "localhost:5173", true, Via::Listener);
         assert_eq!(h["connection"], "upgrade");
         assert_eq!(h["upgrade"], "websocket");
+        // ...but only where the listener splices them.
+        let mut h = headers(&[("connection", "keep-alive, Upgrade"), ("upgrade", "websocket"), ("host", "x")]);
+        rewrite_request(&mut h, &site, "localhost:5173", false, Via::Channel);
+        assert!(!h.contains_key("connection") && !h.contains_key("upgrade"));
+    }
+
+    #[test]
+    fn channel_requests_look_local_whatever_the_origin() {
+        let s = sites(Scheme::Dev { port: 7690 });
+        let site = s.open(3, "k", |_| {});
+        let mut h = headers(&[
+            ("host", "b-0123abcd.arugula.example"),
+            ("origin", "https://b-0123abcd.arugula.example"),
+            ("referer", "https://b-0123abcd.arugula.example/a/b?c"),
+            ("accept-encoding", "gzip"),
+        ]);
+        rewrite_request(&mut h, &site, "localhost:5173", false, Via::Channel);
+        assert_eq!(h["host"], "localhost:5173");
+        assert_eq!(h["origin"], "http://localhost:5173");
+        assert_eq!(h["referer"], "http://localhost:5173/a/b?c");
+        assert_eq!(h["accept-encoding"], "identity");
+        let mut h = headers(&[("referer", "https://b-0123abcd.arugula.example")]);
+        rewrite_request(&mut h, &site, "localhost:5173", false, Via::Channel);
+        assert_eq!(h["referer"], "http://localhost:5173");
+    }
+
+    #[test]
+    fn channel_redirects_stay_on_the_page_origin() {
+        let fa = frame_ancestors(&["https://control.example".into()]);
+        let mut h = headers(&[("location", "http://localhost:5173/next?x"), ("x-frame-options", "DENY")]);
+        rewrite_response(&mut h, "", "localhost:5173", &fa, false);
+        assert_eq!(h["location"], "/next?x");
+        assert!(!h.contains_key("x-frame-options"));
+        assert_eq!(h["content-security-policy"], "frame-ancestors 'self' https://control.example");
+        let mut h = headers(&[("location", "http://127.0.0.1:5173")]);
+        rewrite_response(&mut h, "", "localhost:5173", &fa, false);
+        assert_eq!(h["location"], "/");
+    }
+
+    #[test]
+    fn site_keys_are_stable_and_one_way() {
+        let s = sites(Scheme::Dev { port: 7690 });
+        let a = s.open(3, "abcdefghij0123456789", |_| {}).site_key().to_owned();
+        assert_eq!(a.len(), 32);
+        assert!(a.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()));
+        assert!(!a.contains("abcdefghij"));
+        // The same block key (a reload, a restart) gives the same origin;
+        // another block's, another.
+        assert_eq!(s.open(3, "abcdefghij0123456789", |_| {}).site_key(), a);
+        assert_ne!(s.open(3, "abcdefghij0123456780", |_| {}).site_key(), a);
+    }
+
+    #[test]
+    fn closing_a_site_is_seen() {
+        let s = sites(Scheme::Dev { port: 7690 });
+        let site = s.open(3, "k", |_| {});
+        let closings = s.closings();
+        assert!(Arc::ptr_eq(&s.site(3).unwrap(), &site));
+        s.close(3);
+        assert!(closings.has_changed().unwrap());
+        assert!(s.site(3).is_none());
     }
 
     #[test]
@@ -790,7 +958,7 @@ mod tests {
             ("location", "http://localhost:5173/next"),
             ("content-security-policy", "default-src 'self'"),
         ]);
-        rewrite_response(&mut h, &site, "localhost:5173", &fa, false);
+        rewrite_response(&mut h, &site.origin, "localhost:5173", &fa, false);
         assert!(!h.contains_key("x-frame-options"));
         assert_eq!(h["location"], "http://b-3-k.localhost:7690/next");
         let csp: Vec<_> = h.get_all("content-security-policy").iter().map(|v| v.to_str().unwrap()).collect();
@@ -799,7 +967,7 @@ mod tests {
             ["default-src 'self'", "frame-ancestors 'self' http://127.0.0.1:7681 https://geek.example.ts.net"]
         );
         let mut h = headers(&[("location", "https://elsewhere.example/")]);
-        rewrite_response(&mut h, &site, "localhost:5173", &fa, false);
+        rewrite_response(&mut h, &site.origin, "localhost:5173", &fa, false);
         assert_eq!(h["location"], "https://elsewhere.example/");
     }
 

@@ -89,6 +89,9 @@ struct State {
     /// What the frame loads (stays put while the block lives, so the
     /// frame isn't reloaded as the file changes).
     src: String,
+    /// Its origin's name on control's block domain, `b-<site_key>.<domain>`
+    /// (M50, `block_channel.rs`).
+    site_key: String,
     /// Bumped when the frame should load again (the server wasn't there
     /// when it tried).
     reloads: u64,
@@ -156,7 +159,11 @@ impl Editor {
             site.set_head_script(STORAGE_JS);
             site.set_target(Target::Service(server.clone() as Arc<dyn Service>));
             Editor {
-                state: Mutex::new(State { machine: ctx.sprite.clone(), ..State::default() }),
+                state: Mutex::new(State {
+                    machine: ctx.sprite.clone(),
+                    site_key: site.site_key().to_owned(),
+                    ..State::default()
+                }),
                 path: Mutex::new(None),
                 project: Mutex::new(None),
                 ctx,

@@ -17,6 +17,7 @@ mod api;
 mod apps;
 mod attach;
 mod attention;
+mod block_channels;
 mod blocks;
 #[cfg(feature = "labs")]
 mod calls;

@@ -1020,6 +1020,18 @@ impl Control {
         r.members.iter().filter_map(|m| e.co_owner(&m.account)).collect()
     }
 
+    /// The signing key of a device that may grant a block channel (M50,
+    /// `block_channel.rs`): one of the account's own that opens channels,
+    /// or a co-owner's on a team machine. A block shows whatever its dev
+    /// server does, so as on the block listener, owners only.
+    pub fn block_signer(&self, device: &str) -> Option<[u8; 32]> {
+        let e = self.enrolled()?;
+        let cert = e.trusted.get(device).filter(|c| c.kind.connects()).or_else(|| {
+            e.others.iter().find(|(c, p)| c.device == device && p.is_owner() && c.kind.connects()).map(|(c, _)| c)
+        })?;
+        arugula_e2e::keys::hex32(&cert.sign).ok()
+    }
+
     /// Who a Noise key belongs to, if this daemon lets them in: a device of
     /// its own account (the owner), a team member's, or someone's a session
     /// was shared with.

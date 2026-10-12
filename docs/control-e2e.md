@@ -757,9 +757,12 @@ device key, so it opens the channel with a grant
 - A replayed message 1 gets an answer nobody can read: message 2 and the
   channel need the one-off key's private half.
 - The expiry comes from the daemon's clock, which the page learns over its
-  own device channel, never from the frame, whose code could stretch its
-  own grant. Expiry gates new channels; an open one lasts until it, the
+  own device channel (message 2's payload there is `{"now": <ms>}`), never
+  from the frame, whose code could stretch its own grant. Expiry gates new channels; an open one lasts until it, the
   block, or the device's trust ends.
+- Once open, the channel carries S27's frames (`arugula_e2e::block::wire`):
+  HTTP requests the daemon answers from its block proxy (`sites.rs`), and
+  the page's WebSockets. The daemon's side is `crates/daemon/src/block_channel.rs`.
 
 ## Push
 

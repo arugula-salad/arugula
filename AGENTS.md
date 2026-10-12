@@ -90,7 +90,8 @@ nothing marked `mux:` names the edge or the block kinds.
   process info (`procinfo.rs`), history (`history.rs`), resuming an agent's
   conversation (`resume.rs`), named keys (`keys.rs`).
 - **Blocks:** what every block provides and the registry of kinds (`mux:block.rs`), agents (`agent/`),
-  browsers (`browser.rs`) and block sites (`sites.rs`, `tls.rs`, `ports.rs`),
+  browsers (`browser.rs`) and block sites (`sites.rs`, `tls.rs`, `ports.rs`,
+  and `block_channel.rs` for control's block origins),
   editors (`editor/`), review (`review/`), files (`fs.rs`, with its types in `mux:fs.rs`), forges (`forge/`),
   Fountain (`labs/fountain/`), workspaces (`labs/workspace/`), studio apps
   (`labs/apps/`),
