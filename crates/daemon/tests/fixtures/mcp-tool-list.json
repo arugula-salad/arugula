@@ -635,6 +635,219 @@
     },
     {
       "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "What Arugula offers here"
+      },
+      "description": "What this machine's Arugula offers you, to plan your work around: the blocks you can show the user (and the call that opens each), your tools, the Labs flags on, which forges the user is signed in to here (PR and issue blocks, and the drafts they send), whether Claude Code's hooks are live in your pane (your questions and permission prompts as cards on the phone and the swarm, follow-ups through arugula inbox), and whether this machine has joined Arugula control and which teams it knows.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "No arguments.",
+        "title": "NoArgs",
+        "type": "object"
+      },
+      "name": "capabilities",
+      "outputSchema": {
+        "$defs": {
+          "BlockOffer": {
+            "description": "One kind of block.",
+            "properties": {
+              "about": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "open": {
+                "description": "The call that opens one (`show {kind: \"port\"}`, `run`).",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "open",
+              "about"
+            ],
+            "type": "object"
+          },
+          "ControlJoined": {
+            "description": "Arugula control, as this machine knows it.",
+            "properties": {
+              "connected": {
+                "description": "Reachable through control now.",
+                "type": "boolean"
+              },
+              "kind": {
+                "description": "`account` or `team`: whose machine it is.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "name": {
+                "description": "The account's login, or the team's name.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "state": {
+                "description": "`not_joined`, `joined` or `dropped`.",
+                "type": "string"
+              },
+              "teams": {
+                "description": "The teams whose rosters this machine holds (its own, on a team's\nmachine, and those shared with it), by name.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "state",
+              "connected",
+              "teams"
+            ],
+            "type": "object"
+          },
+          "ForgeSignIn": {
+            "description": "A forge, and whether this machine has the user's login for it.",
+            "properties": {
+              "forge": {
+                "description": "`github`, `forgejo` or `gitlab`.",
+                "type": "string"
+              },
+              "host": {
+                "type": "string"
+              },
+              "note": {
+                "description": "What signs in, or what's missing.",
+                "type": "string"
+              },
+              "signed_in": {
+                "type": "boolean"
+              },
+              "user": {
+                "description": "The login's user, where its CLI says.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "forge",
+              "host",
+              "signed_in",
+              "note"
+            ],
+            "type": "object"
+          },
+          "HooksLive": {
+            "description": "Claude Code's hooks in the caller's pane.",
+            "properties": {
+              "heard_secs_ago": {
+                "description": "How long ago the last hook arrived from it, in seconds.",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "inbox": {
+                "description": "Its `arugula inbox` hook waits for a follow-up now.",
+                "type": "boolean"
+              },
+              "live": {
+                "description": "Whether they reach Arugula from it (`None`: can't tell, or they\ndon't apply).",
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "note": {
+                "type": "string"
+              },
+              "pane": {
+                "description": "The pane asked about: yours (`None`: Arugula doesn't know it).",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "inbox",
+              "note"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "blocks": {
+            "description": "The blocks you can put in front of the user here, and the call that\nopens each.",
+            "items": {
+              "$ref": "#/$defs/BlockOffer"
+            },
+            "type": "array"
+          },
+          "control": {
+            "$ref": "#/$defs/ControlJoined",
+            "description": "This machine's standing with Arugula control, and its teams."
+          },
+          "flags": {
+            "description": "The Labs flags on here (Developer settings): what a stranger's\nmachine doesn't have.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "forges": {
+            "description": "The forges PR and issue blocks reach, and whether the user is\nsigned in to each here (what they send from a `draft` goes with\nthat login).",
+            "items": {
+              "$ref": "#/$defs/ForgeSignIn"
+            },
+            "type": "array"
+          },
+          "hooks": {
+            "$ref": "#/$defs/HooksLive",
+            "description": "Whether Claude Code's hooks are live in your pane."
+          },
+          "summary": {
+            "type": "string"
+          },
+          "tools": {
+            "description": "The tools listed for you.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "version": {
+            "description": "arugulad's version.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "flags",
+          "blocks",
+          "tools",
+          "forges",
+          "hooks",
+          "control",
+          "summary"
+        ],
+        "type": "object"
+      },
+      "title": "What Arugula offers here"
+    },
+    {
+      "annotations": {
         "destructiveHint": true,
         "idempotentHint": false,
         "openWorldHint": false,
@@ -2790,6 +3003,219 @@
       },
       "name": "list",
       "title": "List panes and more"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "What Arugula offers here"
+      },
+      "description": "What this machine's Arugula offers you, to plan your work around: the blocks you can show the user (and the call that opens each), your tools, the Labs flags on, which forges the user is signed in to here (PR and issue blocks, and the drafts they send), whether Claude Code's hooks are live in your pane (your questions and permission prompts as cards on the phone and the swarm, follow-ups through arugula inbox), and whether this machine has joined Arugula control and which teams it knows.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "No arguments.",
+        "title": "NoArgs",
+        "type": "object"
+      },
+      "name": "capabilities",
+      "outputSchema": {
+        "$defs": {
+          "BlockOffer": {
+            "description": "One kind of block.",
+            "properties": {
+              "about": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "open": {
+                "description": "The call that opens one (`show {kind: \"port\"}`, `run`).",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "open",
+              "about"
+            ],
+            "type": "object"
+          },
+          "ControlJoined": {
+            "description": "Arugula control, as this machine knows it.",
+            "properties": {
+              "connected": {
+                "description": "Reachable through control now.",
+                "type": "boolean"
+              },
+              "kind": {
+                "description": "`account` or `team`: whose machine it is.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "name": {
+                "description": "The account's login, or the team's name.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "state": {
+                "description": "`not_joined`, `joined` or `dropped`.",
+                "type": "string"
+              },
+              "teams": {
+                "description": "The teams whose rosters this machine holds (its own, on a team's\nmachine, and those shared with it), by name.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "state",
+              "connected",
+              "teams"
+            ],
+            "type": "object"
+          },
+          "ForgeSignIn": {
+            "description": "A forge, and whether this machine has the user's login for it.",
+            "properties": {
+              "forge": {
+                "description": "`github`, `forgejo` or `gitlab`.",
+                "type": "string"
+              },
+              "host": {
+                "type": "string"
+              },
+              "note": {
+                "description": "What signs in, or what's missing.",
+                "type": "string"
+              },
+              "signed_in": {
+                "type": "boolean"
+              },
+              "user": {
+                "description": "The login's user, where its CLI says.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "forge",
+              "host",
+              "signed_in",
+              "note"
+            ],
+            "type": "object"
+          },
+          "HooksLive": {
+            "description": "Claude Code's hooks in the caller's pane.",
+            "properties": {
+              "heard_secs_ago": {
+                "description": "How long ago the last hook arrived from it, in seconds.",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "inbox": {
+                "description": "Its `arugula inbox` hook waits for a follow-up now.",
+                "type": "boolean"
+              },
+              "live": {
+                "description": "Whether they reach Arugula from it (`None`: can't tell, or they\ndon't apply).",
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "note": {
+                "type": "string"
+              },
+              "pane": {
+                "description": "The pane asked about: yours (`None`: Arugula doesn't know it).",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "inbox",
+              "note"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "blocks": {
+            "description": "The blocks you can put in front of the user here, and the call that\nopens each.",
+            "items": {
+              "$ref": "#/$defs/BlockOffer"
+            },
+            "type": "array"
+          },
+          "control": {
+            "$ref": "#/$defs/ControlJoined",
+            "description": "This machine's standing with Arugula control, and its teams."
+          },
+          "flags": {
+            "description": "The Labs flags on here (Developer settings): what a stranger's\nmachine doesn't have.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "forges": {
+            "description": "The forges PR and issue blocks reach, and whether the user is\nsigned in to each here (what they send from a `draft` goes with\nthat login).",
+            "items": {
+              "$ref": "#/$defs/ForgeSignIn"
+            },
+            "type": "array"
+          },
+          "hooks": {
+            "$ref": "#/$defs/HooksLive",
+            "description": "Whether Claude Code's hooks are live in your pane."
+          },
+          "summary": {
+            "type": "string"
+          },
+          "tools": {
+            "description": "The tools listed for you.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "version": {
+            "description": "arugulad's version.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "flags",
+          "blocks",
+          "tools",
+          "forges",
+          "hooks",
+          "control",
+          "summary"
+        ],
+        "type": "object"
+      },
+      "title": "What Arugula offers here"
     },
     {
       "annotations": {
@@ -5378,6 +5804,219 @@
     },
     {
       "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "What Arugula offers here"
+      },
+      "description": "What this machine's Arugula offers you, to plan your work around: the blocks you can show the user (and the call that opens each), your tools, the Labs flags on, which forges the user is signed in to here (PR and issue blocks, and the drafts they send), whether Claude Code's hooks are live in your pane (your questions and permission prompts as cards on the phone and the swarm, follow-ups through arugula inbox), and whether this machine has joined Arugula control and which teams it knows.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "No arguments.",
+        "title": "NoArgs",
+        "type": "object"
+      },
+      "name": "capabilities",
+      "outputSchema": {
+        "$defs": {
+          "BlockOffer": {
+            "description": "One kind of block.",
+            "properties": {
+              "about": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "open": {
+                "description": "The call that opens one (`show {kind: \"port\"}`, `run`).",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "open",
+              "about"
+            ],
+            "type": "object"
+          },
+          "ControlJoined": {
+            "description": "Arugula control, as this machine knows it.",
+            "properties": {
+              "connected": {
+                "description": "Reachable through control now.",
+                "type": "boolean"
+              },
+              "kind": {
+                "description": "`account` or `team`: whose machine it is.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "name": {
+                "description": "The account's login, or the team's name.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "state": {
+                "description": "`not_joined`, `joined` or `dropped`.",
+                "type": "string"
+              },
+              "teams": {
+                "description": "The teams whose rosters this machine holds (its own, on a team's\nmachine, and those shared with it), by name.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "state",
+              "connected",
+              "teams"
+            ],
+            "type": "object"
+          },
+          "ForgeSignIn": {
+            "description": "A forge, and whether this machine has the user's login for it.",
+            "properties": {
+              "forge": {
+                "description": "`github`, `forgejo` or `gitlab`.",
+                "type": "string"
+              },
+              "host": {
+                "type": "string"
+              },
+              "note": {
+                "description": "What signs in, or what's missing.",
+                "type": "string"
+              },
+              "signed_in": {
+                "type": "boolean"
+              },
+              "user": {
+                "description": "The login's user, where its CLI says.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "forge",
+              "host",
+              "signed_in",
+              "note"
+            ],
+            "type": "object"
+          },
+          "HooksLive": {
+            "description": "Claude Code's hooks in the caller's pane.",
+            "properties": {
+              "heard_secs_ago": {
+                "description": "How long ago the last hook arrived from it, in seconds.",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "inbox": {
+                "description": "Its `arugula inbox` hook waits for a follow-up now.",
+                "type": "boolean"
+              },
+              "live": {
+                "description": "Whether they reach Arugula from it (`None`: can't tell, or they\ndon't apply).",
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "note": {
+                "type": "string"
+              },
+              "pane": {
+                "description": "The pane asked about: yours (`None`: Arugula doesn't know it).",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "inbox",
+              "note"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "blocks": {
+            "description": "The blocks you can put in front of the user here, and the call that\nopens each.",
+            "items": {
+              "$ref": "#/$defs/BlockOffer"
+            },
+            "type": "array"
+          },
+          "control": {
+            "$ref": "#/$defs/ControlJoined",
+            "description": "This machine's standing with Arugula control, and its teams."
+          },
+          "flags": {
+            "description": "The Labs flags on here (Developer settings): what a stranger's\nmachine doesn't have.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "forges": {
+            "description": "The forges PR and issue blocks reach, and whether the user is\nsigned in to each here (what they send from a `draft` goes with\nthat login).",
+            "items": {
+              "$ref": "#/$defs/ForgeSignIn"
+            },
+            "type": "array"
+          },
+          "hooks": {
+            "$ref": "#/$defs/HooksLive",
+            "description": "Whether Claude Code's hooks are live in your pane."
+          },
+          "summary": {
+            "type": "string"
+          },
+          "tools": {
+            "description": "The tools listed for you.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "version": {
+            "description": "arugulad's version.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "flags",
+          "blocks",
+          "tools",
+          "forges",
+          "hooks",
+          "control",
+          "summary"
+        ],
+        "type": "object"
+      },
+      "title": "What Arugula offers here"
+    },
+    {
+      "annotations": {
         "destructiveHint": true,
         "idempotentHint": false,
         "openWorldHint": false,
@@ -7533,6 +8172,219 @@
       },
       "name": "list",
       "title": "List panes and more"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "What Arugula offers here"
+      },
+      "description": "What this machine's Arugula offers you, to plan your work around: the blocks you can show the user (and the call that opens each), your tools, the Labs flags on, which forges the user is signed in to here (PR and issue blocks, and the drafts they send), whether Claude Code's hooks are live in your pane (your questions and permission prompts as cards on the phone and the swarm, follow-ups through arugula inbox), and whether this machine has joined Arugula control and which teams it knows.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "No arguments.",
+        "title": "NoArgs",
+        "type": "object"
+      },
+      "name": "capabilities",
+      "outputSchema": {
+        "$defs": {
+          "BlockOffer": {
+            "description": "One kind of block.",
+            "properties": {
+              "about": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "open": {
+                "description": "The call that opens one (`show {kind: \"port\"}`, `run`).",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "open",
+              "about"
+            ],
+            "type": "object"
+          },
+          "ControlJoined": {
+            "description": "Arugula control, as this machine knows it.",
+            "properties": {
+              "connected": {
+                "description": "Reachable through control now.",
+                "type": "boolean"
+              },
+              "kind": {
+                "description": "`account` or `team`: whose machine it is.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "name": {
+                "description": "The account's login, or the team's name.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "state": {
+                "description": "`not_joined`, `joined` or `dropped`.",
+                "type": "string"
+              },
+              "teams": {
+                "description": "The teams whose rosters this machine holds (its own, on a team's\nmachine, and those shared with it), by name.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "state",
+              "connected",
+              "teams"
+            ],
+            "type": "object"
+          },
+          "ForgeSignIn": {
+            "description": "A forge, and whether this machine has the user's login for it.",
+            "properties": {
+              "forge": {
+                "description": "`github`, `forgejo` or `gitlab`.",
+                "type": "string"
+              },
+              "host": {
+                "type": "string"
+              },
+              "note": {
+                "description": "What signs in, or what's missing.",
+                "type": "string"
+              },
+              "signed_in": {
+                "type": "boolean"
+              },
+              "user": {
+                "description": "The login's user, where its CLI says.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "forge",
+              "host",
+              "signed_in",
+              "note"
+            ],
+            "type": "object"
+          },
+          "HooksLive": {
+            "description": "Claude Code's hooks in the caller's pane.",
+            "properties": {
+              "heard_secs_ago": {
+                "description": "How long ago the last hook arrived from it, in seconds.",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "inbox": {
+                "description": "Its `arugula inbox` hook waits for a follow-up now.",
+                "type": "boolean"
+              },
+              "live": {
+                "description": "Whether they reach Arugula from it (`None`: can't tell, or they\ndon't apply).",
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "note": {
+                "type": "string"
+              },
+              "pane": {
+                "description": "The pane asked about: yours (`None`: Arugula doesn't know it).",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "inbox",
+              "note"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "blocks": {
+            "description": "The blocks you can put in front of the user here, and the call that\nopens each.",
+            "items": {
+              "$ref": "#/$defs/BlockOffer"
+            },
+            "type": "array"
+          },
+          "control": {
+            "$ref": "#/$defs/ControlJoined",
+            "description": "This machine's standing with Arugula control, and its teams."
+          },
+          "flags": {
+            "description": "The Labs flags on here (Developer settings): what a stranger's\nmachine doesn't have.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "forges": {
+            "description": "The forges PR and issue blocks reach, and whether the user is\nsigned in to each here (what they send from a `draft` goes with\nthat login).",
+            "items": {
+              "$ref": "#/$defs/ForgeSignIn"
+            },
+            "type": "array"
+          },
+          "hooks": {
+            "$ref": "#/$defs/HooksLive",
+            "description": "Whether Claude Code's hooks are live in your pane."
+          },
+          "summary": {
+            "type": "string"
+          },
+          "tools": {
+            "description": "The tools listed for you.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "version": {
+            "description": "arugulad's version.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "flags",
+          "blocks",
+          "tools",
+          "forges",
+          "hooks",
+          "control",
+          "summary"
+        ],
+        "type": "object"
+      },
+      "title": "What Arugula offers here"
     },
     {
       "annotations": {
@@ -9716,6 +10568,219 @@
         "idempotentHint": true,
         "openWorldHint": false,
         "readOnlyHint": true,
+        "title": "What Arugula offers here"
+      },
+      "description": "What this machine's Arugula offers you, to plan your work around: the blocks you can show the user (and the call that opens each), your tools, the Labs flags on, which forges the user is signed in to here (PR and issue blocks, and the drafts they send), whether Claude Code's hooks are live in your pane (your questions and permission prompts as cards on the phone and the swarm, follow-ups through arugula inbox), and whether this machine has joined Arugula control and which teams it knows.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "No arguments.",
+        "title": "NoArgs",
+        "type": "object"
+      },
+      "name": "capabilities",
+      "outputSchema": {
+        "$defs": {
+          "BlockOffer": {
+            "description": "One kind of block.",
+            "properties": {
+              "about": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "open": {
+                "description": "The call that opens one (`show {kind: \"port\"}`, `run`).",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "open",
+              "about"
+            ],
+            "type": "object"
+          },
+          "ControlJoined": {
+            "description": "Arugula control, as this machine knows it.",
+            "properties": {
+              "connected": {
+                "description": "Reachable through control now.",
+                "type": "boolean"
+              },
+              "kind": {
+                "description": "`account` or `team`: whose machine it is.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "name": {
+                "description": "The account's login, or the team's name.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "state": {
+                "description": "`not_joined`, `joined` or `dropped`.",
+                "type": "string"
+              },
+              "teams": {
+                "description": "The teams whose rosters this machine holds (its own, on a team's\nmachine, and those shared with it), by name.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "state",
+              "connected",
+              "teams"
+            ],
+            "type": "object"
+          },
+          "ForgeSignIn": {
+            "description": "A forge, and whether this machine has the user's login for it.",
+            "properties": {
+              "forge": {
+                "description": "`github`, `forgejo` or `gitlab`.",
+                "type": "string"
+              },
+              "host": {
+                "type": "string"
+              },
+              "note": {
+                "description": "What signs in, or what's missing.",
+                "type": "string"
+              },
+              "signed_in": {
+                "type": "boolean"
+              },
+              "user": {
+                "description": "The login's user, where its CLI says.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "forge",
+              "host",
+              "signed_in",
+              "note"
+            ],
+            "type": "object"
+          },
+          "HooksLive": {
+            "description": "Claude Code's hooks in the caller's pane.",
+            "properties": {
+              "heard_secs_ago": {
+                "description": "How long ago the last hook arrived from it, in seconds.",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "inbox": {
+                "description": "Its `arugula inbox` hook waits for a follow-up now.",
+                "type": "boolean"
+              },
+              "live": {
+                "description": "Whether they reach Arugula from it (`None`: can't tell, or they\ndon't apply).",
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "note": {
+                "type": "string"
+              },
+              "pane": {
+                "description": "The pane asked about: yours (`None`: Arugula doesn't know it).",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "inbox",
+              "note"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "blocks": {
+            "description": "The blocks you can put in front of the user here, and the call that\nopens each.",
+            "items": {
+              "$ref": "#/$defs/BlockOffer"
+            },
+            "type": "array"
+          },
+          "control": {
+            "$ref": "#/$defs/ControlJoined",
+            "description": "This machine's standing with Arugula control, and its teams."
+          },
+          "flags": {
+            "description": "The Labs flags on here (Developer settings): what a stranger's\nmachine doesn't have.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "forges": {
+            "description": "The forges PR and issue blocks reach, and whether the user is\nsigned in to each here (what they send from a `draft` goes with\nthat login).",
+            "items": {
+              "$ref": "#/$defs/ForgeSignIn"
+            },
+            "type": "array"
+          },
+          "hooks": {
+            "$ref": "#/$defs/HooksLive",
+            "description": "Whether Claude Code's hooks are live in your pane."
+          },
+          "summary": {
+            "type": "string"
+          },
+          "tools": {
+            "description": "The tools listed for you.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "version": {
+            "description": "arugulad's version.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "flags",
+          "blocks",
+          "tools",
+          "forges",
+          "hooks",
+          "control",
+          "summary"
+        ],
+        "type": "object"
+      },
+      "title": "What Arugula offers here"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
         "title": "Command history and output"
       },
       "description": "What happened across panes (open and recently closed), newest first: commands with exit codes, directories, when, and who ran them, and answers and approvals with who gave them. Each has a kind (command, answer, agent or action: a forge action or an app prompt); filter by kind, failed (commands only), since/before (\"2d\", \"36h\"), cwd, a regex. kind output instead: lines of output across panes (and agents' transcripts) matching pattern, a regex, with the pane and command each came from (since and limit apply).",
@@ -10504,6 +11569,219 @@
       },
       "name": "list",
       "title": "List panes and more"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "What Arugula offers here"
+      },
+      "description": "What this machine's Arugula offers you, to plan your work around: the blocks you can show the user (and the call that opens each), your tools, the Labs flags on, which forges the user is signed in to here (PR and issue blocks, and the drafts they send), whether Claude Code's hooks are live in your pane (your questions and permission prompts as cards on the phone and the swarm, follow-ups through arugula inbox), and whether this machine has joined Arugula control and which teams it knows.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "No arguments.",
+        "title": "NoArgs",
+        "type": "object"
+      },
+      "name": "capabilities",
+      "outputSchema": {
+        "$defs": {
+          "BlockOffer": {
+            "description": "One kind of block.",
+            "properties": {
+              "about": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "open": {
+                "description": "The call that opens one (`show {kind: \"port\"}`, `run`).",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "open",
+              "about"
+            ],
+            "type": "object"
+          },
+          "ControlJoined": {
+            "description": "Arugula control, as this machine knows it.",
+            "properties": {
+              "connected": {
+                "description": "Reachable through control now.",
+                "type": "boolean"
+              },
+              "kind": {
+                "description": "`account` or `team`: whose machine it is.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "name": {
+                "description": "The account's login, or the team's name.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "state": {
+                "description": "`not_joined`, `joined` or `dropped`.",
+                "type": "string"
+              },
+              "teams": {
+                "description": "The teams whose rosters this machine holds (its own, on a team's\nmachine, and those shared with it), by name.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "state",
+              "connected",
+              "teams"
+            ],
+            "type": "object"
+          },
+          "ForgeSignIn": {
+            "description": "A forge, and whether this machine has the user's login for it.",
+            "properties": {
+              "forge": {
+                "description": "`github`, `forgejo` or `gitlab`.",
+                "type": "string"
+              },
+              "host": {
+                "type": "string"
+              },
+              "note": {
+                "description": "What signs in, or what's missing.",
+                "type": "string"
+              },
+              "signed_in": {
+                "type": "boolean"
+              },
+              "user": {
+                "description": "The login's user, where its CLI says.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "forge",
+              "host",
+              "signed_in",
+              "note"
+            ],
+            "type": "object"
+          },
+          "HooksLive": {
+            "description": "Claude Code's hooks in the caller's pane.",
+            "properties": {
+              "heard_secs_ago": {
+                "description": "How long ago the last hook arrived from it, in seconds.",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "inbox": {
+                "description": "Its `arugula inbox` hook waits for a follow-up now.",
+                "type": "boolean"
+              },
+              "live": {
+                "description": "Whether they reach Arugula from it (`None`: can't tell, or they\ndon't apply).",
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "note": {
+                "type": "string"
+              },
+              "pane": {
+                "description": "The pane asked about: yours (`None`: Arugula doesn't know it).",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "inbox",
+              "note"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "blocks": {
+            "description": "The blocks you can put in front of the user here, and the call that\nopens each.",
+            "items": {
+              "$ref": "#/$defs/BlockOffer"
+            },
+            "type": "array"
+          },
+          "control": {
+            "$ref": "#/$defs/ControlJoined",
+            "description": "This machine's standing with Arugula control, and its teams."
+          },
+          "flags": {
+            "description": "The Labs flags on here (Developer settings): what a stranger's\nmachine doesn't have.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "forges": {
+            "description": "The forges PR and issue blocks reach, and whether the user is\nsigned in to each here (what they send from a `draft` goes with\nthat login).",
+            "items": {
+              "$ref": "#/$defs/ForgeSignIn"
+            },
+            "type": "array"
+          },
+          "hooks": {
+            "$ref": "#/$defs/HooksLive",
+            "description": "Whether Claude Code's hooks are live in your pane."
+          },
+          "summary": {
+            "type": "string"
+          },
+          "tools": {
+            "description": "The tools listed for you.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "version": {
+            "description": "arugulad's version.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "flags",
+          "blocks",
+          "tools",
+          "forges",
+          "hooks",
+          "control",
+          "summary"
+        ],
+        "type": "object"
+      },
+      "title": "What Arugula offers here"
     },
     {
       "annotations": {

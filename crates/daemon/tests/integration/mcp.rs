@@ -142,7 +142,7 @@ async fn tools_through_the_stdio_bridge() {
 
     // The tools, with honest annotations: grouped by kind (#349).
     let tools = s.list_all_tools().await.unwrap();
-    assert_eq!(tools.len(), 18 - NO_FORGE);
+    assert_eq!(tools.len(), 19 - NO_FORGE);
     // Fountain, studio apps, chant workspaces and chat aren't listed without
     // `labs` (chat's tools, the others' kinds), but a caller who names one
     // still reaches it (here: no Fountain login, so it says so).
@@ -426,7 +426,7 @@ async fn stateless_clients_get_the_cache_hints_claude_code_wants() {
     // (and retries it, then gives up: no tools).
     let tools = s.list_tools(None).await.unwrap();
     assert_eq!((tools.ttl_ms, tools.cache_scope), (Some(0), Some(CacheScope::Private)));
-    assert_eq!(tools.tools.len(), 18 - NO_FORGE, "without labs");
+    assert_eq!(tools.tools.len(), 19 - NO_FORGE, "without labs");
     let t = s.list_resource_templates(None).await.unwrap();
     assert_eq!((t.ttl_ms, t.cache_scope), (Some(0), Some(CacheScope::Private)));
     let r = call(&s, "run", json!({ "command": "echo stateless", "wait": true })).await;
@@ -501,7 +501,7 @@ async fn http_with_a_token_until_it_is_revoked() {
         d.post("/api/mcp/tokens", json!({ "name": "watcher", "scope": "read" }))["token"].as_str().unwrap().to_owned();
     let w = http(&d, &ro, Client::named("watcher")).await.unwrap();
     // (Chat's read_thread is among the read-only tools only with labs, and read_forge only with the forge.)
-    assert_eq!(w.list_all_tools().await.unwrap().len(), 7 - NO_FORGE / 2);
+    assert_eq!(w.list_all_tools().await.unwrap().len(), 8 - NO_FORGE / 2);
     assert!(refused(&w, "run", json!({ "command": "true" })).await.contains("may only read"));
     // Grouped or by an old name, a write is still a write.
     assert!(refused(&w, "show", json!({ "kind": "port", "port": 1 })).await.contains("may only read"));
@@ -936,7 +936,7 @@ async fn labs_lists_all_the_tools_and_the_thread_text() {
     let s = bridge(&d, Client::named("claude-code")).await;
     let names = |tools: &[rmcp::model::Tool]| tools.iter().map(|t| t.name.to_string()).collect::<Vec<_>>();
     let instructions = |s: &Session| s.peer_info().and_then(|i| i.instructions.clone()).unwrap_or_default();
-    assert_eq!(s.list_all_tools().await.unwrap().len(), 18 - NO_FORGE);
+    assert_eq!(s.list_all_tools().await.unwrap().len(), 19 - NO_FORGE);
     assert!(!instructions(&s).contains("read_thread"), "{}", instructions(&s));
 
     // With Labs built in, the `labs` file lists them.
@@ -944,7 +944,7 @@ async fn labs_lists_all_the_tools_and_the_thread_text() {
     {
         arugula_testkit::labs(&d.state, true);
         let with = s.list_all_tools().await.unwrap();
-        assert_eq!(with.len(), 21, "{:?}", names(&with));
+        assert_eq!(with.len(), 22, "{:?}", names(&with));
         for name in ["read_thread", "post_thread", "delegate"] {
             assert!(with.iter().any(|t| t.name == name), "{name} isn't listed with labs");
         }
@@ -967,18 +967,18 @@ async fn labs_lists_all_the_tools_and_the_thread_text() {
         // and none of the others' kinds.
         arugula_proto::flags::set(&d.state, "chat", true).unwrap();
         let chat = s.list_all_tools().await.unwrap();
-        assert_eq!(chat.len(), 20, "{:?}", names(&chat));
+        assert_eq!(chat.len(), 21, "{:?}", names(&chat));
         assert!(!kinds(&chat, "show").contains(&"fountain".to_owned()), "show lists fountain with only chat on");
         assert!(!kinds(&chat, "show").contains(&"app".to_owned()), "show lists app with only chat on");
         arugula_proto::flags::set(&d.state, "chat", false).unwrap();
         arugula_proto::flags::set(&d.state, "fountain", true).unwrap();
         let fountain = s.list_all_tools().await.unwrap();
-        assert_eq!(fountain.len(), 18, "{:?}", names(&fountain));
+        assert_eq!(fountain.len(), 19, "{:?}", names(&fountain));
         assert!(kinds(&fountain, "show").contains(&"fountain".to_owned()));
         assert!(!kinds(&fountain, "show").contains(&"workspace".to_owned()));
         arugula_proto::flags::set(&d.state, "fountain", false).unwrap();
         let without = s.list_all_tools().await.unwrap();
-        assert_eq!(without.len(), 18 - NO_FORGE);
+        assert_eq!(without.len(), 19 - NO_FORGE);
         assert!(!kinds(&without, "show").contains(&"fountain".to_owned()));
     }
     // Without it, the file changes nothing: they aren't in this build.
@@ -986,7 +986,7 @@ async fn labs_lists_all_the_tools_and_the_thread_text() {
     {
         arugula_testkit::labs(&d.state, true);
         let with = s.list_all_tools().await.unwrap();
-        assert_eq!(with.len(), 18 - NO_FORGE, "{:?}", names(&with));
+        assert_eq!(with.len(), 19 - NO_FORGE, "{:?}", names(&with));
         assert!(!with.iter().any(|t| t.name == "read_thread" || t.name == "post_thread"));
         assert!(!kinds(&with, "show").contains(&"fountain".to_owned()));
         assert!(!instructions(&s).contains("read_thread"), "{}", instructions(&s));
@@ -1549,4 +1549,49 @@ fn closing_an_invite_block_is_the_owners_and_loses_nothing() {
     assert!(r["reason"].as_str().unwrap().contains("closed"), "{r}");
     assert_eq!(m.call("read_invite", json!({ "draft": sent })).unwrap()["status"], "sent");
     assert!(grant_of(&d, "tailnet:kim@example.com").is_none());
+}
+
+/// #229: `capabilities` says what this daemon offers the caller: the blocks
+/// `show` lists (a Labs flag adds its kind), its tools, whether control is
+/// joined, and whether Claude Code's hooks reach the daemon from its pane.
+#[tokio::test(flavor = "multi_thread")]
+async fn capabilities_says_what_is_here_and_whether_hooks_are_live() {
+    let d = Daemon::child();
+    let mine = d.get("/api/panes")[0]["id"].as_u64().unwrap();
+    let s = bridge_in(&d, Client::named("claude-code"), Some(mine)).await;
+    let c = call(&s, "capabilities", json!({})).await;
+    let blocks: Vec<&str> = c["blocks"].as_array().unwrap().iter().map(|b| b["kind"].as_str().unwrap()).collect();
+    for kind in ["terminal", "agent", "port", "changes", "file"] {
+        assert!(blocks.contains(&kind), "{kind} isn't offered: {c}");
+    }
+    assert!(!blocks.contains(&"workspace"), "workspace without its flag: {c}");
+    assert!(c["tools"].as_array().unwrap().iter().any(|t| t == "capabilities"), "{c}");
+    assert_eq!(c["control"]["state"], "not_joined", "{c}");
+    assert_eq!((c["hooks"]["pane"].as_u64(), c["hooks"]["live"].as_bool()), (Some(mine), Some(false)), "{c}");
+    assert!(c["hooks"]["note"].as_str().unwrap().contains("arugula hooks install"), "{c}");
+
+    // A hook from the pane (as `arugula hook` posts Claude Code's
+    // PreToolUse): live.
+    d.post(
+        &format!("/api/panes/{mine}/hook"),
+        json!({ "hook_event_name": "PreToolUse", "tool_name": "mcp__arugula__capabilities", "tool_input": {} }),
+    );
+    let c = call(&s, "capabilities", json!({})).await;
+    assert_eq!(c["hooks"]["live"], true, "{c}");
+    assert!(c["summary"].as_str().unwrap().contains("hooks live"), "{c}");
+
+    #[cfg(feature = "labs")]
+    {
+        arugula_proto::flags::set(&d.state, "workspaces", true).unwrap();
+        let c = call(&s, "capabilities", json!({})).await;
+        assert!(c["blocks"].as_array().unwrap().iter().any(|b| b["kind"] == "workspace"), "{c}");
+        assert_eq!(c["flags"], json!(["workspaces"]), "{c}");
+    }
+    s.cancel().await.unwrap();
+
+    // With no pane, it can't tell.
+    let s = bridge_in(&d, Client::named("claude-code"), None).await;
+    let c = call(&s, "capabilities", json!({})).await;
+    assert_eq!(c["hooks"]["live"], Value::Null, "{c}");
+    s.cancel().await.unwrap();
 }

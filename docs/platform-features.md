@@ -55,7 +55,7 @@ protocol. It covers A2A between teammates, not between vendors.
 | Plan | What it brings | Status | Where |
 | --- | --- | --- | --- |
 | AGENTS track: agent catalog and A2A | A recipe is a plain Claude Code subagent file (`.claude/agents/NAME.md`) with an A2A 1.0 card. A team catalog, delegation over control's end-to-end channel, consent cards, and results returned as a reviewed patch | S34 spike is a go. M76 to M80 are open. Outside A2A agents are listed as later | [#403](https://github.com/arugula-salad/arugula/issues/403), [#397](https://github.com/arugula-salad/arugula/issues/397) to [#402](https://github.com/arugula-salad/arugula/issues/402), [#415](https://github.com/arugula-salad/arugula/issues/415) |
-| MCP discoverability | A `capabilities` tool, and one Claude Code plugin bundling the MCP server, the hooks and a short skill | Hooks half landed ([#238](https://github.com/arugula-salad/arugula/issues/238)). The plugin and the tool are open | [#229](https://github.com/arugula-salad/arugula/issues/229) |
+| MCP discoverability | A `capabilities` tool, and one Claude Code plugin bundling the MCP server, the hooks and a short skill | Hooks half landed ([#238](https://github.com/arugula-salad/arugula/issues/238)), and the `capabilities` tool. The plugin is open | [#229](https://github.com/arugula-salad/arugula/issues/229) |
 | Typed MCP and one operation list | Each operation declared once for the API, MCP and the CLI | Design notes, open | [#448](https://github.com/arugula-salad/arugula/issues/448), [#451](https://github.com/arugula-salad/arugula/issues/451) |
 | Phone as a hand | The phone's camera, location and Shortcuts as MCP tools for agents. A2A only if the phone acts as an agent itself | Spike closed | [#268](https://github.com/arugula-salad/arugula/issues/268) (S33) |
 | Triggers and Goals (`experimental`) | Work that starts from events, not only from a person typing. The grow loop around a Goal | Out of the MVP. "Which triggers come first?" is an open question for Jake and Aaron | [product.md](https://github.com/arugula-salad/experimental/blob/main/docs/product.md), [upstream-questions.md](https://github.com/arugula-salad/experimental/blob/main/docs/upstream-questions.md) |
@@ -91,7 +91,7 @@ back to Cowork, and nothing covers them yet.
    result as a card and in the pane's thread. This would also answer "which
    triggers come first?" for `experimental`.
 2. **Finish #229, then ship it as a plugin in Claude and ChatGPT.** The
-   `capabilities` tool and the Claude Code plugin are already scoped. A plugin
+   `capabilities` tool is in; the Claude Code plugin is already scoped. A plugin
    in their apps means a Cowork task or a ChatGPT chat can post into Arugula's
    cards.
 3. **An MCP Apps spike.** Find out whether `claude-agent-acp` and `codex-acp`

@@ -29,6 +29,7 @@
 //! starts says so: the pane shows "started by mcp:<client>", and what the
 //! client typed is in history as theirs.
 
+mod capabilities;
 pub(crate) mod ops;
 pub mod relay;
 pub(crate) mod results;
@@ -274,7 +275,8 @@ impl CacheHints for ReadResourceResult {
 }
 
 const INSTRUCTIONS_BASE: &str = "Arugula runs commands in durable terminal panes that the user can watch \
-(on the web and the phone) and take over. Use run to start a build or a dev server in a pane (wait: true \
+(on the web and the phone) and take over. capabilities says what this machine offers you (its blocks, \
+the forges the user is signed in to, whether your hooks are live, control and teams): call it first. Use run to start a build or a dev server in a pane (wait: true \
 to wait for it), wait and read_output to follow it (they return \"still running\" with an offset: call \
 again; read_output with screen: true is what a full-screen program shows), list to see what's there (kind \
 conversations: Claude Code conversations from a terminal or the desktop app), attach to put a file (a \
@@ -288,7 +290,7 @@ diff), file (at a line), pr, issue, conversation (a Claude Code conversation, to
 one instead of describing it, and wait (until idle or needs_input) instead of polling output. \
 Claude Code hooks put your questions (arugula ask), permission prompts (arugula hook, which anyone allowed can \
 answer), follow-ups (arugula inbox) and attention on cards; without them your questions stay in the terminal. \
-`arugula hooks install` adds them: ask your person first. \
+`arugula hooks install` adds them: ask your person first (capabilities says whether yours are live). \
 Run each `arugula ...` command on its own, not in a pipeline or an `&&` chain, so the allow rules match it.";
 
 /// What the people's conversation about a pane or session adds to the

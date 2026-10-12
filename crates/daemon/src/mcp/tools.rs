@@ -1098,6 +1098,35 @@ fn defs(on: On) -> Vec<Def> {
         .collect()
 }
 
+/// The blocks `capabilities` offers with the flags in `on` (#229): a
+/// terminal and an agent block, and each kind `show` lists, so a kind a
+/// flag leaves out of `show` is left out here too.
+pub(crate) fn block_offers(on: On) -> Vec<results::BlockOffer> {
+    let first = |s: &str| s.split_once(". ").map_or(s, |(a, _)| a).trim_end_matches('.').to_owned() + ".";
+    let mut out = vec![
+        results::BlockOffer {
+            kind: "terminal".into(),
+            open: "run".into(),
+            about: "A command in a terminal pane the user can watch and take over.".into(),
+        },
+        results::BlockOffer {
+            kind: "agent".into(),
+            open: "start_agent".into(),
+            about: "An agent (Claude Code, Codex, any ACP agent) whose approvals and questions come to its block."
+                .into(),
+        },
+    ];
+    let show = defs(on).into_iter().find(|d| d.name == "show");
+    if let Some(Def { args: Args::Kinds { kinds, .. }, .. }) = show {
+        out.extend(kinds.iter().map(|k| results::BlockOffer {
+            kind: k.name.into(),
+            open: format!("show {{kind: \"{}\"}}", k.name),
+            about: first(k.description),
+        }));
+    }
+    out
+}
+
 /// A group's table as a tool holds it.
 fn table(kinds: &'static [Kind]) -> Vec<&'static Kind> {
     kinds.iter().collect()
@@ -1189,6 +1218,18 @@ fn all_defs() -> Vec<Def> {
             open_world: true,
             flag: None,
             output: None,
+        },
+        Def {
+            name: "capabilities",
+            title: "What Arugula offers here",
+            description: "What this machine's Arugula offers you, to plan your work around: the blocks you can show the user (and the call that opens each), your tools, the Labs flags on, which forges the user is signed in to here (PR and issue blocks, and the drafts they send), whether Claude Code's hooks are live in your pane (your questions and permission prompts as cards on the phone and the swarm, follow-ups through arugula inbox), and whether this machine has joined Arugula control and which teams it knows.",
+            args: Args::One(schema_for_type::<NoArgs>),
+            read_only: true,
+            destructive: false,
+            idempotent: true,
+            open_world: false,
+            flag: None,
+            output: Some(output_schema::<results::Capabilities>),
         },
         super::ops::def::<ClosePane>(),
         super::ops::def::<ThreadGet>(),
@@ -1760,6 +1801,10 @@ impl<'a> Call<'a> {
                 Ok(a) => self.read_invite(a).await,
                 Err(e) => Err(e),
             },
+            ("capabilities", _) => match parse::<NoArgs>(args) {
+                Ok(_) => self.capabilities().await,
+                Err(e) => Err(e),
+            },
             // list
             ("list", Some("panes")) => super::ops::call::<ListPanes>(self, args).await,
             ("list", Some("conversations")) => super::ops::call::<ConversationsList>(self, args).await,
@@ -1964,6 +2009,11 @@ impl<'a> Call<'a> {
         let parts = self.ctx.extensions.get::<axum::http::request::Parts>()?;
         let d = parts.headers.get("arugula-claude-config-dir")?.to_str().ok()?.trim();
         (!d.is_empty()).then(|| d.to_owned())
+    }
+
+    /// What the caller may reach.
+    pub(crate) fn scope(&self) -> Scope {
+        self.caller.scope
     }
 
     /// The agent block whose token this is: what confines a caller.
@@ -4139,13 +4189,14 @@ mod tests {
     #[test]
     fn annotations_are_honest() {
         let all = list(Scope::Full, fl(false));
-        assert_eq!(all.len(), 18 - NO_FORGE);
+        assert_eq!(all.len(), 19 - NO_FORGE);
         let ro: Vec<&str> = all
             .iter()
             .filter(|t| t.annotations.as_ref().and_then(|a| a.read_only_hint) == Some(true))
             .map(|t| t.name.as_ref())
             .collect();
-        let mut want = vec!["read_output", "wait", "list", "history", "read_forge", "read_invite", "read_file"];
+        let mut want =
+            vec!["read_output", "wait", "list", "capabilities", "history", "read_forge", "read_invite", "read_file"];
         want.retain(|n| crate::forges::BUILT || !FORGE_TOOLS.contains(n));
         assert_eq!(ro, want);
         assert_eq!(list(Scope::Read, fl(false)).len(), ro.len(), "a read token sees the read-only tools only");
@@ -4238,9 +4289,9 @@ mod tests {
         for name in CHAT_TOOLS {
             assert!(every.contains(&name), "{name} no longer has a definition");
         }
-        assert_eq!(every.len(), 21);
-        assert_eq!(defs(fl(false)).len(), 18 - NO_FORGE);
-        assert_eq!(defs(fl(true)).len(), 21 - NO_FORGE);
+        assert_eq!(every.len(), 22);
+        assert_eq!(defs(fl(false)).len(), 19 - NO_FORGE);
+        assert_eq!(defs(fl(true)).len(), 22 - NO_FORGE);
         assert_eq!(every.len(), defs(fl(false)).len() + CHAT_TOOLS.len() + 1 + NO_FORGE, "and delegate");
     }
 
@@ -4287,12 +4338,14 @@ mod tests {
         "device_call",
     ];
 
-    /// Tools added after #349 for jobs no old tool did: delegating (M78).
-    const SINCE_TOOLS: usize = 1;
+    /// Tools added after #349 for jobs no old tool did: delegating (M78),
+    /// and saying what's here (#229).
+    const SINCE_TOOLS: usize = 2;
 
     /// Kinds added after #349, each a job no old tool did.
     const SINCE: &[(&str, Option<&str>)] = &[
         ("list", Some("agents")),
+        ("capabilities", None),
         ("delegate", Some("send")),
         ("delegate", Some("get")),
         ("delegate", Some("answer")),
