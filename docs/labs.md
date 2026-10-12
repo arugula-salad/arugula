@@ -92,7 +92,8 @@ rest. A starting daemon moves the old file into `flags.json` and removes it.
   `share --guest/--rw/--reusable/--relay/--addr/--name`
   (`LABS_COMMANDS`, `LABS_OPTIONS` in `crates/cli/src/main.rs`).
 - **Daemon (`arugulad --help`):** `--guest-ssh`, `--guest-ssh-host`,
-  `--studio-file`, `--wisp-url`, `--wisp-token-file`
+  `--studio-file`, `--wisp-url`, `--wisp-token-file`, `--loam-url`,
+  `--loam-key-file`
   (`LABS_OPTIONS` in `crates/daemon/src/args.rs`).
 - **MCP:** `read_thread` and `post_thread`, and the kinds `show:app`,
   `show:workspace`, `show:fountain`, `list:fountain_agents`,
@@ -117,6 +118,39 @@ rest. A starting daemon moves the old file into `flags.json` and removes it.
   file). Hosted sandboxes run on control's provider, which writes their
   trust files, so their operator can read them; deleting an account
   deletes its hosted VMs.
+
+### Where machines come from
+
+One provider per daemon (the `Provider` trait, `crates/mux/src/provider/`):
+
+- **A Sprites API** (`crates/daemon/src/labs/sprites.rs`): a wispd
+  (`--wisp-url`, default `http://127.0.0.1:7788`, token in
+  `--wisp-token-file`, default `~/.local/share/wisp/token`) or Fly's
+  sprites. The default.
+- **loam** (`crates/daemon/src/labs/loam.rs`), when `--loam-url` (or
+  `LOAM_API_URL`) is given, e.g. `https://api.loam.inevitable.fyi`. Its
+  project key (`loam_…`, from the loam operator) is read from
+  `--loam-key-file` (`ARUGULA_LOAM_KEY_FILE`), default
+  `~/.config/arugula/loam-key`: one line, mode 0600, beside the other
+  credentials in that directory, and never served by `fs`. A missing or
+  empty key leaves VM panes off, with a warning in the log. Machines are
+  made from loam's `base` template, or from an image pinned by digest
+  (`--image ghcr.io/…@sha256:…`; any other `--image` names a template),
+  labelled `owner=arugulad`, with an idle rule of pause after five minutes.
+
+A VM pane's terminal is a detachable exec session on its machine, so it
+outlives a daemon restart and reattaches from the bytes the pane has. On
+loam a pane that has been quiet (nothing typed, nothing printed) for five
+minutes lets go of its session so the sandbox can pause (memory kept); its
+next keystroke or resize wakes it and reattaches, replaying what was
+printed meanwhile (up to 1 MiB). A sandbox still awake past its idle
+timeout is followed again, and one whose idle rule is `none` is never let
+go of. A command that prints nothing for that long pauses with the
+sandbox and carries on when it wakes.
+
+Changing provider doesn't move machines: a VM pane restored on a daemon
+whose provider doesn't have its machine finds it gone and starts on a new
+one, as after a lost machine.
 
 ## Threads, chat and huddles
 

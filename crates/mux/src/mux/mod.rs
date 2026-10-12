@@ -807,7 +807,7 @@ impl Daemon {
                     // stays in the layout, exited, with its machine and the
                     // reason, for a daemon that has one.
                     None => {
-                        let note = crate::labs::vms_unavailable("VM panes aren't set up here: no wisp token");
+                        let note = crate::labs::vms_unavailable("VM panes aren't set up here: no sandbox provider");
                         start = Start::Unavailable { note };
                         None
                     }

@@ -178,9 +178,10 @@ impl Builder {
         self
     }
 
-    /// `--wisp-token-file /nonexistent`: no machines, whatever this host has.
+    /// `--wisp-token-file /nonexistent`, and no loam: no machines, whatever
+    /// this host has.
     pub fn no_wisp(self) -> Self {
-        self.args(["--wisp-token-file", "/nonexistent"])
+        self.args(["--wisp-token-file", "/nonexistent"]).env_remove("LOAM_API_URL")
     }
 
     /// `--tailscale-socket` pointing nowhere: tailscaled kept out of it.

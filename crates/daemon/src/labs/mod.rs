@@ -70,6 +70,8 @@ pub mod guest_ssh;
 // VMs: the machines panes run on, and the sandboxes they come from. The
 // terminal on one is the core's (`arugula_mux::labs::machine`).
 #[cfg(feature = "labs")]
+pub mod loam;
+#[cfg(feature = "labs")]
 pub mod provider_tunnel;
 #[cfg(feature = "labs")]
 pub mod resident;
@@ -822,6 +824,19 @@ pub fn open_provider(url: &str, _token_file: &Path, given: bool) -> Option<Arc<d
     if given {
         tracing::warn!(url, "{}", not_built("VMs"));
     }
+    None
+}
+
+/// The sandbox provider when it's loam: its API at `url`, with a project
+/// key in `key_file`. A build without Labs has none, and says so.
+#[cfg(feature = "labs")]
+pub fn open_loam(url: &str, key_file: &Path) -> Option<Arc<dyn Provider>> {
+    loam::Loam::open(url, key_file).map(|p| Arc::new(p) as Arc<dyn Provider>)
+}
+
+#[cfg(not(feature = "labs"))]
+pub fn open_loam(url: &str, _key_file: &Path) -> Option<Arc<dyn Provider>> {
+    tracing::warn!(url, "{}", not_built("VMs"));
     None
 }
 
