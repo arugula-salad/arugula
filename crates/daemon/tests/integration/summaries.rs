@@ -43,14 +43,30 @@ fn pane_in(d: &Daemon, id: u64) -> Value {
     ls(d).into_iter().find(|p| p["id"] == id).unwrap_or(Value::Null)
 }
 
+/// `ls` until `ok` holds of what one poll shows of `pane`, and that poll's
+/// view of it. Every field checked comes from the same poll: under load a
+/// poll takes seconds, and a second one sees a different moment (#725).
+fn until_pane(d: &Daemon, pane: u64, what: &str, ok: impl Fn(&Value) -> bool) -> Value {
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        let p = pane_in(d, pane);
+        if ok(&p) {
+            return p;
+        }
+        assert!(Instant::now() < deadline, "timed out waiting for %{pane} {what}; it was {p}");
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
 /// A shell pane in `cwd` that runs `line` (typed, so the shell integration
 /// sees it). `perl -e '$0 = "..."'` stands in for real programs: /proc
 /// shows the command line it sets, as it would theirs.
 fn typed(d: &Daemon, cwd: &Path, setup: &str, line: &str) -> u64 {
     let pane = d.post("/api/run", json!({ "cwd": cwd.display().to_string() }))["pane"].as_u64().unwrap();
-    d.wait_for("a prompt", || {
-        d.get("/api/panes").as_array().unwrap().iter().any(|p| p["id"] == pane && p["cwd"].is_string())
-    });
+    // Its prompt on the screen: the shell is up and its integration loaded.
+    // (A pane's `cwd` is no sign of that: it's the directory asked for
+    // until the shell reports one, so it's there at once.)
+    d.wait_for("a prompt", || d.raw("GET", &format!("/api/panes/{pane}/capture"), None).1.contains('$'));
     if !setup.is_empty() {
         d.post(&format!("/api/panes/{pane}/send"), json!({ "text": setup, "enter": true }));
         d.wait(pane, "command-end");
@@ -88,16 +104,14 @@ fn ls_shows_kind_project_and_activity_for_real_commands() {
         (typed(&d, &loose, "", &fake("journalctl -fu arugulad")), "logs", None),
         (typed(&d, &loose, "", "true"), "shell", None),
     ];
+    // The real path: on macOS the temp dir is under /var, a link to
+    // /private/var, and a process's cwd is the resolved one.
+    let repo_root = std::fs::canonicalize(&repo).unwrap().display().to_string();
     for (pane, kind, project) in cases {
-        d.wait_for(&format!("%{pane} to be {kind}"), || pane_in(&d, pane)["kind"] == kind);
-        let p = pane_in(&d, pane);
-        assert_eq!(p["project"]["name"].as_str(), project, "%{pane}: {p}");
-        if project.is_some() {
-            // The real path: on macOS the temp dir is under /var, a link
-            // to /private/var, and a process's cwd is the resolved one.
-            let root = std::fs::canonicalize(&repo).unwrap();
-            assert_eq!(p["project"]["root"], root.display().to_string());
-        }
+        let root = project.map(|_| repo_root.as_str());
+        until_pane(&d, pane, &format!("to be {kind} in {project:?}"), |p| {
+            p["kind"] == kind && p["project"]["name"].as_str() == project && p["project"]["root"].as_str() == root
+        });
     }
 
     // `arugula run` panes have no shell above them: their own process
@@ -105,7 +119,7 @@ fn ls_shows_kind_project_and_activity_for_real_commands() {
     let run = d.post("/api/run", json!({ "command": fake("pytest -x"), "cwd": sub.display().to_string() }))["pane"]
         .as_u64()
         .unwrap();
-    d.wait_for("a run pane's kind", || pane_in(&d, run)["kind"] == "test");
+    until_pane(&d, run, "to be test", |p| p["kind"] == "test");
 
     // Activity: a pane that prints shows bytes a second; once it stops, 0.
     // It prints until told to stop, not for a fixed time: under load one
@@ -117,12 +131,13 @@ fn ls_shows_kind_project_and_activity_for_real_commands() {
         "",
         &format!("i=0; while [ ! -e {} ]; do i=$((i+1)); echo some output line $i; sleep 0.05; done", stop.display()),
     );
-    d.wait_for("bytes a second", || pane_in(&d, busy)["activity"]["bps"].as_u64().unwrap_or(0) > 100);
-    let last = pane_in(&d, busy)["activity"]["last_ms"].as_u64().unwrap();
-    assert!(last > 0);
+    // Printing, and when it last did, as one poll saw them.
+    until_pane(&d, busy, "to print bytes a second", |p| {
+        p["activity"]["bps"].as_u64().unwrap_or(0) > 100 && p["activity"]["last_ms"].as_u64().unwrap_or(0) > 0
+    });
     std::fs::write(&stop, "").unwrap();
     d.wait(busy, "command-end");
-    d.wait_for("quiet again", || pane_in(&d, busy)["activity"]["bps"] == 0);
+    until_pane(&d, busy, "to be quiet again", |p| p["activity"]["bps"] == 0);
     // Idle shells never printed since the daemon started... except their
     // prompt; either way none of them is busy.
     for p in ls(&d) {
