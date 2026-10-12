@@ -11,7 +11,7 @@
 // menu's words: "direct" or "relayed" (the frame says which way its
 // channel actually connected), or "own site" once it fell back.
 
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { Client } from "../client";
 import type { PaneId } from "../proto";
 import type { Route } from "../block/channel.ts";
@@ -48,7 +48,9 @@ export function BlockFrame(p: FrameProps) {
   const [went, setWent] = useState<Route | null>(null);
   const ref = useRef<HTMLIFrameElement>(null);
   const via = failed === null ? origin : null;
-  useEffect(() => {
+  // Before paint, so the frame is answered before it can load and ask
+  // (the frame asks again until it is, too).
+  useLayoutEffect(() => {
     const frame = ref.current;
     if (!via || !frame) return;
     const block = String(p.id);
