@@ -44,7 +44,8 @@
 //!   team; its default. Account before team because it's the narrower say:
 //!   the account owns the machine, a team only reaches the machines in it.
 //!   So each flag is three-way in `flags.json`: on, off, or not named,
-//!   which follows control ([`unset`]).
+//!   which follows control ([`unset`]). A [`Flag::local_only`] one
+//!   (`guest-ssh`, `agents`) ignores control: only `flags.json` sets it.
 
 use std::{
     collections::BTreeMap,
@@ -104,10 +105,19 @@ pub struct Flag {
     pub about: &'static str,
     /// What it is until someone sets it.
     pub default: bool,
+    /// Only this machine's `flags.json` sets it (#347): control's word on
+    /// it, for the account or the team, is ignored. For what opens a way
+    /// in or acts for the machine (guest ssh, offering agents), which the
+    /// machine's owner turns on there or not at all.
+    pub local_only: bool,
 }
 
 const fn row(name: &'static str, title: &'static str, about: &'static str) -> Flag {
-    Flag { name, title, about, default: false }
+    Flag { name, title, about, default: false, local_only: false }
+}
+
+const fn local_row(name: &'static str, title: &'static str, about: &'static str) -> Flag {
+    Flag { local_only: true, ..row(name, title, about) }
 }
 
 /// Every flag there is. A new one is a row here.
@@ -118,10 +128,14 @@ pub const FLAGS: &[Flag] = &[
     row(FOUNTAIN, "Fountain", "Fountain agents and the runner view. Needs a Fountain login."),
     row(STUDIO, "Studio apps", "Studio app blocks. Needs a linked studio."),
     row(WORKSPACES, "Chant workspaces", "Chant workspace blocks."),
-    row(GUEST_SSH, "Guest ssh", "Invite a guest to a pane over plain ssh."),
+    local_row(GUEST_SSH, "Guest ssh", "Invite a guest to a pane over plain ssh."),
     row(SWARM_THEMES, "Extra swarm views", "The swarm's other views beside the default."),
     row(FORGES, "Forgejo and GitLab", "PR and issue blocks for Forgejo and GitLab, beside GitHub's."),
-    row(AGENTS, "Agent catalog", "Offer Claude Code subagents from this machine, and see the ones your team offers."),
+    local_row(
+        AGENTS,
+        "Agent catalog",
+        "Offer Claude Code subagents from this machine, and see the ones your team offers.",
+    ),
 ];
 
 /// The flags that are on, from one read: what a listing or a `--help` is
@@ -291,6 +305,11 @@ pub struct FlagInfo {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub team: Option<bool>,
+    /// Only this machine sets it; control's word is ignored
+    /// ([`Flag::local_only`]). Absent: control may set it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    pub local_only: bool,
 }
 
 fn yes() -> bool {
@@ -352,8 +371,10 @@ impl Doc {
     /// account, else control's for the team, else its default.
     fn state(&self, dir: &Path, pushed: &Pushed, f: &Flag) -> State {
         let local = self.local(dir, f);
-        let account = pushed.account.get(f.name).copied();
-        let team = pushed.team.get(f.name).copied();
+        // A local-only flag doesn't hear control at all.
+        let pushed_for = |m: &BTreeMap<String, bool>| m.get(f.name).copied().filter(|_| !f.local_only);
+        let account = pushed_for(&pushed.account);
+        let team = pushed_for(&pushed.team);
         let (on, source) = match (local, account, team) {
             (Some(on), ..) => (on, Source::Machine),
             (None, Some(on), _) => (on, Source::Account),
@@ -730,6 +751,27 @@ mod tests {
         assert!(!get(&d2, FOUNTAIN) && get(&d2, CHAT));
         fs::remove_dir_all(&d).unwrap();
         fs::remove_dir_all(&d2).unwrap();
+    }
+
+    /// Guest ssh and the agent catalog are the machine's alone: control
+    /// turns them neither on nor off.
+    #[test]
+    fn control_has_no_say_in_a_local_only_flag() {
+        let local: Vec<_> = FLAGS.iter().filter(|f| f.local_only).map(|f| f.name).collect();
+        assert_eq!(local, [GUEST_SSH, AGENTS]);
+        let d = dir("local-only");
+        write_control(&d, &pushed(&[(GUEST_SSH, true)], &[(AGENTS, true), (CHAT, true)])).unwrap();
+        assert_eq!(names(&d), [CHAT]);
+        assert_eq!(
+            state_of(&d, GUEST_SSH),
+            State { on: false, source: Source::Default, local: None, account: None, team: None }
+        );
+        assert_eq!(state_of(&d, AGENTS).source, Source::Default);
+        // Nor off: the machine's word is all there is.
+        set(&d, AGENTS, true).unwrap();
+        write_control(&d, &pushed(&[(AGENTS, false)], &[])).unwrap();
+        assert!(get(&d, AGENTS) && state_of(&d, AGENTS).source == Source::Machine);
+        fs::remove_dir_all(&d).unwrap();
     }
 
     #[test]

@@ -25,6 +25,7 @@ fn info(f: flags::Flag, s: flags::State) -> FlagInfo {
         local: s.local,
         account: s.account,
         team: s.team,
+        local_only: f.local_only,
     }
 }
 

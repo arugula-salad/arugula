@@ -334,6 +334,8 @@ export class AlongsideError extends Error {
 export type LabsFlags = {
   account: Record<string, boolean>;
   teams: Record<string, { flags: Record<string, boolean>; owner: boolean }>;
+  /** A machine of the account has Developer settings: only then does the page offer these (strangers never see Labs). */
+  dev?: boolean;
 };
 
 export async function api<T>(path: string, body?: unknown): Promise<T> {

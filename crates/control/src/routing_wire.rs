@@ -1105,12 +1105,29 @@ async fn labs_flags_go_to_the_machines_they_are_for() {
     assert_eq!(flags(&c, &team_box).await, json!({ "account": { "chat": false }, "team": { "chat": true } }));
     assert_eq!(flags(&c, &own_box).await, json!({ "account": { "chat": false }, "team": {} }));
 
-    // Each sees what they may set.
+    // Guest ssh and the agent catalog are each machine's alone.
+    for name in ["guest-ssh", "agents"] {
+        let set = json!({ "name": name, "on": true, "team": team });
+        let (st, v) = c.as_person(&owner, "POST", "/api/flags", Some(set)).await;
+        assert_eq!(st, 400, "{name}: {v}");
+        let (st, _) = c.as_person(&mate, "POST", "/api/flags", Some(json!({ "name": name, "on": false }))).await;
+        assert_eq!(st, 400, "{name}");
+    }
+
+    // Each sees what they may set; the page shows it only once a machine
+    // of theirs has Developer settings.
     let (_, v) = c.as_person(&mate, "GET", "/api/flags", None).await;
     assert_eq!(
         v,
-        json!({ "account": { "chat": false }, "teams": { team: { "flags": { "chat": true }, "owner": false } } })
+        json!({
+            "account": { "chat": false },
+            "teams": { team: { "flags": { "chat": true }, "owner": false } },
+            "dev": false,
+        })
     );
+    assert_eq!(c.daemon_get(&own_box, "/api/daemon/trust?features=presigned-invites,dev-settings").await.0, 200);
+    assert_eq!(c.as_person(&mate, "GET", "/api/flags", None).await.1["dev"], true);
+    assert_eq!(c.as_person(&owner, "GET", "/api/flags", None).await.1["dev"], false);
 
     // Unset is gone, not off.
     c.as_person(&mate, "POST", "/api/flags", Some(json!({ "name": "chat", "on": null }))).await;

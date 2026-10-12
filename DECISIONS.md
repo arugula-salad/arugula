@@ -866,6 +866,16 @@ off locally:
 - **Team flags reach the team's machines only** (`daemons.team`), not the
   members' own machines: a team owner doesn't set what runs on someone
   else's laptop.
+- **`guest-ssh` and `agents` are local-only** (`Flag::local_only`): only the
+  machine's `flags.json` turns them on or off. They open a way in, or act
+  for the machine, so its owner decides there. The daemon ignores control's
+  word on them, control refuses to store them (`wire::LOCAL_ONLY_FLAGS`,
+  checked against the registry by a daemon test), and its page doesn't
+  offer them.
+- **Strangers never see Labs on control's page.** The flag lists show only
+  for someone with a machine that has Developer settings: a daemon whose
+  state dir is unlocked adds `dev-settings` to the features it sends
+  control, and `GET /api/flags` answers `dev`.
 - **Tri-state locally.** A flag `flags.json` doesn't name follows control;
   *Follow control* in Developer settings (`PUT /api/flags/{name}` with
   `{"on": null}`, `arugulad flags NAME unset`) takes the machine's word
@@ -881,7 +891,7 @@ off locally:
   it doesn't have; the page offers the list it was built with (`FLAGS` in
   `proto.gen.ts`). Developer settings says where each flag comes from.
 Where: `crates/proto/src/flags.rs` (`explain`, `write_control`, `unset`), `crates/control-wire/src/team.rs` (`TrustAnswer::flags`), `crates/control/src/labs_flags.rs`, `crates/control/src/api.rs` (`daemon_trust`), `crates/daemon/src/control.rs` (`refresh`), `web/src/ui/control.tsx` (`LabsFlagList`), `web/src/ui/developer.tsx`.
-From: #347 (decided by Jake, 2026-10-12).
+From: #347 (decided by Jake, 2026-10-12; who sees the lists and the local-only flags on PR #828, the same day).
 
 ### Zig 0.16 builds Ghostty; the toolchain is pinned
 libghostty-vt needs Zig, pinned in `.mise.toml`; cargo runs under `mise exec`

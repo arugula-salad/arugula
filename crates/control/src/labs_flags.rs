@@ -8,6 +8,12 @@
 //! - **Who wins.** The machine: its own `flags.json` beats anything here.
 //!   Then the account's, then the team's (`arugula_proto::flags` resolves
 //!   it; control only sends both).
+//! - **Some are the machine's alone.** `guest-ssh` and `agents`
+//!   (`wire::LOCAL_ONLY_FLAGS`) are refused here; a daemon ignores them
+//!   from control anyway.
+//! - **Who sees them.** The page shows them only to someone with a machine
+//!   that has Developer settings (`wire::DEV_SETTINGS` in its features):
+//!   strangers never see Labs.
 //! - **What a flag is.** Control doesn't know the list (it doesn't depend
 //!   on `arugula-proto`): a name is any short lowercase word, and a daemon
 //!   ignores one it doesn't have. The web offers the list it was built
@@ -47,7 +53,8 @@ pub fn for_daemon(app: &App, account: &str, device: &str) -> anyhow::Result<wire
 }
 
 /// `GET /api/flags`: the signed-in account's flags and those of each team
-/// it's in, with whether it may set them (owners).
+/// it's in, with whether it may set them (owners), and whether it has a
+/// machine with Developer settings (`dev`), which the page shows them for.
 pub async fn list(State(app): State<Arc<App>>, s: Session) -> R {
     let mut teams = serde_json::Map::new();
     for body in app.db.teams_of(&s.account)? {
@@ -56,7 +63,16 @@ pub async fn list(State(app): State<Arc<App>>, s: Session) -> R {
         let flags = app.db.labs_flags(&team_owner(&r.team))?;
         teams.insert(r.team.clone(), json!({ "flags": flags, "owner": owner }));
     }
-    Ok(Json(json!({ "account": app.db.labs_flags(&account_owner(&s.account))?, "teams": teams })))
+    // Labs isn't for strangers: the page offers these only to someone with
+    // a machine whose owner asked for Developer settings (it says so).
+    let mut dev = false;
+    for d in app.db.daemons(&s.account)? {
+        if crate::teams::has_feature(&app.db.daemon_features(&d.id)?, wire::DEV_SETTINGS) {
+            dev = true;
+            break;
+        }
+    }
+    Ok(Json(json!({ "account": app.db.labs_flags(&account_owner(&s.account))?, "teams": teams, "dev": dev })))
 }
 
 #[derive(Deserialize)]
@@ -81,6 +97,12 @@ fn valid(name: &str) -> bool {
 pub async fn set(State(app): State<Arc<App>>, s: Session, Json(b): Json<Set>) -> R {
     if !valid(&b.name) {
         return Err(err(StatusCode::BAD_REQUEST, "that isn't a flag's name"));
+    }
+    if wire::LOCAL_ONLY_FLAGS.contains(&b.name.as_str()) {
+        return Err(err(
+            StatusCode::BAD_REQUEST,
+            "only a machine turns that flag on or off, in its own Developer settings",
+        ));
     }
     let (owner, daemons) = match &b.team {
         Some(team) => {

@@ -2148,11 +2148,15 @@ function AdmitPrompt({ s, team, req }: { s: ControlSession; team: Team; req: Tea
 /** "an owner", "someone who drives". */
 const roleFor = (role: TeamRole) => (role === "owner" ? "an owner" : `someone who ${roleLabel(role)}`);
 
+/** The flags control may set: guest ssh and the agent catalog are each
+ * machine's alone (`local_only`), set in its own Developer settings. */
+const PUSHED = FLAGS.filter((f) => !f.local_only);
+
 /** Labs flags set on control (#347), for an account's machines or a team's:
  * each unset (a machine follows its default), on or off. A machine's own
  * Developer settings win over these, and the account's over the team's. */
 function LabsFlagList({ scope, what, flags, edit, set }: { scope: string; what: string; flags: Record<string, boolean>; edit: boolean; set: (name: string, on: boolean | null) => void }) {
-  const named = FLAGS.filter((f) => flags[f.name] !== undefined).length;
+  const named = PUSHED.filter((f) => flags[f.name] !== undefined).length;
   return (
     <details class="labs-flags" data-labs-flags={scope}>
       <summary>
@@ -2160,7 +2164,7 @@ function LabsFlagList({ scope, what, flags, edit, set }: { scope: string; what: 
       </summary>
       <p class="dim">{what}</p>
       <ul class="control-devices">
-        {FLAGS.map((f) => {
+        {PUSHED.map((f) => {
           const v = flags[f.name];
           const value = v === undefined ? "" : v ? "on" : "off";
           return (
@@ -2199,12 +2203,13 @@ function Teams({ s, close }: { s: ControlSession; close: () => void }) {
   const [err, setErr] = useState("");
   const act = (f: () => Promise<unknown>) => f().catch((e: Error) => setErr(e.message));
   // Labs flags (#347): the account's and each team's; null until loaded,
-  // and left out by a control from before them.
+  // left out by a control from before them, and for someone with no
+  // machine that has Developer settings (strangers never see Labs).
   const [labs, setLabs] = useState<LabsFlags | null>(null);
   useEffect(() => {
     let live = true;
     s.labsFlags().then(
-      (l) => live && setLabs(l),
+      (l) => live && setLabs(l.dev ? l : null),
       () => live && setLabs(null),
     );
     return () => {

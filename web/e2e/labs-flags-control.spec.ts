@@ -113,6 +113,8 @@ async function reopen(page: Page) {
 
 test("a team's and an account's flags reach the machine, each saying where it comes from", async ({ page }) => {
   expect(existsSync(join(state, "flags.json"))).toBe(false);
+  // No machine of the account has Developer settings: the page offers none.
+  expect((await me.api<{ dev: boolean }>("/api/flags")).dev).toBe(false);
   await setOnControl("chat", true, team);
   await setOnControl("huddles", true, team);
   await setOnControl("huddles", false);
@@ -129,9 +131,19 @@ test("a team's and an account's flags reach the machine, each saying where it co
   await expect(row(page, "huddles").locator("input")).not.toBeChecked();
   await expect(row(page, "huddles").locator("[data-flag-source]")).toHaveText("From your account on control");
   await expect(row(page, "vms").locator("[data-flag-source]")).toHaveCount(0);
+  // Guest ssh and the agent catalog are the machine's alone: control won't
+  // take them, and the dialog says so.
+  await expect(setOnControl("guest-ssh", true, team)).rejects.toThrow(/400/);
+  await expect(row(page, "guest-ssh").locator("[data-flag-local-only]")).toBeVisible();
+  await expect(row(page, "chat").locator("[data-flag-local-only]")).toHaveCount(0);
   // Control saying something is the machine asking: the menus offer them.
   await expect.poll(() => page.evaluate(() => window.__arugula.client.hasDev())).toBe(true);
   await expect.poll(() => page.evaluate(() => window.__arugula.client.flag("chat"))).toBe(true);
+  // And it tells control so on its next refresh (a change nudges one), so
+  // control's page now offers the flags.
+  await setOnControl("fountain", true);
+  await expect.poll(async () => (await me.api<{ dev: boolean }>("/api/flags")).dev, { timeout: 20_000 }).toBe(true);
+  await setOnControl("fountain", null);
 });
 
 test("the machine overrides control, and Follow control takes its word back", async ({ page }) => {

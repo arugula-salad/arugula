@@ -825,6 +825,18 @@ impl Control {
         crate::labs::offers_agents(&self.state_dir)
     }
 
+    /// What this daemon tells control it understands, and (#347) whether
+    /// its owner has Developer settings here, so control's page offers
+    /// Labs flags only to people with such a machine.
+    fn features(&self) -> String {
+        let mut f = features();
+        if arugula_proto::flags::unlocked(&self.state_dir) {
+            f.push(',');
+            f.push_str(wire::DEV_SETTINGS);
+        }
+        f
+    }
+
     /// Look again soon (grants changed here, say).
     pub fn poke(&self) {
         self.nudge.notify_one();
@@ -1159,7 +1171,7 @@ impl Control {
         let number = self.started.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
         self.check_auth(&e).await;
         let moved_to = self.where_control_is(&e.saved.url).await;
-        let own: wire::TrustAnswer = self.get(&e, &wire::Features::path(&features())).await?;
+        let own: wire::TrustAnswer = self.get(&e, &wire::Features::path(&self.features())).await?;
         // The Labs flags its account and team set (#347), under this
         // machine's own; a control from before them says nothing, and
         // what's kept stays.
@@ -1184,7 +1196,7 @@ impl Control {
 
         if let Some(pin) = saved.team.clone() {
             let since = saved.roster.as_ref().map_or(0, |r| r.version);
-            let t: wire::TeamAnswer = self.get(&e, &wire::TeamQuery::path(since, &features())).await?;
+            let t: wire::TeamAnswer = self.get(&e, &wire::TeamQuery::path(since, &self.features())).await?;
             let mut certs = saved.team_certs.clone();
             certs.extend(t.certs);
             let mut cur = saved.roster.clone();
@@ -1240,7 +1252,7 @@ impl Control {
         if !pins.is_empty() {
             let ids: Vec<&str> = pins.keys().map(String::as_str).collect();
             let got: BTreeMap<String, wire::SharedTeamAnswer> =
-                self.get(&e, &wire::TeamsQuery::path(&ids, &features())).await?;
+                self.get(&e, &wire::TeamsQuery::path(&ids, &self.features())).await?;
             for (team, g) in got {
                 let Some(pin) = pins.get(&team) else { continue };
                 let mut cur: Option<Roster> = None;
@@ -3018,6 +3030,28 @@ mod tests {
         }
         assert!(!flags::get(&r.dir, HUDDLES) && !flags::get(&r.dir, VMS) && !flags::get(&r.dir, CHAT));
         let _ = std::fs::remove_dir_all(&r.dir);
+    }
+
+    /// #347: control refuses the flags only a machine sets, and the daemon
+    /// ignores them; both lists are one list.
+    #[test]
+    fn controls_local_only_flags_are_the_registrys() {
+        let registry: Vec<&str> = arugula_proto::flags::FLAGS.iter().filter(|f| f.local_only).map(|f| f.name).collect();
+        assert_eq!(registry, wire::LOCAL_ONLY_FLAGS);
+    }
+
+    /// #347: a machine with Developer settings says so to control, which
+    /// offers Labs flags on its page only to people with one.
+    #[test]
+    fn a_machine_with_developer_settings_says_so() {
+        let dir = std::env::temp_dir().join(format!("arugula-devfeat-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let c = Control::new(&dir, vec![], String::new(), Arc::new(Acl::open(&dir)), false);
+        assert!(!has_feature(&c.features(), wire::DEV_SETTINGS));
+        arugula_proto::flags::unlock(&dir).unwrap();
+        assert!(has_feature(&c.features(), wire::DEV_SETTINGS));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// #232: someone just granted (whom control routes here) is reachable

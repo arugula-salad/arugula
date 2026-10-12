@@ -110,6 +110,11 @@ function Developer({ client, close }: { client: Client; close: () => void }) {
                   <b>{f.title || f.name}</b>
                   <span class="hint">{f.about}</span>
                   <FlagSource f={f} />
+                  {f.local_only ? (
+                    <span class="hint flag-source" data-flag-local-only>
+                      Only this machine sets it, never control
+                    </span>
+                  ) : null}
                 </span>
               </label>
               {/* This machine's word taken back: control's, or the default. */}

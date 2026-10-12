@@ -28,6 +28,16 @@ pub struct TrustAnswer {
     pub flags: Option<Flags>,
 }
 
+/// Labs flags only a machine sets for itself (#347): control refuses to
+/// store them, and a daemon ignores them if sent. The daemon's tests check
+/// this is `arugula_proto::flags`'s `local_only` rows.
+pub const LOCAL_ONLY_FLAGS: &[&str] = &["guest-ssh", "agents"];
+
+/// What a daemon says it understands (`?features=`) once its owner has
+/// asked for Developer settings, or control sends it flags (#347): control's
+/// page offers the account's Labs flags only to people with such a machine.
+pub const DEV_SETTINGS: &str = "dev-settings";
+
 /// Labs flags control sends a machine (#347): its account's, and its
 /// team's if it's a team's machine, by flag name. On or off; a flag
 /// neither names follows the machine's own default. The daemon's own

@@ -132,11 +132,12 @@ fn flags_table() -> String {
     for f in crate::flags::FLAGS {
         let s = |v: &str| serde_json::to_string(v).expect("a string serializes");
         out.push_str(&format!(
-            "  {{ name: {}, title: {}, about: {}, default: {} }},\n",
+            "  {{ name: {}, title: {}, about: {}, default: {}, local_only: {} }},\n",
             s(f.name),
             s(f.title),
             s(f.about),
-            f.default
+            f.default,
+            f.local_only
         ));
     }
     out.push_str("] as const;\n");

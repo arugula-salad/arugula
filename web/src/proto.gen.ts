@@ -496,7 +496,12 @@ account?: boolean,
 /**
  * Control's word for the machine's team, if it has one.
  */
-team?: boolean, };
+team?: boolean, 
+/**
+ * Only this machine sets it; control's word is ignored
+ * ([`Flag::local_only`]). Absent: control may set it.
+ */
+local_only?: boolean, };
 
 /**
  * `PUT /api/flags/{name}`: the body (the `flag.set` operation). `null`
@@ -2071,14 +2076,14 @@ export type OpName = keyof typeof OPS;
 
 /** The Labs flags (`arugula_proto::flags::FLAGS`), in order. */
 export const FLAGS = [
-  { name: "chat", title: "Chat", about: "Threads on panes and sessions, and the chat page.", default: false },
-  { name: "huddles", title: "Huddles", about: "Voice calls on a session.", default: false },
-  { name: "vms", title: "VMs and sandboxes", about: "VM tabs and panes, machines and the sandboxes page. Needs a sandbox provider.", default: false },
-  { name: "fountain", title: "Fountain", about: "Fountain agents and the runner view. Needs a Fountain login.", default: false },
-  { name: "studio", title: "Studio apps", about: "Studio app blocks. Needs a linked studio.", default: false },
-  { name: "workspaces", title: "Chant workspaces", about: "Chant workspace blocks.", default: false },
-  { name: "guest-ssh", title: "Guest ssh", about: "Invite a guest to a pane over plain ssh.", default: false },
-  { name: "swarm-themes", title: "Extra swarm views", about: "The swarm's other views beside the default.", default: false },
-  { name: "forges", title: "Forgejo and GitLab", about: "PR and issue blocks for Forgejo and GitLab, beside GitHub's.", default: false },
-  { name: "agents", title: "Agent catalog", about: "Offer Claude Code subagents from this machine, and see the ones your team offers.", default: false },
+  { name: "chat", title: "Chat", about: "Threads on panes and sessions, and the chat page.", default: false, local_only: false },
+  { name: "huddles", title: "Huddles", about: "Voice calls on a session.", default: false, local_only: false },
+  { name: "vms", title: "VMs and sandboxes", about: "VM tabs and panes, machines and the sandboxes page. Needs a sandbox provider.", default: false, local_only: false },
+  { name: "fountain", title: "Fountain", about: "Fountain agents and the runner view. Needs a Fountain login.", default: false, local_only: false },
+  { name: "studio", title: "Studio apps", about: "Studio app blocks. Needs a linked studio.", default: false, local_only: false },
+  { name: "workspaces", title: "Chant workspaces", about: "Chant workspace blocks.", default: false, local_only: false },
+  { name: "guest-ssh", title: "Guest ssh", about: "Invite a guest to a pane over plain ssh.", default: false, local_only: true },
+  { name: "swarm-themes", title: "Extra swarm views", about: "The swarm's other views beside the default.", default: false, local_only: false },
+  { name: "forges", title: "Forgejo and GitLab", about: "PR and issue blocks for Forgejo and GitLab, beside GitHub's.", default: false, local_only: false },
+  { name: "agents", title: "Agent catalog", about: "Offer Claude Code subagents from this machine, and see the ones your team offers.", default: false, local_only: true },
 ] as const;
