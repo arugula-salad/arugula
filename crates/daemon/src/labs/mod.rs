@@ -96,9 +96,9 @@ pub const GUEST_STREAM_KIND: &[u8] = b"ssh-guest";
 /// Whether this build has Labs.
 pub const BUILT: bool = cfg!(feature = "labs");
 
-pub use arugula_mux::labs::{flag, not_built, thread_names};
 #[cfg(feature = "forge")]
 use arugula_mux::labs::flag_off_as;
+pub use arugula_mux::labs::{flag, not_built, thread_names};
 
 /// The Labs flags that are on here: none in a build without Labs, else
 /// what the machine's state directory says (read on each call).
