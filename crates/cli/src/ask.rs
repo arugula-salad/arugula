@@ -47,6 +47,10 @@ pub fn run(sock: Target) -> i32 {
     let _ = std::io::stdin().read_to_string(&mut input);
     let Some(pane) = crate::util::env_pane() else { return 0 };
     let Ok(hook) = serde_json::from_str::<Value>(&input) else { return 0 };
+    // The plugin's copy of a hook settings.json has too (#229).
+    if crate::hooks::plugin_copy_stands_aside("arugula ask", hook["hook_event_name"].as_str()) {
+        return 0;
+    }
     if hook["tool_name"].as_str().is_some_and(|t| t != "AskUserQuestion") {
         return 0;
     }

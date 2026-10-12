@@ -79,6 +79,21 @@ On Windows, in PowerShell: `irm https://arugula.io/install.ps1 | iex`. With Home
 [Install](https://docs.arugula.io/install/) has the details, and the [quickstart](https://docs.arugula.io/quickstart/) goes from
 the browser to your phone, scripts, agents and MCP.
 
+### Claude Code plugin
+
+Instead of `claude mcp add arugula -- arugula mcp` and `arugula hooks install`,
+one plugin brings Arugula's MCP tools, its hooks (questions, permission prompts
+and follow-ups as cards) and a short skill. It calls the `arugula` you
+installed, so that has to be on your PATH. In Claude Code:
+
+```
+/plugin marketplace add arugula-salad/arugula
+/plugin install arugula@arugula
+```
+
+Already set up the hooks by hand? Each still runs once: the plugin's copy stands
+aside. [plugins/claude-code](plugins/claude-code/README.md) has the details.
+
 ## Docs
 
 **[docs.arugula.io](https://docs.arugula.io/)** has the docs for using Arugula: [panes](https://docs.arugula.io/panes/),

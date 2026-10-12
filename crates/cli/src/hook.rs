@@ -41,17 +41,24 @@ use crate::http::{Target, request, request_op, send_op};
 /// permission to the terminal.
 const GIVE_UP: Duration = Duration::from_secs(60);
 
-fn stdin_hook() -> Option<(u32, Value)> {
+/// The pane and the hook's input, unless this is outside a pane, or the
+/// plugin's copy (`command` is the hook's) of one settings.json has too
+/// (#229).
+fn stdin_hook(command: &str) -> Option<(u32, Value)> {
     let mut input = String::new();
     let _ = std::io::stdin().read_to_string(&mut input);
     let pane = crate::util::env_pane()?;
-    Some((pane, serde_json::from_str(&input).ok()?))
+    let hook: Value = serde_json::from_str(&input).ok()?;
+    if crate::hooks::plugin_copy_stands_aside(command, hook["hook_event_name"].as_str()) {
+        return None;
+    }
+    Some((pane, hook))
 }
 
 /// `arugula hook`: always exits 0; prints a decision only for a
 /// permission someone answered on a card.
 pub fn run(sock: Target) -> i32 {
-    let Some((pane, hook)) = stdin_hook() else { return 0 };
+    let Some((pane, hook)) = stdin_hook("arugula hook") else { return 0 };
     if hook["hook_event_name"] != "PermissionRequest" {
         let _ = request(&sock, "POST", &format!("/api/panes/{pane}/hook"), Some(&hook));
         return 0;
@@ -88,7 +95,7 @@ pub fn run(sock: Target) -> i32 {
 /// `asyncRewake` wakes the agent with it), or 0 when a newer waiter takes
 /// over or there's nothing to wait for.
 pub fn inbox(sock: Target) -> i32 {
-    let Some((pane, hook)) = stdin_hook() else { return 0 };
+    let Some((pane, hook)) = stdin_hook("arugula inbox") else { return 0 };
     let env = |k| std::env::var(k).ok();
     if !driven(env("CLAUDE_CODE_SESSION_ATTENDED").as_deref(), env("CLAUDE_CODE_ENTRYPOINT").as_deref()) {
         return 0;

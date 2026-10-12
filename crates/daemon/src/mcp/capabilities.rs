@@ -95,8 +95,7 @@ impl Call<'_> {
 
     /// Claude Code's hooks in the caller's pane.
     async fn hooks(&self) -> HooksLive {
-        const INSTALL: &str =
-            "`arugula hooks install` adds them (ask your person first); a new Claude Code session picks them up";
+        const INSTALL: &str = "`arugula hooks install`, or Arugula's Claude Code plugin, adds them (ask your person first); a new Claude Code session picks them up";
         if let Scope::Block(id) = self.scope() {
             return HooksLive {
                 pane: Some(id),
