@@ -41,7 +41,10 @@ use std::{
     os::unix::fs::PermissionsExt,
     path::Path,
     process::Command,
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
     time::{Duration, Instant},
 };
 
@@ -359,6 +362,8 @@ struct Control {
     texts: Arc<Mutex<Vec<Value>>>,
     say: tokio::sync::broadcast::Sender<String>,
     dir: Arc<std::path::PathBuf>,
+    /// The box dialed in: it has read `control.json` and is joined.
+    joined: Arc<AtomicBool>,
 }
 
 /// `POST /api/daemon/github/token`: a real installation token for the one
@@ -403,6 +408,7 @@ async fn token(State(c): State<Control>, h: HeaderMap, Json(b): Json<Value>) -> 
 }
 
 async fn dial(State(c): State<Control>, ws: WebSocketUpgrade) -> Response {
+    c.joined.store(true, Ordering::SeqCst);
     ws.on_upgrade(move |sock| async move {
         let (mut tx, mut rx) = sock.split();
         let mut say = c.say.subscribe();
@@ -456,6 +462,7 @@ fn github_a_box_with_no_login_reads_through_the_app_and_its_webhook_pokes_the_bl
         texts: Arc::default(),
         say: tokio::sync::broadcast::channel(64).0,
         dir: Arc::new(dir.to_path_buf()),
+        joined: Arc::default(),
     };
     let origin = rt.block_on(async {
         let app = Router::new()
@@ -474,6 +481,10 @@ fn github_a_box_with_no_login_reads_through_the_app_and_its_webhook_pokes_the_bl
     let cert = Cert::new(&keys, "a1", Kind::Daemon, "test");
     let saved = json!({ "url": origin, "trust": { "account": "a1", "root": keys.id() }, "cert": cert });
     std::fs::write(d.state.join("control.json"), saved.to_string()).unwrap();
+    // The daemon notices control.json within seconds. Opened before that,
+    // the block's first read has no gh and no control, and with polls ten
+    // minutes apart it wouldn't read again in time.
+    until("the box to join the stand-in control", 30, || c.joined.load(Ordering::SeqCst));
     let block = open(&d, &pr.url);
     until("a read through the App", 60, || d.state(block)["pr"].is_object());
     let st = d.state(block);
