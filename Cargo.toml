@@ -66,3 +66,14 @@ unsafe_op_in_unsafe_fn = "deny"
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
+
+# Debug builds are 15-60 GB a worktree and every worktree has its own
+# target/ (AGENTS.md). Line tables keep backtraces' file:line for our crates
+# without the variable and type info a debugger reads; dependencies get no
+# debug info. A fresh `cargo build --workspace --all-targets` goes from 11 GB
+# to 5.9 GB. For a debugger session: CARGO_PROFILE_DEV_DEBUG=full.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
