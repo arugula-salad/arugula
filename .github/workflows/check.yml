@@ -136,7 +136,13 @@ jobs:
         with:
           cache-key: static
       - run: just bootstrap
+      # opt-level 1, not release's 3: these only run the tests (the ssh
+      # tests, the test stack, desktop-xvfb), and release.yml builds what
+      # ships. Measured on geek: the workspace's crates take 29% less CPU
+      # (593 -> 421 CPU-s) (#868).
       - run: just static x86_64
+        env:
+          CARGO_PROFILE_RELEASE_OPT_LEVEL: "1"
       - run: scripts/ci-env keep static
       - name: Hand them to the jobs that need them
         run: tar -cf "$RUNNER_TEMP/run-static.tar" -C "$CI_RUN" x86_64-unknown-linux-musl
