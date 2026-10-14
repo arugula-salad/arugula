@@ -48,6 +48,8 @@ concurrency:
 
 env:
   NEXTEST_PROFILE: ci
+  # sccache's cache (.github/actions/setup, #868): home-cloud's ci-cache.
+  SCCACHE_WEBDAV_PASSWORD: ${{ secrets.SCCACHE_WEBDAV_PASSWORD }}
   # mise's GitHub downloads (nextest): unauthenticated, they share the
   # runner's IP's rate limit.
   GITHUB_TOKEN: ${{ github.token }}
@@ -118,6 +120,9 @@ jobs:
           path: ${{ runner.temp }}/run-debug.tar
           retention-days: 1
           compression-level: 1
+      - name: sccache's hits
+        if: always() && env.RUSTC_WRAPPER == 'sccache'
+        run: sccache --show-stats
 
   # The box's binaries: for the ssh tests, the test stack and
   # team-swarm-phones' box behind netem.
@@ -141,6 +146,9 @@ jobs:
           path: ${{ runner.temp }}/run-static.tar
           retention-days: 1
           compression-level: 1
+      - name: sccache's hits
+        if: always() && env.RUSTC_WRAPPER == 'sccache'
+        run: sccache --show-stats
 
   clippy:
     needs: changes
@@ -170,6 +178,9 @@ jobs:
         run: just desktop-check
       - name: THIRD_PARTY.md is current
         run: just notices && git diff --exit-code THIRD_PARTY.md crates/desktop/THIRD_PARTY.md
+      - name: sccache's hits
+        if: always() && env.RUSTC_WRAPPER == 'sccache'
+        run: sccache --show-stats
 
   # The daemon and the CLI built without the `labs` feature (crates/daemon/
   # src/labs/mod.rs): clippy and the tests. The ssh tests, which need
@@ -188,6 +199,9 @@ jobs:
         env:
           ARUGULA_SKIP_DOCKER: "1"
           ARUGULA_REQUIRE_SYSTEMD: "1"
+      - name: sccache's hits
+        if: always() && env.RUSTC_WRAPPER == 'sccache'
+        run: sccache --show-stats
 
   test:
     needs: [changes, static]
@@ -209,6 +223,9 @@ jobs:
         env:
           # The service tests run, or fail (testkit's user_manager).
           ARUGULA_REQUIRE_SYSTEMD: "1"
+      - name: sccache's hits
+        if: always() && env.RUSTC_WRAPPER == 'sccache'
+        run: sccache --show-stats
       - name: Take the test stack down
         if: always()
         run: just testnet down
