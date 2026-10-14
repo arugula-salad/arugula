@@ -24,6 +24,7 @@ use std::{
 use arugula_vt::{Cursor, CursorShape};
 use ratatui::{
     Terminal,
+    backend::Backend,
     crossterm::{
         cursor::SetCursorStyle,
         event::{
@@ -35,7 +36,6 @@ use ratatui::{
         terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
     },
     layout::Position,
-    backend::Backend,
     prelude::CrosstermBackend,
 };
 
