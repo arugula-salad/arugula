@@ -242,6 +242,11 @@ test("a breakpoint puts a card on the rail, and Continue works", async () => {
   await expect(card).toBeVisible({ timeout: 30_000 });
   await expect(card).toContainText("Debugger paused");
   await expect(card).toContainText("app.js:3");
+  // And still there once VS Code has asked for the rest of the stack (420 ms
+  // after the top frame): that answer starts at the caller, and the card
+  // once took its first frame for where it stopped ("loader:1929", #903).
+  await vs.waitForTimeout(1500);
+  await expect(card).toContainText("app.js:3", { timeout: 1 });
   await card.locator("[data-continue]").click();
   // It runs on to the end: the card goes, and the program finished.
   await expect(card).toHaveCount(0, { timeout: 15_000 });

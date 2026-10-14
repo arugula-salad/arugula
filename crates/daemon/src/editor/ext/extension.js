@@ -500,13 +500,23 @@ function setDebug(d) {
 }
 
 function tracker() {
+  // Where it stopped is the first frame of a stackTrace answer, but only of
+  // one that asked from the top of the stopped thread. VS Code asks for the
+  // top frame first, then, 420 ms on, for the rest from frame 1: that
+  // answer's first frame is the caller (`Module._compile` in Node's
+  // loader), and taking it moved the card off the line it stopped on
+  // (#903). So: the seqs of the requests from frame 0, and their answers.
+  const fromTop = new Set();
+  let thread = null;
   return {
     onDidSendMessage(m) {
       if (m.type === "event" && m.event === "stopped") {
+        thread = m.body?.threadId ?? null;
         setDebug({ state: "paused", reason: m.body?.reason || null, file: debug?.file ?? null, line: debug?.line ?? null });
       } else if (m.type === "event" && m.event === "continued") {
         setDebug({ state: "running" });
-      } else if (m.type === "response" && m.command === "stackTrace" && debug?.state === "paused") {
+      } else if (m.type === "response" && m.command === "stackTrace") {
+        if (!fromTop.delete(m.request_seq) || debug?.state !== "paused") return;
         const top = m.body?.stackFrames?.[0];
         if (top) setDebug({ ...debug, file: top.source?.path || null, line: top.line || null });
       } else if (m.type === "event" && (m.event === "terminated" || m.event === "exited")) {
@@ -514,6 +524,10 @@ function tracker() {
       }
     },
     onWillReceiveMessage(m) {
+      if (m.type === "request" && m.command === "stackTrace") {
+        const a = m.arguments || {};
+        if (!a.startFrame && (thread === null || a.threadId === thread)) fromTop.add(m.seq);
+      }
       // Continue, step: running again before the adapter says so.
       if (m.type === "request" && ["continue", "next", "stepIn", "stepOut"].includes(m.command) && debug?.state === "paused") {
         setDebug({ state: "running" });
