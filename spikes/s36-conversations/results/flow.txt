@@ -1,0 +1,23 @@
+# spikes/s36-conversations/flow.sh on a fresh rig (2026-10-13, geek), after setup.sh.
+# L1 = Claude Code (haiku, auto mode) in %2 on box-a, the home machine.
+# L2 = Claude Code (haiku, default mode: it asks) in %2 on box-b, through the relay.
+# The lead is a Claude Code agent block (haiku) on box-a. Paths shortened to STATE.
+   0.0s @lead, from the owner
+{"posted":1,"delivered":true}
+   2.0s #1 owner: @lead have L1 and L2 each run python3 -m pytest -q and fix what fails, both at once, then tell me what they changed.
+  20.2s #2 L1 (%2 here): turn ended
+  22.2s #3 L2 (%2 on box-b): needs input: Bash: cd STATE/box-b/work/calc && python3 -m pytest -q 2>&1 | tail -80 (answer here: allow or deny L2)
+  22.2s   owner answers L2 in the conversation: {"results":[{"ok":true,"pane":2}]}
+  24.3s #4 L2 (%2 on box-b): owner answered L2 in the conversation: allow
+  28.4s #5 L2 (%2 on box-b): needs input: Edit: STATE/box-b/work/calc/calc.py (answer here: allow or deny L2)
+  28.4s   owner answers L2 in the conversation: {"results":[{"ok":true,"pane":2}]}
+  30.5s #6 L2 (%2 on box-b): owner answered L2 in the conversation: allow
+  30.5s #7 L2 (%2 on box-b): needs input: Bash: python3 -m pytest -q 2>&1 | tail -5 (answer here: allow or deny L2)
+  30.5s   owner answers L2 in the conversation: {"results":[{"ok":true,"pane":2}]}
+  32.6s #8 L2 (%2 on box-b): owner answered L2 in the conversation: allow
+  34.6s #9 L2 (%2 on box-b): turn ended
+  40.7s #10 claude-code (agent): Both L1 and L2 ran pytest and fixed the same bug in calc.py. ...
+  40.7s done
+# Afterwards, in each machine's calc: `calc.py | 2 +-`, and pytest: 1 passed.
+# setup.sh, before box-b's grant: {"error":"box-b refused: 403 {\"error\":\"a machine reaches only the agents here (/api/a2a/)\"}"}
+# After it, box-b's unlinked %1: the same 403.
