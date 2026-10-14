@@ -147,6 +147,85 @@ fn ls_shows_kind_project_and_activity_for_real_commands() {
     }
 }
 
+fn now_ns() -> u128 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+}
+
+/// What a whole State changed against the client's mirror (#916): whether
+/// the layout's rev moved, which sessions and tabs differ (and in which
+/// fields), which panes came or went, and any other part that differs.
+fn state_change(mirror: &State, state: &State) -> String {
+    let (old, new) = (serde_json::to_value(mirror).unwrap(), serde_json::to_value(state).unwrap());
+    let mut out = vec![if mirror.rev == state.rev {
+        format!("rev {} unchanged (a forced resend, not a layout change)", state.rev)
+    } else {
+        format!("rev {} -> {}", mirror.rev, state.rev)
+    }];
+    for list in ["sessions", "tabs", "panes", "machines"] {
+        let by_id = |v: &Value| -> std::collections::BTreeMap<String, Value> {
+            v[list].as_array().into_iter().flatten().map(|e| (e["id"].to_string(), e.clone())).collect()
+        };
+        let (a, b) = (by_id(&old), by_id(&new));
+        let gone: Vec<&String> = a.keys().filter(|k| !b.contains_key(*k)).collect();
+        let came: Vec<&String> = b.keys().filter(|k| !a.contains_key(*k)).collect();
+        if !gone.is_empty() || !came.is_empty() {
+            out.push(format!("{list} gone {gone:?} new {came:?}"));
+        }
+        // Panes' own fields move with every delta; the rest only with a
+        // layout change.
+        if list == "panes" {
+            continue;
+        }
+        for (id, x) in &a {
+            let Some(y) = b.get(id) else { continue };
+            let fields: Vec<&String> = x
+                .as_object()
+                .into_iter()
+                .flatten()
+                .filter(|(k, v)| y.get(k.as_str()) != Some(*v))
+                .map(|(k, _)| k)
+                .collect();
+            if !fields.is_empty() {
+                let show =
+                    |v: &Value| fields.iter().map(|f| format!("{f}={}", v[f.as_str()])).collect::<Vec<_>>().join(" ");
+                out.push(format!("{list} {id} changed: {} -> {}", show(x), show(y)));
+            }
+        }
+    }
+    for (k, v) in new.as_object().into_iter().flatten() {
+        if !["rev", "sessions", "tabs", "panes", "machines"].contains(&k.as_str()) && old.get(k) != Some(v) {
+            out.push(format!("{k}: {} -> {v}", old.get(k).unwrap_or(&Value::Null)));
+        }
+    }
+    out.join("; ")
+}
+
+/// A log from the test's client connecting (the start is setup, and says
+/// things about the machine), its last `n` lines, without colours or each
+/// pane's attention changes (every command start and end makes one).
+fn log_tail(path: &Path, n: usize) -> String {
+    let text = std::fs::read_to_string(path).unwrap_or_else(|e| format!("(can't read it: {e})"));
+    let mut plain = String::with_capacity(text.len());
+    let mut chars = text.chars();
+    while let Some(c) = chars.next() {
+        if c == '\x1b' {
+            // CSI: up to its final byte.
+            for c in chars.by_ref() {
+                if c.is_ascii_alphabetic() {
+                    break;
+                }
+            }
+        } else {
+            plain.push(c);
+        }
+    }
+    let lines: Vec<&str> = plain.lines().collect();
+    let from = lines.iter().rposition(|l| l.contains("client connected")).unwrap_or(0);
+    let lines: Vec<&str> =
+        lines[from..].iter().copied().filter(|l| !l.contains("arugula_mux::mux::attention")).collect();
+    lines[lines.len().saturating_sub(n)..].join("\n")
+}
+
 type Ws = tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
 async fn next_msg(ws: &mut Ws, until: Instant) -> Option<(usize, ServerMsg)> {
@@ -164,7 +243,15 @@ async fn next_msg(ws: &mut Ws, until: Instant) -> Option<(usize, ServerMsg)> {
 /// command: guards M23's 1,400-fold saving from coming back.
 #[tokio::test(flavor = "multi_thread")]
 async fn busy_panes_send_deltas_not_states() {
-    let d = Daemon::child();
+    // Its log, kept outside its state dir (removed with the daemon): a State
+    // here is a mystery on CI's Macs only (#916), and the log says why.
+    let logs = std::env::temp_dir().join(format!("busy-panes-{}-{}", std::process::id(), now_ns()));
+    std::fs::create_dir_all(&logs).unwrap();
+    let log = logs.join("arugulad.log");
+    let d = Daemon::child_env(
+        &[],
+        &[("ARUGULA_LOG_FILE", log.to_str().unwrap()), ("RUST_LOG", "arugulad=info,arugula_mux=info")],
+    );
     // 40 panes, 4 of them printing four lines a second.
     let mut panes = vec![];
     for _ in 0..39 {
@@ -188,11 +275,19 @@ async fn busy_panes_send_deltas_not_states() {
     let window = Duration::from_secs(5);
     let until = Instant::now() + window;
     let (mut bytes, mut states, mut deltas) = (0usize, 0, 0);
+    // What each whole State changed against what the client had.
+    let mut why = vec![];
     while let Some((n, m)) = next_msg(&mut ws, until).await {
         bytes += n;
         match m {
             ServerMsg::State { state } => {
                 states += 1;
+                let at = window.saturating_sub(until.saturating_duration_since(Instant::now()));
+                why.push(format!(
+                    "{:.3}s into the window: {n} bytes, {}",
+                    at.as_secs_f64(),
+                    state_change(&mirror, &state)
+                ));
                 mirror = state;
             }
             ServerMsg::Delta { delta } => {
@@ -204,7 +299,14 @@ async fn busy_panes_send_deltas_not_states() {
     }
     let rate = bytes as f64 / window.as_secs_f64();
     eprintln!("{bytes} bytes in {window:?} ({rate:.0} B/s), {states} states, {deltas} deltas");
+    if states > 0 {
+        for w in &why {
+            eprintln!("whole State {w}");
+        }
+        eprintln!("the daemon's log ({}), its last lines:\n{}", log.display(), log_tail(&log, 150));
+    }
     assert_eq!(states, 0, "no layout changed, so no whole State");
+    let _ = std::fs::remove_dir_all(&logs);
     assert!(deltas > 0, "the busy panes' changes arrived");
     assert!(rate < 20_000.0, "{rate:.0} B/s");
     // The mirror kept up: the busy panes are working.
