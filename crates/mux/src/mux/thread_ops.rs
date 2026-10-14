@@ -1,7 +1,7 @@
 //! Conversations on a pane or session: posting, reading, summaries and who
 //! gets told about a mention.
 
-use super::{Daemon, Posted, SAVE_DEBOUNCE, ThreadError, ThreadPost};
+use super::{ConvReq, Daemon, Posted, SAVE_DEBOUNCE, ThreadError, ThreadPost};
 use crate::{acl::Principal, pane::ToClient, store::now_ms};
 use arugula_core::Role;
 use arugula_proto::{
@@ -16,6 +16,7 @@ impl Daemon {
         match target {
             ThreadTarget::Pane(p) => self.panes.contains_key(&p) || self.blocks.contains_key(&p),
             ThreadTarget::Session(s) => self.mux.session(s).is_ok(),
+            ThreadTarget::Conv(c) => self.threads.conv(c).is_some(),
         }
     }
 
@@ -29,6 +30,8 @@ impl Daemon {
             ThreadTarget::Pane(p) if self.meta.get(&p).is_some_and(|m| m.private) => None,
             ThreadTarget::Pane(p) => self.session_of(p),
             ThreadTarget::Session(s) => Some(s),
+            // S36: a conversation's members are its own, not a session's.
+            ThreadTarget::Conv(_) => None,
         }
     }
 
@@ -46,6 +49,13 @@ impl Daemon {
         let session = match target {
             ThreadTarget::Pane(p) => self.session_of(p).filter(|_| self.readable(who, p))?,
             ThreadTarget::Session(s) => s,
+            // S36: being a member is the whole grant (and a drive grant on
+            // every link through @lead: the lead acts as the owner).
+            ThreadTarget::Conv(c) => {
+                let conv = self.threads.conv(c)?;
+                return (conv.owner == who.id() || conv.members.iter().any(|m| m == who.id()))
+                    .then_some((Role::Editor, 0));
+            }
         };
         let role = self.config.acl.role(who, session)?;
         Some((role, self.config.acl.thread_floor(who, session, target).unwrap_or(0)))
@@ -142,9 +152,19 @@ impl Daemon {
             .collect();
         // An @agent goes to the pane's agent as a follow-up: an instruction,
         // so only from someone who may drive it (and never from an agent).
+        // S36: in a conversation, @lead goes to its lead, from any member
+        // (the lead acts as the owner: membership is the grant).
+        let calls = |t: &[String]| match target {
+            ThreadTarget::Conv(_) => t.iter().any(|t| t == "lead"),
+            _ => crate::labs::threads::calls_agent(t),
+        };
         let to_agent = as_agent.is_none()
-            && crate::labs::threads::calls_agent(&tokens)
-            && matches!(target, ThreadTarget::Pane(p) if self.may_drive_here(&who, p).is_ok());
+            && calls(&tokens)
+            && match target {
+                ThreadTarget::Pane(p) => self.may_drive_here(&who, p).is_ok(),
+                ThreadTarget::Conv(c) => self.threads.conv(c).is_some_and(|c| c.lead.is_some()),
+                ThreadTarget::Session(_) => false,
+            };
         // Which tokens went anywhere; the rest are the poster's to hear about.
         let me = self.name_of(&who);
         let (mut landed, mut unreached) = (Vec::new(), Vec::new());
@@ -152,7 +172,7 @@ impl Daemon {
             let person = self.mentionable().into_iter().any(|p| {
                 mentions.iter().any(|m| m == p.id()) && crate::labs::threads::names(t, p.id(), &self.name_of(&p))
             });
-            if person || (to_agent && crate::labs::threads::calls_agent(std::slice::from_ref(t))) {
+            if person || (to_agent && calls(std::slice::from_ref(t))) {
                 landed.push(t.clone());
             } else if crate::labs::threads::names(t, who.id(), &me) {
                 // Yourself: nothing to say.
@@ -202,6 +222,7 @@ impl Daemon {
         // A notification opens a pane: the thread's, or the session's first.
         let pane = match target {
             ThreadTarget::Pane(p) => Some(p),
+            ThreadTarget::Conv(c) => self.threads.conv(c).and_then(|c| c.lead),
             ThreadTarget::Session(s) => self
                 .mux
                 .session(s)
@@ -220,5 +241,54 @@ impl Daemon {
                 .notify
                 .notify(pane, &title, &body, Some(extra.clone()), Some(extra.clone()), &|p| p.id() == id.as_str());
         }
+    }
+}
+
+impl Daemon {
+    /// S36 (spike): make, read or change a conversation.
+    pub(super) fn conv(&mut self, req: ConvReq) -> Result<arugula_proto::Conversation, String> {
+        use arugula_proto::{ConvId, Conversation};
+        let mut c = match &req {
+            ConvReq::Create { title, owner } => {
+                let mut id = [0u8; 16];
+                getrandom::fill(&mut id).map_err(|e| e.to_string())?;
+                Conversation {
+                    id: ConvId(id),
+                    title: title.clone(),
+                    owner: owner.clone(),
+                    members: vec![],
+                    links: vec![],
+                    lead: None,
+                    created: now_ms(),
+                }
+            }
+            ConvReq::Get(id) | ConvReq::Link(id, _) | ConvReq::Lead(id, _) | ConvReq::Member(id, _) => {
+                self.threads.conv(*id).cloned().ok_or_else(|| format!("no conversation {id}"))?
+            }
+        };
+        match req {
+            ConvReq::Get(_) => return Ok(c),
+            ConvReq::Create { .. } => {}
+            ConvReq::Link(_, mut link) => {
+                if c.links.iter().any(|l| l.machine == link.machine && l.pane == link.pane) {
+                    return Err("that pane is linked already".into());
+                }
+                link.name = format!("L{}", c.links.len() + 1);
+                c.links.push(link);
+            }
+            ConvReq::Lead(_, pane) => c.lead = Some(pane),
+            ConvReq::Member(_, who) => {
+                if !c.members.contains(&who) {
+                    c.members.push(who);
+                }
+            }
+        }
+        self.threads.save_conv(c.clone()).map_err(|e| format!("can't save it: {e}"))?;
+        self.soon();
+        Ok(c)
+    }
+
+    pub(super) fn convs(&self) -> Vec<arugula_proto::Conversation> {
+        self.threads.convs().cloned().collect()
     }
 }

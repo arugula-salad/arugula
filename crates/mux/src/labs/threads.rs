@@ -12,7 +12,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
 
-use arugula_proto::{ThreadMsg, ThreadTarget};
+use arugula_proto::{ConvId, Conversation, ThreadMsg, ThreadTarget};
 use tracing::warn;
 
 /// The longest message kept, in bytes (longer ones are cut).
@@ -26,6 +26,9 @@ pub struct Threads {
     /// Principal id → thread → the last message id they've read.
     reads: BTreeMap<String, BTreeMap<String, u64>>,
     reads_dirty: bool,
+    /// S36 (spike): conversations kept here, each in `conv-<id>.json`
+    /// beside its timeline (`conv-<id>.jsonl`).
+    convs: BTreeMap<ConvId, Conversation>,
 }
 
 impl Threads {
@@ -57,11 +60,40 @@ impl Threads {
                 msgs.insert(target, list);
             }
         }
+        let mut convs = BTreeMap::new();
+        for entry in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if name.starts_with("conv-") && name.ends_with(".json") {
+                if let Some(c) = std::fs::read(entry.path())
+                    .ok()
+                    .and_then(|b| serde_json::from_slice::<Conversation>(&b).ok())
+                {
+                    convs.insert(c.id, c);
+                }
+            }
+        }
         let reads = std::fs::read(dir.join("reads.json"))
             .ok()
             .and_then(|b| serde_json::from_slice(&b).ok())
             .unwrap_or_default();
-        Self { dir, msgs, reads, reads_dirty: false }
+        Self { dir, msgs, reads, reads_dirty: false, convs }
+    }
+
+    /// S36: a conversation kept here.
+    pub fn conv(&self, id: ConvId) -> Option<&Conversation> {
+        self.convs.get(&id)
+    }
+
+    pub fn convs(&self) -> impl Iterator<Item = &Conversation> + '_ {
+        self.convs.values()
+    }
+
+    /// S36: keep a conversation (new or changed).
+    pub fn save_conv(&mut self, c: Conversation) -> io::Result<()> {
+        let b = serde_json::to_vec_pretty(&c).map_err(io::Error::other)?;
+        crate::store::write_atomic(&self.dir.join(format!("conv-{}.json", c.id)), &b)?;
+        self.convs.insert(c.id, c);
+        Ok(())
     }
 
     pub fn get(&self, target: ThreadTarget) -> &[ThreadMsg] {

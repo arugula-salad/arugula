@@ -38,6 +38,17 @@ pub struct ThreadPost {
     pub quote: Option<arugula_proto::Quote>,
 }
 
+/// S36 (spike): what to do to a conversation.
+#[derive(Debug)]
+pub enum ConvReq {
+    Create { title: String, owner: String },
+    Get(arugula_proto::ConvId),
+    /// Link a pane; its name (`L1`...) is given here.
+    Link(arugula_proto::ConvId, arugula_proto::ConvLink),
+    Lead(arugula_proto::ConvId, PaneId),
+    Member(arugula_proto::ConvId, String),
+}
+
 /// What a post comes to: the message, whether it went to the pane's agent,
 /// and the `@`s that reached no one.
 pub type Posted = (ThreadMsg, bool, Vec<arugula_proto::api::Unreached>);
@@ -205,6 +216,10 @@ pub enum Api {
     ThreadPost(ThreadPost, oneshot::Sender<Result<Posted, ThreadError>>),
     /// `who` has read a thread up to a message.
     ThreadRead(ThreadTarget, crate::acl::Principal, u64),
+    /// S36 (spike): make, read or change a conversation.
+    Conv(ConvReq, oneshot::Sender<Result<arugula_proto::Conversation, String>>),
+    /// S36 (spike): every conversation kept here.
+    Convs(oneshot::Sender<Vec<arugula_proto::Conversation>>),
     /// Which of these (principal ids) read a thread now (#297); `None` if
     /// no grant could open it (gone, or a private pane's).
     CanRead(ThreadTarget, Vec<String>, oneshot::Sender<Option<Vec<bool>>>),

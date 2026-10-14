@@ -314,6 +314,17 @@ async fn serve_agent_caller(
                     Ok(Some(Msg::Request { id, head, body })) if agents_only(&head.path) => {
                         tokio::spawn(answer(router.clone(), out.clone(), id, head, body, principal.clone(), caller.clone()));
                     }
+                    // S36 (spike): a conversation's home machine driving a
+                    // pane linked to it here, as the owner when it's this
+                    // account's own machine (else as its account).
+                    #[cfg(feature = "labs")]
+                    Ok(Some(Msg::Request { id, head, body }))
+                        if crate::labs::convs::linked_request(&app, &device.device, &head.path, &body).is_some() =>
+                    {
+                        let own = app.control.enrolled().is_some_and(|e| e.saved.cert.account == device.account);
+                        let who = if own { crate::acl::Principal::Owner } else { principal.clone() };
+                        tokio::spawn(answer(router.clone(), out.clone(), id, head, body, who, caller.clone()));
+                    }
                     Ok(Some(Msg::Request { id, .. })) => {
                         let body = serde_json::to_vec(&serde_json::json!({ "error": "a machine reaches only the agents here (/api/a2a/)" })).unwrap();
                         let m = Msg::Response { id, head: ResponseHead { status: 403, content_type: Some("application/json".to_owned()), more: false }, body };

@@ -33,6 +33,12 @@ impl Daemon {
             Api::ThreadPost(post, reply) => {
                 let _ = reply.send(self.thread_post(post));
             }
+            Api::Conv(req, reply) => {
+                let _ = reply.send(self.conv(req));
+            }
+            Api::Convs(reply) => {
+                let _ = reply.send(self.convs());
+            }
             Api::ThreadRead(target, who, upto) => {
                 if self.thread_role(&who, target).is_some() && self.threads.mark_read(who.id(), target, upto) {
                     self.save_due.get_or_insert_with(|| Instant::now() + SAVE_DEBOUNCE);

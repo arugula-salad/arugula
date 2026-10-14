@@ -1332,6 +1332,90 @@ pub struct Presence {
 pub enum ThreadTarget {
     Pane(PaneId),
     Session(SessionId),
+    /// S36 (spike): a conversation of its own, kept on its home machine,
+    /// linking panes on any machine.
+    Conv(ConvId),
+}
+
+/// S36 (spike): a conversation's id, global: 16 random bytes, `c-` and 32
+/// hex digits on the wire. `Copy`, so `ThreadTarget` stays `Copy`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(type = "string"))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema), schemars(with = "String"))]
+pub struct ConvId(pub [u8; 16]);
+
+impl std::fmt::Display for ConvId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("c-")?;
+        for b in self.0 {
+            write!(f, "{b:02x}")?;
+        }
+        Ok(())
+    }
+}
+
+impl std::str::FromStr for ConvId {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, String> {
+        let h = s.strip_prefix("c-").ok_or("a conversation id starts with c-")?;
+        if h.len() != 32 || !h.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Err("a conversation id is c- and 32 hex digits".into());
+        }
+        let mut out = [0u8; 16];
+        for (i, o) in out.iter_mut().enumerate() {
+            *o = u8::from_str_radix(&h[i * 2..i * 2 + 2], 16).map_err(|e| e.to_string())?;
+        }
+        Ok(ConvId(out))
+    }
+}
+
+impl Serialize for ConvId {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.collect_str(self)
+    }
+}
+
+impl<'de> Deserialize<'de> for ConvId {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        String::deserialize(d)?.parse().map_err(serde::de::Error::custom)
+    }
+}
+
+/// S36 (spike): a conversation: who's in it, what it links, and its lead.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct Conversation {
+    pub id: ConvId,
+    pub title: String,
+    /// Its owner's principal id (`owner` on the home machine): the lead
+    /// acts with their rights.
+    pub owner: String,
+    /// Other members' principal ids: each may read, post and `@lead`.
+    #[serde(default)]
+    pub members: Vec<String>,
+    #[serde(default)]
+    pub links: Vec<ConvLink>,
+    /// The lead agent's block, on this (the home) machine.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub lead: Option<PaneId>,
+    pub created: u64,
+}
+
+/// S36 (spike): a pane a conversation links, here or on another machine.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ConvLink {
+    /// `L1`, `L2`, ...: how the lead and the timeline name it.
+    pub name: String,
+    /// The machine it's on (control's name for it); none: the home machine.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub machine: Option<String>,
+    pub pane: PaneId,
+    /// What it was when linked ("claude in ~/calc").
+    #[serde(default)]
+    pub title: String,
 }
 
 impl ThreadTarget {
@@ -1340,12 +1424,16 @@ impl ThreadTarget {
         match self {
             ThreadTarget::Pane(p) => format!("pane-{p}"),
             ThreadTarget::Session(s) => format!("session-{s}"),
+            ThreadTarget::Conv(c) => format!("conv-{c}"),
         }
     }
 
     pub fn parse(key: &str) -> Option<Self> {
         if let Some(p) = key.strip_prefix("pane-") {
             return p.parse().ok().map(ThreadTarget::Pane);
+        }
+        if let Some(c) = key.strip_prefix("conv-") {
+            return c.parse().ok().map(ThreadTarget::Conv);
         }
         key.strip_prefix("session-")?.parse().ok().map(ThreadTarget::Session)
     }

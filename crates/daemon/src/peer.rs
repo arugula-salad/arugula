@@ -127,7 +127,67 @@ pub async fn request(
         .map_err(|_| anyhow::anyhow!("{} didn't answer in time", m.name))?
 }
 
+/// S36 (spike): [`request`] with a limit of its own (a prompt that waits
+/// out an agent's turn takes longer than [`TIMEOUT`]).
+pub async fn request_within(
+    control: &Control,
+    m: &Machine,
+    method: &str,
+    path: &str,
+    body: Option<&serde_json::Value>,
+    limit: Duration,
+) -> anyhow::Result<(u16, Vec<u8>)> {
+    let head = RequestHead {
+        method: method.into(),
+        path: path.into(),
+        content_type: body.map(|_| "application/json".to_owned()),
+        stream: false,
+        headers: Default::default(),
+    };
+    let body = body.map(|b| serde_json::to_vec(b).unwrap_or_default()).unwrap_or_default();
+    tokio::time::timeout(limit, send(control, m, head, body))
+        .await
+        .map_err(|_| anyhow::anyhow!("{} didn't answer in time", m.name))?
+}
+
+/// S36 (spike): `GET path` on `m` as a stream (a follow): each part to
+/// `part` as it comes, until the other end ends it or `part` says stop.
+pub async fn follow(
+    control: &Control,
+    m: &Machine,
+    path: &str,
+    mut part: impl FnMut(Vec<u8>) -> bool + Send,
+) -> anyhow::Result<u16> {
+    let head =
+        RequestHead { method: "GET".into(), path: path.into(), content_type: None, stream: true, headers: Default::default() };
+    let mut status = 0;
+    send_parts(control, m, head, Vec::new(), |s, b| {
+        status = s;
+        part(b)
+    })
+    .await?;
+    Ok(status)
+}
+
 async fn send(control: &Control, m: &Machine, head: RequestHead, body: Vec<u8>) -> anyhow::Result<(u16, Vec<u8>)> {
+    let mut answer = Vec::new();
+    let mut status = 0;
+    send_parts(control, m, head, body, |s, part| {
+        status = s;
+        answer.extend(part);
+        true
+    })
+    .await?;
+    Ok((status, answer))
+}
+
+async fn send_parts(
+    control: &Control,
+    m: &Machine,
+    head: RequestHead,
+    body: Vec<u8>,
+    mut part: impl FnMut(u16, Vec<u8>) -> bool + Send,
+) -> anyhow::Result<()> {
     let e = control.enrolled().ok_or_else(|| anyhow::anyhow!("this machine isn't in control"))?;
     let relay = format!("/api/relay/c/{}", m.id);
     let base = e.saved.url.trim_end_matches('/');
@@ -150,7 +210,6 @@ async fn send(control: &Control, m: &Machine, head: RequestHead, body: Vec<u8>) 
     for w in ch.seal(&Msg::Request { id: 1, head, body })? {
         ws.send(Message::Binary(w.into())).await?;
     }
-    let mut answer = Vec::new();
     loop {
         let w = match ws.next().await {
             Some(Ok(Message::Binary(b))) => b,
@@ -159,11 +218,11 @@ async fn send(control: &Control, m: &Machine, head: RequestHead, body: Vec<u8>) 
             Some(Err(err)) => return Err(err.into()),
         };
         // Anything but our answer isn't for a machine's channel.
-        if let Some(Msg::Response { id: 1, head, body: part }) = ch.open(&w)? {
-            answer.extend(part);
-            if !head.more {
+        if let Some(Msg::Response { id: 1, head, body: bytes }) = ch.open(&w)? {
+            let more = part(head.status, bytes);
+            if !head.more || !more {
                 let _ = ws.close(None).await;
-                return Ok((head.status, answer));
+                return Ok(());
             }
         }
     }

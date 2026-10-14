@@ -69,11 +69,15 @@ impl Handle for ThreadPost {
         let (msg, to_agent, mut unreached) =
             cx.app.mux.api(|r| Api::ThreadPost(post, r)).await.ok_or_else(gone)?.map_err(thread_err)?;
         let mut agent = None;
-        if matches!(cx.via, Via::Http { .. })
-            && to_agent
-            && let ThreadTarget::Pane(pane) = target
-        {
-            agent = Some(match tell_agent(cx.app, pane, &msg).await {
+        if matches!(cx.via, Via::Http { .. }) && to_agent {
+            let told = match target {
+                ThreadTarget::Pane(pane) => Some(tell_agent(cx.app, pane, &msg).await),
+                // S36 (spike): @lead in a conversation.
+                #[cfg(feature = "labs")]
+                ThreadTarget::Conv(c) => Some(crate::labs::convs::tell_lead(cx.app, c, &msg).await),
+                _ => None,
+            };
+            agent = told.map(|r| match r {
                 Ok(now) => ThreadAgent { delivered: Some(now), error: None },
                 Err(e) => ThreadAgent { delivered: None, error: Some(e) },
             });

@@ -51,6 +51,9 @@ use crate::{block::BlockKinds, provider::Provider, server::App, shellenv::ShellE
 pub mod agents;
 #[cfg(feature = "labs")]
 pub mod apps;
+// S36 (spike): conversations across machines, with a lead.
+#[cfg(feature = "labs")]
+pub mod convs;
 // Forgejo and GitLab as forges (#457): their adapters, the `tea` logins
 // Forgejo reads with, and the webhooks they send. GitHub is core's. The
 // parts of a forge block that connect to them are `forge/labs_forges.rs`,
@@ -132,6 +135,7 @@ pub fn offers_agents(_state_dir: &Path) -> bool {
 /// interrupted, and ask again for those waiting on the owner.
 #[cfg(feature = "labs")]
 pub fn resume_tasks(app: &Arc<App>) {
+    convs::resume(app);
     if on(app.control.state_dir(), arugula_proto::flags::AGENTS) {
         agents::tasks::resume(app);
     }
@@ -143,7 +147,7 @@ pub fn resume_tasks(_app: &Arc<App>) {}
 /// Adds Labs' HTTP routes to the API's.
 #[cfg(feature = "labs")]
 pub fn routes(r: Router<Arc<App>>) -> Router<Arc<App>> {
-    agents::routes(apps::routes::routes(r))
+    convs::routes(agents::routes(apps::routes::routes(r)))
 }
 
 #[cfg(not(feature = "labs"))]

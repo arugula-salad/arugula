@@ -1746,6 +1746,13 @@ impl<'a> Call<'a> {
         if self.caller.scope == Scope::Read && !def.read_only {
             return fail(format!("this token may only read; {name} changes things (ask for a full token)"));
         }
+        // S36 (spike): a conversation's lead names its links L1, L2...
+        #[cfg(feature = "labs")]
+        let args = match crate::labs::convs::route_link(self, name, args).await {
+            Ok(a) => a,
+            Err(Ok(v)) => return CallToolResult::structured(v),
+            Err(Err(e)) => return fail(e),
+        };
         let out = match (name, kind) {
             ("run", _) => match parse(args) {
                 Ok(a) => self.run(a).await,
@@ -2047,6 +2054,11 @@ impl<'a> Call<'a> {
         };
         if let Some(me) = self.me() {
             let tab = panes.iter().find(|p| p.info.id == me).map(|p| p.tab);
+            // S36 (spike): a lead reaches its conversation's links here.
+            #[cfg(feature = "labs")]
+            if tab != Some(p.tab) && crate::labs::convs::lead_reaches(self.app, me, pane).await {
+                return Ok(p);
+            }
             if tab != Some(p.tab) {
                 return Err(format!("%{pane} is in another tab: this agent's token reaches its own tab only"));
             }
@@ -2058,6 +2070,12 @@ impl<'a> Call<'a> {
     /// anything, or for an agent block's token, what it started.
     pub(crate) async fn drivable(&self, pane: PaneId) -> Result<PaneSummary, String> {
         let p = self.readable(pane).await?;
+        #[cfg(feature = "labs")]
+        if let Some(me) = self.me()
+            && crate::labs::convs::lead_reaches(self.app, me, pane).await
+        {
+            return Ok(p);
+        }
         if let Some(me) = self.me()
             && p.info.started_by.as_ref().and_then(|s| s.block) != Some(me)
         {
@@ -2653,6 +2671,13 @@ impl<'a> Call<'a> {
                     return Err(format!("session {s} isn't this agent's: its token reaches its own session only"));
                 }
                 Ok(ThreadTarget::Session(s))
+            }
+            #[cfg(feature = "labs")]
+            (None, None)
+                if let Some(me) = self.me()
+                    && let Some(c) = crate::labs::convs::led_by(self.app, me).await =>
+            {
+                Ok(ThreadTarget::Conv(c.id))
             }
             (None, None) => match self.own_pane() {
                 Some(own) => self.readable(own).await.map(|_| ThreadTarget::Pane(own)),
