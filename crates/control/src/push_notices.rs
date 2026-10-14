@@ -268,3 +268,42 @@ async fn a_new_share_offer_pushes_the_person_offered_once() {
     refresh("a1jake,a2ada,a3bo").await;
     assert!(ada_phone.quiet().await, "once a day, however the offer comes and goes");
 }
+
+/// #857: a machine that lets someone in by a conversation says which, and
+/// the offer's push and prompt name it, not just the machine.
+#[tokio::test]
+async fn an_offer_for_a_conversation_names_it() {
+    let mut app = App::for_tests("http://control.test");
+    person(&app, "github", "1", "jhgaylor", "a1jake");
+    let ada = person(&app, "passkey", "p2", "", "a2ada");
+    let (mut ada_phone, ada_host) = Phone::subscribe(&app, "a2ada", &ada, 10).await;
+    app.cfg.push_hosts = vec![ada_host];
+    let app = Arc::new(app);
+    let cert = Cert::new(&DeviceKeys::generate(), "a1jake", Kind::Daemon, "geek");
+    app.db.put_device(&cert, true, now_ms()).unwrap();
+    app.db.put_daemon("a1jake", &cert.device, "geek", &[]).unwrap();
+    let access = arugula_control_wire::AccessList {
+        accounts: vec!["a2ada".into()],
+        links_until: None,
+        agents: vec![],
+        links: vec![],
+        reasons: vec![arugula_control_wire::AccessReason {
+            account: "a2ada".into(),
+            conv: format!(" calc\n tests {}", "x".repeat(200)),
+        }],
+    };
+    let _ =
+        crate::teams::daemon_access(State(app.clone()), DaemonAuth { cert: cert.clone() }, Json(access)).await.unwrap();
+    let q = Query(serde_json::from_value(json!({ "accounts": "a1jake,a2ada" })).unwrap());
+    let _ = crate::teams::daemon_peers(State(app.clone()), DaemonAuth { cert: cert.clone() }, q).await.unwrap();
+    let n = ada_phone.next().await.expect("a push for the offer");
+    let title = n["title"].as_str().unwrap();
+    assert!(title.starts_with("jhgaylor added you to calc tests xx"), "{title}");
+    assert_eq!(title.chars().count(), "jhgaylor added you to ".len() + arugula_control_wire::AccessReason::MAX_CONV);
+    // Her prompt says so too.
+    let reacher = crate::auth::Reacher { account: "a2ada".into(), daemon: false };
+    let dir = crate::api::directory(State(app.clone()), reacher).await.unwrap().0;
+    let offer = &dir["offers"][0];
+    assert_eq!(offer["name"], "geek");
+    assert!(offer["conv"].as_str().unwrap().starts_with("calc tests x"));
+}

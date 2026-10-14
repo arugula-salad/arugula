@@ -65,6 +65,7 @@ import {
   type ConvLinkRequest,
   type ConvLinkStatus,
   type ConvUnlinkRequest,
+  type ConvActRequest,
 } from "./proto";
 import { decompress } from "fzstd";
 import { SCROLLBACK, TerminalView } from "./terminal-view";
@@ -689,6 +690,12 @@ export class Client {
     return this.convCall(
       this.request(OPS["conv.grant_revoke"].method, opPath("conv.grant_revoke", { id: pane }), { device, conv } satisfies ConvGrantRevokeRequest),
     );
+  }
+
+  /** Answer a link's card (#857), by its ask's id: it goes to the link's
+   *  machine, and the conversation records who answered. */
+  convAct(id: string, req: ConvActRequest): Promise<unknown> {
+    return this.convCall(this.request(OPS["conv.act"].method, opPath("conv.act", { id }), req));
   }
 
   /** Link a pane its machine granted this conversation (kept here). */

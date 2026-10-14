@@ -20,13 +20,13 @@ use arugula_proto::{
         RunResponse, SecretFinding, SendRequest, WaitRequest, WaitResult,
     },
     op::ops::{
-        AdapterInstall, AdaptersList, AgentsGet, AgentsRefresh, ClosePane, ConvCreate, ConvDelete, ConvGrantMake,
-        ConvGrantRevoke, ConvGrantsList, ConvLinkAdd, ConvLinkClose, ConvLinksGet, ConvMemberAdd, ConvMemberRemove,
-        ConvRename, ConversationOpen, ConversationsList, FlagSet, FlagsList, FountainAgentsGet, ListPanes,
-        MachineReset, MachinesList, NotifyGet, NotifySet, PaneAsk, PaneAskWithdraw, PaneAttention, PaneDetection,
-        PaneDiffOf, PaneDrivers, PaneFollowUp, PaneInbox, PaneKeys, PaneMouse, PanePermit, PaneProcess, PanePrompt,
-        PaneSend, PaneWait, PushKeyGet, PushSubscribe, PushTest, RuleForget, RulesForgetAll, RulesList, ShellEnvGet,
-        ShellEnvRefresh, ThreadGet, ThreadPost, ThreadRead,
+        AdapterInstall, AdaptersList, AgentsGet, AgentsRefresh, ClosePane, ConvAct, ConvCreate, ConvDelete,
+        ConvGrantMake, ConvGrantRevoke, ConvGrantsList, ConvLinkAdd, ConvLinkClose, ConvLinksGet, ConvMemberAdd,
+        ConvMemberRemove, ConvRename, ConversationOpen, ConversationsList, FlagSet, FlagsList, FountainAgentsGet,
+        ListPanes, MachineReset, MachinesList, NotifyGet, NotifySet, PaneAsk, PaneAskWithdraw, PaneAttention,
+        PaneDetection, PaneDiffOf, PaneDrivers, PaneFollowUp, PaneInbox, PaneKeys, PaneMouse, PanePermit, PaneProcess,
+        PanePrompt, PaneSend, PaneWait, PushKeyGet, PushSubscribe, PushTest, RuleForget, RulesForgetAll, RulesList,
+        ShellEnvGet, ShellEnvRefresh, ThreadGet, ThreadPost, ThreadRead,
     },
 };
 use axum::{
@@ -84,6 +84,7 @@ pub fn routes() -> Router<Arc<App>> {
         .op::<ConvLinkAdd>()
         .op::<ConvLinkClose>()
         .op::<ConvLinksGet>()
+        .op::<ConvAct>()
         .op::<ConvGrantMake>()
         .op::<ConvGrantsList>()
         .op::<ConvGrantRevoke>()
@@ -239,6 +240,7 @@ async fn act(
     State(app): AppState,
     who: Option<axum::Extension<crate::acl::Principal>>,
     dev: Option<axum::Extension<crate::e2e::Caller>>,
+    via: Option<axum::Extension<ConvVia>>,
     headers: HeaderMap,
     Json(req): Json<arugula_proto::api::ActRequest>,
 ) -> Res<Response> {
@@ -247,6 +249,16 @@ async fn act(
     let panes = req.targets();
     if panes.is_empty() {
         return Err(bad("name a pane (pane) or several (panes)"));
+    }
+    // #857: a conversation's home answering its link's card, by the grant
+    // on the pane (e2e.rs let it through for that pane only). That's the
+    // grant's rule, not the account's.
+    if let Some(axum::Extension(via)) = via {
+        let [pane] = panes[..] else { return Err(bad("a conversation answers one pane's card")) };
+        let r = act_for_conv(&app, pane, &req, who, &via).await;
+        let status = if r.is_ok() { StatusCode::OK } else { StatusCode::CONFLICT };
+        let results = vec![ActResult { pane, ok: r.is_ok(), error: r.err() }];
+        return Ok((status, Json(ActResponse { results })).into_response());
     }
     // An agent's invite (#234): the owner's alone, and not an agent's on
     // the owner's CLI (a courtesy, as for `call`).
@@ -438,6 +450,61 @@ const OWN_ACCOUNT_ONLY: &str = "only this machine's own account allows tasks for
 fn foreign(app: &App, dev: &Option<axum::Extension<crate::e2e::Caller>>) -> bool {
     let own = app.control.enrolled().map(|e| e.saved.cert.account.clone());
     dev.as_ref().is_some_and(|d| Some(&d.0.account) != own.as_ref())
+}
+
+/// A conversation's answer to a linked pane's card (#857): set on a request
+/// a grant let through (`e2e.rs`), or made here for a link at home.
+#[derive(Debug, Clone)]
+pub struct ConvVia {
+    /// The conversation, as the grant names it.
+    pub conv_title: String,
+    /// Who in it answered, as its home says.
+    pub member: String,
+}
+
+impl ConvVia {
+    /// Who answered, as the pane's history and its card record it.
+    fn label(&self) -> String {
+        let member = if self.member.is_empty() { "someone" } else { &self.member };
+        if self.conv_title.is_empty() {
+            format!("{member} via a conversation")
+        } else {
+            format!("{member} via conversation \u{201c}{}\u{201d}", self.conv_title)
+        }
+    }
+}
+
+/// What a grant lets a conversation answer: a card on its own pane, with
+/// the grant maker's rights capped at an editor's. So an owner's own cards
+/// (an agent's invites, a task's consent, M79) aren't a conversation's, and
+/// an editor must still be one on the pane now. Recorded as the member, via
+/// the conversation.
+pub(crate) async fn act_for_conv(
+    app: &App,
+    pane: PaneId,
+    req: &arugula_proto::api::ActRequest,
+    who: crate::acl::Principal,
+    via: &ConvVia,
+) -> Result<(), String> {
+    use arugula_proto::Action;
+    if !matches!(req.action, Action::Allow | Action::Deny | Action::Answer) {
+        return Err("a conversation allows, denies or answers a card, nothing else".into());
+    }
+    if req.id.is_none() {
+        return Err("name the ask it answers (id)".into());
+    }
+    if is_invite(app, pane).await || is_agents(app, pane).await {
+        return Err("a conversation answers its link's own asks: this card is the machine owner's".into());
+    }
+    if !who.is_owner() {
+        match app.mux.api(|r| Api::RoleOn(who.clone(), pane, r)).await.flatten() {
+            Some((role, _)) if role >= arugula_core::Role::Editor => {}
+            Some(_) => return Err(format!("whoever linked %{pane} may only watch it now")),
+            None => return Err(format!("no pane %{pane}")),
+        }
+    }
+    let by = Driver { who: who.id().to_owned(), name: via.label() };
+    act_one(app, pane, req, Some(by)).await
 }
 
 /// Whether a block is a Team agents block (M77), which holds task cards.

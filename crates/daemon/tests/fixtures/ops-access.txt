@@ -5,6 +5,7 @@ adapter.install POST /api/agents/adapters/{kind}/install Owner drives=false cred
 adapters.list GET /api/agents/adapters Owner drives=false credential=false
 agents.get GET /api/hosts/self/agents Owner drives=false credential=false
 agents.refresh POST /api/hosts/self/agents/refresh Owner drives=false credential=false
+conv.act POST /api/convs/{id}/act Handler drives=false credential=false
 conv.create POST /api/convs Owner drives=false credential=false
 conv.delete DELETE /api/convs/{id} Handler drives=false credential=false
 conv.grant POST /api/panes/{id}/conv-grants Pane(Editor) drives=true credential=false

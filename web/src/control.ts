@@ -802,6 +802,8 @@ export interface ShareOffer {
   account: string;
   owner_name: string;
   owner_login: string;
+  /** #857: the conversation they were added to, when that's what it is. */
+  conv?: string | null;
 }
 
 export class ControlSession {

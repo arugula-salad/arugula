@@ -55,6 +55,9 @@ pub mod agents;
 pub mod apps;
 #[cfg(feature = "labs")]
 pub mod links;
+// What a conversation's links do, in its timeline, and its cards (#857).
+#[cfg(feature = "labs")]
+pub mod events;
 // Forgejo and GitLab as forges (#457): their adapters, the `tea` logins
 // Forgejo reads with, and the webhooks they send. GitHub is core's. The
 // parts of a forge block that connect to them are `forge/labs_forges.rs`,
@@ -139,6 +142,8 @@ pub fn resume_tasks(app: &Arc<App>) {
     if on(app.control.state_dir(), arugula_proto::flags::AGENTS) {
         agents::tasks::resume(app);
     }
+    // #857: each conversation's links, watched again.
+    events::resume(app);
 }
 
 #[cfg(not(feature = "labs"))]
@@ -514,6 +519,29 @@ pub fn chat() -> Result<(), String> {
     Err(not_built("Chat"))
 }
 
+/// A conversation's link events (#857) in a build without Labs: none.
+#[cfg(not(feature = "labs"))]
+pub mod events {
+    use std::sync::Arc;
+
+    use arugula_proto::{ConvId, ConvLink, api::ConvActRequest};
+
+    use crate::{acl::Principal, server::App};
+
+    pub fn watch(_app: &Arc<App>, _id: ConvId, _l: &ConvLink) {}
+
+    pub fn stop(_id: ConvId, _link: Option<&str>) {}
+
+    pub async fn act(
+        _app: &App,
+        _id: ConvId,
+        _req: ConvActRequest,
+        _who: &Principal,
+    ) -> Result<(), super::links::Refusal> {
+        Err((501, super::not_built("Chat")))
+    }
+}
+
 /// A conversation's links (#856) in a build without Labs: no grants, and
 /// every request says chat isn't in this build.
 #[cfg(not(feature = "labs"))]
@@ -532,9 +560,11 @@ pub mod links {
     /// Never made here: without Labs no request is a linked one.
     #[allow(dead_code)]
     pub enum Linked {
-        Yes(Principal),
+        Yes(Principal, String),
         Revoked,
     }
+
+    pub const BY_HEADER: &str = "Arugula-Conv-By";
 
     fn no<T>() -> Result<T, Refusal> {
         Err((501, super::not_built("Chat")))

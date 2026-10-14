@@ -12,11 +12,11 @@
 use arugula_proto::{
     ConvGrant, ConvId, ConvLinkStatus, Conversation, PaneId,
     api::{
-        ConvCreateRequest, ConvGrantRequest, ConvGrantRevokeRequest, ConvLinkRequest, ConvMemberRemoveRequest,
-        ConvMemberRequest, ConvRenameRequest, ConvUnlinkRequest, Empty,
+        ConvActRequest, ConvCreateRequest, ConvGrantRequest, ConvGrantRevokeRequest, ConvLinkRequest,
+        ConvMemberRemoveRequest, ConvMemberRequest, ConvRenameRequest, ConvUnlinkRequest, Empty,
     },
     op::ops::{
-        ConvCreate, ConvDelete, ConvGrantMake, ConvGrantRevoke, ConvGrantsList, ConvLinkAdd, ConvLinkClose,
+        ConvAct, ConvCreate, ConvDelete, ConvGrantMake, ConvGrantRevoke, ConvGrantsList, ConvLinkAdd, ConvLinkClose,
         ConvLinksGet, ConvMemberAdd, ConvMemberRemove, ConvRename,
     },
 };
@@ -25,7 +25,7 @@ use axum::http::StatusCode;
 use super::{Cx, Handle, OpError, Via};
 use crate::{
     acl::Principal,
-    labs::links,
+    labs::{events, links},
     mux::{Api, ConvReq},
 };
 
@@ -71,6 +71,7 @@ impl Handle for ConvRename {
 impl Handle for ConvDelete {
     async fn handle(cx: &Cx<'_>, id: ConvId, _: Empty) -> Result<Empty, OpError> {
         conv(cx, ConvReq::Delete { id }).await?;
+        events::stop(id, None);
         cx.app.control.poke();
         Ok(Empty {})
     }
@@ -103,13 +104,20 @@ impl Handle for ConvMemberRemove {
 impl Handle for ConvLinkAdd {
     async fn handle(cx: &Cx<'_>, id: ConvId, req: ConvLinkRequest) -> Result<Conversation, OpError> {
         let who = person(cx)?;
-        links::link(cx.app, id, req, &who).await.map_err(refused)
+        let c = links::link(cx.app, id, req, &who).await.map_err(refused)?;
+        // #857: what it does shows up in the conversation.
+        if let Some(l) = c.links.last() {
+            events::watch(cx.app, id, l);
+        }
+        Ok(c)
     }
 }
 
 impl Handle for ConvLinkClose {
     async fn handle(cx: &Cx<'_>, id: ConvId, req: ConvUnlinkRequest) -> Result<Conversation, OpError> {
-        conv(cx, ConvReq::Unlink { id, name: req.name }).await
+        let c = conv(cx, ConvReq::Unlink { id, name: req.name.clone() }).await?;
+        events::stop(id, Some(&req.name));
+        Ok(c)
     }
 }
 
@@ -141,5 +149,13 @@ impl Handle for ConvGrantRevoke {
         // A machine let in only by that grant is shut out again.
         cx.app.control.poke();
         Ok(left)
+    }
+}
+
+impl Handle for ConvAct {
+    async fn handle(cx: &Cx<'_>, id: ConvId, req: ConvActRequest) -> Result<Empty, OpError> {
+        let who = person(cx)?;
+        events::act(cx.app, id, req, &who).await.map_err(refused)?;
+        Ok(Empty {})
     }
 }

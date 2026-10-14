@@ -630,7 +630,8 @@ cards there), so the Team agents block holds them, one at a time. One is
 opened in session `a2a` when none is open, so a card always has a place,
 gets attention and is pushed. Answering it goes through the routes that see
 the channel's caller (`act`, a block's `answer`), and those refuse a device
-of another account. *Allow for an hour* is a grant for that account and
+of another account. (A conversation's grant answers its own pane's asks
+under its own rule, #857, and never these cards.) *Allow for an hour* is a grant for that account and
 agent, kept on disk, listed and revocable. The caller polls rather than
 streams, and a channel request answers within seconds; tasks take minutes.
 Where: `crates/daemon/src/labs/agents/tasks.rs`, `block.rs` (the hub), `delegate.rs`, `crates/daemon/src/api.rs` (`foreign`, `is_agents`).
@@ -692,6 +693,37 @@ an existing pane people work in, driven turn by turn for as long as the
 conversation lasts.
 Where: `crates/daemon/src/labs/links.rs`, `crates/daemon/src/e2e.rs` (`serve_agent_caller`), `crates/daemon/src/control.rs` (`link_callers`, `link_accounts`), `crates/daemon/src/peer.rs`, `crates/mux/src/labs/convs.rs`, `crates/control/src/teams.rs` (`daemon_access`).
 From: [S36](spikes/s36-conversations/README.md) q2 and q4, M82 (#856).
+
+### A conversation hears its links at home, and answers their cards through the pane's machine
+What a linked pane does is posted in its conversation by the home (#857):
+one watcher per open link, on the mux's event bus for a pane at home or
+`/api/events?pane=N&type=attention,exit&follow=1` followed over the
+standing channel for one elsewhere (its grant lets that through), started
+again with the daemon. The pane's own attention is the signal, filtered by
+rules S36's run forced: a turn ends only after the pane worked; only an ask
+(`ReasonKind::Ask`) is something to answer, so Claude Code's "waiting for
+your input" a minute later is dropped; the same line twice is one; and a
+turn's lines are coalesced (an ask answered within two seconds, by a
+standing rule say, is counted, and the turn's end says "worked 40s, 3
+approvals"). The turn's summary is its last assistant message, carried in
+its `done` reason: an agent block's own, or the one Claude Code's `Stop`
+hook gives `arugula attention done` (`last_assistant_message`, else the
+transcript's last). Events are typed messages (`ThreadMsg.event`: kind,
+link, ask), so the page shows cards and lines, not text to parse; each card
+is pushed to the conversation's people from the home, which they all reach.
+A card is answered by its ask's id through the pane's machine's own
+`attention/act`, never "whatever it asks now", so a late answer can't land
+on a newer prompt. The home records the member who answered; the pane's
+machine records them "via conversation …" with the grant maker's rights.
+That is the grant's rule, not the account's: a request a grant let through
+may answer its own pane's asks whichever account the home is (M79's
+other-account check guards the machine's own task cards, which stay the
+owner's), capped at an editor's: an agent's invites and task consent are
+refused, and a grant maker who is only an editor must still be one.
+Someone outside the owner's teams added to a conversation gets control's
+share offer, which names the conversation (`AccessList.reasons`).
+Where: `crates/daemon/src/labs/events.rs` (`Rules`, the watchers, `act`), `crates/daemon/src/api.rs` (`ConvVia`, `act_for_conv`), `crates/daemon/src/peer.rs` (`follow`), `crates/mux/src/mux/thread_ops.rs` (`notify_card`), `crates/cli/src/cmd/attention.rs`, `crates/control/src/teams.rs` (`daemon_access`).
+From: [S36](spikes/s36-conversations/README.md) q5 and q8, M83 (#857).
 
 ## Federation and control
 

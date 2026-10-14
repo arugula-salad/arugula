@@ -805,6 +805,28 @@ pub struct ConvUnlinkRequest {
     pub name: String,
 }
 
+/// `POST /api/convs/{id}/act` (#857): answer a link's card from the
+/// conversation, by its ask's id, through the link's machine.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ConvActRequest {
+    /// The link: `L1`, `L2`…
+    pub link: String,
+    /// The ask it answers (`ConvAsk::id`).
+    pub id: String,
+    /// `allow` or `deny` a permission; `answer` or `deny` a question.
+    pub action: crate::Action,
+    /// `deny`: why, for the agent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub message: Option<String>,
+    /// `answer`: the card's fields.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[cfg_attr(feature = "ts", ts(type = "Record<string, unknown>"))]
+    pub content: Option<serde_json::Value>,
+}
+
 /// `POST /api/convs/{id}/members/remove`: take someone out (the owner), or
 /// leave (a member, naming themselves).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1763,6 +1785,7 @@ mod wire {
             landed: vec![],
             to_agent: false,
             agent: false,
+            event: None,
         }
     }
 

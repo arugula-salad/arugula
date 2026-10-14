@@ -42,6 +42,9 @@ impl Daemon {
             Api::Conv(req, who, reply) => {
                 let _ = reply.send(self.conv(req, &who));
             }
+            Api::Convs(reply) => {
+                let _ = reply.send(self.convs_for(&Principal::Owner));
+            }
             Api::CanRead(target, ids, reply) => {
                 // A conversation's people are its members: anyone else
                 // could be added to it.

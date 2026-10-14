@@ -80,7 +80,7 @@ fn change<T>(dir: &Path, f: impl FnOnce(&mut Vec<ConvGrant>) -> Result<T, Refusa
 
 /// This machine as a grant names it: its device id in control, or `here`
 /// when it isn't in one.
-fn me(app: &App) -> String {
+pub(crate) fn me(app: &App) -> String {
     app.control.enrolled().map(|e| e.saved.cert.device.clone()).unwrap_or_else(|| "here".into())
 }
 
@@ -182,10 +182,14 @@ async fn sweep(app: &App) {
 /// keeps.
 pub const CONV_HEADER: &str = "Arugula-Conv";
 
+/// The header a home names who in the conversation answers a card with
+/// (#857), for the pane's history: shown, never trusted for access.
+pub const BY_HEADER: &str = "Arugula-Conv-By";
+
 /// What a home daemon's request for a linked pane comes to.
 pub enum Linked {
-    /// Let through, as this person.
-    Yes(Principal),
+    /// Let through, as this person, for the conversation with this title.
+    Yes(Principal, String),
     /// Its grant was revoked, or its pane went: say so (410).
     Revoked,
 }
@@ -208,7 +212,7 @@ pub async fn linked(
     let all = load(app.control.state_dir());
     let mine: Vec<&ConvGrant> = all.iter().filter(|g| g.device == device && g.pane == pane && g.conv == conv).collect();
     if let Some(g) = mine.iter().find(|g| g.revoked.is_none()) {
-        return Some(Linked::Yes(principal(g)));
+        return Some(Linked::Yes(principal(g), g.conv_title.clone()));
     }
     (!mine.is_empty()).then_some(Linked::Revoked)
 }
@@ -248,7 +252,7 @@ fn linked_pane(method: &str, path: &str, body: &[u8]) -> Option<PaneId> {
 // ---------------------------------------------------------------- home
 
 /// The conversation `id`, if `who` is in it.
-async fn conv(app: &App, id: ConvId, who: &Principal) -> Result<Conversation, Refusal> {
+pub(crate) async fn conv(app: &App, id: ConvId, who: &Principal) -> Result<Conversation, Refusal> {
     app.mux
         .api(|r| Api::Conv(ConvReq::Get { id }, who.clone(), r))
         .await
@@ -257,7 +261,7 @@ async fn conv(app: &App, id: ConvId, who: &Principal) -> Result<Conversation, Re
 }
 
 /// Whether `machine` names this one.
-fn is_here(app: &App, machine: &Option<String>) -> bool {
+pub(crate) fn is_here(app: &App, machine: &Option<String>) -> bool {
     machine.as_ref().is_none_or(|m| m.is_empty() || *m == me(app))
 }
 
@@ -316,7 +320,7 @@ pub async fn link(app: &App, id: ConvId, req: ConvLinkRequest, who: &Principal) 
 }
 
 /// What a refusal's body says.
-fn said(body: &[u8]) -> String {
+pub(crate) fn said(body: &[u8]) -> String {
     serde_json::from_slice::<serde_json::Value>(body)
         .ok()
         .and_then(|v| v["error"].as_str().map(str::to_owned))
@@ -353,6 +357,7 @@ async fn status(app: &App, id: ConvId, l: &ConvLink, machines: &[crate::peer::Ma
     let close = |why: String| async move {
         let req = ConvReq::LinkClosed { id, name: l.name.clone(), why: why.clone() };
         let _ = app.mux.api(|r| Api::Conv(req, Principal::Owner, r)).await;
+        super::events::stop(id, Some(&l.name));
         s(ConvLinkState::Closed, None, Some(why))
     };
     let pane = l.pane;

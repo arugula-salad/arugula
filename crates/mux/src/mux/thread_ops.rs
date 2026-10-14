@@ -125,7 +125,10 @@ impl Daemon {
     }
 
     pub(super) fn thread_post(&mut self, post: ThreadPost) -> Result<Posted, ThreadError> {
-        let ThreadPost { target, who, as_agent, text, quote } = post;
+        let ThreadPost { target, who, as_agent, text, quote, event } = post;
+        if event.is_some() && !matches!(target, ThreadTarget::Conv(_)) {
+            return Err(ThreadError(400, "only a conversation's links post events".into()));
+        }
         let (role, _) = self.thread_role(&who, target).ok_or_else(|| ThreadError(404, "no such thread".into()))?;
         if role < Role::Editor {
             return Err(ThreadError(403, "you're watching this session; you can't post in its threads".into()));
@@ -140,7 +143,8 @@ impl Daemon {
             return Err(ThreadError(403, format!("you can't read %{}", q.pane)));
         }
         let by = as_agent.clone().unwrap_or_else(|| self.driver_of(&who));
-        let tokens = crate::labs::threads::mentions(&text);
+        // An event's line mentions nobody: what it quotes is a pane's.
+        let tokens = if event.is_some() { Vec::new() } else { crate::labs::threads::mentions(&text) };
         // A team's other owner reads every thread, as the owner does.
         let co_owner = |p: &Principal| p.id().strip_prefix("account:").is_some_and(|a| self.config.people.owns_here(a));
         let mentions: Vec<String> = self
@@ -193,6 +197,7 @@ impl Daemon {
             landed,
             to_agent,
             agent: as_agent.is_some(),
+            event,
         };
         let msg = self.threads.post(target, msg).map_err(|e| ThreadError(500, format!("can't save it: {e}")))?;
         // What you post, you've read.
@@ -205,6 +210,7 @@ impl Daemon {
         }
         self.soon();
         self.notify_mentions(target, &msg);
+        self.notify_card(target, &msg);
         Ok((msg, to_agent, unreached))
     }
 
@@ -236,6 +242,26 @@ impl Daemon {
                 .notify
                 .notify(pane, &title, &body, Some(extra.clone()), Some(extra.clone()), &|p| p.id() == id.as_str());
         }
+    }
+}
+
+impl Daemon {
+    /// A link's card (#857) goes to everyone in its conversation, on their
+    /// phones too, from here: they may not reach the link's machine.
+    fn notify_card(&self, target: ThreadTarget, msg: &ThreadMsg) {
+        let (ThreadTarget::Conv(id), Some(e)) = (target, &msg.event) else { return };
+        if e.kind != arugula_proto::ConvEventKind::NeedsInput {
+            return;
+        }
+        let Some(c) = self.threads.conv(id) else { return };
+        let title = format!("{} needs you in {}", e.link, c.title);
+        let body: String = e.ask.as_ref().map(|a| a.input.as_str()).unwrap_or(&msg.text).chars().take(200).collect();
+        let extra = serde_json::json!({ "thread": target.key(), "tag": format!("thread-{}-{}", target.key(), e.link) });
+        let people: Vec<String> =
+            std::iter::once(c.owner.clone()).chain(c.members.iter().map(|m| m.who.clone())).collect();
+        self.config
+            .notify
+            .notify(0, &title, &body, Some(extra.clone()), Some(extra), &|p| people.iter().any(|w| w == p.id()));
     }
 }
 

@@ -212,6 +212,31 @@ machine without it, nobody does.
   one, can close a link from its chip. The home drives a linked pane
   (M84's lead will) through control's relay, and only that pane: its
   prompt, wait, screen, events and card answers.
+- **What links do** (#857). Each link's turns show up in its conversation
+  as they happen, wherever its pane runs:
+  - **Turn ended**, with how long it worked, how many asks were answered
+    on the way ("worked 40s, 3 approvals"), and its last message: an agent
+    block's own, or for Claude Code in a terminal the one its `Stop` hook
+    hands `arugula attention done` (so its hooks need to be on, `arugula
+    hooks install`). Only a turn in which the pane worked counts; prompting
+    a pane isn't one.
+  - **A card** for each permission or question it asks that nothing
+    answers within two seconds (an ask a standing rule answers at once is
+    only counted). It shows the tool and what it wants to run, with
+    *Allow* and *Deny* (a question: *Skip*, or answer it at the pane), and
+    is pushed to everyone in the conversation from its home, on their
+    phones too. Anyone in the conversation may answer, whatever their role
+    on the pane: the answer goes to the pane's own machine, names the ask,
+    and so can't land on a newer one ("it asks something else"). The
+    conversation says who answered; the pane's history says "*name* via
+    conversation “*title*”", with the rights of whoever linked it there, no
+    more than an editor's. A card answered at the pane says so once the
+    pane moves on.
+  - **Exited** when its program ends, and for a linked PR (a forge block),
+    its checks finishing, or its merging or closing.
+  - Claude Code's "waiting for your input", a minute after each turn, posts
+    nothing; the same line twice in a row is one. The home watches each link
+    again when it restarts.
 - **An @ of someone who can't see the thread offers to invite them**. When you, the owner, write "@sam look" and Sam is someone this
   machine knows (shared with elsewhere, or on a roster it checked) but
   can't read that thread, the composer says "Sam can't see this. Invite
@@ -307,7 +332,12 @@ menu, *Session thread* in the session menu, or the bubble on a pane.
   made by someone who may drive the pane: the conversation's home then
   reaches that pane, and nothing else there, with that person's rights on
   it, no more than an editor's. Revoking the grant on the pane cuts the
-  link.
+  link. Its events come to the home over the same channel, and its
+  cards are answered through it.
+- **Someone outside your teams** added to a conversation is asked first,
+  as with a share: the offer they see names the conversation ("Jake added
+  you to *calc tests*"), and accepting lists the machine with only that
+  conversation.
 
 ### Huddles: who joins, where the audio goes
 

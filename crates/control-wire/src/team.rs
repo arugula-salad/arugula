@@ -116,6 +116,24 @@ pub struct AccessList {
     /// of theirs). Routed as `agents` are: for their daemons only.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub links: Vec<String>,
+    /// #857: why an account in `accounts` is let in, when it's by being
+    /// in a conversation there: the offer someone outside the team sees
+    /// names it ("added you to *calc tests*"). An older daemon sends none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reasons: Vec<AccessReason>,
+}
+
+/// Why a daemon lets an account in (#857).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AccessReason {
+    pub account: String,
+    /// The title of the conversation they were added to.
+    pub conv: String,
+}
+
+impl AccessReason {
+    /// The longest title control keeps.
+    pub const MAX_CONV: usize = 100;
 }
 
 /// What a daemon says it understands, comma-separated (older ones send
