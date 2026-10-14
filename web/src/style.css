@@ -7560,12 +7560,16 @@ html.chat-open .huddle-bar {
 .chat-main {
   flex: 1;
   min-width: 0;
+  /* On a phone it's a column's child (no .chat-body): without this, a long
+     timeline grows the page instead of scrolling its list (#859). */
+  min-height: 0;
   display: flex;
 }
 
 .chat-thread {
   flex: 1;
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
 }
@@ -8892,4 +8896,19 @@ html[data-finish="glass"] .prompt-backdrop {
 .conv-card-note {
   font-size: 12px;
   color: var(--dim);
+}
+
+/* #859: a question's options on its card, as beside the pane. */
+.conv-card-form {
+  margin: 6px 0 0;
+  padding: 0;
+  border: none;
+  min-width: 0;
+}
+
+.conv-card .ask {
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
 }

@@ -59,7 +59,8 @@ Prompts:
 A conversation's lead (#858) is prompted with `NAME wrote in the
 conversation "TITLE": MESSAGE` and the context after it. MESSAGE, without
 its @lead, is the prompt; as a script, its steps are separated by " ;; ",
-each `mcp TOOL JSON` (as above) or `say TEXT`, and the turn's one message
+each `mcp TOOL JSON` (as above), `say TEXT`, or `run CMD` (a command that
+asks permission, as "run" does, #859), and the turn's one message
 is their lines (or, once, the script in $FAKE_ACP_DIR/lead-script, so the
 message can read as a person's). A lead woken by a link ("L2 (you prompted it) ended its
 turn") or after a restart ("Arugula restarted…") says "Noted: " and that
@@ -428,6 +429,16 @@ def prompt(mid, p):
                 lines.append("MCP " + json.dumps(mcp_call(s.get("mcp"), tool, json.loads(rest[0]) if rest else {})))
             elif step.startswith("say "):
                 lines.append(step[4:])
+            elif step.startswith("run "):
+                # A tool outside the lead's allow list (#859): it asks.
+                cmd, tid = step[4:], f"tool{n}-{len(lines)}"
+                update(sid, s, {"sessionUpdate": "tool_call", "toolCallId": tid, "title": cmd, "kind": "execute",
+                                "status": "pending", "rawInput": {"command": cmd}})
+                outcome = (ask(sid, tid, cmd) or {}).get("outcome", {})
+                ok = outcome.get("outcome") == "selected" and outcome.get("optionId", "").startswith("allow")
+                update(sid, s, {"sessionUpdate": "tool_call_update", "toolCallId": tid,
+                                "status": "completed" if ok else "failed"})
+                lines.append(f"Ran {cmd}." if ok else f"Not allowed: {cmd}.")
         msg("\n".join(lines))
     elif "(you prompted it)" in first or first.startswith("Arugula restarted"):
         msg("Noted: " + first)

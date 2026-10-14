@@ -225,7 +225,12 @@ machine without it, nobody does.
     only counted). It shows the tool and what it wants to run, with
     *Allow* and *Deny* (a question: *Skip*, or answer it at the pane), and
     is pushed to everyone in the conversation from its home, on their
-    phones too. Anyone in the conversation may answer, whatever their role
+    phones too. A question (Claude's AskUserQuestion) shows its options as
+    the card beside the pane does: one pick or several, an *Other* box (a
+    note on a single pick), *Submit* and *Skip*; the conversation records
+    the answer ("Which runner? → pytest"). A question from an older
+    machine, which doesn't send its options, still offers only *Skip*.
+    Anyone in the conversation may answer, whatever their role
     on the pane: the answer goes to the pane's own machine, names the ask,
     and so can't land on a newer one ("it asks something else"). The
     conversation says who answered; the pane's history says "*name* via
@@ -235,11 +240,14 @@ machine without it, nobody does.
   - **Exited** when its program ends, and for a linked PR (a forge block),
     its checks finishing, or its merging or closing.
   - Claude Code's "waiting for your input", a minute after each turn, posts
-    nothing; the same line twice in a row is one. The home watches each link
+    nothing, nor does a blink of work with nothing to say (under two
+    seconds, no summary, nothing asked: Claude Code starting in a
+    terminal does it); the same line twice in a row is one. The home watches each link
     again when it restarts.
 - **The lead** (#858). Every conversation has one: a Claude Code agent
   block on its home machine, started with it on your default model
-  (Claude Code's `model` setting), in a tab of its own in the
+  (Claude Code's `model` setting, read from the daemon's Claude directory
+  when the lead starts: each turn costs that model's price), in a tab of its own in the
   *conversations* session, so you can watch it work. It acts with the
   conversation owner's rights, and a request to a pane on another machine
   still runs under that link's grant there.
@@ -258,6 +266,12 @@ machine without it, nobody does.
   - **Its replies** are its `post_thread`s, or its turn's last message
     when it doesn't post. A reply to an `@lead` notifies whoever asked, on
     their phone too.
+  - **Its own asks are cards** (#859): a tool outside its allow list (its
+    own Bash, `start_agent`…) or a question of its own shows in the
+    conversation as the lead's card, held two seconds as a link's are,
+    pushed to everyone in it, and answered by anyone in it on the lead's
+    block, by the ask's id. The lead acts with the owner's rights, and
+    everyone in the conversation may drive through it already.
   - **`start_agent`** from it opens a helper beside it, which becomes the
     next link.
   - **What it has seen** (the last message it was shown), whom it owes an

@@ -756,6 +756,28 @@ and the links; the conversation keeps its id and timeline.
 Where: `crates/daemon/src/labs/lead.rs`, `crates/daemon/src/mcp/mod.rs` (`Scope::Lead`), `crates/daemon/src/mcp/tools.rs` (`readable`, `thread_of`), `crates/mux/src/labs/convs.rs` (`lead`), `crates/mux/src/mux/thread_ops.rs` (`notify_reply`).
 From: [S36](spikes/s36-conversations/README.md) q3 and q6, M84 (#858).
 
+### A conversation's cards carry their question, and the lead's own asks are cards too
+A question on a conversation's card is answered there (#859, Jake,
+2026-10-14), not only skipped: the ask's reference (`AskRef.questions`,
+boxed, since a reason rides in every attention event) carries Claude's
+AskUserQuestion `questions` from the pane's machine, whether a terminal's
+hook or an agent block raised it, so a watcher elsewhere has them without
+asking again. The card is the pane's own question card, and the answer
+is its fields, sent as `conv.act` `answer` by the ask's id through the
+pane's machine as a permission is; the conversation records the answer in
+a line. The lead's own asks (a tool outside its allow list, a question of
+its own) are cards in its conversation, link `lead`, by the links' rules
+(held two seconds, so one its allow list answers isn't posted), and anyone
+in the conversation answers them on the lead's block (`act_for_lead`): the
+lead acts with the owner's rights and every member may drive through it
+with `@lead` already, so answering its prompt gives nobody more. The real
+run (M85) added one rule: a turn under two seconds with no summary and
+nothing asked isn't posted, since Claude Code starting in a terminal makes
+one. The lead keeps the user's default model (a per-conversation model
+was the fallback, left for after the live run).
+Where: `crates/daemon/src/labs/events.rs` (`Rules`, `act_on_lead`, `post_lead_card`), `crates/daemon/src/labs/lead.rs` (`watch`), `crates/daemon/src/api.rs` (`act_for_lead`), `crates/mux/src/mux/attention.rs` (`ask_reason`), `web/src/ui/conv-events.tsx`.
+From: M83 (#862) and M84 (#866) "For Jake", M85 (#859).
+
 ## Federation and control
 
 ### Every daemon is a peer; control is the only front door

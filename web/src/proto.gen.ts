@@ -118,7 +118,14 @@ agent: string,
  * A permission's tool (`Bash`, `Edit`…), when it's known (#857: a
  * conversation's card shows it).
  */
-tool?: string, };
+tool?: string, 
+/**
+ * A question's choices (#859): Claude's AskUserQuestion `questions`
+ * (`question`, `header`, `multiSelect`, `options`), so a card away from
+ * the pane (a conversation's) can be answered with them. Boxed: a
+ * reason rides in every attention event.
+ */
+questions?: import("./blocks/ask").Question[], };
 
 export type AskWhat = "approve" | "question";
 
@@ -334,7 +341,13 @@ tool?: string,
 /**
  * What it wants, in a line ("Bash: pytest -q"), or the question.
  */
-input: string, };
+input: string, 
+/**
+ * A question's choices (#859), as [`AskRef::questions`]: the card shows
+ * them, and its answer is their fields (`question_<n>`,
+ * `question_<n>_custom`).
+ */
+questions?: import("./blocks/ask").Question[], };
 
 /**
  * `POST /api/convs` (#855): a new conversation here, owned by whoever
@@ -349,7 +362,7 @@ export type ConvCreateRequest = { title: string, };
  */
 export type ConvEvent = { kind: ConvEventKind, 
 /**
- * The link: `L1`, `L2`…
+ * The link: `L1`, `L2`…, or `lead` for the lead's own asks (#859).
  */
 link: string, 
 /**
@@ -358,6 +371,7 @@ link: string,
 ask?: ConvAsk, 
 /**
  * `turn_ended`: its last message. `pr`: what the forge says.
+ * `answered` a question: the answer, in a line (#859).
  */
 summary?: string, 
 /**

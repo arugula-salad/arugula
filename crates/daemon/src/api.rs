@@ -508,6 +508,30 @@ pub(crate) async fn act_for_conv(
     act_one(app, pane, req, Some(by)).await
 }
 
+/// A conversation's answer to its lead's own card (#859): the lead is its
+/// conversation's, started here with the owner's rights, and anyone in the
+/// conversation may answer what it asks (they may drive through it with
+/// `@lead` already). Allow, deny or answer one ask by its id, on the lead's
+/// block only; recorded as the member, via the conversation.
+#[cfg(feature = "labs")]
+pub(crate) async fn act_for_lead(
+    app: &App,
+    lead: PaneId,
+    req: &arugula_proto::api::ActRequest,
+    who: &crate::acl::Principal,
+    via: &ConvVia,
+) -> Result<(), String> {
+    use arugula_proto::Action;
+    if !matches!(req.action, Action::Allow | Action::Deny | Action::Answer) {
+        return Err("a conversation allows, denies or answers a card, nothing else".into());
+    }
+    if req.id.is_none() {
+        return Err("name the ask it answers (id)".into());
+    }
+    let by = Driver { who: who.id().to_owned(), name: via.label() };
+    act_one(app, lead, req, Some(by)).await
+}
+
 /// Whether a block is a Team agents block (M77), which holds task cards.
 async fn is_agents(app: &App, id: PaneId) -> bool {
     app.mux.api(|r| Api::Block(id, r)).await.flatten().is_some_and(|b| b.kind() == arugula_proto::BlockType::Agents)
