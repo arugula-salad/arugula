@@ -53,6 +53,31 @@ runs:
       run: |
         command -v rustup >/dev/null || curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none --no-modify-path
         "$HOME/.cargo/bin/rustup" toolchain install "$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)" --profile minimal -c rustfmt,clippy
+    # Compiles through sccache (#868), whose cache is shared by every job and
+    # run: home-cloud's ci-cache, rclone's WebDAV at a public name (the pods
+    # reach nothing inside the cluster). rust-cache keeps only external
+    # dependencies; this is what spares the workspace's own crates. Only
+    # when the workflow passes the password (check.yml's env), so other
+    # callers and forks compile as before.
+    - name: sccache
+      if: inputs.rust == 'true' && env.SCCACHE_WEBDAV_PASSWORD != ''
+      uses: taiki-e/install-action@v2
+      with:
+        tool: sccache@0.18.0
+    - name: Compile through sccache
+      if: inputs.rust == 'true' && env.SCCACHE_WEBDAV_PASSWORD != ''
+      shell: bash
+      run: |
+        {
+          echo "RUSTC_WRAPPER=sccache"
+          echo "SCCACHE_WEBDAV_ENDPOINT=https://ci-cache.inevitable.fyi"
+          echo "SCCACHE_WEBDAV_USERNAME=arugula-ci"
+          echo "SCCACHE_WEBDAV_KEY_PREFIX=arugula"
+          # sccache can't cache incremental builds.
+          echo "CARGO_INCREMENTAL=0"
+          # If ci-cache is down, compile without it rather than fail.
+          echo "SCCACHE_IGNORE_SERVER_IO_ERROR=1"
+        } >> "$GITHUB_ENV"
     - name: mise (Zig for libghostty, nextest)
       shell: bash
       run: |
