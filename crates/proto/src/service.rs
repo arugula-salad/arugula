@@ -20,9 +20,12 @@ pub const APP_ID: &str = "io.arugula.desktop";
 pub const APP_LABEL: &str = "io.arugula.desktop.daemon";
 /// The app: `Arugula.app`, or `illogical.app`, which is where an app
 /// from 0.25 or before still is after it updates: Tauri's updater
-/// replaces the bundle in place, keeping its name.
-pub const APP_BUNDLES: [&str; 2] = ["/Applications/Arugula.app", "/Applications/illogical.app"];
-/// Its plist inside the app, which is where it runs the daemon from.
+/// replaces the bundle in place, keeping its name. In /Applications or
+/// ~/Applications: the agent runs the daemon in whichever bundle
+/// registered it (`BundleProgram`, #177).
+pub const APP_BUNDLES: [&str; 2] = ["Arugula.app", "illogical.app"];
+/// Its plist inside the app, and the daemon it runs, for the app in
+/// /Applications.
 pub const APP_PLIST: &str = "/Applications/Arugula.app/Contents/Library/LaunchAgents/io.arugula.desktop.daemon.plist";
 pub const APP_PROGRAM: &str = "/Applications/Arugula.app/Contents/MacOS/arugulad";
 /// The app's identifier before the rename, #505: its settings are
@@ -33,18 +36,21 @@ pub const LABEL: &str = "arugulad";
 pub const UNIT: &str = "arugulad.service";
 
 /// The app's plist and the daemon it carries, in the app that's in
-/// /Applications under either name ([`APP_BUNDLES`]); [`APP_PLIST`] and
-/// [`APP_PROGRAM`] when there is none.
+/// /Applications or ~/Applications under either name ([`APP_BUNDLES`]);
+/// [`APP_PLIST`] and [`APP_PROGRAM`] when there is none.
 pub fn app_paths() -> (PathBuf, PathBuf) {
-    app_paths_in(Path::new("/"))
+    app_paths_in(Path::new("/"), home().as_deref())
 }
 
-fn app_paths_in(root: &Path) -> (PathBuf, PathBuf) {
+fn app_paths_in(root: &Path, home: Option<&Path>) -> (PathBuf, PathBuf) {
     let plist = |b: &Path| b.join(format!("Contents/Library/LaunchAgents/{APP_LABEL}.plist"));
-    let at = |p: &str| root.join(p.trim_start_matches('/'));
-    match APP_BUNDLES.iter().map(|b| at(b)).find(|b| plist(b).is_file()) {
+    let dirs = std::iter::once(root.join("Applications")).chain(home.map(|h| h.join("Applications")));
+    match dirs.flat_map(|d| APP_BUNDLES.map(|b| d.join(b))).find(|b| plist(b).is_file()) {
         Some(bundle) => (plist(&bundle), bundle.join("Contents/MacOS/arugulad")),
-        None => (at(APP_PLIST), at(APP_PROGRAM)),
+        None => {
+            let at = |p: &str| root.join(p.trim_start_matches('/'));
+            (at(APP_PLIST), at(APP_PROGRAM))
+        }
     }
 }
 
@@ -311,33 +317,41 @@ mod tests {
     #[test]
     fn the_agent_is_named_after_the_app() {
         assert_eq!(APP_LABEL, format!("{APP_ID}.daemon"));
-        assert!(APP_PLIST.starts_with(APP_BUNDLES[0]) && APP_PLIST.ends_with(&format!("/{APP_LABEL}.plist")));
-        assert!(APP_PROGRAM.starts_with(APP_BUNDLES[0]));
+        let app = format!("/Applications/{}/", APP_BUNDLES[0]);
+        assert!(APP_PLIST.starts_with(&app) && APP_PLIST.ends_with(&format!("/{APP_LABEL}.plist")));
+        assert!(APP_PROGRAM.starts_with(&app));
     }
 
     /// #505: the app under its new name, or still under its old one after
-    /// an update in place.
+    /// an update in place; in /Applications or ~/Applications (#177).
     #[test]
     fn the_app_is_found_under_either_name() {
         let root = std::env::temp_dir().join(format!("arugula-app-paths-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
+        let home = root.join("Users/me");
+        let paths = || app_paths_in(&root, Some(&home));
         let at = |p: &str| root.join(p.trim_start_matches('/'));
         let put = |p: PathBuf| {
             std::fs::create_dir_all(p.parent().unwrap()).unwrap();
             std::fs::write(p, "").unwrap();
         };
-        assert_eq!(app_paths_in(&root), (at(APP_PLIST), at(APP_PROGRAM)));
+        let plist = |b: &Path| b.join(format!("Contents/Library/LaunchAgents/{APP_LABEL}.plist"));
+        let program = |b: &Path| b.join("Contents/MacOS/arugulad");
+        assert_eq!(paths(), (at(APP_PLIST), at(APP_PROGRAM)));
         // The app from before the rename, not yet updated, isn't this one.
         put(at("/Applications/illogical.app/Contents/Library/LaunchAgents/wtf.widgets.illogical.daemon.plist"));
-        assert_eq!(app_paths_in(&root), (at(APP_PLIST), at(APP_PROGRAM)));
-        // Updated in place: the old bundle, the new app.
-        let old = at(APP_BUNDLES[1]);
-        let plist = old.join(format!("Contents/Library/LaunchAgents/{APP_LABEL}.plist"));
-        put(plist.clone());
-        assert_eq!(app_paths_in(&root), (plist, old.join("Contents/MacOS/arugulad")));
+        assert_eq!(paths(), (at(APP_PLIST), at(APP_PROGRAM)));
+        // In ~/Applications.
+        let mine = home.join("Applications").join(APP_BUNDLES[0]);
+        put(plist(&mine));
+        assert_eq!(paths(), (plist(&mine), program(&mine)));
+        // Updated in place: the old bundle, the new app; /Applications first.
+        let old = at("/Applications").join(APP_BUNDLES[1]);
+        put(plist(&old));
+        assert_eq!(paths(), (plist(&old), program(&old)));
         // Arugula.app comes first.
         put(at(APP_PLIST));
-        assert_eq!(app_paths_in(&root), (at(APP_PLIST), at(APP_PROGRAM)));
+        assert_eq!(paths(), (at(APP_PLIST), at(APP_PROGRAM)));
         let _ = std::fs::remove_dir_all(&root);
     }
 }
