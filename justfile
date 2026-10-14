@@ -398,6 +398,17 @@ journey-map:
 journey-map-doc:
     cd web && node --experimental-strip-types --no-warnings e2e/journey/map.ts --design ../docs
 
+# web/e2e/durations.json from check.yml run RUN's e2e shards (their
+# e2e-timings-N artifacts), for the shards' split (web/scripts/e2e-shard.mjs).
+e2e-durations run:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    d=$(mktemp -d)
+    trap 'rm -rf "$d"' EXIT
+    gh run download {{run}} -R arugula-salad/arugula -p 'e2e-timings-*' -D "$d"
+    cd web && node scripts/e2e-durations.mjs "$d"/*/e2e-timings.json > e2e/durations.json
+    echo "web/e2e/durations.json: $(grep -c '": ' e2e/durations.json) files"
+
 # Only the WebKit specs (`*.webkit.spec.ts`), as the macOS runner runs them.
 e2e-webkit: web e2e-build
     cd web && {{suite_lock}} pnpm exec playwright test --project=webkit

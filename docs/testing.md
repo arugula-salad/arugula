@@ -59,11 +59,12 @@ once (#287); a new push to a branch cancels that branch's run:
     tests with the `labs` feature off (#452);
   - **test**: `just test`, the box's binaries from static;
   - **testnet**: the test stack's ssh and control profiles;
-  - **e2e**: the specs (`E2E_SET=rest`) in six `--shard`s, each with its
-    own test daemon on a free port; **stack**: those on the test stack
+  - **e2e**: the specs (`E2E_SET=rest`) in six shards split by recorded
+    time (`web/scripts/e2e-shard.mjs` from `web/e2e/durations.json`; refresh
+    it with `just e2e-durations RUN` after a main run), each with its own
+    test daemon on a free port; **stack**: those on the test stack
     (`E2E_SET=stack`); **perf**: the specs that time things (`E2E_SET=perf`:
-    the frame rates, `editors.spec.ts`), after the shards, which leave geek
-    too busy to measure them;
+    the frame rates, `editors.spec.ts`), beside the shards;
   - **desktop-xvfb**: `just desktop-xvfb` (`join`, `app`, `stale`)
     in its container. It isn't a required check, and isn't named
     `desktop`, which is Windows' required one.
@@ -108,8 +109,8 @@ its own process and all at once, `ssh.rs` and `reboot.rs` one at a time
 once and reports a test that passes the second time as flaky.
 
 geek needs Docker (the testnet, `ssh.rs` in `just test`, and the
-container `just desktop-xvfb` runs in): without it the run fails. To run one shard's specs locally: `E2E_SET=rest
-pnpm exec playwright test --shard=2/6` in `web/`. `just browsers` installs Playwright's browsers (with their
+container `just desktop-xvfb` runs in): without it the run fails. To run one shard's specs locally, in `web/`:
+`E2E_SET=rest pnpm exec playwright test $(E2E_SET=rest node scripts/e2e-shard.mjs 2 6)`. `just browsers` installs Playwright's browsers (with their
 system libraries on Linux, if sudo needs no password; otherwise run `sudo
 pnpm exec playwright install-deps` in `web/` once). See
 [development.md](development.md) for the runners.

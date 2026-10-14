@@ -160,6 +160,9 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   fullyParallel: false,
   workers: 1,
+  // E2E_TIMINGS: also a JSON report there, which check.yml keeps so
+  // `just e2e-durations` can weigh its shards (scripts/e2e-shard.mjs, #868).
+  ...(process.env.E2E_TIMINGS ? { reporter: [["dot"], ["json", { outputFile: process.env.E2E_TIMINGS }]] as const } : {}),
   use: {
     baseURL: external ?? `http://127.0.0.1:${port}`,
     viewport: { width: 1000, height: 640 },

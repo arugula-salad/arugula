@@ -297,11 +297,30 @@ jobs:
       - run: just bootstrap
       - name: Playwright's browsers
         run: just browsers
+      # Shards by recorded time (web/scripts/e2e-shard.mjs, e2e/durations.json),
+      # not Playwright's --shard by count: six of those ran 155-316 s (#868).
+      # Each keeps its JSON report so `just e2e-durations RUN` can refresh
+      # the times.
       - name: The Playwright specs, shard ${{ matrix.shard }} of 6
-        run: port=$(scripts/free-port) && cd web && E2E_PORT=$port pnpm exec playwright test --shard=${{ matrix.shard }}/6
+        run: |
+          port=$(scripts/free-port)
+          cd web
+          mapfile -t files < <(node scripts/e2e-shard.mjs ${{ matrix.shard }} 6)
+          # No files would run every spec in every shard.
+          [ ${#files[@]} -gt 0 ] || { echo "e2e-shard listed nothing" >&2; exit 1; }
+          E2E_PORT=$port pnpm exec playwright test "${files[@]}"
         env:
           E2E_CHROMIUM: "1"
           E2E_SET: rest
+          E2E_TIMINGS: ${{ runner.temp }}/e2e-timings.json
+      - name: The shard's times
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-timings-${{ matrix.shard }}
+          path: ${{ runner.temp }}/e2e-timings.json
+          retention-days: 30
+          if-no-files-found: ignore
       # A failed spec's screenshot (playwright.config.ts), kept a week.
       - name: Failed specs' screenshots
         if: failure()
@@ -348,12 +367,13 @@ jobs:
         run: just testnet down
 
   # The specs that time things (E2E_SET=perf: the frame rates, editors'
-  # files in under 3 s) wait for the shards: beside six browsers they
-  # measured geek's load. Each job has its own pod now, but the wait stays:
-  # the pods share nodes.
+  # files in under 3 s), beside the shards since #868. They waited for the
+  # shards when six browsers shared geek with them, and the wait put ~3 min
+  # on the end of every run; each job has its own pod now and the nodes
+  # sit at 13-28% CPU (its one recent failure came while it waited, under
+  # four overlapping runs). Not a required check (chant.workspace.json).
   perf:
-    needs: [build, e2e]
-    if: ${{ !cancelled() && needs.build.result == 'success' }}
+    needs: build
     runs-on: arugula-amd64
     steps:
       - uses: actions/checkout@v4
