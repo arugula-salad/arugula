@@ -71,7 +71,39 @@ const hook = {
     ),
   answered: (page: Page, key: string) =>
     page.evaluate((k) => (window as unknown as { __permits: Record<string, Promise<{ action: string }>> }).__permits[k], key),
+  /** `arugula ask` on AskUserQuestion (#859): it waits for the answer,
+   * kept as `window.__permits[key]` too. */
+  ask: (page: Page, host: string, pane: number, key: string, questions: unknown) =>
+    page.evaluate(
+      ([h, p, k, q]) => {
+        const w = window as unknown as { __permits: Record<string, Promise<unknown>> };
+        w.__permits ??= {};
+        w.__permits[k as string] = window.__arugula.fleet
+          .request(h as string, "POST", `/api/panes/${p}/ask`, { questions: q, id: k })
+          .then((r) => r.json());
+      },
+      [host, pane, key, questions] as const,
+    ),
 };
+
+/** Claude's AskUserQuestion input: a single pick and a multi-select. */
+const QUESTIONS = [
+  {
+    question: "Which test runner?",
+    header: "Runner",
+    multiSelect: false,
+    options: [
+      { label: "pytest", description: "What the repo uses" },
+      { label: "unittest", description: "The standard library's" },
+    ],
+  },
+  {
+    question: "Which suites?",
+    header: "Suites",
+    multiSelect: true,
+    options: [{ label: "unit" }, { label: "integration" }, { label: "e2e" }],
+  },
+];
 
 /** The conversation's events, as `link:kind` (each card with its state). */
 async function events(page: Page): Promise<string[]> {
@@ -182,6 +214,47 @@ test("a permission on alices-2 is a card at home; Bob allows it from his phone a
   await hook.state(alice, "alices-2", panes.L2, "needs_input", "Claude is waiting for your input");
   await bob.waitForTimeout(4_000);
   expect(await events(alice)).toEqual(["L2:needs_input", "L2:answered", "L2:turn_ended"]);
+});
+
+test("a question on alices-2 is a card with its options; Bob answers it from his phone (#859)", async () => {
+  test.setTimeout(120_000);
+  await hook.state(alice, "alices-2", panes.L2, "working");
+  await hook.ask(alice, "alices-2", panes.L2, "q1", QUESTIONS);
+  const card = bob.locator('[data-chat] [data-conv-card][data-event-link="L2"][data-card-state="open"]');
+  await expect(card).toBeVisible({ timeout: 30_000 });
+  // Its options, as beside the pane: not only Skip.
+  await expect(card.locator(".ask-question")).toHaveCount(2);
+  await expect(card.locator('[data-question="0"] [role="radio"]')).toHaveText([/pytest/, /unittest/]);
+  await expect(card.locator('[data-question="1"] input[type="checkbox"]')).toHaveCount(3);
+  await expect(card.locator("[data-ask-submit]")).toBeDisabled();
+  await card.locator('[data-question="0"] [role="radio"]', { hasText: "pytest" }).tap();
+  await card.locator('[data-question="1"] .ask-option', { hasText: "unit" }).first().tap();
+  await card.locator('[data-question="1"] .ask-option', { hasText: "e2e" }).tap();
+  await card.locator('[data-question="1"] .ask-other').fill("doctests");
+  await card.locator("[data-ask-submit]").tap();
+  // The hook gets Claude Code's answers, as it does from the pane's card.
+  const got = (await hook.answered(alice, "q1")) as unknown as { action: string; output: { hookSpecificOutput: { updatedInput: { answers: Record<string, string> } } } };
+  expect(got.action).toBe("accept");
+  expect(got.output.hookSpecificOutput.updatedInput.answers).toEqual({
+    "Which test runner?": "pytest",
+    "Which suites?": "unit, e2e, doctests",
+  });
+  const done = bob.locator('[data-chat] [data-conv-card="q1"]');
+  await expect(done).toHaveAttribute("data-card-state", "answered");
+  await expect(done.locator("[data-card-done]")).toContainText("answered by bob: Which suites? → unit, e2e, doctests; Which test runner? → pytest");
+  await expect(bob.locator('[data-chat] [data-conv-event="answered"][data-event-link="L2"] [data-event-answer]').last()).toContainText("Which test runner? → pytest");
+  await hook.state(alice, "alices-2", panes.L2, "done", "Ran pytest on unit and e2e.");
+  await expect(bob.locator('[data-chat] [data-conv-event="turn_ended"][data-event-link="L2"]')).toHaveCount(2, { timeout: 30_000 });
+
+  // A question skipped from the card: the hook hears it declined.
+  await hook.state(alice, "alices-2", panes.L2, "working");
+  await hook.ask(alice, "alices-2", panes.L2, "q2", [QUESTIONS[0]]);
+  const next = bob.locator('[data-chat] [data-conv-card="q2"]');
+  await expect(next).toHaveAttribute("data-card-state", "open", { timeout: 30_000 });
+  await next.locator("[data-ask-decline]").tap();
+  expect(await hook.answered(alice, "q2")).toMatchObject({ action: "decline" });
+  await expect(next.locator("[data-card-done]")).toContainText("skipped by bob");
+  await hook.state(alice, "alices-2", panes.L2, "done", "Skipped.");
 });
 
 test("a teammate's pane: Alice answers its card at home, and bobs records it as hers via the conversation", async () => {

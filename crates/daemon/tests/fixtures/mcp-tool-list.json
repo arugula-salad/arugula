@@ -3406,6 +3406,9 @@
                 "description": "What it wants, in a line (\"Bash: pytest -q\"), or the question.",
                 "type": "string"
               },
+              "questions": {
+                "description": "A question's choices (#859), as [`AskRef::questions`]: the card shows\nthem, and its answer is their fields (`question_<n>`,\n`question_<n>_custom`)."
+              },
               "tool": {
                 "description": "A permission's tool, when known.",
                 "type": [
@@ -3465,7 +3468,7 @@
                 "$ref": "#/$defs/ConvEventKind"
               },
               "link": {
-                "description": "The link: `L1`, `L2`…",
+                "description": "The link: `L1`, `L2`…, or `lead` for the lead's own asks (#859).",
                 "type": "string"
               },
               "ok": {
@@ -3476,7 +3479,7 @@
                 ]
               },
               "summary": {
-                "description": "`turn_ended`: its last message. `pr`: what the forge says.",
+                "description": "`turn_ended`: its last message. `pr`: what the forge says.\n`answered` a question: the answer, in a line (#859).",
                 "type": [
                   "string",
                   "null"
@@ -3832,6 +3835,9 @@
                 "description": "What it wants, in a line (\"Bash: pytest -q\"), or the question.",
                 "type": "string"
               },
+              "questions": {
+                "description": "A question's choices (#859), as [`AskRef::questions`]: the card shows\nthem, and its answer is their fields (`question_<n>`,\n`question_<n>_custom`)."
+              },
               "tool": {
                 "description": "A permission's tool, when known.",
                 "type": [
@@ -3891,7 +3897,7 @@
                 "$ref": "#/$defs/ConvEventKind"
               },
               "link": {
-                "description": "The link: `L1`, `L2`…",
+                "description": "The link: `L1`, `L2`…, or `lead` for the lead's own asks (#859).",
                 "type": "string"
               },
               "ok": {
@@ -3902,7 +3908,7 @@
                 ]
               },
               "summary": {
-                "description": "`turn_ended`: its last message. `pr`: what the forge says.",
+                "description": "`turn_ended`: its last message. `pr`: what the forge says.\n`answered` a question: the answer, in a line (#859).",
                 "type": [
                   "string",
                   "null"
@@ -9001,6 +9007,9 @@
                 "description": "What it wants, in a line (\"Bash: pytest -q\"), or the question.",
                 "type": "string"
               },
+              "questions": {
+                "description": "A question's choices (#859), as [`AskRef::questions`]: the card shows\nthem, and its answer is their fields (`question_<n>`,\n`question_<n>_custom`)."
+              },
               "tool": {
                 "description": "A permission's tool, when known.",
                 "type": [
@@ -9060,7 +9069,7 @@
                 "$ref": "#/$defs/ConvEventKind"
               },
               "link": {
-                "description": "The link: `L1`, `L2`…",
+                "description": "The link: `L1`, `L2`…, or `lead` for the lead's own asks (#859).",
                 "type": "string"
               },
               "ok": {
@@ -9071,7 +9080,7 @@
                 ]
               },
               "summary": {
-                "description": "`turn_ended`: its last message. `pr`: what the forge says.",
+                "description": "`turn_ended`: its last message. `pr`: what the forge says.\n`answered` a question: the answer, in a line (#859).",
                 "type": [
                   "string",
                   "null"
@@ -9427,6 +9436,9 @@
                 "description": "What it wants, in a line (\"Bash: pytest -q\"), or the question.",
                 "type": "string"
               },
+              "questions": {
+                "description": "A question's choices (#859), as [`AskRef::questions`]: the card shows\nthem, and its answer is their fields (`question_<n>`,\n`question_<n>_custom`)."
+              },
               "tool": {
                 "description": "A permission's tool, when known.",
                 "type": [
@@ -9486,7 +9498,7 @@
                 "$ref": "#/$defs/ConvEventKind"
               },
               "link": {
-                "description": "The link: `L1`, `L2`…",
+                "description": "The link: `L1`, `L2`…, or `lead` for the lead's own asks (#859).",
                 "type": "string"
               },
               "ok": {
@@ -9497,7 +9509,7 @@
                 ]
               },
               "summary": {
-                "description": "`turn_ended`: its last message. `pr`: what the forge says.",
+                "description": "`turn_ended`: its last message. `pr`: what the forge says.\n`answered` a question: the answer, in a line (#859).",
                 "type": [
                   "string",
                   "null"
@@ -12767,6 +12779,9 @@
                 "description": "What it wants, in a line (\"Bash: pytest -q\"), or the question.",
                 "type": "string"
               },
+              "questions": {
+                "description": "A question's choices (#859), as [`AskRef::questions`]: the card shows\nthem, and its answer is their fields (`question_<n>`,\n`question_<n>_custom`)."
+              },
               "tool": {
                 "description": "A permission's tool, when known.",
                 "type": [
@@ -12826,7 +12841,7 @@
                 "$ref": "#/$defs/ConvEventKind"
               },
               "link": {
-                "description": "The link: `L1`, `L2`…",
+                "description": "The link: `L1`, `L2`…, or `lead` for the lead's own asks (#859).",
                 "type": "string"
               },
               "ok": {
@@ -12837,7 +12852,7 @@
                 ]
               },
               "summary": {
-                "description": "`turn_ended`: its last message. `pr`: what the forge says.",
+                "description": "`turn_ended`: its last message. `pr`: what the forge says.\n`answered` a question: the answer, in a line (#859).",
                 "type": [
                   "string",
                   "null"

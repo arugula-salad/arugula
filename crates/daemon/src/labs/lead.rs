@@ -88,7 +88,8 @@ Drive a link with Arugula's tools, giving its name as the pane: prompt_agent (pr
 (until idle or needs_input) and read_output (screen: true for what it shows). Never give a link's pane number: a \
 number reaches only your own tab. Prompt every link that should work before waiting on any, so they work at once. \
 When a link asks for a permission or a question, don't answer it: the people answer it in the conversation, where it \
-shows as a card; say what it asks if it matters, and wait. list kind links shows the links and their state. \
+shows as a card; say what it asks if it matters, and wait. Your own permission prompts are cards there too, \
+answered by the people. list kind links shows the links and their state. \
 start_agent opens a helper beside you, which becomes the next link. Answer the people with post_thread, giving no \
 pane or session: it posts in your conversation. If you end your turn without posting, your last message is posted \
 for you. read_thread has the whole conversation. Keep replies short.";
@@ -136,9 +137,10 @@ async fn alive(app: &App, c: &Conversation) -> Option<Arc<dyn crate::block::Bloc
     block(app, c.lead.as_ref()?.block).await
 }
 
-/// Whether a block is in a turn now.
+/// Whether a block is in a turn now: working, or waiting on its own card
+/// (#859), which is still its turn.
 fn working(b: &Arc<dyn crate::block::Block>) -> bool {
-    b.state()["attention"] == "working"
+    matches!(b.state()["attention"].as_str(), Some("working" | "needs_input"))
 }
 
 async fn messages(app: &App, id: ConvId) -> Vec<ThreadMsg> {
@@ -355,12 +357,28 @@ fn last_message(b: &Arc<dyn crate::block::Block>) -> Option<String> {
         .map(str::to_owned)
 }
 
+/// When the block's last turn began: its prompt's going in (ms).
+fn turn_began(b: &Arc<dyn crate::block::Block>) -> u64 {
+    let state = b.state();
+    let entries = state["entries"].as_array().map(Vec::as_slice).unwrap_or_default();
+    entries.iter().rev().find(|e| e["type"] == "user").and_then(|e| e["at_ms"].as_u64()).unwrap_or(0)
+}
+
 /// A turn of the lead's ended: post its last message unless it posted,
 /// then tell it about links that ended meanwhile.
 async fn turn_ended(app: &App, id: ConvId, b: &Arc<dyn crate::block::Block>) {
     let Ok(c) = get(app, id).await else { return };
-    let Some(l) = &c.lead else { return };
-    if l.posted == 0
+    if c.lead.is_none() {
+        return;
+    }
+    // Whether it posted this turn: a reply since the turn's prompt went in.
+    // Not a count kept across turns: a prompt queued behind a turn starts
+    // as that turn ends, and its block may never look idle in between, so
+    // that turn's end isn't seen here (#859).
+    let began = turn_began(b);
+    let msgs = messages(app, id).await;
+    let replied = msgs.iter().any(|m| m.at >= began && m.who == WHO && m.event.is_none());
+    if !replied
         && let Some(text) = last_message(b)
         && let Some(msg) = reply(app, id, text).await
     {
@@ -378,14 +396,38 @@ async fn turn_ended(app: &App, id: ConvId, b: &Arc<dyn crate::block::Block>) {
 /// The runners following each lead's turns, by conversation.
 static WATCHING: LazyLock<Mutex<HashMap<ConvId, tokio::task::AbortHandle>>> = LazyLock::new(Default::default);
 
-/// Follow the lead `lead`'s turns: each one's end is [`turn_ended`].
+/// Follow the lead `lead`'s turns: each one's end is [`turn_ended`]. What
+/// it asks itself (a tool outside its allow list, or a question) is a card
+/// in the conversation (#859), by the links' rules: held for a moment, so
+/// one its allow list or a standing rule answers isn't posted.
 pub fn watch(app: &Arc<App>, id: ConvId, lead: PaneId) {
     let app = app.clone();
     let task = tokio::spawn(async move {
         let mut events = app.mux.events();
         let mut busy = block(&app, lead).await.is_some_and(|b| working(&b));
+        let mut asks = super::events::Rules::new(WHO);
         loop {
-            match events.recv().await {
+            let due = asks.due().map(|at| Duration::from_millis(at.saturating_sub(crate::store::now_ms())));
+            let got = match due {
+                Some(d) => match tokio::time::timeout(d, events.recv()).await {
+                    Ok(got) => got,
+                    Err(_) => {
+                        if let Some(card) = asks.tick(crate::store::now_ms()) {
+                            super::events::post_lead_card(&app, id, card).await;
+                        }
+                        continue;
+                    }
+                },
+                None => events.recv().await,
+            };
+            if let Ok(e) = &got
+                && e.pane == Some(lead)
+                && matches!(e.kind, EventKind::Attention { .. })
+            {
+                // Only its cards: its turn's end is its reply, below.
+                asks.on(&e.kind, crate::store::now_ms());
+            }
+            match got {
                 Ok(e) if e.pane == Some(lead) => match e.kind {
                     EventKind::Attention { state: Attention::Working, .. } => busy = true,
                     EventKind::Attention { state: Attention::Done | Attention::Idle, .. } if busy => {

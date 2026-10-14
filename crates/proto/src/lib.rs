@@ -482,6 +482,14 @@ pub struct AskRef {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub tool: Option<String>,
+    /// A question's choices (#859): Claude's AskUserQuestion `questions`
+    /// (`question`, `header`, `multiSelect`, `options`), so a card away from
+    /// the pane (a conversation's) can be answered with them. Boxed: a
+    /// reason rides in every attention event.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[cfg_attr(feature = "ts", ts(type = "import(\"./blocks/ask\").Question[]"))]
+    pub questions: Option<Box<serde_json::Value>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1623,13 +1631,14 @@ pub struct ConvGrant {
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ConvEvent {
     pub kind: ConvEventKind,
-    /// The link: `L1`, `L2`…
+    /// The link: `L1`, `L2`…, or `lead` for the lead's own asks (#859).
     pub link: String,
     /// `needs_input` and `answered`: what it asks.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub ask: Option<ConvAsk>,
     /// `turn_ended`: its last message. `pr`: what the forge says.
+    /// `answered` a question: the answer, in a line (#859).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub summary: Option<String>,
@@ -1686,6 +1695,13 @@ pub struct ConvAsk {
     pub tool: Option<String>,
     /// What it wants, in a line ("Bash: pytest -q"), or the question.
     pub input: String,
+    /// A question's choices (#859), as [`AskRef::questions`]: the card shows
+    /// them, and its answer is their fields (`question_<n>`,
+    /// `question_<n>_custom`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[cfg_attr(feature = "ts", ts(type = "import(\"./blocks/ask\").Question[]"))]
+    pub questions: Option<serde_json::Value>,
 }
 
 impl Conversation {

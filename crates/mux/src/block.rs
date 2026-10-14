@@ -135,6 +135,9 @@ pub struct Waiting {
     /// Where it works, for the bundle key.
     pub cwd: Option<String>,
     pub at_ms: u64,
+    /// A question's choices (AskUserQuestion's `questions`), for a card
+    /// away from the block (#859).
+    pub questions: Option<serde_json::Value>,
 }
 
 /// Files that hold credentials an agent in a VM needs. They're read when

@@ -2966,6 +2966,7 @@ impl Block for Agent {
                 agent,
                 cwd,
                 at_ms: p.at_ms,
+                questions: None,
             });
         }
         let e = g.open_ask()?;
@@ -2976,6 +2977,7 @@ impl Block for Agent {
             agent,
             cwd,
             at_ms: e.ask.at_ms,
+            questions: e.ask.questions.clone().filter(|_| e.ask.kind == arugula_proto::ask::AskKind::Questions),
         })
     }
 }

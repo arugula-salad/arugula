@@ -66,8 +66,8 @@ async function messages(): Promise<Msg[]> {
   return (r.body as unknown as { messages: Msg[] }).messages;
 }
 
-/** The lead's replies, newest last. */
-const replies = async () => (await messages()).filter((m) => m.who === "lead").map((m) => m.text);
+/** The lead's replies, newest last (not its cards, #859). */
+const replies = async () => (await messages()).filter((m) => m.who === "lead" && !m.event).map((m) => m.text);
 
 type Lead = { block: number; cursor: number; asked?: string[]; awaiting?: string[] };
 type Rec = { id: string; lead?: Lead; links: { name: string; machine?: string; pane: number; title: string }[] };
@@ -163,6 +163,52 @@ test("@lead: it prompts both links and waits, the card is answered in the conver
   expect((await record()).lead?.awaiting ?? []).toEqual([]);
 });
 
+test("a link's question and the lead's own permission are cards, answered in the conversation (#859)", async () => {
+  test.setTimeout(180_000);
+  await openConv();
+  const before = (await replies()).length;
+  const script = [
+    "@lead ask L2 which tests, then lint",
+    `mcp prompt_agent ${JSON.stringify({ pane: "L2", text: "ask two", timeout: 5 })}`,
+    // Outside the lead's allow list: it asks.
+    "run make lint",
+    `mcp wait ${JSON.stringify({ pane: "L2", until: "idle", timeout: 90 })}`,
+    "say both answered",
+  ].join(" ;; ");
+  expect((await say(script)).status).toBe(200);
+
+  // L2 (an agent block on alices-2) asks two questions: their options are
+  // on its card here.
+  const q = alice.locator('[data-chat] [data-conv-card][data-event-link="L2"][data-card-state="open"]');
+  await expect(q).toBeVisible({ timeout: 60_000 });
+  await expect(q.locator(".ask-question")).toHaveCount(2);
+  await q.locator('[data-question="0"] .ask-option', { hasText: "Pear" }).click();
+  await q.locator('[data-question="0"] .ask-other').fill("kiwi");
+  await q.locator('[data-question="1"] [role="radio"]', { hasText: "Dog" }).click();
+  await q.locator("[data-ask-submit]").click();
+
+  // The lead's own ask: a card by the lead, which Alice allows here.
+  const own = alice.locator('[data-chat] [data-conv-card][data-event-link="lead"]');
+  await expect(own).toBeVisible({ timeout: 60_000 });
+  await expect(own).toContainText("make lint");
+  await expect(alice.locator("[data-chat] [data-conv-lead]")).toHaveAttribute("data-lead-state", "waiting");
+  await own.locator("[data-card-allow]").click();
+  await expect(own).toHaveAttribute("data-card-state", "answered", { timeout: 30_000 });
+  // (Alice is alices' owner.)
+  await expect(own.locator("[data-card-done]")).toContainText(/allowed by (alice|owner)/);
+
+  // It ran, waited on L2 (whose answer went to its agent), and reported.
+  await expect.poll(async () => (await replies()).length, { timeout: 90_000 }).toBeGreaterThan(before);
+  const said = (await replies()).at(-1)!;
+  expect(said).toContain("Ran make lint.");
+  expect(said).toContain("both answered");
+  const l2 = String((await on("alices-2", "GET", `/api/panes/${panes.L2}/capture`)).body);
+  expect(l2).toContain("You answered: Which fruits do you like? Pear, kiwi; Which pet do you prefer? Dog");
+  const lines = (await messages()).filter((m) => m.event?.kind === "answered").map((m) => m.text);
+  expect(lines.some((l) => /^\S+ allowed lead: wants to run make lint$/.test(l)), lines.join("\n")).toBe(true);
+  expect(lines.some((l) => / answered L2: Which fruits do you like\? → Pear, kiwi; Which pet do you prefer\? → Dog$/.test(l)), lines.join("\n")).toBe(true);
+});
+
 test("the lead can't reach an unlinked pane, even by number, nor a link but to prompt, wait and read", async () => {
   test.setTimeout(120_000);
   const before = (await replies()).length;
@@ -239,7 +285,8 @@ test("the home daemon restarts while a link the lead prompted waits on its card;
   expect(wake).toContain("allowed L2");
   expect(wake).toContain("turn ended");
   expect(wake).toContain("L2: claude on alices-2");
-  expect((await record()).lead?.awaiting ?? []).toEqual([]);
+  // (The page's copy of the record follows the daemon's pushes.)
+  await expect.poll(async () => (await record()).lead?.awaiting ?? [], { timeout: 15_000 }).toEqual([]);
 });
 
 test("start_agent from the lead opens beside it, as a link", async () => {

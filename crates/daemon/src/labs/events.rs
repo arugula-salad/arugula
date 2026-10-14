@@ -51,6 +51,10 @@ use crate::{
 /// before it's a card here.
 pub const HOLD_MS: u64 = 2_000;
 
+/// A turn shorter than this, with no summary and nothing asked, isn't
+/// posted: Claude Code starting in a terminal does it.
+const BLINK_MS: u64 = 2_000;
+
 /// How long a dropped follow waits before it's taken up again, at first
 /// and at most (doubling while its machine stays away).
 const RETRY: Duration = Duration::from_secs(5);
@@ -153,8 +157,13 @@ impl Rules {
                             self.approvals += 1;
                         }
                         self.since.get_or_insert(now);
-                        let ask =
-                            ConvAsk { id: a.id.clone(), what: a.what, tool: a.tool.clone(), input: r.headline.clone() };
+                        let ask = ConvAsk {
+                            id: a.id.clone(),
+                            what: a.what,
+                            tool: a.tool.clone(),
+                            input: r.headline.clone(),
+                            questions: a.questions.as_deref().cloned(),
+                        };
                         self.held = Some((ask, now + HOLD_MS));
                         None
                     }
@@ -171,6 +180,11 @@ impl Rules {
                             .filter(|r| *state == Attention::Done && r.kind == ReasonKind::Done)
                             .map(|r| r.headline.trim().to_owned())
                             .filter(|s| !says_nothing(s));
+                        // Claude Code starting in a terminal (#859's real
+                        // run): a blink of work with nothing to say.
+                        if e.summary.is_none() && e.approvals == 0 && e.worked_ms < Some(BLINK_MS) {
+                            return None;
+                        }
                         self.last = Some(e.clone());
                         Some(e)
                     }
@@ -231,9 +245,13 @@ pub fn line(e: &ConvEvent, who: &str) -> String {
             let did = match e.action {
                 Some(Action::Allow) => "allowed",
                 Some(Action::Answer) => "answered",
+                _ if e.ask.as_ref().is_some_and(|a| a.what == arugula_proto::AskWhat::Question) => "skipped",
                 _ => "denied",
             };
-            format!("{who} {did} {}: {ask}", e.link)
+            match &e.summary {
+                Some(said) => format!("{who} {did} {}: {said}", e.link),
+                None => format!("{who} {did} {}: {ask}", e.link),
+            }
         }
         ConvEventKind::Exited => match e.code {
             Some(c) => format!("exited ({c})"),
@@ -484,8 +502,71 @@ fn card<'a>(msgs: &'a [ThreadMsg], link: &str, ask: &str) -> Option<&'a ConvAsk>
     })
 }
 
+/// A question card's answer in a line (#859): "Which colour? → Red",
+/// each question's, as Claude Code is given them.
+fn answer_line(ask: &ConvAsk, content: Option<&serde_json::Value>) -> Option<String> {
+    let (qs, content) = (ask.questions.as_ref()?, content?);
+    let (answers, notes) = arugula_proto::ask::answers(qs, content);
+    let parts: Vec<String> = answers
+        .iter()
+        .map(|(q, a)| {
+            let note = notes.get(q).and_then(|n| n["notes"].as_str()).map(|n| format!(" ({n})")).unwrap_or_default();
+            format!("{q} → {}{note}", a.as_str().unwrap_or_default())
+        })
+        .collect();
+    (!parts.is_empty()).then(|| parts.join("; "))
+}
+
+/// Record `who`'s answer to `link`'s card in the conversation.
+async fn answered(
+    app: &App,
+    id: ConvId,
+    link: &str,
+    ask: ConvAsk,
+    req: &ConvActRequest,
+    who: &Principal,
+    member: &str,
+) {
+    let summary = if req.action == Action::Answer { answer_line(&ask, req.content.as_ref()) } else { None };
+    let e = ConvEvent {
+        kind: ConvEventKind::Answered,
+        link: link.to_owned(),
+        ask: Some(ask),
+        summary,
+        worked_ms: None,
+        approvals: 0,
+        action: Some(req.action),
+        code: None,
+        ok: None,
+    };
+    let target = ThreadTarget::Conv(id);
+    let post =
+        ThreadPost { target, who: who.clone(), as_agent: None, text: line(&e, member), quote: None, event: Some(e) };
+    if let Some(Err(e)) = app.mux.api(|r| Api::ThreadPost(post, r)).await {
+        warn!(conv = %id, error = e.1, "answered a card, but can't record it");
+    }
+}
+
+/// The lead's own ask (#859), a tool outside its allow list or a question
+/// of its own, as a card in its conversation: posted by the lead, so the
+/// people answer it there.
+pub async fn post_lead_card(app: &App, id: ConvId, e: ConvEvent) {
+    let post = ThreadPost {
+        target: ThreadTarget::Conv(id),
+        who: Principal::Owner,
+        as_agent: Some(Driver { who: super::lead::WHO.into(), name: super::lead::WHO.into() }),
+        text: line(&e, ""),
+        quote: None,
+        event: Some(e),
+    };
+    if let Some(Err(e)) = app.mux.api(|r| Api::ThreadPost(post, r)).await {
+        warn!(conv = %id, error = e.1, "can't post the lead's card");
+    }
+}
+
 /// `POST /api/convs/{id}/act`: answer link `req.link`'s card, as `who`
-/// (someone in the conversation), through the link's machine.
+/// (someone in the conversation), through the link's machine; or the
+/// lead's own card (`lead`), here.
 pub async fn act(app: &App, id: ConvId, req: ConvActRequest, who: &Principal) -> Result<(), Refusal> {
     let c = links::conv(app, id, who).await?;
     if c.floor(who.id()).is_none() {
@@ -493,6 +574,9 @@ pub async fn act(app: &App, id: ConvId, req: ConvActRequest, who: &Principal) ->
     }
     if !matches!(req.action, Action::Allow | Action::Deny | Action::Answer) {
         return Err((400, "action: allow, deny or answer".into()));
+    }
+    if req.link.eq_ignore_ascii_case(super::lead::WHO) {
+        return act_on_lead(app, &c, req, who).await;
     }
     let l = c
         .links
@@ -560,22 +644,44 @@ pub async fn act(app: &App, id: ConvId, req: ConvActRequest, who: &Principal) ->
         }
     }
     // Recorded here as the member who answered.
-    let e = ConvEvent {
-        kind: ConvEventKind::Answered,
-        link: l.name.clone(),
-        ask: Some(ask),
-        summary: None,
-        worked_ms: None,
-        approvals: 0,
-        action: Some(req.action),
-        code: None,
-        ok: None,
+    answered(app, id, &l.name, ask, &req, who, &member).await;
+    Ok(())
+}
+
+/// The lead's own card (#859), answered by anyone in the conversation: the
+/// lead acts with the owner's rights, and everyone in it may drive through
+/// it already (`@lead`). Done here, on the lead's block, by the ask's id.
+async fn act_on_lead(
+    app: &App,
+    c: &arugula_proto::Conversation,
+    req: ConvActRequest,
+    who: &Principal,
+) -> Result<(), Refusal> {
+    let lead = c.lead.as_ref().ok_or((404, "this conversation has no lead".to_owned()))?;
+    let target = ThreadTarget::Conv(c.id);
+    let msgs = app
+        .mux
+        .api(|r| Api::ThreadGet(target, Principal::Owner, r))
+        .await
+        .ok_or((503, "shutting down".to_owned()))?
+        .map_err(|e| (e.0, e.1))?;
+    let ask =
+        card(&msgs, super::lead::WHO, &req.id).cloned().ok_or((404, format!("the lead has no card {}", req.id)))?;
+    let member = crate::api::who_is(app, who.clone()).await.map(|d| d.name).unwrap_or_else(|| who.id().to_owned());
+    let body = ActRequest {
+        action: req.action,
+        pane: Some(lead.block),
+        panes: Vec::new(),
+        id: Some(req.id.clone()),
+        content: req.content.clone(),
+        option: None,
+        suggestion: None,
+        message: req.message.clone(),
+        text: None,
     };
-    let post =
-        ThreadPost { target, who: who.clone(), as_agent: None, text: line(&e, &member), quote: None, event: Some(e) };
-    if let Some(Err(e)) = app.mux.api(|r| Api::ThreadPost(post, r)).await {
-        warn!(conv = %id, error = e.1, "answered a card, but can't record it");
-    }
+    let via = crate::api::ConvVia { conv_title: c.title.clone(), member: member.clone() };
+    crate::api::act_for_lead(app, lead.block, &body, who, &via).await.map_err(|e| (409, e))?;
+    answered(app, c.id, super::lead::WHO, ask, &req, who, &member).await;
     Ok(())
 }
 
@@ -606,8 +712,13 @@ mod tests {
 
     fn ask(id: &str) -> EventKind {
         let mut r = reason(ReasonKind::Ask, "Bash: pytest -q").unwrap();
-        r.ask =
-            Some(AskRef { id: id.into(), what: AskWhat::Approve, agent: "claude".into(), tool: Some("Bash".into()) });
+        r.ask = Some(AskRef {
+            id: id.into(),
+            what: AskWhat::Approve,
+            agent: "claude".into(),
+            tool: Some("Bash".into()),
+            questions: None,
+        });
         att(Attention::NeedsInput, Some(r))
     }
 
@@ -693,6 +804,20 @@ mod tests {
     }
 
     #[test]
+    fn a_blink_with_nothing_to_say_is_no_turn() {
+        let mut r = Rules::new("L1");
+        // Claude Code starting: working, then idle at once, saying nothing.
+        r.on(&working(), 0);
+        assert_eq!(r.on(&att(Attention::Idle, None), 400), None);
+        // A short turn that says something is one.
+        r.on(&working(), 1_000);
+        assert_eq!(r.on(&done("ok"), 1_500).unwrap().summary.as_deref(), Some("ok"));
+        // So is a long one with nothing to say.
+        r.on(&working(), 2_000);
+        assert_eq!(r.on(&att(Attention::Idle, None), 30_000).unwrap().worked_ms, Some(28_000));
+    }
+
+    #[test]
     fn the_same_line_twice_in_a_row_is_one() {
         let mut r = Rules::new("L1");
         let exit = EventKind::Exit { code: Some(1), machine_gone: false };
@@ -714,11 +839,62 @@ mod tests {
     }
 
     #[test]
+    fn a_question_card_carries_its_choices_and_its_answer_says_what_was_picked() {
+        let qs = serde_json::json!([
+            { "question": "Which colour?", "header": "Colour", "multiSelect": false,
+              "options": [{ "label": "Red" }, { "label": "Blue" }] },
+            { "question": "Which fruits?", "header": "Fruit", "multiSelect": true,
+              "options": [{ "label": "Apple" }, { "label": "Pear" }] },
+        ]);
+        let mut r = Rules::new("L2");
+        r.on(&working(), 0);
+        let mut q = reason(ReasonKind::Ask, "Which colour?").unwrap();
+        q.ask = Some(AskRef {
+            id: "q1".into(),
+            what: AskWhat::Question,
+            agent: "claude".into(),
+            tool: None,
+            questions: Some(Box::new(qs.clone())),
+        });
+        r.on(&att(Attention::NeedsInput, Some(q)), 1_000);
+        let card = r.tick(1_000 + HOLD_MS).unwrap();
+        let ask = card.ask.unwrap();
+        assert_eq!((ask.what, ask.questions.as_ref()), (AskWhat::Question, Some(&qs)));
+        let content = serde_json::json!({ "question_0": "Red", "question_0_custom": "dark",
+            "question_1": ["Apple"], "question_1_custom": "kiwi" });
+        let said = answer_line(&ask, Some(&content)).unwrap();
+        assert_eq!(said, "Which colour? → Red (dark); Which fruits? → Apple, kiwi");
+        let e = ConvEvent {
+            kind: ConvEventKind::Answered,
+            link: "L2".into(),
+            ask: Some(ask.clone()),
+            summary: Some(said),
+            worked_ms: None,
+            approvals: 0,
+            action: Some(Action::Answer),
+            code: None,
+            ok: None,
+        };
+        assert_eq!(line(&e, "bob"), "bob answered L2: Which colour? → Red (dark); Which fruits? → Apple, kiwi");
+        // Skipped: said so, with the question.
+        let skipped = ConvEvent { action: Some(Action::Deny), summary: None, ..e };
+        assert_eq!(line(&skipped, "bob"), "bob skipped L2: Which colour?");
+        // Nothing picked: no line of its own.
+        assert_eq!(answer_line(&ask, Some(&serde_json::json!({}))), None);
+    }
+
+    #[test]
     fn an_answered_card_names_who_and_what() {
         let e = ConvEvent {
             kind: ConvEventKind::Answered,
             link: "L2".into(),
-            ask: Some(ConvAsk { id: "p1".into(), what: AskWhat::Approve, tool: None, input: "Edit: calc.py".into() }),
+            ask: Some(ConvAsk {
+                id: "p1".into(),
+                what: AskWhat::Approve,
+                tool: None,
+                input: "Edit: calc.py".into(),
+                questions: None,
+            }),
             summary: None,
             worked_ms: None,
             approvals: 0,

@@ -167,7 +167,7 @@ function QuestionCard({ ask, questions, actions }: { ask: Ask; questions: Questi
   };
   return (
     <>
-      {questions.length > 1 && <div class="ask-message">{ask.message}</div>}
+      {questions.length > 1 && ask.message && <div class="ask-message">{ask.message}</div>}
       {questions.map((q, n) => (
         <fieldset key={n} class="ask-question" data-question={n}>
           <legend>
