@@ -555,6 +555,14 @@ pub(crate) async fn who_is(app: &App, who: crate::acl::Principal) -> Option<Driv
     app.mux.api(|r| Api::Who(who, r)).await
 }
 
+/// What chat calls someone (#889), as their messages name them: a link's
+/// grant and an answer through a conversation name them so too.
+#[cfg_attr(not(feature = "labs"), allow(dead_code))]
+pub(crate) async fn chat_name(app: &App, who: crate::acl::Principal) -> String {
+    let id = who.id().to_owned();
+    app.mux.api(|r| Api::ChatName(who, r)).await.unwrap_or(id)
+}
+
 /// A block's method, on someone's behalf (M29): an approval or answer is
 /// recorded as theirs, for its card, the pane's history and the audit log.
 async fn block_call(

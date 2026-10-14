@@ -15,6 +15,7 @@
 import { useState } from "preact/hooks";
 import { AskCard, type Ask } from "../blocks/ask";
 import { DiffText } from "./diff-card";
+import { Markup } from "./markup";
 import type { Client } from "../client";
 import type { Action, ConvEvent, ThreadMsg } from "../proto";
 
@@ -70,10 +71,12 @@ export function EventBody({ client, conv, m, index }: { client: Client; conv: st
             <span class="conv-event-dot done" aria-hidden="true" />
             Turn ended{parts.length ? <span class="conv-event-meta"> · {parts.join(", ")}</span> : null}
           </div>
+          {/* The agent's own words, in the chat's small Markdown (#889):
+              Markup makes only Preact nodes, so it stays text. */}
           {e.summary && (
-            <p class="conv-event-summary" data-event-summary>
-              {e.summary}
-            </p>
+            <div class="conv-event-summary" data-event-summary>
+              <Markup text={e.summary} />
+            </div>
           )}
         </div>
       );

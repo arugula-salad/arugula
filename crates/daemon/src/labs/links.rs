@@ -111,7 +111,7 @@ pub async fn grant(app: &App, pane: PaneId, req: ConvGrantRequest, by: &Principa
     let p = panes.into_iter().find(|p| p.info.id == pane).ok_or((404, format!("no pane %{pane}")))?;
     let here = me(app);
     let device = req.device.filter(|d| !d.trim().is_empty()).unwrap_or_else(|| here.clone());
-    let by_name = crate::api::who_is(app, by.clone()).await.map(|d| d.name).unwrap_or_else(|| by.id().to_owned());
+    let by_name = crate::api::chat_name(app, by.clone()).await;
     let g = ConvGrant {
         device: device.clone(),
         device_name: req.device_name.unwrap_or_default(),
@@ -305,7 +305,8 @@ pub async fn link(app: &App, id: ConvId, req: ConvLinkRequest, who: &Principal) 
         machine,
         machine_name,
         pane,
-        epoch: req.epoch.unwrap_or(epoch),
+        // Here, the grant's own; there, as the pane's machine gave it.
+        epoch,
         title: req.title.unwrap_or_default().trim().chars().take(100).collect(),
         by: String::new(),
         by_name: String::new(),

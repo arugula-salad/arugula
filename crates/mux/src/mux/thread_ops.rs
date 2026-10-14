@@ -6,7 +6,7 @@ use super::{ConvReq, Daemon, Posted, SAVE_DEBOUNCE, ThreadError, ThreadPost};
 use crate::{acl::Principal, pane::ToClient, store::now_ms};
 use arugula_core::Role;
 use arugula_proto::{
-    Conversation, ServerMsg, SessionId, ThreadMsg, ThreadSummary, ThreadTarget,
+    Conversation, Driver, ServerMsg, SessionId, ThreadMsg, ThreadSummary, ThreadTarget,
     api::{Unreached, UnreachedWhy},
 };
 use tokio::time::Instant;
@@ -142,7 +142,7 @@ impl Daemon {
         {
             return Err(ThreadError(403, format!("you can't read %{}", q.pane)));
         }
-        let by = as_agent.clone().unwrap_or_else(|| self.driver_of(&who));
+        let by = as_agent.clone().unwrap_or_else(|| Driver { who: who.id().to_owned(), name: self.chat_name_of(&who) });
         // An event's line mentions nobody: what it quotes is a pane's.
         let tokens = if event.is_some() { Vec::new() } else { crate::labs::threads::mentions(&text) };
         // A team's other owner reads every thread, as the owner does.
@@ -153,7 +153,7 @@ impl Daemon {
             .filter(|p| p.id() != by.who)
             .filter(|p| self.thread_role(p, target).is_some() || (co_owner(p) && self.thread_exists(target)))
             .filter(|p| {
-                let name = self.name_of(p);
+                let name = self.chat_name_of(p);
                 tokens.iter().any(|t| crate::labs::threads::names(t, p.id(), &name))
             })
             .map(|p| p.id().to_owned())
@@ -175,11 +175,11 @@ impl Daemon {
             _ => crate::labs::threads::calls_agent(std::slice::from_ref(t)),
         };
         // Which tokens went anywhere; the rest are the poster's to hear about.
-        let me = self.name_of(&who);
+        let me = self.chat_name_of(&who);
         let (mut landed, mut unreached) = (Vec::new(), Vec::new());
         for t in &tokens {
             let person = self.mentionable().into_iter().any(|p| {
-                mentions.iter().any(|m| m == p.id()) && crate::labs::threads::names(t, p.id(), &self.name_of(&p))
+                mentions.iter().any(|m| m == p.id()) && crate::labs::threads::names(t, p.id(), &self.chat_name_of(&p))
             });
             if person || (to_agent && reaches_agent(t)) {
                 landed.push(t.clone());
@@ -311,7 +311,7 @@ impl Daemon {
                 if !who.is_owner() {
                     return Err(ThreadError(403, "only this machine's owner makes conversations on it".into()));
                 }
-                (convs::create(&by, &self.name_of(who), &title, now_ms()).map_err(err)?, None)
+                (convs::create(&by, &self.chat_name_of(who), &title, now_ms()).map_err(err)?, None)
             }
             ConvReq::Delete { id } => {
                 let c = get(self, id)?;
@@ -332,7 +332,7 @@ impl Daemon {
                 // Someone who reaches this machine already, or (#856) an
                 // account that being a member lets in, with its root.
                 let (who, name, root) = match self.member_named(&member) {
-                    Ok(p) => (p.id().to_owned(), self.name_of(&p), None),
+                    Ok(p) => (p.id().to_owned(), self.chat_name_of(&p), None),
                     Err(e) => match reach {
                         Some((name, root)) if member.starts_with("account:") && !root.is_empty() => {
                             let name = if name.trim().is_empty() { member.clone() } else { name };
@@ -345,7 +345,7 @@ impl Daemon {
             }
             ConvReq::RemoveMember { id, member } => (get(self, id)?, Some(Change::Remove(member))),
             ConvReq::Link { id, mut link } => {
-                link.by_name = self.name_of(who);
+                link.by_name = self.chat_name_of(who);
                 link.at = now_ms();
                 (get(self, id)?, Some(Change::Link(link)))
             }
@@ -411,7 +411,7 @@ impl Daemon {
             return Ok(p.clone());
         }
         let named: Vec<&Principal> =
-            people.iter().filter(|p| crate::labs::threads::names(&token, p.id(), &self.name_of(p))).collect();
+            people.iter().filter(|p| crate::labs::threads::names(&token, p.id(), &self.chat_name_of(p))).collect();
         match named.as_slice() {
             [p] => Ok((*p).clone()),
             [] => Err((

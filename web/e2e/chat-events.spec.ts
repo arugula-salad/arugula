@@ -212,10 +212,14 @@ test("a permission on alices-2 is a card at home; Bob allows it from his phone a
 
   // Its turn ends, with its last message and the approval.
   await hook.state(alice, "alices-2", panes.L2, "working");
-  await hook.state(alice, "alices-2", panes.L2, "done", "Fixed mean(): it divided by len - 1. 4 passed.");
+  // Claude writes Markdown, and an HTML tag stays text (#889).
+  await hook.state(alice, "alices-2", panes.L2, "done", "**Summary:** fixed `mean()` in calc.py: it divided by len - 1. <b>4</b> passed.");
   const ended = bob.locator('[data-chat] [data-conv-event="turn_ended"][data-event-link="L2"]');
   await expect(ended).toBeVisible({ timeout: 30_000 });
-  await expect(ended.locator("[data-event-summary]")).toHaveText("Fixed mean(): it divided by len - 1. 4 passed.");
+  const summary = ended.locator("[data-event-summary]");
+  await expect(summary).toHaveText("Summary: fixed mean() in calc.py: it divided by len - 1. <b>4</b> passed.");
+  await expect(summary.locator("b")).toHaveText("Summary:");
+  await expect(summary.locator("code")).toHaveText("mean()");
   await expect(ended).toContainText("1 approval");
   expect(await events(alice)).toEqual(["L2:needs_input", "L2:answered", "L2:turn_ended"]);
 

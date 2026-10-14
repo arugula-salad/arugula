@@ -73,6 +73,7 @@ import { makeBlockView, type BlockView } from "./blocks";
 import { E2ESocket, type DaemonClock, type DaemonRef } from "./e2e/channel.ts";
 import type { DeviceKeys } from "./e2e/keys.ts";
 import { pick, upload } from "./upload";
+import { JsonText, exactField, withExact } from "./exact";
 
 /** Ack about this often (bytes drawn); the daemon allows 512 KB. */
 const ACK_EVERY = 64 * 1024;
@@ -398,7 +399,7 @@ export class Client {
         ? {}
         : body instanceof Uint8Array
           ? { headers: { "Content-Type": "application/octet-stream" }, body: body as BodyInit }
-          : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
+          : { headers: { "Content-Type": "application/json" }, body: body instanceof JsonText ? body.text : JSON.stringify(body) }),
     });
     return { ok: res.ok, status: res.status, json: <T,>() => res.json() as Promise<T>, text: () => res.text() };
   }
@@ -639,13 +640,17 @@ export class Client {
   }
 
   private async convCall<T>(res: Promise<ApiResponse>): Promise<T> {
+    return (await this.convOk(res)).json<T>();
+  }
+
+  private async convOk(res: Promise<ApiResponse>): Promise<ApiResponse> {
     const r = await res;
     if (!r.ok) {
       const why = (await r.json<{ error?: string }>().catch(() => ({ error: undefined }))).error ?? `HTTP ${r.status}`;
       // Its status too: a card's answer refused with 409 means its ask is gone (#887).
       throw Object.assign(new Error(why), { status: r.status });
     }
-    return r.json<T>();
+    return r;
   }
 
   createConv(title: string): Promise<Conversation> {
@@ -680,8 +685,12 @@ export class Client {
   /** Let a conversation's home drive `pane` here, with this person's
    *  rights on it. `device`: the home's control device id, null when the
    *  home is this machine. */
-  grantConv(pane: PaneId, req: ConvGrantRequest): Promise<ConvGrant> {
-    return this.convCall(this.request(OPS["conv.grant"].method, opPath("conv.grant", { id: pane }), req));
+  async grantConv(pane: PaneId, req: ConvGrantRequest): Promise<ConvGrant & { epoch_exact: string }> {
+    const r = await this.convOk(this.request(OPS["conv.grant"].method, opPath("conv.grant", { id: pane }), req));
+    // Its epoch's digits as the daemon wrote them (#889): `epoch` is rounded.
+    const text = r.text ? await r.text() : JSON.stringify(await r.json());
+    const g = JSON.parse(text) as ConvGrant;
+    return { ...g, epoch_exact: exactField(text, "epoch") ?? String(g.epoch) };
   }
 
   /** The conversations `pane` is linked to, by their grants here. */
@@ -703,8 +712,10 @@ export class Client {
   }
 
   /** Link a pane its machine granted this conversation (kept here). */
-  linkConv(id: string, req: ConvLinkRequest): Promise<Conversation> {
-    return this.convCall(this.request(OPS["conv.link"].method, opPath("conv.link", { id }), req));
+  linkConv(id: string, req: ConvLinkRequest, epochExact?: string): Promise<Conversation> {
+    // The grant's epoch, exactly (#889), still a JSON number.
+    const body = epochExact ? withExact(req, "epoch", epochExact) : req;
+    return this.convCall(this.request(OPS["conv.link"].method, opPath("conv.link", { id }), body));
   }
 
   /** Start the conversation's lead (#858), or a new one in place of a

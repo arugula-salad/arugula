@@ -2644,6 +2644,16 @@ impl crate::mux::People for Control {
     fn sandbox_done(self: Arc<Self>) {
         Control::sandbox_done(&self)
     }
+
+    /// One person's machine: its account's login, as `e2e.rs` names its
+    /// owner through control. A team's machine has several owners, so not.
+    fn owner_login(&self) -> Option<String> {
+        if Control::is_team(self) {
+            return None;
+        }
+        let e = self.enrolled()?;
+        self.name_of_account(&e.saved.cert.account)
+    }
 }
 
 #[cfg(test)]

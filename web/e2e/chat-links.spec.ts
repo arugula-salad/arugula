@@ -104,16 +104,34 @@ test("a pane on another machine of hers, granted there, is linked; one she didn'
   expect(homeId && otherId).toBeTruthy();
   await show(alice, "alices-2");
   const granted = await firstPane(alice);
-  const g = await call(alice, "POST", `/api/panes/${granted}/conv-grants`, { device: homeId, device_name: "alices", conv, conv_title: "calc tests" });
-  expect(g.status, JSON.stringify(g.body)).toBe(200);
+  // As *Add to conversation…* does it, through the client: the grant's
+  // epoch (nanoseconds, above 2^53) is read exactly, as the daemon wrote
+  // it (#889), not as JSON.parse rounds it.
+  const g = await alice.evaluate(
+    async ([p, h, c]) => {
+      const client = window.__arugula.client;
+      const grant = await client.grantConv(p as number, { device: h as string, device_name: "alices", conv: c as string, conv_title: "calc tests" });
+      const raw = await (await client.request("GET", `/api/panes/${p}/conv-grants`)).text!();
+      return { exact: grant.epoch_exact, epoch: grant.epoch, raw };
+    },
+    [granted, homeId, conv] as const,
+  );
+  expect(g.exact).toMatch(/^\d+$/);
+  expect(g.raw).toContain(`"epoch":${g.exact}`);
+  expect(Number(g.exact)).toBe(g.epoch);
   const run = await call(alice, "POST", "/api/run", { command: "sleep 600" });
   expect(run.status, JSON.stringify(run.body)).toBe(200);
   const unlinked = (run.body as { pane: number }).pane;
   expect(unlinked).not.toBe(granted);
 
   await show(alice, "alices");
-  const linked = await call(alice, "POST", `/api/convs/${conv}/links`, { machine: otherId, pane: granted, epoch: (g.body as { epoch: number }).epoch, title: "shell" });
-  expect(linked.status, JSON.stringify(linked.body)).toBe(200);
+  // Linked with the exact digits, still a JSON number to the home.
+  const linked = await alice.evaluate(
+    async ([c, m, p, e, x]) =>
+      (await window.__arugula.client.linkConv(c as string, { machine: m as string, pane: p as number, epoch: e as number, title: "shell" }, x as string)).links.length,
+    [conv, otherId, granted, g.epoch, g.exact] as const,
+  );
+  expect(linked).toBe(2);
   // The same machine, a pane nobody granted: the relay refuses the home.
   const refused = await call(alice, "POST", `/api/convs/${conv}/links`, { machine: otherId, pane: unlinked, title: "sleep" });
   expect(refused.status, JSON.stringify(refused.body)).toBe(403);
