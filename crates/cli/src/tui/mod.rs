@@ -35,6 +35,7 @@ use ratatui::{
         terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
     },
     layout::Position,
+    backend::Backend,
     prelude::CrosstermBackend,
 };
 
@@ -102,7 +103,10 @@ pub fn run(target: &Target, session: Option<String>) -> anyhow::Result<i32> {
 
     let screen = Screen::enter()?;
     let mut term = Terminal::new(CrosstermBackend::new(std::io::stdout()))?;
-    term.clear()?;
+    // The backend's clear, not the Terminal's: since ratatui 0.30 that one
+    // asks the terminal where the cursor is (to put it back), and a terminal
+    // that never answers holds the TUI up, then fails it.
+    term.backend_mut().clear()?;
 
     // Keys, mouse and resizes, read on their own thread.
     let (ev_tx, ev_rx) = mpsc::channel();
