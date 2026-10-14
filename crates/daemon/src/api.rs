@@ -21,12 +21,12 @@ use arugula_proto::{
     },
     op::ops::{
         AdapterInstall, AdaptersList, AgentsGet, AgentsRefresh, ClosePane, ConvAct, ConvCreate, ConvDelete,
-        ConvGrantMake, ConvGrantRevoke, ConvGrantsList, ConvLinkAdd, ConvLinkClose, ConvLinksGet, ConvMemberAdd,
-        ConvMemberRemove, ConvRename, ConversationOpen, ConversationsList, FlagSet, FlagsList, FountainAgentsGet,
-        ListPanes, MachineReset, MachinesList, NotifyGet, NotifySet, PaneAsk, PaneAskWithdraw, PaneAttention,
-        PaneDetection, PaneDiffOf, PaneDrivers, PaneFollowUp, PaneInbox, PaneKeys, PaneMouse, PanePermit, PaneProcess,
-        PanePrompt, PaneSend, PaneWait, PushKeyGet, PushSubscribe, PushTest, RuleForget, RulesForgetAll, RulesList,
-        ShellEnvGet, ShellEnvRefresh, ThreadGet, ThreadPost, ThreadRead,
+        ConvGrantMake, ConvGrantRevoke, ConvGrantsList, ConvLeadStart, ConvLinkAdd, ConvLinkClose, ConvLinksGet,
+        ConvMemberAdd, ConvMemberRemove, ConvRename, ConversationOpen, ConversationsList, FlagSet, FlagsList,
+        FountainAgentsGet, ListPanes, MachineReset, MachinesList, NotifyGet, NotifySet, PaneAsk, PaneAskWithdraw,
+        PaneAttention, PaneDetection, PaneDiffOf, PaneDrivers, PaneFollowUp, PaneInbox, PaneKeys, PaneMouse,
+        PanePermit, PaneProcess, PanePrompt, PaneSend, PaneWait, PushKeyGet, PushSubscribe, PushTest, RuleForget,
+        RulesForgetAll, RulesList, ShellEnvGet, ShellEnvRefresh, ThreadGet, ThreadPost, ThreadRead,
     },
 };
 use axum::{
@@ -85,6 +85,7 @@ pub fn routes() -> Router<Arc<App>> {
         .op::<ConvLinkClose>()
         .op::<ConvLinksGet>()
         .op::<ConvAct>()
+        .op::<ConvLeadStart>()
         .op::<ConvGrantMake>()
         .op::<ConvGrantsList>()
         .op::<ConvGrantRevoke>()

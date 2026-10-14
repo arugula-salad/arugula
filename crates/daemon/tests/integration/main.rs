@@ -34,6 +34,8 @@ mod editors;
 // #347: needs the forge too (Forgejo's block is one of its gates).
 #[cfg(feature = "labs")]
 mod chat_convs;
+#[cfg(feature = "labs")]
+mod chat_lead;
 #[cfg(all(feature = "labs", feature = "forge"))]
 mod flag_gates;
 #[cfg(feature = "labs")]

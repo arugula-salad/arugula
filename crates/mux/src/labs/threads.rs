@@ -266,6 +266,12 @@ pub fn calls_agent(tokens: &[String]) -> bool {
     tokens.iter().any(|t| t == "agent" || t == "claude")
 }
 
+/// Whether a conversation's message's `@`s (from [`mentions`]) call its
+/// lead (#858).
+pub fn calls_lead(tokens: &[String]) -> bool {
+    tokens.iter().any(|t| t == "lead")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

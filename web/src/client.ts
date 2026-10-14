@@ -703,6 +703,12 @@ export class Client {
     return this.convCall(this.request(OPS["conv.link"].method, opPath("conv.link", { id }), req));
   }
 
+  /** Start the conversation's lead (#858), or a new one in place of a
+   *  lost one: the conversation keeps its id and timeline. */
+  startLead(id: string): Promise<Conversation> {
+    return this.convCall(this.request(OPS["conv.lead"].method, opPath("conv.lead", { id })));
+  }
+
   /** Each link's state now, read from its machine. */
   convLinks(id: string): Promise<ConvLinkStatus[]> {
     return this.convCall(this.request(OPS["conv.links"].method, opPath("conv.links", { id })));

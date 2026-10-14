@@ -640,7 +640,7 @@ function ConvThread({ s, all, id, phone, multi, focus }: { s: Source; all: Sourc
             </button>
           )}
         </header>
-        {conv && <LinkChips s={s} conv={conv} go={openLink} />}
+        {conv && <LinkChips s={s} conv={conv} go={openLink} goLead={(block) => goTo(s, { pane: block })} />}
         <ThreadBody
           client={c}
           target={target}

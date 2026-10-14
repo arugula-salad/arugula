@@ -61,7 +61,13 @@ impl Handle for ThreadPost {
         let (who, as_agent, owner) = match &cx.via {
             Via::Http { who, owner, .. } => (who.clone(), None, *owner),
             Via::Mcp(call) => {
-                let by = Driver { who: call.by(), name: format!("{} (agent)", call.client()) };
+                // A conversation's lead (#858) posts in it as the lead.
+                let by = match call.scope().leads() {
+                    Some(c) if target == ThreadTarget::Conv(c) => {
+                        Driver { who: crate::labs::lead::WHO.into(), name: crate::labs::lead::WHO.into() }
+                    }
+                    _ => Driver { who: call.by(), name: format!("{} (agent)", call.client()) },
+                };
                 (Principal::Owner, Some(by), false)
             }
         };
@@ -69,14 +75,24 @@ impl Handle for ThreadPost {
         let (msg, to_agent, mut unreached) =
             cx.app.mux.api(|r| Api::ThreadPost(post, r)).await.ok_or_else(gone)?.map_err(thread_err)?;
         let mut agent = None;
-        if matches!(cx.via, Via::Http { .. })
-            && to_agent
-            && let ThreadTarget::Pane(pane) = target
-        {
-            agent = Some(match tell_agent(cx.app, pane, &msg).await {
+        if matches!(cx.via, Via::Http { .. }) && to_agent {
+            let told = match target {
+                ThreadTarget::Pane(pane) => Some(tell_agent(cx.app, pane, &msg).await),
+                // #858: @lead is the conversation's lead's next prompt.
+                ThreadTarget::Conv(id) => Some(crate::labs::lead::tell(cx.app, id, &msg).await),
+                ThreadTarget::Session(_) => None,
+            };
+            agent = told.map(|t| match t {
                 Ok(now) => ThreadAgent { delivered: Some(now), error: None },
                 Err(e) => ThreadAgent { delivered: None, error: Some(e) },
             });
+        }
+        // A lead's post is its reply: it tells whoever asked.
+        if let Via::Mcp(call) = &cx.via
+            && let (Some(c), ThreadTarget::Conv(t)) = (call.scope().leads(), target)
+            && c == t
+        {
+            crate::labs::lead::posted(cx.app, c, msg.id).await;
         }
         // The owner, who sees every grant and roster already, is offered to
         // invite whom an @ named but who can't read the thread (#297). Nobody

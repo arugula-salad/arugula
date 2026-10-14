@@ -259,9 +259,70 @@ function PaneGrants({ client, pane, close }: { client: Client; pane: PaneId; clo
 
 const STATE_WORD: Record<ConvLinkState, string> = { live: "live", closed: "closed", offline: "offline" };
 
-/** A conversation's links, as chips in its header: each with its state
- * (asked of its home every 10 s while shown). `go` opens a link. */
-export function LinkChips({ s, conv, go }: { s: Source; conv: Conversation; go: (l: ConvLink) => void }) {
+type LeadState = "working" | "waiting" | "idle" | "gone" | "none";
+const LEAD_WORD: Record<LeadState, string> = {
+  working: "working",
+  waiting: "needs you",
+  idle: "idle",
+  gone: "gone: start another",
+  none: "start one",
+};
+
+/** The conversation's lead (#858), first among its chips: what it's doing,
+ * opening its block; or, when it's gone or never started, a button that
+ * starts one (the conversation keeps its id and timeline). */
+function LeadChip({ s, conv, go }: { s: Source; conv: Conversation; go: (block: PaneId) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const block = conv.lead?.block;
+  const info = block === undefined ? undefined : s.client.info(block);
+  const state: LeadState = !conv.lead
+    ? "none"
+    : !info
+      ? "gone"
+      : info.attention === "working"
+        ? "working"
+        : info.attention === "needs_input"
+          ? "waiting"
+          : "idle";
+  const start = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await s.client.startLead(conv.id);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const live = state !== "gone" && state !== "none";
+  return (
+    <span class={`link-chip lead ${state}`} data-conv-lead data-lead-state={state}>
+      {live ? (
+        <button
+          class="link-chip-open"
+          title={`The lead: an agent here that drives the links with the owner's rights. Write @lead to ask it (${LEAD_WORD[state]})`}
+          onClick={() => block !== undefined && go(block)}
+        >
+          <span class="link-chip-dot" aria-hidden="true" />
+          @lead · {LEAD_WORD[state]}
+        </button>
+      ) : (
+        <button class="link-chip-open" title="Start the conversation's lead" data-start-lead disabled={busy} onClick={() => void start()}>
+          <span class="link-chip-dot" aria-hidden="true" />
+          @lead · {busy ? "starting…" : LEAD_WORD[state]}
+        </button>
+      )}
+      {error && <span class="thread-error">{error}</span>}
+    </span>
+  );
+}
+
+/** A conversation's lead and links, as chips in its header: each link with
+ * its state (asked of its home every 10 s while shown). `go` opens a link,
+ * `goLead` the lead's block. */
+export function LinkChips({ s, conv, go, goLead }: { s: Source; conv: Conversation; go: (l: ConvLink) => void; goLead: (block: PaneId) => void }) {
   const [states, setStates] = useState<Map<string, ConvLinkStatus>>(new Map());
   const [error, setError] = useState<string | null>(null);
   const open = conv.links.filter((l) => !l.closed).length;
@@ -280,7 +341,6 @@ export function LinkChips({ s, conv, go }: { s: Source; conv: Conversation; go: 
       clearInterval(t);
     };
   }, [s.host, conv.id, open]);
-  if (!conv.links.length) return null;
   const me = s.client.me();
   const unlink = async (l: ConvLink) => {
     setError(null);
@@ -292,6 +352,7 @@ export function LinkChips({ s, conv, go }: { s: Source; conv: Conversation; go: 
   };
   return (
     <div class="link-chips" data-conv-links>
+      <LeadChip s={s} conv={conv} go={goLead} />
       {conv.links.map((l) => {
         const st = states.get(l.name);
         const state: ConvLinkState = l.closed ? "closed" : (st?.state ?? "live");

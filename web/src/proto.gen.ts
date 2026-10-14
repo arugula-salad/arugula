@@ -448,6 +448,47 @@ export type ConvGrantRevokeRequest = { device: string, conv: ConvId, };
 export type ConvId = string;
 
 /**
+ * A conversation's lead (#858): an agent block on the home machine whose
+ * MCP token reaches the conversation's links by name. `@lead` is its next
+ * prompt; what it has seen, whom it owes an answer and which links it
+ * waits on are kept here, so a restart loses none of it.
+ */
+export type ConvLead = { 
+/**
+ * Its agent block, here.
+ */
+block: number, 
+/**
+ * When it was started (ms since the epoch).
+ */
+at: number, 
+/**
+ * The last timeline message it has been shown: "since your last turn"
+ * is what comes after.
+ */
+cursor: number, 
+/**
+ * Whoever wrote `@lead` and hasn't had its answer yet (principal ids):
+ * its next reply notifies them.
+ */
+asked?: Array<string>, 
+/**
+ * Links it prompted and hasn't seen finish: one that ends its turn
+ * wakes it.
+ */
+awaiting?: Array<string>, 
+/**
+ * Links that ended their turn while it was busy: they wake it once
+ * it's done.
+ */
+woke?: Array<string>, 
+/**
+ * Its replies in the current turn (it posted with `post_thread`), so
+ * its last message isn't posted too.
+ */
+posted?: number, };
+
+/**
  * A pane a conversation links (#856), on its home machine or another. The
  * pane's machine keeps the grant that lets the home drive it
  * ([`ConvGrant`]); this is the home's side.
@@ -599,7 +640,13 @@ created: number,
  * The panes it links (#856), here and on other machines, in the order
  * they were linked. A closed one stays, and its name isn't used again.
  */
-links: Array<ConvLink>, };
+links: Array<ConvLink>, 
+/**
+ * Its lead (#858): the agent block on this machine that drives the
+ * links, with the owner's rights. None until one is started, and kept
+ * (with its block gone) when it's lost, until it's replaced.
+ */
+lead?: ConvLead, };
 
 /**
  * An editor's debug session.
@@ -2321,6 +2368,7 @@ export const OPS = {
   "conv.grant": { method: "POST", path: "/api/panes/{id}/conv-grants" },
   "conv.grant_revoke": { method: "POST", path: "/api/panes/{id}/conv-grants/revoke" },
   "conv.grants": { method: "GET", path: "/api/panes/{id}/conv-grants" },
+  "conv.lead": { method: "POST", path: "/api/convs/{id}/lead" },
   "conv.link": { method: "POST", path: "/api/convs/{id}/links" },
   "conv.links": { method: "GET", path: "/api/convs/{id}/links" },
   "conv.member_add": { method: "POST", path: "/api/convs/{id}/members" },

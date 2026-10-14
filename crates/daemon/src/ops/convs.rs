@@ -16,8 +16,8 @@ use arugula_proto::{
         ConvMemberRemoveRequest, ConvMemberRequest, ConvRenameRequest, ConvUnlinkRequest, Empty,
     },
     op::ops::{
-        ConvAct, ConvCreate, ConvDelete, ConvGrantMake, ConvGrantRevoke, ConvGrantsList, ConvLinkAdd, ConvLinkClose,
-        ConvLinksGet, ConvMemberAdd, ConvMemberRemove, ConvRename,
+        ConvAct, ConvCreate, ConvDelete, ConvGrantMake, ConvGrantRevoke, ConvGrantsList, ConvLeadStart, ConvLinkAdd,
+        ConvLinkClose, ConvLinksGet, ConvMemberAdd, ConvMemberRemove, ConvRename,
     },
 };
 use axum::http::StatusCode;
@@ -25,7 +25,7 @@ use axum::http::StatusCode;
 use super::{Cx, Handle, OpError, Via};
 use crate::{
     acl::Principal,
-    labs::{events, links},
+    labs::{events, lead, links},
     mux::{Api, ConvReq},
 };
 
@@ -58,7 +58,25 @@ async fn conv(cx: &Cx<'_>, req: ConvReq) -> Result<Conversation, OpError> {
 
 impl Handle for ConvCreate {
     async fn handle(cx: &Cx<'_>, _: (), req: ConvCreateRequest) -> Result<Conversation, OpError> {
-        conv(cx, ConvReq::Create { title: req.title }).await
+        let c = conv(cx, ConvReq::Create { title: req.title }).await?;
+        // #858: its lead starts with it. One that can't start (no Claude
+        // Code here) leaves the conversation without one, to start later.
+        match lead::start(cx.app, c.id).await {
+            Ok(c) => Ok(c),
+            Err((_, why)) => {
+                tracing::warn!(conv = %c.id, why, "a new conversation's lead didn't start");
+                Ok(c)
+            }
+        }
+    }
+}
+
+impl Handle for ConvLeadStart {
+    /// Start its lead, or a new one in place of a lost one: for anyone in
+    /// it, as anyone in it may drive through the lead.
+    async fn handle(cx: &Cx<'_>, id: ConvId, _: Empty) -> Result<Conversation, OpError> {
+        conv(cx, ConvReq::Get { id }).await?;
+        lead::start(cx.app, id).await.map_err(refused)
     }
 }
 
@@ -70,8 +88,13 @@ impl Handle for ConvRename {
 
 impl Handle for ConvDelete {
     async fn handle(cx: &Cx<'_>, id: ConvId, _: Empty) -> Result<Empty, OpError> {
-        conv(cx, ConvReq::Delete { id }).await?;
+        let c = conv(cx, ConvReq::Delete { id }).await?;
         events::stop(id, None);
+        // Its lead goes with it.
+        lead::stop(id);
+        if let Some(l) = c.lead {
+            let _ = cx.app.mux.api(|r| Api::Close(l.block, r)).await;
+        }
         cx.app.control.poke();
         Ok(Empty {})
     }

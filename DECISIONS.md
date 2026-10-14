@@ -725,6 +725,37 @@ share offer, which names the conversation (`AccessList.reasons`).
 Where: `crates/daemon/src/labs/events.rs` (`Rules`, the watchers, `act`), `crates/daemon/src/api.rs` (`ConvVia`, `act_for_conv`), `crates/daemon/src/peer.rs` (`follow`), `crates/mux/src/mux/thread_ops.rs` (`notify_card`), `crates/cli/src/cmd/attention.rs`, `crates/control/src/teams.rs` (`daemon_access`).
 From: [S36](spikes/s36-conversations/README.md) q5 and q8, M83 (#857).
 
+### A conversation's lead drives its links by name, with the owner's rights
+Each conversation has one lead (#858, Jake, 2026-10-13): a Claude Code
+agent block on its home machine, started with the conversation on the
+user's default model, in a tab of its own. Its MCP token is
+`Scope::Lead { block, conv }`: a block's (its own tab, what it started),
+plus the conversation's links, addressed by name only (`L1`, `L2`…). A
+pane number from a lead reaches its own tab and nothing else, because a
+link's number is another machine's: S36's first run gave the lead "L2
+(%3 on box-b)" and it drove its own `%3`. On links it has `prompt_agent`,
+`wait` (until idle waits through the link's cards) and `read_output`; a
+link here is its pane for that call alone, one elsewhere is done there
+through the relay under its grant (the grant maker's rights, capped at
+an editor's). Not on links: `agent_respond` (cards are the people's),
+`send_input` and `run` (a step past prompting its agent). Its thread is
+its conversation, and `list` kind `links` is its alone. It acts with the
+owner's rights, so being a member is a drive grant through it (the
+invite says so). `@lead` from anyone in the conversation is its next
+prompt, and the prompt carries everything (who wrote what, the
+conversation since its last turn, the links by name, how to answer):
+the brief is in its system prompt, which a resumed session doesn't get
+again. The record keeps its cursor (the last message it was shown),
+whom it owes an answer and the links it waits on, so a restart loses
+nothing: a link it prompted that ends its turn wakes it, now or when its
+own turn ends. Its replies are its `post_thread`s, or its turn's last
+message when it posts nothing, and a reply notifies whoever asked. A
+helper it starts is a link, by a grant the home makes with the owner's
+rights. A lost lead is replaced by a new block shown the last messages
+and the links; the conversation keeps its id and timeline.
+Where: `crates/daemon/src/labs/lead.rs`, `crates/daemon/src/mcp/mod.rs` (`Scope::Lead`), `crates/daemon/src/mcp/tools.rs` (`readable`, `thread_of`), `crates/mux/src/labs/convs.rs` (`lead`), `crates/mux/src/mux/thread_ops.rs` (`notify_reply`).
+From: [S36](spikes/s36-conversations/README.md) q3 and q6, M84 (#858).
+
 ## Federation and control
 
 ### Every daemon is a peer; control is the only front door

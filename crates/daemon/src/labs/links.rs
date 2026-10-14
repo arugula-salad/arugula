@@ -106,7 +106,9 @@ fn principal(g: &ConvGrant) -> Principal {
 /// `POST /api/panes/{id}/conv-grants`: let `req`'s home drive `pane` for
 /// its conversation, as `by` (whom the route already checked may drive it).
 pub async fn grant(app: &App, pane: PaneId, req: ConvGrantRequest, by: &Principal) -> Result<ConvGrant, Refusal> {
-    let p = app.mux.api(|r| Api::Pane(pane, r)).await.flatten().ok_or((404, format!("no pane %{pane}")))?;
+    // A terminal or a block (an agent's, #858).
+    let panes = app.mux.api(Api::Panes).await.unwrap_or_default();
+    let p = panes.into_iter().find(|p| p.info.id == pane).ok_or((404, format!("no pane %{pane}")))?;
     let here = me(app);
     let device = req.device.filter(|d| !d.trim().is_empty()).unwrap_or_else(|| here.clone());
     let by_name = crate::api::who_is(app, by.clone()).await.map(|d| d.name).unwrap_or_else(|| by.id().to_owned());
@@ -114,7 +116,7 @@ pub async fn grant(app: &App, pane: PaneId, req: ConvGrantRequest, by: &Principa
         device: device.clone(),
         device_name: req.device_name.unwrap_or_default(),
         pane,
-        epoch: p.epoch,
+        epoch: p.info.epoch,
         conv: req.conv,
         conv_title: req.conv_title.unwrap_or_default(),
         by: by.id().to_owned(),
@@ -365,7 +367,7 @@ async fn status(app: &App, id: ConvId, l: &ConvLink, machines: &[crate::peer::Ma
     if is_here(app, &l.machine) {
         let here = me(app);
         if !grants(app, pane).await.iter().any(|g| g.device == here && g.conv == id) {
-            let gone = app.mux.api(|r| Api::Pane(pane, r)).await.flatten().is_none();
+            let gone = !app.mux.api(Api::Panes).await.unwrap_or_default().iter().any(|p| p.info.id == pane);
             return close(if gone { "its pane closed".into() } else { "its grant was revoked".into() }).await;
         }
         // What it's doing now: a wait that doesn't wait.

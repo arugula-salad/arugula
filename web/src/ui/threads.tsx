@@ -284,7 +284,7 @@ export function ThreadBody({
         {msgs?.length === 0 && (
           <p class="thread-empty">
             {"conv" in target ? (
-              "Nothing yet. Everyone in this conversation reads it; write @name to notify one of them."
+              "Nothing yet. Everyone in this conversation reads it; write @name to notify one of them, or @lead to have the lead work in the linked panes."
             ) : (
               <>
                 Nothing yet. {"pane" in target ? "Talk about this pane here" : "Talk about this session here"}; write @agent to reach
@@ -778,7 +778,7 @@ function Message({
             <pre>{m.quote.text}</pre>
           </button>
         )}
-        {m.to_agent && <div class="thread-tag">sent to the pane's agent</div>}
+        {m.to_agent && <div class="thread-tag">{conv ? "sent to the lead" : "sent to the pane's agent"}</div>}
       </div>
       <div class="msg-tools" role="toolbar" aria-label="Message actions">
         {mayPost && (

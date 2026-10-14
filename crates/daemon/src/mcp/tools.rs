@@ -958,6 +958,12 @@ const LIST: &[Kind] = &[
     super::ops::kind::<ListPanes>(),
     super::ops::kind::<ConversationsList>(),
     Kind {
+        name: "links",
+        description: "A conversation's lead only: the conversation's links (L1, L2…), each with what it is, where it is and its state now. Give a link's name as the pane of prompt_agent, wait and read_output.",
+        schema: schema_for_type::<NoArgs>,
+        flag: Some(flags::CHAT),
+    },
+    Kind {
         name: "devices",
         description: "The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.",
         schema: schema_for_type::<NoArgs>,
@@ -982,6 +988,9 @@ const LIST: &[Kind] = &[
         flag: None,
     },
 ];
+
+/// Kinds listed to a conversation's lead alone (#858).
+const LEAD_ONLY: [(&str, &str); 1] = [("list", "links")];
 
 /// The jobs that work but aren't listed without their Labs flag: they're for
 /// setups a stranger doesn't have (Fountain, the studio, chant workspaces).
@@ -1547,6 +1556,15 @@ pub fn list(scope: Scope, on: On) -> Vec<Tool> {
     defs(on)
         .into_iter()
         .filter(|d| scope != Scope::Read || d.read_only)
+        .map(|mut d| {
+            // A lead's links (#858) are its own.
+            if let Args::Kinds { kinds, .. } = &mut d.args
+                && scope.leads().is_none()
+            {
+                kinds.retain(|k| !LEAD_ONLY.contains(&(d.name, k.name)));
+            }
+            d
+        })
         .map(|d| {
             let (description, schema) = match &d.args {
                 Args::One(schema) => (d.description.to_owned(), without_labs(d.name, schema(), on)),
@@ -1711,11 +1729,33 @@ pub struct Call<'a> {
     peer: Peer<RoleServer>,
     progress: Option<ProgressToken>,
     ctx: RequestContext<RoleServer>,
+    /// A conversation's lead (#858) naming a link here: the link and its
+    /// pane, which this call alone may reach.
+    link: std::sync::OnceLock<(String, PaneId)>,
 }
 
 impl<'a> Call<'a> {
     pub fn new(app: &'a Arc<App>, caller: Caller, client: String, ctx: &RequestContext<RoleServer>) -> Self {
-        Self { app, caller, client, peer: ctx.peer.clone(), progress: ctx.meta.get_progress_token(), ctx: ctx.clone() }
+        Self {
+            app,
+            caller,
+            client,
+            peer: ctx.peer.clone(),
+            progress: ctx.meta.get_progress_token(),
+            ctx: ctx.clone(),
+            link: std::sync::OnceLock::new(),
+        }
+    }
+
+    /// This call is on link `name` (#858), pane `pane` here.
+    #[cfg_attr(not(feature = "labs"), allow(dead_code, reason = "a lead's links are Labs'"))]
+    pub(crate) fn set_link(&self, name: &str, pane: PaneId) {
+        let _ = self.link.set((name.to_owned(), pane));
+    }
+
+    /// The pane of the link this call is on, if it's one here.
+    fn link_pane(&self) -> Option<PaneId> {
+        self.link.get().map(|(_, p)| *p)
     }
 
     pub(crate) fn app(&self) -> &'a Arc<App> {
@@ -1746,7 +1786,18 @@ impl<'a> Call<'a> {
         if self.caller.scope == Scope::Read && !def.read_only {
             return fail(format!("this token may only read; {name} changes things (ask for a full token)"));
         }
-        let out = match (name, kind) {
+        // #858: a lead names its links: one here is its pane for this call;
+        // one elsewhere is done there.
+        let lead = self.caller.scope.leads();
+        let args = match lead {
+            Some(conv) => match crate::labs::lead::route(self, conv, name, args).await {
+                Ok(args) => args,
+                Err(Ok(v)) => return CallToolResult::structured(v),
+                Err(Err(e)) => return fail(e),
+            },
+            None => args,
+        };
+        let mut out = match (name, kind) {
             ("run", _) => match parse(args) {
                 Ok(a) => self.run(a).await,
                 Err(e) => Err(e),
@@ -1814,6 +1865,7 @@ impl<'a> Call<'a> {
             ("list", Some("panes")) => super::ops::call::<ListPanes>(self, args).await,
             ("list", Some("conversations")) => super::ops::call::<ConversationsList>(self, args).await,
             ("list", Some("devices")) => self.list_devices(),
+            ("list", Some("links")) => crate::labs::lead::links_now(self).await,
             ("delegate", Some(kind @ ("send" | "get" | "answer" | "cancel" | "review" | "apply"))) => match parse(args)
             {
                 Ok(a) => self.delegate(kind, a).await,
@@ -1909,6 +1961,14 @@ impl<'a> Call<'a> {
             (_, Some(k)) => Err(format!("{name} kind {k} isn't wired up")),
             (_, None) => Err(format!("no tool {name}")),
         };
+        if let (Some(conv), Some((link, pane)), Ok(v)) = (lead, self.link.get(), &mut out) {
+            // Its name, not its number, which reaches nothing from a lead.
+            if let Some(s) = v["summary"].as_str() {
+                v["summary"] = json!(s.replace(&format!("%{pane}"), link));
+            }
+            v["link"] = json!(link);
+            crate::labs::lead::after(self.app, conv, link, name, v).await;
+        }
         match out {
             Ok(v) => CallToolResult::structured(v),
             Err(e) => fail(e),
@@ -2023,10 +2083,7 @@ impl<'a> Call<'a> {
 
     /// The agent block whose token this is: what confines a caller.
     pub(crate) fn me(&self) -> Option<PaneId> {
-        match self.caller.scope {
-            Scope::Block(b) => Some(b),
-            _ => None,
-        }
+        self.caller.scope.block()
     }
 
     /// An agent in a VM of its own (#59) works on that machine: the first
@@ -2045,9 +2102,18 @@ impl<'a> Call<'a> {
         let Some(p) = panes.iter().find(|p| p.info.id == pane).cloned() else {
             return Err(self.gone(pane).await);
         };
+        // A lead's link here, named for this call (#858).
+        if self.link_pane() == Some(pane) {
+            return Ok(p);
+        }
         if let Some(me) = self.me() {
             let tab = panes.iter().find(|p| p.info.id == me).map(|p| p.tab);
             if tab != Some(p.tab) {
+                if self.caller.scope.leads().is_some() {
+                    return Err(format!(
+                        "%{pane} isn't in your tab: a lead reaches its links by name (L1, L2…; list kind links), never by number"
+                    ));
+                }
                 return Err(format!("%{pane} is in another tab: this agent's token reaches its own tab only"));
             }
         }
@@ -2059,6 +2125,7 @@ impl<'a> Call<'a> {
     pub(crate) async fn drivable(&self, pane: PaneId) -> Result<PaneSummary, String> {
         let p = self.readable(pane).await?;
         if let Some(me) = self.me()
+            && self.link_pane() != Some(pane)
             && p.info.started_by.as_ref().and_then(|s| s.block) != Some(me)
         {
             return Err(format!("%{pane} wasn't started by this agent: it may read it, not drive or close it"));
@@ -2109,7 +2176,7 @@ impl<'a> Call<'a> {
 
     /// `fut`, with progress every 15s, for at most `limit`: `None` if it
     /// took longer (or the client gave up).
-    async fn waiting<T>(&self, what: &str, limit: Duration, fut: impl Future<Output = T>) -> Option<T> {
+    pub(crate) async fn waiting<T>(&self, what: &str, limit: Duration, fut: impl Future<Output = T>) -> Option<T> {
         let start = Instant::now();
         let every = progress_every();
         let mut tick = tokio::time::interval_at(start + every, every);
@@ -2128,7 +2195,7 @@ impl<'a> Call<'a> {
         }
     }
 
-    fn limit(timeout: Option<f64>) -> Duration {
+    pub(crate) fn limit(timeout: Option<f64>) -> Duration {
         timeout
             .filter(|t| t.is_finite() && *t >= 0.0)
             .map(Duration::from_secs_f64)
@@ -2643,6 +2710,13 @@ impl<'a> Call<'a> {
         pane: Option<&PaneArg>,
         session: Option<SessionId>,
     ) -> Result<ThreadTarget, String> {
+        // A lead's thread is its conversation (#858), and only that.
+        if let Some(conv) = self.caller.scope.leads() {
+            if pane.is_some() || session.is_some() {
+                return Err("a lead reads and posts in its conversation only: give no pane or session".into());
+            }
+            return Ok(ThreadTarget::Conv(conv));
+        }
         match (pane.map(PaneArg::id).transpose()?, session) {
             (Some(_), Some(_)) => Err("give a pane or a session, not both".into()),
             (Some(p), None) => self.readable(p).await.map(|_| ThreadTarget::Pane(p)),
@@ -3610,6 +3684,17 @@ impl Call<'_> {
             local: false,
         };
         let block = self.open(req).await?;
+        // #858: a lead's helper is one of its links.
+        if let Some(conv) = self.caller.scope.leads() {
+            let title = a.title.clone().filter(|t| !t.trim().is_empty());
+            let name = crate::labs::lead::adopt(self.app, conv, block, title).await.map_err(|e| e.1)?;
+            return done(
+                format!(
+                    "Started an agent in %{block}, linked as {name}: wait on {name} (until needs_input or idle), then read_output for what it said"
+                ),
+                results::BlockOnly { block },
+            );
+        }
         done(
             format!(
                 "Started an agent in %{block}; wait on it (until needs_input or idle), then read_output for its transcript"
@@ -4359,6 +4444,8 @@ mod tests {
         ("delegate", Some("cancel")),
         ("delegate", Some("review")),
         ("delegate", Some("apply")),
+        // A conversation's lead's links (#858).
+        ("list", Some("links")),
     ];
 
     /// About half as many tools (#349), and every old job is still there:
