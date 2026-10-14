@@ -29,7 +29,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
         with:
-          cache-key: static
+          # Not check.yml's static: that builds at opt-level 1 (#868).
+          cache-key: release-static
           packages: gh
       - run: just bootstrap
       - run: scripts/release check-version "$GITHUB_REF_NAME"
