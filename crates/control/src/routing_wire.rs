@@ -2,7 +2,14 @@
 //! daemon's signature covers, joining with a machine's key, which accounts
 //! control routes to a daemon, rosters, and the relay socket's limits.
 
-use std::{net::SocketAddr, sync::Arc, time::Duration};
+use std::{
+    net::SocketAddr,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
+    time::Duration,
+};
 
 use arugula_e2e::{
     Cert, DeviceKeys, Kind, Trust,
@@ -187,7 +194,16 @@ fn join_body(keys: &DeviceKeys, proof: bool) -> Value {
     let ask = Cert { account: String::new(), ..Cert::new(keys, "", Kind::Daemon, "box") };
     let mut b = json!({ "cert": ask, "urls": [], "features": "presigned-invites" });
     if proof {
-        let ms = now_ms();
+        // Each proof gets its own millisecond: signatures are deterministic,
+        // so two asks built in one millisecond (the cert's `created` too)
+        // are the same proof, and control turns the second away as a
+        // replay (#898).
+        static LAST: AtomicU64 = AtomicU64::new(0);
+        let mut ms = 0;
+        let _ = LAST.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |last| {
+            ms = now_ms().max(last + 1);
+            Some(ms)
+        });
         let sig = hex::encode(keys.signature(arugula_e2e::cert::join_proof_body(&ask, ms).as_bytes()));
         b["proof"] = json!({ "ms": ms, "sig": sig });
     }
@@ -416,7 +432,7 @@ async fn a_second_join_from_one_machine_keeps_the_approval() {
     let b2 = join_body(&keys2, true);
     let second: Value =
         c.http.post(format!("{}/api/join", c.base)).json(&b2).send().await.unwrap().json().await.unwrap();
-    let code2 = second["code"].as_str().unwrap().to_owned();
+    let code2 = second["code"].as_str().unwrap_or_else(|| panic!("{second}")).to_owned();
     assert_eq!(poll(&code2, first["poll"].as_str().unwrap()).await.0, 409);
     assert_eq!(poll(&code2, second["poll"].as_str().unwrap()).await.1["approved"], false);
     // Someone with only its certificate can't take a waiting join over.
