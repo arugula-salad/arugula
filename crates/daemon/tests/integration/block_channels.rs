@@ -108,9 +108,19 @@ async fn rig_with(listen: bool, block_domain: Option<&'static str>) -> Rig {
     let daemon = DeviceKeys::load_or_create(&d.state.join("daemon.key")).unwrap();
     let mut cert = Cert::new(&daemon, "a1", Kind::Daemon, "test");
     cert.sign_with(&device);
-    let control = fake_control(vec![root, cert.clone()], block_domain).await;
-    let saved =
-        json!({ "url": control, "trust": { "account": "a1", "root": device.id() }, "cert": cert, "login": "me" });
+    let certs = vec![root, cert.clone()];
+    let control = fake_control(certs.clone(), block_domain).await;
+    // The certificates too, as `join` saves them (#901): "joined" is read
+    // from this file at start, but without them the daemon knows the
+    // device's key only after its first refresh from control, and a
+    // channel opened before that is refused as an unknown device.
+    let saved = json!({
+        "url": control,
+        "trust": { "account": "a1", "root": device.id() },
+        "cert": cert,
+        "certs": certs,
+        "login": "me",
+    });
     std::fs::write(d.state.join("control.json"), saved.to_string()).unwrap();
     d.stop();
     d.start();

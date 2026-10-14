@@ -104,21 +104,31 @@ fn a_daemon_follows_control_to_its_new_url() {
     let both = json!([new_url, old_url]);
     *old.about.lock().unwrap() =
         json!({ "control": true, "daemon_auth": 2, "url": old_url, "primary": new_url, "urls": both });
+    // A kick reaches only a relay socket that's up: between sockets (the
+    // daemon waits a second or more before dialing again) it's lost, so
+    // kick until a refresh comes (#901).
     let asked = *old.trust_asked.lock().unwrap();
-    old.kick.notify_waiters();
-    d.wait_for("a refresh", || *old.trust_asked.lock().unwrap() > asked);
+    d.wait_for("a refresh", || {
+        old.kick.notify_waiters();
+        std::thread::sleep(Duration::from_millis(200));
+        *old.trust_asked.lock().unwrap() > asked
+    });
     std::thread::sleep(Duration::from_millis(500));
     assert_eq!(saved_url(&d.state), old_url, "the new URL must agree");
 
     // Both agree: followed, and it asks the new one from then on.
     *new.about.lock().unwrap() =
         json!({ "control": true, "daemon_auth": 2, "url": new_url, "primary": new_url, "urls": both });
+    // A refresh saves control.json, then tells control who gets in and
+    // asks for push subscriptions, and only then takes the new URL up:
+    // wait for the running daemon's URL, and then the file has it too
+    // (#901).
     d.wait_for("moved to the new URL", || {
         old.kick.notify_waiters();
         std::thread::sleep(Duration::from_millis(200));
-        saved_url(&d.state) == new_url
+        d.get("/api/host")["control_state"]["url"] == new_url.as_str()
     });
-    assert_eq!(d.get("/api/host")["control_state"]["url"], new_url.as_str());
+    assert_eq!(saved_url(&d.state), new_url);
     let before = *new.trust_asked.lock().unwrap();
     d.wait_for("asking the new URL", || {
         old.kick.notify_waiters();
