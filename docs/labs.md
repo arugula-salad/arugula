@@ -236,7 +236,20 @@ machine without it, nobody does.
     conversation says who answered; the pane's history says "*name* via
     conversation “*title*”", with the rights of whoever linked it there, no
     more than an editor's. A card answered at the pane says so once the
-    pane moves on.
+    pane moves on, or once its answer is refused because the ask is gone
+    (it stops offering *Allow*).
+  - **An edit waiting as a diff** (#887). arugulad is Claude Code's IDE,
+    so in a terminal Claude Code's Write or Edit asks its permission, then
+    waits as a diff in the pane, and that ask can't be answered any more.
+    The diff is the card instead: the file, its lines added and removed,
+    the diff itself, and *Accept* or *Reject*, answered through the pane's
+    machine as a permission is ("bob accepted L1: edit calc.py (+3 −1)").
+    A card already posted for the ask is retired at once (answered
+    elsewhere); one held is replaced, so the edit counts once. Accepting
+    with changes stays at the pane. Both machines need a build with this:
+    an older pane's machine doesn't send the diff, so its edit still waits
+    at the terminal. The lead never hits this: agent blocks have no IDE,
+    so its edits are ordinary permission cards.
   - **Exited** when its program ends, and for a linked PR (a forge block),
     its checks finishing, or its merging or closing.
   - Claude Code's "waiting for your input", a minute after each turn, posts

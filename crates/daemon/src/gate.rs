@@ -36,6 +36,7 @@ pub fn reason(gates: &[Gate]) -> Option<Reason> {
         bundle: Some(g.bundle()),
         ask: None,
         gate: Some(Box::new(g.clone())),
+        diff: None,
         actions,
     })
 }

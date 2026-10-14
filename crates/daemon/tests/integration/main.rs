@@ -35,6 +35,8 @@ mod editors;
 #[cfg(feature = "labs")]
 mod chat_convs;
 #[cfg(feature = "labs")]
+mod chat_diffs;
+#[cfg(feature = "labs")]
 mod chat_lead;
 #[cfg(all(feature = "labs", feature = "forge"))]
 mod flag_gates;

@@ -101,6 +101,8 @@ impl Cards {
             bundle: None,
             ask: None,
             gate: None,
+            // #887: a conversation's watcher cards it from the reason alone.
+            diff: Some(Box::new(d.clone())),
             actions: vec![Action::Accept, Action::Reject, Action::Dismiss],
         };
         Some((reason, d.clone()))

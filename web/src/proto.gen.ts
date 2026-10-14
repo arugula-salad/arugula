@@ -317,7 +317,8 @@ link: string,
  */
 id: string, 
 /**
- * `allow` or `deny` a permission; `answer` or `deny` a question.
+ * `allow` or `deny` a permission; `answer` or `deny` a question;
+ * `accept` or `reject` an edit (#887; `allow` and `deny` do too).
  */
 action: Action, 
 /**
@@ -347,7 +348,13 @@ input: string,
  * them, and its answer is their fields (`question_<n>`,
  * `question_<n>_custom`).
  */
-questions?: import("./blocks/ask").Question[], };
+questions?: import("./blocks/ask").Question[], 
+/**
+ * An edit waiting as a diff (#887): the card shows it, with Accept and
+ * Reject. Its `id` is the diff's, and `what` is `approve`, so a page
+ * that doesn't know diffs offers Allow and Deny, which do the same.
+ */
+diff?: DiffInfo, };
 
 /**
  * `POST /api/convs` (#855): a new conversation here, owned by whoever
@@ -1890,6 +1897,13 @@ ask?: AskRef,
  * `allow` approves (M34).
  */
 gate?: Gate, 
+/**
+ * `diff`: the edit that waits (#887), so a card away from the pane (a
+ * conversation's) can show it and accept it by its id. Boxed: a reason
+ * rides in every attention event. A pane's own info leaves it out (its
+ * `diff` has it).
+ */
+diff?: DiffInfo, 
 /**
  * What [`api::ActRequest`] can do about it here.
  */

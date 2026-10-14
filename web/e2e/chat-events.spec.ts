@@ -14,7 +14,16 @@
 // it as hers "via conversation". An answer names its ask: one for an ask
 // that was answered doesn't land on the next. The watchers come back with
 // the home's daemon.
+//
+// #887: a card whose ask was answered at the pane stops offering Allow
+// once the pane's machine refuses it (409). Claude Code's Write (played by
+// `fake_claude.py` in L2's pane, arugulad being its IDE) asks, then waits
+// as a diff: the ask's card is retired by the diff's, which Bob accepts
+// from his phone, and the file is written.
 
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { closeContexts } from "./helpers";
 import { TeamControl, call, home, live, show } from "./team-fixture";
@@ -296,6 +305,92 @@ test("an answer names its ask: an old one doesn't land on the next prompt", asyn
   await expect(cards.first()).toHaveAttribute("data-card-state", "moved");
   await cards.last().locator("[data-card-deny]").click();
   expect(await hook.answered(alice, "second")).toMatchObject({ action: "deny" });
+});
+
+/** The newest card of `link` in the conversation: its ask's id. */
+async function newestCard(link: string): Promise<string> {
+  const r = await on(alice, "alices", "GET", `/api/threads/conv-${conv}`);
+  const msgs = (r.body as unknown as { messages: { event?: { kind: string; link: string; ask?: { id: string } } }[] }).messages;
+  return msgs.filter((m) => m.event?.kind === "needs_input" && m.event.link === link).at(-1)?.event?.ask?.id ?? "";
+}
+
+test("a card whose ask was answered at the pane stops offering Allow (#887)", async () => {
+  test.setTimeout(60_000);
+  await openConv(bob);
+  await hook.state(alice, "alices-2", panes.L2, "working");
+  await hook.permit(alice, "alices-2", panes.L2, "stale", "python3 -m pytest -x");
+  const card = bob.locator('[data-chat] [data-conv-card][data-event-link="L2"][data-card-state="open"]');
+  await expect(card).toBeVisible({ timeout: 30_000 });
+  const id = await newestCard("L2");
+  // Answered at the pane, and nothing posted after it: the card can't know.
+  const at = await on(alice, "alices-2", "POST", "/api/attention/act", { action: "allow", pane: panes.L2, id });
+  expect(at.status, JSON.stringify(at.body)).toBe(200);
+  expect(await hook.answered(alice, "stale")).toMatchObject({ action: "allow" });
+  const before = await events(alice);
+  // Bob's Allow is refused: the card says so and offers nothing more.
+  const stale = bob.locator(`[data-chat] [data-conv-card="${id}"]`);
+  await stale.locator("[data-card-allow]").tap();
+  await expect(stale).toHaveAttribute("data-card-state", "moved");
+  await expect(stale.locator("[data-card-allow]")).toHaveCount(0);
+  await expect(stale.locator("[data-card-done]")).toHaveText("Answered elsewhere");
+  await expect(stale.locator(".thread-error")).toHaveCount(0);
+  expect(await events(alice)).toEqual(before);
+  await hook.state(alice, "alices-2", panes.L2, "done", "Ran it.");
+});
+
+test("an edit waiting as a diff on alices-2 is a card; Bob accepts it from his phone (#887)", async () => {
+  test.setTimeout(120_000);
+  // Claude Code in L2's pane, with arugulad as its IDE.
+  const fake = resolve("../crates/daemon/tests/fake_claude.py");
+  const send = (text: string) => on(alice, "alices-2", "POST", `/api/panes/${panes.L2}/send`, { text, enter: true });
+  const screen = () =>
+    alice.evaluate(
+      async ([p]) => (await window.__arugula.fleet.request("alices-2", "GET", `/api/panes/${p}/capture?format=text`)).text(),
+      [panes.L2] as const,
+    );
+  expect((await send(`python3 ${fake}`)).status).toBe(200);
+  await expect.poll(screen, { timeout: 20_000 }).toContain("connected");
+  const dir = mkdtempSync(join(tmpdir(), "arugula-e2e-887-"));
+  const file = join(dir, "calc.py");
+  writeFileSync(file, "def mean(xs):\n    return sum(xs) / (len(xs) - 1)\n");
+
+  // The Write asks first: a card, after the hold.
+  await hook.state(alice, "alices-2", panes.L2, "working");
+  await hook.permit(alice, "alices-2", panes.L2, "write", `Write ${file}`);
+  const asked = bob.locator('[data-chat] [data-conv-card][data-event-link="L2"][data-card-state="open"]');
+  await expect(asked).toBeVisible({ timeout: 30_000 });
+  const askId = await newestCard("L2");
+  // Then it waits as a diff: the diff's card comes at once, and the ask's
+  // card is retired.
+  expect((await send(`edit ${file} def mean(xs):\\n    return sum(xs) / len(xs)\\n`)).status).toBe(200);
+  const card = bob.locator('[data-chat] [data-conv-card][data-card-diff][data-event-link="L2"]');
+  await expect(card).toHaveAttribute("data-card-state", "open", { timeout: 30_000 });
+  await expect(bob.locator(`[data-chat] [data-conv-card="${askId}"]`)).toHaveAttribute("data-card-state", "moved");
+  await expect(card.locator(".conv-card-head")).toContainText("Wants to edit");
+  await expect(card.locator(".conv-card-file")).toContainText("calc.py");
+  await expect(card.locator(".diff-text .add")).toContainText("return sum(xs) / len(xs)");
+  await expect(card.locator(".diff-text .del")).toContainText("(len(xs) - 1)");
+  await card.locator("[data-card-accept]").tap();
+  // Claude Code writes it, and the conversation says who accepted it.
+  await expect.poll(screen, { timeout: 15_000 }).toContain("result FILE_SAVED");
+  await expect.poll(() => readFileSync(file, "utf8"), { timeout: 15_000 }).toContain("return sum(xs) / len(xs)\n");
+  await expect(card).toHaveAttribute("data-card-state", "answered");
+  await expect(card.locator("[data-card-done]")).toContainText("accepted by bob");
+  const line = bob.locator('[data-chat] [data-conv-event="answered"][data-event-link="L2"]').last();
+  await expect(line).toContainText("accepted L2:");
+  // (Outside the pane's directory, the file is named in full.)
+  await expect(line).toContainText(`edit ${file} (+1 −1)`);
+  // alices-2 records it as Bob's, via the conversation.
+  await expect
+    .poll(async () => JSON.stringify((await on(alice, "alices-2", "GET", `/api/history?pane=${panes.L2}&kind=answer`)).body))
+    .toContain("via conversation “calc tests”");
+
+  // The tool ran: its hook's ask closes, and the turn ends.
+  const post = { hook_event_name: "PostToolUse", session_id: "s-e2e", tool_name: "Bash", tool_input: { command: `Write ${file}` } };
+  expect((await on(alice, "alices-2", "POST", `/api/panes/${panes.L2}/hook`, post)).status).toBe(200);
+  await hook.answered(alice, "write");
+  await hook.state(alice, "alices-2", panes.L2, "done", "Fixed mean().");
+  await send("quit");
 });
 
 test("the home's watchers come back with its daemon", async () => {

@@ -7,9 +7,14 @@
 // #859: a question (Claude's AskUserQuestion) shows its options, as the
 // card beside the pane does (one pick, several, "Other"), and the lead's
 // own asks are cards too (link `lead`), answered here on the lead's block.
+//
+// #887: an edit waiting as a diff (arugulad is Claude Code's IDE) is a card
+// with the diff, Accept and Reject. A card whose ask is gone at the pane
+// (the link's machine refuses the answer, 409) stops offering its buttons.
 
 import { useState } from "preact/hooks";
 import { AskCard, type Ask } from "../blocks/ask";
+import { DiffText } from "./diff-card";
 import type { Client } from "../client";
 import type { Action, ConvEvent, ThreadMsg } from "../proto";
 
@@ -48,6 +53,8 @@ function took(ms: number): string {
 }
 
 function did(a: Action | undefined, question = false): string {
+  if (a === "accept") return "accepted";
+  if (a === "reject") return "rejected";
   return a === "allow" ? "allowed" : a === "answer" ? "answered" : question ? "skipped" : "denied";
 }
 
@@ -118,9 +125,12 @@ export function EventBody({ client, conv, m, index }: { client: Client; conv: st
 function Card({ client, conv, m, e, index }: { client: Client; conv: string; m: ThreadMsg; e: ConvEvent; index: EventIndex }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // The link's machine said its ask is gone (#887): answered at the pane,
+  // or a diff took its place.
+  const [gone, setGone] = useState("");
   const ask = e.ask!;
   const answer = index.answered.get(cardKey(e.link, ask.id));
-  const moved = (index.newest.get(e.link.toLowerCase()) ?? m.id) > m.id;
+  const moved = gone || (index.newest.get(e.link.toLowerCase()) ?? m.id) > m.id;
   const state = answer ? "answered" : moved ? "moved" : "open";
   const send = async (action: Action, content?: Record<string, unknown>) => {
     setBusy(true);
@@ -128,11 +138,14 @@ function Card({ client, conv, m, e, index }: { client: Client; conv: string; m: 
     try {
       await client.convAct(conv, { link: e.link, id: ask.id, action, content });
     } catch (err) {
-      setError((err as Error).message);
+      const status = (err as { status?: number }).status;
+      if (status === 409 || status === 410) setGone((err as Error).message);
+      else setError((err as Error).message);
     }
     setBusy(false);
   };
   const act = (action: Action) => () => send(action);
+  const diff = ask.diff;
   const approve = ask.what === "approve";
   const questions = !approve && ask.questions?.length ? ask.questions : null;
   const asked: Ask | null = questions && {
@@ -145,6 +158,41 @@ function Card({ client, conv, m, e, index }: { client: Client; conv: string; m: 
     at_ms: m.at,
   };
   const who = answer?.name.split("@")[0];
+  if (diff) {
+    return (
+      <div class={`conv-card ${state} diff`} data-conv-card={ask.id} data-event-link={e.link} data-card-state={state} data-card-diff>
+        <div class="conv-card-head">
+          Wants to {diff.new ? "create" : "edit"}
+          {ask.tool ? <span class="msg-badge">{ask.tool}</span> : null}
+        </div>
+        <div class="conv-card-file">
+          <b>{diff.file}</b>{" "}
+          <span class="diff-counts">
+            <i class="add">+{diff.added}</i> <i class="del">−{diff.removed}</i>
+          </span>
+        </div>
+        <details class="conv-card-diff" open={state === "open"}>
+          <summary>The diff</summary>
+          <DiffText text={diff.text} />
+        </details>
+        {state === "open" ? (
+          <div class="conv-card-buttons">
+            <button class="primary" data-card-accept disabled={busy} onClick={act("accept")}>
+              Accept
+            </button>
+            <button data-card-reject disabled={busy} onClick={act("reject")}>
+              Reject
+            </button>
+          </div>
+        ) : (
+          <div class="conv-card-note" data-card-done title={gone || undefined}>
+            {answer ? `${did(answer.event?.action)} by ${who}` : "Answered elsewhere"}
+          </div>
+        )}
+        {error && <p class="thread-error">{error}</p>}
+      </div>
+    );
+  }
   return (
     <div class={`conv-card ${state}${asked ? " question" : ""}`} data-conv-card={ask.id} data-event-link={e.link} data-card-state={state}>
       <div class="conv-card-head">
@@ -181,7 +229,7 @@ function Card({ client, conv, m, e, index }: { client: Client; conv: string; m: 
           </div>
         )
       ) : (
-        <div class="conv-card-note" data-card-done>
+        <div class="conv-card-note" data-card-done title={gone || undefined}>
           {answer
             ? `${did(answer.event?.action, !approve)} by ${who}${answer.event?.summary ? `: ${answer.event.summary}` : ""}`
             : "Answered elsewhere"}

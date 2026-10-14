@@ -7,7 +7,7 @@ use crate::{
     pane::{CommandRec, PaneHandle},
     store::{LAYOUT_VERSION, PaneMeta, Saved, now_ms},
 };
-use arugula_proto::{BlockType, CommandInfo, PaneId, PaneInfo, State, TabView, WorkKind, api::PaneSummary};
+use arugula_proto::{BlockType, CommandInfo, PaneId, PaneInfo, Reason, State, TabView, WorkKind, api::PaneSummary};
 use std::{collections::BTreeMap, sync::Arc, time::Duration};
 use tokio::time::Instant;
 use tracing::{info, warn};
@@ -193,7 +193,8 @@ impl Daemon {
             current: status.current.map(info_of),
             last: status.last.map(info_of),
             attention: self.attention.get(&p.id).copied().unwrap_or_default(),
-            reason: self.live_reason(p.id),
+            // Its `diff` is above already (#887).
+            reason: self.live_reason(p.id).map(|r| Reason { diff: None, ..r }),
             integration: meta.integration.unwrap_or(true),
             kind: BlockType::Terminal,
             host: meta.host,

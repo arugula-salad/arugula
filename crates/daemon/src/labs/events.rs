@@ -23,6 +23,8 @@
 //!   naming the ask's id, so an answer can't land on a newer prompt; the
 //!   home records who answered (an `answered` event, as them), and the
 //!   pane's machine records them "via conversation …" (`api::ConvVia`).
+//!   An edit waiting as a diff (#887) is a card in the place of the ask
+//!   it replaced, accepted or rejected ([`Rules::on_diff`]).
 //! - **PRs:** a linked forge block's checks finishing (its `done` or
 //!   `failed` reason) is posted as it comes.
 
@@ -74,8 +76,13 @@ pub struct Rules {
     /// An ask held to see whether something answers it first, and when it
     /// becomes a card.
     held: Option<(ConvAsk, u64)>,
-    /// A card posted and not answered yet: its ask's id.
-    carded: Option<String>,
+    /// A card posted and not answered yet: its ask's id, and whether it's
+    /// an edit's diff (#887).
+    carded: Option<(String, bool)>,
+    /// #887: the permission ask an edit's diff stands for now (arugulad is
+    /// Claude Code's IDE, so the same Write waits as both). It's never a
+    /// card of its own.
+    replaced: Option<String>,
     /// The last line posted.
     last: Option<ConvEvent>,
 }
@@ -133,6 +140,7 @@ impl Rules {
                 match state {
                     Attention::Working => {
                         self.since.get_or_insert(now);
+                        self.replaced = None;
                         // Whatever was asked was answered: by a rule, at the
                         // pane, or by a card here.
                         if self.held.take().is_some() {
@@ -144,11 +152,15 @@ impl Rules {
                         None
                     }
                     Attention::NeedsInput => {
-                        // Only an ask has something to answer here.
-                        let r = reason.as_ref().filter(|r| r.kind == ReasonKind::Ask)?;
-                        let a = r.ask.as_ref()?;
-                        if self.carded.as_deref() == Some(a.id.as_str())
+                        let r = reason.as_ref()?;
+                        if r.kind == ReasonKind::Diff {
+                            return self.on_diff(r, now);
+                        }
+                        // Only an ask (or a diff) has something to answer here.
+                        let a = r.ask.as_ref().filter(|_| r.kind == ReasonKind::Ask)?;
+                        if self.carded.as_ref().is_some_and(|(c, _)| *c == a.id)
                             || self.held.as_ref().is_some_and(|(h, _)| h.id == a.id)
+                            || self.replaced.as_deref() == Some(a.id.as_str())
                         {
                             return None;
                         }
@@ -163,6 +175,7 @@ impl Rules {
                             tool: a.tool.clone(),
                             input: r.headline.clone(),
                             questions: a.questions.as_deref().cloned(),
+                            diff: None,
                         };
                         self.held = Some((ask, now + HOLD_MS));
                         None
@@ -170,6 +183,7 @@ impl Rules {
                     Attention::Done | Attention::Idle => {
                         self.held = None;
                         self.carded = None;
+                        self.replaced = None;
                         // Not a turn unless it worked.
                         let since = self.since.take()?;
                         let mut e = self.event(ConvEventKind::TurnEnded);
@@ -194,6 +208,7 @@ impl Rules {
                 self.since = None;
                 self.held = None;
                 self.carded = None;
+                self.replaced = None;
                 self.approvals = 0;
                 let mut e = self.event(ConvEventKind::Exited);
                 e.code = *code;
@@ -201,6 +216,48 @@ impl Rules {
             }
             _ => None,
         }
+    }
+
+    /// An edit waiting as a diff (#887). Claude Code asks the permission
+    /// for it first (a hook's ask), then the pane shows the diff instead, so
+    /// that ask can't be answered any more: the diff takes its place.
+    /// - Held: the diff is held in its place (one edit, one approval).
+    /// - Already a card: the diff is a card at once, which retires it (the
+    ///   page says a card a link moved on from was answered elsewhere).
+    /// - Another diff before it: that one was answered.
+    fn on_diff(&mut self, r: &arugula_proto::Reason, now: u64) -> Option<ConvEvent> {
+        // A machine on an older build doesn't say which edit: nothing to
+        // card, but the ask it replaced isn't one any more either.
+        let Some(d) = r.diff.as_deref() else {
+            if let Some((h, _)) = self.held.take() {
+                self.replaced = Some(h.id);
+            }
+            return None;
+        };
+        if self.carded.as_ref().is_some_and(|(c, _)| *c == d.id)
+            || self.held.as_ref().is_some_and(|(h, _)| h.id == d.id)
+        {
+            return None;
+        }
+        self.since.get_or_insert(now);
+        let ask = diff_ask(d);
+        let held = self.held.take();
+        let carded = self.carded.take();
+        match (held, carded) {
+            (Some((h, _)), _) if h.diff.is_none() => self.replaced = Some(h.id),
+            (None, Some((c, false))) => {
+                self.replaced = Some(c);
+                self.carded = Some((ask.id.clone(), true));
+                let mut e = self.event(ConvEventKind::NeedsInput);
+                e.ask = Some(ask);
+                return self.once(e);
+            }
+            (None, None) => {}
+            // A diff before it, or an ask carded before a diff held: answered.
+            _ => self.approvals += 1,
+        }
+        self.held = Some((ask, now + HOLD_MS));
+        None
     }
 
     /// When a held ask becomes a card (ms), if one is held.
@@ -214,10 +271,24 @@ impl Rules {
             return None;
         }
         let (ask, _) = self.held.take()?;
-        self.carded = Some(ask.id.clone());
+        self.carded = Some((ask.id.clone(), ask.diff.is_some()));
         let mut e = self.event(ConvEventKind::NeedsInput);
         e.ask = Some(ask);
         self.once(e)
+    }
+}
+
+/// An edit waiting as a diff, as a conversation's card has it (#887):
+/// `approve`, so a page that doesn't know diffs offers Allow and Deny.
+pub fn diff_ask(d: &arugula_proto::DiffInfo) -> ConvAsk {
+    let verb = if d.new { "create" } else { "edit" };
+    ConvAsk {
+        id: d.id.clone(),
+        what: arugula_proto::AskWhat::Approve,
+        tool: Some(if d.new { "Write" } else { "Edit" }.into()),
+        input: format!("{verb} {} (+{} −{})", d.file, d.added, d.removed),
+        questions: None,
+        diff: Some(Box::new(d.clone())),
     }
 }
 
@@ -245,6 +316,8 @@ pub fn line(e: &ConvEvent, who: &str) -> String {
             let did = match e.action {
                 Some(Action::Allow) => "allowed",
                 Some(Action::Answer) => "answered",
+                Some(Action::Accept) => "accepted",
+                Some(Action::Reject) => "rejected",
                 _ if e.ask.as_ref().is_some_and(|a| a.what == arugula_proto::AskWhat::Question) => "skipped",
                 _ => "denied",
             };
@@ -547,6 +620,19 @@ async fn answered(
     }
 }
 
+/// What answering `ask` with `action` does: an edit's diff (#887) is
+/// accepted or rejected (Allow and Deny from a page that doesn't know diffs
+/// do the same); anything else is allowed, denied or answered.
+fn card_action(ask: &ConvAsk, action: Action) -> Result<Action, Refusal> {
+    match (ask.diff.is_some(), action) {
+        (true, Action::Accept | Action::Allow) => Ok(Action::Accept),
+        (true, Action::Reject | Action::Deny) => Ok(Action::Reject),
+        (true, _) => Err((400, "an edit is accepted or rejected".into())),
+        (false, Action::Accept | Action::Reject) => Err((400, "only an edit is accepted or rejected".into())),
+        (false, a) => Ok(a),
+    }
+}
+
 /// The lead's own ask (#859), a tool outside its allow list or a question
 /// of its own, as a card in its conversation: posted by the lead, so the
 /// people answer it there.
@@ -572,8 +658,8 @@ pub async fn act(app: &App, id: ConvId, req: ConvActRequest, who: &Principal) ->
     if c.floor(who.id()).is_none() {
         return Err((403, "only the people in a conversation answer its cards".into()));
     }
-    if !matches!(req.action, Action::Allow | Action::Deny | Action::Answer) {
-        return Err((400, "action: allow, deny or answer".into()));
+    if !matches!(req.action, Action::Allow | Action::Deny | Action::Answer | Action::Accept | Action::Reject) {
+        return Err((400, "action: allow, deny, answer, accept or reject".into()));
     }
     if req.link.eq_ignore_ascii_case(super::lead::WHO) {
         return act_on_lead(app, &c, req, who).await;
@@ -594,6 +680,8 @@ pub async fn act(app: &App, id: ConvId, req: ConvActRequest, who: &Principal) ->
         .ok_or((503, "shutting down".to_owned()))?
         .map_err(|e| (e.0, e.1))?;
     let ask = card(&msgs, &l.name, &req.id).cloned().ok_or((404, format!("{} has no card {}", l.name, req.id)))?;
+    let mut req = req;
+    req.action = card_action(&ask, req.action)?;
     let member = crate::api::who_is(app, who.clone()).await.map(|d| d.name).unwrap_or_else(|| who.id().to_owned());
     let body = ActRequest {
         action: req.action,
@@ -667,6 +755,9 @@ async fn act_on_lead(
         .map_err(|e| (e.0, e.1))?;
     let ask =
         card(&msgs, super::lead::WHO, &req.id).cloned().ok_or((404, format!("the lead has no card {}", req.id)))?;
+    // Never an edit's diff: the lead's Claude Code has no IDE (#887).
+    let mut req = req;
+    req.action = card_action(&ask, req.action)?;
     let member = crate::api::who_is(app, who.clone()).await.map(|d| d.name).unwrap_or_else(|| who.id().to_owned());
     let body = ActRequest {
         action: req.action,
@@ -702,6 +793,7 @@ mod tests {
             bundle: None,
             ask: None,
             gate: None,
+            diff: None,
             actions: vec![],
         })
     }
@@ -719,6 +811,26 @@ mod tests {
             tool: Some("Bash".into()),
             questions: None,
         });
+        att(Attention::NeedsInput, Some(r))
+    }
+
+    fn diff_info(id: &str) -> arugula_proto::DiffInfo {
+        arugula_proto::DiffInfo {
+            id: id.into(),
+            file: "calc.py".into(),
+            added: 3,
+            removed: 1,
+            text: "@@ -1 +1,3 @@\n-x\n+a\n+b\n+c".into(),
+            new: false,
+            at_ms: 0,
+            ide: "arugula".into(),
+        }
+    }
+
+    /// The pane shows an edit's diff (#887), as ide::cards says it.
+    fn diff(id: &str) -> EventKind {
+        let mut r = reason(ReasonKind::Diff, "Claude Code wants to edit calc.py (+3 −1)").unwrap();
+        r.diff = Some(Box::new(diff_info(id)));
         att(Attention::NeedsInput, Some(r))
     }
 
@@ -884,6 +996,113 @@ mod tests {
     }
 
     #[test]
+    fn a_diff_replacing_a_held_ask_is_the_card_in_its_place() {
+        // geek's run (#887): the Write's permission, then its diff, at once.
+        let mut r = Rules::new("L1");
+        r.on(&working(), 0);
+        assert_eq!(r.on(&ask("toolu_1"), 1_000), None);
+        assert_eq!(r.on(&diff("d30-7"), 1_010), None, "held too");
+        assert_eq!(r.due(), Some(1_010 + HOLD_MS));
+        let card = r.tick(1_010 + HOLD_MS).unwrap();
+        assert_eq!(card.kind, ConvEventKind::NeedsInput);
+        let a = card.ask.as_ref().unwrap();
+        assert_eq!((a.id.as_str(), a.what, a.tool.as_deref()), ("d30-7", AskWhat::Approve, Some("Edit")));
+        assert_eq!(a.diff.as_deref(), Some(&diff_info("d30-7")));
+        assert_eq!(line(&card, ""), "needs you: edit calc.py (+3 −1)");
+        // The ask it stands for, or the diff, seen again: the same card.
+        assert_eq!(r.on(&ask("toolu_1"), 5_000), None);
+        assert_eq!(r.on(&diff("d30-7"), 5_100), None);
+        assert_eq!(r.tick(20_000), None);
+        // Accepted: one edit, one approval.
+        r.on(&working(), 30_000);
+        assert_eq!(r.on(&done("fixed"), 40_000).unwrap().approvals, 1);
+    }
+
+    #[test]
+    fn a_diff_with_no_ask_before_it_is_a_card() {
+        // jake-mini's run (#887): the diff came first, so the pane never
+        // showed the ask (a diff wins over it there).
+        let mut r = Rules::new("L2");
+        r.on(&working(), 0);
+        assert_eq!(r.on(&diff("d1-2"), 1_000), None);
+        assert_eq!(r.on(&diff("d1-2"), 1_001), None, "the hook's ask, shown as the diff");
+        assert_eq!(r.tick(1_000 + HOLD_MS).unwrap().ask.unwrap().id, "d1-2");
+    }
+
+    #[test]
+    fn a_carded_ask_a_diff_replaces_is_retired_by_the_diff_card_at_once() {
+        let mut r = Rules::new("L1");
+        r.on(&working(), 0);
+        r.on(&ask("toolu_1"), 1_000);
+        assert_eq!(r.tick(1_000 + HOLD_MS).unwrap().ask.unwrap().id, "toolu_1");
+        // The diff comes later: its card now, no hold, so the page shows the
+        // ask's card as answered elsewhere straight away.
+        let card = r.on(&diff("d30-7"), 9_000).unwrap();
+        assert_eq!(card.ask.unwrap().id, "d30-7");
+        assert_eq!(r.due(), None);
+        assert_eq!(r.on(&ask("toolu_1"), 9_500), None, "never carded again");
+        r.on(&working(), 12_000);
+        assert_eq!(r.on(&done("ok"), 20_000).unwrap().approvals, 1);
+    }
+
+    #[test]
+    fn a_diff_the_terminal_answers_inside_the_hold_is_counted_not_posted() {
+        let mut r = Rules::new("L1");
+        r.on(&working(), 0);
+        r.on(&ask("toolu_1"), 1_000);
+        r.on(&diff("d30-7"), 1_010);
+        r.on(&working(), 1_500);
+        assert_eq!(r.tick(10_000), None);
+        // A second edit straight after a first: the first was answered.
+        r.on(&diff("d30-8"), 11_000);
+        r.on(&diff("d30-9"), 12_000);
+        assert_eq!(r.tick(12_000 + HOLD_MS).unwrap().ask.unwrap().id, "d30-9");
+        r.on(&working(), 20_000);
+        assert_eq!(r.on(&done("ok"), 30_000).unwrap().approvals, 3);
+    }
+
+    #[test]
+    fn a_diff_from_an_older_machine_still_stops_its_ask_being_a_card() {
+        let mut r = Rules::new("L1");
+        r.on(&working(), 0);
+        r.on(&ask("toolu_1"), 1_000);
+        // No `diff` on the reason: nothing to card, and the ask can't be
+        // answered any more.
+        let old = att(Attention::NeedsInput, reason(ReasonKind::Diff, "Claude Code wants to edit calc.py (+3 −1)"));
+        assert_eq!(r.on(&old, 1_010), None);
+        assert_eq!(r.tick(10_000), None);
+        assert_eq!(r.on(&ask("toolu_1"), 10_001), None);
+        assert_eq!(r.tick(20_000), None);
+    }
+
+    #[test]
+    fn a_diff_card_is_accepted_or_rejected_and_says_so() {
+        let edit = diff_ask(&diff_info("d1-1"));
+        assert_eq!(card_action(&edit, Action::Accept), Ok(Action::Accept));
+        // A page that doesn't know diffs sends allow and deny.
+        assert_eq!(card_action(&edit, Action::Allow), Ok(Action::Accept));
+        assert_eq!(card_action(&edit, Action::Deny), Ok(Action::Reject));
+        assert!(card_action(&edit, Action::Answer).is_err());
+        let bash = ConvAsk { diff: None, ..edit.clone() };
+        assert!(card_action(&bash, Action::Accept).is_err());
+        assert_eq!(card_action(&bash, Action::Allow), Ok(Action::Allow));
+        let e = ConvEvent {
+            kind: ConvEventKind::Answered,
+            link: "L1".into(),
+            ask: Some(edit),
+            summary: None,
+            worked_ms: None,
+            approvals: 0,
+            action: Some(Action::Accept),
+            code: None,
+            ok: None,
+        };
+        assert_eq!(line(&e, "Jake"), "Jake accepted L1: edit calc.py (+3 −1)");
+        let rejected = ConvEvent { action: Some(Action::Reject), ..e };
+        assert_eq!(line(&rejected, "Jake"), "Jake rejected L1: edit calc.py (+3 −1)");
+    }
+
+    #[test]
     fn an_answered_card_names_who_and_what() {
         let e = ConvEvent {
             kind: ConvEventKind::Answered,
@@ -894,6 +1113,7 @@ mod tests {
                 tool: None,
                 input: "Edit: calc.py".into(),
                 questions: None,
+                diff: None,
             }),
             summary: None,
             worked_ms: None,

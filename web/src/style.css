@@ -8898,6 +8898,23 @@ html[data-finish="glass"] .prompt-backdrop {
   color: var(--dim);
 }
 
+/* #887: an edit waiting as a diff, on its card. */
+.conv-card-file {
+  margin: 4px 0;
+  font: 12px/1.35 ui-monospace, monospace;
+  overflow-wrap: anywhere;
+}
+
+.conv-card-diff {
+  margin: 0 0 8px;
+}
+
+.conv-card-diff summary {
+  font-size: 12px;
+  color: var(--dim);
+  cursor: pointer;
+}
+
 /* #859: a question's options on its card, as beside the pane. */
 .conv-card-form {
   margin: 6px 0 0;
