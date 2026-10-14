@@ -27,7 +27,8 @@
 //!
 //! `GET /api/setup` says how far along each one is; `?part=agents`, only
 //! the agents' (each adapter's state, whether its agent's CLI is on this
-//! machine, and whether Claude Code has the MCP server). When a step needs
+//! machine, and whether Claude Code has the MCP server), with `cli`: how a
+//! new terminal runs `arugula` (#883). When a step needs
 //! something only a person can do (a one-time sudo, a switch in
 //! Tailscale's admin console, a sign-in), the error says so, with the
 //! command or the link.
@@ -74,6 +75,44 @@ struct Status {
     /// Each adapter's state (`adapters::Status::json`), with `found`: its
     /// agent's CLI is on this machine (#335).
     adapters: Vec<Value>,
+    cli: CliStatus,
+}
+
+/// How a new terminal here runs the CLI (#883), for the welcome card.
+#[derive(Serialize, Default)]
+struct CliStatus {
+    /// `arugula` when a new terminal's login shell finds it, else its full
+    /// path (`~/.local/bin/arugula`).
+    command: String,
+    /// The startup files Arugula put `~/.local/bin` on PATH in: a terminal
+    /// open since before needs the full path.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    added: Vec<String>,
+}
+
+/// `CliStatus`, from the login shell (a fresh one, with a clean
+/// environment: the daemon's own PATH isn't a terminal's).
+async fn cli_status() -> CliStatus {
+    #[cfg(unix)]
+    {
+        use arugula_proto::shell_path::{State, check};
+        let Some(home) = std::env::var_os("HOME").map(PathBuf::from) else { return CliStatus::default() };
+        let shell = PathBuf::from(crate::login_shell());
+        let h = home.clone();
+        let Ok(state) = tokio::task::spawn_blocking(move || check(&h, &shell)).await else {
+            return CliStatus { command: "arugula".into(), added: vec![] };
+        };
+        let tilde = |p: &Path| p.strip_prefix(&home).map_or(p.display().to_string(), |r| format!("~/{}", r.display()));
+        let installed = home.join(".local/bin/arugula").is_file();
+        let command = if state.found() || !installed { "arugula".into() } else { "~/.local/bin/arugula".into() };
+        let added = match &state {
+            State::Marked(files) if installed => files.iter().map(|f| tilde(f)).collect(),
+            _ => vec![],
+        };
+        CliStatus { command, added }
+    }
+    #[cfg(not(unix))]
+    CliStatus { command: "arugula".into(), added: vec![] }
 }
 
 #[derive(Serialize, Default)]
@@ -753,11 +792,12 @@ pub(crate) async fn status(app: &Arc<App>, q: SetupQuery) -> Value {
         return serde_json::json!({ "control": control_status(app) });
     }
     if q.part.as_deref() == Some("agents") {
-        let (claude, adapters) = tokio::join!(claude_status(app), adapters_status(app));
-        return serde_json::json!({ "claude": claude, "adapters": adapters });
+        let (claude, adapters, cli) = tokio::join!(claude_status(app), adapters_status(app), cli_status());
+        return serde_json::json!({ "claude": claude, "adapters": adapters, "cli": cli });
     }
-    let (tailscale, claude, adapters) = tokio::join!(tailscale_status(app), claude_status(app), adapters_status(app));
-    serde_json::to_value(Status { tailscale, control: control_status(app), claude, adapters }).unwrap()
+    let (tailscale, claude, adapters, cli) =
+        tokio::join!(tailscale_status(app), claude_status(app), adapters_status(app), cli_status());
+    serde_json::to_value(Status { tailscale, control: control_status(app), claude, adapters, cli }).unwrap()
 }
 
 #[cfg(test)]

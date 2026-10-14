@@ -1,8 +1,9 @@
 #!/bin/sh
 # Install arugula: download a release for this machine, check it, and run
-# `arugulad install`, which puts arugulad and arugula in ~/.local/bin
-# and starts the daemon as a service (systemd user unit on Linux, launchd
-# agent on macOS). Run it again to upgrade; the daemon's flags are kept.
+# `arugulad install`, which puts arugulad and arugula in ~/.local/bin (and
+# that on your shell's PATH, #883) and starts the daemon as a service
+# (systemd user unit on Linux, launchd agent on macOS). Run it again to
+# upgrade; the daemon's flags are kept.
 #
 #   curl -fsSL https://arugula.io/install.sh | sh
 #   curl -fsSL https://arugula.io/install.sh | sh -s -- --no-app
@@ -146,12 +147,16 @@ tar -xzf "$tmp/$name.tar.gz" -C "$tmp"
 os=$(uname -s)
 started=""
 if [ "$os" = Linux ] && ! command -v systemctl >/dev/null 2>&1; then
-  # No systemd (a container, a sandbox): the binaries, but no service.
-  mkdir -p "$HOME/.local/bin"
-  for b in arugulad arugula; do
-    cp "$tmp/$name/$b" "$HOME/.local/bin/.$b.new" && mv "$HOME/.local/bin/.$b.new" "$HOME/.local/bin/$b"
-  done
-  say "installed ~/.local/bin/arugulad and ~/.local/bin/arugula"
+  # No systemd (a container, a sandbox): the binaries (and ~/.local/bin on
+  # your shell's PATH, #883), but no service. A release from before
+  # --no-service: copied by hand.
+  if ! "$tmp/$name/arugulad" install --no-service 2>/dev/null; then
+    mkdir -p "$HOME/.local/bin"
+    for b in arugulad arugula; do
+      cp "$tmp/$name/$b" "$HOME/.local/bin/.$b.new" && mv "$HOME/.local/bin/.$b.new" "$HOME/.local/bin/$b"
+    done
+    say "installed ~/.local/bin/arugulad and ~/.local/bin/arugula"
+  fi
   nosystemd=1
 elif [ -n "${ARUGULA_NO_START:-}" ]; then
   "$tmp/$name/arugulad" install --no-start
@@ -276,17 +281,30 @@ fi
 
 if [ -n "$bin" ]; then
   say ""
-  say "$HOME/.local/bin isn't on your PATH. Add it:"
-  case "${SHELL:-}" in
-    */fish) say "  fish_add_path ~/.local/bin" ;;
-    */zsh) say "  echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.zshrc && exec zsh" ;;
-    */bash)
-      rc=~/.bashrc
-      [ "$os" = Darwin ] && rc=~/.bash_profile
-      say "  echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> $rc && exec bash"
-      ;;
-    *) say "  echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.profile  (then log in again)" ;;
-  esac
+  # `arugulad install` put ~/.local/bin on your login shell's PATH (#883),
+  # or said why not: then (or with a release from before) say how.
+  fish_conf="${XDG_CONFIG_HOME:-$HOME/.config}/fish/conf.d/arugula.fish"
+  if grep -qs 'added by Arugula' ~/.zprofile ~/.zshrc ~/.bash_profile ~/.bash_login ~/.profile ~/.bashrc "$fish_conf" ||
+    { [ -n "${SHELL:-}" ] && "$SHELL" -lc 'command -v arugula' </dev/null >/dev/null 2>&1; }; then
+    say "This terminal's PATH doesn't have ~/.local/bin, but new ones do: open a new"
+    say "terminal window for \`arugula\`, or use the full paths below."
+  else
+    say "$HOME/.local/bin isn't on your PATH. Add it:"
+    case "${SHELL:-}" in
+      */fish) say "  fish_add_path ~/.local/bin" ;;
+      */zsh)
+        rc=~/.zshrc
+        [ "$os" = Darwin ] && rc=~/.zprofile
+        say "  echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> $rc && exec zsh -l"
+        ;;
+      */bash)
+        rc=~/.bashrc
+        [ "$os" = Darwin ] && rc=~/.bash_profile
+        say "  echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> $rc && exec bash"
+        ;;
+      *) say "  echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.profile  (then log in again)" ;;
+    esac
+  fi
 fi
 
 # The phone: this machine's tailnet name, if tailscale is here and up.

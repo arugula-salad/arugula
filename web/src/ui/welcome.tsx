@@ -73,11 +73,15 @@ interface Setup {
   /** #335: each adapter, with `found` (its agent's CLI is here). Absent
    * from an older daemon. */
   adapters?: Adapter[];
+  /** #883: how a new terminal runs the CLI: `arugula`, or its full path
+   * when the login shell doesn't find it; `added`: the startup files
+   * Arugula put `~/.local/bin` on PATH in. Absent from an older daemon. */
+  cli?: { command: string; added?: string[] };
 }
 
 /** `GET /api/setup?part=agents`: what the welcome offer and the Agents
  * step read, without waiting for Tailscale. */
-type AgentsSetup = Pick<Setup, "claude" | "adapters">;
+type AgentsSetup = Pick<Setup, "claude" | "adapters" | "cli">;
 
 /** What a button did. */
 interface Outcome {
@@ -350,6 +354,9 @@ function Welcome({ name, client, setup, manual, refresh }: { name: string; clien
   const panes = client?.state?.panes.length ?? 0;
   // #335: Claude Code is here and isn't set up: offer it without being asked.
   const offer = !manual && !!setup?.claude.installed && !claudeReady(setup);
+  // #883: a new terminal may not find `arugula` by name.
+  const cli = setup?.cli?.command ?? "arugula";
+  const added = setup?.cli?.added ?? [];
   return (
     <section class="start-step">
       <h2>Terminals that outlive their windows</h2>
@@ -386,8 +393,13 @@ function Welcome({ name, client, setup, manual, refresh }: { name: string; clien
           <div>
             <h3>From a terminal</h3>
             <p>
-              The same tabs and splits, over ssh too: <CopyText inline text="arugula tui" />
+              The same tabs and splits, over ssh too: <CopyText inline text={`${cli} tui`} />
             </p>
+            {added.length > 0 && (
+              <p class="start-dim" data-start-cli-added>
+                Arugula put ~/.local/bin on your PATH in {added.join(" and ")}. In a terminal that was already open: <CopyText inline text="~/.local/bin/arugula tui" />
+              </p>
+            )}
           </div>
         </li>
       </ul>

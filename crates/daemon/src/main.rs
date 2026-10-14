@@ -519,6 +519,7 @@ fn main() -> anyhow::Result<()> {
     match args.command {
         #[cfg(unix)]
         Some(install @ Command::Install { tailnet: Some(_), .. }) => labs::tailnet_install(install),
+        Some(Command::Install { no_service: true, .. }) => install::binaries_only(),
         Some(Command::Install { no_start, reset_args, system, daemon_args, .. }) => {
             install::install(!no_start, &daemon_args, reset_args, system)
         }
