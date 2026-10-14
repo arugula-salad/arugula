@@ -118,6 +118,10 @@ mod absent {
         }
 
         pub fn save(&mut self) {}
+
+        pub fn reach(&self) -> Vec<crate::acl::Reach> {
+            Vec::new()
+        }
     }
 
     /// Huddles of a build without Labs: none.

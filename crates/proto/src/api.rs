@@ -746,6 +746,63 @@ pub struct ConvMemberRequest {
     #[serde(default)]
     #[cfg_attr(feature = "ts", ts(as = "Option<bool>"))]
     pub history: bool,
+    /// For an `account:` who doesn't reach this machine yet (#856): what to
+    /// call them, and their account's root, as the owner's browser pinned
+    /// it. Being a member then lets them in, for its conversations only.
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub root: Option<String>,
+}
+
+/// `POST /api/panes/{id}/conv-grants` (#856): let a conversation's home
+/// drive this pane, with the caller's rights on it (an editor's at most).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "ts", ts(optional_fields = nullable))]
+pub struct ConvGrantRequest {
+    /// The home's device id in control; none or empty: this machine.
+    #[serde(default)]
+    pub device: Option<String>,
+    #[serde(default)]
+    pub device_name: Option<String>,
+    pub conv: crate::ConvId,
+    #[serde(default)]
+    pub conv_title: Option<String>,
+}
+
+/// `POST /api/panes/{id}/conv-grants/revoke`: take a grant back, which
+/// cuts the link.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ConvGrantRevokeRequest {
+    pub device: String,
+    pub conv: crate::ConvId,
+}
+
+/// `POST /api/convs/{id}/links` (#856): link a pane the pane's machine has
+/// granted this conversation (`ConvGrant`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "ts", ts(optional_fields = nullable))]
+pub struct ConvLinkRequest {
+    /// The pane's machine, by device id; none: this one.
+    #[serde(default)]
+    pub machine: Option<String>,
+    pub pane: crate::PaneId,
+    /// The pane's epoch, as its grant gave it.
+    #[serde(default)]
+    pub epoch: Option<u64>,
+    #[serde(default)]
+    pub title: Option<String>,
+}
+
+/// `POST /api/convs/{id}/links/close`: close a link (its owner, or whoever
+/// linked it). It stays, closed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ConvUnlinkRequest {
+    pub name: String,
 }
 
 /// `POST /api/convs/{id}/members/remove`: take someone out (the owner), or

@@ -7,11 +7,15 @@
 //! - A member may leave. The owner can't: deleting it is how it ends.
 //! - A member reads from when they joined, or all of it when added with
 //!   history (`Conversation::floor`). The owner reads all of it.
+//! - The owner and members link panes (#856), named `L1`, `L2`… in order.
+//!   A link is closed, never removed, and its name isn't used again; the
+//!   owner or whoever linked one closes it (the daemon too, when the pane's
+//!   machine refuses it).
 //!
 //! Whom a member may be (someone who can reach this machine) is the mux's
 //! call: it knows who that is.
 
-use arugula_proto::{ConvId, ConvMember, Conversation};
+use arugula_proto::{ConvId, ConvLink, ConvMember, Conversation};
 
 /// The longest title kept, in characters.
 pub const MAX_TITLE: usize = 100;
@@ -30,9 +34,16 @@ pub enum Change {
         name: String,
         history: bool,
         at: u64,
+        /// Their account's root, when being a member is how they reach
+        /// this machine (#856).
+        root: Option<String>,
     },
     /// Take someone out, or leave.
     Remove(String),
+    /// Link a pane (#856). Its `name` is given here, and `by` is who asks.
+    Link(ConvLink),
+    /// Close a link, by name.
+    Unlink(String),
 }
 
 /// A title as kept: trimmed, one line, not empty, and not too long.
@@ -55,6 +66,7 @@ pub fn create(owner: &str, owner_name: &str, title_: &str, at: u64) -> Result<Co
         owner_name: owner_name.to_owned(),
         members: Vec::new(),
         created: at,
+        links: Vec::new(),
     })
 }
 
@@ -73,7 +85,7 @@ pub fn apply(c: &mut Conversation, by: &str, change: Change) -> Result<(), Refus
             }
             c.title = title(&t)?;
         }
-        Change::Add { who, name, history, at } => {
+        Change::Add { who, name, history, at, root } => {
             if !owner {
                 return Err((403, "only the conversation's owner adds people to it".into()));
             }
@@ -83,7 +95,7 @@ pub fn apply(c: &mut Conversation, by: &str, change: Change) -> Result<(), Refus
             if c.members.iter().any(|m| m.who == who) {
                 return Err((409, format!("{name} is in it already")));
             }
-            c.members.push(ConvMember { who, name, joined: at, history });
+            c.members.push(ConvMember { who, name, joined: at, history, root });
         }
         Change::Remove(who) => {
             if who == c.owner {
@@ -98,8 +110,46 @@ pub fn apply(c: &mut Conversation, by: &str, change: Change) -> Result<(), Refus
                 return Err((404, "they aren't in it".into()));
             }
         }
+        Change::Link(mut l) => {
+            if c.floor(by).is_none() {
+                return Err((403, "only the people in a conversation link panes to it".into()));
+            }
+            if let Some(o) = c.links.iter().find(|o| o.closed.is_none() && o.machine == l.machine && o.pane == l.pane) {
+                return Err((409, format!("that pane is linked already, as {}", o.name)));
+            }
+            l.name = format!("L{}", c.links.len() + 1);
+            l.by = by.to_owned();
+            l.closed = None;
+            c.links.push(l);
+        }
+        Change::Unlink(name) => {
+            let l = c
+                .links
+                .iter_mut()
+                .find(|l| l.name.eq_ignore_ascii_case(&name))
+                .ok_or((404, format!("no link {name}")))?;
+            if !owner && l.by != by {
+                return Err((403, "only the conversation's owner, or whoever linked it, closes a link".into()));
+            }
+            if l.closed.is_none() {
+                l.closed = Some("unlinked".into());
+            }
+        }
     }
     Ok(())
+}
+
+/// Close link `name` for good, saying why (its pane went, or its machine
+/// refused it): the daemon's, not anyone's request. False if it was closed
+/// already, or there's no such link.
+pub fn close_link(c: &mut Conversation, name: &str, why: &str) -> bool {
+    match c.links.iter_mut().find(|l| l.name == name) {
+        Some(l) if l.closed.is_none() => {
+            l.closed = Some(why.to_owned());
+            true
+        }
+        _ => false,
+    }
 }
 
 #[cfg(test)]
@@ -114,7 +164,47 @@ mod tests {
     }
 
     fn add(c: &mut Conversation, by: &str, who: &str, history: bool, at: u64) -> Result<(), Refusal> {
-        apply(c, by, Change::Add { who: who.into(), name: who.into(), history, at })
+        apply(c, by, Change::Add { who: who.into(), name: who.into(), history, at, root: None })
+    }
+
+    fn link(machine: Option<&str>, pane: arugula_proto::PaneId) -> Change {
+        Change::Link(ConvLink {
+            name: "ignored".into(),
+            machine: machine.map(str::to_owned),
+            machine_name: String::new(),
+            pane,
+            epoch: 1,
+            title: "claude".into(),
+            by: "ignored".into(),
+            by_name: String::new(),
+            at: 1,
+            closed: Some("ignored".into()),
+        })
+    }
+
+    #[test]
+    fn people_in_it_link_panes_named_in_order_and_a_closed_name_is_never_used_again() {
+        let mut c = conv();
+        add(&mut c, "owner", SAM, false, 1).unwrap();
+        apply(&mut c, "owner", link(None, 3)).unwrap();
+        apply(&mut c, SAM, link(Some("dev-b"), 3)).unwrap();
+        assert_eq!(
+            c.links.iter().map(|l| (l.name.as_str(), l.by.as_str(), l.closed.is_none())).collect::<Vec<_>>(),
+            [("L1", "owner", true), ("L2", SAM, true)]
+        );
+        // The same pane twice is one link; a stranger links nothing.
+        assert_eq!(apply(&mut c, SAM, link(None, 3)).unwrap_err().0, 409);
+        assert_eq!(apply(&mut c, "account:stranger", link(None, 4)).unwrap_err().0, 403);
+        // A member closes only what they linked; the owner closes any.
+        assert_eq!(apply(&mut c, SAM, Change::Unlink("L1".into())).unwrap_err().0, 403);
+        apply(&mut c, SAM, Change::Unlink("l2".into())).unwrap();
+        assert!(close_link(&mut c, "L1", "revoked"));
+        assert!(!close_link(&mut c, "L1", "again"), "closed once");
+        assert_eq!(c.links[0].closed.as_deref(), Some("revoked"));
+        // Linked again, it's a new link with a new name.
+        apply(&mut c, "owner", link(None, 3)).unwrap();
+        assert_eq!(c.links.last().unwrap().name, "L3");
+        assert_eq!(c.links.len(), 3);
     }
 
     #[test]

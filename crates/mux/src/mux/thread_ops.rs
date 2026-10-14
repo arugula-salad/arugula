@@ -263,6 +263,13 @@ impl Daemon {
         let get =
             |d: &Self, id| d.threads.conv(id).cloned().ok_or_else(|| ThreadError(404, "no such conversation".into()));
         let (mut c, change) = match req {
+            ConvReq::Get { id } => {
+                // Nobody outside it learns it's here.
+                return get(self, id)
+                    .ok()
+                    .filter(|c| c.floor(&by).is_some())
+                    .ok_or_else(|| ThreadError(404, "no such conversation".into()));
+            }
             ConvReq::Create { title } => {
                 if !who.is_owner() {
                     return Err(ThreadError(403, "only this machine's owner makes conversations on it".into()));
@@ -273,28 +280,53 @@ impl Daemon {
                 let c = get(self, id)?;
                 convs::may_delete(&c, &by).map_err(err)?;
                 self.threads.remove_conv(id).map_err(|e| ThreadError(500, format!("can't delete it: {e}")))?;
+                self.config.acl.set_reach(self.threads.reach());
                 self.save_due.get_or_insert_with(|| Instant::now() + SAVE_DEBOUNCE);
                 self.soon();
                 return Ok(c);
             }
             ConvReq::Rename { id, title } => (get(self, id)?, Some(Change::Rename(title))),
-            ConvReq::AddMember { id, member, history } => {
+            ConvReq::AddMember { id, member, history, reach } => {
                 let c = get(self, id)?;
                 if by != c.owner {
                     // Before looking anyone up: who exists isn't theirs to learn.
                     return Err(ThreadError(403, "only the conversation's owner adds people to it".into()));
                 }
-                let p = self.member_named(&member).map_err(err)?;
-                (c, Some(Change::Add { who: p.id().to_owned(), name: self.name_of(&p), history, at: now_ms() }))
+                // Someone who reaches this machine already, or (#856) an
+                // account that being a member lets in, with its root.
+                let (who, name, root) = match self.member_named(&member) {
+                    Ok(p) => (p.id().to_owned(), self.name_of(&p), None),
+                    Err(e) => match reach {
+                        Some((name, root)) if member.starts_with("account:") && !root.is_empty() => {
+                            let name = if name.trim().is_empty() { member.clone() } else { name };
+                            (member.clone(), name, Some(root))
+                        }
+                        _ => return Err(err(e)),
+                    },
+                };
+                (c, Some(Change::Add { who, name, history, at: now_ms(), root }))
             }
             ConvReq::RemoveMember { id, member } => (get(self, id)?, Some(Change::Remove(member))),
+            ConvReq::Link { id, mut link } => {
+                link.by_name = self.name_of(who);
+                link.at = now_ms();
+                (get(self, id)?, Some(Change::Link(link)))
+            }
+            ConvReq::Unlink { id, name } => (get(self, id)?, Some(Change::Unlink(name))),
+            ConvReq::LinkClosed { id, name, why } => {
+                let mut c = get(self, id)?;
+                if !convs::close_link(&mut c, &name, &why) {
+                    return Ok(c);
+                }
+                (c, None)
+            }
         };
         let (mut added, mut gone) = (None, None);
         if let Some(change) = change {
             match &change {
                 Change::Add { who, .. } => added = Some(who.clone()),
                 Change::Remove(who) => gone = Some(who.clone()),
-                Change::Rename(_) => {}
+                Change::Rename(_) | Change::Link(_) | Change::Unlink(_) => {}
             }
             convs::apply(&mut c, &by, change).map_err(err)?;
         }
@@ -302,6 +334,7 @@ impl Daemon {
             self.threads.forget_reads(&who, ThreadTarget::Conv(c.id));
         }
         self.threads.save_conv(c.clone()).map_err(|e| ThreadError(500, format!("can't save it: {e}")))?;
+        self.config.acl.set_reach(self.threads.reach());
         self.save_due.get_or_insert_with(|| Instant::now() + SAVE_DEBOUNCE);
         self.soon();
         if let Some(member) = added {

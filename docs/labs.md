@@ -184,17 +184,34 @@ machine without it, nobody does.
   session: *New conversation* (the + by *Channels* on the chat page) asks
   for a title and keeps it on the machine you're on, or another of yours
   that's online (its home; it's there while that machine is). You own it.
-  ⓘ shows its members; *Add people…* adds someone who can already reach
-  that machine (someone in your team, or someone a session there is shared
-  with), by name or id, from now on or with its history, and tells them on
-  their phone. The invite and the members list both say what membership
-  will mean once conversations link panes and have a lead: members can have
-  the lead type into and read every linked pane, so invite only people
-  you'd hand those terminals to. Members read and post whatever their role
+  ⓘ shows its members; *Add people…* adds someone by name or id, from now
+  on or with its history, and tells them on their phone: someone who can
+  already reach that machine, a teammate (listed under *Teammates*), or
+  anyone on Arugula by their login. Someone who couldn't reach the machine
+  can once they're in, for its conversations only: control routes them to
+  it, and they see the conversations they're in there and nothing else.
+  The invite and the members list both say what membership means: members
+  can have the lead type into and read every linked pane, so invite only
+  people you'd hand those terminals to. Members read and post whatever their role
   in the machine's sessions; they can leave, and only you rename it, take
   people out or delete it. Unread counts, @mentions (a push whose tap opens
   the conversation), Activity and search work as for any thread. An @ of
   someone who can reach the machine but isn't in it offers to add them.
+- **Links** (#856). *Add to conversation…* on a pane's menu (for someone
+  who may type in it) links the pane into a conversation you're in, on
+  this machine or another of yours or a teammate's, or into a new one
+  here. When the conversation has other people in it, it says first that
+  they'll be able to drive the pane through @lead. Linking is two steps,
+  on two machines: the pane's machine keeps a grant, with your rights on
+  the pane, and the conversation's home keeps the link, named L1, L2… The
+  conversation's header shows a chip for each, live, offline (its machine
+  can't be reached now) or closed; a chip opens the pane, or its thread if
+  you can't open it. *Linked conversations…* on the pane lists its grants,
+  and *Revoke* cuts that link: the home finds it refused and closes it for
+  good (a pane linked again is a new link). The owner, or whoever linked
+  one, can close a link from its chip. The home drives a linked pane
+  (M84's lead will) through control's relay, and only that pane: its
+  prompt, wait, screen, events and card answers.
 - **An @ of someone who can't see the thread offers to invite them**. When you, the owner, write "@sam look" and Sam is someone this
   machine knows (shared with elsewhere, or on a roster it checked) but
   can't read that thread, the composer says "Sam can't see this. Invite
@@ -282,8 +299,15 @@ menu, *Session thread* in the session menu, or the bubble on a pane.
   and the members they added read and post, members from when they were
   added unless added with its history, whatever their role in the
   machine's sessions. A conversation lives on its home machine, in
-  `<state>/threads/conv-<id>.json` (its title and members) beside its
-  messages, and never in control.
+  `<state>/threads/conv-<id>.json` (its title, members and links) beside
+  its messages, and never in control. Members see everything linked; the
+  pane itself, its terminal and its own thread, stays with the people it's
+  shared with.
+- **A link** is a grant on the pane's machine (`<state>/conv-grants.json`),
+  made by someone who may drive the pane: the conversation's home then
+  reaches that pane, and nothing else there, with that person's rights on
+  it, no more than an editor's. Revoking the grant on the pane cuts the
+  link.
 
 ### Huddles: who joins, where the audio goes
 

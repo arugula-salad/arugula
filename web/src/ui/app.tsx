@@ -115,6 +115,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       <ThreadLayer phone={phone} />
       <InLabs on={client.hasCalls()}>{(l) => <l.HuddleBar />}</InLabs>
       {state && <InLabs on={client.hasThreads()}>{(l) => <l.ChatPage client={client} />}</InLabs>}
+      <InLabs on={client.hasThreads()}>{(l) => <l.LinkLayer />}</InLabs>
       {state && <AgentsPageLayer client={client} />}
       <ConversationsLayer />
       <InLabs on={client.flag("studio")}>{(l) => <l.AppsLayer />}</InLabs>

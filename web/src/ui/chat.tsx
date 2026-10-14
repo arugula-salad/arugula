@@ -19,7 +19,7 @@ import { useEffect, useState } from "preact/hooks";
 import type { Client } from "../client";
 import type { Fleet } from "../fleet";
 import { directory } from "../hosts";
-import { threadKey, type Conversation, type SessionId, type ThreadMsg, type ThreadSummary, type ThreadTarget } from "../proto";
+import { threadKey, type ConvLink, type Conversation, type SessionId, type ThreadMsg, type ThreadSummary, type ThreadTarget } from "../proto";
 import { getFleet } from "./hosts";
 import { usePhone } from "./hooks";
 import { openMenu, type MenuItem } from "./menu";
@@ -30,6 +30,7 @@ import { HuddleButton, HuddleChip, useHuddle } from "./huddle";
 import { Avatar } from "./people";
 import { AppBar } from "./app-bar";
 import { ConvMembers, NewConv } from "./convs";
+import { LinkChips, hostOfLink } from "./links";
 
 /** A conversation's mark, beside a session's # and a pane's ↳. */
 export const CONV_SIGIL = "◇";
@@ -342,7 +343,7 @@ function ChatView({ client, route }: { client: Client; route: ChatRoute }) {
   ) : (
     picked &&
     ("conv" in picked.target ? (
-      <ConvThread key={pickedKey} s={picked.s} id={picked.target.conv} phone={phone} multi={multi} focus={route.msg} />
+      <ConvThread key={pickedKey} s={picked.s} all={all} id={picked.target.conv} phone={phone} multi={multi} focus={route.msg} />
     ) : (
       <ChatThread key={pickedKey} s={picked.s} target={picked.target} phone={phone} multi={multi} focus={route.msg} />
     ))
@@ -565,7 +566,7 @@ function ChatThread({ s, target, phone, multi, focus }: { s: Source; target: Thr
 
 /** A conversation (#855): its title, where it's kept and who's in it, its
  * messages, and on the right its members (./convs). */
-function ConvThread({ s, id, phone, multi, focus }: { s: Source; id: string; phone: boolean; multi: boolean; focus?: number }) {
+function ConvThread({ s, all, id, phone, multi, focus }: { s: Source; all: Source[]; id: string; phone: boolean; multi: boolean; focus?: number }) {
   const c = s.client;
   const conv = c.conv(id);
   const target: ThreadTarget = { conv: id };
@@ -585,6 +586,15 @@ function ConvThread({ s, id, phone, multi, focus }: { s: Source; id: string; pho
     if (!c.info(q.pane)) return `%${q.pane} isn't here to show`;
     goTo(s, { pane: q.pane }, (cl) => cl.panes.get(q.pane)?.view.reveal(q.text));
     return null;
+  };
+  // A link's chip opens its pane, where this person can open it; else the
+  // pane's own thread, where they can read that.
+  const openLink = (l: ConvLink) => {
+    const host = hostOfLink(s, l);
+    const there = host === undefined ? undefined : all.find((x) => x.host === host);
+    if (there?.client.info(l.pane)) return goTo(there, { pane: l.pane });
+    if (there?.client.thread({ pane: l.pane })) return openChat(there.host, { pane: l.pane });
+    c.toast(`${l.name} is a pane you can't open${host ? ` on ${host}` : ""}`);
   };
   const topic = [multi || !s.shown ? `on ${s.host || "this machine"}` : "", people.length === 1 ? "just you" : `${people.length} people`]
     .filter(Boolean)
@@ -630,6 +640,7 @@ function ConvThread({ s, id, phone, multi, focus }: { s: Source; id: string; pho
             </button>
           )}
         </header>
+        {conv && <LinkChips s={s} conv={conv} go={openLink} />}
         <ThreadBody
           client={c}
           target={target}

@@ -59,6 +59,12 @@ import {
   type ConvMemberRequest,
   type ConvRenameRequest,
   type Conversation,
+  type ConvGrant,
+  type ConvGrantRequest,
+  type ConvGrantRevokeRequest,
+  type ConvLinkRequest,
+  type ConvLinkStatus,
+  type ConvUnlinkRequest,
 } from "./proto";
 import { decompress } from "fzstd";
 import { SCROLLBACK, TerminalView } from "./terminal-view";
@@ -650,11 +656,54 @@ export class Client {
   }
 
   /** Add someone (an id, or a name as an `@` gives it), from now on or
-   *  with its history. */
-  addConvMember(id: string, who: string, history: boolean): Promise<Conversation> {
+   *  with its history. `reach` (#856): for an `account:` who doesn't reach
+   *  this machine yet, their name and the root this browser pinned for
+   *  them: being a member lets them in. */
+  addConvMember(id: string, who: string, history: boolean, reach?: { name: string; root: string }): Promise<Conversation> {
     return this.convCall(
-      this.request(OPS["conv.member_add"].method, opPath("conv.member_add", { id }), { who, history } satisfies ConvMemberRequest),
+      this.request(OPS["conv.member_add"].method, opPath("conv.member_add", { id }), {
+        who,
+        history,
+        name: reach?.name ?? null,
+        root: reach?.root ?? null,
+      } satisfies ConvMemberRequest),
     );
+  }
+
+  // ---- links (#856): a conversation's panes, by a grant on the pane's machine
+
+  /** Let a conversation's home drive `pane` here, with this person's
+   *  rights on it. `device`: the home's control device id, null when the
+   *  home is this machine. */
+  grantConv(pane: PaneId, req: ConvGrantRequest): Promise<ConvGrant> {
+    return this.convCall(this.request(OPS["conv.grant"].method, opPath("conv.grant", { id: pane }), req));
+  }
+
+  /** The conversations `pane` is linked to, by their grants here. */
+  convGrants(pane: PaneId): Promise<ConvGrant[]> {
+    return this.convCall(this.request(OPS["conv.grants"].method, opPath("conv.grants", { id: pane })));
+  }
+
+  /** Take a grant back: the conversation's link to `pane` is cut. */
+  revokeConvGrant(pane: PaneId, device: string, conv: string): Promise<ConvGrant[]> {
+    return this.convCall(
+      this.request(OPS["conv.grant_revoke"].method, opPath("conv.grant_revoke", { id: pane }), { device, conv } satisfies ConvGrantRevokeRequest),
+    );
+  }
+
+  /** Link a pane its machine granted this conversation (kept here). */
+  linkConv(id: string, req: ConvLinkRequest): Promise<Conversation> {
+    return this.convCall(this.request(OPS["conv.link"].method, opPath("conv.link", { id }), req));
+  }
+
+  /** Each link's state now, read from its machine. */
+  convLinks(id: string): Promise<ConvLinkStatus[]> {
+    return this.convCall(this.request(OPS["conv.links"].method, opPath("conv.links", { id })));
+  }
+
+  /** Close a link (it stays, closed). */
+  unlinkConv(id: string, name: string): Promise<Conversation> {
+    return this.convCall(this.request(OPS["conv.unlink"].method, opPath("conv.unlink", { id }), { name } satisfies ConvUnlinkRequest));
   }
 
   /** Take someone out (its owner), or leave (yourself). */
