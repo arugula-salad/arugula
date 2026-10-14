@@ -107,6 +107,20 @@ runs:
         path: ~/.cache/ms-playwright
         key: playwright-${{ runner.os }}-${{ hashFiles('web/pnpm-lock.yaml') }}
         restore-keys: playwright-${{ runner.os }}-
+    # Ghostty's patched checkout and Zig's caches (vendor/libghostty-vt-sys,
+    # #868): without them every Rust job clones and compiles Ghostty, ~3
+    # CPU-minutes and a minute and a half of wall time each. A job's own key
+    # (its targets), and no restore-keys, so a new Ghostty starts clean
+    # rather than growing the old one.
+    - name: Ghostty's cache
+      if: inputs.rust == 'true'
+      shell: bash
+      run: echo "LIBGHOSTTY_VT_SYS_CACHE_DIR=$HOME/.cache/libghostty-vt-sys" >> "$GITHUB_ENV"
+    - uses: actions/cache@v4
+      if: inputs.rust == 'true'
+      with:
+        path: ~/.cache/libghostty-vt-sys
+        key: ghostty-${{ runner.os }}-${{ inputs.cache-key }}-${{ hashFiles('vendor/libghostty-vt-sys/**', '.mise.toml') }}
     # In place of the build directories geek kept (scripts/ci-cap-target).
     # Saved from main only, so branches don't evict main's.
     - uses: Swatinem/rust-cache@v2
