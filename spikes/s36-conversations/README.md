@@ -68,7 +68,7 @@ The rig is [rig.ts](rig.ts), [setup.sh](setup.sh), [flow.sh](flow.sh), [c.sh](c.
      every linked pane.
    - With an owner's-rights lead, hiding a linked pane's screen from some members doesn't hold: any
      member can ask the lead to describe it. The recommended rule is that a member sees everything
-     linked, with a warning when a link is added and when someone is invited (For Jake 1).
+     linked, with a warning when a link is added and when someone is invited (decided, below).
 5. **Events into the timeline.**
    - **Signals:** the pane's attention events (working, done or idle, needs input with a reason)
      and its exit, from the mux's event bus at home, or from `/api/events?pane=N&follow=1` streamed
@@ -272,7 +272,7 @@ Say it at invite and at link time, as above. Keep the per-pane rule where it's r
 - a pane's own thread stays the pane's;
 - a member can't open the pane itself (its terminal, its block) unless it's shared with them.
 
-That's For Jake 1, because it drops a line of the tracker's shape.
+Jake chose this rule after the spike (below). It drops a line of the tracker's shape.
 
 **What stays enforced in code, not in the prompt:**
 - links are added only by someone who may drive the pane, on that pane's machine (q2);
@@ -396,19 +396,12 @@ From `web/src/ui/chat.tsx` and `threads.tsx`:
 - **Where push comes from.** Pushes go out from the home machine's `config.notify` (Web Push and
   control push), so a member on the phone gets them without reaching the linked machines.
 
-## For Jake
+## Decided after the spike (Jake, 2026-10-13)
 
-1. **What membership shows.** With the lead acting as the owner, any member can ask it to read any
-   linked pane, so the tracker's "a linked pane's screen and quotes are shown only to people that
-   pane is shared with" can't hold (q4). Choose one:
-   - **a) Members see everything linked** (recommended). Drop the placeholder rule. Say so at invite
-     and at link time, and keep the pane itself (its terminal, its own thread) to the people it's
-     shared with.
-   - **b) Keep placeholders for screens and quotes anyway,** as a courtesy, and say the lead can
-     still describe them. It looks safer than it is.
-   - **c) Two kinds of member:** *drivers*, who may `@lead`, and *readers*, who see only the
-     timeline's messages. Events and the lead's replies are still content, so readers still learn
-     what links do; it only stops them asking.
+1. **What membership shows: members see everything linked** (option a of three). The placeholder
+   rule is dropped. The invite and *Add to conversation…* say so (q4). The pane itself, its terminal
+   and its own thread, stays with the people it's shared with. The other options were placeholders
+   kept as a courtesy (b), and drivers vs readers (c).
 
 ## The milestones (from M81, for #851)
 
