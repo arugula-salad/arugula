@@ -448,6 +448,54 @@ fn claude_code_in_a_terminal_asks_through_its_hook() {
     assert_eq!(status, 400);
 }
 
+/// The shell's "command started" (OSC 133;C, from its preexec) comes off
+/// the terminal on the pane's own channel, and can reach the mux after the
+/// question the command asked (#912: the phone's "needs you" dot never came
+/// while the card was up). A question still open wants you, whatever the
+/// shell says it started meanwhile.
+#[test]
+fn a_late_command_start_leaves_the_question_wanting_you() {
+    let d = Daemon::child();
+    let dir = d.sessions.join("late");
+    std::fs::create_dir_all(&dir).unwrap();
+    let cmd = format!(
+        "tty > {dir}/tty; {bin} ask < {input} > {dir}/out; echo done > {dir}/exit",
+        dir = dir.display(),
+        bin = cli_bin().display(),
+        input = fixture(),
+    );
+    let pane = d.post("/api/run", json!({ "command": cmd }))["pane"].as_u64().unwrap();
+    d.wait_for("the card", || pane_info(&d, pane)["ask"].is_object());
+    assert_eq!(pane_info(&d, pane)["attention"], "needs_input");
+    // The command start, late: written to the pane's terminal as the shell
+    // would have written it before the command ran. The mux sends its
+    // event from where it sets the attention, so once it's out, so is that.
+    let (tx, rx) = std::sync::mpsc::channel::<Value>();
+    let sock = d.sock();
+    std::thread::spawn(move || {
+        use std::io::{BufRead, Write};
+        let mut s = std::os::unix::net::UnixStream::connect(sock).unwrap();
+        write!(s, "GET /api/events?follow=1&pane={pane}&type=command_start HTTP/1.1\r\nHost: x\r\n\r\n").unwrap();
+        for line in std::io::BufReader::new(s).lines().map_while(Result::ok) {
+            if let Ok(v) = serde_json::from_str::<Value>(&line) {
+                let _ = tx.send(v);
+            }
+        }
+    });
+    std::thread::sleep(Duration::from_millis(300));
+    let tty = wait_file(&d, &dir.join("tty"));
+    std::fs::write(tty.trim(), "\x1b]133;C\x07").unwrap();
+    rx.recv_timeout(Duration::from_secs(10)).expect("the late command start");
+    let info = pane_info(&d, pane);
+    assert!(info["ask"].is_object());
+    assert_eq!(info["attention"], "needs_input", "{info}");
+
+    // Answered: its program goes on.
+    d.call(pane, "terminal", json!({}));
+    wait_file(&d, &dir.join("exit"));
+    assert!(pane_info(&d, pane)["ask"].is_null());
+}
+
 #[test]
 fn outside_arugula_the_hook_does_nothing() {
     let out = arugula_testkit::command(cli_bin())
