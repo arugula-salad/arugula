@@ -256,26 +256,50 @@ desktop-macos arch="" *tauri_args="":
 # gets the setup page and is left alone). Needs podman or docker; the
 # container runs the host's architecture (aarch64 under Docker Desktop on
 # a Mac). `just desktop-xvfb app keys` runs one claim.
+#
+# ARUGULA_DESKTOP_BINARIES: a directory with the static daemon and CLI to
+# test (check.yml's static job's) in place of `just static`.
+# ARUGULA_DESKTOP_IMAGE_REPO: a registry repository (check.yml: GHCR) to
+# pull the test image from, tagged by what it's built from, in place of
+# building it (6 min on a fresh runner); built when the pull fails, and
+# pushed there too with ARUGULA_DESKTOP_IMAGE_PUSH=1.
 desktop-xvfb *tests="join app stale":
     #!/usr/bin/env bash
     set -euo pipefail
     root={{justfile_directory()}}
     engine=$(command -v podman || command -v docker) || { echo "the desktop test needs podman or docker" >&2; exit 1; }
     arch=$(uname -m); [ "$arch" = arm64 ] && arch=aarch64
-    just static "$arch"
+    src=${ARUGULA_DESKTOP_BINARIES:-}
+    if [ -z "$src" ]; then just static "$arch"; src={{target_dir}}/$arch-unknown-linux-musl/release; fi
     host=$arch-unknown-linux-gnu
     mkdir -p crates/desktop/binaries
-    for b in arugulad arugula; do install -m 755 "{{target_dir}}/$arch-unknown-linux-musl/release/$b" "crates/desktop/binaries/$b-$host"; done
+    for b in arugulad arugula; do install -m 755 "$src/$b" "crates/desktop/binaries/$b-$host"; done
     toolchain=$(sed -n 's/^channel = "\(.*\)"/\1/p' crates/desktop/rust-toolchain.toml)
+    tauri_cli=2.12.1
     base=arugula-desktop-build:jammy-$toolchain
-    "$engine" build -q -t "$base" -f packaging/desktop/Containerfile --build-arg RUST_TOOLCHAIN="$toolchain" --build-arg TAURI_CLI=2.12.1 packaging/desktop
-    "$engine" build -q -t arugula-desktop-xvfb:jammy-$toolchain -f packaging/desktop/xvfb/Containerfile --build-arg BASE="$base" packaging/desktop/xvfb
+    image=arugula-desktop-xvfb:jammy-$toolchain
+    repo=${ARUGULA_DESKTOP_IMAGE_REPO:-}
+    # Everything the two images are built from (neither COPYs a file).
+    tag=$(cat packaging/desktop/Containerfile packaging/desktop/xvfb/Containerfile | { cat; echo "$toolchain $tauri_cli $arch"; } | sha256sum | cut -c1-16)
+    if [ -n "$repo" ] && "$engine" pull -q "$repo:$tag" >/dev/null 2>&1; then
+      echo "the test image: $repo:$tag"
+      "$engine" tag "$repo:$tag" "$image"
+    else
+      [ -z "$repo" ] || echo "no $repo:$tag yet: building it"
+      "$engine" build -q -t "$base" -f packaging/desktop/Containerfile --build-arg RUST_TOOLCHAIN="$toolchain" --build-arg TAURI_CLI="$tauri_cli" packaging/desktop
+      "$engine" build -q -t "$image" -f packaging/desktop/xvfb/Containerfile --build-arg BASE="$base" packaging/desktop/xvfb
+      if [ -n "$repo" ] && [ "${ARUGULA_DESKTOP_IMAGE_PUSH:-}" = 1 ]; then
+        # Never the test's failure: the next run builds it again.
+        "$engine" tag "$image" "$repo:$tag"
+        "$engine" push -q "$repo:$tag" || echo "couldn't push $repo:$tag" >&2
+      fi
+    fi
     target={{target_dir}}/desktop-xvfb-$arch
     mkdir -p "$target"
     "$engine" run --rm --security-opt label=disable \
       -v "$root:/src" -v "$target:/target" -v arugula-desktop-cargo:/opt/cargo/registry \
       -e CARGO_TARGET_DIR=/target -w /src/crates/desktop \
-      arugula-desktop-xvfb:jammy-$toolchain bash -c 'set -euo pipefail
+      "$image" bash -c 'set -euo pipefail
         cargo tauri build --debug --no-bundle
         APP=/target/debug/arugula-desktop BIN=/src/crates/desktop/binaries HOST='"$host"' \
           /src/packaging/desktop/xvfb/run.sh {{tests}}'
