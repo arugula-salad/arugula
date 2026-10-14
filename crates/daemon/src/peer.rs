@@ -26,7 +26,7 @@ use std::{
 
 use arugula_e2e::{
     Cert, Kind, Revocation, Trust,
-    channel::{Channel, Initiator, Msg, RequestHead, ResponseHead, prologue},
+    channel::{Channel, Initiator, Msg, Refusal, RequestHead, ResponseHead, prologue},
 };
 use futures_util::{SinkExt, StreamExt, stream::SplitSink};
 use serde::Deserialize;
@@ -346,7 +346,10 @@ async fn open(control: &Control, m: &Machine) -> anyhow::Result<Arc<Conn>> {
     })
     .await
     .map_err(|_| anyhow::anyhow!("{} didn't answer the handshake in time", m.name))??;
-    let (_, ch) = init.finish(&m2)?;
+    let (said, ch) = init.finish(&m2)?;
+    if let Some(r) = Refusal::decode(&said) {
+        anyhow::bail!("{} refused: {} (not let in?)", m.name, r.message);
+    }
     let (sink, mut stream) = ws.split();
     let conn = Arc::new(Conn {
         ch: Arc::new(ch),

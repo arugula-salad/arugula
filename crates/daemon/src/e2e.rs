@@ -13,7 +13,7 @@ use std::sync::Arc;
 
 use arugula_e2e::{
     Kind,
-    channel::{Channel, MAX_MSG, MAX_WIRE, Msg, RequestHead, Responder, ResponseHead, Welcome, prologue},
+    channel::{Channel, MAX_MSG, MAX_WIRE, Msg, Refusal, RequestHead, Responder, ResponseHead, Welcome, prologue},
 };
 use axum::{
     Router,
@@ -161,6 +161,12 @@ async fn serve(app: Arc<App>, mut inbound: mpsc::Receiver<Vec<u8>>, out: mpsc::S
     }
     let Some((device, principal)) = app.control.device(&who) else {
         warn!(key = hex::encode(&who[..8]), "refused a channel from a device this daemon doesn't trust");
+        // Said, not just hung up (#913): a browser approved a moment ago
+        // gets here before this daemon has fetched its certificate, and a
+        // hang-up looks like a broken route, so it would try a worse one and
+        // stay on it. Queued before the socket closes, as a block's is.
+        let (m2, _) = responder.finish(&Refusal::unknown_device().encode())?;
+        out.send(m2).await?;
         anyhow::bail!("unknown device");
     };
     // The daemon's clock, for the block grants this device mints (M50).

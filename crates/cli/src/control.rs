@@ -48,7 +48,7 @@ use arugula_control_wire as wire;
 use arugula_e2e::{
     Cert, DeviceKeys, Kind, Revocation, Trust,
     cert::{join_proof_body, request_auth},
-    channel::{Channel, Initiator, Msg, RequestHead, prologue},
+    channel::{Channel, Initiator, Msg, Refusal, RequestHead, prologue},
     keys::fingerprint,
     now_ms,
 };
@@ -590,7 +590,10 @@ impl Link {
                 }
             }
         };
-        let (_, ch) = init.finish(&m2)?;
+        let (said, ch) = init.finish(&m2)?;
+        if let Some(r) = Refusal::decode(&said) {
+            bail!("the machine refused: {} (not an approved device?)", r.message);
+        }
         ws.get_ref().set_timeout(None)?;
         ws.get_mut().set_nonblocking(true)?;
         let (tx, rx) = mpsc::channel();

@@ -220,6 +220,12 @@ export class E2ESocket {
         }
       } catch (e) {
         last = e;
+        // The daemon itself said no (#913: it doesn't trust this device
+        // yet, say). Every way reaches the same daemon, so another one
+        // would only hear the same, or, a moment later, be let in on a
+        // worse way than the first and stay there: try again later, from
+        // the first.
+        if ((e as { byDaemon?: boolean }).byDaemon) throw e;
         if (route.mux && (e as { refused?: boolean }).refused) refused = true;
       }
     }
@@ -247,7 +253,7 @@ export class E2ESocket {
             const { payload, channel } = await ik.read(wire);
             clearTimeout(t);
             const w = readWelcome(payload, performance.now());
-            if (w.refused) return rej(Object.assign(new Error(`the machine refused: ${w.refused}`), { refused: w.refused }));
+            if (w.refused) return rej(Object.assign(new Error(`the machine refused: ${w.refused}`), { refused: w.refused, byDaemon: true }));
             const sock = new E2ESocket(ws, channel.send, channel.recv, early);
             sock.clock = w.clock;
             res(sock);
