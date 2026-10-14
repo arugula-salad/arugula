@@ -34,11 +34,19 @@ runs:
     # geek had these: tmux, vi and nvim for the tmux tests and the layout
     # spec; myhostname resolves *.localhost (browser-ports' sites) for Node,
     # as systemd's resolver did there; zstd for the caches.
+    # The runner image may have them all (home-cloud's gha-runner, target
+    # arugula: #868): then no apt at all.
     - name: Packages
       shell: bash
       run: |
-        sudo apt-get update -qq
-        sudo apt-get install -y -qq --no-install-recommends tmux vim-tiny neovim libnss-myhostname zstd ${{ inputs.packages }} >/dev/null
+        missing=()
+        for p in tmux vim-tiny neovim libnss-myhostname zstd ${{ inputs.packages }}; do
+          dpkg-query -W -f='${Status}' "$p" 2>/dev/null | grep -q 'install ok installed' || missing+=("$p")
+        done
+        if [ ${#missing[@]} -gt 0 ]; then
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends "${missing[@]}" >/dev/null
+        fi
     - name: Rust (rust-toolchain.toml's)
       if: inputs.rust == 'true'
       shell: bash
@@ -59,11 +67,22 @@ runs:
     - uses: taiki-e/install-action@v2
       with:
         tool: just
+    # What the runner image has already (home-cloud's gha-runner, target
+    # arugula: #868), so the steps after don't fetch it again.
+    - name: What the image has
+      id: have
+      shell: bash
+      run: |
+        case "$(node --version 2>/dev/null)" in v24.*) echo node=true ;; *) echo node=false ;; esac >> "$GITHUB_OUTPUT"
+        case "$(pnpm --version 2>/dev/null)" in 12.*) echo pnpm=true ;; *) echo pnpm=false ;; esac >> "$GITHUB_OUTPUT"
+        if compgen -G "$HOME/.cache/ms-playwright/chromium-*" >/dev/null; then echo browsers=true; else echo browsers=false; fi >> "$GITHUB_OUTPUT"
     # geek's: MISE_NODE_VERSION=24 and pnpm 12.
     - uses: actions/setup-node@v4
+      if: steps.have.outputs.node != 'true'
       with:
         node-version: 24
     - uses: pnpm/action-setup@v4
+      if: steps.have.outputs.pnpm != 'true'
       with:
         version: 12
     - name: Claude Code
@@ -80,8 +99,10 @@ runs:
         key: pnpm-${{ runner.os }}-${{ hashFiles('web/pnpm-lock.yaml') }}
         restore-keys: pnpm-${{ runner.os }}-
     # Playwright's browsers (`just browsers` installs their system packages
-    # each time; the downloads are what this keeps).
+    # each time; the downloads are what this keeps), unless the image has
+    # them: `just browsers` fetches only a revision it lacks.
     - uses: actions/cache@v4
+      if: steps.have.outputs.browsers != 'true'
       with:
         path: ~/.cache/ms-playwright
         key: playwright-${{ runner.os }}-${{ hashFiles('web/pnpm-lock.yaml') }}
