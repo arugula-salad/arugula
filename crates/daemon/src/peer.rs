@@ -158,8 +158,13 @@ pub async fn follow(
     path: &str,
     mut part: impl FnMut(Vec<u8>) -> bool + Send,
 ) -> anyhow::Result<u16> {
-    let head =
-        RequestHead { method: "GET".into(), path: path.into(), content_type: None, stream: true, headers: Default::default() };
+    let head = RequestHead {
+        method: "GET".into(),
+        path: path.into(),
+        content_type: None,
+        stream: true,
+        headers: Default::default(),
+    };
     let mut status = 0;
     send_parts(control, m, head, Vec::new(), |s, b| {
         status = s;

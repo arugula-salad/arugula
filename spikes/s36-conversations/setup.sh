@@ -27,7 +27,12 @@ c box-a POST "/api/convs/$CONV/links" "{\"machine\":\"box-b\",\"pane\":$B,\"titl
 A_ID=$(jq -r '.machines["box-a"].id' "$STATE/rig.json")
 c box-b POST /api/conv-grants "{\"device\":\"$A_ID\",\"pane\":$B,\"conv\":\"$CONV\"}" > /dev/null
 c box-a POST "/api/convs/$CONV/links" "{\"pane\":$A,\"title\":\"claude in calc\"}" > /dev/null
-c box-a POST "/api/convs/$CONV/links" "{\"machine\":\"box-b\",\"pane\":$B,\"title\":\"claude in calc\"}" | jq -c .links
+# box-a trusts box-b once its trusted devices refresh (about two minutes
+# after box-b joined, on this rig).
+until r=$(c box-a POST "/api/convs/$CONV/links" "{\"machine\":\"box-b\",\"pane\":$B,\"title\":\"claude in calc\"}") && echo "$r" | jq -e .links > /dev/null; do
+  echo "  ${r:0:100}"; sleep 10
+done
+echo "$r" | jq -c .links
 c box-a POST "/api/convs/$CONV/lead" "{\"cwd\":\"$STATE/box-a/work\",\"model\":\"haiku\"}" | jq -c '{lead}'
 until c box-a GET "/api/convs/$CONV" | jq -r .lead | xargs -I{} "$HERE/c.sh" "$STATE" box-a GET /api/blocks/{} | jq -e '.state.attention == "done"' > /dev/null; do sleep 2; done
 echo "lead ready"

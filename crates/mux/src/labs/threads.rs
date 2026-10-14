@@ -63,13 +63,12 @@ impl Threads {
         let mut convs = BTreeMap::new();
         for entry in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
             let name = entry.file_name().to_string_lossy().into_owned();
-            if name.starts_with("conv-") && name.ends_with(".json") {
-                if let Some(c) = std::fs::read(entry.path())
-                    .ok()
-                    .and_then(|b| serde_json::from_slice::<Conversation>(&b).ok())
-                {
-                    convs.insert(c.id, c);
-                }
+            if name.starts_with("conv-")
+                && name.ends_with(".json")
+                && let Some(c) =
+                    std::fs::read(entry.path()).ok().and_then(|b| serde_json::from_slice::<Conversation>(&b).ok())
+            {
+                convs.insert(c.id, c);
             }
         }
         let reads = std::fs::read(dir.join("reads.json"))

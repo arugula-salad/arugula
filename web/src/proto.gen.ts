@@ -291,6 +291,12 @@ dropped_ms?: number,
 code?: string, approve?: string, };
 
 /**
+ * S36 (spike): a conversation's id, global: 16 random bytes, `c-` and 32
+ * hex digits on the wire. `Copy`, so `ThreadTarget` stays `Copy`.
+ */
+export type ConvId = string;
+
+/**
  * An editor's debug session.
  */
 export type DebugState = { 
@@ -1858,7 +1864,7 @@ mention?: boolean, };
 /**
  * What a thread (M61) is about: a pane, or a session.
  */
-export type ThreadTarget = { "pane": number } | { "session": number };
+export type ThreadTarget = { "pane": number } | { "session": number } | { "conv": ConvId };
 
 /**
  * An `@` in a post that reached no one, for the poster alone.

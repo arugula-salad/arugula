@@ -103,16 +103,20 @@ async fn link(State(app): State<Arc<App>>, Path(id): Path<String>, Json(r): Json
             }
         }
         Some(m) => {
-            let (status, body) = remote(&app, m, "GET", &format!("/api/panes/{}/wait?until=idle&timeout=0", r.pane), None, 20)
-                .await
-                .map_err(bad)?;
+            let (status, body) =
+                remote(&app, m, "GET", &format!("/api/panes/{}/wait?until=idle&timeout=0", r.pane), None, 20)
+                    .await
+                    .map_err(bad)?;
             if status >= 400 {
                 return Err(bad(format!("{m} refused: {status} {}", String::from_utf8_lossy(&body))));
             }
         }
     }
-    let c = conv(&app, ConvReq::Link(id, ConvLink { name: String::new(), machine: r.machine, pane: r.pane, title: r.title }))
-        .await?;
+    let c = conv(
+        &app,
+        ConvReq::Link(id, ConvLink { name: String::new(), machine: r.machine, pane: r.pane, title: r.title }),
+    )
+    .await?;
     if let Some(l) = c.links.last() {
         watch(app.clone(), c.id, l.clone());
     }
@@ -279,9 +283,7 @@ pub fn linked_request(app: &App, device: &str, path: &str, body: &[u8]) -> Optio
     let s: Vec<&str> = s.iter().map(String::as_str).collect();
     let pane: PaneId = match s.as_slice() {
         ["api", "panes", id, "prompt" | "wait" | "capture"] => id.parse().ok()?,
-        ["api", "events"] => {
-            query.split('&').find_map(|kv| kv.strip_prefix("pane=")).and_then(|p| p.parse().ok())?
-        }
+        ["api", "events"] => query.split('&').find_map(|kv| kv.strip_prefix("pane=")).and_then(|p| p.parse().ok())?,
         ["api", "attention", "act"] => {
             let v: Value = serde_json::from_slice(body).ok()?;
             if v["panes"].as_array().is_some_and(|a| !a.is_empty()) {
@@ -479,7 +481,9 @@ async fn wake_lead(app: &App, id: ConvId, l: &ConvLink) {
     for e in events.iter().rev().take(20).rev() {
         text.push_str(&format!("- {e}\n"));
     }
-    text.push_str("\nRead what it did (read_output, screen: true) and tell the conversation with post_thread, briefly.");
+    text.push_str(
+        "\nRead what it did (read_output, screen: true) and tell the conversation with post_thread, briefly.",
+    );
     if let Err(e) = b.call_by("send", json!({ "text": text }), None).await {
         warn!(error = e, "can't wake the lead");
     }
@@ -534,9 +538,11 @@ pub async fn route_link(call: &Call<'_>, tool: &str, mut args: Value) -> Result<
     if !matches!(tool, "prompt_agent" | "wait" | "read_output" | "agent_respond") {
         return Ok(args);
     }
-    let Some(name) = args["pane"].as_str().map(str::trim).filter(|s| {
-        s.len() > 1 && s[..1].eq_ignore_ascii_case("l") && s[1..].bytes().all(|b| b.is_ascii_digit())
-    }) else {
+    let Some(name) = args["pane"]
+        .as_str()
+        .map(str::trim)
+        .filter(|s| s.len() > 1 && s[..1].eq_ignore_ascii_case("l") && s[1..].bytes().all(|b| b.is_ascii_digit()))
+    else {
         return Ok(args);
     };
     let name = name.to_uppercase();
@@ -545,7 +551,10 @@ pub async fn route_link(call: &Call<'_>, tool: &str, mut args: Value) -> Result<
         return Err(Err(format!("{name}: this agent leads no conversation")));
     };
     let Some(l) = c.links.iter().find(|l| l.name == name).cloned() else {
-        return Err(Err(format!("no link {name}: the links are {}", c.links.iter().map(|l| l.name.as_str()).collect::<Vec<_>>().join(", "))));
+        return Err(Err(format!(
+            "no link {name}: the links are {}",
+            c.links.iter().map(|l| l.name.as_str()).collect::<Vec<_>>().join(", ")
+        )));
     };
     if tool == "prompt_agent" {
         AWAITING.lock().unwrap().insert((c.id, l.name.clone()));
@@ -567,7 +576,9 @@ async fn remote_tool(app: &App, tool: &str, machine: &str, l: &ConvLink, a: &Val
     match tool {
         "prompt_agent" => {
             let body = json!({ "text": a["text"], "answering": a["answering"].as_bool().unwrap_or(false), "timeout": timeout });
-            let (s, b) = remote(app, machine, "POST", &format!("/api/panes/{pane}/prompt"), Some(&body), timeout as u64 + 10).await?;
+            let (s, b) =
+                remote(app, machine, "POST", &format!("/api/panes/{pane}/prompt"), Some(&body), timeout as u64 + 10)
+                    .await?;
             let r = json_of(s, b)?;
             done(format!("{} on {machine}: {}", l.name, r), json!({ "result": r, "link": l.name }))
         }
@@ -575,7 +586,12 @@ async fn remote_tool(app: &App, tool: &str, machine: &str, l: &ConvLink, a: &Val
             let until = match a["until"].as_str().unwrap_or("idle") {
                 "needs_input" | "needs-input" => "needs-input",
                 "idle" => "idle",
-                other => return Err(format!("{}: a link on another machine waits until idle or needs_input, not {other}", l.name)),
+                other => {
+                    return Err(format!(
+                        "{}: a link on another machine waits until idle or needs_input, not {other}",
+                        l.name
+                    ));
+                }
             };
             let path = format!("/api/panes/{pane}/wait?until={until}&timeout={timeout}");
             let (s, b) = remote(app, machine, "GET", &path, None, timeout as u64 + 10).await?;

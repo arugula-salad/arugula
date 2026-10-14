@@ -115,7 +115,7 @@ function goTo(s: Source, target: ThreadTarget, then?: (c: Client) => void) {
   closeChat();
   if (s.shown) {
     if ("pane" in target) s.client.setActive(target.pane);
-    else s.client.selectSession(target.session);
+    else if ("session" in target) s.client.selectSession(target.session);
     then?.(s.client);
     return;
   }
@@ -378,7 +378,7 @@ function topicOf(s: Source, target: ThreadTarget, multi: boolean): string {
     if (info?.cwd) parts.push(info.cwd.replace(/^\/home\/[^/]+|^\/Users\/[^/]+/, "~"));
     const doing = info?.current?.text ?? info?.command;
     if (doing) parts.push(doing);
-  } else {
+  } else if ("session" in target) {
     const n = panesOf(c, target.session).length;
     parts.push(n === 1 ? "1 pane" : `${n} panes`);
   }
@@ -392,7 +392,7 @@ function panesOf(c: Client, session: SessionId): number[] {
 /** Who's in it: people here now, then whoever has posted. */
 function membersOf(c: Client, target: ThreadTarget, msgs: ThreadMsg[]): { who: string; name: string; pic?: string }[] {
   const out = new Map<string, { who: string; name: string; pic?: string }>();
-  const session = "pane" in target ? c.sessionOfPane(target.pane) : target.session;
+  const session = "pane" in target ? c.sessionOfPane(target.pane) : "session" in target ? target.session : null;
   for (const p of c.state?.presence ?? []) {
     const here = p.tab === undefined || session === null || c.sessionOfTab(p.tab) === session;
     if (here && !out.has(p.who)) out.set(p.who, { who: p.who, name: p.name, pic: p.pic });
@@ -519,7 +519,7 @@ function ChatDetails({
   close: () => void;
 }) {
   const c = s.client;
-  const panes = "pane" in target ? [target.pane] : panesOf(c, target.session);
+  const panes = "pane" in target ? [target.pane] : "session" in target ? panesOf(c, target.session) : [];
   return (
     <aside class="chat-details" aria-label="Details" data-chat-details-panel>
       <header class="chat-head">

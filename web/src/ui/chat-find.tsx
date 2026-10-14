@@ -83,7 +83,7 @@ interface Hit {
 
 function channelName(s: Source, target: ThreadTarget, multi: boolean): string {
   const c = s.client;
-  const name = "pane" in target ? `↳ ${paneLabel(c, target.pane)}` : `# ${sessionName(c, target.session)}`;
+  const name = "pane" in target ? `↳ ${paneLabel(c, target.pane)}` : "session" in target ? `# ${sessionName(c, target.session)}` : `@ ${target.conv}`;
   return multi ? `${name} · ${s.host || "this machine"}` : name;
 }
 

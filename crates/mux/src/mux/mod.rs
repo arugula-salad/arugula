@@ -41,7 +41,10 @@ pub struct ThreadPost {
 /// S36 (spike): what to do to a conversation.
 #[derive(Debug)]
 pub enum ConvReq {
-    Create { title: String, owner: String },
+    Create {
+        title: String,
+        owner: String,
+    },
     Get(arugula_proto::ConvId),
     /// Link a pane; its name (`L1`...) is given here.
     Link(arugula_proto::ConvId, arugula_proto::ConvLink),

@@ -584,6 +584,7 @@ export class Client {
    *  they see that message and what follows there, or the whole thread.
    *  What to tell the owner about it. */
   async inviteToThread(t: ThreadTarget, who: string, msg: ThreadMsg, wholeThread: boolean): Promise<string> {
+    if ("conv" in t) throw new Error("a conversation has members of its own (S36)");
     const session = "session" in t ? t.session : this.sessionOfPane(t.pane);
     if (session === null) throw new Error("that pane is gone");
     const r = await this.request(OPS["invite.send"].method, opPath("invite.send"), {
@@ -645,6 +646,8 @@ export class Client {
 
   /** Whether this person may post in a thread (drivers and owners). */
   mayPost(t: ThreadTarget): boolean {
+    // S36 (spike): a conversation's members all post.
+    if ("conv" in t) return true;
     const session = "session" in t ? t.session : this.sessionOfTab(this.tabOfPane(t.pane)?.id ?? -1);
     return this.role(session ?? null) !== "viewer";
   }

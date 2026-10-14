@@ -111,6 +111,7 @@ export function title(client: Client, target: ThreadTarget): string {
     const name = client.state?.sessions.find((s) => s.id === target.session)?.name;
     return `Session thread · ${name ?? target.session}`;
   }
+  if ("conv" in target) return "Conversation";
   const t = client.title(target.pane);
   return `Thread · %${target.pane}${t ? ` ${t}` : ""}`;
 }
@@ -234,7 +235,7 @@ export function ThreadBody({
 
   // Its pane or session went away, or the layout changed (names).
   useEffect(() => client.subscribe(() => setTick((t) => t + 1)), [client]);
-  const gone = "pane" in target ? !client.info(target.pane) : !client.state?.sessions.some((s) => s.id === target.session);
+  const gone = "pane" in target ? !client.info(target.pane) : "session" in target ? !client.state?.sessions.some((s) => s.id === target.session) : false;
 
   // What's shown is read; the newest stays in view (or the message a link
   // names, once).

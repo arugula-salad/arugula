@@ -29,7 +29,8 @@ export function callFingerprintBody(call: string, from: ClientId, to: ClientId, 
 
 /** `pane-7` / `session-2`: a thread's name in its API path. */
 export function threadKey(t: ThreadTarget): string {
-  return "pane" in t ? `pane-${t.pane}` : `session-${t.session}`;
+  // S36 (spike): a conversation is the third kind.
+  return "pane" in t ? `pane-${t.pane}` : "session" in t ? `session-${t.session}` : `conv-${t.conv}`;
 }
 
 export const enum FrameKind {
