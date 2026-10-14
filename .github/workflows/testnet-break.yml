@@ -1,0 +1,58 @@
+# The test stack's claims under BREAK=1, every night on main (#868): each
+# claim with its property broken, where it must fail, which shows it can
+# catch what it checks. check.yml runs it only when the claims or the stack
+# change (scripts/testnet-changed); this catches a product change that left
+# a claim unable to fail. Its own binaries, like check.yml's static and
+# build jobs make, through the same compile cache.
+name: testnet-break
+on:
+  schedule:
+    - cron: "37 8 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: testnet-break
+  cancel-in-progress: false
+
+env:
+  GITHUB_TOKEN: ${{ github.token }}
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+  SCCACHE_WEBDAV_PASSWORD: ${{ secrets.SCCACHE_WEBDAV_PASSWORD }}
+
+jobs:
+  break:
+    runs-on: arugula-amd64
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          cache-key: static
+      - run: scripts/ci-env testnet
+      - run: just bootstrap
+      # The relay claim's phones (web/fixtures/m52-phones.ts): Google Chrome
+      # and WebKit, as in check.yml's testnet.
+      - name: Playwright's browsers
+        run: just browsers
+      - name: Google Chrome
+        run: command -v google-chrome >/dev/null || (cd web && pnpm exec playwright install --with-deps chrome)
+      # check.yml's static (opt-level 1) and build's CLI.
+      - run: just static x86_64
+        env:
+          CARGO_PROFILE_RELEASE_OPT_LEVEL: "1"
+      - run: mise exec -- cargo build -p arugula
+      - name: Its binaries
+        run: |
+          echo "ARUGULA_TESTNET_BINARIES=$CARGO_TARGET_DIR/x86_64-unknown-linux-musl/release" >> "$GITHUB_ENV"
+          echo "ARUGULA_SSH_BINARIES=$CARGO_TARGET_DIR/x86_64-unknown-linux-musl/release" >> "$GITHUB_ENV"
+          echo "ARUGULA_CLI=$CARGO_TARGET_DIR/debug/arugula" >> "$GITHUB_ENV"
+      - name: The control profile's stack
+        run: just testnet down && just testnet up control
+      - name: The claims under BREAK=1
+        run: just testnet break ssh && just testnet break control
+      - name: Take the test stack down
+        if: always()
+        run: just testnet down

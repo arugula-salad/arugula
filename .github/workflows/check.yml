@@ -236,12 +236,12 @@ jobs:
         if: always()
         run: just testnet down
 
-  # The test stack's claims on fresh boxes, then each under BREAK=1, where
-  # it must fail. One stack, the control profile's: it has every box the
+  # The test stack's claims on fresh boxes, then, when the claims change,
+  # each under BREAK=1, where it must fail (nightly: testnet-break.yml). One stack, the control profile's: it has every box the
   # ssh profile has, so the ssh claims run on it first, and building and
   # starting it once saves a second round.
   testnet:
-    needs: [build, static]
+    needs: [changes, build, static]
     runs-on: arugula-amd64
     steps:
       - uses: actions/checkout@v4
@@ -267,7 +267,11 @@ jobs:
         run: just testnet down && just testnet up control
       - name: The claims
         run: just testnet test ssh && just testnet test control
+      # Only when the claims or the stack change (scripts/testnet-changed):
+      # it checks that each claim can fail, not the product, and was more
+      # than half this job. testnet-break.yml runs it every night (#868).
       - name: The claims under BREAK=1
+        if: needs.changes.outputs.testnet == 'true'
         run: just testnet break ssh && just testnet break control
       - name: Take the test stack down
         if: always()
@@ -411,19 +415,21 @@ jobs:
   # What the push changed (#868): suite, the suites' inputs
   # (scripts/suite-changed); app, the desktop app's (scripts/app-changed);
   # macos, what runs on macOS (scripts/macos-changed: main's always do, a
-  # branch's only when it changes that).
+  # branch's only when it changes that); testnet, the test stack's claims
+  # (scripts/testnet-changed).
   changes:
     runs-on: ubuntu-latest
     outputs:
       suite: ${{ steps.ask.outputs.suite }}
       app: ${{ steps.ask.outputs.app }}
       macos: ${{ steps.ask.outputs.macos }}
+      testnet: ${{ steps.ask.outputs.testnet }}
     steps:
       - uses: actions/checkout@v4
       - id: ask
         run: |
           before="${{ github.event.before }}"
-          for c in suite app macos; do
+          for c in suite app macos testnet; do
             # Only the answer into the outputs: the scripts say why on stdout.
             if "scripts/$c-changed" "$before"; then a=true; else a=false; fi
             echo "$c=$a" >> "$GITHUB_OUTPUT"
