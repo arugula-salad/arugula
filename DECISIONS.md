@@ -771,9 +771,13 @@ its own) are cards in its conversation, link `lead`, by the links' rules
 in the conversation answers them on the lead's block (`act_for_lead`): the
 lead acts with the owner's rights and every member may drive through it
 with `@lead` already, so answering its prompt gives nobody more. The real
-run (M85) added one rule: a turn under two seconds with no summary and
-nothing asked isn't posted, since Claude Code starting in a terminal makes
-one. The lead keeps the user's default model (a per-conversation model
+run (M85) added a rule and a fix: a turn under two seconds with no summary
+and nothing asked isn't posted, since Claude Code starting in a terminal
+makes one; and a lead turn counts as replied by a post since its own
+prompt went in, not by a count across turns, because a prompt queued
+behind a turn starts as it ends and the block never looks idle between
+them (its last message was lost). A lead waiting on its own card is still
+in its turn, so a link ending then wakes it afterwards, not mid-turn. The lead keeps the user's default model (a per-conversation model
 was the fallback, left for after the live run).
 Where: `crates/daemon/src/labs/events.rs` (`Rules`, `act_on_lead`, `post_lead_card`), `crates/daemon/src/labs/lead.rs` (`watch`), `crates/daemon/src/api.rs` (`act_for_lead`), `crates/mux/src/mux/attention.rs` (`ask_reason`), `web/src/ui/conv-events.tsx`.
 From: M83 (#862) and M84 (#866) "For Jake", M85 (#859).
