@@ -449,6 +449,13 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.part }}
+      # Ghostty's checkout and Zig's caches (.github/actions/setup's, #868).
+      - name: Ghostty's cache
+        run: echo "LIBGHOSTTY_VT_SYS_CACHE_DIR=$HOME/.cache/libghostty-vt-sys" >> "$GITHUB_ENV"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/libghostty-vt-sys
+          key: ghostty-${{ runner.os }}-${{ runner.arch }}-${{ matrix.part }}-${{ hashFiles('vendor/libghostty-vt-sys/**', '.mise.toml') }}
       # mise's Zig (for libghostty) and nextest, kept between runs: Zig's
       # community mirror answered 429 once and failed the job (#524).
       - uses: actions/cache@v4

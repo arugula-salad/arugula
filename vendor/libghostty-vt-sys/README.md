@@ -34,6 +34,11 @@ checking out the pinned commit, `build.rs` applies `patches/*.patch` in name
 order (and fetches again when they change). A `GHOSTTY_SOURCE_DIR` checkout
 is used as it is, unpatched.
 
+`LIBGHOSTTY_VT_SYS_CACHE_DIR`, when set, holds the patched checkout and
+Zig's caches between builds in place of `OUT_DIR`, so a fresh target
+directory (CI's, #868) doesn't clone and compile Ghostty again: on a warm
+cache the Zig step takes seconds instead of a minute.
+
 - `0001-no-signal-stack.patch`: no 256 KiB threadlocal signal stack, which
   glibc allocated for every thread in the daemon (S9, M9).
 

@@ -90,6 +90,7 @@ fn main() {
     println!("cargo:rerun-if-env-changed=LIBGHOSTTY_VT_SYS_OPTIMIZE");
     println!("cargo:rerun-if-env-changed=GHOSTTY_SOURCE_DIR");
     println!("cargo:rerun-if-env-changed=GHOSTTY_ZIG_SYSTEM_DIR");
+    println!("cargo:rerun-if-env-changed=LIBGHOSTTY_VT_SYS_CACHE_DIR");
     println!("cargo:rerun-if-env-changed=TARGET");
     println!("cargo:rerun-if-env-changed=HOST");
     println!("cargo:rerun-if-env-changed=DEBUG");
@@ -122,7 +123,17 @@ fn build_vendored(link_mode: LinkMode, target: &str) {
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR must be set"));
     let host = env::var("HOST").expect("HOST must be set");
 
-    // Locate ghostty source: env override > fetch into OUT_DIR.
+    // A directory kept between builds (illogical's CI, #868): the patched
+    // checkout and Zig's caches live there instead of in OUT_DIR, which a
+    // fresh target directory starts without, so Ghostty isn't cloned and
+    // compiled again for every build. Zig's caches are keyed by content and
+    // safe to share between targets, profiles and concurrent builds.
+    let cache_dir = env::var_os("LIBGHOSTTY_VT_SYS_CACHE_DIR")
+        .filter(|dir| !dir.is_empty())
+        .map(PathBuf::from);
+    let cache_root = cache_dir.as_deref().unwrap_or(&out_dir);
+
+    // Locate ghostty source: env override > fetch into the cache or OUT_DIR.
     let ghostty_dir = match env::var("GHOSTTY_SOURCE_DIR") {
         Ok(dir) => {
             let p = PathBuf::from(dir);
@@ -133,13 +144,13 @@ fn build_vendored(link_mode: LinkMode, target: &str) {
             );
             p
         }
-        Err(_) => fetch_ghostty(&out_dir),
+        Err(_) => fetch_ghostty(cache_root),
     };
 
     // Build libghostty-vt via zig.
     let install_prefix = out_dir.join("ghostty-install");
-    let zig_cache_dir = out_dir.join("zig-cache");
-    let zig_global_cache_dir = out_dir.join("zig-global-cache");
+    let zig_cache_dir = cache_root.join("zig-cache");
+    let zig_global_cache_dir = cache_root.join("zig-global-cache");
 
     let optimize = zig_optimize_mode();
     let cpu = env::var("LIBGHOSTTY_VT_SYS_CPU").unwrap_or_else(|_| "baseline".to_owned());
@@ -222,6 +233,12 @@ fn build_vendored(link_mode: LinkMode, target: &str) {
             .arg(&zig_system_dir)
             .arg("--global-cache-dir")
             .arg(&zig_global_cache_dir);
+    }
+
+    // Zig's global cache (its packages, and what it compiles for the build
+    // runner) in the kept directory too, unless --system set it above.
+    if cache_dir.is_some() && env::var_os("GHOSTTY_ZIG_SYSTEM_DIR").is_none() {
+        build.arg("--global-cache-dir").arg(&zig_global_cache_dir);
     }
 
     // Pass -Dtarget only for non-iOS cross targets; native builds let zig
@@ -427,6 +444,15 @@ fn patches() -> Vec<(String, String)> {
 /// illogical's patches. Reuses an existing clone if the commit and the
 /// patches match.
 fn fetch_ghostty(out_dir: &Path) -> PathBuf {
+    // Builds sharing LIBGHOSTTY_VT_SYS_CACHE_DIR take turns: one fetches,
+    // the others find its stamp. Released when the file closes.
+    std::fs::create_dir_all(out_dir)
+        .unwrap_or_else(|e| panic!("failed to create {}: {e}", out_dir.display()));
+    let lock_path = out_dir.join(".ghostty-src.lock");
+    let lock = std::fs::File::create(&lock_path)
+        .unwrap_or_else(|e| panic!("failed to create {}: {e}", lock_path.display()));
+    lock.lock()
+        .unwrap_or_else(|e| panic!("failed to lock {}: {e}", lock_path.display()));
     let src_dir = out_dir.join("ghostty-src");
     let stamp = src_dir.join(".ghostty-commit");
     let patches = patches();
