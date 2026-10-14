@@ -13,9 +13,9 @@
 # On a Mac with someone logged in at the screen, it installs the desktop app
 # too, from the app's own releases (app-latest, #393): in /Applications if
 # you can write there, else ~/Applications, then opens it. The app adopts
-# the daemon this set up (#392). curl leaves no quarantine flag, so until
-# the app is notarized (#177) this is the way to it without a Gatekeeper
-# step (#318).
+# the daemon this set up (#392). The app is signed and notarized (#177);
+# on a Mac with a screen the .dmg from arugula.io is the main way in, and
+# this script the terminal one (#318).
 #
 # --app                     install the Mac app even with no one at the
 #                           screen (over ssh, say)
@@ -115,8 +115,6 @@ fi
 
 # The Mac app's zip, from the app's own releases (#393; v* releases don't
 # carry it), checked against their SHA256SUMS before anything is installed.
-# With curl, not a browser: no com.apple.quarantine, so no Gatekeeper step
-# for an app that isn't notarized yet.
 if [ "$app" = 1 ]; then
   case "$target" in
     aarch64-*) zip=arugula-desktop-macos-arm64.zip ;;

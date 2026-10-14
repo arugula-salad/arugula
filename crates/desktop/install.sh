@@ -3,7 +3,8 @@
 #   Linux: ~/.local/lib/arugula-desktop (the app and the arugulad and
 #          arugula it carries), ~/.local/bin/arugula-desktop, its icons
 #          and a launcher entry.
-#   macOS: ~/Applications/Arugula.app (ad-hoc signed, carrying both).
+#   macOS: ~/Applications/Arugula.app (carrying both). A local build is
+#          ad-hoc signed; the released app is notarized (scripts/macos-sign).
 # The daemon stays its own service: the app starts the installed one, or
 # installs the one it carries (`arugulad install`) when there is none.
 # The carried binaries come from ./sidecars.sh (built when missing; it needs
