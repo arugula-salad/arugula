@@ -182,6 +182,9 @@ lints the daemon with neither, and with each alone.
 - `just proto-ts`: regenerate `web/src/proto.gen.ts`.
 - In a worktree, set `CARGO_TARGET_DIR` to a directory of its own, so
   parallel builds don't share one `target/`.
+- Dev builds carry line tables only, and dependencies no debug info
+  (Cargo.toml says how to get full info for a debugger). Changing that
+  rebuilds the whole target dir, both ways.
 - One suite runs at a time per machine: `just test`, `just check` and
   `just e2e` build, then wait for `scripts/suite-lock` while another worktree's
   tests run. Two at once wedge macOS's syspolicyd, and the tests fail by the

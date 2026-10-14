@@ -71,7 +71,11 @@ all = { level = "warn", priority = -1 }
 # target/ (AGENTS.md). Line tables keep backtraces' file:line for our crates
 # without the variable and type info a debugger reads; dependencies get no
 # debug info. A fresh `cargo build --workspace --all-targets` goes from 11 GB
-# to 5.9 GB. For a debugger session: CARGO_PROFILE_DEV_DEBUG=full.
+# to 5.9 GB. The package override wins over CARGO_PROFILE_DEV_DEBUG, so
+# for a debugger session with full info everywhere:
+#   cargo build --config 'profile.dev.debug="full"' \
+#     --config 'profile.dev.package."*".debug="full"'
+# (CARGO_PROFILE_DEV_DEBUG=full alone gives our crates full info, not deps.)
 [profile.dev]
 debug = "line-tables-only"
 
