@@ -29,6 +29,14 @@ for v in APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWO
   eval "[ -n \"\${$v:-}\" ]" || { echo "macos-sign: APPLE_CERTIFICATE is set but $v isn't" >&2; exit 1; }
 done
 
+# The hardened runtime refuses the microphone (huddles) to an app without
+# the entitlement: tauri.conf.json's macOS "entitlements" (app 0.27.4
+# shipped without it).
+mic() {
+  codesign -d --entitlements - "$1" 2>/dev/null | grep -q com.apple.security.device.audio-input ||
+    { echo "macos-sign: $(basename "$1") has no microphone entitlement (crates/desktop/macos/entitlements.plist)" >&2; exit 1; }
+}
+
 # Tauri's bundler signs, notarizes and staples the app itself when these
 # secrets are set (tauri-macos-sign reads the same APPLE_* variables), so an
 # app that already carries our identity and a ticket only needs checking.
@@ -36,6 +44,7 @@ if [ "$what" = app ] &&
   codesign -dvv "$path" 2>&1 | grep -qxF "Authority=$APPLE_SIGNING_IDENTITY" &&
   xcrun stapler validate "$path" >/dev/null 2>&1; then
   codesign --verify --deep --strict "$path"
+  mic "$path"
   spctl --assess --type execute -vv "$path"
   echo "macos-sign: $(basename "$path") was already signed, notarized and stapled by the bundler"
   exit 0
@@ -73,8 +82,9 @@ case "$what" in
     for f in "$path"/Contents/MacOS/*; do
       [ "$(basename "$f")" = arugula-desktop ] || sign --code-signature-flags runtime "$f"
     done
-    sign --code-signature-flags runtime "$path"
+    sign --code-signature-flags runtime --entitlements-xml-file "$(dirname "$0")/../crates/desktop/macos/entitlements.plist" "$path"
     codesign --verify --deep --strict "$path"
+    mic "$path"
     ditto -c -k --keepParent "$path" "$tmp/notarize.zip"
     notarize "$tmp/notarize.zip"
     xcrun stapler staple "$path"

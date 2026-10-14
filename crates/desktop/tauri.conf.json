@@ -36,6 +36,7 @@
     ],
     "macOS": {
       "signingIdentity": "-",
+      "entitlements": "macos/entitlements.plist",
       "minimumSystemVersion": "13.0",
       "files": {
         "Library/LaunchAgents/io.arugula.desktop.daemon.plist": "macos/io.arugula.desktop.daemon.plist"
