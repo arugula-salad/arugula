@@ -247,7 +247,9 @@ for c in sh mktemp rm mkdir cp mv ln grep cut sed tar gzip sha256sum shasum id c
 done
 path=$stubs:$nosd
 run nosystemd-new Linux x86_64
-if [ "$status" = 0 ] && [ -x "$home/.local/bin/arugula" ] && [ ! -e "$home/.local/bin/illogical" ]; then ok "no systemd, fresh: no old names"; else bad nosystemd-new "made old names on a fresh install"; fi
+# arugulad copies itself and the CLI (`install --no-service`, #883); the
+# stand-in only records that it was asked to.
+if [ "$status" = 0 ] && grep -qx 'arugulad install --no-service' "$home/calls" 2>/dev/null && [ ! -e "$home/.local/bin/illogical" ]; then ok "no systemd, fresh: arugulad install --no-service, no old names"; else bad nosystemd-new "didn't run arugulad install --no-service, or made old names on a fresh install"; fi
 path=$stubs:$PATH
 
 # #532: nothing is unpacked in the temp dir (often noexec): with TMPDIR
