@@ -233,8 +233,8 @@ a trigger of its own and reach them. Intel Macs are the exception:
 tarball and the app on GitHub's `macos-15-intel` runner, which isn't
 ours. It takes about an hour cold, so it runs weekly on main and by hand
 (`gh workflow run macos-intel.yml --ref BRANCH`), and keeps both as
-artifacts; every push lints the Intel build in the home cloud (`just check-macos
-x86_64`). A job's log: `gh run view --log
+artifacts, and lints the Intel build (each push lints only Apple silicon's,
+`just check-macos`, #868). A job's log: `gh run view --log
 <run id>` (or `--log-failed`).
 
 The repo moved from Forgejo (`git.inevitable.fyi/jhgaylor/illogical`,

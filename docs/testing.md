@@ -52,7 +52,8 @@ once (#287); a new push to a branch cancels that branch's run:
     debug-embed`, so they carry `web/dist`) and the box's static ones,
     once, handed to the run's other jobs as artifacts
     (`scripts/ci-env keep`, `.github/actions/setup`);
-  - **clippy**: Linux, both Macs (`just check-macos`), the desktop app
+  - **clippy**: Linux, Apple silicon (`just check-macos`; Intel's runs
+    weekly in macos-intel.yml), the desktop app
     and `just notices`;
   - **core**: `just check-core`, clippy and the daemon's and the CLI's
     tests with the `labs` feature off (#452);

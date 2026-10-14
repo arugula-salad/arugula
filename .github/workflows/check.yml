@@ -3,7 +3,8 @@
 # - on the home cloud's runners (arugula-amd64: a fresh pod per job,
 #   docs/development.md):
 #   - build and static: the debug and the box's (static) binaries, once;
-#   - clippy: Linux, both Macs (cross), the desktop app (when the push
+#   - clippy: Linux, Apple silicon (cross; Intel's is macos-intel.yml's,
+#     weekly), the desktop app (when the push
 #     changes it: scripts/app-changed), and notices;
 #   - test: `just test` (the Rust tests under nextest);
 #   - core: the daemon and the CLI without Labs (`just check-core`, #452);
@@ -162,8 +163,6 @@ jobs:
         run: mise exec -- cargo clippy --workspace --all-targets -- -D warnings
       - if: needs.changes.outputs.suite == 'true'
         run: just check-macos
-      - if: needs.changes.outputs.suite == 'true'
-        run: just check-macos x86_64
       # Only when the push changes what the app is built from
       # (scripts/app-changed): its own workspace, compiled for nothing else.
       - name: The desktop app

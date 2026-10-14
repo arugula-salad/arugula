@@ -2,8 +2,8 @@
 # macOS runner, as `just test` and the release steps run on jake-mini for
 # Apple silicon. Cold, it takes about an hour, so it runs weekly on main and
 # by hand (`gh workflow run macos-intel.yml --ref BRANCH`) for changes that
-# touch macOS; every push still lints the Intel build on geek (`just
-# check-macos x86_64`). The tarball and the app are kept as artifacts for
+# touch macOS. It lints the Intel build too: check.yml lints only Apple
+# silicon's, whose lints Intel's almost never differ from (#868). The tarball and the app are kept as artifacts for
 # trying on an Intel Mac; the release itself cross-compiles them on
 # jake-mini (release.yml).
 name: macos-intel
@@ -61,6 +61,9 @@ jobs:
           path: ~/.local/share/mise/installs
           key: mise-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.mise.toml') }}
       - run: just bootstrap
+      - run: just web
+      - name: Clippy (Intel's own; check.yml lints Apple silicon's)
+        run: mise exec -- cargo clippy --workspace --all-targets -- -D warnings
       - run: just test
       - run: just build
       - run: just dist
