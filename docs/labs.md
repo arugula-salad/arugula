@@ -237,7 +237,12 @@ machine without it, nobody does.
     conversation “*title*”", with the rights of whoever linked it there, no
     more than an editor's. A card answered at the pane says so once the
     pane moves on, or once its answer is refused because the ask is gone
-    (it stops offering *Allow*).
+    (it stops offering *Allow*). A pane linked while it's already asking
+    (a permission, a question or an edit's diff) gets that ask's card too,
+    after the same hold (#895): the home's watch of a link starts with
+    where the pane is now, and so does each follow it takes up again. A
+    pane on another machine needs this build there too; an older one
+    starts the follow from its next change.
   - **An edit waiting as a diff** (#887). arugulad is Claude Code's IDE,
     so in a terminal Claude Code's Write or Edit asks its permission, then
     waits as a diff in the pane, and that ask can't be answered any more.
@@ -255,8 +260,15 @@ machine without it, nobody does.
   - Claude Code's "waiting for your input", a minute after each turn, posts
     nothing, nor does a blink of work with nothing to say (under two
     seconds, no summary, nothing asked: Claude Code starting in a
-    terminal does it); the same line twice in a row is one. The home watches each link
-    again when it restarts.
+    terminal does it), nor a turn nobody prompted with nothing to say and
+    nothing asked (#888: someone opening the pane can set it working until
+    it's quiet). A turn is prompted when Claude Code's `UserPromptSubmit`
+    hook fires (a prompt typed in the terminal, or the lead's
+    `prompt_agent`) or a follow-up reaches it; that rule starts once the
+    pane has said so once, so a pane without the hooks, or on a machine
+    without this build, keeps only the two-second one. The same line
+    twice in a row is one. The home watches each link again when it
+    restarts.
 - **The lead** (#858). Every conversation has one: a Claude Code agent
   block on its home machine, started with it on your default model
   (Claude Code's `model` setting, read from the daemon's Claude directory

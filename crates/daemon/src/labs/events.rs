@@ -5,13 +5,20 @@
 //!   followed over the standing channel to the pane's machine (its grant
 //!   lets that through). Watchers start with the daemon ([`resume`]) and
 //!   when a link is made ([`watch`]), and stop when it closes ([`stop`]); a
-//!   follow that drops is taken up again.
+//!   follow that drops is taken up again. Each starts with where the pane
+//!   is now (`api::attention_now`), so a pane linked mid-turn ends a turn
+//!   and one linked while it's asking is a card (#895).
 //! - **[`Rules`]** turn a pane's attention into lines worth a person's time,
 //!   as S36's run showed they must:
 //!   - a turn ends only after the link worked (prompting it sets it idle
 //!     first, which isn't a turn);
 //!   - only an ask (`ReasonKind::Ask`) needs input: Claude Code's "waiting
 //!     for your input", a minute after each turn, is dropped;
+//!   - a turn with nothing to say and nothing asked isn't posted when it was
+//!     a blink ([`BLINK_MS`]: Claude Code starting) or, once the pane has
+//!     said it's prompted (`EventKind::Prompted`, from Claude Code's
+//!     `UserPromptSubmit` hook or a follow-up), when nobody prompted it
+//!     (#888: a client opening a pane pokes it working until it's quiet);
 //!   - the same line twice in a row is one;
 //!   - lines are coalesced per turn: an ask a standing rule answers within
 //!     [`HOLD_MS`] is counted, not posted, and the turn's end says "worked
@@ -85,6 +92,11 @@ pub struct Rules {
     replaced: Option<String>,
     /// The last line posted.
     last: Option<ConvEvent>,
+    /// #888: the link's pane says when someone prompts it (Claude Code's
+    /// hooks, on a machine with this build), and whether someone prompted
+    /// this turn.
+    prompts: bool,
+    prompted: bool,
 }
 
 /// What a terminal's or a block's turn end says when it has nothing to
@@ -184,6 +196,7 @@ impl Rules {
                         self.held = None;
                         self.carded = None;
                         self.replaced = None;
+                        let prompted = std::mem::take(&mut self.prompted);
                         // Not a turn unless it worked.
                         let since = self.since.take()?;
                         let mut e = self.event(ConvEventKind::TurnEnded);
@@ -194,9 +207,13 @@ impl Rules {
                             .filter(|r| *state == Attention::Done && r.kind == ReasonKind::Done)
                             .map(|r| r.headline.trim().to_owned())
                             .filter(|s| !says_nothing(s));
-                        // Claude Code starting in a terminal (#859's real
-                        // run): a blink of work with nothing to say.
-                        if e.summary.is_none() && e.approvals == 0 && e.worked_ms < Some(BLINK_MS) {
+                        // Nothing to say and nothing asked: Claude Code
+                        // starting in a terminal (#859's real run) is a
+                        // blink of work, and a pane only poked (#888: a
+                        // client opening it sets it working until it's
+                        // quiet) is a turn nobody prompted.
+                        let unprompted = self.prompts && !prompted;
+                        if e.summary.is_none() && e.approvals == 0 && (unprompted || e.worked_ms < Some(BLINK_MS)) {
                             return None;
                         }
                         self.last = Some(e.clone());
@@ -204,11 +221,19 @@ impl Rules {
                     }
                 }
             }
+            // Someone prompted it (#888): the turn it's in, or its next, is
+            // one. (It starts when the pane says it works, as before.)
+            EventKind::Prompted => {
+                self.prompts = true;
+                self.prompted = true;
+                None
+            }
             EventKind::Exit { code, .. } => {
                 self.since = None;
                 self.held = None;
                 self.carded = None;
                 self.replaced = None;
+                self.prompted = false;
                 self.approvals = 0;
                 let mut e = self.event(ConvEventKind::Exited);
                 e.code = *code;
@@ -442,21 +467,22 @@ enum Got {
 /// A pane here: the mux's events for it.
 async fn here(app: Arc<App>, pane: arugula_proto::PaneId, tx: mpsc::UnboundedSender<Got>) {
     let mut events = app.mux.events();
-    // One linked mid-turn (a lead's helper, #858, linked as it starts):
-    // that turn's end is a turn's end too.
-    let now = app.mux.api(Api::Panes).await.unwrap_or_default();
-    if now.iter().any(|p| p.info.id == pane && p.info.attention == Attention::Working) {
-        let working = EventKind::Attention { state: Attention::Working, reason: None };
-        if tx.send(Got::Event(Box::new(working))).is_err() {
-            return;
-        }
+    // Where it is now, as a follow from another machine starts too: one
+    // linked mid-turn (a lead's helper, #858, linked as it starts) ends a
+    // turn, and one linked while it's asking is a card (#895).
+    if let Some(now) = crate::api::attention_now(&app, pane).await
+        && tx.send(Got::Event(Box::new(now))).is_err()
+    {
+        return;
     }
     loop {
         match events.recv().await {
             Ok(e) if e.pane == Some(pane) => {
                 let got = match e.kind {
                     EventKind::Closed => Got::Closed("its pane closed".into()),
-                    k @ (EventKind::Attention { .. } | EventKind::Exit { .. }) => Got::Event(Box::new(k)),
+                    k @ (EventKind::Attention { .. } | EventKind::Exit { .. } | EventKind::Prompted) => {
+                        Got::Event(Box::new(k))
+                    }
                     _ => continue,
                 };
                 if tx.send(got).is_err() {
@@ -472,7 +498,9 @@ async fn here(app: Arc<App>, pane: arugula_proto::PaneId, tx: mpsc::UnboundedSen
 /// A pane on another machine: its events, followed over the standing
 /// channel, taken up again whenever the follow drops.
 async fn there(app: Arc<App>, id: ConvId, l: ConvLink, tx: mpsc::UnboundedSender<Got>) {
-    let path = format!("/api/events?pane={}&type=attention,exit&follow=1", l.pane);
+    // A machine on an older build never sends `prompted`, nor starts with
+    // where the pane is now: the rules do without.
+    let path = format!("/api/events?pane={}&type=attention,exit,prompted&follow=1", l.pane);
     let conv = id.to_string();
     let headers = [(links::CONV_HEADER, conv.as_str())];
     let machine = l.machine.clone().unwrap_or_default();
@@ -927,6 +955,92 @@ mod tests {
         // So is a long one with nothing to say.
         r.on(&working(), 2_000);
         assert_eq!(r.on(&att(Attention::Idle, None), 30_000).unwrap().worked_ms, Some(28_000));
+    }
+
+    /// #888, as M85's live run had it (geek's log): after L1's turn, a
+    /// client opening the pane set it working ("input") and then idle
+    /// ("quiet") 2.5 s later, three times, with nobody prompting it.
+    #[test]
+    fn a_turn_nobody_prompted_with_nothing_to_say_is_no_turn() {
+        let mut r = Rules::new("L1");
+        // The lead's prompt_agent types the prompt: Claude Code's
+        // UserPromptSubmit says so.
+        assert_eq!(r.on(&EventKind::Prompted, 0), None);
+        r.on(&working(), 100);
+        let e = r.on(&done("Both tests pass."), 30_000).unwrap();
+        assert_eq!((e.worked_ms, e.summary.as_deref()), (Some(29_900), Some("Both tests pass.")));
+        // A client opens the pane: working, then quiet.
+        r.on(&working(), 53_000);
+        assert_eq!(r.on(&att(Attention::Idle, None), 55_500), None);
+        // Claude Code's minute-later nudge, then poked again: nothing.
+        let nudge = att(Attention::NeedsInput, reason(ReasonKind::Input, "Claude is waiting for your input"));
+        assert_eq!(r.on(&nudge, 90_000), None);
+        r.on(&working(), 117_000);
+        assert_eq!(r.on(&att(Attention::Idle, None), 140_000), None, "however long it looked busy");
+
+        // A prompt typed at the pane, or a follow-up: a turn, even one with
+        // nothing to say.
+        r.on(&EventKind::Prompted, 200_000);
+        r.on(&working(), 200_050);
+        assert_eq!(r.on(&att(Attention::Idle, None), 210_000).unwrap().worked_ms, Some(9_950));
+        // The prompt can come after it starts working (the hook is slower
+        // than the screen).
+        r.on(&working(), 300_000);
+        r.on(&EventKind::Prompted, 300_200);
+        assert!(r.on(&att(Attention::Idle, None), 305_000).is_some());
+
+        // A turn nobody prompted that says something (Claude Code woken by
+        // its background task), or asked something, is one.
+        r.on(&working(), 400_000);
+        assert_eq!(r.on(&done("The build finished: green."), 420_000).unwrap().worked_ms, Some(20_000));
+        r.on(&working(), 500_000);
+        r.on(&ask("t1"), 501_000);
+        r.on(&working(), 502_000);
+        assert_eq!(r.on(&att(Attention::Idle, None), 503_000).unwrap().approvals, 1);
+    }
+
+    /// A pane that never says it's prompted (no hooks, an older machine, an
+    /// agent block) keeps the blink rule alone.
+    #[test]
+    fn without_prompts_only_a_blink_is_dropped() {
+        let mut r = Rules::new("L1");
+        r.on(&working(), 0);
+        assert_eq!(r.on(&att(Attention::Idle, None), 1_500), None);
+        r.on(&working(), 10_000);
+        assert_eq!(r.on(&att(Attention::Idle, None), 12_500).unwrap().worked_ms, Some(2_500));
+        // An exit forgets this turn's prompt, not that the pane sends them.
+        r.on(&EventKind::Prompted, 20_000);
+        r.on(&working(), 20_100);
+        r.on(&EventKind::Exit { code: Some(0), machine_gone: false }, 21_000).unwrap();
+        r.on(&working(), 30_000);
+        assert_eq!(r.on(&att(Attention::Idle, None), 40_000), None);
+    }
+
+    /// #895: a watcher starts with where the pane is now. One linked while
+    /// it's asking is held and carded like any ask; one linked while its
+    /// edit waits as a diff, the same.
+    #[test]
+    fn a_pane_linked_while_it_asks_is_a_card() {
+        let mut r = Rules::new("L1");
+        assert_eq!(r.on(&ask("t1"), 1_000), None);
+        assert_eq!(r.due(), Some(1_000 + HOLD_MS));
+        let e = r.tick(1_000 + HOLD_MS).unwrap();
+        assert_eq!((e.kind, e.ask.as_ref().map(|a| a.id.as_str())), (ConvEventKind::NeedsInput, Some("t1")));
+        // The follow taken up again starts with the same ask: one card.
+        assert_eq!(r.on(&ask("t1"), 9_000), None);
+        assert_eq!(r.due(), None);
+        // Answered, the turn it was in ends with it counted.
+        r.on(&working(), 10_000);
+        assert_eq!(r.on(&done("ok"), 12_000).unwrap().approvals, 1);
+
+        let mut r = Rules::new("L2");
+        r.on(&diff("d1"), 0);
+        let e = r.tick(HOLD_MS).unwrap();
+        assert_eq!(e.ask.unwrap().diff.unwrap().file, "calc.py");
+        // Linked while idle or done: nothing.
+        let mut r = Rules::new("L3");
+        assert_eq!(r.on(&done("an old turn"), 0), None);
+        assert_eq!(r.on(&att(Attention::Idle, None), 1), None);
     }
 
     #[test]

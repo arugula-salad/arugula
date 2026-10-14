@@ -20,6 +20,10 @@
 // `fake_claude.py` in L2's pane, arugulad being its IDE) asks, then waits
 // as a diff: the ask's card is retired by the diff's, which Bob accepts
 // from his phone, and the file is written.
+//
+// #895: a pane on alices-2 linked while it's already asking is a card.
+// #888: once it has said it's prompted (UserPromptSubmit), a turn nobody
+// prompted with nothing to say (someone opening the pane) posts nothing.
 
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -395,6 +399,49 @@ test("an edit waiting as a diff on alices-2 is a card; Bob accepts it from his p
   await hook.answered(alice, "write");
   await hook.state(alice, "alices-2", panes.L2, "done", "Fixed mean().");
   await send("quit");
+});
+
+test("a pane on alices-2 linked while it asks is a card; a turn nobody prompted posts nothing (#895, #888)", async () => {
+  test.setTimeout(120_000);
+  await openConv(bob);
+  // A pane on alices-2 already asking before it's linked.
+  const p = (await on(alice, "alices-2", "POST", "/api/run", { command: "bash --norc" })).body!.pane as number;
+  await hook.state(alice, "alices-2", p, "working");
+  await hook.permit(alice, "alices-2", p, "early", "make check");
+  await expect
+    .poll(async () => {
+      const ps = (await on(alice, "alices-2", "GET", "/api/panes")).body as unknown as { id: number; ask?: { kind: string } }[];
+      return ps.find((x) => x.id === p)?.ask?.kind;
+    })
+    .toBe("permission");
+  const grant = { device: await deviceOf(alice, "alices"), device_name: "alices", conv, conv_title: "calc tests" };
+  const g = await on(alice, "alices-2", "POST", `/api/panes/${p}/conv-grants`, grant);
+  expect(g.status, JSON.stringify(g.body)).toBe(200);
+  const l = await on(alice, "alices", "POST", `/api/convs/${conv}/links`, { machine: await deviceOf(alice, "alices-2"), pane: p, title: "late" });
+  expect(l.status, JSON.stringify(l.body)).toBe(200);
+  // Its ask is a card, after the hold, and Bob allows it from his phone.
+  const card = bob.locator('[data-chat] [data-conv-card][data-event-link="L4"]');
+  await expect(card).toHaveAttribute("data-card-state", "open", { timeout: 30_000 });
+  await expect(card).toContainText("Bash: make check");
+  await card.locator("[data-card-allow]").tap();
+  expect(await hook.answered(alice, "early")).toMatchObject({ action: "allow" });
+  await hook.state(alice, "alices-2", p, "working");
+  await hook.state(alice, "alices-2", p, "done", "make check passed.");
+  const l4 = async () => (await events(alice)).filter((e) => e.startsWith("L4:"));
+  await expect.poll(l4, { timeout: 30_000 }).toEqual(["L4:needs_input", "L4:answered", "L4:turn_ended"]);
+
+  // Prompted (Claude Code's UserPromptSubmit), then poked by someone
+  // opening the pane: only the first is a turn.
+  const prompt = { hook_event_name: "UserPromptSubmit", session_id: "s-e2e", prompt: "and lint it" };
+  expect((await on(alice, "alices-2", "POST", `/api/panes/${p}/hook`, prompt)).status).toBe(200);
+  await hook.state(alice, "alices-2", p, "working");
+  await hook.state(alice, "alices-2", p, "done", "Lint is clean.");
+  await expect.poll(l4, { timeout: 30_000 }).toHaveLength(4);
+  await hook.state(alice, "alices-2", p, "working");
+  await bob.waitForTimeout(2_500);
+  await hook.state(alice, "alices-2", p, "idle");
+  await bob.waitForTimeout(4_000);
+  expect(await l4()).toEqual(["L4:needs_input", "L4:answered", "L4:turn_ended", "L4:turn_ended"]);
 });
 
 test("the home's watchers come back with its daemon", async () => {

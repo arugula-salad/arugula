@@ -593,6 +593,11 @@ pub enum EventKind {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reason: Option<Reason>,
     },
+    /// Someone prompted the agent in the pane (#888): Claude Code's
+    /// `UserPromptSubmit` hook (a prompt typed there, or `prompt_agent`'s),
+    /// or a follow-up delivered to it. A turn nobody prompted (a client
+    /// poking an idle pane) isn't one.
+    Prompted,
     Exit {
         code: Option<i32>,
         /// The machine it ran on went away (not the program ending).

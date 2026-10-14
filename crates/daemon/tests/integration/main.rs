@@ -38,6 +38,8 @@ mod chat_convs;
 mod chat_diffs;
 #[cfg(feature = "labs")]
 mod chat_lead;
+#[cfg(feature = "labs")]
+mod chat_watch;
 #[cfg(all(feature = "labs", feature = "forge"))]
 mod flag_gates;
 #[cfg(feature = "labs")]

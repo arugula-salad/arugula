@@ -823,6 +823,35 @@ the forge ledgers record.
 Where: `crates/mux/src/mux/who_may.rs` (`chat_name_of`, `short_name`), `crates/mux/src/mux/outside.rs` (`People::owner_login`), `crates/mux/src/mux/thread_ops.rs`, `crates/daemon/src/api.rs` (`chat_name`).
 From: #889 (M85's live run, #859).
 
+### A link's turn is one someone prompted; its watch starts from where the pane is
+M85's live run posted "Turn ended · worked 2s" three times with nobody
+prompting L1 (#888). It was filed as Claude Code's idle recap, but geek's
+log and the transcript say otherwise: the recap (`away_summary`) changed
+no attention at all, and each of the three was a client opening the pane
+(the headless browser taking a screenshot) sending it input, which sets a
+done or nudging pane working ("input") until it's quiet ("quiet") 2.5 s
+later. So the rule isn't about recaps or a time: the pane's machine emits
+`EventKind::Prompted` when Claude Code's `UserPromptSubmit` hook fires (a
+prompt typed in the terminal, the lead's `prompt_agent`, which types it)
+or a follow-up is delivered (`arugula inbox` wakes Claude Code without
+that hook), and a turn nobody prompted that says nothing and asked nothing
+isn't posted. It applies only once the link has sent one `prompted`, so a
+pane without the hooks, an agent block, or a machine on an older build
+keeps the two-second blink rule (kept for those). A turn nobody prompted
+that does say something (Claude Code woken by a background task's end, with
+its `Stop` summary) still posts. Rejected: a longer blink cutoff (a poke
+looks busy as long as its screen keeps redrawing), and dropping every
+unprompted turn (those background wakes).
+A link's watch starts with the pane's attention now, its reason with the
+card's diff (`api::attention_now`): from the mux for a pane here, and as the
+first line of `/api/events?pane=N&type=…attention…&follow=1` from another
+machine, so a pane linked while it's asking is a card (#895), and a follow
+taken up again sees what changed while it was down. Only a single pane's
+follow naming `attention` starts so, so the stream's other readers see
+nothing new, and the grant's route check needs no new key.
+Where: `crates/daemon/src/labs/events.rs` (`Rules`, `here`, `there`), `crates/daemon/src/api.rs` (`attention_now`, `events`), `crates/mux/src/mux/attention.rs` (`hook`, `follow_up`, `wait_inbox`).
+From: #888 and #895 (M85's live run, #859; tracker #851).
+
 ## Federation and control
 
 ### Every daemon is a peer; control is the only front door
