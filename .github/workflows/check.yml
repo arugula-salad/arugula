@@ -10,7 +10,8 @@
 #   - testnet: the test stack's claims (ssh, then control);
 #   - e2e: the Playwright specs in six shards; stack: those on the test
 #     stack; perf: the specs that time things, once the shards are done;
-#   - desktop-xvfb: the Linux desktop app's claims under Xvfb;
+#   - desktop-xvfb: the Linux desktop app's claims under Xvfb, against
+#     static's binaries, in a test image kept on GHCR;
 # - macos: test and, beside it, the WebKit specs, on GitHub's macOS
 #   runners (when the push changes what runs there: scripts/macos-changed;
 #   main always).
@@ -341,18 +342,31 @@ jobs:
 
   # The Linux desktop app under Xvfb, in a container (#317): `just
   # desktop-xvfb`'s join, app (bare, links and nautilus among its claims)
-  # and stale. The recipe builds the box's binaries and the app itself. Not
+  # and stale, against static's binaries. The recipe builds the app itself,
+  # in a test image it pulls from GHCR by what it's built from (a fresh
+  # pod built it for 6 min each run); main pushes it when it's new. Not
   # named desktop: that's the Windows job chant.workspace.json requires.
   desktop-xvfb:
+    needs: static
     runs-on: arugula-amd64
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v4
+      # The app builds in the image, from crates/desktop alone (its own
+      # dist, not web's): no toolchain, web client or mise here.
       - uses: ./.github/actions/setup
         with:
-          cache-key: desktop-xvfb
-      - run: just bootstrap
+          rust: "false"
+          fetch: run-static
+      - name: GHCR, for the test image
+        run: echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
       - name: The desktop app under Xvfb (join, app, stale)
-        run: just desktop-xvfb
+        run: ARUGULA_DESKTOP_BINARIES="$CI_RUNS/$GITHUB_RUN_ID/x86_64-unknown-linux-musl/release" just desktop-xvfb
+        env:
+          ARUGULA_DESKTOP_IMAGE_REPO: ghcr.io/arugula-salad/arugula-desktop-xvfb
+          ARUGULA_DESKTOP_IMAGE_PUSH: ${{ github.ref == 'refs/heads/main' && '1' || '' }}
 
   # Does the push need the macOS runner (scripts/macos-changed)? main's
   # always do; a branch's only when it changes what runs on macOS.
