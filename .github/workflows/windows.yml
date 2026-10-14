@@ -13,10 +13,23 @@ permissions:
   contents: read
 
 jobs:
+  # Only when the push changes what the suites read (scripts/suite-changed,
+  # #868); chant counts a skipped workspace as passing.
+  suite-changed:
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.ask.outputs.run }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: ask
+        run: if scripts/suite-changed "${{ github.event.before }}"; then echo run=true >> "$GITHUB_OUTPUT"; else echo run=false >> "$GITHUB_OUTPUT"; fi
+
   # M55 (#218): the workspace compiles on Windows, and its unit tests pass.
   # (control runs on Fly, and the integration tests use the Unix socket
   # until M56.)
   workspace:
+    needs: suite-changed
+    if: ${{ needs.suite-changed.outputs.run == 'true' }}
     runs-on: windows-latest
     defaults:
       run:
