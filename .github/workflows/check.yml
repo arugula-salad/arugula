@@ -234,7 +234,7 @@ jobs:
       - name: Playwright's browsers
         run: just browsers
       - name: Google Chrome
-        run: cd web && pnpm exec playwright install --with-deps chrome
+        run: command -v google-chrome >/dev/null || (cd web && pnpm exec playwright install --with-deps chrome)
       - name: Its binaries, this run's
         run: |
           echo "ARUGULA_TESTNET_BINARIES=$CI_RUN/x86_64-unknown-linux-musl/release" >> "$GITHUB_ENV"
@@ -340,7 +340,7 @@ jobs:
         run: just browsers
       # Google Chrome itself, not Playwright's Chromium: editors.spec's blocked third-party cookies are a real Chrome profile's. geek had it.
       - name: Google Chrome
-        run: cd web && pnpm exec playwright install --with-deps chrome
+        run: command -v google-chrome >/dev/null || (cd web && pnpm exec playwright install --with-deps chrome)
       - name: The specs that time things
         run: port=$(scripts/free-port) && cd web && E2E_PORT=$port pnpm exec playwright test
         env:

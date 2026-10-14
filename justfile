@@ -422,7 +422,9 @@ browsers *which="chromium webkit":
     #!/usr/bin/env bash
     set -euo pipefail
     cd web
-    if [ "$(uname -s)" = Linux ] && sudo -n true 2>/dev/null; then
+    # /etc/arugula-ci/browser-deps: a runner image with their system
+    # packages already in (home-cloud's gha-runner, target arugula: #868).
+    if [ "$(uname -s)" = Linux ] && [ ! -e /etc/arugula-ci/browser-deps ] && sudo -n true 2>/dev/null; then
       pnpm exec playwright install --with-deps {{which}}
     else
       pnpm exec playwright install {{which}}
