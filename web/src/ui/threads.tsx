@@ -1,12 +1,14 @@
 // Threads on panes and sessions (M61): the people working on something talk
 // beside it. The daemon that owns the pane keeps them; this is the panel
 // (a drawer on the right, the whole screen on a phone), the badge on a
-// pane, and the menu items that open them.
+// pane, and the menu items that open them. A conversation (#855) is a
+// thread of its own, with members of its own: the chat page shows it, with
+// this thread body.
 
 import { Fragment } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { Client } from "../client";
-import { threadKey, type Invitable, type PaneId, type ThreadMsg, type ThreadTarget, type Unreached } from "../proto";
+import { CONV_MEMBERS_SEE, threadKey, type Invitable, type PaneId, type ThreadMsg, type ThreadTarget, type Unreached } from "../proto";
 import { colorOf } from "./people";
 import type { MenuItem } from "./menu";
 import { Markup, mentionToken } from "./markup";
@@ -107,6 +109,7 @@ export function ThreadLayer({ phone }: { phone: boolean }) {
 }
 
 export function title(client: Client, target: ThreadTarget): string {
+  if ("conv" in target) return `Conversation · ${client.conv(target.conv)?.title ?? "gone"}`;
   if ("session" in target) {
     const name = client.state?.sessions.find((s) => s.id === target.session)?.name;
     return `Session thread · ${name ?? target.session}`;
@@ -234,7 +237,12 @@ export function ThreadBody({
 
   // Its pane or session went away, or the layout changed (names).
   useEffect(() => client.subscribe(() => setTick((t) => t + 1)), [client]);
-  const gone = "pane" in target ? !client.info(target.pane) : !client.state?.sessions.some((s) => s.id === target.session);
+  const gone =
+    "pane" in target
+      ? !client.info(target.pane)
+      : "session" in target
+        ? !client.state?.sessions.some((s) => s.id === target.session)
+        : !client.conv(target.conv);
 
   // What's shown is read; the newest stays in view (or the message a link
   // names, once).
@@ -267,8 +275,14 @@ export function ThreadBody({
         {msgs === null && !error && <p class="thread-empty">Loading…</p>}
         {msgs?.length === 0 && (
           <p class="thread-empty">
-            Nothing yet. {"pane" in target ? "Talk about this pane here" : "Talk about this session here"}; write @agent to reach
-            the agent in a pane, or @name to notify someone.
+            {"conv" in target ? (
+              "Nothing yet. Everyone in this conversation reads it; write @name to notify one of them."
+            ) : (
+              <>
+                Nothing yet. {"pane" in target ? "Talk about this pane here" : "Talk about this session here"}; write @agent to reach
+                the agent in a pane, or @name to notify someone.
+              </>
+            )}
           </p>
         )}
         {msgs?.map((m, i) => {
@@ -301,7 +315,11 @@ export function ThreadBody({
       </div>
       {error && <p class="thread-error">{error}</p>}
       {gone ? (
-        <p class="thread-note">{"pane" in target ? "This pane is closed." : "This session is closed."} Its thread stays in search.</p>
+        <p class="thread-note">
+          {"conv" in target
+            ? "This conversation was deleted, or you're no longer in it."
+            : `${"pane" in target ? "This pane is closed." : "This session is closed."} Its thread stays in search.`}
+        </p>
       ) : mayPost ? (
         <Compose
           client={client}
@@ -310,7 +328,7 @@ export function ThreadBody({
           quote={quote}
           setQuote={setQuote}
           setError={setError}
-          people={people(client, msgs ?? [])}
+          people={people(client, msgs ?? [], target)}
           draftKey={extras.draftKey}
           placeholder={extras.name ? undefined : "pane" in target ? "Message (@agent reaches its agent)" : "Message"}
           title={extras.name ?? title(client, target)}
@@ -335,10 +353,16 @@ function meMatcher(client: Client): (token: string) => boolean {
   return (t) => tokens.has(t);
 }
 
-/** People to @mention: who's here and who has posted, and the pane's agent. */
-function people(client: Client, msgs: ThreadMsg[]): { token: string; name: string; who: string; pic?: string }[] {
+/** People to @mention: who's here and who has posted (in a conversation,
+ * who's in it), and the pane's agent. */
+function people(client: Client, msgs: ThreadMsg[], target: ThreadTarget): { token: string; name: string; who: string; pic?: string }[] {
   const out = new Map<string, { token: string; name: string; who: string; pic?: string }>();
   const me = client.me();
+  const conv = "conv" in target ? client.conv(target.conv) : undefined;
+  if (conv) {
+    for (const p of [{ who: conv.owner, name: conv.owner_name }, ...conv.members])
+      if (p.who !== me && p.name) out.set(p.who, { token: mentionToken(p.name), name: p.name, who: p.who });
+  }
   for (const p of client.state?.presence ?? []) if (p.who !== me) out.set(p.who, { token: mentionToken(p.name), name: p.name, who: p.who, pic: p.pic });
   for (const m of msgs) if (!m.agent && m.who !== me && !out.has(m.who)) out.set(m.who, { token: mentionToken(m.name), name: m.name, who: m.who, pic: m.pic });
   return [...out.values()].filter((p) => p.token);
@@ -544,7 +568,8 @@ function Compose({
 
 /** "Sam can't see this. Invite them?" (#297): one click shares the session
  *  with them as a viewer and opens them this thread, from this message on
- *  (the default) or all of it; no other thread opens to them. */
+ *  (the default) or all of it; no other thread opens to them. In a
+ *  conversation (#855) it adds them to it, saying what members can do. */
 function InviteOffer({
   client,
   target,
@@ -584,24 +609,29 @@ function InviteOffer({
     );
   }
   const name = `offer-${msg.id}-${person.who}`;
+  const conv = "conv" in target;
   return (
     <div class="thread-offer" data-offer={person.who}>
       <p>
-        <strong>{who}</strong> can't see this. Invite them?
+        <strong>{who}</strong> {conv ? "isn't in this conversation. Add them?" : "can't see this. Invite them?"}
       </p>
       <label>
-        <input type="radio" name={name} checked={!whole} onChange={() => setWhole(false)} /> This message and what follows
+        <input type="radio" name={name} checked={!whole} onChange={() => setWhole(false)} /> {conv ? "From now on" : "This message and what follows"}
       </label>
       <label>
-        <input type="radio" name={name} checked={whole} onChange={() => setWhole(true)} /> Share the whole thread
+        <input type="radio" name={name} checked={whole} onChange={() => setWhole(true)} /> {conv ? "With its history" : "Share the whole thread"}
       </label>
       <p class="thread-offer-sees">
-        {whole ? `${n} will see all of this thread, and no other` : `${n} will see this message and what follows in this thread`}
+        {conv
+          ? `${n} will read ${whole ? "all of it" : "what's said from now on"}, and post. ${CONV_MEMBERS_SEE}`
+          : whole
+            ? `${n} will see all of this thread, and no other`
+            : `${n} will see this message and what follows in this thread`}
       </p>
       {said && <p class="thread-error">{said.text}</p>}
       <div class="thread-offer-buttons">
         <button type="button" class="primary" disabled={busy} onClick={() => void invite()}>
-          Invite {n}
+          {conv ? "Add" : "Invite"} {n}
         </button>
         <button type="button" onClick={done}>
           Not now

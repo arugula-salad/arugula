@@ -5,6 +5,9 @@
 //!   `session-2.jsonl`). They're outside the pane's own directory, so
 //!   *Forget history* and closing the pane leave the conversation.
 //! - `reads.json`: how far each person has read each thread.
+//! - `conv-<id>.json`: a conversation's record (#855): its title, owner
+//!   and members, written whole on each change. Its timeline is
+//!   `conv-<id>.jsonl`, as any thread's.
 //!
 //! Who may read or post is the mux's call; this only keeps them.
 
@@ -12,7 +15,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
 
-use arugula_proto::{ThreadMsg, ThreadTarget};
+use arugula_proto::{ConvId, Conversation, ThreadMsg, ThreadTarget};
 use tracing::warn;
 
 /// The longest message kept, in bytes (longer ones are cut).
@@ -26,6 +29,8 @@ pub struct Threads {
     /// Principal id → thread → the last message id they've read.
     reads: BTreeMap<String, BTreeMap<String, u64>>,
     reads_dirty: bool,
+    /// The conversations kept here, by id.
+    convs: BTreeMap<ConvId, Conversation>,
 }
 
 impl Threads {
@@ -61,7 +66,72 @@ impl Threads {
             .ok()
             .and_then(|b| serde_json::from_slice(&b).ok())
             .unwrap_or_default();
-        Self { dir, msgs, reads, reads_dirty: false }
+        let mut convs = BTreeMap::new();
+        for entry in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+            let path = entry.path();
+            let Some(ThreadTarget::Conv(id)) = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .and_then(|n| n.strip_suffix(".json"))
+                .and_then(ThreadTarget::parse)
+            else {
+                continue;
+            };
+            match std::fs::read(&path)
+                .map_err(io::Error::other)
+                .and_then(|b| serde_json::from_slice::<Conversation>(&b).map_err(io::Error::other))
+            {
+                Ok(c) if c.id == id => {
+                    convs.insert(id, c);
+                }
+                Ok(_) => warn!(path = %path.display(), "a conversation's record names another id"),
+                Err(e) => warn!(?e, path = %path.display(), "can't read a conversation's record"),
+            }
+        }
+        Self { dir, msgs, reads, reads_dirty: false, convs }
+    }
+
+    /// A conversation kept here.
+    pub fn conv(&self, id: ConvId) -> Option<&Conversation> {
+        self.convs.get(&id)
+    }
+
+    /// Every conversation kept here.
+    pub fn convs(&self) -> impl Iterator<Item = &Conversation> + '_ {
+        self.convs.values()
+    }
+
+    /// Keep a conversation, new or changed: its record, written whole.
+    pub fn save_conv(&mut self, c: Conversation) -> io::Result<()> {
+        let b = serde_json::to_vec_pretty(&c).map_err(io::Error::other)?;
+        crate::store::write_atomic(&self.dir.join(format!("{}.json", ThreadTarget::Conv(c.id).key())), &b)?;
+        self.convs.insert(c.id, c);
+        Ok(())
+    }
+
+    /// Forget a conversation: its record, its timeline and everyone's read
+    /// marks in it.
+    pub fn remove_conv(&mut self, id: ConvId) -> io::Result<()> {
+        let key = ThreadTarget::Conv(id).key();
+        for ext in ["json", "jsonl"] {
+            match std::fs::remove_file(self.dir.join(format!("{key}.{ext}"))) {
+                Err(e) if e.kind() != io::ErrorKind::NotFound => return Err(e),
+                _ => {}
+            }
+        }
+        self.convs.remove(&id);
+        self.msgs.remove(&ThreadTarget::Conv(id));
+        for r in self.reads.values_mut() {
+            self.reads_dirty |= r.remove(&key).is_some();
+        }
+        Ok(())
+    }
+
+    /// Take `who`'s read marks out of a thread (someone who left it).
+    pub fn forget_reads(&mut self, who: &str, target: ThreadTarget) {
+        if let Some(r) = self.reads.get_mut(who) {
+            self.reads_dirty |= r.remove(&target.key()).is_some();
+        }
     }
 
     pub fn get(&self, target: ThreadTarget) -> &[ThreadMsg] {
@@ -231,6 +301,43 @@ mod tests {
         assert_eq!(t.get(a).iter().map(|m| m.text.as_str()).collect::<Vec<_>>(), ["one", "two"]);
         assert_eq!(t.get(ThreadTarget::Session(1)).len(), 1);
         assert_eq!(t.read_upto("owner", a), 2);
+    }
+
+    #[test]
+    fn a_conversation_keeps_its_record_beside_its_timeline_and_goes_whole() {
+        let dir = Tmp::new("conv");
+        let mut t = Threads::open(dir.path());
+        let mut c = crate::labs::convs::create("owner", "Jake", "calc", 1).unwrap();
+        c.members.push(arugula_proto::ConvMember {
+            who: "account:sam".into(),
+            name: "Sam".into(),
+            joined: 5,
+            history: false,
+        });
+        let target = ThreadTarget::Conv(c.id);
+        t.save_conv(c.clone()).unwrap();
+        t.post(target, msg("hi")).unwrap();
+        t.post(ThreadTarget::Pane(1), msg("a pane's")).unwrap();
+        assert!(t.mark_read("account:sam", target, 1));
+        t.save();
+        let key = target.key();
+        assert!(key.starts_with("conv-c-"));
+        assert!(dir.path().join(format!("threads/{key}.json")).exists());
+        assert!(dir.path().join(format!("threads/{key}.jsonl")).exists());
+
+        let mut t = Threads::open(dir.path());
+        assert_eq!(t.conv(c.id), Some(&c));
+        assert_eq!(t.get(target).len(), 1);
+        assert_eq!(t.read_upto("account:sam", target), 1);
+
+        t.remove_conv(c.id).unwrap();
+        t.save();
+        assert!(t.conv(c.id).is_none() && t.get(target).is_empty());
+        let t = Threads::open(dir.path());
+        assert!(t.conv(c.id).is_none() && t.get(target).is_empty());
+        assert_eq!(t.read_upto("account:sam", target), 0);
+        assert!(!dir.path().join(format!("threads/{key}.json")).exists());
+        assert_eq!(t.get(ThreadTarget::Pane(1)).len(), 1, "other threads stay");
     }
 
     #[test]

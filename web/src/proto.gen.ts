@@ -9,6 +9,7 @@ export type ClientId = number;
 export type MachineId = number;
 
 export const CALL_MAX = 5;
+export const CONV_MEMBERS_SEE = "Members can have the lead type into and read every linked pane. Invite only people you'd hand those terminals to.";
 
 /**
  * `POST /api/attention/act`: do something about one pane's reason, or
@@ -291,6 +292,78 @@ dropped_ms?: number,
 code?: string, approve?: string, };
 
 /**
+ * `POST /api/convs` (#855): a new conversation here, owned by whoever
+ * makes it.
+ */
+export type ConvCreateRequest = { title: string, };
+
+/**
+ * A conversation's id (#855): 16 random bytes, written `c-` and 32 hex
+ * digits, a string on the wire (JavaScript never sees a 128-bit number).
+ * Global without asking anyone: the home machine isn't part of it. `Copy`,
+ * so [`ThreadTarget`] stays `Copy`.
+ */
+export type ConvId = string;
+
+/**
+ * Someone in a conversation who isn't its owner: they read and post.
+ */
+export type ConvMember = { 
+/**
+ * Their principal id (`account:…`, `tailnet:…`).
+ */
+who: string, name: string, 
+/**
+ * When they were added (ms): they read from here on, unless `history`.
+ */
+joined: number, 
+/**
+ * Added "with history": they read the whole conversation.
+ */
+history?: boolean, };
+
+/**
+ * `POST /api/convs/{id}/members/remove`: take someone out (the owner), or
+ * leave (a member, naming themselves).
+ */
+export type ConvMemberRemoveRequest = { who: string, };
+
+/**
+ * `POST /api/convs/{id}/members`: add someone, by principal id or by a name
+ * the way an `@` names them, reading from now on or, `history`, all of it.
+ */
+export type ConvMemberRequest = { who: string, history?: boolean | null, };
+
+/**
+ * `POST /api/convs/{id}/rename`: its new title.
+ */
+export type ConvRenameRequest = { title: string, };
+
+/**
+ * A conversation (#855): a thread of its own, kept on its home machine in
+ * `<state>/threads/conv-<id>.json` beside its timeline. Its people are
+ * its record's, not a session's: the owner, and the members they added.
+ */
+export type Conversation = { id: ConvId, title: string, 
+/**
+ * Its owner's principal id on the home machine (`owner`): who renames
+ * and deletes it and adds and removes members.
+ */
+owner: string, 
+/**
+ * The owner's name when it was made.
+ */
+owner_name: string, 
+/**
+ * Everyone else in it, in the order they were added.
+ */
+members: Array<ConvMember>, 
+/**
+ * When it was made (ms since the epoch).
+ */
+created: number, };
+
+/**
  * An editor's debug session.
  */
 export type DebugState = { 
@@ -327,10 +400,10 @@ closed: boolean, };
  * Changes to the last [`State`]: each pane in `panes` is `{id, ...}` with
  * only the fields that changed (a field set to `null` went back to its
  * default, absent); `gone` panes left this client's view. `machines` and
- * `presence` (and `threads`) are whole when present. Anything else (sessions, tabs,
+ * `presence` (and `threads`, `convs`) are whole when present. Anything else (sessions, tabs,
  * options, roles) changes with a new `State`.
  */
-export type Delta = { panes?: Array<{ id: PaneId } & Partial<PaneInfo>>, gone?: Array<number>, machines?: Array<Machine> | null, presence?: Array<Presence> | null, threads?: Array<ThreadSummary> | null, calls?: Array<Call> | null, };
+export type Delta = { panes?: Array<{ id: PaneId } & Partial<PaneInfo>>, gone?: Array<number>, machines?: Array<Machine> | null, presence?: Array<Presence> | null, threads?: Array<ThreadSummary> | null, convs?: Array<Conversation> | null, calls?: Array<Call> | null, };
 
 /**
  * Diagnostic counts: errors, warnings, information.
@@ -1738,6 +1811,10 @@ presence?: Array<Presence>,
  */
 threads?: Array<ThreadSummary>, 
 /**
+ * The conversations (#855) kept here that this person is in.
+ */
+convs?: Array<Conversation>, 
+/**
  * Huddles (M63) on the sessions this person has a role in.
  */
 calls?: Array<Call>, };
@@ -1856,9 +1933,10 @@ unread?: number,
 mention?: boolean, };
 
 /**
- * What a thread (M61) is about: a pane, or a session.
+ * What a thread (M61) is about: a pane, a session, or nothing but itself:
+ * a conversation (#855), with members of its own, kept on its home machine.
  */
-export type ThreadTarget = { "pane": number } | { "session": number };
+export type ThreadTarget = { "pane": number } | { "session": number } | { "conv": ConvId };
 
 /**
  * An `@` in a post that reached no one, for the poster alone.
@@ -1995,6 +2073,11 @@ export const OPS = {
   "adapters.list": { method: "GET", path: "/api/agents/adapters" },
   "agents.get": { method: "GET", path: "/api/hosts/self/agents" },
   "agents.refresh": { method: "POST", path: "/api/hosts/self/agents/refresh" },
+  "conv.create": { method: "POST", path: "/api/convs" },
+  "conv.delete": { method: "DELETE", path: "/api/convs/{id}" },
+  "conv.member_add": { method: "POST", path: "/api/convs/{id}/members" },
+  "conv.member_remove": { method: "POST", path: "/api/convs/{id}/members/remove" },
+  "conv.rename": { method: "POST", path: "/api/convs/{id}/rename" },
   "conversation.open": { method: "POST", path: "/api/conversations/open" },
   "conversations.list": { method: "GET", path: "/api/conversations" },
   "flag.set": { method: "PUT", path: "/api/flags/{name}" },

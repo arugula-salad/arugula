@@ -5,6 +5,11 @@ adapter.install POST /api/agents/adapters/{kind}/install Owner drives=false cred
 adapters.list GET /api/agents/adapters Owner drives=false credential=false
 agents.get GET /api/hosts/self/agents Owner drives=false credential=false
 agents.refresh POST /api/hosts/self/agents/refresh Owner drives=false credential=false
+conv.create POST /api/convs Owner drives=false credential=false
+conv.delete DELETE /api/convs/{id} Handler drives=false credential=false
+conv.member_add POST /api/convs/{id}/members Handler drives=false credential=false
+conv.member_remove POST /api/convs/{id}/members/remove Handler drives=false credential=false
+conv.rename POST /api/convs/{id}/rename Handler drives=false credential=false
 conversation.open POST /api/conversations/open Owner drives=false credential=false
 conversations.list GET /api/conversations Owner drives=false credential=false
 flag.set PUT /api/flags/{name} Owner drives=false credential=false

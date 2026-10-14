@@ -154,7 +154,7 @@ pub fn search(store: &StateDir, kinds: &BlockKinds, re: &Regex, since_ms: Option
     for t in targets {
         let pane = match t {
             arugula_proto::ThreadTarget::Pane(p) => p,
-            arugula_proto::ThreadTarget::Session(_) => 0,
+            arugula_proto::ThreadTarget::Session(_) | arugula_proto::ThreadTarget::Conv(_) => 0,
         };
         for m in threads.get(t) {
             if since_ms.is_some_and(|s| m.at < s) {

@@ -54,6 +54,11 @@ import {
   threadKey,
   type Unreached,
   type Invitable,
+  type ConvCreateRequest,
+  type ConvMemberRemoveRequest,
+  type ConvMemberRequest,
+  type ConvRenameRequest,
+  type Conversation,
 } from "./proto";
 import { decompress } from "fzstd";
 import { SCROLLBACK, TerminalView } from "./terminal-view";
@@ -582,8 +587,14 @@ export class Client {
 
   /** Invite someone a message named into its thread (#297), as a viewer:
    *  they see that message and what follows there, or the whole thread.
-   *  What to tell the owner about it. */
+   *  In a conversation (#855) they're added to it, from now on or with its
+   *  history. What to tell the owner about it. */
   async inviteToThread(t: ThreadTarget, who: string, msg: ThreadMsg, wholeThread: boolean): Promise<string> {
+    if ("conv" in t) {
+      const c = await this.addConvMember(t.conv, who, wholeThread);
+      const m = c.members.find((x) => x.who === who);
+      return `${(m?.name ?? who).split("@")[0]} is in, and was told what members can do`;
+    }
     const session = "session" in t ? t.session : this.sessionOfPane(t.pane);
     if (session === null) throw new Error("that pane is gone");
     const r = await this.request(OPS["invite.send"].method, opPath("invite.send"), {
@@ -602,6 +613,55 @@ export class Client {
     if (body.delivery === "sent") return `${n} is in, and was notified`;
     if (body.delivery === "pending") return `${n} is in, and will be notified${why}`;
     return `${n} is in, but wasn't notified${why}`;
+  }
+
+  // ---- conversations (#855)
+
+  /** The conversations kept here that this person is in (with labs). */
+  convs(): Conversation[] {
+    return this.hasThreads() ? (this.state?.convs ?? []) : [];
+  }
+
+  conv(id: string): Conversation | undefined {
+    return this.convs().find((c) => c.id === id);
+  }
+
+  /** Whether this person owns this machine: who makes conversations here. */
+  ownsMachine(): boolean {
+    return !this.state?.roles;
+  }
+
+  private async convCall<T>(res: Promise<ApiResponse>): Promise<T> {
+    const r = await res;
+    if (!r.ok) throw new Error((await r.json<{ error?: string }>().catch(() => ({ error: undefined }))).error ?? `HTTP ${r.status}`);
+    return r.json<T>();
+  }
+
+  createConv(title: string): Promise<Conversation> {
+    return this.convCall(this.request(OPS["conv.create"].method, opPath("conv.create"), { title } satisfies ConvCreateRequest));
+  }
+
+  renameConv(id: string, title: string): Promise<Conversation> {
+    return this.convCall(this.request(OPS["conv.rename"].method, opPath("conv.rename", { id }), { title } satisfies ConvRenameRequest));
+  }
+
+  deleteConv(id: string): Promise<unknown> {
+    return this.convCall(this.request(OPS["conv.delete"].method, opPath("conv.delete", { id })));
+  }
+
+  /** Add someone (an id, or a name as an `@` gives it), from now on or
+   *  with its history. */
+  addConvMember(id: string, who: string, history: boolean): Promise<Conversation> {
+    return this.convCall(
+      this.request(OPS["conv.member_add"].method, opPath("conv.member_add", { id }), { who, history } satisfies ConvMemberRequest),
+    );
+  }
+
+  /** Take someone out (its owner), or leave (yourself). */
+  removeConvMember(id: string, who: string): Promise<Conversation> {
+    return this.convCall(
+      this.request(OPS["conv.member_remove"].method, opPath("conv.member_remove", { id }), { who } satisfies ConvMemberRemoveRequest),
+    );
   }
 
   markThreadRead(t: ThreadTarget, upto: number) {
@@ -643,8 +703,10 @@ export class Client {
     return this.e2e?.keys;
   }
 
-  /** Whether this person may post in a thread (drivers and owners). */
+  /** Whether this person may post in a thread (drivers and owners; in a
+   *  conversation, everyone in it). */
   mayPost(t: ThreadTarget): boolean {
+    if ("conv" in t) return !!this.conv(t.conv);
     const session = "session" in t ? t.session : this.sessionOfTab(this.tabOfPane(t.pane)?.id ?? -1);
     return this.role(session ?? null) !== "viewer";
   }
@@ -1315,6 +1377,7 @@ export class Client {
       machines: d.machines ?? old.machines,
       presence: d.presence ?? old.presence,
       threads: d.threads ?? old.threads,
+      convs: d.convs ?? old.convs,
       calls: d.calls ?? old.calls,
     };
     if (added || d.gone?.length) return this.applyState(state, false);

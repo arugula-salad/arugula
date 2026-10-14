@@ -7688,6 +7688,102 @@ html.chat-open .huddle-bar {
   padding: 12px 20px 16px;
 }
 
+/* Conversations (#855): Channels' header, with New conversation. */
+.chat-section.chat-channels-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 3px 8px;
+}
+
+.chat-section .chat-new {
+  width: auto;
+  padding: 0 6px;
+  font-size: 15px;
+  line-height: 1.2;
+}
+
+.chat-inline-link {
+  color: var(--accent);
+}
+
+.chat-inline-link:hover {
+  text-decoration: underline;
+}
+
+/* What being a member means, on the invite and the members list. */
+.conv-warning {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border-left: 3px solid var(--warn);
+  border-radius: 4px;
+  background: var(--letterbox);
+  line-height: 1.45;
+}
+
+.conv-note {
+  margin: 10px 0 0;
+  color: var(--dim);
+  line-height: 1.45;
+}
+
+.conv-dialog h2 {
+  margin: 0 0 12px;
+  font-size: 15px;
+}
+
+.conv-dialog label + label {
+  margin-top: 10px;
+}
+
+.conv-dialog select {
+  padding: 6px 8px;
+  color: var(--fg);
+  background: var(--letterbox);
+  border: 1px solid var(--raised-hover);
+  border-radius: 6px;
+}
+
+.chat-people li .dim {
+  margin-left: auto;
+  font-size: 12px;
+}
+
+.conv-remove {
+  padding: 2px 8px;
+  border-radius: 6px;
+  color: var(--dim);
+  font-size: 12px;
+}
+
+.conv-remove:hover {
+  background: var(--raised);
+  color: var(--fg);
+}
+
+.conv-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.conv-actions button {
+  padding: 5px 12px;
+  border-radius: 6px;
+  background: var(--raised);
+}
+
+.conv-actions button.primary {
+  background: var(--accent);
+  color: var(--on-color);
+}
+
+.conv-actions button.danger {
+  color: var(--danger);
+}
+
+
 .chat-thread .thread-msg {
   margin: 0 -20px;
   padding-left: 20px;

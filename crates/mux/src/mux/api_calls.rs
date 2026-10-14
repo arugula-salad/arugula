@@ -4,7 +4,7 @@
 use super::{Api, AskReply, Daemon, SAVE_DEBOUNCE};
 use crate::acl::Principal;
 use arugula_core::{Intent, Role};
-use arugula_proto::{PaneId, ServerMsg, ask::AskKind};
+use arugula_proto::{PaneId, ServerMsg, ThreadTarget, ask::AskKind};
 use tokio::time::Instant;
 use tracing::info;
 
@@ -39,8 +39,17 @@ impl Daemon {
                     self.soon();
                 }
             }
+            Api::Conv(req, who, reply) => {
+                let _ = reply.send(self.conv(req, &who));
+            }
             Api::CanRead(target, ids, reply) => {
-                let r = self.thread_session(target).map(|_| {
+                // A conversation's people are its members: anyone else
+                // could be added to it.
+                let open = match target {
+                    ThreadTarget::Conv(_) => self.thread_exists(target).then_some(()),
+                    _ => self.thread_session(target).map(|_| ()),
+                };
+                let r = open.map(|_| {
                     ids.into_iter()
                         .map(|id| {
                             let p = Principal::User { id, name: String::new(), pic: None };

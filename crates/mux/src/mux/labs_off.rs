@@ -4,12 +4,24 @@
 //! real ones are `thread_ops` and `call_ops`; these are their twins for the
 //! methods the rest of the mux calls.
 
-use super::{Daemon, Posted, ThreadError, ThreadPost};
+use super::{ConvReq, Daemon, Posted, ThreadError, ThreadPost};
 use crate::{acl::Principal, labs::not_built, pane::Subscriber, pane::ToClient};
 use arugula_core::Role;
-use arugula_proto::{Call, ClientId, ServerMsg, SessionId, ThreadMsg, ThreadSummary, ThreadTarget};
+use arugula_proto::{Call, ClientId, Conversation, ServerMsg, SessionId, ThreadMsg, ThreadSummary, ThreadTarget};
 
 impl Daemon {
+    pub(super) fn thread_exists(&self, _target: ThreadTarget) -> bool {
+        false
+    }
+
+    pub(super) fn convs_for(&self, _who: &Principal) -> Vec<Conversation> {
+        Vec::new()
+    }
+
+    pub(super) fn conv(&mut self, _req: ConvReq, _who: &Principal) -> Result<Conversation, ThreadError> {
+        Err(ThreadError(501, not_built("Chat")))
+    }
+
     pub(super) fn thread_session(&self, _target: ThreadTarget) -> Option<SessionId> {
         None
     }

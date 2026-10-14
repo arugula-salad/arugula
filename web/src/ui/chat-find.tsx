@@ -14,7 +14,7 @@ import { getFleet } from "./hosts";
 import { useSubscribe } from "./hooks";
 import type { Fleet, FleetPane } from "../fleet";
 import { cardTitle, holdStill, reasonOf, shortHost, shortPaths, shownNow, wantsYou, whatItDoes } from "../swarm/model";
-import { paneLabel, sessionName, type Row } from "./chat";
+import { CONV_SIGIL, paneLabel, sessionName, type Row } from "./chat";
 import { Markup } from "./markup";
 import { MsgAvatar } from "./threads";
 
@@ -83,7 +83,12 @@ interface Hit {
 
 function channelName(s: Source, target: ThreadTarget, multi: boolean): string {
   const c = s.client;
-  const name = "pane" in target ? `↳ ${paneLabel(c, target.pane)}` : `# ${sessionName(c, target.session)}`;
+  const name =
+    "pane" in target
+      ? `↳ ${paneLabel(c, target.pane)}`
+      : "session" in target
+        ? `# ${sessionName(c, target.session)}`
+        : `${CONV_SIGIL} ${c.conv(target.conv)?.title ?? "a conversation"}`;
   return multi ? `${name} · ${s.host || "this machine"}` : name;
 }
 

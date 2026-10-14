@@ -20,6 +20,8 @@ async fn start() -> Daemon {
 }
 
 #[derive(Debug)]
+// One at a time, in a test: a message's size doesn't matter.
+#[allow(clippy::large_enum_variant)]
 enum In {
     Msg(ServerMsg),
     Frame(Frame),

@@ -570,8 +570,14 @@ impl Daemon {
                     })
                     .collect()
             });
-            let (machines, presence, threads, calls) = people.entry(who.clone()).or_insert_with(|| {
-                (self.machines_for(&who), self.presence(&who), self.threads_for(&who), self.calls_for(&who))
+            let (machines, presence, threads, convs, calls) = people.entry(who.clone()).or_insert_with(|| {
+                (
+                    self.machines_for(&who),
+                    self.presence(&who),
+                    self.threads_for(&who),
+                    self.convs_for(&who),
+                    self.calls_for(&who),
+                )
             });
             let Some(sent) = self.sent.get_mut(&client) else { continue };
             let mut delta = Delta::default();
@@ -615,6 +621,10 @@ impl Daemon {
                 sent.threads = threads.clone();
                 delta.threads = Some(threads.clone());
             }
+            if sent.convs != *convs {
+                sent.convs = convs.clone();
+                delta.convs = Some(convs.clone());
+            }
             if sent.calls != *calls {
                 sent.calls = calls.clone();
                 delta.calls = Some(calls.clone());
@@ -638,6 +648,7 @@ impl Daemon {
             machines: state.machines.clone(),
             presence: state.presence.clone(),
             threads: state.threads.clone(),
+            convs: state.convs.clone(),
             calls: state.calls.clone(),
         };
         let mut panes = Vec::with_capacity(state.panes.len());
@@ -833,6 +844,7 @@ impl Daemon {
         let mut st = self.state();
         st.presence = self.presence(who);
         st.threads = self.threads_for(who);
+        st.convs = self.convs_for(who);
         st.calls = self.calls_for(who);
         if who.is_owner() {
             return st;

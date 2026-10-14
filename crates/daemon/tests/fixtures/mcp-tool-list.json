@@ -3339,6 +3339,9 @@
       "name": "read_thread",
       "outputSchema": {
         "$defs": {
+          "ConvId": {
+            "type": "string"
+          },
           "Quote": {
             "description": "Output quoted in a thread message: kept as text, so it stays readable\nafter the pane scrolls or closes.",
             "properties": {
@@ -3430,7 +3433,7 @@
             "type": "object"
           },
           "ThreadTarget": {
-            "description": "What a thread (M61) is about: a pane, or a session.",
+            "description": "What a thread (M61) is about: a pane, a session, or nothing but itself:\na conversation (#855), with members of its own, kept on its home machine.",
             "oneOf": [
               {
                 "additionalProperties": false,
@@ -3455,6 +3458,18 @@
                 },
                 "required": [
                   "session"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "conv": {
+                    "$ref": "#/$defs/ConvId"
+                  }
+                },
+                "required": [
+                  "conv"
                 ],
                 "type": "object"
               }
@@ -3552,6 +3567,9 @@
       "name": "post_thread",
       "outputSchema": {
         "$defs": {
+          "ConvId": {
+            "type": "string"
+          },
           "Quote": {
             "description": "Output quoted in a thread message: kept as text, so it stays readable\nafter the pane scrolls or closes.",
             "properties": {
@@ -3643,7 +3661,7 @@
             "type": "object"
           },
           "ThreadTarget": {
-            "description": "What a thread (M61) is about: a pane, or a session.",
+            "description": "What a thread (M61) is about: a pane, a session, or nothing but itself:\na conversation (#855), with members of its own, kept on its home machine.",
             "oneOf": [
               {
                 "additionalProperties": false,
@@ -3668,6 +3686,18 @@
                 },
                 "required": [
                   "session"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "conv": {
+                    "$ref": "#/$defs/ConvId"
+                  }
+                },
+                "required": [
+                  "conv"
                 ],
                 "type": "object"
               }
@@ -8508,6 +8538,9 @@
       "name": "read_thread",
       "outputSchema": {
         "$defs": {
+          "ConvId": {
+            "type": "string"
+          },
           "Quote": {
             "description": "Output quoted in a thread message: kept as text, so it stays readable\nafter the pane scrolls or closes.",
             "properties": {
@@ -8599,7 +8632,7 @@
             "type": "object"
           },
           "ThreadTarget": {
-            "description": "What a thread (M61) is about: a pane, or a session.",
+            "description": "What a thread (M61) is about: a pane, a session, or nothing but itself:\na conversation (#855), with members of its own, kept on its home machine.",
             "oneOf": [
               {
                 "additionalProperties": false,
@@ -8624,6 +8657,18 @@
                 },
                 "required": [
                   "session"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "conv": {
+                    "$ref": "#/$defs/ConvId"
+                  }
+                },
+                "required": [
+                  "conv"
                 ],
                 "type": "object"
               }
@@ -8721,6 +8766,9 @@
       "name": "post_thread",
       "outputSchema": {
         "$defs": {
+          "ConvId": {
+            "type": "string"
+          },
           "Quote": {
             "description": "Output quoted in a thread message: kept as text, so it stays readable\nafter the pane scrolls or closes.",
             "properties": {
@@ -8812,7 +8860,7 @@
             "type": "object"
           },
           "ThreadTarget": {
-            "description": "What a thread (M61) is about: a pane, or a session.",
+            "description": "What a thread (M61) is about: a pane, a session, or nothing but itself:\na conversation (#855), with members of its own, kept on its home machine.",
             "oneOf": [
               {
                 "additionalProperties": false,
@@ -8837,6 +8885,18 @@
                 },
                 "required": [
                   "session"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "conv": {
+                    "$ref": "#/$defs/ConvId"
+                  }
+                },
+                "required": [
+                  "conv"
                 ],
                 "type": "object"
               }
@@ -11848,6 +11908,9 @@
       "name": "read_thread",
       "outputSchema": {
         "$defs": {
+          "ConvId": {
+            "type": "string"
+          },
           "Quote": {
             "description": "Output quoted in a thread message: kept as text, so it stays readable\nafter the pane scrolls or closes.",
             "properties": {
@@ -11939,7 +12002,7 @@
             "type": "object"
           },
           "ThreadTarget": {
-            "description": "What a thread (M61) is about: a pane, or a session.",
+            "description": "What a thread (M61) is about: a pane, a session, or nothing but itself:\na conversation (#855), with members of its own, kept on its home machine.",
             "oneOf": [
               {
                 "additionalProperties": false,
@@ -11964,6 +12027,18 @@
                 },
                 "required": [
                   "session"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "conv": {
+                    "$ref": "#/$defs/ConvId"
+                  }
+                },
+                "required": [
+                  "conv"
                 ],
                 "type": "object"
               }

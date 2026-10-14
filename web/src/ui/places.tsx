@@ -9,7 +9,7 @@ import type { Fleet } from "../fleet";
 import { directory } from "../hosts";
 import { closeSwarm, openSwarm } from "../swarm/route";
 import { closeAgentsPage, openAgentsPage } from "./agents-route";
-import { threadKey, type ThreadTarget } from "../proto";
+import { parseThreadKey, threadKey, type ThreadTarget } from "../proto";
 import { getFleet } from "./hosts";
 import { closeThread } from "./threads";
 
@@ -29,14 +29,14 @@ export interface ChatRoute {
   q?: string;
 }
 
-/** `#chat`, `#chat=<host>/<pane-N|session-N>` for one thread, and
+/** `#chat`, `#chat=<host>/<pane-N|session-N|conv-c-…>` for one thread, and
  * `…&msg=N` for one message in it; `#chat=activity`, and
  * `#chat=search/<words>`. */
 export function chatRoute(): ChatRoute | null {
   if (location.hash === "#chat=activity") return { view: "activity" };
   const q = /^#chat=search\/(.*)$/.exec(location.hash);
   if (q) return { view: "search", q: safeDecode(q[1]) };
-  const m = /^#chat(?:=(.*)\/((?:pane|session)-\d+)(?:&msg=(\d+))?)?$/.exec(location.hash);
+  const m = /^#chat(?:=(.*)\/((?:pane|session)-\d+|conv-c-[0-9a-f]{32})(?:&msg=(\d+))?)?$/.exec(location.hash);
   if (!m) return null;
   return m[2] ? { host: safeDecode(m[1]), key: m[2], msg: m[3] ? Number(m[3]) : undefined } : {};
 }
@@ -90,9 +90,7 @@ export function isChatOpen(): boolean {
 }
 
 export function targetOf(key: string): ThreadTarget | null {
-  const m = /^(pane|session)-(\d+)$/.exec(key);
-  if (!m) return null;
-  return m[1] === "pane" ? { pane: Number(m[2]) } : { session: Number(m[2]) };
+  return parseThreadKey(key);
 }
 
 // ---- where the threads come from

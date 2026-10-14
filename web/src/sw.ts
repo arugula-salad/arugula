@@ -19,7 +19,7 @@
 import { E2ESocket } from "./e2e/channel.ts";
 import type { ActRequest } from "./proto";
 import { existingKeys, loadWorkerDirectory } from "./e2e/keys.ts";
-import { shareUrl, tapThread, tapUrl, withShare } from "./tap.ts";
+import { convTap, shareUrl, tapThread, tapUrl, withShare } from "./tap.ts";
 
 /** The parts of a service worker's global scope used here (the project's
  * types are the page's). */
@@ -284,6 +284,23 @@ sw.addEventListener("notificationclick", (event: ClickEvent) => {
           }
         }
         return sw.clients.openWindow("/");
+      })(),
+    );
+    return;
+  }
+  // A conversation (#855): no pane; the chat page opens it on its home.
+  const conv = convTap(data);
+  if (conv) {
+    event.waitUntil(
+      (async () => {
+        const wins = await sw.clients.matchAll({ type: "window", includeUncontrolled: true });
+        for (const w of wins) {
+          if (w.focus) {
+            w.postMessage({ type: "open-chat", thread: data.thread, daemon: data.daemon });
+            return w.focus();
+          }
+        }
+        return sw.clients.openWindow(conv);
       })(),
     );
     return;

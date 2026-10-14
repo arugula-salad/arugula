@@ -14,7 +14,7 @@ Each feature has a flag, off on a new install:
 
 | Flag | Turns on |
 | --- | --- |
-| `chat` | Threads on panes and sessions, and the chat page |
+| `chat` | Threads on panes and sessions, conversations, and the chat page |
 | `huddles` | Voice calls on a session |
 | `vms` | VM tabs and panes, machines and the sandboxes page |
 | `fountain` | Fountain agents and the runner view |
@@ -37,7 +37,7 @@ one isn't made.
 
 | Flag | What is refused without it |
 | --- | --- |
-| `chat` | `/api/threads/…` (get, post, read), `read_thread`/`post_thread` by name, an invite from a thread |
+| `chat` | `/api/threads/…` (get, post, read), `/api/convs…`, `read_thread`/`post_thread` by name, an invite from a thread |
 | `huddles` | joining (or starting) a huddle; leaving, muting and signalling one already on still work |
 | `vms` | `/api/machines`, `/api/sandboxes`, a new VM pane or tab, a borrowed sandbox (`run --sandbox`), *Share machine with tab* |
 | `fountain` | `/api/fountain/agents`, Fountain blocks, Fountain agents and agents wearing one, `list` kinds `fountain_agents`/`fountain_agent` |
@@ -180,6 +180,21 @@ machine without it, nobody does.
   session's thread or from someone who can't drive the pane) stays plain
   and the poster, and no one else, is told so under the message (and in
   `post_thread`'s `unreached`).
+- **Conversations** (#855). A thread of its own, not about one pane or
+  session: *New conversation* (the + by *Channels* on the chat page) asks
+  for a title and keeps it on the machine you're on, or another of yours
+  that's online (its home; it's there while that machine is). You own it.
+  ⓘ shows its members; *Add people…* adds someone who can already reach
+  that machine (someone in your team, or someone a session there is shared
+  with), by name or id, from now on or with its history, and tells them on
+  their phone. The invite and the members list both say what membership
+  will mean once conversations link panes and have a lead: members can have
+  the lead type into and read every linked pane, so invite only people
+  you'd hand those terminals to. Members read and post whatever their role
+  in the machine's sessions; they can leave, and only you rename it, take
+  people out or delete it. Unread counts, @mentions (a push whose tap opens
+  the conversation), Activity and search work as for any thread. An @ of
+  someone who can reach the machine but isn't in it offers to add them.
 - **An @ of someone who can't see the thread offers to invite them**. When you, the owner, write "@sam look" and Sam is someone this
   machine knows (shared with elsewhere, or on a roster it checked) but
   can't read that thread, the composer says "Sam can't see this. Invite
@@ -215,7 +230,8 @@ machine without it, nobody does.
 - **Chat: every thread in one place.** *Chat* (beside *Panes* and *Swarm*
   in the bar, the phone's sheet, or the command palette; `/#chat`) is a
   page of its own, laid out like a team chat. On the left: *Activity*,
-  any huddles that are on, then each machine's sessions as channels with
+  any huddles that are on, *Channels* (the conversations you're in, from
+  every machine), then each machine's sessions as channels with
   each pane's thread under its session, newest first, unread in bold and
   @mentions counted. Fold a machine away, show only what's unread, or drag
   the sidebar wider; the browser remembers. The panes stay as they were
@@ -262,6 +278,12 @@ menu, *Session thread* in the session menu, or the bubble on a pane.
   past.
 - *Quote selection in thread* (pane menu) posts what you selected in the
   terminal; clicking the quote jumps back to it.
+- **Conversations** are different: their people are their own. The owner
+  and the members they added read and post, members from when they were
+  added unless added with its history, whatever their role in the
+  machine's sessions. A conversation lives on its home machine, in
+  `<state>/threads/conv-<id>.json` (its title and members) beside its
+  messages, and never in control.
 
 ### Huddles: who joins, where the audio goes
 

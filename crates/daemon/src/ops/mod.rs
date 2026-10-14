@@ -12,6 +12,7 @@
 mod acl;
 mod close;
 mod conversations;
+mod convs;
 mod flags;
 mod fountain;
 mod fs;
@@ -175,12 +176,23 @@ impl FromPath for usize {
     }
 }
 
-/// `pane-7` or `session-2`; anything else is the 404 the thread routes gave.
+/// `pane-7`, `session-2` or `conv-c-…`; anything else is the 404 the
+/// thread routes gave.
 impl FromPath for arugula_proto::ThreadTarget {
     async fn from_parts(parts: &mut Parts) -> Result<Self, Response> {
         let Path(key) = Path::<String>::from_request_parts(parts, &()).await.map_err(IntoResponse::into_response)?;
-        Self::parse(&key)
-            .ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "a thread is pane-N or session-N".into()).into_response())
+        Self::parse(&key).ok_or_else(|| {
+            ApiError(StatusCode::NOT_FOUND, "a thread is pane-N, session-N or conv-c-…".into()).into_response()
+        })
+    }
+}
+
+/// A conversation's id, `c-` and 32 hex digits (#855); anything else is
+/// no conversation (404).
+impl FromPath for arugula_proto::ConvId {
+    async fn from_parts(parts: &mut Parts) -> Result<Self, Response> {
+        let Path(id) = Path::<String>::from_request_parts(parts, &()).await.map_err(IntoResponse::into_response)?;
+        id.parse().map_err(|why: String| ApiError(StatusCode::NOT_FOUND, why).into_response())
     }
 }
 
