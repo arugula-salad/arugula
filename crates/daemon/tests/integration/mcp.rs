@@ -1306,6 +1306,9 @@ fn an_invite_waits_for_the_owner_and_only_they_send_it() {
     let block = r["block"].as_u64().unwrap();
     assert!(grant_of(&d, sam).is_none());
     assert_eq!(tab_of(&d, block), tab_of(&d, pane), "beside the pane");
+    // The card goes up after invite_person answers (`draft` raises it on
+    // its own task): read or answered before then, it isn't there.
+    d.wait_for("its card", || card_on(&d, block)["id"] == draft.as_str());
     let card = card_on(&d, block);
     assert_eq!(card["source"], "invite", "{card}");
     let name = d.get("/api/panes")[0]["session_name"].as_str().unwrap().to_owned();
@@ -1426,6 +1429,8 @@ fn an_invite_card_leaves_the_panes_own_cards_alone() {
         let m = Mcp::bridge(&d, Some(pane));
         let r = m.call("invite_person", json!({ "who": "tailnet:sam@example.com", "note": "x" })).unwrap();
         let block = r["block"].as_u64().unwrap();
+        // Its card goes up on its own task: decline it once it's there.
+        d.wait_for("the invite card", || card_on(&d, block)["id"] == r["draft"]);
         assert_eq!(card_on(&d, pane)["id"], q, "its own card stays");
         // Settling the invite doesn't answer it...
         d.post(&format!("/api/blocks/{block}/call/decline"), json!({}));
@@ -1486,12 +1491,14 @@ fn an_agent_block_drafts_beside_itself() {
     let block = r["block"].as_u64().unwrap();
     assert_eq!(tab_of(&d, block), tab_of(&d, a));
     assert!(grant_of(&d, "tailnet:sam@example.com").is_none());
+    let draft = r["draft"].as_str().unwrap().to_owned();
+    // The card goes up after invite_person answers, on its own task.
+    d.wait_for("its card", || card_on(&d, block)["id"] == draft.as_str());
     let card = card_on(&d, block);
     // Whose agent it is, and whom exactly, by their principal.
     let want =
         format!("fake-agent (pane %{a}, you started it) wants to bring sam@example.com [tailnet:sam@example.com]");
     assert!(card["message"].as_str().unwrap().starts_with(&want), "{card}");
-    let draft = r["draft"].as_str().unwrap().to_owned();
     let r = agent_mcp(&d, a, "read_invite", json!({ "draft": draft })).unwrap();
     assert_eq!(r["status"], "waiting", "{r}");
     // It may not close or answer its own card.
