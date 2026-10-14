@@ -11,6 +11,12 @@
 #
 # Without APPLE_CERTIFICATE it says so and leaves the ad-hoc signature
 # (exit 0): releases stay unsigned until there's a Developer ID.
+#
+# It signs with rcodesign (apple-codesign, which Tauri builds on), from the
+# certificate and key directly: no keychain. codesign through a keychain of
+# our own failed on the runner VMs with errSecInternalComponent once Tauri
+# had used its own (app-v0.27.1 to 0.27.3). rcodesign comes from PATH, or a
+# pinned release is fetched and checked.
 set -eu
 what=$1
 path=$2
@@ -26,8 +32,6 @@ done
 # Tauri's bundler signs, notarizes and staples the app itself when these
 # secrets are set (tauri-macos-sign reads the same APPLE_* variables), so an
 # app that already carries our identity and a ticket only needs checking.
-# Signing it a second time failed on the runner VMs with
-# errSecInternalComponent (app-v0.27.1).
 if [ "$what" = app ] &&
   codesign -dvv "$path" 2>&1 | grep -qxF "Authority=$APPLE_SIGNING_IDENTITY" &&
   xcrun stapler validate "$path" >/dev/null 2>&1; then
@@ -37,31 +41,28 @@ if [ "$what" = app ] &&
   exit 0
 fi
 
-# A keychain of our own for the run, deleted after: in ~/Library/Keychains,
-# codesign in its partition list, and alone in the search list until the
-# end (restored after). tauri-macos-sign leaves its own keychain, with the
-# same identity, in the search list, and codesign then fails with
-# errSecInternalComponent (app-v0.27.2).
 tmp=$(mktemp -d)
-keychain=$HOME/Library/Keychains/arugula-sign-$(openssl rand -hex 8).keychain-db
-kpass=$(openssl rand -hex 16)
-searched=$(security list-keychains -d user | tr -d '"')
-cleanup() {
-  security delete-keychain "$keychain" 2>/dev/null || true
-  # shellcheck disable=SC2086 # one path each
-  security list-keychains -d user -s $searched 2>/dev/null || true
-  rm -rf "$tmp"
-}
-trap cleanup EXIT
-printf '%s' "$APPLE_CERTIFICATE" | base64 --decode >"$tmp/cert.p12"
-security create-keychain -p "$kpass" "$keychain"
-security unlock-keychain -p "$kpass" "$keychain"
-security import "$tmp/cert.p12" -k "$keychain" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
-security set-keychain-settings -t 3600 -u "$keychain"
-security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$kpass" "$keychain" >/dev/null
-security list-keychains -d user -s "$keychain"
+trap 'rm -rf "$tmp"' EXIT
+umask 077
 
-sign() { codesign --force --timestamp --options runtime --keychain "$keychain" -s "$APPLE_SIGNING_IDENTITY" "$@"; }
+rcodesign=$(command -v rcodesign || true)
+if [ -z "$rcodesign" ]; then
+  v=0.29.0 sha=d98372d5524226ccf9dc0eda03d4e4f5826182dabb2fc3f2bd303ed9113a748d
+  curl -fsSL -o "$tmp/rcodesign.tgz" \
+    "https://github.com/indygreg/apple-platform-rs/releases/download/apple-codesign%2F$v/apple-codesign-$v-macos-universal.tar.gz"
+  echo "$sha  $tmp/rcodesign.tgz" | shasum -a 256 -c >/dev/null
+  tar -xzf "$tmp/rcodesign.tgz" -C "$tmp"
+  rcodesign=$(find "$tmp" -name rcodesign -type f | head -1)
+fi
+
+# The certificate and key on their own: the .p12 also carries Apple's G2
+# intermediate, which rcodesign would otherwise take for the signer.
+printf '%s' "$APPLE_CERTIFICATE" | base64 --decode >"$tmp/cert.p12"
+printf '%s' "$APPLE_CERTIFICATE_PASSWORD" >"$tmp/pass"
+openssl pkcs12 -in "$tmp/cert.p12" -passin "file:$tmp/pass" -clcerts -nokeys -out "$tmp/cert.pem"
+openssl pkcs12 -in "$tmp/cert.p12" -passin "file:$tmp/pass" -nocerts -nodes -out "$tmp/key.pem"
+
+sign() { "$rcodesign" sign --pem-file "$tmp/key.pem" --pem-file "$tmp/cert.pem" --for-notarization "$@"; }
 notarize() {
   xcrun notarytool submit "$1" --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
 }
@@ -70,9 +71,9 @@ case "$what" in
   app)
     # Inside out: the sidecars, then the app.
     for f in "$path"/Contents/MacOS/*; do
-      [ "$(basename "$f")" = arugula-desktop ] || sign "$f"
+      [ "$(basename "$f")" = arugula-desktop ] || sign --code-signature-flags runtime "$f"
     done
-    sign "$path"
+    sign --code-signature-flags runtime "$path"
     codesign --verify --deep --strict "$path"
     ditto -c -k --keepParent "$path" "$tmp/notarize.zip"
     notarize "$tmp/notarize.zip"
