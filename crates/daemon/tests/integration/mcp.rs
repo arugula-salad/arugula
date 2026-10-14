@@ -1233,17 +1233,20 @@ async fn an_agents_mention_invites_nobody() {
 }
 
 /// A POST on the socket as the CLI sends it under Claude Code: the HTTP
-/// status.
-fn as_agent(d: &Daemon, path: &str, body: Value) -> u16 {
+/// status. Like the CLI, it sends no body to a route that takes none
+/// (`Request::without_body`, as close's): the daemon answers those without
+/// reading one, and hangs up on a body it left unread, so the write or the
+/// read here would fail with a broken pipe or a reset (#910). The request
+/// goes in one write, as the CLI's does.
+fn as_agent(d: &Daemon, path: &str, body: Option<Value>) -> u16 {
     use std::io::{Read, Write};
     let mut s = std::os::unix::net::UnixStream::connect(d.sock()).unwrap();
-    let body = body.to_string();
-    write!(
-        s,
+    let body = body.map(|b| b.to_string()).unwrap_or_default();
+    let req = format!(
         "POST {path} HTTP/1.1\r\nHost: x\r\nConnection: close\r\nContent-Type: application/json\r\nX-Arugula-Agent: 1\r\nContent-Length: {}\r\n\r\n{body}",
         body.len()
-    )
-    .unwrap();
+    );
+    s.write_all(req.as_bytes()).unwrap();
     let mut out = String::new();
     s.read_to_string(&mut out).unwrap();
     out.split_whitespace().nth(1).unwrap().parse().unwrap()
@@ -1328,14 +1331,17 @@ fn an_invite_waits_for_the_owner_and_only_they_send_it() {
     let e = m.call("agent_respond", json!({ "pane": block, "action": "answer", "answers": {} })).unwrap_err();
     assert!(e.contains("only the session's owner"), "{e}");
     // Nor Claude Code on the owner's own CLI (it says so).
-    assert_eq!(as_agent(&d, &format!("/api/blocks/{block}/call/answer"), json!({ "content": {} })), 403);
-    assert_eq!(as_agent(&d, "/api/attention/act", json!({ "action": "answer", "pane": block, "content": {} })), 403);
+    assert_eq!(as_agent(&d, &format!("/api/blocks/{block}/call/answer"), Some(json!({ "content": {} }))), 403);
+    assert_eq!(
+        as_agent(&d, "/api/attention/act", Some(json!({ "action": "answer", "pane": block, "content": {} }))),
+        403
+    );
     // Nor may it skip the card: invite on the CLI, or make a card of its
     // own (whose words needn't be what it does), or pin a team.
     let session = d.get("/api/panes")[0]["session"].clone();
     let direct = json!({ "session": session, "who": sam, "role": "editor", "drive_minutes": 60 });
-    assert_eq!(as_agent(&d, "/api/invite", direct), 403);
-    assert_eq!(as_agent(&d, "/api/team-pins", json!({ "pins": {} })), 403);
+    assert_eq!(as_agent(&d, "/api/invite", Some(direct)), 403);
+    assert_eq!(as_agent(&d, "/api/team-pins", Some(json!({ "pins": {} }))), 403);
     let forged = json!({ "type": "invite", "config": { "drafter": "%1", "drafts": [] } });
     let (status, text) = d.raw("POST", "/api/blocks", Some(forged));
     assert_eq!(status, 403, "{text}");
@@ -1533,6 +1539,9 @@ fn closing_an_invite_block_is_the_owners_and_loses_nothing() {
     let sent = invite("tailnet:sam@example.com");
     let block = sent["block"].as_u64().unwrap();
     let sent = sent["draft"].as_str().unwrap().to_owned();
+    // The card goes up after invite_person answers (`draft` raises it on
+    // its own task): answered before then, `answer` isn't a card's.
+    d.wait_for("its card", || card_on(&d, block)["id"] == sent.as_str());
     d.post(&format!("/api/blocks/{block}/call/answer"), json!({ "content": {} }));
     assert_eq!(settled(&m, &sent, None)["status"], "sent");
     let waiting = invite("tailnet:kim@example.com")["draft"].as_str().unwrap().to_owned();
@@ -1548,7 +1557,7 @@ fn closing_an_invite_block_is_the_owners_and_loses_nothing() {
     assert!(why.as_deref().is_some_and(|w| w.contains("only the session's owner closes")), "{why:?}");
     let e = m.call("close", json!({ "pane": block })).unwrap_err();
     assert!(e.contains("only the session's owner closes"), "{e}");
-    assert_eq!(as_agent(&d, &format!("/api/panes/{block}/close"), json!({})), 403);
+    assert_eq!(as_agent(&d, &format!("/api/panes/{block}/close"), None), 403);
     assert!(invite_blocks(&d).contains(&block), "still open");
     assert_eq!(m.call("read_invite", json!({ "draft": waiting })).unwrap()["status"], "waiting");
 
