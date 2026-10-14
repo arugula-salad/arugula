@@ -1241,7 +1241,13 @@ impl Daemon {
                     let text = self.panes.get(&pane).and_then(|h| h.status().current.and_then(|c| c.text));
                     self.emit(Some(pane), EventKind::CommandStart { text });
                     self.watch_agent(pane);
-                    self.set_attention(pane, Attention::Working, "command started");
+                    // A question open beside it still wants you (#912): the
+                    // shell's preexec comes off the terminal on the pane's
+                    // own channel, and can land after the question its
+                    // command asked (`arugula ask` from a hook).
+                    if !self.asks.contains_key(&pane) {
+                        self.set_attention(pane, Attention::Working, "command started");
+                    }
                     self.touch(pane);
                 }
                 Signal::CommandEnd { exit } => {
