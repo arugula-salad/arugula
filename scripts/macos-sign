@@ -37,10 +37,11 @@ if [ "$what" = app ] &&
   exit 0
 fi
 
-# A keychain of our own for the run, deleted after. Set up as
-# tauri-macos-sign does, which works on the runner VMs: in
-# ~/Library/Keychains, codesign in its partition list, after the existing
-# ones in the search list (restored after).
+# A keychain of our own for the run, deleted after: in ~/Library/Keychains,
+# codesign in its partition list, and alone in the search list until the
+# end (restored after). tauri-macos-sign leaves its own keychain, with the
+# same identity, in the search list, and codesign then fails with
+# errSecInternalComponent (app-v0.27.2).
 tmp=$(mktemp -d)
 keychain=$HOME/Library/Keychains/arugula-sign-$(openssl rand -hex 8).keychain-db
 kpass=$(openssl rand -hex 16)
@@ -58,8 +59,7 @@ security unlock-keychain -p "$kpass" "$keychain"
 security import "$tmp/cert.p12" -k "$keychain" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
 security set-keychain-settings -t 3600 -u "$keychain"
 security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$kpass" "$keychain" >/dev/null
-# shellcheck disable=SC2086 # one path each
-security list-keychains -d user -s $searched "$keychain"
+security list-keychains -d user -s "$keychain"
 
 sign() { codesign --force --timestamp --options runtime --keychain "$keychain" -s "$APPLE_SIGNING_IDENTITY" "$@"; }
 notarize() {
