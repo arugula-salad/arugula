@@ -15,6 +15,10 @@
 # - macos: test and, beside it, the WebKit specs, on GitHub's macOS
 #   runners (when the push changes what runs there: scripts/macos-changed;
 #   main always).
+# A push that changes none of what they read (scripts/suite-changed: the
+# docs' prose, spikes, the desktop app...) runs lint and, for the app, its
+# jobs (static, clippy's app half, desktop-xvfb); chant counts the skipped
+# ones as passing (chant.workspace.json).
 # Those jobs start from nothing (.github/actions/setup): the toolchain,
 # GitHub's cache in place of kept build directories, and build's and
 # static's binaries as artifacts in place of a shared run directory
@@ -93,6 +97,8 @@ jobs:
   # The debug binaries, web/dist embedded (debug-embed: the specs run them
   # from other checkouts), for the specs and the test stack's CLI.
   build:
+    needs: changes
+    if: needs.changes.outputs.suite == 'true'
     runs-on: arugula-amd64
     steps:
       - uses: actions/checkout@v4
@@ -115,6 +121,8 @@ jobs:
   # The box's binaries: for the ssh tests, the test stack and
   # team-swarm-phones' box behind netem.
   static:
+    needs: changes
+    if: needs.changes.outputs.suite == 'true' || needs.changes.outputs.app == 'true'
     runs-on: arugula-amd64
     steps:
       - uses: actions/checkout@v4
@@ -134,6 +142,8 @@ jobs:
           compression-level: 1
 
   clippy:
+    needs: changes
+    if: needs.changes.outputs.suite == 'true' || needs.changes.outputs.app == 'true'
     runs-on: arugula-amd64
     steps:
       - uses: actions/checkout@v4
@@ -148,13 +158,17 @@ jobs:
           tool: cargo-about@0.9.2
       - run: just bootstrap
       - run: just web
-      - run: mise exec -- cargo clippy --workspace --all-targets -- -D warnings
-      - run: just check-macos
-      - run: just check-macos x86_64
+      - if: needs.changes.outputs.suite == 'true'
+        run: mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+      - if: needs.changes.outputs.suite == 'true'
+        run: just check-macos
+      - if: needs.changes.outputs.suite == 'true'
+        run: just check-macos x86_64
       # Only when the push changes what the app is built from
       # (scripts/app-changed): its own workspace, compiled for nothing else.
       - name: The desktop app
-        run: if scripts/app-changed "${{ github.event.before }}"; then just desktop-check; fi
+        if: needs.changes.outputs.app == 'true'
+        run: just desktop-check
       - name: THIRD_PARTY.md is current
         run: just notices && git diff --exit-code THIRD_PARTY.md crates/desktop/THIRD_PARTY.md
 
@@ -162,6 +176,8 @@ jobs:
   # src/labs/mod.rs): clippy and the tests. The ssh tests, which need
   # Docker, run in `test`.
   core:
+    needs: changes
+    if: needs.changes.outputs.suite == 'true'
     runs-on: arugula-amd64
     steps:
       - uses: actions/checkout@v4
@@ -175,7 +191,8 @@ jobs:
           ARUGULA_REQUIRE_SYSTEMD: "1"
 
   test:
-    needs: static
+    needs: [changes, static]
+    if: needs.changes.outputs.suite == 'true'
     runs-on: arugula-amd64
     steps:
       - uses: actions/checkout@v4
@@ -347,7 +364,8 @@ jobs:
   # pod built it for 6 min each run); main pushes it when it's new. Not
   # named desktop: that's the Windows job chant.workspace.json requires.
   desktop-xvfb:
-    needs: static
+    needs: [changes, static]
+    if: needs.changes.outputs.suite == 'true' || needs.changes.outputs.app == 'true'
     runs-on: arugula-amd64
     permissions:
       contents: read
@@ -368,16 +386,24 @@ jobs:
           ARUGULA_DESKTOP_IMAGE_REPO: ghcr.io/arugula-salad/arugula-desktop-xvfb
           ARUGULA_DESKTOP_IMAGE_PUSH: ${{ github.ref == 'refs/heads/main' && '1' || '' }}
 
-  # Does the push need the macOS runner (scripts/macos-changed)? main's
-  # always do; a branch's only when it changes what runs on macOS.
-  macos-changed:
+  # What the push changed (#868): suite, the suites' inputs
+  # (scripts/suite-changed); app, the desktop app's (scripts/app-changed);
+  # macos, what runs on macOS (scripts/macos-changed: main's always do, a
+  # branch's only when it changes that).
+  changes:
     runs-on: ubuntu-latest
     outputs:
-      run: ${{ steps.ask.outputs.run }}
+      suite: ${{ steps.ask.outputs.suite }}
+      app: ${{ steps.ask.outputs.app }}
+      macos: ${{ steps.ask.outputs.macos }}
     steps:
       - uses: actions/checkout@v4
       - id: ask
-        run: if scripts/macos-changed "${{ github.event.before }}"; then echo run=true >> "$GITHUB_OUTPUT"; else echo run=false >> "$GITHUB_OUTPUT"; fi
+        run: |
+          before="${{ github.event.before }}"
+          for c in suite app macos; do
+            if "scripts/$c-changed" "$before"; then echo "$c=true"; else echo "$c=false"; fi >> "$GITHUB_OUTPUT"
+          done
 
   # GitHub's Apple silicon runner (free for a public repo, up to five at
   # once): jake-mini's one runner kept every run waiting 12-27 min for it,
@@ -386,8 +412,8 @@ jobs:
   # and the WebKit specs on runners of their own: one after the other they
   # were the run's longest job.
   macos:
-    needs: macos-changed
-    if: ${{ needs.macos-changed.outputs.run == 'true' }}
+    needs: changes
+    if: needs.changes.outputs.suite == 'true' && needs.changes.outputs.macos == 'true'
     runs-on: macos-15
     strategy:
       fail-fast: false

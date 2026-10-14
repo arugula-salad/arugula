@@ -8,11 +8,11 @@
       "branch": "main",
       "window": "24h",
       "phases": {
-        "lint": ["lint"],
-        "build": ["build", "static", "clippy"],
-        "test": ["test"],
-        "e2e": ["e2e (*)"],
-        "macos": { "runs": ["macos (test)", "macos (webkit)"], "skipped": "pass" },
+        "lint": ["lint", "changes", "suite-changed"],
+        "build": { "runs": ["build", "static", "clippy"], "skipped": "pass" },
+        "test": { "runs": ["test"], "skipped": "pass" },
+        "e2e": { "runs": ["e2e*"], "skipped": "pass" },
+        "macos": { "runs": ["macos*"], "skipped": "pass" },
         "windows": { "runs": ["workspace", "desktop"], "skipped": "pass" }
       },
       "require": ["lint", "build", "test", "e2e", "macos", "windows"]
