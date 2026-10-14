@@ -23,23 +23,43 @@ for v in APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWO
   eval "[ -n \"\${$v:-}\" ]" || { echo "macos-sign: APPLE_CERTIFICATE is set but $v isn't" >&2; exit 1; }
 done
 
-# A keychain of our own for the run, deleted after.
+# Tauri's bundler signs, notarizes and staples the app itself when these
+# secrets are set (tauri-macos-sign reads the same APPLE_* variables), so an
+# app that already carries our identity and a ticket only needs checking.
+# Signing it a second time failed on the runner VMs with
+# errSecInternalComponent (app-v0.27.1).
+if [ "$what" = app ] &&
+  codesign -dvv "$path" 2>&1 | grep -qxF "Authority=$APPLE_SIGNING_IDENTITY" &&
+  xcrun stapler validate "$path" >/dev/null 2>&1; then
+  codesign --verify --deep --strict "$path"
+  spctl --assess --type execute -vv "$path"
+  echo "macos-sign: $(basename "$path") was already signed, notarized and stapled by the bundler"
+  exit 0
+fi
+
+# A keychain of our own for the run, deleted after. Set up as
+# tauri-macos-sign does, which works on the runner VMs: in
+# ~/Library/Keychains, codesign in its partition list, after the existing
+# ones in the search list (restored after).
 tmp=$(mktemp -d)
-keychain=$tmp/sign.keychain-db
+keychain=$HOME/Library/Keychains/arugula-sign-$(openssl rand -hex 8).keychain-db
 kpass=$(openssl rand -hex 16)
+searched=$(security list-keychains -d user | tr -d '"')
 cleanup() {
   security delete-keychain "$keychain" 2>/dev/null || true
+  # shellcheck disable=SC2086 # one path each
+  security list-keychains -d user -s $searched 2>/dev/null || true
   rm -rf "$tmp"
 }
 trap cleanup EXIT
 printf '%s' "$APPLE_CERTIFICATE" | base64 --decode >"$tmp/cert.p12"
 security create-keychain -p "$kpass" "$keychain"
-security set-keychain-settings -lut 3600 "$keychain"
 security unlock-keychain -p "$kpass" "$keychain"
 security import "$tmp/cert.p12" -k "$keychain" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
-security set-key-partition-list -S apple-tool:,apple: -s -k "$kpass" "$keychain" >/dev/null
-# shellcheck disable=SC2046 # the existing search list, one path each
-security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+security set-keychain-settings -t 3600 -u "$keychain"
+security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$kpass" "$keychain" >/dev/null
+# shellcheck disable=SC2086 # one path each
+security list-keychains -d user -s $searched "$keychain"
 
 sign() { codesign --force --timestamp --options runtime --keychain "$keychain" -s "$APPLE_SIGNING_IDENTITY" "$@"; }
 notarize() {
