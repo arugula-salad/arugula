@@ -98,6 +98,40 @@ pub enum ConvReq {
         name: String,
         why: String,
     },
+    /// Its lead started, or what it has seen, owes or waits on (#858): the
+    /// daemon's, never a request's.
+    Lead {
+        id: arugula_proto::ConvId,
+        change: LeadChange,
+    },
+}
+
+/// What happens to a conversation's lead (#858): the daemon's, never a
+/// request's.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LeadChange {
+    /// A lead started in `block`, first or in place of a lost one, having
+    /// been shown up to `cursor`. Whom the lost one owed an answer, and the
+    /// links it waited on, are the new one's.
+    Start { block: arugula_proto::PaneId, at: u64, cursor: u64 },
+    /// It was handed a prompt showing the timeline up to `cursor`.
+    Turn { cursor: u64 },
+    /// `who` wrote `@lead`: its next reply is theirs.
+    Asked(String),
+    /// It posted in its turn.
+    Posted,
+    /// Its reply (message `msg`) answers these people: the mux tells them.
+    Replied { who: Vec<String>, msg: u64 },
+    /// A turn of its ended: the next one hasn't posted yet.
+    TurnDone,
+    /// It prompted this link: the link's turn ending wakes it.
+    Await(String),
+    /// It saw this link finish itself (it waited on it).
+    Settled(String),
+    /// This link ended its turn: if the lead waited on it, it's to be woken.
+    LinkEnded(String),
+    /// It was told these links ended.
+    Woken(Vec<String>),
 }
 
 use self::attention::{TermAsk, Waiter};

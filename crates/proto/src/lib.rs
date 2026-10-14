@@ -1453,6 +1453,45 @@ pub struct Conversation {
     /// they were linked. A closed one stays, and its name isn't used again.
     #[serde(default)]
     pub links: Vec<ConvLink>,
+    /// Its lead (#858): the agent block on this machine that drives the
+    /// links, with the owner's rights. None until one is started, and kept
+    /// (with its block gone) when it's lost, until it's replaced.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub lead: Option<ConvLead>,
+}
+
+/// A conversation's lead (#858): an agent block on the home machine whose
+/// MCP token reaches the conversation's links by name. `@lead` is its next
+/// prompt; what it has seen, whom it owes an answer and which links it
+/// waits on are kept here, so a restart loses none of it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ConvLead {
+    /// Its agent block, here.
+    pub block: PaneId,
+    /// When it was started (ms since the epoch).
+    pub at: u64,
+    /// The last timeline message it has been shown: "since your last turn"
+    /// is what comes after.
+    #[serde(default)]
+    pub cursor: u64,
+    /// Whoever wrote `@lead` and hasn't had its answer yet (principal ids):
+    /// its next reply notifies them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub asked: Vec<String>,
+    /// Links it prompted and hasn't seen finish: one that ends its turn
+    /// wakes it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub awaiting: Vec<String>,
+    /// Links that ended their turn while it was busy: they wake it once
+    /// it's done.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub woke: Vec<String>,
+    /// Its replies in the current turn (it posted with `post_thread`), so
+    /// its last message isn't posted too.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub posted: u32,
 }
 
 /// Someone in a conversation who isn't its owner: they read and post.

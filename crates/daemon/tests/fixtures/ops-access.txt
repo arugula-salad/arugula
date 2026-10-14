@@ -11,6 +11,7 @@ conv.delete DELETE /api/convs/{id} Handler drives=false credential=false
 conv.grant POST /api/panes/{id}/conv-grants Pane(Editor) drives=true credential=false
 conv.grant_revoke POST /api/panes/{id}/conv-grants/revoke Pane(Editor) drives=false credential=false
 conv.grants GET /api/panes/{id}/conv-grants Pane(Viewer) drives=false credential=false
+conv.lead POST /api/convs/{id}/lead Handler drives=false credential=false
 conv.link POST /api/convs/{id}/links Handler drives=false credential=false
 conv.links GET /api/convs/{id}/links Handler drives=false credential=false
 conv.member_add POST /api/convs/{id}/members Handler drives=false credential=false

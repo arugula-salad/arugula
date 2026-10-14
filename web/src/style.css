@@ -8756,6 +8756,25 @@ html[data-finish="glass"] .prompt-backdrop {
   text-decoration: line-through;
 }
 
+/* #858: the lead, first among them. */
+.link-chip.lead {
+  border-style: dashed;
+}
+
+.link-chip.lead.working .link-chip-dot {
+  background: var(--accent);
+}
+
+.link-chip.lead.waiting .link-chip-dot {
+  background: var(--warn);
+}
+
+.link-chip.lead.idle .link-chip-dot,
+.link-chip.lead.gone .link-chip-dot,
+.link-chip.lead.none .link-chip-dot {
+  background: var(--muted);
+}
+
 .link-chip-close {
   padding: 2px 8px 2px 2px;
   color: var(--dim);

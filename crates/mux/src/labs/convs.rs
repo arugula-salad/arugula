@@ -12,10 +12,16 @@
 //!   owner or whoever linked one closes it (the daemon too, when the pane's
 //!   machine refuses it).
 //!
+//! - Its lead (#858) is the daemon's to start and to keep track of
+//!   ([`LeadChange`]): what it has seen, whom it owes an answer, and the
+//!   links it waits on, so a restart loses none of it.
+//!
 //! Whom a member may be (someone who can reach this machine) is the mux's
 //! call: it knows who that is.
 
-use arugula_proto::{ConvId, ConvLink, ConvMember, Conversation};
+use arugula_proto::{ConvId, ConvLead, ConvLink, ConvMember, Conversation};
+
+pub use crate::mux::LeadChange;
 
 /// The longest title kept, in characters.
 pub const MAX_TITLE: usize = 100;
@@ -67,6 +73,7 @@ pub fn create(owner: &str, owner_name: &str, title_: &str, at: u64) -> Result<Co
         members: Vec::new(),
         created: at,
         links: Vec::new(),
+        lead: None,
     })
 }
 
@@ -152,6 +159,46 @@ pub fn close_link(c: &mut Conversation, name: &str, why: &str) -> bool {
     }
 }
 
+/// `change` to `c`'s lead. Refused (404) when it has none, except a start.
+pub fn lead(c: &mut Conversation, change: LeadChange) -> Result<(), Refusal> {
+    if let LeadChange::Start { block, at, cursor } = change {
+        let was = c.lead.take();
+        let (asked, awaiting, woke) = was.map(|l| (l.asked, l.awaiting, l.woke)).unwrap_or_default();
+        c.lead = Some(ConvLead { block, at, cursor, asked, awaiting, woke, posted: 0 });
+        return Ok(());
+    }
+    let l = c.lead.as_mut().ok_or((404, "this conversation has no lead".to_owned()))?;
+    let add = |v: &mut Vec<String>, x: String| {
+        if !v.contains(&x) {
+            v.push(x);
+        }
+    };
+    match change {
+        LeadChange::Start { .. } => unreachable!("handled above"),
+        LeadChange::Turn { cursor } => l.cursor = l.cursor.max(cursor),
+        LeadChange::Asked(who) => add(&mut l.asked, who),
+        LeadChange::Posted => l.posted += 1,
+        LeadChange::Replied { who, .. } => l.asked.retain(|w| !who.contains(w)),
+        LeadChange::TurnDone => l.posted = 0,
+        LeadChange::Await(link) => {
+            l.woke.retain(|w| *w != link);
+            add(&mut l.awaiting, link);
+        }
+        LeadChange::Settled(link) => {
+            l.awaiting.retain(|w| *w != link);
+            l.woke.retain(|w| *w != link);
+        }
+        LeadChange::LinkEnded(link) => {
+            if l.awaiting.contains(&link) {
+                l.awaiting.retain(|w| *w != link);
+                add(&mut l.woke, link);
+            }
+        }
+        LeadChange::Woken(links) => l.woke.retain(|w| !links.contains(w)),
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -205,6 +252,43 @@ mod tests {
         apply(&mut c, "owner", link(None, 3)).unwrap();
         assert_eq!(c.links.last().unwrap().name, "L3");
         assert_eq!(c.links.len(), 3);
+    }
+
+    #[test]
+    fn a_lead_keeps_what_it_has_seen_whom_it_owes_and_what_it_waits_on() {
+        let mut c = conv();
+        assert_eq!(lead(&mut c, LeadChange::Posted).unwrap_err().0, 404, "no lead yet");
+        lead(&mut c, LeadChange::Start { block: 7, at: 1, cursor: 0 }).unwrap();
+        lead(&mut c, LeadChange::Asked(SAM.into())).unwrap();
+        lead(&mut c, LeadChange::Asked(SAM.into())).unwrap();
+        lead(&mut c, LeadChange::Turn { cursor: 5 }).unwrap();
+        lead(&mut c, LeadChange::Turn { cursor: 3 }).unwrap();
+        lead(&mut c, LeadChange::Await("L1".into())).unwrap();
+        lead(&mut c, LeadChange::Await("L2".into())).unwrap();
+        lead(&mut c, LeadChange::Posted).unwrap();
+        let l = c.lead.clone().unwrap();
+        assert_eq!((l.cursor, l.asked.as_slice(), l.awaiting.len(), l.posted), (5, [SAM.to_owned()].as_slice(), 2, 1));
+        // L1 ends while it's busy: it's to be woken. L3 it never prompted.
+        lead(&mut c, LeadChange::LinkEnded("L1".into())).unwrap();
+        lead(&mut c, LeadChange::LinkEnded("L3".into())).unwrap();
+        // It waited on L2 itself.
+        lead(&mut c, LeadChange::Settled("L2".into())).unwrap();
+        let l = c.lead.clone().unwrap();
+        assert_eq!((l.awaiting.len(), l.woke.as_slice()), (0, ["L1".to_owned()].as_slice()));
+        // Its turn ends; the next one has posted nothing yet.
+        lead(&mut c, LeadChange::TurnDone).unwrap();
+        lead(&mut c, LeadChange::Turn { cursor: 9 }).unwrap();
+        lead(&mut c, LeadChange::Woken(vec!["L1".into()])).unwrap();
+        lead(&mut c, LeadChange::Replied { who: vec![SAM.into()], msg: 10 }).unwrap();
+        let l = c.lead.clone().unwrap();
+        assert_eq!((l.cursor, l.posted, l.woke.len(), l.asked.len()), (9, 0, 0, 0));
+        // A lost lead's replacement owes what it owed and waits on what it
+        // waited on; it has seen what it was shown.
+        lead(&mut c, LeadChange::Asked(RIL.into())).unwrap();
+        lead(&mut c, LeadChange::Await("L1".into())).unwrap();
+        lead(&mut c, LeadChange::Start { block: 12, at: 2, cursor: 11 }).unwrap();
+        let l = c.lead.unwrap();
+        assert_eq!((l.block, l.cursor, l.asked, l.awaiting), (12, 11, vec![RIL.to_owned()], vec!["L1".to_owned()]));
     }
 
     #[test]

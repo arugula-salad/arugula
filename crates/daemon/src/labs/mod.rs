@@ -58,6 +58,9 @@ pub mod links;
 // What a conversation's links do, in its timeline, and its cards (#857).
 #[cfg(feature = "labs")]
 pub mod events;
+// A conversation's lead (#858): the agent block that drives its links.
+#[cfg(feature = "labs")]
+pub mod lead;
 // Forgejo and GitLab as forges (#457): their adapters, the `tea` logins
 // Forgejo reads with, and the webhooks they send. GitHub is core's. The
 // parts of a forge block that connect to them are `forge/labs_forges.rs`,
@@ -144,6 +147,8 @@ pub fn resume_tasks(app: &Arc<App>) {
     }
     // #857: each conversation's links, watched again.
     events::resume(app);
+    // #858: and its lead, followed again and told what it was owed.
+    lead::resume(app);
 }
 
 #[cfg(not(feature = "labs"))]
@@ -538,6 +543,58 @@ pub mod events {
         _req: ConvActRequest,
         _who: &Principal,
     ) -> Result<(), super::links::Refusal> {
+        Err((501, super::not_built("Chat")))
+    }
+}
+
+/// A conversation's lead (#858) in a build without Labs: none, so no
+/// token is a lead's and no call names a link.
+#[cfg(not(feature = "labs"))]
+pub mod lead {
+    use std::sync::Arc;
+
+    use arugula_proto::{ConvId, Conversation, PaneId, ThreadMsg};
+    use serde_json::Value;
+
+    use crate::{
+        mcp::tools::{Call, Out},
+        server::App,
+    };
+
+    pub const WHO: &str = "lead";
+
+    pub async fn of(_app: &App, _block: PaneId) -> Option<ConvId> {
+        None
+    }
+
+    pub async fn start(_app: &Arc<App>, _id: ConvId) -> Result<Conversation, super::links::Refusal> {
+        Err((501, super::not_built("Chat")))
+    }
+
+    pub async fn tell(_app: &Arc<App>, _id: ConvId, _msg: &ThreadMsg) -> Result<bool, String> {
+        Err(super::not_built("Chat"))
+    }
+
+    pub async fn posted(_app: &App, _id: ConvId, _msg: u64) {}
+
+    pub fn stop(_id: ConvId) {}
+
+    pub async fn route(_call: &Call<'_>, _conv: ConvId, _tool: &str, args: Value) -> Result<Value, Out> {
+        Ok(args)
+    }
+
+    pub async fn after(_app: &App, _conv: ConvId, _name: &str, _tool: &str, _v: &Value) {}
+
+    pub async fn links_now(_call: &Call<'_>) -> Out {
+        Err(super::not_built("Chat"))
+    }
+
+    pub async fn adopt(
+        _app: &Arc<App>,
+        _conv: ConvId,
+        _pane: PaneId,
+        _title: Option<String>,
+    ) -> Result<String, super::links::Refusal> {
         Err((501, super::not_built("Chat")))
     }
 }

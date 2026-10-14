@@ -331,6 +331,7 @@ macro_rules! every_op {
         $m!($crate::op::ops::ConvLinkClose);
         $m!($crate::op::ops::ConvLinksGet);
         $m!($crate::op::ops::ConvAct);
+        $m!($crate::op::ops::ConvLeadStart);
         $m!($crate::op::ops::ConvGrantMake);
         $m!($crate::op::ops::ConvGrantsList);
         $m!($crate::op::ops::ConvGrantRevoke);
@@ -1063,6 +1064,23 @@ pub mod ops {
         type Path = crate::ConvId;
         type Req = crate::api::ConvActRequest;
         type Res = Empty;
+    }
+
+    /// `POST /api/convs/{id}/lead` (#858): start the conversation's lead,
+    /// or a new one in place of a lost one, for someone in it. The new
+    /// block is told the links and the last messages; the conversation
+    /// keeps its id and timeline.
+    pub struct ConvLeadStart;
+
+    impl Op for ConvLeadStart {
+        const NAME: &'static str = "conv.lead";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/convs/{id}/lead";
+        const ACCESS: Access = Access::Handler;
+        const FLAG: Option<&'static str> = Some(crate::flags::CHAT);
+        type Path = crate::ConvId;
+        type Req = Empty;
+        type Res = crate::Conversation;
     }
 
     /// `POST /api/panes/{id}/conv-grants` (#856): let a conversation's home

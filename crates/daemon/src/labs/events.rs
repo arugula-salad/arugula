@@ -255,6 +255,16 @@ fn poster(l: &ConvLink) -> Driver {
 }
 
 async fn post(app: &App, id: ConvId, l: &ConvLink, e: ConvEvent) -> bool {
+    // #858: a link the lead waits on that's done wakes it.
+    let ended = matches!(e.kind, ConvEventKind::TurnEnded | ConvEventKind::Exited);
+    let posted = post_line(app, id, l, e).await;
+    if posted && ended {
+        super::lead::link_ended(app, id, &l.name).await;
+    }
+    posted
+}
+
+async fn post_line(app: &App, id: ConvId, l: &ConvLink, e: ConvEvent) -> bool {
     let post = ThreadPost {
         target: ThreadTarget::Conv(id),
         who: Principal::Owner,
@@ -305,6 +315,7 @@ async fn close(app: &App, id: ConvId, l: &ConvLink, why: String) {
     info!(conv = %id, link = l.name, why, "a link closed");
     let req = ConvReq::LinkClosed { id, name: l.name.clone(), why };
     let _ = app.mux.api(|r| Api::Conv(req, Principal::Owner, r)).await;
+    super::lead::link_ended(app, id, &l.name).await;
 }
 
 /// Watch link `l` of conversation `id`, unless it's watched already.
@@ -340,6 +351,15 @@ enum Got {
 /// A pane here: the mux's events for it.
 async fn here(app: Arc<App>, pane: arugula_proto::PaneId, tx: mpsc::UnboundedSender<Got>) {
     let mut events = app.mux.events();
+    // One linked mid-turn (a lead's helper, #858, linked as it starts):
+    // that turn's end is a turn's end too.
+    let now = app.mux.api(Api::Panes).await.unwrap_or_default();
+    if now.iter().any(|p| p.info.id == pane && p.info.attention == Attention::Working) {
+        let working = EventKind::Attention { state: Attention::Working, reason: None };
+        if tx.send(Got::Event(Box::new(working))).is_err() {
+            return;
+        }
+    }
     loop {
         match events.recv().await {
             Ok(e) if e.pane == Some(pane) => {

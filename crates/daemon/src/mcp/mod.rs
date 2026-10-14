@@ -39,7 +39,7 @@ pub(crate) mod tools;
 use std::sync::Arc;
 
 use arugula_proto::{
-    BlockType, PaneId,
+    BlockType, ConvId, PaneId,
     flags::{self, On},
 };
 use axum::{
@@ -111,6 +111,30 @@ pub enum Scope {
     /// (on the tab's machine, in a VM tab), driving and closing what it
     /// started, and reading the rest of its tab. Nothing in other tabs.
     Block(PaneId),
+    /// A conversation's lead (#858): its block's scope, plus the
+    /// conversation's links, by name only (`L1`, `L2`…), to prompt, wait on
+    /// and read; and its conversation's thread. A pane number reaches only
+    /// what a block's token reaches (its own tab), so a number that happens
+    /// to be a link's on another machine can't be mistaken for it.
+    Lead { block: PaneId, conv: ConvId },
+}
+
+impl Scope {
+    /// The agent block whose token this is.
+    pub fn block(self) -> Option<PaneId> {
+        match self {
+            Scope::Block(b) | Scope::Lead { block: b, .. } => Some(b),
+            Scope::Full | Scope::Read => None,
+        }
+    }
+
+    /// The conversation this caller leads.
+    pub fn leads(self) -> Option<ConvId> {
+        match self {
+            Scope::Lead { conv, .. } => Some(conv),
+            _ => None,
+        }
+    }
 }
 
 /// Who is calling, as the request's checks found.
@@ -130,10 +154,7 @@ impl Caller {
     /// A caller with `scope`. An agent block is always its own pane, whatever
     /// `from_header` says; the others take the header's, if there was one.
     fn new(scope: Scope, token: Option<String>, from_header: Option<PaneId>) -> Self {
-        let pane = match scope {
-            Scope::Block(id) => Some(id),
-            Scope::Full | Scope::Read => from_header,
-        };
+        let pane = scope.block().or(from_header);
         Caller { scope, token, pane }
     }
 }
@@ -205,7 +226,14 @@ async fn authenticate(State(app): State<Arc<App>>, mut req: Request, next: Next)
                 Caller::new(scope, Some(name), pane)
             }
             Some(Bearer::Block(id)) => match app.mux.api(|r| Api::Block(id, r)).await.flatten() {
-                Some(b) if b.kind() == BlockType::Agent => Caller::new(Scope::Block(id), Some(format!("%{id}")), pane),
+                Some(b) if b.kind() == BlockType::Agent => {
+                    // A conversation's lead (#858) reaches its links too.
+                    let scope = match crate::labs::lead::of(&app, id).await {
+                        Some(conv) => Scope::Lead { block: id, conv },
+                        None => Scope::Block(id),
+                    };
+                    Caller::new(scope, Some(format!("%{id}")), pane)
+                }
                 _ => return refuse(StatusCode::UNAUTHORIZED, &format!("agent block %{id} is gone; its token with it")),
             },
             None => return refuse(StatusCode::UNAUTHORIZED, "unknown or revoked MCP token"),

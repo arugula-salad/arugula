@@ -56,6 +56,15 @@ Prompts:
                  as it passes agents in a VM, #59) with JSON as its
                  arguments, and says "MCP " and the result as JSON
 
+A conversation's lead (#858) is prompted with `NAME wrote in the
+conversation "TITLE": MESSAGE` and the context after it. MESSAGE, without
+its @lead, is the prompt; as a script, its steps are separated by " ;; ",
+each `mcp TOOL JSON` (as above) or `say TEXT`, and the turn's one message
+is their lines (or, once, the script in $FAKE_ACP_DIR/lead-script, so the
+message can read as a person's). A lead woken by a link ("L2 (you prompted it) ended its
+turn") or after a restart ("Arugula restarted…") says "Noted: " and that
+first line.
+
 Claude Code conversations (M33): a session/resume or session/load of a
 session it doesn't have finds $CLAUDE_CONFIG_DIR/projects/*/<id>.jsonl, as
 Claude Code would, and remembers the last "remember WORD" prompt in it.
@@ -398,7 +407,31 @@ def prompt(mid, p):
     msg = lambda t: update(sid, s, {"sessionUpdate": "agent_message_chunk", "messageId": f"m{n}",
                                    "content": {"type": "text", "text": t}})
     stop = "end_turn"
-    if text.startswith("look"):
+    first = text.split("\n", 1)[0]
+    lead = re.match(r'^.* wrote in the conversation "[^"]*": (.*)$', first)
+    if lead:
+        text = re.sub(r"@lead\b", "", lead.group(1)).strip()
+        # A script waiting in $FAKE_ACP_DIR/lead-script (taken once): the
+        # message stays what a person would write (screenshots).
+        waiting = os.path.join(DIR, "lead-script")
+        if os.path.exists(waiting):
+            with open(waiting) as f:
+                text = "said ;; " + f.read().strip()
+            os.remove(waiting)
+    script = lead and (" ;; " in text or text.startswith("mcp ") or text.startswith("say "))
+    if script:
+        lines = []
+        for step in text.split(" ;; "):
+            step = step.strip()
+            if step.startswith("mcp "):
+                _, tool, *rest = step.split(" ", 2)
+                lines.append("MCP " + json.dumps(mcp_call(s.get("mcp"), tool, json.loads(rest[0]) if rest else {})))
+            elif step.startswith("say "):
+                lines.append(step[4:])
+        msg("\n".join(lines))
+    elif "(you prompted it)" in first or first.startswith("Arugula restarted"):
+        msg("Noted: " + first)
+    elif text.startswith("look"):
         images = [c.get("mimeType") for c in blocks if c.get("type") == "image"]
         others = [c.get("text", "") for c in blocks[1:] if c.get("type") == "text"]
         msg(f"Saw {len(images)} image(s) {images}; text {others}")

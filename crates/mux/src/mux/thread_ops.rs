@@ -160,9 +160,20 @@ impl Daemon {
             .collect();
         // An @agent goes to the pane's agent as a follow-up: an instruction,
         // so only from someone who may drive it (and never from an agent).
+        // In a conversation, @lead goes to its lead (#858): everyone in it
+        // may drive through the lead, so posting is enough.
         let to_agent = as_agent.is_none()
-            && crate::labs::threads::calls_agent(&tokens)
-            && matches!(target, ThreadTarget::Pane(p) if self.may_drive_here(&who, p).is_ok());
+            && match target {
+                ThreadTarget::Pane(p) => {
+                    crate::labs::threads::calls_agent(&tokens) && self.may_drive_here(&who, p).is_ok()
+                }
+                ThreadTarget::Conv(_) => crate::labs::threads::calls_lead(&tokens),
+                ThreadTarget::Session(_) => false,
+            };
+        let reaches_agent = |t: &String| match target {
+            ThreadTarget::Conv(_) => crate::labs::threads::calls_lead(std::slice::from_ref(t)),
+            _ => crate::labs::threads::calls_agent(std::slice::from_ref(t)),
+        };
         // Which tokens went anywhere; the rest are the poster's to hear about.
         let me = self.name_of(&who);
         let (mut landed, mut unreached) = (Vec::new(), Vec::new());
@@ -170,7 +181,7 @@ impl Daemon {
             let person = self.mentionable().into_iter().any(|p| {
                 mentions.iter().any(|m| m == p.id()) && crate::labs::threads::names(t, p.id(), &self.name_of(&p))
             });
-            if person || (to_agent && crate::labs::threads::calls_agent(std::slice::from_ref(t))) {
+            if person || (to_agent && reaches_agent(t)) {
                 landed.push(t.clone());
             } else if crate::labs::threads::names(t, who.id(), &me) {
                 // Yourself: nothing to say.
@@ -339,6 +350,20 @@ impl Daemon {
                 (get(self, id)?, Some(Change::Link(link)))
             }
             ConvReq::Unlink { id, name } => (get(self, id)?, Some(Change::Unlink(name))),
+            ConvReq::Lead { id, change } => {
+                let mut c = get(self, id)?;
+                let reply = match &change {
+                    convs::LeadChange::Replied { who, msg } => Some((who.clone(), *msg)),
+                    _ => None,
+                };
+                convs::lead(&mut c, change).map_err(err)?;
+                self.threads.save_conv(c.clone()).map_err(|e| ThreadError(500, format!("can't save it: {e}")))?;
+                self.soon();
+                if let Some((who, msg)) = reply {
+                    self.notify_reply(&c, &who, msg);
+                }
+                return Ok(c);
+            }
             ConvReq::LinkClosed { id, name, why } => {
                 let mut c = get(self, id)?;
                 if !convs::close_link(&mut c, &name, &why) {
@@ -400,6 +425,19 @@ impl Daemon {
                 format!("{name} names {}: give their id", named.iter().map(|p| p.id()).collect::<Vec<_>>().join(", ")),
             )),
         }
+    }
+
+    /// Tell whoever asked the lead (#858) that it answered, on their phones
+    /// too: its posts mention no one, so nothing else would.
+    fn notify_reply(&self, c: &Conversation, who: &[String], msg: u64) {
+        let target = ThreadTarget::Conv(c.id);
+        let Some(m) = self.threads.get(target).iter().find(|m| m.id == msg) else { return };
+        let title = format!("The lead answered you in {}", c.title);
+        let body: String = m.text.chars().take(200).collect();
+        let extra = serde_json::json!({ "thread": target.key(), "tag": format!("thread-{}", target.key()) });
+        self.config.notify.notify(0, &title, &body, Some(extra.clone()), Some(extra), &|p| {
+            who.iter().any(|w| w == p.id()) && c.floor(p.id()).is_some()
+        });
     }
 
     /// Tell someone just added to a conversation, on their phone too: what

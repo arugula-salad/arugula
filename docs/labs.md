@@ -210,7 +210,7 @@ machine without it, nobody does.
   and *Revoke* cuts that link: the home finds it refused and closes it for
   good (a pane linked again is a new link). The owner, or whoever linked
   one, can close a link from its chip. The home drives a linked pane
-  (M84's lead will) through control's relay, and only that pane: its
+  (its lead does) through control's relay, and only that pane: its
   prompt, wait, screen, events and card answers.
 - **What links do** (#857). Each link's turns show up in its conversation
   as they happen, wherever its pane runs:
@@ -237,6 +237,37 @@ machine without it, nobody does.
   - Claude Code's "waiting for your input", a minute after each turn, posts
     nothing; the same line twice in a row is one. The home watches each link
     again when it restarts.
+- **The lead** (#858). Every conversation has one: a Claude Code agent
+  block on its home machine, started with it on your default model
+  (Claude Code's `model` setting), in a tab of its own in the
+  *conversations* session, so you can watch it work. It acts with the
+  conversation owner's rights, and a request to a pane on another machine
+  still runs under that link's grant there.
+  - **`@lead`** in the conversation, from anyone in it, is its next
+    prompt. Each prompt says who wrote what, what happened in the
+    conversation since its last turn (its links' events included), the
+    links by name and how to answer, so it needs nothing it was told
+    before; `read_thread` has the rest.
+  - **It drives the links by name** (L1, L2…): `prompt_agent`, `wait`
+    and `read_output`, here or through the relay. A pane number reaches
+    only its own tab, never a link. It can't answer a link's cards (those
+    are the people's: waiting on a link waits through them), type into a
+    link, or run a command in one. `list` kind `links` shows them.
+  - **A link it prompted wakes it** when its turn ends, now if the lead
+    is idle, else once its turn is done.
+  - **Its replies** are its `post_thread`s, or its turn's last message
+    when it doesn't post. A reply to an `@lead` notifies whoever asked, on
+    their phone too.
+  - **`start_agent`** from it opens a helper beside it, which becomes the
+    next link.
+  - **What it has seen** (the last message it was shown), whom it owes an
+    answer and which links it waits on are kept in the conversation's
+    record, so a restart loses none of it: a link that finished meanwhile
+    wakes it, and a turn the restart cut off is taken up again.
+  - **The header's first chip** is the lead: working, idle or needs you,
+    and it opens its block. A lead that's gone (closed) says so; the next
+    `@lead`, or the chip, starts another, which is shown the last messages
+    and the links. The conversation keeps its id and timeline.
 - **An @ of someone who can't see the thread offers to invite them**. When you, the owner, write "@sam look" and Sam is someone this
   machine knows (shared with elsewhere, or on a roster it checked) but
   can't read that thread, the composer says "Sam can't see this. Invite
@@ -334,6 +365,9 @@ menu, *Session thread* in the session menu, or the bubble on a pane.
   it, no more than an editor's. Revoking the grant on the pane cuts the
   link. Its events come to the home over the same channel, and its
   cards are answered through it.
+- **The lead** reaches the conversation's links by name and its own tab,
+  nothing else: no other pane by number, no other thread. Whoever is in
+  the conversation can have it work in every linked pane.
 - **Someone outside your teams** added to a conversation is asked first,
   as with a share: the offer they see names the conversation ("Jake added
   you to *calc tests*"), and accepting lists the machine with only that
