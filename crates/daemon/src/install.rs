@@ -586,7 +586,32 @@ pub fn copy_binaries(home: &Path) -> anyhow::Result<PathBuf> {
         println!("note: no `arugula` CLI next to {}; build it with `cargo build -p arugula`", exe.display());
     }
     drop_old_names(&bin_dir, || old_names_still_used(&bin_dir.join("arugula")));
+    on_path(home);
     Ok(dest)
+}
+
+/// `~/.local/bin` on the PATH of new terminals (#883): stock macOS zsh,
+/// and some Linux profiles, don't have it.
+#[cfg(unix)]
+fn on_path(home: &Path) {
+    let done = arugula_proto::shell_path::ensure(home, Path::new(&crate::login_shell()));
+    if let Some(note) = done.note(home) {
+        println!("{note}");
+    }
+}
+
+/// `arugulad install --no-service`: the binaries in `~/.local/bin`, on
+/// PATH, and no service (install.sh, with no systemd).
+#[cfg(unix)]
+pub fn binaries_only() -> anyhow::Result<()> {
+    let home = PathBuf::from(std::env::var_os("HOME").context("HOME is not set")?);
+    copy_binaries(&home)?;
+    Ok(())
+}
+
+#[cfg(windows)]
+pub fn binaries_only() -> anyhow::Result<()> {
+    bail!("--no-service is for Linux and macOS")
 }
 
 /// `illogicald` and `illogical` in `bin_dir`, the links to `arugulad` and

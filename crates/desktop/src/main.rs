@@ -279,10 +279,31 @@ fn unquarantine(path: &std::path::Path) {
 /// launch agent runs the bundle's, so nothing else puts one on PATH for
 /// `arugulad join` or `arugulad update`. (Elsewhere `arugulad install`
 /// copies itself there, and a later one replaces the link with a copy.)
+///
+/// Then `~/.local/bin` on the PATH of new terminals, when it isn't (#883):
+/// stock macOS zsh doesn't have it (`arugula_proto::shell_path`). In the
+/// background, so it doesn't hold up the daemon.
 fn install_cli() -> Option<PathBuf> {
     if cfg!(windows) {
         return None;
     }
+    let cli = install_cli_files();
+    if let Some(home) = std::env::var_os("HOME").map(PathBuf::from)
+        && ["arugula", "arugulad"].iter().any(|n| home.join(".local/bin").join(n).exists())
+    {
+        std::thread::spawn(move || {
+            use arugula_proto::shell_path;
+            let done = shell_path::ensure(&home, &shell_path::login_shell());
+            if let Some(note) = done.note(&home) {
+                eprintln!("arugula: {note}");
+            }
+        });
+    }
+    cli
+}
+
+/// `install_cli`'s copies and links.
+fn install_cli_files() -> Option<PathBuf> {
     // Only the new names: ones from before the rename stay, beside these.
     if installed(&["arugulad"]).is_none() {
         link_to_bundle("arugulad");

@@ -30,6 +30,10 @@ pub(crate) enum Command {
         /// Write and enable the unit without starting it now.
         #[arg(long)]
         no_start: bool,
+        /// Only put arugulad and arugula in ~/.local/bin, and that on your
+        /// shell's PATH: no service (a machine without systemd).
+        #[arg(long, conflicts_with_all = ["system", "tailnet", "no_start"])]
+        no_service: bool,
         /// macOS: a LaunchDaemon that runs it as you from boot, with nobody
         /// logged in (/Library/LaunchDaemons/arugulad.USER.plist). Runs
         /// sudo, which may ask for your password. `arugulad uninstall`
