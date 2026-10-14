@@ -568,7 +568,7 @@ journey shows the change.
 | J2a | two friends, each through J1 first: one shares a session with the other (not a teammate) by their login, with no fingerprint to compare (their key is pinned on first use, #763), who accepts, finds the machine, asks to drive, is allowed, takes control and types; the owner sees it |
 | J2b | the same through a team: a one-click invite, the owner's machine moved into the team with *Team …*, the friend driving it by role |
 | J2c | the evening #551 audits: the owner's machine already in a team, a friend's second team, the team page's `arugulad join … --team` (not on the app's PATH, #550, and the machine is already in a team), *Team …*, sharing with the team, the Swarm, *+* on a teammate's machine |
-| J3 | (#664, on a real Mac only, below) installs the app by hand from the site's steps, with Gatekeeper on and an older daemon (arugulad 0.26.1) already running: *"Arugula" Not Opened*, *Done*, *Open Anyway* in Privacy & Security, *Open "Arugula"?*, the password; the app offers the daemon's update, and the pane keeps running |
+| J3 | (#664, on a real Mac only, below) installs the app by hand from the site's steps, with Gatekeeper on and an older daemon (arugulad 0.26.1) already running: the app is notarized (#177), so macOS asks only its usual question for a download (*"Arugula" is an app downloaded from the Internet*), *Open*, and the app opens (no *Not Opened*, *Open Anyway* or password; no hang, #315); the app offers the daemon's update, and the pane keeps running |
 | J4 | (#664, on a real Mac only, below) an agent installs over ssh: it reads docs.arugula.io/install/, runs its command, and then runs only commands it has read (the page, what they print, `--help`); one it would have to make up is unguided |
 | J5 | (#664) won't read docs: Getting started from the first screen (no phone, no account), *Use Claude Code with Arugula*, *Start an agent…*, a task, the agent's question approved, its work shown |
 | J6 | (#664) two people on one tailnet with no control: the owner shares a session to the other's tailnet login and sends the address Share shows; they watch, then drive once allowed; a third person on the same login gets the same role, and Share says the login is on two devices (#663). A stand-in for tailscaled answers WhoIs, and the others come in as `tailscale serve` passes a request on |
@@ -629,11 +629,17 @@ screen, unlike J2a's.
 `just macos journey-j3` (`testnet/macos/journey-j3.ts`) is J3: a fresh VM
 with Gatekeeper turned back on (the base image turns it off, so no other
 test meets it), an arugulad 0.26.1 installed and running a pane, and the
-app (app-latest, or `ARUGULA_MACOS_APP_ZIP`) marked as a browser marks a
+app's .dmg (the site's main download; `ARUGULA_J3_FROM=zip` for the .zip)
+from app-latest, or `ARUGULA_MACOS_APP_ZIP`, marked as a browser marks a
 download. Each step's prompt is the install page's sentence for it or the
-dialog's own text; the password prompt is `coreautha`'s window. Finder
-can't be scripted over ssh there, so the app is moved with `mv` and runs
-translocated, as one moved in Terminal does. Its report is `J3`.
+dialog's own text. The app is notarized, so the one dialog expected is
+`CoreServicesUIAgent`'s question for a download; the run prints its words
+and stops if it says *Not Opened* or wants *Open Anyway*, or if no
+window follows *Open* (#315's hang). Finder can't be scripted over ssh
+there, so the app goes to Applications with `cp` from the mounted .dmg
+(or `mv` from the unzipped .zip) and runs translocated, as one moved in
+Terminal does; it is still quarantined, so Gatekeeper sees what it sees
+after a Finder drag. Its report is `J3`.
 
 `just macos journey-j4` (`testnet/macos/journey-j4.ts`) is J4, over ssh in
 a fresh VM with no screen involved: the page's text and the commands its

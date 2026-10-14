@@ -1,12 +1,13 @@
 // J3 (#664): someone installs the Mac app by hand, from the site's steps
 // alone, on a Mac that already runs an older daemon (arugulad 0.26.1:
-// #661). They download the app as the site says,
-// move it to Applications and open it; macOS refuses it
-// ("Arugula" Not Opened), and they follow the site: Done, then Open
-// Anyway in System Settings › Privacy & Security, Open Anyway again in
-// macOS's second dialog (Open "Arugula"?) and their password. The app
-// opens, says the daemon is older, and offers the update; they take it,
-// and the daemon updates itself, with their pane still running.
+// #661). They download the app as the site says (the .dmg, the site's
+// main download, or the .zip), put it in Applications and open it. The
+// app is Developer ID signed and notarized (#177), so macOS asks only its
+// usual question for a download ("Arugula" is an app downloaded from the
+// Internet) and they choose Open: no "Not Opened", no Open Anyway in
+// Privacy & Security, no password, and no silent hang at launch (#315).
+// The app opens, says the daemon is older, and offers the update; they
+// take it, and the daemon updates itself, with their pane still running.
 //
 // A fresh tart VM, with Gatekeeper on (the base image turns it off) and
 // the app from app-latest marked as Safari marks a download. Every step
@@ -16,7 +17,9 @@
 // The report is J3 in web/journey-reports/ (local, never committed).
 //   node --experimental-strip-types testnet/macos/journey-j3.ts
 //   (or: testnet/macos/test.sh journey-j3)
-//   ARUGULA_MACOS_APP_ZIP=URL|path  another app (default: app-latest)
+//   ARUGULA_J3_FROM=dmg|zip         which download (default: dmg)
+//   ARUGULA_MACOS_APP_ZIP=URL|path  another app, a .dmg or .zip as FROM
+//                                   says (default: app-latest's)
 //   KEEP=1                          leave the VM up
 //
 // Exit codes: 0 the journey held (every step led), 1 it didn't.
@@ -26,8 +29,12 @@ import { Journey, Stopped } from "../../web/e2e/journey/record.ts";
 
 process.env.ARUGULA_MACOS_VM ??= "arugula-j3";
 const lib = await import("./journey-lib.ts");
-const { APP, ax, root, sh, shot, shows, until, v, zip } = lib;
+const { APP, ax, root, screen, sh, shot, shows, sleep, until, v } = lib;
 process.env.JOURNEY_REPORT_DIR ??= join(root, "web/journey-reports");
+
+const FROM = process.env.ARUGULA_J3_FROM === "zip" ? "zip" : "dmg";
+const FILE = `arugula-desktop-macos-arm64.${FROM}`;
+const src = process.env.ARUGULA_MACOS_APP_ZIP ?? `https://github.com/arugula-salad/arugula/releases/download/app-latest/${FILE}`;
 
 /** The older daemon: the oldest whose own update finds the renamed
  * repository's releases (#525). */
@@ -41,7 +48,6 @@ const newerThan = (a: string, b: string) => {
 };
 const PAGE = "https://docs.arugula.io/install/";
 const GK = "CoreServicesUIAgent";
-const SETTINGS = "System Settings";
 
 /** The site's install page, as text: what the person follows. */
 async function siteSays(): Promise<string> {
@@ -68,8 +74,16 @@ const keys = (script: string) => sh(`osascript -e ${JSON.stringify(`tell applica
 const daemonVersion = () => {
   try {
     return sh(
-      `curl -s -m 5 -H "Authorization: Bearer $(cat ~/.local/state/arugula/local-token)" http://127.0.0.1:7681/api/host | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])'`,
+      `curl -s -m 5 -H "Authorization: Bearer $(cat ~/.local/state/arugula/local-token)" http://127.0.0.1:7681/api/host | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])' 2>/dev/null`,
     );
+  } catch {
+    return "";
+  }
+};
+/** Every text on Gatekeeper's window, or "" when it has none. */
+const gatekeeper = () => {
+  try {
+    return ax(GK, `proc.windows.length ? all().map(label).filter((t) => t).join("\\n") : ""`);
   } catch {
     return "";
   }
@@ -85,6 +99,7 @@ try {
   // --- The Mac as this person has it: arugulad 0.26.1 running, with a pane.
   v("down");
   v("up");
+  console.log(`macOS ${sh("sw_vers -productVersion")} (${sh("sw_vers -buildVersion")}); the ${FROM} from ${src}`);
   const tgz = `arugula-${OLD}-aarch64-apple-darwin.tar.gz`;
   sh(`set -e; mkdir -p /tmp/old; cd /tmp/old; curl -fsSL -o ${tgz} https://github.com/arugula-salad/arugula/releases/download/v${OLD}/${tgz}; tar -xzf ${tgz} --strip-components 1; ./arugulad install >/dev/null`);
   await until(`arugulad ${OLD} answering`, () => (daemonVersion() === OLD ? true : null), 60_000);
@@ -96,57 +111,52 @@ try {
   sh("screencapture -x /tmp/first.png || true");
   await until("the screen-recording question answered", () => (ax("UserNotificationCenter", `const b = proc.windows.length ? all().find((e) => g(e, "role") === "AXButton" && g(e, "name") === "Allow") : null; if (b) { press(b); "pressed" } else "none"`) === "none" ? true : null), 30_000).catch(() => {});
   // Gatekeeper on, as on a person's Mac (the base image turns it off).
-  sh("echo admin | sudo -S spctl --master-enable 2>/dev/null; spctl --status");
+  console.log(sh("echo admin | sudo -S spctl --master-enable 2>/dev/null; spctl --status"));
 
   const page = await siteSays();
 
-  await step("download", "Downloads the Mac app from the site", "browser", site(page, /arugula-desktop-macos-arm64/), async () => {
+  await step("download", `Downloads the Mac app from the site (the .${FROM})`, "browser", site(page, /arugula-desktop-macos-arm64/), async () => {
     j.opened(PAGE);
-    if (!/^https?:/.test(zip)) v("push", zip, "/tmp/app.zip");
+    if (!/^https?:/.test(src)) v("push", src, `/tmp/${FILE}`);
     // Saved as a browser saves it: marked as downloaded, which is what Gatekeeper checks.
-    sh(`set -e; cd ~/Downloads; case '${zip}' in http*) curl -fsSL -o arugula-desktop-macos-arm64.zip '${zip}' ;; *) cp /tmp/app.zip arugula-desktop-macos-arm64.zip ;; esac; xattr -w com.apple.quarantine "0083;$(printf %x $(date +%s));Safari;$(uuidgen)" arugula-desktop-macos-arm64.zip; ditto -x -k arugula-desktop-macos-arm64.zip .; xattr -p com.apple.quarantine Arugula.app >/dev/null`);
+    sh(`set -e; cd ~/Downloads; case '${src}' in http*) curl -fsSL -o ${FILE} '${src}' ;; *) cp /tmp/${FILE} ${FILE} ;; esac; xattr -w com.apple.quarantine "0083;$(printf %x $(date +%s));Safari;$(uuidgen)" ${FILE}`);
+    if (FROM === "zip") sh(`set -e; cd ~/Downloads; ditto -x -k ${FILE} .; xattr -p com.apple.quarantine Arugula.app >/dev/null`);
   }, { expect: "the download's name on the site" });
 
   await step("move", "Moves Arugula to Applications and opens it", "app", site(page, /Move \*?Arugula\*? to your Applications folder/), async () => {
     // Finder can't be scripted over ssh here (its Apple events wait on a
-    // consent nobody can give), so the move is mv: macOS then runs the app
-    // translocated, as for an app moved in Terminal. The steps are the same.
-    sh("mv ~/Downloads/Arugula.app /Applications/");
+    // consent nobody can give), so the app goes to Applications with cp
+    // from the mounted .dmg (keeping its quarantine, as a Finder drag
+    // does) or mv from the unzipped .zip: macOS then runs it translocated,
+    // as an app moved in Terminal. The steps are the same.
+    if (FROM === "dmg") sh(`set -e; hdiutil attach -quiet -nobrowse -mountpoint /tmp/arugula-dmg ~/Downloads/${FILE}; cp -R /tmp/arugula-dmg/Arugula.app /Applications/; hdiutil detach -quiet /tmp/arugula-dmg`);
+    else sh("mv ~/Downloads/Arugula.app /Applications/");
+    if (!sh("xattr -p com.apple.quarantine /Applications/Arugula.app 2>/dev/null || true")) throw new Error("the app in Applications isn't marked as downloaded");
+    console.log(`spctl: ${sh("spctl -a -vv /Applications/Arugula.app 2>&1 || true").replace(/\s+/g, " ")}`);
     sh("(open /Applications/Arugula.app >/dev/null 2>&1 &)");
   }, { expect: "the site's step to move it and open it" });
 
-  await step("refused", "macOS refuses it; they choose Done, as the site says", "app", shows(GK, /Not Opened/), async () => {
-    pressIn(GK, "Done");
-  }, { expect: "macOS's \"Not Opened\" dialog" });
+  // What macOS shows for a notarized download, word for word. "Not
+  // Opened" (anything that wants Open Anyway) is what this journey is for.
+  const asked = await until("macOS's question", () => gatekeeper() || null, 60_000).catch(() => "");
+  console.log(`macOS shows (${GK}):\n${asked || "(nothing)"}`);
+  // The dialog itself (a step's screenshot is after its act), left in the
+  // VM for KEEP=1 runs to fetch.
+  sh("screencapture -x /tmp/j3-gatekeeper.png || true");
+  if (/Not Opened|Open Anyway|Move to Trash|was blocked/i.test(asked)) throw new Error(`macOS refused the notarized app: ${asked.replace(/\n/g, " / ")}`);
 
-  await step("privacy", "Opens System Settings › Privacy & Security", "app", site(page, /Privacy (&|and) Security/), async () => {
-    sh(`open "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension"`);
-    await until("Privacy & Security", () => shows(SETTINGS, /was blocked/)(), 30_000);
-  }, { expect: "the site's step to open Privacy & Security" });
-
-  await step("open-anyway", "Chooses Open Anyway beside \"Arugula\" was blocked", "app", shows(SETTINGS, /“Arugula” was blocked/), async () => {
-    // Its accessible name is the sentence beside it; the button says Open Anyway.
-    const r = ax(SETTINGS, `const e = all().find((e) => g(e, "role") === "AXButton" && /was blocked/.test(g(e, "name"))); if (!e) "missing"; else { press(e); "ok" }`);
-    if (r !== "ok") throw new Error("no Open Anyway in Privacy & Security");
-  }, { expect: "Open Anyway in Privacy & Security" });
-
-  await step("open-anyway-again", "macOS asks once more; Open Anyway", "app", shows(GK, /Open “Arugula”\?/), async () => {
-    pressIn(GK, "Open Anyway");
-  }, { expect: "the dialog Open \"Arugula\"?" });
-
-  await step("password", "Enters their password", "app", async () => {
-    // coreautha's window (its second: the first is its Passwords… button).
-    const said = sh(
-      `osascript -l JavaScript -e 'const p = Application("System Events").processes.byName("coreautha"); p.windows().flatMap((w) => w.entireContents().map((e) => { try { return String(e.name() || e.value() || "") } catch (_) { return "" } })).find((t) => /administrator/.test(t)) || ""' 2>/dev/null || true`,
-    );
-    return said || null;
-  }, async () => {
-    keys(`keystroke "admin"`);
-    keys("key code 36");
+  await step("confirm", "macOS asks about an app downloaded from the Internet; they choose Open", "app", shows(GK, /downloaded from the Internet|Open “Arugula”\?/), async () => {
+    pressIn(GK, "Open");
+    // #315 was a launch that never drew a window.
     await until("the app's window", () => (ax(APP, "proc.windows.length") !== "0" ? true : null), 60_000);
-  }, { expect: "the password prompt" });
+    const at = sh(`ps -axo command= | grep -m1 '[A]rugula.app/Contents/MacOS' || true`);
+    console.log(`the app runs from: ${at}`);
+    await sleep(3000);
+    const again = gatekeeper();
+    if (again) throw new Error(`macOS asked again: ${again.replace(/\n/g, " / ")}`);
+  }, { expect: "macOS's question for a download" });
 
-  await step("offered", "The app says the daemon is older and offers the update", "app", shows(APP, /arugulad 0\.26\.1, older than/), async () => {
+  await step("offered", "The app says the daemon is older and offers the update", "app", shows(APP, /arugulad (here is )?0\.26\.1, older than/), async () => {
     if (daemonVersion() !== OLD) throw new Error(`the daemon changed before anyone asked: ${daemonVersion()}`);
   }, { expect: "the app saying the daemon is older" });
 

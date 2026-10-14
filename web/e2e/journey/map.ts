@@ -113,11 +113,7 @@ const STEPS: Record<string, Record<string, string>> = {
   J3: {
     download: "download",
     move: "download",
-    refused: "gatekeeper",
-    privacy: "gatekeeper",
-    "open-anyway": "gatekeeper",
-    "open-anyway-again": "gatekeeper",
-    password: "gatekeeper",
+    confirm: "gatekeeper",
     offered: "older",
     update: "older",
   },
