@@ -5,10 +5,12 @@
 //! runs the bundled `arugulad`. On a Mac with no daemon yet, the app
 //! registers it through SMAppService, so it shows under Login Items as
 //! Arugula's, starts at login, and runs the copy inside the app: an app
-//! update brings a new daemon with it. Only from /Applications/Arugula.app
-//! or /Applications/illogical.app (`usable`, #505: an app from before the
-//! rename updates in place and keeps that name): an app run from anywhere
-//! else installs the daemon with `arugulad install` instead.
+//! update brings a new daemon with it. The plist's program is relative to
+//! the bundle (`BundleProgram`, #177), so that's wherever the app is:
+//! /Applications or ~/Applications, under either name (#505: an app from
+//! before the rename updates in place and keeps illogical.app). Not from a
+//! disk image or a translocated copy (`usable`), which go away: an app run
+//! from there installs the daemon with `arugulad install` instead.
 //!
 //! The plist is the bundle's, so it carries no daemon flags: `arugulad
 //! install -- FLAGS` keeps them in the state dir's `daemon-args.json`,
@@ -19,25 +21,33 @@
 //! `/Library/LaunchDaemons` with `--system`): the app adopts that one and
 //! never registers a second.
 
-use std::process::Command;
+use std::{
+    io::Read,
+    process::{Command, Stdio},
+    time::{Duration, Instant},
+};
 
-use arugula_proto::service::{APP_BUNDLES, APP_LABEL};
+use arugula_proto::service::APP_LABEL;
 use objc2_foundation::NSString;
 use objc2_service_management::{SMAppService, SMAppServiceStatus};
 
 pub const LABEL: &str = APP_LABEL;
 
-/// This app is the one the agent runs: it's in /Applications, under
-/// either name (see the plist for why those paths are fixed).
+/// This app can be the one the agent runs: a bundle that carries
+/// arugulad, and that stays where it is.
 pub fn usable() -> bool {
     crate::bundled("arugulad").is_some_and(|p| runs(&p))
 }
 
-/// `exe` is a daemon the agent's plist runs.
+/// `exe` is a bundle's daemon the agent's plist can run: in an installed
+/// app, not on a disk image (`/Volumes/...`) or in a copy Gatekeeper
+/// translocated (an app opened where it was downloaded), which are gone
+/// once the app quits.
 fn runs(exe: &std::path::Path) -> bool {
-    let exe = exe.to_string_lossy();
-    // The default file system ignores case: /Applications/arugula.app is Arugula.app.
-    APP_BUNDLES.iter().any(|b| exe.eq_ignore_ascii_case(&format!("{b}/Contents/MacOS/arugulad")))
+    let s = exe.to_string_lossy();
+    // The default file system ignores case: Arugula.app is arugula.app.
+    let in_app = s.to_ascii_lowercase().ends_with(".app/contents/macos/arugulad");
+    in_app && !s.starts_with("/Volumes/") && !s.contains("/AppTranslocation/")
 }
 
 fn agent() -> objc2::rc::Retained<SMAppService> {
@@ -84,15 +94,43 @@ pub fn unregister() -> Result<(), String> {
 /// install`'s plist does.
 pub fn restart() -> Result<(), String> {
     let uid = unsafe { libc_getuid() };
-    let out = Command::new("launchctl")
+    let mut kick = Command::new("launchctl")
         .args(["kickstart", "-k", &format!("gui/{uid}/{LABEL}")])
-        .output()
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
         .map_err(|e| e.to_string())?;
-    if out.status.success() {
-        Ok(())
-    } else {
-        Err(format!("launchctl kickstart: {}", String::from_utf8_lossy(&out.stderr).trim()))
+    // `kickstart` waits for as long as launchd can't start the program,
+    // which is for good once the app has moved: stop waiting then.
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        if let Some(status) = kick.try_wait().map_err(|e| e.to_string())? {
+            if status.success() {
+                return Ok(());
+            }
+            let mut err = String::new();
+            if let Some(mut e) = kick.stderr.take() {
+                let _ = e.read_to_string(&mut err);
+            }
+            return Err(format!("launchctl kickstart: {}", err.trim()));
+        }
+        if spawn_failed() || Instant::now() > deadline {
+            let _ = kick.kill();
+            let _ = kick.wait();
+            return Err("launchd can't start the daemon's launch agent".into());
+        }
+        std::thread::sleep(Duration::from_millis(250));
     }
+}
+
+/// launchd couldn't start the agent's program: the bundle it was
+/// registered from isn't there any more (it says `spawn failed`, exit 78).
+pub fn spawn_failed() -> bool {
+    let uid = unsafe { libc_getuid() };
+    Command::new("launchctl")
+        .args(["print", &format!("gui/{uid}/{LABEL}")])
+        .output()
+        .is_ok_and(|o| String::from_utf8_lossy(&o.stdout).contains("job state = spawn failed"))
 }
 
 /// A plist from `arugulad install` is there: that install owns the daemon.
@@ -110,11 +148,15 @@ pub fn installed_by_script() -> bool {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn the_agent_runs_either_app() {
-        assert!(super::runs("/Applications/Arugula.app/Contents/MacOS/arugulad".as_ref()));
-        assert!(super::runs("/Applications/arugula.app/Contents/MacOS/arugulad".as_ref()));
-        assert!(super::runs("/Applications/illogical.app/Contents/MacOS/arugulad".as_ref()));
-        assert!(!super::runs("/Users/me/Applications/Arugula.app/Contents/MacOS/arugulad".as_ref()));
+    fn the_agent_runs_an_installed_app() {
+        let runs = |p: &str| super::runs(p.as_ref());
+        assert!(runs("/Applications/Arugula.app/Contents/MacOS/arugulad"));
+        assert!(runs("/Applications/arugula.app/Contents/MacOS/arugulad"));
+        assert!(runs("/Applications/illogical.app/Contents/MacOS/arugulad"));
+        assert!(runs("/Users/me/Applications/Arugula.app/Contents/MacOS/arugulad"));
+        assert!(!runs("/Volumes/Arugula/Arugula.app/Contents/MacOS/arugulad"));
+        assert!(!runs("/private/var/folders/x/T/AppTranslocation/0A1B/d/Arugula.app/Contents/MacOS/arugulad"));
+        assert!(!runs("/Users/me/src/arugula/target/release/arugulad"));
     }
 }
 

@@ -383,24 +383,39 @@ fn start_daemon() -> Result<(), String> {
 }
 
 /// macOS: the daemon as the app's launch agent (`service.rs`), registered
-/// the first time, started again if it isn't answering.
+/// the first time, started again if it isn't answering. An agent that
+/// can't start where it was registered (the app moved since: its program
+/// is relative to that bundle, #177) is registered again, from here.
 #[cfg(target_os = "macos")]
 fn start_agent() -> Result<(), String> {
-    if service::registered() {
-        service::restart()?;
-    } else {
-        service::register()?;
-        eprintln!("arugula: registered the daemon's launch agent ({})", service::LABEL);
-    }
     let cli = install_cli();
-    for _ in 0..60 {
-        if reachable() {
-            if let Some(cli) = cli {
-                eprintln!("arugula: installed the CLI at {}", cli.display());
+    let answers = || {
+        for _ in 0..60 {
+            if reachable() {
+                if let Some(cli) = &cli {
+                    eprintln!("arugula: installed the CLI at {}", cli.display());
+                }
+                return true;
             }
-            return Ok(());
+            if service::spawn_failed() {
+                return false;
+            }
+            std::thread::sleep(Duration::from_millis(250));
         }
-        std::thread::sleep(Duration::from_millis(250));
+        false
+    };
+    if service::registered() {
+        match service::restart() {
+            Ok(()) if answers() => return Ok(()),
+            Ok(()) => eprintln!("arugula: the daemon's launch agent didn't start; registering it again from here"),
+            Err(e) => eprintln!("arugula: {e}; registering the daemon's launch agent again from here"),
+        }
+        service::unregister()?;
+    }
+    service::register()?;
+    eprintln!("arugula: registered the daemon's launch agent ({})", service::LABEL);
+    if answers() {
+        return Ok(());
     }
     Err(format!("the launch agent is {}, but nothing answers at {}", service::status(), addr()))
 }

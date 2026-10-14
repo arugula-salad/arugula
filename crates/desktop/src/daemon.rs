@@ -592,20 +592,24 @@ fn stop(s: &Service) -> Result<(), String> {
 fn start(s: &Service) -> Result<(), String> {
     let file = s.file.display().to_string();
     match s.kind {
+        // Loaded: start it, unless launchd can't (the app moved since it
+        // was registered, and the agent's program is relative to that
+        // bundle, #177). Stopped (unloaded): SMAppService keeps it
+        // registered, so it's back at the next login anyway, but launchd
+        // won't bootstrap a BundleProgram plist by its path. Registering
+        // again loads it, from this app, either way.
+        #[cfg(target_os = "macos")]
+        Kind::AppAgent => {
+            if s.loaded && crate::service::restart().is_ok() {
+                return Ok(());
+            }
+            let _ = crate::service::unregister();
+            crate::service::register()
+        }
+        #[cfg(not(target_os = "macos"))]
+        Kind::AppAgent => Err("the app's launch agent is only on macOS".into()),
         _ if s.loaded && s.kind != Kind::Systemd && s.kind != Kind::LaunchDaemon => {
             launchctl(&["kickstart", &s.target])
-        }
-        Kind::AppAgent => {
-            // Stopped (unloaded): load it again. SMAppService keeps it
-            // registered, so it's back at the next login anyway; if launchd
-            // won't take the plist from here, registering again does it.
-            let loaded = launchctl(&["bootstrap", domain(&s.target), &file]);
-            #[cfg(target_os = "macos")]
-            let loaded = loaded.or_else(|e| {
-                let _ = crate::service::unregister();
-                crate::service::register().map_err(|r| format!("{e}; registering again: {r}"))
-            });
-            loaded
         }
         Kind::Agent => {
             let _ = launchctl(&["enable", &s.target]);
