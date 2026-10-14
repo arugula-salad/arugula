@@ -194,7 +194,12 @@ claim_bare() {
 claim_bytes() {
   local tty="-T"; [ -n "$BREAK" ] && tty="-tt"
   head -c 1048576 /dev/urandom > "$WORK/sent"
-  s "$tty" box-bare cat < "$WORK/sent" > "$WORK/back" 2>/dev/null || true
+  # On a forced tty ssh reads its escapes from the random bytes too, and
+  # a newline, ~, ^Z suspended ssh itself with nothing to resume it: the
+  # broken run hung for good (three of ten check runs, 2026-10-14). -e none
+  # turns the escapes off; the timeout (GNU's sends SIGCONT after SIGTERM)
+  # is for whatever else stalls it. 1 MiB takes about a second.
+  timeout 60 ssh -F "$CFG" -e none "$tty" box-bare cat < "$WORK/sent" > "$WORK/back" 2>/dev/null || true
   [ "$(sha < "$WORK/sent")" = "$(sha < "$WORK/back")" ]
 }
 
