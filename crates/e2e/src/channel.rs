@@ -76,6 +76,37 @@ impl Welcome {
     }
 }
 
+/// Message 2's payload when the daemon won't open a device's channel
+/// (#913): `{"ok":false,"refused":…,"message":…}`, the shape a block's
+/// refusal has (`block.rs`). A browser approved a moment ago reaches a
+/// daemon that hasn't fetched the account's certificates yet; hearing it
+/// from the daemon, it tries again later the same way, instead of taking a
+/// hang-up for a broken route and settling on a worse one. An older daemon
+/// just hangs up.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Refusal {
+    pub ok: bool,
+    pub refused: String,
+    pub message: String,
+}
+
+impl Refusal {
+    /// The device's key isn't one this daemon trusts: not approved, removed,
+    /// or approved so recently that the daemon hasn't heard.
+    pub fn unknown_device() -> Self {
+        Self { ok: false, refused: "unknown-device".into(), message: "it doesn't trust this device (yet)".into() }
+    }
+
+    pub fn encode(&self) -> Vec<u8> {
+        serde_json::to_vec(self).expect("serialize refusal")
+    }
+
+    /// `Some` when message 2 was a refusal rather than a welcome.
+    pub fn decode(payload: &[u8]) -> Option<Self> {
+        serde_json::from_slice::<Self>(payload).ok().filter(|r| !r.ok)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RequestHead {
     pub method: String,
@@ -357,5 +388,17 @@ mod tests {
         let mut w = c.seal(&Msg::Text("hi".into())).unwrap().remove(0);
         w[3] ^= 1;
         assert!(s.open(&w).is_err());
+    }
+
+    #[test]
+    fn a_refusal_reads_as_one_and_a_welcome_doesnt() {
+        let said = Refusal::unknown_device().encode();
+        // The shape a block's refusal has, which pages already read.
+        let v: serde_json::Value = serde_json::from_slice(&said).unwrap();
+        assert_eq!(v["ok"], false);
+        assert_eq!(v["refused"], "unknown-device");
+        assert_eq!(Refusal::decode(&said), Some(Refusal::unknown_device()));
+        assert_eq!(Refusal::decode(&Welcome { now: 1 }.encode()), None);
+        assert_eq!(Refusal::decode(b""), None);
     }
 }

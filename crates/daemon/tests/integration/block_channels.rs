@@ -18,7 +18,7 @@ use arugula_e2e::{
         Answer, Grant, Hello, Refused,
         wire::{self, ReqHead, ResHead, WsOpen},
     },
-    channel::{Channel, Initiator, Msg, Welcome, prologue},
+    channel::{Channel, Initiator, Msg, Refusal, Welcome, prologue},
 };
 use arugula_testkit::{Daemon, arugulad};
 use axum::{
@@ -301,6 +301,20 @@ async fn a_block_through_its_channel() {
     let (status, body) = r.d.raw("POST", &format!("/api/panes/{id}/close"), Some(json!({})));
     assert_eq!(status, 200, "{body}");
     assert_eq!(next(&mut ws, &ch).await, None);
+}
+
+/// #913: a device the daemon doesn't trust (yet: approved a moment ago,
+/// say) is told so in message 2, not just hung up on, so a page tries again
+/// the same way instead of falling to a worse route.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_device_it_doesnt_trust_hears_so() {
+    let r = rig().await;
+    let (_ws, _, said) = open(&r, &DeviceKeys::generate(), &[]).await.expect("an answer, not a hang-up");
+    assert_eq!(Refusal::decode(&said), Some(Refusal::unknown_device()));
+    // Its own device still gets a welcome.
+    let (_ws, _, welcome) = open(&r, &r.device, &[]).await.expect("the device's channel");
+    assert_eq!(Refusal::decode(&welcome), None);
+    assert!(Welcome::decode(&welcome).is_some());
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
