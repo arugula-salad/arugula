@@ -73,7 +73,8 @@ once (#287); a new push to a branch cancels that branch's run:
   Pushes to branches other than main skip testnet, stack and perf (geek
   runs several branches at once, and their load failed the tests that
   time things); `gh workflow run check.yml --ref BRANCH` runs them all.
-- **macos** (GitHub's `macos-15`, Apple silicon, free for a public repo):
+- **macos** (our Macs: a throwaway Tart VM per job, home-cloud's
+  `mac_runner`, `runs-on: [self-hosted, macos-arm64]`):
   `just test` and `just e2e-webkit`, with `ARUGULA_SKIP_DOCKER=1` (no
   Docker there; geek's test runs the ssh tests).
 

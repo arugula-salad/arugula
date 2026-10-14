@@ -13,8 +13,8 @@
 #     stack; perf: the specs that time things, once the shards are done;
 #   - desktop-xvfb: the Linux desktop app's claims under Xvfb, against
 #     static's binaries, in a test image kept on GHCR;
-# - macos: test and, beside it, the WebKit specs, on GitHub's macOS
-#   runners (when the push changes what runs there: scripts/macos-changed;
+# - macos: test and, beside it, the WebKit specs, on our Macs' Tart VMs
+#   (home-cloud's mac_runner; when the push changes what runs there: scripts/macos-changed;
 #   main always).
 # A push that changes none of what they read (scripts/suite-changed: the
 # docs' prose, spikes, the desktop app...) runs lint and, for the app, its
@@ -429,16 +429,21 @@ jobs:
             echo "$c=$a" >> "$GITHUB_OUTPUT"
           done
 
-  # GitHub's Apple silicon runner (free for a public repo, up to five at
-  # once): jake-mini's one runner kept every run waiting 12-27 min for it,
-  # and stays for releases. No Docker there, so the ssh tests skip
+  # Apple silicon, on our Macs since #868 (GitHub's macos-15 before: when
+  # jake-mini had the one runner, every run waited 12-27 min for it; now
+  # agent5, jake-mini and agentnan each run one VM at a time, shared with
+  # the releases). No Docker there, so the ssh tests skip
   # (ARUGULA_SKIP_DOCKER=1, loudly); test runs them in the cluster. `just test`
   # and the WebKit specs on runners of their own: one after the other they
   # were the run's longest job.
   macos:
     needs: changes
     if: needs.changes.outputs.suite == 'true' && needs.changes.outputs.macos == 'true'
-    runs-on: macos-15
+    # Our Macs (home-cloud's mac_runner: each job in a throwaway Tart VM, M4,
+    # 5 cores, 6 GiB, from a golden image with Rust, mise, just, Node 24 and
+    # pnpm 12), not GitHub's macos-15 (#868). The steps below skip what the
+    # image has, so they still run on GitHub's if this goes back.
+    runs-on: [self-hosted, macos-arm64]
     strategy:
       fail-fast: false
       matrix:
@@ -451,22 +456,49 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: bash 4.4+ (macOS ships 3.2; the shell integration tests need PS0)
-        run: brew install bash
+        run: brew list bash >/dev/null 2>&1 || brew install bash
       - name: Rust (rust-toolchain.toml's)
         run: rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)" --profile minimal -c rustfmt,clippy
       - name: mise (it brings the Zig libghostty needs, from .mise.toml)
         run: |
-          curl -fsSL https://mise.run | sh
+          command -v mise >/dev/null || curl -fsSL https://mise.run | sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: What the image has
+        id: have
+        run: |
+          case "$(node --version 2>/dev/null)" in v24.*) echo node=true ;; *) echo node=false ;; esac >> "$GITHUB_OUTPUT"
+          case "$(pnpm --version 2>/dev/null)" in 12.*) echo pnpm=true ;; *) echo pnpm=false ;; esac >> "$GITHUB_OUTPUT"
+          if command -v just >/dev/null; then echo just=true; else echo just=false; fi >> "$GITHUB_OUTPUT"
       - uses: taiki-e/install-action@v2
+        if: steps.have.outputs.just != 'true'
         with:
           tool: just
+      # Linux's: Node 24 and pnpm 12 (.github/actions/setup).
       - uses: actions/setup-node@v4
+        if: steps.have.outputs.node != 'true'
         with:
-          node-version: 22
+          node-version: 24
       - uses: pnpm/action-setup@v4
+        if: steps.have.outputs.pnpm != 'true'
         with:
-          version: 10
+          version: 12
+      # The compile cache Linux's jobs share (.github/actions/setup, #868):
+      # a fresh VM starts with no build at all.
+      - uses: taiki-e/install-action@v2
+        if: env.SCCACHE_WEBDAV_PASSWORD != ''
+        with:
+          tool: sccache@0.18.0
+      - name: Compile through sccache
+        if: env.SCCACHE_WEBDAV_PASSWORD != ''
+        run: |
+          {
+            echo "RUSTC_WRAPPER=sccache"
+            echo "SCCACHE_WEBDAV_ENDPOINT=https://ci-cache.inevitable.fyi"
+            echo "SCCACHE_WEBDAV_USERNAME=arugula-ci"
+            echo "SCCACHE_WEBDAV_KEY_PREFIX=arugula"
+            echo "CARGO_INCREMENTAL=0"
+            echo "SCCACHE_IGNORE_SERVER_IO_ERROR=1"
+          } >> "$GITHUB_ENV"
       # The two build different things (test: the tests, with the
       # dev-dependencies' features): a cache each.
       - uses: Swatinem/rust-cache@v2
@@ -485,6 +517,11 @@ jobs:
         with:
           path: ~/.local/share/mise/installs
           key: mise-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.mise.toml') }}
+      # Playwright's browsers: a fresh VM has none.
+      - uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/ms-playwright
+          key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ matrix.part }}-${{ hashFiles('web/pnpm-lock.yaml') }}
       - run: just bootstrap
       # reboot.rs drives Chromium.
       - name: Playwright's Chromium
