@@ -301,3 +301,32 @@ test("on a phone: the list, then a thread, and back", async ({ browser }) => {
   await chat.locator(".thread-close").tap();
   await expect(chat).toBeHidden();
 });
+
+test("on a phone: search from the list, a result, and back (#889)", async ({ browser }) => {
+  const phone = await (await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })).newPage();
+  await phone.goto("/#chat");
+  await expect.poll(() => phone.evaluate(() => window.__arugula?.client.connected)).toBe(true);
+  const chat = phone.locator("[data-chat]");
+  await expect(chat.locator(".chat-list")).toBeVisible();
+  // The bar's search field isn't on a phone; the list's search button is.
+  await expect(chat.locator(".app-bar [data-chat-search]")).toHaveCount(0);
+  const open = chat.locator("[data-chat-search-open]");
+  const box = (await open.boundingBox())!;
+  expect(box.x + box.width).toBeLessThanOrEqual(390);
+  await open.tap();
+  const view = chat.locator("[data-chat-search-view]");
+  await expect(view).toBeVisible();
+  const field = view.locator("[data-chat-search]");
+  await expect(field).toBeFocused();
+  await field.fill("looking");
+  await expect(view.locator(".chat-head")).toContainText("Results for “looking”");
+  await expect(view).toContainText("looking at it");
+  // Emptying it stays on the results page, for another try.
+  await field.fill("");
+  await expect(view.locator(".chat-title strong")).toHaveText("Search");
+  await expect(field).toBeFocused();
+  expect(await phone.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await view.locator(".chat-back").tap();
+  await expect(chat.locator(".chat-list")).toBeVisible();
+  await phone.context().close();
+});

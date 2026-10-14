@@ -146,6 +146,13 @@ test("the second person finds it under Channels, reads the warning, and both pos
   await chat.locator(".chat-thread textarea").press("Enter");
   await expect(chat.locator(".chat-thread .thread-list")).toContainText("on it");
   await expect(owner.locator("[data-chat] .chat-thread .thread-list")).toContainText("on it");
+  // #889: the owner is "me", not their login's email, in what they posted
+  // and the conversation they made, and the friend's @me reached them.
+  const thread = (await (await fetch(`${base}/api/threads/conv-${id}`)).json()) as { messages: { name: string; text: string; mentions?: string[] }[] };
+  expect(thread.messages.find((m) => m.text === "tests fail on main")?.name).toBe("me");
+  expect(thread.messages.find((m) => m.text === "on it, @me")?.mentions).toEqual(["owner"]);
+  expect(await owner.evaluate((c) => window.__arugula.client.state!.convs!.find((x) => x.id === c)?.owner_name, id)).toBe("me");
+  await expect(owner.locator("[data-chat] .chat-thread .thread-list .mention.me")).toHaveText("@me");
 
   await owner.locator("[data-chat] .chat-thread textarea").fill("thanks");
   await owner.locator("[data-chat] .chat-thread textarea").press("Enter");

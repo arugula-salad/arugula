@@ -286,7 +286,7 @@ export function SearchView({ all, q, multi, phone }: { all: Source[]; q: string;
         sub={q ? `${hits.length === 200 ? "200+" : hits.length} ${hits.length === 1 ? "message" : "messages"}${busy ? ", still looking…" : ""}` : undefined}
         phone={phone}
       />
-      {phone && <SearchField route={{ view: "search", q }} />}
+      {phone && <SearchField route={{ view: "search", q }} phone />}
       <div class="thread-list">
         {!q && <p class="thread-empty">Type to search every thread on every machine.</p>}
         {q && hits.length === 0 && !busy && <p class="thread-empty">No messages match.</p>}
@@ -296,8 +296,10 @@ export function SearchView({ all, q, multi, phone }: { all: Source[]; q: string;
   );
 }
 
-/** The bar's search field: results show as you type. */
-export function SearchField({ route }: { route: ChatRoute }) {
+/** The bar's search field: results show as you type. On a phone (#889)
+ * it heads the results instead, opened from the list's search button: it
+ * takes the focus when it's empty, and emptying it stays on the results. */
+export function SearchField({ route, phone }: { route: ChatRoute; phone?: boolean }) {
   const shown = route.view === "search" ? (route.q ?? "") : "";
   const [text, setText] = useState(shown);
   const timer = useRef<number | undefined>(undefined);
@@ -307,9 +309,12 @@ export function SearchField({ route }: { route: ChatRoute }) {
     if (route.view !== "search") setText("");
   }, [route.view]);
   useEffect(() => () => clearTimeout(timer.current), []);
+  useEffect(() => {
+    if (phone && !shown) input.current?.focus();
+  }, []);
   const go = (v: string, now = false) => {
     clearTimeout(timer.current);
-    const run = () => (v.trim() ? openChatView("search", v.trim()) : route.view === "search" && openChat());
+    const run = () => (v.trim() || phone ? openChatView("search", v.trim()) : route.view === "search" && openChat());
     if (now) run();
     else timer.current = window.setTimeout(run, 200);
   };

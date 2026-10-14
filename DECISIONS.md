@@ -806,6 +806,23 @@ race with the diff closing).
 Where: `crates/daemon/src/labs/events.rs` (`Rules::on_diff`, `diff_ask`, `card_action`), `crates/daemon/src/ide/cards.rs` (`card`), `crates/daemon/src/api.rs` (`act_for_conv`), `crates/mux/src/mux/info.rs`, `web/src/ui/conv-events.tsx`.
 From: #887 (M85's live run, #859).
 
+### Chat calls the owner by a short name; ledgers keep their login
+On a machine's own page the owner's name was their tailnet login, an email,
+so the lead wrote `@jake@example.com` and a pane's history said
+"jake@example.com via conversation …", while control's page (and the page's
+own headers) said "jake" (#889). In threads and conversations the owner is
+now their login on control when the machine is one person's and enrolled
+(as control's page calls them), else their tailnet login without its domain:
+their messages, a conversation's `owner_name`, a link's and a grant's
+`by_name`, and the answers they give through a conversation
+(`chat_name_of`, `api::chat_name`). An `@` of it still reaches them
+(`threads::names` matches the part before the `@`). Ledgers keep the full
+login (`name_of`): a gate's actor, which chant records, and a forge write's
+sender. Rejected: shortening `name_of` itself, which changed what chant and
+the forge ledgers record.
+Where: `crates/mux/src/mux/who_may.rs` (`chat_name_of`, `short_name`), `crates/mux/src/mux/outside.rs` (`People::owner_login`), `crates/mux/src/mux/thread_ops.rs`, `crates/daemon/src/api.rs` (`chat_name`).
+From: #889 (M85's live run, #859).
+
 ## Federation and control
 
 ### Every daemon is a peer; control is the only front door

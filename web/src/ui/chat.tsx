@@ -358,6 +358,13 @@ function ChatView({ client, route }: { client: Client; route: ChatRoute }) {
           <>
             <header class="chat-head">
               <strong>Chat</strong>
+              {/* The bar's search isn't on a phone (#889). */}
+              <button class="chat-search-open" title="Search chat" aria-label="Search chat" data-chat-search-open onClick={() => openChatView("search")}>
+                <svg viewBox="0 0 16 16" width="17" height="17" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+                  <circle cx="7" cy="7" r="4.5" />
+                  <path d="M10.5 10.5 14 14" />
+                </svg>
+              </button>
               <button class="thread-close" title="Close" onClick={closeChat}>
                 ✕
               </button>

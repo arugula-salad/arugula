@@ -306,6 +306,9 @@ impl Daemon {
             Api::Who(who, reply) => {
                 let _ = reply.send(self.driver_of(&who));
             }
+            Api::ChatName(who, reply) => {
+                let _ = reply.send(self.chat_name_of(&who));
+            }
             Api::AskWithdraw(pane, id, token) => {
                 let open = self.asks.get(&pane).is_some_and(|a| {
                     id.as_ref().is_none_or(|id| *id == a.ask.id) && token.is_none_or(|t| t == a.token)

@@ -40,6 +40,12 @@ pub trait People: Send + Sync + Debug {
     fn team_people(&self) -> Vec<Principal>;
     /// A hosted sandbox's last session closed (M20).
     fn sandbox_done(self: Arc<Self>);
+    /// The owner's login on control, when this is one person's machine
+    /// enrolled there (#889): what they're called through control, so the
+    /// machine's own page calls them the same.
+    fn owner_login(&self) -> Option<String> {
+        None
+    }
 }
 
 /// The Claude Code conversations on this machine (#146).

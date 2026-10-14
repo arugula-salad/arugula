@@ -682,7 +682,7 @@ pub async fn act(app: &App, id: ConvId, req: ConvActRequest, who: &Principal) ->
     let ask = card(&msgs, &l.name, &req.id).cloned().ok_or((404, format!("{} has no card {}", l.name, req.id)))?;
     let mut req = req;
     req.action = card_action(&ask, req.action)?;
-    let member = crate::api::who_is(app, who.clone()).await.map(|d| d.name).unwrap_or_else(|| who.id().to_owned());
+    let member = crate::api::chat_name(app, who.clone()).await;
     let body = ActRequest {
         action: req.action,
         pane: Some(l.pane),
@@ -758,7 +758,7 @@ async fn act_on_lead(
     // Never an edit's diff: the lead's Claude Code has no IDE (#887).
     let mut req = req;
     req.action = card_action(&ask, req.action)?;
-    let member = crate::api::who_is(app, who.clone()).await.map(|d| d.name).unwrap_or_else(|| who.id().to_owned());
+    let member = crate::api::chat_name(app, who.clone()).await;
     let body = ActRequest {
         action: req.action,
         pane: Some(lead.block),

@@ -79,7 +79,7 @@ async function link(client: Client, pane: PaneId, home: Source, conv: Conversati
   if (!same && (!homeId || !paneMachine)) throw new Error(`${home.host} and ${here || "this machine"} need to be in Arugula control to link across them`);
   const g = await client.grantConv(pane, { device: homeId, device_name: same ? null : home.host, conv: conv.id, conv_title: conv.title });
   try {
-    await home.client.linkConv(conv.id, { machine: paneMachine, pane, epoch: g.epoch, title: paneTitle(client, pane) });
+    await home.client.linkConv(conv.id, { machine: paneMachine, pane, epoch: g.epoch, title: paneTitle(client, pane) }, g.epoch_exact);
   } catch (e) {
     await client.revokeConvGrant(pane, g.device, conv.id).catch(() => {});
     throw e;

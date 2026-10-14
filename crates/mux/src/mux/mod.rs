@@ -277,6 +277,8 @@ pub enum Api {
     Answered(PaneId, Driver, String, String, String),
     /// What to call someone (M13), for attribution.
     Who(crate::acl::Principal, oneshot::Sender<Driver>),
+    /// What chat calls someone (#889): the owner by a short name.
+    ChatName(crate::acl::Principal, oneshot::Sender<String>),
     /// The asker gave up (Claude Code interrupted it): close the card.
     /// With a token, only if it's still that registration's.
     AskWithdraw(PaneId, Option<String>, Option<u64>),

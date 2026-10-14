@@ -7247,6 +7247,25 @@ input.chat-search {
   height: 32px;
 }
 
+/* #889: the phone's way into search, beside the list's ✕; its field is
+   16px so iOS doesn't zoom in on it. */
+.chat-search-open {
+  padding: 4px 8px;
+  border-radius: 6px;
+  color: var(--dim);
+  line-height: 0;
+}
+
+.chat-search-open:hover {
+  color: var(--fg);
+  background: var(--raised);
+}
+
+.chat.phone input.chat-search {
+  height: 36px;
+  font-size: 16px;
+}
+
 /* M75: Activity and search results, and the switcher. */
 .chat-activity {
   margin-top: 6px;
@@ -8847,8 +8866,11 @@ html[data-finish="glass"] .prompt-backdrop {
   border-left: 3px solid var(--raised-hover);
   border-radius: 4px;
   background: var(--letterbox);
-  white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.conv-event-summary > .msg-code {
+  background: var(--bg);
 }
 
 .conv-card {
