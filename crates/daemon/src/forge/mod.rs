@@ -822,6 +822,7 @@ impl ForgeBlock {
             bundle: Some(bundle.clone()),
             ask: None,
             gate: None,
+            diff: None,
             actions: vec![Action::Dismiss],
         };
         let w = wants.iter().find(|w| !matches!(w, Want::Done { key, .. } if Some(key) == ack.as_ref()))?;

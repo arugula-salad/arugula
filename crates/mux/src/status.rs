@@ -153,6 +153,7 @@ pub fn attention(r: &Record, app: Option<&str>, since_ms: u64) -> (Attention, Op
             bundle: None,
             ask: None,
             gate: None,
+            diff: None,
             actions: vec![Action::Dismiss],
         }
     };

@@ -488,8 +488,13 @@ pub(crate) async fn act_for_conv(
     via: &ConvVia,
 ) -> Result<(), String> {
     use arugula_proto::Action;
-    if !matches!(req.action, Action::Allow | Action::Deny | Action::Answer) {
-        return Err("a conversation allows, denies or answers a card, nothing else".into());
+    // #887: an edit waiting as a diff is accepted or rejected (as is, never
+    // changed from a conversation).
+    let edit = matches!(req.action, Action::Accept | Action::Reject);
+    if !(matches!(req.action, Action::Allow | Action::Deny | Action::Answer) || edit && req.text.is_none()) {
+        return Err(
+            "a conversation allows, denies or answers a card, or accepts or rejects an edit, nothing else".into()
+        );
     }
     if req.id.is_none() {
         return Err("name the ask it answers (id)".into());

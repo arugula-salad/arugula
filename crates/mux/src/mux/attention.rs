@@ -296,6 +296,7 @@ impl Daemon {
             bundle: Some(format!("ask:{project}:{agent}")),
             ask: Some(AskRef { id, what, agent, tool, questions: questions.map(Box::new) }),
             gate: None,
+            diff: None,
             actions,
         })
     }
@@ -891,6 +892,7 @@ mod tests {
             bundle: Some(g.bundle()),
             ask: None,
             gate: Some(Box::new(g.clone())),
+            diff: None,
             actions,
         })
     }

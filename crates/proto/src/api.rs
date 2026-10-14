@@ -814,7 +814,8 @@ pub struct ConvActRequest {
     pub link: String,
     /// The ask it answers (`ConvAsk::id`).
     pub id: String,
-    /// `allow` or `deny` a permission; `answer` or `deny` a question.
+    /// `allow` or `deny` a permission; `answer` or `deny` a question;
+    /// `accept` or `reject` an edit (#887; `allow` and `deny` do too).
     pub action: crate::Action,
     /// `deny`: why, for the agent.
     #[serde(default, skip_serializing_if = "Option::is_none")]

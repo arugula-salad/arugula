@@ -782,6 +782,30 @@ was the fallback, left for after the live run).
 Where: `crates/daemon/src/labs/events.rs` (`Rules`, `act_on_lead`, `post_lead_card`), `crates/daemon/src/labs/lead.rs` (`watch`), `crates/daemon/src/api.rs` (`act_for_lead`), `crates/mux/src/mux/attention.rs` (`ask_reason`), `web/src/ui/conv-events.tsx`.
 From: M83 (#862) and M84 (#866) "For Jake", M85 (#859).
 
+### An edit's diff is a conversation's card, and it retires the ask it replaced
+arugulad is Claude Code's IDE, so a Write or Edit in a terminal asks its
+permission (the hook's card) and then waits as a diff, which the pane shows
+instead (#887, the M85 live run). The ask can't be answered after that, so a
+conversation's card for it went stale (its Allow got 409) and the edit
+stalled at the terminal. The diff is the card now: the pane's machine puts
+the `DiffInfo` on the diff's reason (boxed, as `AskRef.questions` is; a
+pane's own info leaves it out, since its `diff` has it), the home's watcher
+posts it as a `needs_input` card whose ask is the diff (`ConvAsk.diff`, id
+the diff's, `what` approve), and Accept or Reject goes as `conv.act` through
+the pane's machine's `attention/act`, as a permission does. The diff takes
+the ask's place in the rules: a held ask is dropped for it (one edit, one
+approval); a carded ask is retired by posting the diff's card at once,
+without the hold, since nobody answered the ask for two seconds already.
+`what` stays approve so a page from before this offers Allow and Deny, which
+the home maps to Accept and Reject. A card whose answer is refused (409, its
+ask went) stops offering its buttons on that page; other pages learn it when
+the link moves on. Rejected: an `AskWhat::Edit` (every client's ask matches
+would change for a card only conversations show), and having the home fetch
+the diff from the pane's machine (another route through the grant, and a
+race with the diff closing).
+Where: `crates/daemon/src/labs/events.rs` (`Rules::on_diff`, `diff_ask`, `card_action`), `crates/daemon/src/ide/cards.rs` (`card`), `crates/daemon/src/api.rs` (`act_for_conv`), `crates/mux/src/mux/info.rs`, `web/src/ui/conv-events.tsx`.
+From: #887 (M85's live run, #859).
+
 ## Federation and control
 
 ### Every daemon is a peer; control is the only front door

@@ -2134,6 +2134,7 @@ fn cut_reason(headline: String) -> arugula_proto::Reason {
         bundle: None,
         ask: None,
         gate: None,
+        diff: None,
         actions: vec![arugula_proto::Action::Continue, arugula_proto::Action::Dismiss],
     }
 }

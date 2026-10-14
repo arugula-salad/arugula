@@ -799,6 +799,7 @@ impl FountainBlock {
                     bundle: Some(runner::BUNDLE.into()),
                     ask: None,
                     gate: None,
+                    diff: None,
                     actions: vec![Action::Dismiss],
                 },
             );

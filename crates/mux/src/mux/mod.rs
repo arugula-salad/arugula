@@ -760,6 +760,7 @@ fn plain_reason(kind: ReasonKind, headline: &str) -> Reason {
         bundle: None,
         ask: None,
         gate: None,
+        diff: None,
         actions: vec![Action::Dismiss],
     }
 }

@@ -293,6 +293,13 @@ pub struct Reason {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub gate: Option<Box<Gate>>,
+    /// `diff`: the edit that waits (#887), so a card away from the pane (a
+    /// conversation's) can show it and accept it by its id. Boxed: a reason
+    /// rides in every attention event. A pane's own info leaves it out (its
+    /// `diff` has it).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub diff: Option<Box<DiffInfo>>,
     /// What [`api::ActRequest`] can do about it here.
     pub actions: Vec<Action>,
 }
@@ -1288,6 +1295,7 @@ pub struct DebugState {
 /// An edit an agent proposes, waiting as a diff (M28).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct DiffInfo {
     /// What `accept` and `reject` name.
     pub id: String,
@@ -1672,7 +1680,8 @@ pub struct ConvEvent {
 pub enum ConvEventKind {
     /// Its turn ended, after it worked.
     TurnEnded,
-    /// It asks (a permission or a question): a card, answered here.
+    /// It asks (a permission or a question), or an edit waits as a diff
+    /// (#887): a card, answered here.
     NeedsInput,
     /// Someone answered its card in the conversation.
     Answered,
@@ -1703,6 +1712,12 @@ pub struct ConvAsk {
     #[cfg_attr(feature = "ts", ts(optional))]
     #[cfg_attr(feature = "ts", ts(type = "import(\"./blocks/ask\").Question[]"))]
     pub questions: Option<serde_json::Value>,
+    /// An edit waiting as a diff (#887): the card shows it, with Accept and
+    /// Reject. Its `id` is the diff's, and `what` is `approve`, so a page
+    /// that doesn't know diffs offers Allow and Deny, which do the same.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub diff: Option<Box<DiffInfo>>,
 }
 
 impl Conversation {

@@ -640,7 +640,11 @@ export class Client {
 
   private async convCall<T>(res: Promise<ApiResponse>): Promise<T> {
     const r = await res;
-    if (!r.ok) throw new Error((await r.json<{ error?: string }>().catch(() => ({ error: undefined }))).error ?? `HTTP ${r.status}`);
+    if (!r.ok) {
+      const why = (await r.json<{ error?: string }>().catch(() => ({ error: undefined }))).error ?? `HTTP ${r.status}`;
+      // Its status too: a card's answer refused with 409 means its ask is gone (#887).
+      throw Object.assign(new Error(why), { status: r.status });
+    }
     return r.json<T>();
   }
 

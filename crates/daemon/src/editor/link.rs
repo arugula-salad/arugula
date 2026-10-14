@@ -395,6 +395,7 @@ fn attention(
         bundle: None,
         ask: None,
         gate: None,
+        diff: None,
         actions,
     };
     // What stopped holding.
