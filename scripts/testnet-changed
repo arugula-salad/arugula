@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Did this push change what the test stack's claims are made of (#868)?
+# check.yml runs `just testnet break` (each claim under BREAK=1, which
+# must fail) only then: it checks the claims, not the product, and took
+# 4.6 of testnet's 8.5 minutes. testnet-break.yml runs it nightly too.
+# Same answers as scripts/changed: 0 run, 1 skip.
+#
+#   scripts/testnet-changed BEFORE
+set -euo pipefail
+exec "$(dirname "$0")/changed" "the test stack's claims" "${1:-}" \
+  testnet justfile .github/workflows/check.yml scripts/testnet-changed scripts/changed
