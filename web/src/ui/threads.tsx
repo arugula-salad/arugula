@@ -6,13 +6,14 @@
 // this thread body.
 
 import { Fragment } from "preact";
-import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { Client } from "../client";
 import { CONV_MEMBERS_SEE, threadKey, type Invitable, type PaneId, type ThreadMsg, type ThreadTarget, type Unreached } from "../proto";
 import { colorOf } from "./people";
 import type { MenuItem } from "./menu";
 import { Markup, mentionToken } from "./markup";
 import { labsNow } from "../labs-load";
+import { EventBody, eventIndex, type EventIndex } from "./conv-events";
 
 export interface Quote {
   pane: PaneId;
@@ -273,6 +274,9 @@ export function ThreadBody({
   }, [client, threadKey(target), last, client.thread(target)?.unread]);
 
   const isMe = meMatcher(client);
+  // #857: what a conversation's events say about each other (a card answered).
+  const events = useMemo(() => eventIndex(msgs ?? []), [msgs]);
+  const conv = "conv" in target ? target.conv : undefined;
   return (
     <>
       <div class="thread-list" ref={list}>
@@ -312,6 +316,8 @@ export function ThreadBody({
                 extras={extras}
                 mayPost={mayPost && !gone}
                 reply={(q) => composeRef.current?.reply(q)}
+                conv={conv}
+                events={events}
               />
             </Fragment>
           );
@@ -709,9 +715,14 @@ function Message({
   extras,
   mayPost,
   reply,
+  conv,
+  events,
 }: {
   client: Client;
   m: ThreadMsg;
+  /** The conversation it's in (#857), whose events it may carry. */
+  conv?: string;
+  events?: EventIndex;
   /** The message before it, when it's on the same day and no line between. */
   prev?: ThreadMsg;
   isMe: (token: string) => boolean;
@@ -749,11 +760,15 @@ function Message({
             <span class="thread-name" style={{ color: m.agent ? "var(--accent)" : undefined }}>
               {name}
             </span>
-            {m.agent && <span class="msg-badge">Agent</span>}
+            {m.agent && <span class="msg-badge">{m.who.startsWith("link:") ? "Link" : "Agent"}</span>}
             <time title={new Date(m.at).toLocaleString()}>{when(m.at)}</time>
           </div>
         )}
-        {m.text && <Markup text={m.text} isMe={isMe} landed={reached(m, isMe, client.me())} />}
+        {m.event && conv && events ? (
+          <EventBody client={client} conv={conv} m={m} index={events} />
+        ) : (
+          m.text && <Markup text={m.text} isMe={isMe} landed={reached(m, isMe, client.me())} />
+        )}
         {m.quote && (
           <button class="thread-quote" title="Show it in the pane" onClick={() => reveal(m.quote!)}>
             <span class="thread-quote-from">

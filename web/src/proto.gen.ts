@@ -113,7 +113,12 @@ what: AskWhat,
 /**
  * Who asks: the agent (`claude`, `fountain`, …).
  */
-agent: string, };
+agent: string, 
+/**
+ * A permission's tool (`Bash`, `Edit`…), when it's known (#857: a
+ * conversation's card shows it).
+ */
+tool?: string, };
 
 export type AskWhat = "approve" | "question";
 
@@ -292,10 +297,92 @@ dropped_ms?: number,
 code?: string, approve?: string, };
 
 /**
+ * `POST /api/convs/{id}/act` (#857): answer a link's card from the
+ * conversation, by its ask's id, through the link's machine.
+ */
+export type ConvActRequest = { 
+/**
+ * The link: `L1`, `L2`…
+ */
+link: string, 
+/**
+ * The ask it answers (`ConvAsk::id`).
+ */
+id: string, 
+/**
+ * `allow` or `deny` a permission; `answer` or `deny` a question.
+ */
+action: Action, 
+/**
+ * `deny`: why, for the agent.
+ */
+message?: string, 
+/**
+ * `answer`: the card's fields.
+ */
+content?: Record<string, unknown>, };
+
+/**
+ * What a link asks, on its card (#857). Answering names `id`, so an
+ * answer never lands on a newer prompt.
+ */
+export type ConvAsk = { id: string, what: AskWhat, 
+/**
+ * A permission's tool, when known.
+ */
+tool?: string, 
+/**
+ * What it wants, in a line ("Bash: pytest -q"), or the question.
+ */
+input: string, };
+
+/**
  * `POST /api/convs` (#855): a new conversation here, owned by whoever
  * makes it.
  */
 export type ConvCreateRequest = { title: string, };
+
+/**
+ * What a linked pane did, as its conversation's timeline has it (#857):
+ * posted by the home's watcher on that link, and by whoever answered a
+ * card. A message carrying one is shown as a line or a card, not text.
+ */
+export type ConvEvent = { kind: ConvEventKind, 
+/**
+ * The link: `L1`, `L2`…
+ */
+link: string, 
+/**
+ * `needs_input` and `answered`: what it asks.
+ */
+ask?: ConvAsk, 
+/**
+ * `turn_ended`: its last message. `pr`: what the forge says.
+ */
+summary?: string, 
+/**
+ * `turn_ended`: how long it worked (ms).
+ */
+worked_ms?: number, 
+/**
+ * `turn_ended`: the asks answered during the turn, by a standing rule,
+ * a card here, or at the pane.
+ */
+approvals?: number, 
+/**
+ * `answered`: what was done.
+ */
+action?: Action, 
+/**
+ * `exited`: its code, when it has one.
+ */
+code?: number, 
+/**
+ * `pr`: whether its checks passed.
+ */
+ok?: boolean, };
+
+export type ConvEventKind = "turn_ended" | "needs_input" | "answered" | "exited" | "pr";
 
 /**
  * A link grant (#856), kept on the pane's machine
@@ -2047,7 +2134,11 @@ to_agent?: boolean,
 /**
  * An agent posted it (through MCP).
  */
-agent?: boolean, };
+agent?: boolean, 
+/**
+ * What a linked pane did (#857), in a conversation's timeline.
+ */
+event?: ConvEvent, };
 
 /**
  * `POST /api/threads/…`: a message, with output it quotes.
@@ -2224,6 +2315,7 @@ export const OPS = {
   "adapters.list": { method: "GET", path: "/api/agents/adapters" },
   "agents.get": { method: "GET", path: "/api/hosts/self/agents" },
   "agents.refresh": { method: "POST", path: "/api/hosts/self/agents/refresh" },
+  "conv.act": { method: "POST", path: "/api/convs/{id}/act" },
   "conv.create": { method: "POST", path: "/api/convs" },
   "conv.delete": { method: "DELETE", path: "/api/convs/{id}" },
   "conv.grant": { method: "POST", path: "/api/panes/{id}/conv-grants" },

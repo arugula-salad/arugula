@@ -36,6 +36,9 @@ pub struct ThreadPost {
     pub as_agent: Option<Driver>,
     pub text: String,
     pub quote: Option<arugula_proto::Quote>,
+    /// What a linked pane did (#857): a conversation's only. Its text is
+    /// what a reader that doesn't know events shows.
+    pub event: Option<arugula_proto::ConvEvent>,
 }
 
 /// What a post comes to: the message, whether it went to the pane's agent,
@@ -257,6 +260,8 @@ pub enum Api {
     /// Make, change or delete a conversation (#855), as `who`: the record
     /// as it is after (a deleted one as it was).
     Conv(ConvReq, crate::acl::Principal, oneshot::Sender<Result<arugula_proto::Conversation, ThreadError>>),
+    /// Every conversation kept here (#857: the daemon watches their links).
+    Convs(oneshot::Sender<Vec<arugula_proto::Conversation>>),
     /// `who` has read a thread up to a message.
     ThreadRead(ThreadTarget, crate::acl::Principal, u64),
     /// Which of these (principal ids) read a thread now (#297); `None` if

@@ -186,6 +186,8 @@ impl Request for crate::api::ConvLinkRequest {}
 
 impl Request for crate::api::ConvUnlinkRequest {}
 
+impl Request for crate::api::ConvActRequest {}
+
 impl Request for crate::api::FountainQuery {}
 
 impl Request for crate::api::NotifyRequest {}
@@ -328,6 +330,7 @@ macro_rules! every_op {
         $m!($crate::op::ops::ConvLinkAdd);
         $m!($crate::op::ops::ConvLinkClose);
         $m!($crate::op::ops::ConvLinksGet);
+        $m!($crate::op::ops::ConvAct);
         $m!($crate::op::ops::ConvGrantMake);
         $m!($crate::op::ops::ConvGrantsList);
         $m!($crate::op::ops::ConvGrantRevoke);
@@ -1044,6 +1047,22 @@ pub mod ops {
         type Path = crate::ConvId;
         type Req = Empty;
         type Res = Vec<crate::ConvLinkStatus>;
+    }
+
+    /// `POST /api/convs/{id}/act` (#857): answer a link's card from the
+    /// conversation, for someone in it. It goes through the link's machine,
+    /// by the ask's id, with the rights of whoever granted the pane there.
+    pub struct ConvAct;
+
+    impl Op for ConvAct {
+        const NAME: &'static str = "conv.act";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/convs/{id}/act";
+        const ACCESS: Access = Access::Handler;
+        const FLAG: Option<&'static str> = Some(crate::flags::CHAT);
+        type Path = crate::ConvId;
+        type Req = crate::api::ConvActRequest;
+        type Res = Empty;
     }
 
     /// `POST /api/panes/{id}/conv-grants` (#856): let a conversation's home

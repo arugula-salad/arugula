@@ -227,7 +227,7 @@ async fn serve(app: Arc<App>, mut inbound: mpsc::Receiver<Vec<u8>>, out: mpsc::S
                         }
                     }
                     Ok(Some(Msg::Request { id, head, body })) => {
-                        tokio::spawn(answer(router.clone(), out.clone(), id, head, body, principal.clone(), caller.clone()));
+                        tokio::spawn(answer(router.clone(), out.clone(), id, head, body, principal.clone(), caller.clone(), None));
                     }
                     Ok(Some(Msg::Response { .. })) => break Err(anyhow::anyhow!("a client doesn't answer requests")),
                     Err(e) => break Err(e),
@@ -316,7 +316,7 @@ async fn serve_agent_caller(
                 match ch.open(&w) {
                     Ok(None) => {}
                     Ok(Some(Msg::Request { id, head, body })) if !link_only && agents_only(&head.path) => {
-                        tokio::spawn(answer(router.clone(), out.clone(), id, head, body, principal.clone(), caller.clone()));
+                        tokio::spawn(answer(router.clone(), out.clone(), id, head, body, principal.clone(), caller.clone(), None));
                     }
                     Ok(Some(Msg::Request { id, head, body })) => {
                         // A pane a grant here links to its conversation, as
@@ -332,7 +332,18 @@ async fn serve_agent_caller(
                             };
                             let conv = head.headers.iter().find(|(k, _)| k.eq_ignore_ascii_case(crate::labs::links::CONV_HEADER)).map(|(_, v)| v.as_str());
                             match crate::labs::links::linked(&app, &from, conv, &head.method, &head.path, &body).await {
-                                Some(Linked::Yes(who)) => answer(router, out, id, head, body, who, caller).await,
+                                Some(Linked::Yes(who, conv_title)) => {
+                                    // #857: who in the conversation answers a
+                                    // card, for the pane's record only.
+                                    let member = head
+                                        .headers
+                                        .iter()
+                                        .find(|(k, _)| k.eq_ignore_ascii_case(crate::labs::links::BY_HEADER))
+                                        .map(|(_, v)| v.chars().filter(|c| !c.is_control()).take(60).collect())
+                                        .unwrap_or_default();
+                                    let via = crate::api::ConvVia { conv_title, member };
+                                    answer(router, out, id, head, body, who, caller, Some(via)).await
+                                }
                                 Some(Linked::Revoked) => {
                                     let _ = out.put(&refuse(410, "this pane's link was revoked here, or the pane closed")).await;
                                 }
@@ -388,6 +399,7 @@ fn to_msg(o: ToClient) -> Option<Msg> {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn answer(
     router: Router,
     out: Arc<Out>,
@@ -396,6 +408,7 @@ async fn answer(
     body: Vec<u8>,
     who: crate::acl::Principal,
     caller: Caller,
+    via: Option<crate::api::ConvVia>,
 ) {
     let say = |status, content_type, more, body| Msg::Response {
         id,
@@ -403,7 +416,7 @@ async fn answer(
         body,
     };
     let stream = head.stream;
-    let (status, content_type, body) = match call(router, head, body, who, caller).await {
+    let (status, content_type, body) = match call(router, head, body, who, caller, via).await {
         Ok(r) => r,
         Err(e) => {
             let body = serde_json::to_vec(&serde_json::json!({ "error": e.to_string() })).unwrap();
@@ -444,6 +457,7 @@ async fn call(
     body: Vec<u8>,
     who: crate::acl::Principal,
     caller: Caller,
+    via: Option<crate::api::ConvVia>,
 ) -> anyhow::Result<(u16, Option<String>, Body)> {
     anyhow::ensure!(head.path.starts_with("/api/"), "only the API is reachable this way");
     let mut req = Request::builder().method(head.method.as_str()).uri(head.path.as_str());
@@ -464,6 +478,10 @@ async fn call(
     // Which account's device it is (a team owner is `Owner` above, whichever
     // account they are).
     req.extensions_mut().insert(caller);
+    // A conversation's answer to its link's card (#857).
+    if let Some(via) = via {
+        req.extensions_mut().insert(via);
+    }
     let res = router.oneshot(req).await?;
     let status = res.status().as_u16();
     let ct = res.headers().get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).map(str::to_owned);

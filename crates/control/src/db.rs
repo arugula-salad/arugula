@@ -140,6 +140,12 @@ CREATE TABLE IF NOT EXISTS daemon_offers (
     since INTEGER NOT NULL,
     PRIMARY KEY (daemon, account)
 );
+CREATE TABLE IF NOT EXISTS daemon_offer_reasons (
+    daemon TEXT NOT NULL,
+    account TEXT NOT NULL,
+    conv TEXT NOT NULL,
+    PRIMARY KEY (daemon, account)
+);
 CREATE TABLE IF NOT EXISTS daemon_offer_pushes (
     daemon TEXT NOT NULL,
     account TEXT NOT NULL,
@@ -1281,6 +1287,7 @@ impl Db {
         c.execute("DELETE FROM daemon_links WHERE daemon = ?1", params![id])?;
         c.execute("DELETE FROM daemon_offers WHERE daemon = ?1", params![id])?;
         c.execute("DELETE FROM daemon_offer_pushes WHERE daemon = ?1", params![id])?;
+        c.execute("DELETE FROM daemon_offer_reasons WHERE daemon = ?1", params![id])?;
         c.execute("DELETE FROM share_answers WHERE daemon = ?1", params![id])?;
         Ok(())
     }
@@ -1319,6 +1326,33 @@ impl Db {
         }
         tx.commit()?;
         Ok(new)
+    }
+
+    /// Why `daemon` lets accounts in (#857): the conversation each was
+    /// added to, replacing what it said before.
+    pub fn set_offer_reasons(&self, daemon: &str, reasons: &[(String, String)]) -> anyhow::Result<()> {
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        tx.execute("DELETE FROM daemon_offer_reasons WHERE daemon = ?1", params![daemon])?;
+        for (account, conv) in reasons {
+            tx.execute(
+                "INSERT OR REPLACE INTO daemon_offer_reasons (daemon, account, conv) VALUES (?1, ?2, ?3)",
+                params![daemon, account, conv],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// The conversation `daemon` said it added `account` to, if it did.
+    pub fn offer_reason(&self, daemon: &str, account: &str) -> anyhow::Result<Option<String>> {
+        let c = self.c();
+        let mut q = c.prepare("SELECT conv FROM daemon_offer_reasons WHERE daemon = ?1 AND account = ?2")?;
+        let mut rows = q.query(params![daemon, account])?;
+        Ok(match rows.next()? {
+            Some(r) => Some(r.get(0)?),
+            None => None,
+        })
     }
 
     /// Whether to push `account` of `daemon`'s offer (#232): once a day at
@@ -2158,6 +2192,7 @@ impl Db {
                 "DELETE FROM daemon_watches WHERE daemon = ?1",
                 "DELETE FROM daemon_offers WHERE daemon = ?1",
                 "DELETE FROM daemon_offer_pushes WHERE daemon = ?1",
+                "DELETE FROM daemon_offer_reasons WHERE daemon = ?1",
                 "DELETE FROM share_answers WHERE daemon = ?1",
             ] {
                 tx.execute(sql, params![d])?;

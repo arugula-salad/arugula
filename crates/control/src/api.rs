@@ -906,7 +906,9 @@ pub async fn directory(State(app): State<Arc<App>>, s: crate::auth::Reacher) -> 
     for id in if s.daemon { vec![] } else { app.db.offers_for(&s.account)? } {
         let Some((owner, d)) = app.db.daemon_row(&id)? else { continue };
         let Some(who) = app.db.account(&owner)? else { continue };
-        offers.push(json!({ "daemon": d.id, "name": d.name, "account": owner, "owner_name": who.name, "owner_login": who.login }));
+        // #857: the conversation it's for, when it's one's.
+        let conv = app.db.offer_reason(&d.id, &s.account)?;
+        offers.push(json!({ "daemon": d.id, "name": d.name, "account": owner, "owner_name": who.name, "owner_login": who.login, "conv": conv }));
     }
     Ok(Json(json!({ "daemons": daemons, "offers": offers })))
 }

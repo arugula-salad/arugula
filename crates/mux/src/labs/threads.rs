@@ -105,10 +105,19 @@ impl Threads {
     /// each member added with their account's root, once.
     pub fn reach(&self) -> Vec<crate::acl::Reach> {
         let mut out: Vec<crate::acl::Reach> = Vec::new();
-        for m in self.convs.values().flat_map(|c| &c.members) {
-            let Some(root) = &m.root else { continue };
-            if !out.iter().any(|r| r.principal == m.who) {
-                out.push(crate::acl::Reach { principal: m.who.clone(), name: m.name.clone(), root: root.clone() });
+        let mut convs: Vec<&Conversation> = self.convs.values().collect();
+        convs.sort_by_key(|c| (c.created, c.id));
+        for c in convs {
+            for m in &c.members {
+                let Some(root) = &m.root else { continue };
+                if !out.iter().any(|r| r.principal == m.who) {
+                    out.push(crate::acl::Reach {
+                        principal: m.who.clone(),
+                        name: m.name.clone(),
+                        root: root.clone(),
+                        conv: c.title.clone(),
+                    });
+                }
             }
         }
         out
@@ -295,6 +304,7 @@ mod tests {
             landed: Vec::new(),
             to_agent: false,
             agent: false,
+            event: None,
         }
     }
 

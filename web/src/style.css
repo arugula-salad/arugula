@@ -8782,3 +8782,95 @@ html[data-finish="glass"] .prompt-backdrop {
   margin: 8px 0 0;
   color: var(--dim);
 }
+
+/* #857: what a conversation's links do, in its timeline. */
+.conv-event {
+  font-size: 13px;
+  line-height: 1.46;
+}
+
+.conv-event-line {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0 6px;
+  color: var(--fg);
+}
+
+.conv-event-meta {
+  color: var(--dim);
+}
+
+.conv-event-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--dim);
+  align-self: center;
+}
+
+.conv-event-dot.done {
+  background: var(--ok, #3fb950);
+}
+
+.conv-event-dot.failed {
+  background: var(--danger, #f85149);
+}
+
+.conv-event-summary {
+  margin: 4px 0 2px;
+  padding: 6px 8px;
+  border-left: 3px solid var(--raised-hover);
+  border-radius: 4px;
+  background: var(--letterbox);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.conv-card {
+  margin: 4px 0;
+  padding: 8px 10px;
+  max-width: 560px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--letterbox);
+}
+
+.conv-card.answered,
+.conv-card.moved {
+  border-color: var(--raised-hover);
+}
+
+.conv-card-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--dim);
+}
+
+.conv-card-input {
+  margin: 4px 0 8px;
+  font: 12px/1.35 ui-monospace, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.conv-card-buttons {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.conv-card-buttons button {
+  min-height: 32px;
+  padding: 0 14px;
+}
+
+.conv-card-note {
+  font-size: 12px;
+  color: var(--dim);
+}

@@ -253,7 +253,7 @@ impl Daemon {
     /// open permission request or question.
     fn ask_reason(&self, pane: PaneId) -> Option<Reason> {
         let local = self.meta.get(&pane).and_then(|m| m.host).is_none();
-        let (id, what, headline, agent, project, at_ms) = if let Some(a) = self.asks.get(&pane) {
+        let (id, what, headline, agent, project, at_ms, tool) = if let Some(a) = self.asks.get(&pane) {
             let what = if a.ask.kind == AskKind::Permission { AskWhat::Approve } else { AskWhat::Question };
             let (agent, project) = match self.blocks.get(&pane) {
                 // Raised on a block (M35): who asks is the ask's, and the
@@ -276,10 +276,10 @@ impl Daemon {
                     (agent, project_key(cwd.as_deref(), local))
                 }
             };
-            (a.ask.id.clone(), what, a.ask.headline(), agent, project, a.ask.at_ms)
+            (a.ask.id.clone(), what, a.ask.headline(), agent, project, a.ask.at_ms, a.ask.tool.clone())
         } else {
             let w = self.blocks.get(&pane)?.waiting()?;
-            (w.id, w.what, w.headline, w.agent, project_key(w.cwd.as_deref(), local), w.at_ms)
+            (w.id, w.what, w.headline, w.agent, project_key(w.cwd.as_deref(), local), w.at_ms, None)
         };
         let actions = match what {
             AskWhat::Approve => vec![Action::Allow, Action::Deny, Action::Dismiss],
@@ -293,7 +293,7 @@ impl Daemon {
             exit: None,
             duration_ms: None,
             bundle: Some(format!("ask:{project}:{agent}")),
-            ask: Some(AskRef { id, what, agent }),
+            ask: Some(AskRef { id, what, agent, tool }),
             gate: None,
             actions,
         })

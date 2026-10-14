@@ -477,11 +477,17 @@ pub struct AskRef {
     pub what: AskWhat,
     /// Who asks: the agent (`claude`, `fountain`, …).
     pub agent: String,
+    /// A permission's tool (`Bash`, `Edit`…), when it's known (#857: a
+    /// conversation's card shows it).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub tool: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub enum AskWhat {
     Approve,
     Question,
@@ -491,6 +497,7 @@ pub enum AskWhat {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub enum Action {
     /// Approve a permission request.
     Allow,
@@ -1569,6 +1576,79 @@ pub struct ConvGrant {
     pub revoked: Option<u64>,
 }
 
+/// What a linked pane did, as its conversation's timeline has it (#857):
+/// posted by the home's watcher on that link, and by whoever answered a
+/// card. A message carrying one is shown as a line or a card, not text.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct ConvEvent {
+    pub kind: ConvEventKind,
+    /// The link: `L1`, `L2`…
+    pub link: String,
+    /// `needs_input` and `answered`: what it asks.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub ask: Option<ConvAsk>,
+    /// `turn_ended`: its last message. `pr`: what the forge says.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub summary: Option<String>,
+    /// `turn_ended`: how long it worked (ms).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub worked_ms: Option<u64>,
+    /// `turn_ended`: the asks answered during the turn, by a standing rule,
+    /// a card here, or at the pane.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub approvals: u32,
+    /// `answered`: what was done.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub action: Option<Action>,
+    /// `exited`: its code, when it has one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub code: Option<i32>,
+    /// `pr`: whether its checks passed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub ok: Option<bool>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub enum ConvEventKind {
+    /// Its turn ended, after it worked.
+    TurnEnded,
+    /// It asks (a permission or a question): a card, answered here.
+    NeedsInput,
+    /// Someone answered its card in the conversation.
+    Answered,
+    /// Its program ended.
+    Exited,
+    /// A linked PR's checks finished (or it merged or closed).
+    Pr,
+}
+
+/// What a link asks, on its card (#857). Answering names `id`, so an
+/// answer never lands on a newer prompt.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct ConvAsk {
+    pub id: String,
+    pub what: AskWhat,
+    /// A permission's tool, when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub tool: Option<String>,
+    /// What it wants, in a line ("Bash: pytest -q"), or the question.
+    pub input: String,
+}
+
 impl Conversation {
     /// Where `who`'s reading starts: 0 for the owner and a member added with
     /// history, else when they joined; `None` for someone not in it.
@@ -1622,6 +1702,10 @@ pub struct ThreadMsg {
     /// An agent posted it (through MCP).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub agent: bool,
+    /// What a linked pane did (#857), in a conversation's timeline.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub event: Option<ConvEvent>,
 }
 
 /// Output quoted in a thread message: kept as text, so it stays readable

@@ -166,6 +166,47 @@ pub async fn request_within(
         .map_err(|_| anyhow::anyhow!("{} didn't answer in time", m.name))?
 }
 
+/// `GET path` on `m` as a stream (#857: a linked pane's events), on the
+/// standing channel: each part of the answer to `part` as it comes, until
+/// the far end ends it, the channel goes, or `part` says stop. Its status,
+/// and the body when it was refused (a refusal comes whole).
+pub async fn follow(
+    control: &Control,
+    m: &Machine,
+    path: &str,
+    headers: &[(&str, &str)],
+    mut part: impl FnMut(&[u8]) -> bool + Send,
+) -> anyhow::Result<(u16, Vec<u8>)> {
+    let head = RequestHead {
+        method: "GET".into(),
+        path: path.into(),
+        content_type: None,
+        stream: true,
+        headers: headers.iter().map(|(k, v)| ((*k).to_owned(), (*v).to_owned())).collect(),
+    };
+    for _ in 0..2 {
+        let (conn, new) = tokio::time::timeout(TIMEOUT, channel(control, m))
+            .await
+            .map_err(|_| anyhow::anyhow!("{} didn't answer in time", m.name))??;
+        let mut refused = Vec::new();
+        let got = conn
+            .ask_parts(head.clone(), Vec::new(), |status, bytes| {
+                if status >= 400 {
+                    refused.extend(bytes);
+                    return true;
+                }
+                part(&bytes)
+            })
+            .await?;
+        match got {
+            Some(status) => return Ok((status, refused)),
+            None if new => break,
+            None => conn.alive.store(false, Ordering::SeqCst),
+        }
+    }
+    anyhow::bail!("{} closed before answering", m.name)
+}
+
 /// How long a standing channel stays open with nothing asked on it.
 const IDLE: Duration = Duration::from_secs(300);
 
@@ -193,6 +234,28 @@ struct Conn {
 
 impl Conn {
     async fn ask(&self, head: RequestHead, body: Vec<u8>) -> anyhow::Result<Asked> {
+        let mut answer = Vec::new();
+        let status = self
+            .ask_parts(head, body, |_, part| {
+                answer.extend(part);
+                true
+            })
+            .await?;
+        Ok(match status {
+            Some(status) => Asked::Answer(status, answer),
+            None => Asked::Gone,
+        })
+    }
+
+    /// Ask, handing each part of the answer to `part` as it comes (its
+    /// status, and the bytes) until the last, or until `part` says stop.
+    /// `None`: the channel went before anything came back.
+    async fn ask_parts(
+        &self,
+        head: RequestHead,
+        body: Vec<u8>,
+        mut part: impl FnMut(u16, Vec<u8>) -> bool,
+    ) -> anyhow::Result<Option<u16>> {
         let id = self.next.fetch_add(1, Ordering::Relaxed);
         let (tx, mut rx) = mpsc::unbounded_channel();
         self.waiting.lock().unwrap().insert(id, tx);
@@ -210,23 +273,23 @@ impl Conn {
         if sent.is_err() {
             self.waiting.lock().unwrap().remove(&id);
             self.alive.store(false, Ordering::SeqCst);
-            return Ok(Asked::Gone);
+            return Ok(None);
         }
-        let mut answer = Vec::new();
         let mut status = None;
         let r = loop {
             match rx.recv().await {
-                Some((head, part)) => {
+                Some((head, bytes)) => {
                     status = Some(head.status);
-                    answer.extend(part);
-                    if !head.more {
-                        break Ok(Asked::Answer(head.status, answer));
+                    *self.used.lock().unwrap() = Instant::now();
+                    if !part(head.status, bytes) || !head.more {
+                        break Ok(status);
                     }
                 }
-                None if status.is_none() => break Ok(Asked::Gone),
+                None if status.is_none() => break Ok(None),
                 None => break Err(anyhow::anyhow!("the channel closed partway through the answer")),
             }
         };
+        // Whatever still comes for it (a follow cut short) is dropped.
         self.waiting.lock().unwrap().remove(&id);
         *self.used.lock().unwrap() = Instant::now();
         r

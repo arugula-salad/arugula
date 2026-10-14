@@ -3339,6 +3339,193 @@
       "name": "read_thread",
       "outputSchema": {
         "$defs": {
+          "Action": {
+            "description": "Something done about a reason (`POST /api/attention/act`).",
+            "oneOf": [
+              {
+                "const": "allow",
+                "description": "Approve a permission request.",
+                "type": "string"
+              },
+              {
+                "const": "deny",
+                "description": "Refuse a permission request, or skip a question.",
+                "type": "string"
+              },
+              {
+                "const": "answer",
+                "description": "Answer a question (with content).",
+                "type": "string"
+              },
+              {
+                "const": "dismiss",
+                "description": "Clear it: seen, nothing to do.",
+                "type": "string"
+              },
+              {
+                "const": "continue",
+                "description": "A debugger stopped in an editor (M28): let it run on.",
+                "type": "string"
+              },
+              {
+                "const": "accept",
+                "description": "Take an agent's proposed edit (M28: Claude Code's `openDiff`),\noptionally changed first (`content`).",
+                "type": "string"
+              },
+              {
+                "const": "reject",
+                "description": "Turn an agent's proposed edit down.",
+                "type": "string"
+              },
+              {
+                "const": "rerun",
+                "description": "Type a failed command into its pane again, once its shell is idle\n(M11, M10's remainder).",
+                "type": "string"
+              },
+              {
+                "const": "expire",
+                "description": "Turn a chant gate down (#310): clear its pending fact without\napproving it (`chant approve <op> <gate> --expire`), so the next run\nstops there again.",
+                "type": "string"
+              }
+            ]
+          },
+          "AskWhat": {
+            "enum": [
+              "approve",
+              "question"
+            ],
+            "type": "string"
+          },
+          "ConvAsk": {
+            "description": "What a link asks, on its card (#857). Answering names `id`, so an\nanswer never lands on a newer prompt.",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "input": {
+                "description": "What it wants, in a line (\"Bash: pytest -q\"), or the question.",
+                "type": "string"
+              },
+              "tool": {
+                "description": "A permission's tool, when known.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "what": {
+                "$ref": "#/$defs/AskWhat"
+              }
+            },
+            "required": [
+              "id",
+              "what",
+              "input"
+            ],
+            "type": "object"
+          },
+          "ConvEvent": {
+            "description": "What a linked pane did, as its conversation's timeline has it (#857):\nposted by the home's watcher on that link, and by whoever answered a\ncard. A message carrying one is shown as a line or a card, not text.",
+            "properties": {
+              "action": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Action"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "`answered`: what was done."
+              },
+              "approvals": {
+                "description": "`turn_ended`: the asks answered during the turn, by a standing rule,\na card here, or at the pane.",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "ask": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/ConvAsk"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "`needs_input` and `answered`: what it asks."
+              },
+              "code": {
+                "description": "`exited`: its code, when it has one.",
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "kind": {
+                "$ref": "#/$defs/ConvEventKind"
+              },
+              "link": {
+                "description": "The link: `L1`, `L2`…",
+                "type": "string"
+              },
+              "ok": {
+                "description": "`pr`: whether its checks passed.",
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "summary": {
+                "description": "`turn_ended`: its last message. `pr`: what the forge says.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "worked_ms": {
+                "description": "`turn_ended`: how long it worked (ms).",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "link"
+            ],
+            "type": "object"
+          },
+          "ConvEventKind": {
+            "oneOf": [
+              {
+                "const": "turn_ended",
+                "description": "Its turn ended, after it worked.",
+                "type": "string"
+              },
+              {
+                "const": "needs_input",
+                "description": "It asks (a permission or a question): a card, answered here.",
+                "type": "string"
+              },
+              {
+                "const": "answered",
+                "description": "Someone answered its card in the conversation.",
+                "type": "string"
+              },
+              {
+                "const": "exited",
+                "description": "Its program ended.",
+                "type": "string"
+              },
+              {
+                "const": "pr",
+                "description": "A linked PR's checks finished (or it merged or closed).",
+                "type": "string"
+              }
+            ]
+          },
           "ConvId": {
             "type": "string"
           },
@@ -3370,6 +3557,17 @@
                 "description": "When it was posted (ms since the epoch).",
                 "minimum": 0,
                 "type": "integer"
+              },
+              "event": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/ConvEvent"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "What a linked pane did (#857), in a conversation's timeline."
               },
               "id": {
                 "description": "1, 2, 3, ... within its thread.",
@@ -3567,6 +3765,193 @@
       "name": "post_thread",
       "outputSchema": {
         "$defs": {
+          "Action": {
+            "description": "Something done about a reason (`POST /api/attention/act`).",
+            "oneOf": [
+              {
+                "const": "allow",
+                "description": "Approve a permission request.",
+                "type": "string"
+              },
+              {
+                "const": "deny",
+                "description": "Refuse a permission request, or skip a question.",
+                "type": "string"
+              },
+              {
+                "const": "answer",
+                "description": "Answer a question (with content).",
+                "type": "string"
+              },
+              {
+                "const": "dismiss",
+                "description": "Clear it: seen, nothing to do.",
+                "type": "string"
+              },
+              {
+                "const": "continue",
+                "description": "A debugger stopped in an editor (M28): let it run on.",
+                "type": "string"
+              },
+              {
+                "const": "accept",
+                "description": "Take an agent's proposed edit (M28: Claude Code's `openDiff`),\noptionally changed first (`content`).",
+                "type": "string"
+              },
+              {
+                "const": "reject",
+                "description": "Turn an agent's proposed edit down.",
+                "type": "string"
+              },
+              {
+                "const": "rerun",
+                "description": "Type a failed command into its pane again, once its shell is idle\n(M11, M10's remainder).",
+                "type": "string"
+              },
+              {
+                "const": "expire",
+                "description": "Turn a chant gate down (#310): clear its pending fact without\napproving it (`chant approve <op> <gate> --expire`), so the next run\nstops there again.",
+                "type": "string"
+              }
+            ]
+          },
+          "AskWhat": {
+            "enum": [
+              "approve",
+              "question"
+            ],
+            "type": "string"
+          },
+          "ConvAsk": {
+            "description": "What a link asks, on its card (#857). Answering names `id`, so an\nanswer never lands on a newer prompt.",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "input": {
+                "description": "What it wants, in a line (\"Bash: pytest -q\"), or the question.",
+                "type": "string"
+              },
+              "tool": {
+                "description": "A permission's tool, when known.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "what": {
+                "$ref": "#/$defs/AskWhat"
+              }
+            },
+            "required": [
+              "id",
+              "what",
+              "input"
+            ],
+            "type": "object"
+          },
+          "ConvEvent": {
+            "description": "What a linked pane did, as its conversation's timeline has it (#857):\nposted by the home's watcher on that link, and by whoever answered a\ncard. A message carrying one is shown as a line or a card, not text.",
+            "properties": {
+              "action": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Action"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "`answered`: what was done."
+              },
+              "approvals": {
+                "description": "`turn_ended`: the asks answered during the turn, by a standing rule,\na card here, or at the pane.",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "ask": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/ConvAsk"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "`needs_input` and `answered`: what it asks."
+              },
+              "code": {
+                "description": "`exited`: its code, when it has one.",
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "kind": {
+                "$ref": "#/$defs/ConvEventKind"
+              },
+              "link": {
+                "description": "The link: `L1`, `L2`…",
+                "type": "string"
+              },
+              "ok": {
+                "description": "`pr`: whether its checks passed.",
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "summary": {
+                "description": "`turn_ended`: its last message. `pr`: what the forge says.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "worked_ms": {
+                "description": "`turn_ended`: how long it worked (ms).",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "link"
+            ],
+            "type": "object"
+          },
+          "ConvEventKind": {
+            "oneOf": [
+              {
+                "const": "turn_ended",
+                "description": "Its turn ended, after it worked.",
+                "type": "string"
+              },
+              {
+                "const": "needs_input",
+                "description": "It asks (a permission or a question): a card, answered here.",
+                "type": "string"
+              },
+              {
+                "const": "answered",
+                "description": "Someone answered its card in the conversation.",
+                "type": "string"
+              },
+              {
+                "const": "exited",
+                "description": "Its program ended.",
+                "type": "string"
+              },
+              {
+                "const": "pr",
+                "description": "A linked PR's checks finished (or it merged or closed).",
+                "type": "string"
+              }
+            ]
+          },
           "ConvId": {
             "type": "string"
           },
@@ -3598,6 +3983,17 @@
                 "description": "When it was posted (ms since the epoch).",
                 "minimum": 0,
                 "type": "integer"
+              },
+              "event": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/ConvEvent"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "What a linked pane did (#857), in a conversation's timeline."
               },
               "id": {
                 "description": "1, 2, 3, ... within its thread.",
@@ -8538,6 +8934,193 @@
       "name": "read_thread",
       "outputSchema": {
         "$defs": {
+          "Action": {
+            "description": "Something done about a reason (`POST /api/attention/act`).",
+            "oneOf": [
+              {
+                "const": "allow",
+                "description": "Approve a permission request.",
+                "type": "string"
+              },
+              {
+                "const": "deny",
+                "description": "Refuse a permission request, or skip a question.",
+                "type": "string"
+              },
+              {
+                "const": "answer",
+                "description": "Answer a question (with content).",
+                "type": "string"
+              },
+              {
+                "const": "dismiss",
+                "description": "Clear it: seen, nothing to do.",
+                "type": "string"
+              },
+              {
+                "const": "continue",
+                "description": "A debugger stopped in an editor (M28): let it run on.",
+                "type": "string"
+              },
+              {
+                "const": "accept",
+                "description": "Take an agent's proposed edit (M28: Claude Code's `openDiff`),\noptionally changed first (`content`).",
+                "type": "string"
+              },
+              {
+                "const": "reject",
+                "description": "Turn an agent's proposed edit down.",
+                "type": "string"
+              },
+              {
+                "const": "rerun",
+                "description": "Type a failed command into its pane again, once its shell is idle\n(M11, M10's remainder).",
+                "type": "string"
+              },
+              {
+                "const": "expire",
+                "description": "Turn a chant gate down (#310): clear its pending fact without\napproving it (`chant approve <op> <gate> --expire`), so the next run\nstops there again.",
+                "type": "string"
+              }
+            ]
+          },
+          "AskWhat": {
+            "enum": [
+              "approve",
+              "question"
+            ],
+            "type": "string"
+          },
+          "ConvAsk": {
+            "description": "What a link asks, on its card (#857). Answering names `id`, so an\nanswer never lands on a newer prompt.",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "input": {
+                "description": "What it wants, in a line (\"Bash: pytest -q\"), or the question.",
+                "type": "string"
+              },
+              "tool": {
+                "description": "A permission's tool, when known.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "what": {
+                "$ref": "#/$defs/AskWhat"
+              }
+            },
+            "required": [
+              "id",
+              "what",
+              "input"
+            ],
+            "type": "object"
+          },
+          "ConvEvent": {
+            "description": "What a linked pane did, as its conversation's timeline has it (#857):\nposted by the home's watcher on that link, and by whoever answered a\ncard. A message carrying one is shown as a line or a card, not text.",
+            "properties": {
+              "action": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Action"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "`answered`: what was done."
+              },
+              "approvals": {
+                "description": "`turn_ended`: the asks answered during the turn, by a standing rule,\na card here, or at the pane.",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "ask": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/ConvAsk"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "`needs_input` and `answered`: what it asks."
+              },
+              "code": {
+                "description": "`exited`: its code, when it has one.",
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "kind": {
+                "$ref": "#/$defs/ConvEventKind"
+              },
+              "link": {
+                "description": "The link: `L1`, `L2`…",
+                "type": "string"
+              },
+              "ok": {
+                "description": "`pr`: whether its checks passed.",
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "summary": {
+                "description": "`turn_ended`: its last message. `pr`: what the forge says.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "worked_ms": {
+                "description": "`turn_ended`: how long it worked (ms).",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "link"
+            ],
+            "type": "object"
+          },
+          "ConvEventKind": {
+            "oneOf": [
+              {
+                "const": "turn_ended",
+                "description": "Its turn ended, after it worked.",
+                "type": "string"
+              },
+              {
+                "const": "needs_input",
+                "description": "It asks (a permission or a question): a card, answered here.",
+                "type": "string"
+              },
+              {
+                "const": "answered",
+                "description": "Someone answered its card in the conversation.",
+                "type": "string"
+              },
+              {
+                "const": "exited",
+                "description": "Its program ended.",
+                "type": "string"
+              },
+              {
+                "const": "pr",
+                "description": "A linked PR's checks finished (or it merged or closed).",
+                "type": "string"
+              }
+            ]
+          },
           "ConvId": {
             "type": "string"
           },
@@ -8569,6 +9152,17 @@
                 "description": "When it was posted (ms since the epoch).",
                 "minimum": 0,
                 "type": "integer"
+              },
+              "event": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/ConvEvent"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "What a linked pane did (#857), in a conversation's timeline."
               },
               "id": {
                 "description": "1, 2, 3, ... within its thread.",
@@ -8766,6 +9360,193 @@
       "name": "post_thread",
       "outputSchema": {
         "$defs": {
+          "Action": {
+            "description": "Something done about a reason (`POST /api/attention/act`).",
+            "oneOf": [
+              {
+                "const": "allow",
+                "description": "Approve a permission request.",
+                "type": "string"
+              },
+              {
+                "const": "deny",
+                "description": "Refuse a permission request, or skip a question.",
+                "type": "string"
+              },
+              {
+                "const": "answer",
+                "description": "Answer a question (with content).",
+                "type": "string"
+              },
+              {
+                "const": "dismiss",
+                "description": "Clear it: seen, nothing to do.",
+                "type": "string"
+              },
+              {
+                "const": "continue",
+                "description": "A debugger stopped in an editor (M28): let it run on.",
+                "type": "string"
+              },
+              {
+                "const": "accept",
+                "description": "Take an agent's proposed edit (M28: Claude Code's `openDiff`),\noptionally changed first (`content`).",
+                "type": "string"
+              },
+              {
+                "const": "reject",
+                "description": "Turn an agent's proposed edit down.",
+                "type": "string"
+              },
+              {
+                "const": "rerun",
+                "description": "Type a failed command into its pane again, once its shell is idle\n(M11, M10's remainder).",
+                "type": "string"
+              },
+              {
+                "const": "expire",
+                "description": "Turn a chant gate down (#310): clear its pending fact without\napproving it (`chant approve <op> <gate> --expire`), so the next run\nstops there again.",
+                "type": "string"
+              }
+            ]
+          },
+          "AskWhat": {
+            "enum": [
+              "approve",
+              "question"
+            ],
+            "type": "string"
+          },
+          "ConvAsk": {
+            "description": "What a link asks, on its card (#857). Answering names `id`, so an\nanswer never lands on a newer prompt.",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "input": {
+                "description": "What it wants, in a line (\"Bash: pytest -q\"), or the question.",
+                "type": "string"
+              },
+              "tool": {
+                "description": "A permission's tool, when known.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "what": {
+                "$ref": "#/$defs/AskWhat"
+              }
+            },
+            "required": [
+              "id",
+              "what",
+              "input"
+            ],
+            "type": "object"
+          },
+          "ConvEvent": {
+            "description": "What a linked pane did, as its conversation's timeline has it (#857):\nposted by the home's watcher on that link, and by whoever answered a\ncard. A message carrying one is shown as a line or a card, not text.",
+            "properties": {
+              "action": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Action"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "`answered`: what was done."
+              },
+              "approvals": {
+                "description": "`turn_ended`: the asks answered during the turn, by a standing rule,\na card here, or at the pane.",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "ask": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/ConvAsk"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "`needs_input` and `answered`: what it asks."
+              },
+              "code": {
+                "description": "`exited`: its code, when it has one.",
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "kind": {
+                "$ref": "#/$defs/ConvEventKind"
+              },
+              "link": {
+                "description": "The link: `L1`, `L2`…",
+                "type": "string"
+              },
+              "ok": {
+                "description": "`pr`: whether its checks passed.",
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "summary": {
+                "description": "`turn_ended`: its last message. `pr`: what the forge says.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "worked_ms": {
+                "description": "`turn_ended`: how long it worked (ms).",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "link"
+            ],
+            "type": "object"
+          },
+          "ConvEventKind": {
+            "oneOf": [
+              {
+                "const": "turn_ended",
+                "description": "Its turn ended, after it worked.",
+                "type": "string"
+              },
+              {
+                "const": "needs_input",
+                "description": "It asks (a permission or a question): a card, answered here.",
+                "type": "string"
+              },
+              {
+                "const": "answered",
+                "description": "Someone answered its card in the conversation.",
+                "type": "string"
+              },
+              {
+                "const": "exited",
+                "description": "Its program ended.",
+                "type": "string"
+              },
+              {
+                "const": "pr",
+                "description": "A linked PR's checks finished (or it merged or closed).",
+                "type": "string"
+              }
+            ]
+          },
           "ConvId": {
             "type": "string"
           },
@@ -8797,6 +9578,17 @@
                 "description": "When it was posted (ms since the epoch).",
                 "minimum": 0,
                 "type": "integer"
+              },
+              "event": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/ConvEvent"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "What a linked pane did (#857), in a conversation's timeline."
               },
               "id": {
                 "description": "1, 2, 3, ... within its thread.",
@@ -11908,6 +12700,193 @@
       "name": "read_thread",
       "outputSchema": {
         "$defs": {
+          "Action": {
+            "description": "Something done about a reason (`POST /api/attention/act`).",
+            "oneOf": [
+              {
+                "const": "allow",
+                "description": "Approve a permission request.",
+                "type": "string"
+              },
+              {
+                "const": "deny",
+                "description": "Refuse a permission request, or skip a question.",
+                "type": "string"
+              },
+              {
+                "const": "answer",
+                "description": "Answer a question (with content).",
+                "type": "string"
+              },
+              {
+                "const": "dismiss",
+                "description": "Clear it: seen, nothing to do.",
+                "type": "string"
+              },
+              {
+                "const": "continue",
+                "description": "A debugger stopped in an editor (M28): let it run on.",
+                "type": "string"
+              },
+              {
+                "const": "accept",
+                "description": "Take an agent's proposed edit (M28: Claude Code's `openDiff`),\noptionally changed first (`content`).",
+                "type": "string"
+              },
+              {
+                "const": "reject",
+                "description": "Turn an agent's proposed edit down.",
+                "type": "string"
+              },
+              {
+                "const": "rerun",
+                "description": "Type a failed command into its pane again, once its shell is idle\n(M11, M10's remainder).",
+                "type": "string"
+              },
+              {
+                "const": "expire",
+                "description": "Turn a chant gate down (#310): clear its pending fact without\napproving it (`chant approve <op> <gate> --expire`), so the next run\nstops there again.",
+                "type": "string"
+              }
+            ]
+          },
+          "AskWhat": {
+            "enum": [
+              "approve",
+              "question"
+            ],
+            "type": "string"
+          },
+          "ConvAsk": {
+            "description": "What a link asks, on its card (#857). Answering names `id`, so an\nanswer never lands on a newer prompt.",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "input": {
+                "description": "What it wants, in a line (\"Bash: pytest -q\"), or the question.",
+                "type": "string"
+              },
+              "tool": {
+                "description": "A permission's tool, when known.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "what": {
+                "$ref": "#/$defs/AskWhat"
+              }
+            },
+            "required": [
+              "id",
+              "what",
+              "input"
+            ],
+            "type": "object"
+          },
+          "ConvEvent": {
+            "description": "What a linked pane did, as its conversation's timeline has it (#857):\nposted by the home's watcher on that link, and by whoever answered a\ncard. A message carrying one is shown as a line or a card, not text.",
+            "properties": {
+              "action": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Action"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "`answered`: what was done."
+              },
+              "approvals": {
+                "description": "`turn_ended`: the asks answered during the turn, by a standing rule,\na card here, or at the pane.",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "ask": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/ConvAsk"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "`needs_input` and `answered`: what it asks."
+              },
+              "code": {
+                "description": "`exited`: its code, when it has one.",
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "kind": {
+                "$ref": "#/$defs/ConvEventKind"
+              },
+              "link": {
+                "description": "The link: `L1`, `L2`…",
+                "type": "string"
+              },
+              "ok": {
+                "description": "`pr`: whether its checks passed.",
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "summary": {
+                "description": "`turn_ended`: its last message. `pr`: what the forge says.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "worked_ms": {
+                "description": "`turn_ended`: how long it worked (ms).",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "link"
+            ],
+            "type": "object"
+          },
+          "ConvEventKind": {
+            "oneOf": [
+              {
+                "const": "turn_ended",
+                "description": "Its turn ended, after it worked.",
+                "type": "string"
+              },
+              {
+                "const": "needs_input",
+                "description": "It asks (a permission or a question): a card, answered here.",
+                "type": "string"
+              },
+              {
+                "const": "answered",
+                "description": "Someone answered its card in the conversation.",
+                "type": "string"
+              },
+              {
+                "const": "exited",
+                "description": "Its program ended.",
+                "type": "string"
+              },
+              {
+                "const": "pr",
+                "description": "A linked PR's checks finished (or it merged or closed).",
+                "type": "string"
+              }
+            ]
+          },
           "ConvId": {
             "type": "string"
           },
@@ -11939,6 +12918,17 @@
                 "description": "When it was posted (ms since the epoch).",
                 "minimum": 0,
                 "type": "integer"
+              },
+              "event": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/ConvEvent"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "What a linked pane did (#857), in a conversation's timeline."
               },
               "id": {
                 "description": "1, 2, 3, ... within its thread.",

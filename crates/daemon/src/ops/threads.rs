@@ -65,7 +65,7 @@ impl Handle for ThreadPost {
                 (Principal::Owner, Some(by), false)
             }
         };
-        let post = crate::mux::ThreadPost { target, who, as_agent, text: req.text, quote: req.quote };
+        let post = crate::mux::ThreadPost { target, who, as_agent, text: req.text, quote: req.quote, event: None };
         let (msg, to_agent, mut unreached) =
             cx.app.mux.api(|r| Api::ThreadPost(post, r)).await.ok_or_else(gone)?.map_err(thread_err)?;
         let mut agent = None;

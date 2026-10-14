@@ -1627,6 +1627,16 @@ impl Control {
             links_until: links,
             agents: e.agent_accounts(),
             links: e.link_accounts(),
+            // #857: those a conversation here let in, with its title.
+            reasons: self
+                .acl
+                .reach()
+                .into_iter()
+                .filter_map(|r| {
+                    let account = r.principal.strip_prefix("account:")?.to_owned();
+                    Some(wire::AccessReason { account, conv: r.conv })
+                })
+                .collect(),
         };
         if self.published.lock().unwrap().as_ref() == Some(&body) {
             return;
