@@ -46,6 +46,32 @@ pub type Posted = (ThreadMsg, bool, Vec<arugula_proto::api::Unreached>);
 #[derive(Debug)]
 pub struct ThreadError(pub u16, pub String);
 
+/// What to do to a conversation (#855), and who asks. The mux checks it
+/// against the record (`labs::convs`).
+#[derive(Debug)]
+pub enum ConvReq {
+    Create {
+        title: String,
+    },
+    Rename {
+        id: arugula_proto::ConvId,
+        title: String,
+    },
+    Delete {
+        id: arugula_proto::ConvId,
+    },
+    /// `member`: a principal id, or a name as an `@` gives it.
+    AddMember {
+        id: arugula_proto::ConvId,
+        member: String,
+        history: bool,
+    },
+    RemoveMember {
+        id: arugula_proto::ConvId,
+        member: String,
+    },
+}
+
 use self::attention::{TermAsk, Waiter};
 use crate::{
     block::{Block, BlockCtx},
@@ -203,6 +229,9 @@ pub enum Api {
     /// under that name. Answers with the message, and whether it goes to
     /// the pane's agent as a follow-up.
     ThreadPost(ThreadPost, oneshot::Sender<Result<Posted, ThreadError>>),
+    /// Make, change or delete a conversation (#855), as `who`: the record
+    /// as it is after (a deleted one as it was).
+    Conv(ConvReq, crate::acl::Principal, oneshot::Sender<Result<arugula_proto::Conversation, ThreadError>>),
     /// `who` has read a thread up to a message.
     ThreadRead(ThreadTarget, crate::acl::Principal, u64),
     /// Which of these (principal ids) read a thread now (#297); `None` if
@@ -509,7 +538,7 @@ enum Dirty {
 
 /// What one person sees besides panes: machines, who's here, threads,
 /// huddles.
-type Seen = (Vec<Machine>, Vec<Presence>, Vec<ThreadSummary>, Vec<Call>);
+type Seen = (Vec<Machine>, Vec<Presence>, Vec<ThreadSummary>, Vec<arugula_proto::Conversation>, Vec<Call>);
 
 /// A pane as one client has it.
 type PaneJson = serde_json::Map<String, serde_json::Value>;
@@ -525,6 +554,7 @@ struct Sent {
     machines: Vec<Machine>,
     presence: Vec<Presence>,
     threads: Vec<ThreadSummary>,
+    convs: Vec<arugula_proto::Conversation>,
     calls: Vec<Call>,
 }
 

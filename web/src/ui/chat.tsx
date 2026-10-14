@@ -10,12 +10,16 @@
 // hosts' from the fleet's summary connections, which get threads too.
 //
 // A session's huddle (M63) shows on its channel row and in its header.
+//
+// Conversations (#855), threads of their own with members of their own, are
+// *Channels*: after Activity and Huddles, above the machines, from every
+// machine that keeps one you're in (./convs).
 
 import { useEffect, useState } from "preact/hooks";
 import type { Client } from "../client";
 import type { Fleet } from "../fleet";
 import { directory } from "../hosts";
-import { threadKey, type SessionId, type ThreadMsg, type ThreadSummary, type ThreadTarget } from "../proto";
+import { threadKey, type Conversation, type SessionId, type ThreadMsg, type ThreadSummary, type ThreadTarget } from "../proto";
 import { getFleet } from "./hosts";
 import { usePhone } from "./hooks";
 import { openMenu, type MenuItem } from "./menu";
@@ -25,6 +29,10 @@ import { ThreadBody, type Quote } from "./threads";
 import { HuddleButton, HuddleChip, useHuddle } from "./huddle";
 import { Avatar } from "./people";
 import { AppBar } from "./app-bar";
+import { ConvMembers, NewConv } from "./convs";
+
+/** A conversation's mark, beside a session's # and a pane's ↳. */
+export const CONV_SIGIL = "◇";
 
 /** The bar every place shares, with chat's search in it. It is the
  * desktop app's titlebar on this page. */
@@ -101,6 +109,22 @@ export function rowsOf(s: Source): Row[] {
   return out;
 }
 
+/** The conversations on every machine this person is in (#855), newest
+ * message first, then newest made. */
+export function convRows(all: Source[], multi: boolean): { s: Source; r: Row }[] {
+  const out: { s: Source; r: Row; c: Conversation }[] = [];
+  for (const s of all) {
+    const summaries = new Map((s.client.state?.threads ?? []).map((t) => [threadKey(t.target), t]));
+    for (const c of s.client.convs()) {
+      const target = { conv: c.id };
+      const label = multi ? `${c.title} · ${s.host || "this machine"}` : c.title;
+      out.push({ s, c, r: { host: s.host, target, label, sub: false, summary: summaries.get(threadKey(target)) } });
+    }
+  }
+  const at = (x: (typeof out)[number]) => x.r.summary?.at ?? x.c.created;
+  return out.sort((a, b) => at(b) - at(a)).map(({ s, r }) => ({ s, r }));
+}
+
 export function paneLabel(client: Client, pane: number): string {
   const t = client.title(pane) || client.cwd(pane)?.split("/").filter(Boolean).pop() || "";
   return t ? `%${pane} ${t}` : `%${pane}`;
@@ -115,7 +139,7 @@ function goTo(s: Source, target: ThreadTarget, then?: (c: Client) => void) {
   closeChat();
   if (s.shown) {
     if ("pane" in target) s.client.setActive(target.pane);
-    else s.client.selectSession(target.session);
+    else if ("session" in target) s.client.selectSession(target.session);
     then?.(s.client);
     return;
   }
@@ -168,6 +192,8 @@ function ChatView({ client, route }: { client: Client; route: ChatRoute }) {
     .map((h) => ({ name: h.name, why: h.state !== "connected" ? "offline" : "chat is off there" }));
   const multi = all.length > 1;
   const rows = all.map((s) => ({ s, rows: rowsOf(s) }));
+  const channels = convRows(all, multi);
+  const [making, setMaking] = useState(false);
 
   // The thread shown: the route's, else the newest unread, else the newest
   // (on a phone, the list until one is picked).
@@ -176,7 +202,7 @@ function ChatView({ client, route }: { client: Client; route: ChatRoute }) {
   const src = all.find((s) => s.host === route.host);
   if (fromRoute && src) picked = { s: src, target: fromRoute };
   if (!picked && !phone && !route.view) {
-    const flat = rows.flatMap(({ s, rows }) => rows.map((r) => ({ s, r })));
+    const flat = [...channels, ...rows.flatMap(({ s, rows }) => rows.map((r) => ({ s, r })))];
     const best =
       flat.filter((x) => x.r.summary?.unread).sort((a, b) => b.r.summary!.at - a.r.summary!.at)[0] ??
       flat.filter((x) => x.r.summary).sort((a, b) => b.r.summary!.at - a.r.summary!.at)[0] ??
@@ -200,10 +226,10 @@ function ChatView({ client, route }: { client: Client; route: ChatRoute }) {
         key={key}
         class={`chat-row${r.sub ? " sub" : ""}${key === pickedKey ? " selected" : ""}${n ? " unread" : ""}${r.summary ? "" : " quiet"}`}
         data-chat-thread={threadKey(r.target)}
-        title={"pane" in r.target ? `This pane's thread` : `The session's thread`}
+        title={"pane" in r.target ? `This pane's thread` : "session" in r.target ? `The session's thread` : "A conversation"}
         onClick={() => openChat(r.host, r.target)}
       >
-        <span class="chat-sigil">{"pane" in r.target ? "↳" : "#"}</span>
+        <span class="chat-sigil">{"pane" in r.target ? "↳" : "session" in r.target ? "#" : CONV_SIGIL}</span>
         <span class="chat-label">{r.label}</span>
         {"session" in r.target && <HuddleChip client={s.client} session={r.target.session} />}
         {n > 0 && <span class={r.summary?.mention ? "chat-count mention" : "chat-count"}>{r.summary?.mention ? `@${n}` : n}</span>}
@@ -222,7 +248,7 @@ function ChatView({ client, route }: { client: Client; route: ChatRoute }) {
   };
 
   // M75: Alt+↑/↓ through the channels, Shift+Esc marks everything read.
-  const flatRows = rows.flatMap(({ s, rows }) => (phone || !collapsed.has(s.host) ? rows : []).map((r) => ({ s, r })));
+  const flatRows = [...channels, ...rows.flatMap(({ s, rows }) => (phone || !collapsed.has(s.host) ? rows : []).map((r) => ({ s, r })))];
   useChatKeys(flatRows, pickedKey, () => markAllRead(all));
   const mentions = activityCount(all);
 
@@ -241,6 +267,23 @@ function ChatView({ client, route }: { client: Client; route: ChatRoute }) {
           {huddles.map(({ s, r }) => row(s, { ...r, sub: false, label: multi ? `${r.label} · ${s.host || "this machine"}` : r.label }))}
         </section>
       )}
+      <section data-chat-channels>
+        <h2 class="chat-section chat-channels-head">
+          <span>Channels</span>
+          <button class="chat-new" title="New conversation" aria-label="New conversation" data-conv-new onClick={() => setMaking(true)}>
+            +
+          </button>
+        </h2>
+        {channels.length === 0 && (
+          <p class="chat-none">
+            No conversations yet.{" "}
+            <button class="chat-inline-link" onClick={() => setMaking(true)}>
+              Start one
+            </button>
+          </p>
+        )}
+        {(unreadOnly ? channels.filter(({ r }) => r.summary?.unread || `${r.host}/${threadKey(r.target)}` === pickedKey) : channels).map(({ s, r }) => row(s, r))}
+      </section>
       {rows.map(({ s, rows }) => {
         // One machine: its name is the sidebar's title already.
         const name = multi ? s.host || "this machine" : "Sessions";
@@ -248,7 +291,7 @@ function ChatView({ client, route }: { client: Client; route: ChatRoute }) {
         const shown = unreadOnly ? rows.filter((r) => r.summary?.unread || `${r.host}/${threadKey(r.target)}` === pickedKey) : rows;
         const unread = rows.reduce((n, r) => n + (r.summary?.unread ?? 0), 0);
         return (
-          <section key={s.host}>
+          <section key={s.host} data-chat-machine={s.host}>
             <h2 class="chat-section">
               <button aria-expanded={!shut} onClick={() => toggle(s.host)} title={shut ? "Show its sessions" : "Hide its sessions"}>
                 <span class="chat-caret" aria-hidden="true">
@@ -264,6 +307,16 @@ function ChatView({ client, route }: { client: Client; route: ChatRoute }) {
           </section>
         );
       })}
+      {making && (
+        <NewConv
+          all={all}
+          cancel={() => setMaking(false)}
+          done={(s, c) => {
+            setMaking(false);
+            openChat(s.host, { conv: c.id });
+          }}
+        />
+      )}
       {/* The machines chat doesn't show, and why: chat isn't a filter
           that left them out. */}
       {missing.length > 0 && (
@@ -287,7 +340,12 @@ function ChatView({ client, route }: { client: Client; route: ChatRoute }) {
       <SearchView all={all} q={route.q ?? ""} multi={multi} phone={phone} />
     )
   ) : (
-    picked && <ChatThread key={pickedKey} s={picked.s} target={picked.target} phone={phone} multi={multi} focus={route.msg} />
+    picked &&
+    ("conv" in picked.target ? (
+      <ConvThread key={pickedKey} s={picked.s} id={picked.target.conv} phone={phone} multi={multi} focus={route.msg} />
+    ) : (
+      <ChatThread key={pickedKey} s={picked.s} target={picked.target} phone={phone} multi={multi} focus={route.msg} />
+    ))
   );
 
   if (phone) {
@@ -354,7 +412,7 @@ function ChatView({ client, route }: { client: Client; route: ChatRoute }) {
           {list}
           <div class="chat-resize" role="separator" aria-orientation="vertical" title="Drag to resize" onPointerDown={resize} />
         </aside>
-        {thread ?? <div class="chat-thread chat-empty">No threads yet. Start one from a pane's menu, or pick a session.</div>}
+        {thread ?? <div class="chat-thread chat-empty">No threads yet. Start a conversation, start one from a pane's menu, or pick a session.</div>}
       </div>
     </div>
   );
@@ -378,7 +436,7 @@ function topicOf(s: Source, target: ThreadTarget, multi: boolean): string {
     if (info?.cwd) parts.push(info.cwd.replace(/^\/home\/[^/]+|^\/Users\/[^/]+/, "~"));
     const doing = info?.current?.text ?? info?.command;
     if (doing) parts.push(doing);
-  } else {
+  } else if ("session" in target) {
     const n = panesOf(c, target.session).length;
     parts.push(n === 1 ? "1 pane" : `${n} panes`);
   }
@@ -392,7 +450,7 @@ function panesOf(c: Client, session: SessionId): number[] {
 /** Who's in it: people here now, then whoever has posted. */
 function membersOf(c: Client, target: ThreadTarget, msgs: ThreadMsg[]): { who: string; name: string; pic?: string }[] {
   const out = new Map<string, { who: string; name: string; pic?: string }>();
-  const session = "pane" in target ? c.sessionOfPane(target.pane) : target.session;
+  const session = "pane" in target ? c.sessionOfPane(target.pane) : "session" in target ? target.session : null;
   for (const p of c.state?.presence ?? []) {
     const here = p.tab === undefined || session === null || c.sessionOfTab(p.tab) === session;
     if (here && !out.has(p.who)) out.set(p.who, { who: p.who, name: p.name, pic: p.pic });
@@ -505,6 +563,103 @@ function ChatThread({ s, target, phone, multi, focus }: { s: Source; target: Thr
   );
 }
 
+/** A conversation (#855): its title, where it's kept and who's in it, its
+ * messages, and on the right its members (./convs). */
+function ConvThread({ s, id, phone, multi, focus }: { s: Source; id: string; phone: boolean; multi: boolean; focus?: number }) {
+  const c = s.client;
+  const conv = c.conv(id);
+  const target: ThreadTarget = { conv: id };
+  const [details, setDetails] = useState(detailsOpen && !phone);
+  const toggleDetails = () => {
+    detailsOpen = !details;
+    try {
+      localStorage.setItem("chat.details", detailsOpen ? "1" : "0");
+    } catch {
+      // kept for this page only
+    }
+    setDetails(detailsOpen);
+  };
+  const people = conv ? [{ who: conv.owner, name: conv.owner_name || "owner" }, ...conv.members] : [];
+  const name = conv?.title ?? "A conversation";
+  const reveal = (q: Quote): string | null => {
+    if (!c.info(q.pane)) return `%${q.pane} isn't here to show`;
+    goTo(s, { pane: q.pane }, (cl) => cl.panes.get(q.pane)?.view.reveal(q.text));
+    return null;
+  };
+  const topic = [multi || !s.shown ? `on ${s.host || "this machine"}` : "", people.length === 1 ? "just you" : `${people.length} people`]
+    .filter(Boolean)
+    .join(" · ");
+  return (
+    <div class="chat-main">
+      <section class="chat-thread" aria-label={name} data-conv={id}>
+        <header class="chat-head">
+          {phone && (
+            <button class="chat-back" title="Every thread" onClick={() => openChat()}>
+              ‹
+            </button>
+          )}
+          <div class="chat-title">
+            <strong>
+              <span class="chat-title-sigil">{CONV_SIGIL}</span>
+              {name}
+            </strong>
+            <span data-chat-topic>{topic}</span>
+          </div>
+          {conv && (
+            <button class="chat-members" title={`Members: ${people.map((m) => m.name).join(", ")}`} data-conv-people onClick={() => !details && toggleDetails()}>
+              {people.slice(0, 3).map((m) => (
+                <Avatar key={m.who} p={m} />
+              ))}
+              <span>{people.length}</span>
+            </button>
+          )}
+          {!phone && (
+            <button
+              class={details ? "chat-info on" : "chat-info"}
+              title={details ? "Hide details" : "Details: who's in it"}
+              aria-pressed={details}
+              data-chat-details
+              onClick={toggleDetails}
+            >
+              ⓘ
+            </button>
+          )}
+          {phone && (
+            <button class="thread-close" title="Close" onClick={closeChat}>
+              ✕
+            </button>
+          )}
+        </header>
+        <ThreadBody
+          client={c}
+          target={target}
+          phone={phone}
+          reveal={reveal}
+          extras={{
+            link: (msg) => linkTo(s.host, target, msg),
+            focus,
+            draftKey: `${s.host}/${threadKey(target)}`,
+            name: `${CONV_SIGIL} ${name}`,
+          }}
+        />
+      </section>
+      {details && conv && (
+        <aside class="chat-details" aria-label="Details" data-chat-details-panel>
+          <header class="chat-head">
+            <strong>Details</strong>
+            <button class="thread-close" title="Close" onClick={toggleDetails}>
+              ✕
+            </button>
+          </header>
+          <div class="chat-details-body">
+            <ConvMembers s={s} conv={conv} gone={() => openChat()} />
+          </div>
+        </aside>
+      )}
+    </div>
+  );
+}
+
 /** The right-hand panel: the pane itself, live (or the session's panes),
  * and who's in it. */
 function ChatDetails({
@@ -519,7 +674,7 @@ function ChatDetails({
   close: () => void;
 }) {
   const c = s.client;
-  const panes = "pane" in target ? [target.pane] : panesOf(c, target.session);
+  const panes = "pane" in target ? [target.pane] : "session" in target ? panesOf(c, target.session) : [];
   return (
     <aside class="chat-details" aria-label="Details" data-chat-details-panel>
       <header class="chat-head">

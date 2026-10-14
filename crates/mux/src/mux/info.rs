@@ -327,6 +327,7 @@ impl Daemon {
             roles: None,
             presence: Vec::new(),
             threads: Vec::new(),
+            convs: Vec::new(),
             calls: Vec::new(),
         }
     }

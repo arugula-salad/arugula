@@ -721,6 +721,41 @@ pub struct ThreadPostRequest {
     pub quote: Option<crate::Quote>,
 }
 
+/// `POST /api/convs` (#855): a new conversation here, owned by whoever
+/// makes it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ConvCreateRequest {
+    pub title: String,
+}
+
+/// `POST /api/convs/{id}/rename`: its new title.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ConvRenameRequest {
+    pub title: String,
+}
+
+/// `POST /api/convs/{id}/members`: add someone, by principal id or by a name
+/// the way an `@` names them, reading from now on or, `history`, all of it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "ts", ts(optional_fields = nullable))]
+pub struct ConvMemberRequest {
+    pub who: String,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>"))]
+    pub history: bool,
+}
+
+/// `POST /api/convs/{id}/members/remove`: take someone out (the owner), or
+/// leave (a member, naming themselves).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ConvMemberRemoveRequest {
+    pub who: String,
+}
+
 /// `POST /api/threads/…/read`: the caller has read up to that message.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]

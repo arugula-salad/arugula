@@ -97,15 +97,20 @@ impl Handle for ThreadRead {
 
 /// Whom an owner's `@`s that reached nobody name, of those an invite may
 /// name, who can't read the thread and could once invited (not on a
-/// private pane's). Their tokens leave `unreached`: the offer says it.
+/// private pane's), or for a conversation, added. Their tokens leave
+/// `unreached`: the offer says it.
 async fn invitable(app: &App, target: ThreadTarget, unreached: &mut Vec<Unreached>) -> Vec<Invitable> {
     let tokens: Vec<String> =
         unreached.iter().filter(|u| u.why == UnreachedWhy::Nobody).map(|u| u.token.clone()).collect();
     if tokens.is_empty() {
         return Vec::new();
     }
+    // A conversation's member must reach this machine already (#855):
+    // adding one doesn't share anything with them.
+    let conv = matches!(target, ThreadTarget::Conv(_));
     let named: Vec<(String, crate::invite::Person)> = crate::invite::nameable(app)
         .into_iter()
+        .filter(|p| !conv || app.acl.knows(&Principal::User { id: p.id.clone(), name: String::new(), pic: None }))
         .filter_map(|p| {
             let t = tokens.iter().find(|t| crate::labs::thread_names(t, &p.id, &p.name))?;
             Some((t.clone(), p))

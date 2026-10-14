@@ -84,10 +84,18 @@ impl PathArgs for usize {
     }
 }
 
-/// A thread's target, `pane-7` or `session-2` (`/api/threads/{target}`).
+/// A thread's target, `pane-7`, `session-2` or `conv-c-…`
+/// (`/api/threads/{target}`).
 impl PathArgs for crate::ThreadTarget {
     fn fill(&self, template: &str) -> String {
         fill_hole(template, &self.key())
+    }
+}
+
+/// A conversation, `c-…` (`/api/convs/{id}`).
+impl PathArgs for crate::ConvId {
+    fn fill(&self, template: &str) -> String {
+        fill_hole(template, self)
     }
 }
 
@@ -161,6 +169,14 @@ impl Request for crate::api::Subscription {}
 impl Request for crate::api::ThreadPostRequest {}
 
 impl Request for crate::api::ThreadReadRequest {}
+
+impl Request for crate::api::ConvCreateRequest {}
+
+impl Request for crate::api::ConvRenameRequest {}
+
+impl Request for crate::api::ConvMemberRequest {}
+
+impl Request for crate::api::ConvMemberRemoveRequest {}
 
 impl Request for crate::api::FountainQuery {}
 
@@ -296,6 +312,11 @@ macro_rules! every_op {
         $m!($crate::op::ops::ThreadGet);
         $m!($crate::op::ops::ThreadPost);
         $m!($crate::op::ops::ThreadRead);
+        $m!($crate::op::ops::ConvCreate);
+        $m!($crate::op::ops::ConvRename);
+        $m!($crate::op::ops::ConvDelete);
+        $m!($crate::op::ops::ConvMemberAdd);
+        $m!($crate::op::ops::ConvMemberRemove);
         $m!($crate::op::ops::FountainAgentsGet);
         // #578 part a: fs, hosts, setup.
         $m!($crate::op::ops::FsListGet);
@@ -353,11 +374,12 @@ pub mod ops {
     use crate::{
         Machine, PaneId,
         api::{
-            AclSetRequest, Adapters, AgentsInventory, AskAnswer, AskRequest, AttentionRequest, ConversationList,
-            ConversationsQuery, DetectionAnswer, DriverEntry, Empty, FollowUpRequest, FollowedUp, FollowerLinkRequest,
-            FountainAgents, FountainQuery, GuestInvite, GuestInviteRequest, IdeDiffs, IdeDiffsRequest, IdeInfo,
-            IdeMentionRequest, IdeMentioned, InboxAnswer, InstallAdapterRequest, InviteRequest, Invited, KeysRequest,
-            LinkRequest, McpTokenRequest, MouseRequest, NotifyPref, NotifyRequest, OpenConversationRequest,
+            AclSetRequest, Adapters, AgentsInventory, AskAnswer, AskRequest, AttentionRequest, ConvCreateRequest,
+            ConvMemberRemoveRequest, ConvMemberRequest, ConvRenameRequest, ConversationList, ConversationsQuery,
+            DetectionAnswer, DriverEntry, Empty, FollowUpRequest, FollowedUp, FollowerLinkRequest, FountainAgents,
+            FountainQuery, GuestInvite, GuestInviteRequest, IdeDiffs, IdeDiffsRequest, IdeInfo, IdeMentionRequest,
+            IdeMentioned, InboxAnswer, InstallAdapterRequest, InviteRequest, Invited, KeysRequest, LinkRequest,
+            McpTokenRequest, MouseRequest, NotifyPref, NotifyRequest, OpenConversationRequest,
             OpenConversationResponse, PaneDiff, PaneSummary, PermitAnswer, PermitRequest, Process, PromptRequest,
             PromptResult, PushKey, PushSubscriptions, Rules, RunResponse, SendRequest, Share, ShareRequest, ShellEnv,
             SigninLink, StudioApps, StudioLoggedIn, StudioLoginRequest, StudioStatus, Subscription, SyncedHost,
@@ -885,6 +907,81 @@ pub mod ops {
         type Path = crate::ThreadTarget;
         type Req = ThreadReadRequest;
         type Res = Empty;
+    }
+
+    /// `POST /api/convs` (#855): a conversation of its own, kept here (its
+    /// home), owned by the machine's owner who makes it.
+    pub struct ConvCreate;
+
+    impl Op for ConvCreate {
+        const NAME: &'static str = "conv.create";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/convs";
+        const ACCESS: Access = Access::Owner;
+        const FLAG: Option<&'static str> = Some(crate::flags::CHAT);
+        type Path = ();
+        type Req = ConvCreateRequest;
+        type Res = crate::Conversation;
+    }
+
+    /// `POST /api/convs/{id}/rename`: a conversation's new title (its
+    /// owner's). The mux checks against the record.
+    pub struct ConvRename;
+
+    impl Op for ConvRename {
+        const NAME: &'static str = "conv.rename";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/convs/{id}/rename";
+        const ACCESS: Access = Access::Handler;
+        const FLAG: Option<&'static str> = Some(crate::flags::CHAT);
+        type Path = crate::ConvId;
+        type Req = ConvRenameRequest;
+        type Res = crate::Conversation;
+    }
+
+    /// `DELETE /api/convs/{id}`: a conversation and its timeline, gone (its
+    /// owner's).
+    pub struct ConvDelete;
+
+    impl Op for ConvDelete {
+        const NAME: &'static str = "conv.delete";
+        const METHOD: Method = Method::Delete;
+        const PATH: &'static str = "/api/convs/{id}";
+        const ACCESS: Access = Access::Handler;
+        const FLAG: Option<&'static str> = Some(crate::flags::CHAT);
+        type Path = crate::ConvId;
+        type Req = Empty;
+        type Res = Empty;
+    }
+
+    /// `POST /api/convs/{id}/members`: add someone who can reach this
+    /// machine (its owner's), and tell them.
+    pub struct ConvMemberAdd;
+
+    impl Op for ConvMemberAdd {
+        const NAME: &'static str = "conv.member_add";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/convs/{id}/members";
+        const ACCESS: Access = Access::Handler;
+        const FLAG: Option<&'static str> = Some(crate::flags::CHAT);
+        type Path = crate::ConvId;
+        type Req = ConvMemberRequest;
+        type Res = crate::Conversation;
+    }
+
+    /// `POST /api/convs/{id}/members/remove`: take a member out (its
+    /// owner), or leave it (a member).
+    pub struct ConvMemberRemove;
+
+    impl Op for ConvMemberRemove {
+        const NAME: &'static str = "conv.member_remove";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/convs/{id}/members/remove";
+        const ACCESS: Access = Access::Handler;
+        const FLAG: Option<&'static str> = Some(crate::flags::CHAT);
+        type Path = crate::ConvId;
+        type Req = ConvMemberRemoveRequest;
+        type Res = crate::Conversation;
     }
 
     /// `GET /api/fountain/agents` (M43): the person's Fountain agents, read
@@ -1661,6 +1758,12 @@ mod tests {
         assert_eq!(ops::AdapterInstall::path(&"claude".to_owned()), "/api/agents/adapters/claude/install");
         assert_eq!(1u32.fill("/api/sessions/{id}/secrets"), "/api/sessions/1/secrets");
         assert_eq!(crate::ThreadTarget::Session(2).fill("/api/threads/{target}"), "/api/threads/session-2");
+        let conv = crate::ConvId([0xab; 16]);
+        assert_eq!(
+            crate::ThreadTarget::Conv(conv).fill("/api/threads/{target}"),
+            format!("/api/threads/conv-c-{}", "ab".repeat(16))
+        );
+        assert_eq!(ops::ConvRename::path(&conv), format!("/api/convs/c-{}/rename", "ab".repeat(16)));
         assert!(crate::api::Empty::without_body().is_some());
     }
 }

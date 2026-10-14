@@ -20,11 +20,12 @@ use arugula_proto::{
         RunResponse, SecretFinding, SendRequest, WaitRequest, WaitResult,
     },
     op::ops::{
-        AdapterInstall, AdaptersList, AgentsGet, AgentsRefresh, ClosePane, ConversationOpen, ConversationsList,
-        FlagSet, FlagsList, FountainAgentsGet, ListPanes, MachineReset, MachinesList, NotifyGet, NotifySet, PaneAsk,
-        PaneAskWithdraw, PaneAttention, PaneDetection, PaneDiffOf, PaneDrivers, PaneFollowUp, PaneInbox, PaneKeys,
-        PaneMouse, PanePermit, PaneProcess, PanePrompt, PaneSend, PaneWait, PushKeyGet, PushSubscribe, PushTest,
-        RuleForget, RulesForgetAll, RulesList, ShellEnvGet, ShellEnvRefresh, ThreadGet, ThreadPost, ThreadRead,
+        AdapterInstall, AdaptersList, AgentsGet, AgentsRefresh, ClosePane, ConvCreate, ConvDelete, ConvMemberAdd,
+        ConvMemberRemove, ConvRename, ConversationOpen, ConversationsList, FlagSet, FlagsList, FountainAgentsGet,
+        ListPanes, MachineReset, MachinesList, NotifyGet, NotifySet, PaneAsk, PaneAskWithdraw, PaneAttention,
+        PaneDetection, PaneDiffOf, PaneDrivers, PaneFollowUp, PaneInbox, PaneKeys, PaneMouse, PanePermit, PaneProcess,
+        PanePrompt, PaneSend, PaneWait, PushKeyGet, PushSubscribe, PushTest, RuleForget, RulesForgetAll, RulesList,
+        ShellEnvGet, ShellEnvRefresh, ThreadGet, ThreadPost, ThreadRead,
     },
 };
 use axum::{
@@ -74,6 +75,11 @@ pub fn routes() -> Router<Arc<App>> {
         .op::<ThreadGet>()
         .op::<ThreadPost>()
         .op::<ThreadRead>()
+        .op::<ConvCreate>()
+        .op::<ConvRename>()
+        .op::<ConvDelete>()
+        .op::<ConvMemberAdd>()
+        .op::<ConvMemberRemove>()
         .op::<ClosePane>()
         .route("/api/panes/{id}/capture", get(capture))
         .op::<PaneProcess>()

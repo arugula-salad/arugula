@@ -635,14 +635,29 @@ streams, and a channel request answers within seconds; tasks take minutes.
 Where: `crates/daemon/src/labs/agents/tasks.rs`, `block.rs` (the hub), `delegate.rs`, `crates/daemon/src/api.rs` (`foreign`, `is_agents`).
 From: [S34](https://github.com/arugula-salad/arugula/issues/397) q4, q6; M78 (#400), M79 (#401).
 
-### Threads live on the daemon that owns the pane
+### Threads live on the daemon that owns the pane; conversations on their home
 Pane and session threads are kept in `<state>/threads/`, outside the pane's
 own directory (closing a pane keeps its conversation), with the pane's access
 rules. Team channels are ciphertext in control (MLS), and voice is WebRTC on a
 session, signaled through the session's daemon, with control only handing out
 short-lived TURN credentials.
-Where: `crates/daemon/src/threads.rs`, `crates/daemon/src/calls.rs`.
-From: [Talk track](docs/plan-archive.md#talk-track-s30-m61m64-added-2026-10-05), [M61](docs/plan-archive.md#m61-threads-on-panes-and-sessions-240).
+
+A conversation (#855) is a third kind of thread beside them, not a pane or
+session thread moved: those stay as they are, because their access, unread
+marks, invites and push are all the pane's. A conversation has a global id
+(`ConvId`, `c-` and 32 hex digits) and lives on its home machine, the one it
+was made on, never in control: its record in `<state>/threads/conv-<id>.json`
+and its timeline in `conv-<id>.jsonl`, with read marks in the shared
+`reads.json`. Its people are the record's, not a session's: the owner
+(`Owner`) and members (`Editor`), each reading from when they joined unless
+added with history. Only the owner renames, deletes, adds and takes out; a
+member may leave. A member must already reach the home machine (a team's
+member, or someone a session there is shared with): adding one shares
+nothing. Membership will be a drive grant on every linked pane through the
+conversation's lead (Jake, 2026-10-13), so the invite and the members list
+say so from the first conversation on.
+Where: `crates/mux/src/labs/threads.rs`, `crates/mux/src/labs/convs.rs`, `crates/mux/src/mux/thread_ops.rs`, `crates/daemon/src/ops/convs.rs`, `crates/mux/src/labs/calls.rs`.
+From: [Talk track](docs/plan-archive.md#talk-track-s30-m61m64-added-2026-10-05), [M61](docs/plan-archive.md#m61-threads-on-panes-and-sessions-240), [S36](spikes/s36-conversations/README.md) q1 and q4, M81 (#855).
 
 ## Federation and control
 

@@ -17,12 +17,17 @@ export const standalone = () =>
 
 /** Register the service worker (also what makes the app installable). A
  * notification through control (M21) says which daemon it's from. */
-export async function registerWorker(onOpenPane: (pane: number, daemon?: string, thread?: string, share?: boolean) => void) {
+export async function registerWorker(
+  onOpenPane: (pane: number, daemon?: string, thread?: string, share?: boolean) => void,
+  onOpenChat?: (thread: string, daemon?: string) => void,
+) {
   if (!("serviceWorker" in navigator)) return;
   try {
     await navigator.serviceWorker.register("/sw.js");
     navigator.serviceWorker.addEventListener("message", (e) => {
       if (e.data?.type === "open-pane" && typeof e.data.pane === "number") onOpenPane(e.data.pane, e.data.daemon, e.data.thread, e.data.share === true);
+      // #855: a conversation, on the chat page.
+      if (e.data?.type === "open-chat" && typeof e.data.thread === "string") onOpenChat?.(e.data.thread, e.data.daemon);
       // #104: control's page looks for what waits (its prompt shows).
       if (e.data?.type === "control-refresh") dispatchEvent(new Event("arugula:control-refresh"));
       // M26: at its card on the swarm's rail.

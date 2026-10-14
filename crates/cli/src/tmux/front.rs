@@ -45,6 +45,8 @@ pub struct Conn {
 }
 
 /// What the daemon sent.
+// One at a time, as they come: a message's size doesn't matter.
+#[allow(clippy::large_enum_variant)]
 pub enum In {
     Msg(ServerMsg),
     Frame(Frame),

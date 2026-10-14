@@ -1,21 +1,23 @@
-//! Conversations on a pane or session: posting, reading, summaries and who
-//! gets told about a mention.
+//! Threads on a pane or session, and conversations of their own (#855):
+//! posting, reading, summaries, who gets told about a mention, and making
+//! and changing conversations.
 
-use super::{Daemon, Posted, SAVE_DEBOUNCE, ThreadError, ThreadPost};
+use super::{ConvReq, Daemon, Posted, SAVE_DEBOUNCE, ThreadError, ThreadPost};
 use crate::{acl::Principal, pane::ToClient, store::now_ms};
 use arugula_core::Role;
 use arugula_proto::{
-    ServerMsg, SessionId, ThreadMsg, ThreadSummary, ThreadTarget,
+    Conversation, ServerMsg, SessionId, ThreadMsg, ThreadSummary, ThreadTarget,
     api::{Unreached, UnreachedWhy},
 };
 use tokio::time::Instant;
 
 impl Daemon {
-    /// Whether a thread's pane or session is still here.
-    fn thread_exists(&self, target: ThreadTarget) -> bool {
+    /// Whether a thread's pane, session or conversation is still here.
+    pub(super) fn thread_exists(&self, target: ThreadTarget) -> bool {
         match target {
             ThreadTarget::Pane(p) => self.panes.contains_key(&p) || self.blocks.contains_key(&p),
             ThreadTarget::Session(s) => self.mux.session(s).is_ok(),
+            ThreadTarget::Conv(c) => self.threads.conv(c).is_some(),
         }
     }
 
@@ -29,13 +31,17 @@ impl Daemon {
             ThreadTarget::Pane(p) if self.meta.get(&p).is_some_and(|m| m.private) => None,
             ThreadTarget::Pane(p) => self.session_of(p),
             ThreadTarget::Session(s) => Some(s),
+            // Its people are its members, not a session's.
+            ThreadTarget::Conv(_) => None,
         }
     }
 
     /// `who`'s role in a thread, and the time its messages start for them:
     /// a pane's thread is read by whoever may read the pane (a private
     /// pane's only by its owner), a session's by whoever has a role in it.
-    /// A "from now" share sees messages from when it was made.
+    /// A "from now" share sees messages from when it was made. A
+    /// conversation's are its record's: its owner, and its members as
+    /// editors from when they joined (no session's grant counts).
     pub(super) fn thread_role(&self, who: &Principal, target: ThreadTarget) -> Option<(Role, u64)> {
         if !self.thread_exists(target) {
             return None;
@@ -46,6 +52,11 @@ impl Daemon {
         let session = match target {
             ThreadTarget::Pane(p) => self.session_of(p).filter(|_| self.readable(who, p))?,
             ThreadTarget::Session(s) => s,
+            ThreadTarget::Conv(c) => {
+                let conv = self.threads.conv(c)?;
+                let floor = conv.floor(who.id())?;
+                return Some((if who.id() == conv.owner { Role::Owner } else { Role::Editor }, floor));
+            }
         };
         let role = self.config.acl.role(who, session)?;
         Some((role, self.config.acl.thread_floor(who, session, target).unwrap_or(0)))
@@ -57,6 +68,9 @@ impl Daemon {
         target: ThreadTarget,
         msg: Option<u64>,
     ) -> Result<(SessionId, Option<u64>), String> {
+        if let ThreadTarget::Conv(_) = target {
+            return Err("a conversation's people are its members: add them to it".into());
+        }
         self.thread_session(target)
             .ok_or_else(|| "no such thread, or it's a private pane's".to_owned())
             .map(|s| (s, msg.and_then(|id| self.threads.get(target).iter().find(|m| m.id == id).map(|m| m.at))))
@@ -200,8 +214,10 @@ impl Daemon {
             return;
         }
         // A notification opens a pane: the thread's, or the session's first.
+        // A conversation's opens itself (`thread`), with no pane.
         let pane = match target {
             ThreadTarget::Pane(p) => Some(p),
+            ThreadTarget::Conv(_) => Some(0),
             ThreadTarget::Session(s) => self
                 .mux
                 .session(s)
@@ -220,5 +236,121 @@ impl Daemon {
                 .notify
                 .notify(pane, &title, &body, Some(extra.clone()), Some(extra.clone()), &|p| p.id() == id.as_str());
         }
+    }
+}
+
+impl Daemon {
+    /// The conversations kept here that `who` is in, oldest first.
+    pub(super) fn convs_for(&self, who: &Principal) -> Vec<Conversation> {
+        let mut out: Vec<Conversation> = self
+            .threads
+            .convs()
+            .filter(|c| self.thread_role(who, ThreadTarget::Conv(c.id)).is_some())
+            .cloned()
+            .collect();
+        out.sort_by_key(|c| (c.created, c.id));
+        out
+    }
+
+    /// Make, change or delete a conversation, as `who` (#855). Its rules are
+    /// `labs::convs`'; whom it may add is decided here: someone who can
+    /// reach this machine (a team's member, or someone something here is
+    /// shared with), named by id or as an `@` names them.
+    pub(super) fn conv(&mut self, req: ConvReq, who: &Principal) -> Result<Conversation, ThreadError> {
+        use crate::labs::convs::{self, Change};
+        let err = |(code, why): convs::Refusal| ThreadError(code, why);
+        let by = who.id().to_owned();
+        let get =
+            |d: &Self, id| d.threads.conv(id).cloned().ok_or_else(|| ThreadError(404, "no such conversation".into()));
+        let (mut c, change) = match req {
+            ConvReq::Create { title } => {
+                if !who.is_owner() {
+                    return Err(ThreadError(403, "only this machine's owner makes conversations on it".into()));
+                }
+                (convs::create(&by, &self.name_of(who), &title, now_ms()).map_err(err)?, None)
+            }
+            ConvReq::Delete { id } => {
+                let c = get(self, id)?;
+                convs::may_delete(&c, &by).map_err(err)?;
+                self.threads.remove_conv(id).map_err(|e| ThreadError(500, format!("can't delete it: {e}")))?;
+                self.save_due.get_or_insert_with(|| Instant::now() + SAVE_DEBOUNCE);
+                self.soon();
+                return Ok(c);
+            }
+            ConvReq::Rename { id, title } => (get(self, id)?, Some(Change::Rename(title))),
+            ConvReq::AddMember { id, member, history } => {
+                let c = get(self, id)?;
+                if by != c.owner {
+                    // Before looking anyone up: who exists isn't theirs to learn.
+                    return Err(ThreadError(403, "only the conversation's owner adds people to it".into()));
+                }
+                let p = self.member_named(&member).map_err(err)?;
+                (c, Some(Change::Add { who: p.id().to_owned(), name: self.name_of(&p), history, at: now_ms() }))
+            }
+            ConvReq::RemoveMember { id, member } => (get(self, id)?, Some(Change::Remove(member))),
+        };
+        let (mut added, mut gone) = (None, None);
+        if let Some(change) = change {
+            match &change {
+                Change::Add { who, .. } => added = Some(who.clone()),
+                Change::Remove(who) => gone = Some(who.clone()),
+                Change::Rename(_) => {}
+            }
+            convs::apply(&mut c, &by, change).map_err(err)?;
+        }
+        if let Some(who) = gone {
+            self.threads.forget_reads(&who, ThreadTarget::Conv(c.id));
+        }
+        self.threads.save_conv(c.clone()).map_err(|e| ThreadError(500, format!("can't save it: {e}")))?;
+        self.save_due.get_or_insert_with(|| Instant::now() + SAVE_DEBOUNCE);
+        self.soon();
+        if let Some(member) = added {
+            self.notify_added(&c, &member);
+        }
+        Ok(c)
+    }
+
+    /// Whom `name` names, of the people who can reach this machine: a
+    /// principal id, or a name as an `@` gives it (with or without the `@`).
+    fn member_named(&self, name: &str) -> Result<Principal, crate::labs::convs::Refusal> {
+        let token = name.trim().trim_start_matches('@').to_lowercase();
+        if token.is_empty() {
+            return Err((400, "whom? give their name or id".into()));
+        }
+        let people: Vec<Principal> = self
+            .mentionable()
+            .into_iter()
+            .filter(|p| !p.is_owner() && !p.id().starts_with("link:") && !p.id().starts_with("mcp:"))
+            .filter(|p| self.config.acl.knows(p))
+            .collect();
+        if let Some(p) = people.iter().find(|p| p.id().eq_ignore_ascii_case(name.trim())) {
+            return Ok(p.clone());
+        }
+        let named: Vec<&Principal> =
+            people.iter().filter(|p| crate::labs::threads::names(&token, p.id(), &self.name_of(p))).collect();
+        match named.as_slice() {
+            [p] => Ok((*p).clone()),
+            [] => Err((
+                404,
+                format!(
+                    "nobody called {name} can reach this machine: share a session with them first, or have them in your team"
+                ),
+            )),
+            _ => Err((
+                409,
+                format!("{name} names {}: give their id", named.iter().map(|p| p.id()).collect::<Vec<_>>().join(", ")),
+            )),
+        }
+    }
+
+    /// Tell someone just added to a conversation, on their phone too: what
+    /// being a member lets them do is the invite's (#855).
+    fn notify_added(&self, c: &Conversation, member: &str) {
+        let target = ThreadTarget::Conv(c.id);
+        let title = format!("{} added you to {}", c.owner_name, c.title);
+        let extra = serde_json::json!({ "thread": target.key(), "tag": format!("thread-{}", target.key()) });
+        self.config.notify.notify(0, &title, arugula_proto::CONV_MEMBERS_SEE, Some(extra.clone()), Some(extra), &|p| {
+            p.id() == member
+        });
     }
 }

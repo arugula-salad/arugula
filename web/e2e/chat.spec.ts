@@ -187,7 +187,7 @@ test("the chat view lists sessions as channels and panes under them", async () =
 
 test("a thread is read and written in the view, and links to its pane", async () => {
   const chat = page.locator("[data-chat]");
-  await chat.locator(".chat-list section").first().locator(`[data-chat-thread="pane-${home.pane}"]`).click();
+  await chat.locator(".chat-list section[data-chat-machine]").first().locator(`[data-chat-thread="pane-${home.pane}"]`).click();
   await expect(chat.locator(".chat-thread")).toContainText("the build on geek is red");
   await chat.locator(".chat-thread textarea").fill("looking at it");
   await chat.locator(".chat-thread textarea").press("Enter");
@@ -196,11 +196,11 @@ test("a thread is read and written in the view, and links to its pane", async ()
   expect(saved.messages.map((m) => m.text)).toContain("looking at it");
 
   // The session's thread is a channel of its own.
-  await chat.locator(".chat-list section").first().locator(`[data-chat-thread="session-${home.session}"]`).click();
+  await chat.locator(".chat-list section[data-chat-machine]").first().locator(`[data-chat-thread="session-${home.session}"]`).click();
   await expect(chat.locator(".chat-thread")).toContainText("standup in five");
 
   // Back to the pane: the view closes and the pane is the active one.
-  await chat.locator(".chat-list section").first().locator(`[data-chat-thread="pane-${home.pane}"]`).click();
+  await chat.locator(".chat-list section[data-chat-machine]").first().locator(`[data-chat-thread="pane-${home.pane}"]`).click();
   await chat.locator("[data-chat-go]").click();
   await expect(chat).toBeHidden();
   expect(await page.evaluate(() => window.__arugula.client.active())).toBe(home.pane);
@@ -209,7 +209,7 @@ test("a thread is read and written in the view, and links to its pane", async ()
 test("@claude in a session channel says it needs a pane's thread; @notreal isn't marked", async () => {
   await page.locator("[data-open-chat]").click();
   const chat = page.locator("[data-chat]");
-  await chat.locator(".chat-list section").first().locator(`[data-chat-thread="session-${home.session}"]`).click();
+  await chat.locator(".chat-list section[data-chat-machine]").first().locator(`[data-chat-thread="session-${home.session}"]`).click();
   await expect(chat.locator(".chat-thread")).toContainText("standup in five");
   await chat.locator(".chat-thread textarea").fill("@claude are you there");
   await chat.locator(".chat-thread textarea").press("Enter");
@@ -263,7 +263,7 @@ test("details show the pane live, and a draft waits in its thread", async () => 
   await run(page, home.pane, "echo PEEK-$((6*7))", "PEEK-42");
   await page.locator("[data-open-chat]").click();
   const chat = page.locator("[data-chat]");
-  const geek = chat.locator(".chat-list section").first();
+  const geek = chat.locator(".chat-list section[data-chat-machine]").first();
   await geek.locator(`[data-chat-thread="pane-${home.pane}"]`).click();
   await chat.locator("[data-chat-details]").click();
   await expect(chat.locator(`[data-chat-peek="${home.pane}"]`)).toContainText("PEEK-42");

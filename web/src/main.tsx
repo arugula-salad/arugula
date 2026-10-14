@@ -2,7 +2,7 @@
 
 import { OPS, opPath } from "./ops";
 import { setLending } from "./hand";
-import type { TeamPins, TeamPinsRequest } from "./proto";
+import { parseThreadKey, type TeamPins, type TeamPinsRequest } from "./proto";
 import { render } from "preact";
 import "./style.css";
 import { apply as applyAppearance } from "./appearance";
@@ -28,6 +28,7 @@ import { fakeSwarm } from "./swarm/fake";
 import { closeSwarm, onSwarmRoute, swarmRoute } from "./swarm/route";
 import { setupDesktop } from "./desktop";
 import { openThread } from "./ui/threads";
+import { openChat } from "./ui/places";
 import { openDeveloper } from "./ui/developer";
 import { openGettingStarted, type Section } from "./ui/welcome";
 
@@ -394,7 +395,28 @@ if (fromHash) {
   } else go();
   history.replaceState(null, "", "/");
 }
-if (!linkTarget) void registerWorker(openPane);
+// A conversation's notification (#855): `#chat=conv-…&host=DAEMON`, the
+// chat page on its home machine. Through control `host` is its daemon's id,
+// which waits for control's list; pushed by the daemon itself, its home is
+// this page's.
+const openConv = (thread: string, daemon?: string) => {
+  const target = parseThreadKey(thread);
+  if (!target) return;
+  const go = () => {
+    const host = daemon ? directory.list?.hosts.find((h) => h.id === daemon)?.name : (directory.home ?? directory.current);
+    if (host === undefined) return false;
+    openChat(host, target);
+    return true;
+  };
+  if (!go()) {
+    const off = directory.subscribe(() => {
+      if (go()) off();
+    });
+  }
+};
+const fromChatTap = /^#chat=(conv-c-[0-9a-f]{32})(?:&host=([0-9a-f]+))?$/.exec(location.hash);
+if (fromChatTap) openConv(fromChatTap[1], fromChatTap[2]);
+if (!linkTarget) void registerWorker(openPane, openConv);
 
 // The desktop app's notification when control drops this machine, and its
 // Daemon menu (#325): Join… and Join again… open Getting started at the

@@ -15,6 +15,9 @@ pub mod machine;
 // Chat (M61): the threads on panes and sessions.
 #[cfg(feature = "labs")]
 pub mod threads;
+// Chat's conversations (#855): their rules.
+#[cfg(feature = "labs")]
+pub mod convs;
 
 /// What a request that needs a Labs feature this build lacks answers.
 pub fn not_built(what: &str) -> String {

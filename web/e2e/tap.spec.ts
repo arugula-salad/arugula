@@ -1,5 +1,6 @@
 // Where a tap on a notification goes (src/tap.ts, used by the service
-// worker): the pane, the card, and a mention's thread (M61).
+// worker): the pane, the card, a mention's thread (M61), and a
+// conversation on the chat page (#855).
 
 import { expect, test } from "@playwright/test";
 import { shareUrl, tapUrl, withShare } from "../src/tap";
@@ -18,6 +19,16 @@ test("through control the pane is on its daemon", () => {
 test("a thread that isn't a pane's or a session's is dropped", () => {
   for (const thread of ["pane-x", "pane-3/../x", "other-3", "pane-3&x=1", "", "pane-"]) {
     expect(tapUrl({ pane: 3, thread })).toBe("/#pane=3");
+  }
+});
+
+test("a conversation's opens the chat page on it, on its home machine (#855)", () => {
+  const conv = `conv-c-${"0a".repeat(16)}`;
+  expect(tapUrl({ pane: 0, thread: conv })).toBe(`/#chat=${conv}`);
+  expect(tapUrl({ pane: 0, daemon: "d1", thread: conv })).toBe(`/#chat=${conv}&host=d1`);
+  // Not an id: no conversation, and no pane either.
+  for (const thread of ["conv-c-12", `conv-c-${"0A".repeat(16)}`, `conv-${"0a".repeat(16)}`]) {
+    expect(tapUrl({ pane: 0, thread })).toBe("/");
   }
 });
 
