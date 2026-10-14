@@ -401,7 +401,9 @@ jobs:
         run: |
           before="${{ github.event.before }}"
           for c in suite app macos; do
-            if "scripts/$c-changed" "$before"; then echo "$c=true"; else echo "$c=false"; fi >> "$GITHUB_OUTPUT"
+            # Only the answer into the outputs: the scripts say why on stdout.
+            if "scripts/$c-changed" "$before"; then a=true; else a=false; fi
+            echo "$c=$a" >> "$GITHUB_OUTPUT"
           done
 
   # GitHub's Apple silicon runner (free for a public repo, up to five at
