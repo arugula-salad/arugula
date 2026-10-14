@@ -298,12 +298,140 @@ code?: string, approve?: string, };
 export type ConvCreateRequest = { title: string, };
 
 /**
+ * A link grant (#856), kept on the pane's machine
+ * (`<state>/conv-grants.json`): the daemon `device` may drive `pane` here
+ * for conversation `conv`, with the rights of the person who made it
+ * (`by`), no more than an editor's, and only to prompt, wait, capture,
+ * follow its events and answer its cards.
+ */
+export type ConvGrant = { 
+/**
+ * The conversation's home: a daemon's device id in control, or this
+ * machine's own.
+ */
+device: string, 
+/**
+ * Its name, to show.
+ */
+device_name: string, pane: number, 
+/**
+ * The pane's epoch when it was granted.
+ */
+epoch: number, conv: ConvId, 
+/**
+ * The conversation's title, to show.
+ */
+conv_title: string, 
+/**
+ * Who made it: a principal id on this machine, and their name.
+ */
+by: string, by_name: string, 
+/**
+ * When (ms since the epoch).
+ */
+at: number, 
+/**
+ * When it was revoked, or its pane closed: kept for a while so the
+ * home hears "revoked" rather than nothing, then dropped.
+ */
+revoked?: number, };
+
+/**
+ * `POST /api/panes/{id}/conv-grants` (#856): let a conversation's home
+ * drive this pane, with the caller's rights on it (an editor's at most).
+ */
+export type ConvGrantRequest = { 
+/**
+ * The home's device id in control; none or empty: this machine.
+ */
+device?: string | null, device_name?: string | null, conv: ConvId, conv_title?: string | null, };
+
+/**
+ * `POST /api/panes/{id}/conv-grants/revoke`: take a grant back, which
+ * cuts the link.
+ */
+export type ConvGrantRevokeRequest = { device: string, conv: ConvId, };
+
+/**
  * A conversation's id (#855): 16 random bytes, written `c-` and 32 hex
  * digits, a string on the wire (JavaScript never sees a 128-bit number).
  * Global without asking anyone: the home machine isn't part of it. `Copy`,
  * so [`ThreadTarget`] stays `Copy`.
  */
 export type ConvId = string;
+
+/**
+ * A pane a conversation links (#856), on its home machine or another. The
+ * pane's machine keeps the grant that lets the home drive it
+ * ([`ConvGrant`]); this is the home's side.
+ */
+export type ConvLink = { 
+/**
+ * `L1`, `L2`…, in the order linked, never used twice.
+ */
+name: string, 
+/**
+ * The pane's machine: its device id in control, or none for the home
+ * machine itself. Never its name, which can change.
+ */
+machine?: string, 
+/**
+ * The machine's name when it was linked, to show.
+ */
+machine_name: string, pane: number, 
+/**
+ * The pane's epoch when it was linked.
+ */
+epoch: number, 
+/**
+ * What it is ("claude in calc"), to show.
+ */
+title: string, 
+/**
+ * Who linked it: a principal id here, and their name.
+ */
+by: string, by_name: string, 
+/**
+ * When (ms since the epoch).
+ */
+at: number, 
+/**
+ * Closed: the pane went, its grant was revoked, or it was unlinked. It
+ * stays, as a closed link, and is never opened again.
+ */
+closed?: string, };
+
+/**
+ * `POST /api/convs/{id}/links` (#856): link a pane the pane's machine has
+ * granted this conversation (`ConvGrant`).
+ */
+export type ConvLinkRequest = { 
+/**
+ * The pane's machine, by device id; none: this one.
+ */
+machine?: string | null, pane: number, 
+/**
+ * The pane's epoch, as its grant gave it.
+ */
+epoch?: number | null, title?: string | null, };
+
+/**
+ * What a link is now, as its home reads it (#856).
+ */
+export type ConvLinkState = "live" | "closed" | "offline";
+
+/**
+ * One link's state, as `GET /api/convs/{id}/links` answers it.
+ */
+export type ConvLinkStatus = { name: string, state: ConvLinkState, 
+/**
+ * What its pane is doing, when live and known.
+ */
+attention?: Attention, 
+/**
+ * Why it's closed or offline.
+ */
+why?: string, };
 
 /**
  * Someone in a conversation who isn't its owner: they read and post.
@@ -320,7 +448,13 @@ joined: number,
 /**
  * Added "with history": they read the whole conversation.
  */
-history?: boolean, };
+history?: boolean, 
+/**
+ * The root their account's devices chain to, for someone who reaches
+ * this machine only by being a member (#856): their devices are let in,
+ * and control routes them here, while they're in it.
+ */
+root?: string, };
 
 /**
  * `POST /api/convs/{id}/members/remove`: take someone out (the owner), or
@@ -332,12 +466,24 @@ export type ConvMemberRemoveRequest = { who: string, };
  * `POST /api/convs/{id}/members`: add someone, by principal id or by a name
  * the way an `@` names them, reading from now on or, `history`, all of it.
  */
-export type ConvMemberRequest = { who: string, history?: boolean | null, };
+export type ConvMemberRequest = { who: string, history?: boolean | null, 
+/**
+ * For an `account:` who doesn't reach this machine yet (#856): what to
+ * call them, and their account's root, as the owner's browser pinned
+ * it. Being a member then lets them in, for its conversations only.
+ */
+name?: string | null, root?: string | null, };
 
 /**
  * `POST /api/convs/{id}/rename`: its new title.
  */
 export type ConvRenameRequest = { title: string, };
+
+/**
+ * `POST /api/convs/{id}/links/close`: close a link (its owner, or whoever
+ * linked it). It stays, closed.
+ */
+export type ConvUnlinkRequest = { name: string, };
 
 /**
  * A conversation (#855): a thread of its own, kept on its home machine in
@@ -361,7 +507,12 @@ members: Array<ConvMember>,
 /**
  * When it was made (ms since the epoch).
  */
-created: number, };
+created: number, 
+/**
+ * The panes it links (#856), here and on other machines, in the order
+ * they were linked. A closed one stays, and its name isn't used again.
+ */
+links: Array<ConvLink>, };
 
 /**
  * An editor's debug session.
@@ -2075,9 +2226,15 @@ export const OPS = {
   "agents.refresh": { method: "POST", path: "/api/hosts/self/agents/refresh" },
   "conv.create": { method: "POST", path: "/api/convs" },
   "conv.delete": { method: "DELETE", path: "/api/convs/{id}" },
+  "conv.grant": { method: "POST", path: "/api/panes/{id}/conv-grants" },
+  "conv.grant_revoke": { method: "POST", path: "/api/panes/{id}/conv-grants/revoke" },
+  "conv.grants": { method: "GET", path: "/api/panes/{id}/conv-grants" },
+  "conv.link": { method: "POST", path: "/api/convs/{id}/links" },
+  "conv.links": { method: "GET", path: "/api/convs/{id}/links" },
   "conv.member_add": { method: "POST", path: "/api/convs/{id}/members" },
   "conv.member_remove": { method: "POST", path: "/api/convs/{id}/members/remove" },
   "conv.rename": { method: "POST", path: "/api/convs/{id}/rename" },
+  "conv.unlink": { method: "POST", path: "/api/convs/{id}/links/close" },
   "conversation.open": { method: "POST", path: "/api/conversations/open" },
   "conversations.list": { method: "GET", path: "/api/conversations" },
   "flag.set": { method: "PUT", path: "/api/flags/{name}" },

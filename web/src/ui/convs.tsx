@@ -9,7 +9,8 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import type { Client } from "../client";
 import { CONV_MEMBERS_SEE, type Conversation } from "../proto";
 import { ConfirmRemove } from "./confirm";
-import { Avatar } from "./people";
+import { Avatar, getControlSession } from "./people";
+import { personPin, pinPerson } from "../control";
 import type { Source } from "./places";
 
 /** Where a new conversation can live: the machines you own here, online. */
@@ -113,7 +114,10 @@ export function NewConv({ all, done, cancel }: { all: Source[]; done: (s: Source
 
 /** *Add people…*: someone who can reach the home machine (a team's member,
  * or someone something there is shared with), by name or id, from now on or
- * with its history. The invite says what members can do. */
+ * with its history. The invite says what members can do. Someone who can't
+ * reach it yet (#856), a teammate or anyone control finds by their login,
+ * is added with their account's root as this browser has it: being a
+ * member lets them in, for its conversations only. */
 function AddMember({ client, conv, cancel }: { client: Client; conv: Conversation; cancel: () => void }) {
   const [who, setWho] = useState("");
   const [history, setHistory] = useState(false);
@@ -124,11 +128,35 @@ function AddMember({ client, conv, cancel }: { client: Client; conv: Conversatio
   const inIt = new Set([conv.owner, ...conv.members.map((m) => m.who)]);
   const known = new Map<string, string>();
   for (const p of client.state?.presence ?? []) if (!inIt.has(p.who) && p.who !== "owner") known.set(p.who, p.name);
+  // Teammates, from the rosters this browser checked: their roots too.
+  const control = getControlSession();
+  const teammates = new Map<string, { name: string; root: string }>();
+  for (const t of control?.teams ?? []) {
+    for (const m of t.roster.members) {
+      const id = `account:${m.account}`;
+      if (m.account !== control!.account && !inIt.has(id) && !known.has(id)) teammates.set(id, { name: m.name, root: m.root });
+    }
+  }
   const submit = async () => {
     setBusy(true);
     setError(null);
+    const w = who.trim();
     try {
-      await client.addConvMember(conv.id, who.trim(), history);
+      const mate = teammates.get(w);
+      if (mate) await client.addConvMember(conv.id, w, history, mate);
+      else {
+        try {
+          await client.addConvMember(conv.id, w, history);
+        } catch (e) {
+          // Not someone who reaches it: find them on control, as a share does.
+          if (!control || w.startsWith("account:") || !/can reach this machine/.test((e as Error).message)) throw e;
+          const p = await control.person(w.replace(/^@/, ""));
+          const pinned = personPin(p.account);
+          if (pinned && pinned.root !== p.root) throw new Error(`${p.name}'s key isn't the one this browser has for them: check it with them in Share… first`);
+          pinPerson(p.account, p.root);
+          await client.addConvMember(conv.id, `account:${p.account}`, history, { name: p.name, root: p.root });
+        }
+      }
       cancel();
     } catch (e) {
       setError((e as Error).message);
@@ -144,17 +172,31 @@ function AddMember({ client, conv, cancel }: { client: Client; conv: Conversatio
         Who
         <input ref={input} value={who} list="conv-people" placeholder="@sam, or their id" data-conv-who onInput={(e) => setWho((e.target as HTMLInputElement).value)} />
         <datalist id="conv-people">
-          {[...known].map(([id, name]) => (
+          {[...known, ...[...teammates].map(([id, t]) => [id, t.name] as const)].map(([id, name]) => (
             <option key={id} value={id}>
               {name}
             </option>
           ))}
         </datalist>
       </label>
+      {teammates.size > 0 && (
+        <p class="conv-teammates">
+          Teammates:{" "}
+          {[...teammates].map(([id, t]) => (
+            <button type="button" key={id} class="control-linkish" data-conv-teammate={id} onClick={() => setWho(id)}>
+              {t.name}
+            </button>
+          ))}
+        </p>
+      )}
       <label class="control-check">
         <input type="checkbox" checked={history} data-conv-history onChange={(e) => setHistory((e.target as HTMLInputElement).checked)} /> With its history (else from now on)
       </label>
-      <p class="conv-note">They must reach this machine already: someone in your team, or someone a session here is shared with.</p>
+      <p class="conv-note">
+        {control
+          ? "Anyone in your teams, or anyone on Arugula by their login. Someone who can't reach this machine yet can once they're in, for its conversations only."
+          : "They must reach this machine already: someone in your team, or someone a session here is shared with."}
+      </p>
     </Dialog>
   );
 }

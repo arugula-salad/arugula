@@ -12,6 +12,7 @@ import { CONV_MEMBERS_SEE, threadKey, type Invitable, type PaneId, type ThreadMs
 import { colorOf } from "./people";
 import type { MenuItem } from "./menu";
 import { Markup, mentionToken } from "./markup";
+import { labsNow } from "../labs-load";
 
 export interface Quote {
   pane: PaneId;
@@ -56,6 +57,9 @@ export function threadItems(client: Client, pane: PaneId): MenuItem[] {
           } as MenuItem,
         ]
       : []),
+    // #856: link it into a conversation (the Labs chunk is loaded: this
+    // machine keeps threads).
+    ...(labsNow()?.linkItems(client, pane) ?? []),
   ];
 }
 

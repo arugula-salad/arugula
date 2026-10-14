@@ -290,8 +290,9 @@ fn agents_only(path: &str) -> bool {
 }
 
 /// A daemon's channel (#399): its requests under `/api/a2a/` answered as
-/// its account, anything else refused, and closed when it's no longer let
-/// in.
+/// its account, those for a pane linked here to one of its conversations
+/// (#856) as whoever linked it, anything else refused, and closed when it's
+/// no longer let in.
 async fn serve_agent_caller(
     app: Arc<App>,
     mut inbound: mpsc::Receiver<Vec<u8>>,
@@ -305,19 +306,42 @@ async fn serve_agent_caller(
     let router = crate::server::channel_router(app.clone());
     let ch = out.ch.clone();
     let mut changed = app.control.changed.subscribe();
+    // #856: a machine let in only because a pane here is linked to one of
+    // its conversations gets those panes, and not the agents.
+    let link_only = app.control.enrolled().is_some_and(|e| e.link_only.contains(&device.device));
     let r = loop {
         tokio::select! {
             w = inbound.recv() => {
                 let Some(w) = w else { break Ok(()) };
                 match ch.open(&w) {
                     Ok(None) => {}
-                    Ok(Some(Msg::Request { id, head, body })) if agents_only(&head.path) => {
+                    Ok(Some(Msg::Request { id, head, body })) if !link_only && agents_only(&head.path) => {
                         tokio::spawn(answer(router.clone(), out.clone(), id, head, body, principal.clone(), caller.clone()));
                     }
-                    Ok(Some(Msg::Request { id, .. })) => {
-                        let body = serde_json::to_vec(&serde_json::json!({ "error": "a machine reaches only the agents here (/api/a2a/)" })).unwrap();
-                        let m = Msg::Response { id, head: ResponseHead { status: 403, content_type: Some("application/json".to_owned()), more: false }, body };
-                        if let Err(e) = out.put(&m).await { break Err(e) }
+                    Ok(Some(Msg::Request { id, head, body })) => {
+                        // A pane a grant here links to its conversation, as
+                        // whoever made the grant; else refused.
+                        let (app, router, out, caller, from) =
+                            (app.clone(), router.clone(), out.clone(), caller.clone(), device.device.clone());
+                        tokio::spawn(async move {
+                            use crate::labs::links::Linked;
+                            let refuse = |status: u16, why: &str| Msg::Response {
+                                id,
+                                head: ResponseHead { status, content_type: Some("application/json".to_owned()), more: false },
+                                body: serde_json::to_vec(&serde_json::json!({ "error": why })).unwrap(),
+                            };
+                            let conv = head.headers.iter().find(|(k, _)| k.eq_ignore_ascii_case(crate::labs::links::CONV_HEADER)).map(|(_, v)| v.as_str());
+                            match crate::labs::links::linked(&app, &from, conv, &head.method, &head.path, &body).await {
+                                Some(Linked::Yes(who)) => answer(router, out, id, head, body, who, caller).await,
+                                Some(Linked::Revoked) => {
+                                    let _ = out.put(&refuse(410, "this pane's link was revoked here, or the pane closed")).await;
+                                }
+                                None => {
+                                    let why = "a machine reaches only the agents here (/api/a2a/) and the panes linked to its conversations";
+                                    let _ = out.put(&refuse(403, why)).await;
+                                }
+                            }
+                        });
                     }
                     Ok(Some(_)) => break Err(anyhow::anyhow!("a machine's channel carries requests only")),
                     Err(e) => break Err(e),

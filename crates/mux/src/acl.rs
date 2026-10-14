@@ -117,6 +117,20 @@ pub struct Acl {
     /// id; in `notify.json`.
     notify_path: PathBuf,
     notify: RwLock<BTreeMap<String, NotifyPref>>,
+    /// People who reach this machine only by being in a conversation here
+    /// (#856), with their account's root: the mux sets it from the
+    /// conversations' members, and control's refresh lets their devices in.
+    reach: RwLock<Vec<Reach>>,
+}
+
+/// Someone a conversation's membership lets reach this machine (#856).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Reach {
+    /// `account:<id>`.
+    pub principal: String,
+    pub name: String,
+    /// The root their account's devices chain to.
+    pub root: String,
 }
 
 impl Acl {
@@ -139,7 +153,23 @@ impl Acl {
             shared_teams: Default::default(),
             notify_path,
             notify: RwLock::new(notify),
+            reach: Default::default(),
         }
+    }
+
+    /// Who reaches this machine by being in a conversation here (#856).
+    pub fn reach(&self) -> Vec<Reach> {
+        self.reach.read().unwrap().clone()
+    }
+
+    /// Set them (the mux, from the conversations); true if that changed.
+    pub fn set_reach(&self, reach: Vec<Reach>) -> bool {
+        let mut r = self.reach.write().unwrap();
+        if *r == reach {
+            return false;
+        }
+        *r = reach;
+        true
     }
 
     /// Someone's role on a session, by principal id (`owner`, or a grant's).
@@ -319,6 +349,7 @@ impl Acl {
         if p.is_owner()
             || self.grants.read().unwrap().iter().any(|g| g.principal == p.id())
             || self.team_role(p).is_some()
+            || self.reach.read().unwrap().iter().any(|r| r.principal == p.id())
         {
             return true;
         }

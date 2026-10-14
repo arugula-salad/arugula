@@ -614,10 +614,11 @@ roster is already verified. A teammate's own machine is reachable only while it
 offers agents (the A2A-only grant). It names those accounts in a separate
 `agents` list. Control routes their daemons with it and lists it to them,
 but never to their browsers, so a person's fleet doesn't gain machines it
-can't open. One request a channel for now: tasks (M78) will want one that
-stays.
+can't open. A daemon keeps one standing channel to each machine it reaches
+(#856), every request on it numbered, and closes it once it's idle a few
+minutes.
 Where: `crates/daemon/src/peer.rs`, `crates/daemon/src/e2e.rs` (`serve_agent_caller`, `agents_only`), `crates/daemon/src/control.rs` (`agent_callers`, `known_root`), `crates/control/src/auth.rs` (`Reacher`), `crates/control/src/teams.rs` (`daemon_may_reach`).
-From: [S34](https://github.com/arugula-salad/arugula/issues/397) q3, q7; M77 (#399).
+From: [S34](https://github.com/arugula-salad/arugula/issues/397) q3, q7; M77 (#399); #856.
 
 ### A task waits for the machine's own account, on a card held by a block
 Tasks from another account's agent (M78) wait until the receiving machine's
@@ -650,14 +651,47 @@ was made on, never in control: its record in `<state>/threads/conv-<id>.json`
 and its timeline in `conv-<id>.jsonl`, with read marks in the shared
 `reads.json`. Its people are the record's, not a session's: the owner
 (`Owner`) and members (`Editor`), each reading from when they joined unless
-added with history. Only the owner renames, deletes, adds and takes out; a
-member may leave. A member must already reach the home machine (a team's
-member, or someone a session there is shared with): adding one shares
-nothing. Membership will be a drive grant on every linked pane through the
-conversation's lead (Jake, 2026-10-13), so the invite and the members list
-say so from the first conversation on.
-Where: `crates/mux/src/labs/threads.rs`, `crates/mux/src/labs/convs.rs`, `crates/mux/src/mux/thread_ops.rs`, `crates/daemon/src/ops/convs.rs`, `crates/mux/src/labs/calls.rs`.
-From: [Talk track](docs/plan-archive.md#talk-track-s30-m61m64-added-2026-10-05), [M61](docs/plan-archive.md#m61-threads-on-panes-and-sessions-240), [S36](spikes/s36-conversations/README.md) q1 and q4, M81 (#855).
+added with history. Only the machine's owners make one (Jake, 2026-10-13);
+only its owner renames, deletes, adds and takes out; a member may leave.
+Being a member is how someone reaches the home machine (Jake, 2026-10-13,
+#856): a member who couldn't reach it before is added with their account's
+root (from a roster the home checked, or the one the owner's browser
+pinned), so the home lets their devices in and control routes them there,
+as a share would, but for its conversations only: they have no role in its
+sessions. Members see everything linked (Jake, after S36); the pane itself,
+its terminal and its own thread, stays with the people it's shared with.
+Membership is a drive grant on every linked pane through the conversation's
+lead (Jake, 2026-10-13), so the invite, the members list and linking a pane
+into a conversation with members all say so.
+Where: `crates/mux/src/labs/threads.rs`, `crates/mux/src/labs/convs.rs`, `crates/mux/src/mux/thread_ops.rs`, `crates/daemon/src/ops/convs.rs`, `crates/mux/src/labs/calls.rs`, `crates/daemon/src/control.rs` (`Acl::reach` in `others`).
+From: [Talk track](docs/plan-archive.md#talk-track-s30-m61m64-added-2026-10-05), [M61](docs/plan-archive.md#m61-threads-on-panes-and-sessions-240), [S36](spikes/s36-conversations/README.md) q1 and q4, M81 (#855), M82 (#856).
+
+### A conversation's home drives a linked pane through the relay, by a grant on that pane
+A conversation links panes on its home machine and on others (#856). The
+pane's machine keeps the grant (`<state>/conv-grants.json`: the home's
+device, the pane and its epoch, the conversation, who made it), and the
+home keeps the link (`L1`, `L2`…, the machine's device id, never its name,
+the pane, its epoch, a title). Someone who may drive the pane makes the
+grant from their own device, through that machine's `conv.grant` (an
+editor's role and drive trust), so "you can only link a pane you may drive"
+is checked where the pane is, not at home; the home then links it after
+checking, over the relay, that it's let in. The home's daemon channel
+(`serve_agent_caller`) is let through for a granted pane's prompt, wait,
+capture, `events?pane=N` and `attention/act` naming that pane, written
+plainly, and nothing else, with the grant maker's rights on the pane: none
+of those needs more than an editor's, so that is the cap. A grant is listed
+on the pane and revoked there; a revoked one (or one whose pane closed) is
+kept a week, so the home hears "revoked" (410) and closes the link for good
+rather than taking silence for offline. A closed link stays in the
+conversation, and linking the pane again is a new link. A teammate's own
+machine lets the home's daemon in only while a grant names it, for those
+panes only (not its agents), found through a roster it verified or a root a
+share pinned, and names its account in a `links` list that control routes
+as it routes `agents`. It's the relay channel and not A2A tasks: a link is
+an existing pane people work in, driven turn by turn for as long as the
+conversation lasts.
+Where: `crates/daemon/src/labs/links.rs`, `crates/daemon/src/e2e.rs` (`serve_agent_caller`), `crates/daemon/src/control.rs` (`link_callers`, `link_accounts`), `crates/daemon/src/peer.rs`, `crates/mux/src/labs/convs.rs`, `crates/control/src/teams.rs` (`daemon_access`).
+From: [S36](spikes/s36-conversations/README.md) q2 and q4, M82 (#856).
 
 ## Federation and control
 

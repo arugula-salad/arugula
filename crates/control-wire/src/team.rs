@@ -111,6 +111,11 @@ pub struct AccessList {
     /// older daemon sends none.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub agents: Vec<String>,
+    /// #856: accounts whose daemons may reach it for the panes linked to
+    /// their conversations (a teammate's machine, for a conversation on one
+    /// of theirs). Routed as `agents` are: for their daemons only.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub links: Vec<String>,
 }
 
 /// What a daemon says it understands, comma-separated (older ones send

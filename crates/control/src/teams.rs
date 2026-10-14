@@ -885,11 +885,17 @@ pub async fn answer_share(
 /// daemon decides for itself; control routes only those it would anyway
 /// (see the top): this list narrows that, never widens it.
 pub async fn daemon_access(State(app): State<Arc<App>>, d: DaemonAuth, Json(b): Json<wire::AccessList>) -> R {
-    if b.accounts.len() > 500 || b.agents.len() > 500 {
+    if b.accounts.len() > 500 || b.agents.len() > 500 || b.links.len() > 500 {
         return Err(err(StatusCode::BAD_REQUEST, "too many"));
     }
     app.db.set_access(&d.cert.device, &b.accounts, b.links_until)?;
-    app.db.set_agent_access(&d.cert.device, &b.agents)?;
+    // A daemon reaching for a linked pane (#856) is routed exactly as one
+    // reaching for agents: its daemons only, as far as its person would be.
+    let mut daemons = b.agents;
+    daemons.extend(b.links);
+    daemons.sort();
+    daemons.dedup();
+    app.db.set_agent_access(&d.cert.device, &daemons)?;
     crate::reply(&wire::Ack {})
 }
 

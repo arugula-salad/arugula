@@ -8701,3 +8701,84 @@ html[data-finish="glass"] .prompt-backdrop {
   border-radius: 6px;
   background: #000;
 }
+
+/* #856: a conversation's links, as chips under its header. */
+.link-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--raised);
+}
+
+.link-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  border: 1px solid var(--raised-hover);
+  border-radius: 999px;
+  font-size: 12px;
+}
+
+.link-chip-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 2px 10px;
+  overflow: hidden;
+  color: var(--fg);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.link-chip-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ok);
+}
+
+.link-chip.offline .link-chip-dot {
+  background: var(--warn);
+}
+
+.link-chip.closed {
+  opacity: 0.6;
+}
+
+.link-chip.closed .link-chip-dot {
+  background: var(--muted);
+}
+
+.link-chip.closed .link-chip-open {
+  text-decoration: line-through;
+}
+
+.link-chip-close {
+  padding: 2px 8px 2px 2px;
+  color: var(--dim);
+}
+
+.link-chip-close:hover {
+  color: var(--fg);
+}
+
+.link-choices {
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+}
+
+.link-choices li + li {
+  margin-top: 6px;
+}
+
+.conv-teammates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin: 8px 0 0;
+  color: var(--dim);
+}

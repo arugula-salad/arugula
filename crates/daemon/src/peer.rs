@@ -8,18 +8,29 @@
 //!   checked roster names for that account (a teammate's), never to one
 //!   control alone vouches for.
 //! - **What it may do there** is the other machine's to decide: a daemon is
-//!   let in for `/api/a2a/` only, as its account (`e2e.rs`).
-//! - **One request a channel** for now: a catalog asks each machine once
-//!   a refresh. Tasks (M78) will want a channel that stays.
+//!   let in for `/api/a2a/` only, as its account, and for the panes a
+//!   conversation here was granted there (`e2e.rs`, #856).
+//! - **One standing channel per machine** (#856): every request to it goes
+//!   down the same relay socket, numbered (`Msg::Request { id }`), and the
+//!   answers come back by number. It closes when it's been idle a while,
+//!   and a request on one that died is tried once more on a new one.
 
-use std::time::Duration;
+use std::{
+    collections::HashMap,
+    sync::{
+        Arc, LazyLock, Mutex,
+        atomic::{AtomicBool, AtomicU32, Ordering},
+    },
+    time::{Duration, Instant},
+};
 
 use arugula_e2e::{
     Cert, Kind, Revocation, Trust,
-    channel::{Initiator, Msg, RequestHead, prologue},
+    channel::{Channel, Initiator, Msg, RequestHead, ResponseHead, prologue},
 };
-use futures_util::{SinkExt, StreamExt};
+use futures_util::{SinkExt, StreamExt, stream::SplitSink};
 use serde::Deserialize;
+use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 
 use crate::control::Control;
@@ -99,6 +110,21 @@ pub async fn find(control: &Control, which: &str) -> anyhow::Result<Machine> {
     }
 }
 
+/// How long [`find_by_id`] waits for the refresh a miss asks for.
+const MISS_REFRESH: Duration = Duration::from_secs(10);
+
+/// The machine whose device id is `id`. A miss refreshes this daemon's
+/// trust once and looks again (#856): a machine that joined after this one
+/// isn't trusted until the next refresh, which can be a minute away.
+/// `Ok(None)`: control doesn't list it for this one at all.
+pub async fn find_by_id(control: &Control, id: &str) -> anyhow::Result<Option<Machine>> {
+    if let Some(m) = machines(control).await?.into_iter().find(|m| m.id == id) {
+        return Ok(Some(m));
+    }
+    control.refresh_now(MISS_REFRESH).await;
+    Ok(machines(control).await?.into_iter().find(|m| m.id == id))
+}
+
 /// `GET path` on `m`, through control's relay: its status and body.
 pub async fn get(control: &Control, m: &Machine, path: &str) -> anyhow::Result<(u16, Vec<u8>)> {
     request(control, m, "GET", path, None, &[]).await
@@ -114,6 +140,19 @@ pub async fn request(
     body: Option<&serde_json::Value>,
     headers: &[(&str, &str)],
 ) -> anyhow::Result<(u16, Vec<u8>)> {
+    request_within(control, m, method, path, body, headers, TIMEOUT).await
+}
+
+/// [`request`] with a limit of its own.
+pub async fn request_within(
+    control: &Control,
+    m: &Machine,
+    method: &str,
+    path: &str,
+    body: Option<&serde_json::Value>,
+    headers: &[(&str, &str)],
+    limit: Duration,
+) -> anyhow::Result<(u16, Vec<u8>)> {
     let head = RequestHead {
         method: method.into(),
         path: path.into(),
@@ -122,49 +161,193 @@ pub async fn request(
         headers: headers.iter().map(|(k, v)| ((*k).to_owned(), (*v).to_owned())).collect(),
     };
     let body = body.map(|b| serde_json::to_vec(b).unwrap_or_default()).unwrap_or_default();
-    tokio::time::timeout(TIMEOUT, send(control, m, head, body))
+    tokio::time::timeout(limit, send(control, m, head, body))
         .await
         .map_err(|_| anyhow::anyhow!("{} didn't answer in time", m.name))?
 }
 
-async fn send(control: &Control, m: &Machine, head: RequestHead, body: Vec<u8>) -> anyhow::Result<(u16, Vec<u8>)> {
+/// How long a standing channel stays open with nothing asked on it.
+const IDLE: Duration = Duration::from_secs(300);
+
+/// What a request on a channel came to.
+enum Asked {
+    Answer(u16, Vec<u8>),
+    /// The channel went before anything came back: worth one more try, on a
+    /// new one, if this one wasn't new.
+    Gone,
+}
+
+/// Where an answer's parts go: to the request waiting for it.
+type Parts = mpsc::UnboundedSender<(ResponseHead, Vec<u8>)>;
+
+/// A standing channel to one machine (#856).
+struct Conn {
+    ch: Arc<Channel>,
+    sink: tokio::sync::Mutex<SplitSink<crate::dial::Ws, Message>>,
+    /// The requests waiting for their answer's parts, by id.
+    waiting: Mutex<HashMap<u32, Parts>>,
+    next: AtomicU32,
+    alive: AtomicBool,
+    used: Mutex<Instant>,
+}
+
+impl Conn {
+    async fn ask(&self, head: RequestHead, body: Vec<u8>) -> anyhow::Result<Asked> {
+        let id = self.next.fetch_add(1, Ordering::Relaxed);
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        self.waiting.lock().unwrap().insert(id, tx);
+        *self.used.lock().unwrap() = Instant::now();
+        let sent = async {
+            // Sealed and sent under one lock: the nonces reach the socket in
+            // order.
+            let mut sink = self.sink.lock().await;
+            for w in self.ch.seal(&Msg::Request { id, head, body })? {
+                sink.send(Message::Binary(w.into())).await?;
+            }
+            anyhow::Ok(())
+        }
+        .await;
+        if sent.is_err() {
+            self.waiting.lock().unwrap().remove(&id);
+            self.alive.store(false, Ordering::SeqCst);
+            return Ok(Asked::Gone);
+        }
+        let mut answer = Vec::new();
+        let mut status = None;
+        let r = loop {
+            match rx.recv().await {
+                Some((head, part)) => {
+                    status = Some(head.status);
+                    answer.extend(part);
+                    if !head.more {
+                        break Ok(Asked::Answer(head.status, answer));
+                    }
+                }
+                None if status.is_none() => break Ok(Asked::Gone),
+                None => break Err(anyhow::anyhow!("the channel closed partway through the answer")),
+            }
+        };
+        self.waiting.lock().unwrap().remove(&id);
+        *self.used.lock().unwrap() = Instant::now();
+        r
+    }
+}
+
+type Slot = Arc<tokio::sync::Mutex<Option<Arc<Conn>>>>;
+
+/// This daemon's device, the other's, and the other's key.
+type Pair = (String, String, String);
+
+/// The standing channels, by pair.
+static CHANNELS: LazyLock<Mutex<HashMap<Pair, Slot>>> = LazyLock::new(Default::default);
+
+/// This daemon's standing channel to `m`, opened if there's none; and
+/// whether it's new.
+async fn channel(control: &Control, m: &Machine) -> anyhow::Result<(Arc<Conn>, bool)> {
+    let me = control.enrolled().ok_or_else(|| anyhow::anyhow!("this machine isn't in control"))?;
+    let key = (me.saved.cert.device.clone(), m.id.clone(), m.cert.noise.clone());
+    let slot = CHANNELS.lock().unwrap().entry(key).or_default().clone();
+    let mut slot = slot.lock().await;
+    if let Some(c) = slot.as_ref().filter(|c| c.alive.load(Ordering::SeqCst)) {
+        return Ok((c.clone(), false));
+    }
+    let c = open(control, m).await?;
+    *slot = Some(c.clone());
+    Ok((c, true))
+}
+
+async fn open(control: &Control, m: &Machine) -> anyhow::Result<Arc<Conn>> {
     let e = control.enrolled().ok_or_else(|| anyhow::anyhow!("this machine isn't in control"))?;
     let relay = format!("/api/relay/c/{}", m.id);
     let base = e.saved.url.trim_end_matches('/');
     let ws_base = base.replacen("https://", "wss://", 1).replacen("http://", "ws://", 1);
     let url = reqwest::Url::parse(&format!("{ws_base}{relay}"))?;
     let (name, auth) = control.auth_for(&e, "GET", &relay);
-    let mut ws = crate::dial::open_ws(&url, &[(name, &auth), ("origin", base)]).await?;
+    let mut ws = tokio::time::timeout(TIMEOUT, crate::dial::open_ws(&url, &[(name, &auth), ("origin", base)]))
+        .await
+        .map_err(|_| anyhow::anyhow!("{} didn't answer in time", m.name))??;
     // Noise IK, this daemon the initiator.
     let (init, m1) = Initiator::start(&e.keys, &m.cert.noise_key(), &prologue(&m.cert.device))?;
     ws.send(Message::Binary(m1.into())).await?;
-    let m2 = loop {
-        match ws.next().await {
-            Some(Ok(Message::Binary(b))) => break b,
-            Some(Ok(Message::Close(_))) | None => anyhow::bail!("{} closed during the handshake (not let in?)", m.name),
-            Some(Ok(_)) => {}
-            Some(Err(err)) => return Err(err.into()),
-        }
-    };
-    let (_, ch) = init.finish(&m2)?;
-    for w in ch.seal(&Msg::Request { id: 1, head, body })? {
-        ws.send(Message::Binary(w.into())).await?;
-    }
-    let mut answer = Vec::new();
-    loop {
-        let w = match ws.next().await {
-            Some(Ok(Message::Binary(b))) => b,
-            Some(Ok(Message::Close(_))) | None => anyhow::bail!("{} closed before answering", m.name),
-            Some(Ok(_)) => continue,
-            Some(Err(err)) => return Err(err.into()),
-        };
-        // Anything but our answer isn't for a machine's channel.
-        if let Some(Msg::Response { id: 1, head, body: part }) = ch.open(&w)? {
-            answer.extend(part);
-            if !head.more {
-                let _ = ws.close(None).await;
-                return Ok((head.status, answer));
+    let m2 = tokio::time::timeout(TIMEOUT, async {
+        loop {
+            match ws.next().await {
+                Some(Ok(Message::Binary(b))) => break Ok(b),
+                Some(Ok(Message::Close(_))) | None => {
+                    anyhow::bail!("{} closed during the handshake (not let in?)", m.name)
+                }
+                Some(Ok(_)) => {}
+                Some(Err(err)) => break Err(err.into()),
             }
         }
+    })
+    .await
+    .map_err(|_| anyhow::anyhow!("{} didn't answer the handshake in time", m.name))??;
+    let (_, ch) = init.finish(&m2)?;
+    let (sink, mut stream) = ws.split();
+    let conn = Arc::new(Conn {
+        ch: Arc::new(ch),
+        sink: tokio::sync::Mutex::new(sink),
+        waiting: Mutex::new(HashMap::new()),
+        next: AtomicU32::new(1),
+        alive: AtomicBool::new(true),
+        used: Mutex::new(Instant::now()),
+    });
+    // The reader: each answer's parts to whoever asked, until the socket
+    // goes or the channel has been idle a while.
+    let c = conn.clone();
+    let machine = m.name.clone();
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(Duration::from_secs(30));
+        loop {
+            tokio::select! {
+                w = stream.next() => {
+                    let w = match w {
+                        Some(Ok(Message::Binary(b))) => b,
+                        Some(Ok(Message::Close(_))) | None | Some(Err(_)) => break,
+                        Some(Ok(_)) => continue,
+                    };
+                    match c.ch.open(&w) {
+                        Ok(Some(Msg::Response { id, head, body })) => {
+                            let to = c.waiting.lock().unwrap().get(&id).cloned();
+                            if let Some(to) = to {
+                                let _ = to.send((head, body));
+                            }
+                        }
+                        // Anything else isn't for a machine's channel.
+                        Ok(_) => {}
+                        Err(e) => {
+                            tracing::debug!(machine, error = %e, "a machine's channel sent something unreadable");
+                            break;
+                        }
+                    }
+                }
+                _ = tick.tick() => {
+                    let idle = c.used.lock().unwrap().elapsed() > IDLE;
+                    if idle && c.waiting.lock().unwrap().is_empty() {
+                        break;
+                    }
+                }
+            }
+        }
+        c.alive.store(false, Ordering::SeqCst);
+        // Whoever still waits hears it went.
+        c.waiting.lock().unwrap().clear();
+        let _ = c.sink.lock().await.close().await;
+    });
+    Ok(conn)
+}
+
+async fn send(control: &Control, m: &Machine, head: RequestHead, body: Vec<u8>) -> anyhow::Result<(u16, Vec<u8>)> {
+    // Once on the standing channel; once more on a new one if that had
+    // died unnoticed.
+    for _ in 0..2 {
+        let (conn, new) = channel(control, m).await?;
+        match conn.ask(head.clone(), body.clone()).await? {
+            Asked::Answer(status, body) => return Ok((status, body)),
+            Asked::Gone if new => break,
+            Asked::Gone => conn.alive.store(false, Ordering::SeqCst),
+        }
     }
+    anyhow::bail!("{} closed before answering", m.name)
 }

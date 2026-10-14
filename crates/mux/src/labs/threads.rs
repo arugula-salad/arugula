@@ -101,6 +101,19 @@ impl Threads {
         self.convs.values()
     }
 
+    /// Who reaches this machine by being in a conversation here (#856):
+    /// each member added with their account's root, once.
+    pub fn reach(&self) -> Vec<crate::acl::Reach> {
+        let mut out: Vec<crate::acl::Reach> = Vec::new();
+        for m in self.convs.values().flat_map(|c| &c.members) {
+            let Some(root) = &m.root else { continue };
+            if !out.iter().any(|r| r.principal == m.who) {
+                out.push(crate::acl::Reach { principal: m.who.clone(), name: m.name.clone(), root: root.clone() });
+            }
+        }
+        out
+    }
+
     /// Keep a conversation, new or changed: its record, written whole.
     pub fn save_conv(&mut self, c: Conversation) -> io::Result<()> {
         let b = serde_json::to_vec_pretty(&c).map_err(io::Error::other)?;
@@ -313,6 +326,7 @@ mod tests {
             name: "Sam".into(),
             joined: 5,
             history: false,
+            root: Some("r".into()),
         });
         let target = ThreadTarget::Conv(c.id);
         t.save_conv(c.clone()).unwrap();

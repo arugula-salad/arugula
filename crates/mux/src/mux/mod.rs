@@ -50,6 +50,10 @@ pub struct ThreadError(pub u16, pub String);
 /// against the record (`labs::convs`).
 #[derive(Debug)]
 pub enum ConvReq {
+    /// The record, for someone in it.
+    Get {
+        id: arugula_proto::ConvId,
+    },
     Create {
         title: String,
     },
@@ -60,15 +64,36 @@ pub enum ConvReq {
     Delete {
         id: arugula_proto::ConvId,
     },
-    /// `member`: a principal id, or a name as an `@` gives it.
+    /// `member`: a principal id, or a name as an `@` gives it. `reach`: for
+    /// an `account:` who doesn't reach this machine yet (#856), their name
+    /// and their account's root: being a member lets them in.
     AddMember {
         id: arugula_proto::ConvId,
         member: String,
         history: bool,
+        reach: Option<(String, String)>,
     },
     RemoveMember {
         id: arugula_proto::ConvId,
         member: String,
+    },
+    /// Link a pane (#856), as its grant on the pane's machine allows: the
+    /// daemon checked that. Its name and `by` are the mux's to fill.
+    Link {
+        id: arugula_proto::ConvId,
+        link: arugula_proto::ConvLink,
+    },
+    /// Close a link, as someone (its owner, or whoever linked it).
+    Unlink {
+        id: arugula_proto::ConvId,
+        name: String,
+    },
+    /// Close a link because its pane's machine refused it or the pane went:
+    /// the daemon's, never a request's.
+    LinkClosed {
+        id: arugula_proto::ConvId,
+        name: String,
+        why: String,
     },
 }
 
@@ -677,6 +702,8 @@ pub fn start(
         }
     }
     d.sweep_machines();
+    // Who conversations here let in (#856), before control's first refresh.
+    d.config.acl.set_reach(d.threads.reach());
     let (provider, daemon_id) = (d.config.provider.clone(), d.config.daemon_id.clone());
     tokio::spawn(d.run(rx, notices_rx));
     MuxHandle { tx, events, store, provider, daemon_id, fs, shell_env, kinds, inventory }

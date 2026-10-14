@@ -1442,6 +1442,10 @@ pub struct Conversation {
     pub members: Vec<ConvMember>,
     /// When it was made (ms since the epoch).
     pub created: u64,
+    /// The panes it links (#856), here and on other machines, in the order
+    /// they were linked. A closed one stays, and its name isn't used again.
+    #[serde(default)]
+    pub links: Vec<ConvLink>,
 }
 
 /// Someone in a conversation who isn't its owner: they read and post.
@@ -1457,6 +1461,112 @@ pub struct ConvMember {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
     pub history: bool,
+    /// The root their account's devices chain to, for someone who reaches
+    /// this machine only by being a member (#856): their devices are let in,
+    /// and control routes them here, while they're in it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub root: Option<String>,
+}
+
+/// A pane a conversation links (#856), on its home machine or another. The
+/// pane's machine keeps the grant that lets the home drive it
+/// ([`ConvGrant`]); this is the home's side.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ConvLink {
+    /// `L1`, `L2`…, in the order linked, never used twice.
+    pub name: String,
+    /// The pane's machine: its device id in control, or none for the home
+    /// machine itself. Never its name, which can change.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub machine: Option<String>,
+    /// The machine's name when it was linked, to show.
+    #[serde(default)]
+    pub machine_name: String,
+    pub pane: PaneId,
+    /// The pane's epoch when it was linked.
+    #[serde(default)]
+    pub epoch: u64,
+    /// What it is ("claude in calc"), to show.
+    #[serde(default)]
+    pub title: String,
+    /// Who linked it: a principal id here, and their name.
+    pub by: String,
+    #[serde(default)]
+    pub by_name: String,
+    /// When (ms since the epoch).
+    pub at: u64,
+    /// Closed: the pane went, its grant was revoked, or it was unlinked. It
+    /// stays, as a closed link, and is never opened again.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub closed: Option<String>,
+}
+
+/// What a link is now, as its home reads it (#856).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub enum ConvLinkState {
+    /// Its machine answers for it.
+    Live,
+    /// Closed for good (`ConvLink::closed` says why).
+    Closed,
+    /// Its machine can't be reached now.
+    Offline,
+}
+
+/// One link's state, as `GET /api/convs/{id}/links` answers it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ConvLinkStatus {
+    pub name: String,
+    pub state: ConvLinkState,
+    /// What its pane is doing, when live and known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub attention: Option<Attention>,
+    /// Why it's closed or offline.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub why: Option<String>,
+}
+
+/// A link grant (#856), kept on the pane's machine
+/// (`<state>/conv-grants.json`): the daemon `device` may drive `pane` here
+/// for conversation `conv`, with the rights of the person who made it
+/// (`by`), no more than an editor's, and only to prompt, wait, capture,
+/// follow its events and answer its cards.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ConvGrant {
+    /// The conversation's home: a daemon's device id in control, or this
+    /// machine's own.
+    pub device: String,
+    /// Its name, to show.
+    #[serde(default)]
+    pub device_name: String,
+    pub pane: PaneId,
+    /// The pane's epoch when it was granted.
+    #[serde(default)]
+    pub epoch: u64,
+    pub conv: ConvId,
+    /// The conversation's title, to show.
+    #[serde(default)]
+    pub conv_title: String,
+    /// Who made it: a principal id on this machine, and their name.
+    pub by: String,
+    #[serde(default)]
+    pub by_name: String,
+    /// When (ms since the epoch).
+    pub at: u64,
+    /// When it was revoked, or its pane closed: kept for a while so the
+    /// home hears "revoked" rather than nothing, then dropped.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub revoked: Option<u64>,
 }
 
 impl Conversation {
