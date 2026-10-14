@@ -418,7 +418,7 @@ mod tests {
             ("POST", "/api/panes/7/prompt", none, 7),
             ("GET", "/api/panes/7/wait?until=idle&timeout=0", none, 7),
             ("GET", "/api/panes/7/capture", none, 7),
-            ("GET", "/api/events?pane=7&type=attention,exit&follow=1", none, 7),
+            ("GET", "/api/events?pane=7&type=attention,exit,prompted&follow=1", none, 7),
             ("POST", "/api/attention/act", br#"{"action":"allow","pane":7}"#.as_slice(), 7),
             ("POST", "/api/attention/act", br#"{"action":"allow","pane":7,"panes":[]}"#.as_slice(), 7),
         ] {

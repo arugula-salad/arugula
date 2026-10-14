@@ -753,6 +753,10 @@ impl Daemon {
             ("Stop" | "UserPromptSubmit" | "SessionStart", Some(_)) => Some("closed"),
             _ => None,
         };
+        // #888: a turn someone started, as conversations count turns.
+        if event == "UserPromptSubmit" && self.panes.contains_key(&pane) {
+            self.emit(Some(pane), EventKind::Prompted);
+        }
         if event == "PreToolUse" {
             let pre = self.pre.entry(pane).or_default();
             pre.push_back(hook.clone());
@@ -780,6 +784,7 @@ impl Daemon {
         self.next_ask += 1;
         if let Some((text, by)) = self.queued.get_mut(&pane).and_then(|q| q.pop_front()) {
             let _ = tx.send(InboxReply::FollowUp { text, by });
+            self.emit(Some(pane), EventKind::Prompted);
             return Ok((token, rx));
         }
         if let Some(old) = self.inbox.insert(pane, Waiter { token, reply: tx }) {
@@ -805,7 +810,10 @@ impl Daemon {
         }));
         let now = match self.inbox.remove(&pane) {
             Some(w) => match w.reply.send(InboxReply::FollowUp { text: text.clone(), by: by.clone() }) {
-                Ok(()) => true,
+                Ok(()) => {
+                    self.emit(Some(pane), EventKind::Prompted);
+                    true
+                }
                 Err(InboxReply::FollowUp { text, by }) => {
                     self.queued.entry(pane).or_default().push_back((text, by));
                     false

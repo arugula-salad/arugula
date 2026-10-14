@@ -38,7 +38,7 @@
 //! | GET | `/api/panes/N/tail` | `from=OFFSET\|last-command`, `until=OFFSET`, `follow=1`, `text=1` | bytes (streamed with follow); other blocks: their text |
 //! | GET | `/api/panes/N/wait` | `until=command-end\|exit\|match\|idle\|needs-input`, `re=`, `timeout=` secs | `WaitResult` |
 //! | GET | `/api/panes/N/export.cast` | | asciicast v3 |
-//! | GET | `/api/events` | `pane=`, `type=a,b`, `follow=1` | NDJSON `Event`s |
+//! | GET | `/api/events` | `pane=`, `type=a,b`, `follow=1` | NDJSON `Event`s; a follow of one pane naming `attention` starts with its attention now (#895) |
 //! | GET | `/api/history` | `pane=`, `failed=1`, `since=` secs, `cwd=`, `match=` | `[HistoryEntry]` |
 //! | GET | `/api/search` | `re=`, `since=` secs | `[SearchHit]` (output, and thread messages) |
 //! | GET | `/api/threads/pane-N`, `/api/threads/session-N` | | `ThreadMessages`: a thread (M61), as the caller may read it |

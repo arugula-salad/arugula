@@ -1379,8 +1379,27 @@ fn event_type(kind: &EventKind) -> String {
     serde_json::to_value(kind).ok().and_then(|v| v["type"].as_str().map(str::to_owned)).unwrap_or_default()
 }
 
+/// Where pane `id`'s attention is now, as the event that put it there
+/// would say, with its card's diff (#887) when that's what it waits on: what
+/// a follow of the pane starts from (#895), so one taken up while the pane
+/// is asking still sees the ask.
+pub(crate) async fn attention_now(app: &App, id: PaneId) -> Option<EventKind> {
+    let p = app.mux.api(Api::Panes).await.unwrap_or_default().into_iter().find(|p| p.info.id == id)?;
+    let reason = p.info.reason.map(|mut r| {
+        if r.kind == arugula_proto::ReasonKind::Diff && r.diff.is_none() {
+            r.diff = p.info.diff.map(Box::new);
+        }
+        r
+    });
+    Some(EventKind::Attention { state: p.info.attention, reason })
+}
+
 async fn events(State(app): AppState, Query(q): Query<EventsQuery>) -> Res<Response> {
     let types: Option<Vec<String>> = q.types.map(|t| t.split(',').map(|s| s.trim().to_owned()).collect());
+    // #895: a follow of one pane's attention, named as such, starts with
+    // where it is now.
+    let seed =
+        q.pane.filter(|_| q.follow == Some(1) && types.as_ref().is_some_and(|t| t.iter().any(|t| t == "attention")));
     let keep = move |e: &arugula_proto::Event| {
         q.pane.is_none_or(|p| e.pane == Some(p))
             && types.as_ref().is_none_or(|t| t.iter().any(|t| *t == event_type(&e.kind)))
@@ -1409,6 +1428,13 @@ async fn events(State(app): AppState, Query(q): Query<EventsQuery>) -> Res<Respo
         return Ok(([(header::CONTENT_TYPE, "application/x-ndjson")], body).into_response());
     }
     let rx = app.mux.events();
+    let first = match seed {
+        Some(pane) => {
+            attention_now(&app, pane).await.map(|kind| arugula_proto::Event { at_ms: now_ms(), pane: Some(pane), kind })
+        }
+        None => None,
+    };
+    let first = stream::iter(first.map(|e| Ok::<_, Infallible>(line(&e))));
     let s = stream::unfold(rx, move |mut rx| {
         let keep = keep.clone();
         async move {
@@ -1422,7 +1448,7 @@ async fn events(State(app): AppState, Query(q): Query<EventsQuery>) -> Res<Respo
             }
         }
     });
-    Ok(([(header::CONTENT_TYPE, "application/x-ndjson")], Body::from_stream(s)).into_response())
+    Ok(([(header::CONTENT_TYPE, "application/x-ndjson")], Body::from_stream(first.chain(s))).into_response())
 }
 
 #[derive(Deserialize)]
