@@ -853,3 +853,47 @@ async fn the_restore_marker_goes_below_what_a_program_drew_in_place() {
     assert!(marker > last, "the marker is below it: {snap:?}");
     d.signal(nix::sys::signal::Signal::SIGTERM);
 }
+
+/// Pane 1's attention, from the API.
+fn attention_of(d: &Daemon) -> String {
+    let panes = d.get("/api/panes");
+    let p = panes.as_array().unwrap().iter().find(|p| p["id"] == 1).cloned().unwrap();
+    p["attention"].as_str().unwrap_or_default().to_owned()
+}
+
+/// Send pane 1 these bytes as a client's input, and give the mux a moment.
+async fn input_bytes(ws: &mut Ws, data: &[u8]) {
+    let f = Frame { kind: FrameKind::Input, pane: 1, offset: 0, data: data.to_vec() };
+    ws.send(Message::Binary(f.encode().into())).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(500)).await;
+}
+
+/// #909: xterm.js reports its focus as soon as it draws `CSI ? 1004 h`, so
+/// every web client that attaches to a pane whose program has focus
+/// reporting on (Claude Code) sent it `ESC [ O`. A focus report isn't
+/// typing: a finished pane mustn't start working because a window came,
+/// went or was looked at.
+#[tokio::test]
+async fn a_focus_report_doesnt_make_a_finished_pane_work() {
+    let mut d = start().await;
+    let (mut ws, _) = connect_state(&d).await;
+    attach_pane(&mut ws, 1).await;
+    // Still running, with focus reporting on and nothing echoed (an echo
+    // is output, which says busy on its own).
+    type_in(&mut ws, 1, r"stty -echo; printf '\e[?1004hfocus-%s' on; sleep 300").await;
+    read_pane_until(&mut ws, 1, "focus-on").await;
+
+    d.post("/api/panes/1/attention", serde_json::json!({ "state": "done" }));
+    assert_eq!(attention_of(&d), "done");
+    // A window losing focus (or a client attaching unfocused): nobody
+    // looked, so it's still done.
+    input_bytes(&mut ws, b"\x1b[O").await;
+    assert_eq!(attention_of(&d), "done", "a focus-out changed a finished pane");
+    // Two in one frame are still only focus reports.
+    input_bytes(&mut ws, b"\x1b[O\x1b[O").await;
+    assert_eq!(attention_of(&d), "done", "two focus-outs changed a finished pane");
+    // Focus coming in is someone looking at it: seen, not working.
+    input_bytes(&mut ws, b"\x1b[I").await;
+    assert_eq!(attention_of(&d), "idle", "a focus-in on a finished pane");
+    d.signal(nix::sys::signal::Signal::SIGTERM);
+}

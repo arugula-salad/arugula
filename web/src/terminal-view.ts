@@ -119,6 +119,8 @@ export class TerminalView {
   /** Kitty keyboard flags of the primary and alternate screens, which keep
    * separate stacks; the stream (and a snapshot, as `CSI = u`) sets them. */
   private kitty = { normal: new KittyFlags(), alternate: new KittyFlags() };
+  /** The next focus report is xterm.js answering `CSI ? 1004 h` (#909). */
+  private focusEcho = false;
 
   /** `link`: a link clicked in the terminal, before the browser opens it;
    * true if it was handled (M36: a pull request opens as a block). */
@@ -258,6 +260,15 @@ export class TerminalView {
       // Color queries contain "?"; setting colors still goes through.
       p.registerOscHandler(osc, (data) => data.includes("?"));
     }
+    // Turning focus reporting on (`CSI ? 1004 h`) makes xterm.js report its
+    // focus at once. Drawing a pane's snapshot or history does that, so
+    // every client that attached sent the program a focus-out nobody made
+    // (#909). Keep the mode, drop that one report; real focus changes
+    // still go through.
+    p.registerCsiHandler({ prefix: "?", final: "h" }, (params) => {
+      if (params.includes(1004)) this.focusEcho = true;
+      return false;
+    });
     this.followPalette();
     this.followKittyKeys();
   }
@@ -626,7 +637,14 @@ export class TerminalView {
   }
 
   onInput(cb: (data: Uint8Array) => void) {
-    this.term.onData((s) => cb(enc.encode(s)));
+    this.term.onData((s) => {
+      // xterm.js answers `CSI ? 1004 h` right after the handler above sees
+      // it, before parsing goes on.
+      const echo = this.focusEcho;
+      this.focusEcho = false;
+      if (echo && (s === "\x1b[I" || s === "\x1b[O")) return;
+      cb(enc.encode(s));
+    });
     // Mouse reports in X10 encoding arrive as raw bytes in a string.
     this.term.onBinary((s) => cb(Uint8Array.from(s, (c) => c.charCodeAt(0) & 0xff)));
   }
