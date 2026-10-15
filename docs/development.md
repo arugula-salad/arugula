@@ -114,7 +114,12 @@ daemon's update check read it.
    attaches them and `SHA256SUMS` to the GitHub release, publishes it as
    latest, and bumps the formula in `arugula-salad/homebrew-tap`
    (`scripts/release`; the tap's deploy key is the `HOMEBREW_TAP_KEY`
-   secret). It builds no app.
+   secret). Then it publishes the editor extension, attached as
+   `arugula-editor-*.vsix`, to Open VSX (a trusted publisher on the
+   `arugula` namespace, so no secret) and the Visual Studio Marketplace
+   (the `VSCE_PAT` secret), skipping a version that's already there: bump
+   `crates/daemon/src/editor/ext/package.json` to ship a new one. It builds
+   no app.
 3. Running daemons find it within 12 hours and offer *Update now*
    (`arugulad update` from a terminal); `install.sh` picks it up by
    itself. The site and the docs for users are
