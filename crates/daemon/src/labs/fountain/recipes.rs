@@ -70,7 +70,7 @@ pub const LABEL_MACHINE: &str = "arugula.machine";
 
 /// A new agent's model when the recipe inherits one: Fountain needs a model
 /// on a claude agent.
-pub const DEFAULT_MODEL: &str = "anthropic/claude-sonnet-5";
+pub const DEFAULT_MODEL: &str = "anthropic/claude-sonnet-5-5";
 
 /// Where an environment's repository is cloned in the sandbox.
 pub const WORK: &str = "/work";
@@ -85,9 +85,9 @@ pub fn agent_name(recipe: &str) -> String {
 pub fn model(m: &str) -> Option<String> {
     let m = m.trim();
     let id = match m {
-        "sonnet" => "anthropic/claude-sonnet-5".to_owned(),
+        "sonnet" => "anthropic/claude-sonnet-5-5".to_owned(),
         "opus" => "anthropic/claude-opus-5-5".to_owned(),
-        "haiku" => "anthropic/claude-haiku-4-5".to_owned(),
+        "haiku" => "anthropic/claude-haiku-5-5".to_owned(),
         m if m.starts_with("anthropic/") => m.to_owned(),
         m if m.starts_with("claude-") => format!("anthropic/{m}"),
         _ => return None,
@@ -880,8 +880,8 @@ mod tests {
 
     #[test]
     fn models_become_canonical_and_inherit_is_none() {
-        assert_eq!(model("haiku").as_deref(), Some("anthropic/claude-haiku-4-5"));
-        assert_eq!(model("sonnet").as_deref(), Some("anthropic/claude-sonnet-5"));
+        assert_eq!(model("haiku").as_deref(), Some("anthropic/claude-haiku-5-5"));
+        assert_eq!(model("sonnet").as_deref(), Some("anthropic/claude-sonnet-5-5"));
         assert_eq!(model("opus").as_deref(), Some("anthropic/claude-opus-5-5"));
         assert_eq!(model("claude-fable-5-1").as_deref(), Some("anthropic/claude-fable-5-1"));
         assert_eq!(model("anthropic/claude-opus-5").as_deref(), Some("anthropic/claude-opus-5"));
@@ -975,7 +975,7 @@ mod tests {
         let c = compile(&r, &proj, &home, Ok(repo.clone()));
         assert_eq!(c.agent, "recipe-fixer");
         assert_eq!(c.spec["runtime"], "claude");
-        assert_eq!(c.spec["model"], "anthropic/claude-haiku-4-5");
+        assert_eq!(c.spec["model"], "anthropic/claude-haiku-5-5");
         assert!(c.spec["system"].as_str().unwrap().starts_with("Fix tests."));
         assert!(c.spec["system"].as_str().unwrap().contains("/work/widgets"));
         assert_eq!(c.spec["skills"], json!([{ "name": "testing", "content": "---\nname: testing\n---\nRun them." }]));

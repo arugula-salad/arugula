@@ -838,8 +838,8 @@ vault?, environment?}`, the CLI's `arugula agents run NAME --fountain
   Arugula didn't make (chant's, or one made by hand) is never written, and
   the run is refused.
 - **What carries over.** The body becomes `system`. `sonnet`, `opus` and
-  `haiku` become `anthropic/claude-sonnet-5`, `anthropic/claude-opus-5-5`
-  and `anthropic/claude-haiku-4-5`, and a `claude-…` id gets the prefix.
+  `haiku` become `anthropic/claude-sonnet-5-5`, `anthropic/claude-opus-5-5`
+  and `anthropic/claude-haiku-5-5`, and a `claude-…` id gets the prefix.
   `inherit` leaves the agent's model alone, and a new agent starts on
   sonnet. `mcpServers` keep their `${VAR}`s as written, and Fountain fills
   them from the environment's and the vault's secrets at spawn.

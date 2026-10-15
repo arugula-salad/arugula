@@ -352,7 +352,7 @@ fn a_recipe_runs_on_fountain_as_its_own_agent_with_its_hash() {
     assert_eq!(p["environment"], "repo-acme-widgets");
     assert!(p["repo"]["stays"].as_array().unwrap().iter().any(|s| s == "uncommitted changes"), "{p}");
     assert_eq!(p["missing"], json!(["GITHUB_TOKEN", "RECIPE_TOKEN"]));
-    assert_eq!(p["model"], "anthropic/claude-haiku-4-5");
+    assert_eq!(p["model"], "anthropic/claude-haiku-5-5");
     let left = p["left_out"].to_string();
     assert!(left.contains("SKILL.md only") && left.contains("scripts/run.sh"), "{left}");
     assert!(p["notes"].to_string().contains("no tool allowlist"), "{p}");
@@ -405,7 +405,7 @@ fn a_recipe_runs_on_fountain_as_its_own_agent_with_its_hash() {
     assert_eq!((spec["kind"].as_str(), spec["name"].as_str()), (Some("Agent"), Some("recipe-fixer")));
     let s = &spec["spec"];
     assert_eq!(s["runtime"], "claude");
-    assert_eq!(s["model"], "anthropic/claude-haiku-4-5");
+    assert_eq!(s["model"], "anthropic/claude-haiku-5-5");
     assert!(s["system"].as_str().unwrap().starts_with("You fix tests."), "{s}");
     assert_eq!(s["skills"], json!([{ "name": "testing", "content": "---\nname: testing\n---\nRun them.\n" }]));
     assert_eq!(s["mcp_servers"]["tracker"]["headers"]["Authorization"], "Bearer ${RECIPE_TOKEN}");
