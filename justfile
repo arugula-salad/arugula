@@ -451,9 +451,9 @@ vsix:
 # Publish the extension as `arugula.arugula-editor` (#529): to the Visual
 # Studio Marketplace (VSCE_PAT, an Azure DevOps token with Marketplace
 # Manage) and Open VSX (OVSX_PAT), or just one: `just publish-vsix ovsx`.
-# It's a release: bump the version in the extension's package.json first.
-# Whoever holds the tokens runs it; a version already there is skipped, so
-# it can run again after one of them fails.
+# release.yml does this on every `v*` tag; this is the same by hand, for
+# whoever holds the tokens. A version already there is skipped, so it can
+# run again after one of them fails.
 publish-vsix to="both":
     #!/usr/bin/env bash
     set -euo pipefail
