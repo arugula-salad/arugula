@@ -96,17 +96,39 @@ export function channelUrl(creds: Creds, location: { protocol: string; host: str
  * control's relay. The host menu's words for a machine's own channel. */
 export type Route = "direct" | "relayed";
 
+export interface OpenOptions {
+  /** Don't try the direct route, for this reason (`workerDirectBlocked`). */
+  skipDirect?: string | null;
+  /** Who's asking, for the console: "worker" or "page". */
+  who?: string;
+}
+
 /** The block's channel by its route, and through the relay if a direct
- * route doesn't connect (Chrome's Local Network Access asks a frame for
- * its own permission, say). A refusal is the daemon's answer either way.
- * The channel's `route` says which way it went. */
-export async function openChannel(creds: Creds, location: { protocol: string; host: string }): Promise<BlockChannel> {
-  if (creds.route === "relay") return (await BlockChannel.connect(channelUrl(creds, location), creds)).went("relayed");
+ * route doesn't connect (Chrome's Local Network Access stops it, say) or
+ * is skipped. A refusal is the daemon's answer either way. The channel's
+ * `route` says which way it went, and `why` why not direct when its route
+ * was; both go to the console too. */
+export async function openChannel(creds: Creds, location: { protocol: string; host: string }, o: OpenOptions = {}): Promise<BlockChannel> {
+  const relay = () => BlockChannel.connect(channelUrl({ ...creds, route: "relay" }, location), creds);
+  if (creds.route === "relay") return (await relay()).went("relayed");
+  const who = `arugula block ${o.who ?? "channel"}`;
+  if (o.skipDirect) {
+    console.info(`${who}: not trying the direct route ${creds.route}: ${o.skipDirect}. Through control's relay.`);
+    return (await relay()).went("relayed", `not tried: ${o.skipDirect}`);
+  }
+  const t0 = performance.now();
   try {
-    return (await BlockChannel.connect(channelUrl(creds, location), creds)).went("direct");
+    const ch = (await BlockChannel.connect(channelUrl(creds, location), creds)).went("direct");
+    console.info(`${who}: direct to ${creds.route}`);
+    return ch;
   } catch (e) {
     if (e instanceof Refused) throw e;
-    return (await BlockChannel.connect(channelUrl({ ...creds, route: "relay" }, location), creds)).went("relayed");
+    // A WebSocket's error event says nothing more, by design; Chrome puts
+    // a Local Network Access block in the console beside this line. One
+    // that fails in a few ms was stopped by the browser; a timeout wasn't.
+    const why = `${e instanceof Error ? e.message : String(e)} (after ${Math.round(performance.now() - t0)} ms)`;
+    console.warn(`${who}: the direct route didn't connect: ${why}. Through control's relay.`);
+    return (await relay()).went("relayed", why);
   }
 }
 
@@ -120,6 +142,8 @@ export class BlockChannel {
   closed = false;
   /** Which way it went (`openChannel`). */
   route: Route = "relayed";
+  /** Why it went through the relay when its route was direct. */
+  why?: string;
   private sendQ: Promise<void> = Promise.resolve();
   private recvQ: Promise<void> = Promise.resolve();
   private partial: Uint8Array[] = [];
@@ -130,8 +154,9 @@ export class BlockChannel {
   private tx!: Cipher;
   private rx!: Cipher;
 
-  went(route: Route): this {
+  went(route: Route, why?: string): this {
     this.route = route;
+    this.why = why;
     return this;
   }
 

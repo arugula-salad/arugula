@@ -14,13 +14,16 @@
 // - Each request says `sec-fetch-mode` and `sec-fetch-dest` (from its
 //   `mode` and `destination`), which the daemon's proxy reads.
 // - Which way each channel went (direct, or relayed after a direct route
-//   didn't connect) goes to the block's pages, whose shim tells the parent.
+//   didn't connect, and why) goes to the block's pages, whose shim tells
+//   the parent. In Chrome the worker doesn't try a direct route: Local
+//   Network Access stops a worker's (`workerDirectBlocked`, #849).
 //
 // Built by itself into dist/block/sw.js (vite.block.config.ts) and served
 // by control at /.arugula/sw.js, with no CSP: hosting an app's own worker
 // (below) runs its code with `new Function`.
 
 import { BlockChannel, type Held, load, openChannel, Refused, save } from "./channel.ts";
+import { workerDirectBlocked } from "./lna.ts";
 import { TAG, VERSION } from "./page.ts";
 
 interface Waiting {
@@ -66,7 +69,7 @@ sw.addEventListener("message", (e: MessageEvent_) => {
   // channel opened, so it missed `told`).
   if (m.ask === "route") {
     const to = e.source;
-    if (to && chan) e.waitUntil(chan.then((ch) => to.postMessage({ arugula: TAG, v: VERSION, route: ch.route }), () => {}));
+    if (to && chan) e.waitUntil(chan.then((ch) => to.postMessage(routeMsg(ch)), () => {}));
     return;
   }
   if (!m.held) return;
@@ -97,7 +100,7 @@ async function connect(): Promise<BlockChannel> {
   if (!h) throw new Error("this block has no key");
   for (let attempt = 0; ; attempt++) {
     try {
-      return await openChannel(h.creds, sw.location);
+      return await openChannel(h.creds, sw.location, { who: "worker", skipDirect: workerDirectBlocked(navigator.userAgent) });
     } catch (e) {
       if (e instanceof Refused && e.code === "expired" && attempt === 0) {
         h = await renew();
@@ -108,9 +111,12 @@ async function connect(): Promise<BlockChannel> {
   }
 }
 
+/** Which way a channel went, and why not direct, for the pages. */
+const routeMsg = (ch: BlockChannel) => ({ arugula: TAG, v: VERSION, route: ch.route, why: ch.why });
+
 /** Tell the block's pages which way a new channel went. */
 async function told(ch: BlockChannel) {
-  for (const c of await sw.clients.matchAll({ type: "window" })) c.postMessage({ arugula: TAG, v: VERSION, route: ch.route });
+  for (const c of await sw.clients.matchAll({ type: "window" })) c.postMessage(routeMsg(ch));
 }
 
 function channel(): Promise<BlockChannel> {

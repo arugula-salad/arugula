@@ -28,11 +28,15 @@ export interface Failed {
 /** From the frame to the parent: which way the block's channel actually
  * went. A direct route that doesn't connect falls back to the relay
  * without asking, so the route in its credentials isn't the answer. The
- * block's own pages could say anything here: it's for showing only. */
+ * block's own pages could say anything here: it's for showing only.
+ * `why`: why it isn't direct when its route was (#849). `ws`: this is the
+ * pages' own channel, which carries their WebSockets, not the worker's. */
 export interface Routed {
   arugula: typeof TAG;
   v: typeof VERSION;
   route: Route;
+  why?: string;
+  ws?: boolean;
 }
 
 /** From the parent to the frame: credentials, or why there are none. */
@@ -92,9 +96,9 @@ export function tellFailed(origins: string[], why: string) {
 
 /** Tell the parent which way the block's channel went: to the origin
  * that answered, from `Held.parent`. */
-export function tellRoute(parentOrigin: string, route: Route) {
+export function tellRoute(parentOrigin: string, route: Route, why?: string, ws?: boolean) {
   if (parent === window) return;
-  const m: Routed = { arugula: TAG, v: VERSION, route };
+  const m: Routed = { arugula: TAG, v: VERSION, route, ...(why ? { why } : {}), ...(ws ? { ws } : {}) };
   parent.postMessage(m, parentOrigin);
 }
 

@@ -14,9 +14,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { Client } from "../client";
 import type { PaneId } from "../proto";
-import type { Route } from "../block/channel.ts";
 import { routeTitle, setBlockRoute, type BlockRoute } from "./block-route";
-import { blockOrigin, blockSrc, credsFor, frameBlock } from "./through-control";
+import { blockOrigin, blockSrc, credsFor, frameAllow, frameBlock, type Routing } from "./through-control";
 
 export interface FrameProps {
   client: Client;
@@ -45,7 +44,10 @@ const ownSite = (src: string) => (/^https?:\/\//.test(src) ? src : null);
 export function BlockFrame(p: FrameProps) {
   const origin = throughControl(p.client, p.siteKey);
   const [failed, setFailed] = useState<string | null>(null);
-  const [went, setWent] = useState<Route | null>(null);
+  // Which way the worker's channel went (the block's requests), and the
+  // pages' own (their WebSockets), by the frame's word.
+  const [went, setWent] = useState<Routing | null>(null);
+  const [wsWent, setWsWent] = useState<Routing | null>(null);
   const ref = useRef<HTMLIFrameElement>(null);
   const via = failed === null ? origin : null;
   // Before paint, so the frame is answered before it can load and ask
@@ -55,19 +57,32 @@ export function BlockFrame(p: FrameProps) {
     if (!via || !frame) return;
     const block = String(p.id);
     setWent(null);
-    return frameBlock({ frame, origin: via, creds: () => credsFor(p.client, block), failed: (why) => setFailed(why), routed: setWent });
+    setWsWent(null);
+    const routed = (r: Routing) => {
+      // For a live check (#849): the frame's worker logs in its own console.
+      console.info(`arugula block ${block}: its ${r.ws ? "pages' WebSockets" : "requests"} went ${r.route}${r.why ? `: ${r.why}` : ""}`);
+      (r.ws ? setWsWent : setWent)(r);
+    };
+    return frameBlock({ frame, origin: via, creds: () => credsFor(p.client, block), failed: (why) => setFailed(why), routed });
   }, [via, p.id, p.src, p.reloads]);
 
   const own = ownSite(p.src);
   // Only a block opened through control says which way: one on the
   // daemon's own page is always on its own site.
-  const route: BlockRoute | null = via ? went : failed !== null && own ? "own site" : null;
+  const route: BlockRoute | null = via ? (went?.route ?? null) : failed !== null && own ? "own site" : null;
   useEffect(() => {
     setBlockRoute(p.id, route);
     return () => setBlockRoute(p.id, null);
   }, [p.id, route]);
+  const title = route && [routeTitle(route), went?.why && `Not direct: ${went.why}`, wsWent && `Its WebSockets: ${wsWent.route}${wsWent.why ? ` (${wsWent.why})` : ""}`].filter(Boolean).join("\n");
   const pill = route && (
-    <span class={`block-route host-path ${route === "relayed" ? "relayed" : ""}`} data-block-route={route} title={routeTitle(route)}>
+    <span
+      class={`block-route host-path ${route === "relayed" ? "relayed" : ""}`}
+      data-block-route={route}
+      data-block-route-why={went?.why}
+      data-block-ws-route={wsWent?.route}
+      title={title || undefined}
+    >
       {route}
     </span>
   );
@@ -79,7 +94,7 @@ export function BlockFrame(p: FrameProps) {
       src={src}
       title={p.title}
       sandbox={p.sandbox}
-      allow={p.allow}
+      allow={via ? frameAllow(p.allow) : p.allow}
       referrerpolicy="no-referrer"
       data-block-origin={via ?? undefined}
     />

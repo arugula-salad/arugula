@@ -9,7 +9,8 @@ import { evaluate, certBody, joinCode, joinMac, splitJoinCode, type Cert } from 
 import { generateKeys, signText } from "./src/e2e/keys.ts";
 import { daemonNow, E2ESocket, readWelcome } from "./src/e2e/channel.ts";
 import { blockRoutesLabel } from "./src/blocks/block-route.ts";
-import { blockOrigin, blockSrc, credsFor, grantExpiry, heard, isWebKit, MAX_LIFE_MS, mint, type Framed } from "./src/blocks/through-control.ts";
+import { blockOrigin, blockSrc, credsFor, frameAllow, grantExpiry, heard, isWebKit, MAX_LIFE_MS, mint, type Framed } from "./src/blocks/through-control.ts";
+import { workerDirectBlocked } from "./src/block/lna.ts";
 import { follows, newInviteKey, redeemInvite, signInvite, signRedeem, signRoster, type Roster, type TeamPin } from "./src/e2e/team.ts";
 
 const bin = process.env.INTEROP_BIN ?? "../target/debug/examples/interop";
@@ -184,6 +185,17 @@ check("Rust trusts what we signed", JSON.stringify(rust) === JSON.stringify([roo
     "…nor an untagged, other-version or unknown route",
     msg({ route: "relayed" }) === null && msg({ ...routed, v: 2 }) === null && msg({ ...routed, route: "teleport" }) === null && msg({ ...routed, route: 1 }) === null,
   );
+  // …and why not direct, and whether it's the pages' own channel (#849).
+  const why = (m: unknown) => msg(m)?.said as { route?: string; why?: string; ws?: boolean } | undefined;
+  check("a route's reason is heard", why({ ...routed, why: "couldn't connect (after 3 ms)" })?.why === "couldn't connect (after 3 ms)" && why(routed)?.why === undefined);
+  check("…cut short, and only a string", (why({ ...routed, why: "x".repeat(900) })?.why ?? "").length === 300 && why({ ...routed, why: 7 })?.why === undefined);
+  check("the pages' own channel is told apart", why({ ...routed, route: "direct", ws: true })?.ws === true && why({ ...routed, ws: "yes" })?.ws === undefined);
+  // Chrome's Local Network Access: the frame is allowed it, its worker
+  // can't have it from Chrome 147 (WebSockets checked) on.
+  check("a frame is allowed the local network", frameAllow(undefined) === "local-network; local-network-access" && frameAllow("clipboard-read") === "clipboard-read; local-network; local-network-access");
+  const chrome = (v: number) => ua.chrome.replace("141.0.0.0", `${v}.0.0.0`);
+  check("Chrome's worker skips a direct route", workerDirectBlocked(chrome(147)) !== null && workerDirectBlocked(chrome(153)) !== null);
+  check("…not before 147, nor Firefox or WebKit", workerDirectBlocked(chrome(146)) === null && workerDirectBlocked(ua.firefox) === null && workerDirectBlocked(ua.safari) === null);
   check("the host menu sums blocks' routes", blockRoutesLabel([]) === null && blockRoutesLabel(["relayed", "relayed"]) === "Blocks: relayed");
   check(
     "…in the button's words",
