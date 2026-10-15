@@ -65,9 +65,9 @@ export async function openAgents(client: Client, where: { split?: PaneId; sessio
   await client.openBlock({ type: "agents", config: {}, local: true, ...place }, "couldn't open the agent catalog");
 }
 
-/** "Fountain agents…": the catalog beside `split`, or in a new tab of
+/** "Fountain…": the account view beside `split`, or in a new tab of
  * `session`. */
 export async function openFountain(client: Client, where: { split?: PaneId; session?: number }) {
   const place = where.split !== undefined ? { split: where.split, from_pane: where.split } : { session: where.session !== undefined ? String(where.session) : undefined };
-  await client.openBlock({ type: "fountain", config: {}, local: true, ...place }, "couldn't open the Fountain catalog");
+  await client.openBlock({ type: "fountain", config: {}, local: true, ...place }, "couldn't open Fountain");
 }

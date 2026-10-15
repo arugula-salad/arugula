@@ -81,7 +81,6 @@ impl Default for Hub {
 
 impl Hub {
     /// Every event, and every `conversations` signal.
-    #[allow(dead_code)] // The account view's attention (F2).
     pub fn subscribe_all(&self) -> broadcast::Receiver<Arc<Event>> {
         self.all.subscribe()
     }

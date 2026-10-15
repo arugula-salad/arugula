@@ -771,6 +771,11 @@ impl Client {
         self.unit(Method::POST, &path, Some(&json!({ "option_id": option_id }))).await
     }
 
+    /// Mark it read: what clears its unread dot, on every client.
+    pub async fn mark_read(&self, id: &str) -> Result<(), Error> {
+        self.unit(Method::POST, &format!("/api/conversations/{}/read", seg(id)), None).await
+    }
+
     /// Merge labels into the conversation's; a `None` removes that key.
     pub async fn set_labels(&self, id: &str, labels: &BTreeMap<String, Option<String>>) -> Result<Conversation, Error> {
         let path = format!("/api/conversations/{}/labels", seg(id));

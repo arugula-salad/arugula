@@ -40,7 +40,7 @@ one isn't made.
 | `chat` | `/api/threads/…` (get, post, read), `/api/convs…`, `read_thread`/`post_thread` by name, an invite from a thread |
 | `huddles` | joining (or starting) a huddle; leaving, muting and signalling one already on still work |
 | `vms` | `/api/machines`, `/api/sandboxes`, a new VM pane or tab, a borrowed sandbox (`run --sandbox`), *Share machine with tab* |
-| `fountain` | `/api/fountain/agents`, `/api/fountain/login`, Fountain blocks, Fountain agents, `list` kinds `fountain_agents`/`fountain_agent` |
+| `fountain` | `/api/fountain/agents`, `/api/fountain/login`, Fountain blocks, Fountain agents, `list` kinds `fountain_agents`/`fountain_agent`/`fountain_conversations` |
 | `studio` | `/api/studio…`, app blocks, `show` kind `app` |
 | `workspaces` | chant workspace blocks |
 | `guest-ssh` | `/api/guests` (list, invite, revoke) |
@@ -98,7 +98,7 @@ rest. A starting daemon moves the old file into `flags.json` and removes it.
   (`LABS_OPTIONS` in `crates/daemon/src/args.rs`).
 - **MCP:** `read_thread` and `post_thread`, and the kinds `show:app`,
   `show:workspace`, `show:fountain`, `list:fountain_agents`,
-  `list:fountain_agent`, and `start_agent`'s `recipe` (`UNLISTED` and
+  `list:fountain_agent`, `list:fountain_conversations`, and `start_agent`'s `recipe` (`UNLISTED` and
   `UNLISTED_ARGS` in `crates/daemon/src/mcp/tools.rs`).
   Unlisted tools called by name are refused without their flag.
 - **Web client:** `Client.has("vms" | "fountain" | "studio")` and
@@ -718,6 +718,61 @@ views yet; it's all behind the `fountain` flag.
   vaults with their secrets' keys and writes, and the account's inference
   credentials. Errors carry Fountain's codes. A 429 is retried after its
   `Retry-After`.
+
+## Fountain: the account view and its permission requests
+
+F2 (#942) turns the Fountain block into the account's view, behind the
+`fountain` flag. *Fountain…* in a pane's menu (or the phone's sheet)
+opens it.
+
+- **Conversations** is its first tab: every conversation on the account,
+  whoever started it (Arugula, `fountain run`, a script, another
+  conversation), most recently active first, 100 at a time (*More* reads
+  100 more, up to 500). Each row shows its title (else its agent's name),
+  its status, an unread dot, its labels and how many conversations it
+  started. A child is listed under its parent, and *+N* shows the whole
+  spawn tree (`GET /api/conversations/:id/tree`). Label chips filter with
+  Fountain's own `?label=key:value`, combined with AND, and the filter is
+  kept in the block. Opening a row opens the conversation in an agent
+  block beside the view: today's `agent: fountain` block, which runs
+  `fountain acp` and loads that conversation without ever starting a new
+  one (F3 replaces it with a native link). Opening it marks it read (`POST
+  /api/conversations/:id/read`), as the ✓ on an unread row does.
+- **Live status.** On the daemon that runs the account stream
+  (`--fountain-account-stream`), a turn starting or ending, or a sandbox
+  waking, changes its row at once, and a change to the list (Fountain's
+  `conversations` signal) reads it again, at most once every 2 s while
+  the view is drawn and every 20 s while it isn't
+  (`ARUGULA_FOUNTAIN_RELIST_MS` sets the 2 s). It doesn't poll. Fountain
+  allows a key 600 requests a minute. Without the stream, the view reads
+  the list when it opens, on ↻, and every few minutes while it's drawn.
+- **Agents** is the second tab: the catalog as before, read-only, with
+  *Run on Fountain* and *Spec*.
+- **The login** is the daemon's: its own sign-in, else
+  `$FOUNTAIN_API_KEY`, else the `fountain` CLI's credentials. A block whose
+  config names a CLI profile uses that profile instead.
+- **Permission requests.** When an agent in any of the account's
+  conversations asks to run a tool, the daemon that runs the account stream
+  raises a card and pushes it to the phone at once, because Fountain denies
+  an unanswered request after 5 minutes. No block needs to show the
+  conversation. The card is on the account view. If none is open, one
+  opens in a session called `fountain`. *Allow* (or *Always allow*) and
+  *Deny* answer Fountain with one of the options the agent offered (`POST
+  /api/conversations/:id/requests/:request_id`). Every open request is
+  listed at the top of the view, and the card shows the newest. A phone's
+  *Allow* still answers the request it was pushed for, even after a newer
+  one came in. When a request is answered anywhere else (the CLI, an
+  editor, another app), it times out or its turn ends, its card clears.
+  If someone else answered first, Fountain's 409 clears the card and
+  Arugula says the request was already settled. A request for a
+  conversation that an agent block here already shows is listed but
+  raises no card, because that block asks for it. Only the machine's own
+  account answers these requests, and only the owner gets their pushes,
+  since they're answered with the daemon's own Fountain login. A replay
+  after a restart raises only the requests that can still be answered.
+- **MCP:** `list` kind `fountain_conversations` (`labels`, `status`,
+  `limit`) lets an agent read the account's conversations and their open
+  requests. It is read-only: answering stays with the person.
 
 ## Agent recipes
 

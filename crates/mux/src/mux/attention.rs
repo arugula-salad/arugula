@@ -173,6 +173,14 @@ impl Daemon {
                 self.touch(pane);
                 return;
             }
+            // A Fountain account's permission request (#942) is answered
+            // with the owner's own login: for the owner alone, buttons and
+            // all.
+            if self.blocks.get(&pane).is_some_and(|b| b.kind() == BlockType::Fountain) {
+                self.config.notify.notify(pane, title, &body, extra.clone(), extra, &|who| who.is_owner());
+                self.touch(pane);
+                return;
+            }
             // The owner, and whoever may edit the session and opted in
             // (M29): on this daemon's own push, and through control (M21),
             // where the payload is encrypted to each device, so it can carry

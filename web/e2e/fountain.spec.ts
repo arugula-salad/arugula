@@ -4,8 +4,11 @@
 // config's stand-in `fountain`, the fake ACP agent. Nothing here reaches a
 // real Fountain.
 //
-// Opened from a pane's menu ("Fountain agents…"), the block lists every
-// agent; the agent-specs chip leaves the curated ones, a search finds an
+// Opened from a pane's menu ("Fountain…"), the account view (#942 F2)
+// shows the account's conversations first: an unread dot, label chips that
+// filter with Fountain's ?label=, a fan-out's children under their parent,
+// and a row that opens the conversation in an agent block beside it. Its
+// Agents tab lists every agent; the agent-specs chip leaves the curated ones, a search finds an
 // agent by its skill, and *Run on Fountain* opens an agent block beside the
 // catalog that answers a prompt. The cards are read-only: no *Run here*
 // (M44, retired 2026-10-15), and *Spec* without an agent-specs checkout
@@ -21,6 +24,13 @@ const KEY = "e2e-fountain-key";
 const fixture = (f: string) => JSON.parse(readFileSync(new URL(`../../crates/daemon/tests/fixtures/fountain/${f}`, import.meta.url), "utf8"));
 
 let origin = "";
+const games = "02fb18b8-fd17-4689-bbe3-3fe0c2dc6a3f";
+const convs: { id: string; status: string; agent_id: string; title: string | null; unread: boolean; labels: Record<string, string>; parent_conversation_id?: string; runtime: string }[] = [
+  { id: "conv-flaky", status: "running", agent_id: games, title: "fix the flaky test", unread: true, labels: { env: "prod" }, runtime: "claude" },
+  { id: "conv-child", status: "idle", agent_id: games, title: "check the logs", unread: false, labels: { env: "dev" }, parent_conversation_id: "conv-flaky", runtime: "claude" },
+  { id: "conv-cli", status: "idle", agent_id: games, title: null, unread: false, labels: { team: "a" }, runtime: "claude" },
+];
+const reads: string[] = [];
 let server: Server;
 const seen: { path: string; ua: string }[] = [];
 
@@ -44,6 +54,19 @@ test.beforeAll(async () => {
       return a ? json(res, 200, { data: a }) : json(res, 404, { error: "not found" });
     }
     if (u.pathname === "/api/environments") return json(res, 200, envs);
+    if (u.pathname === "/api/conversations") {
+      const want = u.searchParams.getAll("label");
+      const data = convs.filter((c) => want.every((l) => { const [k, v] = [l.slice(0, l.indexOf(":")), l.slice(l.indexOf(":") + 1)]; return c.labels[k] === v; }));
+      return json(res, 200, { data });
+    }
+    const read = u.pathname.match(/^\/api\/conversations\/([^/]+)\/read$/);
+    if (read && req.method === "POST") {
+      const c = convs.find((x) => x.id === decodeURIComponent(read[1]));
+      if (c) c.unread = false;
+      reads.push(decodeURIComponent(read[1]));
+      res.writeHead(204).end();
+      return;
+    }
     json(res, 404, { error: "not here" });
   });
   origin = `http://127.0.0.1:${await listen(server)}`;
@@ -58,10 +81,40 @@ test.afterAll(() => {
 async function openCatalog(page: Page): Promise<number> {
   await reset(page);
   const term = (await panes(page))[0];
-  await menu(page, paneEl(page, term), "Fountain agents…");
+  await menu(page, paneEl(page, term), "Fountain…");
   await expect.poll(async () => (await panes(page)).length).toBe(2);
-  return page.evaluate(() => window.__arugula.client.state!.panes.find((p) => p.type === "fountain")!.id);
+  const block = await page.evaluate(() => window.__arugula.client.state!.panes.find((p) => p.type === "fountain")!.id);
+  await page.locator(`[data-fountain-block="${block}"] [data-fountain-tab="agents"]`).click();
+  return block;
 }
+
+test("the account view lists conversations, filters by label and opens one", async ({ page }) => {
+  await reset(page);
+  const term = (await panes(page))[0];
+  await menu(page, paneEl(page, term), "Fountain…");
+  await expect.poll(async () => (await panes(page)).length).toBe(2);
+  const block = await page.evaluate(() => window.__arugula.client.state!.panes.find((p) => p.type === "fountain")!.id);
+  const el = page.locator(`[data-fountain-block="${block}"]`);
+  const rows = el.locator(".fountain-conv[data-conversation]");
+  await expect(rows).toHaveCount(3);
+  // The child right after its parent; the unread dot on the parent.
+  await expect(rows.nth(0)).toHaveAttribute("data-conversation", "conv-flaky");
+  await expect(rows.nth(1)).toHaveAttribute("data-conversation", "conv-child");
+  await expect(rows.nth(0).locator("[data-unread]")).toBeVisible();
+  await expect(rows.nth(0).locator("[data-status]")).toHaveText("running");
+  await expect(rows.nth(2).locator(".fountain-conv-title")).toHaveText("games conversation");
+  // A label chip filters with Fountain's ?label=.
+  await el.locator('[data-chips="labels"] [data-label="team:a"]').click();
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first()).toHaveAttribute("data-conversation", "conv-cli");
+  await el.locator("[data-labels-clear]").click();
+  await expect(rows).toHaveCount(3);
+  // Opening one: an agent block beside the view, and it's read.
+  await rows.nth(0).locator("[data-open]").click();
+  await expect.poll(async () => (await panes(page)).length).toBe(3);
+  expect(reads).toContain("conv-flaky");
+  await expect(rows.nth(0).locator("[data-unread]")).toHaveCount(0);
+});
 
 test("the catalog filters, and Run on Fountain opens an agent block beside it", async ({ page }) => {
   const block = await openCatalog(page);

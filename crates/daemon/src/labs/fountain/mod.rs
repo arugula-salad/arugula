@@ -1,68 +1,89 @@
-//! The Fountain catalog: the person's Fountain account as a block, every
-//! agent as a read-only card, with where it comes from, filters, and *Run
-//! on Fountain*. (#942 turns this block into the account view; the agents
-//! list stays in it, read-only: chant's agents are still edited in
-//! agent-specs.)
+//! The Fountain account view (#942, F2): the person's Fountain account as a
+//! block. Its first tab is the account's conversations, every one of them
+//! (started here, by the CLI, by a script or by another conversation), with
+//! live status from the account stream, an unread dot, a label filter and a
+//! fan-out's tree; its second the account's agents, read-only (chant's are
+//! still edited in agent-specs), each with *Run on Fountain* and *Spec*. It
+//! also holds the cards for the account's permission requests
+//! ([`attention`]).
 //!
-//! **Config** `{profile?, filter?, specs?}`: the credentials profile
-//! ([`login`]), the filters ([`catalog::Filter`]: search, source, runtime, provider), and
-//! the agent-specs checkout *Spec* looks in. Never a key.
+//! **Config** `{tab?, labels?, limit?, profile?, filter?, specs?}`: the tab
+//! (`conversations`, the default, or `agents`), the label filter
+//! (`["key:value", …]`, combined with AND, as Fountain's `?label=`), how
+//! many conversations to read ([`conversations::PAGE`] more each *More*), a
+//! `fountain` CLI profile to use instead of the account's login
+//! ([`login`]), the agents' filters ([`catalog::Filter`]) and the
+//! agent-specs checkout *Spec* looks in. Never a key. A block saved as M43's
+//! catalog has none of the first three, and opens as the account view.
 //!
-//! **Reads** go through Fountain's HTTP API ([`api`]) with the key of the
-//! person's own CLI login, held in memory only. The list is read when the
-//! block opens, then every [`interval`] while a client draws it (none while
-//! nobody does; drawn again, it reads if the last read is that old), and on
-//! `refresh`. `ARUGULA_FOUNTAIN_POLL_MS` sets the interval (tests).
-//! Environment names come from `GET /api/environments`. The catalog is
-//! read-only: agent-specs stays the one place a curated agent is edited.
+//! **The login** is the daemon's: [`account::Account::resolve`] (its own
+//! sign-in, else `$FOUNTAIN_API_KEY`, else the CLI's credentials), unless
+//! the config names a CLI profile. The key is held in memory only.
 //!
-//! **Actions:** `run {agent}` (*Run on Fountain*: an agent block running
-//! `fountain acp --agent NAME`, beside this one); `spec {agent}` (the
-//! agent-specs file that declares a `managed-by: chant` agent, as a file
-//! block; for any other, or with no checkout, the agent as Fountain returns
-//! it, `GET /api/agents/{id}` with literal values redacted, shown in the
-//! block: Fountain's console has no agent pages any more); `unspec` puts
-//! that away. `filter {...}` changes the filters, `profile {name}` the
-//! login, `specs {dir}` the checkout. `agents {query?, source?}` and `agent
-//! {name}` read without changing anything (MCP's `list` kinds
-//! `fountain_agents` and `fountain_agent`).
+//! **Reads.** The conversations (`GET /api/conversations?limit=&label=`) and
+//! the agents (`GET /api/agents`, environments' names from `GET
+//! /api/environments`) are read when the block opens, then every
+//! [`interval`] while a client draws it, and on `refresh`
+//! (`ARUGULA_FOUNTAIN_POLL_MS` sets the interval). On the daemon that runs
+//! the account stream, the list follows it instead of polling: a `turn` or
+//! `wake` stage event changes a row's status in place, and a `conversations`
+//! signal (the list changed) reads the list again, at most once every
+//! [`relist`] while drawn and ten times that while not, since Fountain
+//! allows a key 600 requests a minute and signals each second of output.
 //!
-//! **`run_here`** (*Run here*, M44: a Claude Code here wearing the agent)
-//! was retired on 2026-10-15 (#942): recipes are what runs here. A block
-//! saved with `here` (where it last ran one) comes back without it: serde
-//! ignores the key.
+//! **Actions:** `tab {tab}`; `labels {labels}` (the filter, kept) and
+//! `more`; `open_conversation {id}` opens a conversation in an agent block
+//! beside this one (today's `agent: fountain` block, `fountain acp` loading
+//! it, following and never starting a new one) and marks it read;
+//! `mark_read {id}` (`POST /api/conversations/:id/read`); `tree {id}` shows
+//! its spawn tree (`GET /api/conversations/:id/tree`), `untree` puts it
+//! away; `answer_request {id, allow, always?}` answers a permission request
+//! (the card's Allow and Deny come here). The agents tab's: `run {agent}`
+//! (*Run on Fountain*: `fountain acp --agent NAME` in an agent block beside
+//! this one); `spec {agent}` (the agent-specs file that declares a
+//! `managed-by: chant` agent, as a file block; for any other, or with no
+//! checkout, the agent as `GET /api/agents/{id}` returns it with literal
+//! values redacted, shown in the block); `unspec`; `filter {...}`, `profile
+//! {name}`, `specs {dir}`; `agents {query?, source?}` and `agent {name}`
+//! read without changing anything.
 //!
-//! **`view: runner`** (M45b, this host as the account's Fountain runner)
-//! is gone: Fountain removed self-hosted runners on 2026-10-14 (its ADR
-//! 0071). A block saved with it comes back as the catalog: `Config` has no
-//! `view`, and serde ignores the key.
+//! **Retired:** `run_here` (M44's *Run here*, a Claude Code here wearing the
+//! agent; 2026-10-15) and `view: runner` (M45b, gone with Fountain's
+//! runners): a block saved with either comes back as the account view,
+//! serde ignoring the key.
 //!
 //! **The log** (`blocks/%N/`): what it was pointed at, and what was opened
-//! from it.
+//! or answered from it.
 
 pub mod account;
 pub mod api;
+pub mod attention;
 pub mod catalog;
 pub mod client;
+pub mod conversations;
 pub mod login;
 pub mod stream;
 
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap},
     sync::{Arc, LazyLock, Mutex, Weak},
     time::Duration,
 };
 
-use arugula_proto::{BlockType, WorkKind, api::OpenRequest};
+use arugula_proto::{Attention, BlockType, ReasonKind, WorkKind, api::OpenRequest};
 use futures_util::future::BoxFuture;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use tokio::sync::broadcast;
 use tracing::{info, warn};
 
 use self::{
     api::{Agent, Client},
+    attention::Request,
     catalog::{Card, Counts, Filter, Source},
+    conversations::{Effect, Node, Row},
     login::Login,
+    stream::Event,
 };
 use crate::{
     block::{Block, BlockCtx, Summary, no_method},
@@ -70,7 +91,7 @@ use crate::{
     store::now_ms,
 };
 
-/// How often a drawn catalog reads the list again.
+/// How often a drawn view reads everything again.
 pub fn interval() -> Duration {
     static AT: std::sync::OnceLock<Duration> = std::sync::OnceLock::new();
     *AT.get_or_init(|| {
@@ -88,53 +109,6 @@ const POLL: Duration = Duration::from_secs(180);
 
 /// Where *Spec* looks when the block hasn't been told, if it's there.
 pub const DEFAULT_SPECS: &str = "~/agent-specs";
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-struct Config {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    profile: Option<String>,
-    // No `view`: the catalog is the only one. A saved `view: runner` (M45b,
-    // before Fountain removed runners) is ignored like any unknown key.
-    #[serde(default, skip_serializing_if = "Filter::is_empty")]
-    filter: Filter,
-    /// The agent-specs checkout (`~/…` allowed).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    specs: Option<String>,
-    // No `here`: *Run here* (M44) was retired, and a saved one is ignored.
-}
-
-#[derive(Debug, Clone, Default, Serialize)]
-struct State {
-    /// The profile in use, and the ones the credentials file has.
-    profile: Option<String>,
-    profiles: Vec<String>,
-    base_url: Option<String>,
-    /// Where the key came from: `env` or `file`.
-    key_from: Option<&'static str>,
-    loading: bool,
-    error: Option<String>,
-    /// The agents the filter shows, in the catalog's order.
-    agents: Vec<Card>,
-    /// How many there are in all.
-    total: usize,
-    /// Rows Fountain sent that didn't parse, and what to say about them.
-    unreadable: usize,
-    unreadable_note: Option<String>,
-    filter: Filter,
-    /// How many each chip would show.
-    counts: Counts,
-    /// The agent-specs checkout *Spec* uses, and when there's none, why.
-    specs: Option<String>,
-    specs_why: Option<String>,
-    /// *Spec* for an agent agent-specs doesn't declare: `{agent, json,
-    /// note}`, the agent as Fountain returns it (literal values redacted).
-    spec: Option<Value>,
-    updated_ms: u64,
-    polls: u64,
-    watching: bool,
-    /// The last action's result, for the client.
-    said: Option<String>,
-}
 
 /// The last list read for an account, so MCP's tools don't read it again
 /// within a poll: keyed by the host the login was read on, the base URL,
@@ -174,18 +148,24 @@ fn recalled(runner: &Runner, login: &Login, within: Duration) -> Option<(Arc<Vec
 /// What one read gets.
 struct Read {
     login: Login,
-    profiles: Vec<String>,
     agents: Arc<Vec<Agent>>,
     unreadable: usize,
-    envs: BTreeMap<String, String>,
 }
 
 /// Log in on the runner's host and read the account's agents (and its
 /// environments' names).
 async fn read_account(runner: &Runner, profile: Option<&str>) -> Result<Read, String> {
     let found = login::read(runner).await?;
-    let profiles = login::profiles(&found);
     let login = login::resolve(&found, profile)?;
+    let (agents, unreadable, _) = read_agents(runner, &login).await?;
+    Ok(Read { login, agents, unreadable })
+}
+
+/// The account's agents and its environments' names, with `login`.
+async fn read_agents(
+    runner: &Runner,
+    login: &Login,
+) -> Result<(Arc<Vec<Agent>>, usize, BTreeMap<String, String>), String> {
     let client = Client::new(&login.base_url, &login.key);
     let (agents, envs) = tokio::join!(client.agents(), client.environments());
     let listing = agents.map_err(|e| e.to_string())?;
@@ -199,8 +179,8 @@ async fn read_account(runner: &Runner, profile: Option<&str>) -> Result<Read, St
         }
     };
     let agents = Arc::new(agents);
-    remember(runner, &login, &agents, unreadable);
-    Ok(Read { login, profiles, agents, unreadable, envs })
+    remember(runner, login, &agents, unreadable);
+    Ok((agents, unreadable, envs))
 }
 
 /// The daemon's own host, as a block's [`Runner::user`] would be: for
@@ -271,6 +251,58 @@ pub async fn agents_answer(
     })
 }
 
+/// MCP's `list` kind `fountain_conversations` (#942): the account's
+/// conversations, read with the daemon's login, and their open permission
+/// requests. Read-only.
+pub async fn conversations_answer(
+    labels: &[String],
+    status: Option<String>,
+    limit: Option<u32>,
+) -> Result<(String, Value), String> {
+    let labels = conversations::parse_labels(&json!(labels))?;
+    let account = account::get().ok_or("Fountain isn't set up on this daemon yet")?;
+    let login = account.resolve().await?;
+    let limit = limit.unwrap_or(conversations::PAGE).clamp(1, conversations::MAX_LIMIT);
+    let q = client::ConversationQuery {
+        limit: Some(limit),
+        labels: conversations::label_pairs(&labels),
+        status: status.filter(|s| !s.trim().is_empty()),
+        ..Default::default()
+    };
+    let l = login.client().conversations(&q).await.map_err(|e| e.to_string())?;
+    let open = attention::requests().open();
+    let mut rows = conversations::rows(&l.items, &[]);
+    for r in &mut rows {
+        r.asking = open.iter().filter(|q| q.conversation_id == r.id).count();
+    }
+    let filter = if labels.is_empty() { String::new() } else { format!(" ({})", labels.join(", ")) };
+    let mut text = format!("{} conversations on {}{filter}:\n", rows.len(), login.base_url);
+    for r in &rows {
+        text.push_str(&conversations::line(r));
+        text.push('\n');
+    }
+    if !open.is_empty() {
+        text.push_str(&format!("{} waiting for the user's answer:\n", open.len()));
+        for q in &open {
+            text.push_str(&format!("  {}: {}\n", conversations::short(&q.conversation_id), q.title()));
+        }
+    }
+    let requests: Vec<Value> = open
+        .iter()
+        .map(|q| {
+            json!({ "id": q.id, "conversation_id": q.conversation_id, "title": q.title(), "tool": q.tool,
+                    "expires_ms": q.expires_ms })
+        })
+        .collect();
+    let v = json!({
+        "base_url": login.base_url,
+        "conversations": rows,
+        "unreadable": l.unreadable,
+        "requests": requests,
+    });
+    Ok((text, v))
+}
+
 /// The whole recipe for MCP's `fountain_agent` and the block's `agent`: as Fountain
 /// returns it, a `${VAR}` left as it is, but an MCP header or env value
 /// typed in literally (which may be a secret) as `<redacted>`; plus where
@@ -285,32 +317,212 @@ pub fn recipe(a: &Agent) -> Value {
     v
 }
 
+/// How long a drawn view waits after the account stream says the list
+/// changed before it reads it again (ten times that while nobody draws it).
+pub fn relist() -> Duration {
+    static AT: std::sync::OnceLock<Duration> = std::sync::OnceLock::new();
+    *AT.get_or_init(|| {
+        std::env::var("ARUGULA_FOUNTAIN_RELIST_MS")
+            .ok()
+            .and_then(|v| v.trim().parse().ok())
+            .map(Duration::from_millis)
+            .unwrap_or(Duration::from_secs(2))
+    })
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum Tab {
+    #[default]
+    Conversations,
+    Agents,
+}
+
+impl Tab {
+    fn is_default(&self) -> bool {
+        *self == Tab::Conversations
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct Config {
+    #[serde(default, skip_serializing_if = "Tab::is_default")]
+    tab: Tab,
+    /// The conversations' label filter: `key:value`, all of them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    labels: Vec<String>,
+    /// How many conversations to read.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    limit: Option<u32>,
+    /// A `fountain` CLI profile, in place of the account's login.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    profile: Option<String>,
+    // No `view`: a saved `view: runner` (M45b, before Fountain removed
+    // runners) is ignored like any unknown key.
+    #[serde(default, skip_serializing_if = "Filter::is_empty")]
+    filter: Filter,
+    /// The agent-specs checkout (`~/…` allowed).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    specs: Option<String>,
+    // No `here`: *Run here* (M44) was retired, and a saved one is ignored.
+}
+
+impl Config {
+    fn limit(&self) -> u32 {
+        self.limit.unwrap_or(conversations::PAGE).clamp(1, conversations::MAX_LIMIT)
+    }
+}
+
+/// An open permission request as the block shows it.
+#[derive(Debug, Clone, Serialize)]
+struct Asking {
+    #[serde(flatten)]
+    request: Request,
+    /// What it asks to do.
+    title: String,
+    /// The conversation's name.
+    conversation: String,
+    /// An agent block here that shows that conversation (it asks there).
+    here: Option<arugula_proto::PaneId>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct LabelCount {
+    label: String,
+    count: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct Tree {
+    root: String,
+    nodes: Vec<Node>,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+struct State {
+    tab: Tab,
+    /// The CLI profile in use (none for this daemon's own sign-in), and the
+    /// ones the credentials file has.
+    profile: Option<String>,
+    profiles: Vec<String>,
+    base_url: Option<String>,
+    /// Where the key came from: `arugula`, `env` or `file`.
+    key_from: Option<&'static str>,
+    loading: bool,
+    /// Why the account (its agents) can't be read.
+    error: Option<String>,
+
+    /// The conversations, newest activity first, the filter's.
+    conversations: Vec<Row>,
+    conv_unreadable: usize,
+    conv_error: Option<String>,
+    labels: Vec<String>,
+    label_counts: Vec<LabelCount>,
+    limit: u32,
+    /// The page is full: there may be more.
+    more: bool,
+    tree: Option<Tree>,
+    /// Open permission requests, newest first, and the one on the card.
+    requests: Vec<Asking>,
+    card: Option<String>,
+    /// This daemon follows the account stream (`--fountain-account-stream`)
+    /// and is connected: the list is live.
+    stream: bool,
+    live: bool,
+    relists: u64,
+
+    /// The agents the filter shows, in the catalog's order.
+    agents: Vec<Card>,
+    /// How many there are in all.
+    total: usize,
+    /// Rows Fountain sent that didn't parse, and what to say about them.
+    unreadable: usize,
+    unreadable_note: Option<String>,
+    filter: Filter,
+    /// How many each chip would show.
+    counts: Counts,
+    /// The agent-specs checkout *Spec* uses, and when there's none, why.
+    specs: Option<String>,
+    specs_why: Option<String>,
+    /// *Spec* for an agent agent-specs doesn't declare: `{agent, json,
+    /// note}`, the agent as Fountain returns it (literal values redacted).
+    spec: Option<Value>,
+    updated_ms: u64,
+    polls: u64,
+    watching: bool,
+    /// The last action's result, for the client.
+    said: Option<String>,
+}
+
 pub struct FountainBlock {
     ctx: BlockCtx,
     me: Weak<FountainBlock>,
     config: Mutex<Config>,
     state: Mutex<State>,
     runner: tokio::sync::OnceCell<Result<Runner, String>>,
-    /// The last list read, whole (the state holds the filter's cards).
+    /// The last lists read, whole (the state holds what's shown).
     agents: Mutex<Arc<Vec<Agent>>>,
+    convs: Mutex<Vec<client::Conversation>>,
     envs: Mutex<BTreeMap<String, String>>,
     login: Mutex<Option<Login>>,
+    /// When the list is read again (the stream said it changed).
+    relist_at: Mutex<Option<tokio::time::Instant>>,
+    /// The requests its card was raised for, and the one on it.
+    raised: Mutex<BTreeSet<String>>,
+    card: Mutex<Option<Asking>>,
     live: Live,
     wake: tokio::sync::Notify,
     reading: tokio::sync::Mutex<()>,
+    listing: tokio::sync::Mutex<()>,
+}
+
+/// The next event off the account stream; a lag reads as "the list
+/// changed", so the view reads it again. Never, without a stream.
+async fn next_event(rx: &mut Option<broadcast::Receiver<Arc<Event>>>) -> Arc<Event> {
+    let Some(r) = rx else { return std::future::pending().await };
+    match r.recv().await {
+        Ok(ev) => ev,
+        Err(broadcast::error::RecvError::Lagged(_)) => {
+            Arc::new(Event { id: 0, kind: "conversations".into(), conversation_id: None, data: Value::Null })
+        }
+        Err(broadcast::error::RecvError::Closed) => {
+            *rx = None;
+            std::future::pending().await
+        }
+    }
+}
+
+/// A reason for a card that says more (the newest request).
+fn input_reason(headline: String) -> arugula_proto::Reason {
+    arugula_proto::Reason {
+        kind: ReasonKind::Input,
+        since_ms: now_ms(),
+        headline,
+        command: None,
+        exit: None,
+        duration_ms: None,
+        bundle: None,
+        ask: None,
+        gate: None,
+        diff: None,
+        actions: vec![arugula_proto::Action::Dismiss],
+    }
 }
 
 impl FountainBlock {
     pub fn create(ctx: BlockCtx, config: Value) -> Result<Arc<dyn Block>, String> {
         let config: Config = serde_json::from_value(config).map_err(|e| format!("fountain config: {e}"))?;
         let state = State {
+            tab: config.tab,
             profile: config.profile.clone(),
             filter: config.filter.clone(),
             specs: config.specs.clone(),
+            labels: config.labels.clone(),
+            limit: config.limit(),
             loading: true,
             ..State::default()
         };
-        crate::review::log(&ctx, &json!({ "e": "view", "view": "catalog", "profile": config.profile }));
+        crate::review::log(&ctx, &json!({ "e": "view", "view": "account", "profile": config.profile }));
         let b = Arc::new_cyclic(|me| Self {
             ctx,
             me: me.clone(),
@@ -318,12 +530,18 @@ impl FountainBlock {
             state: Mutex::new(state),
             runner: tokio::sync::OnceCell::new(),
             agents: Mutex::new(Arc::default()),
+            convs: Mutex::default(),
             envs: Mutex::new(BTreeMap::new()),
             login: Mutex::new(None),
+            relist_at: Mutex::new(None),
+            raised: Mutex::default(),
+            card: Mutex::new(None),
             live: Live::default(),
             wake: tokio::sync::Notify::new(),
             reading: tokio::sync::Mutex::new(()),
+            listing: tokio::sync::Mutex::new(()),
         });
+        attention::requests().hold(b.ctx.id);
         let me = b.clone();
         b.ctx.rt.spawn(async move { me.run().await });
         Ok(b)
@@ -334,18 +552,27 @@ impl FountainBlock {
     }
 
     async fn run(self: Arc<Self>) {
+        let mut events = account::get().map(|a| a.hub().subscribe_all());
+        let reqs = attention::requests();
+        let mut changes = reqs.subscribe();
         self.read().await;
+        self.sync_requests().await;
         loop {
-            // Every interval while drawn, else until it's drawn.
-            match self.next_wait() {
-                Some(left) => tokio::select! {
-                    _ = tokio::time::sleep(left) => {}
-                    _ = self.wake.notified() => {}
-                },
-                None => self.wake.notified().await,
+            tokio::select! {
+                _ = sleep_for(self.next_wait()) => {}
+                _ = self.wake.notified() => {}
+                ev = next_event(&mut events) => self.on_event(&ev),
+                r = changes.changed() => {
+                    if r.is_ok() {
+                        self.sync_requests().await;
+                    }
+                }
             }
             if self.live.closed() {
                 break;
+            }
+            if self.relist_at.lock().unwrap().is_some_and(|t| t <= tokio::time::Instant::now()) {
+                self.relist().await;
             }
             if let Some(every) = self.every()
                 && self.age_ms() >= every.as_millis() as u64
@@ -355,18 +582,64 @@ impl FountainBlock {
         }
     }
 
-    /// How often it reads now; `None`: not until it's drawn.
+    /// How often it reads everything now; `None`: not until it's drawn.
     fn every(&self) -> Option<Duration> {
         self.live.drawn().then(interval)
     }
 
+    /// Until the next read: the poll's, or the list's after a signal.
     fn next_wait(&self) -> Option<Duration> {
-        Some(self.every()?.saturating_sub(Duration::from_millis(self.age_ms())))
+        let poll = self.every().map(|e| e.saturating_sub(Duration::from_millis(self.age_ms())));
+        let list = self.relist_at.lock().unwrap().map(|t| t.saturating_duration_since(tokio::time::Instant::now()));
+        match (poll, list) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        }
     }
 
     /// How long since the last read (or try).
     fn age_ms(&self) -> u64 {
         now_ms().saturating_sub(self.state.lock().unwrap().updated_ms)
+    }
+
+    /// The account stream says something: a row's status, or read the list.
+    fn on_event(&self, ev: &Event) {
+        let effect = conversations::apply(&mut self.state.lock().unwrap().conversations, ev);
+        match effect {
+            Effect::None => {}
+            Effect::Changed => self.ctx.changed(),
+            Effect::Relist => {
+                let d = if self.live.drawn() { relist() } else { relist() * 10 };
+                let mut at = self.relist_at.lock().unwrap();
+                if at.is_none() {
+                    *at = Some(tokio::time::Instant::now() + d);
+                }
+            }
+        }
+    }
+
+    /// The login: the account's, unless the config names a CLI profile;
+    /// and the profiles the CLI's credentials have.
+    async fn login_for(&self, runner: &Runner, profile: Option<&str>) -> (Result<Login, String>, Vec<String>) {
+        let found = login::read(runner).await;
+        let profiles = found.as_ref().map(login::profiles).unwrap_or_default();
+        if profile.is_none()
+            && let Some(a) = account::get()
+        {
+            let env_profile = found.as_ref().ok().map(|f| f.env_profile.trim().to_owned()).filter(|p| !p.is_empty());
+            let r = a.resolve().await.map(|r| Login {
+                profile: env_profile.unwrap_or_else(|| "default".into()),
+                base_url: r.base_url,
+                key: r.key,
+                from: match r.source {
+                    account::Source::Arugula => login::From::Arugula,
+                    account::Source::Env => login::From::Env,
+                    account::Source::File => login::From::File,
+                },
+            });
+            return (r, profiles);
+        }
+        (found.and_then(|f| login::resolve(&f, profile)), profiles)
     }
 
     async fn read(&self) {
@@ -379,45 +652,189 @@ impl FountainBlock {
             Err(e) => return self.fail(e),
         };
         let profile = self.config.lock().unwrap().profile.clone();
-        let read = read_account(&runner, profile.as_deref()).await;
+        let (login, profiles) = self.login_for(&runner, profile.as_deref()).await;
         let specs = self.specs_dir(&runner).await;
-        match read {
-            Ok(r) => {
-                info!(pane = self.ctx.id, agents = r.agents.len(), base = r.login.base_url, "fountain catalog read");
-                {
-                    let mut st = self.state.lock().unwrap();
-                    st.profile = Some(r.login.profile.clone());
-                    st.profiles = r.profiles;
-                    st.base_url = Some(r.login.base_url.clone());
-                    st.unreadable = r.unreadable;
-                    st.unreadable_note = unreadable_note(r.unreadable);
-                    st.key_from = Some(match r.login.from {
-                        login::From::Env => "env",
-                        login::From::File => "file",
-                    });
-                    st.loading = false;
-                    st.error = None;
-                    st.polls += 1;
-                    st.updated_ms = now_ms();
-                    (st.specs, st.specs_why) = specs;
-                }
-                *self.login.lock().unwrap() = Some(r.login);
-                *self.envs.lock().unwrap() = r.envs;
-                *self.agents.lock().unwrap() = r.agents;
-                self.refilter();
-            }
+        let login = match login {
+            Ok(l) => l,
             Err(e) => {
-                // The profiles to pick from, even when the one asked for
-                // isn't there.
-                let profiles = login::read(&runner).await.map(|f| login::profiles(&f)).unwrap_or_default();
                 {
                     let mut st = self.state.lock().unwrap();
                     st.profiles = profiles;
                     (st.specs, st.specs_why) = specs;
                 }
-                self.fail(e)
+                return self.fail(e);
+            }
+        };
+        let (agents, convs) = tokio::join!(read_agents(&runner, &login), self.list(&login));
+        {
+            let mut st = self.state.lock().unwrap();
+            st.profile = (login.from != login::From::Arugula).then(|| login.profile.clone());
+            st.profiles = profiles;
+            st.base_url = Some(login.base_url.clone());
+            st.key_from = Some(match login.from {
+                login::From::Arugula => "arugula",
+                login::From::Env => "env",
+                login::From::File => "file",
+            });
+            st.loading = false;
+            st.polls += 1;
+            st.updated_ms = now_ms();
+            (st.specs, st.specs_why) = specs;
+            st.error = agents.as_ref().err().cloned();
+        }
+        *self.login.lock().unwrap() = Some(login.clone());
+        if let Ok((agents, unreadable, envs)) = agents {
+            info!(pane = self.ctx.id, agents = agents.len(), base = login.base_url, "fountain account read");
+            {
+                let mut st = self.state.lock().unwrap();
+                st.unreadable = unreadable;
+                st.unreadable_note = unreadable_note(unreadable);
+            }
+            *self.envs.lock().unwrap() = envs;
+            *self.agents.lock().unwrap() = agents;
+            self.refilter();
+        }
+        self.take_list(convs);
+        self.sync_requests().await;
+    }
+
+    /// The conversations, with the filter and the page.
+    async fn list(&self, login: &Login) -> Result<api::Listing<client::Conversation>, String> {
+        let (labels, limit) = {
+            let c = self.config.lock().unwrap();
+            (conversations::label_pairs(&c.labels), c.limit())
+        };
+        let q = client::ConversationQuery { limit: Some(limit), labels, ..Default::default() };
+        client::Client::new(&login.base_url, &login.key).conversations(&q).await.map_err(|e| e.to_string())
+    }
+
+    /// The list again (the stream said it changed, or the filter did).
+    async fn relist(&self) {
+        let _one = self.listing.lock().await;
+        *self.relist_at.lock().unwrap() = None;
+        let login = self.login.lock().unwrap().clone();
+        let Some(login) = login else { return self.read().await };
+        let got = self.list(&login).await;
+        self.state.lock().unwrap().relists += 1;
+        self.take_list(got);
+        self.sync_requests().await;
+    }
+
+    fn take_list(&self, got: Result<api::Listing<client::Conversation>, String>) {
+        match got {
+            Ok(l) => {
+                {
+                    let mut st = self.state.lock().unwrap();
+                    st.conv_error = None;
+                    st.conv_unreadable = l.unreadable;
+                }
+                *self.convs.lock().unwrap() = l.items;
+            }
+            Err(e) => {
+                warn!(pane = self.ctx.id, error = %e, "fountain conversations");
+                self.state.lock().unwrap().conv_error = Some(e);
             }
         }
+        self.rebuild_rows();
+    }
+
+    /// The rows, from the list read, the agents' names and the requests.
+    fn rebuild_rows(&self) {
+        let convs = self.convs.lock().unwrap().clone();
+        let agents = self.agents.lock().unwrap().clone();
+        let (labels, limit) = {
+            let c = self.config.lock().unwrap();
+            (c.labels.clone(), c.limit())
+        };
+        let mut rows = conversations::rows(&convs, &agents);
+        let mut st = self.state.lock().unwrap();
+        for r in &mut rows {
+            r.asking = st.requests.iter().filter(|a| a.request.conversation_id == r.id).count();
+            // What the stream said since, until the list says otherwise.
+            if let Some(old) = st.conversations.iter().find(|o| o.id == r.id)
+                && old.status == r.status
+            {
+                r.live = old.live.clone();
+            }
+        }
+        st.label_counts = conversations::label_counts(&rows, 24)
+            .into_iter()
+            .map(|(label, count)| LabelCount { label, count })
+            .collect();
+        st.more = rows.len() as u32 >= limit && limit < conversations::MAX_LIMIT;
+        st.conversations = rows;
+        st.labels = labels;
+        st.limit = limit;
+        st.live = account::get().is_some_and(|a| {
+            let s = a.stream.lock().unwrap();
+            s.enabled && s.connected
+        });
+        st.stream = account::get().is_some_and(|a| a.stream.lock().unwrap().enabled);
+        drop(st);
+        self.ctx.changed();
+    }
+
+    /// The requests as they are now: the list, and the card if this block
+    /// holds them (a push for each new one).
+    async fn sync_requests(&self) {
+        let reqs = attention::requests();
+        let open = reqs.open();
+        let holder = reqs.holder() == Some(self.ctx.id);
+        // An agent block here that follows the conversation asks itself.
+        let mut here: HashMap<String, arugula_proto::PaneId> = HashMap::new();
+        if !open.is_empty() {
+            for (pane, config, _) in self.ctx.agents().await {
+                if config["agent"] == "fountain"
+                    && let Some(sid) = config["session_id"].as_str()
+                {
+                    here.insert(sid.to_owned(), pane);
+                }
+            }
+        }
+        let asking: Vec<Asking> = {
+            let st = self.state.lock().unwrap();
+            open.into_iter()
+                .map(|r| {
+                    let conversation = st
+                        .conversations
+                        .iter()
+                        .find(|c| c.id == r.conversation_id)
+                        .map(conversations::name)
+                        .unwrap_or_else(|| format!("conversation {}", conversations::short(&r.conversation_id)));
+                    Asking { title: r.title(), conversation, here: here.get(&r.conversation_id).copied(), request: r }
+                })
+                .collect()
+        };
+        let mine: Vec<&Asking> = asking.iter().filter(|a| holder && a.here.is_none()).collect();
+        let ids: BTreeSet<String> = mine.iter().map(|a| a.request.id.clone()).collect();
+        let card = mine.first().map(|a| (*a).clone());
+        let before = std::mem::replace(&mut *self.raised.lock().unwrap(), ids.clone());
+        {
+            let mut st = self.state.lock().unwrap();
+            for r in &mut st.conversations {
+                r.asking = asking.iter().filter(|a| a.request.conversation_id == r.id).count();
+            }
+            st.card = card.as_ref().map(|c| c.request.id.clone());
+            st.requests = asking;
+        }
+        let headline = card.as_ref().map(|c| format!("{} wants to run {}", c.conversation, c.title));
+        *self.card.lock().unwrap() = card;
+        let new = ids.difference(&before).count();
+        match headline {
+            None if !before.is_empty() => self.ctx.attention(Attention::Idle, "answered"),
+            None => {}
+            Some(why) if new > 0 => {
+                // A card already up for another: let it go, so this one
+                // pushes too.
+                if !before.is_empty() {
+                    self.ctx.attention(Attention::Idle, "another request");
+                }
+                self.ctx.attention(Attention::NeedsInput, why);
+            }
+            Some(why) if ids != before => self.ctx.update_reason(input_reason(why)),
+            Some(_) => {}
+        }
+        self.ctx.changed();
     }
 
     fn fail(&self, e: String) {
@@ -443,7 +860,7 @@ impl FountainBlock {
             st.agents = cards;
             st.filter = filter;
         }
-        self.ctx.changed();
+        self.rebuild_rows();
     }
 
     /// The agent-specs checkout: the configured one, else the default if
@@ -474,7 +891,101 @@ impl FountainBlock {
         self.ctx.changed();
     }
 
-    /// *Run on Fountain*: today's agent block, beside the catalog.
+    fn client(&self) -> Result<client::Client, String> {
+        let login = self.login.lock().unwrap().clone().ok_or("not signed in to Fountain yet")?;
+        Ok(client::Client::new(&login.base_url, &login.key))
+    }
+
+    /// A conversation, from the list or read.
+    async fn conversation(&self, id: &str) -> Result<client::Conversation, String> {
+        let listed = self.convs.lock().unwrap().iter().find(|c| c.id == id).cloned();
+        match listed {
+            Some(c) => Ok(c),
+            None => self.client()?.conversation(id).await.map_err(|e| e.to_string()),
+        }
+    }
+
+    /// Open a conversation: today's `agent: fountain` block beside this
+    /// one, loading it and following it (never a new one).
+    async fn open_conversation(&self, args: Value) -> Result<Value, String> {
+        let id = args["id"].as_str().filter(|a| !a.is_empty()).ok_or("open_conversation needs {\"id\": ID}")?;
+        let c = self.conversation(id).await?;
+        let agent = c.agent_id.clone().filter(|a| !a.is_empty()).ok_or("this conversation names no agent")?;
+        let mut config = json!({ "agent": "fountain", "fountain_agent": agent, "session_id": c.id, "follow": true });
+        if let Some(t) = c.title.as_deref().filter(|t| !t.trim().is_empty()) {
+            config["title"] = json!(t);
+        }
+        if let Some(p) = self.config.lock().unwrap().profile.clone() {
+            config["profile"] = json!(p);
+        }
+        let block = self.ctx.open(self.beside(BlockType::Agent, config)).await?;
+        crate::review::log(&self.ctx, &json!({ "e": "open", "conversation": c.id, "block": block }));
+        if c.unread
+            && let Err(e) = self.mark_read(&c.id).await
+        {
+            info!(conversation = c.id, error = %e, "marking it read");
+        }
+        let name = self
+            .state
+            .lock()
+            .unwrap()
+            .conversations
+            .iter()
+            .find(|r| r.id == c.id)
+            .map(conversations::name)
+            .unwrap_or_else(|| conversations::short(&c.id));
+        self.said(format!("{name} opened in %{block}"));
+        Ok(json!({ "block": block, "conversation_id": c.id }))
+    }
+
+    async fn mark_read(&self, id: &str) -> Result<(), String> {
+        self.client()?.mark_read(id).await.map_err(|e| e.to_string())?;
+        {
+            let mut st = self.state.lock().unwrap();
+            if let Some(r) = st.conversations.iter_mut().find(|r| r.id == id) {
+                r.unread = false;
+            }
+        }
+        if let Some(c) = self.convs.lock().unwrap().iter_mut().find(|c| c.id == id) {
+            c.unread = false;
+        }
+        self.ctx.changed();
+        Ok(())
+    }
+
+    async fn tree(&self, id: &str) -> Result<Value, String> {
+        let nodes = self.client()?.tree(id).await.map_err(|e| e.to_string())?;
+        let nodes = {
+            let st = self.state.lock().unwrap();
+            conversations::tree(&nodes.items, &st.conversations)
+        };
+        let out = json!({ "root": id, "nodes": nodes });
+        self.state.lock().unwrap().tree = Some(Tree { root: id.to_owned(), nodes });
+        self.ctx.changed();
+        Ok(out)
+    }
+
+    /// Allow or deny a permission request (the card's, or any open one).
+    async fn answer_request(&self, args: Value) -> Result<Value, String> {
+        let id = match args["id"].as_str().filter(|i| !i.is_empty()) {
+            Some(i) => i.to_owned(),
+            None => self.card.lock().unwrap().as_ref().map(|c| c.request.id.clone()).ok_or("no request is open")?,
+        };
+        let allow = args["allow"].as_bool().ok_or("answer_request needs {\"id\": ID, \"allow\": true|false}")?;
+        let always = args["always"].as_bool().unwrap_or(false);
+        let account = account::get().ok_or("Fountain isn't set up yet")?;
+        let title = attention::requests().get(&id).map(|r| r.title());
+        let out = attention::requests().answer(&account, &id, allow, always).await;
+        let how = if allow { if always { "allowed always" } else { "allowed" } } else { "denied" };
+        crate::review::log(&self.ctx, &json!({ "e": "answer", "request": id, "how": how, "ok": out.is_ok() }));
+        match &out {
+            Ok(_) => self.said(format!("{how}: {}", title.unwrap_or_default())),
+            Err(e) => self.said(e.clone()),
+        }
+        out
+    }
+
+    /// *Run on Fountain*: today's agent block, beside the view.
     async fn run_fountain(&self, args: Value) -> Result<Value, String> {
         let which = args["agent"].as_str().filter(|a| !a.is_empty()).ok_or("run needs {\"agent\": NAME}")?;
         let a = self.agent(which)?;
@@ -558,6 +1069,13 @@ impl FountainBlock {
     }
 }
 
+async fn sleep_for(d: Option<Duration>) {
+    match d {
+        Some(d) => tokio::time::sleep(d).await,
+        None => std::future::pending().await,
+    }
+}
+
 /// `$1` a directory (`~/…` allowed): `ok REAL` if it has `src/agents`.
 const SPECS_DIR: &str = r#"dir=$1
 case $dir in "~") dir=$HOME ;; "~/"*) dir=$HOME/${dir#"~/"} ;; esac
@@ -591,7 +1109,7 @@ impl Block for FountainBlock {
 
     fn text(&self) -> String {
         let st = self.state.lock().unwrap();
-        let mut out = String::from("Fountain agents");
+        let mut out = String::from("Fountain");
         if let Some(b) = &st.base_url {
             out.push_str(&format!(" on {b}"));
         }
@@ -602,12 +1120,37 @@ impl Block for FountainBlock {
         if let Some(e) = &st.error {
             out.push_str(&format!("{e}\n"));
         }
-        if let Some(n) = &st.unreadable_note {
-            out.push_str(&format!("{n}\n"));
-        }
         if st.loading {
             out.push_str("reading…\n");
             return out;
+        }
+        if !st.requests.is_empty() {
+            out.push_str(&format!("{} waiting for an answer:\n", st.requests.len()));
+            for a in &st.requests {
+                out.push_str(&format!("  {} wants to run {} ({})\n", a.conversation, a.title, a.request.id));
+            }
+        }
+        let filter = if st.labels.is_empty() { String::new() } else { format!(" ({})", st.labels.join(", ")) };
+        match &st.conv_error {
+            Some(e) => out.push_str(&format!("Conversations{filter}: {e}\n")),
+            None => {
+                let live = if st.live { ", live" } else { "" };
+                out.push_str(&format!("{} conversations{filter}{live}\n", st.conversations.len()));
+                for r in &st.conversations {
+                    out.push_str(&format!("  {}\n", conversations::line(r)));
+                }
+            }
+        }
+        if let Some(t) = &st.tree {
+            out.push_str(&format!("Tree of {}:\n", conversations::short(&t.root)));
+            for n in &t.nodes {
+                let name = n.title.clone().unwrap_or_else(|| conversations::short(&n.id));
+                let status = n.status.as_deref().unwrap_or("");
+                out.push_str(&format!("  {}{name} [{status}]\n", "  ".repeat(n.depth)));
+            }
+        }
+        if let Some(n) = &st.unreadable_note {
+            out.push_str(&format!("{n}\n"));
         }
         let f = st.filter.describe();
         if f.is_empty() {
@@ -630,8 +1173,67 @@ impl Block for FountainBlock {
                 let st = me.state.lock().unwrap();
                 match &st.error {
                     Some(e) => Err(e.clone()),
-                    None => Ok(json!({ "total": st.total, "shown": st.agents.len() })),
+                    None => Ok(json!({ "total": st.total, "shown": st.agents.len(),
+                                       "conversations": st.conversations.len() })),
                 }
+            }),
+            "tab" => Box::pin(async move {
+                let me = me.ok_or("closed")?;
+                let tab: Tab = serde_json::from_value(args["tab"].clone())
+                    .map_err(|_| "tab: conversations or agents".to_owned())?;
+                me.config.lock().unwrap().tab = tab;
+                me.state.lock().unwrap().tab = tab;
+                me.ctx.changed();
+                Ok(json!({ "tab": tab }))
+            }),
+            "labels" => Box::pin(async move {
+                let me = me.ok_or("closed")?;
+                let labels = conversations::parse_labels(&args["labels"])?;
+                {
+                    let mut c = me.config.lock().unwrap();
+                    c.labels = labels.clone();
+                    c.limit = None;
+                }
+                me.relist().await;
+                let st = me.state.lock().unwrap();
+                match &st.conv_error {
+                    Some(e) => Err(e.clone()),
+                    None => Ok(json!({ "labels": labels, "shown": st.conversations.len() })),
+                }
+            }),
+            "more" => Box::pin(async move {
+                let me = me.ok_or("closed")?;
+                {
+                    let mut c = me.config.lock().unwrap();
+                    c.limit = Some((c.limit() + conversations::PAGE).min(conversations::MAX_LIMIT));
+                }
+                me.relist().await;
+                let st = me.state.lock().unwrap();
+                Ok(json!({ "limit": st.limit, "shown": st.conversations.len() }))
+            }),
+            "open_conversation" => Box::pin(async move { me.ok_or("closed")?.open_conversation(args).await }),
+            "mark_read" => Box::pin(async move {
+                let me = me.ok_or("closed")?;
+                let id = args["id"].as_str().ok_or("mark_read needs {\"id\": ID}")?;
+                me.mark_read(id).await?;
+                Ok(json!({ "read": id }))
+            }),
+            "tree" => Box::pin(async move {
+                let me = me.ok_or("closed")?;
+                let id = args["id"].as_str().ok_or("tree needs {\"id\": ID}")?;
+                me.tree(id).await
+            }),
+            "untree" => Box::pin(async move {
+                let me = me.ok_or("closed")?;
+                me.state.lock().unwrap().tree = None;
+                me.ctx.changed();
+                Ok(json!({}))
+            }),
+            "answer_request" => Box::pin(async move { me.ok_or("closed")?.answer_request(args).await }),
+            "requests" => Box::pin(async move {
+                let me = me.ok_or("closed")?;
+                let st = me.state.lock().unwrap();
+                Ok(json!({ "requests": st.requests, "card": st.card }))
             }),
             "filter" => Box::pin(async move {
                 let me = me.ok_or("closed")?;
@@ -703,23 +1305,50 @@ impl Block for FountainBlock {
 
     fn drawn(&self, on: bool) {
         self.live.set(on);
+        if on && let Some(at) = self.relist_at.lock().unwrap().as_mut() {
+            // Drawn again: what changed meanwhile is read now.
+            *at = (*at).min(tokio::time::Instant::now() + relist());
+        }
         self.wake.notify_one();
         self.ctx.changed();
     }
 
     fn close(&self) {
         self.live.close();
+        attention::requests().release(self.ctx.id);
         self.wake.notify_one();
+    }
+
+    fn push_extra(&self) -> Option<Value> {
+        let c = self.card.lock().unwrap().clone()?;
+        Some(json!({ "approve": { "id": c.request.id, "title": format!("{}: {}", c.conversation, c.title) } }))
+    }
+
+    fn waiting(&self) -> Option<crate::block::Waiting> {
+        let c = self.card.lock().unwrap().clone()?;
+        Some(crate::block::Waiting {
+            id: c.request.id.clone(),
+            what: arugula_proto::AskWhat::Approve,
+            headline: format!("{} wants to run {}", c.conversation, c.title),
+            agent: "Fountain".into(),
+            cwd: None,
+            at_ms: c.request.at_ms,
+            questions: None,
+        })
     }
 
     fn summary(&self) -> Summary {
         let st = self.state.lock().unwrap();
         let title = if st.loading {
-            "Fountain agents".to_owned()
-        } else if st.agents.len() == st.total {
-            format!("Fountain agents ({})", st.total)
+            "Fountain".to_owned()
+        } else if !st.requests.is_empty() {
+            format!("Fountain ({} asking)", st.requests.len())
         } else {
-            format!("Fountain agents ({} of {})", st.agents.len(), st.total)
+            let unread = st.conversations.iter().filter(|c| c.unread).count();
+            match unread {
+                0 => format!("Fountain ({} conversations)", st.conversations.len()),
+                n => format!("Fountain ({} conversations, {n} unread)", st.conversations.len()),
+            }
         };
         Summary { work: Some(WorkKind::Fountain), title: Some(title), ..Summary::default() }
     }

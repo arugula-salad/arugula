@@ -59,7 +59,7 @@ test("menus offer only what this machine is set up for", async ({ page }) => {
     flags: ["chat", "huddles", "vms", "fountain", "studio", "workspaces", "guest-ssh", "swarm-themes", "forges", "agents"],
   });
   const [term] = await panes(page);
-  const hidden = ["New VM pane on the right", "New VM tab", "Sandboxes…", "Fountain agents…", "Open a studio app…"];
+  const hidden = ["New VM pane on the right", "New VM tab", "Sandboxes…", "Fountain…", "Open a studio app…"];
 
   // A pane's menu.
   await paneEl(page, term).click({ button: "right", position: { x: 60, y: 60 } });
@@ -120,5 +120,5 @@ test("a Fountain login made since the page loaded shows the next time a menu ope
   // As `fountain auth login` leaves it.
   writeFileSync(join(state, "no-fountain-credentials"), '[default]\napi_key = "ftn_test_e2e"\n');
   await paneEl(page, term).click({ button: "right", position: { x: 60, y: 60 } });
-  await expect(page.getByRole("menuitem", { name: "Fountain agents…" })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: "Fountain…" })).toBeVisible();
 });

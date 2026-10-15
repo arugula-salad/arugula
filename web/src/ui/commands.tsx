@@ -257,7 +257,7 @@ export function machineSettingsItems(client: Client): MenuItem[] {
 
 /** The Fountain catalog with a login here (#180). */
 function fountainItems(client: Client, where: { session?: number; split?: PaneId }): MenuItem[] {
-  return client.has("fountain") ? [{ label: "Fountain agents…", run: () => void openFountain(client, where) }] : [];
+  return client.has("fountain") ? [{ label: "Fountain…", run: () => void openFountain(client, where) }] : [];
 }
 
 /** "idle" when nothing in the tab runs on its machine any more. */
