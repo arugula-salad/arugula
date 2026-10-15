@@ -50,6 +50,7 @@ use arugula_mux::inventory;
 mod invite;
 use arugula_mux::keys;
 mod labs;
+mod listening;
 mod localauth;
 mod mcp;
 use arugula_mux::mux;

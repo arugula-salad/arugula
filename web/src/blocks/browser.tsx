@@ -4,8 +4,9 @@
 
 import { render } from "preact";
 import type { Client } from "../client";
-import type { OpenRequest, PaneId } from "../proto";
-import { askText, tellSetup } from "../ui/menu";
+import { OPS, opPath } from "../ops";
+import type { OpenRequest, PaneId, Ports } from "../proto";
+import { askText, tellSetup, type PromptChoice } from "../ui/menu";
 import { BlockFrame } from "./block-frame";
 import { registerBlock, type BlockView } from "./view";
 
@@ -52,13 +53,36 @@ function shown(s: BrowserState) {
   return s.port !== null ? `:${s.port}${s.path ?? "/"}` : s.url;
 }
 
+/** The ports listening where the port would open (#150), the pane's own
+ * first, as answers to tap. None when the daemon can't say (an older one,
+ * through control too): then it's typed. */
+async function listening(client: Client, where: { split?: PaneId; host?: number; local?: boolean }): Promise<PromptChoice[]> {
+  if (where.split === undefined) return [];
+  const q = where.host !== undefined ? `?host=${where.host}` : where.local ? "?local=true" : "";
+  try {
+    const res = await client.request(OPS["pane.ports"].method, opPath("pane.ports", { id: where.split }) + q);
+    if (!res.ok) return [];
+    const { ports } = await res.json<Ports>();
+    return ports.map((p) => ({
+      value: String(p.port),
+      label: `:${p.port}`,
+      hint: [p.process, p.pane ? "this pane" : ""].filter(Boolean).join(" · ") || undefined,
+      title: `port ${p.port}${p.process ? `, ${p.process}` : ""}${p.pane ? ", started from this pane" : ""}`,
+      strong: p.pane,
+    }));
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Ask for a port and open it beside `split`: on machine `host`, or (`local`)
  * on the daemon's host even in a VM tab.
  */
 export async function openPort(client: Client, where: { split?: PaneId; host?: number; local?: boolean }) {
   if (!client.showsBlocks()) return blocksOff("port");
-  const v = await askText("Open a port", "", "5173, or 5173/path");
+  // No example number: one that looks real gets typed as it is (#150).
+  const v = await askText("Open a port", "", "port number, optionally /path", listening(client, where));
   const m = v?.trim().match(/^:?(\d{1,5})(\/.*)?$/);
   if (!v) return;
   if (!m) {

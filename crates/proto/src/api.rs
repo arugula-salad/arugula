@@ -414,6 +414,40 @@ pub struct Process {
     pub cwd: Option<String>,
 }
 
+/// `GET /api/panes/N/ports`'s query string: where to look, as *Open a
+/// port…* would open it (`OpenRequest`'s `host` and `local`). Neither: the
+/// pane's machine, or this host.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PortsQuery {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host: Option<crate::MachineId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local: Option<bool>,
+}
+
+/// One TCP port something listens on, reachable from loopback.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ListeningPort {
+    pub port: u16,
+    /// The program listening (`node`), when it can be read.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub process: Option<String>,
+    /// Started from the pane asked about (it or a process under it).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    pub pane: bool,
+}
+
+/// `GET /api/panes/N/ports` (#150): what listens on the machine a port
+/// would open on, the pane's own first, then by number.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct Ports {
+    pub ports: Vec<ListeningPort>,
+}
+
 /// `GET /api/panes/N/wait`'s query string.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WaitRequest {

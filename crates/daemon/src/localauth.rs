@@ -143,10 +143,9 @@ fn uid_in(table: &str, peer: SocketAddr, port: u16) -> Option<u32> {
     })
 }
 
-#[cfg(any(unix, test))]
 /// `0100007F:1E01` (IPv4) or 32 hex digits and a port (IPv6): each 32-bit
 /// word as the kernel holds it, printed as a native number.
-fn parse_addr(s: &str) -> Option<SocketAddr> {
+pub(crate) fn parse_addr(s: &str) -> Option<SocketAddr> {
     let (ip, port) = s.split_once(':')?;
     let port = u16::from_str_radix(port, 16).ok()?;
     let word = |h: &str| u32::from_str_radix(h, 16).ok().map(u32::to_ne_bytes);

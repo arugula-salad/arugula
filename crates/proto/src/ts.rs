@@ -55,6 +55,7 @@ fn generate() -> String {
     c.visit::<TeamPins>();
     c.visit::<HostFeatures>();
     c.visit::<FlagInfo>();
+    c.visit::<crate::api::Ports>();
     c.visit::<FlagSetRequest>();
     c.visit::<crate::flags::Source>();
     c.visit::<ControlState>();
