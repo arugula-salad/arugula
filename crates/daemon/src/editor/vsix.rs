@@ -45,7 +45,12 @@ pub fn build() -> Vec<u8> {
     <Properties>
       <Property Id="Microsoft.VisualStudio.Code.Engine" Value="{engine}" />
       <Property Id="Microsoft.VisualStudio.Code.ExtensionKind" Value="workspace" />
+      <Property Id="Microsoft.VisualStudio.Code.ExecutesCode" Value="true" />
       <Property Id="Microsoft.VisualStudio.Services.Links.Source" Value="{repo}" />
+      <Property Id="Microsoft.VisualStudio.Services.Links.GitHub" Value="{repo}" />
+      <Property Id="Microsoft.VisualStudio.Services.Links.Support" Value="{repo}/issues" />
+      <Property Id="Microsoft.VisualStudio.Services.Links.Learn" Value="{homepage}" />
+      <Property Id="Microsoft.VisualStudio.Services.GitHubFlavoredMarkdown" Value="true" />
       <Property Id="Microsoft.VisualStudio.Services.Content.Pricing" Value="Free" />
     </Properties>
     <License>extension/LICENSE.txt</License>
@@ -70,13 +75,16 @@ pub fn build() -> Vec<u8> {
             .unwrap_or_default()),
         engine = esc(pkg["engines"]["vscode"].as_str().unwrap_or("*").to_owned()),
         repo = esc(pkg["repository"]["url"].as_str().unwrap_or("").to_owned()),
+        homepage = esc(s("homepage")),
     );
     let types = r#"<?xml version="1.0" encoding="utf-8"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension=".json" ContentType="application/json"/><Default Extension=".js" ContentType="application/javascript"/><Default Extension=".md" ContentType="text/markdown"/><Default Extension=".txt" ContentType="text/plain"/><Default Extension=".vsixmanifest" ContentType="text/xml"/></Types>
 "#;
     let mut z = Zip::default();
-    z.add("[Content_Types].xml", types.as_bytes());
+    // The manifest first, as vsce does: with `[Content_Types].xml` first in
+    // a stored zip, Open VSX takes it for an Office file and answers 406.
     z.add("extension.vsixmanifest", manifest.as_bytes());
+    z.add("[Content_Types].xml", types.as_bytes());
     for (name, text) in EXT_FILES {
         z.add(&format!("extension/{name}"), text.as_bytes());
     }
@@ -180,6 +188,8 @@ mod tests {
         }
         assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
         let names = String::from_utf8_lossy(&out.stdout);
+        // Open VSX refuses one that starts with `[Content_Types].xml`.
+        assert_eq!(names.lines().next(), Some("extension.vsixmanifest"), "{names}");
         for n in [
             "[Content_Types].xml",
             "extension.vsixmanifest",

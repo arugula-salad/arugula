@@ -44,7 +44,10 @@ phone) draws tabs and splits you drive with the mouse.
 - **Your editor in the swarm.** VS Code, Cursor or nvim (over Remote-SSH
   too) shows up beside your panes once you ask it to. Follow its cursor
   from your phone; a debugger stopping, or Claude Code wanting to edit a
-  file, is a card you answer from anywhere.
+  file, is a card you answer from anywhere. The extension is
+  `arugula.arugula-editor` on the Visual Studio Marketplace and Open VSX
+  (`code --install-extension arugula.arugula-editor`), or `arugula editors
+  install` puts in the daemon's own copy.
 - **Scriptable.** `arugula`, a CLI for scripts and agents: run, send,
   wait for a command or a match, tail, search every pane's history.
 - **In any terminal, too.** `arugula tui` draws the same tabs and splits

@@ -16,7 +16,9 @@ pub enum EditorsCmd {
     },
     /// Install Arugula's extension in VS Code or Cursor.
     ///
-    /// With their CLI (`code --install-extension`).
+    /// The daemon's own copy, with their CLI (`code --install-extension`).
+    /// It's also on the Visual Studio Marketplace and Open VSX:
+    /// `code --install-extension arugula.arugula-editor`.
     Install {
         /// The editor's command [default: `code`, else `cursor`].
         #[arg(long)]
@@ -82,7 +84,7 @@ pub fn run(cmd: Option<EditorsCmd>, ctx: Ctx) -> anyhow::Result<i32> {
             if !st.success() {
                 bail!("{editor} --install-extension failed");
             }
-            println!("Installed. In the editor: \"arugula: Show this workspace in the swarm\".");
+            println!("Installed. In the editor: \"Arugula: Show this workspace in the swarm\".");
         }
     }
     Ok(0)
