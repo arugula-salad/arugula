@@ -115,6 +115,7 @@ mod compat;
 mod daemon;
 #[cfg(target_os = "macos")]
 mod finder;
+mod frames;
 mod links;
 mod panics;
 mod profile;
@@ -486,6 +487,13 @@ fn ours(url: &tauri::Url) -> bool {
     }
 }
 
+/// A block's origin (`frames.rs`): wry asks `on_navigation` about frames
+/// too on macOS and Linux, and a port or editor block's frame is on one.
+fn block_frame(url: &tauri::Url) -> bool {
+    let control = cloud::control().and_then(|c| c.parse::<tauri::Url>().ok());
+    frames::is_block(url, control.as_ref(), cloud::block_domain().as_deref())
+}
+
 /// The local daemon's own page (or its sign-in link).
 fn daemons(url: &tauri::Url) -> bool {
     matches!(url.scheme(), "http" | "https")
@@ -500,6 +508,8 @@ fn daemons(url: &tauri::Url) -> bool {
 fn follow_join(app: AppHandle) {
     let mut was = cloud::control();
     loop {
+        // Control's block domain, before a block's frame needs it.
+        cloud::learn_block_domain();
         std::thread::sleep(JOIN_POLL);
         if !reachable() {
             continue;
@@ -660,7 +670,8 @@ fn open_window(app: &AppHandle, url: WebviewUrl) -> tauri::Result<tauri::Webview
         })
         // Control's own sign-in (GitHub) can't finish in the window: the
         // app's sign-in takes over. A link away from the daemon and control:
-        // the browser takes it.
+        // the browser takes it. A block's frame (a port, an editor) stays:
+        // on macOS and Linux this hears frames too (`frames.rs`).
         .on_navigation(move |url| {
             if cloud::is_control_signin(url) {
                 let (app, label) = nav.clone();
@@ -675,7 +686,7 @@ fn open_window(app: &AppHandle, url: WebviewUrl) -> tauri::Result<tauri::Webview
                 });
                 return false;
             }
-            if ours(url) {
+            if ours(url) || block_frame(url) {
                 return true;
             }
             open_outside(url);

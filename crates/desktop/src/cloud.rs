@@ -32,7 +32,7 @@
 use std::{
     path::PathBuf,
     sync::{Mutex, OnceLock},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use serde_json::{Value, json};
@@ -110,6 +110,56 @@ pub fn local() -> Local {
 /// The control the window may show, from what was last read.
 pub fn control() -> Option<String> {
     LOCAL.lock().unwrap().as_ref().and_then(|l| l.control.clone())
+}
+
+/// Control's block domain (M50), as its `/control.json` said it, for the
+/// control it was read from: whose block origins stay in the window
+/// (`frames.rs`).
+struct Blocks {
+    control: String,
+    domain: Option<String>,
+    read: bool,
+    at: Instant,
+}
+
+static BLOCKS: Mutex<Option<Blocks>> = Mutex::new(None);
+
+/// How often control's block domain is read again once read, and tried
+/// again when it couldn't be.
+const BLOCKS_REREAD: Duration = Duration::from_secs(10 * 60);
+const BLOCKS_RETRY: Duration = Duration::from_secs(30);
+
+/// The block domain of the control the window may show, if it said one.
+pub fn block_domain() -> Option<String> {
+    let c = control()?;
+    BLOCKS.lock().unwrap().as_ref().filter(|b| b.control == c).and_then(|b| b.domain.clone())
+}
+
+/// Read control's block domain when it isn't known for this control yet,
+/// or it's time to again. Blocks on the network: for a thread of its own
+/// (`follow_join`'s), never a navigation's.
+pub fn learn_block_domain() {
+    let Some(c) = control() else { return };
+    let due = match &*BLOCKS.lock().unwrap() {
+        Some(b) if b.control == c => b.at.elapsed() >= if b.read { BLOCKS_REREAD } else { BLOCKS_RETRY },
+        _ => true,
+    };
+    if !due {
+        return;
+    }
+    let said =
+        agent().get(&format!("{c}/control.json")).call().ok().and_then(|mut r| r.body_mut().read_json::<Value>().ok());
+    let mut blocks = BLOCKS.lock().unwrap();
+    let before = blocks.as_ref().filter(|b| b.control == c).and_then(|b| b.domain.clone());
+    let domain = match &said {
+        Some(v) => v["block_domain"].as_str().and_then(crate::frames::block_domain),
+        // Not reached this time: what it said before stands.
+        None => before.clone(),
+    };
+    if said.is_some() && domain != before {
+        eprintln!("arugula: {c}'s block domain is {}", domain.as_deref().unwrap_or("none"));
+    }
+    *blocks = Some(Blocks { control: c, domain, read: said.is_some(), at: Instant::now() });
 }
 
 /// The app's name as a device: "Arugula app on geek". An AppImage whose
