@@ -597,7 +597,10 @@ fn flags_cli(name: Option<&str>, switch: Option<args::Switch>, dir: &std::path::
     };
     match switch {
         None if flags::FLAGS.iter().any(|f| f.name == name) => println!("{}", state(flags::get(dir, name))),
-        None => anyhow::bail!("no flag named {name} (see `arugulad flags`)"),
+        None => match flags::retired(name) {
+            Some(why) => anyhow::bail!("{why}"),
+            None => anyhow::bail!("no flag named {name} (see `arugulad flags`)"),
+        },
         Some(s) => {
             match s {
                 args::Switch::On => flags::set(dir, name, true),

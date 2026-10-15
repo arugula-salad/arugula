@@ -3993,7 +3993,7 @@ Answer these before M36. Each answer goes in as a fixture or a measured number:
 
 ### Fountain track (S24, M43–M45, added 2026-10-03)
 
-**2026-10-15:** M45 is retired: Fountain removed self-hosted runners (see [M45](#m45-geek-as-the-fountain-runner-123)). Later the same day M44 was retired too (see [M44](#m44-wear-a-fountain-agent-locally-122)): Fountain became a headless backend with Arugula as its UI (#942), and recipes, not Fountain agents, are what runs here. S24 and M43 stand; M43's catalog keeps the account's agents read-only, without *Run here*.
+**2026-10-15:** M45 is retired: Fountain removed self-hosted runners (see [M45](#m45-geek-as-the-fountain-runner-123)). Later the same day M44 was retired too (see [M44](#m44-wear-a-fountain-agent-locally-122)): Fountain became a headless backend with Arugula as its UI (#942), and recipes, not Fountain agents, are what runs here. S24 and M43 stand; M43's catalog keeps the account's agents read-only, without *Run here*. What came after is [Fountain track 2](#fountain-track-2-942-f0f5-as-built-2026-10-15).
 
 Today illogical knows Fountain only as an ACP command: an agent block runs `fountain acp --agent X` (S7). This track goes further in three ways. It shows the account's agents as a catalog. It runs one of them locally, as a Claude Code wearing its prompt, skills and MCP servers. And it makes geek the account's Fountain runner, so a Fountain conversation runs on a machine illogical can open a shell on, diff and take over.
 
@@ -4191,6 +4191,19 @@ Today illogical knows Fountain only as an ACP command: an agent block runs `foun
   - runner pinning (`agents.runner_id`);
   - a scoped runner key (the key is readable by the runner's own agents);
   - the `games` environment's broken `love` package.
+
+### Fountain track 2 (#942, F0–F5): as built (2026-10-15)
+
+Jake decided Fountain is a headless backend and Arugula its UI (#942, DECISIONS.md "Fountain is a headless backend, and Arugula is its UI"). The track ran in six phases on 2026-10-15, after the runner integration went (#941, M45 above). Everything was behind the `fountain` flag until F4 (Jake's Q4), and F5 dropped the flag.
+
+- **F0, clear the ground** ([#944](https://github.com/arugula-salad/arugula/pull/944)). The wear helpers M76 and A2A delegation share moved to `labs/wearing.rs`; M44's wear (`as_fountain`) went (M44 above); the catalog block became a read-only agents list inside the account view, chant's agents included (Q5); *Spec* falls back to the agent as Fountain returns it. ([#943](https://github.com/arugula-salad/arugula/pull/943) kept a flag-gates case whose Fountain config still failed to parse.)
+- **F1, client and login** ([#945](https://github.com/arugula-salad/arugula/pull/945)). A typed REST client (`labs/fountain/client.rs`), device-flow sign-in with the key in the state dir and the CLI's credentials as fallback (Q2), and one `/api/events/stream` per login with a persisted cursor, on the one daemon run with `--fountain-account-stream` (Q3). ([#946](https://github.com/arugula-salad/arugula/pull/946) stopped its test pinning the reconnect count.)
+- **F2, the account view and attention** ([#947](https://github.com/arugula-salad/arugula/pull/947)). The Fountain block lists the account's conversations as a tree with labels; a permission request from any conversation is a card and a phone push, and one answered anywhere clears.
+- **F3, the native conversation link** ([#948](https://github.com/arugula-salad/arugula/pull/948)). A third `Link` kind replaced `fountain acp` for `agent: fountain` blocks: Wake, Interrupt and Terminate, the sandbox's diff, git status and files with parked handling, and the block's log as its cursor across restarts. `REMOTE_POLL` and `fountain_busy` went. ([#949](https://github.com/arugula-salad/arugula/pull/949) kept an agent whose command is missing from taking the daemon down on macOS, which F3's tests found.)
+- **F4, recipes on Fountain** ([#950](https://github.com/arugula-salad/arugula/pull/950)). A recipe compiles to one Fountain agent `recipe-NAME`, upserted with `POST /api/apply` before each launch and its conversations labelled with the recipe's hash (Q1); the project's `origin` becomes an environment; a secrets preflight and an explicit per-variable copy (Q6). *Run on Fountain* on the agents block and the Agents page, `arugula agents run --fountain`, and MCP's `start_agent {recipe, on: fountain}`.
+- **F5, out of Labs** ([#951](https://github.com/arugula-salad/arugula/pull/951)). The `fountain` flag is gone: its row moved to `flags::RETIRED`, so a flags file or a control push that still names it is ignored, and setting it says why. Fountain's routes, blocks, CLI command and options, MCP kinds and the web's menus need only a login (`HostFeatures.fountain`), and with none the daemon asks Fountain nothing. Its code stays under the `labs` cargo feature (DECISIONS.md "Fountain is out of Labs"). Its docs moved from labs.md to [fountain.md](fountain.md).
+
+Not done here: the public docs on docs.arugula.io (the site repo) don't describe Fountain yet; Q7, the `managoat/demos` Conversations app, stays as a second client.
 
 ### No special machines track (S27, M49–M50, added 2026-10-04)
 

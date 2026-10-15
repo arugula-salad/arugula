@@ -609,8 +609,9 @@ for agents, environments or vaults (managoat/fountain#2732). Arugula is the
 place a person sees and steers Fountain work (Jake, 2026-10-15, #942), and
 the Conversations app (managoat/demos) stays as a second client. This
 supersedes S34's "no Fountain dependency" (#397) and its q8, "don't build on
-[M43's pieces]": Arugula now builds on Fountain, behind the `fountain` flag
-until recipes run there (#942's F4).
+[M43's pieces]": Arugula now builds on Fountain. It was behind the
+`fountain` flag until recipes ran there (F4); F5 took it out of Labs (see
+"Fountain is out of Labs" under Build and release).
 - **Recipes are the source of truth.** A recipe runs here by being worn
   (M76), and on Fountain by being pushed as one Fountain agent per recipe
   (F4). Pulling a Fountain agent down to wear here (M44's `as_fountain`,
@@ -626,9 +627,9 @@ until recipes run there (#942's F4).
   agent-specs file, else shows the agent as `GET /api/agents/{id}` returns
   it (literal values redacted) in the block, since the console's agent pages
   are gone.
-Not done: dropping the `fountain` flag (F5). (F1's client, sign-in and
-stream, F2's account view and attention, and F4's recipes on Fountain are
-below.)
+(F1's client, sign-in and stream, F2's account view and attention, and
+F4's recipes on Fountain are below; F5, dropping the flag, is under Build
+and release.)
 Where: `crates/daemon/src/labs/fountain/`, `crates/daemon/src/labs/wearing.rs`, `crates/daemon/src/agent/defs.rs` (`AS_FOUNTAIN_GONE`), `web/src/blocks/fountain.tsx`.
 From: #942, superseding [S34](https://github.com/arugula-salad/arugula/issues/397)'s "No Fountain dependency" and q8 ([spike](spikes/s34-agents-a2a/README.md)).
 
@@ -1074,8 +1075,8 @@ From: [Control track](docs/plan-archive.md#control-track-s15-m17m22-added-2026-1
 ## Build and release
 
 ### One switch for what a stranger doesn't get: the `labs` flag
-The `labs` flag turns on huddles and chat, Fountain, studio apps and chant
-workspaces, VMs and sandboxes, guest ssh, Forgejo and GitLab and the swarm's
+The `labs` flag turns on huddles and chat, Fountain (until #942's F5),
+studio apps and chant workspaces, VMs and sandboxes, guest ssh, Forgejo and GitLab and the swarm's
 extra views. It is the first named flag in the daemon's config, and the
 mechanism #347's per-feature flags extend:
 - **The file** is `flags.json` in the state dir, `{"flags": {"labs": true}}`.
@@ -1129,7 +1130,8 @@ From: #385, #342, #347, #387, #464.
 Chat on a machine shouldn't need Fountain, studio and the rest on with it, so
 the one `labs` flag (above) is nine: `chat`, `huddles`, `vms`, `fountain`,
 `studio`, `workspaces`, `guest-ssh`, `swarm-themes`, `forges`. Each is a row
-in `FLAGS`, off by default.
+in `FLAGS`, off by default. (`agents` came later; `fountain` went with
+#942's F5: "Fountain is out of Labs", below.)
 - **`labs` is no longer a flag; in the file it means all of them.** `labs`
   in `flags.json`, or the old empty `labs` file, is the answer for every flag
   the file doesn't name itself. A machine that had Labs keeps everything, one
@@ -1164,12 +1166,14 @@ everything about the feature follows the flag (#347):
 - **Operations** name their flag (`Op::FLAG`), and `ops::flagged` refuses
   one by every way in, HTTP and MCP by name alike, as a 404 that says how to
   turn it on. That is the route list: threads (chat); machines and
-  sandboxes (vms); Fountain's agents; studio; ssh guests (guest-ssh). The
+  sandboxes (vms); studio; ssh guests (guest-ssh); Fountain's agents and
+  sign-in until #942's F5 (below). The
   A2A routes (agents) and the forge webhooks already did; an invite from a
   thread asks `chat` too.
-- **Block types** a flag owns (Fountain, the agent catalog, app,
-  workspace) are wrapped (`labs::Flagged`) so a new one is refused; an agent
-  block that is a Fountain agent checks `fountain`. `POST
+- **Block types** a flag owns (the agent catalog, app, workspace) are
+  wrapped (`labs::Flagged`) so a new one is refused. Fountain's block, and
+  an agent block that is a Fountain agent, checked `fountain` until #942's
+  F5 superseded that (below): they need no flag now. `POST
   /api/blocks` asks `labs::block_flag` first, so an app block doesn't ask
   the studio before it's refused.
 - **The mux** checks `vms` before it makes or borrows a machine or shares
@@ -1190,6 +1194,44 @@ everything about the feature follows the flag (#347):
   each feature's twin says it isn't built, as before.
 Where: `crates/mux/src/labs/mod.rs` (`flag`, `flag_off`), `crates/daemon/src/ops/mod.rs` (`flagged`), `crates/daemon/src/mcp/ops.rs`, `crates/proto/src/op.rs` (`FLAG`), `crates/daemon/src/labs/mod.rs` (`Flagged`, `block_flag`), `crates/mux/src/mux/machines.rs`, `crates/mux/src/mux/call_ops.rs`, `crates/daemon/tests/integration/flag_gates.rs`.
 From: #347, #665.
+
+### Fountain is out of Labs: no flag, still the `labs` cargo feature
+With recipes running on Fountain (#942's F4), the `fountain` flag is gone
+(F5, Jake's Q4: "behind `fountain` until F4, then drop the flag"). The
+account view and sign-in, `--fountain-account-stream`, the native
+conversation link, *Run on Fountain* and MCP's Fountain kinds and
+arguments are offered on any machine, with no flag. This supersedes
+"Each flag gates its feature" (above) for Fountain.
+- **A login is the gate.** Nothing asks Fountain anything until the
+  machine has a login (its own sign-in, else the `fountain` CLI's).
+  `HostFeatures.fountain` is that login, so the menus offer Fountain only
+  where it would work, and the account stream still needs
+  `--fountain-account-stream`, now listed in `arugulad --help`. A new
+  install makes no request to Fountain, which
+  `fountain_account::no_login_no_requests_to_fountain` holds. Recipes on
+  Fountain still need `agents`, since recipes are still Labs.
+- **A retired flag is a name that isn't one.** `fountain` moved from
+  `FLAGS` to `flags::RETIRED`. A `flags.json` or a control push that names
+  it, on or off, is read as any unknown name always was: ignored, and kept
+  by a write, so an older daemon reading the same file keeps its word.
+  `arugulad flags fountain …` and `PUT /api/flags/fountain` say why it's
+  gone instead of "no flag named".
+- **The code stays under the `labs` cargo feature.** No feature had left
+  Labs before, so there was no precedent to follow. The cargo feature
+  (#452) is a build switch, on in every release build and the desktop app,
+  that `just check-core` and CI's `core` job turn off for speed; what a
+  machine shows was always the runtime flags' job, so dropping the flag is
+  what takes Fountain out of Labs for anyone running a release. Moving the
+  code into core as well would mean moving what it leans on that is still
+  Labs (recipes in `labs/agents/`, `labs/wearing.rs`, the `FountainLink`
+  surface twins) for no change to any shipped build. So a build without
+  Labs has no Fountain, as before: its blocks say they aren't built, and
+  MCP doesn't list its kinds or arguments (`FOUNTAIN_KINDS`,
+  `FOUNTAIN_ARGS`, `FOUNTAIN_VALUES` in `mcp/tools.rs`). Revisit when
+  `agents` leaves Labs; the forge and editor features (#461) are the
+  pattern a feature of its own would follow.
+Where: `crates/proto/src/flags.rs` (`RETIRED`, `retired`), `crates/daemon/src/hosts.rs` (`features`), `crates/daemon/src/labs/mod.rs` (`kinds`, `block_flag`), `crates/daemon/src/mcp/tools.rs`, `crates/cli/src/main.rs` and `crates/daemon/src/args.rs` (`LABS_*`), `web/src/client.ts`, `web/src/blocks/lazy.ts`, [docs/fountain.md](docs/fountain.md).
+From: #942 (Q4), F5.
 
 ### Control pushes Labs flags; the machine overrides
 An account sets Labs flags for every machine it owns, and a team's owners

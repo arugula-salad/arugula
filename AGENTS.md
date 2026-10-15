@@ -130,8 +130,11 @@ and tested, but get no new features.
 ## Labs
 
 A flag per feature turns on what a stranger doesn't get (#385, #464, #665):
-`chat`, `huddles`, `vms`, `fountain`, `studio`, `workspaces`, `guest-ssh`,
-`swarm-themes`, `forges`, `agents`. They're named flags in `flags.json` in the state
+`chat`, `huddles`, `vms`, `studio`, `workspaces`, `guest-ssh`,
+`swarm-themes`, `forges`, `agents`. Fountain left Labs (#942, F5): it has
+no flag and needs only a login ([docs/fountain.md](docs/fountain.md)); a
+feature that leaves takes its row out of `FLAGS` and puts its name in
+`flags::RETIRED`, so an old file naming it is ignored. They're named flags in `flags.json` in the state
 dir (`arugula_proto::flags`: the `FLAGS` registry, `get`, `on`, `set`, `all`;
 read on every call, never cached), set by `arugulad flags chat on` or the
 owner's *Developer settings…* in the web client (`flags.list` and `flag.set`
@@ -145,8 +148,9 @@ says how to turn it on. `labs` in the file, or the old empty `labs`
 file (which a daemon moves into it at startup), means every flag the file
 doesn't name. `ARUGULA_STATE_DIR` moves the state dir. A `labs` cargo feature (on by default) compiles Labs
 code in or out: it lives in `crates/daemon/src/labs/`, and core reaches it
-only through the surface in `labs/mod.rs`, which explains the pattern. Fountain,
-studio apps, chant workspaces, and VMs (the Sprites adapter, machines, resident
+only through the surface in `labs/mod.rs`, which explains the pattern. Fountain
+(out of Labs as a flag, still compiled with this feature: DECISIONS.md
+"Fountain is out of Labs"), studio apps, chant workspaces, and VMs (the Sprites adapter, machines, resident
 daemons, the provider tunnel and the tailnet sandbox supervisor) and guest ssh
 (`labs/guest_ssh.rs`; `russh` is an optional dependency, and a build without
 Labs answers `/api/guests` with 501), and chat and huddles (`crates/mux/src/labs/threads.rs`,

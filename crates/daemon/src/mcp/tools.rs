@@ -790,8 +790,8 @@ pub struct ListAgentsArgs {
     /// it.
     #[serde(default)]
     pub query: Option<String>,
-    /// Where they come from: agent-specs (the curated ones, managed by
-    /// chant), hand (hand-made) or app (made by an app). Default: all.
+    /// Where they come from: agent-specs (the curated ones), hand
+    /// (hand-made) or app (made by an app). Default: all.
     #[serde(default)]
     pub source: Option<String>,
     /// The Fountain credentials profile (default: the user's default).
@@ -997,13 +997,13 @@ const LIST: &[Kind] = &[
         name: "fountain_agents",
         description: "The agents on the user's Fountain account, one compact row each: name, runtime and model, where it comes from (agent-specs: curated; hand: hand-made; app: made by an app), skills, MCP servers and description. query searches names, descriptions, skills and servers. To hand one a task, start_agent {agent: fountain, fountain_agent: NAME}.",
         schema: schema_for_type::<ListAgentsArgs>,
-        flag: Some(flags::FOUNTAIN),
+        flag: None,
     },
     Kind {
         name: "fountain_conversations",
         description: "The conversations on the user's Fountain account, read-only: every one, whoever started it (Arugula, the fountain CLI, a script, another conversation), the most recently active first, one line each: title, status, agent, unread, labels, what it started, and its open permission requests (waiting for the user, who answers them on their card). labels filters by key:value; status and limit as Fountain's list takes them.",
         schema: schema_for_type::<ListFountainConversationsArgs>,
-        flag: Some(flags::FOUNTAIN),
+        flag: None,
     },
     Kind {
         name: "fountain_agent",
@@ -1017,45 +1017,44 @@ const LIST: &[Kind] = &[
 const LEAD_ONLY: [(&str, &str); 1] = [("list", "links")];
 
 /// The jobs that work but aren't listed without their Labs flag: they're for
-/// setups a stranger doesn't have (Fountain, the studio, chant workspaces).
+/// setups a stranger doesn't have (the studio, chant workspaces).
 /// Each is a kind of a grouped tool, so without its flag it's filtered out
 /// of its group's table, and its arguments and its line in the description
 /// go with it. A caller who names one is refused, saying how to turn the
 /// flag on (#347: the handler or `ops::flagged` asks), by its
 /// kind or its name before #349.
-const UNLISTED: [(&str, &str, &str); 5] = [
-    ("list", "agents", flags::AGENTS),
-    ("show", "app", flags::STUDIO),
-    ("show", "workspace", flags::WORKSPACES),
-    ("show", "fountain", flags::FOUNTAIN),
-    ("list", "fountain_agent", flags::FOUNTAIN),
-];
+const UNLISTED: [(&str, &str, &str); 3] =
+    [("list", "agents", flags::AGENTS), ("show", "app", flags::STUDIO), ("show", "workspace", flags::WORKSPACES)];
 
 /// Arguments of listed tools that aren't listed without their flag, by
-/// tool: throwaway VMs and sandboxes, and Fountain agents. A caller who
-/// gives one is refused where the flag is off (a new machine, a Fountain
-/// agent, a recipe: #347), except `machine`, which names one already made.
-const UNLISTED_ARGS: [(&str, &[&str], &str); 5] = [
+/// tool: throwaway VMs and sandboxes, and recipes. A caller who gives one
+/// is refused where the flag is off (a new machine, a recipe: #347), except
+/// `machine`, which names one already made. Fountain's (`fountain_agent`,
+/// `on`, `vault`, `environment`) left Labs with it (#942).
+const UNLISTED_ARGS: [(&str, &[&str], &str); 3] = [
     ("run", &["vm", "vm_tab", "image", "machine"], flags::VMS),
-    ("start_agent", &["fountain_agent"], flags::FOUNTAIN),
-    ("start_agent", &["on", "vault", "environment"], flags::FOUNTAIN),
     ("start_agent", &["vm"], flags::VMS),
     ("start_agent", &["recipe"], flags::AGENTS),
 ];
 
-/// Values of a listed tool's arguments that aren't listed without their
-/// flag: start_agent's agent `fountain`.
-const UNLISTED_VALUES: [(&str, &str, &str); 1] = [("start_agent", "fountain", flags::FOUNTAIN)];
+/// Fountain's kinds, arguments and values (#942): listed without a flag
+/// since F5, and not at all by a build without Labs, which hasn't the code.
+const FOUNTAIN_KINDS: [(&str, &str); 4] =
+    [("show", "fountain"), ("list", "fountain_agents"), ("list", "fountain_agent"), ("list", "fountain_conversations")];
+const FOUNTAIN_ARGS: [(&str, &[&str]); 1] = [("start_agent", &["fountain_agent", "on", "vault", "environment"])];
+const FOUNTAIN_VALUES: [(&str, &str); 1] = [("start_agent", "fountain")];
 
-/// A tool's schema without the arguments and values whose flag is off.
+/// A tool's schema without the arguments whose flag is off, and without
+/// Fountain's in a build that hasn't it.
 fn without_labs(tool: &str, schema: Schema, on: On) -> Schema {
+    let fountain = !crate::labs::BUILT;
     let args: Vec<&str> = UNLISTED_ARGS
         .iter()
         .filter(|(t, _, f)| *t == tool && !on.has(f))
         .flat_map(|(_, a, _)| a.iter().copied())
+        .chain(FOUNTAIN_ARGS.iter().filter(|(t, _)| fountain && *t == tool).flat_map(|(_, a)| a.iter().copied()))
         .collect();
-    let values: Vec<&str> =
-        UNLISTED_VALUES.iter().filter(|(t, _, f)| *t == tool && !on.has(f)).map(|(_, v, _)| *v).collect();
+    let values: Vec<&str> = FOUNTAIN_VALUES.iter().filter(|(t, _)| fountain && *t == tool).map(|(_, v)| *v).collect();
     if args.is_empty() && values.is_empty() {
         return schema;
     }
@@ -1116,6 +1115,7 @@ fn listed_kind(on: On, tool: &str, kind: &Kind) -> bool {
     kind.flag.is_none_or(|f| on.has(f))
         && UNLISTED.iter().all(|(t, k, f)| (*t, *k) != (tool, kind.name) || on.has(f))
         && (crate::forges::BUILT || !forge_kind(tool, kind.name))
+        && (crate::labs::BUILT || !FOUNTAIN_KINDS.contains(&(tool, kind.name)))
 }
 
 /// The tools `tools/list` shows: each one a stranger can't use needs its
@@ -3187,7 +3187,6 @@ impl Call<'_> {
     /// The account's agents (M43), read with the user's own login on this
     /// host.
     async fn fountain_agents(&self, profile: Option<&str>) -> Result<crate::labs::fountain::Agents, String> {
-        crate::labs::flag(self.app.control.state_dir(), flags::FOUNTAIN)?;
         let runner = crate::labs::fountain::local_runner(&self.app.mux.shell_env).await;
         crate::labs::fountain::agents_for(&runner, profile).await
     }
@@ -3239,7 +3238,6 @@ impl Call<'_> {
 
     /// The account's conversations (#942), read with the daemon's login.
     async fn fountain_conversations(&self, a: ListFountainConversationsArgs) -> Out {
-        crate::labs::flag(self.app.control.state_dir(), flags::FOUNTAIN)?;
         let (text, v) =
             crate::labs::fountain::conversations_answer(&a.labels, a.status, a.limit.map(|l| l.min(500) as u32))
                 .await?;
@@ -4175,47 +4173,18 @@ mod tests {
 
     use super::*;
 
-    /// The golden's tool list as a build without the forge lists it: no
-    /// `read_forge` or `draft`, and `show` without its `pr` and `issue`
-    /// kinds (their lines, their arguments and the mention in `beside`).
-    fn without_forge(tools: &mut Value) {
-        let tools = tools.as_array_mut().unwrap();
-        tools.retain(|t| !FORGE_TOOLS.contains(&t["name"].as_str().unwrap()));
-        for t in tools.iter_mut().filter(|t| t["name"] == "show") {
-            let text = t["description"].as_str().unwrap();
-            t["description"] = text
-                .split('\n')
-                .filter(|l| !l.starts_with("- pr ") && !l.starts_with("- issue "))
-                .collect::<Vec<_>>()
-                .join("\n")
-                .into();
-            let schema = &mut t["inputSchema"]["properties"];
-            for arg in ["pr", "issue"] {
-                schema.as_object_mut().unwrap().remove(arg);
-            }
-            // `dir` is also the workspace's, with labs.
-            let dir = schema["dir"]["description"].as_str().unwrap();
-            match dir.find("workspace: ") {
-                // Then only the workspace takes it, and it must.
-                Some(at) => {
-                    schema["dir"] = json!({ "description": dir[at..], "type": "string" });
-                }
-                None => {
-                    schema.as_object_mut().unwrap().remove("dir");
-                }
-            }
-            schema["kind"]["enum"].as_array_mut().unwrap().retain(|k| k != "pr" && k != "issue");
-            let beside = schema["beside"]["description"].as_str().unwrap().replace(" pr, issue,", "");
-            schema["beside"]["description"] = beside.into();
-        }
-    }
-
     /// `tools/list` for every scope, with and without labs, against the
     /// checked-in file: names, descriptions, annotations and every input
     /// schema. `ARUGULA_BLESS=1` rewrites the file after a change meant to
-    /// alter what agents see.
+    /// alter what agents see. The file is a Labs build's (which has the
+    /// forge too): a build without Labs leaves out Fountain's kinds and
+    /// arguments (#942, F5) and has no golden of its own, so it checks the
+    /// listing in `unlisted_tools_are_not_listed_without_labs_but_are_there`.
     #[test]
     fn the_tool_list_and_each_schema_are_unchanged() {
+        if !crate::labs::BUILT {
+            return;
+        }
         let mut all = serde_json::Map::new();
         for (scope_name, scope) in [("full", Scope::Full), ("read", Scope::Read), ("block", Scope::Block(1))] {
             for labs in [true, false] {
@@ -4225,20 +4194,11 @@ mod tests {
         }
         let got = serde_json::to_string_pretty(&Value::Object(all)).unwrap() + "\n";
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mcp-tool-list.json");
-        if crate::forges::BUILT && std::env::var_os("ARUGULA_BLESS").is_some() {
+        if std::env::var_os("ARUGULA_BLESS").is_some() {
             std::fs::write(&path, &got).unwrap();
         }
         let want =
             std::fs::read_to_string(&path).expect("tests/fixtures/mcp-tool-list.json (ARUGULA_BLESS=1 writes it)");
-        // A build without the forge lists what the golden does, less the
-        // forge's tools and kinds.
-        let want = if crate::forges::BUILT {
-            want
-        } else {
-            let mut all: Value = serde_json::from_str(&want).unwrap();
-            all.as_object_mut().unwrap().values_mut().for_each(without_forge);
-            serde_json::to_string_pretty(&all).unwrap() + "\n"
-        };
         assert!(got == want, "the tool list changed; ARUGULA_BLESS=1 rewrites {}", path.display());
     }
 
@@ -4434,21 +4394,37 @@ mod tests {
             // Still there: by its kind, and by its name before #349.
             route(tool, json!({ "kind": kind }), fl(false)).unwrap_or_else(|e| panic!("{tool} {kind}: {e}"));
         }
-        for old in ["open_app", "open_workspace", "open_fountain", "list_agents", "read_agent"] {
+        for old in ["open_app", "open_workspace"] {
             let (def, kind, _) = route(old, json!({}), fl(false)).unwrap_or_else(|e| panic!("{old}: {e}"));
             assert!(flagged_kinds().contains(&(def.name, kind.unwrap())), "{old}");
         }
         let show = list(Scope::Full, fl(false)).into_iter().find(|t| t.name == "show").unwrap();
-        for arg in ["app", "env", "view", "source", "profile"] {
+        for arg in ["app", "env"] {
             assert!(show.input_schema["properties"].get(arg).is_none(), "show takes {arg} without labs");
         }
+        // Fountain's kinds (#942, out of Labs): listed by a build with it,
+        // flags or not, with their arguments; not by one without it.
         let list_tool = list(Scope::Full, fl(false)).into_iter().find(|t| t.name == "list").unwrap();
-        for arg in ["name", "source", "profile"] {
-            assert!(list_tool.input_schema["properties"].get(arg).is_none(), "list takes {arg} without labs");
+        for (tool, kind) in FOUNTAIN_KINDS {
+            assert_eq!(kinds_of(false, tool).contains(&kind), crate::labs::BUILT, "{tool} kind {kind}");
+            route(tool, json!({ "kind": kind }), fl(false)).unwrap_or_else(|e| panic!("{tool} {kind}: {e}"));
+        }
+        for old in ["open_fountain", "list_agents", "read_agent"] {
+            let (def, kind, _) = route(old, json!({}), fl(false)).unwrap_or_else(|e| panic!("{old}: {e}"));
+            assert!(FOUNTAIN_KINDS.contains(&(def.name, kind.unwrap())), "{old}");
+        }
+        for (t, arg) in
+            [(&show, "query"), (&show, "source"), (&show, "profile"), (&list_tool, "name"), (&list_tool, "source")]
+        {
+            assert_eq!(t.input_schema["properties"].get(arg).is_some(), crate::labs::BUILT, "{} {arg}", t.name);
+        }
+        let start = list(Scope::Full, fl(false)).into_iter().find(|t| t.name == "start_agent").unwrap();
+        for arg in FOUNTAIN_ARGS[0].1 {
+            assert_eq!(start.input_schema["properties"].get(*arg).is_some(), crate::labs::BUILT, "start_agent {arg}");
         }
         // An error names only the kinds that are listed.
         let e = route("show", json!({ "kind": "terminal" }), fl(false)).err().unwrap();
-        assert!(e.contains("port") && !e.contains("fountain") && !e.contains("workspace"), "{e}");
+        assert!(e.contains("port") && e.contains("fountain") == crate::labs::BUILT && !e.contains("workspace"), "{e}");
         let every: Vec<&str> = all_defs().iter().map(|d| d.name).collect();
         for name in CHAT_TOOLS {
             assert!(every.contains(&name), "{name} no longer has a definition");
@@ -4734,7 +4710,12 @@ mod tests {
             )
         }));
         for text in &prose {
-            let lower = text.to_lowercase();
+            let mut lower = text.to_lowercase();
+            // Fountain left Labs (#942): a build with it lists it to anyone,
+            // its sandboxes too. A build without it says neither.
+            if crate::labs::BUILT {
+                lower = lower.replace("fountain sandbox", "").replace("sandbox provider", "").replace("fountain", "");
+            }
             for word in [
                 "fountain",
                 "studio",
@@ -4766,7 +4747,8 @@ mod tests {
             }
         }
         let start = with.iter().find(|t| t.name == "start_agent").unwrap();
-        assert!(Value::Object((*start.input_schema).clone()).to_string().contains("\"fountain\""));
+        let fountain = Value::Object((*start.input_schema).clone()).to_string().contains("\"fountain\"");
+        assert_eq!(fountain, crate::labs::BUILT, "start_agent's agent fountain is a Labs build's");
         let with = crate::mcp::instructions(fl(true));
         assert!(with.contains("read_thread and post_thread") && with.contains("@agent"), "{with}");
         // Labs only adds the thread sentence.

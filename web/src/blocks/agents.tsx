@@ -9,7 +9,7 @@
 // from other people wait here for the owner (the card on this block allows
 // or denies one), and standing grants are listed with *Revoke*. Agents send
 // tasks with MCP's `delegate`; people with `arugula agents send`.
-// #942 F4: with the `fountain` flag, *Run on Fountain* beside *Run on
+// #942 F4: with a Fountain login, *Run on Fountain* beside *Run on
 // <this machine>* runs the same recipe in a Fountain sandbox (its dialog,
 // `ui/fountain-run.tsx`, shows the preflight first).
 
@@ -205,7 +205,7 @@ function AgentsBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentsS
                         Run on {m.name}
                       </button>
                     )}
-                    {m.here && mayOwn && client.flag("fountain") && (
+                    {m.here && mayOwn && client.has("fountain") && (
                       <button data-run-fountain={c.name} disabled={busy !== null} title="Run it in a Fountain sandbox, as its Fountain agent recipe-NAME" onClick={() => setOnFountain(c.name)}>
                         Run on Fountain
                       </button>

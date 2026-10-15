@@ -237,8 +237,9 @@ class E2ELink implements Link {
   }
 }
 
-/** The host features that follow `labs`: also off without it. */
-const LABS_FEATURES: Exclude<keyof HostFeatures, "flags">[] = ["vms", "fountain", "studio"];
+/** The host features that follow `labs`: also off without it. Fountain
+ * left Labs (#942): `fountain` is the daemon's word alone (a login there). */
+const LABS_FEATURES: Exclude<keyof HostFeatures, "flags">[] = ["vms", "studio"];
 
 export class Client {
   /** The daemon's origin (`https://box.….ts.net`), or "" for the one this
@@ -913,7 +914,7 @@ export class Client {
   }
 
   /** Is `f` set up here? Yes when the daemon didn't say, except for what
-   * labs turns on (VMs, Fountain, studio): those need `hasLabs()` as well. */
+   * labs turns on (VMs, studio): those need `hasLabs()` as well. */
   has(f: Exclude<keyof HostFeatures, "flags">): boolean {
     if (LABS_FEATURES.includes(f) && !this.hasLabs()) return false;
     return this.features?.[f] ?? true;
@@ -928,7 +929,7 @@ export class Client {
   }
 
   /** Whether the Labs flag `name` is on here, whatever else its feature
-   * needs (`has` says that for VMs, Fountain and studio). A daemon from
+   * needs (`has` says that for VMs and studio). A daemon from
    * before flags says only `labs`, which was all of them. */
   flag(name: string): boolean {
     const f = this.features;

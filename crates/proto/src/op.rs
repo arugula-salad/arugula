@@ -1169,7 +1169,6 @@ pub mod ops {
         const METHOD: Method = Method::Get;
         const PATH: &'static str = "/api/fountain/agents";
         const ACCESS: Access = Access::Owner;
-        const FLAG: Option<&'static str> = Some(crate::flags::FOUNTAIN);
         type Path = ();
         type Req = FountainQuery;
         type Res = FountainAgents;
@@ -1184,7 +1183,6 @@ pub mod ops {
         const METHOD: Method = Method::Get;
         const PATH: &'static str = "/api/fountain/login";
         const ACCESS: Access = Access::Owner;
-        const FLAG: Option<&'static str> = Some(crate::flags::FOUNTAIN);
         type Path = ();
         type Req = Empty;
         type Res = crate::api::FountainLogin;
@@ -1200,7 +1198,6 @@ pub mod ops {
         const METHOD: Method = Method::Post;
         const PATH: &'static str = "/api/fountain/login";
         const ACCESS: Access = Access::Owner;
-        const FLAG: Option<&'static str> = Some(crate::flags::FOUNTAIN);
         type Path = ();
         type Req = crate::api::FountainLoginRequest;
         type Res = crate::api::FountainLogin;
@@ -1216,7 +1213,6 @@ pub mod ops {
         const METHOD: Method = Method::Delete;
         const PATH: &'static str = "/api/fountain/login";
         const ACCESS: Access = Access::Owner;
-        const FLAG: Option<&'static str> = Some(crate::flags::FOUNTAIN);
         type Path = ();
         type Req = Empty;
         type Res = crate::api::FountainLogin;

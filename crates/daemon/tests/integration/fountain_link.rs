@@ -474,7 +474,7 @@ impl Fountain {
         let home = home.display().to_string();
         let mut all = vec!["--wisp-token-file", "/nonexistent", "--tailscale-socket", "/nonexistent/sock"];
         all.extend_from_slice(args);
-        Daemon::child_labs_env(
+        Daemon::child_env(
             &all,
             &[
                 ("HOME", home.as_str()),

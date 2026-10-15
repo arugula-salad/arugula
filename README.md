@@ -112,6 +112,8 @@ For working on Arugula itself:
 - [docs/control-e2e.md](docs/control-e2e.md): how control's end-to-end encryption keeps it out of
   your terminals.
 - [DECISIONS.md](DECISIONS.md): the decisions that still hold.
+- [docs/fountain.md](docs/fountain.md): Arugula as Fountain's UI: sign-in, the account view and
+  its permission requests, conversations as agent blocks, recipes on Fountain.
 - [docs/platform-features.md](docs/platform-features.md): which agent platform features (ACP, MCP,
   A2A, skills, scheduled tasks) Arugula brings in, which are planned, and the gaps.
 - [docs/plan-archive.md](docs/plan-archive.md): the original plan and every milestone.

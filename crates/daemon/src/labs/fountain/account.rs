@@ -111,7 +111,6 @@ struct Pending {
 
 pub struct Account {
     dir: PathBuf,
-    state_dir: PathBuf,
     /// What Fountain names the key ("Arugula on geek").
     client_name: String,
     shell_env: Option<Arc<ShellEnv>>,
@@ -186,7 +185,6 @@ impl Account {
         };
         Self {
             dir,
-            state_dir: state_dir.to_owned(),
             client_name: client_name.to_owned(),
             shell_env,
             saved: Mutex::new(saved),
@@ -202,10 +200,6 @@ impl Account {
     /// Where the key and the stream's cursor are kept.
     pub fn dir(&self) -> &Path {
         &self.dir
-    }
-
-    pub fn state_dir(&self) -> &Path {
-        &self.state_dir
     }
 
     /// The account stream's subscribers subscribe here.

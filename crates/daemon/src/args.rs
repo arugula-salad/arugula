@@ -296,11 +296,11 @@ pub(crate) struct RunArgs {
     /// state directory].
     #[arg(long, env = "ARUGULA_STUDIO_FILE", hide = true)]
     pub(crate) studio_file: Option<PathBuf>,
-    /// Follow the Fountain account's event stream on this daemon (with the
-    /// `fountain` flag on): one connection per sign-in, its place kept
+    /// Follow the Fountain account's event stream on this daemon, once it
+    /// has a Fountain login: one connection per sign-in, its place kept
     /// across restarts. Turn it on for one daemon per account, the home
     /// machine's, so a permission request raises one card.
-    #[arg(long, env = "ARUGULA_FOUNTAIN_ACCOUNT_STREAM", hide = true)]
+    #[arg(long, env = "ARUGULA_FOUNTAIN_ACCOUNT_STREAM")]
     pub(crate) fountain_account_stream: bool,
     /// Don't be Claude Code's IDE. By default Claude Code in a pane
     /// connects to arugulad (`CLAUDE_CODE_SSE_PORT`) and its edits wait
@@ -423,14 +423,12 @@ pub(crate) struct BlockArgs {
 pub(crate) const DEFAULT_WISP_URL: &str = "http://127.0.0.1:7788";
 
 /// Options that work but stay out of `--help` unless the machine has turned
-/// their Labs flag on: guest ssh, the studio file, Fountain's account stream
-/// and the sandbox provider.
+/// their Labs flag on: guest ssh, the studio file and the sandbox provider.
 /// The others that are `hide = true` are internals, and stay hidden.
-const LABS_OPTIONS: [(&str, &str); 8] = [
+const LABS_OPTIONS: [(&str, &str); 7] = [
     ("guest_ssh", flags::GUEST_SSH),
     ("guest_ssh_host", flags::GUEST_SSH),
     ("studio_file", flags::STUDIO),
-    ("fountain_account_stream", flags::FOUNTAIN),
     ("wisp_url", flags::VMS),
     ("wisp_token_file", flags::VMS),
     ("loam_url", flags::VMS),
@@ -506,7 +504,6 @@ mod tests {
             "--loam-url",
             "--loam-key-file",
             "--studio-file",
-            "--fountain-account-stream",
             "--guest-ssh",
             "--guest-ssh-host",
             "--guest-machines",
@@ -514,6 +511,8 @@ mod tests {
         ] {
             assert!(!top.contains(flag), "{flag} is in `arugulad --help`");
         }
+        // Fountain left Labs (#942): its option is everyone's.
+        assert!(top.contains("--fountain-account-stream"), "{top}");
         // Still there for whoever knows them.
         assert!(super::Args::command().get_arguments().any(|a| a.get_long() == Some("studio-file")));
     }
@@ -529,7 +528,6 @@ mod tests {
             "--loam-url",
             "--loam-key-file",
             "--studio-file",
-            "--fountain-account-stream",
             "--guest-ssh",
             "--guest-ssh-host",
         ];

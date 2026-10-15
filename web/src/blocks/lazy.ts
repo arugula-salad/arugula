@@ -1,8 +1,10 @@
-// The Fountain, studio app, workspace and agents blocks are Labs: their code is in
-// the Labs chunk. Here, in the main bundle, is what stands in their slot: a
+// The Fountain, studio app, workspace and agents blocks have their code in the
+// Labs chunk. Here, in the main bundle, is what stands in their slot: a
 // "Loading…" while the chunk arrives, then the real block inside it. A
-// machine without labs gets a plain note instead (an old saved layout can
-// still hold such a block), and nothing is fetched for it.
+// machine without the block's flag gets a plain note instead (an old saved
+// layout can still hold such a block), and nothing is fetched for it.
+// Fountain's block needs no flag: it left Labs (#942), and only its code
+// stays in the chunk.
 
 import type { Client } from "../client";
 import { loadLabs, type Labs } from "../labs-load";
@@ -12,8 +14,8 @@ import { registerBlock, type BlockView } from "./view";
 const LABS_BLOCKS = ["fountain", "app", "workspace", "agents"] as const;
 type LabsBlock = (typeof LABS_BLOCKS)[number];
 
-/** The Labs flag each needs. */
-const FLAGS: Record<LabsBlock, string> = { fountain: "fountain", app: "studio", workspace: "workspaces", agents: "agents" };
+/** The Labs flag each needs; `null`: none. */
+const FLAGS: Record<LabsBlock, string | null> = { fountain: null, app: "studio", workspace: "workspaces", agents: "agents" };
 const TITLES: Record<LabsBlock, string> = { fountain: "Fountain", app: "App", workspace: "Workspace", agents: "Team agents" };
 
 function rendererOf(labs: Labs, type: LabsBlock) {
@@ -40,7 +42,8 @@ function lazyView(type: LabsBlock, client: Client, id: PaneId): BlockView {
     if (gone || inner || client.features === null) return;
     off?.();
     off = null;
-    if (!client.flag(FLAGS[type])) {
+    const flag = FLAGS[type];
+    if (flag !== null && !client.flag(flag)) {
       host.textContent = "This block is in Labs";
       host.className = "block block-unknown";
       return;

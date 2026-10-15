@@ -24,7 +24,7 @@ pub struct Args {
     #[arg(long, conflicts_with_all = ["fountain", "codex"])]
     acp: Option<String>,
     /// A Fountain agent (name or id), run in Fountain's sandbox.
-    #[arg(long, hide = true, conflicts_with = "codex")]
+    #[arg(long, conflicts_with = "codex")]
     fountain: Option<String>,
     /// Claude Code as a recipe, a Claude Code subagent (its `name`, from
     /// `.claude/agents/` here or `~/.claude/agents/`): its prompt, model,
@@ -35,7 +35,7 @@ pub struct Args {
     #[arg(long)]
     codex: bool,
     /// Fountain: a vault for its secrets.
-    #[arg(long, hide = true)]
+    #[arg(long)]
     vault: Option<String>,
     /// A model to switch to (e.g. `haiku`).
     #[arg(long)]

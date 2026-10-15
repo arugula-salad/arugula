@@ -1398,10 +1398,9 @@ impl Agent {
         if !ctx.restoring && cfg.def.as_fountain.is_some() {
             return Err(defs::AS_FOUNTAIN_GONE.into());
         }
-        // A Fountain agent is the
-        // `fountain` flag's (#347). One saved while it was on comes back.
+        // A Fountain agent: no flag since #942's F5, only a login, which
+        // the link asks for when it starts.
         if !ctx.restoring && cfg.def.agent == Kind::Fountain {
-            crate::labs::flag(&ctx.state_dir, arugula_proto::flags::FOUNTAIN)?;
             // A new conversation needs its agent; one that exists, its id.
             if cfg.def.fountain_agent.as_deref().is_none_or(str::is_empty) && cfg.session_id.is_none() {
                 return Err(

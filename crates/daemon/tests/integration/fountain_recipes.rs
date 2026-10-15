@@ -286,7 +286,8 @@ impl Fountain {
         let home = dir.join("home");
         std::fs::create_dir_all(&home).unwrap();
         let home = home.display().to_string();
-        Daemon::child_labs_env(
+        // Recipes are the `agents` flag's; Fountain needs none (#942, F5).
+        Daemon::child_in(
             &["--wisp-token-file", "/nonexistent", "--tailscale-socket", "/nonexistent/sock"],
             &[
                 ("HOME", home.as_str()),
@@ -298,6 +299,7 @@ impl Fountain {
                 ("GH_TOKEN", ""),
                 ("ARUGULA_GH_BIN", "/nonexistent/gh"),
             ],
+            |state| arugula_proto::flags::set(state, arugula_proto::flags::AGENTS, true).unwrap(),
         )
     }
 }
