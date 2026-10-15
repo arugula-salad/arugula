@@ -17,7 +17,7 @@ Each feature has a flag, off on a new install:
 | `chat` | Threads on panes and sessions, conversations, and the chat page |
 | `huddles` | Voice calls on a session |
 | `vms` | VM tabs and panes, machines and the sandboxes page |
-| `fountain` | Fountain agents and the runner view |
+| `fountain` | Fountain agents |
 | `studio` | Studio app blocks |
 | `workspaces` | Chant workspace blocks |
 | `guest-ssh` | *Invite over ssh…* for a guest with only OpenSSH |

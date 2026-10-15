@@ -79,7 +79,7 @@ pub const CHAT: &str = "chat";
 pub const HUDDLES: &str = "huddles";
 /// VM tabs and panes, machines and the sandboxes page.
 pub const VMS: &str = "vms";
-/// Fountain agents and the runner view.
+/// Fountain agents.
 pub const FOUNTAIN: &str = "fountain";
 /// Studio app blocks.
 pub const STUDIO: &str = "studio";
@@ -125,7 +125,7 @@ pub const FLAGS: &[Flag] = &[
     row(CHAT, "Chat", "Threads on panes and sessions, and the chat page."),
     row(HUDDLES, "Huddles", "Voice calls on a session."),
     row(VMS, "VMs and sandboxes", "VM tabs and panes, machines and the sandboxes page. Needs a sandbox provider."),
-    row(FOUNTAIN, "Fountain", "Fountain agents and the runner view. Needs a Fountain login."),
+    row(FOUNTAIN, "Fountain", "Fountain agents. Needs a Fountain login."),
     row(STUDIO, "Studio apps", "Studio app blocks. Needs a linked studio."),
     row(WORKSPACES, "Chant workspaces", "Chant workspace blocks."),
     local_row(GUEST_SSH, "Guest ssh", "Invite a guest to a pane over plain ssh."),

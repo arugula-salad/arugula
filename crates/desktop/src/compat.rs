@@ -573,7 +573,6 @@ mod tests {
             tailnet_seen: false,
             control: None,
             team: None,
-            fountain_runner: None,
             features: None,
         };
         assert_eq!(protocol_of(&serde_json::to_value(&info).unwrap()), Some(arugula_proto::PROTOCOL));

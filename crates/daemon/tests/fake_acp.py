@@ -655,7 +655,7 @@ def handle(m):
     if method == "initialize":
         caps.update(p.get("clientCapabilities") or {})
         # Run as `fountain acp --agent no-load-session`: an agent that can't
-        # load or resume a session (M45b's Follow refuses it).
+        # load or resume a session (a followed conversation refuses it).
         no_load = "--agent" in sys.argv[:-1] and sys.argv[sys.argv.index("--agent") + 1] == "no-load-session"
         agent_caps = {"mcpCapabilities": {"http": True}}
         if "--images" in sys.argv:

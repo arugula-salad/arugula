@@ -90,11 +90,6 @@ fn policy(method: &Method, path: &str) -> Policy {
         ["api", "blocks", _, "call", "offer" | "unoffer" | "recipes"] => Policy::Owner,
         // So is *Run there*: an agent on another of the owner's machines.
         ["api", "blocks", _, "call", "run_there"] => Policy::Owner,
-        // M45b: the runner view and what it opens: an agent block on a
-        // runner conversation (the owner's login), a diff whose git runs
-        // as `fountain` through the owner's sudoers rule, a shell as
-        // `fountain`, and which view (the runner's reads the unit).
-        ["api", "blocks", _, "call", "view" | "follow" | "changes" | "shell"] => Policy::Owner,
         // #302: who chant records a workspace's gates as approved by is
         // the owner's to say. #620: so is starting behold on the owner's
         // host for a workspace's graph.
@@ -376,7 +371,7 @@ mod tests {
     #[test]
     fn encoded_paths() {
         let p = Method::POST;
-        for m in ["%70rincipals", "%65nter", "agen%74", "run%5Fhere", "%6C%6F%67%69%6E", "%76iew", "%68ud", "gr%61ph"] {
+        for m in ["%70rincipals", "%65nter", "agen%74", "run%5Fhere", "%6C%6F%67%69%6E", "%73pec", "%68ud", "gr%61ph"] {
             assert_eq!(policy(&p, &format!("/api/blocks/7/call/{m}")), Policy::Owner, "{m}");
         }
         assert_eq!(policy(&p, "/api/blocks/7/call/%61pprove"), Policy::On(7, Role::Editor));

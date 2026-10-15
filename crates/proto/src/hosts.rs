@@ -119,10 +119,6 @@ pub struct HostInfo {
     /// The team it joined as, if one (#110).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub team: Option<String>,
-    /// This machine is the account's Fountain runner (M45b: it has the
-    /// `fountain-runner` unit): what was last read of it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub fountain_runner: Option<FountainRunnerInfo>,
     /// What this machine is set up for (#171, #180): the menus offer only
     /// these, or say how to turn them on. Absent from older daemons.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -323,33 +319,6 @@ pub struct HostFeatures {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub flags: Option<Vec<String>>,
-}
-
-/// A machine's Fountain runner, for its line in the machine panel and the
-/// swarm (M45b). Read in the background, never on the request.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-#[cfg_attr(feature = "ts", ts(optional_fields))]
-pub struct FountainRunnerInfo {
-    /// Its name on Fountain (the unit's `--name`).
-    pub name: String,
-    /// What Fountain says; `None` until read.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub online: Option<bool>,
-    /// The runner's `fountain` version, as Fountain has it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub version: Option<String>,
-    /// `systemctl is-active fountain-runner`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub unit_active: Option<bool>,
-    /// How many sandboxes it holds (when a runner view counted them).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sandboxes: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub checked_ms: Option<u64>,
-    /// What wants the owner (the runner view's attention), if anything.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub problem: Option<String>,
 }
 
 /// `POST /api/hosts/invite`: a one-time token that lets a sandbox add itself.

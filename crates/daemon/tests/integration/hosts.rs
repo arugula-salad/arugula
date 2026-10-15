@@ -528,7 +528,6 @@ fn a_build_without_labs_ignores_the_labs_file() {
     for key in ["labs", "threads", "calls", "fountain", "studio", "vms"] {
         assert_eq!(host["features"][key], false, "{key}: {host}");
     }
-    assert!(host.get("fountain_runner").is_none_or(|v| v.is_null()), "{host}");
 }
 
 /// A build without Labs has no guest ssh: the invite routes answer 501 and

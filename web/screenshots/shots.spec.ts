@@ -311,8 +311,6 @@ async function startDaemon() {
         TERM: "xterm-256color",
         // No "a newer release is out" chip in the pictures.
         ARUGULA_NO_UPDATE_CHECK: "true",
-        // Not this machine's Fountain runner, if it is one (no menu item).
-        ARUGULA_FOUNTAIN_UNIT_FILE: join(root, "no-fountain-runner.service"),
         // The browser's cookie and Node's fetch carry this (e2e/local-token.ts).
         ARUGULA_LOCAL_TOKEN_FILE: process.env.ARUGULA_LOCAL_TOKEN_FILE!,
         PATH: [join(home, "bin"), nvim, "/usr/local/bin", "/usr/bin", "/bin"].filter(Boolean).join(":"),

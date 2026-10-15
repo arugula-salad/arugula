@@ -534,8 +534,6 @@ pub(crate) fn answer(app: &App, owner: bool) -> HostAnswer {
         // The team's name once its roster is in, else its id.
         team: saved
             .and_then(|s| s.roster.as_ref().map(|r| r.name.clone()).or_else(|| Some(s.team.as_ref()?.team.clone()))),
-        // M45b: only where the runner's unit is; from what was last read.
-        fountain_runner: crate::labs::fountain_runner_info(&app.mux.shell_env),
         features: Some(features(app)),
     };
     HostAnswer { info, control_state: owner.then(|| crate::setup::control_state(app)) }

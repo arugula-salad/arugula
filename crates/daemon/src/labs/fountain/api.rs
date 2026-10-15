@@ -1,5 +1,5 @@
 //! Fountain's HTTP API, read-only (M43): the account's agents, its
-//! environments' names, its self-hosted runners and its sandboxes.
+//! environments' and vaults' names.
 //!
 //! Shapes are Fountain's OpenAPI (`<base_url>/api/openapi.json`, CLI
 //! v0.21.0): every list is `{data: [...]}`, an agent by id is `{data:
@@ -199,101 +199,6 @@ pub struct Environment {
     pub name: String,
 }
 
-/// A self-hosted runner (`GET /api/runners`; M45 shows them).
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct Runner {
-    pub id: String,
-    /// The `--name` it connected with.
-    #[serde(default, deserialize_with = "null_default")]
-    pub name: String,
-    #[serde(default, deserialize_with = "null_default")]
-    pub online: bool,
-    #[serde(default)]
-    pub os: Option<String>,
-    #[serde(default)]
-    pub arch: Option<String>,
-    /// Its CLI's version.
-    #[serde(default)]
-    pub version: Option<String>,
-    #[serde(default)]
-    pub hostname: Option<String>,
-    /// The directory on its machine that holds its sandboxes.
-    #[serde(default)]
-    pub root: Option<String>,
-    #[serde(default)]
-    pub last_seen_at: Option<String>,
-    #[serde(default)]
-    pub connected_at: Option<String>,
-    #[serde(default)]
-    pub created_at: Option<String>,
-}
-
-/// Where a runner sandbox lives (`provider: runner`).
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct SandboxRunner {
-    #[serde(default)]
-    pub id: Option<String>,
-    #[serde(default)]
-    pub name: Option<String>,
-    #[serde(default)]
-    pub hostname: Option<String>,
-    #[serde(default, deserialize_with = "null_default")]
-    pub online: bool,
-    /// Its directory on the machine (`<root>/<name>`).
-    #[serde(default)]
-    pub path: Option<String>,
-}
-
-/// A conversation on a sandbox, newest first.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct SandboxConversation {
-    pub id: String,
-    /// pending, running, idle, failed or terminated.
-    #[serde(default)]
-    pub status: String,
-    #[serde(default)]
-    pub mid_turn: bool,
-    #[serde(default)]
-    pub runtime: Option<String>,
-    #[serde(default)]
-    pub title: Option<String>,
-    #[serde(default)]
-    pub inserted_at: Option<String>,
-}
-
-/// A sandbox and its conversations (`GET /api/sandboxes`).
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct Sandbox {
-    pub id: String,
-    /// Its name on the provider (`runner-<runner id>-<short>` on a runner).
-    pub sprite_name: String,
-    /// pending, starting, ready, suspended, terminated or failed.
-    #[serde(default)]
-    pub status: String,
-    /// sprites, e2b, daytona or runner.
-    #[serde(default)]
-    pub provider: Option<String>,
-    /// ephemeral or persistent.
-    #[serde(default)]
-    pub mode: Option<String>,
-    #[serde(default)]
-    pub agent_id: Option<String>,
-    #[serde(default)]
-    pub environment_id: Option<String>,
-    #[serde(default)]
-    pub vault_id: Option<String>,
-    #[serde(default)]
-    pub runner: Option<SandboxRunner>,
-    #[serde(default, deserialize_with = "null_default")]
-    pub conversations: Vec<SandboxConversation>,
-    #[serde(default)]
-    pub inserted_at: Option<String>,
-    #[serde(default)]
-    pub last_resumed_at: Option<String>,
-    #[serde(default)]
-    pub url: Option<String>,
-}
-
 #[derive(Deserialize)]
 struct Data<T> {
     data: T,
@@ -395,20 +300,6 @@ impl Client {
     pub async fn vaults(&self) -> Result<Vec<Environment>, Error> {
         Ok(rows(self.get::<Vec<Value>>("/api/vaults").await?).items)
     }
-
-    pub async fn runners(&self) -> Result<Listing<Runner>, Error> {
-        Ok(rows(self.get::<Vec<Value>>("/api/runners").await?))
-    }
-
-    /// Sandboxes, with their conversations; `status`: comma-separated
-    /// states to keep.
-    pub async fn sandboxes(&self, status: Option<&str>) -> Result<Listing<Sandbox>, Error> {
-        let path = match status {
-            Some(s) => format!("/api/sandboxes?status={s}"),
-            None => "/api/sandboxes".to_owned(),
-        };
-        Ok(rows(self.get::<Vec<Value>>(&path).await?))
-    }
 }
 
 #[cfg(test)]
@@ -451,9 +342,6 @@ mod tests {
         assert!(nulls.skills.is_empty() && nulls.model.is_empty());
         let lit = l.items.iter().find(|a| a.name == "fixture-literal-header").unwrap();
         assert_eq!(lit.mcp_servers["tool"].headers["X-Count"], "3", "a number is its text");
-        let r: Listing<Runner> =
-            rows(vec![serde_json::json!({ "id": "r", "name": null, "online": null }), serde_json::json!(7)]);
-        assert_eq!((r.items.len(), r.unreadable, r.items[0].online), (1, 1, false));
         let e: Listing<Environment> = rows(vec![serde_json::json!({ "id": "e", "name": null })]);
         assert_eq!(e.items[0].name, "");
     }
@@ -473,22 +361,5 @@ mod tests {
         assert_eq!((r.env["TOKEN"].as_str(), r.env["REF"].as_str()), (REDACTED, "${Z}"));
         assert_eq!(s.headers["X-Api-Key"], "typed-in-literally", "kept as read, for M44");
         assert!(!is_reference("${unclosed") && is_reference("a${B}c"));
-    }
-
-    #[test]
-    fn runners_and_sandboxes() {
-        let r: Data<Vec<Runner>> =
-            serde_json::from_str(include_str!("../../../tests/fixtures/fountain/runners.json")).unwrap();
-        assert!(r.data.iter().any(|r| r.online));
-        assert!(r.data.iter().all(|r| !r.name.is_empty() && r.last_seen_at.is_some()));
-        let s: Data<Vec<Sandbox>> = serde_json::from_value(serde_json::json!({ "data": [{
-            "id": "s1", "sprite_name": "runner-r1-abc", "status": "ready", "provider": "runner", "mode": "ephemeral",
-            "runner": { "id": "r1", "name": "geek", "online": true, "path": "/home/fountain/sandboxes/runner-r1-abc" },
-            "conversations": [{ "id": "c1", "status": "idle", "mid_turn": false, "runtime": "claude" }]
-        }, { "id": "s2", "sprite_name": "x", "status": "terminated", "runner": null, "conversations": null }] }))
-        .unwrap();
-        assert_eq!(s.data[0].runner.as_ref().unwrap().path.as_deref(), Some("/home/fountain/sandboxes/runner-r1-abc"));
-        assert_eq!(s.data[0].conversations[0].status, "idle");
-        assert!(s.data[1].conversations.is_empty());
     }
 }

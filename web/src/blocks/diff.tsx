@@ -54,9 +54,6 @@ export interface DiffState {
   error: string | null;
   watching: boolean;
   updated_ms: number;
-  /** M45b: git run as this user (a Fountain runner's sandbox). Its files
-   * aren't yours to read, so there's no *Open file*. */
-  run_as?: string | null;
   /** #619: against the default branch's merge base (a member's Changes),
    * so another base can be picked; the branch HEAD is on when that base is
    * HEAD itself; the base picked instead. */
@@ -231,11 +228,6 @@ function DiffBlock({ client, id, s }: { client: Client; id: PaneId; s: DiffState
     <div class="review" data-diff={id}>
       <div class="review-bar">
         <b class="review-name">{s.name ?? "…"}</b>
-        {s.run_as && (
-          <span class="host-tag" data-run-as={s.run_as} title={`git runs as ${s.run_as} (a Fountain runner's sandbox); its files open from a shell there`}>
-            as {s.run_as}
-          </span>
-        )}
         {machine && (
           <span class="host-tag" title={`on ${machine.name ?? machine.sprite}`}>
             VM
@@ -319,7 +311,7 @@ function DiffBlock({ client, id, s }: { client: Client; id: PaneId; s: DiffState
                   <Hunks
                     f={f}
                     can={can}
-                    open={s.run_as ? undefined : (line) => void openFile(client, id, where(f.path), line)}
+                    open={(line) => void openFile(client, id, where(f.path), line)}
                     show={(pane) => (client.info(pane) ? client.setActive(pane) : client.toast("That agent's pane is closed"))}
                   />
                 )}

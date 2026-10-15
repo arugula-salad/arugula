@@ -1,18 +1,15 @@
 //! Diff blocks (M11): what changed in a git repository on the block's
 //! host, read-only.
 //!
-//! Config `{repo, rev_a?, rev_b?, run_as?}`. No revisions: the working
+//! Config `{repo, rev_a?, rev_b?}`. No revisions: the working
 //! tree (staged, unstaged and untracked) against `HEAD`; one: that revision
 //! against the working tree (untracked too); two: the range. A revision may
 //! be a tree (git's empty tree: everything in the repository). `repo` is any
 //! directory in the repository.
 //!
-//! `run_as: "fountain"` (M45b, from the Fountain runner view's *Changes*):
-//! git runs as the runner's user, through `sudo -n -u fountain /bin/bash
-//! -c` (the one form M45a's sudoers rule allows), for a sandbox arugulad
-//! can't read itself. Only that user, only on this host, and `repo` must be
-//! an absolute path; only the owner opens blocks other than agents, so only
-//! the owner can ask for it.
+//! `run_as` (M45b: git as the Fountain runner's `fountain` user) went with
+//! Fountain's runners: a block that names it is refused, and a saved one
+//! is dropped when the daemon restores it.
 //!
 //! One `sh -c` on the host does the lot (one exec on a VM): find the
 //! repository's top, check the revisions, `git diff -M`, then each
@@ -70,8 +67,9 @@ const UNTRACKED_MAX: usize = 200;
 const OPEN_MAX: usize = 12;
 /// How often it looks again while drawn, here (a machine: every 3s).
 const POLL: Duration = Duration::from_secs(2);
-/// How often a `run_as` diff looks again while drawn.
-const SUDO_POLL: Duration = Duration::from_secs(15);
+/// Why a diff with `run_as` is refused.
+const RUN_AS_GONE: &str =
+    "run_as went with Fountain's self-hosted runners (Fountain removed them): a diff reads git as you";
 /// git's empty tree: what a repository with no commits is compared with.
 const EMPTY_TREE: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 
@@ -142,7 +140,7 @@ struct Config {
     /// Files open when it was saved.
     #[serde(default)]
     open: Vec<String>,
-    /// Run git as this user (only `fountain`, M45b).
+    /// M45b's git as the Fountain runner's user: only read, to refuse it.
     #[serde(default)]
     run_as: Option<String>,
     /// #619: the chant workspace it was opened from, to say what made each
@@ -267,9 +265,6 @@ struct State {
     /// The revision picked in place of the merge base.
     #[serde(skip_serializing_if = "Option::is_none")]
     picked: Option<String>,
-    /// Whose git it runs (M45b: `fountain`), when not yours.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    run_as: Option<String>,
     files: Vec<Value>,
     add: u32,
     del: u32,
@@ -326,9 +321,10 @@ impl Diff {
         }
         let repo = config.repo.clone().filter(|r| !r.is_empty()).unwrap_or_else(|| "~".into());
         let runner = Runner::of(&ctx);
-        if let Some(user) = &config.run_as {
-            crate::labs::check_run_as(user, &repo, ctx.sprite.is_some())?;
-        } else if let Ok(Runner::Local { .. }) = &runner
+        if config.run_as.is_some() {
+            return Err(RUN_AS_GONE.into());
+        }
+        if let Ok(Runner::Local { .. }) = &runner
             && !ctx.restoring
         {
             // Here, the same places are refused as for `/api/fs`.
@@ -346,7 +342,6 @@ impl Diff {
             rev_a: config.rev_a.clone(),
             rev_b: config.rev_b.clone(),
             against,
-            run_as: config.run_as.clone(),
             loading: !ctx.restoring,
             ..Default::default()
         };
@@ -399,12 +394,7 @@ impl Diff {
         // #619: a revision picked in place of the merge base.
         let picked = self.picked.lock().unwrap().clone().filter(|_| self.config.rev_a.is_none());
         args.extend(self.config.rev_a.iter().chain(picked.iter()).chain(self.config.rev_b.iter()).cloned());
-        let run = match &self.config.run_as {
-            // Through sudo, as the runner's user.
-            Some(_) => crate::labs::git_as_runner(&script(), &args).await,
-            None => runner.sh(&script(), &args).await,
-        };
-        let (out, _) = match run {
+        let (out, _) = match runner.sh(&script(), &args).await {
             Ok(o) => o,
             Err(e) => return self.failed(e),
         };
@@ -611,11 +601,7 @@ impl Diff {
     /// Poll while drawn.
     fn watch(&self, round: u64) {
         let Some(me) = self.me.upgrade() else { return };
-        // As `fountain` (M45b) every read is a sudo, which sudo logs: less often.
-        let every = match self.config.run_as {
-            Some(_) => SUDO_POLL,
-            None => super::every(self.runner.as_ref().is_ok_and(Runner::local), POLL),
-        };
+        let every = super::every(self.runner.as_ref().is_ok_and(Runner::local), POLL);
         self.ctx.rt.spawn(async move {
             while me.live.on(round) {
                 me.load().await;
@@ -637,9 +623,6 @@ impl Block for Diff {
             "rev_b": self.config.rev_b,
             "open": *self.open.lock().unwrap(),
         });
-        if let Some(u) = &self.config.run_as {
-            v["run_as"] = json!(u);
-        }
         if let Some(c) = &self.config.chant {
             v["chant"] = json!(c);
         }
@@ -748,15 +731,10 @@ impl Block for Diff {
     fn summary(&self) -> Summary {
         let st = self.state.lock().unwrap();
         let local = self.runner.as_ref().is_ok_and(Runner::local);
-        // A sandbox's directory isn't one of yours to start things in.
-        let cwd = match self.config.run_as {
-            Some(_) => None,
-            None => st.repo.clone().or_else(|| self.config.repo.clone()),
-        };
-        let who = self.config.run_as.as_deref().map(|u| format!(" (as {u})")).unwrap_or_default();
+        let cwd = st.repo.clone().or_else(|| self.config.repo.clone());
         Summary {
-            project: cwd.as_deref().and_then(|c| super::project(c, local && self.config.run_as.is_none())),
-            title: Some(format!("Changes in {}{who}", st.name.as_deref().unwrap_or("…"))),
+            project: cwd.as_deref().and_then(|c| super::project(c, local)),
+            title: Some(format!("Changes in {}", st.name.as_deref().unwrap_or("…"))),
             cwd,
             ..Default::default()
         }

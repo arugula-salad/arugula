@@ -2031,7 +2031,6 @@ mod wire {
             tailnet_seen: false,
             control: None,
             team: None,
-            fountain_runner: None,
             features: None,
         };
         assert_eq!(serde_json::to_value(&bare).unwrap(), json!({ "name": "box", "version": "1.2.3" }));
@@ -2041,7 +2040,6 @@ mod wire {
             tailnet_seen: true,
             control: Some("https://control".into()),
             team: Some("acme".into()),
-            fountain_runner: Some(FountainRunnerInfo { name: "r".into(), online: Some(true), ..Default::default() }),
             features: Some(HostFeatures { labs: true, blocks: true, ..Default::default() }),
             ..bare
         };
@@ -2050,7 +2048,6 @@ mod wire {
             json!({
                 "name": "box", "version": "1.2.3", "protocol": 2, "tailnet_url": "https://box.ts.net",
                 "tailnet_seen": true, "control": "https://control", "team": "acme",
-                "fountain_runner": { "name": "r", "online": true },
                 // `dev` came with flags (#665); `flags` is left out when unsaid;
                 // `block_channels` came with blocks through control (#150).
                 "features": { "labs": true, "dev": false, "blocks": true, "vms": false, "fountain": false,

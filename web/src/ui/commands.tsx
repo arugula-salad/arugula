@@ -255,15 +255,9 @@ export function machineSettingsItems(client: Client): MenuItem[] {
   ];
 }
 
-/** The Fountain catalog with a login here; the runner view where the
- * runner's unit is (#180). */
+/** The Fountain catalog with a login here (#180). */
 function fountainItems(client: Client, where: { session?: number; split?: PaneId }): MenuItem[] {
-  return [
-    ...(client.has("fountain") ? [{ label: "Fountain agents…", run: () => void openFountain(client, where) } as MenuItem] : []),
-    ...(client.flag("fountain") && (client.features === null || client.fountainRunner)
-      ? [{ label: "Fountain runner…", run: () => void openFountain(client, where, "runner") } as MenuItem]
-      : []),
-  ];
+  return client.has("fountain") ? [{ label: "Fountain agents…", run: () => void openFountain(client, where) }] : [];
 }
 
 /** "idle" when nothing in the tab runs on its machine any more. */
