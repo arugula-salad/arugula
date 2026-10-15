@@ -1,6 +1,6 @@
 //! M76: wear a recipe in a Claude Code agent block on this host, with the
 //! server handling in [`super::super::wearing`] (M44's, from when a
-//! Fountain agent could be worn here too). The block gets:
+//! Managoat agent could be worn here too). The block gets:
 //!
 //! - **the prompt**, appended to Claude Code's after a line naming the
 //!   agent (`claude-agent-acp` drops the SDK's `agent` option, so the
@@ -71,7 +71,7 @@ fn configured(dir: &Path, home: &Path) -> BTreeMap<String, Value> {
     out
 }
 
-/// The recipe's servers as Fountain's shape, and the ones it names that
+/// The recipe's servers as Managoat's shape, and the ones it names that
 /// aren't configured anywhere.
 pub(crate) fn servers_of(r: &Recipe, dir: &Path, home: &Path) -> (BTreeMap<String, McpServer>, Vec<LeftOut>) {
     let known = configured(dir, home);

@@ -60,7 +60,7 @@ export interface DiffState {
   base?: boolean;
   on_default?: string | null;
   picked?: string | null;
-  /** #942 F3: a Fountain conversation's sandbox, and whether it's parked
+  /** #942 F3: a Managoat conversation's sandbox, and whether it's parked
    *  (a read never wakes it: Wake does). */
   fountain?: string;
   parked?: boolean;
@@ -94,7 +94,7 @@ export async function openFile(client: Client, from: PaneId, path: string, line:
       return;
     }
   }
-  // #942 F3: a file in a Fountain sandbox is read there.
+  // #942 F3: a file in a Managoat sandbox is read there.
   const config = fountain ? { path, line, fountain } : { path, line };
   const block = await client.openBlock({ type: "file", config, from_pane: from, split: from }, "couldn't open that file");
   if (block !== null) lastFile.set(from, block);

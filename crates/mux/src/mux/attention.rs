@@ -173,7 +173,7 @@ impl Daemon {
                 self.touch(pane);
                 return;
             }
-            // A Fountain account's permission request (#942) is answered
+            // A Managoat account's permission request (#942) is answered
             // with the owner's own login: for the owner alone, buttons and
             // all.
             if self.blocks.get(&pane).is_some_and(|b| b.kind() == BlockType::Fountain) {

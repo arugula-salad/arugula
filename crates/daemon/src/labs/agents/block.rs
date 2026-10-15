@@ -9,13 +9,13 @@
 //! machine's offered recipes; `run_there {machine, agent, prompt?}`, one
 //! another of the account's machines offers, run there (in a session of its
 //! name) for the client to go to; and `revoke {account, agent}`, a standing
-//! grant taken back. On Fountain (#942, F4), with a Fountain login:
+//! grant taken back. On Managoat (#942, F4), with a Managoat login:
 //! `fountain_preflight {agent, cwd?, vault?, environment?}` says what a run
-//! on Fountain would be (what doesn't carry over, the checkout, the
-//! variables Fountain lacks); `fountain_copy {agent, var, vault, cwd?,
+//! on Managoat would be (what doesn't carry over, the checkout, the
+//! variables Managoat lacks); `fountain_copy {agent, var, vault, cwd?,
 //! environment?}` copies one of those from this machine to the vault, as the
 //! person asked; and `run_fountain {agent, cwd?, prompt?, vault?,
-//! environment?}` upserts the recipe as its Fountain agent and opens the
+//! environment?}` upserts the recipe as its Managoat agent and opens the
 //! conversation beside it ([`crate::labs::fountain::recipes`]). Those are
 //! the owner's (authz.rs).
 //!
@@ -398,7 +398,7 @@ impl AgentsBlock {
         Ok(json!({ "block": block, "agent": agent, "cwd": cwd }))
     }
 
-    /// F4: what a run on Fountain would be.
+    /// F4: what a run on Managoat would be.
     async fn fountain_preflight(&self, args: Value) -> Result<Value, String> {
         use crate::labs::fountain::{link, recipes};
         let ask: recipes::Ask = serde_json::from_value(args).map_err(|e| format!("fountain_preflight: {e}"))?;
@@ -427,11 +427,11 @@ impl AgentsBlock {
         Ok(json!({ "copied": var, "vault": vault, "summary": said }))
     }
 
-    /// F4: the recipe on Fountain, its conversation beside this block.
+    /// F4: the recipe on Managoat, its conversation beside this block.
     async fn run_fountain(&self, args: Value) -> Result<Value, String> {
         use crate::labs::fountain::recipes;
         if self.ctx.sprite.is_some() {
-            return Err("Run on Fountain compiles a recipe on this host: open the catalog on it".into());
+            return Err("Run on Managoat compiles a recipe on this host: open the catalog on it".into());
         }
         let ask: recipes::Ask = serde_json::from_value(args).map_err(|e| format!("run_fountain: {e}"))?;
         let machine = self.app().map(|a| a.hosts.name().to_owned()).unwrap_or_default();

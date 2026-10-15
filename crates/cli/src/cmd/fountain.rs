@@ -1,5 +1,6 @@
-//! `arugula fountain`: Fountain agents as a catalog block, and this daemon's
-//! Fountain sign-in (`login`, `logout`, `status`).
+//! `arugula managoat` (`arugula fountain` before the rename): Managoat
+//! agents as a catalog block, and this daemon's
+//! Managoat sign-in (`login`, `logout`, `status`).
 
 use super::Ctx;
 use crate::http::{call_raw, enc, request};
@@ -12,7 +13,7 @@ use arugula_proto::{
 };
 use serde_json::json;
 
-/// Fountain: the catalog.
+/// Managoat: the catalog.
 #[derive(clap::Subcommand)]
 pub enum FountainCmd {
     /// List your agents here, one line each, without opening a block.
@@ -25,26 +26,26 @@ pub enum FountainCmd {
         #[arg(long)]
         profile: Option<String>,
     },
-    /// Sign this daemon in to Fountain with a code you approve in a browser.
+    /// Sign this daemon in to Managoat with a code you approve in a browser.
     ///
     /// Prints the code and where to approve it (a phone signed in to
-    /// Fountain will do), then waits. The key is kept in the daemon's state
-    /// directory, readable by you only. Without a URL: the Fountain this
-    /// daemon is signed in to, else FOUNTAIN_BASE_URL or the fountain CLI
+    /// Managoat will do), then waits. The key is kept in the daemon's state
+    /// directory, readable by you only. Without a URL: the Managoat this
+    /// daemon is signed in to, else MANAGOAT_BASE_URL or the managoat CLI
     /// profile's.
     Login {
-        /// The Fountain instance, e.g. `https://fountain.example`.
+        /// The Managoat instance, e.g. `https://managoat.example`.
         url: Option<String>,
         /// Start the sign-in and return without waiting.
         #[arg(long)]
         no_wait: bool,
     },
-    /// Forget this daemon's Fountain key, revoking it on Fountain.
+    /// Forget this daemon's Managoat key, revoking it on Managoat.
     ///
-    /// The fountain CLI's own login (FOUNTAIN_API_KEY,
-    /// ~/.fountain/credentials) is left alone and used from then on.
+    /// The managoat CLI's own login (MANAGOAT_API_KEY,
+    /// ~/.managoat/credentials) is left alone and used from then on.
     Logout,
-    /// Which Fountain login this daemon uses, and its account stream.
+    /// Which Managoat login this daemon uses, and its account stream.
     Status,
 }
 
@@ -58,7 +59,7 @@ pub struct Args {
     /// Start with this source: agent-specs, hand or app.
     #[arg(long)]
     source: Option<String>,
-    /// The credentials profile (default: FOUNTAIN_PROFILE, else default).
+    /// The credentials profile (default: MANAGOAT_PROFILE, else default).
     #[arg(long)]
     profile: Option<String>,
     /// Split a block instead of opening a tab: `right` for the one this
@@ -78,14 +79,14 @@ fn say(s: &FountainLogin) {
         (Some(base), Some(source)) if s.signed_in => {
             let from = match source {
                 "arugula" => "this daemon's sign-in",
-                "env" => "FOUNTAIN_API_KEY",
-                _ => "the fountain CLI's credentials",
+                "env" => "MANAGOAT_API_KEY (or FOUNTAIN_API_KEY)",
+                _ => "the managoat CLI's credentials",
             };
             let who = s.email.as_deref().map(|e| format!(" as {e}")).unwrap_or_default();
             let prefix = s.key_prefix.as_deref().map(|p| format!(", key {p}…")).unwrap_or_default();
             println!("signed in to {base}{who} ({from}{prefix})");
         }
-        _ => println!("not signed in to Fountain"),
+        _ => println!("not signed in to Managoat"),
     }
     if let Some(p) = &s.pending {
         println!("waiting for code {} to be approved at {}", p.user_code, p.verification_uri);
@@ -122,7 +123,7 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
         }
         Args { cmd: Some(FountainCmd::Login { url, no_wait }), .. } => {
             let (s, v) = call_raw::<FountainLoginStart>(&sock, &(), &FountainLoginRequest { base_url: url })?;
-            let Some(p) = s.pending.clone() else { bail!("Fountain didn't give a code") };
+            let Some(p) = s.pending.clone() else { bail!("Managoat didn't give a code") };
             if json_out && no_wait {
                 print_json(&v);
                 return Ok(0);
@@ -170,11 +171,11 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
                 return Ok(0);
             }
             let rows = agents.agents;
-            let base_url = if agents.base_url.is_empty() { "Fountain" } else { &agents.base_url };
+            let base_url = if agents.base_url.is_empty() { "Managoat" } else { &agents.base_url };
             println!("{} of {} agents on {base_url}", rows.len(), agents.total);
             if agents.unreadable > 0 {
                 let n = agents.unreadable;
-                println!("({n} couldn't be read: Fountain sent something this Arugula doesn't understand)");
+                println!("({n} couldn't be read: Managoat sent something this Arugula doesn't understand)");
             }
             for r in rows {
                 let s = |k: &str| r[k].as_str().unwrap_or("").to_owned();

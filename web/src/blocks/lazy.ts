@@ -1,9 +1,9 @@
-// The Fountain, studio app, workspace and agents blocks have their code in the
+// The Managoat, studio app, workspace and agents blocks have their code in the
 // Labs chunk. Here, in the main bundle, is what stands in their slot: a
 // "Loading…" while the chunk arrives, then the real block inside it. A
 // machine without the block's flag gets a plain note instead (an old saved
 // layout can still hold such a block), and nothing is fetched for it.
-// Fountain's block needs no flag: it left Labs (#942), and only its code
+// Managoat's block needs no flag: it left Labs (#942), and only its code
 // stays in the chunk.
 
 import type { Client } from "../client";
@@ -11,15 +11,15 @@ import { loadLabs, type Labs } from "../labs-load";
 import type { BlockType, PaneId } from "../proto";
 import { registerBlock, type BlockView } from "./view";
 
-const LABS_BLOCKS = ["fountain", "app", "workspace", "agents"] as const;
+const LABS_BLOCKS = ["managoat", "app", "workspace", "agents"] as const;
 type LabsBlock = (typeof LABS_BLOCKS)[number];
 
 /** The Labs flag each needs; `null`: none. */
-const FLAGS: Record<LabsBlock, string | null> = { fountain: null, app: "studio", workspace: "workspaces", agents: "agents" };
-const TITLES: Record<LabsBlock, string> = { fountain: "Fountain", app: "App", workspace: "Workspace", agents: "Team agents" };
+const FLAGS: Record<LabsBlock, string | null> = { managoat: null, app: "studio", workspace: "workspaces", agents: "agents" };
+const TITLES: Record<LabsBlock, string> = { managoat: "Managoat", app: "App", workspace: "Workspace", agents: "Team agents" };
 
 function rendererOf(labs: Labs, type: LabsBlock) {
-  const of = { fountain: labs.fountainBlock, app: labs.appBlock, workspace: labs.workspaceBlock, agents: labs.agentsBlock };
+  const of = { managoat: labs.fountainBlock, app: labs.appBlock, workspace: labs.workspaceBlock, agents: labs.agentsBlock };
   return of[type];
 }
 

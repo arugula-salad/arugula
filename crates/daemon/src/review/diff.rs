@@ -7,8 +7,8 @@
 //! be a tree (git's empty tree: everything in the repository). `repo` is any
 //! directory in the repository.
 //!
-//! `run_as` (M45b: git as the Fountain runner's `fountain` user) went with
-//! Fountain's runners: a block that names it is refused, and a saved one
+//! `run_as` (M45b: git as the Managoat runner's `fountain` user) went with
+//! Managoat's runners: a block that names it is refused, and a saved one
 //! is dropped when the daemon restores it.
 //!
 //! One `sh -c` on the host does the lot (one exec on a VM): find the
@@ -69,7 +69,7 @@ const OPEN_MAX: usize = 12;
 const POLL: Duration = Duration::from_secs(2);
 /// Why a diff with `run_as` is refused.
 const RUN_AS_GONE: &str =
-    "run_as went with Fountain's self-hosted runners (Fountain removed them): a diff reads git as you";
+    "run_as went with Managoat's self-hosted runners (Managoat removed them): a diff reads git as you";
 /// git's empty tree: what a repository with no commits is compared with.
 const EMPTY_TREE: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 
@@ -140,7 +140,7 @@ struct Config {
     /// Files open when it was saved.
     #[serde(default)]
     open: Vec<String>,
-    /// M45b's git as the Fountain runner's user: only read, to refuse it.
+    /// M45b's git as the Managoat runner's user: only read, to refuse it.
     #[serde(default)]
     run_as: Option<String>,
     /// #619: the chant workspace it was opened from, to say what made each
@@ -153,7 +153,7 @@ struct Config {
     /// #619: the revision picked in its place.
     #[serde(default)]
     picked: Option<String>,
-    /// F3: a Fountain conversation's sandbox, read through Fountain.
+    /// F3: a Managoat conversation's sandbox, read through Managoat.
     #[serde(default)]
     fountain: Option<super::Sandbox>,
 }
@@ -279,7 +279,7 @@ struct State {
     watching: bool,
     /// When it last read the diff.
     updated_ms: u64,
-    /// F3: the Fountain conversation whose sandbox it shows, and whether
+    /// F3: the Managoat conversation whose sandbox it shows, and whether
     /// that's parked (Wake to look).
     #[serde(skip_serializing_if = "Option::is_none")]
     fountain: Option<String>,
@@ -469,7 +469,7 @@ impl Diff {
     }
 
     /// F3: the sandbox's tracked changes, and what `git status` says is
-    /// untracked, through Fountain.
+    /// untracked, through Managoat.
     async fn load_sandbox(&self, f: &super::Sandbox) {
         use crate::labs::SandboxRead;
         let d = match f.read(SandboxRead::Diff).await {

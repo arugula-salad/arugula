@@ -483,7 +483,7 @@ pub struct AskRef {
     pub id: String,
     /// `approve` (allow or deny it) or `question` (answer or skip it).
     pub what: AskWhat,
-    /// Who asks: the agent (`claude`, `fountain`, …).
+    /// Who asks: the agent (`claude`, `managoat`, …).
     pub agent: String,
     /// A permission's tool (`Bash`, `Edit`…), when it's known (#857: a
     /// conversation's card shows it).
@@ -829,7 +829,9 @@ pub enum WorkKind {
     Pr,
     /// An issue on a forge (M37).
     Issue,
-    /// A Fountain block (M43): the account's agents.
+    /// A Managoat block (M43): the account's agents. `fountain` before the
+    /// rename (DECISIONS.md "Fountain is Managoat"), still read.
+    #[serde(rename = "managoat", alias = "fountain")]
     Fountain,
 }
 
@@ -1066,9 +1068,11 @@ pub enum BlockType {
     /// login?, repo, kind: pr | issue, number, host?, dir?}` (M37: an
     /// issue, and the agent working on it).
     Forge,
-    /// The person's Fountain account (M43): its agents as a catalog, read
-    /// with their own `fountain` login. Config `{profile?, view: catalog,
-    /// filter?, specs?}`.
+    /// The person's Managoat account (M43): its agents as a catalog, read
+    /// with their own `managoat` login. Config `{profile?, view: catalog,
+    /// filter?, specs?}`. Saved as `managoat`; `fountain`, its name before
+    /// the rename (DECISIONS.md "Fountain is Managoat"), is still read.
+    #[serde(rename = "managoat", alias = "fountain")]
     Fountain,
     /// An agent's invites into the session (#234), waiting for the owner:
     /// a card each, beside the agent. Config `{drafter, drafts}`.

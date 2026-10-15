@@ -1,8 +1,8 @@
-//! Recipes on Fountain (#942, F4): an agent recipe (a Claude Code subagent
-//! file, [`crate::labs::agents`]) run in a Fountain sandbox, beside running
+//! Recipes on Managoat (#942, F4): an agent recipe (a Claude Code subagent
+//! file, [`crate::labs::agents`]) run in a Managoat sandbox, beside running
 //! it here (M76) and on another of the account's machines.
 //!
-//! **One mutable Fountain agent per recipe** (Jake, 2026-10-15): before each
+//! **One mutable Managoat agent per recipe** (Jake, 2026-10-15): before each
 //! launch the recipe is compiled ([`compile`]) and upserted with `POST
 //! /api/apply` as `recipe-<name>`, with `metadata: {managed-by: arugula,
 //! source_path, recipe_hash}`. An unchanged recipe reports `unchanged` and
@@ -14,13 +14,13 @@
 //!
 //! **What carries over, and what doesn't** (each loss is named on the run,
 //! as M76 names what it left out):
-//! - the body is `system` (Fountain writes it to `~/.claude/CLAUDE.md`);
+//! - the body is `system` (Managoat writes it to `~/.claude/CLAUDE.md`);
 //! - `model`: `sonnet`, `opus` and `haiku` become a canonical
 //!   `anthropic/…` id, a `claude-…` id gets the prefix; `inherit` leaves the
 //!   agent's alone (a new agent needs one: [`DEFAULT_MODEL`]);
 //! - `skills` are inline `{name, content}`: `SKILL.md` only, so a skill's
 //!   other files stay here;
-//! - `mcpServers` keep their `${VAR}`s as they are: Fountain substitutes
+//! - `mcpServers` keep their `${VAR}`s as they are: Managoat substitutes
 //!   them from the environment's and the vault's secrets at spawn. A server
 //!   with a value typed in (not a reference) is left out, so no credential
 //!   leaves this machine without the explicit copy below; so is one that
@@ -28,7 +28,7 @@
 //! - `tools`, `disallowedTools` and `permissionMode` become a coarse
 //!   `permission_policy` over ACP's kinds: no `Bash` denies `execute`, no
 //!   `Edit`/`Write` denies `edit` (and `delete`, `move`), no
-//!   `WebFetch`/`WebSearch` denies `fetch`. Fountain has no tool allowlist.
+//!   `WebFetch`/`WebSearch` denies `fetch`. Managoat has no tool allowlist.
 //!
 //! **The working directory.** A sandbox clones its own checkout, so the
 //! project's `origin` (as https) becomes an environment `repo-<owner>-<name>`
@@ -68,19 +68,19 @@ pub const LABEL_RECIPE: &str = "arugula.recipe";
 pub const LABEL_HASH: &str = "arugula.recipe_hash";
 pub const LABEL_MACHINE: &str = "arugula.machine";
 
-/// A new agent's model when the recipe inherits one: Fountain needs a model
+/// A new agent's model when the recipe inherits one: Managoat needs a model
 /// on a claude agent.
 pub const DEFAULT_MODEL: &str = "anthropic/claude-sonnet-5-5";
 
 /// Where an environment's repository is cloned in the sandbox.
 pub const WORK: &str = "/work";
 
-/// The Fountain agent a recipe becomes.
+/// The Managoat agent a recipe becomes.
 pub fn agent_name(recipe: &str) -> String {
     format!("recipe-{recipe}")
 }
 
-/// A recipe's `model` as Fountain's canonical `provider/model`, or none
+/// A recipe's `model` as Managoat's canonical `provider/model`, or none
 /// when it has no such form.
 pub fn model(m: &str) -> Option<String> {
     let m = m.trim();
@@ -92,7 +92,7 @@ pub fn model(m: &str) -> Option<String> {
         m if m.starts_with("claude-") => format!("anthropic/{m}"),
         _ => return None,
     };
-    // Fountain's own check: `^[a-z0-9_-]+/[a-z0-9._-]+$`.
+    // Managoat's own check: `^[a-z0-9_-]+/[a-z0-9._-]+$`.
     let ok = |s: &str, extra: &str| {
         !s.is_empty()
             && s.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || "_-".contains(c) || extra.contains(c))
@@ -134,7 +134,7 @@ pub fn policy(r: &Recipe) -> (BTreeMap<String, String>, Vec<String>) {
         Some("bypassPermissions") => "auto_allow",
         Some("plan") => {
             notes.push(
-                "permissionMode plan: Fountain has no plan mode, so edits and commands are denied (by ACP kind) instead"
+                "permissionMode plan: Managoat has no plan mode, so edits and commands are denied (by ACP kind) instead"
                     .to_owned(),
             );
             for k in ["edit", "delete", "move", "execute"] {
@@ -150,7 +150,7 @@ pub fn policy(r: &Recipe) -> (BTreeMap<String, String>, Vec<String>) {
             "auto_deny"
         }
         Some(m) => {
-            notes.push(format!("permissionMode {m}: Fountain has no such mode, so it asks"));
+            notes.push(format!("permissionMode {m}: Managoat has no such mode, so it asks"));
             "ask"
         }
     };
@@ -171,7 +171,7 @@ pub fn policy(r: &Recipe) -> (BTreeMap<String, String>, Vec<String>) {
     if !r.tools.is_empty() || !r.disallowed_tools.is_empty() {
         let kept = if denied.is_empty() { "nothing denied".to_owned() } else { denied.join("; ") };
         notes.push(format!(
-            "tools: Fountain has no tool allowlist, so only what ACP's kinds can say carries over ({kept})"
+            "tools: Managoat has no tool allowlist, so only what ACP's kinds can say carries over ({kept})"
         ));
     }
     let scoped: Vec<&String> = r.tools.iter().chain(&r.disallowed_tools).filter(|t| t.contains('(')).collect();
@@ -192,7 +192,7 @@ pub fn permission_text(p: &BTreeMap<String, String>) -> String {
 
 // ---------------------------------------------------------------- the repo
 
-/// The project's checkout as an environment Fountain clones.
+/// The project's checkout as an environment Managoat clones.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Repo {
     /// `origin`, as https (no credentials).
@@ -245,7 +245,7 @@ pub async fn repo(dir: &Path) -> Result<Repo, String> {
         .await
         .map_err(|_| format!("{} has no origin, so the sandbox has no checkout of it", dir.display()))?;
     let (url, owner, name) = https(&remote)
-        .ok_or_else(|| format!("its origin ({}) isn't a URL Fountain can clone (https or ssh)", remote.trim()))?;
+        .ok_or_else(|| format!("its origin ({}) isn't a URL Managoat can clone (https or ssh)", remote.trim()))?;
     let mut stays = vec![];
     if git(&["status", "--porcelain"]).await.is_ok_and(|s| !s.trim().is_empty()) {
         stays.push("uncommitted changes".to_owned());
@@ -267,7 +267,7 @@ pub async fn repo(dir: &Path) -> Result<Repo, String> {
 
 // ---------------------------------------------------------------- compiling
 
-/// A recipe as a Fountain agent (and its project as an environment).
+/// A recipe as a Managoat agent (and its project as an environment).
 #[derive(Debug, Clone, Serialize)]
 pub struct Compiled {
     pub recipe: String,
@@ -354,7 +354,7 @@ fn skills(r: &Recipe, dir: &Path, home: &Path) -> (Vec<Value>, Vec<LeftOut>) {
             left.push(LeftOut {
                 name: format!("skill {name}'s other files"),
                 why: format!(
-                    "Fountain's inline skills carry SKILL.md only, so {} file(s) stay here ({})",
+                    "Managoat's inline skills carry SKILL.md only, so {} file(s) stay here ({})",
                     others.len(),
                     shown.join(", ")
                 ),
@@ -364,7 +364,7 @@ fn skills(r: &Recipe, dir: &Path, home: &Path) -> (Vec<Value>, Vec<LeftOut>) {
     (out, left)
 }
 
-/// The recipe's MCP servers as Fountain keeps them, `${VAR}`s as they are,
+/// The recipe's MCP servers as Managoat keeps them, `${VAR}`s as they are,
 /// and the ones that can't go.
 fn servers(r: &Recipe, dir: &Path, home: &Path) -> (Map<String, Value>, Vec<LeftOut>) {
     let (found, mut left) = recipes::wear::servers_of(r, dir, home);
@@ -379,7 +379,7 @@ fn servers(r: &Recipe, dir: &Path, home: &Path) -> (Map<String, Value>, Vec<Left
             .collect();
         let why = if !typed.is_empty() {
             Some(format!(
-                "{} {} a value typed in, not a ${{VAR}}: Arugula doesn't copy it to Fountain (put it in a vault and reference it)",
+                "{} {} a value typed in, not a ${{VAR}}: Arugula doesn't copy it to Managoat (put it in a vault and reference it)",
                 typed.join(", "),
                 if typed.len() == 1 { "holds" } else { "hold" }
             ))
@@ -401,7 +401,7 @@ fn servers(r: &Recipe, dir: &Path, home: &Path) -> (Map<String, Value>, Vec<Left
     (out, left)
 }
 
-/// Compile the recipe, working in `dir`, to a Fountain agent (and its
+/// Compile the recipe, working in `dir`, to a Managoat agent (and its
 /// project, `repo`, to an environment).
 pub fn compile(r: &Recipe, dir: &Path, home: &Path, repo: Result<Repo, String>) -> Compiled {
     let (repo, no_repo) = match repo {
@@ -419,7 +419,7 @@ pub fn compile(r: &Recipe, dir: &Path, home: &Path, repo: Result<Repo, String>) 
             None => {
                 left_out.push(LeftOut {
                     name: format!("model {m}"),
-                    why: "it isn't a Claude model Fountain can name (sonnet, opus, haiku or a claude-… id)".into(),
+                    why: "it isn't a Claude model Managoat can name (sonnet, opus, haiku or a claude-… id)".into(),
                 });
                 None
             }
@@ -539,13 +539,13 @@ pub async fn prepare(state_dir: &Path, home: &Path, a: &Ask) -> Result<(Compiled
     Ok((compile(&r, &dir, home, repo), dir))
 }
 
-/// The flag a recipe on Fountain needs: recipes' (`agents`). Fountain's
+/// The flag a recipe on Managoat needs: recipes' (`agents`). Managoat's
 /// own left Labs (#942, F5).
 pub fn flags(state_dir: &Path) -> Result<(), String> {
     crate::labs::flag(state_dir, arugula_proto::flags::AGENTS)
 }
 
-// ---------------------------------------------------------------- Fountain
+// ---------------------------------------------------------------- Managoat
 
 fn managed(metadata: Option<&Value>) -> bool {
     metadata.and_then(|m| m[MANAGED_BY].as_str()) == Some(ARUGULA)
@@ -569,7 +569,7 @@ pub struct Preflight {
     pub recipe: String,
     pub agent: String,
     pub hash: String,
-    /// The agent is on Fountain already (Arugula's).
+    /// The agent is on Managoat already (Arugula's).
     pub exists: bool,
     /// Why it can't run: an agent of its name Arugula didn't make.
     pub refused: Option<String>,
@@ -592,14 +592,14 @@ pub struct Preflight {
 impl Preflight {
     /// One paragraph, for MCP and the CLI.
     pub fn text(&self) -> String {
-        let mut s = format!("{} runs on Fountain as {}", self.recipe, self.agent);
+        let mut s = format!("{} runs on Managoat as {}", self.recipe, self.agent);
         if let Some(r) = &self.repo {
             s.push_str(&format!(", in a checkout of {} ({})", r.url, r.environment));
         }
         s.push('.');
         if !self.missing.is_empty() {
             s.push_str(&format!(
-                " {} variable(s) missing on Fountain: {}.",
+                " {} variable(s) missing on Managoat: {}.",
                 self.missing.len(),
                 self.missing.join(", ")
             ));
@@ -615,14 +615,14 @@ fn run_environment(c: &Compiled, a: &Ask) -> Option<String> {
 
 /// Whether the agent's name is free for Arugula: none, or Arugula's.
 async fn agent_state(client: &Client, c: &Compiled) -> Result<(bool, Option<String>), String> {
-    let agents = client.agents().await.map_err(|e| format!("Fountain's agents: {e}"))?.items;
+    let agents = client.agents().await.map_err(|e| format!("Managoat's agents: {e}"))?.items;
     Ok(match agents.iter().find(|x| x.name == c.agent) {
         None => (false, None),
         Some(x) if managed(Some(&Value::Object(x.metadata.clone()))) => (true, None),
         Some(_) => (
             true,
             Some(format!(
-                "Fountain has an agent named {} that Arugula didn't make (it isn't managed-by: arugula): it's left alone, so this recipe can't run there under that name",
+                "Managoat has an agent named {} that Arugula didn't make (it isn't managed-by: arugula): it's left alone, so this recipe can't run there under that name",
                 c.agent
             )),
         ),
@@ -647,7 +647,7 @@ async fn keys(
         on_env.extend(e.extra.get("env_vars").and_then(Value::as_object).into_iter().flatten().map(|(k, _)| k.clone()));
     }
     if let Some(name) = vault {
-        let v = by_name(vaults, name).ok_or_else(|| format!("no vault named {name:?} on Fountain"))?;
+        let v = by_name(vaults, name).ok_or_else(|| format!("no vault named {name:?} on Managoat"))?;
         let l = client.secret_keys(Holder::Vault, &v.id).await.map_err(|x| format!("{}'s secrets: {x}", v.name))?;
         on_vault.extend(l.items.into_iter().map(|k| k.key));
     }
@@ -655,11 +655,11 @@ async fn keys(
 }
 
 /// What the run would be: the agent, its checkout, and the variables it
-/// uses that Fountain doesn't have (by key).
+/// uses that Managoat doesn't have (by key).
 pub async fn preflight(client: &Client, c: &Compiled, a: &Ask) -> Result<Preflight, String> {
     let (exists, refused) = agent_state(client, c).await?;
-    let envs = client.environments().await.map_err(|e| format!("Fountain's environments: {e}"))?.items;
-    let vaults = client.vaults().await.map_err(|e| format!("Fountain's vaults: {e}"))?.items;
+    let envs = client.environments().await.map_err(|e| format!("Managoat's environments: {e}"))?.items;
+    let vaults = client.vaults().await.map_err(|e| format!("Managoat's vaults: {e}"))?.items;
     let environment = run_environment(c, a);
     let vault = a.vault().map(str::to_owned);
     let (on_env, on_vault) = keys(client, &envs, &vaults, environment.as_deref(), vault.as_deref()).await?;
@@ -680,7 +680,7 @@ pub async fn preflight(client: &Client, c: &Compiled, a: &Ask) -> Result<Preflig
     let missing = vars.iter().filter(|v| v.on.is_none()).map(|v| v.name.clone()).collect();
     let mut notes = c.notes.clone();
     if c.model.is_none() && !exists {
-        notes.push(format!("model inherit: Fountain needs one for a new agent, so it starts on {DEFAULT_MODEL}"));
+        notes.push(format!("model inherit: Managoat needs one for a new agent, so it starts on {DEFAULT_MODEL}"));
     }
     if let (Some(r), Some(e)) = (&c.repo, environment.as_deref())
         && e != r.environment
@@ -718,8 +718,8 @@ pub async fn copy(client: &Client, c: &Compiled, var: &str, vault: &str, l: &Loo
     if !c.vars.contains(var) {
         return Err(format!("{} doesn't use {var}", c.recipe));
     }
-    let vaults = client.vaults().await.map_err(|e| format!("Fountain's vaults: {e}"))?.items;
-    let v = by_name(&vaults, vault).ok_or_else(|| format!("no vault named {vault:?} on Fountain"))?;
+    let vaults = client.vaults().await.map_err(|e| format!("Managoat's vaults: {e}"))?.items;
+    let v = by_name(&vaults, vault).ok_or_else(|| format!("no vault named {vault:?} on Managoat"))?;
     let found = fw::resolve(&BTreeSet::from([var.to_owned()]), l).await;
     let (Some(value), Some(from)) = (found.values.get(var), found.from.get(var)) else {
         return Err(format!(
@@ -730,7 +730,7 @@ pub async fn copy(client: &Client, c: &Compiled, var: &str, vault: &str, l: &Loo
         .set_secret(Holder::Vault, &v.id, var, value)
         .await
         .map_err(|e| format!("writing {var} to {}: {e}", v.name))?;
-    info!(var, vault = v.name, from, "copied a variable to a Fountain vault, as asked");
+    info!(var, vault = v.name, from, "copied a variable to a Managoat vault, as asked");
     Ok(format!("{var} copied from {from} to vault {}", v.name))
 }
 
@@ -758,7 +758,7 @@ pub async fn upsert(client: &Client, c: &Compiled) -> Result<Upserted, String> {
     }
     let mut resources = vec![];
     if let (Some(r), Some(env)) = (&c.repo, &c.environment_spec) {
-        let envs = client.environments().await.map_err(|e| format!("Fountain's environments: {e}"))?.items;
+        let envs = client.environments().await.map_err(|e| format!("Managoat's environments: {e}"))?.items;
         match envs.iter().find(|e| e.name == r.environment) {
             Some(e) if !managed(e.extra.get("metadata")) => {
                 notes.push(format!("environment {} isn't Arugula's: it's used as it is", r.environment));
@@ -776,7 +776,7 @@ pub async fn upsert(client: &Client, c: &Compiled) -> Result<Upserted, String> {
     for a in &applied {
         if a.action == "error" {
             let why = a.errors.as_ref().map(Value::to_string).unwrap_or_else(|| "no reason given".into());
-            return Err(format!("Fountain refused {} {}: {why}", a.kind, a.name));
+            return Err(format!("Managoat refused {} {}: {why}", a.kind, a.name));
         }
         rows.push(format!("{} {}: {}", a.kind, a.name, a.action));
     }
@@ -786,7 +786,7 @@ pub async fn upsert(client: &Client, c: &Compiled) -> Result<Upserted, String> {
         .find(|a| a.name == c.agent)
         .map(|a| a.id.clone())
         .ok_or_else(|| format!("{} was applied but isn't listed", c.agent))?;
-    info!(agent = c.agent, hash = c.hash, rows = rows.join("; "), "a recipe upserted on Fountain");
+    info!(agent = c.agent, hash = c.hash, rows = rows.join("; "), "a recipe upserted on Managoat");
     Ok(Upserted { agent_id: id, rows, notes })
 }
 
@@ -798,11 +798,11 @@ pub fn block_config(c: &Compiled, up: &Upserted, a: &Ask, machine: &str) -> Valu
     labels.insert(LABEL_HASH, c.hash.clone());
     labels.insert(LABEL_MACHINE, machine.to_owned());
     let mut config = json!({
-        "agent": "fountain",
-        "fountain_agent": up.agent_id,
+        "agent": "managoat",
+        "managoat_agent": up.agent_id,
         "labels": labels,
         "permission": c.permission,
-        "title": format!("{} on Fountain", c.recipe),
+        "title": format!("{} on Managoat", c.recipe),
     });
     if let Some(e) = run_environment(c, a) {
         config["environment"] = json!(e);
@@ -818,7 +818,7 @@ pub fn block_config(c: &Compiled, up: &Upserted, a: &Ask, machine: &str) -> Valu
 
 /// What a run did, in a sentence or two.
 pub fn summary(c: &Compiled, up: &Upserted) -> String {
-    let mut s = format!("{} runs on Fountain as {} ({})", c.recipe, c.agent, up.rows.join(", "));
+    let mut s = format!("{} runs on Managoat as {} ({})", c.recipe, c.agent, up.rows.join(", "));
     if let Some(r) = &c.repo {
         s.push_str(&format!(", in a checkout of {}", r.url));
         if !r.stays.is_empty() {

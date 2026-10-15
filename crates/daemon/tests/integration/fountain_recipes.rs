@@ -1,12 +1,12 @@
-//! Fountain F4 (#942): a recipe (a Claude Code subagent file) run on
-//! Fountain, against a stub Fountain served here: its agents, environments
+//! Managoat F4 (#942): a recipe (a Claude Code subagent file) run on
+//! Managoat, against a stub Managoat served here: its agents, environments
 //! and vaults, `POST /api/apply`, secrets by key, and conversations with
-//! their streams. Nothing reaches a real Fountain.
+//! their streams. Nothing reaches a real Managoat.
 //!
 //! What's checked (F4's "done when"): from the agents block, the preflight
-//! names what doesn't carry over and the variables Fountain lacks, without
+//! names what doesn't carry over and the variables Managoat lacks, without
 //! writing anything; a variable is copied to the vault only when asked, its
-//! value never in an answer or the block; *Run on Fountain* upserts the
+//! value never in an answer or the block; *Run on Managoat* upserts the
 //! recipe as `recipe-fixer` (managed by Arugula, with its project as an
 //! environment) in one apply, and the conversation it opens carries the
 //! recipe's hash as a label and answers over the stream; a second run
@@ -128,7 +128,7 @@ async fn set_secret(State(f): State<Fake>, UrlPath(id): UrlPath<String>, Json(b)
     (StatusCode::CREATED, Json(json!({ "data": { "id": format!("s-{key}"), "key": key } }))).into_response()
 }
 
-/// Fountain's apply: environments, then agents; upsert by name; a row is
+/// Managoat's apply: environments, then agents; upsert by name; a row is
 /// `unchanged` when the spec is what's there.
 async fn apply(State(f): State<Fake>, h: HeaderMap, Json(b): Json<Value>) -> Response {
     if !authed(&h) {
@@ -208,7 +208,7 @@ async fn prompts(State(f): State<Fake>, UrlPath(id): UrlPath<String>, Json(b): J
 }
 
 /// The conversation's SSE: what's after `Last-Event-ID`, then what comes,
-/// until it's quiet a while (Fountain's idle close, short here).
+/// until it's quiet a while (Managoat's idle close, short here).
 async fn stream(
     State(f): State<Fake>,
     h: HeaderMap,
@@ -245,13 +245,13 @@ async fn stream(
     Response::builder().header("content-type", "text/event-stream").body(Body::from_stream(s)).unwrap()
 }
 
-struct Fountain {
+struct Managoat {
     _rt: tokio::runtime::Runtime,
     f: Fake,
     origin: String,
 }
 
-impl Fountain {
+impl Managoat {
     fn start() -> Self {
         let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
         let f = Fake::default();
@@ -286,13 +286,13 @@ impl Fountain {
         let home = dir.join("home");
         std::fs::create_dir_all(&home).unwrap();
         let home = home.display().to_string();
-        // Recipes are the `agents` flag's; Fountain needs none (#942, F5).
+        // Recipes are the `agents` flag's; Managoat needs none (#942, F5).
         Daemon::child_in(
             &["--wisp-token-file", "/nonexistent", "--tailscale-socket", "/nonexistent/sock"],
             &[
                 ("HOME", home.as_str()),
-                ("FOUNTAIN_API_KEY", KEY),
-                ("FOUNTAIN_BASE_URL", self.origin.as_str()),
+                ("MANAGOAT_API_KEY", KEY),
+                ("MANAGOAT_BASE_URL", self.origin.as_str()),
                 ("ARUGULA_FOUNTAIN_STREAM_RETRY_MS", "50"),
                 ("RECIPE_TOKEN", TOKEN),
                 ("GITHUB_TOKEN", ""),
@@ -333,11 +333,11 @@ fn texts(st: &Value) -> Vec<String> {
     entries(st).iter().filter(|e| e["type"] == "agent").filter_map(|e| e["text"].as_str().map(str::to_owned)).collect()
 }
 
-/// F4's "done when": the recipe that runs here runs on Fountain from the
+/// F4's "done when": the recipe that runs here runs on Managoat from the
 /// same card, and its conversation carries the recipe's hash.
 #[test]
 fn a_recipe_runs_on_fountain_as_its_own_agent_with_its_hash() {
-    let fz = Fountain::start();
+    let fz = Managoat::start();
     let dir = Scratch::new("fountain-recipes");
     let proj = project(&dir);
     let d = fz.daemon(&dir);
@@ -345,7 +345,7 @@ fn a_recipe_runs_on_fountain_as_its_own_agent_with_its_hash() {
     let block = d.open_with(json!({ "type": "agents", "local": true, "config": { "dir": cwd } }));
 
     // The preflight: what doesn't carry over, the checkout, and what
-    // Fountain lacks. Nothing is written.
+    // Managoat lacks. Nothing is written.
     let p = d.call(block, "fountain_preflight", json!({ "agent": "fixer", "cwd": cwd, "vault": "v1" }));
     assert_eq!(p["agent"], "recipe-fixer", "{p}");
     assert_eq!(p["exists"], false);
@@ -391,7 +391,7 @@ fn a_recipe_runs_on_fountain_as_its_own_agent_with_its_hash() {
     assert_eq!(p["missing"], json!(["GITHUB_TOKEN"]));
     assert!(p["vars"].as_array().unwrap().contains(&json!({ "name": "RECIPE_TOKEN", "on": "vault" })), "{p}");
 
-    // Run on Fountain: one apply, the environment and the agent.
+    // Run on Managoat: one apply, the environment and the agent.
     let r = d.call(block, "run_fountain", json!({ "agent": "fixer", "cwd": cwd, "vault": "v1", "prompt": "hello" }));
     let agent = r["block"].as_u64().unwrap();
     let applies = fz.f.with(|i| i.applies.clone());
@@ -468,7 +468,7 @@ fn a_recipe_runs_on_fountain_as_its_own_agent_with_its_hash() {
     let r = m
         .call(
             "start_agent",
-            json!({ "recipe": "fixer", "on": "fountain", "cwd": cwd, "vault": "v1", "prompt": "via mcp" }),
+            json!({ "recipe": "fixer", "on": "managoat", "cwd": cwd, "vault": "v1", "prompt": "via mcp" }),
         )
         .unwrap();
     assert!(r["block"].as_u64().is_some(), "{r}");
@@ -487,7 +487,7 @@ fn a_recipe_runs_on_fountain_as_its_own_agent_with_its_hash() {
         .unwrap();
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
     let said = String::from_utf8_lossy(&out.stdout);
-    assert!(said.contains("fixer runs on Fountain as recipe-fixer"), "{said}");
+    assert!(said.contains("fixer runs on Managoat as recipe-fixer"), "{said}");
     d.wait_for("the CLI run's conversation", || fz.f.with(|i| i.created.len()) == 4);
     assert!(fz.f.with(|i| i.created.iter().all(|c| c["labels"]["arugula.recipe"] == "fixer")));
 }

@@ -146,7 +146,7 @@ async fn tools_through_the_stdio_bridge() {
     // Studio apps, chant workspaces and chat aren't listed without their
     // flags (chat's tools, the others' kinds), and a caller who names one is
     // told how to turn it on (#347); a build without Labs says it isn't
-    // built. Fountain left Labs (#942): a build with it lists its kinds with
+    // built. Managoat left Labs (#942): a build with it lists its kinds with
     // no flag, and with no login here they say so, not how to turn a flag on.
     for name in ["read_thread", "post_thread"] {
         assert!(tools.iter().all(|t| t.name != name), "{name} is listed");
@@ -154,10 +154,10 @@ async fn tools_through_the_stdio_bridge() {
     for (tool, kind) in [("show", "app"), ("show", "workspace")] {
         assert!(!kinds(&tools, tool).contains(&kind.to_owned()), "{tool} kind {kind} is listed");
     }
-    for (tool, kind) in [("show", "fountain"), ("list", "fountain_agents"), ("list", "fountain_agent")] {
+    for (tool, kind) in [("show", "managoat"), ("list", "managoat_agents"), ("list", "managoat_agent")] {
         assert_eq!(kinds(&tools, tool).contains(&kind.to_owned()), cfg!(feature = "labs"), "{tool} kind {kind}");
     }
-    let said = refused(&s, "list", json!({ "kind": "fountain_agent", "name": "nobody" })).await;
+    let said = refused(&s, "list", json!({ "kind": "managoat_agent", "name": "nobody" })).await;
     assert!(!said.contains("no tool") && !said.contains("no kind"), "an unlisted kind still answers: {said}");
     let said = refused(&s, "read_agent", json!({ "name": "nobody" })).await;
     assert!(!said.contains("no tool") && !said.contains("no kind"), "so does its name before #349: {said}");
@@ -954,9 +954,9 @@ async fn labs_lists_all_the_tools_and_the_thread_text() {
             assert!(with.iter().any(|t| t.name == name), "{name} isn't listed with labs");
         }
         for (tool, kind) in [
-            ("show", "fountain"),
-            ("list", "fountain_agents"),
-            ("list", "fountain_agent"),
+            ("show", "managoat"),
+            ("list", "managoat_agents"),
+            ("list", "managoat_agent"),
             ("show", "app"),
             ("show", "workspace"),
         ] {
@@ -979,7 +979,7 @@ async fn labs_lists_all_the_tools_and_the_thread_text() {
         std::fs::write(d.state.join("flags.json"), r#"{"flags":{"fountain":false}}"#).unwrap();
         let without = s.list_all_tools().await.unwrap();
         assert_eq!(without.len(), 19 - NO_FORGE);
-        assert!(kinds(&without, "show").contains(&"fountain".to_owned()));
+        assert!(kinds(&without, "show").contains(&"managoat".to_owned()));
         assert!(!kinds(&without, "show").contains(&"workspace".to_owned()));
     }
     // Without it, the file changes nothing: they aren't in this build.
@@ -989,7 +989,7 @@ async fn labs_lists_all_the_tools_and_the_thread_text() {
         let with = s.list_all_tools().await.unwrap();
         assert_eq!(with.len(), 19 - NO_FORGE, "{:?}", names(&with));
         assert!(!with.iter().any(|t| t.name == "read_thread" || t.name == "post_thread"));
-        assert!(!kinds(&with, "show").contains(&"fountain".to_owned()));
+        assert!(!kinds(&with, "show").contains(&"managoat".to_owned()));
         assert!(!instructions(&s).contains("read_thread"), "{}", instructions(&s));
         arugula_testkit::labs(&d.state, false);
     }

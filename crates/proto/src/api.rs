@@ -58,7 +58,7 @@
 //! | GET | `/api/sessions/N/secrets` | | `[SecretFinding]`: panes whose recent output looks like it holds a secret |
 //! | GET | `/api/conversations` | `all`, `q=`, `cwd=`, `live`, `limit=` | `ConversationList` (M33) |
 //! | GET | `/api/fountain/agents` | `query=`, `source=`, `profile=` | `FountainAgents` (M43) |
-//! | GET, POST, DELETE | `/api/fountain/login` | POST `FountainLoginRequest` | `FountainLogin`: this daemon's Fountain sign-in and account stream (never the key); POST starts a device sign-in, DELETE signs out (#942) |
+//! | GET, POST, DELETE | `/api/fountain/login` | POST `FountainLoginRequest` | `FountainLogin`: this daemon's Managoat sign-in and account stream (never the key); POST starts a device sign-in, DELETE signs out (#942) |
 //! | POST | `/api/push/subscribe`, `/api/push/test` | a browser's subscription | `PushSubscriptions` |
 //! | GET | `/api/hosts` | | `HostList`: the daemons a client can switch between |
 //! | POST | `/api/hosts` | `AddHost` | `Host` (replaces one with the same name) |
@@ -1744,7 +1744,7 @@ pub struct FountainQuery {
     pub profile: Option<String>,
 }
 
-/// `GET /api/fountain/agents` (M43): the person's Fountain agents, read with
+/// `GET /api/fountain/agents` (M43): the person's Managoat agents, read with
 /// their own login on this host: compact cards (the daemon's own record of
 /// each, kept as JSON here), filtered.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1753,7 +1753,7 @@ pub struct FountainAgents {
     #[serde(default)]
     pub base_url: String,
     pub profile: String,
-    /// How many agents Fountain has, before the filter.
+    /// How many agents Managoat has, before the filter.
     #[serde(default)]
     pub total: usize,
     #[cfg_attr(feature = "ts", ts(type = "unknown"))]
@@ -1761,31 +1761,31 @@ pub struct FountainAgents {
     #[cfg_attr(feature = "ts", ts(type = "Array<unknown>"))]
     #[serde(default)]
     pub agents: Vec<serde_json::Value>,
-    /// Rows Fountain sent that didn't parse.
+    /// Rows Managoat sent that didn't parse.
     #[serde(default)]
     pub unreadable: usize,
 }
 
-/// `GET /api/fountain/login` (#942): this daemon's Fountain sign-in, and
+/// `GET /api/fountain/login` (#942): this daemon's Managoat sign-in, and
 /// its account stream. Never a key: only where it came from and the
-/// prefix Fountain's key list shows.
+/// prefix Managoat's key list shows.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct FountainLogin {
     /// A key is here: this daemon's own sign-in, or the CLI's login.
     #[serde(default)]
     pub signed_in: bool,
-    /// Where the key in use comes from: `arugula` (`arugula fountain
-    /// login`, kept in the state dir), `env` (`$FOUNTAIN_API_KEY`) or
-    /// `file` (the `fountain` CLI's `~/.fountain/credentials`).
+    /// Where the key in use comes from: `arugula` (`arugula managoat
+    /// login`, kept in the state dir), `env` (`$MANAGOAT_API_KEY`) or
+    /// `file` (the `managoat` CLI's `~/.managoat/credentials`).
     #[serde(default)]
     pub source: Option<String>,
     #[serde(default)]
     pub base_url: Option<String>,
-    /// Who an Arugula sign-in signs in as, when Fountain said.
+    /// Who an Arugula sign-in signs in as, when Managoat said.
     #[serde(default)]
     pub email: Option<String>,
-    /// The key's prefix, as Fountain's key list shows it.
+    /// The key's prefix, as Managoat's key list shows it.
     #[serde(default)]
     pub key_prefix: Option<String>,
     /// A sign-in waiting for its code to be approved.
@@ -1803,7 +1803,7 @@ pub struct FountainLogin {
 
 /// A device sign-in in progress: show `user_code` and send the person to
 /// `verification_uri` (or `verification_uri_complete`) in a browser signed
-/// in to Fountain.
+/// in to Managoat.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct FountainDevice {
@@ -1818,7 +1818,7 @@ pub struct FountainDevice {
 }
 
 /// The account's event stream (`/api/events/stream`), on the daemon that
-/// runs it (`--fountain-account-stream`).
+/// runs it (`--managoat-account-stream`).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct FountainStream {
@@ -1838,7 +1838,7 @@ pub struct FountainStream {
 }
 
 /// `POST /api/fountain/login`: start a device sign-in. `base_url`: which
-/// Fountain; left out, the one signed in to, else `$FOUNTAIN_BASE_URL` or
+/// Managoat; left out, the one signed in to, else `$MANAGOAT_BASE_URL` or
 /// the CLI profile's.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]

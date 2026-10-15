@@ -1159,8 +1159,8 @@ pub mod ops {
         type Res = Vec<crate::ConvGrant>;
     }
 
-    /// `GET /api/fountain/agents` (M43): the person's Fountain agents, read
-    /// with their own login on this host (`arugula fountain agents`). The
+    /// `GET /api/fountain/agents` (M43): the person's Managoat agents, read
+    /// with their own login on this host (`arugula managoat agents`). The
     /// query string is the request.
     pub struct FountainAgentsGet;
 
@@ -1174,7 +1174,7 @@ pub mod ops {
         type Res = FountainAgents;
     }
 
-    /// `GET /api/fountain/login` (#942): this daemon's Fountain sign-in
+    /// `GET /api/fountain/login` (#942): this daemon's Managoat sign-in
     /// (where its key comes from, never the key) and its account stream.
     pub struct FountainLoginGet;
 
@@ -1188,9 +1188,9 @@ pub mod ops {
         type Res = crate::api::FountainLogin;
     }
 
-    /// `POST /api/fountain/login` (`arugula fountain login`): start a device
+    /// `POST /api/fountain/login` (`arugula managoat login`): start a device
     /// sign-in. The answer's `pending` has the code to approve; the daemon
-    /// polls Fountain and keeps the key in its state dir (0600).
+    /// polls Managoat and keeps the key in its state dir (0600).
     pub struct FountainLoginStart;
 
     impl Op for FountainLoginStart {
@@ -1203,8 +1203,8 @@ pub mod ops {
         type Res = crate::api::FountainLogin;
     }
 
-    /// `DELETE /api/fountain/login` (`arugula fountain logout`): forget this
-    /// daemon's key (revoking it on Fountain when it can). The CLI's own
+    /// `DELETE /api/fountain/login` (`arugula managoat logout`): forget this
+    /// daemon's key (revoking it on Managoat when it can). The CLI's own
     /// login, if any, is left as it is.
     pub struct FountainLogout;
 

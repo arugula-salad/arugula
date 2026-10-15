@@ -303,12 +303,12 @@ fn a_remote_pane_runs_there_and_has_its_place_here() {
 /// `flags.json`, one to a feature: `GET /api/host` says so, with threads and
 /// huddles (and studio and VMs, where set up) each following its own, and
 /// setting one on a running daemon, from outside it or through
-/// `PUT /api/flags/{name}`, flips it with no restart. Fountain, out of Labs
+/// `PUT /api/flags/{name}`, flips it with no restart. Managoat, out of Labs
 /// (#942), follows its login alone.
 #[cfg(feature = "labs")]
 #[test]
 fn each_flag_turns_on_its_part_of_what_a_stranger_doesnt_get() {
-    // A Fountain login is set up here, so that `fountain` shows that labs
+    // A Managoat login is set up here, so that `fountain` shows that labs
     // does nothing to it.
     let d = arugulad!("hosts")
         .args(["--name", "plain"])
@@ -324,12 +324,12 @@ fn each_flag_turns_on_its_part_of_what_a_stranger_doesnt_get() {
     for key in ["threads", "calls", "studio", "vms"] {
         assert_eq!(f[key], false, "{key} without labs: {f}");
     }
-    assert_eq!(f["fountain"], true, "Fountain needs no flag, only its login: {f}");
+    assert_eq!(f["fountain"], true, "Managoat needs no flag, only its login: {f}");
 
     arugula_testkit::labs(&d.state, true);
     let f = features();
     assert_eq!((f["labs"].clone(), f["threads"].clone(), f["calls"].clone()), (true.into(), true.into(), true.into()));
-    // Fountain, studio and VMs need their own setup as well: only the
+    // Managoat, studio and VMs need their own setup as well: only the
     // login this daemon has shows.
     assert_eq!(
         (f["fountain"].clone(), f["studio"].clone(), f["vms"].clone()),
@@ -344,7 +344,7 @@ fn each_flag_turns_on_its_part_of_what_a_stranger_doesnt_get() {
         (false.into(), false.into(), false.into())
     );
     // #665: each feature has a flag of its own, and the owner's route turns
-    // chat on alone, Fountain's login notwithstanding.
+    // chat on alone, Managoat's login notwithstanding.
     assert_eq!(f["dev"], true, "the flags file is there: {f}");
     let listed = d.put("/api/flags/chat", serde_json::json!({ "on": true }));
     assert_eq!(
@@ -365,7 +365,7 @@ fn each_flag_turns_on_its_part_of_what_a_stranger_doesnt_get() {
         );
         assert!(row["about"].as_str().is_some_and(|a| !a.is_empty()), "{all}");
     }
-    // Fountain's flag is gone: setting it is refused, saying why.
+    // Managoat's flag is gone: setting it is refused, saying why.
     let (status, text) = d.raw("PUT", "/api/flags/fountain", Some(serde_json::json!({ "on": true })));
     assert!((400..500).contains(&status) && text.contains("isn't a flag any more"), "{status} {text}");
     d.put("/api/flags/chat", serde_json::json!({ "on": false }));
@@ -588,9 +588,10 @@ fn both_helps_follow_the_same_labs_file() {
         assert!(!listed(&cli_off, c), "{c} in `arugula --help` without labs");
     }
     assert!(listed(&cli_off, "run") && listed(&cli_off, "pr"), "{cli_off}");
-    // Fountain left Labs (#942, F5): listed either way.
-    assert!(listed(&cli_off, "fountain"), "{cli_off}");
-    assert!(d_off.contains("--fountain-account-stream"), "{d_off}");
+    // Managoat left Labs (#942, F5): listed either way.
+    assert!(listed(&cli_off, "managoat"), "{cli_off}");
+    assert!(!listed(&cli_off, "fountain"), "its name before the rename is a hidden alias: {cli_off}");
+    assert!(d_off.contains("--managoat-account-stream"), "{d_off}");
     for f in ["--studio-file", "--guest-ssh", "--wisp-url"] {
         assert!(!d_off.contains(f), "{f} in `arugulad --help` without labs");
     }
@@ -598,7 +599,7 @@ fn both_helps_follow_the_same_labs_file() {
     // On, through the environment, and for arugulad through its flag too.
     arugula_testkit::labs(&state, true);
     let cli_on = help(cli_bin(), &[], Some(&state));
-    for c in ["fountain", "studio", "app", "workspace", "guests", "machines", "sandboxes"] {
+    for c in ["managoat", "studio", "app", "workspace", "guests", "machines", "sandboxes"] {
         assert!(listed(&cli_on, c), "{c} isn't in `arugula --help` with labs");
     }
     assert!(!listed(&cli_on, "bridge"), "an internal is in the help with labs");

@@ -1,10 +1,10 @@
-// Fountain blocks (#942): the person's Fountain account. The first tab is
+// Managoat blocks (#942): the person's Managoat account. The first tab is
 // its conversations, every one (started here, by the CLI, a script or
 // another conversation), newest activity first, with live status from the
-// account stream, an unread dot, a label filter (chips, Fountain's
+// account stream, an unread dot, a label filter (chips, Managoat's
 // ?label=) and a fan-out's tree; a row opens the conversation in an agent
 // block beside this one. The second tab is the account's agents as a
-// read-only catalog: a card per agent with a filter bar, *Run on Fountain*
+// read-only catalog: a card per agent with a filter bar, *Run on Managoat*
 // and *Spec*. Above both: the account's open permission requests, each
 // with Allow and Deny (they're cards and phone pushes too, on the daemon
 // that follows the account). Everything drawn comes from the daemon's
@@ -43,7 +43,7 @@ export interface FountainState {
   loading: boolean; error: string | null; agents: Card[]; total: number; unreadable?: number; unreadable_note?: string | null; filter: Filter;
   counts: { source: Record<string, number>; runtime: Record<string, number>; provider: Record<string, number> };
   specs: string | null; specs_why: string | null; updated_ms: number; polls: number; watching?: boolean; said: string | null;
-  /** *Spec* for an agent agent-specs doesn't declare: the agent as Fountain returns it (literal values redacted). */
+  /** *Spec* for an agent agent-specs doesn't declare: the agent as Managoat returns it (literal values redacted). */
   spec?: { agent: string; json: unknown; note: string | null } | null;
 }
 
@@ -80,7 +80,7 @@ function sourceLabel(c: Card): string {
 
 function plain(s: FountainState | null): string {
   if (!s) return "";
-  const lines = [`Fountain${s.base_url ? ` on ${s.base_url}` : ""}`];
+  const lines = [`Managoat${s.base_url ? ` on ${s.base_url}` : ""}`];
   if (s.error) lines.push(s.error);
   for (const r of s.requests ?? []) lines.push(`${r.conversation} wants to run ${r.title}`);
   for (const r of s.conversations ?? []) lines.push(`${r.unread ? "● " : ""}${rowName(r)} [${r.live ?? r.status}]`);
@@ -288,7 +288,7 @@ function FountainBlock({ client, id, s }: { client: Client; id: PaneId; s: Fount
   if (!s || (s.loading && !s.updated_ms)) {
     return (
       <div class="review ws fountain" data-fountain-block={id}>
-        <div class="browser-card dim">Reading your Fountain account…</div>
+        <div class="browser-card dim">Reading your Managoat account…</div>
       </div>
     );
   }
@@ -328,7 +328,7 @@ function FountainBlock({ client, id, s }: { client: Client; id: PaneId; s: Fount
   );
   const head = (
     <span class="review-path" title={s.base_url ?? ""}>
-      <b>Fountain</b> {hostOf(s.base_url)}
+      <b>Managoat</b> {hostOf(s.base_url)}
       {s.profile && s.profile !== "default" ? ` (${s.profile})` : ""}
     </span>
   );
@@ -350,7 +350,7 @@ function FountainBlock({ client, id, s }: { client: Client; id: PaneId; s: Fount
         </div>
         {s.error && (
           <div class="browser-card" data-fountain-error>
-            <p>Can't read your Fountain account</p>
+            <p>Can't read your Managoat account</p>
             <p class="dim">{s.error}</p>
           </div>
         )}
@@ -412,7 +412,7 @@ function FountainBlock({ client, id, s }: { client: Client; id: PaneId; s: Fount
       </div>
       {s.error && (
         <div class="browser-card" data-fountain-error>
-          <p>Can't read your Fountain agents</p>
+          <p>Can't read your Managoat agents</p>
           <p class="dim">{s.error}</p>
           {mayAct && <button onClick={() => void call("refresh", {}, "couldn't read the agents")}>Try again</button>}
         </div>
@@ -432,7 +432,7 @@ function FountainBlock({ client, id, s }: { client: Client; id: PaneId; s: Fount
         <div class="browser-card fountain-spec" data-fountain-spec={s.spec.agent}>
           <div class="fountain-card-head">
             <b>{s.spec.agent}</b>
-            <span class="dim">as Fountain has it</span>
+            <span class="dim">as Managoat has it</span>
             {mayAct && (
               <button class="fountain-link" data-fountain-spec-close onClick={() => void call("unspec", {}, "couldn't close it")}>
                 Close
@@ -478,7 +478,7 @@ function FountainBlock({ client, id, s }: { client: Client; id: PaneId; s: Fount
               {mayAct && (
                 <div class="ws-actions fountain-actions">
                   <button class="pri" data-run={c.name} disabled={busy !== null} onClick={() => void call("run", { agent: c.name }, `couldn't run ${c.name}`)}>
-                    Run on Fountain
+                    Run on Managoat
                   </button>
                   <button data-spec={c.name} disabled={busy !== null} onClick={() => void call("spec", { agent: c.name }, `couldn't open ${c.name}'s spec`)}>
                     Spec
@@ -493,7 +493,7 @@ function FountainBlock({ client, id, s }: { client: Client; id: PaneId; s: Fount
   );
 }
 
-/** How to draw a Fountain block: the Labs entry hands it to the page. */
+/** How to draw a Managoat block: the Labs entry hands it to the page. */
 export const fountainBlock: BlockRenderer = (client, id): BlockView => {
   const host = document.createElement("div");
   host.className = "block block-fountain";
@@ -508,7 +508,7 @@ export const fountainBlock: BlockRenderer = (client, id): BlockView => {
       state = s as FountainState;
       draw();
     },
-    title: () => "Fountain",
+    title: () => "Managoat",
     text: () => plain(state),
     focus: () => host.querySelector<HTMLElement>("input")?.focus(),
     dispose: () => {

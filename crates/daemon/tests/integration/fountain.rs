@@ -1,22 +1,23 @@
-//! M43: the Fountain agent catalog, against a fake Fountain served here
-//! with synthetic agents shaped like S24's, and a fake `~/.fountain/credentials`
-//! in the daemon's scratch HOME. Nothing here talks to a real Fountain: *Run
-//! on Fountain* runs the fake ACP agent as `fountain`.
+//! M43: the Managoat agent catalog, against a fake Managoat served here
+//! with synthetic agents shaped like S24's, and a fake `~/.managoat/credentials`
+//! in the daemon's scratch HOME. Nothing here talks to a real Managoat: *Run
+//! on Managoat* runs the fake ACP agent as `managoat`.
 //!
-//! What's checked: the login (the file's profile, FOUNTAIN_API_KEY, none);
+//! What's checked: the login (the file's profile, MANAGOAT_API_KEY, none,
+//! and the names before the rename: FOUNTAIN_API_KEY, `~/.fountain/credentials`);
 //! the key and Arugula's User-Agent on every request; cards, where each
 //! comes from, and the filters (kept in the config); `capture --text`; *Run
-//! on Fountain* opening an agent block beside it; *Spec* opening the
-//! agent-specs file, or showing the agent as Fountain returns it;
-//! `GET /api/fountain/agents`; and MCP's `list` kinds `fountain_agents` and `fountain_agent`
+//! on Managoat* opening an agent block beside it; *Spec* opening the
+//! agent-specs file, or showing the agent as Managoat returns it;
+//! `GET /api/fountain/agents`; and MCP's `list` kinds `managoat_agents` and `managoat_agent`
 //! from an agent.
 //!
-//! M45b's runner view went with Fountain's self-hosted runners: a block
+//! M45b's runner view went with Managoat's self-hosted runners: a block
 //! saved with `view: runner` comes back as the catalog, and nothing asks
-//! for `/api/runners` (the fake answers 404, as Fountain does now). An
+//! for `/api/runners` (the fake answers 404, as Managoat does now). An
 //! agent block that follows a conversation never starts a new one.
 //!
-//! M44 (wearing a Fountain agent here) was retired on 2026-10-15 (#942):
+//! M44 (wearing a Managoat agent here) was retired on 2026-10-15 (#942):
 //! *Run here* is gone from the catalog, `as_fountain` on a new block and
 //! `start_agent {as_fountain}` are refused with the reason, and a block
 //! saved wearing one comes back with its transcript, saying why it won't
@@ -118,7 +119,7 @@ async fn agent(State(f): State<Fake>, h: HeaderMap, UrlPath(id): UrlPath<String>
     }
 }
 
-/// `/api/runners`, gone from Fountain (its ADR 0071): counted, and 404.
+/// `/api/runners`, gone from Managoat (its ADR 0071): counted, and 404.
 async fn runners(State(f): State<Fake>, h: HeaderMap) -> Response {
     if let Some(r) = guard(&f, &h, "runners") {
         return r;
@@ -143,16 +144,16 @@ async fn environments(State(f): State<Fake>, h: HeaderMap) -> Response {
     Json(f.with(|i| i.envs.clone())).into_response()
 }
 
-/// The fake Fountain, on a runtime of its own, and a scratch HOME whose
+/// The fake Managoat, on a runtime of its own, and a scratch HOME whose
 /// credentials point at it.
-struct Fountain {
+struct Managoat {
     _rt: tokio::runtime::Runtime,
     f: Fake,
     origin: String,
     home: PathBuf,
 }
 
-impl Fountain {
+impl Managoat {
     fn start(dir: &Path) -> Self {
         let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
         let f = Fake::default();
@@ -174,9 +175,9 @@ impl Fountain {
             at
         });
         let home = dir.join("home");
-        std::fs::create_dir_all(home.join(".fountain")).unwrap();
+        std::fs::create_dir_all(home.join(".managoat")).unwrap();
         std::fs::write(
-            home.join(".fountain/credentials"),
+            home.join(".managoat/credentials"),
             format!(
                 "[default]\napi_key = \"{KEY}\"\nbase_url = \"{origin}\"\n\n[other]\napi_key = \"not-this-one\"\nbase_url = \"http://127.0.0.1:9\"\n"
             ),
@@ -197,7 +198,7 @@ impl Fountain {
 }
 
 fn open(d: &Daemon, config: Value) -> u64 {
-    d.post("/api/blocks", json!({ "type": "fountain", "config": config, "local": true }))["block"].as_u64().unwrap()
+    d.post("/api/blocks", json!({ "type": "managoat", "config": config, "local": true }))["block"].as_u64().unwrap()
 }
 
 fn read(d: &Daemon, block: u64) -> Value {
@@ -222,7 +223,7 @@ fn names(st: &Value) -> Vec<String> {
 #[test]
 fn the_catalog_filters_and_runs() {
     let dir = Scratch::new("fountain-catalog");
-    let fz = Fountain::start(&dir);
+    let fz = Managoat::start(&dir);
     let d = fz.daemon(&[]);
     let block = open(&d, json!({ "view": "catalog" }));
     let st = read(&d, block);
@@ -278,19 +279,19 @@ fn the_catalog_filters_and_runs() {
     let (status, body) = d.raw("POST", &format!("/api/blocks/{block}/call/filter"), Some(json!({ "source": "nope" })));
     assert_eq!(status, 400, "{body}");
 
-    // Run on Fountain: an agent block beside it, on the native link (F3:
+    // Run on Managoat: an agent block beside it, on the native link (F3:
     // no `fountain acp`; this fake has no conversations, so it says it
     // couldn't start one: `fountain_link.rs` runs them).
     let out = d.call(block, "run", json!({ "agent": "games" }));
     let agent = out["block"].as_u64().unwrap();
     d.wait_for("the agent block", || d.raw("GET", &format!("/api/blocks/{agent}"), None).0 == 200);
     assert_eq!(info(&d, agent)["tab"], info(&d, block)["tab"], "beside the catalog");
-    d.wait_for("the agent's config saved", || layout_config(&d, agent)["fountain_agent"] == "games");
-    assert_eq!(layout_config(&d, agent)["agent"], "fountain");
+    d.wait_for("the agent's config saved", || layout_config(&d, agent)["managoat_agent"] == "games");
+    assert_eq!(layout_config(&d, agent)["agent"], "managoat");
     d.wait_for("the agent's answer", || d.state(agent)["error"].is_string());
     let st = d.state(agent);
-    assert!(st["error"].as_str().unwrap().contains("couldn't start a conversation on Fountain"), "{st}");
-    assert_eq!(st["server"]["name"], "fountain", "the native link, not a process: {st}");
+    assert!(st["error"].as_str().unwrap().contains("couldn't start a conversation on Managoat"), "{st}");
+    assert_eq!(st["server"]["name"], "managoat", "the native link, not a process: {st}");
     assert!(st["pid"].is_null(), "{st}");
     let (status, _) = d.raw("POST", &format!("/api/blocks/{block}/call/run"), Some(json!({ "agent": "nobody" })));
     assert_eq!(status, 400);
@@ -311,7 +312,7 @@ fn the_catalog_filters_and_runs() {
 #[test]
 fn spec_opens_the_file_or_shows_the_agent() {
     let dir = Scratch::new("fountain-spec");
-    let fz = Fountain::start(&dir);
+    let fz = Managoat::start(&dir);
     // An agent-specs checkout: pr-reviewer declared in a .ts file.
     let specs = dir.join("agent-specs");
     let f = specs.join("src/agents/specialists/engineering/pr-reviewer.ts");
@@ -324,8 +325,8 @@ fn spec_opens_the_file_or_shows_the_agent() {
     // The default checkout isn't in this HOME: Spec asks where it is.
     assert_eq!(st["specs"], Value::Null);
     assert!(st["specs_why"].as_str().unwrap().contains("agent-specs checkout"), "{st}");
-    // ...and without one, a chant agent's Spec is the agent as Fountain
-    // returns it (read again), shown in the block: Fountain's console has
+    // ...and without one, a chant agent's Spec is the agent as Managoat
+    // returns it (read again), shown in the block: Managoat's console has
     // no agent pages any more.
     let panes = d.get("/api/panes").as_array().unwrap().len();
     let before = fz.f.gets("agent");
@@ -364,7 +365,7 @@ fn spec_opens_the_file_or_shows_the_agent() {
     let out = d.call(block, "spec", json!({ "agent": "designer" }));
     assert_eq!(out["kind"], "json");
     assert!(out["note"].as_str().unwrap().contains("no `name: \"designer\"`"), "{out}");
-    // Fountain can't be read again: the list's copy.
+    // Managoat can't be read again: the list's copy.
     fz.f.with(|i| i.deny = true);
     let out = d.call(block, "spec", json!({ "agent": "games" }));
     assert_eq!(out["json"]["name"], "games", "{out}");
@@ -373,10 +374,10 @@ fn spec_opens_the_file_or_shows_the_agent() {
 #[test]
 fn logins() {
     let dir = Scratch::new("fountain-login");
-    let fz = Fountain::start(&dir);
-    // FOUNTAIN_API_KEY and FOUNTAIN_BASE_URL win over the file.
-    std::fs::write(fz.home.join(".fountain/credentials"), "[default]\napi_key = \"stale\"\n").unwrap();
-    let d = fz.daemon(&[("FOUNTAIN_API_KEY", KEY), ("FOUNTAIN_BASE_URL", &fz.origin)]);
+    let fz = Managoat::start(&dir);
+    // MANAGOAT_API_KEY and MANAGOAT_BASE_URL win over the file.
+    std::fs::write(fz.home.join(".managoat/credentials"), "[default]\napi_key = \"stale\"\n").unwrap();
+    let d = fz.daemon(&[("MANAGOAT_API_KEY", KEY), ("MANAGOAT_BASE_URL", &fz.origin), ("FOUNTAIN_API_KEY", "stale")]);
     let block = open(&d, json!({}));
     let st = read(&d, block);
     assert_eq!((st["error"].clone(), st["key_from"].as_str()), (Value::Null, Some("env")), "{st}");
@@ -387,9 +388,9 @@ fn logins() {
     assert_eq!(v["total"], 108);
     drop(d);
 
-    // The file's key; a profile that isn't there; a key Fountain refuses.
+    // The file's key; a profile that isn't there; a key Managoat refuses.
     std::fs::write(
-        fz.home.join(".fountain/credentials"),
+        fz.home.join(".managoat/credentials"),
         format!(
             "[default]\napi_key = \"{KEY}\"\nbase_url = \"{}\"\n[bad]\napi_key = \"wrong\"\nbase_url = \"{}\"\n",
             fz.origin, fz.origin
@@ -403,20 +404,42 @@ fn logins() {
     assert_eq!(st["profiles"], json!(["bad", "default"]), "offered to pick from");
     let (status, body) = d.raw("POST", &format!("/api/blocks/{block}/call/profile"), Some(json!({ "name": "bad" })));
     assert_eq!(status, 400);
-    assert!(body.contains("Fountain refused the key"), "{body}");
+    assert!(body.contains("Managoat refused the key"), "{body}");
     let out = d.call(block, "profile", json!({ "name": "default" }));
     assert_eq!(out["total"], 108);
     d.wait_for("the profile saved", || layout_config(&d, block)["profile"] == "default");
     drop(d);
 
-    // No login at all.
+    // The names before the rename (Managoat was Fountain): FOUNTAIN_* when
+    // MANAGOAT_* is unset, and ~/.fountain/credentials when there's no
+    // ~/.managoat/credentials.
+    std::fs::write(fz.home.join(".managoat/credentials"), "[default]\napi_key = \"stale\"\n").unwrap();
+    let d = fz.daemon(&[("FOUNTAIN_API_KEY", KEY), ("FOUNTAIN_BASE_URL", &fz.origin)]);
+    let st = read(&d, open(&d, json!({})));
+    assert_eq!((st["error"].clone(), st["key_from"].as_str()), (Value::Null, Some("env")), "{st}");
+    drop(d);
+    std::fs::create_dir_all(fz.home.join(".fountain")).unwrap();
+    std::fs::rename(fz.home.join(".managoat/credentials"), fz.home.join(".fountain/credentials")).unwrap();
+    std::fs::write(
+        fz.home.join(".fountain/credentials"),
+        format!("[default]\napi_key = \"{KEY}\"\nbase_url = \"{}\"\n", fz.origin),
+    )
+    .unwrap();
+    let d = fz.daemon(&[]);
+    let st = read(&d, open(&d, json!({ "profile": "nope" })));
+    assert!(st["error"].as_str().unwrap().contains("no profile \"nope\" in ~/.fountain/credentials"), "{st}");
+    let out = d.call(open(&d, json!({})), "profile", json!({ "name": "default" }));
+    assert_eq!(out["total"], 108);
+    drop(d);
     std::fs::remove_file(fz.home.join(".fountain/credentials")).unwrap();
+
+    // No login at all.
     let d = fz.daemon(&[]);
     let block = open(&d, json!({}));
     let st = read(&d, block);
-    assert!(st["error"].as_str().unwrap().starts_with("no Fountain login here"), "{st}");
+    assert!(st["error"].as_str().unwrap().starts_with("no Managoat login here"), "{st}");
     let (_, text) = d.raw("GET", &format!("/api/panes/{block}/capture"), None);
-    assert!(text.contains("no Fountain login here"), "{text}");
+    assert!(text.contains("no Managoat login here"), "{text}");
 }
 
 /// The agent's own MCP call, through the server Arugula gave it.
@@ -440,7 +463,7 @@ fn agent_mcp(d: &Daemon, agent: u64, tool: &str, args: Value) -> Result<Value, S
 #[test]
 fn agents_through_mcp() {
     let dir = Scratch::new("fountain-mcp");
-    let fz = Fountain::start(&dir);
+    let fz = Managoat::start(&dir);
     let d = fz.daemon(&[]);
     let agent = d.open("hello");
     assert_eq!(d.wait(agent, "idle"), "done");
@@ -449,23 +472,23 @@ fn agents_through_mcp() {
     assert_eq!(r["agents"].as_array().unwrap().len(), 1, "{r}");
     assert_eq!(r["agents"][0]["name"], "designer");
     assert!(r["agents"][0]["skills"].as_array().unwrap().contains(&json!("frontend-design")));
-    let r = agent_mcp(&d, agent, "list", json!({ "kind": "fountain_agents", "source": "agent-specs" })).unwrap();
+    let r = agent_mcp(&d, agent, "list", json!({ "kind": "managoat_agents", "source": "agent-specs" })).unwrap();
     assert_eq!(r["agents"].as_array().unwrap().len(), 23);
     // Read within the poll: one read of the list for both.
     assert_eq!(fz.f.gets("agents"), 1);
     // The whole recipe, ${VAR}s as they are.
-    let r = agent_mcp(&d, agent, "list", json!({ "kind": "fountain_agent", "name": "pr-reviewer" })).unwrap();
+    let r = agent_mcp(&d, agent, "list", json!({ "kind": "managoat_agent", "name": "pr-reviewer" })).unwrap();
     assert_eq!(r["name"], "pr-reviewer");
     assert_eq!(r["source"], "agent-specs");
     assert_eq!(r["mcp_servers"]["github"]["headers"]["Authorization"], "Bearer ${X}");
     assert!(r["system"].as_str().is_some());
     assert!(
-        agent_mcp(&d, agent, "list", json!({ "kind": "fountain_agent", "name": "nobody" }))
+        agent_mcp(&d, agent, "list", json!({ "kind": "managoat_agent", "name": "nobody" }))
             .unwrap_err()
             .contains("no agent")
     );
-    // show kind fountain: the catalog beside the agent, filtered.
-    let r = agent_mcp(&d, agent, "show", json!({ "kind": "fountain", "source": "agent-specs" })).unwrap();
+    // show kind managoat: the catalog beside the agent, filtered.
+    let r = agent_mcp(&d, agent, "show", json!({ "kind": "managoat", "source": "agent-specs" })).unwrap();
     let block = r["block"].as_u64().unwrap();
     assert_eq!(d.state(block)["agents"].as_array().unwrap().len(), 23);
     assert_eq!(info(&d, block)["tab"], info(&d, agent)["tab"]);
@@ -491,7 +514,7 @@ fn as_friend(d: &Daemon, method: &str, path: &str, body: Value) -> (u16, String)
 #[test]
 fn an_editor_filters_but_runs_nothing() {
     let dir = Scratch::new("fountain-editor");
-    let fz = Fountain::start(&dir);
+    let fz = Managoat::start(&dir);
     let d = fz.daemon(&[]);
     let block = open(&d, json!({}));
     read(&d, block);
@@ -531,7 +554,7 @@ fn an_editor_filters_but_runs_nothing() {
 #[test]
 fn odd_rows_and_literal_values() {
     let dir = Scratch::new("fountain-odd");
-    let fz = Fountain::start(&dir);
+    let fz = Managoat::start(&dir);
     fz.f.with(|i| i.extra = fixture("odd-agents.json")["data"].as_array().unwrap().clone());
     let d = fz.daemon(&[]);
     let block = open(&d, json!({}));
@@ -544,7 +567,7 @@ fn odd_rows_and_literal_values() {
     assert!(text.contains("1 agent couldn't be read"), "{text}");
     assert!(names(&st).contains(&"fixture-nulls".to_owned()));
     // A header typed in literally is never shown: not in the block's agent
-    // call, its state or its text, nor through MCP's list kind fountain_agent.
+    // call, its state or its text, nor through MCP's list kind managoat_agent.
     let r = d.call(block, "agent", json!({ "name": "fixture-literal-header" }));
     let h = &r["mcp_servers"]["tool"]["headers"];
     assert_eq!(
@@ -557,17 +580,17 @@ fn odd_rows_and_literal_values() {
     let agent = d.open("hello");
     assert_eq!(d.wait(agent, "idle"), "done");
     let r =
-        agent_mcp(&d, agent, "list", json!({ "kind": "fountain_agent", "name": "fixture-literal-header" })).unwrap();
+        agent_mcp(&d, agent, "list", json!({ "kind": "managoat_agent", "name": "fixture-literal-header" })).unwrap();
     assert_eq!(r["mcp_servers"]["tool"]["headers"]["X-Api-Key"], "<redacted>", "{r}");
     assert!(!r.to_string().contains("typed-in-literally"));
-    let r = agent_mcp(&d, agent, "list", json!({ "kind": "fountain_agents" })).unwrap();
+    let r = agent_mcp(&d, agent, "list", json!({ "kind": "managoat_agents" })).unwrap();
     assert_eq!((r["total"].as_u64(), r["unreadable"].as_u64()), (Some(110), Some(1)));
 }
 
 #[test]
 fn a_new_login_never_gets_the_old_list() {
     let dir = Scratch::new("fountain-cache");
-    let fz = Fountain::start(&dir);
+    let fz = Managoat::start(&dir);
     let d = fz.daemon(&[]);
     assert_eq!(d.get("/api/fountain/agents")["total"], 108);
     assert_eq!(fz.f.gets("agents"), 1);
@@ -576,25 +599,25 @@ fn a_new_login_never_gets_the_old_list() {
     assert_eq!(fz.f.gets("agents"), 1);
     // ...but another key (a re-login) reads again, and is refused here.
     std::fs::write(
-        fz.home.join(".fountain/credentials"),
+        fz.home.join(".managoat/credentials"),
         format!("[default]\napi_key = \"another-key\"\nbase_url = \"{}\"\n", fz.origin),
     )
     .unwrap();
     let (status, body) = d.raw("GET", "/api/fountain/agents", None);
     assert_eq!(status, 400, "{body}");
-    assert!(body.contains("Fountain refused the key"), "{body}");
+    assert!(body.contains("Managoat refused the key"), "{body}");
     assert_eq!(fz.f.gets("agents"), 2);
 }
 
 // ---------------------------------------------------------------- M45b's runner view, gone
 
-/// Fountain removed self-hosted runners (its ADR 0071, 2026-10-14). A
-/// Fountain block saved with `view: runner` by an older daemon comes back
+/// Managoat removed self-hosted runners (its ADR 0071, 2026-10-14). A
+/// Managoat block saved with `view: runner` by an older daemon comes back
 /// as the catalog after the upgrade, and nothing reads `/api/runners`.
 #[test]
 fn a_saved_runner_view_comes_back_as_the_catalog() {
     let dir = Scratch::new("fountain-runner-gone");
-    let fz = Fountain::start(&dir);
+    let fz = Managoat::start(&dir);
     let mut d = fz.daemon(&[]);
     // Asked for today: the key is ignored.
     let block = open(&d, json!({ "view": "runner" }));
@@ -616,7 +639,7 @@ fn a_saved_runner_view_comes_back_as_the_catalog() {
     assert!(st["total"].as_u64().unwrap() > 100, "{st}");
     assert_eq!(st["profile"], "default");
     assert!(st.get("runner").is_none(), "{st}");
-    assert!(capture(&d, block).starts_with("Fountain on "), "{}", capture(&d, block));
+    assert!(capture(&d, block).starts_with("Managoat on "), "{}", capture(&d, block));
     assert_eq!(st["tab"], "conversations", "the account view: {st}");
     // Its methods are gone with it.
     for m in ["view", "follow", "changes", "shell"] {
@@ -640,7 +663,7 @@ fn a_saved_runner_view_comes_back_as_the_catalog() {
 #[test]
 fn a_saved_catalog_opens_as_the_account_view() {
     let dir = Scratch::new("fountain-catalog-restore");
-    let fz = Fountain::start(&dir);
+    let fz = Managoat::start(&dir);
     let mut d = fz.daemon(&[]);
     let block = open(&d, json!({}));
     read(&d, block);
@@ -683,14 +706,14 @@ fn capture(d: &Daemon, pane: u64) -> String {
 #[test]
 fn follow_never_starts_a_new_conversation() {
     let dir = Scratch::new("fountain-follow");
-    let fz = Fountain::start(&dir);
+    let fz = Managoat::start(&dir);
     let d = fz.daemon(&[]);
     let news = |d: &Daemon| {
         std::fs::read_dir(&d.sessions)
             .map(|r| r.filter(|e| e.as_ref().unwrap().file_name().to_string_lossy().starts_with("fake-")).count())
             .unwrap_or(0)
     };
-    // F3: the native link asks Fountain for it (this fake has none).
+    // F3: the native link asks Managoat for it (this fake has none).
     {
         let (agent, why) = ("hud-playground", "couldn't load the conversation");
         let block = d.post(
@@ -725,7 +748,7 @@ fn fake_claude(dir: &Path) -> String {
     dir.join("agents").display().to_string()
 }
 
-/// Wearing a Fountain agent here (M44) was retired on 2026-10-15 (#942).
+/// Wearing a Managoat agent here (M44) was retired on 2026-10-15 (#942).
 /// A new block, `arugula agent --as-fountain`'s config and MCP's
 /// `start_agent {as_fountain}` are refused with the reason. A block saved
 /// wearing one by an older daemon comes back with its transcript, says why
@@ -734,7 +757,7 @@ fn fake_claude(dir: &Path) -> String {
 #[test]
 fn a_block_saved_wearing_a_fountain_agent_says_why() {
     let dir = Scratch::new("fountain-wear-gone");
-    let fz = Fountain::start(&dir);
+    let fz = Managoat::start(&dir);
     let agents = fake_claude(&dir);
     let work = dir.join("work");
     std::fs::create_dir_all(&work).unwrap();

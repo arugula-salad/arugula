@@ -8,8 +8,8 @@ This page is the team's description of them. It was the *Labs* sections
 of the public features, teams, advanced and control pages until those
 moved to the site.
 
-Fountain was here until it left Labs (#942, F5): it needs only a Fountain
-login now, and has a page of its own, [fountain.md](fountain.md).
+Managoat was here until it left Labs (#942, F5): it needs only a Managoat
+login now, and has a page of its own, [managoat.md](managoat.md).
 
 ## Turning a feature on
 
@@ -702,7 +702,7 @@ people's agents. With `agents` on (M76, #398):
   Nothing else comes along: the session runs with `--strict-mcp-config`,
   so the account's claude.ai connectors are left out too. The block's
   header shows what came along and what didn't, and why. (Wearing a
-  Fountain agent here, `--as-fountain`, was retired on 2026-10-15: a block
+  Managoat agent here, `--as-fountain`, was retired on 2026-10-15: a block
   saved wearing one comes back saying so, and doesn't start.)
 - **Offering one** is the machine owner's choice: `arugula agents offer
   NAME [--dir PROJECT]` (`--stop` to stop), kept in

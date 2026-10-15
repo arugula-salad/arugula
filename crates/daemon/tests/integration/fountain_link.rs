@@ -1,7 +1,7 @@
-//! Fountain track 2, F3 (#942): a Fountain conversation as an agent block
-//! on the native link, against a stub Fountain served here (its REST API
+//! Managoat track 2, F3 (#942): a Managoat conversation as an agent block
+//! on the native link, against a stub Managoat served here (its REST API
 //! and its SSE streams). No `fountain acp` runs, and nothing reaches a real
-//! Fountain.
+//! Managoat.
 //!
 //! What's checked (F3's "done when"): a conversation started in Arugula
 //! (with the block's agent, vault, environment, labels and permission
@@ -366,8 +366,8 @@ async fn sandbox_read(
     }
 }
 
-/// SSE, as Fountain frames it: what's after `Last-Event-ID`, then (unless
-/// `wait=false`) what comes, until it's been quiet a while (Fountain's idle
+/// SSE, as Managoat frames it: what's after `Last-Event-ID`, then (unless
+/// `wait=false`) what comes, until it's been quiet a while (Managoat's idle
 /// close, short here, so reconnects happen).
 fn sse(f: Fake, conv: Option<String>, after: u64, streams: Option<String>, wait: bool) -> Response {
     let frame = |id: u64, p: &Value| format!("id: {id}\nevent: {}\ndata: {p}\n\n", p["kind"].as_str().unwrap());
@@ -433,13 +433,13 @@ async fn account_stream(State(f): State<Fake>, h: HeaderMap) -> Response {
     sse(f, None, after, None, true)
 }
 
-struct Fountain {
+struct Managoat {
     _rt: tokio::runtime::Runtime,
     f: Fake,
     origin: String,
 }
 
-impl Fountain {
+impl Managoat {
     fn start() -> Self {
         let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
         let f = Fake::default();
@@ -478,8 +478,8 @@ impl Fountain {
             &all,
             &[
                 ("HOME", home.as_str()),
-                ("FOUNTAIN_API_KEY", KEY),
-                ("FOUNTAIN_BASE_URL", self.origin.as_str()),
+                ("MANAGOAT_API_KEY", KEY),
+                ("MANAGOAT_BASE_URL", self.origin.as_str()),
                 ("ARUGULA_FOUNTAIN_STREAM_RETRY_MS", "50"),
                 ("ARUGULA_FOUNTAIN_STREAM_IDLE_MS", "5000"),
             ],
@@ -531,7 +531,7 @@ fn line(d: &Daemon, block: u64) -> Value {
 /// F3's "done when", end to end.
 #[test]
 fn a_conversation_survives_close_restart_park_and_wake() {
-    let fz = Fountain::start();
+    let fz = Managoat::start();
     let dir = Scratch::new("fountain-link");
     let mut d = fz.daemon(&dir, &[]);
 
@@ -551,7 +551,7 @@ fn a_conversation_survives_close_restart_park_and_wake() {
     assert_eq!(c["permission_policy"], json!({ "default": "ask" }));
     let st = d.state(b);
     assert_eq!(st["session_id"], "conv-1");
-    assert_eq!(st["server"]["name"], "fountain");
+    assert_eq!(st["server"]["name"], "managoat");
     d.wait_for("its status", || line(&d, b) == "idle·awake");
 
     // A turn: its updates, its end.
@@ -669,7 +669,7 @@ fn a_conversation_survives_close_restart_park_and_wake() {
     // Terminate: the disk goes.
     d.call(b, "terminate", json!({}));
     d.wait_for("terminated", || line(&d, b) == "terminated");
-    assert!(texts(&d.state(b), "note").iter().any(|t| t.contains("Terminated on Fountain")));
+    assert!(texts(&d.state(b), "note").iter().any(|t| t.contains("Terminated on Managoat")));
 
     // Once more, across a plain restart: still nothing replayed.
     let streams_from = fz.f.with(|i| i.streams.len());
@@ -687,7 +687,7 @@ fn a_conversation_survives_close_restart_park_and_wake() {
 /// merged without duplicates, then a cursor, and no more replays.
 #[test]
 fn a_block_saved_before_f3_restores_onto_the_native_link() {
-    let fz = Fountain::start();
+    let fz = Managoat::start();
     let dir = Scratch::new("fountain-link-old");
     let mut d = fz.daemon(&dir, &[]);
     let b = open_conversation(&d);
@@ -696,7 +696,7 @@ fn a_block_saved_before_f3_restores_onto_the_native_link() {
     assert_eq!(d.wait(b, "idle"), "done");
     d.stop();
     // What an older daemon's log looks like: the same frames, with no
-    // Fountain event ids on them (and no status notifications).
+    // Managoat event ids on them (and no status notifications).
     let blk = d.state.join("blocks").join(b.to_string());
     for e in std::fs::read_dir(&blk).unwrap().flatten() {
         let name = e.file_name().to_string_lossy().into_owned();
@@ -754,7 +754,7 @@ fn a_block_saved_before_f3_restores_onto_the_native_link() {
 /// fan-out (after catching up from the cursor), not a stream of its own.
 #[test]
 fn with_the_account_stream_a_block_follows_its_fan_out() {
-    let fz = Fountain::start();
+    let fz = Managoat::start();
     let dir = Scratch::new("fountain-link-hub");
     let mut d = fz.daemon(&dir, &["--fountain-account-stream"]);
     d.wait_for("the account stream", || fz.f.with(|i| i.streams.iter().any(|s| s.0 == "account")));

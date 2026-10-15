@@ -1,6 +1,6 @@
-//! A Fountain conversation as an agent block's link (#942, F3): the third
+//! A Managoat conversation as an agent block's link (#942, F3): the third
 //! kind beside a local agent server and one in a VM (`agent/link.rs`). No
-//! `fountain acp` runs: the daemon speaks Fountain's REST API and follows
+//! `fountain acp` runs: the daemon speaks Managoat's REST API and follows
 //! the conversation's events itself, and the block keeps speaking ACP.
 //!
 //! **Outbound** JSON-RPC from the block becomes REST: `initialize` is
@@ -14,7 +14,7 @@
 //! acp`.
 //!
 //! **Inbound** frames are made from the conversation's events: its `acp`
-//! output is the sandbox's own ACP (Fountain is "a proxy, not a
+//! output is the sandbox's own ACP (Managoat is "a proxy, not a
 //! translator"), passed on with our session id, and its `stage` events end
 //! the turn our prompt opened with its stop reason, or with an error for
 //! what ACP has no word for (a sandbox that never started or was reclaimed,
@@ -28,7 +28,7 @@
 //! ([`super::stream::Hub`]) when this daemon runs it, after reading what
 //! came since the cursor from the conversation's own stream (`wait=false`);
 //! else the conversation's stream (`GET /api/conversations/:id/stream`),
-//! reconnecting with `Last-Event-ID` on Fountain's idle closes.
+//! reconnecting with `Last-Event-ID` on Managoat's idle closes.
 //!
 //! **The cursor is in the block's log.** Every frame made from an event
 //! carries its id (`_arugula.fountain_event`, on the last frame an event
@@ -41,7 +41,7 @@
 //!
 //! **Turns.** The prompt's `client_request_id` finds the turn it opened
 //! (`turn` `started` carries it); that turn's end answers the prompt. A turn
-//! nobody here started (another client's, or one Fountain opened itself)
+//! nobody here started (another client's, or one Managoat opened itself)
 //! shows as `running` and its output goes into the transcript.
 
 use std::{
@@ -76,7 +76,7 @@ pub fn event_of(frame: &Value) -> Option<u64> {
     frame[EVENT_KEY]["fountain_event"].as_u64()
 }
 
-/// A JSON-RPC id as a string, as Fountain names a request (`"7"` for 7).
+/// A JSON-RPC id as a string, as Managoat names a request (`"7"` for 7).
 fn key_of(id: &Value) -> String {
     match id {
         Value::String(s) => s.clone(),
@@ -89,7 +89,7 @@ fn key_of(id: &Value) -> String {
 /// One event of the conversation's.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Ev {
-    /// Fountain's id (0 for one it didn't number: the `server` stage).
+    /// Managoat's id (0 for one it didn't number: the `server` stage).
     pub id: u64,
     /// `output` or `stage`.
     pub kind: String,
@@ -183,7 +183,7 @@ impl Machine {
         }
     }
 
-    /// From a sandbox's `status` on Fountain.
+    /// From a sandbox's `status` on Managoat.
     fn of(sandbox: &Value) -> Self {
         match sandbox["status"].as_str() {
             Some("ready" | "running" | "active") => Machine::Awake,
@@ -203,7 +203,7 @@ struct Prompt {
     turn: Option<String>,
 }
 
-/// The mapping from ACP to Fountain and back, without the I/O: the driver
+/// The mapping from ACP to Managoat and back, without the I/O: the driver
 /// does the REST calls it asks for and hands it the answers and the
 /// events. Each method returns the frames to hand the block, in order.
 pub struct Core {
@@ -224,7 +224,7 @@ pub struct Core {
     turn: Option<String>,
     /// The status last told the block.
     shown: Option<Value>,
-    /// A replay's prompts, by turn (its `user_message_chunk`s: Fountain's
+    /// A replay's prompts, by turn (its `user_message_chunk`s: Managoat's
     /// `acp` stream has the agent's side only).
     pub prompts: HashMap<String, String>,
 }
@@ -318,7 +318,7 @@ impl Core {
                             "promptCapabilities": { "image": true, "audio": false, "embeddedContext": false },
                             "sessionCapabilities": session,
                         },
-                        "agentInfo": { "name": "fountain", "title": "Fountain", "version": env!("CARGO_PKG_VERSION") },
+                        "agentInfo": { "name": "managoat", "title": "Managoat", "version": env!("CARGO_PKG_VERSION") },
                         "authMethods": [],
                     }),
                 ));
@@ -347,7 +347,7 @@ impl Core {
                 frames.push(result(rpc, json!({ "_meta": { "fountain": { "applied": false } } })))
             }
             (Some(rpc), Some(method)) => {
-                frames.push(error(rpc, NOT_FOUND, format!("{method} isn't something Fountain does")))
+                frames.push(error(rpc, NOT_FOUND, format!("{method} isn't something Managoat does")))
             }
             (None, Some("session/cancel")) => {
                 // Answers nothing: the prompt answers `cancelled` when the
@@ -393,7 +393,7 @@ impl Core {
         }
         if !skipped.is_empty() {
             // A resource on this machine names nothing in the sandbox.
-            warn!(block = self.block, skipped = skipped.join(","), "dropped prompt content a Fountain agent can't use");
+            warn!(block = self.block, skipped = skipped.join(","), "dropped prompt content a Managoat agent can't use");
         }
         let text = texts.join("\n");
         if text.trim().is_empty() && images.is_empty() {
@@ -404,8 +404,8 @@ impl Core {
     }
 
     /// The block answered a permission request: the option it chose goes
-    /// to Fountain; a dismissal is a refusal the agent offered (none
-    /// offered: nothing is sent, and Fountain's timeout denies it); an
+    /// to Managoat; a dismissal is a refusal the agent offered (none
+    /// offered: nothing is sent, and Managoat's timeout denies it); an
     /// option it never offered is never relayed.
     fn answer_call(&mut self, rpc: &Value, m: &Value) -> Option<Call> {
         let request = key_of(rpc);
@@ -442,7 +442,7 @@ impl Core {
         out
     }
 
-    /// The conversation as Fountain has it now, for the status line.
+    /// The conversation as Managoat has it now, for the status line.
     pub fn snapshot(&mut self, c: &Conversation) -> Vec<Value> {
         if !c.status.is_empty() {
             self.status = c.status.clone();
@@ -555,7 +555,7 @@ impl Core {
 
     /// One stored ACP line: a `session/update` with our session id, or a
     /// permission request to ask the block. Anything else the sandbox's
-    /// adapter said (its answers to Fountain, say) isn't ours to relay.
+    /// adapter said (its answers to Managoat, say) isn't ours to relay.
     fn acp(&mut self, line: &str) -> Option<Value> {
         let mut m: Value = match serde_json::from_str(line.trim()) {
             Ok(m) => m,
@@ -643,7 +643,7 @@ impl Core {
                 let answer = match (end, stop) {
                     ("done", s) => Ok(s.unwrap_or("end_turn")),
                     ("interrupted", _) => Ok("cancelled"),
-                    // A refusal or a cancellation is failed on Fountain but
+                    // A refusal or a cancellation is failed on Managoat but
                     // is an ACP stop reason: "declined", not "broke".
                     (_, Some(s)) => Ok(s),
                     (_, None) => Err(format!("the turn failed: {}", reason_text(&meta))),
@@ -676,9 +676,9 @@ impl Core {
             ("wake", "failed") => {
                 let reason = reason_text(&meta);
                 let why = if meta["retryable"] == true {
-                    format!("Fountain couldn't wake the sandbox for the prompt ({reason}): retry shortly")
+                    format!("Managoat couldn't wake the sandbox for the prompt ({reason}): retry shortly")
                 } else {
-                    format!("Fountain couldn't wake the sandbox for the prompt ({reason})")
+                    format!("Managoat couldn't wake the sandbox for the prompt ({reason})")
                 };
                 out.extend(self.end(|p| p.turn.is_none(), Err(why)));
                 if self.machine == Machine::Waking || self.machine == Machine::Starting {
@@ -726,7 +726,7 @@ impl Core {
             }
             ("model", "failed") => {
                 // The turn goes on with the runtime's default model.
-                warn!(block = self.block, requested = %meta["requested"], "Fountain's runtime refused the agent's model");
+                warn!(block = self.block, requested = %meta["requested"], "Managoat's runtime refused the agent's model");
             }
             _ => {}
         }
@@ -814,11 +814,11 @@ pub async fn client_for(profile: Option<&str>) -> Result<Client, String> {
         tokio::time::sleep(Duration::from_millis(100)).await;
         account = account::get();
     }
-    let account = account.ok_or("Fountain isn't set up on this daemon")?;
+    let account = account.ok_or("Managoat isn't set up on this daemon")?;
     Ok(account.resolve_profile(profile).await?.client())
 }
 
-/// Start a block's link: frames from `rx` go to Fountain, and what comes
+/// Start a block's link: frames from `rx` go to Managoat, and what comes
 /// back goes to `out`, until `stop` (or `rx` closes: the daemon is going,
 /// and the conversation goes on without us).
 pub fn spawn(
@@ -860,13 +860,13 @@ async fn drive(
                         d.emit(f);
                     }
                     Err(e) if matches!(e.status(), Some(404 | 410)) => {
-                        return (d.out)(Err(format!("conversation {} is gone from Fountain", a.conversation)));
+                        return (d.out)(Err(format!("conversation {} is gone from Managoat", a.conversation)));
                     }
                     Err(e) => warn!(block = l.block, error = %e, "couldn't read the conversation"),
                 }
                 d.follow(&a.conversation, core.cursor);
             }
-            Err(e) => return (d.out)(Err(format!("can't reach Fountain: {e}"))),
+            Err(e) => return (d.out)(Err(format!("can't reach Managoat: {e}"))),
         }
     }
     loop {
@@ -962,7 +962,7 @@ impl Driver {
                     | Call::Load { rpc, .. }
                     | Call::Prompt { rpc, .. } => core.failed(&rpc, e),
                     Call::Interrupt | Call::Answer { .. } => {
-                        warn!(block = self.l.block, error = e, "no Fountain login");
+                        warn!(block = self.l.block, error = e, "no Managoat login");
                         vec![]
                     }
                 };
@@ -975,7 +975,7 @@ impl Driver {
                     self.follow(&conv.id, 0);
                     f
                 }
-                Err(e) => core.failed(&rpc, format!("couldn't start a conversation on Fountain: {e}")),
+                Err(e) => core.failed(&rpc, format!("couldn't start a conversation on Managoat: {e}")),
             },
             Call::Resume { rpc, conversation } => match c.conversation(&conversation).await {
                 Ok(conv) => {
@@ -983,14 +983,14 @@ impl Driver {
                     self.follow(&conv.id, core.cursor);
                     f
                 }
-                Err(e) => core.failed(&rpc, format!("couldn't open conversation {conversation} on Fountain: {e}")),
+                Err(e) => core.failed(&rpc, format!("couldn't open conversation {conversation} on Managoat: {e}")),
             },
             Call::Load { rpc, conversation } => {
                 let conv = match c.conversation(&conversation).await {
                     Ok(conv) => conv,
                     Err(e) => {
                         return core
-                            .failed(&rpc, format!("couldn't open conversation {conversation} on Fountain: {e}"));
+                            .failed(&rpc, format!("couldn't open conversation {conversation} on Managoat: {e}"));
                     }
                 };
                 core.conversation = Some(conv.id.clone());
@@ -1014,7 +1014,7 @@ impl Driver {
                 if let Err(e) = drained {
                     return core.failed(&rpc, format!("couldn't replay conversation {}: {e}", conv.id));
                 }
-                info!(block = self.l.block, conversation = conv.id, replayed, "loaded a Fountain conversation");
+                info!(block = self.l.block, conversation = conv.id, replayed, "loaded a Managoat conversation");
                 let mut f = core.opened(&rpc, &conv, false);
                 if let Some(first) = f.first_mut() {
                     first[EVENT_KEY] = json!({ "fountain_event": core.cursor });
@@ -1056,7 +1056,7 @@ impl Driver {
 
     /// `session/new`: the agent, vault and environment by name or id.
     async fn create(&self, c: &Client) -> Result<Conversation, String> {
-        let want = self.l.agent.clone().filter(|a| !a.is_empty()).ok_or("the block names no Fountain agent")?;
+        let want = self.l.agent.clone().filter(|a| !a.is_empty()).ok_or("the block names no Managoat agent")?;
         let agent_id = if uuid_like(&want) {
             want
         } else {
@@ -1066,7 +1066,7 @@ impl Driver {
                 .iter()
                 .find(|a| a.name == want || a.id == want)
                 .map(|a| a.id.clone())
-                .ok_or_else(|| format!("no agent {want:?} on this Fountain account"))?
+                .ok_or_else(|| format!("no agent {want:?} on this Managoat account"))?
         };
         let named = |list: Vec<super::client::Named>, want: &str, what: &str| {
             list.iter()
@@ -1175,12 +1175,12 @@ async fn follower(c: Client, conv: String, mut cursor: u64, tx: mpsc::UnboundedS
             match drain(&c, &conv, cursor, |ev| got.push(ev)).await {
                 Ok(_) => failures = 0,
                 Err(e) if matches!(e.status(), Some(404 | 410)) => {
-                    let _ = tx.send(Got::Gone(format!("conversation {conv} is gone from Fountain")));
+                    let _ = tx.send(Got::Gone(format!("conversation {conv} is gone from Managoat")));
                     return;
                 }
                 Err(e) => {
                     failures += 1;
-                    warn!(conversation = conv, error = %e, "catching up a Fountain conversation");
+                    warn!(conversation = conv, error = %e, "catching up a Managoat conversation");
                     tokio::time::sleep(backoff(failures)).await;
                     continue;
                 }
@@ -1227,13 +1227,13 @@ async fn follower(c: Client, conv: String, mut cursor: u64, tx: mpsc::UnboundedS
                 tokio::time::sleep(Duration::from_millis(100)).await;
             }
             Err(e) if matches!(e.status(), Some(404 | 410)) => {
-                let _ = tx.send(Got::Gone(format!("conversation {conv} is gone from Fountain")));
+                let _ = tx.send(Got::Gone(format!("conversation {conv} is gone from Managoat")));
                 return;
             }
             Err(e) => {
                 failures += 1;
                 let pause = e.retry_after().unwrap_or_else(|| backoff(failures));
-                warn!(conversation = conv, error = %e, retry_ms = pause.as_millis() as u64, "following a Fountain conversation");
+                warn!(conversation = conv, error = %e, retry_ms = pause.as_millis() as u64, "following a Managoat conversation");
                 tokio::time::sleep(pause).await;
             }
         }
@@ -1252,7 +1252,7 @@ fn backoff(failures: u32) -> Duration {
     first.saturating_mul(1 << failures.saturating_sub(1).min(5)).min(Duration::from_secs(60))
 }
 
-/// One connection to the conversation's stream, until Fountain closes it
+/// One connection to the conversation's stream, until Managoat closes it
 /// (or it goes silent).
 async fn follow_once(
     c: &Client,

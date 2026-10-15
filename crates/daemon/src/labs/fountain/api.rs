@@ -1,14 +1,14 @@
-//! Fountain's HTTP API, read-only (M43): the account's agents and its
+//! Managoat's HTTP API, read-only (M43): the account's agents and its
 //! environments' names.
 //!
-//! Shapes are Fountain's OpenAPI (`<base_url>/api/openapi.json`, CLI
+//! Shapes are Managoat's OpenAPI (`<base_url>/api/openapi.json`, CLI
 //! v0.21.0): every list is `{data: [...]}`, an agent by id is `{data:
 //! {...}}`. Requests carry the person's key as a bearer token (memory only,
 //! never logged) and Arugula's own User-Agent: managoat.com refuses some
 //! default ones (S24 saw Python's get a 403).
 //!
 //! The types keep what Arugula reads and pass the rest through
-//! (`extra`), so MCP's `fountain_agent` returns the whole recipe. Fountain never
+//! (`extra`), so MCP's `fountain_agent` returns the whole recipe. Managoat never
 //! returns a secret's value: an MCP server's header or env holds a
 //! `${VAR}` reference, or a value someone typed in.
 
@@ -19,7 +19,7 @@ use serde_json::{Map, Value};
 
 pub use crate::labs::wearing::McpServer;
 
-/// What went wrong talking to Fountain.
+/// What went wrong talking to Managoat.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
     /// 401 or 403: the key is wrong, expired, or lacks the scope.
@@ -31,8 +31,8 @@ pub enum Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::Denied(e) => write!(f, "Fountain refused the key: {e}"),
-            Error::NotFound(e) => write!(f, "not found on Fountain: {e}"),
+            Error::Denied(e) => write!(f, "Managoat refused the key: {e}"),
+            Error::NotFound(e) => write!(f, "not found on Managoat: {e}"),
             Error::Http(e) => write!(f, "{e}"),
         }
     }
@@ -93,7 +93,7 @@ pub struct Agent {
     pub metadata: Map<String, Value>,
     #[serde(default)]
     pub environment_id: Option<String>,
-    /// null: the instance's default (sprites on hosted Fountain).
+    /// null: the instance's default (sprites on hosted Managoat).
     #[serde(default)]
     pub sandbox_provider: Option<String>,
     /// ephemeral or persistent.
@@ -107,7 +107,7 @@ pub struct Agent {
     #[serde(default)]
     pub updated_at: Option<String>,
     /// The rest (permission policy, session config, ids of what it may
-    /// attach), passed through to MCP's `fountain_agent`.
+    /// attach), passed through to MCP's `managoat_agent`.
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
@@ -125,7 +125,7 @@ fn null_default<'de, D: serde::Deserializer<'de>, T: Default + Deserialize<'de>>
 }
 
 /// An environment, by its name only: the rest (its variables, setup) is
-/// Fountain's business.
+/// Managoat's business.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Environment {
     pub id: String,
@@ -159,7 +159,7 @@ pub fn rows<T: DeserializeOwned>(rows: Vec<Value>) -> Listing<T> {
         match serde_json::from_value(r) {
             Ok(t) => out.items.push(t),
             Err(e) => {
-                tracing::warn!(error = %e, "a Fountain row that doesn't parse");
+                tracing::warn!(error = %e, "a Managoat row that doesn't parse");
                 out.unreadable += 1;
             }
         }
@@ -195,7 +195,7 @@ impl Client {
             .header("accept", "application/json")
             .send()
             .await
-            .map_err(|e| Error::Http(format!("can't reach Fountain at {}: {e}", self.base)))?;
+            .map_err(|e| Error::Http(format!("can't reach Managoat at {}: {e}", self.base)))?;
         let status = res.status();
         let body = res.bytes().await.map_err(|e| Error::Http(format!("{path}: {e}")))?;
         if !status.is_success() {
@@ -213,7 +213,7 @@ impl Client {
         }
         serde_json::from_slice::<Data<T>>(&body)
             .map(|d| d.data)
-            .map_err(|e| Error::Http(format!("{path}: Fountain said something else: {e}")))
+            .map_err(|e| Error::Http(format!("{path}: Managoat said something else: {e}")))
     }
 
     /// Every agent on the account, whole.

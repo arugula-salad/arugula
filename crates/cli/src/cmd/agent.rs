@@ -23,8 +23,9 @@ pub struct Args {
     /// Any ACP agent server, by its command line.
     #[arg(long, conflicts_with_all = ["fountain", "codex"])]
     acp: Option<String>,
-    /// A Fountain agent (name or id), run in Fountain's sandbox.
-    #[arg(long, conflicts_with = "codex")]
+    /// A Managoat agent (name or id), run in Managoat's sandbox.
+    /// (`--fountain`, its name before the rename, still works.)
+    #[arg(long = "managoat", value_name = "AGENT", alias = "fountain", conflicts_with = "codex")]
     fountain: Option<String>,
     /// Claude Code as a recipe, a Claude Code subagent (its `name`, from
     /// `.claude/agents/` here or `~/.claude/agents/`): its prompt, model,
@@ -34,7 +35,7 @@ pub struct Args {
     /// Codex instead of Claude Code.
     #[arg(long)]
     codex: bool,
-    /// Fountain: a vault for its secrets.
+    /// Managoat: a vault for its secrets.
     #[arg(long)]
     vault: Option<String>,
     /// A model to switch to (e.g. `haiku`).
@@ -161,7 +162,7 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
         } => {
             let mut config = match (&acp, &fountain) {
                 (Some(cmd), _) => json!({ "agent": "acp", "command": cmd }),
-                (_, Some(name)) => json!({ "agent": "fountain", "fountain_agent": name, "vault": vault }),
+                (_, Some(name)) => json!({ "agent": "managoat", "managoat_agent": name, "vault": vault }),
                 _ if codex => json!({ "agent": "codex" }),
                 _ => match &recipe {
                     Some(name) => json!({ "agent": "claude", "recipe": name }),
@@ -169,7 +170,7 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
                 },
             };
             if vault.is_some() && fountain.is_none() {
-                anyhow::bail!("--vault goes with --fountain");
+                anyhow::bail!("--vault goes with --managoat");
             }
             // A VM, or another daemon's machine, has none of this host's
             // directories.

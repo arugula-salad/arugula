@@ -85,13 +85,13 @@ runDir("FAKE_ACP_DIR", "arugula-e2e-fake-acp-");
   process.env.ARUGULA_FORGE_POLL_MS ??= "300,1500";
 }
 
-// M43: Fountain blocks read the credentials file fountain.spec.ts writes
-// (pointing at its fake Fountain), never ~/.fountain. (F3: *Run on
-// Fountain* runs nothing here; the daemon speaks to that fake itself.)
+// M43: Managoat blocks read the credentials file fountain.spec.ts writes
+// (pointing at its fake Managoat), never ~/.managoat or ~/.fountain. (F3: *Run on
+// Managoat* runs nothing here; the daemon speaks to that fake itself.)
 {
   const dir = runDir("ARUGULA_E2E_FOUNTAIN_DIR", "arugula-e2e-fountain-");
-  process.env.ARUGULA_FOUNTAIN_CREDENTIALS = join(dir, "credentials");
-  for (const k of ["FOUNTAIN_API_KEY", "FOUNTAIN_BASE_URL", "FOUNTAIN_PROFILE"]) delete process.env[k];
+  process.env.ARUGULA_MANAGOAT_CREDENTIALS = join(dir, "credentials");
+  for (const p of ["MANAGOAT", "FOUNTAIN"]) for (const k of ["API_KEY", "BASE_URL", "PROFILE"]) delete process.env[`${p}_${k}`];
   process.env.ARUGULA_FOUNTAIN_POLL_MS ??= "1500";
   // M44: a worn agent's variables never reach the person's Infisical or
   // gh (and its bundle goes in the run's own cache: the daemon's command).

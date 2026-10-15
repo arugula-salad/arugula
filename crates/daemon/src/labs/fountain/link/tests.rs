@@ -211,7 +211,7 @@ fn non_protocol_output_and_the_sandboxs_own_answers_are_not_forwarded() {
     prompt(&mut c, 3, "r");
     assert!(c.event(&output(1, "stderr", "npm warn deprecated foo@1.0.0")).is_empty());
     assert!(c.event(&output(2, "stdout", "{\"jsonrpc\":\"2.0\",\"method\":\"session/update\"}")).is_empty());
-    // An answer the sandbox's adapter gave Fountain is not an answer to us.
+    // An answer the sandbox's adapter gave Managoat is not an answer to us.
     assert!(c.event(&acp(3, json!({ "jsonrpc": "2.0", "id": 3, "result": { "stopReason": "end_turn" } }))).is_empty());
     assert!(c.event(&output(4, "acp", "not json")).is_empty());
     assert!(c.waiting().is_some());
@@ -236,7 +236,7 @@ fn a_refused_model_does_not_end_the_turn() {
 
 #[test]
 fn a_turn_that_failed_before_it_started_ends_the_prompt() {
-    // Fountain's fail_before_start: a failed turn with no started stage.
+    // Managoat's fail_before_start: a failed turn with no started stage.
     let mut c = core();
     prompt(&mut c, 3, "r");
     let f = c.event(&stage(1, "turn", "failed", json!({ "turn_id": "t9", "reason": "spawn failed" })));
@@ -302,7 +302,7 @@ fn a_failed_wake_ends_the_prompt_retryable_or_not() {
 }
 
 /// Two clients prompting a parked conversation: both are told `queued`,
-/// and Fountain refuses the second on the stream alone.
+/// and Managoat refuses the second on the stream alone.
 #[test]
 fn a_prompt_refused_on_the_stream_ends_with_a_retry() {
     let mut c = core();
@@ -428,7 +428,7 @@ fn with_no_rejection_on_offer_nothing_is_sent() {
     a["params"]["options"] = json!([{ "optionId": "allow", "kind": "allow_once" }]);
     c.event(&acp(5, a));
     let (_, calls) = c.outbound(&answered(json!(4), json!({ "outcome": "cancelled" })));
-    assert!(calls.is_empty(), "left for Fountain's timeout: {calls:?}");
+    assert!(calls.is_empty(), "left for Managoat's timeout: {calls:?}");
 }
 
 #[test]
@@ -483,7 +483,7 @@ fn initialize_offers_resume_only_with_a_cursor() {
     assert_eq!(caps["loadSession"], true);
     assert!(caps["sessionCapabilities"]["resume"].is_object());
     assert_eq!(caps["promptCapabilities"]["image"], true);
-    assert_eq!(f[0]["result"]["agentInfo"]["name"], "fountain");
+    assert_eq!(f[0]["result"]["agentInfo"]["name"], "managoat");
     // A block saved by a daemon that ran `fountain acp`: no cursor, so it
     // loads, once.
     let (f, _) = Core::new(1, false).outbound(&json!({ "jsonrpc": "2.0", "id": 1, "method": "initialize" }));

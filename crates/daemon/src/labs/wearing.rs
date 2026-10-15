@@ -1,10 +1,10 @@
 //! Wearing an agent definition on this host: what M76's recipes (a Claude
 //! Code subagent file, [`super::agents::wear`]) and A2A delegation
 //! ([`super::agents::delegate`]) share. Moved here from M44's
-//! `fountain/wear.rs` when wearing a Fountain agent locally was retired
+//! `fountain/wear.rs` when wearing a Managoat agent locally was retired
 //! (2026-10-15, #942); the behaviour is the same.
 //!
-//! **MCP servers** get Fountain's substitution ([`substitute`]): `${VAR}`
+//! **MCP servers** get Managoat's substitution ([`substitute`]): `${VAR}`
 //! (an UPPER_SNAKE name) is replaced, `$$` is a literal `$`, a value isn't
 //! expanded again, and every unset name is reported. A variable's value
 //! comes, in order, from ([`resolve`]):
@@ -20,7 +20,7 @@
 //! A server with an unset variable is left out, and so is one that needs an
 //! OAuth sign-in, which a headless Claude Code can't do (no auth header,
 //! and a known OAuth host, or a 401 with `WWW-Authenticate` when probed).
-//! So is a Fountain connection, which only Fountain's sandboxes have. Every
+//! So is a Managoat connection, which only Managoat's sandboxes have. Every
 //! credential goes to the session by reference, never on a command line
 //! ([`servers`]). The block's header names what was left out, and why.
 //!
@@ -74,7 +74,7 @@ pub fn refs_in(v: &Value, out: &mut BTreeSet<String>) {
     }
 }
 
-/// Fountain's substitution of one string (`Managoat.Substitution`): each
+/// Managoat's substitution of one string (`Managoat.Substitution`): each
 /// `${VAR}` from `vars`, `$$` a literal `$`, once (a value isn't expanded
 /// again). With any variable missing, every missing name, sorted.
 pub fn substitute(s: &str, vars: &BTreeMap<String, String>) -> Result<String, BTreeSet<String>> {
@@ -182,7 +182,7 @@ fn text(v: Value) -> Option<String> {
 
 // ---------------------------------------------------------------- MCP servers
 
-/// A server (as Fountain keeps it: Claude Code's config shape) as ACP's
+/// A server (as Managoat keeps it: Claude Code's config shape) as ACP's
 /// `session/new` takes it: http `{type, name, url, headers: [{name,
 /// value}]}`, stdio `{name, command, args, env: [{name, value}]}`. Or why
 /// it can't be.
@@ -207,7 +207,7 @@ pub fn acp_server(name: &str, s: &Value) -> Result<Value, String> {
         return Ok(json!({ "name": name, "command": command, "args": args, "env": pairs(&s["env"]) }));
     }
     if s.get("connection").is_some() {
-        return Err("it's a Fountain connection, which only Fountain's sandboxes have".into());
+        return Err("it's a Managoat connection, which only Managoat's sandboxes have".into());
     }
     Err("it has neither a url nor a command".into())
 }
@@ -257,8 +257,8 @@ async fn probe_oauth(url: &str) -> bool {
 ///
 /// It reads chant's build output, not a contract document (#305):
 /// agent-specs is a chant project, not a workspace, and `dist/fountain.yaml`
-/// is what its fountain lexicon writes for Fountain to apply, so it is the
-/// file Fountain itself trusts. No chant read gives an Environment's
+/// is what its fountain lexicon writes for Managoat to apply, so it is the
+/// file Managoat itself trusts. No chant read gives an Environment's
 /// secrets mapping without building.
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct Specs {
@@ -399,7 +399,7 @@ pub struct Lookup<'a> {
     /// The agent's environment's name, for the agent-specs mapping.
     pub environment: Option<String>,
     /// Its vault's, whose secrets win over the environment's (as on
-    /// Fountain).
+    /// Managoat).
     pub vault: Option<String>,
 }
 
@@ -778,7 +778,7 @@ fn expandable(s: &str) -> bool {
 }
 
 const LITERAL: &str =
-    "it holds a literal ${…} (Fountain's $$ escape), which Claude Code would expand, so it can't be passed on as it is";
+    "it holds a literal ${…} (Managoat's $$ escape), which Claude Code would expand, so it can't be passed on as it is";
 
 /// One server as the session gets it: `resolved` (substituted) in ACP's
 /// shape, with each header and env value (and a URL that had a variable)
@@ -1041,7 +1041,7 @@ mod tests {
             stdio,
             json!({ "name": "chant", "command": "npx", "args": ["@x/chant", "serve"], "env": [{ "name": "K", "value": "v" }] })
         );
-        assert!(acp_server("gmail", &json!({ "connection": "c" })).unwrap_err().contains("Fountain connection"));
+        assert!(acp_server("gmail", &json!({ "connection": "c" })).unwrap_err().contains("Managoat connection"));
         assert!(acp_server("x", &json!({ "type": "ws", "url": "wss://x" })).is_err());
     }
 
@@ -1054,7 +1054,7 @@ mod tests {
         assert!(!says_oauth(200, true) && !says_oauth(406, false));
     }
 
-    /// pr-reviewer's MCP servers, as the Fountain fixture has them.
+    /// pr-reviewer's MCP servers, as the Managoat fixture has them.
     fn pr_reviewer() -> BTreeMap<String, McpServer> {
         let v: Value = serde_json::from_str(include_str!("../../tests/fixtures/fountain/agents.json")).unwrap();
         let pr = v["data"].as_array().unwrap().iter().find(|a| a["name"] == "pr-reviewer").unwrap();
@@ -1086,7 +1086,7 @@ mod tests {
         assert_eq!(out.left[0].name, "github");
         assert!(out.left[0].why.contains("${X} isn't set"), "{:?}", out.left);
         assert!(out.secrets.is_empty() && out.env.is_empty());
-        // A Fountain connection, Arugula's own name, a variable on a
+        // A Managoat connection, Arugula's own name, a variable on a
         // command line, a literal ${…}, a URL with a variable, and a type
         // that's wrong (said from the recipe, not its values).
         let mut odd: BTreeMap<String, McpServer> = BTreeMap::new();

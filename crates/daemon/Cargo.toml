@@ -77,7 +77,7 @@ rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs"
 rmcp = { version = "=3.5.0", default-features = false, features = ["transport-streamable-http-client-unix-socket"] }
 
 [features]
-# Labs (Fountain first; see src/labs/mod.rs), the GitHub forge (src/forge/,
+# Labs (Managoat first; see src/labs/mod.rs), the GitHub forge (src/forge/,
 # surface src/forges.rs) and the editor server with Claude Code's IDE
 # (src/editor/ and src/ide/, surface src/editors.rs): each on by default.
 # Release builds have them all; `--no-default-features` leaves them out.

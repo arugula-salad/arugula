@@ -111,7 +111,7 @@ id: string,
  */
 what: AskWhat, 
 /**
- * Who asks: the agent (`claude`, `fountain`, …).
+ * Who asks: the agent (`claude`, `managoat`, …).
  */
 agent: string, 
 /**
@@ -151,7 +151,7 @@ export type Attention = "idle" | "working" | "needs_input" | "done";
  * What a block is; where one runs is its `host`, not its type. All types
  * share one id space (`%N`) and one place in the layout tree.
  */
-export type BlockType = "terminal" | "browser" | "agent" | "editor" | "diff" | "file" | "remote" | "workspace" | "app" | "forge" | "fountain" | "invite" | "agents";
+export type BlockType = "terminal" | "browser" | "agent" | "editor" | "diff" | "file" | "remote" | "workspace" | "app" | "forge" | "managoat" | "invite" | "agents";
 
 /**
  * A side of a PR: which repository (a fork's, for its head), branch and
@@ -1017,7 +1017,7 @@ export type ForgeWantKind = "review" | "failed" | "changes" | "mention" | "done"
 /**
  * A device sign-in in progress: show `user_code` and send the person to
  * `verification_uri` (or `verification_uri_complete`) in a browser signed
- * in to Fountain.
+ * in to Managoat.
  */
 export type FountainDevice = { base_url: string, user_code: string, verification_uri: string, verification_uri_complete: string | null, 
 /**
@@ -1026,9 +1026,9 @@ export type FountainDevice = { base_url: string, user_code: string, verification
 expires_ms: number, };
 
 /**
- * `GET /api/fountain/login` (#942): this daemon's Fountain sign-in, and
+ * `GET /api/fountain/login` (#942): this daemon's Managoat sign-in, and
  * its account stream. Never a key: only where it came from and the
- * prefix Fountain's key list shows.
+ * prefix Managoat's key list shows.
  */
 export type FountainLogin = { 
 /**
@@ -1036,17 +1036,17 @@ export type FountainLogin = {
  */
 signed_in: boolean, 
 /**
- * Where the key in use comes from: `arugula` (`arugula fountain
- * login`, kept in the state dir), `env` (`$FOUNTAIN_API_KEY`) or
- * `file` (the `fountain` CLI's `~/.fountain/credentials`).
+ * Where the key in use comes from: `arugula` (`arugula managoat
+ * login`, kept in the state dir), `env` (`$MANAGOAT_API_KEY`) or
+ * `file` (the `managoat` CLI's `~/.managoat/credentials`).
  */
 source: string | null, base_url: string | null, 
 /**
- * Who an Arugula sign-in signs in as, when Fountain said.
+ * Who an Arugula sign-in signs in as, when Managoat said.
  */
 email: string | null, 
 /**
- * The key's prefix, as Fountain's key list shows it.
+ * The key's prefix, as Managoat's key list shows it.
  */
 key_prefix: string | null, 
 /**
@@ -1064,14 +1064,14 @@ note: string | null, stream: FountainStream, };
 
 /**
  * `POST /api/fountain/login`: start a device sign-in. `base_url`: which
- * Fountain; left out, the one signed in to, else `$FOUNTAIN_BASE_URL` or
+ * Managoat; left out, the one signed in to, else `$MANAGOAT_BASE_URL` or
  * the CLI profile's.
  */
 export type FountainLoginRequest = { base_url?: string | null, };
 
 /**
  * The account's event stream (`/api/events/stream`), on the daemon that
- * runs it (`--fountain-account-stream`).
+ * runs it (`--managoat-account-stream`).
  */
 export type FountainStream = { 
 /**
@@ -1304,7 +1304,7 @@ block_channels?: boolean,
  */
 vms: boolean, 
 /**
- * A Fountain login here: `FOUNTAIN_API_KEY`, or the CLI's
+ * A Managoat login here: `MANAGOAT_API_KEY` (or `FOUNTAIN_API_KEY`), or the CLI's
  * credentials file.
  */
 fountain: boolean, 
@@ -2333,7 +2333,7 @@ export type UnreachedWhy = "agent_needs_pane" | "may_not_drive" | "nobody";
  * attaching: from the foreground process's command line, else the
  * command the shell integration reported.
  */
-export type WorkKind = "shell" | "build" | "test" | "agent" | "server" | "logs" | "editor" | "app" | "pr" | "issue" | "fountain";
+export type WorkKind = "shell" | "build" | "test" | "agent" | "server" | "logs" | "editor" | "app" | "pr" | "issue" | "managoat";
 
 /**
  * One current record of a kind the declaration names: a decision, a work

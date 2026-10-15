@@ -6,8 +6,8 @@
 // open in a pane). New and Edit are a form that writes the file as Claude
 // Code reads it (keys it doesn't know are kept); Run here opens an agent
 // block wearing it; Offer and Stop offering put it in the team's catalog;
-// Delete removes the file. Run on Fountain (#942 F4, with a Fountain
-// login) runs it in a Fountain sandbox as its Fountain agent. Team: the catalog, by machine and owner; tasks
+// Delete removes the file. Run on Managoat (#942 F4, with a Managoat
+// login) runs it in a Managoat sandbox as its Managoat agent. Team: the catalog, by machine and owner; tasks
 // from other people waiting for you; and standing grants, with Revoke. All
 // of it the shown machine's, and its owner's.
 
@@ -201,7 +201,7 @@ function RecipesTab({ client }: { client: Client }) {
   };
   // The project it works in: its own, where it's offered from, else asked.
   const runFountain = async (r: Recipe, project: string | null) => {
-    const cwd = project ?? r.offered_from ?? (await askText(`Run ${r.name} on Fountain, working in`, "~/", "a project folder (a git checkout with an origin)"));
+    const cwd = project ?? r.offered_from ?? (await askText(`Run ${r.name} on Managoat, working in`, "~/", "a project folder (a git checkout with an origin)"));
     if (cwd?.trim()) setOnFountain({ recipe: r.name, cwd: cwd.trim() });
   };
   const addProject = async () => {
@@ -242,8 +242,8 @@ function RecipesTab({ client }: { client: Client }) {
               Run on {directory.current || "this machine"}
             </button>
             {client.has("fountain") && (
-              <button data-run-fountain={r.name} disabled={busy} title="Run it in a Fountain sandbox, as its Fountain agent recipe-NAME" onClick={() => void runFountain(r, project)}>
-                Run on Fountain
+              <button data-run-fountain={r.name} disabled={busy} title="Run it in a Managoat sandbox, as its Managoat agent recipe-NAME" onClick={() => void runFountain(r, project)}>
+                Run on Managoat
               </button>
             )}
             <button data-edit={r.name} disabled={busy} title="Change its prompt, tools and model" onClick={() => edit(r)}>

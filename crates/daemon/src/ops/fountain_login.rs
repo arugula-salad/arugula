@@ -1,5 +1,5 @@
-//! `fountain.login*` (#942): this daemon's Fountain sign-in (`arugula
-//! fountain login` and `logout`). Each is the owner's: the key it keeps
+//! `fountain.login*` (#942): this daemon's Managoat sign-in (`arugula
+//! managoat login` and `logout`). Each is the owner's: the key it keeps
 //! signs in as them. The work is `labs/fountain/account.rs`; a build without
 //! Labs has no such routes, so its twins are never reached.
 

@@ -72,7 +72,7 @@ routes, which name `server::App`.
 **Block constructors.** `block::create` names nine types' constructors:
 `browser::Browser`, `agent::Agent`, `editor::Editor`, `remote::Remote`,
 `review::diff::Diff`, `review::file::FileView`, `forge::ForgeBlock`,
-`invite::card::InviteBlock`, and `labs::create_block` for Fountain, App and
+`invite::card::InviteBlock`, and `labs::create_block` for Managoat, App and
 Workspace.
 
 **What blocks are given.** `BlockEnv` and `BlockCtx` carry
@@ -266,7 +266,7 @@ core's only path to `App`.
 **Labs' block types** register the same way. `labs::create_block` becomes
 `labs::kinds(&mut BlockKinds)`. Its twin (without the `labs` feature)
 registers kinds whose `create` returns today's `not_built` text, so a
-saved Fountain block in a build without Labs still says "A Fountain block
+saved Managoat block in a build without Labs still says "A Managoat block
 isn't in this build".
 
 **Editors.** The `Block` trait names `Arc<dyn EditorLink>` instead of

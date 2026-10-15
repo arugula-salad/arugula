@@ -1,5 +1,5 @@
 // Loading the Labs chunk (./labs). Core code calls `loadLabs()` only when the
-// machine it is talking to has labs (`Client.hasLabs()`), or for a Fountain
+// machine it is talking to has labs (`Client.hasLabs()`), or for a Managoat
 // block (out of Labs since #942), so a session with neither never fetches
 // the chunk. `labsNow()` is the module once it has
 // arrived, for code that has to answer at once (a menu being built).

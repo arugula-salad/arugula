@@ -286,8 +286,8 @@ async fn act(
             if is_agents(&app, *p).await {
                 return Err(ApiError(StatusCode::FORBIDDEN, OWN_ACCOUNT_ONLY.into()));
             }
-            // #942: a Fountain request is answered with this machine's
-            // own Fountain login, so it's this machine's own account's.
+            // #942: a Managoat request is answered with this machine's
+            // own Managoat login, so it's this machine's own account's.
             if is_fountain(&app, *p).await {
                 return Err(ApiError(StatusCode::FORBIDDEN, FOUNTAIN_OWN_ACCOUNT_ONLY.into()));
             }
@@ -366,7 +366,7 @@ async fn act_one(
         let line = crate::fs::rerun_line(&command).ok_or_else(|| format!("can't type {command:?} again"))?;
         return crate::fs::type_line(app, pane, line, "rerun").await.map_err(|e| e.to_string());
     }
-    // #942: a Fountain account view's cards are the account's permission
+    // #942: a Managoat account view's cards are the account's permission
     // requests, any of them (not only the one on the card, which is the
     // newest): its notification's Allow answers the one it was about, even
     // after a newer one came, or the card was dismissed.
@@ -587,9 +587,9 @@ async fn is_fountain(app: &App, id: PaneId) -> bool {
     app.mux.api(|r| Api::Block(id, r)).await.flatten().is_some_and(|b| b.kind() == arugula_proto::BlockType::Fountain)
 }
 
-/// What answering a Fountain request (#942) from another account says.
+/// What answering a Managoat request (#942) from another account says.
 const FOUNTAIN_OWN_ACCOUNT_ONLY: &str =
-    "only this machine's own account answers its Fountain requests (they're answered with its Fountain login)";
+    "only this machine's own account answers its Managoat requests (they're answered with its Managoat login)";
 
 pub(crate) async fn is_invite(app: &App, id: PaneId) -> bool {
     app.mux.api(|r| Api::Block(id, r)).await.flatten().is_some_and(|b| b.kind() == arugula_proto::BlockType::Invite)
@@ -1023,8 +1023,8 @@ async fn call(
         // M79: a task's card, and taking a grant back, are this machine's
         // own account's: not an editor's, nor a team's other owner's. So is
         // *Run there*, which reaches the account's other machines as this
-        // daemon, and (#942 F4) *Run on Fountain* and copying a variable to
-        // a vault, which use this machine's Fountain login and secrets.
+        // daemon, and (#942 F4) *Run on Managoat* and copying a variable to
+        // a vault, which use this machine's Managoat login and secrets.
         if b.kind() == arugula_proto::BlockType::Agents
             && matches!(
                 method.as_str(),

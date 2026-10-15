@@ -59,8 +59,8 @@ enum Cmd {
     /// It starts in its project, on its machine (one of yours), in a
     /// session named after it.
     ///
-    /// With --fountain (Labs: agents and fountain), it runs in a Fountain
-    /// sandbox instead: the recipe is upserted as the Fountain agent
+    /// With --managoat (Labs: agents), it runs in a Managoat
+    /// sandbox instead: the recipe is upserted as the Managoat agent
     /// recipe-NAME first, and its project's origin is cloned there
     /// (uncommitted work stays here).
     Run {
@@ -68,16 +68,17 @@ enum Cmd {
         /// The machine [default: whichever offers it, this one first].
         #[arg(long, conflicts_with = "fountain")]
         on: Option<String>,
-        /// On Fountain, from this machine's recipe.
-        #[arg(long)]
+        /// On Managoat, from this machine's recipe. (`--fountain`, its name
+        /// before the rename, still works.)
+        #[arg(long = "managoat", alias = "fountain")]
         fountain: bool,
-        /// With --fountain: a vault for the run (name or id).
+        /// With --managoat: a vault for the run (name or id).
         #[arg(long, requires = "fountain")]
         vault: Option<String>,
-        /// With --fountain: an environment instead of the project's.
+        /// With --managoat: an environment instead of the project's.
         #[arg(long, requires = "fountain")]
         environment: Option<String>,
-        /// With --fountain: the project it works in [default: where it's
+        /// With --managoat: the project it works in [default: where it's
         /// offered from].
         #[arg(long, requires = "fountain")]
         cwd: Option<String>,
@@ -265,7 +266,7 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
             if json_out {
                 print_json(&v);
             } else if fountain {
-                println!("{}", v["summary"].as_str().unwrap_or("it runs on Fountain"));
+                println!("{}", v["summary"].as_str().unwrap_or("it runs on Managoat"));
                 println!("In %{} (session {agent})", v["block"]);
             } else {
                 println!(

@@ -7,7 +7,7 @@ import type { PaneId } from "../proto";
 import { AdapterHelp, installAdapter, loadAdapters, type Adapter } from "./adapter";
 import { pickConversation } from "./conversations";
 
-type Kind = "claude" | "codex" | "fountain" | "acp";
+type Kind = "claude" | "codex" | "managoat" | "acp";
 
 export interface AgentWhere {
   /** Split this block (desktop), else a new tab in `session`. */
@@ -50,9 +50,13 @@ export function AgentDialogLayer() {
   );
 }
 
-const remembered = () => {
+type Remembered = { kind?: Kind; fountain?: string; acp?: string; model?: string };
+
+const remembered = (): Remembered => {
   try {
-    return JSON.parse(localStorage.getItem("arugula.agent") ?? "{}") as { kind?: Kind; fountain?: string; acp?: string; model?: string };
+    const last = JSON.parse(localStorage.getItem("arugula.agent") ?? "{}") as Omit<Remembered, "kind"> & { kind?: Kind | "fountain" };
+    // Remembered before Fountain became Managoat.
+    return { ...last, kind: last.kind === "fountain" ? "managoat" : last.kind };
   } catch {
     return {};
   }
@@ -60,9 +64,9 @@ const remembered = () => {
 
 function AgentDialog({ client, where, close }: { client: Client; where: AgentWhere; close: () => void }) {
   const last = remembered();
-  // Fountain agents need a Fountain login here, VMs wisp (#180).
+  // Managoat agents need a Managoat login here, VMs wisp (#180).
   const hasFountain = client.has("fountain");
-  const [kind, setKind] = useState<Kind>(last.kind === "fountain" && !hasFountain ? "claude" : (last.kind ?? "claude"));
+  const [kind, setKind] = useState<Kind>(last.kind === "managoat" && !hasFountain ? "claude" : (last.kind ?? "claude"));
   const [fountain, setFountain] = useState(last.fountain ?? "");
   const [acp, setAcp] = useState(last.acp ?? "");
   const [model, setModel] = useState(last.model ?? "");
@@ -71,7 +75,7 @@ function AgentDialog({ client, where, close }: { client: Client; where: AgentWhe
   const [prompt, setPrompt] = useState("");
   const promptRef = useRef<HTMLTextAreaElement>(null);
   useLayoutEffect(() => promptRef.current?.focus(), []);
-  const canVm = kind !== "fountain" && client.has("vms");
+  const canVm = kind !== "managoat" && client.has("vms");
   // #111: whether this agent's adapter is installed here (a VM installs
   // its own).
   const [adapters, setAdapters] = useState<Adapter[] | null>(null);
@@ -93,7 +97,7 @@ function AgentDialog({ client, where, close }: { client: Client; where: AgentWhe
     if (blocked) return;
     remember();
     const config: Record<string, unknown> = { agent: kind };
-    if (kind === "fountain") config.fountain_agent = fountain.trim();
+    if (kind === "managoat") config.managoat_agent = fountain.trim();
     if (kind === "acp") config.command = acp.trim();
     if (model.trim()) config.model = model.trim();
     if (!(vm && canVm) && cwd.trim()) config.cwd = cwd.trim();
@@ -133,13 +137,13 @@ function AgentDialog({ client, where, close }: { client: Client; where: AgentWhe
           <select name="agent" value={kind} onChange={(e) => setKind((e.currentTarget as HTMLSelectElement).value as Kind)}>
             <option value="claude">Claude Code</option>
             <option value="codex">Codex</option>
-            {hasFountain && <option value="fountain">Fountain agent</option>}
+            {hasFountain && <option value="managoat">Managoat agent</option>}
             <option value="acp">Another ACP agent…</option>
           </select>
         </label>
-        {kind === "fountain" && (
+        {kind === "managoat" && (
           <label>
-            Fountain agent (name or id)
+            Managoat agent (name or id)
             <input name="fountain" value={fountain} required onInput={(e) => setFountain(e.currentTarget.value)} />
           </label>
         )}
@@ -170,13 +174,13 @@ function AgentDialog({ client, where, close }: { client: Client; where: AgentWhe
             }}
           />
         )}
-        {!(vm && canVm) && kind !== "fountain" && (
+        {!(vm && canVm) && kind !== "managoat" && (
           <label>
             Working directory
             <input name="cwd" value={cwd} placeholder="home" onInput={(e) => setCwd(e.currentTarget.value)} />
           </label>
         )}
-        {kind !== "fountain" && (
+        {kind !== "managoat" && (
           <label>
             Model
             <input name="model" value={model} placeholder="the agent's default (e.g. haiku)" onInput={(e) => setModel(e.currentTarget.value)} />

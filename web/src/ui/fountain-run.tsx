@@ -1,9 +1,9 @@
-// Run on Fountain (#942, F4): a recipe of this machine's run in a Fountain
-// sandbox, as its Fountain agent `recipe-<name>` (upserted before each
+// Run on Managoat (#942, F4): a recipe of this machine's run in a Managoat
+// sandbox, as its Managoat agent `recipe-<name>` (upserted before each
 // launch). The dialog shows the daemon's preflight first: the checkout the
 // sandbox clones (uncommitted work here doesn't travel), what doesn't carry
 // over (a skill's other files, a tool allowlist, a server with a value typed
-// in), and the variables the agent uses that Fountain lacks, each with an
+// in), and the variables the agent uses that Managoat lacks, each with an
 // explicit "Copy from this machine to vault X" (never automatic, and the
 // value is never shown). The agents block and the Agents page both open it,
 // each with its own way to reach the daemon (`FountainApi`).
@@ -93,7 +93,7 @@ export function FountainRun({ recipe, cwd, api, close, ran }: { recipe: string; 
   };
   const lost = [...(p?.left_out.map((l) => `${l.name}: ${l.why}`) ?? []), ...(p?.notes ?? [])];
   return (
-    <div class="prompt-backdrop" role="dialog" aria-label={`Run ${recipe} on Fountain`} onPointerDown={(e) => e.target === e.currentTarget && close()}>
+    <div class="prompt-backdrop" role="dialog" aria-label={`Run ${recipe} on Managoat`} onPointerDown={(e) => e.target === e.currentTarget && close()}>
       <form
         class="prompt agent-dialog fountain-run"
         data-fountain-run={recipe}
@@ -103,8 +103,8 @@ export function FountainRun({ recipe, cwd, api, close, ran }: { recipe: string; 
         }}
         onKeyDown={(e) => e.key === "Escape" && close()}
       >
-        <h2>Run {recipe} on Fountain</h2>
-        {!p && !error && <p class="hint">Checking Fountain…</p>}
+        <h2>Run {recipe} on Managoat</h2>
+        {!p && !error && <p class="hint">Checking Managoat…</p>}
         {error && (
           <p class="hint fountain-run-error" data-fountain-run-error>
             {error}
@@ -113,7 +113,7 @@ export function FountainRun({ recipe, cwd, api, close, ran }: { recipe: string; 
         {p && (
           <>
             <p class="hint">
-              As the Fountain agent <b>{p.agent}</b>
+              As the Managoat agent <b>{p.agent}</b>
               {p.exists ? ", updated from the recipe if it changed" : ", made from the recipe now"}
               {p.model ? ` (${p.model})` : ""}. The conversation is labelled with the recipe's hash ({p.hash}).
             </p>
@@ -157,7 +157,7 @@ export function FountainRun({ recipe, cwd, api, close, ran }: { recipe: string; 
             {p.missing.length > 0 && (
               <div class="fountain-run-missing" data-fountain-missing={p.missing.length}>
                 <b>
-                  {p.missing.length} variable{p.missing.length === 1 ? "" : "s"} missing on Fountain
+                  {p.missing.length} variable{p.missing.length === 1 ? "" : "s"} missing on Managoat
                 </b>
                 <ul>
                   {p.missing.map((v) => (
@@ -203,7 +203,7 @@ export function FountainRun({ recipe, cwd, api, close, ran }: { recipe: string; 
             Cancel
           </button>
           <button type="submit" class="primary" data-fountain-go disabled={busy !== null || !p || !!p.refused}>
-            {busy === "run" ? "Starting…" : "Run on Fountain"}
+            {busy === "run" ? "Starting…" : "Run on Managoat"}
           </button>
         </div>
       </form>

@@ -60,7 +60,7 @@ export interface Perm {
 }
 
 export interface AgentState {
-  agent: "claude" | "codex" | "fountain" | "acp";
+  agent: "claude" | "codex" | "managoat" | "acp";
   label: string;
   title: string | null;
   cwd: string | null;
@@ -82,7 +82,7 @@ export interface AgentState {
   tokens: { total: number; last_turn: Record<string, number> | null };
   turns: number;
   allow: { tool: string; title?: string }[];
-  /** M44's Fountain agent worn here (retired): only on a block saved
+  /** M44's Managoat agent worn here (retired): only on a block saved
    *  wearing one, which says why it won't start. */
   as_fountain?: string | null;
   /** M76: the recipe it runs as (a Claude Code subagent), by name. */
@@ -101,7 +101,7 @@ export interface AgentState {
   } | null;
   entries_from: number;
   entries: Entry[];
-  /** #942 F3: a Fountain conversation: its status there, and its line
+  /** #942 F3: a Managoat conversation: its status there, and its line
    *  (pending, running, idle·awake, idle·parked, idle·waking, failed,
    *  terminated). */
   fountain?: FountainStatus;
@@ -130,7 +130,7 @@ interface Worn {
 }
 
 /** What a worn recipe (M76) brought (its skills and MCP servers), and
- *  what didn't carry over. A block saved wearing a Fountain agent (M44,
+ *  what didn't carry over. A block saved wearing a Managoat agent (M44,
  *  retired) shows its name, and the reason it won't start. */
 function WornBar({ s }: { s: AgentState }) {
   const as = s.as_fountain || s.recipe;
@@ -518,7 +518,7 @@ function Composer({
   );
 }
 
-/** #942 F3: a Fountain conversation's status line and its actions: Wake,
+/** #942 F3: a Managoat conversation's status line and its actions: Wake,
  *  Interrupt, Terminate (confirmed: the sandbox's disk goes), and its
  *  sandbox's Changes and Files beside it. */
 function FountainBar({ client, id, s }: { client: Client; id: PaneId; s: AgentState }) {
@@ -531,7 +531,7 @@ function FountainBar({ client, id, s }: { client: Client; id: PaneId; s: AgentSt
   const sandbox = conv ? { conversation: conv, profile: f.profile ?? undefined } : null;
   return (
     <div class="agent-fountain" data-fountain-line={f.line ?? ""}>
-      <span class={`fountain-line ${(f.line ?? "").replace("·", "-")}`} title={conv ? `Fountain conversation ${conv}` : undefined}>
+      <span class={`fountain-line ${(f.line ?? "").replace("·", "-")}`} title={conv ? `Managoat conversation ${conv}` : undefined}>
         {f.line ?? "…"}
       </span>
       {!ended && f.machine !== "awake" && (
@@ -589,7 +589,7 @@ function FountainBar({ client, id, s }: { client: Client; id: PaneId; s: AgentSt
   );
 }
 
-/** A path in a Fountain conversation's sandbox, in a file block beside it. */
+/** A path in a Managoat conversation's sandbox, in a file block beside it. */
 function openSandboxFile(client: Client, id: PaneId, s: AgentState, path: string) {
   const conv = s.fountain?.conversation ?? s.session_id;
   if (!conv) return;
@@ -723,10 +723,10 @@ function AgentBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentSta
               );
             case "tool": {
               if (e.id === liveFrom) live = true;
-              // A Fountain agent's paths are in its sandbox, not here.
+              // A Managoat agent's paths are in its sandbox, not here.
               const openAt = client.state?.roles
                 ? undefined
-                : s.agent === "fountain"
+                : s.agent === "managoat"
                   ? (path: string) => openSandboxFile(client, id, s, path)
                   : (path: string) => void openFile(client, id, path, null);
               return <ToolCard key={e.id} t={e} live={live} openAt={openAt} />;
@@ -734,7 +734,7 @@ function AgentBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentSta
           }
         })}
         {s.status === "working" && !s.pending.length && !open.length && <div class="agent-working">{s.current_tool ? `Running ${s.current_tool.title}…` : "Working…"}</div>}
-        {s.status === "ready" && s.fountain?.status === "running" && <div class="agent-working">A turn is running on Fountain…</div>}
+        {s.status === "ready" && s.fountain?.status === "running" && <div class="agent-working">A turn is running on Managoat…</div>}
         {s.queued.length > 0 && <div class="agent-note">Queued: {s.queued.join(" · ")}</div>}
       </div>
       {s.error && <div class="agent-error">{s.error}</div>}

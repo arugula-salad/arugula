@@ -9,9 +9,9 @@
 //! A diff block opened from a chant workspace member's card also says which
 //! decision and run made each hunk (#619), through Labs' chant workspaces.
 //!
-//! **A Fountain conversation's sandbox** (#942, F3): with `fountain:
+//! **A Managoat conversation's sandbox** (#942, F3): with `fountain:
 //! {conversation, profile?}` in its config, either view reads the sandbox
-//! through Fountain's API (`GET /api/sandboxes/:id/{diff,git-status,files,
+//! through Managoat's API (`GET /api/sandboxes/:id/{diff,git-status,files,
 //! file}`) instead of a host: the diff is the tracked changes, with what
 //! `git status` says is untracked listed beside them; a file block on a
 //! directory (or on no path: the sandbox's home) lists it. A parked sandbox
@@ -52,7 +52,7 @@ use serde_json::Value;
 
 use crate::{block::BlockCtx, provider::Provider};
 
-/// A Fountain conversation whose sandbox a view reads (F3).
+/// A Managoat conversation whose sandbox a view reads (F3).
 #[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Sandbox {
     pub conversation: String,
@@ -63,7 +63,7 @@ pub struct Sandbox {
 /// What a view of a parked sandbox says.
 pub const PARKED: &str = "Parked — Wake to look";
 
-/// How often a view of a sandbox polls Fountain while drawn.
+/// How often a view of a sandbox polls Managoat while drawn.
 pub const SANDBOX_POLL: Duration = Duration::from_secs(5);
 
 impl Sandbox {

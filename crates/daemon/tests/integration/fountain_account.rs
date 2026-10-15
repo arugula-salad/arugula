@@ -1,16 +1,16 @@
-//! Fountain track 2, F1 (#942): this daemon's own Fountain sign-in and the
-//! account stream, against a fake Fountain served here.
+//! Managoat track 2, F1 (#942): this daemon's own Managoat sign-in and the
+//! account stream, against a fake Managoat served here.
 //!
 //! What's checked: `POST /api/fountain/login` with no URL asks for one; with
 //! one it gives the device code, the daemon polls until it's approved, keeps
 //! the key in the state dir (0600) and never shows it; the account stream
-//! (`--fountain-account-stream`) connects with that key and `?blocks=true`,
+//! (`--managoat-account-stream`) connects with that key and `?blocks=true`,
 //! hands events on and keeps its cursor; a daemon killed (SIGKILL) and
 //! started again resumes from the cursor (`Last-Event-ID`) with no gap and
-//! nothing twice, across Fountain's idle closes; `DELETE` signs out and
-//! revokes the key, and the stream stops. And (F5: Fountain is out of
-//! Labs, with no flag) a new install with no login asks Fountain nothing,
-//! even with the account stream on and Fountain's URL known.
+//! nothing twice, across Managoat's idle closes; `DELETE` signs out and
+//! revokes the key, and the stream stops. And (F5: Managoat is out of
+//! Labs, with no flag) a new install with no login asks Managoat nothing,
+//! even with the account stream on and Managoat's URL known.
 
 // Over the daemon's Unix socket.
 #![cfg(unix)]
@@ -95,8 +95,8 @@ async fn revoke(State(f): State<Fake>, h: HeaderMap, UrlPath(id): UrlPath<String
 }
 
 /// The account stream: what's after `Last-Event-ID`, the event at it again
-/// (Fountain's replay may overlap), at most three a connection, then closed
-/// as an idle Fountain closes it.
+/// (Managoat's replay may overlap), at most three a connection, then closed
+/// as an idle Managoat closes it.
 async fn stream(State(f): State<Fake>, h: HeaderMap, q: axum::extract::RawQuery) -> Response {
     if !authed(&h) {
         return (StatusCode::UNAUTHORIZED, Json(json!({ "error": "bad key", "reason": "invalid_api_key" })))
@@ -116,13 +116,13 @@ async fn stream(State(f): State<Fake>, h: HeaderMap, q: axum::extract::RawQuery)
     Response::builder().header("content-type", "text/event-stream").body(Body::from(body)).unwrap()
 }
 
-struct Fountain {
+struct Managoat {
     _rt: tokio::runtime::Runtime,
     f: Fake,
     origin: String,
 }
 
-impl Fountain {
+impl Managoat {
     fn start() -> Self {
         let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
         let f = Fake::default();
@@ -157,15 +157,17 @@ fn login(d: &Daemon) -> Value {
 
 #[test]
 fn device_sign_in_and_the_account_stream_resume_across_a_restart() {
-    let fake = Fountain::start();
+    let fake = Managoat::start();
     let dir = Scratch::new("fountain-account");
     let home = dir.join("home");
     std::fs::create_dir_all(&home).unwrap();
     let home = home.display().to_string();
     let mut d = Daemon::child_env(
-        &["--fountain-account-stream", "--wisp-token-file", "/nonexistent", "--tailscale-socket", "/nonexistent/sock"],
+        &["--managoat-account-stream", "--wisp-token-file", "/nonexistent", "--tailscale-socket", "/nonexistent/sock"],
         &[
             ("HOME", home.as_str()),
+            ("MANAGOAT_API_KEY", ""),
+            ("MANAGOAT_BASE_URL", ""),
             ("FOUNTAIN_API_KEY", ""),
             ("FOUNTAIN_BASE_URL", ""),
             ("ARUGULA_FOUNTAIN_STREAM_RETRY_MS", "50"),
@@ -178,7 +180,7 @@ fn device_sign_in_and_the_account_stream_resume_across_a_restart() {
     assert_eq!(s["stream"]["enabled"], true, "{s}");
     let (code, body) = d.raw("POST", "/api/fountain/login", Some(json!({})));
     assert_eq!(code, 400, "{body}");
-    assert!(body.contains("which Fountain?"), "{body}");
+    assert!(body.contains("which Managoat?"), "{body}");
 
     // Sign in: the code, then the key once it's approved.
     let s = d.post("/api/fountain/login", json!({ "base_url": fake.origin }));
@@ -188,7 +190,7 @@ fn device_sign_in_and_the_account_stream_resume_across_a_restart() {
     let s = login(&d);
     assert_eq!((s["email"].as_str(), s["key_prefix"].as_str()), (Some("owner@example.com"), Some("ftn_de")), "{s}");
     assert!(s["pending"].is_null() && s["error"].is_null(), "{s}");
-    let file = d.state.join("fountain/login.json");
+    let file = d.state.join("managoat/login.json");
     assert_eq!(std::fs::metadata(&file).unwrap().permissions().mode() & 0o777, 0o600);
     assert!(!s.to_string().contains(KEY));
     assert!(!d.raw("GET", "/api/host", None).1.contains(KEY));
@@ -203,10 +205,14 @@ fn device_sign_in_and_the_account_stream_resume_across_a_restart() {
     d.kill();
     let before = fake.f.with(|i| i.cursors.len());
     fake.f.with(|i| i.total = 11);
+    // And started as a daemon from before the rename had left it: the
+    // sign-in and the cursor under `fountain/`. They move to `managoat/`.
+    std::fs::rename(d.state.join("managoat"), d.state.join("fountain")).unwrap();
     d.start();
     d.wait_for("events 6 to 11", || login(&d)["stream"]["cursor"] == 11);
     let s = login(&d);
     assert_eq!(s["source"], "arugula", "the sign-in outlives a restart: {s}");
+    assert!(file.is_file() && !d.state.join("fountain").exists(), "fountain/ moved to managoat/");
     assert_eq!(s["stream"]["delivered"], 6, "6 to 11, each once: {s}");
     let cursors = fake.f.with(|i| i.cursors.clone());
     assert_eq!(cursors[before], Some(5), "resumed from the kept cursor: {cursors:?}");
@@ -221,21 +227,24 @@ fn device_sign_in_and_the_account_stream_resume_across_a_restart() {
     let (code, body) = d.raw("DELETE", "/api/fountain/login", None);
     assert_eq!(code, 200, "{body}");
     let s: Value = serde_json::from_str(&body).unwrap();
-    assert_eq!(s["note"], "the key was revoked on Fountain", "{s}");
+    assert_eq!(s["note"], "the key was revoked on Managoat", "{s}");
     assert_eq!(s["signed_in"], false);
     assert!(!file.exists());
     assert_eq!(fake.f.with(|i| i.revoked.clone()), ["key-1"]);
     d.wait_for("the stream to stop", || login(&d)["stream"]["connected"] == false);
 }
 
-/// A new install with no Fountain login makes no request to Fountain (#942,
+/// A new install with no Managoat login makes no request to Managoat (#942,
 /// F5): no flag keeps it quiet any more, only the missing login. Here the
-/// account stream is on and Fountain's URL is known (`FOUNTAIN_BASE_URL`),
-/// and the host, the login's status, a Fountain block and an `agent:
-/// fountain` block are all asked for; Fountain hears nothing.
+/// account stream is on and Managoat's URL is known (`FOUNTAIN_BASE_URL`),
+/// and the host, the login's status, a Managoat block and an `agent:
+/// managoat` block are all asked for; Managoat hears nothing. It's said
+/// with the names from before the rename (`--fountain-account-stream`,
+/// `FOUNTAIN_BASE_URL`, block type `fountain`, `agent: fountain`), which
+/// still work.
 #[test]
 fn no_login_no_requests_to_fountain() {
-    let fake = Fountain::start();
+    let fake = Managoat::start();
     let dir = Scratch::new("fountain-quiet");
     let home = dir.join("home");
     std::fs::create_dir_all(&home).unwrap();
@@ -244,6 +253,8 @@ fn no_login_no_requests_to_fountain() {
         &["--fountain-account-stream", "--wisp-token-file", "/nonexistent", "--tailscale-socket", "/nonexistent/sock"],
         &[
             ("HOME", home.as_str()),
+            ("MANAGOAT_API_KEY", ""),
+            ("MANAGOAT_BASE_URL", ""),
             ("FOUNTAIN_API_KEY", ""),
             ("FOUNTAIN_BASE_URL", fake.origin.as_str()),
             ("ARUGULA_FOUNTAIN_STREAM_RETRY_MS", "50"),

@@ -544,7 +544,7 @@ pub(crate) fn answer(app: &App, owner: bool) -> HostAnswer {
 ///
 /// What a stranger doesn't get follows the machine's Labs flags: threads
 /// and huddles are a flag each, and studio and VMs need theirs as well as
-/// their own setup. Fountain, out of Labs (#942), needs only a login.
+/// their own setup. Managoat, out of Labs (#942), needs only a login.
 pub(crate) fn features(app: &App) -> HostFeatures {
     let dir = app.control.state_dir();
     let on = crate::labs::flags(dir);

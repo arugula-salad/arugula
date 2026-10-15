@@ -6,10 +6,10 @@
 //! CLI's hidden commands, run against such a daemon, say the same.
 //!
 //! "Past the gate" is all the on side asks: this daemon has no studio, no
-//! Fountain login and no sandbox provider, so most of them fail next for
+//! Managoat login and no sandbox provider, so most of them fail next for
 //! that, in their own words.
 //!
-//! Fountain left Labs (#942, F5): its routes and blocks have no gate, and a
+//! Managoat left Labs (#942, F5): its routes and blocks have no gate, and a
 //! `fountain` the flags file still names, on or off, changes nothing.
 
 // Over the daemon's Unix socket; Windows gets its named pipe in M56 (#219).
@@ -100,7 +100,7 @@ fn each_flag_gates_its_routes_and_blocks_both_ways() {
     assert!(text.contains(&hint("guest-ssh")), "{text}");
 }
 
-/// Fountain's requests, which no flag gates any more (#942, F5): with no
+/// Managoat's requests, which no flag gates any more (#942, F5): with no
 /// login here they fail for that, or in the block's own words.
 fn fountain_requests() -> Vec<(&'static str, &'static str, Option<Value>)> {
     let block = |kind: &str, config: Value| Some(json!({ "type": kind, "config": config, "local": true }));
@@ -112,7 +112,7 @@ fn fountain_requests() -> Vec<(&'static str, &'static str, Option<Value>)> {
     ]
 }
 
-/// A new install reaches Fountain's routes and blocks with no flag; so does
+/// A new install reaches Managoat's routes and blocks with no flag; so does
 /// one whose flags file still says `fountain`, either way, from before F5.
 /// `arugulad flags` doesn't list it, and setting it says why.
 #[test]
@@ -150,7 +150,7 @@ fn fountain_needs_no_flag_and_an_old_entry_changes_nothing() {
         let out = arugulad(args);
         let err = String::from_utf8_lossy(&out.stderr);
         assert!(!out.status.success(), "{args:?}");
-        assert!(err.contains("isn't a flag any more") && err.contains("arugula fountain login"), "{args:?}: {err}");
+        assert!(err.contains("isn't a flag any more") && err.contains("arugula managoat login"), "{args:?}: {err}");
     }
 }
 
