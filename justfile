@@ -442,13 +442,31 @@ browsers *which="chromium webkit":
     fi
 
 # Arugula's VS Code extension as a VSIX in target/ (M28), for Open VSX
-# (`npx ovsx publish FILE`) and the Marketplace (`npx @vscode/vsce publish
-# --packagePath FILE`).
-# Its publisher is `arugula`, which has to be created on both first (#508).
+# and the Marketplace (`just publish-vsix`).
 # Nothing went out as `illogical.illogical-editor`, so no old id to keep.
 vsix:
     {{cargo}} build -p arugulad
     {{target_dir}}/debug/arugulad _vsix {{target_dir}}
+
+# Publish the extension as `arugula.arugula-editor` (#529): to the Visual
+# Studio Marketplace (VSCE_PAT, an Azure DevOps token with Marketplace
+# Manage) and Open VSX (OVSX_PAT), or just one: `just publish-vsix ovsx`.
+# It's a release: bump the version in the extension's package.json first.
+# Whoever holds the tokens runs it; a version already there is skipped, so
+# it can run again after one of them fails.
+publish-vsix to="both":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    case "{{to}}" in both|vsce|ovsx) ;; *) echo "to: both, vsce or ovsx" >&2; exit 2 ;; esac
+    want() { [ "{{to}}" = both ] || [ "{{to}}" = "$1" ]; }
+    want vsce && [ -z "${VSCE_PAT:-}" ] && { echo "VSCE_PAT isn't set" >&2; exit 1; }
+    want ovsx && [ -z "${OVSX_PAT:-}" ] && { echo "OVSX_PAT isn't set" >&2; exit 1; }
+    {{just_executable()}} vsix
+    version=$(sed -n 's/^  "version": "\(.*\)",$/\1/p' crates/daemon/src/editor/ext/package.json)
+    f="{{target_dir}}/arugula-editor-$version.vsix"
+    want vsce && npx -y @vscode/vsce@4.0.0 publish --skip-duplicate --packagePath "$f"
+    want ovsx && npx -y ovsx@1.2.0 publish --skip-duplicate --packagePath "$f"
+    echo "code --install-extension arugula.arugula-editor"
 
 # The site's images, from a throwaway daemon with a demo HOME and a
 # scripted agent (web/screenshots/). They go to apps/site/public/img in a

@@ -201,7 +201,8 @@ enum Command {
     /// Editors in the swarm: VS Code, Cursor or nvim that joined.
     ///
     /// Also editor blocks. `editors install` adds Arugula's extension to VS Code
-    /// or Cursor here (in a Remote-SSH window's terminal: there).
+    /// or Cursor here (in a Remote-SSH window's terminal: there). It's also on
+    /// the Visual Studio Marketplace and Open VSX as `arugula.arugula-editor`.
     Editors {
         #[command(subcommand)]
         cmd: Option<cmd::editors::EditorsCmd>,
