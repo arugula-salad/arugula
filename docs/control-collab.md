@@ -224,6 +224,31 @@ enough to block people.
 4. **Pane links and leads,** moved onto control's conversations.
 5. **Remove the old Labs code** and its flags.
 
+## Fountain, as of 0.40.0
+
+Fountain F1–F5 (#942) landed in 0.40.0 after this draft. It already does
+much of D4 for sandboxed work, so phase 3 should build on it, not beside it.
+Arugula is now the UI for Fountain, a headless agent backend
+(`docs/fountain.md`). It settles none of D1–D6, but it touches four of them.
+
+| This plan | What Fountain already does | What it means here |
+| --- | --- | --- |
+| D4: a task is a conversation with central state that outlives the caller | A Fountain conversation holds its own state (pending, running, idle·parked, failed, terminated), with an event stream and a cursor. Nothing needs to stay alive on the caller's machine. | For work that runs on Fountain, control's task conversation can point at a Fountain conversation instead of running its own task engine. |
+| D5: machines only execute | A Fountain sandbox is a second place to run, and it isn't a machine. A recipe already runs here, on another machine or on Fountain from one card (`start_agent {on: fountain}`). | Control routes a task to a machine or to Fountain. Recipes are already the shared format. |
+| D2: agreements replace cards | Permission requests from any conversation become cards, and the first answer anywhere wins. A launch's `permission_policy` can only narrow the agent's own. | Narrow-only policy is a model for agreements. But only the account owner gets the cards, since they're answered with the daemon's own key. A teammate can't answer: the gap #415 hit. |
+| D3, D6: identity and names come from control | Identity is one device-flow key per daemon, for one Fountain account. Conversations are labelled with `arugula.machine`, not a person. | Fountain has no Arugula people or teams. Control would map its principals onto Fountain accounts. |
+
+Two more overlaps:
+
+- **One stream per account.** Fountain's account stream must run on exactly
+  one daemon per account, or each request raises duplicate cards. That's the
+  fan-out this plan moves to control: control could hold the stream once and
+  send cards to whoever an agreement names.
+- **What #415 needs and Fountain lacks.** Sandboxes can't use
+  AskUserQuestion, because Fountain doesn't forward elicitation, so #938's
+  and #940's lesson can't be met there yet. Results are the sandbox's diff
+  and files, and a branch or PR exists only if the agent pushes one.
+
 ## Open questions
 
 - **Spend:** who pays for a delegated task's model use? Today it's the
@@ -235,9 +260,12 @@ enough to block people.
 - **Self-hosted control (#662):** D1(a) keeps a self-hosted control as blind
   as the hosted one. D1(b) means trusting whoever runs it with every
   conversation.
-- **Fountain:** Jake's agent platform already runs agents centrally. Should
-  control's agent principals and Fountain's agents be the same thing, or
-  should they meet only at the A2A wire?
+- **Fountain:** is it the task backend, or one executor? (a) Control keeps
+  D4's task state and treats a Fountain conversation as one place to run,
+  like a machine. (b) Fountain holds every task's state, and control keeps
+  identity, names, chat and agreements. Recommend (a): (b) would make every
+  Arugula team run a Fountain instance, and managoat.com is Jake's own.
+  Either way, should control own the account stream (above)?
 - **Joining:** should a machine join without a 15-minute code, e.g. by
   approving it from the machine's own page while signed in? That's separate
   from this rewrite, but #415 tripped on it.
