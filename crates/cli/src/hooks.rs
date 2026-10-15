@@ -147,7 +147,8 @@ pub enum HooksCmd {
     /// only with `--allow-acting`. Run each `arugula` command on its own,
     /// not in a pipeline or `&&` chain, or the rules don't match it.
     Install {
-        /// Write DIR/.claude/settings.json instead of ~/.claude/settings.json.
+        /// Write DIR/.claude/settings.json instead of the user's
+        /// ($CLAUDE_CONFIG_DIR/settings.json, else ~/.claude/settings.json).
         #[arg(long, value_name = "DIR")]
         project: Option<PathBuf>,
         /// Print the resulting JSON; write nothing.
@@ -160,7 +161,8 @@ pub enum HooksCmd {
     },
     /// Which hooks and permission rules are there (exits 0 even if some aren't).
     Status {
-        /// Check DIR/.claude/settings.json instead of ~/.claude/settings.json.
+        /// Check DIR/.claude/settings.json instead of the user's
+        /// ($CLAUDE_CONFIG_DIR/settings.json, else ~/.claude/settings.json).
         #[arg(long, value_name = "DIR")]
         project: Option<PathBuf>,
     },
@@ -190,18 +192,22 @@ fn home() -> anyhow::Result<PathBuf> {
 }
 
 fn settings_path(project: Option<PathBuf>) -> anyhow::Result<PathBuf> {
-    let base = match project {
-        Some(dir) => dir,
-        None => PathBuf::from(std::env::var_os("HOME").context("no HOME")?),
-    };
-    Ok(base.join(".claude/settings.json"))
+    match project {
+        Some(dir) => Ok(dir.join(".claude/settings.json")),
+        None => Ok(user_settings_in(&home()?, std::env::var_os("CLAUDE_CONFIG_DIR").map(PathBuf::from))),
+    }
 }
 
-/// The user's own settings.json: under `CLAUDE_CONFIG_DIR` when that's set,
-/// and under `~/.claude`.
+/// The user's settings.json that Claude Code reads: `$CLAUDE_CONFIG_DIR`'s
+/// when that's set, else `~/.claude`'s, never both (#879).
+fn user_settings_in(home: &Path, config_dir: Option<PathBuf>) -> PathBuf {
+    let dir = config_dir.filter(|d| !d.as_os_str().is_empty()).unwrap_or_else(|| home.join(".claude"));
+    dir.join("settings.json")
+}
+
+/// The user's own settings.json, as [`user_settings_in`] has it.
 fn user_settings() -> Vec<PathBuf> {
-    let config_dir = std::env::var_os("CLAUDE_CONFIG_DIR").map(PathBuf::from);
-    home().map(|h| configs(&h, config_dir).into_iter().map(|(s, _)| s).collect()).unwrap_or_default()
+    settings_path(None).into_iter().collect()
 }
 
 /// The plugin's `enabledPlugins` key (`arugula@arugula`) when `settings`
@@ -1048,6 +1054,17 @@ mod tests {
         for c in ["arugula hook", "my-illogical", "/opt/illogical/bin/arugula", "say illogical", ""] {
             assert!(!runs_old(c), "{c}");
         }
+    }
+
+    /// #879: with another config dir in effect, install and status use its
+    /// settings.json, not `~/.claude`'s.
+    #[test]
+    fn user_settings_follow_claude_config_dir() {
+        let home = Path::new("/home/me");
+        let rig = PathBuf::from("/tmp/rig/claude");
+        assert_eq!(user_settings_in(home, Some(rig.clone())), rig.join("settings.json"));
+        assert_eq!(user_settings_in(home, None), home.join(".claude/settings.json"));
+        assert_eq!(user_settings_in(home, Some(PathBuf::new())), home.join(".claude/settings.json"));
     }
 
     /// #534: `arugulad install` renames our hooks and points the MCP
