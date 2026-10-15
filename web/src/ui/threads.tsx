@@ -356,7 +356,7 @@ const composeRef: { current: { reply(text: string): void } | null } = { current:
 
 /** Whether an @token names the person reading. */
 function meMatcher(client: Client): (token: string) => boolean {
-  const me = client.me();
+  const me = client.chatMe();
   const mine = client.state?.presence?.find((p) => p.client === client.clientId)?.name ?? "";
   const login = me.split(":").pop()!.split("@")[0].toLowerCase();
   const tokens = new Set([mentionToken(mine), login, mine.toLowerCase().replace(/\s+/g, "")].filter(Boolean));
@@ -367,13 +367,16 @@ function meMatcher(client: Client): (token: string) => boolean {
  * who's in it), and the pane's agent. */
 function people(client: Client, msgs: ThreadMsg[], target: ThreadTarget): { token: string; name: string; who: string; pic?: string }[] {
   const out = new Map<string, { token: string; name: string; who: string; pic?: string }>();
-  const me = client.me();
+  const me = client.chatMe();
   const conv = "conv" in target ? client.conv(target.conv) : undefined;
   if (conv) {
     for (const p of [{ who: conv.owner, name: conv.owner_name }, ...conv.members])
       if (p.who !== me && p.name) out.set(p.who, { token: mentionToken(p.name), name: p.name, who: p.who });
   }
-  for (const p of client.state?.presence ?? []) if (p.who !== me) out.set(p.who, { token: mentionToken(p.name), name: p.name, who: p.who, pic: p.pic });
+  for (const p of client.state?.presence ?? []) {
+    const who = p.chat ?? p.who;
+    if (who !== me) out.set(who, { token: mentionToken(p.name), name: p.name, who, pic: p.pic });
+  }
   for (const m of msgs) if (!m.agent && m.who !== me && !out.has(m.who)) out.set(m.who, { token: mentionToken(m.name), name: m.name, who: m.who, pic: m.pic });
   return [...out.values()].filter((p) => p.token);
 }
@@ -733,12 +736,12 @@ function Message({
 }) {
   // Runs of one person's messages share a heading.
   const head = !prev || prev.who !== m.who || m.at - prev.at > 5 * 60_000;
-  const mine = m.who === client.me();
+  const mine = m.who === client.chatMe();
   const [copied, setCopied] = useState(false);
   const name = m.agent ? m.name : m.name.split("@")[0];
   const link = extras.link?.(m.id);
   return (
-    <div class={`thread-msg${head ? " first" : ""}${mine ? " mine" : ""}${m.mentions?.includes(client.me()) ? " for-me" : ""}`} data-msg={m.id}>
+    <div class={`thread-msg${head ? " first" : ""}${mine ? " mine" : ""}${m.mentions?.includes(client.chatMe()) ? " for-me" : ""}`} data-msg={m.id}>
       <div class="msg-gutter">
         {head ? (
           m.agent ? (
@@ -767,7 +770,7 @@ function Message({
         {m.event && conv && events ? (
           <EventBody client={client} conv={conv} m={m} index={events} />
         ) : (
-          m.text && <Markup text={m.text} isMe={isMe} landed={reached(m, isMe, client.me())} />
+          m.text && <Markup text={m.text} isMe={isMe} landed={reached(m, isMe, client.chatMe())} />
         )}
         {m.quote && (
           <button class="thread-quote" title="Show it in the pane" onClick={() => reveal(m.quote!)}>

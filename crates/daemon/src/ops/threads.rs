@@ -58,8 +58,8 @@ impl Handle for ThreadPost {
     /// An agent's post (MCP) is the owner's, shown as the agent's, and
     /// does neither that nor the offer to invite.
     async fn handle(cx: &Cx<'_>, target: ThreadTarget, req: ThreadPostRequest) -> Result<ThreadPosted, OpError> {
-        let (who, as_agent, owner) = match &cx.via {
-            Via::Http { who, owner, .. } => (who.clone(), None, *owner),
+        let (who, acting, as_agent, owner) = match &cx.via {
+            Via::Http { who, owner, acting, .. } => (who.clone(), acting.clone(), None, *owner),
             Via::Mcp(call) => {
                 // A conversation's lead (#858) posts in it as the lead.
                 let by = match call.scope().leads() {
@@ -68,10 +68,11 @@ impl Handle for ThreadPost {
                     }
                     _ => Driver { who: call.by(), name: format!("{} (agent)", call.client()) },
                 };
-                (Principal::Owner, Some(by), false)
+                (Principal::Owner, None, Some(by), false)
             }
         };
-        let post = crate::mux::ThreadPost { target, who, as_agent, text: req.text, quote: req.quote, event: None };
+        let post =
+            crate::mux::ThreadPost { target, who, acting, as_agent, text: req.text, quote: req.quote, event: None };
         let (msg, to_agent, mut unreached) =
             cx.app.mux.api(|r| Api::ThreadPost(post, r)).await.ok_or_else(gone)?.map_err(thread_err)?;
         let mut agent = None;
@@ -106,7 +107,11 @@ impl Handle for ThreadRead {
     async fn handle(cx: &Cx<'_>, target: ThreadTarget, req: ThreadReadRequest) -> Result<Empty, OpError> {
         let who = reader(cx);
         crate::labs::chat().map_err(|e| OpError::Status(StatusCode::NOT_IMPLEMENTED, e))?;
-        cx.app.mux.send(Cmd::Api(Api::ThreadRead(target, who, req.upto)));
+        let acting = match &cx.via {
+            Via::Http { acting, .. } => acting.clone(),
+            Via::Mcp(_) => None,
+        };
+        cx.app.mux.send(Cmd::Api(Api::ThreadRead(target, who, acting, req.upto)));
         Ok(Empty {})
     }
 }

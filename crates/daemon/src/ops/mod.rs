@@ -100,7 +100,9 @@ impl OpError {
 pub enum Via<'a> {
     /// An HTTP request, past `authz::check`: who asks (and whether that's
     /// the owner), and whether the owner's CLI says an agent runs it.
-    Http { who: Principal, owner: bool, agent: bool },
+    /// `acting`: a team's other owner (#935), who is `Owner` here for what
+    /// they may and themselves for what is recorded as theirs.
+    Http { who: Principal, owner: bool, agent: bool, acting: Option<Principal> },
     /// An MCP tool call, with its caller's scope.
     Mcp(&'a Call<'a>),
 }
@@ -233,6 +235,11 @@ where
     let who = parts.extensions.get::<Principal>().cloned().unwrap_or(Principal::Owner);
     let owner = who.is_owner();
     let agent = crate::invite::agent(&parts.headers);
+    let acting = parts
+        .extensions
+        .get::<crate::e2e::Caller>()
+        .filter(|_| owner)
+        .and_then(|c| app.control.co_owner_of(&c.account));
     let body = match <O::Req as Request>::without_body() {
         Some(none) => none,
         // A GET's request is its query string.
@@ -258,7 +265,7 @@ where
     if O::ACCESS == Access::Owner && !owner {
         return ApiError(StatusCode::FORBIDDEN, "only the owner can".into()).into_response();
     }
-    let cx = Cx { app: &app, via: Via::Http { who, owner, agent } };
+    let cx = Cx { app: &app, via: Via::Http { who, owner, agent, acting } };
     match O::handle(&cx, path, body).await {
         Ok(res) => Json(res).into_response(),
         Err(OpError::Text(code, why)) => (code, why).into_response(),

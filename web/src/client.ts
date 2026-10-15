@@ -551,6 +551,13 @@ export class Client {
     return this.state?.presence?.find((p) => p.client === this.clientId)?.who ?? "owner";
   }
 
+  /** This client's id in chat (#935): `me()`, but for a team's other owner,
+   * who has the owner's rights, their own account. */
+  chatMe(): string {
+    const p = this.state?.presence?.find((p) => p.client === this.clientId);
+    return p?.chat ?? p?.who ?? "owner";
+  }
+
   // ---- threads
 
   private threadListeners = new Map<string, Set<(m: ThreadMsg) => void>>();

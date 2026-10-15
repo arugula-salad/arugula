@@ -163,6 +163,9 @@ pub struct Subscriber {
     pub ctrl: mpsc::UnboundedSender<ToClient>,
     /// Who this client is (M12): what it sees and may do.
     pub principal: crate::acl::Principal,
+    /// A team's other owner (#935): who they are in chat, beside the
+    /// `Owner` rights `principal` gives them. `None` for everyone else.
+    pub acting: Option<crate::acl::Principal>,
     /// What to call them when the principal doesn't say (M30): someone who
     /// is an owner here through control (the account's own login, or a
     /// team box's owner by name).

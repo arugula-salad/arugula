@@ -1107,6 +1107,12 @@ impl Control {
         out
     }
 
+    /// Who `account` is in chat, if they're a team's other owner here
+    /// (#935): they get in as `Owner`, and post and read as themselves.
+    pub fn co_owner_of(&self, account: &str) -> Option<Principal> {
+        self.enrolled()?.co_owner(account)
+    }
+
     /// The team's other owners (#386), by account: they get in as the
     /// owner, but each is someone to @mention.
     #[cfg_attr(not(feature = "labs"), allow(dead_code))]
@@ -3779,6 +3785,12 @@ mod tests {
 
         let ids: Vec<_> = c.co_owners().iter().map(|p| (p.id().to_owned(), c_name(p))).collect();
         assert_eq!(ids, [("account:o".to_owned(), "Olive".to_owned())], "not this machine's own, nor an editor");
+        // #935: who a team owner's device is in chat; this machine's own account and an editor aren't.
+        assert_eq!(
+            c.co_owner_of("o").map(|p| (p.id().to_owned(), c_name(&p))),
+            Some(("account:o".into(), "Olive".into()))
+        );
+        assert!(c.co_owner_of("m").is_none() && c.co_owner_of("e").is_none() && c.co_owner_of("zz").is_none());
         assert!(c.owns_here("o") && c.owns_here("m") && !c.owns_here("e"));
         assert!(c.is_me("m") && !c.is_me("o"));
         assert!(c.reaches("account:o") && c.reaches("account:e") && !c.reaches("account:m"));

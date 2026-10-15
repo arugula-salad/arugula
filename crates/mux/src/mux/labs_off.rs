@@ -46,7 +46,7 @@ impl Daemon {
         Err(ThreadError(501, not_built("Chat")))
     }
 
-    pub(super) fn threads_for(&self, _who: &Principal) -> Vec<ThreadSummary> {
+    pub(super) fn threads_for(&self, _who: &Principal, _me: &Principal) -> Vec<ThreadSummary> {
         Vec::new()
     }
 

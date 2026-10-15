@@ -384,6 +384,7 @@ async fn post_line(app: &App, id: ConvId, l: &ConvLink, e: ConvEvent) -> bool {
     let post = ThreadPost {
         target: ThreadTarget::Conv(id),
         who: Principal::Owner,
+        acting: None,
         as_agent: Some(poster(l)),
         text: line(&e, ""),
         quote: None,
@@ -641,8 +642,15 @@ async fn answered(
         ok: None,
     };
     let target = ThreadTarget::Conv(id);
-    let post =
-        ThreadPost { target, who: who.clone(), as_agent: None, text: line(&e, member), quote: None, event: Some(e) };
+    let post = ThreadPost {
+        target,
+        who: who.clone(),
+        acting: None,
+        as_agent: None,
+        text: line(&e, member),
+        quote: None,
+        event: Some(e),
+    };
     if let Some(Err(e)) = app.mux.api(|r| Api::ThreadPost(post, r)).await {
         warn!(conv = %id, error = e.1, "answered a card, but can't record it");
     }
@@ -668,6 +676,7 @@ pub async fn post_lead_card(app: &App, id: ConvId, e: ConvEvent) {
     let post = ThreadPost {
         target: ThreadTarget::Conv(id),
         who: Principal::Owner,
+        acting: None,
         as_agent: Some(Driver { who: super::lead::WHO.into(), name: super::lead::WHO.into() }),
         text: line(&e, ""),
         quote: None,

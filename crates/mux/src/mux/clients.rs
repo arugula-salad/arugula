@@ -33,6 +33,7 @@ impl Daemon {
             return;
         };
         let who = sub.principal.clone();
+        let me = sub.acting.clone().unwrap_or_else(|| who.clone());
         match msg {
             ClientMsg::Attach { panes, zstd, acks, kitty_keys: _ } => {
                 for a in panes {
@@ -139,7 +140,7 @@ impl Daemon {
                 } else {
                     self.summary.remove(&client);
                 }
-                let state = self.state_for(&who);
+                let state = self.state_for(&who, &me);
                 self.send_state(client, state, summary, false);
                 // It leaves (or joins) everyone's presence.
                 self.soon();
@@ -545,17 +546,23 @@ impl Daemon {
         };
         let infos: HashMap<PaneId, PaneInfo> =
             ids.iter().filter_map(|id| Some((*id, self.info_of_any(*id)?))).collect();
-        let clients: Vec<(ClientId, Principal)> =
-            self.clients.values().map(|c| (c.client, c.principal.clone())).collect();
+        // Who each is, and who they are in chat (#935): two clients of the
+        // owner's are one view, but not their threads' reads.
+        let clients: Vec<(ClientId, Principal, Principal)> = self
+            .clients
+            .values()
+            .map(|c| (c.client, c.principal.clone(), c.acting.clone().unwrap_or_else(|| c.principal.clone())))
+            .collect();
         // Most clients are one person's: work each view out once.
-        let mut states: HashMap<Principal, State> = HashMap::new();
+        let mut states: HashMap<(Principal, Principal), State> = HashMap::new();
         let mut views: HashMap<(Principal, bool), PaneView> = HashMap::new();
-        let mut people: HashMap<Principal, Seen> = HashMap::new();
-        for (client, who) in clients {
+        let mut people: HashMap<(Principal, Principal), Seen> = HashMap::new();
+        for (client, who, me) in clients {
             let summary = self.summary.contains(&client);
             let stale = full || self.sent.get(&client).is_none_or(|s| s.rev != self.mux.rev);
             if stale {
-                let state = states.entry(who.clone()).or_insert_with(|| self.state_for(&who)).clone();
+                let state =
+                    states.entry((who.clone(), me.clone())).or_insert_with(|| self.state_for(&who, &me)).clone();
                 self.send_state(client, state, summary, false);
                 continue;
             }
@@ -570,15 +577,16 @@ impl Daemon {
                     })
                     .collect()
             });
-            let (machines, presence, threads, convs, calls) = people.entry(who.clone()).or_insert_with(|| {
-                (
-                    self.machines_for(&who),
-                    self.presence(&who),
-                    self.threads_for(&who),
-                    self.convs_for(&who),
-                    self.calls_for(&who),
-                )
-            });
+            let (machines, presence, threads, convs, calls) =
+                people.entry((who.clone(), me.clone())).or_insert_with(|| {
+                    (
+                        self.machines_for(&who),
+                        self.presence(&who),
+                        self.threads_for(&who, &me),
+                        self.convs_for(&who),
+                        self.calls_for(&who),
+                    )
+                });
             let Some(sent) = self.sent.get_mut(&client) else { continue };
             let mut delta = Delta::default();
             for (id, v) in view.iter() {
@@ -754,6 +762,7 @@ impl Daemon {
             .map(|c| Presence {
                 client: c.client,
                 who: c.principal.id().to_owned(),
+                chat: c.acting.as_ref().map(|a| a.id().to_owned()),
                 name: c.name.clone().unwrap_or_else(|| self.name_of(&c.principal)),
                 pic: match &c.principal {
                     Principal::User { pic, .. } => pic.clone(),
@@ -840,10 +849,10 @@ impl Daemon {
     /// What `who` sees: everything for the owner; for anyone else only the
     /// sessions granted to them, their tabs, panes and machines, and their
     /// role in each.
-    pub(super) fn state_for(&self, who: &Principal) -> State {
+    pub(super) fn state_for(&self, who: &Principal, me: &Principal) -> State {
         let mut st = self.state();
         st.presence = self.presence(who);
-        st.threads = self.threads_for(who);
+        st.threads = self.threads_for(who, me);
         st.convs = self.convs_for(who);
         st.calls = self.calls_for(who);
         if who.is_owner() {

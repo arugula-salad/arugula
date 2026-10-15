@@ -153,7 +153,7 @@ export function activityCount(all: Source[]): number {
 function activity(index: Indexed[]): Hit[] {
   const out: Hit[] = [];
   for (const { s, target, summary, msgs } of index) {
-    const me = s.client.me();
+    const me = s.client.chatMe();
     const firstUnread = summary.unread ? summary.last - summary.unread + 1 : Infinity;
     let asked = false;
     for (const m of msgs) {

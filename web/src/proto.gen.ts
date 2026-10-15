@@ -1840,7 +1840,13 @@ export type Presence = { client: number,
 /**
  * Principal id: one person's clients share it.
  */
-who: string, name: string, pic?: string, 
+who: string, name: string, 
+/**
+ * What chat calls them when that isn't `who` (#935): a team's other
+ * owner is the owner by `who`, whose rights they have, and
+ * `account:<id>` here, whose messages and reads are theirs.
+ */
+chat?: string, pic?: string, 
 /**
  * The tab it shows, and the pane it's focused on.
  */

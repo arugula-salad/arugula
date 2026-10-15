@@ -327,6 +327,7 @@ async fn reply(app: &App, id: ConvId, text: String) -> Option<u64> {
     let post = ThreadPost {
         target: ThreadTarget::Conv(id),
         who: Principal::Owner,
+        acting: None,
         as_agent: Some(Driver { who: WHO.into(), name: WHO.into() }),
         text,
         quote: None,

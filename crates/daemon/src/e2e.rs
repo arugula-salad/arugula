@@ -206,6 +206,7 @@ async fn serve(app: Arc<App>, mut inbound: mpsc::Receiver<Vec<u8>>, out: mpsc::S
             data: data_tx,
             ctrl: ctrl_tx,
             principal: principal.clone(),
+            acting: principal.is_owner().then(|| app.control.co_owner_of(&device.account)).flatten(),
             name,
             // A read-only link's stand-in has no signing key.
             device: Some(device.clone()).filter(|d| !d.sign.is_empty()),

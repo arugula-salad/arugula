@@ -183,7 +183,15 @@ fn tap(pane: PaneHandle, from: u64) -> Tap {
     let (data, rx) = crate::pane::client_queue();
     let (ctrl, _ctrl) = mpsc::unbounded_channel();
     pane.attach(
-        Subscriber { client, data, ctrl, principal: crate::acl::Principal::Owner, name: None, device: None },
+        Subscriber {
+            client,
+            data,
+            ctrl,
+            principal: crate::acl::Principal::Owner,
+            name: None,
+            acting: None,
+            device: None,
+        },
         Some(from),
     );
     Tap { pane, client, rx, _ctrl }

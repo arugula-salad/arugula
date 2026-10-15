@@ -1350,6 +1350,12 @@ pub struct Presence {
     /// Principal id: one person's clients share it.
     pub who: String,
     pub name: String,
+    /// What chat calls them when that isn't `who` (#935): a team's other
+    /// owner is the owner by `who`, whose rights they have, and
+    /// `account:<id>` here, whose messages and reads are theirs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub chat: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub pic: Option<String>,

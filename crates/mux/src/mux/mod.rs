@@ -32,6 +32,9 @@ pub const CLOSE_OWNER_ONLY: &str = "only the session's owner closes an invite bl
 pub struct ThreadPost {
     pub target: ThreadTarget,
     pub who: crate::acl::Principal,
+    /// A team's other owner posting (#935): they're named, and their post
+    /// is recorded, as themselves; `who` still decides what they may.
+    pub acting: Option<crate::acl::Principal>,
     /// An agent posting through MCP: its name. Access is still `who`'s.
     pub as_agent: Option<Driver>,
     pub text: String,
@@ -299,7 +302,7 @@ pub enum Api {
     /// Every conversation kept here (#857: the daemon watches their links).
     Convs(oneshot::Sender<Vec<arugula_proto::Conversation>>),
     /// `who` has read a thread up to a message.
-    ThreadRead(ThreadTarget, crate::acl::Principal, u64),
+    ThreadRead(ThreadTarget, crate::acl::Principal, Option<crate::acl::Principal>, u64),
     /// Which of these (principal ids) read a thread now (#297); `None` if
     /// no grant could open it (gone, or a private pane's).
     CanRead(ThreadTarget, Vec<String>, oneshot::Sender<Option<Vec<bool>>>),
@@ -1343,7 +1346,7 @@ impl Daemon {
     fn handle(&mut self, cmd: Cmd) {
         match cmd {
             Cmd::Connect { sub } => {
-                let state = self.state_for(&sub.principal);
+                let state = self.state_for(&sub.principal, sub.acting.as_ref().unwrap_or(&sub.principal));
                 let (client, who) = (sub.client, sub.principal.clone());
                 self.clients.insert(client, sub.clone());
                 self.send_state(client, state, false, true);

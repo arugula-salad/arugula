@@ -17,13 +17,19 @@ use std::{
 };
 
 use agentd::*;
+#[cfg(feature = "labs")]
+use arugula_e2e::channel::{Channel, Initiator, Msg, Refusal, RequestHead, prologue};
 use arugula_e2e::{
     Cert, DeviceKeys, Kind,
     push::PushSub,
     team::{AccountCerts, Member, Roster, TeamPin, TeamRole},
 };
 use base64::Engine;
+#[cfg(feature = "labs")]
+use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
+#[cfg(feature = "labs")]
+use tokio_tungstenite::tungstenite::Message;
 
 const OWNER: &str = "me@example.com";
 const FRIEND: &str = "friend@example.com";
@@ -388,6 +394,8 @@ impl Person {
 struct World {
     fake: Shared,
     url: String,
+    #[cfg_attr(not(feature = "labs"), allow(dead_code))]
+    alex: DeviceKeys,
     alex_root: Cert,
     daemon: DeviceKeys,
     daemon_cert: Cert,
@@ -448,7 +456,7 @@ fn world_where(dee_role: TeamRole) -> World {
         f.teams.insert("t2".into(), (vec![forged], certs.clone()));
     }
     let url = serve(fake.clone());
-    World { fake, url, alex_root, daemon, daemon_cert, bea, cy, dee, t1: (vec![roster], certs) }
+    World { fake, url, alex, alex_root, daemon, daemon_cert, bea, cy, dee, t1: (vec![roster], certs) }
 }
 
 impl World {
@@ -684,4 +692,130 @@ fn an_agent_in_a_terminal_asks_and_the_owner_sends() {
     assert_eq!(d.get("/api/acl")["grants"][0]["principal"], "account:b1");
     std::thread::sleep(Duration::from_secs(2));
     assert_eq!(w.bea.got(&w.fake).len(), 1, "exactly one");
+}
+
+#[cfg(feature = "labs")]
+type Ws = tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+
+#[cfg(feature = "labs")]
+/// A device's channel to the daemon at `/e2e`, as control's relay hands it
+/// over, once the daemon lets that device in (it has to have fetched the
+/// team's certificates first).
+async fn channel(d: &Daemon, daemon: &DeviceKeys, keys: &DeviceKeys) -> (Ws, Channel) {
+    let deadline = std::time::Instant::now() + Duration::from_secs(30);
+    loop {
+        let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{}/e2e", d.port)).await.unwrap();
+        let (init, m1) = Initiator::start(keys, &daemon.noise_public, &prologue(&daemon.id())).unwrap();
+        ws.send(Message::Binary(m1.into())).await.unwrap();
+        if let Some(Ok(Message::Binary(m2))) = ws.next().await
+            && let Ok((said, ch)) = init.finish(&m2)
+            && Refusal::decode(&said).is_none()
+        {
+            return (ws, ch);
+        }
+        assert!(std::time::Instant::now() < deadline, "the daemon never let that device in");
+        tokio::time::sleep(Duration::from_millis(300)).await;
+    }
+}
+
+/// The next thing the daemon says that is a text message of `kind`.
+#[cfg(feature = "labs")]
+async fn text_of(ws: &mut Ws, ch: &Channel, kind: &str) -> Value {
+    loop {
+        let m = tokio::time::timeout(Duration::from_secs(10), ws.next()).await.expect("a message");
+        let Some(Ok(Message::Binary(w))) = m else { panic!("the channel closed") };
+        if let Some(Msg::Text(t)) = ch.open(&w).unwrap() {
+            let v: Value = serde_json::from_str(&t).unwrap();
+            if v["type"] == kind {
+                return v;
+            }
+        }
+    }
+}
+
+/// A POST through the channel: its status and JSON body.
+#[cfg(feature = "labs")]
+async fn channel_post(ws: &mut Ws, ch: &Channel, path: &str, body: Value) -> (u16, Value) {
+    let head = RequestHead {
+        method: "POST".into(),
+        path: path.into(),
+        content_type: Some("application/json".into()),
+        stream: false,
+        headers: Default::default(),
+    };
+    for w in ch.seal(&Msg::Request { id: 1, head, body: body.to_string().into_bytes() }).unwrap() {
+        ws.send(Message::Binary(w.into())).await.unwrap();
+    }
+    loop {
+        let m = tokio::time::timeout(Duration::from_secs(10), ws.next()).await.expect("an answer");
+        let Some(Ok(Message::Binary(w))) = m else { panic!("the channel closed") };
+        if let Some(Msg::Response { head, body, .. }) = ch.open(&w).unwrap() {
+            return (head.status, serde_json::from_slice(&body).unwrap_or(Value::Null));
+        }
+    }
+}
+
+/// #935: on a team's machine every other owner has the owner's rights, but
+/// what they post is theirs. Dee, a second owner account, posts through her
+/// own device's channel as `account:d1`, named for herself; Alex's own
+/// account (the machine's owner), through a channel or locally, stays
+/// `owner`. Each one's reads, unread and mentions are their own.
+#[cfg(feature = "labs")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_teams_other_owner_posts_under_their_own_name() {
+    let w = world_where(TeamRole::Owner);
+    w.fake.lock().unwrap().team = Some(w.t1.clone());
+    let d = w.daemon(true);
+    arugula_testkit::labs(&d.state, true);
+    let (pane, _) = first(&d);
+    let thread = format!("/api/threads/pane-{pane}");
+    let say = |msg: &Value| (msg["who"].as_str().unwrap().to_owned(), msg["name"].as_str().unwrap().to_owned());
+
+    // The machine's owner, locally: the baseline.
+    let r = d.post(&thread, json!({ "text": "from alex, here" }));
+    let (owner, owner_name) = say(&r["message"]);
+    assert_eq!(owner, "owner");
+
+    let (mut dee, dee_ch) = channel(&d, &w.daemon, &w.dee.keys).await;
+    let (mut alex, alex_ch) = channel(&d, &w.daemon, &w.alex).await;
+
+    // Dee keeps the owner's rights (nothing is refused her), as herself.
+    let (status, r) = channel_post(&mut dee, &dee_ch, &thread, json!({ "text": "im not alex" })).await;
+    assert_eq!(status, 200, "{r}");
+    assert_eq!(say(&r["message"]), ("account:d1".to_owned(), "dee".to_owned()), "{r}");
+    assert_ne!(r["message"]["name"], owner_name.as_str());
+
+    // Alex's own account through a channel is as it was locally.
+    let (status, r) = channel_post(&mut alex, &alex_ch, &thread, json!({ "text": "alex, relayed" })).await;
+    assert_eq!(status, 200, "{r}");
+    assert_eq!(say(&r["message"]), (owner.clone(), owner_name.clone()), "{r}");
+
+    // Naming herself reaches no one and needs no excuse; she's someone.
+    let (_, r) = channel_post(&mut dee, &dee_ch, &thread, json!({ "text": "@dee note to self" })).await;
+    assert!(r["message"]["mentions"].as_array().is_none_or(|m| m.is_empty()), "{r}");
+    assert_eq!(r["unreached"], json!([]), "{r}");
+
+    // An @ of her reaches her, by her account.
+    let r = d.post(&thread, json!({ "text": "@dee look at this" }));
+    assert_eq!(r["message"]["mentions"], json!(["account:d1"]), "{r}");
+
+    // What is stored says it too.
+    let got = d.get(&thread);
+    let who: Vec<&str> = got["messages"].as_array().unwrap().iter().map(|m| m["who"].as_str().unwrap()).collect();
+    assert_eq!(who, ["owner", "account:d1", "owner", "account:d1", "owner"], "{got}");
+
+    // Their unread are their own: what each of them posted is read to them.
+    let unread = |hello: &Value| {
+        let t =
+            hello["state"]["threads"].as_array().unwrap().iter().find(|t| t["target"]["pane"] == pane).unwrap().clone();
+        (t["unread"].as_u64().unwrap_or(0), t["mention"].as_bool().unwrap_or(false))
+    };
+    let (mut dee2, dee2_ch) = channel(&d, &w.daemon, &w.dee.keys).await;
+    assert_eq!(unread(&text_of(&mut dee2, &dee2_ch, "hello").await), (1, true), "Dee: Alex's last");
+    // Dee answers; that's Alex's to read, and not Dee's own.
+    channel_post(&mut dee, &dee_ch, &thread, json!({ "text": "thanks" })).await;
+    let (mut alex2, alex2_ch) = channel(&d, &w.daemon, &w.alex).await;
+    assert_eq!(unread(&text_of(&mut alex2, &alex2_ch, "hello").await), (1, false), "Alex: Dee's answer only");
+    let (mut dee3, dee3_ch) = channel(&d, &w.daemon, &w.dee.keys).await;
+    assert_eq!(unread(&text_of(&mut dee3, &dee3_ch, "hello").await), (0, false), "Dee: all read");
 }

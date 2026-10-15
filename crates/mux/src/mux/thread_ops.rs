@@ -82,8 +82,9 @@ impl Daemon {
     }
 
     /// The threads `who` may read that have messages, with what they
-    /// haven't read.
-    pub(super) fn threads_for(&self, who: &Principal) -> Vec<ThreadSummary> {
+    /// haven't read. `me`: who they are in chat, `who` unless a team's other
+    /// owner (#935): reads and mentions are theirs.
+    pub(super) fn threads_for(&self, who: &Principal, me: &Principal) -> Vec<ThreadSummary> {
         let mut out: Vec<ThreadSummary> = self
             .threads
             .targets()
@@ -91,14 +92,14 @@ impl Daemon {
                 let (_, floor) = self.thread_role(who, t)?;
                 let msgs: Vec<&ThreadMsg> = self.threads.get(t).iter().filter(|m| m.at >= floor).collect();
                 let last = msgs.last()?;
-                let read = self.threads.read_upto(who.id(), t);
-                let new: Vec<&&ThreadMsg> = msgs.iter().filter(|m| m.id > read && m.who != who.id()).collect();
+                let read = self.threads.read_upto(me.id(), t);
+                let new: Vec<&&ThreadMsg> = msgs.iter().filter(|m| m.id > read && m.who != me.id()).collect();
                 Some(ThreadSummary {
                     target: t,
                     last: last.id,
                     at: last.at,
                     unread: new.len() as u32,
-                    mention: new.iter().any(|m| m.mentions.iter().any(|x| x == who.id())),
+                    mention: new.iter().any(|m| m.mentions.iter().any(|x| x == me.id())),
                 })
             })
             .collect();
@@ -125,7 +126,7 @@ impl Daemon {
     }
 
     pub(super) fn thread_post(&mut self, post: ThreadPost) -> Result<Posted, ThreadError> {
-        let ThreadPost { target, who, as_agent, text, quote, event } = post;
+        let ThreadPost { target, who, acting, as_agent, text, quote, event } = post;
         if event.is_some() && !matches!(target, ThreadTarget::Conv(_)) {
             return Err(ThreadError(400, "only a conversation's links post events".into()));
         }
@@ -142,7 +143,11 @@ impl Daemon {
         {
             return Err(ThreadError(403, format!("you can't read %{}", q.pane)));
         }
-        let by = as_agent.clone().unwrap_or_else(|| Driver { who: who.id().to_owned(), name: self.chat_name_of(&who) });
+        // Rights are `who`'s; the name on the post is the speaker's (#935).
+        let speaker = acting.as_ref().unwrap_or(&who);
+        let by = as_agent
+            .clone()
+            .unwrap_or_else(|| Driver { who: speaker.id().to_owned(), name: self.chat_name_of(speaker) });
         // An event's line mentions nobody: what it quotes is a pane's.
         let tokens = if event.is_some() { Vec::new() } else { crate::labs::threads::mentions(&text) };
         // A team's other owner reads every thread, as the owner does.
@@ -175,7 +180,7 @@ impl Daemon {
             _ => crate::labs::threads::calls_agent(std::slice::from_ref(t)),
         };
         // Which tokens went anywhere; the rest are the poster's to hear about.
-        let me = self.chat_name_of(&who);
+        let me = self.chat_name_of(speaker);
         let (mut landed, mut unreached) = (Vec::new(), Vec::new());
         for t in &tokens {
             let person = self.mentionable().into_iter().any(|p| {
@@ -183,7 +188,7 @@ impl Daemon {
             });
             if person || (to_agent && reaches_agent(t)) {
                 landed.push(t.clone());
-            } else if crate::labs::threads::names(t, who.id(), &me) {
+            } else if crate::labs::threads::names(t, speaker.id(), &me) {
                 // Yourself: nothing to say.
             } else if crate::labs::threads::calls_agent(std::slice::from_ref(t)) {
                 let why = if matches!(target, ThreadTarget::Pane(_)) {
@@ -201,7 +206,7 @@ impl Daemon {
             at: now_ms(),
             who: by.who.clone(),
             name: by.name.clone(),
-            pic: if as_agent.is_some() { None } else { self.pic_of(&who) },
+            pic: if as_agent.is_some() { None } else { self.pic_of(speaker) },
             text,
             quote,
             mentions,
