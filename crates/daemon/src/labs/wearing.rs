@@ -417,7 +417,7 @@ impl Lookup<'_> {
 
 /// A tool's output, run on this host with `env` (stdin closed; within
 /// [`TOOL_TIMEOUT`]): stdout if it exited 0, else why not.
-async fn run(argv: &[String], cwd: Option<&Path>, env: &[(String, String)]) -> Result<String, String> {
+pub(crate) async fn run(argv: &[String], cwd: Option<&Path>, env: &[(String, String)]) -> Result<String, String> {
     let (bin, args) = argv.split_first().ok_or("nothing to run")?;
     let mut cmd = tokio::process::Command::new(bin);
     cmd.args(args)

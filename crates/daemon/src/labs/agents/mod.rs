@@ -336,6 +336,8 @@ pub fn routes(r: Router<Arc<App>>) -> Router<Arc<App>> {
         .route("/api/a2a/recipes/save", post(recipes_save))
         .route("/api/a2a/recipes/delete", post(recipes_delete))
         .route("/api/a2a/recipes/projects", post(recipes_projects))
+        .route("/api/a2a/fountain/preflight", post(fountain_preflight))
+        .route("/api/a2a/fountain/copy", post(fountain_copy))
 }
 
 /// Whether the request is this machine's own account's: the owner, and (over
@@ -476,6 +478,52 @@ struct RunReq {
     agent: String,
     #[serde(default)]
     prompt: Option<String>,
+    /// #942 F4: on Fountain instead, as its agent `recipe-<name>`, with
+    /// this vault and environment (names or ids), working in `cwd` (else
+    /// where it's offered from).
+    #[serde(default)]
+    fountain: bool,
+    #[serde(default)]
+    vault: Option<String>,
+    #[serde(default)]
+    environment: Option<String>,
+    #[serde(default)]
+    cwd: Option<String>,
+}
+
+impl RunReq {
+    fn ask(&self) -> super::fountain::recipes::Ask {
+        super::fountain::recipes::Ask {
+            agent: self.agent.clone(),
+            cwd: self.cwd.clone(),
+            prompt: self.prompt.clone(),
+            vault: self.vault.clone(),
+            environment: self.environment.clone(),
+        }
+    }
+}
+
+/// #942 F4: a recipe of this machine's on Fountain, in a session of its
+/// name, for a person to talk to.
+pub async fn run_fountain(
+    app: &Arc<App>,
+    ask: &super::fountain::recipes::Ask,
+) -> Result<(arugula_proto::PaneId, String, Value), String> {
+    let (config, summary) =
+        super::fountain::recipes::launch(app.control.state_dir(), &home(app), app.hosts.name(), ask).await?;
+    let labels = config["labels"].clone();
+    let req = arugula_proto::api::OpenRequest {
+        kind: arugula_proto::BlockType::Agent,
+        config,
+        session: Some(ask.agent.clone()),
+        local: true,
+        ..Default::default()
+    };
+    match app.mux.api(|r| crate::mux::Api::Open(req, None, r)).await {
+        Some(Ok(b)) => Ok((b, summary, labels)),
+        Some(Err(e)) => Err(e),
+        None => Err("the daemon is stopping".into()),
+    }
 }
 
 /// *Run there*'s other half (#403's follow-up): one of this machine's
@@ -521,6 +569,15 @@ async fn run_anywhere(
     if !own_account(&app, &who, &dev) {
         return refuse(StatusCode::FORBIDDEN, "this machine's own account's");
     }
+    if r.fountain {
+        return match run_fountain(&app, &r.ask()).await {
+            Ok((block, summary, labels)) => Json(json!({
+                "agent": r.agent, "machine": "fountain", "block": block, "labels": labels, "summary": summary,
+            }))
+            .into_response(),
+            Err(e) => refuse(StatusCode::BAD_REQUEST, &e),
+        };
+    }
     let machine = match delegate::locate(&app, r.machine.as_deref(), &r.agent).await {
         Ok(m) => m,
         Err(e) => return refuse(StatusCode::NOT_FOUND, &e),
@@ -528,6 +585,77 @@ async fn run_anywhere(
     match delegate::run_there(&app, &machine, &r.agent, r.prompt.as_deref()).await {
         Ok(v) => Json(v).into_response(),
         Err(e) => refuse(StatusCode::BAD_GATEWAY, &e),
+    }
+}
+
+/// #942 F4: what a run on Fountain would be, for the Agents page.
+async fn fountain_preflight(
+    State(app): AppState,
+    who: Option<axum::Extension<Principal>>,
+    dev: Option<axum::Extension<crate::e2e::Caller>>,
+    Json(r): Json<RunReq>,
+) -> Response {
+    use super::fountain::{link, recipes};
+    if let Some(x) = off(&app) {
+        return x;
+    }
+    if !own_account(&app, &who, &dev) {
+        return refuse(StatusCode::FORBIDDEN, "this machine's own account's");
+    }
+    let ask = r.ask();
+    let got = async {
+        recipes::flags(app.control.state_dir())?;
+        let (c, _) = recipes::prepare(app.control.state_dir(), &home(&app), &ask).await?;
+        let client = link::client_for(None).await?;
+        recipes::preflight(&client, &c, &ask).await
+    }
+    .await;
+    match got {
+        Ok(p) => {
+            let mut v = serde_json::to_value(&p).unwrap_or_default();
+            v["summary"] = json!(p.text());
+            Json(v).into_response()
+        }
+        Err(e) => refuse(StatusCode::BAD_REQUEST, &e),
+    }
+}
+
+#[derive(Deserialize)]
+struct CopyReq {
+    #[serde(flatten)]
+    run: RunReq,
+    var: String,
+}
+
+/// #942 F4: one variable a recipe uses, copied from this machine to a
+/// Fountain vault, as the person asked (never by itself).
+async fn fountain_copy(
+    State(app): AppState,
+    who: Option<axum::Extension<Principal>>,
+    dev: Option<axum::Extension<crate::e2e::Caller>>,
+    Json(r): Json<CopyReq>,
+) -> Response {
+    use super::fountain::{link, recipes};
+    if let Some(x) = off(&app) {
+        return x;
+    }
+    if !own_account(&app, &who, &dev) {
+        return refuse(StatusCode::FORBIDDEN, "only this machine's own account copies its secrets");
+    }
+    let Some(vault) = r.run.vault.clone().filter(|v| !v.trim().is_empty()) else {
+        return refuse(StatusCode::BAD_REQUEST, "which vault? {\"var\", \"vault\"}");
+    };
+    let got = async {
+        let crate::review::Runner::Local { env, home } = super::fountain::local_runner(&app.mux.shell_env).await else {
+            return Err("this host's".to_owned());
+        };
+        let client = link::client_for(None).await?;
+        recipes::copy_here(&client, app.control.state_dir(), &home, &env, &r.run.ask(), r.var.trim(), &vault).await
+    }
+    .await;
+    match got {
+        Ok(said) => Json(json!({ "copied": r.var, "vault": vault, "summary": said })).into_response(),
+        Err(e) => refuse(StatusCode::BAD_REQUEST, &e),
     }
 }
 

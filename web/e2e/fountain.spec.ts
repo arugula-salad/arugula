@@ -13,8 +13,18 @@
 // catalog that answers a prompt. The cards are read-only: no *Run here*
 // (M44, retired 2026-10-15), and *Spec* without an agent-specs checkout
 // shows the agent as Fountain returns it, in the block.
+//
+// F4: a recipe offered from a project (a git checkout of acme/widgets) has
+// *Run on Fountain* on its card in the agents block. Its dialog shows the
+// preflight (the checkout, what doesn't carry over, the variables Fountain
+// lacks, each with an explicit copy that says when it's not on this
+// machine), then the run applies `recipe-e2e-fixer` and the conversation it
+// opens carries the recipe's hash and answers.
 
-import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createServer, type Server, type ServerResponse } from "node:http";
 import { expect, test, type Page } from "@playwright/test";
 import { menu, paneEl, panes, reset } from "./helpers";
@@ -32,13 +42,15 @@ const convs: { id: string; status: string; agent_id: string; title: string | nul
 ];
 const reads: string[] = [];
 let server: Server;
-/** F3: the conversation Run on Fountain makes: its events (`[id, payload]`). */
-const events: [number, Record<string, unknown>][] = [];
-const stage = (stage: string, state: string, meta: Record<string, unknown> = {}) =>
-  events.push([events.length + 1, { kind: "stage", stream: "", data: JSON.stringify(meta), stage, state, turn_id: meta.turn_id ?? null }]);
-const said = (text: string, turn: string) =>
+/** F3: the conversations Run on Fountain makes (F4's too): their events
+ *  (`[id, conversation, payload]`). */
+const events: [number, string, Record<string, unknown>][] = [];
+const stage = (c: string, stage: string, state: string, meta: Record<string, unknown> = {}) =>
+  events.push([events.length + 1, c, { kind: "stage", stream: "", data: JSON.stringify(meta), stage, state, turn_id: meta.turn_id ?? null }]);
+const said = (c: string, text: string, turn: string) =>
   events.push([
     events.length + 1,
+    c,
     {
       kind: "output",
       stream: "acp",
@@ -46,7 +58,13 @@ const said = (text: string, turn: string) =>
       data: JSON.stringify({ jsonrpc: "2.0", method: "session/update", params: { sessionId: "s", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text } } } }),
     },
   ]);
-const conv = { id: "conv-e2e", status: "idle", sandbox_id: "sb-e2e", sandbox: { id: "sb-e2e", status: "ready" } };
+const made = (id: string) => ({ id, status: "idle", sandbox_id: `sb-${id}`, sandbox: { id: `sb-${id}`, status: "ready" } });
+const conv = made("conv-e2e");
+/** F4: what the runs applied and created, and the agents and environments
+ *  they made. */
+const applied: { kind: string; name: string; spec: Record<string, any> }[] = [];
+const created: Record<string, any>[] = [];
+const upserted: Record<string, any>[] = [];
 
 /** SSE after `Last-Event-ID`, held open (unless `wait=false`) until quiet.
  *  Only conv-e2e has events. */
@@ -56,7 +74,7 @@ function stream(req: import("node:http").IncomingMessage, res: ServerResponse, i
   res.write(": connected\n\n");
   const flush = () => {
     let sent = false;
-    for (const [n, p] of events.filter(([n]) => n > last && id === conv.id)) {
+    for (const [n, , p] of events.filter(([n, c]) => n > last && c === id)) {
       res.write(`id: ${n}\nevent: ${p.kind}\ndata: ${JSON.stringify(p)}\n\n`);
       last = n;
       sent = true;
@@ -90,23 +108,49 @@ test.beforeAll(async () => {
     const u = new URL(req.url!, "http://fountain");
     seen.push({ path: u.pathname, ua: String(req.headers["user-agent"] ?? "") });
     if (req.headers.authorization !== `Bearer ${KEY}`) return json(res, 401, { error: { message: "invalid api key" } });
-    if (u.pathname === "/api/agents") return json(res, 200, agents);
+    if (u.pathname === "/api/agents") return json(res, 200, { data: [...agents.data, ...upserted.filter((a) => a.kind === "Agent")] });
     const one = u.pathname.match(/^\/api\/agents\/([^/]+)$/);
     if (one) {
       const a = agents.data.find((x: { id: string }) => x.id === decodeURIComponent(one[1]));
       return a ? json(res, 200, { data: a }) : json(res, 404, { error: "not found" });
     }
-    if (u.pathname === "/api/environments") return json(res, 200, envs);
+    if (u.pathname === "/api/environments") return json(res, 200, { data: [...envs.data, ...upserted.filter((a) => a.kind === "Environment")] });
+    // F4: a vault, keys only (none set), and apply.
+    if (u.pathname === "/api/vaults") return json(res, 200, { data: [{ id: "vault-1", name: "v1" }] });
+    if (/^\/api\/(vaults|environments)\/[^/]+\/secrets$/.test(u.pathname)) return json(res, 200, { data: [] });
+    if (u.pathname === "/api/apply" && req.method === "POST") {
+      let body = "";
+      req.on("data", (c) => (body += c));
+      req.on("end", () => {
+        const results = (JSON.parse(body).resources as { kind: string; name: string; spec: Record<string, any> }[]).map((r) => {
+          applied.push(r);
+          const had = upserted.find((a) => a.kind === r.kind && a.name === r.name);
+          if (!had) upserted.push({ ...r.spec, kind: r.kind, name: r.name, id: `${r.kind.toLowerCase()}-${r.name}` });
+          return { kind: r.kind, name: r.name, action: had ? "unchanged" : "created", errors: null, secrets: [] };
+        });
+        json(res, 200, { data: { results } });
+      });
+      return;
+    }
     // F3: Run on Fountain's conversation, which echoes as the fake ACP
     // agent did; the listed ones can be opened and followed (quietly).
     // Path segments come percent-encoded, as a server decodes them.
     const path = decodeURIComponent(u.pathname);
     if (path === "/api/conversations" && req.method === "POST") {
-      stage("provision", "done");
-      return json(res, 201, { data: conv });
+      let body = "";
+      req.on("data", (c) => (body += c));
+      req.on("end", () => {
+        const b = JSON.parse(body);
+        // A recipe's run (F4) gets a conversation of its own.
+        const c = b.labels?.["arugula.recipe"] ? made(`conv-f4-${created.length + 1}`) : conv;
+        if (c !== conv) created.push({ ...b, id: c.id });
+        stage(c.id, "provision", "done");
+        json(res, 201, { data: c });
+      });
+      return;
     }
     const it = path.match(/^\/api\/conversations\/([^/]+)(\/(turns|stream|prompts))?$/);
-    const found = it && (it[1] === conv.id ? conv : convs.find((c) => c.id === it[1]));
+    const found = it && (it[1] === conv.id ? conv : (created.find((c) => c.id === it[1]) && made(it[1])) || convs.find((c) => c.id === it[1]));
     if (it && found) {
       if (!it[3]) return json(res, 200, { data: found });
       if (it[3] === "turns") return json(res, 200, { data: [] });
@@ -116,9 +160,9 @@ test.beforeAll(async () => {
       req.on("end", () => {
         const crid = JSON.parse(body).client_request_id ?? null;
         const turn = `turn-${events.length}`;
-        stage("turn", "started", { turn_id: turn, client_request_id: crid });
-        said("Hello! I am fake.", turn);
-        stage("turn", "done", { turn_id: turn, stop_reason: "end_turn" });
+        stage(it[1], "turn", "started", { turn_id: turn, client_request_id: crid });
+        said(it[1], "Hello! I am fake.", turn);
+        stage(it[1], "turn", "done", { turn_id: turn, stop_reason: "end_turn" });
         json(res, 200, { data: { status: "accepted", client_request_id: crid } });
       });
       return;
@@ -250,4 +294,62 @@ test("Spec shows the agent in the block", async ({ page }) => {
   expect((await panes(page)).length).toBe(2);
   await spec.locator("[data-fountain-spec-close]").click();
   await expect(spec).toHaveCount(0);
+});
+
+// F4: the same recipe that runs here runs on Fountain, from its card.
+test("a recipe runs on Fountain from its card, after the preflight", async ({ page }) => {
+  const dir = mkdtempSync(join(tmpdir(), "arugula-e2e-f4-"));
+  mkdirSync(join(dir, ".claude/agents"), { recursive: true });
+  writeFileSync(
+    join(dir, ".claude/agents/e2e-fixer.md"),
+    "---\nname: e2e-fixer\ndescription: Fixes tests\ntools: Read, Edit\nmodel: haiku\nmcpServers:\n  - tracker:\n      type: http\n      url: https://tracker.example.com/mcp\n      headers:\n        Authorization: Bearer ${E2E_F4_NOT_SET}\n---\nYou fix tests.\n",
+  );
+  execFileSync("git", ["init", "-q", dir]);
+  execFileSync("git", ["-C", dir, "remote", "add", "origin", "https://github.com/acme/widgets.git"]);
+  try {
+    await reset(page);
+    const block = await page.evaluate(
+      (dir) => window.__arugula.client.request("POST", "/api/blocks", { type: "agents", config: { dir }, local: true }).then((r) => r.json<{ block: number }>()).then((v) => v.block),
+      dir,
+    );
+    const offered = await page.evaluate(([b, dir]) => window.__arugula.client.request("POST", `/api/blocks/${b}/call/offer`, { agent: "e2e-fixer", dir }).then((r) => r.status), [block, dir] as const);
+    expect(offered).toBe(200);
+    const el = page.locator(`[data-agents-block="${block}"]`);
+    // Beside Run on this machine, from the same card.
+    const card = el.locator('.fountain-card[data-agent="e2e-fixer"]');
+    await expect(card.locator("[data-run-here]")).toBeVisible();
+    await card.locator('[data-run-fountain="e2e-fixer"]').click();
+
+    // The preflight: the checkout, what doesn't carry over, what's missing.
+    const dlg = page.locator('[data-fountain-run="e2e-fixer"]');
+    await expect(dlg.locator("[data-fountain-repo]")).toContainText("https://github.com/acme/widgets.git");
+    await expect(dlg.locator("[data-fountain-repo]")).toContainText("Uncommitted work on this machine doesn't travel");
+    await expect(dlg.locator("[data-fountain-missing]")).toHaveAttribute("data-fountain-missing", "2");
+    await expect(dlg.locator("[data-fountain-lost]")).toContainText("no tool allowlist");
+    expect(applied).toHaveLength(0);
+    // A copy is per variable, once a vault is chosen; one this machine
+    // doesn't have says so.
+    await expect(dlg.locator("[data-copy-var]")).toHaveCount(0);
+    await dlg.locator("[data-fountain-vault]").selectOption("v1");
+    await dlg.locator('[data-copy-var="E2E_F4_NOT_SET"]').click();
+    await expect(dlg.locator("[data-fountain-said]")).toContainText("isn't set on this machine");
+
+    // Run: the agent applied, the conversation labelled, and it answers.
+    await dlg.locator("textarea").fill("hello");
+    await dlg.locator("[data-fountain-go]").click();
+    await expect(dlg).toHaveCount(0);
+    await expect.poll(() => applied.map((a) => `${a.kind} ${a.name}`)).toEqual(["Environment repo-acme-widgets", "Agent recipe-e2e-fixer"]);
+    const spec = applied[1].spec;
+    expect(spec.metadata["managed-by"]).toBe("arugula");
+    expect(spec.mcp_servers.tracker.headers.Authorization).toBe("Bearer ${E2E_F4_NOT_SET}");
+    await expect.poll(() => created.length).toBe(1);
+    expect(created[0].labels["arugula.recipe"]).toBe("e2e-fixer");
+    expect(created[0].labels["arugula.recipe_hash"]).toBe(spec.metadata.recipe_hash);
+    expect(created[0].vault_id).toBe("vault-1");
+    const agent = await page.evaluate(() => window.__arugula.client.state!.panes.find((p) => p.type === "agent")!.id);
+    const a = paneEl(page, agent);
+    await expect(a.locator(".agent-msg").last()).toHaveText("Hello! I am fake.");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

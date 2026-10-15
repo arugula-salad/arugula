@@ -95,6 +95,9 @@ fn policy(method: &Method, path: &str) -> Policy {
         ["api", "blocks", _, "call", "offer" | "unoffer" | "recipes"] => Policy::Owner,
         // So is *Run there*: an agent on another of the owner's machines.
         ["api", "blocks", _, "call", "run_there"] => Policy::Owner,
+        // #942 F4: a recipe on Fountain with the owner's login, and a
+        // variable copied from the owner's host to their vault.
+        ["api", "blocks", _, "call", "fountain_preflight" | "fountain_copy"] => Policy::Owner,
         // #302: who chant records a workspace's gates as approved by is
         // the owner's to say. #620: so is starting behold on the owner's
         // host for a workspace's graph.
@@ -109,6 +112,9 @@ fn policy(method: &Method, path: &str) -> Policy {
         // The Agents page's recipes: listing and writing them is the owner's
         // (writing, this machine's own account's: the handler checks).
         ["api", "a2a", "recipes", ..] => Policy::Owner,
+        // #942 F4: a recipe on Fountain, and a variable copied to a vault
+        // (the handler checks the account too).
+        ["api", "a2a", "fountain", ..] => Policy::Owner,
         // M79: the handler checks the account too (a team's other owner is
         // `Owner` here, and may not answer).
         ["api", "a2a", "tasks", _, "consent"] => Policy::Owner,

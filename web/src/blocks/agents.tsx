@@ -9,6 +9,9 @@
 // from other people wait here for the owner (the card on this block allows
 // or denies one), and standing grants are listed with *Revoke*. Agents send
 // tasks with MCP's `delegate`; people with `arugula agents send`.
+// #942 F4: with the `fountain` flag, *Run on Fountain* beside *Run on
+// <this machine>* runs the same recipe in a Fountain sandbox (its dialog,
+// `ui/fountain-run.tsx`, shows the preflight first).
 
 import { render } from "preact";
 import { useState } from "preact/hooks";
@@ -16,6 +19,7 @@ import type { Client } from "../client";
 import type { PaneId } from "../proto";
 import { getFleet } from "../ui/hosts";
 import { askText } from "../ui/menu";
+import { FountainRun, blockApi } from "../ui/fountain-run";
 import type { BlockRenderer, BlockView } from "./view";
 
 interface Card {
@@ -89,6 +93,7 @@ function plain(s: AgentsState | null): string {
 
 function AgentsBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentsState | null }) {
   const [busy, setBusy] = useState<string | null>(null);
+  const [onFountain, setOnFountain] = useState<string | null>(null);
   const session = client.sessionOfTab(client.tabOfPane(id)?.id ?? -1) ?? null;
   const mayOwn = client.role(session) === "owner";
   const call = async (method: string, args: unknown, failure: string, key = method) => {
@@ -137,6 +142,7 @@ function AgentsBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentsS
   };
   return (
     <div class="review ws fountain agents" data-agents-block={id}>
+      {onFountain && <FountainRun recipe={onFountain} cwd={null} api={blockApi(client, id)} close={() => setOnFountain(null)} ran={() => undefined} />}
       <div class="review-bar">
         <span class="review-path">
           <b>Team agents</b>
@@ -197,6 +203,11 @@ function AgentsBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentsS
                     {m.here && mayOwn && (
                       <button class="pri" data-run-here={c.name} disabled={busy !== null} onClick={() => void runHere(c.name)}>
                         Run on {m.name}
+                      </button>
+                    )}
+                    {m.here && mayOwn && client.flag("fountain") && (
+                      <button data-run-fountain={c.name} disabled={busy !== null} title="Run it in a Fountain sandbox, as its Fountain agent recipe-NAME" onClick={() => setOnFountain(c.name)}>
+                        Run on Fountain
                       </button>
                     )}
                     {!m.here && !m.owner && mayOwn && m.online && (

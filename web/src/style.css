@@ -2162,6 +2162,32 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   font-size: 12px;
 }
 
+/* Run on Fountain (#942 F4): the preflight can be long. */
+.fountain-run {
+  max-height: 80vh;
+  overflow: auto;
+}
+
+.fountain-run .fountain-run-error {
+  color: var(--danger, #e66);
+}
+
+.fountain-run-missing ul,
+.fountain-run-lost ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+}
+
+.fountain-run-missing li {
+  margin: 4px 0;
+}
+
+.fountain-run-lost {
+  font-size: 12px;
+  color: var(--dim);
+}
+
 /* ---- sandboxes (M4b) */
 
 .sandboxes {

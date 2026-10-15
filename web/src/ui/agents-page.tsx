@@ -6,7 +6,8 @@
 // open in a pane). New and Edit are a form that writes the file as Claude
 // Code reads it (keys it doesn't know are kept); Run here opens an agent
 // block wearing it; Offer and Stop offering put it in the team's catalog;
-// Delete removes the file. Team: the catalog, by machine and owner; tasks
+// Delete removes the file. Run on Fountain (#942 F4, with the `fountain`
+// flag) runs it in a Fountain sandbox as its Fountain agent. Team: the catalog, by machine and owner; tasks
 // from other people waiting for you; and standing grants, with Revoke. All
 // of it the shown machine's, and its owner's.
 
@@ -19,6 +20,7 @@ import { ConfirmRemove } from "./confirm";
 import { agentsRoute, closeAgentsPage, openAgentsPage, type AgentsTab } from "./agents-route";
 import { AppBar } from "./app-bar";
 import { CopyText } from "./copy";
+import { FountainRun, pageApi } from "./fountain-run";
 
 interface Recipe {
   name: string;
@@ -126,6 +128,7 @@ function RecipesTab({ client }: { client: Client }) {
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState<Recipe | null>(null);
   const [said, setSaid] = useState<string | null>(null);
+  const [onFountain, setOnFountain] = useState<{ recipe: string; cwd: string | null } | null>(null);
   const load = async () => {
     try {
       setData(await json<Recipes>(client, "GET", "/api/a2a/recipes/all"));
@@ -196,6 +199,11 @@ function RecipesTab({ client }: { client: Client }) {
     );
     closeAgentsPage();
   };
+  // The project it works in: its own, where it's offered from, else asked.
+  const runFountain = async (r: Recipe, project: string | null) => {
+    const cwd = project ?? r.offered_from ?? (await askText(`Run ${r.name} on Fountain, working in`, "~/", "a project folder (a git checkout with an origin)"));
+    if (cwd?.trim()) setOnFountain({ recipe: r.name, cwd: cwd.trim() });
+  };
   const addProject = async () => {
     const dir = await askText("A project with .claude/agents", "~/", "a folder on this machine");
     if (dir?.trim()) await act(() => json(client, "POST", "/api/a2a/recipes/projects", { dir: dir.trim() }));
@@ -233,6 +241,11 @@ function RecipesTab({ client }: { client: Client }) {
             <button class="pri" data-run-here={r.name} disabled={busy} title="Open an agent block wearing this recipe, in its project" onClick={() => void runHere(r, project)}>
               Run on {directory.current || "this machine"}
             </button>
+            {client.flag("fountain") && (
+              <button data-run-fountain={r.name} disabled={busy} title="Run it in a Fountain sandbox, as its Fountain agent recipe-NAME" onClick={() => void runFountain(r, project)}>
+                Run on Fountain
+              </button>
+            )}
             <button data-edit={r.name} disabled={busy} title="Change its prompt, tools and model" onClick={() => edit(r)}>
               Edit
             </button>
@@ -264,6 +277,18 @@ function RecipesTab({ client }: { client: Client }) {
   const none = !data.user.recipes.length && data.projects.every((p) => !p.recipes.length);
   return (
     <div class="agents-recipes-tab">
+      {onFountain && (
+        <FountainRun
+          recipe={onFountain.recipe}
+          cwd={onFountain.cwd}
+          api={pageApi(client)}
+          close={() => setOnFountain(null)}
+          ran={(r) => {
+            closeAgentsPage();
+            client.setActive(r.block);
+          }}
+        />
+      )}
       <p class="agents-lead">
         A recipe is a Claude Code subagent: a name, a prompt, and the tools and model it uses. <b>Run on {directory.current || "this machine"}</b> opens an agent wearing it on this machine.{" "}
         <b>Offer to team</b> lets your team's agents send it tasks; you approve each one.

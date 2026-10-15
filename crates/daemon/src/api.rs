@@ -1023,11 +1023,20 @@ async fn call(
         // M79: a task's card, and taking a grant back, are this machine's
         // own account's: not an editor's, nor a team's other owner's. So is
         // *Run there*, which reaches the account's other machines as this
-        // daemon.
+        // daemon, and (#942 F4) *Run on Fountain* and copying a variable to
+        // a vault, which use this machine's Fountain login and secrets.
         if b.kind() == arugula_proto::BlockType::Agents
             && matches!(
                 method.as_str(),
-                "answer" | "decline" | "approve" | "deny" | "terminal" | "revoke" | "run_there"
+                "answer"
+                    | "decline"
+                    | "approve"
+                    | "deny"
+                    | "terminal"
+                    | "revoke"
+                    | "run_there"
+                    | "run_fountain"
+                    | "fountain_copy"
             )
             && (!owner || foreign(&app, &dev))
         {

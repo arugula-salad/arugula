@@ -417,6 +417,15 @@ pub struct StartAgentArgs {
     /// On a new throwaway VM of its own.
     #[serde(default)]
     pub vm: bool,
+    /// Where a recipe runs: here (default), or fountain: in a Fountain sandbox, as its Fountain agent recipe-NAME (upserted from the recipe first), with its project's origin cloned there (uncommitted work stays here).
+    #[serde(default)]
+    pub on: Option<String>,
+    /// For on: fountain: a Fountain vault for the run (name or id).
+    #[serde(default)]
+    pub vault: Option<String>,
+    /// For on: fountain: a Fountain environment instead of the project's (name or id).
+    #[serde(default)]
+    pub environment: Option<String>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -1026,9 +1035,10 @@ const UNLISTED: [(&str, &str, &str); 5] = [
 /// tool: throwaway VMs and sandboxes, and Fountain agents. A caller who
 /// gives one is refused where the flag is off (a new machine, a Fountain
 /// agent, a recipe: #347), except `machine`, which names one already made.
-const UNLISTED_ARGS: [(&str, &[&str], &str); 4] = [
+const UNLISTED_ARGS: [(&str, &[&str], &str); 5] = [
     ("run", &["vm", "vm_tab", "image", "machine"], flags::VMS),
     ("start_agent", &["fountain_agent"], flags::FOUNTAIN),
+    ("start_agent", &["on", "vault", "environment"], flags::FOUNTAIN),
     ("start_agent", &["vm"], flags::VMS),
     ("start_agent", &["recipe"], flags::AGENTS),
 ];
@@ -3630,6 +3640,12 @@ impl Call<'_> {
         };
         let recipe = a.recipe.as_deref().map(str::trim).filter(|n| !n.is_empty());
         may_start(self.on_machine().await?, host.is_some(), a.vm, recipe.is_some())?;
+        // #942 F4: the recipe on Fountain, as its Fountain agent.
+        match a.on.as_deref().map(str::trim) {
+            None | Some("" | "here") => {}
+            Some("fountain") => return self.start_on_fountain(&a, recipe, beside).await,
+            Some(o) => return Err(format!("on: here or fountain, not {o}")),
+        }
         if recipe.is_some() && !matches!(a.agent, AgentKind::Claude) {
             return Err("recipe is for agent claude: Claude Code runs the recipe".into());
         }
@@ -3711,6 +3727,49 @@ impl Call<'_> {
         done(
             format!(
                 "Started an agent in %{block}; wait on it (until needs_input or idle), then read_output for its transcript"
+            ),
+            results::BlockOnly { block },
+        )
+    }
+
+    /// `start_agent {recipe, on: fountain}`: the recipe upserted as its
+    /// Fountain agent, and its conversation in an agent block.
+    async fn start_on_fountain(&self, a: &StartAgentArgs, recipe: Option<&str>, beside: Option<PaneId>) -> Out {
+        let Some(recipe) = recipe else {
+            return Err("on: fountain runs a recipe: give recipe (a Claude Code subagent's name)".into());
+        };
+        if a.vm {
+            return Err("on: fountain runs in a Fountain sandbox, not a VM".into());
+        }
+        if !matches!(a.agent, AgentKind::Claude | AgentKind::Fountain) {
+            return Err("on: fountain runs the recipe as Claude Code".into());
+        }
+        let ask = crate::labs::FountainRecipe {
+            agent: recipe.to_owned(),
+            cwd: a.cwd.clone(),
+            prompt: Some(a.prompt.clone()),
+            vault: a.vault.clone(),
+            environment: a.environment.clone(),
+        };
+        let (mut config, summary) = crate::labs::fountain_recipe(self.app, ask).await?;
+        if let Some(t) = a.title.as_ref().filter(|t| !t.trim().is_empty()) {
+            config["title"] = json!(t.trim());
+        }
+        let req = OpenRequest {
+            kind: BlockType::Agent,
+            config,
+            session: if beside.is_none() { a.session.clone() } else { None },
+            split: beside,
+            from_pane: beside,
+            vm: false,
+            image: None,
+            host: None,
+            local: false,
+        };
+        let block = self.open(req).await?;
+        done(
+            format!(
+                "{summary} Started in %{block}; wait on it (until needs_input or idle), then read_output for its transcript"
             ),
             results::BlockOnly { block },
         )

@@ -392,6 +392,39 @@ pub async fn fountain_agents(
     Err(crate::api::ApiError(axum::http::StatusCode::NOT_FOUND, not_built("Fountain")))
 }
 
+/// A recipe on Fountain (#942, F4), for MCP's `start_agent {on:
+/// fountain}`: the recipe compiled and upserted as its Fountain agent, and
+/// the agent block's config for its conversation (the caller opens it),
+/// with what didn't carry over in a sentence.
+#[cfg(feature = "labs")]
+pub async fn fountain_recipe(app: &Arc<App>, ask: FountainRecipe) -> Result<(serde_json::Value, String), String> {
+    let ask = fountain::recipes::Ask {
+        agent: ask.agent,
+        cwd: ask.cwd,
+        prompt: ask.prompt,
+        vault: ask.vault,
+        environment: ask.environment,
+    };
+    fountain::recipes::launch(app.control.state_dir(), &crate::home(), app.hosts.name(), &ask).await
+}
+
+#[cfg(not(feature = "labs"))]
+pub async fn fountain_recipe(_: &Arc<App>, _: FountainRecipe) -> Result<(serde_json::Value, String), String> {
+    Err(not_built("Fountain"))
+}
+
+/// What [`fountain_recipe`] runs.
+// Read by the recipe's run, which a build without Labs doesn't have.
+#[cfg_attr(not(feature = "labs"), allow(dead_code))]
+#[derive(Debug, Clone, Default)]
+pub struct FountainRecipe {
+    pub agent: String,
+    pub cwd: Option<String>,
+    pub prompt: Option<String>,
+    pub vault: Option<String>,
+    pub environment: Option<String>,
+}
+
 /// `POST /api/guests`'s answer: an ssh invite, or in a build without Labs
 /// the 501 the route gave every method.
 #[cfg(feature = "labs")]
