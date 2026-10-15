@@ -159,7 +159,7 @@ pub fn resume_tasks(_app: &Arc<App>) {}
 /// Adds Labs' HTTP routes to the API's.
 #[cfg(feature = "labs")]
 pub fn routes(r: Router<Arc<App>>) -> Router<Arc<App>> {
-    agents::routes(apps::routes::routes(r))
+    fountain::account::routes(agents::routes(apps::routes::routes(r)))
 }
 
 #[cfg(not(feature = "labs"))]
@@ -718,8 +718,59 @@ pub async fn app_config(_c: &Value) -> Result<Value, String> {
 /// /api/host`'s `features.fountain`.
 #[cfg(feature = "labs")]
 pub fn fountain_login_here(shell_env: &ShellEnv) -> bool {
-    fountain::login::here(shell_env)
+    fountain::account::get().is_some_and(|a| a.signed_in().is_some()) || fountain::login::here(shell_env)
 }
+
+/// This daemon's Fountain account (#942) at start-up: its own sign-in
+/// (`arugula fountain login`), named for Fountain's key list after the
+/// machine, and with `--fountain-account-stream` the account's event stream.
+#[cfg(feature = "labs")]
+pub fn start_fountain(app: &Arc<App>, state_dir: &Path, name: &str, account_stream: bool) {
+    let account = fountain::account::install(state_dir, &format!("Arugula on {name}"), app.mux.shell_env.clone());
+    if account_stream {
+        tokio::spawn(fountain::stream::run(account, Default::default()));
+    }
+}
+
+#[cfg(not(feature = "labs"))]
+pub fn start_fountain(_app: &Arc<App>, _state_dir: &Path, _name: &str, account_stream: bool) {
+    if account_stream {
+        tracing::warn!("{}", not_built("Fountain's account stream"));
+    }
+}
+
+/// `/api/fountain/login`'s answers (#942): this daemon's sign-in. A build
+/// without Labs has no such route, so these are never reached there.
+#[cfg(feature = "labs")]
+pub use fountain::account::{fountain_login, fountain_login_start, fountain_logout};
+
+#[cfg(not(feature = "labs"))]
+mod fountain_off {
+    use arugula_proto::api::{FountainLogin, FountainLoginRequest};
+    use axum::http::StatusCode;
+
+    use super::not_built;
+    use crate::api::ApiError;
+
+    fn gone<T>() -> Result<T, ApiError> {
+        Err(ApiError(StatusCode::NOT_FOUND, not_built("Fountain")))
+    }
+
+    pub async fn fountain_login() -> Result<FountainLogin, ApiError> {
+        gone()
+    }
+
+    pub async fn fountain_login_start(_: FountainLoginRequest) -> Result<FountainLogin, ApiError> {
+        gone()
+    }
+
+    pub async fn fountain_logout() -> Result<FountainLogin, ApiError> {
+        gone()
+    }
+}
+
+#[cfg(not(feature = "labs"))]
+pub use fountain_off::{fountain_login, fountain_login_start, fountain_logout};
 
 #[cfg(not(feature = "labs"))]
 pub fn fountain_login_here(_shell_env: &ShellEnv) -> bool {

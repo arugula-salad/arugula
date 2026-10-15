@@ -961,6 +961,9 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
     app.guests.run(&app);
     // M78: tasks for this machine's agents that a restart interrupted.
     crate::labs::resume_tasks(&app);
+    // Fountain (#942): this daemon's sign-in, and the account stream where
+    // this is the home daemon.
+    crate::labs::start_fountain(&app, &state_dir, &name, args.fountain_account_stream);
     control.start(app.clone());
     if let Some(serve) = mcp_serve {
         let _ = serve.set(mcp::pipe_server(&app));

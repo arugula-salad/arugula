@@ -40,9 +40,12 @@
 //! **The log** (`blocks/%N/`): what it was pointed at, and what was opened
 //! from it.
 
+pub mod account;
 pub mod api;
 pub mod catalog;
+pub mod client;
 pub mod login;
+pub mod stream;
 
 use std::{
     collections::{BTreeMap, HashMap},

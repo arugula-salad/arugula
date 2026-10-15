@@ -7,6 +7,7 @@ conv.links GET /api/convs/{id}/links
 conversations.list GET /api/conversations
 flags.list GET /api/flags
 fountain.agents GET /api/fountain/agents
+fountain.login GET /api/fountain/login
 fs.list GET /api/fs/list
 fs.recent GET /api/fs/recent
 fs.stat GET /api/fs/stat

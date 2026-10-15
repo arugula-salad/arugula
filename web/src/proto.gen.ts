@@ -1015,6 +1015,79 @@ export type ForgeWant = { kind: ForgeWantKind, why: string, };
 export type ForgeWantKind = "review" | "failed" | "changes" | "mention" | "done" | "assigned";
 
 /**
+ * A device sign-in in progress: show `user_code` and send the person to
+ * `verification_uri` (or `verification_uri_complete`) in a browser signed
+ * in to Fountain.
+ */
+export type FountainDevice = { base_url: string, user_code: string, verification_uri: string, verification_uri_complete: string | null, 
+/**
+ * When the code stops working (ms since the epoch).
+ */
+expires_ms: number, };
+
+/**
+ * `GET /api/fountain/login` (#942): this daemon's Fountain sign-in, and
+ * its account stream. Never a key: only where it came from and the
+ * prefix Fountain's key list shows.
+ */
+export type FountainLogin = { 
+/**
+ * A key is here: this daemon's own sign-in, or the CLI's login.
+ */
+signed_in: boolean, 
+/**
+ * Where the key in use comes from: `arugula` (`arugula fountain
+ * login`, kept in the state dir), `env` (`$FOUNTAIN_API_KEY`) or
+ * `file` (the `fountain` CLI's `~/.fountain/credentials`).
+ */
+source: string | null, base_url: string | null, 
+/**
+ * Who an Arugula sign-in signs in as, when Fountain said.
+ */
+email: string | null, 
+/**
+ * The key's prefix, as Fountain's key list shows it.
+ */
+key_prefix: string | null, 
+/**
+ * A sign-in waiting for its code to be approved.
+ */
+pending: FountainDevice | null, 
+/**
+ * Why the last sign-in didn't happen, or why there's no login.
+ */
+error: string | null, 
+/**
+ * What the last change did (a sign-out that couldn't revoke the key).
+ */
+note: string | null, stream: FountainStream, };
+
+/**
+ * `POST /api/fountain/login`: start a device sign-in. `base_url`: which
+ * Fountain; left out, the one signed in to, else `$FOUNTAIN_BASE_URL` or
+ * the CLI profile's.
+ */
+export type FountainLoginRequest = { base_url?: string | null, };
+
+/**
+ * The account's event stream (`/api/events/stream`), on the daemon that
+ * runs it (`--fountain-account-stream`).
+ */
+export type FountainStream = { 
+/**
+ * This daemon runs it.
+ */
+enabled: boolean, connected: boolean, 
+/**
+ * The last event id handled, kept across restarts (0: none yet).
+ */
+cursor: number, 
+/**
+ * Events handled since the daemon started.
+ */
+delivered: number, error: string | null, };
+
+/**
  * A gate that waits for someone (M34): an op stopped before a step until
  * a person approves it. The `gate` reason, its bundle on the swarm's rail,
  * the card and the phone's sheet are all made from this, whichever reader
@@ -2398,6 +2471,9 @@ export const OPS = {
   "flag.set": { method: "PUT", path: "/api/flags/{name}" },
   "flags.list": { method: "GET", path: "/api/flags" },
   "fountain.agents": { method: "GET", path: "/api/fountain/agents" },
+  "fountain.login": { method: "GET", path: "/api/fountain/login" },
+  "fountain.login_start": { method: "POST", path: "/api/fountain/login" },
+  "fountain.logout": { method: "DELETE", path: "/api/fountain/login" },
   "fs.list": { method: "GET", path: "/api/fs/list" },
   "fs.recent": { method: "GET", path: "/api/fs/recent" },
   "fs.stat": { method: "GET", path: "/api/fs/stat" },
