@@ -810,10 +810,6 @@ pub struct ReadAgentArgs {
 #[cfg_attr(not(feature = "labs"), allow(dead_code))]
 #[derive(Deserialize, JsonSchema)]
 pub struct OpenFountainArgs {
-    /// "catalog" (the default: the agents) or "runner" (this host as the
-    /// Fountain runner, and its sandboxes).
-    #[serde(default)]
-    pub view: Option<String>,
     /// Start with this search (as kind fountain_agents' query).
     #[serde(default)]
     pub query: Option<String>,
@@ -919,7 +915,7 @@ const SHOW: &[Kind] = &[
     },
     Kind {
         name: "fountain",
-        description: "The user's Fountain agents as a catalog block: a card per agent with its skills, servers and where it comes from, filters, and Run on Fountain / Spec for each. Returns the (filtered) list as text. With view \"runner\": this host as the account's Fountain runner instead: its status, the other runners, and its sandboxes with their conversations.",
+        description: "The user's Fountain agents as a catalog block: a card per agent with its skills, servers and where it comes from, filters, and Run on Fountain / Spec for each. Returns the (filtered) list as text.",
         schema: schema_for_type::<OpenFountainArgs>,
         flag: None,
     },
@@ -3205,18 +3201,9 @@ impl Call<'_> {
 
     async fn open_fountain(&self, a: OpenFountainArgs) -> Out {
         let (beside, _) = self.beside(a.beside.as_ref()).await?;
-        let runner = match a.view.as_deref().unwrap_or("catalog") {
-            "catalog" => false,
-            "runner" => true,
-            v => return Err(format!("view is \"catalog\" or \"runner\", not {v:?}")),
-        };
         let mut filter = crate::labs::fountain::catalog::Filter::default();
         filter.apply(&json!({ "query": a.query, "source": a.source }))?;
-        let config = if runner {
-            json!({ "profile": a.profile, "view": "runner" })
-        } else {
-            json!({ "profile": a.profile, "view": "catalog", "filter": filter })
-        };
+        let config = json!({ "profile": a.profile, "filter": filter });
         let req = OpenRequest {
             kind: BlockType::Fountain,
             config,
@@ -3240,10 +3227,6 @@ impl Call<'_> {
         let st = b.state();
         if let Some(e) = st["error"].as_str() {
             return Err(format!("Fountain block %{block}: {e}"));
-        }
-        if runner {
-            let text = b.text();
-            return done(format!("Fountain block %{block}:\n{text}"), results::BlockText { block, text });
         }
         done(
             format!(
@@ -4520,7 +4503,7 @@ mod tests {
             ("open_conversation", json!({ "id": "abc", "then": "fork" }), "show", Some("conversation")),
             ("open_app", json!({ "app": "hud" }), "show", Some("app")),
             ("open_workspace", json!({ "dir": "/w", "env": "prod" }), "show", Some("workspace")),
-            ("open_fountain", json!({ "view": "runner" }), "show", Some("fountain")),
+            ("open_fountain", json!({ "query": "q", "source": "hand" }), "show", Some("fountain")),
             ("read_pr", json!({ "block": 4 }), "read_forge", None),
             ("read_issue", json!({ "block": "%4" }), "read_forge", None),
             ("pr_comment", json!({ "block": 4, "body": "b" }), "draft", Some("comment")),

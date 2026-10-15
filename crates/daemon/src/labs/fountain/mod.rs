@@ -1,9 +1,8 @@
-//! M43: the person's Fountain account as a block, `view: catalog`: every
+//! The Fountain catalog: the person's Fountain account as a block, every
 //! agent as a card, with where it comes from, filters, and ways to run one.
 //!
-//! **Config** `{profile?, view: catalog, filter?, specs?}`: the
-//! credentials profile ([`login`]), what it shows (M45 adds `runner`), the
-//! filters ([`catalog::Filter`]: search, source, runtime, provider), and
+//! **Config** `{profile?, filter?, specs?}`: the credentials profile
+//! ([`login`]), the filters ([`catalog::Filter`]: search, source, runtime, provider), and
 //! the agent-specs checkout *Spec* looks in. Never a key.
 //!
 //! **Reads** go through Fountain's HTTP API ([`api`]) with the key of the
@@ -25,21 +24,10 @@
 //! {name}` read without changing anything (MCP's `list` kinds
 //! `fountain_agents` and `fountain_agent`).
 //!
-//! **`view: runner`** (M45b, [`runner`]): this host as the account's
-//! Fountain runner. `GET /api/runners` every minute while drawn and every
-//! 5 minutes otherwise (so its attention still fires); this host's runner
-//! (the `fountain-runner` unit's `--name`) with its status, version against
-//! the installed `fountain --version`, last seen and sandbox count; every
-//! other runner. Attention (`failed`, bundle `failed:fountain-runner`) when
-//! the unit is active but Fountain has said offline for 5 minutes, or when
-//! another runner is online (it would win placement). Then this runner's
-//! sandboxes (`GET /api/sandboxes`, by runner), each with its directory,
-//! agent and conversations, and: `follow {conversation}` (an agent block
-//! on it: `fountain acp`'s `session/load`), `changes {sandbox}` (a diff
-//! block per git checkout two levels down, its git run as `fountain`
-//! through sudo) and `shell {sandbox}` (a terminal as `fountain` in its
-//! directory, `HOME` there). `view {view}` switches. All four are the
-//! owner's.
+//! **`view: runner`** (M45b, this host as the account's Fountain runner)
+//! is gone: Fountain removed self-hosted runners on 2026-10-14 (its ADR
+//! 0071). A block saved with it comes back as the catalog: `Config` has no
+//! `view`, and serde ignores the key.
 //!
 //! **The log** (`blocks/%N/`): what it was pointed at, and what was opened
 //! from it.
@@ -47,7 +35,6 @@
 pub mod api;
 pub mod catalog;
 pub mod login;
-pub mod runner;
 pub mod wear;
 
 use std::{
@@ -56,10 +43,7 @@ use std::{
     time::Duration,
 };
 
-use arugula_proto::{
-    Action, Attention, BlockType, Reason, ReasonKind, WorkKind,
-    api::{OpenRequest, RunRequest},
-};
+use arugula_proto::{BlockType, WorkKind, api::OpenRequest};
 use futures_util::future::BoxFuture;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -95,22 +79,12 @@ const POLL: Duration = Duration::from_secs(180);
 /// Where *Spec* looks when the block hasn't been told, if it's there.
 pub const DEFAULT_SPECS: &str = "~/agent-specs";
 
-/// What a Fountain block shows: the agents, or this host as the runner
-/// (M45b).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum View {
-    #[default]
-    Catalog,
-    Runner,
-}
-
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 struct Config {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     profile: Option<String>,
-    #[serde(default)]
-    view: View,
+    // No `view`: the catalog is the only one. A saved `view: runner` (M45b,
+    // before Fountain removed runners) is ignored like any unknown key.
     #[serde(default, skip_serializing_if = "Filter::is_empty")]
     filter: Filter,
     /// The agent-specs checkout (`~/…` allowed).
@@ -123,7 +97,6 @@ struct Config {
 
 #[derive(Debug, Clone, Default, Serialize)]
 struct State {
-    view: View,
     /// The profile in use, and the ones the credentials file has.
     profile: Option<String>,
     profiles: Vec<String>,
@@ -152,9 +125,6 @@ struct State {
     watching: bool,
     /// The last action's result, for the client.
     said: Option<String>,
-    /// `view: runner`'s (M45b).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    runner: Option<runner::ViewState>,
 }
 
 /// The last list read for an account, so MCP's tools don't read it again
@@ -319,18 +289,12 @@ pub struct FountainBlock {
     live: Live,
     wake: tokio::sync::Notify,
     reading: tokio::sync::Mutex<()>,
-    /// The runner view's: the reason raised now, when an offline runner
-    /// becomes news, and agents' names by id.
-    raised: Mutex<Option<String>>,
-    due: Mutex<Option<u64>>,
-    agent_names: Mutex<HashMap<String, String>>,
 }
 
 impl FountainBlock {
     pub fn create(ctx: BlockCtx, config: Value) -> Result<Arc<dyn Block>, String> {
         let config: Config = serde_json::from_value(config).map_err(|e| format!("fountain config: {e}"))?;
         let state = State {
-            view: config.view,
             profile: config.profile.clone(),
             filter: config.filter.clone(),
             specs: config.specs.clone(),
@@ -338,7 +302,7 @@ impl FountainBlock {
             loading: true,
             ..State::default()
         };
-        crate::review::log(&ctx, &json!({ "e": "view", "view": config.view, "profile": config.profile }));
+        crate::review::log(&ctx, &json!({ "e": "view", "view": "catalog", "profile": config.profile }));
         let b = Arc::new_cyclic(|me| Self {
             ctx,
             me: me.clone(),
@@ -351,9 +315,6 @@ impl FountainBlock {
             live: Live::default(),
             wake: tokio::sync::Notify::new(),
             reading: tokio::sync::Mutex::new(()),
-            raised: Mutex::new(None),
-            due: Mutex::new(None),
-            agent_names: Mutex::new(HashMap::new()),
         });
         let me = b.clone();
         b.ctx.rt.spawn(async move { me.run().await });
@@ -367,9 +328,7 @@ impl FountainBlock {
     async fn run(self: Arc<Self>) {
         self.read().await;
         loop {
-            // The catalog: every interval while drawn, else until it's
-            // drawn. The runner view: every minute while drawn, every 5
-            // otherwise, and when an offline runner becomes news.
+            // Every interval while drawn, else until it's drawn.
             match self.next_wait() {
                 Some(left) => tokio::select! {
                     _ = tokio::time::sleep(left) => {}
@@ -380,34 +339,21 @@ impl FountainBlock {
             if self.live.closed() {
                 break;
             }
-            let due = self.due.lock().unwrap().is_some_and(|d| now_ms() >= d);
             if let Some(every) = self.every()
-                && (due || self.age_ms() >= every.as_millis() as u64)
+                && self.age_ms() >= every.as_millis() as u64
             {
                 self.read().await;
             }
         }
     }
 
-    fn view(&self) -> View {
-        self.config.lock().unwrap().view
-    }
-
     /// How often it reads now; `None`: not until it's drawn.
     fn every(&self) -> Option<Duration> {
-        let drawn = self.live.drawn();
-        match self.view() {
-            View::Catalog => drawn.then(interval),
-            View::Runner => Some(if drawn { runner::interval() } else { runner::idle_interval() }),
-        }
+        self.live.drawn().then(interval)
     }
 
     fn next_wait(&self) -> Option<Duration> {
-        let mut left = self.every()?.saturating_sub(Duration::from_millis(self.age_ms()));
-        if let Some(due) = *self.due.lock().unwrap() {
-            left = left.min(Duration::from_millis(due.saturating_sub(now_ms()) + 50));
-        }
-        Some(left)
+        Some(self.every()?.saturating_sub(Duration::from_millis(self.age_ms())))
     }
 
     /// How long since the last read (or try).
@@ -416,9 +362,6 @@ impl FountainBlock {
     }
 
     async fn read(&self) {
-        if self.view() == View::Runner {
-            return self.read_runner().await;
-        }
         let _one = self.reading.lock().await;
         if self.live.closed() {
             return;
@@ -631,314 +574,6 @@ impl FountainBlock {
         Ok(json!({ "block": block, "kind": "browser", "url": url, "note": note }))
     }
 
-    // ------------------------------------------------------------ runner view
-
-    /// The runner view is this host's: not from a block on a machine.
-    fn here(&self) -> Result<(), String> {
-        match self.ctx.sprite {
-            None => Ok(()),
-            Some(_) => Err("the runner view is for this host's runner: open it on the host, not on a machine".into()),
-        }
-    }
-
-    /// Read `/api/runners` and this runner's sandboxes, and judge.
-    async fn read_runner(&self) {
-        let _one = self.reading.lock().await;
-        // Only a read that judges sets when to read again early: a failed
-        // one leaves the ordinary interval (no spinning on a stale time).
-        *self.due.lock().unwrap() = None;
-        if self.live.closed() {
-            return;
-        }
-        if let Err(e) = self.here() {
-            return self.fail(e);
-        }
-        let host = match self.runner().await {
-            Ok(r) => r,
-            Err(e) => return self.fail(e),
-        };
-        let profile = self.config.lock().unwrap().profile.clone();
-        let found = match login::read(&host).await {
-            Ok(f) => f,
-            Err(e) => return self.fail(e),
-        };
-        let profiles = login::profiles(&found);
-        self.state.lock().unwrap().profiles = profiles;
-        let login = match login::resolve(&found, profile.as_deref()) {
-            Ok(l) => l,
-            Err(e) => return self.fail(e),
-        };
-        let client = Client::new(&login.base_url, &login.key);
-        let unit = runner::unit();
-        let active = async {
-            match &unit {
-                Some(_) => runner::unit_active().await,
-                None => None,
-            }
-        };
-        let (runners, sandboxes, active, local_version) = tokio::join!(
-            client.runners(),
-            client.sandboxes(Some(runner::LIVE_STATES)),
-            active,
-            local_version(&host, unit.as_ref())
-        );
-        let runners = match runners {
-            Ok(l) => l.items,
-            Err(e) => return self.fail(e.to_string()),
-        };
-        let now = now_ms();
-        let this = unit.as_ref().and_then(|u| runner::this_runner(&runners, u)).cloned();
-        let others: Vec<runner::RunnerRow> = runners
-            .iter()
-            .filter(|r| this.as_ref().is_none_or(|t| t.id != r.id))
-            .map(runner::RunnerRow::from)
-            .collect();
-        let (mut rows, sandboxes_error) = match (&this, sandboxes) {
-            (None, _) => (vec![], None),
-            (Some(t), Ok(l)) => {
-                // The unit's root only: never one Fountain names.
-                let root = unit.as_ref().and_then(|u| u.root.clone());
-                (runner::rows(&l.items, &t.id, root.as_deref()), None)
-            }
-            (Some(_), Err(e)) => (vec![], Some(e.to_string())),
-        };
-        // Agents' names (Follow needs one), each read once.
-        let missing: Vec<String> = {
-            let names = self.agent_names.lock().unwrap();
-            let mut m: Vec<String> =
-                rows.iter().filter_map(|r| r.agent_id.clone()).filter(|id| !names.contains_key(id)).collect();
-            m.sort();
-            m.dedup();
-            m
-        };
-        for id in missing.into_iter().take(10) {
-            match client.agent(&id).await {
-                Ok(a) => {
-                    self.agent_names.lock().unwrap().insert(id, a.name);
-                }
-                Err(e) => warn!(agent = id, error = %e, "fountain agent's name"),
-            }
-        }
-        {
-            let names = self.agent_names.lock().unwrap();
-            for r in &mut rows {
-                r.agent = r.agent_id.as_ref().and_then(|id| names.get(id).cloned());
-            }
-        }
-        // When this view first saw it offline while the unit runs.
-        let offline = active == Some(true) && this.as_ref().is_none_or(|t| !t.online) && unit.is_some();
-        let seen = {
-            let st = self.state.lock().unwrap();
-            let prev = st.runner.as_ref().and_then(|r| r.offline_since_ms);
-            if offline { Some(prev.unwrap_or(now)) } else { None }
-        };
-        let grace = runner::grace();
-        let want = runner::judge(&runners, unit.as_ref(), active, seen, now, grace);
-        *self.due.lock().unwrap() = runner::offline_due(&runners, unit.as_ref(), active, seen, now, grace);
-        let headline = want.as_ref().map(runner::Want::headline);
-        if let Some(u) = &unit {
-            let count = this.as_ref().map(|_| rows.len() as u32);
-            runner::remember(runner::summary(&runners, u, active, count, headline.clone()));
-        }
-        info!(pane = self.ctx.id, runners = runners.len(), sandboxes = rows.len(), want = ?headline, "fountain runner read");
-        {
-            let mut st = self.state.lock().unwrap();
-            st.profile = Some(login.profile.clone());
-            st.base_url = Some(login.base_url.clone());
-            st.key_from = Some(match login.from {
-                login::From::Env => "env",
-                login::From::File => "file",
-            });
-            st.loading = false;
-            st.error = None;
-            st.polls += 1;
-            st.updated_ms = now;
-            st.runner = Some(runner::ViewState {
-                unit: unit.clone(),
-                unit_active: active,
-                local_version,
-                this: this.as_ref().map(runner::RunnerRow::from),
-                others,
-                sandboxes: rows,
-                sandboxes_error,
-                attention: headline,
-                offline_since_ms: seen,
-                note: runner::PARK_NOTE,
-            });
-        }
-        *self.login.lock().unwrap() = Some(login);
-        self.raise(want, seen.unwrap_or(now));
-        self.ctx.changed();
-    }
-
-    /// Ask for attention once per change, and let go when it's over.
-    fn raise(&self, want: Option<runner::Want>, since: u64) {
-        let now = want.as_ref().map(runner::Want::headline);
-        let mut raised = self.raised.lock().unwrap();
-        if *raised == now {
-            return;
-        }
-        if raised.is_some() {
-            self.ctx.clear(ReasonKind::Failed);
-        }
-        if let (Some(w), Some(h)) = (&want, &now) {
-            let since_ms = match w {
-                runner::Want::Offline { since_ms, .. } => *since_ms,
-                runner::Want::Others { .. } => since,
-            };
-            info!(pane = self.ctx.id, headline = h, "fountain runner attention");
-            self.ctx.reason(
-                Attention::Done,
-                Reason {
-                    kind: ReasonKind::Failed,
-                    since_ms,
-                    headline: h.clone(),
-                    command: None,
-                    exit: None,
-                    duration_ms: None,
-                    bundle: Some(runner::BUNDLE.into()),
-                    ask: None,
-                    gate: None,
-                    diff: None,
-                    actions: vec![Action::Dismiss],
-                },
-            );
-        }
-        *raised = now;
-    }
-
-    /// A sandbox on this runner, by its id, its name, or a conversation's id.
-    fn sandbox(&self, which: &str) -> Result<runner::SandboxRow, String> {
-        let st = self.state.lock().unwrap();
-        let v = st.runner.as_ref().ok_or("the runner isn't read yet")?;
-        if v.this.is_none() {
-            return Err(match &v.unit {
-                Some(u) => format!("Fountain doesn't list this host's runner {}", u.name),
-                None => format!("this host runs no {} unit", runner::UNIT),
-            });
-        }
-        v.sandboxes
-            .iter()
-            .find(|s| s.id == which || s.name == which || s.conversations.iter().any(|c| c.id == which))
-            .cloned()
-            .ok_or_else(|| format!("no sandbox or conversation {which:?} on this runner"))
-    }
-
-    /// The unit's `--root`, which every sandbox must be inside.
-    fn unit_root(&self) -> Result<String, String> {
-        let st = self.state.lock().unwrap();
-        st.runner
-            .as_ref()
-            .and_then(|r| r.unit.as_ref())
-            .and_then(|u| u.root.clone())
-            .ok_or_else(|| format!("the {} unit names no --root", runner::UNIT))
-    }
-
-    /// `view {view}`: catalog or runner.
-    async fn set_view(&self, args: &Value) -> Result<Value, String> {
-        let view: View = serde_json::from_value(args["view"].clone())
-            .map_err(|_| "view needs {\"view\": \"catalog\" or \"runner\"}".to_owned())?;
-        if view == View::Runner {
-            self.here()?;
-        }
-        self.config.lock().unwrap().view = view;
-        {
-            let mut st = self.state.lock().unwrap();
-            st.view = view;
-            st.loading = true;
-            if view == View::Catalog {
-                st.runner = None;
-            }
-        }
-        if view == View::Catalog {
-            self.raise(None, now_ms());
-            *self.due.lock().unwrap() = None;
-        }
-        crate::review::log(&self.ctx, &json!({ "e": "view", "view": view }));
-        self.ctx.changed();
-        self.read().await;
-        self.wake.notify_one();
-        let st = self.state.lock().unwrap();
-        match &st.error {
-            Some(e) => Err(e.clone()),
-            None => Ok(json!({ "view": view })),
-        }
-    }
-
-    /// *Follow*: an agent block on the conversation, through `fountain
-    /// acp`'s `session/load` (its id is the session's).
-    async fn follow(&self, args: Value) -> Result<Value, String> {
-        self.here()?;
-        let conv =
-            args["conversation"].as_str().filter(|c| !c.is_empty()).ok_or("follow needs {\"conversation\": ID}")?;
-        let row = self.sandbox(conv)?;
-        let conv = row
-            .conversations
-            .iter()
-            .find(|c| c.id == conv)
-            .cloned()
-            .ok_or_else(|| format!("{conv:?} is a sandbox: follow takes one of its conversations' ids"))?;
-        let agent = row.agent.clone().ok_or("Fountain didn't say this sandbox's agent's name: Follow needs it")?;
-        // `follow`: it loads this conversation or stops; never a new one.
-        let mut config = json!({ "agent": "fountain", "fountain_agent": agent, "session_id": conv.id, "follow": true });
-        if let Some(p) = self.config.lock().unwrap().profile.clone() {
-            config["profile"] = json!(p);
-        }
-        let block = self.ctx.open(self.beside(BlockType::Agent, config)).await?;
-        crate::review::log(
-            &self.ctx,
-            &json!({ "e": "follow", "conversation": conv.id, "agent": agent, "block": block }),
-        );
-        self.said(format!("following {agent}'s conversation {} in %{block}", conv.id));
-        Ok(json!({ "block": block, "agent": agent, "conversation": conv.id }))
-    }
-
-    /// *Changes*: a diff block per git checkout in the sandbox (two levels
-    /// down), its git run as `fountain`.
-    async fn changes(&self, args: Value) -> Result<Value, String> {
-        self.here()?;
-        let which = args["sandbox"].as_str().filter(|s| !s.is_empty()).ok_or("changes needs {\"sandbox\": ID}")?;
-        let row = self.sandbox(which)?;
-        let dir = row.path.clone().ok_or("Fountain doesn't say where this sandbox is")?;
-        let root = self.unit_root()?;
-        let script = format!("{}{}", runner::GIT_SAFE, runner::CHECKOUTS);
-        let (out, _) = runner::sudo_sh(&script, &[root, dir.clone()]).await?;
-        let found = runner::parse_checkouts(&String::from_utf8_lossy(&out))?;
-        if found.is_empty() {
-            let e = format!("no git checkout in {dir} (looked two levels down)");
-            self.said(e.clone());
-            return Err(e);
-        }
-        let mut opened = vec![];
-        for (repo, base) in found {
-            let config = json!({ "repo": repo, "rev_a": base, "run_as": runner::USER });
-            let block = self.ctx.open(self.beside(BlockType::Diff, config)).await?;
-            opened.push(json!({ "block": block, "repo": repo, "rev_a": base }));
-        }
-        crate::review::log(&self.ctx, &json!({ "e": "changes", "sandbox": row.id, "dir": dir, "opened": opened }));
-        self.said(format!("{} checkout{} in {}", opened.len(), if opened.len() == 1 { "" } else { "s" }, row.name));
-        Ok(json!({ "dir": dir, "checkouts": opened }))
-    }
-
-    /// *Shell*: a terminal as `fountain` in the sandbox, `HOME` there.
-    async fn shell(&self, args: Value) -> Result<Value, String> {
-        self.here()?;
-        let which = args["sandbox"].as_str().filter(|s| !s.is_empty()).ok_or("shell needs {\"sandbox\": ID}")?;
-        let row = self.sandbox(which)?;
-        let dir = row.path.clone().ok_or("Fountain doesn't say where this sandbox is")?;
-        let command = runner::shell_command(&self.unit_root()?, &dir);
-        let req = RunRequest {
-            command: Some(command.clone()),
-            split: Some(self.ctx.id),
-            from_pane: Some(self.ctx.id),
-            ..RunRequest::default()
-        };
-        let pane = self.ctx.run(req).await?;
-        crate::review::log(&self.ctx, &json!({ "e": "shell", "sandbox": row.id, "dir": dir, "pane": pane }));
-        self.said(format!("a shell as {} in {} (%{pane})", runner::USER, row.name));
-        Ok(json!({ "pane": pane, "dir": dir, "command": command, "parked": row.parked, "note": runner::PARK_NOTE }))
-    }
-
     fn beside(&self, kind: BlockType, config: Value) -> OpenRequest {
         OpenRequest {
             kind,
@@ -970,18 +605,6 @@ grep -rnF --include='*.ts' -e "name: \"$2\"" -e "name: '$2'" -e "name:\"$2\"" sr
   IFS=: read -r f n _ && [ -n "$f" ] && echo "ok $(pwd -P)/$f $n"
 }"#;
 
-/// The installed `fountain --version` (the stand-in tests name, else the
-/// unit's binary, else `fountain` on the user's PATH).
-async fn local_version(host: &Runner, unit: Option<&runner::Unit>) -> Option<String> {
-    let bin = std::env::var("ARUGULA_FOUNTAIN_BIN")
-        .ok()
-        .filter(|b| !b.is_empty())
-        .or_else(|| unit.and_then(|u| u.bin.clone()))
-        .unwrap_or_else(|| "fountain".into());
-    let (out, _) = host.sh(r#""$1" --version </dev/null 2>/dev/null"#, &[bin]).await.ok()?;
-    runner::parse_version(&String::from_utf8_lossy(&out))
-}
-
 impl Block for FountainBlock {
     fn kind(&self) -> BlockType {
         BlockType::Fountain
@@ -999,19 +622,6 @@ impl Block for FountainBlock {
 
     fn text(&self) -> String {
         let st = self.state.lock().unwrap();
-        if st.view == View::Runner {
-            let mut out = match &st.runner {
-                Some(r) => r.text(st.base_url.as_deref(), now_ms()),
-                None => "Fountain runner\n".to_owned(),
-            };
-            if let Some(e) = &st.error {
-                out.push_str(&format!("{e}\n"));
-            }
-            if st.loading && st.runner.is_none() {
-                out.push_str("reading…\n");
-            }
-            return out;
-        }
         let mut out = String::from("Fountain agents");
         if let Some(b) = &st.base_url {
             out.push_str(&format!(" on {b}"));
@@ -1093,10 +703,6 @@ impl Block for FountainBlock {
             "run" | "run_fountain" => Box::pin(async move { me.ok_or("closed")?.run_fountain(args).await }),
             "run_here" => Box::pin(async move { me.ok_or("closed")?.run_here(args).await }),
             "spec" => Box::pin(async move { me.ok_or("closed")?.spec(args).await }),
-            "view" => Box::pin(async move { me.ok_or("closed")?.set_view(&args).await }),
-            "follow" => Box::pin(async move { me.ok_or("closed")?.follow(args).await }),
-            "changes" => Box::pin(async move { me.ok_or("closed")?.changes(args).await }),
-            "shell" => Box::pin(async move { me.ok_or("closed")?.shell(args).await }),
             "agents" => Box::pin(async move {
                 let me = me.ok_or("closed")?;
                 let mut f = Filter::default();
@@ -1134,20 +740,6 @@ impl Block for FountainBlock {
 
     fn summary(&self) -> Summary {
         let st = self.state.lock().unwrap();
-        if st.view == View::Runner {
-            let title = match st.runner.as_ref() {
-                Some(runner::ViewState { this: Some(t), sandboxes, .. }) => format!(
-                    "Fountain runner {}: {} · {} sandbox{}",
-                    t.name,
-                    if t.online { "online" } else { "offline" },
-                    sandboxes.len(),
-                    if sandboxes.len() == 1 { "" } else { "es" }
-                ),
-                Some(runner::ViewState { unit: Some(u), .. }) => format!("Fountain runner {}: not on Fountain", u.name),
-                _ => "Fountain runners".to_owned(),
-            };
-            return Summary { work: Some(WorkKind::Fountain), title: Some(title), ..Summary::default() };
-        }
         let title = if st.loading {
             "Fountain agents".to_owned()
         } else if st.agents.len() == st.total {

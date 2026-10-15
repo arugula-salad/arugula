@@ -879,7 +879,6 @@ mod tests {
             tailnet_seen: false,
             control: None,
             team: None,
-            fountain_runner: None,
             features: None,
         }
     }

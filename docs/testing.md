@@ -243,7 +243,7 @@ suite's daemon keeps them between specs.
 - `fake_code_server.py`: code-server (M27).
 - Fakes inside the test files themselves: Fountain's API (`fountain.rs`),
   control's relay socket and GitHub App token endpoint, GitHub and Forgejo
-  with stand-in `gh` and `tea` (`forge_live.rs`), `systemctl` and `sudo`.
+  with stand-in `gh` and `tea` (`forge_live.rs`).
 
 ## The replay agent
 

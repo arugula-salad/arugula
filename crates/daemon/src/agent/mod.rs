@@ -143,8 +143,10 @@ pub struct Config {
     /// when the fork is made.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub fork: bool,
-    /// Following a conversation that exists (M45b: a Fountain runner's):
-    /// it's loaded, or the block stops with the reason. Never a new session.
+    /// Following a conversation that exists: it's loaded, or the block
+    /// stops with the reason. Never a new session. Set by M45b's runner
+    /// view (gone with Fountain's runners); kept so a block saved with it
+    /// still never starts a new conversation.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub follow: bool,
     /// Started from a chant workspace member (#304): it runs as the
@@ -659,9 +661,9 @@ impl Inner {
                 self.adapter = None;
                 let just_continued =
                     matches!(self.t.entries.last(), Some(Entry::Note { text, .. }) if text == "Continued in Arugula");
-                // A block opened on a session it has no transcript of (M45b's
-                // *Follow*: a Fountain conversation) didn't start before: it
-                // loads the session, which replays it.
+                // A block opened on a session it has no transcript of (a
+                // followed conversation) didn't start before: it loads the
+                // session, which replays it.
                 if e["resume"].as_bool() == Some(true) && !just_continued && !self.t.entries.is_empty() {
                     self.t.note("Started the agent again", at);
                     if cut_now {

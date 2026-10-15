@@ -21,8 +21,6 @@ const PER_MACHINE = 60;
 
 // The fleet's daemons inherit this: no "a newer release is out" chip.
 process.env.ARUGULA_NO_UPDATE_CHECK = "true";
-// Nor this machine's Fountain runner, if it is one.
-process.env.ARUGULA_FOUNTAIN_UNIT_FILE = "/nonexistent/fountain-runner.service";
 
 let fake: FakeFleet;
 let base = "";

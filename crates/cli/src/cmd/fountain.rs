@@ -1,4 +1,4 @@
-//! `arugula fountain`: Fountain agents as a catalog block, and this machine as the runner.
+//! `arugula fountain`: Fountain agents as a catalog block.
 
 use super::Ctx;
 use crate::http::{enc, request};
@@ -10,17 +10,9 @@ use arugula_proto::{
 };
 use serde_json::json;
 
-/// Fountain: the catalog and this machine as the runner.
+/// Fountain: the catalog.
 #[derive(clap::Subcommand)]
 pub enum FountainCmd {
-    /// This machine as the account's Fountain runner.
-    ///
-    /// `install`, `status`, `adopt` (the root half is
-    /// `scripts/fountain-runner-setup.sh`).
-    Runner {
-        #[command(subcommand)]
-        cmd: crate::fountain_runner::RunnerCmd,
-    },
     /// List your agents here, one line each, without opening a block.
     Agents {
         /// Words to look for (names, descriptions, skills, MCP servers).
@@ -37,10 +29,6 @@ pub enum FountainCmd {
 pub struct Args {
     #[command(subcommand)]
     pub cmd: Option<FountainCmd>,
-    /// What the block shows: catalog (the agents) or runner (this host
-    /// as the Fountain runner, its status and its sandboxes).
-    #[arg(long, value_parser = ["catalog", "runner"], default_value = "catalog")]
-    view: String,
     /// Start with this search (names, descriptions, skills, MCP servers).
     #[arg(long, short)]
     query: Option<String>,
@@ -102,10 +90,7 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
                 println!("{line}");
             }
         }
-        Args { cmd: None, view, query, source, profile, split, session } => {
-            if view == "runner" && (query.is_some() || source.is_some()) {
-                bail!("--query and --source filter the catalog, not the runner view");
-            }
+        Args { cmd: None, query, source, profile, split, session } => {
             let mut filter = json!({});
             if let Some(q) = query {
                 filter["query"] = json!(q);
@@ -115,7 +100,7 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
             }
             let body = OpenRequest {
                 kind: BlockType::Fountain,
-                config: json!({ "profile": profile, "view": view, "filter": filter }),
+                config: json!({ "profile": profile, "filter": filter }),
                 split: split_of(split.as_deref())?,
                 session,
                 from_pane: env_pane(),
@@ -133,7 +118,6 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
             }
             print!("{}", request(&sock, "GET", &format!("/api/panes/{block}/capture"), None)?.text()?);
         }
-        Args { cmd: Some(FountainCmd::Runner { .. }), .. } => unreachable!("handled first"),
     }
     Ok(0)
 }

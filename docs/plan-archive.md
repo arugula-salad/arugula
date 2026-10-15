@@ -91,7 +91,7 @@ Each row is one code. The last column links to the section that holds it (the se
 | M42 | the hive and the timeline themes (#117) | Swarm themes: hive and timeline | [section](#m42-the-hive-and-the-timeline-themes-117) |
 | M43 | Fountain agent catalog (#121) | Fountain agent catalog block | [section](#m43-fountain-agent-catalog-121) |
 | M44 | wear a Fountain agent locally (#122) | Wear a Fountain agent locally | [section](#m44-wear-a-fountain-agent-locally-122) |
-| M45 | geek as the Fountain runner (#123) | geek as the Fountain runner | [section](#m45-geek-as-the-fountain-runner-123) |
+| M45 | geek as the Fountain runner (#123) | geek as the Fountain runner; retired 2026-10-15, when Fountain removed runners | [section](#m45-geek-as-the-fountain-runner-123) |
 | M46 | the app as window, installer and supervisor | The desktop app as window, installer and supervisor | [section](#m46-the-app-as-window-installer-and-supervisor) |
 | M47 | OS integration | OS integration: open a folder in the app | [section](#m47-os-integration) |
 | M48 | native transport | Native transport: the app as control's client | [section](#m48-native-transport) |
@@ -3993,6 +3993,8 @@ Answer these before M36. Each answer goes in as a fixture or a measured number:
 
 ### Fountain track (S24, M43–M45, added 2026-10-03)
 
+**2026-10-15:** M45 is retired: Fountain removed self-hosted runners (see [M45](#m45-geek-as-the-fountain-runner-123)). S24, M43 and M44 stand.
+
 Today illogical knows Fountain only as an ACP command: an agent block runs `fountain acp --agent X` (S7). This track goes further in three ways. It shows the account's agents as a catalog. It runs one of them locally, as a Claude Code wearing its prompt, skills and MCP servers. And it makes geek the account's Fountain runner, so a Fountain conversation runs on a machine illogical can open a shell on, diff and take over.
 
 **Decisions (2026-10-03, Jake):**
@@ -4127,6 +4129,8 @@ Today illogical knows Fountain only as an ACP command: an agent block runs `foun
   - No token was in any process's argv.
 
 #### M45: geek as the Fountain runner (#123)
+
+**Retired (2026-10-15):** Fountain removed self-hosted runners on 2026-10-14 (Fountain's ADR 0071, managoat/fountain#2682): `/api/runners`, `/api/runners/ws` and `fountain runner` no longer exist. M45 went with them: the runner view (`view: runner`), `HostInfo.fountain_runner`, the `failed:fountain-runner` attention, the diff block's `run_as`, `arugula fountain runner` and `scripts/fountain-runner-setup.sh`. A Fountain block saved with `view: runner` comes back as the catalog. M43's catalog and M44's *Run here* don't use a runner and stay. The section below is kept as written.
 
 - **Set up (once, with Jake):**
   - Jake stops the runner on jake-air. Then `DELETE /api/runners/:id` for `jake-air`, `jake-mbair` and `fireball`.

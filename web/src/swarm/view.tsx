@@ -24,7 +24,6 @@ import { FollowView, appName } from "./follow";
 import { DiffCard } from "../ui/diff-card";
 import { GateWhy } from "../ui/gate-why";
 import { PointChoices, pointOf, proposalLine } from "../ui/point-choices";
-import { runnerLabel, runners, subscribeRunners, watchRunners } from "../runners";
 import { activityOf, bundleOf, cardTitle, holdStill, shortHost, whatItDoes, shortPaths, shownNow, wantsYou, followable, GROUPINGS, groupOf, isPresence, kindOf, KINDS, REASON_COL, reasonOf, type GroupBy } from "./model";
 
 const BY_KEY = "arugula.swarm.by";
@@ -122,8 +121,6 @@ export function SwarmView({
   focus?: { host: string; pane: number } | null;
 }) {
   useSubscribe((fn) => fleet.subscribe(fn));
-  useSubscribe((fn) => subscribeRunners(fn));
-  useEffect(() => watchRunners(fleet), [fleet]);
   const phone = usePhone();
   const [by, setBy] = useState<GroupBy>(savedBy);
   const [chosen, setChosen] = useState<Theme>(savedTheme);
@@ -405,8 +402,6 @@ export function SwarmView({
   // left it stops counting, here and in the views.
   const need = wanting.size;
   const clusters = field.current?.clusters ?? [];
-  // M45b: a machine that is the account's Fountain runner says so.
-  const fountainRunners = runners();
 
   return (
     <div class={`swarm${phone ? " phone" : ""}`} data-swarm={by} data-theme={theme}>
@@ -435,11 +430,6 @@ export function SwarmView({
           <div class="needs">
             <b data-stat="need">{need}</b>need you
           </div>
-          {fountainRunners.map(([host, r]) => (
-            <div key={host} class={`swarm-runner${r.problem ? " needs" : ""}`} data-stat="fountain-runner" data-runner={r.name} title={r.problem ?? `${host}: ${runnerLabel(r, host)}`}>
-              <b>Fountain runner</b>on {host}, {r.online === true ? "online" : r.online === false ? "offline" : "…"}
-            </div>
-          ))}
         </div>
         <div class="swarm-spacer" />
         <div>

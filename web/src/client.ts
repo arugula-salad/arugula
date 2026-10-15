@@ -409,8 +409,6 @@ export class Client {
    * read on each hello and when a menu opens; `null` until read, or from
    * a daemon too old to say (then menus offer everything, as before). */
   features: HostFeatures | null = null;
-  /** This machine has the Fountain runner's unit (M45b). */
-  fountainRunner = false;
   clientId: number | null = null;
   connected = false;
   error: string | null = null;
@@ -881,10 +879,8 @@ export class Client {
       if (!res.ok) return;
       const h = await res.json<HostInfo>();
       const features = h.features ?? null;
-      const runner = !!h.fountain_runner;
-      if (JSON.stringify(features) === JSON.stringify(this.features) && runner === this.fountainRunner) return;
+      if (JSON.stringify(features) === JSON.stringify(this.features)) return;
       this.features = features;
-      this.fountainRunner = runner;
       this.emit();
     } catch {
       // as it was

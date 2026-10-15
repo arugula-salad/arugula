@@ -1015,36 +1015,6 @@ export type ForgeWant = { kind: ForgeWantKind, why: string, };
 export type ForgeWantKind = "review" | "failed" | "changes" | "mention" | "done" | "assigned";
 
 /**
- * A machine's Fountain runner, for its line in the machine panel and the
- * swarm (M45b). Read in the background, never on the request.
- */
-export type FountainRunnerInfo = { 
-/**
- * Its name on Fountain (the unit's `--name`).
- */
-name: string, 
-/**
- * What Fountain says; `None` until read.
- */
-online?: boolean, 
-/**
- * The runner's `fountain` version, as Fountain has it.
- */
-version?: string, 
-/**
- * `systemctl is-active fountain-runner`.
- */
-unit_active?: boolean, 
-/**
- * How many sandboxes it holds (when a runner view counted them).
- */
-sandboxes?: number, checked_ms?: number, 
-/**
- * What wants the owner (the runner view's attention), if anything.
- */
-problem?: string, };
-
-/**
  * A gate that waits for someone (M34): an op stopped before a step until
  * a person approves it. The `gate` reason, its bundle on the swarm's rail,
  * the card and the phone's sheet are all made from this, whichever reader
@@ -1312,11 +1282,6 @@ control?: string,
  * The team it joined as, if one (#110).
  */
 team?: string, 
-/**
- * This machine is the account's Fountain runner (M45b: it has the
- * `fountain-runner` unit): what was last read of it.
- */
-fountain_runner?: FountainRunnerInfo, 
 /**
  * What this machine is set up for (#171, #180): the menus offer only
  * these, or say how to turn them on. Absent from older daemons.
@@ -2520,7 +2485,7 @@ export const FLAGS = [
   { name: "chat", title: "Chat", about: "Threads on panes and sessions, and the chat page.", default: false, local_only: false },
   { name: "huddles", title: "Huddles", about: "Voice calls on a session.", default: false, local_only: false },
   { name: "vms", title: "VMs and sandboxes", about: "VM tabs and panes, machines and the sandboxes page. Needs a sandbox provider.", default: false, local_only: false },
-  { name: "fountain", title: "Fountain", about: "Fountain agents and the runner view. Needs a Fountain login.", default: false, local_only: false },
+  { name: "fountain", title: "Fountain", about: "Fountain agents. Needs a Fountain login.", default: false, local_only: false },
   { name: "studio", title: "Studio apps", about: "Studio app blocks. Needs a linked studio.", default: false, local_only: false },
   { name: "workspaces", title: "Chant workspaces", about: "Chant workspace blocks.", default: false, local_only: false },
   { name: "guest-ssh", title: "Guest ssh", about: "Invite a guest to a pane over plain ssh.", default: false, local_only: true },

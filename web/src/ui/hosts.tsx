@@ -10,7 +10,6 @@ import type { Fleet } from "../fleet";
 import { useSubscribe } from "./hooks";
 import { openMenu, type MenuItem } from "./menu";
 import { openSwarm } from "../swarm/route";
-import { runnerLabel, runnerOf, subscribeRunners, watchRunners } from "../runners";
 import { controlMenuItems, controlState, subscribeControlState } from "./control-state";
 
 function seen(name: string): string {
@@ -29,14 +28,6 @@ let fleet: Fleet | null = null;
 /** M25: every host's summary connection, for what the menu says of each. */
 export function setFleet(f: Fleet) {
   fleet = f;
-  // M45b: which machines are Fountain runners, for their lines here.
-  watchRunners(f);
-}
-
-/** M45b: " · Fountain runner online · v0.21.0", for a runner's host. */
-function runnerSuffix(name: string): string {
-  const r = runnerOf(name);
-  return r ? ` · ${runnerLabel(r, name)}` : "";
 }
 
 /** The fleet, if this page has one (#78: every host's conversations). */
@@ -131,7 +122,6 @@ export function hostMenuShown(): boolean {
 function useHosts(): boolean {
   useSubscribe((fn) => directory.subscribe(fn));
   useSubscribe((fn) => fleet?.subscribe(fn) ?? (() => {}));
-  useSubscribe((fn) => subscribeRunners(fn));
   useSubscribe(subscribeControlState);
   // #325: a machine control dropped has the menu, to say so and join again.
   const dropped = controlState()?.state === "dropped";
@@ -165,7 +155,7 @@ export function HostButton() {
   const open = (e: MouseEvent) => {
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const item = (name: string): MenuItem => ({
-      label: `${name === directory.current ? "✓ " : "    "}${name}${name === directory.home ? " (home)" : ""}  · ${fleetLabel(name)}${runnerSuffix(name)}`,
+      label: `${name === directory.current ? "✓ " : "    "}${name}${name === directory.home ? " (home)" : ""}  · ${fleetLabel(name)}`,
       run: () => directory.select(name),
     });
     const groups = hostGroups();
@@ -273,11 +263,6 @@ export function HostSection({ close }: { close: () => void }) {
                   {name === directory.home ? "home · " : ""}
                   {fleetLabel(name)}
                 </span>
-                {runnerOf(name) && (
-                  <span class={`host-seen host-runner${runnerOf(name)!.problem ? " problem" : ""}`} data-fountain-runner={runnerOf(name)!.name} title={runnerOf(name)!.problem ?? ""}>
-                    {runnerLabel(runnerOf(name)!, name)}
-                  </span>
-                )}
               </button>
             ))}
           </div>

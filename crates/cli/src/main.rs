@@ -9,8 +9,6 @@ mod ask;
 mod attach;
 mod cmd;
 mod control;
-#[cfg(feature = "labs")]
-mod fountain_runner;
 mod fs;
 mod hook;
 mod hooks;
@@ -41,8 +39,6 @@ use std::path::PathBuf;
 use arugula_proto::flags::{self, On};
 use clap::{FromArgMatches, Parser, Subcommand};
 use cmd::claude::ClaudeCmd;
-#[cfg(feature = "labs")]
-use cmd::fountain::FountainCmd;
 use util::{Pane, REMOTE};
 
 #[derive(Parser)]
@@ -157,9 +153,7 @@ enum Command {
     /// Read with your own `fountain` login (FOUNTAIN_API_KEY or
     /// ~/.fountain/credentials): a card per agent, where it comes from, filters,
     /// and Run on Fountain / Spec. Prints the block, then the list. `fountain
-    /// agents [QUERY]` lists them here without a block. `fountain --view runner`:
-    /// this host as the account's runner instead, with its sandboxes (Follow,
-    /// Changes, Shell).
+    /// agents [QUERY]` lists them here without a block.
     #[command(args_conflicts_with_subcommands = true, hide = true)]
     Fountain(cmd::fountain::Args),
     /// Show an issue as a block.
@@ -608,13 +602,6 @@ fn real_main(cli: Cli) -> anyhow::Result<i32> {
     if let Command::Hooks { cmd } = cli.cmd {
         // A settings file: no daemon involved.
         return hooks::run(cmd, cli.json);
-    }
-    #[cfg(feature = "labs")]
-    if let Command::Fountain(args) = &cli.cmd
-        && let Some(FountainCmd::Runner { cmd }) = &args.cmd
-    {
-        // Fountain's API and this host's unit: no daemon involved.
-        return fountain_runner::run(cmd, cli.json);
     }
     // `claude ls --host all` (#78): every host's, as each answers.
     if cli.host.as_deref() == Some("all")

@@ -35,7 +35,7 @@ use std::{
     sync::Arc,
 };
 
-use arugula_proto::{BlockType, flags::On, hosts::FountainRunnerInfo};
+use arugula_proto::{BlockType, flags::On};
 use axum::Router;
 #[cfg(not(feature = "labs"))]
 use serde_json::Value;
@@ -711,18 +711,6 @@ pub async fn app_config(_c: &Value) -> Result<Value, String> {
     Err(not_built("An app block"))
 }
 
-/// `GET /api/host`'s `fountain_runner` (M45b): only where the runner's unit
-/// is, from what was last read.
-#[cfg(feature = "labs")]
-pub fn fountain_runner_info(shell_env: &Arc<ShellEnv>) -> Option<FountainRunnerInfo> {
-    fountain::runner::host_info(shell_env)
-}
-
-#[cfg(not(feature = "labs"))]
-pub fn fountain_runner_info(_shell_env: &Arc<ShellEnv>) -> Option<FountainRunnerInfo> {
-    None
-}
-
 /// Whether a Fountain login is here for the catalog to find: `GET
 /// /api/host`'s `features.fountain`.
 #[cfg(feature = "labs")]
@@ -733,16 +721,6 @@ pub fn fountain_login_here(shell_env: &ShellEnv) -> bool {
 #[cfg(not(feature = "labs"))]
 pub fn fountain_login_here(_shell_env: &ShellEnv) -> bool {
     false
-}
-
-/// A diff block's `run_as`, checked when it is made (only the Fountain
-/// runner's user, M45b).
-#[cfg(feature = "labs")]
-pub use fountain::runner::check_run_as;
-
-#[cfg(not(feature = "labs"))]
-pub fn check_run_as(_user: &str, _repo: &str, _on_sprite: bool) -> Result<(), String> {
-    Err(not_built("A diff run as the Fountain runner"))
 }
 
 /// #619: which decision and run made each hunk of a file in a workspace
@@ -770,15 +748,6 @@ pub async fn file_why(
     _at: Option<&str>,
 ) -> Result<FileWhy, String> {
     Err(not_built("Which decision and run made a hunk"))
-}
-
-/// A diff block's git, run as the Fountain runner's user.
-#[cfg(feature = "labs")]
-pub use fountain::runner::git_as_runner;
-
-#[cfg(not(feature = "labs"))]
-pub async fn git_as_runner(_script: &str, _args: &[String]) -> Result<(Vec<u8>, Option<i32>), String> {
-    Err(not_built("A diff run as the Fountain runner"))
 }
 
 /// Whether the Fountain agent `name` can be worn on this host (M44), or why
