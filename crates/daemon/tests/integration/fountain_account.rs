@@ -198,7 +198,12 @@ fn device_sign_in_and_the_account_stream_resume_across_a_restart() {
     assert_eq!(s["stream"]["delivered"], 6, "6 to 11, each once: {s}");
     let cursors = fake.f.with(|i| i.cursors.clone());
     assert_eq!(cursors[before], Some(5), "resumed from the kept cursor: {cursors:?}");
-    assert_eq!(&cursors[..3], [None, Some(3), Some(5)], "{cursors:?}");
+    // How often it connected before the first event depends on timing (a slow
+    // runner reconnects more); what matters is that the cursor only moves
+    // forward and that 3 then 5 were each resumed from.
+    let kept: Vec<u64> = cursors.iter().flatten().copied().collect();
+    assert!(kept.windows(2).all(|w| w[0] <= w[1]), "never backwards: {cursors:?}");
+    assert_eq!(&kept[..2], [3, 5], "{cursors:?}");
 
     // Sign out: the key is revoked and forgotten; the stream has no login.
     let (code, body) = d.raw("DELETE", "/api/fountain/login", None);
