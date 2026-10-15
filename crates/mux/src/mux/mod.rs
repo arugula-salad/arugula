@@ -750,6 +750,24 @@ pub fn start(
     MuxHandle { tx, events, store, provider, daemon_id, fs, shell_env, kinds, inventory }
 }
 
+/// Whether `data` is nothing but focus reports (`ESC [ I` in, `ESC [ O`
+/// out), and if so, whether the last one says focus came in. A terminal
+/// sends these for a window, not for anyone typing (#909).
+fn focus_report(data: &[u8]) -> Option<bool> {
+    if data.is_empty() || !data.len().is_multiple_of(3) {
+        return None;
+    }
+    let mut last = None;
+    for r in data.chunks(3) {
+        last = Some(match r {
+            b"\x1b[I" => true,
+            b"\x1b[O" => false,
+            _ => return None,
+        });
+    }
+    last
+}
+
 /// A reason with nothing but its headline.
 fn plain_reason(kind: ReasonKind, headline: &str) -> Reason {
     Reason {
@@ -1390,7 +1408,7 @@ impl Daemon {
                         None => {}
                     }
                 }
-                if !matches!(&data[..], b"\x1b[I" | b"\x1b[O") {
+                if focus_report(&data).is_none() {
                     self.hold.typed(&self.mux, c, pane, std::time::Instant::now());
                 }
                 let name = self.driver_for(c).name;
@@ -1408,7 +1426,8 @@ impl Daemon {
     fn input(&mut self, pane: PaneId, data: Vec<u8>, by: Option<String>) {
         let Some(p) = self.panes.get(&pane) else { return };
         // A window gaining or losing focus (focus reporting) isn't a turn.
-        let turn = !matches!(&data[..], b"\x1b[I" | b"\x1b[O");
+        let focus = focus_report(&data);
+        let turn = focus.is_none();
         match by {
             Some(by) => p.input_by(data, by),
             None => p.input(data),
@@ -1422,13 +1441,21 @@ impl Daemon {
         if self.asks.contains_key(&pane) || (!turn && self.screen.get(&pane) == Some(&AgentState::Blocked)) {
             return;
         }
+        // A window losing focus isn't anyone looking: every web client that
+        // attaches unfocused sends one, as xterm.js reports its focus when it
+        // draws the pane's `CSI ? 1004 h` (#909).
+        if focus == Some(false) {
+            return;
+        }
         if matches!(self.attention.get(&pane), Some(Attention::NeedsInput | Attention::Done)) {
             if self.attention.get(&pane) == Some(&Attention::Done)
                 && let Some(b) = self.status.get_mut(&pane)
             {
                 b.seen();
             }
-            let next = if p.status().current.is_some() { Attention::Working } else { Attention::Idle };
+            // Looking at it (focus in) starts nothing; typing to what's
+            // running does.
+            let next = if turn && p.status().current.is_some() { Attention::Working } else { Attention::Idle };
             self.set_attention(pane, next, "input");
         }
     }
