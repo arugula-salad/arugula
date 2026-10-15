@@ -192,6 +192,13 @@ impl Request for crate::api::ConvActRequest {}
 
 impl Request for crate::api::FountainQuery {}
 
+/// The body may be left off: the base URL is optional.
+impl Request for crate::api::FountainLoginRequest {
+    fn absent() -> Option<Self> {
+        Some(Self::default())
+    }
+}
+
 impl Request for crate::api::NotifyRequest {}
 
 impl Request for crate::api::StudioLoginRequest {}
@@ -339,6 +346,9 @@ macro_rules! every_op {
         $m!($crate::op::ops::ConvGrantsList);
         $m!($crate::op::ops::ConvGrantRevoke);
         $m!($crate::op::ops::FountainAgentsGet);
+        $m!($crate::op::ops::FountainLoginGet);
+        $m!($crate::op::ops::FountainLoginStart);
+        $m!($crate::op::ops::FountainLogout);
         // #578 part a: fs, hosts, setup.
         $m!($crate::op::ops::FsListGet);
         $m!($crate::op::ops::FsStatGet);
@@ -1163,6 +1173,53 @@ pub mod ops {
         type Path = ();
         type Req = FountainQuery;
         type Res = FountainAgents;
+    }
+
+    /// `GET /api/fountain/login` (#942): this daemon's Fountain sign-in
+    /// (where its key comes from, never the key) and its account stream.
+    pub struct FountainLoginGet;
+
+    impl Op for FountainLoginGet {
+        const NAME: &'static str = "fountain.login";
+        const METHOD: Method = Method::Get;
+        const PATH: &'static str = "/api/fountain/login";
+        const ACCESS: Access = Access::Owner;
+        const FLAG: Option<&'static str> = Some(crate::flags::FOUNTAIN);
+        type Path = ();
+        type Req = Empty;
+        type Res = crate::api::FountainLogin;
+    }
+
+    /// `POST /api/fountain/login` (`arugula fountain login`): start a device
+    /// sign-in. The answer's `pending` has the code to approve; the daemon
+    /// polls Fountain and keeps the key in its state dir (0600).
+    pub struct FountainLoginStart;
+
+    impl Op for FountainLoginStart {
+        const NAME: &'static str = "fountain.login_start";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/fountain/login";
+        const ACCESS: Access = Access::Owner;
+        const FLAG: Option<&'static str> = Some(crate::flags::FOUNTAIN);
+        type Path = ();
+        type Req = crate::api::FountainLoginRequest;
+        type Res = crate::api::FountainLogin;
+    }
+
+    /// `DELETE /api/fountain/login` (`arugula fountain logout`): forget this
+    /// daemon's key (revoking it on Fountain when it can). The CLI's own
+    /// login, if any, is left as it is.
+    pub struct FountainLogout;
+
+    impl Op for FountainLogout {
+        const NAME: &'static str = "fountain.logout";
+        const METHOD: Method = Method::Delete;
+        const PATH: &'static str = "/api/fountain/login";
+        const ACCESS: Access = Access::Owner;
+        const FLAG: Option<&'static str> = Some(crate::flags::FOUNTAIN);
+        type Path = ();
+        type Req = Empty;
+        type Res = crate::api::FountainLogin;
     }
 
     /// `GET /api/machines`: the machines panes run on (`arugula machines`).

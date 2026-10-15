@@ -58,6 +58,7 @@
 //! | GET | `/api/sessions/N/secrets` | | `[SecretFinding]`: panes whose recent output looks like it holds a secret |
 //! | GET | `/api/conversations` | `all`, `q=`, `cwd=`, `live`, `limit=` | `ConversationList` (M33) |
 //! | GET | `/api/fountain/agents` | `query=`, `source=`, `profile=` | `FountainAgents` (M43) |
+//! | GET, POST, DELETE | `/api/fountain/login` | POST `FountainLoginRequest` | `FountainLogin`: this daemon's Fountain sign-in and account stream (never the key); POST starts a device sign-in, DELETE signs out (#942) |
 //! | POST | `/api/push/subscribe`, `/api/push/test` | a browser's subscription | `PushSubscriptions` |
 //! | GET | `/api/hosts` | | `HostList`: the daemons a client can switch between |
 //! | POST | `/api/hosts` | `AddHost` | `Host` (replaces one with the same name) |
@@ -1763,6 +1764,87 @@ pub struct FountainAgents {
     /// Rows Fountain sent that didn't parse.
     #[serde(default)]
     pub unreadable: usize,
+}
+
+/// `GET /api/fountain/login` (#942): this daemon's Fountain sign-in, and
+/// its account stream. Never a key: only where it came from and the
+/// prefix Fountain's key list shows.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct FountainLogin {
+    /// A key is here: this daemon's own sign-in, or the CLI's login.
+    #[serde(default)]
+    pub signed_in: bool,
+    /// Where the key in use comes from: `arugula` (`arugula fountain
+    /// login`, kept in the state dir), `env` (`$FOUNTAIN_API_KEY`) or
+    /// `file` (the `fountain` CLI's `~/.fountain/credentials`).
+    #[serde(default)]
+    pub source: Option<String>,
+    #[serde(default)]
+    pub base_url: Option<String>,
+    /// Who an Arugula sign-in signs in as, when Fountain said.
+    #[serde(default)]
+    pub email: Option<String>,
+    /// The key's prefix, as Fountain's key list shows it.
+    #[serde(default)]
+    pub key_prefix: Option<String>,
+    /// A sign-in waiting for its code to be approved.
+    #[serde(default)]
+    pub pending: Option<FountainDevice>,
+    /// Why the last sign-in didn't happen, or why there's no login.
+    #[serde(default)]
+    pub error: Option<String>,
+    /// What the last change did (a sign-out that couldn't revoke the key).
+    #[serde(default)]
+    pub note: Option<String>,
+    #[serde(default)]
+    pub stream: FountainStream,
+}
+
+/// A device sign-in in progress: show `user_code` and send the person to
+/// `verification_uri` (or `verification_uri_complete`) in a browser signed
+/// in to Fountain.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct FountainDevice {
+    pub base_url: String,
+    pub user_code: String,
+    pub verification_uri: String,
+    #[serde(default)]
+    pub verification_uri_complete: Option<String>,
+    /// When the code stops working (ms since the epoch).
+    #[serde(default)]
+    pub expires_ms: u64,
+}
+
+/// The account's event stream (`/api/events/stream`), on the daemon that
+/// runs it (`--fountain-account-stream`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct FountainStream {
+    /// This daemon runs it.
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub connected: bool,
+    /// The last event id handled, kept across restarts (0: none yet).
+    #[serde(default)]
+    pub cursor: u64,
+    /// Events handled since the daemon started.
+    #[serde(default)]
+    pub delivered: u64,
+    #[serde(default)]
+    pub error: Option<String>,
+}
+
+/// `POST /api/fountain/login`: start a device sign-in. `base_url`: which
+/// Fountain; left out, the one signed in to, else `$FOUNTAIN_BASE_URL` or
+/// the CLI profile's.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct FountainLoginRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_url: Option<String>,
 }
 
 /// `GET /api/push/key`: the daemon's public VAPID key, which a browser

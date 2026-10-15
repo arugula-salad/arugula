@@ -60,6 +60,8 @@ mod forges_github_real;
 mod forges_real;
 #[cfg(feature = "labs")]
 mod fountain;
+#[cfg(feature = "labs")]
+mod fountain_account;
 mod fs;
 #[cfg(feature = "labs")]
 mod guest_ssh;

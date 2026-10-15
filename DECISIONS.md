@@ -884,6 +884,24 @@ nothing new, and the grant's route check needs no new key.
 Where: `crates/daemon/src/labs/events.rs` (`Rules`, `here`, `there`), `crates/daemon/src/api.rs` (`attention_now`, `events`), `crates/mux/src/mux/attention.rs` (`hook`, `follow_up`, `wait_inbox`).
 From: #888 and #895 (M85's live run, #859; tracker #851).
 
+### A daemon signs in to Fountain itself; one daemon follows the account
+Arugula reaches Fountain natively (#942), with its own REST client and the
+account's event stream, and not through a `fountain` CLI subprocess. A
+daemon signs in with Fountain's device flow: a code is approved in any
+browser signed in to Fountain, the phone included, so no redirect URI or
+OAuth client is needed. The key it gets is kept in the daemon's state dir
+(`fountain/login.json`, 0600) and never reaches a client. Signing out
+revokes the key, since nothing else holds it. Without that sign-in, the
+`fountain` CLI's login is read as before (`$FOUNTAIN_API_KEY`, then
+`~/.fountain/credentials`). No instance is a default: the sign-in asks for
+a URL unless the CLI's login names one. Only a daemon started with
+`--fountain-account-stream` holds the account's `/api/events/stream`. That
+is the home machine, so a permission request raises one card. Its cursor
+is kept after each event, so a restart resumes with no gap and no
+duplicate.
+Where: `crates/daemon/src/labs/fountain/{account,client,stream}.rs`, `crates/cli/src/cmd/fountain.rs`.
+From: #942 (Jake's decisions Q2 and Q3), F1.
+
 ## Federation and control
 
 ### Every daemon is a peer; control is the only front door

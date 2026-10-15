@@ -23,6 +23,9 @@ conversations.list GET /api/conversations Owner drives=false credential=false
 flag.set PUT /api/flags/{name} Owner drives=false credential=false
 flags.list GET /api/flags Owner drives=false credential=false
 fountain.agents GET /api/fountain/agents Owner drives=false credential=false
+fountain.login GET /api/fountain/login Owner drives=false credential=false
+fountain.login_start POST /api/fountain/login Owner drives=false credential=false
+fountain.logout DELETE /api/fountain/login Owner drives=false credential=false
 fs.list GET /api/fs/list Owner drives=false credential=false
 fs.recent GET /api/fs/recent Owner drives=false credential=false
 fs.stat GET /api/fs/stat Owner drives=false credential=false

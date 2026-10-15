@@ -40,7 +40,7 @@ one isn't made.
 | `chat` | `/api/threads/…` (get, post, read), `/api/convs…`, `read_thread`/`post_thread` by name, an invite from a thread |
 | `huddles` | joining (or starting) a huddle; leaving, muting and signalling one already on still work |
 | `vms` | `/api/machines`, `/api/sandboxes`, a new VM pane or tab, a borrowed sandbox (`run --sandbox`), *Share machine with tab* |
-| `fountain` | `/api/fountain/agents`, Fountain blocks, Fountain agents, `list` kinds `fountain_agents`/`fountain_agent` |
+| `fountain` | `/api/fountain/agents`, `/api/fountain/login`, Fountain blocks, Fountain agents, `list` kinds `fountain_agents`/`fountain_agent` |
 | `studio` | `/api/studio…`, app blocks, `show` kind `app` |
 | `workspaces` | chant workspace blocks |
 | `guest-ssh` | `/api/guests` (list, invite, revoke) |
@@ -92,7 +92,8 @@ rest. A starting daemon moves the old file into `flags.json` and removes it.
   `share --guest/--rw/--reusable/--relay/--addr/--name`
   (`LABS_COMMANDS`, `LABS_OPTIONS` in `crates/cli/src/main.rs`).
 - **Daemon (`arugulad --help`):** `--guest-ssh`, `--guest-ssh-host`,
-  `--studio-file`, `--wisp-url`, `--wisp-token-file`, `--loam-url`,
+  `--studio-file`, `--fountain-account-stream`, `--wisp-url`,
+  `--wisp-token-file`, `--loam-url`,
   `--loam-key-file`
   (`LABS_OPTIONS` in `crates/daemon/src/args.rs`).
 - **MCP:** `read_thread` and `post_thread`, and the kinds `show:app`,
@@ -676,6 +677,47 @@ only, and only the owner starts or reaches it. It runs until the block
 closes or the daemon stops, either of which stops its process group. One
 that exits by itself shows the end of its log and *Try again*. It isn't
 available for a workspace on a VM; the block says so.
+
+## Fountain: sign-in and the account stream
+
+Arugula is becoming Fountain's UI (#942). F1 adds the plumbing, with no
+views yet; it's all behind the `fountain` flag.
+
+- **Sign-in.** `arugula fountain login [URL]` (or `POST
+  /api/fountain/login {base_url?}`, for the web and the phone) starts
+  Fountain's device flow. It prints a code and where to approve it, in any
+  browser that is signed in to Fountain. The daemon polls until the code is
+  approved, then keeps the key in `fountain/login.json` in its state dir
+  (mode 0600, in a 0700 directory). The key is never logged or sent to a
+  client. Without a URL it uses the instance it is signed in to, else
+  `$FOUNTAIN_BASE_URL` or the `fountain` CLI profile's `base_url`. There is
+  no default instance, so with none of those it asks for a URL. `arugula
+  fountain status` shows which login is in use. `arugula fountain logout`
+  deletes the file and revokes the key on Fountain.
+- **Which login.** This daemon's sign-in comes first. Without one, Arugula
+  uses the `fountain` CLI's login as before: `$FOUNTAIN_API_KEY`, then
+  `~/.fountain/credentials`.
+- **The account stream.** `arugulad --fountain-account-stream`
+  (`ARUGULA_FOUNTAIN_ACCOUNT_STREAM=1`) holds one `GET
+  /api/events/stream?blocks=true` connection for the login. The option is
+  off by default: turn it on for **one daemon per account**, the home
+  machine's, so that each permission request raises one card. The stream
+  hands every event to in-process subscribers, by conversation or all
+  together (`labs/fountain/stream.rs`, `Hub`). The cursor, the last event
+  id handled, is kept in `fountain/stream.json`. After a reconnect or a
+  restart, including a crash, the stream resumes from the cursor with
+  `Last-Event-ID`. An event at or below the cursor is dropped, so none is
+  missed and none is handled twice. Fountain closes an idle stream after
+  60 s; the stream reconnects at once. Errors back off from 1 s up to a
+  minute, or for as long as `Retry-After` asks. When Fountain refuses the
+  key, the stream waits for a new sign-in.
+- **The client.** `labs/fountain/client.rs` is a typed REST client for what
+  the later phases need: conversations (list, show, create, prompts,
+  interrupt, wake, terminate, turns, tree, answering requests, labels),
+  sandbox files, diffs and git status, agents, apply, environments and
+  vaults with their secrets' keys and writes, and the account's inference
+  credentials. Errors carry Fountain's codes. A 429 is retried after its
+  `Retry-After`.
 
 ## Agent recipes
 
