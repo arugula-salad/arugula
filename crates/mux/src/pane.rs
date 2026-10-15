@@ -825,7 +825,14 @@ impl Process {
         events: Sender<Cmd>,
     ) -> std::io::Result<Self> {
         let ws = Winsize { ws_row: rows, ws_col: cols, ws_xpixel: 0, ws_ypixel: 0 };
-        let pty = openpty(Some(&ws), None)?;
+        // One at a time: macOS's openpty isn't thread-safe (it names the
+        // slave through ptsname's shared buffer), and panes starting at
+        // once got another pane's slave, or failed with errno 0 (#916).
+        static OPENPTY: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let pty = {
+            let _one = OPENPTY.lock().unwrap_or_else(|e| e.into_inner());
+            openpty(Some(&ws), None)?
+        };
         // openpty leaves the master inheritable; the child must not hold its
         // own master or it never sees a hangup (spike S3).
         fcntl(&pty.master, FcntlArg::F_SETFD(FdFlag::FD_CLOEXEC))?;
