@@ -1,15 +1,15 @@
-//! Fountain track 2, F2 (#942): the account view and attention, against a
-//! stub Fountain served here (REST and the account's SSE stream).
+//! Managoat track 2, F2 (#942): the account view and attention, against a
+//! stub Managoat served here (REST and the account's SSE stream).
 //!
 //! What's checked, F2's "done when": a conversation started anywhere asks
 //! for permission (the stream's `permission_request` block and `request`
 //! stage) and Arugula raises a card and a phone push, with no block open for
 //! it (the account view opens to hold the card); allowing it from the card
-//! answers Fountain with the agent's own option and the turn goes on; a
+//! answers Managoat with the agent's own option and the turn goes on; a
 //! request answered elsewhere (the CLI) clears its card; losing the race
 //! (409) clears it and says so; a request replayed after its timeout raises
 //! nothing. Then the view: every conversation with live status from the
-//! stream, the unread dot and marking read, the label filter (Fountain's
+//! stream, the unread dot and marking read, the label filter (Managoat's
 //! `?label=`), a fan-out's tree, opening a conversation as an `agent:
 //! fountain` block, and MCP's `list` kind `fountain_conversations`.
 
@@ -81,7 +81,7 @@ impl Fake {
     }
 
     /// A conversation asks to run `command`: the transcript's block, then
-    /// the request stage, as Fountain sends them.
+    /// the request stage, as Managoat sends them.
     fn ask(&self, conv: &str, request: &str, command: &str, ts: &str) {
         let options = json!([
             { "optionId": "allow-o", "name": "Allow", "kind": "allow_once" },
@@ -117,7 +117,7 @@ impl Fake {
     }
 }
 
-/// Now, as Fountain writes a time.
+/// Now, as Managoat writes a time.
 fn now_iso() -> String {
     iso(std::time::SystemTime::now())
 }
@@ -270,13 +270,13 @@ async fn environments(h: HeaderMap) -> Response {
     Json(json!({ "data": [] })).into_response()
 }
 
-struct Fountain {
+struct Managoat {
     _rt: tokio::runtime::Runtime,
     f: Fake,
     origin: String,
 }
 
-impl Fountain {
+impl Managoat {
     fn start() -> Self {
         let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
         let f = Fake::default();
@@ -309,22 +309,22 @@ impl Fountain {
         Self { _rt: rt, f, origin }
     }
 
-    /// A daemon that follows the account (`--fountain-account-stream`), with
-    /// the key in `$FOUNTAIN_API_KEY` (the login it falls back to).
+    /// A daemon that follows the account (`--managoat-account-stream`), with
+    /// the key in `$MANAGOAT_API_KEY` (the login it falls back to).
     fn daemon(&self, dir: &Scratch, stream: bool) -> Daemon {
         let home = dir.join("home");
         std::fs::create_dir_all(&home).unwrap();
         let home = home.display().to_string();
         let mut args = vec!["--wisp-token-file", "/nonexistent", "--tailscale-socket", "/nonexistent/sock"];
         if stream {
-            args.push("--fountain-account-stream");
+            args.push("--managoat-account-stream");
         }
         let d = Daemon::child_env(
             &args,
             &[
                 ("HOME", home.as_str()),
-                ("FOUNTAIN_API_KEY", KEY),
-                ("FOUNTAIN_BASE_URL", self.origin.as_str()),
+                ("MANAGOAT_API_KEY", KEY),
+                ("MANAGOAT_BASE_URL", self.origin.as_str()),
                 ("ARUGULA_FOUNTAIN_STREAM_RETRY_MS", "50"),
                 ("ARUGULA_FOUNTAIN_RELIST_MS", "100"),
                 ("ARUGULA_FOUNTAIN_POLL_MS", "600000"),
@@ -338,7 +338,7 @@ impl Fountain {
 }
 
 fn fountain_blocks(d: &Daemon) -> Vec<Value> {
-    d.get("/api/panes").as_array().unwrap().iter().filter(|p| p["type"] == "fountain").cloned().collect()
+    d.get("/api/panes").as_array().unwrap().iter().filter(|p| p["type"] == "managoat").cloned().collect()
 }
 
 fn pane(d: &Daemon, id: u64) -> Value {
@@ -351,7 +351,7 @@ fn asking(d: &Daemon, block: u64) -> Vec<String> {
 
 #[test]
 fn a_permission_request_from_any_conversation_is_a_card_and_a_push() {
-    let fz = Fountain::start();
+    let fz = Managoat::start();
     let dir = Scratch::new("fountain-attention");
     let d = fz.daemon(&dir, true);
     let phone = Phone::subscribe(&d);
@@ -380,7 +380,7 @@ fn a_permission_request_from_any_conversation_is_a_card_and_a_push() {
     let row = st["conversations"].as_array().unwrap().iter().find(|r| r["id"] == "c1-flaky").cloned().unwrap();
     assert_eq!(row["asking"], 1, "{row}");
 
-    // Allowed from the card (as the phone's Allow does): Fountain is sent
+    // Allowed from the card (as the phone's Allow does): Managoat is sent
     // the agent's own option, and the turn goes on and ends.
     let r = d.post("/api/attention/act", json!({ "action": "allow", "pane": block, "id": "0.r1" }));
     assert_eq!(r["results"][0]["ok"], true, "{r}");
@@ -414,7 +414,7 @@ fn a_permission_request_from_any_conversation_is_a_card_and_a_push() {
     assert_eq!(pane(&d, block)["attention"], "needs_input");
 
     // Losing the race: someone else answered and the stream hasn't said so
-    // yet. Fountain's 409 closes the card, saying why.
+    // yet. Managoat's 409 closes the card, saying why.
     fz.f.with(|i| i.resolved.insert("0.r4".into()));
     let (status, body) =
         d.raw("POST", "/api/attention/act", Some(json!({ "action": "allow", "pane": block, "id": "0.r4" })));
@@ -426,18 +426,18 @@ fn a_permission_request_from_any_conversation_is_a_card_and_a_push() {
     // A request replayed after its timeout raises nothing.
     let old = iso(std::time::SystemTime::now() - Duration::from_secs(600));
     fz.f.ask("c3-cli", "0.r5", "sleep", &old);
-    assert!(phone.quiet(1500), "no push for a request Fountain gave up on");
+    assert!(phone.quiet(1500), "no push for a request Managoat gave up on");
     assert!(asking(&d, block).is_empty());
     assert_eq!(fountain_blocks(&d).len(), 1, "no second view");
 }
 
 #[test]
 fn the_account_view_lists_filters_and_opens() {
-    let fz = Fountain::start();
+    let fz = Managoat::start();
     let dir = Scratch::new("fountain-view");
-    let d = fz.daemon(&dir, true);
+    let mut d = fz.daemon(&dir, true);
     let block =
-        d.post("/api/blocks", json!({ "type": "fountain", "config": {}, "local": true }))["block"].as_u64().unwrap();
+        d.post("/api/blocks", json!({ "type": "managoat", "config": {}, "local": true }))["block"].as_u64().unwrap();
     d.wait_for("the list", || d.state(block)["conversations"].as_array().is_some_and(|c| c.len() == 3));
     let st = d.state(block);
     assert_eq!((st["tab"].as_str(), st["key_from"].as_str()), (Some("conversations"), Some("env")), "{st}");
@@ -466,7 +466,7 @@ fn the_account_view_lists_filters_and_opens() {
     fz.f.push("conversations", json!({ "reason": "changed" }));
     d.wait_for("a read", || fz.f.with(|i| i.lists.len()) > lists);
 
-    // The label filter is Fountain's, and kept.
+    // The label filter is Managoat's, and kept.
     let out = d.call(block, "labels", json!({ "labels": ["env:prod"] }));
     assert_eq!(out["shown"], 1, "{out}");
     assert!(fz.f.with(|i| i.lists.last().unwrap().contains("label=env%3Aprod")));
@@ -492,11 +492,11 @@ fn the_account_view_lists_filters_and_opens() {
             .unwrap_or_default();
         l["panes"][agent.to_string()]["config"].clone()
     };
-    d.wait_for("the agent's config saved", || layout()["agent"] == "fountain");
+    d.wait_for("the agent's config saved", || layout()["agent"] == "managoat");
     let config = layout();
     assert_eq!(
-        (config["agent"].as_str(), config["fountain_agent"].as_str(), config["session_id"].as_str()),
-        (Some("fountain"), Some("a1"), Some("c1-flaky")),
+        (config["agent"].as_str(), config["managoat_agent"].as_str(), config["session_id"].as_str()),
+        (Some("managoat"), Some("a1"), Some("c1-flaky")),
         "{config}"
     );
     assert_eq!(config["follow"], true, "never a new conversation: {config}");
@@ -513,18 +513,39 @@ fn the_account_view_lists_filters_and_opens() {
 
     // MCP: the account's conversations, read-only.
     let m = Mcp::bridge(&d, None);
-    let r = m.call("list", json!({ "kind": "fountain_conversations", "labels": ["team:a"] })).unwrap();
+    let r = m.call("list", json!({ "kind": "managoat_conversations", "labels": ["team:a"] })).unwrap();
     let convs = r["conversations"].as_array().unwrap();
     assert_eq!(convs.len(), 1, "{r}");
     assert_eq!(convs[0]["id"], "c3-cli");
     assert!(r["summary"].as_str().unwrap().starts_with("1 conversations on"), "{r}");
+    drop(m);
+
+    // A layout saved before the rename (DECISIONS.md "Fountain is
+    // Managoat"): the view as `type: fountain` and the conversation as
+    // `agent: fountain`, `fountain_agent`. Both come back, as Managoat's.
+    d.stop();
+    let path = d.state.join("layout.json");
+    let mut saved: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!(saved["panes"][block.to_string()]["type"], "managoat", "saved under the new name");
+    saved["panes"][block.to_string()]["type"] = json!("fountain");
+    let c = saved["panes"][agent.to_string()]["config"].as_object_mut().unwrap();
+    let name = c.remove("managoat_agent").unwrap();
+    c.insert("fountain_agent".into(), name);
+    c.insert("agent".into(), json!("fountain"));
+    std::fs::write(&path, saved.to_string()).unwrap();
+    d.start();
+    d.wait_for("the view", || fountain_blocks(&d).iter().any(|p| p["id"] == block));
+    d.wait_for("the list again", || d.state(block)["conversations"].as_array().is_some_and(|c| c.len() == 3));
+    d.wait_for("the conversation", || d.raw("GET", &format!("/api/blocks/{agent}"), None).0 == 200);
+    assert_eq!(d.state(agent)["agent"], "managoat");
+    assert_eq!(d.state(agent)["label"], "Managoat a1");
 }
 
 /// A daemon that doesn't follow the account stream reads the list, but
 /// raises no card: only the one that does pushes.
 #[test]
 fn only_the_daemon_following_the_account_raises_cards() {
-    let fz = Fountain::start();
+    let fz = Managoat::start();
     let dir = Scratch::new("fountain-not-home");
     let d = fz.daemon(&dir, false);
     let phone = Phone::subscribe(&d);

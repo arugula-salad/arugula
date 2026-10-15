@@ -1,22 +1,22 @@
-// M43: the Fountain agent catalog, against a fake Fountain served here
+// M43: the Managoat agent catalog, against a fake Managoat served here
 // (synthetic agents shaped like S24's) and the credentials file the config
-// points the daemon at (this spec writes it). *Run on Fountain* opens a
+// points the daemon at (this spec writes it). *Run on Managoat* opens a
 // conversation on the native link (#942, F3), which this fake answers over
-// REST and SSE. Nothing here reaches a real Fountain.
+// REST and SSE. Nothing here reaches a real Managoat.
 //
-// Opened from a pane's menu ("Fountain…"), the account view (#942 F2)
+// Opened from a pane's menu ("Managoat…"), the account view (#942 F2)
 // shows the account's conversations first: an unread dot, label chips that
-// filter with Fountain's ?label=, a fan-out's children under their parent,
+// filter with Managoat's ?label=, a fan-out's children under their parent,
 // and a row that opens the conversation in an agent block beside it. Its
 // Agents tab lists every agent; the agent-specs chip leaves the curated ones, a search finds an
-// agent by its skill, and *Run on Fountain* opens an agent block beside the
+// agent by its skill, and *Run on Managoat* opens an agent block beside the
 // catalog that answers a prompt. The cards are read-only: no *Run here*
 // (M44, retired 2026-10-15), and *Spec* without an agent-specs checkout
-// shows the agent as Fountain returns it, in the block.
+// shows the agent as Managoat returns it, in the block.
 //
 // F4: a recipe offered from a project (a git checkout of acme/widgets) has
-// *Run on Fountain* on its card in the agents block. Its dialog shows the
-// preflight (the checkout, what doesn't carry over, the variables Fountain
+// *Run on Managoat* on its card in the agents block. Its dialog shows the
+// preflight (the checkout, what doesn't carry over, the variables Managoat
 // lacks, each with an explicit copy that says when it's not on this
 // machine), then the run applies `recipe-e2e-fixer` and the conversation it
 // opens carries the recipe's hash and answers.
@@ -42,7 +42,7 @@ const convs: { id: string; status: string; agent_id: string; title: string | nul
 ];
 const reads: string[] = [];
 let server: Server;
-/** F3: the conversations Run on Fountain makes (F4's too): their events
+/** F3: the conversations Run on Managoat makes (F4's too): their events
  *  (`[id, conversation, payload]`). */
 const events: [number, string, Record<string, unknown>][] = [];
 const stage = (c: string, stage: string, state: string, meta: Record<string, unknown> = {}) =>
@@ -132,7 +132,7 @@ test.beforeAll(async () => {
       });
       return;
     }
-    // F3: Run on Fountain's conversation, which echoes as the fake ACP
+    // F3: Run on Managoat's conversation, which echoes as the fake ACP
     // agent did; the listed ones can be opened and followed (quietly).
     // Path segments come percent-encoded, as a server decodes them.
     const path = decodeURIComponent(u.pathname);
@@ -183,20 +183,20 @@ test.beforeAll(async () => {
     json(res, 404, { error: "not here" });
   });
   origin = `http://127.0.0.1:${await listen(server)}`;
-  writeFileSync(process.env.ARUGULA_FOUNTAIN_CREDENTIALS!, `[default]\napi_key = "${KEY}"\nbase_url = "${origin}"\n`);
+  writeFileSync(process.env.ARUGULA_MANAGOAT_CREDENTIALS!, `[default]\napi_key = "${KEY}"\nbase_url = "${origin}"\n`);
 });
 
 test.afterAll(() => {
   server.close();
-  rmSync(process.env.ARUGULA_FOUNTAIN_CREDENTIALS!, { force: true });
+  rmSync(process.env.ARUGULA_MANAGOAT_CREDENTIALS!, { force: true });
 });
 
 async function openCatalog(page: Page): Promise<number> {
   await reset(page);
   const term = (await panes(page))[0];
-  await menu(page, paneEl(page, term), "Fountain…");
+  await menu(page, paneEl(page, term), "Managoat…");
   await expect.poll(async () => (await panes(page)).length).toBe(2);
-  const block = await page.evaluate(() => window.__arugula.client.state!.panes.find((p) => p.type === "fountain")!.id);
+  const block = await page.evaluate(() => window.__arugula.client.state!.panes.find((p) => p.type === "managoat")!.id);
   await page.locator(`[data-fountain-block="${block}"] [data-fountain-tab="agents"]`).click();
   return block;
 }
@@ -204,9 +204,9 @@ async function openCatalog(page: Page): Promise<number> {
 test("the account view lists conversations, filters by label and opens one", async ({ page }) => {
   await reset(page);
   const term = (await panes(page))[0];
-  await menu(page, paneEl(page, term), "Fountain…");
+  await menu(page, paneEl(page, term), "Managoat…");
   await expect.poll(async () => (await panes(page)).length).toBe(2);
-  const block = await page.evaluate(() => window.__arugula.client.state!.panes.find((p) => p.type === "fountain")!.id);
+  const block = await page.evaluate(() => window.__arugula.client.state!.panes.find((p) => p.type === "managoat")!.id);
   const el = page.locator(`[data-fountain-block="${block}"]`);
   const rows = el.locator(".fountain-conv[data-conversation]");
   await expect(rows).toHaveCount(3);
@@ -216,7 +216,7 @@ test("the account view lists conversations, filters by label and opens one", asy
   await expect(rows.nth(0).locator("[data-unread]")).toBeVisible();
   await expect(rows.nth(0).locator("[data-status]")).toHaveText("running");
   await expect(rows.nth(2).locator(".fountain-conv-title")).toHaveText("games conversation");
-  // A label chip filters with Fountain's ?label=.
+  // A label chip filters with Managoat's ?label=.
   await el.locator('[data-chips="labels"] [data-label="team:a"]').click();
   await expect(rows).toHaveCount(1);
   await expect(rows.first()).toHaveAttribute("data-conversation", "conv-cli");
@@ -229,7 +229,7 @@ test("the account view lists conversations, filters by label and opens one", asy
   await expect(rows.nth(0).locator("[data-unread]")).toHaveCount(0);
 });
 
-test("the catalog filters, and Run on Fountain opens an agent block beside it", async ({ page }) => {
+test("the catalog filters, and Run on Managoat opens an agent block beside it", async ({ page }) => {
   const block = await openCatalog(page);
   const el = page.locator(`[data-fountain-block="${block}"]`);
   const cards = el.locator(".fountain-card");
@@ -258,7 +258,7 @@ test("the catalog filters, and Run on Fountain opens an agent block beside it", 
   await expect(designer.locator("[data-spec]")).toBeEnabled();
   await expect(el.locator("[data-run-here]")).toHaveCount(0);
 
-  // Clear, then find games and run it on Fountain.
+  // Clear, then find games and run it on Managoat.
   await el.locator("[data-fountain-clear]").click();
   await expect(cards).toHaveCount(108);
   await el.locator(".fountain-search").fill("games");
@@ -267,8 +267,8 @@ test("the catalog filters, and Run on Fountain opens an agent block beside it", 
   await expect.poll(async () => (await panes(page)).length).toBe(3);
   const agent = await page.evaluate(() => window.__arugula.client.state!.panes.find((p) => p.type === "agent")!.id);
   expect(await panes(page)).toContain(agent);
-  // A Fountain conversation on the native link (F3), and it works.
-  expect((await blockState(agent)).label).toBe("Fountain games");
+  // A Managoat conversation on the native link (F3), and it works.
+  expect((await blockState(agent)).label).toBe("Managoat games");
   const a = paneEl(page, agent);
   await expect(a.locator("[data-fountain-line]")).toHaveAttribute("data-fountain-line", "idle·awake");
   await expect(a.locator("[data-fountain-terminate]")).toBeVisible();
@@ -277,7 +277,7 @@ test("the catalog filters, and Run on Fountain opens an agent block beside it", 
   await expect(a.locator(".agent-msg").last()).toHaveText("Hello! I am fake.");
 });
 
-// *Spec* with no agent-specs checkout: the agent as Fountain returns it
+// *Spec* with no agent-specs checkout: the agent as Managoat returns it
 // (GET /api/agents/{id}), shown in the block, not a link to a console page.
 test("Spec shows the agent in the block", async ({ page }) => {
   const block = await openCatalog(page);
@@ -296,8 +296,8 @@ test("Spec shows the agent in the block", async ({ page }) => {
   await expect(spec).toHaveCount(0);
 });
 
-// F4: the same recipe that runs here runs on Fountain, from its card.
-test("a recipe runs on Fountain from its card, after the preflight", async ({ page }) => {
+// F4: the same recipe that runs here runs on Managoat, from its card.
+test("a recipe runs on Managoat from its card, after the preflight", async ({ page }) => {
   const dir = mkdtempSync(join(tmpdir(), "arugula-e2e-f4-"));
   mkdirSync(join(dir, ".claude/agents"), { recursive: true });
   writeFileSync(

@@ -15,10 +15,10 @@
 //!   restarted daemon reattaches at the output offset it had processed, kept
 //!   in `agent-exec.json`. Credentials go in on stdin before the server
 //!   starts (see `GUEST_BOOT`), never in the URL, the argv or the VM's disk.
-//! - **On Fountain** (#942, F3) nothing runs here: the daemon speaks
-//!   Fountain's REST API for the block and makes its inbound frames from
+//! - **On Managoat** (#942, F3) nothing runs here: the daemon speaks
+//!   Managoat's REST API for the block and makes its inbound frames from
 //!   the conversation's events ([`spawn_fountain`]). The conversation lives
-//!   on Fountain, so a restarted daemon carries on from the last event in
+//!   on Managoat, so a restarted daemon carries on from the last event in
 //!   the block's log.
 
 #[cfg(unix)]
@@ -505,8 +505,8 @@ pub fn spawn_vm(
     }
 }
 
-/// A Fountain conversation (#942, F3): no agent server runs here; the
-/// daemon speaks Fountain's API and follows the conversation's events
+/// A Managoat conversation (#942, F3): no agent server runs here; the
+/// daemon speaks Managoat's API and follows the conversation's events
 /// (`labs/fountain/link.rs`). The block's frames are the same ACP.
 pub fn spawn_fountain(rt: &tokio::runtime::Handle, l: crate::labs::FountainLink, sink: Sink) -> Link {
     let (tx, rx) = mpsc::unbounded_channel::<Vec<u8>>();

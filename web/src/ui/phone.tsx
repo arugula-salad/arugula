@@ -250,7 +250,7 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
             )}
             {owner && client.has("fountain") && (
               <button data-open-fountain onClick={act(() => void openFountain(client, { session: where }))}>
-                Fountain
+                Managoat
               </button>
             )}
             {active !== undefined && owner && (

@@ -302,7 +302,7 @@ pub struct WorkspaceOpened {
     pub gates: Value,
 }
 
-/// A card in `list` kind fountain_agents.
+/// A card in `list` kind managoat_agents.
 #[cfg(feature = "labs")]
 #[derive(Debug, Serialize)]
 pub struct AgentRow {
@@ -317,7 +317,7 @@ pub struct AgentRow {
     pub description: String,
 }
 
-/// `list` kind fountain_agents.
+/// `list` kind managoat_agents.
 #[cfg(feature = "labs")]
 #[derive(Debug, Serialize)]
 pub struct FountainAgents {
@@ -326,7 +326,7 @@ pub struct FountainAgents {
     pub unreadable: usize,
 }
 
-/// A Fountain block's text.
+/// A Managoat block's text.
 #[cfg(feature = "labs")]
 #[derive(Debug, Serialize)]
 pub struct BlockText {

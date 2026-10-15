@@ -144,10 +144,17 @@ pub const FLAGS: &[Flag] = &[
 /// or a control push may still name one (an older daemon wrote it, a
 /// machine turned it off); it's ignored, as any name not in [`FLAGS`] is,
 /// and kept. Only [`set`] and [`unset`] say anything: this.
-pub const RETIRED: &[(&str, &str)] = &[(
-    "fountain",
-    "Fountain left Labs (#942): it's on wherever this machine has a Fountain login (`arugula fountain login`)",
-)];
+pub const RETIRED: &[(&str, &str)] = &[
+    (
+        "fountain",
+        "Managoat (Fountain then) left Labs (#942): it's on wherever this machine has a Managoat login (`arugula managoat login`)",
+    ),
+    // Never a flag, but the name it would have now.
+    (
+        "managoat",
+        "Managoat left Labs (#942): it's on wherever this machine has a Managoat login (`arugula managoat login`)",
+    ),
+];
 
 /// What to say of `name` if it is a [`RETIRED`] flag.
 pub fn retired(name: &str) -> Option<String> {
@@ -815,7 +822,7 @@ mod tests {
         assert_eq!(names(&d), [HUDDLES]);
         for e in [set(&d, "fountain", true).unwrap_err(), unset(&d, "fountain").unwrap_err()] {
             assert_eq!(e.kind(), io::ErrorKind::InvalidInput);
-            assert!(e.to_string().contains("isn't a flag any more") && e.to_string().contains("fountain login"), "{e}");
+            assert!(e.to_string().contains("isn't a flag any more") && e.to_string().contains("managoat login"), "{e}");
         }
         fs::remove_dir_all(&d).unwrap();
     }

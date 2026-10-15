@@ -1,13 +1,13 @@
-//! Fountain's REST API, typed: what the account view, the conversation link
-//! and recipes on Fountain need (#942, F1). [`super::api`] is the older,
+//! Managoat's REST API, typed: what the account view, the conversation link
+//! and recipes on Managoat need (#942, F1). [`super::api`] is the older,
 //! read-only reader the catalog uses.
 //!
-//! **Shapes** are Fountain's OpenAPI (`<base_url>/api/openapi.json`): a
+//! **Shapes** are Managoat's OpenAPI (`<base_url>/api/openapi.json`): a
 //! record is `{data: …}`, a list `{data: [...]}`. Each type keeps the fields
-//! Arugula reads and passes the rest through (`extra`), so a newer Fountain's
+//! Arugula reads and passes the rest through (`extra`), so a newer Managoat's
 //! fields aren't lost on the way to a client.
 //!
-//! **Errors** ([`Error`]) are Fountain's: its body's `error` is the code to
+//! **Errors** ([`Error`]) are Managoat's: its body's `error` is the code to
 //! branch on, except on the key and scope refusals, where `error` is a
 //! sentence and `reason` the code. Each status becomes one variant, keeping
 //! the code (`conversation_busy`, `sandbox_not_ready`, `fleet_full`, …).
@@ -39,7 +39,7 @@ pub const RETRIES_429: u32 = 3;
 /// The longest `Retry-After` waited out in place.
 pub const MAX_WAIT: Duration = Duration::from_secs(60);
 
-/// What went wrong talking to Fountain. `code` is Fountain's
+/// What went wrong talking to Managoat. `code` is Managoat's
 /// machine-readable code (empty when it sent none), `message` a sentence.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
@@ -99,7 +99,7 @@ pub enum Error {
 }
 
 impl Error {
-    /// Fountain's code, when it sent one.
+    /// Managoat's code, when it sent one.
     pub fn code(&self) -> &str {
         match self {
             Error::Unauthorized { code, .. }
@@ -145,7 +145,7 @@ impl Error {
         matches!(self, Error::Unauthorized { .. })
     }
 
-    /// How long Fountain asked to be left alone, if it did.
+    /// How long Managoat asked to be left alone, if it did.
     pub fn retry_after(&self) -> Option<Duration> {
         match self {
             Error::RateLimited { retry_after } => Some(*retry_after),
@@ -164,25 +164,25 @@ impl std::fmt::Display for Error {
             (c, m) => write!(f, "{what}: {m} ({c})"),
         };
         match self {
-            Error::Unreachable(e) => write!(f, "can't reach Fountain: {e}"),
-            Error::Unauthorized { code, message } => said(f, "Fountain refused the key", code, message),
-            Error::Forbidden { code, message } => said(f, "Fountain says this key may not", code, message),
-            Error::NotFound { code, message } => said(f, "not found on Fountain", code, message),
-            Error::Conflict { code, message } => said(f, "Fountain refused", code, message),
-            Error::Gone { code, message } => said(f, "gone on Fountain", code, message),
-            Error::Invalid { code, message, .. } => said(f, "Fountain says the request is wrong", code, message),
+            Error::Unreachable(e) => write!(f, "can't reach Managoat: {e}"),
+            Error::Unauthorized { code, message } => said(f, "Managoat refused the key", code, message),
+            Error::Forbidden { code, message } => said(f, "Managoat says this key may not", code, message),
+            Error::NotFound { code, message } => said(f, "not found on Managoat", code, message),
+            Error::Conflict { code, message } => said(f, "Managoat refused", code, message),
+            Error::Gone { code, message } => said(f, "gone on Managoat", code, message),
+            Error::Invalid { code, message, .. } => said(f, "Managoat says the request is wrong", code, message),
             Error::RateLimited { retry_after } => {
-                write!(f, "Fountain's rate limit: try again in {}s", retry_after.as_secs().max(1))
+                write!(f, "Managoat's rate limit: try again in {}s", retry_after.as_secs().max(1))
             }
             Error::Unavailable { code, message, retry_after } => {
-                said(f, "Fountain can't now", code, message)?;
+                said(f, "Managoat can't now", code, message)?;
                 if let Some(r) = retry_after {
                     write!(f, " (try again in {}s)", r.as_secs().max(1))?;
                 }
                 Ok(())
             }
-            Error::Status { status, code, message } => said(f, &format!("Fountain answered {status}"), code, message),
-            Error::Unexpected(e) => write!(f, "Fountain said something else: {e}"),
+            Error::Status { status, code, message } => said(f, &format!("Managoat answered {status}"), code, message),
+            Error::Unexpected(e) => write!(f, "Managoat said something else: {e}"),
         }
     }
 }
@@ -214,7 +214,7 @@ pub fn error_for(status: u16, body: &[u8], retry_after: Option<Duration>) -> Err
     }
 }
 
-/// `Retry-After`, in seconds (Fountain sends seconds; an HTTP date is read
+/// `Retry-After`, in seconds (Managoat sends seconds; an HTTP date is read
 /// as a few seconds).
 pub fn retry_after(h: &reqwest::header::HeaderMap) -> Option<Duration> {
     let v = h.get(reqwest::header::RETRY_AFTER)?.to_str().ok()?.trim();
@@ -300,7 +300,7 @@ impl ConversationQuery {
         if let Some(l) = self.limit {
             q.push(("limit", l.to_string()));
         }
-        // Fountain splits each on its first colon.
+        // Managoat splits each on its first colon.
         q.extend(self.labels.iter().map(|(k, v)| ("label", format!("{k}:{v}"))));
         q
     }
@@ -327,7 +327,7 @@ pub struct NewConversation {
     pub channel_id: Option<String>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty", default)]
     pub labels: BTreeMap<String, String>,
-    /// Narrowing only: Fountain refuses one that widens the agent's.
+    /// Narrowing only: Managoat refuses one that widens the agent's.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub permission_policy: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -514,7 +514,7 @@ pub struct Named {
     pub extra: Map<String, Value>,
 }
 
-/// A secret, by its key: Fountain never returns a value.
+/// A secret, by its key: Managoat never returns a value.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct SecretKey {
     pub id: String,
@@ -572,7 +572,7 @@ struct Data<T> {
 /// ones (S24 saw Python's get a 403).
 pub const USER_AGENT: &str = concat!("arugula/", env!("CARGO_PKG_VERSION"));
 
-/// An HTTP client for Fountain: Arugula's roots, its User-Agent, no
+/// An HTTP client for Managoat: Arugula's roots, its User-Agent, no
 /// redirects (a redirect would carry the key elsewhere), and `timeout` for
 /// the whole request (none for a stream).
 pub fn http(timeout: Option<Duration>) -> reqwest::Client {
@@ -667,7 +667,7 @@ impl Client {
             {
                 waited += 1;
                 let wait = retry_after.min(self.max_wait);
-                tracing::info!(path, wait_ms = wait.as_millis() as u64, "Fountain's rate limit: waiting");
+                tracing::info!(path, wait_ms = wait.as_millis() as u64, "Managoat's rate limit: waiting");
                 tokio::time::sleep(wait).await;
                 continue;
             }
@@ -760,7 +760,7 @@ impl Client {
     }
 
     /// A conversation's event stream (`GET /stream`, SSE), opened with
-    /// `http` (one without a total timeout: a stream lasts until Fountain
+    /// `http` (one without a total timeout: a stream lasts until Managoat
     /// closes it). `streams` filters (`acp,stage`); `wait: false` drains
     /// what's stored and closes. After `last_event_id` when it's not 0.
     pub async fn open_stream(
@@ -922,7 +922,7 @@ impl Client {
         self.list(&format!("{}/{}/secrets", holder.path(), seg(id)), &[]).await
     }
 
-    /// Set one secret (Fountain upserts by key). The value goes in the body
+    /// Set one secret (Managoat upserts by key). The value goes in the body
     /// and nowhere else.
     pub async fn set_secret(&self, holder: Holder, id: &str, key: &str, value: &str) -> Result<SecretKey, Error> {
         let path = format!("{}/{}/secrets", holder.path(), seg(id));
@@ -994,7 +994,7 @@ impl std::fmt::Debug for DeviceGrant {
 }
 
 /// A key the device flow minted: full scope. `prefix` and `key_id` are what
-/// Fountain's key list shows, safe to show here.
+/// Managoat's key list shows, safe to show here.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MintedKey {
     pub api_key: String,
@@ -1023,8 +1023,8 @@ pub enum Poll {
     Invalid,
 }
 
-/// Start a device grant on `base`. `client_name` names the key Fountain
-/// mints ("Arugula on geek"), once Fountain reads it; until then it's
+/// Start a device grant on `base`. `client_name` names the key Managoat
+/// mints ("Arugula on geek"), once Managoat reads it; until then it's
 /// ignored.
 pub async fn device_start(http: &reqwest::Client, base: &str, client_name: &str) -> Result<DeviceGrant, Error> {
     let url = format!("{}/api/auth/device", base.trim_end_matches('/'));
@@ -1042,7 +1042,7 @@ pub async fn device_start(http: &reqwest::Client, base: &str, client_name: &str)
         return Err(error_for(status.as_u16(), &bytes, after));
     }
     serde_json::from_slice(&bytes).map_err(|e| {
-        Error::Unexpected(format!("{base} isn't a Fountain (its /api/auth/device answered something else: {e})"))
+        Error::Unexpected(format!("{base} isn't a Managoat (its /api/auth/device answered something else: {e})"))
     })
 }
 
@@ -1096,7 +1096,7 @@ mod tests {
 
     type Seen = (String, String, String, Value);
 
-    /// A stub Fountain: answers what `answers` says, in order, and records
+    /// A stub Managoat: answers what `answers` says, in order, and records
     /// each request (method, path and query, auth, body).
     #[derive(Clone, Default)]
     struct Stub {
@@ -1327,7 +1327,7 @@ mod tests {
         assert_eq!((k.api_key.as_str(), k.prefix.as_deref()), ("ftn_minted", Some("ftn_mi")));
         assert!(!format!("{k:?}").contains("ftn_minted"));
         assert_eq!(device_poll(&http, &base, "dc-1").await.unwrap(), Poll::Invalid);
-        // Not a Fountain.
+        // Not a Managoat.
         let e = device_start(&http, &format!("{base}/x"), "n").await.unwrap_err();
         assert!(e.status().is_some() || matches!(e, Error::Unexpected(_)), "{e:?}");
     }

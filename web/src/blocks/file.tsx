@@ -28,7 +28,7 @@ export interface FileState {
   error: string | null;
   watching: boolean;
   updated_ms: number;
-  /** #942 F3: a Fountain conversation's sandbox; whether it's parked; and
+  /** #942 F3: a Managoat conversation's sandbox; whether it's parked; and
    *  a directory's entries, when the path is one. */
   fountain?: string;
   parked?: boolean;

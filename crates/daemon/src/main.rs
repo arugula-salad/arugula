@@ -964,9 +964,9 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
     app.guests.run(&app);
     // M78: tasks for this machine's agents that a restart interrupted.
     crate::labs::resume_tasks(&app);
-    // Fountain (#942): this daemon's sign-in, and the account stream where
+    // Managoat (#942): this daemon's sign-in, and the account stream where
     // this is the home daemon.
-    crate::labs::start_fountain(&app, &state_dir, &name, args.fountain_account_stream);
+    crate::labs::start_fountain(&app, &state_dir, &name, args.fountain_account_stream || old_account_stream_env());
     control.start(app.clone());
     if let Some(serve) = mcp_serve {
         let _ = serve.set(mcp::pipe_server(&app));
@@ -1066,6 +1066,19 @@ async fn signalled() {
         _ = STOP.notified() => {}
         _ = term.recv() => {}
     }
+}
+
+/// `ARUGULA_FOUNTAIN_ACCOUNT_STREAM`, `ARUGULA_MANAGOAT_ACCOUNT_STREAM`'s
+/// name before the rename (DECISIONS.md "Fountain is Managoat"): still
+/// read, as clap reads a flag's variable, and the log says to rename it.
+fn old_account_stream_env() -> bool {
+    let on = std::env::var("ARUGULA_FOUNTAIN_ACCOUNT_STREAM").is_ok_and(|v| {
+        !matches!(v.trim().to_ascii_lowercase().as_str(), "" | "0" | "false" | "no" | "off" | "n" | "f")
+    });
+    if on {
+        tracing::warn!("ARUGULA_FOUNTAIN_ACCOUNT_STREAM is the old name: use ARUGULA_MANAGOAT_ACCOUNT_STREAM");
+    }
+    on
 }
 
 #[cfg(test)]

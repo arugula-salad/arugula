@@ -1,23 +1,23 @@
-//! The Fountain account view (#942, F2): the person's Fountain account as a
+//! The Managoat account view (#942, F2): the person's Managoat account as a
 //! block. Its first tab is the account's conversations, every one of them
 //! (started here, by the CLI, by a script or by another conversation), with
 //! live status from the account stream, an unread dot, a label filter and a
 //! fan-out's tree; its second the account's agents, read-only (chant's are
-//! still edited in agent-specs), each with *Run on Fountain* and *Spec*. It
+//! still edited in agent-specs), each with *Run on Managoat* and *Spec*. It
 //! also holds the cards for the account's permission requests
 //! ([`attention`]).
 //!
 //! **Config** `{tab?, labels?, limit?, profile?, filter?, specs?}`: the tab
 //! (`conversations`, the default, or `agents`), the label filter
-//! (`["key:value", …]`, combined with AND, as Fountain's `?label=`), how
+//! (`["key:value", …]`, combined with AND, as Managoat's `?label=`), how
 //! many conversations to read ([`conversations::PAGE`] more each *More*), a
-//! `fountain` CLI profile to use instead of the account's login
+//! `managoat` CLI profile to use instead of the account's login
 //! ([`login`]), the agents' filters ([`catalog::Filter`]) and the
 //! agent-specs checkout *Spec* looks in. Never a key. A block saved as M43's
 //! catalog has none of the first three, and opens as the account view.
 //!
 //! **The login** is the daemon's: [`account::Account::resolve`] (its own
-//! sign-in, else `$FOUNTAIN_API_KEY`, else the CLI's credentials), unless
+//! sign-in, else `$MANAGOAT_API_KEY`, else the CLI's credentials), unless
 //! the config names a CLI profile. The key is held in memory only.
 //!
 //! **Reads.** The conversations (`GET /api/conversations?limit=&label=`) and
@@ -28,18 +28,18 @@
 //! the account stream, the list follows it instead of polling: a `turn` or
 //! `wake` stage event changes a row's status in place, and a `conversations`
 //! signal (the list changed) reads the list again, at most once every
-//! [`relist`] while drawn and ten times that while not, since Fountain
+//! [`relist`] while drawn and ten times that while not, since Managoat
 //! allows a key 600 requests a minute and signals each second of output.
 //!
 //! **Actions:** `tab {tab}`; `labels {labels}` (the filter, kept) and
 //! `more`; `open_conversation {id}` opens a conversation in an agent block
-//! beside this one (an `agent: fountain` block on the native link, F3:
+//! beside this one (an `agent: managoat` block on the native link, F3:
 //! loading it once, following and never starting a new one) and marks it read;
 //! `mark_read {id}` (`POST /api/conversations/:id/read`); `tree {id}` shows
 //! its spawn tree (`GET /api/conversations/:id/tree`), `untree` puts it
 //! away; `answer_request {id, allow, always?}` answers a permission request
 //! (the card's Allow and Deny come here). The agents tab's: `run {agent}`
-//! (*Run on Fountain*: a new conversation with agent NAME, in an agent block
+//! (*Run on Managoat*: a new conversation with agent NAME, in an agent block
 //! beside this one); `spec {agent}` (the agent-specs file that declares a
 //! `managed-by: chant` agent, as a file block; for any other, or with no
 //! checkout, the agent as `GET /api/agents/{id}` returns it with literal
@@ -48,7 +48,7 @@
 //! read without changing anything.
 //!
 //! **Retired:** `run_here` (M44's *Run here*, a Claude Code here wearing the
-//! agent; 2026-10-15) and `view: runner` (M45b, gone with Fountain's
+//! agent; 2026-10-15) and `view: runner` (M45b, gone with Managoat's
 //! runners): a block saved with either comes back as the account view,
 //! serde ignoring the key.
 //!
@@ -194,7 +194,7 @@ pub(crate) async fn local_runner(shell_env: &crate::shellenv::ShellEnv) -> Runne
     Runner::Local { env: crate::shellenv::merge(&env, &shell, None), home }
 }
 
-/// The account's agents for MCP (`list`'s Fountain kinds): the last
+/// The account's agents for MCP (`list`'s Managoat kinds): the last
 /// list read within a poll, else a fresh one.
 pub(crate) async fn agents_for(runner: &Runner, profile: Option<&str>) -> Result<Agents, String> {
     let found = login::read(runner).await?;
@@ -210,8 +210,8 @@ pub(crate) async fn agents_for(runner: &Runner, profile: Option<&str>) -> Result
 pub fn unreadable_note(n: usize) -> Option<String> {
     match n {
         0 => None,
-        1 => Some("1 agent couldn't be read (Fountain sent something this Arugula doesn't understand)".into()),
-        n => Some(format!("{n} agents couldn't be read (Fountain sent something this Arugula doesn't understand)")),
+        1 => Some("1 agent couldn't be read (Managoat sent something this Arugula doesn't understand)".into()),
+        n => Some(format!("{n} agents couldn't be read (Managoat sent something this Arugula doesn't understand)")),
     }
 }
 
@@ -230,8 +230,8 @@ pub fn rows(agents: &[Agent], filter: &Filter) -> Vec<Card> {
     agents.iter().filter(|a| filter.matches(a)).map(|a| catalog::card(a, &BTreeMap::new())).collect()
 }
 
-/// M43: the person's Fountain agents, read with their own login on this
-/// host (`GET /api/fountain/agents`, `arugula fountain agents`): compact
+/// M43: the person's Managoat agents, read with their own login on this
+/// host (`GET /api/fountain/agents`, `arugula managoat agents`): compact
 /// cards, filtered.
 pub async fn agents_answer(
     app: &crate::server::App,
@@ -262,7 +262,7 @@ pub async fn conversations_answer(
     limit: Option<u32>,
 ) -> Result<(String, Value), String> {
     let labels = conversations::parse_labels(&json!(labels))?;
-    let account = account::get().ok_or("Fountain isn't set up on this daemon yet")?;
+    let account = account::get().ok_or("Managoat isn't set up on this daemon yet")?;
     let login = account.resolve().await?;
     let limit = limit.unwrap_or(conversations::PAGE).clamp(1, conversations::MAX_LIMIT);
     let q = client::ConversationQuery {
@@ -305,7 +305,7 @@ pub async fn conversations_answer(
     Ok((text, v))
 }
 
-/// The whole recipe for MCP's `fountain_agent` and the block's `agent`: as Fountain
+/// The whole recipe for MCP's `fountain_agent` and the block's `agent`: as Managoat
 /// returns it, a `${VAR}` left as it is, but an MCP header or env value
 /// typed in literally (which may be a secret) as `<redacted>`; plus where
 /// it comes from.
@@ -356,10 +356,10 @@ struct Config {
     /// How many conversations to read.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     limit: Option<u32>,
-    /// A `fountain` CLI profile, in place of the account's login.
+    /// A `managoat` CLI profile, in place of the account's login.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     profile: Option<String>,
-    // No `view`: a saved `view: runner` (M45b, before Fountain removed
+    // No `view`: a saved `view: runner` (M45b, before Managoat removed
     // runners) is ignored like any unknown key.
     #[serde(default, skip_serializing_if = "Filter::is_empty")]
     filter: Filter,
@@ -427,7 +427,7 @@ struct State {
     /// Open permission requests, newest first, and the one on the card.
     requests: Vec<Asking>,
     card: Option<String>,
-    /// This daemon follows the account stream (`--fountain-account-stream`)
+    /// This daemon follows the account stream (`--managoat-account-stream`)
     /// and is connected: the list is live.
     stream: bool,
     live: bool,
@@ -437,7 +437,7 @@ struct State {
     agents: Vec<Card>,
     /// How many there are in all.
     total: usize,
-    /// Rows Fountain sent that didn't parse, and what to say about them.
+    /// Rows Managoat sent that didn't parse, and what to say about them.
     unreadable: usize,
     unreadable_note: Option<String>,
     filter: Filter,
@@ -447,7 +447,7 @@ struct State {
     specs: Option<String>,
     specs_why: Option<String>,
     /// *Spec* for an agent agent-specs doesn't declare: `{agent, json,
-    /// note}`, the agent as Fountain returns it (literal values redacted).
+    /// note}`, the agent as Managoat returns it (literal values redacted).
     spec: Option<Value>,
     updated_ms: u64,
     polls: u64,
@@ -786,7 +786,7 @@ impl FountainBlock {
         let mut here: HashMap<String, arugula_proto::PaneId> = HashMap::new();
         if !open.is_empty() {
             for (pane, config, _) in self.ctx.agents().await {
-                if config["agent"] == "fountain"
+                if matches!(config["agent"].as_str(), Some("managoat" | "fountain"))
                     && let Some(sid) = config["session_id"].as_str()
                 {
                     here.insert(sid.to_owned(), pane);
@@ -885,7 +885,7 @@ impl FountainBlock {
             let e = self.state.lock().unwrap().error.clone();
             return Err(e.unwrap_or_else(|| "the agents aren't read yet".into()));
         }
-        find(&agents, which).cloned().ok_or_else(|| format!("no agent {which:?} on this Fountain account"))
+        find(&agents, which).cloned().ok_or_else(|| format!("no agent {which:?} on this Managoat account"))
     }
 
     fn said(&self, s: String) {
@@ -894,7 +894,7 @@ impl FountainBlock {
     }
 
     fn client(&self) -> Result<client::Client, String> {
-        let login = self.login.lock().unwrap().clone().ok_or("not signed in to Fountain yet")?;
+        let login = self.login.lock().unwrap().clone().ok_or("not signed in to Managoat yet")?;
         Ok(client::Client::new(&login.base_url, &login.key))
     }
 
@@ -907,13 +907,13 @@ impl FountainBlock {
         }
     }
 
-    /// Open a conversation: today's `agent: fountain` block beside this
+    /// Open a conversation: today's `agent: managoat` block beside this
     /// one, loading it and following it (never a new one).
     async fn open_conversation(&self, args: Value) -> Result<Value, String> {
         let id = args["id"].as_str().filter(|a| !a.is_empty()).ok_or("open_conversation needs {\"id\": ID}")?;
         let c = self.conversation(id).await?;
         let agent = c.agent_id.clone().filter(|a| !a.is_empty()).ok_or("this conversation names no agent")?;
-        let mut config = json!({ "agent": "fountain", "fountain_agent": agent, "session_id": c.id, "follow": true });
+        let mut config = json!({ "agent": "managoat", "managoat_agent": agent, "session_id": c.id, "follow": true });
         if let Some(t) = c.title.as_deref().filter(|t| !t.trim().is_empty()) {
             config["title"] = json!(t);
         }
@@ -975,7 +975,7 @@ impl FountainBlock {
         };
         let allow = args["allow"].as_bool().ok_or("answer_request needs {\"id\": ID, \"allow\": true|false}")?;
         let always = args["always"].as_bool().unwrap_or(false);
-        let account = account::get().ok_or("Fountain isn't set up yet")?;
+        let account = account::get().ok_or("Managoat isn't set up yet")?;
         let title = attention::requests().get(&id).map(|r| r.title());
         let out = attention::requests().answer(&account, &id, allow, always).await;
         let how = if allow { if always { "allowed always" } else { "allowed" } } else { "denied" };
@@ -987,11 +987,11 @@ impl FountainBlock {
         out
     }
 
-    /// *Run on Fountain*: today's agent block, beside the view.
+    /// *Run on Managoat*: today's agent block, beside the view.
     async fn run_fountain(&self, args: Value) -> Result<Value, String> {
         let which = args["agent"].as_str().filter(|a| !a.is_empty()).ok_or("run needs {\"agent\": NAME}")?;
         let a = self.agent(which)?;
-        let mut config = json!({ "agent": "fountain", "fountain_agent": a.name });
+        let mut config = json!({ "agent": "managoat", "managoat_agent": a.name });
         if let Some(p) = self.config.lock().unwrap().profile.clone() {
             config["profile"] = json!(p);
         }
@@ -1000,13 +1000,13 @@ impl FountainBlock {
         }
         let block = self.ctx.open(self.beside(BlockType::Agent, config)).await?;
         crate::review::log(&self.ctx, &json!({ "e": "run", "agent": a.name, "block": block }));
-        self.said(format!("{} runs on Fountain in %{block}", a.name));
+        self.said(format!("{} runs on Managoat in %{block}", a.name));
         Ok(json!({ "block": block, "agent": a.name }))
     }
 
     /// *Spec*: the file that declares a chant-managed agent, else the agent
-    /// as Fountain returns it, shown in the block (the console's agent
-    /// pages are gone: managoat/fountain#2732).
+    /// as Managoat returns it, shown in the block (the console's agent
+    /// pages are gone: managoat/managoat#2732).
     async fn spec(&self, args: Value) -> Result<Value, String> {
         let which = args["agent"].as_str().filter(|a| !a.is_empty()).ok_or("spec needs {\"agent\": NAME}")?;
         let a = self.agent(which)?;
@@ -1050,8 +1050,8 @@ impl FountainBlock {
         crate::review::log(&self.ctx, &json!({ "e": "spec", "agent": a.name, "id": a.id }));
         self.state.lock().unwrap().spec = Some(json!({ "agent": a.name, "json": shown, "note": note }));
         self.said(match &note {
-            Some(n) => format!("{}: {n}; showing it as Fountain has it", a.name),
-            None => format!("{} as Fountain has it", a.name),
+            Some(n) => format!("{}: {n}; showing it as Managoat has it", a.name),
+            None => format!("{} as Managoat has it", a.name),
         });
         Ok(json!({ "kind": "json", "agent": a.name, "json": shown, "note": note }))
     }
@@ -1111,7 +1111,7 @@ impl Block for FountainBlock {
 
     fn text(&self) -> String {
         let st = self.state.lock().unwrap();
-        let mut out = String::from("Fountain");
+        let mut out = String::from("Managoat");
         if let Some(b) = &st.base_url {
             out.push_str(&format!(" on {b}"));
         }
@@ -1332,7 +1332,7 @@ impl Block for FountainBlock {
             id: c.request.id.clone(),
             what: arugula_proto::AskWhat::Approve,
             headline: format!("{} wants to run {}", c.conversation, c.title),
-            agent: "Fountain".into(),
+            agent: "Managoat".into(),
             cwd: None,
             at_ms: c.request.at_ms,
             questions: None,
@@ -1342,14 +1342,14 @@ impl Block for FountainBlock {
     fn summary(&self) -> Summary {
         let st = self.state.lock().unwrap();
         let title = if st.loading {
-            "Fountain".to_owned()
+            "Managoat".to_owned()
         } else if !st.requests.is_empty() {
-            format!("Fountain ({} asking)", st.requests.len())
+            format!("Managoat ({} asking)", st.requests.len())
         } else {
             let unread = st.conversations.iter().filter(|c| c.unread).count();
             match unread {
-                0 => format!("Fountain ({} conversations)", st.conversations.len()),
-                n => format!("Fountain ({} conversations, {n} unread)", st.conversations.len()),
+                0 => format!("Managoat ({} conversations)", st.conversations.len()),
+                n => format!("Managoat ({} conversations, {n} unread)", st.conversations.len()),
             }
         };
         Summary { work: Some(WorkKind::Fountain), title: Some(title), ..Summary::default() }

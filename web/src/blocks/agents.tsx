@@ -9,8 +9,8 @@
 // from other people wait here for the owner (the card on this block allows
 // or denies one), and standing grants are listed with *Revoke*. Agents send
 // tasks with MCP's `delegate`; people with `arugula agents send`.
-// #942 F4: with a Fountain login, *Run on Fountain* beside *Run on
-// <this machine>* runs the same recipe in a Fountain sandbox (its dialog,
+// #942 F4: with a Managoat login, *Run on Managoat* beside *Run on
+// <this machine>* runs the same recipe in a Managoat sandbox (its dialog,
 // `ui/fountain-run.tsx`, shows the preflight first).
 
 import { render } from "preact";
@@ -206,8 +206,8 @@ function AgentsBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentsS
                       </button>
                     )}
                     {m.here && mayOwn && client.has("fountain") && (
-                      <button data-run-fountain={c.name} disabled={busy !== null} title="Run it in a Fountain sandbox, as its Fountain agent recipe-NAME" onClick={() => setOnFountain(c.name)}>
-                        Run on Fountain
+                      <button data-run-fountain={c.name} disabled={busy !== null} title="Run it in a Managoat sandbox, as its Managoat agent recipe-NAME" onClick={() => setOnFountain(c.name)}>
+                        Run on Managoat
                       </button>
                     )}
                     {!m.here && !m.owner && mayOwn && m.online && (

@@ -257,7 +257,7 @@ impl Transcript {
     /// Fold in a transcript an agent replayed (`session/load`), which may
     /// have more than we saw: tool calls and messages by id take the
     /// replay's version, new ones are added. Your own prompts come from our
-    /// log, not the replay (Fountain leaves them out).
+    /// log, not the replay (Managoat leaves them out).
     pub fn merge(&mut self, replay: Transcript) {
         for e in replay.entries {
             match e {
@@ -347,7 +347,7 @@ impl Transcript {
                     let body =
                         if t.output.is_empty() { t.text.clone() } else { crate::osc::strip(t.output.as_bytes()) };
                     if body.contains("```") {
-                        // Already fenced (Fountain's ```console blocks).
+                        // Already fenced (Managoat's ```console blocks).
                         out.push('\n');
                         out.push_str(body.trim_end());
                         out.push('\n');

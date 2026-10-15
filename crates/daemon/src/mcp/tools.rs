@@ -363,7 +363,9 @@ pub enum AgentKind {
     #[default]
     Claude,
     Codex,
-    /// An agent in a Fountain sandbox (fountain_agent names it).
+    /// An agent in a Managoat sandbox (managoat_agent names it).
+    // `fountain`, its name before the rename, is still read (not listed).
+    #[serde(rename = "managoat", alias = "fountain")]
     Fountain,
     /// Any ACP agent server, by command.
     Acp,
@@ -378,8 +380,8 @@ pub struct StartAgentArgs {
     /// For acp: the agent server's command line.
     #[serde(default)]
     pub command: Option<String>,
-    /// For fountain: the agent's name or id.
-    #[serde(default)]
+    /// For managoat: the agent's name or id.
+    #[serde(default, rename = "managoat_agent", alias = "fountain_agent")]
     pub fountain_agent: Option<String>,
     /// For claude: run as this recipe, a Claude Code subagent by its name
     /// (`.claude/agents/NAME.md` in cwd's project, or the user's), on this
@@ -417,13 +419,13 @@ pub struct StartAgentArgs {
     /// On a new throwaway VM of its own.
     #[serde(default)]
     pub vm: bool,
-    /// Where a recipe runs: here (default), or fountain: in a Fountain sandbox, as its Fountain agent recipe-NAME (upserted from the recipe first), with its project's origin cloned there (uncommitted work stays here).
+    /// Where a recipe runs: here (default), or managoat: in a Managoat sandbox, as its Managoat agent recipe-NAME (upserted from the recipe first), with its project's origin cloned there (uncommitted work stays here).
     #[serde(default)]
     pub on: Option<String>,
-    /// For on: fountain: a Fountain vault for the run (name or id).
+    /// For on: managoat: a Managoat vault for the run (name or id).
     #[serde(default)]
     pub vault: Option<String>,
-    /// For on: fountain: a Fountain environment instead of the project's (name or id).
+    /// For on: managoat: a Managoat environment instead of the project's (name or id).
     #[serde(default)]
     pub environment: Option<String>,
 }
@@ -781,7 +783,7 @@ pub struct ListTeamAgentsArgs {
     pub fresh: bool,
 }
 
-// Read only by Fountain's handlers, which a build without Labs lacks.
+// Read only by Managoat's handlers, which a build without Labs lacks.
 #[cfg_attr(not(feature = "labs"), allow(dead_code))]
 #[derive(Deserialize, JsonSchema)]
 pub struct ListAgentsArgs {
@@ -794,23 +796,23 @@ pub struct ListAgentsArgs {
     /// (hand-made) or app (made by an app). Default: all.
     #[serde(default)]
     pub source: Option<String>,
-    /// The Fountain credentials profile (default: the user's default).
+    /// The Managoat credentials profile (default: the user's default).
     #[serde(default)]
     pub profile: Option<String>,
 }
 
-// Read only by Fountain's handlers, which a build without Labs lacks.
+// Read only by Managoat's handlers, which a build without Labs lacks.
 #[cfg_attr(not(feature = "labs"), allow(dead_code))]
 #[derive(Deserialize, JsonSchema)]
 pub struct ReadAgentArgs {
-    /// The agent's name (or id), as kind fountain_agents gives it.
+    /// The agent's name (or id), as kind managoat_agents gives it.
     pub name: String,
-    /// The Fountain credentials profile (default: the user's default).
+    /// The Managoat credentials profile (default: the user's default).
     #[serde(default)]
     pub profile: Option<String>,
 }
 
-// Read only by Fountain's handlers, which a build without Labs lacks.
+// Read only by Managoat's handlers, which a build without Labs lacks.
 #[cfg_attr(not(feature = "labs"), allow(dead_code))]
 #[derive(Deserialize, JsonSchema)]
 pub struct ListFountainConversationsArgs {
@@ -828,17 +830,17 @@ pub struct ListFountainConversationsArgs {
     pub limit: Option<usize>,
 }
 
-// Read only by Fountain's handlers, which a build without Labs lacks.
+// Read only by Managoat's handlers, which a build without Labs lacks.
 #[cfg_attr(not(feature = "labs"), allow(dead_code))]
 #[derive(Deserialize, JsonSchema)]
 pub struct OpenFountainArgs {
-    /// Start with this search (as kind fountain_agents' query).
+    /// Start with this search (as kind managoat_agents' query).
     #[serde(default)]
     pub query: Option<String>,
     /// Start with this source: agent-specs, hand or app.
     #[serde(default)]
     pub source: Option<String>,
-    /// The Fountain credentials profile (default: the user's default).
+    /// The Managoat credentials profile (default: the user's default).
     #[serde(default)]
     pub profile: Option<String>,
     /// Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in).
@@ -878,7 +880,7 @@ pub(crate) enum Args {
 }
 
 /// One job of a grouped tool, like `show {kind: "port", port: 3000}`. Each
-/// is a row, so the kinds that belong to one feature (Fountain's, the
+/// is a row, so the kinds that belong to one feature (Managoat's, the
 /// studio's) can be left out of their group, and their arguments with them,
 /// by filtering its table ([`defs`]).
 pub(crate) struct Kind {
@@ -936,8 +938,8 @@ const SHOW: &[Kind] = &[
         flag: None,
     },
     Kind {
-        name: "fountain",
-        description: "The user's Fountain agents as a catalog block: a card per agent with its skills, servers and where it comes from, filters, and Run on Fountain / Spec for each. Returns the (filtered) list as text.",
+        name: "managoat",
+        description: "The user's Managoat agents as a catalog block: a card per agent with its skills, servers and where it comes from, filters, and Run on Managoat / Spec for each. Returns the (filtered) list as text.",
         schema: schema_for_type::<OpenFountainArgs>,
         flag: None,
     },
@@ -994,20 +996,20 @@ const LIST: &[Kind] = &[
         flag: None,
     },
     Kind {
-        name: "fountain_agents",
-        description: "The agents on the user's Fountain account, one compact row each: name, runtime and model, where it comes from (agent-specs: curated; hand: hand-made; app: made by an app), skills, MCP servers and description. query searches names, descriptions, skills and servers. To hand one a task, start_agent {agent: fountain, fountain_agent: NAME}.",
+        name: "managoat_agents",
+        description: "The agents on the user's Managoat account, one compact row each: name, runtime and model, where it comes from (agent-specs: curated; hand: hand-made; app: made by an app), skills, MCP servers and description. query searches names, descriptions, skills and servers. To hand one a task, start_agent {agent: managoat, managoat_agent: NAME}.",
         schema: schema_for_type::<ListAgentsArgs>,
         flag: None,
     },
     Kind {
-        name: "fountain_conversations",
-        description: "The conversations on the user's Fountain account, read-only: every one, whoever started it (Arugula, the fountain CLI, a script, another conversation), the most recently active first, one line each: title, status, agent, unread, labels, what it started, and its open permission requests (waiting for the user, who answers them on their card). labels filters by key:value; status and limit as Fountain's list takes them.",
+        name: "managoat_conversations",
+        description: "The conversations on the user's Managoat account, read-only: every one, whoever started it (Arugula, the managoat CLI, a script, another conversation), the most recently active first, one line each: title, status, agent, unread, labels, what it started, and its open permission requests (waiting for the user, who answers them on their card). labels filters by key:value; status and limit as Managoat's list takes them.",
         schema: schema_for_type::<ListFountainConversationsArgs>,
         flag: None,
     },
     Kind {
-        name: "fountain_agent",
-        description: "One Fountain agent's whole recipe, by name: its system prompt, skills (inline or from GitHub), MCP servers, model, runtime, environment, sandbox provider and metadata, as Fountain returns it. Secrets are never in it: a server's credentials show as their ${VAR} references.",
+        name: "managoat_agent",
+        description: "One Managoat agent's whole recipe, by name: its system prompt, skills (inline or from GitHub), MCP servers, model, runtime, environment, sandbox provider and metadata, as Managoat returns it. Secrets are never in it: a server's credentials show as their ${VAR} references.",
         schema: schema_for_type::<ReadAgentArgs>,
         flag: None,
     },
@@ -1029,7 +1031,7 @@ const UNLISTED: [(&str, &str, &str); 3] =
 /// Arguments of listed tools that aren't listed without their flag, by
 /// tool: throwaway VMs and sandboxes, and recipes. A caller who gives one
 /// is refused where the flag is off (a new machine, a recipe: #347), except
-/// `machine`, which names one already made. Fountain's (`fountain_agent`,
+/// `machine`, which names one already made. Managoat's (`managoat_agent`,
 /// `on`, `vault`, `environment`) left Labs with it (#942).
 const UNLISTED_ARGS: [(&str, &[&str], &str); 3] = [
     ("run", &["vm", "vm_tab", "image", "machine"], flags::VMS),
@@ -1037,15 +1039,30 @@ const UNLISTED_ARGS: [(&str, &[&str], &str); 3] = [
     ("start_agent", &["recipe"], flags::AGENTS),
 ];
 
-/// Fountain's kinds, arguments and values (#942): listed without a flag
+/// Managoat's kinds, arguments and values (#942): listed without a flag
 /// since F5, and not at all by a build without Labs, which hasn't the code.
 const FOUNTAIN_KINDS: [(&str, &str); 4] =
-    [("show", "fountain"), ("list", "fountain_agents"), ("list", "fountain_agent"), ("list", "fountain_conversations")];
-const FOUNTAIN_ARGS: [(&str, &[&str]); 1] = [("start_agent", &["fountain_agent", "on", "vault", "environment"])];
-const FOUNTAIN_VALUES: [(&str, &str); 1] = [("start_agent", "fountain")];
+    [("show", "managoat"), ("list", "managoat_agents"), ("list", "managoat_agent"), ("list", "managoat_conversations")];
+const FOUNTAIN_ARGS: [(&str, &[&str]); 1] = [("start_agent", &["managoat_agent", "on", "vault", "environment"])];
+const FOUNTAIN_VALUES: [(&str, &str); 1] = [("start_agent", "managoat")];
+
+/// Managoat's kinds by their names before the rename (DECISIONS.md
+/// "Fountain is Managoat"): still answered, for an agent or a script that
+/// kept them, and never listed. `start_agent`'s `agent: managoat`,
+/// `fountain_agent` and `on: fountain` are read the same way (serde
+/// aliases, and the match on `on` in `start_agent`).
+fn old_kind(tool: &str, kind: &str) -> Option<&'static str> {
+    match (tool, kind) {
+        ("show", "fountain") => Some("managoat"),
+        ("list", "fountain_agents") => Some("managoat_agents"),
+        ("list", "fountain_agent") => Some("managoat_agent"),
+        ("list", "fountain_conversations") => Some("managoat_conversations"),
+        _ => None,
+    }
+}
 
 /// A tool's schema without the arguments whose flag is off, and without
-/// Fountain's in a build that hasn't it.
+/// Managoat's in a build that hasn't it.
 fn without_labs(tool: &str, schema: Schema, on: On) -> Schema {
     let fountain = !crate::labs::BUILT;
     let args: Vec<&str> = UNLISTED_ARGS
@@ -1418,8 +1435,8 @@ fn renamed(old: &str) -> Option<(&'static str, Option<(&'static str, Value)>)> {
         "search" => kind("history", "output"),
         "list_conversations" => kind("list", "conversations"),
         "list_devices" => kind("list", "devices"),
-        "list_agents" => kind("list", "fountain_agents"),
-        "read_agent" => kind("list", "fountain_agent"),
+        "list_agents" => kind("list", "managoat_agents"),
+        "read_agent" => kind("list", "managoat_agent"),
         "open_port" => kind("show", "port"),
         "show_changes" => kind("show", "changes"),
         "show_file" => kind("show", "file"),
@@ -1428,7 +1445,7 @@ fn renamed(old: &str) -> Option<(&'static str, Option<(&'static str, Value)>)> {
         "open_conversation" => kind("show", "conversation"),
         "open_app" => kind("show", "app"),
         "open_workspace" => kind("show", "workspace"),
-        "open_fountain" => kind("show", "fountain"),
+        "open_fountain" => kind("show", "managoat"),
         "read_pr" | "read_issue" => Some(("read_forge", None)),
         "pr_comment" | "issue_comment" => kind("draft", "comment"),
         "pr_review" => kind("draft", "review"),
@@ -1654,6 +1671,7 @@ fn pick_kind(
         Some(v) => return Err(format!("{tool}'s kind is a string, one of {}; not {v}", names())),
         None => default.ok_or_else(|| format!("{tool} needs a kind: one of {}", names()))?,
     };
+    let name = old_kind(tool, name).unwrap_or(name);
     let k = kinds
         .iter()
         .find(|k| k.name == name)
@@ -1854,7 +1872,7 @@ impl<'a> Call<'a> {
                 Ok(a) => self.history_or_output(a).await,
                 Err(e) => Err(e),
             },
-            // M44's as_fountain (a Fountain agent worn here) was retired:
+            // M44's as_fountain (a Managoat agent worn here) was retired:
             // said, not ignored into a plain Claude Code.
             ("start_agent", _) if args.get("as_fountain").is_some_and(|v| !v.is_null()) => {
                 Err(crate::agent::defs::AS_FOUNTAIN_GONE.into())
@@ -1905,15 +1923,15 @@ impl<'a> Call<'a> {
                 Ok(a) => self.team_agents(a).await,
                 Err(e) => Err(e),
             },
-            ("list", Some("fountain_agents")) => match parse(args) {
+            ("list", Some("managoat_agents")) => match parse(args) {
                 Ok(a) => self.list_agents(a).await,
                 Err(e) => Err(e),
             },
-            ("list", Some("fountain_agent")) => match parse(args) {
+            ("list", Some("managoat_agent")) => match parse(args) {
                 Ok(a) => self.read_agent(a).await,
                 Err(e) => Err(e),
             },
-            ("list", Some("fountain_conversations")) => match parse(args) {
+            ("list", Some("managoat_conversations")) => match parse(args) {
                 Ok(a) => self.fountain_conversations(a).await,
                 Err(e) => Err(e),
             },
@@ -1949,7 +1967,7 @@ impl<'a> Call<'a> {
                 Ok(a) => self.open_workspace(a).await,
                 Err(e) => Err(e),
             },
-            ("show", Some("fountain")) => match parse(args) {
+            ("show", Some("managoat")) => match parse(args) {
                 Ok(a) => self.open_fountain(a).await,
                 Err(e) => Err(e),
             },
@@ -3230,7 +3248,7 @@ impl Call<'_> {
     async fn read_agent(&self, a: ReadAgentArgs) -> Out {
         let got = self.fountain_agents(a.profile.as_deref()).await?;
         let agent = crate::labs::fountain::find(&got.agents, &a.name).ok_or_else(|| {
-            format!("no agent {:?} on this Fountain account (list kind fountain_agents lists them)", a.name)
+            format!("no agent {:?} on this Managoat account (list kind managoat_agents lists them)", a.name)
         })?;
         let recipe = crate::labs::fountain::recipe(agent);
         done(format!("{} ({}, {})", agent.name, agent.runtime, agent.model), recipe)
@@ -3271,11 +3289,11 @@ impl Call<'_> {
         };
         let st = b.state();
         if let Some(e) = st["error"].as_str() {
-            return Err(format!("Fountain block %{block}: {e}"));
+            return Err(format!("Managoat block %{block}: {e}"));
         }
         done(
             format!(
-                "Fountain block %{block}: {} of {} agents",
+                "Managoat block %{block}: {} of {} agents",
                 st["agents"].as_array().map_or(0, Vec::len),
                 st["total"]
             ),
@@ -3295,7 +3313,7 @@ impl Call<'_> {
     }
 
     async fn list_agents(&self, _: ListAgentsArgs) -> Out {
-        Err(crate::labs::not_built("Fountain"))
+        Err(crate::labs::not_built("Managoat"))
     }
 
     async fn team_agents(&self, _: ListTeamAgentsArgs) -> Out {
@@ -3307,15 +3325,15 @@ impl Call<'_> {
     }
 
     async fn read_agent(&self, _: ReadAgentArgs) -> Out {
-        Err(crate::labs::not_built("Fountain"))
+        Err(crate::labs::not_built("Managoat"))
     }
 
     async fn open_fountain(&self, _: OpenFountainArgs) -> Out {
-        Err(crate::labs::not_built("Fountain"))
+        Err(crate::labs::not_built("Managoat"))
     }
 
     async fn fountain_conversations(&self, _: ListFountainConversationsArgs) -> Out {
-        Err(crate::labs::not_built("Fountain"))
+        Err(crate::labs::not_built("Managoat"))
     }
 }
 
@@ -3638,11 +3656,12 @@ impl Call<'_> {
         };
         let recipe = a.recipe.as_deref().map(str::trim).filter(|n| !n.is_empty());
         may_start(self.on_machine().await?, host.is_some(), a.vm, recipe.is_some())?;
-        // #942 F4: the recipe on Fountain, as its Fountain agent.
+        // #942 F4: the recipe on Managoat, as its Managoat agent.
         match a.on.as_deref().map(str::trim) {
             None | Some("" | "here") => {}
-            Some("fountain") => return self.start_on_fountain(&a, recipe, beside).await,
-            Some(o) => return Err(format!("on: here or fountain, not {o}")),
+            // `fountain`: Managoat's name before the rename, still read.
+            Some("managoat" | "fountain") => return self.start_on_fountain(&a, recipe, beside).await,
+            Some(o) => return Err(format!("on: here or managoat, not {o}")),
         }
         if recipe.is_some() && !matches!(a.agent, AgentKind::Claude) {
             return Err("recipe is for agent claude: Claude Code runs the recipe".into());
@@ -3657,7 +3676,7 @@ impl Call<'_> {
         let agent = match a.agent {
             AgentKind::Claude => "claude",
             AgentKind::Codex => "codex",
-            AgentKind::Fountain => "fountain",
+            AgentKind::Fountain => "managoat",
             AgentKind::Acp => "acp",
         };
         let mut config = json!({ "agent": agent, "prompt": a.prompt });
@@ -3665,7 +3684,7 @@ impl Call<'_> {
             config["command"] = json!(c);
         }
         if let Some(f) = &a.fountain_agent {
-            config["fountain_agent"] = json!(f);
+            config["managoat_agent"] = json!(f);
         }
         if let Some(r) = recipe {
             config["recipe"] = json!(r);
@@ -3730,17 +3749,17 @@ impl Call<'_> {
         )
     }
 
-    /// `start_agent {recipe, on: fountain}`: the recipe upserted as its
-    /// Fountain agent, and its conversation in an agent block.
+    /// `start_agent {recipe, on: managoat}`: the recipe upserted as its
+    /// Managoat agent, and its conversation in an agent block.
     async fn start_on_fountain(&self, a: &StartAgentArgs, recipe: Option<&str>, beside: Option<PaneId>) -> Out {
         let Some(recipe) = recipe else {
-            return Err("on: fountain runs a recipe: give recipe (a Claude Code subagent's name)".into());
+            return Err("on: managoat runs a recipe: give recipe (a Claude Code subagent's name)".into());
         };
         if a.vm {
-            return Err("on: fountain runs in a Fountain sandbox, not a VM".into());
+            return Err("on: managoat runs in a Managoat sandbox, not a VM".into());
         }
         if !matches!(a.agent, AgentKind::Claude | AgentKind::Fountain) {
-            return Err("on: fountain runs the recipe as Claude Code".into());
+            return Err("on: managoat runs the recipe as Claude Code".into());
         }
         let ask = crate::labs::FountainRecipe {
             agent: recipe.to_owned(),
@@ -4177,7 +4196,7 @@ mod tests {
     /// checked-in file: names, descriptions, annotations and every input
     /// schema. `ARUGULA_BLESS=1` rewrites the file after a change meant to
     /// alter what agents see. The file is a Labs build's (which has the
-    /// forge too): a build without Labs leaves out Fountain's kinds and
+    /// forge too): a build without Labs leaves out Managoat's kinds and
     /// arguments (#942, F5) and has no golden of its own, so it checks the
     /// listing in `unlisted_tools_are_not_listed_without_labs_but_are_there`.
     #[test]
@@ -4237,7 +4256,7 @@ mod tests {
         assert!(with >= 8, "only {with} tools list an outputSchema");
     }
 
-    /// A build without Labs lists nothing of Fountain, studio apps or chant
+    /// A build without Labs lists nothing of Managoat, studio apps or chant
     /// workspaces, whatever the `labs` flag says: no kind, no argument, no
     /// value, no word in a description.
     #[cfg(not(feature = "labs"))]
@@ -4254,7 +4273,7 @@ mod tests {
         assert!(!labs, "labs is on in a build without it");
         for scope in [Scope::Full, Scope::Read, Scope::Block(1)] {
             let tools = serde_json::to_string(&list(scope, fl(labs))).unwrap().to_lowercase();
-            assert!(!tools.contains("fountain"), "the tool list mentions Fountain");
+            assert!(!tools.contains("fountain") && !tools.contains("managoat"), "the tool list mentions Managoat");
             assert!(!tools.contains("studio"), "the tool list mentions studio");
             assert!(!tools.contains("workspace"), "the tool list mentions workspaces");
             assert!(!tools.contains("read_thread"), "the tool list mentions chat");
@@ -4363,7 +4382,7 @@ mod tests {
             .unwrap_or_default()
     }
 
-    /// Fountain, studio apps, chant workspaces and chat are for what a
+    /// Managoat, studio apps, chant workspaces and chat are for what a
     /// stranger doesn't have: without `labs` chat's tools and the others'
     /// kinds aren't listed (18 tools of 20), with it all are, and a caller
     /// who names one reaches it either way.
@@ -4402,7 +4421,7 @@ mod tests {
         for arg in ["app", "env"] {
             assert!(show.input_schema["properties"].get(arg).is_none(), "show takes {arg} without labs");
         }
-        // Fountain's kinds (#942, out of Labs): listed by a build with it,
+        // Managoat's kinds (#942, out of Labs): listed by a build with it,
         // flags or not, with their arguments; not by one without it.
         let list_tool = list(Scope::Full, fl(false)).into_iter().find(|t| t.name == "list").unwrap();
         for (tool, kind) in FOUNTAIN_KINDS {
@@ -4413,6 +4432,22 @@ mod tests {
             let (def, kind, _) = route(old, json!({}), fl(false)).unwrap_or_else(|e| panic!("{old}: {e}"));
             assert!(FOUNTAIN_KINDS.contains(&(def.name, kind.unwrap())), "{old}");
         }
+        // Their names before the rename (DECISIONS.md "Fountain is
+        // Managoat") still reach them, and aren't listed.
+        for (tool, old, now) in [
+            ("show", "fountain", "managoat"),
+            ("list", "fountain_agents", "managoat_agents"),
+            ("list", "fountain_agent", "managoat_agent"),
+            ("list", "fountain_conversations", "managoat_conversations"),
+        ] {
+            let (def, kind, _) =
+                route(tool, json!({ "kind": old }), fl(false)).unwrap_or_else(|e| panic!("{old}: {e}"));
+            assert_eq!((def.name, kind), (tool, Some(now)));
+            assert!(!kinds_of(false, tool).contains(&old), "{tool} lists {old}");
+        }
+        let a: StartAgentArgs =
+            parse(json!({ "agent": "fountain", "fountain_agent": "arena", "prompt": "hi", "on": "fountain" })).unwrap();
+        assert!(matches!(a.agent, AgentKind::Fountain) && a.fountain_agent.as_deref() == Some("arena"));
         for (t, arg) in
             [(&show, "query"), (&show, "source"), (&show, "profile"), (&list_tool, "name"), (&list_tool, "source")]
         {
@@ -4424,7 +4459,7 @@ mod tests {
         }
         // An error names only the kinds that are listed.
         let e = route("show", json!({ "kind": "terminal" }), fl(false)).err().unwrap();
-        assert!(e.contains("port") && e.contains("fountain") == crate::labs::BUILT && !e.contains("workspace"), "{e}");
+        assert!(e.contains("port") && e.contains("managoat") == crate::labs::BUILT && !e.contains("workspace"), "{e}");
         let every: Vec<&str> = all_defs().iter().map(|d| d.name).collect();
         for name in CHAT_TOOLS {
             assert!(every.contains(&name), "{name} no longer has a definition");
@@ -4485,7 +4520,7 @@ mod tests {
     /// Kinds added after #349, each a job no old tool did.
     const SINCE: &[(&str, Option<&str>)] = &[
         ("list", Some("agents")),
-        ("list", Some("fountain_conversations")),
+        ("list", Some("managoat_conversations")),
         ("capabilities", None),
         ("delegate", Some("send")),
         ("delegate", Some("get")),
@@ -4559,8 +4594,8 @@ mod tests {
             ("search", json!({ "pattern": "x", "since": "1d", "limit": 5 }), "history", None),
             ("list_conversations", json!({ "query": "q", "live": true }), "list", Some("conversations")),
             ("list_devices", json!({}), "list", Some("devices")),
-            ("list_agents", json!({ "query": "q", "source": "hand" }), "list", Some("fountain_agents")),
-            ("read_agent", json!({ "name": "pr-reviewer" }), "list", Some("fountain_agent")),
+            ("list_agents", json!({ "query": "q", "source": "hand" }), "list", Some("managoat_agents")),
+            ("read_agent", json!({ "name": "pr-reviewer" }), "list", Some("managoat_agent")),
             ("open_port", json!({ "port": 3000, "path": "/x", "beside": "%2" }), "show", Some("port")),
             ("show_changes", json!({ "repo": "/r", "rev_a": "main" }), "show", Some("changes")),
             ("show_file", json!({ "path": "a.rs", "line": 4 }), "show", Some("file")),
@@ -4569,7 +4604,7 @@ mod tests {
             ("open_conversation", json!({ "id": "abc", "then": "fork" }), "show", Some("conversation")),
             ("open_app", json!({ "app": "hud" }), "show", Some("app")),
             ("open_workspace", json!({ "dir": "/w", "env": "prod" }), "show", Some("workspace")),
-            ("open_fountain", json!({ "query": "q", "source": "hand" }), "show", Some("fountain")),
+            ("open_fountain", json!({ "query": "q", "source": "hand" }), "show", Some("managoat")),
             ("read_pr", json!({ "block": 4 }), "read_forge", None),
             ("read_issue", json!({ "block": "%4" }), "read_forge", None),
             ("pr_comment", json!({ "block": 4, "body": "b" }), "draft", Some("comment")),
@@ -4588,8 +4623,8 @@ mod tests {
                     .is_ok(),
                 ("list", Some("conversations")) => parse::<ListConversationsArgs>(args).is_ok(),
                 ("list", Some("devices")) => parse::<NoArgs>(args).is_ok(),
-                ("list", Some("fountain_agents")) => parse::<ListAgentsArgs>(args).is_ok(),
-                ("list", Some("fountain_agent")) => parse::<ReadAgentArgs>(args).is_ok(),
+                ("list", Some("managoat_agents")) => parse::<ListAgentsArgs>(args).is_ok(),
+                ("list", Some("managoat_agent")) => parse::<ReadAgentArgs>(args).is_ok(),
                 ("show", Some("port")) => parse::<OpenPortArgs>(args).is_ok(),
                 ("show", Some("changes")) => parse::<ShowChangesArgs>(args).is_ok(),
                 ("show", Some("file")) => parse::<ShowFileArgs>(args).is_ok(),
@@ -4598,7 +4633,7 @@ mod tests {
                 ("show", Some("conversation")) => parse::<OpenConversationArgs>(args).is_ok(),
                 ("show", Some("app")) => parse::<OpenAppArgs>(args).is_ok(),
                 ("show", Some("workspace")) => parse::<OpenWorkspaceArgs>(args).is_ok(),
-                ("show", Some("fountain")) => parse::<OpenFountainArgs>(args).is_ok(),
+                ("show", Some("managoat")) => parse::<OpenFountainArgs>(args).is_ok(),
                 ("read_forge", _) => parse::<ReadForgeArgs>(args).is_ok(),
                 ("draft", Some("comment")) => parse::<CommentArgs>(args).is_ok(),
                 ("draft", Some("review")) => parse::<PrReviewArgs>(args).is_ok(),
@@ -4711,13 +4746,14 @@ mod tests {
         }));
         for text in &prose {
             let mut lower = text.to_lowercase();
-            // Fountain left Labs (#942): a build with it lists it to anyone,
+            // Managoat left Labs (#942): a build with it lists it to anyone,
             // its sandboxes too. A build without it says neither.
             if crate::labs::BUILT {
-                lower = lower.replace("fountain sandbox", "").replace("sandbox provider", "").replace("fountain", "");
+                lower = lower.replace("managoat sandbox", "").replace("sandbox provider", "").replace("managoat", "");
             }
             for word in [
                 "fountain",
+                "managoat",
                 "studio",
                 "chant",
                 "workspace",
@@ -4747,8 +4783,8 @@ mod tests {
             }
         }
         let start = with.iter().find(|t| t.name == "start_agent").unwrap();
-        let fountain = Value::Object((*start.input_schema).clone()).to_string().contains("\"fountain\"");
-        assert_eq!(fountain, crate::labs::BUILT, "start_agent's agent fountain is a Labs build's");
+        let managoat = Value::Object((*start.input_schema).clone()).to_string().contains("\"managoat\"");
+        assert_eq!(managoat, crate::labs::BUILT, "start_agent's agent managoat is a Labs build's");
         let with = crate::mcp::instructions(fl(true));
         assert!(with.contains("read_thread and post_thread") && with.contains("@agent"), "{with}");
         // Labs only adds the thread sentence.

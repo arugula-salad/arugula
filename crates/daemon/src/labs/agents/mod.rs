@@ -16,7 +16,7 @@
 //!   *required* extension: it's reached over Arugula's end-to-end channel
 //!   only, where the caller is the device on the other end (S34, q2).
 //! - **Wearing it** in an agent block ([`wear`]) is M44's wearing of a
-//!   Fountain agent, with the recipe as the source.
+//!   Managoat agent, with the recipe as the source.
 
 pub mod block;
 pub mod catalog;
@@ -478,7 +478,7 @@ struct RunReq {
     agent: String,
     #[serde(default)]
     prompt: Option<String>,
-    /// #942 F4: on Fountain instead, as its agent `recipe-<name>`, with
+    /// #942 F4: on Managoat instead, as its agent `recipe-<name>`, with
     /// this vault and environment (names or ids), working in `cwd` (else
     /// where it's offered from).
     #[serde(default)]
@@ -503,7 +503,7 @@ impl RunReq {
     }
 }
 
-/// #942 F4: a recipe of this machine's on Fountain, in a session of its
+/// #942 F4: a recipe of this machine's on Managoat, in a session of its
 /// name, for a person to talk to.
 pub async fn run_fountain(
     app: &Arc<App>,
@@ -572,7 +572,7 @@ async fn run_anywhere(
     if r.fountain {
         return match run_fountain(&app, &r.ask()).await {
             Ok((block, summary, labels)) => Json(json!({
-                "agent": r.agent, "machine": "fountain", "block": block, "labels": labels, "summary": summary,
+                "agent": r.agent, "machine": "managoat", "block": block, "labels": labels, "summary": summary,
             }))
             .into_response(),
             Err(e) => refuse(StatusCode::BAD_REQUEST, &e),
@@ -588,7 +588,7 @@ async fn run_anywhere(
     }
 }
 
-/// #942 F4: what a run on Fountain would be, for the Agents page.
+/// #942 F4: what a run on Managoat would be, for the Agents page.
 async fn fountain_preflight(
     State(app): AppState,
     who: Option<axum::Extension<Principal>>,
@@ -628,7 +628,7 @@ struct CopyReq {
 }
 
 /// #942 F4: one variable a recipe uses, copied from this machine to a
-/// Fountain vault, as the person asked (never by itself).
+/// Managoat vault, as the person asked (never by itself).
 async fn fountain_copy(
     State(app): AppState,
     who: Option<axum::Extension<Principal>>,

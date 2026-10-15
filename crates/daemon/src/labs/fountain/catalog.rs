@@ -77,7 +77,7 @@ pub fn source(a: &Agent) -> (Source, Option<String>) {
     (Source::Hand, None)
 }
 
-/// How a sandbox provider is named on a chip (null: Fountain's default).
+/// How a sandbox provider is named on a chip (null: Managoat's default).
 pub fn provider(a: &Agent) -> String {
     a.sandbox_provider.clone().filter(|p| !p.is_empty()).unwrap_or_else(|| "default".into())
 }

@@ -3,26 +3,26 @@
 //! out to the daemon's own subscribers ([`Hub`]).
 //!
 //! **One daemon runs it**, the home one: `arugulad
-//! --fountain-account-stream` (`ARUGULA_FOUNTAIN_ACCOUNT_STREAM=1`), off by
+//! --managoat-account-stream` (`ARUGULA_MANAGOAT_ACCOUNT_STREAM=1`), off by
 //! default, so two machines signed in to one account don't both raise a
 //! card for each permission request. No flag gates it since #942's F5. It
 //! uses [`Account::resolve`]'s login and starts again on every sign-in or
 //! sign-out.
 //!
-//! **The cursor.** Fountain numbers events across the account, and replays
+//! **The cursor.** Managoat numbers events across the account, and replays
 //! what came after `Last-Event-ID` (finished conversations too). The last id
 //! handed to the subscribers is kept in `fountain/stream.json` (0600), with
 //! the account it belongs to, after each event; a reconnect, and a daemon
 //! started again (after a crash too), sends it, so nothing is missed. An
-//! event at or below the cursor (Fountain's replay overlapping what was
+//! event at or below the cursor (Managoat's replay overlapping what was
 //! seen) is dropped, so nothing is handed on twice. The write isn't synced
 //! to disk: a power cut can hand on the last few events again, never skip
-//! one. With no cursor yet, Fountain sends only what happens from then on.
+//! one. With no cursor yet, Managoat sends only what happens from then on.
 //!
-//! **Reconnecting.** Fountain sends a heartbeat every 15 s and closes a
+//! **Reconnecting.** Managoat sends a heartbeat every 15 s and closes a
 //! stream after 60 s idle; a close is normal and reconnects at once. Silence
 //! past [`idle`] counts as a dead connection. Errors back off (1 s doubling to
-//! a minute, with jitter; `Retry-After` when Fountain gives one). A refused
+//! a minute, with jitter; `Retry-After` when Managoat gives one). A refused
 //! key (401) or another 4xx waits for a new sign-in (or five minutes).
 //!
 //! **Subscribers** get [`Event`]s: `output` and `stage` log events (with
@@ -52,7 +52,7 @@ use super::{
 /// One event off the stream.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Event {
-    /// Fountain's id (0 for a signal, which has none).
+    /// Managoat's id (0 for a signal, which has none).
     pub id: u64,
     /// The SSE event: `output`, `stage` or `conversations`.
     pub kind: String,
@@ -233,7 +233,7 @@ pub struct Timing {
     pub refused: Duration,
 }
 
-/// Fountain's heartbeat is every 15 s: three missed is a dead connection.
+/// Managoat's heartbeat is every 15 s: three missed is a dead connection.
 pub fn idle() -> Duration {
     ms_var("ARUGULA_FOUNTAIN_STREAM_IDLE_MS").unwrap_or(Duration::from_secs(45))
 }
@@ -251,7 +251,7 @@ impl Default for Timing {
 
 /// How one connection ended.
 enum Ended {
-    /// Fountain closed it (idle), or it went silent: reconnect now.
+    /// Managoat closed it (idle), or it went silent: reconnect now.
     Closed,
     Failed(Error),
 }
@@ -298,7 +298,7 @@ async fn follow(
     let who = account_of(login);
     let mut cursor = Cursor { last_event_id: load_cursor(account.dir(), &who), account: who };
     set(account, |s| s.cursor = cursor.last_event_id);
-    info!(base_url = %login.base_url, source = login.source.name(), cursor = cursor.last_event_id, "Fountain account stream");
+    info!(base_url = %login.base_url, source = login.source.name(), cursor = cursor.last_event_id, "Managoat account stream");
     let http = client::http(None);
     let mut failures = 0u32;
     loop {
@@ -318,10 +318,10 @@ async fn follow(
                 if e.transient() {
                     let backoff = timing.retry.saturating_mul(1 << (failures - 1).min(16)).min(timing.max);
                     let pause = e.retry_after().unwrap_or(backoff);
-                    warn!(error = %e, retry_ms = pause.as_millis() as u64, "Fountain account stream");
+                    warn!(error = %e, retry_ms = pause.as_millis() as u64, "Managoat account stream");
                     jitter(pause)
                 } else {
-                    warn!(error = %e, "Fountain account stream: refused; waiting for a new sign-in");
+                    warn!(error = %e, "Managoat account stream: refused; waiting for a new sign-in");
                     wait(changes, timing.refused).await;
                     return;
                 }
@@ -334,7 +334,7 @@ async fn follow(
     }
 }
 
-/// Up to a quarter more, so daemons that lost Fountain together don't come
+/// Up to a quarter more, so daemons that lost Managoat together don't come
 /// back together.
 fn jitter(d: Duration) -> Duration {
     let r: [u8; 2] = crate::push::random();
@@ -376,7 +376,7 @@ async fn connect(
     loop {
         let chunk = match tokio::time::timeout(idle, res.chunk()).await {
             Err(_) => {
-                info!("Fountain account stream: silent; reconnecting");
+                info!("Managoat account stream: silent; reconnecting");
                 return Ended::Closed;
             }
             Ok(Err(e)) => return Ended::Failed(Error::Unreachable(format!("the stream broke: {e}"))),
@@ -402,7 +402,7 @@ fn handle(account: &Account, cursor: &mut Cursor, m: Message) {
     if id > 0 {
         cursor.last_event_id = id;
         if let Err(e) = save_cursor(account.dir(), cursor) {
-            warn!(error = %e, "Fountain account stream: can't keep the cursor");
+            warn!(error = %e, "Managoat account stream: can't keep the cursor");
         }
         set(account, |s| {
             s.cursor = id;
@@ -469,7 +469,7 @@ mod tests {
     /// A stub account stream: events 1..=`total`, replaying after
     /// `Last-Event-ID` (and, to be awkward, the event at it again). Each
     /// connection sends at most `per` events and closes, as an idle
-    /// Fountain does. The cursors it was sent are recorded.
+    /// Managoat does. The cursors it was sent are recorded.
     #[derive(Clone)]
     struct Stub {
         total: Arc<Mutex<u64>>,
@@ -535,7 +535,7 @@ mod tests {
 
     /// F1's "done when": a daemon stopped mid-stream (here: its task
     /// aborted, as a crash would) and started again resumes from the kept
-    /// cursor, with no gap and nothing twice, across Fountain's idle closes
+    /// cursor, with no gap and nothing twice, across Managoat's idle closes
     /// (each reconnect is sent the event at the cursor again: dropped).
     #[tokio::test]
     async fn a_restart_resumes_from_the_cursor_with_no_gap_or_duplicate() {
@@ -567,7 +567,7 @@ mod tests {
         assert_eq!(odd, [1, 3, 5, 7, 9], "c1's only");
         task.abort();
         let _ = task.await;
-        assert_eq!(load_cursor(&dir.join("fountain"), &account_of(&login)), 10);
+        assert_eq!(load_cursor(&dir.join("managoat"), &account_of(&login)), 10);
         assert_eq!(a.stream.lock().unwrap().delivered, 10);
 
         // While it's down, more happens.
@@ -591,11 +591,11 @@ mod tests {
 
         // Another account doesn't resume this one's cursor.
         let other = Resolved { base_url: base, key: "k".into(), source: Source::Env, user_id: Some("u2".into()) };
-        assert_eq!(load_cursor(&dir.join("fountain"), &account_of(&other)), 0);
+        assert_eq!(load_cursor(&dir.join("managoat"), &account_of(&other)), 0);
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let mode = std::fs::metadata(dir.join("fountain/stream.json")).unwrap().permissions().mode();
+            let mode = std::fs::metadata(dir.join("managoat/stream.json")).unwrap().permissions().mode();
             assert_eq!(mode & 0o777, 0o600);
         }
         let _ = std::fs::remove_dir_all(&dir);

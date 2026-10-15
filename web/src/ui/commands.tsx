@@ -88,7 +88,7 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
     ...(!client.state?.roles ? [{ label: "Open pull request…", run: () => void openPr(client, { split: id, dir: cwd }) } as MenuItem] : []),
     // M37: an issue beside it (N: in its repository).
     ...(!client.state?.roles ? [{ label: "Open issue…", run: () => void openIssue(client, { split: id, dir: cwd }) } as MenuItem] : []),
-    // M43: the Fountain agent catalog beside it.
+    // M43: the Managoat agent catalog beside it.
     ...(!client.state?.roles ? fountainItems(client, { split: id }) : []),
     // M27: VS Code where this pane runs, in its directory. The owner's,
     // like ports.
@@ -188,7 +188,7 @@ export function newTabItems(client: Client, session: SessionId): MenuItem[] {
     ...(!client.state?.roles ? [{ label: "Open pull request…", run: () => void openPr(client, { session }) } as MenuItem] : []),
     // M37: an issue, in a tab of its own.
     ...(!client.state?.roles ? [{ label: "Open issue…", run: () => void openIssue(client, { session }) } as MenuItem] : []),
-    // M43: the Fountain agent catalog, in a tab of its own.
+    // M43: the Managoat agent catalog, in a tab of its own.
     ...(!client.state?.roles ? fountainItems(client, { session }) : []),
     // #17: a tab here whose shell runs on another host.
     ...remoteHosts().map((h): MenuItem => ({ label: `New tab on ${h}`, run: () => void newRemote(client, h, { session }) })),
@@ -255,9 +255,9 @@ export function machineSettingsItems(client: Client): MenuItem[] {
   ];
 }
 
-/** The Fountain catalog with a login here (#180). */
+/** The Managoat catalog with a login here (#180). */
 function fountainItems(client: Client, where: { session?: number; split?: PaneId }): MenuItem[] {
-  return client.has("fountain") ? [{ label: "Fountain…", run: () => void openFountain(client, where) }] : [];
+  return client.has("fountain") ? [{ label: "Managoat…", run: () => void openFountain(client, where) }] : [];
 }
 
 /** "idle" when nothing in the tab runs on its machine any more. */

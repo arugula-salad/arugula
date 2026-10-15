@@ -1599,8 +1599,8 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   flex: 1;
 }
 
-/* M44: a worn Fountain agent: what it brought, and what didn't come. */
-/* #942 F3: a Fountain conversation's status line and actions. */
+/* M44: a worn Managoat agent: what it brought, and what didn't come. */
+/* #942 F3: a Managoat conversation's status line and actions. */
 .agent-fountain {
   display: flex;
   flex-wrap: wrap;
@@ -2162,7 +2162,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   font-size: 12px;
 }
 
-/* Run on Fountain (#942 F4): the preflight can be long. */
+/* Run on Managoat (#942 F4): the preflight can be long. */
 .fountain-run {
   max-height: 80vh;
   overflow: auto;
@@ -5788,7 +5788,7 @@ button.diff-why-run {
   font-weight: 600;
 }
 
-/* M43: the Fountain agent catalog: the filter bar, then cards in a grid
+/* M43: the Managoat agent catalog: the filter bar, then cards in a grid
  * (a list in a narrow pane and on the phone). */
 .fountain-filters {
   display: flex;
@@ -9018,7 +9018,7 @@ html[data-finish="glass"] .prompt-backdrop {
   background: none;
 }
 
-/* #942 F2: the Fountain account view: its tabs, the open permission
+/* #942 F2: the Managoat account view: its tabs, the open permission
  * requests, and the conversations list. */
 .fountain-tabs {
   display: inline-flex;

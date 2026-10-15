@@ -1,25 +1,25 @@
-//! This daemon's Fountain account (#942, F1): its own sign-in, the login
-//! everything Fountain uses, and the account stream's status.
+//! This daemon's Managoat account (#942, F1): its own sign-in, the login
+//! everything Managoat uses, and the account stream's status.
 //!
-//! **Sign-in** is Fountain's device flow: `POST /api/auth/device` gives a
-//! code to approve at `/device` in a browser signed in to Fountain (on the
+//! **Sign-in** is Managoat's device flow: `POST /api/auth/device` gives a
+//! code to approve at `/device` in a browser signed in to Managoat (on the
 //! phone, say); the daemon polls `/api/auth/device/token` every `interval`
 //! seconds (five more on `slow_down`) until the code is approved, denied or
-//! expired. Started by `arugula fountain login [URL]` or `POST
+//! expired. Started by `arugula managoat login [URL]` or `POST
 //! /api/fountain/login`, which any client (the web, the phone) can call.
-//! Which Fountain: the URL given, else the one signed in to, else
-//! `$FOUNTAIN_BASE_URL` or the CLI profile's `base_url`; with none, it asks
+//! Which Managoat: the URL given, else the one signed in to, else
+//! `$MANAGOAT_BASE_URL` or the CLI profile's `base_url`; with none, it asks
 //! for one. There is no default instance.
 //!
 //! **The key** is kept in the state dir, `fountain/login.json`, mode 0600 in
 //! a 0700 directory (as `studio.json` is), and held in memory: never logged,
 //! never sent to a client (the status says where it came from and its
-//! prefix). `arugula fountain logout` deletes the file and revokes the key on
-//! Fountain when it can (nothing else holds it).
+//! prefix). `arugula managoat logout` deletes the file and revokes the key on
+//! Managoat when it can (nothing else holds it).
 //!
 //! **Which login is used** ([`Account::resolve`]): this daemon's sign-in,
-//! else today's resolution ([`super::login`]: `$FOUNTAIN_API_KEY`, else the
-//! `fountain` CLI's `~/.fountain/credentials`), read on this host with the
+//! else today's resolution ([`super::login`]: `$MANAGOAT_API_KEY`, else the
+//! `managoat` CLI's `~/.managoat/credentials`), read on this host with the
 //! user's shell environment.
 
 use std::{
@@ -60,11 +60,11 @@ struct Saved {
 /// Where the key in use comes from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Source {
-    /// `arugula fountain login`.
+    /// `arugula managoat login`.
     Arugula,
-    /// `$FOUNTAIN_API_KEY`.
+    /// `$MANAGOAT_API_KEY`.
     Env,
-    /// The `fountain` CLI's credentials file.
+    /// The `managoat` CLI's credentials file.
     File,
 }
 
@@ -84,7 +84,7 @@ pub struct Resolved {
     pub base_url: String,
     pub key: String,
     pub source: Source,
-    /// Fountain's id for the account, when known (an Arugula sign-in).
+    /// Managoat's id for the account, when known (an Arugula sign-in).
     pub user_id: Option<String>,
 }
 
@@ -111,7 +111,7 @@ struct Pending {
 
 pub struct Account {
     dir: PathBuf,
-    /// What Fountain names the key ("Arugula on geek").
+    /// What Managoat names the key ("Arugula on geek").
     client_name: String,
     shell_env: Option<Arc<ShellEnv>>,
     saved: Mutex<Option<Saved>>,
@@ -143,7 +143,7 @@ pub fn get() -> Option<Arc<Account>> {
 pub fn base_url(s: &str) -> Result<String, String> {
     let s = s.trim().trim_end_matches('/');
     if s.is_empty() {
-        return Err("which Fountain? give its URL".into());
+        return Err("which Managoat? give its URL".into());
     }
     let s = if s.contains("://") { s.to_owned() } else { format!("https://{s}") };
     let u = url::Url::parse(&s).map_err(|e| format!("{s} isn't a URL: {e}"))?;
@@ -156,8 +156,8 @@ pub fn base_url(s: &str) -> Result<String, String> {
     Ok(s)
 }
 
-/// The base URL the CLI's login names, if it names one: `$FOUNTAIN_BASE_URL`,
-/// else the profile's (`$FOUNTAIN_PROFILE`, else `default`).
+/// The base URL the CLI's login names, if it names one: `$MANAGOAT_BASE_URL`,
+/// else the profile's (`$MANAGOAT_PROFILE`, else `default`).
 pub fn named_base(found: &login::Found) -> Option<String> {
     let env = found.env_base.trim();
     if !env.is_empty() {
@@ -168,16 +168,37 @@ pub fn named_base(found: &login::Found) -> Option<String> {
     all.get(profile)?.get("base_url").map(|b| b.trim().trim_end_matches('/').to_owned()).filter(|b| !b.is_empty())
 }
 
+/// Where the key and the stream's cursor are kept: `managoat/` in the
+/// state dir. A daemon from before the rename (DECISIONS.md "Fountain is
+/// Managoat") kept them in `fountain/`, which is moved here the first time,
+/// sign-in, cursor and all; if it can't be moved, it's used where it is.
+pub fn dir_in(state_dir: &Path) -> PathBuf {
+    let (dir, old) = (state_dir.join("managoat"), state_dir.join("fountain"));
+    if dir.exists() || !old.is_dir() {
+        return dir;
+    }
+    match std::fs::rename(&old, &dir) {
+        Ok(()) => {
+            info!(from = %old.display(), to = %dir.display(), "moved the Managoat sign-in to its new name");
+            dir
+        }
+        Err(e) => {
+            warn!(dir = %old.display(), error = %e, "couldn't move the Managoat sign-in to managoat/; using it where it is");
+            old
+        }
+    }
+}
+
 impl Account {
     pub fn open(state_dir: &Path, client_name: &str, shell_env: Option<Arc<ShellEnv>>, tick: Duration) -> Self {
-        let dir = state_dir.join("fountain");
+        let dir = dir_in(state_dir);
         let file = dir.join("login.json");
         let saved = match std::fs::read(&file) {
             Ok(b) => match serde_json::from_slice::<Saved>(&b) {
                 Ok(s) if !s.key.is_empty() && !s.base_url.is_empty() => Some(s),
                 Ok(_) => None,
                 Err(e) => {
-                    warn!(file = %file.display(), error = %e, "Fountain login unreadable; signed out");
+                    warn!(file = %file.display(), error = %e, "Managoat login unreadable; signed out");
                     None
                 }
             },
@@ -217,11 +238,11 @@ impl Account {
     }
 
     fn save(&self, s: &Saved) -> Result<(), String> {
-        crate::store::private_dir(&self.dir).map_err(|e| format!("can't save the Fountain login: {e}"))?;
+        crate::store::private_dir(&self.dir).map_err(|e| format!("can't save the Managoat login: {e}"))?;
         let bytes = serde_json::to_vec_pretty(s).map_err(|e| e.to_string())?;
-        crate::store::write_atomic(&self.file(), &bytes).map_err(|e| format!("can't save the Fountain login: {e}"))?;
+        crate::store::write_atomic(&self.file(), &bytes).map_err(|e| format!("can't save the Managoat login: {e}"))?;
         // A file made by an older daemon, or by hand, may be wider.
-        crate::perm::set(&self.file(), 0o600).map_err(|e| format!("can't save the Fountain login: {e}"))
+        crate::perm::set(&self.file(), 0o600).map_err(|e| format!("can't save the Managoat login: {e}"))
     }
 
     fn bump(&self) {
@@ -252,7 +273,7 @@ impl Account {
         }
         let found = self.found().await?;
         let l = login::resolve(&found, None)
-            .map_err(|e| format!("{e} (or sign this daemon in: `arugula fountain login URL`)"))?;
+            .map_err(|e| format!("{e} (or sign this daemon in: `arugula managoat login URL`)"))?;
         Ok(Resolved {
             base_url: l.base_url,
             key: l.key,
@@ -319,7 +340,7 @@ impl Account {
             None => match self.signed_in().map(|s| s.base_url) {
                 Some(b) => b,
                 None => named_base(&self.found().await.unwrap_or_default()).ok_or_else(|| {
-                    "which Fountain? give its URL: `arugula fountain login https://fountain.example`".to_owned()
+                    "which Managoat? give its URL: `arugula managoat login https://fountain.example`".to_owned()
                 })?,
             },
         };
@@ -332,7 +353,7 @@ impl Account {
             verification_uri_complete: grant.verification_uri_complete.clone(),
             expires_ms: now_ms() + grant.expires_in * 1000,
         };
-        info!(base_url = %base, user_code = %grant.user_code, "Fountain sign-in started");
+        info!(base_url = %base, user_code = %grant.user_code, "Managoat sign-in started");
         let me = self.clone();
         let task = tokio::spawn(async move { me.poll(http, base, grant).await }).abort_handle();
         if let Some(old) = self.pending.lock().unwrap().replace(Pending { shown, task }) {
@@ -357,9 +378,9 @@ impl Account {
                 Ok(Poll::Approved(k)) => break Ok(k),
                 Ok(Poll::Denied) => break Err("the sign-in was denied".to_owned()),
                 Ok(Poll::Expired) => break Err("the code expired before it was approved: sign in again".to_owned()),
-                Ok(Poll::Invalid) => break Err("Fountain no longer knows that code: sign in again".to_owned()),
-                // Fountain or the network, for now: the code stays good.
-                Err(e) if e.transient() => warn!(error = %e, "Fountain sign-in: polling"),
+                Ok(Poll::Invalid) => break Err("Managoat no longer knows that code: sign in again".to_owned()),
+                // Managoat or the network, for now: the code stays good.
+                Err(e) if e.transient() => warn!(error = %e, "Managoat sign-in: polling"),
                 Err(e) => break Err(e.to_string()),
             }
         };
@@ -369,7 +390,7 @@ impl Account {
                 let me = match c.me().await {
                     Ok(m) => Some(m),
                     Err(e) => {
-                        warn!(error = %e, "Fountain sign-in: who is it");
+                        warn!(error = %e, "Managoat sign-in: who is it");
                         None
                     }
                 };
@@ -384,7 +405,7 @@ impl Account {
                 };
                 match self.save(&saved) {
                     Ok(()) => {
-                        info!(base_url = %base, prefix = ?saved.prefix, "signed in to Fountain");
+                        info!(base_url = %base, prefix = ?saved.prefix, "signed in to Managoat");
                         *self.saved.lock().unwrap() = Some(saved);
                         Ok(())
                     }
@@ -395,14 +416,14 @@ impl Account {
         };
         *self.pending.lock().unwrap() = None;
         if let Err(e) = &done {
-            warn!(base_url = %base, error = %e, "Fountain sign-in");
+            warn!(base_url = %base, error = %e, "Managoat sign-in");
         }
         *self.error.lock().unwrap() = done.err();
         self.bump();
     }
 
     /// Forget this daemon's key (and a sign-in in progress), revoking the
-    /// key on Fountain when it can. The CLI's login is left alone.
+    /// key on Managoat when it can. The CLI's login is left alone.
     pub async fn logout(&self) -> Result<FountainLogin, String> {
         if let Some(p) = self.pending.lock().unwrap().take() {
             p.task.abort();
@@ -411,21 +432,21 @@ impl Account {
         match std::fs::remove_file(self.file()) {
             Ok(()) => {}
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => return Err(format!("can't remove the Fountain login: {e}")),
+            Err(e) => return Err(format!("can't remove the Managoat login: {e}")),
         }
         *self.error.lock().unwrap() = None;
         self.bump();
         let note = match gone {
-            None => Some("this daemon wasn't signed in to Fountain".to_owned()),
+            None => Some("this daemon wasn't signed in to Managoat".to_owned()),
             Some(s) => match &s.key_id {
                 Some(id) => match Client::new(&s.base_url, &s.key).revoke_key(id).await {
-                    Ok(()) => Some("the key was revoked on Fountain".to_owned()),
-                    Err(e) => Some(format!("Fountain didn't revoke the key ({e}): revoke it in its console")),
+                    Ok(()) => Some("the key was revoked on Managoat".to_owned()),
+                    Err(e) => Some(format!("Managoat didn't revoke the key ({e}): revoke it in its console")),
                 },
-                None => Some("revoke the key in Fountain's console".to_owned()),
+                None => Some("revoke the key in Managoat's console".to_owned()),
             },
         };
-        info!(note = ?note, "signed out of Fountain");
+        info!(note = ?note, "signed out of Managoat");
         let mut out = self.status().await;
         out.note = note;
         Ok(out)
@@ -444,7 +465,7 @@ pub fn routes(r: axum::Router<Arc<crate::server::App>>) -> axum::Router<Arc<crat
 
 fn installed() -> Result<Arc<Account>, crate::api::ApiError> {
     get().ok_or_else(|| {
-        crate::api::ApiError(axum::http::StatusCode::SERVICE_UNAVAILABLE, "Fountain isn't set up yet".into())
+        crate::api::ApiError(axum::http::StatusCode::SERVICE_UNAVAILABLE, "Managoat isn't set up yet".into())
     })
 }
 
@@ -454,7 +475,7 @@ pub async fn fountain_login() -> Result<FountainLogin, crate::api::ApiError> {
 }
 
 /// `POST /api/fountain/login`: a 400 says why it can't start (which
-/// Fountain, or what Fountain said).
+/// Managoat, or what Managoat said).
 pub async fn fountain_login_start(
     req: arugula_proto::api::FountainLoginRequest,
 ) -> Result<FountainLogin, crate::api::ApiError> {
@@ -578,7 +599,7 @@ mod tests {
         let dir = scratch("signin");
         let a = Arc::new(Account::open(&dir, "Arugula on test", None, Duration::from_millis(10)));
         let e = a.start(None).await.unwrap_err();
-        assert!(e.contains("which Fountain?"), "{e}");
+        assert!(e.contains("which Managoat?"), "{e}");
         let mut changes = a.changes();
         let s = a.start(Some(&base)).await.unwrap();
         let p = s.pending.unwrap();
@@ -594,10 +615,10 @@ mod tests {
         assert_eq!((s.email.as_deref(), s.key_prefix.as_deref()), (Some("jake@example.com"), Some("ftn_se")));
         let shown = serde_json::to_string(&s).unwrap();
         assert!(!shown.contains("ftn_secret_key"), "{shown}");
-        let file = dir.join("fountain/login.json");
+        let file = dir.join("managoat/login.json");
         use std::os::unix::fs::PermissionsExt;
         assert_eq!(std::fs::metadata(&file).unwrap().permissions().mode() & 0o777, 0o600);
-        assert_eq!(std::fs::metadata(dir.join("fountain")).unwrap().permissions().mode() & 0o777, 0o700);
+        assert_eq!(std::fs::metadata(dir.join("managoat")).unwrap().permissions().mode() & 0o777, 0o700);
         // Read back by the next daemon.
         let again = Arc::new(Account::open(&dir, "n", None, Duration::from_millis(10)));
         let r = again.resolve().await.unwrap();
@@ -606,7 +627,7 @@ mod tests {
         // A second sign-in defaults to the instance signed in to.
         assert_eq!(again.start(None).await.unwrap().pending.unwrap().base_url, base);
         let out = again.logout().await.unwrap();
-        assert_eq!(out.note.as_deref(), Some("the key was revoked on Fountain"));
+        assert_eq!(out.note.as_deref(), Some("the key was revoked on Managoat"));
         assert!(!out.signed_in && out.pending.is_none());
         assert!(!file.exists());
         assert_eq!(fake.revoked.lock().unwrap().clone(), [("k9".to_owned(), "Bearer ftn_secret_key".to_owned())]);
@@ -625,7 +646,33 @@ mod tests {
         let s = a.status().await;
         assert!(!s.signed_in);
         assert_eq!(s.error.as_deref(), Some("the sign-in was denied"));
-        assert!(!dir.join("fountain/login.json").exists());
+        assert!(!dir.join("managoat/login.json").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A daemon from before the rename kept its sign-in and the stream's
+    /// cursor in `fountain/`: the next one moves them to `managoat/` and
+    /// is still signed in, as the same account.
+    #[tokio::test]
+    async fn a_sign_in_kept_under_fountain_moves_to_managoat() {
+        let dir = scratch("moved");
+        let old = dir.join("fountain");
+        std::fs::create_dir_all(&old).unwrap();
+        let saved = r#"{"base_url":"https://managoat.example","key":"ftn_old_key","user_id":"u1","at_ms":1}"#;
+        std::fs::write(old.join("login.json"), saved).unwrap();
+        std::fs::write(old.join("stream.json"), r#"{"account":"a","cursor":7}"#).unwrap();
+        let a = Account::open(&dir, "n", None, Duration::from_millis(10));
+        assert_eq!(a.dir(), dir.join("managoat"));
+        assert!(!old.exists(), "fountain/ is moved, not copied");
+        assert_eq!(std::fs::read_to_string(dir.join("managoat/login.json")).unwrap(), saved);
+        assert!(dir.join("managoat/stream.json").is_file());
+        let r = a.resolve().await.unwrap();
+        assert_eq!((r.source, r.key.as_str(), r.user_id.as_deref()), (Source::Arugula, "ftn_old_key", Some("u1")));
+        // Both there (a rollback signed in again): the new one is used.
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::write(old.join("login.json"), r#"{"base_url":"https://x","key":"other"}"#).unwrap();
+        let again = Account::open(&dir, "n", None, Duration::from_millis(10));
+        assert_eq!(again.signed_in().unwrap().key, "ftn_old_key");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

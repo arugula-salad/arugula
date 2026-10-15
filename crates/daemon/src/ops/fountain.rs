@@ -1,5 +1,5 @@
-//! `fountain`: the person's Fountain agents, read with their own login on this
-//! host (`arugula fountain agents`). Fountain is Labs', so a build without it
+//! `fountain`: the person's Managoat agents, read with their own login on this
+//! host (`arugula managoat agents`). Managoat is Labs', so a build without it
 //! answers as a route that isn't there; MCP's `list` kind fountain_agents
 //! reads the same agents but stays written out in `mcp/tools.rs`, for its
 //! answer is built from the agents themselves, not from this one's rows.

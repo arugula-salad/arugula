@@ -40,7 +40,7 @@ test.beforeAll(async () => {
     ],
     {
       stdio: "ignore",
-      env: { ...process.env, ARUGULA_FOUNTAIN_CREDENTIALS: join(state, "fountain-credentials") },
+      env: { ...process.env, ARUGULA_MANAGOAT_CREDENTIALS: join(state, "fountain-credentials") },
     },
   );
   base = `http://127.0.0.1:${await daemonPort(state, daemon)}`;

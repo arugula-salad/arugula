@@ -41,8 +41,8 @@ struct Config {
     path: String,
     #[serde(default)]
     line: Option<u32>,
-    /// F3: a file in a Fountain conversation's sandbox, read through
-    /// Fountain.
+    /// F3: a file in a Managoat conversation's sandbox, read through
+    /// Managoat.
     #[serde(default)]
     fountain: Option<super::Sandbox>,
 }
@@ -71,7 +71,7 @@ struct State {
     /// Following the file now (someone draws it).
     watching: bool,
     updated_ms: u64,
-    /// F3: the Fountain conversation whose sandbox it shows; whether that's
+    /// F3: the Managoat conversation whose sandbox it shows; whether that's
     /// parked (Wake to look); and a directory's entries (`{name, type,
     /// size}`), when the path is one.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -195,7 +195,7 @@ impl FileView {
         self.ctx.changed();
     }
 
-    /// F3: the file (or directory) in the sandbox, through Fountain. It
+    /// F3: the file (or directory) in the sandbox, through Managoat. It
     /// has no time to look at first, so it's read each time; the state
     /// changes only if what it read did.
     async fn load_sandbox(&self, s: &super::Sandbox) {

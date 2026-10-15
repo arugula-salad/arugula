@@ -100,9 +100,9 @@ fn an_invite_from_a_thread_is_refused_and_one_without_works() {
     assert_eq!(status, 200, "{text}");
 }
 
-/// Fountain left Labs (#942, F5), but its code is still the `labs` cargo
-/// feature's: a build without it has no Fountain, whatever the flags file
-/// says of `fountain` and whatever login is here. A Fountain block says it
+/// Managoat left Labs (#942, F5), but its code is still the `labs` cargo
+/// feature's: a build without it has no Managoat, whatever the flags file
+/// says of `fountain` and whatever login is here. A Managoat block says it
 /// isn't in this build, and the host offers none.
 #[test]
 fn fountain_is_not_in_a_build_without_labs() {
@@ -115,6 +115,6 @@ fn fountain_is_not_in_a_build_without_labs() {
     assert_eq!(d.get("/api/host")["features"]["fountain"], false);
     let (status, text) = d.raw("POST", "/api/blocks", Some(json!({ "type": "fountain", "config": {}, "local": true })));
     assert!((400..600).contains(&status), "{status} {text}");
-    assert!(text.contains("A Fountain block isn't in this build"), "{text}");
+    assert!(text.contains("A Managoat block isn't in this build"), "{text}");
     assert!(!text.contains("arugulad flags"), "{text}");
 }

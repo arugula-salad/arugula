@@ -8,7 +8,7 @@
 //! tool call's `name` and `summary`, the `options`), then a `request` stage
 //! event, `started`, with the same `request_id`, the `tool`, the `options`
 //! and `timeout_ms`. The stage event opens a request here; the block only
-//! says more about it. Fountain resolves it on every outcome (an answer from
+//! says more about it. Managoat resolves it on every outcome (an answer from
 //! any client, a deny, the five-minute timeout, the turn ending) with the
 //! `request` stage `done`, which closes it here: so an answer given in the
 //! CLI, an editor or another app clears the card. The turn ending
@@ -23,9 +23,9 @@
 //! **Where the card goes.** On an account view block ([`super::FountainBlock`]):
 //! the open one with the lowest id holds them ([`Requests::holder`]), and if
 //! none is open when a request comes, one is opened in a session of its own
-//! (`fountain`), so a card always has a pane. It shows the newest request as
+//! (`managoat`), so a card always has a pane. It shows the newest request as
 //! the card (the one just pushed) and lists every open one. A request whose
-//! conversation an agent block here already shows (`agent: fountain`
+//! conversation an agent block here already shows (`agent: managoat`
 //! following it) is listed but raises no card: that block asks itself.
 //!
 //! **Answering** ([`Requests::answer`]) is `POST
@@ -49,23 +49,23 @@ use tracing::{info, warn};
 use super::{account::Account, client::Error, stream::Event};
 use crate::{server::App, store::now_ms};
 
-/// Fountain's own timeout, when the stage event doesn't say.
+/// Managoat's own timeout, when the stage event doesn't say.
 const TIMEOUT_MS: u64 = 5 * 60 * 1000;
 
 /// How long a request outlives its timeout here before it's dropped (the
-/// `done` that Fountain sends at the timeout should come first).
+/// `done` that Managoat sends at the timeout should come first).
 const GRACE_MS: u64 = 30_000;
 
 /// How many resolved ids, and blocks' details, are remembered.
 const REMEMBERED: usize = 256;
 
 /// The session a card's block opens in when none is open.
-pub const SESSION: &str = "fountain";
+pub const SESSION: &str = "managoat";
 
 /// One open permission request.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Request {
-    /// Fountain's `request_id`: the card's id.
+    /// Managoat's `request_id`: the card's id.
     pub id: String,
     pub conversation_id: String,
     /// The tool, as the stage event names it.
@@ -78,7 +78,7 @@ pub struct Request {
     pub options: Vec<Value>,
     pub turn_id: Option<String>,
     pub at_ms: u64,
-    /// When Fountain gives up on it and denies it.
+    /// When Managoat gives up on it and denies it.
     pub expires_ms: u64,
     /// The order it came in (two in one second).
     #[serde(skip)]
@@ -185,7 +185,7 @@ pub fn iso_ms(s: &str) -> Option<u64> {
     u64::try_from(total).ok()
 }
 
-/// A stage event's own data: a JSON string (as Fountain logs it) or an
+/// A stage event's own data: a JSON string (as Managoat logs it) or an
 /// object.
 fn meta(data: &Value) -> Value {
     match &data["data"] {
@@ -293,7 +293,7 @@ impl Requests {
                     expires_ms,
                     seq: self.seq.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
                 };
-                info!(conversation = conv, request = %id, tool = ?r.tool, "Fountain asks for permission");
+                info!(conversation = conv, request = %id, tool = ?r.tool, "Managoat asks for permission");
                 self.open.lock().unwrap().insert(id.clone(), r);
                 self.bump();
                 Some(Change::Opened(id))
@@ -339,7 +339,7 @@ impl Requests {
         if gone.is_empty() {
             return None;
         }
-        info!(requests = ?gone, "Fountain's permission requests settled");
+        info!(requests = ?gone, "Managoat's permission requests settled");
         self.bump();
         Some(Change::Closed(gone))
     }
@@ -355,7 +355,7 @@ impl Requests {
             .map(|r| r.id.clone())
             .collect();
         if !late.is_empty() {
-            warn!(requests = ?late, "Fountain never said these were settled; dropping them past their timeout");
+            warn!(requests = ?late, "Managoat never said these were settled; dropping them past their timeout");
             self.resolve(&late);
         }
     }
@@ -364,20 +364,20 @@ impl Requests {
     /// account's login. Losing the race closes it all the same.
     pub async fn answer(&self, account: &Account, id: &str, allow: bool, always: bool) -> Result<Value, String> {
         let r =
-            self.get(id).ok_or_else(|| format!("no open Fountain request {id:?} (it was answered, or timed out)"))?;
+            self.get(id).ok_or_else(|| format!("no open Managoat request {id:?} (it was answered, or timed out)"))?;
         let option = r.option(allow, always)?;
         let login = account.resolve().await?;
         match login.client().answer(&r.conversation_id, &r.id, &option).await {
             Ok(()) => {
-                info!(conversation = r.conversation_id, request = id, option, "answered a Fountain request");
+                info!(conversation = r.conversation_id, request = id, option, "answered a Managoat request");
                 self.resolve(std::slice::from_ref(&r.id));
                 Ok(json!({ "answered": r.id, "option": option, "conversation_id": r.conversation_id }))
             }
             Err(e @ (Error::Conflict { .. } | Error::NotFound { .. } | Error::Gone { .. })) => {
-                info!(request = id, error = %e, "a Fountain request was settled before this answer");
+                info!(request = id, error = %e, "a Managoat request was settled before this answer");
                 self.resolve(std::slice::from_ref(&r.id));
                 Err(format!(
-                    "{} was already settled on Fountain (answered elsewhere, timed out or its turn ended)",
+                    "{} was already settled on Managoat (answered elsewhere, timed out or its turn ended)",
                     r.title()
                 ))
             }
@@ -401,7 +401,7 @@ pub async fn run(app: Arc<App>, account: Arc<Account>) {
                     }
                 }
                 Err(broadcast::error::RecvError::Lagged(n)) => {
-                    warn!(missed = n, "Fountain attention fell behind the account stream");
+                    warn!(missed = n, "Managoat attention fell behind the account stream");
                 }
                 Err(broadcast::error::RecvError::Closed) => return,
             },
@@ -423,8 +423,8 @@ async fn ensure_holder(app: &App, reqs: &Requests) {
         ..Default::default()
     };
     match app.mux.api(|r| crate::mux::Api::Open(req, None, r)).await {
-        Some(Ok(b)) => info!(block = b, "opened the Fountain account view for a permission request"),
-        Some(Err(e)) => warn!(error = %e, "couldn't open the Fountain account view for a permission request"),
+        Some(Ok(b)) => info!(block = b, "opened the Managoat account view for a permission request"),
+        Some(Err(e)) => warn!(error = %e, "couldn't open the Managoat account view for a permission request"),
         None => {}
     }
 }

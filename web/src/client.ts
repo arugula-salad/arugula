@@ -237,7 +237,7 @@ class E2ELink implements Link {
   }
 }
 
-/** The host features that follow `labs`: also off without it. Fountain
+/** The host features that follow `labs`: also off without it. Managoat
  * left Labs (#942): `fountain` is the daemon's word alone (a login there). */
 const LABS_FEATURES: Exclude<keyof HostFeatures, "flags">[] = ["vms", "studio"];
 
@@ -921,7 +921,7 @@ export class Client {
   }
 
   /** Whether this machine has any Labs flag on: something a stranger
-   * doesn't get (chat, huddles, Fountain, studio, VMs, guest ssh, the
+   * doesn't get (chat, huddles, Managoat, studio, VMs, guest ssh, the
    * swarm's extra views). `flag` says which. Unlike `has`, unknown means no:
    * control serves this page to older daemons too, which never say. */
   hasLabs(): boolean {

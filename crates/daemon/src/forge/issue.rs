@@ -393,9 +393,13 @@ impl ForgeBlock {
         let dir = args["dir"].as_str().map(str::to_owned).or_else(|| self.config.lock().unwrap().dir.clone()).ok_or_else(
             || format!("no clone of {repo} known here: give {{\"dir\": …}}, or open it from one (`arugula issue {number}` there)"),
         )?;
-        let kind = args["agent"].as_str().unwrap_or("claude").to_owned();
-        if !["claude", "codex", "fountain", "acp"].contains(&kind.as_str()) {
-            return Err(format!("agent {kind}? claude, codex, fountain or acp"));
+        // `fountain`: Managoat's name before the rename, still read.
+        let kind = match args["agent"].as_str().unwrap_or("claude") {
+            "fountain" => "managoat".to_owned(),
+            k => k.to_owned(),
+        };
+        if !["claude", "codex", "managoat", "acp"].contains(&kind.as_str()) {
+            return Err(format!("agent {kind}? claude, codex, managoat or acp"));
         }
         let base = match args["base"].as_str() {
             Some(b) => b.to_owned(),
@@ -424,17 +428,20 @@ impl ForgeBlock {
         }
         // Its prompt carries someone else's text: nothing is allowed ahead
         // of time (no "always allow" rules, no permission mode, not the
-        // owner's own Claude Code settings; Fountain's approvals come to the
+        // owner's own Claude Code settings; Managoat's approvals come to the
         // block), so what it wants to do comes to the owner first.
         let mut config = json!({ "agent": kind, "cwd": wt, "allow": [], "user_settings": false,
             "prompt": prompt(&repo, &item, &branch, &base, args["prompt_extra"].as_str()) });
-        if kind == "fountain" {
+        if kind == "managoat" {
             config["permission"] = json!("ask");
         }
-        for k in ["command", "fountain_agent", "model"] {
+        for k in ["command", "managoat_agent", "model"] {
             if !args[k].is_null() {
                 config[k] = args[k].clone();
             }
+        }
+        if args["managoat_agent"].is_null() && !args["fountain_agent"].is_null() {
+            config["managoat_agent"] = args["fountain_agent"].clone();
         }
         let req = OpenRequest {
             kind: BlockType::Agent,

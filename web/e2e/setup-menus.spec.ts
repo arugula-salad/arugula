@@ -1,9 +1,9 @@
 // #171, #180: a machine set up for nothing optional (no --block-listen, no
-// wisp, no Fountain login, no studio) offers nothing that would
-// fail for setup nobody mentioned. VM, sandbox, Fountain and studio items
+// wisp, no Managoat login, no studio) offers nothing that would
+// fail for setup nobody mentioned. VM, sandbox, Managoat and studio items
 // aren't in its menus; Open a port… and Open in editor say how to turn
-// block sites on, with a link, instead of failing. A Fountain login puts
-// Fountain's item back the next time a menu opens.
+// block sites on, with a link, instead of failing. A Managoat login puts
+// Managoat's item back the next time a menu opens.
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -29,7 +29,7 @@ test.beforeAll(async () => {
       ...process.env,
       ARUGULA_STATE_DIR: labs(state),
       ARUGULA_WISP_TOKEN_FILE: "/nonexistent",
-      ARUGULA_FOUNTAIN_CREDENTIALS: join(state, "no-fountain-credentials"),
+      ARUGULA_MANAGOAT_CREDENTIALS: join(state, "no-fountain-credentials"),
     },
   });
   APP = `http://127.0.0.1:${await daemonPort(state, daemon)}`;
@@ -59,7 +59,7 @@ test("menus offer only what this machine is set up for", async ({ page }) => {
     flags: ["chat", "huddles", "vms", "studio", "workspaces", "guest-ssh", "swarm-themes", "forges", "agents"],
   });
   const [term] = await panes(page);
-  const hidden = ["New VM pane on the right", "New VM tab", "Sandboxes…", "Fountain…", "Open a studio app…"];
+  const hidden = ["New VM pane on the right", "New VM tab", "Sandboxes…", "Managoat…", "Open a studio app…"];
 
   // A pane's menu.
   await paneEl(page, term).click({ button: "right", position: { x: 60, y: 60 } });
@@ -114,11 +114,11 @@ test("Open a port… and Open in editor say how to turn block sites on", async (
   expect(await page.evaluate(() => window.__arugula.client.error)).toBeNull();
 });
 
-test("a Fountain login made since the page loaded shows the next time a menu opens", async ({ page }) => {
+test("a Managoat login made since the page loaded shows the next time a menu opens", async ({ page }) => {
   await reset(page);
   const [term] = await panes(page);
-  // As `fountain auth login` leaves it.
+  // As `managoat auth login` leaves it.
   writeFileSync(join(state, "no-fountain-credentials"), '[default]\napi_key = "ftn_test_e2e"\n');
   await paneEl(page, term).click({ button: "right", position: { x: 60, y: 60 } });
-  await expect(page.getByRole("menuitem", { name: "Fountain…" })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: "Managoat…" })).toBeVisible();
 });

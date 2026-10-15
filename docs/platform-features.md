@@ -32,20 +32,20 @@ calls show up as cards.
 
 | Platform feature | What Arugula does with it | Where |
 | --- | --- | --- |
-| ACP (Agent Client Protocol) | Agent blocks are ACP clients. They drive Claude Code (`claude-agent-acp`), Codex (`codex-acp`) and any ACP command. Gemini CLI and opencode are untested. A Fountain conversation is an agent block too, on a native link to Fountain's API rather than `fountain acp` (#942, F3) | [DECISIONS.md](../DECISIONS.md), M6b, S7 |
+| ACP (Agent Client Protocol) | Agent blocks are ACP clients. They drive Claude Code (`claude-agent-acp`), Codex (`codex-acp`) and any ACP command. Gemini CLI and opencode are untested. A Managoat conversation is an agent block too, on a native link to Managoat's API rather than `fountain acp` (#942, F3) | [DECISIONS.md](../DECISIONS.md), M6b, S7 |
 | Claude's `AskUserQuestion` | Shown as a question card through ACP form elicitation, and answerable from a push notification. URL elicitations (an MCP server's sign-in) show as cards too | M6c in [plan-archive.md](plan-archive.md) |
 | Codex plan-mode questions | Shown as cards through elicitation. In its default mode Codex hangs: `codex-acp` drops the async question tool | M6c, S13 |
 | Claude Code permission prompts and questions in a terminal | Become cards through hooks (`arugula hooks install`), and anyone on the team who may answer can answer | [#46](https://github.com/arugula-salad/arugula/issues/46) (M29), [#229](https://github.com/arugula-salad/arugula/issues/229) |
 | MCP, as a server | `arugula mcp` gives any MCP client (Claude Code, Codex, Claude Desktop) tools to run panes, show blocks, draft forge actions and supervise agents | [#5](https://github.com/arugula-salad/arugula/issues/5) (M16), [#349](https://github.com/arugula-salad/arugula/issues/349) |
 | Claude Code conversations, from a terminal or the desktop app's Code tab | Indexed as blocks you can read, continue or fork. Claude Desktop chats are out of scope because they live on claude.ai | [#72](https://github.com/arugula-salad/arugula/issues/72) (M33), [#83](https://github.com/arugula-salad/arugula/issues/83) |
-| Skills and MCP servers bundled with an agent | An agent recipe (a Claude Code subagent file) is worn locally: its skills become a local plugin and its MCP servers are passed by reference, never on argv. On Fountain the same recipe is compiled to one Fountain agent and run in a sandbox. Wearing a Fountain agent locally (M44) was retired on 2026-10-15. Recipes are behind the `agents` flag | [#398](https://github.com/arugula-salad/arugula/issues/398) (M76), [#942](https://github.com/arugula-salad/arugula/issues/942) (F4) |
-| A hosted agent backend (Fountain) | Arugula is Fountain's UI: the account's conversations, their permission requests as cards and pushes, a conversation as an agent block, recipes run in Fountain sandboxes. No flag since 2026-10-15; it needs only a Fountain login ([fountain.md](fountain.md)) | [#942](https://github.com/arugula-salad/arugula/issues/942) (F0 to F5) |
+| Skills and MCP servers bundled with an agent | An agent recipe (a Claude Code subagent file) is worn locally: its skills become a local plugin and its MCP servers are passed by reference, never on argv. On Managoat the same recipe is compiled to one Managoat agent and run in a sandbox. Wearing a Managoat agent locally (M44) was retired on 2026-10-15. Recipes are behind the `agents` flag | [#398](https://github.com/arugula-salad/arugula/issues/398) (M76), [#942](https://github.com/arugula-salad/arugula/issues/942) (F4) |
+| A hosted agent backend (Managoat) | Arugula is Managoat's UI: the account's conversations, their permission requests as cards and pushes, a conversation as an agent block, recipes run in Managoat sandboxes. No flag since 2026-10-15; it needs only a Managoat login ([managoat.md](managoat.md)) | [#942](https://github.com/arugula-salad/arugula/issues/942) (F0 to F5) |
 | Agent inventory | The daemon runs `chant audit --agents` at start to list the agents, skills and servers on a machine | [#255](https://github.com/arugula-salad/arugula/issues/255) |
 | Images in prompts | Sent as ACP image content blocks when the agent supports them | [#249](https://github.com/arugula-salad/arugula/issues/249) (M70) |
 | Push notifications | Web Push when an agent needs input or a long command ends. This is what Claude Code's Remote Control does for Anthropic's apps | M3, M21 |
 
-In `experimental`, the App builder streams Fountain Conversations and
-shows tool approvals as cards. Free-form questions aren't events in Fountain
+In `experimental`, the App builder streams Managoat Conversations and
+shows tool approvals as cards. Free-form questions aren't events in Managoat
 yet ([PLAN.md](https://github.com/arugula-salad/experimental/blob/main/docs/PLAN.md)).
 
 ## Already planned
@@ -71,10 +71,10 @@ features most likely to send Joe back to a vendor app.
 | --- | --- | --- | --- |
 | Runs an agent every morning or on an event | Cowork scheduled tasks (cloud-run as of 2026-10-06), Claude Code Routines (schedule, HTTP or GitHub events), Channels | Build our own: a scheduled or event-started agent block on a machine, with its result as a card and in the pane's thread. Routines can also be started over HTTP | Ours to build. Routines have an HTTP trigger |
 | Opens a tool's interactive UI (a chart, a form, a viewer) | MCP Apps: tools return `ui://` HTML, drawn by Claude, ChatGPT, VS Code and Goose | Draw MCP Apps in a block. In an agent block the agent, not Arugula, is the MCP client, so we only see the UI if the ACP adapter passes the tool's `_meta.ui` through. Needs a spike | Open spec, ratified 2026-01-26 |
-| Uses his ChatGPT or Claude plugins and connectors | ChatGPT apps are now plugins built on MCP, and one plugin reaches ChatGPT, ChatGPT Work and Codex. Claude plugins bundle skills and connectors | Two directions. Bring his skills and MCP servers into Arugula's agents (M76's recipes already do this, here and, compiled to a Fountain agent, on Fountain). And ship Arugula's MCP server as a plugin in Claude and ChatGPT, so his work there lands in Arugula's cards | Open (MCP, `SKILL.md`) |
+| Uses his ChatGPT or Claude plugins and connectors | ChatGPT apps are now plugins built on MCP, and one plugin reaches ChatGPT, ChatGPT Work and Codex. Claude plugins bundle skills and connectors | Two directions. Bring his skills and MCP servers into Arugula's agents (M76's recipes already do this, here and, compiled to a Managoat agent, on Managoat). And ship Arugula's MCP server as a plugin in Claude and ChatGPT, so his work there lands in Arugula's cards | Open (MCP, `SKILL.md`) |
 | Works in Codex's own apps for plan mode and approvals | Codex app-server: the JSON-RPC protocol behind the Codex CLI, VS Code, web, desktop, Xcode and JetBrains clients | A Codex block on the app-server, where `codex-acp` falls short (the default-mode question hang) | Open protocol, backward compatible |
 | Uses Gemini | Gemini CLI speaks ACP. Gemini Enterprise registers outside A2A agents | Test Gemini CLI in an agent block. After the AGENTS track, publish A2A cards outward | Open (ACP, A2A) |
-| Runs long jobs with no terminal | Claude Managed Agents: hosted sessions, memory stores, rubric-graded Outcomes, webhooks (beta) | A second runtime beside machines and Fountain, shown as an agent block | API. Billing and token rules need checking |
+| Runs long jobs with no terminal | Claude Managed Agents: hosted sessions, memory stores, rubric-graded Outcomes, webhooks (beta) | A second runtime beside machines and Managoat, shown as an agent block | API. Billing and token rules need checking |
 | Designs, chats with a Project's memory, makes artifacts in the chat | Claude Design, claude.ai Projects and memory, ChatGPT features in its own app | No API. Rebuild the habit (preview blocks, artifacts as MCP Apps) or link out | Vendor app only |
 
 **One thing to check first.** `experimental` decision D5 has people
@@ -121,7 +121,7 @@ back to Cowork, and nothing covers them yet.
 
 Repos, read on 2026-10-07: this repo's [README](../README.md),
 [DECISIONS.md](../DECISIONS.md), [plan-archive.md](plan-archive.md),
-[labs.md](labs.md), [fountain.md](fountain.md) (added 2026-10-15) and the
+[labs.md](labs.md), [managoat.md](managoat.md) (added 2026-10-15) and the
 issues linked above; and
 [experimental](https://github.com/arugula-salad/experimental)'s
 [PLAN.md](https://github.com/arugula-salad/experimental/blob/main/docs/PLAN.md),

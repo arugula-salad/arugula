@@ -98,7 +98,7 @@ fn answering_clears_the_card_and_the_turn_reports_its_cost() {
 
 #[test]
 fn a_finished_tool_call_drops_its_card() {
-    // Fountain refuses an unanswered request after 5 minutes, saying only
+    // Managoat refuses an unanswered request after 5 minutes, saying only
     // that the tool call failed.
     let mut g = rebuilt();
     g.on_in(
@@ -153,7 +153,7 @@ fn a_load_replay_is_merged_not_duplicated() {
     g.rebuild_line(&frame("note", json!({ "e": "spawn", "resume": true })));
     g.on_out(&json!({ "jsonrpc": "2.0", "id": 10, "method": "session/load", "params": {} }), 1);
     let u = |update: Value| json!({ "jsonrpc": "2.0", "method": "session/update", "params": { "update": update } });
-    // Fountain's replay: no user messages, the tool finished, a new reply.
+    // Managoat's replay: no user messages, the tool finished, a new reply.
     g.on_in(
         &u(json!({ "sessionUpdate": "tool_call", "toolCallId": "t1", "title": "touch x", "status": "completed" })),
         2,

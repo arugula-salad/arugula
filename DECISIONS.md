@@ -605,7 +605,7 @@ From: [S34](https://github.com/arugula-salad/arugula/issues/397), M76 (#398), #4
 
 ### Fountain is a headless backend, and Arugula is its UI
 Fountain is a conversational API to a computer, with no console of its own
-for agents, environments or vaults (managoat/fountain#2732). Arugula is the
+for agents, environments or vaults (managoat/managoat#2732). Arugula is the
 place a person sees and steers Fountain work (Jake, 2026-10-15, #942), and
 the Conversations app (managoat/demos) stays as a second client. This
 supersedes S34's "no Fountain dependency" (#397) and its q8, "don't build on
@@ -891,12 +891,12 @@ account's event stream, and not through a `fountain` CLI subprocess. A
 daemon signs in with Fountain's device flow: a code is approved in any
 browser signed in to Fountain, the phone included, so no redirect URI or
 OAuth client is needed. The key it gets is kept in the daemon's state dir
-(`fountain/login.json`, 0600) and never reaches a client. Signing out
+(`managoat/login.json`, 0600; `fountain/` before "Fountain is Managoat") and never reaches a client. Signing out
 revokes the key, since nothing else holds it. Without that sign-in, the
-`fountain` CLI's login is read as before (`$FOUNTAIN_API_KEY`, then
-`~/.fountain/credentials`). No instance is a default: the sign-in asks for
+`managoat` CLI's login is read as before (`$MANAGOAT_API_KEY`, then
+`~/.managoat/credentials`, each with its old `fountain` name as an alias). No instance is a default: the sign-in asks for
 a URL unless the CLI's login names one. Only a daemon started with
-`--fountain-account-stream` holds the account's `/api/events/stream`. That
+`--managoat-account-stream` holds the account's `/api/events/stream`. That
 is the home machine, so a permission request raises one card. Its cursor
 is kept after each event, so a restart resumes with no gap and no
 duplicate.
@@ -908,7 +908,7 @@ A permission request from any of the account's conversations raises a card
 and a phone push on the daemon that follows the account stream (#942, F2),
 whether or not a block shows that conversation. A card needs a pane, so the
 account view holds them all: the open view with the lowest id, or one
-opened in a session called `fountain` when none is open. It lists every
+opened in a session called `managoat` when none is open. It lists every
 open request and puts the newest on the card. That is the one just pushed,
 so a second request while one is up pushes too. Allow and Deny on the card
 or the phone answer the request they name, not just the one on the card,
@@ -952,6 +952,42 @@ version that started it.
   the run dialog and in the run's summary.
 Where: `crates/daemon/src/labs/fountain/recipes.rs`, `crates/daemon/src/labs/agents/{block,mod}.rs`, `web/src/ui/fountain-run.tsx`.
 From: #942 (Jake's decisions Q1 and Q6), F4.
+
+### Fountain is Managoat
+On 2026-10-15 Fountain was renamed Managoat (its ADR 0082, release v0.27.0),
+and Arugula follows: what a person or an agent reads says Managoat, and the
+new names are the ones Arugula uses and writes. Each old name is still read,
+as Managoat reads its own, until Managoat ends its deprecation window
+(managoat/managoat#2776); Arugula drops them in the same release.
+- **Canonical, with the old as an alias.** The login is `MANAGOAT_API_KEY`,
+  `MANAGOAT_BASE_URL` and `MANAGOAT_PROFILE`, else each `FOUNTAIN_*`, and
+  `~/.managoat/credentials`, else `~/.fountain/credentials`; reading an old
+  one is said once per name in the daemon's log. The CLI is `arugula
+  managoat` (`arugula fountain` a hidden alias), with `--managoat` on
+  `agent` and `agents run`; the daemon's option is
+  `--managoat-account-stream` (`ARUGULA_MANAGOAT_ACCOUNT_STREAM`). A block
+  is saved as `type: managoat`, `agent: managoat` and `managoat_agent`, and
+  one saved as `fountain` and `fountain_agent` restores and is saved again
+  under the new names (serde aliases), so a rollback past this release
+  loses those blocks' type. MCP lists `show` kind `managoat`, `list` kinds
+  `managoat_agents`, `managoat_agent` and `managoat_conversations`, and
+  `start_agent {agent: managoat, managoat_agent, on: managoat}`, and still
+  answers the `fountain` names without listing them.
+- **The state moves.** This daemon's sign-in and stream cursor live in
+  `managoat/` in the state dir; a `fountain/` from before is renamed to it
+  at start-up, and used where it is if it can't be.
+- **Internal names stay**, as Managoat's ADR keeps its own: the Rust
+  module `labs/fountain/` and its types, the HTTP routes and operation
+  names (`/api/fountain/…`, `fountain.login`), the block calls
+  (`run_fountain`, `fountain_preflight`), `features.fountain`, a diff or
+  file block's `fountain` config key, the agent block's state, the
+  `ARUGULA_FOUNTAIN_*_MS` test knobs, and the retired `fountain` flag
+  (`managoat` is retired beside it, so naming either says why).
+  Managoat's own unchanged names (`_fountain/…` ACP methods,
+  `fountain.sandboxLocations`) and the recipe's `managed-by: arugula` and
+  `arugula.*` labels are unchanged.
+Where: `crates/daemon/src/labs/fountain/{login,account}.rs`, `crates/daemon/src/agent/defs.rs` (`Kind`, `Def`), `crates/proto/src/lib.rs` (`BlockType`, `WorkKind`), `crates/daemon/src/mcp/tools.rs` (`old_kind`, `AgentKind`), `crates/cli/src/main.rs`, `crates/daemon/src/args.rs`, [docs/managoat.md](docs/managoat.md).
+From: Managoat's ADR 0082 (managoat/managoat), #942.
 
 ## Federation and control
 
@@ -1198,7 +1234,7 @@ From: #347, #665.
 ### Fountain is out of Labs: no flag, still the `labs` cargo feature
 With recipes running on Fountain (#942's F4), the `fountain` flag is gone
 (F5, Jake's Q4: "behind `fountain` until F4, then drop the flag"). The
-account view and sign-in, `--fountain-account-stream`, the native
+account view and sign-in, `--managoat-account-stream`, the native
 conversation link, *Run on Fountain* and MCP's Fountain kinds and
 arguments are offered on any machine, with no flag. This supersedes
 "Each flag gates its feature" (above) for Fountain.
@@ -1206,7 +1242,7 @@ arguments are offered on any machine, with no flag. This supersedes
   machine has a login (its own sign-in, else the `fountain` CLI's).
   `HostFeatures.fountain` is that login, so the menus offer Fountain only
   where it would work, and the account stream still needs
-  `--fountain-account-stream`, now listed in `arugulad --help`. A new
+  `--managoat-account-stream`, now listed in `arugulad --help`. A new
   install makes no request to Fountain, which
   `fountain_account::no_login_no_requests_to_fountain` holds. Recipes on
   Fountain still need `agents`, since recipes are still Labs.
@@ -1230,7 +1266,7 @@ arguments are offered on any machine, with no flag. This supersedes
   `FOUNTAIN_ARGS`, `FOUNTAIN_VALUES` in `mcp/tools.rs`). Revisit when
   `agents` leaves Labs; the forge and editor features (#461) are the
   pattern a feature of its own would follow.
-Where: `crates/proto/src/flags.rs` (`RETIRED`, `retired`), `crates/daemon/src/hosts.rs` (`features`), `crates/daemon/src/labs/mod.rs` (`kinds`, `block_flag`), `crates/daemon/src/mcp/tools.rs`, `crates/cli/src/main.rs` and `crates/daemon/src/args.rs` (`LABS_*`), `web/src/client.ts`, `web/src/blocks/lazy.ts`, [docs/fountain.md](docs/fountain.md).
+Where: `crates/proto/src/flags.rs` (`RETIRED`, `retired`), `crates/daemon/src/hosts.rs` (`features`), `crates/daemon/src/labs/mod.rs` (`kinds`, `block_flag`), `crates/daemon/src/mcp/tools.rs`, `crates/cli/src/main.rs` and `crates/daemon/src/args.rs` (`LABS_*`), `web/src/client.ts`, `web/src/blocks/lazy.ts`, [docs/managoat.md](docs/managoat.md).
 From: #942 (Q4), F5.
 
 ### Control pushes Labs flags; the machine overrides

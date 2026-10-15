@@ -42,7 +42,7 @@ const CMDS: Record<WorkKind, string[]> = {
   app: [""],
   pr: [""],
   issue: [""],
-  fountain: [""],
+  managoat: [""],
 };
 
 /** `n` made-up panes, refreshed every second, alongside the real ones. */

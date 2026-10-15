@@ -226,7 +226,7 @@ operations, and may call an operation's handler.
 - **Grouped MCP tools:** `list`, `show` and `draft` themselves stay
   hand-written: their lead text, the merged schema and the default kind.
   A kind that is one operation is declared (`list` kind `panes` in the
-  pilot; `conversations`, `fountain_agents` and `show` kind `conversation`
+  pilot; `conversations`, `managoat_agents` and `show` kind `conversation`
   could be). Kinds that aren't operations (`list` kind `devices`, every
   `draft` kind, the `show` kinds that open a block with extra work after)
   stay hand-written rows.
@@ -396,7 +396,7 @@ what it calls; each CLI request site by its route.
   and the tunnels don't. Not counted route by route.
 - **MCP:** 17 tools of their own plus 18 kinds of the three grouped tools,
   35 surfaces. 7 convert cleanly: `close`, `read_thread`, `post_thread`,
-  `list` kinds `panes`, `conversations` and `fountain_agents`, `show` kind
+  `list` kinds `panes`, `conversations` and `managoat_agents`, `show` kind
   `conversation`. The rest are compositions, block calls or MCP-only
   (`device_call`, `invite_person`, `read_invite`, paging in `read_output`).
   They stay hand-written and start calling the operations' handlers as
@@ -439,10 +439,10 @@ Each is one PR. Filed on 2026-10-07 as #572–#580, in this order.
    After 3.
 6. (#577) **MCP: the tools that are operations.** `read_thread` and `post_thread`
    (with `FLAG` replacing `UNLISTED_THREADS`), `list` kinds `conversations`
-   and `fountain_agents`, `show` kind `conversation`. Golden fixture
+   and `managoat_agents`, `show` kind `conversation`. Golden fixture
    unchanged. After 2 and 4. Done, as `thread.get`, `thread.post` (and
    `thread.read`, HTTP only), `fountain.agents`, `conversations.list` and
-   `conversation.open`; `fountain_agents` stays a hand-written kind.
+   `conversation.open`; `managoat_agents` stays a hand-written kind.
 7. (#578) **Operations: the other modules.** `fs` (not `watch`), `hosts`,
    `shares`, `guests`, `acl`, `invite`, `setup`, `mcp/tokens`, `synced`,
    `sandboxes`. May split by module. After 2.

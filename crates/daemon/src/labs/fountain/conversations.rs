@@ -1,7 +1,7 @@
 //! The account view's conversations (#942, F2): rows as a client draws
 //! them, live status from the account stream, the label filter and a
 //! conversation's tree. Pure: the block ([`super::FountainBlock`]) reads
-//! Fountain and calls these.
+//! Managoat and calls these.
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -11,7 +11,7 @@ use serde_json::Value;
 use super::{api::Agent, client::Conversation, client::TreeNode, stream::Event};
 
 /// How many conversations a list reads at first, and how many more each
-/// *More* adds (Fountain's `limit`, at most [`MAX_LIMIT`]).
+/// *More* adds (Managoat's `limit`, at most [`MAX_LIMIT`]).
 pub const PAGE: u32 = 100;
 pub const MAX_LIMIT: u32 = 500;
 
@@ -20,7 +20,7 @@ pub const MAX_LIMIT: u32 = 500;
 pub struct Row {
     pub id: String,
     pub title: Option<String>,
-    /// Fountain's: pending, running, idle, failed or terminated.
+    /// Managoat's: pending, running, idle, failed or terminated.
     pub status: String,
     /// What the stream said since the list was read (`running`, `waking`),
     /// until the next read.
@@ -155,7 +155,7 @@ pub fn parse_labels(v: &Value) -> Result<Vec<String>, String> {
         let (k, val) = i
             .split_once(':')
             .or_else(|| i.split_once('='))
-            .ok_or_else(|| format!("label {i:?}: key:value, as Fountain's ?label= takes it"))?;
+            .ok_or_else(|| format!("label {i:?}: key:value, as Managoat's ?label= takes it"))?;
         if k.trim().is_empty() {
             return Err(format!("label {i:?} has no key"));
         }
@@ -167,7 +167,7 @@ pub fn parse_labels(v: &Value) -> Result<Vec<String>, String> {
     Ok(out)
 }
 
-/// The filter as Fountain's query takes it.
+/// The filter as Managoat's query takes it.
 pub fn label_pairs(labels: &[String]) -> Vec<(String, String)> {
     labels.iter().filter_map(|l| l.split_once(':')).map(|(k, v)| (k.to_owned(), v.to_owned())).collect()
 }

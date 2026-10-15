@@ -1,12 +1,12 @@
 // The default, which is what a stranger gets: a machine without the `labs`
 // flag shows no chat, threads or huddles, no studio, VM or sandbox, no
-// "Invite over ssh", and one swarm theme. Fountain left Labs (#942): with a
-// login here, as this daemon has, *Fountain…* is offered all the same. The rest of the suite
+// "Invite over ssh", and one swarm theme. Managoat left Labs (#942): with a
+// login here, as this daemon has, *Managoat…* is offered all the same. The rest of the suite
 // runs with labs on (e2e/labs.ts), so this is the only proof of the default,
 // and it is in the set that always runs (`E2E_SET=rest`).
 //
 // The daemon here is set up for every one of those (a linked studio, a
-// sandbox provider, guest ssh, and a Fountain login), so only the missing
+// sandbox provider, guest ssh, and a Managoat login), so only the missing
 // file hides them: and the last test sets the flag, on the running daemon, and
 // loads the page again to see them all. (developer-settings.spec.ts turns
 // them on one at a time, from the page.)
@@ -32,8 +32,8 @@ test.afterAll(closeContexts);
 
 test.beforeAll(async () => {
   state = mkdtempSync(join(tmpdir(), "arugula-e2e-labs-off-"));
-  // Set up for Fountain, the studio and VMs, so that only labs is missing
-  // (and Fountain, which doesn't need it, shows).
+  // Set up for Managoat, the studio and VMs, so that only labs is missing
+  // (and Managoat, which doesn't need it, shows).
   writeFileSync(join(state, "fountain-credentials"), '[default]\napi_key = "ftn_test_e2e"\n');
   writeFileSync(join(state, "studio.json"), JSON.stringify({ url: "http://127.0.0.1:9", token: "e2e-studio-token" }));
   writeFileSync(join(state, "wisp-token"), "e2e-wisp-token");
@@ -47,7 +47,7 @@ test.beforeAll(async () => {
     ],
     {
       stdio: "ignore",
-      env: { ...process.env, ARUGULA_FOUNTAIN_CREDENTIALS: join(state, "fountain-credentials") },
+      env: { ...process.env, ARUGULA_MANAGOAT_CREDENTIALS: join(state, "fountain-credentials") },
     },
   );
   base = `http://127.0.0.1:${await daemonPort(state, daemon)}`;
@@ -116,7 +116,7 @@ test("links to Forgejo and GitLab stay plain links; GitHub's still open as block
   ).toEqual([null, null, null, null, "pr", "issue"]);
 });
 
-test("on a desktop: no chat, threads or huddles, no studio or VMs, no ssh invite; Fountain with its login", async ({ page }) => {
+test("on a desktop: no chat, threads or huddles, no studio or VMs, no ssh invite; Managoat with its login", async ({ page }) => {
   await open(page);
   const pane = await page.evaluate(() => window.__arugula.client.state!.panes[0].id);
   await ready(page, pane);
@@ -128,9 +128,9 @@ test("on a desktop: no chat, threads or huddles, no studio or VMs, no ssh invite
   await expect(page.locator("[data-open-chat]")).toHaveCount(0);
   await expect(page.locator("[data-huddle]")).toHaveCount(0);
   await noLabsItems(page, pane);
-  // Fountain is out of Labs (#942): the login here is all it needs.
+  // Managoat is out of Labs (#942): the login here is all it needs.
   await paneEl(page, pane).click({ button: "right", position: { x: 60, y: 60 } });
-  await expect(page.getByRole("menuitem", { name: "Fountain…" })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: "Managoat…" })).toBeVisible();
   await page.keyboard.press("Escape");
 
   // The palette has no chat entry (and does have the rest).
@@ -246,7 +246,7 @@ test("a mention's notification opens only the pane", async ({ page }) => {
 
 test.describe("on a phone", () => {
   test.use({ viewport: { width: 390, height: 760 }, isMobile: true, hasTouch: true });
-  test("the sheet has no chat, studio or VM entries, and Fountain's with its login", async ({ page }) => {
+  test("the sheet has no chat, studio or VM entries, and Managoat's with its login", async ({ page }) => {
     await open(page);
     await expect.poll(() => page.evaluate(() => window.__arugula.client.features !== null)).toBe(true);
     await page.locator(".sheet-button").tap();
@@ -274,7 +274,7 @@ test("a daemon from before labs, which says nothing of it, gets none of it eithe
   await ready(page, pane);
   await expect.poll(() => page.evaluate(() => window.__arugula.client.features?.vms)).toBe(true);
   expect(await page.evaluate(() => [window.__arugula.client.hasLabs(), window.__arugula.client.hasThreads(), window.__arugula.client.hasCalls()])).toEqual([false, false, false]);
-  // Fountain is the daemon's word (an older one said it with its flag on).
+  // Managoat is the daemon's word (an older one said it with its flag on).
   expect(await page.evaluate(() => (["vms", "fountain", "studio"] as const).map((f) => window.__arugula.client.has(f)))).toEqual([false, true, false]);
   await expect(page.locator("[data-open-chat]")).toHaveCount(0);
   await expect(page.locator("[data-huddle]")).toHaveCount(0);
@@ -307,7 +307,7 @@ test("setting the flag on the running daemon brings it all back, with no restart
   await expect(page.locator(".thread-badge.unread")).toBeVisible();
   await expect(page.locator(".session-unread")).toBeVisible();
   await paneEl(page, pane).click({ button: "right", position: { x: 60, y: 60 } });
-  for (const name of ["Invite over ssh…", "New VM pane on the right", "Open a studio app…", "Fountain…"]) {
+  for (const name of ["Invite over ssh…", "New VM pane on the right", "Open a studio app…", "Managoat…"]) {
     await expect(page.getByRole("menuitem", { name })).toBeVisible();
   }
   await expect(page.getByRole("menuitem", { name: /^Thread/ })).toBeVisible();

@@ -32,7 +32,7 @@ pub enum IssueCmd {
     /// its prompt, and the two in a tab.
     Agent {
         block: Pane,
-        /// claude (the default), codex, fountain or acp.
+        /// claude (the default), codex, managoat or acp.
         #[arg(long)]
         agent: Option<String>,
         /// More for its prompt.

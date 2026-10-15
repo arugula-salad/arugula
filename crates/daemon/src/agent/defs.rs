@@ -2,14 +2,15 @@
 //! plus a few defaults.
 //!
 //! - **claude**: Claude Code through `claude-agent-acp` (pinned 0.85.0:
-//!   0.81.2, Fountain's pin, asks AskUserQuestion and MCP forms too, but its
+//!   0.81.2, Managoat's pin, asks AskUserQuestion and MCP forms too, but its
 //!   Claude Code refuses MCP servers' sign-in links), with no settings
 //!   sources so your own hooks don't fire inside the block.
 //! - **codex**: `codex-acp` against the installed `codex`.
-//! - **fountain**: a conversation with agent X in a Fountain sandbox, which
-//!   the daemon drives over Fountain's API itself (#942, F3: nothing runs
-//!   here, and no `fountain acp`; [`super::link::spawn_fountain`]). To run
-//!   `fountain acp` by hand, use `acp` with that command.
+//! - **managoat** (`fountain` before the rename, still read): a
+//!   conversation with agent X in a Managoat sandbox, which the daemon
+//!   drives over Managoat's API itself (#942, F3: nothing runs here, and no
+//!   `managoat acp`; [`super::link::spawn_fountain`]). To run `managoat acp`
+//!   by hand, use `acp` with that command.
 //! - **acp**: any other ACP agent server, by its command line.
 //!
 //! The npm adapters are looked for in `~/.local/share/arugula/agents/`
@@ -72,6 +73,10 @@ pub enum Kind {
     #[default]
     Claude,
     Codex,
+    /// A Managoat conversation. Saved as `managoat`; `fountain`, its name
+    /// before the rename (DECISIONS.md "Fountain is Managoat"), is still
+    /// read, so a layout saved before it restores.
+    #[serde(rename = "managoat", alias = "fountain")]
     Fountain,
     /// Any ACP agent server, by `command`.
     Acp,
@@ -86,31 +91,32 @@ pub struct Def {
     /// The command line, for `acp` (and to override the others').
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub command: Vec<String>,
-    /// Fountain: the agent's name or id (a block opened on a conversation
-    /// that exists, by `session_id`, needs none).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Managoat: the agent's name or id (a block opened on a conversation
+    /// that exists, by `session_id`, needs none). Saved as
+    /// `managoat_agent`; `fountain_agent` is still read.
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "managoat_agent", alias = "fountain_agent")]
     pub fountain_agent: Option<String>,
-    /// Fountain: the vault a new conversation gets (name or id).
+    /// Managoat: the vault a new conversation gets (name or id).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vault: Option<String>,
-    /// Fountain: the environment a new conversation is provisioned from
+    /// Managoat: the environment a new conversation is provisioned from
     /// instead of its agent's (name or id).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub environment: Option<String>,
-    /// Fountain: labels a new conversation is made with.
+    /// Managoat: labels a new conversation is made with.
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub labels: std::collections::BTreeMap<String, String>,
-    /// Fountain's permission policy, as `fountain acp --permission` takes it
+    /// Managoat's permission policy, as `managoat acp --permission` takes it
     /// (default `ask`: approvals come to the block).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub permission: Option<String>,
-    /// Fountain's credentials profile (the CLI's); else the daemon's login.
+    /// Managoat's credentials profile (the CLI's); else the daemon's login.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile: Option<String>,
     /// A model to switch to after the session starts (`haiku`, …).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
-    /// M44's Fountain agent worn here, retired on 2026-10-15 (#942): only
+    /// M44's Managoat agent worn here, retired on 2026-10-15 (#942): only
     /// read, and kept, so a block saved wearing one comes back saying why it
     /// won't start ([`AS_FOUNTAIN_GONE`]) and never starts as a plain
     /// Claude Code. A new block with it is refused.
@@ -172,13 +178,13 @@ fn installed(home: &Path, name: &str) -> String {
     if p.exists() { p.display().to_string() } else { name.to_owned() }
 }
 
-/// Why a block can't wear a Fountain agent here (M44's `as_fountain`).
-pub const AS_FOUNTAIN_GONE: &str = "wearing a Fountain agent here (as_fountain) was retired on 2026-10-15: \
-run it on Fountain (agent fountain), or run a recipe (.claude/agents/NAME.md) here";
+/// Why a block can't wear a Managoat agent here (M44's `as_fountain`).
+pub const AS_FOUNTAIN_GONE: &str = "wearing a Managoat agent here (as_fountain) was retired on 2026-10-15: \
+run it on Managoat (agent managoat), or run a recipe (.claude/agents/NAME.md) here";
 
 impl Def {
     /// Whether it wears something before it starts: a recipe (M76), or a
-    /// Fountain agent (M44, retired: putting it on fails, saying so).
+    /// Managoat agent (M44, retired: putting it on fails, saying so).
     pub fn wears(&self) -> bool {
         self.as_fountain.is_some() || self.recipe.is_some()
     }
@@ -190,20 +196,20 @@ impl Def {
                 None => "Claude Code".into(),
             },
             Kind::Codex => "Codex".into(),
-            Kind::Fountain => format!("Fountain {}", self.fountain_agent.as_deref().unwrap_or("agent")),
+            Kind::Fountain => format!("Managoat {}", self.fountain_agent.as_deref().unwrap_or("agent")),
             Kind::Acp => self.command.first().map(|c| c.rsplit('/').next().unwrap_or(c).to_owned()).unwrap_or_default(),
         }
     }
 
     pub fn check(&self) -> Result<(), String> {
         match self.agent {
-            // Without Labs there is no Fountain to run or to wear.
-            Kind::Fountain if !crate::labs::BUILT => Err(crate::labs::not_built("Fountain")),
+            // Without Labs there is no Managoat to run or to wear.
+            Kind::Fountain if !crate::labs::BUILT => Err(crate::labs::not_built("Managoat")),
             Kind::Fountain if !self.command.is_empty() => {
-                Err("a Fountain block runs no command (to run `fountain acp` by hand: agent acp)".into())
+                Err("a Managoat block runs no command (to run `managoat acp` by hand: agent acp)".into())
             }
             _ if self.agent != Kind::Fountain && (self.environment.is_some() || !self.labels.is_empty()) => {
-                Err("environment and labels are a Fountain conversation's (agent: fountain)".into())
+                Err("environment and labels are a Managoat conversation's (agent: managoat)".into())
             }
             Kind::Acp if self.command.is_empty() => Err("an ACP agent block needs a command".into()),
             _ if !crate::labs::BUILT && self.recipe.is_some() => Err(crate::labs::not_built("Agent recipes")),
@@ -220,7 +226,7 @@ impl Def {
                 Err("claude_config_dir is Claude Code's (agent: claude, or acp running its adapter)".into())
             }
             Kind::Fountain if self.permission_mode.is_some() => {
-                Err("a Fountain agent takes permission, not permission_mode".into())
+                Err("a Managoat agent takes permission, not permission_mode".into())
             }
             _ => Ok(()),
         }
@@ -254,10 +260,10 @@ impl Def {
                 }
                 l.npm = Some(CODEX_ACP);
             }
-            // Nothing to run: the daemon speaks Fountain's API itself (F3).
+            // Nothing to run: the daemon speaks Managoat's API itself (F3).
             Kind::Fountain => {
                 if vm {
-                    return Err("Fountain agents run in Fountain's sandboxes, not in a VM here".into());
+                    return Err("Managoat agents run in Managoat's sandboxes, not in a VM here".into());
                 }
             }
             Kind::Acp => l.argv = self.command.clone(),
@@ -285,7 +291,7 @@ pub fn user_settings_meta() -> Value {
     } } })
 }
 
-/// A worn recipe (M76; M44 wore Fountain agents this way) on Claude's
+/// A worn recipe (M76; M44 wore Managoat agents this way) on Claude's
 /// `session/new` `_meta`: its system prompt appended, its skills as a local
 /// plugin, its model. The
 /// rest stays, `settingSources: []` above all (without it the user's own
@@ -373,10 +379,10 @@ mod tests {
         assert_eq!(mine.meta["claudeCode"]["options"]["settings"]["disableAllHooks"], json!(true));
         assert!(Def { agent: Kind::Codex, user_settings: true, ..Default::default() }.launch(home, false).is_err());
 
-        // A build without Labs refuses a Fountain agent (`check`), so can't launch one.
+        // A build without Labs refuses a Managoat agent (`check`), so can't launch one.
         #[cfg(feature = "labs")]
         {
-            // F3: nothing runs here for a Fountain conversation.
+            // F3: nothing runs here for a Managoat conversation.
             let f = Def {
                 agent: Kind::Fountain,
                 fountain_agent: Some("arena".into()),
@@ -385,11 +391,11 @@ mod tests {
             };
             assert!(f.launch(home, false).unwrap().argv.is_empty());
             assert!(f.launch(home, true).is_err());
-            let by_hand = Def { command: split_command("fountain acp --agent arena"), ..f.clone() };
+            let by_hand = Def { command: split_command("managoat acp --agent arena"), ..f.clone() };
             assert!(by_hand.check().unwrap_err().contains("agent acp"));
             let acp =
-                Def { agent: Kind::Acp, command: split_command("fountain acp --agent arena"), ..Default::default() };
-            assert_eq!(acp.launch(home, false).unwrap().argv, split_command("fountain acp --agent arena"));
+                Def { agent: Kind::Acp, command: split_command("managoat acp --agent arena"), ..Default::default() };
+            assert_eq!(acp.launch(home, false).unwrap().argv, split_command("managoat acp --agent arena"));
             assert!(Def { environment: Some("e".into()), ..Default::default() }.check().is_err());
         }
         #[cfg(not(feature = "labs"))]
@@ -397,6 +403,18 @@ mod tests {
 
         let codex = Def { agent: Kind::Codex, ..Default::default() }.launch(home, false).unwrap();
         assert_eq!(codex.env, vec![("CODEX_PATH".into(), "codex".into())]);
+    }
+
+    /// The rename (DECISIONS.md "Fountain is Managoat"): a block saved as
+    /// `agent: managoat` with `fountain_agent` comes back, and is saved
+    /// again under the new names.
+    #[test]
+    fn a_block_saved_as_fountain_restores() {
+        let old: Def = serde_json::from_value(json!({ "agent": "fountain", "fountain_agent": "arena" })).unwrap();
+        assert_eq!((old.agent, old.fountain_agent.as_deref()), (Kind::Fountain, Some("arena")));
+        let saved = serde_json::to_value(&old).unwrap();
+        assert_eq!(saved, json!({ "agent": "managoat", "managoat_agent": "arena" }));
+        assert_eq!(serde_json::from_value::<Def>(saved).unwrap(), old);
     }
 
     #[cfg(feature = "labs")]

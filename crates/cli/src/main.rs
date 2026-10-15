@@ -148,14 +148,15 @@ enum Command {
     #[command(args_conflicts_with_subcommands = true)]
     Pr(cmd::pr::Args),
     #[cfg(feature = "labs")]
-    /// Your Fountain account as a block, and this daemon's Fountain sign-in.
+    /// Your Managoat account as a block, and this daemon's Managoat sign-in.
     ///
-    /// The block is the account's conversations. `fountain login [URL]` signs
-    /// this daemon in (else it reads the `fountain` CLI's login:
-    /// FOUNTAIN_API_KEY or ~/.fountain/credentials), `fountain status` and
-    /// `fountain logout`; `fountain agents [QUERY]` lists the agents here
-    /// without a block.
-    #[command(args_conflicts_with_subcommands = true)]
+    /// The block is the account's conversations. `managoat login [URL]` signs
+    /// this daemon in (else it reads the `managoat` CLI's login:
+    /// MANAGOAT_API_KEY or ~/.managoat/credentials), `managoat status` and
+    /// `managoat logout`; `managoat agents [QUERY]` lists the agents here
+    /// without a block. (`arugula fountain`, its name before the rename,
+    /// still works.)
+    #[command(name = "managoat", alias = "fountain", args_conflicts_with_subcommands = true)]
     Fountain(cmd::fountain::Args),
     /// Show an issue as a block.
     ///
@@ -774,7 +775,12 @@ mod tests {
                 assert!(arg.is_hide_set(), "{cmd} {o} isn't hidden");
             }
         }
+        assert!(super::Cli::try_parse_from(["arugula", "agent", "--managoat", "x", "hi"]).is_ok());
+        // The names before the rename (DECISIONS.md "Fountain is Managoat").
         assert!(super::Cli::try_parse_from(["arugula", "agent", "--fountain", "x", "hi"]).is_ok());
+        let labs = cfg!(feature = "labs");
+        assert_eq!(super::Cli::try_parse_from(["arugula", "fountain", "status"]).is_ok(), labs);
+        assert_eq!(super::Cli::try_parse_from(["arugula", "managoat", "status"]).is_ok(), labs);
         assert!(super::Cli::try_parse_from(["arugula", "run", "--vm", "--", "make"]).is_ok());
         assert!(super::Cli::try_parse_from(["arugula", "share", "--guest", "--rw", "%3"]).is_ok());
         assert!(super::Cli::try_parse_from(["arugula", "guests"]).is_ok());

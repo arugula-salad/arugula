@@ -2,7 +2,7 @@
 //! haiku each), so they only run when asked:
 //!
 //! ```sh
-//! ARUGULA_REAL_AGENTS=claude,codex,fountain,vm,questions,tui,mcp,mcp-cc,screen cargo test -p arugulad --test integration agents_real::
+//! ARUGULA_REAL_AGENTS=claude,codex,managoat,vm,questions,tui,mcp,mcp-cc,screen cargo test -p arugulad --test integration agents_real::
 //! ```
 //!
 //! - `screen` (#145, #146, #147): Claude Code's TUI in a terminal pane with
@@ -33,7 +33,7 @@
 //! - `claude`: Claude Code through the pinned `claude-agent-acp`, on your
 //!   own login, in a scratch git repo: a command it asks to run, approved.
 //! - `codex`: `codex-acp` against your `codex`.
-//! - `fountain`: the Fountain agent in `ARUGULA_FOUNTAIN_AGENT` (an
+//! - `managoat`: the Managoat agent in `ARUGULA_MANAGOAT_AGENT` (an
 //!   existing one; nothing is created but a conversation, deleted after).
 //! - `vm`: Claude Code in a throwaway wisp VM, with the token in
 //!   `~/.config/arugula/claude-oauth-token` (or an API key in
@@ -134,22 +134,26 @@ fn codex_runs() {
 }
 
 #[test]
-fn a_fountain_agent_asks_and_runs() {
-    if !wanted("fountain") {
+fn a_managoat_agent_asks_and_runs() {
+    if !wanted("managoat") {
         return;
     }
-    let Ok(agent) = std::env::var("ARUGULA_FOUNTAIN_AGENT") else {
-        eprintln!("SKIP: set ARUGULA_FOUNTAIN_AGENT to an existing agent");
+    let Ok(agent) = std::env::var("ARUGULA_MANAGOAT_AGENT") else {
+        eprintln!("SKIP: set ARUGULA_MANAGOAT_AGENT to an existing agent");
         return;
     };
     let d = Daemon::child();
     arugula_testkit::labs(&d.state, true);
     let id = d.open_with(
-        json!({ "type": "agent", "config": { "agent": "fountain", "fountain_agent": agent, "prompt": PROMPT } }),
+        json!({ "type": "agent", "config": { "agent": "managoat", "managoat_agent": agent, "prompt": PROMPT } }),
     );
     approve_a_command(&d, id, 240);
     let session = d.state(id)["session_id"].as_str().unwrap().to_owned();
-    let _ = std::process::Command::new(home().join(".local/bin/fountain")).args(["conv", "delete", &session]).status();
+    // The Managoat CLI, by its name before the rename where it's older.
+    let cli = ["managoat", "fountain"].map(|n| home().join(".local/bin").join(n)).into_iter().find(|p| p.exists());
+    if let Some(cli) = cli {
+        let _ = std::process::Command::new(cli).args(["conv", "delete", &session]).status();
+    }
 }
 
 #[test]
