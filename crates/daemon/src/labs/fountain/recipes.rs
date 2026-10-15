@@ -304,7 +304,9 @@ fn other_files(dir: &Path) -> Vec<String> {
             if t.is_dir() && e.file_name() != ".git" {
                 walk(root, &p, out);
             } else if t.is_file() {
-                let rel = p.strip_prefix(root).unwrap_or(&p).display().to_string();
+                // `/` on Windows too: these are paths inside the skill.
+                let rel = p.strip_prefix(root).unwrap_or(&p);
+                let rel = rel.iter().map(|c| c.to_string_lossy()).collect::<Vec<_>>().join("/");
                 if rel != "SKILL.md" {
                     out.push(rel);
                 }
