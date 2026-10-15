@@ -86,6 +86,10 @@ fn policy(method: &Method, path: &str) -> Policy {
         ["api", "blocks", _, "call", "profile" | "specs" | "run" | "run_fountain" | "spec" | "run_here"] => {
             Policy::Owner
         }
+        // #942: the account view opens a conversation with the owner's
+        // login on the owner's host, marks it read and answers its
+        // permission requests as the owner's account: the owner's.
+        ["api", "blocks", _, "call", "open_conversation" | "mark_read" | "answer_request"] => Policy::Owner,
         // M77: what this machine offers its team, and which project's
         // recipes the agents block lists, are the owner's.
         ["api", "blocks", _, "call", "offer" | "unoffer" | "recipes"] => Policy::Owner,

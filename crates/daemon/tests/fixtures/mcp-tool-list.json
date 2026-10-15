@@ -2920,7 +2920,7 @@
         "readOnlyHint": true,
         "title": "List panes and more"
       },
-      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- agents {fresh?, query?}: The agents the user's team offers: every Claude Code agent recipe offered on this machine, the user's other machines, their teams' and teammates', one line each: name, machine and owner, model, description. A machine that's offline shows its agents as last seen. To hand one a task (this machine's too), delegate {kind: send, agent: NAME}; for a fix in its own project, with pr: true. To run one of this machine's beside you, start_agent {recipe: NAME}.\n- fountain_agents {profile?, query?, source?}: The agents on the user's Fountain account, one compact row each: name, runtime and model, where it comes from (agent-specs: curated; hand: hand-made; app: made by an app), skills, MCP servers and description. query searches names, descriptions, skills and servers. To hand one a task, start_agent {agent: fountain, fountain_agent: NAME}.\n- fountain_agent {name, profile?}: One Fountain agent's whole recipe, by name: its system prompt, skills (inline or from GitHub), MCP servers, model, runtime, environment, sandbox provider and metadata, as Fountain returns it. Secrets are never in it: a server's credentials show as their ${VAR} references.",
+      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- agents {fresh?, query?}: The agents the user's team offers: every Claude Code agent recipe offered on this machine, the user's other machines, their teams' and teammates', one line each: name, machine and owner, model, description. A machine that's offline shows its agents as last seen. To hand one a task (this machine's too), delegate {kind: send, agent: NAME}; for a fix in its own project, with pr: true. To run one of this machine's beside you, start_agent {recipe: NAME}.\n- fountain_agents {profile?, query?, source?}: The agents on the user's Fountain account, one compact row each: name, runtime and model, where it comes from (agent-specs: curated; hand: hand-made; app: made by an app), skills, MCP servers and description. query searches names, descriptions, skills and servers. To hand one a task, start_agent {agent: fountain, fountain_agent: NAME}.\n- fountain_conversations {labels?, limit?, status?}: The conversations on the user's Fountain account, read-only: every one, whoever started it (Arugula, the fountain CLI, a script, another conversation), the most recently active first, one line each: title, status, agent, unread, labels, what it started, and its open permission requests (waiting for the user, who answers them on their card). labels filters by key:value; status and limit as Fountain's list takes them.\n- fountain_agent {name, profile?}: One Fountain agent's whole recipe, by name: its system prompt, skills (inline or from GitHub), MCP servers, model, runtime, environment, sandbox provider and metadata, as Fountain returns it. Secrets are never in it: a server's credentials show as their ${VAR} references.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -2951,13 +2951,22 @@
               "devices",
               "agents",
               "fountain_agents",
+              "fountain_conversations",
               "fountain_agent"
             ],
             "type": "string"
           },
+          "labels": {
+            "default": [],
+            "description": "fountain_conversations: Only conversations carrying these labels, each \"key:value\" (all of\nthem).",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "limit": {
             "default": null,
-            "description": "conversations: How many [default 30].",
+            "description": "conversations: How many [default 30]. fountain_conversations: At most this many, the most recently active first (1 to 500;\ndefault 100).",
             "format": "uint",
             "minimum": 0,
             "type": [
@@ -2993,6 +3002,14 @@
           "source": {
             "default": null,
             "description": "fountain_agents: Where they come from: agent-specs (the curated ones, managed by\nchant), hand (hand-made) or app (made by an app). Default: all.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "default": null,
+            "description": "fountain_conversations: Only these statuses, comma-separated: pending, running, idle, failed,\nterminated.",
             "type": [
               "string",
               "null"
@@ -8623,7 +8640,7 @@
         "readOnlyHint": true,
         "title": "List panes and more"
       },
-      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- agents {fresh?, query?}: The agents the user's team offers: every Claude Code agent recipe offered on this machine, the user's other machines, their teams' and teammates', one line each: name, machine and owner, model, description. A machine that's offline shows its agents as last seen. To hand one a task (this machine's too), delegate {kind: send, agent: NAME}; for a fix in its own project, with pr: true. To run one of this machine's beside you, start_agent {recipe: NAME}.\n- fountain_agents {profile?, query?, source?}: The agents on the user's Fountain account, one compact row each: name, runtime and model, where it comes from (agent-specs: curated; hand: hand-made; app: made by an app), skills, MCP servers and description. query searches names, descriptions, skills and servers. To hand one a task, start_agent {agent: fountain, fountain_agent: NAME}.\n- fountain_agent {name, profile?}: One Fountain agent's whole recipe, by name: its system prompt, skills (inline or from GitHub), MCP servers, model, runtime, environment, sandbox provider and metadata, as Fountain returns it. Secrets are never in it: a server's credentials show as their ${VAR} references.",
+      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- agents {fresh?, query?}: The agents the user's team offers: every Claude Code agent recipe offered on this machine, the user's other machines, their teams' and teammates', one line each: name, machine and owner, model, description. A machine that's offline shows its agents as last seen. To hand one a task (this machine's too), delegate {kind: send, agent: NAME}; for a fix in its own project, with pr: true. To run one of this machine's beside you, start_agent {recipe: NAME}.\n- fountain_agents {profile?, query?, source?}: The agents on the user's Fountain account, one compact row each: name, runtime and model, where it comes from (agent-specs: curated; hand: hand-made; app: made by an app), skills, MCP servers and description. query searches names, descriptions, skills and servers. To hand one a task, start_agent {agent: fountain, fountain_agent: NAME}.\n- fountain_conversations {labels?, limit?, status?}: The conversations on the user's Fountain account, read-only: every one, whoever started it (Arugula, the fountain CLI, a script, another conversation), the most recently active first, one line each: title, status, agent, unread, labels, what it started, and its open permission requests (waiting for the user, who answers them on their card). labels filters by key:value; status and limit as Fountain's list takes them.\n- fountain_agent {name, profile?}: One Fountain agent's whole recipe, by name: its system prompt, skills (inline or from GitHub), MCP servers, model, runtime, environment, sandbox provider and metadata, as Fountain returns it. Secrets are never in it: a server's credentials show as their ${VAR} references.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -8654,13 +8671,22 @@
               "devices",
               "agents",
               "fountain_agents",
+              "fountain_conversations",
               "fountain_agent"
             ],
             "type": "string"
           },
+          "labels": {
+            "default": [],
+            "description": "fountain_conversations: Only conversations carrying these labels, each \"key:value\" (all of\nthem).",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "limit": {
             "default": null,
-            "description": "conversations: How many [default 30].",
+            "description": "conversations: How many [default 30]. fountain_conversations: At most this many, the most recently active first (1 to 500;\ndefault 100).",
             "format": "uint",
             "minimum": 0,
             "type": [
@@ -8696,6 +8722,14 @@
           "source": {
             "default": null,
             "description": "fountain_agents: Where they come from: agent-specs (the curated ones, managed by\nchant), hand (hand-made) or app (made by an app). Default: all.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "default": null,
+            "description": "fountain_conversations: Only these statuses, comma-separated: pending, running, idle, failed,\nterminated.",
             "type": [
               "string",
               "null"
@@ -12554,7 +12588,7 @@
         "readOnlyHint": true,
         "title": "List panes and more"
       },
-      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- agents {fresh?, query?}: The agents the user's team offers: every Claude Code agent recipe offered on this machine, the user's other machines, their teams' and teammates', one line each: name, machine and owner, model, description. A machine that's offline shows its agents as last seen. To hand one a task (this machine's too), delegate {kind: send, agent: NAME}; for a fix in its own project, with pr: true. To run one of this machine's beside you, start_agent {recipe: NAME}.\n- fountain_agents {profile?, query?, source?}: The agents on the user's Fountain account, one compact row each: name, runtime and model, where it comes from (agent-specs: curated; hand: hand-made; app: made by an app), skills, MCP servers and description. query searches names, descriptions, skills and servers. To hand one a task, start_agent {agent: fountain, fountain_agent: NAME}.\n- fountain_agent {name, profile?}: One Fountain agent's whole recipe, by name: its system prompt, skills (inline or from GitHub), MCP servers, model, runtime, environment, sandbox provider and metadata, as Fountain returns it. Secrets are never in it: a server's credentials show as their ${VAR} references.",
+      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- agents {fresh?, query?}: The agents the user's team offers: every Claude Code agent recipe offered on this machine, the user's other machines, their teams' and teammates', one line each: name, machine and owner, model, description. A machine that's offline shows its agents as last seen. To hand one a task (this machine's too), delegate {kind: send, agent: NAME}; for a fix in its own project, with pr: true. To run one of this machine's beside you, start_agent {recipe: NAME}.\n- fountain_agents {profile?, query?, source?}: The agents on the user's Fountain account, one compact row each: name, runtime and model, where it comes from (agent-specs: curated; hand: hand-made; app: made by an app), skills, MCP servers and description. query searches names, descriptions, skills and servers. To hand one a task, start_agent {agent: fountain, fountain_agent: NAME}.\n- fountain_conversations {labels?, limit?, status?}: The conversations on the user's Fountain account, read-only: every one, whoever started it (Arugula, the fountain CLI, a script, another conversation), the most recently active first, one line each: title, status, agent, unread, labels, what it started, and its open permission requests (waiting for the user, who answers them on their card). labels filters by key:value; status and limit as Fountain's list takes them.\n- fountain_agent {name, profile?}: One Fountain agent's whole recipe, by name: its system prompt, skills (inline or from GitHub), MCP servers, model, runtime, environment, sandbox provider and metadata, as Fountain returns it. Secrets are never in it: a server's credentials show as their ${VAR} references.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -12585,13 +12619,22 @@
               "devices",
               "agents",
               "fountain_agents",
+              "fountain_conversations",
               "fountain_agent"
             ],
             "type": "string"
           },
+          "labels": {
+            "default": [],
+            "description": "fountain_conversations: Only conversations carrying these labels, each \"key:value\" (all of\nthem).",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "limit": {
             "default": null,
-            "description": "conversations: How many [default 30].",
+            "description": "conversations: How many [default 30]. fountain_conversations: At most this many, the most recently active first (1 to 500;\ndefault 100).",
             "format": "uint",
             "minimum": 0,
             "type": [
@@ -12627,6 +12670,14 @@
           "source": {
             "default": null,
             "description": "fountain_agents: Where they come from: agent-specs (the curated ones, managed by\nchant), hand (hand-made) or app (made by an app). Default: all.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "default": null,
+            "description": "fountain_conversations: Only these statuses, comma-separated: pending, running, idle, failed,\nterminated.",
             "type": [
               "string",
               "null"

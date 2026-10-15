@@ -626,9 +626,9 @@ until recipes run there (#942's F4).
   agent-specs file, else shows the agent as `GET /api/agents/{id}` returns
   it (literal values redacted) in the block, since the console's agent pages
   are gone.
-Not done: the native client, sign-in and event stream (F1), the account
-view and attention (F2), a native conversation link (F3), recipes on
-Fountain (F4).
+Not done: a native conversation link (F3), recipes on Fountain (F4).
+(F1's client, sign-in and stream, and F2's account view and attention, are
+below.)
 Where: `crates/daemon/src/labs/fountain/`, `crates/daemon/src/labs/wearing.rs`, `crates/daemon/src/agent/defs.rs` (`AS_FOUNTAIN_GONE`), `web/src/blocks/fountain.tsx`.
 From: #942, superseding [S34](https://github.com/arugula-salad/arugula/issues/397)'s "No Fountain dependency" and q8 ([spike](spikes/s34-agents-a2a/README.md)).
 
@@ -901,6 +901,26 @@ is kept after each event, so a restart resumes with no gap and no
 duplicate.
 Where: `crates/daemon/src/labs/fountain/{account,client,stream}.rs`, `crates/cli/src/cmd/fountain.rs`.
 From: #942 (Jake's decisions Q2 and Q3), F1.
+
+### Fountain's permission requests are cards on the account view
+A permission request from any of the account's conversations raises a card
+and a phone push on the daemon that follows the account stream (#942, F2),
+whether or not a block shows that conversation. A card needs a pane, so the
+account view holds them all: the open view with the lowest id, or one
+opened in a session called `fountain` when none is open. It lists every
+open request and puts the newest on the card. That is the one just pushed,
+so a second request while one is up pushes too. Allow and Deny on the card
+or the phone answer the request they name, not just the one on the card,
+with an option the agent offered. The card clears on Fountain's `request`
+stage `done`, which it sends for every outcome. Losing the race to another
+client (409, or 404/410) also clears it, saying the request was already
+settled. A conversation that an agent block here already follows asks
+there, so the view lists its request without raising a second card. The
+requests are answered with the daemon's own Fountain login, so they are
+this machine's own account's to answer, and only the owner gets their
+pushes, unlike an agent block's, which an editor of the session may answer.
+Where: `crates/daemon/src/labs/fountain/{attention,conversations,mod}.rs`, `crates/daemon/src/api.rs` (`act_one`), `crates/mux/src/mux/attention.rs`, `web/src/blocks/fountain.tsx`.
+From: #942, F2.
 
 ## Federation and control
 

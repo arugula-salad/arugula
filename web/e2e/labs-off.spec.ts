@@ -299,7 +299,7 @@ test("setting the flag on the running daemon brings it all back, with no restart
   await expect(page.locator(".thread-badge.unread")).toBeVisible();
   await expect(page.locator(".session-unread")).toBeVisible();
   await paneEl(page, pane).click({ button: "right", position: { x: 60, y: 60 } });
-  for (const name of ["Invite over ssh…", "New VM pane on the right", "Open a studio app…", "Fountain agents…"]) {
+  for (const name of ["Invite over ssh…", "New VM pane on the right", "Open a studio app…", "Fountain…"]) {
     await expect(page.getByRole("menuitem", { name })).toBeVisible();
   }
   await expect(page.getByRole("menuitem", { name: /^Thread/ })).toBeVisible();

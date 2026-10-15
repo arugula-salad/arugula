@@ -26,6 +26,8 @@ pub const DEFAULT_BASE: &str = "https://managoat.com";
 pub enum From {
     Env,
     File,
+    /// This daemon's own sign-in ([`super::account`]).
+    Arugula,
 }
 
 /// A login: the account's base URL and key.

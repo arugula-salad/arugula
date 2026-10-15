@@ -804,6 +804,24 @@ pub struct ReadAgentArgs {
 // Read only by Fountain's handlers, which a build without Labs lacks.
 #[cfg_attr(not(feature = "labs"), allow(dead_code))]
 #[derive(Deserialize, JsonSchema)]
+pub struct ListFountainConversationsArgs {
+    /// Only conversations carrying these labels, each "key:value" (all of
+    /// them).
+    #[serde(default)]
+    pub labels: Vec<String>,
+    /// Only these statuses, comma-separated: pending, running, idle, failed,
+    /// terminated.
+    #[serde(default)]
+    pub status: Option<String>,
+    /// At most this many, the most recently active first (1 to 500;
+    /// default 100).
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
+// Read only by Fountain's handlers, which a build without Labs lacks.
+#[cfg_attr(not(feature = "labs"), allow(dead_code))]
+#[derive(Deserialize, JsonSchema)]
 pub struct OpenFountainArgs {
     /// Start with this search (as kind fountain_agents' query).
     #[serde(default)]
@@ -970,6 +988,12 @@ const LIST: &[Kind] = &[
         name: "fountain_agents",
         description: "The agents on the user's Fountain account, one compact row each: name, runtime and model, where it comes from (agent-specs: curated; hand: hand-made; app: made by an app), skills, MCP servers and description. query searches names, descriptions, skills and servers. To hand one a task, start_agent {agent: fountain, fountain_agent: NAME}.",
         schema: schema_for_type::<ListAgentsArgs>,
+        flag: Some(flags::FOUNTAIN),
+    },
+    Kind {
+        name: "fountain_conversations",
+        description: "The conversations on the user's Fountain account, read-only: every one, whoever started it (Arugula, the fountain CLI, a script, another conversation), the most recently active first, one line each: title, status, agent, unread, labels, what it started, and its open permission requests (waiting for the user, who answers them on their card). labels filters by key:value; status and limit as Fountain's list takes them.",
+        schema: schema_for_type::<ListFountainConversationsArgs>,
         flag: Some(flags::FOUNTAIN),
     },
     Kind {
@@ -1877,6 +1901,10 @@ impl<'a> Call<'a> {
             },
             ("list", Some("fountain_agent")) => match parse(args) {
                 Ok(a) => self.read_agent(a).await,
+                Err(e) => Err(e),
+            },
+            ("list", Some("fountain_conversations")) => match parse(args) {
+                Ok(a) => self.fountain_conversations(a).await,
                 Err(e) => Err(e),
             },
             // show
@@ -3199,6 +3227,15 @@ impl Call<'_> {
         done(format!("{} ({}, {})", agent.name, agent.runtime, agent.model), recipe)
     }
 
+    /// The account's conversations (#942), read with the daemon's login.
+    async fn fountain_conversations(&self, a: ListFountainConversationsArgs) -> Out {
+        crate::labs::flag(self.app.control.state_dir(), flags::FOUNTAIN)?;
+        let (text, v) =
+            crate::labs::fountain::conversations_answer(&a.labels, a.status, a.limit.map(|l| l.min(500) as u32))
+                .await?;
+        done(text, v)
+    }
+
     async fn open_fountain(&self, a: OpenFountainArgs) -> Out {
         let (beside, _) = self.beside(a.beside.as_ref()).await?;
         let mut filter = crate::labs::fountain::catalog::Filter::default();
@@ -3266,6 +3303,10 @@ impl Call<'_> {
     }
 
     async fn open_fountain(&self, _: OpenFountainArgs) -> Out {
+        Err(crate::labs::not_built("Fountain"))
+    }
+
+    async fn fountain_conversations(&self, _: ListFountainConversationsArgs) -> Out {
         Err(crate::labs::not_built("Fountain"))
     }
 }
@@ -4409,6 +4450,7 @@ mod tests {
     /// Kinds added after #349, each a job no old tool did.
     const SINCE: &[(&str, Option<&str>)] = &[
         ("list", Some("agents")),
+        ("list", Some("fountain_conversations")),
         ("capabilities", None),
         ("delegate", Some("send")),
         ("delegate", Some("get")),

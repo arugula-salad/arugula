@@ -126,6 +126,16 @@ async fn runners(State(f): State<Fake>, h: HeaderMap) -> Response {
     (StatusCode::NOT_FOUND, Json(json!({ "error": "not found" }))).into_response()
 }
 
+/// `/api/conversations` (#942's account view): one, started by the CLI.
+async fn conversations(State(f): State<Fake>, h: HeaderMap) -> Response {
+    if let Some(r) = guard(&f, &h, "conversations") {
+        return r;
+    }
+    Json(json!({ "data": [{ "id": "conv-from-cli", "status": "idle", "agent_id": "02fb18b8-fd17-4689-bbe3-3fe0c2dc6a3f", "title": "from the CLI",
+                            "unread": true, "labels": {}, "runtime": "claude" }] }))
+    .into_response()
+}
+
 async fn environments(State(f): State<Fake>, h: HeaderMap) -> Response {
     if let Some(r) = guard(&f, &h, "environments") {
         return r;
@@ -156,6 +166,7 @@ impl Fountain {
                 .route("/api/agents", get(agents))
                 .route("/api/agents/{id}", get(agent))
                 .route("/api/environments", get(environments))
+                .route("/api/conversations", get(conversations))
                 .route("/api/runners", get(runners))
                 .with_state(f.clone());
             let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -620,7 +631,8 @@ fn a_saved_runner_view_comes_back_as_the_catalog() {
     assert!(st["total"].as_u64().unwrap() > 100, "{st}");
     assert_eq!(st["profile"], "default");
     assert!(st.get("runner").is_none(), "{st}");
-    assert!(capture(&d, block).starts_with("Fountain agents"), "{}", capture(&d, block));
+    assert!(capture(&d, block).starts_with("Fountain on "), "{}", capture(&d, block));
+    assert_eq!(st["tab"], "conversations", "the account view: {st}");
     // Its methods are gone with it.
     for m in ["view", "follow", "changes", "shell"] {
         let (status, body) = d.raw("POST", &format!("/api/blocks/{block}/call/{m}"), Some(json!({})));
@@ -635,6 +647,48 @@ fn a_saved_runner_view_comes_back_as_the_catalog() {
     );
     assert_eq!(status, 400, "{body}");
     assert!(body.contains("runners"), "{body}");
+}
+
+/// #942 F2: a catalog block saved by an older daemon (M43's config: a
+/// profile, the agents' filters, the checkout) opens as the account view:
+/// the conversations first, its agents in their tab with the filter it had.
+#[test]
+fn a_saved_catalog_opens_as_the_account_view() {
+    let dir = Scratch::new("fountain-catalog-restore");
+    let fz = Fountain::start(&dir);
+    let mut d = fz.daemon(&[]);
+    let block = open(&d, json!({}));
+    read(&d, block);
+    d.wait_for("saved", || layout_config(&d, block).is_object());
+    d.stop();
+    let path = d.state.join("layout.json");
+    let mut l: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    l["panes"][block.to_string()]["config"] = json!({
+        "profile": "default", "filter": { "query": "frontend-design", "sources": ["agent-specs"] },
+        "specs": "~/agent-specs", "here": 4,
+    });
+    std::fs::write(&path, serde_json::to_vec(&l).unwrap()).unwrap();
+    d.start();
+    let st = read(&d, block);
+    assert!(st["error"].is_null(), "{st}");
+    assert_eq!(st["tab"], "conversations", "{st}");
+    d.wait_for("the conversations", || d.state(block)["conversations"].as_array().is_some_and(|c| c.len() == 1));
+    let st = d.state(block);
+    let c = &st["conversations"][0];
+    assert_eq!(
+        (c["id"].as_str(), c["agent"].as_str(), c["unread"].as_bool()),
+        (Some("conv-from-cli"), Some("games"), Some(true)),
+        "{st}"
+    );
+    assert_eq!(names(&st), ["designer"], "the agents, filtered as saved");
+    assert_eq!(st["profile"], "default");
+    let text = capture(&d, block);
+    assert!(text.contains("1 conversations") && text.contains("from the CLI"), "{text}");
+    assert!(text.contains("1 of 108 agents"), "{text}");
+    // Its config keeps what it had, and nothing it didn't.
+    let config = layout_config(&d, block);
+    assert_eq!(config["filter"]["query"], "frontend-design", "{config}");
+    assert!(config.get("here").is_none() && config.get("tab").is_none(), "{config}");
 }
 
 fn capture(d: &Daemon, pane: u64) -> String {

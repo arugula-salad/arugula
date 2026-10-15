@@ -98,7 +98,6 @@ impl std::fmt::Debug for Resolved {
 }
 
 impl Resolved {
-    #[allow(dead_code)] // The account view and the conversation link (F2, F3).
     pub fn client(&self) -> Client {
         Client::new(&self.base_url, &self.key)
     }
@@ -266,6 +265,7 @@ impl Account {
             source: match l.from {
                 login::From::Env => Source::Env,
                 login::From::File => Source::File,
+                login::From::Arugula => Source::Arugula,
             },
             user_id: None,
         })

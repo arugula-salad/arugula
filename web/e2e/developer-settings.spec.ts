@@ -77,7 +77,7 @@ async function shown(page: Page, pane: number): Promise<Flag[]> {
   const items = (await page.getByRole("menuitem").allInnerTexts()).map((s) => s.trim());
   await page.keyboard.press("Escape");
   if (items.includes("New VM pane on the right")) out.push("vms");
-  if (items.includes("Fountain agents…")) out.push("fountain");
+  if (items.includes("Fountain…")) out.push("fountain");
   if (items.includes("Open a studio app…")) out.push("studio");
   if (items.includes("Invite over ssh…")) out.push("guest-ssh");
   const page_says = await page.evaluate(() => {

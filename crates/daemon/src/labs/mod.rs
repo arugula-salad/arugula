@@ -728,6 +728,9 @@ pub fn fountain_login_here(shell_env: &ShellEnv) -> bool {
 pub fn start_fountain(app: &Arc<App>, state_dir: &Path, name: &str, account_stream: bool) {
     let account = fountain::account::install(state_dir, &format!("Arugula on {name}"), app.mux.shell_env.clone());
     if account_stream {
+        // Its permission requests become cards (F2): only here, where the
+        // stream runs, so one daemon pushes each.
+        tokio::spawn(fountain::attention::run(app.clone(), account.clone()));
         tokio::spawn(fountain::stream::run(account, Default::default()));
     }
 }
