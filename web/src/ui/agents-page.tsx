@@ -6,8 +6,8 @@
 // open in a pane). New and Edit are a form that writes the file as Claude
 // Code reads it (keys it doesn't know are kept); Run here opens an agent
 // block wearing it; Offer and Stop offering put it in the team's catalog;
-// Delete removes the file. Run on Fountain (#942 F4, with the `fountain`
-// flag) runs it in a Fountain sandbox as its Fountain agent. Team: the catalog, by machine and owner; tasks
+// Delete removes the file. Run on Fountain (#942 F4, with a Fountain
+// login) runs it in a Fountain sandbox as its Fountain agent. Team: the catalog, by machine and owner; tasks
 // from other people waiting for you; and standing grants, with Revoke. All
 // of it the shown machine's, and its owner's.
 
@@ -241,7 +241,7 @@ function RecipesTab({ client }: { client: Client }) {
             <button class="pri" data-run-here={r.name} disabled={busy} title="Open an agent block wearing this recipe, in its project" onClick={() => void runHere(r, project)}>
               Run on {directory.current || "this machine"}
             </button>
-            {client.flag("fountain") && (
+            {client.has("fountain") && (
               <button data-run-fountain={r.name} disabled={busy} title="Run it in a Fountain sandbox, as its Fountain agent recipe-NAME" onClick={() => void runFountain(r, project)}>
                 Run on Fountain
               </button>

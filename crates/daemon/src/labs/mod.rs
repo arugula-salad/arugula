@@ -169,12 +169,13 @@ pub fn routes(r: Router<Arc<App>>) -> Router<Arc<App>> {
 
 /// Registers the Labs block types (the others are in `main.rs`'s table).
 /// `invite` is what the agent catalog's card sends an invite with.
-/// Each is made only where the machine has its flag on ([`Flagged`]).
+/// Each is made only where the machine has its flag on ([`Flagged`]),
+/// except Fountain's, which left Labs (#942) and needs only a login.
 #[cfg(feature = "labs")]
 pub fn kinds(kinds: &mut BlockKinds, invite: &crate::invite::Hook) {
     use crate::block::Make;
-    use arugula_proto::flags::{AGENTS, FOUNTAIN, STUDIO, WORKSPACES};
-    kinds.add(BlockType::Fountain, Flagged { flag: FOUNTAIN, kind: Make(fountain::FountainBlock::create) });
+    use arugula_proto::flags::{AGENTS, STUDIO, WORKSPACES};
+    kinds.add(BlockType::Fountain, Make(fountain::FountainBlock::create));
     kinds.add(BlockType::Agents, Flagged { flag: AGENTS, kind: agents::block::AgentsKind(invite.clone()) });
     kinds.add(BlockType::App, Flagged { flag: STUDIO, kind: Make(apps::AppBlock::create) });
     kinds.add(BlockType::Workspace, Flagged { flag: WORKSPACES, kind: Make(workspace::Workspace::create) });
@@ -212,19 +213,16 @@ impl<K: crate::block::BlockKind> crate::block::BlockKind for Flagged<K> {
     }
 }
 
-/// The flag a new block of `kind` with `config` needs (#347), for a route
-/// to refuse it before it does anything else (an app block asks the studio
-/// where its box is first). The block types check it again when made.
-pub fn block_flag(kind: BlockType, config: &serde_json::Value) -> Option<&'static str> {
+/// The flag a new block of `kind` needs (#347), for a route to refuse it
+/// before it does anything else (an app block asks the studio where its box
+/// is first). The block types check it again when made. Fountain's blocks,
+/// and an `agent: fountain` block, need none since #942's F5.
+pub fn block_flag(kind: BlockType) -> Option<&'static str> {
     use arugula_proto::flags;
     match kind {
-        BlockType::Fountain => Some(flags::FOUNTAIN),
         BlockType::Agents => Some(flags::AGENTS),
         BlockType::App => Some(flags::STUDIO),
         BlockType::Workspace => Some(flags::WORKSPACES),
-        // A Fountain agent. (Wearing one here, M44's `as_fountain`, was
-        // retired: the agent block refuses it whatever the flags.)
-        BlockType::Agent if config["agent"] == "fountain" => Some(flags::FOUNTAIN),
         _ => None,
     }
 }

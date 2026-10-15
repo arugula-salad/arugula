@@ -8,7 +8,9 @@
 //! hands events on and keeps its cursor; a daemon killed (SIGKILL) and
 //! started again resumes from the cursor (`Last-Event-ID`) with no gap and
 //! nothing twice, across Fountain's idle closes; `DELETE` signs out and
-//! revokes the key, and the stream stops.
+//! revokes the key, and the stream stops. And (F5: Fountain is out of
+//! Labs, with no flag) a new install with no login asks Fountain nothing,
+//! even with the account stream on and Fountain's URL known.
 
 // Over the daemon's Unix socket.
 #![cfg(unix)]
@@ -42,6 +44,8 @@ struct Inner {
     /// The `Last-Event-ID` each stream connection came with.
     cursors: Vec<Option<u64>>,
     revoked: Vec<String>,
+    /// Every request, whatever it was for.
+    requests: Vec<String>,
 }
 
 #[derive(Clone, Default)]
@@ -129,6 +133,8 @@ impl Fountain {
                 .route("/api/auth/me", get(me))
                 .route("/api/auth/api-keys/{id}", delete(revoke))
                 .route("/api/events/stream", get(stream))
+                .fallback(|| async { StatusCode::NOT_FOUND })
+                .layer(axum::middleware::from_fn_with_state(f.clone(), counted))
                 .with_state(f.clone());
             let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             let at = format!("http://{}", l.local_addr().unwrap());
@@ -137,6 +143,12 @@ impl Fountain {
         });
         Self { _rt: rt, f, origin }
     }
+}
+
+/// Notes each request before it's answered.
+async fn counted(State(f): State<Fake>, req: axum::extract::Request, next: axum::middleware::Next) -> Response {
+    f.with(|i| i.requests.push(format!("{} {}", req.method(), req.uri())));
+    next.run(req).await
 }
 
 fn login(d: &Daemon) -> Value {
@@ -150,7 +162,7 @@ fn device_sign_in_and_the_account_stream_resume_across_a_restart() {
     let home = dir.join("home");
     std::fs::create_dir_all(&home).unwrap();
     let home = home.display().to_string();
-    let mut d = Daemon::child_labs_env(
+    let mut d = Daemon::child_env(
         &["--fountain-account-stream", "--wisp-token-file", "/nonexistent", "--tailscale-socket", "/nonexistent/sock"],
         &[
             ("HOME", home.as_str()),
@@ -214,4 +226,42 @@ fn device_sign_in_and_the_account_stream_resume_across_a_restart() {
     assert!(!file.exists());
     assert_eq!(fake.f.with(|i| i.revoked.clone()), ["key-1"]);
     d.wait_for("the stream to stop", || login(&d)["stream"]["connected"] == false);
+}
+
+/// A new install with no Fountain login makes no request to Fountain (#942,
+/// F5): no flag keeps it quiet any more, only the missing login. Here the
+/// account stream is on and Fountain's URL is known (`FOUNTAIN_BASE_URL`),
+/// and the host, the login's status, a Fountain block and an `agent:
+/// fountain` block are all asked for; Fountain hears nothing.
+#[test]
+fn no_login_no_requests_to_fountain() {
+    let fake = Fountain::start();
+    let dir = Scratch::new("fountain-quiet");
+    let home = dir.join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let home = home.display().to_string();
+    let d = Daemon::child_env(
+        &["--fountain-account-stream", "--wisp-token-file", "/nonexistent", "--tailscale-socket", "/nonexistent/sock"],
+        &[
+            ("HOME", home.as_str()),
+            ("FOUNTAIN_API_KEY", ""),
+            ("FOUNTAIN_BASE_URL", fake.origin.as_str()),
+            ("ARUGULA_FOUNTAIN_STREAM_RETRY_MS", "50"),
+        ],
+    );
+    assert!(!d.state.join("flags.json").exists(), "a new install has no flags file");
+    assert_eq!(d.get("/api/host")["features"]["fountain"], false);
+    // The stream has looked for a login, and found none.
+    d.wait_for("the stream to find no login", || login(&d)["stream"]["error"].is_string());
+    let s = login(&d);
+    assert_eq!((s["signed_in"].clone(), s["stream"]["connected"].clone()), (false.into(), false.into()), "{s}");
+    // The account view, opened anyway: it says there's no login.
+    let view = d.post("/api/blocks", json!({ "type": "fountain", "config": {}, "local": true }));
+    let id = view["block"].as_u64().unwrap();
+    d.wait_for("the view to say why it's empty", || d.state(id)["error"].is_string());
+    // A conversation: refused before it starts, for want of an agent.
+    let (status, text) =
+        d.raw("POST", "/api/blocks", Some(json!({ "type": "agent", "config": { "agent": "fountain" } })));
+    assert_eq!(status, 400, "{text}");
+    assert_eq!(fake.f.with(|i| i.requests.clone()), Vec::<String>::new());
 }

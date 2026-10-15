@@ -143,21 +143,19 @@ async fn tools_through_the_stdio_bridge() {
     // The tools, with honest annotations: grouped by kind (#349).
     let tools = s.list_all_tools().await.unwrap();
     assert_eq!(tools.len(), 19 - NO_FORGE);
-    // Fountain, studio apps, chant workspaces and chat aren't listed without
-    // their flags (chat's tools, the others' kinds), and a caller who names
-    // one is told how to turn it on (#347); a build without Labs says it
-    // isn't built.
+    // Studio apps, chant workspaces and chat aren't listed without their
+    // flags (chat's tools, the others' kinds), and a caller who names one is
+    // told how to turn it on (#347); a build without Labs says it isn't
+    // built. Fountain left Labs (#942): a build with it lists its kinds with
+    // no flag, and with no login here they say so, not how to turn a flag on.
     for name in ["read_thread", "post_thread"] {
         assert!(tools.iter().all(|t| t.name != name), "{name} is listed");
     }
-    for (tool, kind) in [
-        ("show", "fountain"),
-        ("list", "fountain_agents"),
-        ("list", "fountain_agent"),
-        ("show", "app"),
-        ("show", "workspace"),
-    ] {
+    for (tool, kind) in [("show", "app"), ("show", "workspace")] {
         assert!(!kinds(&tools, tool).contains(&kind.to_owned()), "{tool} kind {kind} is listed");
+    }
+    for (tool, kind) in [("show", "fountain"), ("list", "fountain_agents"), ("list", "fountain_agent")] {
+        assert_eq!(kinds(&tools, tool).contains(&kind.to_owned()), cfg!(feature = "labs"), "{tool} kind {kind}");
     }
     let said = refused(&s, "list", json!({ "kind": "fountain_agent", "name": "nobody" })).await;
     assert!(!said.contains("no tool") && !said.contains("no kind"), "an unlisted kind still answers: {said}");
@@ -165,7 +163,7 @@ async fn tools_through_the_stdio_bridge() {
     assert!(!said.contains("no tool") && !said.contains("no kind"), "so does its name before #349: {said}");
     #[cfg(feature = "labs")]
     {
-        assert!(said.contains("`arugulad flags fountain on`"), "{said}");
+        assert!(!said.contains("arugulad flags"), "{said}");
         let said = refused(&s, "read_thread", json!({ "pane": 1 })).await;
         assert!(said.contains("`arugulad flags chat on`"), "read_thread by name: {said}");
     }
@@ -975,18 +973,14 @@ async fn labs_lists_all_the_tools_and_the_thread_text() {
         arugula_proto::flags::set(&d.state, "chat", true).unwrap();
         let chat = s.list_all_tools().await.unwrap();
         assert_eq!(chat.len(), 21, "{:?}", names(&chat));
-        assert!(!kinds(&chat, "show").contains(&"fountain".to_owned()), "show lists fountain with only chat on");
         assert!(!kinds(&chat, "show").contains(&"app".to_owned()), "show lists app with only chat on");
         arugula_proto::flags::set(&d.state, "chat", false).unwrap();
-        arugula_proto::flags::set(&d.state, "fountain", true).unwrap();
-        let fountain = s.list_all_tools().await.unwrap();
-        assert_eq!(fountain.len(), 19, "{:?}", names(&fountain));
-        assert!(kinds(&fountain, "show").contains(&"fountain".to_owned()));
-        assert!(!kinds(&fountain, "show").contains(&"workspace".to_owned()));
-        arugula_proto::flags::set(&d.state, "fountain", false).unwrap();
+        // A `fountain` from before #942's F5, either way, changes nothing.
+        std::fs::write(d.state.join("flags.json"), r#"{"flags":{"fountain":false}}"#).unwrap();
         let without = s.list_all_tools().await.unwrap();
         assert_eq!(without.len(), 19 - NO_FORGE);
-        assert!(!kinds(&without, "show").contains(&"fountain".to_owned()));
+        assert!(kinds(&without, "show").contains(&"fountain".to_owned()));
+        assert!(!kinds(&without, "show").contains(&"workspace".to_owned()));
     }
     // Without it, the file changes nothing: they aren't in this build.
     #[cfg(not(feature = "labs"))]

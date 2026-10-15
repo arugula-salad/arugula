@@ -319,7 +319,7 @@ impl Fountain {
         if stream {
             args.push("--fountain-account-stream");
         }
-        let d = Daemon::child_labs_env(
+        let d = Daemon::child_env(
             &args,
             &[
                 ("HOME", home.as_str()),

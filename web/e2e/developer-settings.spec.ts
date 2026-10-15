@@ -51,7 +51,7 @@ test.afterAll(() => {
   if (state) rmSync(state, { recursive: true, force: true });
 });
 
-const FLAGS = ["chat", "huddles", "vms", "fountain", "studio", "workspaces", "guest-ssh", "swarm-themes", "forges", "agents"] as const;
+const FLAGS = ["chat", "huddles", "vms", "studio", "workspaces", "guest-ssh", "swarm-themes", "forges", "agents"] as const;
 type Flag = (typeof FLAGS)[number];
 
 const setFlag = (flag: string, on: boolean, as?: string) =>
@@ -77,7 +77,6 @@ async function shown(page: Page, pane: number): Promise<Flag[]> {
   const items = (await page.getByRole("menuitem").allInnerTexts()).map((s) => s.trim());
   await page.keyboard.press("Escape");
   if (items.includes("New VM pane on the right")) out.push("vms");
-  if (items.includes("Fountain…")) out.push("fountain");
   if (items.includes("Open a studio app…")) out.push("studio");
   if (items.includes("Invite over ssh…")) out.push("guest-ssh");
   const page_says = await page.evaluate(() => {
@@ -176,8 +175,6 @@ const GATED: [Flag, string, string, unknown][] = [
   ["chat", "GET", "/api/threads/pane-1", undefined],
   ["vms", "GET", "/api/machines", undefined],
   ["vms", "GET", "/api/sandboxes", undefined],
-  ["fountain", "GET", "/api/fountain/agents", undefined],
-  ["fountain", "POST", "/api/blocks", { type: "fountain", config: { view: 42 }, local: true }],
   ["studio", "GET", "/api/studio", undefined],
   ["studio", "POST", "/api/blocks", { type: "app", config: { app: "nothing-here" }, local: true }],
   ["workspaces", "POST", "/api/blocks", { type: "workspace", config: {}, local: true }],

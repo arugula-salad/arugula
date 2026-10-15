@@ -537,10 +537,10 @@ pub async fn prepare(state_dir: &Path, home: &Path, a: &Ask) -> Result<(Compiled
     Ok((compile(&r, &dir, home, repo), dir))
 }
 
-/// Both flags a recipe on Fountain needs.
+/// The flag a recipe on Fountain needs: recipes' (`agents`). Fountain's
+/// own left Labs (#942, F5).
 pub fn flags(state_dir: &Path) -> Result<(), String> {
-    crate::labs::flag(state_dir, arugula_proto::flags::AGENTS)?;
-    crate::labs::flag(state_dir, arugula_proto::flags::FOUNTAIN)
+    crate::labs::flag(state_dir, arugula_proto::flags::AGENTS)
 }
 
 // ---------------------------------------------------------------- Fountain

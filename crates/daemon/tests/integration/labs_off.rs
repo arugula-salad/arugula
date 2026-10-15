@@ -99,3 +99,22 @@ fn an_invite_from_a_thread_is_refused_and_one_without_works() {
     let (status, text) = d.raw("POST", "/api/invite", Some(json!({ "session": session, "who": FRIEND })));
     assert_eq!(status, 200, "{text}");
 }
+
+/// Fountain left Labs (#942, F5), but its code is still the `labs` cargo
+/// feature's: a build without it has no Fountain, whatever the flags file
+/// says of `fountain` and whatever login is here. A Fountain block says it
+/// isn't in this build, and the host offers none.
+#[test]
+fn fountain_is_not_in_a_build_without_labs() {
+    let d = arugulad!("labs-off-fountain")
+        .no_wisp()
+        .args(["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock"])
+        .env("FOUNTAIN_API_KEY", "fk_test")
+        .start();
+    std::fs::write(d.state.join("flags.json"), r#"{"flags":{"fountain":true}}"#).unwrap();
+    assert_eq!(d.get("/api/host")["features"]["fountain"], false);
+    let (status, text) = d.raw("POST", "/api/blocks", Some(json!({ "type": "fountain", "config": {}, "local": true })));
+    assert!((400..600).contains(&status), "{status} {text}");
+    assert!(text.contains("A Fountain block isn't in this build"), "{text}");
+    assert!(!text.contains("arugulad flags"), "{text}");
+}

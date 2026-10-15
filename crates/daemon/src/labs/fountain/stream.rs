@@ -5,7 +5,7 @@
 //! **One daemon runs it**, the home one: `arugulad
 //! --fountain-account-stream` (`ARUGULA_FOUNTAIN_ACCOUNT_STREAM=1`), off by
 //! default, so two machines signed in to one account don't both raise a
-//! card for each permission request. The `fountain` flag must be on too. It
+//! card for each permission request. No flag gates it since #942's F5. It
 //! uses [`Account::resolve`]'s login and starts again on every sign-in or
 //! sign-out.
 //!
@@ -267,14 +267,6 @@ pub async fn run(account: Arc<Account>, timing: Timing) {
     let mut changes = account.changes();
     loop {
         changes.borrow_and_update();
-        if !arugula_proto::flags::on(account.state_dir()).has(arugula_proto::flags::FOUNTAIN) {
-            set(&account, |s| {
-                s.connected = false;
-                s.error = Some("the fountain flag is off here".into());
-            });
-            wait(&mut changes, Duration::from_secs(30)).await;
-            continue;
-        }
         let login = match account.resolve().await {
             Ok(l) => l,
             Err(e) => {
@@ -557,7 +549,7 @@ mod tests {
         let base = serve(stub.clone()).await;
         let dir = std::env::temp_dir().join(format!("ilg-fountain-stream-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        arugula_proto::flags::set(&dir, arugula_proto::flags::FOUNTAIN, true).unwrap();
+        std::fs::create_dir_all(&dir).unwrap();
         let login =
             Resolved { base_url: base.clone(), key: "k".into(), source: Source::Env, user_id: Some("u1".into()) };
 

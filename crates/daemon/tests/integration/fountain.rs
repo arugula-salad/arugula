@@ -189,7 +189,7 @@ impl Fountain {
         let home = self.home.display().to_string();
         let mut all = vec![("HOME", home.as_str()), ("ARUGULA_FOUNTAIN_POLL_MS", "60000")];
         all.extend_from_slice(env);
-        Daemon::child_labs_env(
+        Daemon::child_env(
             &["--wisp-token-file", "/nonexistent", "--owner", OWNER, "--tailscale-socket", "/nonexistent/sock"],
             &all,
         )

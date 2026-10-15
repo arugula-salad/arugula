@@ -2,7 +2,8 @@
 // studio apps and the Fountain, app and workspace blocks, with the call code
 // behind them. Nothing in the main bundle imports this file statically; the
 // page reaches it only through `loadLabs()` (./labs-load), and only when the
-// machine it is on has labs. Anything the main bundle needs from these files
+// machine it is on has labs or opens a Fountain block (Fountain left Labs,
+// #942, and its block's code stays here). Anything the main bundle needs from these files
 // at once (the chat route, `openWorkspace`, the places bar) lives outside
 // them. The swarm's extra views (city, hive, timeline) are chunks of their
 // own, fetched when one is picked.

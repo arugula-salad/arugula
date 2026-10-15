@@ -148,13 +148,14 @@ enum Command {
     #[command(args_conflicts_with_subcommands = true)]
     Pr(cmd::pr::Args),
     #[cfg(feature = "labs")]
-    /// Your Fountain agents as a catalog block.
+    /// Your Fountain account as a block, and this daemon's Fountain sign-in.
     ///
-    /// Read with your own `fountain` login (FOUNTAIN_API_KEY or
-    /// ~/.fountain/credentials): a card per agent, where it comes from, filters,
-    /// and Run on Fountain / Spec. Prints the block, then the list. `fountain
-    /// agents [QUERY]` lists them here without a block.
-    #[command(args_conflicts_with_subcommands = true, hide = true)]
+    /// The block is the account's conversations. `fountain login [URL]` signs
+    /// this daemon in (else it reads the `fountain` CLI's login:
+    /// FOUNTAIN_API_KEY or ~/.fountain/credentials), `fountain status` and
+    /// `fountain logout`; `fountain agents [QUERY]` lists the agents here
+    /// without a block.
+    #[command(args_conflicts_with_subcommands = true)]
     Fountain(cmd::fountain::Args),
     /// Show an issue as a block.
     ///
@@ -444,11 +445,7 @@ fn state_dir() -> Option<PathBuf> {
 /// Commands and options that work but stay out of `--help` unless the machine
 /// has turned their Labs flag on: they're for what a stranger doesn't have.
 /// Others that are `hide = true` are internals, and stay hidden.
-///
-/// Fountain's command is not in a build without the `labs` feature.
 const LABS_COMMANDS: &[(&str, &str)] = &[
-    #[cfg(feature = "labs")]
-    ("fountain", flags::FOUNTAIN),
     ("studio", flags::STUDIO),
     ("app", flags::STUDIO),
     ("workspace", flags::WORKSPACES),
@@ -457,8 +454,7 @@ const LABS_COMMANDS: &[(&str, &str)] = &[
     ("machines", flags::VMS),
     ("sandboxes", flags::VMS),
 ];
-const LABS_OPTIONS: [(&str, &[&str], &str); 7] = [
-    ("agent", &["fountain", "vault"], flags::FOUNTAIN),
+const LABS_OPTIONS: [(&str, &[&str], &str); 6] = [
     ("agent", &["recipe"], flags::AGENTS),
     ("agent", &["vm", "machine"], flags::VMS),
     ("run", &["vm", "vm_tab", "image", "sandbox"], flags::VMS),
@@ -766,7 +762,7 @@ mod tests {
         assert!(listed.contains(&"run") && listed.contains(&"pr"), "{listed:?}");
         // Options: out of the subcommand's help, still parsed.
         for (cmd, opts) in [
-            ("agent", &["fountain", "recipe", "vault", "vm", "machine"][..]),
+            ("agent", &["recipe", "vm", "machine"][..]),
             ("run", &["vm", "vm_tab", "image", "sandbox"][..]),
             ("share", &["guest", "rw", "reusable", "relay", "addr", "name"][..]),
             ("open", &["machine"][..]),
@@ -810,7 +806,7 @@ mod tests {
         let (off, on) = (hidden(&labs_command(false)), hidden(&labs_command(true)));
         let mut set: Vec<String> = super::LABS_COMMANDS.iter().map(|(c, _)| (*c).to_owned()).collect();
         for (cmd, opts) in [
-            ("agent", &["fountain", "recipe", "vault", "vm", "machine"][..]),
+            ("agent", &["recipe", "vm", "machine"][..]),
             ("run", &["vm", "vm_tab", "image", "sandbox"][..]),
             ("share", &["guest", "rw", "reusable", "relay", "addr", "name"][..]),
             ("open", &["machine"][..]),
@@ -847,7 +843,6 @@ mod tests {
         };
         for (cmd, flag) in [
             ("run", "--vm-tab"),
-            ("agent", "--fountain"),
             ("share", "--guest"),
             ("agent", "--machine"),
             ("open", "--machine"),

@@ -9,7 +9,7 @@
 //! machine's offered recipes; `run_there {machine, agent, prompt?}`, one
 //! another of the account's machines offers, run there (in a session of its
 //! name) for the client to go to; and `revoke {account, agent}`, a standing
-//! grant taken back. With the `fountain` flag too (#942, F4):
+//! grant taken back. On Fountain (#942, F4), with a Fountain login:
 //! `fountain_preflight {agent, cwd?, vault?, environment?}` says what a run
 //! on Fountain would be (what doesn't carry over, the checkout, the
 //! variables Fountain lacks); `fountain_copy {agent, var, vault, cwd?,

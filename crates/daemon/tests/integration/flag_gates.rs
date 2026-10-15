@@ -8,6 +8,9 @@
 //! "Past the gate" is all the on side asks: this daemon has no studio, no
 //! Fountain login and no sandbox provider, so most of them fail next for
 //! that, in their own words.
+//!
+//! Fountain left Labs (#942, F5): its routes and blocks have no gate, and a
+//! `fountain` the flags file still names, on or off, changes nothing.
 
 // Over the daemon's Unix socket; Windows gets its named pipe in M56 (#219).
 #![cfg(unix)]
@@ -46,11 +49,8 @@ fn requests(pane: u64) -> Vec<(&'static str, &'static str, String, Option<Value>
         ("vms", "GET", "/api/sandboxes".into(), None),
         ("vms", "POST", "/api/run".into(), Some(json!({ "vm": true }))),
         ("vms", "POST", "/api/run".into(), Some(json!({ "sandbox": "someone-elses" }))),
-        ("fountain", "GET", "/api/fountain/agents".into(), None),
         // Configs that don't parse: on, they fail past the gate, in the
         // block type's own words, and nothing starts.
-        ("fountain", "POST", "/api/blocks".into(), block("fountain", json!({ "profile": 42 }))),
-        ("fountain", "POST", "/api/blocks".into(), block("agent", json!({ "agent": "fountain" }))),
         ("studio", "GET", "/api/studio".into(), None),
         ("studio", "GET", "/api/studio/apps".into(), None),
         ("studio", "POST", "/api/blocks".into(), block("app", json!({ "app": "nothing-here" }))),
@@ -98,6 +98,60 @@ fn each_flag_gates_its_routes_and_blocks_both_ways() {
     let (status, text) = d.raw("GET", "/api/guests", None);
     assert_eq!(status, 404, "{text}");
     assert!(text.contains(&hint("guest-ssh")), "{text}");
+}
+
+/// Fountain's requests, which no flag gates any more (#942, F5): with no
+/// login here they fail for that, or in the block's own words.
+fn fountain_requests() -> Vec<(&'static str, &'static str, Option<Value>)> {
+    let block = |kind: &str, config: Value| Some(json!({ "type": kind, "config": config, "local": true }));
+    vec![
+        ("GET", "/api/fountain/agents", None),
+        ("GET", "/api/fountain/login", None),
+        ("POST", "/api/blocks", block("fountain", json!({ "profile": 42 }))),
+        ("POST", "/api/blocks", block("agent", json!({ "agent": "fountain" }))),
+    ]
+}
+
+/// A new install reaches Fountain's routes and blocks with no flag; so does
+/// one whose flags file still says `fountain`, either way, from before F5.
+/// `arugulad flags` doesn't list it, and setting it says why.
+#[test]
+fn fountain_needs_no_flag_and_an_old_entry_changes_nothing() {
+    let d = daemon("flag-gates-fountain");
+    for file in [None, Some(r#"{"flags":{"fountain":false}}"#), Some(r#"{"flags":{"fountain":true}}"#)] {
+        if let Some(text) = file {
+            std::fs::write(d.state.join("flags.json"), text).unwrap();
+        }
+        for (method, path, body) in fountain_requests() {
+            let (status, text) = d.raw(method, path, body.clone());
+            assert!(!text.contains("arugulad flags"), "{file:?}: {method} {path} {body:?}: {status} {text}");
+            assert_ne!(status, 404, "{file:?}: {method} {path} {body:?}: {text}");
+        }
+        assert!(d.get("/api/flags").as_array().unwrap().iter().all(|f| f["name"] != "fountain"));
+    }
+    // What the file said is kept, for an older daemon reading it.
+    set(&d.state, "chat", true);
+    let file: Value = serde_json::from_str(&std::fs::read_to_string(d.state.join("flags.json")).unwrap()).unwrap();
+    assert_eq!(file["flags"], json!({ "fountain": true, "chat": true }));
+
+    let arugulad = |args: &[&str]| {
+        arugula_testkit::command(Path::new(env!("CARGO_BIN_EXE_arugulad")))
+            .args(args)
+            .arg("--state-dir")
+            .arg(&d.state)
+            .output()
+            .unwrap()
+    };
+    let list = arugulad(&["flags"]);
+    assert!(list.status.success());
+    let list = String::from_utf8_lossy(&list.stdout);
+    assert!(list.contains("chat") && !list.lines().any(|l| l.starts_with("fountain")), "{list}");
+    for args in [&["flags", "fountain", "on"][..], &["flags", "fountain"][..]] {
+        let out = arugulad(args);
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert!(!out.status.success(), "{args:?}");
+        assert!(err.contains("isn't a flag any more") && err.contains("arugula fountain login"), "{args:?}: {err}");
+    }
 }
 
 type Ws = tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;

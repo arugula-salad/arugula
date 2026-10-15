@@ -46,6 +46,11 @@
 //!   So each flag is three-way in `flags.json`: on, off, or not named,
 //!   which follows control ([`unset`]). A [`Flag::local_only`] one
 //!   (`guest-ssh`, `agents`) ignores control: only `flags.json` sets it.
+//! - **A feature that leaves Labs takes its row with it.** Its name moves to
+//!   [`RETIRED`]: a file or a control push that still names it is read as
+//!   it always was, as a name that isn't a flag, and nothing follows, while
+//!   [`set`] and [`unset`] say why it's gone. `fountain` was the first
+//!   (#942, F5).
 
 use std::{
     collections::BTreeMap,
@@ -79,8 +84,6 @@ pub const CHAT: &str = "chat";
 pub const HUDDLES: &str = "huddles";
 /// VM tabs and panes, machines and the sandboxes page.
 pub const VMS: &str = "vms";
-/// Fountain agents.
-pub const FOUNTAIN: &str = "fountain";
 /// Studio app blocks.
 pub const STUDIO: &str = "studio";
 /// Chant workspace blocks.
@@ -125,7 +128,6 @@ pub const FLAGS: &[Flag] = &[
     row(CHAT, "Chat", "Threads on panes and sessions, and the chat page."),
     row(HUDDLES, "Huddles", "Voice calls on a session."),
     row(VMS, "VMs and sandboxes", "VM tabs and panes, machines and the sandboxes page. Needs a sandbox provider."),
-    row(FOUNTAIN, "Fountain", "Fountain agents. Needs a Fountain login."),
     row(STUDIO, "Studio apps", "Studio app blocks. Needs a linked studio."),
     row(WORKSPACES, "Chant workspaces", "Chant workspace blocks."),
     local_row(GUEST_SSH, "Guest ssh", "Invite a guest to a pane over plain ssh."),
@@ -137,6 +139,20 @@ pub const FLAGS: &[Flag] = &[
         "Offer Claude Code subagents from this machine, and see the ones your team offers.",
     ),
 ];
+
+/// Flags that were, and why they aren't: a feature that left Labs. A file
+/// or a control push may still name one (an older daemon wrote it, a
+/// machine turned it off); it's ignored, as any name not in [`FLAGS`] is,
+/// and kept. Only [`set`] and [`unset`] say anything: this.
+pub const RETIRED: &[(&str, &str)] = &[(
+    "fountain",
+    "Fountain left Labs (#942): it's on wherever this machine has a Fountain login (`arugula fountain login`)",
+)];
+
+/// What to say of `name` if it is a [`RETIRED`] flag.
+pub fn retired(name: &str) -> Option<String> {
+    RETIRED.iter().find(|(n, _)| *n == name).map(|(_, why)| format!("{name} isn't a flag any more: {why}"))
+}
 
 /// The flags that are on, from one read: what a listing or a `--help` is
 /// built from, where [`get`] would read the file once per flag.
@@ -407,6 +423,9 @@ fn known(name: &str) -> io::Result<()> {
     if flag(name).is_some() {
         return Ok(());
     }
+    if let Some(why) = retired(name) {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, why));
+    }
     let known: Vec<_> = FLAGS.iter().map(|f| f.name).collect();
     Err(io::Error::new(
         io::ErrorKind::InvalidInput,
@@ -634,8 +653,8 @@ mod tests {
         assert_eq!(on(&d), On::all());
         assert!(unlocked(&d));
         // One turned off there leaves the rest.
-        set(&d, FOUNTAIN, false).unwrap();
-        assert!(!get(&d, FOUNTAIN) && get(&d, CHAT));
+        set(&d, VMS, false).unwrap();
+        assert!(!get(&d, VMS) && get(&d, CHAT));
         assert_eq!(names(&d).len(), FLAGS.len() - 1);
         fs::remove_file(d.join(LEGACY_LABS_FILE)).unwrap();
         assert!(!on(&d).any());
@@ -746,9 +765,9 @@ mod tests {
         // The old marker the same way, and it goes.
         let d2 = dir("unset-marker");
         fs::write(d2.join(LEGACY_LABS_FILE), "").unwrap();
-        unset(&d2, FOUNTAIN).unwrap();
+        unset(&d2, STUDIO).unwrap();
         assert!(!d2.join(LEGACY_LABS_FILE).exists());
-        assert!(!get(&d2, FOUNTAIN) && get(&d2, CHAT));
+        assert!(!get(&d2, STUDIO) && get(&d2, CHAT));
         fs::remove_dir_all(&d).unwrap();
         fs::remove_dir_all(&d2).unwrap();
     }
@@ -771,6 +790,33 @@ mod tests {
         set(&d, AGENTS, true).unwrap();
         write_control(&d, &pushed(&[(AGENTS, false)], &[])).unwrap();
         assert!(get(&d, AGENTS) && state_of(&d, AGENTS).source == Source::Machine);
+        fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// `fountain` left Labs (#942, F5): a file that turned it on or off, or
+    /// control saying so, still reads, means nothing, and survives a write;
+    /// setting it says why it's gone.
+    #[test]
+    fn a_retired_flag_in_the_file_is_ignored_and_kept() {
+        assert!(FLAGS.iter().all(|f| RETIRED.iter().all(|(n, _)| *n != f.name)));
+        let d = dir("retired");
+        fs::write(d.join(FILE), r#"{"flags":{"fountain":true,"chat":true}}"#).unwrap();
+        assert_eq!(names(&d), [CHAT]);
+        assert!(!get(&d, "fountain"));
+        assert_eq!(all(&d).len(), FLAGS.len());
+        fs::write(d.join(FILE), r#"{"flags":{"fountain":false}}"#).unwrap();
+        assert!(!on(&d).any());
+        write_control(&d, &pushed(&[("fountain", true)], &[("fountain", false)])).unwrap();
+        assert!(!on(&d).any());
+        // A write keeps it, for an older daemon reading the same file.
+        set(&d, HUDDLES, true).unwrap();
+        let v: Value = serde_json::from_str(&fs::read_to_string(d.join(FILE)).unwrap()).unwrap();
+        assert_eq!(v["flags"]["fountain"], false);
+        assert_eq!(names(&d), [HUDDLES]);
+        for e in [set(&d, "fountain", true).unwrap_err(), unset(&d, "fountain").unwrap_err()] {
+            assert_eq!(e.kind(), io::ErrorKind::InvalidInput);
+            assert!(e.to_string().contains("isn't a flag any more") && e.to_string().contains("fountain login"), "{e}");
+        }
         fs::remove_dir_all(&d).unwrap();
     }
 
