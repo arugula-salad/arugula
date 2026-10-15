@@ -6,7 +6,10 @@
 //!   Claude Code refuses MCP servers' sign-in links), with no settings
 //!   sources so your own hooks don't fire inside the block.
 //! - **codex**: `codex-acp` against the installed `codex`.
-//! - **fountain**: `fountain acp --agent X`, an agent in a Fountain sandbox.
+//! - **fountain**: a conversation with agent X in a Fountain sandbox, which
+//!   the daemon drives over Fountain's API itself (#942, F3: nothing runs
+//!   here, and no `fountain acp`; [`super::link::spawn_fountain`]). To run
+//!   `fountain acp` by hand, use `acp` with that command.
 //! - **acp**: any other ACP agent server, by its command line.
 //!
 //! The npm adapters are looked for in `~/.local/share/arugula/agents/`
@@ -83,15 +86,25 @@ pub struct Def {
     /// The command line, for `acp` (and to override the others').
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub command: Vec<String>,
-    /// Fountain: the agent's name or id.
+    /// Fountain: the agent's name or id (a block opened on a conversation
+    /// that exists, by `session_id`, needs none).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fountain_agent: Option<String>,
+    /// Fountain: the vault a new conversation gets (name or id).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vault: Option<String>,
-    /// Fountain's `--permission` (default `ask`: approvals come to the block).
+    /// Fountain: the environment a new conversation is provisioned from
+    /// instead of its agent's (name or id).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub environment: Option<String>,
+    /// Fountain: labels a new conversation is made with.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub labels: std::collections::BTreeMap<String, String>,
+    /// Fountain's permission policy, as `fountain acp --permission` takes it
+    /// (default `ask`: approvals come to the block).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub permission: Option<String>,
-    /// Fountain's credentials profile.
+    /// Fountain's credentials profile (the CLI's); else the daemon's login.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile: Option<String>,
     /// A model to switch to after the session starts (`haiku`, …).
@@ -186,8 +199,11 @@ impl Def {
         match self.agent {
             // Without Labs there is no Fountain to run or to wear.
             Kind::Fountain if !crate::labs::BUILT => Err(crate::labs::not_built("Fountain")),
-            Kind::Fountain if self.fountain_agent.as_deref().is_none_or(str::is_empty) => {
-                Err("a Fountain agent block needs the agent's name or id".into())
+            Kind::Fountain if !self.command.is_empty() => {
+                Err("a Fountain block runs no command (to run `fountain acp` by hand: agent acp)".into())
+            }
+            _ if self.agent != Kind::Fountain && (self.environment.is_some() || !self.labels.is_empty()) => {
+                Err("environment and labels are a Fountain conversation's (agent: fountain)".into())
             }
             Kind::Acp if self.command.is_empty() => Err("an ACP agent block needs a command".into()),
             _ if !crate::labs::BUILT && self.recipe.is_some() => Err(crate::labs::not_built("Agent recipes")),
@@ -238,22 +254,11 @@ impl Def {
                 }
                 l.npm = Some(CODEX_ACP);
             }
+            // Nothing to run: the daemon speaks Fountain's API itself (F3).
             Kind::Fountain => {
                 if vm {
                     return Err("Fountain agents run in Fountain's sandboxes, not in a VM here".into());
                 }
-                // Tests put a stand-in there (M43's e2e: the fake ACP agent),
-                // so no test reaches a real Fountain.
-                let bin = std::env::var("ARUGULA_FOUNTAIN_BIN").ok().filter(|b| !b.is_empty());
-                l.argv = vec![bin.unwrap_or_else(|| installed(home, "fountain"))];
-                if let Some(p) = &self.profile {
-                    l.argv.extend(["--profile".into(), p.clone()]);
-                }
-                l.argv.extend(["acp".into(), "--agent".into(), self.fountain_agent.clone().unwrap_or_default()]);
-                if let Some(v) = &self.vault {
-                    l.argv.extend(["--vault".into(), v.clone()]);
-                }
-                l.argv.extend(["--permission".into(), self.permission.clone().unwrap_or_else(|| "ask".into())]);
             }
             Kind::Acp => l.argv = self.command.clone(),
         }
@@ -371,19 +376,24 @@ mod tests {
         // A build without Labs refuses a Fountain agent (`check`), so can't launch one.
         #[cfg(feature = "labs")]
         {
+            // F3: nothing runs here for a Fountain conversation.
             let f = Def {
                 agent: Kind::Fountain,
                 fountain_agent: Some("arena".into()),
                 vault: Some("v".into()),
                 ..Default::default()
             };
-            assert_eq!(
-                f.launch(home, false).unwrap().argv,
-                split_command("fountain acp --agent arena --vault v --permission ask")
-            );
+            assert!(f.launch(home, false).unwrap().argv.is_empty());
             assert!(f.launch(home, true).is_err());
-            assert!(Def { agent: Kind::Fountain, ..Default::default() }.check().is_err());
+            let by_hand = Def { command: split_command("fountain acp --agent arena"), ..f.clone() };
+            assert!(by_hand.check().unwrap_err().contains("agent acp"));
+            let acp =
+                Def { agent: Kind::Acp, command: split_command("fountain acp --agent arena"), ..Default::default() };
+            assert_eq!(acp.launch(home, false).unwrap().argv, split_command("fountain acp --agent arena"));
+            assert!(Def { environment: Some("e".into()), ..Default::default() }.check().is_err());
         }
+        #[cfg(not(feature = "labs"))]
+        assert!(Def { agent: Kind::Fountain, ..Default::default() }.check().is_err());
 
         let codex = Def { agent: Kind::Codex, ..Default::default() }.launch(home, false).unwrap();
         assert_eq!(codex.env, vec![("CODEX_PATH".into(), "codex".into())]);

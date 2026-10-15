@@ -20,7 +20,6 @@ use crate::agentd;
 
 use std::{
     collections::HashSet,
-    os::unix::fs::PermissionsExt,
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -316,12 +315,6 @@ impl Fountain {
         let home = dir.join("home");
         std::fs::create_dir_all(&home).unwrap();
         let home = home.display().to_string();
-        // `fountain` is the fake ACP agent: opening a conversation reaches no
-        // Fountain.
-        let bin = dir.join("fountain");
-        std::fs::write(&bin, format!("#!/bin/sh\nexec python3 {} \"$@\"\n", fake())).unwrap();
-        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
-        let bin = bin.display().to_string();
         let mut args = vec!["--wisp-token-file", "/nonexistent", "--tailscale-socket", "/nonexistent/sock"];
         if stream {
             args.push("--fountain-account-stream");
@@ -335,7 +328,6 @@ impl Fountain {
                 ("ARUGULA_FOUNTAIN_STREAM_RETRY_MS", "50"),
                 ("ARUGULA_FOUNTAIN_RELIST_MS", "100"),
                 ("ARUGULA_FOUNTAIN_POLL_MS", "600000"),
-                ("ARUGULA_FOUNTAIN_BIN", bin.as_str()),
             ],
         );
         if stream {

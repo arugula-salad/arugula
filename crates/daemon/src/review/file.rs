@@ -36,9 +36,15 @@ const POLL: Duration = Duration::from_secs(1);
 
 #[derive(Debug, Clone, Default, Deserialize)]
 struct Config {
+    /// F3: empty for a sandbox's home.
+    #[serde(default)]
     path: String,
     #[serde(default)]
     line: Option<u32>,
+    /// F3: a file in a Fountain conversation's sandbox, read through
+    /// Fountain.
+    #[serde(default)]
+    fountain: Option<super::Sandbox>,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -65,12 +71,22 @@ struct State {
     /// Following the file now (someone draws it).
     watching: bool,
     updated_ms: u64,
+    /// F3: the Fountain conversation whose sandbox it shows; whether that's
+    /// parked (Wake to look); and a directory's entries (`{name, type,
+    /// size}`), when the path is one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    fountain: Option<String>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    parked: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    entries: Option<Vec<Value>>,
 }
 
 pub struct FileView {
     ctx: BlockCtx,
     me: Weak<FileView>,
     files: Result<Target, String>,
+    sandbox: Option<super::Sandbox>,
     state: Mutex<State>,
     /// The size and time last read, to tell a change.
     seen: Mutex<Option<(u64, u64)>>,
@@ -81,12 +97,16 @@ pub struct FileView {
 impl FileView {
     pub fn create(ctx: BlockCtx, config: Value) -> Result<Arc<dyn Block>, String> {
         let config: Config = serde_json::from_value(config).map_err(|e| format!("file config: {e}"))?;
-        if config.path.is_empty() {
+        if config.path.is_empty() && config.fountain.is_none() {
             return Err("a file block needs a path".into());
+        }
+        if config.fountain.as_ref().is_some_and(|f| f.conversation.is_empty()) {
+            return Err("a sandbox's file needs its conversation".into());
         }
         let files = ctx.files();
         if let Ok(Target::Local(scope)) = &files
             && !ctx.restoring
+            && config.fountain.is_none()
         {
             scope.resolve(&config.path).map_err(|e| e.to_string())?;
         }
@@ -96,6 +116,7 @@ impl FileView {
             line: config.line.filter(|l| *l > 0),
             jump: 1,
             loading: !ctx.restoring,
+            fountain: config.fountain.as_ref().map(|f| f.conversation.clone()),
             ..Default::default()
         };
         super::log(&ctx, &json!({ "e": "view", "path": config.path, "line": config.line }));
@@ -104,6 +125,7 @@ impl FileView {
             ctx,
             me: me.clone(),
             files,
+            sandbox: config.fountain.clone(),
             state: Mutex::new(state),
             seen: Mutex::new(None),
             live: Live::default(),
@@ -121,6 +143,9 @@ impl FileView {
         let _one = self.reading.lock().await;
         if self.live.closed() {
             return;
+        }
+        if let Some(s) = self.sandbox.clone() {
+            return self.load_sandbox(&s).await;
         }
         let files = match &self.files {
             Ok(f) => f.clone(),
@@ -170,12 +195,78 @@ impl FileView {
         self.ctx.changed();
     }
 
+    /// F3: the file (or directory) in the sandbox, through Fountain. It
+    /// has no time to look at first, so it's read each time; the state
+    /// changes only if what it read did.
+    async fn load_sandbox(&self, s: &super::Sandbox) {
+        use crate::labs::SandboxRead;
+        let path = self.state.lock().unwrap().path.clone();
+        let file = match path.trim() {
+            "" | "~" => Err("a directory".to_owned()),
+            p if p.ends_with('/') => Err("a directory".to_owned()),
+            p => s.read(SandboxRead::File(p.to_owned())).await,
+        };
+        let (file, listing) = match file {
+            Ok(Some(f)) => (Some(f), None),
+            Ok(None) => return self.failed(super::PARKED.into()),
+            // A directory, perhaps: list it.
+            Err(e) => {
+                let dir = Some(path.trim()).filter(|p| !p.is_empty() && *p != "~").map(str::to_owned);
+                match s.read(SandboxRead::Files(dir)).await {
+                    Ok(Some(l)) => (None, Some(l)),
+                    Ok(None) => return self.failed(super::PARKED.into()),
+                    Err(_) => return self.failed(e),
+                }
+            }
+        };
+        {
+            let mut st = self.state.lock().unwrap();
+            let before = (st.text.clone(), st.entries.clone(), st.binary, st.error.clone(), st.real.clone());
+            match (file, listing) {
+                (Some(f), _) => {
+                    let binary = f["encoding"] == "base64";
+                    let text =
+                        if binary { String::new() } else { f["content"].as_str().unwrap_or_default().to_owned() };
+                    if st.text != text {
+                        st.line = st.line.map(|l| follow(&st.text, &text, l));
+                        st.text = text;
+                        st.rev += 1;
+                    }
+                    let real = f["path"].as_str().filter(|p| !p.is_empty()).unwrap_or(&path).to_owned();
+                    st.name = name_of(&real);
+                    st.real = Some(real);
+                    (st.size, st.binary, st.truncated) =
+                        (f["size"].as_u64().unwrap_or(st.text.len() as u64), binary, f["truncated"] == true);
+                    st.entries = None;
+                }
+                (None, Some(l)) => {
+                    let real = l["path"].as_str().unwrap_or(&path).to_owned();
+                    st.name = name_of(&real);
+                    st.real = Some(real);
+                    st.entries = Some(l["entries"].as_array().cloned().unwrap_or_default());
+                    (st.text, st.binary, st.truncated, st.size) = (String::new(), false, l["truncated"] == true, 0);
+                }
+                (None, None) => return,
+            }
+            st.error = None;
+            st.parked = false;
+            let changed = before != (st.text.clone(), st.entries.clone(), st.binary, st.error.clone(), st.real.clone());
+            if !changed && !st.loading {
+                return;
+            }
+            st.loading = false;
+            st.updated_ms = now_ms();
+        }
+        self.ctx.changed();
+    }
+
     fn failed(&self, why: String) {
         {
             let mut st = self.state.lock().unwrap();
             if st.error.as_deref() == Some(why.as_str()) && !st.loading {
                 return;
             }
+            st.parked = st.fountain.is_some() && why == super::PARKED;
             st.error = Some(why);
             st.loading = false;
             st.updated_ms = now_ms();
@@ -196,7 +287,7 @@ impl FileView {
     fn watch(&self, round: u64) {
         let Some(me) = self.me.upgrade() else { return };
         let local = matches!(self.files, Ok(Target::Local(_)));
-        let every = super::every(local, POLL);
+        let every = if self.sandbox.is_some() { super::SANDBOX_POLL } else { super::every(local, POLL) };
         self.ctx.rt.spawn(async move {
             while me.live.on(round) {
                 me.load(false).await;
@@ -213,7 +304,11 @@ impl Block for FileView {
 
     fn config(&self) -> Value {
         let st = self.state.lock().unwrap();
-        json!({ "path": st.path, "line": st.line })
+        let mut v = json!({ "path": st.path, "line": st.line });
+        if let Some(s) = &self.sandbox {
+            v["fountain"] = json!(s);
+        }
+        v
     }
 
     fn state(&self) -> Value {
@@ -253,7 +348,9 @@ impl Block for FileView {
                     }
                     let me = me.ok_or("closed")?;
                     let path = path.ok_or("open needs {\"path\": …}")?;
-                    if let Ok(Target::Local(scope)) = &me.files {
+                    if let Ok(Target::Local(scope)) = &me.files
+                        && me.sandbox.is_none()
+                    {
                         scope.resolve(&path).map_err(|e| e.to_string())?;
                     }
                     super::log(&me.ctx, &json!({ "e": "view", "path": path, "line": line }));
@@ -285,6 +382,16 @@ impl Block for FileView {
                 let s = self.state();
                 Box::pin(async move { Ok(s) })
             }
+            // F3: wake the sandbox's conversation, then look again.
+            "wake" if self.sandbox.is_some() => {
+                let s = self.sandbox.clone();
+                Box::pin(async move {
+                    let me = me.ok_or("closed")?;
+                    let r = s.ok_or("not a sandbox")?.wake().await?;
+                    me.load(true).await;
+                    Ok(r)
+                })
+            }
             m => {
                 let e = no_method(BlockType::File, m);
                 Box::pin(async move { Err(e) })
@@ -312,7 +419,7 @@ impl Block for FileView {
         let st = self.state.lock().unwrap();
         let path = st.real.clone().unwrap_or_else(|| st.path.clone());
         let dir = std::path::Path::new(&path).parent().map(|p| p.display().to_string());
-        let local = matches!(self.files, Ok(Target::Local(_)));
+        let local = matches!(self.files, Ok(Target::Local(_))) && self.sandbox.is_none();
         Summary {
             project: dir.as_deref().and_then(|d| super::project(d, local)),
             cwd: dir,

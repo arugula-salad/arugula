@@ -1047,3 +1047,26 @@ fn a_permission_request_is_pushed_with_its_approval() {
     d.wait(id, "idle");
     assert_eq!(last_tool(&d.state(id))["status"], "completed");
 }
+
+/// An agent block whose command doesn't exist fails with the reason, and
+/// the daemon goes on answering (it ended: SIGPIPE writing to it, #947).
+#[test]
+fn a_missing_command_fails_its_block_and_nothing_else() {
+    let d = Daemon::child();
+    let started = std::time::Instant::now();
+    let (code, body) = d.raw(
+        "POST",
+        "/api/blocks",
+        Some(json!({ "type": "agent", "config": { "agent": "acp", "command": ["/nonexistent/fountain", "acp"] } })),
+    );
+    assert!(started.elapsed() < Duration::from_secs(10), "it took {:?}", started.elapsed());
+    assert_eq!(code, 200, "{body}");
+    let b = serde_json::from_str::<Value>(&body).unwrap()["block"].as_u64().unwrap();
+    d.wait_for("the reason", || d.state(b)["status"] == "exited");
+    let st = d.state(b);
+    assert!(st["error"].as_str().unwrap_or_default().contains("/nonexistent/fountain"), "{st}");
+    // The daemon still answers, and another block still runs.
+    assert_eq!(d.raw("GET", "/api/panes", None).0, 200);
+    let ok = d.open("hello");
+    assert_eq!(d.wait(ok, "idle"), "done");
+}

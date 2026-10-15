@@ -60,6 +60,10 @@ export interface DiffState {
   base?: boolean;
   on_default?: string | null;
   picked?: string | null;
+  /** #942 F3: a Fountain conversation's sandbox, and whether it's parked
+   *  (a read never wakes it: Wake does). */
+  fountain?: string;
+  parked?: boolean;
 }
 
 /** Bases offered in place of the merge base (#619). */
@@ -82,7 +86,7 @@ export function openChanges(client: Client, from: PaneId) {
 const lastFile = new Map<PaneId, PaneId>();
 
 /** A file at a line, beside the diff block `from`, on its machine. */
-export async function openFile(client: Client, from: PaneId, path: string, line: number | null) {
+export async function openFile(client: Client, from: PaneId, path: string, line: number | null, fountain?: { conversation: string }) {
   const prev = lastFile.get(from);
   if (prev !== undefined && client.info(prev)?.type === "file") {
     if (await client.api(`/api/blocks/${prev}/call/open`, { path, line }, "couldn't open that file")) {
@@ -90,7 +94,9 @@ export async function openFile(client: Client, from: PaneId, path: string, line:
       return;
     }
   }
-  const block = await client.openBlock({ type: "file", config: { path, line }, from_pane: from, split: from }, "couldn't open that file");
+  // #942 F3: a file in a Fountain sandbox is read there.
+  const config = fountain ? { path, line, fountain } : { path, line };
+  const block = await client.openBlock({ type: "file", config, from_pane: from, split: from }, "couldn't open that file");
   if (block !== null) lastFile.set(from, block);
 }
 
@@ -275,7 +281,14 @@ function DiffBlock({ client, id, s }: { client: Client; id: PaneId; s: DiffState
             On {s.on_default}, so committed work on this branch isn't shown. Pick a base above to see it.
           </div>
         )}
-        {s.error ? (
+        {s.parked ? (
+          <div class="browser-card" data-parked>
+            <p>{s.error}</p>
+            <button class="primary" data-wake onClick={() => void client.api(`/api/blocks/${id}/call/wake`, {}, "couldn't wake it")}>
+              Wake
+            </button>
+          </div>
+        ) : s.error ? (
           <div class="browser-card error">
             <p>Can't show the changes</p>
             <p class="dim">{s.error}</p>
@@ -311,7 +324,7 @@ function DiffBlock({ client, id, s }: { client: Client; id: PaneId; s: DiffState
                   <Hunks
                     f={f}
                     can={can}
-                    open={(line) => void openFile(client, id, where(f.path), line)}
+                    open={(line) => void openFile(client, id, where(f.path), line, s.fountain ? { conversation: s.fountain } : undefined)}
                     show={(pane) => (client.info(pane) ? client.setActive(pane) : client.toast("That agent's pane is closed"))}
                   />
                 )}

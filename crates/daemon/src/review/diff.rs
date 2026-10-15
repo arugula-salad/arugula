@@ -153,6 +153,9 @@ struct Config {
     /// #619: the revision picked in its place.
     #[serde(default)]
     picked: Option<String>,
+    /// F3: a Fountain conversation's sandbox, read through Fountain.
+    #[serde(default)]
+    fountain: Option<super::Sandbox>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -276,6 +279,12 @@ struct State {
     watching: bool,
     /// When it last read the diff.
     updated_ms: u64,
+    /// F3: the Fountain conversation whose sandbox it shows, and whether
+    /// that's parked (Wake to look).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    fountain: Option<String>,
+    #[serde(skip_serializing_if = "is_false")]
+    parked: bool,
 }
 
 /// What the last read found.
@@ -319,6 +328,14 @@ impl Diff {
         if config.rev_b.is_some() && config.rev_a.is_none() {
             return Err("rev_b needs rev_a".into());
         }
+        if let Some(f) = &config.fountain {
+            if f.conversation.is_empty() {
+                return Err("a sandbox's diff needs its conversation".into());
+            }
+            if config.rev_a.is_some() || config.chant.is_some() || config.base {
+                return Err("a sandbox's diff is its working tree against HEAD".into());
+            }
+        }
         let repo = config.repo.clone().filter(|r| !r.is_empty()).unwrap_or_else(|| "~".into());
         let runner = Runner::of(&ctx);
         if config.run_as.is_some() {
@@ -326,12 +343,14 @@ impl Diff {
         }
         if let Ok(Runner::Local { .. }) = &runner
             && !ctx.restoring
+            && config.fountain.is_none()
         {
             // Here, the same places are refused as for `/api/fs`.
             ctx.fs.resolve(&repo).map_err(|e| e.to_string())?;
         }
         let empty = |r: &str| r == EMPTY_TREE;
         let against = match (&config.rev_a, &config.rev_b) {
+            _ if config.fountain.is_some() => "the sandbox's working tree against HEAD".to_owned(),
             (Some(a), None) if empty(a) => "everything in it (against an empty tree)".to_owned(),
             (None, _) => "the working tree against HEAD".to_owned(),
             (Some(a), None) => format!("the working tree against {a}"),
@@ -343,6 +362,7 @@ impl Diff {
             rev_b: config.rev_b.clone(),
             against,
             loading: !ctx.restoring,
+            fountain: config.fountain.as_ref().map(|f| f.conversation.clone()),
             ..Default::default()
         };
         super::log(&ctx, &json!({ "e": "diff", "repo": repo, "rev_a": config.rev_a, "rev_b": config.rev_b }));
@@ -378,6 +398,9 @@ impl Diff {
         let _one = self.reading.lock().await;
         if self.live.closed() {
             return;
+        }
+        if let Some(f) = self.config.fountain.clone() {
+            return self.load_sandbox(&f).await;
         }
         let runner = match &self.runner {
             Ok(r) => r.clone(),
@@ -445,12 +468,66 @@ impl Diff {
         self.redraw();
     }
 
+    /// F3: the sandbox's tracked changes, and what `git status` says is
+    /// untracked, through Fountain.
+    async fn load_sandbox(&self, f: &super::Sandbox) {
+        use crate::labs::SandboxRead;
+        let d = match f.read(SandboxRead::Diff).await {
+            Err(e) => return self.failed(e),
+            Ok(None) => return self.failed(super::PARKED.into()),
+            Ok(Some(d)) => d,
+        };
+        // Untracked files are the one thing a diff can't show.
+        let status = f.read(SandboxRead::GitStatus).await.ok().flatten().unwrap_or_default();
+        let text = d["diff"].as_str().unwrap_or_default();
+        let untracked: Vec<&str> = status["entries"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|e| e["worktree"] == "untracked" || e["index"] == "untracked")
+            .filter_map(|e| e["path"].as_str())
+            .collect();
+        let mut h = DefaultHasher::new();
+        (text, &untracked, &d["repo_root"].to_string()).hash(&mut h);
+        let hash = h.finish();
+        let same = {
+            let mut read = self.read.lock().unwrap();
+            let same = read.hash == hash && read.hash != 0;
+            if !same {
+                let (mut files, truncated) = parse(text, d["truncated"] == true);
+                for p in &untracked {
+                    if !files.iter().any(|f| f.path == *p) {
+                        files.push(FileDiff { path: (*p).to_owned(), status: "untracked", ..Default::default() });
+                    }
+                }
+                let truncated = truncated || status["truncated"] == true;
+                *read = Read { hash, files, truncated, head: String::new() };
+            }
+            same
+        };
+        {
+            let mut st = self.state.lock().unwrap();
+            st.loading = false;
+            if same && st.error.is_none() {
+                return;
+            }
+            st.error = None;
+            st.parked = false;
+            let top = d["repo_root"].as_str().filter(|r| !r.is_empty()).map(str::to_owned);
+            st.name = top.as_deref().and_then(|t| t.rsplit('/').find(|s| !s.is_empty())).map(str::to_owned);
+            st.repo = top;
+            st.updated_ms = now_ms();
+        }
+        self.redraw();
+    }
+
     fn failed(&self, why: String) {
         {
             let mut st = self.state.lock().unwrap();
             if st.error.as_deref() == Some(why.as_str()) && !st.loading {
                 return;
             }
+            st.parked = st.fountain.is_some() && why == super::PARKED;
             st.loading = false;
             st.error = Some(why);
             st.files.clear();
@@ -601,7 +678,10 @@ impl Diff {
     /// Poll while drawn.
     fn watch(&self, round: u64) {
         let Some(me) = self.me.upgrade() else { return };
-        let every = super::every(self.runner.as_ref().is_ok_and(Runner::local), POLL);
+        let every = match self.config.fountain {
+            Some(_) => super::SANDBOX_POLL,
+            None => super::every(self.runner.as_ref().is_ok_and(Runner::local), POLL),
+        };
         self.ctx.rt.spawn(async move {
             while me.live.on(round) {
                 me.load().await;
@@ -631,6 +711,9 @@ impl Block for Diff {
         }
         if self.config.base {
             v["base"] = json!(true);
+        }
+        if let Some(f) = &self.config.fountain {
+            v["fountain"] = json!(f);
         }
         v
     }
@@ -705,6 +788,16 @@ impl Block for Diff {
                 let s = self.state();
                 Box::pin(async move { Ok(s) })
             }
+            // F3: wake the sandbox's conversation, then look again.
+            "wake" if self.config.fountain.is_some() => {
+                let f = self.config.fountain.clone();
+                Box::pin(async move {
+                    let me = me.ok_or("closed")?;
+                    let r = f.ok_or("not a sandbox")?.wake().await?;
+                    me.load().await;
+                    Ok(r)
+                })
+            }
             m => {
                 let e = no_method(BlockType::Diff, m);
                 Box::pin(async move { Err(e) })
@@ -730,7 +823,7 @@ impl Block for Diff {
 
     fn summary(&self) -> Summary {
         let st = self.state.lock().unwrap();
-        let local = self.runner.as_ref().is_ok_and(Runner::local);
+        let local = self.runner.as_ref().is_ok_and(Runner::local) && self.config.fountain.is_none();
         let cwd = st.repo.clone().or_else(|| self.config.repo.clone());
         Summary {
             project: cwd.as_deref().and_then(|c| super::project(c, local)),

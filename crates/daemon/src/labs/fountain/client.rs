@@ -736,6 +736,60 @@ impl Client {
         serde_json::from_value(v).map_err(|e| Error::Unexpected(format!("prompts: {e}")))
     }
 
+    /// A prompt with images (`(base64, media type)` each), as the
+    /// conversation link sends an ACP `session/prompt` (#942, F3).
+    pub async fn prompt_images(
+        &self,
+        id: &str,
+        prompt: &str,
+        images: &[(String, String)],
+        client_request_id: Option<&str>,
+    ) -> Result<Prompted, Error> {
+        let mut body = json!({ "prompt": prompt });
+        if !images.is_empty() {
+            body["images"] = images.iter().map(|(d, m)| json!({ "data": d, "media_type": m })).collect();
+        }
+        if let Some(c) = client_request_id {
+            body["client_request_id"] = json!(c);
+        }
+        let path = format!("/api/conversations/{}/prompts", seg(id));
+        let (_, bytes) = self.send(Method::POST, &path, &[], Some(&body)).await?;
+        let v: Value = serde_json::from_slice(&bytes).map_err(|e| Error::Unexpected(format!("prompts: {e}")))?;
+        let v = if v["data"].is_object() { v["data"].clone() } else { v };
+        serde_json::from_value(v).map_err(|e| Error::Unexpected(format!("prompts: {e}")))
+    }
+
+    /// A conversation's event stream (`GET /stream`, SSE), opened with
+    /// `http` (one without a total timeout: a stream lasts until Fountain
+    /// closes it). `streams` filters (`acp,stage`); `wait: false` drains
+    /// what's stored and closes. After `last_event_id` when it's not 0.
+    pub async fn open_stream(
+        &self,
+        http: &reqwest::Client,
+        id: &str,
+        streams: &str,
+        wait: bool,
+        last_event_id: u64,
+    ) -> Result<reqwest::Response, Error> {
+        let mut q = vec![("streams", streams.to_owned())];
+        if !wait {
+            q.push(("wait", "false".to_owned()));
+        }
+        let url = self.url(&format!("/api/conversations/{}/stream", seg(id)), &q)?;
+        let mut req = http.get(url).bearer_auth(&self.key).header(reqwest::header::ACCEPT, "text/event-stream");
+        if last_event_id > 0 {
+            req = req.header("last-event-id", last_event_id.to_string());
+        }
+        let res = req.send().await.map_err(|e| Error::Unreachable(format!("{}: {}", self.base, plain(&e))))?;
+        if res.status().is_success() {
+            return Ok(res);
+        }
+        let status = res.status().as_u16();
+        let after = retry_after(res.headers());
+        let body = res.bytes().await.unwrap_or_default();
+        Err(error_for(status, &body, after))
+    }
+
     /// Stop the running turn (409 `no_turn_running` when there's none).
     pub async fn interrupt(&self, id: &str) -> Result<(), Error> {
         self.unit(Method::POST, &format!("/api/conversations/{}/interrupt", seg(id)), None).await

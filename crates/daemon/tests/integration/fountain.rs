@@ -150,7 +150,6 @@ struct Fountain {
     f: Fake,
     origin: String,
     home: PathBuf,
-    bin: PathBuf,
 }
 
 impl Fountain {
@@ -183,30 +182,12 @@ impl Fountain {
             ),
         )
         .unwrap();
-        // `fountain` is the fake ACP agent: Run on Fountain reaches no Fountain.
-        let bin = dir.join("bin");
-        std::fs::create_dir_all(&bin).unwrap();
-        let fountain = bin.join("fountain");
-        std::fs::write(
-            &fountain,
-            format!(
-                "#!/bin/sh\n[ \"$1\" = --version ] && {{ echo 'fountain version v0.21.0'; exit 0; }}\nexec python3 {} \"$@\"\n",
-                fake()
-            ),
-        )
-        .unwrap();
-        std::fs::set_permissions(&fountain, std::fs::Permissions::from_mode(0o755)).unwrap();
-        Self { _rt: rt, f, origin, home, bin }
+        Self { _rt: rt, f, origin, home }
     }
 
     fn daemon(&self, env: &[(&str, &str)]) -> Daemon {
         let home = self.home.display().to_string();
-        let bin = self.bin.join("fountain").display().to_string();
-        let mut all = vec![
-            ("HOME", home.as_str()),
-            ("ARUGULA_FOUNTAIN_BIN", bin.as_str()),
-            ("ARUGULA_FOUNTAIN_POLL_MS", "60000"),
-        ];
+        let mut all = vec![("HOME", home.as_str()), ("ARUGULA_FOUNTAIN_POLL_MS", "60000")];
         all.extend_from_slice(env);
         Daemon::child_labs_env(
             &["--wisp-token-file", "/nonexistent", "--owner", OWNER, "--tailscale-socket", "/nonexistent/sock"],
@@ -297,16 +278,20 @@ fn the_catalog_filters_and_runs() {
     let (status, body) = d.raw("POST", &format!("/api/blocks/{block}/call/filter"), Some(json!({ "source": "nope" })));
     assert_eq!(status, 400, "{body}");
 
-    // Run on Fountain: an agent block beside it, as `fountain acp --agent`.
+    // Run on Fountain: an agent block beside it, on the native link (F3:
+    // no `fountain acp`; this fake has no conversations, so it says it
+    // couldn't start one: `fountain_link.rs` runs them).
     let out = d.call(block, "run", json!({ "agent": "games" }));
     let agent = out["block"].as_u64().unwrap();
     d.wait_for("the agent block", || d.raw("GET", &format!("/api/blocks/{agent}"), None).0 == 200);
     assert_eq!(info(&d, agent)["tab"], info(&d, block)["tab"], "beside the catalog");
     d.wait_for("the agent's config saved", || layout_config(&d, agent)["fountain_agent"] == "games");
     assert_eq!(layout_config(&d, agent)["agent"], "fountain");
-    d.wait_for("the agent ready", || d.state(agent)["status"] == "ready");
-    d.call(agent, "send", json!({ "text": "hello" }));
-    assert_eq!(d.wait(agent, "idle"), "done");
+    d.wait_for("the agent's answer", || d.state(agent)["error"].is_string());
+    let st = d.state(agent);
+    assert!(st["error"].as_str().unwrap().contains("couldn't start a conversation on Fountain"), "{st}");
+    assert_eq!(st["server"]["name"], "fountain", "the native link, not a process: {st}");
+    assert!(st["pid"].is_null(), "{st}");
     let (status, _) = d.raw("POST", &format!("/api/blocks/{block}/call/run"), Some(json!({ "agent": "nobody" })));
     assert_eq!(status, 400);
 
@@ -705,7 +690,9 @@ fn follow_never_starts_a_new_conversation() {
             .map(|r| r.filter(|e| e.as_ref().unwrap().file_name().to_string_lossy().starts_with("fake-")).count())
             .unwrap_or(0)
     };
-    for (agent, why) in [("hud-playground", "couldn't load the conversation"), ("no-load-session", "no loadSession")] {
+    // F3: the native link asks Fountain for it (this fake has none).
+    {
+        let (agent, why) = ("hud-playground", "couldn't load the conversation");
         let block = d.post(
             "/api/blocks",
             json!({ "type": "agent", "local": true, "config": {

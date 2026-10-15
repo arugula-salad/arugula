@@ -1600,6 +1600,42 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 }
 
 /* M44: a worn Fountain agent: what it brought, and what didn't come. */
+/* #942 F3: a Fountain conversation's status line and actions. */
+.agent-fountain {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: center;
+  padding: 4px 8px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--divider);
+  font-size: 12px;
+}
+.agent-fountain button {
+  font-size: 12px;
+}
+.fountain-line {
+  font-family: ui-monospace, monospace;
+  opacity: 0.8;
+}
+.fountain-line.running {
+  color: var(--accent);
+}
+.fountain-confirm {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.file-entries {
+  list-style: none;
+  margin: 0;
+  padding: 8px 12px;
+  overflow: auto;
+  font-family: ui-monospace, monospace;
+  font-size: 13px;
+}
+
 .agent-worn {
   display: flex;
   flex-wrap: wrap;
