@@ -259,12 +259,17 @@ pub fn forget_fds(id: PaneId) {
 #[cfg(unix)]
 fn run_local(id: PaneId, dir: PathBuf, in_w: OwnedFd, out: OwnedFd, pid: u32, fd_store: bool, sink: Sink) -> Link {
     let (tx, mut rx) = mpsc::unbounded_channel::<Vec<u8>>();
+    // The daemon takes SIGPIPE's default (`main`, #682), which ends the
+    // process: a write to an agent that already exited (a command that isn't
+    // there) would take the whole daemon down (#947). It mustn't be ignored
+    // process-wide instead: what the daemon forks (panes' shells, through
+    // the shim) would inherit that. So the write fails with EPIPE, and the
+    // reader says why the agent ended.
+    no_sigpipe(&in_w);
     let mut writer = File::from(in_w);
     let _ = std::thread::Builder::new().name(format!("agent{id}-write")).spawn(move || {
-        // The daemon takes SIGPIPE's default (`main`, #682), which ends the
-        // process: a write to an agent that already exited (a command that
-        // isn't there) would take the whole daemon down (#947). Blocked
-        // here, the write fails with EPIPE, and the reader says why it ended.
+        // Linux sends a write's SIGPIPE to the thread that wrote: blocked
+        // here, it never ends the process.
         let mut pipe = nix::sys::signal::SigSet::empty();
         pipe.add(nix::sys::signal::Signal::SIGPIPE);
         let _ = nix::sys::signal::pthread_sigmask(nix::sys::signal::SigmaskHow::SIG_BLOCK, Some(&pipe), None);
@@ -310,6 +315,27 @@ fn run_local(id: PaneId, dir: PathBuf, in_w: OwnedFd, out: OwnedFd, pid: u32, fd
         }),
     }
 }
+
+/// macOS (XNU's `dofilewrite`) raises a failed write's SIGPIPE at the
+/// whole process, so another thread that doesn't block it takes the
+/// default and the daemon ends: blocking it in the writing thread isn't
+/// enough there. `F_SETNOSIGPIPE` makes this descriptor's writes fail with
+/// EPIPE and raise nothing.
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+fn no_sigpipe(fd: &OwnedFd) {
+    // `<sys/fcntl.h>`'s; the libc crate doesn't have it.
+    const F_SETNOSIGPIPE: nix::libc::c_int = 73;
+    // SAFETY: fcntl on a descriptor we own, with an integer argument.
+    let r = unsafe { nix::libc::fcntl(fd.as_raw_fd(), F_SETNOSIGPIPE, 1) };
+    if r == -1 {
+        warn!(error = %std::io::Error::last_os_error(), "couldn't keep SIGPIPE off an agent's stdin");
+    }
+}
+
+/// Linux has no per-descriptor switch, and needs none: the writing
+/// thread blocks SIGPIPE (see `run_local`).
+#[cfg(all(unix, not(any(target_os = "macos", target_os = "ios"))))]
+fn no_sigpipe(_fd: &OwnedFd) {}
 
 #[cfg(unix)]
 /// The agent's stdout socket's buffer: room for a whole line, so lines are
