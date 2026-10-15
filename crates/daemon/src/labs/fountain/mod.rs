@@ -33,14 +33,14 @@
 //!
 //! **Actions:** `tab {tab}`; `labels {labels}` (the filter, kept) and
 //! `more`; `open_conversation {id}` opens a conversation in an agent block
-//! beside this one (today's `agent: fountain` block, `fountain acp` loading
-//! it, following and never starting a new one) and marks it read;
+//! beside this one (an `agent: fountain` block on the native link, F3:
+//! loading it once, following and never starting a new one) and marks it read;
 //! `mark_read {id}` (`POST /api/conversations/:id/read`); `tree {id}` shows
 //! its spawn tree (`GET /api/conversations/:id/tree`), `untree` puts it
 //! away; `answer_request {id, allow, always?}` answers a permission request
 //! (the card's Allow and Deny come here). The agents tab's: `run {agent}`
-//! (*Run on Fountain*: `fountain acp --agent NAME` in an agent block beside
-//! this one); `spec {agent}` (the agent-specs file that declares a
+//! (*Run on Fountain*: a new conversation with agent NAME, in an agent block
+//! beside this one); `spec {agent}` (the agent-specs file that declares a
 //! `managed-by: chant` agent, as a file block; for any other, or with no
 //! checkout, the agent as `GET /api/agents/{id}` returns it with literal
 //! values redacted, shown in the block); `unspec`; `filter {...}`, `profile
@@ -61,6 +61,7 @@ pub mod attention;
 pub mod catalog;
 pub mod client;
 pub mod conversations;
+pub mod link;
 pub mod login;
 pub mod stream;
 

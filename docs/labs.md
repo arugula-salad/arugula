@@ -734,9 +734,9 @@ opens it.
   spawn tree (`GET /api/conversations/:id/tree`). Label chips filter with
   Fountain's own `?label=key:value`, combined with AND, and the filter is
   kept in the block. Opening a row opens the conversation in an agent
-  block beside the view: today's `agent: fountain` block, which runs
-  `fountain acp` and loads that conversation without ever starting a new
-  one (F3 replaces it with a native link). Opening it marks it read (`POST
+  block beside the view: an `agent: fountain` block on the native link
+  (below), which loads that conversation once and follows it, never
+  starting a new one. Opening it marks it read (`POST
   /api/conversations/:id/read`), as the ✓ on an unread row does.
 - **Live status.** On the daemon that runs the account stream
   (`--fountain-account-stream`), a turn starting or ending, or a sandbox
@@ -773,6 +773,48 @@ opens it.
 - **MCP:** `list` kind `fountain_conversations` (`labels`, `status`,
   `limit`) lets an agent read the account's conversations and their open
   requests. It is read-only: answering stays with the person.
+
+## Fountain: a conversation as an agent block
+
+F3 (#942), behind the `fountain` flag. An `agent: fountain` block is a
+Fountain conversation, and nothing runs on this machine for it: no
+`fountain acp`. The daemon speaks Fountain's API for the block and makes
+its transcript from the conversation's events, so its cards, the phone,
+`prompt_agent` and `agent_respond` work as for any agent block.
+
+- **Starting one.** `{agent: fountain, fountain_agent, vault?,
+  environment?, labels?, permission?, model?, profile?}` creates the
+  conversation (agent, vault and environment by name or id; `permission`
+  as `fountain acp --permission` takes it, `ask` by default, so approvals
+  come to the block). With `session_id` (a conversation that exists) it
+  opens that one instead. The login is the daemon's (`arugula fountain
+  login`, else the CLI's), or the CLI `profile`'s.
+- **Prompts** go with a `client_request_id` (`arugula-BLOCK-N`), which finds
+  the turn each opened; that turn's end answers it, with the sandbox's own
+  stop reason. What ACP has no word for is said as an error: a sandbox that
+  never started or was reclaimed mid-turn, a terminated conversation, a
+  refused admission, a failed wake. A wake that failed retryably sends the
+  prompt again by itself. Another client's turn, or one Fountain started,
+  shows in the transcript as it runs.
+- **Restarts.** Each frame made from an event names it, so the block's log
+  is its cursor: a restarted daemon follows on from the last event it took,
+  with nothing replayed and nothing twice, and a prompt sent before the
+  restart is answered when its turn ends. A block saved by a daemon that ran
+  `fountain acp` reloads its conversation once (`session/load`, merged),
+  then has a cursor. Closing a block stops nothing on Fountain.
+- **Events** come from the account stream's fan-out on the daemon that runs
+  it (`--fountain-account-stream`), else from the conversation's own stream.
+- **Header.** The status line (pending, running, idle·awake, idle·parked,
+  failed, terminated), *Wake*, *Interrupt*, *Terminate* (it asks first: the
+  sandbox's disk goes; the owner's only), and *Changes* and *Files*.
+- **Sandbox panes.** *Changes* is a diff block and *Files* a file block
+  (`{fountain: {conversation, profile?}}` in their config) that read the
+  sandbox through Fountain (`GET /api/sandboxes/:id/{diff,git-status,files,
+  file}`): the tracked diff with what's untracked listed beside it, a
+  directory's entries, a file. A parked sandbox isn't woken by a read: they
+  say "Parked — Wake to look", with *Wake*.
+- `fountain conv show`'s polling (`REMOTE_POLL`) is gone. To run `fountain
+  acp` by hand, use an `agent: acp` block with that command.
 
 ## Agent recipes
 

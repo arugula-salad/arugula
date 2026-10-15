@@ -63,6 +63,8 @@ mod fountain;
 #[cfg(feature = "labs")]
 mod fountain_account;
 #[cfg(feature = "labs")]
+mod fountain_link;
+#[cfg(feature = "labs")]
 mod fountain_view;
 mod fs;
 #[cfg(feature = "labs")]

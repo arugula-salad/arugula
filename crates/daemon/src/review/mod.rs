@@ -9,6 +9,15 @@
 //! A diff block opened from a chant workspace member's card also says which
 //! decision and run made each hunk (#619), through Labs' chant workspaces.
 //!
+//! **A Fountain conversation's sandbox** (#942, F3): with `fountain:
+//! {conversation, profile?}` in its config, either view reads the sandbox
+//! through Fountain's API (`GET /api/sandboxes/:id/{diff,git-status,files,
+//! file}`) instead of a host: the diff is the tracked changes, with what
+//! `git status` says is untracked listed beside them; a file block on a
+//! directory (or on no path: the sandbox's home) lists it. A parked sandbox
+//! answers `409 sandbox_not_ready`, and a read never wakes it: the view
+//! says "Parked — Wake to look" (its `wake` wakes the conversation).
+//!
 //! What they share, beyond the block contract:
 //!
 //! - **Live only while drawn.** They poll their host (a file's size and
@@ -42,6 +51,31 @@ use std::{
 use serde_json::Value;
 
 use crate::{block::BlockCtx, provider::Provider};
+
+/// A Fountain conversation whose sandbox a view reads (F3).
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Sandbox {
+    pub conversation: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<String>,
+}
+
+/// What a view of a parked sandbox says.
+pub const PARKED: &str = "Parked — Wake to look";
+
+/// How often a view of a sandbox polls Fountain while drawn.
+pub const SANDBOX_POLL: Duration = Duration::from_secs(5);
+
+impl Sandbox {
+    pub async fn read(&self, what: crate::labs::SandboxRead) -> Result<Option<Value>, String> {
+        crate::labs::fountain_sandbox(self.profile.clone(), self.conversation.clone(), what).await
+    }
+
+    /// Wake its conversation's machine (a view's `wake`).
+    pub async fn wake(&self) -> Result<Value, String> {
+        crate::labs::fountain_act(self.profile.clone(), self.conversation.clone(), "wake".into()).await
+    }
+}
 
 /// How long one run of a host's command may take.
 const RUN_TIMEOUT: Duration = Duration::from_secs(30);

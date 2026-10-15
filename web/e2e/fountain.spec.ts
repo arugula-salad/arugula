@@ -1,8 +1,8 @@
 // M43: the Fountain agent catalog, against a fake Fountain served here
 // (synthetic agents shaped like S24's) and the credentials file the config
-// points the daemon at (this spec writes it). *Run on Fountain* runs the
-// config's stand-in `fountain`, the fake ACP agent. Nothing here reaches a
-// real Fountain.
+// points the daemon at (this spec writes it). *Run on Fountain* opens a
+// conversation on the native link (#942, F3), which this fake answers over
+// REST and SSE. Nothing here reaches a real Fountain.
 //
 // Opened from a pane's menu ("Fountain…"), the account view (#942 F2)
 // shows the account's conversations first: an unread dot, label chips that
@@ -32,6 +32,49 @@ const convs: { id: string; status: string; agent_id: string; title: string | nul
 ];
 const reads: string[] = [];
 let server: Server;
+/** F3: the conversation Run on Fountain makes: its events (`[id, payload]`). */
+const events: [number, Record<string, unknown>][] = [];
+const stage = (stage: string, state: string, meta: Record<string, unknown> = {}) =>
+  events.push([events.length + 1, { kind: "stage", stream: "", data: JSON.stringify(meta), stage, state, turn_id: meta.turn_id ?? null }]);
+const said = (text: string, turn: string) =>
+  events.push([
+    events.length + 1,
+    {
+      kind: "output",
+      stream: "acp",
+      turn_id: turn,
+      data: JSON.stringify({ jsonrpc: "2.0", method: "session/update", params: { sessionId: "s", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text } } } }),
+    },
+  ]);
+const conv = { id: "conv-e2e", status: "idle", sandbox_id: "sb-e2e", sandbox: { id: "sb-e2e", status: "ready" } };
+
+/** SSE after `Last-Event-ID`, held open (unless `wait=false`) until quiet.
+ *  Only conv-e2e has events. */
+function stream(req: import("node:http").IncomingMessage, res: ServerResponse, id: string, wait: boolean) {
+  let last = Number(req.headers["last-event-id"] ?? 0);
+  res.writeHead(200, { "content-type": "text/event-stream" });
+  res.write(": connected\n\n");
+  const flush = () => {
+    let sent = false;
+    for (const [n, p] of events.filter(([n]) => n > last && id === conv.id)) {
+      res.write(`id: ${n}\nevent: ${p.kind}\ndata: ${JSON.stringify(p)}\n\n`);
+      last = n;
+      sent = true;
+    }
+    return sent;
+  };
+  flush();
+  if (!wait) return res.end();
+  let quiet = Date.now();
+  const t = setInterval(() => {
+    if (flush()) quiet = Date.now();
+    else if (Date.now() - quiet > 2000) {
+      clearInterval(t);
+      res.end();
+    }
+  }, 50);
+  req.on("close", () => clearInterval(t));
+}
 const seen: { path: string; ua: string }[] = [];
 
 function json(res: ServerResponse, status: number, v: unknown) {
@@ -54,6 +97,32 @@ test.beforeAll(async () => {
       return a ? json(res, 200, { data: a }) : json(res, 404, { error: "not found" });
     }
     if (u.pathname === "/api/environments") return json(res, 200, envs);
+    // F3: Run on Fountain's conversation, which echoes as the fake ACP
+    // agent did; the listed ones can be opened and followed (quietly).
+    // Path segments come percent-encoded, as a server decodes them.
+    const path = decodeURIComponent(u.pathname);
+    if (path === "/api/conversations" && req.method === "POST") {
+      stage("provision", "done");
+      return json(res, 201, { data: conv });
+    }
+    const it = path.match(/^\/api\/conversations\/([^/]+)(\/(turns|stream|prompts))?$/);
+    const found = it && (it[1] === conv.id ? conv : convs.find((c) => c.id === it[1]));
+    if (it && found) {
+      if (!it[3]) return json(res, 200, { data: found });
+      if (it[3] === "turns") return json(res, 200, { data: [] });
+      if (it[3] === "stream") return stream(req, res, it[1], u.searchParams.get("wait") !== "false");
+      let body = "";
+      req.on("data", (c) => (body += c));
+      req.on("end", () => {
+        const crid = JSON.parse(body).client_request_id ?? null;
+        const turn = `turn-${events.length}`;
+        stage("turn", "started", { turn_id: turn, client_request_id: crid });
+        said("Hello! I am fake.", turn);
+        stage("turn", "done", { turn_id: turn, stop_reason: "end_turn" });
+        json(res, 200, { data: { status: "accepted", client_request_id: crid } });
+      });
+      return;
+    }
     if (u.pathname === "/api/conversations") {
       const want = u.searchParams.getAll("label");
       const data = convs.filter((c) => want.every((l) => { const [k, v] = [l.slice(0, l.indexOf(":")), l.slice(l.indexOf(":") + 1)]; return c.labels[k] === v; }));
@@ -154,9 +223,11 @@ test("the catalog filters, and Run on Fountain opens an agent block beside it", 
   await expect.poll(async () => (await panes(page)).length).toBe(3);
   const agent = await page.evaluate(() => window.__arugula.client.state!.panes.find((p) => p.type === "agent")!.id);
   expect(await panes(page)).toContain(agent);
-  // It's today's Fountain agent block (here the fake ACP agent), and works.
+  // A Fountain conversation on the native link (F3), and it works.
   expect((await blockState(agent)).label).toBe("Fountain games");
   const a = paneEl(page, agent);
+  await expect(a.locator("[data-fountain-line]")).toHaveAttribute("data-fountain-line", "idle·awake");
+  await expect(a.locator("[data-fountain-terminate]")).toBeVisible();
   await a.locator(".agent-composer textarea").fill("hello");
   await a.locator(".agent-composer textarea").press("Enter");
   await expect(a.locator(".agent-msg").last()).toHaveText("Hello! I am fake.");

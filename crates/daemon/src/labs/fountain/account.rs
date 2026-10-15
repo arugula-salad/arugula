@@ -271,6 +271,20 @@ impl Account {
         })
     }
 
+    /// The login a block names by its CLI `profile` (#942, F3), else
+    /// [`Account::resolve`]'s.
+    pub async fn resolve_profile(&self, profile: Option<&str>) -> Result<Resolved, String> {
+        let Some(p) = profile.map(str::trim).filter(|p| !p.is_empty()) else { return self.resolve().await };
+        let found = self.found().await?;
+        let l = login::resolve(&found, Some(p))?;
+        let source = match l.from {
+            login::From::Env => Source::Env,
+            login::From::File => Source::File,
+            login::From::Arugula => Source::Arugula,
+        };
+        Ok(Resolved { base_url: l.base_url, key: l.key, source, user_id: None })
+    }
+
     /// What a client may know. Never the key.
     pub async fn status(&self) -> FountainLogin {
         let mut out = FountainLogin {

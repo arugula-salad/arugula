@@ -78,7 +78,7 @@ fn policy(method: &Method, path: &str) -> Policy {
         ["api", "blocks", _, "call", "login" | "diff" | "checkout" | "agent" | "live"] => Policy::Owner,
         // M43: which Fountain login a catalog reads with, and which of the
         // owner's checkouts it opens specs from, are the owner's. So are
-        // running an agent from it (a `fountain acp` on this host, with the
+        // running an agent from it (a Fountain conversation, with the
         // owner's login: a guest's agents go on VMs) and Spec (a file block
         // on the owner's host, or the agent read with the owner's login).
         // M77: so is the agents block's *Run here*, a recipe on the owner's

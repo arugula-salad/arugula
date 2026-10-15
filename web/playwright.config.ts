@@ -86,15 +86,11 @@ runDir("FAKE_ACP_DIR", "arugula-e2e-fake-acp-");
 }
 
 // M43: Fountain blocks read the credentials file fountain.spec.ts writes
-// (pointing at its fake Fountain), never ~/.fountain; and *Run on
-// Fountain* runs a stand-in `fountain` that is the fake ACP agent.
+// (pointing at its fake Fountain), never ~/.fountain. (F3: *Run on
+// Fountain* runs nothing here; the daemon speaks to that fake itself.)
 {
   const dir = runDir("ARUGULA_E2E_FOUNTAIN_DIR", "arugula-e2e-fountain-");
   process.env.ARUGULA_FOUNTAIN_CREDENTIALS = join(dir, "credentials");
-  const fake = fileURLToPath(new URL("../crates/daemon/tests/fake_acp.py", import.meta.url));
-  writeFileSync(join(dir, "fountain"), `#!/bin/sh\nexec python3 ${fake} "$@"\n`);
-  chmodSync(join(dir, "fountain"), 0o755);
-  process.env.ARUGULA_FOUNTAIN_BIN = join(dir, "fountain");
   for (const k of ["FOUNTAIN_API_KEY", "FOUNTAIN_BASE_URL", "FOUNTAIN_PROFILE"]) delete process.env[k];
   process.env.ARUGULA_FOUNTAIN_POLL_MS ??= "1500";
   // M44: a worn agent's variables never reach the person's Infisical or

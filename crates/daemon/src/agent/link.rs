@@ -15,6 +15,11 @@
 //!   restarted daemon reattaches at the output offset it had processed, kept
 //!   in `agent-exec.json`. Credentials go in on stdin before the server
 //!   starts (see `GUEST_BOOT`), never in the URL, the argv or the VM's disk.
+//! - **On Fountain** (#942, F3) nothing runs here: the daemon speaks
+//!   Fountain's REST API for the block and makes its inbound frames from
+//!   the conversation's events ([`spawn_fountain`]). The conversation lives
+//!   on Fountain, so a restarted daemon carries on from the last event in
+//!   the block's log.
 
 #[cfg(unix)]
 use std::{
@@ -256,6 +261,13 @@ fn run_local(id: PaneId, dir: PathBuf, in_w: OwnedFd, out: OwnedFd, pid: u32, fd
     let (tx, mut rx) = mpsc::unbounded_channel::<Vec<u8>>();
     let mut writer = File::from(in_w);
     let _ = std::thread::Builder::new().name(format!("agent{id}-write")).spawn(move || {
+        // The daemon takes SIGPIPE's default (`main`, #682), which ends the
+        // process: a write to an agent that already exited (a command that
+        // isn't there) would take the whole daemon down (#947). Blocked
+        // here, the write fails with EPIPE, and the reader says why it ended.
+        let mut pipe = nix::sys::signal::SigSet::empty();
+        pipe.add(nix::sys::signal::Signal::SIGPIPE);
+        let _ = nix::sys::signal::pthread_sigmask(nix::sys::signal::SigmaskHow::SIG_BLOCK, Some(&pipe), None);
         while let Some(line) = rx.blocking_recv() {
             if writer.write_all(&line).is_err() {
                 break;
@@ -459,6 +471,25 @@ pub fn spawn_vm(
     let (tx, rx) = mpsc::unbounded_channel::<Vec<u8>>();
     let (stop_tx, stop_rx) = mpsc::unbounded_channel::<()>();
     rt.spawn(drive_vm(provider, sprite, dir, begin, rx, stop_rx, sink));
+    Link {
+        tx,
+        stop: Box::new(move || {
+            let _ = stop_tx.send(());
+        }),
+    }
+}
+
+/// A Fountain conversation (#942, F3): no agent server runs here; the
+/// daemon speaks Fountain's API and follows the conversation's events
+/// (`labs/fountain/link.rs`). The block's frames are the same ACP.
+pub fn spawn_fountain(rt: &tokio::runtime::Handle, l: crate::labs::FountainLink, sink: Sink) -> Link {
+    let (tx, rx) = mpsc::unbounded_channel::<Vec<u8>>();
+    let (stop_tx, stop_rx) = mpsc::unbounded_channel::<()>();
+    let out: crate::labs::LinkOut = Arc::new(move |r| match r {
+        Ok(line) => sink(FromAgent::Line(line)),
+        Err(why) => sink(FromAgent::Closed(why)),
+    });
+    crate::labs::fountain_link(rt, l, rx, stop_rx, out);
     Link {
         tx,
         stop: Box::new(move || {

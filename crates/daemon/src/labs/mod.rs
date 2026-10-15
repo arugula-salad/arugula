@@ -742,6 +742,138 @@ pub fn start_fountain(_app: &Arc<App>, _state_dir: &Path, _name: &str, account_s
     }
 }
 
+/// A Fountain conversation block's link (#942, F3): what the native link
+/// (`labs/fountain/link.rs`) needs. In every build, so core makes one
+/// without a `cfg`; a build without Labs closes it at once, saying so.
+// Read by the link, which a build without Labs doesn't have.
+#[cfg_attr(not(feature = "labs"), allow(dead_code))]
+#[derive(Debug, Clone, Default)]
+pub struct FountainLink {
+    pub block: arugula_proto::PaneId,
+    /// The agent, vault and environment a new conversation gets (names or
+    /// ids), its labels, permission policy (`--permission`'s grammar) and
+    /// model.
+    pub agent: Option<String>,
+    pub vault: Option<String>,
+    pub environment: Option<String>,
+    pub labels: std::collections::BTreeMap<String, String>,
+    pub permission: Option<String>,
+    pub model: Option<String>,
+    /// The CLI profile whose login it uses (else the daemon's).
+    pub profile: Option<String>,
+    /// The last event the block's log took, when it has one: the block
+    /// reopens its conversation with no replay. None: `session/load`.
+    pub cursor: Option<u64>,
+    /// Carry on with a conversation already open (a restarted daemon),
+    /// with no `initialize`.
+    pub adopt: Option<FountainAdopt>,
+}
+
+// Read by the link, which a build without Labs doesn't have.
+#[cfg_attr(not(feature = "labs"), allow(dead_code))]
+#[derive(Debug, Clone, Default)]
+pub struct FountainAdopt {
+    pub conversation: String,
+    /// The prompt still waiting for its turn's end: its JSON-RPC id and
+    /// client request id.
+    pub prompt: Option<(serde_json::Value, Option<String>)>,
+    /// The turn it opened, if the block saw it start.
+    pub turn: Option<String>,
+}
+
+/// What a link hands its block: a frame, or why it closed.
+pub type LinkOut = Arc<dyn Fn(Result<Vec<u8>, String>) + Send + Sync>;
+
+/// The id of the Fountain event an inbound frame was made from.
+#[cfg(feature = "labs")]
+pub use fountain::link::event_of as fountain_event;
+
+#[cfg(not(feature = "labs"))]
+pub fn fountain_event(_frame: &serde_json::Value) -> Option<u64> {
+    None
+}
+
+/// Start a Fountain conversation link (F3): frames from `rx` go to
+/// Fountain, what it says comes to `out`.
+#[cfg(feature = "labs")]
+pub fn fountain_link(
+    rt: &tokio::runtime::Handle,
+    l: FountainLink,
+    rx: tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>,
+    stop: tokio::sync::mpsc::UnboundedReceiver<()>,
+    out: LinkOut,
+) {
+    fountain::link::spawn(rt, l, rx, stop, out)
+}
+
+#[cfg(not(feature = "labs"))]
+pub fn fountain_link(
+    _rt: &tokio::runtime::Handle,
+    _l: FountainLink,
+    _rx: tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>,
+    _stop: tokio::sync::mpsc::UnboundedReceiver<()>,
+    out: LinkOut,
+) {
+    out(Err(not_built("Fountain")))
+}
+
+/// What a sandbox pane reads of a Fountain conversation's sandbox (F3).
+// Read by the link, which a build without Labs doesn't have.
+#[cfg_attr(not(feature = "labs"), allow(dead_code))]
+pub enum SandboxRead {
+    Diff,
+    GitStatus,
+    /// A directory (the sandbox's home when none).
+    Files(Option<String>),
+    File(String),
+}
+
+/// A Fountain block's Wake, Interrupt or Terminate.
+#[cfg(feature = "labs")]
+pub async fn fountain_act(
+    profile: Option<String>,
+    conversation: String,
+    action: String,
+) -> Result<serde_json::Value, String> {
+    fountain::link::act(profile.as_deref(), &conversation, &action).await
+}
+
+#[cfg(not(feature = "labs"))]
+pub async fn fountain_act(
+    _profile: Option<String>,
+    _conversation: String,
+    _action: String,
+) -> Result<serde_json::Value, String> {
+    Err(not_built("Fountain"))
+}
+
+/// Read a Fountain conversation's sandbox (F3): `Ok(None)` when it's
+/// parked (a read never wakes it).
+#[cfg(feature = "labs")]
+pub async fn fountain_sandbox(
+    profile: Option<String>,
+    conversation: String,
+    what: SandboxRead,
+) -> Result<Option<serde_json::Value>, String> {
+    use fountain::link::Read;
+    let what = match what {
+        SandboxRead::Diff => Read::Diff,
+        SandboxRead::GitStatus => Read::GitStatus,
+        SandboxRead::Files(p) => Read::Files(p),
+        SandboxRead::File(p) => Read::File(p),
+    };
+    fountain::link::read(profile.as_deref(), &conversation, what).await
+}
+
+#[cfg(not(feature = "labs"))]
+pub async fn fountain_sandbox(
+    _profile: Option<String>,
+    _conversation: String,
+    _what: SandboxRead,
+) -> Result<Option<serde_json::Value>, String> {
+    Err(not_built("Fountain"))
+}
+
 /// `/api/fountain/login`'s answers (#942): this daemon's sign-in. A build
 /// without Labs has no such route, so these are never reached there.
 #[cfg(feature = "labs")]
