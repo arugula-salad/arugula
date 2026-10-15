@@ -746,14 +746,6 @@ async fn open_block(
     if let Some(flag) = crate::labs::block_flag(req.kind, &req.config) {
         crate::labs::flag(app.control.state_dir(), flag).map_err(bad)?;
     }
-    // M44: a worn Fountain agent runs on this host with the owner's
-    // secrets: the owner's alone.
-    if req.kind == arugula_proto::BlockType::Agent
-        && !req.config["as_fountain"].is_null()
-        && who.as_ref().is_some_and(|w| !w.is_owner())
-    {
-        return Err(ApiError(StatusCode::FORBIDDEN, "only the owner can wear a Fountain agent here".into()));
-    }
     // A studio box (M35), by its app's name: where it is, from studio.
     if req.kind == arugula_proto::BlockType::App {
         req.config = crate::labs::app_config(&req.config).await.map_err(bad)?;

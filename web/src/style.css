@@ -5790,6 +5790,20 @@ button.diff-why-run {
   font-size: 12px;
 }
 
+.fountain-spec {
+  margin: 4px 10px;
+  min-width: 0;
+}
+
+.fountain-spec-json {
+  max-height: 40vh;
+  overflow: auto;
+  margin: 6px 0 0;
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .fountain-profile {
   background: var(--raised);
   color: var(--fg);

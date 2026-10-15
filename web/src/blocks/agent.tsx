@@ -82,8 +82,8 @@ export interface AgentState {
   tokens: { total: number; last_turn: Record<string, number> | null };
   turns: number;
   allow: { tool: string; title?: string }[];
-  /** M44: the Fountain agent it wears (by name), what came along, and
-   *  what didn't. */
+  /** M44's Fountain agent worn here (retired): only on a block saved
+   *  wearing one, which says why it won't start. */
   as_fountain?: string | null;
   /** M76: the recipe it runs as (a Claude Code subagent), by name. */
   recipe?: string | null;
@@ -111,12 +111,13 @@ interface Worn {
   skills_missing: string[];
   servers: { name: string; kind: string; vars: string[] }[];
   left_out: { name: string; why: string }[];
-  /** M76: worn from this subagent file, not from Fountain. */
+  /** M76: worn from this subagent file. */
   recipe?: string | null;
 }
 
-/** M44: what a worn Fountain agent (or, M76, a recipe) brought (its
- *  skills and MCP servers), and what didn't carry over. */
+/** What a worn recipe (M76) brought (its skills and MCP servers), and
+ *  what didn't carry over. A block saved wearing a Fountain agent (M44,
+ *  retired) shows its name, and the reason it won't start. */
 function WornBar({ s }: { s: AgentState }) {
   const as = s.as_fountain || s.recipe;
   if (!as) return null;
@@ -128,7 +129,7 @@ function WornBar({ s }: { s: AgentState }) {
       </div>
     );
   }
-  const from = w.recipe ? `the recipe ${w.recipe}` : `Fountain's ${w.agent}, worn here`;
+  const from = w.recipe ? `the recipe ${w.recipe}` : w.agent;
   const missing = [...w.left_out.map((l) => `${l.name}: ${l.why}`), ...w.skills_missing.map((m) => `skill ${m}`)];
   return (
     <div class="agent-worn" data-worn={w.agent}>

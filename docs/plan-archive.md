@@ -90,7 +90,7 @@ Each row is one code. The last column links to the section that holds it (the se
 | M41 | swarm themes, blocks and city (#116) | Swarm themes: blocks and city | [section](#m41-swarm-themes-blocks-and-city-116) |
 | M42 | the hive and the timeline themes (#117) | Swarm themes: hive and timeline | [section](#m42-the-hive-and-the-timeline-themes-117) |
 | M43 | Fountain agent catalog (#121) | Fountain agent catalog block | [section](#m43-fountain-agent-catalog-121) |
-| M44 | wear a Fountain agent locally (#122) | Wear a Fountain agent locally | [section](#m44-wear-a-fountain-agent-locally-122) |
+| M44 | wear a Fountain agent locally (#122) | Wear a Fountain agent locally; retired 2026-10-15, when Arugula became Fountain's UI (#942) | [section](#m44-wear-a-fountain-agent-locally-122) |
 | M45 | geek as the Fountain runner (#123) | geek as the Fountain runner; retired 2026-10-15, when Fountain removed runners | [section](#m45-geek-as-the-fountain-runner-123) |
 | M46 | the app as window, installer and supervisor | The desktop app as window, installer and supervisor | [section](#m46-the-app-as-window-installer-and-supervisor) |
 | M47 | OS integration | OS integration: open a folder in the app | [section](#m47-os-integration) |
@@ -3993,7 +3993,7 @@ Answer these before M36. Each answer goes in as a fixture or a measured number:
 
 ### Fountain track (S24, M43–M45, added 2026-10-03)
 
-**2026-10-15:** M45 is retired: Fountain removed self-hosted runners (see [M45](#m45-geek-as-the-fountain-runner-123)). S24, M43 and M44 stand.
+**2026-10-15:** M45 is retired: Fountain removed self-hosted runners (see [M45](#m45-geek-as-the-fountain-runner-123)). Later the same day M44 was retired too (see [M44](#m44-wear-a-fountain-agent-locally-122)): Fountain became a headless backend with Arugula as its UI (#942), and recipes, not Fountain agents, are what runs here. S24 and M43 stand; M43's catalog keeps the account's agents read-only, without *Run here*.
 
 Today illogical knows Fountain only as an ACP command: an agent block runs `fountain acp --agent X` (S7). This track goes further in three ways. It shows the account's agents as a catalog. It runs one of them locally, as a Claude Code wearing its prompt, skills and MCP servers. And it makes geek the account's Fountain runner, so a Fountain conversation runs on a machine illogical can open a shell on, diff and take over.
 
@@ -4078,6 +4078,8 @@ Today illogical knows Fountain only as an ACP command: an agent block runs `foun
 - **Merging with M45a:** both added `illogical fountain`. There's now one command, with `runner` and `agents` under it.
 
 #### M44: wear a Fountain agent locally (#122)
+
+**Retired (2026-10-15):** Jake decided Fountain is a headless backend and Arugula its UI (#942, DECISIONS.md "Fountain is a headless backend, and Arugula is its UI"). Recipes are the source of truth: one runs here by being worn (M76) and on Fountain by being pushed there, so pulling a Fountain agent down to wear it here runs the wrong way. Gone: `as_fountain` on an agent block, `arugula agent --as-fountain`, `start_agent {as_fountain}`, the catalog's *Run here* (`run_here`, its `here` and the cards' `local`), the GitHub-skill bundles and agent lookup in `fountain/wear.rs`, and their tests. What M76 and A2A delegation borrowed (the servers by reference, the variable lookup, `Worn`, the cache helpers) moved unchanged to `labs/wearing.rs`. A new block with `as_fountain` is refused with the reason; one saved wearing a Fountain agent comes back with its transcript, says why it won't start, and never starts as a plain Claude Code. The section below is kept as written.
 
 `illogical agent --as <fountain agent>`, and *Run here* in M43: a Claude agent block on this host, in a worktree (or the current directory), configured as that agent. A terminal `claude` launched from the picker as *Claude Code as…* gets the same bundle through flags.
 

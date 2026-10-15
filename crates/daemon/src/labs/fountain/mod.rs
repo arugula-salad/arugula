@@ -1,5 +1,8 @@
 //! The Fountain catalog: the person's Fountain account as a block, every
-//! agent as a card, with where it comes from, filters, and ways to run one.
+//! agent as a read-only card, with where it comes from, filters, and *Run
+//! on Fountain*. (#942 turns this block into the account view; the agents
+//! list stays in it, read-only: chant's agents are still edited in
+//! agent-specs.)
 //!
 //! **Config** `{profile?, filter?, specs?}`: the credentials profile
 //! ([`login`]), the filters ([`catalog::Filter`]: search, source, runtime, provider), and
@@ -14,15 +17,20 @@
 //! read-only: agent-specs stays the one place a curated agent is edited.
 //!
 //! **Actions:** `run {agent}` (*Run on Fountain*: an agent block running
-//! `fountain acp --agent NAME`, beside this one); `run_here {agent, cwd?,
-//! prompt?}` (*Run here*, M44: a Claude Code agent block on this host
-//! wearing the agent, in `cwd`, beside this one; [`wear`]); `spec {agent}` (the
+//! `fountain acp --agent NAME`, beside this one); `spec {agent}` (the
 //! agent-specs file that declares a `managed-by: chant` agent, as a file
-//! block; for any other, or with no checkout, Fountain's page for it in a
-//! browser block). `filter {...}` changes the filters, `profile {name}` the
+//! block; for any other, or with no checkout, the agent as Fountain returns
+//! it, `GET /api/agents/{id}` with literal values redacted, shown in the
+//! block: Fountain's console has no agent pages any more); `unspec` puts
+//! that away. `filter {...}` changes the filters, `profile {name}` the
 //! login, `specs {dir}` the checkout. `agents {query?, source?}` and `agent
 //! {name}` read without changing anything (MCP's `list` kinds
 //! `fountain_agents` and `fountain_agent`).
+//!
+//! **`run_here`** (*Run here*, M44: a Claude Code here wearing the agent)
+//! was retired on 2026-10-15 (#942): recipes are what runs here. A block
+//! saved with `here` (where it last ran one) comes back without it: serde
+//! ignores the key.
 //!
 //! **`view: runner`** (M45b, this host as the account's Fountain runner)
 //! is gone: Fountain removed self-hosted runners on 2026-10-14 (its ADR
@@ -35,7 +43,6 @@
 pub mod api;
 pub mod catalog;
 pub mod login;
-pub mod wear;
 
 use std::{
     collections::{BTreeMap, HashMap},
@@ -90,9 +97,7 @@ struct Config {
     /// The agent-specs checkout (`~/…` allowed).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     specs: Option<String>,
-    /// Where *Run here* last ran one (M44), to offer again.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    here: Option<String>,
+    // No `here`: *Run here* (M44) was retired, and a saved one is ignored.
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -118,8 +123,9 @@ struct State {
     /// The agent-specs checkout *Spec* uses, and when there's none, why.
     specs: Option<String>,
     specs_why: Option<String>,
-    /// Where *Run here* last ran one.
-    here: Option<String>,
+    /// *Spec* for an agent agent-specs doesn't declare: `{agent, json,
+    /// note}`, the agent as Fountain returns it (literal values redacted).
+    spec: Option<Value>,
     updated_ms: u64,
     polls: u64,
     watching: bool,
@@ -298,7 +304,6 @@ impl FountainBlock {
             profile: config.profile.clone(),
             filter: config.filter.clone(),
             specs: config.specs.clone(),
-            here: config.here.clone(),
             loading: true,
             ..State::default()
         };
@@ -483,57 +488,9 @@ impl FountainBlock {
         Ok(json!({ "block": block, "agent": a.name }))
     }
 
-    /// *Run here* (M44): a Claude Code agent block on this host wearing the
-    /// agent (its prompt, skills and MCP servers), in `cwd`, beside the
-    /// catalog. Refused, with the reason, for an agent that can't be worn.
-    async fn run_here(&self, args: Value) -> Result<Value, String> {
-        let which = args["agent"].as_str().filter(|a| !a.is_empty()).ok_or("run_here needs {\"agent\": NAME}")?;
-        let a = self.agent(which)?;
-        if let Some(why) = wear::refusal(&a) {
-            return Err(why);
-        }
-        if self.ctx.sprite.is_some() {
-            return Err("Run here wears an agent on this host: open the catalog on it".into());
-        }
-        let given = args["cwd"].as_str().map(str::trim).filter(|c| !c.is_empty()).map(str::to_owned);
-        let cwd = given.clone().or_else(|| self.config.lock().unwrap().here.clone());
-        let cwd = match cwd {
-            Some(c) => {
-                let p = wear::expand(&c, &self.ctx.home);
-                if !p.is_dir() {
-                    return Err(format!("{c} isn't a directory here"));
-                }
-                Some(p.display().to_string())
-            }
-            None => None,
-        };
-        let (profile, specs) = {
-            let c = self.config.lock().unwrap();
-            (c.profile.clone(), c.specs.clone())
-        };
-        let mut config = json!({ "agent": "claude", "as_fountain": a.name, "cwd": cwd });
-        if let Some(p) = profile {
-            config["profile"] = json!(p);
-        }
-        if let Some(s) = specs {
-            config["specs"] = json!(s);
-        }
-        if let Some(p) = args["prompt"].as_str().filter(|p| !p.is_empty()) {
-            config["prompt"] = json!(p);
-        }
-        let block = self.ctx.open(self.beside(BlockType::Agent, config)).await?;
-        if given.is_some() {
-            self.config.lock().unwrap().here = cwd.clone();
-            self.state.lock().unwrap().here = cwd.clone();
-        }
-        crate::review::log(&self.ctx, &json!({ "e": "run_here", "agent": a.name, "block": block, "cwd": cwd }));
-        let at = cwd.as_deref().map(|c| format!(" in {c}")).unwrap_or_default();
-        self.said(format!("{} is worn by a Claude Code here{at}, in %{block}", a.name));
-        Ok(json!({ "block": block, "agent": a.name, "cwd": cwd }))
-    }
-
-    /// *Spec*: the file that declares a chant-managed agent, else its page
-    /// on Fountain.
+    /// *Spec*: the file that declares a chant-managed agent, else the agent
+    /// as Fountain returns it, shown in the block (the console's agent
+    /// pages are gone: managoat/fountain#2732).
     async fn spec(&self, args: Value) -> Result<Value, String> {
         let which = args["agent"].as_str().filter(|a| !a.is_empty()).ok_or("spec needs {\"agent\": NAME}")?;
         let a = self.agent(which)?;
@@ -563,15 +520,24 @@ impl FountainBlock {
                 None => note = why,
             }
         }
-        let base = self.login.lock().unwrap().as_ref().map(|l| l.base_url.clone()).ok_or("not logged in")?;
-        let url = format!("{base}/agents/{}", a.id);
-        let block = self.ctx.open(self.beside(BlockType::Browser, json!({ "url": url }))).await?;
-        crate::review::log(&self.ctx, &json!({ "e": "spec", "agent": a.name, "url": url }));
+        // Read again, in case it changed since the list; the list's if
+        // that fails.
+        let login = self.login.lock().unwrap().clone().ok_or("not logged in")?;
+        let a = match Client::new(&login.base_url, &login.key).agent(&a.id).await {
+            Ok(fresh) => fresh,
+            Err(e) => {
+                info!(agent = a.name, error = %e, "reading the agent again for Spec; using the list's");
+                a
+            }
+        };
+        let shown = recipe(&a);
+        crate::review::log(&self.ctx, &json!({ "e": "spec", "agent": a.name, "id": a.id }));
+        self.state.lock().unwrap().spec = Some(json!({ "agent": a.name, "json": shown, "note": note }));
         self.said(match &note {
-            Some(n) => format!("{}: {n}; opened its page on Fountain", a.name),
-            None => format!("{}'s page on Fountain", a.name),
+            Some(n) => format!("{}: {n}; showing it as Fountain has it", a.name),
+            None => format!("{} as Fountain has it", a.name),
         });
-        Ok(json!({ "block": block, "kind": "browser", "url": url, "note": note }))
+        Ok(json!({ "kind": "json", "agent": a.name, "json": shown, "note": note }))
     }
 
     fn beside(&self, kind: BlockType, config: Value) -> OpenRequest {
@@ -701,8 +667,13 @@ impl Block for FountainBlock {
                 }
             }),
             "run" | "run_fountain" => Box::pin(async move { me.ok_or("closed")?.run_fountain(args).await }),
-            "run_here" => Box::pin(async move { me.ok_or("closed")?.run_here(args).await }),
             "spec" => Box::pin(async move { me.ok_or("closed")?.spec(args).await }),
+            "unspec" => Box::pin(async move {
+                let me = me.ok_or("closed")?;
+                me.state.lock().unwrap().spec = None;
+                me.ctx.changed();
+                Ok(json!({}))
+            }),
             "agents" => Box::pin(async move {
                 let me = me.ok_or("closed")?;
                 let mut f = Filter::default();

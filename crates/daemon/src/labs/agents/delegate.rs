@@ -189,15 +189,13 @@ fn keep(app: &App, machine: &str, agent: &str, t: &Value) {
     let _ = std::fs::create_dir_all(&dir);
     let v = json!({ "machine": machine, "agent": agent, "task": t, "kept_ms": now_ms() });
     if let Ok(b) = serde_json::to_vec_pretty(&v) {
-        let _ =
-            crate::store::write_atomic(&dir.join(format!("{}.json", super::super::fountain::wear::component(id))), &b);
+        let _ = crate::store::write_atomic(&dir.join(format!("{}.json", super::super::wearing::component(id))), &b);
     }
 }
 
 /// A kept result: `(machine, agent, task)`.
 pub fn kept(state_dir: &Path, task: &str) -> Result<(String, String, Value), String> {
-    let file =
-        state_dir.join("a2a").join("results").join(format!("{}.json", super::super::fountain::wear::component(task)));
+    let file = state_dir.join("a2a").join("results").join(format!("{}.json", super::super::wearing::component(task)));
     let b =
         std::fs::read(&file).map_err(|_| format!("no result kept here for task {task} (get it once it has ended)"))?;
     let v: Value = serde_json::from_slice(&b).map_err(|e| format!("its result: {e}"))?;
@@ -298,8 +296,7 @@ async fn apply_in(dir: &Path, p: &Patch, state_dir: &Path, task: &str) -> Result
         .await
         .map_err(|_| format!("{} isn't in a git checkout", dir.display()))?;
     let top = PathBuf::from(top.trim());
-    let file =
-        state_dir.join("a2a").join("results").join(format!("{}.patch", super::super::fountain::wear::component(task)));
+    let file = state_dir.join("a2a").join("results").join(format!("{}.patch", super::super::wearing::component(task)));
     std::fs::write(&file, &p.text).map_err(|e| format!("can't write the patch: {e}"))?;
     let f = file.display().to_string();
     let mut out = Applied {
@@ -331,7 +328,7 @@ async fn apply_in(dir: &Path, p: &Patch, state_dir: &Path, task: &str) -> Result
 
 /// Where review worktrees go: the user's cache.
 pub fn review_root() -> PathBuf {
-    super::super::fountain::wear::cache_root(&[], &crate::home()).with_file_name("review")
+    super::super::wearing::cache_root(&[], &crate::home()).with_file_name("review")
 }
 
 /// Apply task `task`'s kept patch in the checkout at `dir` (and drop its
@@ -349,7 +346,7 @@ pub async fn apply(state_dir: &Path, scratch: &Path, task: &str, dir: &Path) -> 
 }
 
 fn review_dir(scratch: &Path, task: &str) -> PathBuf {
-    scratch.join(super::super::fountain::wear::component(task))
+    scratch.join(super::super::wearing::component(task))
 }
 
 /// Task `task`'s patch in a scratch worktree of `dir`'s repository at its

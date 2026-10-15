@@ -1,6 +1,6 @@
-//! M76: wear a recipe in a Claude Code agent block on this host, the way
-//! M44 wears a Fountain agent (`fountain/wear.rs`, whose server handling
-//! this reuses whole). The block gets:
+//! M76: wear a recipe in a Claude Code agent block on this host, with the
+//! server handling in [`super::super::wearing`] (M44's, from when a
+//! Fountain agent could be worn here too). The block gets:
 //!
 //! - **the prompt**, appended to Claude Code's after a line naming the
 //!   agent (`claude-agent-acp` drops the SDK's `agent` option, so the
@@ -18,7 +18,7 @@
 //!   `.mcp.json`, then the user's `~/.claude.json`, as Claude Code looks
 //!   them up. `${VAR}`s come from the user's shell environment (and `gh
 //!   auth token`); every credential goes by reference, never on a command
-//!   line ([`super::super::fountain::wear::servers`]). Those and Arugula's
+//!   line ([`super::super::wearing::servers`]). Those and Arugula's
 //!   own are all it gets (`--strict-mcp-config`): not the account's
 //!   claude.ai connectors, which an agent offered to other people mustn't
 //!   carry.
@@ -37,10 +37,7 @@ use tracing::info;
 
 use super::{Recipe, RecipeServer};
 use crate::{
-    labs::fountain::{
-        api::{Agent, McpServer},
-        wear::{self as fw, Info, LeftOut, Lookup, Worn},
-    },
+    labs::wearing::{self as fw, Info, LeftOut, Lookup, McpServer, Worn},
     review::Runner,
     store::now_ms,
 };
@@ -160,14 +157,13 @@ pub async fn wear(runner: &Runner, cwd: &Path, name: &str) -> Result<Worn, Strin
     let cache = fw::cache_root(env, home).with_file_name("recipes");
     let (plugin, plugin_name, skills, skills_missing) = bundle(&r, cwd, home, &cache)?;
     let (mcp_servers, mut left) = servers_of(&r, cwd, home);
-    let as_agent = Agent { name: r.name.clone(), mcp_servers, ..Default::default() };
     let mut names = BTreeSet::new();
-    for s in as_agent.mcp_servers.values() {
+    for s in mcp_servers.values() {
         fw::refs_in(&serde_json::to_value(s).unwrap_or_default(), &mut names);
     }
     let lookup = Lookup { env, home, specs: None, environment: None, vault: None };
     let found = fw::resolve(&names, &lookup).await;
-    let served = fw::servers(&as_agent, &found, true).await;
+    let served = fw::servers(&mcp_servers, &found, true).await;
     left.extend(served.left);
     left.sort_by(|a, b| a.name.cmp(&b.name));
     info!(

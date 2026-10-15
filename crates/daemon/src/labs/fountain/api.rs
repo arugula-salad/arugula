@@ -1,5 +1,5 @@
-//! Fountain's HTTP API, read-only (M43): the account's agents, its
-//! environments' and vaults' names.
+//! Fountain's HTTP API, read-only (M43): the account's agents and its
+//! environments' names.
 //!
 //! Shapes are Fountain's OpenAPI (`<base_url>/api/openapi.json`, CLI
 //! v0.21.0): every list is `{data: [...]}`, an agent by id is `{data:
@@ -16,6 +16,8 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::{Map, Value};
+
+pub use crate::labs::wearing::McpServer;
 
 /// What went wrong talking to Fountain.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -63,53 +65,6 @@ impl Skill {
             (None, None) => "?".into(),
         }
     }
-
-    #[allow(dead_code)] // M44 writes inline skills out.
-    pub fn inline(&self) -> bool {
-        self.content.is_some()
-    }
-}
-
-/// One MCP server, as Claude Code's config writes it: `http`/`sse` with a
-/// `url` and `headers`, or `stdio` with a `command`, `args` and `env`. Any
-/// string may hold `${VAR}`s.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct McpServer {
-    #[serde(default, rename = "type", skip_serializing_if = "Option::is_none")]
-    pub kind: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub url: Option<String>,
-    #[serde(default, deserialize_with = "string_map", skip_serializing_if = "BTreeMap::is_empty")]
-    pub headers: BTreeMap<String, String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub command: Option<String>,
-    #[serde(default, deserialize_with = "string_list", skip_serializing_if = "Vec::is_empty")]
-    pub args: Vec<String>,
-    #[serde(default, deserialize_with = "string_map", skip_serializing_if = "BTreeMap::is_empty")]
-    pub env: BTreeMap<String, String>,
-    #[serde(flatten)]
-    pub extra: Map<String, Value>,
-}
-
-/// What stands in for a value typed in literally (not a `${VAR}`
-/// reference) when a recipe is shown.
-pub const REDACTED: &str = "<redacted>";
-
-impl McpServer {
-    /// As it may be shown: a header or env value that isn't (or doesn't
-    /// hold) a `${VAR}` reference may be a secret someone typed in, and
-    /// becomes [`REDACTED`].
-    pub fn redacted(&self) -> Self {
-        let hide = |m: &BTreeMap<String, String>| {
-            m.iter().map(|(k, v)| (k.clone(), if is_reference(v) { v.clone() } else { REDACTED.to_owned() })).collect()
-        };
-        Self { headers: hide(&self.headers), env: hide(&self.env), ..self.clone() }
-    }
-}
-
-/// Whether a value holds a `${VAR}` reference.
-pub fn is_reference(v: &str) -> bool {
-    v.find("${").is_some_and(|at| v[at..].contains('}'))
 }
 
 /// An agent: a whole recipe (`GET /api/agents`).
@@ -148,7 +103,7 @@ pub struct Agent {
     pub conversation_count: u64,
     #[serde(default)]
     pub inserted_at: Option<String>,
-    /// RFC 3339; M44 caches a worn bundle by it.
+    /// RFC 3339.
     #[serde(default)]
     pub updated_at: Option<String>,
     /// The rest (permission policy, session config, ids of what it may
@@ -167,27 +122,6 @@ impl Agent {
 
 fn null_default<'de, D: serde::Deserializer<'de>, T: Default + Deserialize<'de>>(d: D) -> Result<T, D::Error> {
     Ok(Option::<T>::deserialize(d)?.unwrap_or_default())
-}
-
-/// A map of strings: null is empty, a null value is left out, a number or
-/// boolean is its text.
-fn string_map<'de, D: serde::Deserializer<'de>>(d: D) -> Result<BTreeMap<String, String>, D::Error> {
-    let m = Option::<Map<String, Value>>::deserialize(d)?.unwrap_or_default();
-    Ok(m.into_iter().filter_map(|(k, v)| text(v).map(|v| (k, v))).collect())
-}
-
-/// A list of strings, as [`string_map`].
-fn string_list<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<String>, D::Error> {
-    let l = Option::<Vec<Value>>::deserialize(d)?.unwrap_or_default();
-    Ok(l.into_iter().filter_map(text).collect())
-}
-
-fn text(v: Value) -> Option<String> {
-    match v {
-        Value::Null => None,
-        Value::String(s) => Some(s),
-        v => Some(v.to_string()),
-    }
 }
 
 /// An environment, by its name only: the rest (its variables, setup) is
@@ -295,11 +229,6 @@ impl Client {
     pub async fn environments(&self) -> Result<Vec<Environment>, Error> {
         Ok(rows(self.get::<Vec<Value>>("/api/environments").await?).items)
     }
-
-    /// The account's vaults, by name only (M44: a worn agent's secrets).
-    pub async fn vaults(&self) -> Result<Vec<Environment>, Error> {
-        Ok(rows(self.get::<Vec<Value>>("/api/vaults").await?).items)
-    }
 }
 
 #[cfg(test)]
@@ -318,7 +247,6 @@ mod tests {
         assert_eq!(games.runtime, "claude");
         let skills: Vec<String> = games.skills.iter().map(Skill::label).collect();
         assert_eq!(skills, ["love2d", "pixijs", "screenshots-in-prs"]);
-        assert!(games.skills.iter().all(Skill::inline));
         let pr = agents.iter().find(|a| a.name == "pr-reviewer").unwrap();
         assert_eq!(pr.metadata["managed-by"], "chant");
         assert!(pr.skills.iter().any(|s| s.label() == "example-org/agent-skills/*"));
@@ -344,22 +272,5 @@ mod tests {
         assert_eq!(lit.mcp_servers["tool"].headers["X-Count"], "3", "a number is its text");
         let e: Listing<Environment> = rows(vec![serde_json::json!({ "id": "e", "name": null })]);
         assert_eq!(e.items[0].name, "");
-    }
-
-    #[test]
-    fn literal_values_are_redacted_when_shown() {
-        let s: McpServer = serde_json::from_value(serde_json::json!({
-            "type": "http", "url": "https://mcp-1.example.com/mcp",
-            "headers": { "Authorization": "Bearer ${X}", "X-Api-Key": "typed-in-literally", "X-Mixed": "k=${Y};v=1" },
-            "env": { "TOKEN": "also-literal", "REF": "${Z}" }
-        }))
-        .unwrap();
-        let r = s.redacted();
-        assert_eq!(r.headers["Authorization"], "Bearer ${X}");
-        assert_eq!(r.headers["X-Api-Key"], REDACTED);
-        assert_eq!(r.headers["X-Mixed"], "k=${Y};v=1");
-        assert_eq!((r.env["TOKEN"].as_str(), r.env["REF"].as_str()), (REDACTED, "${Z}"));
-        assert_eq!(s.headers["X-Api-Key"], "typed-in-literally", "kept as read, for M44");
-        assert!(!is_reference("${unclosed") && is_reference("a${B}c"));
     }
 }
