@@ -4,8 +4,11 @@
 
 use arugula_proto::{
     PaneId,
-    api::{Detection, DetectionAnswer, DetectionRule, DriverEntry, Empty, NoDetection, PaneDiff, Process},
-    op::ops::{PaneDetection, PaneDiffOf, PaneDrivers, PaneProcess},
+    api::{
+        Detection, DetectionAnswer, DetectionRule, DriverEntry, Empty, NoDetection, PaneDiff, Ports, PortsQuery,
+        Process,
+    },
+    op::ops::{PaneDetection, PaneDiffOf, PaneDrivers, PanePorts, PaneProcess},
 };
 use axum::http::StatusCode;
 
@@ -36,6 +39,44 @@ impl Handle for PaneProcess {
             exe: procinfo::exe(tpgid).map(|p| p.display().to_string()),
             cwd: procinfo::cwd(tpgid).map(|p| p.display().to_string()),
         })
+    }
+}
+
+/// What listens where *Open a port…* beside the pane would open one
+/// (#150): the machine asked for, this host (`local`), or the pane's own
+/// machine. The pane's processes come first when they run there.
+impl Handle for PanePorts {
+    async fn handle(cx: &Cx<'_>, id: PaneId, q: PortsQuery) -> Result<Ports, OpError> {
+        let app = cx.app;
+        let p = pane(app, id).await?;
+        let on = app.mux.api(|r| Api::MachineOf(id, r)).await.flatten();
+        let target = match (q.host, q.local) {
+            (Some(h), _) => Some(
+                app.mux
+                    .api(Api::Machines)
+                    .await
+                    .unwrap_or_default()
+                    .into_iter()
+                    .find(|m| m.id == h)
+                    .ok_or_else(|| ApiError(StatusCode::NOT_FOUND, format!("no machine m{h}")))?,
+            ),
+            (None, Some(true)) => None,
+            (None, _) => on.clone(),
+        };
+        let ports = match target {
+            Some(m) => {
+                let mine = on.as_ref().map(|o| o.id) == Some(m.id);
+                let tag = mine.then(|| crate::mux::exec_tag(&app.mux.daemon_id, id));
+                crate::listening::guest(app, &m, tag).await
+            }
+            None => {
+                let root = if on.is_none() { p.pid_now() } else { None };
+                tokio::task::spawn_blocking(move || crate::listening::local(root))
+                    .await
+                    .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+            }
+        };
+        Ok(Ports { ports })
     }
 }
 

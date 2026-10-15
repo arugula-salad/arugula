@@ -1116,6 +1116,37 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   border-color: var(--accent);
 }
 
+/* Answers to tap (#150): the ports listening, the pane's own first. */
+.prompt-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.prompt-choices button {
+  min-height: 32px;
+  padding: 4px 10px;
+  font: 13px ui-monospace, monospace;
+  color: var(--fg);
+  background: var(--letterbox);
+  border: 1px solid var(--raised-hover);
+  border-radius: 6px;
+}
+
+.prompt-choices button:hover,
+.prompt-choices button:focus-visible {
+  border-color: var(--accent);
+}
+
+.prompt-choices button.strong {
+  border-color: var(--accent);
+}
+
+.prompt-choices .dim {
+  opacity: 0.6;
+}
+
 .prompt-buttons {
   display: flex;
   justify-content: flex-end;

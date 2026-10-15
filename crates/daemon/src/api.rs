@@ -25,8 +25,8 @@ use arugula_proto::{
         ConvMemberAdd, ConvMemberRemove, ConvRename, ConversationOpen, ConversationsList, FlagSet, FlagsList,
         FountainAgentsGet, ListPanes, MachineReset, MachinesList, NotifyGet, NotifySet, PaneAsk, PaneAskWithdraw,
         PaneAttention, PaneDetection, PaneDiffOf, PaneDrivers, PaneFollowUp, PaneInbox, PaneKeys, PaneMouse,
-        PanePermit, PaneProcess, PanePrompt, PaneSend, PaneWait, PushKeyGet, PushSubscribe, PushTest, RuleForget,
-        RulesForgetAll, RulesList, ShellEnvGet, ShellEnvRefresh, ThreadGet, ThreadPost, ThreadRead,
+        PanePermit, PanePorts, PaneProcess, PanePrompt, PaneSend, PaneWait, PushKeyGet, PushSubscribe, PushTest,
+        RuleForget, RulesForgetAll, RulesList, ShellEnvGet, ShellEnvRefresh, ThreadGet, ThreadPost, ThreadRead,
     },
 };
 use axum::{
@@ -92,6 +92,7 @@ pub fn routes() -> Router<Arc<App>> {
         .op::<ClosePane>()
         .route("/api/panes/{id}/capture", get(capture))
         .op::<PaneProcess>()
+        .op::<PanePorts>()
         .op::<PaneDetection>()
         .route("/api/panes/{id}/tail", get(tail))
         .route("/api/panes/{id}/export.cast", get(export))

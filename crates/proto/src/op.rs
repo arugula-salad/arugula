@@ -135,6 +135,8 @@ impl Request for crate::flags::FlagSetRequest {}
 
 impl Request for crate::api::WaitRequest {}
 
+impl Request for crate::api::PortsQuery {}
+
 impl Request for crate::api::SendRequest {}
 
 impl Request for crate::api::KeysRequest {}
@@ -300,6 +302,7 @@ macro_rules! every_op {
         $m!($crate::op::ops::PanePermit);
         $m!($crate::op::ops::PaneInbox);
         $m!($crate::op::ops::PaneProcess);
+        $m!($crate::op::ops::PanePorts);
         $m!($crate::op::ops::PaneDetection);
         $m!($crate::op::ops::PaneDiffOf);
         $m!($crate::op::ops::PaneDrivers);
@@ -399,11 +402,11 @@ pub mod ops {
             GuestInviteRequest, IdeDiffs, IdeDiffsRequest, IdeInfo, IdeMentionRequest, IdeMentioned, InboxAnswer,
             InstallAdapterRequest, InviteRequest, Invited, KeysRequest, LinkRequest, McpTokenRequest, MouseRequest,
             NotifyPref, NotifyRequest, OpenConversationRequest, OpenConversationResponse, PaneDiff, PaneSummary,
-            PermitAnswer, PermitRequest, Process, PromptRequest, PromptResult, PushKey, PushSubscriptions, Rules,
-            RunResponse, SendRequest, Share, ShareRequest, ShellEnv, SigninLink, StudioApps, StudioLoggedIn,
-            StudioLoginRequest, StudioStatus, Subscription, SyncedHost, SyncedRotated, TeamPins, TeamPinsRequest,
-            ThreadMessages, ThreadPostRequest, ThreadPosted, ThreadReadRequest, TokenInfo, WaitRequest, WaitResult,
-            WithdrawRequest,
+            PermitAnswer, PermitRequest, Ports, PortsQuery, Process, PromptRequest, PromptResult, PushKey,
+            PushSubscriptions, Rules, RunResponse, SendRequest, Share, ShareRequest, ShellEnv, SigninLink, StudioApps,
+            StudioLoggedIn, StudioLoginRequest, StudioStatus, Subscription, SyncedHost, SyncedRotated, TeamPins,
+            TeamPinsRequest, ThreadMessages, ThreadPostRequest, ThreadPosted, ThreadReadRequest, TokenInfo,
+            WaitRequest, WaitResult, WithdrawRequest,
         },
         flags::{FlagInfo, FlagSetRequest},
         hosts::{Demoted, Host, PromoteRequest, SandboxList},
@@ -707,6 +710,21 @@ pub mod ops {
         type Path = PaneId;
         type Req = Empty;
         type Res = Process;
+    }
+
+    /// `GET /api/panes/N/ports` (#150): the ports listening where *Open a
+    /// port…* beside the pane would open one, for it to offer. The owner's,
+    /// like port blocks.
+    pub struct PanePorts;
+
+    impl Op for PanePorts {
+        const NAME: &'static str = "pane.ports";
+        const METHOD: Method = Method::Get;
+        const PATH: &'static str = "/api/panes/{id}/ports";
+        const ACCESS: Access = Access::Owner;
+        type Path = PaneId;
+        type Req = PortsQuery;
+        type Res = Ports;
     }
 
     /// `GET /api/panes/N/detection` (#145): how the screen of the agent in a
@@ -1895,6 +1913,7 @@ mod tests {
             ("permit", ops::PanePermit::path(&7)),
             ("inbox", ops::PaneInbox::path(&7)),
             ("process", ops::PaneProcess::path(&7)),
+            ("ports", ops::PanePorts::path(&7)),
             ("detection", ops::PaneDetection::path(&7)),
             ("diff", ops::PaneDiffOf::path(&7)),
             ("drivers", ops::PaneDrivers::path(&7)),

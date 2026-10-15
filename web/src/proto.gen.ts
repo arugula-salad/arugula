@@ -1473,6 +1473,19 @@ export type Linked = { number: number, title: string, state: ItemState, url: str
 head?: string, };
 
 /**
+ * One TCP port something listens on, reachable from loopback.
+ */
+export type ListeningPort = { port: number, 
+/**
+ * The program listening (`node`), when it can be read.
+ */
+process?: string, 
+/**
+ * Started from the pane asked about (it or a process under it).
+ */
+pane?: boolean, };
+
+/**
  * A machine that blocks can run on instead of this host: today a
  * throwaway wisp sprite (a Firecracker microVM) owned by one pane, and
  * deleted when that pane closes.
@@ -1804,6 +1817,12 @@ export type PointChoice = { value: string, label: string, means: string | null, 
  * back; this decides what runs in it.
  */
 export type Policy = { "kind": "none" } | { "kind": "shell" } | { "kind": "rerun", confirm: boolean, } | { "kind": "hook", command: string, } | { "kind": "resume" };
+
+/**
+ * `GET /api/panes/N/ports` (#150): what listens on the machine a port
+ * would open on, the pane's own first, then by number.
+ */
+export type Ports = { ports: Array<ListeningPort>, };
 
 /**
  * A pull request, read whole.
@@ -2445,6 +2464,7 @@ export const OPS = {
   "pane.keys": { method: "POST", path: "/api/panes/{id}/keys" },
   "pane.mouse": { method: "POST", path: "/api/panes/{id}/mouse" },
   "pane.permit": { method: "POST", path: "/api/panes/{id}/permit" },
+  "pane.ports": { method: "GET", path: "/api/panes/{id}/ports" },
   "pane.process": { method: "GET", path: "/api/panes/{id}/process" },
   "pane.prompt": { method: "POST", path: "/api/panes/{id}/prompt" },
   "pane.send": { method: "POST", path: "/api/panes/{id}/send" },

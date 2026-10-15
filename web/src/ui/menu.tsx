@@ -144,17 +144,44 @@ interface OpenPrompt {
   placeholder?: string;
   /** No input: a note to read, with a link to more (#171). */
   notice?: { text: string; link: { label: string; href: string } };
+  /** Answers to pick with a tap, once they're known (#150). */
+  choices?: PromptChoice[];
   done: (value: string | null) => void;
+}
+
+/** One answer offered under the input: choosing it answers with `value`. */
+export interface PromptChoice {
+  value: string;
+  label: string;
+  /** Said beside the label, dimmer (the program on a port). */
+  hint?: string;
+  title?: string;
+  /** Shown first and marked (the pane's own port). */
+  strong?: boolean;
 }
 
 let prompt: OpenPrompt | null = null;
 const promptListeners = new Set<() => void>();
 
-/** Ask for one line of text (no browser dialogs: they block everything). */
-export function askText(title: string, value: string, placeholder?: string): Promise<string | null> {
+/** Ask for one line of text (no browser dialogs: they block everything).
+ * `choices`, when they arrive while it's open, show under the input. */
+export function askText(
+  title: string,
+  value: string,
+  placeholder?: string,
+  choices?: Promise<PromptChoice[]>,
+): Promise<string | null> {
   return new Promise((resolve) => {
-    prompt = { title, value, placeholder, done: resolve };
+    const p: OpenPrompt = { title, value, placeholder, done: resolve };
+    prompt = p;
     promptListeners.forEach((fn) => fn());
+    void choices
+      ?.then((list) => {
+        if (prompt !== p || list.length === 0) return;
+        p.choices = list;
+        promptListeners.forEach((fn) => fn());
+      })
+      .catch(() => {});
   });
 }
 
@@ -225,6 +252,16 @@ export function PromptLayer() {
             onKeyDown={(e) => e.key === "Escape" && finish(null)}
           />
         </label>
+        )}
+        {p.choices && (
+          <div class="prompt-choices" role="group" aria-label="Choices">
+            {p.choices.map((c) => (
+              <button type="button" class={c.strong ? "strong" : undefined} title={c.title} onClick={() => finish(c.value)}>
+                {c.label}
+                {c.hint && <span class="dim"> {c.hint}</span>}
+              </button>
+            ))}
+          </div>
         )}
         <div class="prompt-buttons">
           {!p.notice && (

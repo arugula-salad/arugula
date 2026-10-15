@@ -18,6 +18,7 @@ notify.get GET /api/notify
 pane.detection GET /api/panes/{id}/detection
 pane.diff GET /api/panes/{id}/diff
 pane.drivers GET /api/panes/{id}/drivers
+pane.ports GET /api/panes/{id}/ports
 pane.process GET /api/panes/{id}/process
 pane.wait GET /api/panes/{id}/wait
 panes.list GET /api/panes

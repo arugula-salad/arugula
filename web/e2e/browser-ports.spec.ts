@@ -105,8 +105,10 @@ test("a dev server beside a terminal: its own origin, hot reload, no way into Ar
   await reset(page);
   const [term] = await panes(page);
   await menu(page, paneEl(page, term), "Open a port…");
-  await page.locator(".prompt input").fill(String(VITE));
-  await page.keyboard.press("Enter");
+  // #150: what's listening is offered, so it's a tap rather than a number
+  // typed from an example; the placeholder suggests no port of its own.
+  await expect(page.locator(".prompt input")).toHaveAttribute("placeholder", "port number, optionally /path");
+  await page.locator(".prompt-choices button", { hasText: new RegExp(`^:${VITE}(\\D|$)`) }).click();
   await expect.poll(async () => (await panes(page)).length).toBe(2);
   block = (await panes(page)).find((p) => p !== term)!;
   expect(await page.evaluate((b) => window.__arugula.client.info(b)?.type, block)).toBe("browser");
