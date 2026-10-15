@@ -228,3 +228,38 @@ pkill -f "rig.ts /tmp/s34-rig"
 - Agents use the machine's own Claude Code login.
 - The rig strips `CLAUDE*`/`ILLOGICAL*` from its environment, so nothing reaches your own daemon.
 - Each person's CLI keeps its key under the rig's state directory, never in `~/.config/illogical`.
+
+## The live run on hosted control (#415)
+
+Run 2026-10-15, 03:38–05:02 UTC, on control.arugula.io, with real people and machines:
+- **Jake's side:** his agent in a pane on `geek` (0.39.1, then 0.39.3 after a restart mid-run), offering `arugula-hand`, `homecloud-hand`, `site-hand` and `fountain-hand`.
+- **alecraso's side:** his agent on `aarons-mac-mini` (team Arugula, 0.39.1), plus `aarons-mac-mini-personal`, a second daemon on the same Mac with its own state directory, joined to alecraso's own account. Both offer `fixer` from `arugula-salad/a2a-calc` (private), a two-function calculator with two failing tests. `fixer` is haiku.
+
+They coordinated through an Arugula conversation and this issue. **Result:** every step worked in at least one direction, and what didn't is filed below.
+
+| Step | What happened | Time |
+|---|---|---|
+| 1. Offer, team and personal | `fixer` offered on both machines. geek's catalog listed both, and Jake's agent sent tasks to both. The personal one is reached through the A2A-only grant. | |
+| 2. Jake's agent delegates | Team machine, t17920355291290729: it waited for consent until alecraso got to his phone, then fixed both tests (+2 −2). | 72 s from allow to completed |
+| 3. Consent | alecraso allowed it for an hour. Consent is checked by account, so a team owner can't answer for the machine's owner. Jake didn't try allowing it himself. | |
+| 4. Permission prompts and a question | alecraso answered `fixer`'s permission prompts on its block. A question first ended the task as completed (#940). With `AskUserQuestion` in the recipe, task t179203646822071bb went input-required; Jake's agent answered "raise ZeroDivisionError", and the task completed. | input-required 64 s after send, completed 31 s after the answer |
+| 5. Review and apply on geek | Jake's agent reviewed the step 2 patch in a diff block, applied it (4/4 tests passing), then applied step 4's (5/5). | |
+| 2 (personal) | Two tasks to `aarons-mac-mini-personal`, one sent before geek's restart and lost on Jake's side. One allow for an hour; both completed together. | both completed 04:21:45 |
+| 6. The other way round | alecraso's agent sent `site-hand` on geek a read-only task (outline a post), t1792040243453dabb. It completed with nothing changed. | 34 s, consent included |
+| 7. Cancel, both sides | alecraso's side cancelled t17920402939179938 6 s after it started working: "canceled by alecraso" on geek. Jake's side cancelled t17920404661785e8c on the personal machine before it was allowed, 25 s after sending. | 21 s waiting for consent, cancel at once |
+| 7. Revoke | alecraso revoked Jake's grant on the personal machine. Jake's next task there waited for consent again (20 s, then cancelled). The team machine's grant expired on its own. | |
+
+**Not covered:**
+- Jake trying to allow a task on alecraso's machine himself (step 3).
+- Review and apply in the other direction: step 6's task was read-only, so nothing came back to apply.
+- A question asked in the other direction.
+- Jake's browser not listing the personal machine.
+- Per-call relay latency: the CLI doesn't print it, so the times above are whole steps.
+
+**Found:**
+- #935: a team machine's other owners act as its owner, so Jake's posts in the conversation read as alecraso's. A fix is in flight.
+- #936: on a machine outside the caller's team, the caller is named by account id: `c86f85e963d6740f` in the consent list, grants and cancel status.
+- #937: a blocking `send` that outlived the consent wait never returned, and review said "no result kept here" until a `get`.
+- #938: an input-required question reaches the caller without its options.
+- #939: apply on a dirty checkout says "only in part", though every file landed.
+- #940: a recipe whose `tools` leaves out `AskUserQuestion` can't ask its caller: its question ends the task as completed.
