@@ -98,7 +98,8 @@ rest. A starting daemon moves the old file into `flags.json` and removes it.
   (`LABS_OPTIONS` in `crates/daemon/src/args.rs`).
 - **MCP:** `read_thread` and `post_thread`, and the kinds `show:app`,
   `show:workspace`, `show:fountain`, `list:fountain_agents`,
-  `list:fountain_agent`, `list:fountain_conversations`, and `start_agent`'s `recipe` (`UNLISTED` and
+  `list:fountain_agent`, `list:fountain_conversations`, `start_agent`'s `recipe`, and
+  `start_agent`'s `on`, `vault` and `environment` (`UNLISTED` and
   `UNLISTED_ARGS` in `crates/daemon/src/mcp/tools.rs`).
   Unlisted tools called by name are refused without their flag.
 - **Web client:** `Client.has("vms" | "fountain" | "studio")` and
@@ -815,6 +816,71 @@ its transcript from the conversation's events, so its cards, the phone,
   say "Parked — Wake to look", with *Wake*.
 - `fountain conv show`'s polling (`REMOTE_POLL`) is gone. To run `fountain
   acp` by hand, use an `agent: acp` block with that command.
+
+## Fountain: recipes on Fountain
+
+F4 (#942), with both `agents` and `fountain` on. An agent recipe (below)
+runs in a Fountain sandbox as well as here or on another of your machines:
+*Run on Fountain* sits beside *Run on THIS-MACHINE* on its card in the agents
+block, and on the Agents page. MCP's `start_agent {recipe, on: fountain,
+vault?, environment?}`, the CLI's `arugula agents run NAME --fountain
+[--vault V] [--environment E] [--cwd DIR]` and the block's `run_fountain
+{agent, cwd?, prompt?, vault?, environment?}` do the same.
+
+- **One Fountain agent per recipe** (Jake, 2026-10-15). Before each launch
+  the recipe is compiled and upserted with `POST /api/apply` as
+  `recipe-NAME`, with `metadata: {managed-by: arugula, source_path,
+  recipe_hash}`. An unchanged recipe applies as `unchanged` and writes
+  nothing. Editing the recipe changes that agent, so an older conversation
+  gets the new system prompt on its next wake. Each conversation is
+  labelled `arugula.recipe`, `arugula.recipe_hash` and `arugula.machine`,
+  so the hash says which version started it. An agent of that name that
+  Arugula didn't make (chant's, or one made by hand) is never written, and
+  the run is refused.
+- **What carries over.** The body becomes `system`. `sonnet`, `opus` and
+  `haiku` become `anthropic/claude-sonnet-5`, `anthropic/claude-opus-5-5`
+  and `anthropic/claude-haiku-4-5`, and a `claude-…` id gets the prefix.
+  `inherit` leaves the agent's model alone, and a new agent starts on
+  sonnet. `mcpServers` keep their `${VAR}`s as written, and Fountain fills
+  them from the environment's and the vault's secrets at spawn.
+- **What doesn't, and is named on the run** (the dialog lists it, as M76's
+  header does):
+  - a skill's files other than `SKILL.md`, because Fountain's inline skills
+    carry `SKILL.md` only;
+  - a server with a value typed into its headers or env rather than a
+    `${VAR}`, so that no credential leaves this machine without the copy
+    below;
+  - a server that wants an OAuth sign-in, or whose command is a path on
+    this machine;
+  - a model Fountain can't name;
+  - the tool lists and permission mode. These become a coarse
+    `permission_policy` over ACP's kinds. With no `Bash`, `execute` is
+    denied. With no `Edit` or `Write`, `edit`, `delete` and `move` are
+    denied. With no `WebFetch` or `WebSearch`, `fetch` is denied. A tool's
+    rule (`Bash(git:*)`) is lost. `plan` denies edits and commands, and
+    `acceptEdits` allows edits. Everything else asks, so approvals come to
+    the block. The launch sends the same policy, so it never widens the
+    agent's.
+- **The working directory.** The sandbox clones its own checkout. The
+  project's `origin`, as https and with no credentials, becomes an
+  environment `repo-OWNER-NAME` with `repositories: [{url, mount_path:
+  /work/NAME}]`, and `secret_key: GITHUB_TOKEN` on GitHub. It goes in the
+  same apply. Fountain clones the default branch, so uncommitted changes,
+  unpushed commits and a branch that isn't on `origin` stay here. The
+  dialog says so. An environment of that name that Arugula didn't make is
+  used as it is. Choosing another environment replaces the project's.
+- **Secrets: a preflight and an explicit copy.** The dialog
+  (`fountain_preflight`, `POST /api/a2a/fountain/preflight`) compares the
+  `${VAR}`s the agent uses (and `GITHUB_TOKEN` for a GitHub clone) with
+  the keys of the run's environment and vault. Fountain lists keys, never
+  values. It shows "N variables missing on Fountain", and each missing
+  variable has *Copy from this machine to vault V*
+  (`fountain_copy`, `POST /api/a2a/fountain/copy`). The copy resolves the
+  variable here as wearing does (Infisical through `~/agent-specs`, your
+  shell, `gh auth token`) and writes it to the vault once. Nothing is
+  copied automatically, a variable the recipe doesn't use can't be copied,
+  and no value is shown, logged or kept.
+- Running, previewing and copying are this machine's own account's.
 
 ## Agent recipes
 

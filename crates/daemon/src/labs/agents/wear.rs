@@ -73,7 +73,7 @@ fn configured(dir: &Path, home: &Path) -> BTreeMap<String, Value> {
 
 /// The recipe's servers as Fountain's shape, and the ones it names that
 /// aren't configured anywhere.
-fn servers_of(r: &Recipe, dir: &Path, home: &Path) -> (BTreeMap<String, McpServer>, Vec<LeftOut>) {
+pub(crate) fn servers_of(r: &Recipe, dir: &Path, home: &Path) -> (BTreeMap<String, McpServer>, Vec<LeftOut>) {
     let known = configured(dir, home);
     let mut out = BTreeMap::new();
     let mut left = vec![];

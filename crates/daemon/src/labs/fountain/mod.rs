@@ -63,6 +63,7 @@ pub mod client;
 pub mod conversations;
 pub mod link;
 pub mod login;
+pub mod recipes;
 pub mod stream;
 
 use std::{

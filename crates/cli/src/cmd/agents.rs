@@ -58,11 +58,29 @@ enum Cmd {
     ///
     /// It starts in its project, on its machine (one of yours), in a
     /// session named after it.
+    ///
+    /// With --fountain (Labs: agents and fountain), it runs in a Fountain
+    /// sandbox instead: the recipe is upserted as the Fountain agent
+    /// recipe-NAME first, and its project's origin is cloned there
+    /// (uncommitted work stays here).
     Run {
         agent: String,
         /// The machine [default: whichever offers it, this one first].
-        #[arg(long)]
+        #[arg(long, conflicts_with = "fountain")]
         on: Option<String>,
+        /// On Fountain, from this machine's recipe.
+        #[arg(long)]
+        fountain: bool,
+        /// With --fountain: a vault for the run (name or id).
+        #[arg(long, requires = "fountain")]
+        vault: Option<String>,
+        /// With --fountain: an environment instead of the project's.
+        #[arg(long, requires = "fountain")]
+        environment: Option<String>,
+        /// With --fountain: the project it works in [default: where it's
+        /// offered from].
+        #[arg(long, requires = "fountain")]
+        cwd: Option<String>,
         /// What to ask it first.
         prompt: Vec<String>,
     },
@@ -235,12 +253,20 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
             let body = json!({ "kind": "send", "machine": machine, "agent": agent, "text": text.join(" "), "wait": wait, "pr": pr });
             return task_out(request(&sock, "POST", "/api/a2a/delegate", Some(&body))?.json()?, json_out);
         }
-        Cmd::Run { agent, on, prompt } => {
+        Cmd::Run { agent, on, fountain, vault, environment, cwd, prompt } => {
             let prompt = Some(prompt.join(" ")).filter(|p| !p.trim().is_empty());
-            let body = json!({ "machine": on, "agent": agent, "prompt": prompt });
+            let cwd = cwd.map(|c| match std::fs::canonicalize(&c) {
+                Ok(p) => p.display().to_string(),
+                Err(_) => c,
+            });
+            let body = json!({ "machine": on, "agent": agent, "prompt": prompt, "fountain": fountain,
+                               "vault": vault, "environment": environment, "cwd": cwd });
             let v = request(&sock, "POST", "/api/a2a/run", Some(&body))?.json()?;
             if json_out {
                 print_json(&v);
+            } else if fountain {
+                println!("{}", v["summary"].as_str().unwrap_or("it runs on Fountain"));
+                println!("In %{} (session {agent})", v["block"]);
             } else {
                 println!(
                     "{agent} runs on {} in %{} (session {agent})",

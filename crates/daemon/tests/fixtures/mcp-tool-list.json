@@ -4708,6 +4708,14 @@
               "null"
             ]
           },
+          "environment": {
+            "default": null,
+            "description": "For on: fountain: a Fountain environment instead of the project's (name or id).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "fountain_agent": {
             "default": null,
             "description": "For fountain: the agent's name or id.",
@@ -4719,6 +4727,14 @@
           "model": {
             "default": null,
             "description": "A model to switch to (`haiku`, ...).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "on": {
+            "default": null,
+            "description": "Where a recipe runs: here (default), or fountain: in a Fountain sandbox, as its Fountain agent recipe-NAME (upserted from the recipe first), with its project's origin cloned there (uncommitted work stays here).",
             "type": [
               "string",
               "null"
@@ -4764,6 +4780,14 @@
             "default": false,
             "description": "For claude: the user's Claude Code settings (allow and deny lists,\ndefault mode, CLAUDE.md), without their hooks.",
             "type": "boolean"
+          },
+          "vault": {
+            "default": null,
+            "description": "For on: fountain: a Fountain vault for the run (name or id).",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "vm": {
             "default": false,
@@ -10428,6 +10452,14 @@
               "null"
             ]
           },
+          "environment": {
+            "default": null,
+            "description": "For on: fountain: a Fountain environment instead of the project's (name or id).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "fountain_agent": {
             "default": null,
             "description": "For fountain: the agent's name or id.",
@@ -10439,6 +10471,14 @@
           "model": {
             "default": null,
             "description": "A model to switch to (`haiku`, ...).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "on": {
+            "default": null,
+            "description": "Where a recipe runs: here (default), or fountain: in a Fountain sandbox, as its Fountain agent recipe-NAME (upserted from the recipe first), with its project's origin cloned there (uncommitted work stays here).",
             "type": [
               "string",
               "null"
@@ -10484,6 +10524,14 @@
             "default": false,
             "description": "For claude: the user's Claude Code settings (allow and deny lists,\ndefault mode, CLAUDE.md), without their hooks.",
             "type": "boolean"
+          },
+          "vault": {
+            "default": null,
+            "description": "For on: fountain: a Fountain vault for the run (name or id).",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "vm": {
             "default": false,

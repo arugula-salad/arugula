@@ -9,7 +9,15 @@
 //! machine's offered recipes; `run_there {machine, agent, prompt?}`, one
 //! another of the account's machines offers, run there (in a session of its
 //! name) for the client to go to; and `revoke {account, agent}`, a standing
-//! grant taken back. Those are the owner's (authz.rs).
+//! grant taken back. With the `fountain` flag too (#942, F4):
+//! `fountain_preflight {agent, cwd?, vault?, environment?}` says what a run
+//! on Fountain would be (what doesn't carry over, the checkout, the
+//! variables Fountain lacks); `fountain_copy {agent, var, vault, cwd?,
+//! environment?}` copies one of those from this machine to the vault, as the
+//! person asked; and `run_fountain {agent, cwd?, prompt?, vault?,
+//! environment?}` upserts the recipe as its Fountain agent and opens the
+//! conversation beside it ([`crate::labs::fountain::recipes`]). Those are
+//! the owner's (authz.rs).
 //!
 //! **Consent (M79):** one Team agents block holds the cards for tasks that
 //! wait for this machine's own account (`tasks.rs`): one card at a time,
@@ -389,6 +397,57 @@ impl AgentsBlock {
         self.said(format!("{agent} runs here in %{block}"));
         Ok(json!({ "block": block, "agent": agent, "cwd": cwd }))
     }
+
+    /// F4: what a run on Fountain would be.
+    async fn fountain_preflight(&self, args: Value) -> Result<Value, String> {
+        use crate::labs::fountain::{link, recipes};
+        let ask: recipes::Ask = serde_json::from_value(args).map_err(|e| format!("fountain_preflight: {e}"))?;
+        recipes::flags(&self.ctx.state_dir)?;
+        let (c, _) = recipes::prepare(&self.ctx.state_dir, &crate::home(), &ask).await?;
+        let client = link::client_for(None).await?;
+        let p = recipes::preflight(&client, &c, &ask).await?;
+        let mut v = serde_json::to_value(&p).map_err(|e| e.to_string())?;
+        v["summary"] = json!(p.text());
+        Ok(v)
+    }
+
+    /// F4: one variable from this machine to a vault, as the person asked.
+    async fn fountain_copy(&self, args: Value) -> Result<Value, String> {
+        use crate::labs::fountain::{link, recipes};
+        let var = args["var"].as_str().map(str::trim).filter(|v| !v.is_empty()).ok_or("{\"var\", \"vault\"}")?;
+        let vault = args["vault"].as_str().map(str::trim).filter(|v| !v.is_empty()).ok_or("{\"var\", \"vault\"}")?;
+        let (var, vault) = (var.to_owned(), vault.to_owned());
+        let ask: recipes::Ask = serde_json::from_value(args).map_err(|e| format!("fountain_copy: {e}"))?;
+        let crate::review::Runner::Local { env, home } = crate::review::Runner::user(&self.ctx).await? else {
+            return Err("a recipe's variables are this host's: open the catalog on it".into());
+        };
+        let client = link::client_for(None).await?;
+        let said = recipes::copy_here(&client, &self.ctx.state_dir, &home, &env, &ask, &var, &vault).await?;
+        self.said(said.clone());
+        Ok(json!({ "copied": var, "vault": vault, "summary": said }))
+    }
+
+    /// F4: the recipe on Fountain, its conversation beside this block.
+    async fn run_fountain(&self, args: Value) -> Result<Value, String> {
+        use crate::labs::fountain::recipes;
+        if self.ctx.sprite.is_some() {
+            return Err("Run on Fountain compiles a recipe on this host: open the catalog on it".into());
+        }
+        let ask: recipes::Ask = serde_json::from_value(args).map_err(|e| format!("run_fountain: {e}"))?;
+        let machine = self.app().map(|a| a.hosts.name().to_owned()).unwrap_or_default();
+        let (config, summary) = recipes::launch(&self.ctx.state_dir, &crate::home(), &machine, &ask).await?;
+        let req = OpenRequest {
+            kind: BlockType::Agent,
+            config: config.clone(),
+            split: Some(self.ctx.id),
+            from_pane: Some(self.ctx.id),
+            local: true,
+            ..Default::default()
+        };
+        let block = self.ctx.open(req).await?;
+        self.said(format!("{summary} In %{block}."));
+        Ok(json!({ "block": block, "agent": ask.agent, "labels": config["labels"], "summary": summary }))
+    }
 }
 
 impl Block for AgentsBlock {
@@ -458,6 +517,9 @@ impl Block for AgentsBlock {
             "offer" => Box::pin(async move { me.ok_or("closed")?.offer(args, true).await }),
             "unoffer" => Box::pin(async move { me.ok_or("closed")?.offer(args, false).await }),
             "run_here" => Box::pin(async move { me.ok_or("closed")?.run_here(args).await }),
+            "run_fountain" => Box::pin(async move { me.ok_or("closed")?.run_fountain(args).await }),
+            "fountain_preflight" => Box::pin(async move { me.ok_or("closed")?.fountain_preflight(args).await }),
+            "fountain_copy" => Box::pin(async move { me.ok_or("closed")?.fountain_copy(args).await }),
             "run_there" => Box::pin(async move {
                 let me = me.ok_or("closed")?;
                 let agent = args["agent"].as_str().filter(|a| !a.is_empty()).ok_or("{\"machine\", \"agent\"}")?;

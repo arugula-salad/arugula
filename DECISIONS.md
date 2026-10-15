@@ -626,8 +626,8 @@ until recipes run there (#942's F4).
   agent-specs file, else shows the agent as `GET /api/agents/{id}` returns
   it (literal values redacted) in the block, since the console's agent pages
   are gone.
-Not done: a native conversation link (F3), recipes on Fountain (F4).
-(F1's client, sign-in and stream, and F2's account view and attention, are
+Not done: dropping the `fountain` flag (F5). (F1's client, sign-in and
+stream, F2's account view and attention, and F4's recipes on Fountain are
 below.)
 Where: `crates/daemon/src/labs/fountain/`, `crates/daemon/src/labs/wearing.rs`, `crates/daemon/src/agent/defs.rs` (`AS_FOUNTAIN_GONE`), `web/src/blocks/fountain.tsx`.
 From: #942, superseding [S34](https://github.com/arugula-salad/arugula/issues/397)'s "No Fountain dependency" and q8 ([spike](spikes/s34-agents-a2a/README.md)).
@@ -921,6 +921,36 @@ this machine's own account's to answer, and only the owner gets their
 pushes, unlike an agent block's, which an editor of the session may answer.
 Where: `crates/daemon/src/labs/fountain/{attention,conversations,mod}.rs`, `crates/daemon/src/api.rs` (`act_one`), `crates/mux/src/mux/attention.rs`, `web/src/blocks/fountain.tsx`.
 From: #942, F2.
+
+### A recipe runs on Fountain as one mutable agent it owns
+A recipe runs on Fountain (#942, F4) by being compiled and upserted, before
+each launch, as one Fountain agent named `recipe-NAME` (`POST /api/apply`,
+which writes nothing when nothing changed). It is not one agent per version
+(`recipe-NAME-HASH`), because those pile up and none can be deleted while a
+conversation uses it. Editing the recipe changes the agent, and with it an
+older conversation's system prompt on its next wake. Each conversation is
+labelled with the recipe's hash (`arugula.recipe_hash`), which records the
+version that started it.
+- **Arugula writes only what it made.** The agent and the project's
+  environment (`repo-OWNER-NAME`, from `origin`) carry `metadata:
+  {managed-by: arugula}`. An agent of that name without it (chant's, or one
+  made by hand) is never written, and the run is refused. An environment
+  without it is used as it is.
+- **No credential leaves the machine by itself.** `${VAR}` references go
+  to Fountain as they are written. A server with a value typed in instead
+  is left out of the agent and named. A missing variable is copied only
+  when a person asks for that variable and names a vault: it is resolved
+  here as wearing resolves it, written once, and never shown or logged.
+  This was Jake's decision Q6.
+- **What can't be said is named rather than approximated quietly.**
+  Fountain has no tool allowlist, so `tools`, `disallowedTools` and
+  `permissionMode` become a policy over ACP's kinds. Its default is `ask`,
+  so approvals come to the block, and the launch sends that same policy.
+  Inline skills carry `SKILL.md` only. The sandbox clones `origin`'s
+  default branch, so uncommitted work stays here. Each loss is listed in
+  the run dialog and in the run's summary.
+Where: `crates/daemon/src/labs/fountain/recipes.rs`, `crates/daemon/src/labs/agents/{block,mod}.rs`, `web/src/ui/fountain-run.tsx`.
+From: #942 (Jake's decisions Q1 and Q6), F4.
 
 ## Federation and control
 
