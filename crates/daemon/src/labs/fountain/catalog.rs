@@ -77,21 +77,6 @@ pub fn source(a: &Agent) -> (Source, Option<String>) {
     (Source::Hand, None)
 }
 
-/// `metadata.arugula.local` (flat or nested): `false` (or `"false"`, as
-/// some metadata keeps every value a string) says it's for Fountain only,
-/// not to be worn here (M44). Agents written before the rename say it as
-/// `illogical.local`, which still counts.
-pub fn local_ok(a: &Agent) -> bool {
-    let said = ["arugula", "illogical"]
-        .into_iter()
-        .find_map(|n| a.metadata.get(&format!("{n}.local")).or_else(|| a.metadata.get(n).and_then(|v| v.get("local"))));
-    match said {
-        Some(Value::Bool(false)) => false,
-        Some(Value::String(s)) => !s.trim().eq_ignore_ascii_case("false"),
-        _ => true,
-    }
-}
-
 /// How a sandbox provider is named on a chip (null: Fountain's default).
 pub fn provider(a: &Agent) -> String {
     a.sandbox_provider.clone().filter(|p| !p.is_empty()).unwrap_or_else(|| "default".into())
@@ -232,11 +217,6 @@ pub struct Card {
     pub source: Option<Source>,
     /// Which app made it.
     pub app: Option<String>,
-    /// Whether *Run here* could wear it (M44): `claude` agents not marked
-    /// `arugula.local: false`.
-    pub local: bool,
-    /// Why not, when it's a claude agent that can't.
-    pub local_why: Option<String>,
 }
 
 /// Descriptions on a card stop here.
@@ -244,8 +224,6 @@ const DESCRIPTION: usize = 400;
 
 pub fn card(a: &Agent, envs: &BTreeMap<String, String>) -> Card {
     let (src, app) = source(a);
-    let claude = a.runtime == "claude";
-    let ok = local_ok(a);
     let mut description = a.description.clone().unwrap_or_default().trim().to_owned();
     if description.chars().count() > DESCRIPTION {
         description = description.chars().take(DESCRIPTION).collect::<String>() + "…";
@@ -265,8 +243,6 @@ pub fn card(a: &Agent, envs: &BTreeMap<String, String>) -> Card {
         updated_at: a.updated_at.clone(),
         source: Some(src),
         app,
-        local: claude && ok,
-        local_why: (claude && !ok).then(|| "it's for Fountain only (metadata arugula.local: false)".to_owned()),
     }
 }
 
@@ -397,8 +373,8 @@ mod tests {
         assert!(shown(&f).iter().all(|n| ["codex", "opencode"].contains(&named(&all, n).runtime.as_str())));
         assert_eq!(shown(&f).len(), 7);
         let mut f = Filter::default();
-        f.apply(&json!({ "provider": ["runner"] })).unwrap();
-        assert_eq!(shown(&f).len(), 3, "S24: three agents on the runner provider");
+        f.apply(&json!({ "provider": ["sprites"] })).unwrap();
+        assert_eq!(shown(&f).len(), 13);
         f.apply(&json!({ "provider": "default" })).unwrap();
         assert_eq!(shown(&f).len(), 95);
         f.apply(&json!({ "clear": true, "source": "hand,app" })).unwrap();
@@ -413,36 +389,13 @@ mod tests {
         let envs = BTreeMap::from([(named(&all, "games").environment_id.clone().unwrap(), "games-env".to_owned())]);
         let c = card(named(&all, "games"), &envs);
         assert_eq!(c.skills, ["love2d", "pixijs", "screenshots-in-prs"]);
-        assert_eq!((c.environment.as_deref(), c.provider.as_str(), c.local), (Some("games-env"), "default", true));
+        assert_eq!((c.environment.as_deref(), c.provider.as_str()), (Some("games-env"), "default"));
         let c = card(named(&all, "pr-reviewer"), &envs);
         assert_eq!(c.mcp, ["context7", "github", "mem0"]);
         assert!(
             c.skills.contains(&"code-review".to_owned()) && c.skills.contains(&"example-org/agent-skills/*".to_owned())
         );
         assert!(line(&c).starts_with("pr-reviewer [claude anthropic/"), "{}", line(&c));
-        // Not claude: no Run here, and no reason needed.
-        let codex = all.iter().find(|a| a.runtime == "codex").unwrap();
-        assert_eq!((card(codex, &envs).local, card(codex, &envs).local_why), (false, None));
-        // Marked for Fountain only (M44 adds it to the orchestrators).
-        let mut orch = named(&all, "orchestrator").clone();
-        orch.metadata.insert("arugula.local".into(), json!(false));
-        let c = card(&orch, &envs);
-        assert!(!c.local && c.local_why.unwrap().contains("Fountain only"));
-        orch.metadata.remove("arugula.local");
-        orch.metadata.insert("arugula".into(), json!({ "local": false }));
-        assert!(!card(&orch, &envs).local);
-        orch.metadata.remove("arugula");
-        orch.metadata.insert("arugula.local".into(), json!("false"));
-        assert!(!card(&orch, &envs).local, "as a string too");
-        orch.metadata.insert("arugula.local".into(), json!("true"));
-        assert!(card(&orch, &envs).local);
-        orch.metadata.remove("arugula.local");
-        // As agents written before the rename say it.
-        orch.metadata.insert("illogical.local".into(), json!(false));
-        assert!(!card(&orch, &envs).local);
-        orch.metadata.remove("illogical.local");
-        orch.metadata.insert("illogical".into(), json!({ "local": "false" }));
-        assert!(!card(&orch, &envs).local);
     }
 
     #[test]

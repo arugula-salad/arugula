@@ -1,43 +1,31 @@
-//! M44: wear a Fountain agent locally. A Claude Code agent block on this
-//! host, configured as one of the account's agents: its system prompt, its
-//! skills and its MCP servers (S24's `wear.py`, in Rust).
-//!
-//! **The bundle** is cached under `~/.cache/arugula/fountain/<agent
-//! id>/<updated_at>/` (rebuilt once a day, for the GitHub skills):
-//! - `plugin/`: a Claude Code plugin (`fountain-<name>`) whose `skills/`
-//!   holds the agent's skills: inline ones written out, GitHub ones copied
-//!   from a shallow clone in a shared cache (`…/fountain/github/`), fetched
-//!   again once a day. A GitHub skill with a `name` is that directory of
-//!   the repository; without one, every directory with a `SKILL.md`.
-//! - `system.md`: the system prompt, after a preamble saying it runs
-//!   locally.
-//! - `bundle.json`: what's in it. Never a secret: the MCP servers' values
-//!   are only ever in memory.
+//! Wearing an agent definition on this host: what M76's recipes (a Claude
+//! Code subagent file, [`super::agents::wear`]) and A2A delegation
+//! ([`super::agents::delegate`]) share. Moved here from M44's
+//! `fountain/wear.rs` when wearing a Fountain agent locally was retired
+//! (2026-10-15, #942); the behaviour is the same.
 //!
 //! **MCP servers** get Fountain's substitution ([`substitute`]): `${VAR}`
 //! (an UPPER_SNAKE name) is replaced, `$$` is a literal `$`, a value isn't
 //! expanded again, and every unset name is reported. A variable's value
-//! comes, in order, from:
-//! 1. Infisical: in the agent-specs checkout (its `.infisical.json`), the
-//!    agent's environment in `dist/fountain.yaml` maps the variable to an
-//!    `infisical:///<env>/<KEY>` URI (or to a literal value), read with
-//!    `infisical secrets get KEY --env ENV --path PATH --plain --silent`
-//!    there. A variable it doesn't map is tried as itself in env `dev`.
+//! comes, in order, from ([`resolve`]):
+//! 1. Infisical, when a [`Lookup`] names an agent-specs checkout (its
+//!    `.infisical.json`): the environment's mapping in `dist/fountain.yaml`
+//!    maps the variable to an `infisical:///<env>/<KEY>` URI (or to a
+//!    literal value), read with `infisical secrets get KEY --env ENV --path
+//!    PATH --plain --silent` there. A variable it doesn't map is tried as
+//!    itself in env `dev`. (Recipes name none today.)
 //! 2. The user's shell environment (#74).
 //! 3. Helpers: `GITHUB_TOKEN` (and `GH_TOKEN`) from `gh auth token`.
 //!
 //! A server with an unset variable is left out, and so is one that needs an
 //! OAuth sign-in, which a headless Claude Code can't do (no auth header,
 //! and a known OAuth host, or a 401 with `WWW-Authenticate` when probed).
-//! So is a Fountain connection, which only Fountain's sandboxes have. The
-//! block's header names each, and why.
+//! So is a Fountain connection, which only Fountain's sandboxes have. Every
+//! credential goes to the session by reference, never on a command line
+//! ([`servers`]). The block's header names what was left out, and why.
 //!
-//! **Not wearable:** a non-`claude` agent, and one whose metadata says
-//! `arugula.local: false` (the orchestrators, written for Fountain).
-//!
-//! `ARUGULA_INFISICAL_BIN`, `ARUGULA_GH_BIN` and
-//! `ARUGULA_FOUNTAIN_GIT_BASE` (instead of `https://github.com/`) are for
-//! tests, which never reach the real ones.
+//! `ARUGULA_INFISICAL_BIN` and `ARUGULA_GH_BIN` are for tests, which never
+//! reach the real ones.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -48,22 +36,10 @@ use std::{
 
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
-use tracing::{info, warn};
+use serde_json::{Map, Value, json};
+use tracing::info;
 
-use super::{api::Agent, catalog};
-use crate::{review::Runner, store::now_ms};
-
-/// What the system prompt starts with: it was written for a sandbox.
-pub const PREAMBLE: &str = "You are running as the Fountain agent \"{name}\", but locally, in Claude Code on the user's own \
-machine, not in a Fountain sandbox. Where the instructions below mention /home/sprite, /workspace, vaults or spawning \
-Fountain conversations, they describe the sandbox; here, work in the current directory with the user's own tools and \
-credentials.\n\n---\n\n";
-
-/// A bundle older than this is built again (GitHub skills move).
-const FRESH: Duration = Duration::from_secs(24 * 3600);
-
-/// A bundle version this old is removed (no block runs that long on one).
+/// A cached version this old is removed (no block runs that long on one).
 pub(crate) const OLD: Duration = Duration::from_secs(7 * 24 * 3600);
 
 /// How long one `infisical`, `gh` or `git` may take.
@@ -139,6 +115,71 @@ fn walk(v: &Value, vars: &BTreeMap<String, String>, missing: &mut BTreeSet<Strin
     }
 }
 
+// ---------------------------------------------------------------- the shapes
+
+/// One MCP server, as Claude Code's config writes it: `http`/`sse` with a
+/// `url` and `headers`, or `stdio` with a `command`, `args` and `env`. Any
+/// string may hold `${VAR}`s.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct McpServer {
+    #[serde(default, rename = "type", skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    #[serde(default, deserialize_with = "string_map", skip_serializing_if = "BTreeMap::is_empty")]
+    pub headers: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command: Option<String>,
+    #[serde(default, deserialize_with = "string_list", skip_serializing_if = "Vec::is_empty")]
+    pub args: Vec<String>,
+    #[serde(default, deserialize_with = "string_map", skip_serializing_if = "BTreeMap::is_empty")]
+    pub env: BTreeMap<String, String>,
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
+}
+
+/// What stands in for a value typed in literally (not a `${VAR}`
+/// reference) when a recipe is shown.
+pub const REDACTED: &str = "<redacted>";
+
+impl McpServer {
+    /// As it may be shown: a header or env value that isn't (or doesn't
+    /// hold) a `${VAR}` reference may be a secret someone typed in, and
+    /// becomes [`REDACTED`].
+    pub fn redacted(&self) -> Self {
+        let hide = |m: &BTreeMap<String, String>| {
+            m.iter().map(|(k, v)| (k.clone(), if is_reference(v) { v.clone() } else { REDACTED.to_owned() })).collect()
+        };
+        Self { headers: hide(&self.headers), env: hide(&self.env), ..self.clone() }
+    }
+}
+
+/// Whether a value holds a `${VAR}` reference.
+pub fn is_reference(v: &str) -> bool {
+    v.find("${").is_some_and(|at| v[at..].contains('}'))
+}
+
+/// A map of strings: null is empty, a null value is left out, a number or
+/// boolean is its text.
+fn string_map<'de, D: serde::Deserializer<'de>>(d: D) -> Result<BTreeMap<String, String>, D::Error> {
+    let m = Option::<Map<String, Value>>::deserialize(d)?.unwrap_or_default();
+    Ok(m.into_iter().filter_map(|(k, v)| text(v).map(|v| (k, v))).collect())
+}
+
+/// A list of strings, as [`string_map`].
+fn string_list<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<String>, D::Error> {
+    let l = Option::<Vec<Value>>::deserialize(d)?.unwrap_or_default();
+    Ok(l.into_iter().filter_map(text).collect())
+}
+
+fn text(v: Value) -> Option<String> {
+    match v {
+        Value::Null => None,
+        Value::String(s) => Some(s),
+        v => Some(v.to_string()),
+    }
+}
+
 // ---------------------------------------------------------------- MCP servers
 
 /// A server (as Fountain keeps it: Claude Code's config shape) as ACP's
@@ -206,27 +247,6 @@ async fn probe_oauth(url: &str) -> bool {
         Ok(Ok(r)) => says_oauth(r.status().as_u16(), r.headers().contains_key("www-authenticate")),
         _ => false,
     }
-}
-
-// ---------------------------------------------------------------- refusals
-
-/// Why `a` can't be worn here, if it can't.
-pub fn refusal(a: &Agent) -> Option<String> {
-    if a.runtime != "claude" {
-        let rt = if a.runtime.is_empty() {
-            "an agent of another runtime".to_owned()
-        } else {
-            format!("a {} agent", a.runtime)
-        };
-        return Some(format!("{} is {rt}: Run here wears claude agents only; Run on Fountain", a.name));
-    }
-    if !catalog::local_ok(a) {
-        return Some(format!(
-            "{} is for Fountain only (metadata arugula.local: false; it's written for Fountain's sandboxes): Run on Fountain",
-            a.name
-        ));
-    }
-    None
 }
 
 // ---------------------------------------------------------------- agent-specs
@@ -531,30 +551,7 @@ pub async fn resolve(names: &BTreeSet<String>, l: &Lookup<'_>) -> Found {
     found
 }
 
-// ---------------------------------------------------------------- the bundle
-
-/// What a bundle holds (`bundle.json`): nothing secret.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct Contents {
-    pub agent: String,
-    pub id: String,
-    pub updated_at: Option<String>,
-    pub built_ms: u64,
-    pub plugin: String,
-    /// The skills it has, by name.
-    pub skills: Vec<String>,
-    /// Skills that didn't come (`owner/repo:name` or `…:*`), and why.
-    pub skills_missing: Vec<String>,
-}
-
-/// The bundle on disk, and the system prompt.
-#[derive(Debug, Clone)]
-pub struct Bundle {
-    pub dir: PathBuf,
-    pub plugin: PathBuf,
-    pub system: String,
-    pub contents: Contents,
-}
+// ---------------------------------------------------------------- caches
 
 /// Where Arugula caches bundles: `$XDG_CACHE_HOME` (else `~/.cache`)
 /// `/arugula/fountain`.
@@ -589,106 +586,6 @@ pub(crate) fn age(p: &Path) -> Option<Duration> {
     std::fs::metadata(p).ok()?.modified().ok()?.elapsed().ok()
 }
 
-/// `owner/repo`, shallow-cloned into the shared cache (fetched again once
-/// it's a day old; an offline fetch keeps what's there).
-async fn github(
-    cache: &Path,
-    source: &str,
-    git_ref: Option<&str>,
-    env: &[(String, String)],
-) -> Result<PathBuf, String> {
-    static SOURCE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$").unwrap());
-    if !SOURCE.is_match(source) || source.contains("..") {
-        return Err(format!("{source:?} isn't owner/repo"));
-    }
-    // A ref is a ref, never an option.
-    if let Some(r) = git_ref
-        && (r.is_empty() || r.starts_with('-') || r.chars().any(|c| c.is_control() || c.is_whitespace()))
-    {
-        return Err(format!("{r:?} isn't a git ref"));
-    }
-    let name = match git_ref {
-        Some(r) => format!("{}@{}", source.replace('/', "__"), component(r)),
-        None => source.replace('/', "__"),
-    };
-    let dir = cache.join("github").join(name);
-    let stamp = dir.join(".git/arugula-fetched");
-    let base = setting(env, "ARUGULA_FOUNTAIN_GIT_BASE", "https://github.com/");
-    let url = format!("{base}{source}");
-    if !dir.join(".git").is_dir() {
-        std::fs::create_dir_all(cache.join("github")).map_err(|e| e.to_string())?;
-        let tmp = cache.join("github").join(format!(".clone-{}-{}", std::process::id(), now_ms()));
-        let mut argv: Vec<String> = vec!["git".into(), "clone".into(), "-q".into(), "--depth".into(), "1".into()];
-        if let Some(r) = git_ref {
-            argv.extend(["--branch".into(), r.to_owned()]);
-        }
-        argv.extend(["--end-of-options".into(), url.clone(), tmp.display().to_string()]);
-        let r = run(&argv, None, env).await;
-        if let Err(e) = r {
-            let _ = std::fs::remove_dir_all(&tmp);
-            return Err(format!("couldn't clone {source}: {e}"));
-        }
-        if std::fs::rename(&tmp, &dir).is_err() {
-            // Another wear cloned it first.
-            let _ = std::fs::remove_dir_all(&tmp);
-        }
-        let _ = std::fs::write(&stamp, b"");
-    } else if age(&stamp).is_none_or(|a| a > FRESH) {
-        let d = dir.display().to_string();
-        let what = git_ref.unwrap_or("HEAD").to_owned();
-        let fetched = run(
-            &[
-                "git".into(),
-                "-C".into(),
-                d.clone(),
-                "fetch".into(),
-                "-q".into(),
-                "--depth".into(),
-                "1".into(),
-                "--end-of-options".into(),
-                "origin".into(),
-                what,
-            ],
-            None,
-            env,
-        )
-        .await;
-        match fetched {
-            Ok(_) => {
-                let reset = ["git", "-C", &d, "reset", "-q", "--hard", "FETCH_HEAD"].map(str::to_owned);
-                if let Err(e) = run(&reset, None, env).await {
-                    warn!(source, error = e, "skills: reset after fetch");
-                }
-            }
-            Err(e) => warn!(source, error = e, "skills: fetch (keeping what's cached)"),
-        }
-        let _ = std::fs::write(&stamp, b"");
-    }
-    Ok(dir)
-}
-
-/// Each directory under `root` with a `SKILL.md` (not in `.git`), by its
-/// name, in a stable order.
-fn skill_dirs(root: &Path) -> Vec<PathBuf> {
-    let mut out = vec![];
-    let mut stack = vec![root.to_owned()];
-    while let Some(d) = stack.pop() {
-        let Ok(rd) = std::fs::read_dir(&d) else { continue };
-        let mut subs: Vec<PathBuf> = rd
-            .flatten()
-            .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()) && e.file_name() != ".git")
-            .map(|e| e.path())
-            .collect();
-        subs.sort();
-        if d != root && d.join("SKILL.md").is_file() {
-            out.push(d);
-        }
-        stack.extend(subs.into_iter().rev());
-    }
-    out.sort_by(|a, b| a.file_name().cmp(&b.file_name()).then(a.cmp(b)));
-    out
-}
-
 pub(crate) fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {
     std::fs::create_dir_all(to)?;
     for e in std::fs::read_dir(from)? {
@@ -705,129 +602,6 @@ pub(crate) fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {
         // Symlinks are left out: they could point anywhere.
     }
     Ok(())
-}
-
-/// Build `a`'s bundle under `cache` (or take the one there, if it's
-/// fresh and whole): the plugin with its skills, and the system prompt.
-pub async fn bundle(a: &Agent, cache: &Path, env: &[(String, String)]) -> Result<Bundle, String> {
-    // `<id>/<updated_at>/` holds versions (`v<built_ms>-<pid>/`) and
-    // `current`, naming the newest. A new one never replaces a folder a
-    // running block may be reading its skills from.
-    let parent = cache.join(component(&a.id)).join(component(a.updated_at.as_deref().unwrap_or("unknown")));
-    let system = format!("{}{}", PREAMBLE.replace("{name}", &a.name), a.system.as_deref().unwrap_or(""));
-    if let Ok(cur) = std::fs::read_to_string(parent.join("current"))
-        && let dir = parent.join(component(cur.trim()))
-        && let Ok(text) = std::fs::read_to_string(dir.join("bundle.json"))
-        && let Ok(c) = serde_json::from_str::<Contents>(&text)
-        // A day, skills that didn't come too (they're tried again then).
-        && now_ms().saturating_sub(c.built_ms) < FRESH.as_millis() as u64
-        && dir.join("plugin/skills").is_dir()
-    {
-        let plugin = dir.join("plugin");
-        return Ok(Bundle { dir, plugin, system, contents: c });
-    }
-    std::fs::create_dir_all(&parent).map_err(|e| format!("can't make {}: {e}", parent.display()))?;
-    let version = format!("v{}-{}", now_ms(), std::process::id());
-    let dir = parent.join(&version);
-    let plugin = dir.join("plugin");
-    let tmp = parent.join(format!(".build-{version}"));
-    let _ = std::fs::remove_dir_all(&tmp);
-    let skills = tmp.join("plugin/skills");
-    std::fs::create_dir_all(&skills).map_err(|e| e.to_string())?;
-    std::fs::create_dir_all(tmp.join("plugin/.claude-plugin")).map_err(|e| e.to_string())?;
-    let plugin_name = format!("fountain-{}", slug(&a.name));
-    let manifest = json!({
-        "name": plugin_name,
-        "description": format!("Skills of the Fountain agent {}, worn locally by Arugula", a.name),
-        "version": "0.0.0",
-    });
-    std::fs::write(
-        tmp.join("plugin/.claude-plugin/plugin.json"),
-        serde_json::to_vec_pretty(&manifest).unwrap_or_default(),
-    )
-    .map_err(|e| e.to_string())?;
-    let mut c = Contents {
-        agent: a.name.clone(),
-        id: a.id.clone(),
-        updated_at: a.updated_at.clone(),
-        built_ms: now_ms(),
-        plugin: plugin_name,
-        ..Contents::default()
-    };
-    for s in &a.skills {
-        match (&s.content, &s.source) {
-            (Some(content), _) => {
-                let Some(name) = s.name.as_deref().map(component).filter(|n| n != "_") else {
-                    c.skills_missing.push("an inline skill without a name".into());
-                    continue;
-                };
-                if skills.join(&name).exists() {
-                    continue;
-                }
-                std::fs::create_dir_all(skills.join(&name)).map_err(|e| e.to_string())?;
-                std::fs::write(skills.join(&name).join("SKILL.md"), content).map_err(|e| e.to_string())?;
-                c.skills.push(name);
-            }
-            (None, Some(source)) => {
-                let want = s.name.clone();
-                let label = format!("{source}:{}", want.as_deref().unwrap_or("*"));
-                let repo = match github(cache, source, s.git_ref.as_deref(), env).await {
-                    Ok(r) => r,
-                    Err(e) => {
-                        c.skills_missing.push(format!("{label} ({e})"));
-                        continue;
-                    }
-                };
-                let (skills2, want2) = (skills.clone(), want.clone());
-                let got = tokio::task::spawn_blocking(move || -> std::io::Result<Vec<String>> {
-                    let mut got = vec![];
-                    for d in skill_dirs(&repo) {
-                        let name = d.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-                        if want2.as_ref().is_some_and(|w| *w != name) {
-                            continue;
-                        }
-                        let dest = skills2.join(component(&name));
-                        if dest.exists() {
-                            continue;
-                        }
-                        copy_dir(&d, &dest)?;
-                        got.push(component(&name));
-                        if want2.is_some() {
-                            break;
-                        }
-                    }
-                    Ok(got)
-                })
-                .await
-                .map_err(|e| e.to_string())?
-                .map_err(|e| format!("copying {source}'s skills: {e}"))?;
-                if got.is_empty() {
-                    c.skills_missing.push(format!("{label} (not in the repository)"));
-                }
-                c.skills.extend(got);
-            }
-            (None, None) => c.skills_missing.push(format!("{} (neither inline nor from GitHub)", s.label())),
-        }
-    }
-    std::fs::write(tmp.join("system.md"), &system).map_err(|e| e.to_string())?;
-    std::fs::write(tmp.join("bundle.json"), serde_json::to_vec_pretty(&c).unwrap_or_default())
-        .map_err(|e| e.to_string())?;
-    if let Err(e) = std::fs::rename(&tmp, &dir) {
-        let _ = std::fs::remove_dir_all(&tmp);
-        return Err(format!("can't keep the bundle in {}: {e}", dir.display()));
-    }
-    let pointer = parent.join(format!(".current-{version}"));
-    std::fs::write(&pointer, &version)
-        .and_then(|_| std::fs::rename(&pointer, parent.join("current")))
-        .map_err(|e| format!("can't point at the bundle: {e}"))?;
-    // Older versions go once nothing could still be on them (a week).
-    for e in std::fs::read_dir(&parent).into_iter().flatten().flatten() {
-        let n = e.file_name().to_string_lossy().into_owned();
-        if n != version && n.starts_with('v') && age(&e.path()).is_some_and(|a| a > OLD) {
-            let _ = std::fs::remove_dir_all(e.path());
-        }
-    }
-    Ok(Bundle { dir, plugin, system, contents: c })
 }
 
 // ---------------------------------------------------------------- wearing
@@ -861,8 +635,7 @@ pub struct Info {
     pub skills_missing: Vec<String>,
     pub servers: Vec<ServerInfo>,
     pub left_out: Vec<LeftOut>,
-    /// M76: worn from a recipe (a Claude Code subagent file) at this path,
-    /// not from Fountain.
+    /// M76: the recipe (a Claude Code subagent file) it was worn from.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub recipe: Option<String>,
 }
@@ -874,7 +647,7 @@ impl Info {
         let servers: Vec<String> = self.servers.iter().map(|s| s.name.clone()).collect();
         let what = match &self.recipe {
             Some(path) => format!("As the agent {} ({path})", self.agent),
-            None => format!("As the Fountain agent {}, locally", self.agent),
+            None => format!("As the agent {}", self.agent),
         };
         let mut out = format!("{what}. Skills: {}. MCP servers: {}.", list(&self.skills), list(&servers));
         let mut missing: Vec<String> = self.left_out.iter().map(|l| format!("{} ({})", l.name, l.why)).collect();
@@ -963,14 +736,6 @@ impl Worn {
     pub fn text(&self) -> String {
         self.info.text()
     }
-}
-
-/// Its model, as Claude Code names it (`anthropic/` taken off; another
-/// provider's isn't Claude's).
-pub fn model(a: &Agent) -> Option<String> {
-    let m = a.model.trim();
-    let m = m.strip_prefix("anthropic/").unwrap_or(m);
-    (!m.is_empty() && !m.contains('/')).then(|| m.to_owned())
 }
 
 /// What the session gets of the agent's servers.
@@ -1084,15 +849,15 @@ fn by_reference(
     Ok((acp, full))
 }
 
-/// Turn the agent's servers into what the session gets: substituted, each
-/// credential passed by reference ([`by_reference`]), those that can't come
-/// left out with why.
-pub async fn servers(a: &Agent, found: &Found, probe: bool) -> Served {
+/// Turn an agent's servers (by name) into what the session gets:
+/// substituted, each credential passed by reference ([`by_reference`]),
+/// those that can't come left out with why.
+pub async fn servers(mcp_servers: &BTreeMap<String, McpServer>, found: &Found, probe: bool) -> Served {
     let mut out = Served::default();
     let mut probes = vec![];
     let mut fulls: Vec<Value> = vec![];
     let mut keys: Vec<Vec<String>> = vec![];
-    for (name, s) in &a.mcp_servers {
+    for (name, s) in mcp_servers {
         if name == crate::mcp::SERVER_NAME {
             out.left.push(LeftOut { name: name.clone(), why: "Arugula's own server has that name".into() });
             continue;
@@ -1140,7 +905,7 @@ pub async fn servers(a: &Agent, found: &Found, probe: bool) -> Served {
             out.secrets.push(v.clone());
         }
         for (_, v) in s.headers.iter().chain(s.env.iter()) {
-            if !super::api::is_reference(v) {
+            if !is_reference(v) {
                 out.secrets.push(v.clone());
             }
         }
@@ -1182,122 +947,6 @@ pub async fn servers(a: &Agent, found: &Found, probe: bool) -> Served {
     out
 }
 
-/// Read `which` from the account (with `profile`'s login on `runner`), and
-/// say why it can't be worn if it can't.
-pub async fn find(runner: &Runner, profile: Option<&str>, which: &str) -> Result<(Agent, super::login::Login), String> {
-    let got = super::agents_for(runner, profile).await?;
-    let a = super::find(&got.agents, which)
-        .cloned()
-        .ok_or_else(|| format!("no agent {which:?} on this Fountain account"))?;
-    if let Some(why) = refusal(&a) {
-        return Err(why);
-    }
-    Ok((a, got.login))
-}
-
-/// Wear `which` on this host: read it (fresh), build or take its bundle,
-/// and resolve its MCP servers. `specs` is the agent-specs checkout
-/// (`~/…` allowed; the default one if it's there).
-pub async fn wear(
-    runner: &Runner,
-    profile: Option<&str>,
-    specs: Option<&str>,
-    vault: Option<&str>,
-    which: &str,
-) -> Result<Worn, String> {
-    let Runner::Local { env, home } = runner else {
-        return Err("a worn Fountain agent runs on this host, not on a machine".into());
-    };
-    let (listed, login) = find(runner, profile, which).await?;
-    let client = super::api::Client::new(&login.base_url, &login.key);
-    // Fresh, in case it changed since the list was read.
-    let a = match client.agent(&listed.id).await {
-        Ok(a) => a,
-        Err(e) => {
-            info!(agent = listed.name, error = %e, "reading the agent again; using the list's");
-            listed
-        }
-    };
-    if let Some(why) = refusal(&a) {
-        return Err(why);
-    }
-    let cache = cache_root(env, home);
-    let b = bundle(&a, &cache, env).await?;
-    // The variables: through agent-specs' mapping for its environment.
-    let mut names = BTreeSet::new();
-    for s in a.mcp_servers.values() {
-        refs_in(&serde_json::to_value(s).unwrap_or_default(), &mut names);
-    }
-    let specs_dir = specs.map(|s| expand(s, home)).or_else(|| {
-        let d = expand(super::DEFAULT_SPECS, home);
-        d.is_dir().then_some(d)
-    });
-    let mut environment = None;
-    if !names.is_empty() {
-        if let Some(id) = &a.environment_id
-            && let Ok(envs) = client.environments().await
-        {
-            environment = envs.into_iter().find(|e| e.id == *id).map(|e| e.name).filter(|n| !n.is_empty());
-        }
-        if environment.is_none()
-            && let Some(d) = &specs_dir
-            && let Ok(y) = std::fs::read_to_string(d.join("dist/fountain.yaml"))
-        {
-            environment = parse_specs(&y).environments.get(&a.name).cloned();
-        }
-    }
-    // Its vault: the one asked for, else the only one it may use.
-    let mut vault = vault.map(str::to_owned);
-    if vault.is_none() && !names.is_empty() {
-        let allowed: Vec<&str> = a
-            .extra
-            .get("allowed_vault_ids")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .filter_map(Value::as_str)
-            .collect();
-        if let [one] = allowed.as_slice()
-            && let Ok(vaults) = client.vaults().await
-        {
-            vault = vaults.into_iter().find(|v| v.id == *one).map(|v| v.name).filter(|n| !n.is_empty());
-        }
-    }
-    let lookup = Lookup { env, home, specs: specs_dir, environment, vault };
-    let found = resolve(&names, &lookup).await;
-    let served = servers(&a, &found, true).await;
-    info!(
-        agent = a.name,
-        skills = b.contents.skills.len(),
-        servers = served.infos.len(),
-        left_out = served.left.len(),
-        "wearing a Fountain agent"
-    );
-    Ok(Worn {
-        info: Info {
-            agent: a.name.clone(),
-            id: a.id.clone(),
-            model: model(&a),
-            plugin: b.contents.plugin.clone(),
-            bundle: b.dir.display().to_string(),
-            skills: b.contents.skills.clone(),
-            skills_missing: b.contents.skills_missing.clone(),
-            servers: served.infos,
-            left_out: served.left,
-            recipe: None,
-        },
-        system: b.system,
-        plugin: b.plugin,
-        servers: served.list,
-        env: served.env,
-        secrets: served.secrets,
-        tools: vec![],
-        disallowed_tools: vec![],
-        permission_mode: None,
-        strict_mcp: false,
-    })
-}
-
 /// Replace every secret in a JSON line with `<redacted>` (as it's escaped
 /// in JSON, and as it is).
 pub fn scrub(line: &str, secrets: &[String]) -> Option<String> {
@@ -1311,7 +960,7 @@ pub fn scrub(line: &str, secrets: &[String]) -> Option<String> {
             }
             let cur = out.as_deref().unwrap_or(line);
             if cur.contains(needle) {
-                out = Some(cur.replace(needle, crate::labs::fountain::api::REDACTED));
+                out = Some(cur.replace(needle, REDACTED));
             }
         }
     }
@@ -1405,35 +1054,18 @@ mod tests {
         assert!(!says_oauth(200, true) && !says_oauth(406, false));
     }
 
-    fn agents() -> Vec<Agent> {
-        let v: Value = serde_json::from_str(include_str!("../../../tests/fixtures/fountain/agents.json")).unwrap();
-        super::super::api::rows(v["data"].as_array().unwrap().clone()).items
-    }
-
-    fn named(name: &str) -> Agent {
-        agents().into_iter().find(|a| a.name == name).unwrap()
-    }
-
-    #[test]
-    fn who_can_be_worn() {
-        assert_eq!(refusal(&named("games")), None);
-        assert_eq!(refusal(&named("pr-reviewer")), None);
-        let mut orch = named("orchestrator");
-        orch.metadata.insert("arugula.local".into(), json!(false));
-        assert!(refusal(&orch).unwrap().contains("for Fountain only"));
-        orch.metadata.insert("arugula.local".into(), json!("false"));
-        assert!(refusal(&orch).is_some(), "the string too");
-        let codex = agents().into_iter().find(|a| a.runtime == "codex").unwrap();
-        assert!(refusal(&codex).unwrap().contains("is a codex agent"));
-        assert_eq!(model(&named("pr-reviewer")).as_deref(), Some("claude-sonnet-5"));
-        assert_eq!(model(&Agent { model: "openai/gpt".into(), ..Agent::default() }), None);
+    /// pr-reviewer's MCP servers, as the Fountain fixture has them.
+    fn pr_reviewer() -> BTreeMap<String, McpServer> {
+        let v: Value = serde_json::from_str(include_str!("../../tests/fixtures/fountain/agents.json")).unwrap();
+        let pr = v["data"].as_array().unwrap().iter().find(|a| a["name"] == "pr-reviewer").unwrap();
+        serde_json::from_value(pr["mcp_servers"].clone()).unwrap()
     }
 
     /// pr-reviewer as the fixture has it: github through a variable,
     /// context7 open, mem0 OAuth. Credentials go by reference.
     #[tokio::test]
     async fn servers_resolve_or_are_left_out() {
-        let pr = named("pr-reviewer");
+        let pr = pr_reviewer();
         // The fixture's variables are all ${X}.
         let found = Found { values: vars(&[("X", "fake-secret-value-123")]), from: vars(&[("X", "gh auth token")]) };
         let out = servers(&pr, &found, false).await;
@@ -1457,9 +1089,9 @@ mod tests {
         // A Fountain connection, Arugula's own name, a variable on a
         // command line, a literal ${…}, a URL with a variable, and a type
         // that's wrong (said from the recipe, not its values).
-        let mut odd = Agent { name: "odd".into(), ..Agent::default() };
+        let mut odd: BTreeMap<String, McpServer> = BTreeMap::new();
         let mut add = |n: &str, v: Value| {
-            odd.mcp_servers.insert(n.into(), serde_json::from_value(v).unwrap());
+            odd.insert(n.into(), serde_json::from_value(v).unwrap());
         };
         add("gmail", json!({ "connection": "c" }));
         add("arugula", json!({ "command": "x" }));
@@ -1558,93 +1190,20 @@ mod tests {
         assert_eq!(scrub("{}", &secrets), None);
     }
 
-    /// A git repository of skills under `base/owner/repo`.
-    fn skills_repo(base: &Path, source: &str, skills: &[&str]) {
-        let dir = base.join(source);
-        std::fs::create_dir_all(&dir).unwrap();
-        for s in skills {
-            let d = dir.join("skills").join(s);
-            std::fs::create_dir_all(&d).unwrap();
-            std::fs::write(d.join("SKILL.md"), format!("---\nname: {s}\ndescription: {s}\n---\n")).unwrap();
-            std::fs::write(d.join("extra.txt"), "x").unwrap();
-        }
-        std::fs::write(dir.join("README.md"), "not a skill").unwrap();
-        let git = |args: &[&str]| {
-            let ok = std::process::Command::new("git")
-                .args(["-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false"])
-                .args(args)
-                .current_dir(&dir)
-                .output()
-                .unwrap()
-                .status
-                .success();
-            assert!(ok, "git {args:?}");
-        };
-        git(&["init", "-q", "-b", "main"]);
-        git(&["add", "-A"]);
-        git(&["commit", "-q", "-m", "skills"]);
-    }
-
-    #[tokio::test]
-    async fn bundles_from_fixtures() {
-        let tmp = std::env::temp_dir().join(format!("arugula-wear-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&tmp);
-        let git = tmp.join("git");
-        skills_repo(&git, "acme/skills", &["code-review", "iterate-pr", "other"]);
-        skills_repo(&git, "acme/more", &["alpha", "beta"]);
-        let env = vec![("ARUGULA_FOUNTAIN_GIT_BASE".to_owned(), format!("file://{}/", git.display()))];
-        let mut a = named("games");
-        a.skills.extend([
-            serde_json::from_value(json!({ "source": "acme/skills", "name": "code-review" })).unwrap(),
-            serde_json::from_value(json!({ "source": "acme/more" })).unwrap(),
-            serde_json::from_value(json!({ "source": "acme/skills", "name": "not-there" })).unwrap(),
-            serde_json::from_value(json!({ "source": "acme/nope" })).unwrap(),
-        ]);
-        let cache = tmp.join("cache/arugula/fountain");
-        let b = bundle(&a, &cache, &env).await.unwrap();
-        assert_eq!(b.contents.skills, ["love2d", "pixijs", "screenshots-in-prs", "code-review", "alpha", "beta"]);
-        assert_eq!(b.contents.skills_missing.len(), 2, "{:?}", b.contents.skills_missing);
-        assert!(b.contents.skills_missing[0].starts_with("acme/skills:not-there (not in the repository)"));
-        assert!(b.contents.skills_missing[1].starts_with("acme/nope:* (couldn't clone"));
-        let skills = b.plugin.join("skills");
-        assert!(skills.join("love2d/SKILL.md").is_file() && skills.join("code-review/extra.txt").is_file());
-        assert!(!skills.join("iterate-pr").exists() && !skills.join("README.md").exists());
-        let manifest: Value =
-            serde_json::from_slice(&std::fs::read(b.plugin.join(".claude-plugin/plugin.json")).unwrap()).unwrap();
-        assert_eq!(manifest["name"], "fountain-games");
-        assert!(b.system.starts_with("You are running as the Fountain agent \"games\", but locally"));
-        let versions = cache.join(&a.id).join("2026-09-02T09-40-03Z");
-        assert_eq!(b.dir.parent(), Some(versions.as_path()), "{}", b.dir.display());
-        assert_eq!(
-            std::fs::read_to_string(versions.join("current")).unwrap(),
-            b.dir.file_name().unwrap().to_string_lossy()
-        );
-        assert!(cache.join("github/acme__skills/.git").is_dir(), "one shared clone");
-        // Fresh: taken as it is, skills that didn't come too (for a day).
-        std::fs::write(skills.join("love2d/marker"), "").unwrap();
-        let again = bundle(&a, &cache, &env).await.unwrap();
-        assert_eq!(again.dir, b.dir);
-        assert!(again.plugin.join("skills/love2d/marker").is_file());
-        // A day old: a new version, and the old one stays for blocks on it.
-        let mut c = again.contents.clone();
-        c.built_ms -= FRESH.as_millis() as u64 + 1;
-        std::fs::write(again.dir.join("bundle.json"), serde_json::to_vec(&c).unwrap()).unwrap();
-        std::thread::sleep(std::time::Duration::from_millis(2));
-        let rebuilt = bundle(&a, &cache, &env).await.unwrap();
-        assert_ne!(rebuilt.dir, b.dir);
-        assert!(!rebuilt.plugin.join("skills/love2d/marker").exists());
-        assert!(b.plugin.join("skills/love2d/marker").is_file(), "the old version is kept");
-        assert_eq!(
-            std::fs::read_to_string(versions.join("current")).unwrap(),
-            rebuilt.dir.file_name().unwrap().to_string_lossy()
-        );
-        // A ref is never an option.
-        let mut opt = named("games");
-        opt.skills =
-            vec![serde_json::from_value(json!({ "source": "acme/skills", "ref": "--upload-pack=x" })).unwrap()];
-        opt.id = "opt".into();
-        let o = bundle(&opt, &cache, &env).await.unwrap();
-        assert!(o.contents.skills_missing[0].contains("isn't a git ref"), "{:?}", o.contents.skills_missing);
-        let _ = std::fs::remove_dir_all(&tmp);
+    #[test]
+    fn literal_values_are_redacted_when_shown() {
+        let s: McpServer = serde_json::from_value(serde_json::json!({
+            "type": "http", "url": "https://mcp-1.example.com/mcp",
+            "headers": { "Authorization": "Bearer ${X}", "X-Api-Key": "typed-in-literally", "X-Mixed": "k=${Y};v=1" },
+            "env": { "TOKEN": "also-literal", "REF": "${Z}" }
+        }))
+        .unwrap();
+        let r = s.redacted();
+        assert_eq!(r.headers["Authorization"], "Bearer ${X}");
+        assert_eq!(r.headers["X-Api-Key"], REDACTED);
+        assert_eq!(r.headers["X-Mixed"], "k=${Y};v=1");
+        assert_eq!((r.env["TOKEN"].as_str(), r.env["REF"].as_str()), (REDACTED, "${Z}"));
+        assert_eq!(s.headers["X-Api-Key"], "typed-in-literally", "kept as read, to wear");
+        assert!(!is_reference("${unclosed") && is_reference("a${B}c"));
     }
 }

@@ -312,7 +312,7 @@ impl AgentsBlock {
     fn list_recipes(&self) {
         let Some(dir) = self.config.lock().unwrap().dir.clone() else { return };
         let home = crate::home();
-        let path = super::super::fountain::wear::expand(&dir, &home);
+        let path = super::super::wearing::expand(&dir, &home);
         let offered = super::offers(&self.ctx.state_dir);
         let list: Vec<Value> = super::all(&path, &home)
             .into_iter()
@@ -365,7 +365,7 @@ impl AgentsBlock {
         let offer = super::offers(&self.ctx.state_dir).into_iter().find(|o| o.agent == agent);
         let given = args["cwd"].as_str().map(str::trim).filter(|c| !c.is_empty());
         let cwd: PathBuf = match (given, &offer) {
-            (Some(c), _) => super::super::fountain::wear::expand(c, &crate::home()),
+            (Some(c), _) => super::super::wearing::expand(c, &crate::home()),
             (None, Some(o)) => PathBuf::from(&o.dir),
             (None, None) => return Err(format!("{agent} isn't offered here: say where to run it (cwd)")),
         };

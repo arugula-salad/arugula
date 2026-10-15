@@ -7,12 +7,12 @@
 // Opened from a pane's menu ("Fountain agents…"), the block lists every
 // agent; the agent-specs chip leaves the curated ones, a search finds an
 // agent by its skill, and *Run on Fountain* opens an agent block beside the
-// catalog that answers a prompt.
+// catalog that answers a prompt. The cards are read-only: no *Run here*
+// (M44, retired 2026-10-15), and *Spec* without an agent-specs checkout
+// shows the agent as Fountain returns it, in the block.
 
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server, type ServerResponse } from "node:http";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { menu, paneEl, panes, reset } from "./helpers";
 import { listen } from "./ports";
@@ -38,6 +38,11 @@ test.beforeAll(async () => {
     seen.push({ path: u.pathname, ua: String(req.headers["user-agent"] ?? "") });
     if (req.headers.authorization !== `Bearer ${KEY}`) return json(res, 401, { error: { message: "invalid api key" } });
     if (u.pathname === "/api/agents") return json(res, 200, agents);
+    const one = u.pathname.match(/^\/api\/agents\/([^/]+)$/);
+    if (one) {
+      const a = agents.data.find((x: { id: string }) => x.id === decodeURIComponent(one[1]));
+      return a ? json(res, 200, { data: a }) : json(res, 404, { error: "not found" });
+    }
     if (u.pathname === "/api/environments") return json(res, 200, envs);
     json(res, 404, { error: "not here" });
   });
@@ -82,10 +87,10 @@ test("the catalog filters, and Run on Fountain opens an agent block beside it", 
   const blockState = (b: number) =>
     page.evaluate((b) => window.__arugula.client.request("GET", `/api/blocks/${b}`).then((r) => r.json<{ state: Record<string, any> }>()), b).then((v) => v.state);
   await expect.poll(() => blockState(block).then((s) => s.filter.query)).toBe("frontend-design");
-  // Run here (M44) and Spec are offered.
+  // Spec is offered; Run here (M44) is gone.
   const designer = el.locator('.fountain-card[data-agent="designer"]');
-  await expect(designer.locator("[data-run-here]")).toBeEnabled();
   await expect(designer.locator("[data-spec]")).toBeEnabled();
+  await expect(el.locator("[data-run-here]")).toHaveCount(0);
 
   // Clear, then find games and run it on Fountain.
   await el.locator("[data-fountain-clear]").click();
@@ -104,32 +109,21 @@ test("the catalog filters, and Run on Fountain opens an agent block beside it", 
   await expect(a.locator(".agent-msg").last()).toHaveText("Hello! I am fake.");
 });
 
-// M44: *Run here* asks for a folder and opens a Claude Code block beside
-// the catalog wearing the agent (here Claude Code's adapter is the fake ACP
-// agent): its header says what it wears. games has inline skills only and
-// no MCP servers, so nothing here reaches Infisical, gh or GitHub.
-test("Run here wears the agent in a Claude Code block", async ({ page }) => {
+// *Spec* with no agent-specs checkout: the agent as Fountain returns it
+// (GET /api/agents/{id}), shown in the block, not a link to a console page.
+test("Spec shows the agent in the block", async ({ page }) => {
   const block = await openCatalog(page);
   const el = page.locator(`[data-fountain-block="${block}"]`);
   await el.locator(".fountain-search").fill("games");
   const games = el.locator('.fountain-card[data-agent="games"]');
   await expect(games).toBeVisible();
-  await games.locator("[data-run-here]").click();
-  const dir = mkdtempSync(join(tmpdir(), "arugula-e2e-wear-"));
-  try {
-    await page.locator(".prompt input").fill(dir);
-    await page.locator(".prompt input").press("Enter");
-    await expect.poll(async () => (await panes(page)).length).toBe(3);
-    const agent = await page.evaluate(() => window.__arugula.client.state!.panes.find((p) => p.type === "agent")!.id);
-    const a = paneEl(page, agent);
-    const worn = a.locator('[data-worn="games"]');
-    await expect(worn).toContainText("as games", { timeout: 15_000 });
-    for (const s of ["love2d", "pixijs", "screenshots-in-prs"]) await expect(worn.locator(`[data-worn-skill="${s}"]`)).toBeVisible();
-    await expect(a.locator(".agent-name")).toHaveText("Claude Code as games");
-    await a.locator(".agent-composer textarea").fill("hello");
-    await a.locator(".agent-composer textarea").press("Enter");
-    await expect(a.locator(".agent-msg").last()).toHaveText("Hello! I am fake.");
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
+  await games.locator("[data-spec]").click();
+  const spec = el.locator('[data-fountain-spec="games"]');
+  await expect(spec).toBeVisible();
+  await expect(spec.locator(".fountain-spec-json")).toContainText('"name": "games"');
+  await expect(spec.locator(".fountain-spec-json")).toContainText("love2d");
+  expect(seen.some((s) => s.path.startsWith("/api/agents/"))).toBe(true);
+  expect((await panes(page)).length).toBe(2);
+  await spec.locator("[data-fountain-spec-close]").click();
+  await expect(spec).toHaveCount(0);
 });

@@ -4,12 +4,13 @@
 // comes from), in a grid (a list on the phone), with the filter bar on top:
 // a search box and chips for source, runtime and sandbox provider. The
 // filters are the block's (kept in its config), so every client and the
-// phone see the same list. Each card: *Run on Fountain* (an agent block
-// beside it), *Run here* (M44, the owner's: a Claude Code on this host
-// wearing the agent, in a folder asked for; shown for claude agents, greyed
-// with the reason for the ones written for Fountain only) and *Spec* (the
-// agent-specs file, else Fountain's page). Everything drawn
-// comes from the daemon's state; viewers get the list without the buttons.
+// phone see the same list. The cards are read-only (chant's agents are
+// edited in agent-specs). Each card: *Run on Fountain* (an agent block
+// beside it) and *Spec* (the agent-specs file, else the agent as Fountain
+// returns it, shown here: the console has no agent pages any more).
+// (M44's *Run here*, a Claude Code here wearing the agent, was retired on
+// 2026-10-15: recipes run here.) Everything drawn comes from the daemon's
+// state; viewers get the list without the buttons.
 
 import { render } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
@@ -22,14 +23,16 @@ type Source = "agent-specs" | "hand" | "app";
 interface Card {
   id: string; name: string; description: string; runtime: string; model: string; skills: string[]; mcp: string[];
   environment: string | null; provider: string; mode: string | null; conversations: number; updated_at: string | null;
-  source: Source | null; app: string | null; local: boolean; local_why: string | null;
+  source: Source | null; app: string | null;
 }
 interface Filter { query?: string; sources?: Source[]; runtimes?: string[]; providers?: string[] }
 export interface FountainState {
   profile: string | null; profiles: string[]; base_url: string | null; key_from: "env" | "file" | null;
   loading: boolean; error: string | null; agents: Card[]; total: number; unreadable?: number; unreadable_note?: string | null; filter: Filter;
   counts: { source: Record<string, number>; runtime: Record<string, number>; provider: Record<string, number> };
-  specs: string | null; specs_why: string | null; here?: string | null; updated_ms: number; polls: number; watching?: boolean; said: string | null;
+  specs: string | null; specs_why: string | null; updated_ms: number; polls: number; watching?: boolean; said: string | null;
+  /** *Spec* for an agent agent-specs doesn't declare: the agent as Fountain returns it (literal values redacted). */
+  spec?: { agent: string; json: unknown; note: string | null } | null;
 }
 
 const SOURCES: { key: Source; label: string }[] = [
@@ -136,10 +139,6 @@ function FountainBlock({ client, id, s }: { client: Client; id: PaneId; s: Fount
     const now = (f[key] ?? []) as string[];
     filter({ [arg]: now.includes(k) ? now.filter((x) => x !== k) : [...now, k] });
   };
-  const runHere = async (name: string) => {
-    const cwd = await askText(`Run ${name} here, in`, s.here ?? "~", "a folder on this machine (a worktree)");
-    if (cwd?.trim()) await call("run_here", { agent: name, cwd: cwd.trim() }, `couldn't run ${name} here`);
-  };
   const pickSpecs = async () => {
     const dir = await askText("Your agent-specs checkout", s.specs ?? "", "~/dev/…/agent-specs");
     if (dir?.trim()) await call("specs", { dir: dir.trim() }, "couldn't use that checkout");
@@ -216,6 +215,21 @@ function FountainBlock({ client, id, s }: { client: Client; id: PaneId; s: Fount
           {s.specs_why} <button class="fountain-link" onClick={() => void pickSpecs()}>Pick it…</button>
         </p>
       )}
+      {s.spec && (
+        <div class="browser-card fountain-spec" data-fountain-spec={s.spec.agent}>
+          <div class="fountain-card-head">
+            <b>{s.spec.agent}</b>
+            <span class="dim">as Fountain has it</span>
+            {mayAct && (
+              <button class="fountain-link" data-fountain-spec-close onClick={() => void call("unspec", {}, "couldn't close it")}>
+                Close
+              </button>
+            )}
+          </div>
+          {s.spec.note && <p class="dim">{s.spec.note}</p>}
+          <pre class="fountain-spec-json">{JSON.stringify(s.spec.json, null, 2)}</pre>
+        </div>
+      )}
       <div class="review-body">
         {s.agents.length === 0 && !s.error && <p class="dim fountain-empty">{filtered ? "Nothing matches" : "No agents on this account"}</p>}
         <ul class="fountain-cards">
@@ -253,16 +267,6 @@ function FountainBlock({ client, id, s }: { client: Client; id: PaneId; s: Fount
                   <button class="pri" data-run={c.name} disabled={busy !== null} onClick={() => void call("run", { agent: c.name }, `couldn't run ${c.name}`)}>
                     Run on Fountain
                   </button>
-                  {c.runtime === "claude" && (
-                    <button
-                      data-run-here={c.name}
-                      disabled={busy !== null || !c.local || !mayOwn}
-                      title={c.local_why ?? (mayOwn ? "A Claude Code on this machine wearing this agent: its prompt, skills and MCP servers" : "Only the owner runs agents here")}
-                      onClick={() => void runHere(c.name)}
-                    >
-                      Run here
-                    </button>
-                  )}
                   <button data-spec={c.name} disabled={busy !== null} onClick={() => void call("spec", { agent: c.name }, `couldn't open ${c.name}'s spec`)}>
                     Spec
                   </button>

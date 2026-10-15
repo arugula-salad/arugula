@@ -96,6 +96,8 @@ pub mod tea;
 // calls}`, with the mux's handling in `mux/thread_ops.rs` and
 // `mux/call_ops.rs` (twins in `mux/labs_off.rs`).
 #[cfg(feature = "labs")]
+pub mod wearing;
+#[cfg(feature = "labs")]
 pub mod workspace;
 
 /// Where the guest ssh server listens unless `--guest-ssh` says otherwise.
@@ -220,8 +222,9 @@ pub fn block_flag(kind: BlockType, config: &serde_json::Value) -> Option<&'stati
         BlockType::Agents => Some(flags::AGENTS),
         BlockType::App => Some(flags::STUDIO),
         BlockType::Workspace => Some(flags::WORKSPACES),
-        // A Fountain agent, or one wearing a Fountain agent (M44).
-        BlockType::Agent if config["agent"] == "fountain" || !config["as_fountain"].is_null() => Some(flags::FOUNTAIN),
+        // A Fountain agent. (Wearing one here, M44's `as_fountain`, was
+        // retired: the agent block refuses it whatever the flags.)
+        BlockType::Agent if config["agent"] == "fountain" => Some(flags::FOUNTAIN),
         _ => None,
     }
 }
@@ -750,30 +753,16 @@ pub async fn file_why(
     Err(not_built("Which decision and run made a hunk"))
 }
 
-/// Whether the Fountain agent `name` can be worn on this host (M44), or why
-/// not.
+/// What a worn recipe adds to an agent block, and the secrets to keep out
+/// of every log ([`wearing`]).
 #[cfg(feature = "labs")]
-pub async fn check_wearable(shell_env: &ShellEnv, name: &str) -> Result<(), String> {
-    let runner = fountain::local_runner(shell_env).await;
-    fountain::wear::find(&runner, None, name).await.map(|_| ())
-}
+pub use wearing::{Worn, scrub};
 
 #[cfg(not(feature = "labs"))]
-pub async fn check_wearable(_shell_env: &ShellEnv, _name: &str) -> Result<(), String> {
-    Err(not_built("Fountain"))
-}
-
-/// A Fountain agent worn on this host (M44): put on, what it adds to an
-/// agent block, and the secrets to keep out of every log.
-#[cfg(feature = "labs")]
-pub use fountain::wear::{Worn, scrub, wear};
-
-#[cfg(not(feature = "labs"))]
-pub use absent::{Worn, scrub, wear};
+pub use absent::{Worn, scrub};
 
 /// A recipe (a Claude Code subagent file, M76) worn on this host by a block
-/// working in `cwd`, as [`wear`] wears a Fountain agent. Needs the `agents`
-/// flag.
+/// working in `cwd`. Needs the `agents` flag.
 #[cfg(feature = "labs")]
 pub async fn wear_recipe(
     runner: &crate::review::Runner,
@@ -805,7 +794,7 @@ mod absent {
 
     use serde_json::Value;
 
-    use crate::{review::Runner, server::App};
+    use crate::server::App;
 
     /// Uninhabited: no build without Labs makes a daemon resident in a
     /// sandbox, so there are never binaries to copy in.
@@ -868,16 +857,6 @@ mod absent {
         pub fn permission_mode(&self) -> Option<&str> {
             match *self {}
         }
-    }
-
-    pub async fn wear(
-        _runner: &Runner,
-        _profile: Option<&str>,
-        _specs: Option<&str>,
-        _vault: Option<&str>,
-        _which: &str,
-    ) -> Result<Worn, String> {
-        Err(super::not_built("Fountain"))
     }
 
     pub fn scrub(_line: &str, _secrets: &[String]) -> Option<String> {

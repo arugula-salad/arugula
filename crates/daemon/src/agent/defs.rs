@@ -97,10 +97,10 @@ pub struct Def {
     /// A model to switch to after the session starts (`haiku`, …).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
-    /// M44: Claude Code wearing this Fountain agent (name or id): its
-    /// system prompt, skills and MCP servers, on this host. Read with
-    /// `profile`'s login. Only the name is kept: the bundle is in the
-    /// cache, and its secrets in memory.
+    /// M44's Fountain agent worn here, retired on 2026-10-15 (#942): only
+    /// read, and kept, so a block saved wearing one comes back saying why it
+    /// won't start ([`AS_FOUNTAIN_GONE`]) and never starts as a plain
+    /// Claude Code. A new block with it is refused.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub as_fountain: Option<String>,
     /// M76: Claude Code as a recipe, a Claude Code subagent file by its name
@@ -108,10 +108,6 @@ pub struct Def {
     /// again each time it's put on: the file is the recipe.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recipe: Option<String>,
-    /// M44: the agent-specs checkout whose Infisical mapping a worn agent's
-    /// `${VAR}`s go through (`~/…` allowed; the default one if it's there).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub specs: Option<String>,
     /// #163: the permission mode to put the session in once it's open
     /// (`acceptEdits`, `auto`, …), by the agent's `session/set_mode`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -163,9 +159,13 @@ fn installed(home: &Path, name: &str) -> String {
     if p.exists() { p.display().to_string() } else { name.to_owned() }
 }
 
+/// Why a block can't wear a Fountain agent here (M44's `as_fountain`).
+pub const AS_FOUNTAIN_GONE: &str = "wearing a Fountain agent here (as_fountain) was retired on 2026-10-15: \
+run it on Fountain (agent fountain), or run a recipe (.claude/agents/NAME.md) here";
+
 impl Def {
-    /// Whether it wears something before it starts: a Fountain agent (M44)
-    /// or a recipe (M76).
+    /// Whether it wears something before it starts: a recipe (M76), or a
+    /// Fountain agent (M44, retired: putting it on fails, saying so).
     pub fn wears(&self) -> bool {
         self.as_fountain.is_some() || self.recipe.is_some()
     }
@@ -186,23 +186,13 @@ impl Def {
         match self.agent {
             // Without Labs there is no Fountain to run or to wear.
             Kind::Fountain if !crate::labs::BUILT => Err(crate::labs::not_built("Fountain")),
-            _ if !crate::labs::BUILT && self.as_fountain.is_some() => Err(crate::labs::not_built("Fountain")),
             Kind::Fountain if self.fountain_agent.as_deref().is_none_or(str::is_empty) => {
                 Err("a Fountain agent block needs the agent's name or id".into())
             }
             Kind::Acp if self.command.is_empty() => Err("an ACP agent block needs a command".into()),
-            _ if self.as_fountain.is_some() && self.agent != Kind::Claude => {
-                Err("only Claude Code wears a Fountain agent (agent: claude)".into())
-            }
-            _ if self.as_fountain.as_deref().is_some_and(|a| a.trim().is_empty()) => {
-                Err("as_fountain needs the Fountain agent's name or id".into())
-            }
             _ if !crate::labs::BUILT && self.recipe.is_some() => Err(crate::labs::not_built("Agent recipes")),
             _ if self.recipe.is_some() && self.agent != Kind::Claude => {
                 Err("only Claude Code runs a recipe (agent: claude)".into())
-            }
-            _ if self.recipe.is_some() && self.as_fountain.is_some() => {
-                Err("a recipe or a Fountain agent to wear, not both".into())
             }
             _ if self.recipe.as_deref().is_some_and(|a| a.trim().is_empty()) => {
                 Err("recipe needs the agent's name (its .claude/agents file)".into())
@@ -290,8 +280,9 @@ pub fn user_settings_meta() -> Value {
     } } })
 }
 
-/// M44: a worn Fountain agent on Claude's `session/new` `_meta`: its
-/// system prompt appended, its skills as a local plugin, its model. The
+/// A worn recipe (M76; M44 wore Fountain agents this way) on Claude's
+/// `session/new` `_meta`: its system prompt appended, its skills as a local
+/// plugin, its model. The
 /// rest stays, `settingSources: []` above all (without it the user's own
 /// hooks fire inside the block, S24).
 #[cfg(feature = "labs")]
@@ -402,7 +393,7 @@ mod tests {
     #[test]
     fn a_worn_agent_on_the_meta() {
         let home = Path::new("/nonexistent-home");
-        let def = Def { as_fountain: Some("games".into()), ..Default::default() };
+        let def = Def { recipe: Some("games".into()), ..Default::default() };
         assert_eq!(def.label(), "Claude Code as games");
         let mut meta = def.launch(home, false).unwrap().meta;
         wear_meta(&mut meta, "be games", Path::new("/c/plugin"), Some("claude-opus-5"));
@@ -422,8 +413,8 @@ mod tests {
         wear_meta(&mut bare, "x", Path::new("/p"), None);
         assert_eq!(bare["claudeCode"]["options"]["settingSources"], json!([]));
         assert!(bare["claudeCode"]["options"].get("model").is_none());
-        assert!(Def { agent: Kind::Codex, as_fountain: Some("x".into()), ..Default::default() }.check().is_err());
-        assert!(Def { as_fountain: Some(" ".into()), ..Default::default() }.check().is_err());
+        assert!(Def { agent: Kind::Codex, recipe: Some("x".into()), ..Default::default() }.check().is_err());
+        assert!(Def { recipe: Some(" ".into()), ..Default::default() }.check().is_err());
     }
 
     #[test]

@@ -31,7 +31,7 @@ fn added(state_dir: &Path) -> Vec<String> {
 
 /// Add a project to the page's list (its git top), or drop it.
 pub fn set_project(state_dir: &Path, home: &Path, dir: &str, keep: bool) -> Result<Vec<String>, String> {
-    let d = super::super::fountain::wear::expand(dir, home);
+    let d = super::super::wearing::expand(dir, home);
     let d = d.canonicalize().map_err(|e| format!("{dir}: {e}"))?;
     let d = d.display().to_string();
     let mut list = added(state_dir);
@@ -191,7 +191,7 @@ pub fn save(home: &Path, f: &Form) -> Result<PathBuf, String> {
         }
         None => {
             let dir = match f.dir.as_deref().filter(|d| !d.is_empty()) {
-                Some(d) => super::super::fountain::wear::expand(d, home).join(".claude/agents"),
+                Some(d) => super::super::wearing::expand(d, home).join(".claude/agents"),
                 None => home.join(".claude/agents"),
             };
             let p = dir.join(format!("{}.md", f.name.trim()));

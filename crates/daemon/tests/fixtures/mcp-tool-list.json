@@ -4664,14 +4664,6 @@
             },
             "type": "array"
           },
-          "as_fountain": {
-            "default": null,
-            "description": "For claude: wear this Fountain agent (name or id), on this host: its\nsystem prompt, skills and MCP servers (list kind fountain_agents\nlists them).",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "beside": {
             "anyOf": [
               {
@@ -10374,14 +10366,6 @@
               "type": "string"
             },
             "type": "array"
-          },
-          "as_fountain": {
-            "default": null,
-            "description": "For claude: wear this Fountain agent (name or id), on this host: its\nsystem prompt, skills and MCP servers (list kind fountain_agents\nlists them).",
-            "type": [
-              "string",
-              "null"
-            ]
           },
           "beside": {
             "anyOf": [

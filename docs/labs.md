@@ -40,7 +40,7 @@ one isn't made.
 | `chat` | `/api/threads/…` (get, post, read), `/api/convs…`, `read_thread`/`post_thread` by name, an invite from a thread |
 | `huddles` | joining (or starting) a huddle; leaving, muting and signalling one already on still work |
 | `vms` | `/api/machines`, `/api/sandboxes`, a new VM pane or tab, a borrowed sandbox (`run --sandbox`), *Share machine with tab* |
-| `fountain` | `/api/fountain/agents`, Fountain blocks, Fountain agents and agents wearing one, `list` kinds `fountain_agents`/`fountain_agent` |
+| `fountain` | `/api/fountain/agents`, Fountain blocks, Fountain agents, `list` kinds `fountain_agents`/`fountain_agent` |
 | `studio` | `/api/studio…`, app blocks, `show` kind `app` |
 | `workspaces` | chant workspace blocks |
 | `guest-ssh` | `/api/guests` (list, invite, revoke) |
@@ -87,7 +87,7 @@ rest. A starting daemon moves the old file into `flags.json` and removes it.
 
 - **CLI (`arugula --help`):** `fountain`, `studio`, `app`, `workspace`,
   `agents`, `guests`, `machines`, `sandboxes`;
-  `agent --fountain/--as-fountain/--vault/--vm/--as`,
+  `agent --fountain/--vault/--vm/--as`,
   `run --vm/--vm-tab/--image/--sandbox`, and
   `share --guest/--rw/--reusable/--relay/--addr/--name`
   (`LABS_COMMANDS`, `LABS_OPTIONS` in `crates/cli/src/main.rs`).
@@ -697,11 +697,12 @@ people's agents. With `agents` on (M76, #398):
   are named ones (from the project's local config in `~/.claude.json`,
   its `.mcp.json`, then the user's `~/.claude.json`) and ones written into
   the recipe. Their `${VAR}`s come from your shell environment, and
-  credentials go by reference, as M44's do for a worn Fountain agent.
+  credentials go by reference, never on a command line.
   Nothing else comes along: the session runs with `--strict-mcp-config`,
   so the account's claude.ai connectors are left out too. The block's
-  header shows what came along and what didn't, and why. (Fountain's
-  `--as` is `--as-fountain` now.)
+  header shows what came along and what didn't, and why. (Wearing a
+  Fountain agent here, `--as-fountain`, was retired on 2026-10-15: a block
+  saved wearing one comes back saying so, and doesn't start.)
 - **Offering one** is the machine owner's choice: `arugula agents offer
   NAME [--dir PROJECT]` (`--stop` to stop), kept in
   `<state>/agent-offers.json`. Nothing is offered by default. `arugula

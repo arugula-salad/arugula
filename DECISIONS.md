@@ -549,7 +549,7 @@ because chant has no document that does them (#618):
   `constrains` (chant's statement that it covers the member).
 - A lease's pane: the run whose `lease` is the lease's token, and that run's
   pane. A lease is never linked by its holder's name.
-Where: `crates/daemon/src/labs/workspace/model.rs` (`READER`, `FINGERPRINT`, `INTENT`, `member_why`) and `why.rs`, `apps/hud.rs`, `rules.rs`, `cli/src/ask.rs`, `fountain/wear.rs`, `forge/issue.rs`.
+Where: `crates/daemon/src/labs/workspace/model.rs` (`READER`, `FINGERPRINT`, `INTENT`, `member_why`) and `why.rs`, `apps/hud.rs`, `rules.rs`, `cli/src/ask.rs`, `wearing.rs`, `forge/issue.rs`.
 From: [M34](docs/plan-archive.md#m34-chant-workspace-blocks-73), #303, #305, #617, #618, #619.
 
 ### A workspace block's graph is behold, run by the block
@@ -579,12 +579,14 @@ host only for now.
 Where: `crates/daemon/src/labs/workspace/graph.rs`, `web/src/blocks/workspace-graph.tsx`.
 From: #620, INTENTIUS/behold#474.
 
-### A recipe is a Claude Code subagent file, worn as M44 wears a Fountain agent
+### A recipe is a Claude Code subagent file, worn on this host
 The agents a person offers to other people's agents (#403) are
 `.claude/agents/NAME.md` files, read as they are and never written, so the
 same file is a subagent in the person's own Claude Code. Claude Code's ACP
 adapter drops the SDK's `agent` option, so a block can't select one: it wears
-it through M44's `Worn` instead. The prompt is appended after a line naming
+it instead, through `Worn` (M44's, from when a Fountain agent could be worn
+here too; that was retired on 2026-10-15, and the shared code moved to
+`labs/wearing.rs`). The prompt is appended after a line naming
 the agent, and model, `tools`, `disallowedTools` and `permissionMode` are
 applied (a block's own `permission_mode` wins). Skills are preloaded into the
 prompt, as Claude Code does for a subagent: a recipe's `tools` can leave out
@@ -595,10 +597,40 @@ through Fountain's by-reference server code. The session gets
 carry the account's claude.ai connectors (Gmail and the like), and a real
 run showed those come along otherwise. Offering is per machine and the
 owner's (`<state>/agent-offers.json`). A card is A2A 1.0 with an
-`arugula://` JSON-RPC interface and a required channel extension. Fountain's
-`agent --as` became `--as-fountain`, so `--as` names a recipe.
-Where: `crates/daemon/src/labs/agents/`, `crates/daemon/src/labs/fountain/wear.rs` (`Worn`), `crates/cli/src/cmd/agents.rs`.
+`arugula://` JSON-RPC interface and a required channel extension. `agent
+--as` names a recipe (Fountain's `--as-fountain`, which it once was, went
+with M44).
+Where: `crates/daemon/src/labs/agents/`, `crates/daemon/src/labs/wearing.rs` (`Worn`), `crates/cli/src/cmd/agents.rs`.
 From: [S34](https://github.com/arugula-salad/arugula/issues/397), M76 (#398), #403.
+
+### Fountain is a headless backend, and Arugula is its UI
+Fountain is a conversational API to a computer, with no console of its own
+for agents, environments or vaults (managoat/fountain#2732). Arugula is the
+place a person sees and steers Fountain work (Jake, 2026-10-15, #942), and
+the Conversations app (managoat/demos) stays as a second client. This
+supersedes S34's "no Fountain dependency" (#397) and its q8, "don't build on
+[M43's pieces]": Arugula now builds on Fountain, behind the `fountain` flag
+until recipes run there (#942's F4).
+- **Recipes are the source of truth.** A recipe runs here by being worn
+  (M76), and on Fountain by being pushed as one Fountain agent per recipe
+  (F4). Pulling a Fountain agent down to wear here (M44's `as_fountain`,
+  the catalog's *Run here*, `--as-fountain`, `start_agent {as_fountain}`)
+  was the reverse of that, and is gone. A new block with `as_fountain` is
+  refused with the reason; a saved one comes back with its transcript and
+  says why it won't start, and keeps the key so it never starts as a plain
+  Claude Code.
+- **Chant's agents stay.** The agents agent-specs manages are still edited
+  there and shown read-only: the Fountain block lists the account's agents
+  (with *Run on Fountain* and *Spec*), and MCP's `list` kinds
+  `fountain_agents` and `fountain_agent` read them. *Spec* opens the
+  agent-specs file, else shows the agent as `GET /api/agents/{id}` returns
+  it (literal values redacted) in the block, since the console's agent pages
+  are gone.
+Not done: the native client, sign-in and event stream (F1), the account
+view and attention (F2), a native conversation link (F3), recipes on
+Fountain (F4).
+Where: `crates/daemon/src/labs/fountain/`, `crates/daemon/src/labs/wearing.rs`, `crates/daemon/src/agent/defs.rs` (`AS_FOUNTAIN_GONE`), `web/src/blocks/fountain.tsx`.
+From: #942, superseding [S34](https://github.com/arugula-salad/arugula/issues/397)'s "No Fountain dependency" and q8 ([spike](spikes/s34-agents-a2a/README.md)).
 
 ### A machine reaches another's agents as its account, through the relay
 The team's catalog (M77) is read by the daemon itself, not by a page that
@@ -1069,7 +1101,7 @@ everything about the feature follows the flag (#347):
   thread asks `chat` too.
 - **Block types** a flag owns (Fountain, the agent catalog, app,
   workspace) are wrapped (`labs::Flagged`) so a new one is refused; an agent
-  block that is or wears a Fountain agent checks `fountain`. `POST
+  block that is a Fountain agent checks `fountain`. `POST
   /api/blocks` asks `labs::block_flag` first, so an app block doesn't ask
   the studio before it's refused.
 - **The mux** checks `vms` before it makes or borrows a machine or shares

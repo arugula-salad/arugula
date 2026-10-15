@@ -555,7 +555,7 @@ impl Inner {
     /// agent (it runs in Fountain's sandbox).
     fn servers(&self, ctx: &AgentCtx) -> Vec<Value> {
         let mut list = self.cfg.mcp_servers.clone();
-        // M44: a worn Fountain agent's, values resolved.
+        // A worn recipe's (M76; M44 for Fountain agents), values resolved.
         if let Some(w) = &self.worn {
             let extra: Vec<Value> =
                 w.servers().iter().filter(|s| !list.iter().any(|o| o["name"] == s["name"])).cloned().collect();
@@ -1293,7 +1293,8 @@ impl Inner {
             "allow": self.cfg.allow,
             "permission_mode": self.cfg.def.permission_mode,
             "user_settings": self.cfg.def.user_settings,
-            // M44: what it wears (nothing secret), or that it's putting it on.
+            // What it wears (nothing secret), or that it's putting it on;
+            // `as_fountain` (M44, retired) only on a block saved wearing one.
             "as_fountain": self.cfg.def.as_fountain,
             "worn": self.worn.as_ref().map(|w| w.info()),
             "wearing": self.wearing,
@@ -1307,8 +1308,7 @@ impl Inner {
             "entries_from": from,
             "entries": entries,
         });
-        // M76: the recipe it wears, by name (as `as_fountain` is the
-        // Fountain agent's).
+        // M76: the recipe it wears, by name.
         state["recipe"] = json!(self.cfg.def.recipe);
         // #606: it will carry on by itself (its turn held for background
         // work, or tasks it left running): `wait --idle` waits.
@@ -1342,9 +1342,15 @@ impl Agent {
         // #379: "" is the CLI saying it has none (the default login).
         cfg.def.claude_config_dir = cfg.def.claude_config_dir.take().filter(|d| !d.trim().is_empty());
         cfg.def.check()?;
-        // A Fountain agent, or one wearing a Fountain agent, is the
+        // Wearing a Fountain agent here (M44) was retired: refused for a new
+        // block; a saved one comes back with its transcript and says why it
+        // won't start (`wear`).
+        if !ctx.restoring && cfg.def.as_fountain.is_some() {
+            return Err(defs::AS_FOUNTAIN_GONE.into());
+        }
+        // A Fountain agent is the
         // `fountain` flag's (#347). One saved while it was on comes back.
-        if !ctx.restoring && (cfg.def.agent == Kind::Fountain || cfg.def.as_fountain.is_some()) {
+        if !ctx.restoring && cfg.def.agent == Kind::Fountain {
             crate::labs::flag(&ctx.state_dir, arugula_proto::flags::FOUNTAIN)?;
         }
         let vm = ctx.sprite.is_some();
@@ -1357,9 +1363,6 @@ impl Agent {
         }
         if vm && cfg.def.agent == Kind::Fountain {
             return Err("Fountain agents run in Fountain's sandboxes, not in a VM here".into());
-        }
-        if vm && cfg.def.as_fountain.is_some() {
-            return Err("a worn Fountain agent runs on this host (with your secrets), not in a VM".into());
         }
         if vm && cfg.def.recipe.is_some() {
             return Err("a recipe runs on this host (with your skills and servers), not in a VM".into());
@@ -1567,7 +1570,7 @@ impl Agent {
         if let Some(old) = inner.link.take() {
             old.stop();
         }
-        // M44: put the Fountain agent on first (its bundle, its servers'
+        // Put the recipe on first (its bundle, its servers'
         // secrets), then start.
         if inner.cfg.def.wears() && inner.worn.is_none() {
             self.wear(inner, false);
@@ -1724,8 +1727,8 @@ impl Agent {
         });
     }
 
-    /// Put on the Fountain agent (M44) or the recipe (M76) it wears, then
-    /// start it; or say why it can't be.
+    /// Put on the recipe (M76) it wears, then start it; or say why it can't
+    /// be (a Fountain agent, M44, no longer can).
     fn wear(&self, inner: &mut Inner, take_over: bool) {
         if inner.wearing {
             return;
@@ -1739,13 +1742,11 @@ impl Agent {
         self.ctx.rt.spawn(async move {
             let which = def.as_fountain.clone().or_else(|| def.recipe.clone()).unwrap_or_default();
             let worn = match Runner::user(&agent.ctx).await {
-                Ok(runner) if def.recipe.is_some() => {
+                // Saved wearing a Fountain agent (M44, retired).
+                _ if def.as_fountain.is_some() => Err(defs::AS_FOUNTAIN_GONE.to_owned()),
+                Ok(runner) => {
                     let cwd = cwd.map(std::path::PathBuf::from).unwrap_or_else(|| agent.ctx.home.clone());
                     crate::labs::wear_recipe(&runner, &agent.ctx.state_dir, &cwd, &which).await
-                }
-                Ok(runner) => {
-                    let (profile, specs, vault) = (def.profile.as_deref(), def.specs.as_deref(), def.vault.as_deref());
-                    crate::labs::wear(&runner, profile, specs, vault, &which).await
                 }
                 Err(e) => Err(e),
             };
@@ -2314,7 +2315,7 @@ fn act(ctx: &AgentCtx, g: &mut Inner, f: Effect) {
 }
 
 /// A frame as the log keeps it: without Arugula's MCP token (M16), and
-/// (M44) without a worn Fountain agent's secrets: its servers' headers and
+/// (M44) without a worn recipe's secrets: its servers' headers and
 /// env, and any of `secrets` anywhere else.
 /// A prompt as the log keeps it: an image we kept (M71) by its name in the
 /// block's folder, not its data.
@@ -2356,7 +2357,7 @@ fn redacted<'a>(frame: &'a Value, secrets: &[String]) -> std::borrow::Cow<'a, Va
     Cow::Owned(f)
 }
 
-/// A worn Fountain agent's `_meta` (M44): Claude's, dressed as the agent.
+/// A worn recipe's `_meta` (M76, as M44's): Claude's, dressed as the agent.
 fn worn_meta(ctx: &AgentCtx, g: &Inner) -> Option<Value> {
     let w = g.worn.as_ref()?;
     let mut meta = g.cfg.def.launch(&ctx.home, ctx.sprite.is_some()).map(|l| l.meta).unwrap_or_default();

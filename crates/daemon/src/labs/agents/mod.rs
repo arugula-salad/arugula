@@ -250,7 +250,7 @@ pub fn set_offer(state_dir: &Path, home: &Path, agent: &str, dir: Option<&str>) 
     list.retain(|o| o.agent != agent);
     match dir {
         Some(dir) => {
-            let d = super::fountain::wear::expand(dir, home);
+            let d = super::wearing::expand(dir, home);
             if !d.is_absolute() {
                 return Err(format!("{dir}: the project's whole path"));
             }
@@ -895,7 +895,7 @@ async fn recipes_get(
         return refuse(StatusCode::FORBIDDEN, "the owner's");
     }
     let home = home(&app);
-    let dir = super::fountain::wear::expand(&q.dir, &home);
+    let dir = super::wearing::expand(&q.dir, &home);
     let offered: BTreeMap<String, String> =
         offers(app.control.state_dir()).into_iter().map(|o| (o.agent, o.dir)).collect();
     let list: Vec<Value> = all(&dir, &home)

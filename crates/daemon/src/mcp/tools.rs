@@ -381,11 +381,6 @@ pub struct StartAgentArgs {
     /// For fountain: the agent's name or id.
     #[serde(default)]
     pub fountain_agent: Option<String>,
-    /// For claude: wear this Fountain agent (name or id), on this host: its
-    /// system prompt, skills and MCP servers (list kind fountain_agents
-    /// lists them).
-    #[serde(default)]
-    pub as_fountain: Option<String>,
     /// For claude: run as this recipe, a Claude Code subagent by its name
     /// (`.claude/agents/NAME.md` in cwd's project, or the user's), on this
     /// host: its prompt, model, tools, skills and MCP servers.
@@ -1009,7 +1004,7 @@ const UNLISTED: [(&str, &str, &str); 5] = [
 /// agent, a recipe: #347), except `machine`, which names one already made.
 const UNLISTED_ARGS: [(&str, &[&str], &str); 4] = [
     ("run", &["vm", "vm_tab", "image", "machine"], flags::VMS),
-    ("start_agent", &["fountain_agent", "as_fountain"], flags::FOUNTAIN),
+    ("start_agent", &["fountain_agent"], flags::FOUNTAIN),
     ("start_agent", &["vm"], flags::VMS),
     ("start_agent", &["recipe"], flags::AGENTS),
 ];
@@ -1825,6 +1820,11 @@ impl<'a> Call<'a> {
                 Ok(a) => self.history_or_output(a).await,
                 Err(e) => Err(e),
             },
+            // M44's as_fountain (a Fountain agent worn here) was retired:
+            // said, not ignored into a plain Claude Code.
+            ("start_agent", _) if args.get("as_fountain").is_some_and(|v| !v.is_null()) => {
+                Err(crate::agent::defs::AS_FOUNTAIN_GONE.into())
+            }
             ("start_agent", _) => match parse(args) {
                 Ok(a) => self.start_agent(a).await,
                 Err(e) => Err(e),
@@ -3588,21 +3588,13 @@ impl Call<'_> {
             None => None,
         };
         let recipe = a.recipe.as_deref().map(str::trim).filter(|n| !n.is_empty());
-        may_start(self.on_machine().await?, host.is_some(), a.vm, a.as_fountain.is_some() || recipe.is_some())?;
+        may_start(self.on_machine().await?, host.is_some(), a.vm, recipe.is_some())?;
         if recipe.is_some() && !matches!(a.agent, AgentKind::Claude) {
             return Err("recipe is for agent claude: Claude Code runs the recipe".into());
         }
         // An agent doesn't hand another one every check switched off.
         if let Some(m) = a.permission_mode.as_deref().filter(|m| SKIPS_CHECKS.contains(m)) {
             return Err(format!("permission_mode {m} skips every check: only the user starts an agent like that"));
-        }
-        if let Some(name) = a.as_fountain.as_deref().map(str::trim).filter(|n| !n.is_empty()) {
-            // M44: it runs on this host with the owner's secrets.
-            if !matches!(a.agent, AgentKind::Claude) {
-                return Err("as_fountain is for agent claude: a Claude Code wears the Fountain agent".into());
-            }
-            // Refused up front, with the reason (an orchestrator, a codex agent).
-            crate::labs::check_wearable(&self.app.mux.shell_env, name).await?;
         }
         if host.is_some() {
             self.share_my_machine().await;
@@ -3619,9 +3611,6 @@ impl Call<'_> {
         }
         if let Some(f) = &a.fountain_agent {
             config["fountain_agent"] = json!(f);
-        }
-        if let Some(f) = a.as_fountain.as_deref().map(str::trim).filter(|n| !n.is_empty()) {
-            config["as_fountain"] = json!(f);
         }
         if let Some(r) = recipe {
             config["recipe"] = json!(r);
@@ -3999,7 +3988,7 @@ fn ago(ms: u64) -> String {
 /// The one rule for every tool that creates something (a shell, an agent,
 /// a block): an agent on a machine (a guest's, say) creates things on a
 /// machine, never on this host, where they'd run as the owner (with the
-/// owner's logins and, for a worn Fountain agent, secrets).
+/// owner's logins and, for a worn recipe, secrets).
 pub(crate) fn confine(caller_on_machine: bool, lands_on_machine: bool) -> Result<(), String> {
     if caller_on_machine && !lands_on_machine {
         return Err("an agent on a machine creates things on its machine (or a new VM), not on this host".into());
@@ -4018,11 +4007,11 @@ fn open_lands_on_machine(req: &OpenRequest) -> bool {
 }
 
 /// Whether `start_agent` may start this agent ([`confine`]), and a worn
-/// Fountain agent on this host only.
+/// recipe on this host only.
 fn may_start(caller_on_machine: bool, on_machine: bool, vm: bool, worn: bool) -> Result<(), String> {
     confine(caller_on_machine, on_machine || vm)?;
     if worn && (on_machine || vm) {
-        return Err("a worn agent (a Fountain agent or a recipe) runs on this host, not on a machine".into());
+        return Err("a worn agent (a recipe) runs on this host, not on a machine".into());
     }
     Ok(())
 }
