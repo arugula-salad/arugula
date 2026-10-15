@@ -49,7 +49,7 @@ fn requests(pane: u64) -> Vec<(&'static str, &'static str, String, Option<Value>
         ("fountain", "GET", "/api/fountain/agents".into(), None),
         // Configs that don't parse: on, they fail past the gate, in the
         // block type's own words, and nothing starts.
-        ("fountain", "POST", "/api/blocks".into(), block("fountain", json!({ "view": 42 }))),
+        ("fountain", "POST", "/api/blocks".into(), block("fountain", json!({ "profile": 42 }))),
         ("fountain", "POST", "/api/blocks".into(), block("agent", json!({ "agent": "fountain" }))),
         ("studio", "GET", "/api/studio".into(), None),
         ("studio", "GET", "/api/studio/apps".into(), None),
