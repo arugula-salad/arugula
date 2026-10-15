@@ -15,9 +15,12 @@
 //   reached it directly, except in WebKit (Safari, iOS, the desktop app's
 //   WebKitGTK), which stays on the relay until its direct path is measured
 //   (S27).
-// - The frame says which way its channel actually went (`route`), since a
-//   direct route that doesn't connect falls back to the relay unasked.
-//   That's for showing only (block-route.ts).
+// - The frame is allowed Chrome's Local Network Access (`LNA_ALLOW`), so its
+//   pages' own channel can take a direct route; its worker can't in Chrome
+//   and goes through the relay (#849).
+// - The frame says which way its channels actually went (`route`, and why
+//   not direct), since a direct route that doesn't connect falls back to
+//   the relay unasked. That's for showing only (block-route.ts).
 
 import { hex } from "../e2e/cert.ts";
 import { daemonNow, type DaemonClock, type DaemonRef } from "../e2e/channel.ts";
@@ -31,6 +34,23 @@ import { TAG, VERSION } from "../block/page.ts";
  * this leaves room for the clock estimate to be off. */
 export const GRANT_LIFE_MS = 5 * 60 * 1000;
 export const MAX_LIFE_MS = 10 * 60 * 1000;
+
+/** What a block's frame is allowed beyond its block's own `allow`: Chrome's
+ * Local Network Access (#849). A tailnet's 100.64.0.0/10 and a LAN are
+ * "local", and Chrome checks WebSockets too since 147, so a direct route
+ * from a cross-origin frame needs the permissions policy (its default is
+ * 'self'); the frame's requests are then asked on this page's behalf,
+ * which already has the permission when its own channel went direct.
+ * `local-network` is the spec's name; `local-network-access` the older
+ * one, all Chrome had before 145 and still an alias. Not
+ * `loopback-network`: a daemon's direct route is never this device. The
+ * worker's requests aren't covered (`workerDirectBlocked`). */
+export const LNA_ALLOW = "local-network; local-network-access";
+
+/** A frame's `allow`: the block's own plus `LNA_ALLOW`. */
+export function frameAllow(own: string | undefined): string {
+  return own ? `${own}; ${LNA_ALLOW}` : LNA_ALLOW;
+}
 
 /** A block's origin on control's block domain. Control serves it on the
  * same listener as its page, so the scheme and port are the page's: https
@@ -101,24 +121,38 @@ export interface Framed {
   /** The frame couldn't load the block (its bootstrap said why). */
   failed(why: string): void;
   /** Which way the block's channel went, by the frame's word. */
-  routed(how: Route): void;
+  routed(how: Routing): void;
+}
+
+/** Which way a block's channel went, by its frame's word: `why` it isn't
+ * direct when its route was, and `ws` when it's the pages' own channel
+ * (their WebSockets) rather than the worker's (#849). */
+export interface Routing {
+  route: Route;
+  why?: string;
+  ws?: boolean;
 }
 
 /** What a frame may say. */
-export type Said = { ask: "hello" | "renew" } | { failed: string } | { route: Route };
+export type Said = { ask: "hello" | "renew" } | { failed: string } | Routing;
 
 /** Which frame a message is from, and what it says, if it's one to act on:
  * from a frame `frames` holds (by `source`), at the origin it was given,
  * tagged and versioned per the contract. Anything else is nothing. */
 export function heard(frames: Iterable<Framed>, e: { source: unknown; origin: string; data: unknown }): { from: Framed; said: Said } | null {
-  const d = e.data as { arugula?: unknown; v?: unknown; ask?: unknown; failed?: unknown; route?: unknown } | null;
+  const d = e.data as { arugula?: unknown; v?: unknown; ask?: unknown; failed?: unknown; route?: unknown; why?: unknown; ws?: unknown } | null;
   if (!d || typeof d !== "object" || d.arugula !== TAG || d.v !== VERSION || !e.source) return null;
   for (const f of frames) {
     if (f.frame.contentWindow !== e.source) continue;
     if (f.origin !== e.origin) return null;
     if (d.ask === "hello" || d.ask === "renew") return { from: f, said: { ask: d.ask } };
     if (typeof d.failed === "string") return { from: f, said: { failed: d.failed.slice(0, 300) } };
-    if (d.route === "direct" || d.route === "relayed") return { from: f, said: { route: d.route } };
+    if (d.route === "direct" || d.route === "relayed") {
+      const said: Routing = { route: d.route };
+      if (typeof d.why === "string" && d.why) said.why = d.why.slice(0, 300);
+      if (d.ws === true) said.ws = true;
+      return { from: f, said };
+    }
     return null;
   }
   return null;
@@ -136,7 +170,7 @@ function listen() {
     if (!h) return;
     const { from, said } = h;
     if ("failed" in said) return from.failed(said.failed);
-    if ("route" in said) return from.routed(said.route);
+    if ("route" in said) return from.routed(said);
     const win = from.frame.contentWindow as Window | null;
     void from.creds().then(
       (creds) => win?.postMessage({ arugula: TAG, v: VERSION, creds }, from.origin),

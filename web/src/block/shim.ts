@@ -7,7 +7,8 @@
 //
 // It also relays renewals: when the worker's grant has expired it asks its
 // pages, and a page asks the parent. And it tells the parent which way the
-// worker's channel went (`route`), which the block shows.
+// worker's channel went (`route`), which the block shows, and which way
+// its own did (`route` with `ws`), and why either isn't direct.
 //
 // Built by itself into dist/block/shim.js (vite.block.config.ts) and served
 // by control at /.arugula/shim.js.
@@ -25,11 +26,11 @@ async function renew(parent: string): Promise<Held> {
 }
 
 navigator.serviceWorker?.addEventListener("message", async (e) => {
-  const m = e.data as { arugula?: string; v?: number; ask?: string; route?: string } | null;
+  const m = e.data as { arugula?: string; v?: number; ask?: string; route?: string; why?: string } | null;
   if (m?.arugula !== TAG || m.v !== VERSION) return;
   const h = await load<Held>("held");
   if (!h) return;
-  if (m.route === "direct" || m.route === "relayed") tellRoute(h.parent, m.route);
+  if (m.route === "direct" || m.route === "relayed") tellRoute(h.parent, m.route, typeof m.why === "string" ? m.why : undefined);
   else if (m.ask === "renew") await renew(h.parent).catch(() => {});
 });
 // The worker opened its channel for this page's own request, before this
@@ -39,13 +40,18 @@ navigator.serviceWorker?.controller?.postMessage({ arugula: TAG, v: VERSION, ask
 async function connect(): Promise<BlockChannel> {
   let h = await load<Held>("held");
   if (!h) throw new Error("this block has no key");
+  let ch: BlockChannel;
   try {
-    return await openChannel(h.creds, location);
+    ch = await openChannel(h.creds, location, { who: "page" });
   } catch (e) {
     if (!(e instanceof Refused && e.code === "expired")) throw e;
     h = await renew(h.parent);
-    return openChannel(h.creds, location);
+    ch = await openChannel(h.creds, location, { who: "page" });
   }
+  // A page's channel may go direct where the worker's can't (#849):
+  // control's page asks Local Network Access for its frames.
+  tellRoute(h.parent, ch.route, ch.why, true);
+  return ch;
 }
 
 function channel(): Promise<BlockChannel> {

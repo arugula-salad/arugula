@@ -210,6 +210,8 @@ test("a port and an editor on a machine with no block flags open inside control'
   const frame = await frameOf(port);
   expect(await frame.evaluate(() => !!navigator.serviceWorker.controller)).toBe(true);
   expect(await paneEl(page, port).locator("iframe").getAttribute("sandbox")).toBe("allow-scripts allow-forms allow-same-origin");
+  // Chrome's Local Network Access, for a direct route from its pages (#849).
+  expect(await paneEl(page, port).locator("iframe").getAttribute("allow")).toBe("local-network; local-network-access");
   // It went through control's relay, as this machine does, and says so in
   // the button's words: on the block, and in the host menu.
   await expect(paneEl(page, port).locator("[data-block-route]")).toHaveText("relayed", { timeout: 15_000 });

@@ -830,12 +830,26 @@ page that framed them with `postMessage`. Every message carries
   A `wss://…/e2e` route that doesn't connect is tried once more through
   the relay. S27 kept WebKit on the relay until the worker's direct path
   is measured in real Safari.
+- **Chrome's Local Network Access** (#849): a tailnet's 100.64.0.0/10 and
+  a LAN are "local", and Chrome checks WebSockets since 147. Control's
+  page frames a block with `allow="local-network; local-network-access"`,
+  so a page in the frame may take the direct route, asked on control's
+  page's behalf (which has the permission when its own channel went
+  direct). A service worker is checked against its own origin's
+  permission, which a block's origin never has and a worker can't ask
+  for, so in Chrome 147 and later the worker doesn't try the direct route
+  (`workerDirectBlocked`): the block's requests go through the relay, its
+  pages' WebSockets direct.
 - **The frame says which way it connected**, since that fallback asks
-  no one: `{arugula, v, route: "direct" | "relayed"}`, to the origin in
-  `Held.parent` (#150, PR 5). The worker tells its pages each time it
+  no one: `{arugula, v, route: "direct" | "relayed", why?, ws?}`, to the
+  origin in `Held.parent` (#150, PR 5). `why` says why not direct when
+  the route was (the error and how long it took, or why it wasn't
+  tried), and `ws: true` marks the pages' own channel (their WebSockets)
+  rather than the worker's. The worker tells its pages each time it
   opens a channel, and a page that loaded after the channel opened asks
   it (`{arugula, v, ask: "route"}`, page to worker); the page's shim
-  passes it on. Control's page hears it with the same checks as an ask
+  passes it on, and tells its own when it opens one. Both log to their
+  console too. Control's page hears it with the same checks as an ask
   (source, origin, that frame's block, tag and version, and a route it
   knows) and shows it on the block and in the host menu. It's the
   block's word, and the block's own pages could say anything, so it's
@@ -874,7 +888,10 @@ page that framed them with `postMessage`. Every message carries
 - **Which way it went** (`web/src/blocks/block-route.ts`): each block
   through control shows "direct" or "relayed" from its frame's `route`,
   or "own site" once it fell back to the machine's own block site, in a
-  corner of its frame. The host menu's *This machine* section sums them
+  corner of its frame. That's the worker's channel (the block's
+  requests); its tooltip adds why not direct, and which way the pages'
+  WebSockets went (`data-block-route-why`, `data-block-ws-route`), and
+  control's page logs each to its console. The host menu's *This machine* section sums them
   up ("Blocks: relayed", "Blocks: 1 direct, 1 relayed"), in the words
   the host button uses for the machine's own channel. A block on the
   daemon's own page says nothing.
