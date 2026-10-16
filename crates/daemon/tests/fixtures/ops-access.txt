@@ -3,6 +3,8 @@ acl.get GET /api/acl Owner drives=false credential=false
 acl.set POST /api/acl Owner drives=false credential=false
 adapter.install POST /api/agents/adapters/{kind}/install Owner drives=false credential=false
 adapters.list GET /api/agents/adapters Owner drives=false credential=false
+agent_approvals.get GET /api/agent-approvals Owner drives=false credential=false
+agent_approvals.set PUT /api/agent-approvals Owner drives=false credential=false
 agents.get GET /api/hosts/self/agents Owner drives=false credential=false
 agents.refresh POST /api/hosts/self/agents/refresh Owner drives=false credential=false
 conv.act POST /api/convs/{id}/act Handler drives=false credential=false

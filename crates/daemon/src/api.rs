@@ -20,13 +20,14 @@ use arugula_proto::{
         RunResponse, SecretFinding, SendRequest, WaitRequest, WaitResult,
     },
     op::ops::{
-        AdapterInstall, AdaptersList, AgentsGet, AgentsRefresh, ClosePane, ConvAct, ConvCreate, ConvDelete,
-        ConvGrantMake, ConvGrantRevoke, ConvGrantsList, ConvLeadStart, ConvLinkAdd, ConvLinkClose, ConvLinksGet,
-        ConvMemberAdd, ConvMemberRemove, ConvRename, ConversationOpen, ConversationsList, FlagSet, FlagsList,
-        FountainAgentsGet, ListPanes, MachineReset, MachinesList, NotifyGet, NotifySet, PaneAsk, PaneAskWithdraw,
-        PaneAttention, PaneDetection, PaneDiffOf, PaneDrivers, PaneFollowUp, PaneInbox, PaneKeys, PaneMouse,
-        PanePermit, PanePorts, PaneProcess, PanePrompt, PaneSend, PaneWait, PushKeyGet, PushSubscribe, PushTest,
-        RuleForget, RulesForgetAll, RulesList, ShellEnvGet, ShellEnvRefresh, ThreadGet, ThreadPost, ThreadRead,
+        AdapterInstall, AdaptersList, AgentApprovalsGet, AgentApprovalsSet, AgentsGet, AgentsRefresh, ClosePane,
+        ConvAct, ConvCreate, ConvDelete, ConvGrantMake, ConvGrantRevoke, ConvGrantsList, ConvLeadStart, ConvLinkAdd,
+        ConvLinkClose, ConvLinksGet, ConvMemberAdd, ConvMemberRemove, ConvRename, ConversationOpen, ConversationsList,
+        FlagSet, FlagsList, FountainAgentsGet, ListPanes, MachineReset, MachinesList, NotifyGet, NotifySet, PaneAsk,
+        PaneAskWithdraw, PaneAttention, PaneDetection, PaneDiffOf, PaneDrivers, PaneFollowUp, PaneInbox, PaneKeys,
+        PaneMouse, PanePermit, PanePorts, PaneProcess, PanePrompt, PaneSend, PaneWait, PushKeyGet, PushSubscribe,
+        PushTest, RuleForget, RulesForgetAll, RulesList, ShellEnvGet, ShellEnvRefresh, ThreadGet, ThreadPost,
+        ThreadRead,
     },
 };
 use axum::{
@@ -98,8 +99,8 @@ pub fn routes() -> Router<Arc<App>> {
         .route("/api/panes/{id}/export.cast", get(export))
         .op::<PaneDrivers>()
         .op::<PaneDiffOf>()
-        .op::<arugula_proto::op::ops::AgentApprovalsGet>()
-        .op::<arugula_proto::op::ops::AgentApprovalsSet>()
+        .op::<AgentApprovalsGet>()
+        .op::<AgentApprovalsSet>()
         .op::<RulesList>()
         .op::<RulesForgetAll>()
         .op::<RuleForget>()

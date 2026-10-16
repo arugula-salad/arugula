@@ -1,6 +1,7 @@
 # name method path
 acl.get GET /api/acl
 adapters.list GET /api/agents/adapters
+agent_approvals.get GET /api/agent-approvals
 agents.get GET /api/hosts/self/agents
 conv.grants GET /api/panes/{id}/conv-grants
 conv.links GET /api/convs/{id}/links
