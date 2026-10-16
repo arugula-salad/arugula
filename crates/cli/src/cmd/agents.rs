@@ -70,7 +70,7 @@ enum Cmd {
         on: Option<String>,
         /// On Managoat, from this machine's recipe. (`--fountain`, its name
         /// before the rename, still works.)
-        #[arg(long = "managoat", alias = "fountain")]
+        #[arg(long = "managoat", hide = true, alias = "fountain")]
         fountain: bool,
         /// With --managoat: a vault for the run (name or id).
         #[arg(long, requires = "fountain")]

@@ -1,7 +1,7 @@
 // The default, which is what a stranger gets: a machine without the `labs`
 // flag shows no chat, threads or huddles, no studio, VM or sandbox, no
-// "Invite over ssh", and one swarm theme. Managoat left Labs (#942): with a
-// login here, as this daemon has, *Managoat…* is offered all the same. The rest of the suite
+// "Invite over ssh", and one swarm theme. A legacy Managoat login no longer
+// enables direct execution. The rest of the suite
 // runs with labs on (e2e/labs.ts), so this is the only proof of the default,
 // and it is in the set that always runs (`E2E_SET=rest`).
 //
@@ -32,8 +32,8 @@ test.afterAll(closeContexts);
 
 test.beforeAll(async () => {
   state = mkdtempSync(join(tmpdir(), "arugula-e2e-labs-off-"));
-  // Set up for Managoat, the studio and VMs, so that only labs is missing
-  // (and Managoat, which doesn't need it, shows).
+  // Seed a legacy login alongside the studio and VM settings.
+  // It must not restore the retired integration.
   writeFileSync(join(state, "fountain-credentials"), '[default]\napi_key = "ftn_test_e2e"\n');
   writeFileSync(join(state, "studio.json"), JSON.stringify({ url: "http://127.0.0.1:9", token: "e2e-studio-token" }));
   writeFileSync(join(state, "wisp-token"), "e2e-wisp-token");
@@ -96,7 +96,7 @@ async function noLabsItems(page: Page, pane: number) {
 }
 
 test("the host says labs is off, and what follows it", async () => {
-  expect(await features()).toEqual({ labs: false, dev: false, blocks: false, vms: false, fountain: true, studio: false, threads: false, calls: false, block_channels: false, flags: [] });
+  expect(await features()).toEqual({ labs: false, dev: false, blocks: false, vms: false, fountain: false, studio: false, threads: false, calls: false, block_channels: false, flags: [] });
 });
 
 test("links to Forgejo and GitLab stay plain links; GitHub's still open as blocks", async ({ page }) => {
@@ -116,7 +116,7 @@ test("links to Forgejo and GitLab stay plain links; GitHub's still open as block
   ).toEqual([null, null, null, null, "pr", "issue"]);
 });
 
-test("on a desktop: no chat, threads or huddles, no studio or VMs, no ssh invite; Managoat with its login", async ({ page }) => {
+test("on a desktop: no chat, threads or huddles, no studio or VMs, no ssh invite or direct Managoat", async ({ page }) => {
   await open(page);
   const pane = await page.evaluate(() => window.__arugula.client.state!.panes[0].id);
   await ready(page, pane);
@@ -128,9 +128,9 @@ test("on a desktop: no chat, threads or huddles, no studio or VMs, no ssh invite
   await expect(page.locator("[data-open-chat]")).toHaveCount(0);
   await expect(page.locator("[data-huddle]")).toHaveCount(0);
   await noLabsItems(page, pane);
-  // Managoat is out of Labs (#942): the login here is all it needs.
+  // A saved login cannot restore direct Managoat execution.
   await paneEl(page, pane).click({ button: "right", position: { x: 60, y: 60 } });
-  await expect(page.getByRole("menuitem", { name: "Managoat…" })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: "Managoat…" })).toHaveCount(0);
   await page.keyboard.press("Escape");
 
   // The palette has no chat entry (and does have the rest).
@@ -246,14 +246,14 @@ test("a mention's notification opens only the pane", async ({ page }) => {
 
 test.describe("on a phone", () => {
   test.use({ viewport: { width: 390, height: 760 }, isMobile: true, hasTouch: true });
-  test("the sheet has no chat, studio or VM entries, and Managoat's with its login", async ({ page }) => {
+  test("the sheet has no chat, studio or VM entries, or direct Managoat entries", async ({ page }) => {
     await open(page);
     await expect.poll(() => page.evaluate(() => window.__arugula.client.features !== null)).toBe(true);
     await page.locator(".sheet-button").tap();
     // What it does have.
     await expect(page.locator("[data-open-swarm]")).toBeVisible();
     await expect(page.locator("[data-open-pr]")).toBeVisible();
-    await expect(page.locator("[data-open-fountain]")).toBeVisible();
+    await expect(page.locator("[data-open-fountain]")).toHaveCount(0);
     for (const gone of ["[data-open-chat]", "[data-studio-apps]"]) await expect(page.locator(gone)).toHaveCount(0);
     for (const name of ["New VM tab", "Sandboxes"]) await expect(page.getByRole("button", { name })).toHaveCount(0);
     await expect(page.locator(".session-unread, .thread-badge, [data-huddle]")).toHaveCount(0);
@@ -274,8 +274,8 @@ test("a daemon from before labs, which says nothing of it, gets none of it eithe
   await ready(page, pane);
   await expect.poll(() => page.evaluate(() => window.__arugula.client.features?.vms)).toBe(true);
   expect(await page.evaluate(() => [window.__arugula.client.hasLabs(), window.__arugula.client.hasThreads(), window.__arugula.client.hasCalls()])).toEqual([false, false, false]);
-  // Managoat is the daemon's word (an older one said it with its flag on).
-  expect(await page.evaluate(() => (["vms", "fountain", "studio"] as const).map((f) => window.__arugula.client.has(f)))).toEqual([false, true, false]);
+  // Even an older daemon advertising Managoat cannot restore its UI.
+  expect(await page.evaluate(() => (["vms", "fountain", "studio"] as const).map((f) => window.__arugula.client.has(f)))).toEqual([false, false, false]);
   await expect(page.locator("[data-open-chat]")).toHaveCount(0);
   await expect(page.locator("[data-huddle]")).toHaveCount(0);
   await expect(page.locator(".thread-badge, .session-unread")).toHaveCount(0);
@@ -291,7 +291,7 @@ test("setting the flag on the running daemon brings it all back, with no restart
   const pane0 = ((await (await api("/api/panes")).json()) as { id: number }[])[0].id;
   expect((await api(`/api/threads/pane-${pane0}`, { text: "still there?" }, FRIEND)).ok).toBe(true);
   expect(await features()).toEqual({
-    ...{ labs: true, dev: true, blocks: false, vms: true, fountain: true, studio: true, threads: true, calls: true, block_channels: false },
+    ...{ labs: true, dev: true, blocks: false, vms: true, fountain: false, studio: true, threads: true, calls: true, block_channels: false },
     // `labs`, the one switch from before, is every flag (#665).
     flags: ["chat", "huddles", "vms", "studio", "workspaces", "guest-ssh", "swarm-themes", "forges", "agents"],
   });
@@ -307,9 +307,10 @@ test("setting the flag on the running daemon brings it all back, with no restart
   await expect(page.locator(".thread-badge.unread")).toBeVisible();
   await expect(page.locator(".session-unread")).toBeVisible();
   await paneEl(page, pane).click({ button: "right", position: { x: 60, y: 60 } });
-  for (const name of ["Invite over ssh…", "New VM pane on the right", "Open a studio app…", "Managoat…"]) {
+  for (const name of ["Invite over ssh…", "New VM pane on the right", "Open a studio app…"]) {
     await expect(page.getByRole("menuitem", { name })).toBeVisible();
   }
+  await expect(page.getByRole("menuitem", { name: "Managoat…" })).toHaveCount(0);
   await expect(page.getByRole("menuitem", { name: /^Thread/ })).toBeVisible();
   await page.keyboard.press("Escape");
 

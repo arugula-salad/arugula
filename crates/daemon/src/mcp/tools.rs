@@ -1064,7 +1064,7 @@ fn old_kind(tool: &str, kind: &str) -> Option<&'static str> {
 /// A tool's schema without the arguments whose flag is off, and without
 /// Managoat's in a build that hasn't it.
 fn without_labs(tool: &str, schema: Schema, on: On) -> Schema {
-    let fountain = !crate::labs::BUILT;
+    let fountain = crate::labs::DIRECT_MANAGOAT_RETIRED || !crate::labs::BUILT;
     let args: Vec<&str> = UNLISTED_ARGS
         .iter()
         .filter(|(t, _, f)| *t == tool && !on.has(f))
@@ -1132,7 +1132,8 @@ fn listed_kind(on: On, tool: &str, kind: &Kind) -> bool {
     kind.flag.is_none_or(|f| on.has(f))
         && UNLISTED.iter().all(|(t, k, f)| (*t, *k) != (tool, kind.name) || on.has(f))
         && (crate::forges::BUILT || !forge_kind(tool, kind.name))
-        && (crate::labs::BUILT || !FOUNTAIN_KINDS.contains(&(tool, kind.name)))
+        && ((!crate::labs::DIRECT_MANAGOAT_RETIRED && crate::labs::BUILT)
+            || !FOUNTAIN_KINDS.contains(&(tool, kind.name)))
 }
 
 /// The tools `tools/list` shows: each one a stranger can't use needs its
@@ -4421,11 +4422,11 @@ mod tests {
         for arg in ["app", "env"] {
             assert!(show.input_schema["properties"].get(arg).is_none(), "show takes {arg} without labs");
         }
-        // Managoat's kinds (#942, out of Labs): listed by a build with it,
-        // flags or not, with their arguments; not by one without it.
+        // Retired kinds are never advertised. Old calls still route to
+        // the compatibility handlers, which explain the migration.
         let list_tool = list(Scope::Full, fl(false)).into_iter().find(|t| t.name == "list").unwrap();
         for (tool, kind) in FOUNTAIN_KINDS {
-            assert_eq!(kinds_of(false, tool).contains(&kind), crate::labs::BUILT, "{tool} kind {kind}");
+            assert!(!kinds_of(false, tool).contains(&kind), "{tool} kind {kind}");
             route(tool, json!({ "kind": kind }), fl(false)).unwrap_or_else(|e| panic!("{tool} {kind}: {e}"));
         }
         for old in ["open_fountain", "list_agents", "read_agent"] {
@@ -4451,15 +4452,15 @@ mod tests {
         for (t, arg) in
             [(&show, "query"), (&show, "source"), (&show, "profile"), (&list_tool, "name"), (&list_tool, "source")]
         {
-            assert_eq!(t.input_schema["properties"].get(arg).is_some(), crate::labs::BUILT, "{} {arg}", t.name);
+            assert!(t.input_schema["properties"].get(arg).is_none(), "{} {arg}", t.name);
         }
         let start = list(Scope::Full, fl(false)).into_iter().find(|t| t.name == "start_agent").unwrap();
         for arg in FOUNTAIN_ARGS[0].1 {
-            assert_eq!(start.input_schema["properties"].get(*arg).is_some(), crate::labs::BUILT, "start_agent {arg}");
+            assert!(start.input_schema["properties"].get(*arg).is_none(), "start_agent {arg}");
         }
         // An error names only the kinds that are listed.
         let e = route("show", json!({ "kind": "terminal" }), fl(false)).err().unwrap();
-        assert!(e.contains("port") && e.contains("managoat") == crate::labs::BUILT && !e.contains("workspace"), "{e}");
+        assert!(e.contains("port") && !e.contains("managoat") && !e.contains("workspace"), "{e}");
         let every: Vec<&str> = all_defs().iter().map(|d| d.name).collect();
         for name in CHAT_TOOLS {
             assert!(every.contains(&name), "{name} no longer has a definition");
@@ -4784,7 +4785,7 @@ mod tests {
         }
         let start = with.iter().find(|t| t.name == "start_agent").unwrap();
         let managoat = Value::Object((*start.input_schema).clone()).to_string().contains("\"managoat\"");
-        assert_eq!(managoat, crate::labs::BUILT, "start_agent's agent managoat is a Labs build's");
+        assert!(!managoat, "retired direct execution is never advertised");
         let with = crate::mcp::instructions(fl(true));
         assert!(with.contains("read_thread and post_thread") && with.contains("@agent"), "{with}");
         // Labs only adds the thread sentence.

@@ -296,12 +296,10 @@ pub(crate) struct RunArgs {
     /// state directory].
     #[arg(long, env = "ARUGULA_STUDIO_FILE", hide = true)]
     pub(crate) studio_file: Option<PathBuf>,
-    /// Follow the Managoat account's event stream on this daemon, once it
-    /// has a Managoat login: one connection per sign-in, its place kept
-    /// across restarts. Turn it on for one daemon per account, the home
-    /// machine's, so a permission request raises one card.
+    /// Retired compatibility option; direct account streams no longer start.
     #[arg(
         long = "managoat-account-stream",
+        hide = true,
         alias = "fountain-account-stream",
         env = "ARUGULA_MANAGOAT_ACCOUNT_STREAM"
     )]
@@ -515,10 +513,10 @@ mod tests {
         ] {
             assert!(!top.contains(flag), "{flag} is in `arugulad --help`");
         }
-        // Managoat left Labs (#942): its option is everyone's.
-        assert!(top.contains("--managoat-account-stream") && !top.contains("fountain"), "{top}");
+        // Retired options still parse old service files but are not advertised.
+        assert!(!top.contains("--managoat-account-stream") && !top.contains("fountain"), "{top}");
         // Its name before the rename (DECISIONS.md "Fountain is Managoat")
-        // still turns it on.
+        // still parses for compatibility.
         let old = <super::Args as clap::Parser>::try_parse_from(["arugulad", "--fountain-account-stream"]).unwrap();
         assert!(old.run.fountain_account_stream);
         // Still there for whoever knows them.

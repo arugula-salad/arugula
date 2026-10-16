@@ -1,3 +1,5 @@
+import { cloudPanes, useCloudPanes } from "../cloud";
+import { CloudPanel } from "./cloud";
 // Starting an agent block: which agent, where it runs, and the first prompt.
 // Opened from a pane's menu and the phone's sheet.
 
@@ -7,7 +9,7 @@ import type { PaneId } from "../proto";
 import { AdapterHelp, installAdapter, loadAdapters, type Adapter } from "./adapter";
 import { pickConversation } from "./conversations";
 
-type Kind = "claude" | "codex" | "managoat" | "acp";
+type Kind = "claude" | "codex" | "acp";
 
 export interface AgentWhere {
   /** Split this block (desktop), else a new tab in `session`. */
@@ -50,33 +52,31 @@ export function AgentDialogLayer() {
   );
 }
 
-type Remembered = { kind?: Kind; fountain?: string; acp?: string; model?: string };
+type Remembered = { kind?: Kind; acp?: string; model?: string };
 
 const remembered = (): Remembered => {
   try {
-    const last = JSON.parse(localStorage.getItem("arugula.agent") ?? "{}") as Omit<Remembered, "kind"> & { kind?: Kind | "fountain" };
-    // Remembered before Fountain became Managoat.
-    return { ...last, kind: last.kind === "fountain" ? "managoat" : last.kind };
+    const last = JSON.parse(localStorage.getItem("arugula.agent") ?? "{}") as Omit<Remembered, "kind"> & { kind?: Kind | "fountain" | "managoat" };
+    // Direct cloud launch choices now live in the account panel.
+    return { ...last, kind: last.kind === "fountain" || last.kind === "managoat" ? "claude" : last.kind };
   } catch {
     return {};
   }
 };
 
 function AgentDialog({ client, where, close }: { client: Client; where: AgentWhere; close: () => void }) {
+  useCloudPanes();
+  const [execution, setExecution] = useState(client.state ? "local" : "cloud");
   const last = remembered();
-  // Managoat agents need a Managoat login here, VMs wisp (#180).
-  const hasFountain = client.has("fountain");
-  const [kind, setKind] = useState<Kind>(last.kind === "managoat" && !hasFountain ? "claude" : (last.kind ?? "claude"));
-  const [fountain, setFountain] = useState(last.fountain ?? "");
+  const [kind, setKind] = useState<Kind>(last.kind ?? "claude");
   const [acp, setAcp] = useState(last.acp ?? "");
   const [model, setModel] = useState(last.model ?? "");
   const [vm, setVm] = useState(false);
   const [cwd, setCwd] = useState((where.from !== undefined && client.cwd(where.from)) || "");
   const [prompt, setPrompt] = useState("");
-  const [approval, setApproval] = useState("");
   const promptRef = useRef<HTMLTextAreaElement>(null);
   useLayoutEffect(() => promptRef.current?.focus(), []);
-  const canVm = kind !== "managoat" && client.has("vms");
+  const canVm = client.has("vms");
   // #111: whether this agent's adapter is installed here (a VM installs
   // its own).
   const [adapters, setAdapters] = useState<Adapter[] | null>(null);
@@ -88,7 +88,7 @@ function AgentDialog({ client, where, close }: { client: Client; where: AgentWhe
 
   const remember = () => {
     try {
-      localStorage.setItem("arugula.agent", JSON.stringify({ kind, fountain, acp, model }));
+      localStorage.setItem("arugula.agent", JSON.stringify({ kind, acp, model }));
     } catch {
       // private mode: nothing remembered
     }
@@ -98,10 +98,6 @@ function AgentDialog({ client, where, close }: { client: Client; where: AgentWhe
     if (blocked) return;
     remember();
     const config: Record<string, unknown> = { agent: kind };
-    if (kind === "managoat") {
-      config.managoat_agent = fountain.trim();
-      if (approval) config.permission = approval;
-    }
     if (kind === "acp") config.command = acp.trim();
     if (model.trim()) config.model = model.trim();
     if (!(vm && canVm) && cwd.trim()) config.cwd = cwd.trim();
@@ -110,6 +106,8 @@ function AgentDialog({ client, where, close }: { client: Client; where: AgentWhe
     await client.newAgent({ config, vm: vm && canVm, split: where.split, session: where.session, from: where.from });
   };
 
+  const executionChoice = <label>Run on<select aria-label="Run on" value={execution} onChange={(e) => setExecution(e.currentTarget.value)}><option value="local" disabled={!client.state}>This machine</option>{cloudPanes.enabled && <option value="cloud">Cloud</option>}</select></label>;
+  if (execution === "cloud") return <div class="prompt-backdrop" role="dialog" aria-label="Start an agent" onKeyDown={(e) => e.key === "Escape" && close()}><div class="prompt agent-dialog cloud-launch"><h2>Start an agent</h2>{executionChoice}<CloudPanel launchOnly close={close} notify={async () => "off"} /><button onClick={close}>Cancel</button></div></div>;
   return (
     <div class="prompt-backdrop" role="dialog" aria-label="Start an agent" onPointerDown={(e) => e.target === e.currentTarget && close()}>
       <form
@@ -122,6 +120,7 @@ function AgentDialog({ client, where, close }: { client: Client; where: AgentWhe
         onKeyDown={(e) => e.key === "Escape" && close()}
       >
         <h2>Start an agent</h2>
+        {executionChoice}
         <p class="hint">
           Or{" "}
           <button
@@ -136,21 +135,15 @@ function AgentDialog({ client, where, close }: { client: Client; where: AgentWhe
           </button>{" "}
           from a terminal or the desktop app.
         </p>
+
         <label>
           Agent
           <select name="agent" value={kind} onChange={(e) => setKind((e.currentTarget as HTMLSelectElement).value as Kind)}>
             <option value="claude">Claude Code</option>
             <option value="codex">Codex</option>
-            {hasFountain && <option value="managoat">Managoat agent</option>}
             <option value="acp">Another ACP agent…</option>
           </select>
         </label>
-        {kind === "managoat" && (
-          <label>
-            Managoat agent (name or id)
-            <input name="fountain" value={fountain} required onInput={(e) => setFountain(e.currentTarget.value)} />
-          </label>
-        )}
         {kind === "acp" && (
           <label>
             Command
@@ -178,26 +171,16 @@ function AgentDialog({ client, where, close }: { client: Client; where: AgentWhe
             }}
           />
         )}
-        {!(vm && canVm) && kind !== "managoat" && (
+        {!(vm && canVm) && (
           <label>
             Working directory
             <input name="cwd" value={cwd} placeholder="home" onInput={(e) => setCwd(e.currentTarget.value)} />
           </label>
         )}
-        {kind !== "managoat" && (
-          <label>
+        <label>
             Model
             <input name="model" value={model} placeholder="the agent's default (e.g. haiku)" onInput={(e) => setModel(e.currentTarget.value)} />
-          </label>
-        )}
-        {kind === "managoat" && <label>
-          Tool approvals
-          <select value={approval} onChange={(e) => setApproval(e.currentTarget.value)}>
-            <option value="">Use this machine's default</option>
-            <option value="ask">Ask for approval</option>
-            <option value="auto_allow">Automatically approve</option>
-          </select>
-        </label>}
+        </label>
         <label>
           Prompt
           <textarea name="prompt" ref={promptRef} rows={4} value={prompt} placeholder="What should it do?" onInput={(e) => setPrompt(e.currentTarget.value)} />

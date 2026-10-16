@@ -1,3 +1,4 @@
+import { AgentMessage } from "./agent-message";
 // Agent blocks (M6b): an agent run as messages, thoughts and tool-call
 // cards, with its commands' output in a read-only terminal, permission
 // requests as approve/deny cards, questions and forms as cards (M6c), and a
@@ -612,14 +613,15 @@ function AgentBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentSta
   const tools = s.entries.filter((e) => e.type === "tool");
   const liveFrom = tools.length > LIVE_TERMINALS ? (tools[tools.length - LIVE_TERMINALS] as Tool).id : null;
   let live = liveFrom === null;
+  const archived = s.agent === "managoat";
   const stopped = s.status === "stopped" || s.status === "exited";
   // M33: a conversation opened here, not continued yet.
-  const opened = !!s.import && !s.import.continued;
+  const opened = !archived && !!s.import && !s.import.continued;
   const open = s.asks.filter((a) => !a.accepted);
   const call = (method: string, args: unknown) => void client.api(`/api/blocks/${id}/call/${method}`, args, `couldn't ${method}`);
   // M29: who answered last, and whether this person may answer at all.
   const answered = client.info(id)?.answered ?? null;
-  const can = mayAnswer(client, id);
+  const can = !archived && mayAnswer(client, id);
   return (
     <div
       class="agent"
@@ -635,7 +637,7 @@ function AgentBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentSta
     >
       <div class="agent-bar">
         <span class={`agent-status ${s.status}`}>
-          {s.pending.length || open.length ? "Needs you" : s.import && !s.import.continued ? (s.import.held ? "Open elsewhere" : "Conversation") : STATUS[s.status]}
+          {archived ? "Archived" : s.pending.length || open.length ? "Needs you" : s.import && !s.import.continued ? (s.import.held ? "Open elsewhere" : "Conversation") : STATUS[s.status]}
         </span>
         <span class="agent-name" title={s.server?.name ? `${s.server.name} ${s.server.version ?? ""}` : undefined}>
           {s.title ?? s.label}
@@ -648,7 +650,7 @@ function AgentBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentSta
             {s.cost.last_turn != null && s.turns > 1 ? ` (last ${money(s.cost.last_turn, s.cost.currency)})` : ""}
           </span>
         )}
-        {stopped && !opened && (
+        {stopped && !opened && !archived && (
           <button onClick={() => void client.api(`/api/blocks/${id}/call/start`, {}, "couldn't start it")}>Resume</button>
         )}
         {opened && s.import?.held?.pane != null && client.info(s.import.held.pane) && (
@@ -664,14 +666,14 @@ function AgentBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentSta
             Continue
           </button>
         )}
-        {(opened || (s.import && stopped)) && (
+        {!archived && (opened || (s.import && stopped)) && (
           <button data-fork title="A new session with its history; the original is left alone" onClick={() => void client.api(`/api/blocks/${id}/call/fork`, {}, "couldn't fork it")}>
             Fork
           </button>
         )}
       </div>
       <WornBar s={s} />
-      <FountainBar client={client} id={id} s={s} />
+      {!archived && <FountainBar client={client} id={id} s={s} />}
       {opened && (
         <div class="agent-import">
           A Claude Code conversation from {s.import!.source === "desktop" ? "the desktop app" : s.import!.source === "terminal" ? "a terminal" : "elsewhere"}
@@ -703,18 +705,9 @@ function AgentBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentSta
                 </div>
               );
             case "agent":
-              return (
-                <div key={i} class="agent-msg">
-                  {e.text}
-                </div>
-              );
+              return <AgentMessage key={i} text={e.text} />;
             case "thought":
-              return (
-                <details key={i} class="agent-thought">
-                  <summary>Thinking</summary>
-                  {e.text}
-                </details>
-              );
+              return <AgentMessage key={i} text={e.text} thought />;
             case "note":
               return (
                 <div key={i} class="agent-note">
@@ -726,7 +719,7 @@ function AgentBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentSta
               // A Managoat agent's paths are in its sandbox, not here.
               const openAt = client.state?.roles
                 ? undefined
-                : s.agent === "managoat"
+                : s.agent === "managoat" && !archived
                   ? (path: string) => openSandboxFile(client, id, s, path)
                   : (path: string) => void openFile(client, id, path, null);
               return <ToolCard key={e.id} t={e} live={live} openAt={openAt} />;
@@ -742,7 +735,7 @@ function AgentBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentSta
         <AdapterHelp client={client} a={s.adapter} said then="Resume once it's done." install={() => void installAdapter(client, s.adapter!.kind, { split: id })} />
       )}
       {answered && !s.pending.length && !open.length && <div class="agent-answered">{answeredLine(answered)}</div>}
-      {s.pending.map((p) =>
+      {!archived && s.pending.map((p) =>
         can ? (
           <PermCard key={p.id} client={client} id={id} p={p} cwd={s.cwd} owner={!client.state?.roles} />
         ) : (
@@ -768,7 +761,7 @@ function AgentBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentSta
           ))}
         </div>
       )}
-      <Composer client={client} id={id} s={s} attached={attached} setAttached={setAttached} />
+      {archived ? <p class="agent-note">Archived cloud transcript. Open Cloud agents in your Arugula account to start a new run.</p> : <Composer client={client} id={id} s={s} attached={attached} setAttached={setAttached} />}
     </div>
   );
 }

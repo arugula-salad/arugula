@@ -2,7 +2,7 @@
 //! haiku each), so they only run when asked:
 //!
 //! ```sh
-//! ARUGULA_REAL_AGENTS=claude,codex,managoat,vm,questions,tui,mcp,mcp-cc,screen cargo test -p arugulad --test integration agents_real::
+//! ARUGULA_REAL_AGENTS=claude,codex,vm,questions,tui,mcp,mcp-cc,screen cargo test -p arugulad --test integration agents_real::
 //! ```
 //!
 //! - `screen` (#145, #146, #147): Claude Code's TUI in a terminal pane with
@@ -33,11 +33,11 @@
 //! - `claude`: Claude Code through the pinned `claude-agent-acp`, on your
 //!   own login, in a scratch git repo: a command it asks to run, approved.
 //! - `codex`: `codex-acp` against your `codex`.
-//! - `managoat`: the Managoat agent in `ARUGULA_MANAGOAT_AGENT` (an
-//!   existing one; nothing is created but a conversation, deleted after).
 //! - `vm`: Claude Code in a throwaway wisp VM, with the token in
 //!   `~/.config/arugula/claude-oauth-token` (or an API key in
 //!   `…/anthropic-key`); skipped if neither exists.
+//!
+//! Managed cloud live coverage is in arugula-control, `live_subscription_run`.
 //!
 //! Adapters are found in `~/.local/share/arugula/agents/` (see README).
 
@@ -131,29 +131,6 @@ fn codex_runs() {
     let t = text(&d, id);
     assert!(t.contains("m6b-ok"), "{t}");
     assert_eq!(d.state(id)["server"]["name"], "@agentclientprotocol/codex-acp");
-}
-
-#[test]
-fn a_managoat_agent_asks_and_runs() {
-    if !wanted("managoat") {
-        return;
-    }
-    let Ok(agent) = std::env::var("ARUGULA_MANAGOAT_AGENT") else {
-        eprintln!("SKIP: set ARUGULA_MANAGOAT_AGENT to an existing agent");
-        return;
-    };
-    let d = Daemon::child();
-    arugula_testkit::labs(&d.state, true);
-    let id = d.open_with(
-        json!({ "type": "agent", "config": { "agent": "managoat", "managoat_agent": agent, "prompt": PROMPT } }),
-    );
-    approve_a_command(&d, id, 240);
-    let session = d.state(id)["session_id"].as_str().unwrap().to_owned();
-    // The Managoat CLI, by its name before the rename where it's older.
-    let cli = ["managoat", "fountain"].map(|n| home().join(".local/bin").join(n)).into_iter().find(|p| p.exists());
-    if let Some(cli) = cli {
-        let _ = std::process::Command::new(cli).args(["conv", "delete", &session]).status();
-    }
 }
 
 #[test]

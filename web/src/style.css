@@ -9135,3 +9135,28 @@ html[data-finish="glass"] .prompt-backdrop {
 .fountain-tree {
   margin: 4px 10px;
 }
+
+.cloud-panel { width: min(850px, 85vw); max-height: 85vh; overflow: auto; }
+.cloud-form { display: grid; gap: 12px; margin: 16px 0; }
+.cloud-form label { display: grid; gap: 5px; }
+.cloud-form input:not([type=checkbox]), .cloud-form textarea, .cloud-form select { width: 100%; box-sizing: border-box; }
+.cloud-runs { list-style: none; padding: 0; }
+.cloud-runs li { display: flex; justify-content: space-between; gap: 12px; margin: 8px 0; }
+.cloud-panel pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.cloud-transcript { margin: 16px 0; }
+.prompt-backdrop:has(.cloud-panel) { padding-top: 4vh; }
+.prompt:has(.cloud-panel) { box-sizing: border-box; width: min(900px, calc(100vw - 24px)); }
+.prompt .cloud-panel { width: 100%; max-height: 85vh; }
+.cloud-form textarea, .cloud-form select { padding: 8px; color: var(--fg); background: var(--letterbox); border: 1px solid var(--raised-hover); border-radius: 6px; font: inherit; }
+
+/* Account-owned agent panes use the same bar, transcript and tab surfaces. */
+.main > .cloud-agent { flex: 1; min-width: 0; width: 100%; overflow: auto; }
+.cloud-agent .agent-bar { flex-wrap: wrap; }
+.cloud-agent .cloud-transcript { min-height: 160px; }
+.cloud-agent > .agent-note { padding: 8px 12px; overflow-wrap: anywhere; }
+.cloud-agent pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.cloud-agent > details, .cloud-agent > h3 { margin: 8px 12px; }
+.cloud-phone-tabs { overflow-x: auto; flex-shrink: 0; }
+
+.prompt.cloud-launch { max-height: calc(var(--app-height, 100dvh) - 32px); overflow-y: auto; }
+.prompt .cloud-panel.cloud-launch-form { max-height: none; overflow: visible; }

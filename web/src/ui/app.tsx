@@ -1,3 +1,5 @@
+import { cloudPanes, useCloudPanes } from "../cloud";
+import { CloudTabs, RunDetails } from "./cloud";
 import { Fragment } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { paneIds, tabLabel, type Client } from "../client";
@@ -19,7 +21,7 @@ import { directory } from "../hosts";
 import { DeveloperLayer } from "./developer";
 import { RulesLayer } from "./rules";
 import { useWorkspaceDir } from "../blocks";
-import { AgentDialogLayer } from "./agent-dialog";
+import { startAgent } from "./agent-dialog";
 import { ConversationsLayer } from "./conversations";
 import { PickerLayer, usePickerShortcut } from "./picker";
 import { drawsItsOwn, TermAnswered, TermAsk, TermDiff } from "./term-ask";
@@ -43,6 +45,7 @@ const HIDDEN_GRACE_MS = 10_000;
 export function App({ client, cell }: { client: Client; cell: Cell }) {
   useSubscribe((fn) => client.subscribe(fn));
   const phone = usePhone();
+  const cloud = useCloudPanes();
   const [renaming, setRenaming] = useState<Renaming>(null);
 
   useEffect(() => {
@@ -96,11 +99,13 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       ) : (
         <TopBar client={client} renaming={renaming} setRenaming={setRenaming} inert={chatOpen} />
       ))}
+      {!state && cloud && <AppBar client={client} at="panes" all>{!phone && <div class="tabbar" role="tablist"><CloudTabs /><button onClick={() => startAgent(client, {})}>New agent</button></div>}</AppBar>}
+      {phone && cloudPanes.opened.length > 0 && <div class="tabbar cloud-phone-tabs" role="tablist">{state && <button onClick={() => cloudPanes.local()}>This machine</button>}<CloudTabs /></div>}
       {state && <ControlBanner client={client} />}
       {state && <NewMachineNote />}
       {state && <AgentsNudge client={client} />}
       <main class="main" inert={chatOpen}>
-        {!state ? (
+        {cloud ? <RunDetails key={cloud} id={cloud} /> : !state ? (
           <HostPicker />
         ) : state.sessions.length === 0 ? (
           <NoSessions client={client} phone={phone} />
@@ -111,7 +116,6 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       {phone && state && state.sessions.length > 0 && client.panes.has(client.active() ?? -1) && <KeyBar client={client} />}
       <MenuLayer />
       <PromptLayer />
-      <AgentDialogLayer />
       <ThreadLayer phone={phone} />
       <InLabs on={client.hasCalls()}>{(l) => <l.HuddleBar />}</InLabs>
       {state && <InLabs on={client.hasThreads()}>{(l) => <l.ChatPage client={client} />}</InLabs>}
@@ -130,7 +134,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       {/* An ask to drive shows over the share dialog (#551). */}
       <ShareDialog client={client} />
       <ControlRequests client={client} />
-      <StatusPill client={client} />
+      {!cloud && <StatusPill client={client} />}
     </div>
   );
 }
@@ -167,6 +171,7 @@ function TopBar({
   setRenaming: (r: Renaming) => void;
   inert: boolean;
 }) {
+  const cloud = useCloudPanes();
   useSubscribe(drag.subscribe);
   const state = client.state!;
   // None at all, on a machine with no sessions: the bar is still here for
@@ -229,18 +234,19 @@ function TopBar({
                     client={client}
                     tab={t}
                     index={i}
-                    selected={id === client.tab}
+                    selected={!cloud && id === client.tab}
                     renaming={renaming?.kind === "tab" && renaming.id === id}
                     setRenaming={setRenaming}
                   />
                 </Fragment>
               );
             })}
+            <CloudTabs />
             {marker === session.tabs.length && <div class="drop-marker" />}
             <button
               class="new-tab"
               title={`New tab ${newTabWhere()}`}
-              onClick={() => client.intent({ op: "new_tab", session: session.id, from_pane: client.active() ?? null })}
+              onClick={() => { cloudPanes.local(); client.intent({ op: "new_tab", session: session.id, from_pane: client.active() ?? null }); }}
               onContextMenu={(e) => openFresh(client, e, () => newTabItems(client, session.id))}
             >
               +
@@ -262,6 +268,7 @@ function TopBar({
           </div>
         </>
       )}
+      {!session && <div class="tabbar" role="tablist"><CloudTabs /></div>}
     </AppBar>
   );
 }
@@ -317,7 +324,7 @@ function TabItem({
       title={label}
       onPointerDown={(e) =>
         startDrag(e, { kind: "tab", tab: tab.id }, label, {
-          onClick: () => client.selectTab(tab.id),
+          onClick: () => { cloudPanes.local(); client.selectTab(tab.id); },
           onDrop: (what, target) => drop(client, what, target),
         })
       }

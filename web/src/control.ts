@@ -53,6 +53,7 @@ import {
 
 export interface ControlInfo {
   control: true;
+  cloud?: boolean;
   url: string;
   github: boolean;
   /** WebAuthn works here (control has a domain name, not an IP). */

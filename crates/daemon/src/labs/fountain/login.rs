@@ -266,6 +266,9 @@ fn said_path(path: &str) -> String {
 
 /// Read the variables and the file on the runner's host.
 pub(crate) async fn read(runner: &Runner) -> Result<Found, String> {
+    if crate::labs::DIRECT_MANAGOAT_RETIRED {
+        return Err(crate::agent::defs::CLOUD_MIGRATION.into());
+    }
     let (out, _) = runner.sh(READ, &[]).await?;
     let found = parse_found(&out);
     deprecated(&found.old);
@@ -276,6 +279,9 @@ pub(crate) async fn read(runner: &Runner) -> Result<Found, String> {
 /// key in the daemon's or the shell's environment, or the CLI's
 /// credentials file.
 pub fn here(shell_env: &crate::shellenv::ShellEnv) -> bool {
+    if crate::labs::DIRECT_MANAGOAT_RETIRED {
+        return false;
+    }
     let shell = shell_env.local_now();
     let var = |k: &str| {
         shell

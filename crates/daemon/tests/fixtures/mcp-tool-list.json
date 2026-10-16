@@ -577,7 +577,7 @@
         "readOnlyHint": true,
         "title": "List panes and more"
       },
-      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- managoat_agents {profile?, query?, source?}: The agents on the user's Managoat account, one compact row each: name, runtime and model, where it comes from (agent-specs: curated; hand: hand-made; app: made by an app), skills, MCP servers and description. query searches names, descriptions, skills and servers. To hand one a task, start_agent {agent: managoat, managoat_agent: NAME}.\n- managoat_conversations {labels?, limit?, status?}: The conversations on the user's Managoat account, read-only: every one, whoever started it (Arugula, the managoat CLI, a script, another conversation), the most recently active first, one line each: title, status, agent, unread, labels, what it started, and its open permission requests (waiting for the user, who answers them on their card). labels filters by key:value; status and limit as Managoat's list takes them.\n- managoat_agent {name, profile?}: One Managoat agent's whole recipe, by name: its system prompt, skills (inline or from GitHub), MCP servers, model, runtime, environment, sandbox provider and metadata, as Managoat returns it. Secrets are never in it: a server's credentials show as their ${VAR} references.",
+      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -600,24 +600,13 @@
             "enum": [
               "panes",
               "conversations",
-              "devices",
-              "managoat_agents",
-              "managoat_conversations",
-              "managoat_agent"
+              "devices"
             ],
             "type": "string"
           },
-          "labels": {
-            "default": [],
-            "description": "managoat_conversations: Only conversations carrying these labels, each \"key:value\" (all of\nthem).",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
           "limit": {
             "default": null,
-            "description": "conversations: How many [default 30]. managoat_conversations: At most this many, the most recently active first (1 to 500;\ndefault 100).",
+            "description": "conversations: How many [default 30].",
             "format": "uint",
             "minimum": 0,
             "type": [
@@ -630,37 +619,9 @@
             "description": "conversations: Only ones open somewhere now.",
             "type": "boolean"
           },
-          "name": {
-            "description": "managoat_agent: The agent's name (or id), as kind managoat_agents gives it.",
-            "type": "string"
-          },
-          "profile": {
-            "default": null,
-            "description": "managoat_agents, managoat_agent: The Managoat credentials profile (default: the user's default).",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "query": {
             "default": null,
-            "description": "conversations: Words in the title, prompts or folder. managoat_agents: Words to look for in each agent's name, description, skills and MCP\nservers (all must match): a skill's name finds the agents that have\nit.",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "source": {
-            "default": null,
-            "description": "managoat_agents: Where they come from: agent-specs (the curated ones), hand\n(hand-made) or app (made by an app). Default: all.",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "status": {
-            "default": null,
-            "description": "managoat_conversations: Only these statuses, comma-separated: pending, running, idle, failed,\nterminated.",
+            "description": "conversations: Words in the title, prompts or folder.",
             "type": [
               "string",
               "null"
@@ -1058,7 +1019,7 @@
         "readOnlyHint": false,
         "title": "Show the user a block"
       },
-      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?}: An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on.\n- managoat {beside?, profile?, query?, source?}: The user's Managoat agents as a catalog block: a card per agent with its skills, servers and where it comes from, filters, and Run on Managoat / Spec for each. Returns the (filtered) list as text.",
+      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?}: An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on.",
       "inputSchema": {
         "$defs": {
           "ConversationThen": {
@@ -1093,7 +1054,7 @@
                 "type": "null"
               }
             ],
-            "description": "port, file, pr, issue, conversation, managoat: Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in). changes: The pane whose repository it is (its directory, on its machine). Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in)."
+            "description": "port, file, pr, issue, conversation: Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in). changes: The pane whose repository it is (its directory, on its machine). Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in)."
           },
           "dir": {
             "default": null,
@@ -1119,8 +1080,7 @@
               "file",
               "pr",
               "issue",
-              "conversation",
-              "managoat"
+              "conversation"
             ],
             "type": "string"
           },
@@ -1153,22 +1113,6 @@
             "description": "pr: The pull request: its link (a Forgejo PR's or a GitLab MR's),\nOWNER/REPO#N, GROUP/PROJECT!N (GitLab), or N (in dir's repository).",
             "type": "string"
           },
-          "profile": {
-            "default": null,
-            "description": "managoat: The Managoat credentials profile (default: the user's default).",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "query": {
-            "default": null,
-            "description": "managoat: Start with this search (as kind managoat_agents' query).",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "repo": {
             "default": null,
             "description": "changes: Any directory in the repository, instead (on the pane's machine).",
@@ -1188,14 +1132,6 @@
           "rev_b": {
             "default": null,
             "description": "changes: With rev_a: the range rev_a..rev_b instead of the working tree.",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "source": {
-            "default": null,
-            "description": "managoat: Start with this source: agent-specs, hand or app.",
             "type": [
               "string",
               "null"
@@ -1243,11 +1179,6 @@
               {
                 "const": "claude",
                 "description": "Claude Code.",
-                "type": "string"
-              },
-              {
-                "const": "managoat",
-                "description": "An agent in a Managoat sandbox (managoat_agent names it).",
                 "type": "string"
               },
               {
@@ -1311,33 +1242,9 @@
               "null"
             ]
           },
-          "environment": {
-            "default": null,
-            "description": "For on: managoat: a Managoat environment instead of the project's (name or id).",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "managoat_agent": {
-            "default": null,
-            "description": "For managoat: the agent's name or id.",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "model": {
             "default": null,
             "description": "A model to switch to (`haiku`, ...).",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "on": {
-            "default": null,
-            "description": "Where a recipe runs: here (default), or managoat: in a Managoat sandbox, as its Managoat agent recipe-NAME (upserted from the recipe first), with its project's origin cloned there (uncommitted work stays here).",
             "type": [
               "string",
               "null"
@@ -1375,14 +1282,6 @@
             "default": false,
             "description": "For claude: the user's Claude Code settings (allow and deny lists,\ndefault mode, CLAUDE.md), without their hooks.",
             "type": "boolean"
-          },
-          "vault": {
-            "default": null,
-            "description": "For on: managoat: a Managoat vault for the run (name or id).",
-            "type": [
-              "string",
-              "null"
-            ]
           }
         },
         "required": [
@@ -3021,7 +2920,7 @@
         "readOnlyHint": true,
         "title": "List panes and more"
       },
-      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- agents {fresh?, query?}: The agents the user's team offers: every Claude Code agent recipe offered on this machine, the user's other machines, their teams' and teammates', one line each: name, machine and owner, model, description. A machine that's offline shows its agents as last seen. To hand one a task (this machine's too), delegate {kind: send, agent: NAME}; for a fix in its own project, with pr: true. To run one of this machine's beside you, start_agent {recipe: NAME}.\n- managoat_agents {profile?, query?, source?}: The agents on the user's Managoat account, one compact row each: name, runtime and model, where it comes from (agent-specs: curated; hand: hand-made; app: made by an app), skills, MCP servers and description. query searches names, descriptions, skills and servers. To hand one a task, start_agent {agent: managoat, managoat_agent: NAME}.\n- managoat_conversations {labels?, limit?, status?}: The conversations on the user's Managoat account, read-only: every one, whoever started it (Arugula, the managoat CLI, a script, another conversation), the most recently active first, one line each: title, status, agent, unread, labels, what it started, and its open permission requests (waiting for the user, who answers them on their card). labels filters by key:value; status and limit as Managoat's list takes them.\n- managoat_agent {name, profile?}: One Managoat agent's whole recipe, by name: its system prompt, skills (inline or from GitHub), MCP servers, model, runtime, environment, sandbox provider and metadata, as Managoat returns it. Secrets are never in it: a server's credentials show as their ${VAR} references.",
+      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- agents {fresh?, query?}: The agents the user's team offers: every Claude Code agent recipe offered on this machine, the user's other machines, their teams' and teammates', one line each: name, machine and owner, model, description. A machine that's offline shows its agents as last seen. To hand one a task (this machine's too), delegate {kind: send, agent: NAME}; for a fix in its own project, with pr: true. To run one of this machine's beside you, start_agent {recipe: NAME}.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -3050,24 +2949,13 @@
               "panes",
               "conversations",
               "devices",
-              "agents",
-              "managoat_agents",
-              "managoat_conversations",
-              "managoat_agent"
+              "agents"
             ],
             "type": "string"
           },
-          "labels": {
-            "default": [],
-            "description": "managoat_conversations: Only conversations carrying these labels, each \"key:value\" (all of\nthem).",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
           "limit": {
             "default": null,
-            "description": "conversations: How many [default 30]. managoat_conversations: At most this many, the most recently active first (1 to 500;\ndefault 100).",
+            "description": "conversations: How many [default 30].",
             "format": "uint",
             "minimum": 0,
             "type": [
@@ -3080,37 +2968,9 @@
             "description": "conversations: Only ones open somewhere now.",
             "type": "boolean"
           },
-          "name": {
-            "description": "managoat_agent: The agent's name (or id), as kind managoat_agents gives it.",
-            "type": "string"
-          },
-          "profile": {
-            "default": null,
-            "description": "managoat_agents, managoat_agent: The Managoat credentials profile (default: the user's default).",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "query": {
             "default": null,
-            "description": "conversations: Words in the title, prompts or folder. agents: Words to find in an agent's name or description, or its machine's\nor owner's name. managoat_agents: Words to look for in each agent's name, description, skills and MCP\nservers (all must match): a skill's name finds the agents that have\nit.",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "source": {
-            "default": null,
-            "description": "managoat_agents: Where they come from: agent-specs (the curated ones), hand\n(hand-made) or app (made by an app). Default: all.",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "status": {
-            "default": null,
-            "description": "managoat_conversations: Only these statuses, comma-separated: pending, running, idle, failed,\nterminated.",
+            "description": "conversations: Words in the title, prompts or folder. agents: Words to find in an agent's name or description, or its machine's\nor owner's name.",
             "type": [
               "string",
               "null"
@@ -4522,7 +4382,7 @@
         "readOnlyHint": false,
         "title": "Show the user a block"
       },
-      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?}: An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on.\n- app {app?, beside?}: One of the user's studio apps (a box with its own agent, hud) as an app block: the app in a frame, and its agent's questions as asks on the block; send_input to the block prompts its agent. Without app: lists the user's apps.\n- workspace {dir, actor?, beside?, env?, principals?}: A chant workspace block: its members as cards (open a shell, an agent or the changes in one), its records, and the gates waiting for a person, which the user can approve there and which show as attention on the phone and the swarm. Read through the workspace's own chant. Returns its members and the gates waiting.\n- managoat {beside?, profile?, query?, source?}: The user's Managoat agents as a catalog block: a card per agent with its skills, servers and where it comes from, filters, and Run on Managoat / Spec for each. Returns the (filtered) list as text.",
+      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?}: An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on.\n- app {app?, beside?}: One of the user's studio apps (a box with its own agent, hud) as an app block: the app in a frame, and its agent's questions as asks on the block; send_input to the block prompts its agent. Without app: lists the user's apps.\n- workspace {dir, actor?, beside?, env?, principals?}: A chant workspace block: its members as cards (open a shell, an agent or the changes in one), its records, and the gates waiting for a person, which the user can approve there and which show as attention on the phone and the swarm. Read through the workspace's own chant. Returns its members and the gates waiting.",
       "inputSchema": {
         "$defs": {
           "ConversationThen": {
@@ -4573,7 +4433,7 @@
                 "type": "null"
               }
             ],
-            "description": "port, file, pr, issue, conversation, app, workspace, managoat: Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in). changes: The pane whose repository it is (its directory, on its machine). Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in)."
+            "description": "port, file, pr, issue, conversation, app, workspace: Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in). changes: The pane whose repository it is (its directory, on its machine). Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in)."
           },
           "dir": {
             "default": null,
@@ -4609,8 +4469,7 @@
               "issue",
               "conversation",
               "app",
-              "workspace",
-              "managoat"
+              "workspace"
             ],
             "type": "string"
           },
@@ -4651,22 +4510,6 @@
             "description": "workspace: Editors' chant principals, by their Arugula name\n({\"sam\": \"github:sam-h\"}), for gates an editor approves.",
             "type": "object"
           },
-          "profile": {
-            "default": null,
-            "description": "managoat: The Managoat credentials profile (default: the user's default).",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "query": {
-            "default": null,
-            "description": "managoat: Start with this search (as kind managoat_agents' query).",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "repo": {
             "default": null,
             "description": "changes: Any directory in the repository, instead (on the pane's machine).",
@@ -4686,14 +4529,6 @@
           "rev_b": {
             "default": null,
             "description": "changes: With rev_a: the range rev_a..rev_b instead of the working tree.",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "source": {
-            "default": null,
-            "description": "managoat: Start with this source: agent-specs, hand or app.",
             "type": [
               "string",
               "null"
@@ -4741,11 +4576,6 @@
               {
                 "const": "claude",
                 "description": "Claude Code.",
-                "type": "string"
-              },
-              {
-                "const": "managoat",
-                "description": "An agent in a Managoat sandbox (managoat_agent names it).",
                 "type": "string"
               },
               {
@@ -4809,33 +4639,9 @@
               "null"
             ]
           },
-          "environment": {
-            "default": null,
-            "description": "For on: managoat: a Managoat environment instead of the project's (name or id).",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "managoat_agent": {
-            "default": null,
-            "description": "For managoat: the agent's name or id.",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "model": {
             "default": null,
             "description": "A model to switch to (`haiku`, ...).",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "on": {
-            "default": null,
-            "description": "Where a recipe runs: here (default), or managoat: in a Managoat sandbox, as its Managoat agent recipe-NAME (upserted from the recipe first), with its project's origin cloned there (uncommitted work stays here).",
             "type": [
               "string",
               "null"
@@ -4881,14 +4687,6 @@
             "default": false,
             "description": "For claude: the user's Claude Code settings (allow and deny lists,\ndefault mode, CLAUDE.md), without their hooks.",
             "type": "boolean"
-          },
-          "vault": {
-            "default": null,
-            "description": "For on: managoat: a Managoat vault for the run (name or id).",
-            "type": [
-              "string",
-              "null"
-            ]
           },
           "vm": {
             "default": false,
@@ -6422,7 +6220,7 @@
         "readOnlyHint": true,
         "title": "List panes and more"
       },
-      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- managoat_agents {profile?, query?, source?}: The agents on the user's Managoat account, one compact row each: name, runtime and model, where it comes from (agent-specs: curated; hand: hand-made; app: made by an app), skills, MCP servers and description. query searches names, descriptions, skills and servers. To hand one a task, start_agent {agent: managoat, managoat_agent: NAME}.\n- managoat_conversations {labels?, limit?, status?}: The conversations on the user's Managoat account, read-only: every one, whoever started it (Arugula, the managoat CLI, a script, another conversation), the most recently active first, one line each: title, status, agent, unread, labels, what it started, and its open permission requests (waiting for the user, who answers them on their card). labels filters by key:value; status and limit as Managoat's list takes them.\n- managoat_agent {name, profile?}: One Managoat agent's whole recipe, by name: its system prompt, skills (inline or from GitHub), MCP servers, model, runtime, environment, sandbox provider and metadata, as Managoat returns it. Secrets are never in it: a server's credentials show as their ${VAR} references.",
+      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -6445,24 +6243,13 @@
             "enum": [
               "panes",
               "conversations",
-              "devices",
-              "managoat_agents",
-              "managoat_conversations",
-              "managoat_agent"
+              "devices"
             ],
             "type": "string"
           },
-          "labels": {
-            "default": [],
-            "description": "managoat_conversations: Only conversations carrying these labels, each \"key:value\" (all of\nthem).",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
           "limit": {
             "default": null,
-            "description": "conversations: How many [default 30]. managoat_conversations: At most this many, the most recently active first (1 to 500;\ndefault 100).",
+            "description": "conversations: How many [default 30].",
             "format": "uint",
             "minimum": 0,
             "type": [
@@ -6475,37 +6262,9 @@
             "description": "conversations: Only ones open somewhere now.",
             "type": "boolean"
           },
-          "name": {
-            "description": "managoat_agent: The agent's name (or id), as kind managoat_agents gives it.",
-            "type": "string"
-          },
-          "profile": {
-            "default": null,
-            "description": "managoat_agents, managoat_agent: The Managoat credentials profile (default: the user's default).",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "query": {
             "default": null,
-            "description": "conversations: Words in the title, prompts or folder. managoat_agents: Words to look for in each agent's name, description, skills and MCP\nservers (all must match): a skill's name finds the agents that have\nit.",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "source": {
-            "default": null,
-            "description": "managoat_agents: Where they come from: agent-specs (the curated ones), hand\n(hand-made) or app (made by an app). Default: all.",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "status": {
-            "default": null,
-            "description": "managoat_conversations: Only these statuses, comma-separated: pending, running, idle, failed,\nterminated.",
+            "description": "conversations: Words in the title, prompts or folder.",
             "type": [
               "string",
               "null"
@@ -6903,7 +6662,7 @@
         "readOnlyHint": false,
         "title": "Show the user a block"
       },
-      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?}: An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on.\n- managoat {beside?, profile?, query?, source?}: The user's Managoat agents as a catalog block: a card per agent with its skills, servers and where it comes from, filters, and Run on Managoat / Spec for each. Returns the (filtered) list as text.",
+      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?}: An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on.",
       "inputSchema": {
         "$defs": {
           "ConversationThen": {
@@ -6938,7 +6697,7 @@
                 "type": "null"
               }
             ],
-            "description": "port, file, pr, issue, conversation, managoat: Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in). changes: The pane whose repository it is (its directory, on its machine). Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in)."
+            "description": "port, file, pr, issue, conversation: Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in). changes: The pane whose repository it is (its directory, on its machine). Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in)."
           },
           "dir": {
             "default": null,
@@ -6964,8 +6723,7 @@
               "file",
               "pr",
               "issue",
-              "conversation",
-              "managoat"
+              "conversation"
             ],
             "type": "string"
           },
@@ -6998,22 +6756,6 @@
             "description": "pr: The pull request: its link (a Forgejo PR's or a GitLab MR's),\nOWNER/REPO#N, GROUP/PROJECT!N (GitLab), or N (in dir's repository).",
             "type": "string"
           },
-          "profile": {
-            "default": null,
-            "description": "managoat: The Managoat credentials profile (default: the user's default).",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "query": {
-            "default": null,
-            "description": "managoat: Start with this search (as kind managoat_agents' query).",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "repo": {
             "default": null,
             "description": "changes: Any directory in the repository, instead (on the pane's machine).",
@@ -7033,14 +6775,6 @@
           "rev_b": {
             "default": null,
             "description": "changes: With rev_a: the range rev_a..rev_b instead of the working tree.",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "source": {
-            "default": null,
-            "description": "managoat: Start with this source: agent-specs, hand or app.",
             "type": [
               "string",
               "null"
@@ -7088,11 +6822,6 @@
               {
                 "const": "claude",
                 "description": "Claude Code.",
-                "type": "string"
-              },
-              {
-                "const": "managoat",
-                "description": "An agent in a Managoat sandbox (managoat_agent names it).",
                 "type": "string"
               },
               {
@@ -7156,33 +6885,9 @@
               "null"
             ]
           },
-          "environment": {
-            "default": null,
-            "description": "For on: managoat: a Managoat environment instead of the project's (name or id).",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "managoat_agent": {
-            "default": null,
-            "description": "For managoat: the agent's name or id.",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "model": {
             "default": null,
             "description": "A model to switch to (`haiku`, ...).",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "on": {
-            "default": null,
-            "description": "Where a recipe runs: here (default), or managoat: in a Managoat sandbox, as its Managoat agent recipe-NAME (upserted from the recipe first), with its project's origin cloned there (uncommitted work stays here).",
             "type": [
               "string",
               "null"
@@ -7220,14 +6925,6 @@
             "default": false,
             "description": "For claude: the user's Claude Code settings (allow and deny lists,\ndefault mode, CLAUDE.md), without their hooks.",
             "type": "boolean"
-          },
-          "vault": {
-            "default": null,
-            "description": "For on: managoat: a Managoat vault for the run (name or id).",
-            "type": [
-              "string",
-              "null"
-            ]
           }
         },
         "required": [
@@ -8866,7 +8563,7 @@
         "readOnlyHint": true,
         "title": "List panes and more"
       },
-      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- agents {fresh?, query?}: The agents the user's team offers: every Claude Code agent recipe offered on this machine, the user's other machines, their teams' and teammates', one line each: name, machine and owner, model, description. A machine that's offline shows its agents as last seen. To hand one a task (this machine's too), delegate {kind: send, agent: NAME}; for a fix in its own project, with pr: true. To run one of this machine's beside you, start_agent {recipe: NAME}.\n- managoat_agents {profile?, query?, source?}: The agents on the user's Managoat account, one compact row each: name, runtime and model, where it comes from (agent-specs: curated; hand: hand-made; app: made by an app), skills, MCP servers and description. query searches names, descriptions, skills and servers. To hand one a task, start_agent {agent: managoat, managoat_agent: NAME}.\n- managoat_conversations {labels?, limit?, status?}: The conversations on the user's Managoat account, read-only: every one, whoever started it (Arugula, the managoat CLI, a script, another conversation), the most recently active first, one line each: title, status, agent, unread, labels, what it started, and its open permission requests (waiting for the user, who answers them on their card). labels filters by key:value; status and limit as Managoat's list takes them.\n- managoat_agent {name, profile?}: One Managoat agent's whole recipe, by name: its system prompt, skills (inline or from GitHub), MCP servers, model, runtime, environment, sandbox provider and metadata, as Managoat returns it. Secrets are never in it: a server's credentials show as their ${VAR} references.",
+      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- agents {fresh?, query?}: The agents the user's team offers: every Claude Code agent recipe offered on this machine, the user's other machines, their teams' and teammates', one line each: name, machine and owner, model, description. A machine that's offline shows its agents as last seen. To hand one a task (this machine's too), delegate {kind: send, agent: NAME}; for a fix in its own project, with pr: true. To run one of this machine's beside you, start_agent {recipe: NAME}.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -8895,24 +8592,13 @@
               "panes",
               "conversations",
               "devices",
-              "agents",
-              "managoat_agents",
-              "managoat_conversations",
-              "managoat_agent"
+              "agents"
             ],
             "type": "string"
           },
-          "labels": {
-            "default": [],
-            "description": "managoat_conversations: Only conversations carrying these labels, each \"key:value\" (all of\nthem).",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
           "limit": {
             "default": null,
-            "description": "conversations: How many [default 30]. managoat_conversations: At most this many, the most recently active first (1 to 500;\ndefault 100).",
+            "description": "conversations: How many [default 30].",
             "format": "uint",
             "minimum": 0,
             "type": [
@@ -8925,37 +8611,9 @@
             "description": "conversations: Only ones open somewhere now.",
             "type": "boolean"
           },
-          "name": {
-            "description": "managoat_agent: The agent's name (or id), as kind managoat_agents gives it.",
-            "type": "string"
-          },
-          "profile": {
-            "default": null,
-            "description": "managoat_agents, managoat_agent: The Managoat credentials profile (default: the user's default).",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "query": {
             "default": null,
-            "description": "conversations: Words in the title, prompts or folder. agents: Words to find in an agent's name or description, or its machine's\nor owner's name. managoat_agents: Words to look for in each agent's name, description, skills and MCP\nservers (all must match): a skill's name finds the agents that have\nit.",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "source": {
-            "default": null,
-            "description": "managoat_agents: Where they come from: agent-specs (the curated ones), hand\n(hand-made) or app (made by an app). Default: all.",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "status": {
-            "default": null,
-            "description": "managoat_conversations: Only these statuses, comma-separated: pending, running, idle, failed,\nterminated.",
+            "description": "conversations: Words in the title, prompts or folder. agents: Words to find in an agent's name or description, or its machine's\nor owner's name.",
             "type": [
               "string",
               "null"
@@ -10367,7 +10025,7 @@
         "readOnlyHint": false,
         "title": "Show the user a block"
       },
-      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?}: An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on.\n- app {app?, beside?}: One of the user's studio apps (a box with its own agent, hud) as an app block: the app in a frame, and its agent's questions as asks on the block; send_input to the block prompts its agent. Without app: lists the user's apps.\n- workspace {dir, actor?, beside?, env?, principals?}: A chant workspace block: its members as cards (open a shell, an agent or the changes in one), its records, and the gates waiting for a person, which the user can approve there and which show as attention on the phone and the swarm. Read through the workspace's own chant. Returns its members and the gates waiting.\n- managoat {beside?, profile?, query?, source?}: The user's Managoat agents as a catalog block: a card per agent with its skills, servers and where it comes from, filters, and Run on Managoat / Spec for each. Returns the (filtered) list as text.",
+      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?}: An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on.\n- app {app?, beside?}: One of the user's studio apps (a box with its own agent, hud) as an app block: the app in a frame, and its agent's questions as asks on the block; send_input to the block prompts its agent. Without app: lists the user's apps.\n- workspace {dir, actor?, beside?, env?, principals?}: A chant workspace block: its members as cards (open a shell, an agent or the changes in one), its records, and the gates waiting for a person, which the user can approve there and which show as attention on the phone and the swarm. Read through the workspace's own chant. Returns its members and the gates waiting.",
       "inputSchema": {
         "$defs": {
           "ConversationThen": {
@@ -10418,7 +10076,7 @@
                 "type": "null"
               }
             ],
-            "description": "port, file, pr, issue, conversation, app, workspace, managoat: Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in). changes: The pane whose repository it is (its directory, on its machine). Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in)."
+            "description": "port, file, pr, issue, conversation, app, workspace: Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in). changes: The pane whose repository it is (its directory, on its machine). Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in)."
           },
           "dir": {
             "default": null,
@@ -10454,8 +10112,7 @@
               "issue",
               "conversation",
               "app",
-              "workspace",
-              "managoat"
+              "workspace"
             ],
             "type": "string"
           },
@@ -10496,22 +10153,6 @@
             "description": "workspace: Editors' chant principals, by their Arugula name\n({\"sam\": \"github:sam-h\"}), for gates an editor approves.",
             "type": "object"
           },
-          "profile": {
-            "default": null,
-            "description": "managoat: The Managoat credentials profile (default: the user's default).",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "query": {
-            "default": null,
-            "description": "managoat: Start with this search (as kind managoat_agents' query).",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "repo": {
             "default": null,
             "description": "changes: Any directory in the repository, instead (on the pane's machine).",
@@ -10531,14 +10172,6 @@
           "rev_b": {
             "default": null,
             "description": "changes: With rev_a: the range rev_a..rev_b instead of the working tree.",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "source": {
-            "default": null,
-            "description": "managoat: Start with this source: agent-specs, hand or app.",
             "type": [
               "string",
               "null"
@@ -10586,11 +10219,6 @@
               {
                 "const": "claude",
                 "description": "Claude Code.",
-                "type": "string"
-              },
-              {
-                "const": "managoat",
-                "description": "An agent in a Managoat sandbox (managoat_agent names it).",
                 "type": "string"
               },
               {
@@ -10654,33 +10282,9 @@
               "null"
             ]
           },
-          "environment": {
-            "default": null,
-            "description": "For on: managoat: a Managoat environment instead of the project's (name or id).",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "managoat_agent": {
-            "default": null,
-            "description": "For managoat: the agent's name or id.",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "model": {
             "default": null,
             "description": "A model to switch to (`haiku`, ...).",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "on": {
-            "default": null,
-            "description": "Where a recipe runs: here (default), or managoat: in a Managoat sandbox, as its Managoat agent recipe-NAME (upserted from the recipe first), with its project's origin cloned there (uncommitted work stays here).",
             "type": [
               "string",
               "null"
@@ -10726,14 +10330,6 @@
             "default": false,
             "description": "For claude: the user's Claude Code settings (allow and deny lists,\ndefault mode, CLAUDE.md), without their hooks.",
             "type": "boolean"
-          },
-          "vault": {
-            "default": null,
-            "description": "For on: managoat: a Managoat vault for the run (name or id).",
-            "type": [
-              "string",
-              "null"
-            ]
           },
           "vm": {
             "default": false,
@@ -11858,7 +11454,7 @@
         "readOnlyHint": true,
         "title": "List panes and more"
       },
-      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- managoat_agents {profile?, query?, source?}: The agents on the user's Managoat account, one compact row each: name, runtime and model, where it comes from (agent-specs: curated; hand: hand-made; app: made by an app), skills, MCP servers and description. query searches names, descriptions, skills and servers. To hand one a task, start_agent {agent: managoat, managoat_agent: NAME}.\n- managoat_conversations {labels?, limit?, status?}: The conversations on the user's Managoat account, read-only: every one, whoever started it (Arugula, the managoat CLI, a script, another conversation), the most recently active first, one line each: title, status, agent, unread, labels, what it started, and its open permission requests (waiting for the user, who answers them on their card). labels filters by key:value; status and limit as Managoat's list takes them.\n- managoat_agent {name, profile?}: One Managoat agent's whole recipe, by name: its system prompt, skills (inline or from GitHub), MCP servers, model, runtime, environment, sandbox provider and metadata, as Managoat returns it. Secrets are never in it: a server's credentials show as their ${VAR} references.",
+      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -11881,24 +11477,13 @@
             "enum": [
               "panes",
               "conversations",
-              "devices",
-              "managoat_agents",
-              "managoat_conversations",
-              "managoat_agent"
+              "devices"
             ],
             "type": "string"
           },
-          "labels": {
-            "default": [],
-            "description": "managoat_conversations: Only conversations carrying these labels, each \"key:value\" (all of\nthem).",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
           "limit": {
             "default": null,
-            "description": "conversations: How many [default 30]. managoat_conversations: At most this many, the most recently active first (1 to 500;\ndefault 100).",
+            "description": "conversations: How many [default 30].",
             "format": "uint",
             "minimum": 0,
             "type": [
@@ -11911,37 +11496,9 @@
             "description": "conversations: Only ones open somewhere now.",
             "type": "boolean"
           },
-          "name": {
-            "description": "managoat_agent: The agent's name (or id), as kind managoat_agents gives it.",
-            "type": "string"
-          },
-          "profile": {
-            "default": null,
-            "description": "managoat_agents, managoat_agent: The Managoat credentials profile (default: the user's default).",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "query": {
             "default": null,
-            "description": "conversations: Words in the title, prompts or folder. managoat_agents: Words to look for in each agent's name, description, skills and MCP\nservers (all must match): a skill's name finds the agents that have\nit.",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "source": {
-            "default": null,
-            "description": "managoat_agents: Where they come from: agent-specs (the curated ones), hand\n(hand-made) or app (made by an app). Default: all.",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "status": {
-            "default": null,
-            "description": "managoat_conversations: Only these statuses, comma-separated: pending, running, idle, failed,\nterminated.",
+            "description": "conversations: Words in the title, prompts or folder.",
             "type": [
               "string",
               "null"
@@ -12877,7 +12434,7 @@
         "readOnlyHint": true,
         "title": "List panes and more"
       },
-      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- agents {fresh?, query?}: The agents the user's team offers: every Claude Code agent recipe offered on this machine, the user's other machines, their teams' and teammates', one line each: name, machine and owner, model, description. A machine that's offline shows its agents as last seen. To hand one a task (this machine's too), delegate {kind: send, agent: NAME}; for a fix in its own project, with pr: true. To run one of this machine's beside you, start_agent {recipe: NAME}.\n- managoat_agents {profile?, query?, source?}: The agents on the user's Managoat account, one compact row each: name, runtime and model, where it comes from (agent-specs: curated; hand: hand-made; app: made by an app), skills, MCP servers and description. query searches names, descriptions, skills and servers. To hand one a task, start_agent {agent: managoat, managoat_agent: NAME}.\n- managoat_conversations {labels?, limit?, status?}: The conversations on the user's Managoat account, read-only: every one, whoever started it (Arugula, the managoat CLI, a script, another conversation), the most recently active first, one line each: title, status, agent, unread, labels, what it started, and its open permission requests (waiting for the user, who answers them on their card). labels filters by key:value; status and limit as Managoat's list takes them.\n- managoat_agent {name, profile?}: One Managoat agent's whole recipe, by name: its system prompt, skills (inline or from GitHub), MCP servers, model, runtime, environment, sandbox provider and metadata, as Managoat returns it. Secrets are never in it: a server's credentials show as their ${VAR} references.",
+      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- agents {fresh?, query?}: The agents the user's team offers: every Claude Code agent recipe offered on this machine, the user's other machines, their teams' and teammates', one line each: name, machine and owner, model, description. A machine that's offline shows its agents as last seen. To hand one a task (this machine's too), delegate {kind: send, agent: NAME}; for a fix in its own project, with pr: true. To run one of this machine's beside you, start_agent {recipe: NAME}.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -12906,24 +12463,13 @@
               "panes",
               "conversations",
               "devices",
-              "agents",
-              "managoat_agents",
-              "managoat_conversations",
-              "managoat_agent"
+              "agents"
             ],
             "type": "string"
           },
-          "labels": {
-            "default": [],
-            "description": "managoat_conversations: Only conversations carrying these labels, each \"key:value\" (all of\nthem).",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
           "limit": {
             "default": null,
-            "description": "conversations: How many [default 30]. managoat_conversations: At most this many, the most recently active first (1 to 500;\ndefault 100).",
+            "description": "conversations: How many [default 30].",
             "format": "uint",
             "minimum": 0,
             "type": [
@@ -12936,37 +12482,9 @@
             "description": "conversations: Only ones open somewhere now.",
             "type": "boolean"
           },
-          "name": {
-            "description": "managoat_agent: The agent's name (or id), as kind managoat_agents gives it.",
-            "type": "string"
-          },
-          "profile": {
-            "default": null,
-            "description": "managoat_agents, managoat_agent: The Managoat credentials profile (default: the user's default).",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "query": {
             "default": null,
-            "description": "conversations: Words in the title, prompts or folder. agents: Words to find in an agent's name or description, or its machine's\nor owner's name. managoat_agents: Words to look for in each agent's name, description, skills and MCP\nservers (all must match): a skill's name finds the agents that have\nit.",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "source": {
-            "default": null,
-            "description": "managoat_agents: Where they come from: agent-specs (the curated ones), hand\n(hand-made) or app (made by an app). Default: all.",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "status": {
-            "default": null,
-            "description": "managoat_conversations: Only these statuses, comma-separated: pending, running, idle, failed,\nterminated.",
+            "description": "conversations: Words in the title, prompts or folder. agents: Words to find in an agent's name or description, or its machine's\nor owner's name.",
             "type": [
               "string",
               "null"
