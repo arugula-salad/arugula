@@ -26,6 +26,8 @@ const agentBlock = (page: Page) =>
 
 test.describe("desktop", () => {
   test("an agent block asks, runs, shows its output, and takes messages", async ({ page }) => {
+    // The expanded launcher must keep Start reachable on a short desktop.
+    await page.setViewportSize({ width: 1280, height: 500 });
     await reset(page);
     const [term] = await panes(page);
     await menu(page, paneEl(page, term), "Start an agent…");
