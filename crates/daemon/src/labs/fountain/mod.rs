@@ -261,6 +261,9 @@ pub async fn conversations_answer(
     status: Option<String>,
     limit: Option<u32>,
 ) -> Result<(String, Value), String> {
+    if crate::labs::DIRECT_MANAGOAT_RETIRED {
+        return Err(crate::agent::defs::CLOUD_MIGRATION.into());
+    }
     let labels = conversations::parse_labels(&json!(labels))?;
     let account = account::get().ok_or("Managoat isn't set up on this daemon yet")?;
     let login = account.resolve().await?;
@@ -513,6 +516,9 @@ fn input_reason(headline: String) -> arugula_proto::Reason {
 
 impl FountainBlock {
     pub fn create(ctx: BlockCtx, config: Value) -> Result<Arc<dyn Block>, String> {
+        if crate::labs::DIRECT_MANAGOAT_RETIRED && !ctx.restoring {
+            return Err(crate::agent::defs::CLOUD_MIGRATION.into());
+        }
         let config: Config = serde_json::from_value(config).map_err(|e| format!("fountain config: {e}"))?;
         let state = State {
             tab: config.tab,

@@ -16,6 +16,7 @@ mod billing;
 mod blocks;
 #[cfg(test)]
 mod blocks_wire;
+mod cloud;
 mod db;
 mod forge;
 #[cfg(test)]
@@ -152,6 +153,29 @@ struct Args {
     /// How many each may have at once.
     #[arg(long, default_value_t = 2, env = "ARUGULA_SANDBOX_QUOTA")]
     sandbox_quota: usize,
+
+    /// Managed cloud agents. Credentials are held only by control.
+    #[arg(long, env = "ARUGULA_MANAGOAT_URL", default_value = "https://managoat.com")]
+    cloud_provider_url: String,
+    #[arg(long, env = "ARUGULA_MANAGOAT_API_KEY", hide_env_values = true)]
+    cloud_provider_key: Option<String>,
+    /// Separate 32-byte hex encryption key for user cloud secrets. Back up with deployment secrets.
+    #[arg(long, env = "ARUGULA_CLOUD_SECRET_KEY", hide_env_values = true)]
+    cloud_secret_key: Option<String>,
+    /// Limited beta allowlist; empty disables access for all accounts.
+    #[arg(long, env = "ARUGULA_CLOUD_ACCOUNTS", value_delimiter = ',')]
+    cloud_accounts: Vec<String>,
+    /// Platform-funded model, required when cloud execution is configured.
+    #[arg(long, env = "ARUGULA_CLOUD_MODEL")]
+    cloud_model: Option<String>,
+    #[arg(long, env = "ARUGULA_CLOUD_RUNTIME", default_value = "claude", value_parser = ["claude", "codex", "gemini"])]
+    cloud_runtime: String,
+    #[arg(long, env = "ARUGULA_CLOUD_DAILY_RUNS", default_value_t = 10)]
+    cloud_daily_runs: u64,
+    #[arg(long, env = "ARUGULA_CLOUD_CONCURRENT_RUNS", default_value_t = 2)]
+    cloud_concurrent_runs: u64,
+    #[arg(long, env = "ARUGULA_CLOUD_RUN_MINUTES", default_value_t = 30)]
+    cloud_run_minutes: u64,
 
     /// Billing (M22): a Stripe secret key turns it on (STRIPE_SECRET_KEY);
     /// webhooks are checked with STRIPE_WEBHOOK_SECRET.
@@ -306,6 +330,7 @@ pub struct App {
     pub vapid: push::Vapid,
     pub hosted: Option<sandboxes::Hosted>,
     pub stripe: Option<billing::Stripe>,
+    pub cloud: Option<cloud::Cloud>,
     /// The GitHub App (M40), and daemons' subscriptions to its webhooks.
     pub github_app: Option<forge::GithubApp>,
     pub forge: forge::Watches,
@@ -352,6 +377,7 @@ impl App {
             vapid,
             hosted: None,
             stripe: None,
+            cloud: None,
             github_app: None,
             forge: Default::default(),
             app_logins: Default::default(),
@@ -482,6 +508,17 @@ pub fn router(app: Arc<App>) -> Router {
         .route("/api/push/unsubscribe", post(push::unsubscribe))
         .route(wire::PUSH_SUBS, get(push::daemon_subs))
         .route(wire::PUSH, post(push::daemon_send))
+        .route("/api/cloud/secrets", get(cloud::list_secrets))
+        .route("/api/cloud/secrets/{name}", axum::routing::put(cloud::put_secret).delete(cloud::delete_secret))
+        .route("/api/cloud/runs", get(cloud::runs).post(cloud::start_run))
+        .route("/api/cloud/runs/{id}", get(cloud::run))
+        .route("/api/cloud/runs/{id}/requests", get(cloud::requests))
+        .route("/api/cloud/runs/{id}/requests/{request}", post(cloud::answer))
+        .route("/api/cloud/runs/{id}/cancel", post(cloud::cancel_run))
+        .route("/api/cloud/runs/{id}/events", get(cloud::events))
+        .route("/api/cloud/import", post(cloud::migration::import))
+        .route("/api/cloud/agents", get(cloud::catalog).post(cloud::create_agent))
+        .route("/api/cloud/agents/{id}", axum::routing::put(cloud::update_agent).delete(cloud::delete_agent))
         .route("/api/sandboxes", get(sandboxes::list).post(sandboxes::create))
         .route("/api/sandboxes/{id}", axum::routing::delete(sandboxes::delete))
         .route(wire::SANDBOX_DONE, post(sandboxes::done))
@@ -812,6 +849,41 @@ async fn run() -> anyhow::Result<()> {
         Some(d) => info!(domain = %d, "blocks served at b-<key>.{d}"),
         None => info!("no ARUGULA_CONTROL_BLOCK_DOMAIN: blocks aren't served through control"),
     }
+    let cloud = match a.cloud_provider_key.filter(|k| !k.is_empty()) {
+        Some(key) => {
+            let model = a
+                .cloud_model
+                .filter(|m| !m.trim().is_empty())
+                .context("ARUGULA_CLOUD_MODEL is required for cloud agents")?;
+            let prefix = match a.cloud_runtime.as_str() {
+                "claude" => "anthropic/",
+                "codex" => "openai/",
+                _ => "google/",
+            };
+            anyhow::ensure!(
+                model.starts_with(prefix) && model.len() > prefix.len(),
+                "cloud model must match the configured runtime"
+            );
+            let duration_ms = a
+                .cloud_run_minutes
+                .checked_mul(60_000)
+                .filter(|m| *m > 0)
+                .context("cloud run duration must be positive and finite")?;
+            Some(cloud::Cloud {
+                secret_cipher: a.cloud_secret_key.as_deref().map(cloud::secrets::SecretCipher::new).transpose()?,
+                provider: cloud::provider::Provider::new(&a.cloud_provider_url, key)?,
+                accounts: a.cloud_accounts,
+                model,
+                runtime: a.cloud_runtime,
+                limits: db::cloud::RunLimits {
+                    daily_runs: a.cloud_daily_runs,
+                    concurrent_runs: a.cloud_concurrent_runs,
+                    duration_ms,
+                },
+            })
+        }
+        None => None,
+    };
     let app = Arc::new(App {
         cfg: Config {
             push_hosts: a.push_hosts,
@@ -838,6 +910,7 @@ async fn run() -> anyhow::Result<()> {
         vapid,
         hosted,
         stripe,
+        cloud,
         github_app,
         forge: Default::default(),
         app_logins: Default::default(),
@@ -858,6 +931,10 @@ async fn run() -> anyhow::Result<()> {
     }
     if app.github_app.is_some() {
         tokio::spawn(forge::heartbeat(app.clone(), std::time::Duration::from_secs(a.forge_heartbeat_secs.max(1))));
+    }
+    if app.cloud.is_some() {
+        cloud::worker::start(app.clone());
+        cloud::notifications::start(app.clone());
     }
     if app.stripe.is_some() {
         let a2 = app.clone();

@@ -84,6 +84,7 @@ sw.addEventListener("fetch", (event: FetchEvent) => {
 });
 
 interface Msg {
+  cloud_run?: string;
   title?: string;
   body?: string;
   tag?: string;
@@ -146,9 +147,9 @@ sw.addEventListener("push", (event: PushEvent) => {
       tag: msg.tag || "arugula",
       renotify: true,
       icon: "/icon.svg",
-      requireInteraction: !!(approve || ask || gate || point),
+      requireInteraction: !!(approve || ask || gate || point || msg.cloud_run),
       actions,
-      data: { pane: msg.pane, daemon: msg.daemon, thread: msg.thread, approve, ask, reason, control: msg.control === true },
+      data: { cloud_run: msg.cloud_run, pane: msg.pane, daemon: msg.daemon, thread: msg.thread, approve, ask, reason, control: msg.control === true },
     } as NotificationOptions),
   );
 });
@@ -193,6 +194,17 @@ async function failed(pane: number, daemon: string | undefined, what: string) {
 sw.addEventListener("notificationclick", (event: ClickEvent) => {
   event.notification.close();
   const data = (event.notification.data || {}) as Msg & { approve: Msg["approve"] | null; ask: Msg["ask"] | null };
+  if (data.cloud_run && /^run_[0-9a-f]+$/.test(data.cloud_run)) {
+    const run = data.cloud_run;
+    event.waitUntil((async () => {
+      const windows = await sw.clients.matchAll({ type: "window", includeUncontrolled: true });
+      for (const window of windows) {
+        if (window.focus) { window.postMessage({ type: "open-cloud-run", run }); return window.focus(); }
+      }
+      return sw.clients.openWindow(`/#cloud=${run}`);
+    })());
+    return;
+  }
   const pane = data.pane;
   if ((event.action === "approve" || event.action === "deny") && pane && data.approve) {
     const action = event.action === "approve" ? "allow" : "deny";

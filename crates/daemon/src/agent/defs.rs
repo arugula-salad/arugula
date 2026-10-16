@@ -179,6 +179,8 @@ fn installed(home: &Path, name: &str) -> String {
 }
 
 /// Why a block can't wear a Managoat agent here (M44's `as_fountain`).
+pub const CLOUD_MIGRATION: &str = "Direct Managoat execution is retired. Open Cloud agents in your Arugula account to run or import an agent. Saved local transcripts remain readable.";
+
 pub const AS_FOUNTAIN_GONE: &str = "wearing a Managoat agent here (as_fountain) was retired on 2026-10-15: \
 run it on Managoat (agent managoat), or run a recipe (.claude/agents/NAME.md) here";
 
@@ -203,11 +205,7 @@ impl Def {
 
     pub fn check(&self) -> Result<(), String> {
         match self.agent {
-            // Without Labs there is no Managoat to run or to wear.
-            Kind::Fountain if !crate::labs::BUILT => Err(crate::labs::not_built("Managoat")),
-            Kind::Fountain if !self.command.is_empty() => {
-                Err("a Managoat block runs no command (to run `managoat acp` by hand: agent acp)".into())
-            }
+            Kind::Fountain => Err(CLOUD_MIGRATION.into()),
             _ if self.agent != Kind::Fountain && (self.environment.is_some() || !self.labels.is_empty()) => {
                 Err("environment and labels are a Managoat conversation's (agent: managoat)".into())
             }
@@ -222,11 +220,8 @@ impl Def {
             _ if self.user_settings && self.agent != Kind::Claude => {
                 Err("user_settings is Claude Code's (agent: claude)".into())
             }
-            Kind::Codex | Kind::Fountain if self.claude_config_dir.is_some() => {
+            Kind::Codex if self.claude_config_dir.is_some() => {
                 Err("claude_config_dir is Claude Code's (agent: claude, or acp running its adapter)".into())
-            }
-            Kind::Fountain if self.permission_mode.is_some() => {
-                Err("a Managoat agent takes permission, not permission_mode".into())
             }
             _ => Ok(()),
         }
@@ -389,10 +384,10 @@ mod tests {
                 vault: Some("v".into()),
                 ..Default::default()
             };
-            assert!(f.launch(home, false).unwrap().argv.is_empty());
+            assert_eq!(f.launch(home, false).unwrap_err(), CLOUD_MIGRATION);
             assert!(f.launch(home, true).is_err());
             let by_hand = Def { command: split_command("managoat acp --agent arena"), ..f.clone() };
-            assert!(by_hand.check().unwrap_err().contains("agent acp"));
+            assert_eq!(by_hand.check().unwrap_err(), CLOUD_MIGRATION);
             let acp =
                 Def { agent: Kind::Acp, command: split_command("managoat acp --agent arena"), ..Default::default() };
             assert_eq!(acp.launch(home, false).unwrap().argv, split_command("managoat acp --agent arena"));

@@ -25,7 +25,7 @@ pub struct Args {
     acp: Option<String>,
     /// A Managoat agent (name or id), run in Managoat's sandbox.
     /// (`--fountain`, its name before the rename, still works.)
-    #[arg(long = "managoat", value_name = "AGENT", alias = "fountain", conflicts_with = "codex")]
+    #[arg(long = "managoat", hide = true, value_name = "AGENT", alias = "fountain", conflicts_with = "codex")]
     fountain: Option<String>,
     /// Claude Code as a recipe, a Claude Code subagent (its `name`, from
     /// `.claude/agents/` here or `~/.claude/agents/`): its prompt, model,

@@ -66,7 +66,7 @@ impl Vapid {
         B64.encode(self.key.public_key().to_sec1_bytes())
     }
 
-    fn jwt(&self, audience: &str, subject: &str) -> String {
+    pub(crate) fn jwt(&self, audience: &str, subject: &str) -> String {
         let header = B64.encode(br#"{"typ":"JWT","alg":"ES256"}"#);
         let exp = now_ms() / 1000 + 12 * 3600;
         let claims = B64.encode(json!({ "aud": audience, "exp": exp, "sub": subject }).to_string());
@@ -77,7 +77,7 @@ impl Vapid {
 }
 
 /// An endpoint at a real push service (or one allowed for tests).
-fn allowed_endpoint(app: &App, endpoint: &str) -> bool {
+pub(crate) fn allowed_endpoint(app: &App, endpoint: &str) -> bool {
     let Ok(u) = url::Url::parse(endpoint) else { return false };
     let Some(host) = u.host_str() else { return false };
     let hostport = match u.port() {

@@ -1070,3 +1070,38 @@ fn a_missing_command_fails_its_block_and_nothing_else() {
     let ok = d.open("hello");
     assert_eq!(d.wait(ok, "idle"), "done");
 }
+
+#[test]
+fn legacy_cloud_transcript_restores_without_launching_or_accepting_commands() {
+    let mut d = Daemon::child();
+    let (status, body) = d.raw(
+        "POST",
+        "/api/blocks",
+        Some(json!({"type":"agent","config":{"agent":"fountain","fountain_agent":"legacy-agent"}})),
+    );
+    assert_eq!(status, 400);
+    assert!(body.contains("retired"));
+    let id = d.open("hello");
+    d.wait(id, "idle");
+    let transcript = entries(&d.state(id));
+    d.stop();
+    let path = d.state.join("layout.json");
+    let mut saved: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    let config = &mut saved["panes"][id.to_string()]["config"];
+    config["agent"] = json!("fountain");
+    config["fountain_agent"] = json!("legacy-agent");
+    // Even an old explicit command override must not bypass retirement.
+    config["command"] = json!(["python3", fake()]);
+    std::fs::write(&path, saved.to_string()).unwrap();
+    d.start();
+    d.wait_for("legacy transcript", || d.raw("GET", &format!("/api/blocks/{id}"), None).0 == 200);
+    let state = d.state(id);
+    assert_eq!(state["status"], "stopped");
+    assert_eq!(entries(&state), transcript);
+    assert!(state["error"].as_str().unwrap().contains("retired"));
+    for method in ["start", "send", "approve", "answer", "wake", "terminate", "interrupt", "cancel", "resume"] {
+        let (status, body) = d.raw("POST", &format!("/api/blocks/{id}/call/{method}"), Some(json!({"text":"hello"})));
+        assert_eq!(status, 400, "{body}");
+        assert!(body.contains("retired"), "{body}");
+    }
+}

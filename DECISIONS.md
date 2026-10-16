@@ -603,6 +603,27 @@ with M44).
 Where: `crates/daemon/src/labs/agents/`, `crates/daemon/src/labs/wearing.rs` (`Worn`), `crates/cli/src/cmd/agents.rs`.
 From: [S34](https://github.com/arugula-salad/arugula/issues/397), M76 (#398), #403.
 
+### Cloud execution is owned by Arugula control
+
+Arugula owns the backend account and inference configuration. Users start
+cloud runs through their Arugula account, choose curated or custom agents,
+and provide only the application secrets those agents need. Every run gets
+a fresh disposable checkout; control persists its lifecycle, approvals,
+transcript, and results across browser disconnects and process restarts.
+The beta is account-allowlisted with admission and duration limits.
+
+This replaces the direct-account workflows below: daemon-side Managoat
+login, account streams, remote catalogs, and recipe execution are retired.
+Old saved agent blocks remain readable without reconnecting. Definitions
+can be imported explicitly into account-scoped cloud agents; old remote
+conversations are not transferred. Local agents and their permission rules
+remain machine-owned. Cloud processing is separate from the encrypted
+terminal relay.
+
+Where: `crates/control/src/cloud/`, `crates/control/src/db/cloud.rs`,
+`web/src/ui/cloud.tsx`, [managed cloud agents](docs/managoat.md).
+From: Jake's managed-platform integration decisions, 2026-10-16.
+
 ### Fountain is a headless backend, and Arugula is its UI
 Fountain is a conversational API to a computer, with no console of its own
 for agents, environments or vaults (managoat/managoat#2732). Arugula is the

@@ -1391,7 +1391,9 @@ impl Agent {
         let mut cfg: Config = serde_json::from_value(config).map_err(|e| format!("agent config: {e}"))?;
         // #379: "" is the CLI saying it has none (the default login).
         cfg.def.claude_config_dir = cfg.def.claude_config_dir.take().filter(|d| !d.trim().is_empty());
-        cfg.def.check()?;
+        if !(ctx.restoring && cfg.def.agent == Kind::Fountain) {
+            cfg.def.check()?;
+        }
         // Resolve once for a new conversation. Restores and explicit launch
         // policies keep their choices, and attaching never changes remote policy.
         if !ctx.restoring && cfg.session_id.is_none() && cfg.def.agent == Kind::Fountain && cfg.def.permission.is_none()
@@ -1469,6 +1471,11 @@ impl Agent {
     /// Start, adopt, or (by policy) wait.
     fn begin(&self) {
         let mut inner = self.inner.lock().unwrap();
+        if inner.cfg.def.agent == Kind::Fountain {
+            inner.status = Status::Stopped;
+            inner.error = Some(defs::CLOUD_MIGRATION.into());
+            return;
+        }
         if let Some(p) = inner.cfg.prompt.take() {
             inner.enqueue(&Queued { text: p, images: vec![] }, false);
         }
@@ -3023,6 +3030,11 @@ impl Block for Agent {
     }
 
     fn call_by(&self, method: &str, args: Value, by: Option<&str>) -> BoxFuture<'static, Result<Value, String>> {
+        if self.inner.lock().unwrap().cfg.def.agent == Kind::Fountain
+            && !matches!(method, "state" | "image" | "set_title")
+        {
+            return Box::pin(async { Err(defs::CLOUD_MIGRATION.into()) });
+        }
         // F3: a Managoat conversation's Wake and Terminate, on Managoat.
         if matches!(method, "wake" | "terminate") && self.inner.lock().unwrap().cfg.def.agent == Kind::Fountain {
             return self.fountain_act(method, by);

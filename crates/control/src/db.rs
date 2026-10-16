@@ -1,7 +1,10 @@
-//! Control's database (SQLite). What's in it is metadata only: accounts,
+//! Control's database (SQLite). Terminal service records are metadata: accounts,
 //! sign-in identities, sessions, device certificates (public keys),
 //! revocations, pending joins, the directory and byte counts. Nothing a
-//! daemon sends inside a channel ever reaches it.
+//! daemon sends inside a channel ever reaches it. Managed cloud execution also
+//! stores agent definitions, prompts, results, and encrypted credential snapshots.
+
+pub mod cloud;
 
 use std::{path::Path, sync::Mutex};
 
@@ -545,6 +548,7 @@ impl Db {
             |r| r.get(0),
         )?;
         conn.execute_batch(SCHEMA)?;
+        conn.execute_batch(cloud::SCHEMA)?;
         migrate(&conn)?;
         if !answers_before {
             grandfather_shares(&conn)?;
@@ -555,6 +559,7 @@ impl Db {
     pub fn memory() -> Self {
         let conn = Connection::open_in_memory().unwrap();
         conn.execute_batch(SCHEMA).unwrap();
+        conn.execute_batch(cloud::SCHEMA).unwrap();
         migrate(&conn).unwrap();
         Self { conn: Mutex::new(conn) }
     }
@@ -2136,6 +2141,15 @@ impl Db {
         let a = e.account;
         let mut c = self.c();
         let tx = c.transaction()?;
+        let active: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM cloud_runs WHERE account=?1 AND state NOT IN ('completed','failed','cancelled','expired'))", [a], |r| r.get(0))?;
+        anyhow::ensure!(!active, "cancel cloud runs and wait for cleanup before deleting your account");
+        for table in ["cloud_run_secrets", "cloud_jobs", "cloud_requests", "cloud_notifications", "cloud_events"] {
+            tx.execute(&format!("DELETE FROM {table} WHERE run IN (SELECT id FROM cloud_runs WHERE account=?1)"), [a])?;
+        }
+        for table in ["cloud_runs", "cloud_agents", "cloud_secrets"] {
+            tx.execute(&format!("DELETE FROM {table} WHERE account=?1"), [a])?;
+        }
+
         let daemons: Vec<String> = {
             let mut q = tx.prepare("SELECT id FROM daemons WHERE account = ?1")?;
             q.query_map(params![a], |r| r.get(0))?.collect::<Result<_, _>>()?

@@ -3,6 +3,8 @@
 // list, and how to add a machine.
 
 import { useEffect, useState } from "preact/hooks";
+import { CloudPanel } from "./cloud";
+import { enableControlPush } from "../push";
 import { AlongsideError, api, cameToRecover, DEVICE_HASH, deviceName, inApp, inviteInHash, JOIN_HASH, joinInHash, passkeyRegister, passkeySignIn, previewInvite, RefusedError, shownName, signedAppIn, signInNext, splitDeviceCode, takesSecret, wholeJoinInHash, type AppLogin, type ControlSession, type DeviceCode, type JoinRequest } from "../control";
 import { fingerprint, normalizeCode, normalizeSecret, splitJoinCode, type Cert } from "../e2e/cert.ts";
 import { useSubscribe } from "./hooks";
@@ -574,6 +576,7 @@ export function NoMachines({ s }: { s: ControlSession }) {
             Waiting for {a.owners.length ? a.owners.join(" or ") : "an owner"} to add you to <b>{a.name}</b>. Their machines appear here when they do.
           </p>
         ))}
+        <button class="primary" onClick={openPanel("cloud")}>Cloud agents</button>
         <h1>{s.asked.length ? "Add your own machine" : "Add a machine"}</h1>
         <AddMachine s={s} />
       </main>
@@ -671,7 +674,7 @@ function JoinCodeForm({ s }: { s: ControlSession }) {
   );
 }
 
-type Panel = "devices" | "add" | "add-device" | "teams" | "plan" | "account";
+type Panel = "cloud" | "devices" | "add" | "add-device" | "teams" | "plan" | "account";
 
 const openPanel = (p: Panel) => () => dispatchEvent(new CustomEvent("arugula:control-panel", { detail: p }));
 
@@ -683,6 +686,10 @@ export function ControlOverlay({ s }: { s: ControlSession }) {
   useEffect(() => {
     const on = () => setHash(location.hash);
     const open = (e: Event) => setPanel((e as CustomEvent<Panel>).detail);
+    const cloudMessage = (event: MessageEvent) => {
+      if (event.data?.type === "open-cloud-run" && /^run_[0-9a-f]+$/.test(event.data.run)) location.hash = `cloud=${event.data.run}`;
+    };
+    navigator.serviceWorker?.addEventListener("message", cloudMessage);
     addEventListener("hashchange", on);
     addEventListener("arugula:control-panel", open);
     // Says the panel event has a listener, so a test can wait for it
@@ -693,6 +700,7 @@ export function ControlOverlay({ s }: { s: ControlSession }) {
     // hashchange that fired before this listener was there.
     on();
     return () => {
+      navigator.serviceWorker?.removeEventListener("message", cloudMessage);
       removeEventListener("hashchange", on);
       removeEventListener("arugula:control-panel", open);
       delete document.documentElement.dataset.controlPanels;
@@ -730,6 +738,11 @@ export function ControlOverlay({ s }: { s: ControlSession }) {
   if (s.joined) return <Joined s={s} />;
   const notice = s.notices[0];
   if (notice) return <Notice s={s} n={notice} />;
+  const cloudRun = /^#cloud=(run_[0-9a-f]+)$/.exec(hash)?.[1];
+  if (panel === "cloud" || cloudRun) {
+    const close = () => { setPanel(null); if (cloudRun) location.hash = ""; };
+    return <Modal close={close}><CloudPanel key={cloudRun ?? "catalog"} close={close} initialRun={cloudRun} notify={() => enableControlPush(s.info.vapid, (sub) => s.subscribePush(sub))} /></Modal>;
+  }
   if (panel === "devices") return <Devices s={s} close={() => setPanel(null)} />;
   if (panel === "teams") return <Teams s={s} close={() => setPanel(null)} />;
   if (panel === "plan") return <Plan s={s} close={() => setPanel(null)} />;
@@ -1955,6 +1968,7 @@ export function accountItems(s: ControlSession): MenuItem[] {
   return [
     { label: "Teams…", run: panel("teams") },
     { label: "Devices and machines…", run: panel("devices") },
+    { label: "Cloud agents…", run: openPanel("cloud") },
     { label: "Add a phone or browser…", run: openPanel("add-device") },
     { label: "Sign-in and account…", run: panel("account") },
     ...(s.billing?.billing ? [{ label: s.billing.relay.warning ? "Plan and usage… (over the free relay)" : "Plan and usage…", run: panel("plan") }] : []),

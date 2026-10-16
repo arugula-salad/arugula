@@ -464,6 +464,9 @@ pub fn routes(r: axum::Router<Arc<crate::server::App>>) -> axum::Router<Arc<crat
 }
 
 fn installed() -> Result<Arc<Account>, crate::api::ApiError> {
+    if crate::labs::DIRECT_MANAGOAT_RETIRED {
+        return Err(crate::api::ApiError(axum::http::StatusCode::GONE, crate::agent::defs::CLOUD_MIGRATION.into()));
+    }
     get().ok_or_else(|| {
         crate::api::ApiError(axum::http::StatusCode::SERVICE_UNAVAILABLE, "Managoat isn't set up yet".into())
     })

@@ -148,15 +148,8 @@ enum Command {
     #[command(args_conflicts_with_subcommands = true)]
     Pr(cmd::pr::Args),
     #[cfg(feature = "labs")]
-    /// Your Managoat account as a block, and this daemon's Managoat sign-in.
-    ///
-    /// The block is the account's conversations. `managoat login [URL]` signs
-    /// this daemon in (else it reads the `managoat` CLI's login:
-    /// MANAGOAT_API_KEY or ~/.managoat/credentials), `managoat status` and
-    /// `managoat logout`; `managoat agents [QUERY]` lists the agents here
-    /// without a block. (`arugula fountain`, its name before the rename,
-    /// still works.)
-    #[command(name = "managoat", alias = "fountain", args_conflicts_with_subcommands = true)]
+    /// Retired direct integration. Use Cloud agents in your Arugula account.
+    #[command(name = "managoat", alias = "fountain", hide = true, args_conflicts_with_subcommands = true)]
     Fountain(cmd::fountain::Args),
     /// Show an issue as a block.
     ///

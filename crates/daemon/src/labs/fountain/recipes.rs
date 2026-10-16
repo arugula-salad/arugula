@@ -542,6 +542,9 @@ pub async fn prepare(state_dir: &Path, home: &Path, a: &Ask) -> Result<(Compiled
 /// The flag a recipe on Managoat needs: recipes' (`agents`). Managoat's
 /// own left Labs (#942, F5).
 pub fn flags(state_dir: &Path) -> Result<(), String> {
+    if crate::labs::DIRECT_MANAGOAT_RETIRED {
+        return Err(crate::agent::defs::CLOUD_MIGRATION.into());
+    }
     crate::labs::flag(state_dir, arugula_proto::flags::AGENTS)
 }
 

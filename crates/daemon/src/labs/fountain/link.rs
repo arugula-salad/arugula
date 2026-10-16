@@ -805,6 +805,9 @@ fn stream_http() -> reqwest::Client {
 
 /// The login a block's link uses: its CLI profile's, else the daemon's.
 pub async fn client_for(profile: Option<&str>) -> Result<Client, String> {
+    if crate::labs::DIRECT_MANAGOAT_RETIRED {
+        return Err(crate::agent::defs::CLOUD_MIGRATION.into());
+    }
     // Blocks are brought back before the daemon sets its account up.
     let mut account = account::get();
     for _ in 0..100 {

@@ -745,10 +745,17 @@ pub async fn app_config(_c: &Value) -> Result<Value, String> {
     Err(not_built("An app block"))
 }
 
+// Kept as a single unconditional retirement gate while legacy wire types
+// and parsers remain available for saved layouts. This is not a user flag.
+pub const DIRECT_MANAGOAT_RETIRED: bool = true;
+
 /// Whether a Managoat login is here for the catalog to find: `GET
 /// /api/host`'s `features.fountain`.
 #[cfg(feature = "labs")]
 pub fn fountain_login_here(shell_env: &ShellEnv) -> bool {
+    if DIRECT_MANAGOAT_RETIRED {
+        return false;
+    }
     fountain::account::get().is_some_and(|a| a.signed_in().is_some()) || fountain::login::here(shell_env)
 }
 
@@ -757,6 +764,12 @@ pub fn fountain_login_here(shell_env: &ShellEnv) -> bool {
 /// machine, and with `--managoat-account-stream` the account's event stream.
 #[cfg(feature = "labs")]
 pub fn start_fountain(app: &Arc<App>, state_dir: &Path, name: &str, account_stream: bool) {
+    if DIRECT_MANAGOAT_RETIRED {
+        if account_stream {
+            tracing::warn!("{}", crate::agent::defs::CLOUD_MIGRATION);
+        }
+        return;
+    }
     let account = fountain::account::install(state_dir, &format!("Arugula on {name}"), app.mux.shell_env.clone());
     if account_stream {
         // Its permission requests become cards (F2): only here, where the
