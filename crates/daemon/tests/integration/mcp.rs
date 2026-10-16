@@ -146,8 +146,8 @@ async fn tools_through_the_stdio_bridge() {
     // Studio apps, chant workspaces and chat aren't listed without their
     // flags (chat's tools, the others' kinds), and a caller who names one is
     // told how to turn it on (#347); a build without Labs says it isn't
-    // built. Managoat left Labs (#942): a build with it lists its kinds with
-    // no flag, and with no login here they say so, not how to turn a flag on.
+    // built. Retired direct Managoat kinds stay hidden in every build;
+    // existing callers still receive migration guidance.
     for name in ["read_thread", "post_thread"] {
         assert!(tools.iter().all(|t| t.name != name), "{name} is listed");
     }
@@ -155,7 +155,7 @@ async fn tools_through_the_stdio_bridge() {
         assert!(!kinds(&tools, tool).contains(&kind.to_owned()), "{tool} kind {kind} is listed");
     }
     for (tool, kind) in [("show", "managoat"), ("list", "managoat_agents"), ("list", "managoat_agent")] {
-        assert_eq!(kinds(&tools, tool).contains(&kind.to_owned()), cfg!(feature = "labs"), "{tool} kind {kind}");
+        assert!(!kinds(&tools, tool).contains(&kind.to_owned()), "{tool} kind {kind}");
     }
     let said = refused(&s, "list", json!({ "kind": "managoat_agent", "name": "nobody" })).await;
     assert!(!said.contains("no tool") && !said.contains("no kind"), "an unlisted kind still answers: {said}");
@@ -953,14 +953,11 @@ async fn labs_lists_all_the_tools_and_the_thread_text() {
         for name in ["read_thread", "post_thread", "delegate"] {
             assert!(with.iter().any(|t| t.name == name), "{name} isn't listed with labs");
         }
-        for (tool, kind) in [
-            ("show", "managoat"),
-            ("list", "managoat_agents"),
-            ("list", "managoat_agent"),
-            ("show", "app"),
-            ("show", "workspace"),
-        ] {
+        for (tool, kind) in [("show", "app"), ("show", "workspace")] {
             assert!(kinds(&with, tool).contains(&kind.to_owned()), "{tool} kind {kind} isn't listed with labs");
+        }
+        for (tool, kind) in [("show", "managoat"), ("list", "managoat_agents"), ("list", "managoat_agent")] {
+            assert!(!kinds(&with, tool).contains(&kind.to_owned()), "retired {tool} kind {kind} is listed with labs");
         }
         // A new connection's instructions have the thread text.
         let s2 = bridge(&d, Client::named("claude-code")).await;
