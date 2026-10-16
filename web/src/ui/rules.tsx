@@ -50,6 +50,8 @@ export function RulesLayer() {
 
 function Rules({ client, close }: { client: Client; close: () => void }) {
   const [rules, setRules] = useState<Rule[] | null>(null);
+  const [managoat, setManagoat] = useState<"ask" | "auto_allow" | null>(null);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = async () => {
@@ -62,7 +64,23 @@ function Rules({ client, close }: { client: Client; close: () => void }) {
       setError((e as Error).message);
     }
   };
-  useEffect(() => void load(), []);
+  useEffect(() => {
+    void load();
+    void client.request(OPS["agent_approvals.get"].method, opPath("agent_approvals.get")).then(async (res) => {
+      if (res.ok) setManagoat((await res.json<{ managoat: "ask" | "auto_allow" }>()).managoat);
+    }).catch(() => setError("Couldn't load approval defaults"));
+  }, []);
+
+  const saveManagoat = async (value: "ask" | "auto_allow") => {
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await client.request(OPS["agent_approvals.set"].method, opPath("agent_approvals.set"), { managoat: value });
+      if (!res.ok) throw new Error("Couldn't save approval defaults");
+      setManagoat(value);
+    } catch (e) { setError((e as Error).message); }
+    finally { setSaving(false); }
+  };
 
   const forget = async (index: number | null) => {
     const res = await client.request(OPS["rules.forget_all"].method, index === null ? opPath("rules.forget_all") : opPath("rule.forget", { index })).catch(() => null);
@@ -78,8 +96,16 @@ function Rules({ client, close }: { client: Client; close: () => void }) {
           Agent blocks on this machine allow these without asking. An approval card's <b>From now on…</b> makes one; a block's own{" "}
           <b>Always</b> stays in that block.
         </p>
+        {managoat !== null && <label>
+          New Managoat conversations
+          <select aria-label="Managoat approval default" value={managoat} disabled={saving} onChange={(e) => void saveManagoat(e.currentTarget.value as "ask" | "auto_allow")}>
+            <option value="ask">Ask for approval</option>
+            <option value="auto_allow">Automatically approve</option>
+          </select>
+          <p class="hint">Saved on this machine for launches from any client. Local agents and existing conversations keep their settings. A launch can override this default. Managoat's agent policy and the runtime's sandbox still apply.</p>
+        </label>}
         {error && <p class="error">{error}</p>}
-        {rules && rules.length === 0 && <p class="hint">None yet: every agent block asks.</p>}
+        {rules && rules.length === 0 && <p class="hint">No standing tool rules yet.</p>}
         <ul class="rules-list">
           {(rules ?? []).map((r) => (
             <li key={`${r.index}-${r.at_ms}`} data-rule={r.index}>

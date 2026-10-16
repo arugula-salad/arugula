@@ -775,6 +775,11 @@ mod tests {
                 assert!(arg.is_hide_set(), "{cmd} {o} isn't hidden");
             }
         }
+        assert!(
+            super::Cli::try_parse_from(["arugula", "agent", "--managoat", "x", "--permission", "auto_allow"]).is_ok()
+        );
+        assert!(super::Cli::try_parse_from(["arugula", "agent", "--codex", "--permission", "auto_allow"]).is_err());
+        assert!(super::Cli::try_parse_from(["arugula", "agent", "--permission", "auto_allow"]).is_err());
         assert!(super::Cli::try_parse_from(["arugula", "agent", "--managoat", "x", "hi"]).is_ok());
         // The names before the rename (DECISIONS.md "Fountain is Managoat").
         assert!(super::Cli::try_parse_from(["arugula", "agent", "--fountain", "x", "hi"]).is_ok());

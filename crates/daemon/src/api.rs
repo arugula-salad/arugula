@@ -98,6 +98,8 @@ pub fn routes() -> Router<Arc<App>> {
         .route("/api/panes/{id}/export.cast", get(export))
         .op::<PaneDrivers>()
         .op::<PaneDiffOf>()
+        .op::<arugula_proto::op::ops::AgentApprovalsGet>()
+        .op::<arugula_proto::op::ops::AgentApprovalsSet>()
         .op::<RulesList>()
         .op::<RulesForgetAll>()
         .op::<RuleForget>()

@@ -1392,6 +1392,12 @@ impl Agent {
         // #379: "" is the CLI saying it has none (the default login).
         cfg.def.claude_config_dir = cfg.def.claude_config_dir.take().filter(|d| !d.trim().is_empty());
         cfg.def.check()?;
+        // Resolve once for a new conversation. Restores and explicit launch
+        // policies keep their choices, and attaching never changes remote policy.
+        if !ctx.restoring && cfg.session_id.is_none() && cfg.def.agent == Kind::Fountain && cfg.def.permission.is_none()
+        {
+            cfg.def.permission = Some(ctx.rules.approvals().managoat.as_str().into());
+        }
         // Wearing a Managoat agent here (M44) was retired: refused for a new
         // block; a saved one comes back with its transcript and says why it
         // won't start (`wear`).

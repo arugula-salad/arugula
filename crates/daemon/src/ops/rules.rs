@@ -46,3 +46,23 @@ impl Handle for RuleForget {
         Ok(Empty {})
     }
 }
+
+impl Handle for arugula_proto::op::ops::AgentApprovalsGet {
+    async fn handle(cx: &Cx<'_>, _: (), _: Empty) -> Result<arugula_proto::api::AgentApprovals, OpError> {
+        Ok(cx.app.rules.approvals())
+    }
+}
+
+impl Handle for arugula_proto::op::ops::AgentApprovalsSet {
+    async fn handle(
+        cx: &Cx<'_>,
+        _: (),
+        req: arugula_proto::api::AgentApprovals,
+    ) -> Result<arugula_proto::api::AgentApprovals, OpError> {
+        cx.app
+            .rules
+            .set_approvals(&req)
+            .map_err(|e| OpError::Status(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        Ok(req)
+    }
+}

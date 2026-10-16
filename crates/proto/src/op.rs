@@ -133,6 +133,8 @@ impl Request for crate::api::Empty {
 
 impl Request for crate::flags::FlagSetRequest {}
 
+impl Request for crate::api::AgentApprovals {}
+
 impl Request for crate::api::WaitRequest {}
 
 impl Request for crate::api::PortsQuery {}
@@ -294,6 +296,8 @@ macro_rules! every_op {
         $m!($crate::op::ops::ShellEnvRefresh);
         $m!($crate::op::ops::FlagsList);
         $m!($crate::op::ops::FlagSet);
+        $m!($crate::op::ops::AgentApprovalsGet);
+        $m!($crate::op::ops::AgentApprovalsSet);
         $m!($crate::op::ops::RulesList);
         $m!($crate::op::ops::RulesForgetAll);
         $m!($crate::op::ops::RuleForget);
@@ -506,8 +510,33 @@ pub mod ops {
         type Res = FlagInfo;
     }
 
-    /// `GET /api/rules` (#166): the standing permission rules agent blocks
-    /// answer from (`arugula rules`).
+    /// The owner's default policy for new Managoat conversations on this machine.
+    pub struct AgentApprovalsGet;
+
+    impl Op for AgentApprovalsGet {
+        const NAME: &'static str = "agent_approvals.get";
+        const METHOD: Method = Method::Get;
+        const PATH: &'static str = "/api/agent-approvals";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = Empty;
+        type Res = crate::api::AgentApprovals;
+    }
+
+    /// Save the owner's defaults for new agent conversations on this machine.
+    pub struct AgentApprovalsSet;
+
+    impl Op for AgentApprovalsSet {
+        const NAME: &'static str = "agent_approvals.set";
+        const METHOD: Method = Method::Put;
+        const PATH: &'static str = "/api/agent-approvals";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = crate::api::AgentApprovals;
+        type Res = crate::api::AgentApprovals;
+    }
+
+    /// `GET /api/rules`: standing tool permission rules.
     pub struct RulesList;
 
     impl Op for RulesList {
