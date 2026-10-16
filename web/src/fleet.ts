@@ -62,6 +62,7 @@ export interface FleetHost extends HostRef {
 
 /** One pane of the merged list. */
 export interface FleetPane {
+  cloudRun?: string;
   /** `host:pane`, unique across the fleet. */
   key: string;
   host: string;
@@ -485,6 +486,9 @@ export class Fleet {
     return [...this.hosts.values()].filter((e) => e.client).length;
   }
 
+  private cloudPanes: FleetPane[] = [];
+  setCloudPanes(panes: FleetPane[]) { this.cloudPanes = panes; this.emit(); }
+
   private injected: FleetPane[] = [];
   /** Made-up panes drawn beside the real ones (M26's synthetic fleet, for
    * the frame-rate check and screenshots). */
@@ -550,7 +554,7 @@ export class Fleet {
         });
       }
     }
-    out.push(...this.injected);
+    out.push(...this.cloudPanes, ...this.injected);
     this.merged = out;
     return out;
   }

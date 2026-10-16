@@ -7,14 +7,19 @@ control, not a connection configured on each user's machine.
 
 ## Running an agent
 
-Choose a curated coding or review agent, or save a custom agent with
+Open **New agent**, select **Cloud** under **Run on**, and choose a curated
+coding or review agent, or save a custom agent with
 instructions, tools, skills, and selected secrets. Supply a repository,
 revision, and prompt. Each run creates a fresh environment and checkout.
 Local uncommitted work is not uploaded automatically.
 
-Runs continue when the browser disconnects. Reopen Cloud agents to read
-history, answer tool approvals, cancel a run, or download its saved
-results and transcript. Approval requests wait within the run's deadline;
+Cloud runs open as agent panes beside machine tabs, with a Cloud indicator.
+They also appear in the swarm; a waiting run opens its approval in the pane.
+Runs continue when the browser disconnects. Open panes return after reload;
+closing a pane does not cancel its run. Reopen Cloud agents to find history,
+definitions, and secrets. Answer approvals, cancel a run, and download saved
+results and transcripts from the pane. **Run again** starts a fresh checkout
+with the previous task prefilled; it does not apply earlier results automatically. Approval requests wait within the run's deadline;
 the deadline does not pause while waiting for a person. Browser push
 notifications require an existing notification subscription.
 

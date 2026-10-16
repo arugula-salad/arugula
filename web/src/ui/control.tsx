@@ -1,3 +1,4 @@
+import { cloudPanes, useCloudPanes } from "../cloud";
 // The control-mode screens (M17): signing in, waiting for this browser to
 // be approved, approving other devices and daemons' join codes, the device
 // list, and how to add a machine.
@@ -562,7 +563,8 @@ function RecoveryCodes({ s }: { s: ControlSession }) {
 
 /** Ready, but no machine to show yet: the account's menu (#97), any team
  * this account is waiting on (#103), and how to add a machine (#98). */
-export function NoMachines({ s }: { s: ControlSession }) {
+export function NoMachines({ s, newAgent }: { s: ControlSession; newAgent?: () => void }) {
+  useCloudPanes();
   return (
     <div class="control-page">
       <header class="control-account" data-account-bar>
@@ -576,7 +578,8 @@ export function NoMachines({ s }: { s: ControlSession }) {
             Waiting for {a.owners.length ? a.owners.join(" or ") : "an owner"} to add you to <b>{a.name}</b>. Their machines appear here when they do.
           </p>
         ))}
-        <button class="primary" onClick={openPanel("cloud")}>Cloud agents</button>
+        {cloudPanes.enabled && newAgent && <button class="primary" onClick={newAgent}>New agent</button>}
+        <button onClick={openPanel("cloud")}>Cloud agents</button>
         <h1>{s.asked.length ? "Add your own machine" : "Add a machine"}</h1>
         <AddMachine s={s} />
       </main>
@@ -739,9 +742,9 @@ export function ControlOverlay({ s }: { s: ControlSession }) {
   const notice = s.notices[0];
   if (notice) return <Notice s={s} n={notice} />;
   const cloudRun = /^#cloud=(run_[0-9a-f]+)$/.exec(hash)?.[1];
-  if (panel === "cloud" || cloudRun) {
-    const close = () => { setPanel(null); if (cloudRun) location.hash = ""; };
-    return <Modal close={close}><CloudPanel key={cloudRun ?? "catalog"} close={close} initialRun={cloudRun} notify={() => enableControlPush(s.info.vapid, (sub) => s.subscribePush(sub))} /></Modal>;
+  if (panel === "cloud") {
+    const close = () => setPanel(null);
+    return <Modal close={close}><CloudPanel key={cloudRun ?? "catalog"} close={close}  notify={() => enableControlPush(s.info.vapid, (sub) => s.subscribePush(sub))} /></Modal>;
   }
   if (panel === "devices") return <Devices s={s} close={() => setPanel(null)} />;
   if (panel === "teams") return <Teams s={s} close={() => setPanel(null)} />;

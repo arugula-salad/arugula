@@ -1,3 +1,5 @@
+import { cloudPanes, useCloudPanes } from "../cloud";
+import { CloudPanel } from "./cloud";
 // Starting an agent block: which agent, where it runs, and the first prompt.
 // Opened from a pane's menu and the phone's sheet.
 
@@ -63,6 +65,8 @@ const remembered = (): Remembered => {
 };
 
 function AgentDialog({ client, where, close }: { client: Client; where: AgentWhere; close: () => void }) {
+  useCloudPanes();
+  const [execution, setExecution] = useState(client.state ? "local" : "cloud");
   const last = remembered();
   const [kind, setKind] = useState<Kind>(last.kind ?? "claude");
   const [acp, setAcp] = useState(last.acp ?? "");
@@ -102,6 +106,8 @@ function AgentDialog({ client, where, close }: { client: Client; where: AgentWhe
     await client.newAgent({ config, vm: vm && canVm, split: where.split, session: where.session, from: where.from });
   };
 
+  const executionChoice = <label>Run on<select aria-label="Run on" value={execution} onChange={(e) => setExecution(e.currentTarget.value)}><option value="local" disabled={!client.state}>This machine</option>{cloudPanes.enabled && <option value="cloud">Cloud</option>}</select></label>;
+  if (execution === "cloud") return <div class="prompt-backdrop" role="dialog" aria-label="Start an agent" onKeyDown={(e) => e.key === "Escape" && close()}><div class="prompt agent-dialog cloud-launch"><h2>Start an agent</h2>{executionChoice}<CloudPanel launchOnly close={close} notify={async () => "off"} /><button onClick={close}>Cancel</button></div></div>;
   return (
     <div class="prompt-backdrop" role="dialog" aria-label="Start an agent" onPointerDown={(e) => e.target === e.currentTarget && close()}>
       <form
@@ -114,6 +120,7 @@ function AgentDialog({ client, where, close }: { client: Client; where: AgentWhe
         onKeyDown={(e) => e.key === "Escape" && close()}
       >
         <h2>Start an agent</h2>
+        {executionChoice}
         <p class="hint">
           Or{" "}
           <button
@@ -128,7 +135,7 @@ function AgentDialog({ client, where, close }: { client: Client; where: AgentWhe
           </button>{" "}
           from a terminal or the desktop app.
         </p>
-        <p class="dim">For managed cloud execution, open Cloud agents in your Arugula account.</p>
+
         <label>
           Agent
           <select name="agent" value={kind} onChange={(e) => setKind((e.currentTarget as HTMLSelectElement).value as Kind)}>

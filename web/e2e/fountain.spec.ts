@@ -2,7 +2,7 @@
 import { expect, test } from "@playwright/test";
 import { paneEl, panes, reset } from "./helpers";
 
-test("local agent creation directs former Managoat users to Cloud agents", async ({ page }) => {
+test("local agent creation keeps retired choices out of the unified launcher", async ({ page }) => {
   await reset(page);
   await page.evaluate(() => localStorage.setItem("arugula.agent", JSON.stringify({kind:"managoat", fountain:"old-agent"})));
   const [term] = await panes(page);
@@ -12,7 +12,7 @@ test("local agent creation directs former Managoat users to Cloud agents", async
   const dialog = page.getByRole("dialog", {name:"Start an agent"});
   await expect(dialog.locator("select[name=agent]")).toHaveValue("claude");
   await expect(dialog.locator('option[value="managoat"]')).toHaveCount(0);
-  await expect(dialog).toContainText("open Cloud agents in your Arugula account");
+  await expect(dialog.getByLabel("Run on")).toHaveValue("local");
   await dialog.getByRole("button", {name:"Cancel", exact:true}).click();
   await page.evaluate(() => localStorage.removeItem("arugula.agent"));
 });

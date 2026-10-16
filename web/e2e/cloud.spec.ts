@@ -80,18 +80,29 @@ test("cloud-only account saves a secret, runs, reconnects, approves and download
   await secrets.getByLabel("Value", { exact: true }).fill("test-repository-secret");
   await secrets.getByRole("button", { name: "Save secret" }).click();
   await expect(secrets.getByRole("button", { name: "Remove" })).toBeVisible();
+  await page.getByRole("button", { name: "Close", exact: true }).click();
+  await page.getByRole("button", { name: "New agent", exact: true }).click();
+  await expect(page.getByLabel("Run on")).toHaveValue("cloud");
   await page.getByLabel("Repository URL").fill("https://github.com/example/repo");
   await page.getByLabel("Repository credential").selectOption("GITHUB_TOKEN");
   await page.getByLabel("Task", { exact: true }).fill("Fix the example");
   await page.getByRole("button", { name: "Run in cloud" }).click();
   await expect(page.getByRole("button", { name: "Allow once" })).toBeVisible({ timeout: 30000 });
   expect(secret).toBe("test-repository-secret");
-  await page.getByRole("button", { name: "Close", exact: true }).click();
+  await page.goto(`${base}/#swarm`);
+  const cloudCard = page.locator('.swarm-card[data-kind="input"]').filter({ hasText: "Fix the example" });
+  await expect(cloudCard).toBeVisible();
+  await cloudCard.locator("[data-open-card]").click();
+  await expect(page.getByRole("button", { name: "Allow once" })).toBeVisible();
+  await expect(page.locator("[data-cloud-pane]")).toBeVisible();
+  await expect(page.getByRole("tab", { name: /Cloud/ })).toHaveAttribute("aria-selected", "true");
   await page.reload();
-  await page.getByRole("button", { name: "Cloud agents", exact: true }).click();
-  await page.getByRole("button", { name: "Coding agent: Fix the example" }).click();
+  await expect(page.getByRole("button", { name: "Allow once" })).toBeVisible();
   await page.getByRole("button", { name: "Allow once" }).click();
-  await expect(page.getByRole("heading", { name: "Coding agent · completed" })).toBeVisible({ timeout: 30000 });
+  await expect(page.locator("[data-cloud-pane] .agent-status", { hasText: "completed" })).toBeVisible({ timeout: 30000 });
+  await page.getByRole("button", { name: "Run again", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "Run again" })).toContainText("fresh checkout");
+  await page.getByRole("dialog", { name: "Run again" }).getByRole("button", { name: "Cancel", exact: true }).click();
   const download = page.waitForEvent("download");
   await page.getByRole("button", { name: "Download results and transcript" }).click();
   expect((await download).suggestedFilename()).toMatch(/^run_.*\.json$/);
@@ -103,11 +114,12 @@ test("cloud-only account saves a secret, runs, reconnects, approves and download
   await page.route("**/api/cloud/agents", (route) => route.fulfill({ status: 403, json: { error: "Cloud beta access is disabled" } }));
   await page.route("**/api/cloud/secrets", (route) => route.fulfill({ status: 503, json: { error: "Secrets are unavailable" } }));
   await page.reload();
+  await page.getByRole("button", { name: "Close cloud pane" }).click();
   await page.getByRole("button", { name: "Cloud agents", exact: true }).click();
   await expect(page.getByText("New cloud runs are unavailable:", { exact: false })).toBeVisible();
   await expect(page.getByRole("button", { name: "Run in cloud" })).toBeDisabled();
   await page.getByRole("button", { name: "Coding agent: Fix the example" }).click();
-  await expect(page.getByRole("heading", { name: "Coding agent · completed" })).toBeVisible();
+  await expect(page.locator("[data-cloud-pane] .agent-status", { hasText: "completed" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Download results and transcript" })).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -116,7 +128,6 @@ test("cloud-only account saves a secret, runs, reconnects, approves and download
   await page.route("**/api/cloud/runs/*/events?*", (route) => route.fulfill({ json: { events: [
     { id: 1, stage: "turn", state: "failed", data: JSON.stringify({ reason: "The selected model is unavailable." }), blocks: [] },
   ] } }));
-  await page.getByRole("button", { name: "Back to runs" }).click();
-  await page.getByRole("button", { name: "Coding agent: Fix the example" }).click();
+  await page.reload();
   await expect(page.getByText("The selected model is unavailable.", { exact: true })).toBeVisible();
 });

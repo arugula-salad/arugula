@@ -1,3 +1,4 @@
+import { AgentMessage } from "./agent-message";
 // Agent blocks (M6b): an agent run as messages, thoughts and tool-call
 // cards, with its commands' output in a read-only terminal, permission
 // requests as approve/deny cards, questions and forms as cards (M6c), and a
@@ -704,18 +705,9 @@ function AgentBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentSta
                 </div>
               );
             case "agent":
-              return (
-                <div key={i} class="agent-msg">
-                  {e.text}
-                </div>
-              );
+              return <AgentMessage key={i} text={e.text} />;
             case "thought":
-              return (
-                <details key={i} class="agent-thought">
-                  <summary>Thinking</summary>
-                  {e.text}
-                </details>
-              );
+              return <AgentMessage key={i} text={e.text} thought />;
             case "note":
               return (
                 <div key={i} class="agent-note">

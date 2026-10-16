@@ -1,3 +1,5 @@
+import { AgentDialogLayer, startAgent } from "./ui/agent-dialog";
+import { cloudPanes, useCloudPanes } from "./cloud";
 // Arugula web client: tabs and splits of terminals owned by the daemon.
 
 import { OPS, opPath } from "./ops";
@@ -199,17 +201,19 @@ const cell = await measureCell();
 const root = document.getElementById("root")!;
 function ControlRoot({ s }: { s: ControlSession }) {
   useControl(s);
+  const cloud = useCloudPanes();
+  useEffect(() => { if (s.phase === "ready") return cloudPanes.connect(s.account); }, [s.phase, s.account]);
   useSubscribe((fn) => directory.subscribe(fn));
   const body =
     s.phase !== "ready" ? (
       <ControlGate s={s} />
-    ) : client.e2e ? (
+    ) : client.e2e || cloud ? (
       <App key={client.base} client={client} cell={cell} />
     ) : s.daemons.length ? (
       // Machines, but none picked yet: not "Add a machine" (#749).
       <Connecting name={directory.current} />
     ) : (
-      <NoMachines s={s} />
+      <NoMachines s={s} newAgent={() => startAgent(client, {})} />
     );
   return (
     <>
@@ -252,7 +256,10 @@ const fleetHosts = (): HostRef[] =>
       teamName: d?.team ? session?.teams.find((t) => t.team === d.team)?.roster.name : undefined,
     };
   });
+cloudPanes.subscribe(() => fleet.setCloudPanes(cloudPanes.fleet()));
 fleet.onOpen = (host, pane, share) => {
+  const cloud = fleet.panes.find((p) => p.host === host && p.id === pane && p.cloudRun);
+  if (cloud?.cloudRun) { cloudPanes.open(cloud.cloudRun); return; }
   directory.select(host);
   // The host's client is made when the directory switches, then connects:
   // show the pane once it knows it.
@@ -319,6 +326,7 @@ const draw = () =>
     <>
       {session ? <ControlRoot key={client.base} s={session} /> : <App key={client.base} client={client} cell={cell} />}
       <Swarm key={client.base} client={client} />
+      <AgentDialogLayer />
       <AppearanceLayer />
     </>,
     root,
