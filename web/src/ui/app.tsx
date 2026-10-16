@@ -99,8 +99,8 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       ) : (
         <TopBar client={client} renaming={renaming} setRenaming={setRenaming} inert={chatOpen} />
       ))}
-      {!state && cloud && <AppBar client={client} at="panes" all><div class="tabbar" role="tablist"><CloudTabs /><button onClick={() => startAgent(client, {})}>New agent</button></div></AppBar>}
-      {phone && state && cloudPanes.opened.length > 0 && <div class="tabbar cloud-phone-tabs" role="tablist"><button onClick={() => cloudPanes.local()}>This machine</button><CloudTabs /></div>}
+      {!state && cloud && <AppBar client={client} at="panes" all>{!phone && <div class="tabbar" role="tablist"><CloudTabs /><button onClick={() => startAgent(client, {})}>New agent</button></div>}</AppBar>}
+      {phone && cloudPanes.opened.length > 0 && <div class="tabbar cloud-phone-tabs" role="tablist">{state && <button onClick={() => cloudPanes.local()}>This machine</button>}<CloudTabs /></div>}
       {state && <ControlBanner client={client} />}
       {state && <NewMachineNote />}
       {state && <AgentsNudge client={client} />}

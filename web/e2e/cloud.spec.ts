@@ -122,6 +122,8 @@ test("cloud-only account saves a secret, runs, reconnects, approves and download
   await expect(page.locator("[data-cloud-pane] .agent-status", { hasText: "completed" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Download results and transcript" })).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByRole("tab", { name: /Cloud.*Fix the example/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Close cloud pane" })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: "/tmp/arugula-cloud-mobile.png" });
   // Provider lifecycle failures may have no transcript blocks.
