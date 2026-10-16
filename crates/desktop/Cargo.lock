@@ -101,7 +101,7 @@ dependencies = [
 
 [[package]]
 name = "arugula-core"
-version = "0.40.2"
+version = "0.41.0"
 dependencies = [
  "serde",
 ]
@@ -146,7 +146,7 @@ dependencies = [
 
 [[package]]
 name = "arugula-proto"
-version = "0.40.2"
+version = "0.41.0"
 dependencies = [
  "arugula-core",
  "serde",
