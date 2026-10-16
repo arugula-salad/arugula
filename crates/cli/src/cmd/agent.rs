@@ -56,6 +56,9 @@ pub struct Args {
     /// `acceptEdits`, `plan`, `auto` (Claude Code's), or the agent's own.
     #[arg(long, value_name = "MODE", conflicts_with = "fountain")]
     permission_mode: Option<String>,
+    /// Managoat tool approvals for this conversation; otherwise use this machine's default.
+    #[arg(long, requires = "fountain", conflicts_with_all = ["codex", "acp", "recipe", "resume", "fork"], value_parser = ["ask", "auto_allow"])]
+    permission: Option<String>,
     /// Claude Code with your settings (allow and deny lists, default
     /// mode, `CLAUDE.md`), but none of their hooks.
     #[arg(long, conflicts_with_all = ["acp", "fountain", "codex"])]
@@ -150,6 +153,7 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
             mcp,
             allow,
             permission_mode,
+            permission,
             user_settings,
             vm,
             machine,
@@ -194,6 +198,9 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
                 config["allow"] = allow.iter().map(|t| json!({ "tool": t })).collect();
             }
             config["permission_mode"] = json!(permission_mode);
+            if let Some(permission) = permission {
+                config["permission"] = json!(permission);
+            }
             if user_settings {
                 config["user_settings"] = json!(true);
             }

@@ -777,3 +777,31 @@ fn with_the_account_stream_a_block_follows_its_fan_out() {
         assert_eq!(count(&st, "agent", t), 1, "{t}: {st}");
     }
 }
+
+#[test]
+fn managoat_approval_defaults_persist_and_explicit_launches_win() {
+    let fz = Managoat::start();
+    let dir = Scratch::new("managoat-approvals");
+    let mut d = fz.daemon(&dir, &[]);
+    assert_eq!(d.get("/api/agent-approvals"), json!({"managoat": "ask"}));
+    assert_eq!(d.raw("PUT", "/api/agent-approvals", Some(json!({"managoat": "invalid"}))).0, 422);
+    assert_eq!(d.raw("PUT", "/api/agent-approvals", Some(json!({"managoat": "auto_allow"}))).0, 200);
+    let b = open_conversation(&d);
+    d.wait_for("defaulted conversation", || d.state(b)["status"] == "ready");
+    assert_eq!(fz.f.with(|i| i.created[0]["permission_policy"].clone()), json!({"default": "auto_allow"}));
+    d.stop();
+    d.start();
+    assert_eq!(d.get("/api/agent-approvals"), json!({"managoat": "auto_allow"}));
+    assert_eq!(d.raw("PUT", "/api/agent-approvals", Some(json!({"managoat": "ask"}))).0, 200);
+    // The restored block stays on its existing conversation; no policy rewrite.
+    d.wait_for("restored conversation", || d.state(b)["status"] == "ready");
+    assert_eq!(fz.f.with(|i| i.created.len()), 1);
+    let explicit = d.open_with(json!({"type": "agent", "config": {
+        "agent": "managoat", "managoat_agent": "games", "permission": "auto_allow"
+    }}));
+    d.wait_for("explicit conversation", || d.state(explicit)["status"] == "ready");
+    assert_eq!(fz.f.with(|i| i.created[1]["permission_policy"].clone()), json!({"default": "auto_allow"}));
+    let defaulted = open_conversation(&d);
+    d.wait_for("changed default", || d.state(defaulted)["status"] == "ready");
+    assert_eq!(fz.f.with(|i| i.created[2]["permission_policy"].clone()), json!({"default": "ask"}));
+}

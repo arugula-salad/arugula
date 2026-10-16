@@ -2451,6 +2451,8 @@ export const OPS = {
   "acl.set": { method: "POST", path: "/api/acl" },
   "adapter.install": { method: "POST", path: "/api/agents/adapters/{kind}/install" },
   "adapters.list": { method: "GET", path: "/api/agents/adapters" },
+  "agent_approvals.get": { method: "GET", path: "/api/agent-approvals" },
+  "agent_approvals.set": { method: "PUT", path: "/api/agent-approvals" },
   "agents.get": { method: "GET", path: "/api/hosts/self/agents" },
   "agents.refresh": { method: "POST", path: "/api/hosts/self/agents/refresh" },
   "conv.act": { method: "POST", path: "/api/convs/{id}/act" },

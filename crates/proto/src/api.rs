@@ -1539,6 +1539,32 @@ pub struct Rules {
     pub rules: Vec<StandingRule>,
 }
 
+/// Default policy for new Managoat conversations, owned by this daemon's owner.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub enum ManagoatApproval {
+    #[default]
+    Ask,
+    AutoAllow,
+}
+
+impl ManagoatApproval {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Ask => "ask",
+            Self::AutoAllow => "auto_allow",
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct AgentApprovals {
+    pub managoat: ManagoatApproval,
+}
+
 /// One standing permission rule.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]

@@ -266,3 +266,21 @@ vault?, environment?}`, the CLI's `arugula agents run NAME --managoat
   copied automatically, a variable the recipe doesn't use can't be copied,
   and no value is shown, logged or kept.
 - Running, previewing and copying are this machine's own account's.
+
+## Default tool approvals
+
+The owner can choose **Permission rules… → New Managoat conversations**:
+*Ask for approval* (the default) or *Automatically approve*. This preference
+is saved on the current machine, applies to new UI, CLI and MCP agent-block
+launches, and leaves local agents and existing conversations unchanged.
+It is not yet an account preference synced between machines.
+
+`arugula rules --managoat-approvals auto_allow` saves the same preference;
+`--managoat-approvals ask` resets it. For one launch, use
+`arugula agent --managoat NAME --permission ask` (or `auto_allow`), or the
+start-agent dialog's **Tool approvals** choice. An explicit block-config
+`permission` wins over the default, including policies supplied by recipes.
+
+Managoat can still reject a policy wider than the agent allows. Automatic
+tool approval does not change the runtime's own sandbox or grant vault
+access. Codex's full-access environment setting is a separate choice.

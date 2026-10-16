@@ -14,11 +14,26 @@ pub struct Args {
     forget: Option<usize>,
     #[arg(long)]
     forget_all: bool,
+    /// Default approvals for new Managoat conversations on this machine.
+    #[arg(long, value_parser = ["ask", "auto_allow"])]
+    managoat_approvals: Option<String>,
 }
 
 pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
     let Ctx { sock, json_out, .. } = ctx;
-    let Args { forget, forget_all } = args;
+    let Args { forget, forget_all, managoat_approvals } = args;
+    if let Some(policy) = managoat_approvals {
+        let managoat = if policy == "auto_allow" {
+            arugula_proto::api::ManagoatApproval::AutoAllow
+        } else {
+            arugula_proto::api::ManagoatApproval::Ask
+        };
+        call::<arugula_proto::op::ops::AgentApprovalsSet>(
+            &sock,
+            &(),
+            &arugula_proto::api::AgentApprovals { managoat },
+        )?;
+    }
     if forget_all {
         call::<RulesForgetAll>(&sock, &(), &Empty {})?;
     } else if let Some(i) = forget {
@@ -29,8 +44,10 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
         print_json(&v);
         return Ok(0);
     }
+    let prefs = call::<arugula_proto::op::ops::AgentApprovalsGet>(&sock, &(), &Empty {})?;
+    println!("New Managoat conversations: {} (this machine)", prefs.managoat.as_str());
     if rules.rules.is_empty() {
-        println!("No standing rules: agent blocks ask (\"Always\" for a directory or everywhere makes one)");
+        println!("No standing tool rules (\"Always\" for a directory or everywhere makes one)");
     }
     for r in &rules.rules {
         println!("{}  {}", r.index, r.text);

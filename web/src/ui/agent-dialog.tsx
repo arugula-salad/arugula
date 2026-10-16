@@ -73,6 +73,7 @@ function AgentDialog({ client, where, close }: { client: Client; where: AgentWhe
   const [vm, setVm] = useState(false);
   const [cwd, setCwd] = useState((where.from !== undefined && client.cwd(where.from)) || "");
   const [prompt, setPrompt] = useState("");
+  const [approval, setApproval] = useState("");
   const promptRef = useRef<HTMLTextAreaElement>(null);
   useLayoutEffect(() => promptRef.current?.focus(), []);
   const canVm = kind !== "managoat" && client.has("vms");
@@ -97,7 +98,10 @@ function AgentDialog({ client, where, close }: { client: Client; where: AgentWhe
     if (blocked) return;
     remember();
     const config: Record<string, unknown> = { agent: kind };
-    if (kind === "managoat") config.managoat_agent = fountain.trim();
+    if (kind === "managoat") {
+      config.managoat_agent = fountain.trim();
+      if (approval) config.permission = approval;
+    }
     if (kind === "acp") config.command = acp.trim();
     if (model.trim()) config.model = model.trim();
     if (!(vm && canVm) && cwd.trim()) config.cwd = cwd.trim();
@@ -186,6 +190,14 @@ function AgentDialog({ client, where, close }: { client: Client; where: AgentWhe
             <input name="model" value={model} placeholder="the agent's default (e.g. haiku)" onInput={(e) => setModel(e.currentTarget.value)} />
           </label>
         )}
+        {kind === "managoat" && <label>
+          Tool approvals
+          <select value={approval} onChange={(e) => setApproval(e.currentTarget.value)}>
+            <option value="">Use this machine's default</option>
+            <option value="ask">Ask for approval</option>
+            <option value="auto_allow">Automatically approve</option>
+          </select>
+        </label>}
         <label>
           Prompt
           <textarea name="prompt" ref={promptRef} rows={4} value={prompt} placeholder="What should it do?" onInput={(e) => setPrompt(e.currentTarget.value)} />
