@@ -114,11 +114,12 @@ test("Open a port… and Open in editor say how to turn block sites on", async (
   expect(await page.evaluate(() => window.__arugula.client.error)).toBeNull();
 });
 
-test("a Managoat login made since the page loaded shows the next time a menu opens", async ({ page }) => {
+test("a legacy Managoat login made after page load does not restore direct execution", async ({ page }) => {
   await reset(page);
   const [term] = await panes(page);
   // As `managoat auth login` leaves it.
   writeFileSync(join(state, "no-fountain-credentials"), '[default]\napi_key = "ftn_test_e2e"\n');
   await paneEl(page, term).click({ button: "right", position: { x: 60, y: 60 } });
-  await expect(page.getByRole("menuitem", { name: "Managoat…" })).toBeVisible();
+  await expect(page.getByRole("menu")).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: "Managoat…" })).toHaveCount(0);
 });
