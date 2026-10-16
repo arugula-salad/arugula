@@ -979,7 +979,7 @@ async fn labs_lists_all_the_tools_and_the_thread_text() {
         std::fs::write(d.state.join("flags.json"), r#"{"flags":{"fountain":false}}"#).unwrap();
         let without = s.list_all_tools().await.unwrap();
         assert_eq!(without.len(), 19 - NO_FORGE);
-        assert!(kinds(&without, "show").contains(&"managoat".to_owned()));
+        assert!(!kinds(&without, "show").contains(&"managoat".to_owned()));
         assert!(!kinds(&without, "show").contains(&"workspace".to_owned()));
     }
     // Without it, the file changes nothing: they aren't in this build.

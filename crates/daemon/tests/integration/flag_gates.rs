@@ -150,7 +150,7 @@ fn fountain_needs_no_flag_and_an_old_entry_changes_nothing() {
         let out = arugulad(args);
         let err = String::from_utf8_lossy(&out.stderr);
         assert!(!out.status.success(), "{args:?}");
-        assert!(err.contains("isn't a flag any more") && err.contains("arugula managoat login"), "{args:?}: {err}");
+        assert!(err.contains("isn't a flag any more") && err.contains("Cloud agents"), "{args:?}: {err}");
     }
 }
 

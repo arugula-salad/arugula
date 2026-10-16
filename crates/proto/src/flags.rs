@@ -147,12 +147,12 @@ pub const FLAGS: &[Flag] = &[
 pub const RETIRED: &[(&str, &str)] = &[
     (
         "fountain",
-        "Managoat (Fountain then) left Labs (#942): it's on wherever this machine has a Managoat login (`arugula managoat login`)",
+        "Direct Managoat execution is retired: open Cloud agents in your Arugula account to run agents or import old definitions",
     ),
     // Never a flag, but the name it would have now.
     (
         "managoat",
-        "Managoat left Labs (#942): it's on wherever this machine has a Managoat login (`arugula managoat login`)",
+        "Direct Managoat execution is retired: open Cloud agents in your Arugula account to run agents or import old definitions",
     ),
 ];
 
