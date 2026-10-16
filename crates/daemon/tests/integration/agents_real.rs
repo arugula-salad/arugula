@@ -33,10 +33,11 @@
 //! - `claude`: Claude Code through the pinned `claude-agent-acp`, on your
 //!   own login, in a scratch git repo: a command it asks to run, approved.
 //! - `codex`: `codex-acp` against your `codex`.
-//! Managed cloud live coverage is in arugula-control, `live_subscription_run`.
 //! - `vm`: Claude Code in a throwaway wisp VM, with the token in
 //!   `~/.config/arugula/claude-oauth-token` (or an API key in
 //!   `…/anthropic-key`); skipped if neither exists.
+//!
+//! Managed cloud live coverage is in arugula-control, `live_subscription_run`.
 //!
 //! Adapters are found in `~/.local/share/arugula/agents/` (see README).
 

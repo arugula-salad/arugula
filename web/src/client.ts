@@ -916,6 +916,8 @@ export class Client {
   /** Is `f` set up here? Yes when the daemon didn't say, except for what
    * labs turns on (VMs, studio): those need `hasLabs()` as well. */
   has(f: Exclude<keyof HostFeatures, "flags">): boolean {
+    // Direct Managoat execution is retired, including on older daemons.
+    if (f === "fountain") return false;
     if (LABS_FEATURES.includes(f) && !this.hasLabs()) return false;
     return this.features?.[f] ?? true;
   }
