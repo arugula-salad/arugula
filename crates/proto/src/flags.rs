@@ -822,7 +822,7 @@ mod tests {
         assert_eq!(names(&d), [HUDDLES]);
         for e in [set(&d, "fountain", true).unwrap_err(), unset(&d, "fountain").unwrap_err()] {
             assert_eq!(e.kind(), io::ErrorKind::InvalidInput);
-            assert!(e.to_string().contains("isn't a flag any more") && e.to_string().contains("managoat login"), "{e}");
+            assert!(e.to_string().contains("isn't a flag any more") && e.to_string().contains("Cloud agents"), "{e}");
         }
         fs::remove_dir_all(&d).unwrap();
     }
