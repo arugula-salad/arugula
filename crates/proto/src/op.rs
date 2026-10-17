@@ -666,8 +666,7 @@ pub mod ops {
 
     /// `POST /api/panes/N/prompt` (#147): prompt the agent in a pane and
     /// wait for its turn (`arugula send --wait`, MCP's `prompt_agent`). It
-    /// types as someone, but a pane's agent waiting is not `DRIVES`: it
-    /// never was.
+    /// types an instruction, so it's `DRIVES` (#959).
     pub struct PanePrompt;
 
     impl Op for PanePrompt {
@@ -675,6 +674,7 @@ pub mod ops {
         const METHOD: Method = Method::Post;
         const PATH: &'static str = "/api/panes/{id}/prompt";
         const ACCESS: Access = Access::Pane(Role::Editor);
+        const DRIVES: bool = true;
         type Path = PaneId;
         type Req = PromptRequest;
         type Res = PromptResult;
@@ -1389,7 +1389,8 @@ pub mod ops {
     }
 
     /// `POST /api/panes/N/cd` (M7): `cd` typed into a shell waiting at its
-    /// prompt (`arugula cd`). An editor's on the pane; it isn't `DRIVES`.
+    /// prompt (`arugula cd`). An editor's on the pane; it types, so it's
+    /// `DRIVES` (#959).
     pub struct PaneCd;
 
     impl Op for PaneCd {
@@ -1397,6 +1398,7 @@ pub mod ops {
         const METHOD: Method = Method::Post;
         const PATH: &'static str = "/api/panes/{id}/cd";
         const ACCESS: Access = Access::Pane(Role::Editor);
+        const DRIVES: bool = true;
         type Path = PaneId;
         type Req = crate::fs::CdRequest;
         type Res = Empty;

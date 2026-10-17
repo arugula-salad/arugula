@@ -773,9 +773,9 @@ pub async fn act(app: &App, id: ConvId, req: ConvActRequest, who: &Principal) ->
     Ok(())
 }
 
-/// The lead's own card (#859), answered by anyone in the conversation: the
-/// lead acts with the owner's rights, and everyone in it may drive through
-/// it already (`@lead`). Done here, on the lead's block, by the ask's id.
+/// The lead's own card (#859), answered by whoever in the conversation may
+/// drive the lead (`@lead`), which acts with the owner's rights (#959).
+/// Done here, on the lead's block, by the ask's id.
 async fn act_on_lead(
     app: &App,
     c: &arugula_proto::Conversation,
@@ -783,6 +783,7 @@ async fn act_on_lead(
     who: &Principal,
 ) -> Result<(), Refusal> {
     let lead = c.lead.as_ref().ok_or((404, "this conversation has no lead".to_owned()))?;
+    crate::api::may_drive(app, who, lead.block).await.map_err(|e| (e.0.as_u16(), e.1))?;
     let target = ThreadTarget::Conv(c.id);
     let msgs = app
         .mux

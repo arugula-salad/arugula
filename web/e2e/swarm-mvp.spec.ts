@@ -9,9 +9,10 @@
 // - Claude Code asks to run a tool in a terminal on Jake's machine (its
 //   PermissionRequest hook, fed S18's recorded inputs through
 //   `arugula hook`). The card lifts to all four rails; Sam allows it from
-//   the phone's strip, and every card says "Allowed by sam".
+//   the phone's strip after Jake's trust grant (it's Jake's own machine),
+//   and every card says "Allowed by sam".
 // - Sam sends "now run the tests" as the follow-up: on Jake's own machine
-//   after Jake's trust grant, on the team's box straight through. It reaches
+//   by that trust, on the team's box straight through. It reaches
 //   Claude Code through its inbox hook, and `arugula log --who` and
 //   history attribute the approval and the follow-up to Sam.
 
@@ -271,7 +272,7 @@ test("both people's swarms show the team's shared panes, grouped by person", asy
   for (const p of [sam, samPhone]) await expect.poll(() => clusters(p)).toEqual(["jake", "team Acme", "you"]);
 });
 
-test("Claude Code's approval on Jake's machine reaches both rails; Sam allows it from the phone", async () => {
+test("Claude Code's approval on Jake's machine reaches both rails; Sam allows it from the phone once Jake trusts him", async () => {
   test.setTimeout(120_000);
   // Jake's tab view shows his mac underneath, so his trust prompt has a home.
   await jake.evaluate(() => window.__arugula.hosts.select("mac"));
@@ -281,6 +282,21 @@ test("Claude Code's approval on Jake's machine reaches both rails; Sam allows it
     await expect(card(p)).toBeVisible({ timeout: 20_000 });
     await expect(card(p).locator(".agent-perm-cmd")).toHaveText("cargo test");
   }
+  // It runs on Jake's own machine, so allowing it needs Jake's trust
+  // (#959): refused until then.
+  const refused = await call(samPhone, "mac", "POST", "/api/attention/act", { action: "allow", pane: 1 });
+  expect(refused.status).toBe(403);
+  expect(String(refused.body?.error)).toContain("trust you");
+  await samPhone.evaluate(() => window.__arugula.fleet.paneOp("mac", 1, { op: "request_trust" }));
+  // Jake lets Sam drive it for half an hour, from the tab view.
+  await jake.evaluate(() => (location.hash = ""));
+  await expect(jake.locator('[data-trust-request="1"]')).toBeVisible({ timeout: 15_000 });
+  await jake.locator("[data-trust]").click();
+  // The grant goes over Jake's connection and the answer over Sam's: answer
+  // once the daemon says Sam is trusted, or it can get there first and be
+  // refused again.
+  await expect.poll(() => jake.evaluate(() => window.__arugula.fleet.panes.find((p) => p.key === "mac:1")?.info.trusted?.length ?? 0)).toBe(1);
+  await jake.evaluate(() => (location.hash = "#swarm"));
   await card(samPhone).scrollIntoViewIfNeeded();
   await card(samPhone).getByRole("button", { name: "Allow", exact: true }).tap();
   for (const p of [jake, jakePhone, sam, samPhone]) {
@@ -291,22 +307,9 @@ test("Claude Code's approval on Jake's machine reaches both rails; Sam allows it
   await expect.poll(() => capture(jake, "mac", 1)).toContain('"behavior":"allow"');
 });
 
-test("Sam's follow-up needs Jake's trust on his machine, then reaches the agent", async () => {
+test("Sam's follow-up, now Jake trusts him with the pane, reaches the agent", async () => {
   await expect.poll(() => jake.evaluate(() => window.__arugula.fleet.panes.find((p) => p.key === "mac:1")?.info.inbox)).toBe(true);
   const done = samPhone.locator('.swarm-card[data-answered][data-panes="mac:1"]');
-  await done.locator(".followup input").fill("now run the tests");
-  await done.locator(".followup button").tap();
-  const ask = done.getByRole("button", { name: /^Ask .+ for 30 minutes$/ });
-  await expect(ask).toBeVisible();
-  await ask.tap();
-  // Jake lets Sam drive it for half an hour, from the tab view.
-  await jake.evaluate(() => (location.hash = ""));
-  await expect(jake.locator('[data-trust-request="1"]')).toBeVisible({ timeout: 15_000 });
-  await jake.locator("[data-trust]").click();
-  // The grant goes over Jake's connection and the follow-up over Sam's:
-  // send it once the daemon says Sam is trusted, or it can get there first
-  // and be refused again.
-  await expect.poll(() => jake.evaluate(() => window.__arugula.fleet.panes.find((p) => p.key === "mac:1")?.info.trusted?.length ?? 0)).toBe(1);
   await done.locator(".followup input").fill("now run the tests");
   await done.locator(".followup button").tap();
   await expect(done.locator(".followup-sent")).toHaveText("Sent.");

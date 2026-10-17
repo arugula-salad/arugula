@@ -82,9 +82,25 @@ fn a_lead_answers_an_at_lead_and_tells_whoever_asked() {
     d.post(&format!("/api/panes/{l1}/conv-grants"), json!({ "conv": id, "conv_title": "calc tests" }));
     d.post(&format!("/api/convs/{id}/links"), json!({ "pane": l1, "title": "helper" }));
 
-    // A member's @lead is its next prompt; it prompts L1 by name and says
-    // so without posting: its last message is posted for it.
+    // #959: the lead runs here with the owner's rights, so a member's
+    // @lead is a comment until the owner trusts them with the lead's block,
+    // and so is answering its cards.
     let ask = r#"@lead please ;; mcp prompt_agent {"pane":"L1","text":"hello","timeout":20} ;; say L1 said hello"#;
+    let (s, v) = as_driver(&d, "POST", &thread, Some(json!({ "text": ask })));
+    assert_eq!(s, 200, "{v}");
+    assert_eq!(v["agent"], Value::Null, "it didn't go to the lead: {v}");
+    assert_eq!(v["message"]["landed"], Value::Null, "{v}");
+    assert_eq!(v["unreached"], json!([{ "token": "lead", "why": "may_not_drive" }]), "{v}");
+    let card = json!({ "link": "lead", "id": "nope", "action": "allow" });
+    let (s, v) = as_driver(&d, "POST", &format!("/api/convs/{id}/act"), Some(card.clone()));
+    assert!(s != 200 && v.to_string().contains("trust you"), "{s} {v}");
+    d.trust(lead, &format!("tailnet:{DRIVER}"), 30);
+    d.wait_for("the trust", || {
+        !as_driver(&d, "POST", &format!("/api/convs/{id}/act"), Some(card.clone())).1.to_string().contains("trust you")
+    });
+
+    // Then a member's @lead is its next prompt; it prompts L1 by name and
+    // says so without posting: its last message is posted for it.
     let (s, v) = as_driver(&d, "POST", &thread, Some(json!({ "text": ask })));
     assert_eq!(s, 200, "{v}");
     assert!(v["agent"]["delivered"].is_boolean(), "it went to the lead: {v}");

@@ -405,10 +405,16 @@ mod tests {
             // Only a POST types.
             assert!(!drives(&g, &format!("/api/panes/3/{verb}")), "GET {verb}");
         }
+        // #959: prompting an agent, and `cd`, type too.
+        for verb in ["prompt", "cd"] {
+            assert!(drives(&p, &format!("/api/panes/3/{verb}")), "{verb}");
+        }
         // An editor's other calls on a pane don't.
-        for verb in ["attention", "close", "prompt", "ask", "permit", "hook", "inbox", "capture", "diff", "process"] {
+        for verb in ["attention", "close", "ask", "permit", "hook", "inbox", "capture", "diff", "process"] {
             assert!(!drives(&p, &format!("/api/panes/3/{verb}")), "{verb}");
         }
+        // Answering for an agent is checked by its handler (`api::call`),
+        // which tells an agent's prompt from a gate's review.
         assert!(!drives(&p, "/api/blocks/3/call/approve"));
         // A route that is no operation and ends in one of the names doesn't.
         assert!(!drives(&p, "/api/foo/send"));

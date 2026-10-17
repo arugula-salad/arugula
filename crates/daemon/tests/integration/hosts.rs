@@ -410,7 +410,8 @@ fn the_flags_are_the_owners() {
 /// The files, host-list and setup routes are the owner's (#578): someone a
 /// session is shared with, even as an editor, is refused every one, but
 /// `GET /api/host` (anyone's, without how the machine stands with control)
-/// and `cd` in a pane they may type in (an editor's, not a viewer's).
+/// and `cd` in a pane they may type in (an editor's the owner trusts with
+/// it, not a viewer's).
 #[test]
 fn the_files_hosts_and_setup_routes_are_the_owners() {
     let d = arugulad!("hosts")
@@ -460,10 +461,15 @@ fn the_files_hosts_and_setup_routes_are_the_owners() {
     let host: Value = serde_json::from_str(&text).unwrap();
     assert!(host["name"] == "plain" && host.get("control_state").is_none(), "{host}");
     assert!(d.get("/api/host").get("control_state").is_some());
-    // `cd` is typed input: an editor's, not a viewer's.
+    // `cd` is typed input: an editor's, not a viewer's, and on the owner's
+    // machine only once they trust the editor with the pane (#959).
     let path = format!("/api/panes/{id}/cd");
     let (status, _, text) = as_("watcher", "POST", &path, Some(r#"{"path":"/tmp"}"#));
     assert_eq!((status, text.contains("you're watching")), (403, true), "{text}");
+    let (status, _, text) = as_("friend", "POST", &path, Some(r#"{"path":"/tmp"}"#));
+    assert_eq!((status, text.contains("ask them to trust you")), (403, true), "{text}");
+    d.trust(id, "tailnet:friend@example.com", 30);
+    d.wait_for("the trust", || as_("friend", "POST", &path, Some(r#"{"path":"/tmp"}"#)).0 != 403);
     let (status, _, text) = as_("friend", "POST", &path, Some(r#"{"path":"/tmp"}"#));
     assert!(status != 403 && status != 404, "{status}: {text}");
 }

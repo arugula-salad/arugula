@@ -608,6 +608,20 @@ impl Daemon {
         req
     }
 
+    /// The owner trusts `to` (a principal id, `tailnet:…`) with pane or
+    /// block `pane` for `minutes` (M14), as the pane menu does, over the
+    /// WebSocket. It takes a moment after this returns: wait for it.
+    pub fn trust(&self, pane: u64, to: &str, minutes: u32) {
+        use tokio_tungstenite::tungstenite::{self, Message};
+        let stream = TcpStream::connect(("127.0.0.1", self.port)).unwrap();
+        let (mut ws, _) = tungstenite::client(self.ws("/ws"), stream).expect("the WebSocket");
+        let op = serde_json::json!({ "type": "pane", "pane": pane, "op": { "op": "grant_trust", "to": to, "minutes": minutes } });
+        ws.send(Message::Text(op.to_string().into())).unwrap();
+        // Closed after it, so the op is read first.
+        let _ = ws.close(None);
+        while ws.read().is_ok() {}
+    }
+
     /// One request over the socket (the owner's, so no credential): status
     /// and body, chunks joined. Status 0 if it doesn't answer.
     pub fn raw(&self, method: &str, path: &str, body: Option<Value>) -> (u16, String) {

@@ -73,7 +73,7 @@ impl Handle for ConvCreate {
 
 impl Handle for ConvLeadStart {
     /// Start its lead, or a new one in place of a lost one: for anyone in
-    /// it, as anyone in it may drive through the lead.
+    /// it. It does nothing until someone who may drive it (#959) calls it.
     async fn handle(cx: &Cx<'_>, id: ConvId, _: Empty) -> Result<Conversation, OpError> {
         conv(cx, ConvReq::Get { id }).await?;
         lead::start(cx.app, id).await.map_err(refused)

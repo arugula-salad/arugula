@@ -293,10 +293,13 @@ impl Daemon {
         }
     }
 
-    /// A guest may drive a pane on a machine of its own; one on this
-    /// machine only while the owner trusts them with it (M14).
+    /// A guest may drive a pane on a machine of its own (a VM they
+    /// started, and so the agent block they started on it); anything else,
+    /// a block or the owner's VM too, only while the owner trusts them with
+    /// it (M14, #959). Typing, prompting an agent and answering for it all
+    /// ask this.
     pub(super) fn may_drive_here(&self, who: &Principal, pane: PaneId) -> Result<(), String> {
-        if who.is_owner() || self.machine_of(pane).is_some() || self.blocks.contains_key(&pane) {
+        if who.is_owner() || self.machine_of(pane).is_some_and(|m| m.by.as_deref() == Some(who.id())) {
             return Ok(());
         }
         // A team's machine is the team's: its members drive it by their
