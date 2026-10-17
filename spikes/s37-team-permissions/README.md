@@ -29,14 +29,17 @@ What the code does today, in short:
   thing is the A2A tasks (`crates/daemon/src/labs/agents/tasks.rs`): consent cards, *Allow once*,
   *Allow for an hour*, *Deny*, and grants in `a2a/grants.json`, all on the machine that runs them.
 
-Today's Editor trust bypasses are being closed now, in a separate PR that's in flight:
-`pane.prompt`, `pane.cd`, card approvals, agent-block calls through `may_drive_here`, `@agent` and
-`@lead`. This design takes that PR as done before stage 1. The table in q1 marks those rows "in
-flight".
+Today's Editor trust bypasses are closed by a separate PR, #976: `pane.prompt`, `pane.cd`, card
+approvals, agent-block calls through `may_drive_here`, `@agent` and `@lead`. It also closes two
+paths this audit missed: the trust check in `act_for_conv` (`crates/daemon/src/api.rs:527`, a
+conversation's home answering a link's card), and the debugger `continue` block call
+(`api.rs:341`). This design takes #976 as done before stage 1. The table in q1 marks those rows
+"#976".
 
 Related, not merged: the `design/control-collab` branch (`docs/control-collab.md`, 2026-10-15)
-proposes control as the hub for chat and tasks. Its D1(a) (end to end encrypted in control) and
-D4 (a task's state kept in control) agree with q3 and q4 here. Nothing below depends on it.
+proposes control as the hub for chat and tasks. Its D4 (a task's state kept in control) agrees
+with q4 here. Its D1(a), end to end encryption in control, does not apply to work requests: Jake
+chose plaintext request bodies (decision 6). Nothing below depends on that branch.
 
 ## Decided before the spike (Jake, 2026-10-17)
 
@@ -55,6 +58,27 @@ These are recorded, not reopened.
    discuss, and drive terminals (behind temporary trust on the owner's machine). Instructing
    agents and approving their tools are the machine owner's, unless granted.
 
+## Decided after the spike (Jake, 2026-10-17)
+
+The four questions this spike left open, answered.
+
+5. **"Private on upgrade" means implicit reach only.** Teammates stop being near (M87). Explicit
+   session shares stay, as view, discuss, and drive behind trust (q6). Execution powers an Editor
+   no longer has (instruct, approve, start, sandbox, forge writes) aren't carried over; the owner
+   grants them again.
+6. **Operation bodies are plaintext to control, not sealed.** **Control can read the bodies of
+   work requests**: the command, its directory, its arguments, an instruction's text, and the
+   results' tail. They're signed, so control can't change them, and control can show a request's
+   text with no device online. There's no new encryption primitive. This is a stated exception to
+   [DECISIONS](../../DECISIONS.md)' "Control can refuse service but can't read", which still holds
+   for terminal output, input, scrollback, snapshots and push payloads. M89 amends that entry to
+   say so.
+7. **Forge writes are the owner's only.** They leave the Editor preset (`credentials`) and need a
+   grant.
+8. **A conversation's link carries only its maker's capabilities.** An Editor's link loses
+   `instruct` and `approve` (q6). Membership stays the explicit instruct grant through `@lead`
+   (#858), reaching a link only within the link's grant.
+
 ## Answers
 
 1. **Capabilities.** There are thirteen: `view`, `discuss`, `request`, `arrange`, `drive`,
@@ -66,6 +90,7 @@ These are recorded, not reopened.
 3. **Signed objects.** Six line formats, each with its own first line, kept separate from rosters
    and pinned in `frozen.rs`: a work request, an operation, an approval, a standing grant, a
    revocation and a stop. The approval signs the operation's SHA-256 and the request's id.
+   Control stores them in plaintext (decision 6): it can read them, not change them.
 4. **The lifecycle.** Eight states, three of them dead ends that never run. The daemon keeps a
    ledger written before dispatch, so an id runs at most once.
 5. **Mixed versions.** Control applies the new routing to every daemon, old ones included. New
@@ -134,8 +159,8 @@ capability: it can only lower one (q7a).
 
 ### Every entry point, mapped
 
-"Today" is the check as of aa932b02. A row marked *in flight* is closed by the PR that's in
-flight; the capability column is the target either way.
+"Today" is the check as of aa932b02. A row marked *#976* is closed by PR #976; the capability
+column is the target either way.
 
 **HTTP: operations** (declared in `crates/proto/src/op.rs`, listed with their access in
 `crates/daemon/tests/fixtures/ops-access.txt`, handled in `crates/daemon/src/ops/`):
@@ -145,16 +170,16 @@ flight; the capability column is the target either way.
 | `pane.capture`, `tail`, `wait`, `export.cast`, `diff`, `process`, `detection`; `GET /api/blocks/{id}` | `Pane(Viewer)`, `from_now` floor (`authz.rs:143`) | `view` |
 | `thread.get`, `thread.read` | `Handler`: `thread_role` (`crates/mux/src/mux/thread_ops.rs:45`) | `view` |
 | `thread.post` | `Handler`: `role < Editor` refused (`thread_ops.rs:134`) | `discuss` |
-| `thread.post` with `@agent` | `may_drive_here` (`thread_ops.rs:173`), *in flight* | `instruct` on the pane, else a proposal (q7c) |
+| `thread.post` with `@agent` | `may_drive_here` (`thread_ops.rs:173`), *#976* | `instruct` on the pane, else a proposal (q7c) |
 | `conv.*` `@lead` | being a member (`calls_lead`, `thread_ops.rs`) | `instruct` on the conversation, which membership grants explicitly (q7c) |
 | `pane.send`, `keys`, `mouse`; `upload`, `paste` (hand-written) | `Pane(Editor)` + `DRIVES` → `Api::MayDrive` (`authz.rs`, `ops/mod.rs:354`) | `drive` |
-| `pane.cd` | `Pane(Editor)`, `drives=false`, *in flight* | `drive` |
+| `pane.cd` | `Pane(Editor)`, `drives=false`, *#976* | `drive` |
 | `pane.close` | `Pane(Editor)` | `drive` (closing ends the process) |
 | `pane.attention`, `pane.ask`, `ask_withdraw`, `pane.hook` | `Pane(Editor)` | `drive`: these are the pane's own program speaking, normally over the socket as the owner |
-| `pane.prompt` | `Pane(Editor)`, `drives=false`, *in flight* | `instruct` |
+| `pane.prompt` | `Pane(Editor)`, `drives=false`, *#976* | `instruct` |
 | `pane.followup`, `pane.inbox` | `Pane(Editor)` (`followup` drives) | `instruct` |
-| `pane.permit` | `Pane(Editor)`, *in flight* | `approve` |
-| `conv.act`, `/api/attention/act` (hand-written) | `Handler`: `act` (`crates/daemon/src/api.rs:252`), *in flight* | `approve`, per pane acted on |
+| `pane.permit` | `Pane(Editor)`, *#976* | `approve` |
+| `conv.act`, `/api/attention/act` (hand-written) | `Handler`: `act` (`crates/daemon/src/api.rs:252`), *#976* | `approve`, per pane acted on |
 | `pane.drivers`, `pane.ports`, `panes.list` | `Owner` | `admin` (`view` for `drivers` on a viewed pane is a later nicety) |
 | `conv.grant` | `Pane(Editor)` + drives | `grant` of the capabilities the maker holds, capped (q6) |
 | `conv.grant_revoke` | `Pane(Editor)` | the grant's maker, or `grant` on the pane |
@@ -171,8 +196,10 @@ flight; the capability column is the target either way.
 | `POST /api/blocks` (`open_block`, `api.rs:775`) | `Handler`: a guest's agent goes on a VM (M14) | `start` on the machine, or `sandbox` |
 | `POST /api/blocks/{id}/call/{method}`, default arm | `Pane(Editor)` | decided per method, as below |
 | `call/send`, `keys`, `mouse`, `upload`, `paste` | `Pane(Editor)` + `DRIVES_HAND_WRITTEN` | `drive` |
-| `call/followup`, an agent block's prompt | `Pane(Editor)`, *in flight* | `instruct` |
-| `call/approve`, `answer`, `expire`, `why` | `Pane(Editor)`, *in flight* | `approve` (`why`: `view`) |
+| `call/followup`, an agent block's prompt | `Pane(Editor)`, *#976* | `instruct` |
+| `call/approve`, `answer`, `expire`, `why` | `Pane(Editor)`, *#976* | `approve` (`why`: `view`) |
+| `call/continue` (the debugger's, `api.rs:341`; missed by the audit) | `Pane(Editor)`, *#976* | `drive` |
+| A conversation's home answering a link's card (`act_for_conv`, `api.rs:527`; missed by the audit) | the grant maker's rights, no trust check, *#976* | `approve` within the link grant |
 | `call/comment` and the forge writes (review, merge) | `Pane(Editor)` (M36) | `credentials` |
 | `call/login`, `diff`, `checkout`, `agent`, `live`, `enter`, `profile`, `specs`, `run`, `run_fountain`, `spec`, `run_here`, `run_there`, `open_conversation`, `mark_read`, `answer_request`, `offer`, `unoffer`, `recipes`, `fountain_*`, `principals`, `graph`, `hud` | `Owner` | `admin`; `run_here` and `run` are `start`; `run_there` is `credentials` |
 | `/api/run` | `Owner` | `start` |
@@ -400,15 +427,27 @@ grant working on a machine that hasn't heard. Three things bound it:
 - a daemon that's been out of touch with control longer than a grant's own `made`-to-`expires`
   span treats the grant as expired until it reconnects.
 
-**Sealed bodies.** The operation's bytes are input to someone's machine, and
-[DECISIONS](../../DECISIONS.md)' "Control can refuse service but can't read" covers input. So
-control keeps the request's metadata in the clear: id, daemon, from, via, the operation hash,
-times, state. The operation itself is sealed: an X25519 box per recipient, using the Noise keys in
-their certificates already. The recipients are the target daemon, the authority's devices (so the
-owner's phone can show what it's approving while the workstation is offline) and the requester's
-devices. Results are sealed the same way. This costs one new primitive in `crates/e2e`; the
-alternative, control reading commands, would weaken a settled decision, which this design doesn't
-do.
+**Plaintext bodies: control can read work requests (decision 6).** Control stores every object
+here as written: the request, the operation's own bytes (command, directory, arguments, an
+instruction's text), the approval, and the results' tail. It can read all of them. What it can't do
+is change them: each is signed, and the operation is bound to the approval by its hash, so a body
+control altered no longer matches `op` and the daemon refuses it (q4's second check). The gain is
+that control's page and the phone can show what a request asks for, and the approver can review
+it, with no device online, not even the workstation. There's no new encryption primitive.
+
+**The threat model, then:**
+
+| Control can | Control can't |
+|---|---|
+| read request bodies, operations, approvals, grants and results' tails | make or change a request, an operation, an approval, a grant, a revoke or a stop (all signed by devices the daemon checks) |
+| delay or drop any object, a revoke included (bounded as above) | move an approval to another request or another operation (it names both) |
+| forge a deny or a cancel (refusing service, which it can always do) | make a request run twice (the daemon's ledger) |
+| see who asked whom for what, and when | read terminal output, input, scrollback, snapshots or push payloads, which stay end to end encrypted |
+
+This is a stated exception to [DECISIONS](../../DECISIONS.md)' "Control can refuse service but
+can't read": that entry is amended in M89 to say that work requests and their results' tails are
+readable by control. People are told so where they ask: *Request a run…* says "Arugula's control
+service can read this request."
 
 ## q4: the request lifecycle
 
@@ -468,8 +507,7 @@ stateDiagram-v2
   - The approver's device sets `expires` by its own clock, with ten minutes' slack. The daemon
     can't be asked, because it may be offline.
 - **Results:** the exit status, the duration, and a bounded tail (64 KB) of the run's output,
-  sealed to the requester and the session's viewers, posted in the session's thread and kept on the
-  request in control. The full transcript stays in the pane on the workstation, for those who may
+  posted in the session's thread and kept on the request in control, in plaintext (decision 6). The full transcript stays in the pane on the workstation, for those who may
   view it (#959: no transcript uploaded).
 - **Delivery.** A daemon that advertises `work-requests` pulls what's waiting for it when it
   connects. Control nudges it over the relay when something new arrives, as it does for shares
@@ -497,6 +535,8 @@ Two feature strings join the ones the daemon advertises today (`crates/daemon/sr
 | a conversation's home new, the linked machine old | any | any | The old machine checks its link grants as today (the grant maker's rights, capped at Editor). The link keeps working, with the old powers, until that machine updates. |
 | a conversation's home old, the linked machine new | any | any | The new machine checks the link's grant capabilities (q6). A prompt from a link whose maker had no `instruct` is refused, and the old home shows the error. |
 | a self-hosted control downgraded after M89 | old | any | Requests waiting in control are invisible until it's upgraded again. Daemons keep their ledgers, so nothing reruns when they come back. |
+| new daemon offline | new | new (the approver's phone) | Bodies are plaintext in control, so the phone shows the exact operation and the approver signs it with no device of the workstation's online. The daemon checks the hash against the body when it comes back. |
+| an older client that can't verify signatures | new | old | It can show a request's plaintext text from control, but it can't approve: approvals need the new signing code, and an unsigned or wrongly signed approval is refused by the daemon. |
 
 **The rule that holds across the matrix:** the daemon that owns the resource decides, by its own
 grants, and an old component can only refuse or show less. Control's one change of meaning
@@ -507,14 +547,14 @@ grants, and an old component can only refuse or show less. Control's one change 
 | What exists | Where | Becomes | Why |
 |---|---|---|---|
 | A session share, Viewer | `acl.json` `Grant` (`crates/mux/src/acl.rs:63`) | `view` | maps cleanly |
-| A session share, Editor | `acl.json` | the Editor preset: `view`, `discuss`, `arrange`, `drive` behind trust | decision 4. `instruct`, `approve`, `sandbox` and forge `credentials` aren't carried over |
+| A session share, Editor | `acl.json` | the Editor preset: `view`, `discuss`, `arrange`, `drive` behind trust | decisions 4, 5 and 7. `instruct`, `approve`, `sandbox` and forge `credentials` aren't carried over |
 | A session share, Owner | `acl.json` | Editor's preset, and `share` | maps cleanly |
 | A "from now" share | `Grant.from` | unchanged: `view` keeps its floor | settled (M13) |
 | A share to a team (M30) | `acl.json` `team:ID`, capped by team role (`acl.rs:222`) | the share's preset; the team role can lower it, never raise it | the cap already only lowers. Execution grants to `team:` on a personal machine aren't allowed (q7a) |
 | A read-only link | `Grant.key`, `expires` | `view` until it expires | maps cleanly |
 | Temporary trust | in memory (`who_may.rs:275`) | a `drive` grant on the pane, with its expiry, on disk (M88) | an upgrade restarts the daemon, which drops today's trust anyway |
 | A team machine's roles | the roster (`Enrolled::build`, `control.rs:254-318`) | the default delegated policy (q1), which keeps today's behaviour | #959: "Preserve deliberately shared team machines" |
-| A conversation's link grant | `<state>/conv-grants.json` | the capabilities its maker held when it was made, capped at `view`, `instruct`, `approve`. The machine's owner keeps all three. An Editor's link loses `instruct` and `approve`, and the conversation's header says "needs Jake's grant" | the grant maker's rights were the cap, and decision 4 lowers an Editor's |
+| A conversation's link grant | `<state>/conv-grants.json` | the capabilities its maker held when it was made, capped at `view`, `instruct`, `approve`. The machine's owner keeps all three. An Editor's link loses `instruct` and `approve`, and the conversation's header says "needs Jake's grant" | decision 8: a link carries its maker's capabilities, and decision 4 lowers an Editor's |
 | Conversation membership | the record's members | unchanged: an explicit `instruct` through `@lead`, which the invite already says | it was made explicit on purpose (#858). The lead reaches a link only within the link's grant |
 | A2A *Allow for an hour* | `<state>/a2a/grants.json` | a `request` grant on `agent:NAME` for that account, with its expiry | maps cleanly |
 | MCP client tokens | `mcp/tokens.rs` | unchanged: full is the owner, read is `view` | the owner minted them for themselves |
@@ -631,7 +671,7 @@ and 2 (q6), not as a stage of its own.
 **Where this departs from the split in the brief: stage 2 is two milestones, M88 and M89.**
 Standing grants, revocation and persisted trust are the daemon's alone. They have no control
 schema, no relay messages, and no state machine, and they can ship and be tested with the owner
-granting from the machine itself. Durable requests add control's storage, sealed bodies, the
+granting from the machine itself. Durable requests add control's storage, the
 relay, the ledger and the state machine. Splitting them puts revocation (decision 3) in people's
 hands one release earlier, and keeps each PR reviewable.
 
@@ -686,7 +726,8 @@ hands one release earlier, and keeps each PR reviewable.
   - `arugula op v1`, `work request v1` and `work approval v1`.
   - Control's `work_requests` table (`SCHEMA` and `migrate()` in `crates/control/src/db.rs`) and
     `control-wire` messages.
-  - Sealed operation bodies and results.
+  - Plaintext, signed operation bodies and results' tails; the DECISIONS entry "Control can refuse
+    service but can't read" amended to say control reads work requests (decision 6).
   - The eight states (q4).
   - The daemon's ledger and at-most-once dispatch.
   - The second check at the start.
@@ -751,23 +792,3 @@ hands one release earlier, and keeps each PR reviewable.
 | Revocation and membership changes are tested on every path | M87 (membership), M88 (revocation) |
 | Authorization tests cover HTTP, WebSocket, CLI/MCP, delegation, duplicate dispatch, expiry, offline, migration | M86 (paths), M87 (migration), M88 (expiry), M89 (delegation, duplicates, offline) |
 | Team navigation centres shared work, with zero machines | M91 |
-
-## For Jake
-
-These need a yes or a different answer. Each comes with the design's recommendation.
-
-1. **"Private on upgrade": a reading.** The design takes decision 1 to mean that implicit reach
-   goes (teammates near), and that execution powers an Editor no longer has (instruct, approve,
-   start, forge writes) aren't carried over. Explicit session shares keep their view, discuss and
-   drive (q6), as #959's migration section asks. The other reading is stricter: every personal
-   share is dropped, and owners share again from scratch. Recommended: the first.
-2. **Sealed operations in control** (q3) add one primitive to `crates/e2e`, an X25519 box per
-   recipient. The alternative is that control reads the command lines it stores. Recommended:
-   sealed, which keeps "Control can refuse service but can't read" true.
-3. **Forge writes leave the Editor preset** (`credentials`). Today an Editor can comment, review
-   and merge with the owner's login (M36). Recommended: they leave it, as acting with the owner's
-   identity elsewhere.
-4. **The conversation lead** keeps "membership is an explicit instruct grant through @lead"
-   (#858). What the lead can do on a link becomes the link grant's capabilities, so an Editor's
-   link loses `instruct` and `approve` (q6). Recommended: yes. The alternative is to carry links
-   over unchanged and accept the gap until they're made again.
