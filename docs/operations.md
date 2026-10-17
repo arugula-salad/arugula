@@ -257,7 +257,7 @@ file, so a new one shows up in review.
 
 - `drives` (typing into a pane on the owner's machine needs their trust,
   M14) is `DRIVES: true` on `send`, `keys`, `mouse` and `followup` (#574),
-  and `ops::drives(method, path)` asks it. It used to match path suffixes, so
+  and on `prompt` and `cd` (#959), and `ops::drives(method, path)` asks it. It used to match path suffixes, so
   a new route ending in `/send` got it by accident and a renamed one lost
   it. The hand-written routes that drive (`upload`, `paste`, and the block
   call's `send`, `keys`, `mouse`, `followup`, `upload` and `paste`) are on

@@ -36,6 +36,17 @@ impl Daemon {
         }
     }
 
+    /// Whether `who` may instruct conversation `conv`'s lead (#858): whoever
+    /// may drive its block, as it runs here with the owner's rights (#959).
+    /// With no lead yet, an `@lead` starts one: the owner's, or a team's
+    /// member's.
+    fn may_tell_lead(&self, who: &Principal, conv: arugula_proto::ConvId) -> bool {
+        match self.threads.conv(conv).and_then(|c| c.lead.as_ref()) {
+            Some(l) => self.may_drive_here(who, l.block).is_ok(),
+            None => who.is_owner() || self.config.acl.team_role(who).is_some_and(|r| r >= Role::Editor),
+        }
+    }
+
     /// `who`'s role in a thread, and the time its messages start for them:
     /// a pane's thread is read by whoever may read the pane (a private
     /// pane's only by its owner), a session's by whoever has a role in it.
@@ -165,14 +176,15 @@ impl Daemon {
             .collect();
         // An @agent goes to the pane's agent as a follow-up: an instruction,
         // so only from someone who may drive it (and never from an agent).
-        // In a conversation, @lead goes to its lead (#858): everyone in it
-        // may drive through the lead, so posting is enough.
+        // In a conversation, @lead goes to its lead (#858), which runs here
+        // with the owner's rights: so only from someone who may drive the
+        // lead's block (#959). Anyone else's is a comment.
         let to_agent = as_agent.is_none()
             && match target {
                 ThreadTarget::Pane(p) => {
                     crate::labs::threads::calls_agent(&tokens) && self.may_drive_here(&who, p).is_ok()
                 }
-                ThreadTarget::Conv(_) => crate::labs::threads::calls_lead(&tokens),
+                ThreadTarget::Conv(c) => crate::labs::threads::calls_lead(&tokens) && self.may_tell_lead(&who, c),
                 ThreadTarget::Session(_) => false,
             };
         let reaches_agent = |t: &String| match target {
@@ -190,6 +202,8 @@ impl Daemon {
                 landed.push(t.clone());
             } else if crate::labs::threads::names(t, speaker.id(), &me) {
                 // Yourself: nothing to say.
+            } else if matches!(target, ThreadTarget::Conv(_)) && reaches_agent(t) {
+                unreached.push(Unreached { token: t.clone(), why: UnreachedWhy::MayNotDrive });
             } else if crate::labs::threads::calls_agent(std::slice::from_ref(t)) {
                 let why = if matches!(target, ThreadTarget::Pane(_)) {
                     UnreachedWhy::MayNotDrive

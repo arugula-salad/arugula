@@ -312,6 +312,16 @@ async fn act(
             }
         }
     }
+    // Answering for a pane (approving a tool, answering its question,
+    // running a command again, accepting an edit, continuing a debugger)
+    // drives it (#959); dismissing its card doesn't, nor does a review.
+    if !who.is_owner() && req.action != arugula_proto::Action::Dismiss {
+        for p in &panes {
+            if !is_review(&app, *p).await {
+                may_drive(&app, &who, *p).await?;
+            }
+        }
+    }
     let mut results = Vec::new();
     let by = who_is(&app, who).await;
     for pane in panes {
@@ -552,16 +562,18 @@ pub(crate) async fn act_for_conv(
             Some(_) => return Err(format!("whoever linked %{pane} may only watch it now")),
             None => return Err(format!("no pane %{pane}")),
         }
+        // And may still drive it (#959): a grant outlives no trust.
+        may_drive(app, &who, pane).await.map_err(|e| e.1)?;
     }
     let by = Driver { who: who.id().to_owned(), name: via.label() };
     act_one(app, pane, req, Some(by)).await
 }
 
 /// A conversation's answer to its lead's own card (#859): the lead is its
-/// conversation's, started here with the owner's rights, and anyone in the
-/// conversation may answer what it asks (they may drive through it with
-/// `@lead` already). Allow, deny or answer one ask by its id, on the lead's
-/// block only; recorded as the member, via the conversation.
+/// conversation's, started here with the owner's rights, so whoever may
+/// drive its block may answer what it asks, as they may `@lead` it (#959).
+/// Allow, deny or answer one ask by its id, on the lead's block only;
+/// recorded as the member, via the conversation.
 #[cfg(feature = "labs")]
 pub(crate) async fn act_for_lead(
     app: &App,
@@ -577,8 +589,30 @@ pub(crate) async fn act_for_lead(
     if req.id.is_none() {
         return Err("name the ask it answers (id)".into());
     }
+    may_drive(app, who, lead).await.map_err(|e| e.1)?;
     let by = Driver { who: who.id().to_owned(), name: via.label() };
     act_one(app, lead, req, Some(by)).await
+}
+
+/// Refused unless `who` may drive pane or block `id`: on the owner's
+/// machine, an editor needs their trust (M14), for prompting an agent and
+/// answering for it as for typing (#959). Said as typing says it.
+pub(crate) async fn may_drive(app: &App, who: &crate::acl::Principal, id: PaneId) -> Res<()> {
+    match app.mux.api(|r| Api::MayDrive(who.clone(), id, r)).await {
+        Some(Err(why)) => Err(ApiError(StatusCode::FORBIDDEN, why)),
+        _ => Ok(()),
+    }
+}
+
+/// Whether answering for `id` doesn't drive anything here (#959): a
+/// workspace's or a studio box's gate, decision or question, a forge's
+/// review or checks, or a page's question (a bridge's ask). Their answers
+/// go to chant, the box, the forge or the page, not to a shell or an agent
+/// on this machine.
+async fn is_review(app: &App, id: PaneId) -> bool {
+    use arugula_proto::BlockType;
+    let kind = app.mux.api(|r| Api::Block(id, r)).await.flatten().map(|b| b.kind());
+    matches!(kind, Some(BlockType::Workspace | BlockType::App | BlockType::Forge | BlockType::Browser))
 }
 
 /// Whether a block is a Team agents block (M77), which holds task cards.
@@ -1014,9 +1048,17 @@ async fn call(
         // M11: a file block's `open` is the owner's only. M36: a forge
         // block's writes say who sent them.
         "approve" | "expire" | "deny" | "answer" | "decline" | "send" | "terminal" | "open" | "comment" | "review"
-        | "merge" | "rerun_checks" | "revise" | "drop" => who_is(&app, who).await,
+        | "merge" | "rerun_checks" | "revise" | "drop" => who_is(&app, who.clone()).await,
         _ => None,
     };
+    // Answering an agent (a tool's approval, its question, its dialog), or
+    // continuing a debugger, drives it (#959).
+    if !owner
+        && matches!(method.as_str(), "answer" | "decline" | "terminal" | "approve" | "deny" | "continue")
+        && !is_review(&app, id).await
+    {
+        may_drive(&app, &who, id).await?;
+    }
     if let Some(b) = app.mux.api(|r| Api::Block(id, r)).await.flatten() {
         // An agent's invites (#234) are the owner's, and not for an agent
         // on the owner's CLI either (as a forge's drafts, a courtesy).

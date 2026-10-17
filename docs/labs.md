@@ -277,8 +277,10 @@ machine without it, nobody does.
   *conversations* session, so you can watch it work. It acts with the
   conversation owner's rights, and a request to a pane on another machine
   still runs under that link's grant there.
-  - **`@lead`** in the conversation, from anyone in it, is its next
-    prompt. Each prompt says who wrote what, what happened in the
+  - **`@lead`** in the conversation is its next prompt, from anyone in
+    it who may drive the lead's block: the owner, a team's member on a
+    team's machine, or someone the owner trusts with it (#959). Anyone
+    else's `@lead` is a comment. Each prompt says who wrote what, what happened in the
     conversation since its last turn (its links' events included), the
     links by name and how to answer, so it needs nothing it was told
     before; `read_thread` has the rest.
@@ -295,9 +297,9 @@ machine without it, nobody does.
   - **Its own asks are cards** (#859): a tool outside its allow list (its
     own Bash, `start_agent`…) or a question of its own shows in the
     conversation as the lead's card, held two seconds as a link's are,
-    pushed to everyone in it, and answered by anyone in it on the lead's
-    block, by the ask's id. The lead acts with the owner's rights, and
-    everyone in the conversation may drive through it already.
+    pushed to everyone in it, and answered on the lead's block, by the
+    ask's id, by whoever may `@lead` it: the lead acts with the owner's
+    rights.
   - **`start_agent`** from it opens a helper beside it, which becomes the
     next link.
   - **What it has seen** (the last message it was shown), whom it owes an

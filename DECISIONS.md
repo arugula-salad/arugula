@@ -280,8 +280,18 @@ panes run in a VM (or join the tab's), and driving one of the owner's local
 panes needs a per-pane, time-limited trust grant. Anything that types into a
 pane, including uploads, checks both the role and `MayDrive`; a new route that
 types must be added to that check by path.
-Where: `crates/daemon/src/authz.rs` (`Api::MayDrive`), `crates/mux/src/mux/who_may.rs`, `crates/daemon/src/upload.rs`.
-From: [M14](docs/plan-archive.md#m14-safe-write-access), [M70](docs/plan-archive.md#m70-images-into-terminal-panes-249).
+Instructing an agent and approving its tools are the machine owner's unless
+granted (Jake, 2026-10-17, #959): prompting a pane (`prompt`), `cd`, an
+`@agent` that reaches it, and answering for it (an approval, a question, its
+dialog, a command run again, an edit, a debugger) check `MayDrive` too. A
+block or a VM pane is no exception: only a VM the guest started (and so
+the agent block they started on it) is theirs to drive. A team's editors on
+a team's machine drive by their role, as before. Dismissing a card, and
+answering what isn't a shell or an agent here (a workspace's or a studio
+box's gate, decision or question, a forge's review or checks, a page's
+question), don't drive. An `@agent` from someone without trust is a comment.
+Where: `crates/daemon/src/authz.rs` (`Api::MayDrive`), `crates/mux/src/mux/who_may.rs` (`may_drive_here`), `crates/daemon/src/api.rs` (`may_drive`, `is_review`), `crates/daemon/src/upload.rs`.
+From: [M14](docs/plan-archive.md#m14-safe-write-access), [M70](docs/plan-archive.md#m70-images-into-terminal-panes-249), #959.
 
 ### Only the owner's agent reaches panes over ssh
 The fixed `SSH_AUTH_SOCK` path links only to an agent forwarded by the box's
@@ -794,9 +804,10 @@ through the relay under its grant (the grant maker's rights, capped at
 an editor's). Not on links: `agent_respond` (cards are the people's),
 `send_input` and `run` (a step past prompting its agent). Its thread is
 its conversation, and `list` kind `links` is its alone. It acts with the
-owner's rights, so being a member is a drive grant through it (the
-invite says so). `@lead` from anyone in the conversation is its next
-prompt, and the prompt carries everything (who wrote what, the
+owner's rights, so instructing it is driving its block (#959): `@lead`
+from the owner, a team's member on a team's machine, or someone the owner
+trusts with the lead's block is its next prompt (anyone else's is a
+comment), and the prompt carries everything (who wrote what, the
 conversation since its last turn, the links by name, how to answer):
 the brief is in its system prompt, which a resumed session doesn't get
 again. The record keeps its cursor (the last message it was shown),
@@ -821,10 +832,10 @@ is its fields, sent as `conv.act` `answer` by the ask's id through the
 pane's machine as a permission is; the conversation records the answer in
 a line. The lead's own asks (a tool outside its allow list, a question of
 its own) are cards in its conversation, link `lead`, by the links' rules
-(held two seconds, so one its allow list answers isn't posted), and anyone
-in the conversation answers them on the lead's block (`act_for_lead`): the
-lead acts with the owner's rights and every member may drive through it
-with `@lead` already, so answering its prompt gives nobody more. The real
+(held two seconds, so one its allow list answers isn't posted), and whoever
+may `@lead` it answers them on the lead's block (`act_for_lead`): the
+lead acts with the owner's rights, so answering its prompt is driving it
+(#959). The real
 run (M85) added a rule and a fix: a turn under two seconds with no summary
 and nothing asked isn't posted, since Claude Code starting in a terminal
 makes one; and a lead turn counts as replied by a post since its own

@@ -317,7 +317,8 @@ async fn diffs_can_go_to_another_ide() {
 }
 
 /// Watching a session isn't answering for it: a viewer sees the diff, and
-/// can't accept it; an editor can (M12).
+/// can't accept it; an editor the owner trusts with the pane can (M12,
+/// #959).
 #[tokio::test(flavor = "multi_thread")]
 async fn only_those_who_may_drive_answer_a_diff() {
     let s = setup("roles");
@@ -350,9 +351,23 @@ async fn only_those_who_may_drive_answer_a_diff() {
     let r = accept().await.unwrap();
     assert_eq!(r.status(), 403, "{}", r.text().await.unwrap());
     assert_eq!(std::fs::read_to_string(&file).unwrap(), "before\n");
-    // Someone who may drive the session can.
+    // An editor, on the owner's machine, once the owner trusts them with
+    // the pane (#959): accepting an edit approves the agent's tool.
     d.post("/api/acl", json!({ "session": session, "principal": format!("tailnet:{FRIEND}"), "role": "editor" }));
-    assert_eq!(accept().await.unwrap().status(), 200);
+    let r = accept().await.unwrap();
+    assert_eq!(r.status(), 403);
+    assert!(r.text().await.unwrap().contains("ask them to trust you"));
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "before\n");
+    tokio::task::block_in_place(|| d.trust(pane, &format!("tailnet:{FRIEND}"), 30));
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    let r = loop {
+        let r = accept().await.unwrap();
+        if r.status() != 403 || std::time::Instant::now() > deadline {
+            break r;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    };
+    assert_eq!(r.status(), 200);
     tokio::task::block_in_place(|| {
         wait_text(d, pane, "result FILE_SAVED");
         d.wait_for("the edit written", || std::fs::read_to_string(&file).unwrap_or_default() == "after\n");

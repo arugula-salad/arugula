@@ -710,6 +710,80 @@ fn an_untrusted_editor_may_not_drive_the_owners_pane() {
     assert_eq!(d.raw("POST", &format!("/api/panes/{pane}/keys"), Some(json!({ "keys": ["a"] }))).0, 200);
 }
 
+/// #959: prompting an agent, `cd`, answering for a pane (its card, or a
+/// block call) and driving a block need what typing does. An editor the
+/// owner hasn't trusted is refused each with the owner's-machine sentence,
+/// though dismissing a card is still theirs; trusted with the pane and the
+/// block, none is refused for trust (whatever it then says); and the owner
+/// is never asked.
+#[test]
+fn prompting_and_answering_an_agent_need_the_owners_trust() {
+    const FRIEND: &str = "friend@example.com";
+    let d = arugulad!("api")
+        .env("PS1", "$ ")
+        .args(["--owner", "me@example.com", "--tailscale-socket", "/nonexistent/sock"])
+        .block_listen()
+        .wait_secs(10)
+        .start();
+    d.wait_for("the first prompt", || d.get("/api/panes")[0]["cwd"].is_string());
+    let pane = d.get("/api/panes")[0]["id"].as_u64().unwrap();
+    let session = d.get("/api/panes")[0]["session"].as_u64().unwrap();
+    // A block of the owner's, in the same session.
+    let file = std::env::temp_dir().join(format!("ilg-trust-959-{}.txt", std::process::id()));
+    std::fs::write(&file, "hi\n").unwrap();
+    let block =
+        d.post("/api/blocks", json!({ "type": "editor", "config": { "path": file.display().to_string() } }))["block"]
+            .as_u64()
+            .unwrap();
+    d.post("/api/acl", json!({ "session": session, "principal": format!("tailnet:{FRIEND}"), "role": "editor" }));
+    let as_friend = |path: &str, body: &Value| {
+        let headers = [("tailscale-user-login", FRIEND), ("Content-Type", "application/json")];
+        let (status, _, body) = d.tcp("POST", path, &headers, Some(&body.to_string()));
+        (status, body)
+    };
+    let refused = |(status, why): &(u16, String)| *status == 403 && why.contains("ask them to trust you");
+    let calls = [
+        (format!("/api/panes/{pane}/prompt"), json!({ "text": "true", "stall": 0.2, "timeout": 1 })),
+        (format!("/api/panes/{pane}/cd"), json!({ "path": "/tmp" })),
+        ("/api/attention/act".to_owned(), json!({ "pane": pane, "action": "allow" })),
+        ("/api/attention/act".to_owned(), json!({ "pane": pane, "action": "rerun" })),
+        ("/api/attention/act".to_owned(), json!({ "pane": block, "action": "continue" })),
+        (format!("/api/blocks/{pane}/call/approve"), json!({})),
+        (format!("/api/blocks/{pane}/call/deny"), json!({})),
+        (format!("/api/blocks/{pane}/call/answer"), json!({ "content": {} })),
+        (format!("/api/blocks/{pane}/call/terminal"), json!({})),
+        (format!("/api/blocks/{block}/call/approve"), json!({})),
+        (format!("/api/blocks/{block}/call/continue"), json!({})),
+        (format!("/api/blocks/{block}/call/send"), json!({ "text": "x" })),
+        (format!("/api/blocks/{block}/call/followup"), json!({ "text": "x" })),
+    ];
+    for (path, body) in &calls {
+        let got = as_friend(path, body);
+        assert!(refused(&got), "untrusted: {path} {body}: {got:?}");
+    }
+    // Dismissing a card types nothing.
+    let got = as_friend("/api/attention/act", &json!({ "pane": pane, "action": "dismiss" }));
+    assert_eq!(got.0, 200, "dismiss: {got:?}");
+
+    // Trusted with both, by the owner (the pane menu's op).
+    d.trust(pane, &format!("tailnet:{FRIEND}"), 30);
+    d.trust(block, &format!("tailnet:{FRIEND}"), 30);
+    let last = calls.last().unwrap();
+    d.wait_for("the trust", || {
+        !refused(&as_friend(&calls[1].0, &calls[1].1)) && !refused(&as_friend(&last.0, &last.1))
+    });
+    for (path, body) in &calls {
+        let got = as_friend(path, body);
+        assert!(!refused(&got), "trusted: {path} {body}: {got:?}");
+    }
+    // The owner's own calls are never asked.
+    for (path, body) in &calls {
+        let (status, why) = d.raw("POST", path, Some(body.clone()));
+        assert_ne!(status, 403, "owner: {path} {body}: {why}");
+    }
+    let _ = std::fs::remove_file(&file);
+}
+
 /// #233: an invite is in the audit log: who invited whom, as what, to
 /// which pane, and how it went.
 #[test]

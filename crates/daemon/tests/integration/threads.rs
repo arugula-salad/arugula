@@ -277,6 +277,19 @@ async fn only_what_landed_is_marked_and_the_rest_is_told_to_the_poster_alone() {
     assert_eq!(v["message"]["to_agent"], Value::Null, "{v}");
     assert_eq!(v["message"]["landed"], Value::Null, "{v}");
     assert_eq!(reasons(&v), [pair("agent", "may_not_drive"), pair("notreal", "nobody")]);
+    // It's a comment all the same.
+    assert_eq!(v["message"]["text"], "@agent run it, @notreal", "{v}");
+
+    // Once the owner trusts them with the pane (#959), it reaches the agent.
+    let to = format!("tailnet:{DRIVER}");
+    d.trust(pane, &to, 30);
+    d.wait_for("the trust", || {
+        d.get("/api/panes").as_array().unwrap().iter().any(|p| p["id"] == pane && p["trusted"][0][0] == to)
+    });
+    let (s, v) = guest(&d, DRIVER, "POST", &key, Some(json!({ "text": "@agent run it" })));
+    assert_eq!(s, 200, "{v}");
+    assert_eq!(v["message"]["to_agent"], true, "{v}");
+    assert_eq!(v["message"]["landed"], json!(["agent"]), "{v}");
 
     // A name that exists but can't read this thread reads like one that
     // doesn't: same reason, nothing to tell them apart.

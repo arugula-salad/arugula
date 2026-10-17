@@ -4,8 +4,8 @@
 // has a team box and a machine of her own, and shares a session on it with
 // Bob; Bob has a machine. Each phone's swarm holds the team's panes, grouped
 // by person, with the cards along the bottom; a build that fails on Alice's
-// machine is a card on Bob's iPhone, Bob reruns it from there, and Alice's
-// phone sees it run again. A tap on a tile opens the pane.
+// machine is a card on Bob's iPhone, Bob reruns it from there once Alice
+// trusts him with the pane, and Alice's phone sees it run again. A tap on a tile opens the pane.
 //
 // "Different networks" for real is the testnet's job: the test at the end
 // runs a machine in a container on its own Docker network with `tc netem`,
@@ -138,6 +138,21 @@ test("a build fails on Alice's machine; Bob reruns it from his iPhone's card, an
   await expect.poll(() => reason(bob, key), { timeout: 30_000 }).toBe("failed");
   const card = bob.locator(`.swarm-card[data-panes~="${key}"]`);
   await expect(card).toBeVisible({ timeout: 20_000 });
+  // a1 is Alice's own machine: running it again types into her shell, so
+  // Bob needs her trust with the pane (#959), which she gives.
+  const refused = await bob.evaluate(
+    async (p) => (await window.__arugula.fleet.request("a1", "POST", "/api/attention/act", { action: "rerun", pane: p })).status,
+    pane,
+  );
+  expect(refused).toBe(403);
+  const bobAcct = await alice.evaluate(() => window.__arugula.control!.person("bob"));
+  await alice.evaluate(
+    ([p, to]) => window.__arugula.fleet.paneOp("a1", p, { op: "grant_trust", to, minutes: 30 }),
+    [pane, `account:${bobAcct.account}`] as const,
+  );
+  await expect
+    .poll(() => alice.evaluate((k) => window.__arugula.fleet.panes.find((p) => p.key === k)?.info.trusted?.length ?? 0, key), { timeout: 30_000 })
+    .toBe(1);
   await card.scrollIntoViewIfNeeded();
   await card.locator("[data-rerun]").tap();
   // On Alice's phone, over its slow network: the build ran twice.

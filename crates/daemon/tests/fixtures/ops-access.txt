@@ -55,7 +55,7 @@ notify.set POST /api/notify Handler drives=false credential=false
 pane.ask POST /api/panes/{id}/ask Pane(Editor) drives=false credential=false
 pane.ask_withdraw POST /api/panes/{id}/ask/withdraw Pane(Editor) drives=false credential=false
 pane.attention POST /api/panes/{id}/attention Pane(Editor) drives=false credential=false
-pane.cd POST /api/panes/{id}/cd Pane(Editor) drives=false credential=false
+pane.cd POST /api/panes/{id}/cd Pane(Editor) drives=true credential=false
 pane.close POST /api/panes/{id}/close Pane(Editor) drives=false credential=false
 pane.detection GET /api/panes/{id}/detection Pane(Viewer) drives=false credential=false
 pane.diff GET /api/panes/{id}/diff Pane(Viewer) drives=false credential=false
@@ -67,7 +67,7 @@ pane.mouse POST /api/panes/{id}/mouse Pane(Editor) drives=true credential=false
 pane.permit POST /api/panes/{id}/permit Pane(Editor) drives=false credential=false
 pane.ports GET /api/panes/{id}/ports Owner drives=false credential=false
 pane.process GET /api/panes/{id}/process Pane(Viewer) drives=false credential=false
-pane.prompt POST /api/panes/{id}/prompt Pane(Editor) drives=false credential=false
+pane.prompt POST /api/panes/{id}/prompt Pane(Editor) drives=true credential=false
 pane.send POST /api/panes/{id}/send Pane(Editor) drives=true credential=false
 pane.wait GET /api/panes/{id}/wait Pane(Viewer) drives=false credential=false
 panes.list GET /api/panes Owner drives=false credential=false
