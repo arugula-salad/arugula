@@ -29,6 +29,9 @@
 //                    signs in, but without PRF); a fresh browser without it
 //   --size WxH       viewport [1280x800]; --scale N  device pixel ratio [1]
 //   --headed         show the window
+//   --init JS        run JS in each page before its own scripts: say,
+//                    `window.__arugulaTelemetry = true`, so the usage
+//                    question asks here as it does for a person (M103)
 //
 // Passkeys need a host name: run dev-control with DEV_CONTROL_HOST=localhost.
 // Sam's first sign-in (a new account shows its recovery codes first), then
@@ -55,9 +58,9 @@ import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { chromium, type BrowserContext, type CDPSession, type Locator, type Page } from "@playwright/test";
 
-const usage = "usage: dev-browser [--passkey] [--login NAME] [--profile DIR] [--size WxH] [--scale N] [--headed] URL [STEPS]";
+const usage = "usage: dev-browser [--passkey] [--login NAME] [--profile DIR] [--size WxH] [--scale N] [--headed] [--init JS] URL [STEPS]";
 const args = process.argv.slice(2);
-const opt: { passkey: boolean; login?: string; profile?: string; size: string; scale: number; headed: boolean } = {
+const opt: { passkey: boolean; login?: string; profile?: string; size: string; scale: number; headed: boolean; init?: string } = {
   passkey: false,
   size: "1280x800",
   scale: 1,
@@ -73,6 +76,7 @@ for (let i = 0; i < args.length; i++) {
   else if (a === "--size") opt.size = val();
   else if (a === "--scale") opt.scale = Number(val());
   else if (a === "--headed") opt.headed = true;
+  else if (a === "--init") opt.init = val();
   else if (a === "-h" || a === "--help") die(usage, 0);
   else if (a.startsWith("--")) die(`unknown option ${a}\n${usage}`);
   else rest.push(a);
@@ -103,6 +107,7 @@ async function open(l: { headless: boolean; channel?: string }): Promise<Browser
   const b = await chromium.launch(l);
   return b.newContext({ viewport, deviceScaleFactor: opt.scale });
 }
+if (opt.init) await ctx.addInitScript(opt.init);
 const page: Page = ctx.pages()[0] ?? (await ctx.newPage());
 
 // --login: a cookie the fake GitHub (dev-control's, on 127.0.0.1) signs in
