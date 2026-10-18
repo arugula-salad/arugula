@@ -46,10 +46,20 @@ const INLINE =
 // `[text](url)` link and a `#N` reference.
 const FORGE_INLINE = new RegExp(`${INLINE.source}|(\\[([^\\]\\n]+)\\]\\(([^)\\s]+)\\))|((?:^|(?<=[^\\w]))#\\d+\\b)`, "g");
 
+// A Doc (#965) adds one more, after those: `![alt](assets/<name>)`, a
+// picture of the Doc's. Only that target has the form: `http://`, `data:` and
+// `../` images are not matched, so they stay text and are never fetched. (The
+// name is `assets.rs`'s, with a lowercase picture extension.)
+const DOC_INLINE = new RegExp(
+  `${FORGE_INLINE.source}|(!\\[([^\\]\\n]*)\\]\\((assets/(?=[A-Za-z0-9][A-Za-z0-9_.-]{0,99}\\))[^)]*\\.(?:png|jpe?g|gif|webp))\\))`,
+  "g",
+);
+
 /** The forge-only pass of `inline`: `[text](url)` links and `#N` references.
  * `refs` is the URL a reference's number goes after (`…/issues/`), or null
- * to leave `#N` as text. */
-export type ForgeInline = { refs: string | null };
+ * to leave `#N` as text. `image`: a Doc's picture, given its target
+ * (`assets/x.png`), its alt text and a key; without it an image is a link. */
+export type ForgeInline = { refs: string | null; image?: (src: string, alt: string, key: number) => ComponentChildren };
 
 /** Only these hrefs come out of a body: whoever opened the PR wrote it. */
 const safeHref = (u: string) => /^https?:\/\/[^\s/]/i.test(u);
@@ -58,7 +68,7 @@ export function inline(text: string, isMe?: IsMe, landed?: (token: string) => bo
   const out: ComponentChildren[] = [];
   let at = 0;
   let k = 0;
-  for (const m of text.matchAll(forge ? FORGE_INLINE : INLINE)) {
+  for (const m of text.matchAll(forge ? (forge.image ? DOC_INLINE : FORGE_INLINE) : INLINE)) {
     const i = m.index!;
     if (i > at) out.push(text.slice(at, i));
     const s = m[0];
@@ -79,7 +89,8 @@ export function inline(text: string, isMe?: IsMe, landed?: (token: string) => bo
           </a>,
         );
       else out.push(s);
-    } else if (m[9]) {
+    } else if (m[10]) out.push(forge!.image!(m[12], m[11], k++));
+    else if (m[9]) {
       if (forge?.refs)
         out.push(
           <a key={k++} href={forge.refs + s.slice(1)} target="_blank" rel="noopener noreferrer">

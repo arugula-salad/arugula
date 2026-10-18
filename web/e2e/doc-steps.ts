@@ -4,9 +4,17 @@
 // calls' effect); the page shows the outline with every intent, then each
 // fill as it lands, with no reload.
 
+import { deflateSync } from "node:zlib";
 import { expect, type Page } from "@playwright/test";
 import type { PaneId } from "../src/proto";
 import { example } from "./doc-examples";
+
+declare global {
+  interface Window {
+    /** The Doc view's pictures, by `name/rev` (doc.tsx); gone with the view. */
+    __arugulaDocImages?: (id: number) => Map<string, string> | undefined;
+  }
+}
 
 /** A POST to the daemon: the body it answered. */
 export type Post = (path: string, body: unknown) => Promise<{ block?: number }>;
@@ -158,4 +166,150 @@ export async function brokenEmbeds(page: Page, post: Post, doc: number) {
   await expect(drawn).toContainText("Drawing not drawn: the browser couldn't read it", { timeout: 15_000 });
   await expect(drawn.locator("pre")).toContainText("<rect>");
   await expect(section("s2").locator("img")).toHaveCount(0);
+}
+
+// #965: a Doc's pictures. No image file is committed (AGENTS.md "Binaries"):
+// a PNG is made here, of a size that says which one it is.
+
+const CRC = Array.from({ length: 256 }, (_, n) => {
+  let c = n;
+  for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+  return c >>> 0;
+});
+const crc32 = (b: Buffer) => {
+  let c = 0xffffffff;
+  for (const x of b) c = CRC[(c ^ x) & 0xff] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+};
+function chunk(type: string, data: Buffer): Buffer {
+  const len = Buffer.alloc(4);
+  len.writeUInt32BE(data.length);
+  const body = Buffer.concat([Buffer.from(type), data]);
+  const crc = Buffer.alloc(4);
+  crc.writeUInt32BE(crc32(body));
+  return Buffer.concat([len, body, crc]);
+}
+
+/** A PNG `w`×`h` pixels of one colour. */
+export function png(w: number, h: number, rgb: [number, number, number] = [200, 40, 40]): Buffer {
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(w, 0);
+  ihdr.writeUInt32BE(h, 4);
+  ihdr[8] = 8; // bits
+  ihdr[9] = 2; // RGB
+  const row = Buffer.from([0, ...Array.from({ length: w }, () => rgb).flat()]);
+  const raw = Buffer.concat(Array.from({ length: h }, () => row));
+  const magic = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  return Buffer.concat([magic, chunk("IHDR", ihdr), chunk("IDAT", deflateSync(raw)), chunk("IEND", Buffer.alloc(0))]);
+}
+
+/** The owner (the agent's tool call) puts a picture in the Doc. */
+export const putAsset = (post: Post, doc: number, name: string, bytes: Buffer) =>
+  post(`/api/blocks/${doc}/call/doc_asset_put`, { name, data: bytes.toString("base64") });
+
+/** The images of a section that have loaded, by their natural width. */
+export const widths = (page: Page, doc: number, id: string) =>
+  page
+    .locator(`[data-doc-block="${doc}"] [data-section="${id}"] img.doc-image`)
+    .evaluateAll((imgs) => imgs.map((i) => (i as HTMLImageElement).naturalWidth));
+
+/** What the page asks the daemon for a picture with (`doc_asset` calls). */
+export function watchAssetCalls(page: Page): string[] {
+  const calls: string[] = [];
+  page.on("request", (r) => {
+    if (r.method() === "POST" && r.url().includes("/call/doc_asset")) calls.push(r.postData() ?? "");
+  });
+  return calls;
+}
+
+/** Count the blob: URLs the page makes (a Doc's pictures make none). */
+export const watchBlobs = (page: Page) =>
+  page.evaluate(() => {
+    const w = window as unknown as { __blobs?: number };
+    w.__blobs = 0;
+    const make = URL.createObjectURL.bind(URL);
+    URL.createObjectURL = (o: Blob | MediaSource) => {
+      w.__blobs!++;
+      return make(o);
+    };
+  });
+const blobs = (page: Page) => page.evaluate(() => (window as unknown as { __blobs?: number }).__blobs);
+
+/** A picture in a section shows (a PNG that loaded, from a data: URL, with
+ * its alt text), the same name written again shows the new one with no
+ * reload and one more fetch, an `http://`, `data:` or `../` image is no
+ * picture and is never fetched, and closing the block empties its cache.
+ * Pictures come from `doc_asset`, a call: the fetches are counted. */
+export async function imagesInPlace(page: Page, post: Post, doc: number) {
+  const block = page.locator(`[data-doc-block="${doc}"]`);
+  const section = (id: string) => block.locator(`[data-section="${id}"]`);
+  await bring(page, doc);
+  await expect(block.locator(".doc-title")).toBeVisible({ timeout: 15_000 });
+  const calls = watchAssetCalls(page);
+  await watchBlobs(page);
+  await page.evaluate(() => ((window as unknown as { __same: boolean }).__same = true));
+
+  // The first picture: 2×2 pixels. Twice in a section, fetched once.
+  await putAsset(post, doc, "flow.png", png(2, 2));
+  await fill(post, doc, "s1", "The flow:\n\n![The flow, in boxes](assets/flow.png)\n\nAnd again: ![Again](assets/flow.png)");
+  const imgs = section("s1").locator("img.doc-image");
+  await expect(imgs).toHaveCount(2, { timeout: 15_000 });
+  await expect.poll(() => widths(page, doc, "s1")).toEqual([2, 2]);
+  await expect(imgs.first()).toHaveAttribute("alt", "The flow, in boxes");
+  await expect(imgs.first()).toHaveAttribute("loading", "lazy");
+  await expect(imgs.first()).toHaveAttribute("src", /^data:image\/png;base64,/);
+  expect(calls).toEqual([JSON.stringify({ name: "flow.png" })]);
+  // The text of the Doc names them.
+  expect(await page.evaluate((d) => window.__arugula.text(d), doc)).toContain("[image: The flow, in boxes]");
+
+  // Written again under the same name: 4×3, shown with no reload, one more fetch.
+  await putAsset(post, doc, "flow.png", png(4, 3, [40, 40, 200]));
+  await expect.poll(() => widths(page, doc, "s1")).toEqual([4, 4]);
+  expect(calls).toHaveLength(2);
+  expect(await page.evaluate(() => (window as unknown as { __same?: boolean }).__same)).toBe(true);
+  // The older rev is dropped: one picture is held.
+  expect(await page.evaluate((d) => window.__arugulaDocImages?.(d)?.size, doc)).toBe(1);
+
+  // A picture the state doesn't list shows its alt text, and no other
+  // image target is a picture or is fetched. (The daemon refuses to store
+  // these; the page is given them as state, to show it would not draw them.)
+  const asked: string[] = [];
+  await page.route(/example\.com|\/etc\/passwd/, (r) => {
+    asked.push(r.request().url());
+    return r.abort();
+  });
+  await page.evaluate(
+    ([d, body]) => {
+      const view = window.__arugula.client.blocks.get(d)!.view;
+      view.update({
+        title: "Q",
+        entries: [{ id: "s1", heading: "H", intent: "", body, rev: 99 }],
+        assets: [{ name: "flow.png", mime: "image/png", size: 1, rev: 1 }],
+        rev: 99,
+      });
+    },
+    [doc, "![far](http://example.com/a.png) ![inline](data:image/png;base64,AAAA) ![up](../../etc/passwd) ![gone](assets/gone.png)"] as [number, string],
+  );
+  await expect(section("s1")).toContainText("![inline](data:image/png;base64,AAAA)");
+  await expect(section("s1")).toContainText("![up](../../etc/passwd)");
+  await expect(section("s1").locator("img")).toHaveCount(0);
+  await expect(section("s1").locator("[data-doc-image-missing]")).toHaveText("gone");
+  await page.waitForTimeout(300);
+  expect(asked).toEqual([]);
+  expect(calls).toHaveLength(2);
+
+  // Back to the daemon's own state: the picture again (from the cache).
+  await fill(post, doc, "s1", "Back: ![Back](assets/flow.png)");
+  await expect.poll(() => widths(page, doc, "s1")).toEqual([4]);
+  expect(calls).toHaveLength(2);
+
+  // No blob: URL was made, and closing the block empties its cache.
+  expect(await blobs(page)).toBe(0);
+  await page.evaluate((d) => ((window as unknown as { __kept?: Map<string, string> }).__kept = window.__arugulaDocImages?.(d)), doc);
+  expect(await page.evaluate(() => (window as unknown as { __kept?: Map<string, string> }).__kept?.size)).toBe(1);
+  await post(`/api/panes/${doc}/close`, {});
+  await expect(block).toHaveCount(0, { timeout: 15_000 });
+  expect(await page.evaluate(() => (window as unknown as { __kept?: Map<string, string> }).__kept?.size)).toBe(0);
+  expect(await page.evaluate((d) => window.__arugulaDocImages?.(d), doc)).toBeUndefined();
+  expect(await blobs(page)).toBe(0);
 }

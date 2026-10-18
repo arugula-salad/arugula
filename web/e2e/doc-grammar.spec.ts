@@ -1,4 +1,4 @@
-// #964: the grammar of a Doc's charts and drawings, with no page. The
+// #964, #965: the grammar of a Doc's charts, drawings and pictures, with no page. The
 // daemon's validator (crates/daemon/src/docs/embeds.rs) and the web
 // client's are run over the same files (crates/daemon/tests/fixtures/docs/),
 // and then the chart is laid out: a bar a row, from zero, with axes, labels
@@ -6,7 +6,7 @@
 
 import { expect, test } from "@playwright/test";
 import { buildChart, checkChart, checkSpec, niceTicks, parseChart, summary, type El, type Spec } from "../src/ui/chart";
-import { checkEmbeds, checkSvg, fences, plain, svgUrl } from "../src/ui/embeds";
+import { assetName, checkEmbeds, checkSvg, fences, imageRefs, plain, svgUrl } from "../src/ui/embeds";
 import { example, examples, expected } from "./doc-examples";
 
 const all = (el: El, tag: string): El[] => [...(el.tag === tag ? [el] : []), ...el.kids.flatMap((k) => all(k, tag))];
@@ -20,7 +20,7 @@ const chart = (name: string): Spec => {
 test("every good example passes and reads as the text the daemon gives", () => {
   expect(examples()).toEqual(Object.keys(expected.good));
   for (const name of examples()) {
-    expect(checkEmbeds(example(name)), name).toBeNull();
+    expect(checkEmbeds(example(name), expected.assets), name).toBeNull();
     expect(plain(example(name)), name).toBe(expected.good[name]);
   }
 });
@@ -28,10 +28,70 @@ test("every good example passes and reads as the text the daemon gives", () => {
 test("every bad example is refused with a line naming the problem", () => {
   expect(examples("bad")).toEqual(Object.keys(expected.bad));
   for (const name of examples("bad")) {
-    const why = checkEmbeds(example(name));
+    const why = checkEmbeds(example(name), expected.assets);
     expect(why, name).toContain(expected.bad[name]);
     expect(why, name).not.toContain("\n");
   }
+});
+
+test("a picture is checked wherever the page draws it, as the daemon does", () => {
+  const check = (md: string) => checkEmbeds(md, expected.assets);
+  expect(check("a ![x](assets/chart.png) b ![y](assets/photo.jpg)")).toBeNull();
+  expect(check("![x](assets/chart.png) ![y](assets/gone.png)")).toMatch(/^image assets\/gone\.png: no such asset/);
+  for (const [md, says] of [
+    ["![x](assets/Chart.png)", "no such asset"],
+    ["![x](assets/chart.PNG)", "must be one of"],
+    ["![x](assets/chart)", "must be one of"],
+    ["![x](assets/chart.png.html)", "must be one of"],
+    ["![x](assets/.chart.png)", "must be assets/<file>"],
+    ["![x](/assets/chart.png)", "must be assets/<file>"],
+    ["![x](./assets/chart.png)", "must be assets/<file>"],
+    ["![x](assets/../chart.png)", "must be assets/<file>"],
+    ["![x]()", "must be assets/<file>"],
+    ["![x](//example.com/a.png)", "must be assets/<file>"],
+    ["**![x](assets/gone.png)**", "no such asset"],
+    ["[![x](assets/gone.png)](https://example.com)", "no such asset"],
+    ["1. one\n\n   - two\n\n     ![x](assets/gone.png)", "no such asset"],
+    ["> ```\n> ![x](assets/gone.png)\n> ```", "no such asset"],
+  ]) {
+    const why = check(md);
+    expect(why, md).toContain(says);
+    expect(why, md).not.toContain("\n");
+  }
+  for (const md of [
+    "[a link](https://example.com/a.png)",
+    '![x](assets/gone.png "title")',
+    "![x] (assets/gone.png)",
+    "!\\[x](assets/gone.png)",
+    "``![x](assets/gone.png)``",
+    "`![x](assets/gone.png)` and ``more``",
+    "```\n![x](assets/gone.png)\n```",
+    "- item\n\n    ~~~\n    ![x](assets/gone.png)\n    ~~~",
+    "text\n```\n![x](assets/gone.png)",
+    "é `ü` ![ñ](assets/chart.png) 日本",
+  ]) {
+    expect(check(md), md).toBeNull();
+  }
+  expect(check("`a` ![x](assets/gone.png)")).not.toBeNull();
+  // The text of a Doc says what a picture is, and leaves code as it was.
+  expect(plain("See ![the  flow\nchart](assets/a.png) and ![x](assets/a.png), ![](assets/a.png) or ![y](http://e.com/a.png)")).toBe(
+    "See ![the  flow\nchart](assets/a.png) and [image: x], [image] or ![y](http://e.com/a.png)",
+  );
+  // Only `assets/<plain name>.<picture extension>` is a picture the page draws.
+  expect(["assets/a.png", "assets/a-b_c.JPG", "assets/a.jpeg", "assets/a.gif", "assets/a.webp", "assets/a.svg", "assets/a/b.png", "assets/.a.png", "http://a/b.png", `assets/${"a".repeat(97)}.png`, `assets/${"a".repeat(96)}.png`].map(assetName)).toEqual([
+    "a.png",
+    null,
+    "a.jpeg",
+    "a.gif",
+    "a.webp",
+    null,
+    null,
+    null,
+    null,
+    null,
+    `${"a".repeat(96)}.png`,
+  ]);
+  expect(imageRefs("é `ü` ![ñ](assets/a.png)").map((r) => [r.alt, r.src])).toEqual([["ñ", "assets/a.png"]]);
 });
 
 test("only a real fence is an embed", () => {

@@ -6,7 +6,9 @@
 // says stays text (raw HTML shows as it was typed, an image is a link, and
 // only http(s) hrefs become links). A Doc (`embeds`) also draws a ```chart
 // fence as a chart and shows a ```svg fence as a picture, through <img>
-// only (`drawing.tsx`); everywhere else those are code.
+// only (`drawing.tsx`); everywhere else those are code. With `image` it draws
+// `![alt](assets/<name>)` too (#965): the Doc's own pictures, wherever a line
+// of text is (a quote's included), and no other image target.
 
 import type { ComponentChildren } from "preact";
 import { useMemo } from "preact/hooks";
@@ -30,10 +32,12 @@ const startsBlock = (l: string) => FENCE.test(l) || HEADING.test(l) || RULE.test
 type Ctx = ForgeInline & { embeds?: boolean };
 
 /** `refs`: where a `#N` goes (`…/issues/`), or null for text (GitLab).
- * `embeds`: charts and drawings (a Doc's; a forge's body is code). */
-export function Markdown({ text, refs, embeds }: { text: string; refs: string | null; embeds?: boolean }) {
+ * `embeds`: charts and drawings (a Doc's; a forge's body is code). `image`:
+ * draws a Doc's picture from its target (`assets/x.png`); a new function
+ * draws the body again. */
+export function Markdown({ text, refs, embeds, image }: { text: string; refs: string | null; embeds?: boolean; image?: ForgeInline["image"] }) {
   // A poll that changes nothing hands back the same text: don't parse it again.
-  const out = useMemo(() => blocks(bodyLines(text), { refs, embeds }), [text, refs, embeds]);
+  const out = useMemo(() => blocks(bodyLines(text), { refs, embeds, image }), [text, refs, embeds, image]);
   return <div class="md">{out}</div>;
 }
 
