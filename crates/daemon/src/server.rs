@@ -478,6 +478,7 @@ async fn ws(
     State(app): State<Arc<App>>,
     who: Option<Extension<Principal>>,
     headers: HeaderMap,
+    uri: Uri,
     upgrade: WebSocketUpgrade,
 ) -> Response {
     if let Err((status, why)) = app.access.check_origin(&headers) {
@@ -485,7 +486,7 @@ async fn ws(
         return (status, why).into_response();
     }
     let who = who.map(|Extension(w)| w).unwrap_or(Principal::Owner);
-    let surface = crate::telemetry::surface_of(&headers);
+    let surface = crate::telemetry::surface_of(&headers, uri.query());
     upgrade.on_upgrade(move |socket| connection(app, socket, who, surface))
 }
 
