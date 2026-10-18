@@ -326,14 +326,22 @@ Run each `arugula ...` command on its own, not in a pipeline or an `&&` chain, s
 /// are listed.
 const THREAD_INSTRUCTIONS: &str = "read_thread and post_thread for the people's conversation about a pane or session (an @agent message there reaches you as a follow-up: answer with post_thread), ";
 
+/// What the `docs` flag adds: the `doc` tool is listed only where it is on.
+const DOC_INSTRUCTIONS: &str = "doc to build a report, plan or write-up the user watches fill in beside your pane, ";
+
 /// The server's instructions: without the `chat` flag, they leave out
-/// threads.
+/// threads; without `docs`, the Doc.
 pub(crate) fn instructions(on: On) -> String {
-    if !on.has(flags::CHAT) {
-        return INSTRUCTIONS_BASE.to_owned();
-    }
     let at = INSTRUCTIONS_BASE.find("history for what").expect("the instructions name history");
-    format!("{}{THREAD_INSTRUCTIONS}{}", &INSTRUCTIONS_BASE[..at], &INSTRUCTIONS_BASE[at..])
+    let mut out = INSTRUCTIONS_BASE[..at].to_owned();
+    if on.has(flags::CHAT) {
+        out.push_str(THREAD_INSTRUCTIONS);
+    }
+    if on.has(flags::DOCS) {
+        out.push_str(DOC_INSTRUCTIONS);
+    }
+    out.push_str(&INSTRUCTIONS_BASE[at..]);
+    out
 }
 
 impl ServerHandler for McpServer {

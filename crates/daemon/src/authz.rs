@@ -104,6 +104,10 @@ fn policy(method: &Method, path: &str) -> Policy {
         ["api", "blocks", _, "call", "principals" | "graph"] => Policy::Owner,
         // #618: where a workspace's proposed decisions link to.
         ["api", "blocks", _, "call", "hud"] => Policy::Owner,
+        // #963: a Doc is written by the agent that builds it and the owner's
+        // CLI; an editor's browser could otherwise rewrite the owner's
+        // report.
+        ["api", "blocks", _, "call", "doc_outline" | "doc_fill"] => Policy::Owner,
         ["api", "blocks", id, "call", _] if !get => pane(id).map_or(Policy::Owner, |p| Policy::On(p, Role::Editor)),
         // M76: what's offered to other people's agents is the owner's to
         // choose; the cards (and, from M78, their tasks) are for anyone who
@@ -343,6 +347,11 @@ mod tests {
         assert_eq!(policy(&p, "/api/blocks/7/call/hud"), Policy::Owner);
         assert_eq!(policy(&p, "/api/blocks/7/call/why"), Policy::On(7, Role::Editor));
         assert_eq!(policy(&p, "/api/blocks/7/call/graph"), Policy::Owner);
+        // #963: a Doc is written by its owner only, and read by a viewer.
+        for method in ["doc_outline", "doc_fill"] {
+            assert_eq!(policy(&p, &format!("/api/blocks/7/call/{method}")), Policy::Owner, "{method}");
+        }
+        assert_eq!(policy(&g, "/api/blocks/7"), Policy::On(7, Role::Viewer));
         assert_eq!(policy(&p, "/api/blocks/7/call/comment"), Policy::On(7, Role::Editor));
         assert_eq!(policy(&p, "/api/blocks/7/call/answer"), Policy::On(7, Role::Editor));
         assert_eq!(policy(&p, "/api/studio"), Policy::Owner);

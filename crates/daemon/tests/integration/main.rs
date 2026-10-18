@@ -28,6 +28,7 @@ mod control_state;
 mod conversations;
 mod crash;
 mod dialout;
+mod doc;
 #[cfg(feature = "editor")]
 mod editor_swarm;
 #[cfg(feature = "editor")]

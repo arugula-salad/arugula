@@ -51,7 +51,7 @@ test.afterAll(() => {
   if (state) rmSync(state, { recursive: true, force: true });
 });
 
-const FLAGS = ["chat", "huddles", "vms", "studio", "workspaces", "guest-ssh", "swarm-themes", "forges", "agents"] as const;
+const FLAGS = ["chat", "huddles", "vms", "studio", "workspaces", "guest-ssh", "swarm-themes", "forges", "agents", "docs"] as const;
 type Flag = (typeof FLAGS)[number];
 
 const setFlag = (flag: string, on: boolean, as?: string) =>
@@ -87,12 +87,14 @@ async function shown(page: Page, pane: number): Promise<Flag[]> {
       forges: c.forgeLink("https://gitlab.com/g/p/-/merge_requests/2"),
       // M76 is the daemon's and the CLI's; the page's catalog is M77's.
       agents: c.flag("agents"),
+      docs: c.flag("docs"),
     };
   });
   if (page_says.workspaces) out.push("workspaces");
   if (page_says.themes) out.push("swarm-themes");
   if (page_says.forges) out.push("forges");
   if (page_says.agents) out.push("agents");
+  if (page_says.docs) out.push("docs");
   return FLAGS.filter((f) => out.includes(f));
 }
 

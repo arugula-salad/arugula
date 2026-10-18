@@ -562,6 +562,37 @@ pub struct ShowFileArgs {
     pub beside: Option<PaneArg>,
 }
 
+/// One section of a Doc's outline.
+#[derive(Deserialize, JsonSchema)]
+pub struct DocSection {
+    /// The section's heading.
+    pub heading: String,
+    /// One line on what the section will hold: the user reads it while the section is pending.
+    #[serde(default)]
+    pub intent: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct DocNewArgs {
+    /// The Doc's title.
+    pub title: String,
+    /// Every section, in order (at most 40), so the user sees the whole outline at once.
+    pub sections: Vec<DocSection>,
+    /// Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in).
+    #[serde(default)]
+    pub beside: Option<PaneArg>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct DocFillArgs {
+    /// The Doc block (from doc new).
+    pub block: PaneArg,
+    /// The section's id (s1, s2, … from doc new).
+    pub section: String,
+    /// The section's body, in Markdown (at most 64 KB). Filling a section again replaces it.
+    pub markdown: String,
+}
+
 // Read only by the handler, which a build without Labs lacks.
 #[cfg_attr(not(feature = "labs"), allow(dead_code))]
 #[derive(Deserialize, JsonSchema)]
@@ -973,6 +1004,22 @@ const DRAFT: &[Kind] = &[
     },
 ];
 
+/// `doc`'s jobs (#963): a document the user watches fill in.
+const DOC: &[Kind] = &[
+    Kind {
+        name: "new",
+        description: "A Doc: a block beside your pane that holds a report, plan or write-up, with its outline (every section's heading and intent) shown at once. Returns the block and the section ids (s1, s2, …); fill them next, in order.",
+        schema: schema_for_type::<DocNewArgs>,
+        flag: Some(flags::DOCS),
+    },
+    Kind {
+        name: "fill",
+        description: "Write one section of a Doc (its block, the section id, its Markdown): headings, paragraphs, lists, **bold**, *italic*, `code`, links and tables. No HTML, images or charts. A section is at most 64 KB, a Doc 40 sections and 1 MiB; filling a section again replaces it.",
+        schema: schema_for_type::<DocFillArgs>,
+        flag: Some(flags::DOCS),
+    },
+];
+
 /// `list`'s lists.
 const LIST: &[Kind] = &[
     super::ops::kind::<ListPanes>(),
@@ -1181,6 +1228,14 @@ pub(crate) fn block_offers(on: On) -> Vec<results::BlockOffer> {
             about: first(k.description),
         }));
     }
+    // #963: a Doc opens with its own tool, `new`.
+    if on.has(flags::DOCS) {
+        out.push(results::BlockOffer {
+            kind: "doc".into(),
+            open: "doc {kind: \"new\"}".into(),
+            about: "A report, plan or write-up the user watches fill in, section by section.".into(),
+        });
+    }
     out
 }
 
@@ -1313,6 +1368,18 @@ fn all_defs() -> Vec<Def> {
             idempotent: false,
             open_world: true,
             flag: None,
+            output: None,
+        },
+        Def {
+            name: "doc",
+            title: "Build a document for the user",
+            description: "Build a Doc, a report, plan or write-up longer than a screen, in a block beside your pane that the user (and anyone the session is shared with) watches fill in. Make the outline first with new, so they see every section at once; then fill each section in order and say one sentence about it in the pane. Never write the Doc's files by hand.",
+            args: Args::Kinds { kinds: table(DOC), default: None },
+            read_only: false,
+            destructive: false,
+            idempotent: false,
+            open_world: false,
+            flag: Some(flags::DOCS),
             output: None,
         },
         Def {
@@ -1934,6 +2001,14 @@ impl<'a> Call<'a> {
             },
             ("list", Some("managoat_conversations")) => match parse(args) {
                 Ok(a) => self.fountain_conversations(a).await,
+                Err(e) => Err(e),
+            },
+            ("doc", Some("new")) => match parse(args) {
+                Ok(a) => self.doc_new(a).await,
+                Err(e) => Err(e),
+            },
+            ("doc", Some("fill")) => match parse(args) {
+                Ok(a) => self.doc_fill(a).await,
                 Err(e) => Err(e),
             },
             // show
@@ -2997,6 +3072,70 @@ impl<'a> Call<'a> {
         let block = self.open(req).await?;
         let at = a.line.map(|l| format!(" at line {l}")).unwrap_or_default();
         done(format!("Showing {}{at} in file block %{block}", a.path), results::BlockOnly { block })
+    }
+
+    /// `doc new`: the block beside the caller's pane, then its outline.
+    async fn doc_new(&self, a: DocNewArgs) -> Out {
+        crate::labs::flag(self.app.control.state_dir(), flags::DOCS)?;
+        let (beside, host) = self.beside(a.beside.as_ref()).await?;
+        let req = OpenRequest {
+            kind: BlockType::Doc,
+            config: json!({ "title": a.title }),
+            session: None,
+            split: beside,
+            from_pane: beside,
+            vm: false,
+            image: None,
+            host,
+            local: host.is_none(),
+        };
+        // Through `open`, which records who started it: an agent block may
+        // drive only what it started, so it could not fill its own Doc
+        // otherwise.
+        let block = self.open(req).await?;
+        let sections: Vec<Value> =
+            a.sections.iter().map(|s| json!({ "heading": s.heading, "intent": s.intent })).collect();
+        let args = json!({ "title": a.title, "sections": sections });
+        let outlined = match self.app.mux.api(|r| Api::Block(block, r)).await.flatten() {
+            Some(b) => b.call_by("doc_outline", args, Some(&self.by())).await,
+            None => Err("the Doc's block closed".into()),
+        };
+        let outline = match outlined {
+            Ok(o) => o,
+            Err(e) => {
+                // A Doc with no outline is nothing to look at.
+                let _ = self.app.mux.api(|r| Api::Close(block, r)).await;
+                return Err(e);
+            }
+        };
+        let sections = outline["sections"].clone();
+        let ids: Vec<&str> = sections.as_array().into_iter().flatten().filter_map(|s| s["id"].as_str()).collect();
+        done(
+            format!(
+                "Doc block %{block} with {} sections ({}): fill them in order with doc fill",
+                ids.len(),
+                ids.join(", ")
+            ),
+            json!({ "block": block, "sections": sections }),
+        )
+    }
+
+    /// `doc fill`: one section of a Doc this caller may drive.
+    async fn doc_fill(&self, a: DocFillArgs) -> Out {
+        crate::labs::flag(self.app.control.state_dir(), flags::DOCS)?;
+        let block = a.block.id()?;
+        let p = self.drivable(block).await?;
+        if p.info.kind != BlockType::Doc {
+            return Err(format!("%{block} isn't a Doc: doc new makes one"));
+        }
+        let b =
+            self.app.mux.api(|r| Api::Block(block, r)).await.flatten().ok_or_else(|| format!("no block %{block}"))?;
+        let args = json!({ "section": a.section, "markdown": a.markdown });
+        let out = b.call_by("doc_fill", args, Some(&self.by())).await?;
+        done(
+            format!("Filled {} of Doc %{block} ({} bytes)", a.section, out["bytes"]),
+            json!({ "block": block, "section": a.section, "bytes": out["bytes"] }),
+        )
     }
 }
 
@@ -4407,12 +4546,16 @@ mod tests {
         for (tool, kind) in flagged_kinds() {
             assert!(!kinds_of(false, tool).contains(&kind), "{tool} kind {kind} is listed without labs");
             assert!(kinds_of(true, tool).contains(&kind), "{tool} kind {kind} isn't listed with labs");
-            let t = list(Scope::Full, fl(false)).into_iter().find(|t| t.name == tool).unwrap();
+            // Still there: by its kind, and by its name before #349.
+            route(tool, json!({ "kind": kind }), fl(false)).unwrap_or_else(|e| panic!("{tool} {kind}: {e}"));
+            // A tool all of whose kinds are flagged (`doc`) isn't listed at all.
+            let Some(t) = list(Scope::Full, fl(false)).into_iter().find(|t| t.name == tool) else {
+                assert!(defs(fl(false)).iter().all(|d| d.name != tool), "{tool}");
+                continue;
+            };
             let kinds = t.input_schema["properties"]["kind"]["enum"].clone();
             assert!(!kinds.as_array().unwrap().contains(&json!(kind)), "{tool}: {kinds}");
             assert!(!t.description.as_deref().unwrap().contains(&format!("\n- {kind}")), "{tool}: {kind}");
-            // Still there: by its kind, and by its name before #349.
-            route(tool, json!({ "kind": kind }), fl(false)).unwrap_or_else(|e| panic!("{tool} {kind}: {e}"));
         }
         for old in ["open_app", "open_workspace"] {
             let (def, kind, _) = route(old, json!({}), fl(false)).unwrap_or_else(|e| panic!("{old}: {e}"));
@@ -4465,10 +4608,10 @@ mod tests {
         for name in CHAT_TOOLS {
             assert!(every.contains(&name), "{name} no longer has a definition");
         }
-        assert_eq!(every.len(), 22);
+        assert_eq!(every.len(), 23);
         assert_eq!(defs(fl(false)).len(), 19 - NO_FORGE);
-        assert_eq!(defs(fl(true)).len(), 22 - NO_FORGE);
-        assert_eq!(every.len(), defs(fl(false)).len() + CHAT_TOOLS.len() + 1 + NO_FORGE, "and delegate");
+        assert_eq!(defs(fl(true)).len(), 23 - NO_FORGE);
+        assert_eq!(every.len(), defs(fl(false)).len() + CHAT_TOOLS.len() + 2 + NO_FORGE, "and delegate and doc");
     }
 
     /// The 39 tools before #349, by their old names.
@@ -4515,8 +4658,8 @@ mod tests {
     ];
 
     /// Tools added after #349 for jobs no old tool did: delegating (M78),
-    /// and saying what's here (#229).
-    const SINCE_TOOLS: usize = 2;
+    /// saying what's here (#229), and building a Doc (#963).
+    const SINCE_TOOLS: usize = 3;
 
     /// Kinds added after #349, each a job no old tool did.
     const SINCE: &[(&str, Option<&str>)] = &[
@@ -4531,6 +4674,9 @@ mod tests {
         ("delegate", Some("apply")),
         // A conversation's lead's links (#858).
         ("list", Some("links")),
+        // Building a Doc (#963).
+        ("doc", Some("new")),
+        ("doc", Some("fill")),
     ];
 
     /// About half as many tools (#349), and every old job is still there:
@@ -4788,9 +4934,33 @@ mod tests {
         assert!(!managoat, "retired direct execution is never advertised");
         let with = crate::mcp::instructions(fl(true));
         assert!(with.contains("read_thread and post_thread") && with.contains("@agent"), "{with}");
-        // Labs only adds the thread sentence.
+        // Labs only adds the thread and Doc sentences.
         let without = crate::mcp::instructions(fl(false));
-        assert!(with.len() > without.len() && with.replace(crate::mcp::THREAD_INSTRUCTIONS, "") == without);
+        let plain = with.replace(crate::mcp::THREAD_INSTRUCTIONS, "").replace(crate::mcp::DOC_INSTRUCTIONS, "");
+        assert!(with.len() > without.len() && plain == without);
+        assert!(with.contains("doc to build a report") && !without.contains("doc to build"), "{with}");
+    }
+
+    /// #963: `doc` is a tool, with `new` and `fill`, only where `docs` is on;
+    /// then `capabilities` offers it. Without the flag it is not listed, and
+    /// its schema and prose are nowhere.
+    #[test]
+    fn doc_is_listed_only_with_its_flag() {
+        use arugula_proto::flags::On;
+        let docs = |on: On| defs(on).into_iter().find(|d| d.name == "doc");
+        assert!(docs(On::none()).is_none());
+        assert!(docs(On::all()).is_some());
+        let Some(Def { args: Args::Kinds { kinds, .. }, .. }) = docs(On::all()) else { panic!("doc has kinds") };
+        assert_eq!(kinds.iter().map(|k| k.name).collect::<Vec<_>>(), ["new", "fill"]);
+        let off = block_offers(On::none());
+        assert!(off.iter().all(|o| o.kind != "doc"), "{off:?}");
+        let on = block_offers(On::all());
+        let offer = on.iter().find(|o| o.kind == "doc").expect("capabilities offers a doc");
+        assert_eq!(offer.open, "doc {kind: \"new\"}");
+        // The schema carries the outline's shape.
+        let tool = list(Scope::Full, On::all()).into_iter().find(|t| t.name == "doc").unwrap();
+        let schema = Value::Object((*tool.input_schema).clone()).to_string();
+        assert!(schema.contains("heading") && schema.contains("intent") && schema.contains("markdown"), "{schema}");
     }
 
     /// docs/mcp-permissions.json allows the read-only tools and asks for the
