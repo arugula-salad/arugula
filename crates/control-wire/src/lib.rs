@@ -23,6 +23,7 @@ pub mod forge;
 pub mod join;
 pub mod push;
 pub mod team;
+pub mod telemetry;
 pub mod turn;
 
 pub use join::{CliJoinRequest, JoinPoll, JoinProof, JoinRequest, JoinStarted, JoinTeam, PollQuery};
