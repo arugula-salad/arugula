@@ -694,8 +694,11 @@ mod tests {
         assert_eq!(store.system_events(11), vec![gone.clone()]);
 
         // Past the cap, the file moves aside and reads still see both.
-        let f = fs::OpenOptions::new().append(true).open(root.join("events.jsonl")).unwrap();
+        // Write access, not append: Windows won't resize an append-only
+        // handle. Closed before the rotation renames the file.
+        let f = fs::OpenOptions::new().write(true).open(root.join("events.jsonl")).unwrap();
         f.set_len(SYSTEM_EVENTS_BYTES).unwrap();
+        drop(f);
         let closed = SystemEvent {
             event: E { at_ms: 30, pane: Some(3), kind: K::Closed, id: String::new() },
             sessions: vec![1],
