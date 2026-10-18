@@ -5031,7 +5031,7 @@ mod tests {
         assert!(docs(On::none()).is_none());
         assert!(docs(On::all()).is_some());
         let Some(Def { args: Args::Kinds { kinds, .. }, .. }) = docs(On::all()) else { panic!("doc has kinds") };
-        assert_eq!(kinds.iter().map(|k| k.name).collect::<Vec<_>>(), ["new", "fill"]);
+        assert_eq!(kinds.iter().map(|k| k.name).collect::<Vec<_>>(), ["new", "fill", "asset"]);
         let off = block_offers(On::none());
         assert!(off.iter().all(|o| o.kind != "doc"), "{off:?}");
         let on = block_offers(On::all());
@@ -5041,6 +5041,8 @@ mod tests {
         let tool = list(Scope::Full, On::all()).into_iter().find(|t| t.name == "doc").unwrap();
         let schema = Value::Object((*tool.input_schema).clone()).to_string();
         assert!(schema.contains("heading") && schema.contains("intent") && schema.contains("markdown"), "{schema}");
+        // ...and the picture's: a file or its bytes.
+        assert!(schema.contains("\"path\"") && schema.contains("\"data\""), "{schema}");
     }
 
     /// docs/mcp-permissions.json allows the read-only tools and asks for the
