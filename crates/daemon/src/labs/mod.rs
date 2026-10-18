@@ -223,6 +223,7 @@ pub fn block_flag(kind: BlockType) -> Option<&'static str> {
         BlockType::Agents => Some(flags::AGENTS),
         BlockType::App => Some(flags::STUDIO),
         BlockType::Workspace => Some(flags::WORKSPACES),
+        BlockType::Doc => Some(flags::DOCS),
         _ => None,
     }
 }

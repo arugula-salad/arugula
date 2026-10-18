@@ -231,9 +231,12 @@ fn block_kind(kind: BlockType, config: &Value) -> BlockKind {
         BlockType::App => BlockKind::Studio,
         BlockType::Forge if config["kind"] == "issue" => BlockKind::Issue,
         BlockType::Forge => BlockKind::Pr,
-        BlockType::Remote | BlockType::Fountain | BlockType::Invite | BlockType::Agents | BlockType::Unknown => {
-            BlockKind::Other
-        }
+        BlockType::Remote
+        | BlockType::Fountain
+        | BlockType::Invite
+        | BlockType::Agents
+        | BlockType::Doc
+        | BlockType::Unknown => BlockKind::Other,
     }
 }
 

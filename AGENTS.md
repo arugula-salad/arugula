@@ -133,7 +133,7 @@ and tested, but get no new features.
 
 A flag per feature turns on what a stranger doesn't get (#385, #464, #665):
 `chat`, `huddles`, `vms`, `studio`, `workspaces`, `guest-ssh`,
-`swarm-themes`, `forges`, `agents`. Managoat left Labs (#942, F5): it has
+`swarm-themes`, `forges`, `agents`, `docs`. Managoat left Labs (#942, F5): it has
 no flag and needs only a login ([docs/managoat.md](docs/managoat.md)); a
 feature that leaves takes its row out of `FLAGS` and puts its name in
 `flags::RETIRED`, so an old file naming it is ignored. They're named flags in `flags.json` in the state

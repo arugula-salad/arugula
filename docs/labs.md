@@ -26,6 +26,7 @@ Each feature has a flag, off on a new install:
 | `swarm-themes` | The swarm's city, hive and timeline views |
 | `forges` | GitLab and Forgejo pull request and issue blocks (GitHub's are always on) |
 | `agents` | Offering Claude Code subagents from this machine as A2A agents, and the team's agent catalog (#403) |
+| `docs` | Doc blocks: a report, plan or write-up an agent builds beside its pane, section by section (#962) |
 
 A flag also lists its feature's tools, commands and options in `arugula mcp`,
 `arugula --help` and `arugulad --help`. Without it they aren't offered, and
@@ -48,6 +49,7 @@ one isn't made.
 | `swarm-themes` | nothing on the daemon: it's only the page's |
 | `forges` | Forgejo and GitLab blocks and webhooks |
 | `agents` | `/api/a2a/…`, the agent catalog block, recipes, `delegate` |
+| `docs` | new Doc blocks, and the `doc` tool by name |
 
 ```
 arugulad flags                # the flags, and which are on

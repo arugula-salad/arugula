@@ -7,6 +7,8 @@ session/resume work from a new process.
 Prompts:
   hello          a reply, a usage_update (cost grows by 0.01 per turn)
   run CMD        a tool call that asks permission, then "prints" its output
+  perm TOOL      a tool call named TOOL (an MCP tool, say) that asks
+                 permission; the reply says "Allowed." or "Not allowed."
   read PATH      a Read tool call with no command that fails (not a shell command)
   write NAME TEXT  writes TEXT to NAME in its session's folder, unasked
   slow           streams for ~10s unless cancelled
@@ -173,7 +175,7 @@ def update(sid, s, u):
     send({"method": "session/update", "params": {"sessionId": sid, "update": u}})
 
 
-def ask(sid, tool_id, cmd):
+def ask(sid, tool_id, cmd, name="Bash"):
     """Ask permission; wait for the answer (forever, like the real one)."""
     rid = next_id[0]
     next_id[0] += 1
@@ -181,7 +183,7 @@ def ask(sid, tool_id, cmd):
     waiting[rid] = [ev, None]
     send({"id": rid, "method": "session/request_permission", "params": {
         "sessionId": sid,
-        "toolCall": {"toolCallId": tool_id, "name": "Bash", "title": cmd, "kind": "execute",
+        "toolCall": {"toolCallId": tool_id, "name": name, "title": cmd, "kind": "execute",
                      "status": "pending", "rawInput": {"command": cmd}},
         "options": [
             {"optionId": "allow-once", "name": "Yes", "kind": "allow_once"},
@@ -454,6 +456,20 @@ def prompt(mid, p):
         with open(os.path.join(s.get("cwd") or ".", name), "w") as f:
             f.write(body + "\n")
         msg(f"Wrote {name}.")
+    elif text.startswith("perm "):
+        name = text[5:]
+        tid = f"tool{n}"
+        update(sid, s, {"sessionUpdate": "tool_call", "toolCallId": tid, "title": name, "kind": "other",
+                        "status": "pending", "rawInput": {}})
+        answer = ask(sid, tid, name, name)
+        outcome = (answer or {}).get("outcome", {})
+        if outcome.get("outcome") == "selected" and outcome.get("optionId", "").startswith("allow"):
+            update(sid, s, {"sessionUpdate": "tool_call_update", "toolCallId": tid, "status": "completed"})
+            msg("Allowed.")
+        else:
+            update(sid, s, {"sessionUpdate": "tool_call_update", "toolCallId": tid, "status": "failed",
+                            "rawOutput": "User refused permission to run tool"})
+            msg("Not allowed.")
     elif text.startswith("run "):
         cmd = text[4:]
         tid = f"tool{n}"

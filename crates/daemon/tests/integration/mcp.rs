@@ -545,7 +545,7 @@ async fn http_with_a_token_until_it_is_revoked() {
 
 /// The agent's own MCP call, through the server Arugula gave it: the
 /// result's structured content, or its error.
-fn agent_mcp(d: &Daemon, agent: u64, tool: &str, args: Value) -> Result<Value, String> {
+pub(crate) fn agent_mcp(d: &Daemon, agent: u64, tool: &str, args: Value) -> Result<Value, String> {
     let answers = || -> Vec<String> {
         entries(&d.state(agent))
             .into_iter()
@@ -949,7 +949,7 @@ async fn labs_lists_all_the_tools_and_the_thread_text() {
     {
         arugula_testkit::labs(&d.state, true);
         let with = s.list_all_tools().await.unwrap();
-        assert_eq!(with.len(), 22, "{:?}", names(&with));
+        assert_eq!(with.len(), 23, "{:?}", names(&with));
         for name in ["read_thread", "post_thread", "delegate"] {
             assert!(with.iter().any(|t| t.name == name), "{name} isn't listed with labs");
         }

@@ -282,6 +282,31 @@ test("a daemon from before labs, which says nothing of it, gets none of it eithe
   await noLabsItems(page, pane);
 });
 
+test("a Doc saved while the flag was on stays on the machine and shows as in Labs", async ({ page }) => {
+  expect(existsSync(join(state, "flags.json"))).toBe(false);
+  // Off: a new Doc is refused, saying how to turn it on (#347).
+  const pane = ((await (await api("/api/panes")).json()) as { id: number }[])[0].id;
+  const refused = await api("/api/blocks", { type: "doc", config: { title: "Saved" }, split: pane, local: true });
+  expect(refused.status).toBe(400);
+  expect(((await refused.json()) as { error: string }).error).toContain("`arugulad flags docs on`");
+  // A Doc made while it was on...
+  writeFileSync(join(state, "flags.json"), JSON.stringify({ flags: { docs: true } }));
+  const made = (await (await api("/api/blocks", { type: "doc", config: { title: "Saved" }, split: pane, local: true })).json()) as { block: number };
+  expect((await api(`/api/blocks/${made.block}/call/doc_outline`, { title: "Saved", sections: [{ heading: "One", intent: "the first" }] })).ok).toBe(true);
+  // ...with the flag off again, is still there, and the page says why it doesn't show it.
+  rmSync(join(state, "flags.json"));
+  try {
+    await open(page);
+    await expect.poll(() => page.evaluate(() => window.__arugula.client.features !== null)).toBe(true);
+    await ready(page, pane);
+    await expect(paneEl(page, made.block)).toContainText("This block is in Labs");
+    await expect(page.locator(`[data-doc-block="${made.block}"]`)).toHaveCount(0);
+    expect((await api(`/api/blocks/${made.block}`)).ok).toBe(true);
+  } finally {
+    await api(`/api/panes/${made.block}/close`, {});
+  }
+});
+
 test("setting the flag on the running daemon brings it all back, with no restart", async ({ page }) => {
   expect(existsSync(join(state, "flags.json"))).toBe(false);
   const asked: string[] = [];
@@ -293,7 +318,7 @@ test("setting the flag on the running daemon brings it all back, with no restart
   expect(await features()).toEqual({
     ...{ labs: true, dev: true, blocks: false, vms: true, fountain: false, studio: true, threads: true, calls: true, block_channels: false },
     // `labs`, the one switch from before, is every flag (#665).
-    flags: ["chat", "huddles", "vms", "studio", "workspaces", "guest-ssh", "swarm-themes", "forges", "agents"],
+    flags: ["chat", "huddles", "vms", "studio", "workspaces", "guest-ssh", "swarm-themes", "forges", "agents", "docs"],
   });
 
   await open(page);

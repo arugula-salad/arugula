@@ -113,6 +113,10 @@ const MAX_RETRIES: u32 = 12;
 /// (M33).
 const FOLLOW_EVERY: Duration = Duration::from_secs(1);
 
+/// The tool an agent block's approvals allow without asking (#963): `doc`
+/// writes only the Doc's own folder.
+const DOC_TOOL: &str = "mcp__arugula__doc";
+
 /// The notification a Managoat conversation's link tells its status with
 /// (#942, F3).
 pub const FOUNTAIN_STATUS: &str = "_fountain/status";
@@ -737,6 +741,7 @@ impl Inner {
                 let text = match how {
                     "rule" => format!("Allowed {title} (always allowed)"),
                     "standing" => format!("Allowed {title} (standing rule: {})", e["rule"].as_str().unwrap_or("?")),
+                    "builtin" => format!("Allowed {title} (allowed by Arugula)"),
                     "always" => format!("Allowed {title}, and always from now on"),
                     "standing-new" => {
                         format!("Allowed {title}, and from now on: {}", e["rule"].as_str().unwrap_or("?"))
@@ -2396,14 +2401,18 @@ fn act(ctx: &AgentCtx, g: &mut Inner, f: Effect) {
                     ctx.rules.allowing(&p.tool, what, g.cfg.cwd.as_deref(), ctx.sprite.as_deref())
                 })
                 .flatten();
-            if (allowed || standing.is_some())
+            // #963: building a Doc writes only the Doc's own folder, and an
+            // agent block has no settings or hooks to allow it with.
+            let builtin = crate::mcp::same_tool(&p.tool, DOC_TOOL);
+            if (allowed || standing.is_some() || builtin)
                 && let Some(opt) = p.options.iter().find(|o| o.kind == "allow_once")
             {
                 match standing {
                     Some(r) => {
                         g.note(json!({ "e": "approve", "title": p.title, "how": "standing", "rule": r.describe() }))
                     }
-                    None => g.note(json!({ "e": "approve", "title": p.title, "how": "rule" })),
+                    None if allowed => g.note(json!({ "e": "approve", "title": p.title, "how": "rule" })),
+                    None => g.note(json!({ "e": "approve", "title": p.title, "how": "builtin" })),
                 }
                 let opt = opt.id.clone();
                 g.out(json!({ "jsonrpc": "2.0", "id": p.rpc, "result": { "outcome": { "outcome": "selected", "optionId": opt } } }));
