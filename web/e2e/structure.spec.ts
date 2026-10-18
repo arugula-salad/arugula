@@ -83,7 +83,7 @@ test("shell integration can be switched off for a pane's new shells", async ({ p
 
 test("the account menu offers notifications for this device", async ({ page }) => {
   await reset(page);
-  await page.locator(".app > .bar [data-account-menu]").click();
+  await page.locator(".ws-head [data-account-menu]").click();
   await expect(page.getByRole("menuitemradio", { name: "Notify this device" })).toBeVisible();
   // The service worker that shows them is registered.
   await expect.poll(() => page.evaluate(async () => !!(await navigator.serviceWorker.getRegistration()))).toBe(true);

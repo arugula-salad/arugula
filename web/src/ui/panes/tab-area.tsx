@@ -9,12 +9,11 @@ import { Divider } from "./divider";
 import { DropOverlay } from "./drop-overlay";
 import { len } from "./geometry";
 import { PaneSlot } from "./pane-slot";
-import { layoutRefusal, toggleFocus } from "./layout";
 
 /** One tab's panes, drawn at the cell rectangles the daemon computed. The
- * whole grid is scaled down when another window's size owns the tab.
- * `live`: the new workspace's headers and gutters (M110). */
-export function TabArea({ client, tab, cell, phone, live }: { client: Client; tab: TabView; cell: Cell; phone: boolean; live?: boolean }) {
+ * whole grid is scaled down when another window's size owns the tab. On a
+ * computer the headers and gutters are handles (M110). */
+export function TabArea({ client, tab, cell, phone }: { client: Client; tab: TabView; cell: Cell; phone: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   const [area, setArea] = useState<{ w: number; h: number } | null>(null);
 
@@ -107,26 +106,16 @@ export function TabArea({ client, tab, cell, phone, live }: { client: Client; ta
         ))}
         {headers &&
           tab.layout.panes.map(([id, r]) => (
-            <PaneHeader key={`h${id}`} client={client} tab={tab} id={id} rect={r} cell={cell} active={id === active} live={live} />
+            <PaneHeader key={`h${id}`} client={client} tab={tab} id={id} rect={r} cell={cell} active={id === active} />
           ))}
         {!phone &&
           tab.layout.splits.map((s) =>
             s.extents.slice(0, -1).map((_, i) => (
-              <Divider key={`${s.id}-${i}`} client={client} split={s} index={i} cell={cell} scale={scale} live={live && headers} />
+              <Divider key={`${s.id}-${i}`} client={client} split={s} index={i} cell={cell} scale={scale} />
             )),
           )}
         <DropOverlay client={client} tab={tab} cell={cell} />
       </div>
-      {/* The classic bar has no toolbar to say a tab is focused (the new
-          workspace's Focus button does): say it here. */}
-      {!live && !phone && tab.focus !== null && (
-        <div class="focused-note" data-focused-note>
-          Showing one pane of this tab.
-          <button disabled={!!layoutRefusal(client, tab)} onClick={() => toggleFocus(client, tab)}>
-            Show all
-          </button>
-        </div>
-      )}
       {elsewhere && (
         <div class="sized-elsewhere" data-sized-elsewhere>
           Another window set this tab's size.

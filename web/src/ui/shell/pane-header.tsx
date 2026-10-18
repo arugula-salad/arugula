@@ -52,21 +52,18 @@ function hostOf(client: Client, id: PaneId, info: PaneInfo | undefined): string 
   return m ? (m.name ?? m.sprite) : null;
 }
 
-export /** What names a pane, above it: what it's running (its title, without the
- * spinner a program puts in front), its project or directory, the
- * machine when it isn't the tab's, and which pane has the keys. A label
- * only, in the classic bar (the divider under it stays draggable); with
- * `live` (the new workspace, M110) it's the pane's handle: its number,
- * kind, status, host, repo and branch, a click to give it the keys, a
- * drag to move it, Focus and its menu. It stays one cell row either way. */
-function PaneHeader({
+/** What names a pane, above it, and its handle (M110): its number, kind,
+ * what it's running (its title, without the spinner a program puts in
+ * front), status, host, repo and branch, which pane has the keys, a click
+ * to give it the keys, a drag to move it, Focus and its menu. It's one
+ * cell row, the one the layout keeps above each pane. */
+export function PaneHeader({
   client,
   tab,
   id,
   rect,
   cell,
   active,
-  live,
 }: {
   client: Client;
   tab: TabView;
@@ -74,29 +71,12 @@ function PaneHeader({
   rect: Rect;
   cell: Cell;
   active: boolean;
-  live?: boolean;
 }) {
   const info = client.info(id);
   const title = client.title(id) || info?.command || `pane %${id}`;
   const cwd = client.cwd(id);
   const where = info?.project?.name ?? (cwd ? cwd.split("/").filter(Boolean).pop() ?? "/" : null);
   const style = { left: len(rect.x * cell.width), top: len((rect.y - 1) * cell.height), width: len(rect.cols * cell.width), height: len(cell.height) };
-  if (!live) {
-    const m = client.machine(id);
-    return (
-      <div
-        class={active ? "pane-header active" : "pane-header"}
-        data-pane-header={id}
-        aria-current={active ? "true" : undefined}
-        title={active ? "This pane has the keyboard" : undefined}
-        style={style}
-      >
-        <span class="pane-header-title">{title}</span>
-        {where && title !== where ? <span class="pane-header-where">{where}</span> : null}
-        {m ? <span class="pane-header-where">{m.name ?? m.sprite}</span> : null}
-      </div>
-    );
-  }
 
   const n = ordinal(tab, id);
   const type = paneType(info);

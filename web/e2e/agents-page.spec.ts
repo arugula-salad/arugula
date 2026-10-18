@@ -45,7 +45,7 @@ test("make a recipe in a project from the form, edit it, offer it, run it, delet
   test.setTimeout(120_000);
   await open(page);
   // The page is a place in the bar, beside Panes, Swarm and Chat.
-  await page.locator(".app > .bar [data-open-agents]").click();
+  await page.locator(".ws-rail [data-open-agents]").click();
   const p = page.locator("[data-agents-page=recipes]");
   await expect(p).toBeVisible();
   await expect(p.locator("[data-open-agents]")).toHaveAttribute("aria-pressed", "true");

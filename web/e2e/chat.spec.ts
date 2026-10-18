@@ -116,18 +116,20 @@ test("the bar counts unread threads on every host", async ({ browser }) => {
 test("chat is a page of its own, over the panes and their bar", async () => {
   const pane = page.locator(`[data-pane="${home.pane}"]`);
   const before = await pane.boundingBox();
-  await page.locator(".app > .bar [data-open-chat]").click();
+  await page.locator(".ws-rail [data-open-chat]").click();
   const chat = page.locator("[data-chat]");
   await expect(chat).toBeVisible();
   expect(await page.evaluate(() => location.hash)).toBe("#chat");
 
-  // Its own bar, with the places; the panes' bar is under it and out of reach.
-  await expect(chat.locator(".app-bar [data-open-chat]")).toHaveAttribute("aria-pressed", "true");
+  // Its own bar beside the rail, which says where you are; the panes'
+  // header is under it and out of reach.
+  await expect(page.locator(".ws-rail [data-open-chat]")).toHaveAttribute("aria-pressed", "true");
   const box = (await chat.boundingBox())!;
   expect(box.y).toBe(0);
-  expect(await page.locator(".app > .bar").evaluate((el) => (el as HTMLElement).inert)).toBe(true);
-  expect(await page.locator(".app > .main").evaluate((el) => (el as HTMLElement).inert)).toBe(true);
-  const covered = await page.locator(".app > .bar .session-button").evaluate((el) => {
+  expect(box.x).toBe((await page.locator(".ws-rail").boundingBox())!.width);
+  expect(await page.locator(".ws-head").evaluate((el) => (el as HTMLElement).inert)).toBe(true);
+  expect(await page.locator(".main").evaluate((el) => (el as HTMLElement).inert)).toBe(true);
+  const covered = await page.locator(".ws-head .session-button").evaluate((el) => {
     const r = el.getBoundingClientRect();
     return !!document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)?.closest("[data-chat]");
   });
@@ -140,12 +142,12 @@ test("chat is a page of its own, over the panes and their bar", async () => {
   await page.goBack();
   await expect(chat).toBeHidden();
   expect(await pane.boundingBox()).toEqual(before);
-  expect(await page.locator(".app > .bar").evaluate((el) => (el as HTMLElement).inert)).toBe(false);
+  expect(await page.locator(".ws-head").evaluate((el) => (el as HTMLElement).inert)).toBe(false);
 
   // The Panes place leaves it too.
   await page.locator("[data-open-chat]").click();
   await expect(chat).toBeVisible();
-  await chat.locator("[data-open-panes]").click();
+  await page.locator(".ws-rail [data-open-panes]").click();
   await expect(chat).toBeHidden();
 });
 

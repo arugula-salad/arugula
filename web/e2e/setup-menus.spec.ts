@@ -68,7 +68,7 @@ test("menus offer only what this machine is set up for", async ({ page }) => {
 
   // The session menu, a tab's and the + button's.
   for (const open of [
-    () => page.locator(".session-button").click(),
+    () => page.locator("[data-crumb-menu]").click(),
     () => page.locator(".tab").first().click({ button: "right" }),
     () => page.locator(".new-tab").click({ button: "right" }),
   ]) {

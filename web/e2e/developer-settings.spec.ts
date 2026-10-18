@@ -105,7 +105,7 @@ test("a machine that hasn't asked isn't offered Developer settings, and #develop
   const pane = await start(page);
   expect(existsSync(join(state, "flags.json"))).toBe(false);
   expect(await shown(page, pane)).toEqual([]);
-  await page.locator(".app > .bar [data-account-menu]").click();
+  await page.locator(".ws-head [data-account-menu]").click();
   await expect(page.getByRole("menuitem", { name: "Permission rules…" })).toBeVisible();
   await expect(page.getByRole("menuitem", { name: "Developer settings…" })).toHaveCount(0);
   await page.keyboard.press("Escape");
@@ -138,7 +138,7 @@ test("turning chat on in the dialog shows chat, and nothing else, without a relo
 test("once asked for, the account menu offers them; off takes chat away again", async ({ page }) => {
   const pane = await start(page);
   await expect(page.locator("[data-open-chat]")).toBeVisible();
-  await page.locator(".app > .bar [data-account-menu]").click();
+  await page.locator(".ws-head [data-account-menu]").click();
   await page.getByRole("menuitem", { name: "Developer settings…" }).click();
   await expect(dialog(page).locator('[data-flag="chat"] input')).toBeChecked();
   await dialog(page).locator('[data-flag="chat"] input').uncheck();
@@ -147,7 +147,7 @@ test("once asked for, the account menu offers them; off takes chat away again", 
   await page.keyboard.press("Escape");
   expect(await shown(page, pane)).toEqual([]);
   // Still offered: the machine asked, and all off is an answer.
-  await page.locator(".app > .bar [data-account-menu]").click();
+  await page.locator(".ws-head [data-account-menu]").click();
   await expect(page.getByRole("menuitem", { name: "Developer settings…" })).toBeVisible();
 });
 

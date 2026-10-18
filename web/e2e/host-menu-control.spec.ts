@@ -138,7 +138,7 @@ test("with no sessions the bar and its host menu are still there, and after clos
   await closeAll(page);
   await expect.poll(() => sessions(page)).toBe(0);
   await expect(page.locator(".empty")).toContainText("No sessions.");
-  await expect(page.locator("header.bar .host-button")).toHaveText(/mini/);
+  await expect(page.locator(".ws-head .host-button")).toHaveText(/mini/);
   // Nothing of a session in the bar, and no stale tab behind it.
   await expect(page.locator(".session-button, .tab")).toHaveCount(0);
   await page.locator(".host-button").click();

@@ -128,13 +128,6 @@ test.describe("the attention drawer", () => {
   test.afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
   test("a pending ask is in the drawer; Go to pane lands on it still pending; Allow answers it", async ({ page }) => {
-    await page.addInitScript(() => {
-      try {
-        localStorage.setItem("arugula-appearance", JSON.stringify({ palette: "default", finish: "flat", corners: "square", workspace: "new" }));
-      } catch {
-        // No storage: the classic bar, and the test fails below.
-      }
-    });
     await reset(page);
     await expect(page.locator(".ws-rail")).toBeVisible();
     const shown = await page.evaluate(() => window.__arugula.client.tab!);

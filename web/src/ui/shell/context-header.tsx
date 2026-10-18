@@ -1,14 +1,11 @@
-// Over the panes. The classic bar is the shared app bar (machine, places,
-// commands, account) with the session, Share and the tab strip in it. The
-// new workspace's context header (M108, #1023) says where you are: the
-// machine and how it's reached, the session, then command search, the
-// people here, the account and the window's buttons. It's the desktop app's
-// titlebar either way.
+// Over the panes, the workspace's context header (M108, #1023) says where
+// you are: the machine and how it's reached, the session and the tab, then
+// command search, the bell, Share, the people here, the account and the
+// window's buttons. It's the desktop app's titlebar.
 
 import { tabLabel, type Client } from "../../client";
 import { directory } from "../../hosts";
-import { AccountButton, AppBar, CommandsButton } from "../app-bar";
-import { CloudTabs } from "../cloud";
+import { AccountButton, CommandsButton } from "../app-bar";
 import { useSubscribe } from "../hooks";
 import { getFleet, HostButton, hostMenuShown, machineState } from "../hosts";
 import { PeopleBar, shareSession } from "../people";
@@ -17,42 +14,6 @@ import { WindowButtons } from "../window-buttons";
 import type { Renaming } from "./rename-input";
 import { SessionButton } from "./session-sidebar";
 import { AttentionBell } from "./attention-drawer";
-import { TabStrip } from "./tab-strip";
-
-/** The classic bar (the default until M113). */
-export function ClassicBar({
-  client,
-  renaming,
-  setRenaming,
-  inert,
-}: {
-  client: Client;
-  renaming: Renaming;
-  setRenaming: (r: Renaming) => void;
-  inert: boolean;
-}) {
-  const state = client.state!;
-  // None at all, on a machine with no sessions: the bar is still here for
-  // the host and account menus.
-  const session = state.sessions.find((s) => s.id === client.session) ?? state.sessions[0];
-  return (
-    <AppBar client={client} at="panes" inert={inert} end={<PeopleBar client={client} />}>
-      {session && (
-        <>
-          <SessionButton client={client} session={session} renaming={renaming} setRenaming={setRenaming} />
-          {/* Sharing is the daemon's owner's (M13), and on the bar so it's found (#551). */}
-          {state.roles ? null : (
-            <button class="share-button" aria-label="Share session" title="Share this session with someone" onClick={() => shareSession(session.id)}>
-              Share
-            </button>
-          )}
-          <TabStrip client={client} session={session} renaming={renaming} setRenaming={setRenaming} />
-        </>
-      )}
-      {!session && <div class="tabbar" role="tablist"><CloudTabs /></div>}
-    </AppBar>
-  );
-}
 
 export type Connection = "direct" | "relayed" | "reconnecting" | "offline";
 
@@ -90,15 +51,13 @@ export function ConnectionChip({ client }: { client: Client }) {
   );
 }
 
-/** The new workspace's header. */
+/** The workspace's header. */
 export function ContextHeader({
   client,
-  renaming,
   setRenaming,
   inert,
 }: {
   client: Client;
-  renaming: Renaming;
   setRenaming: (r: Renaming) => void;
   inert: boolean;
 }) {
@@ -124,7 +83,7 @@ export function ContextHeader({
             <span class="ws-crumb-sep" aria-hidden="true">
               /
             </span>
-            <SessionButton client={client} session={session} renaming={renaming} setRenaming={setRenaming} crumb />
+            <SessionButton client={client} session={session} setRenaming={setRenaming} />
           </>
         )}
         {tab && (

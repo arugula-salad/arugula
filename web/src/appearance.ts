@@ -347,23 +347,17 @@ export const CORNERS = [
 export type Finish = (typeof FINISHES)[number]["id"];
 export type Corners = (typeof CORNERS)[number]["id"];
 
-/** Which workspace shell the desktop page draws (M108, #1023): the one bar
- * ("classic", the default until M113) or the rail, sidebar, header and
- * footer ("new"). Phones keep their own header either way. */
-export type Workspace = "classic" | "new";
-
 export interface Appearance {
   /** A palette's id, "system" (the dark default, or Latte when the system
-   * is light) or "default": nothing picked, which is Mocha, or Slate with
-   * the new workspace. */
+   * is light) or "default": nothing picked, which is Slate (M113; Mocha
+   * before it). */
   palette: string;
   finish: Finish;
   corners: Corners;
-  workspace: Workspace;
 }
 
 const KEY = "arugula-appearance";
-const DEFAULT: Appearance = { palette: "default", finish: "flat", corners: "square", workspace: "classic" };
+const DEFAULT: Appearance = { palette: "default", finish: "flat", corners: "square" };
 const lightQuery = typeof matchMedia === "function" ? matchMedia("(prefers-color-scheme: light)") : null;
 
 let current: Appearance = load();
@@ -371,14 +365,18 @@ const listeners = new Set<() => void>();
 
 function load(): Appearance {
   try {
-    const v = JSON.parse(localStorage.getItem(KEY) ?? "null") as Partial<Appearance> | null;
+    const v = JSON.parse(localStorage.getItem(KEY) ?? "null") as (Partial<Appearance> & { workspace?: unknown }) | null;
     if (!v) return DEFAULT;
-    return {
+    const a: Appearance = {
       palette: v.palette === "system" || v.palette === "default" || PALETTES.some((p) => p.id === v.palette) ? v.palette! : DEFAULT.palette,
       finish: FINISHES.some((f) => f.id === v.finish) ? v.finish! : DEFAULT.finish,
       corners: CORNERS.some((c) => c.id === v.corners) ? v.corners! : DEFAULT.corners,
-      workspace: v.workspace === "new" ? "new" : "classic",
     };
+    // M108–M112's "New workspace" switch (`workspace: "classic" | "new"`)
+    // is gone: the new workspace is the only one. Forget it, whatever it
+    // said.
+    if ("workspace" in v) localStorage.setItem(KEY, JSON.stringify(a));
+    return a;
   } catch {
     return DEFAULT;
   }
@@ -386,13 +384,13 @@ function load(): Appearance {
 
 export const appearance = () => current;
 
-/** The dark palette nothing picked means: Slate with the new workspace,
- * Mocha with the classic one (unchanged until M113). */
-export const darkDefault = (a: Appearance = current) => (a.workspace === "new" ? "slate" : "mocha");
+/** The dark palette nothing picked means: Slate, the workspace's own
+ * (M113). Anyone who picked one keeps it. */
+export const darkDefault = () => "slate";
 
 /** The palette in use: "system" and "default" resolved. */
 export function palette(a: Appearance = current): Palette {
-  const id = a.palette === "system" ? (lightQuery?.matches ? "latte" : darkDefault(a)) : a.palette === "default" ? darkDefault(a) : a.palette;
+  const id = a.palette === "system" ? (lightQuery?.matches ? "latte" : darkDefault()) : a.palette === "default" ? darkDefault() : a.palette;
   return PALETTES.find((p) => p.id === id) ?? PALETTES[0];
 }
 

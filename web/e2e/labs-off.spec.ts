@@ -78,7 +78,7 @@ async function noLabsItems(page: Page, pane: number) {
   await page.keyboard.press("Escape");
   // The session menu and the + button's.
   for (const [where, button] of [
-    [page.locator(".session-button"), "left"],
+    [page.locator("[data-crumb-menu]"), "left"],
     [page.locator(".new-tab"), "right"],
   ] as const) {
     await where.click({ button });

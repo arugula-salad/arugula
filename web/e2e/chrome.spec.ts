@@ -1,21 +1,12 @@
-// M108 (#1023): the new workspace, behind Appearance → New workspace. The
-// rail, the session sidebar (switching, search), the routes and their way
-// back, and the header's connection chip. Every other spec runs the classic
-// bar, which stays the default until M113.
+// M108 (#1023) and M113 (#1028): the workspace on a computer. The rail, the
+// session sidebar (switching, search), the routes and their way back, the
+// header's connection chip, and the states and accessibility M113 made
+// deliberate.
 
 import { expect, test, type Page } from "@playwright/test";
 import { active, reset, tab, tabsInSession } from "./helpers";
 
-const NEW = JSON.stringify({ palette: "default", finish: "flat", corners: "square", workspace: "new" });
-
 async function newWorkspace(page: Page) {
-  await page.addInitScript((v) => {
-    try {
-      localStorage.setItem("arugula-appearance", v);
-    } catch {
-      // A page without storage draws the classic bar; the test then fails.
-    }
-  }, NEW);
   await reset(page);
   await expect(page.locator(".ws-rail")).toBeVisible();
 }
@@ -154,16 +145,32 @@ test.describe("on a computer", () => {
     await expect(chip).toHaveAttribute("data-connection", "direct");
   });
 
-  test("Appearance → New workspace switches between the two shells", async ({ page }) => {
+  test("the old New workspace switch is forgotten; a saved palette stays, and Slate is the dark default", async ({ page, browser }) => {
+    // Someone who picked Latte and had turned the new workspace off (M108–M112).
+    await page.addInitScript(() => {
+      try {
+        localStorage.setItem("arugula-appearance", JSON.stringify({ palette: "latte", finish: "flat", corners: "square", workspace: "classic" }));
+      } catch {
+        // No storage: nothing to forget.
+      }
+    });
     await newWorkspace(page);
+    await expect(page.locator(".app-bar")).toHaveCount(0);
+    await expect(page.locator("html")).toHaveAttribute("data-palette", "latte");
+    const saved = await page.evaluate(() => JSON.parse(localStorage.getItem("arugula-appearance") ?? "null"));
+    expect(saved).toEqual({ palette: "latte", finish: "flat", corners: "square" });
+    // Appearance has no switch any more.
     await page.locator("[data-account-menu]").click();
     await page.getByRole("menuitem", { name: "Appearance…" }).click();
-    await page.locator("[data-workspace-choice] input").uncheck();
-    await expect(page.locator(".ws-rail")).toHaveCount(0);
-    await expect(page.locator(".app-bar [data-open-panes]")).toBeVisible();
-    await page.locator("[data-workspace-choice] input").check();
-    await expect(page.locator(".ws-rail")).toBeVisible();
-    await expect(page.locator(".app-bar")).toHaveCount(0);
+    await expect(page.locator("[data-appearance]")).toBeVisible();
+    await expect(page.locator("[data-workspace-choice]")).toHaveCount(0);
+
+    // Nobody's pick: Slate, in a dark scheme.
+    const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 }, colorScheme: "dark" });
+    await fresh.goto(page.url());
+    await expect(fresh.locator(".ws-rail")).toBeVisible();
+    await expect(fresh.locator("html")).toHaveAttribute("data-palette", "slate");
+    await fresh.close();
   });
 });
 

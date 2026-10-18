@@ -24,15 +24,11 @@ export function TabStrip({
   session,
   renaming,
   setRenaming,
-  labelled,
 }: {
   client: Client;
   session: Session;
   renaming: Renaming;
   setRenaming: (r: Renaming) => void;
-  /** The new workspace (M108): icon buttons named for screen readers,
-   * with their keys. The classic bar's keep their names ("+"). */
-  labelled?: boolean;
 }) {
   const cloud = useCloudPanes();
   const tabKey = keyHint("desktop.tab");
@@ -54,7 +50,6 @@ export function TabStrip({
               selected={!cloud && id === client.tab}
               renaming={renaming?.kind === "tab" && renaming.id === id}
               setRenaming={setRenaming}
-              labelled={labelled}
             />
           </Fragment>
         );
@@ -63,9 +58,9 @@ export function TabStrip({
       {marker === session.tabs.length && <div class="drop-marker" />}
       <button
         class="new-tab"
-        title={`New tab ${newTabWhere()}${labelled && tabKey ? ` (${tabKey})` : ""}`}
-        aria-label={labelled ? "New tab" : undefined}
-        aria-keyshortcuts={labelled ? ariaKeys(tabKey) : undefined}
+        title={`New tab ${newTabWhere()}${tabKey ? ` (${tabKey})` : ""}`}
+        aria-label="New tab"
+        aria-keyshortcuts={ariaKeys(tabKey)}
         onClick={() => { cloudPanes.local(); client.intent({ op: "new_tab", session: session.id, from_pane: client.active() ?? null }); }}
         onContextMenu={(e) => openFresh(client, e, () => newTabItems(client, session.id))}
       >
@@ -106,7 +101,6 @@ function TabItem({
   selected,
   renaming,
   setRenaming,
-  labelled,
 }: {
   client: Client;
   tab: TabView;
@@ -114,7 +108,6 @@ function TabItem({
   selected: boolean;
   renaming: boolean;
   setRenaming: (r: Renaming) => void;
-  labelled?: boolean;
 }) {
   const label = tabLabel(client, tab);
   const machine = client.tabMachine(tab.id);
@@ -171,7 +164,7 @@ function TabItem({
       <button
         class="tab-close"
         title="Close tab"
-        aria-label={labelled ? `Close tab ${label}` : undefined}
+        aria-label={`Close tab ${label}`}
         onPointerDown={(e) => e.stopPropagation()}
         onClick={(e) => {
           e.stopPropagation();

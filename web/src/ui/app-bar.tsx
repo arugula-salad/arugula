@@ -6,7 +6,7 @@
 
 import type { ComponentChildren } from "preact";
 import type { Client } from "../client";
-import { useSubscribe } from "./hooks";
+import { usePhone, useSubscribe } from "./hooks";
 import { HostButton } from "./hosts";
 import { Places, type Place } from "./places";
 import { openMenu, type MenuItem } from "./menu";
@@ -17,7 +17,6 @@ import { UpdateChip } from "./update";
 import { WindowButtons } from "./window-buttons";
 import { countView } from "../telemetry";
 import { SearchIcon } from "./shell/icons";
-import { useNewWorkspace } from "./shell/prefs";
 
 /** Who is signed in, through control: their name and their account's
  * items. A daemon's own page has none, and its menu is settings only. */
@@ -64,8 +63,9 @@ export function AppBar({
   all?: boolean;
 }) {
   useSubscribe((fn) => client.subscribe(fn));
-  // The new workspace's rail has the places (M108).
-  const rail = useNewWorkspace();
+  // The workspace's rail has the places (M108), on a computer once a
+  // machine is shown (app.tsx).
+  const rail = !usePhone() && !!client.state;
   return (
     <header class="bar app-bar" data-tauri-drag-region inert={inert} data-at={at}>
       {all ? (

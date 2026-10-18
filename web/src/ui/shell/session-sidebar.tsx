@@ -1,7 +1,7 @@
-// The sessions on the shown machine. With the new workspace (M108, #1023)
-// they're a sidebar beside the panes, grouped by what they need from you;
-// in the classic bar they're the session button, whose menu switches
-// sessions and holds the session's commands.
+// The sessions on the shown machine (M108, #1023): a sidebar beside the
+// panes, grouped by what they need from you, and the header's session
+// breadcrumb, whose menu switches sessions and holds the session's
+// commands.
 
 import { Fragment } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
@@ -371,88 +371,52 @@ function Resizer({ width }: { width: number }) {
   );
 }
 
-/** The session breadcrumb in the new header, or the classic bar's session
- * button: its menu switches sessions and holds the session's commands.
- * `crumb` names it without the "Session" label, and never renames in
- * place (the sidebar's row does). */
+/** The session breadcrumb in the header: the name opens this session's
+ * overview (M111), and the caret (or a right click) its menu, which
+ * switches sessions and holds the session's commands. Renaming happens in
+ * the sidebar's row. */
 export function SessionButton({
   client,
   session,
-  renaming,
   setRenaming,
-  crumb,
 }: {
   client: Client;
   session: Session;
-  renaming: Renaming;
   setRenaming: (r: Renaming) => void;
-  crumb?: boolean;
 }) {
   const state = client.state!;
   const sessionMenu = (e: MouseEvent) => {
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const rename = () => {
-      if (crumb) setSidebarOpen(true);
+      setSidebarOpen(true);
       setRenaming({ kind: "session", id: session.id });
     };
     openFresh(client, { clientX: r.left, clientY: r.bottom + 4, preventDefault: () => e.preventDefault() }, () => [
       ...state.sessions.map((s) => ({
         label: `${s.id === session.id ? "✓ " : "    "}${s.name}`,
-        run: () => (crumb ? showSession(client, s.id) : client.selectSession(s.id)),
+        run: () => showSession(client, s.id),
       })),
       "separator",
       ...sessionItems(client, session.id, rename, { bar: true }),
     ]);
   };
-  if (!crumb && renaming?.kind === "session" && renaming.id === session.id) {
-    return (
-      <RenameInput
-        value={session.name}
-        onDone={(name) => {
-          setRenaming(null);
-          if (name && name !== session.name) client.intent({ op: "rename_session", session: session.id, name });
-        }}
-      />
-    );
-  }
-  if (crumb) {
-    // M111: the name opens this session's overview; the caret (or a right
-    // click) its menu.
-    const unread = client.thread({ session: session.id });
-    return (
-      <span class="ws-crumb-group">
-        <button
-          class="session-button ws-crumb"
-          title="This session's overview: its tabs, panes and what needs you"
-          aria-label={`Session: ${session.name}`}
-          data-crumb-overview
-          onClick={() => openOverview(session.id)}
-          onContextMenu={sessionMenu}
-        >
-          <span class="ws-crumb-name">{session.name}</span>
-          {unread?.unread ? <span class={unread.mention ? "session-unread mention" : "session-unread"} title="New in the session thread" /> : null}
-        </button>
-        <button class="ws-crumb-caret" aria-label={`Session menu: ${session.name}`} title="Switch sessions, rename, close" data-crumb-menu onClick={sessionMenu}>
-          <span class="caret">▾</span>
-        </button>
-      </span>
-    );
-  }
+  const unread = client.thread({ session: session.id });
   return (
-    <button
-      class={crumb ? "session-button ws-crumb" : "session-button"}
-      title={crumb ? "This session: switch sessions, rename, close" : "Sessions"}
-      aria-label={`Session: ${session.name}`}
-      onClick={sessionMenu}
-      onContextMenu={sessionMenu}
-    >
-      {!crumb && <span class="session-label">Session</span>}
-      {crumb ? <span class="ws-crumb-name">{session.name}</span> : session.name}
-      {/* M61: the session's thread has messages you haven't read. */}
-      {client.thread({ session: session.id })?.unread ? (
-        <span class={client.thread({ session: session.id })?.mention ? "session-unread mention" : "session-unread"} title="New in the session thread" />
-      ) : null}{" "}
-      <span class="caret">▾</span>
-    </button>
+    <span class="ws-crumb-group">
+      <button
+        class="session-button ws-crumb"
+        title={`${session.name}: this session's overview, its tabs, panes and what needs you`}
+        aria-label={`Session: ${session.name}`}
+        data-crumb-overview
+        onClick={() => openOverview(session.id)}
+        onContextMenu={sessionMenu}
+      >
+        <span class="ws-crumb-name">{session.name}</span>
+        {unread?.unread ? <span class={unread.mention ? "session-unread mention" : "session-unread"} title="New in the session thread" /> : null}
+      </button>
+      <button class="ws-crumb-caret" aria-label={`Session menu: ${session.name}`} title="Switch sessions, rename, share, close" data-crumb-menu onClick={sessionMenu}>
+        <span class="caret" aria-hidden="true">▾</span>
+      </button>
+    </span>
   );
 }

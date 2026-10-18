@@ -1,4 +1,4 @@
-// M110 (#1025): the pane toolbar's presets and Focus, in the new workspace.
+// M110 (#1025): the pane toolbar's presets and Focus.
 // Each rebuilds the tab's split tree in the daemon (`arrange`, `focus`,
 // M109): the same panes, the same processes and their scrollback, only
 // placed anew; focus gives back exactly the layout it hid.
@@ -10,16 +10,7 @@ import { active, closeContexts, paneEl, panes, ready, reset, run, tab, text } fr
 test.afterAll(closeContexts);
 test.use({ viewport: { width: 1440, height: 900 } });
 
-const NEW = JSON.stringify({ palette: "default", finish: "flat", corners: "square", workspace: "new" });
-
 async function newWorkspace(page: Page) {
-  await page.addInitScript((v) => {
-    try {
-      localStorage.setItem("arugula-appearance", v);
-    } catch {
-      // A page without storage draws the classic bar; the test then fails.
-    }
-  }, NEW);
   await reset(page);
   await expect(page.locator(".ws-rail")).toBeVisible();
 }

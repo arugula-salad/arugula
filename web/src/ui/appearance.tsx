@@ -34,9 +34,9 @@ export function AppearanceLayer() {
 
 function AppearanceDialog({ close }: { close: () => void }) {
   const a = appearance();
-  const dark = PALETTES.find((p) => p.id === darkDefault(a))!.name;
+  const dark = PALETTES.find((p) => p.id === darkDefault())!.name;
   // Nothing picked yet: the default's card is the one on.
-  const picked = a.palette === "default" ? darkDefault(a) : a.palette;
+  const picked = a.palette === "default" ? darkDefault() : a.palette;
   return (
     <div class="prompt-backdrop" role="dialog" aria-label="Appearance" onPointerDown={(e) => e.target === e.currentTarget && close()}>
       <div class="prompt appearance" data-appearance onKeyDown={(e) => e.key === "Escape" && close()}>
@@ -55,21 +55,6 @@ function AppearanceDialog({ close }: { close: () => void }) {
             <PaletteCard key={p.id} p={p} id={p.id} name={p.name} on={picked === p.id} />
           ))}
         </div>
-        <h3>Workspace</h3>
-        <label class="appearance-workspace" data-workspace-choice>
-          <input
-            type="checkbox"
-            checked={a.workspace === "new"}
-            onChange={(e) => setAppearance({ workspace: (e.currentTarget as HTMLInputElement).checked ? "new" : "classic" })}
-          />
-          <span>
-            <b>New workspace</b>
-            <span class="dim">
-              A rail, a sidebar of this machine's sessions, a header and a status line, in place of the one bar. On a computer
-              (not a phone). With no palette picked, it's in Slate.
-            </span>
-          </span>
-        </label>
         <h3>Finish</h3>
         <div class="appearance-finishes" role="radiogroup" aria-label="Finish">
           {FINISHES.map((f) => (

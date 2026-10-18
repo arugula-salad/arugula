@@ -1,5 +1,7 @@
-// The workspace: the bar over the panes (ui/shell/), the tab's panes
-// (ui/panes/), and the layers over them (menus, dialogs, the palette).
+// The workspace: on a computer, the rail, the session sidebar, the header,
+// the tab strip and the footer around the panes (ui/shell/, M108–M113); on
+// a phone, its own header (ui/phone). Then the tab's panes (ui/panes/), and
+// the layers over them (menus, dialogs, the palette).
 
 import { cloudPanes, useCloudPanes } from "../cloud";
 import { CloudTabs, RunDetails } from "./cloud";
@@ -29,14 +31,13 @@ import { PaletteLayer } from "./palette";
 import { ControlBanner } from "./control-state";
 import { AgentsNudge } from "./agents-setup";
 import { useWorkspaceKeys } from "./keys";
-import { ClassicBar, ContextHeader } from "./shell/context-header";
+import { ContextHeader } from "./shell/context-header";
 import type { Renaming } from "./shell/rename-input";
 import { StatusFooter, StatusPill } from "./shell/status-footer";
 import { Rail } from "./shell/rail";
 import { noteLastTab, SessionSidebar } from "./shell/session-sidebar";
 import { TabStrip } from "./shell/tab-strip";
 import { PaneToolbar } from "./shell/pane-toolbar";
-import { useNewWorkspace } from "./shell/prefs";
 import { ActivityDrawer } from "./shell/activity";
 import { AttentionDrawer } from "./shell/attention-drawer";
 import { SessionOverview, useOverview } from "./shell/overview";
@@ -90,9 +91,10 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
   useReportFocus(client, phone);
   useWorkspaceKeys(client, phone);
   useFirstRun(client);
-  // M108 (#1023): the new workspace, when Appearance says so (desktop only).
-  const ws = useNewWorkspace() && !phone;
-  // M111: `#overview` lies over the tabs and panes (new workspace only).
+  // M113 (#1028): a computer draws the workspace once a machine is shown;
+  // a phone keeps its own header.
+  const ws = !phone && !!client.state;
+  // M111: `#overview` lies over the tabs and panes (not on a phone).
   const overview = useOverview();
   useLayoutEffect(() => {
     if (!ws) return;
@@ -114,7 +116,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       ) : state.sessions.length === 0 ? (
         <NoSessions client={client} phone={phone} />
       ) : tab ? (
-        <TabArea client={client} tab={tab} cell={cell} phone={phone} live={ws} />
+        <TabArea client={client} tab={tab} cell={cell} phone={phone} />
       ) : null}
     </main>
   );
@@ -144,18 +146,18 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
     noteLastTab(client);
     const session = state.sessions.find((s) => s.id === client.session) ?? state.sessions[0];
     // The chrome is all outside `.main`, so the panes' cells and who sizes
-    // the tab work as they do under the classic bar.
+    // the tab are the panes' own business.
     return (
       <div class="app ws">
         <Rail client={client} />
         <div class="ws-body">
-          <ContextHeader client={client} renaming={renaming} setRenaming={setRenaming} inert={chatOpen} />
+          <ContextHeader client={client} setRenaming={setRenaming} inert={chatOpen} />
           <div class="ws-row" inert={chatOpen}>
             <SessionSidebar client={client} renaming={renaming} setRenaming={setRenaming} />
             <div class="ws-work">
               <div class="ws-tabs">
                 {session ? (
-                  <TabStrip client={client} session={session} renaming={renaming} setRenaming={setRenaming} labelled />
+                  <TabStrip client={client} session={session} renaming={renaming} setRenaming={setRenaming} />
                 ) : (
                   <div class="tabbar" role="tablist">
                     <CloudTabs />
@@ -182,11 +184,9 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
   }
   return (
     <div class={phone ? "app phone" : "app"}>
-      {state && (phone ? (
-        <PhoneHeader client={client} />
-      ) : (
-        <ClassicBar client={client} renaming={renaming} setRenaming={setRenaming} inert={chatOpen} />
-      ))}
+      {/* A computer gets here only before a machine answers (or with a
+          cloud run's details and none shown). */}
+      {state && phone && <PhoneHeader client={client} />}
       {!state && cloud && <AppBar client={client} at="panes" all>{!phone && <div class="tabbar" role="tablist"><CloudTabs /><button onClick={() => startAgent(client, {})}>New agent</button></div>}</AppBar>}
       {phone && cloudPanes.opened.length > 0 && <div class="tabbar cloud-phone-tabs" role="tablist">{state && <button onClick={() => cloudPanes.local()}>This machine</button>}<CloudTabs /></div>}
       {state && <ControlBanner client={client} />}

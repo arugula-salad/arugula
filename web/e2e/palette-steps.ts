@@ -134,12 +134,12 @@ export async function desktop(page: Page, mod: "Control" | "Meta" = "Control") {
 
   // And it's listed, with its chord, in the account menu, and is the
   // bar's Commands button.
-  await page.locator(".app > .bar [data-account-menu]").click();
+  await page.locator(".ws-head [data-account-menu]").click();
   await page.getByRole("menuitem", { name: "Command palette…" }).click();
   await expect(palette(page)).toBeVisible();
   await page.mouse.click(5, 300);
   await expect(palette(page)).toBeHidden();
-  await page.locator(".app > .bar [data-open-palette]").click();
+  await page.locator(".ws-head [data-open-palette]").click();
   await expect(palette(page)).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(palette(page)).toBeHidden();
