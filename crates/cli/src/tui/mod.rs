@@ -96,7 +96,8 @@ impl Drop for Screen {
     }
 }
 
-pub fn run(target: &Target, session: Option<String>) -> anyhow::Result<i32> {
+/// `hint`: a line for the status bar at the start (telemetry's, M105).
+pub fn run(target: &Target, session: Option<String>, hint: Option<&str>) -> anyhow::Result<i32> {
     let (mut wake, waker) = Wake::pair()?;
     let (err_tx, err_rx) = mpsc::channel();
     let (conn, hello) = Conn::open(target, err_tx, waker.clone())?;
@@ -123,6 +124,9 @@ pub fn run(target: &Target, session: Option<String>) -> anyhow::Result<i32> {
     }
 
     let mut app = App::new(conn, hello, err_rx, session);
+    if let Some(h) = hint {
+        app.say(h);
+    }
     let stats = std::env::var_os("ARUGULA_TUI_STATS");
     let mut shown_cursor: Option<CursorLook> = None;
     let mut last_draw = Instant::now() - FRAME;
