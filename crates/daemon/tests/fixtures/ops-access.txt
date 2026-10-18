@@ -103,7 +103,7 @@ synced.list GET /api/synced Owner drives=false credential=false
 synced.rotate POST /api/synced/rotate-key Owner drives=false credential=false
 team_pins.get GET /api/team-pins Owner drives=false credential=false
 team_pins.set POST /api/team-pins Owner drives=false credential=false
-telemetry.get GET /api/telemetry Owner drives=false credential=false
+telemetry.get GET /api/telemetry Owner drives=false credential=true
 telemetry.set PUT /api/telemetry Owner drives=false credential=false
 thread.get GET /api/threads/{target} Handler drives=false credential=false
 thread.post POST /api/threads/{target} Handler drives=false credential=false

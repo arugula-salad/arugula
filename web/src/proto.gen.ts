@@ -2238,7 +2238,9 @@ url: string,
 signed: boolean, 
 /**
  * The next report, exactly as it would be sent now (an
- * `arugula_control_wire::telemetry::Report`), while it's on.
+ * `arugula_control_wire::telemetry::Report`). While it's off, what a
+ * yes would send first: no counts, a placeholder for the install id,
+ * and `"preview_only": true`. A daemon from M101 always gives one.
  */
 preview?: unknown, };
 

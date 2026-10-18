@@ -93,7 +93,29 @@ async fn with_no_file_nothing_is_ever_sent() {
     t.save();
     assert!(r.got.lock().unwrap().is_empty());
     assert!(!r.dir.join(COUNTS_FILE).exists(), "nothing counted, nothing kept");
-    assert!(t.info().preview.is_none());
+}
+
+/// Before a yes, "what's sent" is this machine's first report, marked as a
+/// preview: its own version and platform, no counts, no install id.
+#[tokio::test]
+async fn the_preview_shows_what_a_yes_would_send() {
+    let r = rig("preview").await;
+    let t = r.telemetry(&[], FAST);
+    let p = t.info().preview.expect("a preview while not asked");
+    assert_eq!(p["preview_only"], true);
+    assert_eq!(p["install"], PREVIEW_INSTALL);
+    assert_eq!(p["version"], env!("CARGO_PKG_VERSION"));
+    assert_eq!((p["channel"].as_str(), p["control"].as_str()), (Some("source"), Some("none")));
+    let report: Report = serde_json::from_value(p).unwrap();
+    assert!(report.check().is_err(), "a preview can't be taken for a report");
+    let names: Vec<_> = report.events.iter().map(|e| serde_json::to_value(e).unwrap()["event"].clone()).collect();
+    assert_eq!(names, ["opted-in", "started", "daily"]);
+    assert_eq!(report.events[2], Event::Daily(Counts::default()), "nothing is counted before a yes");
+
+    r.yes();
+    let p = t.info().preview.unwrap();
+    assert!(p.get("preview_only").is_none(), "on, it's the real next report");
+    assert_eq!(p["install"].as_str(), consent::read(&r.dir).unwrap().install.as_deref());
 }
 
 #[tokio::test]

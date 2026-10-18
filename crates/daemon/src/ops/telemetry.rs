@@ -23,14 +23,25 @@ fn info(cx: &Cx<'_>) -> TelemetryInfo {
     }
 }
 
+/// The owner in person: not an agent (an MCP token, or the CLI an agent
+/// runs), and not a guest.
+fn in_person(cx: &Cx<'_>) -> Result<(), OpError> {
+    if cx.agent_or_guest() {
+        return Err(OpError::Forbidden("telemetry is the owner's to see and answer, not an agent's".into()));
+    }
+    Ok(())
+}
+
 impl Handle for TelemetryGet {
     async fn handle(cx: &Cx<'_>, _: (), _: Empty) -> Result<TelemetryInfo, OpError> {
+        in_person(cx)?;
         Ok(info(cx))
     }
 }
 
 impl Handle for TelemetrySet {
     async fn handle(cx: &Cx<'_>, _: (), req: TelemetrySetRequest) -> Result<TelemetryInfo, OpError> {
+        in_person(cx)?;
         let via = req.via.as_deref().filter(|v| !v.is_empty()).unwrap_or("web");
         // A closed set: anything else is kept as `other`.
         let via = if ["web", "desktop", "cli", "tui", "phone", "mcp"].contains(&via) { via } else { "other" };

@@ -41,6 +41,9 @@ use tracing::{debug, info, warn};
 
 const HOUR: Duration = Duration::from_secs(3600);
 const WEEK_MS: u64 = 7 * 24 * 3600 * 1000;
+/// The install id a preview shows before there is one (never sent: control
+/// takes only 16 hex digits).
+pub const PREVIEW_INSTALL: &str = "<made when you say yes>";
 /// The most reports kept waiting.
 const MAX_QUEUED: usize = 4 * MAX_EVENTS;
 
@@ -517,29 +520,35 @@ impl Telemetry {
 
     /// `telemetry.get`: the state, and the next report as it would go now:
     /// what's queued, then today's counts so far as the coming `daily`.
+    /// While it's off, what a yes would send first, with this machine's
+    /// own version, OS, arch, channel and control, no counts, and
+    /// [`PREVIEW_INSTALL`] for the install id, marked `preview_only`.
     pub fn info(&self) -> TelemetryInfo {
         let state = self.state();
-        let preview = state.install().map(|install| {
-            let l = self.live.lock().unwrap();
-            let mut kept = if l.kept.install == install {
-                l.kept.clone()
-            } else {
-                let via = state.consent.as_ref().and_then(|c| c.via.clone()).unwrap_or_default();
-                let via = serde_json::from_value(Value::String(via)).unwrap_or(Surface::Other);
-                Kept {
-                    install: install.to_owned(),
-                    queue: vec![Queued { at: 0, event: Event::OptedIn { via } }],
-                    ..Default::default()
-                }
-            };
-            drop(l);
-            if !kept.queue.iter().any(|q| matches!(q.event, Event::Daily(_))) {
-                let mut counts = kept.counts.clone();
-                counts.flags_on = self.flags_on();
-                kept.queue.push(Queued { at: 0, event: Event::Daily(counts) });
+        let first = |install: &str| {
+            let via = state.consent.as_ref().and_then(|c| c.via.clone()).unwrap_or_default();
+            let via = serde_json::from_value(Value::String(via)).unwrap_or(Surface::Other);
+            let mut queue = vec![Queued { at: 0, event: Event::OptedIn { via } }];
+            queue.push(Queued { at: 0, event: Event::Started { service: self.service } });
+            Kept { install: install.to_owned(), queue, ..Default::default() }
+        };
+        let mut kept = match state.install() {
+            Some(install) => {
+                let l = self.live.lock().unwrap();
+                if l.kept.install == install { l.kept.clone() } else { first(install) }
             }
-            serde_json::to_value(self.report(&kept)).expect("a report serializes")
-        });
+            None => first(PREVIEW_INSTALL),
+        };
+        if !kept.queue.iter().any(|q| matches!(q.event, Event::Daily(_))) {
+            let mut counts = kept.counts.clone();
+            counts.flags_on = self.flags_on();
+            kept.queue.push(Queued { at: 0, event: Event::Daily(counts) });
+        }
+        let mut preview = serde_json::to_value(self.report(&kept)).expect("a report serializes");
+        if state.install().is_none() {
+            preview["preview_only"] = Value::Bool(true);
+        }
+        let preview = Some(preview);
         let c = state.consent.as_ref();
         TelemetryInfo {
             on: state.on,

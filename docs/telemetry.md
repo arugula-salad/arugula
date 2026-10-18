@@ -43,7 +43,14 @@ While it's off, nothing is counted either.
 One kind of report, typed in `crates/control-wire/src/telemetry.rs`. Every
 field is a number or a value from a fixed list: no names, paths, commands,
 titles, prompts or error messages fit in one. `arugulad telemetry status`
-prints the next one as it would go:
+prints the next one as it would go. Before a yes it prints the first one a
+yes would send: this machine's real version, OS, arch, channel and control,
+no counts, `"install": "<made when you say yes>"` and `"preview_only": true`.
+
+`telemetry.get` and `telemetry.set` are for the owner in person. An agent's
+MCP token, a read-only token and the CLI run by an agent are refused.
+
+Once on, the preview looks like this:
 
 ```json
 {

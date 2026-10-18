@@ -219,7 +219,9 @@ pub struct TelemetryInfo {
     /// go to.
     pub signed: bool,
     /// The next report, exactly as it would be sent now (an
-    /// `arugula_control_wire::telemetry::Report`), while it's on.
+    /// `arugula_control_wire::telemetry::Report`). While it's off, what a
+    /// yes would send first: no counts, a placeholder for the install id,
+    /// and `"preview_only": true`. A daemon from M101 always gives one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional, type = "unknown"))]
     pub preview: Option<Value>,

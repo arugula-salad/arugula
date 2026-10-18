@@ -659,9 +659,13 @@ fn telemetry_cli(what: args::TelemetryCmd, json: bool, dir: &std::path::Path) ->
                 println!("  install  {install}");
             }
             println!("  sent to  {} ({})", info.url, if info.signed { "signed as this machine" } else { "unsigned" });
-            match &info.preview {
-                Some(p) => println!("\nThe next report, as it would be sent:\n{}", serde_json::to_string_pretty(p)?),
-                None => println!("\nNothing is sent. `arugulad telemetry on` turns it on (docs/telemetry.md)."),
+            if let Some(p) = &info.preview {
+                let head = if info.on {
+                    "The next report, as it would be sent:"
+                } else {
+                    "Nothing is sent. With `arugulad telemetry on`, the first report would be (docs/telemetry.md):"
+                };
+                println!("\n{head}\n{}", serde_json::to_string_pretty(p)?);
             }
         }
     }

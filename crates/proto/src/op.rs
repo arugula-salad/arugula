@@ -516,7 +516,8 @@ pub mod ops {
     }
 
     /// `GET /api/telemetry` (M101): whether this machine sends telemetry,
-    /// why, and the next report as it would be sent.
+    /// why, and the next report as it would be sent. The owner's in person:
+    /// it holds the install id, so no agent or read-only token reads it.
     pub struct TelemetryGet;
 
     impl Op for TelemetryGet {
@@ -524,6 +525,7 @@ pub mod ops {
         const METHOD: Method = Method::Get;
         const PATH: &'static str = "/api/telemetry";
         const ACCESS: Access = Access::Owner;
+        const CREDENTIAL: bool = true;
         type Path = ();
         type Req = Empty;
         type Res = TelemetryInfo;
