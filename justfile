@@ -338,14 +338,28 @@ green n="20":
 
 # All tests. The Rust ones run under cargo-nextest (.config/nextest.toml),
 # which `just bootstrap` installs; the doctests, which it can't run, under
-# cargo test. Builds first, then runs the suite one worktree at a time
-# (scripts/suite-lock).
-test: web
+# cargo test. Builds first (test-build), then runs the suite one worktree at
+# a time (scripts/suite-lock).
+test: test-build
+    {{suite_lock}} just test-run
+
+# What `just test` runs, built. check.yml's test job builds it before
+# static's binaries are in.
+[private]
+test-build: web
     {{cargo}} nextest run --workspace --no-run
-    {{cargo}} build -p arugula-control -p arugulad -p arugula
+    {{test_bins}}
     {{cargo}} build -p arugula-e2e --example interop
     cd web && pnpm run typecheck
-    {{suite_lock}} just test-run
+
+# The binaries control-smoke and the specs run, built as the tests' own
+# build resolves features: the whole workspace with an example, which turns
+# on the dev-dependencies' features (arugula-proto's fixtures, rmcp's
+# client...). A `-p` build resolves them again without those, and every crate
+# under them, arugulad among them, built a second time (~50 s from cold).
+# So these are the units `nextest run --workspace` built, plus
+# arugula-control's binary.
+test_bins := cargo + " build --workspace --bins --example interop"
 
 [private]
 test-run:
@@ -356,7 +370,7 @@ test-run:
 # Control end to end without a browser: sign in (fake GitHub), enroll,
 # join a daemon, reach it through the relay and directly.
 control-smoke:
-    {{cargo}} build -p arugula-control -p arugulad -p arugula
+    {{test_bins}}
     cd web && TARGET_DIR="{{target_dir}}/debug" {{suite_lock}} node --experimental-strip-types --no-warnings control-smoke.ts
 
 # The swarm (M26) by hand: three throwaway daemons with scripted work on

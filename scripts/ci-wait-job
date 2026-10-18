@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Wait, in a check.yml job, for another job of the same run to finish, and
+# fail unless it passed: test builds while static builds the box's
+# binaries, and waits for them only before its tests run (they had been
+# a `needs:`, which kept test from starting until static was done).
+#   ci-wait-job JOB [MINUTES]   (30 by default)
+# Reads the run's jobs from GitHub's API with GITHUB_TOKEN (the job needs
+# `actions: read`); `filter=latest` lists a job a re-run left alone with
+# its earlier result, so re-running test on its own still finds static.
+set -euo pipefail
+job=${1:?usage: ci-wait-job JOB [MINUTES]}
+limit=$((${2:-30} * 60))
+url="${GITHUB_API_URL:-https://api.github.com}/repos/${GITHUB_REPOSITORY:?}/actions/runs/${GITHUB_RUN_ID:?}/jobs?filter=latest&per_page=100"
+start=$SECONDS
+last=''
+while :; do
+  # "STATUS CONCLUSION" (queued, in_progress or completed; success,
+  # failure...), "missing" when the run has no such job, or "unreadable"
+  # when GitHub didn't answer (tried again next time round).
+  # shellcheck disable=SC2016 # the ${...} are JavaScript's
+  state=$(curl -fsS --retry 3 -H "Authorization: Bearer ${GITHUB_TOKEN:?}" -H "Accept: application/vnd.github+json" "$url" |
+    JOB=$job node -e '
+      let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => {
+        const j = JSON.parse(s).jobs.find((j) => j.name === process.env.JOB);
+        console.log(j ? `${j.status} ${j.conclusion ?? ""}`.trim() : "missing");
+      });') || state=unreadable
+  [ "$state" = "$last" ] || echo "$job: $state ($((SECONDS - start)) s)"
+  last=$state
+  case $state in
+    "completed success") exit 0 ;;
+    completed*) echo "$job didn't pass ($state): nothing to wait for" >&2; exit 1 ;;
+    # The run's jobs are listed from when their needs are met, and JOB's
+    # are this job's: it's there unless it was renamed.
+    missing) if [ $((SECONDS - start)) -ge 120 ]; then echo "this run has no job named $job" >&2; exit 1; fi ;;
+  esac
+  if [ $((SECONDS - start)) -ge "$limit" ]; then
+    echo "$job still isn't done after ${2:-30} min" >&2
+    exit 1
+  fi
+  sleep 5
+done
