@@ -2789,6 +2789,30 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   line-height: 1.45;
 }
 
+/* The usage counts question (telemetry-card.tsx): a card in the corner,
+   over the page but not in its way. */
+.telemetry-card {
+  position: fixed;
+  z-index: 60;
+  right: 16px;
+  bottom: 16px;
+  width: min(380px, calc(100vw - 32px));
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--raised);
+  box-shadow: 0 12px 40px #000a;
+}
+
+.telemetry-card h2 {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+
+.telemetry-card p {
+  margin: 6px 0;
+  line-height: 1.45;
+}
+
 .fingerprint {
   font: 600 18px ui-monospace, monospace;
   letter-spacing: 0.04em;

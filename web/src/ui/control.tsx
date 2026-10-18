@@ -23,6 +23,7 @@ import { machinePlace, machineState, placeMeans } from "./hosts";
 import { ConfirmRemove } from "./confirm";
 import { canScan, Scanner } from "./scan";
 import { verifyCode, verifyWords } from "../e2e/words.ts";
+import { TelemetryCard } from "./telemetry-card";
 
 export function useControl(s: ControlSession) {
   useSubscribe((fn) => s.subscribe(fn));
@@ -762,6 +763,15 @@ export function ControlOverlay({ s }: { s: ControlSession }) {
         <h2>Add a machine</h2>
         <AddMachine s={s} />
       </Modal>
+    );
+  // M104: asked once, when nothing else is.
+  if (s.askTelemetry())
+    return (
+      <TelemetryCard
+        whose="from your account on this page"
+        answer={(on) => void s.setTelemetry(on).catch(() => {})}
+        later={() => s.telemetryNotNow()}
+      />
     );
   return null;
 }
