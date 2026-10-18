@@ -309,6 +309,20 @@ impl FromRequestParts<Arc<App>> for DaemonAuth {
     }
 }
 
+/// A daemon's signature where a request may come without one (a
+/// telemetry report, M100): none when it isn't signed, and refused, as
+/// [`DaemonAuth`] is, when it's signed badly.
+impl axum::extract::OptionalFromRequestParts<Arc<App>> for DaemonAuth {
+    type Rejection = ApiError;
+
+    async fn from_request_parts(parts: &mut Parts, app: &Arc<App>) -> Result<Option<Self>, ApiError> {
+        if parts.extensions.get::<Signed>().is_none() {
+            return Ok(None);
+        }
+        <Self as FromRequestParts<Arc<App>>>::from_request_parts(parts, app).await.map(Some)
+    }
+}
+
 // ---------------------------------------------------------------- GitHub
 
 #[derive(Deserialize)]
