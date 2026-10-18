@@ -283,3 +283,108 @@ fn what_it_names() {
     assert_eq!(channel(Path::new("/usr/bin/arugulad"), home), Channel::Other);
     assert!(!Telemetry::from_env(Path::new("/nonexistent"), home).info().on, "a test build's is off");
 }
+
+/// A crash as the panic hook writes it (`arugula_proto`'s twin of the wire
+/// type), `at` ms.
+fn crash_at(dir: &Path, at: u64) -> PathBuf {
+    let c = crash::Crash {
+        process: crash::Process::Daemon,
+        version: "0.42.0".into(),
+        location: "crates/daemon/src/main.rs:12".into(),
+        frames: vec!["arugulad::main".into()],
+        at,
+    };
+    crash::write(dir, &c).unwrap()
+}
+
+/// The hook's file is the wire's `Crash`, and keeps the wire's limits.
+#[test]
+fn a_crash_file_is_the_wires_crash() {
+    use arugula_control_wire::telemetry::{MAX_FRAMES, Process};
+    assert_eq!(crash::MAX_FRAMES, MAX_FRAMES);
+    for (p, w) in [
+        (crash::Process::Daemon, Process::Daemon),
+        (crash::Process::Cli, Process::Cli),
+        (crash::Process::Desktop, Process::Desktop),
+    ] {
+        let c = crash::Crash {
+            process: p,
+            version: "0.42.0".into(),
+            location: crash::UNKNOWN.into(),
+            frames: vec![],
+            at: 3,
+        };
+        let wire: Crash = serde_json::from_value(serde_json::to_value(&c).unwrap()).unwrap();
+        assert_eq!(wire.process, w);
+        assert!(takes(&wire), "{wire:?}");
+    }
+}
+
+#[tokio::test]
+async fn a_crash_goes_with_the_next_report_and_its_file_once_taken() {
+    let r = rig("crash").await;
+    r.yes();
+    let now = now_ms();
+    let first = crash_at(&r.dir, now - 10);
+    *r.status.lock().unwrap() = (503, 503);
+    let t = r.telemetry(&[], FAST);
+    t.look().await;
+    assert!(first.exists(), "not taken: kept");
+    assert_eq!(t.info().preview.unwrap()["crashes"][0]["location"], "crates/daemon/src/main.rs:12", "and shown");
+
+    *r.status.lock().unwrap() = (200, 200);
+    t.live.lock().unwrap().wait_until = None;
+    t.look().await;
+    let got = r.got.lock().unwrap().clone();
+    assert_eq!(got.len(), 1);
+    let c = &got[0].0.crashes;
+    assert_eq!(c.len(), 1);
+    assert_eq!(
+        (c[0].process, c[0].location.as_str(), c[0].frames.as_slice(), c[0].at),
+        (
+            arugula_control_wire::telemetry::Process::Daemon,
+            "crates/daemon/src/main.rs:12",
+            &["arugulad::main".to_owned()][..],
+            now - 10
+        )
+    );
+    assert!(!first.exists(), "deleted once taken");
+
+    // A report's worth at a time, the oldest first; the rest wait for the
+    // next report that goes.
+    let files: Vec<_> = (0..MAX_CRASHES as u64 + 2).map(|i| crash_at(&r.dir, now + i)).collect();
+    t.look().await;
+    assert_eq!(r.got.lock().unwrap().len(), 1, "crashes alone don't make a report");
+    t.live.lock().unwrap().kept.queue.push(Queued { at: now_ms(), event: Event::Started { service: false } });
+    t.look().await;
+    assert_eq!(r.got.lock().unwrap()[1].0.crashes.len(), MAX_CRASHES);
+    assert!(files[..MAX_CRASHES].iter().all(|f| !f.exists()));
+    assert!(files[MAX_CRASHES..].iter().all(|f| f.exists()));
+
+    // A week old, or one control wouldn't take, is dropped.
+    let old = crash_at(&r.dir, now - WEEK_MS - 1);
+    let bad = r.dir.join(crash::DIR).join(format!("{}-cli.json", now + 100));
+    std::fs::write(&bad, r#"{"process":"cli","version":"0.42.0","location":"/home/x/y.rs:1","frames":[],"at":1}"#)
+        .unwrap();
+    t.live.lock().unwrap().kept.queue.push(Queued { at: now_ms(), event: Event::Started { service: false } });
+    t.look().await;
+    assert_eq!(r.got.lock().unwrap()[2].0.crashes.len(), 2);
+    assert!(!old.exists() && !bad.exists());
+    assert!(crash::list(&r.dir).is_empty());
+}
+
+#[tokio::test]
+async fn a_no_empties_crashes() {
+    let r = rig("crash-no").await;
+    r.yes();
+    crash_at(&r.dir, now_ms());
+    // Kept while it's off for another reason.
+    let dnt = r.telemetry(&[("DO_NOT_TRACK", "1")], FAST);
+    dnt.look().await;
+    assert_eq!(crash::list(&r.dir).len(), 1);
+    // A no by hand in the file, which the daemon follows.
+    std::fs::write(r.dir.join(consent::FILE), r#"{"telemetry": false, "asked": 1}"#).unwrap();
+    r.telemetry(&[], FAST).look().await;
+    assert!(crash::list(&r.dir).is_empty());
+    assert!(r.got.lock().unwrap().is_empty());
+}

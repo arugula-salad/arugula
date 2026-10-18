@@ -1090,6 +1090,12 @@ fn watch_once(app: &AppHandle) -> anyhow::Result<()> {
 fn main() {
     // Finder throws stderr away: write panics down where they can be found.
     panics::install();
+    // And as a crash in the daemon's state, if telemetry is on there (M102):
+    // the daemon sends it. Its hook runs first, then the log's.
+    if let Some(dir) = arugula_proto::dirs::state_dir() {
+        use arugula_proto::telemetry::crash;
+        crash::install_hook(crash::Process::Desktop, env!("CARGO_PKG_VERSION"), &dir);
+    }
     // `arugula-desktop --agent status|register|unregister|restart`: the
     // daemon's launch agent, for tests and for fixing a Mac by hand.
     #[cfg(target_os = "macos")]

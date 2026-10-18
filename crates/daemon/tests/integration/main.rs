@@ -26,6 +26,7 @@ mod client_fixtures;
 mod control_moves;
 mod control_state;
 mod conversations;
+mod crash;
 mod dialout;
 #[cfg(feature = "editor")]
 mod editor_swarm;
