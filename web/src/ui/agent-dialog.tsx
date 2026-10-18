@@ -17,6 +17,8 @@ export interface AgentWhere {
   session?: number;
   /** Where the request comes from: its directory is the default. */
   from?: PaneId;
+  /** A directory chosen already (+ Pane's, M110), instead of `from`'s. */
+  cwd?: string;
 }
 
 let open: { client: Client; where: AgentWhere } | null = null;
@@ -72,7 +74,7 @@ function AgentDialog({ client, where, close }: { client: Client; where: AgentWhe
   const [acp, setAcp] = useState(last.acp ?? "");
   const [model, setModel] = useState(last.model ?? "");
   const [vm, setVm] = useState(false);
-  const [cwd, setCwd] = useState((where.from !== undefined && client.cwd(where.from)) || "");
+  const [cwd, setCwd] = useState(where.cwd || (where.from !== undefined && client.cwd(where.from)) || "");
   const [prompt, setPrompt] = useState("");
   const promptRef = useRef<HTMLTextAreaElement>(null);
   useLayoutEffect(() => promptRef.current?.focus(), []);

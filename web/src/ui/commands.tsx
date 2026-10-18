@@ -23,6 +23,7 @@ import { openAppearance } from "./appearance";
 import { desktopApp, desktopPlatform, openInNewWindow } from "../desktop";
 import { keyHint } from "./keys";
 import { sessionThreadItems, threadItems } from "./threads";
+import { focusItems } from "./panes/layout";
 
 
 /** A pane's right-click menu. `workspace` is the directory it's in when
@@ -39,12 +40,15 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
     run: () => client.intent({ op: "break_pane", pane: id, session: client.session!, index: null }),
   };
   const closePane: MenuItem = { label: "Close pane", danger: true, run: () => client.intent({ op: "close_pane", pane: id }) };
+  // M110: fill the tab with it (everyone's view), or give the layout back.
+  const focus = phone ? [] : focusItems(client, client.tabOfPane(id), id);
 
   if (info?.type === "remote") {
     // Its terminal is its host's: here, only where it is.
     const at = client.blocks.get(id)?.state as { host: string; pane: PaneId } | null;
     return [
       ...(at ? [{ header: `%${at.pane} on ${at.host}` } as MenuItem] : []),
+      ...focus,
       { label: "Split right", run: () => client.intent({ op: "split", pane: id, edge: "right" }) },
       { label: "Split down", run: () => client.intent({ op: "split", pane: id, edge: "bottom" }) },
       ...elsewhere(),
@@ -60,6 +64,7 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
   const mine = client.machine(id);
   const own = mine !== undefined && "pane" in mine.owner && mine.owner.pane === id;
   return [
+    ...focus,
     { label: "Split right", run: () => client.intent({ op: "split", pane: id, edge: "right" }) },
     { label: "Split down", run: () => client.intent({ op: "split", pane: id, edge: "bottom" }) },
     ...(tabMachine ? [{ label: "Split (local)", run: () => client.intent({ op: "split", pane: id, edge: "right", local: true }) } as MenuItem] : []),

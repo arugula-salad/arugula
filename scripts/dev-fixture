@@ -3,7 +3,7 @@
 # ~/.local/state/arugula-dev) with a workspace to look at and screenshot
 # (S39, #1022): 8 sessions; "arugula" has 4 tabs, and its first tab 6 real
 # panes (tests running, a shell, an agent, an editor, a diff and a browser on
-# a port); two panes want you. It talks to that daemon's socket only, never
+# a port), arranged in a Grid (M110); two panes want you. It talks to that daemon's socket only, never
 # the one in $ARUGULA_SOCK, and closes what's there first.
 #
 #   just dev                 # in one terminal
@@ -17,6 +17,8 @@ set -euo pipefail
 
 state=${ARUGULA_DEV_STATE:-$HOME/.local/state/arugula-dev}
 sock=$state/sock
+# A state dir whose path is too long for a socket keeps it elsewhere.
+[[ -S $sock || ! -f $state/sock.path ]] || sock=$(cat "$state/sock.path")
 repo=$(cd "$(dirname "$0")/.." && pwd)
 bin=${ARUGULA_BIN:-${CARGO_TARGET_DIR:-$repo/target}/debug/arugula}
 [[ -x $bin ]] || bin=$(command -v arugula) || { echo "no arugula CLI: cargo build -p arugula" >&2; exit 1; }
@@ -69,6 +71,54 @@ fi
 a run --session arugula --cwd "$site" -- python3 -m http.server "$port" --bind 127.0.0.1 >/dev/null
 sleep 1
 browser=$(a open ":$port" --split "$diff" | pane)
+
+# The six panes in a Grid (M110): `arrange` is an intent, which only the
+# WebSocket takes, so a few lines of Python say it over the socket.
+python3 - "$sock" "$tests" <<'PY' || echo "dev-fixture: couldn't arrange the six panes in a grid" >&2
+import base64, json, os, socket, struct, sys
+s = socket.socket(socket.AF_UNIX)
+s.connect(sys.argv[1])
+key = base64.b64encode(os.urandom(16)).decode()
+s.sendall(f"GET /ws HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n\r\n".encode())
+buf = b""
+while b"\r\n\r\n" not in buf:
+    buf += s.recv(4096)
+buf = buf.split(b"\r\n\r\n", 1)[1]
+def need(n):
+    global buf
+    while len(buf) < n:
+        buf += s.recv(65536)
+    out, buf = buf[:n], buf[n:]
+    return out
+def frame():
+    b0, b1 = need(2)
+    n = b1 & 0x7F
+    if n == 126: n = struct.unpack(">H", need(2))[0]
+    elif n == 127: n = struct.unpack(">Q", need(8))[0]
+    return b0 & 0x0F, need(n)
+def send(msg):
+    data = json.dumps(msg).encode()
+    mask = os.urandom(4)
+    head = bytes([0x81]) + (bytes([0x80 | len(data)]) if len(data) < 126 else bytes([0x80 | 126]) + struct.pack(">H", len(data)))
+    s.sendall(head + mask + bytes(c ^ mask[i % 4] for i, c in enumerate(data)))
+pane = int(sys.argv[2].lstrip("%"))
+while True:
+    op, data = frame()
+    if op == 1 and json.loads(data).get("type") == "hello":
+        state = json.loads(data)["state"]
+        break
+def holds(n):
+    return n["pane"] == pane if n["type"] == "pane" else any(holds(c["node"]) for c in n["children"])
+tab = next(t["id"] for t in state["tabs"] if holds(t["root"]))
+send({"type": "intent", "id": 1, "intent": {"op": "arrange", "tab": tab, "preset": "grid"}})
+send({"type": "ping", "id": 2})
+while True:
+    op, data = frame()
+    if op != 1: continue
+    m = json.loads(data)
+    if m.get("type") == "error" and m.get("id") == 1: sys.exit(f"arrange: {m['message']}")
+    if m.get("type") == "pong": break
+PY
 
 # 2–4: the other tabs of "arugula".
 a run --session arugula --cwd "$repo/web" >/dev/null

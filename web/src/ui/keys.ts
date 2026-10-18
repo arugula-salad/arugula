@@ -9,10 +9,15 @@
 // an `event.code` (`KeyP`, `Digit1`, `Escape`), so the keyboard's layout
 // doesn't matter, or `key:x` for what the key types (`event.key`, any case).
 //
-// Planned, and left out until there's something for them to do (an unused
-// chord would still be taken from the terminal): Ctrl+Shift+Enter toggles a
-// pane's focus (M109/M110), Ctrl+Shift+E opens + Pane (M110). Ctrl+Shift+N
-// can't be one: Chrome keeps it for incognito.
+// Panes (M110): Ctrl+Shift+Enter toggles the tab's focus on the active
+// pane, Ctrl+Shift+E opens + Pane (the new workspace's), and
+// Ctrl+Alt+Shift+arrows grow (→ ↓) or shrink (← ↑) the active pane. Each
+// takes its key only when it can act (a tab with more than one pane, a
+// split that way), so otherwise the terminal still gets it. The resize
+// chord is one no shell, editor or browser binds; GNOME's default
+// "move window to workspace" takes it before the page sees it, so there
+// it doesn't work. Ctrl+Shift+N can't be one: Chrome keeps it for
+// incognito.
 
 import { useLayoutEffect } from "preact/hooks";
 import type { Client } from "../client";
@@ -23,6 +28,9 @@ import { agentsRoute } from "./agents-route";
 import { togglePalette } from "./palette";
 import { openPicker } from "./picker";
 import { isChatOpen } from "./places";
+import { paneIds } from "../client";
+import { layoutRefusal, resizeActive, toggleFocus, type Way } from "./panes/layout";
+import { addPane } from "./shell/add-pane";
 
 export type Os = "mac" | "other";
 
@@ -88,9 +96,38 @@ const table: Binding[] = [
       const pane = jumpTarget(e)!;
       // Off a cloud run's details, back to the panes (as a tab's click).
       cloudPanes.local();
+      // A focused tab shows the pane asked for instead.
+      const tab = c.tabOfPane(pane);
+      if (tab && tab.focus !== null && tab.focus !== pane) c.intent({ op: "focus", tab: tab.id, pane });
       c.setActive(pane);
       c.viewOf(pane)?.focus();
     },
+  },
+  {
+    id: "pane.focus",
+    label: "Focus pane / restore layout",
+    keys: { mac: ctrlOrCmd("Enter"), other: ["Ctrl+Shift+Enter"] },
+    when: () => focusTarget() !== null,
+    run: () => toggleFocus(workspace!.client, focusTarget()!),
+  },
+  {
+    id: "pane.add",
+    label: "Add a pane",
+    keys: { mac: ctrlOrCmd("KeyE"), other: ["Ctrl+Shift+KeyE"] },
+    when: () => addPane.available && focusTarget(true) !== null,
+    run: () => addPane.toggle(),
+  },
+  {
+    id: "pane.resize",
+    label: "Grow or shrink the pane",
+    keys: {
+      mac: ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].map((k) => `Ctrl+Shift+Alt+${k}`),
+      other: ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].map((k) => `Ctrl+Shift+Alt+${k}`),
+    },
+    hint: { mac: "⌃⌥⇧ arrows", other: "Ctrl+Alt+Shift+arrows" },
+    // Taken only when it resized something.
+    when: (e) => focusTarget() !== null && resizeActive(workspace!.client, e.code.slice("Arrow".length).toLowerCase() as Way),
+    run: () => {},
   },
   // The desktop app on macOS (desktop.ts): its menus leave these to the
   // page. Cmd-W closes the pane (not the window), Cmd-T opens a tab, Cmd-N
@@ -150,7 +187,22 @@ function jumpTarget(e: KeyboardEvent): number | null {
   // Not from under a dialog (the palette, the picker, a prompt).
   if (document.querySelector(".prompt-backdrop")) return null;
   const n = Number(e.code.slice("Digit".length));
-  return w.client.tabView()?.layout.panes[n - 1]?.[0] ?? null;
+  // In reading order, also the panes a focused tab doesn't show.
+  const tab = w.client.tabView();
+  return tab ? (paneIds(tab)[n - 1] ?? null) : null;
+}
+
+/** The shown tab, when the workspace shows panes and may change their
+ * layout (with `one`, also a tab of one pane). */
+function focusTarget(one = false) {
+  const w = workspace;
+  if (!w || w.phone || !w.client.state || isChatOpen() || swarmRoute() || agentsRoute()) return null;
+  // Not from under a dialog, nor over the session overview (M111).
+  if (document.querySelector(".prompt-backdrop") || location.hash.startsWith("#overview")) return null;
+  const tab = w.client.tabView();
+  if (!tab || layoutRefusal(w.client, tab)) return null;
+  if (!one && tab.focus === null && paneIds(tab).length < 2) return null;
+  return tab;
 }
 
 function matches(chord: string, e: KeyboardEvent): boolean {
