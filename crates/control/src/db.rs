@@ -5,6 +5,7 @@
 //! stores agent definitions, prompts, results, and encrypted credential snapshots.
 
 pub mod cloud;
+pub mod s38;
 
 use std::{path::Path, sync::Mutex};
 
@@ -549,6 +550,7 @@ impl Db {
         )?;
         conn.execute_batch(SCHEMA)?;
         conn.execute_batch(cloud::SCHEMA)?;
+        conn.execute_batch(s38::SCHEMA)?;
         migrate(&conn)?;
         if !answers_before {
             grandfather_shares(&conn)?;
@@ -560,6 +562,7 @@ impl Db {
         let conn = Connection::open_in_memory().unwrap();
         conn.execute_batch(SCHEMA).unwrap();
         conn.execute_batch(cloud::SCHEMA).unwrap();
+        conn.execute_batch(s38::SCHEMA).unwrap();
         migrate(&conn).unwrap();
         Self { conn: Mutex::new(conn) }
     }

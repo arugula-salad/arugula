@@ -46,6 +46,23 @@ impl Daemon {
         Err(ThreadError(501, not_built("Chat")))
     }
 
+    pub(super) fn thread_compose(&self, _post: ThreadPost) -> Result<Posted, ThreadError> {
+        Err(ThreadError(501, not_built("Chat")))
+    }
+
+    pub(super) fn thread_commit(
+        &mut self,
+        _target: ThreadTarget,
+        _msg: ThreadMsg,
+        _notify: bool,
+    ) -> Result<ThreadMsg, ThreadError> {
+        Err(ThreadError(501, not_built("Chat")))
+    }
+
+    pub(super) fn conv_put(&mut self, _c: Conversation) -> Result<(), ThreadError> {
+        Err(ThreadError(501, not_built("Chat")))
+    }
+
     pub(super) fn threads_for(&self, _who: &Principal, _me: &Principal) -> Vec<ThreadSummary> {
         Vec::new()
     }

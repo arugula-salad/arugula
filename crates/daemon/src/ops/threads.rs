@@ -74,9 +74,12 @@ impl Handle for ThreadPost {
         let post =
             crate::mux::ThreadPost { target, who, acting, as_agent, text: req.text, quote: req.quote, event: None };
         let (msg, to_agent, mut unreached) =
-            cx.app.mux.api(|r| Api::ThreadPost(post, r)).await.ok_or_else(gone)?.map_err(thread_err)?;
+            crate::labs::convstore::post(cx.app, post).await.ok_or_else(gone)?.map_err(thread_err)?;
         let mut agent = None;
-        if matches!(cx.via, Via::Http { .. }) && to_agent {
+        // S38: an @lead in a conversation kept in control goes to whichever
+        // machine holds the lease, which hands it to its lead.
+        let in_control = matches!(target, ThreadTarget::Conv(c) if crate::labs::convstore::stored(c));
+        if matches!(cx.via, Via::Http { .. }) && to_agent && !in_control {
             let told = match target {
                 ThreadTarget::Pane(pane) => Some(tell_agent(cx.app, pane, &msg).await),
                 // #858: @lead is the conversation's lead's next prompt.

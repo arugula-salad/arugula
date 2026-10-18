@@ -296,6 +296,13 @@ pub enum Api {
     /// under that name. Answers with the message, and whether it goes to
     /// the pane's agent as a follow-up.
     ThreadPost(ThreadPost, oneshot::Sender<Result<Posted, ThreadError>>),
+    /// S38 prototype (#979): a post checked and made up, not kept.
+    ThreadCompose(ThreadPost, oneshot::Sender<Result<Posted, ThreadError>>),
+    /// S38 prototype: keep a message numbered elsewhere (control), and
+    /// tell the thread's readers; `bool`: push its mentions and cards too.
+    ThreadIngest(ThreadTarget, ThreadMsg, bool, oneshot::Sender<Result<ThreadMsg, ThreadError>>),
+    /// S38 prototype: a conversation's record from control.
+    ConvPut(arugula_proto::Conversation, oneshot::Sender<Result<(), ThreadError>>),
     /// Make, change or delete a conversation (#855), as `who`: the record
     /// as it is after (a deleted one as it was).
     Conv(ConvReq, crate::acl::Principal, oneshot::Sender<Result<arugula_proto::Conversation, ThreadError>>),

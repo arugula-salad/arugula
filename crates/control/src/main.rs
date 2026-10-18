@@ -33,6 +33,7 @@ mod relay;
 mod roots;
 #[cfg(test)]
 mod routing_wire;
+mod s38;
 mod sandboxes;
 mod sprites;
 mod teams;
@@ -512,6 +513,11 @@ pub fn router(app: Arc<App>) -> Router {
         .route(wire::TEAM, get(teams::daemon_team))
         .route(wire::PEERS, get(teams::daemon_peers))
         .route(wire::TURN, get(turn::daemon_turn))
+        // S38 prototype (#979): conversations as ciphertext, and the lead's lease.
+        .route("/api/daemon/s38/convs", get(s38::list))
+        .route("/api/daemon/s38/convs/{id}", post(s38::put))
+        .route("/api/daemon/s38/convs/{id}/log", get(s38::log).post(s38::append))
+        .route("/api/daemon/s38/convs/{id}/lease", post(s38::lease))
         .route(wire::TEAMS, get(teams::daemon_teams))
         .route(wire::ACCESS, post(teams::daemon_access))
         .route("/api/relay/link/{id}", get(relay::link))

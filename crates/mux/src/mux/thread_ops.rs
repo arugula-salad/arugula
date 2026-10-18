@@ -137,6 +137,16 @@ impl Daemon {
     }
 
     pub(super) fn thread_post(&mut self, post: ThreadPost) -> Result<Posted, ThreadError> {
+        let target = post.target;
+        let (msg, to_agent, unreached) = self.thread_compose(post)?;
+        let msg = self.thread_commit(target, msg, true)?;
+        Ok((msg, to_agent, unreached))
+    }
+
+    /// S38 prototype (#979): what a post would be (unnumbered), checked as
+    /// a post is, without keeping it: a conversation kept in control is
+    /// numbered there, and comes back through [`Self::thread_commit`].
+    pub(super) fn thread_compose(&self, post: ThreadPost) -> Result<Posted, ThreadError> {
         let ThreadPost { target, who, acting, as_agent, text, quote, event } = post;
         if event.is_some() && !matches!(target, ThreadTarget::Conv(_)) {
             return Err(ThreadError(400, "only a conversation's links post events".into()));
@@ -229,9 +239,21 @@ impl Daemon {
             agent: as_agent.is_some(),
             event,
         };
+        Ok((msg, to_agent, unreached))
+    }
+
+    /// Keep a message and tell everyone who reads the thread. `notify`:
+    /// push its mentions and cards too (S38: only the lead's machine does,
+    /// for a conversation kept in control, so they're sent once).
+    pub(super) fn thread_commit(
+        &mut self,
+        target: ThreadTarget,
+        msg: ThreadMsg,
+        notify: bool,
+    ) -> Result<ThreadMsg, ThreadError> {
         let msg = self.threads.post(target, msg).map_err(|e| ThreadError(500, format!("can't save it: {e}")))?;
         // What you post, you've read.
-        self.threads.mark_read(&by.who, target, msg.id);
+        self.threads.mark_read(&msg.who, target, msg.id);
         self.save_due.get_or_insert_with(|| Instant::now() + SAVE_DEBOUNCE);
         for c in self.clients.values() {
             if self.thread_role(&c.principal, target).is_some() {
@@ -239,9 +261,22 @@ impl Daemon {
             }
         }
         self.soon();
-        self.notify_mentions(target, &msg);
-        self.notify_card(target, &msg);
-        Ok((msg, to_agent, unreached))
+        if notify {
+            self.notify_mentions(target, &msg);
+            self.notify_card(target, &msg);
+        }
+        Ok(msg)
+    }
+
+    /// S38 prototype: a conversation's record as another of the owner's
+    /// machines put it in control. Its lead stays this machine's own (a
+    /// block here, or none).
+    pub(super) fn conv_put(&mut self, mut c: Conversation) -> Result<(), ThreadError> {
+        c.lead = self.threads.conv(c.id).and_then(|old| old.lead.clone());
+        self.threads.save_conv(c).map_err(|e| ThreadError(500, format!("can't save it: {e}")))?;
+        self.config.acl.set_reach(self.threads.reach());
+        self.soon();
+        Ok(())
     }
 
     /// Tell everyone a message mentions, on their phones too.

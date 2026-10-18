@@ -155,6 +155,10 @@ async fn messages(app: &App, id: ConvId) -> Vec<ThreadMsg> {
 /// The user's default model: Claude Code's `model` setting, in the
 /// daemon's Claude directory. None: Claude Code's own default.
 fn user_model() -> Option<String> {
+    // S38 prototype: the rig runs its leads on a cheap model.
+    if let Ok(m) = std::env::var("S38_LEAD_MODEL") {
+        return Some(m);
+    }
     let dir = std::env::var_os("CLAUDE_CONFIG_DIR")
         .map(std::path::PathBuf::from)
         .or_else(|| dirs_home().map(|h| h.join(".claude")))?;
@@ -333,7 +337,7 @@ async fn reply(app: &App, id: ConvId, text: String) -> Option<u64> {
         quote: None,
         event: None,
     };
-    match app.mux.api(|r| Api::ThreadPost(post, r)).await {
+    match super::convstore::post(app, post).await {
         Some(Ok((m, _, _))) => Some(m.id),
         Some(Err(e)) => {
             warn!(conv = %id, error = e.1, "can't post the lead's reply");
@@ -490,6 +494,11 @@ pub fn resume(app: &Arc<App>) {
     tokio::spawn(async move {
         let convs = app.mux.api(Api::Convs).await.unwrap_or_default();
         for c in convs {
+            // S38: one kept in control is led by the lease's holder, which
+            // hands it each @lead; nothing here resumes it.
+            if super::convstore::stored(c.id) {
+                continue;
+            }
             let Some(l) = &c.lead else { continue };
             if block(&app, l.block).await.is_none() {
                 continue;
@@ -598,7 +607,13 @@ pub async fn route(call: &Call<'_>, conv: ConvId, tool: &str, mut args: Value) -
     if here {
         // Here: as its grant still allows.
         let me = links::me(app);
-        if !links::grants(app, l.pane).await.iter().any(|g| g.device == me && g.conv == conv) {
+        // S38 prototype: a conversation kept in control is led by whichever
+        // of the owner's machines holds the lease, so its grant names the
+        // conversation, not one machine (q5).
+        let ours = |g: &arugula_proto::ConvGrant| {
+            g.conv == conv && (g.device == me || super::convstore::leading(conv).is_some())
+        };
+        if !links::grants(app, l.pane).await.iter().any(ours) {
             return Err(Err(format!("{name}'s grant was revoked, or its pane closed")));
         }
         call.set_link(&name, l.pane);

@@ -1,0 +1,21 @@
+dump: 15933 bytes of SQL, 316 lines
+conv_heads: 1 rows
+conv_log: 9 rows
+conv_leases: 1 rows
+conv_log (seq, at, device, bytes):
+   1 1792284562804 9a804f74b8885e07 147
+   2 1792284563937 9a804f74b8885e07 185
+   3 1792284571918 9a804f74b8885e07 362
+   4 1792284576426 9a804f74b8885e07 132
+   5 1792284577500 36d1cd3bc1183f36 189
+   6 1792284599097 36d1cd3bc1183f36 260
+   7 1792284602270 36d1cd3bc1183f36 129
+   8 1792284626780 9a804f74b8885e07 183
+   9 1792284629256 36d1cd3bc1183f36 164
+conv_leases: [('36d1cd3bc1183f36', 2, 1792284647384, 8)]
+'pineapple': in the SQL dump: False; in the raw db+wal bytes: False
+'times': in the SQL dump: False; in the raw db+wal bytes: False
+'asleep': in the SQL dump: False; in the raw db+wal bytes: False
+'word for today': in the SQL dump: False; in the raw db+wal bytes: False
+'said before': in the SQL dump: False; in the raw db+wal bytes: False
+'turn ended': in the SQL dump: False; in the raw db+wal bytes: False

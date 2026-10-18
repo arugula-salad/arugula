@@ -8,6 +8,8 @@ repository.workspace = true
 [dependencies]
 aes-gcm = { workspace = true }
 anyhow = { workspace = true }
+# S38 prototype: X25519 for wrapping a conversation key (already in the tree, through ed25519-dalek).
+curve25519-dalek = "5.0.0"
 ed25519-dalek = { workspace = true }
 getrandom = { workspace = true }
 hex = { workspace = true }
