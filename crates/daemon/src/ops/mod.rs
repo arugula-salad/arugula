@@ -33,6 +33,7 @@ mod shell_env;
 mod signin;
 mod studio;
 mod synced;
+mod telemetry;
 mod threads;
 mod tokens;
 mod wait;

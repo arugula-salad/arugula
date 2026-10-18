@@ -106,7 +106,8 @@ nothing marked `mux:` names the edge or the block kinds.
 - **Lifecycle:** the command line (`args.rs`), startup (`main.rs`), `install`
   (`install.rs`), Getting started (`setup.rs`), updates (`update.rs`,
   `selfupdate.rs`), `_host` (`mux:host.rs`), malloc settings (`mux:heap.rs`), paths
-  through links (`mux:paths.rs`).
+  through links (`mux:paths.rs`), opt-in telemetry (`telemetry.rs`, the
+  answer in `arugula_proto::telemetry`, [docs/telemetry.md](docs/telemetry.md)).
 
 ## Invariants
 

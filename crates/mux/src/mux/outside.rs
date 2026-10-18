@@ -103,3 +103,14 @@ pub trait PaneGone: Send + Sync + Debug {
     /// Remove its uploads on the machine it ran on, if that machine stays.
     fn forget_on(&self, provider: Arc<dyn crate::provider::Provider>, sprite: String, pane: PaneId);
 }
+
+/// What happens here, for whoever counts it (the daemon's telemetry, M101):
+/// told as it happens, on the mux task, so it must not block.
+pub trait Usage: Send + Sync + Debug {
+    /// A new terminal opened (not one restored), on a machine that isn't
+    /// this host or not; `open` terminals are open now.
+    fn pane_opened(&self, on_machine: bool, open: usize);
+    /// A new block that isn't a terminal was made (not one restored), from
+    /// `config`.
+    fn block_opened(&self, kind: arugula_proto::BlockType, config: &Value);
+}

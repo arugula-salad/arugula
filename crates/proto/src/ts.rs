@@ -58,6 +58,8 @@ fn generate() -> String {
     c.visit::<crate::api::Ports>();
     c.visit::<FlagSetRequest>();
     c.visit::<crate::flags::Source>();
+    c.visit::<crate::telemetry::TelemetryInfo>();
+    c.visit::<crate::telemetry::TelemetrySetRequest>();
     c.visit::<ControlState>();
     c.visit::<HostInfo>();
     c.visit::<ThreadMessages>();

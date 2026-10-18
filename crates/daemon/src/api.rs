@@ -26,8 +26,8 @@ use arugula_proto::{
         FlagSet, FlagsList, FountainAgentsGet, ListPanes, MachineReset, MachinesList, NotifyGet, NotifySet, PaneAsk,
         PaneAskWithdraw, PaneAttention, PaneDetection, PaneDiffOf, PaneDrivers, PaneFollowUp, PaneInbox, PaneKeys,
         PaneMouse, PanePermit, PanePorts, PaneProcess, PanePrompt, PaneSend, PaneWait, PushKeyGet, PushSubscribe,
-        PushTest, RuleForget, RulesForgetAll, RulesList, ShellEnvGet, ShellEnvRefresh, ThreadGet, ThreadPost,
-        ThreadRead,
+        PushTest, RuleForget, RulesForgetAll, RulesList, ShellEnvGet, ShellEnvRefresh, TelemetryGet, TelemetrySet,
+        ThreadGet, ThreadPost, ThreadRead,
     },
 };
 use axum::{
@@ -109,6 +109,8 @@ pub fn routes() -> Router<Arc<App>> {
         .op::<ShellEnvRefresh>()
         .op::<FlagsList>()
         .op::<FlagSet>()
+        .op::<TelemetryGet>()
+        .op::<TelemetrySet>()
         .op::<AgentsGet>()
         .op::<AgentsRefresh>()
         .route("/api/editors", get(editors))

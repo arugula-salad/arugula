@@ -32,6 +32,7 @@ pub mod op;
 pub mod service;
 pub mod setup;
 pub mod shell_path;
+pub mod telemetry;
 #[cfg(all(test, feature = "ts"))]
 mod ts;
 pub mod workspace;

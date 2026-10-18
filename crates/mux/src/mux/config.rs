@@ -75,6 +75,8 @@ pub struct Config {
     pub sessions: Arc<dyn super::AgentSessions>,
     /// What a pane leaves behind when it closes.
     pub pane_gone: Arc<dyn super::PaneGone>,
+    /// Told of each new terminal and block, to count them.
+    pub usage: Arc<dyn super::Usage>,
 }
 
 /// How a shell takes a command to run.

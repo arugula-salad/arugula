@@ -146,6 +146,28 @@ pub(crate) enum Command {
         #[arg(long, env = "ARUGULA_STATE_DIR")]
         state_dir: Option<PathBuf>,
     },
+    /// Whether this machine sends usage counts to Arugula, and what: `on`,
+    /// `off`, or `status`, which shows the next report as it would be sent
+    /// (docs/telemetry.md). It writes telemetry.json in the state
+    /// directory; a running daemon follows within a minute.
+    Telemetry {
+        #[arg(value_enum, default_value = "status")]
+        what: TelemetryCmd,
+        /// Print the status as JSON.
+        #[arg(long)]
+        json: bool,
+        /// The daemon's state directory [default: as the daemon's].
+        #[arg(long, env = "ARUGULA_STATE_DIR")]
+        state_dir: Option<PathBuf>,
+    },
+}
+
+/// What `arugulad telemetry` is told to do.
+#[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum TelemetryCmd {
+    On,
+    Off,
+    Status,
 }
 
 /// What `arugulad flags NAME` is told to do.
