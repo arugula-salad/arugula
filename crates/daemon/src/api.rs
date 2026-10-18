@@ -1454,8 +1454,9 @@ async fn scope_for(
 }
 
 /// An event's `id` (M112): its pane (or machine), time and type, and how
-/// many before it had all of those, hashed. Read back from a pane's log, an
-/// event gets the same one each time.
+/// many before it had all of those, hashed. Read back from a pane's log or
+/// the kept lifecycle events (#1035), an event gets the same one each
+/// time, and the one a follow stream gave it.
 #[derive(Default)]
 struct EventIds {
     at_ms: u64,
@@ -1511,17 +1512,27 @@ async fn events(
     if q.follow != Some(1) {
         let since = now_ms().saturating_sub(q.since.unwrap_or(3600) * 1000);
         let store = app.mux.store.clone();
-        let mut all: Vec<arugula_proto::Event> = tokio::task::spawn_blocking(move || {
-            store
+        let (mut all, kept): (Vec<arugula_proto::Event>, _) = tokio::task::spawn_blocking(move || {
+            let index = store
                 .pane_dirs()
                 .into_iter()
                 .filter(|(_, open, _)| *open)
                 .flat_map(|(id, _, dir)| history::stored_events(&dir, id, since))
-                .collect()
+                .collect();
+            (index, store.system_events(since))
         })
         .await
         .unwrap_or_default();
         all.retain(|e| keep(e) && scope.as_ref().is_none_or(|s| s.keeps(e)));
+        // Panes opening, exiting and closing, and machines (#1035): a closed
+        // pane's are its session's still.
+        let closed: std::collections::BTreeSet<PaneId> =
+            kept.iter().filter(|s| matches!(s.event.kind, EventKind::Closed)).filter_map(|s| s.event.pane).collect();
+        all.extend(
+            kept.into_iter()
+                .filter(|s| keep(&s.event) && scope.as_ref().is_none_or(|sc| sc.keeps_stored(s, &closed)))
+                .map(|s| s.event),
+        );
         all.sort_by_key(|e| e.at_ms);
         let mut ids = EventIds::default();
         all.iter_mut().for_each(|e| ids.assign(e));

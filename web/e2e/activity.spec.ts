@@ -58,3 +58,37 @@ test("a command shows under Commands, Refresh doesn't repeat it, and it brings i
   await entry.click();
   await expect.poll(() => active(page)).toBe(first);
 });
+
+// #1035: System's events are kept, so a reload still shows a pane that
+// opened and closed, once, with the id the live stream gave it.
+test("System survives a reload: a closed pane's events show once", async ({ page }) => {
+  await newWorkspace(page);
+  const first = await active(page);
+  await menu(page, paneEl(page, first), "Split right");
+  await expect.poll(() => panes(page)).toHaveLength(2);
+  const second = (await panes(page)).find((p) => p !== first)!;
+
+  await page.locator("[data-activity-toggle]").click();
+  const drawer = page.locator("[data-activity-drawer]");
+  await drawer.locator('[data-activity-filter="system"]').click();
+  const row = (text: string) => drawer.locator(`.ws-activity-row[data-activity-pane="${second}"]`, { hasText: text });
+  await expect(row("Pane opened")).toHaveCount(1);
+  const opened = await row("Pane opened").getAttribute("data-activity-id");
+
+  await page.evaluate((pane) => window.__arugula.client.intent({ op: "close_pane", pane }), second);
+  await expect.poll(() => panes(page)).toEqual([first]);
+  await expect(row("Pane closed")).toHaveCount(1);
+  // The stream and the poll's read are one event, not two.
+  await drawer.locator("[data-activity-refresh]").click();
+  await expect(row("Pane closed")).toHaveCount(1);
+  await expect(row("Pane opened")).toHaveCount(1);
+
+  await page.reload();
+  await expect.poll(() => page.evaluate(() => window.__arugula?.client.connected)).toBe(true);
+  await page.locator("[data-activity-toggle]").click();
+  await drawer.locator('[data-activity-filter="system"]').click();
+  await expect(row("Pane closed")).toHaveCount(1);
+  await expect(row("Pane opened")).toHaveCount(1);
+  await expect(row("Pane opened")).toHaveAttribute("data-activity-id", opened!);
+  await expect(drawer.locator("[data-activity-since]")).toHaveCount(0);
+});

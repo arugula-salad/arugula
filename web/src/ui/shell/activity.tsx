@@ -5,9 +5,11 @@
 //
 // Commands, answers, agent turns and actions come from `GET /api/history?
 // session=` (M112a), whose ids are stable, so a poll or Refresh merges by id
-// and never shows one twice. System (exit, opened, closed, machine) is live
-// only: those events aren't stored, so it shows what `GET /api/events?
-// follow=1` streams while the drawer is up, and says so.
+// and never shows one twice. System (exit, opened, closed, machine) comes
+// from `GET /api/events?session=` the same way: the daemon keeps those
+// (#1035), with the ids `follow=1` streams them with, so the stream (where
+// a plain fetch reaches the daemon) only makes them show sooner. A daemon
+// from before #1035 keeps none: its System is what the stream brought.
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { Client } from "../../client";
@@ -112,6 +114,11 @@ interface HistoryEntry {
   by?: string;
 }
 
+const SYSTEM_TYPES = "exit,opened,closed,machine";
+/** How far back System reads, in seconds: as far as history's commands go
+ * in practice, without reading a week of opens and closes each poll. */
+const SYSTEM_SINCE = 24 * 3600;
+
 /** `GET /api/events`'s line, for the types System asks for. */
 interface EventLine {
   id?: string;
@@ -133,11 +140,10 @@ class Feed {
   seq = 0;
   status: Status = "loading";
   error: string | null = null;
-  /** System streams from here: what "since you opened this" means. */
-  readonly since = Date.now();
-  /** Whether System can be had here: a stream needs a plain fetch, which
-   * a page reaching its daemon through control's channel doesn't have. */
-  readonly system: boolean;
+  /** Whether System streams here as well as being read: a stream needs a
+   * plain fetch, which a page reaching its daemon through control's
+   * channel doesn't have (it reads System with each poll instead). */
+  readonly live: boolean;
   private readonly fns = new Set<() => void>();
   private stopped = false;
   private abort: AbortController | null = null;
@@ -148,7 +154,7 @@ class Feed {
     readonly client: Client,
     readonly session: SessionId,
   ) {
-    this.system = !client.e2e;
+    this.live = !client.e2e;
   }
 
   subscribe(fn: () => void) {
@@ -173,7 +179,10 @@ class Feed {
 
   private async fetch() {
     try {
-      const res = await this.client.request("GET", `/api/history?session=${this.session}&limit=200`);
+      const [res] = await Promise.all([
+        this.client.request("GET", `/api/history?session=${this.session}&limit=200`),
+        this.fetchSystem(),
+      ]);
       if (this.stopped) return;
       if (res.status === 403 || (res.status === 404 && !this.client.ownsMachine())) {
         this.status = "denied";
@@ -215,12 +224,27 @@ class Feed {
     this.emit();
   }
 
+  /** System's kept events (#1035). Not reading them is no error: History
+   * says how the session is, and the stream may still bring them. */
+  private async fetchSystem() {
+    try {
+      const path = `/api/events?session=${this.session}&type=${SYSTEM_TYPES}&since=${SYSTEM_SINCE}`;
+      const res = await this.client.request("GET", path);
+      if (!res.ok || !res.text || this.stopped) return;
+      for (const line of (await res.text()).split("\n")) {
+        if (line.trim()) this.event(line);
+      }
+    } catch {
+      // Left to the next poll.
+    }
+  }
+
   /** System's events, as they happen, until stopped. */
   stream() {
-    if (!this.system || this.stopped) return;
+    if (!this.live || this.stopped) return;
     const ctrl = (this.abort = new AbortController());
     const base = this.client.base;
-    const url = `${base}/api/events?session=${this.session}&follow=1&type=exit,opened,closed,machine`;
+    const url = `${base}/api/events?session=${this.session}&follow=1&type=${SYSTEM_TYPES}`;
     const again = () => {
       if (!this.stopped) this.retry = window.setTimeout(() => this.stream(), 5000);
     };
@@ -242,7 +266,10 @@ class Feed {
           while ((nl = buf.indexOf("\n")) >= 0) {
             const line = buf.slice(0, nl).trim();
             buf = buf.slice(nl + 1);
-            if (line) this.event(line);
+            if (line) {
+              this.event(line);
+              this.emit();
+            }
           }
         }
         again();
@@ -261,8 +288,9 @@ class Feed {
     }
     const text = systemText(e);
     if (!text) return;
-    // A stream's ids are its own: one restarted later counts again.
-    const id = `sys:${e.id ?? `${e.type}:${e.pane ?? e.machine}:${e.at_ms}`}`;
+    // The stream gives an event the id a read of it does (#1035), so the
+    // two merge; a line without one (no daemon gives none now) falls back.
+    const id = `sys:${e.id || `${e.type}:${e.pane ?? e.machine}:${e.at_ms}`}`;
     this.put({
       id,
       pane: e.pane ?? null,
@@ -273,7 +301,6 @@ class Feed {
       exit: e.type === "exit" ? (e.code ?? null) : null,
       open: true,
     });
-    this.emit();
   }
 
   stop() {
@@ -366,8 +393,7 @@ export function ActivityDrawer({ client, session }: { client: Client; session: S
   const upTo = p.live ? Infinity : frozen;
   const kept = all.filter((it) => it.seq <= upTo);
   const waiting = all.length - kept.length;
-  const system = feed.system;
-  const filter: ActivityFilter = p.filter === "system" && !system ? "all" : p.filter;
+  const filter = p.filter;
   const shown = kept.filter((it) => inFilter(filter, it.kind));
 
   // Live keeps the newest in view, unless you've scrolled up to read.
@@ -426,7 +452,7 @@ export function ActivityDrawer({ client, session }: { client: Client; session: S
           Activity
         </button>
         <div class="ws-activity-filters" role="group" aria-label="Show">
-          {FILTERS.filter((f) => f !== "system" || system).map((f) => (
+          {FILTERS.map((f) => (
             <button
               key={f}
               class={f === filter ? "ws-activity-filter on" : "ws-activity-filter"}
@@ -475,11 +501,6 @@ export function ActivityDrawer({ client, session }: { client: Client; session: S
             atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
           }}
         >
-          {filter === "system" && (
-            <div class="ws-activity-note" data-activity-since>
-              Live only: what happened since you opened this, at {clock(feed.since)}.
-            </div>
-          )}
           {feed.status === "loading" && shown.length === 0 ? (
             <div class="ws-activity-empty">Reading the session's history…</div>
           ) : feed.status === "denied" ? (
