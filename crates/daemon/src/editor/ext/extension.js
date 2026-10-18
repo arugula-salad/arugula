@@ -68,6 +68,13 @@ function setting(key) {
 function activate(context) {
   ctx = context;
   block = Number(setting("block")) || 0;
+  // A new embedded workspace starts with room for code. Do this only once:
+  // VS Code persists later sidebar toggles, and desktop editors are untouched.
+  if (block > 0 && setting("compact") && !context.workspaceState.get("compact-initialized")) {
+    void vscode.commands.executeCommand("workbench.action.closeSidebar").then(() => {
+      return context.workspaceState.update("compact-initialized", true);
+    });
+  }
   on = block > 0 || remembered().includes(folderPath());
   status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 0);
   status.command = "arugula.menu";

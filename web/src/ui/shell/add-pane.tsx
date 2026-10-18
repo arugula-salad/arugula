@@ -1,4 +1,4 @@
-// + Pane (M110, #1025): a drawer under the pane toolbar that says what kind
+// Add Pane: a drawer that says what kind
 // of pane, on which machine, in which directory and on which side of the
 // active pane, shows where that is before it makes it, and then gives the
 // new pane the keys. Each kind is made the way its menu item makes it (a
@@ -9,15 +9,17 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { paneIds, type Client } from "../../client";
 import { newRemote, remoteHosts } from "../../blocks";
 import { directory } from "../../hosts";
-import type { OpenRequest, PaneId, TabView } from "../../proto";
+import type { Node, OpenRequest, PaneId, TabView } from "../../proto";
 import { startAgent } from "../agent-dialog";
 import { useEscape } from "../keys";
 import { openPicker } from "../picker";
+import { closeAttention } from "./attention-drawer";
 import { ordinal } from "../panes/layout";
 
 // ---- whether it's open (the toolbar's button and Ctrl+Shift+E)
 
 let open = false;
+let back: HTMLElement | null = null;
 /** Toolbars on the page: Ctrl+Shift+E only takes the key while one is. */
 let toolbars = 0;
 const listeners = new Set<() => void>();
@@ -25,13 +27,18 @@ const changed = () => listeners.forEach((fn) => fn());
 
 export const addPane = {
   toggle() {
-    open = !open;
+    if (open) return addPane.close();
+    closeAttention(false);
+    back = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    open = true;
     changed();
   },
-  close() {
+  close(restore = true) {
     if (!open) return;
     open = false;
     changed();
+    if (restore && back?.isConnected) back.focus();
+    back = null;
   },
   /** Whether there's a toolbar for it to open under. */
   get available() {
@@ -48,7 +55,10 @@ export function useAddPane(): boolean {
     return () => {
       toolbars--;
       listeners.delete(fn);
-      if (toolbars === 0) open = false;
+      if (toolbars === 0) {
+        open = false;
+        back = null;
+      }
     };
   }, []);
   return open;
@@ -62,12 +72,12 @@ type Place = "right" | "down";
  * in the home daemon's list (a shell only). */
 type Where = { kind: "here" } | { kind: "machine"; id: number; name: string } | { kind: "host"; name: string };
 
-const KINDS: { kind: Kind; label: string }[] = [
-  { kind: "shell", label: "Shell" },
-  { kind: "agent", label: "Agent" },
-  { kind: "editor", label: "Editor" },
-  { kind: "changes", label: "Changes" },
-  { kind: "port", label: "Port" },
+const KINDS: { kind: Kind; label: string; description: string }[] = [
+  { kind: "shell", label: "Shell", description: "Run commands on a machine" },
+  { kind: "agent", label: "Agent", description: "Start an AI agent in its own pane" },
+  { kind: "editor", label: "Editor", description: "Edit files in a code workspace" },
+  { kind: "changes", label: "Changes", description: "Review code changes and diffs" },
+  { kind: "port", label: "Port", description: "Preview an app running on a port" },
 ];
 
 const whereKey = (w: Where) => (w.kind === "here" ? "here" : w.kind === "machine" ? `m${w.id}` : `h:${w.name}`);
@@ -143,7 +153,7 @@ export function AddPaneDrawer({ client, tab }: { client: Client; tab: TabView })
         requestAnimationFrame(() => client.viewOf(made)?.focus());
         if (!quiet) {
           setBusy(false);
-          addPane.close();
+          addPane.close(false);
         }
       } else if (Date.now() - started > 20_000) {
         stop();
@@ -227,23 +237,26 @@ export function AddPaneDrawer({ client, tab }: { client: Client; tab: TabView })
         }
       }}
     >
+      <header class="add-pane-head"><div><h2>Add a pane</h2><p>{tab.name || "Current tab"} · {anchorName}</p></div><button aria-label="Close Add Pane" disabled={busy} onClick={() => addPane.close()}>✕</button></header>
+      <div class="add-pane-body">
       <div class="add-pane-row">
         <span class="add-pane-label" id="add-pane-kind">
-          Type
+          Pane type
         </span>
-        <div class="add-pane-seg" role="radiogroup" aria-labelledby="add-pane-kind">
-          {KINDS.map(({ kind: k, label }, i) => (
+        <div class="add-pane-seg add-pane-kinds" role="radiogroup" aria-labelledby="add-pane-kind">
+          {KINDS.map(({ kind: k, label, description }, i) => (
             <button
               key={k}
               ref={i === 0 ? first : undefined}
               role="radio"
               aria-checked={kind === k}
               data-kind={k}
+              aria-label={label}
               disabled={!!kindRefusal(k)}
               title={kindRefusal(k) ?? undefined}
               onClick={() => setKind(k)}
             >
-              {label}
+              <KindIcon kind={k} /><span><strong>{label}</strong><small>{description}</small></span>
             </button>
           ))}
         </div>
@@ -282,8 +295,8 @@ export function AddPaneDrawer({ client, tab }: { client: Client; tab: TabView })
       </label>
       {kind !== "port" && (
         <div class="add-pane-row">
-          <span class="add-pane-label">Directory</span>
-          <span class="add-pane-dir" data-add-pane-dir title={theDir || undefined}>
+          <span class="add-pane-label">Working directory</span>
+          <div class="add-pane-directory"><span class="add-pane-dir" data-add-pane-dir title={theDir || undefined}>
             {dirApplies ? theDir || "home" : "home (on that machine)"}
           </span>
           <button
@@ -293,21 +306,22 @@ export function AddPaneDrawer({ client, tab }: { client: Client; tab: TabView })
             onClick={() => anchor !== undefined && openPicker(client, anchor, false, setDir)}
           >
             Choose…
-          </button>
+          </button></div>
         </div>
       )}
       <div class="add-pane-row">
         <span class="add-pane-label" id="add-pane-place">
-          Place
+          Placement
         </span>
-        <div class="add-pane-seg" role="radiogroup" aria-labelledby="add-pane-place">
+        <div class="add-pane-seg add-pane-placements" role="radiogroup" aria-labelledby="add-pane-place">
           {(["right", "down"] as const).map((p) => (
-            <button key={p} role="radio" aria-checked={place === p} data-place={p} onClick={() => setPlace(p)}>
-              {p === "right" ? "Right" : "Down"}
+            <button key={p} role="radio" aria-checked={place === p} data-place={p} aria-label={p === "right" ? "Right" : "Down"} onClick={() => setPlace(p)}>
+              <span class={`add-pane-placement-icon ${p}`} aria-hidden="true" /><span><strong>{p === "right" ? "Right" : "Down"}</strong><small>{p === "right" ? "Beside the active pane" : "Below the active pane"}</small></span>
             </button>
           ))}
         </div>
       </div>
+      <div class="add-pane-row"><span class="add-pane-label">Layout preview</span><div class="add-pane-preview" aria-label={`New pane ${place === "right" ? "right of" : "below"} ${anchorName}`}><LayoutPreview node={tab.root} anchor={anchor} place={place} label={label} /></div></div>
       <p class="add-pane-dest" data-add-pane-destination>
         {destination}
         {kind === "agent" && <span class="add-pane-then"> (the agent dialog opens next)</span>}
@@ -317,6 +331,7 @@ export function AddPaneDrawer({ client, tab }: { client: Client; tab: TabView })
           {error}
         </p>
       )}
+      </div>
       <div class="add-pane-actions">
         <button onClick={() => addPane.close()} disabled={busy}>
           Cancel
@@ -327,4 +342,25 @@ export function AddPaneDrawer({ client, tab }: { client: Client; tab: TabView })
       </div>
     </div>
   );
+}
+
+/** Mirror the real split tree, showing the new split only at its anchor. */
+function LayoutPreview({ node, anchor, place, label }: { node: Node; anchor: PaneId | undefined; place: Place; label: string }) {
+  if (node.type === "pane") return node.pane === anchor ? (
+    <div class={`add-pane-preview-split ${place === "right" ? "row" : "column"}`}>
+      <span class="add-pane-preview-cell active">Active</span><span class="add-pane-preview-cell new">+ {label}</span>
+    </div>
+  ) : <span class="add-pane-preview-cell" />;
+  return <div class={`add-pane-preview-split ${node.dir}`}>{node.children.map((child, i) => <div key={i} style={{ flex: `${child.weight} 1 0`, minWidth: 0, minHeight: 0, display: "flex" }}><LayoutPreview node={child.node} anchor={anchor} place={place} label={label} /></div>)}</div>;
+}
+
+function KindIcon({ kind }: { kind: Kind }) {
+  const paths: Record<Kind, string> = {
+    shell: "M4 4h16v16H4z M7 9l3 3-3 3 M13 16h4",
+    agent: "M5 8h14v12H5z M12 8V4 M9 4h6 M8 12h1 M15 12h1 M9 16h6",
+    editor: "M6 3h8l4 4v14H6z M14 3v5h4 M9 12h6 M9 16h6",
+    changes: "M7 7v10 M9 5h7v12 M7 3a2 2 0 1 0 0 4a2 2 0 1 0 0-4 M7 17a2 2 0 1 0 0 4a2 2 0 1 0 0-4 M16 17a2 2 0 1 0 0 4a2 2 0 1 0 0-4",
+    port: "M3 12h18 M12 3c-6 6-6 12 0 18 M12 3c6 6 6 12 0 18 M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18",
+  };
+  return <svg class="add-pane-kind-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d={paths[kind]} /></svg>;
 }

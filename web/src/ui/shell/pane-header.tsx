@@ -1,4 +1,4 @@
-// The row above a pane, when a tab has more than one.
+// The identity and controls above each desktop pane.
 
 import type { Client } from "../../client";
 import type { PaneId, PaneInfo, Rect, TabView } from "../../proto";
@@ -56,7 +56,7 @@ function hostOf(client: Client, id: PaneId, info: PaneInfo | undefined): string 
  * what it's running (its title, without the spinner a program puts in
  * front), status, host, repo and branch, which pane has the keys, a click
  * to give it the keys, a drag to move it, Focus and its menu. It's one
- * cell row, the one the layout keeps above each pane. */
+ * reserved pixel row above the pane, outside its terminal cells. */
 export function PaneHeader({
   client,
   tab,
@@ -64,6 +64,7 @@ export function PaneHeader({
   rect,
   cell,
   active,
+  height = cell.height,
 }: {
   client: Client;
   tab: TabView;
@@ -71,12 +72,13 @@ export function PaneHeader({
   rect: Rect;
   cell: Cell;
   active: boolean;
+  height?: number;
 }) {
   const info = client.info(id);
   const title = client.title(id) || info?.command || `pane %${id}`;
   const cwd = client.cwd(id);
   const where = info?.project?.name ?? (cwd ? cwd.split("/").filter(Boolean).pop() ?? "/" : null);
-  const style = { left: len(rect.x * cell.width), top: len((rect.y - 1) * cell.height), width: len(rect.cols * cell.width), height: len(cell.height) };
+  const style = { left: len(rect.x * cell.width), top: len(rect.y * cell.height - height), width: len(rect.cols * cell.width), height: len(height) };
 
   const n = ordinal(tab, id);
   const type = paneType(info);

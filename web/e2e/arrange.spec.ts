@@ -90,7 +90,7 @@ test("every preset and Focus keep the panes and what they printed", async ({ pag
   await expect.poll(async () => (await tab(page)).focus).toBe(main);
   await expect.poll(() => panes(page)).toEqual([main]);
   await expect(toolbar.locator("[data-pane-focus]")).toHaveAttribute("aria-pressed", "true");
-  await expect(page.locator("[data-pane-header]")).toHaveCount(0);
+  await expect(page.locator("[data-pane-header]")).toHaveCount(1);
   await kept(page, marks);
   await toolbar.locator("[data-pane-focus]").click();
   await expect.poll(async () => (await tab(page)).focus).toBeNull();
@@ -143,4 +143,41 @@ test("+ Pane says where before it opens a shell, then gives it the keys", async 
   // The keys are the new pane's: typing goes there without a click.
   await page.keyboard.type("pwd\n", { delay: 2 });
   await expect.poll(() => text(page, made)).toMatch(/\n\/tmp\s*\n/);
+});
+
+test("Add Pane previews the selected split and keeps its actions reachable in a short window", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 600 });
+  await newWorkspace(page);
+  await shells(page, 3);
+  const trigger = page.locator("[data-add-pane]");
+  await trigger.click();
+  const drawer = page.locator("[data-add-pane-drawer]");
+  await expect(drawer).toBeVisible();
+  // Toggling also closes the drawer and restores its opener.
+  await page.keyboard.press("Control+Shift+E");
+  await expect(drawer).toBeHidden();
+  await expect(trigger).toBeFocused();
+  await trigger.click();
+  const preview = drawer.locator(".add-pane-preview");
+  await expect(preview.locator(".add-pane-preview-cell")).toHaveCount(4);
+  const active = preview.locator(".active");
+  const made = preview.locator(".new");
+  await preview.scrollIntoViewIfNeeded();
+  let a = (await active.boundingBox())!;
+  let b = (await made.boundingBox())!;
+  expect(b.x).toBeGreaterThan(a.x);
+  expect(b.y).toBe(a.y);
+  await drawer.locator('[data-place="down"]').click();
+  a = (await active.boundingBox())!;
+  b = (await made.boundingBox())!;
+  expect(b.y).toBeGreaterThan(a.y);
+  expect(b.x).toBe(a.x);
+  const bounds = (await drawer.boundingBox())!;
+  const action = (await drawer.locator("[data-add-pane-create]").boundingBox())!;
+  expect(bounds.y).toBeGreaterThanOrEqual(44);
+  expect(bounds.y + bounds.height).toBeLessThanOrEqual(600);
+  expect(action.y + action.height).toBeLessThanOrEqual(bounds.y + bounds.height);
+  await page.keyboard.press("Escape");
+  await expect(drawer).toBeHidden();
+  await expect(trigger).toBeFocused();
 });

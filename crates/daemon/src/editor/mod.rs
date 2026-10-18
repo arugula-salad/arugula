@@ -276,31 +276,61 @@ impl Editor {
     /// The workspace file (`ws`) on `folder`: it names the block, and has
     /// the palette's colors while the theme is Arugula's.
     fn write_workspace(&self, ws: &Path, folder: &str) -> Result<(), String> {
+        // VS Code supports JSONC. Open an existing commented workspace as-is;
+        // only palette updates are refused when we cannot safely round-trip it.
+        if let Ok(old) = std::fs::read_to_string(ws)
+            && serde_json::from_str::<Value>(&old).is_err()
+        {
+            return Ok(());
+        }
         let theme = self.theme.lock().unwrap().as_ref().and_then(|t| theme::parse(t).ok());
-        let user = server::settings().and_then(|s| std::fs::read_to_string(s.dir.join("user/User/settings.json")).ok());
-        let old = std::fs::read_to_string(ws).ok();
-        let text = theme::workspace(
-            old.as_deref(),
-            folder,
-            json!(self.ctx.id),
-            theme.as_ref(),
-            theme::user_leaves_it(user.as_deref()),
-        );
-        crate::store::write_atomic(ws, text.to_string().as_bytes()).map_err(|e| format!("{}: {e}", ws.display()))
+        self.write_workspace_theme(ws, folder, theme.as_ref(), theme.as_ref()).map(|_| ())
     }
 
-    /// The page's palette (#1048): kept for a restart, and put in the
-    /// workspace, where the open window picks it up. A block in a VM has
-    /// no workspace of ours, so keeps the extension's theme.
-    fn set_theme(&self, args: Value) -> Result<Value, String> {
-        theme::parse(&args)?;
-        let changed = self.theme.lock().unwrap().replace(args.clone()).as_ref() != Some(&args);
-        let ws = self.workspace_file.lock().unwrap().clone();
-        let Some(ws) = ws.filter(|_| changed) else {
-            return Ok(json!({}));
+    fn write_workspace_theme(
+        &self,
+        ws: &Path,
+        folder: &str,
+        next: Option<&theme::Theme>,
+        previous: Option<&theme::Theme>,
+    ) -> Result<bool, String> {
+        let user = server::settings().map(|s| std::fs::read_to_string(s.dir.join("user/User/settings.json")));
+        let leaves_it = match &user {
+            Some(Ok(text)) => theme::user_leaves_it(Some(text)),
+            Some(Err(e)) => e.kind() == std::io::ErrorKind::NotFound,
+            None => false,
         };
-        let folder = self.state.lock().unwrap().folder.clone();
-        self.write_workspace(&ws, &folder)?;
+        let old = match std::fs::read_to_string(ws) {
+            Ok(text) => Some(text),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            Err(e) => return Err(format!("{}: {e}", ws.display())),
+        };
+        let text = theme::workspace(old.as_deref(), folder, json!(self.ctx.id), next, previous, leaves_it)?;
+        if old.as_deref().and_then(|s| serde_json::from_str::<Value>(s).ok()).as_ref() != Some(&text) {
+            crate::store::write_atomic(ws, text.to_string().as_bytes())
+                .map_err(|e| format!("{}: {e}", ws.display()))?;
+        }
+        Ok(next.is_some_and(|t| t.applied(&text)))
+    }
+
+    /// Colors are shared by a block's clients; the latest successful palette
+    /// update wins. A failed write is not cached, so the same request can retry.
+    fn set_theme(&self, args: Value) -> Result<Value, String> {
+        let next = theme::parse(&args)?;
+        let previous = self.theme.lock().unwrap().clone();
+        // Recheck even an identical palette: the user may have edited their
+        // settings since it was sent. The writer avoids unchanged disk writes.
+        let ws = self.workspace_file.lock().unwrap().clone();
+        if let Some(ws) = ws {
+            let folder = self.state.lock().unwrap().folder.clone();
+            let previous = previous.as_ref().and_then(|v| theme::parse(v).ok());
+            if !self.write_workspace_theme(&ws, &folder, Some(&next), previous.as_ref())? {
+                // Retain the identity of the last generated values, so a later
+                // global preference can still unshadow only those fields.
+                return Ok(json!({}));
+            }
+        }
+        *self.theme.lock().unwrap() = Some(args);
         self.ctx.changed();
         Ok(json!({}))
     }

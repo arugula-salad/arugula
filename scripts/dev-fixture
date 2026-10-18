@@ -3,14 +3,14 @@
 # ~/.local/state/arugula-dev) with a workspace to look at and screenshot
 # (S39, #1022): 8 sessions; "arugula" has 4 tabs, and its first tab 6 real
 # panes (tests running, a shell, an agent, an editor, a diff and a browser on
-# a port), arranged in a Grid (M110); two panes want you. It talks to that daemon's socket only, never
+# a port), arranged around a tall agent pane; two panes want you. It talks to that daemon's socket only, never
 # the one in $ARUGULA_SOCK, and closes what's there first.
 #
 #   just dev                 # in one terminal
 #   just dev-fixture         # in another; then open http://localhost:5173
 #
-# The agent is Claude Code's block, started with no prompt; without its ACP
-# adapter a shell stands in (it says so). "Tests" is a loop printing test
+# The agent is a real ACP block using a local, deterministic fixture adapter.
+# It needs no account, API key or network and identifies itself as a fixture. "Tests" is a loop printing test
 # lines, not a real suite. There's no remote pane: that needs a second
 # daemon in the host list.
 set -euo pipefail
@@ -39,9 +39,43 @@ if ((${#old[@]})); then a close "${old[@]}" >/dev/null; fi
 port=$("$repo/scripts/free-port")
 site=$state/fixture-site
 mkdir -p "$site"
+# A separate sample repository guarantees a useful diff without editing this checkout.
+sample=$(mktemp -d "${TMPDIR:-/tmp}/arugula-fixture.XXXXXX")
+printf '%s\n' "$sample" >"$state/fixture-project.path"
+cat >"$sample/workspace.ts" <<'EOF'
+export interface Workspace {
+  name: string;
+  panes: number;
+  status: "ready" | "working";
+}
+
+export const workspace: Workspace = {
+  name: "Visual review",
+  panes: 4,
+  status: "working",
+};
+EOF
+git -C "$sample" init -q
+git -C "$sample" add workspace.ts
+git -C "$sample" -c user.name='Arugula fixture' -c user.email='fixture@localhost' commit -q --allow-empty -m 'Fixture baseline'
+python3 - "$sample/workspace.ts" <<'PYTHON'
+from pathlib import Path
+import sys
+p = Path(sys.argv[1])
+p.write_text(p.read_text().replace('panes: 4', 'panes: 6').replace('status: "working",', 'status: "ready",') + '\nexport const description = "Six panes, one shared workspace.";\n')
+PYTHON
 cat >"$site/index.html" <<EOF
-<!doctype html><title>fixture site</title>
-<body style="font:16px system-ui;padding:2rem"><h1>Fixture site</h1><p>Served on :$port by python3 -m http.server.</p></body>
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>Workspace preview · fixture</title>
+<style>
+* { box-sizing: border-box } body { margin: 0; padding: 24px; background: #101722; color: #dce5f2; font: 14px/1.6 system-ui }
+small { color: #7e95b4; letter-spacing: .08em; text-transform: uppercase } h1 { font-size: 27px; line-height: 1.2; margin: 16px 0 10px }
+p { color: #9eafc5 } .badge { color: #74d9ba; font-size: 12px } .card { margin-top: 22px; padding: 18px; border: 1px solid #2c3b4e; border-radius: 8px; background: #172130 }
+.steps { display: flex; flex-wrap: wrap; gap: 8px } .steps span { padding: 5px 10px; border-radius: 4px; background: #233247; color: #c2d4ea; font-size: 12px }
+</style><small>Arugula / local preview</small><h1>One workspace.<br>Everything in view.</h1>
+<p>A sample page for comparing pane styling, spacing and embedded content.</p>
+<div class="card"><div class="badge">● Preview ready</div><p>Source, changes and running output stay together.</p><div class="steps"><span>01 Inspect</span><span>02 Review</span><span>03 Iterate</span></div></div>
+<p><small>Visual fixture · served on :$port</small></p></html>
 EOF
 
 # 1. "arugula": its first tab is the six-pane one.
@@ -59,24 +93,19 @@ tests=$(a run --session arugula --cwd "$repo" -- bash -c '
     sleep 3
   done' | pane)
 shell=$(a run --split "$tests" --cwd "$repo" | pane)
-editor=$(a edit "$repo/README.md" --line 1 --split "$shell" | pane)
-diff=$(a diff --repo "$repo" --split "$tests" | pane)
-if agent=$(a agent --title fixture-agent --cwd "$repo" --split "$editor" 2>/dev/null | pane) && [[ -n $agent ]]; then
-  :
-else
-  agent=""
-  echo "dev-fixture: no agent pane (Claude Code's ACP adapter didn't start here); a shell stands in" >&2
-  agent=$(a run --split "$editor" --cwd "$repo" -- bash -c 'echo "(an agent would be here)"; exec bash' | pane)
-fi
+editor=$(a edit "$sample/workspace.ts" --line 1 --split "$shell" | pane)
+diff=$(a diff --repo "$sample" --split "$tests" | pane)
+printf -v adapter 'python3 %q' "$repo/scripts/dev-fixture-agent.py"
+agent=$(a agent --acp "$adapter" --title 'Fixture agent' --cwd "$sample" --split "$editor" 'Review the sample workspace change and summarize what to check.' | pane)
 a run --session arugula --cwd "$site" -- python3 -m http.server "$port" --bind 127.0.0.1 >/dev/null
 sleep 1
 browser=$(a open ":$port" --split "$diff" | pane)
 
-# The six panes in a Grid (M110): `arrange` is an intent, which only the
-# WebSocket takes, so a few lines of Python say it over the socket.
-python3 - "$sock" "$tests" <<'PY' || echo "dev-fixture: couldn't arrange the six panes in a grid" >&2
+# Compose the six real panes using layout intents over the WebSocket.
+python3 - "$sock" "$tests" "$agent" "$editor" "$diff" "$browser" "$shell" <<'PY' || echo "dev-fixture: couldn't arrange the six panes" >&2
 import base64, json, os, socket, struct, sys
 s = socket.socket(socket.AF_UNIX)
+s.settimeout(15)
 s.connect(sys.argv[1])
 key = base64.b64encode(os.urandom(16)).decode()
 s.sendall(f"GET /ws HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n\r\n".encode())
@@ -110,14 +139,41 @@ while True:
 def holds(n):
     return n["pane"] == pane if n["type"] == "pane" else any(holds(c["node"]) for c in n["children"])
 tab = next(t["id"] for t in state["tabs"] if holds(t["root"]))
-send({"type": "intent", "id": 1, "intent": {"op": "arrange", "tab": tab, "preset": "grid"}})
-send({"type": "ping", "id": 2})
-while True:
-    op, data = frame()
-    if op != 1: continue
-    m = json.loads(data)
-    if m.get("type") == "error" and m.get("id") == 1: sys.exit(f"arrange: {m['message']}")
-    if m.get("type") == "pong": break
+seq = 0
+def intent(value):
+    global seq, state
+    seq += 1
+    send({"type": "intent", "id": seq, "intent": value})
+    send({"type": "ping", "id": seq})
+    while True:
+        op, data = frame()
+        if op != 1: continue
+        m = json.loads(data)
+        if m.get("type") == "error": sys.exit(m["message"])
+        if m.get("type") == "state": state = m["state"]
+        if m.get("type") == "pong": break
+
+def root():
+    return next(t["root"] for t in state["tabs"] if t["id"] == tab)
+
+def panes(node):
+    return [node["pane"]] if node["type"] == "pane" else [p for c in node["children"] for p in panes(c["node"])]
+
+tests, agent, editor, diff, browser, shell = [int(x.lstrip("%")) for x in sys.argv[2:]]
+intent({"op": "arrange", "tab": tab, "preset": "columns"})
+# Put the conversation on the left, source/review in the middle and preview/
+# running output on the right. Each move uses the actual daemon layout.
+for i, desired in enumerate([agent, editor, diff, browser, tests, shell]):
+    current = panes(root())[i]
+    if current != desired:
+        intent({"op": "move_pane", "pane": desired, "target": current, "edge": "center"})
+for moving, target in [(diff, editor), (tests, browser), (shell, tests)]:
+    intent({"op": "move_pane", "pane": moving, "target": target, "edge": "bottom"})
+intent({"op": "resize_split", "split": root()["id"], "weights": [0.38, 0.34, 0.28]})
+# Keep preview useful while the two terminal panes occupy compact rows.
+right = root()["children"][2]["node"]
+intent({"op": "resize_split", "split": right["id"], "weights": [0.5, 0.25, 0.25]})
+
 PY
 
 # 2–4: the other tabs of "arugula".

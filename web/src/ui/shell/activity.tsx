@@ -550,7 +550,7 @@ function Row({ client, it, onClick }: { client: Client; it: Item; onClick: () =>
           : { cls: "bad", text: `exit ${it.exit}` };
   return (
     <button
-      class={`ws-activity-row ${it.kind}`}
+      class="ws-activity-row"
       data-activity-id={it.id}
       data-activity-kind={it.kind}
       data-activity-pane={it.pane ?? undefined}

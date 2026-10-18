@@ -32,7 +32,11 @@ yourself, operating the hosted one and testing it are in
 alone. `just dev-fixture` fills that daemon with a workspace to look at
 and screenshot (S39): 8 sessions, one with 4 tabs, a tab of 6 panes
 (tests, a shell, an agent, an editor, a diff and a browser) and two
-panes wanting you. It replaces what's there. `just dev-control [machine…]` shows the web client as
+panes wanting you. Its asymmetric layout puts a populated fixture agent beside
+an editor, a real sample diff, and a dark local preview. The fixture adapter is
+local and deterministic: it does not call a model or need credentials. The
+sample repository is separate from both the checkout and daemon state. It
+replaces what's in that dev daemon. `just dev-control [machine…]` shows the web client as
 control.arugula.io serves it, signed in, with machines: a local control
 on 7690 with a fake GitHub, daemons joined to it through its relay
 (default `workstation laptop`, with Labs; `DEV_CONTROL_LABS=0` without),

@@ -63,7 +63,7 @@ const START: Duration = Duration::from_secs(60);
 /// file and carries the themes (Slate, Latte and Mocha; a block's palette goes over
 /// them, `theme.rs`).
 pub const EXT_ID: &str = "arugula.arugula-editor";
-pub const EXT_VERSION: &str = "0.2.2";
+pub const EXT_VERSION: &str = "0.2.3";
 pub const EXT_FILES: &[(&str, &str)] = &[
     ("package.json", include_str!("ext/package.json")),
     ("extension.js", include_str!("ext/extension.js")),
@@ -77,6 +77,14 @@ const SETTINGS: &str = r#"{
   "workbench.colorTheme": "arugula",
   "chat.disableAIFeatures": true,
   "workbench.startupEditor": "none",
+  "workbench.activityBar.location": "hidden",
+  "workbench.statusBar.visible": false,
+  "workbench.editor.tabSizing": "shrink",
+  "window.commandCenter": false,
+  "workbench.layoutControl.enabled": false,
+  "window.menuBarVisibility": "compact",
+  "editor.minimap.enabled": false,
+  "breadcrumbs.enabled": false,
   "workbench.secondarySideBar.defaultVisibility": "hidden",
   "security.workspace.trust.enabled": false,
   "telemetry.telemetryLevel": "off"

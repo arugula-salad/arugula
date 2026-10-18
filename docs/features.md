@@ -37,11 +37,13 @@ around your panes. A phone keeps its own header and sheet.
   the layouts *Columns*, *Grid* and *Main + stack*, *Focus* (one pane fills
   the tab; again to restore it), and *+ Pane* (a shell, agent, editor,
   changes or a port, on which machine, in which directory, to the right or
-  below). Layouts and focus are the machine's, so everyone sees the same.
-- **Each pane's header**, in the row above it: its number (the
+  below). The drawer previews the split before creation. Layouts and focus
+  are the machine's, so everyone sees the same.
+- **Each pane's header**, including a single or focused desktop pane: its number (the
   Ctrl+Shift+digit one), what it is, its status, where it runs, its
   directory and branch. Click it to type there, drag it to move the pane,
-  double-click to focus, `…` for its menu.
+  double-click to focus, `…` for its menu. Headers reserve their own space;
+  the cyan outline encloses the focused pane without covering terminal rows.
 - **The activity drawer** under the panes (the session's commands,
   agent turns, and panes opening, exiting and closing and their machines,
   kept across a reload, a closed pane's too), and **the footer**:
@@ -56,7 +58,13 @@ without the buttons they can't use, or with them off and the reason.
 Appearance (in Settings) picks the palette: Slate until you pick one, or
 *Match system* for Slate or Latte with the system. Every palette's text reads at WCAG AA (4.5:1) on
 its backgrounds, and with *reduce motion* on nothing animates and the
-cursor doesn't blink.
+cursor doesn't blink. New workspaces use soft pane corners; a saved corner
+choice is kept. Local editor blocks follow the selected palette unless you
+choose a different editor theme or custom editor colors. The editor palette
+is shared per block: when clients choose different palettes, the latest update
+wins. New embedded editors start with the Explorer
+collapsed and compact chrome; Ctrl+B (Cmd+B on macOS) reopens the Explorer,
+and subsequent layout choices are kept. VM editors use the bundled Slate theme.
 
 ### Keys
 

@@ -78,6 +78,12 @@ pub fn parse(v: &Value) -> Result<Theme, String> {
 }
 
 impl Theme {
+    /// Whether these workspace fields are still exactly what we generated.
+    pub fn applied(&self, workspace: &Value) -> bool {
+        let generated = self.settings();
+        OWNED.iter().all(|key| workspace["settings"][key] == generated[key])
+    }
+
     /// As workspace settings.
     fn settings(&self) -> Value {
         let rules: Vec<Value> = self
@@ -104,30 +110,70 @@ fn ours(v: &Value) -> bool {
     v.is_null() || v == DARK || v == LIGHT
 }
 
-/// Whether the user's settings (`settings.json`'s text) leave the theme to
-/// us. Unreadable: theirs, left alone.
+/// Explicit theme or color customizations belong to the user. JSONC or
+/// unreadable text is conservatively treated as customized, never overwritten.
 pub fn user_leaves_it(settings: Option<&str>) -> bool {
     match settings {
         None => true,
-        Some(text) => serde_json::from_str::<Value>(text).is_ok_and(|v| ours(&v["workbench.colorTheme"])),
+        Some(text) => serde_json::from_str::<Value>(text).is_ok_and(|v| {
+            ours(&v["workbench.colorTheme"])
+                && !custom(&v["workbench.colorCustomizations"])
+                && !custom(&v["editor.tokenColorCustomizations"])
+        }),
     }
 }
 
-/// The block's workspace file: its folder, the block, settings kept from
-/// `old`, and the palette's colors when the theme is still ours.
-pub fn workspace(old: Option<&str>, folder: &str, block: Value, theme: Option<&Theme>, user_leaves_it: bool) -> Value {
-    let mut settings = old
-        .and_then(|t| serde_json::from_str::<Value>(t).ok())
-        .and_then(|v| v.get("settings").and_then(Value::as_object).cloned())
-        .unwrap_or_default();
+fn custom(value: &Value) -> bool {
+    !value.is_null() && !value.as_object().is_some_and(Map::is_empty)
+}
+
+const OWNED: [&str; 3] = ["workbench.colorTheme", "workbench.colorCustomizations", "editor.tokenColorCustomizations"];
+
+/// Preserve the whole workspace, and update only settings still identical to
+/// our previous generated values. Existing JSONC/invalid JSON is left on disk
+/// untouched rather than guessing which settings can safely be discarded.
+pub fn workspace(
+    old: Option<&str>,
+    folder: &str,
+    block: Value,
+    theme: Option<&Theme>,
+    previous: Option<&Theme>,
+    user_leaves_it: bool,
+) -> Result<Value, String> {
+    let mut workspace = match old {
+        Some(text) => serde_json::from_str::<Value>(text)
+            .map_err(|_| "editor workspace uses JSONC or invalid JSON; leaving it unchanged".to_owned())?,
+        None => json!({ "folders": [{ "path": folder }], "settings": {} }),
+    };
+    let root = workspace.as_object_mut().ok_or("editor workspace must be an object; leaving it unchanged")?;
+    let settings = root
+        .entry("settings")
+        .or_insert_with(|| json!({}))
+        .as_object_mut()
+        .ok_or("editor workspace settings must be an object; leaving it unchanged")?;
     settings.insert("arugula.block".into(), block);
-    let leaves_it = user_leaves_it && ours(settings.get("workbench.colorTheme").unwrap_or(&Value::Null));
-    if let Some(t) = theme.filter(|_| leaves_it)
-        && let Value::Object(s) = t.settings()
-    {
-        settings.extend(s);
+    if old.is_none() {
+        settings.insert("arugula.compact".into(), json!(true));
     }
-    json!({ "folders": [{ "path": folder }], "settings": settings })
+    let prior = previous.map(Theme::settings);
+    let generated = |key: &str, value: &Value| prior.as_ref().is_some_and(|p| &p[key] == value);
+    let customized = !ours(settings.get("workbench.colorTheme").unwrap_or(&Value::Null))
+        || OWNED[1..].iter().any(|key| settings.get(*key).is_some_and(|v| custom(v) && !generated(key, v)));
+    if !user_leaves_it {
+        // A global choice must not remain shadowed by our old workspace values.
+        // Remove only unchanged generated fields; any user edits remain theirs.
+        for key in OWNED {
+            if settings.get(key).is_some_and(|v| generated(key, v)) {
+                settings.remove(key);
+            }
+        }
+    } else if !customized
+        && let Some(t) = theme
+        && let Value::Object(next) = t.settings()
+    {
+        settings.extend(next);
+    }
+    Ok(workspace)
 }
 
 #[cfg(test)]
@@ -165,10 +211,11 @@ mod tests {
     #[test]
     fn the_workspace_takes_the_palette() {
         let t = parse(&latte()).unwrap();
-        let w = workspace(None, "/r/p", json!(7), Some(&t), true);
+        let w = workspace(None, "/r/p", json!(7), Some(&t), None, true).unwrap();
         assert_eq!(w["folders"][0]["path"], "/r/p");
         let s = &w["settings"];
         assert_eq!(s["arugula.block"], 7);
+        assert_eq!(s["arugula.compact"], true);
         assert_eq!(s["workbench.colorTheme"], LIGHT);
         assert_eq!(s["workbench.colorCustomizations"]["editor.background"], "#eff1f5");
         assert_eq!(s["editor.tokenColorCustomizations"]["textMateRules"][0]["settings"]["fontStyle"], "italic");
@@ -177,11 +224,14 @@ mod tests {
         old["settings"]["editor.fontSize"] = json!(15);
         let mut dark = latte();
         dark["light"] = json!(false);
-        let w = workspace(Some(&old.to_string()), "/r/p", json!(7), Some(&parse(&dark).unwrap()), true);
+        let w =
+            workspace(Some(&old.to_string()), "/r/p", json!(7), Some(&parse(&dark).unwrap()), Some(&t), true).unwrap();
         assert_eq!(w["settings"]["workbench.colorTheme"], DARK);
         assert_eq!(w["settings"]["editor.fontSize"], 15);
+        let existing = workspace(Some(r#"{"settings":{}}"#), "/r/p", json!(7), None, None, true).unwrap();
+        assert!(existing["settings"].get("arugula.compact").is_none());
         // No palette yet: just the block.
-        let w = workspace(None, "/r/p", json!(7), None, true);
+        let w = workspace(None, "/r/p", json!(7), None, None, true).unwrap();
         assert!(w["settings"].get("workbench.colorTheme").is_none());
     }
 
@@ -194,12 +244,63 @@ mod tests {
         assert!(user_leaves_it(Some("{}")));
         assert!(!user_leaves_it(Some(r#"{"workbench.colorTheme": "Default Light Modern"}"#)));
         assert!(!user_leaves_it(Some("{ // mine\n}")));
-        let w = workspace(None, "/r/p", json!(7), Some(&t), false);
+        let w = workspace(None, "/r/p", json!(7), Some(&t), None, false).unwrap();
         assert!(w["settings"].get("workbench.colorTheme").is_none());
         // In the block (VS Code's picker writes where it's set).
         let old = json!({ "settings": { "workbench.colorTheme": "Monokai" } }).to_string();
-        let w = workspace(Some(&old), "/r/p", json!(7), Some(&t), true);
+        let w = workspace(Some(&old), "/r/p", json!(7), Some(&t), None, true).unwrap();
         assert_eq!(w["settings"]["workbench.colorTheme"], "Monokai");
         assert!(w["settings"].get("workbench.colorCustomizations").is_none());
+    }
+
+    #[test]
+    fn jsonc_and_invalid_workspace_settings_are_never_replaced() {
+        let t = parse(&latte()).unwrap();
+        for old in ["{ // user comment\n}", "{", r#"{"settings":null}"#, "[]"] {
+            assert!(workspace(Some(old), "/r/p", json!(7), Some(&t), None, true).is_err());
+        }
+    }
+
+    #[test]
+    fn root_fields_and_color_overrides_are_preserved() {
+        let t = parse(&latte()).unwrap();
+        let mut old = workspace(None, "/r/p", json!(7), Some(&t), None, true).unwrap();
+        old["folders"] = json!([{ "path": "/first" }, { "path": "/second" }]);
+        old["tasks"] = json!({ "version": "2.0.0", "tasks": [] });
+        old["settings"]["workbench.colorCustomizations"]["editor.background"] = json!("#123456");
+        let mut dark = latte();
+        dark["light"] = json!(false);
+        let next = parse(&dark).unwrap();
+        let w = workspace(Some(&old.to_string()), "/r/p", json!(7), Some(&next), Some(&t), true).unwrap();
+        assert_eq!(w, old, "custom colors on Arugula also opt out");
+        assert!(!next.applied(&w));
+        old["settings"].as_object_mut().unwrap().remove("workbench.colorCustomizations");
+        old["settings"]["editor.tokenColorCustomizations"] = json!({"comments":"#123456"});
+        let w = workspace(Some(&old.to_string()), "/r/p", json!(7), Some(&next), Some(&t), true).unwrap();
+        assert_eq!(w, old, "custom token colors also opt out");
+    }
+
+    #[test]
+    fn global_choices_are_not_shadowed_by_generated_workspace_values() {
+        let t = parse(&latte()).unwrap();
+        let old = workspace(None, "/r/p", json!(7), Some(&t), None, true).unwrap();
+        assert!(t.applied(&old));
+        for user in [
+            json!({"workbench.colorTheme":"Monokai"}),
+            json!({"workbench.colorCustomizations":{"editor.background":"#123456"}}),
+            json!({"editor.tokenColorCustomizations":{"comments":"#123456"}}),
+        ] {
+            assert!(!user_leaves_it(Some(&user.to_string())));
+            let w = workspace(Some(&old.to_string()), "/r/p", json!(7), Some(&t), Some(&t), false).unwrap();
+            for key in OWNED {
+                assert!(w["settings"].get(key).is_none());
+            }
+        }
+        let mut custom = old;
+        custom["settings"]["workbench.colorTheme"] = json!("Monokai");
+        custom["settings"]["workbench.colorCustomizations"] = json!({"editor.background":"#123456"});
+        let w = workspace(Some(&custom.to_string()), "/r/p", json!(7), Some(&t), Some(&t), false).unwrap();
+        assert_eq!(w["settings"]["workbench.colorTheme"], "Monokai");
+        assert_eq!(w["settings"]["workbench.colorCustomizations"], custom["settings"]["workbench.colorCustomizations"]);
     }
 }

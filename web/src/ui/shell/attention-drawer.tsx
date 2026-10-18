@@ -22,6 +22,7 @@ import { useSubscribe } from "../hooks";
 import { getFleet } from "../hosts";
 import { openMenu, type MenuItem } from "../menu";
 import { agentNotifyItems, notificationItems } from "../notify";
+import { addPane } from "./add-pane";
 import { closePlace, currentPlace } from "../places";
 
 // ---- the items
@@ -121,6 +122,7 @@ const changed = () => listeners.forEach((fn) => fn());
 /** Open it; Escape or Close gives the focus back to what had it. `pick`
  * selects that item (`host:pane`) first. */
 export function openAttention(pick?: string) {
+  addPane.close(false);
   const back = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   drawer = { back: drawer?.back ?? back, pick };
   changed();

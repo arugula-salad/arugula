@@ -196,9 +196,8 @@ test("a second window sees layout changes live, and the same terminal", async ({
 // M110 (#1025): the header above each pane is its
 // handle: a click gives it the keys, and `…` is its menu (Focus, then the
 // pane menu: split, move to a new tab, close).
-// M113: a header is the one cell row the layout keeps above its pane, so
-// it crops none of the terminal: each pane shows every row the daemon gave
-// it, and the header sits right on top of it.
+// Headers have a separate pixel budget: each pane shows every terminal
+// row the daemon gave it, with a readable header directly above.
 test("pane headers sit in the row above each pane and crop none of it", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await reset(page);
@@ -212,6 +211,7 @@ test("pane headers sit in the row above each pane and crop none of it", async ({
     await expect.poll(() => size(page, id)).toEqual([r.cols, r.rows]);
     const pane = (await paneEl(page, id).boundingBox())!;
     const head = (await page.locator(`[data-pane-header="${id}"]`).boundingBox())!;
+    expect(head.height).toBeGreaterThanOrEqual(32);
     expect(Math.abs(head.y + head.height - pane.y)).toBeLessThanOrEqual(1);
     expect(Math.abs(head.x - pane.x)).toBeLessThanOrEqual(1);
   }
@@ -236,8 +236,9 @@ test("the pane header's menu focuses, splits and closes", async ({ page }) => {
   await page.getByRole("menuitem", { name: "Focus pane" }).click();
   await expect.poll(async () => (await tab(page)).focus).toBe(second);
   await expect.poll(() => panes(page)).toEqual([second]);
-  // Focused, there's one pane shown and no header: the pane menu restores.
-  await menu(page, paneEl(page, second), "Restore layout");
+  // The focused pane retains its identity and a visible restore action.
+  await expect(page.locator("[data-pane-header]")).toHaveCount(1);
+  await page.locator(`[data-pane-expand="${second}"]`).click();
   await expect.poll(async () => (await tab(page)).focus).toBeNull();
   await expect.poll(() => panes(page)).toEqual([first, second]);
 

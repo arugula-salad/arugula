@@ -1,0 +1,281 @@
+/* Workspace chrome: keep the structure quiet, and make selection legible.
+   All colors come from the chosen palette; phone chrome is unchanged. */
+.app.ws {
+  --chrome-line: color-mix(in srgb, var(--subtle) 22%, var(--surface));
+  --chrome-selected: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  --chrome-selected-line: color-mix(in srgb, var(--accent) 65%, var(--surface));
+}
+
+.ws-head {
+  padding-left: 0;
+  gap: 10px;
+  border-bottom-color: var(--chrome-line);
+}
+
+.ws-wordmark {
+  flex: none;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 18px;
+  box-sizing: border-box;
+  border-right: 1px solid var(--chrome-line);
+  color: var(--subtle);
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: .15em;
+  white-space: nowrap;
+}
+
+.ws-wordmark strong {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.ws-wordmark:hover {
+  background: var(--raised);
+}
+
+.ws-crumbs {
+  margin-left: 8px;
+}
+
+.ws-wordmark + .ws-crumbs {
+  margin-left: 0;
+}
+
+.ws-rail {
+  padding-top: 0;
+  gap: 6px;
+  border-right-color: var(--chrome-line);
+}
+
+.ws-brand {
+  height: var(--head-h);
+  margin-bottom: 2px;
+  border-bottom: 1px solid var(--chrome-line);
+}
+
+.ws-rail-button {
+  min-height: 48px;
+  box-sizing: border-box;
+  justify-content: center;
+  gap: 6px;
+  margin-inline: 4px;
+  padding: 6px 0;
+  border: 1px solid transparent;
+  border-radius: 5px;
+}
+
+.ws-rail-button.here {
+  background: var(--chrome-selected);
+  border-color: var(--chrome-selected-line);
+  color: var(--accent);
+}
+
+.ws-rail-button.here::before {
+  display: none;
+}
+
+.ws-rail-button.on {
+  background: var(--surface);
+  border-color: var(--chrome-line);
+  color: var(--fg);
+}
+
+.ws-sidebar {
+  border-right-color: var(--chrome-line);
+}
+
+.ws-sidebar-head {
+  padding: 8px 10px 8px 16px;
+}
+
+.ws-sidebar-head h2 {
+  color: var(--fg);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: .04em;
+}
+
+.ws-search {
+  margin: 0 12px 8px;
+  border-color: var(--chrome-line);
+  border-radius: 5px;
+}
+
+.ws-session-list {
+  padding-inline: 8px;
+}
+
+.ws-group {
+  margin: 16px 7px 6px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.ws-group:not(:first-child) {
+  border-top: 1px solid var(--chrome-line);
+  padding-top: 14px;
+}
+
+.ws-session {
+  border-radius: 5px;
+  margin-bottom: 3px;
+}
+
+.ws-session.current {
+  background: var(--chrome-selected);
+  border-color: var(--chrome-selected-line);
+}
+
+.ws-session-main {
+  gap: 7px;
+  padding: 10px 6px 10px 9px;
+}
+
+.ws-session-name {
+  font-size: 13px;
+}
+
+.ws-session-sub {
+  padding-left: 14px;
+  font-size: 11px;
+}
+
+.ws-session-context {
+  gap: 4px;
+}
+
+.ws-session-more {
+  position: absolute;
+  right: 3px;
+  bottom: 4px;
+  width: 22px;
+  height: 22px;
+  background: var(--surface);
+}
+
+.ws-session-sub {
+  padding-right: 22px;
+}
+
+.ws-session-counts {
+  gap: 6px;
+}
+
+.ws-session > .att {
+  position: absolute;
+  right: 29px;
+  bottom: 7px;
+}
+
+.ws-tabs {
+  border-bottom-color: var(--chrome-line);
+  padding-inline: 8px;
+}
+
+.ws-tabs .tab {
+  border-radius: 5px 5px 0 0;
+  color: var(--subtle);
+}
+
+.ws-tabs .tab.selected {
+  background: var(--chrome-selected);
+  border-color: var(--chrome-selected-line);
+  color: var(--fg);
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+
+.pane-toolbar {
+  border-bottom-color: var(--chrome-line);
+  gap: 8px;
+}
+
+.pt-presets {
+  gap: 0;
+  border: 1px solid var(--chrome-line);
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.pt-presets > button {
+  border-radius: 0;
+  padding-inline: 8px;
+}
+
+.pt-presets > button + button {
+  border-left: 1px solid var(--chrome-line);
+}
+
+.pane-toolbar > .pt-focus,
+.pane-toolbar > .pt-add {
+  border: 1px solid var(--chrome-selected-line);
+  border-radius: 5px;
+  color: var(--accent);
+}
+
+.pane-toolbar > .pt-add {
+  background: var(--chrome-selected);
+}
+
+.pt-add kbd {
+  display: none;
+}
+
+.ws-activity {
+  margin: 0 8px 6px;
+  border: 1px solid var(--chrome-line);
+  border-radius: 5px;
+  overflow: visible;
+}
+
+.ws-activity-bar {
+  height: 32px;
+}
+
+.ws-activity-row {
+  min-height: 25px;
+  border-bottom: 1px solid color-mix(in srgb, var(--chrome-line) 45%, transparent);
+}
+
+.ws-activity-time {
+  font: 11px ui-monospace, Menlo, monospace;
+  min-width: 7ch;
+}
+
+.ws-activity-kind {
+  min-width: 64px;
+}
+
+.ws-activity-filter.on {
+  background: var(--chrome-selected);
+  box-shadow: inset 0 0 0 1px var(--chrome-selected-line);
+}
+
+.ws-foot {
+  gap: 16px;
+  font-size: 11px;
+  border-top-color: var(--chrome-line);
+}
+
+.ws-foot-hints {
+  gap: 10px !important;
+}
+
+@media (max-width: 1400px) {
+  .ws-crumb-tab {
+    display: none;
+  }
+}
+
+@media (max-width: 1100px) {
+  .ws-crumbs {
+    margin-left: 10px;
+  }
+  .pane-toolbar {
+    gap: 4px;
+  }
+}
