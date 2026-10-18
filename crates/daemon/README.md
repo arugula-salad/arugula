@@ -21,5 +21,4 @@ the mux) and `src/server.rs` (the web client and `/ws`); `src/args.rs` is the
 command line. The task that orders every change is `crates/mux/src/mux/mod.rs`.
 
 Integration tests are one binary, `tests/integration/`, on
-`arugula-testkit`; recorded data in `tests/fixtures/`. `tests/integration/tmux.rs`
-replays iTerm2's tmux -CC session and compares every reply with tmux 3.6's.
+`arugula-testkit`; recorded data in `tests/fixtures/`.

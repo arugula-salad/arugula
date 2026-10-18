@@ -21,19 +21,8 @@ mod pipe;
 mod ssh;
 mod telemetry;
 mod term;
-#[cfg(unix)]
-mod tmux;
-mod tui;
 mod util;
 mod wake;
-
-// tmux's control mode (`-CC`) front is for iTerm2 over ssh to a Unix box.
-#[cfg(not(unix))]
-mod tmux {
-    pub fn run(_: crate::http::Target, _: &[String]) -> anyhow::Result<i32> {
-        anyhow::bail!("tmux control mode is for Unix boxes (iTerm2 over ssh)")
-    }
-}
 
 use std::path::PathBuf;
 
@@ -241,14 +230,6 @@ enum Command {
     Wait(cmd::wait::Args),
     /// Use a pane from this terminal (Ctrl-] to detach).
     Attach { pane: Option<Pane> },
-    /// The daemon's tabs and splits in this terminal.
-    ///
-    /// With a sidebar of sessions, tabs and what needs you. Ctrl-] is the menu key.
-    Tui {
-        /// Start in this session (name or id); made if there's none.
-        #[arg(long)]
-        session: Option<String>,
-    },
     /// Export a pane's history as an asciicast (`asciinema play`).
     Export(cmd::export::Args),
     /// The pane's foreground process.
@@ -415,14 +396,6 @@ enum Command {
     /// the daemon's `/mcp`. `mcp token` makes tokens for clients that reach `/mcp`
     /// over HTTP without a tailnet identity.
     Mcp(cmd::mcp::Args),
-    /// Be a tmux server in control mode for iTerm2.
-    ///
-    /// Also other tmux `-CC` clients: `arugula tmux -CC [attach -t SESSION | new
-    /// -s NAME]`. Linked or installed as `tmux`, the CLI does this by itself.
-    Tmux {
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        args: Vec<String>,
-    },
     /// Usage reports from this machine: on, off, or what would be sent.
     ///
     /// Off until you say yes. `status` prints the next report exactly as it
@@ -438,15 +411,13 @@ enum Command {
 impl Cli {
     /// Whether this command may ask the one-time telemetry question first:
     /// one a person runs on the local daemon and reads at a terminal. Not
-    /// JSON for a program, MCP, tmux's control mode, the TUI (it shows a
-    /// hint), `arugula telemetry` itself, or an agent's hooks.
+    /// JSON for a program, MCP, `arugula telemetry` itself, or an agent's
+    /// hooks.
     fn may_ask(&self) -> bool {
         !self.json
             && !matches!(
                 self.cmd,
                 Command::Telemetry { .. }
-                    | Command::Tui { .. }
-                    | Command::Tmux { .. }
                     | Command::Mcp(_)
                     | Command::Events(_)
                     | Command::Bridge { .. }
@@ -577,20 +548,17 @@ fn main() {
         use arugula_proto::telemetry::crash;
         crash::install_hook(crash::Process::Cli, env!("CARGO_PKG_VERSION"), &dir);
     }
-    // Run as `tmux` (a link, or a copy on an ssh host's PATH): be tmux's
-    // control mode, with tmux's own arguments.
+    // Run as `tmux` (a link left from when the CLI was tmux's control mode
+    // for iTerm2, removed 2026-10-18): say so rather than parse tmux's
+    // arguments as ours.
     let argv0 = std::env::args_os().next().map(PathBuf::from);
     let name = argv0.as_deref().and_then(|p| p.file_name());
     if name.is_some_and(|n| n == "tmux" || cfg!(windows) && n.eq_ignore_ascii_case("tmux.exe")) {
-        let args: Vec<String> = std::env::args().skip(1).collect();
-        let target = http::Target::Socket(default_socket());
-        match tmux::run(target, &args) {
-            Ok(code) => std::process::exit(code),
-            Err(e) => {
-                eprintln!("tmux (arugula): {e:#}");
-                std::process::exit(1);
-            }
-        }
+        eprintln!(
+            "tmux (arugula): Arugula is no longer a tmux control-mode server; remove this link to the arugula CLI ({})",
+            argv0.as_deref().map(|p| p.display().to_string()).unwrap_or_default()
+        );
+        std::process::exit(1);
     }
     // What a stranger doesn't get shows in `--help` where this machine has
     // turned its flag on; everything works either way.
@@ -715,7 +683,6 @@ fn real_main(cli: Cli) -> anyhow::Result<i32> {
         | Command::Logout => {
             unreachable!("handled before connecting")
         }
-        Command::Tmux { args } => tmux::run(ctx.sock, &args),
         Command::Ls => cmd::ls::run(ctx),
         Command::Status => cmd::status::run(ctx),
         Command::Setup(args) => cmd::setup::run(args, ctx),
@@ -749,10 +716,6 @@ fn real_main(cli: Cli) -> anyhow::Result<i32> {
         Command::Tail(args) => cmd::tail::run(args, ctx),
         Command::Wait(args) => cmd::wait::run(args, ctx),
         Command::Attach { pane } => attach::run(&ctx.sock, util::here(pane)?),
-        Command::Tui { session } => {
-            let hint = telemetry::tui_hint(&ctx.sock, state_dir().as_deref());
-            tui::run(&ctx.sock, session, hint)
-        }
         Command::Telemetry { cmd } => telemetry::run(cmd, ctx, state_dir().as_deref()),
         Command::Export(args) => cmd::export::run(args, ctx),
         Command::Process(args) => cmd::process::run(args, ctx),

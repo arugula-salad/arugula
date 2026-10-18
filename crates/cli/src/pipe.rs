@@ -3,8 +3,8 @@
 //! Opened as a plain (synchronous) handle, which is enough for one thread
 //! that reads and writes in turn: a read only blocks when asked to, and
 //! "non-blocking" reads ask the pipe first how much is waiting
-//! (`PeekNamedPipe`), so the front ends' loops never sit in a read while
-//! they have something to write (S29).
+//! (`PeekNamedPipe`), so `attach`'s loop never sits in a read while
+//! it has something to write (S29).
 
 use std::{
     fs::File,

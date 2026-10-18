@@ -56,7 +56,10 @@ pub type OptionMap = BTreeMap<String, String>;
 
 /// Opaque named strings that clients keep with the layout (tmux's `@user`
 /// options: iTerm2's tab grouping and attach guard, `@affinities`). Saved
-/// with the layout; an entry goes when what it belongs to does.
+/// with the layout; an entry goes when what it belongs to does. Only the
+/// tmux front end set them, and it was removed (DECISIONS.md "The TUI and
+/// tmux -CC are removed"); they stay in the protocol and the saved layout so
+/// a layout and an older client still load, and nothing reads them.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Options {
@@ -189,7 +192,9 @@ pub enum Intent {
         split: NodeId,
         weights: Vec<f64>,
     },
-    /// Set an option, or unset it (`value: None`).
+    /// Set an option, or unset it (`value: None`). No client sends it
+    /// since the tmux front end was removed; kept in the protocol (see
+    /// [`Options`]).
     SetOption {
         scope: OptionScope,
         name: String,

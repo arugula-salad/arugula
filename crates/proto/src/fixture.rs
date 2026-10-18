@@ -637,8 +637,8 @@ mod tests {
     #[test]
     fn matching() {
         let want = json!({"type": "attach", "panes": [{"pane": 1, "offset": null}], "cwd": "<home>"});
-        let tui = json!({"type": "attach", "panes": [{"pane": 1, "offset": null, "history": 10000}], "zstd": true, "cwd": "/x"});
-        assert_eq!(subset(&want, &tui), Ok(()));
+        let got = json!({"type": "attach", "panes": [{"pane": 1, "offset": null, "history": 10000}], "zstd": true, "cwd": "/x"});
+        assert_eq!(subset(&want, &got), Ok(()));
         assert!(subset(&want, &json!({"type": "attach", "panes": [{"pane": 2}]})).is_err());
         assert!(text_matches("/api/run?cwd=<home>/x&a=<n>", "/api/run?cwd=/Users/a/x&a=4"));
         assert!(!text_matches("/api/run?cwd=<home>/x", "/api/run?cwd=/Users/a/y"));

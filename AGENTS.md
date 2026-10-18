@@ -39,8 +39,8 @@ Each has a `README.md` with where to start reading.
   feature is on when the daemon's is.
 - `crates/daemon`: `arugulad`, the binary: the edge and the integrations
   around `arugula-mux`, wired together in `main.rs`.
-- `crates/cli`: `arugula`, the CLI, plus `arugula tui` and
-  `arugula tmux -CC`.
+- `crates/cli`: `arugula`, the CLI. It doesn't link `arugula-vt`, so it
+  builds without libghostty and Zig.
 - `crates/control`: Arugula control: accounts, devices, the directory and the
   relay.
 - `crates/control-wire`: the enrolment, routing, relay, push and TURN messages
@@ -125,9 +125,10 @@ nothing marked `mux:` names the edge or the block kinds.
 
 ## Clients
 
-The web client and the desktop app get new features. The TUI
-(`crates/cli/src/tui/`) and tmux -CC (`crates/cli/src/tmux/`) are kept working
-and tested, but get no new features.
+The web client and the desktop app are the clients that draw panes; the CLI
+scripts them and `arugula attach` shows one in a terminal. The TUI and the
+tmux -CC front end were removed (DECISIONS.md "The TUI and tmux -CC are
+removed").
 
 ## Labs
 

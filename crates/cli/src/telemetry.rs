@@ -1,5 +1,5 @@
 //! The CLI's side of telemetry (M105, #987): the one question it asks
-//! before a command, the TUI's hint, and `arugula telemetry on|off|status`.
+//! before a command and `arugula telemetry on|off|status`.
 //! The answer is the daemon's (`telemetry.get` and `telemetry.set`). With no
 //! daemon running it's the consent file (`arugula_proto::telemetry`),
 //! written as `arugulad telemetry` writes it. `docs/telemetry.md` says it
@@ -28,9 +28,6 @@ pub const QUESTION: &str = "Help improve Arugula? Send usage counts and crash re
                             terminal contents, file names, commands or prompts). Details: arugula telemetry status. \
                             [y/N] ";
 
-/// What the TUI shows in its status line instead of asking.
-pub const HINT: &str = "Usage reports are off: `arugula telemetry on` to help improve Arugula";
-
 /// What the question is for: where the answer is recorded.
 const VIA: &str = "cli";
 
@@ -55,7 +52,7 @@ pub struct Facts {
     /// refuse its answer, and it isn't the agent's to give.
     pub agent: bool,
     /// The command is one a person reads at a terminal: not `--json`, MCP,
-    /// `tmux -CC`, the TUI, `arugula telemetry` itself, or a hook.
+    /// `arugula telemetry` itself, or a hook.
     pub command: bool,
     /// What the environment and the consent file say here: only
     /// [`Why::NotAsked`] asks. `DO_NOT_TRACK`, `ARUGULA_TELEMETRY=off`, `CI`
@@ -108,15 +105,6 @@ pub fn first_run(target: &Target, state_dir: &Path) {
         Ok(()) => writeln!(err, "Usage reports stay off. `arugula telemetry on` turns them on."),
         Err(e) => writeln!(err, "arugula: couldn't save your answer: {e:#}"),
     };
-}
-
-/// The TUI's hint, if it should show one: the local daemon, its owner in
-/// person, and nobody has answered there yet.
-pub fn tui_hint(target: &Target, state_dir: Option<&Path>) -> Option<&'static str> {
-    let local = matches!(target, Target::Socket(_));
-    let why = consent::enabled(state_dir?).why;
-    let f = Facts { tty: true, local, agent: http::agent(), command: true, why };
-    (should_ask(&f) && daemon_not_asked(target).unwrap_or(false)).then_some(HINT)
 }
 
 fn set_daemon(target: &Target, on: bool) -> anyhow::Result<TelemetryInfo> {
@@ -233,7 +221,7 @@ mod tests {
         assert!(!should_ask(&Facts { tty: false, ..facts() }), "a pipe");
         assert!(!should_ask(&Facts { local: false, ..facts() }), "--host or --ssh");
         assert!(!should_ask(&Facts { agent: true, ..facts() }), "an agent");
-        assert!(!should_ask(&Facts { command: false, ..facts() }), "--json, mcp, tmux, tui, telemetry");
+        assert!(!should_ask(&Facts { command: false, ..facts() }), "--json, mcp, telemetry");
         for why in [Why::Yes, Why::No, Why::DoNotTrack, Why::Env, Why::Ci, Why::Test] {
             assert!(!should_ask(&Facts { why, ..facts() }), "{why:?}");
         }

@@ -1141,8 +1141,8 @@ struct TailQuery {
     from: Option<String>,
     #[serde(default)]
     follow: Option<u8>,
-    /// Stop at this offset (not with `follow`): the TUI's copy mode reads
-    /// the history before what it has (M32).
+    /// Stop at this offset (not with `follow`): for reading the history
+    /// before what a client has (M32's copy mode, since removed, did).
     #[serde(default)]
     until: Option<u64>,
     /// Strip escape sequences.

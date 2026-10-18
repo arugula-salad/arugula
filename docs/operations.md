@@ -327,8 +327,6 @@ doesn't depend on the answer:
 - **A route nobody but MCP uses:** keep it; the route costs one line
   (`.op::<O>()`) and the web or a script may want it. If that ever matters,
   `PATH` becomes optional.
-- **The TUI and tmux -CC** use the WebSocket and a few routes through the
-  same CLI helpers; they need no change.
 
 ## The pilot
 

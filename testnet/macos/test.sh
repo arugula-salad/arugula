@@ -3,8 +3,8 @@
 # macOS checks that need a whole Mac, each in a fresh tart VM clone
 # (testnet/macos/vm.sh), with no person and no GUI on the host.
 #
-#   testnet/macos/test.sh tools                safari, iterm2 and launchd in
-#                                              one VM, booted once
+#   testnet/macos/test.sh tools                safari and launchd in one VM,
+#                                              booted once
 #   testnet/macos/test.sh launchd [claim...]   claims below
 #   BREAK=1 testnet/macos/test.sh launchd      every claim must fail
 #   testnet/macos/test.sh safari               web/safari against real Safari
@@ -13,9 +13,6 @@
 #                                              the iOS Simulator (ios.sh; the
 #                                              Xcode base, `vm.sh base --xcode`;
 #                                              parked, #257)
-#   testnet/macos/test.sh iterm2 [claim...]    M5 and M32 in iTerm2 (iterm2.sh;
-#                                              BREAK=both adds the break pass
-#                                              in the same VM)
 #   testnet/macos/test.sh app                  #178, the app in cloud mode
 #                                              (app-cloud.ts)
 #   testnet/macos/test.sh journey              #551, J1 on the real app and
@@ -28,8 +25,8 @@
 #   KEEP=1 ...                                 leave the clone running
 #
 # tools runs launchd last: its reboot restarts the VM, it leaves a sudoers
-# drop-in, and its user must never have had a GUI session. safari and
-# iterm2 install no service and run as admin; what they leave running is
+# drop-in, and its user must never have had a GUI session. safari
+# installs no service and runs as admin; what it leaves running is
 # stopped before launchd starts.
 #
 # launchd (S28 #153, M52 #155): a user made with sysadminctl who has never
@@ -225,19 +222,15 @@ t_launchd() {
   fi
 }
 
-# One boot for safari, iterm2 and launchd, in that order.
+# One boot for safari and launchd, in that order.
 t_tools() {
-  [ $# = 0 ] || { echo "tools takes no claims: name them with launchd or iterm2 alone" >&2; exit 2; }
-  [ -z "$BREAK" ] || { echo "BREAK=1 is one test's: launchd or iterm2" >&2; exit 2; }
+  [ $# = 0 ] || { echo "tools takes no claims: name them with launchd alone" >&2; exit 2; }
+  [ -z "$BREAK" ] || { echo "BREAK=1 is one test's: launchd" >&2; exit 2; }
   launchd_claims
   fresh
-  local t
-  for t in safari iterm2; do
-    if ARUGULA_MACOS_UP=1 "$HERE/$t.sh"; then echo "[macos $t] ok"; else echo "[macos $t] FAIL" >&2; failed=1; fi
-  done
-  # iterm2's daemons and iTerm2 run as admin from /tmp/arugula, where
-  # make_user puts the user's binaries, and safaridriver stays up.
-  v ssh 'pkill -9 -x iTerm2; pkill -f "^/tmp/arugula/arugula"; pkill -x safaridriver; true'
+  if ARUGULA_MACOS_UP=1 "$HERE/safari.sh"; then echo "[macos safari] ok"; else echo "[macos safari] FAIL" >&2; failed=1; fi
+  # safaridriver stays up.
+  v ssh 'pkill -x safaridriver; true'
   test=launchd
   t_launchd
 }
@@ -248,11 +241,10 @@ case "$test" in
   launchd) launchd_claims "$@"; fresh; t_launchd ;;
   safari) exec "$HERE/safari.sh" "$@" ;;
   ios) exec "$HERE/ios.sh" "$@" ;;
-  iterm2) exec "$HERE/iterm2.sh" "$@" ;;
   app) cd "$ROOT" && exec node --experimental-strip-types --no-warnings testnet/macos/app-cloud.ts "$@" ;;
   journey) cd "$ROOT" && exec node --experimental-strip-types --no-warnings testnet/macos/journey-j2a.ts "$@" ;;
   journey-j3) cd "$ROOT" && exec node --experimental-strip-types --no-warnings testnet/macos/journey-j3.ts "$@" ;;
   journey-j4) cd "$ROOT" && exec node --experimental-strip-types --no-warnings testnet/macos/journey-j4.ts "$@" ;;
-  *) sed -n '3,58p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2 ;;
+  *) sed -n '3,55p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2 ;;
 esac
 [ -z "$failed" ]

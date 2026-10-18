@@ -50,11 +50,6 @@ phone) draws tabs and splits you drive with the mouse.
   install` puts in the daemon's own copy.
 - **Scriptable.** `arugula`, a CLI for scripts and agents: run, send,
   wait for a command or a match, tail, search every pane's history.
-- **In any terminal, too.** `arugula tui` draws the same tabs and splits
-  in the terminal you're in (over ssh as well), with a sidebar of what
-  needs you: allow an agent's request from there without opening its pane.
-  Select, search a pane's whole history and copy, to your own clipboard
-  over ssh.
 
 [![A tour of the swarm: every pane clustered by project, then one project's panes up close, then an agent's request on the Needs You rail, then that agent's session opened](https://arugula.io/img/dive.gif)](https://arugula.io)
 

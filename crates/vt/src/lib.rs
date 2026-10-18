@@ -12,12 +12,7 @@ mod ghostty;
 mod status_query;
 
 pub use compat::Capabilities;
-pub use ghostty::{
-    CaptureOpts, CellStyle, CheckpointError, Color, Cursor, CursorShape, Found, GhosttyEngine, Line, Unit, engine_tag,
-};
-/// libghostty's key and mouse events, for [`GhosttyEngine::encode_key`] and
-/// [`GhosttyEngine::encode_mouse`].
-pub use libghostty_vt::{key, mouse};
+pub use ghostty::{CheckpointError, GhosttyEngine, engine_tag};
 
 pub trait VtEngine {
     /// Process PTY output.

@@ -1,7 +1,7 @@
 //! The daemon's integration tests, as one binary: one per file linked 48
 //! times over (125-200 MB each in a debug build, #466). Each file is a
-//! module; `cargo test -p arugulad --test integration tmux::` runs one,
-//! nextest's `-E 'binary(integration) & test(/^tmux::/)'` too.
+//! module; `cargo test -p arugulad --test integration attach::` runs one,
+//! nextest's `-E 'binary(integration) & test(/^attach::/)'` too.
 
 mod agentd;
 #[cfg(unix)]
@@ -90,7 +90,6 @@ mod team_answers;
 mod telemetry;
 #[cfg(feature = "labs")]
 mod threads;
-mod tmux;
 mod upgrade;
 mod vm_layout;
 #[cfg(feature = "labs")]

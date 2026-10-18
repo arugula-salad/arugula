@@ -247,8 +247,8 @@ impl Remote {
         if !status.success() && unreachable(&String::from_utf8_lossy(&said)) {
             eprintln!(
                 "arugula: {dest} can't reach control at {control}. Joining needs {dest} to connect out to \
-                 control (HTTPS, or http on a private network), and it couldn't. {dest} is still reachable from a \
-                 terminal over ssh: `arugula --ssh {dest} tui`.",
+                 control (HTTPS, or http on a private network), and it couldn't. {dest} is still reachable over \
+                 ssh: `arugula --ssh {dest} web` says how to open its page.",
                 dest = self.dest
             );
         }

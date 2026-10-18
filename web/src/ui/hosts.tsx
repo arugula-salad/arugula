@@ -167,7 +167,7 @@ export function HostButton() {
     if (directory.sshOnly.length) {
       items.push("separator", { header: "From a terminal (ssh)" } as MenuItem);
       for (const h of directory.sshOnly) {
-        items.push({ label: `    ${h.name}  · arugula --host ${h.name} tui`, disabled: true, run: () => {} });
+        items.push({ label: `    ${h.name}  · arugula --host ${h.name} ls`, disabled: true, run: () => {} });
       }
     }
     items.push("separator", { label: "Swarm: every pane at once", run: openSwarm });

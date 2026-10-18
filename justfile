@@ -550,8 +550,8 @@ forges cmd="test" forge="forgejo":
     esac
 
 # macOS checks in a throwaway tart VM (docs/testing.md, "A fresh Mac"):
-# `just macos tools` (safari, iterm2 and launchd in one VM, booted once),
-# each alone (`just macos launchd`, `safari`, `iterm2`), `just macos ios`
+# `just macos tools` (safari and launchd in one VM, booted once),
+# each alone (`just macos launchd`, `safari`), `just macos ios`
 # (the iOS Simulator, on the Xcode base: `just macos base --xcode` once;
 # parked, #257), or base|up|down|ssh for the VM.
 # Fails without tart or the base VM; ARUGULA_SKIP_MACOS_VM=1 skips loudly.

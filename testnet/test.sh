@@ -65,7 +65,7 @@
 #   unreachable
 #           A box that can't reach control (box-bare joining the hosted
 #           control, with no route out) says so, naming the box, control
-#           and `arugula --ssh box tui`, and is still reachable over
+#           and `arugula --ssh box web`, and is still reachable over
 #           --ssh. Broken: it joins the stack's control, which it can reach.
 #   cli     M49 end to end: box-systemd and box-bare join the stack's
 #           control (approved by the headless device); box-bare's daemon
@@ -76,8 +76,8 @@
 #           from control, and `--host box-bare` (direct) and `--host
 #           box-systemd` (relayed) each `run`, `ls` and `capture`. Then on
 #           the relayed box: `events --follow` and `tail --follow` print
-#           while they run, and `attach` and `tui` (in a pty from `ssh -tt`)
-#           type into a pane, see the answer, and leave with Ctrl-]. Broken:
+#           while they run, and `attach` (in a pty from `ssh -tt`)
+#           types into a pane, see the answer, and leave with Ctrl-]. Broken:
 #           the CLI isn't logged in, so neither name resolves.
 #   team    Another person's machine in a team (#254): an owner signs in,
 #           makes a team and joins box-systemd to it; a second person, the
@@ -342,7 +342,7 @@ claim_unreachable() {
   kill "$pid" 2>/dev/null || true
   wait "$pid" 2>/dev/null && rc=1
   grep -qF "$box can't reach control at $url" "$WORK/unreachable.out" || rc=1
-  grep -qF "arugula --ssh $box tui" "$WORK/unreachable.out" || rc=1
+  grep -qF "arugula --ssh $box web" "$WORK/unreachable.out" || rc=1
   cli --ssh "$box" ls > /dev/null || { note "unreachable: $box isn't reachable over --ssh"; rc=1; }
   # Leave it bare for the ssh profile's claims.
   fresh "$box" || true
@@ -409,23 +409,6 @@ pty_attach() {
     s -tt bastion "stty cols 100 rows 30; .local/bin/arugula --host $box attach $pane" > "$WORK/attach-$box.out" 2>&1 || rc=1
   grep -q "$mark-42" "$WORK/attach-$box.out" || { note "attach on $box never showed $mark-42 (exit $rc)"; tail -c 600 "$WORK/attach-$box.out" >&2; return 1; }
   [ "$rc" = 0 ] || { note "attach on $box didn't exit 0 after Ctrl-]"; return 1; }
-}
-
-# `arugula --host $1 tui` on the bastion, in a pty: typed into its focused
-# pane, then Ctrl-] q. Holds when it exited 0 and the marker reached a
-# pane (on the screen it drew, or in a capture afterwards).
-pty_tui() {
-  local box="$1" mark="TUI-$1-$$" rc=0 p
-  # shellcheck disable=SC2016 # $((...)) is for the pane's shell
-  { sleep 5; printf '\r'; sleep 2; printf 'echo %s-$((6*7))\r' "$mark"; sleep 4; printf '\035q'; sleep 2; } |
-    s -tt bastion "stty cols 120 rows 35; TERM=xterm-256color .local/bin/arugula --host $box tui" > "$WORK/tui-$box.out" 2>&1 || rc=1
-  [ "$rc" = 0 ] || { note "tui on $box didn't exit 0 after Ctrl-] q"; tail -c 600 "$WORK/tui-$box.out" >&2; return 1; }
-  grep -q "$mark-42" "$WORK/tui-$box.out" && return 0
-  for p in $(s bastion ".local/bin/arugula --host $box ls" | sed -n 's/^%\([0-9]*\) .*/\1/p'); do
-    s bastion ".local/bin/arugula --host $box capture $p" 2>/dev/null | grep -q "$mark-42" && return 0
-  done
-  note "tui on $box: no pane shows $mark-42"
-  return 1
 }
 
 # `events --follow` and `tail --follow` on the bastion print while they
@@ -496,11 +479,10 @@ claim_cli() {
       sleep 0.5
     done
     [ "$seen" = 1 ] || { note "cli: capture on $b never showed M49-$b-42"; ok=0; continue; }
-    # The relayed box: streams, attach and tui (#254).
+    # The relayed box: streams and attach (#254).
     [ "$b" = box-systemd ] || continue
     follows "$b" || { note "cli: events/tail --follow on $b:"; cat "$WORK/follow-$b.out" >&2; ok=0; }
     pty_attach "$b" "$pane" || ok=0
-    pty_tui "$b" || ok=0
   done
   bastion_tidy
   # Leave box-bare bare for the ssh profile's claims.

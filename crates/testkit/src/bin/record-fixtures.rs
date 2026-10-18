@@ -17,7 +17,7 @@ type Recording = (&'static str, &'static str, fn(&Session));
 const ALL: [Recording; 3] = [
     (
         "attach",
-        "Attach to the first pane as the TUI does (view at 80x24, attach), type a command and see its output, \
+        "Attach to the first pane as a terminal client does (view at 80x24, attach), type a command and see its output, \
          resize to 100x30, detach.",
         attach,
     ),

@@ -16,7 +16,7 @@ Not here: what each milestone built (the archive), how to build and test
 ## Protocol and transports
 
 ### One protocol, two transports
-The web client, the CLI, the TUI and the API speak one protocol. On a
+The web client, the CLI and the API speak one protocol. On a
 WebSocket it is JSON text frames for control messages and binary frames for
 terminal bytes; on the Unix socket (a named pipe on Windows) the same messages
 travel length-prefixed. A transport never shapes the protocol or the core, so
@@ -78,8 +78,7 @@ up from the log (or gets `resync` if the log no longer has the gap). A slow
 client never pauses the program: the log absorbs its output. The program is
 paused only when the daemon itself falls behind, through a bounded queue (64
 chunks), and client requests are served before that queue, so Ctrl-C stops a
-flood at once. Clients that don't ack (`attach`, the tmux front end, the share
-viewer) get `resync` on a full queue.
+flood at once. Clients that don't ack (`attach`, the share viewer) get `resync` on a full queue.
 Where: `crates/mux/src/pane.rs` (`ACK_WINDOW`, `PROGRAM_QUEUE`).
 From: [Protocol, flow control](docs/plan-archive.md#protocol-one-protocol-two-transports), #52.
 
@@ -96,10 +95,9 @@ Typing takes the size only once the owner has been idle for 3 s
 (`SIZE_HOLD`; the owner's typing and taking the size both count). Until then
 the newcomer types into the owner's size. Such a claim carries `typed: true`;
 an older daemon ignores the field and takes it at once. Focusing a window
-doesn't claim (web or TUI), and a remote pane claims its host's tab only when
-typed into, not because this window owns its home tab. `illogical attach` and
-an iTerm2 window resize still claim at once: they are one terminal's own size
-changing.
+doesn't claim, and a remote pane claims its host's tab only when typed
+into, not because this window owns its home tab. `illogical attach`'s
+resize still claims at once: it is one terminal's own size changing.
 Why: one person moving between devices; "smallest wins" would make the desktop
 suffer whenever the phone is open. The hold is #333: two editors typing in
 turn, or one person with two windows, resized the PTY at every handover, and
@@ -245,7 +243,7 @@ Every request has an author and every session an access list. Roles per
 session are `viewer`, `editor` and `owner`; the daemon's owner owns every
 session. `illogical_core::access::need` is the one decision function, and the
 daemon enforces it on every path: the WebSocket (in the mux, per message), the
-HTTP API (`authz.rs`), the Unix socket, the channel and the tmux front end.
+HTTP API (`authz.rs`), the Unix socket and the channel.
 The unit of sharing is the session; tabs, blocks and machines inherit it.
 Grants are data (`acl.json`) with an audit log (`audit.jsonl`).
 Where: `crates/core/src/access.rs`, `crates/mux/src/acl.rs`, `crates/daemon/src/authz.rs`, `crates/mux/src/mux/who_may.rs`.
@@ -311,18 +309,50 @@ Where: `crates/daemon/src/server.rs`, `web/`.
 From: [Cargo workspace](docs/plan-archive.md#cargo-workspace), #387 (point 4).
 
 ### No client links daemon code
-`cli` (TUI, tmux front end), `desktop` and `web/` speak the wire through
+`cli`, `desktop` and `web/` speak the wire through
 `illogical-proto`. `core` has no internal dependencies, `proto` depends only
 on `core`, `vt` and `e2e` stand alone, and `control` shares only `e2e`.
 Where: `Cargo.toml`, `crates/*/Cargo.toml`.
 From: #387.
 
-### Only the web client and the desktop app get new features
-The TUI (`illogical tui`) and the tmux `-CC` front end are kept working and
-tested, but they are frozen: no new features there.
-Why: every feature in the web client lands once instead of three times.
-Where: `crates/cli/src/tui/`, `crates/cli/src/tmux/`, `web/`, `crates/desktop/`.
-From: #387; [S26](docs/plan-archive.md#s26-how-native-can-it-get-141), [M31](docs/plan-archive.md#m31-illogical-tui), [M5](docs/plan-archive.md#m5-tmux-control-mode--cc-front-end).
+### The web client and the desktop app are the clients
+Panes are drawn by the web client (in a browser, on the phone, and in the
+desktop app's webview). The CLI scripts and drives panes (`run`, `send`,
+`tail`, `wait`, `capture`) and `arugula attach` puts one pane in the terminal
+you're in, but nothing else draws tabs and splits.
+Why: every feature lands once. The TUI and the tmux `-CC` front end were
+frozen first (#387) and then removed: "The TUI and tmux -CC are removed",
+below.
+Where: `web/`, `crates/desktop/`, `crates/cli/src/attach.rs`.
+From: #387; [S26](docs/plan-archive.md#s26-how-native-can-it-get-141); Jake, 2026-10-18.
+
+### The TUI and tmux -CC are removed
+`arugula tui` (M31, M32: tabs, splits and a sidebar in a terminal, with copy
+mode) and `arugula tmux -CC` (M5: the CLI as a tmux control-mode server, so
+iTerm2 drew the daemon's tabs as native windows) were taken out of Arugula
+on 2026-10-18, Jake's decision. The CLI no longer links `arugula-vt`, so it
+builds without libghostty and Zig, and ratatui and the crates only it
+pulled in left the build. Revive them from git if they're wanted again:
+everything is in the tree at 50daf913 (`crates/cli/src/tui/`,
+`crates/cli/src/tmux/`, `crates/vt/src/ghostty/copy.rs`, `view.rs` and
+`inspect.rs`, `crates/daemon/tests/integration/tmux.rs` with S11's
+transcript, `web/e2e/tui*.spec.ts`, `web/e2e/tmux.spec.ts` and
+`testnet/macos/iterm2.sh`). What stays, for a fleet whose versions are
+mixed:
+- **The wire is unchanged.** An older CLI's TUI or tmux front end still
+  attaches to a newer daemon. `ClientMsg::Attach`'s `kitty_keys` and
+  `/api/panes/{id}/tail`'s `until` stay; so do `Intent::SetOption`,
+  `Options` and `OptionScope` (clients' `@` options, which only the tmux
+  front end set), in the protocol and in the saved layout, so a layout
+  that has them still loads. Nothing reads them now.
+- **Telemetry's `tui`** stays in `Surface` and in `telemetry.set`'s `via`:
+  an older daemon or CLI reports it. A WebSocket on the local socket now
+  counts as `cli` (it is `arugula attach`, or an older TUI).
+- **A `tmux` link to the CLI** (what `arugula tmux -CC` asked for, for
+  iTerm2 over ssh) now says the front end was removed and exits 1, rather
+  than reading tmux's arguments as the CLI's.
+Where: `crates/cli/src/main.rs`, `crates/core/src/mux.rs` (`Options`), `crates/vt/src/ghostty/paste.rs` and `screen.rs` (what the mux still uses).
+From: Jake, 2026-10-18.
 
 ### The web client draws terminals through one file
 xterm.js lives behind `terminal-view.ts` (WebGL on visible panes, DOM for the
@@ -362,7 +392,7 @@ Where: `crates/desktop/src/main.rs`, `crates/desktop/src/service.rs`,
 From: [Desktop track](docs/plan-archive.md#desktop-track-s25-m46m48-added-2026-10-04), [S26](docs/plan-archive.md#s26-how-native-can-it-get-141), #317, #390, #392, #550, #561.
 
 ### Clients run ssh; daemons don't
-The CLI, the TUI and the desktop app run the system `ssh` themselves, where
+The CLI and the desktop app run the system `ssh` themselves, where
 the user's agent and prompts are. A daemon never relays ssh (that would make
 it a hub and put the user's ssh credentials in a background service). ssh is
 used to install and join a box to control; control reaches it after that.
@@ -1205,7 +1235,7 @@ and their tests). What stays, for a fleet whose versions are mixed:
   `call_*` variants now, so one fails to parse and the daemon logs it as a
   bad client message and carries on, as it does for any message it doesn't
   know. An older daemon's `calls` (in `State`, `Delta` and
-  `HostFeatures`) and `call_signal` are ignored by a newer page and TUI,
+  `HostFeatures`) and `call_signal` are ignored by a newer page and TUI (since removed),
   which never ask for them. `GET /api/turn` and control's
   `GET /api/daemon/turn` are gone; an older daemon asking control falls
   back to public STUN, as it did when control couldn't be reached.

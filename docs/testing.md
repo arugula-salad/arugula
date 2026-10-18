@@ -33,7 +33,7 @@ or an account skip without it and name what's missing
 | `just e2e-webkit` | only the `webkit` project: Safari's engine, for device keys (#94) and the one-click invite (#137) | macOS |
 | `just testnet up`, `test`, `break` (`ssh`, then `control`) | the Docker test stack's claims ([testnet/README.md](../testnet/README.md)), then each claim under `BREAK=1`, where it must fail | Linux |
 | `just forges`, `just testnet-hosts`, `just testnet-editors` | real forges, two hosts and VS Code over Remote-SSH, in Docker ([below](#real-forges-two-hosts-vs-code-over-remote-ssh)) | the forges nightly (`forges-nightly.yml`) |
-| `just macos <test>` | the tart VM's checks: `tools` (real Safari, iTerm2, then launchd with no GUI session, in one VM), Safari in the iOS Simulator, the desktop app ([below](#a-fresh-mac-the-tart-vm-harness)), `journey`: J1 on the real app and Safari, then J2a with Riley in a browser, `journey-j3`: the app installed by hand over an older daemon, and `journey-j4`: an agent installing over ssh, all graphed ([below](#a-new-users-journeys)) | no |
+| `just macos <test>` | the tart VM's checks: `tools` (real Safari, then launchd with no GUI session, in one VM), Safari in the iOS Simulator, the desktop app ([below](#a-fresh-mac-the-tart-vm-harness)), `journey`: J1 on the real app and Safari, then J2a with Riley in a browser, `journey-j3`: the app installed by hand over an older daemon, and `journey-j4`: an agent installing over ssh, all graphed ([below](#a-new-users-journeys)) | no |
 | `just desktop-check` | rustfmt and clippy for `crates/desktop` | Linux |
 | `just desktop-xvfb` | the Linux desktop app under Xvfb in a container (`packaging/desktop/xvfb/`): `join` (#204), `app` (`bare`, `links` and `nautilus` among its claims) and `stale` (#317) (see [The desktop app's tests](#the-desktop-apps-tests)) | Linux |
 | `just desktop-packages ARCH` | the .deb on Ubuntu 22.04 and the .rpm on Fedora 42 install and claim `arugula://` (after `just desktop-linux ARCH`) | no |
@@ -193,11 +193,11 @@ Waiting on something that takes as long as the machine is busy (a flood
 of output, a build): stop it or wait for its end, never sleep a fixed time
 and hope, and make deadlines failure limits that are generous (tens of
 seconds) rather than waits. A reader that has to keep up with a flood
-(the tmux client in `tmux.rs`) does as little per line as it can and lets
-its own timeouts expire while lines keep coming. `falling_behind_pauses_the_pane`
-failed under a load average of 30 because a fixed 40 MB flood was still
-running after `continue`; it now runs `yes` until the pane pauses, sends
-^C and waits for the prompt in a capture.
+does as little per line as it can and lets its own timeouts expire while
+lines keep coming. A test of a paused pane once failed under a load
+average of 30 because a fixed 40 MB flood was still running after
+`continue`; run `yes` until the pane pauses, send ^C and wait for the
+prompt in a capture.
 
 The same goes for a step that has to have happened before the next one
 makes sense: wait for the daemon to say it happened. Before a ^C, wait
@@ -359,7 +359,7 @@ ids are kept: a fresh daemon hands out the same ones.
 
 | Fixture | What the client does |
 |---|---|
-| `attach` | views the first tab at 80x24 and attaches its pane as the TUI does, types `echo fixture-attach`, resizes to 100x30, detaches |
+| `attach` | views the first tab at 80x24 and attaches its pane as a terminal client does, types `echo fixture-attach`, resizes to 100x30, detaches |
 | `run-capture` | `arugula run --wait 'echo fixture-run'`, then `arugula capture %2` |
 | `events` | `arugula events -f` while `arugula run` runs a command, until it exits |
 
@@ -406,10 +406,6 @@ closes what's open (so `events -f` ends), and that counts as those closes.
 It exits 0 when the fixture played out, 1 on anything unexpected and 2 if
 steps were left at the timeout.
 
-- The TUI: `crates/cli/src/tui/fixture_tests.rs` plays `attach` through the
-  TUI's own connection and `App`, drawn into ratatui's test backend sized
-  so its pane area is the recorded view, typed into with key events. What's
-  left at the end is the recording's detach: the TUI detaches by closing.
 - The CLI: `crates/cli/tests/fixtures.rs` runs `arugula --host <url>`
   for `run --wait`, `capture` and `events -f`.
 
@@ -798,7 +794,7 @@ Three tests cover M49, from fastest to most faithful:
 - The testnet's `cli` claim (`just testnet test control cli`; Docker):
   the CLI on the bastion, with no daemon, logs in and reaches box-bare
   directly and box-systemd through the relay; on box-systemd it also
-  follows events and a pane's output, and drives `attach` and `tui` in a
+  follows events and a pane's output, and drives `attach` in a
   pty (`ssh -tt`, keys piped in with pauses). `team` reaches another
   account's machine: an owner (a second headless device, `devs FILE` in
   `testnet/test.sh`) makes a team and joins box-systemd to it, the CLI's
@@ -988,8 +984,8 @@ reached only over ssh.
 | `crates/daemon/tests/integration/reboot.rs` | #26; M52's "the box survives a reboot" on Linux | installs over `--ssh` as a lingering user service, builds #26's session (splits, a nested directory, coloured output, every restart policy, a browser block, an agent block), then `docker restart` twice with nobody logged in; checks the daemon is up, the journal's "saved for shutdown" and "restored", layout, directories, scrollback with `── restored`, each pane by its policy, both blocks, and a headless web client (`web/reconnect-watch.ts`) reconnecting without a reload | promise 2 on Linux if the daemon isn't up after the restart (lingering, the user service); otherwise a restore regressed (#26), named by the assertion |
 | `just testnet test control signin reach` | the ground under #155 (M52) | a device signs in with the fake GitHub and is trusted; box-systemd reaches control at its inner address | the stack, not M52: the fakes or the inner network |
 | `just testnet test control relay` | #155 (M52): one step plus the approval, the pane opens from the phone, ssh out of the picture, the box survives a reboot | on a fresh box-systemd, `arugula --ssh box-systemd join` installs and starts the daemon and prints a code; the device approves it; the box is on the device list and online; with the CLI's ssh master closed and the bastion paused, a marker round-trips through a pane over the relay. Then `web/fixtures/m52-phones.ts`: a Pixel 7 (Chrome) and an iPhone (WebKit) sign in to the stack's control, the device approves each, and each opens the box's pane, taps it and types a marker, which the device reads back from the box's pane over the relay; the script `docker restart`s the box, and the same open pages reach it again by themselves and type a second marker; after that the device's own marker round-trips too | promise 4: the join over ssh, the approval, the relay with ssh gone, a phone's page reaching the box through control, or coming back after a reboot (which also rests on promise 2). `m52-phones:` on stderr names the phone and the step |
-| `just testnet test control unreachable` | #155 (M52): "a box that can't reach control says so and stays reachable over `--ssh`" | box-bare, with no route out, joins the hosted control; the output must name the box and control and give `arugula --ssh box-bare tui`, and `--ssh box-bare ls` still works | promise 5 |
-| `just testnet test control cli` | #149 (M49), #254 | box-systemd and box-bare join over ssh; the CLI on the bastion, with no daemon, logs in with a code the device approves, lists both from control, and runs, lists and captures on box-bare directly and box-systemd through the relay; on box-systemd, `events --follow` and `tail --follow` print while running, and `attach` and `tui` in a pty type a command, see the answer and leave with Ctrl-] ([M49](#m49-the-cli-through-control)) | the CLI through control (login, `hosts`, direct or relayed routing, streamed answers, `/ws` over the channel); the joins it starts with are promise 4 |
+| `just testnet test control unreachable` | #155 (M52): "a box that can't reach control says so and stays reachable over `--ssh`" | box-bare, with no route out, joins the hosted control; the output must name the box and control and give `arugula --ssh box-bare web`, and `--ssh box-bare ls` still works | promise 5 |
+| `just testnet test control cli` | #149 (M49), #254 | box-systemd and box-bare join over ssh; the CLI on the bastion, with no daemon, logs in with a code the device approves, lists both from control, and runs, lists and captures on box-bare directly and box-systemd through the relay; on box-systemd, `events --follow` and `tail --follow` print while running, and `attach` in a pty types a command, sees the answer and leaves with Ctrl-] ([M49](#m49-the-cli-through-control)) | the CLI through control (login, `hosts`, direct or relayed routing, streamed answers, `/ws` over the channel); the joins it starts with are promise 4 |
 | `just testnet test control team` | #254: a team machine listed and reachable from `arugula hosts` | an owner's team with box-systemd in it; the CLI's account asks to join and is admitted; `hosts` lists box-systemd as the owner's, and the CLI captures its pane and attaches to it (relayed) | pinning and checking another account's root, or a team member's CLI device not taken by the team's machine |
 | `crates/daemon/tests/integration/guest_ssh.rs`, `web/e2e/guest-ssh.spec.ts` | #198 (M65): the direct path and the pane menu entry | the system OpenSSH client as a guest against a dev daemon ([below](#guest-ssh-m65)) | promise 6; the test's name says which part (read-only, read-write, ending a session, refusals, the CLI) |
 | `guest_ssh.rs`'s `a_guest_reaches_a_daemon_behind_nat_through_controls_jump_host` | #253 (M65's relay) | box-systemd joined to the `control` profile's control, a guest on the host through control's jump host | promise 6 for a box behind NAT, and control can't read the pane |
@@ -1085,19 +1081,18 @@ in `web/`, after `cargo build -p arugulad` and `pnpm run build`).
 ## A fresh Mac: the tart VM harness
 
 macOS checks that need a whole Mac (a user who never logged in to the GUI,
-real Safari, iTerm2, the desktop app) run in a throwaway macOS VM made with
+real Safari, the desktop app) run in a throwaway macOS VM made with
 [tart](https://tart.run), driven over ssh. No person and no window on the
 host: everything with a GUI happens inside the VM, whose image logs `admin`
 in to its own GUI session at boot. The scripts are in `testnet/macos/`.
 
 ```sh
 just macos base              # make the base VM, once (about 30 GB)
-just macos tools             # safari, iterm2, then launchd, in one VM
+just macos tools             # safari, then launchd, in one VM
 just macos launchd           # launchd with no GUI session (S28, M52)
 just macos safari            # web/safari against real Safari (#94, #137)
 just macos base --xcode      # the Xcode base for `ios`, once (about 60 GB more)
 just macos ios               # #94 and #137 in the iOS Simulator (#257; parked, below)
-just macos iterm2            # M5 (tmux -CC) and M32 (OSC 52) in iTerm2
 just macos app               # the desktop app in cloud mode (#178)
 just macos journey           # J1, then J2a, on the real app (#551)
 just macos up | ssh CMD | down   # the VM by hand
@@ -1106,24 +1101,21 @@ just macos up | ssh CMD | down   # the VM by hand
 `just macos <test>` builds the debug binaries first, then runs
 `testnet/macos/test.sh <test>`. Each test clones a fresh VM, runs, and
 deletes the clone (`KEEP=1` leaves it running for a look). `tools` boots
-one VM for `safari`, `iterm2` and `launchd`, in that order: launchd goes
+one VM for `safari` and `launchd`, in that order: launchd goes
 last because its `reboot` restarts the VM, it leaves a sudoers drop-in,
-and its user must never have had a GUI session. Safari and iTerm2 run as
-`admin` and install no service, and what they leave running is stopped
-before launchd starts, so they can't change its results.
+and its user must never have had a GUI session. Safari runs as
+`admin` and installs no service, and what it leaves running is stopped
+before launchd starts, so it can't change its results.
 
-`launchd`, `iterm2` and `app` have a `BREAK=1` form that breaks what each
+`launchd` and `app` have a `BREAK=1` form that breaks what each
 check is about, and every check must then fail, as in the testnet's
-claims. `BREAK=both` with `iterm2` runs the normal pass, then the break
-pass in the same VM, with fresh daemons, and passes when every check held
-in the first and none in the second. `tools` takes no `BREAK`: run
-`launchd` or `iterm2` alone for that.
+claims. `tools` takes no `BREAK`: run `launchd` alone for that.
 
 Without tart, or without the base VM, every script fails and says what to
 run; a test that didn't run isn't a pass. Only `ARUGULA_SKIP_MACOS_VM=1`
 skips, and it prints that no VM test ran. They need an Apple silicon Mac,
 about 35 GB free (about 60 GB more for `ios`'s Xcode base), and the network
-for the images, iTerm2 and the app's zip.
+for the images and the app's zip.
 
 ### Setup
 
@@ -1159,7 +1151,6 @@ for the images, iTerm2 and the app's zip.
 | `launchd` (`install`, `logout`, `uninstall`, `ssh`, `system`, `reboot`, `system-uninstall`) | A user made with `sysadminctl`, who never had a GUI session and is reached only over ssh, runs `arugulad install`. With no GUI session that's the background agent (with one it's the usual GUI LaunchAgent, which this VM's `admin` has and `illo` never does): it installs, warns that the daemon won't start after a reboot by itself, and the daemon and a pane outlive the ssh session. `arugulad uninstall` leaves nothing behind. `arugula --ssh illo@vm ls` from the host starts the daemon there and passes the warning through. `arugulad install --system` switches to a LaunchDaemon cleanly; after a clean shutdown and `tart run`, with nobody logged in as them, the daemon is back with its pane's output; `arugulad uninstall` removes the LaunchDaemon too. | One VM, in that order. "Nothing behind" means no plist in `~/Library/LaunchAgents` or `/Library/LaunchDaemons`, no `arugulad` service in `gui/UID`, `user/UID` or `system`, and no `arugulad` process for the user. The user gets passwordless sudo before `system`, as an admin would have. `BREAK=1` boots the service out before install, logout, system and reboot, drops the `note:` line (install checks both), installs again after each uninstall, and has the daemon already running when the ssh check would start it. |
 | `safari` | `/key-probe.html` puts its verdict in the DOM (`data-verdict` on `#verdict`: `keys`, `wrapped` or `none`, and JSON in `#result`), and it's `keys` or `wrapped`. A signed-out invitee opens a presigned invite, signs in through GitHub and joins in one click; the owner's Chrome sees them in the roster. | `web/safari/safari.spec.ts` with a small WebDriver client (`web/safari/webdriver.ts`). safaridriver runs in the VM (`sudo safaridriver --enable` once); its port comes to the host over ssh, and control and the fake GitHub, run on the host, are forwarded to the same ports on the VM's loopback. `SAFARIDRIVER_URL` alone runs the spec against any safaridriver. |
 | `ios` (`probe`, `invite`, `s27`), parked (#257) | The same key probe and presigned invite as `safari`, in Safari on an iPhone in the iOS Simulator (the probe reports `Safari N on iPhone, iOS N`), and, when named, S27's `safari/safari.ts --ios`, whose verdict must be a go. | `testnet/macos/ios.sh`, in a clone of the Xcode base (`arugula-macos-ios`). In the VM: `safaridriver --enable`, the newest iOS runtime's iPhone (`ARUGULA_IOS_DEVICE` names another device type; one is made if the image has none, and the runtime downloaded with `xcodebuild -downloadPlatform iOS` if it has no iOS runtime) booted with `simctl bootstatus -b`. The Simulator shares the VM's network, so the ports forwarded to the VM's loopback reach it as for `safari`. The spec picks it with `safari:useSimulator` and `safari:deviceUDID` (`SAFARI_IOS=1`, `SAFARI_DEVICE_UDID`). `just macos ios` builds `web/dist` and control first. `s27` needs `ARUGULA_S27_DIR`, the spike built in a worktree of `archive/spikes`: its CA is then trusted in the Mac's keychain and added to the Simulator's (`simctl keychain add-root-cert`), and its block names go in `/etc/hosts`. |
-| `iterm2` (`attach`, `split`, `tab`, `copy`) | iTerm2 runs `arugula tmux -CC` and opens a native window for the daemon's tab, text written there runs in the pane, and the pane's output shows in iTerm2 (all three `attach`); a split in iTerm2 adds a pane; a daemon tab becomes an iTerm2 tab. `arugula tui` in iTerm2 copies a line in copy mode, and `pbpaste` has it (`copy`). | iTerm2's latest stable zip, driven by AppleScript over ssh. The VM's TCC database (SIP is off in the image) gets Apple Events for sshd and osascript to iTerm2 before it starts, so nothing asks. |
 | `app` (`signin`, `approve`, `machines`, `reach`) | The release's app (`ARUGULA_MACOS_APP_ZIP` for another) signs in to control through the browser hand-over, is approved as a new device, lists every machine on the account (one on the host, and the Mac's own daemon once it joins), and keystrokes in its terminal run in that machine's pane. | `testnet/macos/app-cloud.ts`. Control, the fake GitHub and the host's machine run here; `web/fixtures/device.ts` is the person: it reads the app's `/#app=` page from Safari (AppleScript), allows it, hands the grant to the app's loopback port, and approves the app. The app's window is read through accessibility (JXA and System Events). |
 
 `ios` is parked: on the Xcode image's `:latest` (Xcode 27, iOS 27
@@ -1190,9 +1181,6 @@ What they found (2026-10-05, macOS 26.6.2 in the VM):
 - **Safari 26.6.2:** Ed25519 keys survive a reload, X25519 keys come back
   from IndexedDB as null, and the wrapped fallback works (verdict
   `wrapped`), as in Playwright's WebKit. The presigned invite passes.
-- **iTerm2 3.7.3:** every check passes. In copy mode, `[` `o` (a command's
-  output by its marks) found nothing in the TUI over macOS's bash 3.2; the
-  test copies a line instead.
 - **The app (0.17.0):** every check passes.
 
 ### In CI: the macos-tart runner
@@ -1274,10 +1262,6 @@ Only what no test can do:
 
 Real gaps, each one automatable:
 
-- **iTerm2 beyond tmux's basics:** dragging dividers, resizing windows,
-  detach and reattach ([development.md](development.md#testing-iterm2))
-  aren't in `just macos iterm2` yet; they can be, with the same
-  AppleScript.
 - **The iOS Simulator** (#257): `just macos ios` is written but parked
   ([above](#the-tests)); it needs a run on the Xcode 26 base, and S27's
   `--ios` with it.

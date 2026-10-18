@@ -1,5 +1,5 @@
 //! The wire snapshot: VT bytes that rebuild the terminal in a fresh one
-//! (xterm.js on attach and resync, the tmux front end's mirror).
+//! (xterm.js on attach and resync).
 //!
 //! libghostty's formatter writes most of it. What it leaves out or gets
 //! wrong at the pinned commit is filled in here (spike S1,
