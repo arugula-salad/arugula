@@ -1,6 +1,5 @@
 // The one-cell gutter between two panes of a split: dragging it resizes
-// them. In the new workspace (M110) the row between two stacked panes is
-// the lower one's header, so the gutter's handle there is a 6px band over
+// them. The row between two stacked panes is the lower one's header (M110), so the gutter's handle there is a 6px band over
 // the header's top edge, and a column gutter is at least 6px: both
 // overlap what's beside them rather than taking cells.
 
@@ -18,14 +17,12 @@ export function Divider({
   index,
   cell,
   scale,
-  live,
 }: {
   client: Client;
   split: SplitRect;
   index: number;
   cell: Cell;
   scale: number;
-  live?: boolean;
 }) {
   const row = split.dir === "row";
   const at = split.extents.slice(0, index + 1).reduce((a, b) => a + b, 0) + index;
@@ -33,11 +30,9 @@ export function Divider({
   const cellStyle = row
     ? px({ x: r.x + at, y: r.y, cols: 1, rows: r.rows }, cell)
     : px({ x: r.x, y: r.y + at, cols: r.cols, rows: 1 }, cell);
-  const style = !live
-    ? cellStyle
-    : row
-      ? { ...cellStyle, left: len((r.x + at) * cell.width + Math.min(0, (cell.width - HIT) / 2)), width: len(Math.max(cell.width, HIT)) }
-      : { ...cellStyle, top: len((r.y + at) * cell.height - HIT / 2), height: len(HIT) };
+  const style = row
+    ? { ...cellStyle, left: len((r.x + at) * cell.width + Math.min(0, (cell.width - HIT) / 2)), width: len(Math.max(cell.width, HIT)) }
+    : { ...cellStyle, top: len((r.y + at) * cell.height - HIT / 2), height: len(HIT) };
 
   const onPointerDown = (e: PointerEvent) => {
     if (e.button !== 0) return;
@@ -79,7 +74,7 @@ export function Divider({
 
   return (
     <div
-      class={`divider ${row ? "col-resize" : "row-resize"}${live ? " live" : ""}`}
+      class={`divider live ${row ? "col-resize" : "row-resize"}`}
       data-split={split.id}
       style={style}
       onPointerDown={onPointerDown}

@@ -163,7 +163,7 @@ test("a standing rule outlives its block and is forgotten from the account menu"
   await expect(second.locator(".agent-note").filter({ hasText: /Allowed make test \(standing rule: Bash make… in / })).toBeVisible();
 
   // The account menu lists it; Forget, and the next request asks again.
-  await page.locator(".app > .bar [data-account-menu]").click();
+  await page.locator(".ws-head [data-account-menu]").click();
   await page.getByRole("menuitem", { name: "Permission rules…" }).click();
   const dialog = page.getByRole("dialog", { name: "Permission rules" });
   await expect(dialog.locator("[data-rule]")).toHaveCount(1);

@@ -264,7 +264,7 @@ function DiffBlock({ client, id, s }: { client: Client; id: PaneId; s: DiffState
           </select>
         )}
         {can && (
-          <button title="Read it again" onClick={() => call("refresh")}>
+          <button title="Read it again" aria-label="Read it again" onClick={() => call("refresh")}>
             ↻
           </button>
         )}

@@ -1,7 +1,10 @@
-// The session's tabs, in the bar: each tab, the cloud runs opened beside
-// them, and + (with ▾ for other kinds of tab).
+// The session's tabs, over the panes: each tab, the cloud runs opened
+// beside them, and + (with ▾ for other kinds of tab). Many tabs scroll
+// sideways (the wheel too), the shown one is kept in sight, and + and ▾
+// stay at the end (M113).
 
 import { Fragment } from "preact";
+import { useLayoutEffect, useRef } from "preact/hooks";
 import { cloudPanes, useCloudPanes } from "../../cloud";
 import { paneIds, tabLabel, type Client } from "../../client";
 import { directory } from "../../hosts";
@@ -16,6 +19,7 @@ import { openFresh } from "../open-fresh";
 import { drop } from "../panes/drop";
 import { TabPeople } from "../people";
 import { ariaKeys, keyHint } from "../keys";
+import { newTabRefusal } from "./live";
 import { RenameInput, type Renaming } from "./rename-input";
 
 /** The tab bar of a session. */
@@ -24,50 +28,75 @@ export function TabStrip({
   session,
   renaming,
   setRenaming,
-  labelled,
 }: {
   client: Client;
   session: Session;
   renaming: Renaming;
   setRenaming: (r: Renaming) => void;
-  /** The new workspace (M108): icon buttons named for screen readers,
-   * with their keys. The classic bar's keep their names ("+"). */
-  labelled?: boolean;
 }) {
   const cloud = useCloudPanes();
   const tabKey = keyHint("desktop.tab");
   useSubscribe(drag.subscribe);
   const target = drag.current?.target;
   const marker = target?.kind === "tabbar" ? Math.min(target.index, session.tabs.length) : null;
+  const refusal = newTabRefusal(client, session.id);
+  // Which ends have tabs scrolled past them, for the fades (style.css).
+  const strip = useRef<HTMLDivElement>(null);
+  const edges = () => {
+    const el = strip.current;
+    if (!el) return;
+    const more = el.scrollWidth - el.clientWidth > 1;
+    const start = more && el.scrollLeft > 1;
+    const end = more && el.scrollLeft < el.scrollWidth - el.clientWidth - 1;
+    el.dataset.overflow = start && end ? "both" : start ? "start" : end ? "end" : "";
+  };
+  useLayoutEffect(edges);
   return (
-    <div class="tabbar" role="tablist">
-      {session.tabs.map((id, i) => {
-        const t = client.tabView(id);
-        if (!t) return null;
-        return (
-          <Fragment key={id}>
-            {marker === i && <div class="drop-marker" />}
-            <TabItem
-              client={client}
-              tab={t}
-              index={i}
-              selected={!cloud && id === client.tab}
-              renaming={renaming?.kind === "tab" && renaming.id === id}
-              setRenaming={setRenaming}
-              labelled={labelled}
-            />
-          </Fragment>
-        );
-      })}
-      <CloudTabs />
-      {marker === session.tabs.length && <div class="drop-marker" />}
+    <div class="tabstrip">
+      <div
+        ref={strip}
+        class="tabbar"
+        role="tablist"
+        aria-label={`Tabs in ${session.name}`}
+        onScroll={edges}
+        onWheel={(e) => {
+          // A mouse wheel scrolls the tabs sideways.
+          const el = e.currentTarget as HTMLElement;
+          if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && el.scrollWidth > el.clientWidth) {
+            el.scrollLeft += e.deltaY;
+            e.preventDefault();
+          }
+        }}
+      >
+        {session.tabs.map((id, i) => {
+          const t = client.tabView(id);
+          if (!t) return null;
+          return (
+            <Fragment key={id}>
+              {marker === i && <div class="drop-marker" />}
+              <TabItem
+                client={client}
+                tab={t}
+                index={i}
+                selected={!cloud && id === client.tab}
+                renaming={renaming?.kind === "tab" && renaming.id === id}
+                setRenaming={setRenaming}
+              />
+            </Fragment>
+          );
+        })}
+        <CloudTabs />
+        {marker === session.tabs.length && <div class="drop-marker" />}
+      </div>
+      {/* Outside the tabs that scroll, so they're always in reach. */}
       <button
         class="new-tab"
-        title={`New tab ${newTabWhere()}${labelled && tabKey ? ` (${tabKey})` : ""}`}
-        aria-label={labelled ? "New tab" : undefined}
-        aria-keyshortcuts={labelled ? ariaKeys(tabKey) : undefined}
+        title={refusal ?? `New tab ${newTabWhere()}${tabKey ? ` (${tabKey})` : ""}`}
+        aria-label="New tab"
+        aria-keyshortcuts={ariaKeys(tabKey)}
+        disabled={!!refusal}
         onClick={() => { cloudPanes.local(); client.intent({ op: "new_tab", session: session.id, from_pane: client.active() ?? null }); }}
-        onContextMenu={(e) => openFresh(client, e, () => newTabItems(client, session.id))}
+        onContextMenu={(e) => !refusal && openFresh(client, e, () => newTabItems(client, session.id))}
       >
         +
       </button>
@@ -75,8 +104,10 @@ export function TabStrip({
           click: not only behind a right-click. */}
       <button
         class="new-tab-more"
-        title="More kinds of tab"
+        title={refusal ?? "More kinds of tab: a directory, a PR, a VM…"}
         aria-label="More kinds of tab"
+        aria-haspopup="menu"
+        disabled={!!refusal}
         data-new-tab-more
         onClick={(e) => {
           const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -106,7 +137,6 @@ function TabItem({
   selected,
   renaming,
   setRenaming,
-  labelled,
 }: {
   client: Client;
   tab: TabView;
@@ -114,11 +144,17 @@ function TabItem({
   selected: boolean;
   renaming: boolean;
   setRenaming: (r: Renaming) => void;
-  labelled?: boolean;
 }) {
   const label = tabLabel(client, tab);
   const machine = client.tabMachine(tab.id);
   const close = () => client.intent({ op: "close_tab", tab: tab.id });
+  // Closing and renaming are an editor's (a viewer's would be refused).
+  const edits = client.role(client.sessionOfTab(tab.id) ?? null) !== "viewer";
+  const ref = useRef<HTMLDivElement>(null);
+  // The shown tab stays in sight when there are more than fit.
+  useLayoutEffect(() => {
+    if (selected) ref.current?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+  }, [selected]);
   if (renaming) {
     return (
       <div class="tab selected">
@@ -134,6 +170,7 @@ function TabItem({
   }
   return (
     <div
+      ref={ref}
       class={selected ? "tab selected" : "tab"}
       role="tab"
       aria-selected={selected}
@@ -146,8 +183,28 @@ function TabItem({
           onDrop: (what, target) => drop(client, what, target),
         })
       }
-      onDblClick={() => setRenaming({ kind: "tab", id: tab.id })}
-      onAuxClick={(e) => e.button === 1 && close()}
+      // From the keyboard (M113): the shown tab is the one Tab reaches;
+      // arrows, Home and End move between tabs, Enter or Space shows one,
+      // F2 renames it, and the menu key opens its menu.
+      tabIndex={selected ? 0 : -1}
+      onKeyDown={(e) => {
+        const el = e.currentTarget as HTMLElement;
+        const tabs = [...(el.parentElement?.querySelectorAll<HTMLElement>(".tab[data-tab-id]") ?? [])];
+        const i = tabs.indexOf(el);
+        const go = (j: number) => tabs[(j + tabs.length) % tabs.length]?.focus();
+        if (e.key === "ArrowRight") go(i + 1);
+        else if (e.key === "ArrowLeft") go(i - 1);
+        else if (e.key === "Home") go(0);
+        else if (e.key === "End") go(tabs.length - 1);
+        else if (e.key === "Enter" || e.key === " ") {
+          cloudPanes.local();
+          client.selectTab(tab.id);
+        } else if (e.key === "F2" && edits) setRenaming({ kind: "tab", id: tab.id });
+        else return;
+        e.preventDefault();
+      }}
+      onDblClick={() => edits && setRenaming({ kind: "tab", id: tab.id })}
+      onAuxClick={(e) => e.button === 1 && edits && close()}
       onContextMenu={(e) => openFresh(client, e, () => tabItems(client, tab, () => setRenaming({ kind: "tab", id: tab.id })))}
     >
       {machine ? (
@@ -168,18 +225,20 @@ function TabItem({
       <span class="tab-label">{label}</span>
       <TabPeople client={client} tab={tab.id} />
       <AttentionBadge {...tabAttention(client, tab)} client={client} />
-      <button
-        class="tab-close"
-        title="Close tab"
-        aria-label={labelled ? `Close tab ${label}` : undefined}
-        onPointerDown={(e) => e.stopPropagation()}
-        onClick={(e) => {
-          e.stopPropagation();
-          close();
-        }}
-      >
-        ×
-      </button>
+      {edits && (
+        <button
+          class="tab-close"
+          title="Close tab"
+          aria-label={`Close tab ${label}`}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            close();
+          }}
+        >
+          ×
+        </button>
+      )}
     </div>
   );
 }

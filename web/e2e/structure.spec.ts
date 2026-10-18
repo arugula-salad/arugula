@@ -81,9 +81,33 @@ test("shell integration can be switched off for a pane's new shells", async ({ p
   await expect(paneEl(page, split).locator(".cmd-mark")).toHaveCount(0);
 });
 
+// M113 (#1028): on a computer, the workspace is the only shell: each part
+// there, and named for a screen reader.
+test("the workspace's parts: rail, header, sessions, tabs, toolbar, footer", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await reset(page);
+  await expect(page.getByRole("navigation", { name: "Places" })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Where you are" })).toBeVisible();
+  await expect(page.getByRole("complementary", { name: /^Sessions on / })).toBeVisible();
+  await expect(page.getByRole("tablist", { name: /^Tabs in / })).toBeVisible();
+  await expect(page.getByRole("toolbar", { name: "Panes" })).toBeVisible();
+  await expect(page.locator("[data-status-footer]")).toBeVisible();
+  // No classic bar, and no Appearance switch back to it.
+  await expect(page.locator(".app > .bar, .app-bar, [data-workspace-choice]")).toHaveCount(0);
+  // The header, the tab strip and the toolbar sit above the panes; the
+  // footer below; the rail and the sidebar to their left.
+  const main = (await page.locator(".main").boundingBox())!;
+  for (const sel of [".ws-head", ".ws-tabs", "[data-pane-toolbar]"]) expect((await page.locator(sel).boundingBox())!.y).toBeLessThan(main.y);
+  expect((await page.locator("[data-status-footer]").boundingBox())!.y).toBeGreaterThanOrEqual(main.y + main.height - 1);
+  for (const sel of [".ws-rail", "[data-session-sidebar]"]) {
+    const b = (await page.locator(sel).boundingBox())!;
+    expect(b.x + b.width).toBeLessThanOrEqual(main.x + 1);
+  }
+});
+
 test("the account menu offers notifications for this device", async ({ page }) => {
   await reset(page);
-  await page.locator(".app > .bar [data-account-menu]").click();
+  await page.locator(".ws-head [data-account-menu]").click();
   await expect(page.getByRole("menuitemradio", { name: "Notify this device" })).toBeVisible();
   // The service worker that shows them is registered.
   await expect.poll(() => page.evaluate(async () => !!(await navigator.serviceWorker.getRegistration()))).toBe(true);
@@ -95,6 +119,9 @@ test.describe("phone", () => {
 
   test("the sheet lists panes that need you", async ({ page }) => {
     await reset(page);
+    // M113: a phone keeps its own header; none of the workspace's chrome.
+    await expect(page.locator(".phone-bar")).toBeVisible();
+    await expect(page.locator(".ws-rail, .ws-head, [data-session-sidebar], [data-pane-toolbar], [data-status-footer]")).toHaveCount(0);
     const pane = await active(page);
     await page.evaluate(
       (p) => fetch(`/api/panes/${p}/attention`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ state: "needs_input" }) }),

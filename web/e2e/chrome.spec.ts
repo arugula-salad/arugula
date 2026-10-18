@@ -1,21 +1,12 @@
-// M108 (#1023): the new workspace, behind Appearance → New workspace. The
-// rail, the session sidebar (switching, search), the routes and their way
-// back, and the header's connection chip. Every other spec runs the classic
-// bar, which stays the default until M113.
+// M108 (#1023) and M113 (#1028): the workspace on a computer. The rail, the
+// session sidebar (switching, search), the routes and their way back, the
+// header's connection chip, and the states and accessibility M113 made
+// deliberate.
 
 import { expect, test, type Page } from "@playwright/test";
-import { active, reset, tab, tabsInSession } from "./helpers";
-
-const NEW = JSON.stringify({ palette: "default", finish: "flat", corners: "square", workspace: "new" });
+import { active, panes, reset, tab, tabsInSession } from "./helpers";
 
 async function newWorkspace(page: Page) {
-  await page.addInitScript((v) => {
-    try {
-      localStorage.setItem("arugula-appearance", v);
-    } catch {
-      // A page without storage draws the classic bar; the test then fails.
-    }
-  }, NEW);
   await reset(page);
   await expect(page.locator(".ws-rail")).toBeVisible();
 }
@@ -154,16 +145,269 @@ test.describe("on a computer", () => {
     await expect(chip).toHaveAttribute("data-connection", "direct");
   });
 
-  test("Appearance → New workspace switches between the two shells", async ({ page }) => {
+  test("the old New workspace switch is forgotten; a saved palette stays, and Slate is the dark default", async ({ page, browser }) => {
+    // Someone who picked Latte and had turned the new workspace off (M108–M112).
+    await page.addInitScript(() => {
+      try {
+        localStorage.setItem("arugula-appearance", JSON.stringify({ palette: "latte", finish: "flat", corners: "square", workspace: "classic" }));
+      } catch {
+        // No storage: nothing to forget.
+      }
+    });
+    await newWorkspace(page);
+    await expect(page.locator(".app-bar")).toHaveCount(0);
+    await expect(page.locator("html")).toHaveAttribute("data-palette", "latte");
+    const saved = await page.evaluate(() => JSON.parse(localStorage.getItem("arugula-appearance") ?? "null"));
+    expect(saved).toEqual({ palette: "latte", finish: "flat", corners: "square" });
+    // Appearance has no switch any more.
+    await page.locator("[data-account-menu]").click();
+    await page.getByRole("menuitem", { name: "Appearance…" }).click();
+    await expect(page.locator("[data-appearance]")).toBeVisible();
+    await expect(page.locator("[data-workspace-choice]")).toHaveCount(0);
+
+    // Nobody's pick: Slate, in a dark scheme.
+    const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 }, colorScheme: "dark" });
+    await fresh.goto(page.url());
+    await expect(fresh.locator(".ws-rail")).toBeVisible();
+    await expect(fresh.locator("html")).toHaveAttribute("data-palette", "slate");
+    await fresh.close();
+  });
+});
+
+/** Drop the page's link and hold off its retry; `back()` reconnects. */
+async function dropLink(page: Page): Promise<() => Promise<void>> {
+  await page.evaluate(() => {
+    const c = window.__arugula.client as unknown as { schedule: (f: () => void, d: number) => void; link?: { close(): void } };
+    (window as unknown as { __retry: unknown }).__retry = c.schedule;
+    c.schedule = () => {};
+    c.link?.close();
+  });
+  return async () => {
+    await page.evaluate(() => {
+      const c = window.__arugula.client as unknown as { schedule: unknown; connect(): void };
+      c.schedule = (window as unknown as { __retry: unknown }).__retry;
+      c.connect();
+    });
+  };
+}
+
+// M113 (#1028): each state the workspace can be in, made deliberate.
+test.describe("states", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  test("an empty machine says what a session is, and makes one", async ({ page }) => {
+    await newWorkspace(page);
+    await page.evaluate(() => {
+      const c = window.__arugula.client;
+      for (const s of c.state!.sessions) c.intent({ op: "close_session", session: s.id });
+    });
+    const empty = page.locator("[data-no-sessions]");
+    await expect(empty.locator(".empty-title")).toHaveText(/^No sessions on /);
+    await expect(page.locator("[data-session-empty]")).toBeVisible();
+    // Nothing that needs a session: no tab strip, toolbar or activity.
+    await expect(page.locator(".ws-tabs, [data-pane-toolbar], [data-activity-toggle]")).toHaveCount(0);
+    await empty.getByRole("button", { name: "New session" }).click();
+    await expect.poll(() => panes(page)).toHaveLength(1);
+    await expect(page.locator("[data-no-sessions]")).toHaveCount(0);
+  });
+
+  test("while the link is down nothing claims to be live, and what would change something says why", async ({ page }) => {
+    await newWorkspace(page);
+    const first = await active(page);
+    await page.evaluate((pane) => window.__arugula.client.intent({ op: "split", pane, edge: "right" }), first);
+    await expect.poll(() => panes(page)).toHaveLength(2);
+    await expect(page.locator("[data-pane-status]").first()).toBeVisible();
+    const back = await dropLink(page);
+
+    await expect(page.locator(".app.ws.stale")).toBeVisible();
+    await expect(page.locator("[data-stale-note]")).toContainText("nothing here is live");
+    // No status a pane may no longer have, nor another window's size.
+    await expect(page.locator("[data-pane-status]")).toHaveCount(0);
+    await expect(page.locator("[data-sized-elsewhere]")).toHaveCount(0);
+    await expect(page.locator(".ws-group-stale").first()).toHaveText(/last known/);
+    for (const sel of [".new-tab", "[data-new-tab-more]", "[data-add-pane]", "[data-new-session]", ".ws-share", '[data-preset="grid"]']) {
+      await expect(page.locator(sel).first()).toBeDisabled();
+      await expect(page.locator(sel).first()).toHaveAttribute("title", /^Reconnecting to /);
+    }
+
+    await back();
+    await expect(page.locator(".app.ws.stale")).toHaveCount(0);
+    await expect(page.locator("[data-stale-note]")).toHaveCount(0);
+    await expect(page.locator(".new-tab")).toBeEnabled();
+  });
+
+  test("a pane that can't be made says why, and + Pane stays open", async ({ page }) => {
+    await newWorkspace(page);
+    // The machine says no (as it would out of room, or to a bad path).
+    await page.route("**/api/blocks", (route) =>
+      route.request().method() === "POST"
+        ? route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "no room for another pane" }) })
+        : route.continue(),
+    );
+    await page.locator("[data-add-pane]").click();
+    const drawer = page.locator("[data-add-pane-drawer]");
+    await drawer.locator('[data-kind="changes"]').click();
+    await drawer.locator("[data-add-pane-create]").click();
+    await expect(drawer.locator("[data-add-pane-error]")).toHaveText("No room for another pane");
+    await expect(drawer.locator("[data-add-pane-error]")).toHaveAttribute("role", "alert");
+    await expect(drawer).toBeVisible();
+    expect(await panes(page)).toHaveLength(1);
+  });
+
+  test("20 tabs: the strip scrolls, keeps the shown tab and + in sight; long names are cut, whole in their tooltip", async ({ page }) => {
+    await newWorkspace(page);
+    const long = "a-session-whose-name-goes-on-and-on-past-any-sidebar-width";
+    const s = await session(page, long);
+    await page.evaluate((s) => window.__arugula.client.selectSession(s), s);
+    for (let i = 1; i < 20; i++) {
+      // One at a time: a burst of new terminals runs headless Chrome out of
+      // WebGL contexts.
+      await page.evaluate((s) => window.__arugula.client.intent({ op: "new_tab", session: s, from_pane: null }), s);
+      await expect.poll(() => tabsInSession(page)).toHaveLength(i + 1);
+    }
+    const ids = await tabsInSession(page);
+    await page.evaluate((t) => window.__arugula.client.selectTab(t), ids[19]);
+    const strip = page.locator(".ws-tabs .tabbar");
+    const box = (await strip.boundingBox())!;
+    await expect(strip).toHaveAttribute("data-overflow", /start|both/);
+    await expect
+      .poll(async () => {
+        const t = (await page.locator(`[data-tab-id="${ids[19]}"]`).boundingBox())!;
+        return t.x >= box.x - 1 && t.x + t.width <= box.x + box.width + 1;
+      })
+      .toBe(true);
+    // + and ▾ beside the tabs, on screen.
+    for (const sel of [".ws-tabs .new-tab", ".ws-tabs [data-new-tab-more]"]) {
+      const b = (await page.locator(sel).boundingBox())!;
+      expect(b.x + b.width).toBeLessThanOrEqual(1440);
+    }
+    // The wheel scrolls it sideways.
+    const before = await strip.evaluate((el) => el.scrollLeft);
+    await strip.hover();
+    await page.mouse.wheel(0, -400);
+    await expect.poll(() => strip.evaluate((el) => el.scrollLeft)).toBeLessThan(before);
+
+    // The long name: cut with an ellipsis in the crumb and the row, whole
+    // where the pointer rests.
+    const crumb = page.locator(".ws-crumb-name");
+    await expect(crumb).toHaveText(long);
+    expect(await crumb.evaluate((el) => el.scrollWidth > el.clientWidth && getComputedStyle(el).textOverflow === "ellipsis")).toBe(true);
+    await expect(page.locator(".ws-crumb")).toHaveAttribute("title", new RegExp(`^${long}`));
+    await expect(row(page, long).locator(".ws-session-main")).toHaveAttribute("title", new RegExp(`^${long}`));
+  });
+});
+
+// M113 (#1028): keyboard, names, contrast and motion.
+test.describe("accessibility", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  test("every icon button is named, with a tooltip", async ({ page }) => {
+    await newWorkspace(page);
+    const first = await active(page);
+    await page.evaluate((pane) => window.__arugula.client.intent({ op: "split", pane, edge: "right" }), first);
+    await expect.poll(() => panes(page)).toHaveLength(2);
+    const unnamed = await page.evaluate(() =>
+      [...document.querySelectorAll<HTMLElement>(".app.ws button")]
+        .filter((b) => b.offsetParent && !/[A-Za-z0-9]/.test(b.textContent ?? ""))
+        .filter((b) => !b.getAttribute("aria-label") || !b.title)
+        .map((b) => b.outerHTML.slice(0, 120)),
+    );
+    expect(unnamed).toEqual([]);
+    // And the ones with a key say it.
+    await expect(page.locator("[data-pane-expand]").first()).toHaveAttribute("title", /\(Ctrl\+Shift\+Enter\)$/);
+    await expect(page.locator("[data-add-pane]")).toHaveAttribute("title", /\(Ctrl\+Shift\+E\)$/);
+    await expect(page.locator("[data-open-palette]")).toHaveAttribute("title", /\(Ctrl\+Shift\+P\)$/);
+  });
+
+  test("from the keyboard: out of the terminal by the palette, along the tabs, and back", async ({ page }) => {
+    await newWorkspace(page);
+    await page.locator(".ws-tabs .new-tab").click();
+    await expect.poll(() => tabsInSession(page)).toHaveLength(2);
+    const [t1, t2] = await tabsInSession(page);
+    await expect.poll(() => tab(page).then((t) => t.id)).toBe(t2);
+
+    // The terminal has the keys; the palette moves them to the tabs.
+    await page.keyboard.press("Control+Shift+KeyP");
+    await page.keyboard.type("keyboard to the tabs");
+    await page.keyboard.press("Enter");
+    const shown = page.locator(`[data-tab-id="${t2}"]`);
+    await expect(shown).toBeFocused();
+    // Visibly.
+    expect(await shown.evaluate((el) => getComputedStyle(el).outlineStyle)).not.toBe("none");
+    // Left goes to the first tab without showing it; Enter shows it, and its
+    // pane takes the keys.
+    await page.keyboard.press("ArrowLeft");
+    await expect(page.locator(`[data-tab-id="${t1}"]`)).toBeFocused();
+    expect((await tab(page)).id).toBe(t2);
+    await page.keyboard.press("Enter");
+    await expect.poll(() => tab(page).then((t) => t.id)).toBe(t1);
+    // A state change doesn't take the keys from a tab a keyboard is on.
+    await page.keyboard.press("Control+Shift+KeyP");
+    await page.keyboard.type("keyboard to the tabs");
+    await page.keyboard.press("Enter");
+    await expect(page.locator(`[data-tab-id="${t1}"]`)).toBeFocused();
+    await page.evaluate((t) => window.__arugula.client.intent({ op: "rename_tab", tab: t, name: "renamed" }), t2);
+    await expect(page.locator(`[data-tab-id="${t2}"]`)).toContainText("renamed");
+    await expect(page.locator(`[data-tab-id="${t1}"]`)).toBeFocused();
+    // And the sidebar: the palette puts the keys in its search.
+    await page.keyboard.press("Control+Shift+KeyP");
+    await page.keyboard.type("keyboard to the sessions");
+    await page.keyboard.press("Enter");
+    await expect(page.locator("[data-session-search]")).toBeFocused();
+  });
+
+  test("on every palette the chrome's words read at 4.5:1", async ({ page }) => {
     await newWorkspace(page);
     await page.locator("[data-account-menu]").click();
     await page.getByRole("menuitem", { name: "Appearance…" }).click();
-    await page.locator("[data-workspace-choice] input").uncheck();
-    await expect(page.locator(".ws-rail")).toHaveCount(0);
-    await expect(page.locator(".app-bar [data-open-panes]")).toBeVisible();
-    await page.locator("[data-workspace-choice] input").check();
-    await expect(page.locator(".ws-rail")).toBeVisible();
-    await expect(page.locator(".app-bar")).toHaveCount(0);
+    const ids = await page.locator("[data-palette-choice]").evaluateAll((els) => els.map((e) => e.getAttribute("data-palette-choice")!));
+    expect(ids.length).toBeGreaterThan(5);
+    for (const id of ids) {
+      await page.locator(`[data-palette-choice="${id}"]`).click();
+      const worst = await page.evaluate(() => {
+        const css = getComputedStyle(document.documentElement);
+        const v = (k: string) => css.getPropertyValue(`--${k}`).trim();
+        const lum = (hex: string) => {
+          const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+          return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        };
+        const ratio = (a: string, b: string) => {
+          const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p);
+          return (x + 0.05) / (y + 0.05);
+        };
+        let min = Infinity;
+        let at = "";
+        for (const t of ["fg", "dim", "subtle", "accent", "warn", "ok", "danger", "info"])
+          for (const b of ["bg", "surface", "raised"]) {
+            const r = ratio(v(t), v(b));
+            if (r < min) [min, at] = [r, `${t} on ${b}`];
+          }
+        return { min, at };
+      });
+      expect(worst.min, `${id}: ${worst.at}`).toBeGreaterThanOrEqual(4.5);
+    }
+    // Back to nothing picked.
+    await page.getByRole("button", { name: "Reset" }).click();
+  });
+
+  test("less motion when asked: nothing animates, and the cursor doesn't blink", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await newWorkspace(page);
+    const pane = await active(page);
+    const blink = await page.evaluate((p) => {
+      const v = window.__arugula.client.viewOf(p) as unknown as { term: { options: { cursorBlink: boolean } } };
+      return v.term.options.cursorBlink;
+    }, pane);
+    expect(blink).toBe(false);
+    const duration = await page.evaluate(() => {
+      const el = document.createElement("span");
+      el.className = "att needs_input";
+      document.querySelector(".ws-foot")!.append(el);
+      const d = getComputedStyle(el).animationDuration;
+      el.remove();
+      return parseFloat(d);
+    });
+    expect(duration).toBeLessThan(0.01);
   });
 });
 

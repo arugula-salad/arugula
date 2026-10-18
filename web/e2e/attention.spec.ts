@@ -109,7 +109,7 @@ test("a push for a failure offers Dismiss", async ({ browser }) => {
   await context.close();
 });
 
-// M111 (#1026): the attention drawer, in the new workspace. A real
+// M111 (#1026): the attention drawer, in the workspace. A real
 // permission request (Claude Code's PermissionRequest hook, fed S18's
 // recorded input, as perm-reach.spec.ts does) in a tab nobody is looking
 // at: the bell counts it, the drawer shows it, closing the drawer and Go to
@@ -128,13 +128,6 @@ test.describe("the attention drawer", () => {
   test.afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
   test("a pending ask is in the drawer; Go to pane lands on it still pending; Allow answers it", async ({ page }) => {
-    await page.addInitScript(() => {
-      try {
-        localStorage.setItem("arugula-appearance", JSON.stringify({ palette: "default", finish: "flat", corners: "square", workspace: "new" }));
-      } catch {
-        // No storage: the classic bar, and the test fails below.
-      }
-    });
     await reset(page);
     await expect(page.locator(".ws-rail")).toBeVisible();
     const shown = await page.evaluate(() => window.__arugula.client.tab!);
@@ -145,9 +138,11 @@ test.describe("the attention drawer", () => {
     const ask = () => page.evaluate((p) => window.__arugula.client.info(p)?.ask?.kind ?? null, pane);
     await expect.poll(ask, { timeout: 15_000 }).toBe("permission");
 
-    // The bell counts it.
+    // The bell counts it; so do the footer and the sidebar's Needs you.
     const bell = page.locator("[data-open-attention]");
     await expect(bell).toHaveAttribute("data-bell-count", "1");
+    await expect(page.locator("[data-footer-needs]")).toHaveAttribute("data-footer-needs", "1");
+    await expect(page.locator('[data-session-group="needs"]')).toContainText("1");
     await bell.click();
     const drawer = page.getByRole("dialog", { name: "Needs you" });
     await expect(drawer).toBeVisible();

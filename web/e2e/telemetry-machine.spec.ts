@@ -54,7 +54,7 @@ const optIn = (p: Page) => p.addInitScript(() => Object.assign(window, { __arugu
 /** The page, connected and drawn, then a moment for the card to come. */
 async function load(page: Page) {
   await open(page);
-  await expect(page.locator(".app > .bar [data-account-menu]")).toBeVisible();
+  await expect(page.locator(".ws-head [data-account-menu]")).toBeVisible();
   await page.waitForTimeout(500);
 }
 
@@ -120,7 +120,7 @@ test("the settings switch flips it, and No turns it off for good", async ({ page
   await load(page);
   await expect(card(page)).toHaveCount(0);
   const settings = async () => {
-    await page.locator(".app > .bar [data-account-menu]").click();
+    await page.locator(".ws-head [data-account-menu]").click();
     await page.getByRole("menuitem", { name: "Usage and crash reports…" }).click();
     return page.getByRole("dialog", { name: "Usage and crash reports" });
   };

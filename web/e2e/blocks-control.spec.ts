@@ -215,7 +215,7 @@ test("a port and an editor on a machine with no block flags open inside control'
   // It went through control's relay, as this machine does, and says so in
   // the button's words: on the block, and in the host menu.
   await expect(paneEl(page, port).locator("[data-block-route]")).toHaveText("relayed", { timeout: 15_000 });
-  await expect(page.locator(".host-button [data-path]")).toHaveText("relayed");
+  await expect(page.locator(".ws-head [data-connection]")).toHaveAttribute("data-connection", "relayed");
   await page.locator(".host-button").click();
   await expect(page.getByRole("menuitem", { name: "Blocks: relayed" })).toBeVisible();
   await page.keyboard.press("Escape");

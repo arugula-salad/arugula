@@ -423,13 +423,13 @@ test("J2c: #551's evening: a machine already in one team, a friend's second team
       "sam",
       "app",
       at(sam),
-      (p) => p.getByRole("button", { name: "+" }),
+      (p) => p.getByRole("button", { name: "New tab", exact: true }),
       async (p) => {
         await show(p, "geek");
-        const title = (await p.getByRole("button", { name: "+" }).getAttribute("title")) ?? "";
+        const title = (await p.getByRole("button", { name: "New tab", exact: true }).getAttribute("title")) ?? "";
         if (!/geek|machine|on /i.test(title))
           j.issue(`+ doesn't say which machine the tab opens on (its tooltip: "${title}"); this one opens on Jake's geek, as jake`);
-        await p.getByRole("button", { name: "+" }).click();
+        await p.getByRole("button", { name: "New tab", exact: true }).click();
         await expect(p.getByTitle("Hosts")).toContainText("geek");
       },
     );

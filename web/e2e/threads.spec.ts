@@ -174,7 +174,7 @@ test("on a phone the thread takes the screen", async () => {
 
 test("the session has a thread of its own", async () => {
   await owner.keyboard.press("Escape");
-  await owner.locator(".session-button").click();
+  await owner.locator("[data-crumb-menu]").click();
   await owner.getByRole("menuitem", { name: "Session thread" }).click();
   const panel = owner.locator(".thread-panel");
   await expect(panel).toContainText("Session thread");
@@ -184,7 +184,7 @@ test("the session has a thread of its own", async () => {
   // The friend sees the session button light up, and the menu says how many.
   await expect(friend.locator(".session-button .session-unread")).toBeVisible();
   await friend.keyboard.press("Escape");
-  await friend.locator(".session-button").click();
+  await friend.locator("[data-crumb-menu]").click();
   await friend.getByRole("menuitem", { name: "Session thread (1 new)" }).click();
   await expect(friend.locator(".thread-panel .thread-msg")).toContainText("standup in 5");
   await expect(friend.locator(".session-button .session-unread")).toHaveCount(0);

@@ -155,7 +155,7 @@ test("pane to a new tab and back", async ({ page }) => {
 
 test("sessions: create, switch, close", async ({ page }) => {
   await reset(page);
-  await page.locator(".session-button").click();
+  await page.locator("[data-crumb-menu]").click();
   await page.getByRole("menuitem", { name: "New session" }).click();
   await expect.poll(() => page.evaluate(() => window.__arugula.client.state!.sessions.length)).toBe(2);
   const [s1, s2] = await page.evaluate(() => window.__arugula.client.state!.sessions.map((s) => s.id));
@@ -163,10 +163,10 @@ test("sessions: create, switch, close", async ({ page }) => {
   const name1 = await page.evaluate(() => window.__arugula.client.state!.sessions[0].name);
   expect(name1).toMatch(/^[a-z]+ [a-z]+$/);
   await expect.poll(() => page.evaluate(() => window.__arugula.client.session)).toBe(s2);
-  await page.locator(".session-button").click();
+  await page.locator("[data-crumb-menu]").click();
   await page.getByRole("menuitem", { name: new RegExp(`${name1}$`) }).click();
   await expect.poll(() => page.evaluate(() => window.__arugula.client.session)).toBe(s1);
-  await page.locator(".session-button").click();
+  await page.locator("[data-crumb-menu]").click();
   await page.getByRole("menuitem", { name: "Close session" }).click();
   await expect.poll(() => page.evaluate(() => window.__arugula.client.state!.sessions.map((s) => s.id))).toEqual([s2]);
 });
@@ -193,18 +193,32 @@ test("a second window sees layout changes live, and the same terminal", async ({
   await expect.poll(async () => (await tab(a)).layout.panes[0][1].cols).toBeGreaterThan(before + 10);
 });
 
-// M110 (#1025): in the new workspace, the header above each pane is its
+// M110 (#1025): the header above each pane is its
 // handle: a click gives it the keys, and `…` is its menu (Focus, then the
 // pane menu: split, move to a new tab, close).
+// M113: a header is the one cell row the layout keeps above its pane, so
+// it crops none of the terminal: each pane shows every row the daemon gave
+// it, and the header sits right on top of it.
+test("pane headers sit in the row above each pane and crop none of it", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await reset(page);
+  const first = await active(page);
+  await page.evaluate((pane) => window.__arugula.client.intent({ op: "split", pane, edge: "bottom" }), first);
+  await expect.poll(() => panes(page)).toHaveLength(2);
+  const second = (await panes(page)).find((p) => p !== first)!;
+  for (const p of [first, second]) await ready(page, p);
+  const t = await tab(page);
+  for (const [id, r] of t.layout.panes) {
+    await expect.poll(() => size(page, id)).toEqual([r.cols, r.rows]);
+    const pane = (await paneEl(page, id).boundingBox())!;
+    const head = (await page.locator(`[data-pane-header="${id}"]`).boundingBox())!;
+    expect(Math.abs(head.y + head.height - pane.y)).toBeLessThanOrEqual(1);
+    expect(Math.abs(head.x - pane.x)).toBeLessThanOrEqual(1);
+  }
+});
+
 test("the pane header's menu focuses, splits and closes", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.addInitScript(() => {
-    try {
-      localStorage.setItem("arugula-appearance", JSON.stringify({ palette: "default", finish: "flat", corners: "square", workspace: "new" }));
-    } catch {
-      // The classic bar then; the test fails.
-    }
-  });
   await reset(page);
   const first = await active(page);
   await page.evaluate((pane) => window.__arugula.client.intent({ op: "split", pane, edge: "right" }), first);

@@ -1,5 +1,7 @@
-// The workspace: the bar over the panes (ui/shell/), the tab's panes
-// (ui/panes/), and the layers over them (menus, dialogs, the palette).
+// The workspace: on a computer, the rail, the session sidebar, the header,
+// the tab strip and the footer around the panes (ui/shell/, M108–M113); on
+// a phone, its own header (ui/phone). Then the tab's panes (ui/panes/), and
+// the layers over them (menus, dialogs, the palette).
 
 import { cloudPanes, useCloudPanes } from "../cloud";
 import { CloudTabs, RunDetails } from "./cloud";
@@ -29,14 +31,13 @@ import { PaletteLayer } from "./palette";
 import { ControlBanner } from "./control-state";
 import { AgentsNudge } from "./agents-setup";
 import { useWorkspaceKeys } from "./keys";
-import { ClassicBar, ContextHeader } from "./shell/context-header";
+import { connection, ContextHeader } from "./shell/context-header";
 import type { Renaming } from "./shell/rename-input";
 import { StatusFooter, StatusPill } from "./shell/status-footer";
 import { Rail } from "./shell/rail";
 import { noteLastTab, SessionSidebar } from "./shell/session-sidebar";
 import { TabStrip } from "./shell/tab-strip";
 import { PaneToolbar } from "./shell/pane-toolbar";
-import { useNewWorkspace } from "./shell/prefs";
 import { ActivityDrawer } from "./shell/activity";
 import { AttentionDrawer } from "./shell/attention-drawer";
 import { SessionOverview, useOverview } from "./shell/overview";
@@ -90,9 +91,10 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
   useReportFocus(client, phone);
   useWorkspaceKeys(client, phone);
   useFirstRun(client);
-  // M108 (#1023): the new workspace, when Appearance says so (desktop only).
-  const ws = useNewWorkspace() && !phone;
-  // M111: `#overview` lies over the tabs and panes (new workspace only).
+  // M113 (#1028): a computer draws the workspace once a machine is shown;
+  // a phone keeps its own header.
+  const ws = !phone && !!client.state;
+  // M111: `#overview` lies over the tabs and panes (not on a phone).
   const overview = useOverview();
   useLayoutEffect(() => {
     if (!ws) return;
@@ -114,7 +116,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       ) : state.sessions.length === 0 ? (
         <NoSessions client={client} phone={phone} />
       ) : tab ? (
-        <TabArea client={client} tab={tab} cell={cell} phone={phone} live={ws} />
+        <TabArea client={client} tab={tab} cell={cell} phone={phone} />
       ) : null}
     </main>
   );
@@ -144,24 +146,36 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
     noteLastTab(client);
     const session = state.sessions.find((s) => s.id === client.session) ?? state.sessions[0];
     // The chrome is all outside `.main`, so the panes' cells and who sizes
-    // the tab work as they do under the classic bar.
+    // the tab are the panes' own business.
+    // M113: while the link is down, what's shown is the last word from the
+    // machine; the chrome greys what it can't vouch for (style.css).
+    const stale = !client.connected;
     return (
-      <div class="app ws">
+      <div class={stale ? "app ws stale" : "app ws"}>
         <Rail client={client} />
         <div class="ws-body">
-          <ContextHeader client={client} renaming={renaming} setRenaming={setRenaming} inert={chatOpen} />
+          <ContextHeader client={client} setRenaming={setRenaming} inert={chatOpen} />
           <div class="ws-row" inert={chatOpen}>
             <SessionSidebar client={client} renaming={renaming} setRenaming={setRenaming} />
             <div class="ws-work">
-              <div class="ws-tabs">
-                {session ? (
-                  <TabStrip client={client} session={session} renaming={renaming} setRenaming={setRenaming} labelled />
-                ) : (
-                  <div class="tabbar" role="tablist">
-                    <CloudTabs />
+              {session ? (
+                <div class="ws-tabs">
+                  <TabStrip client={client} session={session} renaming={renaming} setRenaming={setRenaming} />
+                </div>
+              ) : (
+                cloudPanes.opened.length > 0 && (
+                  <div class="ws-tabs">
+                    <div class="tabbar" role="tablist">
+                      <CloudTabs />
+                    </div>
                   </div>
-                )}
-              </div>
+                )
+              )}
+              {stale && (
+                <div class="ws-stale" role="status" data-stale-note>
+                  {connection(client).why}. What's shown is how it was; nothing here is live until it's back.
+                </div>
+              )}
               <ControlBanner client={client} />
               <NewMachineNote />
               <AgentsNudge client={client} />
@@ -182,11 +196,9 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
   }
   return (
     <div class={phone ? "app phone" : "app"}>
-      {state && (phone ? (
-        <PhoneHeader client={client} />
-      ) : (
-        <ClassicBar client={client} renaming={renaming} setRenaming={setRenaming} inert={chatOpen} />
-      ))}
+      {/* A computer gets here only before a machine answers (or with a
+          cloud run's details and none shown). */}
+      {state && phone && <PhoneHeader client={client} />}
       {!state && cloud && <AppBar client={client} at="panes" all>{!phone && <div class="tabbar" role="tablist"><CloudTabs /><button onClick={() => startAgent(client, {})}>New agent</button></div>}</AppBar>}
       {phone && cloudPanes.opened.length > 0 && <div class="tabbar cloud-phone-tabs" role="tablist">{state && <button onClick={() => cloudPanes.local()}>This machine</button>}<CloudTabs /></div>}
       {state && <ControlBanner client={client} />}
@@ -218,21 +230,29 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
   );
 }
 
-/** The empty state, below the bar. Through control it says which machine
- * this is and where to switch, since the machine may not be the one meant. */
+/** The empty state, beside the sessions (or under the phone's header).
+ * Through control it says which machine this is and where to switch,
+ * since the machine may not be the one meant. A guest can't make one. */
 function NoSessions({ client, phone }: { client: Client; phone: boolean }) {
   useSubscribe((fn) => directory.subscribe(fn));
+  const host = directory.current || "this machine";
+  const guest = !!client.state?.roles;
   return (
-    <div class="empty">
-      <p>No sessions.</p>
+    <div class="empty" data-no-sessions>
+      <p class="empty-title">{guest ? `Nothing on ${host} is shared with you yet.` : `No sessions on ${host}.`}</p>
+      <p class="dim">
+        {guest
+          ? "When its owner shares a session with you, it shows here."
+          : "A session holds tabs, and each tab its panes: shells, agents, editors."}
+      </p>
       {directory.control && (
-        <p data-no-sessions-host>
-          No sessions on {directory.current}. Switch machines from the {phone ? "menu at the top" : "menu at the top left"}.
-        </p>
+        <p data-no-sessions-host>Not the machine you meant? Switch from the {phone ? "menu at the top" : "machine's name at the top left"}.</p>
       )}
-      <button class="primary" onClick={() => client.intent({ op: "new_session", name: null, from_pane: null })}>
-        New session
-      </button>
+      {!guest && (
+        <button class="primary" disabled={!client.connected} onClick={() => client.intent({ op: "new_session", name: null, from_pane: null })}>
+          New session
+        </button>
+      )}
     </div>
   );
 }

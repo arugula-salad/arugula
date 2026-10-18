@@ -462,7 +462,7 @@ export function ActivityDrawer({ client, session }: { client: Client; session: S
             </button>
           </>
         )}
-        <button class="ws-activity-more" data-activity-more aria-label="More" title="More" onClick={more}>
+        <button class="ws-activity-more" data-activity-more aria-label="Activity menu" title="Activity: clear this view, collapse" onClick={more}>
           <MoreIcon size={15} />
         </button>
       </header>

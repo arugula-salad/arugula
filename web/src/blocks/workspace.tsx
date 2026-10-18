@@ -369,7 +369,7 @@ function WorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: Work
           </button>
         )}
         {mayOpen && (
-          <button title="Read it again" disabled={s.loading} onClick={refresh}>
+          <button title="Read it again" aria-label="Read it again" disabled={s.loading} onClick={refresh}>
             {s.loading ? "…" : "↻"}
           </button>
         )}

@@ -19,10 +19,10 @@ import { useWorkspaceDir } from "../blocks";
 import { closeSwarm, openSwarm, swarmRoute } from "../swarm/route";
 import { closeChat, closeOverview, isChatOpen, openChat, openChatView, openOverview, overviewRoute } from "./places";
 import { cloudPanes } from "../cloud";
-import { appearance } from "../appearance";
 import { showSession } from "./shell/session-sidebar";
 import { paneName } from "./shell/overview";
 import { openAttention } from "./shell/attention-drawer";
+import { focusSessionSearch } from "./shell/prefs";
 import { agentsRoute, closeAgentsPage, openAgentsPage } from "./agents-route";
 import { askText, closeMenu, type MenuItem } from "./menu";
 import { ariaKeys, keyHint } from "./keys";
@@ -222,7 +222,7 @@ export function commands(client: Client, phone: boolean, workspace: string | nul
     detail: next === undefined ? "nothing needs you" : client.title(next) || `pane %${next}`,
     run: () => next !== undefined && client.setActive(next),
   });
-  out.push(...places(client));
+  out.push(...places(client, phone));
   out.push({
     key: "Swarm/next-in-swarm",
     group: "Swarm",
@@ -240,7 +240,7 @@ function here(): "panes" | "swarm" | "chat" | "agents" {
 
 /** The places, and what the one you're in offers: first when you're not
  * on the panes, so the palette starts with the view it's opened over. */
-function places(client: Client): Command[] {
+function places(client: Client, phone: boolean): Command[] {
   const at = here();
   const toPanes = () => {
     if (swarmRoute()) closeSwarm();
@@ -251,11 +251,25 @@ function places(client: Client): Command[] {
   const out: Command[] = [];
   const go = (key: string, label: string, run: () => void) => out.push({ key: `Places/${key}`, group: "Places", label, run });
   if (at !== "panes") go("panes", "Go to Panes", toPanes);
-  // M111, in the new workspace: this machine's sessions at a glance, and
-  // what waits on you on every machine.
-  if (appearance().workspace === "new") {
+  // M111, on a computer: this machine's sessions at a glance, and what
+  // waits on you on every machine.
+  if (!phone) {
     if (!overviewRoute()) go("overview", "Go to the session overview", () => openOverview());
     go("attention", "Needs you: what waits on you, on every machine", () => openAttention());
+    // M113: a way out of a terminal (which keeps Tab) to the chrome, from
+    // the keyboard; Tab and the arrows go on from there.
+    if (at === "panes" && !overviewRoute()) {
+      const focus = (key: string, label: string, sel: string, before?: () => void) =>
+        go(key, label, () => {
+          before?.();
+          requestAnimationFrame(() => document.querySelector<HTMLElement>(sel)?.focus());
+        });
+      focus("focus-rail", "Move the keyboard to the rail", ".ws-rail button");
+      go("focus-sessions", "Move the keyboard to the sessions (search)", focusSessionSearch);
+      focus("focus-tabs", "Move the keyboard to the tabs", ".ws-tabs .tab[tabindex='0']");
+      focus("focus-toolbar", "Move the keyboard to the pane toolbar", ".pane-toolbar button:not(:disabled)");
+      focus("focus-header", "Move the keyboard to the header", ".ws-head button");
+    }
   }
   if (at !== "swarm") go("swarm", "Go to Swarm", openSwarm);
   if (client.hasThreads()) {

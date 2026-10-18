@@ -130,16 +130,6 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   white-space: nowrap;
 }
 
-/* What the button is: the name beside it is the session's. */
-.session-label {
-  margin-right: 6px;
-  font-size: 10px;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--dim);
-}
-
 .session-button:hover,
 .new-tab:hover {
   background: var(--raised);
@@ -8770,7 +8760,7 @@ html[data-finish="glass"] .prompt-backdrop {
 .prompt.agent-dialog, .prompt.cloud-launch { box-sizing: border-box; max-height: calc(var(--app-height, 100dvh) - 32px); overflow-y: auto; }
 .prompt .cloud-panel.cloud-launch-form { max-height: none; overflow: visible; }
 
-/* ---- the new workspace (M108, #1023): a rail, the session sidebar, a
+/* ---- the workspace (M108, #1023; the only one since M113): a rail, the session sidebar, a
    context header, the tab strip and a status footer around `.main`. Only
    the palette's tokens, so every palette draws it. The chrome is all
    outside `.main`: the panes' cell maths doesn't change. */
@@ -9093,6 +9083,8 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   display: flex;
   align-items: center;
   gap: 6px;
+  /* The same height with or without + (a guest has none). */
+  min-height: 26px;
   padding: 12px 8px 6px 14px;
 }
 
@@ -10089,8 +10081,8 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   font: 11px ui-monospace, Menlo, monospace;
 }
 
-/* What needs you is amber here, as #1018 has it; the classic bar keeps
-   the accent. */
+/* What needs you is amber in the workspace, as #1018 has it (a phone
+   keeps the accent). */
 .app.ws .att.needs_input {
   color: var(--warn);
 }
@@ -10152,26 +10144,6 @@ html[data-workspace="new"] #status {
 
 .ws-session-counts {
   gap: 8px;
-}
-
-/* Appearance → New workspace (M108). */
-.appearance-workspace {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  max-width: 560px;
-  cursor: pointer;
-}
-
-.appearance-workspace input {
-  margin: 3px 0 0;
-  accent-color: var(--accent);
-}
-
-.appearance-workspace > span {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
 }
 
 /* The rail leaves room for macOS's traffic lights: the places' own bars
@@ -10606,27 +10578,115 @@ html[data-workspace="new"] .thread-panel {
   filter: brightness(1.1);
 }
 
-/* The classic bar's word that a tab shows one pane (M110). */
-.focused-note {
-  position: absolute;
-  top: 8px;
-  right: 12px;
-  z-index: 8;
+
+/* ---- M113 (#1028): the workspace's states and accessibility. */
+
+/* Many tabs scroll sideways (the tabs alone: + and ▾ stay beside them),
+   with a fade at an end that has more past it. */
+.ws-tabs .tabstrip {
+  flex: 1;
   display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 4px 4px 4px 10px;
-  border: 1px solid var(--divider);
-  border-radius: 8px;
-  background: var(--surface);
-  box-shadow: 0 4px 16px #0006;
-  color: var(--dim);
+  align-items: stretch;
+  min-width: 0;
+}
+
+.ws-tabs .tabstrip > .tabbar {
+  flex: 0 1 auto;
+}
+
+.ws-tabs .tabbar[data-overflow="end"] {
+  mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+}
+
+.ws-tabs .tabbar[data-overflow="start"] {
+  mask-image: linear-gradient(to left, #000 calc(100% - 28px), transparent);
+}
+
+.ws-tabs .tabbar[data-overflow="both"] {
+  mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent);
+}
+
+.ws-tabs :is(.new-tab, .new-tab-more):disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ws-tabs .tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* While the link is down, what the page heard last: nothing claims to be
+   working, running or connected (the header's chip says reconnecting). */
+.app.ws.stale :is(.ws-session, .ws-group, .pane-header, .ws-foot-needs) .ws-dot {
+  background: var(--muted);
+}
+
+.app.ws.stale .att {
+  opacity: 0.5;
+}
+
+.app.ws.stale .main {
+  filter: saturate(0.4);
+  opacity: 0.75;
+}
+
+.ws-stale {
+  flex: none;
+  padding: 5px 12px;
+  border-bottom: 1px solid var(--raised);
+  background: color-mix(in srgb, var(--warn) 12%, var(--surface));
+  color: var(--fg);
   font-size: 12px;
 }
 
-.focused-note button {
-  padding: 3px 10px;
-  border-radius: 6px;
-  background: var(--raised);
+.ws-group-stale {
+  font-weight: 400;
+}
+
+/* An empty machine says what a session is, and how to make one. */
+.empty .empty-title {
+  margin: 0 0 4px;
   color: var(--fg);
+  font-size: 15px;
+}
+
+.empty .dim {
+  margin: 0 0 14px;
+  max-width: 420px;
+  text-align: center;
+}
+
+.empty [data-no-sessions-host] {
+  margin: 0 0 14px;
+}
+
+/* Disabled with a reason (the title says it): it looks it. */
+.app.ws :is(.ws-share, .ws-icon-button, .pt-add, .pt-preset, .pt-focus):disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Focus that can be seen on the chrome's other controls too. */
+.app.ws :is(.ws-sidebar input, .add-pane select, .ws-tabs [role="tab"], [role="option"], .ws-sidebar-resize, .ws-activity [tabindex="0"]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* Less motion, when asked for: nothing pulses, slides or fades. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* A pane with a header says there what it wants (needs you, done, failed):
+   no pill over its terminal's first lines as well. */
+.grid.with-headers .pane-badge {
+  display: none;
 }

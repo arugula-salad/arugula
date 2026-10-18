@@ -31,6 +31,11 @@ test("a browser block opens beside a terminal, frames its page, and closes", asy
   await expect.poll(async () => (await panes(page)).length).toBe(2);
   const block = (await panes(page)).find((p) => p !== term)!;
   expect(await page.evaluate((b) => window.__arugula.client.info(b)?.type, block)).toBe("browser");
+  // M113: in the workspace, its header says what it is, and the toolbar
+  // counts it with the terminal.
+  await expect(page.locator(`[data-pane-header="${block}"] .pane-header-type`)).toHaveText("web");
+  await expect(page.locator(`[data-pane-header="${term}"] .pane-header-type`)).toHaveText("shell");
+  await expect(page.locator("[data-pane-toolbar] [data-pane-count]")).toHaveAttribute("data-pane-count", "2");
 
   const frame = page.frameLocator(`[data-pane="${block}"] iframe`);
   await expect(frame.locator("#h")).toHaveText("hello from /one");

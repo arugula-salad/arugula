@@ -148,9 +148,11 @@ claim_titlebar() {
   sleep 1
   eval "$(xdotool getwindowgeometry --shell "$w")"
   local x0=$X y0=$Y
-  # Drag the bar's empty middle (.bar-fill) 150 right and 80 down: left
-  # of the Commands button and the account menu, right of the one tab.
-  xdotool mousemove --window "$w" $((WIDTH - 400)) 16 mousedown 1 sleep 0.3 \
+  # Drag the header's empty middle (.bar-fill) 150 right and 80 down. At
+  # 1000 wide (M113) the rail is the left 56px, the machine and session
+  # end near 300, and command search starts near 550 (the window's
+  # buttons take the right 120): 420 is between them.
+  xdotool mousemove --window "$w" $((WIDTH / 2 - 80)) 16 mousedown 1 sleep 0.3 \
     mousemove_relative 50 30 sleep 0.2 mousemove_relative 100 50 sleep 0.3 mouseup 1
   sleep 1
   eval "$(xdotool getwindowgeometry --shell "$w")"

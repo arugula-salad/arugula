@@ -1,19 +1,8 @@
-// The new workspace's switches and what this device remembers of it (M108,
-// #1023): whether it's on (Appearance → New workspace), the session
+// What this device remembers of the workspace (M108, #1023): the session
 // sidebar's width and whether it's open, and whether the window is narrow
 // enough that the sidebar folds into the rail.
 
 import { useEffect, useState } from "preact/hooks";
-import { appearance, onAppearance } from "../../appearance";
-import { usePhone } from "../hooks";
-
-/** Whether this page draws the new workspace: on, and not on a phone. */
-export function useNewWorkspace(): boolean {
-  const [, tick] = useState(0);
-  useEffect(() => onAppearance(() => tick((t) => t + 1)), []);
-  const phone = usePhone();
-  return appearance().workspace === "new" && !phone;
-}
 
 /** A media query's answer, kept current. */
 export function useMedia(query: string): boolean {

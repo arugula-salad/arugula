@@ -6,6 +6,7 @@ import { paneIds, type Client } from "../../client";
 import type { PaneId, Preset, Rect, TabView } from "../../proto";
 import { keyHint } from "../keys";
 import type { MenuItem } from "../menu";
+import { offlineWhy } from "../shell/live";
 
 export const PRESETS: { preset: Preset; label: string }[] = [
   { preset: "columns", label: "Columns" },
@@ -23,7 +24,7 @@ export function ordinal(tab: TabView, pane: PaneId): number {
 export function layoutRefusal(client: Client, tab: TabView): string | null {
   const session = client.sessionOfTab(tab.id) ?? null;
   if (client.role(session) === "viewer") return "Viewers can't change the layout";
-  return null;
+  return offlineWhy(client);
 }
 
 /** Why the presets are off, if they are. */
@@ -53,8 +54,8 @@ export function toggleFocus(client: Client, tab: TabView, pane?: PaneId, refused
   }
 }
 
-/** The pane menu's Focus pane, or Restore layout on the focused one (both
- * shells: the classic bar has no toolbar for it). */
+/** The pane menu's Focus pane, or Restore layout on the focused one (the
+ * same as the toolbar's Focus and the header's expand). */
 export function focusItems(client: Client, tab: TabView | undefined, id: PaneId): MenuItem[] {
   if (!tab || (tab.focus === null && paneIds(tab).length < 2)) return [];
   const restore = tab.focus === id;

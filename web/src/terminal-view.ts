@@ -131,7 +131,8 @@ export class TerminalView {
       theme: terminalTheme(),
       fontFamily: FONT_FAMILY,
       fontSize: FONT_SIZE,
-      cursorBlink: true,
+      // No blinking for someone who asked for less motion (M113).
+      cursorBlink: !(typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches),
       scrollback: SCROLLBACK,
       allowProposedApi: true,
       macOptionIsMeta: true,

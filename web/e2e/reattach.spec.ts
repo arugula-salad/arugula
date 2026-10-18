@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "@playwright/test";
-import { active, open, panes, ready, reset, run, screen, size, text, type, closeContexts } from "./helpers";
+import { active, open, panes, ready, reset, run, screen, size, tab, text, type, closeContexts } from "./helpers";
 
 test.afterAll(closeContexts);
 
@@ -149,4 +149,41 @@ test("a page opened while a full-screen app is mid escape sequence draws the res
   await type(page, pane, "\x03");
   await Promise.all([ctx.close(), ctx2.close(), ctx3.close()]);
   rmSync(dir, { recursive: true, force: true });
+});
+
+// M113 (#1028): a reload of the workspace comes back where it was: the
+// same session, tab and pane (each pane the same process, its scrollback
+// whole), the daemon's layout, and the sidebar as this device left it.
+test("a reload comes back to the same session, tab and pane, with the sidebar as it was", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await reset(page);
+  await page.evaluate(() => window.__arugula.client.intent({ op: "new_session", name: "reload-two", from_pane: null }));
+  await expect.poll(() => page.evaluate(() => window.__arugula.client.state!.sessions.length)).toBe(2);
+  const session = await page.evaluate(() => window.__arugula.client.state!.sessions.find((s) => s.name === "reload-two")!.id);
+  await page.evaluate((s) => window.__arugula.client.selectSession(s), session);
+  await expect.poll(() => page.evaluate(() => window.__arugula.client.session)).toBe(session);
+  const first = await active(page);
+  await ready(page, first);
+  await page.evaluate((pane) => window.__arugula.client.intent({ op: "split", pane, edge: "right" }), first);
+  await expect.poll(() => panes(page)).toHaveLength(2);
+  const second = (await panes(page)).find((p) => p !== first)!;
+  await ready(page, second);
+  await run(page, second, "echo before-$((6*7)) $$", "before-42");
+  const pid = (await text(page, second)).match(/before-42 (\d+)/)![1];
+  await page.evaluate((p) => window.__arugula.client.setActive(p), second);
+  const layout = (await tab(page)).root;
+  await page.locator(".ws-rail [data-open-sessions]").click();
+  await expect(page.locator("[data-session-sidebar]")).toHaveCount(0);
+
+  await page.reload();
+  await expect.poll(() => page.evaluate(() => window.__arugula?.client.connected)).toBe(true);
+  await expect(page.locator(".ws-rail")).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.__arugula.client.session)).toBe(session);
+  await expect.poll(() => active(page)).toBe(second);
+  expect((await tab(page)).root).toEqual(layout);
+  await ready(page, second);
+  await expect.poll(() => text(page, second)).toContain(`before-42 ${pid}`);
+  await run(page, second, "echo after-$$", `after-${pid}`);
+  await expect(page.locator("[data-session-sidebar]")).toHaveCount(0);
+  await expect(page.locator(".ws-crumb-name")).toHaveText("reload-two");
 });

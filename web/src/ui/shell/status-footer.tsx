@@ -1,7 +1,7 @@
-// The footer under the new workspace (M108, #1023): the machine, the focused
+// The footer under the workspace (M108, #1023): the machine, the focused
 // pane's repo and branch when known, the agents running and what needs you
-// on this machine, with the shortcuts from ui/keys.ts. And the classic
-// bar's status pill, for the connection.
+// on this machine, with the shortcuts from ui/keys.ts. And the status
+// pill: the phone's connection, and errors everywhere.
 
 import type { Client } from "../../client";
 import { directory } from "../../hosts";
@@ -23,18 +23,23 @@ export function StatusFooter({ client }: { client: Client }) {
   const focused = active === undefined ? undefined : client.info(active);
   const repo = focused?.project?.name ?? null;
   const branch = focused?.branch ?? null;
-  const agents = panes.filter((p) => isAgent(p) && p.running).length;
+  // Not while the link is down: it may not be so any more (M113).
+  const agents = client.connected ? panes.filter((p) => isAgent(p) && p.running).length : 0;
+  const shown = client.tabView();
   const needs = panes.filter((p) => p.attention === "needs_input");
   const { state } = connection(client);
   const host = directory.current || "This machine";
   // M111: the attention drawer, at this machine's first; seeing it never
   // answers it.
   const next = () => openAttention(`${directory.current}:${(needs.find((p) => p.id !== active) ?? needs[0]).id}`);
+  // The panes' only with a tab of them to act on.
   const hints: [string, string | undefined][] = [
     ["Commands", keyHint("palette")],
-    ["Go to pane", keyHint("pane.jump")],
-    ["Focus", keyHint("pane.focus")],
-    ["Go to directory", keyHint("picker")],
+    ...(shown ? ([
+      ["Go to pane", keyHint("pane.jump")],
+      ["Focus", keyHint("pane.focus")],
+      ["Go to directory", keyHint("picker")],
+    ] as [string, string | undefined][]) : []),
   ];
   return (
     <footer class="ws-foot" data-status-footer>
@@ -65,7 +70,7 @@ export function StatusFooter({ client }: { client: Client }) {
         </button>
       )}
       <span class="ws-foot-fill" />
-      <ActivityToggle client={client} />
+      {client.session !== null && client.state?.sessions.length ? <ActivityToggle client={client} /> : null}
       <span class="ws-foot-hints" aria-label="Shortcuts">
         {hints.flatMap(([label, key]) =>
           key

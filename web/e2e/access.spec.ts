@@ -122,6 +122,31 @@ test("a viewer can't type, call the API or change the layout", async () => {
   expect(await owner.evaluate(() => window.__arugula.client.state!.panes.length)).toBe(before);
 });
 
+// M113 (#1028): the workspace shows a viewer only what they may do; the
+// rest is disabled with why, or not there.
+test("a viewer's workspace hides what they can't do, or says why it's off", async () => {
+  await friend.setViewportSize({ width: 1440, height: 900 });
+  await expect(friend.locator(".ws-rail")).toBeVisible();
+  // Sessions, sharing and closing are the owner's: not offered.
+  await expect(friend.locator("[data-new-session], .ws-share, .tab-close")).toHaveCount(0);
+  // Tabs and the layout are an editor's: off, with the reason.
+  await expect(friend.locator(".ws-tabs .new-tab")).toBeDisabled();
+  await expect(friend.locator(".ws-tabs .new-tab")).toHaveAttribute("title", "Viewers can't open tabs in this session");
+  for (const sel of ["[data-add-pane]", '[data-preset="columns"]', "[data-pane-focus]"]) {
+    await expect(friend.locator(sel)).toBeDisabled();
+    await expect(friend.locator(sel)).toHaveAttribute("title", "Viewers can't change the layout");
+  }
+  // A viewer doesn't size the tab (the daemon letterboxes it): no offer to.
+  await expect(friend.locator("[data-sized-elsewhere]")).toHaveCount(0);
+  // The session's menu: its thread and notifications, nothing of the owner's.
+  await friend.locator("[data-crumb-menu]").click();
+  await expect(friend.getByRole("menuitem").first()).toBeVisible();
+  for (const item of ["New session", "Rename session", "Close session", "Share session…"])
+    await expect(friend.getByRole("menuitem", { name: item })).toHaveCount(0);
+  await friend.keyboard.press("Escape");
+  await friend.setViewportSize({ width: 1000, height: 640 });
+});
+
 test("made an editor, they type at once, without reconnecting", async () => {
   const clientId = await friend.evaluate(() => window.__arugula.client.clientId);
   expect((await api("/api/acl", { session: shared, principal: `tailnet:${FRIEND}`, role: "editor" })).ok).toBe(true);

@@ -9,12 +9,11 @@ import { Divider } from "./divider";
 import { DropOverlay } from "./drop-overlay";
 import { len } from "./geometry";
 import { PaneSlot } from "./pane-slot";
-import { layoutRefusal, toggleFocus } from "./layout";
 
 /** One tab's panes, drawn at the cell rectangles the daemon computed. The
- * whole grid is scaled down when another window's size owns the tab.
- * `live`: the new workspace's headers and gutters (M110). */
-export function TabArea({ client, tab, cell, phone, live }: { client: Client; tab: TabView; cell: Cell; phone: boolean; live?: boolean }) {
+ * whole grid is scaled down when another window's size owns the tab. On a
+ * computer the headers and gutters are handles (M110). */
+export function TabArea({ client, tab, cell, phone }: { client: Client; tab: TabView; cell: Cell; phone: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   const [area, setArea] = useState<{ w: number; h: number } | null>(null);
 
@@ -81,7 +80,12 @@ export function TabArea({ client, tab, cell, phone, live }: { client: Client; ta
   const rev = client.state?.rev;
   useEffect(() => {
     const el = document.activeElement;
-    const idle = !el || el === document.body || el.closest(".menu, .bar button, .tab, .pane-toolbar button, .pane-header button");
+    // Not from where the keyboard took it (M113): someone moving through
+    // the chrome with Tab and the arrows keeps their place.
+    const idle =
+      !el ||
+      el === document.body ||
+      (el.closest(".menu, .bar button, .tab, .pane-toolbar button, .pane-header button") && !el.matches(":focus-visible"));
     const now = client.active(tab.id) ?? null;
     if (!phone && now !== null && idle) client.viewOf(now)?.focus();
   }, [client, rev, active, phone]);
@@ -89,7 +93,10 @@ export function TabArea({ client, tab, cell, phone, live }: { client: Client; ta
   const gridW = tab.cols * cell.width;
   const gridH = tab.rows * cell.height;
   const scale = area ? Math.min(1, area.w / gridW, area.h / gridH) : 1;
-  const elsewhere = tab.owner !== null && tab.owner !== client.clientId;
+  // Not while the link is down, nor to a viewer: neither has a say in its
+  // size (viewers see it letterboxed; the daemon takes editors' sizes).
+  const viewer = client.role(client.sessionOfTab(tab.id) ?? null) === "viewer";
+  const elsewhere = client.connected && !viewer && tab.owner !== null && tab.owner !== client.clientId;
 
   return (
     <div class={scale < 1 ? "tab-area scaled" : "tab-area"} ref={ref}>
@@ -107,26 +114,16 @@ export function TabArea({ client, tab, cell, phone, live }: { client: Client; ta
         ))}
         {headers &&
           tab.layout.panes.map(([id, r]) => (
-            <PaneHeader key={`h${id}`} client={client} tab={tab} id={id} rect={r} cell={cell} active={id === active} live={live} />
+            <PaneHeader key={`h${id}`} client={client} tab={tab} id={id} rect={r} cell={cell} active={id === active} />
           ))}
         {!phone &&
           tab.layout.splits.map((s) =>
             s.extents.slice(0, -1).map((_, i) => (
-              <Divider key={`${s.id}-${i}`} client={client} split={s} index={i} cell={cell} scale={scale} live={live && headers} />
+              <Divider key={`${s.id}-${i}`} client={client} split={s} index={i} cell={cell} scale={scale} />
             )),
           )}
         <DropOverlay client={client} tab={tab} cell={cell} />
       </div>
-      {/* The classic bar has no toolbar to say a tab is focused (the new
-          workspace's Focus button does): say it here. */}
-      {!live && !phone && tab.focus !== null && (
-        <div class="focused-note" data-focused-note>
-          Showing one pane of this tab.
-          <button disabled={!!layoutRefusal(client, tab)} onClick={() => toggleFocus(client, tab)}>
-            Show all
-          </button>
-        </div>
-      )}
       {elsewhere && (
         <div class="sized-elsewhere" data-sized-elsewhere>
           Another window set this tab's size.

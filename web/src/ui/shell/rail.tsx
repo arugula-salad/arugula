@@ -1,4 +1,4 @@
-// The rail down the left of the new workspace (M108, #1023): Arugula's mark
+// The rail down the left of the workspace (M108, #1023): Arugula's mark
 // (this machine's sessions), Sessions (the sidebar), Panes, Swarm, Chat,
 // Agents and Settings. It stays while the swarm, chat or agents cover the
 // panes, so the way back is always in one place, and Panes goes back to the

@@ -1,4 +1,4 @@
-// M112b (#1027): the activity drawer under the new workspace. A command run
+// M112b (#1027): the activity drawer under the workspace. A command run
 // in a pane shows under Commands; Refresh merges by id and doesn't show it
 // twice; clicking it brings its pane back; the panes above give the drawer
 // their rows, and it is never one of the tab's panes.
@@ -9,22 +9,14 @@ import { active, closeContexts, menu, paneEl, panes, ready, reset, run, tab } fr
 test.afterAll(closeContexts);
 test.use({ viewport: { width: 1440, height: 900 } });
 
-const NEW = JSON.stringify({
-  palette: "default",
-  finish: "flat",
-  corners: "square",
-  workspace: "new",
-});
-
 async function newWorkspace(page: Page) {
-  await page.addInitScript((v) => {
+  await page.addInitScript(() => {
     try {
-      localStorage.setItem("arugula-appearance", v);
       localStorage.removeItem("arugula.workspace.activity");
     } catch {
-      // A page without storage draws the classic bar; the test then fails.
+      // No storage: the drawer starts as it would anyway.
     }
-  }, NEW);
+  });
   await reset(page);
   await expect(page.locator(".ws-rail")).toBeVisible();
 }

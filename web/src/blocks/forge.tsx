@@ -285,7 +285,7 @@ function IssueBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeSta
           </a>
         )}
         {mayWrite && (
-          <button title="Read it again" disabled={busy !== null} onClick={refresh}>
+          <button title="Read it again" aria-label="Read it again" disabled={busy !== null} onClick={refresh}>
             {busy === "refresh" ? "…" : "↻"}
           </button>
         )}
@@ -688,7 +688,7 @@ function PrBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeState 
           </a>
         )}
         {!viewer && (
-          <button title="Read it again" disabled={busy !== null} onClick={refresh}>
+          <button title="Read it again" aria-label="Read it again" disabled={busy !== null} onClick={refresh}>
             {busy === "refresh" ? "…" : "↻"}
           </button>
         )}

@@ -49,7 +49,7 @@ test("opens once on first run, a step at a time, then from the account menu", as
   await expect(panel).toBeHidden();
 
   // Always in the account menu, from the start.
-  await page.locator(".app > .bar [data-account-menu]").click();
+  await page.locator(".ws-head [data-account-menu]").click();
   await page.getByRole("menuitem", { name: "Getting started" }).click();
   await expect(panel).toBeVisible();
   await expect(progress).toHaveText("Step 1 / 5 · Welcome");
