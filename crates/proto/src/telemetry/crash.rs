@@ -9,6 +9,10 @@
 //!   (`crates/…`), and our own functions on the stack
 //!   (`arugula_mux::pane::Pane::resize`). Never the panic's message or
 //!   payload, which can hold a path or someone's text.
+//! - **The location always; frames when they can be had.** The location is
+//!   the panic's own (`file!()`/`line!()`, compiled in). Frames come from a
+//!   backtrace, which names functions only in a build that keeps its
+//!   symbols: a stripped one (the desktop app's release) has none.
 //! - **One file a crash,** `crashes/<ms>-<process>.json` in the state dir,
 //!   renamed into place whole, as an `arugula_control_wire::telemetry::Crash`
 //!   (this crate doesn't depend on that one, so [`Crash`] here is its twin;
@@ -115,20 +119,30 @@ pub fn crash(process: Process, version: &str, panic: Option<(String, u32)>, trac
 /// Our frames in `trace`, innermost first, below the panic machinery: each
 /// one's name, and its `crates/…:line` when the trace has it.
 fn frames(process: Process, trace: &str) -> Vec<(String, Option<String>)> {
-    // (symbol, `at` of the line after it)
+    // (symbol, `at` of the line after it). A frame is `  N: name`; a
+    // function inlined into it is another name under it, unnumbered; the
+    // full format puts `0x… - ` before the name.
     let mut all: Vec<(String, Option<String>)> = Vec::new();
     for line in trace.lines() {
-        let t = line.trim_start();
+        let t = line.trim();
+        if t.is_empty() {
+            continue;
+        }
         if let Some(at) = t.strip_prefix("at ") {
             if let Some(last) = all.last_mut().filter(|l| l.1.is_none()) {
                 last.1 = Some(at.trim().to_owned());
             }
-        } else if let Some((n, sym)) = t.split_once(": ")
-            && !n.is_empty()
-            && n.bytes().all(|b| b.is_ascii_digit())
-        {
-            all.push((sym.trim().to_owned(), None));
+            continue;
         }
+        let sym = match t.split_once(": ") {
+            Some((n, sym)) if !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()) => sym.trim_start(),
+            _ => t,
+        };
+        let sym = match sym.split_once(" - ") {
+            Some((ip, name)) if ip.starts_with("0x") => name,
+            _ => sym,
+        };
+        all.push((sym.trim().to_owned(), None));
     }
     // The hook and the panic machinery are above the panic: what's ours
     // starts after the first of std's panicking frames.
@@ -307,6 +321,7 @@ mod tests {
     /// The message the child panics with: it must never be written down.
     const SECRET: &str = "the-secret-in-the-message-/home/someone/private";
     const CHILD: &str = "ARUGULA_TEST_CRASH_DIR";
+    const TRACE: &str = "--- the child's backtrace ---";
 
     /// The child of the hook tests: with the hook on the state dir it
     /// names, and telemetry on as that dir's file says, a thread panics.
@@ -316,6 +331,13 @@ mod tests {
         let Some(d) = std::env::var_os(CHILD) else { return };
         let d = PathBuf::from(d);
         let at = d.clone();
+        // The hook before ours: the backtrace as this process resolves it,
+        // for the parent to tell whether frames could be named at all.
+        let print = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            eprintln!("{TRACE}\n{}\n{TRACE}", std::backtrace::Backtrace::force_capture());
+            print(info);
+        }));
         // Not `enabled()`: a test build is always off, and so is nextest.
         install_with(Process::Cli, "0.42.0", &d, Box::new(move || super::super::enabled_in(&at, &|_| None).on));
         let _ = std::thread::spawn(|| panic!("{SECRET}")).join();
@@ -345,9 +367,16 @@ mod tests {
         let c: Crash = serde_json::from_str(&text).unwrap();
         assert_eq!((c.process, c.version.as_str()), (Process::Cli, "0.42.0"));
         assert!(c.location.starts_with("crates/proto/src/telemetry/crash.rs:"), "{c:?}");
-        assert!(!c.frames.is_empty(), "{c:?}");
+        // Frames are best-effort: only a build whose backtraces name our
+        // functions has them. The location always is.
+        let trace = stderr.split(TRACE).nth(1).unwrap_or_default();
         assert!(c.frames.iter().all(|f| f.starts_with("arugula_proto::")), "{c:?}");
-        assert!(c.frames.iter().any(|f| f == "arugula_proto::telemetry::crash::tests::panic_in_child"), "{c:?}");
+        if trace.contains("arugula_proto::") {
+            let want = "arugula_proto::telemetry::crash::tests::panic_in_child";
+            assert!(c.frames.iter().any(|f| f == want), "{c:?}\nfrom:\n{trace}");
+        } else {
+            eprintln!("this build's backtraces name none of our functions, so no frames: {trace}");
+        }
         let name = files[0].1.file_name().unwrap().to_string_lossy().into_owned();
         assert_eq!(name, format!("{}-cli.json", c.at));
         let _ = fs::remove_dir_all(&d);
@@ -449,6 +478,24 @@ mod tests {
 ";
         let c = crash(Process::Cli, "0.42.0", None, trace, 1);
         assert_eq!(c.frames, ["arugula_proto::telemetry::crash::tests::panic_in_child"]);
+        assert_eq!(c.location, "crates/proto/src/telemetry/crash.rs:312");
+    }
+
+    /// A function inlined into a frame is a name under it with no number;
+    /// the full format has the address first.
+    #[test]
+    fn inlined_and_full_frames_are_read_too() {
+        let trace = "   0: core::panicking::panic_fmt
+   1: std::thread::lifecycle::spawn_unchecked::{{closure}}
+      arugula_proto::telemetry::crash::tests::panic_in_child::{{closure}}
+             at ./crates/proto/src/telemetry/crash.rs:312:39
+   2:     0x5555deadbeef - arugula_mux::pane::Pane::resize::h0123456789abcdef
+";
+        let c = crash(Process::Cli, "0.42.0", None, trace, 1);
+        assert_eq!(
+            c.frames,
+            ["arugula_proto::telemetry::crash::tests::panic_in_child", "arugula_mux::pane::Pane::resize"]
+        );
         assert_eq!(c.location, "crates/proto/src/telemetry/crash.rs:312");
     }
 

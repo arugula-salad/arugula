@@ -16,7 +16,9 @@ fn crash_with(dir: &std::path::Path) -> String {
         .env_remove("CI")
         .env_remove("DO_NOT_TRACK")
         .env_remove(telemetry::ENV)
-        .env_remove("RUST_BACKTRACE")
+        // The default hook prints its backtrace: whether this build names
+        // our functions at all.
+        .env("RUST_BACKTRACE", "1")
         .output()
         .unwrap();
     assert!(!out.status.success());
@@ -34,7 +36,7 @@ fn a_test_panic_is_written_down_where_and_not_what() {
     assert!(crash::list(&dir).is_empty(), "not asked: nothing written");
 
     telemetry::set(&dir, true, "cli", 1).unwrap();
-    crash_with(&dir);
+    let stderr = crash_with(&dir);
     let files = crash::list(&dir);
     assert_eq!(files.len(), 1);
     let text = std::fs::read_to_string(&files[0].1).unwrap();
@@ -42,7 +44,13 @@ fn a_test_panic_is_written_down_where_and_not_what() {
     let c: crash::Crash = serde_json::from_str(&text).unwrap();
     assert_eq!((c.process, c.version.as_str()), (crash::Process::Daemon, env!("CARGO_PKG_VERSION")));
     assert!(c.location.starts_with("crates/daemon/src/main.rs:"), "{c:?}");
-    assert!(c.frames.iter().any(|f| f == "arugulad::main"), "{c:?}");
     assert!(c.frames.iter().all(|f| f.starts_with("arugula")), "{c:?}");
+    // Frames are best-effort: only a build whose backtraces name our
+    // functions has them. The location always is.
+    if stderr.contains("arugulad::") {
+        assert!(c.frames.iter().any(|f| f == "arugulad::main"), "{c:?}\nfrom:\n{stderr}");
+    } else {
+        eprintln!("this build's backtraces name none of our functions, so no frames: {stderr}");
+    }
     let _ = std::fs::remove_dir_all(&dir);
 }
