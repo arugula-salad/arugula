@@ -36,6 +36,7 @@ import { Rail } from "./shell/rail";
 import { noteLastTab, SessionSidebar } from "./shell/session-sidebar";
 import { TabStrip } from "./shell/tab-strip";
 import { useNewWorkspace } from "./shell/prefs";
+import { ActivityDrawer } from "./shell/activity";
 import { TabArea } from "./panes/tab-area";
 import { DragGhost } from "./panes/drop-overlay";
 import { useHoverToSwitchTabs } from "./panes/drop";
@@ -159,6 +160,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
               <NewMachineNote />
               <AgentsNudge client={client} />
               {main}
+              {session && !cloud && <ActivityDrawer key={session.id} client={client} session={session.id} />}
             </div>
           </div>
           <StatusFooter client={client} />

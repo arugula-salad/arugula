@@ -9,6 +9,7 @@ import type { PaneInfo } from "../../proto";
 import { useSubscribe } from "../hooks";
 import { keyHint } from "../keys";
 import { closePlace, currentPlace } from "../places";
+import { ActivityToggle } from "./activity";
 import { connection } from "./context-header";
 import { BranchIcon } from "./icons";
 
@@ -70,6 +71,7 @@ export function StatusFooter({ client }: { client: Client }) {
         </button>
       )}
       <span class="ws-foot-fill" />
+      <ActivityToggle client={client} />
       <span class="ws-foot-hints" aria-label="Shortcuts">
         {hints.flatMap(([label, key]) =>
           key
