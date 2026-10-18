@@ -2245,6 +2245,14 @@ signed: boolean,
 preview?: unknown, };
 
 /**
+ * `POST /api/telemetry/note` (the `telemetry.note` operation, M103): what
+ * the web client counted since its last note, for the day's counts. Views
+ * by `arugula_control_wire::telemetry::View`'s names (one it doesn't know
+ * counts as `other`), and how many errors our code hit. Counts only.
+ */
+export type TelemetryNoteRequest = { views: { [key in string]: number }, web_errors: number, };
+
+/**
  * `PUT /api/telemetry` (the `telemetry.set` operation): the owner's answer,
  * and where they gave it (`web` when not said).
  */
@@ -2588,6 +2596,7 @@ export const OPS = {
   "team_pins.get": { method: "GET", path: "/api/team-pins" },
   "team_pins.set": { method: "POST", path: "/api/team-pins" },
   "telemetry.get": { method: "GET", path: "/api/telemetry" },
+  "telemetry.note": { method: "POST", path: "/api/telemetry/note" },
   "telemetry.set": { method: "PUT", path: "/api/telemetry" },
   "thread.get": { method: "GET", path: "/api/threads/{target}" },
   "thread.post": { method: "POST", path: "/api/threads/{target}" },

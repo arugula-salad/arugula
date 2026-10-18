@@ -768,7 +768,7 @@ export function ControlOverlay({ s }: { s: ControlSession }) {
   if (s.askTelemetry())
     return (
       <TelemetryCard
-        whose="from your account on this page"
+        about="Send usage counts from your account on this page: which views you open and how often, and errors our code hits. Never what your terminals show, names, file names, commands or prompts."
         answer={(on) => void s.setTelemetry(on).catch(() => {})}
         later={() => s.telemetryNotNow()}
       />

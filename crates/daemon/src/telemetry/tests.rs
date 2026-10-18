@@ -388,3 +388,40 @@ async fn a_no_empties_crashes() {
     assert!(crash::list(&r.dir).is_empty());
     assert!(r.got.lock().unwrap().is_empty());
 }
+
+/// The web client's notes (M103): views by name, an unknown one as
+/// `other`, and every count capped, however a page asks.
+#[test]
+fn a_note_adds_views_and_caps_them() {
+    let note = |views: &[(&str, u32)], web_errors: u32| TelemetryNoteRequest {
+        views: views.iter().map(|(k, v)| (k.to_string(), *v)).collect(),
+        web_errors,
+    };
+    let mut c = Counts::default();
+    add_note(&mut c, &note(&[("swarm", 2), ("getting-started", 1), ("nonsense", 3), ("more-nonsense", 4)], 1));
+    add_note(&mut c, &note(&[("swarm", 1)], 0));
+    assert_eq!(c.views.get(&View::Swarm), Some(&3));
+    assert_eq!(c.views.get(&View::GettingStarted), Some(&1));
+    assert_eq!(c.views.get(&View::Other), Some(&7));
+    assert_eq!(c.web_errors, 1);
+
+    // One note adds at most NOTE_MAX to a count, however many names fold
+    // into it; a day's count stops at DAY_MAX.
+    let mut c = Counts::default();
+    add_note(&mut c, &note(&[("chat", u32::MAX), ("x", NOTE_MAX), ("y", NOTE_MAX)], u32::MAX));
+    assert_eq!((c.views[&View::Chat], c.views[&View::Other], c.web_errors), (NOTE_MAX, NOTE_MAX, NOTE_MAX));
+    for _ in 0..(DAY_MAX / NOTE_MAX + 5) {
+        add_note(&mut c, &note(&[("chat", NOTE_MAX)], NOTE_MAX));
+    }
+    assert_eq!((c.views[&View::Chat], c.web_errors), (DAY_MAX, DAY_MAX));
+}
+
+#[test]
+fn the_apps_window_counts_as_desktop() {
+    let mut h = HeaderMap::new();
+    h.insert(axum::http::header::USER_AGENT, "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15".parse().unwrap());
+    assert_eq!(surface_of(&h, None), Surface::Web);
+    assert_eq!(surface_of(&h, Some("via=desktop")), Surface::Desktop);
+    h.insert(axum::http::header::USER_AGENT, "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0) Mobile".parse().unwrap());
+    assert_eq!(surface_of(&h, None), Surface::Phone);
+}

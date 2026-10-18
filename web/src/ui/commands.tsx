@@ -17,6 +17,7 @@ import { openPalette } from "./palette";
 import { agentNotifyItems, notificationItems } from "./notify";
 import { openGettingStarted } from "./welcome";
 import { openDeveloper } from "./developer";
+import { openMachineTelemetry } from "./machine-telemetry";
 import { openRules } from "./rules";
 import { openAppearance } from "./appearance";
 import { desktopApp, desktopPlatform, openInNewWindow } from "../desktop";
@@ -245,12 +246,14 @@ export function settingsItems(client: Client | null): MenuItem[] {
   ];
 }
 
-/** The shown machine's settings: its standing permission rules (#166) and
- * its Labs flags (#665), the owner's. In the machine menu. */
+/** The shown machine's settings: its standing permission rules (#166), its
+ * usage and crash reports (M103) and its Labs flags (#665), the owner's.
+ * In the machine menu. */
 export function machineSettingsItems(client: Client): MenuItem[] {
   if (!client.state || client.state.roles) return [];
   return [
     { label: "Permission rules…", run: () => openRules(client) },
+    { label: "Usage and crash reports…", run: () => openMachineTelemetry(client) },
     ...(client.hasDev() ? [{ label: "Developer settings…", run: () => openDeveloper(client) } as MenuItem] : []),
   ];
 }

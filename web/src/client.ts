@@ -74,6 +74,7 @@ import { E2ESocket, type DaemonClock, type DaemonRef } from "./e2e/channel.ts";
 import type { DeviceKeys } from "./e2e/keys.ts";
 import { pick, upload } from "./upload";
 import { JsonText, exactField, withExact } from "./exact";
+import { desktopApp } from "./desktop";
 
 /** Ack about this often (bytes drawn); the daemon allows 512 KB. */
 const ACK_EVERY = 64 * 1024;
@@ -1168,7 +1169,10 @@ export class Client {
       });
     } else {
       const here = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}`;
-      const url = /^https?:/.test(this.base) ? `${this.base.replace(/^http/, "ws")}/ws` : `${here}${this.base}/ws`;
+      // The app's window says so: its webview's User-Agent is a
+      // browser's, and the daemon counts clients by where (M103).
+      const via = desktopApp() ? "?via=desktop" : "";
+      const url = /^https?:/.test(this.base) ? `${this.base.replace(/^http/, "ws")}/ws${via}` : `${here}${this.base}/ws${via}`;
       link = new SocketLink(url);
     }
     this.link = link;

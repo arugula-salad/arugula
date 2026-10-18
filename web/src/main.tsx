@@ -33,6 +33,7 @@ import { openThread } from "./ui/threads";
 import { openChat } from "./ui/places";
 import { openDeveloper } from "./ui/developer";
 import { openGettingStarted, type Section } from "./ui/welcome";
+import { followMachine, MachineTelemetryLayer } from "./ui/machine-telemetry";
 
 // Served by Arugula control (M17), not a daemon: sign in, enroll this
 // browser, and reach daemons through end-to-end channels. A read-only link
@@ -160,6 +161,9 @@ async function syncPins(c: Client, session: ControlSession) {
 }
 
 const connect = () => {
+  // M103: the shown machine's usage reports, asked and counted only on a
+  // page that talks to its daemon directly (control's page has M104's).
+  followMachine(client, !info && !linkTarget);
   // In control mode there's nothing to connect to until a daemon is known.
   if (!session || client.e2e) client.connect();
   if (session) {
@@ -328,6 +332,7 @@ const draw = () =>
       <Swarm key={client.base} client={client} />
       <AgentDialogLayer />
       <AppearanceLayer />
+      <MachineTelemetryLayer />
     </>,
     root,
   );

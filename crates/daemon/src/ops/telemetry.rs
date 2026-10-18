@@ -4,8 +4,8 @@
 
 use arugula_proto::{
     api::Empty,
-    op::ops::{TelemetryGet, TelemetrySet},
-    telemetry::{self as consent, TelemetryInfo, TelemetrySetRequest},
+    op::ops::{TelemetryGet, TelemetryNote, TelemetrySet},
+    telemetry::{self as consent, TelemetryInfo, TelemetryNoteRequest, TelemetrySetRequest},
 };
 
 use super::{Cx, Handle, OpError};
@@ -52,5 +52,15 @@ impl Handle for TelemetrySet {
             t.answered();
         }
         Ok(info(cx))
+    }
+}
+
+impl Handle for TelemetryNote {
+    async fn handle(cx: &Cx<'_>, _: (), req: TelemetryNoteRequest) -> Result<Empty, OpError> {
+        in_person(cx)?;
+        // Off (not asked, no, or kept off), it counts nothing, and says
+        // nothing of it: a page learns no more than `get` tells it.
+        crate::telemetry::note(&req);
+        Ok(Empty {})
     }
 }
