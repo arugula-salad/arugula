@@ -819,6 +819,8 @@ mod tests {
                 service: None,
                 fd_store: false,
                 hold: false,
+                #[cfg(windows)]
+                host: "arugulad.exe".into(),
             },
             env: vec![],
             home: home.clone(),
