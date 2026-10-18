@@ -114,10 +114,15 @@ Off, nothing is written. A crash holds only where it happened:
 }
 ```
 
-- `location`: the file and line in Arugula's own source. A panic inside a
-  library is placed at the first of Arugula's functions that called it.
+- `location`: the file and line in Arugula's own source, which every build
+  knows. A panic inside a library is placed at the first of Arugula's
+  functions that called it, in a build with line tables (a debug build); a
+  release build says `crates/unknown`.
 - `frames`: Arugula's own functions on the stack, innermost first, at most
-  32. Nothing from libraries or the system is kept.
+  32. Nothing from libraries or the system is kept. Only a build that keeps
+  its symbols has them. Today `arugulad` and `arugula` keep them (Cargo's
+  release default drops only debug info), and the desktop app's own binary
+  doesn't (`strip = true`): its crashes carry the location alone.
 - **Never the panic's message**, which can hold a path or someone's text.
 
 The daemon sends them with its next report (`started` after a restart, so a
