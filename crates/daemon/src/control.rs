@@ -1567,6 +1567,21 @@ impl Control {
         Ok(serde_json::from_value(v).unwrap_or_default())
     }
 
+    /// S38 prototype (#979): a call to control's conversation store, signed
+    /// as this daemon: GET without a body, POST with one. Its status and
+    /// JSON answer.
+    pub async fn s38(&self, path: &str, body: Option<&serde_json::Value>) -> anyhow::Result<(u16, serde_json::Value)> {
+        let e = self.enrolled().ok_or_else(|| anyhow::anyhow!("this machine isn't in control"))?;
+        let res = match body {
+            Some(b) => self.post_json(&e, path, b).send().await?,
+            None => {
+                self.http.get(format!("{}{path}", e.saved.url)).header(AUTH, self.sign(&e, "GET", path, b"")).send().await?
+            }
+        };
+        let status = res.status().as_u16();
+        Ok((status, res.json().await.unwrap_or_default()))
+    }
+
     /// ICE servers for a huddle (M63): control's TURN credentials, kept
     /// for an hour of their eight; public STUN when this daemon isn't
     /// joined to control or control can't be reached.

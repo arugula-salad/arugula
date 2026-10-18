@@ -61,6 +61,10 @@ pub mod events;
 // A conversation's lead (#858): the agent block that drives its links.
 #[cfg(feature = "labs")]
 pub mod lead;
+// S38 prototype (#979): conversations kept in control as ciphertext, and
+// the lease on the machine that runs the lead.
+#[cfg(feature = "labs")]
+pub mod convstore;
 // Forgejo and GitLab as forges (#457): their adapters, the `tea` logins
 // Forgejo reads with, and the webhooks they send. GitHub is core's. The
 // parts of a forge block that connect to them are `forge/labs_forges.rs`,
@@ -147,6 +151,9 @@ pub fn resume_tasks(app: &Arc<App>) {
     if on(app.control.state_dir(), arugula_proto::flags::AGENTS) {
         agents::tasks::resume(app);
     }
+    // S38 prototype: conversations kept in control, mirrored here; their
+    // links and lead are resumed only by the lease's holder.
+    convstore::start(app);
     // #857: each conversation's links, watched again.
     events::resume(app);
     // #858: and its lead, followed again and told what it was owed.
@@ -159,7 +166,7 @@ pub fn resume_tasks(_app: &Arc<App>) {}
 /// Adds Labs' HTTP routes to the API's.
 #[cfg(feature = "labs")]
 pub fn routes(r: Router<Arc<App>>) -> Router<Arc<App>> {
-    fountain::account::routes(agents::routes(apps::routes::routes(r)))
+    convstore::routes(fountain::account::routes(agents::routes(apps::routes::routes(r))))
 }
 
 #[cfg(not(feature = "labs"))]

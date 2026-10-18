@@ -263,6 +263,7 @@ version = "0.42.0"
 dependencies = [
  "aes-gcm 0.11.1",
  "anyhow",
+ "curve25519-dalek 5.0.0",
  "ed25519-dalek",
  "futures-util",
  "getrandom 0.4.3",

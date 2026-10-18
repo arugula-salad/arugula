@@ -33,6 +33,22 @@ impl Daemon {
             Api::ThreadPost(post, reply) => {
                 let _ = reply.send(self.thread_post(post));
             }
+            Api::ThreadCompose(post, reply) => {
+                let _ = reply.send(self.thread_compose(post));
+            }
+            Api::ThreadIngest(target, msg, notify, reply) => {
+                // In order, none skipped: its number is control's.
+                let next = self.threads.get(target).last().map_or(1, |m| m.id + 1);
+                let r = if msg.id != next {
+                    Err(super::ThreadError(409, format!("expected entry {next}, got {}", msg.id)))
+                } else {
+                    self.thread_commit(target, msg, notify)
+                };
+                let _ = reply.send(r);
+            }
+            Api::ConvPut(c, reply) => {
+                let _ = reply.send(self.conv_put(c));
+            }
             Api::ThreadRead(target, who, acting, upto) => {
                 let reader = acting.as_ref().unwrap_or(&who).id();
                 if self.thread_role(&who, target).is_some() && self.threads.mark_read(reader, target, upto) {

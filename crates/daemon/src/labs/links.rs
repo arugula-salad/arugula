@@ -367,7 +367,11 @@ async fn status(app: &App, id: ConvId, l: &ConvLink, machines: &[crate::peer::Ma
     let path = format!("/api/panes/{pane}/wait?until=idle&timeout=0");
     if is_here(app, &l.machine) {
         let here = me(app);
-        if !grants(app, pane).await.iter().any(|g| g.device == here && g.conv == id) {
+        // S38 prototype: a conversation kept in control has its grants
+        // named for it, not for one machine (q5): the first run's box-b
+        // closed L1 here, as "revoked", because the grant named box-a.
+        let ours = |g: &ConvGrant| g.conv == id && (g.device == here || super::convstore::stored(id));
+        if !grants(app, pane).await.iter().any(ours) {
             let gone = !app.mux.api(Api::Panes).await.unwrap_or_default().iter().any(|p| p.info.id == pane);
             return close(if gone { "its pane closed".into() } else { "its grant was revoked".into() }).await;
         }

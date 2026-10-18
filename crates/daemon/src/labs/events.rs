@@ -390,7 +390,7 @@ async fn post_line(app: &App, id: ConvId, l: &ConvLink, e: ConvEvent) -> bool {
         quote: None,
         event: Some(e),
     };
-    match app.mux.api(|r| Api::ThreadPost(post, r)).await {
+    match super::convstore::post(app, post).await {
         Some(Ok(_)) => true,
         // The conversation went.
         Some(Err(e)) if e.0 == 404 => false,
@@ -408,6 +408,11 @@ pub fn resume(app: &Arc<App>) {
     tokio::spawn(async move {
         let convs = app.mux.api(Api::Convs).await.unwrap_or_default();
         for c in convs {
+            // S38: one kept in control is watched by the lease's holder,
+            // when it takes the lease.
+            if super::convstore::stored(c.id) {
+                continue;
+            }
             for l in c.links.iter().filter(|l| l.closed.is_none()) {
                 watch(&app, c.id, l);
             }
@@ -651,7 +656,7 @@ async fn answered(
         quote: None,
         event: Some(e),
     };
-    if let Some(Err(e)) = app.mux.api(|r| Api::ThreadPost(post, r)).await {
+    if let Some(Err(e)) = super::convstore::post(app, post).await {
         warn!(conv = %id, error = e.1, "answered a card, but can't record it");
     }
 }
@@ -682,7 +687,7 @@ pub async fn post_lead_card(app: &App, id: ConvId, e: ConvEvent) {
         quote: None,
         event: Some(e),
     };
-    if let Some(Err(e)) = app.mux.api(|r| Api::ThreadPost(post, r)).await {
+    if let Some(Err(e)) = super::convstore::post(app, post).await {
         warn!(conv = %id, error = e.1, "can't post the lead's card");
     }
 }

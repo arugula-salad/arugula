@@ -13,6 +13,7 @@
 pub mod block;
 pub mod cert;
 pub mod channel;
+pub mod conv;
 pub mod keys;
 pub mod mux;
 pub mod push;
