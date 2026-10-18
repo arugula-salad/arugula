@@ -307,6 +307,7 @@ name = "arugula-proto"
 version = "0.42.0"
 dependencies = [
  "arugula-core",
+ "getrandom 0.4.3",
  "schemars",
  "serde",
  "serde_json",

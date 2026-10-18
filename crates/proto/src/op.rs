@@ -133,6 +133,8 @@ impl Request for crate::api::Empty {
 
 impl Request for crate::flags::FlagSetRequest {}
 
+impl Request for crate::telemetry::TelemetrySetRequest {}
+
 impl Request for crate::api::AgentApprovals {}
 
 impl Request for crate::api::WaitRequest {}
@@ -296,6 +298,8 @@ macro_rules! every_op {
         $m!($crate::op::ops::ShellEnvRefresh);
         $m!($crate::op::ops::FlagsList);
         $m!($crate::op::ops::FlagSet);
+        $m!($crate::op::ops::TelemetryGet);
+        $m!($crate::op::ops::TelemetrySet);
         $m!($crate::op::ops::AgentApprovalsGet);
         $m!($crate::op::ops::AgentApprovalsSet);
         $m!($crate::op::ops::RulesList);
@@ -424,6 +428,7 @@ pub mod ops {
         },
         flags::{FlagInfo, FlagSetRequest},
         hosts::{Demoted, Host, PromoteRequest, SandboxList},
+        telemetry::{TelemetryInfo, TelemetrySetRequest},
     };
 
     /// `GET /api/panes`: every pane and block (`arugula ls`, MCP's `list`
@@ -508,6 +513,34 @@ pub mod ops {
         type Path = String;
         type Req = FlagSetRequest;
         type Res = FlagInfo;
+    }
+
+    /// `GET /api/telemetry` (M101): whether this machine sends telemetry,
+    /// why, and the next report as it would be sent.
+    pub struct TelemetryGet;
+
+    impl Op for TelemetryGet {
+        const NAME: &'static str = "telemetry.get";
+        const METHOD: Method = Method::Get;
+        const PATH: &'static str = "/api/telemetry";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = Empty;
+        type Res = TelemetryInfo;
+    }
+
+    /// `PUT /api/telemetry` (M101): the owner's answer. Yes sends the first
+    /// report at once; no deletes the install id and what wasn't sent.
+    pub struct TelemetrySet;
+
+    impl Op for TelemetrySet {
+        const NAME: &'static str = "telemetry.set";
+        const METHOD: Method = Method::Put;
+        const PATH: &'static str = "/api/telemetry";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = TelemetrySetRequest;
+        type Res = TelemetryInfo;
     }
 
     /// The owner's default policy for new Managoat conversations on this machine.

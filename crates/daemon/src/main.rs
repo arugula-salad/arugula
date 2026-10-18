@@ -86,6 +86,7 @@ mod sync;
 use arugula_mux::sys;
 pub(crate) use arugula_mux::sys::home;
 mod tailscale;
+mod telemetry;
 mod tls;
 mod update;
 #[cfg(unix)]
@@ -551,6 +552,9 @@ fn main() -> anyhow::Result<()> {
         Some(Command::Flags { name, switch, state_dir }) => {
             flags_cli(name.as_deref(), switch, &state_dir.unwrap_or_else(default_state_dir))
         }
+        Some(Command::Telemetry { what, json, state_dir }) => {
+            telemetry_cli(what, json, &state_dir.unwrap_or_else(default_state_dir))
+        }
         Some(Command::Leave { state_dir }) => {
             let dir = state_dir.unwrap_or_else(default_state_dir);
             let listen = std::fs::read_to_string(dir.join("listen")).unwrap_or_else(|_| "127.0.0.1:7681".into());
@@ -615,6 +619,49 @@ fn flags_cli(name: Option<&str>, switch: Option<args::Switch>, dir: &std::path::
                 println!("  This build of Arugula has no Labs, so nothing changes.");
             } else if daemon_running(dir) {
                 println!("  The running daemon follows at once.");
+            }
+        }
+    }
+    Ok(())
+}
+
+/// `arugulad telemetry`: the owner's answer, or what is sent. It works on
+/// the state directory, not through the daemon.
+fn telemetry_cli(what: args::TelemetryCmd, json: bool, dir: &std::path::Path) -> anyhow::Result<()> {
+    use arugula_proto::telemetry as consent;
+    match what {
+        args::TelemetryCmd::On | args::TelemetryCmd::Off => {
+            let on = what == args::TelemetryCmd::On;
+            consent::set(dir, on, "cli", arugula_e2e::now_ms()).map_err(|e| anyhow::anyhow!("{e}"))?;
+            let state = consent::enabled(dir);
+            println!("Telemetry is {}", state.why.line());
+            if on && !state.on {
+                println!("  Nothing is sent while that holds.");
+            } else if on {
+                println!("  See what is sent with `arugulad telemetry status`.");
+            } else {
+                println!("  The install id and anything not yet sent are deleted.");
+            }
+            if daemon_running(dir) {
+                println!("  The running daemon follows within a minute.");
+            }
+        }
+        args::TelemetryCmd::Status => {
+            let t = telemetry::Telemetry::from_env(dir, &home());
+            t.set_signer(Arc::new(telemetry::FromFile(control::joined_in(dir))));
+            let info = t.info();
+            if json {
+                println!("{}", serde_json::to_string_pretty(&info)?);
+                return Ok(());
+            }
+            println!("Telemetry is {}", info.why.line());
+            if let Some(install) = &info.install {
+                println!("  install  {install}");
+            }
+            println!("  sent to  {} ({})", info.url, if info.signed { "signed as this machine" } else { "unsigned" });
+            match &info.preview {
+                Some(p) => println!("\nThe next report, as it would be sent:\n{}", serde_json::to_string_pretty(p)?),
+                None => println!("\nNothing is sent. `arugulad telemetry on` turns it on (docs/telemetry.md)."),
             }
         }
     }
@@ -921,8 +968,12 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
         shell_env_skip: vec!["CLAUDE_CODE_SSE_PORT".into()],
         sessions: Arc::new(conversations::Sessions),
         pane_gone,
+        usage: Arc::new(telemetry::Hooks),
         at_exit: Some(mux::AtExit(Arc::new(labs::stop_beholds))),
     };
+    // M101: counting starts with the mux; reports, once control is known.
+    let telemetry = telemetry::Telemetry::from_env(&state_dir, &home());
+    telemetry.start(control.clone());
     let mux = mux::start(config, store, kept, editors::pane_cards(&ide));
     editors::run_ide(&ide, mux.clone());
 
@@ -1030,6 +1081,7 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
             sys::notify("STOPPING=1");
             info!("shutting down: saving every pane");
             mux.shutdown().await;
+            telemetry.save();
         }
     }
     // Returning drops open connections; panes' shells are hung up as their

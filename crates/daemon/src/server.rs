@@ -9,6 +9,7 @@ use std::{
     },
 };
 
+use arugula_control_wire::telemetry::Surface;
 use arugula_proto::op::ops::SigninLinkGet;
 use arugula_proto::{ClientId, ClientMsg, Frame, FrameKind, PaneId, ServerMsg, block_patch};
 use axum::{
@@ -484,14 +485,16 @@ async fn ws(
         return (status, why).into_response();
     }
     let who = who.map(|Extension(w)| w).unwrap_or(Principal::Owner);
-    upgrade.on_upgrade(move |socket| connection(app, socket, who))
+    let surface = crate::telemetry::surface_of(&headers);
+    upgrade.on_upgrade(move |socket| connection(app, socket, who, surface))
 }
 
 async fn local_ws(State(app): State<Arc<App>>, upgrade: WebSocketUpgrade) -> Response {
-    upgrade.on_upgrade(move |socket| connection(app, socket, Principal::Owner))
+    upgrade.on_upgrade(move |socket| connection(app, socket, Principal::Owner, Surface::Tui))
 }
 
-async fn connection(app: Arc<App>, mut socket: WebSocket, who: Principal) {
+async fn connection(app: Arc<App>, mut socket: WebSocket, who: Principal, surface: Surface) {
+    crate::telemetry::client(surface);
     let client: ClientId = app.new_client_id();
     info!(client, who = who.id(), "client connected");
     let (data_tx, mut data_rx) = client_queue();
