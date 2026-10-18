@@ -12,7 +12,8 @@ import type { Attention, PaneInfo, Session, SessionId, TabId } from "../../proto
 import { AttentionBadge } from "../attention";
 import { sessionItems } from "../commands";
 import { openFresh } from "../open-fresh";
-import { closePlace, currentPlace } from "../places";
+import { closePlace, currentPlace, openOverview } from "../places";
+import { openAttention } from "./attention-drawer";
 import { BranchIcon, MoreIcon, PanesIcon, PlusIcon, SearchIcon, TabsIcon } from "./icons";
 import { setSidebarOpen, setSidebarWidth, takeSearchFocus, useSidebar } from "./prefs";
 import { RenameInput, type Renaming } from "./rename-input";
@@ -207,7 +208,16 @@ export function SessionSidebar({
           return (
             <Fragment key={g.id}>
               <h3 class={`ws-group ${g.id}`} data-session-group={g.id}>
-                {g.label} <span class="ws-group-count">{rows.length}</span>
+                {g.id === "needs" ? (
+                  // M111: what each one asks, in the attention drawer.
+                  <button class="ws-group-open" data-open-attention-group title="See what needs you, on every machine (looking doesn't answer it)" onClick={() => openAttention()}>
+                    {g.label} <span class="ws-group-count">{rows.length}</span>
+                  </button>
+                ) : (
+                  <>
+                    {g.label} <span class="ws-group-count">{rows.length}</span>
+                  </>
+                )}
               </h3>
               {rows.map((r) => (
                 <SessionRow
@@ -403,6 +413,29 @@ export function SessionButton({
           if (name && name !== session.name) client.intent({ op: "rename_session", session: session.id, name });
         }}
       />
+    );
+  }
+  if (crumb) {
+    // M111: the name opens this session's overview; the caret (or a right
+    // click) its menu.
+    const unread = client.thread({ session: session.id });
+    return (
+      <span class="ws-crumb-group">
+        <button
+          class="session-button ws-crumb"
+          title="This session's overview: its tabs, panes and what needs you"
+          aria-label={`Session: ${session.name}`}
+          data-crumb-overview
+          onClick={() => openOverview(session.id)}
+          onContextMenu={sessionMenu}
+        >
+          <span class="ws-crumb-name">{session.name}</span>
+          {unread?.unread ? <span class={unread.mention ? "session-unread mention" : "session-unread"} title="New in the session thread" /> : null}
+        </button>
+        <button class="ws-crumb-caret" aria-label={`Session menu: ${session.name}`} title="Switch sessions, rename, close" data-crumb-menu onClick={sessionMenu}>
+          <span class="caret">▾</span>
+        </button>
+      </span>
     );
   }
   return (

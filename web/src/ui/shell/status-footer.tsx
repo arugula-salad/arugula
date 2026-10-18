@@ -8,8 +8,8 @@ import { directory } from "../../hosts";
 import type { PaneInfo } from "../../proto";
 import { useSubscribe } from "../hooks";
 import { keyHint } from "../keys";
-import { closePlace, currentPlace } from "../places";
 import { ActivityToggle } from "./activity";
+import { openAttention } from "./attention-drawer";
 import { connection } from "./context-header";
 import { BranchIcon } from "./icons";
 
@@ -27,16 +27,9 @@ export function StatusFooter({ client }: { client: Client }) {
   const needs = panes.filter((p) => p.attention === "needs_input");
   const { state } = connection(client);
   const host = directory.current || "This machine";
-  // Each press goes to the next pane that wants you, from the one after
-  // the focused pane; seeing it never answers it.
-  const next = () => {
-    const i = needs.findIndex((p) => p.id === active);
-    const p = needs[(i + 1) % needs.length];
-    const at = currentPlace();
-    if (at !== "panes") closePlace(at);
-    client.setActive(p.id);
-    client.viewOf(p.id)?.focus();
-  };
+  // M111: the attention drawer, at this machine's first; seeing it never
+  // answers it.
+  const next = () => openAttention(`${directory.current}:${(needs.find((p) => p.id !== active) ?? needs[0]).id}`);
   const hints: [string, string | undefined][] = [
     ["Commands", keyHint("palette")],
     ["Go to pane", keyHint("pane.jump")],
@@ -63,7 +56,7 @@ export function StatusFooter({ client }: { client: Client }) {
         <button
           class="ws-foot-needs"
           data-footer-needs={needs.length}
-          title="Go to the next pane that needs you (this doesn't answer it)"
+          title="What needs you: see it, answer it or go to it (looking doesn't answer it)"
           onClick={next}
         >
           <span class="ws-dot needs_input" aria-hidden="true" />
