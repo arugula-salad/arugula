@@ -106,8 +106,14 @@ fn policy(method: &Method, path: &str) -> Policy {
         ["api", "blocks", _, "call", "hud"] => Policy::Owner,
         // #963: a Doc is written by the agent that builds it and the owner's
         // CLI; an editor's browser could otherwise rewrite the owner's
-        // report.
-        ["api", "blocks", _, "call", "doc_outline" | "doc_fill"] => Policy::Owner,
+        // report. #965: so are its pictures.
+        ["api", "blocks", _, "call", "doc_outline" | "doc_fill" | "doc_asset_put"] => Policy::Owner,
+        // #965: reading a picture is a call (a POST), and a viewer's page
+        // shows the Doc's pictures: without this row the default below
+        // would ask for an editor.
+        ["api", "blocks", id, "call", "doc_asset"] if !get => {
+            pane(id).map_or(Policy::Owner, |p| Policy::On(p, Role::Viewer))
+        }
         ["api", "blocks", id, "call", _] if !get => pane(id).map_or(Policy::Owner, |p| Policy::On(p, Role::Editor)),
         // M76: what's offered to other people's agents is the owner's to
         // choose; the cards (and, from M78, their tasks) are for anyone who
@@ -348,9 +354,14 @@ mod tests {
         assert_eq!(policy(&p, "/api/blocks/7/call/why"), Policy::On(7, Role::Editor));
         assert_eq!(policy(&p, "/api/blocks/7/call/graph"), Policy::Owner);
         // #963: a Doc is written by its owner only, and read by a viewer.
-        for method in ["doc_outline", "doc_fill"] {
+        for method in ["doc_outline", "doc_fill", "doc_asset_put"] {
             assert_eq!(policy(&p, &format!("/api/blocks/7/call/{method}")), Policy::Owner, "{method}");
         }
+        // #965: ...but its pictures are read by a viewer, whose page shows
+        // them. The row is for the Doc's method alone: another block's
+        // `asset` is the editor's.
+        assert_eq!(policy(&p, "/api/blocks/7/call/doc_asset"), Policy::On(7, Role::Viewer));
+        assert_eq!(policy(&p, "/api/blocks/7/call/asset"), Policy::On(7, Role::Editor));
         assert_eq!(policy(&g, "/api/blocks/7"), Policy::On(7, Role::Viewer));
         assert_eq!(policy(&p, "/api/blocks/7/call/comment"), Policy::On(7, Role::Editor));
         assert_eq!(policy(&p, "/api/blocks/7/call/answer"), Policy::On(7, Role::Editor));

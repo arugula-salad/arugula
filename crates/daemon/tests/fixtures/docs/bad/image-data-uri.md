@@ -1,0 +1,1 @@
+![Inline](data:image/png;base64,AAAA)
