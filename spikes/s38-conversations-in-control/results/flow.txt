@@ -1,0 +1,56 @@
+   0.0s 1. box-a moves conversation c-da4bbeae01524e6c144a51a51ff2b42e into control
+{"conv":"c-da4bbeae01524e6c144a51a51ff2b42e","leading":1,"messages":1,"wrapped_to":["36d1cd3bc1183f36","9a804f74b8885e07","dead7d38c86c56a6"]}
+   1.1s    box-b mirrors it: {"messages":1,"leading":null}; box-b sees the links: [{"name":"L1","state":"live","attention":"idle"}]
+box-a: {"leading":1,"lead_block":2}  box-b: {"leading":null,"lead_block":null}  
+   1.1s 2. @lead, from box-a
+{"posted":2}
+   9.3s   #3 L1 · claude in calc on box-b: turn ended · worked 1s: 17 × 23 = **391** (17 × 20 = 340, plus 17 × 3 = 51, gives 391.) 
+  14.6s   #4 lead: L1 says: 17 × 23 = **391** 
+box-a: {"leading":1,"lead_block":2}  box-b: {"leading":null,"lead_block":null}  
+  14.7s 3. control's database, dumped
+dump: 13477 bytes of SQL, 310 lines
+conv_heads: 1 rows
+conv_log: 4 rows
+conv_leases: 1 rows
+conv_log (seq, at, device, bytes):
+   1 1792284562804 9a804f74b8885e07 147
+   2 1792284563937 9a804f74b8885e07 185
+   3 1792284571918 9a804f74b8885e07 362
+   4 1792284576426 9a804f74b8885e07 132
+conv_leases: [('9a804f74b8885e07', 1, 1792284589779, 2)]
+'pineapple': in the SQL dump: False; in the raw db+wal bytes: False
+'times': in the SQL dump: False; in the raw db+wal bytes: False
+'ask l1': in the SQL dump: False; in the raw db+wal bytes: False
+'tell me': in the SQL dump: False; in the raw db+wal bytes: False
+   (exit 0: 0 means none of those words is in it)
+  14.7s 4. box-a sleeps (SIGSTOP 1687726); @lead from box-b
+{"posted":5}
+  28.0s    box-b took the lease: token 2
+  37.2s   #6 L1 · claude in calc on box-b: turn ended · worked 1s: 6 × 7 = **42** 
+  40.3s   #7 lead: L1 says: 6 × 7 = **42** 
+  40.3s 5. box-a wakes (SIGCONT)
+box-a: {"leading":null,"lead_block":2}  box-b: {"leading":2,"lead_block":3}  
+   box-a log: 2026-10-18T00:50:03.099933Z  WARN arugulad::labs::convstore: s38: not posting as the lead: this machine doesn't hold the lead's lease conv=c-da4bbeae01524e6c144a51a51ff2b42e
+   box-a log: 2026-10-18T00:50:03.129783Z  WARN arugulad::labs::convstore: s38: lost the lead's lease conv=c-da4bbeae01524e6c144a51a51ff2b42e status=409 why="the lead's lease is 36d1cd3bc1183f36's (token 2), until 1792284615669"
+   box-a log: 2026-10-18T00:50:03.130516Z  INFO arugulad::labs::convstore: s38: closed this machine's lead: another machine holds the lease conv=c-da4bbeae01524e6c144a51a51ff2b42e block=2
+  48.4s    a lead's post from box-a with its old token 1:
+the lead's lease is 36d1cd3bc1183f36's (token 2), until 1792284625867
+  48.4s 6. box-a restarts
+old: 1687726
+new: 1705561
+box-a: {"leading":null,"lead_block":2}  box-b: {"leading":2,"lead_block":3}  
+{"posted":8}
+  68.1s   #9 lead: The word for today, said before the move, is: **pineapple** 
+box-a: {"leading":null,"lead_block":2}  box-b: {"leading":2,"lead_block":3}  
+  73.2s 7. who appended each entry (control's half: seq and device), and what it says (a member's half)
+seq  appended by who      text
+  1  box-a       jake     Said before the move: the word for today is pineapple.
+  2  box-a       jake     @lead ask L1 what 17 times 23 is, then tell me its answer.
+  3  box-a       L1 · claude in calc on box-b turn ended · worked 1s: 17 × 23 = **391** (17 × 20 = 340, plus 17 × 3 = 51, gives 391.)
+  4  box-a       lead     L1 says: 17 × 23 = **391**
+  5  box-b       jake     @lead box-a is asleep. Ask L1 what 6 times 7 is, then tell me.
+  6  box-b       L1 · claude in calc on box-b turn ended · worked 1s: 6 × 7 = **42**
+  7  box-b       lead     L1 says: 6 × 7 = **42**
+  8  box-a       jake     @lead what was the word for today, said before the move?
+  9  box-b       lead     The word for today, said before the move, is: **pineapple**
+   the final dump holds none of the messages' words: yes

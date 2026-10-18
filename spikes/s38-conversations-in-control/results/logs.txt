@@ -1,0 +1,14 @@
+# box-a (the first lead's machine): its S38 lines
+2026-10-18T00:49:22.813127Z  INFO arugulad::labs::convstore: s38: this machine took the lead's lease conv=c-da4bbeae01524e6c144a51a51ff2b42e token=1 cursor=1
+2026-10-18T00:49:22.813391Z  INFO arugulad::labs::convstore: s38: conversation moved into control conv=c-da4bbeae01524e6c144a51a51ff2b42e messages=1 devices=3
+2026-10-18T00:49:24.588081Z  INFO arugulad::labs::convstore: s38: handing an @lead to the lead here conv=c-da4bbeae01524e6c144a51a51ff2b42e msg=2 token=1
+2026-10-18T00:50:03.099933Z  WARN arugulad::labs::convstore: s38: not posting as the lead: this machine doesn't hold the lead's lease conv=c-da4bbeae01524e6c144a51a51ff2b42e
+2026-10-18T00:50:03.129783Z  WARN arugulad::labs::convstore: s38: lost the lead's lease conv=c-da4bbeae01524e6c144a51a51ff2b42e status=409 why="the lead's lease is 36d1cd3bc1183f36's (token 2), until 1792284615669"
+2026-10-18T00:50:03.130516Z  INFO arugulad::labs::convstore: s38: closed this machine's lead: another machine holds the lease conv=c-da4bbeae01524e6c144a51a51ff2b42e block=2
+2026-10-18T00:50:11.184117Z  WARN arugulad::labs::convstore: s38: control refused the lead's post (fenced) conv=c-da4bbeae01524e6c144a51a51ff2b42e fence=1 why="the lead's lease is 36d1cd3bc1183f36's (token 2), until 1792284625867"
+
+# box-b: its S38 lines
+2026-10-18T00:49:22.935410Z  INFO arugulad::labs::convstore: s38: a conversation in control, mirrored here conv=c-da4bbeae01524e6c144a51a51ff2b42e
+2026-10-18T00:49:50.430102Z  INFO arugulad::labs::convstore: s38: this machine took the lead's lease conv=c-da4bbeae01524e6c144a51a51ff2b42e token=2 cursor=2
+2026-10-18T00:49:50.430394Z  INFO arugulad::labs::convstore: s38: handing an @lead to the lead here conv=c-da4bbeae01524e6c144a51a51ff2b42e msg=5 token=2
+2026-10-18T00:50:27.270460Z  INFO arugulad::labs::convstore: s38: handing an @lead to the lead here conv=c-da4bbeae01524e6c144a51a51ff2b42e msg=8 token=2
