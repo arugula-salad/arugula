@@ -47,7 +47,14 @@ fn a_test_panic_is_written_down_where_and_not_what() {
     assert!(c.frames.iter().all(|f| f.starts_with("arugula")), "{c:?}");
     // Frames are best-effort: only a build whose backtraces name our
     // functions has them. The location always is.
-    if stderr.contains("arugulad::") {
+    // A frame named for one of ours, not one of std's whose generic
+    // arguments mention ours (macOS's dev builds name ours `{closure#0}`).
+    let named = stderr.lines().any(|l| {
+        l.trim_start()
+            .split_once(": ")
+            .is_some_and(|(n, sym)| n.bytes().all(|b| b.is_ascii_digit()) && sym.starts_with("arugulad::"))
+    });
+    if named {
         assert!(c.frames.iter().any(|f| f == "arugulad::main"), "{c:?}\nfrom:\n{stderr}");
     } else {
         eprintln!("this build's backtraces name none of our functions, so no frames: {stderr}");

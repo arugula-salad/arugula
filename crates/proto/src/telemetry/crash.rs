@@ -371,7 +371,14 @@ mod tests {
         // functions has them. The location always is.
         let trace = stderr.split(TRACE).nth(1).unwrap_or_default();
         assert!(c.frames.iter().all(|f| f.starts_with("arugula_proto::")), "{c:?}");
-        if trace.contains("arugula_proto::") {
+        // A frame named for one of ours, not one of std's whose generic
+        // arguments mention ours (macOS's dev builds name ours `{closure#2}`).
+        let named = trace.lines().any(|l| {
+            l.trim_start()
+                .split_once(": ")
+                .is_some_and(|(n, sym)| n.bytes().all(|b| b.is_ascii_digit()) && sym.starts_with("arugula_proto::"))
+        });
+        if named {
             let want = "arugula_proto::telemetry::crash::tests::panic_in_child";
             assert!(c.frames.iter().any(|f| f == want), "{c:?}\nfrom:\n{trace}");
         } else {
