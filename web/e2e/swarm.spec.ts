@@ -206,9 +206,18 @@ test("a full rail: the rest pulse in place, and the rail says how many", async (
   const page = await browser.newPage({ viewport: { width: 1000, height: 480 } });
   await swarm(page);
   await clearRail(page);
-  await Promise.all([fake.trouble("workstation", 1), fake.trouble("build-01", 1), fake.trouble("build-02", 2)]);
+  const failing = (
+    await Promise.all([fake.trouble("workstation", 1), fake.trouble("build-01", 1), fake.trouble("build-02", 2)])
+  ).flatMap((ids, i) => ids.map((id) => `${["workstation", "build-01", "build-02"][i]}:${id}`));
   await expect(page.locator(".swarm-card[data-bundle]")).toHaveCount(2, { timeout: 20_000 });
   await expect(page.locator(".swarm-waiting")).toHaveAttribute("data-waiting", /^[12]$/);
+  // Every run has failed before the rail is cleared: one failing after it
+  // would put a card back.
+  await expect
+    .poll(() => page.evaluate((keys) => keys.filter((k) => window.__arugula.fleet.panes.find((p) => p.key === k)?.info.reason).length, failing), {
+      timeout: 20_000,
+    })
+    .toBe(4);
   await clearRail(page);
   await expect(page.locator(".swarm-waiting")).toHaveCount(0);
   await page.close();

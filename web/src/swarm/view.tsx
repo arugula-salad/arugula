@@ -936,7 +936,10 @@ function Card({
 }
 
 function AnsweredCard({ d, fleet, close }: { d: Done; fleet: Fleet; close: () => void }) {
-  const p = d.pane;
+  // The pane as it is now, not as it was when answered: an agent in a
+  // terminal waits on its inbox only once it stops, maybe after the answer,
+  // and its follow-up box shows then.
+  const p = fleet.panes.find((x) => x.key === d.key) ?? d.pane;
   const can = fleet.role(p) !== "viewer";
   return (
     <div class="swarm-card in t-answered" data-answered={d.answered.id} data-panes={p.key} style={{ "--c": "rgb(124,134,152)" }}>
