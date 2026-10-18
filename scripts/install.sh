@@ -353,3 +353,9 @@ say "  Agents    ${bin}arugula agent --help · claude mcp add arugula -- ${bin}a
 say "  Hooks     ${bin}arugula hooks install   (Claude Code's questions and approvals as cards)"
 say "            or both at once, in Claude Code: /plugin install arugula --marketplace arugula-salad/arugula"
 say "  Docs      https://arugula.io/#install"
+# Telemetry is opt-in (docs/telemetry.md): say the first command asks,
+# unless the environment already keeps it off.
+if [ -z "${ARUGULA_TELEMETRY:-}" ] && [ -z "${DO_NOT_TRACK:-}" ]; then
+  say ""
+  say "Usage reports are off. The first \`arugula\` command asks if you'd like to send them (set ARUGULA_TELEMETRY=off to never be asked)."
+fi

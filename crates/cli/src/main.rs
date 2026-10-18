@@ -19,6 +19,7 @@ mod mcp;
 #[cfg(windows)]
 mod pipe;
 mod ssh;
+mod telemetry;
 mod term;
 #[cfg(unix)]
 mod tmux;
@@ -426,6 +427,55 @@ enum Command {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
+    /// Usage reports from this machine: on, off, or what would be sent.
+    ///
+    /// Off until you say yes. `status` prints the next report exactly as it
+    /// would go (`--json` for the daemon's answer). Usage counts and crash
+    /// reports only: never terminal contents, file names, commands or
+    /// prompts.
+    Telemetry {
+        #[command(subcommand)]
+        cmd: telemetry::TelemetryCmd,
+    },
+}
+
+impl Cli {
+    /// Whether this command may ask the one-time telemetry question first:
+    /// one a person runs on the local daemon and reads at a terminal. Not
+    /// JSON for a program, MCP, tmux's control mode, the TUI (it shows a
+    /// hint), `arugula telemetry` itself, or an agent's hooks.
+    fn may_ask(&self) -> bool {
+        !self.json
+            && !matches!(
+                self.cmd,
+                Command::Telemetry { .. }
+                    | Command::Tui { .. }
+                    | Command::Tmux { .. }
+                    | Command::Mcp(_)
+                    | Command::Events(_)
+                    | Command::Bridge { .. }
+                    | Command::Ask
+                    | Command::Hook
+                    | Command::Inbox
+            )
+    }
+}
+
+/// The one-time question (M105), before the command runs, when
+/// `telemetry::should_ask` says so.
+fn ask_about_telemetry(cli: &Cli) {
+    use std::io::IsTerminal;
+    let Some(dir) = state_dir() else { return };
+    let facts = telemetry::Facts {
+        tty: std::io::stdin().is_terminal() && std::io::stderr().is_terminal(),
+        local: cli.host.is_none() && cli.ssh.is_none(),
+        agent: http::agent(),
+        command: cli.may_ask(),
+        why: arugula_proto::telemetry::enabled(&dir).why,
+    };
+    if telemetry::should_ask(&facts) {
+        telemetry::first_run(&http::Target::Socket(socket(cli)), &dir);
+    }
 }
 
 /// The local daemon's state directory, resolved as the daemon and the desktop
@@ -554,6 +604,7 @@ fn main() {
 }
 
 fn real_main(cli: Cli) -> anyhow::Result<i32> {
+    ask_about_telemetry(&cli);
     if let Command::Join(args) = &cli.cmd {
         return cmd::join::run(args, &cli);
     }
@@ -698,7 +749,11 @@ fn real_main(cli: Cli) -> anyhow::Result<i32> {
         Command::Tail(args) => cmd::tail::run(args, ctx),
         Command::Wait(args) => cmd::wait::run(args, ctx),
         Command::Attach { pane } => attach::run(&ctx.sock, util::here(pane)?),
-        Command::Tui { session } => tui::run(&ctx.sock, session),
+        Command::Tui { session } => {
+            let hint = telemetry::tui_hint(&ctx.sock, state_dir().as_deref());
+            tui::run(&ctx.sock, session, hint)
+        }
+        Command::Telemetry { cmd } => telemetry::run(cmd, ctx, state_dir().as_deref()),
         Command::Export(args) => cmd::export::run(args, ctx),
         Command::Process(args) => cmd::process::run(args, ctx),
         Command::Capture(args) => cmd::capture::run(args, ctx),
