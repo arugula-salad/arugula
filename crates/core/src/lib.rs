@@ -18,7 +18,9 @@ pub type ClientId = u64;
 
 pub use access::{Need, Role};
 pub use layout::{Layout, Rect, SplitRect};
-pub use mux::{Claim, Effect, Error, Intent, Mux, OptionMap, OptionScope, Options, SIZE_HOLD, Session, SizeHold, Tab};
+pub use mux::{
+    Claim, Effect, Error, Intent, Mux, OptionMap, OptionScope, Options, Preset, SIZE_HOLD, Session, SizeHold, Tab,
+};
 pub use tree::{Child, Dir, Edge, Node};
 
 #[cfg(test)]

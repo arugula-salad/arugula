@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 /// What keeps illogical's name after the rename to Arugula (#504).
 pub use arugula_core::rename;
 pub use arugula_core::{
-    ClientId, Dir, Edge, Intent, Layout, Node, NodeId, OptionMap, OptionScope, Options, PaneId, Rect, Session,
+    ClientId, Dir, Edge, Intent, Layout, Node, NodeId, OptionMap, OptionScope, Options, PaneId, Preset, Rect, Session,
     SessionId, SplitRect, TabId,
 };
 
@@ -988,6 +988,10 @@ pub struct TabView {
     pub rows: u16,
     pub owner: Option<ClientId>,
     pub zoom: Option<PaneId>,
+    /// The pane filling the tab for everyone (focus mode, M109), if any.
+    /// `layout` already shows it.
+    #[serde(default)]
+    pub focus: Option<PaneId>,
     pub layout: Layout,
 }
 
@@ -1101,6 +1105,10 @@ pub struct PaneInfo {
     /// The git repository it works in, if any (M23).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub project: Option<Project>,
+    /// Its repository's checked-out branch, or a short commit when HEAD is
+    /// detached (M109).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
     /// Output rate (M23).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub activity: Option<Activity>,

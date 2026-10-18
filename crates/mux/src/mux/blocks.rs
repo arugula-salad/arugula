@@ -353,14 +353,14 @@ impl Daemon {
     }
 
     /// The blocks `client` draws: those in the tab it shows, or on a phone
-    /// the one pane it shows. None for a summaries-only client.
+    /// the one pane it shows, or the tab's focused pane. None for a summaries-only client.
     pub(super) fn shown_by(&self, client: ClientId) -> Vec<PaneId> {
         if self.summary.contains(&client) || !self.clients.contains_key(&client) {
             return vec![];
         }
         let Some(Ok(t)) = self.viewing.get(&client).map(|tab| self.mux.tab(*tab)) else { return vec![] };
         let panes = t.root.panes();
-        let zoom = self.zoomed.get(&client).filter(|z| panes.contains(z)).copied();
+        let zoom = self.zoomed.get(&client).filter(|z| panes.contains(z)).copied().or(t.focus);
         panes.into_iter().filter(|p| self.blocks.contains_key(p) && zoom.is_none_or(|z| z == *p)).collect()
     }
 

@@ -79,7 +79,10 @@ pub fn need(mux: &Mux, intent: &Intent) -> Result<Need, Error> {
             }
             Need::on(Editor, s)
         }
-        Intent::RenameTab { tab, .. } | Intent::CloseTab { tab } => Need::on(Editor, vec![of_tab(*tab)?]),
+        Intent::RenameTab { tab, .. }
+        | Intent::CloseTab { tab }
+        | Intent::Arrange { tab, .. }
+        | Intent::Focus { tab, .. } => Need::on(Editor, vec![of_tab(*tab)?]),
         Intent::MoveTab { tab, session, .. } => {
             mux.session(*session)?;
             Need::on(Editor, vec![of_tab(*tab)?, *session])
@@ -137,6 +140,12 @@ mod tests {
         assert!(!may(Intent::NewSession { name: None, from_pane: None }));
         assert!(!may(Intent::SetOption { scope: OptionScope::Global, name: "x".into(), value: None }));
         assert!(may(Intent::SetOption { scope: OptionScope::Pane(pane_a), name: "x".into(), value: None }));
+        // Arranging and focusing a tab are an editor's, not a viewer's.
+        let (tab_a, tab_b) = (m.sessions[0].tabs[0], m.sessions[1].tabs[0]);
+        assert!(may(Intent::Arrange { tab: tab_a, preset: crate::Preset::Grid, main: None }));
+        assert!(!may(Intent::Arrange { tab: tab_b, preset: crate::Preset::Grid, main: None }));
+        assert!(may(Intent::Focus { tab: tab_a, pane: Some(pane_a) }));
+        assert!(!may(Intent::Focus { tab: tab_b, pane: None }));
         // A new tab can't borrow the working directory of a pane you can't see.
         let none: HashMap<SessionId, Role> = [(a, Role::Editor)].into();
         let i = Intent::NewTab { session: a, from_pane: Some(pane_b), cwd: None };

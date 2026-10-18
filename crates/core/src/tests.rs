@@ -1,6 +1,6 @@
 use proptest::prelude::*;
 
-use crate::{Edge, Effect, Intent, Mux, Node};
+use crate::{Edge, Effect, Intent, Mux, Node, Preset};
 
 fn mux_with_session() -> Mux {
     let mut m = Mux::new();
@@ -167,6 +167,10 @@ fn layout_serializes_for_clients() {
     assert_eq!(intent, Intent::Split { pane: 1, edge: Edge::Right, local: false, cwd: None });
 }
 
+fn preset() -> impl Strategy<Value = Preset> {
+    prop_oneof![Just(Preset::Columns), Just(Preset::Grid), Just(Preset::MainStack)]
+}
+
 /// An intent built from small random numbers, aimed at IDs that may or may
 /// not exist (so failures are exercised too).
 fn arb_intent() -> impl Strategy<Value = Intent> {
@@ -198,6 +202,12 @@ fn arb_intent() -> impl Strategy<Value = Intent> {
         }),
         (id.clone(), prop::collection::vec(-1.0f64..5.0, 1..4))
             .prop_map(|(split, weights)| Intent::ResizeSplit { split, weights }),
+        (id.clone(), preset(), prop::option::of(id.clone())).prop_map(|(tab, preset, main)| Intent::Arrange {
+            tab,
+            preset,
+            main
+        }),
+        (id.clone(), prop::option::of(id)).prop_map(|(tab, pane)| Intent::Focus { tab, pane }),
     ]
 }
 
@@ -297,4 +307,135 @@ fn a_split_or_tab_can_name_its_directory() {
     assert_eq!(fx, vec![Effect::Spawn { pane: 2, cwd_from: Some(1), cwd: Some("/tmp".into()) }]);
     let fx = m.apply(Intent::NewTab { session: 1, from_pane: None, cwd: Some("/srv".into()) }).unwrap();
     assert_eq!(fx, vec![Effect::Spawn { pane: 3, cwd_from: None, cwd: Some("/srv".into()) }]);
+}
+
+/// A session whose first tab holds `n` panes, split every which way, in a
+/// tab big enough for any preset.
+fn tab_of(n: u32) -> Mux {
+    let mut m = mux_with_session();
+    m.view(1, 1, 200, 60, None, true).unwrap();
+    let edges = [Edge::Right, Edge::Bottom, Edge::Left, Edge::Top];
+    for i in 1..n {
+        m.apply(Intent::Split { pane: i, edge: edges[i as usize % 4], local: false, cwd: None }).unwrap();
+    }
+    m
+}
+
+#[test]
+fn every_preset_keeps_the_panes_for_any_count() {
+    for n in 1..=9 {
+        for preset in [Preset::Columns, Preset::Grid, Preset::MainStack] {
+            let mut m = tab_of(n);
+            let mut before = m.tab(1).unwrap().root.panes();
+            let fx = m.apply(Intent::Arrange { tab: 1, preset, main: None }).unwrap();
+            assert_eq!(fx, vec![], "n={n} {preset:?}");
+            assert_eq!(m.validate(), Ok(()), "n={n} {preset:?}");
+            let mut after = m.tab(1).unwrap().root.panes();
+            before.sort();
+            after.sort();
+            assert_eq!(after, before, "n={n} {preset:?}");
+        }
+    }
+}
+
+#[test]
+fn presets_have_the_planned_shapes() {
+    use crate::Dir;
+    let shape = |n, preset, main| {
+        let mut m = tab_of(n);
+        m.apply(Intent::Arrange { tab: 1, preset, main }).unwrap();
+        m.tab(1).unwrap().root.clone()
+    };
+    let row_len = |node: &Node| match node {
+        Node::Split { dir: Dir::Row, children, .. } => children.len(),
+        Node::Pane { .. } => 1,
+        n => panic!("not a row: {n:?}"),
+    };
+    // Columns: one row of n, in reading order.
+    let Node::Split { dir: Dir::Row, children, .. } = shape(4, Preset::Columns, None) else { panic!() };
+    assert_eq!(children.len(), 4);
+    // Grid of 7: three columns, rows of 3, 3 and 1, the last one widened.
+    let Node::Split { dir: Dir::Column, children, .. } = shape(7, Preset::Grid, None) else { panic!() };
+    assert_eq!(children.iter().map(|c| row_len(&c.node)).collect::<Vec<_>>(), vec![3, 3, 1]);
+    // Grid of 2 is a row; of 1, the pane.
+    assert_eq!(row_len(&shape(2, Preset::Grid, None)), 2);
+    assert_eq!(shape(1, Preset::Grid, None), Node::pane(1));
+    // MainStack of 2: columns, main first.
+    assert_eq!(shape(2, Preset::MainStack, Some(2)).panes(), vec![2, 1]);
+    assert_eq!(shape(1, Preset::MainStack, Some(1)), Node::pane(1));
+}
+
+#[test]
+fn main_stack_makes_main_the_largest() {
+    for n in 2..=9 {
+        let mut m = tab_of(n);
+        let main = n / 2 + 1;
+        m.apply(Intent::Arrange { tab: 1, preset: Preset::MainStack, main: Some(main) }).unwrap();
+        let l = m.layout(1).unwrap();
+        let area = |p| l.panes.iter().find(|(q, _)| *q == p).map(|(_, r)| r.cols as u32 * r.rows as u32).unwrap();
+        for p in m.tab(1).unwrap().root.panes().into_iter().filter(|p| *p != main) {
+            assert!(area(main) > area(p) || n == 2 && area(main) >= area(p), "n={n}: %{main} vs %{p}");
+        }
+    }
+}
+
+#[test]
+fn arrange_is_refused_when_it_wont_fit_or_main_is_elsewhere() {
+    let mut m = tab_of(6);
+    // Six stacked need 11 rows: a 40x8 tab fits the grid but not the stack.
+    m.apply(Intent::Arrange { tab: 1, preset: Preset::Columns, main: None }).unwrap();
+    m.view(1, 1, 40, 8, None, true).unwrap();
+    let before = m.tab(1).unwrap().root.clone();
+    assert!(m.apply(Intent::Arrange { tab: 1, preset: Preset::MainStack, main: Some(1) }).is_err());
+    assert_eq!(m.tab(1).unwrap().root, before);
+    m.apply(Intent::Arrange { tab: 1, preset: Preset::Grid, main: None }).unwrap();
+    m.apply(Intent::NewTab { session: 1, from_pane: None, cwd: None }).unwrap();
+    assert!(m.apply(Intent::Arrange { tab: 1, preset: Preset::MainStack, main: Some(7) }).is_err());
+    assert!(m.apply(Intent::Arrange { tab: 9, preset: Preset::Grid, main: None }).is_err());
+}
+
+#[test]
+fn focus_then_unfocus_gives_back_the_layout() {
+    let mut m = tab_of(4);
+    let before = m.layout(1).unwrap();
+    m.apply(Intent::Focus { tab: 1, pane: Some(3) }).unwrap();
+    let t = m.tab(1).unwrap();
+    let focused = m.layout(1).unwrap();
+    assert_eq!(focused.panes, vec![(3, crate::Rect { x: 0, y: 0, cols: t.cols, rows: t.rows })]);
+    // Only the focused pane is sized; the others keep theirs.
+    assert_eq!(m.pane_rects().keys().copied().collect::<Vec<_>>(), vec![3]);
+    m.apply(Intent::Focus { tab: 1, pane: None }).unwrap();
+    assert_eq!(m.layout(1).unwrap(), before);
+    // A pane from elsewhere can't be focused.
+    assert!(m.apply(Intent::Focus { tab: 1, pane: Some(42) }).is_err());
+    // Focus is saved with the layout; an older layout loads without it.
+    m.apply(Intent::Focus { tab: 1, pane: Some(2) }).unwrap();
+    let back: Mux = serde_json::from_str(&serde_json::to_string(&m).unwrap()).unwrap();
+    assert_eq!(back.tab(1).unwrap().focus, Some(2));
+    let mut old = serde_json::to_value(&m).unwrap();
+    old["tabs"]["1"].as_object_mut().unwrap().remove("focus");
+    assert_eq!(serde_json::from_value::<Mux>(old).unwrap().tab(1).unwrap().focus, None);
+}
+
+#[test]
+fn layout_changes_clear_focus() {
+    let mut m = tab_of(3);
+    m.apply(Intent::Focus { tab: 1, pane: Some(2) }).unwrap();
+    m.apply(Intent::Split { pane: 1, edge: Edge::Right, local: false, cwd: None }).unwrap();
+    assert_eq!(m.tab(1).unwrap().focus, None, "split");
+    m.apply(Intent::Focus { tab: 1, pane: Some(2) }).unwrap();
+    m.apply(Intent::Arrange { tab: 1, preset: Preset::Grid, main: None }).unwrap();
+    assert_eq!(m.tab(1).unwrap().focus, None, "arrange");
+    m.apply(Intent::Focus { tab: 1, pane: Some(2) }).unwrap();
+    m.apply(Intent::ClosePane { pane: 2 }).unwrap();
+    assert_eq!(m.tab(1).unwrap().focus, None, "closed");
+    // Closing another pane keeps it.
+    m.apply(Intent::Focus { tab: 1, pane: Some(3) }).unwrap();
+    m.apply(Intent::ClosePane { pane: 1 }).unwrap();
+    assert_eq!(m.tab(1).unwrap().focus, Some(3));
+    // A swap across tabs takes the focused pane away.
+    m.apply(Intent::NewTab { session: 1, from_pane: None, cwd: None }).unwrap();
+    m.apply(Intent::MovePane { pane: 3, target: 5, edge: Edge::Center }).unwrap();
+    assert_eq!(m.validate(), Ok(()));
+    assert_eq!(m.tab(1).unwrap().focus, None, "swapped away");
 }
