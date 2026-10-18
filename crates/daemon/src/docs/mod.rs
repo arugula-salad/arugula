@@ -947,6 +947,7 @@ mod tests {
             ("photo.png", jpeg.to_vec(), "holds a jpeg image: name it photo.jpg"),
             // Size: 2 MB fits, one byte more doesn't.
             ("big.png", big.clone(), "the cap is 2097152"),
+            ("over.png", png(&"x".repeat(ASSET_MAX - 7)), "is 2097153 bytes; the cap is 2097152"),
         ] {
             let e = put(&d, name, &bytes).await.unwrap_err();
             assert!(e.contains(says) && !e.contains('\n'), "{name}: {e}");

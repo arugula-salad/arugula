@@ -610,7 +610,7 @@ fn a_picture_that_isnt_one_is_refused_with_a_line_saying_what_to_fix() {
     // file that's there, and at most 2 MB (its size is looked at first).
     refuse(asset_path(doc, "a.png", Path::new("real.png")), "give an absolute path, or send data");
     refuse(asset_path(doc, "a.png", &d.sessions.join("missing.png")), "missing.png");
-    refuse(asset_path(doc, "a.png", &huge), "2 MB");
+    refuse(asset_path(doc, "a.png", &huge), "is 2097160 bytes; a picture is 2097152 (2 MB) at most");
     refuse(json!({ "kind": "asset", "block": doc, "name": "a.png" }), "give path or data");
     refuse(
         json!({ "kind": "asset", "block": doc, "name": "a.png", "path": real, "data": b64(&png("x")) }),
