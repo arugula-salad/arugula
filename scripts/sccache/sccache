@@ -1,0 +1,32 @@
+#!/bin/sh
+# RUSTC_WRAPPER that shares sccache's cache between worktrees (docs/development.md,
+# "A compiler cache for worktrees"). `just sccache-setup` copies it out of the
+# checkout and prints the ~/.cargo/config.toml lines that use it.
+#
+# sccache hashes every CARGO_* variable into its keys, and each worktree has
+# its own CARGO_TARGET_DIR (AGENTS.md), so with plain sccache no worktree
+# hits another's entries. rustc doesn't read it; dropping it here makes the
+# keys the same.
+#
+# Named sccache because the cc crate routes C compiles through RUSTC_WRAPPER
+# only when it is named that (aws-lc-sys's C is most of a cold build's C).
+# Without sccache on PATH it runs the compiler as is, so uninstalling sccache
+# doesn't break builds.
+unset CARGO_TARGET_DIR CARGO_BUILD_TARGET_DIR
+
+self=$(cd "$(dirname "$0")" && pwd -P)
+real=
+set -f
+IFS=:
+for dir in $PATH; do
+  [ -n "$dir" ] && [ -x "$dir/sccache" ] || continue
+  [ "$(cd "$dir" && pwd -P)" = "$self" ] && continue
+  real=$dir/sccache
+  break
+done
+unset IFS
+
+if [ -n "$real" ]; then
+  exec "$real" "$@"
+fi
+exec "$@"

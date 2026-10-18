@@ -83,6 +83,56 @@ README's `dive.gif` is the site's own tour, made by
 bastion and a box with no Arugula that only ssh reaches. `just testnet
 test` runs its claims; `testnet/README.md` lists them.
 
+## Caches for worktrees
+
+Every worktree has a target directory of its own (AGENTS.md), so each new
+one starts cold. Two caches shared by all of a machine's worktrees make
+that cheaper; both are opt-in, per machine, in `~/.cargo/config.toml`.
+`just build-cache` prints the lines (with this machine's paths) and copies
+the sccache wrapper out of the checkout, to
+`~/.local/share/arugula/sccache/sccache`, so the config never points into
+a worktree that gets deleted. Install sccache first: `brew install sccache`
+on macOS, `cargo install --locked sccache` (or a release binary on PATH)
+on Linux.
+
+- `LIBGHOSTTY_VT_SYS_CACHE_DIR` keeps libghostty-vt-sys's Ghostty checkout
+  and Zig's caches outside the target directory, as CI does (#868).
+  Without it every target directory clones Ghostty and compiles it in Zig,
+  45-50 s of the critical path; with it, that step is a second.
+- `build.rustc-wrapper` puts rustc, and the C that aws-lc-sys and the other
+  `cc` build scripts compile, through sccache. It is
+  `scripts/sccache/sccache`, not sccache itself: sccache hashes every
+  `CARGO_*` variable into its keys, `CARGO_TARGET_DIR` among them, so with
+  plain sccache no worktree ever hits another's entries. The wrapper drops
+  that variable, which rustc doesn't read. It is named sccache because the
+  `cc` crate wraps C compiles only in a wrapper of that name, and it runs
+  the compiler directly when sccache isn't installed.
+
+What sccache can't share: our own crates (incremental, and keyed on the
+worktree's path), binaries, proc macros, and about 1 in 10 of the
+dependencies: those using a proc macro (its build differs between target
+directories) or a build script's output (`OUT_DIR`'s path is in the key).
+That leaves most dependencies, which on a machine with many cores weren't
+on the critical path to begin with: there it's arugulad's own crate,
+compiled twice (once for `cargo build`, once for the tests). On
+geek (32 cores), a cold `cargo build -p arugulad --bin arugulad` and
+`cargo test -p arugulad --no-run` in a fresh worktree:
+
+| | Wall | CPU |
+| --- | --- | --- |
+| Neither cache | 129-155 s | 590 s |
+| sccache only (95% hits) | 127-145 s | not measured |
+| Zig cache only | 98-100 s | 409 s |
+| Both | 95 s (114 s under load) | 367 s |
+
+sccache's own cache defaults to `~/.cache/sccache` (Linux) or
+`~/Library/Caches/Mozilla.sccache` (macOS). `SCCACHE_CACHE_SIZE` caps it
+(20G in what `just build-cache` prints), and sccache drops the least
+recently used entries past that. One arugulad build and its tests add
+about 270 MB. The Zig cache has no cap: it grows by
+about 550 MB for each Ghostty commit and Zig optimize mode, and is safe to
+delete. Windows isn't covered (the wrapper is a shell script).
+
 ## Releasing
 
 The daemon and the desktop app release apart (#388): a daemon or web change
