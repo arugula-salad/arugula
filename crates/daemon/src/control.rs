@@ -1317,7 +1317,16 @@ impl Control {
         let number = self.started.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
         self.check_auth(&e).await;
         let moved_to = self.where_control_is(&e.saved.url).await;
-        let own: wire::TrustAnswer = self.get(&e, &wire::Features::path(&self.features())).await?;
+        // This machine's version, OS and arch (M100): control keeps them on
+        // its row. An older control ignores them.
+        let pq = format!(
+            "{}&version={}&os={}&arch={}",
+            wire::Features::path(&self.features()),
+            env!("CARGO_PKG_VERSION").replace('+', "%2B"),
+            std::env::consts::OS,
+            std::env::consts::ARCH,
+        );
+        let own: wire::TrustAnswer = self.get(&e, &pq).await?;
         // The Labs flags its account and team set (#347), under this
         // machine's own; a control from before them says nothing, and
         // what's kept stays.

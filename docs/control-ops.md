@@ -298,6 +298,40 @@ What's in them:
   `cloud request answered`, `cloud secret saved/deleted`.
 - **Other**: `push turned on` (the push service's host), `push turned off`,
   `push relayed` (status), `labs flag set`.
+- **Machines' versions**: `machine version` (machine, version, os, arch)
+  when a joined daemon's trust request (`GET /api/daemon/trust?…&version=&os=&arch=`)
+  says something other than last time. Control keeps them on the daemon's
+  row. This needs no opt-in: it describes a machine joined to control, as
+  its name and addresses do. Older daemons say nothing.
+- **Installs' telemetry** (`POST /api/telemetry`, opt-in on the machine,
+  `crates/control/src/telemetry.rs`): a report signed by a joined daemon
+  goes on its account, with `machine` (the daemon id); an unsigned one
+  goes on `install:<id>` with no person made for it. Each carries
+  `install`, `version`, `os`, `arch`, `channel` and `control`:
+  `install opted in` (via), `install started` (service), `install day`
+  (`panes_opened`, `panes_peak`, `agents_started_<runtime>`,
+  `blocks_opened_<kind>`, `clients_<surface>`, `view_<view>`, `flags_on`
+  as a list, `web_errors`), and `crash` (process, `version` that crashed,
+  `install_version` reporting it, location, frames, at). A report is
+  checked (`Report::check`, at most 64 KB) and refused with 400 or 413;
+  unsigned ones are limited to 600 an hour per client address, and 30 an
+  hour per install (or per daemon, signed), past which they get 429.
+  Without `POSTHOG_API_KEY` control takes reports and forwards nothing.
+- **Control's page's usage** (M104, opt-in on the account): the page isn't
+  any one machine's, so its yes is the account's, kept on its row
+  (`accounts.telemetry`: NULL not asked, 0 no, 1 yes; `telemetry_at` when).
+  `GET /api/me/telemetry` says `{on, at, ask}` (`ask` is false without
+  `POSTHOG_API_KEY`, and then the page never asks); `POST {on}` answers,
+  from the card the page shows once after sign-in or the switch under
+  Sign-in and account. A yes sends `page opted in`; a no sends nothing.
+  With yes, the page sends what it counted each minute and as it closes
+  to `POST /api/telemetry/page {views, web_errors}` (a session, same
+  origin), sent as `page day` under the account: `view_<view>` for each
+  view opened (`view_other` for one control doesn't know), `web_errors`
+  (a count; never a message or a stack). Without yes it's refused (403,
+  reason `telemetry_off`) whatever a page sends; it's limited to 300 an
+  hour per account (429). Neither route makes a `control request`.
+  Control's own events above don't depend on this answer.
 
 Deleting an account sends `account deleted`, but doesn't delete the
 person in PostHog: do that in PostHog (or by its API) when someone asks.

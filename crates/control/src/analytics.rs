@@ -209,6 +209,12 @@ pub async fn requests(State(app): State<Arc<App>>, mut req: Request, next: Next)
     if method == axum::http::Method::GET && status < 400 {
         return res;
     }
+    // The page's own usage reports and the answer about them (M104): the
+    // answer decides what's sent about the page, so neither is a request
+    // to report (a report sends `page day` itself).
+    if route == arugula_control_wire::telemetry::PAGE || route == arugula_control_wire::telemetry::ME_TELEMETRY {
+        return res;
+    }
     app.analytics.capture(
         account,
         "control request",
@@ -221,7 +227,7 @@ pub async fn requests(State(app): State<Arc<App>>, mut req: Request, next: Next)
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     #[test]
@@ -238,7 +244,7 @@ mod tests {
     }
 
     /// A fake PostHog: where it listens, and the batches it gets.
-    async fn fake_posthog() -> (String, mpsc::UnboundedReceiver<Value>) {
+    pub(crate) async fn fake_posthog() -> (String, mpsc::UnboundedReceiver<Value>) {
         use axum::{Json, Router, routing::post};
         let (got_tx, got) = mpsc::unbounded_channel::<Value>();
         let fake = Router::new().route(

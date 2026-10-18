@@ -346,6 +346,20 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     if !has("devices", "pin")? {
         conn.execute_batch("ALTER TABLE devices ADD COLUMN pin TEXT")?;
     }
+    // M100: the version, OS and arch a joined daemon last said it runs.
+    if !has("daemons", "version")? {
+        conn.execute_batch(
+            "ALTER TABLE daemons ADD COLUMN version TEXT; ALTER TABLE daemons ADD COLUMN os TEXT;
+             ALTER TABLE daemons ADD COLUMN arch TEXT;",
+        )?;
+    }
+    // M104: whether the account lets control's page send usage counts
+    // (NULL: not asked, 0: no, 1: yes), and when it answered.
+    if !has("accounts", "telemetry")? {
+        conn.execute_batch(
+            "ALTER TABLE accounts ADD COLUMN telemetry INTEGER; ALTER TABLE accounts ADD COLUMN telemetry_at INTEGER;",
+        )?;
+    }
     Ok(())
 }
 
@@ -633,6 +647,26 @@ impl Db {
     /// The account's display name (#102).
     pub fn set_name(&self, account: &str, name: &str) -> anyhow::Result<()> {
         self.c().execute("UPDATE accounts SET name = ?2 WHERE id = ?1", params![account, name])?;
+        Ok(())
+    }
+
+    /// The account's answer for control's page (M104): yes or no and
+    /// when, or nothing while it hasn't been asked.
+    pub fn page_telemetry(&self, account: &str) -> anyhow::Result<(Option<bool>, Option<u64>)> {
+        Ok(self
+            .c()
+            .query_row("SELECT telemetry, telemetry_at FROM accounts WHERE id = ?1", params![account], |r| {
+                Ok((r.get::<_, Option<i64>>(0)?.map(|v| v != 0), r.get(1)?))
+            })
+            .optional()?
+            .unwrap_or((None, None)))
+    }
+
+    pub fn set_page_telemetry(&self, account: &str, on: bool, now: u64) -> anyhow::Result<()> {
+        self.c().execute(
+            "UPDATE accounts SET telemetry = ?2, telemetry_at = ?3 WHERE id = ?1",
+            params![account, on as i64, now],
+        )?;
         Ok(())
     }
 
@@ -1703,6 +1737,17 @@ impl Db {
     pub fn set_daemon_features(&self, daemon: &str, features: &str) -> anyhow::Result<()> {
         self.c().execute("UPDATE daemons SET features = ?2 WHERE id = ?1", params![daemon, features])?;
         Ok(())
+    }
+
+    /// The version, OS and arch a daemon says it runs (M100): whether
+    /// that's news (not what it said last).
+    pub fn set_daemon_machine(&self, daemon: &str, version: &str, os: &str, arch: &str) -> anyhow::Result<bool> {
+        let n = self.c().execute(
+            "UPDATE daemons SET version = ?2, os = ?3, arch = ?4
+             WHERE id = ?1 AND (version IS NOT ?2 OR os IS NOT ?3 OR arch IS NOT ?4)",
+            params![daemon, version, os, arch],
+        )?;
+        Ok(n > 0)
     }
 
     /// What a daemon last said it understands ("" for an older one).
