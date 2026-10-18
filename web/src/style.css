@@ -5787,15 +5787,15 @@ button.diff-why-run {
   font-weight: 600;
 }
 
-/* The agent cards' notes and links (M43's Managoat catalog first; the
- * team agents block and page use them now). */
-.fountain-said,
-.fountain-empty {
+/* The offered agents' notes and links (the agents block and page; M43's
+ * Managoat catalog had them first). */
+.offer-said,
+.offer-empty {
   font-size: 12px;
   margin: 4px 10px;
 }
 
-.fountain-link {
+.offer-link {
   background: none;
   border: 0;
   padding: 0;
@@ -6278,7 +6278,7 @@ button.diff-why-run {
   white-space: nowrap;
 }
 
-.fountain-cards {
+.offer-cards {
   list-style: none;
   margin: 0;
   padding: 8px;
@@ -6287,7 +6287,7 @@ button.diff-why-run {
   gap: 8px;
 }
 
-.fountain-card {
+.offer-card {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -6298,20 +6298,20 @@ button.diff-why-run {
   min-width: 0;
 }
 
-.fountain-card-head {
+.offer-card-head {
   display: flex;
   gap: 6px;
   align-items: center;
   justify-content: space-between;
 }
 
-.fountain-name {
+.offer-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.fountain-desc {
+.offer-desc {
   margin: 0;
   font-size: 12px;
   display: -webkit-box;
@@ -6320,27 +6320,27 @@ button.diff-why-run {
   overflow: hidden;
 }
 
-.fountain-mcp {
+.worn-mcp {
   border: 1px solid var(--divider);
 }
 
-.fountain-actions {
+.offer-actions {
   margin-top: auto;
   padding-top: 4px;
 }
 
-.phone .fountain-cards {
+.phone .offer-cards {
   grid-template-columns: 1fr;
   gap: 0;
   padding: 0;
 }
 
-.phone .fountain-card {
+.phone .offer-card {
   border-radius: 0;
   border-width: 0 0 1px;
 }
 
-.phone .fountain-actions button {
+.phone .offer-actions button {
   padding: 8px 14px;
   font-size: 14px;
 }

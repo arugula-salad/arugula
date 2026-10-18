@@ -44,8 +44,8 @@ struct Config {
     #[serde(default)]
     line: Option<u32>,
     /// F3's file in a Managoat sandbox, removed: only read, to refuse it.
-    #[serde(default)]
-    fountain: Option<Value>,
+    #[serde(default, rename = "fountain")]
+    managoat_sandbox: Option<Value>,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -88,7 +88,7 @@ pub struct FileView {
 impl FileView {
     pub fn create(ctx: BlockCtx, config: Value) -> Result<Arc<dyn Block>, String> {
         let config: Config = serde_json::from_value(config).map_err(|e| format!("file config: {e}"))?;
-        if config.fountain.as_ref().is_some_and(|f| !f.is_null()) {
+        if config.managoat_sandbox.as_ref().is_some_and(|f| !f.is_null()) {
             return Err(super::SANDBOX_GONE.into());
         }
         if config.path.is_empty() {

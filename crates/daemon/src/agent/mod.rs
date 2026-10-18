@@ -1287,7 +1287,7 @@ impl Inner {
             "user_settings": self.cfg.def.user_settings,
             // What it wears (nothing secret), or that it's putting it on;
             // `as_fountain` (M44, retired) only on a block saved wearing one.
-            "as_fountain": self.cfg.def.as_fountain,
+            "as_fountain": self.cfg.def.as_managoat,
             "worn": self.worn.as_ref().map(|w| w.info()),
             "wearing": self.wearing,
             "import": self.cfg.import.as_ref().map(|i| json!({
@@ -1335,14 +1335,14 @@ impl Agent {
         cfg.def.claude_config_dir = cfg.def.claude_config_dir.take().filter(|d| !d.trim().is_empty());
         // A Managoat block from before daemon-side Managoat was removed
         // comes back archived ([`Agent::begin`]); a new one is refused.
-        if !(ctx.restoring && cfg.def.agent == Kind::Fountain) {
+        if !(ctx.restoring && cfg.def.agent == Kind::Managoat) {
             cfg.def.check()?;
         }
         // Wearing a Managoat agent here (M44) was retired: refused for a new
         // block; a saved one comes back with its transcript and says why it
         // won't start (`wear`).
-        if !ctx.restoring && cfg.def.as_fountain.is_some() {
-            return Err(defs::AS_FOUNTAIN_GONE.into());
+        if !ctx.restoring && cfg.def.as_managoat.is_some() {
+            return Err(defs::AS_MANAGOAT_GONE.into());
         }
         let vm = ctx.sprite.is_some();
         if vm && ctx.provider.is_none() {
@@ -1395,7 +1395,7 @@ impl Agent {
     /// Start, adopt, or (by policy) wait.
     fn begin(&self) {
         let mut inner = self.inner.lock().unwrap();
-        if inner.cfg.def.agent == Kind::Fountain {
+        if inner.cfg.def.agent == Kind::Managoat {
             inner.status = Status::Stopped;
             inner.error = Some(defs::CLOUD_MIGRATION.into());
             return;
@@ -1737,10 +1737,10 @@ impl Agent {
         let cwd = inner.cfg.cwd.clone();
         let agent = Agent { ctx: self.ctx.clone(), inner: self.inner.clone(), tx: self.tx.clone() };
         self.ctx.rt.spawn(async move {
-            let which = def.as_fountain.clone().or_else(|| def.recipe.clone()).unwrap_or_default();
+            let which = def.as_managoat.clone().or_else(|| def.recipe.clone()).unwrap_or_default();
             let worn = match Runner::user(&agent.ctx).await {
                 // Saved wearing a Managoat agent (M44, retired).
-                _ if def.as_fountain.is_some() => Err(defs::AS_FOUNTAIN_GONE.to_owned()),
+                _ if def.as_managoat.is_some() => Err(defs::AS_MANAGOAT_GONE.to_owned()),
                 Ok(runner) => {
                     let cwd = cwd.map(std::path::PathBuf::from).unwrap_or_else(|| agent.ctx.home.clone());
                     crate::labs::wear_recipe(&runner, &agent.ctx.state_dir, &cwd, &which).await
@@ -2830,7 +2830,7 @@ impl Block for Agent {
     }
 
     fn call_by(&self, method: &str, args: Value, by: Option<&str>) -> BoxFuture<'static, Result<Value, String>> {
-        if self.inner.lock().unwrap().cfg.def.agent == Kind::Fountain
+        if self.inner.lock().unwrap().cfg.def.agent == Kind::Managoat
             && !matches!(method, "state" | "image" | "set_title")
         {
             return Box::pin(async { Err(defs::CLOUD_MIGRATION.into()) });

@@ -142,7 +142,7 @@ function WornBar({ s }: { s: AgentState }) {
           </span>
         ))}
         {w.servers.map((m) => (
-          <span key={`m-${m.name}`} class="ws-tag fountain-mcp" title={m.vars.length ? m.vars.join("\n") : "MCP server"} data-worn-server={m.name}>
+          <span key={`m-${m.name}`} class="ws-tag worn-mcp" title={m.vars.length ? m.vars.join("\n") : "MCP server"} data-worn-server={m.name}>
             ⚙ {m.name}
           </span>
         ))}

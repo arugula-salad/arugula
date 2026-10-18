@@ -200,7 +200,7 @@ function RecipesTab({ client }: { client: Client }) {
     const dir = await askText("A project with .claude/agents", "~/", "a folder on this machine");
     if (dir?.trim()) await act(() => json(client, "POST", "/api/a2a/recipes/projects", { dir: dir.trim() }));
   };
-  if (error) return <p class="dim fountain-said" data-agents-error>{error}</p>;
+  if (error) return <p class="dim offer-said" data-agents-error>{error}</p>;
   if (!data) return <p class="dim">Reading this machine's recipes…</p>;
   const where = [{ label: "~/.claude/agents (yours, every project)", dir: "" }, ...data.projects.map((p) => ({ label: p.dir, dir: p.dir }))];
   // Paths under the home directory read from ~ (the full ones are long).
@@ -495,7 +495,7 @@ function TeamTab({ client }: { client: Client }) {
     await client.request("POST", `/api/a2a/tasks/${encodeURIComponent(id)}/consent`, { answer: a }).catch(() => null);
     await load();
   };
-  if (error) return <p class="dim fountain-said">{error}</p>;
+  if (error) return <p class="dim offer-said">{error}</p>;
   if (!shelves) return <p class="dim">Asking every machine for its agents…</p>;
   const offered = shelves.filter((s) => s.agents.length);
   const quiet = shelves.filter((s) => !s.agents.length);
@@ -561,7 +561,7 @@ function TeamTab({ client }: { client: Client }) {
               {!s.online ? ` · offline, as seen ${ago(s.fetched_ms)}` : ""}
             </span>
           </h4>
-          {s.note && s.online && <p class="dim fountain-said">{s.note}</p>}
+          {s.note && s.online && <p class="dim offer-said">{s.note}</p>}
           {/* Rows, not cards: what you do with one is its Run and its Copy. */}
           <ul class="agents-cards agents-rows">
             {s.agents.map((a) => (

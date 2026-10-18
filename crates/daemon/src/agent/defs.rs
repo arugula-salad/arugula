@@ -76,7 +76,7 @@ pub enum Kind {
     /// one (`managoat`, or `fountain` before the rename) restores archived,
     /// and a new one is refused ([`CLOUD_MIGRATION`]).
     #[serde(rename = "managoat", alias = "fountain")]
-    Fountain,
+    Managoat,
     /// Any ACP agent server, by `command`.
     Acp,
 }
@@ -93,16 +93,16 @@ pub struct Def {
     /// Managoat: the agent's name, for an archived block's title. Saved as
     /// `managoat_agent`; `fountain_agent` is still read.
     #[serde(default, skip_serializing_if = "Option::is_none", rename = "managoat_agent", alias = "fountain_agent")]
-    pub fountain_agent: Option<String>,
+    pub managoat_agent: Option<String>,
     /// A model to switch to after the session starts (`haiku`, …).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
     /// M44's Managoat agent worn here, retired on 2026-10-15 (#942): only
     /// read, and kept, so a block saved wearing one comes back saying why it
-    /// won't start ([`AS_FOUNTAIN_GONE`]) and never starts as a plain
+    /// won't start ([`AS_MANAGOAT_GONE`]) and never starts as a plain
     /// Claude Code. A new block with it is refused.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub as_fountain: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "as_fountain")]
+    pub as_managoat: Option<String>,
     /// M76: Claude Code as a recipe, a Claude Code subagent file by its name
     /// (in the block's project's `.claude/agents/`, then the user's). Read
     /// again each time it's put on: the file is the recipe.
@@ -163,31 +163,31 @@ fn installed(home: &Path, name: &str) -> String {
 pub const CLOUD_MIGRATION: &str = "Direct Managoat execution is retired. Open Cloud agents in your Arugula account to run or import an agent. Saved local transcripts remain readable.";
 
 /// Why a block can't wear a Managoat agent here (M44's `as_fountain`).
-pub const AS_FOUNTAIN_GONE: &str = "wearing a Managoat agent here (as_fountain) was retired on 2026-10-15: \
+pub const AS_MANAGOAT_GONE: &str = "wearing a Managoat agent here (as_fountain) was retired on 2026-10-15: \
 run a recipe (.claude/agents/NAME.md) here, or a cloud agent from your Arugula account";
 
 impl Def {
     /// Whether it wears something before it starts: a recipe (M76), or a
     /// Managoat agent (M44, retired: putting it on fails, saying so).
     pub fn wears(&self) -> bool {
-        self.as_fountain.is_some() || self.recipe.is_some()
+        self.as_managoat.is_some() || self.recipe.is_some()
     }
 
     pub fn label(&self) -> String {
         match self.agent {
-            Kind::Claude => match self.as_fountain.as_ref().or(self.recipe.as_ref()) {
+            Kind::Claude => match self.as_managoat.as_ref().or(self.recipe.as_ref()) {
                 Some(a) => format!("Claude Code as {a}"),
                 None => "Claude Code".into(),
             },
             Kind::Codex => "Codex".into(),
-            Kind::Fountain => format!("Managoat {}", self.fountain_agent.as_deref().unwrap_or("agent")),
+            Kind::Managoat => format!("Managoat {}", self.managoat_agent.as_deref().unwrap_or("agent")),
             Kind::Acp => self.command.first().map(|c| c.rsplit('/').next().unwrap_or(c).to_owned()).unwrap_or_default(),
         }
     }
 
     pub fn check(&self) -> Result<(), String> {
         match self.agent {
-            Kind::Fountain => Err(CLOUD_MIGRATION.into()),
+            Kind::Managoat => Err(CLOUD_MIGRATION.into()),
             Kind::Acp if self.command.is_empty() => Err("an ACP agent block needs a command".into()),
             _ if !crate::labs::BUILT && self.recipe.is_some() => Err(crate::labs::not_built("Agent recipes")),
             _ if self.recipe.is_some() && self.agent != Kind::Claude => {
@@ -235,7 +235,7 @@ impl Def {
                 l.npm = Some(CODEX_ACP);
             }
             // `check` refused it.
-            Kind::Fountain => return Err(CLOUD_MIGRATION.into()),
+            Kind::Managoat => return Err(CLOUD_MIGRATION.into()),
             Kind::Acp => l.argv = self.command.clone(),
         }
         if !self.command.is_empty() {
@@ -351,7 +351,7 @@ mod tests {
 
         // Daemon-side Managoat was removed: a Managoat block never starts.
         // Running `managoat acp` by hand is an `acp` block like any other.
-        let f = Def { agent: Kind::Fountain, fountain_agent: Some("arena".into()), ..Default::default() };
+        let f = Def { agent: Kind::Managoat, managoat_agent: Some("arena".into()), ..Default::default() };
         assert_eq!(f.launch(home, false).unwrap_err(), CLOUD_MIGRATION);
         assert_eq!(f.check().unwrap_err(), CLOUD_MIGRATION);
         let acp = Def { agent: Kind::Acp, command: split_command("managoat acp --agent arena"), ..Default::default() };
@@ -367,7 +367,7 @@ mod tests {
     #[test]
     fn a_block_saved_as_fountain_restores() {
         let old: Def = serde_json::from_value(json!({ "agent": "fountain", "fountain_agent": "arena" })).unwrap();
-        assert_eq!((old.agent, old.fountain_agent.as_deref()), (Kind::Fountain, Some("arena")));
+        assert_eq!((old.agent, old.managoat_agent.as_deref()), (Kind::Managoat, Some("arena")));
         let saved = serde_json::to_value(&old).unwrap();
         assert_eq!(saved, json!({ "agent": "managoat", "managoat_agent": "arena" }));
         assert_eq!(serde_json::from_value::<Def>(saved).unwrap(), old);

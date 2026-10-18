@@ -296,7 +296,7 @@ mod tests {
             of(Kind::Codex).unwrap().npm("~/x"),
             format!("npm install --omit=optional --prefix ~/x/codex {CODEX_ACP}")
         );
-        assert!(of(Kind::Fountain).is_none());
+        assert!(of(Kind::Managoat).is_none());
         assert_eq!(quote("/a b/it's"), r"'/a b/it'\''s'");
         assert_eq!(major("v22.23.2"), Some(22));
         assert_eq!(major("v8.1.0"), Some(8));

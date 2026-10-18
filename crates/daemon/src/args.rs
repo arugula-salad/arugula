@@ -326,7 +326,7 @@ pub(crate) struct RunArgs {
         alias = "fountain-account-stream",
         env = "ARUGULA_MANAGOAT_ACCOUNT_STREAM"
     )]
-    pub(crate) fountain_account_stream: bool,
+    pub(crate) managoat_account_stream: bool,
     /// Don't be Claude Code's IDE. By default Claude Code in a pane
     /// connects to arugulad (`CLAUDE_CODE_SSE_PORT`) and its edits wait
     /// as diff cards beside the terminal's own prompt.
@@ -540,7 +540,7 @@ mod tests {
         assert!(!top.contains("--managoat-account-stream") && !top.contains("fountain"), "{top}");
         // Its name before the rename to Managoat still parses too.
         let old = <super::Args as clap::Parser>::try_parse_from(["arugulad", "--fountain-account-stream"]).unwrap();
-        assert!(old.run.fountain_account_stream);
+        assert!(old.run.managoat_account_stream);
         // Still there for whoever knows them.
         assert!(super::Args::command().get_arguments().any(|a| a.get_long() == Some("studio-file")));
     }

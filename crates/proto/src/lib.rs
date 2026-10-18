@@ -781,7 +781,7 @@ pub enum WorkKind {
     /// A Managoat block (M43), removed with daemon-side Managoat: never
     /// made now, and kept so an older daemon's panes still parse.
     #[serde(rename = "managoat", alias = "fountain")]
-    Fountain,
+    Managoat,
 }
 
 /// The git repository a pane's working directory is in (M23).
