@@ -167,6 +167,7 @@ pub enum Surface {
     Web,
     Desktop,
     Cli,
+    /// `arugula tui`, removed 2026-10-18: an older daemon still reports it.
     Tui,
     Phone,
     Mcp,

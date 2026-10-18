@@ -491,7 +491,8 @@ async fn ws(
 }
 
 async fn local_ws(State(app): State<Arc<App>>, upgrade: WebSocketUpgrade) -> Response {
-    upgrade.on_upgrade(move |socket| connection(app, socket, Principal::Owner, Surface::Tui))
+    // The socket's WebSocket is `arugula attach` (and an older CLI's TUI).
+    upgrade.on_upgrade(move |socket| connection(app, socket, Principal::Owner, Surface::Cli))
 }
 
 async fn connection(app: Arc<App>, mut socket: WebSocket, who: Principal, surface: Surface) {

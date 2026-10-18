@@ -43,7 +43,8 @@ impl Handle for TelemetrySet {
     async fn handle(cx: &Cx<'_>, _: (), req: TelemetrySetRequest) -> Result<TelemetryInfo, OpError> {
         in_person(cx)?;
         let via = req.via.as_deref().filter(|v| !v.is_empty()).unwrap_or("web");
-        // A closed set: anything else is kept as `other`.
+        // A closed set: anything else is kept as `other`. `tui` is an older
+        // CLI's (the TUI was removed).
         let via = if ["web", "desktop", "cli", "tui", "phone", "mcp"].contains(&via) { via } else { "other" };
         consent::set(cx.app.control.state_dir(), req.on, via, arugula_e2e::now_ms())
             .map_err(|e| OpError::Failed(format!("couldn't write {}: {e}", consent::FILE)))?;

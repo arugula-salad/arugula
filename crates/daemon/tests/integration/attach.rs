@@ -388,7 +388,7 @@ async fn ctrl_c_stops_a_flood_at_once() {
 
 /// Programs asking for the kitty keyboard protocol are told it's there
 /// whoever is attached (#806): a client that doesn't claim `kitty_keys`
-/// (the web) as much as one that does (the TUI).
+/// (the web) as much as one that does (as the removed TUI did).
 #[tokio::test]
 async fn programs_hear_of_kitty_keys_whoever_is_attached() {
     let d = start().await;

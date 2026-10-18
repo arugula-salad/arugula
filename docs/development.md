@@ -203,8 +203,8 @@ Controller starts a fresh pod for each job and deletes it after, from
 home-cloud's `platform/arc/runner-scale-set-arugula-amd64.yaml`, in the
 org's `illogical` runner group, which only this repo may use. A pod has
 nothing of its own: `.github/actions/setup` installs the toolchain (Rust
-from rust-toolchain.toml, mise's Zig and nextest, just, Node 24, pnpm 12,
-tmux), restores GitHub's caches in place of kept build directories (the
+from rust-toolchain.toml, mise's Zig and nextest, just, Node 24, pnpm 12),
+restores GitHub's caches in place of kept build directories (the
 Rust build per job, saved from main only; pnpm's store; Playwright's
 browsers), and fetches build's and static's binaries, which those jobs
 upload as artifacts, into `$CI_RUN` (`scripts/ci-env`), so the jobs after
@@ -248,45 +248,6 @@ The repo moved from Forgejo (`git.inevitable.fyi/jhgaylor/illogical`,
 archived; v0.1.0–v0.12.0 assets are still there) on 2026-10-03, with issue
 and PR numbers kept.
 
-## Testing iTerm2
-
-`just macos iterm2` checks attach, typing, output, a split and a new tab
-in a real iTerm2 inside a tart VM ([testing.md](testing.md#a-fresh-mac-the-tart-vm-harness)).
-The rest of this script is still by hand. From the Mac, against geek:
-
-1. On geek, install the build (`just install`) and check `arugula ls`
-   works. Open <https://geek.tail1234.ts.net> in a browser beside iTerm2.
-2. In iTerm2: `ssh -t geek '~/.local/bin/arugula tmux -CC attach'`. A new
-   iTerm2 window opens with a tab per Arugula tab (the gateway window
-   says "tmux mode"). The tab's shell prompt is there, with its history.
-3. Type `ls` and Enter in it: the output appears in iTerm2 and in the
-   browser's same pane.
-4. *Shell › Split Vertically*, then *Split Horizontally*: three native
-   splits; the browser shows the same three panes within a second.
-5. Drag an iTerm2 divider: the browser's divider moves to match. Drag one
-   in the browser: iTerm2's moves. Resize the iTerm2 window: the panes
-   reflow and the browser letterboxes the tab at iTerm2's size; click in
-   the browser's pane and type, and the browser takes the size back.
-6. ⌘T for a new tab: a new tab appears in the browser too. Close it in
-   iTerm2 (⌘W, *Kill*): it goes from the browser. Close a split with
-   `exit`: its pane goes from both.
-7. Run `vim` (or `htop`) in a pane, type a little, and leave it running.
-8. Detach (*Shell › tmux › Detach*). The iTerm2 windows close; vim keeps
-   running in the browser.
-9. Reattach with the same `ssh` command: the tabs and splits come back as
-   they were, with vim on screen; quit it with `:q` and the shell prompt is
-   on the line after the `vim` command.
-10. In the browser, split a pane and open a new tab: iTerm2 shows both.
-
-Watch for: an alert from iTerm2 about an unexpected reply (it disconnects
-on any error it doesn't expect; note the command it names), panes that
-stay blank after attach, output in the wrong pane, a window that keeps
-resizing itself when both iTerm2 and the browser are open, and garbled
-screens after a reattach. To record the conversation, start it with
-`ARUGULA_TMUX_LOG`: `ssh -t geek 'ARUGULA_TMUX_LOG=/tmp/cc.log
-~/.local/bin/arugula tmux -CC attach'` writes every line both ways (`>`
-from iTerm2, `<` to it) to `/tmp/cc.log` on geek.
-
 ## Layout
 
 See [AGENTS.md](../AGENTS.md) for the crate map and the daemon's layers. Each crate has a `README.md` with what it is, what it depends on inside the workspace, and where to start reading.
@@ -315,8 +276,7 @@ See [AGENTS.md](../AGENTS.md) for the crate map and the daemon's layers. Each cr
   "you fell behind, resync" notice uses a separate channel.
 - **Cells, not pixels.** The plan said react-mosaic; it lays panes out in
   its own pixels, which drift from the PTY sizes. The daemon computes cell
-  rectangles instead (and M5's tmux layout strings come for free), and the
-  client draws them.
+  rectangles instead, and the client draws them.
 - **Size is per tab.** With splits, one window's size decides every pane in a
   tab; per-pane ownership would mix a phone's and a desktop's sizes in one
   tab. A phone claims its tab with one pane zoomed; the others keep their

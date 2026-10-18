@@ -115,8 +115,8 @@ impl Target {
         std::fs::read_to_string(file).ok().map(|t| t.trim().to_owned()).filter(|t| !t.is_empty())
     }
 
-    /// A WebSocket handshake request for this target. (Only the terminal
-    /// front ends use WebSockets, and they're Unix only for now.)
+    /// A WebSocket handshake request for this target. (Only `attach` and
+    /// control's link use WebSockets.)
     pub fn ws_request(&self) -> anyhow::Result<tungstenite::handshake::client::Request> {
         use tungstenite::client::IntoClientRequest;
         let mut req = self.ws_url().into_client_request()?;
@@ -207,7 +207,7 @@ fn tls_config() -> anyhow::Result<Arc<rustls::ClientConfig>> {
 
 /// A connection to a daemon, whatever it runs over.
 pub trait Stream: Read + Write + Send {
-    /// For polling (the terminal front ends, Unix only for now).
+    /// For polling (`attach` and control's link).
     #[cfg(unix)]
     fn fd(&self) -> BorrowedFd<'_>;
     /// Windows: whether a read now would return something (data, or the

@@ -395,11 +395,11 @@ function Welcome({ name, client, setup, manual, refresh }: { name: string; clien
           <div>
             <h3>From a terminal</h3>
             <p>
-              The same tabs and splits, over ssh too: <CopyText inline text={`${cli} tui`} />
+              Run, watch and script panes from a shell, over ssh too: <CopyText inline text={`${cli} ls`} />
             </p>
             {added.length > 0 && (
               <p class="start-dim" data-start-cli-added>
-                Arugula put ~/.local/bin on your PATH in {added.join(" and ")}. In a terminal that was already open: <CopyText inline text="~/.local/bin/arugula tui" />
+                Arugula put ~/.local/bin on your PATH in {added.join(" and ")}. In a terminal that was already open: <CopyText inline text="~/.local/bin/arugula ls" />
               </p>
             )}
           </div>

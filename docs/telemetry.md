@@ -54,12 +54,10 @@ It asks only when all of these hold, and otherwise says nothing:
 - nothing keeps telemetry off (`DO_NOT_TRACK`, `ARUGULA_TELEMETRY=off`, `CI`,
   a test run);
 - the command isn't `--json`, `arugula mcp`, `arugula events`, `arugula
-  tmux -CC`, the TUI, `arugula telemetry`, or one of Claude Code's hooks;
+  telemetry`, or one of Claude Code's hooks;
 - no agent runs it (`CLAUDECODE` or `AI_AGENT` set).
 
-`arugula tui` never asks: while nobody has answered, it shows "Usage reports
-are off: `arugula telemetry on` to help improve Arugula" in its status line
-for a few seconds when it starts. The install scripts say the first
+The install scripts say the first
 `arugula` command will ask, and that `ARUGULA_TELEMETRY=off` means it never
 will (they leave that out when `ARUGULA_TELEMETRY` or `DO_NOT_TRACK` is set).
 
@@ -112,7 +110,7 @@ Once on, the preview looks like this:
       "panes_peak": 6,
       "agents_started": { "claude": 3 },
       "blocks_opened": { "terminal": 14, "browser": 2, "review": 1 },
-      "clients": { "web": 4, "tui": 1, "mcp": 2 },
+      "clients": { "web": 4, "cli": 1, "mcp": 2 },
       "views": {},
       "flags_on": ["chat"],
       "web_errors": 0

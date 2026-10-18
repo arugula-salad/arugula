@@ -156,7 +156,8 @@ Arugula so far, and the same engine bet (a `crates/ghostty-vt` crate).
 
 **Overlap:** the daemon's core almost entirely (daemon-owned PTYs, layout restore, agent
 resume, run/send/wait/read, multi-host list). **Theirs only:** runs
-in any terminal (ours: `tmux -CC`), Windows, broad agent detection,
+in any terminal (ours did, with `tmux -CC` and the TUI, until both were
+removed on 2026-10-18), Windows, broad agent detection,
 plugins, agents driving the mux (ours, not built). **Ours only:** web and
 phone client, push and answering from it, agent blocks, multiplayer
 (principals and roles, live sharing, safe write access, reaching beyond the tailnet), control's E2E relay and hosted sandboxes, machines per

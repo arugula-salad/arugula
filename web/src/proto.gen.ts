@@ -1572,7 +1572,10 @@ export type OptionScope = { "kind": "global" } | { "kind": "session", "id": numb
 /**
  * Opaque named strings that clients keep with the layout (tmux's `@user`
  * options: iTerm2's tab grouping and attach guard, `@affinities`). Saved
- * with the layout; an entry goes when what it belongs to does.
+ * with the layout; an entry goes when what it belongs to does. Only the
+ * tmux front end set them, and it was removed (DECISIONS.md "The TUI and
+ * tmux -CC are removed"); they stay in the protocol and the saved layout so
+ * a layout and an older client still load, and nothing reads them.
  */
 export type Options = { global?: { [key in string]: string }, sessions?: Array<[number, { [key in string]: string }]>, tabs?: Array<[number, { [key in string]: string }]>, panes?: Array<[number, { [key in string]: string }]>, };
 
@@ -2034,7 +2037,8 @@ export type State = { rev: number, sessions: Array<Session>, tabs: Array<TabView
  */
 machines: Array<Machine>, 
 /**
- * Clients' named options (tmux `@` options), per scope.
+ * Clients' named options (tmux `@` options), per scope: unused since
+ * the tmux front end was removed, kept for older clients.
  */
 options: Options, 
 /**

@@ -31,8 +31,7 @@ runs:
         echo "CI_RUNS=$RUNNER_TEMP/runs" >> "$GITHUB_ENV"
         echo "CARGO_TARGET_DIR=$GITHUB_WORKSPACE/target" >> "$GITHUB_ENV"
         echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-    # geek had these: tmux, vi and nvim for the tmux tests and the layout
-    # spec; myhostname resolves *.localhost (browser-ports' sites) for Node,
+    # geek had these: vi and nvim for the layout spec; myhostname resolves *.localhost (browser-ports' sites) for Node,
     # as systemd's resolver did there; zstd for the caches.
     # The runner image may have them all (home-cloud's gha-runner, target
     # arugula: #868): then no apt at all.
@@ -40,7 +39,7 @@ runs:
       shell: bash
       run: |
         missing=()
-        for p in tmux vim-tiny neovim libnss-myhostname zstd ${{ inputs.packages }}; do
+        for p in vim-tiny neovim libnss-myhostname zstd ${{ inputs.packages }}; do
           dpkg-query -W -f='${Status}' "$p" 2>/dev/null | grep -q 'install ok installed' || missing+=("$p")
         done
         if [ ${#missing[@]} -gt 0 ]; then

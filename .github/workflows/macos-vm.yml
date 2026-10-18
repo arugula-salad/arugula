@@ -1,6 +1,5 @@
 # The tart VM tests (#263): `just macos tools` boots one fresh macOS VM on
-# jake-mini and runs real Safari, iTerm2 (tmux -CC, OSC 52), then launchd
-# with no GUI session (docs/testing.md, "A fresh Mac: the tart VM harness").
+# jake-mini and runs real Safari, then launchd with no GUI session (docs/testing.md, "A fresh Mac: the tart VM harness").
 # Nightly on main and by hand (`gh workflow run macos-vm.yml`).
 #
 # It runs on jake-mini itself, not in a runner VM: macOS VMs don't nest, and

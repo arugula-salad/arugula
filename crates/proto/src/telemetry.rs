@@ -53,7 +53,8 @@ pub struct Consent {
     /// When they answered, in ms.
     #[serde(default)]
     pub asked: u64,
-    /// Where they answered: `web`, `desktop`, `cli`, `tui`, `phone`.
+    /// Where they answered: `web`, `desktop`, `cli`, `tui` (an older
+    /// CLI's TUI), `phone`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub via: Option<String>,
     /// 16 hex digits, while the answer is yes.

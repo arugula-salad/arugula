@@ -465,14 +465,14 @@ watched environment (`web/src/ui/gate-why.tsx`).
 for the gate, in the member's directory. That line has `--plan <digest>`,
 so the approval is for the plan you were shown, and `--sign` for a gate
 that needs a signed approval (`crates/daemon/src/gate.rs`). The owner and
-drivers approve, from the block, the rail, the phone's sheet, a push or
-`arugula tui`; watchers see the cards without buttons. Approving doesn't run
+drivers approve, from the block, the rail, the phone's sheet or a push;
+watchers see the cards without buttons. Approving doesn't run
 the op: run it again to walk through the gate.
 
 *Expire* turns a gate down: `chant approve <op> <gate> [--env E] --expire`
 clears the waiting gate without approving it, so the next run of the op
-stops there again. It's on the block's gate card, the phone's sheet,
-`arugula tui` and the push, for chant gates only (hud has no route for it).
+stops there again. It's on the block's gate card, the phone's sheet
+and the push, for chant gates only (hud has no route for it).
 
 ### Who chant records
 

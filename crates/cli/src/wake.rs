@@ -1,5 +1,4 @@
-//! Waiting in the terminal front ends' loops (`attach`, `tui`, control's
-//! link) until the daemon's connection has something to read, another
+//! Waiting in the terminal loops (`attach`, control's link) until the daemon's connection has something to read, another
 //! thread wakes us (keys, API answers), or time is up.
 //!
 //! On Unix that's `poll` on the connection and a socket pair. Windows can't

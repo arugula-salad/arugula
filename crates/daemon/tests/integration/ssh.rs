@@ -149,7 +149,7 @@ fn ssh_installs_runs_forwards_the_agent_pushes_and_saved_hosts_work() {
     assert!(told.contains(&link) && told.contains("ssh -N -L") && told.contains("box-bare"), "{told}");
 
     // The client's agent, in a pane, while a client stays connected (an
-    // events stream stands in for someone in the TUI).
+    // events stream stands in for someone attached).
     let mut watching = env.cmd(&["--ssh", "box-bare", "events", "-f"]).stdout(Stdio::null()).spawn().unwrap();
     std::thread::sleep(Duration::from_secs(1));
     let want = String::from_utf8(

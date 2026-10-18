@@ -1829,7 +1829,7 @@ fn auth_failed(e: &Value) -> bool {
 }
 
 /// How to get a block whose adapter is missing going (#335), for its text
-/// (`tail`, `capture`, the TUI): the page has *Install* for it.
+/// (`tail`, `capture`): the page has *Install* for it.
 fn adapter_fix(adapter: &Value, block: arugula_proto::PaneId) -> Option<String> {
     let kind = adapter["kind"].as_str()?;
     let npm = adapter["npm"].as_str().unwrap_or_default();

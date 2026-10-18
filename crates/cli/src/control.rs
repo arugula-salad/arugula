@@ -20,7 +20,7 @@
 //! one channel ([`Link::stream`]), so `run`, `ls`, `capture` and the rest
 //! work unchanged. An answer with no end (`events --follow`, `tail
 //! --follow`) comes back in parts as it's written. A WebSocket to `/ws`
-//! (`attach`, `tui`) is the channel's own protocol messages, which the
+//! (`attach`) is the channel's own protocol messages, which the
 //! channel already carries: the daemon makes each channel a client of its
 //! own, so one `/ws` per command.
 

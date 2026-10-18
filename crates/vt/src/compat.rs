@@ -7,9 +7,9 @@
 //! with them, and xterm.js, which lacks them, draws garbage. So replies are
 //! rewritten to the client's capabilities: DECRQM answers for unsupported
 //! modes become "not recognized". The kitty keyboard reply passes through
-//! for every pane (#806): the TUI encodes kitty keys, and the web encodes
-//! the chords that need them and sends legacy bytes for the rest, which
-//! programs in kitty mode still read.
+//! for every pane (#806): the web client encodes the chords that need them
+//! and sends legacy bytes for the rest, which programs in kitty mode still
+//! read.
 //! Kitty graphics are turned off in the engine itself when the client can't
 //! draw them ([`Capabilities::kitty_graphics`]), so a graphics query gets no
 //! answer at all.

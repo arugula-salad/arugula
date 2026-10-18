@@ -5,10 +5,35 @@
 
 /// Columns and rows; 80x24 if it can't be told.
 pub fn size() -> (u16, u16) {
-    match ratatui::crossterm::terminal::size() {
-        Ok((c, r)) if c > 0 && r > 0 => (c, r),
+    match raw_size() {
+        Some((c, r)) if c > 0 && r > 0 => (c, r),
         _ => (80, 24),
     }
+}
+
+#[cfg(unix)]
+fn raw_size() -> Option<(u16, u16)> {
+    nix::ioctl_read_bad!(winsize, nix::libc::TIOCGWINSZ, nix::libc::winsize);
+    // stdout first, then stdin and stderr: whichever is the terminal.
+    [1, 0, 2].into_iter().find_map(|fd| {
+        // SAFETY: winsize is plain integers, for which zero is valid.
+        let mut ws: nix::libc::winsize = unsafe { std::mem::zeroed() };
+        // SAFETY: TIOCGWINSZ fills the winsize we pass, on a std fd.
+        unsafe { winsize(fd, &mut ws) }.ok().map(|_| (ws.ws_col, ws.ws_row))
+    })
+}
+
+#[cfg(windows)]
+fn raw_size() -> Option<(u16, u16)> {
+    use windows_sys::Win32::System::Console::{CONSOLE_SCREEN_BUFFER_INFO, GetConsoleScreenBufferInfo};
+    // SAFETY: the struct is plain integers, for which zero is valid.
+    let mut info: CONSOLE_SCREEN_BUFFER_INFO = unsafe { std::mem::zeroed() };
+    // SAFETY: our own std handle and a struct it fills.
+    if unsafe { GetConsoleScreenBufferInfo(handle(Std::Out), &mut info) } == 0 {
+        return None;
+    }
+    let w = info.srWindow;
+    Some(((w.Right - w.Left + 1) as u16, (w.Bottom - w.Top + 1) as u16))
 }
 
 /// Raw input (and on Windows, VT output) until dropped.
