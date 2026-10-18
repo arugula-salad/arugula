@@ -25,11 +25,12 @@ The web client and the desktop app ask the machine's owner once, with a card
 in the corner (M103), and the `arugula` CLI asks once (below). Both write the
 same file, through the `telemetry.get` and `telemetry.set` operations (`GET`
 and `PUT /api/telemetry`, owner only). The card's *What's sent* shows the
-preview below. Closing it without answering asks again on the next load. It
-is asked only on a page that talks to the daemon directly: control's page
-asks about the account instead (M104), and leaves the machine's answer to
-*Usage and crash reports…* in the machine's settings, where the owner can
-change it any time (on a phone, in the sheet).
+preview below. Closing it without answering asks again on the next load.
+Control's page asks about the account first (M104). Once that's answered (or
+from a control that doesn't ask), each machine the person owns asks once, as
+it's shown there. A read-only link never asks. *Usage and crash reports…* in
+the machine's settings changes the answer any time (on a phone, in the
+sheet).
 
 ### The CLI's question
 

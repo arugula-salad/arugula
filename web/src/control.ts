@@ -1529,6 +1529,8 @@ export class ControlSession {
   telemetry: PageConsent | null = null;
   /** The card was put away unanswered on this load: asked again next. */
   private telemetryLater = false;
+  /** `/api/me/telemetry` has answered (or failed): `telemetry` is known. */
+  private telemetryLoaded = false;
 
   telemetryNotNow() {
     this.telemetryLater = true;
@@ -1537,6 +1539,7 @@ export class ControlSession {
 
   async loadTelemetry() {
     this.telemetry = await api<PageConsent>("/api/me/telemetry").catch(() => null);
+    this.telemetryLoaded = true;
     this.countIfAllowed();
     this.emit();
   }
@@ -1552,6 +1555,14 @@ export class ControlSession {
   askTelemetry(): boolean {
     const t = this.telemetry;
     return !!t && t.ask && t.on === null && !this.telemetryLater && !automated();
+  }
+
+  /** Whether the account's question is out of the way, so a machine's may
+   * come (M103): answered, or never asked by this control. Not while the
+   * account's card waits, nor after it was put away on this load. */
+  telemetryAsked(): boolean {
+    const t = this.telemetry;
+    return this.telemetryLoaded && !(t?.ask && t.on === null);
   }
 
   private countIfAllowed() {

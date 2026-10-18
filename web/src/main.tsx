@@ -33,7 +33,7 @@ import { openThread } from "./ui/threads";
 import { openChat } from "./ui/places";
 import { openDeveloper } from "./ui/developer";
 import { openGettingStarted, type Section } from "./ui/welcome";
-import { followMachine, MachineTelemetryLayer } from "./ui/machine-telemetry";
+import { followMachine, machineTelemetryChanged, MachineTelemetryLayer } from "./ui/machine-telemetry";
 
 // Served by Arugula control (M17), not a daemon: sign in, enroll this
 // browser, and reach daemons through end-to-end channels. A read-only link
@@ -161,9 +161,11 @@ async function syncPins(c: Client, session: ControlSession) {
 }
 
 const connect = () => {
-  // M103: the shown machine's usage reports, asked and counted only on a
-  // page that talks to its daemon directly (control's page has M104's).
-  followMachine(client, !info && !linkTarget);
+  // M103: the shown machine's usage reports, counted only on a page that
+  // talks to its daemon directly (control's page counts its own, M104).
+  // Asked there, and on control's page once the account's question is out
+  // of the way; never on a read-only link.
+  followMachine(client, !info && !linkTarget, () => !linkTarget && (!session || session.telemetryAsked()));
   // In control mode there's nothing to connect to until a daemon is known.
   if (!session || client.e2e) client.connect();
   if (session) {
@@ -289,6 +291,7 @@ setFleet(fleet);
 if (!linkTarget) {
   // Teams load after the directory: their names come with them (M30).
   session?.subscribe(() => {
+    machineTelemetryChanged();
     if (session.login) fleet.me = session.login;
     fleet.setHosts(fleetHosts());
   });
