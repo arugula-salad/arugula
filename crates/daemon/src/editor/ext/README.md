@@ -10,4 +10,4 @@ Puts your editor in your [Arugula](https://arugula.io) swarm, beside your termin
 
 It needs Arugula on the machine where the files are: see [arugula.io](https://arugula.io). It talks only to the Arugula daemon on its own machine, over a local socket. Your files and cursor go only to the people following you, over Arugula's end-to-end channels.
 
-It also brings Arugula's colour theme.
+It also brings Arugula's colour themes: *arugula* (Slate, dark) and *arugula light* (Latte). In an Arugula editor block they follow the palette you picked.

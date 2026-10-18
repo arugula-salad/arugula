@@ -3,7 +3,9 @@
 // port. The daemon starts the server; until it's up the block says why.
 
 import { render } from "preact";
+import { onAppearance, palette } from "../appearance";
 import type { Client } from "../client";
+import { editorTheme } from "../editor-theme";
 import type { OpenRequest, PaneId } from "../proto";
 import { BlockFrame } from "./block-frame";
 import { blocksOff } from "./browser";
@@ -95,17 +97,32 @@ registerBlock("editor", (client, id): BlockView => {
   let state: EditorState | null = null;
   const draw = () => render(<EditorBlock client={client} id={id} s={state} />, host);
   draw();
+  // Its colors follow this page's palette (#1048): sent once it's open on
+  // its folder, and again when the palette changes. Quietly: a viewer who
+  // may not change the block just keeps what it has.
+  let sent = "";
+  const sendTheme = () => {
+    if (!state?.src || state.machine) return;
+    const theme = editorTheme(palette());
+    const key = JSON.stringify(theme);
+    if (key === sent) return;
+    sent = key;
+    void client.request("POST", `/api/blocks/${id}/call/theme`, theme).catch(() => (sent = ""));
+  };
+  const offAppearance = onAppearance(sendTheme);
   return {
     host,
     setVisible: (v) => (host.style.display = v ? "" : "none"),
     update: (s) => {
       state = s as EditorState;
       draw();
+      sendTheme();
     },
     title: () => (state ? (state.file ? `${state.file.split("/").pop()} — ${state.name}` : state.name || "editor") : "editor"),
     text: () => (state ? `${state.file ?? state.folder}${state.line ? `:${state.line}` : ""}\n${state.lines.join("\n")}`.trim() : ""),
     focus: () => host.querySelector<HTMLElement>("iframe")?.focus(),
     dispose: () => {
+      offAppearance();
       render(null, host);
       host.remove();
     },

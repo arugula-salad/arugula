@@ -8,7 +8,7 @@ use super::server::{EXT_FILES, EXT_VERSION};
 const README: &str = include_str!("ext/README.md");
 const LICENSE: &str = include_str!("../../../../LICENSE-MIT");
 
-/// The extension's file name: `arugula-editor-0.2.1.vsix`.
+/// The extension's file name: `arugula-editor-0.2.2.vsix`.
 pub fn file_name() -> String {
     format!("arugula-editor-{EXT_VERSION}.vsix")
 }
@@ -196,11 +196,13 @@ mod tests {
             "extension/package.json",
             "extension/extension.js",
             "extension/README.md",
+            "extension/theme.json",
+            "extension/theme-light.json",
         ] {
             assert!(names.lines().any(|l| l == n), "{n} in {names}");
         }
         let text = String::from_utf8_lossy(&bytes);
-        assert!(text.contains(r#"Id="arugula-editor" Version="0.2.1" Publisher="arugula""#));
+        assert!(text.contains(r#"Id="arugula-editor" Version="0.2.2" Publisher="arugula""#));
         assert!(text.contains(r#"ExtensionKind" Value="workspace""#));
     }
 }
