@@ -109,6 +109,9 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           cache-key: build
+          # Ghostty for x86_64-linux-gnu, as build, core and test all build it
+          # (clippy's adds macOS's, static's musl: their own).
+          ghostty-key: gnu
       - run: just bootstrap
       - run: just web
       - run: mise exec -- cargo build -p arugulad -p arugula -p arugula-control --features arugulad/debug-embed,arugula-control/debug-embed
@@ -201,6 +204,9 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           cache-key: core
+          # Ghostty for x86_64-linux-gnu, as build, core and test all build it
+          # (clippy's adds macOS's, static's musl: their own).
+          ghostty-key: gnu
       - run: just bootstrap
       - run: just check-core
         env:
@@ -230,6 +236,9 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           cache-key: test
+          # Ghostty for x86_64-linux-gnu, as build, core and test all build it
+          # (clippy's adds macOS's, static's musl: their own).
+          ghostty-key: gnu
           claude-code: "true"
       - run: scripts/ci-env testnet
       - run: just bootstrap
