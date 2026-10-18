@@ -12,7 +12,7 @@
 // third-party cookies, and so the block's storage (#69).
 
 import { execFile, spawn, type ChildProcess } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -133,6 +133,10 @@ test("Open in editor: VS Code on the pane's directory, on the block's own origin
   await expect.poll(async () => (await blockState(page, first))?.server, { timeout: 540_000 }).toEqual({ is: "running" });
   const f = frame(page, first);
   await expect(f.locator(".monaco-workbench")).toBeVisible({ timeout: 60_000 });
+  // Embedded defaults leave room for code. The normal sidebar shortcut still
+  // opens the explorer, and the user's choice survives reloading the iframe.
+  await expect(f.locator(".monaco-workbench .part.sidebar")).toBeHidden({ timeout: 30_000 });
+  await f.locator(".monaco-workbench").press(process.platform === "darwin" ? "Meta+b" : "Control+b");
   // The pane's directory, in the explorer.
   await expect(f.locator(".explorer-folders-view .monaco-list-row", { hasText: "crates" }).first()).toBeVisible({ timeout: 30_000 });
   const info = await page.evaluate((b) => window.__arugula.client.info(b), first);
@@ -142,13 +146,63 @@ test("Open in editor: VS Code on the pane's directory, on the block's own origin
   const origin = await page.evaluate((b) => new URL((document.querySelector(`[data-pane="${b}"] iframe`) as HTMLIFrameElement).src).origin, first);
   expect(origin).toMatch(new RegExp(`^http://b-${first}-[a-z0-9]{20}\\.localhost:${BLOCKS}$`));
   expect(await paneEl(page, first).locator("iframe").getAttribute("sandbox")).toContain("allow-same-origin");
-  // Arugula's theme: the terminal's background.
+  // Arugula's theme follows the surrounding workspace.
   await expect
     .poll(() => f.locator(".monaco-workbench .part.sidebar").evaluate((e) => getComputedStyle(e).backgroundColor))
-    .toBe("rgb(24, 24, 37)");
+    .toBe(await page.locator(".app").evaluate((e) => {
+      const probe = document.createElement("span");
+      probe.style.background = "var(--surface)";
+      e.append(probe);
+      const color = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      return color;
+    }));
   // The server has no TCP port: only a 0600 socket.
   const { stdout } = await sh("ls", ["-l", `${join(state, "sock")}-code`]);
   expect(stdout).toMatch(/^srw-------/);
+});
+
+test("an open editor follows palette changes and keeps a customized editor theme", async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.goto("/");
+  await expect.poll(() => page.evaluate(() => window.__arugula?.client.connected)).toBe(true);
+  await page.evaluate((b) => window.__arugula.client.setActive(b), first);
+  await expect(frame(page, first).locator(".monaco-workbench")).toBeVisible({ timeout: 30_000 });
+  // The sidebar opened in the prior test stays open on the new page.
+  await expect(frame(page, first).locator(".monaco-workbench .part.sidebar")).toBeVisible();
+  const select = async (palette: string) => {
+    await page.locator("[data-account-menu]").click();
+    await page.getByRole("menuitem", { name: "Appearance…" }).click();
+    await page.locator(`[data-palette-choice="${palette}"]`).click();
+    await page.getByRole("dialog", { name: "Appearance", exact: true }).getByRole("button", { name: "Done", exact: true }).click();
+  };
+  // Locator assertions retry across code-server's startup/navigation instead
+  // of letting a transient destroyed execution context abort expect.poll.
+  const background = (color: string) => expect(frame(page, first).locator(".monaco-workbench"))
+    .toHaveCSS("--vscode-editor-background", new RegExp(`^\\s*${color}\\s*$`, "i"), { timeout: 15_000 });
+  await select("latte");
+  await background("#eff1f5");
+  await select("slate");
+  await background("#0c1118");
+
+  // This is VS Code's workspace settings file, the same place its settings
+  // editor writes. A user's chosen theme and colors must survive a palette change.
+  const folder = join(state, "editor/w", String(first));
+  const workspace = join(folder, readdirSync(folder).find((name) => name.endsWith(".code-workspace"))!);
+  const original = readFileSync(workspace, "utf8");
+  try {
+    const custom = JSON.parse(original);
+    custom.settings["workbench.colorTheme"] = "Default Dark Modern";
+    custom.settings["workbench.colorCustomizations"] = { "editor.background": "#123456" };
+    writeFileSync(workspace, JSON.stringify(custom));
+    await background("#123456");
+    await select("latte");
+    await background("#123456");
+    expect(JSON.parse(readFileSync(workspace, "utf8")).settings["workbench.colorTheme"]).toBe("Default Dark Modern");
+  } finally {
+    writeFileSync(workspace, original);
+    await select("slate");
+  }
 });
 
 test("arugula edit FILE:LINE: the file at its line in under 3 s once warm, reported as it moves", async ({ page }) => {

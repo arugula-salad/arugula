@@ -1,0 +1,93 @@
+/* Shared embedded-pane chrome: keep controls subordinate to pane identity. */
+.browser-bar,
+.agent-bar,
+.review-bar {
+  min-height: 34px;
+  box-sizing: border-box;
+  gap: 8px;
+  padding: 5px 10px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--divider);
+  color: var(--subtle);
+  font-size: 12px;
+}
+
+.browser-bar button,
+.browser-open,
+.agent-bar button,
+.review-bar button {
+  border: 1px solid var(--divider);
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--subtle);
+}
+
+.browser-bar button:hover:not(:disabled),
+.browser-open:hover,
+.agent-bar button:hover,
+.review-bar button:hover {
+  background: var(--raised);
+  color: var(--fg);
+}
+
+.browser-url input {
+  background: var(--bg);
+  font-size: 12px;
+}
+
+.agent-log {
+  padding: 14px;
+  line-height: 1.6;
+}
+
+.agent-user {
+  border: 1px solid var(--divider);
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+
+.agent-tool {
+  border: 1px solid var(--divider);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.agent-composer {
+  padding: 10px;
+  gap: 8px;
+}
+
+.agent-composer textarea {
+  background: var(--bg);
+  border-color: var(--divider);
+  border-radius: 6px;
+  line-height: 1.5;
+}
+
+.agent-composer textarea:focus {
+  border-color: var(--accent);
+}
+
+.diff-file-head {
+  min-height: 34px;
+}
+
+.editor-note {
+  background: var(--surface);
+  color: var(--subtle);
+  border: 1px solid var(--divider);
+  border-radius: 6px;
+}
+
+.agent-msg > .md,
+.agent-thought > .md {
+  white-space: normal;
+}
+
+.agent-msg .md h1,
+.agent-msg .md h2,
+.agent-msg .md h3 {
+  font-size: 14px;
+  line-height: 1.4;
+  margin: 12px 0 8px;
+}

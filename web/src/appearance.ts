@@ -357,7 +357,7 @@ export interface Appearance {
 }
 
 const KEY = "arugula-appearance";
-const DEFAULT: Appearance = { palette: "default", finish: "flat", corners: "square" };
+const DEFAULT: Appearance = { palette: "default", finish: "flat", corners: "soft" };
 const lightQuery = typeof matchMedia === "function" ? matchMedia("(prefers-color-scheme: light)") : null;
 
 let current: Appearance = load();

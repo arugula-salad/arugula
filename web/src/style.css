@@ -9514,8 +9514,8 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   white-space: nowrap;
 }
 
-.ws-activity-row.command .ws-activity-text,
-.ws-activity-row.action .ws-activity-text {
+.ws-activity-row[data-activity-kind="command"] .ws-activity-text,
+.ws-activity-row[data-activity-kind="action"] .ws-activity-text {
   font-family: ui-monospace, Menlo, monospace;
 }
 

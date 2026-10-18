@@ -20,6 +20,7 @@ import { closeSwarm, openSwarm, swarmRoute } from "../swarm/route";
 import { closeChat, closeOverview, isChatOpen, openChat, openChatView, openOverview, overviewRoute } from "./places";
 import { cloudPanes } from "../cloud";
 import { showSession } from "./shell/session-sidebar";
+import { SearchIcon, PanesIcon, SettingsIcon, SessionsIcon, ChatIcon, SwarmIcon } from "./shell/icons";
 import { paneName } from "./shell/overview";
 import { openAttention } from "./shell/attention-drawer";
 import { focusSessionSearch } from "./shell/prefs";
@@ -383,11 +384,13 @@ function Palette({ client, phone, close }: { client: Client; phone: boolean; clo
       onPointerDown={(e) => e.target === e.currentTarget && close(false)}
     >
       <div class={phone ? "picker palette phone" : "picker palette"} onKeyDown={onKey}>
-        <input
+        <div class="palette-search"><SearchIcon size={20} /><input
           ref={input}
           class="picker-filter"
           placeholder="Type a command, a tab or a pane"
           aria-label="Command"
+          aria-controls="palette-results"
+          aria-activedescendant={rows[sel] ? `palette-result-${sel}` : undefined}
           aria-keyshortcuts={ariaKeys(keyHint("palette"))}
           value={query}
           autocomplete="off"
@@ -398,11 +401,13 @@ function Palette({ client, phone, close }: { client: Client; phone: boolean; clo
             setSel(0);
           }}
         />
-        <ul class="picker-list" role="listbox" aria-label="Commands" ref={listRef}>
+        </div><div class="palette-results-heading"><span>{query ? "Search results" : "Commands & destinations"}</span><span>{rows.length} available</span></div>
+        <ul id="palette-results" class="picker-list" role="listbox" aria-label="Commands" ref={listRef}>
           {rows.length === 0 && <li class="picker-empty">Nothing matches</li>}
           {rows.map((c, i) => (
             <li
               key={c.key}
+              id={`palette-result-${i}`}
               role="option"
               aria-selected={i === sel}
               aria-disabled={c.disabled}
@@ -412,17 +417,20 @@ function Palette({ client, phone, close }: { client: Client; phone: boolean; clo
               onPointerMove={() => i !== sel && setSel(i)}
               onClick={() => run(c)}
             >
-              <span class="palette-group">{c.group}</span>
+              <span class="palette-command-icon" aria-hidden="true">{c.group === "Settings" ? <SettingsIcon /> : c.group === "Chat" ? <ChatIcon /> : c.group === "Swarm" ? <SwarmIcon /> : c.group === "Go to" || c.group === "Places" ? <SessionsIcon /> : <PanesIcon />}</span>
+              <span class="palette-command-text">
               <span class="picker-label">
                 {c.checked !== undefined && <span class="menu-check">{c.checked ? "●" : ""}</span>}
                 {c.label}
               </span>
               {c.detail && <span class="palette-detail">{c.detail}</span>}
+              <span class="palette-group">{c.group}</span></span>
               {recent.includes(c.key) && !query && <span class="palette-recent">recent</span>}
               {c.shortcut && <kbd class="menu-key">{c.shortcut}</kbd>}
             </li>
           ))}
         </ul>
+        <footer class="palette-help"><span><kbd>↑</kbd> <kbd>↓</kbd> Navigate</span><span><kbd>↵</kbd> Run command</span><span><kbd>Esc</kbd> Close</span></footer>
         {phone && (
           <div class="picker-actions">
             <button onClick={() => close()}>Cancel</button>

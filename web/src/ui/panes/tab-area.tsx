@@ -7,7 +7,8 @@ import type { Cell } from "../cells";
 import { PaneHeader } from "../shell/pane-header";
 import { Divider } from "./divider";
 import { DropOverlay } from "./drop-overlay";
-import { len } from "./geometry";
+import { len, px } from "./geometry";
+import { paneChrome, PIXELS } from "./chrome-geometry";
 import { PaneSlot } from "./pane-slot";
 
 /** One tab's panes, drawn at the cell rectangles the daemon computed. The
@@ -32,13 +33,12 @@ export function TabArea({ client, tab, cell, phone }: { client: Client; tab: Tab
     return () => ro.disconnect();
   }, []);
 
-  // With more than one pane, each gets a header, one cell row above it:
-  // a pane below another has its header in the divider row between them,
-  // and the top row's take a row above the grid (like tmux's
-  // pane-border-status). A phone shows one pane at a time: none.
-  const headers = !phone && tab.layout.panes.length > 1;
+  // Reserve the split tree's chrome budget before claiming terminal rows.
+  // Phones keep their existing single-pane, cell-only layout.
+  const headers = !phone && tab.layout.panes.length > 0;
+  const chrome = headers ? paneChrome(tab.layout, tab.cols, tab.rows, cell) : null;
   const cols = area ? Math.max(2, Math.floor(area.w / cell.width)) : 0;
-  const rows = area ? Math.max(1, Math.floor((area.h - (headers ? cell.height : 0)) / cell.height)) : 0;
+  const rows = area ? Math.max(1, Math.floor((area.h - (chrome?.overhead ?? 0)) / cell.height)) : 0;
   const active = client.active(tab.id) ?? null;
   const zoom = phone ? active : null;
 
@@ -101,7 +101,9 @@ export function TabArea({ client, tab, cell, phone }: { client: Client; tab: Tab
   }, [client, rev, active, phone]);
 
   const gridW = tab.cols * cell.width;
-  const gridH = tab.rows * cell.height;
+  const gridH = chrome?.height ?? tab.rows * cell.height;
+  const drawingCell = chrome ? PIXELS : cell;
+  const drawingTab = chrome ? { ...tab, layout: { ...tab.layout, panes: tab.layout.panes.map(([id, r]) => [id, chrome.panes.get(id) ?? r] as [PaneId, typeof r]) } } : tab;
   const scale = area ? Math.min(1, area.w / gridW, area.h / gridH) : 1;
   // Not while the link is down, nor to a viewer: neither has a say in its
   // size (viewers see it letterboxed; the daemon takes editors' sizes).
@@ -111,28 +113,30 @@ export function TabArea({ client, tab, cell, phone }: { client: Client; tab: Tab
   return (
     <div class={scale < 1 ? "tab-area scaled" : "tab-area"} ref={ref}>
       <div
-        class={headers ? "grid with-headers" : "grid"}
+        class={headers ? "grid with-headers pane-chrome" : "grid"}
         style={{
           width: len(gridW),
           height: len(gridH),
-          marginTop: headers ? len(cell.height) : undefined,
           transform: scale < 1 ? `scale(${scale})` : undefined,
         }}
       >
-        {tab.layout.panes.map(([id, r]) => (
-          <PaneSlot key={id} client={client} id={id} rect={r} cell={cell} active={id === active} phone={phone} />
+        {drawingTab.layout.panes.map(([id, r]) => (
+          <PaneSlot key={id} client={client} id={id} rect={r} cell={drawingCell} active={id === active} phone={phone} />
         ))}
         {headers &&
-          tab.layout.panes.map(([id, r]) => (
-            <PaneHeader key={`h${id}`} client={client} tab={tab} id={id} rect={r} cell={cell} active={id === active} />
+          drawingTab.layout.panes.map(([id, r]) => (
+            <PaneHeader key={`h${id}`} client={client} tab={tab} id={id} rect={r} cell={drawingCell} height={chrome?.header} active={id === active} />
           ))}
+        {chrome && Array.from(chrome.frames, ([id, r]) => (
+          <div key={`f${id}`} class={`pane-frame${id === active ? " active" : ""}`} style={px(r, PIXELS)} aria-hidden="true" />
+        ))}
         {!phone &&
           tab.layout.splits.map((s) =>
             s.extents.slice(0, -1).map((_, i) => (
-              <Divider key={`${s.id}-${i}`} client={client} split={s} index={i} cell={cell} scale={scale} />
+              <Divider key={`${s.id}-${i}`} client={client} split={s} index={i} cell={cell} scale={scale} projected={chrome?.dividers.get(`${s.id}-${i}`)} resizeUnit={chrome?.resizeUnits.get(`${s.id}-${i}`)} />
             )),
           )}
-        <DropOverlay client={client} tab={tab} cell={cell} />
+        <DropOverlay client={client} tab={drawingTab} cell={drawingCell} />
       </div>
       {elsewhere && (
         <div class="sized-elsewhere" data-sized-elsewhere>

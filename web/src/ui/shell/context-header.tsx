@@ -15,6 +15,8 @@ import type { Renaming } from "./rename-input";
 import { SessionButton } from "./session-sidebar";
 import { AttentionBell } from "./attention-drawer";
 import { offlineWhy } from "./live";
+import { useSidebar } from "./prefs";
+import { openOverview } from "../places";
 
 export type Connection = "direct" | "relayed" | "reconnecting" | "offline";
 
@@ -63,11 +65,19 @@ export function ContextHeader({
   inert: boolean;
 }) {
   useSubscribe((fn) => directory.subscribe(fn));
+  const sidebar = useSidebar();
   const state = client.state!;
   const session = state.sessions.find((s) => s.id === client.session) ?? state.sessions[0];
   const tab = client.tabView();
   return (
     <header class="ws-head" data-tauri-drag-region inert={inert}>
+      {sidebar.open && !sidebar.narrow && (
+        <button class="ws-wordmark" style={{ width: `${sidebar.width}px` }}
+          aria-label="Arugula Control: session overview" title="This machine’s session overview"
+          onClick={() => openOverview()}>
+          Arugula <span aria-hidden="true">/</span> <strong>Control</strong>
+        </button>
+      )}
       <nav class="ws-crumbs" aria-label="Where you are" data-tauri-drag-region>
         {/* The machine's name even where there's no menu of others (a
             daemon's own page alone): HostButton draws nothing then. */}

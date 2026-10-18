@@ -3,7 +3,7 @@
   "displayName": "Arugula",
   "description": "Your editor in the Arugula swarm: who's in which file, follow its cursor from a phone, debugger stops and Claude Code's diffs on the rail. And Arugula's colours.",
   "publisher": "arugula",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "license": "MIT",
   "repository": { "type": "git", "url": "https://github.com/arugula-salad/arugula" },
   "homepage": "https://arugula.io",
@@ -27,6 +27,11 @@
           "type": "number",
           "default": 0,
           "description": "The editor block this window is (Arugula sets it in the block's workspace)."
+        },
+        "arugula.compact": {
+          "type": "boolean",
+          "default": false,
+          "description": "Start a new embedded editor with its explorer closed. Toggle it with Ctrl+B (Cmd+B on macOS); later choices are preserved."
         },
         "arugula.socket": {
           "type": "string",
