@@ -50,6 +50,9 @@ let appClient: () => Client | null = () => workspace?.client ?? null;
 
 const ctrlOrCmd = (code: string) => [`Ctrl+Shift+${code}`, `Meta+Shift+${code}`];
 const mac = desktopPlatform() === "macos";
+/** The desktop app's Cmd chords. `when` checks the app's platform, not the
+ * browser's OS, so they're listed for both. */
+const appKey = (code: string) => ({ mac: [`Meta+${code}`], other: [`Meta+${code}`] });
 
 const table: Binding[] = [
   {
@@ -95,7 +98,7 @@ const table: Binding[] = [
   {
     id: "desktop.close",
     label: "Close pane",
-    keys: { mac: ["Meta+KeyW"], other: [] },
+    keys: appKey("KeyW"),
     when: () => mac && !!appClient(),
     run: () => {
       const c = appClient()!;
@@ -106,7 +109,7 @@ const table: Binding[] = [
   {
     id: "desktop.tab",
     label: "New tab",
-    keys: { mac: ["Meta+KeyT"], other: [] },
+    keys: appKey("KeyT"),
     when: () => mac && !!appClient(),
     run: () => {
       const c = appClient()!;
@@ -116,14 +119,14 @@ const table: Binding[] = [
   {
     id: "desktop.window",
     label: "New window",
-    keys: { mac: ["Meta+KeyN"], other: [] },
+    keys: appKey("KeyN"),
     when: () => mac && !!appClient(),
     run: () => openInNewWindow(),
   },
   {
     id: "desktop.attach",
     label: "Attach file",
-    keys: { mac: ["Meta+KeyU"], other: [] },
+    keys: appKey("KeyU"),
     when: () => mac && !!appClient(),
     run: () => {
       // The agent composer's 📎 when one has focus or is the active pane,
