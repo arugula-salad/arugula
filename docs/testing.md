@@ -66,7 +66,11 @@ once (#287); a new push to a branch cancels that branch's run:
     it with `just e2e-durations RUN` after a main run), each with its own
     test daemon on a free port; **stack**: those on the test stack
     (`E2E_SET=stack`); **perf**: the specs that time things (`E2E_SET=perf`:
-    the frame rates, `editors.spec.ts`), beside the shards;
+    the frame rates, `editors.spec.ts`), beside the shards. The frame
+    rates are asserted; the editors' times to a file are reported against
+    their 3 s budget (`web/e2e/timing.ts`) in the job's summary, over
+    budget marked, and don't fail it (shared pods put them over with
+    nothing broken: 10 red main runs in a week);
   - **desktop-xvfb**: `just desktop-xvfb` (`join`, `app`, `stale`)
     in its container. It isn't a required check, and isn't named
     `desktop`, which is Windows' required one.
@@ -841,7 +845,7 @@ people signed in on any browser context, and machines joined to it.
 |---|---|---|
 | M11 | `changes.spec.ts` (Pixel 7), `changes.webkit.spec.ts` (iPhone) | Changes, a hunk's line, a live file block; a failed build's push through the fake service, and Rerun from the notification (Pixel 7) or Needs you (iPhone) |
 | M16 | `mcp.spec.ts`, "watched from a phone" | an MCP client's build drawn live on a Pixel 7, Failed on its Needs you, fixed and rerun by the client |
-| M27 | `editors.spec.ts` | an editor block opened from a Pixel 7 and from an iPhone, the file at its line in under 3 s on a warm server |
+| M27 | `editors.spec.ts` | an editor block opened from a Pixel 7 and from an iPhone, the file at its line on a warm server, timed against a 3 s budget (reported in the perf job's summary, not asserted) |
 | M26, M30 | `team-swarm-phones.spec.ts` | two teammates' swarms on a Pixel 7 (Chrome's network emulation, 150 ms, 1.6 Mbit/s) and an iPhone: grouped by person, cards along the bottom, a rerun from the iPhone's card seen on the Pixel, a tile tap opening the pane; and a machine on another network behind netem (Docker, [below](#tests-that-need-docker)) |
 | #86 | `studio-phone.spec.ts` | a studio app from the template through the token API (a fake studio and box), `arugula studio login`, `hud share --role follower`, `arugula studio follower`, `arugula app`; a question answered from a Pixel 7 and a gate approved from an iPhone, with hud told who |
 
