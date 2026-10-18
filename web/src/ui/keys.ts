@@ -10,7 +10,7 @@
 // doesn't matter, or `key:x` for what the key types (`event.key`, any case).
 //
 // Panes (M110): Ctrl+Shift+Enter toggles the tab's focus on the active
-// pane, Ctrl+Shift+E opens + Pane (the new workspace's), and
+// pane, Ctrl+Shift+E opens + Pane (the pane toolbar's), and
 // Ctrl+Alt+Shift+arrows grow (→ ↓) or shrink (← ↑) the active pane. Each
 // takes its key only when it can act (a tab with more than one pane, a
 // split that way), so otherwise the terminal still gets it. The resize

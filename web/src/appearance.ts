@@ -96,7 +96,7 @@ export const PALETTES: Palette[] = [
     // M108 (#1023): the workspace's own dark palette, from #1018's mission
     // control: near-black slate, blue-gray lines, a restrained cyan for
     // selection and focus, lavender second, amber for attention. The dark
-    // default with the new workspace. Every text color passes WCAG AA (4.5)
+    // default since M113. Every text color passes WCAG AA (4.5)
     // on bg, surface and raised; muted is only ever a fill.
     id: "slate",
     name: "Slate",

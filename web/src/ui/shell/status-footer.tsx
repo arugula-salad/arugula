@@ -1,7 +1,7 @@
-// The footer under the new workspace (M108, #1023): the machine, the focused
+// The footer under the workspace (M108, #1023): the machine, the focused
 // pane's repo and branch when known, the agents running and what needs you
-// on this machine, with the shortcuts from ui/keys.ts. And the classic
-// bar's status pill, for the connection.
+// on this machine, with the shortcuts from ui/keys.ts. And the status
+// pill: the phone's connection, and errors everywhere.
 
 import type { Client } from "../../client";
 import { directory } from "../../hosts";

@@ -1,4 +1,4 @@
-// The new workspace's icons (M108): plain strokes in the text's color, so
+// The workspace's icons (M108): plain strokes in the text's color, so
 // every palette draws them. Each sits beside a label or carries the
 // button's aria-label; none is the only sign of anything.
 

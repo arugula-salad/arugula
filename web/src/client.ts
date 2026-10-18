@@ -487,7 +487,48 @@ export class Client {
   }
 
   emit() {
+    this.notePlace();
     for (const fn of this.listeners) fn();
+  }
+
+  // ---- where this window was, for a reload (M113)
+
+  /** The tab and pane this window shows, kept for this browser tab only
+   * (sessionStorage): a reload comes back to them, a new window doesn't. */
+  private placeKey = () => `arugula.place:${this.base}`;
+  private placeNoted = "";
+  private placeRestored = false;
+
+  private notePlace() {
+    if (this.tab === null || !this.state) return;
+    const pane = this.activePane.get(this.tab);
+    const v = JSON.stringify({ tab: this.tab, pane: pane ?? null });
+    if (v === this.placeNoted) return;
+    this.placeNoted = v;
+    try {
+      sessionStorage.setItem(this.placeKey(), v);
+    } catch {
+      // No storage: a reload starts at the first session.
+    }
+  }
+
+  /** Once, on the first state: back to the tab and pane noted before a
+   * reload, if they're still there. */
+  private restorePlace(s: State) {
+    if (this.placeRestored) return;
+    this.placeRestored = true;
+    let saved: { tab?: TabId; pane?: PaneId | null } | null = null;
+    try {
+      saved = JSON.parse(sessionStorage.getItem(this.placeKey()) ?? "null");
+    } catch {
+      return;
+    }
+    const tab = saved?.tab === undefined ? undefined : s.tabs.find((t) => t.id === saved!.tab);
+    const session = tab && s.sessions.find((x) => x.tabs.includes(tab.id));
+    if (!tab || !session) return;
+    this.session = session.id;
+    this.tab = tab.id;
+    if (saved!.pane != null && paneIds(tab).includes(saved!.pane)) this.activePane.set(tab.id, saved!.pane);
   }
 
   // ---- reading state
@@ -1578,6 +1619,7 @@ export class Client {
   private fixSelection() {
     const s = this.state;
     if (!s) return;
+    this.restorePlace(s);
     if (!s.sessions.some((x) => x.id === this.session)) this.session = s.sessions[0]?.id ?? null;
     const tabs = s.sessions.find((x) => x.id === this.session)?.tabs ?? [];
     if (this.tab === null || !tabs.includes(this.tab)) this.tab = tabs[0] ?? null;

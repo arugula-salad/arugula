@@ -8760,7 +8760,7 @@ html[data-finish="glass"] .prompt-backdrop {
 .prompt.agent-dialog, .prompt.cloud-launch { box-sizing: border-box; max-height: calc(var(--app-height, 100dvh) - 32px); overflow-y: auto; }
 .prompt .cloud-panel.cloud-launch-form { max-height: none; overflow: visible; }
 
-/* ---- the new workspace (M108, #1023): a rail, the session sidebar, a
+/* ---- the workspace (M108, #1023; the only one since M113): a rail, the session sidebar, a
    context header, the tab strip and a status footer around `.main`. Only
    the palette's tokens, so every palette draws it. The chrome is all
    outside `.main`: the panes' cell maths doesn't change. */
@@ -10081,8 +10081,8 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   font: 11px ui-monospace, Menlo, monospace;
 }
 
-/* What needs you is amber here, as #1018 has it; the classic bar keeps
-   the accent. */
+/* What needs you is amber in the workspace, as #1018 has it (a phone
+   keeps the accent). */
 .app.ws .att.needs_input {
   color: var(--warn);
 }
@@ -10683,4 +10683,10 @@ html[data-workspace="new"] .thread-panel {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* A pane with a header says there what it wants (needs you, done, failed):
+   no pill over its terminal's first lines as well. */
+.grid.with-headers .pane-badge {
+  display: none;
 }

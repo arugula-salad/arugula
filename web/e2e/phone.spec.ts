@@ -9,6 +9,15 @@ const { viewport, userAgent, deviceScaleFactor, isMobile, hasTouch } = devices["
 test.use({ viewport, userAgent, deviceScaleFactor, isMobile, hasTouch });
 
 test("one pane at a time, switch from the sheet, extra keys work", async ({ page }) => {
+  // M113: whatever this device last picked, a phone keeps its own header:
+  // no rail, sidebar, toolbar or pane headers.
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem("arugula-appearance", JSON.stringify({ palette: "default", finish: "flat", corners: "square", workspace: "new" }));
+    } catch {
+      // No storage: the same, without the old key.
+    }
+  });
   await reset(page);
   // A split made on the phone.
   await page.locator(".sheet-button").click();
@@ -20,6 +29,8 @@ test("one pane at a time, switch from the sheet, extra keys work", async ({ page
   await ready(page, shown);
   const fill = await page.locator(".pane").boundingBox();
   expect(fill!.width).toBeGreaterThan(380);
+  await expect(page.locator(".phone-bar")).toBeVisible();
+  await expect(page.locator(".ws-rail, .ws-head, [data-session-sidebar], [data-pane-toolbar], [data-pane-header]")).toHaveCount(0);
 
   // Ctrl from the key bar, then "c", interrupts a running command.
   await type(page, shown, "sleep 100\n");

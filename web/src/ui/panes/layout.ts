@@ -54,8 +54,8 @@ export function toggleFocus(client: Client, tab: TabView, pane?: PaneId, refused
   }
 }
 
-/** The pane menu's Focus pane, or Restore layout on the focused one (both
- * shells: the classic bar has no toolbar for it). */
+/** The pane menu's Focus pane, or Restore layout on the focused one (the
+ * same as the toolbar's Focus and the header's expand). */
 export function focusItems(client: Client, tab: TabView | undefined, id: PaneId): MenuItem[] {
   if (!tab || (tab.focus === null && paneIds(tab).length < 2)) return [];
   const restore = tab.focus === id;
