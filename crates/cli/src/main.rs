@@ -525,6 +525,12 @@ fn main() {
     unsafe {
         let _ = nix::sys::signal::signal(nix::sys::signal::Signal::SIGPIPE, nix::sys::signal::SigHandler::SigDfl);
     }
+    // A panic is written down as a crash, in the local daemon's state, if
+    // telemetry is on there (M102): the daemon sends it.
+    if let Some(dir) = state_dir() {
+        use arugula_proto::telemetry::crash;
+        crash::install_hook(crash::Process::Cli, env!("CARGO_PKG_VERSION"), &dir);
+    }
     // Run as `tmux` (a link, or a copy on an ssh host's PATH): be tmux's
     // control mode, with tmux's own arguments.
     let argv0 = std::env::args_os().next().map(PathBuf::from);
