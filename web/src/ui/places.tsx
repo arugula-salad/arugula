@@ -7,8 +7,8 @@ import { useEffect, useState } from "preact/hooks";
 import type { Client } from "../client";
 import type { Fleet } from "../fleet";
 import { directory } from "../hosts";
-import { closeSwarm, openSwarm } from "../swarm/route";
-import { closeAgentsPage, openAgentsPage } from "./agents-route";
+import { closeSwarm, openSwarm, swarmRoute } from "../swarm/route";
+import { agentsRoute, closeAgentsPage, openAgentsPage } from "./agents-route";
 import { parseThreadKey, threadKey, type ThreadTarget } from "../proto";
 import { getFleet } from "./hosts";
 import { closeThread } from "./threads";
@@ -148,8 +148,16 @@ export function useChatTick(client: Client) {
 /** Where a person is: the panes, the swarm, chat or agents. */
 export type Place = "panes" | "swarm" | "chat" | "agents";
 
+/** Where the page is now, from the route. */
+export function currentPlace(): Place {
+  if (isChatOpen()) return "chat";
+  if (swarmRoute()) return "swarm";
+  if (agentsRoute()) return "agents";
+  return "panes";
+}
+
 /** Back to the panes from wherever you are. */
-function closePlace(at: Place) {
+export function closePlace(at: Place) {
   if (at === "chat") closeChat();
   else if (at === "agents") closeAgentsPage();
   else if (at === "swarm") closeSwarm();
