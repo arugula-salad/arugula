@@ -2615,6 +2615,7 @@ impl<'a> Call<'a> {
             since_ms: since.map(|s| now_ms().saturating_sub(s * 1000)),
             cwd: a.cwd.clone(),
             matching,
+            only: None,
         };
         let store = self.app.mux.store.clone();
         let all =

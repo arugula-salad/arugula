@@ -222,6 +222,37 @@ pub enum Cmd {
     Shutdown(oneshot::Sender<()>),
 }
 
+/// What someone may read of the panes' history and events (M112): each
+/// pane, with where a "from now" share (M13) starts for them, and the
+/// machines those panes run on.
+#[derive(Debug, Clone, Default)]
+pub struct Scope {
+    pub panes: BTreeMap<PaneId, Floor>,
+    pub machines: std::collections::BTreeSet<MachineId>,
+}
+
+/// Where a pane's history starts for someone: its output offset, and when
+/// (ms). Both 0 but for a "from now" share.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Floor {
+    pub offset: u64,
+    pub at_ms: u64,
+}
+
+impl Scope {
+    /// Whether an event is in it: its pane's, at or after the pane's floor,
+    /// or a machine's (no pane) that runs one of its panes.
+    pub fn keeps(&self, e: &Event) -> bool {
+        match e.pane {
+            Some(p) => self.panes.get(&p).is_some_and(|f| e.at_ms >= f.at_ms),
+            None => match &e.kind {
+                EventKind::Machine { machine, .. } => self.machines.contains(machine),
+                _ => false,
+            },
+        }
+    }
+}
+
 /// Requests from the HTTP API and the CLI.
 pub enum Api {
     Panes(oneshot::Sender<Vec<PaneSummary>>),
@@ -321,6 +352,11 @@ pub enum Api {
     Trust(PaneId, String, u32, oneshot::Sender<bool>),
     /// A notice for whoever (by principal id) is connected.
     Tell(String, String),
+    /// The panes `who` may read the history and events of (M112): every
+    /// pane of a session (`Some`), or of every session they reach, that's
+    /// readable to them. `None` when there's no such session, or `who` has
+    /// no role on it.
+    Scope(crate::acl::Principal, Option<SessionId>, oneshot::Sender<Option<Scope>>),
     /// Where each pane of a session's output ends now (a "from now" share
     /// starts there).
     SessionEnds(SessionId, oneshot::Sender<Option<BTreeMap<PaneId, u64>>>),
@@ -1091,7 +1127,7 @@ impl Daemon {
     }
 
     fn emit(&self, pane: Option<PaneId>, kind: EventKind) {
-        let _ = self.events.send(Event { at_ms: now_ms(), pane, kind });
+        let _ = self.events.send(Event { at_ms: now_ms(), pane, kind, id: String::new() });
     }
 
     fn focused(&self, pane: PaneId) -> bool {

@@ -84,6 +84,7 @@ mod recipes;
 mod resident;
 mod resume;
 mod review;
+mod session_history;
 mod share;
 mod sites;
 mod ssh;
