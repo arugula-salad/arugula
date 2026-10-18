@@ -57,7 +57,9 @@ once (#287); a new push to a branch cancels that branch's run:
     and `just notices`;
   - **core**: `just check-core`, clippy and the daemon's and the CLI's
     tests with the `labs` feature off (#452);
-  - **test**: `just test`, the box's binaries from static;
+  - **test**: `just test`, the box's binaries from static: it builds
+    beside static and waits for them (`scripts/ci-wait-job`) only before
+    the tests run;
   - **testnet**: the test stack's ssh and control profiles;
   - **e2e**: the specs (`E2E_SET=rest`) in six shards split by recorded
     time (`web/scripts/e2e-shard.mjs` from `web/e2e/durations.json`; refresh
