@@ -7,13 +7,18 @@
 // else (a script in one runs nowhere), a chart that can't be drawn says so
 // with its source, a viewer's page shows all of it, in the light theme and
 // the dark. A chart fence in a forge's body stays code: forge-github.spec.ts.
+//
+// #965: a picture the agent saved shows from a data: URL (control's CSP has
+// no blob:), a name written again shows the new one with no reload, any other
+// image target stays text and is never fetched, a viewer's page shows it, and
+// closing the block empties the page's cache.
 
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ChildProcess } from "node:child_process";
 import { expect, test, type Page } from "@playwright/test";
-import { bring, brokenEmbeds, fillEmbeds, fillsInPlace, newDoc, placedEmbeds, seeEmbeds, type Post } from "./doc-steps";
+import { bring, brokenEmbeds, fill, fillEmbeds, fillsInPlace, imagesInPlace, newDoc, placedEmbeds, png, putAsset, seeEmbeds, type Post, widths } from "./doc-steps";
 import { closeContexts, open, panes, ready, reset } from "./helpers";
 import { daemon, pixel7 } from "./phones";
 
@@ -50,6 +55,20 @@ test.describe("on a Pixel 7", () => {
     const term = await page.evaluate(() => window.__arugula.client.state!.panes[0].id);
     await ready(page, term);
     await fillsInPlace(page, post(page), term);
+  });
+
+  test("a picture fits the phone", async ({ page }) => {
+    await open(page);
+    const term = await page.evaluate(() => window.__arugula.client.state!.panes[0].id);
+    await ready(page, term);
+    const doc = await newDoc(post(page), term);
+    await bring(page, doc);
+    await putAsset(post(page), doc, "wide.png", png(900, 40));
+    await fill(post(page), doc, "s1", "![A wide one](assets/wide.png)");
+    await expect.poll(() => widths(page, doc, "s1")).toEqual([900]);
+    const width = await page.evaluate(() => document.documentElement.clientWidth);
+    const box = await page.locator(`[data-doc-block="${doc}"] img.doc-image`).boundingBox();
+    expect(box!.width).toBeLessThanOrEqual(width);
   });
 
   test("a chart and a drawing fit the phone", async ({ page }) => {
@@ -89,6 +108,13 @@ test("a drawing that can't be shown says why, and fences sit where the daemon lo
   await seeEmbeds(page, doc);
   await placedEmbeds(page, post(page), doc);
   await brokenEmbeds(page, post(page), doc);
+});
+
+test("a picture shows, a replaced one shows with no reload, and other images stay text", async ({ page }) => {
+  await reset(page);
+  const [term] = await panes(page);
+  const doc = await newDoc(post(page), term);
+  await imagesInPlace(page, post(page), doc);
 });
 
 // What a person reads: colours the page's palette gives, in both.
@@ -184,6 +210,33 @@ test.describe("a viewer", () => {
     const r = await friend.request.post(`/api/blocks/${doc}/call/doc_fill`, { data: { section: "s1", markdown: "Rewritten." } });
     expect(r.status()).toBe(403);
     await seeEmbeds(friend, doc);
+    await friend.close();
+  });
+
+  test("sees a picture, which reading takes a viewer's call for, and can't put one", async ({ browser, page }) => {
+    await open(page);
+    const term = await page.evaluate(() => window.__arugula.client.state!.panes[0].id);
+    await ready(page, term);
+    const doc = await newDoc(post(page), term);
+    const session = await page.evaluate((d) => {
+      const c = window.__arugula.client;
+      return c.sessionOfTab(c.tabOfPane(d)!.id);
+    }, doc);
+    expect((await page.request.post("/api/acl", { data: { session, principal: `tailnet:${FRIEND}`, role: "viewer" } })).ok()).toBe(true);
+    await putAsset(post(page), doc, "flow.png", png(3, 2));
+    await fill(post(page), doc, "s1", "The flow: ![The flow](assets/flow.png)");
+
+    const friend = await (await browser.newContext({ baseURL: url, extraHTTPHeaders: { "tailscale-user-login": FRIEND } })).newPage();
+    await friend.goto("/");
+    await expect.poll(() => friend.evaluate(() => window.__arugula?.client.role())).toBe("viewer");
+    await bring(friend, doc);
+    await expect.poll(() => widths(friend, doc, "s1"), { timeout: 15_000 }).toEqual([3]);
+    // They can't put one, or rewrite the section to show it differently.
+    const put = await friend.request.post(`/api/blocks/${doc}/call/doc_asset_put`, { data: { name: "x.png", data: png(1, 1).toString("base64") } });
+    expect(put.status()).toBe(403);
+    const again = await friend.request.post(`/api/blocks/${doc}/call/doc_fill`, { data: { section: "s1", markdown: "Rewritten." } });
+    expect(again.status()).toBe(403);
+    await expect.poll(() => widths(friend, doc, "s1")).toEqual([3]);
     await friend.close();
   });
 });

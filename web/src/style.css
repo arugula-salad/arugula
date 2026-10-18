@@ -5320,6 +5320,20 @@ button.diff-why-run {
   border-radius: 6px;
 }
 
+/* A picture the agent saved (#965): as wide as it is, no wider than the page. */
+.md .doc-image {
+  max-width: 100%;
+  height: auto;
+  vertical-align: middle;
+  border-radius: 6px;
+}
+
+.md .doc-image-wait,
+.md .doc-image-missing {
+  color: var(--dim, inherit);
+  font-style: italic;
+}
+
 .forge-dot {
   display: inline-block;
   width: 8px;

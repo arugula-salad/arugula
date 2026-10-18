@@ -4,7 +4,9 @@
 //! token drives its own Doc and no one else's; its approvals let `doc`
 //! through with no card (the fake ACP agent); the owner writes it and an
 //! editor or a viewer can't; the flag hides it and refuses it; a restart
-//! brings it back; and an idle Doc costs nothing.
+//! brings it back; and an idle Doc costs nothing. Its pictures (#965): put by
+//! path or data, read by a viewer, written by the owner alone, and never in
+//! the state a client is sent.
 
 // Over the daemon's Unix socket; Windows gets its named pipe in M56 (#219).
 #![cfg(unix)]
@@ -505,4 +507,261 @@ fn a_chart_and_a_drawing_fill_and_a_bad_one_leaves_the_section_as_it_was() {
     let text = d.raw("GET", &format!("/api/panes/{doc}/capture"), None).1;
     assert!(text.contains("[chart: Sales by month (bar, 3 rows)]") && text.contains("[drawing]"), "{text}");
     drop(m);
+}
+
+/// A PNG's first bytes and then `extra`: the daemon tells a file by them.
+fn png(extra: &str) -> Vec<u8> {
+    [b"\x89PNG\r\n\x1a\n".as_slice(), extra.as_bytes()].concat()
+}
+
+fn b64(bytes: &[u8]) -> String {
+    use base64::Engine;
+    base64::engine::general_purpose::STANDARD.encode(bytes)
+}
+
+fn asset_data(block: u64, name: &str, bytes: &[u8]) -> Value {
+    json!({ "kind": "asset", "block": block, "name": name, "data": b64(bytes) })
+}
+
+fn asset_path(block: u64, name: &str, path: &Path) -> Value {
+    json!({ "kind": "asset", "block": block, "name": name, "path": path })
+}
+
+/// The pictures a Doc's state lists, by name.
+fn asset_names(state: &Value) -> Vec<String> {
+    state["assets"].as_array().unwrap().iter().map(|a| a["name"].as_str().unwrap().to_owned()).collect()
+}
+
+#[test]
+fn an_agent_puts_a_picture_from_a_file_or_from_data_and_fills_with_it() {
+    let (d, pane, _) = shared();
+    let m = Mcp::bridge(&d, Some(pane));
+    let doc = m.call("doc", outline(2)).unwrap()["block"].as_u64().unwrap();
+    let mut viewer = Page::connect(&d, Some(FRIEND));
+    viewer.show(pane);
+    viewer.settled(doc);
+
+    // From a file the agent saved, by its absolute path.
+    let file = d.sessions.join("flow.png");
+    std::fs::write(&file, png("from a file")).unwrap();
+    let put = m.call("doc", asset_path(doc, "flow.png", &file)).unwrap();
+    assert_eq!(put["path"], "assets/flow.png", "{put}");
+    assert_eq!(put["mime"], "image/png");
+    // The viewer's page is told it exists, by name, and nothing of its bytes.
+    let patch = viewer.block(doc);
+    assert_eq!(patch["assets"][0]["name"], "flow.png", "{patch}");
+    assert!(!patch.to_string().contains(&b64(&png("from a file"))[8..]), "{patch}");
+    // ...and from base64.
+    m.call("doc", asset_data(doc, "shot.png", &png("from data"))).unwrap();
+    assert_eq!(asset_names(&d.state(doc)), ["flow.png", "shot.png"]);
+    assert_eq!(std::fs::read(d.state.join(format!("blocks/{doc}/doc/assets/flow.png"))).unwrap(), png("from a file"));
+
+    // Now a section can show them, and its text says what they are.
+    m.call("doc", fill(doc, "s1", "The flow:\n\n![The flow, in boxes](assets/flow.png)\n")).unwrap();
+    let text = d.raw("GET", &format!("/api/panes/{doc}/capture"), None).1;
+    assert!(text.contains("[image: The flow, in boxes]"), "{text}");
+
+    // A name used again is replaced: the same Doc, one picture, a new rev.
+    let rev = |d: &Daemon| d.state(doc)["assets"][0]["rev"].as_u64().unwrap();
+    let before = rev(&d);
+    m.call("doc", asset_data(doc, "flow.png", &png("replaced"))).unwrap();
+    assert_eq!(asset_names(&d.state(doc)), ["flow.png", "shot.png"]);
+    assert!(rev(&d) > before);
+
+    // A picture the Doc doesn't have is refused, and the section stays.
+    let was = bodies(&d.state(doc));
+    let e = m.call("doc", fill(doc, "s2", "![Gone](assets/gone.png)")).unwrap_err();
+    assert!(e.contains("image assets/gone.png: no such asset") && e.contains("section is unchanged"), "{e}");
+    let e = m.call("doc", fill(doc, "s2", "![Far](http://example.com/a.png)")).unwrap_err();
+    assert!(e.contains("must be assets/<file>"), "{e}");
+    assert_eq!(bodies(&d.state(doc)), was);
+    drop(m);
+}
+
+#[test]
+fn a_picture_that_isnt_one_is_refused_with_a_line_saying_what_to_fix() {
+    let (d, pane, _) = shared();
+    let m = Mcp::bridge(&d, Some(pane));
+    let doc = m.call("doc", outline(1)).unwrap()["block"].as_u64().unwrap();
+    let save = |name: &str, bytes: &[u8]| {
+        let p = d.sessions.join(name);
+        std::fs::write(&p, bytes).unwrap();
+        p
+    };
+    let svg = save("drawing.png", b"<svg xmlns=\"http://www.w3.org/2000/svg\"/>");
+    let html = save("page.png", b"<html><body>hi</body></html>");
+    let real = save("real.png", &png("x"));
+    let huge = save("huge.png", &png(&"x".repeat(2 * 1024 * 1024)));
+    let refuse = |args: Value, says: &str| {
+        let e = m.call("doc", args.clone()).unwrap_err();
+        assert!(e.contains(says) && !e.trim().contains('\n'), "{args}: {e}");
+    };
+    // The bytes decide: an SVG file (named .png or .svg), an HTML file named
+    // .png and a PNG named .svg are all refused.
+    refuse(asset_path(doc, "drawing.png", &svg), "```svg fence");
+    refuse(asset_path(doc, "drawing.svg", &svg), "must end in .png");
+    refuse(asset_path(doc, "page.png", &html), "isn't a PNG, JPEG, GIF or WebP");
+    refuse(asset_path(doc, "real.svg", &real), "must end in .png");
+    // A name is a plain file name that isn't a scratch file.
+    for name in ["../real.png", "a/b.png", "x.tmp", ".hidden.png"] {
+        refuse(asset_path(doc, name, &real), if name.ends_with("tmp") { ".tmp" } else { "1 to 100" });
+    }
+    // A path: absolute (the daemon's working directory isn't the agent's), a
+    // file that's there, and at most 2 MB (its size is looked at first).
+    refuse(asset_path(doc, "a.png", Path::new("real.png")), "give an absolute path, or send data");
+    refuse(asset_path(doc, "a.png", &d.sessions.join("missing.png")), "missing.png");
+    refuse(asset_path(doc, "a.png", &huge), "is 2097160 bytes; a picture is 2097152 (2 MB) at most");
+    refuse(json!({ "kind": "asset", "block": doc, "name": "a.png" }), "give path or data");
+    refuse(
+        json!({ "kind": "asset", "block": doc, "name": "a.png", "path": real, "data": b64(&png("x")) }),
+        "give path or data",
+    );
+    // Over the cap as data; the cap itself is fine.
+    refuse(asset_data(doc, "a.png", &png(&"x".repeat(2 * 1024 * 1024))), "the cap is 2097152");
+    m.call("doc", asset_data(doc, "ok.png", &png(&"x".repeat(2 * 1024 * 1024 - 8)))).unwrap();
+    // At most 20 pictures.
+    for i in 1..20 {
+        m.call("doc", asset_data(doc, &format!("p{i}.png"), &png(&i.to_string()))).unwrap();
+    }
+    refuse(asset_data(doc, "p20.png", &png("x")), "at most 20 assets");
+    m.call("doc", asset_data(doc, "p1.png", &png("replaced"))).unwrap();
+    assert_eq!(asset_names(&d.state(doc)).len(), 20);
+    assert!(!d.state.join(format!("blocks/{doc}/doc/assets/p20.png")).exists());
+    // Only a Doc takes one.
+    let file = d.sessions.join("notes.txt");
+    std::fs::write(&file, "x").unwrap();
+    let shown = m.call("show", json!({ "kind": "file", "path": file })).unwrap()["block"].as_u64().unwrap();
+    refuse(asset_data(shown, "a.png", &png("x")), "isn't a Doc");
+    drop(m);
+}
+
+#[test]
+fn an_agent_block_puts_a_picture_in_its_own_doc_and_no_one_elses() {
+    let (d, _, _) = shared();
+    let a = d.open("hello");
+    d.wait(a, "idle");
+    let doc = agent_mcp(&d, a, "doc", outline(1)).unwrap()["block"].as_u64().unwrap();
+    // The agent block's token: asset (by data and by a file), then fill with them.
+    agent_mcp(&d, a, "doc", asset_data(doc, "one.png", &png("one"))).unwrap();
+    let file = d.sessions.join("two.png");
+    std::fs::write(&file, png("two")).unwrap();
+    agent_mcp(&d, a, "doc", asset_path(doc, "two.png", &file)).unwrap();
+    agent_mcp(&d, a, "doc", fill(doc, "s1", "![One](assets/one.png) and ![Two](assets/two.png)")).unwrap();
+    assert_eq!(asset_names(&d.state(doc)), ["one.png", "two.png"]);
+    assert_eq!(bodies(&d.state(doc))[0].as_deref(), Some("![One](assets/one.png) and ![Two](assets/two.png)"));
+
+    // Another agent in its tab may not put one in a Doc it didn't start.
+    let b = agent_mcp(
+        &d,
+        a,
+        "start_agent",
+        json!({ "agent": "acp", "command": format!("python3 {}", fake()), "prompt": "hello" }),
+    )
+    .unwrap()["block"]
+        .as_u64()
+        .unwrap();
+    d.wait(b, "idle");
+    let e = agent_mcp(&d, b, "doc", asset_data(doc, "three.png", &png("three"))).unwrap_err();
+    assert!(e.contains("wasn't started by this agent"), "{e}");
+    assert_eq!(asset_names(&d.state(doc)), ["one.png", "two.png"]);
+}
+
+#[test]
+fn a_viewer_reads_a_picture_and_neither_a_viewer_nor_an_editor_can_put_one() {
+    let (d, pane, _) = shared();
+    let m = Mcp::bridge(&d, Some(pane));
+    let doc = m.call("doc", outline(1)).unwrap()["block"].as_u64().unwrap();
+    let bytes = png("the picture");
+    m.call("doc", asset_data(doc, "pic.png", &bytes)).unwrap();
+    m.call("doc", fill(doc, "s1", "![Pic](assets/pic.png)")).unwrap();
+
+    // The read is a call, and a viewer's: they get the bytes, with the type
+    // the daemon's sniff found.
+    let read = format!("/api/blocks/{doc}/call/doc_asset");
+    for who in [FRIEND, EDITOR] {
+        let (status, text) = d.raw_as(who, "POST", &read, Some(json!({ "name": "pic.png" })));
+        assert_eq!(status, 200, "{who}: {text}");
+        let got: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!((got["mime"].as_str(), got["data"].as_str()), (Some("image/png"), Some(b64(&bytes).as_str())));
+    }
+    let (status, text) = d.raw("POST", &read, Some(json!({ "name": "pic.png" })));
+    assert_eq!(status, 200, "the owner too: {text}");
+    // A name it doesn't have is an error, whoever asks.
+    let (status, _) = d.raw_as(FRIEND, "POST", &read, Some(json!({ "name": "../doc.json" })));
+    assert_ne!(status, 200);
+
+    // Writing is the owner's: a viewer's and an editor's put and fill are 403,
+    // and nothing changes.
+    let put = format!("/api/blocks/{doc}/call/doc_asset_put");
+    let fill_path = format!("/api/blocks/{doc}/call/doc_fill");
+    let before = (d.state(doc), mtimes(&d.state.join(format!("blocks/{doc}"))));
+    for who in [FRIEND, EDITOR] {
+        let (status, text) =
+            d.raw_as(who, "POST", &put, Some(json!({ "name": "evil.png", "data": b64(&png("evil")) })));
+        assert_eq!(status, 403, "{who}: {text}");
+        let (status, text) = d.raw_as(who, "POST", &put, Some(json!({ "name": "pic.png", "data": b64(&png("evil")) })));
+        assert_eq!(status, 403, "{who} replacing: {text}");
+        let body = json!({ "section": "s1", "markdown": "![Pic](assets/pic.png) rewritten" });
+        let (status, text) = d.raw_as(who, "POST", &fill_path, Some(body));
+        assert_eq!(status, 403, "{who}: {text}");
+    }
+    assert_eq!((d.state(doc), mtimes(&d.state.join(format!("blocks/{doc}")))), before);
+    let (status, text) = d.raw("POST", &put, Some(json!({ "name": "owner.png", "data": b64(&png("mine")) })));
+    assert_eq!(status, 200, "the owner puts one: {text}");
+    // Another block's `asset` call is not opened by the Doc's row: a viewer
+    // can't call it (the Editor default), here on the Doc, which has no such method.
+    let (status, text) = d.raw_as(FRIEND, "POST", &format!("/api/blocks/{doc}/call/asset"), Some(json!({})));
+    assert_eq!(status, 403, "{text}");
+    drop(m);
+}
+
+#[test]
+fn no_client_is_sent_a_pictures_bytes_and_a_restart_keeps_it() {
+    let (mut d, pane, _) = shared();
+    let m = Mcp::bridge(&d, Some(pane));
+    let doc = m.call("doc", outline(2)).unwrap()["block"].as_u64().unwrap();
+    let mut owner = Page::connect(&d, None);
+    let mut viewer = Page::connect(&d, Some(FRIEND));
+    for page in [&mut owner, &mut viewer] {
+        page.show(pane);
+        page.settled(doc);
+    }
+    // Up to 2 MB, which every client would have been sent on every fill.
+    let marker = "UNIQUE-PICTURE-BYTES ";
+    let bytes = png(&marker.repeat(20_000));
+    m.call("doc", asset_data(doc, "big.png", &bytes)).unwrap();
+    m.call("doc", fill(doc, "s1", "![Big](assets/big.png)")).unwrap();
+    m.call("doc", fill(doc, "s2", "Text after it.")).unwrap();
+    for page in [&mut owner, &mut viewer] {
+        let frames = page.blocks_for(doc, Duration::from_millis(900));
+        assert!(frames.len() >= 2, "{} frames", frames.len());
+        for frame in &frames {
+            let text = frame.to_string();
+            assert!(!text.contains("UNIQUE-PICTURE") && text.len() < 2000, "a {} byte frame: {text}", text.len());
+        }
+        assert_eq!(frames.last().unwrap()["assets"][0]["name"], "big.png");
+    }
+    // Nor does the block's state over HTTP, its text, or a later join.
+    let whole = d.get(&format!("/api/blocks/{doc}"));
+    assert!(!whole.to_string().contains("UNIQUE-PICTURE"), "{}", whole.to_string().len());
+    let text = d.raw("GET", &format!("/api/panes/{doc}/capture"), None).1;
+    assert!(!text.contains("UNIQUE-PICTURE") && text.contains("[image: Big]"), "{text}");
+    let mut late = Page::connect(&d, Some(FRIEND));
+    late.show(pane);
+    let state = late.settled(doc);
+    assert!(!state.to_string().contains("UNIQUE-PICTURE") && asset_names(&state) == ["big.png"], "{state}");
+    drop(m);
+
+    // A restart: the picture is still there, still read by name, and a
+    // scratch file left by a crash is not one.
+    std::fs::write(d.state.join(format!("blocks/{doc}/doc/assets/big.tmp")), "half").unwrap();
+    d.stop();
+    d.start();
+    let state = d.state(doc);
+    assert_eq!(asset_names(&state), ["big.png"], "{state}");
+    assert_eq!(state["assets"][0]["size"], bytes.len());
+    let (status, text) =
+        d.raw_as(FRIEND, "POST", &format!("/api/blocks/{doc}/call/doc_asset"), Some(json!({ "name": "big.png" })));
+    assert_eq!(status, 200, "{}", &text[..text.len().min(200)]);
+    assert!(text.contains(&b64(&bytes)[..40]));
 }

@@ -17,15 +17,29 @@
 //!   with the `xmlns` an `<img>` needs. The client shows it only through
 //!   `<img>`, which runs no script, so nothing here sanitises it.
 //!
-//! The rules are `deploy/machine/doc.mjs`'s (`checkChart`, `checkOrdered`)
-//! in Rust, and `web/src/ui/chart.tsx` has them in TypeScript for a chart
+//! And the pictures (#965): `![alt](assets/<name>)` in a line of text. The
+//! client draws one as an `<img>` when the target is `assets/` and a plain
+//! file name ending in a picture extension, and everywhere else (`http://`,
+//! `data:`, `../`) it stays text, never fetched. The daemon checks every
+//! image-shaped reference outside a fence and an inline code span (a
+//! heading, a list item, a table cell and a quote included: the page draws
+//! them all), and wants each to be an asset of this Doc that exists. It
+//! errs toward checking: a quote's own fence is code on the page, and
+//! the daemon (which reads a fence only where it starts a line) checks
+//! what is in it all the same.
+//!
+//! The rules are `deploy/machine/doc.mjs`'s (`checkChart`, `checkOrdered`,
+//! `checkImage`) in Rust, and `web/src/ui/chart.tsx` has them in TypeScript for a chart
 //! that arrives some other way. Both run over the files in
 //! `tests/fixtures/docs/` (`expect.json` says what each one must say), so
 //! they can't drift.
 
 use serde_json::Value;
 
-use super::SECTION_MAX;
+use super::{
+    SECTION_MAX,
+    assets::{self, Asset},
+};
 
 /// Rows in a chart.
 pub const MAX_ROWS: usize = 200;
@@ -88,9 +102,9 @@ fn one_line(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-/// Whether the body's charts and drawings can be shown: the first problem,
-/// in one line, or `Ok`.
-pub fn check(md: &str) -> Result<(), String> {
+/// Whether the body's charts, drawings and pictures can be shown, given the
+/// Doc's `assets`: the first problem, in one line, or `Ok`.
+pub fn check(md: &str, assets: &[Asset]) -> Result<(), String> {
     for f in fences(md) {
         match f.lang.as_str() {
             "chart" => check_chart(&f.code).map(|_| ())?,
@@ -98,29 +112,128 @@ pub fn check(md: &str) -> Result<(), String> {
             _ => {}
         }
     }
+    let md = normal(md);
+    let lines: Vec<&str> = md.split('\n').collect();
+    let fenced = fences_in(&lines);
+    for (n, line) in lines.iter().enumerate() {
+        if fenced.iter().any(|f| f.lines.contains(&n)) {
+            continue;
+        }
+        for r in image_refs(line) {
+            check_image(&r.src, assets)?;
+        }
+    }
     Ok(())
 }
 
-/// The body as plain Markdown: a chart is a line saying what it is and a
-/// drawing is `[drawing]` (the Doc's `text()`, which `history` and
-/// `search` read).
+/// An image-shaped reference in a line.
+struct ImageRef {
+    start: usize,
+    end: usize,
+    alt: String,
+    src: String,
+}
+
+/// The `![alt](src)` in a line, left to right, skipping inline code. The
+/// client's `inline()` finds them the same way (`web/src/ui/markup.tsx`),
+/// except that it takes only a target it can show, and this takes any.
+fn image_refs(line: &str) -> Vec<ImageRef> {
+    let b = line.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'`' {
+            // A span is a pair of backticks with something between them.
+            i += match line[i + 1..].find('`') {
+                Some(n) if n > 0 => n + 2,
+                _ => 1,
+            };
+        } else if b[i] == b'!' && b.get(i + 1) == Some(&b'[') {
+            match image_at(line, i) {
+                Some(r) => {
+                    i = r.end;
+                    out.push(r);
+                }
+                None => i += 1,
+            }
+        } else {
+            i += 1;
+        }
+    }
+    out
+}
+
+/// The reference starting at the `!` at `at`, if there is one.
+fn image_at(line: &str, at: usize) -> Option<ImageRef> {
+    let rest = &line[at + 2..];
+    let close = rest.find(']')?;
+    let inner = rest[close + 1..].strip_prefix('(')?;
+    let end = inner.find(')')?;
+    let src = &inner[..end];
+    if src.contains(char::is_whitespace) {
+        return None;
+    }
+    Some(ImageRef { start: at, end: at + 2 + close + 2 + end + 1, alt: rest[..close].to_owned(), src: src.to_owned() })
+}
+
+/// The picture's name, if `src` is `assets/` and a plain file name with a
+/// picture extension: what the client shows.
+fn asset_name(src: &str) -> Option<&str> {
+    src.strip_prefix("assets/").filter(|n| assets::is_name(n) && assets::named_mime(n).is_some())
+}
+
+/// A reference's target must be a picture of this Doc.
+fn check_image(src: &str, assets: &[Asset]) -> Result<(), String> {
+    let bad = |why: String| format!("image {}: {why}", one_line(src));
+    let Some(name) = src.strip_prefix("assets/").filter(|n| assets::is_name(n)) else {
+        return Err(bad(
+            "must be assets/<file>, a plain file name in this Doc's assets (send one with doc asset first)".into(),
+        ));
+    };
+    if asset_name(src).is_none() {
+        return Err(bad(format!("must be one of {}", assets::extensions())));
+    }
+    if !assets.iter().any(|a| a.name == name) {
+        return Err(bad("no such asset in this Doc: send it with doc asset first".into()));
+    }
+    Ok(())
+}
+
+/// The body as plain Markdown: a chart is a line saying what it is, a
+/// drawing is `[drawing]` and a picture `[image: alt]` (the Doc's `text()`,
+/// which `history` and `search` read).
 pub fn plain(md: &str) -> String {
     let md = normal(md);
     let lines: Vec<&str> = md.split('\n').collect();
     let mut out: Vec<String> = Vec::new();
     let mut at = 0;
     for f in fences_in(&lines) {
-        let stand_in = match f.lang.as_str() {
-            "chart" => summary(&f.code),
-            "svg" => "[drawing]".to_owned(),
-            _ => continue,
-        };
-        out.extend(lines[at..f.lines.start].iter().map(|l| (*l).to_owned()));
-        out.push(stand_in);
+        out.extend(lines[at..f.lines.start].iter().map(|l| stand_in(l)));
+        match f.lang.as_str() {
+            "chart" => out.push(summary(&f.code)),
+            "svg" => out.push("[drawing]".to_owned()),
+            // Code is as it was written, pictures in it included.
+            _ => out.extend(lines[f.lines.clone()].iter().map(|l| (*l).to_owned())),
+        }
         at = f.lines.end;
     }
-    out.extend(lines[at.min(lines.len())..].iter().map(|l| (*l).to_owned()));
+    out.extend(lines[at.min(lines.len())..].iter().map(|l| stand_in(l)));
     out.join("\n")
+}
+
+/// A line of text with each picture the client would show as `[image: alt]`.
+fn stand_in(line: &str) -> String {
+    let (mut out, mut at) = (String::new(), 0);
+    for r in image_refs(line).into_iter().filter(|r| asset_name(&r.src).is_some()) {
+        out.push_str(&line[at..r.start]);
+        match r.alt.trim() {
+            "" => out.push_str("[image]"),
+            alt => out.push_str(&format!("[image: {}]", one_line(alt))),
+        }
+        at = r.end;
+    }
+    out.push_str(&line[at..]);
+    out
 }
 
 /// `[chart: Sales by month (bar, 3 rows)]`; `[chart]` for one that can't be
@@ -360,6 +473,16 @@ mod tests {
         serde_json::from_str(&std::fs::read_to_string(dir().join("expect.json")).unwrap()).unwrap()
     }
 
+    /// The Doc the examples are checked against: the assets expect.json names.
+    fn assets() -> Vec<Asset> {
+        let named = |n: &str| Asset { name: n.to_owned(), mime: assets::named_mime(n).unwrap(), size: 1, rev: 1 };
+        expect()["assets"].as_array().unwrap().iter().map(|n| named(n.as_str().unwrap())).collect()
+    }
+
+    fn check(md: &str) -> Result<(), String> {
+        super::check(md, &assets())
+    }
+
     fn files(sub: &str) -> Vec<String> {
         let mut names: Vec<String> = std::fs::read_dir(dir().join(sub))
             .unwrap()
@@ -502,6 +625,55 @@ mod tests {
     }
 
     #[test]
+    fn a_picture_is_checked_wherever_the_page_draws_it() {
+        // A text line's pictures, however many and wherever in it.
+        assert_eq!(check("a ![x](assets/chart.png) b ![y](assets/photo.jpg)"), Ok(()));
+        let e = check("![x](assets/chart.png) ![y](assets/gone.png)").unwrap_err();
+        assert!(e.starts_with("image assets/gone.png: no such asset") && !e.contains('\n'), "{e}");
+        // A name is exact, and the extension has to be a picture's.
+        for (md, says) in [
+            ("![x](assets/Chart.png)", "no such asset"),
+            ("![x](assets/chart.PNG)", "must be one of"),
+            ("![x](assets/chart)", "must be one of"),
+            ("![x](assets/chart.png.html)", "must be one of"),
+            ("![x](assets/.chart.png)", "must be assets/<file>"),
+            ("![x](/assets/chart.png)", "must be assets/<file>"),
+            ("![x](./assets/chart.png)", "must be assets/<file>"),
+            ("![x](assets/../chart.png)", "must be assets/<file>"),
+            ("![x]()", "must be assets/<file>"),
+            ("![x](//example.com/a.png)", "must be assets/<file>"),
+            // Bold, a link around it, a deeper list: the page draws or doesn't, and the daemon checks.
+            ("**![x](assets/gone.png)**", "no such asset"),
+            ("[![x](assets/gone.png)](https://example.com)", "no such asset"),
+            ("1. one\n\n   - two\n\n     ![x](assets/gone.png)", "no such asset"),
+            // A quote's own fence is code on the page; the daemon errs toward checking.
+            ("> ```\n> ![x](assets/gone.png)\n> ```", "no such asset"),
+        ] {
+            let e = check(md).expect_err(md);
+            assert!(e.contains(says) && !e.contains('\n'), "{md}: {e}");
+        }
+        // What is not an image: a link, a title after the target, text.
+        for md in [
+            "[a link](https://example.com/a.png)",
+            "![x](assets/gone.png \"title\")",
+            "![x] (assets/gone.png)",
+            "!\\[x](assets/gone.png)",
+            "``![x](assets/gone.png)``",
+            "`![x](assets/gone.png)` and ``more``",
+            "```\n![x](assets/gone.png)\n```",
+            "- item\n\n    ~~~\n    ![x](assets/gone.png)\n    ~~~",
+        ] {
+            assert_eq!(check(md), Ok(()), "{md}");
+        }
+        // An unclosed fence runs to the end, pictures in it included.
+        assert_eq!(check("text\n```\n![x](assets/gone.png)"), Ok(()));
+        // A picture after a code span is still found.
+        assert!(check("`a` ![x](assets/gone.png)").is_err());
+        // Unicode text around a picture is no trouble.
+        assert_eq!(check("é `ü` ![ñ](assets/chart.png) 日本"), Ok(()));
+    }
+
+    #[test]
     fn plain_text_says_what_a_chart_and_a_drawing_are() {
         let spec =
             json!({ "type": "bar", "title": "Sales\nby month", "x": "m", "y": "a", "rows": [{ "m": 1, "a": 2 }] });
@@ -515,5 +687,12 @@ mod tests {
         );
         // One that can't be read is just a chart.
         assert_eq!(plain("```chart\nnope\n```"), "[chart]");
+        // A picture is its alt text; one the page wouldn't draw stays as written.
+        assert_eq!(
+            plain(
+                "See ![the  flow\nchart](assets/a.png) and ![x](assets/a.png), ![](assets/a.png) or ![y](http://e.com/a.png)"
+            ),
+            "See ![the  flow\nchart](assets/a.png) and [image: x], [image] or ![y](http://e.com/a.png)"
+        );
     }
 }

@@ -2,13 +2,14 @@
 // doc.spec.ts's, in the engine Safari uses. The daemon is the spec's own,
 // with the `docs` flag on (labs.ts). #964's too: WebKit's <img> of an SVG
 // from a data: URL, and a chart drawn as SVG, which differ from Chrome's.
+// #965's too: a PNG from a data: URL, replaced under its name, with no blob:.
 
 import { rmSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ChildProcess } from "node:child_process";
 import { expect, test } from "@playwright/test";
-import { bring, brokenEmbeds, fillEmbeds, fillsInPlace, newDoc, seeEmbeds, type Post } from "./doc-steps";
+import { bring, brokenEmbeds, fillEmbeds, fillsInPlace, imagesInPlace, newDoc, seeEmbeds, type Post } from "./doc-steps";
 import { open, ready } from "./helpers";
 import { daemon, iphone } from "./phones";
 
@@ -52,4 +53,12 @@ test("a chart draws and a drawing shows through <img> in WebKit; a script in one
   await fillEmbeds(post, doc);
   await seeEmbeds(page, doc);
   await brokenEmbeds(page, post, doc);
+});
+
+test("a picture shows in WebKit, a replaced one with no reload, and other images stay text", async ({ page }) => {
+  await open(page);
+  const term = await page.evaluate(() => window.__arugula.client.state!.panes[0].id);
+  await ready(page, term);
+  const doc = await newDoc(post, term);
+  await imagesInPlace(page, post, doc);
 });

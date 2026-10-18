@@ -27,11 +27,18 @@
 //! fences (#964, [`embeds`]): `doc_fill` checks every one before it writes
 //! anything, so a bad one leaves the section as it was.
 //!
+//! **Pictures** (#965, [`assets`]): `doc_asset_put {name, data}` (the
+//! owner's) keeps a PNG, JPEG, GIF or WebP in `assets/`, and a body names it
+//! as `![alt](assets/<name>)`, which `doc_fill` checks like a fence. The state
+//! lists them as `assets: [{name, mime, size, rev}]` and never holds their
+//! bytes; `doc_asset {name}` (a viewer's) answers `{mime, data}` for one.
+//!
 //! The Doc is Labs' while `docs` is a flag, but its code is core: it checks
 //! the flag itself when made ([`DocKind`]), and a restored one comes back
 //! with the flag off (#347: turning a flag off hides and refuses, it
 //! doesn't throw away).
 
+mod assets;
 mod embeds;
 
 use std::{
@@ -44,9 +51,12 @@ use futures_util::future::BoxFuture;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
+pub use assets::ASSET_MAX;
+use assets::{ASSETS_MAX, Asset};
+
 use crate::{
     block::{Block, BlockCtx, BlockKind, Summary, no_method},
-    store::{private_dir, write_atomic},
+    store::{now_ms, private_dir, write_atomic},
 };
 
 /// A section's body, in bytes.
@@ -129,6 +139,8 @@ struct Entry {
 struct State {
     title: String,
     entries: Vec<Entry>,
+    /// The pictures kept in `assets/`, by name.
+    assets: Vec<Asset>,
     rev: u64,
     /// The folder couldn't be read back: the block shows this and writes
     /// nothing.
@@ -163,6 +175,9 @@ impl Doc {
                 Ok(l) => (state.title, state.entries) = (l.title, l.entries),
                 Err(e) => state.error = Some(e),
             }
+        }
+        if restoring {
+            state.assets = assets::load(&dir.join(assets::FOLDER));
         }
         Arc::new_cyclic(|me| Doc {
             me: me.clone(),
@@ -252,7 +267,7 @@ impl Doc {
             }
             // Before the first write: a bad fence leaves the section, on
             // disk and in the state, exactly as it was.
-            embeds::check(md).map_err(|e| format!("section {section}: {e}; the section is unchanged"))?;
+            embeds::check(md, &st.assets).map_err(|e| format!("section {section}: {e}; the section is unchanged"))?;
             if md.len() > SECTION_MAX {
                 return Err(format!(
                     "section {section} is {} bytes; the cap is {SECTION_MAX} (64 KB): split it or shorten it",
@@ -285,9 +300,71 @@ impl Doc {
         Ok(json!({ "section": section, "bytes": md.len() }))
     }
 
+    /// `doc_asset_put`: a picture, by name; a name already kept is replaced.
+    async fn asset_put(&self, name: &str, data: &str) -> Result<Value, String> {
+        assets::check_name(name)?;
+        // The base64 of the cap, and a little over, before it is decoded.
+        if data.len() > ASSET_MAX / 3 * 4 + 8 {
+            return Err(format!("{name} is too big; the cap is {ASSET_MAX} bytes (2 MB): shrink it"));
+        }
+        let Some(bytes) = crate::agent::images::decode(data) else { return Err(assets::not_a_picture(name, data)) };
+        if bytes.len() > ASSET_MAX {
+            return Err(format!("{name} is {} bytes; the cap is {ASSET_MAX} (2 MB): shrink it", bytes.len()));
+        }
+        let mime = assets::kind_of(name, &bytes)?;
+        let _io = self.io.lock().await;
+        {
+            let st = self.state.lock().unwrap();
+            if let Some(e) = &st.error {
+                return Err(e.clone());
+            }
+            // One file on a filesystem that ignores case is one name.
+            if let Some(a) = st.assets.iter().find(|a| a.name != name && a.name.eq_ignore_ascii_case(name)) {
+                return Err(format!("the Doc has {} already: use that name to replace it", a.name));
+            }
+            if st.assets.len() >= ASSETS_MAX && !st.assets.iter().any(|a| a.name == name) {
+                return Err(format!("a Doc has at most {ASSETS_MAX} assets: replace one by its name"));
+            }
+        }
+        let size = bytes.len() as u64;
+        write(self.dir.join(assets::FOLDER), name, bytes).await?;
+        let rev = {
+            let mut st = self.state.lock().unwrap();
+            let old = st.assets.iter().position(|a| a.name == name);
+            let rev = now_ms().max(old.map_or(0, |i| st.assets[i].rev + 1));
+            let asset = Asset { name: name.to_owned(), mime, size, rev };
+            match old {
+                Some(i) => st.assets[i] = asset,
+                None => {
+                    st.assets.push(asset);
+                    st.assets.sort_by(|a, b| a.name.cmp(&b.name));
+                }
+            }
+            st.rev += 1;
+            rev
+        };
+        (self.changed)();
+        Ok(json!({ "name": name, "path": format!("assets/{name}"), "mime": mime, "size": size, "rev": rev }))
+    }
+
+    /// `doc_asset`: a kept picture, for a client to show. The type is what
+    /// the bytes say.
+    async fn asset(&self, name: &str) -> Result<Value, String> {
+        use base64::Engine;
+        if !self.state.lock().unwrap().assets.iter().any(|a| a.name == name) {
+            return Err(format!("this Doc has no asset {name:?}"));
+        }
+        let path = self.dir.join(assets::FOLDER).join(name);
+        let bytes = tokio::fs::read(&path).await.map_err(|_| format!("this Doc has no asset {name:?}"))?;
+        let mime = crate::agent::images::sniff(&bytes).ok_or_else(|| format!("{name} isn't an image"))?;
+        Ok(json!({ "mime": mime, "data": base64::engine::general_purpose::STANDARD.encode(bytes) }))
+    }
+
     fn state_json(&self) -> Value {
         let st = self.state.lock().unwrap();
-        let mut v = json!({ "title": st.title, "entries": st.entries, "entries_from": 0, "rev": st.rev });
+        let mut v = json!({
+            "title": st.title, "entries": st.entries, "entries_from": 0, "assets": st.assets, "rev": st.rev,
+        });
         if let Some(e) = &st.error {
             v["error"] = json!(e);
         }
@@ -414,6 +491,24 @@ impl Block for Doc {
                     let me = me.ok_or("closed")?;
                     let markdown = markdown.ok_or("doc_fill needs {section, markdown}")?;
                     me.fill(&section, &markdown).await
+                })
+            }
+            "doc_asset_put" => {
+                let name = args["name"].as_str().map(str::to_owned);
+                let data = args["data"].as_str().map(str::to_owned);
+                Box::pin(async move {
+                    let me = me.ok_or("closed")?;
+                    let (Some(name), Some(data)) = (name, data) else {
+                        return Err("doc_asset_put needs {name, data}".into());
+                    };
+                    me.asset_put(&name, &data).await
+                })
+            }
+            "doc_asset" => {
+                let name = args["name"].as_str().map(str::to_owned);
+                Box::pin(async move {
+                    let me = me.ok_or("closed")?;
+                    me.asset(&name.ok_or("doc_asset needs {name}")?).await
                 })
             }
             "state" => {
@@ -763,6 +858,210 @@ mod tests {
         let (back, _seen) = ctx(&state, true);
         assert_eq!(DocKind.create(back, config).map(|b| b.kind()).unwrap(), BlockType::Doc, "restored with it off");
         std::fs::remove_dir_all(state).unwrap();
+    }
+
+    /// What a PNG starts with: the daemon tells a file by its first bytes.
+    fn png(extra: &str) -> Vec<u8> {
+        [b"\x89PNG\r\n\x1a\n".as_slice(), extra.as_bytes()].concat()
+    }
+
+    fn b64(bytes: &[u8]) -> String {
+        use base64::Engine;
+        base64::engine::general_purpose::STANDARD.encode(bytes)
+    }
+
+    async fn put(d: &Doc, name: &str, bytes: &[u8]) -> Result<Value, String> {
+        d.call("doc_asset_put", json!({ "name": name, "data": b64(bytes) })).await
+    }
+
+    fn assets(d: &Doc) -> Vec<Value> {
+        d.state()["assets"].as_array().unwrap().clone()
+    }
+
+    fn files(folder: &Path) -> Vec<String> {
+        let mut names: Vec<String> =
+            std::fs::read_dir(folder).unwrap().map(|e| e.unwrap().file_name().into_string().unwrap()).collect();
+        names.sort();
+        names
+    }
+
+    #[tokio::test]
+    async fn a_picture_is_kept_by_name_and_a_replaced_name_has_a_new_rev() {
+        let dir = temp("asset");
+        let (d, pushes) = doc(&dir, false);
+        let made = put(&d, "chart.png", &png("one")).await.unwrap();
+        assert_eq!(
+            (made["path"].as_str(), made["mime"].as_str(), made["size"].as_u64()),
+            (Some("assets/chart.png"), Some("image/png"), Some(11))
+        );
+        assert_eq!(pushes.load(Ordering::SeqCst), 1);
+        let first = assets(&d);
+        assert_eq!(first.len(), 1);
+        assert_eq!(first[0]["name"], "chart.png");
+        assert_eq!(first[0].as_object().unwrap().len(), 4, "name, mime, size and rev, and nothing else: {first:?}");
+        // The same name again replaces it, with a new rev and the new size.
+        put(&d, "chart.png", &png("two, longer")).await.unwrap();
+        let second = assets(&d);
+        assert_eq!(second.len(), 1);
+        assert!(second[0]["rev"].as_u64() > first[0]["rev"].as_u64(), "{first:?} {second:?}");
+        assert_eq!(second[0]["size"], 19);
+        let read = d.call("doc_asset", json!({ "name": "chart.png" })).await.unwrap();
+        assert_eq!(read["data"], b64(&png("two, longer")));
+        assert_eq!(pushes.load(Ordering::SeqCst), 2);
+        // A picture is kept on disk and found again after a restart.
+        std::fs::write(dir.join(FOLDER).join(assets::FOLDER).join("chart.tmp"), "half").unwrap();
+        let (again, _) = doc(&dir, true);
+        assert_eq!(assets(&again).len(), 1);
+        assert_eq!(assets(&again)[0]["name"], "chart.png");
+        assert_eq!(assets(&again)[0]["size"], 19);
+        let read = again.call("doc_asset", json!({ "name": "chart.png" })).await.unwrap();
+        assert_eq!(read["mime"], "image/png");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_picture_that_breaks_a_rule_is_refused_and_nothing_changes() {
+        let dir = temp("asset-rules");
+        let (d, pushes) = doc(&dir, false);
+        put(&d, "keep.png", &png("keep")).await.unwrap();
+        let before = (assets(&d), pushes.load(Ordering::SeqCst), files(&dir.join(FOLDER).join(assets::FOLDER)));
+        let svg = b"<svg xmlns=\"http://www.w3.org/2000/svg\"/>".as_slice();
+        let jpeg = b"\xff\xd8\xff\xe0 jfif".as_slice();
+        let big = png(&"x".repeat(ASSET_MAX));
+        let fits = png(&"x".repeat(ASSET_MAX - 8));
+        for (name, bytes, says) in [
+            // Names.
+            ("../evil.png", png("x"), "1 to 100"),
+            ("sub/a.png", png("x"), "1 to 100"),
+            ("a.tmp", png("x"), ".tmp"),
+            ("a.TMP", png("x"), ".tmp"),
+            ("", png("x"), "1 to 100"),
+            ("Keep.png", png("x"), "has keep.png already"),
+            // Types: the bytes decide and the name has to agree.
+            ("a.svg", png("x"), "must end in .png"),
+            ("a.jpg", png("x"), "holds a png image: name it a.png"),
+            ("page.png", b"<html><body>hi</body></html>".to_vec(), "isn't a PNG, JPEG, GIF or WebP"),
+            ("drawing.png", svg.to_vec(), "```svg fence"),
+            ("drawing.svg", svg.to_vec(), "must end in .png"),
+            ("text.png", b"just words".to_vec(), "isn't a PNG, JPEG, GIF or WebP"),
+            ("photo.png", jpeg.to_vec(), "holds a jpeg image: name it photo.jpg"),
+            // Size: 2 MB fits, one byte more doesn't.
+            ("big.png", big.clone(), "the cap is 2097152"),
+            ("over.png", png(&"x".repeat(ASSET_MAX - 7)), "is 2097153 bytes; the cap is 2097152"),
+        ] {
+            let e = put(&d, name, &bytes).await.unwrap_err();
+            assert!(e.contains(says) && !e.contains('\n'), "{name}: {e}");
+        }
+        put(&d, "fits.png", &fits).await.unwrap();
+        put(&d, "exact.png", &png(&"x".repeat(ASSET_MAX - 8))).await.unwrap();
+        let e = d.call("doc_asset_put", json!({ "name": "a.png", "data": "!!not base64!!" })).await.unwrap_err();
+        assert!(e.contains("isn't base64"), "{e}");
+        let e =
+            d.call("doc_asset_put", json!({ "name": "a.png", "data": "x".repeat(ASSET_MAX * 2) })).await.unwrap_err();
+        assert!(e.contains("too big; the cap is 2097152"), "{e}");
+        assert!(d.call("doc_asset_put", json!({ "name": "a.png" })).await.unwrap_err().contains("needs {name, data}"));
+        // Nothing else was kept or sent.
+        let kept = assets(&d);
+        assert_eq!(
+            kept.iter().map(|a| a["name"].as_str().unwrap()).collect::<Vec<_>>(),
+            ["exact.png", "fits.png", "keep.png"]
+        );
+        assert_eq!(pushes.load(Ordering::SeqCst), before.1 + 2);
+        assert_eq!(files(&dir.join(FOLDER).join(assets::FOLDER)), ["exact.png", "fits.png", "keep.png"]);
+        assert_eq!(kept.iter().find(|a| a["name"] == "keep.png"), before.0.first());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_doc_keeps_twenty_pictures() {
+        let dir = temp("asset-count");
+        let (d, pushes) = doc(&dir, false);
+        for i in 0..ASSETS_MAX {
+            put(&d, &format!("p{i:02}.png"), &png(&i.to_string())).await.unwrap();
+        }
+        let pushed = pushes.load(Ordering::SeqCst);
+        let e = put(&d, "one-more.png", &png("x")).await.unwrap_err();
+        assert!(e.contains("at most 20 assets") && !e.contains('\n'), "{e}");
+        assert_eq!((assets(&d).len(), pushes.load(Ordering::SeqCst)), (20, pushed));
+        assert!(!dir.join(FOLDER).join(assets::FOLDER).join("one-more.png").exists());
+        // A name it has is replaced, not counted twice.
+        put(&d, "p07.png", &png("new")).await.unwrap();
+        assert_eq!(assets(&d).len(), 20);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn fill_names_only_pictures_the_doc_has_and_the_text_says_image() {
+        let dir = temp("asset-fill");
+        let (d, pushes) = doc(&dir, false);
+        outline(&d, 2).await.unwrap();
+        fill(&d, "s1", "Before.").await.unwrap();
+        let state = (entries(&d), pushes.load(Ordering::SeqCst), files(&dir.join(FOLDER)));
+        // A picture that isn't there, on a filled section and a pending one:
+        // refused, and nothing is written.
+        for section in ["s1", "s2"] {
+            let e = fill(&d, section, "![The flow](assets/flow.png)").await.unwrap_err();
+            assert!(e.starts_with(&format!("section {section}: image assets/flow.png: no such asset")), "{e}");
+            assert!(e.ends_with("the section is unchanged") && !e.contains('\n'), "{e}");
+        }
+        for md in ["![x](https://example.com/x.png)", "![x](../x.png)", "![x](assets/flow.svg)"] {
+            assert!(fill(&d, "s2", md).await.unwrap_err().contains("section s2: image "), "{md}");
+        }
+        assert_eq!((entries(&d), pushes.load(Ordering::SeqCst), files(&dir.join(FOLDER))), state);
+        // Put, then it fills, and `text()` says what it is.
+        put(&d, "flow.png", &png("flow")).await.unwrap();
+        fill(&d, "s2", "The flow:\n\n![The flow, in boxes](assets/flow.png)\n").await.unwrap();
+        let want = "# Plan\n\n## H1\n\nBefore.\n\n## H2\n\nThe flow:\n\n[image: The flow, in boxes]\n";
+        assert_eq!(d.text(), want);
+        assert_eq!(DocKind.stored_text(&dir).as_deref(), Some(want));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn doc_asset_answers_with_the_bytes_type_and_only_for_a_kept_name() {
+        let dir = temp("asset-read");
+        let (d, _) = doc(&dir, false);
+        outline(&d, 1).await.unwrap();
+        put(&d, "a.png", &png("pic")).await.unwrap();
+        let read = d.call("doc_asset", json!({ "name": "a.png" })).await.unwrap();
+        assert_eq!(
+            (read["mime"].as_str(), read["data"].as_str()),
+            (Some("image/png"), Some(b64(&png("pic")).as_str()))
+        );
+        // The type is the bytes', never the name's: a file that changed
+        // under its name (hand-edited) is read for what it is.
+        let jpeg = b"\xff\xd8\xff\xe0 jfif";
+        std::fs::write(dir.join(FOLDER).join(assets::FOLDER).join("a.png"), jpeg).unwrap();
+        assert_eq!(d.call("doc_asset", json!({ "name": "a.png" })).await.unwrap()["mime"], "image/jpeg");
+        std::fs::write(dir.join(FOLDER).join(assets::FOLDER).join("a.png"), "<html>").unwrap();
+        assert!(d.call("doc_asset", json!({ "name": "a.png" })).await.unwrap_err().contains("isn't an image"));
+        // Nothing but a kept name is read: not the Doc's own files, not a path.
+        for name in ["doc.json", "../doc.json", "../s1.md", "b.png", "", "a.png/../../doc.json"] {
+            let e = d.call("doc_asset", json!({ "name": name })).await.unwrap_err();
+            assert!(e.contains("no asset"), "{name:?}: {e}");
+        }
+        assert!(d.call("doc_asset", json!({})).await.unwrap_err().contains("needs {name}"));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// The trap: the bytes must never be in the state every client is sent.
+    #[tokio::test]
+    async fn no_state_holds_a_pictures_bytes() {
+        let dir = temp("asset-state");
+        let (d, _) = doc(&dir, false);
+        outline(&d, 2).await.unwrap();
+        let bytes = png(&"UNIQUE-PICTURE-BYTES ".repeat(50));
+        put(&d, "big.png", &bytes).await.unwrap();
+        fill(&d, "s1", "![alt](assets/big.png)").await.unwrap();
+        let (state, at) = d.state_and_changed().unwrap();
+        let patch = arugula_proto::block_patch::to_patch(&state, at);
+        for sent in [d.state(), state, patch] {
+            let text = sent.to_string();
+            assert!(!text.contains("UNIQUE-PICTURE") && !text.contains(&b64(&bytes)[..40]), "{text}");
+            assert!(text.len() < 1000, "{} bytes of state for a {} byte picture", text.len(), bytes.len());
+            assert_eq!(sent["assets"][0]["name"], "big.png");
+        }
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[tokio::test]

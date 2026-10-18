@@ -577,6 +577,20 @@ pub struct DocFillArgs {
     pub markdown: String,
 }
 
+#[derive(Deserialize, JsonSchema)]
+pub struct DocAssetArgs {
+    /// The Doc block (from doc new).
+    pub block: PaneArg,
+    /// The picture's name in the Doc: letters, digits, _ . and -, ending in .png, .jpg, .jpeg, .gif or .webp (the bytes must be that type). A name already used is replaced.
+    pub name: String,
+    /// A PNG, JPEG, GIF or WebP file you can read, as an absolute path (at most 2 MB). An agent on a machine of its own sends data instead.
+    #[serde(default)]
+    pub path: Option<String>,
+    /// Or the file itself, base64 (at most 2 MB).
+    #[serde(default)]
+    pub data: Option<String>,
+}
+
 // Read only by the handler, which a build without Labs lacks.
 #[cfg_attr(not(feature = "labs"), allow(dead_code))]
 #[derive(Deserialize, JsonSchema)]
@@ -926,7 +940,7 @@ const DOC: &[Kind] = &[
     },
     Kind {
         name: "fill",
-        description: r##"Write one section of a Doc (its block, the section id, its Markdown): headings, paragraphs, lists, **bold**, *italic*, `code`, links and tables. No HTML; images come later. A section is at most 64 KB, a Doc 40 sections and 1 MiB; filling a section again replaces it.
+        description: r##"Write one section of a Doc (its block, the section id, its Markdown): headings, paragraphs, lists, **bold**, *italic*, `code`, links and tables. No HTML. A picture is ![alt](assets/<name>) after doc asset has put it there. A section is at most 64 KB, a Doc 40 sections and 1 MiB; filling a section again replaces it.
 
 Two kinds of fenced block draw as more than code, in the section that talks about them.
 A chart: a ```chart fence holding a JSON spec. type is "bar" or "line"; title is optional; x is the key of each row that labels it; y is a key, or a list of up to 4 keys, whose values are numbers (not strings); rows is 1 to 200 objects. A line chart's x must go up: numbers, ISO dates (2026-01-31), or labels listed in order with "order": [...]. For example:
@@ -939,6 +953,12 @@ A drawing: a ```svg fence holding one <svg> element, with xmlns="http://www.w3.o
 ```
 Every fence is checked before anything is written: a bad chart or drawing is refused with one line saying what to fix, and the section stays as it was."##,
         schema: schema_for_type::<DocFillArgs>,
+        flag: Some(flags::DOCS),
+    },
+    Kind {
+        name: "asset",
+        description: r##"Put a picture in a Doc (its block, a name, and one of path or data): a PNG, JPEG, GIF or WebP, at most 2 MB, at most 20 per Doc. path is an absolute path to a file you saved; an agent on a machine of its own sends data (base64) instead. What the bytes are decides the type, so the name has to end in the right extension (.png, .jpg, .jpeg, .gif, .webp); an SVG file is refused: draw it with a ```svg fence. Returns assets/<name>; show it in a section with ![what it shows](assets/<name>). Put the asset before the doc fill that names it: a fill naming an asset the Doc doesn't have is refused. Only assets/ images show; an http:// or ../ one is refused. A name already used is replaced. For example: {"kind": "asset", "block": 7, "name": "flow.png", "path": "/tmp/flow.png"}."##,
+        schema: schema_for_type::<DocAssetArgs>,
         flag: Some(flags::DOCS),
     },
 ];
@@ -1828,6 +1848,10 @@ impl<'a> Call<'a> {
             },
             ("doc", Some("fill")) => match parse(args) {
                 Ok(a) => self.doc_fill(a).await,
+                Err(e) => Err(e),
+            },
+            ("doc", Some("asset")) => match parse(args) {
+                Ok(a) => self.doc_asset(a).await,
                 Err(e) => Err(e),
             },
             // show
@@ -2951,6 +2975,49 @@ impl<'a> Call<'a> {
         done(
             format!("Filled {} of Doc %{block} ({} bytes)", a.section, out["bytes"]),
             json!({ "block": block, "section": a.section, "bytes": out["bytes"] }),
+        )
+    }
+
+    /// `doc asset`: a picture into a Doc this caller may drive, from a file
+    /// of the caller's or from base64.
+    async fn doc_asset(&self, a: DocAssetArgs) -> Out {
+        use base64::Engine;
+        crate::labs::flag(self.app.control.state_dir(), flags::DOCS)?;
+        let block = a.block.id()?;
+        let p = self.drivable(block).await?;
+        if p.info.kind != BlockType::Doc {
+            return Err(format!("%{block} isn't a Doc: doc new makes one"));
+        }
+        let cap = crate::docs::ASSET_MAX as u64;
+        let data = match (a.path, a.data) {
+            (Some(path), None) => {
+                // As `attach` reads one: its paths are on its machine, not here.
+                if let Some(me) = self.me()
+                    && self.app.mux.api(|r| Api::MachineOf(me, r)).await.flatten().is_some()
+                {
+                    return Err("this agent runs on a machine of its own: send the file as data".into());
+                }
+                // The daemon's working directory is not the agent's.
+                if !std::path::Path::new(&path).is_absolute() {
+                    return Err(format!("{path}: give an absolute path, or send data"));
+                }
+                let size = tokio::fs::metadata(&path).await.map_err(|e| format!("{path}: {e}"))?.len();
+                if size > cap {
+                    return Err(format!("{path} is {size} bytes; a picture is {cap} (2 MB) at most: shrink it"));
+                }
+                let bytes = tokio::fs::read(&path).await.map_err(|e| format!("{path}: {e}"))?;
+                base64::engine::general_purpose::STANDARD.encode(bytes)
+            }
+            (None, Some(data)) => data,
+            _ => return Err("give path or data".into()),
+        };
+        let b =
+            self.app.mux.api(|r| Api::Block(block, r)).await.flatten().ok_or_else(|| format!("no block %{block}"))?;
+        let out = b.call_by("doc_asset_put", json!({ "name": a.name, "data": data }), Some(&self.by())).await?;
+        let path = out["path"].as_str().unwrap_or_default().to_owned();
+        done(
+            format!("Saved {path} in Doc %{block}: show it with ![what it shows]({path}) in a section"),
+            json!({ "block": block, "path": path, "mime": out["mime"], "size": out["size"] }),
         )
     }
 }
@@ -4415,7 +4482,7 @@ mod tests {
         assert!(docs(On::none()).is_none());
         assert!(docs(On::all()).is_some());
         let Some(Def { args: Args::Kinds { kinds, .. }, .. }) = docs(On::all()) else { panic!("doc has kinds") };
-        assert_eq!(kinds.iter().map(|k| k.name).collect::<Vec<_>>(), ["new", "fill"]);
+        assert_eq!(kinds.iter().map(|k| k.name).collect::<Vec<_>>(), ["new", "fill", "asset"]);
         let off = block_offers(On::none());
         assert!(off.iter().all(|o| o.kind != "doc"), "{off:?}");
         let on = block_offers(On::all());
@@ -4425,6 +4492,8 @@ mod tests {
         let tool = list(Scope::Full, On::all()).into_iter().find(|t| t.name == "doc").unwrap();
         let schema = Value::Object((*tool.input_schema).clone()).to_string();
         assert!(schema.contains("heading") && schema.contains("intent") && schema.contains("markdown"), "{schema}");
+        // ...and the picture's: a file or its bytes.
+        assert!(schema.contains("\"path\"") && schema.contains("\"data\""), "{schema}");
     }
 
     /// docs/mcp-permissions.json allows the read-only tools and asks for the

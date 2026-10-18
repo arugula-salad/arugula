@@ -1,0 +1,1 @@
+![Gone](assets/missing.png)
