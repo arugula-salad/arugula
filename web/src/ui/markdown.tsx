@@ -76,7 +76,9 @@ function blocks(lines: string[], fx: Ctx): ComponentChildren[] {
     } else if (QUOTE.test(l)) {
       const q: string[] = [];
       while (i < lines.length && QUOTE.test(lines[i])) q.push(lines[i++].replace(/^ {0,3}> ?/, ""));
-      out.push(<blockquote key={k++}>{blocks(q, fx)}</blockquote>);
+      // A quote's fences stay code: the daemon checks fences that start a
+      // line (lists reach theirs, a quote's lines start with ">").
+      out.push(<blockquote key={k++}>{blocks(q, { ...fx, embeds: false })}</blockquote>);
     } else if (l.includes("|") && i + 1 < lines.length && lines[i + 1].includes("-") && TABLE_SEP.test(lines[i + 1])) {
       const head = cells(l);
       i += 2;

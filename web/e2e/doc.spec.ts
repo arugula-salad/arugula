@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ChildProcess } from "node:child_process";
 import { expect, test, type Page } from "@playwright/test";
-import { bring, brokenEmbeds, fillEmbeds, fillsInPlace, newDoc, seeEmbeds, type Post } from "./doc-steps";
+import { bring, brokenEmbeds, fillEmbeds, fillsInPlace, newDoc, placedEmbeds, seeEmbeds, type Post } from "./doc-steps";
 import { closeContexts, open, panes, ready, reset } from "./helpers";
 import { daemon, pixel7 } from "./phones";
 
@@ -81,12 +81,13 @@ test("a chart draws, drawings show as pictures, and a script in one runs nothing
   expect(await page.evaluate((d) => window.__arugula.text(d), doc)).toContain("[drawing]");
 });
 
-test("a chart or a drawing that can't be shown says why, with its source", async ({ page }) => {
+test("a drawing that can't be shown says why, and fences sit where the daemon looks", async ({ page }) => {
   await reset(page);
   const [term] = await panes(page);
   const doc = await newDoc(post(page), term);
   await fillEmbeds(post(page), doc);
   await seeEmbeds(page, doc);
+  await placedEmbeds(page, post(page), doc);
   await brokenEmbeds(page, post(page), doc);
 });
 

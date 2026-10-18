@@ -5,11 +5,13 @@
     "drawing.md": "Two boxes and an arrow:\n\n[drawing]\n",
     "line-chart.md": "Weekly sign-ups, two series:\n\n[chart: Sign-ups by month (line, 4 rows)]\n",
     "line-dates.md": "[chart: line, 3 rows]\n",
+    "quoted-chart.md": "A chart in a quote is only code, here and on the page:\n\n> ```chart\n> {\"type\": \"pie\"}\n> ```\n",
     "script-drawing.md": "[drawing]\n"
   },
   "bad": {
     "bad/backwards-dates.md": "chart: a line chart's x must go up: row 2",
     "bad/bad-json.md": "chart: not JSON (",
+    "bad/chart-in-list.md": "chart: type must be \"bar\" or \"line\", got \"pie\"",
     "bad/label-not-in-order.md": "chart: row 2 (\"Mar\") is not in order",
     "bad/no-rows.md": "chart: rows must be a non-empty list",
     "bad/numbers-down.md": "chart: a line chart's x must go up: row 2 (2024) does not come after row 1 (numbers)",

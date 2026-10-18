@@ -135,30 +135,27 @@ export async function seeEmbeds(page: Page, doc: number) {
   expect(await pwned(page)).toBeUndefined();
 }
 
-/** A chart or a drawing that can't be shown says why, with its source, and
- * is never an empty box. The daemon refuses these, so they come in where it
- * doesn't look: a fence in a quote. */
-export async function brokenEmbeds(page: Page, post: Post, doc: number) {
+/** Fences sit where the daemon looks for them: one in a list item draws
+ * (and the daemon checks it); one in a quote is code, on both sides. */
+export async function placedEmbeds(page: Page, post: Post, doc: number) {
   const block = page.locator(`[data-doc-block="${doc}"]`);
   const section = (id: string) => block.locator(`[data-section="${id}"]`);
-  const quoted = (md: string) => md.replace(/\n$/, "").split("\n").map((l) => `> ${l}`).join("\n");
-  await fill(post, doc, "s1", quoted(example("bad/unknown-type.md")));
-  const note = section("s1").locator("[data-chart-note]");
-  await expect(note).toContainText('Chart not drawn: type must be "bar" or "line", got "pie"', { timeout: 15_000 });
-  await expect(note.locator("pre")).toContainText('"type": "pie"');
-  await expect(section("s1").locator("svg")).toHaveCount(0);
-  await fill(post, doc, "s1", quoted(example("bad/unordered-line.md")));
-  await expect(note).toContainText("Chart not drawn: a line chart's x must be numbers, dates");
-  await fill(post, doc, "s1", quoted(example("bad/bad-json.md")));
-  await expect(note).toContainText("Chart not drawn: not JSON");
-  await expect(note.locator("pre")).toContainText('"rows": [');
+  const chart = example("bar-chart.md").split("```")[1].replace(/^chart\n/, "");
+  await fill(post, doc, "s1", `- item\n\n  \`\`\`chart\n  ${chart.trim()}\n  \`\`\`\n`);
+  await expect(section("s1").locator("li svg.chart rect[data-bar]")).toHaveCount(3, { timeout: 15_000 });
+  await fill(post, doc, "s1", example("quoted-chart.md"));
+  await expect(section("s1").locator("blockquote pre")).toContainText('"type": "pie"', { timeout: 15_000 });
+  await expect(section("s1").locator("svg, [data-chart-note]")).toHaveCount(0);
+}
 
-  // A drawing the browser can't read as an image (the daemon only checks
-  // its root): its note, and its source.
+/** A drawing the browser can't read as an image says so, with its source,
+ * and is never a broken picture. The daemon only checks its root, so this
+ * is a legitimate fill. */
+export async function brokenEmbeds(page: Page, post: Post, doc: number) {
+  const section = (id: string) => page.locator(`[data-doc-block="${doc}"] [data-section="${id}"]`);
   await fill(post, doc, "s2", '```svg\n<svg xmlns="http://www.w3.org/2000/svg"><rect></svg>\n```');
   const drawn = section("s2").locator("[data-drawing-note]");
   await expect(drawn).toContainText("Drawing not drawn: the browser couldn't read it", { timeout: 15_000 });
   await expect(drawn.locator("pre")).toContainText("<rect>");
-  await fill(post, doc, "s3", quoted(example("bad/svg-no-namespace.md")));
-  await expect(section("s3").locator("[data-drawing-note]")).toContainText("Drawing not drawn: the <svg> needs xmlns=");
+  await expect(section("s2").locator("img")).toHaveCount(0);
 }

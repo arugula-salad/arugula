@@ -4,7 +4,10 @@
 //! Two fences, found the way the web client's Markdown finds them
 //! (`web/src/ui/markdown.tsx`, `web/src/ui/embeds.ts`: three backticks or
 //! tildes, the language the first word after them, a fence unclosed running
-//! to the end, one inside another fence not a fence):
+//! to the end, one inside another fence not a fence). A fence starts a
+//! line, indented as in a list item; one inside a quote (`> ```chart`) is
+//! code on the page too (`markdown.tsx` draws embeds everywhere but in a
+//! quote), so the fences checked are exactly the fences drawn:
 //!
 //! - ```` ```chart ````: a JSON spec, `bar` or `line`: `type`, an optional
 //!   `title`, `x` (the key that labels a row), 1 to 4 `y` series and 1 to
