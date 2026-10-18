@@ -14,6 +14,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/ho
 import { paneIds, tabLabel, type Client } from "../client";
 import type { PaneId } from "../proto";
 import { fuzzy } from "../fs";
+import { countView } from "../telemetry";
 import { useWorkspaceDir } from "../blocks";
 import { closeSwarm, openSwarm, swarmRoute } from "../swarm/route";
 import { closeChat, isChatOpen, openChat, openChatView } from "./places";
@@ -40,6 +41,7 @@ const listeners = new Set<() => void>();
 const changed = () => listeners.forEach((fn) => fn());
 
 export function openPalette(client: Client, phone = false) {
+  countView("palette");
   closeMenu();
   open = { client, phone };
   changed();

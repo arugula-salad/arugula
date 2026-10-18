@@ -24,6 +24,7 @@ import { signText } from "./e2e/keys.ts";
 import { callFingerprintBody, type Call, type CallMember, type CallSignal, type ClientId, type SessionId } from "./proto";
 import { getControlSession } from "./ui/people";
 import { native, nativeCalls, NativePeer } from "./call-native";
+import { countView } from "./telemetry";
 
 /** How sure we are a peer is who the daemon says.
  * - `verified`: its fingerprints are signed by a device this browser's
@@ -530,6 +531,12 @@ const changed = () => listeners.forEach((fn) => fn());
 /** Join the huddle on `session` through `client` (leaving any other). */
 export function joinHuddle(client: Client, session: SessionId) {
   if (active && active.client === client && active.session === session && active.live()) return;
+  countView("huddle");
+  join(client, session);
+}
+
+/** Join, whoever asked: a person (above), or a rejoin after a drop. */
+function join(client: Client, session: SessionId) {
   active?.dispose();
   const h = new Huddle(client, session);
   active = h;
@@ -552,7 +559,7 @@ function rejoinLater(h: Huddle) {
     if (active !== h || Date.now() > until) return off();
     if (!h.client.connected || !h.client.state?.sessions.some((s) => s.id === h.session)) return;
     off();
-    joinHuddle(h.client, h.session);
+    join(h.client, h.session);
   });
 }
 

@@ -28,6 +28,7 @@ import { startAgent } from "./agent-dialog";
 import type { ControlState, HostInfo } from "../proto";
 import { placeOf, refreshControlState } from "./control-state";
 import { desktopApp } from "../desktop";
+import { countView } from "../telemetry";
 import { AdapterHelp, adapterLine, adapterReady, installAdapter, type Adapter } from "./adapter";
 
 const DOCS = "https://docs.arugula.io";
@@ -113,6 +114,7 @@ let lastClient: Client | null = null;
 let closedOnce = false;
 
 export function openGettingStarted(section?: Section, client?: Client) {
+  countView("getting-started");
   shown = { client: client ?? lastClient, section };
   changed();
 }

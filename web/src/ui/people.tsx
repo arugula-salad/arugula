@@ -11,6 +11,7 @@ import type { MenuItem } from "./menu";
 import { keyChanged, keyChangeSeen, personPin, pinPerson, verifyPerson, type ControlSession } from "../control";
 import { readVerifyCode, verifyWords } from "../e2e/words.ts";
 import { CopyText } from "./copy";
+import { countView } from "../telemetry";
 import { canScan, Scanner } from "./scan";
 
 /** Control mode (M19): people are accounts there, and links go through it. */
@@ -309,6 +310,7 @@ let openShare: ((s: SessionId) => void) | null = null;
 let pendingShare: SessionId | null = null;
 
 export function shareSession(session: SessionId) {
+  countView("share");
   if (openShare) openShare(session);
   else pendingShare = session;
 }
