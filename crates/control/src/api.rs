@@ -62,6 +62,7 @@ pub async fn set_name(State(app): State<Arc<App>>, s: Session, Json(b): Json<Nam
     let mut ds: Vec<String> = app.db.daemons(&s.account)?.into_iter().map(|d| d.id).collect();
     ds.extend(crate::teams::reachable(&app, &s.account)?);
     app.relay.nudge(&ds);
+    app.analytics.capture(&s.account, "name changed", json!({}));
     Ok(Json(json!({ "name": name })))
 }
 
@@ -198,6 +199,11 @@ pub async fn enroll(
                 return Err(err(StatusCode::BAD_REQUEST, "the first device signs its own certificate"));
             }
             app.db.put_device(&c, true, now_ms())?;
+            app.analytics.capture(
+                &s.account,
+                "device enrolled",
+                json!({ "kind": c.kind.as_str(), "first": true, "presigned": false }),
+            );
             Ok(Json(json!({ "approved": true, "cert": c, "root": c.device })))
         }
         Some(root) => {
@@ -216,6 +222,11 @@ pub async fn enroll(
             {
                 app.db.put_device(&c, true, now_ms())?;
                 nudge(&app, &s.account);
+                app.analytics.capture(
+                    &s.account,
+                    "device enrolled",
+                    json!({ "kind": c.kind.as_str(), "first": false, "presigned": true }),
+                );
                 return Ok(Json(json!({ "approved": true, "cert": c, "root": root })));
             }
             app.db.put_device(&Cert { approver: String::new(), sig: String::new(), ..c.clone() }, false, now_ms())?;
@@ -224,6 +235,11 @@ pub async fn enroll(
             // The account's other devices hear of it once (#104), not on
             // every reload of the waiting page.
             if new {
+                app.analytics.capture(
+                    &s.account,
+                    "device requested",
+                    json!({ "kind": c.kind.as_str(), "with_machine": join.is_some() }),
+                );
                 let (title, body) = match join {
                     Some(_) => (
                         "A new browser and a machine want into your account",
@@ -290,6 +306,11 @@ pub async fn add_recovery(State(app): State<Arc<App>>, s: Session, Json(b): Json
     if !b.revocations.is_empty() {
         nudge(&app, &s.account);
     }
+    app.analytics.capture(
+        &s.account,
+        "recovery codes made",
+        json!({ "codes": b.certs.len(), "replaced": b.revocations.len() }),
+    );
     Ok(Json(json!({})))
 }
 
@@ -377,6 +398,11 @@ pub async fn approve(State(app): State<Arc<App>>, s: Session, Path(id): Path<Str
     app.db.put_device(&b.cert, true, now_ms())?;
     app.db.set_device_mac(&s.account, &id, b.mac.as_deref())?;
     nudge(&app, &s.account);
+    app.analytics.capture(
+        &s.account,
+        "device approved",
+        json!({ "kind": b.cert.kind.as_str(), "with_code": b.mac.is_some() }),
+    );
     Ok(Json(json!({ "approved": true })))
 }
 
@@ -394,6 +420,7 @@ pub async fn reject(State(app): State<Arc<App>>, s: Session, Path(id): Path<Stri
         None => String::new(),
     };
     app.db.turn_down(&s.account, &id, &name, now_ms())?;
+    app.analytics.capture(&s.account, "device turned down", json!({}));
     Ok(Json(json!({})))
 }
 
@@ -417,7 +444,9 @@ pub async fn revoke(State(app): State<Arc<App>>, s: Session, Json(b): Json<Revok
         return Err(err(StatusCode::FORBIDDEN, "that device isn't this account's"));
     }
     // A revoked daemon leaves the directory and the relay.
-    if app.db.daemon_account(&r.device)?.as_deref() == Some(s.account.as_str()) {
+    let machine = app.db.daemon_account(&r.device)?.as_deref() == Some(s.account.as_str());
+    app.analytics.capture(&s.account, "device removed", json!({ "machine": machine }));
+    if machine {
         app.db.add_machine_revocation(&r)?;
         nudge(&app, &s.account);
         app.db.drop_daemon(&r.device)?;
@@ -567,6 +596,14 @@ pub async fn join(
             ),
         ));
     }
+    app.analytics.capture_anon(
+        &format!("device:{}", b.cert.device),
+        "machine join started",
+        json!({
+            "kind": b.cert.kind.as_str(), "team": b.team.is_some(), "sandbox": sandbox.is_some(),
+            "proven": proven, "urls": b.urls.len(),
+        }),
+    );
     let started = wire::JoinStarted { code, poll, expires_in_secs: crate::db::JOIN_TTL_MS / 1000, team_name };
     Ok(crate::reply(&started)?.into_response())
 }
@@ -692,6 +729,7 @@ pub async fn join_approve(
         app.db.put_device(&c, true, now_ms())?;
         app.db.approve_join(&code, &c, None, b.mac.as_deref())?;
         nudge(&app, &s.account);
+        app.analytics.capture(&s.account, "cli joined", json!({ "with_code": b.mac.is_some() }));
         return Ok(Json(json!({ "approved": true, "device": c.device })));
     }
     let known = app.db.device_known(&c.device)?;
@@ -732,6 +770,14 @@ pub async fn join_approve(
         crate::sandboxes::enrolled(&app, sandbox, &c).await?;
     }
     app.db.approve_join(&code, &c, team.as_ref().map(|(t, sig)| (t.as_str(), sig.as_str())), b.mac.as_deref())?;
+    let props = json!({
+        "rejoin": known, "sandbox": j.sandbox.is_some(), "with_code": b.mac.is_some(),
+        "asked_for_team": j.team.is_some(), "urls": j.urls.len(),
+    });
+    match &team {
+        Some((t, _)) => app.analytics.capture_team(&s.account, t, "machine joined", props),
+        None => app.analytics.capture(&s.account, "machine joined", props),
+    }
     Ok(Json(json!({ "approved": true, "daemon": c.device })))
 }
 
@@ -756,6 +802,7 @@ pub async fn join_reject(
         .ok_or_else(|| err(StatusCode::NOT_FOUND, "no such code (expired?)"))?;
     let on = app.db.device(&s.account, &b.device)?.map(|(c, _)| c.name).unwrap_or_else(|| "a device".into());
     app.db.reject_join(&code, &on)?;
+    app.analytics.capture(&s.account, "machine join turned down", json!({}));
     Ok(Json(json!({})))
 }
 
@@ -838,6 +885,11 @@ pub async fn move_daemon(
         &serde_json::to_string(&m).map_err(anyhow::Error::from)?,
     )?;
     app.relay.nudge(&[id]);
+    let props = json!({ "into_team": m.team.is_some(), "from_team": now.is_some(), "own": owner == s.account });
+    match m.team.as_ref().map(|p| &p.team).or(now.as_ref()) {
+        Some(t) => app.analytics.capture_team(&s.account, t, "machine moved", props),
+        None => app.analytics.capture(&s.account, "machine moved", props),
+    }
     Ok(Json(json!({})))
 }
 
@@ -859,6 +911,7 @@ pub async fn daemon_trust(State(app): State<Arc<App>>, d: DaemonAuth, Query(q): 
 }
 
 pub async fn daemon_leave(State(app): State<Arc<App>>, d: DaemonAuth) -> R {
+    app.analytics.capture(&d.cert.account, "machine left", json!({}));
     app.db.drop_daemon(&d.cert.device)?;
     app.relay.drop_daemon(&d.cert.device);
     crate::reply(&wire::Ack {})

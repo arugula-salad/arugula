@@ -75,10 +75,14 @@ pub async fn create(State(app): State<Arc<App>>, s: Session, body: Option<Json<V
     let ticket = token();
     app.db.add_sandbox(&id, &s.account, &device, &hash(&ticket), now_ms())?;
     info!(sandbox = id, account = s.account, "creating a hosted sandbox");
+    app.analytics.capture(&s.account, "sandbox created", json!({ "live": live + 1, "allowlisted": allowed }));
     let (a, sid) = (app.clone(), id.clone());
     tokio::spawn(async move {
         if let Err(e) = provision(&a, &sid, &ticket).await {
             warn!(sandbox = sid, error = %e, "hosted sandbox failed to start");
+            if let Ok(Some(x)) = a.db.sandbox(&sid) {
+                a.analytics.capture(&x.account, "sandbox failed", json!({ "state": x.state }));
+            }
             let _ = a.db.set_sandbox_state(&sid, &format!("failed: {e}"));
         }
     });
@@ -194,6 +198,12 @@ pub async fn done(State(app): State<Arc<App>>, d: DaemonAuth) -> R {
 }
 
 pub async fn remove(app: &App, id: &str) -> anyhow::Result<()> {
+    if let Ok(Some(x)) = app.db.sandbox(id)
+        && x.deleted.is_none()
+    {
+        let minutes = now_ms().saturating_sub(x.created) / 60_000;
+        app.analytics.capture(&x.account, "sandbox deleted", json!({ "minutes": minutes, "state": x.state }));
+    }
     if let Some(h) = &app.hosted {
         h.sprites.delete(id).await?;
     }

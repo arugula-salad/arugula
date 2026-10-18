@@ -8,6 +8,7 @@
 //! by the account's own devices, so it can refuse service but can't read.
 
 mod account;
+mod analytics;
 mod api;
 mod app_login;
 mod auth;
@@ -213,6 +214,13 @@ struct Args {
     #[arg(long, default_value_t = 5_000, env = "ARUGULA_RELAY_MAX_TOTAL")]
     relay_max_total: usize,
 
+    /// Product analytics (analytics.rs): a PostHog project's API key turns
+    /// them on (POSTHOG_API_KEY), sent to its host. Off when unset.
+    #[arg(long, env = "POSTHOG_API_KEY", hide_env_values = true)]
+    posthog_api_key: Option<String>,
+    #[arg(long, default_value = "https://us.i.posthog.com", env = "POSTHOG_HOST")]
+    posthog_host: String,
+
     /// Off-site backup with Litestream (#174).
     #[command(flatten)]
     backup: backup::Litestream,
@@ -348,6 +356,8 @@ pub struct App {
     pub guest_routes: guest_jump::Routes,
     /// Blocks' relay sockets open (M50).
     pub blocks: blocks::Open,
+    /// Product analytics, when they're on.
+    pub analytics: analytics::Analytics,
 }
 
 #[cfg(test)]
@@ -387,6 +397,7 @@ impl App {
             jump: None,
             guest_routes: Default::default(),
             blocks: Default::default(),
+            analytics: Default::default(),
         }
     }
 }
@@ -532,6 +543,7 @@ pub fn router(app: Arc<App>) -> Router {
         .route("/api/relay/c/{id}", get(relay::client))
         .route("/api/relay/m", get(relay::many))
         .fallback(asset)
+        .layer(axum::middleware::from_fn_with_state(app.clone(), analytics::requests))
         .layer(axum::middleware::from_fn_with_state(app.clone(), account::note_agent))
         .layer(axum::middleware::from_fn_with_state(app.clone(), moved))
         .layer(axum::middleware::from_fn_with_state(app.clone(), auth::verify_daemon))
@@ -787,6 +799,14 @@ async fn run() -> anyhow::Result<()> {
         b.restore_if_missing().await?;
     }
     let db = db::Db::open(&a.db)?;
+    let http = roots::client(std::time::Duration::from_secs(15))?;
+    let analytics = match set(a.posthog_api_key) {
+        Some(key) => analytics::Analytics::start(key, &a.posthog_host, http.clone()),
+        None => {
+            info!("no POSTHOG_API_KEY: product analytics are off");
+            analytics::Analytics::default()
+        }
+    };
     if let Some(b) = &backup {
         b.replicate();
     }
@@ -898,7 +918,7 @@ async fn run() -> anyhow::Result<()> {
             old_daemon_signatures: !a.refuse_old_daemon_signatures,
         },
         db,
-        http: roots::client(std::time::Duration::from_secs(15))?,
+        http,
         relay: relay::Relay::new(relay::Caps {
             sockets: a.relay_max_sockets,
             daemons: a.relay_max_machines,
@@ -920,6 +940,7 @@ async fn run() -> anyhow::Result<()> {
         jump,
         guest_routes: Default::default(),
         blocks: Default::default(),
+        analytics,
     });
     if let (Some(l), Some(j)) = (guest_listener, &app.jump) {
         info!(addr = %l.local_addr()?, host = %j.host, port = j.port, "guest ssh jump host");
@@ -964,11 +985,12 @@ async fn run() -> anyhow::Result<()> {
         let _ = t.set_nodelay(true);
     });
     info!(%listen, url = %app.cfg.public_url, "Arugula control");
-    let serve = axum::serve(l, router(app).into_make_service_with_connect_info::<SocketAddr>());
+    let serve = axum::serve(l, router(app.clone()).into_make_service_with_connect_info::<SocketAddr>());
     tokio::select! {
         r = serve => r?,
         _ = stopping() => info!("stopping"),
     }
+    app.analytics.flush().await;
     // Litestream syncs what's left before control goes.
     if let Some(b) = &backup {
         b.stop().await;

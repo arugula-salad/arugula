@@ -245,6 +245,8 @@ pub async fn create(State(app): State<Arc<App>>, s: Session, Json(b): Json<NewTe
         locked: false,
     };
     app.db.add_team(&t, 1, &serde_json::to_string(&r)?, arugula_e2e::now_ms())?;
+    app.analytics.group(&s.account, &t.id, json!({ "members": 1, "locked": false }));
+    app.analytics.capture_team(&s.account, &t.id, "team created", json!({}));
     Ok(Json(json!({ "team": t.id })))
 }
 
@@ -385,6 +387,27 @@ pub async fn set_roster(
         app.db.drop_request(&team, &m.account)?;
     }
     nudge_team(&app, &team);
+    let added = b.roster.members.iter().filter(|m| prev.member(&m.account).is_none()).count();
+    let removed = prev.members.iter().filter(|m| b.roster.member(&m.account).is_none()).count();
+    let owners = b.roster.members.iter().filter(|m| m.role == TeamRole::Owner).count();
+    app.analytics.capture_team(
+        &s.account,
+        &team,
+        "team roster changed",
+        json!({
+            "version": b.roster.version, "members": b.roster.members.len(), "owners": owners,
+            "added": added, "removed": removed, "with_invite": joined.is_some(),
+        }),
+    );
+    if let Some(me) = &joined {
+        app.analytics.capture_team(
+            &s.account,
+            &team,
+            "team joined",
+            json!({ "role": me.role.as_str(), "via": "presigned" }),
+        );
+    }
+    app.analytics.group(&s.account, &team, json!({ "members": b.roster.members.len(), "owners": owners }));
     // A team pays per seat (M22).
     crate::billing::sync_seats(&app, &team, b.roster.members.len()).await;
     Ok(Json(json!({ "version": b.roster.version })))
@@ -461,6 +484,12 @@ pub async fn invite(State(app): State<Arc<App>>, s: Session, Path(team): Path<St
                 e.into()
             }
         })?;
+        app.analytics.capture_team(
+            &s.account,
+            &team,
+            "team invite made",
+            json!({ "kind": "presigned", "role": inv.role.as_str() }),
+        );
         return Ok(Json(json!({ "key": inv.key, "expires": inv.expires })));
     }
     // Every link carries a one-time key now (#762): a page from before
@@ -492,6 +521,12 @@ pub async fn invite(State(app): State<Arc<App>>, s: Session, Path(team): Path<St
                 e.into()
             }
         })?;
+    app.analytics.capture_team(
+        &s.account,
+        &team,
+        "team invite made",
+        json!({ "kind": "ask", "role": ask.role.as_str() }),
+    );
     Ok(Json(json!({ "key": ask.key, "expires": ask.expires })))
 }
 
@@ -523,6 +558,7 @@ pub async fn cancel_presigned(State(app): State<Arc<App>>, s: Session, Path((tea
         .filter(|(t, _, _)| *t == team)
         .ok_or_else(|| err(StatusCode::NOT_FOUND, "that invite expired, was used, or never was"))?;
     app.db.drop_presigned(&key)?;
+    app.analytics.capture_team(&s.account, &team, "team invite cancelled", json!({}));
     Ok(Json(json!({})))
 }
 
@@ -618,6 +654,7 @@ pub async fn accept_invite(
         return Err(err(StatusCode::FORBIDDEN, "that request doesn't come from the invite link; open the link again"));
     }
     let name = member_name(&me);
+    let role = ask.role.as_str();
     let new = !app.db.requests(&t)?.iter().any(|r| r.account == s.account);
     app.db.add_request(
         &t,
@@ -625,7 +662,7 @@ pub async fn accept_invite(
             account: s.account.clone(),
             root,
             name,
-            role: ask.role.as_str().to_owned(),
+            role: role.to_owned(),
             created: arugula_e2e::now_ms(),
             invite: Some(ask),
             proof: Some(b.proof),
@@ -644,6 +681,7 @@ pub async fn accept_invite(
             "Open Arugula to add them.".into(),
         );
     }
+    app.analytics.capture_team(&s.account, &t, "team join requested", json!({ "role": role, "again": !new }));
     Ok(Json(json!({ "team": t, "pending": true })))
 }
 
@@ -652,6 +690,7 @@ pub async fn reject(State(app): State<Arc<App>>, s: Session, Path((team, account
         return Err(err(StatusCode::FORBIDDEN, "owners decide"));
     }
     app.db.drop_request(&team, &account)?;
+    app.analytics.capture_team(&s.account, &team, "team request turned down", json!({}));
     Ok(Json(json!({})))
 }
 
@@ -671,6 +710,8 @@ pub async fn lock(State(app): State<Arc<App>>, s: Session, Path(team): Path<Stri
         app.db.drop_invites(&team)?;
     }
     nudge_team(&app, &team);
+    app.analytics.capture_team(&s.account, &team, if b.locked { "team locked" } else { "team unlocked" }, json!({}));
+    app.analytics.group(&s.account, &team, json!({ "locked": b.locked }));
     Ok(Json(json!({ "locked": b.locked })))
 }
 
@@ -894,6 +935,7 @@ pub async fn answer_share(
     app.db.answer_share(&s.account, &daemon, b.accept, arugula_e2e::now_ms())?;
     // It fetches their certificates now, and lets them in.
     app.relay.nudge(&[daemon]);
+    app.analytics.capture(&s.account, "share answered", json!({ "accepted": b.accept }));
     Ok(Json(json!({ "accepted": b.accept })))
 }
 

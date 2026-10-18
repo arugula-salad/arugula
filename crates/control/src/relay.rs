@@ -27,6 +27,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use futures_util::{SinkExt, StreamExt};
+use serde_json::json;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, DuplexStream};
 use tracing::{info, warn};
 
@@ -376,7 +377,10 @@ pub async fn dial(
     let id = d.cert.device.clone();
     let ticket = match app.relay.admit(&app.db, &d.cert.account, true, app.stripe.is_some()) {
         Ok(t) => t,
-        Err(why) => return refuse(why, false, up),
+        Err(why) => {
+            note_refused(&app, &d.cert.account, "machine", &why);
+            return refuse(why, false, up);
+        }
     };
     if let Err(e) = app.db.seen(&id, urls.as_deref(), now_ms()) {
         warn!(error = %e, "recording a daemon");
@@ -409,6 +413,7 @@ async fn daemon_socket(app: Arc<App>, id: String, ws: WebSocket, ticket: Ticket)
         nudge.notify_one();
     }
     info!(daemon = %id, "daemon connected to the relay");
+    let connected = Instant::now();
     let (mut tx, mut rx) = ws.split();
     let mut ping = tokio::time::interval(PING_EVERY);
     let mut heard = Instant::now();
@@ -457,6 +462,11 @@ async fn daemon_socket(app: Arc<App>, id: String, ws: WebSocket, ticket: Ticket)
     app.guest_routes.drop_daemon(&id, generation);
     let _ = app.db.seen(&id, None, now_ms());
     info!(daemon = %id, "daemon left the relay");
+    app.analytics.capture(
+        &ticket.account,
+        "machine relay session",
+        json!({ "seconds": connected.elapsed().as_secs() }),
+    );
 }
 
 /// A refused socket's answer. Over the ceiling (#344), a browser can't
@@ -533,8 +543,12 @@ fn splice_to(
     };
     let ticket = match app.relay.admit(&app.db, &who, false, app.stripe.is_some()) {
         Ok(t) => t,
-        Err(why) => return refuse(why, browser(headers), up),
+        Err(why) => {
+            note_refused(&app, &who, if account.is_some() { "client" } else { "link" }, &why);
+            return refuse(why, browser(headers), up);
+        }
     };
+    let started = Instant::now();
     // A hosted sandbox (M20) doesn't dial in: it's reached through the
     // provider's proxy, which wakes it.
     if let Ok(Some(sandbox)) = app.db.sandbox_of_daemon(&id)
@@ -552,6 +566,7 @@ fn splice_to(
                 _ = ticket.gone() => return,
             };
             let _ = app.db.add_relay_bytes(&who, &crate::day(now_ms()), up + down);
+            note_session(&app, &who, "sandbox", started, up, down, false);
         });
     }
     // Past twice the free allowance, a free account's relayed traffic
@@ -574,6 +589,7 @@ fn splice_to(
         if let Err(e) = app.db.add_relay_bytes(&who, &day, up + down) {
             warn!(error = %e, "metering");
         }
+        note_session(&app, &who, if account.is_some() { "client" } else { "link" }, started, up, down, slow);
     })
 }
 
@@ -744,7 +760,10 @@ fn mframe(kind: u8, chan: u32, payload: &[u8]) -> Vec<u8> {
 pub async fn many(State(app): State<Arc<App>>, s: Session, headers: HeaderMap, up: WebSocketUpgrade) -> Response {
     let ticket = match app.relay.admit(&app.db, &s.account, false, app.stripe.is_some()) {
         Ok(t) => Arc::new(t),
-        Err(why) => return refuse(why, browser(&headers), up),
+        Err(why) => {
+            note_refused(&app, &s.account, "page", &why);
+            return refuse(why, browser(&headers), up);
+        }
     };
     up.max_message_size(MAX_WIRE + 5)
         .read_buffer_size(CLIENT_READ_BUFFER)
@@ -857,6 +876,7 @@ async fn channel(
     }
     let (mut rd, mut wr) = tokio::io::split(stream);
     let (sent, got) = (AtomicU64::new(0), AtomicU64::new(0));
+    let started = Instant::now();
     let up = async {
         while let Some(b) = from_page.recv().await {
             sent.fetch_add(b.len() as u64, Ordering::Relaxed);
@@ -897,9 +917,32 @@ async fn channel(
         _ = up => {},
         _ = down => {},
     }
-    let bytes = sent.load(Ordering::Relaxed) + got.load(Ordering::Relaxed);
-    let _ = app.db.add_relay_bytes(&account, &crate::day(now_ms()), bytes);
+    let (sent, got) = (sent.load(Ordering::Relaxed), got.load(Ordering::Relaxed));
+    let _ = app.db.add_relay_bytes(&account, &crate::day(now_ms()), sent + got);
+    note_session(&app, &account, "page", started, sent, got, slow);
     true
+}
+
+/// A relayed channel to a machine ended: how long, and how much each way
+/// (never what: it's end-to-end encrypted).
+fn note_session(app: &App, who: &str, kind: &str, started: Instant, up: u64, down: u64, slow: bool) {
+    app.analytics.capture(
+        who,
+        "relay session",
+        json!({
+            "kind": kind, "seconds": started.elapsed().as_secs(), "bytes_up": up, "bytes_down": down,
+            "slowed": slow,
+        }),
+    );
+}
+
+/// A relay socket refused: at the account's limits, or the relay's.
+fn note_refused(app: &App, who: &str, kind: &str, why: &Refused) {
+    let reason = match why {
+        Refused::Account(_) => "account limit",
+        Refused::Full => "relay full",
+    };
+    app.analytics.capture(who, "relay refused", json!({ "kind": kind, "reason": reason }));
 }
 
 #[cfg(test)]

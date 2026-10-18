@@ -245,6 +245,63 @@ fly secrets set -a illogical-control \
 start when they're missing. A self-hosted control can run coturn instead
 (not wired up yet).
 
+### Product analytics (PostHog)
+
+Control sends product events to PostHog when it has a project API key
+(`crates/control/src/analytics.rs`). Without one, which is how every
+self-hosted control starts, it sends nothing:
+
+```
+fly secrets set -a illogical-control POSTHOG_API_KEY=phc_…
+# POSTHOG_HOST defaults to https://us.i.posthog.com; EU projects:
+#   POSTHOG_HOST=https://eu.i.posthog.com
+```
+
+`fly logs` says `product analytics on` at start, or `no POSTHOG_API_KEY`.
+Events are batched (every 10 s or 100 events) off the request path. A
+full queue (10,000) drops them, and whatever is queued is sent when
+control stops.
+
+What's in them:
+
+- **Who**: the account id as `distinct_id`. No name, login, email or IP
+  (`$geoip_disable`). A machine's join request, which comes before any
+  account, goes on `device:<id>` with no person made for it. Team events
+  carry a `team` group (`$groups`), whose properties are its member and
+  owner counts and whether it's locked.
+- **Never**: terminal bytes (control can't read them), prompts, repository
+  URLs, secret names or values, push endpoints, invite keys or join codes.
+- **Requests**: `control request` for every request a person (a session or
+  the CLI) makes that changes something, and every one that fails, with
+  its route template (`/api/devices/{id}/approve`, never the real path),
+  method, status and time taken. Reads that succeed are left out (pages
+  poll them), and so are daemons' own requests.
+- **Sign-in**: `signed up`, `signed in` (`method`: github, passkey, app),
+  `sign-in failed`, `signed out`, `session ended`, `passkey added`,
+  `passkey removed`, `desktop app sign-in allowed`, `name changed`,
+  `account deleted`.
+- **Devices and machines**: `device enrolled`, `device requested`,
+  `device approved`, `device turned down`, `device removed`,
+  `recovery codes made`, `machine join started`, `machine joined`,
+  `machine join turned down`, `cli joined`, `machine moved`,
+  `machine left`, `share answered`.
+- **Teams**: `team created`, `team roster changed`, `team joined`,
+  `team invite made`, `team invite cancelled`, `team join requested`,
+  `team request turned down`, `team locked`, `team unlocked`.
+- **Relay**: `relay session` (kind, seconds, bytes each way, slowed),
+  `machine relay session` (seconds a machine stayed dialed in),
+  `relay refused` (account limit or relay full).
+- **Paid things**: `checkout started`, `upgraded`, `subscription changed`,
+  `sandbox created`, `sandbox failed`, `sandbox deleted` (minutes),
+  `cloud agent created/updated/deleted/imported`, `cloud run started`,
+  `cloud run finished` (outcome, minutes), `cloud run cancelled`,
+  `cloud request answered`, `cloud secret saved/deleted`.
+- **Other**: `push turned on` (the push service's host), `push turned off`,
+  `push relayed` (status), `labs flag set`.
+
+Deleting an account sends `account deleted`, but doesn't delete the
+person in PostHog: do that in PostHog (or by its API) when someone asks.
+
 ### A spend alert
 
 A spend alert isn't something this repository sets: it belongs to

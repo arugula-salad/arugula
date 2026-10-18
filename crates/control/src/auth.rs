@@ -80,7 +80,12 @@ impl FromRequestParts<Arc<App>> for Session {
     async fn from_request_parts(parts: &mut Parts, app: &Arc<App>) -> Result<Self, ApiError> {
         // A CLI device's signature (M49): no cookie, so no origin to check.
         match parts.extensions.get::<Signed>() {
-            Some(Signed(Ok(cert))) if cert.kind == Kind::Cli => return Ok(Session { account: cert.account.clone() }),
+            Some(Signed(Ok(cert))) if cert.kind == Kind::Cli => {
+                if let Some(a) = parts.extensions.get::<crate::analytics::Asker>() {
+                    a.set(&cert.account);
+                }
+                return Ok(Session { account: cert.account.clone() });
+            }
             Some(Signed(Ok(_))) => return Err(err(StatusCode::UNAUTHORIZED, "sign in first")),
             Some(Signed(Err((status, msg)))) => return Err(err(*status, msg)),
             None => {}
@@ -98,6 +103,9 @@ impl FromRequestParts<Arc<App>> for Session {
             cookie(&parts.headers, SESSION_COOKIE).ok_or_else(|| err(StatusCode::UNAUTHORIZED, "sign in first"))?;
         let account =
             app.db.session(&hash(token), now_ms())?.ok_or_else(|| err(StatusCode::UNAUTHORIZED, "sign in again"))?;
+        if let Some(a) = parts.extensions.get::<crate::analytics::Asker>() {
+            a.set(&account);
+        }
         Ok(Session { account })
     }
 }
@@ -391,6 +399,7 @@ pub async fn github_callback(
         }
         Err(why) => {
             warn!(%why, "GitHub sign-in failed");
+            app.analytics.capture("anonymous", "sign-in failed", serde_json::json!({ "method": "github" }));
             (StatusCode::BAD_REQUEST, format!("Sign-in failed: {why}")).into_response()
         }
     }
@@ -441,10 +450,12 @@ async fn github_finish(app: &App, headers: &HeaderMap, q: Callback) -> Result<(S
         .json()
         .await
         .map_err(|e| e.to_string())?;
+    let new_id = new_account_id();
     let account = app
         .db
-        .account_for("github", &user.id.to_string(), &user.login, &new_account_id(), now_ms())
+        .account_for("github", &user.id.to_string(), &user.login, &new_id, now_ms())
         .map_err(|e| e.to_string())?;
+    app.analytics.signed_in(&account, "github", account == new_id);
     Ok((account, next))
 }
 
@@ -460,7 +471,8 @@ pub fn new_account_id() -> String {
     hex::encode(arugula_e2e::random::<8>())
 }
 
-pub async fn logout(State(app): State<Arc<App>>, _s: Session, headers: HeaderMap) -> Response {
+pub async fn logout(State(app): State<Arc<App>>, s: Session, headers: HeaderMap) -> Response {
+    app.analytics.capture(&s.account, "signed out", serde_json::json!({}));
     if let Some(t) = cookie(&headers, SESSION_COOKIE) {
         let _ = app.db.drop_session(&hash(t));
     }

@@ -120,6 +120,11 @@ pub async fn set(State(app): State<Arc<App>>, s: Session, Json(b): Json<Set>) ->
     if app.db.set_labs_flag(&owner, &b.name, b.on)? {
         app.relay.nudge(&daemons);
     }
+    let props = json!({ "flag": b.name, "on": b.on });
+    match &b.team {
+        Some(t) => app.analytics.capture_team(&s.account, t, "labs flag set", props),
+        None => app.analytics.capture(&s.account, "labs flag set", props),
+    }
     Ok(Json(json!({ "flags": app.db.labs_flags(&owner)? })))
 }
 

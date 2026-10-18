@@ -334,7 +334,18 @@ async fn step(app: &App, job: &mut Job, now: u64) -> Result<()> {
             }
             job.execution.environment = None;
             job.execution.stage = "done".into();
-            save(app, job, job.execution.outcome.as_deref().unwrap_or("failed"), None, now)
+            let outcome = job.execution.outcome.as_deref().unwrap_or("failed");
+            save(app, job, outcome, None, now)?;
+            app.analytics.capture(
+                &job.account,
+                "cloud run finished",
+                json!({
+                    "outcome": outcome, "agent_curated": spec.agent_id.starts_with("curated_"),
+                    "runtime": spec.runtime, "model": spec.model,
+                    "minutes": now.saturating_sub(job.run.created) / 60_000,
+                }),
+            );
+            Ok(())
         }
         _ => bail!("unknown cloud execution stage"),
     }

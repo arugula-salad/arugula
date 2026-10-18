@@ -308,6 +308,7 @@ async fn register(
         None => {
             let a = app.db.account_for("passkey", &r.id, "", &auth::new_account_id(), now)?;
             app.db.set_name(&a, &name)?;
+            app.analytics.signed_in(&a, "passkey", true);
             (a.clone(), Some(auth::start_session(app, &a)?))
         }
     };
@@ -318,6 +319,11 @@ async fn register(
     if let Some(prf) = r.prf {
         app.db.passkey_prf(&r.id, prf)?;
     }
+    app.analytics.capture(
+        &account,
+        "passkey added",
+        json!({ "provider": provider, "prf": r.prf, "new_account": cookie.is_some() }),
+    );
     Ok((account, provider, cookie))
 }
 
@@ -350,6 +356,7 @@ pub struct Assertion {
 pub async fn login_finish(State(app): State<Arc<App>>, headers: HeaderMap, Json(a): Json<Assertion>) -> Response {
     match login(&app, &headers, a) {
         Ok((cookie, pk)) => {
+            app.analytics.signed_in(&pk.account, "passkey", false);
             // Which account, and what keeps the passkey: the page names a
             // device whose keys came from it by that (#764).
             let mut res = Json(json!({ "account": pk.account, "provider": pk.provider })).into_response();
