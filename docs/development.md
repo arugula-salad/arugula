@@ -22,7 +22,7 @@ release tarballs in `dist/`.
 ## Working on it
 
 What a new install hides until its flag is on (`arugulad flags chat on`, one
-to a feature: chat, huddles, Managoat, studio, workspaces, VMs, guest ssh) is described
+to a feature: chat, Managoat, studio, workspaces, VMs, guest ssh) is described
 in [labs.md](labs.md); the public docs leave it out. Running control
 yourself, operating the hosted one and testing it are in
 [control-ops.md](control-ops.md).

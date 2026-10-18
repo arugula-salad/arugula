@@ -117,7 +117,6 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       <MenuLayer />
       <PromptLayer />
       <ThreadLayer phone={phone} />
-      <InLabs on={client.hasCalls()}>{(l) => <l.HuddleBar />}</InLabs>
       {state && <InLabs on={client.hasThreads()}>{(l) => <l.ChatPage client={client} />}</InLabs>}
       <InLabs on={client.hasThreads()}>{(l) => <l.LinkLayer />}</InLabs>
       {state && <AgentsPageLayer client={client} />}
@@ -216,7 +215,6 @@ function TopBar({
               <span class="caret">▾</span>
             </button>
           )}
-          <InLabs on={client.hasCalls()}>{(l) => <l.HuddleButton client={client} session={session.id} label />}</InLabs>
           {/* Sharing is the daemon's owner's (M13), and on the bar so it's found (#551). */}
           {state.roles ? null : (
             <button class="share-button" aria-label="Share session" title="Share this session with someone" onClick={() => shareSession(session.id)}>

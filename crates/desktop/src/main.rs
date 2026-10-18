@@ -96,8 +96,8 @@
 //! - **The page**: `/`, `/#pane=N` and `/#getting-started=SECTION`, the
 //!   sign-in link `/auth?token=…&next=…`, and the `arugula:open-pane` and
 //!   `arugula:getting-started` events the app sends a page already open. The other way, the page reads
-//!   `window.__arugulaApp` and calls the app's huddle commands
-//!   (`call_native_*`) and window permissions (capabilities/default.json).
+//!   `window.__arugulaApp` and uses the app's window permissions
+//!   (capabilities/default.json).
 //! - **The local files**: the state directory's `listen` (the address) and
 //!   `local-token`.
 //! - **The service install**: `arugulad install`, which copies itself to
@@ -108,8 +108,6 @@
 //!   the bundled copy instead (`service.rs`). And `arugulad --version`,
 //!   printing `arugulad X.Y.Z`.
 
-#[cfg(all(target_os = "linux", feature = "native-calls"))]
-mod calls;
 mod cloud;
 mod compat;
 mod daemon;
@@ -567,8 +565,6 @@ fn open_outside(url: &tauri::Url) {
 /// control's origin too: when joined, the window shows control's page, and
 /// without them its bar can't move, minimize, maximize or close the window
 /// on Linux. The control is only known at run time, and can change (#204).
-/// Control's page also runs huddles through the app (M63), as the daemon's
-/// page does.
 fn allow_control(app: &AppHandle) {
     static ALLOWED: Mutex<Vec<String>> = Mutex::new(Vec::new());
     let Some(origin) = cloud::control()
@@ -589,17 +585,10 @@ fn allow_control(app: &AppHandle) {
         .permission("core:window:allow-toggle-maximize")
         .permission("core:window:allow-internal-toggle-maximize")
         .permission("core:window:allow-close")
-        .permission("core:window:allow-start-dragging")
-        .permission("allow-call-native-start")
-        .permission("allow-call-native-peer")
-        .permission("allow-call-native-remote")
-        .permission("allow-call-native-drop")
-        .permission("allow-call-native-mute")
-        .permission("allow-call-native-stop")
-        .permission("allow-call-native-status");
+        .permission("core:window:allow-start-dragging");
     match app.add_capability(cap) {
         Ok(()) => allowed.push(origin),
-        Err(e) => eprintln!("arugula: letting {origin} use its window and calls: {e}"),
+        Err(e) => eprintln!("arugula: letting {origin} use its window: {e}"),
     }
 }
 
@@ -631,8 +620,9 @@ fn open_window(app: &AppHandle, url: WebviewUrl) -> tauri::Result<tauri::Webview
         .title("Arugula")
         .inner_size(1280.0, 820.0)
         .initialization_script(cloud::init_script())
-        // Huddles (M63): the microphone for the client's own pages (macOS
-        // still asks, once, for the app); nobody else's.
+        // The microphone for the client's own pages (a lent device's
+        // record_audio, S33; macOS still asks, once, for the app); nobody
+        // else's.
         .on_permission_request(|w, kind| match kind {
             tauri::webview::PermissionKind::Microphone if w.url().is_ok_and(|u| ours(&u)) => {
                 tauri::webview::PermissionResponse::Allow
@@ -1143,25 +1133,6 @@ fn main() {
     if updater {
         builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
     }
-    #[cfg(all(target_os = "linux", feature = "native-calls"))]
-    let builder = builder.invoke_handler(tauri::generate_handler![
-        daemon_status,
-        retry,
-        compat::compat,
-        compat::compat_fix,
-        compat::compat_skip,
-        cloud::cloud_status,
-        cloud::cloud_signin,
-        cloud::cloud_local,
-        calls::call_native_start,
-        calls::call_native_peer,
-        calls::call_native_remote,
-        calls::call_native_drop,
-        calls::call_native_mute,
-        calls::call_native_stop,
-        calls::call_native_status
-    ]);
-    #[cfg(not(all(target_os = "linux", feature = "native-calls")))]
     let builder = builder.invoke_handler(tauri::generate_handler![
         daemon_status,
         retry,

@@ -1,14 +1,11 @@
 //! The mux's Labs surface (see the daemon's `labs/mod.rs` for the pattern):
 //! what Labs puts inside the core, with a twin for builds without the
-//! feature: a VM pane's terminal, chat's threads and huddles' calls.
+//! feature: a VM pane's terminal and chat's threads.
 
 use std::sync::Arc;
 
 use crate::provider::{Begin, Exec, ExecEvent, Provider};
 
-// Huddles (M63): who is in each voice call on a session.
-#[cfg(feature = "labs")]
-pub mod calls;
 // VMs: the machines panes run on.
 #[cfg(feature = "labs")]
 pub mod machine;
@@ -54,17 +51,15 @@ pub fn flag(_state_dir: &std::path::Path, _flag: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Threads on panes and sessions, and huddles on sessions. Always made, so
-/// each has a twin that holds nothing and touches nothing on disk: a build
+/// Threads on panes and sessions. Always made, so
+/// it has a twin that holds nothing and touches nothing on disk: a build
 /// without Labs never opens, writes or deletes the state dir's `threads/`,
 /// so a later build with Labs finds it as it was.
-#[cfg(feature = "labs")]
-pub use calls::Calls;
 #[cfg(feature = "labs")]
 pub use threads::Threads;
 
 #[cfg(not(feature = "labs"))]
-pub use absent::{Calls, Threads};
+pub use absent::Threads;
 
 /// Whether `token` (an `@name` in a message) names this person: see
 /// `threads::names`. Nobody is named where there is no chat.
@@ -89,12 +84,12 @@ pub fn vms_unavailable(_why: &str) -> String {
     "VMs aren't in this build (built without labs)".to_owned()
 }
 
-/// The twins of Threads and Calls, for a build without Labs.
+/// The twin of Threads, for a build without Labs.
 #[cfg(not(feature = "labs"))]
 mod absent {
     use std::path::Path;
 
-    use arugula_proto::{CallMember, ClientId, SessionId, ThreadMsg, ThreadTarget};
+    use arugula_proto::{ThreadMsg, ThreadTarget};
 
     /// Threads of a build without Labs: none, and nothing read from or
     /// written to the state dir.
@@ -121,20 +116,6 @@ mod absent {
 
         pub fn reach(&self) -> Vec<crate::acl::Reach> {
             Vec::new()
-        }
-    }
-
-    /// Huddles of a build without Labs: none.
-    #[derive(Default)]
-    pub struct Calls;
-
-    impl Calls {
-        pub fn leave_all(&mut self, _client: ClientId) -> bool {
-            false
-        }
-
-        pub fn retain(&mut self, _keep: impl FnMut(SessionId, &CallMember) -> bool) -> bool {
-            false
         }
     }
 }

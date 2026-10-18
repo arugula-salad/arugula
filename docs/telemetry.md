@@ -136,8 +136,8 @@ Once on, the preview looks like this:
   clients that attached by where (the web client, a phone, the CLI's
   terminal, MCP), and which Labs flags are on. Restored panes and blocks
   aren't counted again. `views` are the views the web client opened
-  (swarm, chat, conversations, agents, huddle, palette, settings, getting
-  started, share), and `web_errors` how many errors our code hit there:
+  (swarm, chat, conversations, agents, palette, settings, getting started,
+  share), and `web_errors` how many errors our code hit there:
   the page sends what it counted to its daemon each minute and as it goes
   away (`telemetry.note`, owner only; nothing is kept while it's off, and
   one note adds at most 1,000 to a count). Control's page sends its own to

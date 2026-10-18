@@ -6,8 +6,6 @@
 mod api_calls;
 mod attention;
 mod blocks;
-#[cfg(feature = "labs")]
-mod call_ops;
 mod clients;
 mod config;
 mod info;
@@ -147,7 +145,7 @@ use crate::{
 };
 use arugula_core::{Intent, Mux, Role};
 use arugula_proto::{
-    Action, Activity, Attention, BlockType, Call, ClientId, ClientMsg, Driver, Event, EventKind, Machine, MachineId,
+    Action, Activity, Attention, BlockType, ClientId, ClientMsg, Driver, Event, EventKind, Machine, MachineId,
     MachineState, Owner, PaneId, Policy, Presence, Reason, ReasonKind, ServerMsg, SessionId, TabId, ThreadMsg,
     ThreadSummary, ThreadTarget, WorkKind,
     api::{OpenRequest, PaneSummary, RunRequest},
@@ -193,6 +191,9 @@ fn driver_lapse() -> Duration {
         .unwrap_or(DRIVER_LAPSE)
 }
 
+// `Api` has always been the largest; the lint fires since `Subscriber`
+// lost its device certificate (huddles' signatures) and `Connect` shrank.
+#[allow(clippy::large_enum_variant)]
 pub enum Cmd {
     Connect {
         sub: Subscriber,
@@ -528,8 +529,6 @@ struct Daemon {
     store: StateDir,
     /// Threads on panes and sessions (M61).
     threads: crate::labs::Threads,
-    /// Huddles on sessions (M63).
-    calls: crate::labs::Calls,
     notices: NoticeSink,
     events: broadcast::Sender<Event>,
     /// Non-terminal blocks (terminals are in `panes`).
@@ -606,8 +605,8 @@ enum Dirty {
 }
 
 /// What one person sees besides panes: machines, who's here, threads,
-/// huddles.
-type Seen = (Vec<Machine>, Vec<Presence>, Vec<ThreadSummary>, Vec<arugula_proto::Conversation>, Vec<Call>);
+/// conversations.
+type Seen = (Vec<Machine>, Vec<Presence>, Vec<ThreadSummary>, Vec<arugula_proto::Conversation>);
 
 /// A pane as one client has it.
 type PaneJson = serde_json::Map<String, serde_json::Value>;
@@ -624,7 +623,6 @@ struct Sent {
     presence: Vec<Presence>,
     threads: Vec<ThreadSummary>,
     convs: Vec<arugula_proto::Conversation>,
-    calls: Vec<Call>,
 }
 
 /// A pane's working directory and foreground command, as the OS showed
@@ -702,7 +700,6 @@ pub fn start(
         sizes: BTreeMap::new(),
         config,
         threads: crate::labs::Threads::open(store.root()),
-        calls: Default::default(),
         store: store.clone(),
         notices,
         events: events.clone(),
@@ -1375,7 +1372,6 @@ impl Daemon {
                 self.refused.remove(&client);
                 self.viewing.remove(&client);
                 self.zoomed.remove(&client);
-                self.calls.leave_all(client);
                 // Their last client left: they no longer drive anything.
                 if let Some(who) = gone
                     && !self.clients.values().any(|c| c.principal.id() == who.id() && !self.summary.contains(&c.client))

@@ -119,24 +119,24 @@ test("a team's and an account's flags reach the machine, each saying where it co
   // No machine of the account has Developer settings: the page offers none.
   expect((await me.api<{ dev: boolean }>("/api/flags")).dev).toBe(false);
   await setOnControl("chat", true, team);
-  await setOnControl("huddles", true, team);
-  await setOnControl("huddles", false);
+  await setOnControl("workspaces", true, team);
+  await setOnControl("workspaces", false);
   // Each set nudges the machine: the file may come before the last of them.
   const fromControl = () => {
     const f = join(state, "flags.control.json");
     return existsSync(f) ? JSON.parse(readFileSync(f, "utf8")) : null;
   };
   await expect.poll(fromControl, { timeout: 20_000 }).toEqual({
-    account: { huddles: false },
-    team: { chat: true, huddles: true },
+    account: { workspaces: false },
+    team: { chat: true, workspaces: true },
   });
 
   await reopen(page);
   await expect(row(page, "chat").locator("input")).toBeChecked();
   await expect(row(page, "chat").locator("[data-flag-source]")).toHaveText("From your team on control");
   // The account's word beats the team's.
-  await expect(row(page, "huddles").locator("input")).not.toBeChecked();
-  await expect(row(page, "huddles").locator("[data-flag-source]")).toHaveText("From your account on control");
+  await expect(row(page, "workspaces").locator("input")).not.toBeChecked();
+  await expect(row(page, "workspaces").locator("[data-flag-source]")).toHaveText("From your account on control");
   await expect(row(page, "vms").locator("[data-flag-source]")).toHaveCount(0);
   // Guest ssh and the agent catalog are the machine's alone: control won't
   // take them, and the dialog says so.
@@ -169,7 +169,7 @@ test("the machine overrides control, and Follow control takes its word back", as
 
 test("unset on control, the machine is back to the flag's default", async ({ page }) => {
   await setOnControl("chat", null, team);
-  await expect.poll(() => JSON.parse(readFileSync(join(state, "flags.control.json"), "utf8")).team, { timeout: 20_000 }).toEqual({ huddles: true });
+  await expect.poll(() => JSON.parse(readFileSync(join(state, "flags.control.json"), "utf8")).team, { timeout: 20_000 }).toEqual({ workspaces: true });
   await reopen(page);
   await expect(row(page, "chat").locator("input")).not.toBeChecked();
   await expect(row(page, "chat").locator("[data-flag-source]")).toHaveCount(0);

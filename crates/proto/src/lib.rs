@@ -125,23 +125,6 @@ pub enum ClientMsg {
     /// or its zoomed pane): one it starts showing comes whole at once.
     /// Sent again, it starts over: each block's next state comes whole.
     BlockPatches,
-    /// Join the huddle on `session` (M63), starting one if there's none.
-    /// Anyone with a role in the session may, up to [`CALL_MAX`] people.
-    CallJoin { session: SessionId },
-    /// Leave it. The huddle ends when its last member leaves.
-    CallLeave { session: SessionId },
-    /// Show everyone in the huddle that this client is (un)muted.
-    CallMute { session: SessionId, muted: bool },
-    /// A WebRTC description for another member of the huddle, passed on
-    /// untouched as [`ServerMsg::CallSignal`]. `signal` is
-    /// `{type: "offer"|"answer", sdp, sig?}`: `sig` signs the SDP's
-    /// fingerprints with the device key ([`call_fingerprint_body`]).
-    CallSignal {
-        session: SessionId,
-        to: ClientId,
-        #[cfg_attr(feature = "ts", ts(as = "CallSignal"))]
-        signal: serde_json::Value,
-    },
     /// This client is a hand (S33): device tools agents may call through
     /// the daemon's MCP server. `tools` empty: it stops being one. A hand
     /// that isn't connected is woken by a push to its device.
@@ -173,20 +156,6 @@ pub struct HandTool {
     #[serde(default)]
     #[cfg_attr(feature = "ts", ts(type = "unknown"))]
     pub schema: serde_json::Value,
-}
-
-/// The most people in one huddle: every member sends to every other
-/// (S30: CPU and how it sounds are the limit, not bandwidth).
-pub const CALL_MAX: usize = 5;
-
-/// What a huddle member signs with its device key when it sends a
-/// description: the call, who it's for, and the SDP's `a=fingerprint:`
-/// lines in order. Naming the call and the recipient keeps a daemon from
-/// replaying it into another call or to another member.
-pub fn call_fingerprint_body(call: &str, from: ClientId, to: ClientId, sdp: &str) -> String {
-    let fps: Vec<&str> = sdp.lines().map(str::trim).filter(|l| l.starts_with("a=fingerprint:")).collect();
-    // Frozen (#504): signed, and checked by other versions.
-    format!("illogical call v1\ncall {call}\nfrom {from}\nto {to}\n{}\n", fps.join("\n"))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -702,21 +671,6 @@ pub enum ServerMsg {
     /// A new message in a pane's or session's thread (M61), sent to every
     /// client whose person may read it.
     Thread { target: ThreadTarget, msg: ThreadMsg },
-    /// A huddle member's description for this client (M63). `cert` is the
-    /// sender's device certificate as the daemon verified it, when it
-    /// connected with one: the receiver checks `signal.sig` against it and
-    /// checks the certificate itself, so the daemon can't swap the
-    /// fingerprints. No `cert`: the sender has no device key (tailnet or
-    /// local), and the client says the peer isn't verified.
-    CallSignal {
-        session: SessionId,
-        from: ClientId,
-        #[cfg_attr(feature = "ts", ts(as = "CallSignal"))]
-        signal: serde_json::Value,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        #[cfg_attr(feature = "ts", ts(type = "unknown"))]
-        cert: Option<serde_json::Value>,
-    },
     /// An agent calls one of this hand's tools (S33). `from` says who, for
     /// the person to decide. Answer with [`ClientMsg::HandReply`].
     HandCall {
@@ -749,8 +703,6 @@ pub struct Delta {
     pub threads: Option<Vec<ThreadSummary>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub convs: Option<Vec<Conversation>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub calls: Option<Vec<Call>>,
 }
 
 impl Delta {
@@ -761,7 +713,6 @@ impl Delta {
             && self.presence.is_none()
             && self.threads.is_none()
             && self.convs.is_none()
-            && self.calls.is_none()
     }
 }
 
@@ -803,9 +754,6 @@ impl State {
         }
         if let Some(c) = &delta.convs {
             self.convs = c.clone();
-        }
-        if let Some(c) = &delta.calls {
-            self.calls = c.clone();
         }
     }
 }
@@ -889,70 +837,6 @@ pub struct State {
     /// The conversations (#855) kept here that this person is in.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub convs: Vec<Conversation>,
-    /// Huddles (M63) on the sessions this person has a role in.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub calls: Vec<Call>,
-}
-
-/// A huddle: a voice call on a session (M63), peer to peer between its
-/// members, signaled through this daemon.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub struct Call {
-    pub session: SessionId,
-    /// New each time a huddle starts on the session, so what's signed for
-    /// one can't be used in the next.
-    pub id: String,
-    /// When it started (ms since the epoch).
-    pub started: u64,
-    /// In the order they joined.
-    pub members: Vec<CallMember>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub struct CallMember {
-    pub client: ClientId,
-    /// Their principal id.
-    pub who: String,
-    pub name: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts", ts(optional))]
-    pub pic: Option<String>,
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub muted: bool,
-    /// When they joined (ms since the epoch).
-    pub joined: u64,
-    /// Their device's id, when they connected with a device key (through
-    /// control): their fingerprints are signed. Absent for a tailnet or
-    /// local connection.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts", ts(optional))]
-    pub device: Option<String>,
-}
-
-/// What one huddle member sends another through the daemon (M63), which
-/// passes it on untouched: [`ClientMsg::CallSignal`]'s and
-/// [`ServerMsg::CallSignal`]'s `signal`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub struct CallSignal {
-    #[serde(rename = "type")]
-    pub kind: SdpKind,
-    pub sdp: String,
-    /// Hex Ed25519 signature of [`call_fingerprint_body`] by the sender's
-    /// device key, when it has one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts", ts(optional))]
-    pub sig: Option<String>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-#[serde(rename_all = "snake_case")]
-pub enum SdpKind {
-    Offer,
-    Answer,
 }
 
 pub type MachineId = u32;
@@ -1987,7 +1871,6 @@ mod tests {
             presence: vec![],
             threads: vec![],
             convs: vec![],
-            calls: vec![],
         };
         let msg = ServerMsg::State { state };
         let back: ServerMsg = serde_json::from_str(&serde_json::to_string(&msg).unwrap()).unwrap();

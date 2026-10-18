@@ -166,36 +166,32 @@ async fn next(ws: &mut Ws, deadline: tokio::time::Instant) -> Value {
     }
 }
 
-/// A huddle is joined only where the machine has the `huddles` flag on.
+/// Huddles were removed (2026-10-18). A page from before, or a `flags.json`
+/// that still has them on, sends a call message: it's dropped, and the
+/// connection carries on as if it hadn't come.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_huddle_is_joined_only_with_its_flag() {
+async fn a_call_message_from_an_older_page_is_dropped() {
     use tokio_tungstenite::tungstenite::client::IntoClientRequest;
-    let d = daemon("flag-gates-huddle");
+    let d = daemon("flag-gates-old-call");
+    std::fs::write(d.state.join("flags.json"), r#"{"flags":{"huddles":true}}"#).unwrap();
     let session = d.get("/api/panes")[0]["session"].as_u64().unwrap();
     let mut req = format!("ws://127.0.0.1:{}/ws", d.port).into_client_request().unwrap();
     req.headers_mut().insert("tailscale-user-login", OWNER.parse().unwrap());
     let (mut ws, _) = connect_async(req).await.unwrap();
-    let join = json!({ "type": "call_join", "session": session }).to_string();
     let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
     while next(&mut ws, deadline).await["type"] != "hello" {}
-
-    // Off: refused, saying how to turn it on.
-    ws.send(Message::Text(join.clone().into())).await.unwrap();
-    let refusal = loop {
-        let v = next(&mut ws, deadline).await;
-        if v["type"] == "error" {
-            break v;
-        }
-    };
-    assert!(refusal["message"].as_str().unwrap().contains(&hint("huddles")), "{refusal}");
-
-    // On: the same message starts a huddle, which the state then has.
-    set(&d.state, "huddles", true);
-    ws.send(Message::Text(join.into())).await.unwrap();
+    for m in [
+        json!({ "type": "call_join", "session": session }),
+        json!({ "type": "call_signal", "session": session, "to": 99, "signal": {} }),
+        json!({ "type": "ping", "id": 7 }),
+    ] {
+        ws.send(Message::Text(m.to_string().into())).await.unwrap();
+    }
     loop {
         let v = next(&mut ws, deadline).await;
         assert_ne!(v["type"], "error", "{v}");
-        if v.to_string().contains("\"members\":[{") {
+        if v["type"] == "pong" {
+            assert_eq!(v["id"], 7, "{v}");
             break;
         }
     }

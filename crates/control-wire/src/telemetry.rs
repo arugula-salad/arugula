@@ -236,7 +236,6 @@ pub enum View {
     Chat,
     Conversations,
     Agents,
-    Huddle,
     Palette,
     Settings,
     GettingStarted,
@@ -249,7 +248,6 @@ pub enum View {
 #[serde(rename_all = "kebab-case")]
 pub enum LabsFlag {
     Chat,
-    Huddles,
     Vms,
     Studio,
     Workspaces,

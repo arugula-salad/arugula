@@ -14,8 +14,8 @@
 //! #556), so it doesn't wait for the tray (#561): once the update is in
 //! place it restarts by itself when nobody's using it (`wait_for`): no
 //! window of ours focused for five minutes, no typing or mouse anywhere for
-//! as long (where the system says: macOS), no huddle live and no dialog or
-//! file picker open. It comes back quietly (`Quiet`): the windows it had, on
+//! as long (where the system says: macOS), and no dialog or file picker
+//! open. It comes back quietly (`Quiet`): the windows it had, on
 //! the pages they showed, without taking focus from another app.
 //!
 //! The app never updates the daemon:
@@ -244,18 +244,13 @@ pub struct Seen {
     /// Since the last key press or mouse move anywhere, where the system
     /// says (macOS).
     pub input: Option<Duration>,
-    /// A huddle is live (in a page, or the Linux app's own call).
-    pub call: bool,
-    /// A dialog, an alert or a file picker is open, or a page didn't say
-    /// whether it's in a huddle.
+    /// A dialog, an alert or a file picker is open.
     pub dialog: bool,
 }
 
 /// Why the app shouldn't restart yet, or `None`: it's been idle `idle`.
 pub fn wait_for(s: &Seen, idle: Duration) -> Option<&'static str> {
-    if s.call {
-        Some("a huddle is live")
-    } else if s.dialog {
+    if s.dialog {
         Some("a dialog is open")
     } else if s.unfocused < idle {
         Some("a window is in use")
@@ -314,10 +309,7 @@ fn restart_when_idle(app: &AppHandle) {
             }
         }
         let v = READY.lock().unwrap().clone().unwrap_or_default();
-        eprintln!(
-            "arugula: restarting into {v} on its own: unused for {}s, no huddle or dialog (#561)",
-            idle.as_secs()
-        );
+        eprintln!("arugula: restarting into {v} on its own: unused for {}s, no dialog (#561)", idle.as_secs());
         Quiet::save(&app);
         app.restart();
     });
@@ -331,45 +323,12 @@ fn look(app: &AppHandle) -> Seen {
     let windows = app.webview_windows();
     let focused = windows.values().any(|w| w.is_focused().unwrap_or(false));
     let unfocused = if focused { Duration::ZERO } else { LAST_FOCUS.lock().unwrap().unwrap_or(*STARTED).elapsed() };
-    // A page in a huddle says so (`__arugula.huddle`, web/src/main.tsx).
-    // A page that doesn't answer counts as busy.
-    const IN_HUDDLE: &str = "(() => { try { const h = window.__arugula && window.__arugula.huddle; return !!(h && h.live()); } catch (e) { return false; } })()";
-    let (tx, rx) = mpsc::channel();
-    let mut asked = 0;
-    for w in windows.values() {
-        let tx = tx.clone();
-        if w.eval_with_callback(IN_HUDDLE, move |r| {
-            let _ = tx.send(r.trim() == "true");
-        })
-        .is_ok()
-        {
-            asked += 1;
-        }
-    }
-    drop(tx);
-    let deadline = Instant::now() + Duration::from_secs(5);
-    let (mut call, mut answered) = (native_call(), 0);
-    while answered < asked {
-        let Ok(live) = rx.recv_timeout(deadline.saturating_duration_since(Instant::now())) else { break };
-        call |= live;
-        answered += 1;
-    }
     let (tx, rx) = mpsc::channel();
     let _ = app.run_on_main_thread(move || {
         let _ = tx.send(dialog_open());
     });
-    let dialog = rx.recv_timeout(Duration::from_secs(5)).unwrap_or(true) || answered < asked;
-    Seen { unfocused, input: input_idle(), call, dialog }
-}
-
-#[cfg(all(target_os = "linux", feature = "native-calls"))]
-fn native_call() -> bool {
-    crate::calls::live()
-}
-
-#[cfg(not(all(target_os = "linux", feature = "native-calls")))]
-fn native_call() -> bool {
-    false
+    let dialog = rx.recv_timeout(Duration::from_secs(5)).unwrap_or(true);
+    Seen { unfocused, input: input_idle(), dialog }
 }
 
 /// A sheet, an alert or a file picker is up. On the main thread.
@@ -493,7 +452,7 @@ mod tests {
     const MIN: Duration = Duration::from_secs(60);
 
     fn idle() -> Seen {
-        Seen { unfocused: 10 * MIN, input: Some(10 * MIN), call: false, dialog: false }
+        Seen { unfocused: 10 * MIN, input: Some(10 * MIN), dialog: false }
     }
 
     #[test]
@@ -522,11 +481,10 @@ mod tests {
     }
 
     #[test]
-    fn waits_through_a_huddle_or_a_dialog() {
-        assert_eq!(wait_for(&Seen { call: true, ..idle() }, 5 * MIN), Some("a huddle is live"));
+    fn waits_through_a_dialog() {
         assert_eq!(wait_for(&Seen { dialog: true, ..idle() }, 5 * MIN), Some("a dialog is open"));
-        let all = Seen { unfocused: Duration::ZERO, input: Some(Duration::ZERO), call: true, dialog: true };
-        assert_eq!(wait_for(&all, 5 * MIN), Some("a huddle is live"));
+        let all = Seen { unfocused: Duration::ZERO, input: Some(Duration::ZERO), dialog: true };
+        assert_eq!(wait_for(&all, 5 * MIN), Some("a dialog is open"));
     }
 
     #[test]

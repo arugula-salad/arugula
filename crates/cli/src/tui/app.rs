@@ -440,7 +440,6 @@ impl App {
                 ServerMsg::Pong { .. }
                 | ServerMsg::Follow { .. }
                 | ServerMsg::Thread { .. }
-                | ServerMsg::CallSignal { .. }
                 | ServerMsg::HandCall { .. } => {}
             },
         }

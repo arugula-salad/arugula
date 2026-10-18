@@ -1,6 +1,6 @@
-// The Labs half of the web client, as one chunk: chat, huddles, sandboxes,
-// studio apps and the Managoat, app and workspace blocks, with the call code
-// behind them. Nothing in the main bundle imports this file statically; the
+// The Labs half of the web client, as one chunk: chat, sandboxes, studio
+// apps and the Managoat, app and workspace blocks, with the code behind
+// them. Nothing in the main bundle imports this file statically; the
 // page reaches it only through `loadLabs()` (./labs-load), and only when the
 // machine it is on has labs or opens a Managoat block (Managoat left Labs,
 // #942, and its block's code stays here). Anything the main bundle needs from these files
@@ -8,8 +8,6 @@
 // them. The swarm's extra views (city, hive, timeline) are chunks of their
 // own, fetched when one is picked.
 
-export { activeHuddle } from "./call";
-export { HuddleBar, HuddleButton, huddleItems } from "./ui/huddle";
 export { ChatPage } from "./ui/chat";
 export { LinkLayer, linkItems } from "./ui/links";
 export { AgentsPage } from "./ui/agents-page";

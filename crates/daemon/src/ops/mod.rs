@@ -449,7 +449,6 @@ const HAND_WRITTEN: &[(&str, &str)] = &[
     ("/api/editors", "settings, #575"),
     // Not yet converted for other reasons.
     ("/api/run", "composes several calls"),
-    ("/api/turn", "not yet converted"),
     ("/api/attention", "not yet converted"),
     ("/api/attention/act", "not yet converted"),
     ("/api/blocks", "not yet converted"),

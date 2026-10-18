@@ -1,7 +1,7 @@
 // Drawing a piece of Labs UI from the main bundle: the page asks for the
 // Labs chunk when the machine has labs (`on`), and draws the piece once it is
 // there. Once loaded it also keeps drawing for a page whose machine has none,
-// so a huddle the person is in stays on screen when they look at another host.
+// so what it opened stays on screen when they look at another host.
 
 import type { ComponentChildren } from "preact";
 import { useEffect, useState } from "preact/hooks";

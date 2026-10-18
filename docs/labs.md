@@ -9,7 +9,10 @@ of the public features, teams, advanced and control pages until those
 moved to the site.
 
 Managoat was here until it left Labs (#942, F5): it needs only a Managoat
-login now, and has a page of its own, [managoat.md](managoat.md).
+login now, and has a page of its own, [managoat.md](managoat.md). Huddles,
+voice calls on a session, were here until they were removed (2026-10-18,
+DECISIONS.md "Huddles are removed"); a `huddles` flag left in `flags.json`
+does nothing.
 
 ## Turning a feature on
 
@@ -18,7 +21,6 @@ Each feature has a flag, off on a new install:
 | Flag | Turns on |
 | --- | --- |
 | `chat` | Threads on panes and sessions, conversations, and the chat page |
-| `huddles` | Voice calls on a session |
 | `vms` | VM tabs and panes, machines and the sandboxes page |
 | `studio` | Studio app blocks |
 | `workspaces` | Chant workspace blocks |
@@ -30,7 +32,7 @@ Each feature has a flag, off on a new install:
 A flag also lists its feature's tools, commands and options in `arugula mcp`,
 `arugula --help` and `arugulad --help`. Without it they aren't offered, and
 they don't work either: the feature's routes, its blocks, its MCP tools called
-by name and (for huddles) joining a call are refused, saying how to turn the
+by name are refused, saying how to turn the
 flag on (`arugulad flags NAME on` on that machine, or Developer settings). A
 hidden CLI command run against a daemon without the flag says the same, so
 with `--host` or `--ssh` it's the other machine's flag that counts (#347).
@@ -40,7 +42,6 @@ one isn't made.
 | Flag | What is refused without it |
 | --- | --- |
 | `chat` | `/api/threads/…` (get, post, read), `/api/convs…`, `read_thread`/`post_thread` by name, an invite from a thread |
-| `huddles` | joining (or starting) a huddle; leaving, muting and signalling one already on still work |
 | `vms` | `/api/machines`, `/api/sandboxes`, a new VM pane or tab, a borrowed sandbox (`run --sandbox`), *Share machine with tab* |
 | `studio` | `/api/studio…`, app blocks, `show` kind `app` |
 | `workspaces` | chant workspace blocks |
@@ -77,8 +78,7 @@ rest. A starting daemon moves the old file into `flags.json` and removes it.
 
 - **Per machine.** They're read by the machine that serves the page, so every
   machine you want a feature on needs its own. Someone you share a session
-  with sees chat and huddles on your machine if it has them on, and not
-  otherwise.
+  with sees chat on your machine if it has it on, and not otherwise.
 - **No restart.** The daemon reads the flags whenever it's asked.
 - **Each feature still needs its own setup.** Studio needs a link, VMs a
   sandbox provider, guest ssh its listener; a flag lets its
@@ -105,7 +105,7 @@ rest. A starting daemon moves the old file into `flags.json` and removes it.
   `hasLabs()`/`hasThreads()` in `web/src/client.ts`: VM panes and tabs,
   *Sandboxes…*, *Split (local)* and a VM tab's *Machine* items, studio
   apps, *Open as workspace*, *Invite over ssh…*, threads, chat,
-  huddles, and the swarm's city, hive and timeline themes
+  and the swarm's city, hive and timeline themes
   (`web/src/swarm/view.tsx`).
 - **Machines (VMs).** A *machine* (`--machine mN`, `mN:PATH`, `--machine
   local`, MCP `run`'s `machine`) is a VM or sandbox from the provider
@@ -153,12 +153,12 @@ Changing provider doesn't move machines: a VM pane restored on a daemon
 whose provider doesn't have its machine finds it gone and starts on a new
 one, as after a lost machine.
 
-## Threads, chat and huddles
+## Threads and chat
 
-Chat and huddles are on for a machine that has labs. The file belongs to
-the machine, so on a team every team machine needs one. Someone you share
-a session on a machine with labs with sees chat and huddles there; on a
-machine without it, nobody does.
+Chat is on for a machine that has labs. The file belongs to the machine,
+so on a team every team machine needs one. Someone you share a session on
+a machine with labs with sees chat there; on a machine without it, nobody
+does.
 
 - **Threads on panes and sessions**. Every pane and every session has
   a thread where the people working on it talk: *Thread* in a pane's menu,
@@ -322,30 +322,10 @@ machine without it, nobody does.
   Nobody else's post is offered anything, so an @ never tells an editor
   who exists. Agents get no offer: `post_thread` points them at
   `invite_person`.
-- **Huddles**. A voice call on a session, for the people working in
-  it: the headphones button by the session's name (or *Start a huddle* in
-  the session menu) starts one, and everyone with the session sees it's on
-  (the button goes green with how many are in) and joins with a click. Up
-  to 5 people. The huddle bar stays in the corner while you move between
-  tabs, sessions and chat (where it sits in the sidebar's corner): who's in, who's talking, who's muted,
-  *Mute* (Ctrl/Cmd+Shift+Space) and *Leave*. Audio goes straight between
-  devices, encrypted end to end (WebRTC, DTLS-SRTP), through a TURN relay
-  when there's no direct path; the machine only introduces the members.
-  Through control, each device signs its call fingerprints with its device
-  key and the others check them, so neither the machine nor control can
-  listen in by standing in the middle: one of your own devices shows as
-  verified, someone else's as signed, and a mismatch is refused. A
-  connection with no device key (over a tailnet, or local) shows as
-  unverified. Someone whose access is removed drops out at once. A machine
-  restart ends its huddles, and the page joins again when it's back. On an
-  iPhone the mic stops while the app is in the background; the bar says
-  so. The Linux desktop app's web view has no WebRTC, so the app runs the
-  call itself (WebRTC in Rust, Opus, and WebRTC's echo cancellation and
-  noise suppression), with the same bar and buttons.
 - **Chat: every thread in one place.** *Chat* (beside *Panes* and *Swarm*
   in the bar, the phone's sheet, or the command palette; `/#chat`) is a
   page of its own, laid out like a team chat. On the left: *Activity*,
-  any huddles that are on, *Channels* (the conversations you're in, from
+  *Channels* (the conversations you're in, from
   every machine), then each machine's sessions as channels with
   each pane's thread under its session, newest first, unread in bold and
   @mentions counted. Fold a machine away, show only what's unread, or drag
@@ -362,7 +342,7 @@ machine without it, nobody does.
     the people here (and `@agent` in a pane's thread). An unsent message
     waits in its thread while you look at another.
   - **The header** says where the thread is and what its pane is doing,
-    who's in it, and has the huddle button and *Go to pane* (or *Go to
+    who's in it, and has *Go to pane* (or *Go to
     session*). ⓘ opens details: the pane's screen, live (or each of the
     session's panes), and the people.
   - **Getting around:** the search field in the bar searches every thread
@@ -414,31 +394,6 @@ menu, *Session thread* in the session menu, or the bubble on a pane.
   as with a share: the offer they see names the conversation ("Jake added
   you to *calc tests*"), and accepting lists the machine with only that
   conversation.
-
-### Huddles: who joins, where the audio goes
-
-A session can have a huddle, a voice call for the people in it: the
-headphones button by the session's name, or *Start a huddle* in the
-session menu. Up to 5 people.
-
-- **Who can join:** anyone the session is shared with, watchers too. A
-  read-only link can't. Someone whose share is removed drops out at once.
-- **Where the audio goes:** straight between the devices in the call,
-  encrypted end to end. When two devices can't reach each other directly
-  it goes through a TURN relay (Cloudflare's, for the hosted control),
-  which carries only ciphertext; Cloudflare sees addresses and how much is
-  sent. The machine that runs the session only introduces the members.
-- **Who you're talking to:** through control, each device signs its call
-  fingerprints with its device key. Your own devices show as verified,
-  other people's as signed (by the device their machine vouches for), and
-  a mismatch is refused. Over a tailnet there are no device keys, so
-  members show as unverified.
-
-Huddles don't go through control. Control hands machines short-lived
-TURN credentials (from Cloudflare, for the hosted control); a relayed
-call's audio is encrypted end to end, so the relay sees only addresses and
-volume. Operating TURN for the hosted control is in
-[control-ops.md](control-ops.md#turn-for-huddles).
 
 ## Chant workspaces
 

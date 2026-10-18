@@ -29,9 +29,9 @@ for v in APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWO
   eval "[ -n \"\${$v:-}\" ]" || { echo "macos-sign: APPLE_CERTIFICATE is set but $v isn't" >&2; exit 1; }
 done
 
-# The hardened runtime refuses the microphone (huddles) to an app without
-# the entitlement: tauri.conf.json's macOS "entitlements" (app 0.27.4
-# shipped without it).
+# The hardened runtime refuses the microphone (a lent device's record_audio,
+# S33) to an app without the entitlement: tauri.conf.json's macOS
+# "entitlements" (app 0.27.4 shipped without it).
 mic() {
   codesign -d --entitlements - "$1" 2>/dev/null | grep -q com.apple.security.device.audio-input ||
     { echo "macos-sign: $(basename "$1") has no microphone entitlement (crates/desktop/macos/entitlements.plist)" >&2; exit 1; }

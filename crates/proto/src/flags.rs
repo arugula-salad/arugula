@@ -80,8 +80,6 @@ pub const LABS: &str = "labs";
 
 /// Threads on panes and sessions, and the chat page.
 pub const CHAT: &str = "chat";
-/// Voice calls on a session.
-pub const HUDDLES: &str = "huddles";
 /// VM tabs and panes, machines and the sandboxes page.
 pub const VMS: &str = "vms";
 /// Studio app blocks.
@@ -126,7 +124,6 @@ const fn local_row(name: &'static str, title: &'static str, about: &'static str)
 /// Every flag there is. A new one is a row here.
 pub const FLAGS: &[Flag] = &[
     row(CHAT, "Chat", "Threads on panes and sessions, and the chat page."),
-    row(HUDDLES, "Huddles", "Voice calls on a session."),
     row(VMS, "VMs and sandboxes", "VM tabs and panes, machines and the sandboxes page. Needs a sandbox provider."),
     row(STUDIO, "Studio apps", "Studio app blocks. Needs a linked studio."),
     row(WORKSPACES, "Chant workspaces", "Chant workspace blocks."),
@@ -149,6 +146,7 @@ pub const RETIRED: &[(&str, &str)] = &[
         "fountain",
         "Direct Managoat execution is retired: open Cloud agents in your Arugula account to run agents or import old definitions",
     ),
+    ("huddles", "Huddles (voice calls on a session) were removed from Arugula"),
     // Never a flag, but the name it would have now.
     (
         "managoat",
@@ -667,8 +665,8 @@ mod tests {
         assert!(!on(&d).any());
 
         // `labs` in the file, as #464 wrote it: on is all of them, off none.
-        fs::write(d.join(FILE), r#"{"flags":{"labs":true,"huddles":false}}"#).unwrap();
-        assert!(get(&d, CHAT) && !get(&d, HUDDLES));
+        fs::write(d.join(FILE), r#"{"flags":{"labs":true,"studio":false}}"#).unwrap();
+        assert!(get(&d, CHAT) && !get(&d, STUDIO));
         fs::write(d.join(FILE), r#"{"flags":{"labs":false,"chat":true}}"#).unwrap();
         assert_eq!(names(&d), [CHAT]);
         // And off there wins over an old file still lying about.
@@ -726,7 +724,7 @@ mod tests {
         );
         assert_eq!(state_of(&d, VMS).source, Source::Account);
         assert!(!state_of(&d, VMS).on);
-        assert_eq!(state_of(&d, HUDDLES).source, Source::Default);
+        assert_eq!(state_of(&d, STUDIO).source, Source::Default);
 
         // The machine forces either way, and taking its word back follows
         // control again.
@@ -759,12 +757,12 @@ mod tests {
     #[test]
     fn taking_one_back_from_labs_keeps_the_rest() {
         let d = dir("unset-labs");
-        fs::write(d.join(FILE), r#"{"flags":{"labs":true,"huddles":false}}"#).unwrap();
+        fs::write(d.join(FILE), r#"{"flags":{"labs":true,"studio":false}}"#).unwrap();
         write_control(&d, &pushed(&[], &[(CHAT, false)])).unwrap();
         assert!(get(&d, CHAT) && state_of(&d, CHAT).source == Source::Machine);
         unset(&d, CHAT).unwrap();
         assert_eq!(state_of(&d, CHAT).source, Source::Team);
-        assert!(!get(&d, CHAT) && get(&d, VMS) && !get(&d, HUDDLES));
+        assert!(!get(&d, CHAT) && get(&d, VMS) && !get(&d, STUDIO));
         assert_eq!(names(&d).len(), FLAGS.len() - 2);
         let v: Value = serde_json::from_str(&fs::read_to_string(d.join(FILE)).unwrap()).unwrap();
         assert!(v["flags"].get(LABS).is_none() && v["flags"].get(CHAT).is_none());
@@ -816,14 +814,33 @@ mod tests {
         write_control(&d, &pushed(&[("fountain", true)], &[("fountain", false)])).unwrap();
         assert!(!on(&d).any());
         // A write keeps it, for an older daemon reading the same file.
-        set(&d, HUDDLES, true).unwrap();
+        set(&d, STUDIO, true).unwrap();
         let v: Value = serde_json::from_str(&fs::read_to_string(d.join(FILE)).unwrap()).unwrap();
         assert_eq!(v["flags"]["fountain"], false);
-        assert_eq!(names(&d), [HUDDLES]);
+        assert_eq!(names(&d), [STUDIO]);
         for e in [set(&d, "fountain", true).unwrap_err(), unset(&d, "fountain").unwrap_err()] {
             assert_eq!(e.kind(), io::ErrorKind::InvalidInput);
             assert!(e.to_string().contains("isn't a flag any more") && e.to_string().contains("Cloud agents"), "{e}");
         }
+        fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// Huddles were removed (2026-10-18): a `flags.json` an older daemon
+    /// wrote with `"huddles": true`, or control still pushing it, loads
+    /// without error and turns nothing on.
+    #[test]
+    fn huddles_on_from_before_loads_and_means_nothing() {
+        let d = dir("huddles");
+        fs::write(d.join(FILE), r#"{"flags":{"huddles":true,"chat":true}}"#).unwrap();
+        assert_eq!(names(&d), [CHAT]);
+        assert!(!get(&d, "huddles"));
+        write_control(&d, &pushed(&[("huddles", true)], &[("huddles", true)])).unwrap();
+        assert_eq!(names(&d), [CHAT]);
+        set(&d, VMS, true).unwrap();
+        let v: Value = serde_json::from_str(&fs::read_to_string(d.join(FILE)).unwrap()).unwrap();
+        assert_eq!(v["flags"]["huddles"], true, "kept for an older daemon");
+        let e = set(&d, "huddles", true).unwrap_err();
+        assert!(e.to_string().contains("isn't a flag any more") && e.to_string().contains("removed"), "{e}");
         fs::remove_dir_all(&d).unwrap();
     }
 

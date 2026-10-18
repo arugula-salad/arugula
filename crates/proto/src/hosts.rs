@@ -310,10 +310,6 @@ pub struct HostFeatures {
     #[serde(default)]
     #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
     pub threads: bool,
-    /// Huddles on sessions, likewise.
-    #[serde(default)]
-    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
-    pub calls: bool,
     /// The names of the Labs flags that are on, whatever else each needs
     /// (a login, a provider). `None` from a daemon before #665: see `labs`.
     #[serde(default, skip_serializing_if = "Option::is_none")]

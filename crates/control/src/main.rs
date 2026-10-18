@@ -37,7 +37,6 @@ mod sandboxes;
 mod sprites;
 mod teams;
 mod telemetry;
-mod turn;
 #[cfg(test)]
 mod two_sites;
 
@@ -138,14 +137,6 @@ struct Args {
     #[arg(long, env = "SPRITES_TOKEN", hide_env_values = true)]
     sprites_token: Option<String>,
 
-    /// TURN for huddles (M63): a Cloudflare TURN key's id and API token.
-    /// Without them, daemons get public STUN only.
-    #[arg(long, env = "CLOUDFLARE_TURN_KEY_ID", hide_env_values = true)]
-    turn_key_id: Option<String>,
-    #[arg(long, env = "CLOUDFLARE_TURN_API_TOKEN", hide_env_values = true)]
-    turn_api_token: Option<String>,
-    #[arg(long, default_value = "https://rtc.live.cloudflare.com", env = "ARUGULA_TURN_API", hide = true)]
-    turn_api: String,
     /// The static daemon (x86_64 musl) to put in them.
     #[arg(long, default_value = "/arugulad", env = "ARUGULA_SANDBOX_BINARY")]
     sandbox_binary: PathBuf,
@@ -349,8 +340,6 @@ pub struct App {
     pub daemon_sigs: auth::Replays,
     /// Who still signs requests at an old URL (#535).
     pub old_hosts: auth::OldHosts,
-    /// TURN credentials for huddles (M63).
-    pub turn: Option<turn::Turn>,
     /// The ssh jump host for guests (M65), when it's on, and the routes
     /// daemons registered for it.
     pub jump: Option<guest_jump::Jump>,
@@ -394,7 +383,6 @@ impl App {
             app_logins: Default::default(),
             daemon_sigs: Default::default(),
             old_hosts: Default::default(),
-            turn: None,
             jump: None,
             guest_routes: Default::default(),
             blocks: Default::default(),
@@ -521,7 +509,6 @@ pub fn router(app: Arc<App>) -> Router {
         .route("/api/presigned/{team}/{key}/preview", get(teams::preview_presigned))
         .route(wire::TEAM, get(teams::daemon_team))
         .route(wire::PEERS, get(teams::daemon_peers))
-        .route(wire::TURN, get(turn::daemon_turn))
         .route(wire::TEAMS, get(teams::daemon_teams))
         .route(wire::ACCESS, post(teams::daemon_access))
         .route("/api/relay/link/{id}", get(relay::link))
@@ -838,13 +825,6 @@ async fn run() -> anyhow::Result<()> {
         a.stripe_minutes_price,
         a.stripe_minutes_event,
     )?;
-    let turn = match (set(a.turn_key_id), set(a.turn_api_token)) {
-        (Some(key_id), Some(token)) => Some(turn::Turn { key_id, token, api: a.turn_api }),
-        _ => {
-            tracing::warn!("no CLOUDFLARE_TURN_KEY_ID/CLOUDFLARE_TURN_API_TOKEN: huddles get STUN only");
-            None
-        }
-    };
     // The guests' jump host: bound now, so its port is known.
     let guest_ssh = match a.guest_ssh {
         Some(addr) => {
@@ -946,7 +926,6 @@ async fn run() -> anyhow::Result<()> {
         app_logins: Default::default(),
         daemon_sigs: Default::default(),
         old_hosts: Default::default(),
-        turn,
         jump,
         guest_routes: Default::default(),
         blocks: Default::default(),

@@ -300,8 +300,8 @@ fn a_remote_pane_runs_there_and_has_its_place_here() {
 }
 
 /// What a stranger doesn't get follows the flags in the state dir's
-/// `flags.json`, one to a feature: `GET /api/host` says so, with threads and
-/// huddles (and studio and VMs, where set up) each following its own, and
+/// `flags.json`, one to a feature: `GET /api/host` says so, with threads
+/// (and studio and VMs, where set up) each following its own, and
 /// setting one on a running daemon, from outside it or through
 /// `PUT /api/flags/{name}`, flips it with no restart. Direct Managoat
 /// execution stays retired even when a saved login exists.
@@ -321,14 +321,16 @@ fn each_flag_turns_on_its_part_of_what_a_stranger_doesnt_get() {
     let features = || d.get("/api/host")["features"].clone();
     let f = features();
     assert_eq!(f["labs"], false, "{f}");
-    for key in ["threads", "calls", "studio", "vms"] {
+    for key in ["threads", "studio", "vms"] {
         assert_eq!(f[key], false, "{key} without labs: {f}");
     }
     assert_eq!(f["fountain"], false, "direct Managoat is retired even with a login: {f}");
 
     arugula_testkit::labs(&d.state, true);
     let f = features();
-    assert_eq!((f["labs"].clone(), f["threads"].clone(), f["calls"].clone()), (true.into(), true.into(), true.into()));
+    assert_eq!((f["labs"].clone(), f["threads"].clone()), (true.into(), true.into()));
+    // Huddles were removed (2026-10-18): no `calls` for an older page to read.
+    assert!(f.get("calls").is_none(), "{f}");
     // The retired integration stays off; studio and VMs are not set up.
     assert_eq!(
         (f["fountain"].clone(), f["studio"].clone(), f["vms"].clone()),
@@ -338,10 +340,7 @@ fn each_flag_turns_on_its_part_of_what_a_stranger_doesnt_get() {
     // Off again, and on through the owner's route.
     arugula_testkit::labs(&d.state, false);
     let f = features();
-    assert_eq!(
-        (f["labs"].clone(), f["threads"].clone(), f["calls"].clone()),
-        (false.into(), false.into(), false.into())
-    );
+    assert_eq!((f["labs"].clone(), f["threads"].clone()), (false.into(), false.into()));
     // #665: each feature has a flag of its own, and the owner's route turns
     // chat on alone, Managoat's login notwithstanding.
     assert_eq!(f["dev"], true, "the flags file is there: {f}");
@@ -352,7 +351,7 @@ fn each_flag_turns_on_its_part_of_what_a_stranger_doesnt_get() {
     );
     let f = features();
     assert_eq!((f["labs"].clone(), f["threads"].clone()), (true.into(), true.into()), "{f}");
-    assert_eq!((f["calls"].clone(), f["fountain"].clone()), (false.into(), false.into()), "{f}");
+    assert_eq!(f["fountain"], false, "{f}");
     assert_eq!(f["flags"], serde_json::json!(["chat"]));
     let all = d.get("/api/flags");
     assert_eq!(all.as_array().map(Vec::len), Some(arugula_proto::flags::FLAGS.len()), "{all}");
