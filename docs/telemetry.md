@@ -25,7 +25,7 @@ CLI (M105). Both write the same file, through the `telemetry.get` and
 - **Yes** makes a random install id: 16 hex digits, unrelated to anything
   else on the machine. Reports carry it.
 - **No** deletes the install id, today's counts and any report not yet sent
-  (`telemetry.counts.json`). A later yes gets a new id, so reports before and
+  (`telemetry.counts.json`), and the crashes waiting (`crashes/`). A later yes gets a new id, so reports before and
   after can't be joined up.
 
 Telemetry is off, whatever the file says, when any of these holds:
@@ -92,7 +92,39 @@ Once on, the preview looks like this:
   when one opens), agent blocks started by runtime, blocks opened by kind,
   clients that attached by where (the web client, a phone, the CLI's
   terminal, MCP), and which Labs flags are on. Restored panes and blocks
-  aren't counted again. Views (`views`, M103) and crashes (M102) come later.
+  aren't counted again. Views (`views`) and the web client's errors
+  (`web_errors`) come later (M103).
+- **`crashes`**: the panics of `arugulad`, `arugula` and the desktop app,
+  below.
+
+## Crashes
+
+While telemetry is on, a panic in `arugulad`, the `arugula` CLI or the
+desktop app is written down in the daemon's state directory, one file each,
+`crashes/<ms>-<process>.json`, and the panic still prints as it always did.
+Off, nothing is written. A crash holds only where it happened:
+
+```json
+{
+  "process": "daemon",
+  "version": "0.43.0",
+  "location": "crates/mux/src/pane.rs:812",
+  "frames": ["arugula_mux::pane::Pane::resize", "arugula_mux::mux::Mux::resize"],
+  "at": 1760000000000
+}
+```
+
+- `location`: the file and line in Arugula's own source. A panic inside a
+  library is placed at the first of Arugula's functions that called it.
+- `frames`: Arugula's own functions on the stack, innermost first, at most
+  32. Nothing from libraries or the system is kept.
+- **Never the panic's message**, which can hold a path or someone's text.
+
+The daemon sends them with its next report (`started` after a restart, so a
+crash that stopped it goes when it's back), at most 10 at a time, and deletes
+each file once a report holding it was taken. At most 50 wait: past that the
+oldest go, and so does any a week old. A no deletes them all, and `arugulad
+telemetry status` shows the waiting ones in its preview.
 
 Counts are kept in `telemetry.counts.json`, saved every hour and when the
 daemon stops, so a restart loses at most an hour's.

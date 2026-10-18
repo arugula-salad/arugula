@@ -107,7 +107,8 @@ nothing marked `mux:` names the edge or the block kinds.
   (`install.rs`), Getting started (`setup.rs`), updates (`update.rs`,
   `selfupdate.rs`), `_host` (`mux:host.rs`), malloc settings (`mux:heap.rs`), paths
   through links (`mux:paths.rs`), opt-in telemetry (`telemetry.rs`, the
-  answer in `arugula_proto::telemetry`, [docs/telemetry.md](docs/telemetry.md)).
+  answer in `arugula_proto::telemetry`, crash files from its `crash` panic
+  hook, [docs/telemetry.md](docs/telemetry.md)).
 
 ## Invariants
 
