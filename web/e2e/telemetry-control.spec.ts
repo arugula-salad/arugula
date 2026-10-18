@@ -120,10 +120,13 @@ test("the card asks once, yes sends counts, and the switch turns them off", asyn
   await page.waitForTimeout(500);
   await expect(card(page)).toHaveCount(0);
 
-  // What it counted goes as the page goes away: Settings was opened.
+  // What it counted goes as the page goes away: Settings was opened. The
+  // page's `pagehide` here, not a navigation's: a send during a real
+  // unload may or may not be let through by then, which isn't ours to test.
+  await expect(page.locator("html[data-usage-counts]")).toHaveCount(1, { timeout: 20_000 });
   await page.locator("[data-account-menu]").first().click();
   await page.keyboard.press("Escape");
-  await page.goto("about:blank");
+  await page.evaluate(() => dispatchEvent(new PageTransitionEvent("pagehide")));
   await expect.poll(() => events.find((e) => e.event === "page day"), { timeout: 30_000 }).toBeTruthy();
   const day = events.find((e) => e.event === "page day")!;
   expect(day.properties.view_settings).toBe(1);
