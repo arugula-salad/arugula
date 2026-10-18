@@ -456,3 +456,53 @@ fn a_closed_doc_is_kept_for_history_and_search() {
     assert!(found.to_string().contains("The needle is in section one."), "{found}");
     drop(m);
 }
+
+/// A file from `tests/fixtures/docs/`, the same ones the web client's
+/// `doc-grammar.spec.ts` reads.
+fn example(name: &str) -> String {
+    std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/docs").join(name)).unwrap()
+}
+
+#[test]
+fn a_chart_and_a_drawing_fill_and_a_bad_one_leaves_the_section_as_it_was() {
+    let (d, pane, _) = shared();
+    let m = Mcp::bridge(&d, Some(pane));
+    let doc = m.call("doc", outline(3)).unwrap()["block"].as_u64().unwrap();
+    let mut viewer = Page::connect(&d, Some(FRIEND));
+    viewer.show(pane);
+    viewer.settled(doc);
+
+    // A chart and a drawing, in sections, as patches a second client merges.
+    let (chart, drawing) = (example("bar-chart.md"), example("script-drawing.md"));
+    m.call("doc", fill(doc, "s1", &chart)).unwrap();
+    let patch = viewer.block(doc);
+    assert_eq!((patch["entries_at"].as_u64(), patch["entries"][0]["body"].as_str()), (Some(0), Some(chart.as_str())));
+    // An SVG with a script in it is stored: it is only ever shown by <img>.
+    m.call("doc", fill(doc, "s2", &drawing)).unwrap();
+    let patch = viewer.block(doc);
+    assert_eq!((patch["entries_at"].as_u64(), patch["entries"][0]["body"].as_str()), (Some(1), Some(drawing.as_str())));
+    let file = |s: &str| d.state.join(format!("blocks/{doc}/doc/{s}.md"));
+    assert_eq!(std::fs::read_to_string(file("s2")).unwrap(), drawing);
+
+    // A bad chart over a filled section, and over a pending one: refused with
+    // a line saying what to fix, and nothing changes on disk, in the state or
+    // on a page.
+    let before = (bodies(&d.state(doc)), mtimes(&d.state.join(format!("blocks/{doc}"))));
+    for (section, bad, says) in [
+        ("s1", "bad/unordered-line.md", "x must be numbers, dates"),
+        ("s3", "bad/bad-json.md", "chart: not JSON"),
+        ("s2", "bad/too-many-series.md", "1 to 4 keys"),
+        ("s3", "bad/svg-no-root.md", "start with <svg"),
+    ] {
+        let e = m.call("doc", fill(doc, section, &example(bad))).unwrap_err();
+        assert!(e.contains(says) && e.contains("section is unchanged") && !e.contains('\n'), "{bad}: {e}");
+    }
+    assert_eq!((bodies(&d.state(doc)), mtimes(&d.state.join(format!("blocks/{doc}")))), before);
+    assert!(!file("s3").exists());
+    assert!(viewer.blocks_for(doc, Duration::from_millis(700)).is_empty(), "a refusal sends nothing");
+
+    // The text has a line for each.
+    let text = d.raw("GET", &format!("/api/panes/{doc}/capture"), None).1;
+    assert!(text.contains("[chart: Sales by month (bar, 3 rows)]") && text.contains("[drawing]"), "{text}");
+    drop(m);
+}

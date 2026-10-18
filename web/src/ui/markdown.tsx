@@ -4,10 +4,15 @@
 // `inline()`'s, plus links and #N references. Only Preact nodes come out,
 // never HTML: a body is written by anyone who can open a PR, so what it
 // says stays text (raw HTML shows as it was typed, an image is a link, and
-// only http(s) hrefs become links).
+// only http(s) hrefs become links). A Doc (`embeds`) also draws a ```chart
+// fence as a chart and shows a ```svg fence as a picture, through <img>
+// only (`drawing.tsx`); everywhere else those are code.
 
 import type { ComponentChildren } from "preact";
 import { useMemo } from "preact/hooks";
+import { Chart } from "./chart";
+import { Drawing } from "./drawing";
+import { bodyLines, readFence } from "./embeds";
 import { inline, type ForgeInline } from "./markup";
 
 const ITEM = /^( *)([-*+]|\d+[.)])\s+(.*)$/;
@@ -20,26 +25,31 @@ const TABLE_SEP = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 const indentOf = (l: string) => l.length - l.trimStart().length;
 const startsBlock = (l: string) => FENCE.test(l) || HEADING.test(l) || RULE.test(l) || QUOTE.test(l) || ITEM.test(l);
 
-/** `refs`: where a `#N` goes (`…/issues/`), or null for text (GitLab). */
-export function Markdown({ text, refs }: { text: string; refs: string | null }) {
+/** What the blocks need besides the lines: `refs` for `inline()`, and
+ * whether a chart or svg fence is more than code. */
+type Ctx = ForgeInline & { embeds?: boolean };
+
+/** `refs`: where a `#N` goes (`…/issues/`), or null for text (GitLab).
+ * `embeds`: charts and drawings (a Doc's; a forge's body is code). */
+export function Markdown({ text, refs, embeds }: { text: string; refs: string | null; embeds?: boolean }) {
   // A poll that changes nothing hands back the same text: don't parse it again.
-  const out = useMemo(() => blocks(text.replace(/\r/g, "").replace(/\t/g, "    ").split("\n"), { refs }), [text, refs]);
+  const out = useMemo(() => blocks(bodyLines(text), { refs, embeds }), [text, refs, embeds]);
   return <div class="md">{out}</div>;
 }
 
 // Nobody is notified by what a body says, so no mention pill.
-const line = (s: string, fx: ForgeInline) => inline(s, undefined, () => false, fx);
+const line = (s: string, fx: Ctx) => inline(s, undefined, () => false, fx);
 
 /** A fenced block from `i`, unclosed ones running to the end. */
-function fenced(lines: string[], i: number, strip: number, k: number): { node: ComponentChildren; next: number } {
-  const mark = lines[i].trimStart().slice(0, 3);
-  const code: string[] = [];
-  i++;
-  for (; i < lines.length && !lines[i].trimStart().startsWith(mark); i++) code.push(lines[i].slice(Math.min(strip, indentOf(lines[i]))));
-  return { node: <pre key={k}>{code.join("\n")}</pre>, next: i + 1 };
+function fenced(lines: string[], i: number, strip: number, k: number, fx: Ctx): { node: ComponentChildren; next: number } {
+  const f = readFence(lines, i, strip);
+  const code = f.code.join("\n");
+  if (fx.embeds && f.lang === "chart") return { node: <Chart key={k} source={code} />, next: f.next };
+  if (fx.embeds && f.lang === "svg") return { node: <Drawing key={k} svg={code} alt={f.alt} />, next: f.next };
+  return { node: <pre key={k}>{code}</pre>, next: f.next };
 }
 
-function blocks(lines: string[], fx: ForgeInline): ComponentChildren[] {
+function blocks(lines: string[], fx: Ctx): ComponentChildren[] {
   const out: ComponentChildren[] = [];
   let i = 0;
   let k = 0;
@@ -51,7 +61,7 @@ function blocks(lines: string[], fx: ForgeInline): ComponentChildren[] {
     }
     let m: RegExpMatchArray | null;
     if (FENCE.test(l)) {
-      const f = fenced(lines, i, indentOf(l), k++);
+      const f = fenced(lines, i, indentOf(l), k++, fx);
       out.push(f.node);
       i = f.next;
     } else if ((m = l.match(HEADING))) {
@@ -66,7 +76,9 @@ function blocks(lines: string[], fx: ForgeInline): ComponentChildren[] {
     } else if (QUOTE.test(l)) {
       const q: string[] = [];
       while (i < lines.length && QUOTE.test(lines[i])) q.push(lines[i++].replace(/^ {0,3}> ?/, ""));
-      out.push(<blockquote key={k++}>{blocks(q, fx)}</blockquote>);
+      // A quote's fences stay code: the daemon checks fences that start a
+      // line (lists reach theirs, a quote's lines start with ">").
+      out.push(<blockquote key={k++}>{blocks(q, { ...fx, embeds: false })}</blockquote>);
     } else if (l.includes("|") && i + 1 < lines.length && lines[i + 1].includes("-") && TABLE_SEP.test(lines[i + 1])) {
       const head = cells(l);
       i += 2;
@@ -123,7 +135,7 @@ function cells(row: string): string[] {
 
 /** A list at `base` indent: its items, their continuation lines, and the
  * lists nested under them. */
-function list(lines: string[], i: number, base: number, fx: ForgeInline, key: number): { node: ComponentChildren; next: number } {
+function list(lines: string[], i: number, base: number, fx: Ctx, key: number): { node: ComponentChildren; next: number } {
   const first = lines[i].match(ITEM)!;
   const ordered = /\d/.test(first[2]);
   const items: ComponentChildren[] = [];
@@ -156,7 +168,7 @@ function list(lines: string[], i: number, base: number, fx: ForgeInline, key: nu
       if (ind <= base && ITEM.test(cur)) break;
       if (ind <= base && startsBlock(cur)) break;
       if (FENCE.test(cur) && ind > base) {
-        const f = fenced(lines, i, ind, k++);
+        const f = fenced(lines, i, ind, k++, fx);
         inner.push(f.node);
         i = f.next;
       } else if (ind > base && ITEM.test(cur)) {

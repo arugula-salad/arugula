@@ -6,6 +6,7 @@
 
 import { expect, type Page } from "@playwright/test";
 import type { PaneId } from "../src/proto";
+import { example } from "./doc-examples";
 
 /** A POST to the daemon: the body it answered. */
 export type Post = (path: string, body: unknown) => Promise<{ block?: number }>;
@@ -24,11 +25,11 @@ export async function newDoc(post: Post, term: PaneId, title = "Quarterly plan")
   return doc;
 }
 
-const fill = (post: Post, doc: number, section: string, markdown: string) =>
+export const fill = (post: Post, doc: number, section: string, markdown: string) =>
   post(`/api/blocks/${doc}/call/doc_fill`, { section, markdown });
 
 /** Show `doc` on a phone, where one block is up at a time. */
-async function bring(page: Page, doc: number) {
+export async function bring(page: Page, doc: number) {
   await page.evaluate((d) => window.__arugula.client.setActive(d), doc);
 }
 
@@ -86,4 +87,75 @@ export async function fillsInPlace(page: Page, post: Post, term: PaneId) {
   expect(await page.evaluate(() => (window as unknown as { __same?: boolean }).__same)).toBe(true);
   expect(await block.evaluate((el) => el.scrollTop)).toBe(0);
   return doc;
+}
+
+const pwned = (page: Page) => page.evaluate(() => (window as unknown as { __pwned?: number }).__pwned);
+
+/** A chart in s1, a drawing in s2 and one with a script in it in s3 (the
+ * grammar's own examples), as the agent sends them. */
+export async function fillEmbeds(post: Post, doc: number) {
+  await fill(post, doc, "s1", example("bar-chart.md"));
+  await fill(post, doc, "s2", example("drawing.md"));
+  await fill(post, doc, "s3", example("script-drawing.md"));
+}
+
+/** What `fillEmbeds` shows, on `page`: the chart is SVG with a bar a row,
+ * the drawings are pictures (an <img> that loaded, a data: URL, no SVG
+ * node of theirs in the page), and the script in one never ran. */
+export async function seeEmbeds(page: Page, doc: number) {
+  const block = page.locator(`[data-doc-block="${doc}"]`);
+  const section = (id: string) => block.locator(`[data-section="${id}"]`);
+  const chart = section("s1").locator("svg.chart");
+  await expect(chart).toBeVisible({ timeout: 15_000 });
+  await expect(chart.locator("rect[data-bar]")).toHaveCount(3);
+  await expect(chart).toHaveAttribute("aria-label", "Sales by month, bar chart. sales: Jan 12, Feb 18, Mar 25");
+  await expect(chart.locator("text", { hasText: "Mar" })).toHaveCount(1);
+  await expect(section("s1")).toContainText("Up and to the right.");
+  await expect(section("s1").locator("[data-chart-note]")).toHaveCount(0);
+  // Heights are in proportion to the values from zero.
+  const heights = await chart.locator("rect[data-bar]").evaluateAll((rs) => rs.map((r) => Number(r.getAttribute("height"))));
+  expect(heights[0] / heights[2]).toBeCloseTo(12 / 25, 6);
+
+  const loaded = (id: string) =>
+    section(id)
+      .locator("img.doc-drawing")
+      .evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0);
+  for (const id of ["s2", "s3"]) {
+    const img = section(id).locator("img.doc-drawing");
+    await expect(img).toBeVisible();
+    await expect.poll(() => loaded(id)).toBe(true);
+    await expect(img).toHaveAttribute("src", /^data:image\/svg\+xml;charset=utf-8,%3Csvg/);
+    // Only ever a picture: nothing of the drawing is in the page.
+    await expect(section(id).locator("svg, script, rect, text")).toHaveCount(0);
+  }
+  await expect(section("s2").locator("img")).toHaveAttribute("alt", "Idea to app");
+  await expect(section("s3").locator("img")).toHaveAttribute("alt", "drawing");
+  // The script in s3's drawing ran nowhere (it is an <img>), nor did its onload.
+  await page.waitForTimeout(300);
+  expect(await pwned(page)).toBeUndefined();
+}
+
+/** Fences sit where the daemon looks for them: one in a list item draws
+ * (and the daemon checks it); one in a quote is code, on both sides. */
+export async function placedEmbeds(page: Page, post: Post, doc: number) {
+  const block = page.locator(`[data-doc-block="${doc}"]`);
+  const section = (id: string) => block.locator(`[data-section="${id}"]`);
+  const chart = example("bar-chart.md").split("```")[1].replace(/^chart\n/, "");
+  await fill(post, doc, "s1", `- item\n\n  \`\`\`chart\n  ${chart.trim()}\n  \`\`\`\n`);
+  await expect(section("s1").locator("li svg.chart rect[data-bar]")).toHaveCount(3, { timeout: 15_000 });
+  await fill(post, doc, "s1", example("quoted-chart.md"));
+  await expect(section("s1").locator("blockquote pre")).toContainText('"type": "pie"', { timeout: 15_000 });
+  await expect(section("s1").locator("svg, [data-chart-note]")).toHaveCount(0);
+}
+
+/** A drawing the browser can't read as an image says so, with its source,
+ * and is never a broken picture. The daemon only checks its root, so this
+ * is a legitimate fill. */
+export async function brokenEmbeds(page: Page, post: Post, doc: number) {
+  const section = (id: string) => page.locator(`[data-doc-block="${doc}"] [data-section="${id}"]`);
+  await fill(post, doc, "s2", '```svg\n<svg xmlns="http://www.w3.org/2000/svg"><rect></svg>\n```');
+  const drawn = section("s2").locator("[data-drawing-note]");
+  await expect(drawn).toContainText("Drawing not drawn: the browser couldn't read it", { timeout: 15_000 });
+  await expect(drawn.locator("pre")).toContainText("<rect>");
+  await expect(section("s2").locator("img")).toHaveCount(0);
 }

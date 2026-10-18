@@ -1,13 +1,14 @@
 // #963 on an iPhone (WebKit, docs/testing.md "Phones"): the same checks as
 // doc.spec.ts's, in the engine Safari uses. The daemon is the spec's own,
-// with the `docs` flag on (labs.ts).
+// with the `docs` flag on (labs.ts). #964's too: WebKit's <img> of an SVG
+// from a data: URL, and a chart drawn as SVG, which differ from Chrome's.
 
 import { rmSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ChildProcess } from "node:child_process";
 import { expect, test } from "@playwright/test";
-import { fillsInPlace, type Post } from "./doc-steps";
+import { bring, brokenEmbeds, fillEmbeds, fillsInPlace, newDoc, seeEmbeds, type Post } from "./doc-steps";
 import { open, ready } from "./helpers";
 import { daemon, iphone } from "./phones";
 
@@ -40,4 +41,15 @@ test("a Doc fills in on an iPhone: its outline, then each section, with no reloa
   const term = await page.evaluate(() => window.__arugula.client.state!.panes[0].id);
   await ready(page, term);
   await fillsInPlace(page, post, term);
+});
+
+test("a chart draws and a drawing shows through <img> in WebKit; a script in one runs nothing", async ({ page }) => {
+  await open(page);
+  const term = await page.evaluate(() => window.__arugula.client.state!.panes[0].id);
+  await ready(page, term);
+  const doc = await newDoc(post, term);
+  await bring(page, doc);
+  await fillEmbeds(post, doc);
+  await seeEmbeds(page, doc);
+  await brokenEmbeds(page, post, doc);
 });

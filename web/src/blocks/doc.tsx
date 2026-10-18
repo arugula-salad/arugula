@@ -1,7 +1,8 @@
 // Doc blocks (#963): a document an agent builds beside its pane, an outline
 // first and then one section at a time. One scrolling column: the title,
 // then each section's heading and either its body (Markdown, as the forge
-// blocks draw one: no HTML ever) or a placeholder saying what it will hold.
+// blocks draw one: no HTML ever; its charts are drawn here and its drawings
+// shown through <img>, #964) or a placeholder saying what it will hold.
 // A section filled while you watch gets a short highlight; nothing scrolls
 // you. The daemon pushes every change (patches that `client.ts` merges into
 // the whole state), so there is nothing here to poll.
@@ -9,6 +10,7 @@
 import { render } from "preact";
 import type { Client } from "../client";
 import type { PaneId } from "../proto";
+import { plain } from "../ui/embeds";
 import { Markdown } from "../ui/markdown";
 import { registerBlock, type BlockView } from "./view";
 
@@ -29,11 +31,12 @@ interface DocState {
   error?: string;
 }
 
-/** The Doc as Markdown, as the daemon's `capture --text` has it. */
+/** The Doc as Markdown, as the daemon's `capture --text` has it: a chart is
+ * a line saying what it is and a drawing is `[drawing]`. */
 function markdown(s: DocState): string {
   const parts = [`# ${s.title}\n`];
   for (const e of s.entries) {
-    const body = e.body !== null ? `${e.body.trimEnd()}\n` : `_(coming${e.intent ? `: ${e.intent}` : ""})_\n`;
+    const body = e.body !== null ? `${plain(e.body).trimEnd()}\n` : `_(coming${e.intent ? `: ${e.intent}` : ""})_\n`;
     parts.push(`\n## ${e.heading}\n\n${body}`);
   }
   return parts.join("");
@@ -66,7 +69,7 @@ function DocBlock({ id, s, fresh }: { id: PaneId; s: DocState | null; fresh: Map
             {e.body !== null ? (
               // A refill is a new element, so its highlight plays again.
               <div key={e.rev} class={fresh.get(e.id) === e.rev ? "doc-body doc-fresh" : "doc-body"}>
-                <Markdown text={e.body} refs={null} />
+                <Markdown text={e.body} refs={null} embeds />
               </div>
             ) : (
               <div class="doc-pending">
