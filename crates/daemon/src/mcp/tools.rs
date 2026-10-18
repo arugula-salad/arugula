@@ -917,8 +917,7 @@ const LEAD_ONLY: [(&str, &str); 1] = [("list", "links")];
 /// Each is a kind of a grouped tool, so without its flag it's filtered out
 /// of its group's table, and its arguments and its line in the description
 /// go with it. A caller who names one is refused, saying how to turn the
-/// flag on (#347: the handler or `ops::flagged` asks), by its
-/// kind or its name before #349.
+/// flag on (#347: the handler or `ops::flagged` asks).
 const UNLISTED: [(&str, &str, &str); 3] =
     [("list", "agents", flags::AGENTS), ("show", "app", flags::STUDIO), ("show", "workspace", flags::WORKSPACES)];
 
@@ -1281,33 +1280,6 @@ fn all_defs() -> Vec<Def> {
     ]
 }
 
-/// What a tool's name meant before #349 grouped them: the tool now, and
-/// the argument that picks the old job. Answered for a client that kept
-/// the old names (a script, a list cached before an upgrade); never listed.
-fn renamed(old: &str) -> Option<(&'static str, Option<(&'static str, Value)>)> {
-    let kind = |tool: &'static str, k: &str| Some((tool, Some(("kind", json!(k)))));
-    match old {
-        "capture_screen" => Some(("read_output", Some(("screen", json!(true))))),
-        "search" => kind("history", "output"),
-        "list_conversations" => kind("list", "conversations"),
-        "list_devices" => kind("list", "devices"),
-        "open_port" => kind("show", "port"),
-        "show_changes" => kind("show", "changes"),
-        "show_file" => kind("show", "file"),
-        "open_pr" => kind("show", "pr"),
-        "open_issue" => kind("show", "issue"),
-        "open_conversation" => kind("show", "conversation"),
-        "open_app" => kind("show", "app"),
-        "open_workspace" => kind("show", "workspace"),
-        "read_pr" | "read_issue" => Some(("read_forge", None)),
-        "pr_comment" | "issue_comment" => kind("draft", "comment"),
-        "pr_review" => kind("draft", "review"),
-        "pr_merge" => kind("draft", "merge"),
-        "issue_new" => kind("draft", "issue"),
-        _ => None,
-    }
-}
-
 /// A grouped tool's schema: `kind`, then every kind's arguments. One that
 /// several kinds take has one entry, its description saying which kind
 /// means what; what each kind needs is in the tool's description
@@ -1482,20 +1454,11 @@ pub fn list(scope: Scope, on: On) -> Vec<Tool> {
         .collect()
 }
 
-/// What a call reaches: its tool (by its name now, for an old one), the
-/// kind it picks for a grouped one, and its arguments without the kind.
+/// What a call reaches: its tool, the kind it picks for a grouped one, and
+/// its arguments without the kind.
 /// Every kind answers, listed or not; `on` only says which ones an error
 /// names.
 fn route(name: &str, mut args: Value, on: On) -> Result<(Def, Option<&'static str>, Value), String> {
-    let name = match renamed(name) {
-        Some((tool, set)) => {
-            if let (Some((key, v)), Some(o)) = (set, args.as_object_mut()) {
-                o.insert(key.into(), v);
-            }
-            tool
-        }
-        None => name,
-    };
     let def = all_defs().into_iter().find(|d| d.name == name).ok_or_else(|| format!("no tool {name}"))?;
     let kind = match &def.args {
         Args::One(_) => None,
@@ -4083,12 +4046,8 @@ mod tests {
             let kinds = t.input_schema["properties"]["kind"]["enum"].clone();
             assert!(!kinds.as_array().unwrap().contains(&json!(kind)), "{tool}: {kinds}");
             assert!(!t.description.as_deref().unwrap().contains(&format!("\n- {kind}")), "{tool}: {kind}");
-            // Still there: by its kind, and by its name before #349.
+            // Still there by its kind.
             route(tool, json!({ "kind": kind }), fl(false)).unwrap_or_else(|e| panic!("{tool} {kind}: {e}"));
-        }
-        for old in ["open_app", "open_workspace"] {
-            let (def, kind, _) = route(old, json!({}), fl(false)).unwrap_or_else(|e| panic!("{old}: {e}"));
-            assert!(flagged_kinds().contains(&(def.name, kind.unwrap())), "{old}");
         }
         let show = list(Scope::Full, fl(false)).into_iter().find(|t| t.name == "show").unwrap();
         for arg in ["app", "env"] {
@@ -4141,176 +4100,6 @@ mod tests {
         assert_eq!(defs(fl(false)).len(), 19 - NO_FORGE);
         assert_eq!(defs(fl(true)).len(), 22 - NO_FORGE);
         assert_eq!(every.len(), defs(fl(false)).len() + CHAT_TOOLS.len() + 1 + NO_FORGE, "and delegate");
-    }
-
-    /// The 39 tools before #349, by their old names.
-    const BEFORE: [&str; 39] = [
-        "run",
-        "send_input",
-        "attach",
-        "read_output",
-        "capture_screen",
-        "wait",
-        "list",
-        "close",
-        "read_thread",
-        "post_thread",
-        "history",
-        "search",
-        "open_port",
-        "open_app",
-        "start_agent",
-        "list_conversations",
-        "open_conversation",
-        "prompt_agent",
-        "agent_respond",
-        "show_changes",
-        "show_file",
-        "open_workspace",
-        "open_pr",
-        "read_pr",
-        "pr_comment",
-        "pr_review",
-        "pr_merge",
-        "open_issue",
-        "read_issue",
-        "issue_comment",
-        "issue_new",
-        "invite_person",
-        "read_invite",
-        "list_agents",
-        "read_agent",
-        "open_fountain",
-        "read_file",
-        "list_devices",
-        "device_call",
-    ];
-
-    /// Tools added after #349 for jobs no old tool did: delegating (M78),
-    /// and saying what's here (#229).
-    const SINCE_TOOLS: usize = 2;
-
-    /// Kinds added after #349, each a job no old tool did.
-    const SINCE: &[(&str, Option<&str>)] = &[
-        ("list", Some("agents")),
-        ("capabilities", None),
-        ("delegate", Some("send")),
-        ("delegate", Some("get")),
-        ("delegate", Some("answer")),
-        ("delegate", Some("cancel")),
-        ("delegate", Some("review")),
-        ("delegate", Some("apply")),
-        // A conversation's lead's links (#858).
-        ("list", Some("links")),
-    ];
-
-    /// The old tools whose jobs went with daemon-side Managoat.
-    const RETIRED: [&str; 3] = ["list_agents", "read_agent", "open_fountain"];
-
-    /// About half as many tools (#349), and every old job is still there
-    /// (but [`RETIRED`]'s): each old name is a tool now, or reaches the tool
-    /// and kind that does its job, with its old arguments; and it stays
-    /// read-only or not.
-    #[test]
-    fn every_old_tool_is_a_tool_or_a_kind() {
-        let now = all_defs();
-        // The old jobs in half as many tools; a tool for a job none of them
-        // did (SINCE) counts apart.
-        let new_tools =
-            now.iter().filter(|d| SINCE.iter().any(|(t, _)| *t == d.name) && !BEFORE.contains(&d.name)).count();
-        let new_tools = new_tools.min(SINCE_TOOLS);
-        assert!((now.len() - new_tools) * 2 <= BEFORE.len() + 1, "{} tools", now.len());
-        let mut jobs = std::collections::BTreeSet::new();
-        for old in BEFORE.into_iter().filter(|o| !RETIRED.contains(o)) {
-            let (def, kind, _) = route(old, json!({}), fl(true)).unwrap_or_else(|e| panic!("{old}: {e}"));
-            let was_ro = matches!(
-                old,
-                "read_output"
-                    | "capture_screen"
-                    | "wait"
-                    | "list"
-                    | "read_thread"
-                    | "history"
-                    | "search"
-                    | "list_conversations"
-                    | "read_pr"
-                    | "read_issue"
-                    | "read_invite"
-                    | "read_file"
-                    | "list_devices"
-            );
-            assert_eq!(def.read_only, was_ro, "{old} is now {}, read-only {}", def.name, def.read_only);
-            // search is history's kind output, an argument of a tool that
-            // does one thing.
-            jobs.insert((def.name, kind));
-        }
-        // Jobs since: the team's agent catalog (M77).
-        jobs.extend(SINCE.iter().copied());
-        // Every tool and kind there is now does one of the old jobs, or a new one.
-        let mut all = std::collections::BTreeSet::new();
-        for d in &now {
-            match &d.args {
-                Args::One(_) => {
-                    all.insert((d.name, None));
-                }
-                Args::Kinds { kinds, .. } => all.extend(kinds.iter().map(|k| (d.name, Some(k.name)))),
-            }
-        }
-        assert_eq!(jobs, all);
-    }
-
-    /// The old tools' arguments still parse as the kind that does their
-    /// job, kind added.
-    #[test]
-    fn old_calls_reach_their_kind_with_their_arguments() {
-        let calls = [
-            ("capture_screen", json!({ "pane": 3 }), "read_output", None),
-            ("search", json!({ "pattern": "x", "since": "1d", "limit": 5 }), "history", None),
-            ("list_conversations", json!({ "query": "q", "live": true }), "list", Some("conversations")),
-            ("list_devices", json!({}), "list", Some("devices")),
-            ("open_port", json!({ "port": 3000, "path": "/x", "beside": "%2" }), "show", Some("port")),
-            ("show_changes", json!({ "repo": "/r", "rev_a": "main" }), "show", Some("changes")),
-            ("show_file", json!({ "path": "a.rs", "line": 4 }), "show", Some("file")),
-            ("open_pr", json!({ "pr": "o/r#1", "dir": "/r" }), "show", Some("pr")),
-            ("open_issue", json!({ "issue": "o/r#2" }), "show", Some("issue")),
-            ("open_conversation", json!({ "id": "abc", "then": "fork" }), "show", Some("conversation")),
-            ("open_app", json!({ "app": "hud" }), "show", Some("app")),
-            ("open_workspace", json!({ "dir": "/w", "env": "prod" }), "show", Some("workspace")),
-            ("read_pr", json!({ "block": 4 }), "read_forge", None),
-            ("read_issue", json!({ "block": "%4" }), "read_forge", None),
-            ("pr_comment", json!({ "block": 4, "body": "b" }), "draft", Some("comment")),
-            ("issue_comment", json!({ "block": 4, "body": "b" }), "draft", Some("comment")),
-            ("pr_review", json!({ "block": 4, "event": "request_changes", "body": "b" }), "draft", Some("review")),
-            ("pr_merge", json!({ "block": 4, "style": "squash" }), "draft", Some("merge")),
-            ("issue_new", json!({ "repo": "o/r", "title": "t" }), "draft", Some("issue")),
-        ];
-        for (old, args, tool, kind) in calls {
-            let (def, k, args) = route(old, args, fl(false)).unwrap_or_else(|e| panic!("{old}: {e}"));
-            assert_eq!((def.name, k), (tool, kind), "{old}");
-            let ok = match (tool, kind) {
-                ("read_output", _) => parse::<ReadArgs>(args).map(|a| assert!(a.screen)).is_ok(),
-                ("history", _) => parse::<HistoryArgs>(args)
-                    .map(|a| assert_eq!((a.kind.as_deref(), a.pattern.as_deref()), (Some("output"), Some("x"))))
-                    .is_ok(),
-                ("list", Some("conversations")) => parse::<ListConversationsArgs>(args).is_ok(),
-                ("list", Some("devices")) => parse::<NoArgs>(args).is_ok(),
-                ("show", Some("port")) => parse::<OpenPortArgs>(args).is_ok(),
-                ("show", Some("changes")) => parse::<ShowChangesArgs>(args).is_ok(),
-                ("show", Some("file")) => parse::<ShowFileArgs>(args).is_ok(),
-                ("show", Some("pr")) => parse::<OpenPrArgs>(args).is_ok(),
-                ("show", Some("issue")) => parse::<OpenIssueArgs>(args).is_ok(),
-                ("show", Some("conversation")) => parse::<OpenConversationArgs>(args).is_ok(),
-                ("show", Some("app")) => parse::<OpenAppArgs>(args).is_ok(),
-                ("show", Some("workspace")) => parse::<OpenWorkspaceArgs>(args).is_ok(),
-                ("read_forge", _) => parse::<ReadForgeArgs>(args).is_ok(),
-                ("draft", Some("comment")) => parse::<CommentArgs>(args).is_ok(),
-                ("draft", Some("review")) => parse::<PrReviewArgs>(args).is_ok(),
-                ("draft", Some("merge")) => parse::<PrMergeArgs>(args).is_ok(),
-                ("draft", Some("issue")) => parse::<IssueNewArgs>(args).is_ok(),
-                _ => unreachable!("{tool} {kind:?}"),
-            };
-            assert!(ok, "{old}'s arguments don't parse as {tool} {kind:?}");
-        }
     }
 
     /// A grouped call says what's wrong with it: no kind, a kind it doesn't

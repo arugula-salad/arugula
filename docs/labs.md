@@ -72,10 +72,10 @@ works with the daemon stopped. The state directory is kept by
 them.
 
 Before each feature had a flag there was one switch, and it still counts:
-an empty `labs` file in the state directory (0.24 and later), or `labs` in
-`flags.json`, means every flag the file doesn't name is on. So a machine
-that had Labs keeps all of it, and turning one feature off there leaves the
-rest. A starting daemon moves the old file into `flags.json` and removes it.
+`labs` in `flags.json` means every flag the file doesn't name is on. So a
+machine that had Labs keeps all of it, and turning one feature off there
+leaves the rest. (The empty `labs` file of 0.24 to 0.28 was moved into
+`flags.json` by daemons up to 0.44; it isn't read any more.)
 
 - **Per machine.** They're read by the machine that serves the page, so every
   machine you want a feature on needs its own. Someone you share a session

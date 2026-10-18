@@ -24,14 +24,14 @@
 //!   read as "every flag at its default"; only an explicit [`set`] replaces
 //!   it, and keeps the old one beside it as `flags.json.bad`.
 //! - **`labs` is every flag.** Before each feature had a flag there was one
-//!   switch: an empty `labs` file in the state dir (#385), then `labs` in
-//!   `flags.json` (#464). Either still means "on" for every flag the file
-//!   doesn't itself name, so a machine that had Labs keeps all of it, and
-//!   turning one feature off there leaves the rest. The daemon moves the old
-//!   file into `flags.json` when it starts ([`migrate_legacy`]). Nothing
-//!   offers `labs` as a flag any more.
+//!   switch, `labs` in `flags.json` (#464). It still means "on" for every
+//!   flag the file doesn't itself name, so a machine that had Labs keeps all
+//!   of it, and turning one feature off there leaves the rest. Nothing
+//!   offers `labs` as a flag any more. (The empty `labs` file of #385 before
+//!   it was moved into `flags.json` by daemons 0.29 to 0.44, and is no longer
+//!   read.)
 //! - **The file's presence is the owner asking.** A machine with a
-//!   `flags.json` (or the old file) has asked for Developer settings
+//!   `flags.json` has asked for Developer settings
 //!   ([`unlocked`]), and its menus offer them; a new install's don't. So
 //!   has one control sends flags to.
 //! - **Control pushes, the machine overrides (#347).** A machine joined to
@@ -39,7 +39,7 @@
 //!   second file, `flags.control.json` ([`CONTROL_FILE`]), which only the
 //!   daemon writes, from control's answer ([`write_control`]), and removes
 //!   when it leaves control. A flag is, first match wins: what `flags.json`
-//!   says of it (by name, then `labs`, then the old marker); what control
+//!   says of it (by name, then `labs`); what control
 //!   says for the machine's account; what control says for the machine's
 //!   team; its default. Account before team because it's the narrower say:
 //!   the account owns the machine, a team only reaches the machines in it.
@@ -68,10 +68,6 @@ pub const FILE: &str = "flags.json";
 /// What control says for this machine (#347), written by the daemon from
 /// control's answer. The owner's word is [`FILE`]; nobody edits this one.
 pub const CONTROL_FILE: &str = "flags.control.json";
-
-/// What #385 used before this: an empty file named `labs`. Read as a
-/// fallback and migrated ([`migrate_legacy`]); nothing writes it any more.
-pub const LEGACY_LABS_FILE: &str = "labs";
 
 /// The key that meant all of Labs before each feature had a flag (#464):
 /// in the file it still stands for every flag the file doesn't name. Not a
@@ -195,10 +191,10 @@ pub fn on(state_dir: &Path) -> On {
 }
 
 /// Whether `state_dir`'s owner has asked for Developer settings: it has a
-/// flags file, or the `labs` file from before. Or control sends it flags
+/// flags file. Or control sends it flags
 /// (#347), so its owner can see where they come from and override them.
 pub fn unlocked(state_dir: &Path) -> bool {
-    state_dir.join(FILE).exists() || state_dir.join(LEGACY_LABS_FILE).exists() || !read_control(state_dir).is_empty()
+    state_dir.join(FILE).exists() || !read_control(state_dir).is_empty()
 }
 
 /// What control says for this machine (#347): its account's flags and,
@@ -251,7 +247,7 @@ pub struct State {
 pub fn explain(state_dir: &Path) -> Vec<(Flag, State)> {
     let doc = read(state_dir);
     let pushed = read_control(state_dir);
-    FLAGS.iter().map(|f| (*f, doc.state(state_dir, &pushed, f))).collect()
+    FLAGS.iter().map(|f| (*f, doc.state(&pushed, f))).collect()
 }
 
 /// [`CONTROL_FILE`] as it is: empty if there's none or it doesn't parse
@@ -383,15 +379,15 @@ impl Doc {
     }
 
     /// This machine's word on a flag: the file's on it, else its word on
-    /// `labs` (which was all of them), else the old marker's (on).
-    fn local(&self, dir: &Path, f: &Flag) -> Option<bool> {
-        self.says(f.name).or_else(|| self.says(LABS)).or_else(|| dir.join(LEGACY_LABS_FILE).exists().then_some(true))
+    /// `labs` (which was all of them).
+    fn local(&self, f: &Flag) -> Option<bool> {
+        self.says(f.name).or_else(|| self.says(LABS))
     }
 
     /// A flag's state: this machine's word, else control's for the
     /// account, else control's for the team, else its default.
-    fn state(&self, dir: &Path, pushed: &Pushed, f: &Flag) -> State {
-        let local = self.local(dir, f);
+    fn state(&self, pushed: &Pushed, f: &Flag) -> State {
+        let local = self.local(f);
         // A local-only flag doesn't hear control at all.
         let pushed_for = |m: &BTreeMap<String, bool>| m.get(f.name).copied().filter(|_| !f.local_only);
         let account = pushed_for(&pushed.account);
@@ -409,7 +405,7 @@ impl Doc {
 /// Whether the flag `name` is on in `state_dir`. Read on every call; a
 /// name that isn't in [`FLAGS`] is off.
 pub fn get(state_dir: &Path, name: &str) -> bool {
-    flag(name).is_some_and(|f| read(state_dir).state(state_dir, &read_control(state_dir), f).on)
+    flag(name).is_some_and(|f| read(state_dir).state(&read_control(state_dir), f).on)
 }
 
 /// Every flag with its state, from one read of each file.
@@ -465,24 +461,20 @@ fn write(state_dir: &Path, key: Option<(&str, Option<bool>)>) -> io::Result<()> 
             Map::new()
         }
     };
-    let marker = state_dir.join(LEGACY_LABS_FILE);
-    let mut drop_marker = false;
     let flags = doc.entry("flags").or_insert_with(|| Value::Object(Map::new()));
     match (flags, key) {
         (Value::Object(flags), Some((name, Some(on)))) => {
             flags.insert(name.to_owned(), Value::Bool(on));
         }
         (Value::Object(flags), Some((name, None))) => {
-            // `labs` (or the old marker) speaks for every flag the file
-            // doesn't name: name them first, so taking one back leaves
-            // the rest as they were.
-            let labs = flags.get(LABS).and_then(Value::as_bool).or_else(|| marker.exists().then_some(true));
+            // `labs` speaks for every flag the file doesn't name: name
+            // them first, so taking one back leaves the rest as they were.
+            let labs = flags.get(LABS).and_then(Value::as_bool);
             if let Some(labs) = labs.filter(|_| !flags.contains_key(name)) {
                 for f in FLAGS {
                     flags.entry(f.name).or_insert(Value::Bool(labs));
                 }
                 flags.remove(LABS);
-                drop_marker = true;
             }
             flags.remove(name);
         }
@@ -490,27 +482,7 @@ fn write(state_dir: &Path, key: Option<(&str, Option<bool>)>) -> io::Result<()> 
     }
     let mut text = serde_json::to_string_pretty(&doc).expect("a JSON object serializes");
     text.push('\n');
-    write_atomic(&state_dir.join(FILE), text.as_bytes())?;
-    if drop_marker {
-        let _ = fs::remove_file(marker);
-    }
-    Ok(())
-}
-
-/// The old `labs` marker file, moved into `flags.json`: `labs` on there
-/// (every flag the file doesn't name) unless the file already says one way
-/// or the other, and the marker removed.
-/// `true` if there was a marker. Run by the daemon at startup.
-pub fn migrate_legacy(state_dir: &Path) -> io::Result<bool> {
-    let marker = state_dir.join(LEGACY_LABS_FILE);
-    if !marker.exists() {
-        return Ok(false);
-    }
-    if read(state_dir).says(LABS).is_none() {
-        write(state_dir, Some((LABS, Some(true))))?;
-    }
-    fs::remove_file(&marker)?;
-    Ok(true)
+    write_atomic(&state_dir.join(FILE), text.as_bytes())
 }
 
 /// A new file renamed over the old, so a reader sees all of one or all of
@@ -649,48 +621,30 @@ mod tests {
         fs::remove_dir_all(&d).unwrap();
     }
 
-    /// What was one switch is every flag: the old `labs` file, and `labs`
-    /// in the flags file. A flag the file names for itself follows that.
+    /// What was one switch is every flag: `labs` in the flags file. A flag
+    /// the file names for itself follows that. The old empty `labs` file of
+    /// #385 means nothing now.
     #[test]
     fn labs_from_before_is_every_flag_the_file_doesnt_name() {
         let d = dir("legacy");
-        fs::write(d.join(LEGACY_LABS_FILE), "").unwrap();
+        fs::write(d.join(FILE), r#"{"flags":{"labs":true}}"#).unwrap();
         assert_eq!(on(&d), On::all());
-        assert!(unlocked(&d));
         // One turned off there leaves the rest.
         set(&d, VMS, false).unwrap();
         assert!(!get(&d, VMS) && get(&d, CHAT));
         assert_eq!(names(&d).len(), FLAGS.len() - 1);
-        fs::remove_file(d.join(LEGACY_LABS_FILE)).unwrap();
-        assert!(!on(&d).any());
 
-        // `labs` in the file, as #464 wrote it: on is all of them, off none.
+        // On is all of them, off none.
         fs::write(d.join(FILE), r#"{"flags":{"labs":true,"studio":false}}"#).unwrap();
         assert!(get(&d, CHAT) && !get(&d, STUDIO));
         fs::write(d.join(FILE), r#"{"flags":{"labs":false,"chat":true}}"#).unwrap();
         assert_eq!(names(&d), [CHAT]);
-        // And off there wins over an old file still lying about.
-        fs::write(d.join(LEGACY_LABS_FILE), "").unwrap();
-        assert_eq!(names(&d), [CHAT]);
         fs::remove_dir_all(&d).unwrap();
-    }
 
-    #[test]
-    fn migrating_moves_the_marker_into_the_flags_file() {
-        let d = dir("migrate");
-        assert!(!migrate_legacy(&d).unwrap());
-        fs::write(d.join(LEGACY_LABS_FILE), "anything").unwrap();
-        assert!(migrate_legacy(&d).unwrap());
-        assert!(!d.join(LEGACY_LABS_FILE).exists());
-        assert_eq!(on(&d), On::all());
-        assert!(!migrate_legacy(&d).unwrap());
-
-        // A file that already says off wins over the marker, which still goes.
-        fs::write(d.join(FILE), r#"{"flags":{"labs":false}}"#).unwrap();
-        fs::write(d.join(LEGACY_LABS_FILE), "").unwrap();
-        assert!(migrate_legacy(&d).unwrap());
-        assert!(!d.join(LEGACY_LABS_FILE).exists());
-        assert!(!on(&d).any());
+        // The marker file alone is neither Labs nor Developer settings.
+        let d = dir("marker");
+        fs::write(d.join("labs"), "").unwrap();
+        assert!(!on(&d).any() && !unlocked(&d));
         fs::remove_dir_all(&d).unwrap();
     }
 
@@ -766,15 +720,7 @@ mod tests {
         assert_eq!(names(&d).len(), FLAGS.len() - 2);
         let v: Value = serde_json::from_str(&fs::read_to_string(d.join(FILE)).unwrap()).unwrap();
         assert!(v["flags"].get(LABS).is_none() && v["flags"].get(CHAT).is_none());
-
-        // The old marker the same way, and it goes.
-        let d2 = dir("unset-marker");
-        fs::write(d2.join(LEGACY_LABS_FILE), "").unwrap();
-        unset(&d2, STUDIO).unwrap();
-        assert!(!d2.join(LEGACY_LABS_FILE).exists());
-        assert!(!get(&d2, STUDIO) && get(&d2, CHAT));
         fs::remove_dir_all(&d).unwrap();
-        fs::remove_dir_all(&d2).unwrap();
     }
 
     /// Guest ssh and the agent catalog are the machine's alone: control

@@ -38,8 +38,7 @@ macro_rules! arugulad {
 }
 
 /// Turns Labs on or off in a daemon's state dir, as `arugulad flags labs`
-/// does (#464): a running daemon follows at once. Only the one test of the
-/// old `labs` marker file (`hosts.rs`) writes that file by hand.
+/// does (#464): a running daemon follows at once.
 pub fn labs(state: &Path, on: bool) {
     for f in arugula_proto::flags::FLAGS {
         arugula_proto::flags::set(state, f.name, on).expect("the state dir takes flags.json");

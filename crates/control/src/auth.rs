@@ -12,10 +12,8 @@
 //!   `illogical daemon auth v2\n<METHOD>\n<path and query>\n<ms>\n<nonce>\n<sha256 of the body, hex>\n`,
 //!   within five minutes of now. Each signature is good once: control
 //!   remembers the ones it took until they'd be too old anyway.
-//!   Daemons from before 0.17 sign `<device id> <ms> <sig>` over
-//!   `illogical daemon auth\n<METHOD>\n<path>\n<ms>\n` (no query, no body);
-//!   control takes those too, once each, until it's started with
-//!   `--refuse-old-daemon-signatures`, when they're told to update.
+//!   Daemons from before 0.17 signed `<device id> <ms> <sig>` (no query,
+//!   no body, no nonce); those are told to update (426).
 //!
 //! Cookie-authenticated requests that change anything, and every WebSocket
 //! upgrade, must come from control's own origin (no cross-site requests
@@ -140,11 +138,6 @@ pub struct DaemonAuth {
     pub cert: Cert,
 }
 
-/// What a pre-0.17 daemon signs.
-pub fn daemon_auth_message(method: &str, path: &str, ms: u64) -> String {
-    format!("illogical daemon auth\n{method}\n{path}\n{ms}\n")
-}
-
 /// What a daemon signs: the request's method, path and query, time, a
 /// nonce, and its body's hash.
 pub fn daemon_auth_message_v2(method: &str, path_and_query: &str, ms: u64, nonce: &str, body: &[u8]) -> String {
@@ -245,15 +238,12 @@ fn check_daemon(app: &App, parts: &Parts, body: &[u8]) -> Result<Cert, ApiError>
             let pq = parts.uri.path_and_query().map_or_else(|| parts.uri.path(), |p| p.as_str());
             (*id, ms, *sig, daemon_auth_message_v2(parts.method.as_str(), pq, ms, nonce, body))
         }
-        [id, ms, sig] => {
-            if !app.cfg.old_daemon_signatures {
-                return Err(err(
-                    StatusCode::UPGRADE_REQUIRED,
-                    "this machine's Arugula is too old for this control: update Arugula (0.17 or newer) and restart it",
-                ));
-            }
-            let ms: u64 = ms.parse().map_err(|_| bad())?;
-            (*id, ms, *sig, daemon_auth_message(parts.method.as_str(), parts.uri.path(), ms))
+        // A daemon from before 0.17 signs `<id> <ms> <sig>`.
+        [_, _, _] => {
+            return Err(err(
+                StatusCode::UPGRADE_REQUIRED,
+                "this machine's Arugula is too old for this control: update Arugula (0.17 or newer) and restart it",
+            ));
         }
         _ => return Err(bad()),
     };

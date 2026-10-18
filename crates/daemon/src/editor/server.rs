@@ -63,9 +63,6 @@ const START: Duration = Duration::from_secs(60);
 /// file and carries the theme.
 pub const EXT_ID: &str = "arugula.arugula-editor";
 pub const EXT_VERSION: &str = "0.2.1";
-/// What it was called before: taken out of our settings folder where it's
-/// still listed. M27's, and the name before the rename.
-const OLD_IDS: &[&str] = &["illogical.illogical", "illogical.illogical-editor"];
 pub const EXT_FILES: &[(&str, &str)] = &[
     ("package.json", include_str!("ext/package.json")),
     ("extension.js", include_str!("ext/extension.js")),
@@ -464,8 +461,7 @@ fn install_ext(exts: &Path) -> io::Result<()> {
     let list = exts.join("extensions.json");
     let mut all: Vec<serde_json::Value> =
         std::fs::read(&list).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
-    let ours =
-        |v: &serde_json::Value| v["identifier"]["id"].as_str().is_some_and(|id| id == EXT_ID || OLD_IDS.contains(&id));
+    let ours = |v: &serde_json::Value| v["identifier"]["id"].as_str() == Some(EXT_ID);
     if all.iter().any(|v| ours(v) && v["relativeLocation"] == rel.as_str()) {
         return Ok(());
     }
@@ -671,20 +667,14 @@ mod tests {
         assert_eq!(v["chat.disableAIFeatures"], true);
         // Someone's own settings stay theirs.
         std::fs::write(&settings, "{\"workbench.colorTheme\": \"Default Light Modern\"}").unwrap();
-        // An extension they installed stays listed; an old one of ours goes.
+        // An extension they installed stays listed; an older one of ours goes.
         let exts = dir.join("extensions");
-        std::fs::create_dir_all(exts.join("illogical.illogical-0.0.1")).unwrap();
-        std::fs::create_dir_all(exts.join("illogical.illogical-editor-0.2.0")).unwrap();
+        std::fs::create_dir_all(exts.join(format!("{EXT_ID}-0.0.1"))).unwrap();
         let mut list: Vec<serde_json::Value> =
             serde_json::from_slice(&std::fs::read(exts.join("extensions.json")).unwrap()).unwrap();
         list.retain(|v| v["identifier"]["id"] != EXT_ID);
         list.push(serde_json::json!({ "identifier": { "id": "rust-lang.rust-analyzer" }, "relativeLocation": "ra" }));
-        list.push(
-            // M27's, under its old name.
-            serde_json::json!({ "identifier": { "id": "illogical.illogical" }, "relativeLocation": "illogical.illogical-0.0.1" }),
-        );
-        // The one from before the rename.
-        list.push(serde_json::json!({ "identifier": { "id": "illogical.illogical-editor" }, "relativeLocation": "illogical.illogical-editor-0.2.0" }));
+        list.push(serde_json::json!({ "identifier": { "id": EXT_ID }, "relativeLocation": format!("{EXT_ID}-0.0.1") }));
         std::fs::write(exts.join("extensions.json"), serde_json::to_vec(&list).unwrap()).unwrap();
         prepare(&dir).unwrap();
         assert!(std::fs::read_to_string(&settings).unwrap().contains("Light"));
@@ -693,8 +683,7 @@ mod tests {
         let ids: Vec<&str> = list.iter().filter_map(|v| v["identifier"]["id"].as_str()).collect();
         assert_eq!(ids, ["rust-lang.rust-analyzer", EXT_ID]);
         assert_eq!(list[1]["relativeLocation"], format!("{EXT_ID}-{EXT_VERSION}"));
-        assert!(!exts.join("illogical.illogical-0.0.1").exists());
-        assert!(!exts.join("illogical.illogical-editor-0.2.0").exists());
+        assert!(!exts.join(format!("{EXT_ID}-0.0.1")).exists());
         let pkg: serde_json::Value =
             serde_json::from_slice(&std::fs::read(exts.join(format!("{EXT_ID}-{EXT_VERSION}/package.json"))).unwrap())
                 .unwrap();

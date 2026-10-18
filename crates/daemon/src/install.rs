@@ -140,35 +140,6 @@ fn unit_env(unit: &str) -> Vec<String> {
     unit.lines().filter(|l| l.starts_with("Environment=")).map(String::from).collect()
 }
 
-/// Whether Claude Code here still runs `illogical`, once the CLI just
-/// installed (`cli`) has renamed our hooks and MCP server to `arugula`
-/// (#534). Also true when it can't tell: the old names then stay until the
-/// next install looks again.
-fn old_names_still_used(cli: &std::path::Path) -> bool {
-    let out = match Command::new(cli).args(["hooks", "rename-old"]).output() {
-        Ok(o) if o.status.success() => o,
-        Ok(o) => {
-            println!(
-                "note: `{} hooks rename-old` failed: {}",
-                cli.display(),
-                String::from_utf8_lossy(&o.stderr).trim()
-            );
-            return true;
-        }
-        Err(e) => {
-            println!("note: couldn't run {}: {e}", cli.display());
-            return true;
-        }
-    };
-    let text = String::from_utf8_lossy(&out.stdout);
-    let mut lines: Vec<&str> = text.lines().collect();
-    let said = lines.pop().and_then(|l| serde_json::from_str::<serde_json::Value>(l).ok());
-    for l in lines {
-        println!("{l}");
-    }
-    said.and_then(|v| v["old"].as_bool()).unwrap_or(true)
-}
-
 #[cfg(target_os = "macos")]
 pub fn install(start: bool, daemon_args: &[String], reset: bool, system: bool) -> anyhow::Result<()> {
     launchd::install(start, daemon_args, reset, system)
@@ -224,8 +195,7 @@ mod windows {
         local().join("Programs").join("arugula")
     }
 
-    /// The files, into `programs()`. illogical's folder, with its copies
-    /// under the old names, goes once nothing runs them (#534).
+    /// The files, into `programs()`.
     pub fn copy_binaries() -> anyhow::Result<PathBuf> {
         let me = std::env::current_exe()?.canonicalize()?;
         let from = me.parent().context("this exe has no directory")?.to_owned();
@@ -234,17 +204,6 @@ mod windows {
         }
         let dir = programs();
         copy_files(&from, &dir, &FILES)?;
-        let old = local().join("Programs").join(arugula_proto::rename::OLD);
-        if old.is_dir() && dir.join("arugula.exe").is_file() {
-            if super::old_names_still_used(&dir.join("arugula.exe")) {
-                println!("note: kept {}: Claude Code still runs `illogical` from there", old.display());
-            } else {
-                match fs::remove_dir_all(&old) {
-                    Ok(()) => println!("removed {} (the old names)", old.display()),
-                    Err(e) => println!("note: couldn't remove {}: {e}", old.display()),
-                }
-            }
-        }
         Ok(dir.join("arugulad.exe"))
     }
 
@@ -585,7 +544,6 @@ pub fn copy_binaries(home: &Path) -> anyhow::Result<PathBuf> {
     } else {
         println!("note: no `arugula` CLI next to {}; build it with `cargo build -p arugula`", exe.display());
     }
-    drop_old_names(&bin_dir, || old_names_still_used(&bin_dir.join("arugula")));
     on_path(home);
     Ok(dest)
 }
@@ -612,35 +570,6 @@ pub fn binaries_only() -> anyhow::Result<()> {
 #[cfg(windows)]
 pub fn binaries_only() -> anyhow::Result<()> {
     bail!("--no-service is for Linux and macOS")
-}
-
-/// `illogicald` and `illogical` in `bin_dir`, the links to `arugulad` and
-/// `arugula` that illogical's rename left (#505, #534), go once nothing runs
-/// them (`still_used`, asked only when there are some, #534): Claude Code
-/// hooks and its MCP server called them by those names.
-#[cfg(unix)]
-fn drop_old_names(bin_dir: &Path, still_used: impl FnOnce() -> bool) {
-    let ours = |old: &str, new: &str| {
-        fs::read_link(bin_dir.join(old)).is_ok_and(|t| t == Path::new(new) || t == bin_dir.join(new))
-    };
-    let links: Vec<&str> = [("illogicald", "arugulad"), ("illogical", "arugula")]
-        .into_iter()
-        .filter(|(o, n)| ours(o, n))
-        .map(|(o, _)| o)
-        .collect();
-    if links.is_empty() {
-        return;
-    }
-    if still_used() {
-        println!("note: kept {}: Claude Code still runs `illogical`", links.join(" and "));
-        return;
-    }
-    for old in links {
-        match fs::remove_file(bin_dir.join(old)) {
-            Ok(()) => println!("removed {} (the old name)", bin_dir.join(old).display()),
-            Err(e) => println!("note: couldn't remove {}: {e}", bin_dir.join(old).display()),
-        }
-    }
 }
 
 /// macOS: a LaunchAgent in the user's GUI domain when they have a GUI
@@ -1159,73 +1088,6 @@ mod tests {
         assert_eq!(super::unit_env(&t), env);
         // illogical's unit is no longer read (#534).
         assert_eq!(super::unit_args("ExecStart=%h/.local/bin/illogicald --listen x\n"), None);
-    }
-
-    /// #534: the links the rename left go once nothing runs them; asked
-    /// only when there are some; anything else by those names stays.
-    #[cfg(unix)]
-    #[test]
-    fn old_names_go_once_unused() {
-        use std::{cell::Cell, os::unix::fs::symlink};
-        let bin = std::env::temp_dir().join(format!("arugula-install-links-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&bin);
-        std::fs::create_dir_all(&bin).unwrap();
-        for f in ["arugulad", "arugula"] {
-            std::fs::write(bin.join(f), f).unwrap();
-        }
-        let asked = Cell::new(0);
-        let ask = |used: bool| {
-            let asked = &asked;
-            move || {
-                asked.set(asked.get() + 1);
-                used
-            }
-        };
-        // None: not asked.
-        super::drop_old_names(&bin, ask(false));
-        assert_eq!(asked.get(), 0);
-        symlink("arugulad", bin.join("illogicald")).unwrap();
-        symlink(bin.join("arugula"), bin.join("illogical")).unwrap();
-        // Still used: kept.
-        super::drop_old_names(&bin, ask(true));
-        assert_eq!(asked.get(), 1);
-        assert!(std::fs::symlink_metadata(bin.join("illogical")).is_ok());
-        assert!(std::fs::symlink_metadata(bin.join("illogicald")).is_ok());
-        // Unused: gone, and nothing else.
-        super::drop_old_names(&bin, ask(false));
-        let mut names: Vec<_> = std::fs::read_dir(&bin).unwrap().map(|e| e.unwrap().file_name()).collect();
-        names.sort();
-        assert_eq!(names, ["arugula", "arugulad"]);
-        // A file of that name (not our link) stays, and isn't asked about.
-        std::fs::write(bin.join("illogical"), "someone's").unwrap();
-        symlink("elsewhere", bin.join("illogicald")).unwrap();
-        super::drop_old_names(&bin, ask(false));
-        assert_eq!(asked.get(), 2);
-        assert_eq!(std::fs::read_to_string(bin.join("illogical")).unwrap(), "someone's");
-        assert!(std::fs::symlink_metadata(bin.join("illogicald")).is_ok());
-        std::fs::remove_dir_all(&bin).unwrap();
-    }
-
-    /// The CLI's answer: `{"old": …}` last, anything else printed; no
-    /// answer counts as still used.
-    #[cfg(unix)]
-    #[test]
-    fn asks_the_cli_whether_old_names_are_used() {
-        let dir = std::env::temp_dir().join(format!("arugula-install-ask-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let cli = |name: &str, body: &str| {
-            let f = dir.join(name);
-            std::fs::write(&f, format!("#!/bin/sh\n[ \"$1 $2\" = \"hooks rename-old\" ] || exit 9\n{body}\n")).unwrap();
-            crate::perm::set(&f, 0o755).unwrap();
-            f
-        };
-        assert!(!super::old_names_still_used(&cli("no", "echo renamed; echo '{\"old\": false}'")));
-        assert!(super::old_names_still_used(&cli("yes", "echo '{\"old\": true}'")));
-        assert!(super::old_names_still_used(&cli("mute", "true")));
-        assert!(super::old_names_still_used(&cli("fails", "exit 1")));
-        assert!(super::old_names_still_used(&dir.join("missing")));
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[cfg(unix)]

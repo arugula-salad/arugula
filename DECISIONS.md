@@ -1085,12 +1085,11 @@ mechanism #347's per-feature flags extend:
   no MCP tool, since an agent has no business with the owner's settings; the
   web client's *Labs…* in the session menu uses them and reloads the page,
   because `HostFeatures` and the Labs chunk are read at load.
-- **The old `labs` file** (#385: empty, present means on) is read once more
-  and retired. A starting daemon moves it into `flags.json` (unless that
-  already says `labs`) and removes it. Until then `get` counts the file as
-  `labs` on when `flags.json` has no `labs`, so a CLI newer than its daemon,
-  or a daemon not yet restarted, still sees Labs. That fallback goes in a
-  later release, like the rename bridges (#534).
+- **The old `labs` file** (#385: empty, present means on) was read once
+  more and retired: daemons 0.29 to 0.44 moved it into `flags.json` (unless
+  that already said `labs`) on start and removed it, and `get` counted it as
+  `labs` on until then. Both went in 0.45 (2026-10-18): a machine that skipped
+  every release from 0.24 to 0.44 starts with Labs off and turns it back on.
 - **The `labs` cargo feature (#452) is unaffected.** `labs::enabled` is still
   `BUILT && flags::get(…)`; a build without Labs can set the flag and
   nothing follows, and *Labs…* says so.
@@ -1116,7 +1115,7 @@ in `FLAGS`, off by default. (`agents` came later; `fountain` went with
 one", below; `huddles` went when huddles were removed: "Huddles are
 removed", below.)
 - **`labs` is no longer a flag; in the file it means all of them.** `labs`
-  in `flags.json`, or the old empty `labs` file, is the answer for every flag
+  in `flags.json` is the answer for every flag
   the file doesn't name itself. A machine that had Labs keeps everything, one
   feature turned off there leaves the rest, and the test suites' one switch
   (`testkit::labs`, `e2e/labs.ts`) still turns it all on. `PUT

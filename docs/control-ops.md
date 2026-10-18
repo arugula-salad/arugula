@@ -110,11 +110,9 @@ arugula-control --public-url https://control.example.com --listen 127.0.0.1:7690
 - **Behind a proxy** that passes the client's address in a header, use
   `--trust-proxy-header` (for example `Fly-Client-IP`), so rate limits are
   per client (an IPv6 client counts by its /64).
-- **Daemons from before 0.17** sign their requests to control the old
-  way. Control takes that, each signature once, unless it's started with
-  `--refuse-old-daemon-signatures` (`ARUGULA_CONTROL_REFUSE_OLD_DAEMON_SIGNATURES=1`),
-  when those daemons are told to update. A machine control already knows
-  joins again only from 0.17 on.
+- **Daemons from before 0.17** signed their requests to control the old
+  way and joined without their key's proof. Control refuses both (426) and
+  tells them to update.
 - **Build it** with `just static` (`target/x86_64-unknown-linux-musl/release/arugula-control`).
   - The web client is built into the binary.
   - `--static-dir web/dist` serves a local build instead.

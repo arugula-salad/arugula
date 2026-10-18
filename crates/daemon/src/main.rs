@@ -801,12 +801,6 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
     let state_dir = args.state_dir.clone().unwrap_or_else(default_state_dir);
     let store = store::StateDir::open(state_dir.clone())?;
     info!(state = %state_dir.display(), "state directory");
-    // The `labs` file of #385 moves into flags.json (#464).
-    match arugula_proto::flags::migrate_legacy(&state_dir) {
-        Ok(true) => info!("the labs file is now labs in flags.json: every flag on"),
-        Ok(false) => {}
-        Err(e) => warn!(error = %e, "can't move the labs file into flags.json"),
-    }
     if let Err(e) = store::write_atomic(&state_dir.join("listen"), args.listen.to_string().as_bytes()) {
         warn!(error = %e, "can't record the listen address");
     }
