@@ -9,10 +9,12 @@ import { Divider } from "./divider";
 import { DropOverlay } from "./drop-overlay";
 import { len } from "./geometry";
 import { PaneSlot } from "./pane-slot";
+import { layoutRefusal, toggleFocus } from "./layout";
 
 /** One tab's panes, drawn at the cell rectangles the daemon computed. The
- * whole grid is scaled down when another window's size owns the tab. */
-export function TabArea({ client, tab, cell, phone }: { client: Client; tab: TabView; cell: Cell; phone: boolean }) {
+ * whole grid is scaled down when another window's size owns the tab.
+ * `live`: the new workspace's headers and gutters (M110). */
+export function TabArea({ client, tab, cell, phone, live }: { client: Client; tab: TabView; cell: Cell; phone: boolean; live?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   const [area, setArea] = useState<{ w: number; h: number } | null>(null);
 
@@ -40,6 +42,11 @@ export function TabArea({ client, tab, cell, phone }: { client: Client; tab: Tab
   const rows = area ? Math.max(1, Math.floor((area.h - (headers ? cell.height : 0)) / cell.height)) : 0;
   const active = client.active(tab.id) ?? null;
   const zoom = phone ? active : null;
+
+  // A tab focused on one pane (M109, anyone's doing) has the keys there.
+  useEffect(() => {
+    if (tab.focus !== null && client.active(tab.id) !== tab.focus) client.setActive(tab.focus);
+  }, [client, tab.id, tab.focus]);
 
   // Tell the daemon what we show. Showing a tab (or another pane, on a
   // phone) claims its size; resizing the window only updates a size we own.
@@ -74,7 +81,7 @@ export function TabArea({ client, tab, cell, phone }: { client: Client; tab: Tab
   const rev = client.state?.rev;
   useEffect(() => {
     const el = document.activeElement;
-    const idle = !el || el === document.body || el.closest(".menu, .bar button, .tab");
+    const idle = !el || el === document.body || el.closest(".menu, .bar button, .tab, .pane-toolbar button, .pane-header button");
     const now = client.active(tab.id) ?? null;
     if (!phone && now !== null && idle) client.viewOf(now)?.focus();
   }, [client, rev, active, phone]);
@@ -98,15 +105,28 @@ export function TabArea({ client, tab, cell, phone }: { client: Client; tab: Tab
         {tab.layout.panes.map(([id, r]) => (
           <PaneSlot key={id} client={client} id={id} rect={r} cell={cell} active={id === active} phone={phone} />
         ))}
-        {headers && tab.layout.panes.map(([id, r]) => <PaneHeader key={`h${id}`} client={client} id={id} rect={r} cell={cell} active={id === active} />)}
+        {headers &&
+          tab.layout.panes.map(([id, r]) => (
+            <PaneHeader key={`h${id}`} client={client} tab={tab} id={id} rect={r} cell={cell} active={id === active} live={live} />
+          ))}
         {!phone &&
           tab.layout.splits.map((s) =>
             s.extents.slice(0, -1).map((_, i) => (
-              <Divider key={`${s.id}-${i}`} client={client} split={s} index={i} cell={cell} scale={scale} />
+              <Divider key={`${s.id}-${i}`} client={client} split={s} index={i} cell={cell} scale={scale} live={live && headers} />
             )),
           )}
         <DropOverlay client={client} tab={tab} cell={cell} />
       </div>
+      {/* The classic bar has no toolbar to say a tab is focused (the new
+          workspace's Focus button does): say it here. */}
+      {!live && !phone && tab.focus !== null && (
+        <div class="focused-note" data-focused-note>
+          Showing one pane of this tab.
+          <button disabled={!!layoutRefusal(client, tab)} onClick={() => toggleFocus(client, tab)}>
+            Show all
+          </button>
+        </div>
+      )}
       {elsewhere && (
         <div class="sized-elsewhere" data-sized-elsewhere>
           Another window set this tab's size.

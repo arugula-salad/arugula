@@ -35,6 +35,7 @@ import { StatusFooter, StatusPill } from "./shell/status-footer";
 import { Rail } from "./shell/rail";
 import { noteLastTab, SessionSidebar } from "./shell/session-sidebar";
 import { TabStrip } from "./shell/tab-strip";
+import { PaneToolbar } from "./shell/pane-toolbar";
 import { useNewWorkspace } from "./shell/prefs";
 import { ActivityDrawer } from "./shell/activity";
 import { AttentionDrawer } from "./shell/attention-drawer";
@@ -113,7 +114,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       ) : state.sessions.length === 0 ? (
         <NoSessions client={client} phone={phone} />
       ) : tab ? (
-        <TabArea client={client} tab={tab} cell={cell} phone={phone} />
+        <TabArea client={client} tab={tab} cell={cell} phone={phone} live={ws} />
       ) : null}
     </main>
   );
@@ -164,6 +165,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
               <ControlBanner client={client} />
               <NewMachineNote />
               <AgentsNudge client={client} />
+              {tab && !cloud && !overviewOpen && <PaneToolbar client={client} tab={tab} />}
               {main}
               {session && !cloud && <ActivityDrawer key={session.id} client={client} session={session.id} />}
               {overviewOpen && <SessionOverview client={client} session={overview?.session} />}

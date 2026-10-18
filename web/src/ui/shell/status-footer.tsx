@@ -33,6 +33,7 @@ export function StatusFooter({ client }: { client: Client }) {
   const hints: [string, string | undefined][] = [
     ["Commands", keyHint("palette")],
     ["Go to pane", keyHint("pane.jump")],
+    ["Focus", keyHint("pane.focus")],
     ["Go to directory", keyHint("picker")],
   ];
   return (

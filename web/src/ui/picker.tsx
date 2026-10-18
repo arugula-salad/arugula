@@ -13,14 +13,16 @@ import { directory } from "../hosts";
 import { fuzzy, isDir, listDirs, recentDirs, type FsList } from "../fs";
 import { isWorkspace, openWorkspace } from "../blocks/open-labs";
 
-let open: { client: Client; pane: PaneId; phone: boolean } | null = null;
+/** `choose`: the picker only picks (+ Pane's directory, M110). */
+let open: { client: Client; pane: PaneId; phone: boolean; choose?: (path: string) => void } | null = null;
 const listeners = new Set<() => void>();
 const changed = () => listeners.forEach((fn) => fn());
 
-/** Show the picker for the block `pane` (its host and directory). */
-export function openPicker(client: Client, pane: PaneId | undefined, phone = false) {
+/** Show the picker for the block `pane` (its host and directory). With
+ * `choose`, its one action hands the directory back instead. */
+export function openPicker(client: Client, pane: PaneId | undefined, phone = false, choose?: (path: string) => void) {
   if (pane === undefined) return client.toast("no pane to start from");
-  open = { client, pane, phone };
+  open = { client, pane, phone, choose };
   changed();
 }
 
@@ -34,13 +36,14 @@ export function PickerLayer() {
     };
   }, []);
   if (!open) return null;
-  const { client, pane, phone } = open;
+  const { client, pane, phone, choose } = open;
   return (
     <Picker
       key={pane}
       client={client}
       pane={pane}
       phone={phone}
+      choose={choose}
       close={() => {
         open = null;
         changed();
@@ -53,7 +56,7 @@ type Row = { path: string; label: string; recent?: boolean; up?: boolean };
 
 const base = (p: string) => p.split("/").filter(Boolean).pop() ?? "/";
 
-function Picker({ client, pane, phone, close }: { client: Client; pane: PaneId; phone: boolean; close: () => void }) {
+function Picker({ client, pane, phone, close, choose }: { client: Client; pane: PaneId; phone: boolean; close: () => void; choose?: (path: string) => void }) {
   const info = client.info(pane);
   const machine = client.machine(pane);
   const tab = client.tabOfPane(pane);
@@ -198,7 +201,8 @@ function Picker({ client, pane, phone, close }: { client: Client; pane: PaneId; 
       setSel((s) => Math.max(0, s - 1));
     } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
-      void act("pane");
+      if (choose) chosen();
+      else void act("pane");
     } else if (e.key === "Enter") {
       e.preventDefault();
       const r = rows[sel];
@@ -207,6 +211,12 @@ function Picker({ client, pane, phone, close }: { client: Client; pane: PaneId; 
       e.preventDefault();
       void go(list.parent);
     }
+  };
+
+  const chosen = () => {
+    if (!list || moving) return;
+    choose?.(list.path);
+    close();
   };
 
   // The path as buttons, each going to that directory.
@@ -272,16 +282,24 @@ function Picker({ client, pane, phone, close }: { client: Client; pane: PaneId; 
           <span class="picker-target" title={where}>
             {base(where)}
           </span>
-          <button class="primary" disabled={!list || busy || moving || !!paneRefusal} title={paneRefusal ?? "Ctrl+Enter"} onClick={() => void act("pane")}>
-            New pane here
-          </button>
-          <button disabled={!list || busy || moving || !!tabRefusal} title={tabRefusal ?? undefined} onClick={() => void act("tab")}>
-            New tab here
-          </button>
-          <button disabled={!list || busy || moving || !isTerminal} title={cdRefusal ?? undefined} onClick={() => void act("cd")}>
-            cd there
-          </button>
-          {workspace && list && !moving && (
+          {choose ? (
+            <button class="primary" data-picker-choose disabled={!list || moving} title="Ctrl+Enter" onClick={chosen}>
+              Use this directory
+            </button>
+          ) : (
+            <>
+              <button class="primary" disabled={!list || busy || moving || !!paneRefusal} title={paneRefusal ?? "Ctrl+Enter"} onClick={() => void act("pane")}>
+                New pane here
+              </button>
+              <button disabled={!list || busy || moving || !!tabRefusal} title={tabRefusal ?? undefined} onClick={() => void act("tab")}>
+                New tab here
+              </button>
+              <button disabled={!list || busy || moving || !isTerminal} title={cdRefusal ?? undefined} onClick={() => void act("cd")}>
+                cd there
+              </button>
+            </>
+          )}
+          {!choose && workspace && list && !moving && (
             <button
               data-open-workspace
               onClick={() => {

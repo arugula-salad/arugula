@@ -192,3 +192,79 @@ test("a second window sees layout changes live, and the same terminal", async ({
   await dragTo(b, divider, { x: box.x + 150, y: box.y + box.height / 2 });
   await expect.poll(async () => (await tab(a)).layout.panes[0][1].cols).toBeGreaterThan(before + 10);
 });
+
+// M110 (#1025): in the new workspace, the header above each pane is its
+// handle: a click gives it the keys, and `…` is its menu (Focus, then the
+// pane menu: split, move to a new tab, close).
+test("the pane header's menu focuses, splits and closes", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem("arugula-appearance", JSON.stringify({ palette: "default", finish: "flat", corners: "square", workspace: "new" }));
+    } catch {
+      // The classic bar then; the test fails.
+    }
+  });
+  await reset(page);
+  const first = await active(page);
+  await page.evaluate((pane) => window.__arugula.client.intent({ op: "split", pane, edge: "right" }), first);
+  await expect.poll(() => panes(page)).toHaveLength(2);
+  const second = (await panes(page))[1];
+  await expect(page.locator("[data-pane-header]")).toHaveCount(2);
+  // Its number is the Ctrl+Shift+digit one, not the pane's id.
+  await expect(page.locator(`[data-pane-header="${second}"] [data-pane-ordinal]`)).toHaveText("2");
+
+  // A click on the header gives that pane the keys.
+  await page.locator(`[data-pane-header="${first}"] .pane-header-title`).click();
+  await expect.poll(() => active(page)).toBe(first);
+
+  await page.locator(`[data-pane-more="${second}"]`).click();
+  await page.getByRole("menuitem", { name: "Focus pane" }).click();
+  await expect.poll(async () => (await tab(page)).focus).toBe(second);
+  await expect.poll(() => panes(page)).toEqual([second]);
+  // Focused, there's one pane shown and no header: the pane menu restores.
+  await menu(page, paneEl(page, second), "Restore layout");
+  await expect.poll(async () => (await tab(page)).focus).toBeNull();
+  await expect.poll(() => panes(page)).toEqual([first, second]);
+
+  await page.locator(`[data-pane-more="${second}"]`).click();
+  await page.getByRole("menuitem", { name: "Split down" }).click();
+  await expect.poll(() => panes(page)).toHaveLength(3);
+  const third = (await panes(page)).find((p) => p !== first && p !== second)!;
+  await page.locator(`[data-pane-more="${third}"]`).click();
+  await page.getByRole("menuitem", { name: "Close pane" }).click();
+  await expect.poll(() => panes(page)).toEqual([first, second]);
+
+  // The gutter between them still drags, through its 6px band.
+  const divider = page.locator(".divider.live").first();
+  const box = (await divider.boundingBox())!;
+  const cols = (await tab(page)).layout.panes[0][1].cols;
+  await dragTo(page, divider, { x: box.x - 120, y: box.y + box.height / 2 });
+  await expect.poll(async () => (await tab(page)).layout.panes[0][1].cols).toBeLessThan(cols - 5);
+});
+
+test("Ctrl+Alt+Shift+arrows grow and shrink the active pane", async ({ page }) => {
+  await reset(page);
+  const left = await active(page);
+  await menu(page, paneEl(page, left), "Split right");
+  await expect.poll(() => panes(page)).toHaveLength(2);
+  const right = await active(page);
+  await ready(page, right);
+  const cols = async (p: number) => Object.fromEntries((await tab(page)).layout.panes)[p].cols as number;
+  const before = await cols(right);
+  await paneEl(page, right).click({ position: { x: 40, y: 40 } });
+  await page.keyboard.press("Control+Alt+Shift+ArrowRight");
+  await expect.poll(() => cols(right)).toBe(before + 4);
+  await page.keyboard.press("Control+Alt+Shift+ArrowLeft");
+  await page.keyboard.press("Control+Alt+Shift+ArrowLeft");
+  await expect.poll(() => cols(right)).toBe(before - 4);
+  // The program sees the size that's drawn.
+  await page.waitForTimeout(200);
+  await run(page, right, "tput cols", `\n${(await size(page, right))![0]}\n`);
+  expect((await size(page, right))![0]).toBe(before - 4);
+  // No split above or below: the key isn't taken, and nothing moves.
+  const shape = JSON.stringify((await tab(page)).root);
+  await page.keyboard.press("Control+Alt+Shift+ArrowDown");
+  await page.waitForTimeout(300);
+  expect(JSON.stringify((await tab(page)).root)).toBe(shape);
+});

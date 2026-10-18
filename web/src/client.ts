@@ -450,6 +450,9 @@ export class Client {
    * after are the ones it created, and become active. */
   private lastIntentAt = 0;
   private pendingBlocks = new Map<PaneId, unknown>();
+  /** Who wants to hear that an intent was refused (M110: a layout
+   * button says why), by the intent's id. */
+  private refusals = new Map<number, (message: string) => void>();
   /** M28: who wants each followed editor's stream. */
   private editorFollows = new Map<PaneId, Set<(m: import("./proto").FollowMsg) => void>>();
 
@@ -1229,7 +1232,8 @@ export class Client {
     if (this.link?.open) this.link.sendText(JSON.stringify(msg));
   }
 
-  intent(intent: Intent) {
+  /** Send `intent`; `refused` hears the daemon's reason if it says no. */
+  intent(intent: Intent, refused?: (message: string) => void): number {
     this.lastIntentAt = Date.now();
     // Closing a block that stands for something elsewhere (#17: a remote
     // pane) closes that too.
@@ -1242,7 +1246,14 @@ export class Client {
             ? (this.state?.sessions.find((s) => s.id === intent.session)?.tabs ?? []).flatMap((t) => (this.tabView(t) ? paneIds(this.tabView(t)!) : []))
             : [];
     for (const id of closing) this.blocks.get(id)?.view.closing?.();
-    this.send({ type: "intent", id: this.nextId++, intent });
+    const id = this.nextId++;
+    if (refused) {
+      this.refusals.set(id, refused);
+      // An answer comes only when it's refused: forget the rest.
+      setTimeout(() => this.refusals.delete(id), 30_000);
+    }
+    this.send({ type: "intent", id, intent });
+    return id;
   }
 
   view(tab: TabId, cols: number, rows: number, zoom: PaneId | null, claim: boolean, typed = false) {
@@ -1353,6 +1364,10 @@ export class Client {
       case "error":
         // M30: the daemon hangs up next; what it showed is no longer ours.
         if (msg.message === "your access was removed") this.revoked = true;
+        if (msg.id !== null) {
+          this.refusals.get(msg.id)?.(msg.message);
+          this.refusals.delete(msg.id);
+        }
         this.showError(msg.message);
         break;
       case "notice":
