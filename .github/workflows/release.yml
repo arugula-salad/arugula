@@ -102,25 +102,29 @@ jobs:
   # The editor extension as arugula.arugula-editor (#529), once the
   # release is out. A version that's already there is skipped, so most
   # releases publish nothing: bump the extension's package.json to ship it.
-  # Open VSX takes the workflow's OIDC token (a trusted publisher on the
-  # arugula namespace: this repo, release.yml); the Marketplace takes
-  # VSCE_PAT, an Azure DevOps token with Marketplace (Manage).
+  # No stored secrets, both through the workflow's OIDC token:
+  # - Open VSX: a trusted publisher on arugula-editor (this repo,
+  #   release.yml).
+  # - The Marketplace: the Entra app arugula-marketplace-publish (Jake's
+  #   Default Directory; AZURE_CLIENT_ID and AZURE_TENANT_ID are repo
+  #   variables), which trusts this repo's `marketplace` environment and
+  #   is a Contributor on the arugula publisher (#934).
+  # GitHub's runner: it has the Azure CLI that azure/login needs.
   extension:
     needs: publish
-    runs-on: arugula-amd64
+    runs-on: ubuntu-latest
+    environment: marketplace
     permissions:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/setup
-        with:
-          rust: "false"
-          packages: gh
       - run: gh release download "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" -p 'arugula-editor-*.vsix' -D vsix
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: npx -y ovsx@1.2.0 publish --trusted-publishing --skip-duplicate --packagePath vsix/*.vsix
-      - run: npx -y @vscode/vsce@4.0.0 publish --skip-duplicate --packagePath vsix/*.vsix
-        env:
-          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          allow-no-subscriptions: true
+      - run: npx -y @vscode/vsce@4.0.0 publish --azure-credential --skip-duplicate --packagePath vsix/*.vsix

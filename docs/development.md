@@ -116,8 +116,10 @@ daemon's update check read it.
    (`scripts/release`; the tap's deploy key is the `HOMEBREW_TAP_KEY`
    secret). Then it publishes the editor extension, attached as
    `arugula-editor-*.vsix`, to Open VSX (a trusted publisher on the
-   `arugula` namespace, so no secret) and the Visual Studio Marketplace
-   (the `VSCE_PAT` secret), skipping a version that's already there: bump
+   `arugula` namespace) and the Visual Studio Marketplace (an Entra app
+   that trusts the `marketplace` environment, #934), both by the
+   workflow's OIDC token with no secret, skipping a version that's
+   already there: bump
    `crates/daemon/src/editor/ext/package.json` to ship a new one. It builds
    no app.
 3. Running daemons find it within 12 hours and offer *Update now*
