@@ -30,6 +30,7 @@ import {
 import { newKeyPair } from "./e2e/noise.ts";
 import type { E2ETarget } from "./client";
 import { desktopApp } from "./desktop";
+import { automated, counting, startCounting, stopCounting, type PageCounts } from "./telemetry";
 import {
   follows,
   inviteKey,
@@ -351,6 +352,28 @@ export async function api<T>(path: string, body?: unknown): Promise<T> {
   const j = (await res.json().catch(() => ({}))) as T & { error?: string };
   if (!res.ok) throw new HttpError(res.status, j.error ?? `HTTP ${res.status}`, j as Record<string, unknown>);
   return j;
+}
+
+/** M104: the account's answer for this page (control-wire's
+ * `telemetry::PageConsent`). */
+export interface PageConsent {
+  on: boolean | null;
+  at: number | null;
+  /** This control forwards reports: only then is the question asked. */
+  ask: boolean;
+}
+
+/** This page's counts to control, under the signed-in account. A
+ * `keepalive` fetch as the page goes away, so it still arrives. Control
+ * saying no (the account turned it off elsewhere) stops the counting. */
+async function sendPageCounts(c: PageCounts, leaving: boolean): Promise<boolean> {
+  const res = await fetch("/api/telemetry/page", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(c),
+    keepalive: leaving,
+  });
+  return res.status !== 403;
 }
 
 const DIR_KEY = "arugula.control.directory";
@@ -955,6 +978,8 @@ export class ControlSession {
       // #327: a browser the account no longer trusts says so at once.
       this.set(this.phase === "untrusted" ? "untrusted" : "ready");
       this.timer = window.setInterval(() => void this.refresh(), 10_000);
+      // M104: the account's answer about usage counts from this page.
+      void this.loadTelemetry();
     } catch (e) {
       this.set("error", String((e as Error).message ?? e));
     }
@@ -1493,6 +1518,43 @@ export class ControlSession {
     this.name = r.name;
     this.login = r.name;
     this.emit();
+  }
+
+  /** M104: whether the account lets this page send usage counts (`on`:
+   * null until asked), and whether this control asks at all. Null until
+   * known, and from a control without it. */
+  telemetry: PageConsent | null = null;
+  /** The card was put away unanswered on this load: asked again next. */
+  private telemetryLater = false;
+
+  telemetryNotNow() {
+    this.telemetryLater = true;
+    this.emit();
+  }
+
+  async loadTelemetry() {
+    this.telemetry = await api<PageConsent>("/api/me/telemetry").catch(() => null);
+    this.countIfAllowed();
+    this.emit();
+  }
+
+  async setTelemetry(on: boolean) {
+    this.telemetry = await api<PageConsent>("/api/me/telemetry", { on });
+    this.countIfAllowed();
+    this.emit();
+  }
+
+  /** Whether to show the card: asked by a control that forwards them, not
+   * answered, not put away on this load, and not under a test runner. */
+  askTelemetry(): boolean {
+    const t = this.telemetry;
+    return !!t && t.ask && t.on === null && !this.telemetryLater && !automated();
+  }
+
+  private countIfAllowed() {
+    if (this.telemetry?.on) {
+      if (!counting()) startCounting(sendPageCounts);
+    } else stopCounting();
   }
 
   async createTeam(name: string) {

@@ -21,6 +21,49 @@ use serde::{Deserialize, Serialize};
 /// Signed by a daemon joined to this control, or not signed at all.
 pub const TELEMETRY: &str = "/api/telemetry";
 
+/// The signed-in account's answer for control's own page (M104): `GET`
+/// [`PageConsent`], `POST` [`SetPageConsent`]. An account's, not a
+/// machine's: the page isn't any one machine's.
+pub const ME_TELEMETRY: &str = "/api/me/telemetry";
+
+/// Control's page's counts (`POST`), [`PageReport`], with the session.
+/// Refused (403, [`NOT_OPTED_IN`]) unless the account said yes.
+pub const PAGE: &str = "/api/telemetry/page";
+
+/// The reason [`PAGE`] gives for a 403: the account hasn't said yes.
+pub const NOT_OPTED_IN: &str = "telemetry_off";
+
+/// The most any one count in a [`PageReport`] is taken as (a minute's is
+/// far less).
+pub const MAX_PAGE_COUNT: u32 = 10_000;
+
+/// Whether the account lets control's page send usage counts.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PageConsent {
+    /// `None`: not asked yet, which counts as no.
+    pub on: Option<bool>,
+    /// When it was answered, in ms.
+    pub at: Option<u64>,
+    /// Whether the page should ask: this control forwards reports. One
+    /// without analytics would send them nowhere, so it doesn't ask.
+    pub ask: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SetPageConsent {
+    pub on: bool,
+}
+
+/// What control's page counted since its last report: views opened, and
+/// how many errors our code hit (a count, never what they said).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PageReport {
+    #[serde(default)]
+    pub views: BTreeMap<View, u32>,
+    #[serde(default)]
+    pub web_errors: u32,
+}
+
 /// The most events and crashes one report may carry.
 pub const MAX_EVENTS: usize = 50;
 pub const MAX_CRASHES: usize = 10;

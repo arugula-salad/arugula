@@ -70,6 +70,9 @@ pub const TELEMETRY: (&str, usize) = ("telemetry", 600);
 /// Telemetry reports per install id, or per daemon when signed: an
 /// install sends one when it starts and one a day, so this is plenty.
 pub const INSTALL_REPORTS: (&str, usize) = ("install-report", 30);
+/// Control's page's reports (M104), per account: one a minute from each
+/// open page, and one as it closes, so a few tabs' worth.
+pub const PAGE_REPORTS: (&str, usize) = ("page-report", 300);
 const WINDOW: Duration = Duration::from_secs(3600);
 
 /// What a client address counts as: itself, or for IPv6 its /64.

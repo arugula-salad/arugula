@@ -14,6 +14,7 @@ import { PALETTE_KEY, settingsItems } from "./commands";
 import { openPalette } from "./palette";
 import { UpdateChip } from "./update";
 import { WindowButtons } from "./window-buttons";
+import { countView } from "../telemetry";
 
 /** Who is signed in, through control: their name and their account's
  * items. A daemon's own page has none, and its menu is settings only. */
@@ -107,6 +108,7 @@ export function AccountButton({ client }: { client: Client | null }) {
   const account = useAccount();
   const login = account?.login() ?? null;
   const open = (e: MouseEvent) => {
+    countView("settings");
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const mine: MenuItem[] = account ? [{ header: accountHeader(login) }, ...account.items(), "separator"] : [];
     const items: MenuItem[] = [...mine, ...settingsItems(client)];
