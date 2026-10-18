@@ -198,6 +198,7 @@ mod tests {
             "extension/README.md",
             "extension/theme.json",
             "extension/theme-light.json",
+            "extension/theme-mocha.json",
         ] {
             assert!(names.lines().any(|l| l == n), "{n} in {names}");
         }

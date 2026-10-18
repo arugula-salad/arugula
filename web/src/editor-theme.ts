@@ -3,7 +3,8 @@
 // panes around it. The page sends them to the block (its `theme` call);
 // the daemon writes them into the block's workspace, and VS Code applies a
 // change to it at once. The extension's own themes (`ext/theme.json`,
-// Slate, and `ext/theme-light.json`, Latte) are these for those palettes.
+// Slate, `ext/theme-light.json`, Latte, and `ext/theme-mocha.json`, Mocha)
+// are these for those palettes.
 
 import { legible, type Palette } from "./appearance";
 
