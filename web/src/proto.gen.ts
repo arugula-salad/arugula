@@ -2220,6 +2220,42 @@ pins: { [key in string]: string },
 drop: Array<string>, };
 
 /**
+ * `GET /api/telemetry` (the `telemetry.get` operation).
+ */
+export type TelemetryInfo = { on: boolean, why: TelemetryWhy, 
+/**
+ * When the owner answered (ms), if they have.
+ */
+asked?: number, via?: string, install?: string, 
+/**
+ * Where reports go.
+ */
+url: string, 
+/**
+ * Reports are signed as this machine: it's joined to the control they
+ * go to.
+ */
+signed: boolean, 
+/**
+ * The next report, exactly as it would be sent now (an
+ * `arugula_control_wire::telemetry::Report`). While it's off, what a
+ * yes would send first: no counts, a placeholder for the install id,
+ * and `"preview_only": true`. A daemon from M101 always gives one.
+ */
+preview?: unknown, };
+
+/**
+ * `PUT /api/telemetry` (the `telemetry.set` operation): the owner's answer,
+ * and where they gave it (`web` when not said).
+ */
+export type TelemetrySetRequest = { on: boolean, via?: string, };
+
+/**
+ * Why telemetry is on or off here.
+ */
+export type TelemetryWhy = "yes" | "not_asked" | "no" | "do_not_track" | "env" | "ci" | "test";
+
+/**
  * What handing a post to the pane's agent came to: `delivered` (`false`:
  * queued), or `error`.
  */
@@ -2551,6 +2587,8 @@ export const OPS = {
   "synced.rotate": { method: "POST", path: "/api/synced/rotate-key" },
   "team_pins.get": { method: "GET", path: "/api/team-pins" },
   "team_pins.set": { method: "POST", path: "/api/team-pins" },
+  "telemetry.get": { method: "GET", path: "/api/telemetry" },
+  "telemetry.set": { method: "PUT", path: "/api/telemetry" },
   "thread.get": { method: "GET", path: "/api/threads/{target}" },
   "thread.post": { method: "POST", path: "/api/threads/{target}" },
   "thread.read": { method: "POST", path: "/api/threads/{target}/read" },

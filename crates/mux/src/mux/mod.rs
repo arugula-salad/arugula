@@ -20,7 +20,7 @@ mod thread_ops;
 mod who_may;
 
 pub use config::{AtExit, Config};
-pub use outside::{AgentSessions, CardsCall, CardsCx, Notify, PaneCards, PaneGone, People};
+pub use outside::{AgentSessions, CardsCall, CardsCx, Notify, PaneCards, PaneGone, People, Usage};
 
 /// Who answers an invite card: the owner, by any route.
 pub const OWNER_ONLY: &str = "only the session's owner sends or declines an invite";
@@ -955,6 +955,9 @@ impl Daemon {
         self.panes.insert(id, h);
         self.ids.lock().unwrap().insert(id);
         self.sizes.insert(id, (cols, rows));
+        if !restore {
+            self.config.usage.pane_opened(machine.is_some(), self.panes.len());
+        }
         Ok(())
     }
 
@@ -987,7 +990,11 @@ impl Daemon {
         let is_restore = restoring.is_some();
         let (policy, kept) = restoring.unwrap_or_default();
         let ctx = BlockCtx::new(id, dir, base, sprite, is_restore, policy, kept);
+        let new = (!is_restore).then(|| config.clone());
         let b = self.config.kinds.create(kind, ctx, config)?;
+        if let Some(config) = new {
+            self.config.usage.block_opened(kind, &config);
+        }
         self.blocks.insert(id, b);
         self.ids.lock().unwrap().insert(id);
         Ok(())

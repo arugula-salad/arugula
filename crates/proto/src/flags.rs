@@ -519,7 +519,7 @@ pub fn migrate_legacy(state_dir: &Path) -> io::Result<bool> {
 /// the other. Private to the owner, as the state dir's other files are. The
 /// temporary file's name has our pid, so two writers don't share one.
 /// (`rename` replaces an existing file on Windows too.)
-fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
+pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
     use io::Write;
     if let Some(dir) = path.parent() {
         private_dir(dir)?;

@@ -677,6 +677,26 @@ fn read_saved(dir: &Path) -> anyhow::Result<Option<Saved>> {
     }
 }
 
+/// The control `control.json` in `dir` joins, and its enrolment's
+/// certificate signature, for telemetry's report from another process.
+pub fn joined_in(dir: &Path) -> Option<(String, String)> {
+    read_saved(dir).ok().flatten().map(|s| (s.url.trim_end_matches('/').to_owned(), s.cert.sig))
+}
+
+/// Telemetry's reports (M101) are signed as this daemon, when it's joined
+/// to the control they go to.
+impl crate::telemetry::Signer for Control {
+    fn joined(&self) -> Option<(String, String)> {
+        let e = self.enrolled()?;
+        Some((e.saved.url.trim_end_matches('/').to_owned(), e.saved.cert.sig.clone()))
+    }
+
+    fn sign_post(&self, path: &str, body: &[u8]) -> Option<String> {
+        let e = self.enrolled()?;
+        Some(self.sign(&e, "POST", path, body))
+    }
+}
+
 fn write_saved(dir: &Path, s: &Saved) -> anyhow::Result<()> {
     crate::store::write_atomic(&dir.join(FILE), &serde_json::to_vec_pretty(s)?)?;
     Ok(())
@@ -703,7 +723,7 @@ async fn takes_v2(http: &reqwest::Client, url: &str) -> bool {
     about.daemon_auth >= 2
 }
 
-const AUTH: &str = "x-arugula-auth";
+pub(crate) const AUTH: &str = "x-arugula-auth";
 
 impl Control {
     pub fn new(
@@ -2672,7 +2692,7 @@ impl crate::mux::People for Control {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use arugula_e2e::{DeviceKeys, Kind};
 
     use super::*;
@@ -2682,6 +2702,15 @@ mod tests {
         let mut cert = Cert::new(&keys, account, kind, "x");
         cert.sign_with(&keys);
         (keys, cert)
+    }
+
+    /// A daemon's `Control`, joined to the control at `url` (for
+    /// telemetry's tests, M101).
+    pub(crate) fn joined_at(dir: &Path, url: &str) -> Arc<Control> {
+        let acl = Arc::new(Acl::open(dir));
+        let c = Control::new(dir, vec![], String::new(), acl.clone(), false);
+        c.install(Some(Enrolled::build(saved_for(url, "a"), Arc::new(DeviceKeys::generate()), &acl, false, &[])));
+        c
     }
 
     fn mv(keys: &DeviceKeys, by: &Cert, daemon: &str, team: Option<&TeamPin>, at: u64) -> Move {
