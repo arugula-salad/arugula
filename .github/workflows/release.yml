@@ -72,6 +72,13 @@ jobs:
       - uses: pnpm/action-setup@v4
         with:
           version: 10
+      # main's warm target dir (windows-release-cache.yml); a tag's run
+      # only reads it.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: windows-release
+          cache-workspace-crates: true
+          save-if: false
       # arugulad and arugula, with Microsoft's ConPTY: the zip
       # (install.ps1's, M59).
       - run: scripts/windows-dist "${GITHUB_REF_NAME#v}"
