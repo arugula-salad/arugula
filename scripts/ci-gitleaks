@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# gitleaks over the history, at the version geek has (mise), fetched when
+# PATH has another: all of it (check.yml's lint, on main), or with a range,
+# only those commits (binaries.yml's quick: a pull request's own).
+#
+#   scripts/ci-gitleaks [BASE..HEAD]
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+version=8.30.1
+
+gitleaks=gitleaks
+if [ "$(gitleaks version 2>/dev/null | sed 's/^v//')" != "$version" ]; then
+  dir="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/gitleaks-$version"
+  if [ ! -x "$dir/gitleaks" ]; then
+    mkdir -p "$dir"
+    curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v$version/gitleaks_${version}_linux_x64.tar.gz" | tar -xz -C "$dir" gitleaks
+  fi
+  gitleaks=$dir/gitleaks
+fi
+"$gitleaks" version
+
+if [ $# -gt 0 ]; then
+  exec "$gitleaks" git --no-banner --redact --log-opts="$1" .
+fi
+exec "$gitleaks" git --no-banner --redact .

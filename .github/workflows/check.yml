@@ -73,11 +73,6 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: just
-      - name: gitleaks
-        # The version geek has (mise).
-        run: |
-          curl -fsSL https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz | tar -xz -C /usr/local/bin gitleaks
-          gitleaks version
       - name: shellcheck
         # The version geek has: the runner image's changes what it reports.
         run: |
@@ -85,8 +80,9 @@ jobs:
           sudo install /tmp/shellcheck-v0.11.0/shellcheck /usr/local/bin/shellcheck
           shellcheck --version
       - name: Formatting
-        # rust-toolchain.toml's toolchain, rustfmt only.
-        run: rustup component add rustfmt && cargo fmt --all --check
+        # rust-toolchain.toml's toolchain, rustfmt only. Pull requests run it
+        # too (binaries.yml's quick).
+        run: rustup component add rustfmt && just fmt-check
       - name: install.sh and the release's glibc check
         run: shellcheck -s sh scripts/install.sh scripts/glibc-floor && shellcheck -s bash scripts/tests/*.sh scripts/dist-pack
       - name: Release scripts and ratchets
@@ -96,7 +92,8 @@ jobs:
       - name: The CI's and the test stack's scripts
         run: shellcheck -x scripts/ci-* scripts/free-port testnet/*.sh testnet/forges/*.sh testnet/hosts/*.sh testnet/editors/*.sh testnet/macos/*.sh && shellcheck -s sh testnet/editors/box/entrypoint.sh testnet/sshd/entrypoint.sh testnet/sshd-systemd/keys.sh testnet/git/entrypoint.sh testnet/tailnet/entrypoint.sh
       - name: No secrets
-        run: gitleaks git --no-banner --redact .
+        # The whole history; a pull request's quick job scans its own commits.
+        run: scripts/ci-gitleaks
 
   # The debug binaries, web/dist embedded (debug-embed: the specs run them
   # from other checkouts), for the specs and the test stack's CLI.
@@ -187,7 +184,7 @@ jobs:
         if: needs.changes.outputs.app == 'true'
         run: just desktop-check
       - name: THIRD_PARTY.md is current
-        run: just notices && git diff --exit-code THIRD_PARTY.md crates/desktop/THIRD_PARTY.md
+        run: just notices-check
       - name: sccache's hits
         if: always() && env.RUSTC_WRAPPER == 'sccache'
         run: sccache --show-stats
