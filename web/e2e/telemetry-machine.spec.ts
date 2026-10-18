@@ -105,7 +105,9 @@ test("the owner is asked once: put away it asks again, Yes turns it on, and view
   await load(page);
   await expect(card(page)).toHaveCount(0);
 
-  // The swarm, opened; the page's count goes as it goes away.
+  // Counting, then the swarm, opened; the page's count goes as it goes
+  // away (pagehide on the live page, not a race with an unload).
+  await expect(page.locator("html[data-usage-counts]")).toHaveCount(1);
   await page.evaluate(() => (location.hash = "#swarm"));
   await expect(page.locator(".swarm")).toBeVisible();
   await page.evaluate(() => dispatchEvent(new PageTransitionEvent("pagehide")));

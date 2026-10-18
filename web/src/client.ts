@@ -384,9 +384,8 @@ export class Client {
     link.close();
   }
 
-  /** A request to the daemon's API: fetch, or through the channel.
-   * `keepalive`: the page is going away, and a fetch must outlive it. */
-  async request(method: string, path: string, body?: unknown, opts: { keepalive?: boolean } = {}): Promise<ApiResponse> {
+  /** A request to the daemon's API: fetch, or through the channel. */
+  async request(method: string, path: string, body?: unknown): Promise<ApiResponse> {
     if (this.e2e) {
       const sock = (this.link as E2ELink | undefined)?.sock;
       if (!sock?.open) throw new Error("not connected");
@@ -398,7 +397,6 @@ export class Client {
       // Another daemon (on this machine, its sign-in cookie; it allows
       // credentials only from our exact origin).
       credentials: /^https?:/.test(this.base) ? "include" : "same-origin",
-      ...(opts.keepalive ? { keepalive: true } : {}),
       ...(body === undefined
         ? {}
         : body instanceof Uint8Array

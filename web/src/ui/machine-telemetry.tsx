@@ -48,12 +48,30 @@ const owner = (c: Client) => c.connected && !!c.state && !c.state.roles;
 /** Where the answer was given. */
 const via = () => (desktopApp() ? "desktop" : "web");
 
-/** This page's counts to `c`'s daemon (`telemetry.note`), a `keepalive`
- * request as the page goes away. A 403 (not the owner now) stops them. */
+/** Whether this browser lets a fetch outlive the page. */
+const keepalive = typeof Request !== "undefined" && "keepalive" in Request.prototype;
+
+/** This page's counts to `c`'s daemon (`telemetry.note`). A 403 (not the
+ * owner now) stops them. As the page goes away, a `keepalive` fetch made
+ * there and then, which the browser sends after the page is gone (a plain
+ * request can be dropped with it). Not a beacon: that can't carry what the
+ * daemon's sign-in needs (its credentials mode, for another daemon). */
 const noteTo =
   (c: Client) =>
-  async (counts: PageCounts, leaving: boolean): Promise<boolean> =>
-    (await c.request(OPS["telemetry.note"].method, opPath("telemetry.note"), counts, { keepalive: leaving })).status !== 403;
+  async (counts: PageCounts, leaving: boolean): Promise<boolean> => {
+    const op = OPS["telemetry.note"];
+    if (leaving && keepalive && !c.e2e) {
+      void fetch(c.base + opPath("telemetry.note"), {
+        method: op.method,
+        keepalive: true,
+        credentials: /^https?:/.test(c.base) ? "include" : "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(counts),
+      }).catch(() => {});
+      return true;
+    }
+    return (await c.request(op.method, opPath("telemetry.note"), counts)).status !== 403;
+  };
 
 /** Follow the shown machine's client: read its answer once its owner is
  * connected, and count for it while that's yes. `isDirect`: this page
