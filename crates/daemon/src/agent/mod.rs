@@ -443,9 +443,20 @@ pub struct AgentKind {
 
 impl BlockKind for AgentKind {
     fn create(&self, ctx: BlockCtx, config: Value) -> Result<Arc<dyn Block>, String> {
+        let new = !ctx.restoring;
+        // What it runs, for telemetry's count (M101): its kind and command.
+        let agent = config["agent"].as_str().unwrap_or("claude").to_owned();
+        let command: Vec<String> = match &config["command"] {
+            Value::String(c) => defs::split_command(c),
+            v => serde_json::from_value(v.clone()).unwrap_or_default(),
+        };
         let ctx =
             AgentCtx { block: ctx, mcp: self.mcp.clone(), secrets: self.secrets.clone(), rules: self.rules.clone() };
-        Agent::create(ctx, config)
+        let made = Agent::create(ctx, config)?;
+        if new {
+            crate::telemetry::agent_started(crate::telemetry::runtime(&agent, &command));
+        }
+        Ok(made)
     }
 
     fn stored_text(&self, dir: &Path) -> Option<String> {

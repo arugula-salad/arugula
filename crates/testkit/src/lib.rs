@@ -82,7 +82,7 @@ const START: Duration = Duration::from_secs(15);
 /// How a test daemon starts. Every one gets `--listen 127.0.0.1:0`,
 /// `--no-manager-env` and a `--state-dir` of its own, its output goes
 /// nowhere, and `NOTIFY_SOCKET` is taken out of its environment (a test run
-/// from a service would pass its own on). `ARUGULA_CHANT` is empty, so
+/// from a service would pass its own on). `ARUGULA_TELEMETRY` is off. `ARUGULA_CHANT` is empty, so
 /// it never reads the host's agent config with chant. The rest is the
 /// test's to say.
 #[derive(Clone, Debug)]
@@ -114,7 +114,8 @@ impl Builder {
             // No `chant audit --agents` of the host's agent config (#145):
             // every screen rule set runs. A test that wants an inventory
             // points this at a stand-in chant.
-            env: vec![("ARUGULA_CHANT".into(), Some("".into()))],
+            // And never telemetry (M101), whatever the test run's environment.
+            env: vec![("ARUGULA_CHANT".into(), Some("".into())), ("ARUGULA_TELEMETRY".into(), Some("off".into()))],
             block_listen: false,
             wait: Duration::from_secs(15),
             record: None,
@@ -306,10 +307,12 @@ pub fn scrub_env(c: &mut Command) -> &mut Command {
 }
 
 /// A [`Command`] for `bin` with [`scrub_env`] applied: what a test runs
-/// (`arugulad`, the `arugula` CLI) with only the environment it sets.
+/// (`arugulad`, the `arugula` CLI) with only the environment it sets, and
+/// telemetry off (M101).
 pub fn command(bin: impl AsRef<OsStr>) -> Command {
     let mut c = Command::new(bin);
     scrub_env(&mut c);
+    c.env("ARUGULA_TELEMETRY", "off");
     c
 }
 

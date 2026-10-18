@@ -337,6 +337,11 @@ pub(crate) fn instructions(on: On) -> String {
 }
 
 impl ServerHandler for McpServer {
+    /// An MCP client's session began (counted for telemetry, M101).
+    async fn on_initialized(&self, _: rmcp::service::NotificationContext<RoleServer>) {
+        crate::telemetry::client(arugula_control_wire::telemetry::Surface::Mcp);
+    }
+
     fn get_info(&self) -> ServerConfig {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().enable_resources().build())
             .with_server_info(Implementation::new("arugula", env!("CARGO_PKG_VERSION")))
