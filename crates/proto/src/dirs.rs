@@ -216,14 +216,22 @@ mod tests {
     }
 
     /// Not in the same directory (Windows' `illogical\state` and
-    /// `arugula\state`): the new parent is made, the link is absolute.
-    #[cfg(unix)]
+    /// `arugula\state`): the new parent is made, the link is absolute (on
+    /// Windows a symbolic link, or else a junction).
     #[test]
     fn moved_across_parents() {
         let d = scratch("parents");
-        std::fs::create_dir_all(d.join("illogical/state")).unwrap();
-        assert_eq!(renamed(&d.join("arugula/state"), &d.join("illogical/state")), d.join("arugula/state"));
-        assert_eq!(std::fs::read_link(d.join("illogical/state")).unwrap(), d.join("arugula/state"));
+        let (new, old) = (d.join("arugula").join("state"), d.join("illogical").join("state"));
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::write(old.join("listen"), "x").unwrap();
+        assert_eq!(renamed(&new, &old), new);
+        assert!(std::fs::symlink_metadata(&new).unwrap().is_dir());
+        assert!(!std::fs::symlink_metadata(&old).unwrap().is_dir(), "a link now");
+        assert_eq!(std::fs::read_to_string(old.join("listen")).unwrap(), "x");
+        assert_eq!(renamed(&new, &old), new, "and again");
+        // A junction goes with remove_dir, not remove_file.
+        #[cfg(windows)]
+        let _ = std::fs::remove_dir(&old);
         std::fs::remove_dir_all(&d).unwrap();
     }
 
