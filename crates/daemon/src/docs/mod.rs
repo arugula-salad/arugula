@@ -23,12 +23,16 @@
 //!
 //! Methods (the owner's, `authz.rs`): `doc_outline {title, sections:
 //! [{heading, intent}]}`, once, and `doc_fill {section, markdown}`, which
-//! replaces a body.
+//! replaces a body. A body may hold ```` ```chart ```` and ```` ```svg ````
+//! fences (#964, [`embeds`]): `doc_fill` checks every one before it writes
+//! anything, so a bad one leaves the section as it was.
 //!
 //! The Doc is Labs' while `docs` is a flag, but its code is core: it checks
 //! the flag itself when made ([`DocKind`]), and a restored one comes back
 //! with the flag off (#347: turning a flag off hides and refuses, it
 //! doesn't throw away).
+
+mod embeds;
 
 use std::{
     path::{Path, PathBuf},
@@ -246,6 +250,9 @@ impl Doc {
             if md.trim().is_empty() {
                 return Err(format!("section {section} is empty: give its Markdown"));
             }
+            // Before the first write: a bad fence leaves the section, on
+            // disk and in the state, exactly as it was.
+            embeds::check(md).map_err(|e| format!("section {section}: {e}; the section is unchanged"))?;
             if md.len() > SECTION_MAX {
                 return Err(format!(
                     "section {section} is {} bytes; the cap is {SECTION_MAX} (64 KB): split it or shorten it",
@@ -329,14 +336,14 @@ fn load(dir: &Path) -> Result<Loaded, String> {
 }
 
 /// The Doc as Markdown: a pending section is its heading and what it
-/// will hold.
+/// will hold, a chart one line and a drawing `[drawing]`.
 fn markdown(title: &str, entries: &[Entry]) -> String {
     let mut out = format!("# {title}\n");
     for e in entries {
         out.push_str(&format!("\n## {}\n\n", e.heading));
         match &e.body {
             Some(b) => {
-                out.push_str(b.trim_end());
+                out.push_str(embeds::plain(b).trim_end());
                 out.push('\n');
             }
             None if e.intent.is_empty() => out.push_str("_(coming)_\n"),
@@ -541,6 +548,49 @@ mod tests {
         assert_eq!(pushes.load(Ordering::SeqCst), pushed + 18, "a refusal pushes nothing");
         // The outline is once.
         assert!(outline(&d, 3).await.unwrap_err().contains("already has its outline"));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    fn example(name: &str) -> String {
+        std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/docs").join(name)).unwrap()
+    }
+
+    /// A bad chart or drawing is refused before the first write: the
+    /// section is as it was on disk and in the state, filled or pending,
+    /// and nothing is pushed.
+    #[tokio::test]
+    async fn a_bad_fence_leaves_the_section_as_it_was() {
+        let dir = temp("fences");
+        let (d, pushes) = doc(&dir, false);
+        outline(&d, 2).await.unwrap();
+        fill(&d, "s1", &example("bar-chart.md")).await.unwrap();
+        let (state, pushed) = (entries(&d), pushes.load(Ordering::SeqCst));
+        let folder = dir.join(FOLDER);
+        let files = || {
+            let mut names: Vec<_> = std::fs::read_dir(&folder).unwrap().map(|e| e.unwrap().file_name()).collect();
+            names.sort();
+            names
+        };
+        let on_disk = (files(), std::fs::read_to_string(folder.join("s1.md")).unwrap());
+        for name in ["bad/unordered-line.md", "bad/bad-json.md", "bad/svg-no-root.md", "bad/no-rows.md"] {
+            for section in ["s1", "s2"] {
+                let e = fill(&d, section, &example(name)).await.unwrap_err();
+                assert!(e.starts_with(&format!("section {section}: ")) && !e.contains('\n'), "{name}: {e}");
+            }
+        }
+        // Past the checks of the body as a whole too: a good chart then a bad one.
+        let both = format!("{}\n{}", example("line-chart.md"), example("bad/string-value.md"));
+        assert!(fill(&d, "s2", &both).await.unwrap_err().contains("must be a number"));
+        assert_eq!(entries(&d), state);
+        assert_eq!(pushes.load(Ordering::SeqCst), pushed, "a refusal pushes nothing");
+        assert_eq!((files(), std::fs::read_to_string(folder.join("s1.md")).unwrap()), on_disk);
+        // A drawing over the cap is refused on its own account.
+        let big = format!("```svg\n<svg xmlns=\"http://www.w3.org/2000/svg\">{}</svg>\n```", "x".repeat(SECTION_MAX));
+        assert!(fill(&d, "s2", &big).await.unwrap_err().contains("svg: "));
+        // A drawing with a script in it is stored as written.
+        let script = example("script-drawing.md");
+        fill(&d, "s2", &script).await.unwrap();
+        assert_eq!(std::fs::read_to_string(folder.join("s2.md")).unwrap(), script);
         std::fs::remove_dir_all(dir).unwrap();
     }
 

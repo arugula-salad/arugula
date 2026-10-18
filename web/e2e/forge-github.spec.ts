@@ -13,6 +13,7 @@ import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { createServer, type Server, type ServerResponse } from "node:http";
 import { expect, test } from "@playwright/test";
+import { example } from "./doc-examples";
 import { reset } from "./helpers";
 import { listen } from "./ports";
 
@@ -105,4 +106,29 @@ test("red check runs on your GitHub PR rerun from the block", async ({ page }) =
   // The jobs queue again: no longer failed.
   await expect(el.locator('[data-want="failed"]')).toHaveCount(0);
   await expect(el.locator('[data-check="queued"]')).toHaveCount(3);
+});
+
+// #964: a Doc draws a chart fence and shows an svg one; a forge's body is
+// written by anyone who can open a PR, so there they stay code.
+test("a chart or svg fence in a PR's description is code, not a chart or a picture", async ({ page }) => {
+  const was = item.body;
+  item.body = `${example("bar-chart.md")}\n${example("drawing.md")}`;
+  try {
+    await reset(page);
+    const block = await page.evaluate(
+      ([api, repo, number]) =>
+        window.__arugula.client
+          .request("POST", "/api/blocks", { type: "forge", config: { provider: "github", api, repo, number }, local: true })
+          .then((r) => r.json<{ block: number }>())
+          .then((r) => r.block),
+      [origin, REPO, N] as const,
+    );
+    const body = page.locator(`[data-forge-block="${block}"] .forge-desc`);
+    await expect(body.locator("pre")).toHaveCount(2);
+    await expect(body.locator("pre").first()).toContainText('"type": "bar"');
+    await expect(body.locator("pre").nth(1)).toContainText('<svg xmlns="http://www.w3.org/2000/svg"');
+    await expect(body.locator("svg, img, .chart-box")).toHaveCount(0);
+  } finally {
+    item.body = was;
+  }
 });

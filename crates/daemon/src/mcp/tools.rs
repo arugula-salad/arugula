@@ -1014,7 +1014,18 @@ const DOC: &[Kind] = &[
     },
     Kind {
         name: "fill",
-        description: "Write one section of a Doc (its block, the section id, its Markdown): headings, paragraphs, lists, **bold**, *italic*, `code`, links and tables. No HTML, images or charts. A section is at most 64 KB, a Doc 40 sections and 1 MiB; filling a section again replaces it.",
+        description: r##"Write one section of a Doc (its block, the section id, its Markdown): headings, paragraphs, lists, **bold**, *italic*, `code`, links and tables. No HTML; images come later. A section is at most 64 KB, a Doc 40 sections and 1 MiB; filling a section again replaces it.
+
+Two kinds of fenced block draw as more than code, in the section that talks about them.
+A chart: a ```chart fence holding a JSON spec. type is "bar" or "line"; title is optional; x is the key of each row that labels it; y is a key, or a list of up to 4 keys, whose values are numbers (not strings); rows is 1 to 200 objects. A line chart's x must go up: numbers, ISO dates (2026-01-31), or labels listed in order with "order": [...]. For example:
+```chart
+{"type": "bar", "title": "Sales by month", "x": "month", "y": ["sales"], "rows": [{"month": "Jan", "sales": 12}, {"month": "Feb", "sales": 19}]}
+```
+A drawing: a ```svg fence holding one <svg> element, with xmlns="http://www.w3.org/2000/svg" on it and a viewBox. Any text after svg on the fence line is its alt text. It is shown as a picture, so scripts in it don't run. For example:
+```svg Idea to app
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 40"><rect x="2" y="8" width="60" height="24" fill="#e8f0fe" stroke="#335"/><path d="M62 20 H98" stroke="#335"/><rect x="98" y="8" width="60" height="24" fill="#e6f4ea" stroke="#335"/></svg>
+```
+Every fence is checked before anything is written: a bad chart or drawing is refused with one line saying what to fix, and the section stays as it was."##,
         schema: schema_for_type::<DocFillArgs>,
         flag: Some(flags::DOCS),
     },

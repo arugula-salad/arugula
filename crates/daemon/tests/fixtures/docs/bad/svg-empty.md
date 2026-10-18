@@ -1,0 +1,4 @@
+Nothing in it:
+
+```svg
+```
