@@ -501,6 +501,8 @@ Object.assign(window, {
       return v ? [v.cols, v.rows] : null;
     },
     offset: (pane: number) => client.panes.get(pane)?.offset ?? null,
+    /** #1049: whether a terminal draws with WebGL now. */
+    webgl: (pane: number) => client.panes.get(pane)?.view.webglOn ?? null,
     selection: (pane: number) => client.panes.get(pane)?.view.selection() ?? "",
   },
 });

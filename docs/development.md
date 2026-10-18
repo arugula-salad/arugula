@@ -336,7 +336,15 @@ See [AGENTS.md](../AGENTS.md) for the crate map and the daemon's layers. Each cr
   sizes until a desktop takes the tab back.
 - **WebGL drew nothing in phone emulation** (fractional pixel ratio), so
   touch devices use xterm's DOM renderer; desktops use WebGL for visible panes
-  only and release contexts for hidden ones (Chrome allows ~16).
+  only and release contexts for hidden ones (Chrome allows ~16). At most
+  12 draw with WebGL at once (the ones used last); the rest, and any that
+  lose their context, fall back to the DOM renderer (#1049). Release with
+  `WEBGL_lose_context` on the addon's own canvas: the first canvas in
+  `.xterm-screen` is its 2D link layer, which made the release a no-op.
+- **A render's effects can run after the next state.** Preact runs them as
+  late as the component's next render, so an effect that focuses a pane
+  checks its tab is still the shown one: focusing a pane selects its tab,
+  and a stale one swapped two new tabs back and forth for good (#1049).
 - **Preact 11 no longer appends `px`** to numeric styles. Zeros still worked,
   so the bug looked like a layout one.
 - **Subscribe, then catch up.** A store subscription made in an effect misses

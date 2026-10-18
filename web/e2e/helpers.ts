@@ -20,6 +20,7 @@ declare global {
       screen(pane: PaneId): string;
       size(pane: PaneId): [number, number] | null;
       offset(pane: PaneId): number | null;
+      webgl(pane: PaneId): boolean | null;
       selection(pane: PaneId): string;
     };
   }
