@@ -6,11 +6,13 @@
 //! the shell integration reported. S16 got 52 of 54 labelled commands right
 //! this way. `project` is the nearest directory up from the working
 //! directory with a `.git` in it, found without running git, and cached.
+//! `branch` is that repository's HEAD, read from the file (M109).
 
 use std::{
     collections::HashMap,
-    path::Path,
+    path::{Path, PathBuf},
     sync::{LazyLock, Mutex},
+    time::{Duration, Instant},
 };
 
 use arugula_proto::{Project, WorkKind};
@@ -197,21 +199,72 @@ pub fn project(cwd: &str) -> Option<Project> {
 /// `arugula`), read from the git config, a worktree's through its common
 /// directory.
 fn origin_name(root: &Path) -> Option<String> {
-    let dot = root.join(".git");
-    let git_dir = if dot.is_dir() {
-        dot
-    } else {
-        // A worktree: `gitdir: <its dir under the main repository>`, whose
-        // `commondir` is the main repository's .git.
-        let text = std::fs::read_to_string(&dot).ok()?;
-        let d = Path::new(text.strip_prefix("gitdir:")?.trim()).to_path_buf();
-        let d = if d.is_absolute() { d } else { root.join(d) };
-        match std::fs::read_to_string(d.join("commondir")) {
-            Ok(c) => d.join(c.trim()),
-            Err(_) => d,
-        }
+    let d = git_dir(root)?;
+    // A worktree's directory under the main repository names the main
+    // repository's .git in its `commondir`.
+    let common = match std::fs::read_to_string(d.join("commondir")) {
+        Ok(c) => d.join(c.trim()),
+        Err(_) => d,
     };
-    origin_in(&std::fs::read_to_string(git_dir.join("config")).ok()?)
+    origin_in(&std::fs::read_to_string(common.join("config")).ok()?)
+}
+
+/// The repository's own git directory: its `.git`, or for a worktree
+/// (`.git` is a file, `gitdir: <path>`) the directory that names.
+fn git_dir(root: &Path) -> Option<PathBuf> {
+    let dot = root.join(".git");
+    if dot.is_dir() {
+        return Some(dot);
+    }
+    let text = std::fs::read_to_string(&dot).ok()?;
+    let d = Path::new(text.strip_prefix("gitdir:")?.trim()).to_path_buf();
+    Some(if d.is_absolute() { d } else { root.join(d) })
+}
+
+/// How long a repository's branch is believed: a checkout in a pane that
+/// stays in its directory shows within this, and a busy screen costs one
+/// small read per repository per period, not one per frame.
+const BRANCH_FRESH: Duration = Duration::from_secs(2);
+
+/// A branch as read, and when.
+type Read = (Instant, Option<String>);
+
+/// Branches already read, by repository root.
+static BRANCHES: LazyLock<Mutex<HashMap<String, Read>>> = LazyLock::new(Default::default);
+
+/// The branch checked out in the repository at `root` (a [`Project`]'s
+/// root), or the short commit when HEAD is detached. Read from HEAD, not
+/// by running git, and cached for [`BRANCH_FRESH`]; a pane moving to
+/// another repository asks for another root, so it's read afresh.
+pub fn branch(root: &str) -> Option<String> {
+    if let Some((at, b)) = BRANCHES.lock().unwrap().get(root)
+        && at.elapsed() < BRANCH_FRESH
+    {
+        return b.clone();
+    }
+    let found = head_of(Path::new(root));
+    let mut cache = BRANCHES.lock().unwrap();
+    if cache.len() > 4096 {
+        cache.clear();
+    }
+    cache.insert(root.to_owned(), (Instant::now(), found.clone()));
+    found
+}
+
+fn head_of(root: &Path) -> Option<String> {
+    head_in(&std::fs::read_to_string(git_dir(root)?.join("HEAD")).ok()?)
+}
+
+/// A HEAD file's branch (`ref: refs/heads/main` → `main`), or its
+/// commit's first seven hex digits when detached.
+fn head_in(head: &str) -> Option<String> {
+    let head = head.trim();
+    if let Some(r) = head.strip_prefix("ref:") {
+        let r = r.trim();
+        let name = r.strip_prefix("refs/heads/").unwrap_or(r);
+        return (!name.is_empty()).then(|| name.to_owned());
+    }
+    (head.len() >= 7 && head.bytes().all(|b| b.is_ascii_hexdigit())).then(|| head[..7].to_owned())
 }
 
 /// `[remote "origin"]`'s url's last part, without `.git`.
@@ -400,6 +453,46 @@ mod tests {
         std::fs::write(wt.join(".git"), format!("gitdir: {}\n", main.join(".git/worktrees/wt").display())).unwrap();
         assert_eq!(origin_name(&wt).as_deref(), Some("arugula"));
         assert_eq!(origin_name(&main).as_deref(), Some("arugula"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn branches_from_head() {
+        let dir = std::env::temp_dir().join(format!("arugula-branch-{}", std::process::id()));
+        let s = |p: &Path| p.display().to_string();
+        // On a branch, slashes and all.
+        let repo = dir.join("repo");
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+        std::fs::write(repo.join(".git/HEAD"), "ref: refs/heads/m109/layout\n").unwrap();
+        assert_eq!(branch(&s(&repo)).as_deref(), Some("m109/layout"));
+        // Detached: the short commit.
+        let detached = dir.join("detached");
+        std::fs::create_dir_all(detached.join(".git")).unwrap();
+        std::fs::write(detached.join(".git/HEAD"), "bb5b2f16a0c1d2e3f4a5b6c7d8e9f00112233445\n").unwrap();
+        assert_eq!(branch(&s(&detached)).as_deref(), Some("bb5b2f1"));
+        // A worktree reads its own HEAD, through `gitdir:`, relative or not.
+        std::fs::create_dir_all(repo.join(".git/worktrees/wt")).unwrap();
+        std::fs::write(repo.join(".git/worktrees/wt/HEAD"), "ref: refs/heads/feature\n").unwrap();
+        let wt = dir.join("wt");
+        std::fs::create_dir_all(&wt).unwrap();
+        std::fs::write(wt.join(".git"), format!("gitdir: {}\n", s(&repo.join(".git/worktrees/wt")))).unwrap();
+        assert_eq!(branch(&s(&wt)).as_deref(), Some("feature"));
+        let rel = dir.join("rel");
+        std::fs::create_dir_all(&rel).unwrap();
+        std::fs::write(rel.join(".git"), "gitdir: ../repo/.git/worktrees/wt\n").unwrap();
+        assert_eq!(head_of(&rel).as_deref(), Some("feature"));
+        // No repository, or one without a readable HEAD.
+        let loose = dir.join("loose");
+        std::fs::create_dir_all(&loose).unwrap();
+        assert_eq!(branch(&s(&loose)), None);
+        assert_eq!(head_in("garbage"), None);
+        // A checkout shows once the cache is stale; a cwd in a pane's info
+        // goes through `project` first, so a subdirectory is its root's.
+        std::fs::write(repo.join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
+        assert_eq!(head_of(&repo).as_deref(), Some("main"));
+        let inner = repo.join("src");
+        std::fs::create_dir_all(&inner).unwrap();
+        assert_eq!(project(&s(&inner)).map(|p| p.root), Some(s(&repo)));
         std::fs::remove_dir_all(&dir).ok();
     }
 }

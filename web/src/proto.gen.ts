@@ -1231,7 +1231,7 @@ team?: string,
  */
 features?: HostFeatures, };
 
-export type Intent = { "op": "new_session", name: string | null, from_pane: number | null, } | { "op": "rename_session", session: number, name: string, } | { "op": "close_session", session: number, } | { "op": "new_tab", session: number, from_pane: number | null, cwd?: string, } | { "op": "rename_tab", tab: number, name: string | null, } | { "op": "close_tab", tab: number, } | { "op": "move_tab", tab: number, session: number, index: number, } | { "op": "split", pane: number, edge: Edge, local?: boolean, cwd?: string, } | { "op": "close_pane", pane: number, } | { "op": "move_pane", pane: number, target: number, edge: Edge, } | { "op": "break_pane", pane: number, session: number, index: number | null, } | { "op": "dock_tab", tab: number, target: number, edge: Edge, } | { "op": "resize_split", split: number, weights: Array<number>, } | { "op": "set_option", scope: OptionScope, name: string, value: string | null, };
+export type Intent = { "op": "new_session", name: string | null, from_pane: number | null, } | { "op": "rename_session", session: number, name: string, } | { "op": "close_session", session: number, } | { "op": "new_tab", session: number, from_pane: number | null, cwd?: string, } | { "op": "rename_tab", tab: number, name: string | null, } | { "op": "close_tab", tab: number, } | { "op": "move_tab", tab: number, session: number, index: number, } | { "op": "split", pane: number, edge: Edge, local?: boolean, cwd?: string, } | { "op": "close_pane", pane: number, } | { "op": "move_pane", pane: number, target: number, edge: Edge, } | { "op": "break_pane", pane: number, session: number, index: number | null, } | { "op": "dock_tab", tab: number, target: number, edge: Edge, } | { "op": "resize_split", split: number, weights: Array<number>, } | { "op": "arrange", tab: number, preset: Preset, main?: number, } | { "op": "focus", tab: number, pane: number | null, } | { "op": "set_option", scope: OptionScope, name: string, value: string | null, };
 
 /**
  * Someone the owner's `@token` named who can't read the thread (#297):
@@ -1688,6 +1688,11 @@ resumes?: string | null,
  */
 project?: Project | null, 
 /**
+ * Its repository's checked-out branch, or a short commit when HEAD is
+ * detached (M109).
+ */
+branch?: string | null, 
+/**
  * Output rate (M23).
  */
 activity?: Activity | null, 
@@ -1762,6 +1767,11 @@ chat?: string, pic?: string,
  * The tab it shows, and the pane it's focused on.
  */
 tab?: number, pane?: number, };
+
+/**
+ * A whole-tab arrangement for [`Intent::Arrange`].
+ */
+export type Preset = "columns" | "grid" | "main_stack";
 
 /**
  * The git repository a pane's working directory is in (M23).
@@ -2063,7 +2073,12 @@ threads?: Array<ThreadSummary>,
  */
 convs?: Array<Conversation>, };
 
-export type TabView = { id: number, name: string | null, root: Node, cols: number, rows: number, owner: number | null, zoom: number | null, layout: Layout, };
+export type TabView = { id: number, name: string | null, root: Node, cols: number, rows: number, owner: number | null, zoom: number | null, 
+/**
+ * The pane filling the tab for everyone (focus mode, M109), if any.
+ * `layout` already shows it.
+ */
+focus: number | null, layout: Layout, };
 
 /**
  * `GET` and `POST /api/team-pins`: the teams pinned here, and those whose

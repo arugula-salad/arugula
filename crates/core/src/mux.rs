@@ -38,6 +38,26 @@ pub struct Tab {
     /// While set, this pane fills the tab and the others keep their sizes
     /// (a phone showing one pane at a time).
     pub zoom: Option<PaneId>,
+    /// While set, this pane fills the tab for everyone (desktop focus mode,
+    /// [`Intent::Focus`]). Unlike `zoom`, which follows one client's view,
+    /// it's shared, saved and survives a reload; it never touches `root`,
+    /// so unfocusing gives back the same layout.
+    #[serde(default)]
+    pub focus: Option<PaneId>,
+}
+
+/// A whole-tab arrangement for [`Intent::Arrange`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub enum Preset {
+    /// One row of equal columns.
+    Columns,
+    /// ⌈√n⌉ columns, filled row by row; the last row's panes widen to fill
+    /// it.
+    Grid,
+    /// `main` on the left (0.6), the rest stacked on the right.
+    MainStack,
 }
 
 /// Where an option lives, as in tmux: the server, a session, a window (tab)
@@ -192,6 +212,22 @@ pub enum Intent {
         split: NodeId,
         weights: Vec<f64>,
     },
+    /// Rebuild a tab's tree from its panes, in reading order, as `preset`.
+    /// No pane is started or stopped. `main` is the big pane of
+    /// [`Preset::MainStack`] [default: the first]; it must be in the tab.
+    Arrange {
+        tab: TabId,
+        preset: Preset,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts", ts(optional))]
+        main: Option<PaneId>,
+    },
+    /// Show one pane filling the tab, for everyone, or (`pane: None`) the
+    /// whole tab again. See [`Tab::focus`].
+    Focus {
+        tab: TabId,
+        pane: Option<PaneId>,
+    },
     /// Set an option, or unset it (`value: None`). No client sends it
     /// since the tmux front end was removed; kept in the protocol (see
     /// [`Options`]).
@@ -306,8 +342,10 @@ impl Mux {
         self.session(session)?;
         self.next_tab += 1;
         let id = self.next_tab;
-        self.tabs
-            .insert(id, Tab { id, name: None, root, cols: DEFAULT_COLS, rows: DEFAULT_ROWS, owner: None, zoom: None });
+        self.tabs.insert(
+            id,
+            Tab { id, name: None, root, cols: DEFAULT_COLS, rows: DEFAULT_ROWS, owner: None, zoom: None, focus: None },
+        );
         let s = self.session_mut(session)?;
         let at = index.unwrap_or(s.tabs.len()).min(s.tabs.len());
         s.tabs.insert(at, id);
@@ -333,6 +371,9 @@ impl Mux {
                 tab.root = rest;
                 if tab.zoom == Some(pane) {
                     tab.zoom = None;
+                }
+                if tab.focus == Some(pane) {
+                    tab.focus = None;
                 }
             }
             None => self.remove_tab(tab_id),
@@ -410,6 +451,7 @@ impl Mux {
                 let tab = self.tabs.get_mut(&tab_id).unwrap();
                 tab.root = root;
                 tab.zoom = None;
+                tab.focus = None;
                 Ok(vec![Effect::Spawn { pane: new, cwd_from: Some(pane), cwd }])
             }
             ClosePane { pane } => {
@@ -429,6 +471,13 @@ impl Mux {
                     tabs.get_mut(&from).unwrap().root.replace_pane(pane, TEMP);
                     tabs.get_mut(&to).unwrap().root.replace_pane(target, pane);
                     tabs.get_mut(&from).unwrap().root.replace_pane(TEMP, target);
+                    // Across tabs, a zoom or focus on either pane would
+                    // now point into the other tab.
+                    for t in [from, to] {
+                        let t = tabs.get_mut(&t).unwrap();
+                        t.zoom = t.zoom.filter(|z| t.root.contains(*z));
+                        t.focus = None;
+                    }
                     return Ok(vec![]);
                 }
                 self.detach_pane(pane)?;
@@ -438,6 +487,7 @@ impl Mux {
                 let tab = self.tabs.get_mut(&to).unwrap();
                 tab.root = root;
                 tab.zoom = None;
+                tab.focus = None;
                 Ok(vec![])
             }
             BreakPane { pane, session, index } => {
@@ -473,6 +523,7 @@ impl Mux {
                 let t = self.tabs.get_mut(&to).unwrap();
                 t.root = dest;
                 t.zoom = None;
+                t.focus = None;
                 Ok(vec![])
             }
             ResizeSplit { split, weights } => {
@@ -485,6 +536,39 @@ impl Mux {
                     c.weight = w;
                 }
                 normalize_weights(children);
+                Ok(vec![])
+            }
+            Arrange { tab, preset, main } => {
+                let t = self.tab(tab)?;
+                let panes = t.root.panes();
+                if let Some(m) = main
+                    && !panes.contains(&m)
+                {
+                    return Err(Error::NoPane(m));
+                }
+                let (cols, rows) = (t.cols, t.rows);
+                let root = arrange(&panes, preset, main, &mut self.node_ids());
+                let (min_cols, min_rows) = root.min_size();
+                if min_cols > cols || min_rows > rows {
+                    return Err(Error::Invalid("the tab is too small for that layout"));
+                }
+                let t = self.tabs.get_mut(&tab).unwrap();
+                t.root = root;
+                // Every pane is still there, so a focus could stay; but
+                // then the new arrangement wouldn't show until unfocus, and
+                // asking for one means wanting to see it. So it goes, as it
+                // does on a Split. A phone's zoom is its own view and stays.
+                t.focus = None;
+                Ok(vec![])
+            }
+            Focus { tab, pane } => {
+                let t = self.tabs.get_mut(&tab).ok_or(Error::NoTab(tab))?;
+                if let Some(p) = pane
+                    && !t.root.contains(p)
+                {
+                    return Err(Error::NoPane(p));
+                }
+                t.focus = pane;
                 Ok(vec![])
             }
             SetOption { scope, name, value } => {
@@ -569,14 +653,14 @@ impl Mux {
 
     pub fn layout(&self, tab: TabId) -> Result<Layout, Error> {
         let t = self.tab(tab)?;
-        Ok(match t.zoom {
+        Ok(match t.focus.or(t.zoom) {
             Some(p) => Layout { panes: vec![(p, Rect { x: 0, y: 0, cols: t.cols, rows: t.rows })], splits: vec![] },
             None => layout::layout(&t.root, t.cols, t.rows),
         })
     }
 
-    /// The size every visible pane should have. Panes hidden behind a zoom
-    /// are left out, so they keep their last size.
+    /// The size every visible pane should have. Panes hidden behind a focus
+    /// or a zoom are left out, so they keep their last size.
     pub fn pane_rects(&self) -> BTreeMap<PaneId, Rect> {
         self.tabs.keys().flat_map(|t| self.layout(*t).unwrap().panes).collect()
     }
@@ -593,6 +677,9 @@ impl Mux {
             if t.zoom.is_some_and(|z| !t.root.contains(z)) {
                 return Err(format!("tab {} zooms a pane it doesn't have", t.id));
             }
+            if t.focus.is_some_and(|f| !t.root.contains(f)) {
+                return Err(format!("tab {} focuses a pane it doesn't have", t.id));
+            }
             let homes = self.sessions.iter().filter(|s| s.tabs.contains(&t.id)).count();
             if homes != 1 {
                 return Err(format!("tab {} is in {homes} sessions", t.id));
@@ -608,6 +695,41 @@ impl Mux {
         }
         Ok(())
     }
+}
+
+/// `panes` (in reading order) laid out as `preset`, normalized.
+fn arrange(panes: &[PaneId], preset: Preset, main: Option<PaneId>, next_id: &mut impl FnMut() -> NodeId) -> Node {
+    use crate::tree::{Child, Dir};
+    let mut split = |dir, nodes: Vec<(f64, Node)>| -> Node {
+        if nodes.len() == 1 {
+            return nodes.into_iter().next().unwrap().1;
+        }
+        let children = nodes.into_iter().map(|(weight, node)| Child { weight, node }).collect();
+        Node::Split { id: next_id(), dir, children }
+    };
+    let even = |ps: &[PaneId]| ps.iter().map(|p| (1.0, Node::pane(*p))).collect::<Vec<_>>();
+    let mut root = match preset {
+        Preset::Columns => split(Dir::Row, even(panes)),
+        Preset::Grid => {
+            let c = (panes.len() as f64).sqrt().ceil().max(1.0) as usize;
+            let rows: Vec<(f64, Node)> = panes.chunks(c).map(|r| (1.0, split(Dir::Row, even(r)))).collect();
+            split(Dir::Column, rows)
+        }
+        Preset::MainStack => {
+            let main = main.or(panes.first().copied()).expect("a tab has a pane");
+            let rest: Vec<PaneId> = panes.iter().copied().filter(|p| *p != main).collect();
+            match rest.len() {
+                0 => Node::pane(main),
+                1 => split(Dir::Row, even(&[main, rest[0]])),
+                _ => {
+                    let stack = split(Dir::Column, even(&rest));
+                    split(Dir::Row, vec![(0.6, Node::pane(main)), (0.4, stack)])
+                }
+            }
+        }
+    };
+    root.normalize();
+    root
 }
 
 /// How long a tab's size owner keeps the size against another client's

@@ -682,6 +682,7 @@ impl Daemon {
                 answered: None,
                 work: None,
                 project: None,
+                branch: None,
                 activity: None,
                 title: None,
                 file: None,

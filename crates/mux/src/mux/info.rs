@@ -173,11 +173,13 @@ impl Daemon {
             _ => typed.or(seen.as_ref().map(|s| s.work)).unwrap_or(WorkKind::Shell),
         };
         let command = if running { seen.and_then(|s| s.command) } else { meta.command };
+        let project = cwd.as_deref().and_then(crate::classify::project);
         PaneInfo {
             resumes,
             id: p.id,
             epoch: p.epoch,
-            project: cwd.as_deref().and_then(crate::classify::project),
+            branch: project.as_ref().and_then(|p| crate::classify::branch(&p.root)),
+            project,
             cwd,
             command,
             work: Some(work),
@@ -226,6 +228,7 @@ impl Daemon {
         PaneInfo {
             id,
             epoch: 0,
+            branch: s.project.as_ref().and_then(|p| crate::classify::branch(&p.root)),
             project: s.project,
             cwd: s.cwd,
             file: s.file,
@@ -308,6 +311,7 @@ impl Daemon {
                     rows: t.rows,
                     owner: t.owner,
                     zoom: t.zoom,
+                    focus: t.focus,
                     layout: self.mux.layout(t.id).ok()?,
                 })
             })

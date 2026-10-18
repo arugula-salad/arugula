@@ -15,6 +15,8 @@ mod agents_real;
 mod api;
 #[cfg(feature = "labs")]
 mod apps;
+#[cfg(unix)]
+mod arrange;
 mod attach;
 mod attention;
 mod block_channels;
