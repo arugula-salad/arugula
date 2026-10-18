@@ -3,8 +3,8 @@
 // ship the previous bundle. Other debug builds read it at run time, so a
 // new bundle needn't recompile the daemon (every `just test` built one).
 fn main() {
-    let embeds = std::env::var("PROFILE").as_deref() == Ok("release")
-        || std::env::var_os("CARGO_FEATURE_DEBUG_EMBED").is_some();
+    let embeds =
+        std::env::var("PROFILE").as_deref() == Ok("release") || std::env::var_os("CARGO_FEATURE_DEBUG_EMBED").is_some();
     if embeds {
         println!("cargo:rerun-if-changed=../../web/dist");
     } else {
