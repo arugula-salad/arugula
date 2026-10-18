@@ -1884,5 +1884,3 @@ mod tests {
         assert_eq!(back, msg);
     }
 }
-
-pub  fn ci_probe_misformatted( ){ }
