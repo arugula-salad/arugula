@@ -5288,6 +5288,38 @@ button.diff-why-run {
   text-align: left;
 }
 
+/* Charts and drawings in a Doc (#964). A chart's series take the palette's
+   colors, so both themes read; its text and axes are currentColor. */
+:root {
+  --c1: var(--info);
+  --c2: var(--peach);
+  --c3: var(--ok);
+  --c4: var(--pink);
+}
+
+.md .chart-box {
+  margin: 0 0 0.7em;
+}
+
+.md .chart-note {
+  margin: 0 0 0.7em;
+}
+
+.md .chart-note > p {
+  margin: 0 0 0.3em;
+}
+
+/* An SVG in an <img> has no background of its own, and what an agent draws
+   is meant for white: so it sits on white in either theme. */
+.md .doc-drawing {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 0 0.7em;
+  background: #fff;
+  border-radius: 6px;
+}
+
 .forge-dot {
   display: inline-block;
   width: 8px;
