@@ -8,5 +8,5 @@ topic: [panes and sessions](https://docs.arugula.io/panes/),
 [attention and history](https://docs.arugula.io/attention/) and
 [sharing](https://docs.arugula.io/sharing/). Labs features (chat, threads,
 VMs and the rest) are described for the team in [labs.md](labs.md),
-and Managoat, Arugula as the UI of a Managoat account, in
+and cloud agents, run through Arugula control, in
 [managoat.md](managoat.md).

@@ -161,25 +161,6 @@ pub fn draw(app: &mut App, f: &mut Frame) -> Option<Cursor> {
                     );
                 }
             }
-            Some(BlockType::Fountain) => {
-                // The Managoat catalog on one line: how many, of how many,
-                // and the filter.
-                let s = app.blocks.get(&pid);
-                let at = |k: &str| s.and_then(|s| s[k].as_str().map(str::to_owned));
-                let shown = s.and_then(|s| s["agents"].as_array().map(Vec::len)).unwrap_or(0);
-                let total = s.and_then(|s| s["total"].as_u64()).unwrap_or(0);
-                let line = match (at("error"), s.is_some_and(|s| s["loading"] == true)) {
-                    (Some(e), _) => format!("%{pid} Managoat agents: {e}"),
-                    (None, true) => format!("%{pid} Managoat agents: reading…"),
-                    (None, false) if shown as u64 == total => {
-                        format!("%{pid} Managoat agents: {total}  (`arugula capture %{pid}`)")
-                    }
-                    (None, false) => {
-                        format!("%{pid} Managoat agents: {shown} of {total}  (`arugula capture %{pid}`)")
-                    }
-                };
-                note(buf, r, &line);
-            }
             Some(BlockType::Forge) => {
                 // M36: the PR on one line, then what waits on you, each a
                 // line (drafts first: an agent's write waits to be sent).

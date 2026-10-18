@@ -28,11 +28,6 @@ export interface FileState {
   error: string | null;
   watching: boolean;
   updated_ms: number;
-  /** #942 F3: a Managoat conversation's sandbox; whether it's parked; and
-   *  a directory's entries, when the path is one. */
-  fountain?: string;
-  parked?: boolean;
-  entries?: { name: string; type: string; size: number | null }[];
 }
 
 const KB = (n: number) => (n < 1024 ? `${n} B` : `${Math.round(n / 1024)} KB`);
@@ -59,7 +54,7 @@ function FileBlock({ client, id, s }: { client: Client; id: PaneId; s: FileState
 
   useEffect(() => {
     const c = code.current;
-    if (!c || !s || s.error || s.binary || s.entries) return;
+    if (!c || !s || s.error || s.binary) return;
     const path = s.real ?? s.path;
     const was = shown.current;
     if (was.path !== path) c.open(path, s.text);
@@ -73,8 +68,6 @@ function FileBlock({ client, id, s }: { client: Client; id: PaneId; s: FileState
   const path = s ? (s.real ?? s.path) : "";
   const slash = path.lastIndexOf("/");
   const problem = s?.error ?? (s?.binary ? `A binary file (${KB(s.size)})` : null);
-  const entries = s && !s.error ? s.entries : undefined;
-  const open = (p: string) => void client.api(`/api/blocks/${id}/call/open`, { path: p }, "couldn't open that");
   return (
     <div class="review" data-file-block={id}>
       <div class="review-bar">
@@ -92,42 +85,14 @@ function FileBlock({ client, id, s }: { client: Client; id: PaneId; s: FileState
           {s?.watching ? "live" : "paused"}
         </span>
       </div>
-      {s?.parked && (
-        <div class="browser-card" data-parked>
-          <p>{s.error}</p>
-          <button class="primary" data-wake onClick={() => void client.api(`/api/blocks/${id}/call/wake`, {}, "couldn't wake it")}>
-            Wake
-          </button>
-        </div>
-      )}
-      {entries && (
-        <ul class="file-entries" data-entries>
-          {slash > 0 && (
-            <li>
-              <button class="link" onClick={() => open(path.slice(0, slash) || "/")}>
-                ..
-              </button>
-            </li>
-          )}
-          {entries.map((e) => (
-            <li key={e.name} data-entry={e.name}>
-              <button class="link" onClick={() => open(`${path.replace(/\/$/, "")}/${e.name}`)}>
-                {e.name}
-                {e.type === "directory" ? "/" : ""}
-              </button>
-              {e.size != null && <span class="dim"> {KB(e.size)}</span>}
-            </li>
-          ))}
-        </ul>
-      )}
-      {problem && !s?.parked && (
+      {problem && (
         <div class="browser-card error">
           <p>{s?.error ? "Can't show this file" : problem}</p>
           {s?.error && <p class="dim">{s.error}</p>}
         </div>
       )}
       {!s || (s.loading && !s.text) ? <div class="browser-card dim">Reading {s?.name ?? "the file"}…</div> : null}
-      <div class="file-code" ref={box} style={problem || entries || !s || (s.loading && !s.text) ? { display: "none" } : undefined} />
+      <div class="file-code" ref={box} style={problem || !s || (s.loading && !s.text) ? { display: "none" } : undefined} />
     </div>
   );
 }

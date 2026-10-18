@@ -654,14 +654,10 @@ def handle(m):
         return
     if method == "initialize":
         caps.update(p.get("clientCapabilities") or {})
-        # Run as `fountain acp --agent no-load-session`: an agent that can't
-        # load or resume a session (a followed conversation refuses it).
-        no_load = "--agent" in sys.argv[:-1] and sys.argv[sys.argv.index("--agent") + 1] == "no-load-session"
         agent_caps = {"mcpCapabilities": {"http": True}}
         if "--images" in sys.argv:
             agent_caps["promptCapabilities"] = {"image": True}
-        if not no_load:
-            agent_caps.update({"loadSession": True, "sessionCapabilities": {"resume": {}, "fork": {}}})
+        agent_caps.update({"loadSession": True, "sessionCapabilities": {"resume": {}, "fork": {}}})
         send({"id": mid, "result": {"protocolVersion": 1, "agentCapabilities": agent_caps,
             "agentInfo": {"name": os.environ.get("FAKE_ACP_NAME", "fake-acp"), "version": "1"}, "authMethods": []}})
     elif method == "session/new":

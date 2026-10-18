@@ -93,7 +93,7 @@ nothing marked `mux:` names the edge or the block kinds.
   browsers (`browser.rs`) and block sites (`sites.rs`, `tls.rs`, `ports.rs`,
   and `block_channel.rs` for control's block origins),
   editors (`editor/`), review (`review/`), files (`fs.rs`, with its types in `mux:fs.rs`), forges (`forge/`),
-  Managoat (`labs/fountain/`), workspaces (`labs/workspace/`), studio apps
+  workspaces (`labs/workspace/`), studio apps
   (`labs/apps/`),
   conversations (`conversations/`), the IDE bridge (`ide/`, with the mux's half in `mux:ide/`), invites
   (`invite/`), remote blocks (`remote.rs`), configured agent harnesses
@@ -133,11 +133,11 @@ and tested, but get no new features.
 
 A flag per feature turns on what a stranger doesn't get (#385, #464, #665):
 `chat`, `vms`, `studio`, `workspaces`, `guest-ssh`,
-`swarm-themes`, `forges`, `agents`. Managoat left Labs (#942, F5): it has
-no flag and needs only a login ([docs/managoat.md](docs/managoat.md)); a
-feature that leaves takes its row out of `FLAGS` and puts its name in
-`flags::RETIRED`, so an old file naming it is ignored (`huddles` too: huddles
-were removed, DECISIONS.md "Huddles are removed"). They're named flags in `flags.json` in the state
+`swarm-themes`, `forges`, `agents`. A feature that leaves takes its row out
+of `FLAGS` and puts its name in `flags::RETIRED`, so an old file naming it
+is ignored: `fountain` (daemon-side Managoat, removed: DECISIONS.md
+"Daemon-side Managoat is removed") and `huddles` (DECISIONS.md "Huddles are
+removed"). They're named flags in `flags.json` in the state
 dir (`arugula_proto::flags`: the `FLAGS` registry, `get`, `on`, `set`, `all`;
 read on every call, never cached), set by `arugulad flags chat on` or the
 owner's *Developer settings…* in the web client (`flags.list` and `flag.set`
@@ -151,9 +151,7 @@ says how to turn it on. `labs` in the file, or the old empty `labs`
 file (which a daemon moves into it at startup), means every flag the file
 doesn't name. `ARUGULA_STATE_DIR` moves the state dir. A `labs` cargo feature (on by default) compiles Labs
 code in or out: it lives in `crates/daemon/src/labs/`, and core reaches it
-only through the surface in `labs/mod.rs`, which explains the pattern. Managoat
-(out of Labs as a flag, still compiled with this feature: DECISIONS.md
-"Fountain is out of Labs"), studio apps, chant workspaces, and VMs (the Sprites adapter, machines, resident
+only through the surface in `labs/mod.rs`, which explains the pattern. Studio apps, chant workspaces, and VMs (the Sprites adapter, machines, resident
 daemons, the provider tunnel and the tailnet sandbox supervisor) and guest ssh
 (`labs/guest_ssh.rs`; `russh` is an optional dependency, and a build without
 Labs answers `/api/guests` with 501), and chat (`crates/mux/src/labs/threads.rs`, with the mux's handling in

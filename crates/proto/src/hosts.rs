@@ -300,9 +300,6 @@ pub struct HostFeatures {
     pub block_channels: bool,
     /// VM tabs and panes and *Sandboxes…*: a sandbox provider (wisp).
     pub vms: bool,
-    /// A Managoat login here: `MANAGOAT_API_KEY` (or `FOUNTAIN_API_KEY`), or the CLI's
-    /// credentials file.
-    pub fountain: bool,
     /// A studio is linked (`arugula studio login`).
     pub studio: bool,
     /// Threads on panes and sessions: the `chat` flag. Older daemons leave it

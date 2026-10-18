@@ -302,38 +302,6 @@ pub struct WorkspaceOpened {
     pub gates: Value,
 }
 
-/// A card in `list` kind managoat_agents.
-#[cfg(feature = "labs")]
-#[derive(Debug, Serialize)]
-pub struct AgentRow {
-    pub name: String,
-    pub id: String,
-    pub runtime: String,
-    pub model: String,
-    pub source: Option<crate::labs::fountain::catalog::Source>,
-    pub app: Option<String>,
-    pub skills: Vec<String>,
-    pub mcp: Vec<String>,
-    pub description: String,
-}
-
-/// `list` kind managoat_agents.
-#[cfg(feature = "labs")]
-#[derive(Debug, Serialize)]
-pub struct FountainAgents {
-    pub total: usize,
-    pub agents: Vec<AgentRow>,
-    pub unreadable: usize,
-}
-
-/// A Managoat block's text.
-#[cfg(feature = "labs")]
-#[derive(Debug, Serialize)]
-pub struct BlockText {
-    pub block: PaneId,
-    pub text: String,
-}
-
 /// A new issue drafted in a forge block, waiting for the user.
 #[derive(Debug, Serialize)]
 pub struct ForgeDrafted {
@@ -538,8 +506,6 @@ mod tests {
         same(PortOpened { block: 9, port: 3000 }, json!({ "block": 9, "port": 3000 }));
         #[cfg(feature = "labs")]
         same(AppOpened { block: 9, app: "notes".into() }, json!({ "block": 9, "app": "notes" }));
-        #[cfg(feature = "labs")]
-        same(BlockText { block: 9, text: "t".into() }, json!({ "block": 9, "text": "t" }));
         same(Screen { pane: 7, text: "hi".into() }, json!({ "pane": 7, "text": "hi" }));
         shaped(
             FileRead { path: "/a".into(), size: 10, offset: 0, next_offset: 10, more: false, text: "x".into() },
@@ -744,27 +710,6 @@ mod tests {
             },
             json!({ "block": 4, "root": "/w", "members": [{ "name": "m", "dir": "/w/m", "kind": "rust",
                 "errors": 0, "gates": [] }], "gates": [] }),
-        );
-        #[cfg(feature = "labs")]
-        same(
-            FountainAgents {
-                total: 3,
-                agents: vec![AgentRow {
-                    name: "n".into(),
-                    id: "i".into(),
-                    runtime: "claude".into(),
-                    model: "m".into(),
-                    source: None,
-                    app: None,
-                    skills: vec![],
-                    mcp: vec!["x".into()],
-                    description: String::new(),
-                }],
-                unreadable: 0,
-            },
-            json!({ "total": 3, "agents": [{ "name": "n", "id": "i", "runtime": "claude", "model": "m",
-                "source": null, "app": null, "skills": [], "mcp": ["x"], "description": "" }],
-                "unreadable": 0 }),
         );
         #[cfg(feature = "labs")]
         same(Apps { apps: vec![] }, json!({ "apps": [] }));

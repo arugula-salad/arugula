@@ -44,8 +44,7 @@ not run. CI never sets it. The claims expect fresh boxes: after installing anyth
 | `tailnet` | `headscale`, `ts-box`, `ts-client` | validated | S28's tailnet comparison |
 
 The relay is part of `control`, and Forgejo and GitLab have a stack of
-their own in [`forges/`](forges/README.md). A `fountain` profile (#200) is
-added when a milestone needs it.
+their own in [`forges/`](forges/README.md).
 
 ### `ssh`
 

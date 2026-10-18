@@ -25,7 +25,7 @@ export const KINDS: Record<WorkKind, [number, number, number]> = {
   pr: [235, 150, 110],
   // M37: an issue.
   issue: [215, 190, 95],
-  // M43: the Managoat agent catalog.
+  // M43: the Managoat account view (removed; an older daemon may still say it).
   managoat: [120, 170, 250],
 };
 
@@ -60,7 +60,6 @@ export function kindOf(p: FleetPane): WorkKind {
   if (p.info.type === "agent") return "agent";
   if (p.info.type === "app") return "app";
   if (p.info.type === "forge") return "pr";
-  if (p.info.type === "managoat") return "managoat";
   if (p.info.type === "browser") return "server";
   return "shell";
 }

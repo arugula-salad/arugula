@@ -112,8 +112,8 @@ For working on Arugula itself:
 - [docs/control-e2e.md](docs/control-e2e.md): how control's end-to-end encryption keeps it out of
   your terminals.
 - [DECISIONS.md](DECISIONS.md): the decisions that still hold.
-- [docs/managoat.md](docs/managoat.md): Arugula as Managoat's UI: sign-in, the account view and
-  its permission requests, conversations as agent blocks, recipes on Managoat.
+- [docs/managoat.md](docs/managoat.md): managed cloud agents, run through Arugula control on
+  Managoat, and what became of the daemon's own Managoat integration.
 - [docs/platform-features.md](docs/platform-features.md): which agent platform features (ACP, MCP,
   A2A, skills, scheduled tasks) Arugula brings in, which are planned, and the gaps.
 - [docs/plan-archive.md](docs/plan-archive.md): the original plan and every milestone.

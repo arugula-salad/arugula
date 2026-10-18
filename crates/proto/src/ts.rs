@@ -67,8 +67,6 @@ fn generate() -> String {
     c.visit::<ThreadPostRequest>();
     c.visit::<ThreadReadRequest>();
     c.visit::<ThreadPosted>();
-    c.visit::<crate::api::FountainLogin>();
-    c.visit::<crate::api::FountainLoginRequest>();
     c.visit::<crate::api::ConvCreateRequest>();
     c.visit::<crate::api::ConvRenameRequest>();
     c.visit::<crate::api::ConvMemberRequest>();

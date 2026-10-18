@@ -57,8 +57,6 @@
 //! | GET | `/api/panes/N/diff` | | `PaneDiff`: the edit its diff card shows (M28) |
 //! | GET | `/api/sessions/N/secrets` | | `[SecretFinding]`: panes whose recent output looks like it holds a secret |
 //! | GET | `/api/conversations` | `all`, `q=`, `cwd=`, `live`, `limit=` | `ConversationList` (M33) |
-//! | GET | `/api/fountain/agents` | `query=`, `source=`, `profile=` | `FountainAgents` (M43) |
-//! | GET, POST, DELETE | `/api/fountain/login` | POST `FountainLoginRequest` | `FountainLogin`: this daemon's Managoat sign-in and account stream (never the key); POST starts a device sign-in, DELETE signs out (#942) |
 //! | POST | `/api/push/subscribe`, `/api/push/test` | a browser's subscription | `PushSubscriptions` |
 //! | GET | `/api/hosts` | | `HostList`: the daemons a client can switch between |
 //! | POST | `/api/hosts` | `AddHost` | `Host` (replaces one with the same name) |
@@ -1539,32 +1537,6 @@ pub struct Rules {
     pub rules: Vec<StandingRule>,
 }
 
-/// Default policy for new Managoat conversations, owned by this daemon's owner.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub enum ManagoatApproval {
-    #[default]
-    Ask,
-    AutoAllow,
-}
-
-impl ManagoatApproval {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Ask => "ask",
-            Self::AutoAllow => "auto_allow",
-        }
-    }
-}
-
-#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub struct AgentApprovals {
-    pub managoat: ManagoatApproval,
-}
-
 /// One standing permission rule.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
@@ -1757,120 +1729,6 @@ pub struct StudioAppRow {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct FollowerLinkRequest {
     pub link: String,
-}
-
-/// What `GET /api/fountain/agents` takes as its query string (M43).
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FountainQuery {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub query: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub source: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub profile: Option<String>,
-}
-
-/// `GET /api/fountain/agents` (M43): the person's Managoat agents, read with
-/// their own login on this host: compact cards (the daemon's own record of
-/// each, kept as JSON here), filtered.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub struct FountainAgents {
-    #[serde(default)]
-    pub base_url: String,
-    pub profile: String,
-    /// How many agents Managoat has, before the filter.
-    #[serde(default)]
-    pub total: usize,
-    #[cfg_attr(feature = "ts", ts(type = "unknown"))]
-    pub filter: serde_json::Value,
-    #[cfg_attr(feature = "ts", ts(type = "Array<unknown>"))]
-    #[serde(default)]
-    pub agents: Vec<serde_json::Value>,
-    /// Rows Managoat sent that didn't parse.
-    #[serde(default)]
-    pub unreadable: usize,
-}
-
-/// `GET /api/fountain/login` (#942): this daemon's Managoat sign-in, and
-/// its account stream. Never a key: only where it came from and the
-/// prefix Managoat's key list shows.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub struct FountainLogin {
-    /// A key is here: this daemon's own sign-in, or the CLI's login.
-    #[serde(default)]
-    pub signed_in: bool,
-    /// Where the key in use comes from: `arugula` (`arugula managoat
-    /// login`, kept in the state dir), `env` (`$MANAGOAT_API_KEY`) or
-    /// `file` (the `managoat` CLI's `~/.managoat/credentials`).
-    #[serde(default)]
-    pub source: Option<String>,
-    #[serde(default)]
-    pub base_url: Option<String>,
-    /// Who an Arugula sign-in signs in as, when Managoat said.
-    #[serde(default)]
-    pub email: Option<String>,
-    /// The key's prefix, as Managoat's key list shows it.
-    #[serde(default)]
-    pub key_prefix: Option<String>,
-    /// A sign-in waiting for its code to be approved.
-    #[serde(default)]
-    pub pending: Option<FountainDevice>,
-    /// Why the last sign-in didn't happen, or why there's no login.
-    #[serde(default)]
-    pub error: Option<String>,
-    /// What the last change did (a sign-out that couldn't revoke the key).
-    #[serde(default)]
-    pub note: Option<String>,
-    #[serde(default)]
-    pub stream: FountainStream,
-}
-
-/// A device sign-in in progress: show `user_code` and send the person to
-/// `verification_uri` (or `verification_uri_complete`) in a browser signed
-/// in to Managoat.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub struct FountainDevice {
-    pub base_url: String,
-    pub user_code: String,
-    pub verification_uri: String,
-    #[serde(default)]
-    pub verification_uri_complete: Option<String>,
-    /// When the code stops working (ms since the epoch).
-    #[serde(default)]
-    pub expires_ms: u64,
-}
-
-/// The account's event stream (`/api/events/stream`), on the daemon that
-/// runs it (`--managoat-account-stream`).
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub struct FountainStream {
-    /// This daemon runs it.
-    #[serde(default)]
-    pub enabled: bool,
-    #[serde(default)]
-    pub connected: bool,
-    /// The last event id handled, kept across restarts (0: none yet).
-    #[serde(default)]
-    pub cursor: u64,
-    /// Events handled since the daemon started.
-    #[serde(default)]
-    pub delivered: u64,
-    #[serde(default)]
-    pub error: Option<String>,
-}
-
-/// `POST /api/fountain/login`: start a device sign-in. `base_url`: which
-/// Managoat; left out, the one signed in to, else `$MANAGOAT_BASE_URL` or
-/// the CLI profile's.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub struct FountainLoginRequest {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub base_url: Option<String>,
 }
 
 /// `GET /api/push/key`: the daemon's public VAPID key, which a browser
@@ -2158,9 +2016,9 @@ mod wire {
                 "tailnet_seen": true, "control": "https://control", "team": "acme",
                 // `dev` came with flags (#665); `flags` is left out when unsaid;
                 // `block_channels` came with blocks through control (#150);
-                // `calls` went with huddles (2026-10-18).
-                "features": { "labs": true, "dev": false, "blocks": true, "vms": false, "fountain": false,
-                              "studio": false, "threads": false, "block_channels": false },
+                // `calls` went with huddles, `fountain` with daemon-side Managoat.
+                "features": { "labs": true, "dev": false, "blocks": true, "vms": false, "studio": false,
+                              "threads": false, "block_channels": false },
             })
         );
     }
@@ -2501,9 +2359,9 @@ mod wire {
         same(&Adapters { adapters: list.clone() }, json!({ "adapters": list }));
     }
 
-    /// `studio`, `studio/apps`, the follower link and `fountain/agents`.
+    /// `studio`, `studio/apps` and the follower link.
     #[test]
-    fn studio_and_fountain_answer_as_they_did() {
+    fn studio_answers_as_it_did() {
         same(
             &StudioStatus {
                 url: Some("https://s.example".into()),
@@ -2545,20 +2403,6 @@ mod wire {
         same(&StudioApps { studio: None, apps: vec![] }, json!({ "studio": null, "apps": [] }));
         let link: FollowerLinkRequest = serde_json::from_value(json!({ "link": "https://p.example/join" })).unwrap();
         assert_eq!(link.link, "https://p.example/join");
-
-        let agents = vec![json!({ "id": "a1", "name": "Agent" })];
-        same(
-            &FountainAgents {
-                base_url: "https://fountain.example".into(),
-                profile: "default".into(),
-                total: 3,
-                filter: json!({ "query": "a" }),
-                agents: agents.clone(),
-                unreadable: 1,
-            },
-            json!({ "base_url": "https://fountain.example", "profile": "default", "total": 3,
-                    "filter": { "query": "a" }, "agents": agents, "unreadable": 1 }),
-        );
     }
 
     /// `push/subscribe` and `push/test`.

@@ -2,7 +2,7 @@
 
 Every test runs the real binaries as child processes, each with its own
 temp state directory and a port the OS picks. Anything outside Arugula
-(GitHub, Managoat, an agent, Stripe) is a fake served by the test or a
+(GitHub, an agent, Stripe) is a fake served by the test or a
 small script, or a response recorded from the real service and checked in.
 Nothing in the default run costs money, and no test waits for a person:
 what still needs one is listed under [By hand](#by-hand).
@@ -38,7 +38,7 @@ or an account skip without it and name what's missing
 | `just desktop-xvfb` | the Linux desktop app under Xvfb in a container (`packaging/desktop/xvfb/`): `join` (#204), `app` (`bare`, `links` and `nautilus` among its claims) and `stale` (#317) (see [The desktop app's tests](#the-desktop-apps-tests)) | Linux |
 | `just desktop-packages ARCH` | the .deb on Ubuntu 22.04 and the .rpm on Fedora 42 install and claim `arugula://` (after `just desktop-linux ARCH`) | no |
 | `testnet/macos/desktop.sh`, `testnet/macos/update.sh`, `testnet/macos/stale-daemon.sh` | the macOS app from its .dmg in a fresh tart VM, its updater, and a daemon older than the app's (#661) | no |
-| `just check-core` | clippy and the daemon's and CLI's tests without the `labs` feature (the core, with no Managoat; #452), the `forge` and `editor` features on | Linux and macOS |
+| `just check-core` | clippy and the daemon's and CLI's tests without the `labs` feature (the core; #452), the `forge` and `editor` features on | Linux and macOS |
 | `just check-features` | clippy for the daemon with no features, with only `forge` and with only `editor` (#461); not in `check` or CI | Linux and macOS |
 | `just check-macos` | clippy for the macOS target from Linux (compiles, doesn't link) | Linux |
 
@@ -234,15 +234,13 @@ suite's daemon keeps them between specs.
 
 ### The fakes
 
-- `fake_acp.py`: an ACP agent, standing in for Claude Code's adapter and
-  for `managoat`.
+- `fake_acp.py`: an ACP agent, standing in for Claude Code's adapter.
 - `fake_claude.py`: Claude Code talking to its IDE (M28), as S17 recorded it.
 - `crates/vt/fixtures/agents/replay.py`: Claude Code or Codex in a
   terminal, played back from a recording ([below](#the-replay-agent)).
 - `fake_mcp.py`: an MCP server whose tools ask the user through elicitation.
 - `fake_code_server.py`: code-server (M27).
-- Fakes inside the test files themselves: Managoat's API (`fountain.rs`),
-  control's relay socket and GitHub App token endpoint, GitHub and Forgejo
+- Fakes inside the test files themselves: control's relay socket and GitHub App token endpoint, GitHub and Forgejo
   with stand-in `gh` and `tea` (`forge_live.rs`).
 
 ## The replay agent
@@ -317,7 +315,7 @@ Recorded from real systems and checked in, so tests see real shapes:
 | `crates/daemon/tests/fixtures/conversations/` | Claude Code transcripts, one per shape (S20) | by hand, as in `archive/spikes:spikes/s20-conversations/` |
 | `crates/daemon/tests/fixtures/conversations/desktop/` | the Claude desktop app's Code tab session records (#81, #83), made up from the fields S20 saw | by hand |
 | `crates/daemon/tests/fixtures/s13-*`, `s18-*` | Claude Code hook payloads | by hand |
-| `crates/daemon/tests/fixtures/fountain/`, `chant/` | Managoat API and chant output | by hand |
+| `crates/daemon/tests/fixtures/chant/` | chant output | by hand |
 | `crates/daemon/tests/fixtures/chant/why/` | `graph --intent app/server.mjs --json` and `status local --json` (chant 0.108.1) over a workspace with a committed agent run, an uncommitted line, a decision and a held lease (#619) | `make.sh DIR CHANT OUT` beside them, with the chant from `web/e2e/fixtures/chant-why` |
 | `crates/daemon/tests/fixtures/chant/audit-agents.json` | `chant audit --agents --scope system,user --format json` (chant 0.95.0), with only Claude Code configured | `chant audit --agents` with `HOME` a scratch dir holding only `.claude/CLAUDE.md` and `.claude/settings.json` |
 | `crates/proto/fixtures/` | client fixtures: what a client and the daemon said to each other ([below](#client-fixtures)) | `just record-fixtures [names]` |
@@ -1289,7 +1287,6 @@ Real gaps, each one automatable:
 - **Control checking GitHub's signature on a real webhook delivery**: it
   needs a URL github.com can reach.
 - **Cursor's Remote-SSH and the Dev Containers extension** (M28).
-- **A Managoat profile** in `testnet/` (#200).
 - **More client fixtures** (#200): splits and tabs, `arugula attach`'s
   zoomed view, `--ssh` through `arugula bridge`, and the desktop app and
   web client against the fixture server.

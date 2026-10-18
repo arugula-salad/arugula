@@ -138,21 +138,8 @@ pub struct McpServer {
     pub extra: Map<String, Value>,
 }
 
-/// What stands in for a value typed in literally (not a `${VAR}`
-/// reference) when a recipe is shown.
+/// What stands in for a secret scrubbed out of what's shown.
 pub const REDACTED: &str = "<redacted>";
-
-impl McpServer {
-    /// As it may be shown: a header or env value that isn't (or doesn't
-    /// hold) a `${VAR}` reference may be a secret someone typed in, and
-    /// becomes [`REDACTED`].
-    pub fn redacted(&self) -> Self {
-        let hide = |m: &BTreeMap<String, String>| {
-            m.iter().map(|(k, v)| (k.clone(), if is_reference(v) { v.clone() } else { REDACTED.to_owned() })).collect()
-        };
-        Self { headers: hide(&self.headers), env: hide(&self.env), ..self.clone() }
-    }
-}
 
 /// Whether a value holds a `${VAR}` reference.
 pub fn is_reference(v: &str) -> bool {
@@ -1054,11 +1041,18 @@ mod tests {
         assert!(!says_oauth(200, true) && !says_oauth(406, false));
     }
 
-    /// pr-reviewer's MCP servers, as the Managoat fixture has them.
+    /// pr-reviewer's MCP servers, as a Managoat agent of it had them.
     fn pr_reviewer() -> BTreeMap<String, McpServer> {
-        let v: Value = serde_json::from_str(include_str!("../../tests/fixtures/fountain/agents.json")).unwrap();
-        let pr = v["data"].as_array().unwrap().iter().find(|a| a["name"] == "pr-reviewer").unwrap();
-        serde_json::from_value(pr["mcp_servers"].clone()).unwrap()
+        serde_json::from_value(json!({
+            "context7": { "type": "http", "url": "https://mcp.context7.com/mcp" },
+            "github": {
+                "type": "http",
+                "url": "https://api.githubcopilot.com/mcp/",
+                "headers": { "Authorization": "Bearer ${X}" },
+            },
+            "mem0": { "type": "http", "url": "https://mcp.mem0.ai/mcp" },
+        }))
+        .unwrap()
     }
 
     /// pr-reviewer as the fixture has it: github through a variable,
@@ -1188,22 +1182,5 @@ mod tests {
         assert!(out.contains("short"), "too short to be scrubbed (would wreck the JSON)");
         serde_json::from_str::<Value>(&out).unwrap();
         assert_eq!(scrub("{}", &secrets), None);
-    }
-
-    #[test]
-    fn literal_values_are_redacted_when_shown() {
-        let s: McpServer = serde_json::from_value(serde_json::json!({
-            "type": "http", "url": "https://mcp-1.example.com/mcp",
-            "headers": { "Authorization": "Bearer ${X}", "X-Api-Key": "typed-in-literally", "X-Mixed": "k=${Y};v=1" },
-            "env": { "TOKEN": "also-literal", "REF": "${Z}" }
-        }))
-        .unwrap();
-        let r = s.redacted();
-        assert_eq!(r.headers["Authorization"], "Bearer ${X}");
-        assert_eq!(r.headers["X-Api-Key"], REDACTED);
-        assert_eq!(r.headers["X-Mixed"], "k=${Y};v=1");
-        assert_eq!((r.env["TOKEN"].as_str(), r.env["REF"].as_str()), (REDACTED, "${Z}"));
-        assert_eq!(s.headers["X-Api-Key"], "typed-in-literally", "kept as read, to wear");
-        assert!(!is_reference("${unclosed") && is_reference("a${B}c"));
     }
 }
