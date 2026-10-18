@@ -45,6 +45,8 @@ jobs:
         with:
           workspaces: crates/desktop
           shared-key: windows-desktop
+          # Not keyed on the job's id: app-release.yml's job is windows.
+          add-job-id-key: false
       # Stand-ins for what the release builds (scripts/windows-dist): the
       # daemon, the CLI and Microsoft's ConPTY. This installer is for
       # checking the app; the release's carries the real ones.

@@ -129,6 +129,7 @@ jobs:
         with:
           workspaces: crates/desktop
           shared-key: windows-desktop
+          add-job-id-key: false
           save-if: false
       # arugulad and arugula, with Microsoft's ConPTY, as the app carries
       # them (tauri.windows.conf.json).

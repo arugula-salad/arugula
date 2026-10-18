@@ -42,9 +42,21 @@ jobs:
       - uses: mlugg/setup-zig@v2
         with:
           version: 0.16.0
+      # Ghostty's build (libghostty-vt-sys's Zig, 2.5 min of a warm build,
+      # before vt, mux and arugulad can start), kept by its content as on
+      # Linux (the setup action): the checkout's new mtimes rebuild every
+      # path crate, and this one most slowly.
+      - run: echo "LIBGHOSTTY_VT_SYS_CACHE_DIR=$(cygpath -w "$HOME/.cache/libghostty-vt-sys")" >> "$GITHUB_ENV"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/libghostty-vt-sys
+          key: ghostty-Windows-release-${{ hashFiles('vendor/libghostty-vt-sys/**', '.mise.toml') }}
+      # Not keyed on the job's id (rust-cache's default): release.yml's job
+      # is named windows, this one release-cache.
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: windows-release
+          add-job-id-key: false
           # Our crates too: the libraries don't change version between
           # releases now, so they're worth keeping.
           cache-workspace-crates: true
