@@ -123,6 +123,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: scripts/release check-app-version "$GITHUB_REF_NAME"
+      # main's warm build of the app (windows-desktop.yml); a tag's run
+      # only reads it.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates/desktop
+          shared-key: windows-desktop
+          save-if: false
       # arugulad and arugula, with Microsoft's ConPTY, as the app carries
       # them (tauri.windows.conf.json).
       - run: |

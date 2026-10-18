@@ -1,0 +1,56 @@
+# The release's Windows build, warm. release.yml's windows job builds
+# arugulad and arugula with --release on GitHub's runner, and it built them
+# cold every time (11 min of a release's ~13). A tag's run can only read
+# main's caches, so main keeps one: this builds what scripts/windows-dist
+# builds, in the same profile, and saves the target dir under the key the
+# release reads (shared-key windows-release). The workspace's libraries are
+# 0.0.0 (#1036), so a release finds them built, not just the dependencies.
+# Not in ci/green (chant's windows phase counts workspace and desktop only):
+# nothing waits for it.
+name: windows-release-cache
+on:
+  push:
+    branches: [main]
+    paths:
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - ".cargo/**"
+      - ".github/workflows/windows-release-cache.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One at a time, and never cancelled: main pushes more often than this
+# runs, and a cancelled run saves nothing. GitHub keeps only the newest
+# waiting run.
+concurrency:
+  group: windows-release-cache
+  cancel-in-progress: false
+
+jobs:
+  release-cache:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      # Zig for Ghostty's lib-vt, as release.yml's windows job.
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: windows-release
+          # Our crates too: the libraries don't change version between
+          # releases now, so they're worth keeping.
+          cache-workspace-crates: true
+      # A release build needs web/dist (crates/daemon/build.rs). The real
+      # client only matters in the release's own build, which rebuilds
+      # arugulad anyway (its version and web/dist differ): a stand-in
+      # saves installing pnpm and building it here.
+      - run: mkdir -p web/dist && echo '<!doctype html>' > web/dist/index.html
+      - run: cargo build --release -p arugulad -p arugula

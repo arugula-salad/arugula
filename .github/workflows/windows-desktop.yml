@@ -39,9 +39,12 @@ jobs:
         working-directory: crates/desktop
     steps:
       - uses: actions/checkout@v4
+      # Under a key app-release.yml's windows job reads: a tag's run can
+      # only read main's caches, and this is main's release build of the app.
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: crates/desktop
+          shared-key: windows-desktop
       # Stand-ins for what the release builds (scripts/windows-dist): the
       # daemon, the CLI and Microsoft's ConPTY. This installer is for
       # checking the app; the release's carries the real ones.
