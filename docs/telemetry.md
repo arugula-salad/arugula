@@ -18,9 +18,42 @@ arugulad telemetry off
 ```
 
 They work with the daemon stopped. A running daemon follows within a minute.
-The web client and the app will ask once (M103), and so will the `arugula`
-CLI (M105). Both write the same file, through the `telemetry.get` and
-`telemetry.set` operations (`GET` and `PUT /api/telemetry`, owner only).
+`arugula telemetry on|off|status [--json]` does the same through the running
+daemon, and on the file when no daemon runs. The web client and the app will
+ask once (M103), and the `arugula` CLI asks once (below). Both write the same
+file, through the `telemetry.get` and `telemetry.set` operations (`GET` and
+`PUT /api/telemetry`, owner only).
+
+### The CLI's question
+
+The first `arugula` command a person runs at a terminal asks, on stderr,
+before the command runs:
+
+```
+Help improve Arugula? Send usage counts and crash reports from this machine (never terminal contents, file names, commands or prompts). Details: arugula telemetry status. [y/N]
+```
+
+`y` or `yes` is yes. Enter, or anything else, is no. Either answer is saved
+(`via: cli`) and the CLI never asks again: through `telemetry.set` when the
+daemon runs, or straight into `telemetry.json` when it doesn't. If saving
+fails, it says so in one line and runs the command anyway.
+
+It asks only when all of these hold, and otherwise says nothing:
+
+- stdin and stderr are terminals (not a pipe or a script);
+- it talks to the local daemon (no `--host` or `--ssh`), and the daemon says
+  nobody has answered (it refuses agents and guests);
+- nothing keeps telemetry off (`DO_NOT_TRACK`, `ARUGULA_TELEMETRY=off`, `CI`,
+  a test run);
+- the command isn't `--json`, `arugula mcp`, `arugula events`, `arugula
+  tmux -CC`, the TUI, `arugula telemetry`, or one of Claude Code's hooks;
+- no agent runs it (`CLAUDECODE` or `AI_AGENT` set).
+
+`arugula tui` never asks: while nobody has answered, it shows "Usage reports
+are off: `arugula telemetry on` to help improve Arugula" in its status line
+for a few seconds when it starts. The install scripts say the first
+`arugula` command will ask, and that `ARUGULA_TELEMETRY=off` means it never
+will (they leave that out when `ARUGULA_TELEMETRY` or `DO_NOT_TRACK` is set).
 
 - **Yes** makes a random install id: 16 hex digits, unrelated to anything
   else on the machine. Reports carry it.
@@ -48,7 +81,9 @@ yes would send: this machine's real version, OS, arch, channel and control,
 no counts, `"install": "<made when you say yes>"` and `"preview_only": true`.
 
 `telemetry.get` and `telemetry.set` are for the owner in person. An agent's
-MCP token, a read-only token and the CLI run by an agent are refused.
+MCP token, a read-only token and the CLI run by an agent are refused
+(`arugula telemetry` refuses an agent itself, before it reaches the daemon or
+the file).
 
 Once on, the preview looks like this:
 

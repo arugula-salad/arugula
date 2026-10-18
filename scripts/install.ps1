@@ -67,6 +67,12 @@
     '  arugula web       open it in your browser, signed in'
     '  arugula run pwsh  a pane, from the command line'
     "(Or now: & '$bin\arugula.exe' web)"
+    # Telemetry is opt-in (docs/telemetry.md): say the first command asks,
+    # unless the environment already keeps it off.
+    if (-not $env:ARUGULA_TELEMETRY -and -not $env:DO_NOT_TRACK) {
+      ''
+      "Usage reports are off. The first ``arugula`` command asks if you'd like to send them (set ARUGULA_TELEMETRY=off to never be asked)."
+    }
   } finally {
     Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
   }
