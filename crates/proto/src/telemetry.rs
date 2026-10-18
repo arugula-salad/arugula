@@ -238,6 +238,19 @@ pub struct TelemetrySetRequest {
     pub via: Option<String>,
 }
 
+/// `POST /api/telemetry/note` (the `telemetry.note` operation, M103): what
+/// the web client counted since its last note, for the day's counts. Views
+/// by `arugula_control_wire::telemetry::View`'s names (one it doesn't know
+/// counts as `other`), and how many errors our code hit. Counts only.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct TelemetryNoteRequest {
+    #[serde(default)]
+    pub views: std::collections::BTreeMap<String, u32>,
+    #[serde(default)]
+    pub web_errors: u32,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

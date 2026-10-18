@@ -18,6 +18,7 @@ import { pickApp, openSandboxes } from "../labs-load";
 import { openPicker } from "./picker";
 import { NotifySection } from "./notify";
 import { openDeveloper } from "./developer";
+import { openMachineTelemetry } from "./machine-telemetry";
 import { openGettingStarted } from "./welcome";
 import { openPalette } from "./palette";
 import { InLabs } from "./in-labs";
@@ -275,6 +276,7 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
             <button data-getting-started-open onClick={act(() => openGettingStarted(undefined, client))}>
               Getting started
             </button>
+            {owner && <button onClick={act(() => openMachineTelemetry(client))}>Usage and crash reports</button>}
             {owner && client.hasDev() && <button onClick={act(() => openDeveloper(client))}>Developer settings</button>}
           </div>
         </section>

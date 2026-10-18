@@ -18,9 +18,15 @@ arugulad telemetry off
 ```
 
 They work with the daemon stopped. A running daemon follows within a minute.
-The web client and the app will ask once (M103), and so will the `arugula`
-CLI (M105). Both write the same file, through the `telemetry.get` and
-`telemetry.set` operations (`GET` and `PUT /api/telemetry`, owner only).
+The web client and the desktop app ask the machine's owner once, with a card
+in the corner (M103), and so will the `arugula` CLI (M105). Both write the
+same file, through the `telemetry.get` and `telemetry.set` operations (`GET`
+and `PUT /api/telemetry`, owner only). The card's *What's sent* shows the
+preview below. Closing it without answering asks again on the next load. It
+is asked only on a page that talks to the daemon directly: control's page
+asks about the account instead (M104), and leaves the machine's answer to
+*Usage and crash reports…* in the machine's settings, where the owner can
+change it any time (on a phone, in the sheet).
 
 - **Yes** makes a random install id: 16 hex digits, unrelated to anything
   else on the machine. Reports carry it.
@@ -92,7 +98,15 @@ Once on, the preview looks like this:
   when one opens), agent blocks started by runtime, blocks opened by kind,
   clients that attached by where (the web client, a phone, the CLI's
   terminal, MCP), and which Labs flags are on. Restored panes and blocks
-  aren't counted again. Views (`views`, M103) and crashes (M102) come later.
+  aren't counted again. `views` are the views the web client opened
+  (swarm, chat, conversations, agents, huddle, palette, settings, getting
+  started, share), and `web_errors` how many errors our code hit there:
+  the page sends what it counted to its daemon each minute and as it goes
+  away (`telemetry.note`, owner only; nothing is kept while it's off, and
+  one note adds at most 1,000 to a count). Control's page sends its own to
+  control instead (M104), never to the machine. Crashes (M102) come later.
+- **Clients** by where: the desktop app's window says it's the app (its
+  webview's User-Agent is a browser's), so it counts as `desktop`.
 
 Counts are kept in `telemetry.counts.json`, saved every hour and when the
 daemon stops, so a restart loses at most an hour's.

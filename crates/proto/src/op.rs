@@ -135,6 +135,8 @@ impl Request for crate::flags::FlagSetRequest {}
 
 impl Request for crate::telemetry::TelemetrySetRequest {}
 
+impl Request for crate::telemetry::TelemetryNoteRequest {}
+
 impl Request for crate::api::AgentApprovals {}
 
 impl Request for crate::api::WaitRequest {}
@@ -300,6 +302,7 @@ macro_rules! every_op {
         $m!($crate::op::ops::FlagSet);
         $m!($crate::op::ops::TelemetryGet);
         $m!($crate::op::ops::TelemetrySet);
+        $m!($crate::op::ops::TelemetryNote);
         $m!($crate::op::ops::AgentApprovalsGet);
         $m!($crate::op::ops::AgentApprovalsSet);
         $m!($crate::op::ops::RulesList);
@@ -428,7 +431,7 @@ pub mod ops {
         },
         flags::{FlagInfo, FlagSetRequest},
         hosts::{Demoted, Host, PromoteRequest, SandboxList},
-        telemetry::{TelemetryInfo, TelemetrySetRequest},
+        telemetry::{TelemetryInfo, TelemetryNoteRequest, TelemetrySetRequest},
     };
 
     /// `GET /api/panes`: every pane and block (`arugula ls`, MCP's `list`
@@ -543,6 +546,21 @@ pub mod ops {
         type Path = ();
         type Req = TelemetrySetRequest;
         type Res = TelemetryInfo;
+    }
+
+    /// `POST /api/telemetry/note` (M103): the web client's counts since its
+    /// last note (views it opened, errors it hit), added to the day's while
+    /// telemetry is on. Nothing while it's off. The owner's in person.
+    pub struct TelemetryNote;
+
+    impl Op for TelemetryNote {
+        const NAME: &'static str = "telemetry.note";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/telemetry/note";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = TelemetryNoteRequest;
+        type Res = Empty;
     }
 
     /// The owner's default policy for new Managoat conversations on this machine.

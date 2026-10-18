@@ -28,12 +28,12 @@ use std::{
 
 use arugula_control_wire::telemetry::{
     AgentRuntime, Arch, BlockKind, Channel, ControlKind, Counts, Crash, Event, LabsFlag, MAX_CRASHES, MAX_EVENTS, Os,
-    Report, Surface, TELEMETRY,
+    Report, Surface, TELEMETRY, View,
 };
 use arugula_e2e::now_ms;
 use arugula_proto::{
     BlockType,
-    telemetry::{self as consent, COUNTS_FILE, TelemetryInfo},
+    telemetry::{self as consent, COUNTS_FILE, TelemetryInfo, TelemetryNoteRequest},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -164,6 +164,34 @@ pub fn client(surface: Surface) {
 /// An agent block started (not one restored).
 pub fn agent_started(runtime: AgentRuntime) {
     count(|c| *c.agents_started.entry(runtime).or_default() += 1);
+}
+
+/// The most one web client's note (`telemetry.note`, M103) adds to any one
+/// count: a minute's is far less.
+pub const NOTE_MAX: u32 = 1_000;
+/// The most a day's count of a view, or of web errors, reaches.
+pub const DAY_MAX: u32 = 100_000;
+
+/// A web client's note, into the day's counts (if telemetry is on).
+pub fn note(n: &TelemetryNoteRequest) {
+    count(|c| add_note(c, n));
+}
+
+/// A note's views and web errors, into `c`: a view it doesn't know counts
+/// as `other`, and each count is capped ([`NOTE_MAX`], [`DAY_MAX`]), so no
+/// one page can run them up.
+pub fn add_note(c: &mut Counts, n: &TelemetryNoteRequest) {
+    let mut views = std::collections::BTreeMap::<View, u32>::new();
+    for (name, k) in &n.views {
+        let view = serde_json::from_value(Value::String(name.clone())).unwrap_or(View::Other);
+        let v = views.entry(view).or_default();
+        *v = v.saturating_add(*k).min(NOTE_MAX);
+    }
+    let add = |to: &mut u32, k: u32| *to = to.saturating_add(k.min(NOTE_MAX)).min(DAY_MAX);
+    for (view, k) in views {
+        add(c.views.entry(view).or_default(), k);
+    }
+    add(&mut c.web_errors, n.web_errors);
 }
 
 /// What the mux tells telemetry of (its `Usage`).
@@ -607,10 +635,14 @@ impl Signer for FromFile {
     }
 }
 
-/// The surface of a WebSocket client, from its request's headers. The web
-/// client on a phone says so in its User-Agent; the app's webview doesn't
-/// (M103's notes tell the two apart).
-pub fn surface_of(headers: &axum::http::HeaderMap) -> Surface {
+/// The surface of a WebSocket client, from its request's headers and query.
+/// The web client on a phone says so in its User-Agent. The desktop app's
+/// webview looks like a browser there, so the page says it's the app's
+/// window itself (`/ws?via=desktop`, M103).
+pub fn surface_of(headers: &axum::http::HeaderMap, query: Option<&str>) -> Surface {
+    if query.is_some_and(|q| q.split('&').any(|kv| kv == "via=desktop")) {
+        return Surface::Desktop;
+    }
     let ua = headers.get(axum::http::header::USER_AGENT).and_then(|v| v.to_str().ok()).unwrap_or("");
     if ["iPhone", "iPad", "Android", "Mobile"].iter().any(|m| ua.contains(m)) { Surface::Phone } else { Surface::Web }
 }

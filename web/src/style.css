@@ -2813,6 +2813,42 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   line-height: 1.45;
 }
 
+/* *What's sent* (M103): the next report as JSON, folded away. */
+.telemetry-preview {
+  margin: 8px 0;
+}
+
+.telemetry-preview summary {
+  cursor: pointer;
+  color: var(--accent);
+}
+
+.telemetry-preview pre {
+  max-height: 240px;
+  overflow: auto;
+  margin: 8px 0 0;
+  padding: 8px;
+  border-radius: 6px;
+  background: var(--surface);
+  font: 11px/1.4 ui-monospace, monospace;
+  white-space: pre;
+}
+
+.prompt .machine-telemetry-switch {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin: 10px 0;
+  font-weight: 400;
+  cursor: pointer;
+}
+
+.prompt .machine-telemetry-switch input {
+  width: auto;
+  margin: 0;
+  padding: 0;
+}
+
 .fingerprint {
   font: 600 18px ui-monospace, monospace;
   letter-spacing: 0.04em;

@@ -92,6 +92,7 @@ mod sites;
 mod ssh;
 mod summaries;
 mod team_answers;
+mod telemetry;
 #[cfg(feature = "labs")]
 mod threads;
 mod tmux;
