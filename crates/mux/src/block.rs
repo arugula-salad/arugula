@@ -171,7 +171,7 @@ pub struct BlockEnv {
     pub cmds: Option<tokio::sync::mpsc::UnboundedSender<crate::mux::Cmd>>,
     /// The daemon's panes and blocks.
     pub ids: PaneIds,
-    /// The daemon's state directory, where the machine's `labs` file is.
+    /// The daemon's state directory, where the machine's `flags.json` is.
     pub state_dir: PathBuf,
 }
 
@@ -204,7 +204,7 @@ pub struct BlockCtx {
     pub shell_env: Arc<crate::shellenv::ShellEnv>,
     cmds: Option<tokio::sync::mpsc::UnboundedSender<crate::mux::Cmd>>,
     ids: PaneIds,
-    /// The daemon's state directory, where the machine's `labs` file is.
+    /// The daemon's state directory, where the machine's `flags.json` is.
     pub state_dir: PathBuf,
 }
 

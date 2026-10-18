@@ -74,9 +74,10 @@ fn v2(keys: &DeviceKeys, method: &str, path_and_query: &str, body: &[u8]) -> Str
     format!("v2 {} {ms} {nonce} {}", keys.id(), hex::encode(keys.signature(msg.as_bytes())))
 }
 
+/// How a daemon from before 0.17 signed: no query, body or nonce.
 fn v1(keys: &DeviceKeys, method: &str, path: &str) -> String {
     let ms = now_ms();
-    let msg = crate::auth::daemon_auth_message(method, path, ms);
+    let msg = format!("illogical daemon auth\n{method}\n{path}\n{ms}\n");
     format!("{} {ms} {}", keys.id(), hex::encode(keys.signature(msg.as_bytes())))
 }
 
@@ -165,27 +166,12 @@ async fn daemon_signatures_cover_the_request_and_are_good_once() {
     let r = c.http.get(format!("{}{pq}", c.base)).header("x-illogical-auth", h).send().await.unwrap();
     assert_eq!(r.status(), 401);
 
-    // A daemon from before 0.17 signs the old way: taken, once each.
-    let h = v1(&d, "GET", "/api/daemon/trust");
-    assert_eq!(get(h.clone(), "/api/daemon/trust").await.unwrap().status(), 200);
-    assert_eq!(get(h, "/api/daemon/trust").await.unwrap().status(), 401);
-
-    // A control that refuses the old way says to update.
-    let strict = control(|a| a.cfg.old_daemon_signatures = false).await;
-    person(&strict.app, "jake", "a1");
-    let d = daemon(&strict.app, "a1", "geek");
-    let r = strict
-        .http
-        .get(format!("{}/api/daemon/trust", strict.base))
-        .header("x-arugula-auth", v1(&d, "GET", "/api/daemon/trust"))
-        .send()
-        .await
-        .unwrap();
+    // A daemon from before 0.17 signs the old way: told to update.
+    let r = get(v1(&d, "GET", "/api/daemon/trust"), "/api/daemon/trust").await.unwrap();
     assert_eq!(r.status(), 426);
     assert!(r.text().await.unwrap().contains("update Arugula"));
-    assert_eq!(strict.daemon_get(&d, "/api/daemon/trust").await.0, 200);
-    let ctl: Value =
-        strict.http.get(format!("{}/control.json", strict.base)).send().await.unwrap().json().await.unwrap();
+    assert_eq!(c.daemon_get(&d, "/api/daemon/trust").await.0, 200);
+    let ctl: Value = c.http.get(format!("{}/control.json", c.base)).send().await.unwrap().json().await.unwrap();
     assert_eq!(ctl["daemon_auth"], 2);
 }
 
@@ -229,9 +215,9 @@ async fn joining_again_needs_the_machines_key() {
     let proven = join_body(&joined, true);
     assert_eq!(post(proven.clone()).await.unwrap().status(), 200);
     assert_eq!(post(proven).await.unwrap().status(), 401, "a proof is good once");
-    // A new machine on an older Arugula still joins.
+    // A new machine on Arugula before 0.17 (no proof) is told to update.
     let fresh = DeviceKeys::generate();
-    assert_eq!(post(join_body(&fresh, false)).await.unwrap().status(), 200);
+    assert_eq!(post(join_body(&fresh, false)).await.unwrap().status(), 426);
 
     // A code asked for without the key, for a machine that became known
     // since, isn't approved: nothing of the joined one changes.
@@ -289,9 +275,9 @@ async fn a_removed_machine_rejoins_only_with_a_new_key() {
     assert_eq!(said["removed"]["at"], rev.at);
     let words = said["error"].as_str().unwrap();
     assert!(words.contains("removed") && words.contains("by laptop") && words.contains("new key"), "{words}");
-    // Without its key's proof, it learns less.
+    // Without its key's proof, it learns nothing of it.
     let said: Value = post(join_body(&old, false)).await.unwrap().json().await.unwrap();
-    assert!(said["removed"].get("by").is_none() && !said["error"].as_str().unwrap().contains("laptop"), "{said}");
+    assert!(said.get("removed").is_none() && !said["error"].as_str().unwrap().contains("laptop"), "{said}");
     // A code it got before (or from an older control) is refused for the
     // real reason.
     let ask = Cert { account: String::new(), ..Cert::new(&old, "", Kind::Daemon, "box") };
@@ -437,7 +423,7 @@ async fn a_second_join_from_one_machine_keeps_the_approval() {
     assert_eq!(poll(&code2, second["poll"].as_str().unwrap()).await.1["approved"], false);
     // Someone with only its certificate can't take a waiting join over.
     let r = c.http.post(format!("{}/api/join", c.base)).json(&join_body(&keys2, false)).send().await.unwrap();
-    assert_eq!(r.status(), 409);
+    assert_eq!(r.status(), 426);
     assert_eq!(poll(&code2, second["poll"].as_str().unwrap()).await.0, 200);
     // A poll token nobody was given is still nobody's.
     assert_eq!(poll(&code2, "nope").await.0, 403);

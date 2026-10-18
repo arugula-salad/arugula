@@ -92,11 +92,10 @@ fn the_bridge_says_which_pane_it_runs_in() {
     assert!(!head.contains("x-arugula-pane"), "{head}");
 }
 
-/// #505: the pane and the Claude Code config directory go under both
-/// names, for a daemon older than 0.25; a pane an illogical daemon started
-/// says which under the old name.
+/// The pane and the Claude Code config directory go under Arugula's names
+/// only: the old ones went with #534.
 #[test]
-fn the_bridge_says_it_under_both_names() {
+fn pane_and_config_dir_go_under_arugulas_names() {
     let head = headers_sent_with("ARUGULA_PANE", Some("7"), &[("CLAUDE_CONFIG_DIR", "/c")]);
     for h in ["x-arugula-pane: 7\r\n", "arugula-claude-config-dir: /c\r\n"] {
         assert!(head.contains(h), "{head}");

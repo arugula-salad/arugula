@@ -468,49 +468,6 @@ fn the_files_hosts_and_setup_routes_are_the_owners() {
     assert!(status != 403 && status != 404, "{status}: {text}");
 }
 
-/// The `labs` file of #385, the one test that still writes it: a daemon
-/// that hasn't moved it yet (or a CLI newer than its daemon) still sees
-/// Labs, and a starting daemon moves it into `flags.json` and removes it.
-#[cfg(feature = "labs")]
-#[test]
-fn the_old_labs_file_still_turns_labs_on_and_a_starting_daemon_migrates_it() {
-    // The fallback: a running daemon sees the marker the moment it's made...
-    let d = arugulad!("hosts-legacy")
-        .args(["--name", "plain"])
-        .no_wisp()
-        .no_tailscale()
-        .env("PS1", "$ ")
-        .env("ARUGULA_LOCAL_TOKEN_FILE", token_file())
-        .start();
-    let labs = || d.get("/api/host")["features"]["labs"].clone();
-    assert_eq!(labs(), false);
-    std::fs::write(d.state.join("labs"), "").unwrap();
-    assert_eq!(labs(), true);
-    // ...unless flags.json says otherwise.
-    arugula_testkit::labs(&d.state, false);
-    assert_eq!(labs(), false);
-    drop(d);
-
-    // The migration: the marker is there when the daemon starts.
-    let state = arugula_testkit::Scratch::new("labs-migrate");
-    std::fs::write(state.join("labs"), "").unwrap();
-    std::fs::write(state.join("flags.json"), r#"{"other":1,"flags":{"future":true}}"#).unwrap();
-    let d = arugulad!("hosts-migrate")
-        .state_dir(&*state)
-        .args(["--name", "plain"])
-        .no_wisp()
-        .no_tailscale()
-        .env("PS1", "$ ")
-        .env("ARUGULA_LOCAL_TOKEN_FILE", token_file())
-        .start();
-    assert_eq!(d.get("/api/host")["features"]["labs"], true);
-    assert!(!state.join("labs").exists(), "the marker file is retired");
-    let flags: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(state.join("flags.json")).unwrap()).unwrap();
-    assert_eq!(flags, serde_json::json!({ "other": 1, "flags": { "future": true, "labs": true } }));
-    drop(d);
-}
-
 /// A build without Labs ignores the `labs` file: nothing it holds is on.
 #[cfg(not(feature = "labs"))]
 #[test]

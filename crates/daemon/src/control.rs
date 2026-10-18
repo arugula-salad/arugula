@@ -520,8 +520,6 @@ pub struct Control {
     /// Reached through a provider's proxy (a hosted sandbox, M20): no relay
     /// socket, so certificates are fetched more often instead of nudged.
     pub no_relay: bool,
-    /// Control takes v2 request signatures (see [`auth_header`]).
-    auth_v2: std::sync::atomic::AtomicBool,
     /// Every URL control says it answers at (#507), from `/control.json`:
     /// their pages may frame this daemon's blocks.
     control_urls: std::sync::Mutex<Vec<String>>,
@@ -701,24 +699,9 @@ fn write_saved(dir: &Path, s: &Saved) -> anyhow::Result<()> {
 }
 
 /// A request signature for control: see control's `auth.rs`. It covers the
-/// method, path and query, the time, a fresh nonce and the body's hash
-/// (`v2`), or for a control from before 0.17 the method, path and time.
-pub fn auth_header(keys: &DeviceKeys, method: &str, path_and_query: &str, body: &[u8], v2: bool) -> String {
-    if !v2 {
-        let ms = now_ms();
-        let path = path_and_query.split('?').next().unwrap_or(path_and_query);
-        let msg = format!("illogical daemon auth\n{method}\n{path}\n{ms}\n");
-        return format!("{} {ms} {}", keys.id(), hex::encode(keys.signature(msg.as_bytes())));
-    }
+/// method, path and query, the time, a fresh nonce and the body's hash.
+pub fn auth_header(keys: &DeviceKeys, method: &str, path_and_query: &str, body: &[u8]) -> String {
     arugula_e2e::cert::request_auth(keys, method, path_and_query, body)
-}
-
-/// Whether the control at `url` takes signatures over the body and a
-/// nonce (it says `daemon_auth: 2` in `control.json`).
-async fn takes_v2(http: &reqwest::Client, url: &str) -> bool {
-    let Ok(r) = http.get(format!("{url}{}", wire::CONTROL_JSON)).send().await else { return false };
-    let about: wire::ControlAuth = r.json().await.unwrap_or_default();
-    about.daemon_auth >= 2
 }
 
 pub(crate) const AUTH: &str = "x-arugula-auth";
@@ -744,7 +727,6 @@ impl Control {
             http: crate::roots::http().timeout(Duration::from_secs(20)).build().expect("http client"),
             published: Default::default(),
             no_relay,
-            auth_v2: Default::default(),
             control_urls: Default::default(),
             team_pins: RwLock::new(
                 std::fs::read(state_dir.join(PINS_FILE))
@@ -1244,15 +1226,7 @@ impl Control {
 
     /// A signature for a request to control (see [`auth_header`]).
     fn sign(&self, e: &Enrolled, method: &str, path_and_query: &str, body: &[u8]) -> String {
-        let v2 = self.auth_v2.load(std::sync::atomic::Ordering::Relaxed);
-        auth_header(&e.keys, method, path_and_query, body, v2)
-    }
-
-    /// Ask control how it takes signatures, until it says v2.
-    async fn check_auth(&self, e: &Enrolled) {
-        if !self.auth_v2.load(std::sync::atomic::Ordering::Relaxed) && takes_v2(&self.http, &e.saved.url).await {
-            self.auth_v2.store(true, std::sync::atomic::Ordering::Relaxed);
-        }
+        auth_header(&e.keys, method, path_and_query, body)
     }
 
     /// Where control says it is (#507): the URLs it answers at, kept for
@@ -1312,7 +1286,6 @@ impl Control {
     async fn refresh(&self) -> anyhow::Result<bool> {
         let Some(e) = self.enrolled() else { return Ok(false) };
         let number = self.started.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
-        self.check_auth(&e).await;
         let moved_to = self.where_control_is(&e.saved.url).await;
         // This machine's version, OS and arch (M100): control keeps them on
         // its row. An older control ignores them.
@@ -1852,7 +1825,6 @@ async fn relay_once(
     }
     let scheme = if url.scheme() == "https" { "wss" } else { "ws" };
     url.set_scheme(scheme).map_err(|()| anyhow::anyhow!("bad control URL"))?;
-    control.check_auth(e).await;
     let signed = format!("{}?{}", url.path(), url.query().unwrap_or_default());
     let ws = crate::dial::open_ws(&url, &[(AUTH, &control.sign(e, "GET", &signed, b""))]).await?;
     info!(control = e.saved.url, "connected to control's relay");
@@ -1965,10 +1937,9 @@ fn retire(state_dir: &Path, r: &mut Removed) -> anyhow::Result<()> {
 /// revoked). `None` when control still knows it, or can't be asked.
 async fn forgotten(s: &Saved, keys: &DeviceKeys) -> Option<Forgot> {
     let http = crate::roots::http().timeout(Duration::from_secs(10)).build().ok()?;
-    let v2 = takes_v2(&http, &s.url).await;
     let path = wire::TRUST;
     let res =
-        http.get(format!("{}{path}", s.url)).header(AUTH, auth_header(keys, "GET", path, b"", v2)).send().await.ok()?;
+        http.get(format!("{}{path}", s.url)).header(AUTH, auth_header(keys, "GET", path, b"")).send().await.ok()?;
     if res.status() == reqwest::StatusCode::GONE {
         return Some(Forgot::Removed);
     }
@@ -2208,10 +2179,9 @@ async fn drop_key(url: &str, state_dir: &Path) {
     if let Ok(keys) = DeviceKeys::load(&key) {
         let path = wire::LEAVE;
         let http = crate::roots::client();
-        let v2 = takes_v2(&http, url).await;
         let _ = http
             .post(format!("{url}{path}"))
-            .header(AUTH, auth_header(&keys, "POST", path, b"", v2))
+            .header(AUTH, auth_header(&keys, "POST", path, b""))
             .timeout(Duration::from_secs(10))
             .send()
             .await;
@@ -2615,9 +2585,7 @@ pub async fn leave(state_dir: &Path, listen: &str) -> anyhow::Result<()> {
     let keys = DeviceKeys::load(&state_dir.join(KEY_FILE))?;
     let path = wire::LEAVE;
     let http = crate::roots::client();
-    let v2 = takes_v2(&http, &s.url).await;
-    let res =
-        http.post(format!("{}{path}", s.url)).header(AUTH, auth_header(&keys, "POST", path, b"", v2)).send().await;
+    let res = http.post(format!("{}{path}", s.url)).header(AUTH, auth_header(&keys, "POST", path, b"")).send().await;
     match res {
         Ok(r) if r.status().is_success() => println!("Left {} ({}).", s.url, whose(&s)),
         Ok(r) => println!("{} (leaving anyway)", control_said(r).await),

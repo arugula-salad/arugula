@@ -228,18 +228,6 @@ struct Args {
     #[arg(long, env = "ARUGULA_CONTROL_PROXY_HEADER")]
     trust_proxy_header: Option<String>,
 
-    /// Refuse requests signed the way daemons before 0.17 sign them (no
-    /// body, query or nonce in the signature); those daemons are told to
-    /// update. Off for now, so machines joined with older releases keep
-    /// working.
-    #[arg(
-        long,
-        env = "ARUGULA_CONTROL_REFUSE_OLD_DAEMON_SIGNATURES",
-        value_parser = clap::builder::BoolishValueParser::new(),
-        action = clap::ArgAction::SetTrue
-    )]
-    refuse_old_daemon_signatures: bool,
-
     /// Serve the web client from this directory instead of the built-in
     /// copy (development).
     #[arg(long)]
@@ -278,8 +266,6 @@ pub struct Config {
     pub block_domain: Option<String>,
     pub github: Option<Github>,
     pub static_dir: Option<PathBuf>,
-    /// Take requests signed as daemons before 0.17 sign them.
-    pub old_daemon_signatures: bool,
 }
 
 /// One URL control answers at (#507).
@@ -367,7 +353,6 @@ impl App {
                 block_domain: None,
                 github: None,
                 static_dir: None,
-                old_daemon_signatures: true,
             },
             db,
             http: reqwest::Client::new(),
@@ -905,7 +890,6 @@ async fn run() -> anyhow::Result<()> {
             public_url,
             github,
             static_dir: a.static_dir,
-            old_daemon_signatures: !a.refuse_old_daemon_signatures,
         },
         db,
         http,
@@ -936,9 +920,6 @@ async fn run() -> anyhow::Result<()> {
         tokio::spawn(guest_jump::serve(app.clone(), l));
     }
     tokio::spawn(relay::Relay::log_counts(app.clone()));
-    if !app.cfg.old_daemon_signatures {
-        info!("refusing daemons' pre-0.17 request signatures");
-    }
     if app.github_app.is_some() {
         tokio::spawn(forge::heartbeat(app.clone(), std::time::Duration::from_secs(a.forge_heartbeat_secs.max(1))));
     }

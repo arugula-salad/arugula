@@ -248,10 +248,9 @@ async fn tools_through_the_stdio_bridge() {
     assert_eq!(m["match"], "typed-4", "{m}");
     let screen = call(&s, "read_output", json!({ "pane": p, "screen": true })).await;
     assert!(screen["text"].as_str().unwrap().contains("typed-4"), "{screen}");
-    // By its name before #349 too, though it isn't listed.
+    // Its name before #349 is gone.
     assert!(tools.iter().all(|t| t.name != "capture_screen"));
-    let old = call(&s, "capture_screen", json!({ "pane": p })).await;
-    assert!(old["text"].as_str().unwrap().contains("typed-4"), "{old}");
+    assert!(refused(&s, "capture_screen", json!({ "pane": p })).await.contains("no tool"));
 
     // list, search, and the resources.
     let l = call(&s, "list", json!({})).await;
@@ -261,8 +260,6 @@ async fn tools_through_the_stdio_bridge() {
     );
     let hits = call(&s, "history", json!({ "kind": "output", "pattern": "built-42" })).await;
     assert!(hits["hits"].as_array().unwrap().iter().any(|h| h["pane"] == pane), "{hits}");
-    let old = call(&s, "search", json!({ "pattern": "built-42" })).await;
-    assert!(old["hits"].as_array().unwrap().iter().any(|h| h["pane"] == pane), "{old}");
     // A grouped tool says what's wrong with a call.
     let why = refused(&s, "show", json!({ "port": 1 })).await;
     assert!(why.contains("show needs a kind"), "{why}");
@@ -359,7 +356,7 @@ async fn what_a_tool_answers_fits_the_output_schema_it_lists() {
 }
 
 /// `show`'s blocks (#349): a diff of a repository and a file at a line, by
-/// kind, as show_changes and show_file did; and by those names too.
+/// kind, as show_changes and show_file did.
 #[tokio::test(flavor = "multi_thread")]
 async fn show_opens_each_kind_of_block() {
     let d = Daemon::child();
@@ -393,11 +390,6 @@ async fn show_opens_each_kind_of_block() {
     assert_eq!(info["type"], "file", "{info}");
     assert!(f["summary"].as_str().unwrap().contains("at line 2"), "{f}");
 
-    // The old names reach the same kinds.
-    let old = call(&s, "show_file", json!({ "path": path })).await;
-    assert_eq!(d.get(&format!("/api/blocks/{}", old["block"]))["info"]["type"], "file");
-    let old = call(&s, "show_changes", json!({ "repo": repo })).await;
-    assert_eq!(old["files"].as_array().unwrap().len(), 1, "{old}");
     // And a PR or issue block is what read_forge and draft take.
     let why = refused(&s, "read_forge", json!({ "block": f["block"] })).await;
     assert!(why.contains("isn't a PR or issue block"), "{why}");
@@ -505,9 +497,8 @@ async fn http_with_a_token_until_it_is_revoked() {
     // (Chat's read_thread is among the read-only tools only with labs, and read_forge only with the forge.)
     assert_eq!(w.list_all_tools().await.unwrap().len(), 8 - NO_FORGE / 2);
     assert!(refused(&w, "run", json!({ "command": "true" })).await.contains("may only read"));
-    // Grouped or by an old name, a write is still a write.
+    // Grouped, a write is still a write.
     assert!(refused(&w, "show", json!({ "kind": "port", "port": 1 })).await.contains("may only read"));
-    assert!(refused(&w, "open_port", json!({ "port": 1 })).await.contains("show changes things"));
     call(&w, "list", json!({ "kind": "devices" })).await;
     // #234: nor ask to invite anyone.
     let invite = json!({ "who": "tailnet:sam@example.com", "pane": 1, "note": "x" });

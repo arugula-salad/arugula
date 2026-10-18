@@ -427,7 +427,7 @@ Nothing moves on disk. `StateDir` (`layout.json`, `panes/N/`) moves with
 `ARUGULA_STATE_DIR`) and hands it to `mux::start`. Every other file under
 it stays the binary's, at the same path: `hosts.json`, tokens,
 `rules.json` (now opened by `main.rs`), control's files, `editors/sock`,
-and the `labs` file (read by `arugula_proto::hosts::labs`). Threads'
+and `flags.json` (read by `arugula_proto::flags`). Threads'
 `threads/` moves with `labs/threads.rs`, and a build without Labs still
 never opens it.
 

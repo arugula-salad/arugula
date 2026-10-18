@@ -482,12 +482,14 @@ pub fn removed(app: &App, device: &str, kind: Kind, detail: bool) -> anyhow::Res
 /// How far a join proof's time may be from control's clock.
 const PROOF_SKEW_MS: u64 = 5 * 60 * 1000;
 
-/// What an older daemon is told when a join would need its key.
+/// What a daemon from before 0.17, which asks without its key's proof, is
+/// told.
 const JOIN_NEEDS_UPDATE: &str =
-    "this machine was joined before: update Arugula (0.17 or newer) on it, then run join again";
+    "this machine's Arugula is too old for this control: update Arugula (0.17 or newer) on it, then run join again";
 
 /// Whether the join request comes from the key's holder: an error if it
-/// says so and doesn't, `false` if it doesn't say (an older daemon).
+/// says so and doesn't, `false` if it doesn't say (a daemon from before
+/// 0.17, which [`join`] turns away).
 fn join_proven(app: &App, b: &wire::JoinRequest) -> Result<bool, ApiError> {
     let Some(p) = &b.proof else { return Ok(false) };
     let body = arugula_e2e::cert::join_proof_body(&b.cert, p.ms);
@@ -546,18 +548,18 @@ pub async fn join(
         _ => return Err(err(StatusCode::BAD_REQUEST, "a daemon certificate")),
     }
     check_urls(&b.urls)?;
-    // A daemon control knows joins again only with its key: anyone may
-    // have its certificate.
+    // A daemon joins only with its key's proof: anyone may have a known
+    // daemon's certificate. One from before 0.17 doesn't send it.
     let proven = join_proven(&app, &b)?;
+    if !proven {
+        return Err(err(StatusCode::UPGRADE_REQUIRED, JOIN_NEEDS_UPDATE));
+    }
     // A removed key never joins again (#330), and gets no code: it says
     // when it was removed (and by which device, to the key's holder), and
     // that it needs a new key. `removed` says so to the program asking.
     if let Some((msg, removed)) = removed(&app, &b.cert.device, b.cert.kind, proven)? {
         let said = wire::RemovedAnswer { error: Some(msg), removed: Some(removed) };
         return Ok((StatusCode::GONE, crate::reply(&said)?).into_response());
-    }
-    if !proven && app.db.device_known(&b.cert.device)? {
-        return Err(err(StatusCode::UPGRADE_REQUIRED, JOIN_NEEDS_UPDATE));
     }
     let code = join_code(&b.cert);
     let poll = token();

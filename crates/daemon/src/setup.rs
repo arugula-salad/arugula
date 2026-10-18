@@ -13,8 +13,6 @@
 //!   `false` drops it. On a machine control dropped (#325), the same
 //!   button joins again: the old enrollment is set aside first.
 //! - `POST /api/setup/claude`: `claude mcp add arugula -- arugula mcp`.
-//!   One registered as `illogical` (before the rename, #505) is replaced:
-//!   the new one added, then the old one removed.
 //! - `POST /api/setup/agents/{kind}` (#335), "Use Claude Code with
 //!   Arugula": installs (or updates) the agent's ACP adapter, waiting for
 //!   npm, and for Claude Code adds the MCP server too; the answer says what
@@ -192,10 +190,6 @@ struct ClaudeStatus {
     installed: bool,
     /// `claude mcp get arugula` finds it.
     tools: bool,
-    /// `claude mcp get illogical` finds it (#505, #534): it still works
-    /// (`arugulad install` makes it run `arugula`, #534), and setting up
-    /// again renames it.
-    old: bool,
 }
 
 /// The join in flight, if any, and the last one's failure.
@@ -550,8 +544,6 @@ async fn cli(app: &App) -> Option<PathBuf> {
 
 /// The MCP server's name in Claude Code: its tools are `mcp__arugula__*`.
 const MCP_NAME: &str = crate::mcp::SERVER_NAME;
-/// What it was registered as before the rename (#505, #534).
-const MCP_OLD: &str = arugula_proto::rename::OLD;
 
 /// `claude mcp get NAME`: the scope it's registered in (`user`, `local`
 /// or `project`), if it is.
@@ -570,8 +562,7 @@ fn scope_of(out: &str) -> Option<&'static str> {
 
 async fn claude_status(app: &App) -> ClaudeStatus {
     let Some(c) = claude(app).await else { return ClaudeStatus::default() };
-    let (tools, old) = tokio::join!(mcp_scope(app, &c, MCP_NAME), mcp_scope(app, &c, MCP_OLD));
-    ClaudeStatus { installed: true, tools: tools.is_some(), old: old.is_some() }
+    ClaudeStatus { installed: true, tools: mcp_scope(app, &c, MCP_NAME).await.is_some() }
 }
 
 pub(crate) async fn claude_mcp(app: &Arc<App>) -> Outcome {
@@ -581,80 +572,31 @@ pub(crate) async fn claude_mcp(app: &Arc<App>) -> Outcome {
     }
 }
 
-/// What `add_mcp` does, given what Claude Code has: `claude` arguments,
-/// in order. The new name is added before the old one goes, so a failed
-/// add leaves the old (which still works). An old one in a project's
-/// `.mcp.json` is that project's file, and stays.
-fn mcp_plan(has_new: bool, old_scope: Option<&str>, cli: &str) -> Vec<Vec<String>> {
-    let mut steps = vec![];
-    if !has_new {
-        steps.push(["mcp", "add", "--scope", "user", MCP_NAME, "--", cli, "mcp"].map(String::from).to_vec());
-    }
-    if let Some(scope @ ("user" | "local")) = old_scope {
-        steps.push(["mcp", "remove", "--scope", scope, MCP_OLD].map(String::from).to_vec());
-    }
-    steps
-}
-
-/// What a replaced registration says (#505, #534).
-const RENAMED: &str = "Renamed Claude Code's MCP server from illogical to arugula. Its tools are now \
-mcp__arugula__*: rename any permission rules for mcp__illogical__* to match.";
-
-/// Claude Code's MCP server added, and one under the old name replaced
-/// (#505, #534): what changed, a line each (none: it was there already).
+/// Claude Code's MCP server added: what changed, a line (none: it was
+/// there already).
 async fn add_mcp(app: &App) -> Result<Vec<String>, Outcome> {
     let Some(c) = claude(app).await else {
         return Err(Outcome::err("Claude Code isn't installed on this machine.")
             .link("Install Claude Code", "https://docs.anthropic.com/en/docs/claude-code"));
     };
-    let mut done = vec![];
-    // An old name can be in more than one scope; `get` shows one at a time.
-    for round in 0..3 {
-        let (new, old) = tokio::join!(mcp_scope(app, &c, MCP_NAME), mcp_scope(app, &c, MCP_OLD));
-        let cli = if new.is_none() {
-            let Some(cli) = cli(app).await else {
-                return Err(Outcome { done, ..Outcome::err("Can't find the Arugula CLI next to the daemon.") });
-            };
-            cli.display().to_string()
-        } else {
-            String::new()
-        };
-        let steps = mcp_plan(new.is_some(), old.as_deref(), &cli);
-        if old.as_deref() == Some("project") && round == 0 {
-            done.push(
-                "Claude Code also has an illogical MCP server in a project's .mcp.json: rename it there to arugula \
-                 (command: arugula mcp)."
-                    .into(),
-            );
-        }
-        if steps.is_empty() {
-            break;
-        }
-        for step in steps {
-            let args: Vec<&str> = step.iter().map(String::as_str).collect();
-            match run(app, &c, &args, Duration::from_secs(20)).await {
-                Ok((true, _, _)) => {}
-                Ok((false, out, err)) => {
-                    let said = if err.is_empty() { out.trim().to_owned() } else { err };
-                    return Err(Outcome { done, ..Outcome::err(format!("claude mcp {}: {said}", step[1])) });
-                }
-                Err(e) => return Err(Outcome { done, ..Outcome::err(e) }),
-            }
-            let line = if step[1] == "add" {
-                "Added Arugula's MCP server to Claude Code: it can start its helpers as panes in your next session."
-            } else {
-                RENAMED
-            };
-            if !done.iter().any(|d| d == line) {
-                done.push(line.into());
-            }
-        }
+    if mcp_scope(app, &c, MCP_NAME).await.is_some() {
+        return Ok(vec![]);
     }
-    // Renamed: the add's line says less than the rename's.
-    if done.iter().any(|d| d == RENAMED) {
-        done.retain(|d| !d.starts_with("Added Arugula's MCP server"));
+    let Some(cli) = cli(app).await else {
+        return Err(Outcome::err("Can't find the Arugula CLI next to the daemon."));
+    };
+    let cli = cli.display().to_string();
+    let args = ["mcp", "add", "--scope", "user", MCP_NAME, "--", &cli, "mcp"];
+    match run(app, &c, &args, Duration::from_secs(20)).await {
+        Ok((true, _, _)) => Ok(vec![
+            "Added Arugula's MCP server to Claude Code: it can start its helpers as panes in your next session.".into(),
+        ]),
+        Ok((false, out, err)) => {
+            let said = if err.is_empty() { out.trim().to_owned() } else { err };
+            Err(Outcome::err(format!("claude mcp add: {said}")))
+        }
+        Err(e) => Err(Outcome::err(e)),
     }
-    Ok(done)
 }
 
 // ---- agents' adapters (#335)
@@ -822,27 +764,8 @@ mod tests {
     }
 
     #[test]
-    fn mcp_plan_adds_then_replaces_the_old_name() {
-        let cli = "/usr/local/bin/arugula";
-        let add = ["mcp", "add", "--scope", "user", "arugula", "--", cli, "mcp"].map(String::from).to_vec();
-        let rm = |s: &str| ["mcp", "remove", "--scope", s, "illogical"].map(String::from).to_vec();
-        // Nothing there: add.
-        assert_eq!(mcp_plan(false, None, cli), std::slice::from_ref(&add));
-        // There: nothing to do.
-        assert!(mcp_plan(true, None, cli).is_empty());
-        // The old name: the new added first, then the old removed.
-        assert_eq!(mcp_plan(false, Some("user"), cli), [add.clone(), rm("user")]);
-        assert_eq!(mcp_plan(false, Some("local"), cli), [add.clone(), rm("local")]);
-        // Both: only the old goes.
-        assert_eq!(mcp_plan(true, Some("user"), cli), [rm("user")]);
-        // A project's .mcp.json is theirs.
-        assert_eq!(mcp_plan(false, Some("project"), cli), [add]);
-        assert!(mcp_plan(true, Some("project"), cli).is_empty());
-    }
-
-    #[test]
     fn scope_from_claude_mcp_get() {
-        let out = "illogical:\n  Scope: Local config (private to you in this project)\n  Status: ✓ Connected\n";
+        let out = "arugula:\n  Scope: Local config (private to you in this project)\n  Status: ✓ Connected\n";
         assert_eq!(scope_of(out), Some("local"));
         assert_eq!(scope_of("x:\n  Scope: User config (available in all your projects)\n"), Some("user"));
         assert_eq!(scope_of("x:\n  Scope: Project config (shared via .mcp.json)\n"), Some("project"));
