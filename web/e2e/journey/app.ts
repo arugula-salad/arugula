@@ -64,7 +64,7 @@ export class App {
     await ctx.addInitScript(
       ({ name, control }) => {
         Object.assign(window, {
-          __arugulaApp: { name, platform: "macos", nativeCalls: false },
+          __arugulaApp: { name, platform: "macos" },
         });
         // signin.html's invoke(), answered by the test (cloud.rs's commands).
         const call = (

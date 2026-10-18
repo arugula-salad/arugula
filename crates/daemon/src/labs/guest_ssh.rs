@@ -825,7 +825,6 @@ async fn attach(
         principal: crate::acl::Principal::Owner,
         acting: None,
         name: Some(g.label.clone()),
-        device: None,
     };
     let want = Want { history: Some(HISTORY), ..Default::default() };
     handle.attach_with(sub.clone(), want);

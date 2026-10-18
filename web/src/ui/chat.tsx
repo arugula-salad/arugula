@@ -9,10 +9,8 @@
 // The shown host's threads come from the page's own connection; the other
 // hosts' from the fleet's summary connections, which get threads too.
 //
-// A session's huddle (M63) shows on its channel row and in its header.
-//
 // Conversations (#855), threads of their own with members of their own, are
-// *Channels*: after Activity and Huddles, above the machines, from every
+// *Channels*: after Activity, above the machines, from every
 // machine that keeps one you're in (./convs).
 
 import { useEffect, useState } from "preact/hooks";
@@ -26,7 +24,6 @@ import { openMenu, type MenuItem } from "./menu";
 import { chatRoute, closeChat, openChat, openChatView, sources, targetOf, useChatTick, type ChatRoute, type Source } from "./places";
 import { ActivityView, SearchField, SearchView, Switcher, activityCount, useChatKeys } from "./chat-find";
 import { ThreadBody, type Quote } from "./threads";
-import { HuddleButton, HuddleChip, useHuddle } from "./huddle";
 import { Avatar } from "./people";
 import { AppBar } from "./app-bar";
 import { ConvMembers, NewConv } from "./convs";
@@ -154,11 +151,6 @@ export function ChatPage({ client }: { client: Client }) {
   useChatTick(client);
   const route = chatRoute();
   const open = !!route && client.hasThreads();
-  // The huddle bar docks in the sidebar's footer on this page (style.css).
-  useEffect(() => {
-    document.documentElement.classList.toggle("chat-open", open);
-    return () => document.documentElement.classList.remove("chat-open");
-  }, [open]);
   if (!open) return null;
   return <ChatView client={client} route={route!} />;
 }
@@ -184,7 +176,6 @@ function markAllRead(all: Source[]) {
 function ChatView({ client, route }: { client: Client; route: ChatRoute }) {
   const phone = usePhone();
   const fleet = getFleet();
-  const huddle = useHuddle();
   const [, setTick] = useState(0);
   const redraw = () => setTick((t) => t + 1);
   const all = sources(client, fleet);
@@ -211,7 +202,7 @@ function ChatView({ client, route }: { client: Client; route: ChatRoute }) {
     if (best) picked = { s: best.s, target: best.r.target };
   }
 
-  // The sidebar's width, on the root: the docked huddle bar reads it too.
+  // The sidebar's width, on the root.
   useEffect(() => {
     document.documentElement.style.setProperty("--chat-side", `${sideWidth}px`);
   });
@@ -219,7 +210,7 @@ function ChatView({ client, route }: { client: Client; route: ChatRoute }) {
 
   const pickedKey = picked ? `${picked.s.host}/${threadKey(picked.target)}` : null;
 
-  const row = (s: Source, r: Row) => {
+  const row = (r: Row) => {
     const key = `${r.host}/${threadKey(r.target)}`;
     const n = r.summary?.unread ?? 0;
     return (
@@ -232,14 +223,10 @@ function ChatView({ client, route }: { client: Client; route: ChatRoute }) {
       >
         <span class="chat-sigil">{"pane" in r.target ? "↳" : "session" in r.target ? "#" : CONV_SIGIL}</span>
         <span class="chat-label">{r.label}</span>
-        {"session" in r.target && <HuddleChip client={s.client} session={r.target.session} />}
         {n > 0 && <span class={r.summary?.mention ? "chat-count mention" : "chat-count"}>{r.summary?.mention ? `@${n}` : n}</span>}
       </button>
     );
   };
-
-  // Sessions with a huddle on, at the top, as in a team chat's sidebar.
-  const huddles = rows.flatMap(({ s, rows }) => rows.filter((r) => "session" in r.target && s.client.call(r.target.session)).map((r) => ({ s, r })));
 
   const toggle = (host: string) => {
     if (collapsed.has(host)) collapsed.delete(host);
@@ -262,12 +249,6 @@ function ChatView({ client, route }: { client: Client; route: ChatRoute }) {
           {mentions > 0 && <span class="chat-count mention">{mentions}</span>}
         </button>
       </div>
-      {huddles.length > 0 && (
-        <section data-chat-huddles>
-          <h2 class="chat-section">Huddles</h2>
-          {huddles.map(({ s, r }) => row(s, { ...r, sub: false, label: multi ? `${r.label} · ${s.host || "this machine"}` : r.label }))}
-        </section>
-      )}
       <section data-chat-channels>
         <h2 class="chat-section chat-channels-head">
           <span>Channels</span>
@@ -283,7 +264,7 @@ function ChatView({ client, route }: { client: Client; route: ChatRoute }) {
             </button>
           </p>
         )}
-        {(unreadOnly ? channels.filter(({ r }) => r.summary?.unread || `${r.host}/${threadKey(r.target)}` === pickedKey) : channels).map(({ s, r }) => row(s, r))}
+        {(unreadOnly ? channels.filter(({ r }) => r.summary?.unread || `${r.host}/${threadKey(r.target)}` === pickedKey) : channels).map(({ r }) => row(r))}
       </section>
       {rows.map(({ s, rows }) => {
         // One machine: its name is the sidebar's title already.
@@ -304,7 +285,7 @@ function ChatView({ client, route }: { client: Client; route: ChatRoute }) {
             </h2>
             {!shut && rows.length === 0 && <p class="chat-none">No sessions.</p>}
             {!shut && rows.length > 0 && shown.length === 0 && <p class="chat-none">Nothing unread.</p>}
-            {!shut && shown.map((r) => row(s, r))}
+            {!shut && shown.map((r) => row(r))}
           </section>
         );
       })}
@@ -411,7 +392,7 @@ function ChatView({ client, route }: { client: Client; route: ChatRoute }) {
       <ChatBar client={client} route={route} />
       <Switcher rows={flatRows} multi={multi} />
       <div class="chat-body">
-        <aside class={huddle ? "chat-side huddling" : "chat-side"}>
+        <aside class="chat-side">
           <header class="chat-side-head">
             <button class="chat-workspace" data-chat-workspace onClick={workspaceMenu} onContextMenu={workspaceMenu}>
               {workspaceName(all, fleet)} <span class="caret">▾</span>
@@ -525,9 +506,6 @@ function ChatThread({ s, target, phone, multi, focus }: { s: Source; target: Thr
               ))}
               <span>{members.length}</span>
             </button>
-          )}
-          {session !== null && c.state?.sessions.some((x) => x.id === session) && (
-            <HuddleButton client={c} session={session} label />
           )}
           {alive && (
             <button class="chat-go" data-chat-go onClick={() => goTo(s, target)}>

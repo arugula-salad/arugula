@@ -2,10 +2,10 @@
 // proto-ts`). This file adds the code that goes with them. The HTTP API's
 // types that aren't generated yet are declared where they're used (#387).
 
-import type { ClientId, Gate, PaneId, ThreadTarget } from "./proto.gen";
+import type { Gate, PaneId, ThreadTarget } from "./proto.gen";
 
 export type * from "./proto.gen";
-export { CALL_MAX, CONV_MEMBERS_SEE } from "./proto.gen";
+export { CONV_MEMBERS_SEE } from "./proto.gen";
 
 /** What names a gate among its block's: `member/op/gate`. */
 export function gateKey(g: Gate): string {
@@ -14,18 +14,6 @@ export function gateKey(g: Gate): string {
 
 /** What *Expire* does to a chant gate (#310), for its tooltip. */
 export const EXPIRE_TITLE = "Turn it down: clear the pending gate without approving it, so the next run stops there again";
-
-/** What a huddle member signs with its device key: the call, who from and
- * to, and the SDP's `a=fingerprint:` lines (the daemon's
- * `call_fingerprint_body`). */
-export function callFingerprintBody(call: string, from: ClientId, to: ClientId, sdp: string): string {
-  const fps = sdp
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter((l) => l.startsWith("a=fingerprint:"));
-  // Frozen (#504): signed.
-  return `illogical call v1\ncall ${call}\nfrom ${from}\nto ${to}\n${fps.join("\n")}\n`;
-}
 
 /** `pane-7` / `session-2` / `conv-c-…`: a thread's name in its API path. */
 export function threadKey(t: ThreadTarget): string {

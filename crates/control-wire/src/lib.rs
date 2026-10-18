@@ -24,7 +24,6 @@ pub mod join;
 pub mod push;
 pub mod team;
 pub mod telemetry;
-pub mod turn;
 
 pub use join::{CliJoinRequest, JoinPoll, JoinProof, JoinRequest, JoinStarted, JoinTeam, PollQuery};
 pub use push::{PushAnswer, PushRequest, PushSubs};
@@ -32,7 +31,6 @@ pub use team::{
     AccessList, AccessReason, DEV_SETTINGS, Features, Flags, LOCAL_ONLY_FLAGS, PeerCerts, PeersQuery, SharedTeamAnswer,
     TeamAnswer, TeamNone, TeamQuery, TeamsQuery, TrustAnswer,
 };
-pub use turn::IceServers;
 
 /// What control says about itself, to browsers, the CLI and daemons.
 pub const CONTROL_JSON: &str = "/control.json";
@@ -58,8 +56,6 @@ pub const PUSH_SUBS: &str = "/api/daemon/push-subs";
 /// A daemon has control relay an encrypted notification (`POST`),
 /// [`PushRequest`], answered [`PushAnswer`].
 pub const PUSH: &str = "/api/daemon/push";
-/// ICE servers for a huddle (`GET`), [`IceServers`].
-pub const TURN: &str = "/api/daemon/turn";
 /// A hosted sandbox's last session closed (`POST`, no body), answered
 /// [`Ack`].
 pub const SANDBOX_DONE: &str = "/api/daemon/sandbox-done";

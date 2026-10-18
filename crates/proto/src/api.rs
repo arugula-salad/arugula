@@ -2157,9 +2157,10 @@ mod wire {
                 "name": "box", "version": "1.2.3", "protocol": 2, "tailnet_url": "https://box.ts.net",
                 "tailnet_seen": true, "control": "https://control", "team": "acme",
                 // `dev` came with flags (#665); `flags` is left out when unsaid;
-                // `block_channels` came with blocks through control (#150).
+                // `block_channels` came with blocks through control (#150);
+                // `calls` went with huddles (2026-10-18).
                 "features": { "labs": true, "dev": false, "blocks": true, "vms": false, "fountain": false,
-                              "studio": false, "threads": false, "calls": false, "block_channels": false },
+                              "studio": false, "threads": false, "block_channels": false },
             })
         );
     }

@@ -20,7 +20,6 @@ import { ControlSession, detectControl, restoreInvite, showMoving } from "./cont
 import { accountItems, ControlGate, ControlOverlay, controlMenuItems, NoMachines, useControl } from "./ui/control";
 import { setFleet, setHostMenuExtras } from "./ui/hosts";
 import { setControlSession, shareSession } from "./ui/people";
-import { labsNow } from "./labs-load";
 import { unhex } from "./e2e/cert.ts";
 import { usePhone, useSubscribe } from "./ui/hooks";
 import { useEffect, useState } from "preact/hooks";
@@ -478,11 +477,6 @@ Object.assign(window, {
     remotes,
     control: session,
     fleet,
-    /** M63: the huddle this page is in. The desktop app reads it too: an
-     * update's restart waits while `huddle.live()` (#561). */
-    get huddle() {
-      return labsNow()?.activeHuddle() ?? null;
-    },
     /** M26: made-up panes in the swarm (frame-rate check, screenshots). */
     swarmFake: (n: number) => fakeSwarm(fleet, n),
     /** M26: the swarm's field, when it's shown. */

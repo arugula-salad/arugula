@@ -51,7 +51,7 @@ test.afterAll(() => {
   if (state) rmSync(state, { recursive: true, force: true });
 });
 
-const FLAGS = ["chat", "huddles", "vms", "studio", "workspaces", "guest-ssh", "swarm-themes", "forges", "agents"] as const;
+const FLAGS = ["chat", "vms", "studio", "workspaces", "guest-ssh", "swarm-themes", "forges", "agents"] as const;
 type Flag = (typeof FLAGS)[number];
 
 const setFlag = (flag: string, on: boolean, as?: string) =>
@@ -71,7 +71,6 @@ async function shown(page: Page, pane: number): Promise<Flag[]> {
   await page.evaluate(() => window.__arugula.client.loadFeatures());
   const out: Flag[] = [];
   if (await page.locator("[data-open-chat]").count()) out.push("chat");
-  if (await page.locator("[data-huddle]").count()) out.push("huddles");
   await paneEl(page, pane).click({ button: "right", position: { x: 60, y: 60 } });
   await expect(page.getByRole("menuitem", { name: "Share read-only link…" })).toBeVisible();
   const items = (await page.getByRole("menuitem").allInnerTexts()).map((s) => s.trim());
@@ -168,9 +167,8 @@ test("each flag turns on its own feature and no other", async ({ page }) => {
 
 /** Requests that are each flag's feature (#347): its routes, and making
  * its blocks. Configs that don't parse, so with the flag on they fail past
- * the gate, in their own words, and nothing starts. (Huddles are a
- * WebSocket message: crates/daemon/tests/integration/flag_gates.rs; the
- * swarm's views have no route.) */
+ * the gate, in their own words, and nothing starts. (The swarm's
+ * views have no route.) */
 const GATED: [Flag, string, string, unknown][] = [
   ["chat", "GET", "/api/threads/pane-1", undefined],
   ["vms", "GET", "/api/machines", undefined],

@@ -1,5 +1,5 @@
 // The default, which is what a stranger gets: a machine without the `labs`
-// flag shows no chat, threads or huddles, no studio, VM or sandbox, no
+// flag shows no chat or threads, no studio, VM or sandbox, no
 // "Invite over ssh", and one swarm theme. A legacy Managoat login no longer
 // enables direct execution. The rest of the suite
 // runs with labs on (e2e/labs.ts), so this is the only proof of the default,
@@ -68,7 +68,7 @@ const api = (path: string, body?: unknown, as?: string) =>
 const features = async () => ((await (await api("/api/host")).json()) as { features: Record<string, boolean | string[]> }).features;
 
 /** What this page shows to a stranger's eye, wherever labs would put it. */
-const MENU_HIDDEN = [/^Thread\b/, /^Session thread/, /huddle/i, /\bVM\b/, /^Sandboxes/, /studio app/i, /^Invite over ssh/, /^Developer settings/];
+const MENU_HIDDEN = [/^Thread\b/, /^Session thread/, /\bVM\b/, /^Sandboxes/, /studio app/i, /^Invite over ssh/, /^Developer settings/];
 
 async function menuItems(page: Page) {
   const items = (await page.getByRole("menuitem").allInnerTexts()).map((s) => s.trim());
@@ -96,7 +96,7 @@ async function noLabsItems(page: Page, pane: number) {
 }
 
 test("the host says labs is off, and what follows it", async () => {
-  expect(await features()).toEqual({ labs: false, dev: false, blocks: false, vms: false, fountain: false, studio: false, threads: false, calls: false, block_channels: false, flags: [] });
+  expect(await features()).toEqual({ labs: false, dev: false, blocks: false, vms: false, fountain: false, studio: false, threads: false, block_channels: false, flags: [] });
 });
 
 test("links to Forgejo and GitLab stay plain links; GitHub's still open as blocks", async ({ page }) => {
@@ -116,17 +116,16 @@ test("links to Forgejo and GitLab stay plain links; GitHub's still open as block
   ).toEqual([null, null, null, null, "pr", "issue"]);
 });
 
-test("on a desktop: no chat, threads or huddles, no studio or VMs, no ssh invite or direct Managoat", async ({ page }) => {
+test("on a desktop: no chat or threads, no studio or VMs, no ssh invite or direct Managoat", async ({ page }) => {
   await open(page);
   const pane = await page.evaluate(() => window.__arugula.client.state!.panes[0].id);
   await ready(page, pane);
   await expect.poll(() => page.evaluate(() => window.__arugula.client.features !== null)).toBe(true);
   expect(await page.evaluate(() => window.__arugula.client.hasLabs())).toBe(false);
 
-  // The bar: Panes and Swarm, no Chat, no huddle button.
+  // The bar: Panes and Swarm, no Chat.
   await expect(page.locator("[data-open-swarm]")).toBeVisible();
   await expect(page.locator("[data-open-chat]")).toHaveCount(0);
-  await expect(page.locator("[data-huddle]")).toHaveCount(0);
   await noLabsItems(page, pane);
   // A saved login cannot restore direct Managoat execution.
   await paneEl(page, pane).click({ button: "right", position: { x: 60, y: 60 } });
@@ -197,14 +196,6 @@ test("a thread message posted through the API shows nowhere", async ({ page }) =
   await expect(page.locator(".thread-badge")).toHaveCount(0);
   await expect(page.locator(".session-unread")).toHaveCount(0);
   await expect(page.locator(".thread-panel")).toHaveCount(0);
-  // Nor a huddle on the session, were there one.
-  expect(
-    await page.evaluate((s) => {
-      const c = window.__arugula.client;
-      c.state!.calls = [{ session: s, id: "x", started: 0, members: [] }];
-      return c.call(s);
-    }, session),
-  ).toBeUndefined();
   expect(await page.evaluate(([p, s]) => [window.__arugula.client.thread({ pane: p }), window.__arugula.client.thread({ session: s })], [pane, session])).toEqual([undefined, undefined]);
   await expect(page.locator("[data-open-chat]")).toHaveCount(0);
   await noLabsItems(page, pane);
@@ -256,13 +247,13 @@ test.describe("on a phone", () => {
     await expect(page.locator("[data-open-fountain]")).toHaveCount(0);
     for (const gone of ["[data-open-chat]", "[data-studio-apps]"]) await expect(page.locator(gone)).toHaveCount(0);
     for (const name of ["New VM tab", "Sandboxes"]) await expect(page.getByRole("button", { name })).toHaveCount(0);
-    await expect(page.locator(".session-unread, .thread-badge, [data-huddle]")).toHaveCount(0);
+    await expect(page.locator(".session-unread, .thread-badge")).toHaveCount(0);
   });
 });
 
 test("a daemon from before labs, which says nothing of it, gets none of it either", async ({ page }) => {
-  // What `GET /api/host` says on an older daemon: every feature on, and no
-  // `labs`. Control serves this page to such daemons too.
+  // What `GET /api/host` says on an older daemon: every feature on (huddles'
+  // `calls` too, from before they were removed), and no `labs`. Control serves this page to such daemons too.
   await page.route("**/api/host", async (r) => {
     const res = await r.fetch();
     const host = (await res.json()) as { features?: Record<string, boolean> };
@@ -273,11 +264,10 @@ test("a daemon from before labs, which says nothing of it, gets none of it eithe
   const pane = await page.evaluate(() => window.__arugula.client.state!.panes[0].id);
   await ready(page, pane);
   await expect.poll(() => page.evaluate(() => window.__arugula.client.features?.vms)).toBe(true);
-  expect(await page.evaluate(() => [window.__arugula.client.hasLabs(), window.__arugula.client.hasThreads(), window.__arugula.client.hasCalls()])).toEqual([false, false, false]);
+  expect(await page.evaluate(() => [window.__arugula.client.hasLabs(), window.__arugula.client.hasThreads()])).toEqual([false, false]);
   // Even an older daemon advertising Managoat cannot restore its UI.
   expect(await page.evaluate(() => (["vms", "fountain", "studio"] as const).map((f) => window.__arugula.client.has(f)))).toEqual([false, false, false]);
   await expect(page.locator("[data-open-chat]")).toHaveCount(0);
-  await expect(page.locator("[data-huddle]")).toHaveCount(0);
   await expect(page.locator(".thread-badge, .session-unread")).toHaveCount(0);
   await noLabsItems(page, pane);
 });
@@ -291,9 +281,9 @@ test("setting the flag on the running daemon brings it all back, with no restart
   const pane0 = ((await (await api("/api/panes")).json()) as { id: number }[])[0].id;
   expect((await api(`/api/threads/pane-${pane0}`, { text: "still there?" }, FRIEND)).ok).toBe(true);
   expect(await features()).toEqual({
-    ...{ labs: true, dev: true, blocks: false, vms: true, fountain: false, studio: true, threads: true, calls: true, block_channels: false },
+    ...{ labs: true, dev: true, blocks: false, vms: true, fountain: false, studio: true, threads: true, block_channels: false },
     // `labs`, the one switch from before, is every flag (#665).
-    flags: ["chat", "huddles", "vms", "studio", "workspaces", "guest-ssh", "swarm-themes", "forges", "agents"],
+    flags: ["chat", "vms", "studio", "workspaces", "guest-ssh", "swarm-themes", "forges", "agents"],
   });
 
   await open(page);
@@ -301,7 +291,6 @@ test("setting the flag on the running daemon brings it all back, with no restart
   await ready(page, pane);
   await expect.poll(() => page.evaluate(() => window.__arugula.client.hasLabs())).toBe(true);
   await expect(page.locator("[data-open-chat]")).toBeVisible();
-  await expect(page.locator("[data-huddle]").first()).toBeVisible();
   // Now the Labs chunk was fetched, since this machine has them.
   expect(asked.filter((u) => LABS_CHUNK.test(u)).length).toBeGreaterThan(0);
   await expect(page.locator(".thread-badge.unread")).toBeVisible();

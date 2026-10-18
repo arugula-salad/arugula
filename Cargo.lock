@@ -283,7 +283,6 @@ version = "0.43.0"
 dependencies = [
  "anyhow",
  "arugula-core",
- "arugula-e2e",
  "arugula-proto",
  "arugula-vt",
  "base64 0.23.1",

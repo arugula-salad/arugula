@@ -2,8 +2,7 @@
 
 The JSON that daemons and Arugula control send each other to enrol, to learn
 their account's and team's certificates, to say who gets in, to dial the
-relay, to relay web push, to get ICE servers for huddles and to hear about
-GitHub: one type per message, so a renamed field breaks both builds. The CLI
+relay, to relay web push and to hear about GitHub: one type per message, so a renamed field breaks both builds. The CLI
 joins with these types too. The routes are `pub const`s here too.
 
 Depends on `arugula-e2e` (certificates, rosters, push subscriptions) and

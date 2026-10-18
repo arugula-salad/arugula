@@ -19,8 +19,6 @@ mod attach;
 mod attention;
 mod block_channels;
 mod blocks;
-#[cfg(feature = "labs")]
-mod calls;
 #[cfg(unix)]
 mod client_fixtures;
 mod control_moves;

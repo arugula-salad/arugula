@@ -21,7 +21,6 @@ import { openDeveloper } from "./developer";
 import { openMachineTelemetry } from "./machine-telemetry";
 import { openGettingStarted } from "./welcome";
 import { openPalette } from "./palette";
-import { InLabs } from "./in-labs";
 import { GateWhy } from "./gate-why";
 import { PointChoices, pointOf } from "./point-choices";
 import { shareSession } from "./people";
@@ -46,7 +45,6 @@ export function PhoneHeader({ client }: { client: Client }) {
             </>
           )}
         </button>
-        {session && <InLabs on={client.hasCalls()}>{(l) => <l.HuddleButton client={client} session={session.id} />}</InLabs>}
         {panes.length > 1 && (
           <span class="pane-count">
             {panes.indexOf(active ?? -1) + 1}/{panes.length}

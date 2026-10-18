@@ -13,7 +13,6 @@ import {
   encodeFrame,
   FrameKind,
   type ActRequest,
-  type Call,
   type AttachPane,
   type ClientId,
   type ClientMsg,
@@ -754,39 +753,6 @@ export class Client {
     void this.request(OPS["thread.read"].method, opPath("thread.read", { target: threadKey(t) }), { upto } satisfies ThreadReadRequest).catch(() => {});
   }
 
-  // ---- huddles (M63)
-
-  private callListeners = new Set<(m: Extract<ServerMsg, { type: "call_signal" }>) => void>();
-
-  /** The huddle on a session, if there is one (and this machine has labs). */
-  call(session: SessionId): Call | undefined {
-    if (!this.hasCalls()) return undefined;
-    return this.state?.calls?.find((c) => c.session === session);
-  }
-
-  /** Descriptions from other huddle members, as they come. */
-  onCallSignal(fn: (m: Extract<ServerMsg, { type: "call_signal" }>) => void): () => void {
-    this.callListeners.add(fn);
-    return () => this.callListeners.delete(fn);
-  }
-
-  /** Whether this machine has huddles: labs, and a daemon that has them
-   *  (unknown means no, like threads). */
-  hasCalls(): boolean {
-    return this.hasLabs() && this.features?.calls === true;
-  }
-
-  /** Whether this page talks to the daemon with a device key: what it
-   * says in a huddle is signed. */
-  signs(): boolean {
-    return !!this.e2e;
-  }
-
-  /** The device key this page signs with, through control. */
-  deviceKeys(): DeviceKeys | undefined {
-    return this.e2e?.keys;
-  }
-
   /** Whether this person may post in a thread (drivers and owners; in a
    *  conversation, everyone in it). */
   mayPost(t: ThreadTarget): boolean {
@@ -924,7 +890,7 @@ export class Client {
   }
 
   /** Whether this machine has any Labs flag on: something a stranger
-   * doesn't get (chat, huddles, Managoat, studio, VMs, guest ssh, the
+   * doesn't get (chat, Managoat, studio, VMs, guest ssh, the
    * swarm's extra views). `flag` says which. Unlike `has`, unknown means no:
    * control serves this page to older daemons too, which never say. */
   hasLabs(): boolean {
@@ -1416,9 +1382,6 @@ export class Client {
       case "thread":
         for (const fn of this.threadListeners.get(threadKey(msg.target)) ?? []) fn(msg.msg);
         break;
-      case "call_signal":
-        for (const fn of this.callListeners) fn(msg);
-        break;
       case "block": {
         const b = this.blocks.get(msg.block);
         let state = msg.state;
@@ -1465,7 +1428,6 @@ export class Client {
       presence: d.presence ?? old.presence,
       threads: d.threads ?? old.threads,
       convs: d.convs ?? old.convs,
-      calls: d.calls ?? old.calls,
     };
     if (added || d.gone?.length) return this.applyState(state, false);
     this.state = state;

@@ -7,11 +7,12 @@
      CFBundleDocumentTypes: the app can open folders (a new tab there) and
      .command scripts (run in a new tab), as an alternate handler, so it
      never takes them from Terminal unless someone picks it.
-     NSMicrophoneUsageDescription: huddles (M63). -->
+     NSMicrophoneUsageDescription: a lent device's record_audio (S33,
+     web/src/hand.ts): an agent asks, the person allows it, the page records. -->
 <plist version="1.0">
 <dict>
   <key>NSMicrophoneUsageDescription</key>
-  <string>Arugula uses the microphone for huddles: voice calls with the people in a session.</string>
+  <string>Arugula uses the microphone when an agent asks this device to record audio and you allow it.</string>
   <key>NSServices</key>
   <array>
     <dict>

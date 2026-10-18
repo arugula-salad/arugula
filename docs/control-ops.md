@@ -227,24 +227,6 @@ To turn it on:
 
 Fly's own daily volume snapshots (kept 5 days) still run.
 
-### TURN for huddles
-
-Huddles are a labs feature ([labs.md](labs.md)). Machines ask control for TURN credentials for
-their huddles (`GET /api/daemon/turn`), and control asks Cloudflare's TURN
-service for short-lived ones (8 hours; a machine reuses them for an hour).
-Without a key, machines get Cloudflare's public STUN only, which is enough
-unless both ends are behind strict NATs. In the Cloudflare dashboard,
-*Realtime → TURN Server → Create*, then:
-
-```
-fly secrets set -a illogical-control \
-  CLOUDFLARE_TURN_KEY_ID=… CLOUDFLARE_TURN_API_TOKEN=…
-```
-
-`fly logs` says `no CLOUDFLARE_TURN_KEY_ID/CLOUDFLARE_TURN_API_TOKEN` at
-start when they're missing. A self-hosted control can run coturn instead
-(not wired up yet).
-
 ### Product analytics (PostHog)
 
 Control sends product events to PostHog when it has a project API key

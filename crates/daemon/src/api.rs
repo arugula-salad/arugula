@@ -73,7 +73,6 @@ pub fn routes() -> Router<Arc<App>> {
         .route("/api/panes/{id}/hook", post(hook))
         .op::<PaneInbox>()
         .op::<PaneFollowUp>()
-        .route("/api/turn", get(turn))
         .op::<ThreadGet>()
         .op::<ThreadPost>()
         .op::<ThreadRead>()
@@ -189,15 +188,7 @@ fn tap(pane: PaneHandle, from: u64) -> Tap {
     let (data, rx) = crate::pane::client_queue();
     let (ctrl, _ctrl) = mpsc::unbounded_channel();
     pane.attach(
-        Subscriber {
-            client,
-            data,
-            ctrl,
-            principal: crate::acl::Principal::Owner,
-            name: None,
-            acting: None,
-            device: None,
-        },
+        Subscriber { client, data, ctrl, principal: crate::acl::Principal::Owner, name: None, acting: None },
         Some(from),
     );
     Tap { pane, client, rx, _ctrl }
@@ -1747,11 +1738,6 @@ pub(crate) fn agents_json(snap: &crate::inventory::Snapshot) -> AgentsInventory 
 async fn editors(State(app): AppState, who: Option<axum::Extension<crate::acl::Principal>>) -> Json<serde_json::Value> {
     let who = who.map(|axum::Extension(w)| w).filter(|w| !w.is_owner());
     Json(app.mux.api(|r| Api::Editors(who, r)).await.unwrap_or_default().into())
-}
-
-/// ICE servers for a huddle (M63): TURN credentials from control, or STUN.
-async fn turn(State(app): AppState) -> Json<arugula_control_wire::IceServers> {
-    Json(app.control.ice_servers().await)
 }
 
 #[cfg(test)]

@@ -7,7 +7,7 @@ import { opPath } from "../ops";
 import { paneIds, type Client } from "../client";
 import type { Machine, OpenRequest, PaneId, Policy, SessionId, TabView } from "../proto";
 import { askText, type MenuItem } from "./menu";
-import { labsNow, openSandboxes, pickApp } from "../labs-load";
+import { openSandboxes, pickApp } from "../labs-load";
 import { driveItems, shareSession } from "./people";
 import { newRemote, openChanges, openEditor, openFountain, openIssue, openPort, openPr, openWorkspace, remoteHosts } from "../blocks";
 import { startAgent } from "./agent-dialog";
@@ -212,9 +212,8 @@ export function sessionItems(client: Client, session: SessionId, rename: () => v
     { label: "Rename session", run: rename },
     // M61: the people's conversation about this session.
     ...sessionThreadItems(client, session),
-    // The bar has Huddle and Share beside the session's button: its menu
-    // doesn't repeat them (the palette has them).
-    ...(opts.bar ? [] : (labsNow()?.huddleItems(client, session) ?? [])),
+    // The bar has Share beside the session's button: its menu doesn't
+    // repeat it (the palette has it).
     // Sharing is the daemon's owner's (M13).
     ...(client.state?.roles || opts.bar ? [] : [{ label: "Share session…", run: () => shareSession(session) } as MenuItem]),
     ...agentNotifyItems(client, session),

@@ -345,8 +345,8 @@ says which side is behind and offers that side's update; the app never shows
 a daemon's page it doesn't match.
 An app update that replaces the app in place (macOS, the AppImage) restarts
 the app by itself once nobody's using it (#561): no window of ours focused
-and, on macOS, no input anywhere for five minutes, no huddle live and no
-dialog or file picker open. Running on from a replaced bundle breaks the
+and, on macOS, no input anywhere for five minutes, and no dialog or file
+picker open. Running on from a replaced bundle breaks the
 macOS services the app reaches through it (the file picker, #556), and the
 panes are the daemon's, so a restart loses nothing; the windows come back
 on their pages without taking focus. The tray's *Restart to update* stays
@@ -1143,7 +1143,8 @@ From: [Control track](docs/plan-archive.md#control-track-s15-m17m22-added-2026-1
 ## Build and release
 
 ### One switch for what a stranger doesn't get: the `labs` flag
-The `labs` flag turns on huddles and chat, Fountain (until #942's F5),
+The `labs` flag turns on chat (and huddles, until they were removed),
+Fountain (until #942's F5),
 studio apps and chant workspaces, VMs and sandboxes, guest ssh, Forgejo and GitLab and the swarm's
 extra views. It is the first named flag in the daemon's config, and the
 mechanism #347's per-feature flags extend:
@@ -1199,7 +1200,8 @@ Chat on a machine shouldn't need Fountain, studio and the rest on with it, so
 the one `labs` flag (above) is nine: `chat`, `huddles`, `vms`, `fountain`,
 `studio`, `workspaces`, `guest-ssh`, `swarm-themes`, `forges`. Each is a row
 in `FLAGS`, off by default. (`agents` came later; `fountain` went with
-#942's F5: "Fountain is out of Labs", below.)
+#942's F5: "Fountain is out of Labs", below; `huddles` went when huddles
+were removed: "Huddles are removed", below.)
 - **`labs` is no longer a flag; in the file it means all of them.** `labs`
   in `flags.json`, or the old empty `labs` file, is the answer for every flag
   the file doesn't name itself. A machine that had Labs keeps everything, one
@@ -1215,7 +1217,7 @@ in `FLAGS`, off by default. (`agents` came later; `fountain` went with
 - **`HostFeatures` says which.** `labs` is now "any flag on", and `flags`
   names those that are. A page on a daemon from before reads `labs` for every
   flag, which is what it meant there. `Client.flag(name)` is the page's one
-  question; `has()`, `hasThreads()` and `hasCalls()` stand as they were.
+  question; `has()` and `hasThreads()` stand as they were.
 - **Developer settings, unlocked first.** The owner's dialog (session menu,
   palette, the phone's sheet) has a switch per flag and applies it without a
   reload: the Labs chunk loads when a flag first needs it. The menus offer it
@@ -1245,9 +1247,7 @@ everything about the feature follows the flag (#347):
   /api/blocks` asks `labs::block_flag` first, so an app block doesn't ask
   the studio before it's refused.
 - **The mux** checks `vms` before it makes or borrows a machine or shares
-  one with a tab, and `huddles` before a join. Leaving, muting and
-  signalling a huddle already on still work, so turning the flag off
-  doesn't strand anyone in one.
+  one with a tab.
 - **What was made with the flag on stays.** A block restored at start-up
   isn't asked (as a Forgejo block wasn't), threads stay on disk and in the
   page's state, a VM pane in a saved layout comes back. Turning a flag off
@@ -1260,7 +1260,7 @@ everything about the feature follows the flag (#347):
   machine; the CLI keeps no list of its own for this.
 - **A build without Labs is unchanged.** `labs::flag` is `Ok` there, and
   each feature's twin says it isn't built, as before.
-Where: `crates/mux/src/labs/mod.rs` (`flag`, `flag_off`), `crates/daemon/src/ops/mod.rs` (`flagged`), `crates/daemon/src/mcp/ops.rs`, `crates/proto/src/op.rs` (`FLAG`), `crates/daemon/src/labs/mod.rs` (`Flagged`, `block_flag`), `crates/mux/src/mux/machines.rs`, `crates/mux/src/mux/call_ops.rs`, `crates/daemon/tests/integration/flag_gates.rs`.
+Where: `crates/mux/src/labs/mod.rs` (`flag`, `flag_off`), `crates/daemon/src/ops/mod.rs` (`flagged`), `crates/daemon/src/mcp/ops.rs`, `crates/proto/src/op.rs` (`FLAG`), `crates/daemon/src/labs/mod.rs` (`Flagged`, `block_flag`), `crates/mux/src/mux/machines.rs`, `crates/daemon/tests/integration/flag_gates.rs`.
 From: #347, #665.
 
 ### Fountain is out of Labs: no flag, still the `labs` cargo feature
@@ -1300,6 +1300,34 @@ arguments are offered on any machine, with no flag. This supersedes
   pattern a feature of its own would follow.
 Where: `crates/proto/src/flags.rs` (`RETIRED`, `retired`), `crates/daemon/src/hosts.rs` (`features`), `crates/daemon/src/labs/mod.rs` (`kinds`, `block_flag`), `crates/daemon/src/mcp/tools.rs`, `crates/cli/src/main.rs` and `crates/daemon/src/args.rs` (`LABS_*`), `web/src/client.ts`, `web/src/blocks/lazy.ts`, [docs/managoat.md](docs/managoat.md).
 From: #942 (Q4), F5.
+
+### Huddles are removed
+Huddles (M63: voice calls on a session, peer to peer over WebRTC, signalled
+through the daemon, with TURN credentials from control and a native call
+peer in the Linux app) were taken out of Arugula entirely on 2026-10-18,
+Jake's decision. Revive them from git if they're wanted again: everything
+is in the tree at f9c8217b (`crates/mux/src/labs/calls.rs`,
+`crates/mux/src/mux/call_ops.rs`, `crates/desktop/src/calls.rs`,
+`crates/control/src/turn.rs`, `web/src/call.ts`, `web/src/ui/huddle.tsx`
+and their tests). What stays, for a fleet whose versions are mixed:
+- **`huddles` is a retired flag** (`flags::RETIRED`, as `fountain` above):
+  a `flags.json` or a control push that names it loads, means nothing, and
+  is kept by a write; setting it says why it's gone.
+- **An older page's call messages are dropped.** `ClientMsg` has no
+  `call_*` variants now, so one fails to parse and the daemon logs it as a
+  bad client message and carries on, as it does for any message it doesn't
+  know. An older daemon's `calls` (in `State`, `Delta` and
+  `HostFeatures`) and `call_signal` are ignored by a newer page and TUI,
+  which never ask for them. `GET /api/turn` and control's
+  `GET /api/daemon/turn` are gone; an older daemon asking control falls
+  back to public STUN, as it did when control couldn't be reached.
+- **Telemetry's `huddle` view and `huddles` flag** were dropped from the
+  closed sets; an older daemon's report counts them as `other`.
+- **The macOS app keeps its microphone** (`NSMicrophoneUsageDescription`,
+  the `audio-input` entitlement and `scripts/macos-sign`'s check): a lent
+  device's `record_audio` (S33) records in the app's webview too.
+Where: `crates/proto/src/flags.rs` (`RETIRED`), `crates/daemon/tests/integration/flag_gates.rs` (`a_call_message_from_an_older_page_is_dropped`), `crates/desktop/Info.plist`.
+From: Jake, 2026-10-18.
 
 ### Control pushes Labs flags; the machine overrides
 An account sets Labs flags for every machine it owns, and a team's owners

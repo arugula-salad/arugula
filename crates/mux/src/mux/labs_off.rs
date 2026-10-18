@@ -1,13 +1,13 @@
-//! What the daemon does about chat and huddles in a build without the `labs`
-//! feature: nothing is kept, no thread or huddle is ever in a client's state,
-//! and every request for either is refused with "isn't in this build". The
-//! real ones are `thread_ops` and `call_ops`; these are their twins for the
-//! methods the rest of the mux calls.
+//! What the daemon does about chat in a build without the `labs` feature:
+//! nothing is kept, no thread is ever in a client's state, and every request
+//! for one is refused with "isn't in this build". The real ones are
+//! `thread_ops`; these are their twins for the methods the rest of the mux
+//! calls.
 
 use super::{ConvReq, Daemon, Posted, ThreadError, ThreadPost};
-use crate::{acl::Principal, labs::not_built, pane::Subscriber, pane::ToClient};
+use crate::{acl::Principal, labs::not_built};
 use arugula_core::Role;
-use arugula_proto::{Call, ClientId, Conversation, ServerMsg, SessionId, ThreadMsg, ThreadSummary, ThreadTarget};
+use arugula_proto::{Conversation, SessionId, ThreadMsg, ThreadSummary, ThreadTarget};
 
 impl Daemon {
     pub(super) fn thread_exists(&self, _target: ThreadTarget) -> bool {
@@ -49,35 +49,4 @@ impl Daemon {
     pub(super) fn threads_for(&self, _who: &Principal, _me: &Principal) -> Vec<ThreadSummary> {
         Vec::new()
     }
-
-    pub(super) fn calls_for(&self, _who: &Principal) -> Vec<Call> {
-        Vec::new()
-    }
-
-    pub(super) fn call_leave(&mut self, sub: &Subscriber, _session: SessionId) {
-        refuse(sub);
-    }
-
-    pub(super) fn call_mute(&mut self, sub: &Subscriber, _session: SessionId, _muted: bool) {
-        refuse(sub);
-    }
-
-    pub(super) fn call_join(&mut self, sub: &Subscriber, _session: SessionId) {
-        refuse(sub);
-    }
-
-    pub(super) fn call_signal(
-        &mut self,
-        sub: &Subscriber,
-        _session: SessionId,
-        _to: ClientId,
-        _signal: serde_json::Value,
-    ) {
-        refuse(sub);
-    }
-}
-
-/// Tells the client its huddle message went nowhere.
-fn refuse(sub: &Subscriber) {
-    let _ = sub.ctrl.send(ToClient::Msg(ServerMsg::Error { id: None, message: not_built("A huddle") }));
 }

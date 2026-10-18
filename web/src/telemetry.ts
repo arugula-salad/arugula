@@ -9,7 +9,7 @@
 // away, what was counted goes to that function and starts again from zero.
 
 /** The views counted, as control-wire's `telemetry::View` spells them. */
-export type View = "swarm" | "chat" | "conversations" | "agents" | "huddle" | "palette" | "settings" | "getting-started" | "share";
+export type View = "swarm" | "chat" | "conversations" | "agents" | "palette" | "settings" | "getting-started" | "share";
 
 /** What was counted since the last send. */
 export interface PageCounts {

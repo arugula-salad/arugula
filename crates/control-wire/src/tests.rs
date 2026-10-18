@@ -462,56 +462,6 @@ fn a_push_answer_is_the_push_services_status() {
     assert_eq!(round::<PushAnswer>(json!({ "status": 201 })).status, 201);
 }
 
-// ---------------------------------------------------------------- TURN
-
-fn cloudflare_server() -> Value {
-    json!({
-        "urls": ["stun:stun.cloudflare.com:3478", "turn:turn.cloudflare.com:3478?transport=udp"],
-        "username": "u", "credential": "c",
-    })
-}
-
-/// Control's answer with a TURN key, and without.
-#[test]
-fn ice_servers_are_what_control_answers() {
-    let turn = round::<IceServers>(json!({ "ice_servers": [cloudflare_server()], "ttl": 28_800, "turn": true }));
-    assert_eq!(turn, IceServers::turn(vec![parse(&cloudflare_server())], 28_800));
-    let stun = round::<IceServers>(
-        json!({ "ice_servers": [{ "urls": ["stun:stun.cloudflare.com:3478"] }], "ttl": 28_800, "turn": false }),
-    );
-    assert_eq!(stun, IceServers::stun(28_800));
-}
-
-/// The daemon's own answer when it isn't joined or control can't be
-/// reached, as it was built with `json!`: no `ttl`.
-#[test]
-fn the_stun_only_fallback_is_what_the_daemon_built() {
-    let recorded = json!({ "ice_servers": [{ "urls": ["stun:stun.cloudflare.com:3478"] }], "turn": false });
-    assert_eq!(serde_json::to_value(IceServers::stun_only()).unwrap(), recorded);
-    assert_eq!(round::<IceServers>(recorded), IceServers::stun_only());
-}
-
-/// The web client takes whatever `RTCIceServer` holds, so what Cloudflare
-/// adds to a server (or control to the answer's servers) is passed on, and
-/// `urls` may be one string.
-#[test]
-fn an_ice_server_passes_on_what_it_isnt_told_about() {
-    let server =
-        json!({ "urls": "turn:t.example:3478", "username": "u", "credential": "c", "credentialType": "password" });
-    round::<IceServers>(json!({ "ice_servers": [server], "ttl": 1, "turn": true }));
-}
-
-/// An older control (or one that left something out) still parses: the web
-/// reads `ice_servers` alone, and `?? []`.
-#[test]
-fn an_older_controls_ice_servers_parse() {
-    let full = json!({ "ice_servers": [cloudflare_server()], "ttl": 1, "turn": true });
-    for k in ["ttl", "turn", "ice_servers"] {
-        parse::<IceServers>(&without(&full, k));
-    }
-    assert!(parse::<IceServers>(&json!({})).ice_servers.is_empty());
-}
-
 // ---------------------------------------------------------------- forge
 
 use forge::{ForgePoke, ForgeWatch, ForgeWatching, GithubToken, GithubTokenRequest};

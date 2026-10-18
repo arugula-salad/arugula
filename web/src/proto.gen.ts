@@ -8,7 +8,6 @@ export type NodeId = number;
 export type ClientId = number;
 export type MachineId = number;
 
-export const CALL_MAX = 5;
 export const CONV_MEMBERS_SEE = "Members can have the lead type into and read every linked pane. Invite only people you'd hand those terminals to.";
 
 /**
@@ -160,53 +159,6 @@ export type BlockType = "terminal" | "browser" | "agent" | "editor" | "diff" | "
 export type Branch = { repo: string | null, branch: string, sha: string, };
 
 /**
- * A huddle: a voice call on a session (M63), peer to peer between its
- * members, signaled through this daemon.
- */
-export type Call = { session: number, 
-/**
- * New each time a huddle starts on the session, so what's signed for
- * one can't be used in the next.
- */
-id: string, 
-/**
- * When it started (ms since the epoch).
- */
-started: number, 
-/**
- * In the order they joined.
- */
-members: Array<CallMember>, };
-
-export type CallMember = { client: number, 
-/**
- * Their principal id.
- */
-who: string, name: string, pic?: string, muted?: boolean, 
-/**
- * When they joined (ms since the epoch).
- */
-joined: number, 
-/**
- * Their device's id, when they connected with a device key (through
- * control): their fingerprints are signed. Absent for a tailnet or
- * local connection.
- */
-device?: string, };
-
-/**
- * What one huddle member sends another through the daemon (M63), which
- * passes it on untouched: [`ClientMsg::CallSignal`]'s and
- * [`ServerMsg::CallSignal`]'s `signal`.
- */
-export type CallSignal = { type: SdpKind, sdp: string, 
-/**
- * Hex Ed25519 signature of [`call_fingerprint_body`] by the sender's
- * device key, when it has one.
- */
-sig?: string, };
-
-/**
  * A person's note asking an agent to change its draft.
  */
 export type ChangesAsked = { note: string, by: string, at_ms: number, 
@@ -237,7 +189,7 @@ export type ClientMsg = { "type": "attach", panes: Array<AttachPane>, zstd?: boo
  * Unused since #806: programs asking are told it's there whoever
  * is attached. Kept so older clients and daemons still agree.
  */
-kitty_keys?: boolean, } | { "type": "ack", pane: number, offset: number, } | { "type": "detach", panes: Array<number>, } | { "type": "view", tab: number, cols: number, rows: number, zoom: number | null, claim: boolean, typed?: boolean, } | { "type": "intent", id: number | null, intent: Intent, } | { "type": "pane", pane: number, op: PaneOp, } | { "type": "focus", pane: number | null, } | { "type": "ping", id: number, } | { "type": "subscribe", summary: boolean, } | { "type": "follow", pane: number, on: boolean, } | { "type": "block_patches" } | { "type": "call_join", session: number, } | { "type": "call_leave", session: number, } | { "type": "call_mute", session: number, muted: boolean, } | { "type": "call_signal", session: number, to: number, signal: CallSignal, } | { "type": "hand", tools: Array<HandTool>, name?: string, } | { "type": "hand_reply", id: number, result?: unknown, error?: string, };
+kitty_keys?: boolean, } | { "type": "ack", pane: number, offset: number, } | { "type": "detach", panes: Array<number>, } | { "type": "view", tab: number, cols: number, rows: number, zoom: number | null, claim: boolean, typed?: boolean, } | { "type": "intent", id: number | null, intent: Intent, } | { "type": "pane", pane: number, op: PaneOp, } | { "type": "focus", pane: number | null, } | { "type": "ping", id: number, } | { "type": "subscribe", summary: boolean, } | { "type": "follow", pane: number, on: boolean, } | { "type": "block_patches" } | { "type": "hand", tools: Array<HandTool>, name?: string, } | { "type": "hand_reply", id: number, result?: unknown, error?: string, };
 
 /**
  * A command the shell integration reported.
@@ -709,7 +661,7 @@ closed: boolean, };
  * `presence` (and `threads`, `convs`) are whole when present. Anything else (sessions, tabs,
  * options, roles) changes with a new `State`.
  */
-export type Delta = { panes?: Array<{ id: PaneId } & Partial<PaneInfo>>, gone?: Array<number>, machines?: Array<Machine> | null, presence?: Array<Presence> | null, threads?: Array<ThreadSummary> | null, convs?: Array<Conversation> | null, calls?: Array<Call> | null, };
+export type Delta = { panes?: Array<{ id: PaneId } & Partial<PaneInfo>>, gone?: Array<number>, machines?: Array<Machine> | null, presence?: Array<Presence> | null, threads?: Array<ThreadSummary> | null, convs?: Array<Conversation> | null, };
 
 /**
  * Diagnostic counts: errors, warnings, information.
@@ -1317,10 +1269,6 @@ studio: boolean,
  * out, and pages hide threads there.
  */
 threads?: boolean, 
-/**
- * Huddles on sessions, likewise.
- */
-calls?: boolean, 
 /**
  * The names of the Labs flags that are on, whatever else each needs
  * (a login, a provider). `None` from a daemon before #665: see `labs`.
@@ -2104,12 +2052,10 @@ from_pane?: number | null, };
 
 export type RunResponse = { pane: number, };
 
-export type SdpKind = "offer" | "answer";
-
 /**
  * Control messages from the server.
  */
-export type ServerMsg = { "type": "hello", version: string, client: number, state: State, } | { "type": "state", state: State, } | { "type": "size", pane: number, cols: number, rows: number, } | { "type": "resync", pane: number, } | { "type": "error", id: number | null, message: string, } | { "type": "block", block: number, state: unknown, } | { "type": "pong", id: number, } | { "type": "notice", message: string, } | { "type": "control_request", pane: number, who: string, name: string, } | { "type": "trust_request", pane: number, who: string, name: string, } | { "type": "delta", delta: Delta, } | { "type": "follow", pane: number, msg: FollowMsg, } | { "type": "thread", target: ThreadTarget, msg: ThreadMsg, } | { "type": "call_signal", session: number, from: number, signal: CallSignal, cert?: unknown, } | { "type": "hand_call", id: number, tool: string, args: Record<string, unknown>, from: string, };
+export type ServerMsg = { "type": "hello", version: string, client: number, state: State, } | { "type": "state", state: State, } | { "type": "size", pane: number, cols: number, rows: number, } | { "type": "resync", pane: number, } | { "type": "error", id: number | null, message: string, } | { "type": "block", block: number, state: unknown, } | { "type": "pong", id: number, } | { "type": "notice", message: string, } | { "type": "control_request", pane: number, who: string, name: string, } | { "type": "trust_request", pane: number, who: string, name: string, } | { "type": "delta", delta: Delta, } | { "type": "follow", pane: number, msg: FollowMsg, } | { "type": "thread", target: ThreadTarget, msg: ThreadMsg, } | { "type": "hand_call", id: number, tool: string, args: Record<string, unknown>, from: string, };
 
 export type Session = { id: number, name: string, tabs: Array<number>, };
 
@@ -2189,11 +2135,7 @@ threads?: Array<ThreadSummary>,
 /**
  * The conversations (#855) kept here that this person is in.
  */
-convs?: Array<Conversation>, 
-/**
- * Huddles (M63) on the sessions this person has a role in.
- */
-calls?: Array<Call>, };
+convs?: Array<Conversation>, };
 
 export type TabView = { id: number, name: string | null, root: Node, cols: number, rows: number, owner: number | null, zoom: number | null, layout: Layout, };
 
@@ -2608,7 +2550,6 @@ export type OpName = keyof typeof OPS;
 /** The Labs flags (`arugula_proto::flags::FLAGS`), in order. */
 export const FLAGS = [
   { name: "chat", title: "Chat", about: "Threads on panes and sessions, and the chat page.", default: false, local_only: false },
-  { name: "huddles", title: "Huddles", about: "Voice calls on a session.", default: false, local_only: false },
   { name: "vms", title: "VMs and sandboxes", about: "VM tabs and panes, machines and the sandboxes page. Needs a sandbox provider.", default: false, local_only: false },
   { name: "studio", title: "Studio apps", about: "Studio app blocks. Needs a linked studio.", default: false, local_only: false },
   { name: "workspaces", title: "Chant workspaces", about: "Chant workspace blocks.", default: false, local_only: false },

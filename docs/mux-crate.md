@@ -1,6 +1,10 @@
 # The daemon's core as a lib crate
 
 > The moves are done (tickets #460, #701–#705); this note is now the design record.
+> Huddles were removed since (2026-10-18, DECISIONS.md "Huddles are removed"):
+> `labs/calls.rs`, `mux/call_ops.rs` and `Subscriber.device` are gone, and
+> the mux no longer depends on `arugula-e2e`. Where the plan below names
+> them, it is the record of what was moved.
 
 
 A design note for #459 (part of #387, item 4). It proposes what moves out
@@ -128,15 +132,14 @@ forget_on}` when a pane closes, so its uploads go with it.
 **Rules.** `mux::start` opens `rules.json` only to put `rules::Rules`
 into `BlockEnv` and `MuxHandle`. `rules.rs` names `mcp::same_tool`.
 
-**Labs.** The mux holds `labs::Threads` and `labs::Calls`, and calls
+**Labs.** The mux holds `labs::Threads`, and calls
 `labs::threads::{names, mentions, calls_agent}`, `labs::vms_unavailable`
 and `labs::stop_beholds`. pane.rs calls `labs::machine_start`. Seventeen
 `#[cfg(feature = "labs")]` lines sit in the core files:
 
 - `Block::wrote_run`, `BlockCtx::block` and `BlockCtx::update_reason`;
 - `Api::GuestInput`, `Api::GuestSize` and `Api::GuestLeft`;
-- `mux/thread_ops.rs` and `mux/call_ops.rs`, with their twins in
-  `mux/labs_off.rs`.
+- `mux/thread_ops.rs`, with its twins in `mux/labs_off.rs`.
 
 The other direction matters as much. Integrations reach the core through
 `MuxHandle` (`send`, `api`, `events`, and the fields `store`, `provider`,
@@ -148,7 +151,7 @@ sites) and `store::now_ms` (33) are used everywhere.
 
 `Daemon` itself is private to `mux/`. No integration touches its fields
 directly. They reach them through the mux's own files: `thread_ops.rs`
-and `call_ops.rs` for chat and huddles, `attention.rs` for the IDE, and
+for chat, `attention.rs` for the IDE, and
 `api_calls.rs` and `who_may.rs` for editors.
 
 ## The line

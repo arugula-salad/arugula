@@ -543,7 +543,7 @@ pub(crate) fn answer(app: &App, owner: bool) -> HostAnswer {
 /// or say how to turn it on (#171). Cheap: nothing here asks anyone.
 ///
 /// What a stranger doesn't get follows the machine's Labs flags: threads
-/// and huddles are a flag each, and studio and VMs need theirs as well as
+/// are a flag, and studio and VMs need theirs as well as
 /// their own setup. Managoat, out of Labs (#942), needs only a login.
 pub(crate) fn features(app: &App) -> HostFeatures {
     let dir = app.control.state_dir();
@@ -557,7 +557,6 @@ pub(crate) fn features(app: &App) -> HostFeatures {
         fountain: crate::labs::fountain_login_here(&app.mux.shell_env),
         studio: on.has(flags::STUDIO) && crate::labs::studio_here(),
         threads: on.has(flags::CHAT),
-        calls: on.has(flags::HUDDLES),
         flags: Some(on.names().map(str::to_owned).collect()),
     }
 }

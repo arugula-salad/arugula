@@ -1,6 +1,6 @@
 //! Labs: the features that are not part of the core (Managoat, studio apps
-//! with hud, chant workspaces, VMs with their sandboxes, guest ssh, huddles
-//! and chat, and the Forgejo and GitLab forges: everything listed in
+//! with hud, chant workspaces, VMs with their sandboxes, guest ssh and chat,
+//! and the Forgejo and GitLab forges: everything listed in
 //! #452 to #457 is here), behind the cargo feature `labs`. The feature is on by default, so a release build has all of it;
 //! `--no-default-features` leaves it out, for fast local builds, for agents
 //! working on core, and for the CI job `core`. (The runtime switches, the
@@ -92,9 +92,8 @@ pub mod sandbox;
 pub mod sprites;
 #[cfg(feature = "labs")]
 pub mod tea;
-// Chat (M61) and huddles (M63) are the core's: `arugula_mux::labs::{threads,
-// calls}`, with the mux's handling in `mux/thread_ops.rs` and
-// `mux/call_ops.rs` (twins in `mux/labs_off.rs`).
+// Chat (M61) is the core's: `arugula_mux::labs::threads`, with the mux's
+// handling in `mux/thread_ops.rs` (twins in `mux/labs_off.rs`).
 #[cfg(feature = "labs")]
 pub mod wearing;
 #[cfg(feature = "labs")]

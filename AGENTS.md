@@ -75,10 +75,10 @@ nothing marked `mux:` names the edge or the block kinds.
   and `agentenv.rs`): the task that owns the layout, the
   panes and every client (`mod.rs`), with one file per area: `attention.rs`,
   `clients.rs`, `blocks.rs`, `api_calls.rs`, `who_may.rs`, `thread_ops.rs`,
-  `machines.rs`, `call_ops.rs`, `info.rs`, `config.rs`, and the traits it
-  calls out through, `outside.rs` (`thread_ops.rs` and `call_ops.rs` are Labs;
-  `labs_off.rs` has their twins). Next to it: threads on panes
-  (`mux:labs/threads.rs`), huddles (`mux:labs/calls.rs`), and, in the daemon,
+  `machines.rs`, `info.rs`, `config.rs`, and the traits it calls out
+  through, `outside.rs` (`thread_ops.rs` is Labs; `labs_off.rs` has its
+  twins). Next to it: threads on panes (`mux:labs/threads.rs`), and, in the
+  daemon,
   gates waiting for a person (`gate.rs`), hands (`hand.rs`), Web Push
   (`push.rs`).
 - **Panes** (`mux:`): a process on a PTY and its VT thread (`pane.rs`),
@@ -132,11 +132,12 @@ and tested, but get no new features.
 ## Labs
 
 A flag per feature turns on what a stranger doesn't get (#385, #464, #665):
-`chat`, `huddles`, `vms`, `studio`, `workspaces`, `guest-ssh`,
+`chat`, `vms`, `studio`, `workspaces`, `guest-ssh`,
 `swarm-themes`, `forges`, `agents`. Managoat left Labs (#942, F5): it has
 no flag and needs only a login ([docs/managoat.md](docs/managoat.md)); a
 feature that leaves takes its row out of `FLAGS` and puts its name in
-`flags::RETIRED`, so an old file naming it is ignored. They're named flags in `flags.json` in the state
+`flags::RETIRED`, so an old file naming it is ignored (`huddles` too: huddles
+were removed, DECISIONS.md "Huddles are removed"). They're named flags in `flags.json` in the state
 dir (`arugula_proto::flags`: the `FLAGS` registry, `get`, `on`, `set`, `all`;
 read on every call, never cached), set by `arugulad flags chat on` or the
 owner's *Developer settings…* in the web client (`flags.list` and `flag.set`
@@ -155,11 +156,10 @@ only through the surface in `labs/mod.rs`, which explains the pattern. Managoat
 "Fountain is out of Labs"), studio apps, chant workspaces, and VMs (the Sprites adapter, machines, resident
 daemons, the provider tunnel and the tailnet sandbox supervisor) and guest ssh
 (`labs/guest_ssh.rs`; `russh` is an optional dependency, and a build without
-Labs answers `/api/guests` with 501), and chat and huddles (`crates/mux/src/labs/threads.rs`,
-`labs/calls.rs`, with the mux's handling in `crates/mux/src/mux/thread_ops.rs` and
-`call_ops.rs`, which need `Daemon`'s fields; a build without Labs answers
-the thread routes with 501 and a huddle message with an error, and never
-touches the state dir's `threads/`), and the Forgejo and GitLab forges
+Labs answers `/api/guests` with 501), and chat (`crates/mux/src/labs/threads.rs`, with the mux's handling in
+`crates/mux/src/mux/thread_ops.rs`, which needs `Daemon`'s fields; a build
+without Labs answers the thread routes with 501 and never touches the
+state dir's `threads/`), and the Forgejo and GitLab forges
 (`labs/forgejo.rs`, `labs/gitlab.rs`, `labs/tea.rs`, `labs/forge_live.rs`,
 and `forge/labs_forges.rs`, the block's own connecting, which needs its
 fields; GitHub's PR and issue blocks are core, and `labs::forge_allowed`

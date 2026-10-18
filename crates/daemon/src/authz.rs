@@ -57,8 +57,6 @@ fn policy(method: &Method, path: &str) -> Policy {
     let pane = |s: &str| s.parse::<PaneId>().ok();
     let get = method == Method::GET;
     match parts.as_slice() {
-        // M63: for huddles, which anyone with a session may join.
-        ["api", "turn"] if get => Policy::Anyone,
         ["api", "panes", id, "capture" | "tail" | "wait" | "export.cast"] if get => {
             pane(id).map_or(Policy::Owner, |p| Policy::On(p, Role::Viewer))
         }

@@ -149,10 +149,6 @@ impl Daemon {
             ClientMsg::BlockPatches => {
                 self.patched.insert(client, Default::default());
             }
-            ClientMsg::CallJoin { session } => self.call_join(&sub, session),
-            ClientMsg::CallLeave { session } => self.call_leave(&sub, session),
-            ClientMsg::CallMute { session, muted } => self.call_mute(&sub, session, muted),
-            ClientMsg::CallSignal { session, to, signal } => self.call_signal(&sub, session, to, signal),
             // The server hands these to `App::hands` (S33).
             ClientMsg::Hand { .. } | ClientMsg::HandReply { .. } => {}
             ClientMsg::Focus { pane } => {
@@ -577,16 +573,9 @@ impl Daemon {
                     })
                     .collect()
             });
-            let (machines, presence, threads, convs, calls) =
-                people.entry((who.clone(), me.clone())).or_insert_with(|| {
-                    (
-                        self.machines_for(&who),
-                        self.presence(&who),
-                        self.threads_for(&who, &me),
-                        self.convs_for(&who),
-                        self.calls_for(&who),
-                    )
-                });
+            let (machines, presence, threads, convs) = people.entry((who.clone(), me.clone())).or_insert_with(|| {
+                (self.machines_for(&who), self.presence(&who), self.threads_for(&who, &me), self.convs_for(&who))
+            });
             let Some(sent) = self.sent.get_mut(&client) else { continue };
             let mut delta = Delta::default();
             for (id, v) in view.iter() {
@@ -633,10 +622,6 @@ impl Daemon {
                 sent.convs = convs.clone();
                 delta.convs = Some(convs.clone());
             }
-            if sent.calls != *calls {
-                sent.calls = calls.clone();
-                delta.calls = Some(calls.clone());
-            }
             if !delta.is_empty()
                 && let Some(c) = self.clients.get(&client)
             {
@@ -657,7 +642,6 @@ impl Daemon {
             presence: state.presence.clone(),
             threads: state.threads.clone(),
             convs: state.convs.clone(),
-            calls: state.calls.clone(),
         };
         let mut panes = Vec::with_capacity(state.panes.len());
         for p in &state.panes {
@@ -834,13 +818,6 @@ impl Daemon {
                 p.detach(client);
             }
         }
-        // Whoever lost the session leaves its huddle (and whoever was
-        // disconnected, every huddle).
-        let who: HashMap<ClientId, Principal> = self.clients.iter().map(|(id, c)| (*id, c.principal.clone())).collect();
-        self.calls.retain(|s, m| {
-            who.get(&m.client)
-                .is_some_and(|p| p.is_owner() || (!p.id().starts_with("link:") && acl.role(p, s).is_some()))
-        });
         // Sessions and roles changed with them: everyone starts over.
         self.full = true;
         self.broadcast();
@@ -854,7 +831,6 @@ impl Daemon {
         st.presence = self.presence(who);
         st.threads = self.threads_for(who, me);
         st.convs = self.convs_for(who);
-        st.calls = self.calls_for(who);
         if who.is_owner() {
             return st;
         }

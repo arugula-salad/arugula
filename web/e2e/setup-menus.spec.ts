@@ -52,11 +52,10 @@ test("menus offer only what this machine is set up for", async ({ page }) => {
     fountain: false,
     studio: false,
     threads: true,
-    calls: true,
     // Not joined to a control with a block domain (#150).
     block_channels: false,
     // `labs` in flags.json is every flag (#665).
-    flags: ["chat", "huddles", "vms", "studio", "workspaces", "guest-ssh", "swarm-themes", "forges", "agents"],
+    flags: ["chat", "vms", "studio", "workspaces", "guest-ssh", "swarm-themes", "forges", "agents"],
   });
   const [term] = await panes(page);
   const hidden = ["New VM pane on the right", "New VM tab", "Sandboxes…", "Managoat…", "Open a studio app…"];

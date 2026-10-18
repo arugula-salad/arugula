@@ -525,8 +525,6 @@ pub struct Control {
     /// Every URL control says it answers at (#507), from `/control.json`:
     /// their pages may frame this daemon's blocks.
     control_urls: std::sync::Mutex<Vec<String>>,
-    /// TURN credentials for huddles (M63), and when they were fetched.
-    turn: tokio::sync::Mutex<Option<(std::time::Instant, wire::IceServers)>>,
     /// Teams the owner's browser pinned (#233), by id: `<founder
     /// device>.<founder's root>`, in `team-pins.json`. Their rosters are
     /// fetched and checked as a shared team's, so their members can be
@@ -748,7 +746,6 @@ impl Control {
             no_relay,
             auth_v2: Default::default(),
             control_urls: Default::default(),
-            turn: Default::default(),
             team_pins: RwLock::new(
                 std::fs::read(state_dir.join(PINS_FILE))
                     .ok()
@@ -1594,29 +1591,6 @@ impl Control {
             return Err(v["error"].as_str().map_or_else(|| format!("control said {status}"), str::to_owned));
         }
         Ok(serde_json::from_value(v).unwrap_or_default())
-    }
-
-    /// ICE servers for a huddle (M63): control's TURN credentials, kept
-    /// for an hour of their eight; public STUN when this daemon isn't
-    /// joined to control or control can't be reached.
-    pub async fn ice_servers(&self) -> wire::IceServers {
-        let Some(e) = self.enrolled() else { return wire::IceServers::stun_only() };
-        let mut cached = self.turn.lock().await;
-        if let Some((at, v)) = &*cached
-            && at.elapsed() < Duration::from_secs(3600)
-        {
-            return v.clone();
-        }
-        match self.get::<wire::IceServers>(&e, wire::TURN).await {
-            Ok(v) => {
-                *cached = Some((std::time::Instant::now(), v.clone()));
-                v
-            }
-            Err(err) => {
-                warn!(error = %err, "no TURN credentials from control: STUN only");
-                wire::IceServers::stun_only()
-            }
-        }
     }
 
     /// A hosted sandbox's last session closed (M20): control deletes it.
@@ -3196,28 +3170,28 @@ pub(crate) mod tests {
     /// control says nothing of them, and go when the machine leaves.
     #[tokio::test]
     async fn control_pushes_labs_flags_and_the_machine_overrides() {
-        use arugula_proto::flags::{self, CHAT, HUDDLES, Source, VMS};
+        use arugula_proto::flags::{self, CHAT, STUDIO, Source, VMS};
         let r = rig("flags").await;
         r.fake.lock().unwrap().flags =
             Some(serde_json::json!({ "account": { "vms": false }, "team": { "chat": true, "vms": true } }));
         let c = r.daemon().await;
-        assert!(flags::get(&r.dir, CHAT) && !flags::get(&r.dir, VMS) && !flags::get(&r.dir, HUDDLES));
+        assert!(flags::get(&r.dir, CHAT) && !flags::get(&r.dir, VMS) && !flags::get(&r.dir, STUDIO));
         let source = |name| flags::explain(&r.dir).into_iter().find(|(f, _)| f.name == name).unwrap().1.source;
         assert_eq!((source(CHAT), source(VMS)), (Source::Team, Source::Account));
 
         // The machine forces one off; a team change doesn't move it.
         flags::set(&r.dir, CHAT, false).unwrap();
         r.fake.lock().unwrap().flags =
-            Some(serde_json::json!({ "team": { "chat": true, "huddles": true, "vms": true } }));
+            Some(serde_json::json!({ "team": { "chat": true, "studio": true, "vms": true } }));
         assert!(c.refresh_now(REFRESH_WAIT).await);
-        assert!(!flags::get(&r.dir, CHAT) && flags::get(&r.dir, HUDDLES));
+        assert!(!flags::get(&r.dir, CHAT) && flags::get(&r.dir, STUDIO));
         // VMs follow the account's word going away: the team's says on.
         assert!(flags::get(&r.dir, VMS) && source(VMS) == Source::Team);
 
         // A control from before flags says nothing: what was sent stays.
         r.fake.lock().unwrap().flags = None;
         assert!(c.refresh_now(REFRESH_WAIT).await);
-        assert!(flags::get(&r.dir, HUDDLES));
+        assert!(flags::get(&r.dir, STUDIO));
 
         // Leaving control: only the machine's own word is left.
         std::fs::remove_file(r.dir.join(FILE)).unwrap();
@@ -3225,7 +3199,7 @@ pub(crate) mod tests {
         while r.dir.join(flags::CONTROL_FILE).exists() && t.elapsed() < Duration::from_secs(10) {
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
-        assert!(!flags::get(&r.dir, HUDDLES) && !flags::get(&r.dir, VMS) && !flags::get(&r.dir, CHAT));
+        assert!(!flags::get(&r.dir, STUDIO) && !flags::get(&r.dir, VMS) && !flags::get(&r.dir, CHAT));
         let _ = std::fs::remove_dir_all(&r.dir);
     }
 

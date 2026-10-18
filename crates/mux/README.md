@@ -37,7 +37,7 @@ and `src/mux/outside.rs` (what the binary supplies), `src/pane.rs` (a process
 on a PTY and its VT thread) and `src/block.rs`.
 
 The `labs` feature carries what Labs puts inside the mux task (threads and
-huddles, `src/labs/`), with a twin for each item when it's off, so call sites
+VM machines, `src/labs/`), with a twin for each item when it's off, so call sites
 have no `cfg`. `arugulad`'s `labs` forwards it (`labs = ["arugula-mux/labs", …]`),
 so the two are on together.
 
