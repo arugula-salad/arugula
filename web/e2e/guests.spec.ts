@@ -60,7 +60,7 @@ test.afterAll(async () => {
   const wisp = (method: string, path: string) => fetch(`${WISP}/v1/sprites${path}`, { method, headers: { Authorization: `Bearer ${token}` } });
   try {
     const id = readFileSync(join(dir, "daemon-id"), "utf8").trim();
-    const list = await (await wisp("GET", `?prefix=illogical-eph-${id}-`)).json();
+    const list = await (await wisp("GET", `?prefix=arugula-eph-${id}-`)).json();
     for (const s of list.sprites ?? []) await wisp("DELETE", `/${s.name}`);
   } catch {
     // nothing to clean

@@ -72,7 +72,7 @@ test.afterAll(async () => {
     }
   })();
   if (id && token) {
-    const list = await (await wisp("GET", `?prefix=illogical-eph-${id}-`)).json();
+    const list = await (await wisp("GET", `?prefix=arugula-eph-${id}-`)).json();
     for (const s of list.sprites ?? []) await wisp("DELETE", `/${s.name}`);
   }
   if (state) rmSync(state, { recursive: true, force: true });
@@ -233,7 +233,7 @@ test("after a reboot the tab gets one fresh machine and each pane restores", asy
   await expect.poll(() => flat(page, vmB)).toContain("No such file");
   // One sprite, not one per pane.
   const id = readFileSync(join(state, "daemon-id"), "utf8").trim();
-  const list = await (await wisp("GET", `?prefix=illogical-eph-${id}-`)).json();
+  const list = await (await wisp("GET", `?prefix=arugula-eph-${id}-`)).json();
   expect(list.sprites.map((s: { name: string }) => s.name)).toEqual([sprite]);
 });
 

@@ -321,6 +321,12 @@ impl Config {
 
     /// The sprite names this daemon's machines get.
     pub(super) fn sprite_prefix(&self) -> String {
+        format!("arugula-eph-{}-", self.daemon_id)
+    }
+
+    /// What this daemon's machines were named before the rename (#509),
+    /// and still are while they run.
+    pub(super) fn old_sprite_prefix(&self) -> String {
         format!("illogical-eph-{}-", self.daemon_id)
     }
 

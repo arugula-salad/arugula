@@ -29,15 +29,20 @@ use crate::{provider::ServiceDef, server::App};
 
 /// The daemon's port inside a sandbox, unless asked otherwise.
 pub const DEFAULT_PORT: u16 = 7681;
-/// The provider service that keeps it running. Frozen (#504): daemons of
-/// other versions look for it in each other's sandboxes.
-pub const SERVICE: &str = "illogicald";
+/// The provider service that keeps it running.
+pub const SERVICE: &str = "arugulad";
+/// Its name in a sandbox made resident before the rename (#509).
+const OLD_SERVICE: &str = "illogicald";
 /// How long a new resident daemon gets to answer.
 const START_PATIENCE: Duration = Duration::from_secs(60);
 /// Our own machines' sandboxes (VM panes and tabs, any daemon's): not for
-/// opening shells on or making resident. Frozen (#504), with
-/// `sprite_prefix`: daemons of other versions share an account.
-const EPHEMERAL: &str = "illogical-eph-";
+/// opening shells on or making resident (`sprite_prefix`, and illogical's
+/// from before the rename, #509).
+const EPHEMERAL: [&str; 2] = ["arugula-eph-", "illogical-eph-"];
+
+fn ephemeral(sandbox: &str) -> bool {
+    EPHEMERAL.iter().any(|p| sandbox.starts_with(p))
+}
 
 /// Where the static binaries to copy in are.
 #[derive(Debug, Clone)]
@@ -69,7 +74,7 @@ pub async fn list(app: &App) -> Result<SandboxList, Failed> {
     };
     let sandboxes = all
         .into_iter()
-        .filter(|s| !s.name.starts_with(EPHEMERAL))
+        .filter(|s| !ephemeral(&s.name))
         .map(|s| SandboxInfo { host: resident(&s.name), name: s.name, status: s.status })
         .collect();
     let caps = p.caps();
@@ -94,7 +99,11 @@ pub async fn demote(app: &App, sandbox: &str) -> Result<Demoted, Failed> {
     let Some(p) = app.mux.provider.clone() else {
         return Err((StatusCode::SERVICE_UNAVAILABLE, "no sandbox provider is set up here".into()));
     };
-    if let Err(e) = p.delete_service(sandbox, SERVICE).await {
+    // Under its old name if it was made resident before the rename (#509).
+    let was = p.delete_service(sandbox, OLD_SERVICE).await;
+    if let Err(e) = p.delete_service(sandbox, SERVICE).await
+        && was.is_err()
+    {
         return Err((StatusCode::BAD_GATEWAY, format!("{e:#}")));
     }
     let hosts: Vec<String> = app
@@ -121,7 +130,7 @@ pub async fn make_resident(app: &App, sandbox: &str, req: PromoteRequest) -> Res
     if !(p.caps().fs && p.caps().services) {
         return Err(bad(format!("{} can't keep a daemon running (no files or services)", p.name())));
     }
-    if sandbox.starts_with(EPHEMERAL) {
+    if ephemeral(sandbox) {
         return Err(bad(format!("{sandbox} is a VM pane's machine")));
     }
     let binaries = app.binaries.clone().ok_or((
@@ -166,6 +175,8 @@ pub async fn make_resident(app: &App, sandbox: &str, req: PromoteRequest) -> Res
         env: vec![("PATH".into(), format!("{bin}:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin"))],
         dir: Some(home.clone()),
     };
+    // One made resident before the rename (#509) would hold the port.
+    let _ = p.delete_service(sandbox, OLD_SERVICE).await;
     p.put_service(sandbox, SERVICE, &def).await.map_err(gateway)?;
     // It answers (through the provider, with the token) before it's listed.
     let deadline = tokio::time::Instant::now() + START_PATIENCE;

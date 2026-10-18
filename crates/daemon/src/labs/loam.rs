@@ -1487,7 +1487,7 @@ mod tests {
     async fn a_pane_detaches_and_resumes_from_its_byte_count() {
         let (base, f) = fake().await;
         let lo = Arc::new(Loam::new(&base, "loam_k".into()).unwrap());
-        let (exec, mut rx) = pane(&lo, "illogical-eph-ab-1", shell());
+        let (exec, mut rx) = pane(&lo, "arugula-eph-ab-1", shell());
         let id = session(&mut rx).await;
         {
             let g = f.lock().unwrap();
@@ -1505,9 +1505,9 @@ mod tests {
         assert_eq!(output(&mut rx, 5).await, "hello");
         // The pane lets go (a daemon restart): the session carries on.
         drop(exec);
-        until("detached", || attached(&f, "illogical-eph-ab-1") == 0).await;
-        say(&f, "illogical-eph-ab-1", &id, b" while away");
-        let (exec, mut rx) = pane(&lo, "illogical-eph-ab-1", Begin::Resume { session: id.clone(), received: 5 });
+        until("detached", || attached(&f, "arugula-eph-ab-1") == 0).await;
+        say(&f, "arugula-eph-ab-1", &id, b" while away");
+        let (exec, mut rx) = pane(&lo, "arugula-eph-ab-1", Begin::Resume { session: id.clone(), received: 5 });
         assert_eq!(session(&mut rx).await, id);
         // Only what the pane didn't have.
         assert_eq!(output(&mut rx, 11).await, " while away");
@@ -1521,7 +1521,7 @@ mod tests {
         let lo = Arc::new(
             Loam::new(&base, "k".into()).unwrap().with_idle(Duration::from_millis(300), Duration::from_secs(60)),
         );
-        let sb = "illogical-eph-ab-2";
+        let sb = "arugula-eph-ab-2";
         let (exec, mut rx) = pane(&lo, sb, shell());
         session(&mut rx).await;
         assert_eq!(attached(&f, sb), 1);
@@ -1541,7 +1541,7 @@ mod tests {
     async fn a_pause_under_an_attached_pane_waits_for_input() {
         let (base, f) = fake().await;
         let lo = Arc::new(Loam::new(&base, "k".into()).unwrap());
-        let sb = "illogical-eph-ab-3";
+        let sb = "arugula-eph-ab-3";
         let (exec, mut rx) = pane(&lo, sb, shell());
         let id = session(&mut rx).await;
         exec.input(b"a".to_vec());
@@ -1565,17 +1565,17 @@ mod tests {
     async fn the_machine_going_and_a_hang_up_are_told_apart() {
         let (base, f) = fake().await;
         let lo = Arc::new(Loam::new(&base, "k".into()).unwrap());
-        let (exec, mut rx) = pane(&lo, "illogical-eph-ab-4", shell());
+        let (exec, mut rx) = pane(&lo, "arugula-eph-ab-4", shell());
         session(&mut rx).await;
         exec.hang_up();
         assert!(matches!(next(&mut rx).await, ExecEvent::Exited(Some(129))));
 
-        let (_exec, mut rx) = pane(&lo, "illogical-eph-ab-5", shell());
+        let (_exec, mut rx) = pane(&lo, "arugula-eph-ab-5", shell());
         session(&mut rx).await;
-        Provider::delete(&*lo, "illogical-eph-ab-5").await.unwrap();
+        Provider::delete(&*lo, "arugula-eph-ab-5").await.unwrap();
         assert!(matches!(next(&mut rx).await, ExecEvent::Lost { machine_gone: true }));
         // A session that isn't there any more (a stop, a restore).
-        let (_exec, mut rx) = pane(&lo, "illogical-eph-ab-4", Begin::Resume { session: "s-404".into(), received: 0 });
+        let (_exec, mut rx) = pane(&lo, "arugula-eph-ab-4", Begin::Resume { session: "s-404".into(), received: 0 });
         assert!(matches!(next(&mut rx).await, ExecEvent::Lost { machine_gone: false }));
         // Someone else's sandbox that doesn't exist is never made.
         let spawn = Spawn { program: "bash".into(), args: vec![], cwd: Default::default(), env: vec![] };
@@ -1588,8 +1588,8 @@ mod tests {
     async fn the_rest_of_the_provider() {
         let (base, f) = fake().await;
         let lo = Loam::new(&base, "k".into()).unwrap();
-        lo.create("illogical-eph-ab-6", Some("ghcr.io/arugula-salad/box@sha256:00")).await.unwrap();
-        lo.create("illogical-eph-ab-6", None).await.unwrap();
+        lo.create("arugula-eph-ab-6", Some("ghcr.io/arugula-salad/box@sha256:00")).await.unwrap();
+        lo.create("arugula-eph-ab-6", None).await.unwrap();
         lo.create("other", Some("base")).await.unwrap();
         {
             let g = f.lock().unwrap();
@@ -1597,8 +1597,8 @@ mod tests {
             assert_eq!(g.created[1]["template"], "base");
         }
         put_to_sleep(&f, "other", "stopped");
-        let names: Vec<_> = lo.list("illogical-eph-").await.unwrap().into_iter().map(|s| s.name).collect();
-        assert_eq!(names, ["illogical-eph-ab-6"]);
+        let names: Vec<_> = lo.list("arugula-eph-").await.unwrap().into_iter().map(|s| s.name).collect();
+        assert_eq!(names, ["arugula-eph-ab-6"]);
         assert_eq!(lo.status("other").await.unwrap().unwrap().status, "cold");
         assert!(lo.status("nope").await.unwrap().is_none());
         lo.wake("other").await.unwrap();

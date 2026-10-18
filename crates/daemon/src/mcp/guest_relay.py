@@ -18,21 +18,24 @@ import threading
 
 path = sys.argv[-1]
 pidfile = path + ".pid"
+# Where an agent started before the rename (#509) connects.
+was = path.replace("/arugula-mcp-", "/illogical-mcp-")
 
-# The relay before us, if it's still there.
-try:
-    with open(pidfile) as f:
-        old = int(f.read().strip())
-    with open(f"/proc/{old}/cmdline", "rb") as f:
-        cmdline = f.read()
-        if b"arugula-mcp-relay" in cmdline and old != os.getpid():
-            os.kill(old, signal.SIGTERM)
-except (OSError, ValueError):
-    pass
-try:
-    os.unlink(path)
-except FileNotFoundError:
-    pass
+# The relay before us, if it's still there (at either path).
+for p in {path, was}:
+    try:
+        with open(p + ".pid") as f:
+            old = int(f.read().strip())
+        with open(f"/proc/{old}/cmdline", "rb") as f:
+            cmdline = f.read()
+            if b"arugula-mcp-relay" in cmdline and old != os.getpid():
+                os.kill(old, signal.SIGTERM)
+    except (OSError, ValueError):
+        pass
+    try:
+        os.unlink(p)
+    except FileNotFoundError:
+        pass
 
 os.umask(0o077)
 listener = socket.socket(socket.AF_UNIX)
@@ -40,6 +43,11 @@ listener.bind(path)
 listener.listen(16)
 with open(pidfile, "w") as f:
     f.write(str(os.getpid()))
+if was != path:
+    try:
+        os.symlink(path, was)
+    except OSError:
+        pass
 print("arugula: MCP relay on", path, file=sys.stderr, flush=True)
 
 lock = threading.Lock()

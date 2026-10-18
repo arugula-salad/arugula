@@ -31,10 +31,10 @@ pub const CLIENT: &str = include_str!("guest_client.py");
 pub type Serve = Arc<dyn Fn(PaneId, DuplexStream) + Send + Sync>;
 
 /// The relay's socket in the guest, per block (a VM tab can hold several).
-/// Frozen (#504): an agent started before the rename has this path in its
-/// `mcpServers`, and the relay a restarted daemon opens must be there.
+/// An agent started before the rename (#509) has `/tmp/illogical-mcp-N.sock`
+/// in its `mcpServers`: the relay links that to this.
 pub fn socket(id: PaneId) -> String {
-    format!("/tmp/illogical-mcp-{id}.sock")
+    format!("/tmp/arugula-mcp-{id}.sock")
 }
 
 /// The `mcpServers` entry a VM agent gets: the client, on stdio.
@@ -357,7 +357,8 @@ mod tests {
         }
         let dir = std::env::temp_dir().join(format!("arugula-relay-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let sock = dir.join("mcp.sock").display().to_string();
+        let sock = dir.join("arugula-mcp-1.sock").display().to_string();
+        let was = dir.join("illogical-mcp-1.sock").display().to_string();
         let count = Arc::new(std::sync::atomic::AtomicU64::new(0));
 
         let (mut relay, pipe) = local_relay(&sock, "arugula-mcp-relay");
@@ -384,8 +385,9 @@ mod tests {
         assert_eq!((r["id"].as_u64(), r["result"]["session"].as_u64()), (Some(1), Some(1)), "{r}");
 
         // A second client (an agent restarting its MCP client) is a session
-        // of its own.
-        let mut b = client(&sock);
+        // of its own: here, one started before the rename (#509), at the
+        // old path.
+        let mut b = client(&was);
         b.send(init.clone());
         assert_eq!(b.recv()["result"]["session"], 2);
         drop(b);

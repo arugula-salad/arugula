@@ -47,7 +47,7 @@ impl Drop for Daemon {
             let auth = format!("Authorization: Bearer {token}");
             let list = Command::new("curl")
                 .args(["-s", "-H", &auth])
-                .arg(format!("{WISP}/v1/sprites?prefix=illogical-eph-{}-", id.trim()))
+                .arg(format!("{WISP}/v1/sprites?prefix=arugula-eph-{}-", id.trim()))
                 .output()
                 .map(|o| o.stdout)
                 .unwrap_or_default();

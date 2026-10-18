@@ -157,7 +157,7 @@ fn claude_code_in_a_vm() {
     approve_a_command(&d, id, 300);
     let machines: Value = d.get("/api/machines");
     let sprite = machines[0]["sprite"].as_str().unwrap().to_owned();
-    assert!(sprite.starts_with("illogical-eph-"), "{machines}");
+    assert!(sprite.starts_with("arugula-eph-"), "{machines}");
     // Closing it deletes its machine.
     d.post(&format!("/api/panes/{id}/close"), json!({}));
     d.wait_for("its machine to go", || d.get("/api/machines").as_array().unwrap().is_empty());
