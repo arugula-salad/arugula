@@ -4,9 +4,10 @@
 //
 // - **The question** is the card (telemetry-card.tsx), shown to the owner
 //   alone, only on a page talking to the daemon directly, while the daemon
-//   says nobody has answered. Control's page asks about the account
-//   instead (M104), and asks nothing about the machine: one question is
-//   enough there, and the machine's switch is in its settings.
+//   says nobody has answered. On control's page it comes after the
+//   account's question (M104) has its answer, or straight away from a
+//   control that doesn't ask: each machine the person owns asks once, as
+//   it's shown there. Not on a read-only link.
 // - **The switch** is *Usage and crash reports…* in the machine's settings
 //   (the machine menu, or the account menu's *This machine*), and on the
 //   phone's sheet, with the same preview.
@@ -31,6 +32,9 @@ const ABOUT =
  * control's page, nor a read-only link through control). */
 let followed: Client | null = null;
 let direct = false;
+/** Whether the card may show now (on control's page: once the account's
+ * question is out of the way). */
+let mayAsk = () => false;
 /** Its `telemetry.get`, once read (null: not yet, not the owner, or a
  * daemon from before M101). */
 let info: TelemetryInfo | null = null;
@@ -75,8 +79,10 @@ const noteTo =
 
 /** Follow the shown machine's client: read its answer once its owner is
  * connected, and count for it while that's yes. `isDirect`: this page
- * talks to the daemon itself. */
-export function followMachine(client: Client, isDirect: boolean) {
+ * talks to the daemon itself, and counts for it. `ask`: whether the card
+ * may show (by default, only when direct). */
+export function followMachine(client: Client, isDirect: boolean, ask: () => boolean = () => isDirect) {
+  mayAsk = ask;
   if (followed === client) return;
   unsubscribe();
   // The machine before: what it counted goes to it, then no more.
@@ -129,6 +135,11 @@ function count() {
   } else if (counting()) stopCounting();
 }
 
+/** Something `mayAsk` reads changed: draw the card again. */
+export function machineTelemetryChanged() {
+  changed();
+}
+
 export function openMachineTelemetry(client: Client) {
   dialog = client;
   changed();
@@ -153,7 +164,7 @@ export function MachineTelemetryLayer() {
       />
     );
   const c = followed;
-  if (!c || !direct || !info || info.why !== "not_asked" || later || automated() || !owner(c)) return null;
+  if (!c || !mayAsk() || !info || info.why !== "not_asked" || later || automated() || !owner(c)) return null;
   return (
     <TelemetryCard
       about={ABOUT}

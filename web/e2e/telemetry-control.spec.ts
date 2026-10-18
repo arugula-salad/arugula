@@ -3,10 +3,11 @@
 // says so (this one does, `__arugulaTelemetry`). Put away unanswered, it
 // asks again on the next load; answered, never again. Yes sends what the
 // page counted as `page day` (to a fake PostHog here); the switch under
-// Sign-in and account turns it off.
+// Sign-in and account turns it off. Then each machine the account owns asks
+// once (M103), shown there, after the account's question is answered.
 
 import { spawn, type ChildProcess } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -22,6 +23,7 @@ let base = "";
 const procs: ChildProcess[] = [];
 const dirs: string[] = [];
 let gh: Server;
+let github = "";
 let posthog: Server;
 /** Events that reached the fake PostHog. */
 const events: { event: string; distinct_id: string; properties: Record<string, unknown> }[] = [];
@@ -37,7 +39,7 @@ function temp(what: string) {
 test.beforeAll(async () => {
   gh = fakeGithub(0);
   await new Promise((r) => gh.once("listening", r));
-  const github = `http://127.0.0.1:${(gh.address() as AddressInfo).port}`;
+  github = `http://127.0.0.1:${(gh.address() as AddressInfo).port}`;
   posthog = createServer((req, res) => {
     let body = "";
     req.on("data", (d) => (body += d));
@@ -153,4 +155,81 @@ test("the card asks once, yes sends counts, and the switch turns them off", asyn
   await expect(page.locator("[data-account-menu]").first()).toBeVisible({ timeout: 20_000 });
   await page.waitForTimeout(500);
   await expect(card(page)).toHaveCount(0);
+});
+
+test("a machine the account owns asks once on control's page, after the account's question", async ({ browser }) => {
+  test.setTimeout(120_000);
+  const ctx = await browser.newContext();
+  // A new account (the test before answered for its own).
+  await ctx.addCookies([{ name: "fake_github_login", value: "machine-owner", url: github }]);
+  await ctx.addInitScript(() => Object.assign(window, { __arugulaTelemetry: true }));
+  const page = await ctx.newPage();
+  await page.goto("/");
+  await page.locator("[data-signin=github]").click();
+  await page.locator("[data-stored-codes]").check();
+  await page.locator("[data-saved-codes]").click();
+  await expect(card(page)).toBeVisible({ timeout: 20_000 });
+
+  // One machine of the account's, nothing keeping its telemetry off, its
+  // reports going nowhere.
+  const state = temp("mac");
+  const env: NodeJS.ProcessEnv = { ...process.env, ARUGULA_TELEMETRY_URL: "http://127.0.0.1:9" };
+  for (const k of ["CI", "DO_NOT_TRACK", "ARUGULA_TELEMETRY", "NEXTEST_RUN_ID"]) delete env[k];
+  const joining = spawn("../target/debug/arugulad", ["join", base, "--name", "mac", "--state-dir", state], { stdio: ["pipe", "pipe", "ignore"], env });
+  procs.push(joining);
+  const link = await new Promise<string>((res) => {
+    let out = "";
+    joining.stdout!.on("data", (d) => {
+      out += d;
+      const m = out.match(/(http\S+#join=[A-Z0-9.-]+)/);
+      if (m) res(m[1]);
+    });
+  });
+  const exited = new Promise<number | null>((r) => joining.on("exit", r));
+  await page.goto(link);
+  await page.locator("[data-approve-join]").click();
+  expect(await exited).toBe(0);
+  procs.push(
+    spawn(
+      "../target/debug/arugulad",
+      [
+        ...["--listen", ANY, "--name", "mac", "--state-dir", state],
+        ...["--shell", "bash --norc --noprofile", "--no-manager-env", "--tailscale-socket", "/nonexistent/sock"],
+      ],
+      { stdio: "ignore", env: { ...env, ARUGULA_WISP_TOKEN_FILE: "/nonexistent" } },
+    ),
+  );
+  await expect
+    .poll(async () => ((await (await ctx.request.get("/api/directory")).json()) as { daemons: { online: boolean }[] }).daemons.map((d) => d.online), {
+      timeout: 20_000,
+    })
+    .toEqual([true]);
+  await page.goto("/");
+  await expect.poll(() => page.evaluate(() => !!window.__arugula?.client.e2e && window.__arugula.client.connected), { timeout: 20_000 }).toBe(true);
+
+  // The account's question first, alone: the machine's waits.
+  await expect(card(page)).toBeVisible({ timeout: 20_000 });
+  await expect(card(page)).toContainText("from your account on this page");
+  await page.waitForTimeout(1000);
+  await expect(card(page)).toHaveCount(1);
+  await card(page).getByRole("button", { name: "No thanks" }).click();
+
+  // Then the machine's, with its preview.
+  await expect(card(page)).toBeVisible({ timeout: 20_000 });
+  await expect(card(page)).toContainText("from this machine: versions, which features are used");
+  await card(page).getByText("What's sent").click();
+  await expect(card(page).locator("[data-telemetry-preview] pre")).toContainText('"preview_only": true');
+  await card(page).getByRole("button", { name: "Yes, send them" }).click();
+  await expect(card(page)).toHaveCount(0);
+  const consent = join(state, "telemetry.json");
+  await expect.poll(() => existsSync(consent) && (JSON.parse(readFileSync(consent, "utf8")) as { telemetry: boolean }).telemetry).toBe(true);
+  expect((JSON.parse(readFileSync(consent, "utf8")) as { via: string }).via).toBe("web");
+  expect(await answer(page)).toBe(false);
+
+  // Answered both: never asked again.
+  await page.reload();
+  await expect.poll(() => page.evaluate(() => !!window.__arugula?.client.e2e && window.__arugula.client.connected), { timeout: 20_000 }).toBe(true);
+  await page.waitForTimeout(1500);
+  await expect(card(page)).toHaveCount(0);
+  await ctx.close();
 });
