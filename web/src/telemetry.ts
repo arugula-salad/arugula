@@ -83,6 +83,8 @@ export function startCounting(to: Send) {
     () => removeEventListener("pagehide", onHide),
     () => clearInterval(timer),
   ];
+  // Says it's counting, for a spec to wait for (never what was counted).
+  document.documentElement.dataset.usageCounts = "";
 }
 
 /** Stop, and drop what was counted but not sent. */
@@ -90,6 +92,7 @@ export function stopCounting() {
   for (const f of stopFns) f();
   stopFns = [];
   send = null;
+  delete document.documentElement.dataset.usageCounts;
   counts = { views: {}, web_errors: 0 };
 }
 

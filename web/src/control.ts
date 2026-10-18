@@ -363,14 +363,17 @@ export interface PageConsent {
   ask: boolean;
 }
 
-/** This page's counts to control, under the signed-in account. A
- * `keepalive` fetch as the page goes away, so it still arrives. Control
- * saying no (the account turned it off elsewhere) stops the counting. */
+/** This page's counts to control, under the signed-in account. As the
+ * page goes away, a beacon, which the browser sends after it's gone (a
+ * `keepalive` fetch if it won't take one). Control saying no (the account
+ * turned it off elsewhere) stops the counting. */
 async function sendPageCounts(c: PageCounts, leaving: boolean): Promise<boolean> {
+  const body = JSON.stringify(c);
+  if (leaving && navigator.sendBeacon?.("/api/telemetry/page", new Blob([body], { type: "application/json" }))) return true;
   const res = await fetch("/api/telemetry/page", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(c),
+    body,
     keepalive: leaving,
   });
   return res.status !== 403;
