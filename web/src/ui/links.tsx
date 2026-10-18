@@ -12,6 +12,7 @@ import { CONV_MEMBERS_SEE, type ConvGrant, type ConvLink, type ConvLinkState, ty
 import type { MenuItem } from "./menu";
 import { getFleet } from "./hosts";
 import { sources, type Source } from "./places";
+import { useEscape } from "./keys";
 
 type Open = { kind: "add"; client: Client; pane: PaneId } | { kind: "grants"; client: Client; pane: PaneId };
 
@@ -86,20 +87,6 @@ async function link(client: Client, pane: PaneId, home: Source, conv: Conversati
   }
 }
 
-/** Escape closes a dialog, before anything under it hears the key. */
-function useEscape(close: () => void) {
-  useEffect(() => {
-    const key = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      e.preventDefault();
-      e.stopPropagation();
-      close();
-    };
-    window.addEventListener("keydown", key, true);
-    return () => window.removeEventListener("keydown", key, true);
-  }, []);
-}
-
 function AddToConv({ client, pane, close }: { client: Client; pane: PaneId; close: () => void }) {
   const all = sources(client, getFleet());
   const choices = all.flatMap((s) => s.client.convs().map((c) => ({ s, c })));
@@ -112,7 +99,7 @@ function AddToConv({ client, pane, close }: { client: Client; pane: PaneId; clos
   useEffect(() => {
     if (making) input.current?.focus();
   }, [making]);
-  useEscape(close);
+  useEscape("links.close", close);
   const chosen = choices.find((x) => `${x.s.host}/${x.c.id}` === picked);
   const linked = (c: Conversation) => c.links.some((l) => !l.closed && l.pane === pane && (l.machine ?? null) === (chosenMachine(c) ?? null));
   // The pane's machine as a link names it from that conversation's home.
@@ -216,7 +203,7 @@ function PaneGrants({ client, pane, close }: { client: Client; pane: PaneId; clo
   useEffect(() => {
     client.convGrants(pane).then(setGrants, (e: Error) => setError(e.message));
   }, [pane]);
-  useEscape(close);
+  useEscape("links.close", close);
   const revoke = async (g: ConvGrant) => {
     setError(null);
     try {

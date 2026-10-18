@@ -10,7 +10,8 @@ import { useSubscribe } from "./hooks";
 import { HostButton } from "./hosts";
 import { Places, type Place } from "./places";
 import { openMenu, type MenuItem } from "./menu";
-import { PALETTE_KEY, settingsItems } from "./commands";
+import { settingsItems } from "./commands";
+import { ariaKeys, keyHint } from "./keys";
 import { openPalette } from "./palette";
 import { UpdateChip } from "./update";
 import { WindowButtons } from "./window-buttons";
@@ -93,11 +94,11 @@ function CommandsButton({ client }: { client: Client }) {
       // Its name is "Commands": the chord beside it is for the eye, and
       // would otherwise make it a button named "…+Shift+P".
       aria-label="Commands"
-      aria-keyshortcuts={PALETTE_KEY.replace("Ctrl", "Control")}
+      aria-keyshortcuts={ariaKeys(keyHint("palette"))}
       onClick={() => openPalette(client)}
     >
       <span>Commands</span>
-      <kbd aria-hidden="true">{PALETTE_KEY}</kbd>
+      <kbd aria-hidden="true">{keyHint("palette")}</kbd>
     </button>
   );
 }

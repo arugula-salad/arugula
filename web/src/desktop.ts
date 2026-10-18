@@ -12,9 +12,7 @@
 //   closes the pane (not the window), Cmd-T opens a tab, Cmd-N a window, and
 //   Cmd-U attaches files (as Claude's app does): the agent composer's 📎 when
 //   one has focus or is the active pane, else the active terminal's
-//   *Attach file…* (M70).
-
-import type { Client } from "./client";
+//   *Attach file…* (M70). They're in ui/keys.ts's table.
 
 type AppInfo = { name?: string; platform?: "macos" | "linux" };
 
@@ -41,43 +39,8 @@ export function openInNewWindow(pane?: number) {
   window.open(pane === undefined ? "/" : `/#pane=${pane}`, "_blank");
 }
 
-/** Mark the page and take the app's keys. `client` is read on each press:
- * the page swaps it when the host changes. */
-export function setupDesktop(client: () => Client) {
+/** Mark the page for the stylesheet. */
+export function setupDesktop() {
   const platform = desktopPlatform();
-  if (!platform) return;
-  document.documentElement.dataset.desktop = platform;
-  if (platform !== "macos") return;
-  addEventListener(
-    "keydown",
-    (e) => {
-      if (!e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
-      const c = client();
-      const act = (
-        {
-          KeyW: () => {
-            const pane = c.active();
-            if (pane !== undefined) c.intent({ op: "close_pane", pane });
-          },
-          KeyT: () => {
-            if (c.session !== null) c.intent({ op: "new_tab", session: c.session, from_pane: c.active() ?? null });
-          },
-          KeyN: () => openInNewWindow(),
-          KeyU: () => {
-            const pane = c.active();
-            const el = pane === undefined ? null : document.querySelector(`[data-pane="${pane}"]`);
-            const composer = document.activeElement?.closest(".agent-composer") ?? el?.querySelector(".agent-composer");
-            const attach = composer?.querySelector<HTMLButtonElement>("button.attach");
-            if (attach) attach.click();
-            else if (pane !== undefined && c.panes.has(pane) && c.mayType(pane)) void c.attachFiles(pane);
-          },
-        } as Record<string, () => void>
-      )[e.code];
-      if (!act) return;
-      e.preventDefault();
-      e.stopPropagation();
-      act();
-    },
-    true,
-  );
+  if (platform) document.documentElement.dataset.desktop = platform;
 }

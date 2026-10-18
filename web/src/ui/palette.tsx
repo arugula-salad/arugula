@@ -20,7 +20,8 @@ import { closeSwarm, openSwarm, swarmRoute } from "../swarm/route";
 import { closeChat, isChatOpen, openChat, openChatView } from "./places";
 import { agentsRoute, closeAgentsPage, openAgentsPage } from "./agents-route";
 import { askText, closeMenu, type MenuItem } from "./menu";
-import { newTabItems, PALETTE_KEY, paneItems, sessionItems, settingsItems, tabItems } from "./commands";
+import { ariaKeys, keyHint } from "./keys";
+import { newTabItems, paneItems, sessionItems, settingsItems, tabItems } from "./commands";
 
 export interface Command {
   /** Stable enough to remember as a recent pick. */
@@ -52,21 +53,10 @@ function closePalette() {
   changed();
 }
 
-/** The chord anywhere, before the terminal sees it. Again closes it. */
-export function usePaletteShortcut(client: Client, phone: boolean) {
-  useEffect(() => {
-    const key = (e: KeyboardEvent) => {
-      // A Mac's Cmd too, for the desktop app (its menu leaves Cmd chords
-      // to the page) and Safari.
-      if (!((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && e.code === "KeyP")) return;
-      e.preventDefault();
-      e.stopPropagation();
-      if (open) closePalette();
-      else openPalette(client, phone);
-    };
-    window.addEventListener("keydown", key, true);
-    return () => window.removeEventListener("keydown", key, true);
-  }, [client, phone]);
+/** The chord (ui/keys.ts): opens it, and again closes it. */
+export function togglePalette(client: Client, phone: boolean) {
+  if (open) closePalette();
+  else openPalette(client, phone);
 }
 
 export function PaletteLayer() {
@@ -333,7 +323,7 @@ function Palette({ client, phone, close }: { client: Client; phone: boolean; clo
           class="picker-filter"
           placeholder="Type a command, a tab or a pane"
           aria-label="Command"
-          aria-keyshortcuts={PALETTE_KEY.replace("Ctrl", "Control")}
+          aria-keyshortcuts={ariaKeys(keyHint("palette"))}
           value={query}
           autocomplete="off"
           autocapitalize="off"

@@ -3,7 +3,7 @@
 // session.
 
 import { OPS, opPath } from "../ops";
-import { useEffect, useLayoutEffect, useState } from "preact/hooks";
+import { useEffect, useState } from "preact/hooks";
 import type { Client } from "../client";
 import type { InviteRequest, Invited, PaneId, Presence, Role, SessionId } from "../proto";
 import { roleLabel } from "./roles";
@@ -13,6 +13,7 @@ import { readVerifyCode, verifyWords } from "../e2e/words.ts";
 import { CopyText } from "./copy";
 import { countView } from "../telemetry";
 import { canScan, Scanner } from "./scan";
+import { useEscape } from "./keys";
 
 /** Control mode (M19): people are accounts there, and links go through it. */
 let control: ControlSession | null = null;
@@ -372,17 +373,7 @@ export function ShareDialog({ client }: { client: Client }) {
   }, [client]);
   // As soon as it's drawn (an effect waits for the next frame), and before
   // the terminal, which keeps the keys it takes.
-  useLayoutEffect(() => {
-    if (session === null) return;
-    const key = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      e.preventDefault();
-      e.stopPropagation();
-      setSession(null);
-    };
-    window.addEventListener("keydown", key, true);
-    return () => window.removeEventListener("keydown", key, true);
-  }, [session]);
+  useEscape("share.close", session === null ? null : () => setSession(null), [session]);
   if (session === null) return null;
   const name = client.state?.sessions.find((s) => s.id === session)?.name ?? `$${session}`;
   // Control mode: where a person it's shared with finds it (#551).

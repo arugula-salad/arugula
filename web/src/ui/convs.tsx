@@ -12,6 +12,7 @@ import { ConfirmRemove } from "./confirm";
 import { Avatar, getControlSession } from "./people";
 import { personPin, pinPerson } from "../control";
 import type { Source } from "./places";
+import { useEscape } from "./keys";
 
 /** Where a new conversation can live: the machines you own here, online. */
 export function homes(all: Source[]): Source[] {
@@ -28,16 +29,7 @@ function Dialog({ label, children, busy, ok, submit, cancel, error }: {
   cancel: () => void;
   error: string | null;
 }) {
-  useEffect(() => {
-    const key = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      e.preventDefault();
-      e.stopPropagation();
-      cancel();
-    };
-    window.addEventListener("keydown", key, true);
-    return () => window.removeEventListener("keydown", key, true);
-  }, []);
+  useEscape("conv-dialog.cancel", cancel);
   return (
     <div class="prompt-backdrop" onClick={(e) => e.target === e.currentTarget && cancel()}>
       <form

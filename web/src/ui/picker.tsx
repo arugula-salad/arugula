@@ -49,21 +49,6 @@ export function PickerLayer() {
   );
 }
 
-/** Ctrl+Shift+G anywhere (before the terminal sees it) opens the picker on
- * the active pane. */
-export function usePickerShortcut(client: Client, phone: boolean) {
-  useEffect(() => {
-    const key = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey && e.shiftKey && !e.altKey && e.key.toLowerCase() === "g")) return;
-      e.preventDefault();
-      e.stopPropagation();
-      openPicker(client, client.active(), phone);
-    };
-    window.addEventListener("keydown", key, true);
-    return () => window.removeEventListener("keydown", key, true);
-  }, [client, phone]);
-}
-
 type Row = { path: string; label: string; recent?: boolean; up?: boolean };
 
 const base = (p: string) => p.split("/").filter(Boolean).pop() ?? "/";

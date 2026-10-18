@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+# `just dev-fixture`: seed `just dev`'s daemon (127.0.0.1:7682, state in
+# ~/.local/state/arugula-dev) with a workspace to look at and screenshot
+# (S39, #1022): 8 sessions; "arugula" has 4 tabs, and its first tab 6 real
+# panes (tests running, a shell, an agent, an editor, a diff and a browser on
+# a port); two panes want you. It talks to that daemon's socket only, never
+# the one in $ARUGULA_SOCK, and closes what's there first.
+#
+#   just dev                 # in one terminal
+#   just dev-fixture         # in another; then open http://localhost:5173
+#
+# The agent is Claude Code's block, started with no prompt; without its ACP
+# adapter a shell stands in (it says so). "Tests" is a loop printing test
+# lines, not a real suite. There's no remote pane: that needs a second
+# daemon in the host list.
+set -euo pipefail
+
+state=${ARUGULA_DEV_STATE:-$HOME/.local/state/arugula-dev}
+sock=$state/sock
+repo=$(cd "$(dirname "$0")/.." && pwd)
+bin=${ARUGULA_BIN:-${CARGO_TARGET_DIR:-$repo/target}/debug/arugula}
+[[ -x $bin ]] || bin=$(command -v arugula) || { echo "no arugula CLI: cargo build -p arugula" >&2; exit 1; }
+[[ -S $sock ]] || { echo "no dev daemon at $sock: start it with \`just dev\`" >&2; exit 1; }
+
+# Never the daily daemon: only this socket, and nothing inherited.
+unset ARUGULA_SOCK ARUGULA_PANE
+a() { "$bin" --socket "$sock" "$@"; }
+# A new pane's id, from what `run` and the block commands print (`%N`).
+pane() { grep -o '%[0-9]*' | head -1; }
+
+# Start from nothing: close every pane there is (the daemon's own first
+# session too), so a rerun gives the same workspace.
+mapfile -t old < <(a ls | grep -o '^%[0-9]*' || true)
+if ((${#old[@]})); then a close "${old[@]}" >/dev/null; fi
+
+# A web server for the browser pane, in a tab of its own.
+port=$("$repo/scripts/free-port")
+site=$state/fixture-site
+mkdir -p "$site"
+cat >"$site/index.html" <<EOF
+<!doctype html><title>fixture site</title>
+<body style="font:16px system-ui;padding:2rem"><h1>Fixture site</h1><p>Served on :$port by python3 -m http.server.</p></body>
+EOF
+
+# 1. "arugula": its first tab is the six-pane one.
+# shellcheck disable=SC2016 # the loop expands in the pane
+tests=$(a run --session arugula --cwd "$repo" -- bash -c '
+  n=0
+  while :; do
+    n=$((n + 1))
+    echo "running 48 tests (round $n)"
+    for i in $(seq 1 48); do
+      printf "test layout::arrange_case_%02d ... ok\n" "$i"
+      sleep 0.4
+    done
+    echo "test result: ok. 48 passed; 0 failed; 0 ignored"
+    sleep 3
+  done' | pane)
+shell=$(a run --split "$tests" --cwd "$repo" | pane)
+editor=$(a edit "$repo/README.md" --line 1 --split "$shell" | pane)
+diff=$(a diff --repo "$repo" --split "$tests" | pane)
+if agent=$(a agent --title fixture-agent --cwd "$repo" --split "$editor" 2>/dev/null | pane) && [[ -n $agent ]]; then
+  :
+else
+  agent=""
+  echo "dev-fixture: no agent pane (Claude Code's ACP adapter didn't start here); a shell stands in" >&2
+  agent=$(a run --split "$editor" --cwd "$repo" -- bash -c 'echo "(an agent would be here)"; exec bash' | pane)
+fi
+a run --session arugula --cwd "$site" -- python3 -m http.server "$port" --bind 127.0.0.1 >/dev/null
+sleep 1
+browser=$(a open ":$port" --split "$diff" | pane)
+
+# 2–4: the other tabs of "arugula".
+a run --session arugula --cwd "$repo/web" >/dev/null
+log=$(a run --session arugula --cwd "$repo" -- bash -c 'git log --oneline -n 30; exec bash' | pane)
+
+# Attention on two panes: one asks, one is done (once their prompts are
+# up, which would clear it).
+sleep 2
+echo '{"message":"Claude needs your permission to use Bash"}' | a attention needs-input --pane "$shell" >/dev/null
+echo '{"message":"git log finished"}' | a attention "done" --pane "$log" >/dev/null
+
+# 5–11: seven more sessions, a pane or two each.
+for s in control site docs infra scratch review notes; do
+  p=$(a run --session "$s" --cwd "$repo" | pane)
+  if [[ $s == control || $s == review ]]; then a run --split "$p" --cwd "$repo" >/dev/null; fi
+done
+
+echo "dev-fixture: 8 sessions; the six-pane tab: tests $tests, shell $shell, editor $editor, diff $diff, agent ${agent:-none}, browser $browser on :$port"

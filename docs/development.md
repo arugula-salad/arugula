@@ -29,7 +29,10 @@ yourself, operating the hosted one and testing it are in
 
 `just dev` runs a separate daemon on 7682 (state in
 `~/.local/state/arugula-dev`) plus Vite on 5173, leaving the real one
-alone. `just dev-control [machine…]` shows the web client as
+alone. `just dev-fixture` fills that daemon with a workspace to look at
+and screenshot (S39): 8 sessions, one with 4 tabs, a tab of 6 panes
+(tests, a shell, an agent, an editor, a diff and a browser) and two
+panes wanting you. It replaces what's there. `just dev-control [machine…]` shows the web client as
 control.arugula.io serves it, signed in, with machines: a local control
 on 7690 with a fake GitHub, daemons joined to it through its relay
 (default `workstation laptop`, with Labs; `DEV_CONTROL_LABS=0` without),
