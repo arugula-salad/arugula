@@ -536,6 +536,10 @@ pub struct Event {
     pub pane: Option<PaneId>,
     #[serde(flatten)]
     pub kind: EventKind,
+    /// `/api/events` gives each one (M112): stable for an event read back
+    /// from a pane's log, so a client merges a refresh by it. Opaque.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub id: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

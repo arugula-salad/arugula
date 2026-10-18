@@ -92,6 +92,9 @@ impl Daemon {
                 let _ = reply.send(ok);
             }
             Api::Tell(who, message) => self.tell(&who, ServerMsg::Notice { message }),
+            Api::Scope(who, session, reply) => {
+                let _ = reply.send(self.scope(&who, session));
+            }
             Api::SessionEnds(session, reply) => {
                 let ends = self.mux.session(session).ok().map(|s| {
                     s.tabs

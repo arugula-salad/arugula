@@ -1410,6 +1410,9 @@ struct EventsQuery {
     /// Without follow: how far back, in seconds (default an hour).
     #[serde(default)]
     since: Option<u64>,
+    /// Only this session's panes (M112), and its machines' events.
+    #[serde(default)]
+    session: Option<SessionId>,
 }
 
 fn event_type(kind: &EventKind) -> String {
@@ -1431,12 +1434,71 @@ pub(crate) async fn attention_now(app: &App, id: PaneId) -> Option<EventKind> {
     Some(EventKind::Attention { state: p.info.attention, reason })
 }
 
-async fn events(State(app): AppState, Query(q): Query<EventsQuery>) -> Res<Response> {
+/// The panes someone may read the history and events of (M112), within a
+/// session if they name one: `None` for the owner with no session (all of
+/// them). A session that isn't there, or isn't theirs, is a 404.
+async fn scope_for(
+    app: &App,
+    who: &crate::acl::Principal,
+    session: Option<SessionId>,
+) -> Res<Option<crate::mux::Scope>> {
+    if who.is_owner() && session.is_none() {
+        return Ok(None);
+    }
+    let s = app.mux.api(|r| Api::Scope(who.clone(), session, r)).await.flatten();
+    match (s, session) {
+        (Some(s), _) => Ok(Some(s)),
+        (None, Some(id)) => Err(ApiError(StatusCode::NOT_FOUND, format!("no session ${id}"))),
+        (None, None) => Ok(Some(Default::default())),
+    }
+}
+
+/// An event's `id` (M112): its pane (or machine), time and type, and how
+/// many before it had all of those, hashed. Read back from a pane's log, an
+/// event gets the same one each time.
+#[derive(Default)]
+struct EventIds {
+    at_ms: u64,
+    seen: std::collections::HashMap<String, u32>,
+}
+
+impl EventIds {
+    fn assign(&mut self, e: &mut arugula_proto::Event) {
+        use sha2::{Digest, Sha256};
+        if e.at_ms != self.at_ms {
+            self.at_ms = e.at_ms;
+            self.seen.clear();
+        }
+        let machine = match &e.kind {
+            EventKind::Machine { machine, .. } => machine.to_string(),
+            _ => String::new(),
+        };
+        let what = format!(
+            "{}\0{}\0{}\0{machine}",
+            e.pane.map(|p| p.to_string()).unwrap_or_default(),
+            e.at_ms,
+            event_type(&e.kind)
+        );
+        let n = self.seen.entry(what.clone()).or_default();
+        e.id = hex::encode(&Sha256::digest(format!("{what}\0{n}").as_bytes())[..8]);
+        *n += 1;
+    }
+}
+
+async fn events(
+    State(app): AppState,
+    who: Option<axum::Extension<crate::acl::Principal>>,
+    Query(q): Query<EventsQuery>,
+) -> Res<Response> {
+    let who = who.map(|axum::Extension(w)| w).unwrap_or(crate::acl::Principal::Owner);
+    let scope = scope_for(&app, &who, q.session).await?;
     let types: Option<Vec<String>> = q.types.map(|t| t.split(',').map(|s| s.trim().to_owned()).collect());
     // #895: a follow of one pane's attention, named as such, starts with
     // where it is now.
-    let seed =
-        q.pane.filter(|_| q.follow == Some(1) && types.as_ref().is_some_and(|t| t.iter().any(|t| t == "attention")));
+    let seed = q
+        .pane
+        .filter(|_| q.follow == Some(1) && types.as_ref().is_some_and(|t| t.iter().any(|t| t == "attention")))
+        .filter(|p| scope.as_ref().is_none_or(|s| s.panes.contains_key(p)));
     let keep = move |e: &arugula_proto::Event| {
         q.pane.is_none_or(|p| e.pane == Some(p))
             && types.as_ref().is_none_or(|t| t.iter().any(|t| *t == event_type(&e.kind)))
@@ -1459,26 +1521,48 @@ async fn events(State(app): AppState, Query(q): Query<EventsQuery>) -> Res<Respo
         })
         .await
         .unwrap_or_default();
-        all.retain(&keep);
+        all.retain(|e| keep(e) && scope.as_ref().is_none_or(|s| s.keeps(e)));
         all.sort_by_key(|e| e.at_ms);
+        let mut ids = EventIds::default();
+        all.iter_mut().for_each(|e| ids.assign(e));
         let body: Vec<u8> = all.iter().flat_map(|e| line(e).to_vec()).collect();
         return Ok(([(header::CONTENT_TYPE, "application/x-ndjson")], body).into_response());
     }
     let rx = app.mux.events();
+    let mut ids = EventIds::default();
     let first = match seed {
-        Some(pane) => {
-            attention_now(&app, pane).await.map(|kind| arugula_proto::Event { at_ms: now_ms(), pane: Some(pane), kind })
-        }
+        Some(pane) => attention_now(&app, pane).await.map(|kind| {
+            let mut e = arugula_proto::Event { at_ms: now_ms(), pane: Some(pane), kind, id: String::new() };
+            ids.assign(&mut e);
+            e
+        }),
         None => None,
     };
     let first = stream::iter(first.map(|e| Ok::<_, Infallible>(line(&e))));
-    let s = stream::unfold(rx, move |mut rx| {
+    // A scoped follow (a session, or a guest) asks again as each event comes,
+    // so a pane opened since is in it and one taken away isn't; a pane that
+    // was in it stays, for its `closed` (it has left its tab by then).
+    let scoped = scope.map(|s| (s, app.clone(), who, q.session));
+    let s = stream::unfold((rx, ids, scoped), move |(mut rx, mut ids, mut scoped)| {
         let keep = keep.clone();
         async move {
             loop {
                 match rx.recv().await {
-                    Ok(e) if keep(&e) => return Some((Ok::<_, Infallible>(line(&e)), rx)),
-                    Ok(_) => continue,
+                    Ok(e) if !keep(&e) => continue,
+                    Ok(mut e) => {
+                        if let Some((was, app, who, session)) = &mut scoped {
+                            let now = app.mux.api(|r| Api::Scope(who.clone(), *session, r)).await.flatten();
+                            let now = now?;
+                            let gone = matches!(e.kind, EventKind::Closed) && was.keeps(&e);
+                            if !now.keeps(&e) && !gone {
+                                continue;
+                            }
+                            was.panes.extend(now.panes);
+                            was.machines.extend(now.machines);
+                        }
+                        ids.assign(&mut e);
+                        return Some((Ok::<_, Infallible>(line(&e)), (rx, ids, scoped)));
+                    }
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
                     Err(_) => return None,
                 }
@@ -1509,6 +1593,9 @@ struct HistoryQuery {
     /// Another host's synced history (`*`: every host's).
     #[serde(default)]
     host: Option<String>,
+    /// Only the panes in this session's tabs now (M112).
+    #[serde(default)]
+    session: Option<SessionId>,
 }
 
 /// Things that look like credentials, for warning before sharing (M14):
@@ -1562,7 +1649,22 @@ async fn secrets(State(app): AppState, Path(id): Path<SessionId>) -> Res<Respons
     Ok(Json(found).into_response())
 }
 
-async fn history_(State(app): AppState, Query(q): Query<HistoryQuery>) -> Res<Response> {
+async fn history_(
+    State(app): AppState,
+    who: Option<axum::Extension<crate::acl::Principal>>,
+    Query(q): Query<HistoryQuery>,
+) -> Res<Response> {
+    let who = who.map(|axum::Extension(w)| w).unwrap_or(crate::acl::Principal::Owner);
+    // M112: anyone reads the history of the panes they may read; another
+    // host's synced history stays the owner's, and a session is this host's.
+    if q.host.is_some() && !who.is_owner() {
+        return Err(ApiError(StatusCode::FORBIDDEN, "only the owner can do that".into()));
+    }
+    if q.host.is_some() && q.session.is_some() {
+        return Err(bad("session is this host's: not with host"));
+    }
+    let only =
+        scope_for(&app, &who, q.session).await?.map(|s| s.panes.into_iter().map(|(p, f)| (p, f.offset)).collect());
     let matching = q.matching.as_deref().map(Regex::new).transpose().map_err(|e| bad(format!("match: {e}")))?;
     let kind = q
         .kind
@@ -1578,6 +1680,7 @@ async fn history_(State(app): AppState, Query(q): Query<HistoryQuery>) -> Res<Re
         since_ms: q.since.map(|s| now_ms().saturating_sub(s * 1000)),
         cwd: q.cwd,
         matching,
+        only,
     };
     let store = app.mux.store.clone();
     let limit = q.limit.unwrap_or(100);

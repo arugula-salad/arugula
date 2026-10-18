@@ -2,8 +2,9 @@
 //! anything. Anyone else reaches only calls about one pane or block, in a
 //! session shared with them: reading it as a viewer, driving it (typing,
 //! keys, answering, approving an agent) as an editor. Everything that
-//! reaches the machine itself (files, new panes, machines, history across
-//! panes, hosts, sharing) stays the owner's.
+//! reaches the machine itself (files, new panes, machines, search across
+//! panes, hosts, sharing) stays the owner's. History and events (M112) are
+//! read across the panes someone may read, and no others.
 //!
 //! The WebSocket is checked in the mux, per message; this is the HTTP half.
 
@@ -102,6 +103,9 @@ fn policy(method: &Method, path: &str) -> Policy {
         ["api", "a2a", "agents", ..] => Policy::Handler,
         // M61: the mux checks each thread (a pane's, or a session's).
         ["api", "threads", ..] => Policy::Handler,
+        // M112: the handlers keep to the panes each person may read (and
+        // from where a "from now" share starts); synced hosts are the owner's.
+        ["api", "history" | "events"] if get => Policy::Handler,
         // M24: the handler shows each person what they may read, and checks
         // each pane acted on.
         ["api", "attention"] if get => Policy::Handler,
@@ -299,6 +303,9 @@ mod tests {
         assert_eq!(policy(&p, "/api/run"), Policy::Owner);
         assert_eq!(policy(&g, "/api/fs/read"), Policy::Owner);
         assert_eq!(policy(&g, "/api/search"), Policy::Owner);
+        // M112: history and events keep to what each person may read.
+        assert_eq!(policy(&g, "/api/history"), Policy::Handler);
+        assert_eq!(policy(&g, "/api/events"), Policy::Handler);
         assert_eq!(policy(&p, "/api/acl"), Policy::Owner);
         // #233: inviting, and the owner's browser's team pins.
         assert_eq!(policy(&p, "/api/invite"), Policy::Owner);

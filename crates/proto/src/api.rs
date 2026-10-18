@@ -38,8 +38,8 @@
 //! | GET | `/api/panes/N/tail` | `from=OFFSET\|last-command`, `until=OFFSET`, `follow=1`, `text=1` | bytes (streamed with follow); other blocks: their text |
 //! | GET | `/api/panes/N/wait` | `until=command-end\|exit\|match\|idle\|needs-input`, `re=`, `timeout=` secs | `WaitResult` |
 //! | GET | `/api/panes/N/export.cast` | | asciicast v3 |
-//! | GET | `/api/events` | `pane=`, `type=a,b`, `follow=1` | NDJSON `Event`s; a follow of one pane naming `attention` starts with its attention now (#895) |
-//! | GET | `/api/history` | `pane=`, `failed=1`, `since=` secs, `cwd=`, `match=` | `[HistoryEntry]` |
+//! | GET | `/api/events` | `pane=`, `session=`, `type=a,b`, `follow=1`, `since=` secs | NDJSON `Event`s, each with an `id` (M112); a guest gets the panes they may read; a follow of one pane naming `attention` starts with its attention now (#895) |
+//! | GET | `/api/history` | `pane=`, `session=`, `failed=1`, `since=` secs, `cwd=`, `match=`, `kind=`, `limit=`, `host=` | `[HistoryEntry]`, each with a stable `id` (M112); a guest gets the panes they may read |
 //! | GET | `/api/search` | `re=`, `since=` secs | `[SearchHit]` (output, and thread messages) |
 //! | GET | `/api/threads/pane-N`, `/api/threads/session-N` | | `ThreadMessages`: a thread (M61), as the caller may read it |
 //! | POST | `/api/threads/pane-N`, `/api/threads/session-N` | `ThreadPostRequest` | `ThreadPosted`: posted (needs drive); `agent` is `{delivered}` (or `{error}`) when an `@agent` went to the pane's agent |
@@ -545,6 +545,10 @@ pub struct HistoryEntry {
     /// Command, answer, agent or action. Older records have none: commands.
     #[serde(default)]
     pub kind: HistoryKind,
+    /// Stable across reads and unique (M112): a client merges a refresh by
+    /// it. Opaque; derived from the host, pane and output offset.
+    #[serde(default)]
+    pub id: String,
 }
 
 /// A handoff in a pane: from here on, `who` typed (`arugula log --who`).

@@ -26,6 +26,9 @@ pub struct Filter {
     pub since_ms: Option<u64>,
     pub cwd: Option<String>,
     pub matching: Option<Regex>,
+    /// Only these panes (M112: a session's, or what a guest may read), each
+    /// from an output offset (a "from now" share's floor; else 0).
+    pub only: Option<std::collections::BTreeMap<PaneId, u64>>,
 }
 
 /// Who typed in a pane, by handoff (M13), oldest first.
@@ -64,6 +67,7 @@ pub fn commands_in(events: Vec<(u64, Event)>, pane: PaneId, open: bool) -> Vec<H
                 host: None,
                 by,
                 kind,
+                id: String::new(),
             }),
             Event::End { at_ms, exit } => {
                 // The latest one still running: a note recorded inside a
@@ -85,6 +89,7 @@ pub fn history(store: &StateDir, f: &Filter, limit: usize) -> Vec<HistoryEntry> 
         .pane_dirs()
         .into_iter()
         .filter(|(id, _, _)| f.pane.is_none_or(|p| p == *id))
+        .filter(|(id, _, _)| f.only.as_ref().is_none_or(|o| o.contains_key(id)))
         .flat_map(|(id, open, dir)| commands(&dir, id, open));
     filtered(all, f, limit)
 }
@@ -92,7 +97,8 @@ pub fn history(store: &StateDir, f: &Filter, limit: usize) -> Vec<HistoryEntry> 
 /// Entries that pass the filter, the last `limit` by start time.
 pub fn filtered(all: impl Iterator<Item = HistoryEntry>, f: &Filter, limit: usize) -> Vec<HistoryEntry> {
     let dirs = f.cwd.as_deref().map(crate::paths::forms);
-    let mut all: Vec<HistoryEntry> = all
+    let mut all: Vec<HistoryEntry> = with_ids(all)
+        .filter(|c| f.only.as_ref().is_none_or(|o| o.get(&c.pane).is_some_and(|from| c.start >= *from)))
         // Only a command that ran has an exit code that means failure.
         .filter(|c| !f.failed || (c.kind.is_command() && c.exit.is_some_and(|e| e != 0)))
         .filter(|c| f.kind.is_none_or(|k| k == c.kind))
@@ -106,6 +112,22 @@ pub fn filtered(all: impl Iterator<Item = HistoryEntry>, f: &Filter, limit: usiz
     all.sort_by_key(|c| c.started_ms);
     let skip = all.len().saturating_sub(limit);
     all.split_off(skip)
+}
+
+/// Each entry's `id` (M112): its host, pane, output offset and start time,
+/// and how many before it in its pane had all of those (two notes recorded
+/// at once share an offset), hashed. The same on every read, as a pane's
+/// log only grows and pane ids are never reused.
+fn with_ids(all: impl Iterator<Item = HistoryEntry>) -> impl Iterator<Item = HistoryEntry> {
+    use sha2::{Digest, Sha256};
+    let mut seen: std::collections::HashMap<(Option<String>, PaneId, u64, u64), u32> = Default::default();
+    all.map(move |mut c| {
+        let n = seen.entry((c.host.clone(), c.pane, c.start, c.started_ms)).or_default();
+        let key = format!("{}\0{}\0{}\0{}\0{}", c.host.as_deref().unwrap_or(""), c.pane, c.start, c.started_ms, n);
+        *n += 1;
+        c.id = hex::encode(&Sha256::digest(key.as_bytes())[..8]);
+        c
+    })
 }
 
 /// Lines of output (escape sequences stripped) matching `re`, newest panes
@@ -250,7 +272,7 @@ pub fn stored_events(dir: &Path, pane: PaneId, since_ms: u64) -> Vec<ApiEvent> {
             _ => continue,
         };
         if at_ms >= since_ms {
-            out.push(ApiEvent { at_ms, pane: Some(pane), kind });
+            out.push(ApiEvent { at_ms, pane: Some(pane), kind, id: String::new() });
         }
     }
     out
@@ -391,6 +413,7 @@ mod tests {
             host: None,
             by: None,
             kind: HistoryKind::Command,
+            id: String::new(),
         };
         let cwds = [format!("{real}/repo"), format!("{real}/repo/src"), format!("{real}/repo2")];
         let under = |dir: String| {

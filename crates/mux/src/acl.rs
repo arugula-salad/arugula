@@ -333,6 +333,15 @@ impl Acl {
         Some(from.get(&pane).copied().unwrap_or(0))
     }
 
+    /// For a "from now" share (M13): when it was made (ms), for what has
+    /// a time and no offset (a pane's events).
+    pub fn share_at(&self, p: &Principal, session: SessionId) -> Option<u64> {
+        let Principal::User { id, .. } = p else { return None };
+        let g = self.grants.read().unwrap();
+        let grant = g.iter().find(|g| g.session == session && &g.principal == id)?;
+        grant.from.as_ref().map(|_| grant.at)
+    }
+
     /// For a "from now" share (M13): when it was made. Thread messages
     /// (M61) from before it aren't theirs to read either, but for the one
     /// thread they were invited into (#297): there, from its exception.

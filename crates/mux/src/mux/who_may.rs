@@ -322,6 +322,43 @@ impl Daemon {
         who.is_owner() || (self.sees(who, pane) && !self.meta.get(&pane).is_some_and(|m| m.private))
     }
 
+    /// The panes `who` may read the history and events of (M112), as
+    /// `Api::Scope` says.
+    pub(super) fn scope(&self, who: &Principal, session: Option<SessionId>) -> Option<super::Scope> {
+        let sessions: Vec<SessionId> = match session {
+            Some(s) => {
+                self.mux.session(s).ok()?;
+                if !who.is_owner() && self.config.acl.role(who, s).is_none() {
+                    return None;
+                }
+                vec![s]
+            }
+            None => self
+                .mux
+                .sessions
+                .iter()
+                .map(|s| s.id)
+                .filter(|s| who.is_owner() || self.config.acl.role(who, *s).is_some())
+                .collect(),
+        };
+        let mut out = super::Scope::default();
+        for s in sessions {
+            let Ok(sess) = self.mux.session(s) else { continue };
+            let at_ms = self.config.acl.share_at(who, s).unwrap_or(0);
+            for p in sess.tabs.iter().filter_map(|t| self.mux.tab(*t).ok()).flat_map(|t| t.root.panes()) {
+                if !self.readable(who, p) {
+                    continue;
+                }
+                let offset = self.config.acl.floor(who, s, p).unwrap_or(0);
+                out.panes.insert(p, super::Floor { offset, at_ms });
+                if let Some(m) = self.meta.get(&p).and_then(|m| m.host) {
+                    out.machines.insert(m);
+                }
+            }
+        }
+        Some(out)
+    }
+
     // ---- threads (M61)
 }
 
