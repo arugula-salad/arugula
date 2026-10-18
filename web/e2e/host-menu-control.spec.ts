@@ -137,7 +137,7 @@ test("with no sessions the bar and its host menu are still there, and after clos
   await expect.poll(() => sessions(page)).toBeGreaterThan(0);
   await closeAll(page);
   await expect.poll(() => sessions(page)).toBe(0);
-  await expect(page.locator(".empty")).toContainText("No sessions.");
+  await expect(page.locator(".empty")).toContainText("No sessions on");
   await expect(page.locator(".ws-head .host-button")).toHaveText(/mini/);
   // Nothing of a session in the bar, and no stale tab behind it.
   await expect(page.locator(".session-button, .tab")).toHaveCount(0);
@@ -152,7 +152,7 @@ test("with no sessions the bar and its host menu are still there, and after clos
   // ...and closing that last one lands on the working bar again.
   await closeAll(page);
   await expect.poll(() => sessions(page)).toBe(0);
-  await expect(page.locator(".empty")).toContainText("No sessions.");
+  await expect(page.locator(".empty")).toContainText("No sessions on");
   await expect(page.locator(".session-button, .tab")).toHaveCount(0);
   expect(await page.evaluate(() => [window.__arugula.client.session, window.__arugula.client.tab])).toEqual([null, null]);
   await page.locator(".host-button").click();
@@ -169,7 +169,7 @@ test("on a phone, with no sessions, the header opens the sheet with the machines
   await expect.poll(() => sessions(page)).toBeGreaterThan(0);
   await closeAll(page);
   await expect.poll(() => sessions(page)).toBe(0);
-  await expect(page.locator(".empty")).toContainText("No sessions.");
+  await expect(page.locator(".empty")).toContainText("No sessions on");
   await page.locator(".phone-bar .sheet-button").click();
   await expect(page.locator(".sheet-hosts")).toContainText("mini");
   await page.locator(".sheet-backdrop").click({ position: { x: 380, y: 750 } });

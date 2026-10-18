@@ -22,6 +22,7 @@ import { cloudPanes } from "../cloud";
 import { showSession } from "./shell/session-sidebar";
 import { paneName } from "./shell/overview";
 import { openAttention } from "./shell/attention-drawer";
+import { focusSessionSearch } from "./shell/prefs";
 import { agentsRoute, closeAgentsPage, openAgentsPage } from "./agents-route";
 import { askText, closeMenu, type MenuItem } from "./menu";
 import { ariaKeys, keyHint } from "./keys";
@@ -255,6 +256,20 @@ function places(client: Client, phone: boolean): Command[] {
   if (!phone) {
     if (!overviewRoute()) go("overview", "Go to the session overview", () => openOverview());
     go("attention", "Needs you: what waits on you, on every machine", () => openAttention());
+    // M113: a way out of a terminal (which keeps Tab) to the chrome, from
+    // the keyboard; Tab and the arrows go on from there.
+    if (at === "panes" && !overviewRoute()) {
+      const focus = (key: string, label: string, sel: string, before?: () => void) =>
+        go(key, label, () => {
+          before?.();
+          requestAnimationFrame(() => document.querySelector<HTMLElement>(sel)?.focus());
+        });
+      focus("focus-rail", "Move the keyboard to the rail", ".ws-rail button");
+      go("focus-sessions", "Move the keyboard to the sessions (search)", focusSessionSearch);
+      focus("focus-tabs", "Move the keyboard to the tabs", ".ws-tabs .tab[tabindex='0']");
+      focus("focus-toolbar", "Move the keyboard to the pane toolbar", ".pane-toolbar button:not(:disabled)");
+      focus("focus-header", "Move the keyboard to the header", ".ws-head button");
+    }
   }
   if (at !== "swarm") go("swarm", "Go to Swarm", openSwarm);
   if (client.hasThreads()) {

@@ -274,12 +274,12 @@ test("two machines join by code; one direct, one only through the relay", async 
   await shell(laptop, "box");
   expect(await laptop.evaluate(() => window.__arugula.client.path)).toBe("direct");
 
-  await expect(laptop.locator(".host-button [data-path]")).toHaveText("direct");
+  await expect(laptop.locator(".ws-head [data-connection]")).toHaveAttribute("data-connection", "direct");
 
   await showHost(laptop, "mac");
   await shell(laptop, "mac");
   expect(await laptop.evaluate(() => window.__arugula.client.path)).toBe("relayed");
-  await expect(laptop.locator(".host-button [data-path]")).toHaveText("relayed");
+  await expect(laptop.locator(".ws-head [data-connection]")).toHaveAttribute("data-connection", "relayed");
 
   // M70: a pasted image goes through the relay in chunks (2.5 MB: three),
   // inside the end-to-end channel, and lands on the machine whole.
@@ -759,7 +759,8 @@ test("with no sessions on the machine shown, control's page still has the host a
   await closeAll();
   await expect.poll(none).toBe(0);
   // It says which machine this is and where to switch.
-  await expect(laptop.locator("[data-no-sessions-host]")).toHaveText("No sessions on box. Switch machines from the menu at the top left.");
+  await expect(laptop.locator("[data-no-sessions-host]")).toHaveText("Not the machine you meant? Switch from the machine's name at the top left.");
+  await expect(laptop.locator("[data-no-sessions] .empty-title")).toHaveText("No sessions on box.");
   await expect(laptop.locator(".ws-head .host-button")).toHaveText(/box/);
   // The account's items are the account menu's, on the right, not the
   // host menu's.

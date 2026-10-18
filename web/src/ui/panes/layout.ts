@@ -6,6 +6,7 @@ import { paneIds, type Client } from "../../client";
 import type { PaneId, Preset, Rect, TabView } from "../../proto";
 import { keyHint } from "../keys";
 import type { MenuItem } from "../menu";
+import { offlineWhy } from "../shell/live";
 
 export const PRESETS: { preset: Preset; label: string }[] = [
   { preset: "columns", label: "Columns" },
@@ -23,7 +24,7 @@ export function ordinal(tab: TabView, pane: PaneId): number {
 export function layoutRefusal(client: Client, tab: TabView): string | null {
   const session = client.sessionOfTab(tab.id) ?? null;
   if (client.role(session) === "viewer") return "Viewers can't change the layout";
-  return null;
+  return offlineWhy(client);
 }
 
 /** Why the presets are off, if they are. */

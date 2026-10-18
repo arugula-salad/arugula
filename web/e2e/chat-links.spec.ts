@@ -201,7 +201,7 @@ test("each link's chip shows it live", async () => {
 test("revoking a grant on the pane closes its link for good", async () => {
   test.setTimeout(90_000);
   // On alices-2, from the pane's own menu.
-  await alice.locator("[data-chat] [data-open-panes]").click();
+  await alice.locator(".ws-rail [data-open-panes]").click();
   await expect(alice.locator("[data-chat]")).toBeHidden();
   await show(alice, "alices-2");
   const pane = await firstPane(alice);

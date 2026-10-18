@@ -356,19 +356,22 @@ export function ShareDialog({ client }: { client: Client }) {
     }
   };
   useEffect(() => {
-    openShare = (s) => {
+    const open = (s: SessionId) => {
       setSession(s);
       setErr("");
       setAsked(null);
       void load(s);
     };
+    openShare = open;
     if (pendingShare !== null) {
       const s = pendingShare;
       pendingShare = null;
-      openShare(s);
+      open(s);
     }
+    // Only its own: when the page goes from its first, bare tree to the
+    // workspace (M113), the dialog there opens before this one closes.
     return () => {
-      openShare = null;
+      if (openShare === open) openShare = null;
     };
   }, [client]);
   // As soon as it's drawn (an effect waits for the next frame), and before

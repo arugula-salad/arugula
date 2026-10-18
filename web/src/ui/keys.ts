@@ -42,6 +42,9 @@ export interface Binding {
   keys: Record<Os, string[]>;
   /** The hint, when the first chord doesn't say it (a range of keys). */
   hint?: Partial<Record<Os, string>>;
+  /** Whether it exists on this page at all (the desktop app's Cmd keys
+   * only in the app on macOS): without it, no hint shows it. */
+  here?: () => boolean;
   /** Whether it applies now; when it doesn't, the key goes on. */
   when?: (e: KeyboardEvent) => boolean;
   run: (e: KeyboardEvent) => void;
@@ -59,8 +62,9 @@ let appClient: () => Client | null = () => workspace?.client ?? null;
 const ctrlOrCmd = (code: string) => [`Ctrl+Shift+${code}`, `Meta+Shift+${code}`];
 const mac = desktopPlatform() === "macos";
 /** The desktop app's Cmd chords. `when` checks the app's platform, not the
- * browser's OS, so they're listed for both. */
-const appKey = (code: string) => ({ mac: [`Meta+${code}`], other: [`Meta+${code}`] });
+ * browser's OS, so they're listed for both; `here` keeps their hints off
+ * every other page (M113). */
+const appKey = (code: string) => ({ keys: { mac: [`Meta+${code}`], other: [`Meta+${code}`] }, here: () => mac });
 
 const table: Binding[] = [
   {
@@ -135,7 +139,7 @@ const table: Binding[] = [
   {
     id: "desktop.close",
     label: "Close pane",
-    keys: appKey("KeyW"),
+    ...appKey("KeyW"),
     when: () => mac && !!appClient(),
     run: () => {
       const c = appClient()!;
@@ -146,7 +150,7 @@ const table: Binding[] = [
   {
     id: "desktop.tab",
     label: "New tab",
-    keys: appKey("KeyT"),
+    ...appKey("KeyT"),
     when: () => mac && !!appClient(),
     run: () => {
       const c = appClient()!;
@@ -156,14 +160,14 @@ const table: Binding[] = [
   {
     id: "desktop.window",
     label: "New window",
-    keys: appKey("KeyN"),
+    ...appKey("KeyN"),
     when: () => mac && !!appClient(),
     run: () => openInNewWindow(),
   },
   {
     id: "desktop.attach",
     label: "Attach file",
-    keys: appKey("KeyU"),
+    ...appKey("KeyU"),
     when: () => mac && !!appClient(),
     run: () => {
       // The agent composer's 📎 when one has focus or is the active pane,
@@ -285,7 +289,7 @@ export function bindings(): readonly Binding[] {
  * it ("Ctrl+Shift+P", "⌘U"); undefined when it has none on this OS. */
 export function keyHint(id: string): string | undefined {
   const b = table.find((x) => x.id === id);
-  if (!b) return undefined;
+  if (!b || (b.here && !b.here())) return undefined;
   return b.hint?.[os] ?? (b.keys[os][0] ? formatChord(b.keys[os][0]) : undefined);
 }
 

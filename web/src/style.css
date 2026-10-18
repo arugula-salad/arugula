@@ -9083,6 +9083,8 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   display: flex;
   align-items: center;
   gap: 6px;
+  /* The same height with or without + (a guest has none). */
+  min-height: 26px;
   padding: 12px 8px 6px 14px;
 }
 
@@ -10576,3 +10578,109 @@ html[data-workspace="new"] .thread-panel {
   filter: brightness(1.1);
 }
 
+
+/* ---- M113 (#1028): the workspace's states and accessibility. */
+
+/* Many tabs scroll sideways (the tabs alone: + and ▾ stay beside them),
+   with a fade at an end that has more past it. */
+.ws-tabs .tabstrip {
+  flex: 1;
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+}
+
+.ws-tabs .tabstrip > .tabbar {
+  flex: 0 1 auto;
+}
+
+.ws-tabs .tabbar[data-overflow="end"] {
+  mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+}
+
+.ws-tabs .tabbar[data-overflow="start"] {
+  mask-image: linear-gradient(to left, #000 calc(100% - 28px), transparent);
+}
+
+.ws-tabs .tabbar[data-overflow="both"] {
+  mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent);
+}
+
+.ws-tabs :is(.new-tab, .new-tab-more):disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ws-tabs .tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* While the link is down, what the page heard last: nothing claims to be
+   working, running or connected (the header's chip says reconnecting). */
+.app.ws.stale :is(.ws-session, .ws-group, .pane-header, .ws-foot-needs) .ws-dot {
+  background: var(--muted);
+}
+
+.app.ws.stale .att {
+  opacity: 0.5;
+}
+
+.app.ws.stale .main {
+  filter: saturate(0.4);
+  opacity: 0.75;
+}
+
+.ws-stale {
+  flex: none;
+  padding: 5px 12px;
+  border-bottom: 1px solid var(--raised);
+  background: color-mix(in srgb, var(--warn) 12%, var(--surface));
+  color: var(--fg);
+  font-size: 12px;
+}
+
+.ws-group-stale {
+  font-weight: 400;
+}
+
+/* An empty machine says what a session is, and how to make one. */
+.empty .empty-title {
+  margin: 0 0 4px;
+  color: var(--fg);
+  font-size: 15px;
+}
+
+.empty .dim {
+  margin: 0 0 14px;
+  max-width: 420px;
+  text-align: center;
+}
+
+.empty [data-no-sessions-host] {
+  margin: 0 0 14px;
+}
+
+/* Disabled with a reason (the title says it): it looks it. */
+.app.ws :is(.ws-share, .ws-icon-button, .pt-add, .pt-preset, .pt-focus):disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Focus that can be seen on the chrome's other controls too. */
+.app.ws :is(.ws-sidebar input, .add-pane select, .ws-tabs [role="tab"], [role="option"], .ws-sidebar-resize, .ws-activity [tabindex="0"]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* Less motion, when asked for: nothing pulses, slides or fades. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

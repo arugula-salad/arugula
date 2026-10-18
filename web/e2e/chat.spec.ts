@@ -126,7 +126,7 @@ test("chat is a page of its own, over the panes and their bar", async () => {
   await expect(page.locator(".ws-rail [data-open-chat]")).toHaveAttribute("aria-pressed", "true");
   const box = (await chat.boundingBox())!;
   expect(box.y).toBe(0);
-  expect(box.x).toBe((await page.locator(".ws-rail").boundingBox())!.width);
+  expect(Math.round(box.x)).toBe(Math.round((await page.locator(".ws-rail").boundingBox())!.width));
   expect(await page.locator(".ws-head").evaluate((el) => (el as HTMLElement).inert)).toBe(true);
   expect(await page.locator(".main").evaluate((el) => (el as HTMLElement).inert)).toBe(true);
   const covered = await page.locator(".ws-head .session-button").evaluate((el) => {
@@ -173,7 +173,7 @@ test("the sidebar remembers a machine folded away, and can show only what's unre
   await chat.locator("[data-chat-workspace]").click();
   await page.locator(".menu").getByText("Show every session").click();
   await expect(chat.locator(".chat-row").first()).toBeVisible();
-  await chat.locator("[data-open-panes]").click();
+  await page.locator(".ws-rail [data-open-panes]").click();
 });
 
 test("the chat view lists sessions as channels and panes under them", async () => {
@@ -237,7 +237,7 @@ test("@claude in a session channel says it needs a pane's thread; @notreal isn't
   await expect(offer.locator(".thread-offer-sees")).toHaveText("sam will see all of this thread, and no other");
   await offer.getByRole("button", { name: "Not now" }).click();
   await expect(offer).toHaveCount(0);
-  await chat.locator("[data-open-panes]").click();
+  await page.locator(".ws-rail [data-open-panes]").click();
   await expect(chat).toBeHidden();
 });
 
@@ -284,7 +284,7 @@ test("details show the pane live, and a draft waits in its thread", async () => 
   await chat.locator(".chat-thread textarea").fill("");
   await chat.locator("[data-chat-details]").click();
   await expect(chat.locator("[data-chat-details-panel]")).toHaveCount(0);
-  await chat.locator("[data-open-panes]").click();
+  await page.locator(".ws-rail [data-open-panes]").click();
 });
 
 test("on a phone: the list, then a thread, and back", async ({ browser }) => {

@@ -197,6 +197,9 @@ export function newTabItems(client: Client, session: SessionId): MenuItem[] {
  * this session, and nothing else. Settings for the device, the machine and
  * the account are in the account menu (`settingsItems`). */
 export function sessionItems(client: Client, session: SessionId, rename: () => void, opts: { bar?: boolean } = {}): MenuItem[] {
+  // A guest's: the session's thread and notifications. Making, renaming
+  // and closing sessions are the machine owner's (M113).
+  if (client.state?.roles) return [...sessionThreadItems(client, session), ...agentNotifyItems(client, session)];
   return [
     { label: "New session", run: () => client.intent({ op: "new_session", name: null, from_pane: client.active() ?? null }) },
     // VMs and sandboxes need wisp (#180).

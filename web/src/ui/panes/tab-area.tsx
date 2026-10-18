@@ -80,7 +80,12 @@ export function TabArea({ client, tab, cell, phone }: { client: Client; tab: Tab
   const rev = client.state?.rev;
   useEffect(() => {
     const el = document.activeElement;
-    const idle = !el || el === document.body || el.closest(".menu, .bar button, .tab, .pane-toolbar button, .pane-header button");
+    // Not from where the keyboard took it (M113): someone moving through
+    // the chrome with Tab and the arrows keeps their place.
+    const idle =
+      !el ||
+      el === document.body ||
+      (el.closest(".menu, .bar button, .tab, .pane-toolbar button, .pane-header button") && !el.matches(":focus-visible"));
     const now = client.active(tab.id) ?? null;
     if (!phone && now !== null && idle) client.viewOf(now)?.focus();
   }, [client, rev, active, phone]);
@@ -88,7 +93,10 @@ export function TabArea({ client, tab, cell, phone }: { client: Client; tab: Tab
   const gridW = tab.cols * cell.width;
   const gridH = tab.rows * cell.height;
   const scale = area ? Math.min(1, area.w / gridW, area.h / gridH) : 1;
-  const elsewhere = tab.owner !== null && tab.owner !== client.clientId;
+  // Not while the link is down, nor to a viewer: neither has a say in its
+  // size (viewers see it letterboxed; the daemon takes editors' sizes).
+  const viewer = client.role(client.sessionOfTab(tab.id) ?? null) === "viewer";
+  const elsewhere = client.connected && !viewer && tab.owner !== null && tab.owner !== client.clientId;
 
   return (
     <div class={scale < 1 ? "tab-area scaled" : "tab-area"} ref={ref}>

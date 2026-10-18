@@ -39,6 +39,7 @@ import { noteLastTab, SessionSidebar } from "./shell/session-sidebar";
 import { TabStrip } from "./shell/tab-strip";
 import { PaneToolbar } from "./shell/pane-toolbar";
 import { ActivityDrawer } from "./shell/activity";
+import { connection } from "./shell/context-header";
 import { AttentionDrawer } from "./shell/attention-drawer";
 import { SessionOverview, useOverview } from "./shell/overview";
 import { TabArea } from "./panes/tab-area";
@@ -147,23 +148,35 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
     const session = state.sessions.find((s) => s.id === client.session) ?? state.sessions[0];
     // The chrome is all outside `.main`, so the panes' cells and who sizes
     // the tab are the panes' own business.
+    // M113: while the link is down, what's shown is the last word from the
+    // machine; the chrome greys what it can't vouch for (style.css).
+    const stale = !client.connected;
     return (
-      <div class="app ws">
+      <div class={stale ? "app ws stale" : "app ws"}>
         <Rail client={client} />
         <div class="ws-body">
           <ContextHeader client={client} setRenaming={setRenaming} inert={chatOpen} />
           <div class="ws-row" inert={chatOpen}>
             <SessionSidebar client={client} renaming={renaming} setRenaming={setRenaming} />
             <div class="ws-work">
-              <div class="ws-tabs">
-                {session ? (
+              {session ? (
+                <div class="ws-tabs">
                   <TabStrip client={client} session={session} renaming={renaming} setRenaming={setRenaming} />
-                ) : (
-                  <div class="tabbar" role="tablist">
-                    <CloudTabs />
+                </div>
+              ) : (
+                cloudPanes.opened.length > 0 && (
+                  <div class="ws-tabs">
+                    <div class="tabbar" role="tablist">
+                      <CloudTabs />
+                    </div>
                   </div>
-                )}
-              </div>
+                )
+              )}
+              {stale && (
+                <div class="ws-stale" role="status" data-stale-note>
+                  {connection(client).why}. What's shown is how it was; nothing here is live until it's back.
+                </div>
+              )}
               <ControlBanner client={client} />
               <NewMachineNote />
               <AgentsNudge client={client} />
@@ -218,21 +231,29 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
   );
 }
 
-/** The empty state, below the bar. Through control it says which machine
- * this is and where to switch, since the machine may not be the one meant. */
+/** The empty state, beside the sessions (or under the phone's header).
+ * Through control it says which machine this is and where to switch,
+ * since the machine may not be the one meant. A guest can't make one. */
 function NoSessions({ client, phone }: { client: Client; phone: boolean }) {
   useSubscribe((fn) => directory.subscribe(fn));
+  const host = directory.current || "this machine";
+  const guest = !!client.state?.roles;
   return (
-    <div class="empty">
-      <p>No sessions.</p>
+    <div class="empty" data-no-sessions>
+      <p class="empty-title">{guest ? `Nothing on ${host} is shared with you yet.` : `No sessions on ${host}.`}</p>
+      <p class="dim">
+        {guest
+          ? "When its owner shares a session with you, it shows here."
+          : "A session holds tabs, and each tab its panes: shells, agents, editors."}
+      </p>
       {directory.control && (
-        <p data-no-sessions-host>
-          No sessions on {directory.current}. Switch machines from the {phone ? "menu at the top" : "menu at the top left"}.
-        </p>
+        <p data-no-sessions-host>Not the machine you meant? Switch from the {phone ? "menu at the top" : "machine's name at the top left"}.</p>
       )}
-      <button class="primary" onClick={() => client.intent({ op: "new_session", name: null, from_pane: null })}>
-        New session
-      </button>
+      {!guest && (
+        <button class="primary" disabled={!client.connected} onClick={() => client.intent({ op: "new_session", name: null, from_pane: null })}>
+          New session
+        </button>
+      )}
     </div>
   );
 }

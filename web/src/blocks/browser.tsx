@@ -117,10 +117,10 @@ function BrowserBlock({ client, id, s }: { client: Client; id: PaneId; s: Browse
   return (
     <div class="browser">
       <div class="browser-bar">
-        <button title="Back" disabled={s.back.length === 0} onClick={() => call("back")}>
+        <button title="Back" aria-label="Back" disabled={s.back.length === 0} onClick={() => call("back")}>
           ←
         </button>
-        <button title="Reload" onClick={() => call("reload")}>
+        <button title="Reload" aria-label="Reload" onClick={() => call("reload")}>
           ↻
         </button>
         {port && s.machine && (
@@ -139,7 +139,7 @@ function BrowserBlock({ client, id, s }: { client: Client; id: PaneId; s: Browse
           <input name="url" value={shown(s)} spellcheck={false} autocomplete="off" />
         </form>
         {/^https?:/.test(s.url) && (
-          <a class="browser-open" href={s.url} target="_blank" rel="noopener noreferrer" title="Open in a new tab">
+          <a class="browser-open" href={s.url} target="_blank" rel="noopener noreferrer" title="Open in a new tab" aria-label="Open in a new tab">
             ↗
           </a>
         )}

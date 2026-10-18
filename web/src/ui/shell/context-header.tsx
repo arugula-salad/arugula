@@ -14,6 +14,7 @@ import { WindowButtons } from "../window-buttons";
 import type { Renaming } from "./rename-input";
 import { SessionButton } from "./session-sidebar";
 import { AttentionBell } from "./attention-drawer";
+import { offlineWhy } from "./live";
 
 export type Connection = "direct" | "relayed" | "reconnecting" | "offline";
 
@@ -102,7 +103,13 @@ export function ContextHeader({
       <AttentionBell client={client} />
       {/* Sharing is the daemon's owner's (M13), and in sight so it's found (#551). */}
       {session && !state.roles && (
-        <button class="ws-share" aria-label="Share session" title="Share this session with someone" onClick={() => shareSession(session.id)}>
+        <button
+          class="ws-share"
+          aria-label="Share session"
+          title={offlineWhy(client) ?? "Share this session with someone"}
+          disabled={!client.connected}
+          onClick={() => shareSession(session.id)}
+        >
           Share
         </button>
       )}

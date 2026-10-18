@@ -16,6 +16,7 @@ import { closePlace, currentPlace, openOverview } from "../places";
 import { openAttention } from "./attention-drawer";
 import { BranchIcon, MoreIcon, PanesIcon, PlusIcon, SearchIcon, TabsIcon } from "./icons";
 import { setSidebarOpen, setSidebarWidth, takeSearchFocus, useSidebar } from "./prefs";
+import { offlineWhy } from "./live";
 import { RenameInput, type Renaming } from "./rename-input";
 
 // ---- what a session row says, from real state only
@@ -172,14 +173,26 @@ export function SessionSidebar({
     }
   };
   const host = directory.current || "this machine";
+  // New sessions are the machine owner's (a guest's would be refused).
+  const owner = !state.roles;
+  const offline = offlineWhy(client);
   return (
     <aside class={narrow ? "ws-sidebar overlay" : "ws-sidebar"} style={{ width: `${width}px` }} aria-label={`Sessions on ${host}`} data-session-sidebar>
       <div class="ws-sidebar-head">
         <h2>Sessions</h2>
         <span class="ws-sidebar-count">{all.length}</span>
-        <button class="ws-icon-button" aria-label="New session" title={`New session on ${host}`} data-new-session onClick={create}>
-          <PlusIcon />
-        </button>
+        {owner && (
+          <button
+            class="ws-icon-button"
+            aria-label="New session"
+            title={offline ?? `New session on ${host}`}
+            data-new-session
+            disabled={!!offline}
+            onClick={create}
+          >
+            <PlusIcon />
+          </button>
+        )}
       </div>
       <label class="ws-search">
         <SearchIcon size={14} />
@@ -212,10 +225,12 @@ export function SessionSidebar({
                   // M111: what each one asks, in the attention drawer.
                   <button class="ws-group-open" data-open-attention-group title="See what needs you, on every machine (looking doesn't answer it)" onClick={() => openAttention()}>
                     {g.label} <span class="ws-group-count">{rows.length}</span>
+                    {offline && <span class="ws-group-stale"> · last known</span>}
                   </button>
                 ) : (
                   <>
                     {g.label} <span class="ws-group-count">{rows.length}</span>
+                    {offline && <span class="ws-group-stale"> · last known</span>}
                   </>
                 )}
               </h3>
@@ -242,7 +257,7 @@ export function SessionSidebar({
                 <button onClick={() => setQuery("")}>Clear the search</button>
               </>
             ) : (
-              <p>No sessions on {host}.</p>
+              <p>{owner ? `No sessions on ${host}.` : `Nothing on ${host} is shared with you.`}</p>
             )}
           </div>
         )}

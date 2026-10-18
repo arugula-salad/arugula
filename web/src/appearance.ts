@@ -412,13 +412,73 @@ export function setAppearance(change: Partial<Appearance>) {
   apply();
 }
 
+// ---- legible on every palette (M113, #1028)
+
+const channels = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+const toHex = (c: number[]) => `#${c.map((v) => Math.round(v).toString(16).padStart(2, "0")).join("")}`;
+
+function luminance(hex: string): number {
+  const [r, g, b] = channels(hex).map((v) => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+/** WCAG's contrast ratio between two `#rrggbb` colors. */
+export function contrast(a: string, b: string): number {
+  const [x, y] = [luminance(a), luminance(b)].sort((p, q) => q - p);
+  return (x + 0.05) / (y + 0.05);
+}
+
+const mix = (a: string, b: string, t: number) => {
+  const [x, y] = [channels(a), channels(b)];
+  return toHex(x.map((v, i) => v + (y[i] - v) * t));
+};
+
+/** `color`, moved toward `toward` only as far as it takes to read at 4.5:1
+ * on every one of `on`. */
+function legibleOn(color: string, on: string[], toward: string): string {
+  const ok = (c: string) => on.every((b) => contrast(c, b) >= 4.5);
+  if (ok(color)) return color;
+  let lo = 0;
+  let hi = 1;
+  for (let i = 0; i < 12; i++) {
+    const t = (lo + hi) / 2;
+    if (ok(mix(color, toward, t))) hi = t;
+    else lo = t;
+  }
+  return mix(color, toward, hi);
+}
+
+/** The words the chrome writes in each color: the dimmed, the accent and
+ * the status colors. */
+const TEXT = ["fg", "dim", "subtle", "accent", "warn", "ok", "danger", "info", "peach", "teal", "pink"] as const;
+
+/** The palette's UI colors as the page uses them (M113): a word in any of
+ * them reads at WCAG AA (4.5:1) on the backgrounds it sits on (bg, surface
+ * and raised, the hovered and picked rows'). Each palette keeps its
+ * colors where they already do; one that doesn't is moved toward white
+ * (on a dark palette) or black (on a light one) as little as it takes. A primary button's label likewise reads on the accent. */
+export function legible(p: Palette): Ui {
+  const u = { ...p.ui };
+  const on = [u.bg, u.surface, u.raised];
+  const end = p.light ? "#000000" : "#ffffff";
+  // Toward black or white, so a color keeps its hue (amber stays amber,
+  // only darker or lighter).
+  for (const k of TEXT) u[k] = legibleOn(u[k], on, end);
+  const label = [u["on-color"], "#000000", "#ffffff"].sort((a, b) => contrast(b, u.accent) - contrast(a, u.accent));
+  if (contrast(u["on-color"], u.accent) < 4.5) u["on-color"] = label[0];
+  return u;
+}
+
 /** Puts the appearance on the document: the palette as custom properties
  * (style.css's :root holds Mocha's, for a page that never runs this), the
  * finish and corners as attributes style.css keys on. */
 export function apply() {
   const p = palette();
   const root = document.documentElement;
-  for (const [k, v] of Object.entries(p.ui)) root.style.setProperty(`--${k}`, v);
+  for (const [k, v] of Object.entries(legible(p))) root.style.setProperty(`--${k}`, v);
   root.style.setProperty("--divider", p.ui.raised);
   root.style.colorScheme = p.light ? "light" : "dark";
   root.dataset.scheme = p.light ? "light" : "dark";

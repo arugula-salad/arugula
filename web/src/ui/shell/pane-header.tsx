@@ -123,7 +123,7 @@ export function PaneHeader({
       )}
       <span class="pane-header-type">{type}</span>
       <span class="pane-header-title">{title}</span>
-      {status.word && (
+      {status.word && client.connected && (
         <span class={`pane-header-status ${status.cls}`} data-pane-status={status.cls}>
           <span class={`ws-dot ${status.cls}`} aria-hidden="true" />
           {status.word}
