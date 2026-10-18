@@ -60,13 +60,16 @@ pub const VM_PORT: u16 = 13340;
 const START: Duration = Duration::from_secs(60);
 
 /// The extension every editor block has (`ext/`): it reports the active
-/// file and carries the theme.
+/// file and carries the themes (Slate, Latte and Mocha; a block's palette goes over
+/// them, `theme.rs`).
 pub const EXT_ID: &str = "arugula.arugula-editor";
-pub const EXT_VERSION: &str = "0.2.1";
+pub const EXT_VERSION: &str = "0.2.2";
 pub const EXT_FILES: &[(&str, &str)] = &[
     ("package.json", include_str!("ext/package.json")),
     ("extension.js", include_str!("ext/extension.js")),
     ("theme.json", include_str!("ext/theme.json")),
+    ("theme-light.json", include_str!("ext/theme-light.json")),
+    ("theme-mocha.json", include_str!("ext/theme-mocha.json")),
 ];
 
 /// What a new settings folder starts with. Later changes are the user's.

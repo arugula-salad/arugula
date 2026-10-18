@@ -17,12 +17,16 @@
 //!   `payload=[["openFile", …]]`), so a block made for a file, or brought
 //!   back after a restart, asks the server to open it as it loads.
 //!
+//! - **Its colors follow the page's palette** (#1048, `theme.rs`): the
+//!   page sends them, and they go into the block's workspace.
+//!
 //! In a VM there's no daemon socket for the extension to reach, so the
 //! block shows the file it was opened on and doesn't follow the cursor.
 
 pub mod link;
 pub mod presence;
 pub mod server;
+mod theme;
 pub mod vsix;
 
 use std::{
@@ -70,6 +74,9 @@ struct Config {
     /// The random part of its site's name (dev scheme).
     #[serde(default)]
     key: Option<String>,
+    /// The colors the page last sent (`theme.rs`).
+    #[serde(default)]
+    theme: Option<Value>,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -113,8 +120,12 @@ pub struct Editor {
     key: String,
     server: Arc<Server>,
     site: Arc<Site>,
-    /// The workspace file that names this block (this host only).
+    /// The folder of the workspace file that names this block (this host
+    /// only), and the file once it's open on a folder.
     workspace: Option<PathBuf>,
+    workspace_file: Mutex<Option<PathBuf>>,
+    /// The palette's colors, as the page sent them (#1048).
+    theme: Mutex<Option<Value>>,
     /// A load found no server: reload the frame once it's up.
     missed: AtomicBool,
     closed: AtomicBool,
@@ -174,6 +185,8 @@ impl Editor {
                 server,
                 site,
                 workspace,
+                workspace_file: Mutex::new(None),
+                theme: Mutex::new(config.theme.clone().filter(|t| theme::parse(t).is_ok())),
                 missed: AtomicBool::new(false),
                 closed: AtomicBool::new(false),
                 link: Mutex::new(None),
@@ -227,8 +240,8 @@ impl Editor {
             Some(dir) => {
                 let ws = dir.join(format!("{}.code-workspace", safe(&name)));
                 std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
-                let text = json!({ "folders": [{ "path": folder }], "settings": { "arugula.block": self.ctx.id } });
-                crate::store::write_atomic(&ws, text.to_string().as_bytes()).map_err(|e| e.to_string())?;
+                self.write_workspace(&ws, &folder)?;
+                *self.workspace_file.lock().unwrap() = Some(ws.clone());
                 format!("/?workspace={}", enc(&ws.display().to_string()))
             }
             None => format!("/?folder={}", enc(&folder)),
@@ -258,6 +271,38 @@ impl Editor {
         };
         self.ctx.changed();
         Ok(())
+    }
+
+    /// The workspace file (`ws`) on `folder`: it names the block, and has
+    /// the palette's colors while the theme is Arugula's.
+    fn write_workspace(&self, ws: &Path, folder: &str) -> Result<(), String> {
+        let theme = self.theme.lock().unwrap().as_ref().and_then(|t| theme::parse(t).ok());
+        let user = server::settings().and_then(|s| std::fs::read_to_string(s.dir.join("user/User/settings.json")).ok());
+        let old = std::fs::read_to_string(ws).ok();
+        let text = theme::workspace(
+            old.as_deref(),
+            folder,
+            json!(self.ctx.id),
+            theme.as_ref(),
+            theme::user_leaves_it(user.as_deref()),
+        );
+        crate::store::write_atomic(ws, text.to_string().as_bytes()).map_err(|e| format!("{}: {e}", ws.display()))
+    }
+
+    /// The page's palette (#1048): kept for a restart, and put in the
+    /// workspace, where the open window picks it up. A block in a VM has
+    /// no workspace of ours, so keeps the extension's theme.
+    fn set_theme(&self, args: Value) -> Result<Value, String> {
+        theme::parse(&args)?;
+        let changed = self.theme.lock().unwrap().replace(args.clone()).as_ref() != Some(&args);
+        let ws = self.workspace_file.lock().unwrap().clone();
+        let Some(ws) = ws.filter(|_| changed) else {
+            return Ok(json!({}));
+        };
+        let folder = self.state.lock().unwrap().folder.clone();
+        self.write_workspace(&ws, &folder)?;
+        self.ctx.changed();
+        Ok(json!({}))
     }
 
     fn failed(&self, why: String) {
@@ -367,6 +412,7 @@ impl Block for Editor {
             "line": st.line,
             "project": self.project.lock().unwrap().as_ref().map(|p| p.root.clone()),
             "key": self.key,
+            "theme": self.theme.lock().unwrap().clone(),
         })
     }
 
@@ -444,6 +490,7 @@ impl Block for Editor {
                 Ok(json!({}))
             }
             "state" => Ok(self.state()),
+            "theme" => self.set_theme(args),
             m => Err(no_method(BlockType::Editor, m)),
         };
         Box::pin(async move { result })

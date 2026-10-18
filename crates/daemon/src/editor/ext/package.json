@@ -3,7 +3,7 @@
   "displayName": "Arugula",
   "description": "Your editor in the Arugula swarm: who's in which file, follow its cursor from a phone, debugger stops and Claude Code's diffs on the rail. And Arugula's colours.",
   "publisher": "arugula",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "license": "MIT",
   "repository": { "type": "git", "url": "https://github.com/arugula-salad/arugula" },
   "homepage": "https://arugula.io",
@@ -40,6 +40,10 @@
         }
       }
     },
-    "themes": [{ "label": "arugula", "uiTheme": "vs-dark", "path": "./theme.json" }]
+    "themes": [
+      { "label": "arugula", "uiTheme": "vs-dark", "path": "./theme.json" },
+      { "label": "arugula light", "uiTheme": "vs", "path": "./theme-light.json" },
+      { "label": "arugula mocha", "uiTheme": "vs-dark", "path": "./theme-mocha.json" }
+    ]
   }
 }
