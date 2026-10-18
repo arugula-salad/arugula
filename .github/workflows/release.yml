@@ -121,10 +121,12 @@ jobs:
       - run: gh release download "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" -p 'arugula-editor-*.vsix' -D vsix
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - run: npx -y ovsx@1.2.0 publish --trusted-publishing --skip-duplicate --packagePath vsix/*.vsix
       - uses: azure/login@v2
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           allow-no-subscriptions: true
       - run: npx -y @vscode/vsce@4.0.0 publish --azure-credential --skip-duplicate --packagePath vsix/*.vsix
+      # Each store on its own: one refusing (Open VSX 406'd 0.2.1) doesn't hold back the other.
+      - if: ${{ !cancelled() }}
+        run: npx -y ovsx@1.2.0 publish --trusted-publishing --skip-duplicate --packagePath vsix/*.vsix

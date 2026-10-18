@@ -119,7 +119,7 @@ daemon's update check read it.
    `arugula` namespace) and the Visual Studio Marketplace (an Entra app
    that trusts the `marketplace` environment, #934), both by the
    workflow's OIDC token with no secret, skipping a version that's
-   already there: bump
+   already there, and trying each store even if the other refuses: bump
    `crates/daemon/src/editor/ext/package.json` to ship a new one. It builds
    no app.
 3. Running daemons find it within 12 hours and offer *Update now*
