@@ -965,6 +965,9 @@ pub enum BlockType {
     /// this one reaches, and this machine's recipes to offer. Config
     /// `{dir?}`.
     Agents,
+    /// A document an agent builds beside its pane: an outline, then
+    /// sections filled in live (#962). Config `{title}`.
+    Doc,
     /// A type a newer daemon has and this build doesn't know: its state
     /// still parses. Nothing opens one, and the web client's types leave
     /// it out.

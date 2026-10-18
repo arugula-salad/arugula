@@ -847,6 +847,7 @@ people signed in on any browser context, and machines joined to it.
 | M16 | `mcp.spec.ts`, "watched from a phone" | an MCP client's build drawn live on a Pixel 7, Failed on its Needs you, fixed and rerun by the client |
 | M27 | `editors.spec.ts` | an editor block opened from a Pixel 7 and from an iPhone, the file at its line on a warm server, timed against a 3 s budget (reported in the perf job's summary, not asserted) |
 | M26, M30 | `team-swarm-phones.spec.ts` | two teammates' swarms on a Pixel 7 (Chrome's network emulation, 150 ms, 1.6 Mbit/s) and an iPhone: grouped by person, cards along the bottom, a rerun from the iPhone's card seen on the Pixel, a tile tap opening the pane; and a machine on another network behind netem (Docker, [below](#tests-that-need-docker)) |
+| #963 | `doc.spec.ts` (Pixel 7), `doc.webkit.spec.ts` (iPhone) | a Doc's outline with every section's intent, then each fill appearing with no reload, on both; a script or `javascript:` link in a body staying text. The checks are `doc-steps.ts`'s |
 | #86 | `studio-phone.spec.ts` | a studio app from the template through the token API (a fake studio and box), `arugula studio login`, `hud share --role follower`, `arugula studio follower`, `arugula app`; a question answered from a Pixel 7 and a gate approved from an iPhone, with hud told who |
 
 Run one with `cd web && E2E_PORT=<port> pnpm exec playwright test
@@ -1262,6 +1263,34 @@ Only what no test can do:
   identity provider's login.
 - **Publishing the VS Code extension** to the Marketplace and Open VSX
   (M28): a publisher account and a release step.
+- **A Doc built by a real Claude Code (#963).** No `ANTHROPIC_API_KEY` in CI,
+  and the permission prompts are Claude Code's own, so the proof that an
+  agent can write a report without a prompt is a run. Before a PR that
+  changes what an agent sees of Docs merges:
+  1. Start a daemon of the branch with `docs` on, with a state directory and
+     a port of its own, so it leaves the daily one alone:
+
+     ```sh
+     just web && cargo build -p arugulad -p arugula
+     S=~/.local/state/arugula-doc-hand
+     target/debug/arugulad flags docs on --state-dir $S
+     target/debug/arugulad --listen 127.0.0.1:7690 --state-dir $S
+     ```
+
+     Open `http://127.0.0.1:7690/`. In a pane there, put the branch's `arugula`
+     first on `PATH` (`export PATH=$PWD/target/debug:$PATH`); the pane's
+     `ARUGULA_SOCK` points it at this daemon.
+  2. Run `arugula hooks install` (the default: no `--allow-acting`), and
+     check `arugula hooks status` says `read` present.
+  3. Start `claude` in the pane and ask: "Write a three-section report on
+     this repository's tests as a Doc, filling one section at a time."
+  4. Expect: no permission prompt anywhere (the pane or the phone's Needs
+     you); a Doc block beside the pane with the three headings and their
+     intents at once; each section's text appearing as it is written, with
+     no reload; every section filled at the end. The same run in the desktop
+     app (its window on this daemon) and on a phone.
+  5. Keep the screenshots for the PR's description, not the repository
+     ([Binaries](../AGENTS.md#binaries)).
 
 ## Planned
 

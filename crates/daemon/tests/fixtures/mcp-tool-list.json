@@ -4558,6 +4558,102 @@
       "annotations": {
         "destructiveHint": false,
         "idempotentHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": false,
+        "title": "Build a document for the user"
+      },
+      "description": "Build a Doc, a report, plan or write-up longer than a screen, in a block beside your pane that the user (and anyone the session is shared with) watches fill in. Make the outline first with new, so they see every section at once; then fill each section in order and say one sentence about it in the pane. Never write the Doc's files by hand.\n- new {sections, title, beside?}: A Doc: a block beside your pane that holds a report, plan or write-up, with its outline (every section's heading and intent) shown at once. Returns the block and the section ids (s1, s2, …); fill them next, in order.\n- fill {block, markdown, section}: Write one section of a Doc (its block, the section id, its Markdown): headings, paragraphs, lists, **bold**, *italic*, `code`, links and tables. No HTML, images or charts. A section is at most 64 KB, a Doc 40 sections and 1 MiB; filling a section again replaces it.",
+      "inputSchema": {
+        "$defs": {
+          "DocSection": {
+            "description": "One section of a Doc's outline.",
+            "properties": {
+              "heading": {
+                "description": "The section's heading.",
+                "type": "string"
+              },
+              "intent": {
+                "default": "",
+                "description": "One line on what the section will hold: the user reads it while the section is pending.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "heading"
+            ],
+            "type": "object"
+          },
+          "PaneArg": {
+            "anyOf": [
+              {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "description": "A pane or block: `7` or `\"%7\"`."
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "beside": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PaneArg"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "new: Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in)."
+          },
+          "block": {
+            "$ref": "#/$defs/PaneArg",
+            "description": "fill: The Doc block (from doc new)."
+          },
+          "kind": {
+            "description": "Which one (see the tool's description).",
+            "enum": [
+              "new",
+              "fill"
+            ],
+            "type": "string"
+          },
+          "markdown": {
+            "description": "fill: The section's body, in Markdown (at most 64 KB). Filling a section again replaces it.",
+            "type": "string"
+          },
+          "section": {
+            "description": "fill: The section's id (s1, s2, … from doc new).",
+            "type": "string"
+          },
+          "sections": {
+            "description": "new: Every section, in order (at most 40), so the user sees the whole outline at once.",
+            "items": {
+              "$ref": "#/$defs/DocSection"
+            },
+            "type": "array"
+          },
+          "title": {
+            "description": "new: The Doc's title.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
+      "name": "doc",
+      "title": "Build a document for the user"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
         "openWorldHint": true,
         "readOnlyHint": false,
         "title": "Start an agent"
@@ -10196,6 +10292,102 @@
       },
       "name": "show",
       "title": "Show the user a block"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": false,
+        "title": "Build a document for the user"
+      },
+      "description": "Build a Doc, a report, plan or write-up longer than a screen, in a block beside your pane that the user (and anyone the session is shared with) watches fill in. Make the outline first with new, so they see every section at once; then fill each section in order and say one sentence about it in the pane. Never write the Doc's files by hand.\n- new {sections, title, beside?}: A Doc: a block beside your pane that holds a report, plan or write-up, with its outline (every section's heading and intent) shown at once. Returns the block and the section ids (s1, s2, …); fill them next, in order.\n- fill {block, markdown, section}: Write one section of a Doc (its block, the section id, its Markdown): headings, paragraphs, lists, **bold**, *italic*, `code`, links and tables. No HTML, images or charts. A section is at most 64 KB, a Doc 40 sections and 1 MiB; filling a section again replaces it.",
+      "inputSchema": {
+        "$defs": {
+          "DocSection": {
+            "description": "One section of a Doc's outline.",
+            "properties": {
+              "heading": {
+                "description": "The section's heading.",
+                "type": "string"
+              },
+              "intent": {
+                "default": "",
+                "description": "One line on what the section will hold: the user reads it while the section is pending.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "heading"
+            ],
+            "type": "object"
+          },
+          "PaneArg": {
+            "anyOf": [
+              {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "description": "A pane or block: `7` or `\"%7\"`."
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "beside": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PaneArg"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "new: Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in)."
+          },
+          "block": {
+            "$ref": "#/$defs/PaneArg",
+            "description": "fill: The Doc block (from doc new)."
+          },
+          "kind": {
+            "description": "Which one (see the tool's description).",
+            "enum": [
+              "new",
+              "fill"
+            ],
+            "type": "string"
+          },
+          "markdown": {
+            "description": "fill: The section's body, in Markdown (at most 64 KB). Filling a section again replaces it.",
+            "type": "string"
+          },
+          "section": {
+            "description": "fill: The section's id (s1, s2, … from doc new).",
+            "type": "string"
+          },
+          "sections": {
+            "description": "new: Every section, in order (at most 40), so the user sees the whole outline at once.",
+            "items": {
+              "$ref": "#/$defs/DocSection"
+            },
+            "type": "array"
+          },
+          "title": {
+            "description": "new: The Doc's title.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
+      "name": "doc",
+      "title": "Build a document for the user"
     },
     {
       "annotations": {

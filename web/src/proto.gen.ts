@@ -150,7 +150,7 @@ export type Attention = "idle" | "working" | "needs_input" | "done";
  * What a block is; where one runs is its `host`, not its type. All types
  * share one id space (`%N`) and one place in the layout tree.
  */
-export type BlockType = "terminal" | "browser" | "agent" | "editor" | "diff" | "file" | "remote" | "workspace" | "app" | "forge" | "invite" | "agents";
+export type BlockType = "terminal" | "browser" | "agent" | "editor" | "diff" | "file" | "remote" | "workspace" | "app" | "forge" | "invite" | "agents" | "doc";
 
 /**
  * A side of a PR: which repository (a fork's, for its head), branch and
@@ -2492,4 +2492,5 @@ export const FLAGS = [
   { name: "swarm-themes", title: "Extra swarm views", about: "The swarm's other views beside the default.", default: false, local_only: false },
   { name: "forges", title: "Forgejo and GitLab", about: "PR and issue blocks for Forgejo and GitLab, beside GitHub's.", default: false, local_only: false },
   { name: "agents", title: "Agent catalog", about: "Offer Claude Code subagents from this machine, and see the ones your team offers.", default: false, local_only: true },
+  { name: "docs", title: "Docs", about: "Agents build documents in a block beside their pane.", default: false, local_only: false },
 ] as const;

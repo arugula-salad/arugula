@@ -134,7 +134,7 @@ removed").
 
 A flag per feature turns on what a stranger doesn't get (#385, #464, #665):
 `chat`, `vms`, `studio`, `workspaces`, `guest-ssh`,
-`swarm-themes`, `forges`, `agents`. A feature that leaves takes its row out
+`swarm-themes`, `forges`, `agents`, `docs`. A feature that leaves takes its row out
 of `FLAGS` and puts its name in `flags::RETIRED`, so an old file naming it
 is ignored: `fountain` (daemon-side Managoat, removed: DECISIONS.md
 "Daemon-side Managoat is removed") and `huddles` (DECISIONS.md "Huddles are

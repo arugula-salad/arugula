@@ -22,6 +22,7 @@ mod control;
 use arugula_mux::conpty;
 mod conversations;
 mod dial;
+mod docs;
 mod e2e;
 #[cfg(feature = "editor")]
 mod editor;
@@ -707,6 +708,7 @@ fn kinds(
     kinds.add(BlockType::File, Make(review::file::FileView::create));
     forges::kinds(&mut kinds);
     kinds.add(BlockType::Invite, invite::card::InviteKind(invite.clone()));
+    kinds.add(BlockType::Doc, docs::DocKind);
     labs::kinds(&mut kinds, invite);
     kinds
 }
@@ -1166,6 +1168,7 @@ mod tests {
             BlockType::Forge,
             BlockType::Invite,
             BlockType::Agents,
+            BlockType::Doc,
             BlockType::Unknown,
         ];
         // A new type is a compile error here until it is listed above.
@@ -1183,6 +1186,7 @@ mod tests {
                 | BlockType::Forge
                 | BlockType::Invite
                 | BlockType::Agents
+                | BlockType::Doc
                 | BlockType::Unknown => {}
             }
             let made = !matches!(kind, BlockType::Terminal | BlockType::Unknown);

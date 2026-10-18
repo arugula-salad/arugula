@@ -8,6 +8,7 @@ import "./file";
 import "./lazy";
 import "./forge";
 import "./invite";
+import "./doc";
 
 export { makeBlockView, type BlockView } from "./view";
 export { openPort } from "./browser";

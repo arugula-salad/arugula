@@ -90,6 +90,8 @@ pub const SWARM_THEMES: &str = "swarm-themes";
 pub const FORGES: &str = "forges";
 /// Agent recipes offered from this machine, and the team's agent catalog.
 pub const AGENTS: &str = "agents";
+/// Doc blocks: a document an agent builds beside its pane.
+pub const DOCS: &str = "docs";
 
 /// One flag.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -131,6 +133,7 @@ pub const FLAGS: &[Flag] = &[
         "Agent catalog",
         "Offer Claude Code subagents from this machine, and see the ones your team offers.",
     ),
+    row(DOCS, "Docs", "Agents build documents in a block beside their pane."),
 ];
 
 /// Flags that were, and why they aren't: a feature that left Labs. A file
