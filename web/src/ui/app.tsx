@@ -3,7 +3,7 @@
 
 import { cloudPanes, useCloudPanes } from "../cloud";
 import { CloudTabs, RunDetails } from "./cloud";
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useState } from "preact/hooks";
 import type { Client } from "../client";
 import type { Cell } from "./cells";
 import { useSubscribe, usePhone } from "./hooks";
@@ -29,9 +29,13 @@ import { PaletteLayer } from "./palette";
 import { ControlBanner } from "./control-state";
 import { AgentsNudge } from "./agents-setup";
 import { useWorkspaceKeys } from "./keys";
-import { ContextHeader } from "./shell/context-header";
+import { ClassicBar, ContextHeader } from "./shell/context-header";
 import type { Renaming } from "./shell/rename-input";
-import { StatusPill } from "./shell/status-footer";
+import { StatusFooter, StatusPill } from "./shell/status-footer";
+import { Rail } from "./shell/rail";
+import { noteLastTab, SessionSidebar } from "./shell/session-sidebar";
+import { TabStrip } from "./shell/tab-strip";
+import { useNewWorkspace } from "./shell/prefs";
 import { TabArea } from "./panes/tab-area";
 import { DragGhost } from "./panes/drop-overlay";
 import { useHoverToSwitchTabs } from "./panes/drop";
@@ -82,33 +86,101 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
   useReportFocus(client, phone);
   useWorkspaceKeys(client, phone);
   useFirstRun(client);
+  // M108 (#1023): the new workspace, when Appearance says so (desktop only).
+  const ws = useNewWorkspace() && !phone;
+  useLayoutEffect(() => {
+    if (!ws) return;
+    // The swarm, chat and agents pages sit beside its rail (style.css).
+    document.documentElement.dataset.workspace = "new";
+    return () => void delete document.documentElement.dataset.workspace;
+  }, [ws]);
 
   const state = client.state;
   const tab = client.tabView();
   // M73: the chat page covers the panes, which stay laid out under it (so
   // their terminals keep their size) but can't be reached.
   const chatOpen = useChatOpen() && !!state && client.hasThreads();
+  const main = (
+    <main class="main" inert={chatOpen}>
+      {cloud ? <RunDetails key={cloud} id={cloud} /> : !state ? (
+        <HostPicker />
+      ) : state.sessions.length === 0 ? (
+        <NoSessions client={client} phone={phone} />
+      ) : tab ? (
+        <TabArea client={client} tab={tab} cell={cell} phone={phone} />
+      ) : null}
+    </main>
+  );
+  const layers = (
+    <>
+      <MenuLayer />
+      <PromptLayer />
+      <ThreadLayer phone={phone} />
+      {state && <InLabs on={client.hasThreads()}>{(l) => <l.ChatPage client={client} />}</InLabs>}
+      <InLabs on={client.hasThreads()}>{(l) => <l.LinkLayer />}</InLabs>
+      {state && <AgentsPageLayer client={client} />}
+      <ConversationsLayer />
+      <InLabs on={client.flag("studio")}>{(l) => <l.AppsLayer />}</InLabs>
+      <InLabs on={client.flag("vms")}>{(l) => <l.SandboxesLayer />}</InLabs>
+      <RulesLayer />
+      <DeveloperLayer />
+      <PickerLayer />
+      <PaletteLayer />
+      <GettingStartedLayer />
+      <DragGhost />
+      {/* An ask to drive shows over the share dialog (#551). */}
+      <ShareDialog client={client} />
+      <ControlRequests client={client} />
+    </>
+  );
+  if (ws && state) {
+    noteLastTab(client);
+    const session = state.sessions.find((s) => s.id === client.session) ?? state.sessions[0];
+    // The chrome is all outside `.main`, so the panes' cells and who sizes
+    // the tab work as they do under the classic bar.
+    return (
+      <div class="app ws">
+        <Rail client={client} />
+        <div class="ws-body">
+          <ContextHeader client={client} renaming={renaming} setRenaming={setRenaming} inert={chatOpen} />
+          <div class="ws-row" inert={chatOpen}>
+            <SessionSidebar client={client} renaming={renaming} setRenaming={setRenaming} />
+            <div class="ws-work">
+              <div class="ws-tabs">
+                {session ? (
+                  <TabStrip client={client} session={session} renaming={renaming} setRenaming={setRenaming} labelled />
+                ) : (
+                  <div class="tabbar" role="tablist">
+                    <CloudTabs />
+                  </div>
+                )}
+              </div>
+              <ControlBanner client={client} />
+              <NewMachineNote />
+              <AgentsNudge client={client} />
+              {main}
+            </div>
+          </div>
+          <StatusFooter client={client} />
+        </div>
+        {layers}
+        {!cloud && <StatusPill client={client} errorsOnly />}
+      </div>
+    );
+  }
   return (
     <div class={phone ? "app phone" : "app"}>
       {state && (phone ? (
         <PhoneHeader client={client} />
       ) : (
-        <ContextHeader client={client} renaming={renaming} setRenaming={setRenaming} inert={chatOpen} />
+        <ClassicBar client={client} renaming={renaming} setRenaming={setRenaming} inert={chatOpen} />
       ))}
       {!state && cloud && <AppBar client={client} at="panes" all>{!phone && <div class="tabbar" role="tablist"><CloudTabs /><button onClick={() => startAgent(client, {})}>New agent</button></div>}</AppBar>}
       {phone && cloudPanes.opened.length > 0 && <div class="tabbar cloud-phone-tabs" role="tablist">{state && <button onClick={() => cloudPanes.local()}>This machine</button>}<CloudTabs /></div>}
       {state && <ControlBanner client={client} />}
       {state && <NewMachineNote />}
       {state && <AgentsNudge client={client} />}
-      <main class="main" inert={chatOpen}>
-        {cloud ? <RunDetails key={cloud} id={cloud} /> : !state ? (
-          <HostPicker />
-        ) : state.sessions.length === 0 ? (
-          <NoSessions client={client} phone={phone} />
-        ) : tab ? (
-          <TabArea client={client} tab={tab} cell={cell} phone={phone} />
-        ) : null}
-      </main>
+      {main}
       {phone && state && state.sessions.length > 0 && client.panes.has(client.active() ?? -1) && <KeyBar client={client} />}
       <MenuLayer />
       <PromptLayer />

@@ -150,7 +150,7 @@ function hostGroups(): { label: string; names: string[] }[] {
 }
 
 /** Desktop: the shown host, opening a menu of the others. */
-export function HostButton() {
+export function HostButton({ path = true }: { path?: boolean } = {}) {
   if (!useHosts()) return null;
   const open = (e: MouseEvent) => {
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -197,7 +197,7 @@ export function HostButton() {
   return (
     <button class="host-button" title="Hosts" data-host={directory.current} onClick={open} onContextMenu={open}>
       {directory.current}
-      {directory.path ? (
+      {path && directory.path ? (
         <span class={`host-path ${directory.path}`} data-path={directory.path} title={directory.path === "relayed" ? "Through Arugula control's relay (end to end encrypted)" : "Straight to the machine"}>
           {directory.path}
         </span>

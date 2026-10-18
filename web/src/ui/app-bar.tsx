@@ -16,6 +16,8 @@ import { openPalette } from "./palette";
 import { UpdateChip } from "./update";
 import { WindowButtons } from "./window-buttons";
 import { countView } from "../telemetry";
+import { SearchIcon } from "./shell/icons";
+import { useNewWorkspace } from "./shell/prefs";
 
 /** Who is signed in, through control: their name and their account's
  * items. A daemon's own page has none, and its menu is settings only. */
@@ -62,6 +64,8 @@ export function AppBar({
   all?: boolean;
 }) {
   useSubscribe((fn) => client.subscribe(fn));
+  // The new workspace's rail has the places (M108).
+  const rail = useNewWorkspace();
   return (
     <header class="bar app-bar" data-tauri-drag-region inert={inert} data-at={at}>
       {all ? (
@@ -71,7 +75,7 @@ export function AppBar({
       ) : (
         <HostButton />
       )}
-      <Places client={client} at={at} />
+      {!rail && <Places client={client} at={at} />}
       {children}
       <div class="bar-fill" data-tauri-drag-region />
       {client.state && <CommandsButton client={client} />}
@@ -85,19 +89,20 @@ export function AppBar({
 
 /** The command palette, where it can be seen: most of what a pane can do
  * is in it (and in a pane's right-click menu). */
-function CommandsButton({ client }: { client: Client }) {
+export function CommandsButton({ client, search }: { client: Client; search?: boolean }) {
   return (
     <button
-      class="commands-button"
+      class={search ? "commands-button ws-search-button" : "commands-button"}
       data-open-palette
-      title="Every command for this pane, tab and session"
+      title={search ? `Search every command for this pane, tab and session (${keyHint("palette")})` : "Every command for this pane, tab and session"}
       // Its name is "Commands": the chord beside it is for the eye, and
       // would otherwise make it a button named "…+Shift+P".
       aria-label="Commands"
       aria-keyshortcuts={ariaKeys(keyHint("palette"))}
       onClick={() => openPalette(client)}
     >
-      <span>Commands</span>
+      {search && <SearchIcon />}
+      <span>{search ? "Search commands" : "Commands"}</span>
       <kbd aria-hidden="true">{keyHint("palette")}</kbd>
     </button>
   );

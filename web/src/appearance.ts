@@ -93,6 +93,40 @@ export const PALETTES: Palette[] = [
     term: mochaTerm,
   },
   {
+    // M108 (#1023): the workspace's own dark palette, from #1018's mission
+    // control: near-black slate, blue-gray lines, a restrained cyan for
+    // selection and focus, lavender second, amber for attention. The dark
+    // default with the new workspace. Every text color passes WCAG AA (4.5)
+    // on bg, surface and raised; muted is only ever a fill.
+    id: "slate",
+    name: "Slate",
+    light: false,
+    ui: {
+      bg: "#0c1118",
+      fg: "#d6dee9",
+      dim: "#8b98ab",
+      surface: "#090d13",
+      letterbox: "#06090d",
+      raised: "#1a2230",
+      "raised-hover": "#243042",
+      accent: "#56c8dc",
+      danger: "#f2778a",
+      ok: "#5fd394",
+      warn: "#f0b45a",
+      info: "#7aa7f0",
+      peach: "#f29b6b",
+      teal: "#5fd3c4",
+      pink: "#ad9cf2",
+      muted: "#3a4658",
+      subtle: "#b4c0d0",
+      "on-color": "#06090d",
+    },
+    term: term("#d6dee9", "#0c1118", "#56c8dc", "#56c8dc40", [
+      "#1a2230", "#f2778a", "#5fd394", "#f0b45a", "#7aa7f0", "#ad9cf2", "#56c8dc", "#b4c0d0",
+      "#5c6a80", "#ff96a6", "#82e3ad", "#ffcb7d", "#9dc0ff", "#c6b9ff", "#84dceb", "#eef3f8",
+    ]),
+  },
+  {
     id: "latte",
     name: "Latte",
     light: true,
@@ -313,15 +347,23 @@ export const CORNERS = [
 export type Finish = (typeof FINISHES)[number]["id"];
 export type Corners = (typeof CORNERS)[number]["id"];
 
+/** Which workspace shell the desktop page draws (M108, #1023): the one bar
+ * ("classic", the default until M113) or the rail, sidebar, header and
+ * footer ("new"). Phones keep their own header either way. */
+export type Workspace = "classic" | "new";
+
 export interface Appearance {
-  /** A palette's id, or "system": Mocha, or Latte when the system is light. */
+  /** A palette's id, "system" (the dark default, or Latte when the system
+   * is light) or "default": nothing picked, which is Mocha, or Slate with
+   * the new workspace. */
   palette: string;
   finish: Finish;
   corners: Corners;
+  workspace: Workspace;
 }
 
 const KEY = "arugula-appearance";
-const DEFAULT: Appearance = { palette: "mocha", finish: "flat", corners: "square" };
+const DEFAULT: Appearance = { palette: "default", finish: "flat", corners: "square", workspace: "classic" };
 const lightQuery = typeof matchMedia === "function" ? matchMedia("(prefers-color-scheme: light)") : null;
 
 let current: Appearance = load();
@@ -332,9 +374,10 @@ function load(): Appearance {
     const v = JSON.parse(localStorage.getItem(KEY) ?? "null") as Partial<Appearance> | null;
     if (!v) return DEFAULT;
     return {
-      palette: v.palette === "system" || PALETTES.some((p) => p.id === v.palette) ? v.palette! : DEFAULT.palette,
+      palette: v.palette === "system" || v.palette === "default" || PALETTES.some((p) => p.id === v.palette) ? v.palette! : DEFAULT.palette,
       finish: FINISHES.some((f) => f.id === v.finish) ? v.finish! : DEFAULT.finish,
       corners: CORNERS.some((c) => c.id === v.corners) ? v.corners! : DEFAULT.corners,
+      workspace: v.workspace === "new" ? "new" : "classic",
     };
   } catch {
     return DEFAULT;
@@ -343,9 +386,13 @@ function load(): Appearance {
 
 export const appearance = () => current;
 
-/** The palette in use: "system" resolved. */
+/** The dark palette nothing picked means: Slate with the new workspace,
+ * Mocha with the classic one (unchanged until M113). */
+export const darkDefault = (a: Appearance = current) => (a.workspace === "new" ? "slate" : "mocha");
+
+/** The palette in use: "system" and "default" resolved. */
 export function palette(a: Appearance = current): Palette {
-  const id = a.palette === "system" ? (lightQuery?.matches ? "latte" : "mocha") : a.palette;
+  const id = a.palette === "system" ? (lightQuery?.matches ? "latte" : darkDefault(a)) : a.palette === "default" ? darkDefault(a) : a.palette;
   return PALETTES.find((p) => p.id === id) ?? PALETTES[0];
 }
 
@@ -379,6 +426,7 @@ export function apply() {
   root.dataset.scheme = p.light ? "light" : "dark";
   root.dataset.finish = current.finish;
   root.dataset.corners = current.corners;
+  root.dataset.palette = p.id;
   document.querySelector('meta[name="theme-color"]')?.setAttribute("content", p.ui.surface);
   listeners.forEach((fn) => fn());
 }
