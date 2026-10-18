@@ -9,6 +9,7 @@ pub mod mux;
 pub mod names;
 pub mod rename;
 pub mod tree;
+pub mod version;
 
 pub type SessionId = u32;
 pub type TabId = u32;

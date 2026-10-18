@@ -650,7 +650,7 @@ impl Daemon {
             panes.push(serde_json::Value::Object(v));
         }
         let msg = if hello {
-            ServerMsg::Hello { version: env!("CARGO_PKG_VERSION").into(), client, state }
+            ServerMsg::Hello { version: arugula_core::version::get().into(), client, state }
         } else {
             ServerMsg::State { state }
         };
