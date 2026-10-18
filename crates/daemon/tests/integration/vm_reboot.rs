@@ -8,7 +8,7 @@
 //! - every pane says its session was lost and gets a shell again, on its
 //!   tab's machine, under a new boot id with its home directory kept;
 //! - each tab still has exactly one machine, on the sprite it had;
-//! - wisp has no other `illogical-eph-<this daemon>-*` sprite, and none
+//! - wisp has no other `arugula-eph-<this daemon>-*` sprite, and none
 //!   once the tabs are closed.
 //!
 //! Skips without a wisp token on this host (ARUGULA_WISP_TOKEN_FILE or
@@ -149,7 +149,7 @@ impl Daemon {
     /// The names this daemon gives its machines' sprites.
     fn prefix(&self) -> Option<String> {
         let id = std::fs::read_to_string(self.state.join("daemon-id")).ok()?;
-        Some(format!("illogical-eph-{}-", id.trim()))
+        Some(format!("arugula-eph-{}-", id.trim()))
     }
 
     fn log(&self, pane: u64) -> String {
@@ -188,7 +188,7 @@ fn vm_tabs_come_back_on_their_machines_after_a_real_reboot() {
         return;
     };
     assert!(
-        try_sprites(&token, "illogical-eph-").is_some(),
+        try_sprites(&token, "arugula-eph-").is_some(),
         "wispd doesn't answer at {WISP} with this host's token (the token file is there)"
     );
     let mut d = Daemon::new();

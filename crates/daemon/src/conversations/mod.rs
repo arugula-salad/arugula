@@ -532,12 +532,20 @@ fn lstart_secs(s: &str) -> Option<u64> {
 /// (`arugula-pane-<id>-<n>.scope`, `arugula-agent-<id>-<n>.scope`).
 fn scope_of(pid: u32) -> (Option<PaneId>, Option<PaneId>) {
     let Ok(cg) = std::fs::read_to_string(format!("/proc/{pid}/cgroup")) else { return (None, None) };
-    let id = |prefix: &str| {
-        let i = cg.find(prefix)? + prefix.len();
-        cg[i..].split(['-', '.']).next()?.parse::<PaneId>().ok()
+    scopes_in(&cg)
+}
+
+/// The pane and agent block named by the scopes in a `/proc/*/cgroup`.
+fn scopes_in(cg: &str) -> (Option<PaneId>, Option<PaneId>) {
+    let id = |kind: &str| {
+        // A pane started before the rename (#509) keeps illogical's scope.
+        ["arugula", "illogical"].into_iter().find_map(|name| {
+            let prefix = format!("{name}-{kind}-");
+            let i = cg.find(&prefix)? + prefix.len();
+            cg[i..].split(['-', '.']).next()?.parse::<PaneId>().ok()
+        })
     };
-    // Frozen (#504): running panes keep the scopes they started in.
-    (id("illogical-pane-"), id("illogical-agent-"))
+    (id("pane"), id("agent"))
 }
 
 /// The desktop app's records, by Claude Code session id.
@@ -785,6 +793,15 @@ mod tests {
         let ours = Ours { panes: [(crate::procinfo::ppid(me).unwrap(), 7)].into(), ..Default::default() };
         assert_eq!(live(&sessions, &ours)["live-one"].pane, Some(7));
         std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn scopes_under_either_name() {
+        let cg = "0::/user.slice/user-1000.slice/user@1000.service/app.slice/arugula-pane-12-179.scope\n";
+        assert_eq!(scopes_in(cg), (Some(12), None));
+        let cg = "0::/user.slice/user@1000.service/app.slice/illogical-agent-5-179.scope\n";
+        assert_eq!(scopes_in(cg), (None, Some(5)));
+        assert_eq!(scopes_in("0::/user.slice/session-2.scope\n"), (None, None));
     }
 
     #[test]

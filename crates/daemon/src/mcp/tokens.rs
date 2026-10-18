@@ -21,6 +21,7 @@ use std::{
 use arugula_proto::{
     PaneId,
     op::ops::{McpTokenMint, McpTokenRevoke, McpTokensList},
+    rename::OLD,
 };
 use axum::Router;
 use hkdf::hmac::{Hmac, KeyInit, Mac};
@@ -149,17 +150,15 @@ impl Tokens {
         gone
     }
 
-    fn mac(&self, block: PaneId) -> String {
+    fn mac(&self, name: &str, block: PaneId) -> String {
         let mut m = <Hmac<Sha256> as KeyInit>::new_from_slice(&self.key).expect("any key length");
-        // Frozen (#504): agents started before an update carry tokens made
-        // this way (`block_tokens_never_change`).
-        m.update(format!("illogical block {block}").as_bytes());
+        m.update(format!("{name} block {block}").as_bytes());
         hex(&m.finalize().into_bytes())
     }
 
     /// The token an agent block's MCP server carries.
     pub fn block_token(&self, block: PaneId) -> String {
-        format!("{BLOCK_PREFIX}{block}_{}", self.mac(block))
+        format!("{BLOCK_PREFIX}{block}_{}", self.mac("arugula", block))
     }
 
     /// What a bearer token is, if it's one of ours.
@@ -167,10 +166,13 @@ impl Tokens {
         if let Some(rest) = token.strip_prefix(BLOCK_PREFIX) {
             let (id, mac) = rest.split_once('_')?;
             let id: PaneId = id.parse().ok()?;
-            let want = self.mac(id);
-            // Compared without stopping at the first difference.
-            let same = want.len() == mac.len() && want.bytes().zip(mac.bytes()).fold(0u8, |d, (a, b)| d | (a ^ b)) == 0;
-            return same.then_some(Bearer::Block(id));
+            // Compared without stopping at the first difference. An agent
+            // started before the rename (#509) carries illogical's.
+            let same = |want: String| {
+                want.len() == mac.len() && want.bytes().zip(mac.bytes()).fold(0u8, |d, (a, b)| d | (a ^ b)) == 0
+            };
+            let ok = same(self.mac("arugula", id)) | same(self.mac(OLD, id));
+            return ok.then_some(Bearer::Block(id));
         }
         let want = digest(token);
         let mut s = self.saved.lock().unwrap();
@@ -200,12 +202,16 @@ pub fn api_routes() -> Router<Arc<App>> {
 mod tests {
     use super::*;
 
-    /// An agent block's token from before an update still checks (#504):
-    /// a rename must not change how it's made.
+    /// An agent block's token from before an update still checks: one made
+    /// as illogical made them (#509), too.
     #[test]
-    fn block_tokens_never_change() {
+    fn block_tokens_from_before_still_check() {
         let t = Tokens { path: PathBuf::new(), key: [b'k'; 32], saved: Mutex::new(vec![]) };
-        assert_eq!(t.mac(7), "fc69c1f978ef50871eeb01118749d040388f7ae2c231ac65206a7146184b68bd");
+        let old = format!("{BLOCK_PREFIX}7_fc69c1f978ef50871eeb01118749d040388f7ae2c231ac65206a7146184b68bd");
+        assert_eq!(t.check(&old), Some(Bearer::Block(7)));
+        assert_ne!(t.block_token(7), old);
+        assert_eq!(t.check(&t.block_token(7)), Some(Bearer::Block(7)));
+        assert_eq!(t.check(&old.replacen("_7_", "_8_", 1)), None);
     }
 
     #[test]

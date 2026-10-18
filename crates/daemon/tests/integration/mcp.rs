@@ -818,9 +818,10 @@ fn an_agent_block_in_a_vm_gets_mcp_through_the_relay() {
     assert!(seen.contains(&a) && !seen.contains(&other), "{l}");
     // Its run lands on its own machine, beside it (which makes the machine
     // its tab's).
-    let sock = format!("/tmp/illogical-mcp-{a}.sock");
-    let r = agent_mcp(&d, a, "run", json!({ "command": format!("test -S {sock} && echo IN-ITS-VM"), "wait": true }))
-        .unwrap();
+    // And where an agent from before the rename (#509) connects.
+    let (sock, was) = (format!("/tmp/arugula-mcp-{a}.sock"), format!("/tmp/illogical-mcp-{a}.sock"));
+    let check = format!("test -S {sock} && test -S {was} && echo IN-ITS-VM");
+    let r = agent_mcp(&d, a, "run", json!({ "command": check, "wait": true })).unwrap();
     assert_eq!(r["exit"], 0, "{r}");
     assert!(r.to_string().contains("IN-ITS-VM"), "{r}");
     let pane = r["pane"].as_u64().unwrap();

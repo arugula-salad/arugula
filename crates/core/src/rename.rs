@@ -1,24 +1,23 @@
 //! illogical is now Arugula (#509). Every install is on Arugula 0.26 or
 //! later, so names only cross between versions under Arugula's (#534).
-//! What was made under the old name and stays there: the state, config,
-//! data and cache directories (used where they are, [`kept`]).
 //!
-//! **Never renamed**, because something already stored or running depends
-//! on the exact bytes. Each is marked "Frozen (#504)" where it's defined:
+//! What was made under the old name is moved to the new one, with the old
+//! name left as a link to it (`dirs::renamed`): the state, config, data and
+//! cache directories. What a running pane or agent was started with is
+//! still found under illogical's name until it ends: its holder socket in
+//! the temp dir, its systemd scope, its sandbox (`illogical-eph-`), a
+//! resident daemon's service, a VM agent's MCP relay socket and its block
+//! token. New ones get Arugula's.
+//!
+//! **Never renamed**, because something already stored depends on the
+//! exact bytes. Each is marked "Frozen (#504)" where it's defined:
 //!
 //! - the domains signed or hashed into device certificates, join and team
 //!   proofs, push and call tokens (`illogical device v1`, `illogical team
 //!   invite v1`, …), the Noise prologue `illogical/1`, the sync key's HKDF
 //!   info `illogical sync v1`, the key file header `illogical-device-key 1`
 //!   and the checkpoint magic `ILLOGICAL-CKPT1`;
-//! - the browser's IndexedDB `illogical-device`, which holds its device key;
-//! - the names a running pane is found by after a daemon restart: the
-//!   holder socket `illogical-hold-*`, Windows' pane pipe
-//!   `illogical-<user>-pane-*`, and the systemd scopes `illogical-pane-*`
-//!   and `illogical-agent-*`;
-//! - the sandbox prefix `illogical-eph-` and the resident service name,
-//!   which daemons of different versions on one account read from each
-//!   other's sandboxes.
+//! - the browser's IndexedDB `illogical-device`, which holds its device key.
 
 /// The old name of the product, for what was made under it.
 pub const OLD: &str = "illogical";

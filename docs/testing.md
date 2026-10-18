@@ -1227,8 +1227,7 @@ each sprite suspended and cooled through wispd's operator endpoints (what
 starts, every pane says its session was lost and gets a shell on its
 tab's machine under a new boot id, with its home directory kept; each tab
 still has exactly one machine, and wisp lists no other
-`illogical-eph-<daemon id>-*` sprite (the prefix kept from before the
-rename), nor any once the tabs close. With a token and no wispd answering
+`arugula-eph-<daemon id>-*` sprite, nor any once the tabs close. With a token and no wispd answering
 at 127.0.0.1:7788 it fails rather than skips.
 
 `workspace.spec.ts` and `changes-why.spec.ts` need the network on their

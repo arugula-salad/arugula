@@ -26,7 +26,7 @@ use std::{
     time::Duration,
 };
 
-use arugula_proto::PaneId;
+use arugula_proto::{PaneId, rename::OLD};
 use nix::{
     libc,
     sys::socket::{ControlMessage, ControlMessageOwned, MsgFlags, recvmsg, sendmsg},
@@ -54,14 +54,33 @@ pub fn socket_for(pane_dir: &Path) -> PathBuf {
     if plain.as_os_str().len() < 100 {
         return plain;
     }
+    hashed("arugula", pane_dir)
+}
+
+/// The temp dir's socket for `pane_dir`, under `name`'s prefix.
+fn hashed(name: &str, pane_dir: &Path) -> PathBuf {
     // FNV-1a: stable across runs, unlike std's hasher.
     let hash = pane_dir
         .as_os_str()
         .as_encoded_bytes()
         .iter()
         .fold(0xcbf29ce484222325u64, |h, b| (h ^ *b as u64).wrapping_mul(0x100000001b3));
-    // Frozen (#504): a restarted daemon finds running panes by it.
-    std::env::temp_dir().join(format!("illogical-hold-{hash:016x}.sock"))
+    std::env::temp_dir().join(format!("{name}-hold-{hash:016x}.sock"))
+}
+
+/// Where a running shim may be listening for `pane_dir`: [`socket_for`],
+/// or, for a pane started before the rename (#509), the temp dir's socket
+/// under illogical's prefix, named by its directory as it was then (the
+/// state directory has moved since, `dirs::renamed`).
+fn sockets_for(pane_dir: &Path) -> Vec<PathBuf> {
+    let mut out = vec![socket_for(pane_dir), hashed(OLD, pane_dir)];
+    let (Some(block), Some(state)) = (pane_dir.file_name(), pane_dir.parent().and_then(Path::parent)) else {
+        return out;
+    };
+    if state.file_name().is_some_and(|n| n == "arugula") {
+        out.push(hashed(OLD, &state.with_file_name(OLD).join("blocks").join(block)));
+    }
+    out
 }
 
 // ---------------------------------------------------------------- daemon side
@@ -103,10 +122,7 @@ pub fn collect(state_dir: &Path) -> HashMap<String, OwnedFd> {
     let Ok(entries) = std::fs::read_dir(state_dir.join("blocks")) else { return out };
     for e in entries.flatten() {
         let Some(pane) = e.file_name().to_str().and_then(|n| n.parse::<PaneId>().ok()) else { continue };
-        let socket = socket_for(&e.path());
-        if !socket.exists() {
-            continue;
-        }
+        let Some(socket) = sockets_for(&e.path()).into_iter().find(|s| s.exists()) else { continue };
         match borrow(pane, &socket) {
             Ok(fd) => {
                 out.insert(format!("pane-{pane}"), fd);
@@ -254,5 +270,30 @@ fn same_user(conn: &UnixStream) -> bool {
         let (mut uid, mut gid) = (0, 0);
         // SAFETY: getpeereid writes two ids.
         unsafe { libc::getpeereid(conn.as_raw_fd(), &mut uid, &mut gid) == 0 && uid == me }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_pane_from_before_the_rename_is_still_found() {
+        let short = Path::new("/home/a/.local/state/arugula/blocks/7");
+        assert_eq!(socket_for(short), short.join("hold"));
+        let long = format!("/home/{}/.local/state/arugula/blocks/7", "a".repeat(80));
+        let long = Path::new(&long);
+        let new = socket_for(long);
+        assert!(new.file_name().unwrap().to_str().unwrap().starts_with("arugula-hold-"), "{new:?}");
+        let old_dir = format!("/home/{}/.local/state/illogical/blocks/7", "a".repeat(80));
+        let all = sockets_for(long);
+        assert_eq!(all[0], new);
+        assert_eq!(all[1], hashed("illogical", long));
+        assert_eq!(all[2], hashed("illogical", Path::new(&old_dir)));
+        // Unchanged since illogical: what its shims are listening on.
+        assert_eq!(
+            hashed("illogical", Path::new("/x")),
+            std::env::temp_dir().join("illogical-hold-07d64e07b49caeb2.sock")
+        );
     }
 }

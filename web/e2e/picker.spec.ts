@@ -87,7 +87,7 @@ test.afterAll(async () => {
       // never made one
     }
     if (id && token) {
-      const list = await (await wisp("GET", `?prefix=illogical-eph-${id}-`)).json();
+      const list = await (await wisp("GET", `?prefix=arugula-eph-${id}-`)).json();
       for (const s of list.sprites ?? []) await wisp("DELETE", `/${s.name}`);
     }
     rmSync(state, { recursive: true, force: true });
@@ -277,7 +277,7 @@ test.describe("phone", () => {
     // The machine has a generated name of its own; the sprite keeps its id.
     const m = await page.evaluate((p) => window.__arugula.client.machine(p)!, vm);
     expect(m.name).toMatch(/^[a-z]+ [a-z]+$/);
-    expect(m.sprite).toMatch(/^illogical-eph-/);
+    expect(m.sprite).toMatch(/^arugula-eph-/);
     await type(page, vm, "mkdir -p ~/m7/inner ~/m7/other && echo made-$((6*7))\n");
     await expect.poll(() => text(page, vm)).toContain("made-42");
 

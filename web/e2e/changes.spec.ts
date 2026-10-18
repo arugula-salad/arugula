@@ -303,7 +303,7 @@ test.describe("on a VM tab", () => {
     for (const p of [term, diff, file]) if (p) await post(VM_PORT, `/api/panes/${p}/close`, {}).catch(() => null);
     await new Promise((r) => setTimeout(r, 3000));
     if (id) {
-      const list = await (await wisp("GET", `?prefix=illogical-eph-${id}-`)).json();
+      const list = await (await wisp("GET", `?prefix=arugula-eph-${id}-`)).json();
       for (const s of list.sprites ?? []) await wisp("DELETE", `/${s.name}`);
     }
   });

@@ -31,7 +31,7 @@ impl Daemon {
                 "no sandbox provider: arugulad found none (a wisp token, or --loam-url and its key)",
             ));
         }
-        if sprite.starts_with(&self.config.sprite_prefix()) {
+        if sprite.starts_with(&self.config.sprite_prefix()) || sprite.starts_with(&self.config.old_sprite_prefix()) {
             return Err(format!("{sprite} is one of this daemon's own machines"));
         }
         Ok(self.add_machine(sprite.to_owned(), None, true))
@@ -178,13 +178,16 @@ impl Daemon {
     /// pane closed while the daemon was down.
     pub(super) fn sweep_machines(&self) {
         let Some(provider) = self.config.provider.clone() else { return };
-        let prefix = self.config.sprite_prefix();
+        let prefixes = [self.config.sprite_prefix(), self.config.old_sprite_prefix()];
         let keep: Vec<String> = self.machines.values().map(|m| m.sprite.clone()).collect();
         tokio::spawn(async move {
-            let names = match provider.list(&prefix).await {
-                Ok(n) => n.into_iter().map(|s| s.name).collect::<Vec<_>>(),
-                Err(e) => return warn!(error = %e, "can't list machines to sweep"),
-            };
+            let mut names = Vec::new();
+            for prefix in &prefixes {
+                match provider.list(prefix).await {
+                    Ok(n) => names.extend(n.into_iter().map(|s| s.name)),
+                    Err(e) => return warn!(error = %e, "can't list machines to sweep"),
+                }
+            }
             for name in names.into_iter().filter(|n| !keep.contains(n)) {
                 match provider.delete(&name).await {
                     Ok(()) => info!(sprite = name, "deleted a machine nothing owns"),

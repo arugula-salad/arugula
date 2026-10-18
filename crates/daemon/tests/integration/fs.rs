@@ -45,7 +45,7 @@ impl Drop for Daemon {
         self.0.halt();
         // Machines a failed test left behind: this daemon's only.
         if let (Some(token), Ok(id)) = (token(), std::fs::read_to_string(self.state.join("daemon-id"))) {
-            let list = curl(&token, "GET", &format!("{WISP}/v1/sprites?prefix=illogical-eph-{}-", id.trim()), None);
+            let list = curl(&token, "GET", &format!("{WISP}/v1/sprites?prefix=arugula-eph-{}-", id.trim()), None);
             let names: Value = serde_json::from_str(&list).unwrap_or_default();
             for n in names["sprites"].as_array().into_iter().flatten().filter_map(|s| s["name"].as_str()) {
                 curl(&token, "DELETE", &format!("{WISP}/v1/sprites/{n}"), None);
@@ -231,7 +231,7 @@ fn a_sandbox_through_the_provider() {
     let machines = d.get("/api/machines");
     let ours = machines.as_array().unwrap().iter().find(|m| m["borrowed"] != true).unwrap().clone();
     assert!(ours["name"].as_str().is_some_and(|n| n.split(' ').count() == 2), "{ours}");
-    assert!(ours["sprite"].as_str().unwrap().starts_with("illogical-eph-"));
+    assert!(ours["sprite"].as_str().unwrap().starts_with("arugula-eph-"));
     // Borrowed ones go by their own name.
     assert!(machines.as_array().unwrap().iter().filter(|m| m["borrowed"] == true).all(|m| m["name"].is_null()));
 }

@@ -405,8 +405,8 @@ fn editors_socket(state_dir: &std::path::Path) -> std::io::Result<tokio::net::Un
 }
 
 /// Windows: beside the desktop app, which its installer puts in
-/// %LOCALAPPDATA%\arugula (M54). A machine set up as illogical keeps its
-/// `illogical` one, in place.
+/// %LOCALAPPDATA%\arugula (M54). A machine set up as illogical has its
+/// `illogical` one moved there.
 fn default_state_dir() -> PathBuf {
     arugula_proto::dirs::default_state_dir().unwrap_or_else(|| home().join(".local/state/arugula"))
 }
@@ -488,6 +488,9 @@ fn main() -> anyhow::Result<()> {
     if argv.get(1).map(String::as_str) == Some("_host") {
         host::run(&argv[2..]);
     }
+    // Before anything opens a file in them (Windows won't move a folder
+    // with one open): illogical's directories, under Arugula's name (#509).
+    arugula_proto::dirs::migrate();
     // The macOS app's agent, onto a newer daemon an update put in place.
     #[cfg(target_os = "macos")]
     selfupdate::hand_on();

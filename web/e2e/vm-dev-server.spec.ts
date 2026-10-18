@@ -87,7 +87,7 @@ test.afterAll(async () => {
     // never started
   }
   if (id && token) {
-    const list = await (await wisp("GET", `?prefix=illogical-eph-${id}-`)).json();
+    const list = await (await wisp("GET", `?prefix=arugula-eph-${id}-`)).json();
     for (const s of list.sprites ?? []) await wisp("DELETE", `/${s.name}`);
   }
   rmSync(state, { recursive: true, force: true });

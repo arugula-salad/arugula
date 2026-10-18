@@ -382,7 +382,7 @@ fn a_conversation_in_a_panes_scope_goes_to_the_pane_then_to_its_block() {
     assert_eq!(live["pid"], s["pid"]);
     assert_eq!(list[0]["block"], id);
     let cgroup = std::fs::read_to_string(format!("/proc/{}/cgroup", live["pid"])).unwrap();
-    assert!(cgroup.contains(&format!("illogical-agent-{id}-")), "in its scope: {cgroup}");
+    assert!(cgroup.contains(&format!("arugula-agent-{id}-")), "in its scope: {cgroup}");
 }
 
 /// #81, #83: a Code tab session of the desktop app, found where the app

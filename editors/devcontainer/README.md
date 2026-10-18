@@ -11,8 +11,8 @@ The extension runs inside the container, so it can't see the Arugula daemon on t
 }
 ```
 
-Until it's published, copy `src/arugula` into `.devcontainer/arugula` and use `"./arugula": {}`. It was never published under its old name (`illogical`), so there's no old feature id to keep; a copy of the old `src/illogical` keeps working on a machine whose daemon started out as illogical, since its socket is still where it was.
+Until it's published, copy `src/arugula` into `.devcontainer/arugula` and use `"./arugula": {}`. It was never published under its old name (`illogical`), so there's no old feature id to keep; a copy of the old `src/illogical` keeps working on a machine whose daemon started out as illogical, since its socket is still found through the old path.
 
-On a machine whose daemon started out as illogical, the state directory is still `~/.local/state/illogical`, and `~/.local/state/arugula` is a link to it, so the mount's source is there either way (on Linux and macOS). The extension it asks for, `arugula.arugula-editor`, comes from the Visual Studio Marketplace (or Open VSX, in editors that use it).
+On a machine whose daemon started out as illogical, the daemon moves the state directory to `~/.local/state/arugula` and leaves `~/.local/state/illogical` as a link to it, so the mount's source is there either way (on Linux and macOS). The extension it asks for, `arugula.arugula-editor`, comes from the Visual Studio Marketplace (or Open VSX, in editors that use it).
 
 The socket is 0600 and belongs to you on the host: the container's user needs your uid (the usual `vscode` user is 1000) or root.
