@@ -28,6 +28,7 @@ import { AppBar, setAccount } from "./ui/app-bar";
 import { fakeSwarm } from "./swarm/fake";
 import { closeSwarm, onSwarmRoute, swarmRoute } from "./swarm/route";
 import { setupDesktop } from "./desktop";
+import { installKeys } from "./ui/keys";
 import { openThread } from "./ui/threads";
 import { openChat } from "./ui/places";
 import { openDeveloper } from "./ui/developer";
@@ -140,8 +141,10 @@ function untilShown(done: (c: Client) => boolean) {
   swapped.add(check);
   check();
 }
-// Inside the desktop app: its titlebar and keys (M46).
-setupDesktop(() => client);
+// Inside the desktop app: its titlebar (M46). The page's keys, the app's
+// among them (ui/keys.ts).
+setupDesktop();
+installKeys(() => client);
 /** Hand a machine of yours the teams this browser pinned (#233), and drop
  * those it has that this account isn't in now (only once the teams have
  * loaded: a failed load isn't "none"). */

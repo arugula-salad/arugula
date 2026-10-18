@@ -21,13 +21,9 @@ import { openMachineTelemetry } from "./machine-telemetry";
 import { openRules } from "./rules";
 import { openAppearance } from "./appearance";
 import { desktopApp, desktopPlatform, openInNewWindow } from "../desktop";
+import { keyHint } from "./keys";
 import { sessionThreadItems, threadItems } from "./threads";
 
-/** Chords, as menus and the palette show them. */
-export const PICKER_KEY = "Ctrl+Shift+G";
-export const PALETTE_KEY = "Ctrl+Shift+P";
-/** The desktop app on macOS (desktop.ts). */
-export const ATTACH_KEY = "⌘U";
 
 /** A pane's right-click menu. `workspace` is the directory it's in when
  * that is a chant workspace (M34). */
@@ -102,10 +98,10 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
     // M70: a file onto this pane's host, its path pasted in (for an agent
     // there to read).
     ...(entry && client.mayType(id)
-      ? [{ label: "Attach file…", shortcut: desktopPlatform() === "macos" ? ATTACH_KEY : undefined, run: () => void client.attachFiles(id) } as MenuItem]
+      ? [{ label: "Attach file…", shortcut: desktopPlatform() === "macos" ? keyHint("desktop.attach") : undefined, run: () => void client.attachFiles(id) } as MenuItem]
       : []),
     moveToTab,
-    { label: "Go to directory…", shortcut: PICKER_KEY, run: () => openPicker(client, id, phone) },
+    { label: "Go to directory…", shortcut: keyHint("picker"), run: () => openPicker(client, id, phone) },
     { label: "Copy working directory", disabled: !cwd, run: () => cwd && void navigator.clipboard?.writeText(cwd) },
     // A dial-out host's links would be on a daemon nobody can reach.
     ...(client.base.startsWith("/")
@@ -162,7 +158,7 @@ export function tabItems(client: Client, tab: TabView, rename: () => void): Menu
     { label: "Rename tab", run: rename },
     { label: "New tab", run: () => client.intent({ op: "new_tab", session: client.session!, from_pane: client.active(tab.id) ?? null }) },
     ...(client.has("vms") ? [{ label: "New VM tab", run: () => void client.newVm({ session: client.session!, tab: true }) } as MenuItem] : []),
-    { label: "Go to directory…", shortcut: PICKER_KEY, run: () => openPicker(client, client.active(tab.id)) },
+    { label: "Go to directory…", shortcut: keyHint("picker"), run: () => openPicker(client, client.active(tab.id)) },
     // The desktop app (M46): this tab in a window of its own.
     ...(desktopApp() ? [{ label: "Open in new window", run: () => openInNewWindow(client.active(tab.id)) } as MenuItem] : []),
     // M11: what changed in the active pane's repository, on its machine.
@@ -180,7 +176,7 @@ export function newTabItems(client: Client, session: SessionId): MenuItem[] {
   return [
     { label: "New tab", run: () => client.intent({ op: "new_tab", session, from_pane: client.active() ?? null }) },
     ...(client.has("vms") ? [{ label: "New VM tab", run: () => void client.newVm({ session, tab: true }) } as MenuItem] : []),
-    { label: "In a directory…", shortcut: PICKER_KEY, disabled: client.active() === undefined, run: () => openPicker(client, client.active()) },
+    { label: "In a directory…", shortcut: keyHint("picker"), disabled: client.active() === undefined, run: () => openPicker(client, client.active()) },
     // M35: a studio app's box, in a tab of its own. The owner's.
     ...(!client.state?.roles && client.has("studio") ? [{ label: "Open a studio app…", run: () => pickApp(client, { session }) } as MenuItem] : []),
     // M36: a pull request, in a tab of its own.
@@ -235,7 +231,7 @@ export function settingsItems(client: Client | null): MenuItem[] {
       ? [
           "separator" as const,
           { label: "Getting started", run: () => openGettingStarted(undefined, client) } as MenuItem,
-          { label: "Command palette…", shortcut: PALETTE_KEY, run: () => openPalette(client) } as MenuItem,
+          { label: "Command palette…", shortcut: keyHint("palette"), run: () => openPalette(client) } as MenuItem,
         ]
       : []),
   ];

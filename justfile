@@ -690,12 +690,20 @@ dev-control *machines:
 dev-browser *args:
     node --experimental-strip-types --no-warnings {{justfile_directory()}}/web/dev-browser.ts {{args}}
 
+# Blocks on ports (browsers, editors) listen on a free loopback port.
 # Dev loop: separate daemon on 7682 + Vite on 5173; leaves the real one alone.
 dev:
     {{cargo}} build -p arugulad
     trap 'kill 0' EXIT; \
-      {{target_dir}}/debug/arugulad --listen 127.0.0.1:7682 --allow-origin http://localhost:5173 --state-dir ~/.local/state/arugula-dev & \
+      {{target_dir}}/debug/arugulad --listen 127.0.0.1:7682 --allow-origin http://localhost:5173 --block-listen 127.0.0.1:0 --state-dir ~/.local/state/arugula-dev & \
       (cd web && pnpm run dev)
+
+# S39: 8 sessions, a six-pane tab and attention on two panes, replacing
+# what's there. Run `just dev` first.
+# Seed `just dev`'s daemon with a workspace to screenshot (scripts/dev-fixture).
+dev-fixture:
+    {{cargo}} build -p arugula
+    CARGO_TARGET_DIR="{{target_dir}}" scripts/dev-fixture
 
 # Re-record snapshot fixtures (crates/vt/fixtures).
 fixtures *names:
