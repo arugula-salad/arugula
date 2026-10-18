@@ -7,6 +7,7 @@ import { defineConfig } from "@playwright/test";
 import "./e2e/scrub-env.ts";
 // Loopback callers show the daemon's local token: every daemon of the run
 // shares one, which browsers carry as a cookie.
+import { labs } from "./e2e/labs.ts";
 import { tokenCookies } from "./e2e/local-token.ts";
 
 // Directories for the run, made once (workers load this config too, and
@@ -102,10 +103,10 @@ runDir("FAKE_ACP_DIR", "arugula-e2e-fake-acp-");
   process.env.ARUGULA_CHANT = "";
 }
 
-// The suite's daemons have the `labs` file (e2e/labs.ts), which turns on what
-// a stranger doesn't get: the shared one here, and the ones the specs start.
-// `labs-off.spec.ts` starts one without it, and is the proof of the default.
-writeFileSync(join(runDir("ARUGULA_E2E_STATE", "arugula-e2e-"), "labs"), "");
+// The suite's daemons have `labs` in flags.json (e2e/labs.ts), which turns on
+// what a stranger doesn't get: the shared one here, and the ones the specs
+// start. `labs-off.spec.ts` starts one without it, and is the proof of the default.
+labs(runDir("ARUGULA_E2E_STATE", "arugula-e2e-"));
 
 // By default runs against a throwaway debug daemon on 7683 (which serves
 // web/dist from disk), driving the system Chrome (E2E_CHROMIUM=1: Playwright's
