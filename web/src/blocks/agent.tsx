@@ -102,20 +102,6 @@ export interface AgentState {
   } | null;
   entries_from: number;
   entries: Entry[];
-  /** #942 F3: a Managoat conversation: its status there, and its line
-   *  (pending, running, idle·awake, idle·parked, idle·waking, failed,
-   *  terminated). */
-  fountain?: FountainStatus;
-}
-
-export interface FountainStatus {
-  conversation?: string | null;
-  status?: string;
-  machine?: string;
-  sandbox_id?: string | null;
-  turn_id?: string | null;
-  line: string | null;
-  profile: string | null;
 }
 
 interface Worn {
@@ -459,7 +445,7 @@ function Composer({
       setAttached([]);
     }
   };
-  const busy = s.status === "working" || (s.status === "starting" && s.queued.length > 0) || s.fountain?.status === "running";
+  const busy = s.status === "working" || (s.status === "starting" && s.queued.length > 0);
   const opened = s.import && !s.import.continued;
   return (
     <form
@@ -516,87 +502,6 @@ function Composer({
         Send
       </button>
     </form>
-  );
-}
-
-/** #942 F3: a Managoat conversation's status line and its actions: Wake,
- *  Interrupt, Terminate (confirmed: the sandbox's disk goes), and its
- *  sandbox's Changes and Files beside it. */
-function FountainBar({ client, id, s }: { client: Client; id: PaneId; s: AgentState }) {
-  const [confirming, setConfirming] = useState(false);
-  const f = s.fountain;
-  if (!f) return null;
-  const conv = f.conversation ?? s.session_id;
-  const call = (method: string, failure: string) => void client.api(`/api/blocks/${id}/call/${method}`, {}, failure);
-  const ended = f.status === "terminated" || f.status === "failed";
-  const sandbox = conv ? { conversation: conv, profile: f.profile ?? undefined } : null;
-  return (
-    <div class="agent-fountain" data-fountain-line={f.line ?? ""}>
-      <span class={`fountain-line ${(f.line ?? "").replace("·", "-")}`} title={conv ? `Managoat conversation ${conv}` : undefined}>
-        {f.line ?? "…"}
-      </span>
-      {!ended && f.machine !== "awake" && (
-        <button data-fountain-wake title="Start its sandbox now, so the next prompt doesn't wait for it" onClick={() => call("wake", "couldn't wake it")}>
-          Wake
-        </button>
-      )}
-      {f.status === "running" && (
-        <button data-fountain-interrupt onClick={() => call("interrupt", "couldn't interrupt it")}>
-          Interrupt
-        </button>
-      )}
-      {sandbox && !ended && (
-        <>
-          <button
-            data-fountain-changes
-            title="What changed in its sandbox"
-            onClick={() => void client.openBlock({ type: "diff", config: { fountain: sandbox }, from_pane: id, split: id }, "couldn't show the changes")}
-          >
-            Changes
-          </button>
-          <button
-            data-fountain-files
-            title="Its sandbox's files"
-            onClick={() => void client.openBlock({ type: "file", config: { path: "", fountain: sandbox }, from_pane: id, split: id }, "couldn't show the files")}
-          >
-            Files
-          </button>
-        </>
-      )}
-      {!ended && !confirming && (
-        <button class="link danger" data-fountain-terminate onClick={() => setConfirming(true)}>
-          Terminate…
-        </button>
-      )}
-      {confirming && (
-        <span class="fountain-confirm" role="alertdialog" aria-label="Terminate the conversation?">
-          Terminate it? Its sandbox is destroyed, and the disk with it; the transcript stays.
-          <button
-            class="danger"
-            data-fountain-terminate-confirm
-            onClick={() => {
-              setConfirming(false);
-              call("terminate", "couldn't terminate it");
-            }}
-          >
-            Terminate
-          </button>
-          <button class="link" onClick={() => setConfirming(false)}>
-            Cancel
-          </button>
-        </span>
-      )}
-    </div>
-  );
-}
-
-/** A path in a Managoat conversation's sandbox, in a file block beside it. */
-function openSandboxFile(client: Client, id: PaneId, s: AgentState, path: string) {
-  const conv = s.fountain?.conversation ?? s.session_id;
-  if (!conv) return;
-  void client.openBlock(
-    { type: "file", config: { path, fountain: { conversation: conv, profile: s.fountain?.profile ?? undefined } }, from_pane: id, split: id },
-    "couldn't open that file",
   );
 }
 
@@ -673,7 +578,6 @@ function AgentBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentSta
         )}
       </div>
       <WornBar s={s} />
-      {!archived && <FountainBar client={client} id={id} s={s} />}
       {opened && (
         <div class="agent-import">
           A Claude Code conversation from {s.import!.source === "desktop" ? "the desktop app" : s.import!.source === "terminal" ? "a terminal" : "elsewhere"}
@@ -716,18 +620,14 @@ function AgentBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentSta
               );
             case "tool": {
               if (e.id === liveFrom) live = true;
-              // A Managoat agent's paths are in its sandbox, not here.
-              const openAt = client.state?.roles
-                ? undefined
-                : s.agent === "managoat" && !archived
-                  ? (path: string) => openSandboxFile(client, id, s, path)
-                  : (path: string) => void openFile(client, id, path, null);
+              // An archived Managoat conversation's paths were in its
+              // sandbox, not here.
+              const openAt = client.state?.roles || archived ? undefined : (path: string) => void openFile(client, id, path, null);
               return <ToolCard key={e.id} t={e} live={live} openAt={openAt} />;
             }
           }
         })}
         {s.status === "working" && !s.pending.length && !open.length && <div class="agent-working">{s.current_tool ? `Running ${s.current_tool.title}…` : "Working…"}</div>}
-        {s.status === "ready" && s.fountain?.status === "running" && <div class="agent-working">A turn is running on Managoat…</div>}
         {s.queued.length > 0 && <div class="agent-note">Queued: {s.queued.join(" · ")}</div>}
       </div>
       {s.error && <div class="agent-error">{s.error}</div>}

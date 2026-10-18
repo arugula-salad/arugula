@@ -150,7 +150,7 @@ export type Attention = "idle" | "working" | "needs_input" | "done";
  * What a block is; where one runs is its `host`, not its type. All types
  * share one id space (`%N`) and one place in the layout tree.
  */
-export type BlockType = "terminal" | "browser" | "agent" | "editor" | "diff" | "file" | "remote" | "workspace" | "app" | "forge" | "managoat" | "invite" | "agents";
+export type BlockType = "terminal" | "browser" | "agent" | "editor" | "diff" | "file" | "remote" | "workspace" | "app" | "forge" | "invite" | "agents";
 
 /**
  * A side of a PR: which repository (a fork's, for its head), branch and
@@ -967,79 +967,6 @@ export type ForgeWant = { kind: ForgeWantKind, why: string, };
 export type ForgeWantKind = "review" | "failed" | "changes" | "mention" | "done" | "assigned";
 
 /**
- * A device sign-in in progress: show `user_code` and send the person to
- * `verification_uri` (or `verification_uri_complete`) in a browser signed
- * in to Managoat.
- */
-export type FountainDevice = { base_url: string, user_code: string, verification_uri: string, verification_uri_complete: string | null, 
-/**
- * When the code stops working (ms since the epoch).
- */
-expires_ms: number, };
-
-/**
- * `GET /api/fountain/login` (#942): this daemon's Managoat sign-in, and
- * its account stream. Never a key: only where it came from and the
- * prefix Managoat's key list shows.
- */
-export type FountainLogin = { 
-/**
- * A key is here: this daemon's own sign-in, or the CLI's login.
- */
-signed_in: boolean, 
-/**
- * Where the key in use comes from: `arugula` (`arugula managoat
- * login`, kept in the state dir), `env` (`$MANAGOAT_API_KEY`) or
- * `file` (the `managoat` CLI's `~/.managoat/credentials`).
- */
-source: string | null, base_url: string | null, 
-/**
- * Who an Arugula sign-in signs in as, when Managoat said.
- */
-email: string | null, 
-/**
- * The key's prefix, as Managoat's key list shows it.
- */
-key_prefix: string | null, 
-/**
- * A sign-in waiting for its code to be approved.
- */
-pending: FountainDevice | null, 
-/**
- * Why the last sign-in didn't happen, or why there's no login.
- */
-error: string | null, 
-/**
- * What the last change did (a sign-out that couldn't revoke the key).
- */
-note: string | null, stream: FountainStream, };
-
-/**
- * `POST /api/fountain/login`: start a device sign-in. `base_url`: which
- * Managoat; left out, the one signed in to, else `$MANAGOAT_BASE_URL` or
- * the CLI profile's.
- */
-export type FountainLoginRequest = { base_url?: string | null, };
-
-/**
- * The account's event stream (`/api/events/stream`), on the daemon that
- * runs it (`--managoat-account-stream`).
- */
-export type FountainStream = { 
-/**
- * This daemon runs it.
- */
-enabled: boolean, connected: boolean, 
-/**
- * The last event id handled, kept across restarts (0: none yet).
- */
-cursor: number, 
-/**
- * Events handled since the daemon started.
- */
-delivered: number, error: string | null, };
-
-/**
  * A gate that waits for someone (M34): an op stopped before a step until
  * a person approves it. The `gate` reason, its bundle on the swarm's rail,
  * the card and the phone's sheet are all made from this, whichever reader
@@ -1255,11 +1182,6 @@ block_channels?: boolean,
  * VM tabs and panes and *Sandboxes…*: a sandbox provider (wisp).
  */
 vms: boolean, 
-/**
- * A Managoat login here: `MANAGOAT_API_KEY` (or `FOUNTAIN_API_KEY`), or the CLI's
- * credentials file.
- */
-fountain: boolean, 
 /**
  * A studio is linked (`arugula studio login`).
  */
@@ -2437,8 +2359,6 @@ export const OPS = {
   "acl.set": { method: "POST", path: "/api/acl" },
   "adapter.install": { method: "POST", path: "/api/agents/adapters/{kind}/install" },
   "adapters.list": { method: "GET", path: "/api/agents/adapters" },
-  "agent_approvals.get": { method: "GET", path: "/api/agent-approvals" },
-  "agent_approvals.set": { method: "PUT", path: "/api/agent-approvals" },
   "agents.get": { method: "GET", path: "/api/hosts/self/agents" },
   "agents.refresh": { method: "POST", path: "/api/hosts/self/agents/refresh" },
   "conv.act": { method: "POST", path: "/api/convs/{id}/act" },
@@ -2458,10 +2378,6 @@ export const OPS = {
   "conversations.list": { method: "GET", path: "/api/conversations" },
   "flag.set": { method: "PUT", path: "/api/flags/{name}" },
   "flags.list": { method: "GET", path: "/api/flags" },
-  "fountain.agents": { method: "GET", path: "/api/fountain/agents" },
-  "fountain.login": { method: "GET", path: "/api/fountain/login" },
-  "fountain.login_start": { method: "POST", path: "/api/fountain/login" },
-  "fountain.logout": { method: "DELETE", path: "/api/fountain/login" },
   "fs.list": { method: "GET", path: "/api/fs/list" },
   "fs.recent": { method: "GET", path: "/api/fs/recent" },
   "fs.stat": { method: "GET", path: "/api/fs/stat" },

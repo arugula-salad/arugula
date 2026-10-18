@@ -20,14 +20,14 @@ use arugula_proto::{
         RunResponse, SecretFinding, SendRequest, WaitRequest, WaitResult,
     },
     op::ops::{
-        AdapterInstall, AdaptersList, AgentApprovalsGet, AgentApprovalsSet, AgentsGet, AgentsRefresh, ClosePane,
-        ConvAct, ConvCreate, ConvDelete, ConvGrantMake, ConvGrantRevoke, ConvGrantsList, ConvLeadStart, ConvLinkAdd,
-        ConvLinkClose, ConvLinksGet, ConvMemberAdd, ConvMemberRemove, ConvRename, ConversationOpen, ConversationsList,
-        FlagSet, FlagsList, FountainAgentsGet, ListPanes, MachineReset, MachinesList, NotifyGet, NotifySet, PaneAsk,
-        PaneAskWithdraw, PaneAttention, PaneDetection, PaneDiffOf, PaneDrivers, PaneFollowUp, PaneInbox, PaneKeys,
-        PaneMouse, PanePermit, PanePorts, PaneProcess, PanePrompt, PaneSend, PaneWait, PushKeyGet, PushSubscribe,
-        PushTest, RuleForget, RulesForgetAll, RulesList, ShellEnvGet, ShellEnvRefresh, TelemetryGet, TelemetryNote,
-        TelemetrySet, ThreadGet, ThreadPost, ThreadRead,
+        AdapterInstall, AdaptersList, AgentsGet, AgentsRefresh, ClosePane, ConvAct, ConvCreate, ConvDelete,
+        ConvGrantMake, ConvGrantRevoke, ConvGrantsList, ConvLeadStart, ConvLinkAdd, ConvLinkClose, ConvLinksGet,
+        ConvMemberAdd, ConvMemberRemove, ConvRename, ConversationOpen, ConversationsList, FlagSet, FlagsList,
+        ListPanes, MachineReset, MachinesList, NotifyGet, NotifySet, PaneAsk, PaneAskWithdraw, PaneAttention,
+        PaneDetection, PaneDiffOf, PaneDrivers, PaneFollowUp, PaneInbox, PaneKeys, PaneMouse, PanePermit, PanePorts,
+        PaneProcess, PanePrompt, PaneSend, PaneWait, PushKeyGet, PushSubscribe, PushTest, RuleForget, RulesForgetAll,
+        RulesList, ShellEnvGet, ShellEnvRefresh, TelemetryGet, TelemetryNote, TelemetrySet, ThreadGet, ThreadPost,
+        ThreadRead,
     },
 };
 use axum::{
@@ -98,8 +98,6 @@ pub fn routes() -> Router<Arc<App>> {
         .route("/api/panes/{id}/export.cast", get(export))
         .op::<PaneDrivers>()
         .op::<PaneDiffOf>()
-        .op::<AgentApprovalsGet>()
-        .op::<AgentApprovalsSet>()
         .op::<RulesList>()
         .op::<RulesForgetAll>()
         .op::<RuleForget>()
@@ -132,8 +130,7 @@ pub fn routes() -> Router<Arc<App>> {
         .op::<PushSubscribe>()
         .op::<PushTest>()
         .op::<NotifyGet>()
-        .op::<NotifySet>()
-        .op::<FountainAgentsGet>();
+        .op::<NotifySet>();
     // Labs' routes, if this build has them, and the editor's.
     let r = crate::labs::routes(r);
     let r = crate::editors::routes(r);
@@ -283,11 +280,6 @@ async fn act(
             if is_agents(&app, *p).await {
                 return Err(ApiError(StatusCode::FORBIDDEN, OWN_ACCOUNT_ONLY.into()));
             }
-            // #942: a Managoat request is answered with this machine's
-            // own Managoat login, so it's this machine's own account's.
-            if is_fountain(&app, *p).await {
-                return Err(ApiError(StatusCode::FORBIDDEN, FOUNTAIN_OWN_ACCOUNT_ONLY.into()));
-            }
         }
     }
     // All or nothing on access: a list with one pane you can't change is
@@ -372,33 +364,6 @@ async fn act_one(
             .ok_or_else(|| format!("%{pane} has no command to run again"))?;
         let line = crate::fs::rerun_line(&command).ok_or_else(|| format!("can't type {command:?} again"))?;
         return crate::fs::type_line(app, pane, line, "rerun").await.map_err(|e| e.to_string());
-    }
-    // #942: a Managoat account view's cards are the account's permission
-    // requests, any of them (not only the one on the card, which is the
-    // newest): its notification's Allow answers the one it was about, even
-    // after a newer one came, or the card was dismissed.
-    if matches!(req.action, Action::Allow | Action::Deny)
-        && let Some(b) = app.mux.api(|r| Api::Block(pane, r)).await.flatten()
-        && b.kind() == arugula_proto::BlockType::Fountain
-    {
-        let allow = req.action == Action::Allow;
-        let always = allow && req.option.as_deref().is_some_and(|o| o.starts_with("always"));
-        let headline = b.waiting().filter(|w| req.id.as_ref().is_none_or(|i| *i == w.id)).map(|w| w.headline);
-        let args = serde_json::json!({ "id": req.id, "allow": allow, "always": always });
-        let out = block_call(app, pane, &b, "answer_request", args, by.clone()).await?;
-        // Its card closes saying who.
-        if let (Some(by), Some(id)) = (by, out["answered"].as_str()) {
-            let how = if !allow {
-                "denied"
-            } else if always {
-                "allowed always"
-            } else {
-                "allowed"
-            };
-            let headline = headline.unwrap_or_else(|| id.to_owned());
-            app.mux.send(Cmd::Api(Api::Answered(pane, by, id.to_owned(), how.into(), headline)));
-        }
-        return Ok(());
     }
     if req.action == Action::Dismiss {
         return match app.mux.api(|r| Api::Attention(pane, Attention::Idle, None, r)).await {
@@ -547,7 +512,7 @@ pub(crate) async fn act_for_conv(
     if req.id.is_none() {
         return Err("name the ask it answers (id)".into());
     }
-    if is_invite(app, pane).await || is_agents(app, pane).await || is_fountain(app, pane).await {
+    if is_invite(app, pane).await || is_agents(app, pane).await {
         return Err("a conversation answers its link's own asks: this card is the machine owner's".into());
     }
     if !who.is_owner() {
@@ -613,14 +578,6 @@ async fn is_review(app: &App, id: PaneId) -> bool {
 async fn is_agents(app: &App, id: PaneId) -> bool {
     app.mux.api(|r| Api::Block(id, r)).await.flatten().is_some_and(|b| b.kind() == arugula_proto::BlockType::Agents)
 }
-
-async fn is_fountain(app: &App, id: PaneId) -> bool {
-    app.mux.api(|r| Api::Block(id, r)).await.flatten().is_some_and(|b| b.kind() == arugula_proto::BlockType::Fountain)
-}
-
-/// What answering a Managoat request (#942) from another account says.
-const FOUNTAIN_OWN_ACCOUNT_ONLY: &str =
-    "only this machine's own account answers its Managoat requests (they're answered with its Managoat login)";
 
 pub(crate) async fn is_invite(app: &App, id: PaneId) -> bool {
     app.mux.api(|r| Api::Block(id, r)).await.flatten().is_some_and(|b| b.kind() == arugula_proto::BlockType::Invite)
@@ -1062,20 +1019,11 @@ async fn call(
         // M79: a task's card, and taking a grant back, are this machine's
         // own account's: not an editor's, nor a team's other owner's. So is
         // *Run there*, which reaches the account's other machines as this
-        // daemon, and (#942 F4) *Run on Managoat* and copying a variable to
-        // a vault, which use this machine's Managoat login and secrets.
+        // daemon.
         if b.kind() == arugula_proto::BlockType::Agents
             && matches!(
                 method.as_str(),
-                "answer"
-                    | "decline"
-                    | "approve"
-                    | "deny"
-                    | "terminal"
-                    | "revoke"
-                    | "run_there"
-                    | "run_fountain"
-                    | "fountain_copy"
+                "answer" | "decline" | "approve" | "deny" | "terminal" | "revoke" | "run_there"
             )
             && (!owner || foreign(&app, &dev))
         {

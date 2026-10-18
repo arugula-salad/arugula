@@ -335,25 +335,3 @@ test.describe("phone", () => {
     await expect(paneEl(page, id).locator(".agent-msg").last()).toHaveText("Not allowed.");
   });
 });
-
-
-test("retired approval defaults do not approve local agents", async ({ page }) => {
-  await reset(page);
-  await page.evaluate(() => window.__arugula.client.request("DELETE", "/api/rules"));
-  try {
-    await page.evaluate(() => window.__arugula.client.request("PUT", "/api/agent-approvals", { managoat: "auto_allow" }));
-    await page.locator(".app > .bar [data-account-menu]").click();
-    await page.getByRole("menuitem", { name: "Permission rules…" }).click();
-    const dialog = page.getByRole("dialog", { name: "Permission rules" });
-    await expect(dialog.getByLabel("Managoat approval default")).toHaveCount(0);
-    await dialog.getByRole("button", { name: "Close" }).click();
-    const [term] = await panes(page);
-    await menu(page, paneEl(page, term), "Start an agent…");
-    await startFake(page, "run echo approval-check");
-    await expect.poll(() => agentBlock(page)).not.toBeNull();
-    const block = paneEl(page, (await agentBlock(page))!);
-    await expect(block.getByRole("button", { name: "Approve", exact: true })).toBeVisible();
-  } finally {
-    await page.evaluate(() => window.__arugula.client.request("PUT", "/api/agent-approvals", { managoat: "ask" }));
-  }
-});

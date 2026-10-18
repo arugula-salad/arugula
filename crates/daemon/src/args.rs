@@ -318,7 +318,8 @@ pub(crate) struct RunArgs {
     /// state directory].
     #[arg(long, env = "ARUGULA_STUDIO_FILE", hide = true)]
     pub(crate) studio_file: Option<PathBuf>,
-    /// Retired compatibility option; direct account streams no longer start.
+    /// Removed with daemon-side Managoat: still parsed, so an old service
+    /// file starts, and does nothing but say so.
     #[arg(
         long = "managoat-account-stream",
         hide = true,
@@ -537,8 +538,7 @@ mod tests {
         }
         // Retired options still parse old service files but are not advertised.
         assert!(!top.contains("--managoat-account-stream") && !top.contains("fountain"), "{top}");
-        // Its name before the rename (DECISIONS.md "Fountain is Managoat")
-        // still parses for compatibility.
+        // Its name before the rename to Managoat still parses too.
         let old = <super::Args as clap::Parser>::try_parse_from(["arugulad", "--fountain-account-stream"]).unwrap();
         assert!(old.run.fountain_account_stream);
         // Still there for whoever knows them.

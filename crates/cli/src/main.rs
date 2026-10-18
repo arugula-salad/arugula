@@ -148,10 +148,6 @@ enum Command {
     /// draft that waits for a person to send it.
     #[command(args_conflicts_with_subcommands = true)]
     Pr(cmd::pr::Args),
-    #[cfg(feature = "labs")]
-    /// Retired direct integration. Use Cloud agents in your Arugula account.
-    #[command(name = "managoat", alias = "fountain", hide = true, args_conflicts_with_subcommands = true)]
-    Fountain(cmd::fountain::Args),
     /// Show an issue as a block.
     ///
     /// Forgejo through your `tea` login, GitHub through `gh`'s: its labels,
@@ -732,8 +728,6 @@ fn real_main(cli: Cli) -> anyhow::Result<i32> {
         Command::Workspace(args) => cmd::workspace::run(args, ctx),
         Command::Agents(args) => cmd::agents::run(args, ctx),
         Command::Pr(args) => cmd::pr::run(args, ctx),
-        #[cfg(feature = "labs")]
-        Command::Fountain(args) => cmd::fountain::run(args, ctx),
         Command::Issue(args) => cmd::issue::run(args, ctx),
         Command::Rerun(args) => cmd::rerun::run(args, ctx),
         Command::Agent(args) => cmd::agent::run(*args, ctx),
@@ -829,17 +823,9 @@ mod tests {
                 assert!(arg.is_hide_set(), "{cmd} {o} isn't hidden");
             }
         }
-        assert!(
-            super::Cli::try_parse_from(["arugula", "agent", "--managoat", "x", "--permission", "auto_allow"]).is_ok()
-        );
-        assert!(super::Cli::try_parse_from(["arugula", "agent", "--codex", "--permission", "auto_allow"]).is_err());
-        assert!(super::Cli::try_parse_from(["arugula", "agent", "--permission", "auto_allow"]).is_err());
-        assert!(super::Cli::try_parse_from(["arugula", "agent", "--managoat", "x", "hi"]).is_ok());
-        // The names before the rename (DECISIONS.md "Fountain is Managoat").
-        assert!(super::Cli::try_parse_from(["arugula", "agent", "--fountain", "x", "hi"]).is_ok());
-        let labs = cfg!(feature = "labs");
-        assert_eq!(super::Cli::try_parse_from(["arugula", "fountain", "status"]).is_ok(), labs);
-        assert_eq!(super::Cli::try_parse_from(["arugula", "managoat", "status"]).is_ok(), labs);
+        // Daemon-side Managoat was removed: its command and options are gone.
+        assert!(super::Cli::try_parse_from(["arugula", "agent", "--managoat", "x", "hi"]).is_err());
+        assert!(super::Cli::try_parse_from(["arugula", "managoat", "status"]).is_err());
         assert!(super::Cli::try_parse_from(["arugula", "run", "--vm", "--", "make"]).is_ok());
         assert!(super::Cli::try_parse_from(["arugula", "share", "--guest", "--rw", "%3"]).is_ok());
         assert!(super::Cli::try_parse_from(["arugula", "guests"]).is_ok());

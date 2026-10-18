@@ -27,7 +27,6 @@ test.afterAll(closeContexts);
 
 test.beforeAll(async () => {
   state = mkdtempSync(join(tmpdir(), "arugula-e2e-developer-"));
-  writeFileSync(join(state, "fountain-credentials"), '[default]\napi_key = "ftn_test_e2e"\n');
   writeFileSync(join(state, "studio.json"), JSON.stringify({ url: "http://127.0.0.1:9", token: "e2e-studio-token" }));
   writeFileSync(join(state, "wisp-token"), "e2e-wisp-token");
   daemon = spawn(
@@ -38,10 +37,7 @@ test.beforeAll(async () => {
       ...["--wisp-url", "http://127.0.0.1:9", "--wisp-token-file", join(state, "wisp-token")],
       ...["--guest-ssh", "127.0.0.1:0", "--guest-ssh-host", "127.0.0.1"],
     ],
-    {
-      stdio: "ignore",
-      env: { ...process.env, ARUGULA_MANAGOAT_CREDENTIALS: join(state, "fountain-credentials") },
-    },
+    { stdio: "ignore" },
   );
   base = `http://127.0.0.1:${await daemonPort(state, daemon)}`;
 });

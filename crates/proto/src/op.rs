@@ -137,8 +137,6 @@ impl Request for crate::telemetry::TelemetrySetRequest {}
 
 impl Request for crate::telemetry::TelemetryNoteRequest {}
 
-impl Request for crate::api::AgentApprovals {}
-
 impl Request for crate::api::WaitRequest {}
 
 impl Request for crate::api::PortsQuery {}
@@ -195,15 +193,6 @@ impl Request for crate::api::ConvLinkRequest {}
 impl Request for crate::api::ConvUnlinkRequest {}
 
 impl Request for crate::api::ConvActRequest {}
-
-impl Request for crate::api::FountainQuery {}
-
-/// The body may be left off: the base URL is optional.
-impl Request for crate::api::FountainLoginRequest {
-    fn absent() -> Option<Self> {
-        Some(Self::default())
-    }
-}
 
 impl Request for crate::api::NotifyRequest {}
 
@@ -303,8 +292,6 @@ macro_rules! every_op {
         $m!($crate::op::ops::TelemetryGet);
         $m!($crate::op::ops::TelemetrySet);
         $m!($crate::op::ops::TelemetryNote);
-        $m!($crate::op::ops::AgentApprovalsGet);
-        $m!($crate::op::ops::AgentApprovalsSet);
         $m!($crate::op::ops::RulesList);
         $m!($crate::op::ops::RulesForgetAll);
         $m!($crate::op::ops::RuleForget);
@@ -356,10 +343,6 @@ macro_rules! every_op {
         $m!($crate::op::ops::ConvGrantMake);
         $m!($crate::op::ops::ConvGrantsList);
         $m!($crate::op::ops::ConvGrantRevoke);
-        $m!($crate::op::ops::FountainAgentsGet);
-        $m!($crate::op::ops::FountainLoginGet);
-        $m!($crate::op::ops::FountainLoginStart);
-        $m!($crate::op::ops::FountainLogout);
         // #578 part a: fs, hosts, setup.
         $m!($crate::op::ops::FsListGet);
         $m!($crate::op::ops::FsStatGet);
@@ -419,15 +402,14 @@ pub mod ops {
             AclSetRequest, Adapters, AgentsInventory, AskAnswer, AskRequest, AttentionRequest, ConvCreateRequest,
             ConvGrantRequest, ConvGrantRevokeRequest, ConvLinkRequest, ConvMemberRemoveRequest, ConvMemberRequest,
             ConvRenameRequest, ConvUnlinkRequest, ConversationList, ConversationsQuery, DetectionAnswer, DriverEntry,
-            Empty, FollowUpRequest, FollowedUp, FollowerLinkRequest, FountainAgents, FountainQuery, GuestInvite,
-            GuestInviteRequest, IdeDiffs, IdeDiffsRequest, IdeInfo, IdeMentionRequest, IdeMentioned, InboxAnswer,
-            InstallAdapterRequest, InviteRequest, Invited, KeysRequest, LinkRequest, McpTokenRequest, MouseRequest,
-            NotifyPref, NotifyRequest, OpenConversationRequest, OpenConversationResponse, PaneDiff, PaneSummary,
-            PermitAnswer, PermitRequest, Ports, PortsQuery, Process, PromptRequest, PromptResult, PushKey,
-            PushSubscriptions, Rules, RunResponse, SendRequest, Share, ShareRequest, ShellEnv, SigninLink, StudioApps,
-            StudioLoggedIn, StudioLoginRequest, StudioStatus, Subscription, SyncedHost, SyncedRotated, TeamPins,
-            TeamPinsRequest, ThreadMessages, ThreadPostRequest, ThreadPosted, ThreadReadRequest, TokenInfo,
-            WaitRequest, WaitResult, WithdrawRequest,
+            Empty, FollowUpRequest, FollowedUp, FollowerLinkRequest, GuestInvite, GuestInviteRequest, IdeDiffs,
+            IdeDiffsRequest, IdeInfo, IdeMentionRequest, IdeMentioned, InboxAnswer, InstallAdapterRequest,
+            InviteRequest, Invited, KeysRequest, LinkRequest, McpTokenRequest, MouseRequest, NotifyPref, NotifyRequest,
+            OpenConversationRequest, OpenConversationResponse, PaneDiff, PaneSummary, PermitAnswer, PermitRequest,
+            Ports, PortsQuery, Process, PromptRequest, PromptResult, PushKey, PushSubscriptions, Rules, RunResponse,
+            SendRequest, Share, ShareRequest, ShellEnv, SigninLink, StudioApps, StudioLoggedIn, StudioLoginRequest,
+            StudioStatus, Subscription, SyncedHost, SyncedRotated, TeamPins, TeamPinsRequest, ThreadMessages,
+            ThreadPostRequest, ThreadPosted, ThreadReadRequest, TokenInfo, WaitRequest, WaitResult, WithdrawRequest,
         },
         flags::{FlagInfo, FlagSetRequest},
         hosts::{Demoted, Host, PromoteRequest, SandboxList},
@@ -561,32 +543,6 @@ pub mod ops {
         type Path = ();
         type Req = TelemetryNoteRequest;
         type Res = Empty;
-    }
-
-    /// The owner's default policy for new Managoat conversations on this machine.
-    pub struct AgentApprovalsGet;
-
-    impl Op for AgentApprovalsGet {
-        const NAME: &'static str = "agent_approvals.get";
-        const METHOD: Method = Method::Get;
-        const PATH: &'static str = "/api/agent-approvals";
-        const ACCESS: Access = Access::Owner;
-        type Path = ();
-        type Req = Empty;
-        type Res = crate::api::AgentApprovals;
-    }
-
-    /// Save the owner's defaults for new agent conversations on this machine.
-    pub struct AgentApprovalsSet;
-
-    impl Op for AgentApprovalsSet {
-        const NAME: &'static str = "agent_approvals.set";
-        const METHOD: Method = Method::Put;
-        const PATH: &'static str = "/api/agent-approvals";
-        const ACCESS: Access = Access::Owner;
-        type Path = ();
-        type Req = crate::api::AgentApprovals;
-        type Res = crate::api::AgentApprovals;
     }
 
     /// `GET /api/rules`: standing tool permission rules.
@@ -1239,65 +1195,6 @@ pub mod ops {
         type Path = PaneId;
         type Req = ConvGrantRevokeRequest;
         type Res = Vec<crate::ConvGrant>;
-    }
-
-    /// `GET /api/fountain/agents` (M43): the person's Managoat agents, read
-    /// with their own login on this host (`arugula managoat agents`). The
-    /// query string is the request.
-    pub struct FountainAgentsGet;
-
-    impl Op for FountainAgentsGet {
-        const NAME: &'static str = "fountain.agents";
-        const METHOD: Method = Method::Get;
-        const PATH: &'static str = "/api/fountain/agents";
-        const ACCESS: Access = Access::Owner;
-        type Path = ();
-        type Req = FountainQuery;
-        type Res = FountainAgents;
-    }
-
-    /// `GET /api/fountain/login` (#942): this daemon's Managoat sign-in
-    /// (where its key comes from, never the key) and its account stream.
-    pub struct FountainLoginGet;
-
-    impl Op for FountainLoginGet {
-        const NAME: &'static str = "fountain.login";
-        const METHOD: Method = Method::Get;
-        const PATH: &'static str = "/api/fountain/login";
-        const ACCESS: Access = Access::Owner;
-        type Path = ();
-        type Req = Empty;
-        type Res = crate::api::FountainLogin;
-    }
-
-    /// `POST /api/fountain/login` (`arugula managoat login`): start a device
-    /// sign-in. The answer's `pending` has the code to approve; the daemon
-    /// polls Managoat and keeps the key in its state dir (0600).
-    pub struct FountainLoginStart;
-
-    impl Op for FountainLoginStart {
-        const NAME: &'static str = "fountain.login_start";
-        const METHOD: Method = Method::Post;
-        const PATH: &'static str = "/api/fountain/login";
-        const ACCESS: Access = Access::Owner;
-        type Path = ();
-        type Req = crate::api::FountainLoginRequest;
-        type Res = crate::api::FountainLogin;
-    }
-
-    /// `DELETE /api/fountain/login` (`arugula managoat logout`): forget this
-    /// daemon's key (revoking it on Managoat when it can). The CLI's own
-    /// login, if any, is left as it is.
-    pub struct FountainLogout;
-
-    impl Op for FountainLogout {
-        const NAME: &'static str = "fountain.logout";
-        const METHOD: Method = Method::Delete;
-        const PATH: &'static str = "/api/fountain/login";
-        const ACCESS: Access = Access::Owner;
-        type Path = ();
-        type Req = Empty;
-        type Res = crate::api::FountainLogin;
     }
 
     /// `GET /api/machines`: the machines panes run on (`arugula machines`).

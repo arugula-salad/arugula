@@ -146,8 +146,8 @@ async fn tools_through_the_stdio_bridge() {
     // Studio apps, chant workspaces and chat aren't listed without their
     // flags (chat's tools, the others' kinds), and a caller who names one is
     // told how to turn it on (#347); a build without Labs says it isn't
-    // built. Retired direct Managoat kinds stay hidden in every build;
-    // existing callers still receive migration guidance.
+    // built. Daemon-side Managoat was removed: its kinds aren't listed, and
+    // a caller who names one is told where cloud agents went.
     for name in ["read_thread", "post_thread"] {
         assert!(tools.iter().all(|t| t.name != name), "{name} is listed");
     }
@@ -158,12 +158,9 @@ async fn tools_through_the_stdio_bridge() {
         assert!(!kinds(&tools, tool).contains(&kind.to_owned()), "{tool} kind {kind}");
     }
     let said = refused(&s, "list", json!({ "kind": "managoat_agent", "name": "nobody" })).await;
-    assert!(!said.contains("no tool") && !said.contains("no kind"), "an unlisted kind still answers: {said}");
-    let said = refused(&s, "read_agent", json!({ "name": "nobody" })).await;
-    assert!(!said.contains("no tool") && !said.contains("no kind"), "so does its name before #349: {said}");
+    assert!(said.contains("Cloud agents in your Arugula account"), "{said}");
     #[cfg(feature = "labs")]
     {
-        assert!(!said.contains("arugulad flags"), "{said}");
         let said = refused(&s, "read_thread", json!({ "pane": 1 })).await;
         assert!(said.contains("`arugulad flags chat on`"), "read_thread by name: {said}");
     }
@@ -972,7 +969,7 @@ async fn labs_lists_all_the_tools_and_the_thread_text() {
         assert_eq!(chat.len(), 21, "{:?}", names(&chat));
         assert!(!kinds(&chat, "show").contains(&"app".to_owned()), "show lists app with only chat on");
         arugula_proto::flags::set(&d.state, "chat", false).unwrap();
-        // A `fountain` from before #942's F5, either way, changes nothing.
+        // A `fountain` flag from before #942's F5 changes nothing.
         std::fs::write(d.state.join("flags.json"), r#"{"flags":{"fountain":false}}"#).unwrap();
         let without = s.list_all_tools().await.unwrap();
         assert_eq!(without.len(), 19 - NO_FORGE);

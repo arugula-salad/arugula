@@ -394,8 +394,7 @@ core through `app.mux` keeps doing so.
 
 **`hosts.rs`'s `HostFeatures`.** The type is in proto and stays there.
 `hosts::features(&App)` stays in the **binary**, because it asks
-integrations (`sites::get`, `labs::fountain_login_here`,
-`labs::studio_here`), which only the binary may name. Two things cross the
+integrations (`sites::get`, `labs::studio_here`), which only the binary may name. Two things cross the
 line, both read-only: `app.mux.provider.is_some()` for `vms`, and the
 state dir, through `app.control.state_dir()` for `labs` (today's path).
 `hosts.rs` as a whole (812 lines: other daemons, tokens, invites) is Reach

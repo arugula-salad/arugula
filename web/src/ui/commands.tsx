@@ -9,7 +9,7 @@ import type { Machine, OpenRequest, PaneId, Policy, SessionId, TabView } from ".
 import { askText, type MenuItem } from "./menu";
 import { openSandboxes, pickApp } from "../labs-load";
 import { driveItems, shareSession } from "./people";
-import { newRemote, openChanges, openEditor, openFountain, openIssue, openPort, openPr, openWorkspace, remoteHosts } from "../blocks";
+import { newRemote, openChanges, openEditor, openIssue, openPort, openPr, openWorkspace, remoteHosts } from "../blocks";
 import { startAgent } from "./agent-dialog";
 import { pickConversation } from "./conversations";
 import { openPicker } from "./picker";
@@ -89,8 +89,6 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
     ...(!client.state?.roles ? [{ label: "Open pull request…", run: () => void openPr(client, { split: id, dir: cwd }) } as MenuItem] : []),
     // M37: an issue beside it (N: in its repository).
     ...(!client.state?.roles ? [{ label: "Open issue…", run: () => void openIssue(client, { split: id, dir: cwd }) } as MenuItem] : []),
-    // M43: the Managoat agent catalog beside it.
-    ...(!client.state?.roles ? fountainItems(client, { split: id }) : []),
     // M27: VS Code where this pane runs, in its directory. The owner's,
     // like ports.
     ...(entry && !client.state?.roles ? [{ label: "Open in editor", run: () => openEditor(client, id) } as MenuItem] : []),
@@ -189,8 +187,6 @@ export function newTabItems(client: Client, session: SessionId): MenuItem[] {
     ...(!client.state?.roles ? [{ label: "Open pull request…", run: () => void openPr(client, { session }) } as MenuItem] : []),
     // M37: an issue, in a tab of its own.
     ...(!client.state?.roles ? [{ label: "Open issue…", run: () => void openIssue(client, { session }) } as MenuItem] : []),
-    // M43: the Managoat agent catalog, in a tab of its own.
-    ...(!client.state?.roles ? fountainItems(client, { session }) : []),
     // #17: a tab here whose shell runs on another host.
     ...remoteHosts().map((h): MenuItem => ({ label: `New tab on ${h}`, run: () => void newRemote(client, h, { session }) })),
   ];
@@ -255,11 +251,6 @@ export function machineSettingsItems(client: Client): MenuItem[] {
     { label: "Usage and crash reports…", run: () => openMachineTelemetry(client) },
     ...(client.hasDev() ? [{ label: "Developer settings…", run: () => openDeveloper(client) } as MenuItem] : []),
   ];
-}
-
-/** The Managoat catalog with a login here (#180). */
-function fountainItems(client: Client, where: { session?: number; split?: PaneId }): MenuItem[] {
-  return client.has("fountain") ? [{ label: "Managoat…", run: () => void openFountain(client, where) }] : [];
 }
 
 /** "idle" when nothing in the tab runs on its machine any more. */

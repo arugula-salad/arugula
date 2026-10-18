@@ -21,23 +21,16 @@ fn needs_input(sock: &crate::http::Target, block: u32) -> anyhow::Result<bool> {
 #[derive(clap::Args)]
 pub struct Args {
     /// Any ACP agent server, by its command line.
-    #[arg(long, conflicts_with_all = ["fountain", "codex"])]
+    #[arg(long, conflicts_with = "codex")]
     acp: Option<String>,
-    /// A Managoat agent (name or id), run in Managoat's sandbox.
-    /// (`--fountain`, its name before the rename, still works.)
-    #[arg(long = "managoat", hide = true, value_name = "AGENT", alias = "fountain", conflicts_with = "codex")]
-    fountain: Option<String>,
     /// Claude Code as a recipe, a Claude Code subagent (its `name`, from
     /// `.claude/agents/` here or `~/.claude/agents/`): its prompt, model,
     /// tools, permission mode, skills and MCP servers.
-    #[arg(long = "as", value_name = "AGENT", hide = true, conflicts_with_all = ["acp", "fountain", "codex", "vm", "machine"])]
+    #[arg(long = "as", value_name = "AGENT", hide = true, conflicts_with_all = ["acp", "codex", "vm", "machine"])]
     recipe: Option<String>,
     /// Codex instead of Claude Code.
     #[arg(long)]
     codex: bool,
-    /// Managoat: a vault for its secrets.
-    #[arg(long)]
-    vault: Option<String>,
     /// A model to switch to (e.g. `haiku`).
     #[arg(long)]
     model: Option<String>,
@@ -54,14 +47,11 @@ pub struct Args {
     allow: Vec<String>,
     /// The permission mode its session starts in: `default`,
     /// `acceptEdits`, `plan`, `auto` (Claude Code's), or the agent's own.
-    #[arg(long, value_name = "MODE", conflicts_with = "fountain")]
+    #[arg(long, value_name = "MODE")]
     permission_mode: Option<String>,
-    /// Managoat tool approvals for this conversation; otherwise use this machine's default.
-    #[arg(long, requires = "fountain", conflicts_with_all = ["codex", "acp", "recipe", "resume", "fork"], value_parser = ["ask", "auto_allow"])]
-    permission: Option<String>,
     /// Claude Code with your settings (allow and deny lists, default
     /// mode, `CLAUDE.md`), but none of their hooks.
-    #[arg(long, conflicts_with_all = ["acp", "fountain", "codex"])]
+    #[arg(long, conflicts_with_all = ["acp", "codex"])]
     user_settings: bool,
     /// On a new throwaway VM of its own.
     #[arg(long, hide = true, conflicts_with = "machine")]
@@ -75,11 +65,11 @@ pub struct Args {
     cwd: Option<String>,
     /// Continue a Claude Code conversation from a terminal or the
     /// desktop app (its id, or the start of it; `arugula claude ls`).
-    #[arg(long, value_name = "ID", conflicts_with_all = ["acp", "fountain", "codex", "vm", "machine", "fork", "recipe"])]
+    #[arg(long, value_name = "ID", conflicts_with_all = ["acp", "codex", "vm", "machine", "fork", "recipe"])]
     resume: Option<String>,
     /// Fork a Claude Code conversation and go on in the fork (for one
     /// that's still open somewhere else).
-    #[arg(long, value_name = "ID", conflicts_with_all = ["acp", "fountain", "codex", "vm", "machine", "recipe"])]
+    #[arg(long, value_name = "ID", conflicts_with_all = ["acp", "codex", "vm", "machine", "recipe"])]
     fork: Option<String>,
     #[arg(long)]
     session: Option<String>,
@@ -144,16 +134,13 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
         }
         Args {
             acp,
-            fountain,
             recipe,
             codex,
-            vault,
             model,
             title,
             mcp,
             allow,
             permission_mode,
-            permission,
             user_settings,
             vm,
             machine,
@@ -164,18 +151,14 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
             prompt,
             ..
         } => {
-            let mut config = match (&acp, &fountain) {
-                (Some(cmd), _) => json!({ "agent": "acp", "command": cmd }),
-                (_, Some(name)) => json!({ "agent": "managoat", "managoat_agent": name, "vault": vault }),
+            let mut config = match &acp {
+                Some(cmd) => json!({ "agent": "acp", "command": cmd }),
                 _ if codex => json!({ "agent": "codex" }),
                 _ => match &recipe {
                     Some(name) => json!({ "agent": "claude", "recipe": name }),
                     None => json!({ "agent": "claude" }),
                 },
             };
-            if vault.is_some() && fountain.is_none() {
-                anyhow::bail!("--vault goes with --managoat");
-            }
             // A VM, or another daemon's machine, has none of this host's
             // directories.
             let here = !(vm || machine.is_some() || REMOTE.load(std::sync::atomic::Ordering::Relaxed));
@@ -184,7 +167,7 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
             config["cwd"] = json!(cwd);
             // #379: Claude Code logs in as whoever ran this, not as the
             // daemon's default login ("" says this has none).
-            if here && fountain.is_none() && !codex {
+            if here && !codex {
                 let dir = std::env::var("CLAUDE_CONFIG_DIR").ok().filter(|d| !d.is_empty());
                 config["claude_config_dir"] = json!(dir.map(|d| absolute(&d)).transpose()?.unwrap_or_default());
             }
@@ -198,9 +181,6 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
                 config["allow"] = allow.iter().map(|t| json!({ "tool": t })).collect();
             }
             config["permission_mode"] = json!(permission_mode);
-            if let Some(permission) = permission {
-                config["permission"] = json!(permission);
-            }
             if user_settings {
                 config["user_settings"] = json!(true);
             }
@@ -211,7 +191,6 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
             // #335: Claude Code's or Codex's adapter isn't installed here:
             // say how, rather than make a block that can't start.
             if acp.is_none()
-                && fountain.is_none()
                 && !vm
                 && machine.is_none()
                 && let Some(why) = adapter_missing(&sock, config["agent"].as_str().unwrap_or_default())

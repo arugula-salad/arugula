@@ -15,11 +15,6 @@
 //!   restarted daemon reattaches at the output offset it had processed, kept
 //!   in `agent-exec.json`. Credentials go in on stdin before the server
 //!   starts (see `GUEST_BOOT`), never in the URL, the argv or the VM's disk.
-//! - **On Managoat** (#942, F3) nothing runs here: the daemon speaks
-//!   Managoat's REST API for the block and makes its inbound frames from
-//!   the conversation's events ([`spawn_fountain`]). The conversation lives
-//!   on Managoat, so a restarted daemon carries on from the last event in
-//!   the block's log.
 
 #[cfg(unix)]
 use std::{
@@ -497,25 +492,6 @@ pub fn spawn_vm(
     let (tx, rx) = mpsc::unbounded_channel::<Vec<u8>>();
     let (stop_tx, stop_rx) = mpsc::unbounded_channel::<()>();
     rt.spawn(drive_vm(provider, sprite, dir, begin, rx, stop_rx, sink));
-    Link {
-        tx,
-        stop: Box::new(move || {
-            let _ = stop_tx.send(());
-        }),
-    }
-}
-
-/// A Managoat conversation (#942, F3): no agent server runs here; the
-/// daemon speaks Managoat's API and follows the conversation's events
-/// (`labs/fountain/link.rs`). The block's frames are the same ACP.
-pub fn spawn_fountain(rt: &tokio::runtime::Handle, l: crate::labs::FountainLink, sink: Sink) -> Link {
-    let (tx, rx) = mpsc::unbounded_channel::<Vec<u8>>();
-    let (stop_tx, stop_rx) = mpsc::unbounded_channel::<()>();
-    let out: crate::labs::LinkOut = Arc::new(move |r| match r {
-        Ok(line) => sink(FromAgent::Line(line)),
-        Err(why) => sink(FromAgent::Closed(why)),
-    });
-    crate::labs::fountain_link(rt, l, rx, stop_rx, out);
     Link {
         tx,
         stop: Box::new(move || {

@@ -128,17 +128,6 @@ impl Rules {
         Arc::new(Self { path, list: Mutex::new(list) })
     }
 
-    pub fn approvals(&self) -> arugula_proto::api::AgentApprovals {
-        std::fs::read(self.path.with_file_name("agent-approvals.json"))
-            .ok()
-            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-            .unwrap_or_default()
-    }
-
-    pub fn set_approvals(&self, prefs: &arugula_proto::api::AgentApprovals) -> io::Result<()> {
-        write_atomic(&self.path.with_file_name("agent-approvals.json"), &serde_json::to_vec_pretty(prefs)?)
-    }
-
     pub fn list(&self) -> Vec<Standing> {
         self.list.lock().unwrap().clone()
     }

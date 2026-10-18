@@ -1,25 +1,23 @@
-// The Managoat, studio app, workspace and agents blocks have their code in the
+// The studio app, workspace and agents blocks have their code in the
 // Labs chunk. Here, in the main bundle, is what stands in their slot: a
 // "Loading…" while the chunk arrives, then the real block inside it. A
 // machine without the block's flag gets a plain note instead (an old saved
 // layout can still hold such a block), and nothing is fetched for it.
-// Managoat's block needs no flag: it left Labs (#942), and only its code
-// stays in the chunk.
 
 import type { Client } from "../client";
 import { loadLabs, type Labs } from "../labs-load";
 import type { BlockType, PaneId } from "../proto";
 import { registerBlock, type BlockView } from "./view";
 
-const LABS_BLOCKS = ["managoat", "app", "workspace", "agents"] as const;
+const LABS_BLOCKS = ["app", "workspace", "agents"] as const;
 type LabsBlock = (typeof LABS_BLOCKS)[number];
 
-/** The Labs flag each needs; `null`: none. */
-const FLAGS: Record<LabsBlock, string | null> = { managoat: null, app: "studio", workspace: "workspaces", agents: "agents" };
-const TITLES: Record<LabsBlock, string> = { managoat: "Managoat", app: "App", workspace: "Workspace", agents: "Team agents" };
+/** The Labs flag each needs. */
+const FLAGS: Record<LabsBlock, string> = { app: "studio", workspace: "workspaces", agents: "agents" };
+const TITLES: Record<LabsBlock, string> = { app: "App", workspace: "Workspace", agents: "Team agents" };
 
 function rendererOf(labs: Labs, type: LabsBlock) {
-  const of = { managoat: labs.fountainBlock, app: labs.appBlock, workspace: labs.workspaceBlock, agents: labs.agentsBlock };
+  const of = { app: labs.appBlock, workspace: labs.workspaceBlock, agents: labs.agentsBlock };
   return of[type];
 }
 
@@ -43,7 +41,7 @@ function lazyView(type: LabsBlock, client: Client, id: PaneId): BlockView {
     off?.();
     off = null;
     const flag = FLAGS[type];
-    if (flag !== null && !client.flag(flag)) {
+    if (!client.flag(flag)) {
       host.textContent = "This block is in Labs";
       host.className = "block block-unknown";
       return;

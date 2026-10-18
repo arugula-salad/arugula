@@ -64,10 +64,3 @@ export async function openAgents(client: Client, where: { split?: PaneId; sessio
   const place = where.split !== undefined ? { split: where.split, from_pane: where.split } : { session: where.session !== undefined ? String(where.session) : undefined };
   await client.openBlock({ type: "agents", config: {}, local: true, ...place }, "couldn't open the agent catalog");
 }
-
-/** "Managoat…": the account view beside `split`, or in a new tab of
- * `session`. */
-export async function openFountain(client: Client, where: { split?: PaneId; session?: number }) {
-  const place = where.split !== undefined ? { split: where.split, from_pane: where.split } : { session: where.session !== undefined ? String(where.session) : undefined };
-  await client.openBlock({ type: "managoat", config: {}, local: true, ...place }, "couldn't open Managoat");
-}

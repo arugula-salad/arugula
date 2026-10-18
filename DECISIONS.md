@@ -375,7 +375,7 @@ From: [SSH track](docs/plan-archive.md#ssh-track-s28-m51m53-added-2026-10-04), M
 ### An agent block is an ACP client
 It speaks the Agent Client Protocol (JSON-RPC on the agent's stdio) to
 whatever agent server the block names (Claude Code through
-`claude-agent-acp`, Codex, Fountain, any ACP command). One protocol for every
+`claude-agent-acp`, Codex, any ACP command). One protocol for every
 agent, so no per-agent adapter. A permission request puts the block in
 `needs-input`; an unanswered question or approval waits indefinitely. "Always"
 rules are kept by the daemon in `rules.json`, per machine, never in Claude
@@ -399,7 +399,7 @@ else its shell's (`procinfo::env_var`, that one variable from
 *Start an agent…* beside a terminal falls back to the daemon's login. Opened
 conversations (M33) keep the daemon's directory, where the index found them;
 a VM's Claude Code keeps its token file. An `acp` block takes it too (it may be
-the adapter run by hand); Codex and Fountain refuse it.
+the adapter run by hand); Codex refuses it.
 
 The directory is a path, so it's kept in `layout.json` and a restarted daemon
 starts the adapter with it again. Keys and tokens in a caller's environment
@@ -622,8 +622,9 @@ a fresh disposable checkout; control persists its lifecycle, approvals,
 transcript, and results across browser disconnects and process restarts.
 The beta is account-allowlisted with admission and duration limits.
 
-This replaces the direct-account workflows below: daemon-side Managoat
-login, account streams, remote catalogs, and recipe execution are retired.
+This replaced the daemon's direct-account workflows (#942): its Managoat
+login, account streams, remote catalogs, and recipe execution were retired,
+and then removed ("Daemon-side Managoat is removed", below).
 Old saved agent blocks remain readable without reconnecting. Definitions
 can be imported explicitly into account-scoped cloud agents; old remote
 conversations are not transferred. Local agents and their permission rules
@@ -634,35 +635,50 @@ Where: `crates/control/src/cloud/`, `crates/control/src/db/cloud.rs`,
 `web/src/ui/cloud.tsx`, [managed cloud agents](docs/managoat.md).
 From: Jake's managed-platform integration decisions, 2026-10-16.
 
-### Fountain is a headless backend, and Arugula is its UI
-Fountain is a conversational API to a computer, with no console of its own
-for agents, environments or vaults (managoat/managoat#2732). Arugula is the
-place a person sees and steers Fountain work (Jake, 2026-10-15, #942), and
-the Conversations app (managoat/demos) stays as a second client. This
-supersedes S34's "no Fountain dependency" (#397) and its q8, "don't build on
-[M43's pieces]": Arugula now builds on Fountain. It was behind the
-`fountain` flag until recipes ran there (F4); F5 took it out of Labs (see
-"Fountain is out of Labs" under Build and release).
-- **Recipes are the source of truth.** A recipe runs here by being worn
-  (M76), and on Fountain by being pushed as one Fountain agent per recipe
-  (F4). Pulling a Fountain agent down to wear here (M44's `as_fountain`,
-  the catalog's *Run here*, `--as-fountain`, `start_agent {as_fountain}`)
-  was the reverse of that, and is gone. A new block with `as_fountain` is
-  refused with the reason; a saved one comes back with its transcript and
-  says why it won't start, and keeps the key so it never starts as a plain
-  Claude Code.
-- **Chant's agents stay.** The agents agent-specs manages are still edited
-  there and shown read-only: the Fountain block lists the account's agents
-  (with *Run on Fountain* and *Spec*), and MCP's `list` kinds
-  `fountain_agents` and `fountain_agent` read them. *Spec* opens the
-  agent-specs file, else shows the agent as `GET /api/agents/{id}` returns
-  it (literal values redacted) in the block, since the console's agent pages
-  are gone.
-(F1's client, sign-in and stream, F2's account view and attention, and
-F4's recipes on Fountain are below; F5, dropping the flag, is under Build
-and release.)
-Where: `crates/daemon/src/labs/fountain/`, `crates/daemon/src/labs/wearing.rs`, `crates/daemon/src/agent/defs.rs` (`AS_FOUNTAIN_GONE`), `web/src/blocks/fountain.tsx`.
-From: #942, superseding [S34](https://github.com/arugula-salad/arugula/issues/397)'s "No Fountain dependency" and q8 ([spike](spikes/s34-agents-a2a/README.md)).
+### Daemon-side Managoat is removed
+The daemon's own Managoat integration (#942's F1 to F5: its device sign-in
+and account stream, the account view block with its catalog, conversations
+and permission-request cards, a conversation as an agent block on a native
+link, recipes run on Managoat (from the Agents page, the agents block,
+`agents run --managoat` and MCP's `start_agent {on: managoat}`), views of a
+conversation's sandbox, `arugula managoat`, MCP's Managoat kinds, and the
+per-machine default for Managoat approvals) was retired by "Cloud execution
+is owned by Arugula control" (above) and taken out on 2026-10-18, Jake's
+decision. Control's own Managoat adapter (`crates/control/src/cloud/`) is
+separate and stays. This ends "Fountain is a headless backend, and Arugula
+is its UI" (#942, 2026-10-15), and with it the entries on the daemon's
+sign-in, the account view's cards, recipes on Managoat and the rename's
+aliases; S34's "no Fountain dependency" holds again for the daemon. Revive
+any of it from git: everything is in the tree at 50daf913
+(`crates/daemon/src/labs/fountain/`, `crates/cli/src/cmd/fountain.rs`,
+`web/src/blocks/fountain.tsx`, `web/src/ui/fountain-run.tsx` and their
+tests). What stays, for saved state and a fleet whose versions are mixed:
+- **A saved Managoat agent block is an archived transcript.** `agent:
+  managoat` (`fountain` before the rename) and `managoat_agent` still
+  parse; the block comes back with its transcript, stopped, saying where
+  cloud agents went, and refuses every call but reading it and its title.
+  A new one is refused with the same words.
+- **A saved account view, or a diff or file view of a sandbox, is
+  dropped.** `BlockType` has no `managoat` now, so one parses as `Unknown`,
+  which no kind makes, and restoring drops it, as it does any block it
+  can't make; a view with `fountain` in its config is refused, and so
+  dropped too. They held nothing of their own: what they showed lives on
+  Managoat. `WorkKind`'s `managoat` stays, so an older daemon's panes
+  still parse.
+- **Old names are refused, not run as something else.** MCP's Managoat
+  kinds (by either name) and `start_agent` with `agent: managoat`,
+  `managoat_agent` or `on: managoat` say where cloud agents went; `POST
+  /api/a2a/run` with an older CLI's `fountain: true` is refused (410), not
+  run on another machine. `arugulad --managoat-account-stream` still
+  parses, so an old service file starts, and logs that it does nothing.
+- **`fountain` (and `managoat`) stay retired flags** (`flags::RETIRED`,
+  "A retired flag is a name that isn't one" under Build and release).
+- **An older daemon's `features.fountain`** is ignored: no page or CLI
+  reads it. `/api/fountain/…`, `/api/agent-approvals` and `/api/a2a/
+  fountain/…` are gone; `agent-approvals.json` and `managoat/` in a state
+  dir are left as they are.
+Where: `crates/daemon/src/agent/defs.rs` (`Kind::Fountain`, `CLOUD_MIGRATION`), `crates/daemon/src/agent/mod.rs` (`begin`), `crates/daemon/src/review/mod.rs` (`SANDBOX_GONE`), `crates/daemon/src/mcp/tools.rs` (`managoat_kind`, `managoat_start`), `crates/daemon/src/labs/agents/mod.rs` (`run_anywhere`), `crates/proto/src/lib.rs` (`BlockType`, `WorkKind`), `crates/daemon/tests/integration/agents.rs` (`legacy_cloud_transcript_restores_without_launching_or_accepting_commands`), `crates/daemon/tests/integration/flag_gates.rs`.
+From: Jake, 2026-10-18.
 
 ### A machine reaches another's agents as its account, through the relay
 The team's catalog (M77) is read by the daemon itself, not by a page that
@@ -917,110 +933,6 @@ nothing new, and the grant's route check needs no new key.
 Where: `crates/daemon/src/labs/events.rs` (`Rules`, `here`, `there`), `crates/daemon/src/api.rs` (`attention_now`, `events`), `crates/mux/src/mux/attention.rs` (`hook`, `follow_up`, `wait_inbox`).
 From: #888 and #895 (M85's live run, #859; tracker #851).
 
-### A daemon signs in to Fountain itself; one daemon follows the account
-Arugula reaches Fountain natively (#942), with its own REST client and the
-account's event stream, and not through a `fountain` CLI subprocess. A
-daemon signs in with Fountain's device flow: a code is approved in any
-browser signed in to Fountain, the phone included, so no redirect URI or
-OAuth client is needed. The key it gets is kept in the daemon's state dir
-(`managoat/login.json`, 0600; `fountain/` before "Fountain is Managoat") and never reaches a client. Signing out
-revokes the key, since nothing else holds it. Without that sign-in, the
-`managoat` CLI's login is read as before (`$MANAGOAT_API_KEY`, then
-`~/.managoat/credentials`, each with its old `fountain` name as an alias). No instance is a default: the sign-in asks for
-a URL unless the CLI's login names one. Only a daemon started with
-`--managoat-account-stream` holds the account's `/api/events/stream`. That
-is the home machine, so a permission request raises one card. Its cursor
-is kept after each event, so a restart resumes with no gap and no
-duplicate.
-Where: `crates/daemon/src/labs/fountain/{account,client,stream}.rs`, `crates/cli/src/cmd/fountain.rs`.
-From: #942 (Jake's decisions Q2 and Q3), F1.
-
-### Fountain's permission requests are cards on the account view
-A permission request from any of the account's conversations raises a card
-and a phone push on the daemon that follows the account stream (#942, F2),
-whether or not a block shows that conversation. A card needs a pane, so the
-account view holds them all: the open view with the lowest id, or one
-opened in a session called `managoat` when none is open. It lists every
-open request and puts the newest on the card. That is the one just pushed,
-so a second request while one is up pushes too. Allow and Deny on the card
-or the phone answer the request they name, not just the one on the card,
-with an option the agent offered. The card clears on Fountain's `request`
-stage `done`, which it sends for every outcome. Losing the race to another
-client (409, or 404/410) also clears it, saying the request was already
-settled. A conversation that an agent block here already follows asks
-there, so the view lists its request without raising a second card. The
-requests are answered with the daemon's own Fountain login, so they are
-this machine's own account's to answer, and only the owner gets their
-pushes, unlike an agent block's, which an editor of the session may answer.
-Where: `crates/daemon/src/labs/fountain/{attention,conversations,mod}.rs`, `crates/daemon/src/api.rs` (`act_one`), `crates/mux/src/mux/attention.rs`, `web/src/blocks/fountain.tsx`.
-From: #942, F2.
-
-### A recipe runs on Fountain as one mutable agent it owns
-A recipe runs on Fountain (#942, F4) by being compiled and upserted, before
-each launch, as one Fountain agent named `recipe-NAME` (`POST /api/apply`,
-which writes nothing when nothing changed). It is not one agent per version
-(`recipe-NAME-HASH`), because those pile up and none can be deleted while a
-conversation uses it. Editing the recipe changes the agent, and with it an
-older conversation's system prompt on its next wake. Each conversation is
-labelled with the recipe's hash (`arugula.recipe_hash`), which records the
-version that started it.
-- **Arugula writes only what it made.** The agent and the project's
-  environment (`repo-OWNER-NAME`, from `origin`) carry `metadata:
-  {managed-by: arugula}`. An agent of that name without it (chant's, or one
-  made by hand) is never written, and the run is refused. An environment
-  without it is used as it is.
-- **No credential leaves the machine by itself.** `${VAR}` references go
-  to Fountain as they are written. A server with a value typed in instead
-  is left out of the agent and named. A missing variable is copied only
-  when a person asks for that variable and names a vault: it is resolved
-  here as wearing resolves it, written once, and never shown or logged.
-  This was Jake's decision Q6.
-- **What can't be said is named rather than approximated quietly.**
-  Fountain has no tool allowlist, so `tools`, `disallowedTools` and
-  `permissionMode` become a policy over ACP's kinds. Its default is `ask`,
-  so approvals come to the block, and the launch sends that same policy.
-  Inline skills carry `SKILL.md` only. The sandbox clones `origin`'s
-  default branch, so uncommitted work stays here. Each loss is listed in
-  the run dialog and in the run's summary.
-Where: `crates/daemon/src/labs/fountain/recipes.rs`, `crates/daemon/src/labs/agents/{block,mod}.rs`, `web/src/ui/fountain-run.tsx`.
-From: #942 (Jake's decisions Q1 and Q6), F4.
-
-### Fountain is Managoat
-On 2026-10-15 Fountain was renamed Managoat (its ADR 0082, release v0.27.0),
-and Arugula follows: what a person or an agent reads says Managoat, and the
-new names are the ones Arugula uses and writes. Each old name is still read,
-as Managoat reads its own, until Managoat ends its deprecation window
-(managoat/managoat#2776); Arugula drops them in the same release.
-- **Canonical, with the old as an alias.** The login is `MANAGOAT_API_KEY`,
-  `MANAGOAT_BASE_URL` and `MANAGOAT_PROFILE`, else each `FOUNTAIN_*`, and
-  `~/.managoat/credentials`, else `~/.fountain/credentials`; reading an old
-  one is said once per name in the daemon's log. The CLI is `arugula
-  managoat` (`arugula fountain` a hidden alias), with `--managoat` on
-  `agent` and `agents run`; the daemon's option is
-  `--managoat-account-stream` (`ARUGULA_MANAGOAT_ACCOUNT_STREAM`). A block
-  is saved as `type: managoat`, `agent: managoat` and `managoat_agent`, and
-  one saved as `fountain` and `fountain_agent` restores and is saved again
-  under the new names (serde aliases), so a rollback past this release
-  loses those blocks' type. MCP lists `show` kind `managoat`, `list` kinds
-  `managoat_agents`, `managoat_agent` and `managoat_conversations`, and
-  `start_agent {agent: managoat, managoat_agent, on: managoat}`, and still
-  answers the `fountain` names without listing them.
-- **The state moves.** This daemon's sign-in and stream cursor live in
-  `managoat/` in the state dir; a `fountain/` from before is renamed to it
-  at start-up, and used where it is if it can't be.
-- **Internal names stay**, as Managoat's ADR keeps its own: the Rust
-  module `labs/fountain/` and its types, the HTTP routes and operation
-  names (`/api/fountain/…`, `fountain.login`), the block calls
-  (`run_fountain`, `fountain_preflight`), `features.fountain`, a diff or
-  file block's `fountain` config key, the agent block's state, the
-  `ARUGULA_FOUNTAIN_*_MS` test knobs, and the retired `fountain` flag
-  (`managoat` is retired beside it, so naming either says why).
-  Managoat's own unchanged names (`_fountain/…` ACP methods,
-  `fountain.sandboxLocations`) and the recipe's `managed-by: arugula` and
-  `arugula.*` labels are unchanged.
-Where: `crates/daemon/src/labs/fountain/{login,account}.rs`, `crates/daemon/src/agent/defs.rs` (`Kind`, `Def`), `crates/proto/src/lib.rs` (`BlockType`, `WorkKind`), `crates/daemon/src/mcp/tools.rs` (`old_kind`, `AgentKind`), `crates/cli/src/main.rs`, `crates/daemon/src/args.rs`, [docs/managoat.md](docs/managoat.md).
-From: Managoat's ADR 0082 (managoat/managoat), #942.
-
 ## Federation and control
 
 ### Every daemon is a peer; control is the only front door
@@ -1144,7 +1056,7 @@ From: [Control track](docs/plan-archive.md#control-track-s15-m17m22-added-2026-1
 
 ### One switch for what a stranger doesn't get: the `labs` flag
 The `labs` flag turns on chat (and huddles, until they were removed),
-Fountain (until #942's F5),
+Fountain (until #942's F5; its daemon side was removed later),
 studio apps and chant workspaces, VMs and sandboxes, guest ssh, Forgejo and GitLab and the swarm's
 extra views. It is the first named flag in the daemon's config, and the
 mechanism #347's per-feature flags extend:
@@ -1200,8 +1112,9 @@ Chat on a machine shouldn't need Fountain, studio and the rest on with it, so
 the one `labs` flag (above) is nine: `chat`, `huddles`, `vms`, `fountain`,
 `studio`, `workspaces`, `guest-ssh`, `swarm-themes`, `forges`. Each is a row
 in `FLAGS`, off by default. (`agents` came later; `fountain` went with
-#942's F5: "Fountain is out of Labs", below; `huddles` went when huddles
-were removed: "Huddles are removed", below.)
+#942's F5, a retired flag ever since: "A retired flag is a name that isn't
+one", below; `huddles` went when huddles were removed: "Huddles are
+removed", below.)
 - **`labs` is no longer a flag; in the file it means all of them.** `labs`
   in `flags.json`, or the old empty `labs` file, is the answer for every flag
   the file doesn't name itself. A machine that had Labs keeps everything, one
@@ -1237,13 +1150,13 @@ everything about the feature follows the flag (#347):
   one by every way in, HTTP and MCP by name alike, as a 404 that says how to
   turn it on. That is the route list: threads (chat); machines and
   sandboxes (vms); studio; ssh guests (guest-ssh); Fountain's agents and
-  sign-in until #942's F5 (below). The
+  sign-in until #942's F5 (since removed). The
   A2A routes (agents) and the forge webhooks already did; an invite from a
   thread asks `chat` too.
 - **Block types** a flag owns (the agent catalog, app, workspace) are
-  wrapped (`labs::Flagged`) so a new one is refused. Fountain's block, and
-  an agent block that is a Fountain agent, checked `fountain` until #942's
-  F5 superseded that (below): they need no flag now. `POST
+  wrapped (`labs::Flagged`) so a new one is refused. (Fountain's block,
+  and an agent block that was a Fountain agent, checked `fountain` until
+  #942's F5; both are gone now.) `POST
   /api/blocks` asks `labs::block_flag` first, so an app block doesn't ask
   the studio before it's refused.
 - **The mux** checks `vms` before it makes or borrows a machine or shares
@@ -1263,42 +1176,17 @@ everything about the feature follows the flag (#347):
 Where: `crates/mux/src/labs/mod.rs` (`flag`, `flag_off`), `crates/daemon/src/ops/mod.rs` (`flagged`), `crates/daemon/src/mcp/ops.rs`, `crates/proto/src/op.rs` (`FLAG`), `crates/daemon/src/labs/mod.rs` (`Flagged`, `block_flag`), `crates/mux/src/mux/machines.rs`, `crates/daemon/tests/integration/flag_gates.rs`.
 From: #347, #665.
 
-### Fountain is out of Labs: no flag, still the `labs` cargo feature
-With recipes running on Fountain (#942's F4), the `fountain` flag is gone
-(F5, Jake's Q4: "behind `fountain` until F4, then drop the flag"). The
-account view and sign-in, `--managoat-account-stream`, the native
-conversation link, *Run on Fountain* and MCP's Fountain kinds and
-arguments are offered on any machine, with no flag. This supersedes
-"Each flag gates its feature" (above) for Fountain.
-- **A login is the gate.** Nothing asks Fountain anything until the
-  machine has a login (its own sign-in, else the `fountain` CLI's).
-  `HostFeatures.fountain` is that login, so the menus offer Fountain only
-  where it would work, and the account stream still needs
-  `--managoat-account-stream`, now listed in `arugulad --help`. A new
-  install makes no request to Fountain, which
-  `fountain_account::no_login_no_requests_to_fountain` holds. Recipes on
-  Fountain still need `agents`, since recipes are still Labs.
-- **A retired flag is a name that isn't one.** `fountain` moved from
-  `FLAGS` to `flags::RETIRED`. A `flags.json` or a control push that names
-  it, on or off, is read as any unknown name always was: ignored, and kept
-  by a write, so an older daemon reading the same file keeps its word.
-  `arugulad flags fountain …` and `PUT /api/flags/fountain` say why it's
-  gone instead of "no flag named".
-- **The code stays under the `labs` cargo feature.** No feature had left
-  Labs before, so there was no precedent to follow. The cargo feature
-  (#452) is a build switch, on in every release build and the desktop app,
-  that `just check-core` and CI's `core` job turn off for speed; what a
-  machine shows was always the runtime flags' job, so dropping the flag is
-  what takes Fountain out of Labs for anyone running a release. Moving the
-  code into core as well would mean moving what it leans on that is still
-  Labs (recipes in `labs/agents/`, `labs/wearing.rs`, the `FountainLink`
-  surface twins) for no change to any shipped build. So a build without
-  Labs has no Fountain, as before: its blocks say they aren't built, and
-  MCP doesn't list its kinds or arguments (`FOUNTAIN_KINDS`,
-  `FOUNTAIN_ARGS`, `FOUNTAIN_VALUES` in `mcp/tools.rs`). Revisit when
-  `agents` leaves Labs; the forge and editor features (#461) are the
-  pattern a feature of its own would follow.
-Where: `crates/proto/src/flags.rs` (`RETIRED`, `retired`), `crates/daemon/src/hosts.rs` (`features`), `crates/daemon/src/labs/mod.rs` (`kinds`, `block_flag`), `crates/daemon/src/mcp/tools.rs`, `crates/cli/src/main.rs` and `crates/daemon/src/args.rs` (`LABS_*`), `web/src/client.ts`, `web/src/blocks/lazy.ts`, [docs/managoat.md](docs/managoat.md).
+### A retired flag is a name that isn't one
+A Labs feature that stops being a flag takes its row out of `FLAGS` and
+puts its name in `flags::RETIRED`, with why. `fountain` was the first
+(#942's F5, when Fountain left Labs; its daemon side was later removed:
+"Daemon-side Managoat is removed", under Agents and blocks), with
+`managoat`, the name it would have now, beside it. A `flags.json` or a
+control push that names one, on or off, is read as any unknown name always
+was: ignored, and kept by a write, so an older daemon reading the same file
+keeps its word. `arugulad flags NAME …` and `PUT /api/flags/NAME` say why
+it's gone instead of "no flag named".
+Where: `crates/proto/src/flags.rs` (`RETIRED`, `retired`), `crates/daemon/tests/integration/flag_gates.rs`.
 From: #942 (Q4), F5.
 
 ### Huddles are removed
@@ -1310,7 +1198,8 @@ is in the tree at f9c8217b (`crates/mux/src/labs/calls.rs`,
 `crates/mux/src/mux/call_ops.rs`, `crates/desktop/src/calls.rs`,
 `crates/control/src/turn.rs`, `web/src/call.ts`, `web/src/ui/huddle.tsx`
 and their tests). What stays, for a fleet whose versions are mixed:
-- **`huddles` is a retired flag** (`flags::RETIRED`, as `fountain` above):
+- **`huddles` is a retired flag** (`flags::RETIRED`, "A retired flag is a
+  name that isn't one", above):
   a `flags.json` or a control push that names it loads, means nothing, and
   is kept by a write; setting it says why it's gone.
 - **An older page's call messages are dropped.** `ClientMsg` has no

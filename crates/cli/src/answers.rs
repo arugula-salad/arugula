@@ -165,15 +165,13 @@ fn the_agents_inventory_and_detection_of_an_older_daemon() {
 }
 
 #[test]
-fn conversations_adapters_and_fountain() {
+fn conversations_and_adapters() {
     let l: ConversationList = old(json!({}));
     assert!(l.conversations.is_empty());
     let l: ConversationList = old(json!({ "conversations": [{ "id": "abc", "title": "t" }], "total": 1 }));
     assert_eq!((l.conversations[0].conversation["id"].as_str(), l.conversations[0].block), (Some("abc"), None));
     let a: Adapters = old(json!({ "adapters": [{ "kind": "claude" }] }));
     assert_eq!(a.adapters.len(), 1);
-    let f: FountainAgents = old(json!({ "profile": "default", "filter": {} }));
-    assert_eq!((f.base_url.as_str(), f.total, f.agents.len(), f.unreadable), ("", 0, 0, 0));
 }
 
 #[test]

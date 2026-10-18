@@ -74,28 +74,14 @@ fn policy(method: &Method, path: &str) -> Policy {
         // M37: an agent on an issue works in the owner's clone, as them.
         // M40: a webhook on the repository (*Live updates*) is the owner's.
         ["api", "blocks", _, "call", "login" | "diff" | "checkout" | "agent" | "live"] => Policy::Owner,
-        // M43: which Managoat login a catalog reads with, and which of the
-        // owner's checkouts it opens specs from, are the owner's. So are
-        // running an agent from it (a Managoat conversation, with the
-        // owner's login: a guest's agents go on VMs) and Spec (a file block
-        // on the owner's host, or the agent read with the owner's login).
-        // M77: so is the agents block's *Run here*, a recipe on the owner's
-        // host with their secrets.
-        ["api", "blocks", _, "call", "profile" | "specs" | "run" | "run_fountain" | "spec" | "run_here"] => {
-            Policy::Owner
-        }
-        // #942: the account view opens a conversation with the owner's
-        // login on the owner's host, marks it read and answers its
-        // permission requests as the owner's account: the owner's.
-        ["api", "blocks", _, "call", "open_conversation" | "mark_read" | "answer_request"] => Policy::Owner,
+        // M77: the agents block's *Run here*, a recipe on the owner's host
+        // with their secrets, is the owner's.
+        ["api", "blocks", _, "call", "run_here"] => Policy::Owner,
         // M77: what this machine offers its team, and which project's
         // recipes the agents block lists, are the owner's.
         ["api", "blocks", _, "call", "offer" | "unoffer" | "recipes"] => Policy::Owner,
         // So is *Run there*: an agent on another of the owner's machines.
         ["api", "blocks", _, "call", "run_there"] => Policy::Owner,
-        // #942 F4: a recipe on Managoat with the owner's login, and a
-        // variable copied from the owner's host to their vault.
-        ["api", "blocks", _, "call", "fountain_preflight" | "fountain_copy"] => Policy::Owner,
         // #302: who chant records a workspace's gates as approved by is
         // the owner's to say. #620: so is starting behold on the owner's
         // host for a workspace's graph.
@@ -110,9 +96,6 @@ fn policy(method: &Method, path: &str) -> Policy {
         // The Agents page's recipes: listing and writing them is the owner's
         // (writing, this machine's own account's: the handler checks).
         ["api", "a2a", "recipes", ..] => Policy::Owner,
-        // #942 F4: a recipe on Managoat, and a variable copied to a vault
-        // (the handler checks the account too).
-        ["api", "a2a", "fountain", ..] => Policy::Owner,
         // M79: the handler checks the account too (a team's other owner is
         // `Owner` here, and may not answer).
         ["api", "a2a", "tasks", _, "consent"] => Policy::Owner,
@@ -326,8 +309,6 @@ mod tests {
         assert_eq!(policy(&g, "/api/ide"), Policy::Owner);
         assert_eq!(policy(&Method::PUT, "/api/ide"), Policy::Owner);
         assert_eq!(policy(&g, "/api/rules"), Policy::Owner);
-        assert_eq!(policy(&g, "/api/agent-approvals"), Policy::Owner);
-        assert_eq!(policy(&Method::PUT, "/api/agent-approvals"), Policy::Owner);
         assert_eq!(policy(&Method::DELETE, "/api/rules/0"), Policy::Owner);
         assert_eq!(policy(&g, "/api/editors/vsix"), Policy::Owner);
         assert_eq!(policy(&g, "/api/hosts/self/shell-env"), Policy::Owner);
@@ -382,7 +363,7 @@ mod tests {
     #[test]
     fn encoded_paths() {
         let p = Method::POST;
-        for m in ["%70rincipals", "%65nter", "agen%74", "run%5Fhere", "%6C%6F%67%69%6E", "%73pec", "%68ud", "gr%61ph"] {
+        for m in ["%70rincipals", "%65nter", "agen%74", "run%5Fhere", "%6C%6F%67%69%6E", "%68ud", "gr%61ph"] {
             assert_eq!(policy(&p, &format!("/api/blocks/7/call/{m}")), Policy::Owner, "{m}");
         }
         assert_eq!(policy(&p, "/api/blocks/7/call/%61pprove"), Policy::On(7, Role::Editor));

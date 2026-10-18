@@ -46,12 +46,17 @@ is not saved as a platform credential. Review the imported definition and
 provide any required secrets in Arugula. Existing remote conversations
 remain in the old account; importing definitions does not transfer them.
 
-Saved local Managoat agent blocks remain readable as stopped transcripts.
-They cannot send prompts, resume, approve tools, wake, or terminate remote
-conversations. Old direct login routes return a retirement message. The
-daemon does not discover old credentials or start an account stream, even
-when the old stream option is present. Existing credential files are left
-untouched for an explicit import.
+The daemon's own Managoat integration (#942: its sign-in, the account
+stream, the account view and its catalog, recipes run on Managoat, and
+views of a conversation's sandbox) was removed on 2026-10-18. Saved local
+Managoat agent blocks remain readable as stopped transcripts. They cannot
+send prompts, resume, approve tools, wake, or terminate remote
+conversations. A saved account view, or a diff or file view of a sandbox,
+is dropped when the daemon restores the layout. The old `/api/fountain/…`
+routes, `arugula managoat` and MCP's Managoat kinds are gone (MCP names
+Cloud agents instead); `--managoat-account-stream` still parses, so an old
+service file starts, and only logs that it does nothing. Existing
+credential files are left untouched for an explicit import.
 
 ## Operating the beta
 
@@ -86,8 +91,8 @@ of a user's changes.
 The control cloud tests cover account isolation, limits, encrypted secrets,
 imports, durable execution, approvals, result capture, and cleanup. The
 cloud browser spec exercises the UI against a real control process and a
-fake provider. Daemon retirement regressions verify saved transcripts and
-no provider connections with old credentials and stream flags.
+fake provider. Daemon regressions verify that saved Managoat transcripts
+restore without starting, and that the old routes and blocks are refused.
 
 The ignored `cloud::worker::tests::live_subscription_run` test exercises a
 real backend account. Set `ARUGULA_MANAGOAT_API_KEY`, `ARUGULA_CLOUD_MODEL`,

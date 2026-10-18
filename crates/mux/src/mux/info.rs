@@ -253,7 +253,6 @@ impl Daemon {
                 BlockType::Agent => Some(WorkKind::Agent),
                 BlockType::App => Some(WorkKind::App),
                 BlockType::Forge => Some(WorkKind::Pr),
-                BlockType::Fountain => Some(WorkKind::Fountain),
                 _ => None,
             }),
             activity: None,

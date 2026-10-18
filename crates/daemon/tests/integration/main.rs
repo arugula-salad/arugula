@@ -57,10 +57,6 @@ mod forge_live;
 mod forges_github_real;
 #[cfg(feature = "labs")]
 mod forges_real;
-#[cfg(feature = "labs")]
-mod fountain;
-#[cfg(feature = "labs")]
-mod fountain_account;
 mod fs;
 #[cfg(feature = "labs")]
 mod guest_ssh;

@@ -1599,43 +1599,8 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   flex: 1;
 }
 
-/* M44: a worn Managoat agent: what it brought, and what didn't come. */
-/* #942 F3: a Managoat conversation's status line and actions. */
-.agent-fountain {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 8px;
-  align-items: center;
-  padding: 4px 8px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--divider);
-  font-size: 12px;
-}
-.agent-fountain button {
-  font-size: 12px;
-}
-.fountain-line {
-  font-family: ui-monospace, monospace;
-  opacity: 0.8;
-}
-.fountain-line.running {
-  color: var(--accent);
-}
-.fountain-confirm {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
-}
-.file-entries {
-  list-style: none;
-  margin: 0;
-  padding: 8px 12px;
-  overflow: auto;
-  font-family: ui-monospace, monospace;
-  font-size: 13px;
-}
-
+/* M44: a worn recipe (once a Managoat agent too): what it brought, and
+ * what didn't come. */
 .agent-worn {
   display: flex;
   flex-wrap: wrap;
@@ -2160,32 +2125,6 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   margin: 0;
   color: var(--dim);
   font-size: 12px;
-}
-
-/* Run on Managoat (#942 F4): the preflight can be long. */
-.fountain-run {
-  max-height: 80vh;
-  overflow: auto;
-}
-
-.fountain-run .fountain-run-error {
-  color: var(--danger, #e66);
-}
-
-.fountain-run-missing ul,
-.fountain-run-lost ul {
-  margin: 6px 0 0;
-  padding-left: 18px;
-  font-size: 12px;
-}
-
-.fountain-run-missing li {
-  margin: 4px 0;
-}
-
-.fountain-run-lost {
-  font-size: 12px;
-  color: var(--dim);
 }
 
 /* ---- sandboxes (M4b) */
@@ -5848,55 +5787,8 @@ button.diff-why-run {
   font-weight: 600;
 }
 
-/* M43: the Managoat agent catalog: the filter bar, then cards in a grid
- * (a list in a narrow pane and on the phone). */
-.fountain-filters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
-  padding: 6px 8px;
-  border-bottom: 1px solid var(--divider);
-  font-size: 12px;
-}
-
-.fountain-search {
-  flex: 1 1 220px;
-  min-width: 0;
-  padding: 4px 8px;
-  border-radius: 4px;
-  border: 1px solid var(--divider);
-  background: var(--raised);
-  color: var(--fg);
-  font-size: 13px;
-}
-
-.fountain-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.fountain-chip,
-.fountain-clear {
-  font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 10px;
-  border: 1px solid var(--divider);
-  background: transparent;
-  color: var(--fg);
-}
-
-.fountain-chip.on {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--on-color);
-}
-
-.fountain-chip.on .dim {
-  color: var(--on-color);
-}
-
+/* The agent cards' notes and links (M43's Managoat catalog first; the
+ * team agents block and page use them now). */
 .fountain-said,
 .fountain-empty {
   font-size: 12px;
@@ -5910,29 +5802,6 @@ button.diff-why-run {
   color: var(--accent);
   text-decoration: underline;
   font-size: 12px;
-}
-
-.fountain-spec {
-  margin: 4px 10px;
-  min-width: 0;
-}
-
-.fountain-spec-json {
-  max-height: 40vh;
-  overflow: auto;
-  margin: 6px 0 0;
-  font-size: 12px;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.fountain-profile {
-  background: var(--raised);
-  color: var(--fg);
-  border: 0;
-  border-radius: 4px;
-  font-size: 12px;
-  height: 26px;
 }
 
 /* #403: the Agents page, over everything like the chat page. Its tabs
@@ -6440,15 +6309,6 @@ button.diff-why-run {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.fountain-src.agent-specs {
-  background: var(--accent);
-  color: var(--on-color);
-}
-
-.fountain-meta {
-  font-size: 11px;
 }
 
 .fountain-desc {
@@ -7739,7 +7599,6 @@ input.chat-search {
   color: var(--danger);
 }
 
-
 .chat-thread .thread-msg {
   margin: 0 -20px;
   padding-left: 20px;
@@ -8883,124 +8742,6 @@ html[data-finish="glass"] .prompt-backdrop {
   padding: 0;
   border: none;
   background: none;
-}
-
-/* #942 F2: the Managoat account view: its tabs, the open permission
- * requests, and the conversations list. */
-.fountain-tabs {
-  display: inline-flex;
-  gap: 2px;
-}
-
-.fountain-tab {
-  font-size: 12px;
-  padding: 2px 8px;
-  border-radius: 4px;
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--fg);
-}
-
-.fountain-tab.on {
-  border-color: var(--divider);
-  background: var(--raised);
-  font-weight: 600;
-}
-
-.fountain-dot {
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--accent);
-  margin-left: 4px;
-  vertical-align: middle;
-}
-
-.fountain-dot-slot {
-  flex: 0 0 12px;
-}
-
-.fountain-requests {
-  list-style: none;
-  margin: 6px 8px;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.fountain-request {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 8px;
-  border-radius: 6px;
-  border: 1px solid var(--accent);
-  font-size: 12px;
-  min-width: 0;
-}
-
-.fountain-request-what {
-  flex: 1 1 200px;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.fountain-convs {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.fountain-conv {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 8px;
-  border-bottom: 1px solid var(--divider);
-  font-size: 13px;
-  min-width: 0;
-}
-
-.fountain-conv.unread .fountain-conv-title {
-  font-weight: 600;
-}
-
-.fountain-conv-title {
-  flex: 1 1 160px;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-align: left;
-}
-
-.fountain-link-plain {
-  background: none;
-  border: 0;
-  padding: 0;
-  color: var(--fg);
-  cursor: pointer;
-}
-
-.fountain-status.running,
-.fountain-status.waking {
-  color: var(--accent);
-}
-
-.fountain-status.failed {
-  color: var(--danger);
-}
-
-.fountain-more {
-  margin: 8px;
-}
-
-.fountain-tree {
-  margin: 4px 10px;
 }
 
 .cloud-panel { width: min(850px, 85vw); max-height: 85vh; overflow: auto; }

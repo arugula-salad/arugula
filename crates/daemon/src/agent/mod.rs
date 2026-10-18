@@ -6,10 +6,9 @@
 //! command; see [`defs`]), opens a session, and turns `session/update`s into
 //! a transcript: your prompts, the agent's messages and thoughts, and tool
 //! calls with their commands' output. Permission requests become cards with
-//! approve and deny. A Managoat conversation (#942, F3) runs nothing here:
-//! its link speaks Managoat's API and makes the same frames from the
-//! conversation's events ([`link::spawn_fountain`]), so everything below
-//! holds for it too.
+//! approve and deny. A Managoat conversation, from before daemon-side
+//! Managoat was removed, comes back archived: its transcript, read from its
+//! log, and nothing that starts or reaches it.
 //!
 //! **The log is the JSON-RPC stream.** Every frame in either direction is a
 //! line in the block's log (`{"t":ms,"d":"in"|"out","m":frame}`), plus notes
@@ -30,8 +29,7 @@
 //! A standing rule (#166, [`crate::rules`]) is "always" kept by the daemon
 //! for a directory or every block; blocks check those after their own.
 //! Cancelling a turn answers open requests `cancelled`; a card goes when its
-//! tool call ends, or (Managoat) when the request was answered anywhere: the
-//! phone, another client, Managoat's 5-minute timeout.
+//! tool call ends.
 //!
 //! **Questions and forms** (M6c). The block declares form and URL
 //! elicitation, so Claude's AskUserQuestion arrives as `elicitation/create`
@@ -48,10 +46,7 @@
 //! reboot the block starts it again and reopens the session with
 //! `session/resume` (no replay; the transcript is ours) or `session/load`
 //! (whose replay is merged in). The restart policy decides whether that
-//! happens by itself (`none` and `rerun-ask` wait for "Resume"). A Managoat
-//! conversation never stopped: the block carries on following it from the
-//! last event its log took (each frame made from one names it), with its
-//! prompt still waiting for its turn's end, whatever the policy.
+//! happens by itself (`none` and `rerun-ask` wait for "Resume").
 
 pub mod adapters;
 mod background;
@@ -106,22 +101,12 @@ fn autonomous_quiet() -> Duration {
         Duration::from_millis(ms.unwrap_or(60_000))
     })
 }
-/// When an agent says "retry shortly" (Managoat provisioning a sandbox).
+/// When an agent says "retry shortly".
 const RETRY_AFTER: Duration = Duration::from_secs(5);
 const MAX_RETRIES: u32 = 12;
 /// How often an opened conversation's transcript and holder are checked
 /// (M33).
 const FOLLOW_EVERY: Duration = Duration::from_secs(1);
-
-/// The notification a Managoat conversation's link tells its status with
-/// (#942, F3).
-pub const FOUNTAIN_STATUS: &str = "_fountain/status";
-
-/// The `client_request_id` a Managoat block's prompt goes with: its
-/// JSON-RPC id, which the log keeps, so a restarted daemon knows it too.
-fn fountain_crid(block: arugula_proto::PaneId, rpc: u64) -> String {
-    format!("arugula-{block}-{rpc}")
-}
 
 /// What makes the block again (`layout.json`). Nothing secret.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -416,11 +401,6 @@ struct Inner {
     /// #590: the run id picked for the prompt just sent (its trailer is in
     /// the prompt), for its `runs start`.
     next_run: Option<String>,
-    /// #942 F3: a Managoat conversation's status, as its link last said it
-    /// (`_fountain/status`).
-    fountain: Option<Value>,
-    /// The last Managoat event the log took: where its link carries on.
-    fountain_cursor: Option<u64>,
 }
 
 enum Msg {
@@ -546,8 +526,6 @@ impl Inner {
             runs: None,
             carry_run: None,
             next_run: None,
-            fountain: None,
-            fountain_cursor: None,
         }
     }
 
@@ -577,8 +555,7 @@ impl Inner {
     /// (M16), scoped to the block's tab. Over HTTP on loopback when the
     /// agent takes it, else `arugula mcp` on stdio with the token in its
     /// environment. A VM's agent can't reach the host, so it gets a client
-    /// for the relay the daemon opens into its VM (#59). Not for a Managoat
-    /// agent (it runs in Managoat's sandbox).
+    /// for the relay the daemon opens into its VM (#59).
     fn servers(&self, ctx: &AgentCtx) -> Vec<Value> {
         let mut list = self.cfg.mcp_servers.clone();
         // A worn recipe's (M76; M44 for Managoat agents), values resolved.
@@ -588,7 +565,7 @@ impl Inner {
             list.extend(extra);
         }
         let Some(link) = &ctx.mcp else { return list };
-        if self.cfg.def.agent == Kind::Fountain || list.iter().any(|s| s["name"] == crate::mcp::SERVER_NAME) {
+        if list.iter().any(|s| s["name"] == crate::mcp::SERVER_NAME) {
             return list;
         }
         if ctx.sprite.is_some() {
@@ -670,8 +647,8 @@ impl Inner {
             "queue_clear" => self.queue.clear(),
             "login" => self.login = e["login"].as_str().map(str::to_owned),
             "spawn" => {
-                // A new server: nothing outstanding carries over. (A Managoat
-                // turn wasn't cut: it goes on there, and shows as it does.)
+                // A new server: nothing outstanding carries over. (An old
+                // Managoat block's turn wasn't cut: it went on there.)
                 self.background.clear();
                 let cut_now = e["fountain"] != true
                     && (self.prompt_id.is_some() || !self.pending.is_empty() || !self.asks.is_empty());
@@ -745,8 +722,8 @@ impl Inner {
                 };
                 self.t.note(format!("{text}{}", by_of(e)), at);
             }
-            // (`remote` and `remote_done`, from the `fountain conv show`
-            // polling F3 replaced, are ignored.)
+            // An old Managoat block's Wake and Terminate. (`remote` and
+            // `remote_done`, from before those, are ignored.)
             "fountain" => {
                 let text = e["text"].as_str().unwrap_or_default();
                 self.t.note(format!("{text}{}", by_of(e)), at);
@@ -881,10 +858,6 @@ impl Inner {
 
     fn on_in(&mut self, m: &Value, at: u64) -> Vec<Effect> {
         let mut fx = vec![];
-        // F3: the Managoat event it was made from, for the link's cursor.
-        if let Some(id) = crate::labs::fountain_event(m) {
-            self.fountain_cursor = Some(self.fountain_cursor.unwrap_or(0).max(id));
-        }
         let method = m["method"].as_str();
         match (m.get("id"), method) {
             // An answer to one of ours.
@@ -942,7 +915,7 @@ impl Inner {
                         self.replay = None;
                         fx.push(Effect::SessionLost(e));
                     }
-                    // Managoat, while it provisions a sandbox: "retry shortly".
+                    // An agent that's still provisioning: "retry shortly".
                     // The prompt goes again, as if this one hadn't happened.
                     (Purpose::Prompt, Some(e)) if e.contains("retry") => {
                         self.prompt_id = None;
@@ -1138,44 +1111,10 @@ impl Inner {
                 let done = m["params"]["elicitationId"].as_str();
                 self.asks.retain(|a| a.elicitation_id.is_none() || a.elicitation_id.as_deref() != done);
             }
-            // F3: the conversation's status on Managoat.
-            (None, Some(FOUNTAIN_STATUS)) => {
-                let p = &m["params"];
-                let was = self.fountain.as_ref().map(|f| f["turn_id"].clone()).unwrap_or_default();
-                // A turn this block didn't start (another client's, or one
-                // Managoat started itself): said, so its output reads apart.
-                if p["turn_id"].is_string()
-                    && p["turn_id"] != was
-                    && p["prompt_turn"] != p["turn_id"]
-                    && self.prompt_id.is_none()
-                {
-                    self.t.note("A turn on Managoat that wasn't started here", at);
-                }
-                self.fountain = Some(p.clone());
-            }
             (Some(id), Some(method)) => fx.push(Effect::Unsupported(id.clone(), method.to_owned())),
             _ => {}
         }
         fx
-    }
-
-    /// A Managoat conversation's status line: pending, running, idle·awake,
-    /// idle·parked (idle·waking while it's woken), failed or terminated.
-    fn fountain_line(&self) -> Option<String> {
-        let f = self.fountain.as_ref()?;
-        let status = f["status"].as_str().filter(|s| !s.is_empty())?;
-        Some(match (status, f["machine"].as_str().unwrap_or("none")) {
-            ("idle", "awake") => "idle·awake".into(),
-            ("idle", "waking" | "starting") => "idle·waking".into(),
-            ("idle", _) => "idle·parked".into(),
-            (s, _) => s.to_owned(),
-        })
-    }
-
-    /// A Managoat turn running that isn't our prompt's (another client's,
-    /// or one Managoat started itself).
-    fn fountain_running(&self) -> bool {
-        self.fountain.as_ref().is_some_and(|f| f["status"] == "running")
     }
 
     /// An `elicitation/create` as a card: AskUserQuestion's questions (by its
@@ -1258,7 +1197,6 @@ impl Inner {
                 (Attention::Working, "working on a background task's result".into())
             }
             Status::Working => (Attention::Working, "working".into()),
-            Status::Ready if self.fountain_running() => (Attention::Working, "working on Managoat".into()),
             Status::Starting | Status::Ready if !self.queue.is_empty() => (Attention::Working, "starting".into()),
             Status::Ready | Status::Starting if self.error.is_some() => {
                 (Attention::NeedsInput, self.error.clone().unwrap_or_default())
@@ -1364,13 +1302,6 @@ impl Inner {
         });
         // M76: the recipe it wears, by name.
         state["recipe"] = json!(self.cfg.def.recipe);
-        // F3: the conversation on Managoat, and its status line.
-        if self.cfg.def.agent == Kind::Fountain {
-            let mut f = self.fountain.clone().unwrap_or_else(|| json!({}));
-            f["line"] = json!(self.fountain_line());
-            f["profile"] = json!(self.cfg.def.profile);
-            state["fountain"] = f;
-        }
         // #606: it will carry on by itself (its turn held for background
         // work, or tasks it left running): `wait --idle` waits.
         state["held"] = json!(self.status == Status::Working && self.result_in);
@@ -1402,31 +1333,16 @@ impl Agent {
         let mut cfg: Config = serde_json::from_value(config).map_err(|e| format!("agent config: {e}"))?;
         // #379: "" is the CLI saying it has none (the default login).
         cfg.def.claude_config_dir = cfg.def.claude_config_dir.take().filter(|d| !d.trim().is_empty());
+        // A Managoat block from before daemon-side Managoat was removed
+        // comes back archived ([`Agent::begin`]); a new one is refused.
         if !(ctx.restoring && cfg.def.agent == Kind::Fountain) {
             cfg.def.check()?;
-        }
-        // Resolve once for a new conversation. Restores and explicit launch
-        // policies keep their choices, and attaching never changes remote policy.
-        if !ctx.restoring && cfg.session_id.is_none() && cfg.def.agent == Kind::Fountain && cfg.def.permission.is_none()
-        {
-            cfg.def.permission = Some(ctx.rules.approvals().managoat.as_str().into());
         }
         // Wearing a Managoat agent here (M44) was retired: refused for a new
         // block; a saved one comes back with its transcript and says why it
         // won't start (`wear`).
         if !ctx.restoring && cfg.def.as_fountain.is_some() {
             return Err(defs::AS_FOUNTAIN_GONE.into());
-        }
-        // A Managoat agent: no flag since #942's F5, only a login, which
-        // the link asks for when it starts.
-        if !ctx.restoring && cfg.def.agent == Kind::Fountain {
-            // A new conversation needs its agent; one that exists, its id.
-            if cfg.def.fountain_agent.as_deref().is_none_or(str::is_empty) && cfg.session_id.is_none() {
-                return Err(
-                    "a Managoat block needs the agent's name or id (managoat_agent), or a conversation (session_id)"
-                        .into(),
-                );
-            }
         }
         let vm = ctx.sprite.is_some();
         if vm && ctx.provider.is_none() {
@@ -1435,9 +1351,6 @@ impl Agent {
         // Fail now, with a clear reason, rather than in the VM later.
         if vm && cfg.def.agent == Kind::Claude && !ctx.restoring {
             secret_env(&ctx)?;
-        }
-        if vm && cfg.def.agent == Kind::Fountain {
-            return Err("Managoat agents run in Managoat's sandboxes, not in a VM here".into());
         }
         if vm && cfg.def.recipe.is_some() {
             return Err("a recipe runs on this host (with your skills and servers), not in a VM".into());
@@ -1519,30 +1432,6 @@ impl Agent {
     /// After a restart: carry on with the agent server still running from
     /// before it, else (by policy) start it again or wait.
     fn take_over(&self, inner: &mut Inner) {
-        if inner.cfg.def.agent == Kind::Fountain {
-            // A `fountain acp` an older daemon ran for it goes: the
-            // conversation is followed natively from now on (F3).
-            if let Some(pid) = link::alive_pid(&self.ctx.dir) {
-                link::kill_group(pid, self.ctx.dir.clone());
-            }
-            if self.ctx.sprite.is_none() {
-                let (a, b) = (format!("agent-{}-in", self.ctx.id), format!("agent-{}-out", self.ctx.id));
-                let mut kept = self.ctx.kept.lock().unwrap();
-                kept.remove(&a);
-                kept.remove(&b);
-                link::forget_fds(self.ctx.id);
-            }
-            if self.adopt_fountain(inner) {
-                if inner.status == Status::Starting && inner.cfg.session_id.is_some() && inner.ours.is_empty() {
-                    inner.status = Status::Ready;
-                }
-                return;
-            }
-            if matches!(inner.status, Status::Exited | Status::Stopped) && inner.fountain_cursor.is_some() {
-                // It had stopped: Resume reopens it.
-                return;
-            }
-        }
         {
             // Still running from before the restart: carry on with it. One
             // an older daemon started without Arugula's token in its
@@ -1622,55 +1511,6 @@ impl Agent {
         })
     }
 
-    /// F3: carry on following a Managoat conversation from the last event
-    /// the log took, with the prompt still waiting (no `initialize`, no
-    /// replay). Not for a block with no cursor (one an older daemon ran
-    /// `fountain acp` for: it reopens with `session/load`, once), one that
-    /// had stopped, or one cut off while opening its session.
-    fn adopt_fountain(&self, inner: &mut Inner) -> bool {
-        let (Some(sid), Some(cursor)) = (inner.cfg.session_id.clone(), inner.fountain_cursor) else { return false };
-        if matches!(inner.status, Status::Exited | Status::Stopped) {
-            return false;
-        }
-        let opening = |p: &Purpose| {
-            matches!(p, Purpose::Init | Purpose::New | Purpose::Load { .. } | Purpose::Resume | Purpose::Fork)
-        };
-        if inner.ours.values().any(opening) {
-            return false;
-        }
-        let prompt = inner.prompt_id.map(|id| (json!(id), Some(fountain_crid(self.ctx.id, id))));
-        let turn = inner.fountain.as_ref().and_then(|f| f["prompt_turn"].as_str()).map(str::to_owned);
-        let adopt = crate::labs::FountainAdopt { conversation: sid, prompt, turn };
-        inner.generation += 1;
-        let sink = self.sink(inner.generation);
-        let l = self.fountain_link(inner, Some(cursor), Some(adopt));
-        info!(block = self.ctx.id, cursor, "following the Managoat conversation again");
-        inner.link = Some(link::spawn_fountain(&self.ctx.rt, l, sink));
-        true
-    }
-
-    /// What a Managoat block's link is made with (F3).
-    fn fountain_link(
-        &self,
-        inner: &Inner,
-        cursor: Option<u64>,
-        adopt: Option<crate::labs::FountainAdopt>,
-    ) -> crate::labs::FountainLink {
-        let d = &inner.cfg.def;
-        crate::labs::FountainLink {
-            block: self.ctx.id,
-            agent: d.fountain_agent.clone(),
-            vault: d.vault.clone(),
-            environment: d.environment.clone(),
-            labels: d.labels.clone(),
-            permission: d.permission.clone(),
-            model: d.model.clone(),
-            profile: d.profile.clone(),
-            cursor,
-            adopt,
-        }
-    }
-
     fn adopt(&self, inner: &mut Inner) -> bool {
         match &self.ctx.sprite {
             None => {
@@ -1711,7 +1551,7 @@ impl Agent {
     /// restarts connects again).
     fn relay(&self, inner: &mut Inner, provider: Arc<dyn crate::provider::Provider>, sprite: &str) {
         let Some(mcp) = &self.ctx.mcp else { return };
-        if inner.cfg.def.agent == Kind::Fountain || inner.relay.as_ref().is_some_and(|r| !r.finished()) {
+        if inner.relay.as_ref().is_some_and(|r| !r.finished()) {
             return;
         }
         let r = crate::mcp::relay::start(&self.ctx.rt, provider, sprite.to_owned(), self.ctx.id, mcp.serve.clone());
@@ -1727,20 +1567,6 @@ impl Agent {
         // secrets), then start.
         if inner.cfg.def.wears() && inner.worn.is_none() {
             self.wear(inner, false);
-            return;
-        }
-        // F3: a Managoat conversation runs nothing here.
-        if inner.cfg.def.agent == Kind::Fountain {
-            if let Err(e) = inner.cfg.def.launch(&self.ctx.home, self.ctx.sprite.is_some()) {
-                return self.failed(inner, e);
-            }
-            let resume = inner.cfg.session_id.is_some();
-            inner.note(json!({ "e": "spawn", "fountain": true, "resume": resume }));
-            inner.generation += 1;
-            let sink = self.sink(inner.generation);
-            let l = self.fountain_link(inner, inner.fountain_cursor, None);
-            inner.link = Some(link::spawn_fountain(&self.ctx.rt, l, sink));
-            self.initialize(inner);
             return;
         }
         // #161: a local agent runs with the user's shell environment, which
@@ -2629,11 +2455,7 @@ fn send_next(ctx: &AgentCtx, g: &mut Inner) {
         prompt.push(chant::turn_block(c, &run));
         g.next_run = g.carry_run.is_none().then_some(run);
     }
-    let mut params = json!({ "sessionId": session, "prompt": prompt });
-    if g.cfg.def.agent == Kind::Fountain {
-        params["_meta"] = json!({ "clientRequestId": fountain_crid(ctx.id, g.next_id) });
-    }
-    g.request("session/prompt", params);
+    g.request("session/prompt", json!({ "sessionId": session, "prompt": prompt }));
     start_run(ctx, g, &q.text);
 }
 
@@ -2838,9 +2660,7 @@ impl Agent {
         // (`$/cancel_request`), and answering `cancel` would only fail the
         // tool and let the turn carry on (S13).
         let open: Vec<Value> = g.pending.iter().map(|p| p.rpc.clone()).collect();
-        // F3: a turn on Managoat that isn't our prompt's stops too.
-        let remote = g.cfg.def.agent == Kind::Fountain && g.link.is_some() && g.fountain_running();
-        if g.prompt_id.is_none() && open.is_empty() && !remote {
+        if g.prompt_id.is_none() && open.is_empty() {
             drop(g);
             self.changed();
             return Ok(json!({ "cancelled": false }));
@@ -2957,37 +2777,6 @@ impl Agent {
     }
 }
 
-impl Agent {
-    /// Wake a Managoat conversation's parked machine, or Terminate it (its
-    /// sandbox, and the disk, go: the owner's to do). What follows shows in
-    /// its status from the conversation's events.
-    fn fountain_act(&self, method: &str, by: Option<&str>) -> BoxFuture<'static, Result<Value, String>> {
-        let (profile, sid) = {
-            let g = self.inner.lock().unwrap();
-            (g.cfg.def.profile.clone(), g.cfg.session_id.clone())
-        };
-        let (method, by) = (method.to_owned(), by.map(str::to_owned));
-        let (inner, tx) = (self.inner.clone(), self.tx.clone());
-        Box::pin(async move {
-            if method == "terminate"
-                && let Some(by) = &by
-            {
-                return Err(format!("only the owner terminates a conversation ({by} can't)"));
-            }
-            let sid = sid.ok_or("there's no conversation on Managoat yet")?;
-            let r = crate::labs::fountain_act(profile, sid, method.clone()).await?;
-            let text = match (method.as_str(), r["status"].as_str()) {
-                ("terminate", _) => "Terminated on Managoat: its sandbox, and the disk with it, are gone",
-                (_, Some("awake")) => "Its sandbox was already awake",
-                _ => "Waking its sandbox on Managoat",
-            };
-            inner.lock().unwrap().note(json!({ "e": "fountain", "text": text, "by": by }));
-            let _ = tx.send(Msg::Changed);
-            Ok(r)
-        })
-    }
-}
-
 impl Block for Agent {
     fn kind(&self) -> BlockType {
         BlockType::Agent
@@ -3046,10 +2835,6 @@ impl Block for Agent {
         {
             return Box::pin(async { Err(defs::CLOUD_MIGRATION.into()) });
         }
-        // F3: a Managoat conversation's Wake and Terminate, on Managoat.
-        if matches!(method, "wake" | "terminate") && self.inner.lock().unwrap().cfg.def.agent == Kind::Fountain {
-            return self.fountain_act(method, by);
-        }
         let result = match method {
             "send" => self.send(&args, by),
             "approve" => self.approve(&args, by),
@@ -3057,9 +2842,6 @@ impl Block for Agent {
             "answer" => self.answer(&args, by),
             "decline" => self.decline(&args, by),
             "cancel" => self.cancel(),
-            // F3: Interrupt is Stop (`session/cancel`, which interrupts the
-            // turn on Managoat, ours or not).
-            "interrupt" if self.inner.lock().unwrap().cfg.def.agent == Kind::Fountain => self.cancel(),
             // After a restart cut a turn off, Continue sends the agent on
             // (#680); otherwise it starts a stopped agent.
             "continue" if self.cut_off() => {

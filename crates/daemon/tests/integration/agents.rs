@@ -5,7 +5,7 @@
 //! user manager, a restart with an approval pending that the agent server
 //! lives through.
 //!
-//! Real adapters (Claude Code, Codex, Managoat) are in `agents_real.rs`,
+//! Real adapters (Claude Code, Codex) are in `agents_real.rs`,
 //! which costs money and only runs when asked to.
 
 // Over the daemon's Unix socket; Windows gets its named pipe in M56 (#219).

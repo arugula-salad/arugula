@@ -6,11 +6,10 @@
 //!   Claude Code refuses MCP servers' sign-in links), with no settings
 //!   sources so your own hooks don't fire inside the block.
 //! - **codex**: `codex-acp` against the installed `codex`.
-//! - **managoat** (`fountain` before the rename, still read): a
-//!   conversation with agent X in a Managoat sandbox, which the daemon
-//!   drives over Managoat's API itself (#942, F3: nothing runs here, and no
-//!   `managoat acp`; [`super::link::spawn_fountain`]). To run `managoat acp`
-//!   by hand, use `acp` with that command.
+//! - **managoat** (`fountain` before the rename, still read): a Managoat
+//!   conversation from before daemon-side Managoat was removed. Only
+//!   restored, archived: never started. To run `managoat acp` by hand, use
+//!   `acp` with that command.
 //! - **acp**: any other ACP agent server, by its command line.
 //!
 //! The npm adapters are looked for in `~/.local/share/arugula/agents/`
@@ -73,9 +72,9 @@ pub enum Kind {
     #[default]
     Claude,
     Codex,
-    /// A Managoat conversation. Saved as `managoat`; `fountain`, its name
-    /// before the rename (DECISIONS.md "Fountain is Managoat"), is still
-    /// read, so a layout saved before it restores.
+    /// A Managoat conversation, removed with daemon-side Managoat: a saved
+    /// one (`managoat`, or `fountain` before the rename) restores archived,
+    /// and a new one is refused ([`CLOUD_MIGRATION`]).
     #[serde(rename = "managoat", alias = "fountain")]
     Fountain,
     /// Any ACP agent server, by `command`.
@@ -91,28 +90,10 @@ pub struct Def {
     /// The command line, for `acp` (and to override the others').
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub command: Vec<String>,
-    /// Managoat: the agent's name or id (a block opened on a conversation
-    /// that exists, by `session_id`, needs none). Saved as
+    /// Managoat: the agent's name, for an archived block's title. Saved as
     /// `managoat_agent`; `fountain_agent` is still read.
     #[serde(default, skip_serializing_if = "Option::is_none", rename = "managoat_agent", alias = "fountain_agent")]
     pub fountain_agent: Option<String>,
-    /// Managoat: the vault a new conversation gets (name or id).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub vault: Option<String>,
-    /// Managoat: the environment a new conversation is provisioned from
-    /// instead of its agent's (name or id).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub environment: Option<String>,
-    /// Managoat: labels a new conversation is made with.
-    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
-    pub labels: std::collections::BTreeMap<String, String>,
-    /// Managoat's permission policy, as `managoat acp --permission` takes it
-    /// (default `ask`: approvals come to the block).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub permission: Option<String>,
-    /// Managoat's credentials profile (the CLI's); else the daemon's login.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub profile: Option<String>,
     /// A model to switch to after the session starts (`haiku`, …).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
@@ -178,11 +159,12 @@ fn installed(home: &Path, name: &str) -> String {
     if p.exists() { p.display().to_string() } else { name.to_owned() }
 }
 
-/// Why a block can't wear a Managoat agent here (M44's `as_fountain`).
+/// Why a Managoat block doesn't start: daemon-side Managoat was removed.
 pub const CLOUD_MIGRATION: &str = "Direct Managoat execution is retired. Open Cloud agents in your Arugula account to run or import an agent. Saved local transcripts remain readable.";
 
+/// Why a block can't wear a Managoat agent here (M44's `as_fountain`).
 pub const AS_FOUNTAIN_GONE: &str = "wearing a Managoat agent here (as_fountain) was retired on 2026-10-15: \
-run it on Managoat (agent managoat), or run a recipe (.claude/agents/NAME.md) here";
+run a recipe (.claude/agents/NAME.md) here, or a cloud agent from your Arugula account";
 
 impl Def {
     /// Whether it wears something before it starts: a recipe (M76), or a
@@ -206,9 +188,6 @@ impl Def {
     pub fn check(&self) -> Result<(), String> {
         match self.agent {
             Kind::Fountain => Err(CLOUD_MIGRATION.into()),
-            _ if self.agent != Kind::Fountain && (self.environment.is_some() || !self.labels.is_empty()) => {
-                Err("environment and labels are a Managoat conversation's (agent: managoat)".into())
-            }
             Kind::Acp if self.command.is_empty() => Err("an ACP agent block needs a command".into()),
             _ if !crate::labs::BUILT && self.recipe.is_some() => Err(crate::labs::not_built("Agent recipes")),
             _ if self.recipe.is_some() && self.agent != Kind::Claude => {
@@ -255,12 +234,8 @@ impl Def {
                 }
                 l.npm = Some(CODEX_ACP);
             }
-            // Nothing to run: the daemon speaks Managoat's API itself (F3).
-            Kind::Fountain => {
-                if vm {
-                    return Err("Managoat agents run in Managoat's sandboxes, not in a VM here".into());
-                }
-            }
+            // `check` refused it.
+            Kind::Fountain => return Err(CLOUD_MIGRATION.into()),
             Kind::Acp => l.argv = self.command.clone(),
         }
         if !self.command.is_empty() {
@@ -374,35 +349,21 @@ mod tests {
         assert_eq!(mine.meta["claudeCode"]["options"]["settings"]["disableAllHooks"], json!(true));
         assert!(Def { agent: Kind::Codex, user_settings: true, ..Default::default() }.launch(home, false).is_err());
 
-        // A build without Labs refuses a Managoat agent (`check`), so can't launch one.
-        #[cfg(feature = "labs")]
-        {
-            // F3: nothing runs here for a Managoat conversation.
-            let f = Def {
-                agent: Kind::Fountain,
-                fountain_agent: Some("arena".into()),
-                vault: Some("v".into()),
-                ..Default::default()
-            };
-            assert_eq!(f.launch(home, false).unwrap_err(), CLOUD_MIGRATION);
-            assert!(f.launch(home, true).is_err());
-            let by_hand = Def { command: split_command("managoat acp --agent arena"), ..f.clone() };
-            assert_eq!(by_hand.check().unwrap_err(), CLOUD_MIGRATION);
-            let acp =
-                Def { agent: Kind::Acp, command: split_command("managoat acp --agent arena"), ..Default::default() };
-            assert_eq!(acp.launch(home, false).unwrap().argv, split_command("managoat acp --agent arena"));
-            assert!(Def { environment: Some("e".into()), ..Default::default() }.check().is_err());
-        }
-        #[cfg(not(feature = "labs"))]
-        assert!(Def { agent: Kind::Fountain, ..Default::default() }.check().is_err());
+        // Daemon-side Managoat was removed: a Managoat block never starts.
+        // Running `managoat acp` by hand is an `acp` block like any other.
+        let f = Def { agent: Kind::Fountain, fountain_agent: Some("arena".into()), ..Default::default() };
+        assert_eq!(f.launch(home, false).unwrap_err(), CLOUD_MIGRATION);
+        assert_eq!(f.check().unwrap_err(), CLOUD_MIGRATION);
+        let acp = Def { agent: Kind::Acp, command: split_command("managoat acp --agent arena"), ..Default::default() };
+        assert_eq!(acp.launch(home, false).unwrap().argv, split_command("managoat acp --agent arena"));
 
         let codex = Def { agent: Kind::Codex, ..Default::default() }.launch(home, false).unwrap();
         assert_eq!(codex.env, vec![("CODEX_PATH".into(), "codex".into())]);
     }
 
-    /// The rename (DECISIONS.md "Fountain is Managoat"): a block saved as
-    /// `agent: managoat` with `fountain_agent` comes back, and is saved
-    /// again under the new names.
+    /// A block saved as `agent: fountain` (its name before the rename to
+    /// Managoat) with `fountain_agent` still parses, so it comes back
+    /// archived, and is saved again under the newer names.
     #[test]
     fn a_block_saved_as_fountain_restores() {
         let old: Def = serde_json::from_value(json!({ "agent": "fountain", "fountain_agent": "arena" })).unwrap();

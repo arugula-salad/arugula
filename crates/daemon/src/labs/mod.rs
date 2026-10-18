@@ -1,5 +1,4 @@
-//! Labs: the features that are not part of the core (Managoat, studio apps
-//! with hud, chant workspaces, VMs with their sandboxes, guest ssh and chat,
+//! Labs: the features that are not part of the core (studio apps with hud, chant workspaces, VMs with their sandboxes, guest ssh and chat,
 //! and the Forgejo and GitLab forges: everything listed in
 //! #452 to #457 is here), behind the cargo feature `labs`. The feature is on by default, so a release build has all of it;
 //! `--no-default-features` leaves it out, for fast local builds, for agents
@@ -44,7 +43,7 @@ use serde_json::Value;
 use crate::block::{Block, BlockCtx, BlockKind};
 #[cfg(feature = "forge")]
 use crate::forge::model::Provider as ForgeProvider;
-use crate::{block::BlockKinds, provider::Provider, server::App, shellenv::ShellEnv};
+use crate::{block::BlockKinds, provider::Provider, server::App};
 
 // Agent recipes and their A2A cards (M76): the `agents` flag.
 #[cfg(feature = "labs")]
@@ -69,8 +68,6 @@ pub mod lead;
 pub mod forge_live;
 #[cfg(feature = "labs")]
 pub mod forgejo;
-#[cfg(feature = "labs")]
-pub mod fountain;
 #[cfg(feature = "labs")]
 pub mod gitlab;
 // Guest ssh: the russh server and its invites (M65). `russh` is an optional
@@ -158,7 +155,7 @@ pub fn resume_tasks(_app: &Arc<App>) {}
 /// Adds Labs' HTTP routes to the API's.
 #[cfg(feature = "labs")]
 pub fn routes(r: Router<Arc<App>>) -> Router<Arc<App>> {
-    fountain::account::routes(agents::routes(apps::routes::routes(r)))
+    agents::routes(apps::routes::routes(r))
 }
 
 #[cfg(not(feature = "labs"))]
@@ -168,13 +165,11 @@ pub fn routes(r: Router<Arc<App>>) -> Router<Arc<App>> {
 
 /// Registers the Labs block types (the others are in `main.rs`'s table).
 /// `invite` is what the agent catalog's card sends an invite with.
-/// Each is made only where the machine has its flag on ([`Flagged`]),
-/// except Managoat's, which left Labs (#942) and needs only a login.
+/// Each is made only where the machine has its flag on ([`Flagged`]).
 #[cfg(feature = "labs")]
 pub fn kinds(kinds: &mut BlockKinds, invite: &crate::invite::Hook) {
     use crate::block::Make;
     use arugula_proto::flags::{AGENTS, STUDIO, WORKSPACES};
-    kinds.add(BlockType::Fountain, Make(fountain::FountainBlock::create));
     kinds.add(BlockType::Agents, Flagged { flag: AGENTS, kind: agents::block::AgentsKind(invite.clone()) });
     kinds.add(BlockType::App, Flagged { flag: STUDIO, kind: Make(apps::AppBlock::create) });
     kinds.add(BlockType::Workspace, Flagged { flag: WORKSPACES, kind: Make(workspace::Workspace::create) });
@@ -214,8 +209,7 @@ impl<K: crate::block::BlockKind> crate::block::BlockKind for Flagged<K> {
 
 /// The flag a new block of `kind` needs (#347), for a route to refuse it
 /// before it does anything else (an app block asks the studio where its box
-/// is first). The block types check it again when made. Managoat's blocks,
-/// and an `agent: managoat` block, need none since #942's F5.
+/// is first). The block types check it again when made.
 pub fn block_flag(kind: BlockType) -> Option<&'static str> {
     use arugula_proto::flags;
     match kind {
@@ -239,7 +233,6 @@ impl BlockKind for NotBuilt {
 
 #[cfg(not(feature = "labs"))]
 pub fn kinds(kinds: &mut BlockKinds, _invite: &crate::invite::Hook) {
-    kinds.add(BlockType::Fountain, NotBuilt("A Managoat block"));
     kinds.add(BlockType::Agents, NotBuilt("The agent catalog"));
     kinds.add(BlockType::App, NotBuilt("An app block"));
     kinds.add(BlockType::Workspace, NotBuilt("A chant workspace"));
@@ -369,57 +362,6 @@ pub fn hook_path(provider: ForgeProvider) -> Result<&'static str, String> {
 #[cfg(all(not(feature = "labs"), feature = "forge"))]
 pub fn hook_path(provider: ForgeProvider) -> Result<&'static str, String> {
     Err(not_built(&format!("A {provider:?} webhook")))
-}
-
-/// `GET /api/fountain/agents`'s answer: Managoat's agents, or in a build
-/// without Labs the 404 a route that isn't there gives.
-#[cfg(feature = "labs")]
-pub async fn fountain_agents(
-    app: &crate::server::App,
-    q: arugula_proto::api::FountainQuery,
-) -> Result<arugula_proto::api::FountainAgents, crate::api::ApiError> {
-    fountain::agents_answer(app, q).await
-}
-
-#[cfg(not(feature = "labs"))]
-pub async fn fountain_agents(
-    _: &crate::server::App,
-    _: arugula_proto::api::FountainQuery,
-) -> Result<arugula_proto::api::FountainAgents, crate::api::ApiError> {
-    Err(crate::api::ApiError(axum::http::StatusCode::NOT_FOUND, not_built("Managoat")))
-}
-
-/// A recipe on Managoat (#942, F4), for MCP's `start_agent {on:
-/// managoat}`: the recipe compiled and upserted as its Managoat agent, and
-/// the agent block's config for its conversation (the caller opens it),
-/// with what didn't carry over in a sentence.
-#[cfg(feature = "labs")]
-pub async fn fountain_recipe(app: &Arc<App>, ask: FountainRecipe) -> Result<(serde_json::Value, String), String> {
-    let ask = fountain::recipes::Ask {
-        agent: ask.agent,
-        cwd: ask.cwd,
-        prompt: ask.prompt,
-        vault: ask.vault,
-        environment: ask.environment,
-    };
-    fountain::recipes::launch(app.control.state_dir(), &crate::home(), app.hosts.name(), &ask).await
-}
-
-#[cfg(not(feature = "labs"))]
-pub async fn fountain_recipe(_: &Arc<App>, _: FountainRecipe) -> Result<(serde_json::Value, String), String> {
-    Err(not_built("Managoat"))
-}
-
-/// What [`fountain_recipe`] runs.
-// Read by the recipe's run, which a build without Labs doesn't have.
-#[cfg_attr(not(feature = "labs"), allow(dead_code))]
-#[derive(Debug, Clone, Default)]
-pub struct FountainRecipe {
-    pub agent: String,
-    pub cwd: Option<String>,
-    pub prompt: Option<String>,
-    pub vault: Option<String>,
-    pub environment: Option<String>,
 }
 
 /// `POST /api/guests`'s answer: an ssh invite, or in a build without Labs
@@ -742,217 +684,6 @@ pub use apps::routes::app_config;
 #[cfg(not(feature = "labs"))]
 pub async fn app_config(_c: &Value) -> Result<Value, String> {
     Err(not_built("An app block"))
-}
-
-// Kept as a single unconditional retirement gate while legacy wire types
-// and parsers remain available for saved layouts. This is not a user flag.
-pub const DIRECT_MANAGOAT_RETIRED: bool = true;
-
-/// Whether a Managoat login is here for the catalog to find: `GET
-/// /api/host`'s `features.fountain`.
-#[cfg(feature = "labs")]
-pub fn fountain_login_here(shell_env: &ShellEnv) -> bool {
-    if DIRECT_MANAGOAT_RETIRED {
-        return false;
-    }
-    fountain::account::get().is_some_and(|a| a.signed_in().is_some()) || fountain::login::here(shell_env)
-}
-
-/// This daemon's Managoat account (#942) at start-up: its own sign-in
-/// (`arugula managoat login`), named for Managoat's key list after the
-/// machine, and with `--managoat-account-stream` the account's event stream.
-#[cfg(feature = "labs")]
-pub fn start_fountain(app: &Arc<App>, state_dir: &Path, name: &str, account_stream: bool) {
-    if DIRECT_MANAGOAT_RETIRED {
-        if account_stream {
-            tracing::warn!("{}", crate::agent::defs::CLOUD_MIGRATION);
-        }
-        return;
-    }
-    let account = fountain::account::install(state_dir, &format!("Arugula on {name}"), app.mux.shell_env.clone());
-    if account_stream {
-        // Its permission requests become cards (F2): only here, where the
-        // stream runs, so one daemon pushes each.
-        tokio::spawn(fountain::attention::run(app.clone(), account.clone()));
-        tokio::spawn(fountain::stream::run(account, Default::default()));
-    }
-}
-
-#[cfg(not(feature = "labs"))]
-pub fn start_fountain(_app: &Arc<App>, _state_dir: &Path, _name: &str, account_stream: bool) {
-    if account_stream {
-        tracing::warn!("{}", not_built("Managoat's account stream"));
-    }
-}
-
-/// A Managoat conversation block's link (#942, F3): what the native link
-/// (`labs/fountain/link.rs`) needs. In every build, so core makes one
-/// without a `cfg`; a build without Labs closes it at once, saying so.
-// Read by the link, which a build without Labs doesn't have.
-#[cfg_attr(not(feature = "labs"), allow(dead_code))]
-#[derive(Debug, Clone, Default)]
-pub struct FountainLink {
-    pub block: arugula_proto::PaneId,
-    /// The agent, vault and environment a new conversation gets (names or
-    /// ids), its labels, permission policy (`--permission`'s grammar) and
-    /// model.
-    pub agent: Option<String>,
-    pub vault: Option<String>,
-    pub environment: Option<String>,
-    pub labels: std::collections::BTreeMap<String, String>,
-    pub permission: Option<String>,
-    pub model: Option<String>,
-    /// The CLI profile whose login it uses (else the daemon's).
-    pub profile: Option<String>,
-    /// The last event the block's log took, when it has one: the block
-    /// reopens its conversation with no replay. None: `session/load`.
-    pub cursor: Option<u64>,
-    /// Carry on with a conversation already open (a restarted daemon),
-    /// with no `initialize`.
-    pub adopt: Option<FountainAdopt>,
-}
-
-// Read by the link, which a build without Labs doesn't have.
-#[cfg_attr(not(feature = "labs"), allow(dead_code))]
-#[derive(Debug, Clone, Default)]
-pub struct FountainAdopt {
-    pub conversation: String,
-    /// The prompt still waiting for its turn's end: its JSON-RPC id and
-    /// client request id.
-    pub prompt: Option<(serde_json::Value, Option<String>)>,
-    /// The turn it opened, if the block saw it start.
-    pub turn: Option<String>,
-}
-
-/// What a link hands its block: a frame, or why it closed.
-pub type LinkOut = Arc<dyn Fn(Result<Vec<u8>, String>) + Send + Sync>;
-
-/// The id of the Managoat event an inbound frame was made from.
-#[cfg(feature = "labs")]
-pub use fountain::link::event_of as fountain_event;
-
-#[cfg(not(feature = "labs"))]
-pub fn fountain_event(_frame: &serde_json::Value) -> Option<u64> {
-    None
-}
-
-/// Start a Managoat conversation link (F3): frames from `rx` go to
-/// Managoat, what it says comes to `out`.
-#[cfg(feature = "labs")]
-pub fn fountain_link(
-    rt: &tokio::runtime::Handle,
-    l: FountainLink,
-    rx: tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>,
-    stop: tokio::sync::mpsc::UnboundedReceiver<()>,
-    out: LinkOut,
-) {
-    fountain::link::spawn(rt, l, rx, stop, out)
-}
-
-#[cfg(not(feature = "labs"))]
-pub fn fountain_link(
-    _rt: &tokio::runtime::Handle,
-    _l: FountainLink,
-    _rx: tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>,
-    _stop: tokio::sync::mpsc::UnboundedReceiver<()>,
-    out: LinkOut,
-) {
-    out(Err(not_built("Managoat")))
-}
-
-/// What a sandbox pane reads of a Managoat conversation's sandbox (F3).
-// Read by the link, which a build without Labs doesn't have.
-#[cfg_attr(not(feature = "labs"), allow(dead_code))]
-pub enum SandboxRead {
-    Diff,
-    GitStatus,
-    /// A directory (the sandbox's home when none).
-    Files(Option<String>),
-    File(String),
-}
-
-/// A Managoat block's Wake, Interrupt or Terminate.
-#[cfg(feature = "labs")]
-pub async fn fountain_act(
-    profile: Option<String>,
-    conversation: String,
-    action: String,
-) -> Result<serde_json::Value, String> {
-    fountain::link::act(profile.as_deref(), &conversation, &action).await
-}
-
-#[cfg(not(feature = "labs"))]
-pub async fn fountain_act(
-    _profile: Option<String>,
-    _conversation: String,
-    _action: String,
-) -> Result<serde_json::Value, String> {
-    Err(not_built("Managoat"))
-}
-
-/// Read a Managoat conversation's sandbox (F3): `Ok(None)` when it's
-/// parked (a read never wakes it).
-#[cfg(feature = "labs")]
-pub async fn fountain_sandbox(
-    profile: Option<String>,
-    conversation: String,
-    what: SandboxRead,
-) -> Result<Option<serde_json::Value>, String> {
-    use fountain::link::Read;
-    let what = match what {
-        SandboxRead::Diff => Read::Diff,
-        SandboxRead::GitStatus => Read::GitStatus,
-        SandboxRead::Files(p) => Read::Files(p),
-        SandboxRead::File(p) => Read::File(p),
-    };
-    fountain::link::read(profile.as_deref(), &conversation, what).await
-}
-
-#[cfg(not(feature = "labs"))]
-pub async fn fountain_sandbox(
-    _profile: Option<String>,
-    _conversation: String,
-    _what: SandboxRead,
-) -> Result<Option<serde_json::Value>, String> {
-    Err(not_built("Managoat"))
-}
-
-/// `/api/fountain/login`'s answers (#942): this daemon's sign-in. A build
-/// without Labs has no such route, so these are never reached there.
-#[cfg(feature = "labs")]
-pub use fountain::account::{fountain_login, fountain_login_start, fountain_logout};
-
-#[cfg(not(feature = "labs"))]
-mod fountain_off {
-    use arugula_proto::api::{FountainLogin, FountainLoginRequest};
-    use axum::http::StatusCode;
-
-    use super::not_built;
-    use crate::api::ApiError;
-
-    fn gone<T>() -> Result<T, ApiError> {
-        Err(ApiError(StatusCode::NOT_FOUND, not_built("Managoat")))
-    }
-
-    pub async fn fountain_login() -> Result<FountainLogin, ApiError> {
-        gone()
-    }
-
-    pub async fn fountain_login_start(_: FountainLoginRequest) -> Result<FountainLogin, ApiError> {
-        gone()
-    }
-
-    pub async fn fountain_logout() -> Result<FountainLogin, ApiError> {
-        gone()
-    }
-}
-
-#[cfg(not(feature = "labs"))]
-pub use fountain_off::{fountain_login, fountain_login_start, fountain_logout};
-
-#[cfg(not(feature = "labs"))]
-pub fn fountain_login_here(_shell_env: &ShellEnv) -> bool {
-    false
 }
 
 /// #619: which decision and run made each hunk of a file in a workspace

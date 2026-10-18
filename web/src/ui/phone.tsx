@@ -11,7 +11,7 @@ import { AttentionBadge } from "./attention";
 import { HostCrumb, HostSection } from "./hosts";
 import { openSwarm } from "../swarm/route";
 import { openChat } from "./places";
-import { openChanges, openFountain, openIssue, openPort, openPr } from "../blocks";
+import { openChanges, openIssue, openPort, openPr } from "../blocks";
 import { startAgent } from "./agent-dialog";
 import { pickConversation } from "./conversations";
 import { pickApp, openSandboxes } from "../labs-load";
@@ -245,11 +245,6 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
             {owner && client.flag("agents") && (
               <button data-open-agents onClick={act(() => openAgentsPage())}>
                 Agents
-              </button>
-            )}
-            {owner && client.has("fountain") && (
-              <button data-open-fountain onClick={act(() => void openFountain(client, { session: where }))}>
-                Managoat
               </button>
             )}
             {active !== undefined && owner && (

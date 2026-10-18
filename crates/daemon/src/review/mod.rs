@@ -9,14 +9,9 @@
 //! A diff block opened from a chant workspace member's card also says which
 //! decision and run made each hunk (#619), through Labs' chant workspaces.
 //!
-//! **A Managoat conversation's sandbox** (#942, F3): with `fountain:
-//! {conversation, profile?}` in its config, either view reads the sandbox
-//! through Managoat's API (`GET /api/sandboxes/:id/{diff,git-status,files,
-//! file}`) instead of a host: the diff is the tracked changes, with what
-//! `git status` says is untracked listed beside them; a file block on a
-//! directory (or on no path: the sandbox's home) lists it. A parked sandbox
-//! answers `409 sandbox_not_ready`, and a read never wakes it: the view
-//! says "Parked — Wake to look" (its `wake` wakes the conversation).
+//! A view of a Managoat conversation's sandbox (`fountain` in its config,
+//! #942's F3) went with daemon-side Managoat: a new one is refused, and a
+//! saved one is dropped when the daemon restores it ([`SANDBOX_GONE`]).
 //!
 //! What they share, beyond the block contract:
 //!
@@ -52,30 +47,9 @@ use serde_json::Value;
 
 use crate::{block::BlockCtx, provider::Provider};
 
-/// A Managoat conversation whose sandbox a view reads (F3).
-#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct Sandbox {
-    pub conversation: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub profile: Option<String>,
-}
-
-/// What a view of a parked sandbox says.
-pub const PARKED: &str = "Parked — Wake to look";
-
-/// How often a view of a sandbox polls Managoat while drawn.
-pub const SANDBOX_POLL: Duration = Duration::from_secs(5);
-
-impl Sandbox {
-    pub async fn read(&self, what: crate::labs::SandboxRead) -> Result<Option<Value>, String> {
-        crate::labs::fountain_sandbox(self.profile.clone(), self.conversation.clone(), what).await
-    }
-
-    /// Wake its conversation's machine (a view's `wake`).
-    pub async fn wake(&self) -> Result<Value, String> {
-        crate::labs::fountain_act(self.profile.clone(), self.conversation.clone(), "wake".into()).await
-    }
-}
+/// Why a view of a Managoat sandbox is refused.
+pub const SANDBOX_GONE: &str =
+    "a view of a Managoat sandbox went with daemon-side Managoat (cloud agents run through your Arugula account)";
 
 /// How long one run of a host's command may take.
 const RUN_TIMEOUT: Duration = Duration::from_secs(30);

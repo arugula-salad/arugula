@@ -303,13 +303,12 @@ fn a_remote_pane_runs_there_and_has_its_place_here() {
 /// `flags.json`, one to a feature: `GET /api/host` says so, with threads
 /// (and studio and VMs, where set up) each following its own, and
 /// setting one on a running daemon, from outside it or through
-/// `PUT /api/flags/{name}`, flips it with no restart. Direct Managoat
-/// execution stays retired even when a saved login exists.
+/// `PUT /api/flags/{name}`, flips it with no restart. Daemon-side Managoat
+/// was removed: no `fountain` feature, whatever login is here.
 #[cfg(feature = "labs")]
 #[test]
 fn each_flag_turns_on_its_part_of_what_a_stranger_doesnt_get() {
-    // A Managoat login is set up here, so that `fountain` shows that labs
-    // does nothing to it.
+    // A Managoat login is set up here, to show it's no feature now.
     let d = arugulad!("hosts")
         .args(["--name", "plain"])
         .no_wisp()
@@ -324,25 +323,22 @@ fn each_flag_turns_on_its_part_of_what_a_stranger_doesnt_get() {
     for key in ["threads", "studio", "vms"] {
         assert_eq!(f[key], false, "{key} without labs: {f}");
     }
-    assert_eq!(f["fountain"], false, "direct Managoat is retired even with a login: {f}");
+    assert!(f.get("fountain").is_none(), "daemon-side Managoat was removed: {f}");
 
     arugula_testkit::labs(&d.state, true);
     let f = features();
     assert_eq!((f["labs"].clone(), f["threads"].clone()), (true.into(), true.into()));
     // Huddles were removed (2026-10-18): no `calls` for an older page to read.
     assert!(f.get("calls").is_none(), "{f}");
-    // The retired integration stays off; studio and VMs are not set up.
-    assert_eq!(
-        (f["fountain"].clone(), f["studio"].clone(), f["vms"].clone()),
-        (false.into(), false.into(), false.into())
-    );
+    // Studio and VMs are not set up.
+    assert_eq!((f["studio"].clone(), f["vms"].clone()), (false.into(), false.into()));
 
     // Off again, and on through the owner's route.
     arugula_testkit::labs(&d.state, false);
     let f = features();
     assert_eq!((f["labs"].clone(), f["threads"].clone()), (false.into(), false.into()));
     // #665: each feature has a flag of its own, and the owner's route turns
-    // chat on alone, Managoat's login notwithstanding.
+    // chat on alone.
     assert_eq!(f["dev"], true, "the flags file is there: {f}");
     let listed = d.put("/api/flags/chat", serde_json::json!({ "on": true }));
     assert_eq!(
@@ -351,7 +347,6 @@ fn each_flag_turns_on_its_part_of_what_a_stranger_doesnt_get() {
     );
     let f = features();
     assert_eq!((f["labs"].clone(), f["threads"].clone()), (true.into(), true.into()), "{f}");
-    assert_eq!(f["fountain"], false, "{f}");
     assert_eq!(f["flags"], serde_json::json!(["chat"]));
     let all = d.get("/api/flags");
     assert_eq!(all.as_array().map(Vec::len), Some(arugula_proto::flags::FLAGS.len()), "{all}");
@@ -530,7 +525,7 @@ fn a_build_without_labs_ignores_the_labs_file() {
         .start();
     arugula_testkit::labs(&d.state, true);
     let host = d.get("/api/host");
-    for key in ["labs", "threads", "fountain", "studio", "vms"] {
+    for key in ["labs", "threads", "studio", "vms"] {
         assert_eq!(host["features"][key], false, "{key}: {host}");
     }
 }
@@ -592,9 +587,9 @@ fn both_helps_follow_the_same_labs_file() {
         assert!(!listed(&cli_off, c), "{c} in `arugula --help` without labs");
     }
     assert!(listed(&cli_off, "run") && listed(&cli_off, "pr"), "{cli_off}");
-    // Retired Managoat commands stay hidden regardless of Labs.
-    assert!(!listed(&cli_off, "managoat"), "{cli_off}");
-    assert!(!listed(&cli_off, "fountain"), "its name before the rename is a hidden alias: {cli_off}");
+    // Daemon-side Managoat was removed: no command, and its daemon option
+    // only parses.
+    assert!(!listed(&cli_off, "managoat") && !listed(&cli_off, "fountain"), "{cli_off}");
     assert!(!d_off.contains("--managoat-account-stream"), "{d_off}");
     for f in ["--studio-file", "--guest-ssh", "--wisp-url"] {
         assert!(!d_off.contains(f), "{f} in `arugulad --help` without labs");
@@ -606,7 +601,7 @@ fn both_helps_follow_the_same_labs_file() {
     for c in ["studio", "app", "workspace", "guests", "machines", "sandboxes"] {
         assert!(listed(&cli_on, c), "{c} isn't in `arugula --help` with labs");
     }
-    assert!(!listed(&cli_on, "managoat"), "retired direct integration is hidden");
+    assert!(!listed(&cli_on, "managoat"), "{cli_on}");
     assert!(!listed(&cli_on, "bridge"), "an internal is in the help with labs");
     let elsewhere = dir.join("elsewhere");
     std::fs::create_dir_all(&elsewhere).unwrap();

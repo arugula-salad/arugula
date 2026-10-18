@@ -237,8 +237,7 @@ class E2ELink implements Link {
   }
 }
 
-/** The host features that follow `labs`: also off without it. Managoat
- * left Labs (#942): `fountain` is the daemon's word alone (a login there). */
+/** The host features that follow `labs`: also off without it. */
 const LABS_FEATURES: Exclude<keyof HostFeatures, "flags">[] = ["vms", "studio"];
 
 export class Client {
@@ -883,14 +882,12 @@ export class Client {
   /** Is `f` set up here? Yes when the daemon didn't say, except for what
    * labs turns on (VMs, studio): those need `hasLabs()` as well. */
   has(f: Exclude<keyof HostFeatures, "flags">): boolean {
-    // Direct Managoat execution is retired, including on older daemons.
-    if (f === "fountain") return false;
     if (LABS_FEATURES.includes(f) && !this.hasLabs()) return false;
     return this.features?.[f] ?? true;
   }
 
   /** Whether this machine has any Labs flag on: something a stranger
-   * doesn't get (chat, Managoat, studio, VMs, guest ssh, the
+   * doesn't get (chat, studio, VMs, guest ssh, the
    * swarm's extra views). `flag` says which. Unlike `has`, unknown means no:
    * control serves this page to older daemons too, which never say. */
   hasLabs(): boolean {
