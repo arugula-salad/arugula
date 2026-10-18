@@ -229,6 +229,9 @@ pub enum Cmd {
 pub struct Scope {
     pub panes: BTreeMap<PaneId, Floor>,
     pub machines: std::collections::BTreeSet<MachineId>,
+    /// The sessions it covers, with when a "from now" share starts (ms):
+    /// for a closed pane's stored events (#1035), which no tab has now.
+    pub sessions: BTreeMap<SessionId, u64>,
 }
 
 /// Where a pane's history starts for someone: its output offset, and when
@@ -250,6 +253,17 @@ impl Scope {
                 _ => false,
             },
         }
+    }
+
+    /// Whether a stored lifecycle event (#1035) is in it: as [`Self::keeps`]
+    /// says, or, for a pane that has since closed (`closed`) or a machine,
+    /// by the session it happened in. A private pane's stays the owner's.
+    pub fn keeps_stored(&self, s: &crate::store::SystemEvent, closed: &std::collections::BTreeSet<PaneId>) -> bool {
+        if self.keeps(&s.event) {
+            return true;
+        }
+        let gone = s.event.pane.is_none_or(|p| closed.contains(&p) && !self.panes.contains_key(&p));
+        gone && !s.private && s.sessions.iter().any(|x| self.sessions.get(x).is_some_and(|at| s.event.at_ms >= *at))
     }
 }
 
@@ -509,6 +523,10 @@ struct Daemon {
     mux: Mux,
     panes: HashMap<PaneId, PaneHandle>,
     meta: HashMap<PaneId, PaneMeta>,
+    /// While an intent's effects run: each pane's session, privacy and
+    /// machine from before it, so a pane it closed (or a machine that goes
+    /// with it) is stored with where it was (#1035).
+    was: HashMap<PaneId, (Option<SessionId>, bool, Option<MachineId>)>,
     attention: HashMap<PaneId, Attention>,
     /// Why each pane wants you (M24), as recorded when it started to.
     reasons: HashMap<PaneId, Reason>,
@@ -707,6 +725,7 @@ pub fn start(
         mux: Mux::new(),
         panes: HashMap::new(),
         meta: HashMap::new(),
+        was: HashMap::new(),
         attention: HashMap::new(),
         reasons: HashMap::new(),
         watching: Default::default(),
@@ -1127,7 +1146,44 @@ impl Daemon {
     }
 
     fn emit(&self, pane: Option<PaneId>, kind: EventKind) {
-        let _ = self.events.send(Event { at_ms: now_ms(), pane, kind, id: String::new() });
+        let event = Event { at_ms: now_ms(), pane, kind, id: String::new() };
+        // Lifecycle events are kept, so a read without follow has them
+        // with the id the follow stream gave them (#1035).
+        if crate::store::SystemEvent::kept(&event.kind) {
+            let (sessions, private) = self.where_from(&event);
+            let stored = crate::store::SystemEvent { event: event.clone(), sessions, private };
+            if let Err(e) = self.store.record_system(&stored) {
+                warn!(error = %e, "can't keep a lifecycle event");
+            }
+        }
+        let _ = self.events.send(event);
+    }
+
+    /// The sessions an event happened in and whether its pane is private:
+    /// its pane's, or for a machine's own event, those of the panes on it.
+    fn where_from(&self, e: &Event) -> (Vec<SessionId>, bool) {
+        let at = |p: PaneId| {
+            let was = self.was.get(&p);
+            let session = self.session_of(p).or(was.and_then(|w| w.0));
+            let private = self.meta.get(&p).map(|m| m.private).or(was.map(|w| w.1)).unwrap_or(false);
+            (session, private)
+        };
+        match (e.pane, &e.kind) {
+            (Some(p), _) => {
+                let (s, private) = at(p);
+                (s.into_iter().collect(), private)
+            }
+            (None, EventKind::Machine { machine, .. }) => {
+                let on = self.meta.iter().filter(|(_, m)| m.host == Some(*machine)).map(|(p, _)| *p);
+                let was_on = self.was.iter().filter(|(_, w)| w.2 == Some(*machine)).map(|(p, _)| *p);
+                let mut sessions: Vec<SessionId> =
+                    on.chain(was_on).map(at).filter(|(_, private)| !private).filter_map(|(s, _)| s).collect();
+                sessions.sort_unstable();
+                sessions.dedup();
+                (sessions, false)
+            }
+            (None, _) => (vec![], false),
+        }
     }
 
     fn focused(&self, pane: PaneId) -> bool {

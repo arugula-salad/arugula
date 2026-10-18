@@ -106,3 +106,98 @@ fn history_and_events_by_session_with_stable_ids_and_a_guest_sees_only_theirs() 
     assert_eq!(panes_of(&ndjson(&body)), BTreeSet::from([a]), "{body}");
     assert_eq!(as_friend(&d, &format!("/api/events?session={sb}")).0, 404);
 }
+
+/// Follow `/api/events` (over the socket) until a line has `until` in it:
+/// the events it streamed.
+fn follow(d: &Daemon, query: &str, until: String) -> std::thread::JoinHandle<Vec<Value>> {
+    use std::io::{Read, Write};
+    let mut s = std::os::unix::net::UnixStream::connect(d.sock()).unwrap();
+    write!(s, "GET /api/events?follow=1&{query} HTTP/1.1\r\nHost: x\r\n\r\n").unwrap();
+    s.set_read_timeout(Some(std::time::Duration::from_secs(30))).unwrap();
+    std::thread::spawn(move || {
+        let mut seen = String::new();
+        let mut buf = [0u8; 4096];
+        while !seen.lines().any(|l| l.starts_with('{') && l.contains(&until)) {
+            match s.read(&mut buf) {
+                Ok(0) | Err(_) => break,
+                Ok(n) => seen.push_str(&String::from_utf8_lossy(&buf[..n])),
+            }
+        }
+        // Chunked: the JSON lines are the events.
+        seen.lines().filter(|l| l.starts_with('{')).filter_map(|l| serde_json::from_str(l).ok()).collect()
+    })
+}
+
+fn of(v: &[Value], pane: u64, ty: &str) -> Vec<Value> {
+    v.iter().filter(|e| e["pane"] == pane && e["type"] == ty).cloned().collect()
+}
+
+/// #1035: panes opening, exiting and closing are kept, so a read without
+/// `follow` has them, with the ids a follow stream gave them, and a session
+/// still has a closed pane's.
+#[test]
+fn lifecycle_events_replay_with_the_follow_streams_ids_and_a_closed_panes_session() {
+    let mut d = start();
+    let (keep, sa) = run_in(&d, "alpha", "echo stays");
+    const TYPES: &str = "type=exit,opened,closed,machine";
+    let pane = d.post("/api/run", json!({"command": "echo goes", "session": "alpha"}))["pane"].as_u64().unwrap();
+    let live = follow(&d, TYPES, format!(r#""pane":{pane},"type":"closed""#));
+    d.get(&format!("/api/panes/{pane}/wait?until=exit&timeout=10"));
+    let (other, sb) = run_in(&d, "beta", "echo elsewhere");
+    assert_ne!(sa, sb);
+    assert_eq!(d.raw("POST", &format!("/api/panes/{pane}/close"), Some(json!({}))).0, 200);
+    let live = live.join().unwrap();
+    let streamed_close = of(&live, pane, "closed");
+    assert_eq!(streamed_close.len(), 1, "the stream saw it close: {live:?}");
+
+    let events = |path: &str| -> Vec<Value> {
+        let (status, body) = d.raw("GET", path, None);
+        assert_eq!(status, 200, "{path}: {body}");
+        ndjson(&body).as_array().unwrap().clone()
+    };
+    let all = events(&format!("/api/events?{TYPES}"));
+    for ty in ["opened", "exit", "closed"] {
+        assert_eq!(of(&all, pane, ty).len(), 1, "{ty} replays without follow: {all:?}");
+    }
+    assert_eq!(of(&all, keep, "exit").len(), 1, "{all:?}");
+    // The same ids on every read, unique, and the stream's.
+    let first = ids(&Value::Array(all.clone()));
+    assert!(first.iter().all(|i| !i.is_empty()), "{all:?}");
+    assert_eq!(first, ids(&Value::Array(events(&format!("/api/events?{TYPES}")))));
+    assert_eq!(first.iter().collect::<BTreeSet<_>>().len(), first.len(), "{all:?}");
+    for e in &live {
+        let p = e["pane"].as_u64().unwrap_or(0);
+        if p == pane || p == keep {
+            assert!(all.contains(e), "streamed {e} isn't replayed the same: {all:?}");
+        }
+    }
+    assert_eq!(of(&all, pane, "closed"), streamed_close);
+    // A type filter gives an event the id it has unfiltered.
+    let closed_only = events("/api/events?type=closed");
+    assert!(closed_only.iter().all(|e| all.contains(e)), "{closed_only:?}");
+
+    // The session it was in still has it, closed; the other session doesn't.
+    let ea = events(&format!("/api/events?session={sa}&{TYPES}"));
+    assert_eq!(of(&ea, pane, "closed"), streamed_close, "{ea:?}");
+    assert_eq!(of(&ea, pane, "opened").len(), 1, "{ea:?}");
+    assert_eq!(of(&ea, keep, "exit").len(), 1, "{ea:?}");
+    assert!(of(&ea, other, "exit").is_empty(), "{ea:?}");
+    let eb = events(&format!("/api/events?session={sb}&{TYPES}"));
+    assert!(of(&eb, pane, "closed").is_empty() && of(&eb, other, "exit").len() == 1, "{eb:?}");
+    // A guest of that session reads it too.
+    d.post(
+        "/api/acl",
+        json!({ "session": sa, "principal": format!("tailnet:{FRIEND}"), "role": "viewer", "history": true }),
+    );
+    let (s, body) = as_friend(&d, &format!("/api/events?session={sa}&{TYPES}"));
+    assert_eq!(s, 200, "{body}");
+    let theirs = ndjson(&body);
+    assert_eq!(of(theirs.as_array().unwrap(), pane, "closed"), streamed_close, "{theirs}");
+    assert!(of(theirs.as_array().unwrap(), other, "exit").is_empty(), "{theirs}");
+
+    // And a restart keeps them.
+    d.stop();
+    d.start();
+    let again = ndjson(&d.raw("GET", &format!("/api/events?{TYPES}"), None).1);
+    assert_eq!(of(again.as_array().unwrap(), pane, "closed"), streamed_close, "{again}");
+}

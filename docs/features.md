@@ -42,8 +42,9 @@ around your panes. A phone keeps its own header and sheet.
   Ctrl+Shift+digit one), what it is, its status, where it runs, its
   directory and branch. Click it to type there, drag it to move the pane,
   double-click to focus, `…` for its menu.
-- **The activity drawer** under the panes (the session's commands and
-  agent turns, and machine events while you watch), and **the footer**:
+- **The activity drawer** under the panes (the session's commands,
+  agent turns, and panes opening, exiting and closing and their machines,
+  kept across a reload, a closed pane's too), and **the footer**:
   the machine, the focused pane's repository and branch, agents running,
   what needs input, and the keys.
 

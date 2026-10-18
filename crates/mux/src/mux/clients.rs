@@ -248,7 +248,17 @@ impl Daemon {
         self.check_move(&intent).map_err(refused)?;
         let local = matches!(intent, Intent::Split { local: true, .. });
         let before: Vec<SessionId> = self.mux.sessions.iter().map(|s| s.id).collect();
+        let was: HashMap<_, _> = self
+            .mux
+            .panes()
+            .into_iter()
+            .map(|p| {
+                let m = self.meta.get(&p);
+                (p, (self.session_of(p), m.is_some_and(|m| m.private), m.and_then(|m| m.host)))
+            })
+            .collect();
         let effects = self.mux.apply(intent.clone()).map_err(|e| refused(e.to_string()))?;
+        let was = std::mem::replace(&mut self.was, was);
         for gone in before.into_iter().filter(|s| self.mux.session(*s).is_err()) {
             self.config.acl.forget_session(gone);
         }
@@ -384,6 +394,7 @@ impl Daemon {
             }
         }
         self.reap_machines();
+        self.was = was;
         self.changed();
         self.emit(None, EventKind::Layout { rev: self.mux.rev });
         Ok(())

@@ -345,6 +345,7 @@ impl Daemon {
         for s in sessions {
             let Ok(sess) = self.mux.session(s) else { continue };
             let at_ms = self.config.acl.share_at(who, s).unwrap_or(0);
+            out.sessions.insert(s, at_ms);
             for p in sess.tabs.iter().filter_map(|t| self.mux.tab(*t).ok()).flat_map(|t| t.root.panes()) {
                 if !self.readable(who, p) {
                     continue;

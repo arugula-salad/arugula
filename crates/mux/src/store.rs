@@ -12,6 +12,11 @@
 //!                                     "<offset> restore <unix ms>"
 //!     checkpoint                      "offset <n>\n" + engine checkpoint
 //!     exec.json                       a VM pane's session on its machine
+//!   closed/<id>-<unix ms>/            a closed pane's directory, a while
+//!   events.jsonl                      panes opening, exiting and closing,
+//!   events.1.jsonl                    and machines coming and going (#1035):
+//!                                     one JSON line each, the newest file
+//!                                     moved aside at 1 MB
 //! ```
 //!
 //! The log is the truth. A checkpoint is a cache of the terminal at some
@@ -30,12 +35,15 @@ use std::{
 };
 
 use arugula_core::Mux;
-use arugula_proto::{BlockType, Machine, MachineId, PaneId, Policy, api::HistoryKind};
+use arugula_proto::{BlockType, Machine, MachineId, PaneId, Policy, SessionId, api::HistoryKind};
 use serde::{Deserialize, Serialize};
 
 pub const LAYOUT_VERSION: u32 = 1;
 const SEGMENT_BYTES: u64 = 4 * 1024 * 1024;
 pub const RETAIN_BYTES: u64 = 256 * 1024 * 1024;
+/// How big `events.jsonl` grows before it's moved aside to
+/// `events.1.jsonl` (the one before is dropped): about 10,000 events.
+pub const SYSTEM_EVENTS_BYTES: u64 = 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Saved {
@@ -225,6 +233,31 @@ impl StateDir {
         }
     }
 
+    /// Keep a pane's or machine's lifecycle event (#1035). Appended whole
+    /// or not at all as far as a reader cares: a torn last line is skipped.
+    pub fn record_system(&self, e: &SystemEvent) -> io::Result<()> {
+        let path = self.root.join("events.jsonl");
+        if fs::metadata(&path).is_ok_and(|m| m.len() >= SYSTEM_EVENTS_BYTES) {
+            fs::rename(&path, self.root.join("events.1.jsonl"))?;
+        }
+        let mut line = serde_json::to_vec(e).map_err(io::Error::other)?;
+        line.push(b'\n');
+        private_file().create(true).append(true).open(&path)?.write_all(&line)
+    }
+
+    /// The lifecycle events kept since `since_ms`, oldest first. A line
+    /// that doesn't parse (torn, or a kind from a newer daemon) is skipped.
+    pub fn system_events(&self, since_ms: u64) -> Vec<SystemEvent> {
+        ["events.1.jsonl", "events.jsonl"]
+            .iter()
+            .filter_map(|n| fs::read_to_string(self.root.join(n)).ok())
+            .flat_map(|text| {
+                text.lines().filter_map(|l| serde_json::from_str::<SystemEvent>(l).ok()).collect::<Vec<_>>()
+            })
+            .filter(|e| e.event.at_ms >= since_ms)
+            .collect()
+    }
+
     /// Every pane directory with history: open panes, then closed ones.
     pub fn pane_dirs(&self) -> Vec<(PaneId, bool, PathBuf)> {
         let mut out = Vec::new();
@@ -299,6 +332,30 @@ pub enum Event {
     Bell {
         at_ms: u64,
     },
+}
+
+/// A lifecycle event as `events.jsonl` keeps it (#1035): the event the
+/// follow stream sent (same time, so the same id), and where it happened,
+/// for a session's read after its pane has closed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SystemEvent {
+    #[serde(flatten)]
+    pub event: arugula_proto::Event,
+    /// The session its pane was in; a machine's, every session with a
+    /// pane on it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sessions: Vec<SessionId>,
+    /// Its pane was private (M14): only the owner reads it once closed.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub private: bool,
+}
+
+impl SystemEvent {
+    /// Whether `/api/events` replays this kind from the store.
+    pub fn kept(kind: &arugula_proto::EventKind) -> bool {
+        use arugula_proto::EventKind as K;
+        matches!(kind, K::Exit { .. } | K::Opened | K::Closed | K::Machine { .. })
+    }
 }
 
 /// One index line: `{"o":offset,"e":kind,...}`.
@@ -600,6 +657,54 @@ mod tests {
         log.append(b"def").unwrap();
         assert_eq!(log.read_from(0).unwrap(), (3, b"def".to_vec()), "offsets carry on after a purge");
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn system_events_round_trip_rotate_and_skip_bad_lines() {
+        use arugula_proto::{Event as E, EventKind as K, MachineState};
+        let root = tmp("system-events");
+        let store = StateDir::open(root.clone()).unwrap();
+        assert!(store.system_events(0).is_empty(), "no file yet is no events");
+        let opened = SystemEvent {
+            event: E { at_ms: 10, pane: Some(3), kind: K::Opened, id: String::new() },
+            sessions: vec![1],
+            private: false,
+        };
+        let gone = SystemEvent {
+            event: E {
+                at_ms: 20,
+                pane: None,
+                kind: K::Machine { machine: 2, state: MachineState::Gone },
+                id: String::new(),
+            },
+            sessions: vec![],
+            private: false,
+        };
+        store.record_system(&opened).unwrap();
+        // A torn line and a kind this daemon doesn't know are skipped.
+        fs::OpenOptions::new()
+            .append(true)
+            .open(root.join("events.jsonl"))
+            .unwrap()
+            .write_all(b"{\"at_ms\":15,\"type\":\"from_the_future\"}\n{\"at_ms\":1")
+            .unwrap();
+        fs::OpenOptions::new().append(true).open(root.join("events.jsonl")).unwrap().write_all(b"\n").unwrap();
+        store.record_system(&gone).unwrap();
+        assert_eq!(store.system_events(0), vec![opened.clone(), gone.clone()]);
+        assert_eq!(store.system_events(11), vec![gone.clone()]);
+
+        // Past the cap, the file moves aside and reads still see both.
+        let f = fs::OpenOptions::new().append(true).open(root.join("events.jsonl")).unwrap();
+        f.set_len(SYSTEM_EVENTS_BYTES).unwrap();
+        let closed = SystemEvent {
+            event: E { at_ms: 30, pane: Some(3), kind: K::Closed, id: String::new() },
+            sessions: vec![1],
+            private: true,
+        };
+        store.record_system(&closed).unwrap();
+        assert!(root.join("events.1.jsonl").exists());
+        assert_eq!(store.system_events(0), vec![opened, gone, closed]);
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
