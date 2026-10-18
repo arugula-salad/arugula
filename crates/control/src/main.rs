@@ -36,6 +36,7 @@ mod routing_wire;
 mod sandboxes;
 mod sprites;
 mod teams;
+mod telemetry;
 mod turn;
 #[cfg(test)]
 mod two_sites;
@@ -493,6 +494,10 @@ pub fn router(app: Arc<App>) -> Router {
         .route("/api/daemons/{id}/team", post(api::move_daemon))
         .route(wire::TRUST, get(api::daemon_trust))
         .route(wire::LEAVE, post(api::daemon_leave))
+        .route(
+            wire::telemetry::TELEMETRY,
+            post(telemetry::report).layer(axum::extract::DefaultBodyLimit::max(telemetry::MAX_BODY)),
+        )
         .route("/api/directory", get(api::directory))
         .route("/api/shares/{daemon}", post(teams::answer_share))
         .route("/api/people", get(teams::person))

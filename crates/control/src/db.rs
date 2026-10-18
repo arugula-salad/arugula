@@ -346,6 +346,13 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     if !has("devices", "pin")? {
         conn.execute_batch("ALTER TABLE devices ADD COLUMN pin TEXT")?;
     }
+    // M100: the version, OS and arch a joined daemon last said it runs.
+    if !has("daemons", "version")? {
+        conn.execute_batch(
+            "ALTER TABLE daemons ADD COLUMN version TEXT; ALTER TABLE daemons ADD COLUMN os TEXT;
+             ALTER TABLE daemons ADD COLUMN arch TEXT;",
+        )?;
+    }
     Ok(())
 }
 
@@ -1703,6 +1710,17 @@ impl Db {
     pub fn set_daemon_features(&self, daemon: &str, features: &str) -> anyhow::Result<()> {
         self.c().execute("UPDATE daemons SET features = ?2 WHERE id = ?1", params![daemon, features])?;
         Ok(())
+    }
+
+    /// The version, OS and arch a daemon says it runs (M100): whether
+    /// that's news (not what it said last).
+    pub fn set_daemon_machine(&self, daemon: &str, version: &str, os: &str, arch: &str) -> anyhow::Result<bool> {
+        let n = self.c().execute(
+            "UPDATE daemons SET version = ?2, os = ?3, arch = ?4
+             WHERE id = ?1 AND (version IS NOT ?2 OR os IS NOT ?3 OR arch IS NOT ?4)",
+            params![daemon, version, os, arch],
+        )?;
+        Ok(n > 0)
     }
 
     /// What a daemon last said it understands ("" for an older one).
