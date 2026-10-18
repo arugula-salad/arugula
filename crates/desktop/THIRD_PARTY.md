@@ -7543,9 +7543,9 @@ Apache License
 ## Apache License 2.0
 
 Used by:
-- [arugula-core 0.43.0](https://github.com/arugula-salad/arugula)
+- [arugula-core 0.44.0](https://github.com/arugula-salad/arugula)
 - [arugula-desktop 0.28.0](https://crates.io/crates/arugula-desktop)
-- [arugula-proto 0.43.0](https://github.com/arugula-salad/arugula)
+- [arugula-proto 0.44.0](https://github.com/arugula-salad/arugula)
 - [anyhow 1.0.104](https://github.com/dtolnay/anyhow)
 - [async-trait 0.1.92](https://github.com/dtolnay/async-trait)
 - [dirs-sys 0.5.0](https://github.com/dirs-dev/dirs-sys-rs)
