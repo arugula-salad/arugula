@@ -139,15 +139,23 @@ fn frames(process: Process, trace: &str) -> Vec<(String, Option<String>)> {
         .filter_map(|(sym, at)| {
             let name = name(&sym)?;
             let at = at.and_then(|a| {
-                // `path:line:column`
-                let mut parts = a.rsplitn(3, ':');
-                let (_col, line, file) = (parts.next()?, parts.next()?, parts.next()?);
-                line.parse::<u32>().ok()?;
+                let (file, line) = file_line(&a)?;
                 Some(format!("{}:{line}", ours(process, file)?))
             });
             Some((name, at))
         })
         .collect()
+}
+
+/// `path:line:column` (Unix) or `path:line` (Windows, whose paths can hold
+/// a `:` of their own): the path and the line.
+fn file_line(at: &str) -> Option<(&str, u32)> {
+    let num = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
+    let (rest, last) = at.rsplit_once(':').filter(|(_, n)| num(n))?;
+    match rest.rsplit_once(':').filter(|(_, n)| num(n)) {
+        Some((file, line)) => Some((file, line.parse().ok()?)),
+        None => Some((rest, last.parse().ok()?)),
+    }
 }
 
 /// Our crates' directory, where this one was built from.
@@ -179,7 +187,8 @@ fn plain(s: &str) -> bool {
 }
 
 /// A symbol as a crash names it, if it's ours: no hash, no generic
-/// arguments, no closures, `<T as Trait>::f` as `T::f`.
+/// arguments, no closures (`{{closure}}`, MSVC's `closure$0`, and its
+/// `impl$0`), `<T as Trait>::f` as `T::f`.
 fn name(sym: &str) -> Option<String> {
     let mut s = sym.trim();
     // `…::h0123456789abcdef`
@@ -217,7 +226,7 @@ fn name(sym: &str) -> Option<String> {
             _ => {}
         }
     }
-    let name: Vec<&str> = out.split("::").filter(|seg| !seg.is_empty() && !seg.contains('{')).collect();
+    let name: Vec<&str> = out.split("::").filter(|seg| !seg.is_empty() && !seg.contains(['{', '$'])).collect();
     let krate = *name.first()?;
     let ours = krate == "arugula" || krate == "arugulad" || krate.starts_with("arugula_");
     let name = name.join("::");
@@ -399,6 +408,12 @@ mod tests {
             name("<arugula_mux::pane::Pane<T> as core::ops::drop::Drop>::drop").as_deref(),
             Some("arugula_mux::pane::Pane::drop")
         );
+        assert_eq!(
+            name("arugula_proto::x::tests::panic_in_child::closure$1").as_deref(),
+            Some("arugula_proto::x::tests::panic_in_child"),
+            "MSVC's"
+        );
+        assert_eq!(name("arugula_mux::pane::impl$3::drop").as_deref(), Some("arugula_mux::pane::drop"));
         assert_eq!(name("arugulad::main").as_deref(), Some("arugulad::main"));
         assert_eq!(name("arugula::cmd::run").as_deref(), Some("arugula::cmd::run"));
         assert_eq!(name("<serde_json::de::Deserializer<R> as serde::Deserializer>::deserialize_any"), None);
@@ -413,6 +428,28 @@ mod tests {
         assert_eq!(ours(Process::Daemon, "src/main.rs"), None);
         assert_eq!(ours(Process::Daemon, "/home/me/.cargo/registry/src/index.crates.io-1/serde-1.0/src/de.rs"), None);
         assert_eq!(ours(Process::Daemon, "/rustc/abc/library/core/src/option.rs"), None);
+    }
+
+    /// Windows prints `path:line`, with backslashes and a drive's colon.
+    #[test]
+    fn windows_frames_are_read_too() {
+        assert_eq!(file_line("./crates/a.rs:12:9"), Some(("./crates/a.rs", 12)));
+        assert_eq!(file_line(r".\crates\a.rs:12"), Some((r".\crates\a.rs", 12)));
+        assert_eq!(file_line(r"C:\s\crates\a.rs:12"), Some((r"C:\s\crates\a.rs", 12)));
+        assert_eq!(file_line("nowhere"), None);
+        // As std prints it there (MSVC, a dev build).
+        let trace = r"   0: std::panicking::panic_handler
+             at /rustc/abc/library\std\src\panicking.rs:679
+   1: core::panicking::panic_fmt
+             at /rustc/abc/library\core\src\panicking.rs:80
+   2: arugula_proto::telemetry::crash::tests::panic_in_child::closure$1
+             at .\crates\proto\src\telemetry\crash.rs:312
+   3: core::hint::black_box
+             at /rustc/abc/library\core\src\hint.rs:491
+";
+        let c = crash(Process::Cli, "0.42.0", None, trace, 1);
+        assert_eq!(c.frames, ["arugula_proto::telemetry::crash::tests::panic_in_child"]);
+        assert_eq!(c.location, "crates/proto/src/telemetry/crash.rs:312");
     }
 
     /// A panic in a dependency is where the first of our frames called it.
