@@ -367,9 +367,8 @@ impl Daemon {
     /// Whether `client` is sent `pane`'s state only while it shows it
     /// (#739): an agent block, or a doc (#963: up to 1 MiB of text that
     /// no phone should get on attach), to a client that takes patches (a
-    /// page). An
-    /// agent's state is its transcript, which nothing off screen reads; the
-    /// fleet, the swarm and the tab strip go by its summary. Other blocks'
+    /// page). An agent's state is its transcript, which nothing off screen
+    /// reads; the fleet, the swarm and the tab strip go by its summary. Other blocks'
     /// states name them off screen (a browser's title, a remote's host),
     /// and the CLI's fronts redraw panes they don't show, so those go to
     /// everyone who may see them, as before.
