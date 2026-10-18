@@ -707,7 +707,7 @@ tests). What stays, for saved state and a fleet whose versions are mixed:
   reads it. `/api/fountain/…`, `/api/agent-approvals` and `/api/a2a/
   fountain/…` are gone; `agent-approvals.json` and `managoat/` in a state
   dir are left as they are.
-Where: `crates/daemon/src/agent/defs.rs` (`Kind::Fountain`, `CLOUD_MIGRATION`), `crates/daemon/src/agent/mod.rs` (`begin`), `crates/daemon/src/review/mod.rs` (`SANDBOX_GONE`), `crates/daemon/src/mcp/tools.rs` (`managoat_kind`, `managoat_start`), `crates/daemon/src/labs/agents/mod.rs` (`run_anywhere`), `crates/proto/src/lib.rs` (`BlockType`, `WorkKind`), `crates/daemon/tests/integration/agents.rs` (`legacy_cloud_transcript_restores_without_launching_or_accepting_commands`), `crates/daemon/tests/integration/flag_gates.rs`.
+Where: `crates/daemon/src/agent/defs.rs` (`Kind::Managoat`, `CLOUD_MIGRATION`), `crates/daemon/src/agent/mod.rs` (`begin`), `crates/daemon/src/review/mod.rs` (`SANDBOX_GONE`), `crates/daemon/src/mcp/tools.rs` (`managoat_kind`, `managoat_start`), `crates/daemon/src/labs/agents/mod.rs` (`run_anywhere`), `crates/proto/src/lib.rs` (`BlockType`, `WorkKind`), `crates/daemon/tests/integration/agents.rs` (`legacy_cloud_transcript_restores_without_launching_or_accepting_commands`), `crates/daemon/tests/integration/flag_gates.rs`.
 From: Jake, 2026-10-18.
 
 ### A machine reaches another's agents as its account, through the relay

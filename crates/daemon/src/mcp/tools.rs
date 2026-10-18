@@ -1693,7 +1693,7 @@ impl<'a> Call<'a> {
             // M44's as_fountain (a Managoat agent worn here) was retired:
             // said, not ignored into a plain Claude Code.
             ("start_agent", _) if args.get("as_fountain").is_some_and(|v| !v.is_null()) => {
-                Err(crate::agent::defs::AS_FOUNTAIN_GONE.into())
+                Err(crate::agent::defs::AS_MANAGOAT_GONE.into())
             }
             // Daemon-side Managoat was removed: an agent on Managoat (or a
             // recipe run there) is refused, not started here instead.

@@ -478,8 +478,8 @@ struct RunReq {
     prompt: Option<String>,
     /// #942 F4's run on Managoat, removed with daemon-side Managoat: an
     /// older CLI's `--managoat` is refused, not run somewhere else.
-    #[serde(default)]
-    fountain: bool,
+    #[serde(default, alias = "fountain")]
+    managoat: bool,
 }
 
 /// *Run there*'s other half (#403's follow-up): one of this machine's
@@ -525,7 +525,7 @@ async fn run_anywhere(
     if !own_account(&app, &who, &dev) {
         return refuse(StatusCode::FORBIDDEN, "this machine's own account's");
     }
-    if r.fountain {
+    if r.managoat {
         return refuse(StatusCode::GONE, crate::agent::defs::CLOUD_MIGRATION);
     }
     let machine = match delegate::locate(&app, r.machine.as_deref(), &r.agent).await {
@@ -921,6 +921,16 @@ mod tests {
     use super::*;
 
     const FIXER: &str = "---\nname: fixer\ndescription: Fixes failing tests\ntools: Read, Edit, Bash\nmodel: haiku\npermissionMode: acceptEdits\nskills:\n  - testing\nmcpServers:\n  - github\n  - docs:\n      type: http\n      url: https://example.com/mcp\n---\n\nYou fix tests.\n";
+
+    /// An older CLI's run on Managoat sent `fountain: true`; it's still
+    /// read, so it's refused rather than run here.
+    #[test]
+    fn an_older_clis_managoat_run_is_still_read() {
+        for key in ["fountain", "managoat"] {
+            let r: RunReq = serde_json::from_value(serde_json::json!({ "agent": "a", key: true })).unwrap();
+            assert!(r.managoat, "{key}");
+        }
+    }
 
     #[test]
     fn a_subagent_file_is_a_recipe() {

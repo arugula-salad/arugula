@@ -117,7 +117,7 @@ pub fn harness(def: &super::defs::Def) -> String {
     match def.agent {
         Kind::Claude => "claude-code".into(),
         Kind::Codex => "codex".into(),
-        Kind::Fountain => "managoat".into(),
+        Kind::Managoat => "managoat".into(),
         Kind::Acp => def.label(),
     }
 }

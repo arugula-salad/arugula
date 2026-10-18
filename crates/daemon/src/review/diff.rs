@@ -156,8 +156,8 @@ struct Config {
     #[serde(default)]
     picked: Option<String>,
     /// F3's view of a Managoat sandbox, removed: only read, to refuse it.
-    #[serde(default, skip_serializing)]
-    fountain: Option<Value>,
+    #[serde(default, skip_serializing, rename = "fountain")]
+    managoat_sandbox: Option<Value>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -324,7 +324,7 @@ impl Diff {
         if config.rev_b.is_some() && config.rev_a.is_none() {
             return Err("rev_b needs rev_a".into());
         }
-        if config.fountain.as_ref().is_some_and(|f| !f.is_null()) {
+        if config.managoat_sandbox.as_ref().is_some_and(|f| !f.is_null()) {
             return Err(super::SANDBOX_GONE.into());
         }
         let repo = config.repo.clone().filter(|r| !r.is_empty()).unwrap_or_else(|| "~".into());

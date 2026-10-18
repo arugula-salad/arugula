@@ -99,7 +99,7 @@ function AgentsBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentsS
   };
   if (!s || (s.loading && !s.updated_ms)) {
     return (
-      <div class="review ws fountain agents" data-agents-block={id}>
+      <div class="review ws agents" data-agents-block={id}>
         <div class="browser-card dim">Asking every machine for its agents…</div>
       </div>
     );
@@ -136,7 +136,7 @@ function AgentsBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentsS
     }
   };
   return (
-    <div class="review ws fountain agents" data-agents-block={id}>
+    <div class="review ws agents" data-agents-block={id}>
       <div class="review-bar">
         <span class="review-path">
           <b>Team agents</b>
@@ -154,7 +154,7 @@ function AgentsBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentsS
           <p class="dim">{s.error}</p>
         </div>
       )}
-      {s.said && <p class="dim fountain-said">{s.said}</p>}
+      {s.said && <p class="dim offer-said">{s.said}</p>}
       {(s.waiting?.length ?? 0) > 0 && (
         <section class="agents-recipes" data-agents-waiting>
           <h4 class="agents-shelf-head">Waiting for you</h4>
@@ -170,9 +170,9 @@ function AgentsBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentsS
           </ul>
         </section>
       )}
-      {s.catalog.note && <p class="dim fountain-said">{s.catalog.note}</p>}
+      {s.catalog.note && <p class="dim offer-said">{s.catalog.note}</p>}
       <div class="review-body">
-        {total === 0 && !s.error && <p class="dim fountain-empty">No agents offered on any machine you reach</p>}
+        {total === 0 && !s.error && <p class="dim offer-empty">No agents offered on any machine you reach</p>}
         {shelves.map((m) => (
           <section key={m.machine} class="agents-shelf" data-shelf={m.name} data-online={String(m.online)}>
             <h4 class="agents-shelf-head">
@@ -184,16 +184,16 @@ function AgentsBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentsS
                 {!m.online ? ` · offline, as seen ${ago(m.fetched_ms)}` : ""}
               </span>
             </h4>
-            {m.note && m.online && <p class="dim fountain-said">{m.note}</p>}
-            <ul class="fountain-cards">
+            {m.note && m.online && <p class="dim offer-said">{m.note}</p>}
+            <ul class="offer-cards">
               {m.agents.map((c) => (
-                <li key={`${m.machine}/${c.name}`} class={`fountain-card ${m.online ? "" : "dim"}`} data-agent={c.name} data-on={m.name}>
-                  <div class="fountain-card-head">
-                    <b class="fountain-name">{c.name}</b>
+                <li key={`${m.machine}/${c.name}`} class={`offer-card ${m.online ? "" : "dim"}`} data-agent={c.name} data-on={m.name}>
+                  <div class="offer-card-head">
+                    <b class="offer-name">{c.name}</b>
                     {model(c) && <span class="ws-tag">{model(c)}</span>}
                   </div>
-                  {c.description && <p class="fountain-desc">{c.description}</p>}
-                  <div class="ws-actions fountain-actions">
+                  {c.description && <p class="offer-desc">{c.description}</p>}
+                  <div class="ws-actions offer-actions">
                     {m.here && mayOwn && (
                       <button class="pri" data-run-here={c.name} disabled={busy !== null} onClick={() => void runHere(c.name)}>
                         Run on {m.name}
@@ -237,11 +237,11 @@ function AgentsBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentsS
           <section class="agents-recipes" data-agents-recipes>
             <h4 class="agents-shelf-head">
               Offer from this machine
-              <button class="fountain-link" data-pick-dir onClick={() => void pickDir()}>
+              <button class="offer-link" data-pick-dir onClick={() => void pickDir()}>
                 {s.dir ? s.dir : "Pick a project…"}
               </button>
             </h4>
-            {s.recipes_error && <p class="dim fountain-said">{s.recipes_error}</p>}
+            {s.recipes_error && <p class="dim offer-said">{s.recipes_error}</p>}
             {s.dir && !s.recipes_error && s.recipes.length === 0 && <p class="dim">No recipes in {s.dir}/.claude/agents or ~/.claude/agents</p>}
             <ul class="agents-recipe-list">
               {s.recipes.map((r) => (
@@ -269,7 +269,7 @@ function AgentsBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentsS
 /** How to draw an agents block: the Labs entry hands it to the page. */
 export const agentsBlock: BlockRenderer = (client, id): BlockView => {
   const host = document.createElement("div");
-  host.className = "block block-fountain block-agents";
+  host.className = "block block-agents";
   let state: AgentsState | null = null;
   const draw = () => render(<AgentsBlock client={client} id={id} s={state} />, host);
   draw();

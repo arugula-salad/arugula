@@ -1024,7 +1024,7 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
     crate::labs::resume_tasks(&app);
     // Daemon-side Managoat was removed: an old service file's flag still
     // parses, and says so.
-    if args.fountain_account_stream {
+    if args.managoat_account_stream {
         tracing::warn!(
             "--managoat-account-stream does nothing: daemon-side Managoat was removed (cloud agents run through Arugula control)"
         );
