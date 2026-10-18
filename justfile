@@ -22,6 +22,29 @@ bootstrap:
     mise install
     cd web && pnpm install --frozen-lockfile
 
+# Copies scripts/sccache/sccache out of the checkout and prints the
+# ~/.cargo/config.toml lines that turn the caches on; writes no config
+# itself (docs/development.md, "Caches for worktrees").
+# Share build caches (Ghostty's Zig build, sccache) between worktrees.
+build-cache:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if ! command -v sccache >/dev/null; then
+      echo "sccache isn't on PATH: brew install sccache (macOS), or cargo install --locked sccache" >&2
+      exit 1
+    fi
+    wrapper=${XDG_DATA_HOME:-$HOME/.local/share}/arugula/sccache/sccache
+    mkdir -p "$(dirname "$wrapper")"
+    install -m 755 scripts/sccache/sccache "$wrapper"
+    case $(uname -s) in
+      Darwin) caches=$HOME/Library/Caches ;;
+      *) caches=${XDG_CACHE_HOME:-$HOME/.cache} ;;
+    esac
+    echo "Installed $wrapper. Add to ~/.cargo/config.toml (merge into any [build] or [env] there):" >&2
+    printf '\n[build]\nrustc-wrapper = "%s"\n\n[env]\n' "$wrapper"
+    printf 'LIBGHOSTTY_VT_SYS_CACHE_DIR = "%s/libghostty-vt-sys"\n' "$caches"
+    printf 'SCCACHE_CACHE_SIZE = "20G"\n'
+
 # Build the web client into web/dist (embedded into the daemon).
 web:
     cd web && pnpm run build

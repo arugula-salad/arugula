@@ -186,7 +186,10 @@ lints the daemon with neither, and with each alone.
   and Vite on 5173, leaving your daily daemon alone.
 - `just proto-ts`: regenerate `web/src/proto.gen.ts`.
 - In a worktree, set `CARGO_TARGET_DIR` to a directory of its own, so
-  parallel builds don't share one `target/`.
+  parallel builds don't share one `target/`. A new one builds cold;
+  `just build-cache` sets up caches its worktrees share (Ghostty's Zig
+  build, sccache), per machine (docs/development.md, "Caches for
+  worktrees").
 - Dev builds carry line tables only, and dependencies no debug info
   (Cargo.toml says how to get full info for a debugger). Changing that
   rebuilds the whole target dir, both ways.
