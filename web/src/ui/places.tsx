@@ -145,11 +145,33 @@ export function useChatTick(client: Client) {
 
 // ---- the places: the panes, the swarm, chat and agents
 
-/** Where a person is: the panes, the swarm, chat or agents. */
-export type Place = "panes" | "swarm" | "chat" | "agents";
+/** Where a person is: the panes, the swarm, chat or agents, or (in the new
+ * workspace, M111) the overview of this machine's sessions. */
+export type Place = "panes" | "swarm" | "chat" | "agents" | "overview";
+
+/** `#overview`, or `#overview=<session>` for one session's (M111). */
+export function overviewRoute(): { session?: number } | null {
+  const m = /^#overview(?:=(\d+))?$/.exec(location.hash);
+  return m ? { session: m[1] ? Number(m[1]) : undefined } : null;
+}
+
+export function openOverview(session?: number) {
+  closeThread();
+  const hash = session === undefined ? "overview" : `overview=${session}`;
+  if (location.hash !== `#${hash}`) location.hash = hash;
+}
+
+/** Back to the panes; a hashchange, so everything that follows the route
+ * hears it. */
+export function closeOverview() {
+  if (!overviewRoute()) return;
+  history.replaceState(null, "", location.pathname + location.search);
+  dispatchEvent(new HashChangeEvent("hashchange"));
+}
 
 /** Where the page is now, from the route. */
 export function currentPlace(): Place {
+  if (overviewRoute()) return "overview";
   if (isChatOpen()) return "chat";
   if (swarmRoute()) return "swarm";
   if (agentsRoute()) return "agents";
@@ -161,6 +183,7 @@ export function closePlace(at: Place) {
   if (at === "chat") closeChat();
   else if (at === "agents") closeAgentsPage();
   else if (at === "swarm") closeSwarm();
+  else if (at === "overview") closeOverview();
 }
 
 /** Panes · Swarm · Chat · Agents, in the bar every place shares

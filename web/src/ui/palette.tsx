@@ -17,7 +17,12 @@ import { fuzzy } from "../fs";
 import { countView } from "../telemetry";
 import { useWorkspaceDir } from "../blocks";
 import { closeSwarm, openSwarm, swarmRoute } from "../swarm/route";
-import { closeChat, isChatOpen, openChat, openChatView } from "./places";
+import { closeChat, closeOverview, isChatOpen, openChat, openChatView, openOverview, overviewRoute } from "./places";
+import { cloudPanes } from "../cloud";
+import { appearance } from "../appearance";
+import { showSession } from "./shell/session-sidebar";
+import { paneName } from "./shell/overview";
+import { openAttention } from "./shell/attention-drawer";
 import { agentsRoute, closeAgentsPage, openAgentsPage } from "./agents-route";
 import { askText, closeMenu, type MenuItem } from "./menu";
 import { ariaKeys, keyHint } from "./keys";
@@ -35,22 +40,32 @@ export interface Command {
   checked?: boolean;
   /** Where it is, for jumps: the session, the tab. */
   detail?: string;
+  /** More words that find it, after its label (a jump's session and tab). */
+  also?: string;
 }
 
 let open: { client: Client; phone: boolean } | null = null;
+/** What had the keys before it opened: Escape gives them back (M111). */
+let back: HTMLElement | null = null;
 const listeners = new Set<() => void>();
 const changed = () => listeners.forEach((fn) => fn());
 
 export function openPalette(client: Client, phone = false) {
   countView("palette");
   closeMenu();
+  if (!open) back = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   open = { client, phone };
   changed();
 }
 
-function closePalette() {
+/** Closed without running anything: the focus goes back where it was (a
+ * command run puts it on the pane, or on what it opens). */
+function closePalette(restore = true) {
   open = null;
   changed();
+  const to = back;
+  back = null;
+  if (restore && to?.isConnected) to.focus();
 }
 
 /** The chord (ui/keys.ts): opens it, and again closes it. */
@@ -147,23 +162,48 @@ export function commands(client: Client, phone: boolean, workspace: string | nul
   // Without the menu's headers: each would name every item after it.
   out.push(...fromMenu("Settings", settingsItems(client).filter((i) => typeof i === "object" && "label" in i && i.label !== "Command palette…")));
 
-  // Jumps: sessions, tabs, panes and workspaces by name.
+  // Jumps: this machine's sessions, tabs, panes and workspaces by name
+  // (M111: every pane, in any session, and out of a cloud run's tab).
+  const toPane = (p: PaneId) => {
+    cloudPanes.local();
+    client.setActive(p);
+    requestAnimationFrame(() => client.viewOf(p)?.focus());
+  };
   for (const s of state.sessions) {
-    if (s.id !== session) out.push({ key: `Go/session ${s.id}`, group: "Go to", label: `Session ${s.name}`, run: () => client.selectSession(s.id) });
+    if (s.id !== session) out.push({ key: `Go/session ${s.id}`, group: "Go to", label: `Session ${s.name}`, run: () => showSession(client, s.id) });
     for (const tid of s.tabs) {
       const t = client.tabView(tid);
       if (!t) continue;
       const label = tabLabel(client, t);
       const panes = paneIds(t);
-      out.push({ key: `Go/tab ${tid}`, group: "Go to", label: `Tab ${label}`, detail: s.name, run: () => client.selectTab(tid) });
+      out.push({
+        key: `Go/tab ${tid}`,
+        group: "Go to",
+        label: `Tab ${label}`,
+        detail: s.name,
+        also: s.name,
+        run: () => {
+          cloudPanes.local();
+          client.selectTab(tid);
+        },
+      });
       for (const p of panes) {
         const info = client.info(p);
-        if (info?.type === "workspace") {
+        if (!info) continue;
+        if (info.type === "workspace") {
           const name = client.title(p).replace(/ \(chant\)$/, "");
-          out.push({ key: `Go/pane ${p}`, group: "Go to", label: `Workspace ${name}`, detail: `${s.name} › ${label}`, run: () => client.setActive(p) });
-        } else if (panes.length > 1) {
-          const name = client.title(p) || client.cwd(p) || `pane %${p}`;
-          out.push({ key: `Go/pane ${p}`, group: "Go to", label: `Pane ${name}`, detail: `${s.name} › ${label}`, run: () => client.setActive(p) });
+          out.push({ key: `Go/pane ${p}`, group: "Go to", label: `Workspace ${name}`, detail: `${s.name} › ${label}`, run: () => toPane(p) });
+        } else {
+          const cwd = client.cwd(p)?.replace(/^\/(?:home|Users)\/[^/]+/, "~") ?? null;
+          out.push({
+            key: `Go/pane ${p}`,
+            group: "Go to",
+            label: `Pane ${paneName(client, info)}`,
+            detail: [`${s.name} › ${label}`, cwd, info.branch].filter(Boolean).join(" · "),
+            // Found by its session and tab too, and its directory's name.
+            also: [s.name, label, cwd?.split("/").pop(), info.branch].filter(Boolean).join(" "),
+            run: () => toPane(p),
+          });
         }
       }
     }
@@ -206,10 +246,17 @@ function places(client: Client): Command[] {
     if (swarmRoute()) closeSwarm();
     if (isChatOpen()) closeChat();
     if (agentsRoute()) closeAgentsPage();
+    closeOverview();
   };
   const out: Command[] = [];
   const go = (key: string, label: string, run: () => void) => out.push({ key: `Places/${key}`, group: "Places", label, run });
   if (at !== "panes") go("panes", "Go to Panes", toPanes);
+  // M111, in the new workspace: this machine's sessions at a glance, and
+  // what waits on you on every machine.
+  if (appearance().workspace === "new") {
+    if (!overviewRoute()) go("overview", "Go to the session overview", () => openOverview());
+    go("attention", "Needs you: what waits on you, on every machine", () => openAttention());
+  }
   if (at !== "swarm") go("swarm", "Go to Swarm", openSwarm);
   if (client.hasThreads()) {
     if (at !== "chat") go("chat", "Go to Chat", () => openChat());
@@ -239,7 +286,10 @@ function rank(list: Command[], query: string, recent: string[]): Command[] {
     .map((c) => {
       const a = fuzzy(q, c.label);
       const b = fuzzy(q, `${c.group} ${c.label}`);
-      const s = a === null ? b : b === null ? a : Math.max(a, b);
+      // Where a jump is (its session, directory, branch) finds it too,
+      // after a match on its name.
+      const d = a === null && b === null && c.also ? fuzzy(q, `${c.label} ${c.also}`) : null;
+      const s = a === null ? (b ?? (d === null ? null : d - 2)) : b === null ? a : Math.max(a, b);
       return { c, s: s === null ? null : s + (at(c) < Infinity ? 4 : 0) - (c.disabled ? 20 : 0) };
     })
     .filter((x): x is { c: Command; s: number } => x.s !== null);
@@ -249,7 +299,7 @@ function rank(list: Command[], query: string, recent: string[]): Command[] {
 
 // ---------------------------------------------------------------- view
 
-function Palette({ client, phone, close }: { client: Client; phone: boolean; close: () => void }) {
+function Palette({ client, phone, close }: { client: Client; phone: boolean; close: (restore?: boolean) => void }) {
   const [query, setQuery] = useState("");
   const [sel, setSel] = useState(0);
   const input = useRef<HTMLInputElement>(null);
@@ -280,7 +330,7 @@ function Palette({ client, phone, close }: { client: Client; phone: boolean; clo
   const run = (c: Command | undefined) => {
     if (!c || c.disabled) return;
     remember(c.key);
-    close();
+    close(false);
     // The panes are under the swarm, chat and agents: show them, unless
     // it's the swarm's or chat's, or a place's (it goes there itself).
     if (c.group !== "Swarm" && c.group !== "Places" && swarmRoute()) closeSwarm();
@@ -288,6 +338,7 @@ function Palette({ client, phone, close }: { client: Client; phone: boolean; clo
       if (isChatOpen()) closeChat();
       if (agentsRoute()) closeAgentsPage();
     }
+    if (c.group !== "Places" && overviewRoute()) closeOverview();
     // Keys back to the pane first; a prompt the command opens takes them.
     const active = client.active();
     if (!phone && active !== undefined) client.viewOf(active)?.focus();
@@ -315,7 +366,7 @@ function Palette({ client, phone, close }: { client: Client; phone: boolean; clo
       class="prompt-backdrop picker-backdrop"
       role="dialog"
       aria-label="Command palette"
-      onPointerDown={(e) => e.target === e.currentTarget && close()}
+      onPointerDown={(e) => e.target === e.currentTarget && close(false)}
     >
       <div class={phone ? "picker palette phone" : "picker palette"} onKeyDown={onKey}>
         <input
@@ -360,7 +411,7 @@ function Palette({ client, phone, close }: { client: Client; phone: boolean; clo
         </ul>
         {phone && (
           <div class="picker-actions">
-            <button onClick={close}>Cancel</button>
+            <button onClick={() => close()}>Cancel</button>
           </div>
         )}
       </div>

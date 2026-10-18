@@ -16,6 +16,7 @@ import { UpdateChip } from "../update";
 import { WindowButtons } from "../window-buttons";
 import type { Renaming } from "./rename-input";
 import { SessionButton } from "./session-sidebar";
+import { AttentionBell } from "./attention-drawer";
 import { TabStrip } from "./tab-strip";
 
 /** The classic bar (the default until M113). */
@@ -138,6 +139,8 @@ export function ContextHeader({
       <div class="bar-fill" data-tauri-drag-region />
       <CommandsButton client={client} search />
       <UpdateChip client={client} />
+      {/* M111: what waits on you, on every machine. */}
+      <AttentionBell client={client} />
       {/* Sharing is the daemon's owner's (M13), and in sight so it's found (#551). */}
       {session && !state.roles && (
         <button class="ws-share" aria-label="Share session" title="Share this session with someone" onClick={() => shareSession(session.id)}>

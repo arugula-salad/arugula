@@ -12,7 +12,7 @@ import { onSwarmRoute, openSwarm } from "../../swarm/route";
 import { openAgentsPage } from "../agents-route";
 import { settingsItems } from "../commands";
 import { openMenu } from "../menu";
-import { chatUnread, closePlace, currentPlace, openChat, useChatTick, type Place } from "../places";
+import { chatUnread, closePlace, currentPlace, openChat, openOverview, useChatTick, type Place } from "../places";
 import { countView } from "../../telemetry";
 import { AgentsIcon, ChatIcon, Mark, PanesIcon, SessionsIcon, SettingsIcon, SwarmIcon } from "./icons";
 import { focusSessionSearch, setSidebarOpen, useSidebar } from "./prefs";
@@ -56,12 +56,9 @@ export function Rail({ client }: { client: Client }) {
       <button
         class="ws-brand"
         aria-label={`Arugula: the sessions on ${host}`}
-        title={`The sessions on ${host}`}
+        title={`The sessions on ${host}: their tabs, panes and what needs you`}
         data-open-overview
-        onClick={() => {
-          closePlace(at);
-          focusSessionSearch();
-        }}
+        onClick={() => (at === "overview" ? focusSessionSearch() : openOverview())}
       >
         <Mark />
       </button>

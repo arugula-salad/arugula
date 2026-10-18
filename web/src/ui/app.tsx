@@ -37,6 +37,8 @@ import { noteLastTab, SessionSidebar } from "./shell/session-sidebar";
 import { TabStrip } from "./shell/tab-strip";
 import { useNewWorkspace } from "./shell/prefs";
 import { ActivityDrawer } from "./shell/activity";
+import { AttentionDrawer } from "./shell/attention-drawer";
+import { SessionOverview, useOverview } from "./shell/overview";
 import { TabArea } from "./panes/tab-area";
 import { DragGhost } from "./panes/drop-overlay";
 import { useHoverToSwitchTabs } from "./panes/drop";
@@ -89,6 +91,8 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
   useFirstRun(client);
   // M108 (#1023): the new workspace, when Appearance says so (desktop only).
   const ws = useNewWorkspace() && !phone;
+  // M111: `#overview` lies over the tabs and panes (new workspace only).
+  const overview = useOverview();
   useLayoutEffect(() => {
     if (!ws) return;
     // The swarm, chat and agents pages sit beside its rail (style.css).
@@ -101,8 +105,9 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
   // M73: the chat page covers the panes, which stay laid out under it (so
   // their terminals keep their size) but can't be reached.
   const chatOpen = useChatOpen() && !!state && client.hasThreads();
+  const overviewOpen = ws && !!overview && !!state && !cloud;
   const main = (
-    <main class="main" inert={chatOpen}>
+    <main class="main" inert={chatOpen || overviewOpen}>
       {cloud ? <RunDetails key={cloud} id={cloud} /> : !state ? (
         <HostPicker />
       ) : state.sessions.length === 0 ? (
@@ -161,7 +166,10 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
               <AgentsNudge client={client} />
               {main}
               {session && !cloud && <ActivityDrawer key={session.id} client={client} session={session.id} />}
+              {overviewOpen && <SessionOverview client={client} session={overview?.session} />}
             </div>
+            {/* M111: between the header and the footer, over the panes. */}
+            <AttentionDrawer client={client} />
           </div>
           <StatusFooter client={client} />
         </div>
