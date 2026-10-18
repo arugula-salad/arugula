@@ -471,6 +471,10 @@ fn log_to_file(argv: &[String]) {
 static VERSION_MARK: &str = concat!("\0arugula-version=", env!("CARGO_PKG_VERSION"), "\0");
 
 fn main() -> anyhow::Result<()> {
+    // The libraries are 0.0.0 (a release rebuilds only the binaries): what
+    // they report as the version is ours.
+    arugula_core::version::set(env!("CARGO_PKG_VERSION"));
+    arugula_vt::set_version(env!("CARGO_PKG_VERSION"));
     // A closed pipe (`| head`) ends the process quietly, not with a panic
     // from `println!` (#682): Rust starts with SIGPIPE ignored.
     // SAFETY: nothing else runs yet, and SIG_DFL is no handler.

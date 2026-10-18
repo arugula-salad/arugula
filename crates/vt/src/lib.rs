@@ -14,6 +14,19 @@ mod status_query;
 pub use compat::Capabilities;
 pub use ghostty::{CheckpointError, GhosttyEngine, engine_tag};
 
+static XTVERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+/// The release the terminals answer XTVERSION with ("arugula 0.45.0"). The
+/// daemon sets it at start: this crate stays at version 0.0.0, so a release
+/// bump doesn't rebuild it (arugula_core::version says why).
+pub fn set_version(version: &str) {
+    let _ = XTVERSION.set(format!("arugula {version}"));
+}
+
+fn xtversion() -> &'static str {
+    XTVERSION.get().map_or("arugula 0.0.0", String::as_str)
+}
+
 pub trait VtEngine {
     /// Process PTY output.
     fn feed(&mut self, bytes: &[u8]);

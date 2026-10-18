@@ -156,7 +156,10 @@ impl Daemon {
     /// Start recording a session named `name` (its file name), saying what
     /// it does in `about`.
     pub fn fixture(&self, name: &str, about: &str) -> Session<'_> {
-        let header = Header { fixture: name.into(), version: env!("CARGO_PKG_VERSION").into(), about: about.into() };
+        // The tests' package's version (arugulad's), which cargo and nextest
+        // set when they run a test: this crate is 0.0.0 (arugula_core::version).
+        let version = std::env::var("CARGO_PKG_VERSION").unwrap_or_else(|_| "0.0.0".into());
+        let header = Header { fixture: name.into(), version, about: about.into() };
         let rec = Rec { start: Instant::now(), norm: normalizer(self), events: vec![] };
         Session { d: self, header, rec: Arc::new(Mutex::new(rec)), next: Arc::new(AtomicU32::new(1)) }
     }
