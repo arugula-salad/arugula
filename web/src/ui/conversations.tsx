@@ -17,6 +17,7 @@ import type { ApiResponse, Client } from "../client";
 import { directory } from "../hosts";
 import type { OpenConversationRequest, OpenConversationResponse, PaneId } from "../proto";
 import { getFleet } from "./hosts";
+import { countView } from "../telemetry";
 
 export interface Conversation {
   id: string;
@@ -50,6 +51,7 @@ const changed = () => listeners.forEach((fn) => fn());
 
 /** Show the conversations picker. */
 export function pickConversation(client: Client, where: ConversationsWhere, phone = false) {
+  countView("conversations");
   open = { client, where, phone };
   changed();
 }
