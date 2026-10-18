@@ -317,6 +317,21 @@ What's in them:
   unsigned ones are limited to 600 an hour per client address, and 30 an
   hour per install (or per daemon, signed), past which they get 429.
   Without `POSTHOG_API_KEY` control takes reports and forwards nothing.
+- **Control's page's usage** (M104, opt-in on the account): the page isn't
+  any one machine's, so its yes is the account's, kept on its row
+  (`accounts.telemetry`: NULL not asked, 0 no, 1 yes; `telemetry_at` when).
+  `GET /api/me/telemetry` says `{on, at, ask}` (`ask` is false without
+  `POSTHOG_API_KEY`, and then the page never asks); `POST {on}` answers,
+  from the card the page shows once after sign-in or the switch under
+  Sign-in and account. A yes sends `page opted in`; a no sends nothing.
+  With yes, the page sends what it counted each minute and as it closes
+  to `POST /api/telemetry/page {views, web_errors}` (a session, same
+  origin), sent as `page day` under the account: `view_<view>` for each
+  view opened (`view_other` for one control doesn't know), `web_errors`
+  (a count; never a message or a stack). Without yes it's refused (403,
+  reason `telemetry_off`) whatever a page sends; it's limited to 300 an
+  hour per account (429). Neither route makes a `control request`.
+  Control's own events above don't depend on this answer.
 
 Deleting an account sends `account deleted`, but doesn't delete the
 person in PostHog: do that in PostHog (or by its API) when someone asks.

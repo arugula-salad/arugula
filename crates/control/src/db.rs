@@ -353,6 +353,13 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
              ALTER TABLE daemons ADD COLUMN arch TEXT;",
         )?;
     }
+    // M104: whether the account lets control's page send usage counts
+    // (NULL: not asked, 0: no, 1: yes), and when it answered.
+    if !has("accounts", "telemetry")? {
+        conn.execute_batch(
+            "ALTER TABLE accounts ADD COLUMN telemetry INTEGER; ALTER TABLE accounts ADD COLUMN telemetry_at INTEGER;",
+        )?;
+    }
     Ok(())
 }
 
@@ -640,6 +647,26 @@ impl Db {
     /// The account's display name (#102).
     pub fn set_name(&self, account: &str, name: &str) -> anyhow::Result<()> {
         self.c().execute("UPDATE accounts SET name = ?2 WHERE id = ?1", params![account, name])?;
+        Ok(())
+    }
+
+    /// The account's answer for control's page (M104): yes or no and
+    /// when, or nothing while it hasn't been asked.
+    pub fn page_telemetry(&self, account: &str) -> anyhow::Result<(Option<bool>, Option<u64>)> {
+        Ok(self
+            .c()
+            .query_row("SELECT telemetry, telemetry_at FROM accounts WHERE id = ?1", params![account], |r| {
+                Ok((r.get::<_, Option<i64>>(0)?.map(|v| v != 0), r.get(1)?))
+            })
+            .optional()?
+            .unwrap_or((None, None)))
+    }
+
+    pub fn set_page_telemetry(&self, account: &str, on: bool, now: u64) -> anyhow::Result<()> {
+        self.c().execute(
+            "UPDATE accounts SET telemetry = ?2, telemetry_at = ?3 WHERE id = ?1",
+            params![account, on as i64, now],
+        )?;
         Ok(())
     }
 

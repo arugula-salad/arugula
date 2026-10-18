@@ -498,6 +498,11 @@ pub fn router(app: Arc<App>) -> Router {
             wire::telemetry::TELEMETRY,
             post(telemetry::report).layer(axum::extract::DefaultBodyLimit::max(telemetry::MAX_BODY)),
         )
+        .route(wire::telemetry::ME_TELEMETRY, get(telemetry::page_consent).post(telemetry::set_page_consent))
+        .route(
+            wire::telemetry::PAGE,
+            post(telemetry::page).layer(axum::extract::DefaultBodyLimit::max(telemetry::MAX_PAGE_BODY)),
+        )
         .route("/api/directory", get(api::directory))
         .route("/api/shares/{daemon}", post(teams::answer_share))
         .route("/api/people", get(teams::person))

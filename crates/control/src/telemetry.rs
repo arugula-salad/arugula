@@ -12,10 +12,16 @@
 //! machine joined to this control, like the name and addresses it already
 //! keeps. They ride on the trust request it makes anyway, and an older
 //! daemon sends none.
+//!
+//! Control's own page (M104) isn't any one machine's, so its yes is the
+//! account's (`accounts.telemetry`, NULL until asked). With it, the page
+//! sends what it counted each minute, as `page day` under the account;
+//! without it, control refuses them whatever a page sends.
 
 use std::{net::SocketAddr, sync::Arc};
 
 use arugula_control_wire as wire;
+use arugula_e2e::now_ms;
 use axum::{
     Json,
     body::Bytes,
@@ -24,9 +30,13 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
-use wire::telemetry::{Arch, Counts, Event, Os, Report};
+use wire::telemetry::{Arch, Counts, Event, MAX_PAGE_COUNT, Os, PageConsent, PageReport, Report, SetPageConsent};
 
-use crate::{ApiError, App, auth::DaemonAuth, err, limit};
+use crate::{
+    ApiError, App,
+    auth::{DaemonAuth, Session},
+    err, limit, refusal,
+};
 
 /// The most a report's body may be.
 pub const MAX_BODY: usize = 64 * 1024;
@@ -84,6 +94,54 @@ pub async fn report(
                 "location": c.location, "frames": c.frames, "at": c.at,
             })),
         );
+    }
+    crate::reply(&wire::Ack {})
+}
+
+/// The most a page report's body may be.
+pub const MAX_PAGE_BODY: usize = 4 * 1024;
+
+/// The account's answer for control's page (M104).
+pub async fn page_consent(State(app): State<Arc<App>>, s: Session) -> Result<Json<Value>, ApiError> {
+    let (on, at) = app.db.page_telemetry(&s.account)?;
+    crate::reply(&PageConsent { on, at, ask: app.analytics.on() })
+}
+
+/// The account answers (the page's card, or its switch under Account).
+/// Saying yes is sent as `page opted in`; saying no sends nothing.
+pub async fn set_page_consent(
+    State(app): State<Arc<App>>,
+    s: Session,
+    Json(b): Json<SetPageConsent>,
+) -> Result<Json<Value>, ApiError> {
+    let now = now_ms();
+    app.db.set_page_telemetry(&s.account, b.on, now)?;
+    if b.on {
+        app.analytics.capture(&s.account, "page opted in", json!({}));
+    }
+    crate::reply(&PageConsent { on: Some(b.on), at: Some(now), ask: app.analytics.on() })
+}
+
+/// Control's page's counts (`POST /api/telemetry/page`), sent as `page
+/// day` under the account: only once it said yes, whatever a page sends.
+pub async fn page(State(app): State<Arc<App>>, s: Session, body: Bytes) -> Result<Json<Value>, ApiError> {
+    app.limits.check_account(limit::PAGE_REPORTS, &s.account)?;
+    let r: PageReport = serde_json::from_slice(&body).map_err(|e| err(StatusCode::BAD_REQUEST, &e.to_string()))?;
+    if app.db.page_telemetry(&s.account)?.0 != Some(true) {
+        return Err(refusal(
+            StatusCode::FORBIDDEN,
+            wire::telemetry::NOT_OPTED_IN,
+            "this account hasn't said yes to usage reports from this page",
+        ));
+    }
+    // A view this control doesn't know reads as `view_other`.
+    let mut p = Map::new();
+    for (v, n) in &r.views {
+        p.insert(format!("view_{}", name(v).replace('-', "_")), (*n).min(MAX_PAGE_COUNT).into());
+    }
+    p.insert("web_errors".into(), r.web_errors.min(MAX_PAGE_COUNT).into());
+    if r.views.values().any(|n| *n > 0) || r.web_errors > 0 {
+        app.analytics.capture(&s.account, "page day", Value::Object(p));
     }
     crate::reply(&wire::Ack {})
 }
@@ -353,5 +411,108 @@ mod tests {
         let junk = format!("{}&version=%3Cscript%3E", wire::Features::path(""));
         assert_eq!(c.send("GET", &junk, b"", Some(&d)).await, 200, "a version that doesn't look like one is left out");
         assert!(c.events().await.is_empty());
+    }
+
+    /// A signed-in person's request (the session cookie `tok`, made here),
+    /// from control's own page: its status and answer.
+    async fn as_person(c: &Control, method: &str, path: &str, body: Option<Value>) -> (u16, Value) {
+        let mut req = c
+            .http
+            .request(method.parse().unwrap(), format!("{}{path}", c.base))
+            .header("cookie", format!("{}=tok", crate::auth::SESSION_COOKIE))
+            .header("origin", &c.base);
+        if let Some(b) = body {
+            req = req.json(&b);
+        }
+        let res = req.send().await.unwrap();
+        (res.status().as_u16(), res.json().await.unwrap_or(Value::Null))
+    }
+
+    fn signed_in(c: &Control) {
+        let now = now_ms();
+        c.app.db.account_for("github", "gh-1", "someone", "acct1", now).unwrap();
+        c.app.db.add_session(&crate::auth::hash("tok"), "acct1", now, now + 60_000).unwrap();
+    }
+
+    const ME: &str = wire::telemetry::ME_TELEMETRY;
+    const PAGE: &str = wire::telemetry::PAGE;
+
+    /// Not asked until it answers; yes is kept (and said once), and no too.
+    #[tokio::test]
+    async fn telemetry_page_consent() {
+        let mut c = control().await;
+        signed_in(&c);
+        assert_eq!(c.send("GET", ME, b"", None).await, 401, "signed in only");
+        let (st, got) = as_person(&c, "GET", ME, None).await;
+        assert_eq!(st, 200);
+        assert_eq!(got, json!({ "on": null, "at": null, "ask": true }));
+        let (st, got) = as_person(&c, "POST", ME, Some(json!({ "on": true }))).await;
+        assert_eq!((st, &got["on"]), (200, &json!(true)));
+        assert!(got["at"].as_u64().unwrap() > 0);
+        assert_eq!(as_person(&c, "GET", ME, None).await.1["on"], true);
+        let ev = c.events().await;
+        assert_eq!(ev.len(), 1, "no control request for it: {ev:?}");
+        assert_eq!((&ev[0]["event"], &ev[0]["distinct_id"]), (&json!("page opted in"), &json!("acct1")));
+        assert_eq!(as_person(&c, "POST", ME, Some(json!({ "on": false }))).await.0, 200);
+        assert_eq!(as_person(&c, "GET", ME, None).await.1["on"], false);
+        assert!(c.events().await.is_empty(), "saying no sends nothing");
+        // Another site's page can't answer for it.
+        let other = c
+            .http
+            .post(format!("{}{ME}", c.base))
+            .header("cookie", format!("{}=tok", crate::auth::SESSION_COOKIE))
+            .header("origin", "https://elsewhere.example")
+            .json(&json!({ "on": true }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(other.status().as_u16(), 403);
+        assert_eq!(as_person(&c, "GET", ME, None).await.1["on"], false);
+    }
+
+    /// The page's counts are refused until the account says yes, go out as
+    /// `page day` once it has, and are refused again after no.
+    #[tokio::test]
+    async fn telemetry_page_only_after_yes() {
+        let mut c = control().await;
+        signed_in(&c);
+        let counts = json!({ "views": { "swarm": 3, "getting-started": 1, "some-newer-view": 2 }, "web_errors": 1 });
+        assert_eq!(c.send("POST", PAGE, &serde_json::to_vec(&counts).unwrap(), None).await, 401);
+        let (st, got) = as_person(&c, "POST", PAGE, Some(counts.clone())).await;
+        assert_eq!((st, &got["reason"]), (403, &json!(wire::telemetry::NOT_OPTED_IN)), "not asked is no");
+        assert!(c.events().await.is_empty());
+
+        as_person(&c, "POST", ME, Some(json!({ "on": true }))).await;
+        c.events().await;
+        assert_eq!(as_person(&c, "POST", PAGE, Some(counts.clone())).await.0, 200);
+        let ev = c.events().await;
+        assert_eq!(ev.len(), 1, "{ev:?}");
+        assert_eq!((&ev[0]["event"], &ev[0]["distinct_id"]), (&json!("page day"), &json!("acct1")));
+        let p = &ev[0]["properties"];
+        assert_eq!((&p["view_swarm"], &p["view_getting_started"], &p["view_other"]), (&json!(3), &json!(1), &json!(2)));
+        assert_eq!(p["web_errors"], 1);
+        assert!(p.get("install").is_none() && p.get("machine").is_none());
+        assert_eq!(as_person(&c, "POST", PAGE, Some(json!({ "views": { "chat": 1_000_000 } }))).await.0, 200);
+        assert_eq!(c.events().await[0]["properties"]["view_chat"], MAX_PAGE_COUNT, "a count is capped");
+        assert_eq!(as_person(&c, "POST", PAGE, Some(json!({}))).await.0, 200);
+        assert!(c.events().await.is_empty(), "nothing counted, nothing sent");
+        assert_eq!(as_person(&c, "POST", PAGE, Some(json!({ "views": "swarm" }))).await.0, 400);
+
+        as_person(&c, "POST", ME, Some(json!({ "on": false }))).await;
+        let (st, got) = as_person(&c, "POST", PAGE, Some(counts)).await;
+        assert_eq!((st, &got["reason"]), (403, &json!(wire::telemetry::NOT_OPTED_IN)), "no stops them");
+        assert!(c.events().await.is_empty());
+    }
+
+    /// Limited per account.
+    #[tokio::test]
+    async fn telemetry_page_past_the_limit() {
+        let c = control().await;
+        signed_in(&c);
+        as_person(&c, "POST", ME, Some(json!({ "on": true }))).await;
+        for _ in 0..limit::PAGE_REPORTS.1 {
+            assert_eq!(as_person(&c, "POST", PAGE, Some(json!({ "web_errors": 1 }))).await.0, 200);
+        }
+        assert_eq!(as_person(&c, "POST", PAGE, Some(json!({ "web_errors": 1 }))).await.0, 429);
     }
 }
