@@ -896,8 +896,14 @@ pub async fn move_daemon(
 // ---------------------------------------------------------------- daemons
 
 /// The daemon's account's certificates, to evaluate against its root.
-pub async fn daemon_trust(State(app): State<Arc<App>>, d: DaemonAuth, Query(q): Query<wire::Features>) -> R {
+pub async fn daemon_trust(
+    State(app): State<Arc<App>>,
+    d: DaemonAuth,
+    Query(q): Query<wire::Features>,
+    Query(m): Query<crate::telemetry::Machine>,
+) -> R {
     app.db.set_daemon_features(&d.cert.device, &q.features)?;
+    crate::telemetry::machine_seen(&app, &d, &m)?;
     let (trust, certs, revs) = trusted(&app, &d.cert.account)?;
     // Its last move (#100), for the daemon to check and take.
     let moved = app.db.daemon_moved(&d.cert.device)?.and_then(|j| {

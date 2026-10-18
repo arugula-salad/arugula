@@ -64,6 +64,12 @@ pub const FORGE_WATCHES: (&str, usize) = ("forge-watch", 120);
 pub const FORGE_LOOKUPS: (&str, usize) = ("forge-lookup", 600);
 /// Shares offered to other accounts, per daemon (each shows a prompt).
 pub const OFFERS: (&str, usize) = ("offer", 120);
+/// Telemetry reports (M100), per client address: many installs can share
+/// one (an office, a NAT).
+pub const TELEMETRY: (&str, usize) = ("telemetry", 600);
+/// Telemetry reports per install id, or per daemon when signed: an
+/// install sends one when it starts and one a day, so this is plenty.
+pub const INSTALL_REPORTS: (&str, usize) = ("install-report", 30);
 const WINDOW: Duration = Duration::from_secs(3600);
 
 /// What a client address counts as: itself, or for IPv6 its /64.
@@ -108,6 +114,11 @@ impl Limits {
     /// Count one use by a daemon; refuse once over the limit.
     pub fn check_daemon(&self, what: (&'static str, usize), daemon: &str) -> Result<(), ApiError> {
         self.count(what, format!("daemon:{daemon}"), "too many of those from this machine lately; try again later")
+    }
+
+    /// Count one use by an install (its telemetry id); refuse once over the limit.
+    pub fn check_install(&self, what: (&'static str, usize), install: &str) -> Result<(), ApiError> {
+        self.count(what, format!("install:{install}"), "too many reports from this install lately; try again later")
     }
 
     /// Count one use of something with one limit for everyone.

@@ -221,7 +221,7 @@ pub async fn requests(State(app): State<Arc<App>>, mut req: Request, next: Next)
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     #[test]
@@ -238,7 +238,7 @@ mod tests {
     }
 
     /// A fake PostHog: where it listens, and the batches it gets.
-    async fn fake_posthog() -> (String, mpsc::UnboundedReceiver<Value>) {
+    pub(crate) async fn fake_posthog() -> (String, mpsc::UnboundedReceiver<Value>) {
         use axum::{Json, Router, routing::post};
         let (got_tx, got) = mpsc::unbounded_channel::<Value>();
         let fake = Router::new().route(
