@@ -26,10 +26,6 @@ const GROUPS: { id: Group; label: string }[] = [
   { id: "idle", label: "Idle" },
 ];
 
-/** M109 adds `PaneInfo.branch`; until it lands (and from an older daemon)
- * there's none, and nothing is shown for it. */
-const branchOf = (p: PaneInfo): string | null => (p as PaneInfo & { branch?: string | null }).branch ?? null;
-
 export interface SessionSummary {
   session: Session;
   tabs: number;
@@ -59,7 +55,7 @@ export function summarize(client: Client, session: Session): SessionSummary {
   const top = pick("needs_input") ?? pick("working") ?? pick("done");
   const attention = top?.attention ?? "idle";
   const repos = [...new Set(infos.flatMap((i) => (i.project ? [i.project.name] : [])))];
-  const branches = [...new Set(infos.flatMap((i) => (branchOf(i) ? [branchOf(i)!] : [])))];
+  const branches = [...new Set(infos.flatMap((i) => (i.branch ? [i.branch] : [])))];
   let context: string | null = null;
   if (branches.length > 1) context = "Multiple branches";
   else if (repos.length > 1) context = "Multiple repos";
@@ -311,7 +307,9 @@ function SessionRow({
               {row.context ? (
                 <span class="ws-session-context">
                   {row.context.startsWith("Multiple") ? null : <BranchIcon size={11} />}
-                  {row.context}
+                  <span class="ws-ellipsis" title={row.context}>
+                    {row.context}
+                  </span>
                 </span>
               ) : (
                 <span />

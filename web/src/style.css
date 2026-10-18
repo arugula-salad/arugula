@@ -9505,3 +9505,10 @@ html[data-workspace="new"][data-desktop="macos"] .bar {
 html[data-workspace="new"] .thread-panel {
   top: 44px;
 }
+
+.ws-ellipsis {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

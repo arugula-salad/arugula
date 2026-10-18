@@ -12,8 +12,6 @@ import { closePlace, currentPlace } from "../places";
 import { connection } from "./context-header";
 import { BranchIcon } from "./icons";
 
-const branchOf = (p: PaneInfo): string | null => (p as PaneInfo & { branch?: string | null }).branch ?? null;
-
 /** Agents: agent blocks, and terminals running one. */
 const isAgent = (p: PaneInfo) => p.type === "agent" || p.kind === "agent";
 
@@ -23,7 +21,7 @@ export function StatusFooter({ client }: { client: Client }) {
   const active = client.active();
   const focused = active === undefined ? undefined : client.info(active);
   const repo = focused?.project?.name ?? null;
-  const branch = focused ? branchOf(focused) : null;
+  const branch = focused?.branch ?? null;
   const agents = panes.filter((p) => isAgent(p) && p.running).length;
   const needs = panes.filter((p) => p.attention === "needs_input");
   const { state } = connection(client);
