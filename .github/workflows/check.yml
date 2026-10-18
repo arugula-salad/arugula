@@ -247,8 +247,9 @@ jobs:
           path: ${{ runner.temp }}/artifacts
       - name: Into the run directory
         run: mkdir -p "$CI_RUN" && tar -xf "$RUNNER_TEMP/artifacts/run-static.tar" -C "$CI_RUN"
-      # test-build again, all of it fresh (a few seconds), then the suite.
-      - run: ARUGULA_SSH_BINARIES="$CI_RUN/x86_64-unknown-linux-musl/release" just test
+      # The suite, on what test-build built: `just test` would build the web
+      # client again first, for nothing.
+      - run: ARUGULA_SSH_BINARIES="$CI_RUN/x86_64-unknown-linux-musl/release" just test-run
         env:
           # The service tests run, or fail (testkit's user_manager).
           ARUGULA_REQUIRE_SYSTEMD: "1"

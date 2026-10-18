@@ -1,7 +1,15 @@
-// Release builds embed web/dist (rust-embed). Rebuild when it changes, or a
-// fresh `just web` would ship the previous bundle.
+// Release builds embed web/dist (rust-embed), and so do debug builds with
+// debug-embed. Rebuild those when it changes, or a fresh `just web` would
+// ship the previous bundle. Other debug builds read it at run time, so a
+// new bundle needn't recompile the daemon (every `just test` built one).
 fn main() {
-    println!("cargo:rerun-if-changed=../../web/dist");
+    let embeds = std::env::var("PROFILE").as_deref() == Ok("release")
+        || std::env::var_os("CARGO_FEATURE_DEBUG_EMBED").is_some();
+    if embeds {
+        println!("cargo:rerun-if-changed=../../web/dist");
+    } else {
+        println!("cargo:rerun-if-changed=build.rs");
+    }
     // Debug builds read web/dist at run time, from the folder's canonical
     // path, which rust-embed works out when the daemon compiles. If the
     // folder doesn't exist then, it keeps the path with `..` in it, finds
