@@ -62,7 +62,7 @@ const START: Duration = Duration::from_secs(60);
 /// The extension every editor block has (`ext/`): it reports the active
 /// file and carries the theme.
 pub const EXT_ID: &str = "arugula.arugula-editor";
-pub const EXT_VERSION: &str = "0.2.0";
+pub const EXT_VERSION: &str = "0.2.1";
 /// What it was called before: taken out of our settings folder where it's
 /// still listed. M27's, and the name before the rename.
 const OLD_IDS: &[&str] = &["illogical.illogical", "illogical.illogical-editor"];
