@@ -111,7 +111,13 @@ pub async fn subscribe(State(app): State<Arc<App>>, s: Session, Json(b): Json<Su
     let mut ds: Vec<String> = app.db.daemons(&s.account)?.into_iter().map(|d| d.id).collect();
     ds.extend(crate::teams::reachable(&app, &s.account)?);
     app.relay.nudge(&ds);
+    app.analytics.capture(&s.account, "push turned on", json!({ "service": push_service(&sub.endpoint) }));
     Ok(Json(json!({})))
+}
+
+/// Which push service an endpoint is at (its host), never the endpoint.
+fn push_service(endpoint: &str) -> String {
+    url::Url::parse(endpoint).ok().and_then(|u| u.host_str().map(str::to_owned)).unwrap_or_default()
 }
 
 #[derive(Deserialize)]
@@ -121,6 +127,7 @@ pub struct Unsubscribe {
 
 pub async fn unsubscribe(State(app): State<Arc<App>>, s: Session, Json(b): Json<Unsubscribe>) -> R {
     app.db.drop_push_sub(&b.endpoint, Some(&s.account))?;
+    app.analytics.capture(&s.account, "push turned off", json!({}));
     Ok(Json(json!({})))
 }
 
@@ -249,6 +256,11 @@ pub async fn daemon_send(State(app): State<Arc<App>>, d: DaemonAuth, Json(b): Js
     let status = post(&app, &b.endpoint, body, b.ttl.unwrap_or(HOUR), b.urgency.as_deref()).await?;
     // Only who and how it went; never what (we couldn't read it anyway).
     info!(daemon = d.cert.device, %account, status, "push relayed");
+    app.analytics.capture(
+        &account,
+        "push relayed",
+        json!({ "status": status, "ok": (200..300).contains(&status), "own_machine": account == d.cert.account }),
+    );
     crate::reply(&PushAnswer { status })
 }
 

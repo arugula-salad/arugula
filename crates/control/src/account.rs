@@ -120,6 +120,7 @@ pub async fn end_session(State(app): State<Arc<App>>, s: Session, Path(id): Path
         return Err(err(StatusCode::NOT_FOUND, "no such session"));
     }
     info!(account = s.account, "a session signed out");
+    app.analytics.capture(&s.account, "session ended", json!({ "everywhere": false }));
     Ok(Json(json!({})))
 }
 
@@ -128,6 +129,7 @@ pub async fn end_all(State(app): State<Arc<App>>, s: Session) -> Response {
     match app.db.drop_sessions(&s.account) {
         Ok(n) => {
             info!(account = s.account, sessions = n, "signed out everywhere");
+            app.analytics.capture(&s.account, "session ended", json!({ "everywhere": true, "sessions": n }));
             let mut res = Json(json!({ "ended": n })).into_response();
             res.headers_mut().append(header::SET_COOKIE, clear_cookie(&app));
             res
@@ -181,6 +183,7 @@ pub async fn remove_passkey(State(app): State<Arc<App>>, s: Session, Path(id): P
     match app.db.drop_passkey(&s.account, &id)? {
         Ok(()) => {
             info!(account = s.account, "passkey removed");
+            app.analytics.capture(&s.account, "passkey removed", json!({}));
             Ok(Json(json!({ "passkeys": app.db.passkey_count(&s.account)? })))
         }
         Err(why @ "no such passkey") => Err(err(StatusCode::NOT_FOUND, why)),
@@ -364,6 +367,11 @@ pub async fn delete_account(app: &Arc<App>, account: &str, typed: &str) -> Resul
         crate::push::notify(app, to, &tag, title, body);
     }
     info!(account, machines = daemons.len(), teams = disband.len(), "account deleted");
+    app.analytics.capture(
+        account,
+        "account deleted",
+        json!({ "machines": daemons.len(), "teams_disbanded": disband.len(), "teams_left": p.tell.len() }),
+    );
     Ok(())
 }
 

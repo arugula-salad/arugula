@@ -199,6 +199,11 @@ pub async fn checkout(State(app): State<Arc<App>>, headers: HeaderMap, s: Sessio
     }
     form.push((format!("line_items[{i}][price]"), st.minutes_price.clone()));
     let session = st.post(&app.http, "/v1/checkout/sessions", &form).await?;
+    let props = json!({ "plan": if b.team.is_some() { "team" } else { "personal" }, "seats": seats });
+    match &b.team {
+        Some(t) => app.analytics.capture_team(&s.account, t, "checkout started", props),
+        None => app.analytics.capture(&s.account, "checkout started", props),
+    }
     Ok(Json(json!({ "url": session["url"] })))
 }
 
@@ -243,6 +248,7 @@ pub async fn webhook(State(app): State<Arc<App>>, headers: HeaderMap, body: Byte
             let sub = obj["subscription"].as_str().unwrap_or_default();
             app.db.set_billing(&owner, obj["customer"].as_str(), Some(sub), "active", now_ms())?;
             info!(owner, "upgraded");
+            note(&app, &owner, "upgraded", json!({}));
             // The seat item, for keeping its quantity with the roster.
             if let Ok(s) = st.get(&app.http, &format!("/v1/subscriptions/{sub}")).await {
                 for item in s["items"]["data"].as_array().into_iter().flatten() {
@@ -256,10 +262,25 @@ pub async fn webhook(State(app): State<Arc<App>>, headers: HeaderMap, body: Byte
             let status = obj["status"].as_str().unwrap_or("canceled");
             app.db.set_billing(&owner, obj["customer"].as_str(), obj["id"].as_str(), status, now_ms())?;
             info!(owner, status, "subscription changed");
+            note(&app, &owner, "subscription changed", json!({ "status": status }));
         }
         _ => {}
     }
     Ok(StatusCode::OK)
+}
+
+/// A billing event, by who pays (`account:<id>` or `team:<id>`): a team's
+/// goes on its founder, grouped under the team.
+fn note(app: &App, owner: &str, event: &str, mut props: Value) {
+    props["plan"] = if owner.starts_with("team:") { "team" } else { "personal" }.into();
+    match owner.split_once(':') {
+        Some(("account", a)) => app.analytics.capture(a, event, props),
+        Some(("team", t)) => {
+            let who = app.db.team(t).ok().flatten().map(|t| t.founder).unwrap_or_else(|| owner.to_owned());
+            app.analytics.capture_team(&who, t, event, props)
+        }
+        _ => {}
+    }
 }
 
 /// A team's roster changed: its seats follow (M19 → M22).

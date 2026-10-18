@@ -279,6 +279,7 @@ pub async fn allow(State(app): State<Arc<App>>, s: Session, Path(id): Path<Strin
     let (grant, port) = app.app_logins.allow(&id, &s.account, now_ms()).ok_or_else(|| {
         err(StatusCode::NOT_FOUND, "that sign-in expired or was already used; start it again in the app")
     })?;
+    app.analytics.capture(&s.account, "desktop app sign-in allowed", json!({}));
     Ok(Json(json!({ "redirect": format!("http://127.0.0.1:{port}{LOOPBACK_PATH}?ticket={id}&grant={grant}") })))
 }
 
@@ -305,6 +306,7 @@ pub async fn redeem(
         err(StatusCode::NOT_FOUND, "that sign-in expired or was already used; start it again in the app")
     })?;
     let cookie = start_session(&app, &account)?;
+    app.analytics.signed_in(&account, "app", false);
     let mut res = StatusCode::NO_CONTENT.into_response();
     res.headers_mut().append(header::SET_COOKIE, cookie);
     Ok(res)

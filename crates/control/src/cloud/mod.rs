@@ -64,7 +64,10 @@ pub async fn create_agent(
 ) -> Result<Json<CloudAgent>, ApiError> {
     enabled(&app, &session.account)?;
     definition.validate().map_err(|e| err(StatusCode::UNPROCESSABLE_ENTITY, &e.to_string()))?;
-    Ok(Json(app.db.create_cloud_agent(&session.account, definition)?))
+    let secrets = definition.secret_names.len();
+    let agent = app.db.create_cloud_agent(&session.account, definition)?;
+    app.analytics.capture(&session.account, "cloud agent created", json!({ "secrets": secrets }));
+    Ok(Json(agent))
 }
 
 #[derive(Deserialize)]
@@ -88,6 +91,7 @@ pub async fn update_agent(
     if !app.db.update_cloud_agent(&session.account, &id, update.version, &update.definition)? {
         return Err(err(StatusCode::CONFLICT, "agent changed; reload before saving"));
     }
+    app.analytics.capture(&session.account, "cloud agent updated", json!({ "version": update.version + 1 }));
     Ok(Json(json!({"version": update.version + 1})))
 }
 
@@ -100,6 +104,7 @@ pub async fn delete_agent(
     if !app.db.archive_cloud_agent(&session.account, &id)? {
         return Err(err(StatusCode::NOT_FOUND, "agent not found"));
     }
+    app.analytics.capture(&session.account, "cloud agent deleted", json!({}));
     Ok(Json(json!({})))
 }
 
@@ -159,6 +164,11 @@ pub async fn start_run(
     {
         return Err(err(StatusCode::SERVICE_UNAVAILABLE, "cloud secrets are not configured"));
     }
+    let props = json!({
+        "agent_curated": agent.curated, "runtime": cloud.runtime, "model": cloud.model,
+        "repository_secret": input.repository_secret.is_some(), "agent_secrets": agent.definition.secret_names.len(),
+        "git_ref": !input.git_ref.is_empty(), "prompt_chars": input.prompt.chars().count(),
+    });
     let spec = crate::db::cloud::RunSpec {
         agent_id: agent.id,
         agent_version: agent.version,
@@ -183,6 +193,7 @@ pub async fn start_run(
             "request key already used with different input" => err(StatusCode::CONFLICT, &e.to_string()),
             _ => e.into(),
         })?;
+    app.analytics.capture(&session.account, "cloud run started", props);
     Ok(Json(run))
 }
 
@@ -207,6 +218,7 @@ pub async fn cancel_run(
         return Err(err(StatusCode::NOT_FOUND, "run not found"));
     }
     app.db.cancel_cloud_run(&session.account, &id)?;
+    app.analytics.capture(&session.account, "cloud run cancelled", json!({}));
     Ok(Json(json!({})))
 }
 
@@ -257,6 +269,8 @@ pub async fn answer(
         .ok_or_else(|| err(StatusCode::NOT_FOUND, "active run not found"))?;
     let cloud =
         app.cloud.as_ref().ok_or_else(|| err(StatusCode::SERVICE_UNAVAILABLE, "cloud execution is unavailable"))?;
+    let kind = if answer.option_id.is_some() { "option" } else { answer.action.as_deref().unwrap_or("") };
+    let kind = kind.to_owned();
     let body = match (answer.option_id, answer.action) {
         (Some(option), None) if !option.is_empty() && option.len() <= 256 && answer.content.is_none() => {
             json!({"option_id":option})
@@ -279,6 +293,7 @@ pub async fn answer(
         err(StatusCode::BAD_GATEWAY, "could not deliver the answer; refresh the run before retrying")
     })?;
     app.db.resolve_cloud_request(&session.account, &id, &request)?;
+    app.analytics.capture(&session.account, "cloud request answered", json!({ "answer": kind }));
     Ok(Json(json!({})))
 }
 
@@ -311,6 +326,7 @@ pub async fn put_secret(
         return Err(err(StatusCode::UNPROCESSABLE_ENTITY, "secret limit reached"));
     }
     app.db.put_cloud_secret(&session.account, &name, &cipher.seal(&session.account, &name, &input.value)?)?;
+    app.analytics.capture(&session.account, "cloud secret saved", json!({}));
     Ok(Json(json!({"name":name})))
 }
 pub async fn delete_secret(
@@ -319,6 +335,7 @@ pub async fn delete_secret(
     Path(name): Path<String>,
 ) -> Result<Json<Value>, ApiError> {
     app.db.delete_cloud_secret(&session.account, &name)?;
+    app.analytics.capture(&session.account, "cloud secret deleted", json!({}));
     Ok(Json(json!({})))
 }
 

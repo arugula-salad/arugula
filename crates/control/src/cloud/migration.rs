@@ -35,6 +35,7 @@ pub async fn import(
         .map_err(|_| err(StatusCode::BAD_GATEWAY, "could not read the old agent; check its ID and credential"))?;
     let (definition, warnings) = convert(&source)?;
     let agent = app.db.create_cloud_agent(&session.account, definition)?;
+    app.analytics.capture(&session.account, "cloud agent imported", json!({ "warnings": warnings.len() }));
     Ok(Json(json!({"agent":agent,"warnings":warnings})))
 }
 
