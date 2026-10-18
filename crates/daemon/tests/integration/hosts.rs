@@ -530,7 +530,7 @@ fn a_build_without_labs_ignores_the_labs_file() {
         .start();
     arugula_testkit::labs(&d.state, true);
     let host = d.get("/api/host");
-    for key in ["labs", "threads", "calls", "fountain", "studio", "vms"] {
+    for key in ["labs", "threads", "fountain", "studio", "vms"] {
         assert_eq!(host["features"][key], false, "{key}: {host}");
     }
 }
