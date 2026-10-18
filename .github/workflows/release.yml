@@ -72,11 +72,17 @@ jobs:
       - uses: pnpm/action-setup@v4
         with:
           version: 10
-      # main's warm target dir (windows-release-cache.yml); a tag's run
-      # only reads it.
+      # main's warm target dir and Ghostty build
+      # (windows-release-cache.yml); a tag's run only reads them.
+      - run: echo "LIBGHOSTTY_VT_SYS_CACHE_DIR=$(cygpath -w "$HOME/.cache/libghostty-vt-sys")" >> "$GITHUB_ENV"
+      - uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/libghostty-vt-sys
+          key: ghostty-Windows-release-${{ hashFiles('vendor/libghostty-vt-sys/**', '.mise.toml') }}
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: windows-release
+          add-job-id-key: false
           cache-workspace-crates: true
           save-if: false
       # arugulad and arugula, with Microsoft's ConPTY: the zip
