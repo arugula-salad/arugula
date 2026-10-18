@@ -42,8 +42,16 @@ export function TabArea({ client, tab, cell, phone }: { client: Client; tab: Tab
   const active = client.active(tab.id) ?? null;
   const zoom = phone ? active : null;
 
+  // An effect of a render whose tab isn't shown any more (#1049): Preact
+  // runs a render's effects as late as the next render, and by then a tab
+  // just made can be the shown one. Focusing a pane selects its tab, so a
+  // stale effect would select the old tab, whose effect selects the new
+  // one, and the two swap for good, the page stuck redrawing.
+  const stale = () => client.tab !== tab.id;
+
   // A tab focused on one pane (M109, anyone's doing) has the keys there.
   useEffect(() => {
+    if (stale()) return;
     if (tab.focus !== null && client.active(tab.id) !== tab.focus) client.setActive(tab.focus);
   }, [client, tab.id, tab.focus]);
 
@@ -72,6 +80,7 @@ export function TabArea({ client, tab, cell, phone }: { client: Client; tab: Tab
   // picked from the keyboard (Ctrl+Shift+N) in the frame between would
   // otherwise lose the keys to the one before it.
   useEffect(() => {
+    if (stale()) return;
     const now = client.active(tab.id) ?? null;
     if (!phone && now !== null) client.viewOf(now)?.focus();
   }, [client, tab.id, active, phone]);
@@ -79,6 +88,7 @@ export function TabArea({ client, tab, cell, phone }: { client: Client; tab: Tab
   // (a rename box) is using the keyboard.
   const rev = client.state?.rev;
   useEffect(() => {
+    if (stale()) return;
     const el = document.activeElement;
     // Not from where the keyboard took it (M113): someone moving through
     // the chrome with Tab and the arrows keeps their place.

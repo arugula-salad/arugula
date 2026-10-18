@@ -18,7 +18,15 @@ const enc = new TextEncoder();
 /** Touch-first devices draw with the DOM renderer: xterm's WebGL renderer
  * drew nothing at all in Chrome's phone emulation (fractional pixel ratio),
  * and a phone shows one pane at a time, so the speed isn't needed. */
-const WEBGL = !matchMedia("(pointer: coarse)").matches;
+let WEBGL = !matchMedia("(pointer: coarse)").matches;
+
+/** Terminals drawing with WebGL at once (#1049). Browsers keep about 16
+ * contexts a page and lose the oldest past that, whoever it belongs to;
+ * past this many, the one used longest ago draws with the DOM renderer
+ * instead, leaving room for the swarm's city and a page's others. */
+export const MAX_WEBGL = 12;
+/** The terminals with a WebGL renderer, the one used longest ago first. */
+const withWebgl = new Set<TerminalView>();
 
 /** A finished command, from the shell integration's OSC 133/633 marks. */
 export interface CommandMark {
@@ -108,7 +116,8 @@ function kittyParam(p: number | number[] | undefined): number | null {
 export class TerminalView {
   readonly host: HTMLDivElement;
   private term: Terminal;
-  private webgl: WebglAddon | undefined;
+  private visible = false;
+  private webgl: { addon: WebglAddon; gl: WebGL2RenderingContext | null } | undefined;
   readonly marks: CommandMark[] = [];
   private pendingText = "";
   private pending: { text: string; start: IMarker } | null = null;
@@ -544,31 +553,77 @@ export class TerminalView {
     return true;
   }
 
-  /** WebGL only while on screen: Chrome allows ~16 contexts per page and
-   * xterm's addon leaks them on dispose, so hidden panes use the DOM
-   * renderer and give their context back. */
+  /** WebGL only while on screen: hidden panes use the DOM renderer and
+   * give their context back, and only the MAX_WEBGL used last have one. */
   setVisible(visible: boolean) {
+    this.visible = visible;
     if (visible && !this.webgl && WEBGL) {
-      try {
-        const webgl = new WebglAddon();
-        webgl.onContextLoss(() => this.dropWebgl());
-        this.term.loadAddon(webgl);
-        this.webgl = webgl;
-      } catch {
-        // No WebGL: the DOM renderer still works.
-      }
+      this.loadWebgl();
       this.term.refresh(0, this.term.rows - 1);
     } else if (!visible && this.webgl) {
       this.dropWebgl();
+    } else if (visible) {
+      this.touchWebgl();
     }
   }
 
+  private loadWebgl() {
+    // Room first: the oldest is lost when a page has too many.
+    for (const v of withWebgl) {
+      if (withWebgl.size < MAX_WEBGL) break;
+      v.dropWebgl();
+    }
+    const screen = this.host.querySelector(".xterm-screen");
+    const before = new Set(screen?.querySelectorAll("canvas"));
+    try {
+      const addon = new WebglAddon();
+      this.term.loadAddon(addon);
+      // Its own canvas, not the link layer's (a 2D canvas it adds first),
+      // to give the context back the moment it's dropped: a context the
+      // page no longer uses still counts until it's collected.
+      const canvas = [...(screen?.querySelectorAll("canvas") ?? [])].find(
+        (c) => !before.has(c) && !c.className.includes("-layer"),
+      );
+      const gl = (canvas?.getContext("webgl2") as WebGL2RenderingContext | null | undefined) ?? null;
+      this.webgl = { addon, gl };
+      withWebgl.add(this);
+      // Lost anyway (the GPU process restarted, another page's contexts):
+      // draw with the DOM renderer now, not after the addon waits 3 s for
+      // a restore with a blank pane.
+      canvas?.addEventListener("webglcontextlost", () => this.webgl?.addon === addon && this.dropWebgl(), { once: true });
+      addon.onContextLoss(() => this.webgl?.addon === addon && this.dropWebgl());
+    } catch {
+      // No WebGL: the DOM renderer still works, and nobody tries again.
+      WEBGL = false;
+    }
+  }
+
+  /** Used now: the last to lose WebGL to another terminal, and given it
+   * back if it lost it while on screen. */
+  private touchWebgl() {
+    if (!this.webgl) {
+      if (this.visible && WEBGL) this.loadWebgl();
+      return;
+    }
+    withWebgl.delete(this);
+    withWebgl.add(this);
+  }
+
+  /** Whether this terminal draws with WebGL, for tests. */
+  get webglOn(): boolean {
+    return !!this.webgl;
+  }
+
+  /** Back to the DOM renderer, which draws the same buffer at the same
+   * size, and the context given back. */
   private dropWebgl() {
-    const canvas = this.host.querySelector("canvas");
-    const gl = canvas?.getContext("webgl2");
-    this.webgl?.dispose();
+    const webgl = this.webgl;
+    if (!webgl) return;
     this.webgl = undefined;
-    gl?.getExtension("WEBGL_lose_context")?.loseContext();
+    withWebgl.delete(this);
+    webgl.addon.dispose();
+    webgl.gl?.getExtension("WEBGL_lose_context")?.loseContext();
+    this.term.refresh(0, this.term.rows - 1);
   }
 
   get cols() {
@@ -634,6 +689,7 @@ export class TerminalView {
   }
 
   focus() {
+    this.touchWebgl();
     this.term.focus();
   }
 
