@@ -7544,7 +7544,7 @@ Apache License
 
 Used by:
 - [arugula-core 0.44.0](https://github.com/arugula-salad/arugula)
-- [arugula-desktop 0.28.0](https://crates.io/crates/arugula-desktop)
+- [arugula-desktop 0.29.0](https://crates.io/crates/arugula-desktop)
 - [arugula-proto 0.44.0](https://github.com/arugula-salad/arugula)
 - [anyhow 1.0.104](https://github.com/dtolnay/anyhow)
 - [async-trait 0.1.92](https://github.com/dtolnay/async-trait)
