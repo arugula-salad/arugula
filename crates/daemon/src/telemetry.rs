@@ -12,6 +12,12 @@
 //! - **When:** `opted-in` right after a yes, `started` a minute after
 //!   startup, `daily` once a day. A report that doesn't go is sent again at
 //!   the next try, an hour on; what's older than a week is dropped.
+//! - **Crashes** (M102) wait in `crashes/`, a file each, written by the
+//!   panic hook of `arugulad`, `arugula` and the app
+//!   (`arugula_proto::telemetry::crash`). They go with the next report
+//!   that goes anyway (`opted-in`, `started`, `daily`, or one tried again),
+//!   [`MAX_CRASHES`] at a time, and each file is deleted once a report
+//!   holding it was taken. A no empties `crashes/`.
 //! - **Signed** when the machine is joined to the control reports go to (the
 //!   hosted one, unless `ARUGULA_TELEMETRY_URL` says). A signed report
 //!   control refuses (401: the enrolment is stale) goes again unsigned, and
@@ -33,7 +39,7 @@ use arugula_control_wire::telemetry::{
 use arugula_e2e::now_ms;
 use arugula_proto::{
     BlockType,
-    telemetry::{self as consent, COUNTS_FILE, TelemetryInfo},
+    telemetry::{self as consent, COUNTS_FILE, TelemetryInfo, crash},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -94,9 +100,6 @@ struct Kept {
     counts: Counts,
     #[serde(default)]
     queue: Vec<Queued>,
-    /// Crashes waiting to go (M102).
-    #[serde(default)]
-    crashes: Vec<Crash>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -333,6 +336,7 @@ impl Telemetry {
         self.on.store(state.on, Ordering::Relaxed);
         if !state.on {
             self.live.lock().unwrap().kept = Kept::default();
+            self.no_crashes(&state);
         }
         self.wake.notify_one();
     }
@@ -345,10 +349,11 @@ impl Telemetry {
         let Some(install) = state.install().map(str::to_owned) else {
             // Off: nothing kept in memory. A no deleted the file already.
             self.live.lock().unwrap().kept = Kept::default();
+            self.no_crashes(&state);
             return;
         };
         let now = now_ms();
-        let report = {
+        let kept = {
             let mut l = self.live.lock().unwrap();
             if l.kept.install != install {
                 // A new yes (or one made while the daemon was stopped).
@@ -377,21 +382,28 @@ impl Telemetry {
             }
             let before = l.kept.queue.len();
             l.kept.queue.retain(|q| now.saturating_sub(q.at) < WEEK_MS);
-            l.kept.crashes.retain(|c| now.saturating_sub(c.at) < WEEK_MS);
             let over = l.kept.queue.len().saturating_sub(MAX_QUEUED);
             l.kept.queue.drain(..over);
             l.queued |= l.kept.queue.len() != before;
             let waiting = l.wait_until.is_some_and(|t| Instant::now() < t);
-            (!waiting && !(l.kept.queue.is_empty() && l.kept.crashes.is_empty())).then(|| self.report(&l.kept))
+            // Crashes go with a report that goes anyway.
+            (!waiting && !l.kept.queue.is_empty()).then(|| l.kept.clone())
         };
-        if let Some(report) = report {
+        if let Some(kept) = kept {
+            let crashes = self.crashes(now, true);
+            let report = self.report(&kept, crashes.iter().map(|(_, c)| c.clone()).collect());
             let sent = self.send(&report).await;
             let mut l = self.live.lock().unwrap();
             if sent && l.kept.install == report.install {
                 let n = report.events.len().min(l.kept.queue.len());
-                let c = report.crashes.len().min(l.kept.crashes.len());
                 l.kept.queue.drain(..n);
-                l.kept.crashes.drain(..c);
+                for (file, _) in &crashes {
+                    if let Err(e) = std::fs::remove_file(file)
+                        && e.kind() != std::io::ErrorKind::NotFound
+                    {
+                        warn!(error = %e, file = %file.display(), "can't delete a crash that was sent");
+                    }
+                }
                 l.wait_until = None;
                 l.queued = true;
             } else if !sent {
@@ -404,6 +416,39 @@ impl Telemetry {
         };
         if save {
             self.save();
+        }
+    }
+
+    /// The crashes waiting in `crashes/`, oldest first, at most a report's
+    /// worth, with their files. With `tidy`, a file that doesn't parse, a
+    /// crash control wouldn't take and one a week old are deleted on the
+    /// way; without, they're only left out.
+    fn crashes(&self, now: u64, tidy: bool) -> Vec<(PathBuf, Crash)> {
+        let mut out = Vec::new();
+        for (_, file) in crash::list(&self.dir) {
+            if out.len() == MAX_CRASHES {
+                break;
+            }
+            let c = std::fs::read(&file).ok().and_then(|b| serde_json::from_slice::<Crash>(&b).ok());
+            match c.filter(|c| now.saturating_sub(c.at) < WEEK_MS && takes(c)) {
+                Some(c) => out.push((file, c)),
+                None if tidy => {
+                    debug!(file = %file.display(), "a crash control wouldn't take: deleted");
+                    let _ = std::fs::remove_file(&file);
+                }
+                None => {}
+            }
+        }
+        out
+    }
+
+    /// Off because the owner said no (by hand in the file, say): no
+    /// crashes either. Off for any other reason, they wait.
+    fn no_crashes(&self, state: &consent::State) {
+        if state.why == consent::Why::No
+            && let Err(e) = crash::clear(&self.dir)
+        {
+            warn!(error = %e, "can't empty crashes/");
         }
     }
 
@@ -443,7 +488,7 @@ impl Telemetry {
     }
 
     /// The next report from what's `kept`, at most a report's worth.
-    fn report(&self, kept: &Kept) -> Report {
+    fn report(&self, kept: &Kept, crashes: Vec<Crash>) -> Report {
         Report {
             install: kept.install.clone(),
             version: env!("CARGO_PKG_VERSION").into(),
@@ -461,7 +506,7 @@ impl Telemetry {
             channel: self.channel,
             control: self.control_kind(),
             events: kept.queue.iter().take(MAX_EVENTS).map(|q| q.event.clone()).collect(),
-            crashes: kept.crashes.iter().take(MAX_CRASHES).cloned().collect(),
+            crashes,
         }
     }
 
@@ -544,7 +589,9 @@ impl Telemetry {
             counts.flags_on = self.flags_on();
             kept.queue.push(Queued { at: 0, event: Event::Daily(counts) });
         }
-        let mut preview = serde_json::to_value(self.report(&kept)).expect("a report serializes");
+        let crashes =
+            if state.on { self.crashes(now_ms(), false).into_iter().map(|(_, c)| c).collect() } else { vec![] };
+        let mut preview = serde_json::to_value(self.report(&kept, crashes)).expect("a report serializes");
         if state.install().is_none() {
             preview["preview_only"] = Value::Bool(true);
         }
@@ -567,6 +614,21 @@ impl Telemetry {
     pub fn set_signer(&self, signer: Arc<dyn Signer>) {
         let _ = self.signer.set(signer);
     }
+}
+
+/// Whether control takes `crash`, alone in a report.
+fn takes(crash: &Crash) -> bool {
+    let r = Report {
+        install: "0000000000000000".into(),
+        version: "0.0.0".into(),
+        os: Os::Other,
+        arch: Arch::Other,
+        channel: Channel::Other,
+        control: ControlKind::None,
+        events: vec![],
+        crashes: vec![crash.clone()],
+    };
+    r.check().is_ok()
 }
 
 fn same(a: &str, b: &str) -> bool {

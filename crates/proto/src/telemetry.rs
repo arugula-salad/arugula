@@ -13,8 +13,9 @@
 //! - **No file is not asked, and not asked is off.** So is a file that
 //!   doesn't parse: it is logged once and read as no file.
 //! - **Yes makes the install id; no deletes it.** No also deletes what was
-//!   counted and not yet sent ([`COUNTS_FILE`]). A yes after a no is a new
-//!   install id, so the two can't be joined up.
+//!   counted and not yet sent ([`COUNTS_FILE`]) and the crashes waiting
+//!   ([`crash::DIR`]). A yes after a no is a new install id, so the two
+//!   can't be joined up.
 //! - **Some things keep it off, whatever the file says** ([`enabled`]):
 //!   `DO_NOT_TRACK`, `ARUGULA_TELEMETRY=off`, `CI`, and tests (nextest, and
 //!   the testkit's daemons, which set `ARUGULA_TELEMETRY=off`).
@@ -30,6 +31,8 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
+
+pub mod crash;
 
 /// The owner's answer, in the state dir.
 pub const FILE: &str = "telemetry.json";
@@ -171,7 +174,8 @@ pub fn read(state_dir: &Path) -> Option<Consent> {
 }
 
 /// The owner's answer, `via` where they gave it, at `now` (ms). Yes keeps
-/// the install id it had, or makes one; no deletes it and what was counted.
+/// the install id it had, or makes one; no deletes it, what was counted and
+/// the crashes waiting.
 pub fn set(state_dir: &Path, on: bool, via: &str, now: u64) -> io::Result<Consent> {
     let mut c = read(state_dir).unwrap_or_default();
     let kept = c.install.take().filter(|i| c.telemetry && is_install(i));
@@ -187,6 +191,7 @@ pub fn set(state_dir: &Path, on: bool, via: &str, now: u64) -> io::Result<Consen
             Err(e) if e.kind() != io::ErrorKind::NotFound => return Err(e),
             _ => {}
         }
+        crash::clear(state_dir)?;
     }
     Ok(c)
 }

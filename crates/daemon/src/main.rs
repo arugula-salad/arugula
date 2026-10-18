@@ -518,6 +518,15 @@ fn main() -> anyhow::Result<()> {
     }
     let args = Args::from_arg_matches(&args::labs_command(args::labs_here()).get_matches_from(&argv))
         .unwrap_or_else(|e| e.exit());
+    // A panic is written down as a crash, if telemetry is on (M102).
+    use arugula_proto::telemetry::crash;
+    let crash_dir = args.run.state_dir.clone().unwrap_or_else(default_state_dir);
+    crash::install_hook(crash::Process::Daemon, env!("CARGO_PKG_VERSION"), &crash_dir);
+    // A debug build crashes as it starts, for the live check (M106).
+    #[cfg(debug_assertions)]
+    if args.command.is_none() && std::env::var_os(crash::TEST_PANIC_ENV).is_some_and(|v| !v.is_empty() && v != "0") {
+        panic!("{} is set: crashing as asked", crash::TEST_PANIC_ENV);
+    }
     match args.command {
         #[cfg(unix)]
         Some(install @ Command::Install { tailnet: Some(_), .. }) => labs::tailnet_install(install),
