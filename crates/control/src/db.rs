@@ -360,6 +360,7 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
             "ALTER TABLE accounts ADD COLUMN telemetry INTEGER; ALTER TABLE accounts ADD COLUMN telemetry_at INTEGER;",
         )?;
     }
+    cloud::migrate(conn)?;
     Ok(())
 }
 
@@ -2188,10 +2189,21 @@ impl Db {
         let tx = c.transaction()?;
         let active: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM cloud_runs WHERE account=?1 AND state NOT IN ('completed','failed','cancelled','expired'))", [a], |r| r.get(0))?;
         anyhow::ensure!(!active, "cancel cloud runs and wait for cleanup before deleting your account");
-        for table in ["cloud_run_secrets", "cloud_jobs", "cloud_requests", "cloud_notifications", "cloud_events"] {
+        // Its Managoat resources go first (`Db::delete_cloud_workspaces`).
+        let live: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM cloud_workspaces WHERE account=?1 AND deleted IS NULL)",
+            [a],
+            |r| r.get(0),
+        )?;
+        anyhow::ensure!(!live, "wait for your Cloud workspaces to be deleted before deleting your account");
+        for table in ["cloud_run_secrets", "cloud_requests", "cloud_notifications", "cloud_events"] {
             tx.execute(&format!("DELETE FROM {table} WHERE run IN (SELECT id FROM cloud_runs WHERE account=?1)"), [a])?;
         }
-        for table in ["cloud_runs", "cloud_agents", "cloud_secrets"] {
+        tx.execute(
+            "DELETE FROM cloud_jobs WHERE id IN (SELECT id FROM cloud_runs WHERE account=?1 UNION SELECT id FROM cloud_workspaces WHERE account=?1)",
+            [a],
+        )?;
+        for table in ["cloud_runs", "cloud_workspaces", "cloud_agents", "cloud_secrets"] {
             tx.execute(&format!("DELETE FROM {table} WHERE account=?1"), [a])?;
         }
 

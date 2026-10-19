@@ -39,8 +39,12 @@ CREATE TABLE IF NOT EXISTS cloud_run_secrets (
     sealed BLOB NOT NULL,
     PRIMARY KEY(run,name)
 );
+-- One per run, and one per Cloud workspace for its whole life: `id` is the
+-- run's or the Cloud workspace's, and `kind` says which ('run' or
+-- 'cloud_workspace'). `cancel` on a Cloud workspace's job is its delete.
 CREATE TABLE IF NOT EXISTS cloud_jobs (
-    run TEXT PRIMARY KEY REFERENCES cloud_runs(id),
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL DEFAULT 'run',
     body TEXT NOT NULL,
     cancel INTEGER NOT NULL DEFAULT 0,
     lease TEXT,
@@ -66,7 +70,62 @@ CREATE TABLE IF NOT EXISTS cloud_events (
     body TEXT NOT NULL,
     PRIMARY KEY(run,cursor)
 );
+-- `saved_spec` is what the user saved and `saved_revision` the environment
+-- revision it became; `built_spec` is the saved spec as of the revision that
+-- last reached `ready`. The rest mirrors the Managoat workspace's last poll.
+-- `deleted` is set once its Managoat resources are gone.
+CREATE TABLE IF NOT EXISTS cloud_workspaces (
+    id TEXT PRIMARY KEY,
+    account TEXT NOT NULL,
+    request_key TEXT NOT NULL,
+    name TEXT NOT NULL,
+    saved_spec TEXT NOT NULL,
+    saved_revision TEXT,
+    built_spec TEXT,
+    status TEXT NOT NULL DEFAULT 'provisioning',
+    sandbox_status TEXT,
+    error TEXT,
+    revision TEXT,
+    built_from_revision TEXT,
+    stale INTEGER NOT NULL DEFAULT 0,
+    changed_fields TEXT NOT NULL DEFAULT '[]',
+    environment TEXT,
+    vault TEXT,
+    provider_id TEXT,
+    created INTEGER NOT NULL,
+    deleted INTEGER,
+    UNIQUE(account, request_key)
+);
+CREATE INDEX IF NOT EXISTS cloud_workspaces_owner ON cloud_workspaces(account, created);
 ";
+
+/// `cloud_jobs` keyed on a run (`run`, a foreign key to `cloud_runs`) before
+/// Cloud workspaces (M114): rebuilt keyed on `id`, with a `kind`.
+pub(super) fn migrate(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
+    let keyed_on_run: bool =
+        conn.query_row("SELECT EXISTS(SELECT 1 FROM pragma_table_info('cloud_jobs') WHERE name='run')", [], |r| {
+            r.get(0)
+        })?;
+    if keyed_on_run {
+        conn.execute_batch(
+            "BEGIN;
+             CREATE TABLE cloud_jobs_v2 (
+                 id TEXT PRIMARY KEY,
+                 kind TEXT NOT NULL DEFAULT 'run',
+                 body TEXT NOT NULL,
+                 cancel INTEGER NOT NULL DEFAULT 0,
+                 lease TEXT,
+                 lease_until INTEGER NOT NULL DEFAULT 0
+             );
+             INSERT INTO cloud_jobs_v2(id,kind,body,cancel,lease,lease_until)
+                 SELECT run,'run',body,cancel,lease,lease_until FROM cloud_jobs;
+             DROP TABLE cloud_jobs;
+             ALTER TABLE cloud_jobs_v2 RENAME TO cloud_jobs;
+             COMMIT;",
+        )?;
+    }
+    Ok(())
+}
 
 /// User-editable agent definition. Model funding and execution credentials are
 /// supplied by control, not accepted as user-selected provider configuration.
@@ -182,6 +241,261 @@ pub struct Job {
     pub execution: Execution,
     pub cancelled: bool,
     pub lease: String,
+}
+
+/// What a Cloud workspace's machine is built from, as the user saved it: it
+/// becomes the environment control keeps for the Cloud workspace. Secret
+/// values stay in the account's secret store; this only names them.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CloudWorkspaceSpec {
+    pub name: String,
+    #[serde(default)]
+    pub repositories: Vec<CloudWorkspaceRepository>,
+    #[serde(default)]
+    pub packages: CloudWorkspacePackages,
+    #[serde(default)]
+    pub setup_script: String,
+    #[serde(default)]
+    pub setup_timeout_seconds: Option<u32>,
+    #[serde(default)]
+    pub env_vars: std::collections::BTreeMap<String, String>,
+    #[serde(default)]
+    pub networking: Option<CloudWorkspaceNetworking>,
+    /// The account's secrets the vault holds besides the repositories' own.
+    #[serde(default)]
+    pub secrets: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CloudWorkspaceRepository {
+    pub url: String,
+    #[serde(default, rename = "ref")]
+    pub git_ref: String,
+    /// `/home/sprite/<repository name>` when left out.
+    #[serde(default)]
+    pub mount: String,
+    /// The secret the clone authenticates with, kept in the vault.
+    #[serde(default)]
+    pub secret: Option<String>,
+}
+
+/// Managoat installs `apt` and `npm` packages; other toolchains go in the
+/// setup script.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CloudWorkspacePackages {
+    #[serde(default)]
+    pub apt: Vec<String>,
+    #[serde(default)]
+    pub npm: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CloudWorkspaceNetworking {
+    /// `unrestricted` or `limited`.
+    #[serde(rename = "type")]
+    pub kind: String,
+    #[serde(default)]
+    pub allowed_hosts: Vec<String>,
+}
+
+fn plain_word(s: &str, max: usize) -> bool {
+    !s.is_empty() && s.len() <= max && !s.starts_with('-') && !s.chars().any(|c| c.is_whitespace() || c.is_control())
+}
+
+impl CloudWorkspaceSpec {
+    /// Check what the user sent and fill in the default mounts, so the saved
+    /// spec says where each repository is.
+    pub fn normalize(&mut self) -> Result<()> {
+        self.name = self.name.trim().to_owned();
+        if self.name.is_empty() || self.name.len() > 120 {
+            bail!("name must contain 1–120 bytes");
+        }
+        if self.repositories.len() > 10 {
+            bail!("at most 10 repositories");
+        }
+        let mut mounts = std::collections::BTreeSet::new();
+        for repository in &mut self.repositories {
+            if !crate::cloud::https_repository(&repository.url) {
+                bail!("repository must be an HTTPS URL without embedded credentials");
+            }
+            if repository.git_ref.starts_with('-')
+                || repository.git_ref.chars().any(char::is_control)
+                || repository.git_ref.len() > 256
+            {
+                bail!("invalid ref");
+            }
+            if repository.mount.is_empty() {
+                let last = repository.url.trim_end_matches('/').rsplit('/').next().unwrap_or_default();
+                let name = last.strip_suffix(".git").unwrap_or(last);
+                if name.is_empty()
+                    || matches!(name, "." | "..")
+                    || !name.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
+                {
+                    bail!("give the repository a mount");
+                }
+                repository.mount = format!("/home/sprite/{name}");
+            }
+            let segments: Vec<&str> = repository.mount.split('/').skip(1).collect();
+            if !repository.mount.starts_with('/')
+                || repository.mount.len() > 256
+                || repository.mount.chars().any(char::is_control)
+                || segments.iter().any(|s| s.is_empty() || matches!(*s, "." | ".."))
+            {
+                bail!("a mount must be an absolute path");
+            }
+            if !mounts.insert(repository.mount.clone()) {
+                bail!("two repositories share a mount");
+            }
+            if repository.secret.as_ref().is_some_and(|name| !crate::cloud::secrets::valid_name(name)) {
+                bail!("invalid repository secret name");
+            }
+        }
+        let packages = [&self.packages.apt, &self.packages.npm];
+        if packages.iter().any(|list| list.len() > 100 || list.iter().any(|p| !plain_word(p, 200))) {
+            bail!("invalid packages");
+        }
+        if self.setup_script.len() > 64_000 {
+            bail!("setup script must be at most 64000 bytes");
+        }
+        if self.setup_timeout_seconds.is_some_and(|s| !(1..=900).contains(&s)) {
+            bail!("setup timeout must be 1–900 seconds");
+        }
+        if self.env_vars.len() > 100
+            || self.env_vars.iter().any(|(k, v)| !crate::cloud::secrets::valid_name(k) || v.len() > 32_000)
+        {
+            bail!("invalid or reserved environment variable");
+        }
+        if let Some(networking) = &self.networking
+            && (!matches!(networking.kind.as_str(), "unrestricted" | "limited")
+                || networking.allowed_hosts.len() > 200
+                || networking.allowed_hosts.iter().any(|h| !plain_word(h, 253))
+                || (networking.kind == "unrestricted" && !networking.allowed_hosts.is_empty()))
+        {
+            bail!("invalid networking");
+        }
+        if self.secrets.len() > 32 || self.secrets.iter().any(|s| !crate::cloud::secrets::valid_name(s)) {
+            bail!("invalid or reserved secret name");
+        }
+        if serde_json::to_vec(self)?.len() > 256_000 {
+            bail!("cloud workspace settings are too large");
+        }
+        Ok(())
+    }
+
+    /// Every secret the vault holds: the repositories' and the others.
+    pub fn secret_names(&self) -> Vec<String> {
+        let mut names: Vec<String> =
+            self.repositories.iter().filter_map(|r| r.secret.clone()).chain(self.secrets.iter().cloned()).collect();
+        names.sort();
+        names.dedup();
+        names
+    }
+
+    /// The environment's build fields, every one sent so the same body can
+    /// replace them on an update.
+    pub fn environment(&self) -> serde_json::Value {
+        let repositories: Vec<_> = self
+            .repositories
+            .iter()
+            .map(|r| {
+                let mut repository = serde_json::json!({"url":r.url,"mount_path":r.mount});
+                if !r.git_ref.is_empty() {
+                    repository["ref"] = serde_json::json!(r.git_ref);
+                }
+                if let Some(name) = &r.secret {
+                    repository["secret_key"] = serde_json::json!(name);
+                }
+                repository
+            })
+            .collect();
+        let mut packages = serde_json::Map::new();
+        for (manager, list) in [("apt", &self.packages.apt), ("npm", &self.packages.npm)] {
+            if !list.is_empty() {
+                packages.insert(manager.into(), serde_json::json!(list));
+            }
+        }
+        let mut body = serde_json::json!({
+            "repositories": repositories, "packages": packages,
+            "setup_script": self.setup_script, "env_vars": self.env_vars,
+        });
+        if let Some(seconds) = self.setup_timeout_seconds {
+            body["setup_timeout_seconds"] = serde_json::json!(seconds);
+        }
+        if let Some(networking) = &self.networking {
+            body["networking_type"] = serde_json::json!(networking.kind);
+            if networking.kind == "limited" {
+                body["networking_config"] = serde_json::json!({"allowed_hosts":networking.allowed_hosts});
+            }
+        }
+        body
+    }
+}
+
+/// A Cloud workspace as the account sees it. Its Managoat ids stay in
+/// control.
+#[derive(Debug, Clone, Serialize)]
+pub struct CloudWorkspace {
+    pub id: String,
+    pub name: String,
+    pub saved_spec: CloudWorkspaceSpec,
+    pub built_spec: Option<CloudWorkspaceSpec>,
+    /// Managoat's `provisioning`, `ready` or `failed`, or `deleting`.
+    pub status: String,
+    pub sandbox_status: Option<String>,
+    pub error: Option<String>,
+    pub revision: Option<String>,
+    pub built_from_revision: Option<String>,
+    pub stale: bool,
+    pub changed_fields: Vec<String>,
+    pub created: u64,
+}
+
+/// The Cloud workspace's provisioning journal, as `Execution` is a run's.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct CloudWorkspaceExecution {
+    pub stage: String,
+    pub environment: Option<String>,
+    pub vault: Option<String>,
+    pub workspace: Option<String>,
+    #[serde(default)]
+    pub secrets_uploaded: Vec<String>,
+}
+
+pub struct CloudWorkspaceJob {
+    pub cloud_workspace: CloudWorkspace,
+    pub account: String,
+    pub execution: CloudWorkspaceExecution,
+    /// Revision of the environment control made, from its create response.
+    pub saved_revision: Option<String>,
+    pub deleting: bool,
+    pub lease: String,
+}
+
+const CLOUD_WORKSPACE_COLUMNS: &str = "id,name,saved_spec,built_spec,status,sandbox_status,error,revision,built_from_revision,stale,changed_fields,created";
+
+fn cloud_workspace_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<CloudWorkspace> {
+    fn decode<T: serde::de::DeserializeOwned>(i: usize, s: &str) -> rusqlite::Result<T> {
+        serde_json::from_str(s)
+            .map_err(|e| rusqlite::Error::FromSqlConversionFailure(i, rusqlite::types::Type::Text, Box::new(e)))
+    }
+    Ok(CloudWorkspace {
+        id: r.get(0)?,
+        name: r.get(1)?,
+        saved_spec: decode(2, &r.get::<_, String>(2)?)?,
+        built_spec: r.get::<_, Option<String>>(3)?.map(|s| decode(3, &s)).transpose()?,
+        status: r.get(4)?,
+        sandbox_status: r.get(5)?,
+        error: r.get(6)?,
+        revision: r.get(7)?,
+        built_from_revision: r.get(8)?,
+        stale: r.get(9)?,
+        changed_fields: decode(10, &r.get::<_, String>(10)?)?,
+        created: r.get(11)?,
+    })
 }
 
 fn row(r: &rusqlite::Row<'_>) -> rusqlite::Result<CloudRun> {
@@ -377,7 +691,7 @@ impl Db {
             )?;
         }
         tx.execute(
-            "INSERT INTO cloud_jobs(run,body) VALUES(?1,?2)",
+            "INSERT INTO cloud_jobs(id,kind,body) VALUES(?1,'run',?2)",
             params![run.id, serde_json::to_string(&Execution::default())?],
         )?;
         tx.commit()?;
@@ -391,11 +705,11 @@ impl Db {
     }
 
     pub fn cloud_conversation(&self, account: &str, id: &str, now: u64) -> Result<Option<String>> {
-        Ok(self.c().query_row("SELECT r.provider_id FROM cloud_runs r JOIN cloud_jobs j ON j.run=r.id WHERE r.account=?1 AND r.id=?2 AND r.state IN ('running','needs_input','recovering') AND j.cancel=0 AND r.deadline>?3", params![account,id,now], |r| r.get::<_,Option<String>>(0)).optional()?.flatten())
+        Ok(self.c().query_row("SELECT r.provider_id FROM cloud_runs r JOIN cloud_jobs j ON j.id=r.id WHERE r.account=?1 AND r.id=?2 AND r.state IN ('running','needs_input','recovering') AND j.cancel=0 AND r.deadline>?3", params![account,id,now], |r| r.get::<_,Option<String>>(0)).optional()?.flatten())
     }
 
     pub fn cancel_cloud_run(&self, account: &str, id: &str) -> Result<bool> {
-        Ok(self.c().execute("UPDATE cloud_jobs SET cancel=1 WHERE run IN (SELECT id FROM cloud_runs WHERE account=?1 AND id=?2 AND state NOT IN ('completed','failed','cancelled','expired'))", params![account,id])? == 1)
+        Ok(self.c().execute("UPDATE cloud_jobs SET cancel=1 WHERE id IN (SELECT id FROM cloud_runs WHERE account=?1 AND id=?2 AND state NOT IN ('completed','failed','cancelled','expired'))", params![account,id])? == 1)
     }
 
     pub fn cloud_events(&self, account: &str, id: &str, after: u64) -> Result<Vec<serde_json::Value>> {
@@ -432,15 +746,12 @@ impl Db {
     pub fn claim_cloud_job(&self, now: u64) -> Result<Option<Job>> {
         let mut conn = self.c();
         let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-        let found = tx.query_row("SELECT r.id,r.spec,r.state,r.created,r.deadline,r.result,r.account,j.body,j.cancel FROM cloud_runs r JOIN cloud_jobs j ON j.run=r.id WHERE r.state NOT IN ('completed','failed','cancelled','expired') AND j.lease_until<=?1 ORDER BY j.lease_until,r.created LIMIT 1", [now], |r| Ok((row(r)?,r.get::<_,String>(6)?,r.get::<_,String>(7)?,r.get::<_,bool>(8)?))).optional()?;
+        let found = tx.query_row("SELECT r.id,r.spec,r.state,r.created,r.deadline,r.result,r.account,j.body,j.cancel FROM cloud_runs r JOIN cloud_jobs j ON j.id=r.id WHERE r.state NOT IN ('completed','failed','cancelled','expired') AND j.lease_until<=?1 ORDER BY j.lease_until,r.created LIMIT 1", [now], |r| Ok((row(r)?,r.get::<_,String>(6)?,r.get::<_,String>(7)?,r.get::<_,bool>(8)?))).optional()?;
         let Some((run, account, body, cancelled)) = found else {
             return Ok(None);
         };
         let lease = hex::encode(arugula_e2e::random::<16>());
-        tx.execute(
-            "UPDATE cloud_jobs SET lease=?1,lease_until=?2 WHERE run=?3",
-            params![lease, now + 120_000, run.id],
-        )?;
+        tx.execute("UPDATE cloud_jobs SET lease=?1,lease_until=?2 WHERE id=?3", params![lease, now + 120_000, run.id])?;
         tx.commit()?;
         Ok(Some(Job { run, account, execution: serde_json::from_str(&body)?, cancelled, lease }))
     }
@@ -456,7 +767,7 @@ impl Db {
         let mut conn = self.c();
         let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         let changed = tx.execute(
-            "UPDATE cloud_jobs SET body=?1,lease_until=COALESCE(?2,lease_until) WHERE run=?3 AND lease=?4",
+            "UPDATE cloud_jobs SET body=?1,lease_until=COALESCE(?2,lease_until) WHERE id=?3 AND lease=?4",
             params![serde_json::to_string(&job.execution)?, release_at, job.run.id, job.lease],
         )?;
         if changed != 1 {
@@ -480,7 +791,7 @@ impl Db {
         let mut conn = self.c();
         let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         let owns: bool = tx.query_row(
-            "SELECT EXISTS(SELECT 1 FROM cloud_jobs WHERE run=?1 AND lease=?2)",
+            "SELECT EXISTS(SELECT 1 FROM cloud_jobs WHERE id=?1 AND lease=?2)",
             params![job.run.id, job.lease],
             |r| r.get(0),
         )?;
@@ -541,6 +852,216 @@ impl Db {
     }
 }
 
+impl Db {
+    /// Create a Cloud workspace and its job. A retry with the same request
+    /// key returns the first one; with other settings it's a conflict.
+    pub fn create_cloud_workspace(
+        &self,
+        account: &str,
+        request_key: &str,
+        spec: &CloudWorkspaceSpec,
+        now: u64,
+    ) -> Result<CloudWorkspace> {
+        if request_key.is_empty() || request_key.len() > 128 {
+            bail!("invalid request key");
+        }
+        let mut conn = self.c();
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        require_account(&tx, account)?;
+        let existing = tx
+            .query_row(
+                &format!("SELECT {CLOUD_WORKSPACE_COLUMNS} FROM cloud_workspaces WHERE account=?1 AND request_key=?2"),
+                params![account, request_key],
+                cloud_workspace_row,
+            )
+            .optional()?;
+        if let Some(existing) = existing {
+            if existing.saved_spec != *spec {
+                bail!("request key already used with different input");
+            }
+            return Ok(existing);
+        }
+        for name in spec.secret_names() {
+            let exists: bool = tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM cloud_secrets WHERE account=?1 AND name=?2)",
+                params![account, name],
+                |r| r.get(0),
+            )?;
+            if !exists {
+                bail!("required cloud secret is missing");
+            }
+        }
+        let id = format!("cw_{}", hex::encode(arugula_e2e::random::<16>()));
+        tx.execute(
+            "INSERT INTO cloud_workspaces(id,account,request_key,name,saved_spec,created) VALUES(?1,?2,?3,?4,?5,?6)",
+            params![id, account, request_key, spec.name, serde_json::to_string(spec)?, now],
+        )?;
+        tx.execute(
+            "INSERT INTO cloud_jobs(id,kind,body) VALUES(?1,'cloud_workspace',?2)",
+            params![id, serde_json::to_string(&CloudWorkspaceExecution::default())?],
+        )?;
+        let created = tx.query_row(
+            &format!("SELECT {CLOUD_WORKSPACE_COLUMNS} FROM cloud_workspaces WHERE id=?1"),
+            [&id],
+            cloud_workspace_row,
+        )?;
+        tx.commit()?;
+        Ok(created)
+    }
+
+    /// The account's Cloud workspaces that aren't deleted yet, newest first.
+    pub fn cloud_workspaces(&self, account: &str) -> Result<Vec<CloudWorkspace>> {
+        let conn = self.c();
+        let mut q = conn.prepare(&format!(
+            "SELECT {CLOUD_WORKSPACE_COLUMNS} FROM cloud_workspaces WHERE account=?1 AND deleted IS NULL ORDER BY created DESC, id"
+        ))?;
+        Ok(q.query_map([account], cloud_workspace_row)?.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    pub fn cloud_workspace(&self, account: &str, id: &str) -> Result<Option<CloudWorkspace>> {
+        Ok(self
+            .c()
+            .query_row(
+                &format!(
+                    "SELECT {CLOUD_WORKSPACE_COLUMNS} FROM cloud_workspaces WHERE account=?1 AND id=?2 AND deleted IS NULL"
+                ),
+                params![account, id],
+                cloud_workspace_row,
+            )
+            .optional()?)
+    }
+
+    /// Ask the worker to delete it. Saying so again is harmless.
+    pub fn delete_cloud_workspace(&self, account: &str, id: &str) -> Result<bool> {
+        let mut conn = self.c();
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let changed = tx.execute(
+            "UPDATE cloud_workspaces SET status='deleting' WHERE account=?1 AND id=?2 AND deleted IS NULL",
+            params![account, id],
+        )?;
+        tx.execute("UPDATE cloud_jobs SET cancel=1 WHERE id=?1 AND kind='cloud_workspace'", [id])?;
+        tx.commit()?;
+        Ok(changed == 1)
+    }
+
+    /// Account erasure: ask for every one of its Cloud workspaces to go.
+    pub fn delete_cloud_workspaces(&self, account: &str) -> Result<()> {
+        for w in self.cloud_workspaces(account)? {
+            self.delete_cloud_workspace(account, &w.id)?;
+        }
+        Ok(())
+    }
+
+    pub fn claim_cloud_workspace_job(&self, now: u64) -> Result<Option<CloudWorkspaceJob>> {
+        let mut conn = self.c();
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let columns = CLOUD_WORKSPACE_COLUMNS.split(',').map(|c| format!("w.{c}")).collect::<Vec<_>>().join(",");
+        let found = tx
+            .query_row(
+                &format!(
+                    "SELECT {columns},w.account,w.saved_revision,j.body,j.cancel FROM cloud_workspaces w JOIN cloud_jobs j ON j.id=w.id
+                     WHERE j.kind='cloud_workspace' AND w.deleted IS NULL AND j.lease_until<=?1 ORDER BY j.lease_until,w.created LIMIT 1"
+                ),
+                [now],
+                |r| {
+                    Ok((
+                        cloud_workspace_row(r)?,
+                        r.get::<_, String>(12)?,
+                        r.get::<_, Option<String>>(13)?,
+                        r.get::<_, String>(14)?,
+                        r.get::<_, bool>(15)?,
+                    ))
+                },
+            )
+            .optional()?;
+        let Some((cloud_workspace, account, saved_revision, body, deleting)) = found else {
+            return Ok(None);
+        };
+        let lease = hex::encode(arugula_e2e::random::<16>());
+        tx.execute(
+            "UPDATE cloud_jobs SET lease=?1,lease_until=?2 WHERE id=?3",
+            params![lease, now + 120_000, cloud_workspace.id],
+        )?;
+        tx.commit()?;
+        Ok(Some(CloudWorkspaceJob {
+            cloud_workspace,
+            account,
+            execution: serde_json::from_str(&body)?,
+            saved_revision,
+            deleting,
+            lease,
+        }))
+    }
+
+    /// Checkpoint under the claim, as `checkpoint_cloud_job` does. A delete
+    /// asked for meanwhile keeps the status `deleting`. `built_spec` becomes
+    /// the saved spec once the revision that spec was saved as is built.
+    pub fn checkpoint_cloud_workspace_job(&self, job: &CloudWorkspaceJob, release_at: Option<u64>) -> Result<()> {
+        let mut conn = self.c();
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let changed = tx.execute(
+            "UPDATE cloud_jobs SET body=?1,lease_until=COALESCE(?2,lease_until) WHERE id=?3 AND lease=?4",
+            params![serde_json::to_string(&job.execution)?, release_at, job.cloud_workspace.id, job.lease],
+        )?;
+        if changed != 1 {
+            bail!("cloud job lease lost");
+        }
+        let w = &job.cloud_workspace;
+        tx.execute(
+            "UPDATE cloud_workspaces SET
+                 status=CASE WHEN (SELECT cancel FROM cloud_jobs WHERE id=?1)=1 THEN 'deleting' ELSE ?2 END,
+                 sandbox_status=?3, error=?4, revision=?5, built_from_revision=?6, stale=?7, changed_fields=?8,
+                 environment=?9, vault=?10, provider_id=?11, saved_revision=COALESCE(saved_revision,?12),
+                 built_spec=CASE WHEN ?2='ready' AND ?6 IS NOT NULL AND ?6=COALESCE(saved_revision,?12) THEN saved_spec ELSE built_spec END
+             WHERE id=?1",
+            params![
+                w.id,
+                w.status,
+                w.sandbox_status,
+                w.error,
+                w.revision,
+                w.built_from_revision,
+                w.stale,
+                serde_json::to_string(&w.changed_fields)?,
+                job.execution.environment,
+                job.execution.vault,
+                job.execution.workspace,
+                job.saved_revision,
+            ],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Its Managoat resources are gone: keep the row as a tombstone and end
+    /// the job.
+    pub fn finish_cloud_workspace_delete(&self, job: &CloudWorkspaceJob, now: u64) -> Result<()> {
+        let mut conn = self.c();
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        if tx.execute("DELETE FROM cloud_jobs WHERE id=?1 AND lease=?2", params![job.cloud_workspace.id, job.lease])?
+            != 1
+        {
+            bail!("cloud job lease lost");
+        }
+        tx.execute(
+            "UPDATE cloud_workspaces SET status='deleted',deleted=?1,environment=NULL,vault=NULL,provider_id=NULL WHERE id=?2",
+            params![now, job.cloud_workspace.id],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// One sealed secret of the account's, read when the vault is filled.
+    pub fn cloud_secret(&self, account: &str, name: &str) -> Result<Option<Vec<u8>>> {
+        Ok(self
+            .c()
+            .query_row("SELECT sealed FROM cloud_secrets WHERE account=?1 AND name=?2", params![account, name], |r| {
+                r.get(0)
+            })
+            .optional()?)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -573,6 +1094,91 @@ mod tests {
     }
     fn limits() -> RunLimits {
         RunLimits { daily_runs: 2, concurrent_runs: 1, duration_ms: 60000 }
+    }
+
+    fn cloud_workspace_spec() -> CloudWorkspaceSpec {
+        let mut spec: CloudWorkspaceSpec = serde_json::from_value(
+            serde_json::json!({"name":"Box","repositories":[{"url":"https://github.com/example/app"}]}),
+        )
+        .unwrap();
+        spec.normalize().unwrap();
+        spec
+    }
+
+    #[test]
+    fn account_erasure_waits_for_cloud_workspaces_to_be_deleted() {
+        let db = test_db();
+        let kept = db.create_cloud_workspace("b", "keep", &cloud_workspace_spec(), 0).unwrap();
+        let w = db.create_cloud_workspace("a", "erase", &cloud_workspace_spec(), 0).unwrap();
+        let erase = super::super::Erase { account: "a", disband: &[], retain_for: &[] };
+        assert!(db.delete_account(&erase).is_err());
+        db.delete_cloud_workspaces("a").unwrap();
+        assert!(db.delete_account(&erase).is_err(), "still deleting");
+        let job = db.claim_cloud_workspace_job(0).unwrap().unwrap();
+        let job = if job.cloud_workspace.id == w.id { job } else { db.claim_cloud_workspace_job(0).unwrap().unwrap() };
+        assert!(job.deleting);
+        db.finish_cloud_workspace_delete(&job, 1).unwrap();
+        db.delete_account(&erase).unwrap();
+        let rows: u64 = db.c().query_row("SELECT count(*) FROM cloud_workspaces", [], |r| r.get(0)).unwrap();
+        assert_eq!(rows, 1);
+        let jobs: u64 = db.c().query_row("SELECT count(*) FROM cloud_jobs", [], |r| r.get(0)).unwrap();
+        assert_eq!(jobs, 1);
+        assert_eq!(db.cloud_workspace("b", &kept.id).unwrap().unwrap().status, "provisioning");
+    }
+
+    #[test]
+    fn cloud_jobs_keyed_on_run_are_rekeyed_with_their_kind() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE cloud_runs (id TEXT PRIMARY KEY);
+             CREATE TABLE cloud_jobs (
+                 run TEXT PRIMARY KEY REFERENCES cloud_runs(id),
+                 body TEXT NOT NULL,
+                 cancel INTEGER NOT NULL DEFAULT 0,
+                 lease TEXT,
+                 lease_until INTEGER NOT NULL DEFAULT 0
+             );
+             INSERT INTO cloud_runs VALUES ('run_1');
+             INSERT INTO cloud_jobs(run,body,cancel,lease,lease_until) VALUES ('run_1','{}',1,'held',42);",
+        )
+        .unwrap();
+        conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+        migrate(&conn).unwrap();
+        migrate(&conn).unwrap();
+        let row: (String, String, String, bool, String, u64) = conn
+            .query_row("SELECT id,kind,body,cancel,lease,lease_until FROM cloud_jobs", [], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?))
+            })
+            .unwrap();
+        assert_eq!(row, ("run_1".into(), "run".into(), "{}".into(), true, "held".into(), 42));
+        conn.execute("INSERT INTO cloud_jobs(id,kind,body) VALUES('cw_1','cloud_workspace','{}')", []).unwrap();
+    }
+
+    #[test]
+    fn built_spec_follows_the_revision_that_reached_ready() {
+        let db = test_db();
+        let w = db.create_cloud_workspace("a", "built", &cloud_workspace_spec(), 0).unwrap();
+        let mut job = db.claim_cloud_workspace_job(0).unwrap().unwrap();
+        job.saved_revision = Some("rev1".into());
+        job.cloud_workspace.status = "ready".into();
+        job.cloud_workspace.built_from_revision = Some("rev0".into());
+        db.checkpoint_cloud_workspace_job(&job, Some(0)).unwrap();
+        assert!(db.cloud_workspace("a", &w.id).unwrap().unwrap().built_spec.is_none());
+        let mut job = db.claim_cloud_workspace_job(0).unwrap().unwrap();
+        assert_eq!(job.saved_revision.as_deref(), Some("rev1"));
+        job.cloud_workspace.built_from_revision = Some("rev1".into());
+        job.cloud_workspace.stale = true;
+        job.cloud_workspace.changed_fields = vec!["packages".into()];
+        db.checkpoint_cloud_workspace_job(&job, Some(0)).unwrap();
+        let saved = db.cloud_workspace("a", &w.id).unwrap().unwrap();
+        assert_eq!(saved.built_spec, Some(cloud_workspace_spec()));
+        assert!(saved.stale);
+        assert_eq!(saved.changed_fields, ["packages"]);
+        // A delete asked for under a worker's claim stays asked for.
+        let job = db.claim_cloud_workspace_job(0).unwrap().unwrap();
+        db.delete_cloud_workspace("a", &w.id).unwrap();
+        db.checkpoint_cloud_workspace_job(&job, Some(0)).unwrap();
+        assert_eq!(db.cloud_workspace("a", &w.id).unwrap().unwrap().status, "deleting");
     }
 
     #[test]

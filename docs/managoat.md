@@ -36,7 +36,9 @@ Secrets are write-only in the UI and account-bound encrypted in the database.
 A run snapshots the selected secrets, so editing a secret does not change
 an already queued run. Model-provider credentials belong to the platform.
 Account deletion waits for active cloud runs to finish cleanup (including
-operator recovery when needed), then erases the account's cloud records.
+operator recovery when needed), then erases the account's cloud records. It
+starts deleting the account's Cloud workspaces (their Managoat workspace,
+vault and environment) and refuses until that's done.
 
 ## Existing Managoat users
 

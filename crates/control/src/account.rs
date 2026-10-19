@@ -306,6 +306,12 @@ pub async fn delete_account(app: &Arc<App>, account: &str, typed: &str) -> Resul
     if !p.pays.is_empty() {
         return Err(err(StatusCode::CONFLICT, &format!("cancel {} first", p.pays.join(" and "))));
     }
+    // Cloud workspaces' Managoat resources go in the worker: ask for that,
+    // and refuse until it's done.
+    app.db.delete_cloud_workspaces(account)?;
+    if !app.db.cloud_workspaces(account)?.is_empty() {
+        return Err(err(StatusCode::CONFLICT, "Your Cloud workspaces are being deleted. Try again in a minute."));
+    }
     // Hosted VMs go the way they always do.
     for x in app.db.sandboxes(account)? {
         if x.deleted.is_none()

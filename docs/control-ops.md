@@ -275,7 +275,9 @@ What's in them:
   `sandbox created`, `sandbox failed`, `sandbox deleted` (minutes),
   `cloud agent created/updated/deleted/imported`, `cloud run started`,
   `cloud run finished` (outcome, minutes), `cloud run cancelled`,
-  `cloud request answered`, `cloud secret saved/deleted`.
+  `cloud request answered`, `cloud secret saved/deleted`,
+  `cloud workspace created` (counts of repositories, secrets, packages and
+  env vars), `cloud workspace deleted`.
 - **Other**: `push turned on` (the push service's host), `push turned off`,
   `push relayed` (status), `labs flag set`.
 - **Machines' versions**: `machine version` (machine, version, os, arch)
