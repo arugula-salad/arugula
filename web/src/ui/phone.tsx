@@ -148,6 +148,11 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
           <button data-new-agent onClick={act(() => startAgent(client, { session: where, from: active }))}>
             New agent
           </button>
+          {client.state && (
+            <button data-new-chat onClick={act(() => void client.newChat({ session: where ?? undefined }))}>
+              New chat
+            </button>
+          )}
           {owner && (
             <button
               data-conversations

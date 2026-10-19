@@ -168,6 +168,7 @@ const ExpandIcon = ({ on }: { on: boolean }) => (
 /** Type remains named for assistive technology and in the hover label. */
 function PaneTypeIcon({ type }: { type: string | undefined }) {
   const path = type === "agent" ? "M7 8h10v11H7zM12 8V4M9 12h1M14 12h1M10 16h4"
+    : type === "chat" ? "M4 5h16v11H9l-5 4z"
     : type === "editor" ? "M6 3h8l4 4v14H6zM14 3v5h4M9 12h6M9 16h6"
     : type === "diff" ? "M6 3v18M18 3v18M3 8h6M15 16h6M18 13v6"
     : type === "browser" ? "M3 5h18v14H3zM3 9h18M6 7h1M9 7h1"

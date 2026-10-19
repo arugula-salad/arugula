@@ -1289,6 +1289,11 @@
             ],
             "description": "Open it beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in)."
           },
+          "chat": {
+            "default": false,
+            "description": "A chat block instead: a plain conversation with Claude, with no tools, files, shell or MCP servers, for the user to read and go on with. Only prompt, model, title, beside and session apply.",
+            "type": "boolean"
+          },
           "command": {
             "default": null,
             "description": "For acp: the agent server's command line.",
@@ -5160,6 +5165,11 @@
             ],
             "description": "Open it beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in)."
           },
+          "chat": {
+            "default": false,
+            "description": "A chat block instead: a plain conversation with Claude, with no tools, files, shell or MCP servers, for the user to read and go on with. Only prompt, model, title, beside and session apply.",
+            "type": "boolean"
+          },
           "command": {
             "default": null,
             "description": "For acp: the agent server's command line.",
@@ -7762,6 +7772,11 @@
               }
             ],
             "description": "Open it beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in)."
+          },
+          "chat": {
+            "default": false,
+            "description": "A chat block instead: a plain conversation with Claude, with no tools, files, shell or MCP servers, for the user to read and go on with. Only prompt, model, title, beside and session apply.",
+            "type": "boolean"
           },
           "command": {
             "default": null,
@@ -11633,6 +11648,11 @@
               }
             ],
             "description": "Open it beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in)."
+          },
+          "chat": {
+            "default": false,
+            "description": "A chat block instead: a plain conversation with Claude, with no tools, files, shell or MCP servers, for the user to read and go on with. Only prompt, model, title, beside and session apply.",
+            "type": "boolean"
           },
           "command": {
             "default": null,

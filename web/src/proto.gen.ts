@@ -150,7 +150,7 @@ export type Attention = "idle" | "working" | "needs_input" | "done";
  * What a block is; where one runs is its `host`, not its type. All types
  * share one id space (`%N`) and one place in the layout tree.
  */
-export type BlockType = "terminal" | "browser" | "agent" | "editor" | "diff" | "file" | "remote" | "workspace" | "app" | "forge" | "invite" | "agents" | "doc";
+export type BlockType = "terminal" | "browser" | "agent" | "editor" | "diff" | "file" | "remote" | "workspace" | "app" | "forge" | "invite" | "agents" | "doc" | "chat";
 
 /**
  * A side of a PR: which repository (a fork's, for its head), branch and

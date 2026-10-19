@@ -80,6 +80,7 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
     // A port where this pane runs: its machine, or this host.
     { label: mine ? "Open a port on this machine…" : "Open a port…", run: () => void openPort(client, { split: id, host: mine?.id, local: !mine }) },
     { label: "Start an agent…", run: () => startAgent(client, { split: id, from: id }) },
+    { label: "Start a chat", run: () => void client.newChat({ split: id, from: id }) },
     // M33: Claude Code conversations from terminals and the desktop app.
     ...(!client.state?.roles
       ? [{ label: "Claude Code conversations…", run: () => pickConversation(client, { split: id, cwd: cwd ?? undefined }) } as MenuItem]

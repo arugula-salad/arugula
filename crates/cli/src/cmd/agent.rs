@@ -1,4 +1,5 @@
-//! `arugula agent`: an agent block with a prompt, or a Claude Code conversation continued.
+//! `arugula agent`: an agent block with a prompt, a chat (`--chat`), or a
+//! Claude Code conversation continued.
 
 use super::Ctx;
 use crate::http::{call, call_raw, request, request_as};
@@ -31,6 +32,10 @@ pub struct Args {
     /// Codex instead of Claude Code.
     #[arg(long)]
     codex: bool,
+    /// A chat block instead: a plain conversation with Claude, with no
+    /// tools, files, shell or MCP servers, in a folder of its own.
+    #[arg(long, conflicts_with_all = ["acp", "codex", "recipe", "mcp", "allow", "permission_mode", "user_settings", "vm", "machine", "cwd", "resume", "fork"])]
+    chat: bool,
     /// A model to switch to (e.g. `haiku`).
     #[arg(long)]
     model: Option<String>,
@@ -130,6 +135,40 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
                 let text = request(&sock, "GET", &format!("/api/panes/{block}/capture"), None)?.ok()?.text()?;
                 print!("{text}");
                 return Ok(if needs_input { 2 } else { 0 });
+            }
+        }
+        Args { chat: true, model, title, session, split, wait, prompt, .. } => {
+            let mut config = json!({ "agent": "claude", "model": model, "title": title });
+            if !REMOTE.load(std::sync::atomic::Ordering::Relaxed) {
+                let dir = std::env::var("CLAUDE_CONFIG_DIR").ok().filter(|d| !d.is_empty());
+                config["claude_config_dir"] = json!(dir.map(|d| absolute(&d)).transpose()?.unwrap_or_default());
+            }
+            let prompt = prompt.join(" ");
+            if !prompt.is_empty() {
+                config["prompt"] = json!(prompt);
+            }
+            if let Some(why) = adapter_missing(&sock, "claude") {
+                eprintln!("{why}");
+                return Ok(1);
+            }
+            let body = OpenRequest {
+                kind: BlockType::Chat,
+                config,
+                split: split.map(|p| p.0),
+                session,
+                from_pane: std::env::var("ARUGULA_PANE").ok().and_then(|v| v.parse::<u32>().ok()),
+                ..Default::default()
+            };
+            let (OpenResponse { block }, v) = request_as(&sock, "POST", "/api/blocks", &body)?.parse_raw()?;
+            if json_out {
+                print_json(&v);
+            } else {
+                println!("%{block}");
+            }
+            if wait && !prompt.is_empty() {
+                needs_input(&sock, block)?;
+                let text = request(&sock, "GET", &format!("/api/panes/{block}/capture"), None)?.ok()?.text()?;
+                print!("{text}");
             }
         }
         Args {
