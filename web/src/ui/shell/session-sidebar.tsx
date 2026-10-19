@@ -177,7 +177,7 @@ export function SessionSidebar({
   const owner = !state.roles;
   const offline = offlineWhy(client);
   return (
-    <aside class={narrow ? "ws-sidebar overlay" : "ws-sidebar"} style={{ width: `${width}px` }} aria-label={`Sessions on ${host}`} data-session-sidebar>
+    <aside id="ws-session-sidebar" class={narrow ? "ws-sidebar overlay" : "ws-sidebar"} style={{ width: `${width}px` }} aria-label={`Sessions on ${host}`} data-session-sidebar>
       <div class="ws-sidebar-head">
         <h2>Sessions</h2>
         <span class="ws-sidebar-count">{all.length}</span>

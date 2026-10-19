@@ -346,3 +346,24 @@ html[data-desktop="macos"]:not([data-native-tabs]) .app.ws::before {
   app-region: drag;
   -webkit-app-region: drag;
 }
+
+/* Sessions changes the sidebar, not the current destination. */
+.ws-rail-utility {
+  padding-bottom: 8px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid var(--chrome-line);
+}
+.ws-rail-utility .ws-rail-button.on {
+  background: none;
+  border-color: transparent;
+  color: var(--fg);
+}
+.ws-rail-utility .ws-rail-button:hover { background: var(--raised); }
+.ws-sidebar-chevron {
+  position: absolute;
+  right: 3px;
+  top: 7px;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--dim);
+}
